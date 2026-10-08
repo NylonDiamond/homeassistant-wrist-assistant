@@ -5,7 +5,7 @@ widget extension (through the App Group) keep it locally; HA keeps a copy
 here so it can validate HMACs on signed requests.
 
 A pair comes from the iPhone's sign-in through `register_secret`
-(`WARegisterSecretView`), from a code a watch or an iPhone shows and an admin
+(`WARegisterSecretView`), from a code a watch or an iPhone shows and a user
 confirms in the panel (`pairing_ws.py`), or from a QR code the panel shows and
 an iPhone redeems (`WAPairRedeemView`). Either way the entry is bound to a Home
 Assistant user, and the secret, never a bearer, is what authorizes the
@@ -35,7 +35,7 @@ _SAVE_DEBOUNCE_SECONDS = 2
 # constants so sensor.py can infer device_kind without re-spelling the strings.
 LABEL_IPHONE_SELF_PROVISION = "iphone-self-provision"
 LABEL_WATCH_SELF_PROVISION = "watch-self-provision"
-# A watch paired by a code an admin confirmed in the panel, with no iPhone.
+# A watch paired by a code a user confirmed in the panel, with no iPhone.
 LABEL_WATCH_CODE_PAIR = "watch-code-pair"
 
 DEVICE_KIND_IPHONE = "iphone"
@@ -487,7 +487,7 @@ class WidgetSecretStore:
         user. It refreshes over HMAC, which carries no user, but the iPhone
         re-registers on every app update, so a watch paired before user
         binding gets bound through its owner. A watch paired by code is bound
-        to the confirming admin at once and has no owner iPhone. Returns the
+        to the confirming user at once and has no owner iPhone. Returns the
         watch ids that changed.
 
         Only this direction exists: the iPhone, already proven to be
@@ -577,12 +577,12 @@ def watch_has_iphone(entries: Mapping[str, WidgetSecretEntry], watch_id: str) ->
     So that is the one thing that counts, whether or not that phone has an
     entry here.
 
-    Never for a watch whose key came from a code an admin confirmed
+    Never for a watch whose key came from a code a user confirmed
     (``LABEL_WATCH_CODE_PAIR``): the watch made that key alone and no phone
     holds it, so no move signed as this watch can land. That covers a new
     watch paired by code, and an old one paired again by code, whose
     metadata refresh may still report its old phone. Another iPhone of the
-    same Home Assistant user does not count either: a household whose admin
+    same Home Assistant user does not count either: a household where one person
     pairs every watch by code would otherwise wait on every one of them.
 
     False for an iPhone entry and an unknown id. Pure over the entries, so it

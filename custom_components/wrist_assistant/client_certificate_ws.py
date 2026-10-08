@@ -12,10 +12,10 @@ The certificate belongs to a Home Assistant user, the same key the signed
 ops bind to a device's user. By default that is the user on the connection:
 any signed-in user reads and manages their own, so none of these commands is
 admin only. An administrator can also name another user with ``user_id``,
-which is how a watch paired for a household member gets one: the panel is
-admin only and the phone no longer imports certificates, so without it a
-certificate could only ever land under the administrator's own record, which
-that member's watch never reads. Naming another user is refused for anyone
+which is how a watch an administrator paired for a household member gets
+one: the phone no longer imports certificates, so without it a certificate
+could only ever land under the administrator's own record, which that
+member's watch never reads. Naming another user is refused for anyone
 but an administrator (``unauthorized``), and the user must exist, be active
 and not be one Home Assistant made for itself (``invalid_user``), the same
 rule pairing applies when it binds a device to a user.
@@ -118,9 +118,9 @@ async def _target_user(
     message).
 
     No ``user_id``, or the caller's own: the caller. Another user: only an
-    administrator may name one, checked here although the panel that sends
-    it is admin only already, since these commands are open to every
-    signed-in user. The user must exist, be active and not be one Home
+    administrator may name one, checked here since these commands and the
+    panel that sends them are open to every signed-in user. The user must
+    exist, be active and not be one Home
     Assistant made for itself (Supervisor, the content user): the same rule
     as ``_pick_user`` in ``pairing_ws.py``, which binds a paired device to
     a user, so a certificate can be stored for exactly the users a device

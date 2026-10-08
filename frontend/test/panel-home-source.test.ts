@@ -56,20 +56,20 @@ describe("Home's device cards", () => {
     expect(card).toContain("const held = owner?.complication_count ?? 0;");
   });
 
-  it("says in small print what the states cover: the watch app too, for an administrator who can read it", () => {
-    expect(home).toContain(`"Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app."`);
-    expect(home).toContain(`: "Synced, Waiting and Nothing waiting cover complications and widgets."}</p>`);
+  it("says in small print what the states cover: the watch app too", () => {
+    expect(home).toContain(`<p class="home-small">Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app.</p>`);
     expect(home).not.toContain("only.</p>");
   });
 
-  it("judges each watch on its watch app records too, for an administrator, and says what a waiting card waits for", () => {
-    expect(home).toContain("homeDeviceRows(this.homeDevices(), admin ? this.watchAppSyncs : new Map())");
+  it("judges each watch on its watch app records too, for everyone, and says what a waiting card waits for", () => {
+    expect(home).toContain("homeDeviceRows(this.homeDevices(), this.watchAppSyncs)");
+    expect(home).not.toContain("admin");
     expect(card).toContain("`For ${waitingForText(d.waitingFor)}`");
     expect(card).toContain(`<span class="home-device-why">\${why}</span>`);
   });
 
   it("has a count tile per page, each opening that page on this device", () => {
-    expect(card).toContain("deviceCardTiles(d.kind, admin).map((t) => this.renderHomeTile(t, d, owner))");
+    expect(card).toContain("deviceCardTiles(d.kind).map((t) => this.renderHomeTile(t, d, owner))");
     expect(tile).toContain("this.pickPickerTab(d.id);");
     expect(tile).toContain("this.pickerFilter = t.filter;");
     expect(tile).toContain("if (this.draft) this.openPicker();");
@@ -106,8 +106,8 @@ describe("Home's status row", () => {
     expect(status).toContain("Every device has your latest changes.");
   });
 
-  it("puts New complication and Pair a device in the head, for administrators only", () => {
-    expect(home).toContain("const acts = admin ? html`");
+  it("puts New complication and Pair a device in the head, for everyone", () => {
+    expect(home).toContain("const acts = html`<div class=\"home-head-acts\">");
     expect(home).toContain("this.goTo(COMPLICATIONS_PATH); this.openNewDialog();");
     expect(home).toContain("?disabled=${full || this.ownerBusy}");
   });
@@ -132,7 +132,7 @@ describe("Home's status row", () => {
     expect(back).toContain("void this.loadWatchAppSync(true);");
     expect(will).toContain(`if (changed.has("owners") && tabOfRoute(this.route) === "home") void this.loadWatchAppSync(false);`);
     const load = method("  private async loadWatchAppSync(again: boolean) {");
-    expect(load).toContain("if (this.hass?.user?.is_admin !== true) return;");
+    expect(load).not.toContain("is_admin");
     expect(load).toContain("const summary = await fetchWatchConfigSummary(hass);");
     expect(load).toContain("next = summaryWatchAppSyncs(summary, watches);");
     expect(load).toContain("if (!summaryUnknown(err)) {");
@@ -148,7 +148,7 @@ describe("Home's device sheet", () => {
 
   it("opens from a whole device card, for everyone", () => {
     expect(card).toContain(`<button type="button" class="home-device-open" title=\${\`Open \${d.name}\`} @click=\${() => this.openDeviceSheet(d.id)}>`);
-    expect(home).toContain("${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices, admin) : nothing}");
+    expect(home).toContain("${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices) : nothing}");
   });
 
   it("shows no design cards, only a count on each tab", () => {
@@ -170,15 +170,16 @@ describe("Home's device sheet", () => {
     expect(home).not.toContain("confirm(");
   });
 
-  it("offers Forget to administrators only, behind a second step", () => {
-    expect(sheet).toContain("${admin ? html`<button class=\"danger dev-forget\" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon(\"delete\")}<span>Remove device</span></button>` : nothing}");
+  it("offers Forget to everyone, behind a second step", () => {
+    expect(sheet).toContain("<button class=\"danger dev-forget\" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon(\"delete\")}<span>Remove device</span></button>");
+    expect(sheet).not.toContain("admin ? html`<button class=\"danger dev-forget\"");
     expect(sheet).toContain("@click=${() => void this.forgetDeviceNow(ownerId)}");
     expect(sheet).toContain("${this.deviceForgetAsk ? ask : overview}");
     expect(sheet.match(/<dialog /g)).toHaveLength(1);
   });
 
   it("has a tab for each of the device's pages, each opening it on this device", () => {
-    expect(sheet).toContain("${deviceSheetTabs(row.kind, admin).map(tab)}");
+    expect(sheet).toContain("${deviceSheetTabs(row.kind).map(tab)}");
     expect(sheet).toContain("const path = watchScreenPath(t.screen, ownerId);");
     expect(sheet).toContain("this.pickWatch(ownerId);");
     expect(sheet).toContain("this.pickerFilter = filter;");
@@ -188,8 +189,10 @@ describe("Home's device sheet", () => {
     expect(sheet).not.toContain("openNewDialog");
   });
 
-  it("renames the device in Home Assistant's own registry, from a button on the head, for administrators", () => {
-    expect(sheet).toContain("admin && !this.deviceForgetAsk && !renaming");
+  it("renames the device through the integration, from a button on the head, for everyone", () => {
+    expect(sheet).not.toContain("mayRename");
+    expect(sheet).not.toContain("is_admin");
+    expect(sheet).toContain("${!this.deviceForgetAsk && !renaming");
     expect(sheet).toContain("@click=${() => this.startDeviceRename(ownerId)}>Rename</button>");
     expect(sheet).toContain("void this.renameDeviceNow(ownerId);");
     const save = method("  private async renameDeviceNow(ownerId: string) {");
@@ -219,12 +222,12 @@ describe("coming back to Home", () => {
 });
 
 describe("Home's Pair a device dialog", () => {
-  it("opens from the head's button, or from the only card in a home with no devices, for administrators only", () => {
-    expect(home).toContain("const add = admin && devices.length === 0 ? html`<ul class=\"home-devices\"><li><button type=\"button\" class=\"home-device-add\"");
+  it("opens from the head's button, or from the only card in a home with no devices, for everyone", () => {
+    expect(home).toContain("const add = devices.length === 0 ? html`<ul class=\"home-devices\"><li><button type=\"button\" class=\"home-device-add\"");
     expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<b>Pair a device</b>");
     expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<span>Pair a device</span>");
-    expect(home).toContain("${groups.map((g) => this.renderHomeGroup(g, admin, elapsed))}${add}");
-    expect(home).toContain("${admin && this.pairOpen ? this.renderPairDialog() : nothing}");
+    expect(home).toContain("${groups.map((g) => this.renderHomeGroup(g, elapsed))}${add}");
+    expect(home).toContain("${this.pairOpen ? this.renderPairDialog() : nothing}");
   });
 
   it("closes, withdrawing an open QR code, when the panel leaves the page", () => {
@@ -261,7 +264,7 @@ describe("Home's Pair a device dialog", () => {
     // Any other opening, and every closing, drops the line.
     expect(method("  private openDeviceSheet(ownerId: string, forget = false) {")).toContain("this.devicePaired = undefined;");
     expect(method("  private closeDeviceSheet() {")).toContain("this.devicePaired = undefined;");
-    expect(method("  private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[], admin: boolean) {"))
+    expect(method("  private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[]) {"))
       .toContain(`\${this.devicePaired === ownerId ? html\`<div class="dev-paired" role="status">`);
   });
 });

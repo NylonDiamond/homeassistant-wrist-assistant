@@ -824,11 +824,11 @@ describe("autoSplitShapes", () => {
     expect(fake.live("library")).toHaveLength(3);
   });
 
-  it("says nothing to a non-admin", async () => {
+  it("splits for a non-admin too, on the owners the server listed them", async () => {
     freshSessionStorage();
     const fake = fakeHass({ documents: { "watch-1": [rawFixture("living_room.json")] }, admin: false });
-    expect(await run(fake, [ownerRow()])).toEqual([]);
-    expect(fake.sent).toEqual([]);
+    expect(await run(fake, [ownerRow()])).toHaveLength(1);
+    expect(fake.live("watch-1")).toHaveLength(3);
   });
 
   it("says nothing when there is nothing to split", async () => {

@@ -124,7 +124,7 @@ export function summaryUnknown(err: unknown): boolean {
  * Read one watch's records, every kind side by side, and give their verdict.
  * Only for an integration with no summary command.
  * A refused read counts as no record. Undefined when every read failed: the
- * panel cannot tell (not an administrator, the integration not ready, the
+ * panel cannot tell (a watch it may not read, the integration not ready, the
  * connection gone), so Home says nothing about the watch app rather than
  * calling it fine.
  */

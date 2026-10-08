@@ -60,6 +60,8 @@ const setting = (key: string): CatalogSetting => {
  * when it lacks a key `confirmWants` names. A QR offer answers with a link,
  * and its state is whatever `offerState` holds. */
 function fakeHass(newWatch: string, opts: {
+  /** Signed in as a user who is not an administrator. */
+  notAdmin?: boolean;
   pickUser?: boolean;
   boundUser?: string;
   lookup?: Record<string, unknown>;
@@ -69,7 +71,7 @@ function fakeHass(newWatch: string, opts: {
   const sent: Record<string, unknown>[] = [];
   const store = new Map<string, WatchConfigRecord>();
   const hass = {
-    user: { id: "root", is_admin: true, name: "Jesse" },
+    user: { id: "root", is_admin: opts.notAdmin !== true, name: "Jesse" },
     states: {},
     connection: {
       async sendMessagePromise(msg: Record<string, unknown>): Promise<unknown> {
@@ -93,6 +95,8 @@ function fakeHass(newWatch: string, opts: {
           return { found: true, watch_id: newWatch, device_name: "New Watch", expires_in: 300, already_paired: false, paired_by_other_user: false, ...bound, ...opts.lookup };
         }
         if (type === "config/auth/list") {
+          // Home Assistant's own rule: administrators only.
+          if (opts.notAdmin === true) throw Object.assign(new Error("Unauthorized"), { code: "unauthorized" });
           return [
             { id: "sup", name: "Supervisor", is_active: true, system_generated: true, group_ids: ["system-admin"] },
             { id: "chen", name: "Chen", is_active: true, system_generated: false, group_ids: ["system-users"] },
@@ -366,6 +370,25 @@ describe("Watch settings as a page under the Watch app row", () => {
       expect(inside.pairCard.pair.done).toBe("Paired New Watch for Jesse.");
     });
 
+    it("never asks, nor reads the people, for someone who is not an administrator: they pair for themselves", async () => {
+      const { inside, ha, text } = await lookedUp({ pickUser: true, notAdmin: true });
+      expect(ha.sent.filter((m) => m.type === "config/auth/list")).toEqual([]);
+      expect(text()).not.toContain("Whose watch is this?");
+      expect(text()).not.toContain("Chen · User");
+      expect(text()).toContain(`ws-pair-go" ?disabled=false`);
+      await inside.pairCard.confirmPair();
+      expect("user_id" in confirms(ha.sent)[0]!).toBe(false);
+      expect(inside.pairCard.pair.done).toBe("Paired New Watch.");
+    });
+
+    it("keeps Replace on a code confirm for someone who is not an administrator", async () => {
+      const { inside, ha, text } = await lookedUp({ notAdmin: true, lookup: { already_paired: true } });
+      expect(text()).toContain("Replace its pairing");
+      inside.pairCard.tickPair("replace", true);
+      await inside.pairCard.confirmPair();
+      expect(confirms(ha.sent)[0]!.replace).toBe(true);
+    });
+
     it("starts on the person a known watch already belongs to", async () => {
       const { inside, ha } = await lookedUp({ pickUser: true, boundUser: "chen" });
       expect(inside.pairCard.pair.userId).toBe("chen");
@@ -473,6 +496,31 @@ describe("Watch settings as a page under the Watch app row", () => {
       expect(offers(ha.sent)).toHaveLength(0);
       inside.pairCard.pickOfferUser("chen");
       expect(text()).toContain(`ws-qr-show" ?disabled=false`);
+      ws.leave();
+    });
+
+    it("makes the code for the person at the card, with no question, when they are not an administrator", async () => {
+      const { inside, ha, text, ws } = await qrMode({ notAdmin: true });
+      expect(ha.sent.filter((m) => m.type === "config/auth/list")).toEqual([]);
+      expect(text()).not.toContain("Whose iPhone is this?");
+      expect(text()).toContain(`ws-qr-show" ?disabled=false`);
+      // Replace on an offer is an administrator's: no box, and no More options
+      // that would only hold it.
+      expect(text()).not.toContain("Replace an iPhone paired for someone else");
+      expect(text()).not.toContain("More options");
+      // Even a Replace left set by some other way is never sent.
+      inside.pairCard.setOfferReplace(true);
+      expect(text()).not.toContain("Replace an iPhone paired for someone else");
+      await inside.pairCard.showOffer();
+      const offer = offers(ha.sent).at(-1)!;
+      expect("user_id" in offer).toBe(false);
+      expect("replace" in offer).toBe(false);
+      ws.leave();
+    });
+
+    it("keeps Replace behind More options for an administrator", async () => {
+      const { text, ws } = await qrMode();
+      expect(text()).toContain("More options");
       ws.leave();
     });
 

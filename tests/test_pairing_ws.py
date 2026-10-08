@@ -4,8 +4,8 @@ Loads ``pairing_ws.py`` with stubbed Home Assistant modules over a real
 ``WidgetSecretStore``, a real ``PairRequestStore`` and a real
 ``PairOfferStore``, with a fake connection like ``test_watch_config_ws.py``.
 The device registry and the Logbook helpers are recorders.
-``test_ws_command_registration.py`` covers the registration and the admin
-gate statically.
+``test_ws_command_registration.py`` covers the registration and the open
+gate statically; the admin-only parts inside the commands are run here.
 
 Covered: the lookup and confirm of a code (old form and sealed, a watch and
 an iPhone), a sealed pairing stored only when its box is fetched (and nothing
@@ -404,8 +404,9 @@ def test_confirm_of_an_unknown_code_is_refused(env) -> None:
 
 
 def test_a_non_admin_cannot_take_another_user_s_watch(env) -> None:
-    """Unreachable behind require_admin; the check is kept to match
-    register_secret, so it is pinned here with the gate stubbed open."""
+    """The commands are open to every signed-in user, so this check is
+    what stops a household member re-keying someone else's device, the
+    same refusal register_secret makes."""
     env.secret_store.register(WATCH, SECRET_B, "watch-self-provision", user_id="bob")
     pending = _pending(env)
     connection = _call(
@@ -462,7 +463,8 @@ def test_confirm_refuses_a_missing_inactive_or_system_user(env, user_id: str) ->
 
 
 def test_a_non_admin_cannot_pick_another_user(env) -> None:
-    """Unreachable behind require_admin; pinned with the gate stubbed open."""
+    """The commands are open to every signed-in user; binding a device to
+    someone else is the admin-only part."""
     pending = _pending(env)
     connection = _call(
         env, env.ws.ws_pair_confirm, user=_User("chen"), code=pending.code, user_id="root"
@@ -886,7 +888,8 @@ def test_an_offer_refuses_a_missing_inactive_or_system_user(env, user_id) -> Non
 
 
 def test_a_non_admin_cannot_offer_for_another_user(env) -> None:
-    """Unreachable behind require_admin; pinned with the gate stubbed open."""
+    """The commands are open to every signed-in user; an offer for someone
+    else is the admin-only part."""
     connection = _call(env, env.ws.ws_pair_offer, user=_User("chen"), user_id="root")
     [(_id, code, _message)] = connection.errors
     assert code == "unauthorized"

@@ -102,10 +102,10 @@ export function voiceGlyph(): TemplateResult {
     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${svg`<path d="M4 9.5H7.5L12 5.5V18.5L7.5 14.5H4Z" /><path d="M15.5 9.2A4 4 0 0 1 15.5 14.8" /><path d="M18.2 6.8A7.5 7.5 0 0 1 18.2 17.2" />`}</svg>`;
 }
 
-/** The top bar's way in, beside Menus. Administrators only, in a home with a
- * watch, as for Pages and Menus. */
-export function renderWatchVoiceButton(hass: HassLike, owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
-  if (!hass.user?.is_admin || settingsWatches(owners).length === 0) return nothing;
+/** The top bar's way in, beside Menus. Only in a home with a watch, as for
+ * Pages and Menus. */
+export function renderWatchVoiceButton(owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
+  if (settingsWatches(owners).length === 0) return nothing;
   return html`<button class="tb-btn tb-voice" title="The watch's voice defaults, phrases and watch voice"
     @click=${open}>${voiceGlyph()}<span>Voice</span></button>`;
 }

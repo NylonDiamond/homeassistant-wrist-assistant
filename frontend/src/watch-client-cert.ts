@@ -7,8 +7,8 @@
 // (mTLS) needs one on every device that talks to it. The certificate belongs
 // to a Home Assistant user, one per user, and that user's watches and iPhone
 // read it from the integration the next time they open the app. The card
-// starts on the signed in administrator; its "For" menu picks another person,
-// so a watch paired for a household member can get one too.
+// starts on the signed in person; for an administrator its "For" menu picks
+// another person, so a watch paired for a household member can get one too.
 
 import type { ClientCertificateStatus } from "./ha-api.js";
 import { type PairUserChoice, errorCode } from "./watch-settings.js";
@@ -35,8 +35,8 @@ export const CLIENT_CERT_FOR_TITLE = "For";
 export const CLIENT_CERT_FOR_HINT = "Each person has their own. It goes to the watch and iPhone paired for them.";
 
 /** The person the card is about, by name, when it is not the signed in
- * administrator: undefined for the administrator, and with no menu (one
- * person, or a list that could not be read). */
+ * person: undefined for the signed in person, and with no menu (not an
+ * administrator, one person, or a list that could not be read). */
 export function clientCertOtherName(
   users: readonly PairUserChoice[] | undefined,
   userId: string | undefined,

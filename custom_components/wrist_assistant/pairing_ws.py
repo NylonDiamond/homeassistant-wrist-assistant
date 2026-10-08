@@ -2,8 +2,8 @@
 
 **By code.** A watch with no iPhone, or an iPhone, posts its id to the
 unauthenticated ``/v2/pair/start`` (``WAPairStartView``) and shows the code it
-gets back. An admin types the code into the panel, which looks it up and then
-confirms it here. The confirm is what approves the pair for the widget secret
+gets back. A signed-in user types the code into the panel, which looks it up
+and then confirms it here. The confirm is what approves the pair for the widget secret
 store, bound to a Home Assistant user the same way ``register_secret`` binds a
 pair to the user behind its bearer.
 
@@ -22,7 +22,16 @@ redeems it at ``/v2/pair/redeem`` (``WAPairRedeemView``), and the panel polls
 The bound user is whose device it is: it runs with that user's rights, and
 Fast alerts for it go to that user's iPhones. The panel asks "Whose watch is
 this?" (or iPhone) and sends the answer as ``user_id``; with none (an older
-panel) the confirming admin is bound, as before. Every command is admin only.
+panel) the confirming user is bound, as before.
+
+Every command is open to every signed-in user, so a household member pairs
+their own devices, the same as ``/v2/register_secret`` has always let any
+user pair through the iPhone's sign-in. What only an administrator may do is
+checked inside the commands: pair a device for another user (``_pick_user``),
+take over a device bound to someone else (the confirm's
+``paired_by_other_user``), and make a QR offer with ``replace``. A
+non-administrator also sees and cancels only the QR offers they made
+themselves.
 
 Commands:
 
@@ -64,6 +73,7 @@ from .const import DOMAIN
 from .logbook_events import log_secret_registered, log_secret_reprovisioned
 from .sealed_box import PAIRED_SECRET_BYTES, SealedBoxError, seal_pair_secret
 from .wa_pair_requests import (
+    OFFER_STATE_EXPIRED,
     OFFER_STATE_REDEEMED,
     PAIR_KIND_IPHONE,
     PAIR_KIND_WATCH,
@@ -118,6 +128,22 @@ def _device_noun(kind: str) -> str:
     return "iPhone" if kind == PAIR_KIND_IPHONE else "watch"
 
 
+def _may_see_offer(connection: ActiveConnection, offer: Any) -> bool:
+    """Whether the caller may read or cancel a QR offer.
+
+    An administrator any offer; anyone else only one they made themselves
+    (``admin_id`` records the maker, whoever they are). The offer id is a
+    hash of a secret token and is handed only to its maker, so this is a
+    second lock rather than the only one.
+    """
+    user = getattr(connection, "user", None)
+    if user is None:
+        return False
+    if getattr(user, "is_admin", False):
+        return True
+    return offer.admin_id is not None and offer.admin_id == user.id
+
+
 @callback
 def async_register_pairing_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_pair_lookup)
@@ -134,7 +160,7 @@ def store_paired_device(
     *,
     user_id: str | None,
 ) -> str:
-    """Write a pairing the admin approved, and everything that goes with it.
+    """Write a pairing the panel approved, and everything that goes with it.
 
     Shared by the code confirm here and the QR redeem
     (``WAPairRedeemView``), so both make the same entry, the same Logbook
@@ -247,7 +273,6 @@ async def _wait_for_delivery(parked: ParkedPairing | None) -> str:
 # ── by code ──────────────────────────────────────────────────────────────
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_LOOKUP,
@@ -258,7 +283,7 @@ async def _wait_for_delivery(parked: ParkedPairing | None) -> str:
 def ws_pair_lookup(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """What a code stands for, so the admin can check it before confirming.
+    """What a code stands for, so the user can check it before confirming.
 
     Result: {"found": true, "watch_id", "kind", "device_name", "screen_size",
              "app_version", "app_build", "expires_in", "remote",
@@ -269,10 +294,10 @@ def ws_pair_lookup(
     ``kind`` is ``watch`` or ``iphone``. ``expires_in`` is whole seconds
     left. ``remote`` is the address the request came from (a string, or null
     when unknown) and ``age_seconds`` whole seconds since it was made, so the
-    admin can tell their own device's code from a stranger's.
+    user can tell their own device's code from a stranger's.
     ``already_paired`` means the id holds a secret already, and
     ``paired_by_other_user`` that the secret is bound to another user than
-    the admin looking. ``bound_user_id`` is the user the device is bound to
+    the user looking. ``bound_user_id`` is the user the device is bound to
     now (null when it is new or unbound), so the panel can offer that user
     first when a known device pairs again.
 
@@ -328,9 +353,10 @@ async def _pick_user(
     """The user to bind, or the refusal as (code, message).
 
     No ``user_id``, or the caller's own: the caller. Another user: only an
-    admin may name one (the commands are admin only already; this keeps the
-    rule next to the binding), and the user must exist, be active and not be
-    one Home Assistant made for itself (Supervisor, the content user).
+    admin may name one (the commands are open to every signed-in user, so
+    this is what stops a household member binding a device to someone
+    else), and the user must exist, be active and not be one Home Assistant
+    made for itself (Supervisor, the content user).
     """
     caller_id = caller.id if caller is not None else None
     if requested is None or requested == caller_id:
@@ -343,7 +369,6 @@ async def _pick_user(
     return user.id, None
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_CONFIRM,
@@ -362,7 +387,7 @@ async def ws_pair_confirm(
     Result: {"ok": true, "watch_id", "kind", "device_name", "result", "user_id"}
 
     ``user_id`` in the message is whose device it is (see ``_pick_user``);
-    without it the confirming admin. The reply names the user bound.
+    without it the confirming user. The reply names the user bound.
     ``result`` is ``new``, ``rekey`` or ``idempotent``, as the store reports
     it, or ``waiting`` for a sealed pairing whose device has not fetched its
     box yet.
@@ -373,7 +398,7 @@ async def ws_pair_confirm(
     then hold the device's identity, push routes and designs. And
     ``allow_remote: true`` is required when the request came from outside
     the home network, so a stranger's code typed by mistake pairs nothing.
-    Either refusal leaves the code waiting, so the admin can tick the box
+    Either refusal leaves the code waiting, so the user can tick the box
     and confirm again.
 
     A sealed request gets its secret here: 32 random bytes, sealed to the
@@ -449,8 +474,9 @@ async def ws_pair_confirm(
         return
 
     is_admin = bool(user is not None and user.is_admin)
-    # Cannot fire behind require_admin; kept so this path refuses exactly
-    # what register_secret refuses.
+    # A non-admin may re-key only a device that is theirs or bound to no one,
+    # exactly what register_secret lets any signed-in user do; a device bound
+    # to someone else needs an administrator.
     if (
         existing is not None
         and existing.user_id is not None
@@ -571,7 +597,6 @@ def home_urls(hass: HomeAssistant) -> tuple[str | None, str | None, str | None]:
     return internal, external, cloud_url
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_OFFER,
@@ -589,8 +614,10 @@ async def ws_pair_offer(
     Result: {"offer_id", "url", "expires_in"}
 
     ``user_id`` is whose iPhone it is, checked like the confirm's; without it
-    the admin. ``replace: true`` lets the redeem take over a phone id that is
-    bound to another user. ``kind`` may be sent and can only be ``iphone``.
+    the caller. ``replace: true`` lets the redeem take over a phone id that is
+    bound to another user, or to none; only an administrator may send it
+    (``unauthorized`` otherwise). ``kind`` may be sent and can only be
+    ``iphone``.
     ``url`` is the ``wristassistant://pair#...`` link
     (``wa_pair_requests.build_offer_url``): this home's instance id, the
     token, its home, away and cloud addresses and its name. ``offer_id`` is
@@ -606,6 +633,16 @@ async def ws_pair_offer(
     user_id, refusal = await _pick_user(hass, user, msg.get("user_id"), noun="iPhone")
     if refusal is not None:
         connection.send_error(msg["id"], *refusal)
+        return
+    # Replace lets whichever phone redeems the code take over an id bound to
+    # another person (or to no one), and the redeem cannot tell whose phone
+    # it is. So only an administrator may offer it.
+    if msg.get("replace") is True and not (user is not None and user.is_admin):
+        connection.send_error(
+            msg["id"],
+            "unauthorized",
+            "Only an administrator can show a QR code that replaces another pairing.",
+        )
         return
     try:
         instance_id = await ha_instance_id.async_get(hass)
@@ -652,7 +689,6 @@ async def ws_pair_offer(
     )
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_OFFER_STATUS,
@@ -673,12 +709,18 @@ def ws_pair_offer_status(
     code ran out. Show a new one." ``device_name`` is what the phone reported
     (null when it sent none), ``user_id`` the user it was bound to, and
     ``device_id`` the phone's id, which the panel opens its device sheet on.
+
+    A non-administrator is told only about an offer they made; anyone else's
+    reads as ``expired``, as an unknown one does, so nothing is said about
+    it at all.
     """
     offer_store = _offer_store(hass)
     if offer_store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     state, offer = offer_store.state_of(msg["offer_id"])
+    if offer is not None and not _may_see_offer(connection, offer):
+        state, offer = OFFER_STATE_EXPIRED, None
     result: dict[str, Any] = {"state": state}
     if state == OFFER_STATE_REDEEMED and offer is not None:
         result["device_name"] = offer.device_name
@@ -687,7 +729,6 @@ def ws_pair_offer_status(
     connection.send_result(msg["id"], result)
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_OFFER_CANCEL,
@@ -704,9 +745,16 @@ def ws_pair_offer_cancel(
     offer was still open. Cancelling an unknown, spent or lapsed offer is not
     an error. A redeemed phone stays paired; Remove in the Devices card is
     how it goes.
+
+    A non-administrator may cancel only an offer they made. Anyone else's is
+    left alone and answered like an unknown one, ``cancelled`` false.
     """
     offer_store = _offer_store(hass)
     if offer_store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    offer = offer_store.get(msg["offer_id"])
+    if offer is not None and not _may_see_offer(connection, offer):
+        connection.send_result(msg["id"], {"ok": True, "cancelled": False})
         return
     connection.send_result(msg["id"], {"ok": True, "cancelled": offer_store.cancel(msg["offer_id"])})

@@ -97,10 +97,10 @@ function loadRoomsEditor(): Promise<void> {
   return loading;
 }
 
-/** The top bar's way in, after Status pages. Administrators only, in a home
- * with a watch, as for those. */
-export function renderWatchRoomsButton(hass: HassLike, owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
-  if (!hass.user?.is_admin || settingsWatches(owners).length === 0) return nothing;
+/** The top bar's way in, after Status pages. Only in a home with a watch, as
+ * for those. */
+export function renderWatchRoomsButton(owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
+  if (settingsWatches(owners).length === 0) return nothing;
   return html`<button class="tb-btn tb-rooms" title="The watch's rooms: switching pages by room and point control"
     @click=${open}>${uiIcon("home")}<span>Rooms</span></button>`;
 }

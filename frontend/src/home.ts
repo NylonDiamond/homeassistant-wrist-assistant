@@ -105,10 +105,9 @@ export type DeviceSheetTab =
  * its complications, then every watch screen that belongs to one watch, then
  * Settings; HTTP actions and Cameras are the home's, not a watch's, so they
  * stay on Home's Watch app card. An iPhone has its widgets and its Control
- * Center controls, which is all the panel holds for a phone. The watch
- * screens are an administrator's, as on Home.
+ * Center controls, which is all the panel holds for a phone.
  */
-export function deviceSheetTabs(kind: "watch" | "iphone", admin: boolean): DeviceSheetTab[] {
+export function deviceSheetTabs(kind: "watch" | "iphone"): DeviceSheetTab[] {
   if (kind === "iphone") {
     return [
       { kind: "list", label: "Widgets", filter: "all" },
@@ -116,7 +115,6 @@ export function deviceSheetTabs(kind: "watch" | "iphone", admin: boolean): Devic
     ];
   }
   const tabs: DeviceSheetTab[] = [{ kind: "list", label: "Complications", filter: "all" }];
-  if (!admin) return tabs;
   for (const screen of [...WATCH_SCREENS.filter((s) => s.shared !== true), WATCH_SETTINGS_SCREEN]) {
     const count = SCREEN_COUNTS[screen.id];
     tabs.push(count === undefined ? { kind: "screen", label: screen.label, screen } : { kind: "screen", label: screen.label, screen, count });
@@ -126,11 +124,11 @@ export function deviceSheetTabs(kind: "watch" | "iphone", admin: boolean): Devic
 
 /** The count tiles on a device's card on Home, each a door to that page on
  * this device: the sheet's tabs that carry a count. A watch has its
- * complications, then its pages, status pages and Control Center (an
- * administrator's); an iPhone has its widgets and its Control Center
- * controls. Settings, which counts nothing, is the card's own door. */
-export function deviceCardTiles(kind: "watch" | "iphone", admin: boolean): DeviceSheetTab[] {
-  return deviceSheetTabs(kind, admin).filter((t) => t.kind === "list" || t.count !== undefined);
+ * complications, then its pages, status pages and Control Center; an iPhone
+ * has its widgets and its Control Center controls. Settings, which counts
+ * nothing, is the card's own door. */
+export function deviceCardTiles(kind: "watch" | "iphone"): DeviceSheetTab[] {
+  return deviceSheetTabs(kind).filter((t) => t.kind === "list" || t.count !== undefined);
 }
 
 /** A tile's word under its number: the page's name, cut to one short word

@@ -2994,7 +2994,6 @@ export class WaPageEditor extends LitElement {
    */
   private renderTopBar(draft: WatchPagesDraft | undefined): TemplateResult {
     const dirty = draft?.dirty ?? false;
-    const admin = this.hass?.user?.is_admin === true;
     const watches = this.watches;
     const shell = this.shellOwnsWatch;
     return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch pages">
@@ -3013,8 +3012,8 @@ export class WaPageEditor extends LitElement {
           title=${dirty ? `Save (${MOD}S)` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
         <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
-      ${admin && !shell ? html`<button class="tb-btn tb-menus" title="The watch's Anywhere menu, Entity quick menu and page switcher"
-        @click=${() => (this.onMenus ? this.onMenus() : navigateMenusFromPages(undefined))}>${uiIcon("radial")}<span>Menus</span></button>` : nothing}
+      ${shell ? nothing : html`<button class="tb-btn tb-menus" title="The watch's Anywhere menu, Entity quick menu and page switcher"
+        @click=${() => (this.onMenus ? this.onMenus() : navigateMenusFromPages(undefined))}>${uiIcon("radial")}<span>Menus</span></button>`}
       ${this.barActions}
       <button class="help" title="Help: pages in Home Assistant" aria-label="Help"
         @click=${() => window.open(WATCH_PAGES_HELP_URL, "_blank", "noopener")}>?</button>

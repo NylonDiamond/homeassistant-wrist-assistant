@@ -178,11 +178,12 @@ describe("the list page", () => {
     expect(start).not.toContain("startRecent");
   });
 
-  it("puts Gallery, Import and New at the head, Import and New for admins only", () => {
+  it("puts Gallery, Import and New at the head, for everyone", () => {
     const page = method("  private renderListPage() {");
     expect(page).toContain("href=${GALLERY_PAGE}");
-    expect(page).toContain('${admin ? html`<button class="cl-btn cl-import"');
-    expect(page).toContain('${admin ? html`<button class="cl-btn cl-new"');
+    expect(page).toContain('<button class="cl-btn cl-import"');
+    expect(page).toContain('<button class="cl-btn cl-new"');
+    expect(page).not.toContain("admin");
     expect(page).toContain("this.openNewDialog()");
     expect(page).toContain("this.openImportDialog()");
   });

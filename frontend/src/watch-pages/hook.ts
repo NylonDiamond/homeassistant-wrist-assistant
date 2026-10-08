@@ -126,10 +126,10 @@ function loadPageEditor(): Promise<void> {
   return loading;
 }
 
-/** The top bar's way in, beside Watch settings. Administrators only, in a
- * home with a watch, as for Watch settings: both read admin commands. */
-export function renderWatchPagesButton(hass: HassLike, owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
-  if (!hass.user?.is_admin || settingsWatches(owners).length === 0) return nothing;
+/** The top bar's way in, beside Watch settings. Only in a home with a watch,
+ * as for Watch settings. */
+export function renderWatchPagesButton(owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
+  if (settingsWatches(owners).length === 0) return nothing;
   return html`<button class="tb-btn tb-pages" title="The watch's pages, as Home Assistant keeps them"
     @click=${open}>${uiIcon("pages")}<span>Pages</span></button>`;
 }

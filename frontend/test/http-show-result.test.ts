@@ -213,9 +213,10 @@ describe("the Run an HTTP action target", () => {
     expect(holder.action).toEqual({ type: "runHTTPAction", entityId: `http_action.${BLANK}`, displayName: "Unfinished", domain: "http_action" });
   });
 
-  it("is fed by the panel, which reads the library for an administrator", () => {
+  it("is fed by the panel, which reads the library for everyone", () => {
     const panel = readFileSync(join(__dirname, "..", "src", "panel.ts"), "utf8");
-    expect(panel).toContain("if (this.hass.user?.is_admin) void this.loadHttpLibrary();");
+    expect(panel).toContain("      void this.loadHttpLibrary();\n");
+    expect(panel).not.toContain("is_admin) void this.loadHttpLibrary();");
     expect(panel).toContain("httpActions: this.httpLibrary?.actions,");
   });
 

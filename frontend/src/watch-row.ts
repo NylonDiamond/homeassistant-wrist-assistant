@@ -91,9 +91,6 @@ export interface WatchRowInput {
   /** Whether the device list has been read, so "no watch" is the truth. */
   loaded: boolean;
   menuOpen: boolean;
-  /** Settings and pairing are an administrator's, as every command in them
-   * is; anyone else who lands on a watch screen gets the row without them. */
-  admin: boolean;
   onMenu: (open: boolean) => void;
   onPick: (watchId: string) => void;
   /** A screen link pressed, Settings and Pair a watch included: its path
@@ -114,11 +111,11 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
     }}>${l.screen.label}</a>`;
   return html`<nav class="wa-watchrow" aria-label="Watch app">
     ${renderWatchSlot(input, slot, choices)}
-    ${slot === "none" && input.admin ? html`<span class="wa-wr-note">${WATCH_ROW_NONE_NOTE}</span>` : nothing}
+    ${slot === "none" ? html`<span class="wa-wr-note">${WATCH_ROW_NONE_NOTE}</span>` : nothing}
     <span class="wa-wr-links">
       ${slot === "none" ? nothing : watchRowLinks(input.route, input.watch).map((l) => link(l))}
-      ${input.admin ? link(watchRowSettingsLink(input.route, input.watch), "wa-wr-settings ",
-        "How the watch behaves: gestures, pages, cameras and connection") : nothing}
+      ${link(watchRowSettingsLink(input.route, input.watch), "wa-wr-settings ",
+        "How the watch behaves: gestures, pages, cameras and connection")}
     </span>
   </nav>`;
 }
@@ -128,7 +125,6 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
     return html`<span class="wa-wr-watch"><span class="wa-wr-chip" aria-hidden="true">${uiIcon("watch")}</span><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">Loading…</span></span>`;
   }
   if (slot === "none") {
-    if (!input.admin) return html`<span class="wa-wr-watch"><span class="wa-wr-chip" aria-hidden="true">${uiIcon("watch")}</span><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">None yet</span></span>`;
     const settings = watchRowSettingsLink(input.route, undefined);
     return html`<button type="button" class="wa-wr-pair" title="Opens Settings, where a watch pairs with a code"
       @click=${() => { if (!settings.on) input.onGo(settings.path); }}>${uiIcon("watch")}<span>Pair a watch</span></button>`;

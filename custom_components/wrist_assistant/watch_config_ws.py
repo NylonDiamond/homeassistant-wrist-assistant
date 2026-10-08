@@ -3,20 +3,23 @@ watch config live line.
 
 The panel reads a watch's stored config, saves it, and lists and restores its
 history over the authenticated WebSocket the frontend already holds, the same
-way the complication editor talks to ``complication_ws.py``. Every panel
-command requires an HA administrator: the panel is admin-only, and a read
-hands out a watch's whole page config. The devices never read or write
-through these; they use the signed ``watch_config_get`` / ``watch_config_put``
-ops in ``wa_v2_views.py``.
+way the complication editor talks to ``complication_ws.py``. The devices never
+read or write through these; they use the signed ``watch_config_get`` /
+``watch_config_put`` ops in ``wa_v2_views.py``.
 
-One exception: ``subscribe``, which the iPhone app sends over its own
-WebSocket so that a panel save reaches it while it is open rather than on its
-next foreground. The phone's user need not be an administrator, and all it is
-ever told is revision numbers, the same way ``complications/owner_subscribe``
-tells it only tokens. The documents still travel only over the signed get.
-A non-administrator may name only a watch paired to them, one whose
-secret-store entry is bound to their user; anything else is refused
-``unauthorized``.
+The panel is open to every signed-in user. A read hands out a watch's whole
+page config, so every command that names a watch (``owner_watch_id``, or
+``watch_id`` for the voice list) is allowed only for one the caller may
+manage (``may_manage_owner`` in ``panel_access.py``): an administrator any
+watch, anyone else a device bound to their own user. Anything else is
+refused ``unauthorized`` before it is read. ``summary`` answers an
+administrator about every watch and anyone else about their own.
+
+``subscribe`` is the iPhone app's live line over its own WebSocket, so that a
+panel save reaches it while it is open rather than on its next foreground.
+All it is ever told is revision numbers, the same way
+``complications/owner_subscribe`` tells it only tokens. The documents still
+travel only over the signed get. It follows the same owner rule.
 
 Commands:
 
@@ -28,7 +31,7 @@ Commands:
     wrist_assistant/watch_config/history_entry  {owner_watch_id, kind, revision}
     wrist_assistant/watch_config/restore        {owner_watch_id, kind, revision,
                                                  base_revision}
-    wrist_assistant/watch_config/subscribe      {owner_watch_id}   (not admin)
+    wrist_assistant/watch_config/subscribe      {owner_watch_id}
     wrist_assistant/watch_voices/get            {watch_id}
 
 ``watch_voices/get`` is the voice list a watch reported over the signed
@@ -37,7 +40,8 @@ voice picker. It is not a watch config record and has no revision.
 
 Every refusal is a WebSocket error with the store's code: ``invalid``,
 ``unavailable``, ``no_record``, ``conflict`` or ``not_found``, plus
-``unauthorized`` from ``subscribe`` (not the store's). A conflict's
+``unauthorized`` for a watch that is not the caller's (not the store's). A
+conflict's
 message always begins ``stored revision is <N>``, which is how the panel
 learns the revision to reload at; an error carries no data besides its code
 and message.
@@ -55,6 +59,7 @@ from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN, WATCH_CONFIG_PANEL_KINDS
 from .listener_relay import WATCH_CONFIG, listener_relay
+from .panel_access import is_admin, may_manage_owner, require_owner
 from .watch_config_store import (
     WatchConfigChange,
     WatchConfigStore,
@@ -110,27 +115,12 @@ def _may_follow_owner(
 ) -> bool:
     """Whether the signed-in user may hear about `owner`'s saves.
 
-    The same rule as ``may_follow_owner`` in ``complication_ws.py``, kept
-    here so this module needs nothing from that one. An administrator may
-    follow any watch. Anyone else may follow only a device whose
-    secret-store entry is bound to their user; a device bound to no user or
-    to someone else, and an id with no entry, are refused.
+    The rule every owner scoped panel command follows, ``may_manage_owner``
+    in ``panel_access.py``: an administrator any watch, every signed-in
+    user the Library, anyone else only a device bound to their own user.
+    Kept under this name for the phone's live line and its tests.
     """
-    user = getattr(connection, "user", None)
-    if user is None:
-        return False
-    if getattr(user, "is_admin", False):
-        return True
-    user_id = getattr(user, "id", None)
-    domain_data = hass.data.get(DOMAIN)
-    secrets = getattr(domain_data, "widget_secret_store", None)
-    entry = secrets.get(owner) if secrets is not None else None
-    return (
-        user_id is not None
-        and entry is not None
-        and entry.user_id is not None
-        and entry.user_id == user_id
-    )
+    return may_manage_owner(hass, connection, owner)
 
 
 def _voices_store(hass: HomeAssistant) -> WatchVoicesStore | None:
@@ -152,7 +142,6 @@ def async_register_watch_config_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_watch_voices_get)
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_GET,
@@ -183,6 +172,8 @@ def ws_watch_config_get(
     store = _store(hass)
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    if not require_owner(hass, connection, msg, msg["owner_watch_id"]):
         return
     kind = msg["kind"]
     try:
@@ -223,7 +214,6 @@ def ws_watch_config_get(
     )
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command({vol.Required("type"): _CMD_SUMMARY})
 @callback
 def ws_watch_config_summary(
@@ -249,13 +239,26 @@ def ws_watch_config_summary(
     4): its revision and the last revision each device pulled, so Home can
     say which watch still waits for it. It is left out when the library's
     file could not be read, and on an integration that has no library.
+
+    An administrator hears about every watch. Anyone else hears only about
+    the watches they may manage (``may_manage_owner``), in ``owners`` and in
+    ``http_actions.delivered`` alike, so the two never name a watch the
+    other leaves out. The library's ``revision`` is the home's and is the
+    same for everyone.
     """
     store = _store(hass)
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
+    admin = is_admin(connection)
+
+    def listed(owner: str) -> bool:
+        return admin or may_manage_owner(hass, connection, owner)
+
     owners: dict[str, dict[str, dict[str, int]]] = {}
     for owner_watch_id in store.owners():
+        if not listed(owner_watch_id):
+            continue
         kinds: dict[str, dict[str, int]] = {}
         try:
             for kind in sorted(WATCH_CONFIG_PANEL_KINDS):
@@ -277,14 +280,16 @@ def ws_watch_config_summary(
     result: dict[str, Any] = {"owners": owners}
     http_actions = getattr(hass.data.get(DOMAIN), "http_actions_store", None)
     if http_actions is not None and http_actions.available:
+        delivered = http_actions.delivered()
         result["http_actions"] = {
             "revision": http_actions.revision,
-            "delivered": http_actions.delivered(),
+            "delivered": {
+                owner: revision for owner, revision in delivered.items() if listed(owner)
+            },
         }
     connection.send_result(msg["id"], result)
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_SAVE,
@@ -322,6 +327,8 @@ def ws_watch_config_save(
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
+    if not require_owner(hass, connection, msg, msg["owner_watch_id"]):
+        return
     try:
         record = store.panel_save(
             msg["owner_watch_id"],
@@ -341,7 +348,6 @@ def ws_watch_config_save(
     connection.send_result(msg["id"], {"revision": record.revision})
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_HISTORY,
@@ -370,6 +376,8 @@ def ws_watch_config_history(
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
+    if not require_owner(hass, connection, msg, msg["owner_watch_id"]):
+        return
     try:
         entries = store.history(msg["owner_watch_id"], msg["kind"])
     except WatchConfigStoreError as err:
@@ -380,7 +388,6 @@ def ws_watch_config_history(
     )
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_HISTORY_ENTRY,
@@ -405,6 +412,8 @@ def ws_watch_config_history_entry(
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
+    if not require_owner(hass, connection, msg, msg["owner_watch_id"]):
+        return
     try:
         entry = store.history_entry(msg["owner_watch_id"], msg["kind"], msg["revision"])
     except WatchConfigStoreError as err:
@@ -413,7 +422,6 @@ def ws_watch_config_history_entry(
     connection.send_result(msg["id"], entry.as_dict())
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_RESTORE,
@@ -444,6 +452,8 @@ def ws_watch_config_restore(
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
+    if not require_owner(hass, connection, msg, msg["owner_watch_id"]):
+        return
     try:
         record = store.restore(
             msg["owner_watch_id"],
@@ -464,7 +474,6 @@ def ws_watch_config_restore(
     connection.send_result(msg["id"], {"revision": record.revision})
 
 
-# Deliberately not admin-only: see the module docstring.
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_SUBSCRIBE,
@@ -527,7 +536,6 @@ def ws_watch_config_subscribe(
     connection.send_result(msg["id"], {"revisions": revisions})
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_VOICES_GET,
@@ -546,11 +554,14 @@ def ws_watch_voices_get(
     Sorted by id. An empty list with a null time when the watch has sent
     none yet: one that predates the watch_voices capability, or one that has
     not polled since. The panel's picker groups the list by language and
-    offers "System voice" for no choice. Admin only, like every panel read.
+    offers "System voice" for no choice. Only for a watch the caller may
+    manage, like every other read of one watch.
     """
     store = _voices_store(hass)
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    if not require_owner(hass, connection, msg, msg["watch_id"]):
         return
     entry = store.get(msg["watch_id"])
     if entry is None:

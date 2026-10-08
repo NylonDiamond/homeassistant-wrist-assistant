@@ -97,43 +97,35 @@ describe("watchConfigCount", () => {
 });
 
 describe("deviceSheetTabs", () => {
-  const labels = (kind: "watch" | "iphone", admin: boolean) => deviceSheetTabs(kind, admin).map((t) => t.label);
+  const labels = (kind: "watch" | "iphone") => deviceSheetTabs(kind).map((t) => t.label);
 
   it("gives a watch its complications, its own screens and Settings, never the home's shared screens", () => {
-    expect(labels("watch", true)).toEqual(["Complications", "Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Settings"]);
+    expect(labels("watch")).toEqual(["Complications", "Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Settings"]);
   });
 
   it("gives an iPhone its widgets and its Control Center controls", () => {
-    expect(deviceSheetTabs("iphone", true)).toEqual([
+    expect(deviceSheetTabs("iphone")).toEqual([
       { kind: "list", label: "Widgets", filter: "all" },
       { kind: "list", label: "Control Center", filter: "control" },
     ]);
   });
 
   it("puts a count on Pages, Status pages and Control Center", () => {
-    const counted = deviceSheetTabs("watch", true).flatMap((t) => t.kind === "screen" && t.count ? [`${t.label}:${t.count}`] : []);
+    const counted = deviceSheetTabs("watch").flatMap((t) => t.kind === "screen" && t.count ? [`${t.label}:${t.count}`] : []);
     expect(counted).toEqual(["Pages:pages", "Status pages:status_pages", "Control Center:control_center"]);
-  });
-
-  it("keeps the watch screens for administrators", () => {
-    expect(labels("watch", false)).toEqual(["Complications"]);
   });
 });
 
 describe("deviceCardTiles", () => {
-  const labels = (kind: "watch" | "iphone", admin: boolean) => deviceCardTiles(kind, admin).map((t) => t.label);
+  const labels = (kind: "watch" | "iphone") => deviceCardTiles(kind).map((t) => t.label);
 
   it("gives a watch a tile for each counted page, and an iPhone its widgets and controls", () => {
-    expect(labels("watch", true)).toEqual(["Complications", "Pages", "Status pages", "Control Center"]);
-    expect(labels("iphone", true)).toEqual(["Widgets", "Control Center"]);
-  });
-
-  it("keeps the watch screens for administrators", () => {
-    expect(labels("watch", false)).toEqual(["Complications"]);
+    expect(labels("watch")).toEqual(["Complications", "Pages", "Status pages", "Control Center"]);
+    expect(labels("iphone")).toEqual(["Widgets", "Control Center"]);
   });
 
   it("cuts a two word page name to one under the number", () => {
-    expect(labels("watch", true).map(tileWord)).toEqual(["Complications", "Pages", "Status", "Controls"]);
+    expect(labels("watch").map(tileWord)).toEqual(["Complications", "Pages", "Status", "Controls"]);
   });
 });
 

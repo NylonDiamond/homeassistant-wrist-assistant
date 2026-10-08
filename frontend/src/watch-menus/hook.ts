@@ -112,10 +112,10 @@ function loadMenuEditor(): Promise<void> {
   return loading;
 }
 
-/** The top bar's way in, beside Pages. Administrators only, in a home with a
- * watch, as for Pages. */
-export function renderWatchMenusButton(hass: HassLike, owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
-  if (!hass.user?.is_admin || settingsWatches(owners).length === 0) return nothing;
+/** The top bar's way in, beside Pages. Only in a home with a watch, as for
+ * Pages. */
+export function renderWatchMenusButton(owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
+  if (settingsWatches(owners).length === 0) return nothing;
   return html`<button class="tb-btn tb-menus" title="The watch's Anywhere menu, Entity quick menu and page switcher"
     @click=${open}>${uiIcon("radial")}<span>Menus</span></button>`;
 }

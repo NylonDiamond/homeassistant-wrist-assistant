@@ -206,7 +206,7 @@ interface Inside {
   pickUser(userId: string): void;
 }
 
-function fakeHass(start: ClientCertificateStatus | "old", users?: HaUser[]) {
+function fakeHass(start: ClientCertificateStatus | "old", users?: HaUser[], admin = true) {
   const sent: Record<string, unknown>[] = [];
   let status = start;
   const others = new Map<string, ClientCertificateStatus>(
@@ -214,11 +214,13 @@ function fakeHass(start: ClientCertificateStatus | "old", users?: HaUser[]) {
   );
   const hass = {
     states: {},
-    user: { id: "u-admin", is_admin: true, name: "Jesse" },
+    user: { id: "u-admin", is_admin: admin, name: "Jesse" },
     connection: {
       async sendMessagePromise(msg: Record<string, unknown>): Promise<unknown> {
         sent.push(msg);
         if (msg.type === "config/auth/list") {
+          // Home Assistant's own rule: administrators only.
+          if (!admin) throw refusal("unauthorized", "Unauthorized");
           if (users === undefined) throw refusal("unknown_command", "Unknown command.");
           return users;
         }
@@ -345,8 +347,8 @@ const PEOPLE: HaUser[] = [
 ];
 
 describe("the For menu", () => {
-  async function card(start: ClientCertificateStatus, users?: HaUser[]) {
-    const ha = fakeHass(start, users);
+  async function card(start: ClientCertificateStatus, users?: HaUser[], admin = true) {
+    const ha = fakeHass(start, users, admin);
     const c = new ClientCertCard(() => undefined);
     c.open(ha.hass);
     await settle();
@@ -367,6 +369,15 @@ describe("the For menu", () => {
     // The administrator's own status, read with no user named.
     expect(certCommands(ha.sent)).toEqual([{ type: "wrist_assistant/client_certificate/status" }]);
     expect(shown).toContain("Installed");
+  });
+
+  it("shows no menu, and never reads the people, for someone who is not an administrator", async () => {
+    const { ha, text } = await card(held(), PEOPLE, false);
+    expect(ha.sent.filter((m) => m.type === "config/auth/list")).toEqual([]);
+    expect(text()).not.toContain(CLIENT_CERT_FOR_HINT);
+    expect(text()).not.toContain("Anna");
+    expect(certCommands(ha.sent)).toEqual([{ type: "wrist_assistant/client_certificate/status" }]);
+    expect(text()).toContain("Installed");
   });
 
   it("shows no menu with one person, or when the people cannot be read", async () => {

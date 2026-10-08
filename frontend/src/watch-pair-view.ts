@@ -11,8 +11,11 @@
 //   is left, or the mode or the person changes, is withdrawn. Home's dialog
 //   opens on it with a code already showing (`open`'s `showQr`).
 // - Type a code: a watch, or an iPhone, shows a six character code. Look up
-//   comes first, so the administrator sees which device it is (its name, app
+//   comes first, so the person at the card sees which device it is (its name, app
 //   version and build, when and from where it asked) before it gets a key.
+//
+// Anyone signed in can pair, but only for themselves; an administrator also
+// gets "Whose watch is this?" to pair for somebody else (`mayPairForOthers`).
 //
 // Its words and rules are in `watch-settings.ts`, which the tests read
 // without a DOM. Plan: app repo docs/iphone_pairing_without_sign_in_2026-10.md.
@@ -54,6 +57,7 @@ import {
   type PairMode,
   type PairUserChoice,
   errorCode,
+  mayPairForOthers,
   normalizePairCode,
   pairCanConfirm,
   pairChecksNeeded,
@@ -91,8 +95,9 @@ export interface PairState {
   /** The device waiting on `code`, once looked up. */
   found?: PairLookupFound & { code: string };
   /** Who the device can be paired for, read with the lookup. Undefined when
-   * the integration's confirm takes no user, or the list could not be read:
-   * the device is then paired for the administrator at the card. */
+   * the integration's confirm takes no user, the person at the card is not an
+   * administrator, or the list could not be read: the device is then paired
+   * for the person at the card. */
   users?: readonly PairUserChoice[];
   /** The user picked in "Whose watch is this?". Undefined while nobody is. */
   userId?: string;
@@ -112,11 +117,14 @@ export interface OfferState {
   /** The people list has been read (or failed to be). Show QR code waits on
    * it, so nobody is paired for the wrong person while it loads. */
   usersRead: boolean;
-  /** Who the iPhone can be paired for. Undefined when the list could not be
-   * read: the iPhone is then paired for the administrator at the card. */
+  /** Who the iPhone can be paired for. Undefined when the person at the card
+   * is not an administrator, or the list could not be read: the iPhone is
+   * then paired for the person at the card. */
   users?: readonly PairUserChoice[];
   userId?: string;
-  /** "Replace an iPhone paired for someone else", sent as `replace`. */
+  /** "Replace an iPhone paired for someone else", sent as `replace`. Only an
+   * administrator sees the box or sends it: the server refuses `replace` on
+   * an offer from anyone else (`unauthorized`). */
   replace: boolean;
   busy?: "offer";
   /** The QR code on screen, until it is used, runs out or is withdrawn.
@@ -162,8 +170,8 @@ export class PairWatchCard {
   /** An offer state question is out. */
   private polling = false;
   /** Opened to show a QR code at once (Home's dialog): the QR mode makes its
-   * code without waiting for Show QR code, and starts on the administrator
-   * at the card rather than on nobody. */
+   * code without waiting for Show QR code, and starts on the person at the
+   * card rather than on nobody. */
   private autoQr = false;
   /** The code box takes the cursor on its next drawing: the mode was just
    * switched to Type a code. */
@@ -236,7 +244,7 @@ export class PairWatchCard {
   }
 
   /** Who the QR mode starts on: the menu's own default, else, when the card
-   * shows its code at once, the administrator at the card. */
+   * shows its code at once, the person at the card. */
   private startUser(users: readonly PairUserChoice[] | undefined): string | undefined {
     if (users === undefined) return undefined;
     const picked = pairDefaultUser(users, null);
@@ -291,9 +299,12 @@ export class PairWatchCard {
     }
   }
 
-  /** Who a device can be paired for. A list that cannot be read leaves the
-   * menu out, and the device is paired for the administrator as before. */
+  /** Who a device can be paired for. Only an administrator gets a list (and
+   * only an administrator may read one); anyone else, or a list that cannot
+   * be read, leaves the menu out, and the device is paired for the person at
+   * the card. */
   private async pairUsers(hass: HassLike): Promise<readonly PairUserChoice[] | undefined> {
+    if (!mayPairForOthers(hass.user)) return undefined;
     try {
       return pairUserChoices(await listHaUsers(hass), hass.user?.id);
     } catch {
@@ -402,7 +413,8 @@ export class PairWatchCard {
   /** Make an offer and draw it. One already open is withdrawn first. */
   private async showOffer(): Promise<void> {
     const hass = this.hass;
-    const { users, userId, replace } = this.offer;
+    const { users, userId } = this.offer;
+    const replace = this.offer.replace && mayPairForOthers(hass?.user);
     if (!hass || this.offer.busy || !this.offer.usersRead || !pairPersonPicked(users, userId)) return;
     this.withdrawOffer();
     const seq = ++this.offerSeq;
@@ -599,7 +611,8 @@ export class PairWatchCard {
   /**
    * The QR mode: the code on a white tile in a dark well, a bar under it
    * that runs down with its time, and beside it the steps on the iPhone,
-   * whose iPhone it is, and Replace. Before a code shows, the well holds
+   * whose iPhone it is, and Replace (both for an administrator only, behind
+   * More options for Replace). Before a code shows, the well holds
    * Show QR code (or "Making…" while one is made).
    */
   private renderQr() {
@@ -629,7 +642,8 @@ export class PairWatchCard {
         <div class="ws-qr-side">
           ${this.steps(PAIR_QR_STEPS)}
           ${this.renderUserMenu(o.users, o.userId, "iphone", false, (id) => this.pickOfferUser(id))}
-          ${this.qrMore || o.replace
+          ${!mayPairForOthers(this.hass?.user) ? nothing
+            : this.qrMore || o.replace
             ? html`<label class="field check ws-qr-replace"><span>${PAIR_QR_REPLACE_LABEL}</span>
                   <input type="checkbox" .checked=${live(o.replace)} ?disabled=${!o.usersRead}
                     @change=${(e: Event) => this.setOfferReplace((e.target as HTMLInputElement).checked)} /></label>
@@ -645,11 +659,11 @@ export class PairWatchCard {
       ${o.error ? html`<div class="hint err" role="alert">${o.error}</div>` : nothing}`;
   }
 
-  /** "Whose watch is this?": the Home Assistant users, each with its account
-   * type, the administrator at the card first. With more than one, nobody is
-   * picked until the administrator picks (a known device starts on its
-   * owner). Left out with one person to choose from, or when the
-   * integration's confirm takes no user. */
+  /** "Whose watch is this?", for an administrator: the Home Assistant users,
+   * each with its account type, the administrator at the card first. With
+   * more than one, nobody is picked until the administrator picks (a known
+   * device starts on its owner). Left out for anyone else, with one person
+   * to choose from, or when the integration's confirm takes no user. */
   private renderUserMenu(
     users: readonly PairUserChoice[] | undefined,
     userId: string | undefined,

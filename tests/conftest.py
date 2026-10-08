@@ -62,9 +62,10 @@ def session(token: str) -> requests.Session:
 def _forget_devices(base_url: str, token: str, watch_ids: list[str]) -> None:
     """Drop every listed device from the integration's widget secret store.
 
-    Uses the admin-only ``wrist_assistant/devices/forget`` WebSocket command,
-    which is the only path that removes an entry without a device registry
-    record to click on in the UI. Imported lazily so a pure-unit run never
+    Uses the ``wrist_assistant/devices/forget`` WebSocket command, which is
+    the only path that removes an entry without a device registry record to
+    click on in the UI. The test token must be an administrator's: anyone
+    else may forget only a device bound to them. Imported lazily so a pure-unit run never
     needs the websockets package loaded.
     """
     from websockets.sync.client import connect

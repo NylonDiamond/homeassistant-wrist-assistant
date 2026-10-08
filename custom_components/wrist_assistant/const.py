@@ -70,7 +70,7 @@ class WristAssistantData:
     # Watch config documents (the phone's page config in step 1), one record
     # per watch per kind. Read and written over the signed watch_config ops.
     watch_config_store: WatchConfigStore
-    # Devices waiting for an admin to confirm their pairing code, and the
+    # Devices waiting for a user to confirm their pairing code, and the
     # sealed secrets of confirmed ones waiting to be fetched. Memory only;
     # written by /v2/pair/start, confirmed by pairing_ws.py, read by
     # /v2/pair/status.
@@ -299,7 +299,8 @@ WATCH_VOICES_CAPABILITY = "watch_voices"
 # The home's HTTP action library (step 4d batch 4), see http_actions_store.py:
 # one record for the whole home, not one per watch. The document is the
 # phone's own HTTPActionConfig JSON, secrets included, which is why nothing
-# but the panel's admin commands ever reads it whole.
+# but the panel's commands (open to every signed-in user, see
+# http_actions_ws.py) ever reads it whole; no device is sent it.
 HTTP_ACTIONS_STORAGE_KEY = "wrist_assistant.http_actions"
 HTTP_ACTIONS_STORAGE_VERSION = 1
 # What the integration advertises once it keeps that library, serves the

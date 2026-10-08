@@ -7,7 +7,7 @@ live HTTP suite still covers the round trip.
 
 ``test_ws_command_registration.py`` is the other half of the coverage here and
 stays static: it reads the module's AST to prove every command is registered
-and admin-gated. This one runs them.
+and gated. This one runs them.
 
 The owner row is a wire contract two other codebases build against (the panel
 and the iOS app), which is why the watch row is asserted as a whole dict
@@ -239,6 +239,8 @@ def _loaded_modules():
         watch_config_mod = _load("watch_config_store")
         # The real one: the live subscriptions reach the store through it.
         _load("listener_relay")
+        # The real one: who may touch which owner is what these tests check.
+        _load("panel_access")
         yield _load("complication_ws"), store_mod, secrets_mod, watch_config_mod
     finally:
         for key in list(sys.modules):
@@ -254,11 +256,20 @@ def _loaded_modules():
 class _Device:
     name: str | None = None
     name_by_user: str | None = None
+    id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
 class _DeviceRegistry:
     def __init__(self) -> None:
         self.by_identifier: dict[tuple[str, str], _Device] = {}
+
+    def async_update_device(self, device_id: str, **changes):
+        for device in self.by_identifier.values():
+            if device.id == device_id:
+                for key, value in changes.items():
+                    setattr(device, key, value)
+                return device
+        raise KeyError(device_id)
 
     def async_get_device(self, identifiers=None, **_kwargs):
         for identifier in identifiers or ():
@@ -342,7 +353,10 @@ class _Push:
 
 
 class _Connection:
-    user = None
+    # An administrator unless a test says otherwise: an administrator may
+    # touch every owner, and the non-admin rules have their own tests here
+    # and in test_panel_access.py.
+    user: Any = types.SimpleNamespace(id="root", name="Root", is_admin=True)
 
     def __init__(self) -> None:
         self.results: dict[int, Any] = {}
@@ -1122,7 +1136,16 @@ def test_owner_subscribe_refuses_an_unbound_or_unknown_owner_to_a_non_admin(env)
     env.add_watch("watch-legacy")
     assert _refused(_try_owner_subscribe(env, "watch-legacy", ALICE))
     assert _refused(_try_owner_subscribe(env, "no-such-device", ALICE))
-    assert _refused(_try_owner_subscribe(env, LIBRARY, ALICE))
+
+
+def test_owner_subscribe_lets_any_signed_in_user_follow_the_library(env) -> None:
+    """The Library is the household's shelf, editable by everyone, so
+    everyone may hear about its commits too."""
+    connection = _owner_subscribe(env, LIBRARY, ALICE)
+    env.save_document(LIBRARY)
+    assert connection.events == [
+        {"id": 7, "event": {"token": env.store.owner_token(LIBRARY)}}
+    ]
 
 
 def test_owner_subscribe_refuses_a_connection_with_no_user(env) -> None:

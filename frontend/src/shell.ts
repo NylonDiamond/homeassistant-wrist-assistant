@@ -131,11 +131,9 @@ export function tabPath(tab: PanelTab, watch?: string): string {
   return HOME_PATH;
 }
 
-/** The tabs a person sees: the Watch app only for an administrator, as its
- * screens read admin commands. */
-export function tabsFor(admin: boolean): PanelTab[] {
-  return admin ? ["home", "watch", "complications"] : ["home", "complications"];
-}
+/** The tabs across the top, in order. Every signed in person gets all three:
+ * the server lists each person only the devices they may manage. */
+export const PANEL_TABS: readonly PanelTab[] = ["home", "watch", "complications"];
 
 /** Every tab's sub-path, as one pattern anchored at the end of an address:
  * the first one in it and everything after. */
@@ -234,7 +232,6 @@ export function reopensDesign(route: PanelRoute | undefined): boolean {
 
 export interface TabBarInput {
   route: PanelRoute | undefined;
-  admin: boolean;
   /** Whether the bar offers Home Assistant's menu: a phone, or the sidebar
    * hidden. */
   menu: boolean;
@@ -253,7 +250,7 @@ export function renderTabBar(input: TabBarInput): TemplateResult {
     ${input.menu ? html`<button class="wa-tabs-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
       @click=${input.onMenu}>${uiIcon("menu")}</button>` : nothing}
     <span class="wa-tabs-name">Wrist Assistant</span>
-    <span class="wa-tabs-list">${tabsFor(input.admin).map((tab) => html`<a class="wa-tab ${tab === current ? "on" : ""}"
+    <span class="wa-tabs-list">${PANEL_TABS.map((tab) => html`<a class="wa-tab ${tab === current ? "on" : ""}"
       href=${href(tab)} aria-current=${tab === current ? "page" : "false"}
       @click=${(e: MouseEvent) => {
         if (!isPlainClick(e)) return;

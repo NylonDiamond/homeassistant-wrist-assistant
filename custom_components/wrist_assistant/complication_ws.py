@@ -1,19 +1,30 @@
 """WebSocket API for the custom complication editor panel.
 
 The HA frontend panel is the only editor of custom complications. It talks to
-this module over the authenticated WebSocket the frontend already holds; every
-command requires an HA administrator, reads included. The panel itself is
-admin-only, and the reads carry the whole slot pool of every watch in the
-house plus rendered templates, so a non-admin household member has no reason
-to reach them. The watch never uses these commands; it pulls over the
-HMAC-signed ``/v2/action`` ops in ``wa_v2_views.py``.
+this module over the authenticated WebSocket the frontend already holds. The
+watch never uses these commands; it pulls over the HMAC-signed
+``/v2/action`` ops in ``wa_v2_views.py``.
 
-One exception: ``owner_subscribe``, which the iPhone app sends over its own
-WebSocket. The phone's user need not be an administrator, and all it is ever
-told is a number: the token of a commit for the owner it named. The designs
-themselves still travel only over the signed ``complications_sync`` pull.
-A non-administrator may name only a device paired to them (see
-``may_follow_owner``); anything else is refused ``unauthorized``.
+The panel is open to every signed-in user, and who may do what is decided per
+command (``panel_access.py``):
+
+* Every command that names an owner (``owner_watch_id``, ``watch_id``, both
+  sides of ``move_owner``, the phone's ``owner_subscribe``) is allowed only
+  for an owner the caller may manage: an administrator any owner, anyone
+  else a device bound to their own user, and everyone the Library. Anything
+  else is refused ``unauthorized`` before it is read.
+* ``owners`` lists every row to an administrator and only the caller's own
+  devices plus the Library to anyone else. ``subscribe`` with no owner
+  filter likewise sends a non-administrator only their own owners' commits.
+* Parts, the renders the preview draws with (``render_values``,
+  ``history_series``, ``statistics_series``, ``list_items``) are the home's,
+  open to every signed-in user.
+* ``gallery_key`` stays admin only.
+
+``owner_subscribe`` is the iPhone app's live line over its own WebSocket. All
+it is ever told is a number: the token of a commit for the owner it named.
+The designs themselves still travel only over the signed
+``complications_sync`` pull.
 
 Commands:
 
@@ -24,7 +35,7 @@ Commands:
     wrist_assistant/complications/save        {owner_watch_id, document, base_revision?}
     wrist_assistant/complications/delete      {owner_watch_id, id, base_revision?}
     wrist_assistant/complications/subscribe   {owner_watch_id?}
-    wrist_assistant/complications/owner_subscribe {owner_id}      (not admin)
+    wrist_assistant/complications/owner_subscribe {owner_id}
     wrist_assistant/complications/history     {owner_watch_id, complication_id}
     wrist_assistant/complications/history_get {owner_watch_id, complication_id,
                                                revision}
@@ -78,13 +89,14 @@ here because ``owners`` is what surfaces that store to a human, so the list
 and the way to prune it stay in one file.
 
 ``gallery_key`` hands the panel the random key it sends to the complication
-gallery (see ``gallery_key_store.py``). Admin-only like the rest: the key is
-what lets someone delete this home's gallery uploads.
+gallery (see ``gallery_key_store.py``). It is the one admin only command
+here: the key is what lets someone delete this home's gallery uploads, which
+are the home's public face rather than any one person's.
 
 The three ``parts_*`` commands are Parts, the home's library of saved layer
 sets (see ``parts_store.py``). A part is share text, so nothing about the house
-is in one, but they are admin-only like every other command here: writing to
-this library is editing what the panel offers everybody.
+is in one. Parts are shared by the household, so every signed-in user may
+read and change them.
 
 The two ``preview_*`` commands are the Browse grid's card pictures (see
 ``card_preview_store.py``). The panel draws a card once on save and sends it
@@ -137,6 +149,7 @@ from .list_items import (
     async_list_items,
 )
 from .listener_relay import COMPLICATIONS, listener_relay
+from .panel_access import is_admin, may_manage_owner, require_owner
 from .statistics_series import (
     PERIODS,
     STAT_TYPES,
@@ -171,6 +184,9 @@ _CMD_LIST_ITEMS = f"{DOMAIN}/complications/list_items"
 _CMD_NUDGE = f"{DOMAIN}/complications/nudge"
 _CMD_WATCH_STATUS = f"{DOMAIN}/complications/watch_status"
 _CMD_FORGET = f"{DOMAIN}/devices/forget"
+_CMD_RENAME = f"{DOMAIN}/devices/rename"
+# As long as a name gets before the device sheet and the sidebar cut it off.
+_RENAME_MAX_CHARS = 100
 _CMD_GALLERY_KEY = f"{DOMAIN}/gallery_key"
 _CMD_PARTS_LIST = f"{DOMAIN}/complications/parts_list"
 _CMD_PARTS_SAVE = f"{DOMAIN}/complications/parts_save"
@@ -191,29 +207,12 @@ def may_follow_owner(
 ) -> bool:
     """Whether the signed-in user may hear about `owner`'s commits.
 
-    The live lines (``owner_subscribe`` here, ``watch_config/subscribe``)
-    are open to every signed-in user, because the phone's user need not be
-    an administrator. An administrator may follow any owner, as the panel
-    can see them all anyway. Anyone else may follow only a device paired
-    to them: one whose secret-store entry is bound to their user. A device
-    bound to no user (paired before binding) or to someone else, an owner
-    with no entry, and the Library are refused.
+    The same rule as every owner scoped command, ``may_manage_owner`` in
+    ``panel_access.py``: an administrator any owner, every signed-in user
+    the Library, anyone else only a device bound to their own user. Kept
+    under this name for the phone's live line and its tests.
     """
-    user = getattr(connection, "user", None)
-    if user is None:
-        return False
-    if getattr(user, "is_admin", False):
-        return True
-    user_id = getattr(user, "id", None)
-    domain_data = hass.data.get(DOMAIN)
-    secrets = getattr(domain_data, "widget_secret_store", None)
-    entry = secrets.get(owner) if secrets is not None else None
-    return (
-        user_id is not None
-        and entry is not None
-        and entry.user_id is not None
-        and entry.user_id == user_id
-    )
+    return may_manage_owner(hass, connection, owner)
 
 
 def _previews(hass: HomeAssistant) -> CardPreviewStore | None:
@@ -298,6 +297,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_nudge)
     websocket_api.async_register_command(hass, ws_watch_status)
     websocket_api.async_register_command(hass, ws_forget_device)
+    websocket_api.async_register_command(hass, ws_rename_device)
     websocket_api.async_register_command(hass, ws_gallery_key)
     websocket_api.async_register_command(hass, ws_parts_list)
     websocket_api.async_register_command(hass, ws_parts_save)
@@ -326,10 +326,10 @@ async def ws_gallery_key(
 #
 # One library per home. A part is the share text of a few layers, so the three
 # commands below move strings and nothing else: the panel draws the picture
-# itself from the text rather than keeping a picture beside it.
+# itself from the text rather than keeping a picture beside it. The library is
+# the household's, so every signed-in user may read and change it.
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command({vol.Required("type"): _CMD_PARTS_LIST})
 @callback
 def ws_parts_list(
@@ -343,7 +343,6 @@ def ws_parts_list(
     connection.send_result(msg["id"], {"parts": store.list()})
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_PARTS_SAVE,
@@ -370,7 +369,6 @@ def ws_parts_save(
     connection.send_result(msg["id"], {"part": part})
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_PARTS_DELETE,
@@ -393,7 +391,6 @@ def ws_parts_delete(
     connection.send_result(msg["id"], {"ok": True})
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command({vol.Required("type"): _CMD_OWNERS})
 @callback
 def ws_owners(
@@ -449,11 +446,23 @@ def ws_owners(
     here rather than read from any store: only the complication count and the
     token are real. It is listed even when this home has no devices at all,
     because somewhere to build is the one thing a home in that state needs.
+
+    An administrator gets every row. Anyone else gets only the rows they may
+    manage (``may_manage_owner``): their own devices and the Library, never
+    another person's device or an orphan. Their own watch can still name a
+    paired iPhone that is someone else's; ``paired_iphone_id`` and
+    ``paired_iphone_name`` are then null, so every id the reply names is a
+    row in it.
     """
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
+    admin = is_admin(connection)
+
+    def listed(owner: str) -> bool:
+        return admin or may_manage_owner(hass, connection, owner)
+
     store: ComplicationStore = domain_data.complication_store
     secret_store = domain_data.widget_secret_store
     # An owner the secret store no longer knows is a device that went away
@@ -484,8 +493,15 @@ def ws_owners(
     coordinator = getattr(domain_data, "coordinator", None)
     entries = secret_store.all_entries
     for device_id, entry in entries.items():
+        # Seen even when it is not listed, so another person's device is
+        # left out rather than listed below as an orphan.
         seen.add(device_id)
+        if not listed(device_id):
+            continue
         paired_id = entry.owner_iphone_id
+        if paired_id and not listed(paired_id):
+            # Not this caller's phone, so not a row of this reply either.
+            paired_id = None
         paired_name: str | None = None
         paired_entry = secret_store.get(paired_id) if paired_id else None
         if paired_id:
@@ -543,7 +559,9 @@ def ws_owners(
     # panel offers the Move action on, so it says so rather than making the
     # browser infer it from a missing name.
     for owner in store.owners():
-        if owner in seen or store.is_empty(owner):
+        # An orphan is nobody's device any more, so only an administrator
+        # sees it (and may move its designs).
+        if owner in seen or store.is_empty(owner) or not listed(owner):
             continue
         owners.append(
             {
@@ -607,7 +625,6 @@ def ws_owners(
     )
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_FORGET,
@@ -639,6 +656,9 @@ def ws_forget_device(
     has no entry in the secret store, so it answers ``not_found``, which is
     the true thing to say about an owner that was never a device. ``force``
     does not get past it either, since the entry is looked up first.
+
+    A non-administrator may forget only their own device; any other id is
+    refused ``unauthorized`` before it is looked up.
     """
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:
@@ -646,6 +666,8 @@ def ws_forget_device(
         return
 
     watch_id = msg["watch_id"]
+    if not require_owner(hass, connection, msg, watch_id):
+        return
     if domain_data.widget_secret_store.get(watch_id) is None:
         connection.send_error(
             msg["id"], "not_found", f"no registered device with id {watch_id}"
@@ -726,7 +748,70 @@ def ws_forget_device(
     )
 
 
-@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_RENAME,
+        vol.Required("watch_id"): str,
+        vol.Required("name"): vol.Any(str, None),
+    }
+)
+@callback
+def ws_rename_device(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Give one device the name Home Assistant shows for it.
+
+    The same rename as on the device's page in Settings, Devices: it sets
+    the registry's ``name_by_user``, so every list in Home Assistant and the
+    ``owners`` reply show it. ``null`` (or a blank name) drops the rename,
+    and the name the device reports shows again.
+
+    This exists because Home Assistant core keeps
+    ``config/device_registry/update`` to administrators, and a household
+    member should still be able to name their own watch. So the panel calls
+    this instead, and the owner check is what stands in for the admin one: a
+    non-administrator may rename only a device paired to them.
+
+    Result: {"ok": true, "watch_id", "name"} with ``name`` as stored (null
+    when the rename was dropped).
+    """
+    domain_data = hass.data.get(DOMAIN)
+    if domain_data is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+
+    watch_id = msg["watch_id"]
+    if not require_owner(hass, connection, msg, watch_id):
+        return
+    if domain_data.widget_secret_store.get(watch_id) is None:
+        connection.send_error(
+            msg["id"], "not_found", f"no registered device with id {watch_id}"
+        )
+        return
+
+    name = msg["name"]
+    if name is not None:
+        name = name.strip() or None
+    if name is not None and len(name) > _RENAME_MAX_CHARS:
+        connection.send_error(
+            msg["id"], "invalid_name", f"a name is at most {_RENAME_MAX_CHARS} characters"
+        )
+        return
+
+    device_registry = dr.async_get(hass)
+    device = device_registry.async_get_device(
+        identifiers={(DOMAIN, f"watch_{watch_id}")}
+    )
+    if device is None:
+        connection.send_error(
+            msg["id"], "not_found", "Home Assistant has no device entry for it"
+        )
+        return
+    device_registry.async_update_device(device.id, name_by_user=name)
+    _LOGGER.info("Renamed device watch_id=%s name=%r", watch_id, name)
+    connection.send_result(msg["id"], {"ok": True, "watch_id": watch_id, "name": name})
+
+
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_LIST,
@@ -743,6 +828,8 @@ def ws_list(
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     owner = msg["owner_watch_id"]
+    if not require_owner(hass, connection, msg, owner):
+        return
     domain_data = hass.data.get(DOMAIN)
     coordinator = domain_data.coordinator if domain_data is not None else None
     records = store.list(owner, include_deleted=msg["include_deleted"])
@@ -794,7 +881,6 @@ def ws_list(
     )
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_GET,
@@ -810,6 +896,8 @@ def ws_get(
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
+    if not require_owner(hass, connection, msg, msg["owner_watch_id"]):
+        return
     record = store.get(msg["owner_watch_id"], msg["complication_id"].upper())
     if record is None:
         connection.send_error(msg["id"], "not_found", "no such complication")
@@ -817,7 +905,6 @@ def ws_get(
     connection.send_result(msg["id"], {"record": record.as_dict()})
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_SAVE,
@@ -834,6 +921,8 @@ def ws_save(
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
+    if not require_owner(hass, connection, msg, msg["owner_watch_id"]):
+        return
     user = connection.user
     updated_by = f"ha-panel:{user.name or user.id}" if user else "ha-panel"
     try:
@@ -849,7 +938,6 @@ def ws_save(
     connection.send_result(msg["id"], {"ok": True, "record": record.as_dict()})
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_DELETE,
@@ -865,6 +953,8 @@ def ws_delete(
     store = _store(hass)
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    if not require_owner(hass, connection, msg, msg["owner_watch_id"]):
         return
     user = connection.user
     updated_by = f"ha-panel:{user.name or user.id}" if user else "ha-panel"
@@ -884,7 +974,6 @@ def ws_delete(
     connection.send_result(msg["id"], {"ok": True, "record": record.as_dict()})
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_SAVE_HISTORY,
@@ -907,6 +996,8 @@ def ws_save_history(
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     owner = msg["owner_watch_id"]
+    if not require_owner(hass, connection, msg, owner):
+        return
     record_id = msg["complication_id"].upper()
     record = store.get(owner, record_id)
     if record is None:
@@ -925,7 +1016,6 @@ def ws_save_history(
     )
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_SAVE_HISTORY_GET,
@@ -943,6 +1033,8 @@ def ws_save_history_get(
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
+    if not require_owner(hass, connection, msg, msg["owner_watch_id"]):
+        return
     entry = store.history_entry(
         msg["owner_watch_id"], msg["complication_id"].upper(), msg["revision"]
     )
@@ -954,7 +1046,6 @@ def ws_save_history_get(
     )
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_SAVE_HISTORY_RESTORE,
@@ -984,6 +1075,8 @@ def ws_save_history_restore(
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     owner = msg["owner_watch_id"]
+    if not require_owner(hass, connection, msg, owner):
+        return
     record_id = msg["complication_id"].upper()
     current = store.get(owner, record_id)
     if current is None:
@@ -1016,7 +1109,6 @@ def ws_save_history_restore(
     )
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_SUBSCRIBE,
@@ -1034,16 +1126,30 @@ def ws_subscribe(
     stale before they try to save it, and lets "Send to watch" go green the
     moment the watch reports the token it applied (``record`` is null on
     those, ``applied_token`` carries the news). Optional owner filter.
+
+    A named owner must be one the caller may manage, or the subscribe is
+    refused ``unauthorized``. With no filter an administrator hears every
+    owner and anyone else only the owners they may manage, asked on each
+    event so a device paired to them later is heard too.
     """
     store = _store(hass)
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     owner_filter = msg.get("owner_watch_id")
+    if owner_filter is not None and not require_owner(hass, connection, msg, owner_filter):
+        return
+    admin = is_admin(connection)
 
     @callback
     def _on_change(change: ComplicationChange) -> None:
         if owner_filter is not None and change.owner_watch_id != owner_filter:
+            return
+        if (
+            owner_filter is None
+            and not admin
+            and not may_manage_owner(hass, connection, change.owner_watch_id)
+        ):
             return
         connection.send_message(
             websocket_api.event_message(
@@ -1065,7 +1171,6 @@ def ws_subscribe(
     connection.send_result(msg["id"], {"token": store.token})
 
 
-# Deliberately not admin-only: see the module docstring.
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_OWNER_SUBSCRIBE,
@@ -1115,7 +1220,6 @@ def ws_owner_subscribe(
     connection.send_result(msg["id"], {"token": store.owner_token(owner)})
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_WATCH_STATUS,
@@ -1147,6 +1251,8 @@ def ws_watch_status(
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     owner = msg["owner_watch_id"]
+    if not require_owner(hass, connection, msg, owner):
+        return
     coordinator = domain_data.coordinator
     store = domain_data.complication_store
     push = domain_data.complication_push
@@ -1172,7 +1278,6 @@ def ws_watch_status(
     )
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_NUDGE,
@@ -1208,6 +1313,8 @@ def ws_nudge(
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     owner = msg["owner_watch_id"]
+    if not require_owner(hass, connection, msg, owner):
+        return
     coordinator = domain_data.coordinator
     polling = coordinator.is_polling(owner)
     coordinator.wake_watch(owner, renotify=True)
@@ -1227,7 +1334,6 @@ def ws_nudge(
     )
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_MOVE_OWNER,
@@ -1255,10 +1361,18 @@ def ws_move_owner(
     offers registered devices, and a watch that has not paired yet can be
     given its designs once it has. The Library is no target either: it has no
     entry, and this command is about putting designs back on a device.
+
+    Both sides must be owners the caller may manage. For anyone but an
+    administrator that means from their own device or the Library to their
+    own device; an orphan is nobody's, so only an administrator moves one.
     """
     store = _store(hass)
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    if not require_owner(
+        hass, connection, msg, msg["source_owner_watch_id"], msg["target_owner_watch_id"]
+    ):
         return
     user = connection.user
     updated_by = f"ha-panel:{user.name or user.id}" if user else "ha-panel"
@@ -1303,7 +1417,6 @@ def ws_move_owner(
     )
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_RENDER,
@@ -1340,7 +1453,6 @@ def ws_render_values(
     connection.send_result(msg["id"], {"results": results})
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_HISTORY,
@@ -1414,7 +1526,6 @@ async def ws_history_series(
     connection.send_result(msg["id"], {"results": results})
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_STATISTICS,
@@ -1471,7 +1582,6 @@ async def ws_statistics_series(
     connection.send_result(msg["id"], {"results": results})
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_LIST_ITEMS,
@@ -1532,7 +1642,6 @@ async def ws_list_items(
 # ── Card previews ──────────────────────────────────────────────────────
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_PREVIEW_SAVE,
@@ -1559,6 +1668,8 @@ async def ws_preview_save(
     if store is None or previews is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
+    if not require_owner(hass, connection, msg, msg["owner_watch_id"]):
+        return
     record = store.get(msg["owner_watch_id"], msg["complication_id"].upper())
     if record is None or record.deleted:
         connection.send_error(msg["id"], "not_found", "no such complication")
@@ -1583,7 +1694,6 @@ async def ws_preview_save(
     connection.send_result(msg["id"], {"ok": True, "preview": preview})
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_PREVIEW_GET,
@@ -1602,6 +1712,8 @@ async def ws_preview_get(
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     owner = msg["owner_watch_id"]
+    if not require_owner(hass, connection, msg, owner):
+        return
     record_id = msg["complication_id"].upper()
     if previews.revision_of(owner, record_id) != msg["revision"]:
         connection.send_error(msg["id"], "not_found", "no preview of that revision")

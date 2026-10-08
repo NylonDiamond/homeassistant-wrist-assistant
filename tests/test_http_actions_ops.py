@@ -40,7 +40,7 @@ from test_http_actions_store import CONFLICT, loaded_package, new_store
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
 _VIEWS = _PKG_DIR / "wa_v2_views.py"
 _NAMES = (
-    "_async_bound_user_is_admin",
+    "_async_bound_user_is_active",
     "_http_actions_refusal",
     "_http_actions_store_refusal",
     "_op_http_actions_hand_over",
@@ -207,8 +207,8 @@ def test_an_empty_hand_over_answers_revision_0(env) -> None:
     assert env.store.has_handed_over("watch-A")
 
 
-@pytest.mark.parametrize("user_id", ["member", "retired", None, "deleted"])
-def test_only_an_admins_device_may_hand_over(env, user_id) -> None:
+@pytest.mark.parametrize("user_id", ["retired", None, "deleted"])
+def test_only_a_device_bound_to_an_active_user_may_hand_over(env, user_id) -> None:
     env.store.save(library(action()), base_revision=0)
     before = env.store.get()
     reply = op(
@@ -230,8 +230,21 @@ def test_only_an_admins_device_may_hand_over(env, user_id) -> None:
     assert env.store.get()["handed_over"] == ["watch-A"]
 
 
+def test_a_device_bound_to_a_user_who_is_not_an_admin_hands_over(env) -> None:
+    """Every signed-in user may edit the library in the panel, so a member's
+    phone handing its own over grants them nothing new."""
+    reply = op(
+        env,
+        "_op_http_actions_hand_over",
+        {"document": library(action(), action(id=ID_B))},
+        user_id="member",
+    )
+    assert (reply.status, reply.body) == (200, {"ok": True, "revision": 1, "added": 2})
+    assert env.store.get()["handed_over"] == ["watch-A"]
+
+
 @pytest.mark.parametrize(
-    ("user_id", "can"), [("admin", True), ("member", False), ("retired", False), (None, False)]
+    ("user_id", "can"), [("admin", True), ("member", True), ("retired", False), (None, False)]
 )
 def test_get_says_whether_the_device_may_hand_over(env, user_id, can) -> None:
     assert op(env, "_op_http_actions_get", {}, user_id=user_id).body["can_hand_over"] is can
