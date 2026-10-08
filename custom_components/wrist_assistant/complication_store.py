@@ -997,7 +997,7 @@ class ComplicationStore:
             }
         raw_records = data.get("records", [])
         if not isinstance(raw_records, list):
-            return
+            raw_records = []
         skipped = 0
         for raw in raw_records:
             record = ComplicationRecord.from_dict(raw) if isinstance(raw, dict) else None
@@ -1008,6 +1008,13 @@ class ComplicationStore:
             # A token on disk can never be behind a record's token; heal
             # rather than hand out a duplicate on the next commit.
             self._token = max(self._token, record.token)
+        # An ack above every token its owner holds is one this store never
+        # issued (records that would not load, or a file put back by hand).
+        # Dropped rather than kept: kept, it would read as proof again once
+        # new commits climbed past it, though the device pulled none of them.
+        for owner, applied in list(self._applied.items()):
+            if applied > self.owner_token(owner):
+                del self._applied[owner]
         _LOGGER.debug(
             "Loaded %d complication record(s) for %d owner(s), token=%d, skipped=%d",
             sum(len(v) for v in self._records.values()),
@@ -1467,8 +1474,15 @@ class ComplicationStore:
         made it indistinguishable from a watch that acked an empty store: the
         panel showed "Not on watch yet" and a Resend that could not work,
         because nothing on that watch was listening for the answer.
+
+        Never above :meth:`owner_token`: an ack is proof only of a token this
+        store handed out (see :meth:`set_applied_token`), so one that sits
+        above every token the owner holds reads as no ack at all.
         """
-        return self._applied.get(owner_watch_id)
+        applied = self._applied.get(owner_watch_id)
+        if applied is None or applied > self.owner_token(owner_watch_id):
+            return None
+        return applied
 
     def pending_changes(self, owner_watch_id: str) -> int | None:
         """How many designs changed here since the token the device applied.
@@ -1488,8 +1502,28 @@ class ComplicationStore:
 
         Notifies listeners with a record-less change so the panel's
         subscription can flip "Send to watch" green without polling.
+
+        A device only ever acks a token a pull handed it, and the owner's
+        token never goes down, so a report above :meth:`owner_token` is a
+        token this store never issued. Store tokens carry no epoch: after
+        Home Assistant is restored from a backup, or after a start that could
+        not read the storage file, a device still reports where it got to
+        before. Such a report proves nothing about what the device holds now,
+        so it is not recorded and the stored ack stays where it was. Recording
+        it would read as "up to date" (``pending_changes`` 0, and the move
+        status's proof) until enough new commits passed it, while the device
+        had pulled none of them. The device notices the rewind on its next
+        pull, pulls again from 0 and acks a real token.
         """
         if isinstance(token, bool) or not isinstance(token, int) or token < 0:
+            return False
+        if token > self.owner_token(owner_watch_id):
+            _LOGGER.debug(
+                "Ignoring applied token %d from %s: the owner's token is %d",
+                token,
+                owner_watch_id,
+                self.owner_token(owner_watch_id),
+            )
             return False
         if self.applied_token(owner_watch_id) == token:
             return False

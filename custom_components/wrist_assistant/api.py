@@ -358,6 +358,10 @@ class DeltaCoordinator:
         # watch_id → the certificate revision its last reply with a body
         # carried, kept like _http_actions_sent.
         self._client_certificate_sent: dict[str, int] = {}
+        # Answers whether a device id still has a secret here. None until
+        # setup attaches it (attach_device_check), and then a poll for an id
+        # it says no to gets a bodiless 204 and opens no session.
+        self._device_known: Callable[[str], bool] | None = None
         self._unsub_state_changed = hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_changed
         )
@@ -833,6 +837,53 @@ class DeltaCoordinator:
         self._wake_all_waiters()
         self._fire_session_callbacks()
 
+    @callback
+    def attach_device_check(self, device_known: Callable[[str], bool]) -> None:
+        """Wire in the question "does this device still have a secret here".
+
+        A poll authenticates before it reaches the coordinator, and the view
+        awaits a user check in between. A device removed during that await
+        would otherwise open a fresh session after `drop_session` cleared it,
+        and get one more reply with a body. With this attached, such a poll
+        gets a bodiless 204 and leaves nothing behind.
+        """
+        self._device_known = device_known
+
+    @callback
+    def drop_session(self, watch_id: str) -> bool:
+        """Forget everything held here for a device that is being removed.
+
+        Called by both removal paths (HA's device page and the panel's Forget)
+        before the device's secret and registry entry go. Without it the
+        session stayed in `real_sessions` until SESSION_TTL ran out, and in
+        that window any session listener saw a watch whose entities had just
+        been deleted and added them back, re-creating the device as an empty
+        shell with no secret behind it.
+
+        The parked poll is released the way a superseded one is: its waiter
+        is taken out of `_waiters` before it is set, so the poll fails its
+        ownership check and ends with a bodiless 204. Taking it out first also
+        means the store saves that follow (the watch config's `forget_owner`,
+        the complication release) find no waiter to wake, so the removed
+        device is never handed one more reply with a body.
+
+        Returns whether a session existed. Session listeners fire when one
+        did, so the counts on the diagnostic sensors drop at once.
+        """
+        had_session = self._sessions.pop(watch_id, None) is not None
+        waiter = self._waiters.pop(watch_id, None)
+        if waiter is not None:
+            waiter.set()  # parked poll re-checks ownership and exits with a 204
+        self._remove_watcher_index(watch_id)
+        self._last_poll_at.pop(watch_id, None)
+        self._token_notified.pop(watch_id, None)
+        self._watch_config_sent.pop(watch_id, None)
+        self._http_actions_sent.pop(watch_id, None)
+        self._client_certificate_sent.pop(watch_id, None)
+        if had_session:
+            self._fire_session_callbacks()
+        return had_session
+
     async def handle_poll(
         self,
         watch_id: str,
@@ -880,6 +931,10 @@ class DeltaCoordinator:
         past the one it saw, and a change wakes the parked polls of that
         user's devices.
         """
+        # A device removed while its request was in flight: no session, no
+        # stamps, no body.
+        if self._device_known is not None and not self._device_known(watch_id):
+            return 204, None
         self._last_poll_at[watch_id] = self.hass.loop.time()
         store = self._complication_store
         if store is not None and complications_token is not None:

@@ -644,6 +644,99 @@ def test_a_renamed_global_skips_a_stored_variable_key() -> None:
     assert [v["key"] for v in ha.public_list(merged)["actions"][0]["variables"]] == ["k_2"]
 
 
+def test_an_added_action_whose_variable_is_named_like_a_stored_global_keeps_asking() -> None:
+    stored = library(
+        action(url="https://a.example/{{token}}"),
+        globals_=[{"id": "S1", "key": "token", "value": "SECRET_A"}],
+    )
+    incoming = library(
+        action(
+            id=ID_B,
+            url="https://b.example/send?t={{token}}",
+            headers=[header("X-Code", "{{ token }}")],
+            body="code={{token}}",
+            bodyContentType="form",
+            variables=[variable("token")],
+        )
+    )
+    ha.validate_document(incoming)
+    merged, added, changed = ha.merge_hand_over(stored, incoming)
+    assert (added, changed) == (1, True)
+    ha.validate_document(merged)
+    # The stored global and the stored action are untouched.
+    assert merged["globalVariables"] == stored["globalVariables"]
+    assert merged["actions"][0] == stored["actions"][0]
+    # The added action still asks for its value, under a free name, with the
+    # label its old key read as.
+    listed = ha.public_list(merged)["actions"]
+    asked = listed[1]["variables"]
+    assert [(v["key"], v["prompt"]) for v in asked] == [("token_2", "Token")]
+    # What the person types is what is sent, never the stored secret.
+    request = ha.build_request(merged, ID_B, {"token_2": "1234"})
+    assert request.url == "https://b.example/send?t=1234"
+    assert request.headers[0] == ("X-Code", "1234")
+    assert request.body == b"code=1234"
+    for part in (request.url, request.body.decode(), *(v for _n, v in request.headers)):
+        assert "SECRET_A" not in part
+    # The stored action still reads the stored global.
+    assert ha.build_request(merged, ID_A, {}).url == "https://a.example/SECRET_A"
+
+
+def test_a_renamed_global_never_takes_an_added_action_variable_name() -> None:
+    stored = library(
+        action(url="https://a.example/{{token}}"),
+        globals_=[{"id": "S1", "key": "token", "value": "SECRET_A"}],
+    )
+    incoming = library(
+        action(id=ID_B, url="https://b.example/{{token}}"),
+        action(
+            id=ID_C,
+            url="https://c.example/send?t={{token_2}}",
+            variables=[variable("token_2", prompt="Code")],
+        ),
+        globals_=[{"id": "P1", "key": "token", "value": "SECRET_B"}],
+    )
+    ha.validate_document(incoming)
+    merged, added, _changed = ha.merge_hand_over(stored, incoming)
+    assert added == 2
+    ha.validate_document(merged)
+    # The phone's global steps over the added action's own variable name.
+    assert [(g["key"], g["value"]) for g in merged["globalVariables"]] == [
+        ("token", "SECRET_A"),
+        ("token_3", "SECRET_B"),
+    ]
+    assert ha.build_request(merged, ID_B, {}).url == "https://b.example/SECRET_B"
+    # The variable is still asked for and sends what the person types.
+    listed = {a["id"]: a for a in ha.public_list(merged)["actions"]}
+    assert [(v["key"], v["prompt"]) for v in listed[ID_C]["variables"]] == [("token_2", "Code")]
+    assert ha.build_request(merged, ID_C, {"token_2": "1234"}).url == (
+        "https://c.example/send?t=1234"
+    )
+
+
+def test_a_variable_the_phone_global_filled_follows_that_global_rename() -> None:
+    stored = library(
+        action(url="https://a.example/{{token}}", variables=[variable("token")]),
+    )
+    incoming = library(
+        action(
+            id=ID_B,
+            url="https://b.example/{{token}}",
+            variables=[variable("token")],
+        ),
+        globals_=[{"id": "P1", "key": "token", "value": "phone"}],
+    )
+    merged, _added, _changed = ha.merge_hand_over(stored, incoming)
+    ha.validate_document(merged)
+    assert [g["key"] for g in merged["globalVariables"]] == ["token_2"]
+    listed = {a["id"]: a for a in ha.public_list(merged)["actions"]}
+    # On the phone the global filled it, so it is still filled and not asked.
+    assert listed[ID_B]["variables"] == []
+    assert ha.build_request(merged, ID_B, {}).url == "https://b.example/phone"
+    # The stored action still asks for its own.
+    assert [v["key"] for v in listed[ID_A]["variables"]] == ["token"]
+
+
 def test_a_hand_over_of_what_is_stored_changes_nothing() -> None:
     stored = library(action(), globals_=[{"id": "G", "key": "k", "value": "v"}])
     merged, added, changed = ha.merge_hand_over(stored, json.loads(json.dumps(stored)))

@@ -170,9 +170,13 @@ def store_paired_device(
         log_secret_reprovisioned(
             hass, watch_id=watch_id, label=fields.label, app_version=fields.app_version
         )
-    if user_id is not None:
+    # A phone that was paired here before takes the watches that named it
+    # when they were paired, if they are bound to no one. Only one that was
+    # here before: an id no entry holds (never seen, or forgotten) is just
+    # a name the pairing device chose, and must not collect the old watches
+    # of whatever phone once had it.
+    if user_id is not None and existing is not None:
         secret_store.bind_owned_watches(watch_id, user_id)
-    secret_store.inherit_owner_user(watch_id)
     # A device that was paired before keeps its registry entry; show the name
     # it reports now. A user's own rename (`name_by_user`) still wins on display.
     if fields.device_name is not None:

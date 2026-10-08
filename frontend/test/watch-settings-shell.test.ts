@@ -374,9 +374,16 @@ describe("Watch settings as a page under the Watch app row", () => {
     });
 
     it("leaves the question out for an integration whose confirm takes no user", async () => {
-      const { inside, ha, text } = await lookedUp({});
+      const opened = await page("w2", WATCHES, {});
+      // The client certificate card reads the people on opening; the lookup
+      // must not read them again.
+      const listed = () => opened.ha.sent.filter((m) => m.type === "config/auth/list").length;
+      const before = listed();
+      opened.inside.pairCard.setPairCode("ABCDEF");
+      await opened.inside.pairCard.lookUpPair();
+      const { inside, ha, text } = opened;
       expect(text()).not.toContain("Whose watch is this?");
-      expect(ha.sent.some((m) => m.type === "config/auth/list")).toBe(false);
+      expect(listed()).toBe(before);
       await inside.pairCard.confirmPair();
       expect("user_id" in confirms(ha.sent)[0]!).toBe(false);
     });

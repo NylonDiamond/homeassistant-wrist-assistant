@@ -277,6 +277,11 @@ class _Coordinator:
     def __init__(self) -> None:
         self.polling: set[str] = set()
         self.woken: list[tuple[str, bool]] = []
+        self.dropped: list[str] = []
+        # The secret store, when a test wants to know whether the secret was
+        # still there at the drop.
+        self.secrets: Any = None
+        self.secret_at_drop: dict[str, bool] = {}
 
     def is_polling(self, watch_id: str) -> bool:
         return watch_id in self.polling
@@ -286,6 +291,15 @@ class _Coordinator:
 
     def wake_watch(self, watch_id: str, *, renotify: bool = False) -> None:
         self.woken.append((watch_id, renotify))
+
+    def drop_session(self, watch_id: str) -> bool:
+        """What a forget calls first. Records the id, and whether the device
+        still had its secret at that moment (set by the test that asks)."""
+        self.dropped.append(watch_id)
+        if self.secrets is not None:
+            self.secret_at_drop[watch_id] = self.secrets.get(watch_id) is not None
+        self.polling.discard(watch_id)
+        return True
 
 
 class _Push:
@@ -841,6 +855,30 @@ def test_forgetting_a_device_drops_its_voice_list(env) -> None:
     env.add_watch("watch-B", device_name="Other Watch")
     env.call(env.ws.ws_forget_device, watch_id="watch-A", force=False)
     assert forgotten == ["watch-A"]
+
+
+def test_forgetting_a_device_drops_its_live_session_first(env) -> None:
+    """The Forget closes the device's poll session while its secret is still
+    there, so the parked poll ends without a body and no session listener
+    re-adds its entities after the registry device goes. A refused Forget
+    leaves the session alone."""
+    env.coordinator.secrets = env.secrets
+    env.add_watch("watch-A", device_name="Apple Watch")
+    env.add_watch("watch-B", device_name="Other Watch")
+    env.coordinator.polling.update({"watch-A", "watch-B"})
+
+    env.call(env.ws.ws_forget_device, watch_id="watch-A", force=False)
+    assert env.coordinator.dropped == ["watch-A"]
+    assert env.coordinator.secret_at_drop == {"watch-A": True}
+    assert env.secrets.get("watch-A") is None
+    assert env.coordinator.polling == {"watch-B"}
+
+    connection = _Connection()
+    env.ws.ws_forget_device(
+        env.hass, connection, {"id": 2, "watch_id": "watch-gone", "force": True}
+    )
+    assert [code for _id, code, _msg in connection.errors] == ["not_found"]
+    assert env.coordinator.dropped == ["watch-A"]
 
 
 def test_moving_an_owner_carries_its_watch_config(env) -> None:

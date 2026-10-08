@@ -70,6 +70,13 @@ async def async_setup_entry(
         ent_reg = er.async_get(hass)
         new_entities: list[SensorEntity] = []
         for watch_id in coordinator.real_sessions:
+            # The secret store decides whether a device exists. A session can
+            # outlive its device by a moment (a removal racing a poll), and
+            # adding entities for it would re-create the device as an empty
+            # shell with no secret behind it.
+            if secret_store.get(watch_id) is None:
+                known_watches.discard(watch_id)
+                continue
             if watch_id in known_watches:
                 # Verify entities still exist in registry (user may have deleted device)
                 sentinel = f"wrist_assistant_{watch_id}_poll_interval"

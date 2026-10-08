@@ -660,23 +660,32 @@ export interface ClientCertificateStatus {
   source: "panel" | "iphone" | null;
 }
 
-/** The signed in user's certificate, or that there is none. An integration
- * from before the panel kept certificates rejects with `unknown_command`. */
-export async function fetchClientCertificate(hass: HassLike) {
-  return hass.connection.sendMessagePromise<ClientCertificateStatus>({ type: `${CLIENT_CERT}/status` });
+/** The `user_id` key for a certificate command: none for the signed in user,
+ * the server's default and the only form an older integration takes. */
+function certUser(userId: string | undefined): { user_id?: string } {
+  return userId === undefined ? {} : { user_id: userId };
+}
+
+/** The certificate of `userId` (the signed in user when undefined), or that
+ * there is none. Naming another user is for administrators only, and the
+ * server refuses an unknown, deactivated or system user with
+ * `invalid_user`. An integration from before the panel kept certificates
+ * rejects with `unknown_command`. */
+export async function fetchClientCertificate(hass: HassLike, userId?: string) {
+  return hass.connection.sendMessagePromise<ClientCertificateStatus>({ type: `${CLIENT_CERT}/status`, ...certUser(userId) });
 }
 
 /** Store a `.p12` (base64) and its passphrase, which may be empty, as the
- * signed in user's certificate, over any held. Refusals: `invalid_pkcs12`
- * (not a .p12 file), `bad_passphrase`, `too_large` (over 32 KiB), and the
- * generic ones. */
-export async function putClientCertificate(hass: HassLike, pkcs12: string, passphrase: string) {
-  return hass.connection.sendMessagePromise<ClientCertificateStatus>({ type: `${CLIENT_CERT}/put`, pkcs12, passphrase });
+ * certificate of `userId` (the signed in user when undefined), over any
+ * held. Refusals: `invalid_pkcs12` (not a .p12 file), `bad_passphrase`,
+ * `too_large` (over 32 KiB), `invalid_user`, and the generic ones. */
+export async function putClientCertificate(hass: HassLike, pkcs12: string, passphrase: string, userId?: string) {
+  return hass.connection.sendMessagePromise<ClientCertificateStatus>({ type: `${CLIENT_CERT}/put`, pkcs12, passphrase, ...certUser(userId) });
 }
 
-/** Remove the signed in user's certificate. */
-export async function deleteClientCertificate(hass: HassLike) {
-  return hass.connection.sendMessagePromise<ClientCertificateStatus>({ type: `${CLIENT_CERT}/delete` });
+/** Remove the certificate of `userId` (the signed in user when undefined). */
+export async function deleteClientCertificate(hass: HassLike, userId?: string) {
+  return hass.connection.sendMessagePromise<ClientCertificateStatus>({ type: `${CLIENT_CERT}/delete`, ...certUser(userId) });
 }
 
 const WC = "wrist_assistant/watch_config";

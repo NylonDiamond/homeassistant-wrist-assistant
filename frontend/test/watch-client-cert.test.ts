@@ -5,8 +5,10 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ClientCertificateStatus, HassLike } from "../src/ha-api.js";
+import type { ClientCertificateStatus, HaUser, HassLike } from "../src/ha-api.js";
 import {
+  CLIENT_CERT_FOR_HINT,
+  CLIENT_CERT_FOR_TITLE,
   CLIENT_CERT_MAX_BYTES,
   CLIENT_CERT_SAVED_NOTE,
   CLIENT_CERT_UPDATE_TEXT,
@@ -14,8 +16,12 @@ import {
   clientCertCanUpload,
   clientCertDateText,
   clientCertErrorText,
+  clientCertOtherName,
+  clientCertRemoveAsk,
+  clientCertSavedNote,
   clientCertSizeProblem,
   clientCertSourceText,
+  clientCertUploadTitle,
   clientCertView,
   readFileAsBase64,
   shortFingerprint,
@@ -197,26 +203,44 @@ interface Inside {
   pick(input: { files: unknown[]; value: string }): Promise<void>;
   upload(): Promise<void>;
   remove(): Promise<void>;
+  pickUser(userId: string): void;
 }
 
-function fakeHass(start: ClientCertificateStatus | "old") {
+function fakeHass(start: ClientCertificateStatus | "old", users?: HaUser[]) {
   const sent: Record<string, unknown>[] = [];
   let status = start;
+  const others = new Map<string, ClientCertificateStatus>(
+    (users ?? []).filter((u) => u.id !== "u-admin" && u.is_active !== false).map((u) => [u.id, none]),
+  );
   const hass = {
     states: {},
+    user: { id: "u-admin", is_admin: true, name: "Jesse" },
     connection: {
       async sendMessagePromise(msg: Record<string, unknown>): Promise<unknown> {
         sent.push(msg);
+        if (msg.type === "config/auth/list") {
+          if (users === undefined) throw refusal("unknown_command", "Unknown command.");
+          return users;
+        }
         if (status === "old") throw refusal("unknown_command", "Unknown command.");
-        if (msg.type === "wrist_assistant/client_certificate/status") return status;
+        // Each person their own record; the signed in one's is `status`.
+        const who = msg.user_id;
+        if (who !== undefined && !others.has(String(who))) {
+          throw refusal("invalid_user", "Pick an active Home Assistant user for this certificate.");
+        }
+        const current = who === undefined ? status : others.get(String(who))!;
+        const keep = (next: ClientCertificateStatus) => {
+          if (who === undefined) status = next;
+          else others.set(String(who), next);
+          return next;
+        };
+        if (msg.type === "wrist_assistant/client_certificate/status") return current;
         if (msg.type === "wrist_assistant/client_certificate/put") {
           if (msg.passphrase !== "right") throw refusal("bad_passphrase", "wrong passphrase");
-          status = held({ revision: status.revision + 1 });
-          return status;
+          return keep(held({ revision: current.revision + 1 }));
         }
         if (msg.type === "wrist_assistant/client_certificate/delete") {
-          status = { ...none, revision: status.revision + 1 };
-          return status;
+          return keep({ ...none, revision: current.revision + 1 });
         }
         throw refusal("unknown_command", "Unknown command.");
       },
@@ -225,14 +249,14 @@ function fakeHass(start: ClientCertificateStatus | "old") {
       },
     },
   } as unknown as HassLike;
-  return { hass, sent };
+  return { hass, sent, others, mine: () => status };
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("the card", () => {
-  async function card(start: ClientCertificateStatus | "old") {
-    const ha = fakeHass(start);
+  async function card(start: ClientCertificateStatus | "old", users?: HaUser[]) {
+    const ha = fakeHass(start, users);
     const c = new ClientCertCard(() => undefined);
     c.open(ha.hass);
     await settle();
@@ -241,7 +265,7 @@ describe("the card", () => {
 
   it("reads the status once on opening, and shows what is held", async () => {
     const { ha, text } = await card(held({ source: "iphone" }));
-    expect(ha.sent).toEqual([{ type: "wrist_assistant/client_certificate/status" }]);
+    expect(ha.sent.filter((m) => m.type !== "config/auth/list")).toEqual([{ type: "wrist_assistant/client_certificate/status" }]);
     const shown = text();
     expect(shown).toContain("Client certificate");
     expect(shown).toContain("Installed");
@@ -252,8 +276,9 @@ describe("the card", () => {
     // No upload form until Replace is pressed.
     expect(shown).not.toContain(`type="password"`);
     // Drawing again reads nothing.
+    const before = ha.sent.length;
     text();
-    expect(ha.sent).toHaveLength(1);
+    expect(ha.sent).toHaveLength(before);
   });
 
   it("offers the upload form when there is none, Upload off until a file is read", async () => {
@@ -309,5 +334,119 @@ describe("the card", () => {
     const { text } = await card("old");
     expect(text()).toContain(CLIENT_CERT_UPDATE_TEXT);
     expect(text()).not.toContain(`type="password"`);
+  });
+});
+
+const PEOPLE: HaUser[] = [
+  { id: "u-admin", name: "Jesse", is_active: true, group_ids: ["system-admin"] },
+  { id: "u-anna", name: "Anna", is_active: true, group_ids: ["system-users"] },
+  { id: "u-old", name: "Old account", is_active: false },
+  { id: "u-super", name: "Supervisor", is_active: true, system_generated: true },
+];
+
+describe("the For menu", () => {
+  async function card(start: ClientCertificateStatus, users?: HaUser[]) {
+    const ha = fakeHass(start, users);
+    const c = new ClientCertCard(() => undefined);
+    c.open(ha.hass);
+    await settle();
+    return { c, inside: c as unknown as Inside, ha, text: () => flatten(c.render()) };
+  }
+
+  const certCommands = (sent: Record<string, unknown>[]) => sent.filter((m) => String(m.type).startsWith("wrist_assistant/client_certificate/"));
+
+  it("lists the people pairing offers, starting on the signed in administrator", async () => {
+    const { ha, text } = await card(held(), PEOPLE);
+    const shown = text();
+    expect(shown).toContain(CLIENT_CERT_FOR_TITLE);
+    expect(shown).toContain(CLIENT_CERT_FOR_HINT);
+    expect(shown).toContain("Jesse (you) · Admin");
+    expect(shown).toContain("Anna · User");
+    expect(shown).not.toContain("Old account");
+    expect(shown).not.toContain("Supervisor");
+    // The administrator's own status, read with no user named.
+    expect(certCommands(ha.sent)).toEqual([{ type: "wrist_assistant/client_certificate/status" }]);
+    expect(shown).toContain("Installed");
+  });
+
+  it("shows no menu with one person, or when the people cannot be read", async () => {
+    const one = await card(held(), [PEOPLE[0]!]);
+    expect(one.text()).not.toContain(CLIENT_CERT_FOR_HINT);
+    const unread = await card(held());
+    expect(unread.text()).not.toContain(CLIENT_CERT_FOR_HINT);
+    expect(unread.text()).toContain("Installed");
+  });
+
+  it("reads, uploads and removes the chosen person's certificate", async () => {
+    stubReader("data:application/x-pkcs12;base64,MIIK");
+    const { inside, ha, text } = await card(held(), PEOPLE);
+    inside.pickUser("u-anna");
+    await settle();
+    expect(certCommands(ha.sent).at(-1)).toEqual({ type: "wrist_assistant/client_certificate/status", user_id: "u-anna" });
+    // Anna has none, so the upload form shows, though the administrator has one.
+    expect(text()).toContain("None");
+    expect(text()).toContain(`type="password"`);
+    await inside.pick({ files: [{ name: "anna.p12", size: 2_400 }], value: "" });
+    inside.passphrase = "right";
+    await inside.upload();
+    expect(certCommands(ha.sent).at(-1)).toEqual({
+      type: "wrist_assistant/client_certificate/put", pkcs12: "MIIK", passphrase: "right", user_id: "u-anna",
+    });
+    expect(ha.others.get("u-anna")?.present).toBe(true);
+    // The administrator's own record is untouched.
+    expect(ha.mine()).toEqual(held());
+    expect(text()).toContain(clientCertSavedNote("Anna"));
+    inside.askRemove = true;
+    expect(text()).toContain(clientCertRemoveAsk("Anna"));
+    await inside.remove();
+    expect(certCommands(ha.sent).at(-1)).toEqual({ type: "wrist_assistant/client_certificate/delete", user_id: "u-anna" });
+    expect(ha.others.get("u-anna")?.present).toBe(false);
+  });
+
+  it("sends no user when the administrator is picked again", async () => {
+    const { inside, ha } = await card(held(), PEOPLE);
+    inside.pickUser("u-anna");
+    await settle();
+    inside.pickUser("u-admin");
+    await settle();
+    expect(certCommands(ha.sent).at(-1)).toEqual({ type: "wrist_assistant/client_certificate/status" });
+  });
+
+  it("drops a picked file and passphrase when the person changes", async () => {
+    stubReader("data:application/x-pkcs12;base64,MIIK");
+    const { inside } = await card(none, PEOPLE);
+    await inside.pick({ files: [{ name: "home.p12", size: 2_400 }], value: "" });
+    inside.passphrase = "secret";
+    inside.pickUser("u-anna");
+    await settle();
+    expect(inside.file).toBeUndefined();
+    expect(inside.passphrase).toBe("");
+  });
+});
+
+describe("the words for another person", () => {
+  const choices = [
+    { id: "u-admin", label: "Jesse (you) · Admin", name: "Jesse", admin: true },
+    { id: "u-anna", label: "Anna · User", name: "Anna", admin: false },
+  ];
+
+  it("names the person only when it is not the administrator at the card", () => {
+    expect(clientCertOtherName(choices, "u-anna", "u-admin")).toBe("Anna");
+    expect(clientCertOtherName(choices, "u-admin", "u-admin")).toBeUndefined();
+    expect(clientCertOtherName(undefined, "u-anna", "u-admin")).toBeUndefined();
+    expect(clientCertOtherName([choices[0]!], "u-anna", "u-admin")).toBeUndefined();
+  });
+
+  it("keeps the old words for the administrator and names anyone else", () => {
+    expect(clientCertSavedNote()).toBe(CLIENT_CERT_SAVED_NOTE);
+    expect(clientCertSavedNote("Anna")).toBe("Saved for Anna. Their watch and iPhone pick it up the next time they open the app.");
+    expect(clientCertRemoveAsk("Anna")).toContain("for Anna?");
+    expect(clientCertUploadTitle()).toContain("your devices");
+    expect(clientCertUploadTitle("Anna")).toContain("for Anna");
+  });
+
+  it("says a refused person in the server's words", () => {
+    expect(clientCertErrorText(refusal("invalid_user", "pick an active Home Assistant user for this certificate"), "read"))
+      .toBe("Pick an active Home Assistant user for this certificate.");
   });
 });

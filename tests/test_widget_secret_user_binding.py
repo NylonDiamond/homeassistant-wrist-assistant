@@ -13,6 +13,9 @@ the rules:
   upgrade binds every existing device without anyone re-pairing);
 * the same user may rekey their own device, and an admin may rekey anyone's;
 * a different non-admin user is refused with 403 and the entry is untouched;
+* no device is ever bound to a user through the iPhone it names: a bearer
+  registration binds to the bearer's user only, and the signed metadata
+  refresh ignores ``owner_iphone_id`` altogether;
 * the stored user survives a save/load round trip;
 * the ``/live`` snapshot cap spends down and then stops.
 """
@@ -25,6 +28,7 @@ import asyncio
 import base64
 import contextlib
 import importlib.util
+import inspect
 import logging
 import sys
 import types
@@ -302,28 +306,116 @@ def test_a_bound_watch_is_not_rebound_through_its_iphone(env) -> None:
     assert env.store.get("watch-a").user_id == "bob"
 
 
-def test_a_watch_registered_under_a_bound_iphone_inherits_its_user(env) -> None:
-    _post(env, {"watch_id": "iphone-1", "label": "iphone-self-provision"}, ALICE)
-    # The watch self-registers with the bearer it was mirrored; a bearer-less
-    # test stands in for a watch whose registration carried no user.
+def test_a_registration_without_a_user_never_takes_the_named_iphone_s_user(env) -> None:
+    """The owner id is only the registering client's word, so naming a bound
+    iPhone is no way to run as that iPhone's user."""
+    _post(env, {"watch_id": "iphone-1", "label": "iphone-self-provision"}, ROOT)
     reply = _post(
         env,
         {"watch_id": "watch-a", "label": "watch-self-provision", "owner_iphone_id": "iphone-1"},
         None,
     )
     assert reply.status == 200, reply.body
+    assert env.store.get("watch-a").user_id is None
+    assert reply.body["user_bound"] is False
+
+
+def test_a_registration_naming_another_person_s_iphone_is_bound_to_the_bearer(env) -> None:
+    _post(env, {"watch_id": "iphone-1", "label": "iphone-self-provision"}, ROOT)
+    reply = _post(
+        env,
+        {"watch_id": "watch-a", "label": "watch-self-provision", "owner_iphone_id": "iphone-1"},
+        BOB,
+    )
+    assert reply.status == 200, reply.body
+    assert env.store.get("watch-a").user_id == "bob"
+    assert env.store.get("iphone-1").user_id == "root"
+
+
+def test_there_is_no_way_to_bind_a_device_through_the_iphone_it_names(env) -> None:
+    assert not hasattr(env.store, "inherit_owner_user")
+    source = (_SRC / "wa_v2_views.py").read_text() + (_SRC / "pairing_ws.py").read_text()
+    assert "inherit_owner_user" not in source
+
+
+# ── the signed metadata refresh ──────────────────────────────────────────
+
+
+class _MetadataCtx:
+    def __init__(self, env, watch_id: str, payload: dict) -> None:
+        self.hass = object()
+        self.domain_data = types.SimpleNamespace(widget_secret_store=env.store)
+        self.watch_id = watch_id
+        self.payload = payload
+
+    def signed_json(self, body: dict, status: int = 200) -> _Response:
+        return _Response(status=status, body=body)
+
+
+def _update_metadata(env, watch_id: str, payload: dict) -> _Response:
+    path = _SRC / "wa_v2_views.py"
+    tree = ast.parse(path.read_text(), filename=str(path))
+    wanted = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_op_update_metadata"
+    ]
+    assert len(wanted) == 1
+    code = compile(
+        ast.Module(body=wanted, type_ignores=[]),
+        str(path),
+        "exec",
+        flags=__future__.annotations.compiler_flag,
+        dont_inherit=True,
+    )
+    registry = types.SimpleNamespace(async_get_device=lambda **_: None)
+    namespace: dict[str, Any] = {
+        "Response": _Response,
+        "_OpContext": object,
+        "DOMAIN": "wrist_assistant",
+        "dr": types.SimpleNamespace(async_get=lambda _hass: registry),
+    }
+    exec(code, namespace)  # noqa: S102
+    return asyncio.run(namespace["_op_update_metadata"](_MetadataCtx(env, watch_id, payload)))
+
+
+def test_an_unbound_device_cannot_name_an_admin_s_iphone_and_run_as_the_admin(env) -> None:
+    """The attack: a legacy device bound to no one names an admin's iPhone
+    (its id is in the device registry) and would then be bound to the admin."""
+    env.store.register("iphone-admin", SECRET_A, "iphone-self-provision", user_id="root")
+    env.store.register("legacy-watch", SECRET_B, "watch-self-provision")
+
+    reply = _update_metadata(
+        env, "legacy-watch", {"owner_iphone_id": "iphone-admin", "app_version": "9.9"}
+    )
+    assert reply.status == 200, reply.body
+    entry = env.store.get("legacy-watch")
+    assert entry.user_id is None
+    assert entry.owner_iphone_id is None
+    assert entry.app_version == "9.9"
+    assert reply.body["user_bound"] is False
+    assert reply.body["owner_iphone_id"] is None
+
+    # And the admin's iPhone pairing again does not collect it either.
+    assert env.store.bind_owned_watches("iphone-admin", "root") == []
+    assert env.store.get("legacy-watch").user_id is None
+
+
+def test_the_metadata_refresh_keeps_the_stored_owner(env) -> None:
+    env.store.register(
+        "watch-a", SECRET_B, "watch-self-provision", owner_iphone_id="iphone-1", user_id="alice"
+    )
+    reply = _update_metadata(env, "watch-a", {"owner_iphone_id": "iphone-9"})
+    assert reply.status == 200, reply.body
+    assert env.store.get("watch-a").owner_iphone_id == "iphone-1"
+    assert reply.body["owner_iphone_id"] == "iphone-1"
     assert env.store.get("watch-a").user_id == "alice"
-    assert reply.body["user_bound"] is True
 
 
-def test_inherit_owner_user_needs_a_bound_owner(env) -> None:
-    env.store.register("iphone-1", SECRET_A, "iphone-self-provision")
-    env.store.register("watch-a", SECRET_B, "watch-self-provision", owner_iphone_id="iphone-1")
-    assert env.store.inherit_owner_user("watch-a") is False
-    env.store.register("iphone-1", SECRET_A, "iphone-self-provision", user_id="alice")
-    assert env.store.inherit_owner_user("watch-a") is True
-    assert env.store.inherit_owner_user("watch-a") is False  # already bound
-    assert env.store.inherit_owner_user("nope") is False
+def test_the_store_s_metadata_update_takes_no_owner() -> None:
+    with _loaded_store() as store_mod:
+        params = inspect.signature(store_mod.WidgetSecretStore.update_metadata).parameters
+    assert "owner_iphone_id" not in params
 
 
 # ── persistence ──────────────────────────────────────────────────────────

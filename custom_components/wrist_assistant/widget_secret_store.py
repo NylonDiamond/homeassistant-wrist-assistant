@@ -84,7 +84,10 @@ class WidgetSecretEntry:
     Surfaces in HA's device registry as a `via_device` link so tapping the
     iPhone shows its watches as children. None for iPhone entries themselves
     and for watches paired by an iOS build that predates this field — those
-    watches root under the global Wrist Assistant service device instead."""
+    watches root under the global Wrist Assistant service device instead.
+
+    A leftover of the old phone link: only a bearer registration writes it,
+    and the signed metadata refresh never changes it."""
 
     device_name: str | None = None
     """User-visible device name reported by the app (WKInterfaceDevice.name on
@@ -312,17 +315,21 @@ class WidgetSecretStore:
         *,
         app_version: str | None = None,
         app_build: str | None = None,
-        owner_iphone_id: str | None = None,
         device_name: str | None = None,
         screen_size: str | None = None,
     ) -> bool:
         """Update diagnostic metadata on an existing entry without touching the
-        secret material, algo, or label.
+        secret material, algo, label, user or owner iPhone.
 
         Backs `op=update_metadata` on /v2/action — the HMAC-signed path an
-        already-registered watch uses to report app updates / iPhone identity
-        rotation. The bearer-authed `register()` remains the only way to write
-        secret material; this method deliberately cannot rekey.
+        already-registered watch uses to report app updates. The bearer-authed
+        `register()` remains the only way to write secret material; this
+        method deliberately cannot rekey.
+
+        It cannot set `owner_iphone_id` either. There is no owner phone any
+        more, and the field is a leftover nothing updates. A signer that could
+        name any iPhone here could also name another person's iPhone, and an
+        unbound entry would then be bound to that person's user through it.
 
         None means "leave unchanged" (caller omitted the field), unlike
         `register()` which replaces the whole entry. Returns False when the
@@ -340,9 +347,6 @@ class WidgetSecretStore:
         if app_build is not None and entry.app_build != app_build:
             entry.app_build = app_build
             changed = True
-        if owner_iphone_id is not None and entry.owner_iphone_id != owner_iphone_id:
-            entry.owner_iphone_id = owner_iphone_id
-            changed = True
         if device_name is not None and entry.device_name != device_name:
             entry.device_name = device_name
             changed = True
@@ -357,10 +361,9 @@ class WidgetSecretStore:
         self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
         if changed:
             _LOGGER.info(
-                "Updated metadata for watch_id=%s app_version=%s owner_iphone_id=%s",
+                "Updated metadata for watch_id=%s app_version=%s",
                 watch_id,
                 app_version,
-                owner_iphone_id,
             )
             self._notify_listeners()
         return True
@@ -413,6 +416,12 @@ class WidgetSecretStore:
         binding gets bound through its owner. A watch paired by code is bound
         to the confirming admin at once and has no owner iPhone. Returns the
         watch ids that changed.
+
+        Only this direction exists: the iPhone, already proven to be
+        `owner_iphone_id` and bound to `user_id`, binds watches that named it.
+        A watch can no longer name an owner after it is registered
+        (`update_metadata` ignores the field), so no device can point itself
+        at another person's iPhone and inherit that person's user.
         """
         bound: list[str] = []
         for watch_id, entry in self._secrets.items():
@@ -426,30 +435,6 @@ class WidgetSecretStore:
             self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
             self._notify_listeners()
         return bound
-
-    def inherit_owner_user(self, watch_id: str) -> bool:
-        """Bind an unbound watch to its owner iPhone's user, if that is known.
-
-        The other direction of `bind_owned_watches`: the watch reported (or
-        just learned) its owner after the iPhone was already bound. Returns
-        True when the entry changed.
-        """
-        entry = self._secrets.get(watch_id)
-        if entry is None or entry.user_id is not None or not entry.owner_iphone_id:
-            return False
-        owner = self._secrets.get(entry.owner_iphone_id)
-        if owner is None or owner.user_id is None:
-            return False
-        entry.user_id = owner.user_id
-        _LOGGER.info(
-            "Bound watch %s to user %s through its iPhone %s",
-            watch_id,
-            owner.user_id,
-            entry.owner_iphone_id,
-        )
-        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
-        self._notify_listeners()
-        return True
 
     def get(self, watch_id: str) -> WidgetSecretEntry | None:
         return self._secrets.get(watch_id)
@@ -513,10 +498,11 @@ def watch_has_iphone(entries: Mapping[str, WidgetSecretEntry], watch_id: str) ->
     The move signs as the watch, with the copy of the watch's key the phone
     kept from the old phone link. Only a watch the old link set up has such a
     copy, and every one of those names the iPhone that paired it
-    (``owner_iphone_id``): the watch refused to register without it, the
-    phone's relay sent its own id, and the watch's metadata refresh keeps
-    reporting it. So that is the one thing that counts, whether or not that
-    phone has an entry here.
+    (``owner_iphone_id``): the watch refused to register without it, and the
+    phone's relay sent its own id. The field keeps the value that
+    registration wrote (the watch's metadata refresh no longer changes it).
+    So that is the one thing that counts, whether or not that phone has an
+    entry here.
 
     Never for a watch whose key came from a code an admin confirmed
     (``LABEL_WATCH_CODE_PAIR``): the watch made that key alone and no phone

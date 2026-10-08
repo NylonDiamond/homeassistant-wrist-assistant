@@ -5,11 +5,13 @@
 //
 // A Home Assistant behind a reverse proxy that asks for a client certificate
 // (mTLS) needs one on every device that talks to it. The certificate belongs
-// to the signed in Home Assistant user, one per user, and that user's watches
-// and iPhone read it from the integration the next time they open the app.
+// to a Home Assistant user, one per user, and that user's watches and iPhone
+// read it from the integration the next time they open the app. The card
+// starts on the signed in administrator; its "For" menu picks another person,
+// so a watch paired for a household member can get one too.
 
 import type { ClientCertificateStatus } from "./ha-api.js";
-import { errorCode } from "./watch-settings.js";
+import { type PairUserChoice, errorCode } from "./watch-settings.js";
 
 export const CLIENT_CERT_TITLE = "Client certificate";
 
@@ -25,6 +27,46 @@ export const CLIENT_CERT_UPDATE_TEXT = "Update the Wrist Assistant integration t
 
 /** Asked before Remove runs. */
 export const CLIENT_CERT_REMOVE_ASK = "Remove this certificate? Your watch and iPhone stop sending it the next time they open the app.";
+
+/** The title of the menu that picks whose certificate the card shows. */
+export const CLIENT_CERT_FOR_TITLE = "For";
+
+/** The line under the menu: what the choice decides. */
+export const CLIENT_CERT_FOR_HINT = "Each person has their own. It goes to the watch and iPhone paired for them.";
+
+/** The person the card is about, by name, when it is not the signed in
+ * administrator: undefined for the administrator, and with no menu (one
+ * person, or a list that could not be read). */
+export function clientCertOtherName(
+  users: readonly PairUserChoice[] | undefined,
+  userId: string | undefined,
+  adminId: string | undefined,
+): string | undefined {
+  if (users === undefined || users.length < 2 || userId === undefined || userId === adminId) return undefined;
+  return users.find((u) => u.id === userId)?.name;
+}
+
+/** Under the card after an upload or a removal, naming the person when it
+ * was someone else's certificate. */
+export function clientCertSavedNote(otherName?: string): string {
+  return otherName === undefined
+    ? CLIENT_CERT_SAVED_NOTE
+    : `Saved for ${otherName}. Their watch and iPhone pick it up the next time they open the app.`;
+}
+
+/** Asked before Remove runs, naming the person when it is someone else's. */
+export function clientCertRemoveAsk(otherName?: string): string {
+  return otherName === undefined
+    ? CLIENT_CERT_REMOVE_ASK
+    : `Remove the certificate for ${otherName}? Their watch and iPhone stop sending it the next time they open the app.`;
+}
+
+/** The Upload button's tooltip once a file is ready. */
+export function clientCertUploadTitle(otherName?: string): string {
+  return otherName === undefined
+    ? "Store this certificate in Home Assistant for your devices"
+    : `Store this certificate in Home Assistant for ${otherName}`;
+}
 
 /** The file types the picker offers. */
 export const CLIENT_CERT_ACCEPT = ".p12,.pfx,application/x-pkcs12";
@@ -145,6 +187,7 @@ export function clientCertErrorText(err: unknown, step: "read" | "upload" | "rem
   if (code === "bad_passphrase") return sentence(message) || "That passphrase does not open this certificate.";
   if (code === "invalid_pkcs12") return sentence(message) || "That is not a .p12 file.";
   if (code === "too_large") return `That file is too large. ${sentence(message)}`.trim();
+  if (code === "invalid_user") return sentence(message) || "Pick an active Home Assistant user.";
   const lead = step === "read" ? "Could not read the certificate" : step === "upload" ? "Could not upload" : "Could not remove";
   return `${lead}: ${message}`;
 }

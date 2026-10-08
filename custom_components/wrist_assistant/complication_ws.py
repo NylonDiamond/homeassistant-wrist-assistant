@@ -634,6 +634,12 @@ def ws_forget_device(
             )
             return
 
+    # Close its live session first, as the removal from HA's device page
+    # does: the parked poll ends without a body (the watch config forget
+    # below would otherwise wake it into one more reply), and no session
+    # listener can re-add its entities, and with them a device with no
+    # secret, once the registry device goes below.
+    domain_data.coordinator.drop_session(watch_id)
     domain_data.widget_secret_store.remove(watch_id)
     domain_data.notification_store.remove(watch_id)
     # Its designs move to the Library and everything else it held (presets,

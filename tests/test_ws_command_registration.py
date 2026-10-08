@@ -13,8 +13,8 @@ Every command is admin-only, reads included: the panel is admin-only, and the
 reads hand out the slot pool of every watch in the house along with rendered
 templates, a watch's whole page config, or what a watch waiting to pair
 reported. The exceptions are listed in ``_NOT_ADMIN``: one live line each in
-two modules, and ``client_certificate_ws.py``, whose commands only ever touch
-the caller's own certificate.
+two modules, and ``client_certificate_ws.py``, whose commands touch the
+caller's own certificate unless an administrator names another user.
 
 Seven modules hold commands: ``complication_ws.py`` (the editor),
 ``watch_config_ws.py`` (the Watch settings view and the page editor),
@@ -130,9 +130,11 @@ _ADMIN_ONLY = {
 # * ``ws_watch_config_subscribe`` hands out nothing but revision numbers, the
 #   same kind of thing. The documents themselves still travel only over the
 #   signed ``watch_config_get``.
-# * The client certificate commands read and write only the certificate of
-#   the user on the connection, the same per-user record the signed ops keep,
-#   and any signed-in user manages their own.
+# * The client certificate commands read and write the certificate of the
+#   user on the connection, the same per-user record the signed ops keep,
+#   and any signed-in user manages their own. Naming another user is the one
+#   admin-only part, checked inside the commands (`_target_user`) and covered
+#   in `test_client_certificate_ws.py`.
 _NOT_ADMIN = {
     _MODULE.name: {"ws_owner_subscribe"},
     _WATCH_CONFIG_MODULE.name: {"ws_watch_config_subscribe"},

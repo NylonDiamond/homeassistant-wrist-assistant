@@ -46,6 +46,11 @@ async def async_setup_entry(
         ent_reg = er.async_get(hass)
         new_entities: list[TextEntity] = []
         for watch_id in coordinator.real_sessions:
+            # Only a device with a secret exists; a session that outlived its
+            # removal must not re-create the device (see sensor.py).
+            if secret_store.get(watch_id) is None:
+                known_watches.discard(watch_id)
+                continue
             if watch_id in known_watches:
                 sentinel = f"wrist_assistant_{watch_id}_name"
                 if ent_reg.async_get_entity_id("text", DOMAIN, sentinel) is not None:

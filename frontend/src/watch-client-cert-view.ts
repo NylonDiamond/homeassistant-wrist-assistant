@@ -1,11 +1,15 @@
 // The "Client certificate" card on the Watch app's Settings page, beside the
-// pairing card: the signed in user's mTLS certificate, which that user's
+// pairing card: a Home Assistant user's mTLS certificate, which that user's
 // watches and iPhone read from the integration. It shows what is held (its
 // fingerprint, when, and from where) and uploads, replaces or removes it.
 //
 // The card is not about the watch on the page: one certificate per Home
-// Assistant user, so it reads its status once each time the page is opened
-// and never again until something here changes it. No polling.
+// Assistant user. It starts on the signed in administrator, and its "For"
+// menu, the same list of people as the pairing card's "Whose watch is
+// this?", picks someone else, so a watch paired for a household member can
+// get one: that watch reads only its own user's certificate. It reads the
+// chosen person's status once each time the page is opened or the person
+// changes, and never again until something here changes it. No polling.
 //
 // Its words and rules are `watch-client-cert.ts`, which the tests read without
 // a DOM.
@@ -17,24 +21,29 @@ import {
   type HassLike,
   deleteClientCertificate,
   fetchClientCertificate,
+  listHaUsers,
   putClientCertificate,
 } from "./ha-api.js";
 import { SECTION_COLOR } from "./kinds.js";
 import { uiIcon } from "./ui-icons.js";
 import {
   CLIENT_CERT_ACCEPT,
+  CLIENT_CERT_FOR_HINT,
+  CLIENT_CERT_FOR_TITLE,
   CLIENT_CERT_HELP,
-  CLIENT_CERT_REMOVE_ASK,
-  CLIENT_CERT_SAVED_NOTE,
   CLIENT_CERT_TITLE,
   CLIENT_CERT_UPDATE_TEXT,
   clientCertCanUpload,
   clientCertErrorText,
+  clientCertOtherName,
+  clientCertRemoveAsk,
+  clientCertSavedNote,
   clientCertSizeProblem,
+  clientCertUploadTitle,
   clientCertView,
   readFileAsBase64,
 } from "./watch-client-cert.js";
-import { errorCode } from "./watch-settings.js";
+import { PAIR_USER_PLACEHOLDER, type PairUserChoice, errorCode, pairUserChoices, pairUserToSend } from "./watch-settings.js";
 
 /** The card's mark and tint: neutral, it is not a setting of the watch. */
 const CERT_LOOK = { icon: "lock", color: SECTION_COLOR.place } as const;
@@ -67,11 +76,19 @@ export class ClientCertCard {
   private askRemove = false;
   /** An upload or removal just went through. */
   private done = false;
+  /** The people the "For" menu offers. Undefined until read, and when the
+   * list cannot be read: then there is no menu and the card is about the
+   * signed in administrator, as before the menu. */
+  private users?: readonly PairUserChoice[];
+  /** Whose certificate the card shows. Starts on the signed in
+   * administrator. */
+  private userId?: string;
 
   /** `update` asks the page to draw again. */
   constructor(private readonly update: () => void) {}
 
-  /** The page has come on screen: start afresh and read the status once. */
+  /** The page has come on screen: start afresh on the signed in
+   * administrator, read the people for the menu, and read the status once. */
   open(hass: HassLike): void {
     this.hass = hass;
     this.visit++;
@@ -79,6 +96,49 @@ export class ClientCertCard {
     this.status = undefined;
     this.readError = undefined;
     this.unsupported = false;
+    this.users = undefined;
+    this.userId = hass.user?.id;
+    void this.readUsers();
+    void this.read();
+  }
+
+  /** The `user_id` the commands send: none for the administrator at the
+   * card, the server's default. */
+  private userToSend(): string | undefined {
+    return pairUserToSend(this.userId, this.hass?.user?.id);
+  }
+
+  /** The chosen person by name when it is not the administrator at the card. */
+  private otherName(): string | undefined {
+    return clientCertOtherName(this.users, this.userId, this.hass?.user?.id);
+  }
+
+  /** The people the menu offers, the same list the pairing card's menu
+   * shows. A list that cannot be read leaves the menu out. */
+  private async readUsers(): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const visit = this.visit;
+    let users: readonly PairUserChoice[] | undefined;
+    try {
+      users = pairUserChoices(await listHaUsers(hass), hass.user?.id);
+    } catch {
+      users = undefined;
+    }
+    if (visit !== this.visit) return;
+    this.users = users;
+    this.update();
+  }
+
+  /** Another person picked in the menu: drop what was typed for the last
+   * one and read the new one's status. */
+  private pickUser(userId: string): void {
+    if (this.busy !== undefined || userId === this.userId) return;
+    this.visit++;
+    this.reset();
+    this.userId = userId;
+    this.status = undefined;
+    this.readError = undefined;
     void this.read();
   }
 
@@ -108,7 +168,7 @@ export class ClientCertCard {
     this.readError = undefined;
     this.update();
     try {
-      const status = await fetchClientCertificate(hass);
+      const status = await fetchClientCertificate(hass, this.userToSend());
       if (visit !== this.visit) return;
       this.status = status;
     } catch (err) {
@@ -164,7 +224,7 @@ export class ClientCertCard {
     this.askRemove = false;
     this.update();
     try {
-      const status = await putClientCertificate(hass, file.data, this.passphrase);
+      const status = await putClientCertificate(hass, file.data, this.passphrase, this.userToSend());
       if (visit !== this.visit) return;
       this.status = status;
       this.fileSeq++;
@@ -193,7 +253,7 @@ export class ClientCertCard {
     this.done = false;
     this.update();
     try {
-      const status = await deleteClientCertificate(hass);
+      const status = await deleteClientCertificate(hass, this.userToSend());
       if (visit !== this.visit) return;
       this.status = status;
       this.askRemove = false;
@@ -233,9 +293,28 @@ export class ClientCertCard {
       </div>
       <div class="sec-b">
         <div class="hint keep">${CLIENT_CERT_HELP}</div>
+        ${this.unsupported ? nothing : this.renderUserMenu()}
         ${this.renderBody()}
       </div>
     </section>`;
+  }
+
+  /** "For": whose certificate the card shows, the people the pairing card
+   * offers, starting on the administrator at the card. Left out with one
+   * person to choose from, or when the list could not be read. Kept outside
+   * the body so a person whose status cannot be read can be swapped for
+   * another. */
+  private renderUserMenu() {
+    const users = this.users;
+    if (users === undefined || users.length < 2) return nothing;
+    const picked = this.userId !== undefined && users.some((u) => u.id === this.userId) ? this.userId : undefined;
+    return html`<label class="field ws-cert-user"><span>${CLIENT_CERT_FOR_TITLE}</span>
+        <select .value=${live(picked ?? "")} ?disabled=${this.busy !== undefined}
+          @change=${(e: Event) => this.pickUser((e.target as HTMLSelectElement).value)}>
+          ${picked === undefined ? html`<option value="" disabled selected>${PAIR_USER_PLACEHOLDER}</option>` : nothing}
+          ${users.map((u) => html`<option value=${u.id} ?selected=${u.id === picked}>${u.label}</option>`)}
+        </select></label>
+      <div class="hint keep">${CLIENT_CERT_FOR_HINT}</div>`;
   }
 
   private renderBody() {
@@ -258,7 +337,7 @@ export class ClientCertCard {
       </div>`}
       ${view.installed && this.askRemove
         ? html`<div class="ws-cert-ask" role="alert">
-            <span>${CLIENT_CERT_REMOVE_ASK}</span>
+            <span>${clientCertRemoveAsk(this.otherName())}</span>
             <button type="button" class="small danger" ?disabled=${busy} @click=${() => void this.remove()}>${this.busy === "remove" ? "Removing…" : "Remove"}</button>
             <button type="button" class="small" ?disabled=${busy} @click=${() => { this.askRemove = false; this.update(); }}>Keep</button>
           </div>`
@@ -272,7 +351,7 @@ export class ClientCertCard {
         : nothing}
       ${!view.installed || this.replacing ? this.renderForm(view.installed) : nothing}
       ${this.error === undefined ? nothing : html`<div class="hint err" role="alert">${this.error}</div>`}
-      ${this.done ? html`<div class="hint keep ws-cert-done" role="status">${CLIENT_CERT_SAVED_NOTE}</div>` : nothing}`;
+      ${this.done ? html`<div class="hint keep ws-cert-done" role="status">${clientCertSavedNote(this.otherName())}</div>` : nothing}`;
   }
 
   /** The file, its passphrase and Upload. `replacing`: a certificate is held,
@@ -301,7 +380,7 @@ export class ClientCertCard {
       </label>
       <div class="row-acts ws-cert-acts">
         <button type="button" class="small primary" ?disabled=${!ready}
-          title=${ready ? "Store this certificate in Home Assistant for your devices" : "Choose a .p12 file first"}
+          title=${ready ? clientCertUploadTitle(this.otherName()) : "Choose a .p12 file first"}
           @click=${() => void this.upload()}>${this.busy === "upload" ? "Uploading…" : "Upload"}</button>
         ${replacing ? html`<button type="button" class="small" ?disabled=${busy} @click=${() => this.setReplacing(false)}>Cancel</button>` : nothing}
       </div>`;

@@ -72,6 +72,13 @@ from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import instance_id as ha_instance_id
 
+try:
+    # Home Assistant 2026.5 and later keep it here.
+    from homeassistant.components.http.auth_util import async_user_not_allowed_do_auth
+except ImportError:
+    # Earlier releases define it in the auth middleware module.
+    from homeassistant.components.http.auth import async_user_not_allowed_do_auth
+
 from .audio_upload import MAX_UPLOAD_SIZE, async_cleanup_clips, async_save_clip
 from .bundle_ops import (
     BundleRequestError,
@@ -335,19 +342,29 @@ class _OpContext:
         )
 
 
-async def _async_bound_user_ok(hass: HomeAssistant, user_id: str | None) -> bool:
-    """Whether the user a secret is bound to may still act.
+async def _async_bound_user_ok(
+    hass: HomeAssistant, user_id: str | None, request: Request
+) -> bool:
+    """Whether the user a secret is bound to may still act, on this request.
 
     A secret outlives Home Assistant's own tokens, so this is where a
     disabled or deleted user loses the devices they paired: the HMAC still
     verifies, but the request is refused. An unbound entry (paired before
     user binding, not yet re-provisioned) passes; there is no user to check.
     The lookup is an in-memory dictionary read, not I/O.
+
+    The rest is Home Assistant's own check for its tokens
+    (`async_user_not_allowed_do_auth`): the user must be active, and a user
+    marked local only is refused unless the request comes from the local
+    network and not through Home Assistant Cloud. A signed request runs as
+    that user, so it gets no further than the user's own token would.
     """
     if user_id is None:
         return True
     user = await hass.auth.async_get_user(user_id)
-    return user is not None and user.is_active
+    if user is None:
+        return False
+    return async_user_not_allowed_do_auth(hass, user, request) is None
 
 
 def _log_signed_request_rejected(
@@ -424,9 +441,10 @@ class WAActionView(HomeAssistantView):
             # Race with deletion between validate and dispatch, or storage
             # corruption — either way, treat as unknown.
             return Response(status=401, text="Unauthorized")
-        if not await _async_bound_user_ok(self._hass, secret_entry.user_id):
+        if not await _async_bound_user_ok(self._hass, secret_entry.user_id, request):
             _LOGGER.debug(
-                "WA request refused (v2/action): bound user of %s is disabled or gone",
+                "WA request refused (v2/action): bound user of %s is disabled, gone, "
+                "or local only on a remote request",
                 validated.watch_id,
             )
             return Response(status=401, text="Unauthorized")
@@ -519,9 +537,10 @@ class WADeltaView(HomeAssistantView):
         secret_entry = domain_data.widget_secret_store.get(validated.watch_id)
         if secret_entry is None or secret_entry.secret_bytes is None:
             return Response(status=401, text="Unauthorized")
-        if not await _async_bound_user_ok(self._hass, secret_entry.user_id):
+        if not await _async_bound_user_ok(self._hass, secret_entry.user_id, request):
             _LOGGER.debug(
-                "WA request refused (v2/delta): bound user of %s is disabled or gone",
+                "WA request refused (v2/delta): bound user of %s is disabled, gone, "
+                "or local only on a remote request",
                 validated.watch_id,
             )
             return Response(status=401, text="Unauthorized")
@@ -1431,7 +1450,15 @@ async def _remote_command_hold_loop(
 
     Every repeat carries the context of the request that started the hold,
     so the whole hold is one user's action.
+
+    On the way out it removes its own entry from ``holds``, and only its
+    own. A second ``hold_start`` for the same entity cancels this task and
+    files the new one under the same key before this ``finally`` runs, so
+    removing whatever sits there would drop the new hold: ``hold_stop`` would
+    then find nothing to cancel and the new hold would repeat until the
+    timeout.
     """
+    this_task = asyncio.current_task()
     try:
         elapsed = 0.0
         while elapsed < _REMOTE_HOLD_TIMEOUT_SECONDS:
@@ -1450,7 +1477,8 @@ async def _remote_command_hold_loop(
     except asyncio.CancelledError:
         pass
     finally:
-        holds.pop(entity_id, None)
+        if holds.get(entity_id) is this_task:
+            del holds[entity_id]
 
 
 def _resolve_companion_target(
@@ -2293,9 +2321,14 @@ async def _op_verify_identity(ctx: _OpContext) -> Response:
 async def _op_update_metadata(ctx: _OpContext) -> Response:
     """HMAC-signed metadata refresh for an already-registered watch.
 
-    Body: `{app_version?, app_build?, owner_iphone_id?, device_name?,
-    screen_size?}` — all optional strings; omitted/empty fields are left
-    unchanged.
+    Body: `{app_version?, app_build?, device_name?, screen_size?}` — all
+    optional strings; omitted/empty fields are left unchanged.
+
+    An `owner_iphone_id` in the body, which older apps still send, is
+    ignored and the stored one kept. There is no owner phone any more, and a
+    signer that could name one could name another person's iPhone and, while
+    its own entry is bound to no user, be bound to that person's user
+    through it. So this op never changes who a device runs as.
 
     This exists so a registered watch never needs the HA bearer token to keep
     its diagnostic sensors current. The bearer-authed `register_secret` path
@@ -2326,7 +2359,6 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
         ctx.watch_id,
         app_version=_clean("app_version"),
         app_build=_clean("app_build"),
-        owner_iphone_id=_clean("owner_iphone_id"),
         device_name=device_name,
         screen_size=_clean("screen_size"),
     )
@@ -2334,10 +2366,6 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
         # Entry vanished between HMAC validation and dispatch (concurrent
         # removal). Signed 410 tells the watch its registration is gone.
         return ctx.signed_json({"ok": False, "error": "not registered"}, status=410)
-
-    # HMAC carries no user, so this op cannot bind on its own; but a watch
-    # that just reported its owner can take the owner's user.
-    ctx.domain_data.widget_secret_store.inherit_owner_user(ctx.watch_id)
 
     # Same registry propagation as the register_secret view: surface a renamed
     # watch immediately instead of waiting for the next HA restart. Manual
@@ -2757,11 +2785,15 @@ class WARegisterSecretView(HomeAssistantView):
             )
         # An iPhone re-registers on every app update; its watches never
         # re-send a bearer registration once they hold a secret. Carry the
-        # user across so a watch paired before binding is bound through its
-        # owner, and a watch registered under an already-bound owner inherits.
+        # bearer's user across so a watch paired before binding is bound
+        # through its owner. Every entry this touches is bound to the
+        # bearer's own user and no one else's: the registered entry by
+        # `register()`, and watches that named this id by
+        # `bind_owned_watches`. An entry registered without a user stays
+        # unbound; it never takes the user of the iPhone it names, since
+        # that id is only the registering client's word.
         if user_id is not None:
             domain_data.widget_secret_store.bind_owned_watches(watch_id, user_id)
-        domain_data.widget_secret_store.inherit_owner_user(watch_id)
         # Propagate the freshly-reported `device_name` to HA's device registry
         # immediately so the user sees their watch renamed from "Watch
         # DD2509D8" → "Jesse's Apple Watch" without waiting for the next HA
@@ -2979,8 +3011,11 @@ class WAPairRedeemView(HomeAssistantView):
     In order: the fields are checked (400, the shared field codes); the
     offer is found (404 `unknown_offer`, also for one already spent or
     cancelled) and must not have run out (410 `expired`); the box must open
-    (400 `bad_box`); a `device_id` bound to another user is refused unless
-    the admin chose Replace on the offer (409 `bound_to_other_user`). Then
+    (400 `bad_box`). The offer is not tied to a device id, so a `device_id`
+    already here is checked: one that is not an iPhone is refused even with
+    Replace (409 `not_an_iphone`); an iPhone bound to no user (409
+    `unbound_needs_replace`) or to another user (409 `bound_to_other_user`)
+    is refused unless the admin chose Replace on the offer. Then
     the secret is stored with the iPhone label, bound to the offer's user,
     by the same write a code confirm makes (`pairing_ws.store_paired_device`),
     and the offer is spent. A refused redeem leaves the offer open.
@@ -3066,7 +3101,35 @@ class WAPairRedeemView(HomeAssistantView):
                 400, "bad_box", f"The sealed key must be {PAIRED_SECRET_BYTES} bytes."
             )
 
+        # The QR code is not tied to a device id; the phone names its own. So
+        # an id that is already here is only taken over when it is an iPhone
+        # and the admin meant it: the same person's iPhone pairing again, or
+        # any other with Replace ticked. Replace means "this iPhone was paired
+        # for someone else", never "any device", so a watch is refused even
+        # then; it would be re-keyed and turned into an iPhone.
         existing = secret_store.get(device_id)
+        if existing is not None and existing.label != LABEL_IPHONE_SELF_PROVISION:
+            _LOGGER.warning(
+                "Refused QR redeem for watch_id=%s: the id belongs to a watch", device_id
+            )
+            return self._refuse(
+                409,
+                "not_an_iphone",
+                "This device id belongs to a paired watch, not an iPhone, so it "
+                "cannot be paired as one. Replace does not change that.",
+            )
+        if existing is not None and existing.user_id is None and not offer.replace:
+            # Paired before devices were tied to a person: nothing says whose
+            # it is, so only an admin's explicit Replace takes it over.
+            _LOGGER.warning(
+                "Refused QR redeem for watch_id=%s: paired for no one", device_id
+            )
+            return self._refuse(
+                409,
+                "unbound_needs_replace",
+                "This iPhone was paired before devices belonged to a person. Ask "
+                "an admin to show a QR code with Replace ticked.",
+            )
         if (
             existing is not None
             and existing.user_id is not None

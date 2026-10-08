@@ -10,7 +10,7 @@ from pathlib import Path
 import voluptuous as vol
 
 from homeassistant import loader
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import (
     HomeAssistant,
@@ -681,6 +681,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     await notification_store.async_load()
     widget_secret_store = WidgetSecretStore(hass)
     await widget_secret_store.async_load()
+    # The secret store decides whether a device exists. A poll from a device
+    # removed while its request was in flight opens no session and gets no body.
+    coordinator.attach_device_check(
+        lambda watch_id: widget_secret_store.get(watch_id) is not None
+    )
     # Step 6, once per install: an iPhone's push token filed under its
     # companion watch moves to the phone's own id, where it now lives and
     # where routing pairs it with the watches of the same user.
@@ -1262,16 +1267,21 @@ async def async_remove_config_entry_device(
     silently reverts after a reload. Strip the corresponding entries here so
     UI removals actually stick (and so leftover dev/test pairings can be
     cleaned up without editing storage files by hand).
-    """
-    domain_data: WristAssistantData | None = hass.data.get(DOMAIN)
-    if domain_data is None:
-        return True
 
+    Removal is refused while the integration is not loaded (disabled, unloaded,
+    or waiting to retry setup). The stores are not in memory then, so nothing
+    could be torn down: HA would drop the registry device, but the secret,
+    push tokens, watch config, logs and voices would stay on disk, the next
+    load would bring the device back, and its key would still sign requests.
+    HA tells the user only "Failed to remove device entry, rejected by
+    integration", so the log says why and what to do.
+    """
     # Watch and iPhone devices use the (DOMAIN, "watch_<watch_id>") identifier
     # — see widget_secret_store._make_device_info. The service ("Delta
     # Coordinator") device uses (DOMAIN, entry.entry_id) instead; we leave
     # those untouched. Multiple identifiers are theoretically possible, so
     # iterate rather than assume one.
+    watch_ids: list[str] = []
     for domain_str, ident in device_entry.identifiers:
         if domain_str != DOMAIN:
             continue
@@ -1285,6 +1295,31 @@ async def async_remove_config_entry_device(
         # re-provisioned back into existence.
         if watch_id == LIBRARY_OWNER_ID:
             continue
+        watch_ids.append(watch_id)
+
+    if not watch_ids:
+        # Nothing of ours to tear down (the service device, say).
+        return True
+
+    domain_data: WristAssistantData | None = hass.data.get(DOMAIN)
+    if domain_data is None or entry.state is not ConfigEntryState.LOADED:
+        _LOGGER.warning(
+            "Refused to remove device %s (%s): the Wrist Assistant integration "
+            "is not loaded (state: %s), so its pairing secret, push tokens and "
+            "watch settings cannot be deleted and the device would come back "
+            "with its key still valid. Enable the integration and wait for it "
+            "to finish loading, then remove the device again",
+            device_entry.name_by_user or device_entry.name or device_entry.id,
+            ", ".join(watch_ids),
+            getattr(entry.state, "value", entry.state),
+        )
+        return False
+
+    for watch_id in watch_ids:
+        # Close its live session first: the parked poll ends without a body,
+        # and no session listener can bring its entities (and with them the
+        # registry device) back once HA deletes them below.
+        domain_data.coordinator.drop_session(watch_id)
         domain_data.widget_secret_store.remove(watch_id)
         domain_data.notification_store.remove(watch_id)
         # Same teardown the panel's Forget action performs. The device's

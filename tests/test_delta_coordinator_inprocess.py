@@ -1685,3 +1685,139 @@ def test_the_question_neither_wakes_nor_holds_a_poll(coordinator) -> None:
         assert status == 200 and body["voices_wanted"] is True
 
     asyncio.run(run())
+
+
+# ── dropping a removed device's session ──────────────────────────────────
+
+
+def test_dropping_a_removed_device_ends_its_parked_poll_without_a_body(coordinator) -> None:
+    """Both removal paths (HA's device page and the panel's Forget) drop the
+    device's session before its secret goes. The parked poll ends with a
+    bodiless 204, the device leaves `real_sessions` at once rather than after
+    SESSION_TTL, and nothing the coordinator kept for it survives. The watch
+    config forget that follows a removal saves and wakes the owner; with the
+    waiter already gone it wakes nobody, so the removed device is never handed
+    one more reply with a body."""
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    store.async_add_listener(coord.watch_config_changed)
+    fired: list[str] = []
+    coord.async_add_session_listener(lambda: fired.append("sessions"))
+    ent = "wrist_assistant.drop1"
+    hass.states.set(ent, "off")
+    _device_put(store, "pages")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent], complications_token=0)
+        c0 = body["next_cursor"]
+        held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=10))
+        await asyncio.sleep(0.05)
+        assert "w1" in coord._waiters and "w1" in coord.real_sessions
+        assert "w1" in coord._watch_config_sent
+        coord._token_notified["w1"] = 3
+        coord._http_actions_sent["w1"] = 1
+        coord._client_certificate_sent["w1"] = 1
+        fired.clear()
+
+        assert coord.drop_session("w1") is True
+        # What the removal does next: the forget wakes the owner.
+        store.forget_owner("w1")
+
+        status, body = await asyncio.wait_for(held, timeout=2)
+        assert status == 204 and body is None
+        assert "w1" not in coord.real_sessions
+        assert fired == ["sessions"]
+        for kept in (
+            coord._sessions,
+            coord._waiters,
+            coord._last_poll_at,
+            coord._token_notified,
+            coord._watch_config_sent,
+            coord._http_actions_sent,
+            coord._client_certificate_sent,
+        ):
+            assert "w1" not in kept
+        assert all("w1" not in watchers for watchers in coord._entity_to_watchers.values())
+        assert "w1" not in coord._domain_watchers
+        assert "w1" not in coord._wake_all_watchers
+        assert coord.is_polling("w1") is False
+
+        # A state change now wakes nothing and recreates nothing.
+        _change(hass, coord, ent, "on")
+        assert "w1" not in coord._sessions
+
+    asyncio.run(run())
+
+
+def test_dropping_a_device_with_no_session_is_quiet(coordinator) -> None:
+    """An iPhone never polls, and a watch may not have polled since a restart.
+    Dropping either raises nothing and fires no session listener."""
+    _module, _hass, coord = coordinator
+    fired: list[str] = []
+    coord.async_add_session_listener(lambda: fired.append("sessions"))
+    assert coord.drop_session("iphone:never-polled") is False
+    assert fired == []
+
+
+def test_dropping_one_device_leaves_another_s_poll_parked(coordinator) -> None:
+    module, hass, coord = coordinator
+    ent = "wrist_assistant.drop2"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        _status, body = await _poll(coord, watch_id="w1", entities=[ent])
+        c1 = body["next_cursor"]
+        _status, body = await _poll(coord, watch_id="w2", entities=[ent])
+        c2 = body["next_cursor"]
+        held_1 = asyncio.create_task(_poll(coord, watch_id="w1", since=c1, entities=[ent], timeout=10))
+        held_2 = asyncio.create_task(_poll(coord, watch_id="w2", since=c2, entities=[ent], timeout=10))
+        await asyncio.sleep(0.05)
+
+        coord.drop_session("w1")
+        status, body = await asyncio.wait_for(held_1, timeout=2)
+        assert status == 204 and body is None
+        assert not held_2.done()
+        assert "w2" in coord._waiters and "w2" in coord.real_sessions
+
+        _change(hass, coord, ent, "on")
+        status, body = await asyncio.wait_for(held_2, timeout=2)
+        assert status == 200
+        assert [e["entity_id"] for e in body["events"]] == [ent]
+
+    asyncio.run(run())
+
+
+def test_a_poll_from_a_device_with_no_secret_opens_no_session(coordinator) -> None:
+    """A request authenticates before it reaches the coordinator, and the view
+    awaits a user check in between. A device removed during that await must
+    not get a fresh session (and with it, entities and a registry device) or
+    a reply with a body."""
+    _module, hass, coord = coordinator
+    known = {"w1"}
+    coord.attach_device_check(lambda watch_id: watch_id in known)
+    fired: list[str] = []
+    coord.async_add_session_listener(lambda: fired.append("sessions"))
+    ent = "wrist_assistant.drop3"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        assert status == 200 and body is not None
+        coord.drop_session("w1")
+        known.discard("w1")
+        fired.clear()
+
+        status, body = await _poll(coord, entities=[ent])
+        assert status == 204 and body is None
+        assert "w1" not in coord._sessions
+        assert "w1" not in coord._last_poll_at
+        assert fired == []
+
+    asyncio.run(run())
+
+
+def test_setup_wires_the_secret_store_in_as_the_device_check() -> None:
+    init = (_PKG_DIR / "__init__.py").read_text()
+    assert "coordinator.attach_device_check(" in init
+    assert "widget_secret_store.get(watch_id) is not None" in init

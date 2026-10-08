@@ -15,6 +15,11 @@ Covered:
 * ``complications_create`` from a still-forgotten owner succeeds.
 * The version view answers 503 while the config entry is reloading.
 * ``register_secret`` refuses the Library's owner id.
+* A signed request whose bound user is local only is refused the way Home
+  Assistant refuses that user's own token from outside the home, and both
+  signed views hand the request to that check.
+* A remote hold that is preempted by a second ``hold_start`` leaves the new
+  hold in place, so ``hold_stop`` still stops it.
 """
 
 from __future__ import annotations
@@ -233,3 +238,251 @@ def test_register_secret_refuses_the_library_owner_id(env) -> None:
     )
     assert reply.status == 400
     assert "reserved" in reply.body["message"]
+
+
+# ── loading single definitions ───────────────────────────────────────────
+
+
+def _extract(names: set[str], namespace: dict[str, Any]) -> dict[str, Any]:
+    """Functions, classes and plain assignments out of ``wa_v2_views.py`` by
+    name, run in ``namespace``."""
+    tree = ast.parse(_MODULE.read_text(), filename=str(_MODULE))
+    wanted = [
+        node
+        for node in tree.body
+        if (
+            isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name in names
+        )
+        or (
+            isinstance(node, ast.Assign)
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id in names
+        )
+    ]
+    found = {
+        node.targets[0].id if isinstance(node, ast.Assign) else node.name for node in wanted
+    }
+    assert found == names, names ^ found
+    code = compile(
+        ast.Module(body=wanted, type_ignores=[]),
+        str(_MODULE),
+        "exec",
+        flags=__future__.annotations.compiler_flag,
+        dont_inherit=True,
+    )
+    exec(code, namespace)  # noqa: S102
+    return namespace
+
+
+# ── a local-only bound user ──────────────────────────────────────────────
+
+
+class _HAUser:
+    def __init__(self, *, is_active: bool = True, local_only: bool = False) -> None:
+        self.is_active = is_active
+        self.local_only = local_only
+
+
+class _AuthCheck:
+    """Stands in for Home Assistant's ``async_user_not_allowed_do_auth``,
+    with its rules (inactive, then local only from a non-local address or
+    through the cloud), and notes every call it gets."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[Any, Any, Any]] = []
+        self.cloud = False
+
+    def __call__(self, hass: Any, user: Any, request: Any = None) -> str | None:
+        self.calls.append((hass, user, request))
+        if not user.is_active:
+            return "User is not active"
+        if not user.local_only:
+            return None
+        if self.cloud:
+            return "User is local only"
+        if request.remote.startswith(("192.168.", "127.")):
+            return None
+        return "User cannot authenticate remotely"
+
+
+@pytest.fixture
+def bound_user():
+    users: dict[str, _HAUser] = {}
+
+    async def async_get_user(user_id: str) -> _HAUser | None:
+        return users.get(user_id)
+
+    check = _AuthCheck()
+    namespace = _extract(
+        {"_async_bound_user_ok"},
+        {
+            "HomeAssistant": object,
+            "Request": object,
+            "async_user_not_allowed_do_auth": check,
+        },
+    )
+    hass = types.SimpleNamespace(auth=types.SimpleNamespace(async_get_user=async_get_user))
+    yield types.SimpleNamespace(
+        ok=namespace["_async_bound_user_ok"], users=users, check=check, hass=hass
+    )
+
+
+def _bound_ok(env, user_id: str | None, remote: str = "203.0.113.9") -> bool:
+    request = types.SimpleNamespace(remote=remote)
+    return asyncio.run(env.ok(env.hass, user_id, request))
+
+
+def test_a_local_only_bound_user_is_refused_from_outside_the_home(bound_user) -> None:
+    bound_user.users["kid"] = _HAUser(local_only=True)
+    assert _bound_ok(bound_user, "kid", remote="203.0.113.9") is False
+    assert _bound_ok(bound_user, "kid", remote="192.168.1.40") is True
+    # Through the cloud the address can look local; it is refused all the same.
+    bound_user.check.cloud = True
+    assert _bound_ok(bound_user, "kid", remote="127.0.0.1") is False
+
+
+def test_the_request_reaches_home_assistant_s_check(bound_user) -> None:
+    bound_user.users["alice"] = _HAUser()
+    request = types.SimpleNamespace(remote="203.0.113.9")
+    assert asyncio.run(bound_user.ok(bound_user.hass, "alice", request)) is True
+    assert bound_user.check.calls == [(bound_user.hass, bound_user.users["alice"], request)]
+
+
+def test_a_disabled_or_missing_user_is_refused_and_an_unbound_entry_passes(bound_user) -> None:
+    bound_user.users["gone-quiet"] = _HAUser(is_active=False)
+    assert _bound_ok(bound_user, "gone-quiet", remote="192.168.1.40") is False
+    assert _bound_ok(bound_user, "deleted") is False
+    assert _bound_ok(bound_user, None) is True
+
+
+@pytest.mark.parametrize("view", ["WAActionView", "WADeltaView"])
+def test_both_signed_views_pass_the_request_to_the_user_check(view) -> None:
+    tree = ast.parse(_MODULE.read_text(), filename=str(_MODULE))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == view)
+    calls = [
+        node
+        for node in ast.walk(cls)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_async_bound_user_ok"
+    ]
+    assert len(calls) == 1
+    args = calls[0].args
+    assert len(args) == 3 and isinstance(args[2], ast.Name) and args[2].id == "request"
+
+
+def test_the_user_check_is_home_assistant_s_own() -> None:
+    source = _MODULE.read_text()
+    assert (
+        "from homeassistant.components.http.auth_util import async_user_not_allowed_do_auth"
+        in source
+    )
+    assert "from homeassistant.components.http.auth import async_user_not_allowed_do_auth" in source
+
+
+# ── remote command holds ─────────────────────────────────────────────────
+
+
+ENTITY = "remote.living_room"
+
+
+class _HoldCtx:
+    def __init__(self, hass: Any, payload: dict) -> None:
+        self.hass = hass
+        self.payload = payload
+
+    def new_context(self) -> object:
+        return object()
+
+    def signed_json(self, payload: dict, status: int = 200) -> _Response:
+        return _Response(status=status, body=payload)
+
+
+def _hold_env(timeout: float = 10.0) -> tuple[Any, list, Any]:
+    namespace = _extract(
+        {
+            "_op_remote_command",
+            "_remote_command_holds",
+            "_remote_command_hold_loop",
+            "_REMOTE_HOLDS_KEY",
+            "_REMOTE_HOLD_TIMEOUT_SECONDS",
+        },
+        {
+            "asyncio": asyncio,
+            "Any": Any,
+            "Response": _Response,
+            "DOMAIN": DOMAIN,
+            "HomeAssistant": object,
+            "Context": object,
+            "_OpContext": object,
+        },
+    )
+    namespace["_REMOTE_HOLD_TIMEOUT_SECONDS"] = timeout
+    sent: list[str] = []
+
+    async def async_call(domain: str, service: str, data: dict, context: Any = None) -> None:
+        sent.append(data["command"])
+
+    hass = types.SimpleNamespace(
+        data={},
+        services=types.SimpleNamespace(async_call=async_call),
+        async_create_task=lambda coro: asyncio.get_running_loop().create_task(coro),
+    )
+    return namespace, sent, hass
+
+
+async def _settle() -> None:
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+
+def test_a_preempted_hold_leaves_the_new_hold_for_hold_stop_to_stop() -> None:
+    namespace, sent, hass = _hold_env()
+    op = namespace["_op_remote_command"]
+
+    async def scenario() -> None:
+        start = {"entity_id": ENTITY, "action": "hold_start", "hold_secs": 0.05}
+        assert (await op(_HoldCtx(hass, {**start, "command": "up"}))).status == 200
+        await _settle()
+        holds = namespace["_remote_command_holds"](hass)
+        first = holds[ENTITY]
+
+        await op(_HoldCtx(hass, {**start, "command": "down"}))
+        second = holds[ENTITY]
+        assert second is not first
+        await _settle()
+        # The first hold has ended, and its clean-up left the second in place.
+        assert first.done()
+        assert holds.get(ENTITY) is second
+
+        await op(_HoldCtx(hass, {"entity_id": ENTITY, "action": "hold_stop"}))
+        assert ENTITY not in holds
+        await _settle()
+        assert second.done()
+        count = len(sent)
+        await asyncio.sleep(0.15)
+        assert len(sent) == count, "the second hold kept repeating after hold_stop"
+        assert set(sent) == {"up", "down"}
+
+    asyncio.run(scenario())
+
+
+def test_a_hold_that_runs_out_removes_its_own_entry() -> None:
+    namespace, sent, hass = _hold_env(timeout=0.1)
+    op = namespace["_op_remote_command"]
+
+    async def scenario() -> None:
+        await op(
+            _HoldCtx(
+                hass,
+                {"entity_id": ENTITY, "action": "hold_start", "command": "up", "hold_secs": 0.05},
+            )
+        )
+        holds = namespace["_remote_command_holds"](hass)
+        task = holds[ENTITY]
+        await asyncio.wait_for(task, timeout=2)
+        assert ENTITY not in holds
+        assert sent == ["up", "up"]
+
+    asyncio.run(scenario())

@@ -43,9 +43,44 @@ DOMAIN = "wrist_assistant"
 
 
 class _User:
-    def __init__(self, user_id: str, *, is_admin: bool = False) -> None:
+    def __init__(
+        self,
+        user_id: str,
+        *,
+        is_admin: bool = False,
+        is_active: bool = True,
+        system_generated: bool = False,
+    ) -> None:
         self.id = user_id
         self.is_admin = is_admin
+        self.is_active = is_active
+        self.system_generated = system_generated
+
+
+ADMIN = "user-admin"
+MEMBER = "user-member"
+RETIRED = "user-retired"
+SUPERVISOR = "user-supervisor"
+
+
+class _Auth:
+    """The few users ``hass.auth.async_get_user`` knows."""
+
+    def __init__(self) -> None:
+        self.users = {
+            u.id: u
+            for u in (
+                _User(USER, is_admin=True),
+                _User(OTHER_USER),
+                _User(ADMIN, is_admin=True),
+                _User(MEMBER),
+                _User(RETIRED, is_active=False),
+                _User(SUPERVISOR, is_admin=True, system_generated=True),
+            )
+        }
+
+    async def async_get_user(self, user_id: str) -> _User | None:
+        return self.users.get(user_id)
 
 
 class _Connection:
@@ -85,7 +120,7 @@ def env(tmp_path):
         ws = pkg.load("client_certificate_ws")
         store = new_store(pkg, tmp_path)
         domain = types.SimpleNamespace(client_certificate_store=store)
-        hass = types.SimpleNamespace(data={DOMAIN: domain})
+        hass = types.SimpleNamespace(data={DOMAIN: domain}, auth=_Auth())
         changes: list[str] = []
         store.async_add_listener(changes.append)
         yield types.SimpleNamespace(
@@ -94,8 +129,8 @@ def env(tmp_path):
         )
 
 
-def _call(env, command, user: str | None = USER, **msg) -> _Connection:
-    connection = _Connection(_User(user) if user is not None else None)
+def _call(env, command, user: str | None = USER, *, admin: bool = False, **msg) -> _Connection:
+    connection = _Connection(_User(user, is_admin=admin) if user is not None else None)
     outcome = command(env.hass, connection, {"id": 1, **msg})
     if asyncio.iscoroutine(outcome):
         asyncio.run(outcome)
@@ -378,3 +413,87 @@ def test_the_panel_replaces_a_phone_s_certificate(env) -> None:
     status = _ok(env, env.ws.ws_client_certificate_put, **_upload(other))
     assert status["revision"] == 2 and status["fingerprint"] == _fp(other)
     assert status["source"] == "panel"
+
+
+# ── an administrator acting for another user ─────────────────────────────
+
+
+def test_an_admin_stores_a_certificate_a_member_s_watch_fetches(env) -> None:
+    status = _ok(
+        env, env.ws.ws_client_certificate_put, user=ADMIN, admin=True, user_id=MEMBER, **_upload()
+    )
+    assert status["present"] is True and status["revision"] == 1 and status["source"] == "panel"
+    # Stored under the member, not the administrator.
+    assert env.store.get(MEMBER).certificate.pkcs12 == make_p12()
+    assert env.store.get(ADMIN) is None
+    # The change names the member, which is what wakes their devices.
+    assert env.changes == [MEMBER]
+    # A watch bound to the member fetches it, sealed with its own secret.
+    reply = call(
+        env, "_op_client_certificate_get", {}, watch_id=WATCH, secret=WATCH_SECRET, user_id=MEMBER
+    )
+    assert reply.status == 200 and reply.body["present"] is True
+    assert reply.body["fingerprint"] == _fp(make_p12())
+    opened = env.pkg.sealed.open_box(
+        WATCH_SECRET, WATCH, "client_certificate_get", reply.body["sealed"]
+    )
+    assert json.loads(opened) == cert_body()
+    # A device of the administrator still has none.
+    mine = call(
+        env, "_op_client_certificate_get", {}, watch_id=WATCH, secret=WATCH_SECRET, user_id=ADMIN
+    )
+    assert mine.body == {"ok": True, "revision": 0, "present": False}
+
+
+def test_an_admin_reads_and_removes_a_member_s_certificate(env) -> None:
+    stored = _ok(
+        env, env.ws.ws_client_certificate_put, user=ADMIN, admin=True, user_id=MEMBER, **_upload()
+    )
+    assert _ok(env, env.ws.ws_client_certificate_status, user=ADMIN, admin=True) == EMPTY
+    assert (
+        _ok(env, env.ws.ws_client_certificate_status, user=ADMIN, admin=True, user_id=MEMBER)
+        == stored
+    )
+    # The member sees the same record as their own.
+    assert _ok(env, env.ws.ws_client_certificate_status, user=MEMBER) == stored
+    removed = _ok(
+        env, env.ws.ws_client_certificate_delete, user=ADMIN, admin=True, user_id=MEMBER
+    )
+    assert removed["present"] is False and removed["revision"] == 2
+    assert env.store.get(MEMBER).present is False
+    assert env.changes == [MEMBER, MEMBER]
+
+
+def test_naming_yourself_is_the_same_as_naming_nobody(env) -> None:
+    status = _ok(env, env.ws.ws_client_certificate_put, user=MEMBER, user_id=MEMBER, **_upload())
+    assert status["present"] is True and env.store.get(MEMBER).present
+    assert env.changes == [MEMBER]
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["ws_client_certificate_status", "ws_client_certificate_put", "ws_client_certificate_delete"],
+)
+def test_a_user_who_is_not_an_admin_cannot_name_another_user(env, command) -> None:
+    _ok(env, env.ws.ws_client_certificate_put, user=ADMIN, admin=True, **_upload())
+    kept = env.store.get(ADMIN)
+    code, message = _error(
+        env, getattr(env.ws, command), user=MEMBER, user_id=ADMIN, **_upload(make_p12(common_name="x"))
+    )
+    assert code == "unauthorized" and "administrator" in message
+    assert env.store.get(ADMIN) is kept and env.store.get(MEMBER) is None
+    assert env.changes == [ADMIN]
+
+
+@pytest.mark.parametrize("target", ["user-nobody", RETIRED, SUPERVISOR])
+@pytest.mark.parametrize(
+    "command",
+    ["ws_client_certificate_status", "ws_client_certificate_put", "ws_client_certificate_delete"],
+)
+def test_an_unknown_inactive_or_system_user_is_refused(env, command, target) -> None:
+    code, _message = _error(
+        env, getattr(env.ws, command), user=ADMIN, admin=True, user_id=target, **_upload()
+    )
+    assert code == "invalid_user"
+    assert env.store.get(target) is None and env.store.get(ADMIN) is None
+    assert env.changes == []

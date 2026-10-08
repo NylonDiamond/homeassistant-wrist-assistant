@@ -562,14 +562,72 @@ def test_replace_on_the_offer_takes_the_phone_over(env, caplog) -> None:
     assert any("from user root to user chen" in r.getMessage() for r in caplog.records)
 
 
-@pytest.mark.parametrize("bound_to", ["chen", None])
-def test_the_same_person_s_or_an_unbound_phone_needs_no_replace(env, bound_to) -> None:
+def test_the_same_person_s_phone_needs_no_replace(env) -> None:
     old = base64.b64encode(b"o" * 32).decode()
-    env.penv.secret_store.register(PHONE, old, "iphone-self-provision", user_id=bound_to)
+    env.penv.secret_store.register(PHONE, old, "iphone-self-provision", user_id="chen")
     reply = _redeem(env, _redeem_body(env, _offer(env)))
     assert reply.status == 200
     assert env.penv.secret_store.get(PHONE).user_id == "chen"
     assert env.penv.logbook[-1][0] == "reprovisioned"
+
+
+def test_a_phone_bound_to_no_one_needs_replace(env) -> None:
+    """Paired before devices were tied to a person: nothing says it is the
+    offer's person's, so a plain QR code does not take it over."""
+    old = base64.b64encode(b"o" * 32).decode()
+    env.penv.secret_store.register(PHONE, old, "iphone-self-provision")
+    offer = _offer(env)
+    reply = _redeem(env, _redeem_body(env, offer))
+    assert (reply.status, reply.body["error"]) == (409, "unbound_needs_replace")
+    assert "Replace" in reply.body["message"]
+    entry = env.penv.secret_store.get(PHONE)
+    assert (entry.secret_b64, entry.user_id) == (old, None)
+    assert env.penv.offer_store.state_of(offer.offer_id)[0] == "open"
+
+    reply = _redeem(env, _redeem_body(env, _offer(env, replace=True)))
+    assert reply.status == 200, reply.body
+    entry = env.penv.secret_store.get(PHONE)
+    assert (base64.b64decode(entry.secret_b64), entry.user_id) == (NEW_SECRET, "chen")
+
+
+@pytest.mark.parametrize("replace", [False, True], ids=["plain", "replace"])
+@pytest.mark.parametrize("bound_to", ["root", "chen", None], ids=["other", "same", "nobody"])
+@pytest.mark.parametrize("label", ["watch-self-provision", "watch-code-pair", None])
+def test_a_watch_s_id_is_never_taken_over_as_an_iphone(env, label, bound_to, replace) -> None:
+    """The QR code is not tied to a device id, so a redeemer could name a
+    watch's. Replace means another person's iPhone, never any device."""
+    old = base64.b64encode(b"o" * 32).decode()
+    env.penv.secret_store.register(PHONE, old, label, user_id=bound_to)
+    offer = _offer(env, replace=replace)
+    reply = _redeem(env, _redeem_body(env, offer))
+    assert (reply.status, reply.body["ok"], reply.body["error"]) == (409, False, "not_an_iphone")
+    assert "watch" in reply.body["message"]
+    entry = env.penv.secret_store.get(PHONE)
+    assert (entry.secret_b64, entry.label, entry.user_id) == (old, label, bound_to)
+    assert env.penv.offer_store.state_of(offer.offer_id)[0] == "open"
+    assert env.penv.logbook == []
+
+
+def test_a_new_id_does_not_collect_the_old_watches_of_a_forgotten_phone(env) -> None:
+    """Watches that named a phone are bound through it only while that phone
+    is still here; a redeem may name any id it likes."""
+    env.penv.secret_store.register(
+        "old-watch", base64.b64encode(b"w" * 32).decode(), "watch-self-provision",
+        owner_iphone_id=PHONE,
+    )
+    assert _redeem(env, _redeem_body(env, _offer(env))).status == 200
+    assert env.penv.secret_store.get("old-watch").user_id is None
+
+
+def test_replacing_a_phone_that_was_here_binds_the_watches_that_named_it(env) -> None:
+    old = base64.b64encode(b"o" * 32).decode()
+    env.penv.secret_store.register(PHONE, old, "iphone-self-provision")
+    env.penv.secret_store.register(
+        "old-watch", base64.b64encode(b"w" * 32).decode(), "watch-self-provision",
+        owner_iphone_id=PHONE,
+    )
+    assert _redeem(env, _redeem_body(env, _offer(env, replace=True))).status == 200
+    assert env.penv.secret_store.get("old-watch").user_id == "chen"
 
 
 @pytest.mark.parametrize(

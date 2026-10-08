@@ -1608,6 +1608,94 @@ def test_never_acked_is_none_and_an_ack_of_zero_is_a_number(mod):
     assert _new(mod).applied_token(OWNER) == 0
 
 
+def test_an_ack_above_the_owner_token_is_never_proof_of_a_pull(mod):
+    """Store tokens carry no epoch. After Home Assistant is restored from a
+    backup, a device still reports the token it reached before, which can sit
+    above every token this store hands out. Kept, that stale ack read as
+    "up to date" and as the move's proof before the device pulled anything.
+    """
+    store = _new(mod)
+    seen = []
+    store.async_add_listener(seen.append)
+    store._token = 299
+    store.save(OWNER, _doc(slotIndex=0), base_revision=None, updated_by="t")
+    assert store.owner_token(OWNER) == 300
+    assert store.set_applied_token(OWNER, 300) is True
+    acks = len(seen)
+
+    # The device reports a token from before the rewind: nothing moves and
+    # nobody is told.
+    assert store.set_applied_token(OWNER, 350) is False
+    assert store.applied_token(OWNER) == 300
+    assert len(seen) == acks
+
+    # Four new designs reach the owner: four changes wait for the device.
+    for slot in range(1, 5):
+        store.save(OWNER, _doc(slotIndex=slot), base_revision=None, updated_by="t")
+    assert store.owner_token(OWNER) == 304
+    assert store.pending_changes(OWNER) == 4
+
+    # The stale report is still not credited, now that the owner has moved.
+    assert store.set_applied_token(OWNER, 350) is False
+    assert store.applied_token(OWNER) == 300
+    assert store.pending_changes(OWNER) == 4
+    assert store.set_applied_token(OWNER, 303) is True
+    assert store.applied_token(OWNER) == 303
+    assert store.pending_changes(OWNER) == 1
+
+    # The device pulled again and acks the real token.
+    assert store.set_applied_token(OWNER, 304) is True
+    assert store.applied_token(OWNER) == 304
+    assert store.pending_changes(OWNER) == 0
+    assert _new(mod).applied_token(OWNER) == 304
+
+
+def test_an_ack_above_the_owner_token_with_none_before_stays_none(mod):
+    store = _new(mod)
+    store.save(OWNER, _doc(), base_revision=None, updated_by="t")
+    assert store.set_applied_token(OWNER, 350) is False
+    assert store.applied_token(OWNER) is None
+    assert store.pending_changes(OWNER) is None
+    # An owner with nothing stored issued no token above 0 either.
+    assert store.set_applied_token(OTHER, 5) is False
+    assert store.applied_token(OTHER) is None
+    assert store.set_applied_token(OTHER, 0) is True
+    assert store.applied_token(OTHER) == 0
+
+
+def test_a_stored_ack_above_the_owner_token_is_dropped_on_load(mod):
+    """A file whose ack outruns its records (records that would not load, or
+    a file put back by hand) must not turn into proof once new commits climb
+    past the old number."""
+    store = _new(mod)
+    store.save(OWNER, _doc(), base_revision=None, updated_by="t")
+    store.set_applied_token(OWNER, 1)
+    saved = copy.deepcopy(_FakeStore.saved)
+    saved["applied"] = {OWNER: 3, OTHER: 7}
+    _FakeStore.saved = saved
+
+    reloaded = _new(mod)
+    assert reloaded.applied_token(OWNER) is None
+    assert reloaded.applied_token(OTHER) is None
+    for slot in range(1, 4):
+        reloaded.save(OWNER, _doc(slotIndex=slot), base_revision=None, updated_by="t")
+    assert reloaded.owner_token(OWNER) == 4
+    assert reloaded.applied_token(OWNER) is None
+    assert reloaded.pending_changes(OWNER) is None
+
+
+def test_after_an_unreadable_file_no_report_reads_as_up_to_date(mod):
+    """A start that could not read the file holds nothing and saves nothing.
+    Every device then reports a token this store never issued, and none of
+    them may show as having applied what is here."""
+    _FakeStore.saved = "not an object"
+    store = _new(mod)
+    assert store._load_failed is True
+    assert store.set_applied_token(OWNER, 12) is False
+    assert store.applied_token(OWNER) is None
+    assert store.pending_changes(OWNER) is None
+
+
 def test_last_sync_is_stamped_notifies_nobody_and_survives_restart(mod):
     """The phone's only sign of life, so it has to outlive a restart.
 

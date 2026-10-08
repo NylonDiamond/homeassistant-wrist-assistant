@@ -1505,9 +1505,23 @@ def empty_document() -> dict[str, Any]:
     return {"schemaVersion": SCHEMA_VERSION, "actions": [], "globalVariables": []}
 
 
+def humanize_key(key: str) -> str:
+    """``HTTPActionVariable.humanize``: the label a device shows for a
+    variable with no prompt (``garage_message`` reads "Garage Message")."""
+    words = [w for w in key.replace("_", " ").replace("-", " ").split(" ") if w]
+    if not words:
+        return "Value"
+    return " ".join(w[:1].upper() + w[1:] for w in words)
+
+
 def _rewrite_tokens(raw: dict[str, Any], renames: dict[str, str]) -> dict[str, Any]:
-    """An incoming action with every renamed global's token rewritten in its
-    URL, header names and values, and body."""
+    """An incoming action with every renamed key rewritten: each ``{{old}}``
+    token in its URL, header names and values, and body, and the key of each
+    of its variables that carries an old name.
+
+    A renamed variable with no prompt of its own is given the label its old
+    key read as, so the person is asked the same question as before.
+    """
     if not renames:
         return raw
     action = dict(raw)
@@ -1530,6 +1544,19 @@ def _rewrite_tokens(raw: dict[str, Any], renames: dict[str, str]) -> dict[str, A
             else h
             for h in headers
         ]
+    variables = action.get("variables")
+    if isinstance(variables, list):
+        rewritten: list[Any] = []
+        for variable in variables:
+            old = trim(_string(variable.get("key"))) if isinstance(variable, dict) else ""
+            if old not in renames:
+                rewritten.append(variable)
+                continue
+            entry = {**variable, "key": renames[old]}
+            if not trim(_string(entry.get("prompt"))):
+                entry["prompt"] = humanize_key(old)
+            rewritten.append(entry)
+        action["variables"] = rewritten
     return action
 
 
@@ -1551,6 +1578,18 @@ def merge_hand_over(
       too, and is renamed the same way. Added under that key it would fill
       the stored action's token raw in place of the escaped value a person
       types, which is a change to a stored action.
+    * A new name never uses the key of a variable of an incoming action
+      either, so a renamed global cannot take over a variable the person is
+      asked for. A variable of an added action that the phone's own global of
+      the same key filled is renamed along with that global, so it is still
+      filled by it.
+    * A variable of an added action that the person is asked for (no
+      incoming global has its key) and whose key is a global in the merged
+      library is renamed too, to the first ``<key>_2`` and on that nothing
+      above uses, and its ``{{key}}`` tokens follow. Kept under its old key the
+      stored global would fill it raw, sending that global's value to the
+      added action's server in place of what the person types. A renamed
+      variable with no prompt keeps the label its old key read as.
 
     ``incoming`` must already have passed :func:`validate_document`.
     """
@@ -1571,15 +1610,38 @@ def merge_hand_over(
         for variable in Action.read(raw).variables
     }
     stored_variable_keys.discard("")
-    taken = (
-        set(stored_globals)
-        | stored_variable_keys
-        | {
-            trim(_string(g.get("key")))
-            for g in incoming.get("globalVariables", [])
-            if isinstance(g, dict)
-        }
-    )
+    incoming_global_keys = {
+        trim(_string(g.get("key")))
+        for g in incoming.get("globalVariables", [])
+        if isinstance(g, dict)
+    }
+    stored_ids = {
+        _string(a.get("id")).upper() for a in merged["actions"] if isinstance(a, dict)
+    }
+    # The actions this hand-over adds: the first of each id the library does
+    # not hold yet.
+    to_add: list[dict[str, Any]] = []
+    adding_ids: set[str] = set()
+    for raw in incoming.get("actions", []):
+        folded = _string(raw.get("id")).upper()
+        if folded in stored_ids or folded in adding_ids:
+            continue
+        adding_ids.add(folded)
+        to_add.append(raw)
+    incoming_variable_keys = {
+        trim(variable.key) for raw in to_add for variable in Action.read(raw).variables
+    }
+    incoming_variable_keys.discard("")
+    taken = set(stored_globals) | stored_variable_keys | incoming_global_keys | incoming_variable_keys
+
+    def free_name(key: str) -> str:
+        suffix = 2
+        while f"{key}_{suffix}" in taken:
+            suffix += 1
+        new_key = f"{key}_{suffix}"
+        taken.add(new_key)
+        return new_key
+
     global_ids = {_string(g.get("id")).upper() for g in merged["globalVariables"] if isinstance(g, dict)}
     renames: dict[str, str] = {}
     for raw in incoming.get("globalVariables", []):
@@ -1589,11 +1651,7 @@ def merge_hand_over(
         if key in stored_globals and stored_globals[key] == value:
             continue
         if key in stored_globals or key in stored_variable_keys:
-            suffix = 2
-            while f"{key}_{suffix}" in taken:
-                suffix += 1
-            new_key = f"{key}_{suffix}"
-            taken.add(new_key)
+            new_key = free_name(key)
             renames[key] = new_key
             entry["key"] = new_key
             stored_globals[new_key] = value
@@ -1605,16 +1663,17 @@ def merge_hand_over(
         merged["globalVariables"].append(entry)
         changed = True
 
-    stored_ids = {
-        _string(a.get("id")).upper() for a in merged["actions"] if isinstance(a, dict)
-    }
-    added = 0
-    for raw in incoming.get("actions", []):
-        folded = _string(raw.get("id")).upper()
-        if folded in stored_ids:
+    # A prompted variable of an added action that a merged global would now
+    # fill keeps prompting under a free name. ``stored_globals`` holds every
+    # global key of the merged library by now.
+    for key in sorted(incoming_variable_keys):
+        if key in incoming_global_keys or key not in stored_globals:
             continue
+        renames[key] = free_name(key)
+
+    added = 0
+    for raw in to_add:
         merged["actions"].append(_rewrite_tokens(raw, renames))
-        stored_ids.add(folded)
         added += 1
         changed = True
     return merged, added, changed
