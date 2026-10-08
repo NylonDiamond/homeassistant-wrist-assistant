@@ -46,6 +46,10 @@ class SnapshotAspectStore:
     """Persistent map of camera entity_id → snapshot aspect (width / height)."""
 
     def __init__(self, hass: HomeAssistant) -> None:
+        # A debounced save is waiting (see async_shutdown), and whether the
+        # entry has unloaded, after which this instance saves nothing.
+        self._save_pending = False
+        self._closed = False
         self._aspects: dict[str, float] = {}
         self._store: Store = Store(
             hass,
@@ -70,6 +74,23 @@ class SnapshotAspectStore:
                 self._aspects[entity_id] = value
         _LOGGER.debug("Loaded %d snapshot aspects from storage", len(self._aspects))
 
+    def _schedule_save(self) -> None:
+        if self._closed:
+            return
+        self._save_pending = True
+        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+
+    async def async_shutdown(self) -> None:
+        """Called on unload: write a save still waiting out its debounce now,
+        which cancels the delayed one, and save nothing after. A reload then
+        reads every change, and an uninstall that follows removes a file no
+        one writes again."""
+        self._closed = True
+        if not self._save_pending:
+            return
+        self._save_pending = False
+        await self._store.async_save(self._serialize())
+
     def _serialize(self) -> dict:
         return {"aspects": dict(self._aspects)}
 
@@ -85,10 +106,10 @@ class SnapshotAspectStore:
         if self._aspects.get(entity_id) == aspect:
             return
         self._aspects[entity_id] = aspect
-        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        self._schedule_save()
 
     def delete(self, entity_id: str) -> None:
         """Forget a camera's aspect (e.g. on re-frame) so the next capture
         recomputes it instead of reserving the old footprint."""
         if self._aspects.pop(entity_id, None) is not None:
-            self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+            self._schedule_save()

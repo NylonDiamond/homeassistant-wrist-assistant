@@ -95,6 +95,10 @@ class PartsStore:
     """The home's saved parts, newest change first when listed."""
 
     def __init__(self, hass: HomeAssistant) -> None:
+        # A debounced save is waiting (see async_shutdown), and whether the
+        # entry has unloaded, after which this instance saves nothing.
+        self._save_pending = False
+        self._closed = False
         self._parts: dict[str, dict[str, Any]] = {}
         self._store: Store = Store(hass, PARTS_STORAGE_VERSION, PARTS_STORAGE_KEY)
 
@@ -127,6 +131,23 @@ class PartsStore:
             }
         _LOGGER.debug("Loaded %d saved parts from storage", len(self._parts))
 
+    def _schedule_save(self) -> None:
+        if self._closed:
+            return
+        self._save_pending = True
+        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+
+    async def async_shutdown(self) -> None:
+        """Called on unload: write a save still waiting out its debounce now,
+        which cancels the delayed one, and save nothing after. A reload then
+        reads every change, and an uninstall that follows removes a file no
+        one writes again."""
+        self._closed = True
+        if not self._save_pending:
+            return
+        self._save_pending = False
+        await self._store.async_save(self._serialize())
+
     def _serialize(self) -> dict[str, Any]:
         return {"parts": list(self._parts.values())}
 
@@ -156,7 +177,7 @@ class PartsStore:
             existing["name"] = clean_name
             existing["text"] = clean_text
             existing["updated_at"] = _now()
-            self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+            self._schedule_save()
             return dict(existing)
         if len(self._parts) >= MAX_PARTS:
             raise PartsValidationError(
@@ -171,7 +192,7 @@ class PartsStore:
             "updated_at": now,
         }
         self._parts[part["id"]] = part
-        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        self._schedule_save()
         return dict(part)
 
     def delete(self, part_id: str) -> None:
@@ -179,4 +200,4 @@ class PartsStore:
         panel can say so rather than showing a row that is already gone."""
         if self._parts.pop(part_id, None) is None:
             raise PartNotFoundError("no such part")
-        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        self._schedule_save()

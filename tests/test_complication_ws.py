@@ -237,6 +237,8 @@ def _loaded_modules():
         # The real one: forget and move reach into it, and what they leave
         # behind is asserted below.
         watch_config_mod = _load("watch_config_store")
+        # The real one: the live subscriptions reach the store through it.
+        _load("listener_relay")
         yield _load("complication_ws"), store_mod, secrets_mod, watch_config_mod
     finally:
         for key in list(sys.modules):
@@ -1345,3 +1347,58 @@ def test_history_restore_of_an_unknown_revision_is_not_found(env) -> None:
         revision=1,
     )
     assert code == "not_found"
+
+
+# ── live subscriptions across a reload ───────────────────────────────────
+
+
+def _reload(env) -> Any:
+    """What a config entry reload does to the store: unload lets go of the
+    old one, and the next setup builds a new one and points the live
+    subscriptions at it. The panel's and the phone's WebSockets stay open."""
+    relay = env.ws.listener_relay(env.hass, env.ws.COMPLICATIONS)
+    relay.release()
+    store = type(env.store)(object())
+    asyncio.run(store.async_load())
+    env.hass.data[DOMAIN].complication_store = store
+    relay.follow(store)
+    old, env.store = env.store, store
+    return old
+
+
+def test_live_subscriptions_hear_the_new_store_after_a_reload(env) -> None:
+    """The panel's subscription and the phone's owner subscription both keep
+    working: a commit on the reloaded store is an event on each, so Send to
+    watch can still go green, and the old store is heard no more."""
+    env.add_watch("watch-A", user_id="alice")
+    panel = _LiveConnection()
+    panel.user = ROOT
+    env.ws.ws_subscribe(env.hass, panel, {"id": 5})
+    assert panel.errors == []
+    phone = _owner_subscribe(env, "watch-A", ALICE)
+
+    old = _reload(env)
+    env.save_document("watch-A")
+    token = env.store.owner_token("watch-A")
+    assert [e["event"]["owner_watch_id"] for e in panel.events] == ["watch-A"]
+    assert panel.events[0]["event"]["token"] == env.store.token
+    assert phone.events == [{"id": 7, "event": {"token": token}}]
+
+    # The watch acks the new token: the panel hears it, as on a fresh page.
+    env.store.set_applied_token("watch-A", token)
+    assert panel.events[-1]["event"]["applied_token"] == token
+
+    events_before = (len(panel.events), len(phone.events))
+    env.store, live = old, env.store
+    env.save_document("watch-A")
+    env.store = live
+    assert (len(panel.events), len(phone.events)) == events_before
+
+
+def test_unsubscribing_after_a_reload_stops_the_events(env) -> None:
+    env.add_watch("watch-A", user_id="alice")
+    phone = _owner_subscribe(env, "watch-A", ALICE)
+    _reload(env)
+    phone.subscriptions.pop(7)()
+    env.save_document("watch-A")
+    assert phone.events == []

@@ -36,6 +36,8 @@ _WS_PATH = (
     / "watch_config_ws.py"
 )
 
+_RELAY_PATH = _WS_PATH.with_name("listener_relay.py")
+
 DOMAIN = "wrist_assistant"
 WATCH = "watch-A"
 PHONE_HASH = "a" * 64
@@ -97,6 +99,16 @@ def _stub(name: str, **attrs: object) -> None:
     sys.modules[name] = module
 
 
+def _load_relay() -> types.ModuleType:
+    """Load ``listener_relay.py`` into the stub package, where
+    ``watch_config_ws.py`` imports it from. It needs no stubs."""
+    spec = importlib.util.spec_from_file_location(f"{_PKG}.listener_relay", _RELAY_PATH)
+    relay = importlib.util.module_from_spec(spec)
+    sys.modules[f"{_PKG}.listener_relay"] = relay
+    spec.loader.exec_module(relay)
+    return relay
+
+
 @pytest.fixture
 def env():
     with _loaded_module() as store_mod:
@@ -111,6 +123,7 @@ def env():
         )
         _stub("voluptuous", Required=_Marker, Optional=_Marker)
         _stub(f"{_PKG}.const", DOMAIN=DOMAIN)
+        relay_mod = _load_relay()
         spec = importlib.util.spec_from_file_location(f"{_PKG}.watch_config_ws", _WS_PATH)
         ws = importlib.util.module_from_spec(spec)
         sys.modules[f"{_PKG}.watch_config_ws"] = ws
@@ -120,7 +133,9 @@ def env():
         store = store_mod.WatchConfigStore(hass)
         asyncio.run(store.async_load())
         hass.data = {DOMAIN: types.SimpleNamespace(watch_config_store=store)}
-        yield types.SimpleNamespace(ws=ws, store=store, mod=store_mod, hass=hass)
+        yield types.SimpleNamespace(
+            ws=ws, store=store, mod=store_mod, hass=hass, relay_mod=relay_mod
+        )
 
 
 def _call(env, command, **msg) -> _Connection:
@@ -751,6 +766,40 @@ def test_unsubscribing_stops_the_events(env) -> None:
     connection.subscriptions.pop(1)()
     _save(env, {"wrapPages": True}, 1)
     assert connection.events() == [{"kind": "behavior", "revision": 1}]
+
+
+def _reload(env) -> Any:
+    """What a config entry reload does to the store: unload lets go of the
+    old one, and the next setup builds a new one from the same file and
+    points the live subscriptions at it. The WebSocket stays open."""
+    relay = env.ws.listener_relay(env.hass, env.ws.WATCH_CONFIG)
+    relay.release()
+    store = env.mod.WatchConfigStore(env.hass)
+    asyncio.run(store.async_load())
+    env.hass.data[DOMAIN].watch_config_store = store
+    relay.follow(store)
+    old, env.store = env.store, store
+    return old
+
+
+def test_a_subscription_hears_the_new_store_after_a_reload(env) -> None:
+    """The phone's live line survives a reload of the integration: a save on
+    the reloaded store is an event, and the old store is heard no more."""
+    _phone_upload(env, "behavior", {})
+    connection = _subscribe(env)
+    old = _reload(env)
+    assert _save(env, {"wrapPages": True}, 1).errors == []
+    assert connection.events() == [{"kind": "behavior", "revision": 2}]
+    old.put(WATCH, "behavior", {}, document_hash=PHONE_HASH, base_revision=1, updated_by=WATCH)
+    assert connection.events() == [{"kind": "behavior", "revision": 2}]
+
+
+def test_unsubscribing_after_a_reload_stops_the_events(env) -> None:
+    connection = _subscribe(env)
+    _reload(env)
+    connection.subscriptions.pop(1)()
+    _phone_upload(env, "behavior", {})
+    assert connection.events() == []
 
 
 def test_subscribe_answers_unavailable_before_the_integration_is_ready(env) -> None:

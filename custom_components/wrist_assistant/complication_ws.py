@@ -136,6 +136,7 @@ from .list_items import (
     ListItemsError,
     async_list_items,
 )
+from .listener_relay import COMPLICATIONS, listener_relay
 from .statistics_series import (
     PERIODS,
     STAT_TYPES,
@@ -1056,7 +1057,11 @@ def ws_subscribe(
             )
         )
 
-    connection.subscriptions[msg["id"]] = store.async_add_listener(_on_change)
+    # Through the relay, not the store: a config entry reload replaces the
+    # store but keeps this subscription open (see listener_relay.py).
+    relay = listener_relay(hass, COMPLICATIONS)
+    relay.follow(store)
+    connection.subscriptions[msg["id"]] = relay.add_listener(_on_change)
     connection.send_result(msg["id"], {"token": store.token})
 
 
@@ -1103,7 +1108,10 @@ def ws_owner_subscribe(
             websocket_api.event_message(msg["id"], {"token": change.token})
         )
 
-    connection.subscriptions[msg["id"]] = store.async_add_listener(_on_change)
+    # Through the relay, as in ws_subscribe, so a reload does not end it.
+    relay = listener_relay(hass, COMPLICATIONS)
+    relay.follow(store)
+    connection.subscriptions[msg["id"]] = relay.add_listener(_on_change)
     connection.send_result(msg["id"], {"token": store.owner_token(owner)})
 
 

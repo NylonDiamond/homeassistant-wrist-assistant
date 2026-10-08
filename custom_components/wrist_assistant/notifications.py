@@ -58,6 +58,10 @@ class NotificationTokenStore:
     """
 
     def __init__(self, hass: HomeAssistant) -> None:
+        # A debounced save is waiting (see async_shutdown), and whether the
+        # entry has unloaded, after which this instance saves nothing.
+        self._save_pending = False
+        self._closed = False
         # device id -> platform -> TokenEntry
         self._tokens: dict[str, dict[str, TokenEntry]] = {}
         # watch_id -> arbitrary per-watch metadata, e.g. {"delivery_mode": "mirror"}.
@@ -129,6 +133,23 @@ class NotificationTokenStore:
             environment=_normalize_environment(raw.get("environment")),
             relay_token=raw.get("relay_token"),
         )
+
+    def _schedule_save(self) -> None:
+        if self._closed:
+            return
+        self._save_pending = True
+        self._store.async_delay_save(self._serialize, 5)
+
+    async def async_shutdown(self) -> None:
+        """Called on unload: write a save still waiting out its debounce now,
+        which cancels the delayed one, and save nothing after. A reload then
+        reads every change, and an uninstall that follows removes a file no
+        one writes again."""
+        self._closed = True
+        if not self._save_pending:
+            return
+        self._save_pending = False
+        await self._store.async_save(self._serialize())
 
     def _serialize(self) -> dict:
         """Serialize tokens for storage (nested-by-platform shape)."""
@@ -207,7 +228,7 @@ class NotificationTokenStore:
             platform,
             normalized_environment,
         )
-        self._store.async_delay_save(self._serialize, 5)
+        self._schedule_save()
         self._notify_listeners()
         return "new" if existing is None else "updated"
 
@@ -249,7 +270,7 @@ class NotificationTokenStore:
         if meta.get(key) == value:
             return
         meta[key] = value
-        self._store.async_delay_save(self._serialize, 5)
+        self._schedule_save()
         # Notify so diagnostic entities (e.g. the Delivery mode sensor) reflect
         # a mode change as soon as the app pushes it, not on the next restart.
         self._notify_listeners()
@@ -293,7 +314,7 @@ class NotificationTokenStore:
                 if not by_platform:
                     self._tokens.pop(watch_id, None)
         if changed:
-            self._store.async_delay_save(self._serialize, 5)
+            self._schedule_save()
             self._notify_listeners()
 
     def delivery_modes(self) -> dict[str, str]:
@@ -324,7 +345,7 @@ class NotificationTokenStore:
                 del self._tokens[store_id]
             removed += 1
         if removed:
-            self._store.async_delay_save(self._serialize, 5)
+            self._schedule_save()
             self._notify_listeners()
         return removed
 
@@ -370,7 +391,7 @@ class NotificationTokenStore:
                 phone_tokens[PLATFORM_IOS] = entry
                 counts["moved"] += 1
         self._ios_tokens_moved = True
-        self._store.async_delay_save(self._serialize, 5)
+        self._schedule_save()
         if counts["moved"] or counts["dropped"]:
             self._notify_listeners()
         _LOGGER.info(

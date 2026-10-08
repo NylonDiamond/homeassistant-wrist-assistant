@@ -158,6 +158,10 @@ class WidgetSecretStore:
     """Persistent map of watch_id → WidgetSecretEntry."""
 
     def __init__(self, hass: HomeAssistant) -> None:
+        # A debounced save is waiting (see async_shutdown), and whether the
+        # entry has unloaded, after which this instance saves nothing.
+        self._save_pending = False
+        self._closed = False
         self._secrets: dict[str, WidgetSecretEntry] = {}
         # Private: the file holds every device's key, and each key signs as
         # its device with that device's user's rights. Home Assistant then
@@ -202,6 +206,23 @@ class WidgetSecretStore:
                     main_house=entry.get("main_house") is not False,
                 )
         _LOGGER.debug("Loaded %d widget secrets from storage", len(self._secrets))
+
+    def _schedule_save(self) -> None:
+        if self._closed:
+            return
+        self._save_pending = True
+        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+
+    async def async_shutdown(self) -> None:
+        """Called on unload: write a save still waiting out its debounce now,
+        which cancels the delayed one, and save nothing after. A reload then
+        reads every change, and an uninstall that follows removes a file no
+        one writes again."""
+        self._closed = True
+        if not self._save_pending:
+            return
+        self._save_pending = False
+        await self._store.async_save(self._serialize())
 
     def _serialize(self) -> dict:
         return {
@@ -286,7 +307,7 @@ class WidgetSecretStore:
                     user_id,
                 )
             existing.last_provision = now
-            self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+            self._schedule_save()
             self._notify_listeners()
             return "idempotent"
 
@@ -311,7 +332,7 @@ class WidgetSecretStore:
             owner_iphone_id,
             user_id,
         )
-        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        self._schedule_save()
         self._notify_listeners()
         return "new" if existing is None else "rekey"
 
@@ -383,7 +404,7 @@ class WidgetSecretStore:
         # idempotent branch, a metadata ping is still a "this watch is alive
         # and configured" signal for the Last provision sensor.
         entry.last_provision = dt_util.utcnow()
-        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        self._schedule_save()
         if changed:
             _LOGGER.info(
                 "Updated metadata for watch_id=%s app_version=%s",
@@ -408,7 +429,7 @@ class WidgetSecretStore:
         self._secrets[watch_id] = replace(
             entry, secret_b64=secret_b64, last_provision=dt_util.utcnow()
         )
-        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        self._schedule_save()
         _LOGGER.info("Re-keyed widget secret for watch_id=%s", watch_id)
         return True
 
@@ -424,7 +445,7 @@ class WidgetSecretStore:
         if entry is None or entry.main_house == main_house:
             return False
         entry.main_house = main_house
-        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        self._schedule_save()
         _LOGGER.info(
             "watch_id=%s takes its settings from %s",
             watch_id,
@@ -457,7 +478,7 @@ class WidgetSecretStore:
             _LOGGER.info(
                 "Bound %d watch(es) of iPhone %s to user %s", len(bound), owner_iphone_id, user_id
             )
-            self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+            self._schedule_save()
             self._notify_listeners()
         return bound
 
@@ -479,7 +500,7 @@ class WidgetSecretStore:
 
     def remove(self, watch_id: str) -> None:
         if self._secrets.pop(watch_id, None) is not None:
-            self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+            self._schedule_save()
             self._notify_listeners()
 
     @property

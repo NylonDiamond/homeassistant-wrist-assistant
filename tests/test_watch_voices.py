@@ -28,7 +28,14 @@ from typing import Any
 import pytest
 
 from test_watch_config_store import _PKG, _FakeStore, _Hass, _loaded_module
-from test_watch_config_ws import _WS_PATH, _Connection, _event_message, _Marker, _stub
+from test_watch_config_ws import (
+    _WS_PATH,
+    _Connection,
+    _event_message,
+    _load_relay,
+    _Marker,
+    _stub,
+)
 
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
 _STORE_PATH = _PKG_DIR / "watch_voices_store.py"
@@ -384,6 +391,7 @@ def ws_env():
             websocket_command=lambda schema: (lambda func: func),
         )
         _stub("voluptuous", Required=_Marker, Optional=_Marker)
+        _load_relay()
         spec = importlib.util.spec_from_file_location(f"{_PKG}.watch_config_ws", _WS_PATH)
         ws = importlib.util.module_from_spec(spec)
         sys.modules[f"{_PKG}.watch_config_ws"] = ws
