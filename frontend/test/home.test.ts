@@ -145,9 +145,14 @@ describe("summaryCounts", () => {
     expect(counts.get("w1")).toEqual({ pages: 5, status_pages: 2, control_center: 0 });
   });
 
-  it("says nothing for a watch the summary leaves out, or an integration that sends no counts", () => {
-    expect(summaryCounts({ owners: {} }, ["w1"]).has("w1")).toBe(false);
-    expect(summaryCounts({ owners: { w1: { pages: n(2) } } }, ["w1"]).has("w1")).toBe(false);
+  it("counts none for a watch the summary leaves out, which has no records", () => {
+    const counts = summaryCounts({ owners: { w1: { pages: n(2, 5) } } }, ["w1", "w2"]);
+    expect(counts.get("w2")).toEqual({ pages: 0, status_pages: 0, control_center: 0 });
+  });
+
+  it("says nothing on an integration that sends no counts", () => {
+    expect(summaryCounts({ owners: { w1: { pages: n(2) } } }, ["w1"]).size).toBe(0);
+    expect(summaryCounts({ owners: {} }, ["w1"]).size).toBe(0);
   });
 });
 

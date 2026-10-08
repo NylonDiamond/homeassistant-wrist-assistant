@@ -140,17 +140,17 @@ export function tileWord(label: string): string {
 }
 
 /** Each watch's item counts, read off the watch config summary's `items`.
- * A kind with no record counts none; a watch the summary leaves out, or an
- * integration older than the field, gives nothing, so the card shows no
- * number rather than a wrong one. */
+ * A kind with no record counts none, and so does a watch the summary leaves
+ * out, which has no records at all. An integration older than the field
+ * sends `items` on no record, and then nothing is given, so the cards show
+ * no number rather than a wrong one. */
 export function summaryCounts(summary: WatchConfigSummary, watchIds: readonly string[]): Map<string, Partial<Record<DeviceCountKind, number>>> {
   const out = new Map<string, Partial<Record<DeviceCountKind, number>>>();
   const kinds: DeviceCountKind[] = ["pages", "status_pages", "control_center"];
+  const counted = Object.values(summary.owners).some((owner) => Object.values(owner).some((k) => typeof k.items === "number"));
+  if (!counted) return out;
   for (const id of watchIds) {
-    const owner = summary.owners[id];
-    if (owner === undefined) continue;
-    // An integration that sends no counts sends none on any kind.
-    if (!Object.values(owner).some((k) => typeof k.items === "number") && Object.keys(owner).some((k) => (kinds as string[]).includes(k))) continue;
+    const owner = summary.owners[id] ?? {};
     const counts: Partial<Record<DeviceCountKind, number>> = {};
     for (const kind of kinds) counts[kind] = owner[kind]?.items ?? 0;
     out.set(id, counts);
@@ -286,7 +286,7 @@ export const homeStyles = css`
   .home-device-go { display: inline-flex; flex: none; align-self: flex-start; color: var(--wa-muted); transform: rotate(-90deg); }
   .home-device-go svg.ui-icon { width: 13px; height: 13px; }
   /* A tile per page that counts something, each a door to that page: the
-     number large, its name small under it. A row of equal tiles. */
+     number large, its name small under it. */
   .home-tiles { position: relative; z-index: 1; display: flex; gap: 6px; }
   .home-tiles > * { flex: 1 1 0; }
   /* The first tile's word is the longest: "Complications". */
