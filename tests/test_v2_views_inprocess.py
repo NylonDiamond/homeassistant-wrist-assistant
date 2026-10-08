@@ -20,6 +20,9 @@ Covered:
   signed views hand the request to that check.
 * A remote hold that is preempted by a second ``hold_start`` leaves the new
   hold in place, so ``hold_stop`` still stops it.
+* ``snapshot`` clamps a NaN, infinite or huge viewport instead of answering
+  500, and ``camera_batch`` skips a ``cameras`` entry that is not an object
+  instead of failing the whole batch.
 """
 
 from __future__ import annotations
@@ -27,8 +30,12 @@ from __future__ import annotations
 import __future__
 import ast
 import asyncio
+import base64
+import contextlib
 import importlib.util
+import io
 import logging
+import math
 import sys
 import types
 import uuid
@@ -652,3 +659,193 @@ def test_a_stream_is_refused_while_the_integration_reloads(stream_views) -> None
     [stream] = stream_views.streams
     stream_views.hass.data.clear()
     assert asyncio.run(stream["authorize"]()) is False
+
+
+# ── camera snapshots: malformed viewports and camera entries ─────────────
+
+
+@contextlib.contextmanager
+def _loaded_camera_stream():
+    """The real ``camera_stream`` over stubbed Home Assistant modules, so the
+    ops below crop with the real ``_process_snapshot`` and ``_process_frame``.
+    aiohttp is the real one; only Home Assistant, which is not installed, is
+    stubbed, and ``sys.modules`` is put back afterwards."""
+    saved = dict(sys.modules)
+    try:
+        for name, attrs in (
+            ("homeassistant", {}),
+            ("homeassistant.components", {}),
+            (
+                "homeassistant.components.camera",
+                {"Image": type("Image", (), {}), "async_get_image": None},
+            ),
+            ("homeassistant.core", {"HomeAssistant": type("HomeAssistant", (), {})}),
+            (
+                "homeassistant.exceptions",
+                {"HomeAssistantError": type("HomeAssistantError", (Exception,), {})},
+            ),
+        ):
+            module = types.ModuleType(name)
+            for key, value in attrs.items():
+                setattr(module, key, value)
+            sys.modules[name] = module
+        name = "wa_camera_stream_views_test"
+        spec = importlib.util.spec_from_file_location(name, _MODULE.with_name("camera_stream.py"))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+        yield module
+    finally:
+        for key in list(sys.modules):
+            if key not in saved:
+                del sys.modules[key]
+        sys.modules.update(saved)
+
+
+def _jpeg(width: int = 320, height: int = 240) -> bytes:
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), (10, 120, 200)).save(buf, "JPEG", quality=90)
+    return buf.getvalue()
+
+
+class _CameraCtx:
+    def __init__(self, hass: Any, payload: dict) -> None:
+        self.hass = hass
+        self.payload = payload
+        self.domain_data = types.SimpleNamespace(
+            snapshot_crop_store=types.SimpleNamespace(matches_saved=lambda *_: False),
+            snapshot_aspect_store=types.SimpleNamespace(set=lambda *_: None),
+        )
+
+    def signed_json(self, payload: dict, status: int = 200) -> _Response:
+        return _Response(status=status, body=payload)
+
+    def signed_bytes(self, body: bytes, **_: Any) -> _Response:
+        return _Response(status=200, body=body)
+
+
+@pytest.fixture
+def camera_ops():
+    """``_op_snapshot`` and ``_op_camera_batch`` with a camera that always
+    answers with a small JPEG and an executor that runs the job in place."""
+    with _loaded_camera_stream() as cs:
+        names = {
+            "DEFAULT_QUALITY", "DEFAULT_WIDTH", "MAX_BATCH_CAMERAS", "MAX_QUALITY",
+            "MAX_WIDTH", "MIN_QUALITY", "MIN_WIDTH", "NOTIF_SNAPSHOT_MAX_BYTES",
+            "NOTIF_SNAPSHOT_MAX_HEIGHT", "NOTIF_SNAPSHOT_MAX_WIDTH",
+            "SNAPSHOT_CAMERA_TIMEOUT", "SNAPSHOT_DEFAULT_QUALITY", "SNAPSHOT_MAX_BYTES",
+            "SNAPSHOT_MAX_HEIGHT", "SNAPSHOT_MAX_WIDTH", "SNAPSHOT_SLOW_CAMERA_TIMEOUT",
+            "ViewportState", "_process_frame", "_process_snapshot", "jpeg_aspect",
+        }
+        image = types.SimpleNamespace(content=_jpeg())
+        fetched: list[str] = []
+
+        async def async_get_image(_hass: Any, entity_id: str, timeout: float = 0) -> Any:
+            fetched.append(entity_id)
+            return image
+
+        processed: list[Any] = []
+
+        async def async_add_executor_job(func: Any, *args: Any) -> Any:
+            if func is cs._process_snapshot or func is cs._process_frame:
+                processed.append(args[1])
+            return func(*args)
+
+        namespace = _extract(
+            {"_op_snapshot", "_op_camera_batch", "_parse_stream_viewport", "_bound_int", "_bound_float"},
+            {
+                **{name: getattr(cs, name) for name in names},
+                "Any": Any,
+                "asyncio": asyncio,
+                "base64": base64,
+                "math": math,
+                "Response": _Response,
+                "HomeAssistantError": sys.modules["homeassistant.exceptions"].HomeAssistantError,
+                "_LOGGER": logging.getLogger("wa_camera_ops_test"),
+                "_OpContext": object,
+                "async_get_image": async_get_image,
+            },
+        )
+        hass = types.SimpleNamespace(
+            states=types.SimpleNamespace(get=lambda entity_id: object()),
+            async_add_executor_job=async_add_executor_job,
+        )
+        yield types.SimpleNamespace(
+            ns=namespace, hass=hass, fetched=fetched, processed=processed, cs=cs
+        )
+
+
+def _snapshot(camera_ops, payload: dict) -> _Response:
+    ctx = _CameraCtx(camera_ops.hass, payload)
+    return asyncio.run(camera_ops.ns["_op_snapshot"](ctx))
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [
+        {"x": "nan", "y": 0, "width": 0.5, "height": 0.5},
+        {"x": float("nan"), "y": float("nan"), "w": float("nan"), "h": float("nan")},
+        {"x": 1e308, "y": 0, "width": 0.5, "height": 0.5},
+        {"x": float("inf"), "y": float("-inf"), "width": float("inf"), "height": 0.5},
+        {"x": 10**400, "y": -(10**400), "width": 0.5, "height": 10**400},
+        {"x": "0.25", "y": None, "width": "wide", "height": [1]},
+    ],
+)
+def test_a_snapshot_with_a_wild_viewport_is_clamped_not_crashed(camera_ops, viewport) -> None:
+    """NaN, infinity and numbers too big for the crop's int() used to raise in
+    the executor and come back as a 500. They now clamp to the unit square,
+    the same way stream_open treats them, and the snapshot is served."""
+    reply = _snapshot(camera_ops, {"entity_id": "camera.front", "viewport": viewport})
+    assert reply.status == 200
+    assert reply.body[:2] == b"\xff\xd8"
+    [used] = camera_ops.processed
+    for value in (used.x, used.y, used.w, used.h):
+        assert math.isfinite(value) and 0.0 <= value <= 1.0
+    assert used.w >= 0.01 and used.h >= 0.01
+
+
+def test_a_snapshot_keeps_a_sane_viewport_as_sent(camera_ops) -> None:
+    viewport = {"x": 0.25, "y": 0.1, "width": 0.5, "height": 0.4}
+    assert _snapshot(camera_ops, {"entity_id": "camera.front", "viewport": viewport}).status == 200
+    [used] = camera_ops.processed
+    assert (used.x, used.y, used.w, used.h) == (0.25, 0.1, 0.5, 0.4)
+
+
+def test_a_snapshot_with_an_infinite_width_takes_the_largest_size(camera_ops) -> None:
+    reply = _snapshot(
+        camera_ops,
+        {"entity_id": "camera.front", "width": float("inf"), "quality": float("nan")},
+    )
+    assert reply.status == 200
+
+
+def test_camera_batch_skips_entries_that_are_not_objects(camera_ops) -> None:
+    """A bare string, null or number in ``cameras`` used to raise
+    AttributeError inside the gather and fail the whole batch with a 500.
+    Each now gets skipped like an entry with a bad entity_id, and the good
+    entry beside them is still served."""
+    payload = {
+        "cameras": [
+            "camera.front",
+            None,
+            7,
+            ["camera.front"],
+            {"entity_id": "camera.back", "viewport": {"x": "nan", "width": float("inf")}},
+        ]
+    }
+    ctx = _CameraCtx(camera_ops.hass, payload)
+    reply = asyncio.run(camera_ops.ns["_op_camera_batch"](ctx))
+    assert reply.status == 200
+    [snap] = reply.body["snapshots"]
+    assert snap["entity_id"] == "camera.back"
+    assert snap["data"] and snap["size"] > 0
+    assert camera_ops.fetched == ["camera.back"]
+
+
+def test_camera_batch_with_only_bad_entries_answers_an_empty_list(camera_ops) -> None:
+    ctx = _CameraCtx(camera_ops.hass, {"cameras": ["camera.front", None]})
+    reply = asyncio.run(camera_ops.ns["_op_camera_batch"](ctx))
+    assert reply.status == 200
+    assert reply.body == {"snapshots": []}

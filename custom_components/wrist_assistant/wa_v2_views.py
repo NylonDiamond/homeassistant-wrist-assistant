@@ -56,6 +56,7 @@ import asyncio
 import base64
 import gzip
 import logging
+import math
 import time
 import uuid
 from dataclasses import dataclass
@@ -1096,13 +1097,6 @@ async def _op_snapshot(ctx: _OpContext) -> Response:
     if state is None:
         return Response(status=404, text="Camera entity not found")
 
-    def _bound(value: Any, default: int, lo: int, hi: int) -> int:
-        try:
-            v = int(value) if value is not None else default
-        except (TypeError, ValueError):
-            v = default
-        return max(lo, min(hi, v))
-
     # `hd` opts into the larger notification-snapshot budget (1024px / 250KB)
     # instead of the complication-optimized 400px tier. Used by the framing
     # editor's preview, where a crisp full-frame still matters and the payload
@@ -1112,31 +1106,20 @@ async def _op_snapshot(ctx: _OpContext) -> Response:
     max_h = NOTIF_SNAPSHOT_MAX_HEIGHT if hd else SNAPSHOT_MAX_HEIGHT
     max_bytes = NOTIF_SNAPSHOT_MAX_BYTES if hd else SNAPSHOT_MAX_BYTES
 
-    width = _bound(ctx.payload.get("width"), max_w, MIN_WIDTH, max_w)
-    max_height = _bound(ctx.payload.get("max_height"), max_h, MIN_WIDTH, max_h)
-    quality = _bound(
+    width = _bound_int(ctx.payload.get("width"), max_w, MIN_WIDTH, max_w)
+    max_height = _bound_int(ctx.payload.get("max_height"), max_h, MIN_WIDTH, max_h)
+    quality = _bound_int(
         ctx.payload.get("quality"),
         SNAPSHOT_DEFAULT_QUALITY,
         MIN_QUALITY,
         MAX_QUALITY,
     )
 
-    viewport = ViewportState()
-    raw_viewport = ctx.payload.get("viewport")
-    if isinstance(raw_viewport, dict):
-        # Body uses `width`/`height` keys (Swift JSON convention); the
-        # ViewportState dataclass uses `w`/`h`. Translate explicitly. Falls
-        # back to `w`/`h` keys too so a future client sending the dataclass
-        # shape directly still works.
-        try:
-            viewport = ViewportState(
-                x=float(raw_viewport.get("x", 0.0)),
-                y=float(raw_viewport.get("y", 0.0)),
-                w=float(raw_viewport.get("width", raw_viewport.get("w", 1.0))),
-                h=float(raw_viewport.get("height", raw_viewport.get("h", 1.0))),
-            )
-        except (TypeError, ValueError):
-            viewport = ViewportState()
+    # Body uses `width`/`height` keys (Swift JSON convention); the
+    # ViewportState dataclass uses `w`/`h`. The shared parser takes both and
+    # clamps every field to the unit square, so NaN, infinity or a huge number
+    # cannot reach the crop's int() conversion.
+    viewport = _parse_stream_viewport(ctx.payload.get("viewport"))
 
     # `slow_camera` comes from the iPhone's Get Camera Image Shortcut, which has
     # no tap budget to protect, so a cloud or wake-up camera gets the 10 s the
@@ -1866,32 +1849,18 @@ async def _op_camera_batch(ctx: _OpContext) -> Response:
 
     cameras = cameras[:MAX_BATCH_CAMERAS]
 
-    async def _fetch_one(spec: dict) -> dict | None:
+    async def _fetch_one(spec: Any) -> dict | None:
+        # An entry that is not an object (a bare string, null, a number) names
+        # no camera, so it is skipped like an entry with a bad entity_id rather
+        # than failing the whole batch.
+        if not isinstance(spec, dict):
+            return None
         entity_id = spec.get("entity_id")
         if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
             return None
-        try:
-            width = int(spec.get("width", DEFAULT_WIDTH))
-            quality = int(spec.get("quality", DEFAULT_QUALITY))
-        except (TypeError, ValueError):
-            return {"entity_id": entity_id, "data": None, "size": 0}
-        width = max(MIN_WIDTH, min(width, MAX_WIDTH))
-        quality = max(MIN_QUALITY, min(quality, MAX_QUALITY))
-
-        viewport = ViewportState()
-        if isinstance(spec.get("viewport"), dict):
-            vp = spec["viewport"]
-            # Accept both width/height (Swift JSON convention) and w/h
-            # (dataclass shape) — see _op_snapshot for context.
-            try:
-                viewport = ViewportState(
-                    x=max(0.0, min(1.0, float(vp.get("x", 0.0)))),
-                    y=max(0.0, min(1.0, float(vp.get("y", 0.0)))),
-                    w=max(0.01, min(1.0, float(vp.get("width", vp.get("w", 1.0))))),
-                    h=max(0.01, min(1.0, float(vp.get("height", vp.get("h", 1.0))))),
-                )
-            except (TypeError, ValueError):
-                viewport = ViewportState()
+        width = _bound_int(spec.get("width"), DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH)
+        quality = _bound_int(spec.get("quality"), DEFAULT_QUALITY, MIN_QUALITY, MAX_QUALITY)
+        viewport = _parse_stream_viewport(spec.get("viewport"))
 
         try:
             image = await async_get_image(ctx.hass, entity_id, timeout=5)
@@ -2051,34 +2020,41 @@ async def _op_camera_devices(ctx: _OpContext) -> Response:
 
 def _parse_stream_viewport(raw: Any) -> ViewportState:
     """Parse a viewport mapping from JSON. Accepts both `width`/`height`
-    (Swift JSON convention) and `w`/`h` (dataclass shape) — see _op_snapshot
-    for context.
+    (Swift JSON convention) and `w`/`h` (dataclass shape).
+
+    Every field is clamped to the unit square (width and height to at least
+    0.01), and a missing, malformed or NaN field takes its full-frame default,
+    so the crop's int() conversions never see NaN or infinity. Shared by
+    snapshot, camera_batch, stream_open and snapshots_open.
     """
     if not isinstance(raw, dict):
         return ViewportState()
-    try:
-        return ViewportState(
-            x=max(0.0, min(1.0, float(raw.get("x", 0.0)))),
-            y=max(0.0, min(1.0, float(raw.get("y", 0.0)))),
-            w=max(0.01, min(1.0, float(raw.get("width", raw.get("w", 1.0))))),
-            h=max(0.01, min(1.0, float(raw.get("height", raw.get("h", 1.0))))),
-        )
-    except (TypeError, ValueError):
-        return ViewportState()
+    return ViewportState(
+        x=_bound_float(raw.get("x"), 0.0, 0.0, 1.0),
+        y=_bound_float(raw.get("y"), 0.0, 0.0, 1.0),
+        w=_bound_float(raw.get("width", raw.get("w")), 1.0, 0.01, 1.0),
+        h=_bound_float(raw.get("height", raw.get("h")), 1.0, 0.01, 1.0),
+    )
 
 
 def _bound_int(value: Any, default: int, lo: int, hi: int) -> int:
+    # int() of an infinite float raises OverflowError, of NaN ValueError.
     try:
         v = int(value) if value is not None else default
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         v = default
     return max(lo, min(hi, v))
 
 
 def _bound_float(value: Any, default: float, lo: float, hi: float) -> float:
+    # float() of an integer too large for a float raises OverflowError, and
+    # NaN ("nan" parses) would slip through min/max, so both take the default.
+    # Infinity and huge numbers clamp to the nearest bound like any other.
     try:
         v = float(value) if value is not None else default
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        v = default
+    if math.isnan(v):
         v = default
     return max(lo, min(hi, v))
 

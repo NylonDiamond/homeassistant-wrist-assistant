@@ -154,6 +154,16 @@ def validate_wa_request(
     if not all((version_str, op, watch_id, ts_str, nonce, sig_hex)):
         raise WAHMACError("missing_headers")
 
+    # aiohttp hands header bytes over as UTF-8 text with surrogate escapes, so
+    # a header can carry characters a real client never sends. A non-ASCII
+    # signature makes `hmac.compare_digest` raise TypeError, and an escaped
+    # byte in the nonce makes the canonical `.encode("utf-8")` raise. Refuse
+    # them here so they get the same 401 as any other bad request.
+    if not all(
+        value.isascii() for value in (version_str, op, watch_id, ts_str, nonce, sig_hex)
+    ):
+        raise WAHMACError("invalid_header")
+
     try:
         version = int(version_str)
     except ValueError as err:
