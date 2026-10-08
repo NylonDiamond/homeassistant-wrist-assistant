@@ -10,7 +10,8 @@ The record:
 * ``document``: the phone's own ``HTTPActionConfig`` JSON, as the panel
   saved it or the hand-overs built it, secrets included. None until the
   first accepted change.
-* ``revision``: 0 for no document yet, then +1 per accepted change.
+* ``revision``: 0 for no document yet, then up by one per accepted change,
+  from above ``revision_floor`` (see below).
 * ``hash``: the canonical hash of the document (``canonical_hash``), null at
   revision 0.
 * ``updated_at`` / ``updated_by``: when, and who: ``panel`` for a panel
@@ -27,6 +28,12 @@ WebSocket in ``http_actions_ws.py``) and a phone's hand-over (a pure merge,
 see ``merge_hand_over``). Every accepted change tells the listeners its new
 revision, which is how the parked delta polls are woken.
 
+Saves are debounced, so a hard kill can lose a revision a device was already
+handed, and counting on from the file would hand the same number out again for
+a different library. A load that finds the file sets ``revision_floor`` above
+every revision an earlier run can have handed out (``_revision_floor``) and
+writes it back before returning; every new revision is above it.
+
 Storage is one Home Assistant ``Store`` file. A file that cannot be read is
 logged and left alone: every read and write is then refused with
 ``unavailable`` until a restart reads it, so a damaged file is never saved
@@ -41,6 +48,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -61,6 +69,23 @@ from .http_actions import (
 _LOGGER = logging.getLogger(__name__)
 
 _SAVE_DEBOUNCE_SECONDS = 1
+
+# How far above the stored revision (and the stored floor) the next start's
+# revisions begin: far more saves than one debounce chain, the most a hard
+# kill can lose, ever holds.
+_REVISION_MARGIN = 1000
+
+
+def _revision_floor(saved_floor: int, highest: int) -> int:
+    """Where revisions continue after a load that found the file: above the
+    stored floor and the stored revision by ``_REVISION_MARGIN``, and never
+    below the minutes since 1970, which also clears a file that lost both.
+    Stays far inside the 32-bit integer a watch reads it into."""
+    return max(
+        int(time.time() // 60),
+        saved_floor + _REVISION_MARGIN,
+        highest + _REVISION_MARGIN,
+    )
 
 # `updated_by` on a panel save, as for the watch config.
 PANEL_WRITER = "panel"
@@ -181,6 +206,9 @@ class HTTPActionsStore:
         self._listeners: list[ChangeListener] = []
         # (revision, public list, its hash), made on first ask per revision.
         self._public: tuple[int, dict[str, Any], str] | None = None
+        # Every new revision is above this. 0 until a load finds the file: a
+        # fresh install has handed nothing out.
+        self._revision_floor = 0
 
     async def async_load(self) -> None:
         try:
@@ -193,6 +221,23 @@ class HTTPActionsStore:
             self._load_failed = True
             return
         self._record = HTTPActionsRecord.from_dict(data)
+        if isinstance(data, dict):
+            saved = data.get("revision_floor")
+            if isinstance(saved, bool) or not isinstance(saved, int) or saved < 0:
+                saved = 0
+            self._revision_floor = _revision_floor(saved, self._record.revision)
+            # Written now, before any revision above it is handed out, so the
+            # next start's floor clears every revision this run gives out.
+            try:
+                await self._store.async_save(self._serialize())
+            except Exception:  # noqa: BLE001 (the next save writes it)
+                _LOGGER.exception("Could not write the HTTP action revision floor")
+
+    def _serialize(self) -> dict[str, Any]:
+        data = self._record.as_storage_dict()
+        if self._revision_floor:
+            data["revision_floor"] = self._revision_floor
+        return data
 
     async def async_remove(self) -> None:
         """Delete the file. Called when the integration is removed."""
@@ -204,9 +249,7 @@ class HTTPActionsStore:
         if self._closed:
             return
         self._save_pending = True
-        self._store.async_delay_save(
-            self._record.as_storage_dict, _SAVE_DEBOUNCE_SECONDS
-        )
+        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
 
     async def async_shutdown(self) -> None:
         """Called on unload: write a save still waiting out its debounce
@@ -217,7 +260,7 @@ class HTTPActionsStore:
         if not self._save_pending or self._load_failed:
             return
         self._save_pending = False
-        await self._store.async_save(self._record.as_storage_dict())
+        await self._store.async_save(self._serialize())
 
     def _check_available(self) -> None:
         if self._load_failed:
@@ -360,7 +403,7 @@ class HTTPActionsStore:
     def _accept(self, document: dict[str, Any], updated_by: str) -> None:
         record = self._record
         record.document = document
-        record.revision += 1
+        record.revision = max(record.revision, self._revision_floor) + 1
         record.hash = canonical_hash(document)
         record.updated_at = _now_iso()
         record.updated_by = updated_by

@@ -805,9 +805,11 @@ def test_a_subscription_hears_the_new_store_after_a_reload(env) -> None:
     connection = _subscribe(env)
     old = _reload(env)
     assert _save(env, {"wrapPages": True}, 1).errors == []
-    assert connection.events() == [{"kind": "behavior", "revision": 2}]
+    # The reloaded store continues above its revision floor.
+    revision = env.store._revision_floor + 1
+    assert connection.events() == [{"kind": "behavior", "revision": revision}]
     old.put(WATCH, "behavior", {}, document_hash=PHONE_HASH, base_revision=1, updated_by=WATCH)
-    assert connection.events() == [{"kind": "behavior", "revision": 2}]
+    assert connection.events() == [{"kind": "behavior", "revision": revision}]
 
 
 def test_unsubscribing_after_a_reload_stops_the_events(env) -> None:

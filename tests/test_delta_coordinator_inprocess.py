@@ -7,10 +7,9 @@ SESSION_TTL. The HTTP suite still covers the end-to-end behavior.
 
 Covered:
 
-* Idle gap: a state change that arrives while NO session exists is not
-  buffered. A watch resuming with its pre-gap cursor must get 410, and the
-  cursor it receives from the follow-up snapshot must then be accepted (no
-  410 loop).
+* Idle gap: a state change that arrives while NO session exists is still
+  buffered, and a watch resuming with its cursor collects it as a delta; a
+  cursor older than the ring is told to resync.
 * Superseded poll: an older long-poll for the same watch that finishes after
   a newer one has started must not evict the newer poll's waiter.
 * Watch config on the poll: the signer's pages, behavior and menus revisions
@@ -172,50 +171,42 @@ def _change(hass, coord, entity_id: str, state: str) -> None:
     coord._handle_state_changed(_Event(s))
 
 
-def test_idle_gap_forces_resync_then_accepts_snapshot_cursor(coordinator) -> None:
+def test_a_change_with_no_session_reaches_the_returning_watch(coordinator) -> None:
+    """Changes are buffered with or without a session. A watch back after
+    SESSION_TTL with a good cursor is asked for its list at its own cursor,
+    then collects exactly what changed while it was away: no 410, and no
+    full snapshot."""
     module, hass, coord = coordinator
     ent = "wrist_assistant.t1"
     hass.states.set(ent, "off")
 
     async def run() -> None:
-        # 1. Subscribe (snapshot path) → cursor c0.
         status, body = await _poll(coord, entities=[ent])
         assert status == 200
         c0 = body["next_cursor"]
 
-        # 2. Session goes idle past SESSION_TTL and is pruned → no sessions.
+        # The session lapses: nobody is connected.
         coord._sessions["w1"].last_seen -= module.SESSION_TTL + timedelta(seconds=1)
         coord._prune_sessions()
         assert not coord._sessions
 
-        # 3. A change happens with nobody connected: it is NOT buffered.
+        # A change with nobody connected is still buffered.
         _change(hass, coord, ent, "on")
-        assert not coord._events
+        assert [e.entity_id for e in coord._events] == [ent]
 
-        # 4. Watch resumes with its old cursor → must be told to resync.
-        status, body = await _poll(coord, since=c0, entities=[ent], force_delta=True)
-        assert status == 410, body
-        assert body["resync_required"] is True
-
-        # 5. Client takes a snapshot → new cursor c1 (>= gap).
-        status, body = await _poll(coord, since=None, entities=[ent])
-        assert status == 200
-        c1 = body["next_cursor"]
-        assert c1 > c0
-        states = {e["entity_id"]: e["state"] for e in body["events"]}
-        assert states[ent] == "on"
-
-        # 6. Next poll with c1 must be accepted — pre-fix this looped 410s.
-        status, body = await _poll(coord, since=c1, entities=[ent], force_delta=True)
+        # The watch comes back with its cursor and no list: asked for the
+        # list, at its own cursor.
+        status, body = await _poll(coord, since=c0, entities=None)
         assert status == 200, body
+        assert body["need_entities"] is True
         assert body["resync_required"] is False
+        assert body["next_cursor"] == c0
 
-        # 7. With a session alive, changes are buffered and delivered.
-        _change(hass, coord, ent, "off")
-        status, body = await _poll(coord, since=c1, entities=[ent], force_delta=True)
-        assert status == 200
-        assert [e["entity_id"] for e in body["events"]] == [ent]
-        assert body["next_cursor"] > c1
+        # With the list it gets the change it missed, as a delta.
+        status, body = await _poll(coord, since=c0, entities=[ent], timeout=0)
+        assert status == 200, body
+        assert {e["entity_id"]: e["state"] for e in body["events"]} == {ent: "on"}
+        assert body["next_cursor"] == coord._cursor
 
     asyncio.run(run())
 
@@ -395,15 +386,14 @@ def test_poll_listener_exception_does_not_break_poll(coordinator) -> None:
 
 
 def test_events_still_delivered_after_an_idle_gap(coordinator) -> None:
-    """A gap must not break the ring buffer's index lookup.
+    """A watch away for longer than SESSION_TTL while the house kept changing
+    resumes from its cursor and is handed its own changes, the ones from
+    before and after its session lapsed alike.
 
-    Regression: `_bisect_cursor` derived the deque index arithmetically from
-    the oldest event's cursor, which is only valid while every cursor value
-    has an event behind it. The idle gap consumes cursor values without
-    appending, so once the buffer held events from BOTH sides of a gap the
-    computed index overshot, `_collect_events` scanned an empty slice, and
-    every poll answered 200 with no events and next_cursor == since. The
-    watch showed stale tiles indefinitely and only recovered on a restart.
+    Regression guard for `_bisect_cursor`, which once derived the deque index
+    arithmetically from the oldest event's cursor: with changes on both sides
+    of a lapsed session the computed index overshot and every poll answered
+    200 with no events and next_cursor == since.
     """
     module, hass, coord = coordinator
     ent = "wrist_assistant.t6"
@@ -413,34 +403,26 @@ def test_events_still_delivered_after_an_idle_gap(coordinator) -> None:
         status, body = await _poll(coord, entities=[ent])
         c0 = body["next_cursor"]
 
-        # A real event lands in the buffer BEFORE the gap, so the deque's
-        # oldest cursor stays behind the gap for the rest of the test.
         _change(hass, coord, ent, "on")
-        assert len(coord._events) == 1
-
-        # Session goes idle: a burst of changes is dropped, each consuming a
-        # cursor value. This is what desynchronises index from cursor.
         coord._sessions["w1"].last_seen -= module.SESSION_TTL + timedelta(seconds=1)
         coord._prune_sessions()
         assert not coord._sessions
         for _ in range(50):
             _change(hass, coord, "wrist_assistant.noise", "x")
-        assert len(coord._events) == 1  # nothing buffered during the gap
+        _change(hass, coord, ent, "off")
+        assert len(coord._events) == 52
 
-        # Watch resumes: told to resync, then takes a snapshot.
         status, body = await _poll(coord, since=c0, entities=[ent], force_delta=True)
-        assert status == 410, body
-        status, body = await _poll(coord, since=None, entities=[ent])
+        assert status == 200, body
+        assert [e["state"] for e in body["events"]] == ["on", "off"]
+        assert body["next_cursor"] == coord._cursor
         c1 = body["next_cursor"]
 
-        # A change after the gap must be delivered on the next poll.
-        _change(hass, coord, ent, "off")
+        # And a change after the resume arrives on the next poll.
+        _change(hass, coord, ent, "on")
         status, body = await _poll(coord, since=c1, entities=[ent], force_delta=True)
         assert status == 200, body
-        assert [e["entity_id"] for e in body["events"]] == [ent], (
-            "post-gap event was not delivered: the buffer index lookup is "
-            f"desynchronised by the gap. body={body!r}"
-        )
+        assert [e["entity_id"] for e in body["events"]] == [ent]
         assert body["next_cursor"] > c1
 
     asyncio.run(run())
@@ -487,11 +469,13 @@ def test_asking_for_the_list_keeps_the_device_at_its_own_cursor(coordinator) -> 
     asyncio.run(run())
 
 
-def test_asking_for_the_list_after_a_dropped_change_answers_410(coordinator) -> None:
-    """A change that landed while the device had no session was never
-    buffered. A device coming back with a cursor from before it must be told
-    to resync, not asked for its list and moved past the gap."""
-    _module, hass, coord = coordinator
+def test_asking_for_the_list_with_a_cursor_older_than_the_ring_answers_410(
+    coordinator,
+) -> None:
+    """A device coming back with a cursor the ring no longer reaches back to
+    must be told to resync, not asked for its list and moved past changes it
+    can never be sent."""
+    module, hass, coord = coordinator
     ent = "wrist_assistant.ne2"
     hass.states.set(ent, "off")
 
@@ -500,7 +484,8 @@ def test_asking_for_the_list_after_a_dropped_change_answers_410(coordinator) -> 
         c0 = body["next_cursor"]
         coord.async_force_resync()
         _change(hass, coord, ent, "on")
-        assert not coord._events
+        for i in range(module.MAX_EVENTS_BUFFER + 1):
+            _change(hass, coord, "wrist_assistant.noise", str(i))
 
         status, body = await _poll(coord, since=c0, entities=None)
         assert status == 410, body
@@ -727,7 +712,15 @@ def test_behind_watch_is_told_once_per_token_then_waits(coordinator) -> None:
         assert status == 200 and body["events"] == []
         assert body["complications_token"] == 2
 
-        # Still behind, same token: parks and times out.
+        # Still behind, same token: told once more, in case the first reply
+        # was lost in a half-open connection.
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=10, complications_token=0),
+            timeout=1,
+        )
+        assert status == 200 and body["complications_token"] == 2
+
+        # Still behind after that: parks and times out.
         status, body = await asyncio.wait_for(
             _poll(coord, since=c0, entities=[ent], timeout=1, complications_token=0),
             timeout=3,
@@ -1494,10 +1487,13 @@ def test_a_watch_config_wake_does_not_re_arm_the_complication_token(coordinator)
         status, body = await _poll(coord, entities=[ent], complications_token=0)
         c0 = body["next_cursor"]
         complications.tokens["w1"] = 2
-        # Behind on complications: told once.
+        # Behind on complications: told once, and once more while the
+        # report still lags.
         status, body = await _poll(coord, since=c0, entities=[ent], timeout=10, complications_token=0)
         assert status == 200 and body["complications_token"] == 2
         assert coord._token_notified["w1"] == 2
+        status, body = await _poll(coord, since=c0, entities=[ent], timeout=10, complications_token=0)
+        assert status == 200 and coord._token_repeated["w1"] == 2
 
         held = asyncio.create_task(
             _poll(coord, since=c0, entities=[ent], timeout=10, complications_token=0)

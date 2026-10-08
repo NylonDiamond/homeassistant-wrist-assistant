@@ -883,6 +883,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     coordinator.register_capability("custom_complications_move_status")
     coordinator.register_capability("gzip")
     coordinator.register_capability("slim_payloads")
+    # Lean delta replies (api.py, DeltaCoordinator._lean_reply): a poll with
+    # `lean: true` gets only what differs from what it holds, `caps_hash`
+    # stands in for the capability list, and `epoch` names the cursor's
+    # coordinator. Also promises that a need_entities reply keeps the
+    # device's cursor or answers 410, and that changes are buffered with no
+    # session open. The watch sends `lean` only when it sees this.
+    coordinator.register_capability("delta_lean")
     coordinator.register_capability("camera_batch")
     # Progressive batch snapshot stream: one connection serves N cameras, each
     # JPEG flushed as it's ready (op=snapshots_open → /v2/snapshots/<token>).

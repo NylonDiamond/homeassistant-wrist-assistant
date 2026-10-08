@@ -84,7 +84,14 @@ Storage is one Home Assistant ``Store`` file per owner, holding every kind for
 that owner, plus a small index naming the owners. A document can be large
 (the cap is ``WATCH_CONFIG_MAX_DOCUMENT_BYTES``), so one watch's save must not
 rewrite another watch's file. The index only changes when an owner appears or
-goes away.
+goes away, and once per start for ``revision_floor``.
+
+Saves are debounced, so a hard kill can lose a revision a device was already
+handed. Counting on from the file would then hand the same number out again
+for a different document, which a device holding it never fetches. So a load
+that finds an index sets ``revision_floor`` above every revision an earlier
+run can have handed out (:func:`_revision_floor`) and writes it to the index
+before returning, and every new revision, a first one included, is above it.
 
 Listeners (:meth:`WatchConfigStore.async_add_listener`) hear one
 :class:`WatchConfigChange` per kind whose revision moved: every accepted save,
@@ -104,6 +111,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -125,6 +133,23 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 _SAVE_DEBOUNCE_SECONDS = 1
+
+# How far above the highest stored revision (and the stored floor) the next
+# start's revisions begin: far more saves than one debounce chain, the most a
+# hard kill can lose, ever holds.
+_REVISION_MARGIN = 1000
+
+
+def _revision_floor(saved_floor: int, highest: int) -> int:
+    """Where revisions continue after a load that found an index: above the
+    stored floor and the highest stored revision by ``_REVISION_MARGIN``,
+    and never below the minutes since 1970, which also clears an index that
+    lost both. Stays far inside the 32-bit integer a watch reads it into."""
+    return max(
+        int(time.time() // 60),
+        saved_floor + _REVISION_MARGIN,
+        highest + _REVISION_MARGIN,
+    )
 
 # The list key a kind's document must carry, for the kinds that have one: a
 # page config without its page list is not a page config, while the behavior
@@ -966,8 +991,16 @@ class WatchConfigStore:
         self._index_save_pending = False
         self._pending_owners: set[str] = set()
         self._closed = False
+        # Every new revision is above this (see _revision_floor). 0 until a
+        # load finds an index: a fresh install has handed nothing out.
+        self._revision_floor = 0
 
     # ── persistence ────────────────────────────────────────────────────
+
+    def _next_revision(self, current: int) -> int:
+        """The revision a save of a record now at ``current`` (0 for none)
+        gets."""
+        return max(current, self._revision_floor) + 1
 
     def _file(self, owner_watch_id: str) -> Store:
         store = self._files.get(owner_watch_id)
@@ -980,6 +1013,13 @@ class WatchConfigStore:
 
     async def _async_read_index(self) -> list[str] | None:
         """The owner ids the index names, or ``None`` when it is unreadable."""
+        index = await self._async_read_index_file()
+        return None if index is None else index[0]
+
+    async def _async_read_index_file(self) -> tuple[list[str], int | None] | None:
+        """``(owners, saved floor)`` from the index, the floor None when there
+        is no index (0 for one written before the floor existed). ``None``
+        when it is unreadable."""
         try:
             data = await self._index.async_load()
         except Exception:
@@ -990,7 +1030,7 @@ class WatchConfigStore:
             )
             return None
         if not data:
-            return []
+            return [], None
         owners = data.get("owners") if isinstance(data, dict) else None
         if not isinstance(owners, list):
             _LOGGER.error(
@@ -1000,7 +1040,10 @@ class WatchConfigStore:
                 WATCH_CONFIG_STORAGE_KEY,
             )
             return None
-        return [owner for owner in owners if isinstance(owner, str) and owner]
+        floor = data.get("revision_floor")
+        if isinstance(floor, bool) or not isinstance(floor, int) or floor < 0:
+            floor = 0
+        return [owner for owner in owners if isinstance(owner, str) and owner], floor
 
     async def async_load(self) -> None:
         """Read the index, then every owner file it names.
@@ -1010,10 +1053,11 @@ class WatchConfigStore:
         never saved over. An unreadable index refuses everything; an
         unreadable owner file refuses that owner alone.
         """
-        owners = await self._async_read_index()
-        if owners is None:
+        index = await self._async_read_index_file()
+        if index is None:
             self._load_failed = True
             return
+        owners, saved_floor = index
         dropped = False
         for owner in owners:
             try:
@@ -1053,6 +1097,20 @@ class WatchConfigStore:
             else:
                 # Listed but empty or missing: nothing to keep an entry for.
                 dropped = True
+        if saved_floor is not None:
+            highest = max(
+                (r.revision for by_kind in self._records.values() for r in by_kind.values()),
+                default=0,
+            )
+            self._revision_floor = _revision_floor(saved_floor, highest)
+            # Written now, before any revision above it is handed out, so the
+            # next start's floor clears every revision this run gives out.
+            try:
+                await self._index.async_save(self._serialize_index())
+                dropped = False
+            except Exception:  # noqa: BLE001 (the debounced save retries it)
+                _LOGGER.exception("Could not write the watch config revision floor")
+                dropped = True
         if dropped:
             self._schedule_index_save()
         _LOGGER.debug(
@@ -1062,7 +1120,10 @@ class WatchConfigStore:
         )
 
     def _serialize_index(self) -> dict[str, Any]:
-        return {"owners": sorted(set(self._records) | self._failed_owners)}
+        data: dict[str, Any] = {"owners": sorted(set(self._records) | self._failed_owners)}
+        if self._revision_floor:
+            data["revision_floor"] = self._revision_floor
+        return data
 
     def _serialize_owner(self, owner_watch_id: str) -> dict[str, Any]:
         return {
@@ -1325,7 +1386,7 @@ class WatchConfigStore:
             record = WatchConfigRecord(
                 owner_watch_id=owner_watch_id,
                 kind=kind,
-                revision=1,
+                revision=self._next_revision(0),
                 hash=document_hash,
                 updated_at=_now_iso(),
                 updated_by=updated_by,
@@ -1349,8 +1410,8 @@ class WatchConfigStore:
         self._notify(owner_watch_id, kind, record.revision)
         return record
 
-    @staticmethod
     def _replace(
+        self,
         record: WatchConfigRecord,
         document: dict[str, Any],
         document_hash: str,
@@ -1361,7 +1422,7 @@ class WatchConfigStore:
         into the history first. Every save that replaces a document, device or
         panel, a restore included, goes through here."""
         record.remember(record.current_as_history())
-        record.revision += 1
+        record.revision = self._next_revision(record.revision)
         record.hash = document_hash
         record.updated_at = _now_iso()
         record.updated_by = updated_by
@@ -1386,7 +1447,7 @@ class WatchConfigStore:
           (:func:`validate_document` with ``check_items``). The panel builds
           what it sends, so it can always fix a fault there.
         * A new record only for a paired watch. ``base_revision`` 0 with no
-          stored record creates revision 1 when the secret store knows the
+          stored record creates the first revision when the secret store knows the
           owner (``is_paired``), and is refused with
           :class:`WatchConfigNoRecordError` otherwise, so the panel never
           invents a document for an id nothing signs as. A base above 0 with
@@ -1512,14 +1573,14 @@ class WatchConfigStore:
     def _panel_create(
         self, owner_watch_id: str, kind: str, document: dict[str, Any], size: int
     ) -> WatchConfigRecord:
-        """Revision 1 of a kind the owner holds no record of, written by the
+        """The first revision of a kind the owner holds no record of, written by the
         panel: the server's hash, ``updated_by`` ``panel``, no history, and
         nothing delivered yet. Listeners are told, so the watch's parked poll
         wakes and pulls it."""
         record = WatchConfigRecord(
             owner_watch_id=owner_watch_id,
             kind=kind,
-            revision=1,
+            revision=self._next_revision(0),
             hash=canonical_hash(document),
             updated_at=_now_iso(),
             updated_by=WATCH_CONFIG_PANEL_WRITER,

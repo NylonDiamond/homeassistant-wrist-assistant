@@ -512,6 +512,81 @@ class WAActionView(HomeAssistantView):
 
 # ── /v2/delta view ───────────────────────────────────────────────────────
 
+# Input caps on a delta poll. A real watch sends a few hundred entity ids in
+# a few KB; these leave room for the largest home and refuse the rest before
+# any of it reaches the coordinator.
+DELTA_MAX_BODY_BYTES = 256 * 1024
+DELTA_MAX_ENTITIES = 2000
+DELTA_MAX_TEMPLATES = 100
+DELTA_MAX_TEMPLATE_CHARS = 4096
+DELTA_MAX_SUMMARY_ENTITIES = 2000
+DELTA_MAX_CUSTOM_ENTITIES = 2000
+# The longest `caps_hash` or `epoch` read from a lean poll. Both are 16 hex
+# digits as this server writes them; anything longer reads as absent.
+_DELTA_TOKEN_MAX_CHARS = 64
+
+
+async def _read_capped_body(request: Request, limit: int) -> bytes | None:
+    """The request body, or None when it is longer than ``limit`` bytes.
+
+    A declared length over the limit is refused before anything is read, and
+    a body with no declared length (chunked) is read only up to the limit.
+    """
+    declared = request.content_length
+    if declared is not None and declared > limit:
+        return None
+    chunks: list[bytes] = []
+    size = 0
+    while True:
+        chunk = await request.content.read(64 * 1024)
+        if not chunk:
+            return b"".join(chunks)
+        size += len(chunk)
+        if size > limit:
+            return None
+        chunks.append(chunk)
+
+
+def _delta_over_caps(payload: dict[str, Any]) -> str | None:
+    """Why a delta poll asks for more than the caps allow, or None. Counted on
+    what was sent, before junk entries are filtered out."""
+    entities = payload.get("entities")
+    if isinstance(entities, list) and len(entities) > DELTA_MAX_ENTITIES:
+        return f"entities is limited to {DELTA_MAX_ENTITIES} ids"
+    templates = payload.get("templates")
+    if isinstance(templates, dict):
+        if len(templates) > DELTA_MAX_TEMPLATES:
+            return f"templates is limited to {DELTA_MAX_TEMPLATES} entries"
+        if any(
+            isinstance(v, str) and len(v) > DELTA_MAX_TEMPLATE_CHARS
+            for v in templates.values()
+        ):
+            return f"a template is limited to {DELTA_MAX_TEMPLATE_CHARS} characters"
+    summary = payload.get("summary_entities")
+    if isinstance(summary, dict):
+        total = sum(len(ids) for ids in summary.values() if isinstance(ids, list))
+        if total > DELTA_MAX_SUMMARY_ENTITIES:
+            return f"summary_entities is limited to {DELTA_MAX_SUMMARY_ENTITIES} ids"
+    custom = payload.get("custom_entity_ids")
+    if isinstance(custom, list) and len(custom) > DELTA_MAX_CUSTOM_ENTITIES:
+        return f"custom_entity_ids is limited to {DELTA_MAX_CUSTOM_ENTITIES} ids"
+    return None
+
+
+def _lean_request(payload: dict[str, Any]) -> tuple[bool, str | None, str | None]:
+    """``(lean, caps_hash, epoch)`` from a delta poll. ``caps_hash`` and
+    ``epoch`` are read only with ``lean: true``; a value that is not a short
+    string reads as absent."""
+    if payload.get("lean") is not True:
+        return False, None, None
+
+    def token(raw: Any) -> str | None:
+        if isinstance(raw, str) and 0 < len(raw) <= _DELTA_TOKEN_MAX_CHARS:
+            return raw
+        return None
+
+    return True, token(payload.get("caps_hash")), token(payload.get("epoch"))
+
 
 def _held_revision(raw: Any) -> int | None:
     """A revision a device reports holding: a whole number from 0 up, or
@@ -564,7 +639,9 @@ class WADeltaView(HomeAssistantView):
         if domain_data is None:
             return Response(status=503, text="Integration not loaded")
 
-        body = await request.read()
+        body = await _read_capped_body(request, DELTA_MAX_BODY_BYTES)
+        if body is None:
+            return Response(status=413, text="Request body too large")
 
         try:
             validated = validate_wa_request(
@@ -595,6 +672,9 @@ class WADeltaView(HomeAssistantView):
             return Response(status=400, text="Invalid JSON body")
         if not isinstance(payload, dict):
             return Response(status=400, text="Expected JSON object body")
+        over_caps = _delta_over_caps(payload)
+        if over_caps is not None:
+            return Response(status=400, text=over_caps)
 
         # Cross-check: the watch_id in the HMAC header is the source of truth.
         # If the body's watch_id disagrees, reject — a confused client should
@@ -703,6 +783,15 @@ class WADeltaView(HomeAssistantView):
             client_certificate=_held_revision(payload.get("client_certificate")),
         )
 
+        # A watch that sees `delta_lean` sends `lean: true`, with the hash of
+        # the capability list it holds and the epoch its cursor came from, and
+        # gets replies that leave out what it already holds (see
+        # DeltaCoordinator._lean_reply). Older apps send none of it.
+        lean, caps_hash, epoch = _lean_request(payload)
+        # The device emptied its attribute cache since its last poll, so the
+        # session's diff baselines must go too (DeltaCoordinator).
+        attrs_reset = payload.get("attrs_reset", False) is True
+
         # Push notification token registration piggybacks on long-poll.
         device_token = payload.get("device_token")
         notification_store = domain_data.notification_store
@@ -758,6 +847,10 @@ class WADeltaView(HomeAssistantView):
             complications_token=complications_token,
             voices_hash=voices_hash,
             held=held,
+            lean=lean,
+            caps_hash=caps_hash,
+            epoch=epoch,
+            attrs_reset=attrs_reset,
         )
 
         if status == 204 or body_dict is None:
@@ -774,7 +867,7 @@ class WADeltaView(HomeAssistantView):
                 algo=validated.algo,
             )
             return Response(
-                status=status if status == 204 else status,
+                status=status,
                 headers={"X-WA-Ts": str(ts), "X-WA-Sig": sig},
             )
 

@@ -124,6 +124,10 @@ class _FakeStore:
         _FakeStore.files[self.key] = copy.deepcopy(serialize())
         _FakeStore.writes.append(self.key)
 
+    async def async_save(self, data: Any) -> None:
+        _FakeStore.files[self.key] = copy.deepcopy(data)
+        _FakeStore.writes.append(self.key)
+
     async def async_remove(self) -> None:
         _FakeStore.files.pop(self.key, None)
         _FakeStore.removed.append(self.key)
@@ -541,8 +545,12 @@ def test_a_restart_reads_back_every_record_and_its_history(mod):
     assert after.size_bytes == before.size_bytes > 0
     assert [(e.revision, e.hash) for e in after.history] == [(1, HASH_1)]
     assert again.get(OTHER, "pages").hash == HASH_3
-    # And the revision carries on from where it was.
-    assert _put(again, OWNER, base=2, digest=HASH_3).revision == 3
+    # And the revision carries on above the floor the restart set, which is
+    # on disk before anything above it is handed out.
+    floor = again._revision_floor
+    assert floor >= 2 + mod._REVISION_MARGIN
+    assert _FakeStore.files[INDEX_KEY]["revision_floor"] == floor
+    assert _put(again, OWNER, base=2, digest=HASH_3).revision == floor + 1
 
 
 def test_the_owner_file_holds_the_document_and_history_but_the_index_does_not(mod):
@@ -2260,7 +2268,9 @@ def test_a_create_for_an_unreadable_owner_is_unavailable(mod):
     store = _new(mod, paired={OWNER})
     with pytest.raises(mod.WatchConfigUnavailableError):
         store.panel_save(OWNER, "menus", _menus(), base_revision=0)
-    assert _FakeStore.writes == []
+    # Only the load's revision floor, into the index; the owner's file is
+    # never written.
+    assert _FakeStore.writes == [INDEX_KEY]
 
 
 def test_a_restore_never_creates_even_for_a_paired_watch(mod):
@@ -2860,14 +2870,15 @@ def test_a_file_written_before_step_3_still_loads_and_works(mod):
     # Everything works on it: the report, a device save over the faulty
     # tiles, a restore of an entry without an envelope, and the rewrite.
     assert store.report_unreadable(OWNER, "pages", 4) is True
-    assert _put(store, doc=old_document, base=4, digest=HASH_2).revision == 5
-    assert store.restore(OWNER, "pages", 2, base_revision=5).revision == 6
+    floor = store._revision_floor
+    assert _put(store, doc=old_document, base=4, digest=HASH_2).revision == floor + 1
+    assert store.restore(OWNER, "pages", 2, base_revision=floor + 1).revision == floor + 2
     written = _FakeStore.files[key]["records"]["pages"]
-    assert (written["rejected_revision"], written["revision"]) == (4, 6)
+    assert (written["rejected_revision"], written["revision"]) == (4, floor + 2)
     assert written["history"][0] == {
         "revision": 2, "hash": None, "updated_at": None, "updated_by": None,
         "document": {"pages": [{"id": "P1", "tiles": []}]},
     }
     again = _new(mod).get(OWNER, "pages")
-    assert (again.revision, again.rejected_revision) == (6, 4)
-    assert [e.revision for e in again.history] == [2, 3, 4, 5]
+    assert (again.revision, again.rejected_revision) == (floor + 2, 4)
+    assert [e.revision for e in again.history] == [2, 3, 4, floor + 1]

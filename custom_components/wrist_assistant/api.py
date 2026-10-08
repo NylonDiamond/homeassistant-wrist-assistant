@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+import hashlib
 import logging
+import secrets
 from typing import Any
 
 from homeassistant.const import EVENT_STATE_CHANGED
@@ -21,7 +23,7 @@ from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.helpers.template import Template
 from homeassistant.util import dt as dt_util
 
-from .logbook_events import log_first_sync, log_session_dropped
+from .logbook_events import log_first_sync
 
 
 DEFAULT_TIMEOUT_SECONDS = 45
@@ -33,6 +35,9 @@ POLL_GAP_SECONDS = 10
 MAX_EVENTS_BUFFER = 5000
 MAX_EVENTS_PER_RESPONSE = 250
 SESSION_TTL = timedelta(minutes=5)
+# How long a parked poll waits after a wake before it collects, so a burst
+# (a scene setting a dozen lights) goes out as one reply, not a dozen.
+WAKE_COALESCE_SECONDS = 0.15
 # The watch config kinds the delta reply names, as `watch_config: {kind: rev}`.
 # The eight a watch applies (WATCH_CONFIG_PANEL_KINDS in const.py). Never the
 # catalog, which only the phone and the panel read.
@@ -49,6 +54,15 @@ DELTA_WATCH_CONFIG_KINDS = (
 
 _LOGGER = logging.getLogger(__name__)
 _ATTR_DIFF_SENTINEL = object()
+
+
+def capabilities_hash(capabilities: Iterable[str]) -> str:
+    """The ``caps_hash`` a lean poll and its reply carry: the first 16
+    lowercase hex digits of SHA-256 over the capabilities, sorted by their
+    UTF-8 bytes and joined with ``,``. The watch computes the same over the
+    list it holds, so a match means the reply can leave the list out."""
+    encoded = sorted(cap.encode() for cap in capabilities)
+    return hashlib.sha256(b",".join(encoded)).hexdigest()[:16]
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +117,27 @@ class WatchSession:
     first_seen: datetime = field(default_factory=dt_util.utcnow)
     last_poll_interval: timedelta | None = None
     last_sent_attrs: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # The state word last sent per entity, beside last_sent_attrs and reset
+    # with it. A change whose state matches it and whose attribute diff is
+    # empty tells this watch nothing and is left out of its reply.
+    last_sent_state: dict[str, str] = field(default_factory=dict)
+    # The cursor of the last reply written while diffs were on, so the
+    # baselines above match a device holding exactly that reply. A poll from
+    # an older cursor never got it (a lost or cancelled reply), and its
+    # baselines are dropped.
+    diff_cursor: int | None = None
+
+    def keep_baselines(self, entity_ids: set[str]) -> None:
+        """Forget the attribute and state baselines of every entity not in
+        ``entity_ids``, keeping the rest."""
+        for baseline in (self.last_sent_attrs, self.last_sent_state):
+            for entity_id in [e for e in baseline if e not in entity_ids]:
+                del baseline[entity_id]
+
+    def clear_baselines(self) -> None:
+        self.last_sent_attrs.clear()
+        self.last_sent_state.clear()
+        self.diff_cursor = None
 
 
 @dataclass(slots=True)
@@ -323,11 +358,10 @@ class DeltaCoordinator:
         self._events: deque[DeltaEvent] = deque(maxlen=MAX_EVENTS_BUFFER)
         self._cursor = 0
         self._generation = 0
-        # Cursor value at the most recent state change that was NOT buffered
-        # because no watch was connected. A watch resuming with a cursor at or
-        # below this point missed at least one change, so it must resync even
-        # though the ring buffer itself has no gap. None = nothing dropped yet.
-        self._gap_cursor: int | None = None
+        # Names this coordinator's cursors. A new one on every start and every
+        # reload, so a lean poll holding a cursor from an earlier one is told
+        # to resync even when the number happens to be in range.
+        self._epoch = secrets.token_hex(8)
         self._waiters: dict[str, asyncio.Event] = {}  # watch_id → per-waiter event
         self._entity_to_watchers: dict[str, set[str]] = {}  # entity_id → {watch_ids}
         self._domain_watchers: set[str] = set()  # watch_ids with domain-level template deps
@@ -337,6 +371,10 @@ class DeltaCoordinator:
         self._poll_callbacks: list[Callable[[str], None]] = []
         self._capabilities: set[str] = {"smart_camera_stream", "template_subscriptions", "compact_events", "attribute_diffs", "instant_poll"}
         self._sorted_capabilities: list[str] = sorted(self._capabilities)
+        self._caps_hash = capabilities_hash(self._capabilities)
+        # Devices whose first sync since this server started is logged, so a
+        # watch coming back after the session TTL is not logged again.
+        self._first_sync_logged: set[str] = set()
         # Custom complications ride the poll: the owner's store token goes
         # out on every reply, the watch's applied token comes in on every
         # request, and a commit wakes the parked poll. None until setup
@@ -344,11 +382,16 @@ class DeltaCoordinator:
         self._complication_store: Any | None = None
         # watch_id → loop time of its last poll, for is_polling().
         self._last_poll_at: dict[str, float] = {}
-        # watch_id → store token the watch was last handed in a "you are
-        # behind" reply. Bounds that reply to once per token change, so a
-        # watch whose pull keeps failing waits out the poll window instead
-        # of spinning on immediate empty replies.
+        # watch_id → store token the watch was last handed on a reply while
+        # its applied token differed. Bounds the "you are behind" reply to
+        # once per token change, so a watch whose pull keeps failing waits
+        # out the poll window instead of spinning on immediate empty replies.
         self._token_notified: dict[str, int] = {}
+        # watch_id → the token it was told once more because its applied
+        # token still lagged one it had been told (the first reply may have
+        # been lost in a half-open connection). Once per token, like
+        # _held_repeated for the config numbers.
+        self._token_repeated: dict[str, int] = {}
         # Watch config rides the poll the same way: every reply with a body
         # names the signer's revision of every kind a watch applies
         # (DELTA_WATCH_CONFIG_KINDS), and a save wakes the parked poll (see
@@ -404,6 +447,12 @@ class DeltaCoordinator:
         """Register a server capability advertised to clients."""
         self._capabilities.add(cap)
         self._sorted_capabilities = sorted(self._capabilities)
+        self._caps_hash = capabilities_hash(self._capabilities)
+
+    @property
+    def epoch(self) -> str:
+        """This coordinator's epoch (see ``_epoch``)."""
+        return self._epoch
 
     @property
     def capabilities(self) -> list[str]:
@@ -434,6 +483,7 @@ class DeltaCoordinator:
         """
         if renotify:
             self._token_notified.pop(watch_id, None)
+            self._token_repeated.pop(watch_id, None)
         waiter = self._waiters.get(watch_id)
         if waiter is not None:
             waiter.set()
@@ -471,18 +521,27 @@ class DeltaCoordinator:
     def _complications_behind(self, watch_id: str, applied: int | None) -> bool:
         """True when the watch should be handed the current token now: it
         told us what it applied, that is older, and it has not been told
-        about this token yet."""
+        about this token yet, or was told only once and still lags it."""
         if applied is None:
             return False
         server = self.complications_token(watch_id)
         if server is None or server == applied:
             return False
-        return self._token_notified.get(watch_id) != server
+        if self._token_notified.get(watch_id) != server:
+            return True
+        return self._token_repeated.get(watch_id) != server
 
-    def _note_complications_notified(self, watch_id: str) -> None:
-        server = self.complications_token(watch_id)
-        if server is not None:
-            self._token_notified[watch_id] = server
+    def _note_complications_notified(
+        self, watch_id: str, token: int, applied: int | None
+    ) -> None:
+        """After a reply carries ``token`` to a poll that applied
+        ``applied``: a watch that differs has now been told. One told before
+        and still lagging has now been told once more."""
+        if applied is None or token == applied:
+            return
+        if self._token_notified.get(watch_id) == token:
+            self._token_repeated[watch_id] = token
+        self._token_notified[watch_id] = token
 
     # ── watch config on the poll ──────────────────────────────────────
 
@@ -974,10 +1033,13 @@ class DeltaCoordinator:
         self._remove_watcher_index(watch_id)
         self._last_poll_at.pop(watch_id, None)
         self._token_notified.pop(watch_id, None)
+        self._token_repeated.pop(watch_id, None)
         self._watch_config_sent.pop(watch_id, None)
         self._http_actions_sent.pop(watch_id, None)
         self._client_certificate_sent.pop(watch_id, None)
         self._held_repeated.pop(watch_id, None)
+        # A device paired again under the same id is a first sync again.
+        self._first_sync_logged.discard(watch_id)
         if had_session:
             self._fire_session_callbacks()
         return had_session
@@ -1001,6 +1063,10 @@ class DeltaCoordinator:
         complications_token: int | None = None,
         voices_hash: str | None = None,
         held: HeldConfig | None = None,
+        lean: bool = False,
+        caps_hash: str | None = None,
+        epoch: str | None = None,
+        attrs_reset: bool = False,
     ) -> tuple[int, dict[str, Any] | None]:
         """Handle a single long-poll request.
 
@@ -1035,6 +1101,14 @@ class DeltaCoordinator:
         answered at once with an empty reply carrying it, like a poll whose
         last reply predates the change, once per value. It is how a hint
         lost in a half-open connection reaches the device on its next poll.
+        A watch config kind it reports at the stored revision counts as a
+        confirmed delivery, as a ``watch_config_get`` from that revision does.
+
+        ``lean`` (the ``delta_lean`` capability) shapes every reply with a
+        body down to what the device does not already hold (see
+        ``_lean_reply``). ``caps_hash`` is the hash of the capability list it
+        holds and ``epoch`` the epoch its cursor came from; both are read
+        only on a lean poll.
         """
         # A device removed while its request was in flight: no session, no
         # stamps, no body.
@@ -1044,6 +1118,8 @@ class DeltaCoordinator:
         store = self._complication_store
         if store is not None and complications_token is not None:
             store.set_applied_token(watch_id, complications_token)
+        reported = held or HeldConfig()
+        self._confirm_held_watch_config(watch_id, reported)
         status, body = await self._handle_poll_inner(
             watch_id=watch_id,
             since=since,
@@ -1061,44 +1137,159 @@ class DeltaCoordinator:
             custom_entity_ids=custom_entity_ids,
             applied_complications_token=complications_token,
             held=held,
+            lean=lean,
+            epoch=epoch,
+            attrs_reset=attrs_reset,
         )
         if body is not None:
-            token = self.complications_token(watch_id)
-            if token is not None:
-                body["complications_token"] = token
-            reported = held or HeldConfig()
-            revisions = self.watch_config_revisions(watch_id)
-            if revisions is not None:
-                body["watch_config"] = revisions
-                self._watch_config_sent[watch_id] = revisions
-                self._note_held(
-                    watch_id, "watch_config", reported.watch_config_lags(revisions), revisions
-                )
-            library_revision = self.http_actions_revision()
-            if library_revision is not None:
-                body["http_actions"] = library_revision
-                self._http_actions_sent[watch_id] = library_revision
-                self._note_held(
-                    watch_id,
-                    "http_actions",
-                    reported.http_actions is not None
-                    and reported.http_actions != library_revision,
-                    library_revision,
-                )
-            certificate_revision = self.client_certificate_revision(watch_id)
-            if certificate_revision is not None:
-                body["client_certificate"] = certificate_revision
-                self._client_certificate_sent[watch_id] = certificate_revision
-                self._note_held(
-                    watch_id,
-                    "client_certificate",
-                    reported.client_certificate is not None
-                    and reported.client_certificate != certificate_revision,
-                    certificate_revision,
-                )
-            if self._voices_wanted(watch_id, voices_hash):
-                body["voices_wanted"] = True
+            self._stamp_reply(watch_id, body, reported, complications_token, voices_hash)
+            if lean:
+                self._lean_reply(body, reported, complications_token, caps_hash, epoch)
         return status, body
+
+    def _stamp_reply(
+        self,
+        watch_id: str,
+        body: dict[str, Any],
+        reported: HeldConfig,
+        applied_token: int | None,
+        voices_hash: str | None,
+    ) -> None:
+        """Put the config numbers on a reply with a body, and record what it
+        carried (see HeldConfig)."""
+        token = self.complications_token(watch_id)
+        if token is not None:
+            body["complications_token"] = token
+            self._note_complications_notified(watch_id, token, applied_token)
+        revisions = self.watch_config_revisions(watch_id)
+        if revisions is not None:
+            body["watch_config"] = revisions
+            self._watch_config_sent[watch_id] = revisions
+            self._note_held(
+                watch_id, "watch_config", reported.watch_config_lags(revisions), revisions
+            )
+        library_revision = self.http_actions_revision()
+        if library_revision is not None:
+            body["http_actions"] = library_revision
+            self._http_actions_sent[watch_id] = library_revision
+            self._note_held(
+                watch_id,
+                "http_actions",
+                reported.http_actions is not None
+                and reported.http_actions != library_revision,
+                library_revision,
+            )
+        certificate_revision = self.client_certificate_revision(watch_id)
+        if certificate_revision is not None:
+            body["client_certificate"] = certificate_revision
+            self._client_certificate_sent[watch_id] = certificate_revision
+            self._note_held(
+                watch_id,
+                "client_certificate",
+                reported.client_certificate is not None
+                and reported.client_certificate != certificate_revision,
+                certificate_revision,
+            )
+        if self._voices_wanted(watch_id, voices_hash):
+            body["voices_wanted"] = True
+
+    def _lean_reply(
+        self,
+        body: dict[str, Any],
+        reported: HeldConfig,
+        applied_token: int | None,
+        caps_hash: str | None,
+        epoch: str | None,
+    ) -> None:
+        """Shape a stamped reply for a lean poll: leave out what the device
+        already holds, so a quiet reply is little more than its cursor.
+
+        * ``capabilities`` only when the poll's ``caps_hash`` is not the
+          server's, and then with ``caps_hash``.
+        * ``need_entities`` and ``resync_required`` only when true, and
+          ``events`` only when there are some. ``next_cursor`` always.
+        * Each config number only when it differs from what the poll
+          reported holding; ``watch_config`` names only the kinds that differ.
+        * ``epoch`` only when the poll's is not this coordinator's.
+
+        The device fills a missing number in from the request it sent, so
+        what reaches the rest of the app reads like a full reply.
+        """
+        if caps_hash == self._caps_hash:
+            body.pop("capabilities", None)
+        else:
+            body["caps_hash"] = self._caps_hash
+        for key in ("need_entities", "resync_required"):
+            if body.get(key) is False:
+                del body[key]
+        if not body.get("events"):
+            body.pop("events", None)
+        revisions = body.get("watch_config")
+        if revisions is not None:
+            held_revisions = reported.watch_config or {}
+            changed = {
+                kind: revision
+                for kind, revision in revisions.items()
+                if held_revisions.get(kind) != revision
+            }
+            if changed:
+                body["watch_config"] = changed
+            else:
+                del body["watch_config"]
+        for key, held_value in (
+            ("http_actions", reported.http_actions),
+            ("client_certificate", reported.client_certificate),
+            ("complications_token", applied_token),
+        ):
+            if key in body and body[key] == held_value:
+                del body[key]
+        if epoch != self._epoch:
+            body["epoch"] = self._epoch
+
+    def _confirm_held_watch_config(self, watch_id: str, reported: HeldConfig) -> None:
+        """A kind the device reports holding at the stored revision is a
+        confirmed delivery: the same mark ``watch_config_get`` makes for a get
+        from the stored revision, which also clears an unreadable report about
+        it. The store saves only when something moves."""
+        held = reported.watch_config
+        store = self._watch_config_store
+        if not held or store is None:
+            return
+        current = self.watch_config_revisions(watch_id)
+        if current is None:
+            return
+        for kind, revision in current.items():
+            if revision > 0 and held.get(kind) == revision:
+                try:
+                    store.mark_delivered(watch_id, kind, revision, confirmed=True)
+                except Exception:  # noqa: BLE001 (a mark must not fail the poll)
+                    _LOGGER.debug(
+                        "Could not mark %s %s delivered", watch_id, kind, exc_info=True
+                    )
+
+    def _collect(
+        self,
+        session: WatchSession,
+        since_cursor: int,
+        *,
+        slim: bool,
+        compact: bool,
+        attribute_diffs: bool,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """The watch's entity changes past ``since_cursor`` and its templates
+        whose value moved, with the cursor to hand back."""
+        changed_ids = self._changed_entity_ids(since_cursor)
+        events, cursor = self._collect_events(
+            since_cursor=since_cursor,
+            entities=session.entities,
+            limit=MAX_EVENTS_PER_RESPONSE,
+            slim=slim,
+            compact=compact,
+            session=session if attribute_diffs else None,
+            attribute_diffs=attribute_diffs,
+        )
+        events.extend(self._evaluate_templates(session, changed_ids=changed_ids))
+        return events, cursor
 
     async def _handle_poll_inner(
         self,
@@ -1118,6 +1309,9 @@ class DeltaCoordinator:
         custom_entity_ids: list[str] | None = None,
         applied_complications_token: int | None = None,
         held: HeldConfig | None = None,
+        lean: bool = False,
+        epoch: str | None = None,
+        attrs_reset: bool = False,
     ) -> tuple[int, dict[str, Any] | None]:
         self._prune_sessions()
         session = self._sessions.get(watch_id)
@@ -1125,7 +1319,12 @@ class DeltaCoordinator:
         if is_new_session:
             session = WatchSession(watch_id=watch_id)
             self._sessions[watch_id] = session
-            log_first_sync(self.hass, watch_id=watch_id)
+            # Once per device while this server runs. A watch gets a new
+            # session after every SESSION_TTL away (each wrist down), which
+            # is no news.
+            if watch_id not in self._first_sync_logged:
+                self._first_sync_logged.add(watch_id)
+                log_first_sync(self.hass, watch_id=watch_id)
 
         now = dt_util.utcnow()
         if not is_new_session:
@@ -1142,14 +1341,40 @@ class DeltaCoordinator:
             session.entities = new_entities
             session.config_hash = config_hash
             session.entities_synced = True
-            session.last_sent_attrs.clear()
+            # A lean watch keeps its attribute cache across a resent list, so
+            # the baselines of the entities still in it stay. An older watch
+            # empties its cache whenever it sends the list (each loop start)
+            # while keeping its cursor, and must get full attributes again.
+            if lean:
+                session.keep_baselines(new_entities)
+            else:
+                session.clear_baselines()
         elif session.config_hash != config_hash:
             # Watch config changed, ask client to send the latest entity list.
             session.config_hash = config_hash
             sessions_changed = sessions_changed or bool(session.entities)
             session.entities.clear()
             session.entities_synced = False
-            session.last_sent_attrs.clear()
+            session.clear_baselines()
+
+        # The baselines must match the attribute cache the device holds, or
+        # its next diffs merge into the wrong set. They go when the device
+        # says it emptied its cache (`attrs_reset`), when it polls without
+        # diffs (nothing then keeps them in step), and when it polls from a
+        # cursor older than the last reply written with diffs: that reply
+        # moved the baselines and never reached it.
+        if attrs_reset or not attribute_diffs:
+            session.clear_baselines()
+        elif (
+            session.diff_cursor is not None
+            and since is not None
+            and since != ""
+        ):
+            since_cursor, invalid_since = self._parse_since(
+                since=since, default_cursor=self._cursor
+            )
+            if invalid_since or since_cursor < session.diff_cursor:
+                session.clear_baselines()
 
         # Store template subscriptions (sent alongside entities)
         if templates is not None:
@@ -1161,49 +1386,71 @@ class DeltaCoordinator:
             self._fire_session_callbacks()
         self._fire_poll_callbacks(watch_id)
 
+        def reply(
+            events: list[dict[str, Any]],
+            next_cursor: int,
+            *,
+            need_entities: bool = False,
+            resync_required: bool = False,
+            include_details: bool = False,
+        ) -> dict[str, Any]:
+            if attribute_diffs:
+                session.diff_cursor = next_cursor
+            return self._response_payload(
+                events=events,
+                next_cursor=next_cursor,
+                need_entities=need_entities,
+                resync_required=resync_required,
+                include_details=include_details,
+                battery_threshold=battery_threshold,
+                summary_entities=summary_entities,
+                include_summary=include_summary,
+                custom_entity_ids=custom_entity_ids,
+            )
+
+        # A lean poll names the epoch its cursor came from. A cursor from an
+        # earlier coordinator (a restart or a reload) can be in range by
+        # chance and still mean nothing here, so it is answered with a resync.
+        if (
+            lean
+            and epoch is not None
+            and since is not None
+            and since != ""
+            and epoch != self._epoch
+        ):
+            return 410, reply(
+                [],
+                self._cursor,
+                need_entities=not session.entities_synced,
+                resync_required=True,
+            )
+
         if not session.entities_synced:
             # The device is asked for its entity list. Its next poll carries
             # the list with whatever cursor this reply hands back, and the
             # device keeps any cursor at or above its own. Handing back the
             # current cursor to a device that sent an older one made it skip
-            # every change in between: those already in the buffer, and those
-            # dropped while it had no session (after a prune, force_resync, or
-            # its session being dropped while its loop kept running), with no
-            # 410 to tell it so.
+            # every change in between, with no 410 to tell it so.
             #
             # So a device that sent a cursor is judged on it first. A stale or
             # unreadable cursor gets the same 410 any poll would, and the
             # device answers that with a full snapshot. A good one is echoed
-            # back, so the next poll resumes from where the device really is.
-            # A brand-new device (no cursor) has nothing to skip and keeps the
-            # current cursor, as before.
+            # back, so the next poll resumes from where the device really is:
+            # changes are buffered with or without a session, so a watch back
+            # after SESSION_TTL collects exactly what it missed. A brand-new
+            # device (no cursor) has nothing to skip and keeps the current
+            # cursor, as before.
             reply_cursor = self._cursor
             if since is not None and since != "":
                 since_cursor, invalid_since = self._parse_since(
                     since=since, default_cursor=self._cursor
                 )
                 if invalid_since or self._is_stale_cursor(since_cursor):
-                    return 410, self._response_payload(
-                        events=[],
-                        next_cursor=self._cursor,
-                        need_entities=True,
-                        resync_required=True,
-                        battery_threshold=battery_threshold,
-                        summary_entities=summary_entities,
-                        include_summary=include_summary,
-                        custom_entity_ids=custom_entity_ids,
+                    return 410, reply(
+                        [], self._cursor, need_entities=True, resync_required=True
                     )
                 reply_cursor = since_cursor
-            return 200, self._response_payload(
-                events=[],
-                next_cursor=reply_cursor,
-                need_entities=True,
-                resync_required=False,
-                battery_threshold=battery_threshold,
-                summary_entities=summary_entities,
-                include_summary=include_summary,
-                custom_entity_ids=custom_entity_ids,
-            )
+            return 200, reply([], reply_cursor, need_entities=True)
 
         # When since is nil, the client is requesting a full state snapshot.
         # Fetch current state directly from HA's state machine (in-memory, instant).
@@ -1216,45 +1463,20 @@ class DeltaCoordinator:
                 session=session if attribute_diffs else None, attribute_diffs=attribute_diffs,
             )
             snapshot_events.extend(self._snapshot_templates(session))
-            return 200, self._response_payload(
-                events=snapshot_events,
-                next_cursor=snapshot_cursor,
-                need_entities=False,
-                resync_required=False,
-                battery_threshold=battery_threshold,
-                summary_entities=summary_entities,
-                include_summary=include_summary,
-                custom_entity_ids=custom_entity_ids,
-            )
+            return 200, reply(snapshot_events, snapshot_cursor)
 
         since_cursor, invalid_since = self._parse_since(
             since=since, default_cursor=self._cursor
         )
-        if invalid_since:
-            return 410, self._response_payload(
-                events=[],
-                next_cursor=self._cursor,
-                need_entities=False,
-                resync_required=True,
-                battery_threshold=battery_threshold,
-                summary_entities=summary_entities,
-                include_summary=include_summary,
-                custom_entity_ids=custom_entity_ids,
-            )
-
-        if self._is_stale_cursor(since_cursor):
-            return 410, self._response_payload(
-                events=[],
-                next_cursor=self._cursor,
-                need_entities=False,
-                resync_required=True,
-                battery_threshold=battery_threshold,
-                summary_entities=summary_entities,
-                include_summary=include_summary,
-                custom_entity_ids=custom_entity_ids,
-            )
+        if invalid_since or self._is_stale_cursor(since_cursor):
+            return 410, reply([], self._cursor, resync_required=True)
 
         request_cursor = since_cursor
+
+        def collect(cursor: int) -> tuple[list[dict[str, Any]], int]:
+            return self._collect(
+                session, cursor, slim=slim, compact=compact, attribute_diffs=attribute_diffs
+            )
 
         def quiet_reply(cursor: int) -> tuple[int, dict[str, Any] | None]:
             """Answer a poll that found nothing for this watch.
@@ -1279,72 +1501,18 @@ class DeltaCoordinator:
             A change can land in the same loop tick the wait timed out, and
             the cursor about to go back must not skip it.
             """
-            changed = self._changed_entity_ids(since_cursor)
-            events, cursor = self._collect_events(
-                since_cursor=since_cursor,
-                entities=session.entities,
-                limit=MAX_EVENTS_PER_RESPONSE,
-                slim=slim,
-                compact=compact,
-                session=session if attribute_diffs else None,
-                attribute_diffs=attribute_diffs,
-            )
-            template_events = self._evaluate_templates(session, changed_ids=changed)
-            if template_events:
-                events.extend(template_events)
+            events, cursor = collect(since_cursor)
             if events:
-                return 200, self._response_payload(
-                    events=events,
-                    next_cursor=cursor,
-                    need_entities=False,
-                    resync_required=False,
-                    battery_threshold=battery_threshold,
-                    summary_entities=summary_entities,
-                    include_summary=include_summary,
-                    custom_entity_ids=custom_entity_ids,
-                )
+                return 200, reply(events, cursor)
             return quiet_reply(cursor)
 
-        changed_ids = self._changed_entity_ids(since_cursor)
-        events, next_cursor = self._collect_events(
-            since_cursor=since_cursor,
-            entities=session.entities,
-            limit=MAX_EVENTS_PER_RESPONSE,
-            slim=slim,
-            compact=compact,
-            session=session if attribute_diffs else None,
-            attribute_diffs=attribute_diffs,
-        )
-        # Evaluate subscribed templates and include any changed values
-        template_events = self._evaluate_templates(session, changed_ids=changed_ids)
-        if template_events:
-            events.extend(template_events)
+        events, next_cursor = collect(since_cursor)
         if events:
-            return 200, self._response_payload(
-                events=events,
-                next_cursor=next_cursor,
-                need_entities=False,
-                resync_required=False,
-                include_details=force_delta,
-                battery_threshold=battery_threshold,
-                summary_entities=summary_entities,
-                include_summary=include_summary,
-                custom_entity_ids=custom_entity_ids,
-            )
+            return 200, reply(events, next_cursor, include_details=force_delta)
 
         # Force delta: skip long-poll wait, return immediately with detailed info_summary
         if force_delta:
-            return 200, self._response_payload(
-                events=[],
-                next_cursor=next_cursor,
-                need_entities=False,
-                resync_required=False,
-                include_details=True,
-                battery_threshold=battery_threshold,
-                summary_entities=summary_entities,
-                include_summary=include_summary,
-                custom_entity_ids=custom_entity_ids,
-            )
+            return 200, reply([], next_cursor, include_details=True)
 
         # Probe: timeout 0 means "answer now". Nothing for this watch past the
         # cursor, so the answer is an empty 204, or a small 200 carrying the
@@ -1357,35 +1525,27 @@ class DeltaCoordinator:
         #
         # A watch that is behind on its custom complications gets an empty
         # 200 instead of parking or probing: the wrapper stamps the current
-        # token on it and the watch pulls. Once per token change, so a pull
-        # that keeps failing does not turn this into a tight loop. A watch
-        # config save (or a change to the home's HTTP action library) since
-        # this watch's last reply gets the same empty 200, once per change,
-        # since the wrapper records what each reply carried.
-        complications_behind = self._complications_behind(
-            watch_id, applied_complications_token
-        )
-        if complications_behind or self._config_behind(watch_id, held):
-            if complications_behind:
-                self._note_complications_notified(watch_id)
-            return 200, self._response_payload(
-                events=[],
-                next_cursor=next_cursor,
-                need_entities=False,
-                resync_required=False,
-                battery_threshold=battery_threshold,
-                summary_entities=summary_entities,
-                include_summary=include_summary,
-                custom_entity_ids=custom_entity_ids,
-            )
+        # token on it and the watch pulls. Once per token change (and once
+        # more while its report still lags), so a pull that keeps failing
+        # does not turn this into a tight loop. A watch config save (or a
+        # change to the home's HTTP action library) since this watch's last
+        # reply gets the same empty 200, once per change, since the wrapper
+        # records what each reply carried.
+        def behind() -> bool:
+            return self._complications_behind(
+                watch_id, applied_complications_token
+            ) or self._config_behind(watch_id, held)
+
+        if behind():
+            return 200, reply([], next_cursor)
         # Not behind. Before probing or parking, make sure there is something
         # recorded for a later save to be compared against.
         self._note_config_baseline(watch_id)
         if timeout <= 0:
             return quiet_reply(next_cursor)
+        since_cursor = next_cursor
 
         deadline = self.hass.loop.time() + timeout
-        observed_generation = self._generation
 
         # Register per-waiter event and build watcher index. A newer poll for
         # the same watch supersedes any older one still parked (half-open
@@ -1405,36 +1565,6 @@ class DeltaCoordinator:
                 remaining = deadline - self.hass.loop.time()
                 if remaining <= 0:
                     return timed_out()
-
-                if self._generation != observed_generation:
-                    observed_generation = self._generation
-                    changed_ids = self._changed_entity_ids(since_cursor)
-                    events, next_cursor = self._collect_events(
-                        since_cursor=since_cursor,
-                        entities=session.entities,
-                        limit=MAX_EVENTS_PER_RESPONSE,
-                        slim=slim,
-                        compact=compact,
-                        session=session if attribute_diffs else None,
-                        attribute_diffs=attribute_diffs,
-                    )
-                    template_events = self._evaluate_templates(session, changed_ids=changed_ids)
-                    if template_events:
-                        events.extend(template_events)
-                    if events:
-                        return 200, self._response_payload(
-                            events=events,
-                            next_cursor=next_cursor,
-                            need_entities=False,
-                            resync_required=False,
-                            battery_threshold=battery_threshold,
-                            summary_entities=summary_entities,
-                            include_summary=include_summary,
-                            custom_entity_ids=custom_entity_ids,
-                        )
-                    since_cursor = next_cursor
-                    continue
-
                 try:
                     await asyncio.wait_for(waiter_event.wait(), timeout=remaining)
                 except TimeoutError:
@@ -1445,64 +1575,33 @@ class DeltaCoordinator:
                 # the newer poll deliver; this one just ends quietly.
                 if self._waiters.get(watch_id) is not waiter_event:
                     return 204, None
-                observed_generation = self._generation
 
-                changed_ids = self._changed_entity_ids(since_cursor)
-                events, next_cursor = self._collect_events(
-                    since_cursor=since_cursor,
-                    entities=session.entities,
-                    limit=MAX_EVENTS_PER_RESPONSE,
-                    slim=slim,
-                    compact=compact,
-                    session=session if attribute_diffs else None,
-                    attribute_diffs=attribute_diffs,
-                )
-                template_events = self._evaluate_templates(session, changed_ids=changed_ids)
-                if template_events:
-                    events.extend(template_events)
+                # Let the rest of a burst land before collecting, inside the
+                # poll's own window. Wakes during the pause are collected now.
+                pause = min(WAKE_COALESCE_SECONDS, deadline - self.hass.loop.time())
+                if pause > 0:
+                    await asyncio.sleep(pause)
+                    if self._waiters.get(watch_id) is not waiter_event:
+                        return 204, None
+                    waiter_event.clear()
+
+                events, next_cursor = collect(since_cursor)
                 if events:
-                    return 200, self._response_payload(
-                        events=events,
-                        next_cursor=next_cursor,
-                        need_entities=False,
-                        resync_required=False,
-                        battery_threshold=battery_threshold,
-                        summary_entities=summary_entities,
-                        include_summary=include_summary,
-                        custom_entity_ids=custom_entity_ids,
-                    )
+                    return 200, reply(events, next_cursor)
                 # Woken by a complication commit (or a panel nudge) or a
                 # watch config save or an HTTP action library change rather
-                # than an entity: nothing to deliver
-                # but the token and the revisions, which the wrapper stamps
-                # on this empty reply.
-                complications_behind = self._complications_behind(
-                    watch_id, applied_complications_token
-                )
-                if complications_behind or self._config_behind(watch_id, held):
-                    if complications_behind:
-                        self._note_complications_notified(watch_id)
-                    return 200, self._response_payload(
-                        events=[],
-                        next_cursor=next_cursor,
-                        need_entities=False,
-                        resync_required=False,
-                        battery_threshold=battery_threshold,
-                        summary_entities=summary_entities,
-                        include_summary=include_summary,
-                        custom_entity_ids=custom_entity_ids,
-                    )
+                # than an entity: nothing to deliver but the token and the
+                # revisions, which the wrapper stamps on this empty reply.
+                if behind():
+                    return 200, reply([], next_cursor)
+                # Nothing this watch has not seen (every change was a no-op
+                # for it): back to waiting, inside the same window.
                 since_cursor = next_cursor
         finally:
-            # Keep the session in self._sessions across a client cancel so
-            # state_changed events fired during a brief background→foreground
-            # cycle still land in the ring buffer for this watch to pick up
-            # on reconnect. Otherwise the early-return in
-            # _handle_state_changed (`if not self._sessions: return`) drops
-            # every event between disconnect and reconnect — and the watch
-            # comes back with next_cursor == since and stale tiles.
-            # SESSION_TTL (5 min) handles truly abandoned sessions via
-            # _prune_sessions on the next poll from any watch.
+            # Keep the session in self._sessions across a client cancel; it
+            # holds the attribute baselines and the entity list. SESSION_TTL
+            # (5 min) handles truly abandoned sessions via _prune_sessions on
+            # the next poll from any watch.
             #
             # Only remove OUR waiter. If a newer poll for this watch already
             # replaced it, popping unconditionally would blind that live poll:
@@ -1513,18 +1612,14 @@ class DeltaCoordinator:
 
     @callback
     def _handle_state_changed(self, event: Event) -> None:
-        """Track every state change in a bounded in-memory ring buffer."""
-        if not self._sessions:
-            # No watches connected — skip payload construction, but still
-            # consume a cursor value for the dropped change and remember it.
-            # A watch that later resumes with a cursor BELOW this point missed
-            # the change and is told to resync (see _is_stale_cursor). Bumping
-            # the cursor is what keeps that check from looping: a snapshot
-            # taken after the gap hands out a cursor >= _gap_cursor, which is
-            # distinguishable from the pre-gap cursor a stale watch holds.
-            self._cursor += 1
-            self._gap_cursor = self._cursor
-            return
+        """Track every state change in a bounded in-memory ring buffer.
+
+        Buffered whether or not any watch has a session: a watch back after
+        SESSION_TTL then collects only what changed, and the ring's size
+        alone decides when a cursor is too old. The ring keeps HA's own
+        State and builds a payload only when a poll reads it (see
+        DeltaEvent), so an unwatched house costs a reference per change.
+        """
         new_state: State | None = event.data.get("new_state")
         if new_state is None:
             return
@@ -1588,8 +1683,10 @@ class DeltaCoordinator:
     ) -> list[dict[str, Any]]:
         """Build a full state snapshot from HA's state machine for the given entities.
 
-        When attribute_diffs is True, populates session.last_sent_attrs so
-        subsequent delta events can compute diffs against this baseline.
+        When attribute_diffs is True, populates session.last_sent_attrs (and
+        last_sent_state) so subsequent delta events can compute diffs against
+        this baseline, and marks every entry ``attrs_full``: it carries the
+        whole attribute set.
         """
         to_payload = self._slim_state_to_payload if slim else self._state_to_payload
         snapshot: list[dict[str, Any]] = []
@@ -1625,20 +1722,21 @@ class DeltaCoordinator:
                 else:
                     ns_payload = entry.get("new_state", {})
                     session.last_sent_attrs[entity_id] = dict(ns_payload.get("attributes", {}))
+                session.last_sent_state[entity_id] = state.state
+                entry["attrs_full"] = True
             snapshot.append(entry)
         return snapshot
 
     def _bisect_cursor(self, since_cursor: int) -> int:
         """Return the deque index of the first event with cursor > since_cursor.
 
-        Cursors are monotonically increasing but NOT contiguous with the ring
-        buffer: a state change that arrives while no watch session exists
-        consumes a cursor value without appending an event (see
-        _handle_state_changed). Deriving the index arithmetically from the
-        oldest event's cursor therefore overshoots by the number of dropped
-        changes and silently yields an empty slice — every later poll then
-        answers "nothing changed" and the watch keeps stale tiles forever.
-        Binary search is correct whether or not cursors are contiguous.
+        Cursors are monotonically increasing. They were once not contiguous
+        with the ring buffer (a change with no watch session consumed a
+        cursor value without appending an event), and deriving the index
+        arithmetically from the oldest event's cursor then overshot and
+        yielded an empty slice: every later poll answered "nothing changed"
+        and the watch kept stale tiles forever. Binary search is correct
+        whether or not cursors are contiguous.
 
         Returns len(deque) if all events are at or before since_cursor.
         """
@@ -1672,9 +1770,12 @@ class DeltaCoordinator:
                 payload = self._slim_event_payload(payload)
             if compact:
                 payload = self._compact_event(payload)
-            # Apply attribute-level diff if enabled
+            # Apply attribute-level diff if enabled. None: the watch already
+            # holds this state and every attribute in it, so it is left out.
             if attribute_diffs and session is not None:
                 payload = self._apply_attribute_diff(payload, session, compact)
+                if payload is None:
+                    continue
             matched.append(payload)
             last_sent_cursor = event.cursor
             if len(matched) >= limit:
@@ -1694,10 +1795,15 @@ class DeltaCoordinator:
         payload: dict[str, Any],
         session: "WatchSession",
         compact: bool,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """Replace full attributes with a diff against last-sent values.
 
-        Updates session.last_sent_attrs with the full attributes for next diff.
+        Updates session.last_sent_attrs and last_sent_state for the next diff.
+        With no baseline for the entity the full set goes out, marked
+        ``attrs_full`` so the watch replaces its cached attributes rather than
+        merging into them. Returns None when the state word matches the last
+        one sent and no attribute moved: the watch already holds all of it
+        (only ``last_updated`` and the context moved, which it never shows).
         """
         entity_id = payload.get("entity_id", "")
         if compact:
@@ -1711,32 +1817,36 @@ class DeltaCoordinator:
         previous = session.last_sent_attrs.get(entity_id)
         diffed = self._diff_attributes(full_attrs, previous)
         session.last_sent_attrs[entity_id] = dict(full_attrs)
+        state = payload.get("state")
+        previous_state = session.last_sent_state.get(entity_id, _ATTR_DIFF_SENTINEL)
+        session.last_sent_state[entity_id] = state
+        if previous is not None and not diffed and previous_state == state:
+            return None
 
         if compact:
-            return {**payload, "attributes": diffed}
+            shaped = {**payload, "attributes": diffed}
         else:
-            return {
+            shaped = {
                 **payload,
                 "new_state": {**payload["new_state"], "attributes": diffed},
             }
+        if previous is None:
+            shaped["attrs_full"] = True
+        return shaped
 
     def _is_stale_cursor(self, since_cursor: int) -> bool:
         """Return True if requested cursor is out of range.
 
-        Covers three cases:
+        Covers two cases:
         - Cursor is older than the oldest retained event (buffer overflow).
         - Cursor is ahead of the current server cursor (HA restarted and
           the coordinator's cursor reset to 0 while the watch kept its old
           cursor from a previous instance).
-        - Cursor is before the last change that was dropped because no watch
-          was connected (idle gap). The dropped change consumed cursor value
-          _gap_cursor without an event in the buffer, so a watch holding an
-          older cursor missed it. A cursor equal to _gap_cursor came from a
-          snapshot taken after the gap and is fine.
+
+        Every change is buffered, session or not, so the ring is the only
+        record of what a cursor missed.
         """
         if since_cursor > self._cursor:
-            return True
-        if self._gap_cursor is not None and since_cursor < self._gap_cursor:
             return True
         if not self._events:
             return False
@@ -1805,17 +1915,24 @@ class DeltaCoordinator:
                 "Slow template render (%.0fms): %.120s",
                 elapsed_ms, template_str,
             )
-        # info.result is a method on RenderInfo, not the rendered value —
-        # calling str() on it gave back the bound-method repr instead of
-        # the actual template output. Invoke it; _evaluate_templates wraps
-        # this in try/except so a render error becomes "".
-        rendered = info.result()
-        value = str(rendered).strip() if rendered is not None else ""
+        # The dependencies are read before the result: a render that raised
+        # still recorded what it read, and keeping them is what makes the
+        # template render again when one of those entities changes. Empty
+        # deps would leave it showing "" until the next snapshot.
         deps = _TemplateDeps(
-            entities=info.entities or frozenset(),
-            domains=info.domains or frozenset(),
-            all_states=info.all_states,
+            entities=frozenset(info.entities or ()),
+            domains=frozenset(info.domains or ()),
+            all_states=bool(info.all_states),
         )
+        # info.result is a method on RenderInfo, not the rendered value;
+        # calling str() on it gave back the bound-method repr instead of
+        # the actual template output. It raises the render's own error.
+        try:
+            rendered = info.result()
+        except Exception:  # noqa: BLE001 (a template error renders as "")
+            _LOGGER.debug("Template render failed: %.120s", template_str, exc_info=True)
+            return "", deps
+        value = str(rendered).strip() if rendered is not None else ""
         return value, deps
 
     @staticmethod
@@ -1917,6 +2034,7 @@ class DeltaCoordinator:
             # Forgetting this only costs the watch one extra "you are behind"
             # reply, which is what a watch back after five idle minutes wants.
             self._token_notified.pop(watch_id, None)
+            self._token_repeated.pop(watch_id, None)
             # The same for the watch config revisions: the next reply with a
             # body carries them again and records them afresh.
             self._watch_config_sent.pop(watch_id, None)
@@ -1934,9 +2052,10 @@ class DeltaCoordinator:
             if waiter is not None:
                 waiter.set()  # parked poll re-checks ownership and exits
             self._remove_watcher_index(watch_id)
+        # No logbook entry: a watch's session lapses every time it is put
+        # down for SESSION_TTL, so "disconnected" filled the logbook with
+        # one line per wrist cycle.
         if expired:
-            for watch_id in expired:
-                log_session_dropped(self.hass, watch_id=watch_id, reason="idle_ttl")
             self._fire_session_callbacks()
 
     def _response_payload(
