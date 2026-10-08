@@ -24,7 +24,11 @@ watch config store's listeners, which hear every accepted save, restore,
 forget and move). It marks photos that fell out of use, clears the mark on
 photos back in use, and deletes photos unused for more than seven days. The
 grace keeps an upload whose page save has not happened yet, and the panel's
-undo. When some owner's pages could not be read the sweep marks and deletes
+undo. The sweep also keeps every photo a revision in some owner's ``pages``
+history names, since the panel can restore that revision; once the last such
+revision is pushed out of the history the photo is marked and the same grace
+runs from then. Only a current page counts for ``used_by`` and for refusing a
+delete. When some owner's pages could not be read the sweep marks and deletes
 nothing, since those pages may name any photo.
 
 An index that cannot be read is logged and left alone: every read and write
@@ -45,7 +49,7 @@ import logging
 import os
 import re
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -60,6 +64,7 @@ from .page_images import (
     PageImageInvalid,
     check_id,
     check_jpeg,
+    ids_in_pages,
     is_preset,
     normalize_id,
     plan_sweep,
@@ -79,6 +84,9 @@ _MAX_BASE64_CHARS = (MAX_IMAGE_BYTES + 2) // 3 * 4
 # Every owner's current ``pages`` document, and whether that is all of them
 # (``WatchConfigStore.documents``).
 PagesSource = Callable[[], tuple[Mapping[str, Any], bool]]
+# Every owner's older ``pages`` documents, the ones the panel can restore, and
+# whether that is all of them (``WatchConfigStore.history_documents``).
+PagesHistorySource = Callable[[], tuple[Mapping[str, Iterable[Any]], bool]]
 
 
 class PageImagesError(Exception):
@@ -199,13 +207,20 @@ class PageImagesStore:
     """The index in ``.storage``, the JPEG files beside it, and the built-in
     photos that ship with the integration."""
 
-    def __init__(self, hass: HomeAssistant, pages: PagesSource | None = None) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        pages: PagesSource | None = None,
+        history: PagesHistorySource | None = None,
+    ) -> None:
         """``pages`` reads every owner's ``pages`` document. Without it no
         photo is ever in use, so nothing is swept and nothing is marked (what
         a store made only to remove its files, or a test of the files alone,
-        wants)."""
+        wants). ``history`` reads every owner's older ``pages`` documents,
+        whose photos the sweep keeps so a restore finds them."""
         self._hass = hass
         self._pages = pages
+        self._history = history
         self._store: Store = Store(
             hass, PAGE_IMAGES_STORAGE_VERSION, PAGE_IMAGES_STORAGE_KEY
         )
@@ -331,6 +346,23 @@ class PageImagesStore:
             return {}, True
         documents, complete = self._pages()
         return usage(documents), complete
+
+    def _kept(self) -> tuple[set[str], bool]:
+        """The photo ids the sweep must keep, and whether every owner's pages
+        and history could be read: every id a current page names, and every
+        id a history revision names, since a restore of that revision brings
+        the photo back onto a page. Once the last revision naming a photo is
+        pushed out of the history, the next sweep marks it and the usual
+        grace runs from then."""
+        used, complete = self._usage()
+        kept = set(used)
+        if self._history is not None:
+            histories, history_complete = self._history()
+            complete = complete and history_complete
+            for documents in histories.values():
+                for document in documents:
+                    kept |= ids_in_pages(document)
+        return kept, complete
 
     def list(self) -> dict[str, Any]:
         """The panel's view: ``{"presets": [{id, name, width, height}],
@@ -505,14 +537,14 @@ class PageImagesStore:
 
         await self._hass.async_add_executor_job(write)
         now = _iso(_utcnow())
-        used, _complete = self._usage()
+        kept, _complete = self._kept()
         entry = {
             "bytes": len(data),
             "width": width,
             "height": height,
             "sha256": digest,
             "added_at": now,
-            "unused_since": None if used.get(image_id) else now,
+            "unused_since": None if image_id in kept else now,
         }
         self._index[image_id] = entry
         self._schedule_save()
@@ -535,10 +567,12 @@ class PageImagesStore:
         if self._load_failed or self._pages is None:
             return ()
         moment = now or _utcnow()
-        used, complete = self._usage()
+        # Current pages and history both: a photo only an older revision
+        # names is still needed by a restore of it.
+        kept, complete = self._kept()
         plan = plan_sweep(
             {image_id: entry["unused_since"] for image_id, entry in self._index.items()},
-            used,
+            kept,
             moment,
             complete=complete,
         )

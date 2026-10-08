@@ -1157,6 +1157,24 @@ class WatchConfigStore:
         }
         return found, not (self._load_failed or self._failed_owners)
 
+    def history_documents(self, kind: Any) -> tuple[dict[str, list[dict[str, Any]]], bool]:
+        """Every owner's history documents of ``kind``, oldest first, and
+        whether that is all of them.
+
+        The documents :meth:`restore` can bring back, so a caller keeping
+        what a restore would need (the page photo sweep) counts them as well
+        as :meth:`documents`. An owner whose record has no history is left
+        out. The second value is as in :meth:`documents`. The documents are
+        the stored objects, not copies; read only.
+        """
+        kind = validate_kind(kind)
+        found = {
+            owner: [entry.document for entry in by_kind[kind].history]
+            for owner, by_kind in self._records.items()
+            if kind in by_kind and by_kind[kind].history
+        }
+        return found, not (self._load_failed or self._failed_owners)
+
     def history(self, owner_watch_id: str, kind: Any) -> list[WatchConfigHistoryEntry]:
         """The owner's history of that kind, newest first.
 

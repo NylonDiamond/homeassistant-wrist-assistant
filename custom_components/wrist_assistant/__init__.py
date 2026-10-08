@@ -787,12 +787,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     )
     http_action_runner = HTTPActionRunner(hass)
     # The home's page background photos (step 4d batch 6). A photo no page
-    # names is marked, and deleted seven days later, by a sweep that runs
+    # names, nor any older pages revision the panel could restore, is
+    # marked, and deleted seven days later, by a sweep that runs
     # here once and then after every write of any watch's pages, whoever
     # made it: every such write reaches the watch config store's listeners.
     # Housekeeping only: a failed sweep must not fail setup.
     page_images_store = PageImagesStore(
-        hass, pages=lambda: watch_config_store.documents("pages")
+        hass,
+        pages=lambda: watch_config_store.documents("pages"),
+        history=lambda: watch_config_store.history_documents("pages"),
     )
     await page_images_store.async_load()
     try:

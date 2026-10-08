@@ -12,7 +12,8 @@ built-in id, first write wins), the caps and refusals, reads of custom and
 built-in photos, the list and its order, delete and its refusals, the sweep
 (mark, clear, delete after seven days, nothing on unread pages) driven by real
 pages writes of every kind (device put, panel save, restore, forget, move),
-the start of day sweep of missing and stray files, an unreadable index never
+photos kept while a history revision names them and swept after the grace
+once it is pushed out, the start of day sweep of missing and stray files, an unreadable index never
 saved over, unload and removal.
 """
 
@@ -141,7 +142,9 @@ class Env:
         if self._unlisten is not None:
             self._unlisten()
         store = self.loaded.store_mod.PageImagesStore(
-            self.hass, pages=lambda: self.watch_config.documents("pages")
+            self.hass,
+            pages=lambda: self.watch_config.documents("pages"),
+            history=lambda: self.watch_config.history_documents("pages"),
         )
         asyncio.run(store.async_load())
         if start:
@@ -158,6 +161,12 @@ class Env:
             owner, "pages", document, document_hash=HASH, base_revision=0,
             force=True, updated_by=owner,
         )
+
+    def clear_pages(self, owner: str) -> None:
+        """Save pages with no photos often enough that neither the current
+        document nor any history revision names one any more."""
+        for _ in range(self.loaded.wc_mod.WATCH_CONFIG_HISTORY_LIMIT + 1):
+            self.put_pages(owner, pages())
 
     def upload(self, data: bytes | None = None) -> dict[str, Any]:
         return asyncio.run(self.store.async_upload(data or jpeg()))
@@ -378,7 +387,7 @@ def test_a_device_put_marks_and_clears(env) -> None:
     env.put_pages("watch-A", pages(image_id))
     assert env.index()[image_id]["unused_since"] is None
     env.advance(days=1)
-    env.put_pages("watch-A", pages())
+    env.clear_pages("watch-A")
     assert env.index()[image_id]["unused_since"] == "2026-10-06T12:00:00Z"
     env.advance(days=1)
     env.put_pages("watch-A", pages(image_id))
@@ -413,9 +422,14 @@ def test_a_panel_save_and_a_restore_sweep(env) -> None:
     record = env.watch_config.panel_save("watch-A", "pages", pages(image_id), base_revision=0)
     assert env.index()[image_id]["unused_since"] is None
     record = env.watch_config.panel_save("watch-A", "pages", pages(), base_revision=record.revision)
-    assert env.index()[image_id]["unused_since"] is not None
+    # The older revision still names it, so it stays in use.
+    assert env.index()[image_id]["unused_since"] is None
+    stale = env.upload(jpeg(99, 99))["image_id"]
+    env.advance(days=8)
     env.watch_config.restore("watch-A", "pages", 1, base_revision=record.revision)
     assert env.index()[image_id]["unused_since"] is None
+    # The restore swept: the photo nothing ever named went.
+    assert stale not in env.index()
 
 
 def test_forget_and_move_sweep(env) -> None:
@@ -428,11 +442,63 @@ def test_forget_and_move_sweep(env) -> None:
     assert env.index()[image_id]["unused_since"] == "2026-10-05T12:00:00Z"
 
 
+def test_a_photo_only_a_history_revision_names_is_kept_for_a_restore(env) -> None:
+    old = env.upload(jpeg(100, 100))["image_id"]
+    new = env.upload(jpeg(101, 100))["image_id"]
+    record = env.watch_config.panel_save("watch-A", "pages", pages(old), base_revision=0)
+    record = env.watch_config.panel_save(
+        "watch-A", "pages", pages(new), base_revision=record.revision
+    )
+    # Only revision 1, now in the history, names the old photo.
+    assert env.watch_config.documents("pages")[0]["watch-A"] == pages(new)
+    assert env.index()[old]["unused_since"] is None
+    env.advance(days=8)
+    env.put_pages("watch-B", pages())
+    assert env.store.sweep() == ()
+    # A restart's sweep keeps it too.
+    env.new_store()
+    assert env.index()[old]["unused_since"] is None
+    assert f"{old}.jpg" in env.files()
+    # A current page is what counts as in use for the panel.
+    assert {i["id"]: i["used_by"] for i in env.store.list()["images"]}[old] == []
+    env.watch_config.restore("watch-A", "pages", 1, base_revision=record.revision)
+    assert asyncio.run(env.store.async_read(old)) == (old, jpeg(100, 100))
+    assert {i["id"]: i["used_by"] for i in env.store.list()["images"]}[old] == ["watch-A"]
+
+
+def test_a_photo_dropped_from_the_history_is_swept_after_the_grace(env) -> None:
+    limit = env.loaded.wc_mod.WATCH_CONFIG_HISTORY_LIMIT
+    old = env.upload(jpeg(100, 100))["image_id"]
+    new = env.upload(jpeg(101, 100))["image_id"]
+    record = env.watch_config.panel_save("watch-A", "pages", pages(old), base_revision=0)
+    # The history holds the last few replaced documents, so revision 1 is
+    # pushed out by the save after the one that fills it.
+    for _ in range(limit + 1):
+        env.advance(days=1)
+        record = env.watch_config.panel_save(
+            "watch-A", "pages", pages(new), base_revision=record.revision
+        )
+        if record.history_entry(1) is not None:
+            assert env.index()[old]["unused_since"] is None
+    # The last save pushed revision 1 out, and its photo's grace starts then.
+    with pytest.raises(env.loaded.wc_mod.WatchConfigNotFoundError):
+        env.watch_config.history_entry("watch-A", "pages", 1)
+    dropped_at = env.clock
+    assert env.index()[old]["unused_since"] == dropped_at.isoformat().replace("+00:00", "Z")
+    env.advance(days=7)
+    env.put_pages("watch-B", pages())
+    assert old in env.index()
+    env.advance(seconds=1)
+    env.put_pages("watch-B", pages())
+    assert old not in env.index()
+    assert env.files() == [f"{new}.jpg"]
+
+
 def test_unread_pages_stop_the_sweep_marking_or_deleting(env) -> None:
     unused = env.upload()["image_id"]
     used = env.upload(jpeg(99, 99))["image_id"]
     env.put_pages("watch-A", pages(used))
-    env.put_pages("watch-A", pages())
+    env.clear_pages("watch-A")
     assert env.index()[used]["unused_since"] is not None
     env.watch_config._failed_owners.add("watch-Z")
     env.advance(days=30)

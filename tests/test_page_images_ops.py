@@ -348,6 +348,7 @@ def test_setup_builds_the_store_hooks_the_sweep_and_advertises() -> None:
     const = (_PKG_DIR / "const.py").read_text()
     for expected in (
         'pages=lambda: watch_config_store.documents("pages")',
+        'history=lambda: watch_config_store.history_documents("pages")',
         "await page_images_store.async_load()",
         "await page_images_store.async_start()",
         "watch_config_store.async_add_listener(page_images_store.pages_changed)",
