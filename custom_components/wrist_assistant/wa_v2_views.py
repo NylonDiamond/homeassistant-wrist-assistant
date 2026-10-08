@@ -100,10 +100,12 @@ from .camera_stream import (
     NOTIF_SNAPSHOT_MAX_BYTES,
     NOTIF_SNAPSHOT_MAX_HEIGHT,
     NOTIF_SNAPSHOT_MAX_WIDTH,
+    SNAPSHOT_CAMERA_TIMEOUT,
     SNAPSHOT_DEFAULT_QUALITY,
     SNAPSHOT_MAX_BYTES,
     SNAPSHOT_MAX_HEIGHT,
     SNAPSHOT_MAX_WIDTH,
+    SNAPSHOT_SLOW_CAMERA_TIMEOUT,
     ViewportState,
     _process_frame,
     _process_snapshot,
@@ -1097,8 +1099,17 @@ async def _op_snapshot(ctx: _OpContext) -> Response:
         except (TypeError, ValueError):
             viewport = ViewportState()
 
+    # `slow_camera` comes from the iPhone's Get Camera Image Shortcut, which has
+    # no tap budget to protect, so a cloud or wake-up camera gets the 10 s the
+    # old bearer camera_proxy path allowed. Complication and notification
+    # fetches never send it and keep the short timeout.
+    camera_timeout = (
+        SNAPSHOT_SLOW_CAMERA_TIMEOUT
+        if ctx.payload.get("slow_camera") is True
+        else SNAPSHOT_CAMERA_TIMEOUT
+    )
     try:
-        image = await async_get_image(ctx.hass, entity_id, timeout=5)
+        image = await async_get_image(ctx.hass, entity_id, timeout=camera_timeout)
     except HomeAssistantError:
         return Response(status=503, text="Camera unavailable")
     if image is None or image.content is None:

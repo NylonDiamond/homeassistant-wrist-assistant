@@ -520,6 +520,8 @@ SNAPSHOT_MAX_WIDTH = 400
 SNAPSHOT_MAX_HEIGHT = 300
 SNAPSHOT_MAX_BYTES = 102400  # 100KB
 SNAPSHOT_DEFAULT_QUALITY = 85
+SNAPSHOT_CAMERA_TIMEOUT = 5  # seconds HA waits for the camera
+SNAPSHOT_SLOW_CAMERA_TIMEOUT = 12  # Shortcuts only, for cloud or wake-up cameras
 
 
 def _process_snapshot(
