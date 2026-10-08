@@ -695,6 +695,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         _LOGGER.exception("Moving iPhone push tokens to their phones failed; continuing setup")
     stream_token_store = StreamTokenStore()
     batch_snapshot_token_store = BatchSnapshotTokenStore()
+    # Removing a device takes back the stream tokens it has not used yet,
+    # along with closing the streams it has running.
+    camera_stream_coordinator.attach_token_stores(
+        (stream_token_store, batch_snapshot_token_store)
+    )
     # Watches waiting for an admin to confirm their pairing code. Memory only:
     # a restart drops them and the watch asks for a new code.
     pair_request_store = PairRequestStore()
@@ -1320,6 +1325,9 @@ async def async_remove_config_entry_device(
         # and no session listener can bring its entities (and with them the
         # registry device) back once HA deletes them below.
         domain_data.coordinator.drop_session(watch_id)
+        # And its camera streams: a running one stops, and a stream token it
+        # was handed but has not used can no longer open one.
+        domain_data.camera_stream_coordinator.close_device(watch_id)
         domain_data.widget_secret_store.remove(watch_id)
         domain_data.notification_store.remove(watch_id)
         # Same teardown the panel's Forget action performs. The device's

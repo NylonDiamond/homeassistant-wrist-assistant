@@ -640,6 +640,9 @@ def ws_forget_device(
     # listener can re-add its entities, and with them a device with no
     # secret, once the registry device goes below.
     domain_data.coordinator.drop_session(watch_id)
+    # Its camera streams end too, and any stream token it has not used yet
+    # stops working, as on the removal from HA's device page.
+    domain_data.camera_stream_coordinator.close_device(watch_id)
     domain_data.widget_secret_store.remove(watch_id)
     domain_data.notification_store.remove(watch_id)
     # Its designs move to the Library and everything else it held (presets,

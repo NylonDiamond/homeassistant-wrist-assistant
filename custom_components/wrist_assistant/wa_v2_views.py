@@ -367,6 +367,25 @@ async def _async_bound_user_ok(
     return async_user_not_allowed_do_auth(hass, user, request) is None
 
 
+async def _async_device_may_stream(
+    hass: HomeAssistant, watch_id: str, request: Request
+) -> bool:
+    """Whether a device may still use a camera stream token it was handed.
+
+    The checks a signed request gets in ``WAActionView.post``, run again when
+    the token is used and while the stream runs: the token was minted by a
+    signed request, but the device may have been removed, or its user
+    disabled, since. No integration loaded (a reload) counts as no.
+    """
+    domain_data: WristAssistantData | None = hass.data.get(DOMAIN)
+    if domain_data is None:
+        return False
+    secret_entry = domain_data.widget_secret_store.get(watch_id)
+    if secret_entry is None or secret_entry.secret_bytes is None:
+        return False
+    return await _async_bound_user_ok(hass, secret_entry.user_id, request)
+
+
 def _log_signed_request_rejected(
     hass: HomeAssistant,
     domain_data: WristAssistantData,
@@ -2494,6 +2513,16 @@ class WAStreamView(HomeAssistantView):
             _LOGGER.debug("Rejected /v2/stream token (missing/expired/consumed)")
             return Response(text="Not Found", status=404)
 
+        # The token stands in for a signature, so the device behind it must
+        # still pass what a signed request must: still registered, its user
+        # still active. Refused the same way as an unknown token.
+        if not await _async_device_may_stream(self._hass, entry.watch_id, request):
+            _LOGGER.debug(
+                "Rejected /v2/stream token: %s is removed, or its user may not act",
+                entry.watch_id,
+            )
+            return Response(text="Not Found", status=404)
+
         coordinator = domain_data.camera_stream_coordinator
 
         # Validate the entity still exists. A token minted against an entity
@@ -2503,7 +2532,10 @@ class WAStreamView(HomeAssistantView):
         if state is None or not entry.entity_id.startswith("camera."):
             return Response(text="Camera entity not available", status=404)
 
-        coordinator.get_or_create_session(
+        # A session of this connection's own. An older connection for the
+        # same camera (one gone half-open on a network change) is told to
+        # stop, so the two never share one.
+        session = coordinator.open_session(
             entry.watch_id,
             entry.entity_id,
             entry.width,
@@ -2512,12 +2544,20 @@ class WAStreamView(HomeAssistantView):
             entry.viewport,
         )
 
+        hass = self._hass
+        watch_id = entry.watch_id
+
+        async def _still_allowed() -> bool:
+            return await _async_device_may_stream(hass, watch_id, request)
+
         return await run_mjpeg_stream(
             self._hass,
             request,
             coordinator,
             entry.watch_id,
             entry.entity_id,
+            session=session,
+            authorize=_still_allowed,
         )
 
 
@@ -2547,6 +2587,15 @@ class WABatchSnapshotView(HomeAssistantView):
         if entry is None:
             # Indistinguishable from expired/consumed, matching WAStreamView.
             _LOGGER.debug("Rejected /v2/snapshots token (missing/expired/consumed)")
+            return Response(text="Not Found", status=404)
+
+        # Same as WAStreamView: the device must still be registered and its
+        # user still allowed when the token is used, not only when minted.
+        if not await _async_device_may_stream(self._hass, entry.watch_id, request):
+            _LOGGER.debug(
+                "Rejected /v2/snapshots token: %s is removed, or its user may not act",
+                entry.watch_id,
+            )
             return Response(text="Not Found", status=404)
 
         return await run_batch_snapshot_stream(

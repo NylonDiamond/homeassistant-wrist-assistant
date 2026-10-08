@@ -363,6 +363,18 @@ class _NotificationStore:
         return None
 
 
+class _CameraStreams:
+    """Stand-in for CameraStreamCoordinator: notes each device whose streams
+    and stream tokens a Forget closed."""
+
+    def __init__(self) -> None:
+        self.closed: list[str] = []
+
+    def close_device(self, watch_id: str) -> int:
+        self.closed.append(watch_id)
+        return 0
+
+
 class _DomainData:
     def __init__(self, store, secret_store, coordinator, push, watch_config) -> None:
         self.complication_store = store
@@ -371,6 +383,7 @@ class _DomainData:
         self.complication_push = push
         self.watch_config_store = watch_config
         self.notification_store = _NotificationStore()
+        self.camera_stream_coordinator = _CameraStreams()
 
 
 class _Hass:
@@ -879,6 +892,25 @@ def test_forgetting_a_device_drops_its_live_session_first(env) -> None:
     )
     assert [code for _id, code, _msg in connection.errors] == ["not_found"]
     assert env.coordinator.dropped == ["watch-A"]
+
+
+def test_forgetting_a_device_closes_its_camera_streams(env) -> None:
+    """A Forget ends the device's running camera streams and voids the stream
+    tokens it has not used, for the device forgotten only. A refused Forget
+    closes nothing."""
+    cameras = env.hass.data[DOMAIN].camera_stream_coordinator
+    env.add_watch("watch-A", device_name="Apple Watch")
+    env.add_watch("watch-B", device_name="Other Watch")
+
+    env.call(env.ws.ws_forget_device, watch_id="watch-A", force=False)
+    assert cameras.closed == ["watch-A"]
+
+    connection = _Connection()
+    env.ws.ws_forget_device(
+        env.hass, connection, {"id": 2, "watch_id": "watch-gone", "force": True}
+    )
+    assert [code for _id, code, _msg in connection.errors] == ["not_found"]
+    assert cameras.closed == ["watch-A"]
 
 
 def test_moving_an_owner_carries_its_watch_config(env) -> None:

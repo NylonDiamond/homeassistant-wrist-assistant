@@ -8,11 +8,12 @@ camera transport.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable, Iterable
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from io import BytesIO
 import logging
-from typing import Any
+from typing import Any, Protocol
 from aiohttp.web import Request, Response, StreamResponse
 
 # NOTE: Pillow (PIL) is imported lazily inside _process_frame / _process_snapshot
@@ -51,6 +52,12 @@ DEFAULT_WIDTH = 400
 DEFAULT_QUALITY = 75
 DEFAULT_FPS = 2.0
 
+# How often a running stream asks again whether its device may still stream
+# (still registered, its user still active). Removing a device closes its
+# streams at once; this catches a user disabled in Home Assistant, which no
+# hook of ours sees. The check is two in-memory lookups.
+STREAM_AUTH_RECHECK_SECONDS = 30.0
+
 
 @dataclass(slots=True)
 class ViewportState:
@@ -67,7 +74,14 @@ _UNSET = object()  # sentinel so None can explicitly clear source_entity_id
 
 @dataclass(slots=True)
 class StreamSession:
-    """Active stream session keyed by (watch_id, entity_id)."""
+    """One stream connection's settings, filed under (watch_id, entity_id).
+
+    Each connection gets its own session object, and only the newest one for
+    a (watch_id, entity_id) is filed on the coordinator. ``closed_event`` is
+    how the coordinator tells the frame loop holding this session to stop:
+    a newer connection for the same camera took its place, or the device
+    was removed.
+    """
 
     viewport: ViewportState = field(default_factory=ViewportState)
     width: int = DEFAULT_WIDTH
@@ -76,6 +90,21 @@ class StreamSession:
     source_entity_id: str | None = None  # overrides which entity frames come from
     source_width: int = 0   # native resolution of the source camera (set on first frame)
     source_height: int = 0
+    closed_event: asyncio.Event = field(
+        default_factory=asyncio.Event, repr=False, compare=False
+    )
+
+    @property
+    def closed(self) -> bool:
+        return self.closed_event.is_set()
+
+    def close(self) -> None:
+        """Tell the frame loop using this session to stop."""
+        self.closed_event.set()
+
+
+class _DeviceTokenStore(Protocol):
+    def release_device(self, watch_id: str) -> int: ...
 
 
 class CameraStreamCoordinator:
@@ -85,8 +114,16 @@ class CameraStreamCoordinator:
         self._sessions: dict[tuple[str, str], StreamSession] = {}
         self._device_groups: list[dict] | None = None  # cached camera device groups
         self._device_groups_ts: float = 0  # monotonic timestamp of last build
+        # The stores holding tokens a device has been handed but not yet used
+        # (single stream and batch snapshot), so closing a device's streams
+        # also takes back the ones it has not opened yet.
+        self._token_stores: tuple[_DeviceTokenStore, ...] = ()
 
-    def get_or_create_session(
+    def attach_token_stores(self, stores: Iterable[_DeviceTokenStore]) -> None:
+        """The token stores ``close_device`` releases a device's tokens from."""
+        self._token_stores = tuple(stores)
+
+    def open_session(
         self,
         watch_id: str,
         entity_id: str,
@@ -95,31 +132,38 @@ class CameraStreamCoordinator:
         fps: float = DEFAULT_FPS,
         viewport: ViewportState | None = None,
     ) -> StreamSession:
-        """Get existing session or create a new one."""
+        """A fresh session for a new stream connection, filed in place of any
+        older one for the same (watch_id, entity_id).
+
+        The older session is closed, so the frame loop still holding it stops.
+        Two connections never share one session: when a watch's connection
+        goes half-open on a network change and it opens a second one, the
+        first loop used to keep the shared session and, when it finally
+        ended, removed the entry the second connection was still using, after
+        which every zoom, HD/SD or fps change answered ``no_active_stream``.
+
+        The new connection's token carries the authoritative viewport. Without
+        it, a crop left by a prior stream for the same camera (the cropped
+        notification live stream the user just tapped, say) would carry into
+        the full-screen view, which mints a full-frame token, and the Crown
+        could never zoom back out. The HD/SD choice and the source size carry
+        over, as they did when the session was shared.
+        """
         key = (watch_id, entity_id)
-        session = self._sessions.get(key)
-        if session is None:
-            session = StreamSession(
-                viewport=viewport or ViewportState(),
-                width=width,
-                quality=quality,
-                fps=fps,
-            )
-            self._sessions[key] = session
-        else:
-            session.width = width
-            session.quality = quality
-            session.fps = fps
-            # A new connection's token carries the authoritative viewport for
-            # this (watch_id, entity_id). Without this, a stale session left by
-            # a *prior* stream for the same camera keeps its crop — e.g. the
-            # cropped notification live stream the user just tapped — so the
-            # full-screen view, which mints a full-frame token, would stay
-            # server-cropped and the Crown could never zoom back out. The
-            # mid-stream width-only path (update_session) still passes
-            # viewport=None, so live zoom-resolution retunes don't reset it.
-            if viewport is not None:
-                session.viewport = viewport
+        previous = self._sessions.get(key)
+        session = StreamSession(
+            viewport=viewport
+            or (previous.viewport if previous is not None else ViewportState()),
+            width=width,
+            quality=quality,
+            fps=fps,
+        )
+        if previous is not None:
+            session.source_entity_id = previous.source_entity_id
+            session.source_width = previous.source_width
+            session.source_height = previous.source_height
+            previous.close()
+        self._sessions[key] = session
         return session
 
     def update_session(
@@ -184,12 +228,38 @@ class CameraStreamCoordinator:
         self._device_groups = None
         self._device_groups_ts = 0
 
-    def remove_session(self, watch_id: str, entity_id: str) -> None:
-        """Remove a session on disconnect."""
-        self._sessions.pop((watch_id, entity_id), None)
+    def remove_session(
+        self, watch_id: str, entity_id: str, session: StreamSession
+    ) -> bool:
+        """Remove a stream's session when its connection ends.
+
+        Only if it is still the one filed: a newer connection for the same
+        camera may have replaced it, and that one's entry stays.
+        """
+        key = (watch_id, entity_id)
+        if self._sessions.get(key) is not session:
+            return False
+        del self._sessions[key]
+        return True
+
+    def close_device(self, watch_id: str) -> int:
+        """Stop every stream a device has running and take back every stream
+        token it holds but has not used. Called when the device is removed.
+
+        Returns how many sessions and tokens went, for the log.
+        """
+        closed = 0
+        for key in [key for key in self._sessions if key[0] == watch_id]:
+            self._sessions.pop(key).close()
+            closed += 1
+        for store in self._token_stores:
+            closed += store.release_device(watch_id)
+        return closed
 
     def shutdown(self) -> None:
-        """Clear all sessions."""
+        """Stop every running stream and clear all sessions."""
+        for session in self._sessions.values():
+            session.close()
         self._sessions.clear()
         self._device_groups = None
         self._device_groups_ts = 0
@@ -342,21 +412,31 @@ async def run_mjpeg_stream(
     coordinator: CameraStreamCoordinator,
     watch_id: str,
     entity_id: str,
+    *,
+    session: StreamSession | None = None,
+    authorize: Callable[[], Awaitable[bool]] | None = None,
 ) -> StreamResponse:
-    """Run the multipart MJPEG frame loop until the client disconnects.
+    """Run the multipart MJPEG frame loop until the client disconnects or the
+    session is closed.
 
-    The session for `(watch_id, entity_id)` must already exist on the
-    coordinator — callers create it before invoking this so they can
-    validate inputs (the stream token's claim) before
-    we start writing response headers.
+    `session` is the one the caller opened for this connection
+    (`CameraStreamCoordinator.open_session`); left out, the one filed for
+    `(watch_id, entity_id)` is used. Callers open it before invoking this so
+    they can validate inputs (the stream token's claim) before we start
+    writing response headers.
 
     The loop reads its mutable params (viewport / width / quality / fps /
     source_entity_id) from the session every iteration, so concurrent
     POSTs to the viewport endpoint flow into the running stream without
-    a reconnect.
+    a reconnect. It stops once the session is closed: a newer connection
+    for the same camera replaced it, or the device was removed.
+
+    `authorize`, when given, is asked every STREAM_AUTH_RECHECK_SECONDS
+    whether the device may still stream; a no (or an error) ends the stream.
     """
-    session = coordinator._sessions.get((watch_id, entity_id))
     if session is None:
+        session = coordinator._sessions.get((watch_id, entity_id))
+    if session is None or session.closed:
         return Response(text="No active stream session", status=404)
 
     response = StreamResponse(
@@ -379,9 +459,37 @@ async def run_mjpeg_stream(
     consecutive_slow = 0
     consecutive_fast = 0
     skip_next = False
+    next_auth_check = loop.time() + STREAM_AUTH_RECHECK_SECONDS
+
+    async def _pause_until(deadline: float) -> None:
+        """Wait for the next frame slot, or less if the session is closed."""
+        delay = deadline - loop.time()
+        if delay <= 0:
+            await asyncio.sleep(0)
+            return
+        try:
+            await asyncio.wait_for(session.closed_event.wait(), delay)
+        except asyncio.TimeoutError:
+            pass
 
     try:
-        while True:
+        while not session.closed:
+            if authorize is not None and loop.time() >= next_auth_check:
+                next_auth_check = loop.time() + STREAM_AUTH_RECHECK_SECONDS
+                try:
+                    allowed = await authorize()
+                except Exception:  # noqa: BLE001 — refuse when the check cannot answer
+                    _LOGGER.debug(
+                        "Stream permission check failed for %s", watch_id, exc_info=True
+                    )
+                    allowed = False
+                if not allowed:
+                    _LOGGER.debug(
+                        "Smart stream for %s stopped: %s may no longer stream",
+                        entity_id, watch_id,
+                    )
+                    break
+
             # Read current params from session (may be updated by POST endpoint)
             current_viewport = session.viewport
             current_width = session.width
@@ -401,7 +509,7 @@ async def run_mjpeg_stream(
             # Skip this frame if flagged by backpressure detection
             if skip_next:
                 skip_next = False
-                await asyncio.sleep(max(0, next_frame_at - loop.time()))
+                await _pause_until(next_frame_at)
                 continue
 
             try:
@@ -410,7 +518,7 @@ async def run_mjpeg_stream(
                     hass, fetch_entity, timeout=5
                 )
                 if image is None or image.content is None:
-                    await asyncio.sleep(max(0, next_frame_at - loop.time()))
+                    await _pause_until(next_frame_at)
                     continue
 
                 # Skip duplicate frames from the source camera. The key
@@ -428,7 +536,7 @@ async def run_mjpeg_stream(
                     fetch_entity,
                 )
                 if frame_hash == last_frame_hash:
-                    await asyncio.sleep(max(0, next_frame_at - loop.time()))
+                    await _pause_until(next_frame_at)
                     continue
                 last_frame_hash = frame_hash
 
@@ -440,6 +548,11 @@ async def run_mjpeg_stream(
                     current_width,
                     current_quality,
                 )
+
+                # The camera fetch and the resize both wait; the session may
+                # have been closed meanwhile. No frame goes out after that.
+                if session.closed:
+                    break
 
                 # Capture source resolution (updates on source switch)
                 if src_w > 0 and src_h > 0:
@@ -503,11 +616,15 @@ async def run_mjpeg_stream(
                 session.source_entity_id = None
                 consecutive_source_errors = 0
 
-            await asyncio.sleep(max(0, next_frame_at - loop.time()))
+            await _pause_until(next_frame_at)
     except asyncio.CancelledError:
         pass
     finally:
-        coordinator.remove_session(watch_id, entity_id)
+        # Remove only this connection's own session. A newer connection for
+        # the same camera has filed its own in its place, and removing that
+        # one would leave its zoom and quality changes nowhere to land.
+        session.close()
+        coordinator.remove_session(watch_id, entity_id, session)
         _LOGGER.debug("Smart stream ended for %s (watch: %s)", entity_id, watch_id)
 
     return response

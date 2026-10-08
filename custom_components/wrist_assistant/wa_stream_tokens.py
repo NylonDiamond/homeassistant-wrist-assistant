@@ -35,6 +35,14 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+def _release_device(entries: OrderedDict, watch_id: str) -> int:
+    """Drop every entry minted for `watch_id`, used or not, from a store."""
+    tokens = [token for token, entry in entries.items() if entry.watch_id == watch_id]
+    for token in tokens:
+        del entries[token]
+    return len(tokens)
+
+
 @dataclass
 class StreamTokenEntry:
     """A pending stream session bound to a single token."""
@@ -126,6 +134,11 @@ class StreamTokenStore:
         """Delete a token early (e.g. user cancelled before connecting)."""
         return self._entries.pop(token, None) is not None
 
+    def release_device(self, watch_id: str) -> int:
+        """Delete every token minted for a device, so a removed device cannot
+        open a stream with one it was handed just before. Returns the count."""
+        return _release_device(self._entries, watch_id)
+
     def _evict_expired(self, now: float) -> None:
         # OrderedDict is insertion-ordered, and every mint() uses the same TTL,
         # so the head is always the oldest entry. Stop at the first non-expired
@@ -210,6 +223,10 @@ class BatchSnapshotTokenStore:
             return None
         entry.consumed = True
         return entry
+
+    def release_device(self, watch_id: str) -> int:
+        """Delete every token minted for a device. Returns the count."""
+        return _release_device(self._entries, watch_id)
 
     def _evict_expired(self, now: float) -> None:
         while self._entries:
