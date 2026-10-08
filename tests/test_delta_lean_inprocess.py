@@ -195,7 +195,7 @@ def test_a_poll_without_lean_is_answered_as_before(coordinator) -> None:
         assert body["capabilities"] == coord.capabilities
         assert body["need_entities"] is False and body["resync_required"] is False
         assert body["http_actions"] == 3 and body["client_certificate"] == 7
-        assert "epoch" not in body and "caps_hash" not in body
+        assert body["epoch"] == coord.epoch and "caps_hash" not in body
         cursor = body["next_cursor"]
         # An epoch on a poll without lean is never judged.
         status, body = await _poll(coord, since=cursor, entities=[ent], timeout=0, epoch="nope")
@@ -549,8 +549,9 @@ def test_a_probe_and_a_snapshot_do_not_wait(coordinator) -> None:
 
 
 def test_any_reply_carrying_a_new_token_counts_as_telling(coordinator) -> None:
-    """The token rode an event reply; the next poll still lagging is told once
-    more (the reply may have been lost), and then the poll parks."""
+    """The token rode an event reply. A poll still lagging right after it
+    parks; one still lagging once the telling is old is told once more (the
+    reply may have been lost), and then the poll parks."""
     _module, hass, coord = coordinator
     complications = _FakeComplicationStore()
     coord.attach_complication_store(complications)
@@ -569,6 +570,14 @@ def test_any_reply_carrying_a_new_token_counts_as_telling(coordinator) -> None:
         assert coord._token_notified["w1"] == 9
         cursor = body["next_cursor"]
 
+        # The poll right after it (the watch's pull still running) parks.
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=cursor, entities=[ent], timeout=1, complications_token=0),
+            timeout=3,
+        )
+        assert status == 204
+
+        coord._token_notified_at["w1"] -= _module.TOKEN_REPEAT_AFTER_SECONDS
         status, body = await asyncio.wait_for(
             _poll(coord, since=cursor, entities=[ent], timeout=10, complications_token=0),
             timeout=1,

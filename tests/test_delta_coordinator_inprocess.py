@@ -712,8 +712,17 @@ def test_behind_watch_is_told_once_per_token_then_waits(coordinator) -> None:
         assert status == 200 and body["events"] == []
         assert body["complications_token"] == 2
 
-        # Still behind, same token: told once more, in case the first reply
-        # was lost in a half-open connection.
+        # Polling again at once (its pull is still running): parks, since the
+        # telling is too fresh to have been lost.
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=1, complications_token=0),
+            timeout=3,
+        )
+        assert status == 204
+
+        # Still behind once the telling is old: told once more, in case the
+        # first reply was lost in a half-open connection.
+        coord._token_notified_at["w1"] -= module.TOKEN_REPEAT_AFTER_SECONDS
         status, body = await asyncio.wait_for(
             _poll(coord, since=c0, entities=[ent], timeout=10, complications_token=0),
             timeout=1,
@@ -1492,6 +1501,7 @@ def test_a_watch_config_wake_does_not_re_arm_the_complication_token(coordinator)
         status, body = await _poll(coord, since=c0, entities=[ent], timeout=10, complications_token=0)
         assert status == 200 and body["complications_token"] == 2
         assert coord._token_notified["w1"] == 2
+        coord._token_notified_at["w1"] -= module.TOKEN_REPEAT_AFTER_SECONDS
         status, body = await _poll(coord, since=c0, entities=[ent], timeout=10, complications_token=0)
         assert status == 200 and coord._token_repeated["w1"] == 2
 

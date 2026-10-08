@@ -38,6 +38,10 @@ SESSION_TTL = timedelta(minutes=5)
 # How long a parked poll waits after a wake before it collects, so a burst
 # (a scene setting a dozen lights) goes out as one reply, not a dozen.
 WAKE_COALESCE_SECONDS = 0.15
+# A watch told about a new complication token polls again at once while its
+# pull runs, still reporting the old one. That poll is not a lost hint, so a
+# lagging report is told again only once the first telling is this old.
+TOKEN_REPEAT_AFTER_SECONDS = 20.0
 # The watch config kinds the delta reply names, as `watch_config: {kind: rev}`.
 # The eight a watch applies (WATCH_CONFIG_PANEL_KINDS in const.py). Never the
 # catalog, which only the phone and the panel read.
@@ -392,6 +396,8 @@ class DeltaCoordinator:
         # been lost in a half-open connection). Once per token, like
         # _held_repeated for the config numbers.
         self._token_repeated: dict[str, int] = {}
+        # watch_id → loop time of the first telling of _token_notified.
+        self._token_notified_at: dict[str, float] = {}
         # Watch config rides the poll the same way: every reply with a body
         # names the signer's revision of every kind a watch applies
         # (DELTA_WATCH_CONFIG_KINDS), and a save wakes the parked poll (see
@@ -484,6 +490,7 @@ class DeltaCoordinator:
         if renotify:
             self._token_notified.pop(watch_id, None)
             self._token_repeated.pop(watch_id, None)
+            self._token_notified_at.pop(watch_id, None)
         waiter = self._waiters.get(watch_id)
         if waiter is not None:
             waiter.set()
@@ -521,7 +528,8 @@ class DeltaCoordinator:
     def _complications_behind(self, watch_id: str, applied: int | None) -> bool:
         """True when the watch should be handed the current token now: it
         told us what it applied, that is older, and it has not been told
-        about this token yet, or was told only once and still lags it."""
+        about this token yet, or was told only once, at least
+        TOKEN_REPEAT_AFTER_SECONDS ago, and still lags it."""
         if applied is None:
             return False
         server = self.complications_token(watch_id)
@@ -529,7 +537,13 @@ class DeltaCoordinator:
             return False
         if self._token_notified.get(watch_id) != server:
             return True
-        return self._token_repeated.get(watch_id) != server
+        if self._token_repeated.get(watch_id) == server:
+            return False
+        told_at = self._token_notified_at.get(watch_id)
+        return (
+            told_at is None
+            or self.hass.loop.time() - told_at >= TOKEN_REPEAT_AFTER_SECONDS
+        )
 
     def _note_complications_notified(
         self, watch_id: str, token: int, applied: int | None
@@ -541,6 +555,8 @@ class DeltaCoordinator:
             return
         if self._token_notified.get(watch_id) == token:
             self._token_repeated[watch_id] = token
+        else:
+            self._token_notified_at[watch_id] = self.hass.loop.time()
         self._token_notified[watch_id] = token
 
     # ── watch config on the poll ──────────────────────────────────────
@@ -1034,6 +1050,7 @@ class DeltaCoordinator:
         self._last_poll_at.pop(watch_id, None)
         self._token_notified.pop(watch_id, None)
         self._token_repeated.pop(watch_id, None)
+        self._token_notified_at.pop(watch_id, None)
         self._watch_config_sent.pop(watch_id, None)
         self._http_actions_sent.pop(watch_id, None)
         self._client_certificate_sent.pop(watch_id, None)
@@ -1145,6 +1162,11 @@ class DeltaCoordinator:
             self._stamp_reply(watch_id, body, reported, complications_token, voices_hash)
             if lean:
                 self._lean_reply(body, reported, complications_token, caps_hash, epoch)
+            else:
+                # A new watch's first poll of a connection is not lean yet
+                # (it has not seen `delta_lean`), and its next one names
+                # this epoch. Older apps ignore the key.
+                body["epoch"] = self._epoch
         return status, body
 
     def _stamp_reply(
@@ -2035,6 +2057,7 @@ class DeltaCoordinator:
             # reply, which is what a watch back after five idle minutes wants.
             self._token_notified.pop(watch_id, None)
             self._token_repeated.pop(watch_id, None)
+            self._token_notified_at.pop(watch_id, None)
             # The same for the watch config revisions: the next reply with a
             # body carries them again and records them afresh.
             self._watch_config_sent.pop(watch_id, None)
