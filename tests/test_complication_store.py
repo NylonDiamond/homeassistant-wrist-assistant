@@ -1315,27 +1315,50 @@ def test_restore_over_tombstones_bumps_revision(mod):
     assert rec.deleted is False
 
 
-def test_restore_refuses_two_documents_of_one_shape_in_one_slot(mod):
-    """A restore gets the seat check a save makes, with the same error.
+def test_restore_skips_the_second_document_of_one_shape_in_one_slot(mod):
+    """A restore gets the seat check a save makes, but skips rather than refuses.
 
     Before the fix a restore batch holding two circular documents at slot 3
     committed both, and the devices could only ever place one of them.
+    Refusing the whole batch would instead leave a wiped store with nothing
+    restored, so the later document of the pair is left out, reported with
+    the message a save gives, and the rest of the batch goes in.
     """
     store = _new(mod)
     first = _doc(schemaVersion=6, slotIndex=3, name="Garage", supportedFamilies=["circular"])
     second = _doc(schemaVersion=6, slotIndex=3, name="Lights", supportedFamilies=["circular"])
-    with pytest.raises(mod.ComplicationValidationError) as restored:
-        store.restore(OWNER, [first, second], updated_by="watch-restore")
-    assert store.is_empty(OWNER)
-    assert store.token == 0
+    other = _doc(schemaVersion=6, slotIndex=4, name="Door", supportedFamilies=["circular"])
+    skipped: list[dict] = []
+    records = store.restore(
+        OWNER, [first, second, other], updated_by="watch-restore", skipped=skipped
+    )
+    assert [r.id for r in records] == [first["id"], other["id"]]
+    assert {r.id for r in store.list(OWNER)} == {first["id"], other["id"]}
+    assert [s["id"] for s in skipped] == [second["id"]]
 
     # The message is the one a save gives for the same clash.
-    store.save(OWNER, first, base_revision=None, updated_by="t")
     with pytest.raises(mod.ComplicationValidationError) as saved:
         store.save(OWNER, second, base_revision=None, updated_by="t")
-    assert restored.value.message == saved.value.message
-    assert "slot 3" in restored.value.message
-    assert '"Garage"' in restored.value.message
+    assert skipped[0]["message"] == saved.value.message
+    assert "slot 3" in skipped[0]["message"]
+    assert '"Garage"' in skipped[0]["message"]
+
+
+def test_restore_reports_nothing_skipped_when_a_bad_document_refuses_the_batch(mod):
+    """A structural error still refuses everything, and leaves no skips behind."""
+    store = _new(mod)
+    first = _doc(schemaVersion=6, slotIndex=3, supportedFamilies=["circular"])
+    second = _doc(schemaVersion=6, slotIndex=3, supportedFamilies=["circular"])
+    skipped: list[dict] = []
+    with pytest.raises(mod.ComplicationValidationError):
+        store.restore(
+            OWNER,
+            [first, second, _doc(slotIndex=MAX_SLOTS)],
+            updated_by="watch-restore",
+            skipped=skipped,
+        )
+    assert store.is_empty(OWNER)
+    assert skipped == []
 
 
 def test_restore_lets_two_shapes_share_one_slot(mod):
@@ -1343,9 +1366,13 @@ def test_restore_lets_two_shapes_share_one_slot(mod):
     store = _new(mod)
     round_one = _doc(schemaVersion=6, slotIndex=3, supportedFamilies=["circular"])
     wide_one = _doc(schemaVersion=6, slotIndex=3, supportedFamilies=["rectangular"])
-    records = store.restore(OWNER, [round_one, wide_one], updated_by="watch-restore")
+    skipped: list[dict] = []
+    records = store.restore(
+        OWNER, [round_one, wide_one], updated_by="watch-restore", skipped=skipped
+    )
     assert len(records) == 2
     assert len(store.list(OWNER)) == 2
+    assert skipped == []
 
 
 # ── move_owner (the reinstall recovery path) ───────────────────────────────

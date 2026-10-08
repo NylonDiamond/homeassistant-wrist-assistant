@@ -1847,20 +1847,26 @@ class ComplicationStore:
         documents: list[Any],
         *,
         updated_by: str,
+        skipped: list[dict[str, str]] | None = None,
     ) -> list[ComplicationRecord]:
         """Seed an *empty* owner collection from a device replica.
 
         Recovery only. Refuses when the owner already has live records so a
         stale watch can never overwrite what the panel holds. Every document is
-        validated before any is written, so a bad batch stores nothing.
+        validated before any is written, so a structurally bad batch stores
+        nothing.
 
-        The batch also gets the seat check ``save`` makes: two documents of
-        one shape in one slot refuse the whole batch with the error a save
-        would give. The devices collapse such a pair to one picker row, and a
-        restore is the one write that could otherwise bring the clash in
-        without the check. The device keeps its own copies on a refusal, so
-        nothing is lost; the restore simply does not happen until the clash is
-        fixed on the device.
+        The seat check ``save`` makes (one document per shape in a slot) runs
+        here too, but a clash skips the one document rather than refusing the
+        batch. A save refuses because the person editing can pick another slot
+        on the spot. A restore runs after a store wipe with nobody at the
+        panel, from a watch replica that may hold a clash older than the check,
+        and refusing it would leave the watch with nothing restored at all over
+        one legacy pair. So the first document of a clashing pair is kept (a
+        live record, then batch order), the later one is left out, and the
+        rest of the batch is committed. When ``skipped`` is given, each
+        document left out is appended to it as ``{"id", "message"}``, the
+        message being the one a save would refuse with.
         """
         if not self.is_empty(owner_watch_id):
             raise ComplicationConflictError(
@@ -1874,10 +1880,11 @@ class ComplicationStore:
             )
         validated: list[dict[str, Any]] = []
         seen: set[str] = set()
+        left_out: list[dict[str, str]] = []
         # The seats already held: the owner's live records (none, since the
         # owner is empty, but the check should not lean on that) and then each
         # document of the batch as it is accepted, so the second of a clashing
-        # pair is the one refused.
+        # pair is the one left out.
         seated: dict[str, ComplicationRecord] = {
             record_id: record
             for record_id, record in self._records.get(owner_watch_id, {}).items()
@@ -1889,7 +1896,11 @@ class ComplicationStore:
             if record_id in seen:
                 raise ComplicationValidationError(f"duplicate id {record_id}")
             seen.add(record_id)
-            self._refuse_held_seat(seated, record_id, document, None)
+            try:
+                self._refuse_held_seat(seated, record_id, document, None)
+            except ComplicationValidationError as err:
+                left_out.append({"id": record_id, "message": err.message})
+                continue
             seated[record_id] = ComplicationRecord(
                 id=record_id,
                 owner_watch_id=owner_watch_id,
@@ -1902,6 +1913,10 @@ class ComplicationStore:
             )
             validated.append(document)
 
+        # Reported only once the whole batch has passed validation, so a
+        # refused batch never leaves a half-filled list behind.
+        if skipped is not None:
+            skipped.extend(left_out)
         committed: list[ComplicationRecord] = []
         for document in validated:
             record_id = _validate_uuid(document["id"], "document.id")
