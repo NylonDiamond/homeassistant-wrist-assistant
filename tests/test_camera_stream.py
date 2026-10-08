@@ -450,30 +450,28 @@ def test_viewport_matches_compares_saved_crop() -> None:
 # ── session reuse: a new connection's token viewport must win ─────────────
 
 
-def test_get_or_create_session_updates_viewport_on_reuse() -> None:
-    """A reused session must adopt the new connection's token viewport.
+def test_a_new_connection_takes_its_token_viewport_not_the_old_crop() -> None:
+    """A second connection for the same camera must use its own token's viewport.
 
     Repro for the notification→tap→full-screen bug: the cropped notification
     live stream leaves a session keyed by (watch_id, entity_id); tapping it
     opens the in-app full-screen view, which mints a *full-frame* token for the
-    same camera. The session is keyed by (watch_id, entity_id), so the second
-    connection reuses the first's session object — and before the fix it kept
-    the stale crop, leaving the live stream server-cropped so the Crown could
-    never zoom back out.
+    same camera. Before the fix the second connection kept the stale crop,
+    leaving the live stream server-cropped so the Crown could never zoom back
+    out.
     """
     with _fresh_camera_stream("cs_session_reuse") as cs:
         coord = cs.CameraStreamCoordinator()
         crop = cs.ViewportState(0.25, 0.25, 0.5, 0.5)
 
         # 1) Notification stream opens cropped.
-        s1 = coord.get_or_create_session("watch1", "camera.front", viewport=crop)
+        s1 = coord.open_session("watch1", "camera.front", viewport=crop)
         assert s1.viewport == crop
 
-        # 2) Full-screen reuses the same key with a full-frame token.
-        s2 = coord.get_or_create_session(
+        # 2) Full-screen opens the same camera with a full-frame token.
+        s2 = coord.open_session(
             "watch1", "camera.front", viewport=cs.ViewportState()
         )
-        assert s2 is s1  # same session object, keyed by (watch_id, entity_id)
         assert cs.is_full_frame_viewport(s2.viewport)
 
         # 3) A mid-stream width-only retune (viewport=None) must NOT reset it —
@@ -482,6 +480,192 @@ def test_get_or_create_session_updates_viewport_on_reuse() -> None:
         assert cs.is_full_frame_viewport(
             coord._sessions[("watch1", "camera.front")].viewport
         )
+
+
+# ── two connections for one camera ────────────────────────────────────────
+
+
+def test_a_new_connection_replaces_the_old_session_and_tells_it_to_stop() -> None:
+    """The newer connection gets a session of its own; the older one is closed
+    and its teardown no longer removes the entry the newer one is using."""
+    with _fresh_camera_stream("cs_session_replace") as cs:
+        coord = cs.CameraStreamCoordinator()
+        key = ("watch1", "camera.front")
+
+        first = coord.open_session("watch1", "camera.front")
+        first.source_entity_id = "camera.front_hd"
+        first.source_width, first.source_height = 1920, 1080
+        second = coord.open_session("watch1", "camera.front", width=480)
+
+        assert second is not first
+        assert first.closed and not second.closed
+        assert coord._sessions[key] is second
+        # The HD/SD choice and source size carry over, as when it was shared.
+        assert second.source_entity_id == "camera.front_hd"
+        assert (second.source_width, second.source_height) == (1920, 1080)
+
+        # The first connection ending removes nothing it does not own.
+        assert coord.remove_session("watch1", "camera.front", first) is False
+        assert coord._sessions[key] is second
+        assert coord.update_session("watch1", "camera.front", fps=5.0) is True
+
+        assert coord.remove_session("watch1", "camera.front", second) is True
+        assert key not in coord._sessions
+
+
+def _frame_source(cs, jpeg: bytes) -> None:
+    async def _get_image(hass, entity_id, timeout=5):  # noqa: ANN001
+        return types.SimpleNamespace(content=jpeg)
+
+    cs.async_get_image = _get_image
+
+
+def test_a_half_open_connection_ending_late_keeps_the_new_stream_controllable() -> None:
+    """The watch's first connection goes half-open on a network change and it
+    opens a second one for the same camera. The first loop must stop, and its
+    teardown must leave the second connection's session in place, so zoom,
+    HD/SD and fps changes still reach the video that keeps playing."""
+    with _fresh_camera_stream("cs_half_open") as cs:
+        cs.StreamResponse = _RecordingStreamResponse
+        _frame_source(cs, _test_jpeg(640, 480))
+        coord = cs.CameraStreamCoordinator()
+        key = ("watch1", "camera.front")
+
+        async def scenario() -> None:
+            first = coord.open_session("watch1", "camera.front", fps=10.0)
+            task_a = asyncio.create_task(
+                cs.run_mjpeg_stream(
+                    _FakeHass(), object(), coord, "watch1", "camera.front", session=first
+                )
+            )
+            await asyncio.sleep(0.05)
+
+            second = coord.open_session("watch1", "camera.front", fps=10.0)
+            task_b = asyncio.create_task(
+                cs.run_mjpeg_stream(
+                    _FakeHass(), object(), coord, "watch1", "camera.front", session=second
+                )
+            )
+
+            # The first loop stops on its own, well inside one frame slot.
+            response_a = await asyncio.wait_for(task_a, timeout=1)
+            assert len(response_a.chunks) >= 1
+            assert coord._sessions[key] is second
+
+            # A zoom change still lands on the running stream and re-renders.
+            assert coord.update_session("watch1", "camera.front", width=320) is True
+            await asyncio.sleep(0.3)
+            assert not task_b.done()
+
+            task_b.cancel()
+            response_b = await task_b
+            assert len(response_b.chunks) >= 2
+            assert key not in coord._sessions
+
+        asyncio.run(scenario())
+
+
+# ── closing a device's streams ────────────────────────────────────────────
+
+
+def _load_token_stores():
+    path = _CAMERA_STREAM_PATH.with_name("wa_stream_tokens.py")
+    spec = importlib.util.spec_from_file_location("wa_stream_tokens_under_test", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+    return module
+
+
+def test_closing_a_device_stops_its_streams_and_takes_back_its_tokens() -> None:
+    """Removing a device must end what it already has running and void the
+    tokens it was handed but has not used. Another device's are untouched."""
+    tokens = _load_token_stores()
+    with _fresh_camera_stream("cs_close_device") as cs:
+        cs.StreamResponse = _RecordingStreamResponse
+        _frame_source(cs, _test_jpeg(640, 480))
+        coord = cs.CameraStreamCoordinator()
+        streams = tokens.StreamTokenStore()
+        batches = tokens.BatchSnapshotTokenStore()
+        coord.attach_token_stores((streams, batches))
+
+        def _mint(watch_id: str) -> tuple[str, str]:
+            stream, _ = streams.mint(
+                watch_id=watch_id, entity_id="camera.front", width=400, quality=75,
+                fps=2.0, viewport=cs.ViewportState(), ttl_seconds=30,
+            )
+            batch, _ = batches.mint(
+                watch_id=watch_id, cameras=[("camera.front", 200, 200)], quality=75,
+                ttl_seconds=30,
+            )
+            return stream, batch
+
+        gone_stream, gone_batch = _mint("watch-gone")
+        kept_stream, kept_batch = _mint("watch-kept")
+
+        async def scenario() -> None:
+            # A slow frame rate, so the loop sits in its pause when closed.
+            gone = coord.open_session("watch-gone", "camera.front", fps=0.5)
+            kept = coord.open_session("watch-kept", "camera.front", fps=0.5)
+            task_gone = asyncio.create_task(
+                cs.run_mjpeg_stream(
+                    _FakeHass(), object(), coord, "watch-gone", "camera.front", session=gone
+                )
+            )
+            task_kept = asyncio.create_task(
+                cs.run_mjpeg_stream(
+                    _FakeHass(), object(), coord, "watch-kept", "camera.front", session=kept
+                )
+            )
+            await asyncio.sleep(0.05)
+
+            assert coord.close_device("watch-gone") == 3  # one session, two tokens
+            await asyncio.wait_for(task_gone, timeout=1)
+            assert ("watch-gone", "camera.front") not in coord._sessions
+
+            assert not task_kept.done()
+            assert coord._sessions[("watch-kept", "camera.front")] is kept
+            task_kept.cancel()
+            await task_kept
+
+        asyncio.run(scenario())
+
+        assert streams.claim(gone_stream) is None
+        assert batches.claim(gone_batch) is None
+        assert streams.claim(kept_stream) is not None
+        assert batches.claim(kept_batch) is not None
+
+
+def test_a_stream_stops_once_its_device_may_no_longer_stream() -> None:
+    """A user disabled while a stream runs: the periodic check ends it."""
+    with _fresh_camera_stream("cs_authorize") as cs:
+        cs.StreamResponse = _RecordingStreamResponse
+        cs.STREAM_AUTH_RECHECK_SECONDS = 0.0  # ask on every frame
+        _frame_source(cs, _test_jpeg(640, 480))
+        coord = cs.CameraStreamCoordinator()
+        answers = [True, True, False]
+        asked: list[bool] = []
+
+        async def _authorize() -> bool:
+            asked.append(answers[len(asked)])
+            return asked[-1]
+
+        async def scenario() -> None:
+            session = coord.open_session("watch1", "camera.front", fps=10.0)
+            await asyncio.wait_for(
+                cs.run_mjpeg_stream(
+                    _FakeHass(), object(), coord, "watch1", "camera.front",
+                    session=session, authorize=_authorize,
+                ),
+                timeout=2,
+            )
+
+        asyncio.run(scenario())
+        assert asked == [True, True, False]
+        assert ("watch1", "camera.front") not in coord._sessions
 
 
 # ── batch snapshot stream ─────────────────────────────────────────────────

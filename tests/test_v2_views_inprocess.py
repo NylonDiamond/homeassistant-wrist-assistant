@@ -27,6 +27,9 @@ from __future__ import annotations
 import __future__
 import ast
 import asyncio
+import importlib.util
+import logging
+import sys
 import types
 import uuid
 from pathlib import Path
@@ -486,3 +489,166 @@ def test_a_hold_that_runs_out_removes_its_own_entry() -> None:
         assert sent == ["up", "up"]
 
     asyncio.run(scenario())
+
+
+# ── camera stream tokens ─────────────────────────────────────────────────
+
+
+def _load_stream_tokens() -> Any:
+    path = _MODULE.with_name("wa_stream_tokens.py")
+    spec = importlib.util.spec_from_file_location("wa_stream_tokens_views_test", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+    return module
+
+
+class _SecretStore:
+    def __init__(self) -> None:
+        self.entries: dict[str, types.SimpleNamespace] = {}
+
+    def get(self, watch_id: str) -> types.SimpleNamespace | None:
+        return self.entries.get(watch_id)
+
+
+class _CameraCoordinator:
+    def __init__(self) -> None:
+        self.opened: list[tuple[str, str]] = []
+
+    def open_session(self, watch_id: str, entity_id: str, *_args: Any) -> Any:
+        self.opened.append((watch_id, entity_id))
+        return types.SimpleNamespace(watch_id=watch_id, entity_id=entity_id)
+
+
+@pytest.fixture
+def stream_views():
+    tokens = _load_stream_tokens()
+    users: dict[str, _HAUser] = {"alice": _HAUser()}
+
+    async def async_get_user(user_id: str) -> _HAUser | None:
+        return users.get(user_id)
+
+    streams: list[dict[str, Any]] = []
+    batches: list[Any] = []
+
+    async def run_mjpeg_stream(hass, request, coordinator, watch_id, entity_id, **kwargs):
+        streams.append({"watch_id": watch_id, "entity_id": entity_id, **kwargs})
+        return _Response(status=200)
+
+    async def run_batch_snapshot_stream(hass, request, cameras, quality, concurrency=0):
+        batches.append(cameras)
+        return _Response(status=200)
+
+    namespace = _extract(
+        {"WAStreamView", "WABatchSnapshotView", "_async_device_may_stream", "_async_bound_user_ok"},
+        {
+            "Any": Any,
+            "DOMAIN": DOMAIN,
+            "HomeAssistant": object,
+            "HomeAssistantView": _View,
+            "Request": object,
+            "Response": _Response,
+            "StreamResponse": _Response,
+            "WristAssistantData": object,
+            "_LOGGER": logging.getLogger("wa_stream_views_test"),
+            "async_user_not_allowed_do_auth": _AuthCheck(),
+            "run_mjpeg_stream": run_mjpeg_stream,
+            "run_batch_snapshot_stream": run_batch_snapshot_stream,
+        },
+    )
+    secrets = _SecretStore()
+    secrets.entries["watch-A"] = types.SimpleNamespace(secret_bytes=b"k" * 32, user_id="alice")
+    domain_data = types.SimpleNamespace(
+        widget_secret_store=secrets,
+        stream_token_store=tokens.StreamTokenStore(),
+        batch_snapshot_token_store=tokens.BatchSnapshotTokenStore(),
+        camera_stream_coordinator=_CameraCoordinator(),
+        batch_snapshot_settings_store=types.SimpleNamespace(concurrency=0),
+    )
+    hass = types.SimpleNamespace(
+        data={DOMAIN: domain_data},
+        auth=types.SimpleNamespace(async_get_user=async_get_user),
+        states=types.SimpleNamespace(get=lambda entity_id: object()),
+    )
+
+    def mint_stream() -> str:
+        token, _ = domain_data.stream_token_store.mint(
+            watch_id="watch-A", entity_id="camera.front", width=400, quality=75,
+            fps=2.0, viewport=object(), ttl_seconds=30,
+        )
+        return token
+
+    def mint_batch() -> str:
+        token, _ = domain_data.batch_snapshot_token_store.mint(
+            watch_id="watch-A", cameras=[("camera.front", 200, 200)], quality=75,
+            ttl_seconds=30,
+        )
+        return token
+
+    yield types.SimpleNamespace(
+        stream=namespace["WAStreamView"](hass),
+        batch=namespace["WABatchSnapshotView"](hass),
+        hass=hass,
+        domain_data=domain_data,
+        secrets=secrets,
+        users=users,
+        streams=streams,
+        batches=batches,
+        mint_stream=mint_stream,
+        mint_batch=mint_batch,
+    )
+
+
+_HOME_REQUEST = types.SimpleNamespace(remote="192.168.1.40")
+
+
+def test_a_stream_token_opens_a_stream_and_hands_it_the_permission_check(stream_views) -> None:
+    reply = asyncio.run(stream_views.stream.get(_HOME_REQUEST, stream_views.mint_stream()))
+    assert reply.status == 200
+    assert stream_views.domain_data.camera_stream_coordinator.opened == [
+        ("watch-A", "camera.front")
+    ]
+    [stream] = stream_views.streams
+    assert stream["session"].entity_id == "camera.front"
+
+    # The running stream asks again later; a disabled user is then refused.
+    assert asyncio.run(stream["authorize"]()) is True
+    stream_views.users["alice"].is_active = False
+    assert asyncio.run(stream["authorize"]()) is False
+
+
+@pytest.mark.parametrize("change", ["device removed", "user disabled", "user deleted"])
+def test_a_stream_token_is_refused_once_its_device_may_not_stream(stream_views, change) -> None:
+    """The token was minted by a signed request, but the device was removed or
+    its user disabled before it was used. It opens nothing."""
+    stream_token = stream_views.mint_stream()
+    batch_token = stream_views.mint_batch()
+    if change == "device removed":
+        stream_views.secrets.entries.clear()
+    elif change == "user disabled":
+        stream_views.users["alice"].is_active = False
+    else:
+        stream_views.users.clear()
+
+    assert asyncio.run(stream_views.stream.get(_HOME_REQUEST, stream_token)).status == 404
+    assert asyncio.run(stream_views.batch.get(_HOME_REQUEST, batch_token)).status == 404
+    assert stream_views.streams == []
+    assert stream_views.batches == []
+    assert stream_views.domain_data.camera_stream_coordinator.opened == []
+
+
+def test_a_batch_snapshot_token_still_works_for_a_device_that_may_stream(stream_views) -> None:
+    reply = asyncio.run(stream_views.batch.get(_HOME_REQUEST, stream_views.mint_batch()))
+    assert reply.status == 200
+    assert stream_views.batches == [[("camera.front", 200, 200)]]
+
+
+def test_a_stream_is_refused_while_the_integration_reloads(stream_views) -> None:
+    """The running stream's check finds no integration loaded and says no."""
+    asyncio.run(stream_views.stream.get(_HOME_REQUEST, stream_views.mint_stream()))
+    [stream] = stream_views.streams
+    stream_views.hass.data.clear()
+    assert asyncio.run(stream["authorize"]()) is False

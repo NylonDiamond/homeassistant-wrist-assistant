@@ -90,6 +90,7 @@ class _Recorder:
 def _domain_data(journal: list[tuple[str, str]]) -> types.SimpleNamespace:
     return types.SimpleNamespace(
         coordinator=_Recorder(journal, "coordinator"),
+        camera_stream_coordinator=_Recorder(journal, "cameras"),
         widget_secret_store=_Recorder(journal, "secrets"),
         notification_store=_Recorder(journal, "notifications"),
         complication_store=_Recorder(journal, "complications"),
@@ -170,9 +171,13 @@ def test_removing_a_device_closes_its_session_before_its_secret_goes(remove_devi
     assert asyncio.run(remove_device(_hass(_domain_data(journal)), entry, device)) is True
 
     assert journal[0] == ("coordinator.drop_session", "w1")
-    assert journal[1] == ("secrets.remove", "w1")
+    # Its camera streams stop and its unused stream tokens go before the
+    # secret does, so nothing it was handed outlives it.
+    assert journal[1] == ("cameras.close_device", "w1")
+    assert journal[2] == ("secrets.remove", "w1")
     assert {call for call, _ in journal} == {
         "coordinator.drop_session",
+        "cameras.close_device",
         "secrets.remove",
         "notifications.remove",
         "complications.release_owner",
