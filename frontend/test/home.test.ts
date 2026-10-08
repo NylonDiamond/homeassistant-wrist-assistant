@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { deviceCardTiles, deviceFacts, homeGroups, homeTotals, lastSeenDevice, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
+import { countWord, deviceCardTiles, deviceFacts, homeGroups, homeTotals, lastSeenDevice, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -172,6 +172,17 @@ describe("seenWords and pendingWords", () => {
   });
 });
 
+describe("countWord", () => {
+  it("writes the page's word small, singular for one, and leaves status alone", () => {
+    expect(countWord("Widgets", 1)).toBe("widget");
+    expect(countWord("Widgets", 0)).toBe("widgets");
+    expect(countWord("Control Center", 1)).toBe("control");
+    expect(countWord("Complications", 21)).toBe("complications");
+    expect(countWord("Status pages", 1)).toBe("status");
+    expect(countWord("Pages", undefined)).toBe("pages");
+  });
+});
+
 describe("homeTotals", () => {
   it("counts every device and each sync word", () => {
     expect(homeTotals([{ sync: "synced" }, { sync: "waiting" }, { sync: "synced" }, { sync: "idle" }]))
@@ -281,14 +292,12 @@ describe("the shell's and Home's look", () => {
     expect(title).toContain("letter-spacing");
   });
 
-  it("cuts a long device name with an ellipsis on a box of its own, not on the flex row", () => {
+  it("shows every word: no ellipsis anywhere on Home, a long name or fact wraps instead", () => {
     const text = homeStyles.cssText;
+    const home = text.slice(0, text.indexOf("dialog.dev-dialog"));
+    expect(home).not.toContain("text-overflow");
     const rule = (sel: string) => text.slice(text.indexOf(sel), text.indexOf("}", text.indexOf(sel)));
-    const label = rule(".home-device-label {");
-    expect(label).toContain("min-width: 0");
-    expect(label).toContain("overflow: hidden");
-    expect(label).toContain("text-overflow: ellipsis");
-    expect(label).toContain("white-space: nowrap");
-    expect(rule(".home-device-name {")).not.toContain("text-overflow");
+    expect(rule(".home-device-label {")).toContain("overflow-wrap: anywhere");
+    expect(rule(".home-device-facts {")).toContain("overflow-wrap: anywhere");
   });
 });

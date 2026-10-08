@@ -142,7 +142,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceRows, homeGroups, homeTotals, lastSeenDevice, pendingWords, seenWords, summaryCounts, tileWord, homeDevices, homeStyles, watchConfigCount } from "./home.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceRows, homeGroups, homeTotals, lastSeenDevice, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount } from "./home.js";
 import { homePhoneArt, homeWatchArt } from "./home-art.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
@@ -18926,7 +18926,10 @@ export class WristAssistantPanel extends LitElement {
     const owner = this.ownerOf(d.id);
     const seen = seenWords(owner, elapsed);
     const pending = pendingWords(owner);
-    const facts = [...deviceFacts(owner, d.kind), ...(seen === undefined ? [] : [seen])].join(" · ");
+    // What it is and its app on one line, then the paired phone and when it
+    // was seen, a line each, so nothing has to be cut.
+    const facts = deviceFacts(owner, d.kind);
+    const lines = [facts.slice(0, 2).join(" · "), ...facts.slice(2), ...(seen === undefined ? [] : [seen])];
     const why = [d.waitingFor.length === 0 ? undefined : `For ${waitingForText(d.waitingFor)}`, pending]
       .filter((w): w is string => w !== undefined).join(" · ");
     const held = owner?.complication_count ?? 0;
@@ -18939,7 +18942,7 @@ export class WristAssistantPanel extends LitElement {
           </button>
           <span class="home-device-sync"><i class="home-dot" aria-hidden="true"></i><b>${deviceSyncLabel(d.sync)}</b></span>
         </div>
-        <span class="home-device-facts" title=${facts}>${facts}</span>
+        <span class="home-device-facts">${lines.map((line) => html`<span>${line}</span>`)}</span>
         ${why === "" ? nothing : html`<span class="home-device-why">${why}</span>`}
       </div>
       <div class="home-tiles">${deviceCardTiles(d.kind, admin).map((t) => this.renderHomeTile(t, d, owner))}</div>
@@ -18963,7 +18966,7 @@ export class WristAssistantPanel extends LitElement {
    * on this watch. The way the sheet's tabs go, without a sheet to close. */
   private renderHomeTile(t: DeviceSheetTab, d: HomeDeviceRow, owner: OwnerSummary | undefined) {
     const n = this.homeTileCount(t, d, owner);
-    const body = html`<b class=${n === 0 ? "none" : ""}>${n ?? "–"}</b><span>${tileWord(t.label).toLocaleLowerCase()}</span>`;
+    const body = html`<b class=${n === 0 ? "none" : ""}>${n ?? "–"}</b><span>${countWord(t.label, n)}</span>`;
     if (t.kind === "list") {
       return html`<button type="button" class="home-tile" title=${`${t.label} on ${d.name}`}
         @click=${() => {

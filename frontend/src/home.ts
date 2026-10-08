@@ -139,6 +139,13 @@ export function tileWord(label: string): string {
   return label === "Status pages" ? "Status" : label === "Control Center" ? "Controls" : label;
 }
 
+/** A count door's word after its number, in small letters, singular for
+ * one: "1 widget", "2 widgets", "1 status". */
+export function countWord(label: string, n: number | undefined): string {
+  const word = tileWord(label).toLocaleLowerCase();
+  return n === 1 && word.endsWith("s") && word !== "status" ? word.slice(0, -1) : word;
+}
+
 /** Each watch's item counts, read off the watch config summary's `items`.
  * A kind with no record counts none, and so does a watch the summary leaves
  * out, which has no records at all. An integration older than the field
@@ -295,7 +302,7 @@ export const homeStyles = css`
   }
   .home-total-n { font-size: 34px; font-weight: 300; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .home-total-n small { margin-left: 5px; font-size: 13px; font-weight: 400; letter-spacing: 0; color: var(--wa-muted); }
-  .home-total-sub { font-size: 11.5px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-total-sub { font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); overflow-wrap: anywhere; }
   /* Every device as a share of one thin bar: synced, waiting, never synced. */
   .home-bar { display: flex; gap: 3px; }
   .home-bar i { height: 3px; border-radius: 2px; background: var(--wa-line-strong); }
@@ -323,7 +330,7 @@ export const homeStyles = css`
   .home-attn-row { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 9px 0; border-top: 1px solid var(--wa-line); }
   .home-attn-who { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--c); }
   .home-attn-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-  .home-attn-text b, .home-attn-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-attn-text b, .home-attn-text span { overflow-wrap: anywhere; }
   .home-attn-text b { font-size: 13px; font-weight: 500; }
   .home-attn-text span { font-size: 11.5px; color: var(--wa-muted); }
   .home-attn-ok { margin: 0; padding: 10px 0 2px; border-top: 1px solid var(--wa-line); font-size: 12.5px; color: var(--wa-muted); }
@@ -338,7 +345,7 @@ export const homeStyles = css`
     font-size: 14px; font-weight: 600; color: var(--c);
   }
   .home-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .home-person-name { margin: 4px 0 0; min-width: 0; font-size: 16px; font-weight: 500; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-person-name { margin: 4px 0 0; min-width: 0; font-size: 16px; font-weight: 500; letter-spacing: -.01em; overflow-wrap: anywhere; }
   .home-person-n { font-size: 11.5px; color: var(--wa-muted); }
   .home-person-sum { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--wa-label); }
   /* The devices, one card each, as many to a row as fit. */
@@ -375,18 +382,19 @@ export const homeStyles = css`
   button.home-device-open::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
   .home-device:has(button.home-device-open:focus-visible) { box-shadow: var(--wa-ring); }
   .home-device-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 0 4px; }
-  .home-device-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .home-device-line { display: flex; align-items: flex-start; gap: 8px; min-width: 0; line-height: 1.35; }
   .home-device-name { min-width: 0; display: flex; align-items: center; font-size: 13px; font-weight: 500; }
-  /* The name in its own box: an ellipsis only reaches a block, never the
-     bare text of a flex row. */
-  .home-device-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .home-device-sync { flex: none; display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--wa-muted); }
+  /* The name in its own box, wrapping onto as many lines as it needs: Home
+     shows every word, never an ellipsis. */
+  .home-device-label { min-width: 0; overflow-wrap: anywhere; }
+  .home-device-sync { flex: none; display: flex; align-items: center; gap: 5px; font-size: 11px; line-height: 17.5px; color: var(--wa-muted); }
   .home-device-sync b { font-weight: 500; }
   .home-device.synced .home-device-sync b { color: var(--wa-green); }
   .home-device.waiting .home-device-sync b { color: var(--wa-amber); }
   .home-device.synced .home-dot { background: var(--wa-green); }
   .home-device.waiting .home-dot { background: var(--wa-amber); }
-  .home-device-facts { font-size: 11px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* What it is, then one fact to a line, each wrapping rather than cut. */
+  .home-device-facts { display: flex; flex-direction: column; gap: 1px; font-size: 11px; line-height: 1.35; color: var(--wa-muted); overflow-wrap: anywhere; }
   /* What a waiting device waits for and what its next pull brings. */
   .home-device-why { font-size: 11px; color: var(--wa-label); overflow-wrap: anywhere; }
   /* A small door per page that counts something, each opening that page on
