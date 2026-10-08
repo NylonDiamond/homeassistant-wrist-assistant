@@ -1211,14 +1211,7 @@ class ComplicationStore:
             return 0
         moving = self.list(owner_watch_id)
         if moving:
-            library_live = {
-                record.id: record
-                for record in self._records.get(LIBRARY_OWNER_ID, {}).values()
-                if not record.deleted
-            }
-            taken: set[tuple[int, str]] = set()
-            for record in library_live.values():
-                taken |= _slot_shapes(record)
+            library_live, taken = self._library_seats()
             linked_elsewhere = self._live_link_ids(excluding=owner_watch_id)
             moved = 0
             for source in moving:
@@ -1227,34 +1220,12 @@ class ComplicationStore:
                     continue
                 if source.id in library_live:
                     continue
-                document = copy.deepcopy(source.document)
-                shapes = shapes_of(document)
-                slot = _slot_of(source)
-                if slot < 0 or any((slot, shape) in taken for shape in shapes):
-                    slot = next(
-                        (
-                            candidate
-                            for candidate in _SLOT_RANGE
-                            if not any((candidate, shape) in taken for shape in shapes)
-                        ),
-                        slot if slot >= 0 else 0,
-                    )
-                    if isinstance(document, dict):
-                        document["slotIndex"] = slot
-                taken |= {(slot, shape) for shape in shapes}
-                existing = self._records.get(LIBRARY_OWNER_ID, {}).get(source.id)
-                self._commit(
-                    ComplicationRecord(
-                        id=source.id,
-                        owner_watch_id=LIBRARY_OWNER_ID,
-                        revision=existing.revision + 1 if existing is not None else 1,
-                        token=0,
-                        updated_at="",
-                        updated_by=updated_by,
-                        document=document,
-                        deleted=False,
-                        history=copy.deepcopy(source.history),
-                    )
+                self._commit_to_library(
+                    source.id,
+                    source.document,
+                    source.history,
+                    taken=taken,
+                    updated_by=updated_by,
                 )
                 moved += 1
             _LOGGER.info(
@@ -1269,6 +1240,75 @@ class ComplicationStore:
             owner_watch_id, updated_by=updated_by, mark_forgotten=mark_forgotten
         )
         return moved
+
+    def _library_seats(
+        self,
+    ) -> tuple[dict[str, ComplicationRecord], set[tuple[int, str]]]:
+        """The Library's live records by id, and every (slot, shape) they hold.
+
+        The pair :meth:`_commit_to_library` works against; the seat set is
+        updated in place as designs land, so one batch never seats two
+        designs of one shape in one Library slot.
+        """
+        library_live = {
+            record.id: record
+            for record in self._records.get(LIBRARY_OWNER_ID, {}).values()
+            if not record.deleted
+        }
+        taken: set[tuple[int, str]] = set()
+        for record in library_live.values():
+            taken |= _slot_shapes(record)
+        return library_live, taken
+
+    def _commit_to_library(
+        self,
+        record_id: str,
+        document: dict[str, Any] | None,
+        history: list[ComplicationHistoryEntry],
+        *,
+        taken: set[tuple[int, str]],
+        updated_by: str,
+    ) -> ComplicationRecord:
+        """Commit one design under the Library as a fresh revision.
+
+        It keeps its own slot when the Library draws nothing of its shapes
+        there, else it takes the lowest slot free for every shape it draws.
+        The Library's slot is only where the design lands when it is next put
+        on a device, so a bump costs nothing visible. A Library tombstone with
+        this id is revived on top of its revision. The caller has already
+        checked that the Library holds no live record with this id.
+        """
+        document = copy.deepcopy(document)
+        shapes = shapes_of(document)
+        slot = document.get("slotIndex") if isinstance(document, dict) else None
+        if isinstance(slot, bool) or not isinstance(slot, int):
+            slot = -1
+        if slot < 0 or any((slot, shape) in taken for shape in shapes):
+            slot = next(
+                (
+                    candidate
+                    for candidate in _SLOT_RANGE
+                    if not any((candidate, shape) in taken for shape in shapes)
+                ),
+                slot if slot >= 0 else 0,
+            )
+            if isinstance(document, dict):
+                document["slotIndex"] = slot
+        taken |= {(slot, shape) for shape in shapes}
+        existing = self._records.get(LIBRARY_OWNER_ID, {}).get(record_id)
+        return self._commit(
+            ComplicationRecord(
+                id=record_id,
+                owner_watch_id=LIBRARY_OWNER_ID,
+                revision=existing.revision + 1 if existing is not None else 1,
+                token=0,
+                updated_at="",
+                updated_by=updated_by,
+                document=document,
+                deleted=False,
+                history=copy.deepcopy(history),
+            )
+        )
 
     def release_orphans(self, registered: set[str], *, updated_by: str) -> list[str]:
         """Release every owner the secret store no longer knows.
@@ -1862,11 +1902,24 @@ class ComplicationStore:
         on the spot. A restore runs after a store wipe with nobody at the
         panel, from a watch replica that may hold a clash older than the check,
         and refusing it would leave the watch with nothing restored at all over
-        one legacy pair. So the first document of a clashing pair is kept (a
-        live record, then batch order), the later one is left out, and the
-        rest of the batch is committed. When ``skipped`` is given, each
-        document left out is appended to it as ``{"id", "message"}``, the
-        message being the one a save would refuse with.
+        one legacy pair. So the first document of a clashing pair is restored
+        (a live record, then batch order) and the rest of the batch is
+        committed.
+
+        The later document of the pair is not thrown away. It goes to the
+        Library through the same path :meth:`release_owner` uses, so it lands
+        as an ordinary Library design (bumped to a free Library slot if need
+        be) and can be put back on a device from the panel. The watch drops
+        whatever Home Assistant did not take on its next pull, so without this
+        the design would be gone. If the Library already holds a live record
+        with that id, that record is kept as it is and the restored copy is
+        not written.
+
+        When ``skipped`` is given, each document left out of the owner is
+        appended to it as ``{"id", "message", "library"}``: the message a save
+        would refuse with plus where the design went, and ``library`` is
+        ``"kept"`` (committed to the Library now) or ``"existing"`` (the
+        Library already held it).
         """
         if not self.is_empty(owner_watch_id):
             raise ComplicationConflictError(
@@ -1880,7 +1933,7 @@ class ComplicationStore:
             )
         validated: list[dict[str, Any]] = []
         seen: set[str] = set()
-        left_out: list[dict[str, str]] = []
+        left_out: list[tuple[str, dict[str, Any], str]] = []
         # The seats already held: the owner's live records (none, since the
         # owner is empty, but the check should not lean on that) and then each
         # document of the batch as it is accepted, so the second of a clashing
@@ -1899,7 +1952,7 @@ class ComplicationStore:
             try:
                 self._refuse_held_seat(seated, record_id, document, None)
             except ComplicationValidationError as err:
-                left_out.append({"id": record_id, "message": err.message})
+                left_out.append((record_id, document, err.message))
                 continue
             seated[record_id] = ComplicationRecord(
                 id=record_id,
@@ -1913,10 +1966,6 @@ class ComplicationStore:
             )
             validated.append(document)
 
-        # Reported only once the whole batch has passed validation, so a
-        # refused batch never leaves a half-filled list behind.
-        if skipped is not None:
-            skipped.extend(left_out)
         committed: list[ComplicationRecord] = []
         for document in validated:
             record_id = _validate_uuid(document["id"], "document.id")
@@ -1939,6 +1988,35 @@ class ComplicationStore:
                 history=list(existing.history) if existing is not None else [],
             )
             committed.append(self._commit(record))
+
+        # Written and reported only once the whole batch has passed
+        # validation, so a refused batch touches neither the Library nor the
+        # caller's list.
+        if left_out:
+            library_live, taken = self._library_seats()
+            for record_id, document, message in left_out:
+                if record_id in library_live:
+                    outcome = "existing"
+                    message += (
+                        "; the Library already holds this design, so that copy was kept"
+                    )
+                else:
+                    # A tombstone of the owner's own with this id brings its
+                    # past along, as a revived restore would have.
+                    own = self._records.get(owner_watch_id, {}).get(record_id)
+                    self._commit_to_library(
+                        record_id,
+                        document,
+                        own.history if own is not None else [],
+                        taken=taken,
+                        updated_by=updated_by,
+                    )
+                    outcome = "kept"
+                    message += "; kept in the Library instead"
+                if skipped is not None:
+                    skipped.append(
+                        {"id": record_id, "message": message, "library": outcome}
+                    )
         return committed
 
     def move_owner(

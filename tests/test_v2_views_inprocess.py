@@ -217,7 +217,8 @@ def test_create_from_a_forgotten_owner_succeeds_and_clears_the_mark(env) -> None
 
 
 def test_restore_reports_a_document_left_out_over_a_seat_clash(env) -> None:
-    """The reply stays ``ok`` and lists the left-out document under ``skipped``.
+    """The reply stays ``ok`` and lists the left-out document under ``skipped``,
+    which says the design was kept in the Library.
 
     Older watch builds read only ``ok`` from this reply, so the extra field
     costs them nothing.
@@ -229,8 +230,11 @@ def test_restore_reports_a_document_left_out_over_a_seat_clash(env) -> None:
     assert reply.status == 200
     assert reply.body["ok"] is True
     assert [r["id"] for r in reply.body["records"]] == [first["id"]]
-    assert [s["id"] for s in reply.body["skipped"]] == [second["id"]]
-    assert "slot 3" in reply.body["skipped"][0]["message"]
+    [left_out] = reply.body["skipped"]
+    assert (left_out["id"], left_out["library"]) == (second["id"], "kept")
+    assert "slot 3" in left_out["message"]
+    assert left_out["message"].endswith("kept in the Library instead")
+    assert [r.id for r in env.store.list("library")] == [second["id"]]
 
 
 def test_a_clean_restore_reports_an_empty_skipped_list(env) -> None:
