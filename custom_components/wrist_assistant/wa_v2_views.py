@@ -3706,6 +3706,13 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     does not count as a delivery of it. Any other value is stale and ignored.
     The reply is the same either way. A value that is not a non-negative
     integer is refused, like a bad ``since_revision``.
+
+    A get whose ``since_revision`` is the stored revision, with no report
+    about it, is the device saying it holds that revision: it read and
+    applied it. That delivery is marked confirmed, which clears a standing
+    ``rejected_revision`` (the device could not read the save once and has
+    read it since, after an app update for instance). A get that carried the
+    document out is not a confirmation and leaves the report standing.
     """
     raw_since = ctx.payload.get("since_revision")
     if raw_since is not None and (
@@ -3774,7 +3781,12 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     if unreadable is None or not store.report_unreadable(
         ctx.watch_id, kind, unreadable
     ):
-        store.mark_delivered(ctx.watch_id, kind, record.revision)
+        store.mark_delivered(
+            ctx.watch_id,
+            kind,
+            record.revision,
+            confirmed=raw_since == record.revision,
+        )
     return response
 
 

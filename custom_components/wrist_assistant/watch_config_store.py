@@ -67,12 +67,18 @@ Each record carries:
   written before these fields existed load with 0 and no time.
 * ``rejected_revision`` / ``rejected_at``: the last revision a device reported
   it fetched and could not decode, and when (0 and no time for never). Set by
-  a signed get carrying ``unreadable_revision`` equal to the stored revision,
-  and cleared only by a forget: a later save simply has a higher revision, so
-  the panel reads "could not read this save" only while the two are equal,
-  and then it outranks delivery (the get that fetched the document counted as
-  a delivery before the device knew it could not read it). Files written
-  before these fields existed load with 0 and no time.
+  a signed get carrying ``unreadable_revision`` equal to the stored revision.
+  A later save simply has a higher revision, so the panel reads "could not
+  read this save" only while the two are equal, and then it outranks delivery
+  (the get that fetched the document counted as a delivery before the device
+  knew it could not read it). It is cleared by a forget, and by the device
+  confirming it holds that revision or a later one: a signed get whose
+  ``since_revision`` names the stored revision without a report about it.
+  Only that confirmation clears it. A get that merely carried the document
+  out proves nothing about whether the device could read it, and a put is the
+  iPhone mirror writing, not the watch reading, so both move
+  ``delivered_revision`` and leave the report standing. Files written before
+  these fields existed load with 0 and no time.
 
 Storage is one Home Assistant ``Store`` file per owner, holding every kind for
 that owner, plus a small index naming the owners. A document can be large
@@ -771,18 +777,34 @@ class WatchConfigRecord:
             stored["history"] = [entry.as_dict() for entry in self.history]
         return stored
 
-    def mark_delivered(self, revision: int) -> bool:
-        """Record that a device holds ``revision``. Returns whether it moved.
+    def mark_delivered(self, revision: int, *, confirmed: bool = False) -> bool:
+        """Record that a device holds ``revision``. Returns whether anything
+        moved.
 
-        Only ever forwards, and never past the record's own revision, so a
-        reply carrying an older copy cannot make a newer save look delivered.
+        ``delivered_revision`` only ever forwards, and never past the record's
+        own revision, so a reply carrying an older copy cannot make a newer
+        save look delivered.
+
+        ``confirmed`` means the device itself said it holds ``revision`` (it
+        asked from that revision), not merely that the document was sent to
+        it. Only then is an unreadable report about that revision
+        or an earlier one cleared: the device has since read and applied it,
+        and the panel must stop offering to restore an older save. A plain
+        delivery leaves the report alone, because the get that carries the
+        document out counts as a delivery before the device has tried to
+        read it.
         """
         revision = min(revision, self.revision)
-        if revision <= self.delivered_revision:
-            return False
-        self.delivered_revision = revision
-        self.delivered_at = _now_iso()
-        return True
+        moved = False
+        if confirmed and 0 < self.rejected_revision <= revision:
+            self.rejected_revision = 0
+            self.rejected_at = None
+            moved = True
+        if revision > self.delivered_revision:
+            self.delivered_revision = revision
+            self.delivered_at = _now_iso()
+            moved = True
+        return moved
 
     def mark_rejected(self) -> bool:
         """Record that a device could not decode the current revision.
@@ -1497,16 +1519,24 @@ class WatchConfigStore:
         self._notify(record.owner_watch_id, record.kind, record.revision)
         return record
 
-    def mark_delivered(self, owner_watch_id: str, kind: str, revision: int) -> bool:
+    def mark_delivered(
+        self, owner_watch_id: str, kind: str, revision: int, *, confirmed: bool = False
+    ) -> bool:
         """Record that the owner's device holds ``revision`` of ``kind``.
 
         Called by the signed get for every reply about a stored record, the
         ones that carry the document and the ones that answer "you already
-        have it". Saves only when the value moves, so a phone checking in on
+        have it". Saves only when something moves, so a phone checking in on
         every foreground costs no disk write once it is up to date.
+
+        ``confirmed`` is for the "you already have it" case: the device asked
+        from ``revision`` itself, so it has read and applied it. That clears
+        an unreadable report about ``revision`` or an earlier one (see
+        ``WatchConfigRecord.mark_delivered``). A get that carried the document
+        out passes ``confirmed=False`` and leaves the report standing.
         """
         record = self._records.get(owner_watch_id, {}).get(kind)
-        if record is None or not record.mark_delivered(revision):
+        if record is None or not record.mark_delivered(revision, confirmed=confirmed):
             return False
         self._schedule_owner_save(owner_watch_id)
         return True
@@ -1520,8 +1550,11 @@ class WatchConfigStore:
         and ``rejected_at`` (the first report's time, kept through repeats),
         and the caller must then not mark that revision delivered. A report
         about any other revision is stale (a newer save already replaced what
-        the device could not read) and changes nothing. Saves only when the
-        value moves. Tells no listener: the revision did not change.
+        the device could not read) and changes nothing. Since delivery never
+        runs past the stored revision, that also means a report about a
+        revision older than one already delivered never flags anything. Saves
+        only when the value moves. Tells no listener: the revision did not
+        change.
         """
         record = self._records.get(owner_watch_id, {}).get(kind)
         if record is None or revision != record.revision:

@@ -446,6 +446,112 @@ def test_events_still_delivered_after_an_idle_gap(coordinator) -> None:
     asyncio.run(run())
 
 
+def test_asking_for_the_list_keeps_the_device_at_its_own_cursor(coordinator) -> None:
+    """A device whose session went away (here force_resync) polls again with
+    its old cursor and no list. It is asked for the list, and the reply must
+    hand back its own cursor, not the current one: the device keeps any cursor
+    at or above its own, and with the current one it would never be sent the
+    changes it has not seen yet."""
+    _module, hass, coord = coordinator
+    ent = "wrist_assistant.ne1"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+
+        # A change the device has not collected yet, then its session goes.
+        _change(hass, coord, ent, "on")
+        for _ in range(5):
+            _change(hass, coord, "wrist_assistant.noise", "x")
+        coord.async_force_resync()
+        assert not coord._sessions
+        assert coord._cursor > c0
+
+        status, body = await _poll(coord, since=c0, entities=None)
+        assert status == 200, body
+        assert body["need_entities"] is True
+        assert body["resync_required"] is False
+        assert body["next_cursor"] == c0
+
+        # One more change while the device is sending its list.
+        _change(hass, coord, "wrist_assistant.other", "on")
+
+        status, body = await _poll(
+            coord, since=body["next_cursor"], entities=[ent], force_delta=True
+        )
+        assert status == 200, body
+        states = {e["entity_id"]: e["state"] for e in body["events"]}
+        assert states == {ent: "on"}
+
+    asyncio.run(run())
+
+
+def test_asking_for_the_list_after_a_dropped_change_answers_410(coordinator) -> None:
+    """A change that landed while the device had no session was never
+    buffered. A device coming back with a cursor from before it must be told
+    to resync, not asked for its list and moved past the gap."""
+    _module, hass, coord = coordinator
+    ent = "wrist_assistant.ne2"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+        coord.async_force_resync()
+        _change(hass, coord, ent, "on")
+        assert not coord._events
+
+        status, body = await _poll(coord, since=c0, entities=None)
+        assert status == 410, body
+        assert body["resync_required"] is True
+
+        # The snapshot the device takes next ends the resync for good.
+        status, body = await _poll(coord, since=None, entities=[ent])
+        assert status == 200
+        assert {e["entity_id"]: e["state"] for e in body["events"]} == {ent: "on"}
+        c1 = body["next_cursor"]
+        status, body = await _poll(coord, since=c1, entities=[ent], force_delta=True)
+        assert status == 200, body
+        assert body["resync_required"] is False
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("since", ["999", "not a number"])
+def test_asking_for_the_list_with_a_cursor_this_server_never_issued_answers_410(
+    coordinator, since
+) -> None:
+    """A cursor from before a Home Assistant restart (ahead of the current
+    one) or one that does not parse is answered the way any poll would."""
+    _module, _hass, coord = coordinator
+
+    async def run() -> None:
+        status, body = await _poll(coord, since=since, entities=None)
+        assert status == 410, body
+        assert body["resync_required"] is True
+
+    asyncio.run(run())
+
+
+def test_a_brand_new_device_is_asked_for_its_list_at_the_current_cursor(coordinator) -> None:
+    """With no cursor of its own there is nothing to skip, so the reply keeps
+    handing out the current cursor as it always has."""
+    _module, hass, coord = coordinator
+    ent = "wrist_assistant.ne3"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        await _poll(coord, watch_id="other", entities=[ent])
+        _change(hass, coord, ent, "on")
+        status, body = await _poll(coord, since=None, entities=None)
+        assert status == 200, body
+        assert body["need_entities"] is True
+        assert body["next_cursor"] == coord._cursor
+
+    asyncio.run(run())
+
+
 def test_probe_answers_at_once_and_leaves_held_poll_alone(coordinator) -> None:
     """timeout=0 is a probe: empty 204 now, events if any, and the long poll
     the same watch is holding is neither woken nor superseded by it."""
