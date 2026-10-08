@@ -30,7 +30,9 @@ the secret on the server and keeps a copy sealed to that key
 (``sealed_box.seal_pair_secret``) for ten minutes; the device fetches it from
 the unauthenticated ``/v2/pair/status``, which this store answers too
 (``PairRequestStore.status``). Anybody may fetch it: only the holder of the
-device's private key can open it. The old, clear form is still accepted from
+device's private key can open it. Nobody can throw it away either: while it
+waits, a new start for the same id is refused (``ConfirmedPairWaiting``,
+409 from the view). The old, clear form is still accepted from
 a watch, so watches on older builds keep pairing.
 
 ``kind`` says what is pairing: ``"watch"`` (the default, and the only kind
@@ -450,6 +452,19 @@ class SealedCopy:
     expires_at: float
 
 
+class ConfirmedPairWaiting(Exception):
+    """A start refused because a confirmed box still waits for this id.
+
+    ``expires_in`` is the whole seconds until that box runs out, after which
+    a start for the id is taken again.
+    """
+
+    def __init__(self, watch_id: str, expires_in: int) -> None:
+        super().__init__(f"a confirmed pairing is waiting for {watch_id}")
+        self.watch_id = watch_id
+        self.expires_in = expires_in
+
+
 class PairRequestStore:
     """Bounded TTL store of pending pairings, keyed by code, and of the
     sealed boxes of confirmed ones, keyed by watch id."""
@@ -503,12 +518,33 @@ class PairRequestStore:
 
         ``remote_public`` defaults to what ``remote_is_public`` says of
         ``remote``; the view passes it when it knows more (a request through
-        Home Assistant Cloud). A start also drops any sealed box still
-        waiting for this watch id: the device has started over with a new
-        key pair and could not open the old box anyway.
+        Home Assistant Cloud).
+
+        While a confirmed sealed box waits for this watch id, a start is
+        refused with ``ConfirmedPairWaiting`` and the store is left as it
+        was. ``/v2/pair/start`` needs no sign-in and a watch id is not
+        secret (it rides in the clear in every status poll), so anyone on
+        the network could otherwise post a start for it and throw the box
+        away before the device fetched it. The confirm has already written
+        the box's key into the secret store, so that would leave a key no
+        device holds and a pairing that can only fail.
+
+        Refusing is safe for the apps. The watch and the iPhone both make a
+        fresh key pair for every start and keep it only for that one flow,
+        so no restart of theirs could ever open an older box, and none
+        needs to throw one away: a device that still holds its key polls
+        ``/v2/pair/status`` for the box rather than starting again. The cost
+        is that a device which leaves the code screen between the admin's
+        confirm and its own fetch (a second or two at the usual poll rate)
+        must wait out the box, at most ten minutes, before a new code.
         """
         current = self._clock() if now is None else now
         self._evict_expired(current)
+        waiting = self._sealed.get(fields.watch_id)
+        if waiting is not None and waiting.expires_at > current:
+            raise ConfirmedPairWaiting(
+                fields.watch_id, max(1, math.ceil(waiting.expires_at - current))
+            )
         replaced = [
             code for code, pending in self._entries.items() if pending.watch_id == fields.watch_id
         ]
@@ -529,7 +565,6 @@ class PairRequestStore:
             raise RuntimeError("could not find a free pairing code")
         for old_code in replaced:
             del self._entries[old_code]
-        self._sealed.pop(fields.watch_id, None)
         pending = PendingPair(
             code=code,
             fields=fields,

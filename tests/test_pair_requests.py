@@ -539,11 +539,55 @@ def test_status_hands_out_a_copy(mod) -> None:
     assert store.status("watch-1")[1] == _BOX
 
 
-def test_a_new_start_drops_a_waiting_box(mod) -> None:
+def test_a_new_start_cannot_throw_away_a_waiting_box(mod) -> None:
+    """Anyone who saw a watch id could post a start for it, and the confirm
+    has already stored the box's key, so the box must outlive the attempt."""
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock, code_factory=_codes("AAAAAA", "BBBBBB"))
+    store.confirm_sealed(store.start(_fields(mod)), _BOX)
+    clock.now += 100
+
+    with pytest.raises(mod.ConfirmedPairWaiting) as refused:
+        store.start(_fields(mod), remote="192.0.2.66")
+    assert refused.value.watch_id == "watch-1"
+    assert refused.value.expires_in == 500
+    # Nothing changed: the box is still handed out, no request was stored.
+    assert store.status("watch-1") == ("confirmed", _BOX)
+    assert len(store) == 0
+    assert store.get("BBBBBB") is None
+
+    # A sealed start with a fresh key is refused the same way.
+    public = base64.b64decode(_public_b64())
+    with pytest.raises(mod.ConfirmedPairWaiting):
+        store.start(_fields(mod), kind="iphone", public_key=public)
+    assert store.status("watch-1") == ("confirmed", _BOX)
+
+
+def test_the_refusal_rounds_the_wait_up_and_is_never_zero(mod) -> None:
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock, code_factory=_codes("AAAAAA"))
+    store.confirm_sealed(store.start(_fields(mod)), _BOX)
+    clock.now += 599.5
+    with pytest.raises(mod.ConfirmedPairWaiting) as refused:
+        store.start(_fields(mod))
+    assert refused.value.expires_in == 1
+
+
+def test_a_start_is_taken_again_once_the_box_runs_out(mod) -> None:
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock, code_factory=_codes("AAAAAA", "BBBBBB"))
+    store.confirm_sealed(store.start(_fields(mod)), _BOX)
+    clock.now += mod.PAIR_SEALED_COPY_TTL_SECONDS
+    pending = store.start(_fields(mod))
+    assert pending.code == "BBBBBB"
+    assert store.status("watch-1") == ("pending", None)
+
+
+def test_another_id_still_starts_while_a_box_waits(mod) -> None:
     store = mod.PairRequestStore(clock=_Clock(), code_factory=_codes("AAAAAA", "BBBBBB"))
     store.confirm_sealed(store.start(_fields(mod)), _BOX)
-    store.start(_fields(mod))
-    assert store.status("watch-1") == ("pending", None)
+    assert store.start(_fields(mod, "watch-2")).code == "BBBBBB"
+    assert store.status("watch-1") == ("confirmed", _BOX)
 
 
 def test_a_refused_start_keeps_a_waiting_box(mod) -> None:
@@ -551,8 +595,11 @@ def test_a_refused_start_keeps_a_waiting_box(mod) -> None:
     store.confirm_sealed(store.start(_fields(mod, "mover"), remote="10.0.0.1"), _BOX)
     for index in range(4):
         store.start(_fields(mod, f"watch-{index}"), remote="10.0.0.2")
-    assert store.start(_fields(mod, "mover"), remote="10.0.0.2") is None
+    # The waiting box is what refuses it, before the address cap is counted.
+    with pytest.raises(mod.ConfirmedPairWaiting):
+        store.start(_fields(mod, "mover"), remote="10.0.0.2")
     assert store.status("mover") == ("confirmed", _BOX)
+    assert len(store) == 4
 
 
 def test_waiting_boxes_are_capped(mod) -> None:
