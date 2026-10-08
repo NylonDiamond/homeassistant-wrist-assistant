@@ -28,7 +28,8 @@ function between(text: string, from: string, to: string): string {
 
 const home = method("  private renderHome() {");
 const card = method("  private renderHomeDevice(");
-const door = method("  private renderHomeDoor(");
+const tile = method("  private renderHomeTile(");
+const group = method("  private renderHomeGroup(");
 
 describe("Home's page", () => {
   it("is the devices alone: no Watch app card, no complications card, no recent designs", () => {
@@ -41,7 +42,7 @@ describe("Home's page", () => {
 
   it("says Loading… while the devices load, so the pairing card never flashes up", () => {
     expect(home).toContain("const loading = !this.linkReady && this.owners.length === 0;");
-    expect(home.indexOf("${loading")).toBeLessThan(home.indexOf("${add}"));
+    expect(home.indexOf("${loading")).toBeLessThan(home.indexOf("}${add}"));
   });
 });
 
@@ -65,13 +66,35 @@ describe("Home's device cards", () => {
     expect(card).toContain(`<span class="home-device-why"> · \${waitingForText(d.waitingFor)}</span>`);
   });
 
-  it("has a few doors at its foot, each opening that page on this device", () => {
-    expect(card).toContain("deviceCardDoors(d.kind, admin).map((t) => this.renderHomeDoor(t, d, count))");
-    expect(door).toContain("this.pickPickerTab(d.id);");
-    expect(door).toContain("this.pickerFilter = t.filter;");
-    expect(door).toContain("if (this.draft) this.openPicker();");
-    expect(door).toContain("const path = watchScreenPath(t.screen, d.id);");
-    expect(door.indexOf("this.pickWatch(d.id);")).toBeLessThan(door.indexOf("this.goTo(path);"));
+  it("has a count tile per page, each opening that page on this device", () => {
+    expect(card).toContain("deviceCardTiles(d.kind, admin).map((t) => this.renderHomeTile(t, d, owner))");
+    expect(tile).toContain("this.pickPickerTab(d.id);");
+    expect(tile).toContain("this.pickerFilter = t.filter;");
+    expect(tile).toContain("if (this.draft) this.openPicker();");
+    expect(tile).toContain("const path = watchScreenPath(t.screen, d.id);");
+    expect(tile.indexOf("this.pickWatch(d.id);")).toBeLessThan(tile.indexOf("this.goTo(path);"));
+    const count = method("  private homeTileCount(");
+    expect(count).toContain("this.watchCounts.get(d.id)?.[t.count]");
+  });
+
+  it("says when it was last heard from and what it will pick up, with a watch's Settings for an administrator", () => {
+    expect(card).toContain("const seen = seenWords(owner, elapsed);");
+    expect(card).toContain("const pending = pendingWords(owner);");
+    expect(card).toContain(`const settings = d.kind === "watch" && admin ? watchScreenPath(WATCH_SETTINGS_SCREEN, d.id) : undefined;`);
+  });
+
+  it("groups the cards by person, in that person's color, with their picture where Home Assistant has one", () => {
+    expect(home).toContain("const groups = homeGroups(this.people(), devices);");
+    expect(group).toContain(`const color = personColorVar(g.index) ?? "var(--wa-hue-grey)";`);
+    expect(group).toContain("<img src=${g.person.picture}");
+    expect(method("  private people(): Person[] {")).toContain("peopleOf(this.owners, this.haPersonsFor.persons)");
+    expect(SOURCE).not.toContain("peopleOf(this.owners)");
+  });
+
+  it("reads the counts from the same summary as the watch app's state", () => {
+    const load = method("  private async loadWatchAppSync(again: boolean) {");
+    expect(load).toContain("counts = summaryCounts(summary, watches);");
+    expect(load).toContain("this.watchCounts = counts;");
   });
 
   it("reads the watch app records on the way into Home, and when the watches change", () => {
@@ -81,7 +104,8 @@ describe("Home's device cards", () => {
     expect(will).toContain(`if (changed.has("owners") && tabOfRoute(this.route) === "home") void this.loadWatchAppSync(false);`);
     const load = method("  private async loadWatchAppSync(again: boolean) {");
     expect(load).toContain("if (this.hass?.user?.is_admin !== true) return;");
-    expect(load).toContain("summaryWatchAppSyncs(await fetchWatchConfigSummary(hass), watches)");
+    expect(load).toContain("const summary = await fetchWatchConfigSummary(hass);");
+    expect(load).toContain("next = summaryWatchAppSyncs(summary, watches);");
     expect(load).toContain("if (!summaryUnknown(err)) {");
     expect(load.indexOf("fetchWatchConfigSummary")).toBeLessThan(load.indexOf("readWatchAppSync((kind) => fetchWatchConfig(hass, id, kind))"));
     expect(load).toContain("if (run !== this.watchAppSyncRun) return;");
@@ -167,9 +191,9 @@ describe("coming back to Home", () => {
 
 describe("Home's Pair a device dialog", () => {
   it("opens from the last card of the devices, for administrators only", () => {
-    expect(home).toContain("const add = admin ? html`<li><button type=\"button\" class=\"home-device-add\"");
+    expect(home).toContain("const add = admin ? html`<ul class=\"home-devices\"><li><button type=\"button\" class=\"home-device-add\"");
     expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<b>Pair a device</b>");
-    expect(home).toContain("${devices.map((d) => this.renderHomeDevice(d, admin))}${add}</ul>");
+    expect(home).toContain("${groups.map((g) => this.renderHomeGroup(g, admin, elapsed))}${add}");
     expect(home).toContain("${admin && this.pairOpen ? this.renderPairDialog() : nothing}");
   });
 

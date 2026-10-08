@@ -142,7 +142,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, deviceCardDoors, deviceFacts, deviceSheetTabs, homeDeviceRows, homeDevices, homeStyles, watchConfigCount } from "./home.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceRows, homeGroups, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount } from "./home.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -203,7 +203,7 @@ import {
   shapeGroups,
   shapeOffered,
 } from "./newComplication.js";
-import { type Person, deviceShortName, peopleOf } from "./people.js";
+import { type HaPerson, type Person, deviceShortName, haPeople, peopleOf } from "./people.js";
 import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt, shapeOnlyArt, shapeWell, watchWell } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { STACK_FLAT, STACK_HOME, sheetUnits, stackRigStyle, turnStack, zoomStack, type StackView } from "./stack3d.js";
@@ -1490,6 +1490,14 @@ export class WristAssistantPanel extends LitElement {
   /** Each watch's watch app records, as Home last read them
    * (`watch-app-sync.ts`), by watch. Read on the way into Home. */
   @state() private watchAppSyncs: ReadonlyMap<string, WatchAppSync> = new Map();
+  /** Each watch's pages, status pages and Control Center counts, from the
+   * same summary as `watchAppSyncs`, for Home's cards. */
+  @state() private watchCounts: ReadonlyMap<string, Partial<Record<DeviceCountKind, number>>> = new Map();
+  /** When the owners list was last read, so Home can age each device's
+   * "Seen … ago" by the time since. */
+  private ownersReadAt = 0;
+  /** `haPeople` of the states it was last worked out from. */
+  private haPersonsFor?: { states: HassLike["states"]; persons: Map<string, HaPerson> };
   /** The watches the last read was for, so a fresh owners list with the same
    * watches reads nothing again. */
   private watchAppSyncFor?: string;
@@ -6873,6 +6881,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       const reply = await fetchOwners(this.hass);
       this.owners = reply.owners;
+      this.ownersReadAt = Date.now();
       this.maxSchemaVersion = reply.max_schema_version;
       this.loadError = undefined;
       if (!this.ownerId && this.owners.length > 0) {
@@ -11111,8 +11120,11 @@ export class WristAssistantPanel extends LitElement {
     const run = ++this.watchAppSyncRun;
     const hass = this.hass;
     let next: Map<string, WatchAppSync>;
+    let counts = new Map<string, Partial<Record<DeviceCountKind, number>>>();
     try {
-      next = summaryWatchAppSyncs(await fetchWatchConfigSummary(hass), watches);
+      const summary = await fetchWatchConfigSummary(hass);
+      next = summaryWatchAppSyncs(summary, watches);
+      counts = summaryCounts(summary, watches);
     } catch (err) {
       if (!summaryUnknown(err)) {
         // Not read: let the next visit to Home ask again.
@@ -11126,6 +11138,16 @@ export class WristAssistantPanel extends LitElement {
     }
     if (run !== this.watchAppSyncRun) return;
     this.watchAppSyncs = next;
+    this.watchCounts = counts;
+  }
+
+  /** The household as people, each Home Assistant user's devices together
+   * under that user's person (`peopleOf`). The person list is worked out
+   * again only when the states change. */
+  private people(): Person[] {
+    const states = this.hass?.states ?? {};
+    if (this.haPersonsFor?.states !== states) this.haPersonsFor = { states, persons: haPeople(states) };
+    return peopleOf(this.owners, this.haPersonsFor.persons);
   }
 
   /** Every owner as the sync rule reads it, named the way the pill and
@@ -11143,8 +11165,13 @@ export class WristAssistantPanel extends LitElement {
       const fresh = new Map(reply.owners.map((o) => [o.owner_watch_id, o]));
       this.owners = this.owners.map((o) => {
         const f = fresh.get(o.owner_watch_id);
-        return f ? { ...o, token: f.token, applied_token: f.applied_token, complication_count: f.complication_count } : o;
+        return f ? {
+          ...o, token: f.token, applied_token: f.applied_token, complication_count: f.complication_count,
+          // Home's line about each device, kept as current as the pill.
+          polling: f.polling, last_seen_seconds: f.last_seen_seconds, pending_changes: f.pending_changes, user_id: f.user_id,
+        } : o;
       });
+      this.ownersReadAt = Date.now();
     } catch {
       // The pill keeps what it had rather than blaming a device for a panel problem.
     }
@@ -12070,7 +12097,7 @@ export class WristAssistantPanel extends LitElement {
     const page = form === "page";
     const d = this.draft;
     const devices = this.pickerDevices();
-    const people = peopleOf(this.owners);
+    const people = this.people();
     const all = pickerView(this.pickerRows(), devices, ALL_DEVICES);
     const tabs = pickerTabs(all, devices);
     const tab = this.pickerTabKey(tabs);
@@ -13804,7 +13831,7 @@ export class WristAssistantPanel extends LitElement {
    */
   private newPeople(owners: readonly DeviceOwner[]): { person: Person; devices: OwnerSummary[] }[] {
     const offered = new Set(owners.map((o) => o.ownerId));
-    return peopleOf(this.owners)
+    return this.people()
       .map((person) => ({ person, devices: person.owners.filter((o) => offered.has(o.owner_watch_id)) }))
       .filter((row) => row.devices.length > 0);
   }
@@ -18761,41 +18788,51 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * Home, the panel's front page at its own address: the devices, one card
-   * each, and where each has got to. The tabs above already lead to the
-   * watch app's screens and to the complications, so Home does not repeat
-   * them; it answers "what is in this home, and is each one up to date".
+   * each, grouped by the person they belong to, and where each has got to.
+   * The tabs above already lead to the watch app's screens and to the
+   * complications, so Home does not repeat them; it answers "what is in this
+   * home, whose is it, and is each one up to date".
    *
-   * A card has the device drawn with one shape lit in its state's color, its
-   * name, what it is, and Synced or Waiting (or Nothing waiting, for one that
-   * has nothing to pick up and never synced). A phone's word is the header
-   * pill's rule for its complications; a watch's is the worse of that and its
-   * watch app records (`deviceVerdict`), which only an administrator can
-   * read. A waiting card says what for, and the small print says what is
-   * counted. The whole card opens the device's sheet; a few doors at its foot
-   * open its most used pages directly (`deviceCardDoors`). An administrator
-   * has a last card that opens the "Pair a device" dialog. Nothing but
-   * "Loading…" while the devices are still loading, so the pairing card
-   * never flashes up in a home that has devices.
+   * A group is one Home Assistant person's devices, under that person's
+   * picture and name (`people`), or for a device bound to nobody the group
+   * the panel reads from its pairing and name. Each person wears the color
+   * their devices wear on the Complications tab (`personColorVar`), on the
+   * avatar ring and each card's outline and device drawing.
+   *
+   * A card has the device drawn with one shape lit, its name, what it is, and
+   * Synced or Waiting (or Nothing waiting, for one that has nothing to pick
+   * up and never synced). A phone's word is the header pill's rule for its
+   * complications; a watch's is the worse of that and its watch app records
+   * (`deviceVerdict`), which only an administrator can read. A waiting card
+   * says what for. Under that, a tile per page that counts something, each
+   * opening that page on the device (`deviceCardTiles`), and at the foot when
+   * it was last heard from and what its next pull brings, with a door to a
+   * watch's settings. The whole card opens the device's sheet. An
+   * administrator has a last card that opens the "Pair a device" dialog.
+   * Nothing but "Loading…" while the devices are still loading, so the
+   * pairing card never flashes up in a home that has devices.
    */
   private renderHome() {
     const admin = this.hass.user?.is_admin === true;
     const devices = homeDeviceRows(this.homeDevices(), admin ? this.watchAppSyncs : new Map());
     const loading = !this.linkReady && this.owners.length === 0;
-    const add = admin ? html`<li><button type="button" class="home-device-add" title="Pair a watch or iPhone, by a code or a QR code"
-        @click=${() => this.openPairDialog()}>${uiIcon("plus")}<b>Pair a device</b><span>A watch or an iPhone, by a code or a QR code</span></button></li>` : nothing;
+    const groups = homeGroups(this.people(), devices);
+    const elapsed = this.ownersReadAt > 0 ? (Date.now() - this.ownersReadAt) / 1000 : 0;
+    const add = admin ? html`<ul class="home-devices"><li><button type="button" class="home-device-add" title="Pair a watch or iPhone, by a code or a QR code"
+        @click=${() => this.openPairDialog()}>${uiIcon("plus")}<b>Pair a device</b><span>A watch or an iPhone, by a code or a QR code</span></button></li></ul>` : nothing;
     return html`${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
       <div class="home"><div class="home-wrap">
         <div class="home-head">
           <div class="home-head-text">
             <h1>Home</h1>
-            <p class="home-lead">Your watches and iPhones, and whether each one has your latest changes.</p>
+            <p class="home-lead">Your watches and iPhones, whose each one is, and whether it has your latest changes.</p>
           </div>
         </div>
         ${loading
           ? html`<p class="home-empty">Loading…</p>`
           : devices.length === 0 && !admin
             ? html`<p class="home-empty">No watch or iPhone has connected to this Home Assistant yet.</p>`
-            : html`<ul class="home-devices">${devices.map((d) => this.renderHomeDevice(d, admin))}${add}</ul>`}
+            : html`${groups.map((g) => this.renderHomeGroup(g, admin, elapsed))}${add}`}
         ${devices.length === 0 ? nothing : html`<p class="home-small">${admin
           ? "Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app."
           : "Synced, Waiting and Nothing waiting cover complications and widgets."}</p>`}
@@ -18804,11 +18841,32 @@ export class WristAssistantPanel extends LitElement {
       ${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices, admin) : nothing}`;
   }
 
+  /** One person's devices on Home: their picture (or initial) in their color,
+   * their name and how many devices, then a card per device. */
+  private renderHomeGroup(g: { person?: Person; index: number; rows: HomeDeviceRow[] }, admin: boolean, elapsed: number) {
+    const color = personColorVar(g.index) ?? "var(--wa-hue-grey)";
+    const name = g.person?.label ?? "Other devices";
+    const n = g.rows.length;
+    return html`<section class="home-person" style=${`--c:${color}`}>
+      <div class="home-person-head">
+        <span class="home-avatar" aria-hidden="true">${g.person?.picture
+          ? html`<img src=${g.person.picture} alt="" loading="lazy" />`
+          : html`<span>${name.trim().charAt(0).toLocaleUpperCase()}</span>`}</span>
+        <h2 class="home-person-name">${name}</h2>
+        <span class="home-person-n">${n} ${n === 1 ? "device" : "devices"}</span>
+      </div>
+      <ul class="home-devices">${g.rows.map((d) => this.renderHomeDevice(d, admin, elapsed))}</ul>
+    </section>`;
+  }
+
   /** One device's card on Home. The name's button reaches over the whole
-   * card and opens the sheet; the doors at the foot sit above it. */
-  private renderHomeDevice(d: HomeDeviceRow, admin: boolean) {
+   * card and opens the sheet; the tiles and the foot's door sit above it. */
+  private renderHomeDevice(d: HomeDeviceRow, admin: boolean, elapsed: number) {
     const owner = this.ownerOf(d.id);
-    const count = owner?.complication_count ?? 0;
+    const seen = seenWords(owner, elapsed);
+    const pending = pendingWords(owner);
+    const foot = [seen, pending].filter((w): w is string => w !== undefined).join(" · ");
+    const settings = d.kind === "watch" && admin ? watchScreenPath(WATCH_SETTINGS_SCREEN, d.id) : undefined;
     return html`<li class="home-device ${d.sync}">
       <div class="home-device-top">
         <span class="home-device-art" aria-hidden="true">${deviceShapeArt("rectangular", d.kind, d.sync !== "idle")}</span>
@@ -18822,32 +18880,56 @@ export class WristAssistantPanel extends LitElement {
         </div>
         <span class="home-device-go" aria-hidden="true">${uiIcon("chevron")}</span>
       </div>
-      <div class="home-device-doors">${deviceCardDoors(d.kind, admin).map((t) => this.renderHomeDoor(t, d, count))}</div>
+      <div class="home-tiles">${deviceCardTiles(d.kind, admin).map((t) => this.renderHomeTile(t, d, owner))}</div>
+      ${foot === "" && settings === undefined ? nothing : html`<div class="home-device-foot">
+        <span class="home-device-seen ${owner?.polling === true ? "on" : ""}">${foot}</span>
+        ${settings === undefined ? nothing : html`<a class="home-door" href=${panelUrl(this.route, settings, window.location.pathname)} title=${`Settings on ${d.name}`}
+          @click=${(e: MouseEvent) => {
+            if (!isPlainClick(e)) return;
+            e.preventDefault();
+            this.pickWatch(d.id);
+            this.goTo(settings);
+          }}>Settings</a>`}
+      </div>`}
     </li>`;
   }
 
-  /** One door at the foot of a device's card: the device's complications on
-   * the Complications tab, or one watch screen on this watch. The way the
-   * sheet's tabs go, without a sheet to close. */
-  private renderHomeDoor(t: DeviceSheetTab, d: HomeDeviceRow, count: number) {
+  /** How many one tile's page holds on this device: its complications (the
+   * owner's count), the ones with a control, or a watch config's items from
+   * the summary. Undefined when the summary has not said. */
+  private homeTileCount(t: DeviceSheetTab, d: HomeDeviceRow, owner: OwnerSummary | undefined): number | undefined {
     if (t.kind === "list") {
-      return html`<button type="button" class="home-door" title=${`${t.label} on ${d.name}`}
+      if (t.filter === "all") return owner?.complication_count ?? 0;
+      return rowsOnDevice(this.pickerRows(), d.id)
+        .filter((r) => r.copies.some((c) => c.ownerId === d.id && c.item.kind === "record" && hasControlOf(c.item.record))).length;
+    }
+    return t.count === undefined ? undefined : this.watchCounts.get(d.id)?.[t.count];
+  }
+
+  /** One count tile on a device's card, a door to that page on the device:
+   * the device's complications on the Complications tab, or one watch screen
+   * on this watch. The way the sheet's tabs go, without a sheet to close. */
+  private renderHomeTile(t: DeviceSheetTab, d: HomeDeviceRow, owner: OwnerSummary | undefined) {
+    const n = this.homeTileCount(t, d, owner);
+    const body = html`<b class=${n === 0 ? "none" : ""}>${n ?? "–"}</b><span>${t.label}</span>`;
+    if (t.kind === "list") {
+      return html`<button type="button" class="home-tile" title=${`${t.label} on ${d.name}`}
         @click=${() => {
           this.pickerFilter = t.filter;
           this.pickPickerTab(d.id);
           this.goTo(COMPLICATIONS_PATH);
           // With a design open the tab is the editor, so the list opens over it.
           if (this.draft) this.openPicker();
-        }}>${t.label}<span class="home-door-n">${count}</span></button>`;
+        }}>${body}</button>`;
     }
     const path = watchScreenPath(t.screen, d.id);
-    return html`<a class="home-door" href=${panelUrl(this.route, path, window.location.pathname)} title=${`${t.label} on ${d.name}`}
+    return html`<a class="home-tile" href=${panelUrl(this.route, path, window.location.pathname)} title=${`${t.label} on ${d.name}`}
       @click=${(e: MouseEvent) => {
         if (!isPlainClick(e)) return;
         e.preventDefault();
         this.pickWatch(d.id);
         this.goTo(path);
-      }}>${t.label}</a>`;
+      }}>${body}</a>`;
   }
 
   /** Open Home's sheet on one device, starting on its overview, or on its
@@ -20082,7 +20164,7 @@ export class WristAssistantPanel extends LitElement {
     const ask = `Press again to take it off ${label}.`;
     // The Unassigned chip has no x: there is nowhere further to take it off to.
     const mayEdit = this.canEdit && this.hass.user?.is_admin === true && target.kind !== "library";
-    const hue = placeColorVar(this.pickerPeople(peopleOf(this.owners)), target.ownerId, target.kind);
+    const hue = placeColorVar(this.pickerPeople(this.people()), target.ownerId, target.kind);
     return html`<span class="doc-chip ${hue ? "hued" : ""}" aria-current=${here ? "true" : nothing}
       style=${hue ? `--chip-c: ${hue}` : nothing}>
       ${uiIcon(icon)}<span class="doc-chip-name">${label}</span>

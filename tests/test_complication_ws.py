@@ -486,8 +486,36 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
         # It names the iPhone that paired it, so that phone may still move
         # its setup here.
         "has_iphone": True,
+        # Neither key is bound to a Home Assistant user.
+        "user_id": None,
+        "polling": False,
+        "last_seen_seconds": None,
+        "pending_changes": 0,
         "is_orphan": False,
     }
+
+
+def test_a_device_row_names_its_user_and_where_it_has_got_to(env) -> None:
+    """Home's line about each device: whose it is, whether it is polling,
+    how long since it was last heard from, and what its next pull brings.
+    A watch whose own key predates binding takes its paired phone's user."""
+    env.add_phone("phone-1", device_name="Jesse's iPhone", user_id="user-jesse")
+    env.add_watch("watch-A", device_name="Apple Watch", owner_iphone_id="phone-1")
+    env.add_watch("watch-B", device_name="Chen", user_id="user-chen")
+    env.add_watch("watch-C", device_name="Spare")
+    env.coordinator.polling.add("watch-A")
+    rows = {r["owner_watch_id"]: r for r in env.owners()}
+    assert {k: r.get("user_id") for k, r in rows.items() if k != LIBRARY} == {
+        "phone-1": "user-jesse",
+        "watch-A": "user-jesse",
+        "watch-B": "user-chen",
+        "watch-C": None,
+    }
+    assert (rows["watch-A"]["polling"], rows["watch-A"]["last_seen_seconds"]) == (True, 3)
+    assert (rows["watch-B"]["polling"], rows["watch-B"]["last_seen_seconds"]) == (False, None)
+    # A phone holds no long-poll, whatever the coordinator says.
+    env.coordinator.polling.add("phone-1")
+    assert next(r for r in env.owners() if r["owner_watch_id"] == "phone-1")["polling"] is False
 
 
 def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
@@ -520,6 +548,10 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
             "applied_token": 2,
             "main_house": True,
             "has_iphone": False,
+            "user_id": None,
+            "polling": False,
+            "last_seen_seconds": None,
+            "pending_changes": 0,
             "is_orphan": False,
         },
         _library_row(),

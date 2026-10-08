@@ -15,7 +15,7 @@
 // Everything here is pure, so the checkbox row can be read in a test without a
 // browser. Plan: app repo docs/complication_one_shape_per_document.md.
 
-import type { OwnerSummary } from "./ha-api.js";
+import type { HassEntityState, OwnerSummary } from "./ha-api.js";
 import { deviceKindOf, isLibraryOwner } from "./version.js";
 
 /** One member of the household, with the devices that are theirs. The phone
@@ -30,6 +30,39 @@ export interface Person {
    * person, and the devices under it say what they are. */
   label: string;
   owners: OwnerSummary[];
+  /** The Home Assistant user the group's devices are bound to, when they are
+   * (`OwnerSummary.user_id`). */
+  userId?: string;
+  /** That user's `person` entity's picture, when it has one. */
+  picture?: string;
+}
+
+/** A Home Assistant `person`, as the panel names a household's people. */
+export interface HaPerson {
+  entityId: string;
+  name: string;
+  picture?: string;
+}
+
+/** Every `person` entity bound to a Home Assistant user, by that user's id.
+ * The name is the entity's friendly name, or its id's tail without one; the
+ * picture is its `entity_picture`, which Home Assistant serves without a
+ * login. A person bound to no user is left out: no device can name it. */
+export function haPeople(states: Readonly<Record<string, HassEntityState>>): Map<string, HaPerson> {
+  const out = new Map<string, HaPerson>();
+  for (const [entityId, state] of Object.entries(states)) {
+    if (!entityId.startsWith("person.")) continue;
+    const user = state.attributes.user_id;
+    if (typeof user !== "string" || user === "" || out.has(user)) continue;
+    const friendly = state.attributes.friendly_name;
+    const picture = state.attributes.entity_picture;
+    out.set(user, {
+      entityId,
+      name: typeof friendly === "string" && friendly.trim() !== "" ? friendly.trim() : entityId.slice("person.".length),
+      ...(typeof picture === "string" && picture !== "" ? { picture } : {}),
+    });
+  }
+  return out;
 }
 
 /** Watches before phones, each block left in the order the server gave it.
@@ -89,6 +122,10 @@ function personNameFrom(watch: OwnerSummary | undefined, phone: OwnerSummary | u
   return cut;
 }
 
+/** The start of a group key that is a Home Assistant user's rather than a
+ * phone's or a watch's. */
+const USER_KEY = "user:";
+
 /**
  * Which person a watch belongs to, as a group key.
  *
@@ -99,21 +136,34 @@ function personNameFrom(watch: OwnerSummary | undefined, phone: OwnerSummary | u
  * happens to share the missing one's name.
  */
 function groupKey(owner: OwnerSummary, phones: readonly OwnerSummary[]): string {
+  // A device bound to a Home Assistant user is that user's, whatever it is
+  // paired with: one person can carry several phones and watches.
+  if (owner.user_id) return `${USER_KEY}${owner.user_id}`;
   if (deviceKindOf(owner) === "iphone") return owner.owner_watch_id;
   const pairedId = owner.paired_iphone_id;
+  // An unbound watch joins its phone's group, which is that phone's user's
+  // when the phone is bound.
+  const phoneKey = (p: OwnerSummary) => p.user_id ? `${USER_KEY}${p.user_id}` : p.owner_watch_id;
   if (pairedId !== undefined && pairedId !== null && pairedId !== "") {
-    return phones.some((p) => p.owner_watch_id === pairedId) ? pairedId : owner.owner_watch_id;
+    const paired = phones.find((p) => p.owner_watch_id === pairedId);
+    return paired ? phoneKey(paired) : owner.owner_watch_id;
   }
   const named = owner.paired_iphone_name;
   if (named) {
     const match = phones.find((p) => p.device_name === named);
-    if (match) return match.owner_watch_id;
+    if (match) return phoneKey(match);
   }
   return owner.owner_watch_id;
 }
 
 /**
  * The household, in the order a list draws it.
+ *
+ * A device bound to a Home Assistant user (`user_id`) is grouped with every
+ * other device of that user, and the group takes that user's person's name
+ * and picture from `persons` (`haPeople`) where there is one. A device bound
+ * to nobody is grouped the old way, by the phone it is paired with, and named
+ * from its watch's name.
  *
  * Orphans are left out entirely. They belong to nobody by definition (the
  * entry that would have said which phone is the one that went missing) and
@@ -131,7 +181,7 @@ function groupKey(owner: OwnerSummary, phones: readonly OwnerSummary[]): string 
  * phone comes first anyway, because that is the order a person reads their own
  * devices in.
  */
-export function peopleOf(owners: readonly OwnerSummary[]): Person[] {
+export function peopleOf(owners: readonly OwnerSummary[], persons: ReadonlyMap<string, HaPerson> = new Map()): Person[] {
   const real = byKind(owners).filter((o) => !o.is_orphan && !isLibraryOwner(o));
   const phones = real.filter((o) => deviceKindOf(o) === "iphone");
   const groups = new Map<string, OwnerSummary[]>();
@@ -142,13 +192,18 @@ export function peopleOf(owners: readonly OwnerSummary[]): Person[] {
     groups.set(key, group);
   }
   return [...groups].map(([key, group]) => {
-    const phone = group.find((o) => deviceKindOf(o) === "iphone");
+    const phoneList = group.filter((o) => deviceKindOf(o) === "iphone");
+    const phone = phoneList[0];
     const watches = group.filter((o) => deviceKindOf(o) !== "iphone");
     const head = phone ?? watches[0]!;
+    const userId = key.startsWith(USER_KEY) ? key.slice(USER_KEY.length) : undefined;
+    const person = userId === undefined ? undefined : persons.get(userId);
     return {
       key,
-      label: personNameFrom(watches[0], phone) ?? nameOf(head),
-      owners: phone ? [phone, ...watches] : watches,
+      label: person?.name ?? personNameFrom(watches[0], phone) ?? nameOf(head),
+      owners: [...phoneList, ...watches],
+      ...(userId === undefined ? {} : { userId }),
+      ...(person?.picture === undefined ? {} : { picture: person.picture }),
     };
   });
 }

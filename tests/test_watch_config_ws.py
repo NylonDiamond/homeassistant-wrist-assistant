@@ -252,6 +252,25 @@ def test_summary_leaves_out_the_catalog_only_the_phone_writes(env) -> None:
     assert set(kinds) <= set(env.ws.WATCH_CONFIG_PANEL_KINDS)
 
 
+def test_summary_counts_the_items_of_the_kinds_that_list_them(env) -> None:
+    pages = _pages_doc()
+    pages["pages"].append({"id": "SYS", "name": "Settings", "isSystemPage": True, "items": []})
+    _phone_upload(env, "pages", pages)
+    _phone_upload(env, "behavior", {"longPressDuration": "Long"})
+    kinds = _ok(env, env.ws.ws_watch_config_summary)["owners"][WATCH]
+    assert kinds["pages"]["items"] == 1
+    assert "items" not in kinds["behavior"]
+
+
+def test_item_count_reads_each_list_kind_and_nothing_else(env) -> None:
+    count = env.ws._item_count
+    assert count("status_pages", {"statusPages": [{"id": "a"}, {"id": "b"}, "junk"]}) == 2
+    assert count("control_center", {"entities": [{"entityId": "light.x"}]}) == 1
+    assert count("control_center", {"entities": "not a list"}) == 0
+    assert count("pages", None) == 0
+    assert count("behavior", {"pages": [{}]}) is None
+
+
 def test_summary_never_moves_delivery(env) -> None:
     _phone_upload(env, "behavior", {"longPressDuration": "Long"})
     _save(env, {"longPressDuration": "Short"}, 1)

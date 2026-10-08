@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { deviceCardDoors, deviceFacts, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
+import { deviceCardTiles, deviceFacts, homeGroups, pendingWords, seenWords, summaryCounts, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -120,16 +120,63 @@ describe("deviceSheetTabs", () => {
   });
 });
 
-describe("deviceCardDoors", () => {
-  const labels = (kind: "watch" | "iphone", admin: boolean) => deviceCardDoors(kind, admin).map((t) => t.label);
+describe("deviceCardTiles", () => {
+  const labels = (kind: "watch" | "iphone", admin: boolean) => deviceCardTiles(kind, admin).map((t) => t.label);
 
-  it("gives a watch its complications, pages and settings, and an iPhone its widgets", () => {
-    expect(labels("watch", true)).toEqual(["Complications", "Pages", "Settings"]);
-    expect(labels("iphone", true)).toEqual(["Widgets"]);
+  it("gives a watch a tile for each counted page, and an iPhone its widgets and controls", () => {
+    expect(labels("watch", true)).toEqual(["Complications", "Pages", "Status pages", "Control Center"]);
+    expect(labels("iphone", true)).toEqual(["Widgets", "Control Center"]);
   });
 
   it("keeps the watch screens for administrators", () => {
     expect(labels("watch", false)).toEqual(["Complications"]);
+  });
+});
+
+describe("summaryCounts", () => {
+  const n = (revision: number, items?: number) => ({ revision, delivered_revision: revision, rejected_revision: 0, ...(items === undefined ? {} : { items }) });
+
+  it("reads each watch's items, a kind with no record counting none", () => {
+    const counts = summaryCounts({ owners: { w1: { pages: n(2, 5), status_pages: n(1, 2), behavior: n(3) } } }, ["w1"]);
+    expect(counts.get("w1")).toEqual({ pages: 5, status_pages: 2, control_center: 0 });
+  });
+
+  it("says nothing for a watch the summary leaves out, or an integration that sends no counts", () => {
+    expect(summaryCounts({ owners: {} }, ["w1"]).has("w1")).toBe(false);
+    expect(summaryCounts({ owners: { w1: { pages: n(2) } } }, ["w1"]).has("w1")).toBe(false);
+  });
+});
+
+describe("seenWords and pendingWords", () => {
+  it("says Online now for a polling watch, else how long ago, aged by the time since the list was read", () => {
+    expect(seenWords({ polling: true, last_seen_seconds: 3 }, 0)).toBe("Online now");
+    expect(seenWords({ polling: false, last_seen_seconds: 200 }, 100)).toBe("Seen 5 min ago");
+    expect(seenWords({ polling: false, last_seen_seconds: null }, 0)).toBeUndefined();
+    expect(seenWords(undefined, 0)).toBeUndefined();
+  });
+
+  it("counts what the next pull brings, and says nothing for none", () => {
+    expect(pendingWords({ pending_changes: 1 })).toBe("1 change to pick up");
+    expect(pendingWords({ pending_changes: 3 })).toBe("3 changes to pick up");
+    expect(pendingWords({ pending_changes: 0 })).toBeUndefined();
+    expect(pendingWords({ pending_changes: null })).toBeUndefined();
+  });
+});
+
+describe("homeGroups", () => {
+  const row = (id: string) => ({ id, name: id, kind: "watch" as const, sync: "synced" as const, waitingFor: [] });
+
+  it("puts each person's rows under them, in the people's order, and keeps a stray row", () => {
+    const people = [
+      { key: "user:b", label: "Chen", owners: [owner({ owner_watch_id: "w2" })] },
+      { key: "user:a", label: "Jesse", owners: [owner({ owner_watch_id: "w1" }), owner({ owner_watch_id: "p1" })] },
+    ];
+    const groups = homeGroups(people, [row("w1"), row("w2"), row("p1"), row("w9")]);
+    expect(groups.map((g) => [g.person?.label, g.index, g.rows.map((r) => r.id)])).toEqual([
+      ["Chen", 0, ["w2"]],
+      ["Jesse", 1, ["w1", "p1"]],
+      [undefined, -1, ["w9"]],
+    ]);
   });
 });
 
@@ -168,7 +215,7 @@ describe("the shell's and Home's look", () => {
 
   it("draws every Home control with a one pixel outline", () => {
     const text = homeStyles.cssText;
-    for (const sel of ["a.home-btn, button.home-btn {", "a.home-door, button.home-door {"]) {
+    for (const sel of ["a.home-btn, button.home-btn {", "a.home-door, button.home-door {", "a.home-tile, button.home-tile {"]) {
       const rule = text.slice(text.indexOf(sel), text.indexOf("}", text.indexOf(sel)));
       expect(rule, sel).toContain("border: 1px solid var(--wa-line-strong)");
     }

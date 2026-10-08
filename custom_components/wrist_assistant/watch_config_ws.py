@@ -71,6 +71,28 @@ _CMD_SUBSCRIBE = f"{DOMAIN}/watch_config/subscribe"
 _CMD_VOICES_GET = f"{DOMAIN}/watch_voices/get"
 
 
+# The kinds whose documents are a list of items, and the key holding it.
+_ITEM_LISTS = {"pages": "pages", "status_pages": "statusPages", "control_center": "entities"}
+
+
+def _item_count(kind: str, document: Any) -> int | None:
+    """How many items a record lists, as its editor lists them, or None for a
+    kind that is not a list. The watch's own system pages are not the
+    household's, so they are not counted; a missing or malformed list is
+    none. The panel's ``watchConfigCount`` reads a document the same way."""
+    key = _ITEM_LISTS.get(kind)
+    if key is None:
+        return None
+    items = document.get(key) if isinstance(document, dict) else None
+    if not isinstance(items, list):
+        return 0
+    return sum(
+        1
+        for item in items
+        if isinstance(item, dict) and not (kind == "pages" and item.get("isSystemPage") is True)
+    )
+
+
 def _store(hass: HomeAssistant) -> WatchConfigStore | None:
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:
@@ -176,12 +198,15 @@ def ws_watch_config_summary(
     """Where every watch's panel-written records have got to, in one answer.
 
     Result: {"owners": {<owner_watch_id>: {<kind>: {"revision",
-             "delivered_revision", "rejected_revision"}}},
+             "delivered_revision", "rejected_revision", "items"?}}},
              "http_actions"?: {"revision", "delivered": {<owner id>: <n>}}}
 
     The panel's Home asks this to say which watches are still waiting, where
     it used to read every record of every watch, document and all. Only
-    numbers travel: no document, no hash, no names. Only the kinds the panel
+    numbers travel: no document, no hash, no names. ``items`` is how many
+    the record lists, on the kinds whose editors list items (`_ITEM_LISTS`):
+    the pages (the watch's own system pages left out), the status pages and
+    the Control Center controls. Home puts it on each watch's card. Only the kinds the panel
     writes are listed, a kind with no record is left out, and so is a watch
     whose stored file could not be read: the panel then says nothing about
     that watch rather than calling it fine. Reading changes nothing.
@@ -203,11 +228,15 @@ def ws_watch_config_summary(
                 record = store.get(owner_watch_id, kind)
                 if record is None:
                     continue
-                kinds[kind] = {
+                numbers = {
                     "revision": record.revision,
                     "delivered_revision": record.delivered_revision,
                     "rejected_revision": record.rejected_revision,
                 }
+                items = _item_count(kind, record.document)
+                if items is not None:
+                    numbers["items"] = items
+                kinds[kind] = numbers
         except WatchConfigStoreError:
             continue
         owners[owner_watch_id] = kinds

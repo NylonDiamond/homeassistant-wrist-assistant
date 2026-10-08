@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
-import { deviceShortName, libraryOwner, peopleNames, peopleOf, personOf } from "../src/people.js";
+import { deviceShortName, haPeople, libraryOwner, peopleNames, peopleOf, personOf } from "../src/people.js";
 
 function owner(o: Partial<OwnerSummary> & { owner_watch_id: string }): OwnerSummary {
   return {
@@ -243,5 +243,50 @@ describe("deviceShortName", () => {
   it("keeps a watch's own name always", () => {
     const people = peopleOf([watch("w1", "Jesse's Watch")]);
     expect(deviceShortName(people[0]!.owners[0]!, people[0]!)).toBe("Jesse's Watch");
+  });
+});
+
+describe("people by Home Assistant user", () => {
+  const state = (entity_id: string, attributes: Record<string, unknown>) =>
+    ({ entity_id, state: "home", attributes, last_changed: "", last_updated: "" });
+
+  it("reads each person bound to a user, with a name and a picture where there is one", () => {
+    const persons = haPeople({
+      "person.jesse": state("person.jesse", { user_id: "u1", friendly_name: "Jesse", entity_picture: "/api/image/serve/x/512x512" }),
+      "person.chen_lin": state("person.chen_lin", { user_id: "u2" }),
+      "person.guest": state("person.guest", { friendly_name: "Guest" }),
+      "light.kitchen": state("light.kitchen", { user_id: "u3" }),
+    });
+    expect([...persons]).toEqual([
+      ["u1", { entityId: "person.jesse", name: "Jesse", picture: "/api/image/serve/x/512x512" }],
+      ["u2", { entityId: "person.chen_lin", name: "chen_lin" }],
+    ]);
+  });
+
+  it("puts every device of one user together, under that user's person, every phone first", () => {
+    const persons = new Map([["u1", { entityId: "person.jesse", name: "Jesse", picture: "/pic" }]]);
+    const people = peopleOf([
+      watch("w1", "Jesse Apple Watch", { user_id: "u1" }),
+      watch("w2", "Chen", { user_id: "u2", paired_iphone_id: "p2" }),
+      watch("w3", "Sim", { user_id: "u1", paired_iphone_id: "p3" }),
+      watch("w4", "Spare"),
+      phone("p1", "iPhone 15 Pro", { user_id: "u1" }),
+      phone("p2", "iPhone 14 Pro Max", { user_id: "u2" }),
+      phone("p3", "iPhone 17 Pro", { user_id: "u1" }),
+    ], persons);
+    expect(people.map((p) => [p.key, p.label, p.owners.map((o) => o.owner_watch_id), p.userId, p.picture])).toEqual([
+      ["user:u1", "Jesse", ["p1", "p3", "w1", "w3"], "u1", "/pic"],
+      // No person for this user: the name is read from the watch as before.
+      ["user:u2", "Chen", ["p2", "w2"], "u2", undefined],
+      ["w4", "Spare", ["w4"], undefined, undefined],
+    ]);
+  });
+
+  it("puts an unbound watch with its bound phone's user", () => {
+    const people = peopleOf([
+      watch("w1", "Apple Watch", { paired_iphone_id: "p1" }),
+      phone("p1", "iPhone", { user_id: "u1" }),
+    ]);
+    expect(people.map((p) => [p.key, p.owners.map((o) => o.owner_watch_id)])).toEqual([["user:u1", ["p1", "w1"]]]);
   });
 });

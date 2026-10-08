@@ -94,6 +94,20 @@ export interface OwnerSummary {
       phone, absent from the Library row and from integrations older than the
       field. */
   has_iphone?: boolean | null;
+  /** The Home Assistant user this device is bound to (a watch through its
+      paired iPhone when its own key predates binding), null when none.
+      Absent from the Library and orphan rows and from integrations older
+      than the field. `haPeople` turns it into a person. */
+  user_id?: string | null;
+  /** Whether a watch holds a long-poll on this server right now. Never true
+      for a phone. Absent where `user_id` is. */
+  polling?: boolean;
+  /** Seconds since a watch last polled, or a phone last pulled, when the
+      list was read. Null when it has not since the server started. */
+  last_seen_seconds?: number | null;
+  /** How many designs the device's next pull brings. Null before its first
+      ack. */
+  pending_changes?: number | null;
   /** No device is registered under this id any more, but it still owns
       records: a reinstall gave the watch a new id. Offer the Move action. */
   is_orphan: boolean;
@@ -678,6 +692,9 @@ export interface WatchConfigDelivery {
   revision: number;
   delivered_revision: number;
   rejected_revision: number;
+  /** How many items the record lists, on the pages, status pages and Control
+   * Center kinds only. Absent from integrations older than the field. */
+  items?: number;
 }
 
 /** Every watch's panel-written records by kind, numbers only. A kind with no

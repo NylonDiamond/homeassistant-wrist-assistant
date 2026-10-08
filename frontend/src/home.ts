@@ -4,8 +4,9 @@
 
 import { css } from "lit";
 import { litOutline } from "./editor-chrome.js";
-import type { OwnerSummary } from "./ha-api.js";
-import { type DeviceSync, type HomeDevice, deviceSync } from "./send-state.js";
+import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
+import type { Person } from "./people.js";
+import { type DeviceSync, type HomeDevice, agoWords, deviceSync } from "./send-state.js";
 import { type WatchScreen, WATCH_SCREENS, WATCH_SETTINGS_SCREEN } from "./shell.js";
 import { type DeviceKind, deviceKindOf } from "./version.js";
 import { type WatchAppSync, deviceVerdict } from "./watch-app-sync.js";
@@ -123,14 +124,68 @@ export function deviceSheetTabs(kind: "watch" | "iphone", admin: boolean): Devic
   return tabs;
 }
 
-/** The few doors at the foot of a device's card on Home: the sheet's own
- * tabs, cut to the ones a household opens most. A watch has its
- * complications, its pages and its settings (the last two an
- * administrator's); an iPhone has its widgets. The sheet has the rest. */
-export function deviceCardDoors(kind: "watch" | "iphone", admin: boolean): DeviceSheetTab[] {
-  return deviceSheetTabs(kind, admin).filter((t) => t.kind === "list"
-    ? t.filter === "all"
-    : t.screen.id === "pages" || t.screen.id === WATCH_SETTINGS_SCREEN.id);
+/** The count tiles on a device's card on Home, each a door to that page on
+ * this device: the sheet's tabs that carry a count. A watch has its
+ * complications, then its pages, status pages and Control Center (an
+ * administrator's); an iPhone has its widgets and its Control Center
+ * controls. Settings, which counts nothing, is the card's own door. */
+export function deviceCardTiles(kind: "watch" | "iphone", admin: boolean): DeviceSheetTab[] {
+  return deviceSheetTabs(kind, admin).filter((t) => t.kind === "list" || t.count !== undefined);
+}
+
+/** Each watch's item counts, read off the watch config summary's `items`.
+ * A kind with no record counts none; a watch the summary leaves out, or an
+ * integration older than the field, gives nothing, so the card shows no
+ * number rather than a wrong one. */
+export function summaryCounts(summary: WatchConfigSummary, watchIds: readonly string[]): Map<string, Partial<Record<DeviceCountKind, number>>> {
+  const out = new Map<string, Partial<Record<DeviceCountKind, number>>>();
+  const kinds: DeviceCountKind[] = ["pages", "status_pages", "control_center"];
+  for (const id of watchIds) {
+    const owner = summary.owners[id];
+    if (owner === undefined) continue;
+    // An integration that sends no counts sends none on any kind.
+    if (!Object.values(owner).some((k) => typeof k.items === "number") && Object.keys(owner).some((k) => (kinds as string[]).includes(k))) continue;
+    const counts: Partial<Record<DeviceCountKind, number>> = {};
+    for (const kind of kinds) counts[kind] = owner[kind]?.items ?? 0;
+    out.set(id, counts);
+  }
+  return out;
+}
+
+/** When a device was last heard from, as Home's card says it: "Online now"
+ * for a watch holding a long-poll, else "Seen 5 min ago", aged by the time
+ * since the list was read (`elapsed`, seconds). Nothing when the server has
+ * not heard from it since it started, or is too old to say. */
+export function seenWords(owner: Pick<OwnerSummary, "polling" | "last_seen_seconds"> | undefined, elapsed: number): string | undefined {
+  if (owner?.polling === true) return "Online now";
+  const seconds = owner?.last_seen_seconds;
+  if (typeof seconds !== "number") return undefined;
+  return `Seen ${agoWords(seconds + Math.max(0, elapsed))}`;
+}
+
+/** What a device's next pull brings, when it brings anything. */
+export function pendingWords(owner: Pick<OwnerSummary, "pending_changes"> | undefined): string | undefined {
+  const n = owner?.pending_changes;
+  if (typeof n !== "number" || n <= 0) return undefined;
+  return `${n} ${n === 1 ? "change" : "changes"} to pick up`;
+}
+
+/** Home's devices by person, in the people's own order: each person with
+ * their rows, in the rows' order (watches, then phones). A row no person
+ * holds, which only an inconsistent list could give, ends up in a group of
+ * its own at the end rather than going missing. */
+export function homeGroups(people: readonly Person[], rows: readonly HomeDeviceRow[]): { person?: Person; index: number; rows: HomeDeviceRow[] }[] {
+  const out: { person?: Person; index: number; rows: HomeDeviceRow[] }[] = [];
+  const placed = new Set<string>();
+  people.forEach((person, index) => {
+    const ids = new Set(person.owners.map((o) => o.owner_watch_id));
+    const mine = rows.filter((r) => ids.has(r.id));
+    for (const r of mine) placed.add(r.id);
+    if (mine.length > 0) out.push({ person, index, rows: mine });
+  });
+  const rest = rows.filter((r) => !placed.has(r.id));
+  if (rest.length > 0) out.push({ index: -1, rows: rest });
+  return out;
 }
 
 /** The line under the device sheet's title: what it is, its app version, and
@@ -170,21 +225,30 @@ export const homeStyles = css`
   a.home-btn:focus-visible, button.home-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.home-btn:disabled { opacity: .5; cursor: default; }
   .home-btn svg.ui-icon { width: 14px; height: 14px; }
-  /* The devices, one card each, as many to a row as fit. A card's outline is
-     lit in its state's color: green for synced, amber for waiting, grey for
-     nothing waiting. */
+  /* One person's devices: their picture or initial ringed in their color
+     (--c, the color their devices wear on the Complications tab), their
+     name, and the cards, which take the same color. */
+  .home-person { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .home-person-head { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0 2px; }
+  .home-avatar {
+    width: 30px; height: 30px; flex: none; box-sizing: border-box; border-radius: 50%; overflow: hidden;
+    display: grid; place-items: center; border: 2px solid var(--c); background: var(--wa-field);
+    font-size: 13px; font-weight: 650; color: var(--wa-ink);
+  }
+  .home-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .home-person-name { margin: 0; min-width: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-person-n { flex: none; font-size: 12.5px; color: var(--wa-muted); }
+  /* The devices, one card each, as many to a row as fit. */
   .home-devices {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 14px;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 14px;
     margin: 0; padding: 0; list-style: none;
   }
   .home-device {
-    --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid); --c: var(--wa-hue-grey);
+    --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
     position: relative; display: flex; flex-direction: column; gap: 14px; min-width: 0; box-sizing: border-box;
     padding: 16px; border-radius: var(--wa-lc-r, 12px);
     ${litOutline}
   }
-  .home-device.synced { --c: var(--wa-green); }
-  .home-device.waiting { --c: var(--wa-amber); }
   .home-device:hover { --lo-fill: var(--wa-hover); }
   /* The whole card opens the device's sheet: the name's button reaches over
      the card, and the doors at the foot sit above it. */
@@ -215,7 +279,29 @@ export const homeStyles = css`
   /* A right-pointing chevron: the down one, turned. */
   .home-device-go { display: inline-flex; flex: none; align-self: flex-start; color: var(--wa-muted); transform: rotate(-90deg); }
   .home-device-go svg.ui-icon { width: 13px; height: 13px; }
-  .home-device-doors { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+  /* A tile per page that counts something, each a door to that page: the
+     number large, its name small under it. A row of equal tiles. */
+  .home-tiles {
+    position: relative; z-index: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); gap: 6px;
+  }
+  a.home-tile, button.home-tile {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; box-sizing: border-box;
+    padding: 7px 9px; border-radius: 8px; font: inherit; text-align: left; cursor: pointer; text-decoration: none;
+    color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong);
+  }
+  a.home-tile:hover, button.home-tile:hover { background: var(--wa-card); border-color: var(--wa-muted); }
+  a.home-tile:focus-visible, button.home-tile:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .home-tile b { font-size: 18px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .home-tile b.none { color: var(--wa-muted); }
+  .home-tile span { max-width: 100%; font-size: 11px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The foot: when it was last heard from and what it will pick up, and a
+     watch's Settings at the right. */
+  .home-device-foot { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; min-height: 26px; margin-top: auto; }
+  /* Only the door takes a press; the words let it through to the card. */
+  .home-device-foot { pointer-events: none; }
+  .home-device-foot > a { pointer-events: auto; }
+  .home-device-seen { flex: 1; min-width: 0; font-size: 12px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-device-seen.on { color: var(--wa-green); }
   a.home-door, button.home-door {
     display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 26px; padding: 0 10px;
     border-radius: 6px; font: inherit; font-size: 12px; font-weight: 550; cursor: pointer; white-space: nowrap; text-decoration: none;
@@ -223,7 +309,6 @@ export const homeStyles = css`
   }
   a.home-door:hover, button.home-door:hover { background: var(--wa-card); }
   a.home-door:focus-visible, button.home-door:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .home-door-n { font-variant-numeric: tabular-nums; color: var(--wa-muted); }
   /* Pair a device, the grid's last card: a dashed outline, nothing lit, as
      tall as the cards beside it. */
   .home-devices > li:has(> button.home-device-add) { display: flex; }

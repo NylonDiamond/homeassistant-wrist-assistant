@@ -398,6 +398,17 @@ def ws_owners(
     (`watch_has_iphone`), so the panel's watch editors wait for that move
     instead of offering to start a fresh record over it.
 
+    ``user_id`` is the Home Assistant user the device's key is bound to, or a
+    watch's paired iPhone's user when the watch's own key predates binding;
+    null when neither is bound. The panel matches it to a ``person`` entity
+    to group a household's devices by the person they belong to, with that
+    person's name and picture. ``polling``, ``last_seen_seconds`` and
+    ``pending_changes`` are Home's line about each device: whether a watch
+    holds a long-poll now, how long since it last polled (a phone: since it
+    last pulled), and how many designs its next pull brings. They are
+    ``watch_status``'s fields under the names Home reads, read once with the
+    list rather than on a timer per device.
+
     One row is not a device: the Library (``LIBRARY_OWNER_ID``), always
     present and always last. It is the home's shelf for designs that are on no
     device yet, or have been taken off every device without being thrown away.
@@ -437,16 +448,23 @@ def ws_owners(
     # loop below must not reach it: it owns records and has no secret store
     # entry, which is exactly what that loop calls an orphan.
     seen: set[str] = {LIBRARY_OWNER_ID}
+    coordinator = getattr(domain_data, "coordinator", None)
     entries = secret_store.all_entries
     for device_id, entry in entries.items():
         seen.add(device_id)
         paired_id = entry.owner_iphone_id
         paired_name: str | None = None
+        paired_entry = secret_store.get(paired_id) if paired_id else None
         if paired_id:
-            paired_entry = secret_store.get(paired_id)
             paired_name = registry_name(paired_id) or (
                 paired_entry.device_name if paired_entry is not None else None
             )
+        phone = entry.device_kind == DEVICE_KIND_IPHONE
+        seen_seconds = (
+            store.seconds_since_sync(device_id)
+            if phone
+            else _seconds_since_poll(hass, coordinator, device_id)
+        )
         owners.append(
             {
                 "owner_watch_id": device_id,
@@ -477,6 +495,13 @@ def ws_owners(
                 # rather than offering to start a fresh record over it.
                 # False for a phone.
                 "has_iphone": watch_has_iphone(entries, device_id),
+                # The Home Assistant user this device belongs to, through its
+                # paired iPhone for a watch whose own key was never bound.
+                "user_id": entry.user_id
+                or (paired_entry.user_id if paired_entry is not None else None),
+                "polling": bool(not phone and coordinator and coordinator.is_polling(device_id)),
+                "last_seen_seconds": None if seen_seconds is None else round(seen_seconds),
+                "pending_changes": store.pending_changes(device_id),
                 "is_orphan": False,
             }
         )
