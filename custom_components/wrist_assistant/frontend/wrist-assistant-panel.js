@@ -76,9 +76,10 @@ import{a as Nr}from"./chunks/chunk-P7FG3CI7.js";import{a as Ni,b as Hd,c as _d,d
   .home-device-go svg.ui-icon { width: 13px; height: 13px; }
   /* A tile per page that counts something, each a door to that page: the
      number large, its name small under it. A row of equal tiles. */
-  .home-tiles {
-    position: relative; z-index: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); gap: 6px;
-  }
+  .home-tiles { position: relative; z-index: 1; display: flex; gap: 6px; }
+  .home-tiles > * { flex: 1 1 0; }
+  /* The first tile's word is the longest: "Complications". */
+  .home-tiles > :first-child { flex-grow: 1.45; }
   a.home-tile, button.home-tile {
     display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; box-sizing: border-box;
     padding: 7px 8px; border-radius: 8px; font: inherit; text-align: left; cursor: pointer; text-decoration: none;
