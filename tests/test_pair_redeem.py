@@ -744,6 +744,28 @@ def test_rekey_swaps_the_secret_and_keeps_everything_else(env) -> None:
     assert base64.b64decode(saved["secret_b64"]) == NEW_SECRET
 
 
+def test_the_new_secret_is_on_disk_before_the_reply_is_signed_with_it(env) -> None:
+    """The phone drops its old key once the reply verifies under the new
+    one. A debounced save would leave a window in which a crash brings Home
+    Assistant back on the old key with the phone holding only the new."""
+    _paired_phone(env)
+    file = env.penv.secret_store._store
+    assert file.saved_now == []
+    on_disk_at_signing: list[list[bytes]] = []
+
+    class _WatchingCtx(_Ctx):
+        def signed_json(self, body: dict, status: int = 200) -> Any:
+            on_disk_at_signing.append(
+                [base64.b64decode(data["secrets"][PHONE]["secret_b64"]) for data in file.saved_now]
+            )
+            return super().signed_json(body, status)
+
+    sealed = env.sealed.seal(OLD_SECRET, PHONE, "rekey", NEW_SECRET)
+    reply = asyncio.run(env.rekey(_WatchingCtx(env, {"sealed": sealed})))
+    assert (reply.status, reply.signed_with) == (200, NEW_SECRET)
+    assert on_disk_at_signing == [[NEW_SECRET]]
+
+
 @pytest.mark.parametrize(
     "spoil", ["sealed with the new secret", "another op", "another id", "missing", "short"]
 )

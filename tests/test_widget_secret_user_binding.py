@@ -54,12 +54,19 @@ class _FakeStore:
     def __init__(self, *_args: object, **kwargs: object) -> None:
         self.saved: dict | None = None
         self.kwargs = kwargs
+        # Every payload written at once (`async_save`), not debounced, in
+        # order, so a test can tell an immediate write from a delayed one.
+        self.saved_now: list[dict] = []
 
     async def async_load(self) -> dict | None:
         return self.saved
 
     def async_delay_save(self, serialize, *_args: object, **_kwargs: object) -> None:
         self.saved = serialize()
+
+    async def async_save(self, data: dict) -> None:
+        self.saved = data
+        self.saved_now.append(data)
 
 
 def _stub(name: str, **attrs: object) -> types.ModuleType:
@@ -504,6 +511,38 @@ def test_main_house_is_on_disk_only_while_false(env) -> None:
     assert env.store.note_main_house("watch-1", True) is True
     assert "main_house" not in env.store._store.saved["secrets"]["watch-1"]
     assert env.store.note_main_house("nope", False) is False
+
+
+def test_a_re_key_is_written_at_once_and_keeps_the_rest(env) -> None:
+    """The re-key op signs its reply with the new key, so the store writes
+    the file before it hands control back, not on the debounce."""
+    env.store.register("phone-1", SECRET_A, "iphone-self-provision", user_id="alice")
+    assert env.store._store.saved_now == []
+    assert asyncio.run(env.store.async_replace_secret("phone-1", SECRET_B)) is True
+    [written] = env.store._store.saved_now
+    assert written["secrets"]["phone-1"]["secret_b64"] == SECRET_B
+    assert written["secrets"]["phone-1"]["user_id"] == "alice"
+    assert env.store.get("phone-1").secret_b64 == SECRET_B
+    # A device that went in a race writes nothing.
+    assert asyncio.run(env.store.async_replace_secret("gone", SECRET_B)) is False
+    assert len(env.store._store.saved_now) == 1
+
+
+@pytest.mark.parametrize(
+    ("label", "is_watch"),
+    [
+        ("watch-code-pair", True),
+        ("watch-self-provision", True),
+        (None, True),
+        ("iphone-self-provision", False),
+    ],
+)
+def test_only_a_watch_entry_counts_as_a_paired_watch(env, label, is_watch) -> None:
+    """The watch config store asks this before the panel makes a watch's
+    first record, so an iPhone id must never pass."""
+    env.store.register("device-1", SECRET_A, label)
+    assert env.store.is_paired_watch("device-1") is is_watch
+    assert env.store.is_paired_watch("unknown") is False
 
 
 def test_a_new_pair_keeps_the_main_house_mark(env) -> None:

@@ -3,15 +3,16 @@
 **By code.** A watch with no iPhone, or an iPhone, posts its id to the
 unauthenticated ``/v2/pair/start`` (``WAPairStartView``) and shows the code it
 gets back. An admin types the code into the panel, which looks it up and then
-confirms it here. The confirm is what writes the pair into the widget secret
+confirms it here. The confirm is what approves the pair for the widget secret
 store, bound to a Home Assistant user the same way ``register_secret`` binds a
 pair to the user behind its bearer.
 
 A device on a current build sends an X25519 public key rather than a secret
 (``wa_pair_requests.validate_pair_start``). For such a request the confirm
 makes the secret here and keeps a copy sealed to that key, which the device
-fetches from ``/v2/pair/status``. An older watch sends its secret, and the
-confirm stores that one, as it always did.
+fetches from ``/v2/pair/status``; the pairing is stored when it does
+(``async_pair_status``), never before. An older watch sends its secret, and
+the confirm stores that one, as it always did.
 
 **By QR code.** ``pair/offer`` makes a one-use token for an iPhone and answers
 the ``wristassistant://pair#...`` link the panel draws as a QR code. The phone
@@ -46,6 +47,7 @@ deactivated one, or one Home Assistant made for itself),
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import secrets
@@ -68,6 +70,7 @@ from .wa_pair_requests import (
     PairFields,
     PairOfferStore,
     PairRequestStore,
+    ParkedPairing,
     build_offer_url,
     validate_pair_fields,
 )
@@ -185,6 +188,60 @@ def store_paired_device(
         if device is not None and device.name != fields.device_name:
             device_registry.async_update_device(device.id, name=fields.device_name)
     return result
+
+
+async def async_pair_status(
+    hass: HomeAssistant,
+    pair_store: PairRequestStore,
+    secret_store: WidgetSecretStore,
+    watch_id: str,
+) -> tuple[str, dict[str, str] | None]:
+    """What ``/v2/pair/status`` answers, storing a sealed pairing on the
+    first fetch of its box.
+
+    The confirm parked the pairing with the box rather than storing it. The
+    first time the box is handed out, the pairing goes through the shared
+    write (``store_paired_device``) and the file is written at once, before
+    the box leaves: a device that opens it and checks the key with
+    ``verify_identity`` finds Home Assistant holding it, and no crash can
+    lose a key the device was already given. Later fetches hand out the same
+    box and store nothing. Anyone may fetch the box (only the device can
+    open it), so a stranger's fetch stores the pairing early, which the
+    confirm had decided anyway.
+    """
+    state, box = pair_store.status(watch_id)
+    if state == "confirmed":
+        parked = pair_store.take_parked(watch_id)
+        if parked is not None:
+            parked.result = store_paired_device(
+                hass, secret_store, parked.fields, user_id=parked.user_id
+            )
+            await secret_store.async_save_now()
+            _LOGGER.info(
+                "Stored the sealed pairing of watch_id=%s as its box was fetched (%s)",
+                watch_id,
+                parked.result,
+            )
+    return state, box
+
+
+# How long a sealed confirm waits for its device to fetch the box before it
+# answers `waiting`. A device on the code screen polls every two or three
+# seconds, so this covers a few polls.
+_DELIVERY_WAIT_SECONDS = 10.0
+_DELIVERY_POLL_SECONDS = 0.25
+
+
+async def _wait_for_delivery(parked: ParkedPairing | None) -> str:
+    """The store's result for a parked pairing once its box is fetched, or
+    ``waiting`` when no fetch came within ``_DELIVERY_WAIT_SECONDS``."""
+    if parked is None:
+        return "waiting"
+    waited = 0.0
+    while parked.result is None and waited < _DELIVERY_WAIT_SECONDS:
+        await asyncio.sleep(_DELIVERY_POLL_SECONDS)
+        waited += _DELIVERY_POLL_SECONDS
+    return parked.result if parked.result is not None else "waiting"
 
 
 # ── by code ──────────────────────────────────────────────────────────────
@@ -307,7 +364,8 @@ async def ws_pair_confirm(
     ``user_id`` in the message is whose device it is (see ``_pick_user``);
     without it the confirming admin. The reply names the user bound.
     ``result`` is ``new``, ``rekey`` or ``idempotent``, as the store reports
-    it.
+    it, or ``waiting`` for a sealed pairing whose device has not fetched its
+    box yet.
 
     Two ticks guard against pairing the wrong thing. ``replace: true`` is
     required when the id is paired already, by anyone: a code for a known id
@@ -318,12 +376,17 @@ async def ws_pair_confirm(
     Either refusal leaves the code waiting, so the admin can tick the box
     and confirm again.
 
-    A sealed request gets its secret here: 32 random bytes, stored, and
-    sealed to the device's public key for ``/v2/pair/status``. An old-form
-    request stores the secret it brought. The label comes from the kind, so
-    a confirmed iPhone is an iPhone. Then the shared write
-    (``store_paired_device``), and the request goes, so a second confirm of
-    the same code is ``unknown_code``.
+    A sealed request gets its secret here: 32 random bytes, sealed to the
+    device's public key for ``/v2/pair/status``. It is not stored yet: the
+    pairing is parked with the box, and the device's first fetch of the box
+    makes the shared write (``async_pair_status``). The confirm waits a few
+    seconds for that fetch, so the usual reply comes after the device holds
+    its key and the panel finds it among the devices; past the wait it
+    answers ``waiting`` and the write happens whenever the fetch comes. An
+    old-form request stores the secret it brought, at once, through the
+    same write (``store_paired_device``). The label comes from the kind, so
+    a confirmed iPhone is an iPhone. Either way the request goes, so a
+    second confirm of the same code is ``unknown_code``.
     """
     stores = _stores(hass)
     if stores is None:
@@ -415,10 +478,17 @@ async def ws_pair_confirm(
             connection.send_error(msg["id"], "invalid_public_key", err.message)
             return
 
-    result = store_paired_device(hass, secret_store, fields, user_id=user_id)
     if sealed_reply is not None:
-        pair_store.confirm_sealed(pending, sealed_reply)
+        # Nothing is stored until the device fetches its box: see
+        # `async_pair_status`. The box lives only in memory, so a key stored
+        # now could outlive it and leave a pairing nobody holds the key to.
+        parked = pair_store.confirm_sealed(
+            pending, sealed_reply, fields=fields, user_id=user_id
+        )
+        result = await _wait_for_delivery(parked)
     else:
+        # The old form: the device made this secret and holds it already.
+        result = store_paired_device(hass, secret_store, fields, user_id=user_id)
         pair_store.remove(pending.code)
     _LOGGER.info(
         "Paired %s watch_id=%s by code (%s%s), user=%s, confirmed by %s",

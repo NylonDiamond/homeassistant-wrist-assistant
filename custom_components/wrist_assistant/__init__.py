@@ -765,9 +765,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # is contained inside the store and never fails setup. The store asks the
     # secret store whether a watch is paired before the panel may create that
     # watch's first record; it is handed a question, not the secret store.
+    # Only a watch: an iPhone entry is paired too, but it never has a watch's
+    # config, so the panel may not start one under it.
     watch_config_store = WatchConfigStore(
         hass,
-        is_paired=lambda watch_id: widget_secret_store.get(watch_id) is not None,
+        is_paired=widget_secret_store.is_paired_watch,
     )
     await watch_config_store.async_load()
     # Custom complications ride the watch's long-poll: the owner's store

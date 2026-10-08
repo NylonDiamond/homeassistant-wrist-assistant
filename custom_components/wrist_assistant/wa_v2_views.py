@@ -164,7 +164,7 @@ from .page_images_store import (
     PageImagesUnavailableError,
     decode_data as decode_page_image,
 )
-from .pairing_ws import store_paired_device
+from .pairing_ws import async_pair_status, store_paired_device
 from .sealed_box import PAIRED_SECRET_BYTES, SealedBoxError, open_box, open_offer_secret, seal
 from .wa_pair_requests import (
     OFFER_STATE_EXPIRED,
@@ -2457,10 +2457,11 @@ async def _op_rekey(ctx: _OpContext) -> Response:
     request already proved besides.
 
     One store write swaps the secret and keeps everything else, the bound
-    user included (``WidgetSecretStore.replace_secret``), so a re-key never
-    changes whose device it is. The reply, ``{"ok": true}``, is signed with
-    the NEW secret: a device that verifies it knows Home Assistant holds the
-    new key before it drops the old one. This is what the phone's
+    user included (``WidgetSecretStore.async_replace_secret``), so a re-key
+    never changes whose device it is. That write reaches the file before the
+    reply is made. The reply, ``{"ok": true}``, is signed with the NEW
+    secret: a device that verifies it knows Home Assistant holds the new key,
+    on disk, before it drops the old one. This is what the phone's
     ``rotate()`` uses in place of ``register_secret`` with a token.
 
     Refusals are signed with the old secret, which still stands: 400
@@ -2490,7 +2491,10 @@ async def _op_rekey(ctx: _OpContext) -> Response:
             status=400,
         )
     store = ctx.domain_data.widget_secret_store
-    if not store.replace_secret(ctx.watch_id, base64.b64encode(new_secret).decode("ascii")):
+    # Awaited: the new key is on disk before the reply below is signed with it.
+    if not await store.async_replace_secret(
+        ctx.watch_id, base64.b64encode(new_secret).decode("ascii")
+    ):
         return ctx.signed_json({"ok": False, "error": "not registered"}, status=410)
     entry = store.get(ctx.watch_id)
     log_secret_reprovisioned(
@@ -3055,12 +3059,15 @@ class WAPairStatusView(HomeAssistantView):
     * `{"state": "expired"}`: no code and no box, whatever the reason.
 
     Every state also carries `server_time` (Unix seconds), as the start
-    reply does: the key is stored at the confirm, before the device has
-    proved it, so a device whose clock is off by more than the signing
-    window would otherwise read its failing `verify_identity` as a refusal.
+    reply does: the key is stored before the device has proved it, so a
+    device whose clock is off by more than the signing window would
+    otherwise read its failing `verify_identity` as a refusal.
 
-    Anyone may ask: only the holder of the device's private key can open
-    the box. The device then checks the secret with a signed
+    The confirm parks the pairing with the box; the first fetch of the box
+    stores it, on disk, before answering (`pairing_ws.async_pair_status`).
+    A box nobody fetched in time, or one lost to a restart, so leaves
+    nothing behind. Anyone may ask: only the holder of the device's private
+    key can open the box. The device then checks the secret with a signed
     `verify_identity`, as an old-form watch does. A start for the same id
     is refused while the box waits, so nobody can throw it away before the
     device fetches it.
@@ -3089,7 +3096,10 @@ class WAPairStatusView(HomeAssistantView):
             return self.json_message("watch_id required", status_code=400)
         if len(watch_id) > REGISTER_ID_MAX_LEN:
             return self.json_message("watch_id too long", status_code=400)
-        state, sealed = pair_store.status(watch_id)
+        secret_store = getattr(domain_data, "widget_secret_store", None)
+        if secret_store is None:
+            return self.json_message("Integration not loaded", status_code=503)
+        state, sealed = await async_pair_status(self._hass, pair_store, secret_store, watch_id)
         return self.json(
             {"state": state, **(sealed or {}), "server_time": int(time.time())}
         )

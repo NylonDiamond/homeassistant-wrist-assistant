@@ -118,6 +118,10 @@ def _untouchable(name: str):
     return _fail
 
 
+async def _pair_status(_hass: Any, pair_store: Any, _secret_store: Any, watch_id: str) -> Any:
+    return pair_store.status(watch_id)
+
+
 def _view_classes(pair_mod, log_hmac_failure) -> dict[str, type]:
     path = _SRC / "wa_v2_views.py"
     tree = ast.parse(path.read_text(), filename=str(path))
@@ -165,6 +169,10 @@ def _view_classes(pair_mod, log_hmac_failure) -> dict[str, type]:
         "log_hmac_failure": log_hmac_failure,
         # A fixed clock, so the replies' `server_time` is known.
         "time": types.SimpleNamespace(time=lambda: SERVER_NOW),
+        # The status view answers what this says. Storing a parked sealed
+        # pairing on the first fetch is pinned over the real function in
+        # test_pairing_ws.py; the boxes here are confirmed with nothing parked.
+        "async_pair_status": _pair_status,
     }
     exec(code, namespace)  # noqa: S102
     return {name: namespace[name] for name in names}
@@ -503,8 +511,8 @@ def test_status_follows_a_sealed_pairing(env) -> None:
 
 def test_a_start_for_a_confirmed_id_answers_409_and_keeps_the_box(env) -> None:
     """Someone on the network who saw the id in a status poll posts a start
-    for it after the admin confirmed. The box, whose key the confirm already
-    stored, must still be there for the device."""
+    for it after the admin confirmed. The box, which carries the only copy
+    of the confirmed pairing, must still be there for the device."""
     code = _start(env, _sealed_body()).body["code"]
     box = {"server_public_key_b64": "S", "nonce": "N", "box": "B"}
     env.pair_store.confirm_sealed(env.pair_store.get(code), box)

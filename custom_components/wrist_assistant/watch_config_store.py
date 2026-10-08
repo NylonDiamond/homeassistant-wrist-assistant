@@ -939,8 +939,9 @@ class WatchConfigStore:
     def __init__(
         self, hass: HomeAssistant, *, is_paired: PairedCheck | None = None
     ) -> None:
-        """``is_paired`` answers whether an owner id has a pair in the secret
-        store. Setup passes one backed by ``WidgetSecretStore``; without it no
+        """``is_paired`` answers whether an owner id is a paired watch in the
+        secret store (an iPhone entry does not count). Setup passes
+        ``WidgetSecretStore.is_paired_watch``; without it no
         owner counts as paired, so the panel can never create a record (what
         a store made only to remove its files, or a test, wants)."""
         self._hass = hass
@@ -1444,8 +1445,8 @@ class WatchConfigStore:
         return kind
 
     def _owner_is_paired(self, owner_watch_id: str) -> bool:
-        """Whether the secret store knows the owner. False when no check was
-        handed in (see ``__init__``)."""
+        """Whether the secret store knows the owner as a watch. False when no
+        check was handed in (see ``__init__``)."""
         return self._is_paired is not None and bool(self._is_paired(owner_watch_id))
 
     @staticmethod
