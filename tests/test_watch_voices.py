@@ -32,6 +32,7 @@ from test_watch_config_ws import (
     _WS_PATH,
     _Connection,
     _event_message,
+    _load_panel_access,
     _load_relay,
     _Marker,
     _stub,
@@ -392,6 +393,7 @@ def ws_env():
         )
         _stub("voluptuous", Required=_Marker, Optional=_Marker)
         _load_relay()
+        _load_panel_access()
         spec = importlib.util.spec_from_file_location(f"{_PKG}.watch_config_ws", _WS_PATH)
         ws = importlib.util.module_from_spec(spec)
         sys.modules[f"{_PKG}.watch_config_ws"] = ws

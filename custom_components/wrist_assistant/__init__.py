@@ -718,7 +718,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     camera_stream_coordinator.attach_token_stores(
         (stream_token_store, batch_snapshot_token_store)
     )
-    # Watches waiting for an admin to confirm their pairing code. Memory only:
+    # Watches waiting for a user to confirm their pairing code. Memory only:
     # a restart drops them and the watch asks for a new code.
     pair_request_store = PairRequestStore()
     # The panel's QR offers for an iPhone. Memory only, like the codes: a
@@ -1008,20 +1008,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     listener_relay(hass, WATCH_CONFIG).follow(watch_config_store)
 
     if not hass.data.get(f"{DOMAIN}_views_registered"):
-        # Panel-facing complication editor API (admin-only mutations).
+        # The panel is open to every signed-in user; who may do what is
+        # decided per command (panel_access.py): a device's own things only
+        # for its user or an admin, the home's shared libraries for everyone,
+        # the gallery key for admins.
+        # Panel-facing complication editor API, owner scoped.
         # Registered once per HA process, like the HTTP views below.
         async_register_websocket_commands(hass)
-        # The panel's Watch settings view (admin only), beside the editor's,
-        # and the phone's watch config live line (any signed-in user).
+        # The panel's Watch settings view, beside the editor's, and the
+        # phone's watch config live line, owner scoped.
         async_register_watch_config_commands(hass)
-        # The panel's pairing-code lookup and confirm (admin only).
+        # The panel's pairing-code lookup and confirm, and the QR offers
+        # (any signed-in user; pairing for someone else is admin only).
         async_register_pairing_commands(hass)
         # The panel's HTTP actions screen: the home's library and the Test
-        # card (admin only).
+        # card (any signed-in user).
         async_register_http_actions_commands(hass)
-        # The panel's page photos: list, fetch, upload, delete (admin only).
+        # The panel's page photos: list, fetch, upload, delete (any
+        # signed-in user).
         async_register_page_images_commands(hass)
-        # The panel's camera framing: list, save, send a test (admin only).
+        # The panel's camera framing: list, save, send a test (any
+        # signed-in user; a test goes to the caller's own devices).
         async_register_camera_framing_commands(hass)
         # The panel's client certificate import: status, put, delete, each
         # for the signed-in user's own certificate (any signed-in user).
@@ -1029,7 +1036,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # v2 transport: /v2/* HMAC for all watch traffic. A pair comes from
         # the iPhone's sign-in through WARegisterSecretView (bearer), or from
         # a code the watch gets from WAPairStartView (no auth, stores only a
-        # pending request) and an admin confirms in the panel. WAVersionView
+        # pending request) and a user confirms in the panel. WAVersionView
         # is unauthenticated metadata for the apps' version check.
         nonce_cache = WANonceCache(ttl_seconds=WA_HMAC_NONCE_TTL_SECONDS)
         hass.data[f"{DOMAIN}_nonce_cache"] = nonce_cache

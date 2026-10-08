@@ -12,7 +12,7 @@ on base 0 creates a paired watch's first copy; so are ``voice``,
 ``notification_style`` and ``status_pages`` (step 4d batch 2) and
 ``control_center`` (step 4d batch 5) and a second home's ``rooms`` (step 8).
 ``test_ws_command_registration.py``
-covers the registration and the admin gate statically.
+covers the registration and the owner gate statically.
 """
 
 from __future__ import annotations
@@ -64,8 +64,9 @@ BOB = _signed_in("bob")
 
 
 class _Connection:
-    # An administrator unless a test says otherwise: the panel's commands
-    # are admin-only, and the live line's own rule has its own tests.
+    # An administrator unless a test says otherwise: an administrator may
+    # touch every watch, and the non-admin rule has its own tests here and
+    # in test_panel_access.py.
     user: Any = ROOT
 
     def __init__(self) -> None:
@@ -109,6 +110,20 @@ def _load_relay() -> types.ModuleType:
     return relay
 
 
+def _load_panel_access() -> types.ModuleType:
+    """Load ``panel_access.py`` into the stub package, where
+    ``watch_config_ws.py`` imports it from. It needs only the two constants,
+    added to whatever const stub is already there."""
+    _stub(f"{_PKG}.const", DOMAIN=DOMAIN, LIBRARY_OWNER_ID="library")
+    spec = importlib.util.spec_from_file_location(
+        f"{_PKG}.panel_access", _WS_PATH.with_name("panel_access.py")
+    )
+    access = importlib.util.module_from_spec(spec)
+    sys.modules[f"{_PKG}.panel_access"] = access
+    spec.loader.exec_module(access)
+    return access
+
+
 @pytest.fixture
 def env():
     with _loaded_module() as store_mod:
@@ -124,6 +139,7 @@ def env():
         _stub("voluptuous", Required=_Marker, Optional=_Marker)
         _stub(f"{_PKG}.const", DOMAIN=DOMAIN)
         relay_mod = _load_relay()
+        _load_panel_access()
         spec = importlib.util.spec_from_file_location(f"{_PKG}.watch_config_ws", _WS_PATH)
         ws = importlib.util.module_from_spec(spec)
         sys.modules[f"{_PKG}.watch_config_ws"] = ws

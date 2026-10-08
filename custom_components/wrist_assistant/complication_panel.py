@@ -110,7 +110,10 @@ async def async_register_panel(hass: HomeAssistant, version: str) -> None:
             module_url=f"{_STATIC_URL}/{_BUNDLE_NAME}?v={version}-{digest}",
             sidebar_title="Wrist Assistant",
             sidebar_icon="mdi:watch-variant",
-            require_admin=True,
+            # Every signed-in user, so each household member can look after
+            # their own devices. What each command allows is decided per
+            # command (see panel_access.py), not here.
+            require_admin=False,
             config={"version": version},
         )
     except ValueError as err:

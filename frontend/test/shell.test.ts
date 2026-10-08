@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   COMPLICATIONS_PATH,
   HOME_PATH,
+  PANEL_TABS,
   WATCH_SCREENS,
   editorKeysLive,
   isComplicationsRoute,
@@ -20,7 +21,6 @@ import {
   swallowsSaveKey,
   tabOfRoute,
   tabPath,
-  tabsFor,
   watchScreenOf,
   watchScreenPath,
 } from "../src/shell.js";
@@ -134,9 +134,8 @@ describe("addresses", () => {
     expect(tabPath("complications", "w2")).toBe(COMPLICATIONS_PATH);
   });
 
-  it("offers the Watch app to administrators only", () => {
-    expect(tabsFor(true)).toEqual(["home", "watch", "complications"]);
-    expect(tabsFor(false)).toEqual(["home", "complications"]);
+  it("offers every tab to everybody", () => {
+    expect(PANEL_TABS).toEqual(["home", "watch", "complications"]);
   });
 
   it("takes the prefix from the route when there is one", () => {
@@ -292,12 +291,12 @@ describe("reopensDesign", () => {
 });
 
 describe("renderTabBar", () => {
-  const bar = (path: string, admin: boolean, menu = false) => flat(renderTabBar({
-    route: at(path), admin, menu, onMenu: () => undefined, onTab: () => undefined,
+  const bar = (path: string, menu = false) => flat(renderTabBar({
+    route: at(path), menu, onMenu: () => undefined, onTab: () => undefined,
   }));
 
-  it("draws every tab for an administrator, as links to their addresses", () => {
-    const text = bar("", true);
+  it("draws every tab, as links to their addresses", () => {
+    const text = bar("");
     expect(text).toContain(">Home</a>");
     expect(text).toContain(">Watch app</a>");
     expect(text).toContain(">Complications</a>");
@@ -305,16 +304,10 @@ describe("renderTabBar", () => {
     expect(text.indexOf("Watch app</a>")).toBeLessThan(text.indexOf("Complications</a>"));
   });
 
-  it("leaves the Watch app out for anyone else", () => {
-    const text = bar("", false);
-    expect(text).not.toContain("Watch app");
-    expect(text).toContain(">Complications</a>");
-  });
-
   it("marks the tab on screen and no other", () => {
     const marks = (text: string) => text.match(/wa-tab on/g)?.length ?? 0;
     for (const [path, label] of [["", "Home"], ["/menus/w1", "Watch app"], ["/complications", "Complications"]] as const) {
-      const text = bar(path, true);
+      const text = bar(path);
       expect(marks(text), path).toBe(1);
       expect(text).toMatch(new RegExp(`wa-tab on[^>]*>${label}</a>`));
     }
@@ -322,15 +315,15 @@ describe("renderTabBar", () => {
 
   it("links the Watch app tab to Pages on the shared watch", () => {
     const text = flat(renderTabBar({
-      route: at(""), admin: true, menu: false, onMenu: () => undefined, onTab: () => undefined, watch: "w2",
+      route: at(""), menu: false, onMenu: () => undefined, onTab: () => undefined, watch: "w2",
     }));
     expect(text).toMatch(/href=\/wrist-assistant\/pages\/w2 [^>]*>Watch app<\/a>/);
-    expect(bar("", true)).toMatch(/href=\/wrist-assistant\/pages [^>]*>Watch app<\/a>/);
+    expect(bar("")).toMatch(/href=\/wrist-assistant\/pages [^>]*>Watch app<\/a>/);
   });
 
   it("offers Home Assistant's menu only when asked", () => {
-    expect(bar("", true, true)).toContain("wa-tabs-menu");
-    expect(bar("", true, false)).not.toContain("wa-tabs-menu");
+    expect(bar("", true)).toContain("wa-tabs-menu");
+    expect(bar("", false)).not.toContain("wa-tabs-menu");
   });
 });
 

@@ -1,10 +1,10 @@
 """Pending watch pairings, and the field rules every pairing obeys.
 
 A watch can pair without the iPhone. It posts its id and a fresh secret to
-the unauthenticated ``/v2/pair/start`` and gets back a short code. An admin
+the unauthenticated ``/v2/pair/start`` and gets back a short code. A user
 types that code into the panel, which looks the request up and confirms it
 over the WebSocket (``pairing_ws.py``). Only a confirmed pairing reaches the
-widget secret store, bound to the user the admin picked. Until then the pair
+widget secret store, bound to the user the confirmer picked. Until then the pair
 signs nothing.
 
 ``PairRequestStore`` holds the requests in memory, modelled on
@@ -12,7 +12,7 @@ signs nothing.
 order, a hard cap, and an injectable clock. One request per watch id; a new
 start for the same watch replaces the old one. Each request remembers the
 address it came from, so one address can hold only a few at once and the
-admin sees where a code came from before confirming it. A restart drops
+user sees where a code came from before confirming it. A restart drops
 them all, which only means the watch asks for a new code.
 
 ``validate_pair_fields`` is the one set of rules for the fields a pairing
@@ -24,7 +24,7 @@ Sealed code pairing
 -------------------
 A watch that sends its secret in ``pair/start`` sends it in the clear, and
 over plain ``http://`` anyone on the network then holds a working key the
-moment the admin confirms. A device that knows better sends an X25519
+moment the user confirms. A device that knows better sends an X25519
 ``public_key_b64`` instead (``validate_pair_start``). The confirm then makes
 the secret on the server and keeps a copy sealed to that key
 (``sealed_box.seal_pair_secret``) for ten minutes; the device fetches it from
@@ -422,14 +422,14 @@ def new_pair_code() -> str:
 
 @dataclass
 class PendingPair:
-    """A watch waiting for an admin to confirm its code."""
+    """A watch waiting for a user to confirm its code."""
 
     code: str
     fields: PairFields
     created_at: float
     expires_at: float
     # The address the start came from (aiohttp's ``request.remote``), shown
-    # to the admin at lookup. None when the transport reports none.
+    # to the user at lookup. None when the transport reports none.
     remote: str | None = None
     # Whether that address is outside the home network, or the request came
     # in through Home Assistant Cloud (whose requests can look local). The
@@ -555,7 +555,7 @@ class PairRequestStore:
         was. ``/v2/pair/start`` needs no sign-in and a watch id is not
         secret (it rides in the clear in every status poll), so anyone on
         the network could otherwise post a start for it and throw the box
-        away before the device fetched it, and with it the pairing the admin
+        away before the device fetched it, and with it the pairing the user
         just confirmed.
 
         Refusing is safe for the apps. The watch and the iPhone both make a
@@ -563,7 +563,7 @@ class PairRequestStore:
         so no restart of theirs could ever open an older box, and none
         needs to throw one away: a device that still holds its key polls
         ``/v2/pair/status`` for the box rather than starting again. The cost
-        is that a device which leaves the code screen between the admin's
+        is that a device which leaves the code screen between the user's
         confirm and its own fetch (a second or two at the usual poll rate)
         must wait out the box, at most ten minutes, before a new code.
         """
@@ -665,7 +665,7 @@ class PairRequestStore:
     ) -> tuple[str, dict[str, str] | None]:
         """What ``/v2/pair/status`` answers for a watch id.
 
-        ``("pending", None)`` while a request waits for the admin,
+        ``("pending", None)`` while a request waits for a user,
         ``("confirmed", box)`` while a confirmed sealed box waits for the
         device, and ``("expired", None)`` otherwise: a code that ran out, a
         box that ran out, an id never seen, and an old-form request that was
@@ -761,7 +761,9 @@ class PairOffer:
     user_id: str | None
     """Whose iPhone it is: the user the redeemed key is bound to."""
     admin_id: str | None
-    """The admin who made the offer, for the log."""
+    """The user who made the offer, for the log and for ``offer_status`` /
+    ``offer_cancel``, which show a non-administrator only their own. Named
+    from when only an administrator could make one."""
     replace: bool
     """Whether a device id already bound to another user may be taken over."""
     created_at: float

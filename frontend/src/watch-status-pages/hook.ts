@@ -98,10 +98,10 @@ function loadStatusPagesEditor(): Promise<void> {
   return loading;
 }
 
-/** The top bar's way in, beside Pages and Menus. Administrators only, in a
- * home with a watch, as for those. */
-export function renderWatchStatusPagesButton(hass: HassLike, owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
-  if (!hass.user?.is_admin || settingsWatches(owners).length === 0) return nothing;
+/** The top bar's way in, beside Pages and Menus. Only in a home with a
+ * watch, as for those. */
+export function renderWatchStatusPagesButton(owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
+  if (settingsWatches(owners).length === 0) return nothing;
   return html`<button class="tb-btn tb-status-pages" title="The watch's status pages"
     @click=${open}>${uiIcon("list")}<span>Status pages</span></button>`;
 }

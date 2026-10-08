@@ -1,9 +1,10 @@
 """WebSocket commands for the panel's page background photos (step 4d batch 6).
 
 The panel lists the home's photos, fetches one to draw it, uploads a new one
-and deletes one no page uses, over the WebSocket it already holds. Every
-command is admin only, like the rest of the panel: a photo can show the
-inside of the house, and an upload writes to Home Assistant's disk.
+and deletes one no page uses, over the WebSocket it already holds. The photos
+are the home's, shared by every page of every watch, so every command is open
+to every signed-in user. An upload writes to Home Assistant's disk, held to
+the store's size and count limits (``too_large``, ``full``).
 
 Commands:
 
@@ -53,7 +54,6 @@ def async_register_page_images_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_page_images_delete)
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command({vol.Required("type"): _CMD_LIST})
 @callback
 def ws_page_images_list(
@@ -82,7 +82,6 @@ def ws_page_images_list(
     connection.send_result(msg["id"], result)
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {vol.Required("type"): _CMD_GET, vol.Required("image_id"): str}
 )
@@ -116,7 +115,6 @@ async def ws_page_images_get(
     )
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {vol.Required("type"): _CMD_UPLOAD, vol.Required("data"): str}
 )
@@ -146,7 +144,6 @@ async def ws_page_images_upload(
     connection.send_result(msg["id"], result)
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {vol.Required("type"): _CMD_DELETE, vol.Required("image_id"): str}
 )

@@ -1406,7 +1406,6 @@ export class WaMenuEditor extends LitElement {
     const editing = draft !== undefined && !this.unsupported;
     // The pages count too: a page's switcher settings are edited here.
     const dirty = editing && this.dirty;
-    const admin = this.hass?.user?.is_admin === true;
     const shell = this.shellOwnsWatch;
     return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch menus">
       ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
@@ -1421,8 +1420,8 @@ export class WaMenuEditor extends LitElement {
           title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
         <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
-      ${admin && !shell ? html`<button class="tb-btn tb-pages" title="The watch's pages, as Home Assistant keeps them"
-        @click=${() => (this.onPages ? this.onPages() : navigatePagesFromMenus(undefined))}>${uiIcon("pages")}<span>Pages</span></button>` : nothing}
+      ${shell ? nothing : html`<button class="tb-btn tb-pages" title="The watch's pages, as Home Assistant keeps them"
+        @click=${() => (this.onPages ? this.onPages() : navigatePagesFromMenus(undefined))}>${uiIcon("pages")}<span>Pages</span></button>`}
       ${this.barActions}
       <button class="help" title="Help: the quick menu editor" aria-label="Help"
         @click=${() => window.open(WATCH_MENUS_HELP_URL, "_blank", "noopener")}>?</button>

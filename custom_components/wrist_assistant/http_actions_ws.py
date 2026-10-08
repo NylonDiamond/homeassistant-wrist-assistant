@@ -1,9 +1,13 @@
 """WebSocket commands for the panel's HTTP actions screen (step 4d batch 4).
 
 The panel reads the home's HTTP action library, saves it, and tests a draft
-action over the WebSocket it already holds. Every command is admin only: a
-read hands out every URL, header and global in the house, and a test sends
-a request from Home Assistant to wherever the draft points.
+action over the WebSocket it already holds. The library is the home's, shared
+by the household like Parts and page photos, so every command is open to every
+signed-in user, not only administrators. That is a deliberate choice with a
+cost worth knowing: a read hands out every URL, header and global in the
+house, and a test sends a request from Home Assistant to wherever the draft
+points, so any signed-in user can make Home Assistant send a request on its
+own network.
 
 Commands:
 
@@ -56,7 +60,6 @@ def async_register_http_actions_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_http_actions_test)
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command({vol.Required("type"): _CMD_GET})
 @callback
 def ws_http_actions_get(
@@ -84,7 +87,6 @@ def ws_http_actions_get(
     connection.send_result(msg["id"], result)
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_SAVE,
@@ -120,7 +122,6 @@ def ws_http_actions_save(
     connection.send_result(msg["id"], {"revision": revision})
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_TEST,

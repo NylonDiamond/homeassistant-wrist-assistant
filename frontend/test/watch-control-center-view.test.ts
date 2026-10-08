@@ -113,10 +113,10 @@ describe("the route and the button", () => {
     expect(watchControlCenterUrl(undefined, false, "/wrist-assistant/control-center/x")).toBe("/wrist-assistant");
   });
 
-  it("shows the button to an administrator with a watch", () => {
+  it("shows the button in a home with a watch, and not in one without", () => {
     const owners = [{ owner_watch_id: "w1", kind: "watch" }] as unknown as OwnerSummary[];
-    expect(flat(renderWatchControlCenterButton(HASS, owners, () => undefined))).toContain("Control Center");
-    expect(flat(renderWatchControlCenterButton({ ...HASS, user: { is_admin: false } }, owners, () => undefined))).toBe("");
+    expect(flat(renderWatchControlCenterButton(owners, () => undefined))).toContain("Control Center");
+    expect(flat(renderWatchControlCenterButton([], () => undefined))).toBe("");
   });
 });
 

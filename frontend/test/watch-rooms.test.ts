@@ -562,11 +562,10 @@ describe("the route and the button", () => {
     expect(watchRoomsUrl({ prefix: "/wa", path: "" }, true)).toBe("/wa/rooms");
   });
 
-  it("is drawn for an administrator in a home with a watch", () => {
+  it("is drawn in a home with a watch, and not in one without", () => {
     const watch = { owner_watch_id: "W1", device_kind: "watch" } as unknown as OwnerSummary;
-    const admin = { user: { is_admin: true } } as unknown as HassLike;
-    expect(flat(renderWatchRoomsButton(admin, [watch], () => undefined))).toContain("Rooms");
-    expect(renderWatchRoomsButton({ user: { is_admin: false } } as unknown as HassLike, [watch], () => undefined)).not.toHaveProperty("strings");
+    expect(flat(renderWatchRoomsButton([watch], () => undefined))).toContain("Rooms");
+    expect(renderWatchRoomsButton([], () => undefined)).not.toHaveProperty("strings");
   });
 });
 

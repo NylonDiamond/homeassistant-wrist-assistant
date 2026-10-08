@@ -705,7 +705,7 @@ export async function createWatchBehavior(
 // ── pairing a device ─────────────────────────────────────────────────────
 //
 // A watch, or an iPhone, asks Home Assistant for a pairing and shows a six
-// character code; an administrator types it into the "Pair a device" card.
+// character code; somebody signed in types it into the "Pair a device" card.
 // Or, for an iPhone, the card shows a QR code the phone scans. Plans: app
 // repo docs/pages_in_home_assistant_step4.md, 4c, and
 // docs/iphone_pairing_without_sign_in_2026-10.md, step 1.
@@ -974,6 +974,15 @@ export function pairUserIsAdmin(user: PairUserFacts): boolean {
   return user.is_owner === true || (user.group_ids ?? []).includes("system-admin");
 }
 
+/** Whether the person at the card may pair a device (or keep a certificate)
+ * for somebody else, and so is offered the "Whose watch is this?" menu. Only
+ * an administrator: the server refuses anyone else naming another user, and
+ * the list of people comes from `config/auth/list`, which Home Assistant
+ * keeps to administrators. Anyone else pairs for themselves, with no menu. */
+export function mayPairForOthers(user: { is_admin?: boolean } | undefined): boolean {
+  return user?.is_admin === true;
+}
+
 /** The people a device can be paired for: active users Home Assistant did
  * not make for itself (the server refuses the others), the administrator at
  * the card first as "Name (you)", then the rest by name. Each line ends with
@@ -1004,9 +1013,8 @@ export function pairDefaultUser(
   return choices.length === 1 ? choices[0]?.id : undefined;
 }
 
-/** The `user_id` the confirm sends: none for the administrator at the card,
- * which is the server's default and the only form an older integration
- * takes. */
+/** The `user_id` the confirm sends: none for the person at the card, which
+ * is the server's default and the only form an older integration takes. */
 export function pairUserToSend(picked: string | undefined, adminId: string | undefined): string | undefined {
   return picked === undefined || picked === adminId ? undefined : picked;
 }

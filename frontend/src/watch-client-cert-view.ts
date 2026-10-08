@@ -4,10 +4,11 @@
 // fingerprint, when, and from where) and uploads, replaces or removes it.
 //
 // The card is not about the watch on the page: one certificate per Home
-// Assistant user. It starts on the signed in administrator, and its "For"
-// menu, the same list of people as the pairing card's "Whose watch is
+// Assistant user. It starts on the signed in person. For an administrator its
+// "For" menu, the same list of people as the pairing card's "Whose watch is
 // this?", picks someone else, so a watch paired for a household member can
-// get one: that watch reads only its own user's certificate. It reads the
+// get one: that watch reads only its own user's certificate. Anyone else
+// gets no menu and keeps their own (`mayPairForOthers`). It reads the
 // chosen person's status once each time the page is opened or the person
 // changes, and never again until something here changes it. No polling.
 //
@@ -43,7 +44,7 @@ import {
   clientCertView,
   readFileAsBase64,
 } from "./watch-client-cert.js";
-import { PAIR_USER_PLACEHOLDER, type PairUserChoice, errorCode, pairUserChoices, pairUserToSend } from "./watch-settings.js";
+import { PAIR_USER_PLACEHOLDER, type PairUserChoice, errorCode, mayPairForOthers, pairUserChoices, pairUserToSend } from "./watch-settings.js";
 
 /** The card's mark and tint: neutral, it is not a setting of the watch. */
 const CERT_LOOK = { icon: "lock", color: SECTION_COLOR.place } as const;
@@ -76,19 +77,18 @@ export class ClientCertCard {
   private askRemove = false;
   /** An upload or removal just went through. */
   private done = false;
-  /** The people the "For" menu offers. Undefined until read, and when the
-   * list cannot be read: then there is no menu and the card is about the
-   * signed in administrator, as before the menu. */
+  /** The people the "For" menu offers. Undefined until read, for anyone but
+   * an administrator, and when the list cannot be read: then there is no
+   * menu and the card is about the signed in person, as before the menu. */
   private users?: readonly PairUserChoice[];
-  /** Whose certificate the card shows. Starts on the signed in
-   * administrator. */
+  /** Whose certificate the card shows. Starts on the signed in person. */
   private userId?: string;
 
   /** `update` asks the page to draw again. */
   constructor(private readonly update: () => void) {}
 
-  /** The page has come on screen: start afresh on the signed in
-   * administrator, read the people for the menu, and read the status once. */
+  /** The page has come on screen: start afresh on the signed in person, read
+   * the people for the menu, and read the status once. */
   open(hass: HassLike): void {
     this.hass = hass;
     this.visit++;
@@ -102,22 +102,23 @@ export class ClientCertCard {
     void this.read();
   }
 
-  /** The `user_id` the commands send: none for the administrator at the
-   * card, the server's default. */
+  /** The `user_id` the commands send: none for the person at the card, the
+   * server's default. */
   private userToSend(): string | undefined {
     return pairUserToSend(this.userId, this.hass?.user?.id);
   }
 
-  /** The chosen person by name when it is not the administrator at the card. */
+  /** The chosen person by name when it is not the person at the card. */
   private otherName(): string | undefined {
     return clientCertOtherName(this.users, this.userId, this.hass?.user?.id);
   }
 
   /** The people the menu offers, the same list the pairing card's menu
-   * shows. A list that cannot be read leaves the menu out. */
+   * shows. Only an administrator reads one; for anyone else, or a list that
+   * cannot be read, the menu is left out. */
   private async readUsers(): Promise<void> {
     const hass = this.hass;
-    if (!hass) return;
+    if (!hass || !mayPairForOthers(hass.user)) return;
     const visit = this.visit;
     let users: readonly PairUserChoice[] | undefined;
     try {
@@ -299,9 +300,10 @@ export class ClientCertCard {
     </section>`;
   }
 
-  /** "For": whose certificate the card shows, the people the pairing card
-   * offers, starting on the administrator at the card. Left out with one
-   * person to choose from, or when the list could not be read. Kept outside
+  /** "For", for an administrator: whose certificate the card shows, the
+   * people the pairing card offers, starting on the administrator at the
+   * card. Left out for anyone else, with one person to choose from, or when
+   * the list could not be read. Kept outside
    * the body so a person whose status cannot be read can be swapped for
    * another. */
   private renderUserMenu() {

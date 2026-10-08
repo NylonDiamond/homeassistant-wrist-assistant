@@ -8,9 +8,10 @@ here: the notification crop and its ``open_zoomed`` flag
 the phone's signed v2 ops did (``camera_devices``, ``set_snapshot_crop``,
 ``get_snapshot_crop``, ``snapshot_crops_status``, ``set_stream_entity``,
 ``get_stream_entity`` and ``send_test_notification``), over the WebSocket the
-panel already holds, as the logged in admin. Every command is admin only, like
-the rest of the panel: a crop changes what every alert of a camera shows, and
-a test sends a real alert.
+panel already holds, as the signed-in user. A camera's framing is the home's,
+not one person's, so every signed-in user may read and change it, the way any
+household member could from their phone before. A test sends a real alert,
+but only to the caller's own devices (see ``ws_cameras_test``).
 
 Commands:
 
@@ -115,7 +116,6 @@ def _state_name(state: Any) -> str:
     return state.entity_id
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command({vol.Required("type"): _CMD_LIST})
 @callback
 def ws_cameras_list(
@@ -216,7 +216,6 @@ def _parse_viewport(raw: Any) -> ViewportState:
     )
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_SAVE,
@@ -301,7 +300,6 @@ def ws_cameras_save(
 # ── test ─────────────────────────────────────────────────────────────────
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_TEST,

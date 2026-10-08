@@ -136,7 +136,7 @@ describe("the watch screens under the row", () => {
     expect(row).toContain("onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },");
     expect(row).toContain("onPick: (watchId) => this.pickWatch(watchId),");
     expect(row).toContain("watch: this.sharedWatch,");
-    expect(row).toContain("admin: this.hass.user?.is_admin === true,");
+    expect(row).not.toContain("admin");
   });
 
   it("makes a watch paired in Watch settings the shared one", () => {
@@ -172,14 +172,14 @@ describe("the Settings page", () => {
   it("is a watch screen under the row, drawn by the panel", () => {
     expect(method("  private renderTab() {")).toContain("if (isWatchSettingsRoute(this.route)) return this.withWatchRow(this.renderSettingsPage());");
     const page = method("  private renderSettingsPage() {");
-    expect(page).toContain("if (this.hass.user?.is_admin !== true) {");
+    expect(page).not.toContain("is_admin");
     expect(page).toContain("if (!this.linkReady && this.owners.length === 0) {");
     expect(page).toContain("return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow, width: this.panelWidth });");
   });
 
-  it("follows the shared watch on every draw for an administrator, once the devices are in, and leaves on any other route", () => {
+  it("follows the shared watch on every draw, once the devices are in, and leaves on any other route", () => {
     const will = method("  protected override willUpdate(changed");
-    expect(will).toContain("if (isWatchSettingsRoute(this.route) && this.hass?.user?.is_admin === true) {");
+    expect(will).toContain("if (isWatchSettingsRoute(this.route)) {");
     expect(will).toContain("if (this.linkReady || this.owners.length > 0) this.watchSettings.show(this.hass, this.owners, this.sharedWatch);");
     expect(will).toContain("this.watchSettings.leave();");
   });

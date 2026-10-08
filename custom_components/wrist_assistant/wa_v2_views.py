@@ -3,7 +3,7 @@
 The watch app no longer carries an HA bearer token. Every request from the
 watch is HMAC-signed using a per-watch secret registered with HA at pair-time.
 A pair comes from the iPhone's sign-in through `register_secret`
-(`WARegisterSecretView`), or from a code the watch shows and an admin confirms
+(`WARegisterSecretView`), or from a code the watch shows and a user confirms
 in the panel (`WAPairStartView`, then `pairing_ws.py`). Read-style responses
 are HMAC-signed back so a wrong host can't feed the watch forged data.
 
@@ -14,7 +14,7 @@ Endpoints registered here:
   `POST /api/wrist_assistant/v2/pair/redeem` (no auth): the ways a pair
   starts. All check the fields with `validate_pair_fields`. A sealed code
   pairing fetches its secret from `POST /api/wrist_assistant/v2/pair/status`
-  (no auth) once an admin confirms it.
+  (no auth) once a user confirms it.
 
 * `POST /api/wrist_assistant/v2/action` — small JSON ops dispatched by
   `X-WA-Op`. Vocabulary covers services, single-entity reads, batch reads,
@@ -398,7 +398,7 @@ def _log_signed_request_rejected(
 
     A known watch pairing again by code polls ``verify_identity`` with its
     new secret while Home Assistant still holds the old one, so every poll
-    fails ``bad_signature`` until an admin confirms the code. Those failures
+    fails ``bad_signature`` until a user confirms the code. Those failures
     are the pairing working, not a fault; a row for each, every few seconds,
     would bury the Logbook. While the watch id has a pending request it is
     treated as unknown, which ``log_hmac_failure`` never logs.
@@ -2937,13 +2937,13 @@ class WAPairStartView(HomeAssistantView):
       The device learns of the confirm by polling `verify_identity` with
       it, which answers 401 until then.
 
-    The reply is a six-character code for an admin to type into the panel,
+    The reply is a six-character code for a user to type into the panel,
     with `server_time` (Unix seconds, on every reply, the 429 too) so a
     device whose secret then fails `verify_identity` can tell a clock off by
     more than the signing window from a refusal. This view only stores the
     request: it writes nothing to the secret
     store, touches no device and logs nothing to the Logbook, so nothing
-    signs until an admin confirms it (`pairing_ws.py`).
+    signs until a user confirms it (`pairing_ws.py`).
 
     Requests last ten minutes, one per device (a new start replaces the old
     one), at most four per address and 64 in all wait at once; past either
@@ -2953,7 +2953,7 @@ class WAPairStartView(HomeAssistantView):
     no sign-in and anyone who saw the id could otherwise throw the box away
     (`PairRequestStore.start`). The address is kept for the panel's lookup, with
     whether it is outside the home network (or came through Home Assistant
-    Cloud), in which case the confirm needs the admin's `allow_remote`.
+    Cloud), in which case the confirm needs the user's `allow_remote`.
     """
 
     url = "/api/wrist_assistant/v2/pair/start"
@@ -3051,7 +3051,7 @@ class WAPairStatusView(HomeAssistantView):
 
     Body `{"watch_id"}`. Answers 200 with one of:
 
-    * `{"state": "pending"}`: the code still waits for an admin.
+    * `{"state": "pending"}`: the code still waits to be confirmed.
     * `{"state": "confirmed", "server_public_key_b64", "nonce", "box"}`: the
       secret, sealed to the device's X25519 public key
       (`sealed_box.seal_pair_secret`). Kept for ten minutes after the
@@ -3219,8 +3219,9 @@ class WAPairRedeemView(HomeAssistantView):
 
         # The QR code is not tied to a device id; the phone names its own. So
         # an id that is already here is only taken over when it is an iPhone
-        # and the admin meant it: the same person's iPhone pairing again, or
-        # any other with Replace ticked. Replace means "this iPhone was paired
+        # and the offer allows it: the same person's iPhone pairing again, or
+        # any other with Replace ticked (only an admin may tick it, see
+        # `pairing_ws.ws_pair_offer`). Replace means "this iPhone was paired
         # for someone else", never "any device", so a watch is refused even
         # then; it would be re-keyed and turned into an iPhone.
         existing = secret_store.get(device_id)
@@ -4034,17 +4035,22 @@ _HAND_OVER_MAX_SEALED_BOX_CHARS = 4 * -(-(_HAND_OVER_MAX_BODY_BYTES + 16) // 3)
 _HAND_OVER_MAX_SEALED_BODY_BYTES = _HAND_OVER_MAX_SEALED_BOX_CHARS + 1024
 
 
-async def _async_bound_user_is_admin(ctx: _OpContext) -> bool:
-    """Whether the device's bound user is an active Home Assistant admin
-    (the owner, or a member of the admin group).
+async def _async_bound_user_is_active(ctx: _OpContext) -> bool:
+    """Whether the device is bound to an active Home Assistant user, admin
+    or not.
 
-    An unbound entry has no user to vouch for it and is not an admin. The
+    An unbound entry has no user to vouch for it, and a user who was deleted
+    or deactivated vouches for nothing either. Neither may hand over. The
     lookup is an in-memory dictionary read, not I/O.
     """
     if ctx.user_id is None:
         return False
     user = await ctx.hass.auth.async_get_user(ctx.user_id)
-    return user is not None and user.is_active and user.is_admin
+    return (
+        user is not None
+        and user.is_active
+        and not getattr(user, "system_generated", False)
+    )
 
 
 async def _op_http_actions_hand_over(ctx: _OpContext) -> Response:
@@ -4057,7 +4063,7 @@ async def _op_http_actions_hand_over(ctx: _OpContext) -> Response:
            ``sealed`` key is always read sealed.
     Reply: {"ok": true, "revision": <int>, "added": <actions added>}
     Refusal: signed 403 {"ok": false, "error": "forbidden", "message"} when
-             the device's bound user is not an active admin; signed 400
+             the device is bound to no active user; signed 400
              "invalid" for a plain body or a sealed plaintext over 256 KiB
              (a sealed body may be larger by its base64 and envelope), a
              sealed box that is malformed or does not open, a plaintext that
@@ -4067,9 +4073,13 @@ async def _op_http_actions_hand_over(ctx: _OpContext) -> Response:
     The seal keeps the library's globals (tokens, passwords in headers)
     out of anything that logs or caches the request body on the way.
 
-    Only an admin's device may hand over: the library's globals are sent
-    raw by Home Assistant from its own network, so whoever adds an action
-    decides where they go. The owner is the signing id: the phone signs as
+    Any device bound to an active user may hand over, admin or not. The
+    library's globals are sent raw by Home Assistant from its own network,
+    so whoever adds an action decides where they go; but the panel's HTTP
+    actions screen lets every signed-in user edit the same library
+    (``http_actions_ws.py``), so a hand-over grants nothing the user could
+    not do there. An unbound device has no user behind it and is still
+    refused. The owner is the signing id: the phone signs as
     its watch. A pure merge (``http_actions.merge_hand_over``): stored
     actions and globals are never changed, a clashing global comes in under
     a new key. A second hand-over from an owner already listed changes
@@ -4079,11 +4089,11 @@ async def _op_http_actions_hand_over(ctx: _OpContext) -> Response:
     store = getattr(ctx.domain_data, "http_actions_store", None)
     if store is None:
         return _http_actions_refusal(ctx, "unavailable", "integration not ready", 503)
-    if not await _async_bound_user_is_admin(ctx):
+    if not await _async_bound_user_is_active(ctx):
         return _http_actions_refusal(
             ctx,
             "forbidden",
-            "only a device paired by a Home Assistant administrator can hand over HTTP actions",
+            "only a device paired to an active Home Assistant user can hand over HTTP actions",
             403,
         )
     too_large = f"the library is over {_HAND_OVER_MAX_BODY_BYTES} bytes"
@@ -4135,8 +4145,8 @@ async def _op_http_actions_get(ctx: _OpContext) -> Response:
     library, which no device is sent. ``document`` is left out when
     ``since_revision`` is the stored revision, and at revision 0 (``hash``
     then null). ``handed_over`` says whether the signer's phone has given
-    its library, and ``can_hand_over`` whether it may (its bound user is an
-    active admin), so a phone that may not stops asking. A reply about a
+    its library, and ``can_hand_over`` whether it may (it is bound to an
+    active user), so a phone that may not stops asking. A reply about a
     stored revision marks it delivered for the signer, which the panel's
     Home reads.
     """
@@ -4157,7 +4167,7 @@ async def _op_http_actions_get(ctx: _OpContext) -> Response:
         "revision": revision,
         "hash": digest,
         "handed_over": store.has_handed_over(ctx.watch_id),
-        "can_hand_over": await _async_bound_user_is_admin(ctx),
+        "can_hand_over": await _async_bound_user_is_active(ctx),
     }
     if listed is not None and since != revision:
         reply["document"] = listed

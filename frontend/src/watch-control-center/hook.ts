@@ -99,10 +99,10 @@ function loadControlCenterEditor(): Promise<void> {
   return loading;
 }
 
-/** The top bar's way in, after Status pages. Administrators only, in a home
- * with a watch, as for those. */
-export function renderWatchControlCenterButton(hass: HassLike, owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
-  if (!hass.user?.is_admin || settingsWatches(owners).length === 0) return nothing;
+/** The top bar's way in, after Status pages. Only in a home with a watch, as
+ * for those. */
+export function renderWatchControlCenterButton(owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
+  if (settingsWatches(owners).length === 0) return nothing;
   return html`<button class="tb-btn tb-control-center" title="The entities the watch's Control Center controls offer"
     @click=${open}>${uiIcon("grid")}<span>Control Center</span></button>`;
 }

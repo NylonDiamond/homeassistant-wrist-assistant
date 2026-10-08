@@ -338,7 +338,9 @@ export async function fetchWatchStatus(hass: HassLike, owner: string) {
 
 /** Give one device the name Home Assistant shows for it, the same rename as
  * on its page in Settings, Devices. Null drops the rename, so the name the
- * device reports shows again. Admin only, as the registry commands are. */
+ * device reports shows again. Admin only: Home Assistant core keeps
+ * `config/device_registry/update` to administrators, so the panel offers
+ * Rename to administrators alone. */
 export async function renameDevice(hass: HassLike, watchId: string, name: string | null) {
   const devices = await hass.connection.sendMessagePromise<{ id: string; identifiers: [string, string][] }[]>({
     type: "config/device_registry/list",
@@ -566,22 +568,25 @@ export interface HaUser {
   group_ids?: string[];
 }
 
-/** Every Home Assistant user. Home Assistant's own command, admin only. */
+/** Every Home Assistant user. Home Assistant's own command, admin only, so
+ * only asked for an administrator (`mayPairForOthers`). */
 export async function listHaUsers(hass: HassLike) {
   return hass.connection.sendMessagePromise<HaUser[]>({ type: "config/auth/list" });
 }
 
-/** Find the pairing request a watch shows `code` for. Admin only. An
+/** Find the pairing request a watch shows `code` for. Open to anyone signed
+ * in. An
  * unknown or expired code answers `{found: false}`, not an error. */
 export async function lookupPairCode(hass: HassLike, code: string) {
   return hass.connection.sendMessagePromise<PairLookup>({ type: `${PAIR}/lookup`, code });
 }
 
 /** Pair the device that shows `code`, for the Home Assistant user `userId`,
- * or for the signed in administrator when it is undefined (the only form an
- * integration from before the choice accepts). `replace` and `allowRemote`
- * are the card's ticked boxes, sent only when ticked so an older integration
- * never sees a key it does not know. A refusal rejects with a WebSocket error
+ * or for the signed in person when it is undefined (the only form an
+ * integration from before the choice accepts). Naming another user is for
+ * administrators only: anyone else is refused `unauthorized`. `replace` and
+ * `allowRemote` are the card's ticked boxes, sent only when ticked so an
+ * older integration never sees a key it does not know. A refusal rejects with a WebSocket error
  * whose `code` is `unknown_code` (unknown or expired), `unavailable` (the
  * integration is not ready), `invalid_user` (no such user, a deactivated
  * one, or one Home Assistant made for itself), `needs_replace` (the device
@@ -624,8 +629,9 @@ export interface PairOfferStatus {
 }
 
 /** Make a QR code an iPhone can pair with, for `userId` (the signed in
- * administrator when undefined). `replace` lets it take over an iPhone
- * paired for another user. Admin only. An integration from before QR
+ * person when undefined). `replace` lets it take over an iPhone paired for
+ * another user. Open to anyone signed in, but naming another user is for
+ * administrators only (`unauthorized`). An integration from before QR
  * pairing rejects with `unknown_command`. */
 export async function offerPairQr(hass: HassLike, userId?: string, replace = false) {
   return hass.connection.sendMessagePromise<PairOffer>({
@@ -690,7 +696,7 @@ export async function deleteClientCertificate(hass: HassLike, userId?: string) {
 
 const WC = "wrist_assistant/watch_config";
 
-/** Admin only. */
+/** For a watch the server lists for the signed in person. */
 export async function fetchWatchConfig(hass: HassLike, owner: string, kind: WatchConfigKind) {
   return hass.connection.sendMessagePromise<WatchConfigRecord>({ type: `${WC}/get`, owner_watch_id: owner, kind });
 }
@@ -716,7 +722,7 @@ export interface WatchConfigSummary {
   http_actions?: HttpActionsDelivery;
 }
 
-/** Admin only. One answer for every watch, no documents: what Home asks in
+/** One answer for every watch the signed in person may manage, no documents: what Home asks in
  * place of a read per kind per watch. An integration older than the command
  * rejects with the code `unknown_command`. */
 export async function fetchWatchConfigSummary(hass: HassLike) {
@@ -724,7 +730,7 @@ export async function fetchWatchConfigSummary(hass: HassLike) {
 }
 
 /** Save one watch's config of one kind, compare-and-swap on `baseRevision`.
- * Admin only. A record has three parties: the iPhone mirror writes it, the
+ * For a watch the signed in person may manage. A record has three parties: the iPhone mirror writes it, the
  * panel writes it here, and the watch reads it with its own signed pull. A
  * refusal rejects with a WebSocket error whose `code` is `conflict` (someone
  * saved since; the message starts "stored revision is N"), `no_record`
@@ -760,7 +766,7 @@ export interface WatchConfigHistoryEntry {
   size: number;
 }
 
-/** The kept earlier saves of one kind, newest first. Admin only. An
+/** The kept earlier saves of one kind, newest first. An
  * integration older than the command rejects with code `unknown_command`. */
 export async function fetchWatchConfigHistory(hass: HassLike, owner: string, kind: WatchConfigKind) {
   return hass.connection.sendMessagePromise<{ entries: WatchConfigHistoryEntry[] }>({
@@ -770,7 +776,7 @@ export async function fetchWatchConfigHistory(hass: HassLike, owner: string, kin
   });
 }
 
-/** One earlier save with its document. Admin only. Rejects with `not_found`
+/** One earlier save with its document. Rejects with `not_found`
  * when the store no longer keeps that revision. */
 export async function fetchWatchConfigHistoryEntry(hass: HassLike, owner: string, kind: WatchConfigKind, revision: number) {
   return hass.connection.sendMessagePromise<{
@@ -785,7 +791,7 @@ export async function fetchWatchConfigHistoryEntry(hass: HassLike, owner: string
 /** Save an earlier revision again as a new revision, by `panel`. The same
  * conflict rule and shape guard as a save: `baseRevision` is the revision on
  * screen, so a save that landed since comes back as `conflict`, and a
- * revision the store no longer keeps as `not_found`. Admin only. */
+ * revision the store no longer keeps as `not_found`. */
 export async function restoreWatchConfig(
   hass: HassLike,
   owner: string,
@@ -852,8 +858,8 @@ export interface HttpActionsRecord extends HttpActionsDelivery {
   document?: HttpActionsDocument;
 }
 
-/** Admin only. An integration older than the library rejects with the code
- * `unknown_command`. */
+/** The home's shared library, open to anyone signed in. An integration
+ * older than the library rejects with the code `unknown_command`. */
 export async function fetchHttpActions(hass: HassLike) {
   return hass.connection.sendMessagePromise<HttpActionsRecord>({ type: `${HA_ACTIONS}/get` });
 }
@@ -861,7 +867,7 @@ export async function fetchHttpActions(hass: HassLike) {
 /** Save the library, compare-and-swap on `baseRevision` (0 creates it). A
  * refusal rejects with a WebSocket error whose `code` is `conflict` (the
  * message starts "stored revision is N"), `invalid` (the message says what)
- * or `unavailable`. Admin only. */
+ * or `unavailable`. */
 export async function saveHttpActions(hass: HassLike, baseRevision: number, document: HttpActionsDocument) {
   return hass.connection.sendMessagePromise<{ revision: number }>({
     type: `${HA_ACTIONS}/save`,
@@ -902,7 +908,7 @@ export interface HttpActionTestReply {
 }
 
 /** Send one action from Home Assistant without saving it: the draft action,
- * the draft globals, and a value for each prompt by key. Admin only. */
+ * the draft globals, and a value for each prompt by key. */
 export async function testHttpAction(
   hass: HassLike,
   action: Record<string, unknown>,
@@ -942,7 +948,7 @@ export interface CameraFraming {
   stream_choices: string[];
 }
 
-/** Every camera in the home with its framing. Admin only. An integration
+/** Every camera in the home with its framing. An integration
  * older than the command rejects with the code `unknown_command`. */
 export async function fetchCameras(hass: HassLike) {
   return hass.connection.sendMessagePromise<{ cameras: CameraFraming[] }>({ type: `${CAMERAS}/list` });
@@ -959,7 +965,7 @@ export interface CameraFramingSave {
 }
 
 /** Save one camera's framing. Rejects with a WebSocket error whose code is
- * `invalid`, `unavailable` or `failed`. Admin only. */
+ * `invalid`, `unavailable` or `failed`. */
 export async function saveCameraFraming(hass: HassLike, save: CameraFramingSave) {
   return hass.connection.sendMessagePromise<{ ok: true; count: number }>({ type: `${CAMERAS}/save`, ...save });
 }
@@ -973,7 +979,7 @@ export interface CameraTestReply {
 }
 
 /** Send a real alert with this camera's picture to the signed in person's
- * devices. Admin only. */
+ * devices. */
 export async function sendCameraTest(hass: HassLike, camera: string, title?: string, message?: string) {
   return hass.connection.sendMessagePromise<CameraTestReply>({
     type: `${CAMERAS}/test`,
@@ -986,7 +992,7 @@ export async function sendCameraTest(hass: HassLike, camera: string, title?: str
 /** The voices a watch reported it has installed (`watch_voices_put`), for
  * the voice editor's Watch voice picker: each `{id, name, language,
  * quality}`, and when they came (null when the watch never sent any). Not a
- * watch config record: no revision, no history. Admin only. An integration
+ * watch config record: no revision, no history. An integration
  * older than it does not know the command. */
 export async function fetchWatchVoices(hass: HassLike, watchId: string) {
   return hass.connection.sendMessagePromise<{
@@ -1017,14 +1023,14 @@ export interface PageImageEntry {
 }
 
 /** The built-in photos in the phone's order, then the library, newest
- * first. Admin only. An integration older than the photo store rejects with
+ * first. An integration older than the photo store rejects with
  * the code `unknown_command`. */
 export async function listPageImages(hass: HassLike) {
   return hass.connection.sendMessagePromise<{ presets: PageImagePreset[]; images: PageImageEntry[] }>({ type: `${PAGE_IMAGES}/list` });
 }
 
 /** One photo's JPEG as base64. Built-in ids work too. Refused `not_found`
- * when the store has no such photo. Admin only. */
+ * when the store has no such photo. */
 export async function fetchPageImage(hass: HassLike, imageId: string) {
   return hass.connection.sendMessagePromise<{ image_id: string; content_type: string; data: string }>({
     type: `${PAGE_IMAGES}/get`,
@@ -1034,7 +1040,7 @@ export async function fetchPageImage(hass: HassLike, imageId: string) {
 
 /** Store a JPEG (base64). The reply names the new photo, or the stored one
  * with the same bytes. Refusals: `invalid`, `too_large`, `full`,
- * `unavailable`. Admin only. */
+ * `unavailable`. */
 export async function uploadPageImage(hass: HassLike, data: string) {
   return hass.connection.sendMessagePromise<{ image_id: string; width: number; height: number; bytes: number }>({
     type: `${PAGE_IMAGES}/upload`,
@@ -1043,12 +1049,13 @@ export async function uploadPageImage(hass: HassLike, data: string) {
 }
 
 /** Delete a photo of the library. Refused `in_use` while a saved page names
- * it, `invalid` for a built-in id. Admin only. */
+ * it, `invalid` for a built-in id. */
 export async function deletePageImage(hass: HassLike, imageId: string) {
   return hass.connection.sendMessagePromise<unknown>({ type: `${PAGE_IMAGES}/delete`, image_id: imageId });
 }
 
-/** Hand every live record of one watch to another watch. Admin only. */
+/** Hand every live record of one watch to another watch, both ones the
+ * signed in person may manage. */
 export async function moveOwner(hass: HassLike, source: string, target: string) {
   return hass.connection.sendMessagePromise<{
     records: ComplicationRecord[];
@@ -1096,7 +1103,8 @@ export interface HassConfigEntry {
 /** Home Assistant's own config entries of one integration, in any state.
  * Asked by `domain` alone: adding `type_filter` hides entries Home
  * Assistant files under another type (measured on 2026.9: Music Assistant's
- * one entry came back only without it). Admin only. */
+ * one entry came back only without it). Open to every user in Home
+ * Assistant core, unlike the registry update (`renameDevice`). */
 export async function fetchConfigEntries(hass: HassLike, domain: string): Promise<HassConfigEntry[]> {
   return hass.connection.sendMessagePromise<HassConfigEntry[]>({ type: "config_entries/get", domain });
 }

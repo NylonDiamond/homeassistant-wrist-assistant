@@ -73,6 +73,7 @@ import {
   PAIR_REPLACE_LABEL,
   PAIR_SHOW_QR_TEXT,
   PAIR_USER_PLACEHOLDER,
+  mayPairForOthers,
   pairCanConfirm,
   pairChecksNeeded,
   pairCountdownText,
@@ -613,6 +614,13 @@ describe("pairing a watch by its code", () => {
     expect(pairUserTitle("iphone")).toBe("Whose iPhone is this?");
     expect(pairUserHint("iphone")).toBe("The iPhone runs with this person's rights.");
     expect(PAIR_USER_PLACEHOLDER).toBe("Choose a person");
+  });
+
+  it("lets only an administrator pair for somebody else; anyone else pairs for themselves", () => {
+    expect(mayPairForOthers({ is_admin: true })).toBe(true);
+    expect(mayPairForOthers({ is_admin: false })).toBe(false);
+    expect(mayPairForOthers({})).toBe(false);
+    expect(mayPairForOthers(undefined)).toBe(false);
   });
 
   it("counts the owner and the administrators group as Admin, everyone else as User", () => {

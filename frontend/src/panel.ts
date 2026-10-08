@@ -1569,8 +1569,8 @@ export class WristAssistantPanel extends LitElement {
    * "Open a watch app page" tap-action picker. */
   @state() private pages: { id: string; name: string }[] = [];
   /** The home's HTTP action library (`watch-pages/http-library.ts`), for the
-   * "Run an HTTP action" pick list. Read for an administrator with the
-   * complication list; undefined before that and with an integration older
+   * "Run an HTTP action" pick list. Read with the complication list;
+   * undefined before that and with an integration older
    * than the library. */
   @state() private httpLibrary?: WatchHttpLibrary;
   private httpLibraryRun = 0;
@@ -6419,7 +6419,7 @@ export class WristAssistantPanel extends LitElement {
     // reads again on the way back to it. Not before the device list is in,
     // so a home with watches never shows the "no watch" card first. Any
     // other route takes it off the screen; its edits stay kept.
-    if (isWatchSettingsRoute(this.route) && this.hass?.user?.is_admin === true) {
+    if (isWatchSettingsRoute(this.route)) {
       if (this.linkReady || this.owners.length > 0) this.watchSettings.show(this.hass, this.owners, this.sharedWatch);
     } else {
       this.watchSettings.leave();
@@ -6865,7 +6865,7 @@ export class WristAssistantPanel extends LitElement {
   // ── data loading ──────────────────────────────────────────────────────
 
   private get canEdit(): boolean {
-    return !!this.hass.user?.is_admin && !this.readOnlyReason && !!this.draft;
+    return !this.readOnlyReason && !!this.draft;
   }
 
   private async loadOwners() {
@@ -7011,7 +7011,7 @@ export class WristAssistantPanel extends LitElement {
       this.occupied = reply.occupied
         ?? this.presets.map((p): OccupiedSlot => ({ slot: p.slot, name: p.name, kind: "preset", home: "" }));
       this.pages = reply.pages ?? [];
-      if (this.hass.user?.is_admin) void this.loadHttpLibrary();
+      void this.loadHttpLibrary();
       this.serverToken = reply.token;
       this.appliedToken = reply.applied_token ?? undefined;
       this.pendingChanges = typeof reply.pending_changes === "number" ? reply.pending_changes : undefined;
@@ -7400,7 +7400,7 @@ export class WristAssistantPanel extends LitElement {
    * face is already drawing goes on drawing.
    */
   private async fixSeatClashes() {
-    if (!this.hass.user?.is_admin || this.saving) return;
+    if (this.saving) return;
     this.saving = true;
     this.saveError = undefined;
     this.copyStatus = undefined;
@@ -9730,7 +9730,7 @@ export class WristAssistantPanel extends LitElement {
       ["Values on the watch", "Every entity and shared value the complication reads, with its live reading. Slide, pick or type another value to watch the preview and the states react. The bar then reads Testing, in amber, while the watch keeps showing the live value. Nothing is saved, and Reset to live returns to the real reading."],
     ];
     const saving: [string, string][] = [
-      ["Save", `Writes the complication to Home Assistant (${m}S). It is dimmed while there is nothing to save. Only an administrator can save. Nothing saves by itself.`],
+      ["Save", `Writes the complication to Home Assistant (${m}S). It is dimmed while there is nothing to save. Nothing saves by itself.`],
       ["Unassigned", "A design made with no device ticked is kept as unassigned. Nothing shows it until a copy of it goes on a device."],
       ["Saved", "Beside Save: when this complication was last saved, or Not saved yet. The footer says whether there are unsaved changes."],
       ["Reaching the watch", "The watch pulls saved changes by itself while Wrist Assistant is open on this home. There is no separate send step."],
@@ -10710,7 +10710,6 @@ export class WristAssistantPanel extends LitElement {
   override render() {
     const bar = renderTabBar({
       route: this.route,
-      admin: this.hass.user?.is_admin === true,
       menu: this.narrow || this.hass.dockedSidebar === "always_hidden",
       onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
       onTab: (tab) => this.openTab(tab),
@@ -10784,7 +10783,6 @@ export class WristAssistantPanel extends LitElement {
       watch: this.sharedWatch,
       loaded: this.linkReady || this.owners.length > 0,
       menuOpen: this.watchRowMenu,
-      admin: this.hass.user?.is_admin === true,
       onMenu: (open) => this.toggleWatchRowMenu(open),
       onPick: (watchId) => this.pickWatch(watchId),
       onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
@@ -10798,13 +10796,9 @@ export class WristAssistantPanel extends LitElement {
    * of the new tab straight after (a dialog opened on it) finds the tab
    * already drawn. Home Assistant then hands over the same route.
    */
-  /** The Settings page's body, under the row: the settings for an
-   * administrator, once the device list is in. Anyone else is told whose
-   * they are, as every setting is an administrator's command. */
+  /** The Settings page's body, under the row: the settings, once the device
+   * list is in. */
   private renderSettingsPage() {
-    if (this.hass.user?.is_admin !== true) {
-      return html`<div class="ws-page"><div class="ws-cols one"><p class="home-empty">Watch settings are for administrators of this Home Assistant.</p></div></div>`;
-    }
     if (!this.linkReady && this.owners.length === 0) {
       return html`<div class="ws-page"><div class="ws-cols one"><p class="home-empty">Loading…</p></div></div>`;
     }
@@ -10944,7 +10938,7 @@ export class WristAssistantPanel extends LitElement {
           ? html`<button class="link" ?disabled=${this.splitNotice.busy} @click=${this.splitNotice.undo}>Undo</button>`
           : nothing}
         <button class="link" @click=${() => { this.splitNotice = undefined; }}>Dismiss</button></div>` : nothing}
-      ${this.seatClash && this.hass.user?.is_admin ? html`<div class="banner warn link-note"><span>${this.seatClash}</span>
+      ${this.seatClash ? html`<div class="banner warn link-note"><span>${this.seatClash}</span>
         <button class="link" ?disabled=${this.saving} @click=${() => void this.fixSeatClashes()}>Fix</button></div>` : nothing}
       ${this.helpOpen ? this.renderHelpDialog() : nothing}
       ${this.newOpen ? this.renderNewDialog() : nothing}
@@ -11015,7 +11009,7 @@ export class WristAssistantPanel extends LitElement {
     return html`<header class=${stacked ? "stacked" : nothing}>
       ${open ? this.renderBackToList() : nothing}
       ${open ? this.renderPicker() : nothing}
-      ${open && (this.hass.user?.is_admin || d) ? html`<span class="tb-div" aria-hidden="true"></span>` : nothing}
+      ${open ? html`<span class="tb-div" aria-hidden="true"></span>` : nothing}
       ${open ? this.renderNewButton() : nothing}
       ${open ? this.renderImportButton() : nothing}
       ${d ? this.renderShareButton() : nothing}
@@ -11098,12 +11092,10 @@ export class WristAssistantPanel extends LitElement {
    * integration older than that command is read the old way, one read per
    * kind per watch. Any other failure leaves the card as it was: on
    * complications alone the first time, on the last reading after that.
-   * Only an administrator can read the records, so anyone else's card stays
-   * on complications alone. Without `again`, nothing is read when the same
-   * watches were read already.
+   * Without `again`, nothing is read when the same watches were read
+   * already.
    */
   private async loadWatchAppSync(again: boolean) {
-    if (this.hass?.user?.is_admin !== true) return;
     const watches = settingsWatches(this.owners).map((w) => w.owner_watch_id);
     const key = watchAppSyncKey(watches);
     if (!again && key === this.watchAppSyncFor) return;
@@ -11187,11 +11179,10 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
-  /** New, beside Browse, for an administrator: making one should not need
-   * the list opened first. The picker's foot keeps its own New too. A full
-   * device keeps the button but disables it, and the tooltip says why. */
+  /** New, beside Browse: making one should not need the list opened first.
+   * The picker's foot keeps its own New too. A full device keeps the button
+   * but disables it, and the tooltip says why. */
   private renderNewButton() {
-    if (!this.hass.user?.is_admin) return nothing;
     const full = this.freeSlot() < 0;
     const where = isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : this.deviceWord;
     return html`<button class="tb-btn tb-new" aria-haspopup="dialog" ?disabled=${full || this.ownerBusy}
@@ -11199,10 +11190,9 @@ export class WristAssistantPanel extends LitElement {
       @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>`;
   }
 
-  /** Import, beside New, for an administrator. A full device keeps the
-   * button but disables it, and the tooltip says why. */
+  /** Import, beside New. A full device keeps the button but disables it, and
+   * the tooltip says why. */
   private renderImportButton() {
-    if (!this.hass.user?.is_admin) return nothing;
     const full = this.freeSlot() < 0;
     const where = isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : this.deviceWord;
     return html`<button class="tb-btn tb-import" aria-haspopup="dialog" ?disabled=${full}
@@ -11211,12 +11201,11 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The ··· menu: the two nudges that ask a device to pull again. Both are for
-   * an administrator, and only one applies at a time; with neither there is
-   * no menu at all rather than an empty one.
+   * The ··· menu: the two nudges that ask a device to pull again. Only one
+   * applies at a time; with neither there is no menu at all rather than an
+   * empty one.
    */
   private renderTopMenu() {
-    if (!this.hass.user?.is_admin) return nothing;
     const info = this.sendInfo();
     if (!info?.d.resend && !info?.d.refresh) return nothing;
     const open = this.sideMenu === "top";
@@ -11612,7 +11601,6 @@ export class WristAssistantPanel extends LitElement {
   /** Take a card picture for a record the grid had to draw live, once per
    * revision per visit, behind any other such picture still being taken. */
   private queueCardPreview(ownerId: string, record: ComplicationRecord, cfg: CustomComplicationConfig) {
-    if (!this.hass.user?.is_admin) return;
     const key = `${ownerId}|${record.id}|${record.revision}`;
     if (this.cardPreviewTried.has(key)) return;
     this.cardPreviewTried.add(key);
@@ -12244,8 +12232,7 @@ export class WristAssistantPanel extends LitElement {
   /**
    * The head's Device toggle: whether a card draws the device round the shape.
    *
-   * Offered to everybody, admin or not: it changes what a card looks like and
-   * writes nothing.
+   * It changes what a card looks like and writes nothing.
    */
   private renderPickerLook() {
     const bare = this.pickerBare;
@@ -12472,7 +12459,6 @@ export class WristAssistantPanel extends LitElement {
    * the hint and Back up all.
    */
   private renderPickerFoot(page = false) {
-    if (!this.hass.user?.is_admin) return nothing;
     // The seats being counted are the edited device's: that is where New puts
     // a complication, and its dialog is where another device is chosen.
     const full = this.freeSlot() < 0;
@@ -12511,10 +12497,8 @@ export class WristAssistantPanel extends LitElement {
   // that could drift from the first. One that fails stops the rest and says
   // so, rather than reporting twenty failures of the same cause.
 
-  /** The head's Select toggle. Admins only, because every act on the bar is a
-   * write and a reader has none of them. */
+  /** The head's Select toggle. */
   private renderPickerSelect() {
-    if (!this.hass.user?.is_admin) return nothing;
     const on = this.pickerSelecting;
     return html`<button type="button" class="pk-pick-btn ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
       title=${on ? "Back to opening one card at a time" : "Pick several cards and act on them together"}
@@ -12583,7 +12567,6 @@ export class WristAssistantPanel extends LitElement {
    * where they were and nothing moves when picking is turned on.
    */
   private renderPickerBar() {
-    if (!this.hass.user?.is_admin) return nothing;
     const n = this.pickerPicked.length;
     const shown = this.pickerShown;
     const allShown = shown.length > 0 && shown.every((k) => this.pickerPicked.includes(k));
@@ -12658,7 +12641,7 @@ export class WristAssistantPanel extends LitElement {
    * not twenty pieces of news.
    */
   private async runBatch(doing: string, act: (at: { ownerId: string; id: string }) => Promise<void>) {
-    if (!this.hass.user?.is_admin || this.saving || this.pickerBatchNote !== undefined) return;
+    if (this.saving || this.pickerBatchNote !== undefined) return;
     const keys = [...this.pickerPicked];
     if (keys.length === 0) return;
     this.pickerBatchAsk = undefined;
@@ -12816,7 +12799,7 @@ export class WristAssistantPanel extends LitElement {
     // The open complication goes through the inspector's own Delete, so an
     // unsaved draft and a conflict behave the same from either place. Hide
     // follows the same split: the open one through its draft, others at once.
-    const mayDelete = open ? this.canEdit : !!this.hass.user?.is_admin;
+    const mayDelete = !open || this.canEdit;
     const confirming = this.pickerConfirmDelete === record.id;
     const stop = (e: Event) => e.stopPropagation();
     // Parsed once per record and resolved once per card: this method is only
@@ -12836,7 +12819,7 @@ export class WristAssistantPanel extends LitElement {
     // the name and the picture both toggle it, so there is no small target to
     // find, and the hover actions stand down because the bar under the grid is
     // what acts on a pick.
-    const picking = this.pickerSelecting && this.hass.user?.is_admin === true;
+    const picking = this.pickerSelecting;
     const pickKey = `${actOwnerId}|${record.id}`;
     const picked = picking && this.pickerPicked.includes(pickKey);
     const hit = () => { if (picking) this.togglePickedCard(pickKey); else void this.openFromPicker(row, actOn); };
@@ -12903,7 +12886,6 @@ export class WristAssistantPanel extends LitElement {
    * cards wide never has two of them overlapping each other.
    */
   private renderPickerDup(row: PickerRow, open: boolean, cardKey: string) {
-    if (!this.hass.user?.is_admin) return nothing;
     if (row.open.item.kind !== "record") return nothing;
     return html`<span class="pk-dup" data-dup=${cardKey}>
       <button type="button" class="pk-dup-open ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
@@ -13057,7 +13039,7 @@ export class WristAssistantPanel extends LitElement {
    * document, so nothing on screen changes but the chips.
    */
   private async removeRowFrom(row: PickerRow, place: DevicePlace, quiet = false, follow = false) {
-    if (!this.hass.user?.is_admin || this.saving) return;
+    if (this.saving) return;
     const openHere = place.copies.some((c) => this.isOpenCopy(c));
     if (openHere && !follow) return;
     // The copy this lands on is the one the server holds, not the one on
@@ -13249,7 +13231,7 @@ export class WristAssistantPanel extends LitElement {
    * thing again, a few inches higher up, and had to be dismissed.
    */
   private async addRowTo(row: PickerRow, target: DeviceOwner, quiet = false) {
-    if (!this.hass.user?.is_admin || this.saving) return;
+    if (this.saving) return;
     const from = row.open;
     if (from.item.kind !== "record") return;
     const cfg = this.rowConfig(row);
@@ -13452,7 +13434,7 @@ export class WristAssistantPanel extends LitElement {
       });
       return;
     }
-    if (!this.hass.user?.is_admin || this.saving || !record.document) return;
+    if (this.saving || !record.document) return;
     this.saving = true;
     this.saveError = undefined;
     try {
@@ -13672,7 +13654,6 @@ export class WristAssistantPanel extends LitElement {
       }),
     });
     if (state === "empty") return this.renderStartPage();
-    const admin = this.hass.user?.is_admin === true;
     const total = rows.filter((row) => row.open.item.kind === "record").length;
     const full = this.freeSlot() < 0;
     return html`<div class="cl-page"><div class="cl-wrap">
@@ -13684,12 +13665,12 @@ export class WristAssistantPanel extends LitElement {
         <div class="cl-acts">
           <a class="cl-btn cl-gallery" href=${GALLERY_PAGE} target="_blank" rel="noopener"
             title="Ready-made complications from other people">${uiIcon("globe")}<span>Gallery</span></a>
-          ${admin ? html`<button class="cl-btn cl-import" ?disabled=${full}
+          <button class="cl-btn cl-import" ?disabled=${full}
             title=${full ? "Every device is full. Delete a complication first." : "Paste a complication somebody shared"}
-            @click=${() => this.openImportDialog()}>${uiIcon("paste")}<span>Import</span></button>` : nothing}
-          ${admin ? html`<button class="cl-btn cl-new" ?disabled=${full || this.ownerBusy}
+            @click=${() => this.openImportDialog()}>${uiIcon("paste")}<span>Import</span></button>
+          <button class="cl-btn cl-new" ?disabled=${full || this.ownerBusy}
             title=${full ? "Every device is full. Delete a complication first." : "Make a new complication"}
-            @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>` : nothing}
+            @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>
         </div>
       </div>
       ${state === "loading" ? html`<p class="cl-loading">Loading…</p>` : this.renderPickerSurface("page")}
@@ -14185,7 +14166,6 @@ export class WristAssistantPanel extends LitElement {
    * device: see `defaultDupTicks`.
    */
   private openDuplicateAs(cfg: CustomComplicationConfig, ownerId: string) {
-    if (!this.hass.user?.is_admin) return;
     this.dupFrom = { cfg: structuredClone(cfg), ownerId };
     const family = supportedFamilies(cfg)[0];
     const owner = this.ownerOf(ownerId);
@@ -14555,7 +14535,9 @@ export class WristAssistantPanel extends LitElement {
     const focused = rows.find((row) => row.key === this.shareFocus);
     const spot = focused?.ids ?? [];
     const family = this.dialogFamily(cfg);
-    const admin = this.hass.user?.is_admin === true;
+    // Posting to the gallery needs the gallery key, which the integration
+    // hands to administrators only (`wrist_assistant/gallery_key`).
+    const mayPost = this.hass.user?.is_admin === true;
     const copied = this.shareCopied;
     let n = 0;
     const who = this.shareSection(++n, "s-who", "Who is it for", html`
@@ -14571,15 +14553,15 @@ export class WristAssistantPanel extends LitElement {
           family !== undefined && isDrawable(family) ? { cfg, family, face: layouts[family] } : undefined)
         : html`<div class="hint">Pick a shape first.</div>`,
       nothing, !ready);
-    const posted = admin ? this.galleryLink() : undefined;
+    const posted = mayPost ? this.galleryLink() : undefined;
     const send = this.shareSection(++n, "s-send", "Send it", html`
       ${this.renderGalleryStanding(posted)}
       <div class="xf-acts">
-        <button class="xf-act" ?disabled=${!share || !admin || !ready} aria-haspopup="dialog"
+        <button class="xf-act" ?disabled=${!share || !mayPost || !ready} aria-haspopup="dialog"
           @click=${() => this.openGalleryDialog()}>
           <span class="ic">${uiIcon("globe")}</span><b>${posted?.kind === "live" ? "Update in online gallery" : posted?.kind === "pending" ? "Send to gallery again" : "Post to online gallery"}</b>
           <span>${!share ? "Only shares can go"
-            : !admin ? "Needs a Home Assistant administrator"
+            : !mayPost ? "Only an administrator can post to the gallery"
             : posted?.kind === "live" ? "A new version. The link and votes stay"
             : posted?.kind === "pending" ? "Takes the place of the copy in review"
             : "Everyone can find it, after review"}</span>
@@ -14609,7 +14591,7 @@ export class WristAssistantPanel extends LitElement {
           ? "A Control Center control, and no shape"
           : `${familyWords(shared)} · ${layerCountWords(cfg)}`,
         () => this.closeShareDialog(),
-        admin ? html`<button class="small xf-mine" aria-haspopup="dialog" @click=${() => this.openGalleryDialog("mine")}>
+        mayPost ? html`<button class="small xf-mine" aria-haspopup="dialog" @click=${() => this.openGalleryDialog("mine")}>
           ${uiIcon("globe")}<span>My uploads</span>${this.galleryUploads === undefined
             ? nothing : html`<span class="xf-count">${galleryUploadRows(this.galleryUploads).length}</span>`}</button>` : nothing)}
       <div class="xfer-body">
@@ -16224,10 +16206,6 @@ export class WristAssistantPanel extends LitElement {
     const payload = this.pendingLink;
     if (payload === undefined) return;
     this.pendingLink = undefined;
-    if (!this.hass.user?.is_admin) {
-      this.linkNote = "This link holds a shared complication. Only a Home Assistant administrator can import it.";
-      return;
-    }
     const text = await decodeShareLink(payload);
     if (text === undefined) {
       this.linkNote = SHARE_LINK_DAMAGED;
@@ -16328,7 +16306,6 @@ export class WristAssistantPanel extends LitElement {
   /** `fromLink` is a design that arrived in the address, which goes to
    * Unassigned whatever device is open (`importDestination`). */
   private openImportDialog(fromLink = false) {
-    if (!this.hass.user?.is_admin) return;
     // A full device can still take a link, which goes to Unassigned; the
     // dialog says so, or says Unassigned is full too.
     if (!fromLink && this.freeSlot() < 0) return;
@@ -17166,7 +17143,6 @@ export class WristAssistantPanel extends LitElement {
         ${this.canEdit ? html`<button class="slots-pick" @click=${() => this.openSlotsDialog()}>Pick ${n === 1 ? "entity" : "entities"}${uiIcon("arrow")}</button>` : nothing}</div>`);
     }
     if (this.readOnlyReason) out.push(html`<div class="banner warn"><b>Read only.</b> ${this.readOnlyReason}</div>`);
-    else if (this.draft && !this.hass.user?.is_admin) out.push(html`<div class="banner warn"><b>Read only.</b> Only a Home Assistant administrator can save complications.</div>`);
     if (this.conflict) {
       const c = this.conflict;
       out.push(html`<div class="banner err"><b>Save rejected.</b> ${c.message}
@@ -17214,9 +17190,7 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="banner warn">
       <b>This ${deviceWord} is no longer registered.</b> Reinstalling ${appWord} gives the ${deviceWord} a new id, and these
       ${owner.complication_count} complication${owner.complication_count === 1 ? "" : "s"} stayed behind under the old one.
-      ${!this.hass.user?.is_admin
-        ? html`<div class="hint">Only a Home Assistant administrator can move them.</div>`
-        : targets.length === 0
+      ${targets.length === 0
           ? html`<div class="hint">No registered ${deviceWord} to move them to. Open Wrist Assistant on the ${deviceWord} first.</div>`
           : html`<div class="acts">
               <select @change=${(e: Event) => { this.moveTarget = (e.target as HTMLSelectElement).value || undefined; }}>
@@ -18786,8 +18760,8 @@ export class WristAssistantPanel extends LitElement {
    *
    * At the top, the totals (devices, Synced, Waiting, the device heard from
    * last) beside Waiting to sync, a line per waiting device with what it
-   * waits for and a door to its sheet (`renderHomeStatus`). An administrator
-   * has New complication and Pair a device in the head.
+   * waits for and a door to its sheet (`renderHomeStatus`). The head has New
+   * complication and Pair a device.
    *
    * A group is one Home Assistant person's devices, under that person's
    * picture and name (`people`), or for a device bound to nobody the group
@@ -18800,31 +18774,30 @@ export class WristAssistantPanel extends LitElement {
    * Nothing waiting, for one that has nothing to pick up and never synced).
    * A phone's word is the header pill's rule for its complications; a
    * watch's is the worse of that and its watch app records
-   * (`deviceVerdict`), which only an administrator can read. Under the name,
-   * what it is and when it was last heard from, what a waiting card waits
-   * for, and a small door per page that counts something, each opening that
-   * page on the device (`deviceCardTiles`). The whole card opens the
-   * device's sheet, which also leads to a watch's Settings. In a home with
-   * no devices an administrator gets a card that opens "Pair a device".
-   * Nothing but "Loading…" while the devices are still loading, so the
-   * pairing card never flashes up in a home that has devices.
+   * (`deviceVerdict`). Under the name, what it is and when it was last heard
+   * from, what a waiting card waits for, and a small door per page that
+   * counts something, each opening that page on the device
+   * (`deviceCardTiles`). The whole card opens the device's sheet, which also
+   * leads to a watch's Settings. In a home with no devices a card opens
+   * "Pair a device". Nothing but "Loading…" while the devices are still
+   * loading, so the pairing card never flashes up in a home that has
+   * devices.
    */
   private renderHome() {
-    const admin = this.hass.user?.is_admin === true;
-    const devices = homeDeviceRows(this.homeDevices(), admin ? this.watchAppSyncs : new Map());
+    const devices = homeDeviceRows(this.homeDevices(), this.watchAppSyncs);
     const loading = !this.linkReady && this.owners.length === 0;
     const groups = homeGroups(this.people(), devices);
     const elapsed = this.ownersReadAt > 0 ? (Date.now() - this.ownersReadAt) / 1000 : 0;
     const full = this.freeSlot() < 0;
-    const add = admin && devices.length === 0 ? html`<ul class="home-devices"><li><button type="button" class="home-device-add" title="Pair a watch or iPhone, by a code or a QR code"
+    const add = devices.length === 0 ? html`<ul class="home-devices"><li><button type="button" class="home-device-add" title="Pair a watch or iPhone, by a code or a QR code"
         @click=${() => this.openPairDialog()}>${uiIcon("plus")}<b>Pair a device</b><span>A watch or an iPhone, by a code or a QR code</span></button></li></ul>` : nothing;
-    const acts = admin ? html`<div class="home-head-acts">
+    const acts = html`<div class="home-head-acts">
         <button type="button" class="home-btn add" ?disabled=${full || this.ownerBusy}
           title=${full ? "Every device is full. Delete a complication first." : "Make a new complication"}
           @click=${() => { this.goTo(COMPLICATIONS_PATH); this.openNewDialog(); }}>${uiIcon("plus")}<span>New complication</span></button>
         <button type="button" class="home-btn add" title="Pair a watch or iPhone, by a code or a QR code"
           @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair a device</span></button>
-      </div>` : nothing;
+      </div>`;
     return html`${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
       <div class="home"><div class="home-wrap">
         <div class="home-head">
@@ -18836,15 +18809,11 @@ export class WristAssistantPanel extends LitElement {
         </div>
         ${loading
           ? html`<p class="home-empty">Loading…</p>`
-          : devices.length === 0 && !admin
-            ? html`<p class="home-empty">No watch or iPhone has connected to this Home Assistant yet.</p>`
-            : html`${devices.length === 0 ? nothing : this.renderHomeStatus(devices, groups, elapsed)}${groups.map((g) => this.renderHomeGroup(g, admin, elapsed))}${add}`}
-        ${devices.length === 0 ? nothing : html`<p class="home-small">${admin
-          ? "Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app."
-          : "Synced, Waiting and Nothing waiting cover complications and widgets."}</p>`}
+          : html`${devices.length === 0 ? nothing : this.renderHomeStatus(devices, groups, elapsed)}${groups.map((g) => this.renderHomeGroup(g, elapsed))}${add}`}
+        ${devices.length === 0 ? nothing : html`<p class="home-small">Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app.</p>`}
       </div></div>
-      ${admin && this.pairOpen ? this.renderPairDialog() : nothing}
-      ${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices, admin) : nothing}`;
+      ${this.pairOpen ? this.renderPairDialog() : nothing}
+      ${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices) : nothing}`;
   }
 
   /** Home's status row: the totals, with every device as a share of one bar,
@@ -18891,7 +18860,7 @@ export class WristAssistantPanel extends LitElement {
 
   /** One person's devices on Home: their picture (or initial) in their color,
    * their name, how many devices and how many wait, then a card per device. */
-  private renderHomeGroup(g: { person?: Person; index: number; rows: HomeDeviceRow[] }, admin: boolean, elapsed: number) {
+  private renderHomeGroup(g: { person?: Person; index: number; rows: HomeDeviceRow[] }, elapsed: number) {
     const color = personColorVar(g.index) ?? "var(--wa-hue-grey)";
     const name = g.person?.label ?? "Other devices";
     const n = g.rows.length;
@@ -18906,13 +18875,13 @@ export class WristAssistantPanel extends LitElement {
         <span class="home-person-n">${n} ${n === 1 ? "device" : "devices"}</span>
         <span class="home-person-sum"><i class="home-dot ${waiting > 0 ? "waiting" : synced === n ? "synced" : ""}" aria-hidden="true"></i>${sum}</span>
       </div>
-      <ul class="home-devices">${g.rows.map((d) => this.renderHomeDevice(d, admin, elapsed))}</ul>
+      <ul class="home-devices">${g.rows.map((d) => this.renderHomeDevice(d, elapsed))}</ul>
     </section>`;
   }
 
   /** One device's card on Home. The name's button reaches over the whole
    * card and opens the sheet; the count doors sit above it. */
-  private renderHomeDevice(d: HomeDeviceRow, admin: boolean, elapsed: number) {
+  private renderHomeDevice(d: HomeDeviceRow, elapsed: number) {
     const owner = this.ownerOf(d.id);
     const seen = seenWords(owner, elapsed);
     const pending = pendingWords(owner);
@@ -18935,7 +18904,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="home-device-facts">${lines.map((line) => html`<span>${line}</span>`)}</span>
         ${why === "" ? nothing : html`<span class="home-device-why">${why}</span>`}
       </div>
-      <div class="home-tiles">${deviceCardTiles(d.kind, admin).map((t) => this.renderHomeTile(t, d, owner))}</div>
+      <div class="home-tiles">${deviceCardTiles(d.kind).map((t) => this.renderHomeTile(t, d, owner))}</div>
     </li>`;
   }
 
@@ -18990,11 +18959,11 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** Read the counts the sheet's watch tabs wear, from the stored records.
-   * Only a watch has them, and only an administrator may read them. A reply
-   * that lands after the sheet moved on is dropped. */
+   * Only a watch has them. A reply that lands after the sheet moved on is
+   * dropped. */
   private async loadDeviceCounts(ownerId: string) {
     this.deviceCounts = undefined;
-    if (this.hass.user?.is_admin !== true || deviceKindOf(this.ownerOf(ownerId)) !== "watch") return;
+    if (deviceKindOf(this.ownerOf(ownerId)) !== "watch") return;
     const kinds: DeviceCountKind[] = ["pages", "status_pages", "control_center"];
     const read = await Promise.all(kinds.map(async (kind) => {
       try {
@@ -19026,14 +18995,16 @@ export class WristAssistantPanel extends LitElement {
    * for each of its pages, each opening that page on this device. A tile
    * wears how many its page holds: the device's complications (or its
    * Control Center ones), and on a watch its pages, status pages and Control
-   * Center controls. An administrator can rename it (Home Assistant's own
-   * device name), or forget it after a second step that says what goes with
-   * it.
+   * Center controls. Anyone can forget it, after a second step that says
+   * what goes with it. Only an administrator can rename it: the name is Home
+   * Assistant's own device name, and Home Assistant keeps
+   * `config/device_registry/update` to administrators.
    */
-  private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[], admin: boolean) {
+  private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[]) {
     const row = devices.find((d) => d.id === ownerId);
     // The device left the home (forgotten here or elsewhere): nothing to show.
     if (!row) return nothing;
+    const mayRename = this.hass.user?.is_admin === true;
     const close = () => this.closeDeviceSheet();
     const owner = this.ownerOf(ownerId);
     const designs = rowsOnDevice(this.pickerRows(), ownerId).filter((r) => r.copies.some((c) => c.ownerId === ownerId && c.item.kind === "record"));
@@ -19117,9 +19088,9 @@ export class WristAssistantPanel extends LitElement {
           ${seen === undefined ? nothing : html`<span class="dev-state-seen">${seen}</span>`}
         </div>
         <h3 class="dev-title">Open on this ${row.kind === "watch" ? "watch" : "iPhone"}</h3>
-        <nav class="dev-tabs" aria-label=${`Pages for ${row.name}`}>${deviceSheetTabs(row.kind, admin).map(tab)}</nav>
+        <nav class="dev-tabs" aria-label=${`Pages for ${row.name}`}>${deviceSheetTabs(row.kind).map(tab)}</nav>
         <div class="dev-acts">
-          ${admin ? html`<button class="danger dev-forget" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon("delete")}<span>Remove device</span></button>` : nothing}
+          <button class="danger dev-forget" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon("delete")}<span>Remove device</span></button>
         </div>
       </div>`;
     return html`<dialog class="xf dev-dialog ${row.sync}" aria-label=${title} style=${`--c:${color}`} @close=${close}
@@ -19132,7 +19103,7 @@ export class WristAssistantPanel extends LitElement {
           <span class="dev-facts">${facts}</span>
         </div>
         <div class="dev-hero-acts">
-          ${admin && !this.deviceForgetAsk && !renaming
+          ${mayRename && !this.deviceForgetAsk && !renaming
             ? html`<button class="home-btn dev-rename-open" title="Change the name Home Assistant shows for it"
                 @click=${() => this.startDeviceRename(ownerId)}>Rename</button>`
             : nothing}
@@ -19253,7 +19224,6 @@ export class WristAssistantPanel extends LitElement {
    * list is the page itself.
    */
   private renderStartPage() {
-    const admin = this.hass.user?.is_admin === true;
     const devices = this.owners.filter((o) => !isLibraryOwner(o) && !o.is_orphan).length;
     const full = this.freeSlot() < 0;
     const plural = (n: number, word: string) => `${word}${n === 1 ? "" : "s"}`;
@@ -19268,10 +19238,10 @@ export class WristAssistantPanel extends LitElement {
               <span class="start-fact"><b>${devices}</b> ${plural(devices, "device")}</span>
             </div>
             <div class="start-acts">
-              ${admin ? html`<button class="primary start-new" ?disabled=${full || this.ownerBusy}
+              <button class="primary start-new" ?disabled=${full || this.ownerBusy}
                 title=${full ? "Every device is full. Delete a complication first." : "Make a new complication"}
-                @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>` : nothing}
-              ${admin ? html`<button class="ghost" ?disabled=${full} @click=${() => this.openImportDialog()}>${uiIcon("paste")}<span>Import</span></button>` : nothing}
+                @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>
+              <button class="ghost" ?disabled=${full} @click=${() => this.openImportDialog()}>${uiIcon("paste")}<span>Import</span></button>
             </div>
           </div>
           <div class="start-show" aria-hidden="true">
@@ -19282,18 +19252,18 @@ export class WristAssistantPanel extends LitElement {
             <span class="start-tile t4">${deviceShapeArt("rectangular", "iphone", true)}</span>
           </div>
         </section>
-        ${admin ? this.renderStartShapes(full) : nothing}
+        ${this.renderStartShapes(full)}
         <section class="start-links">
           <a class="start-link" href=${GALLERY_PAGE} target="_blank" rel="noopener">
             <span class="ic">${uiIcon("globe")}</span>
             <span class="t"><b>Browse the online gallery</b><span>Ready-made complications from other people</span></span>
             ${uiIcon("arrow")}
           </a>
-          ${admin ? html`<button class="start-link" ?disabled=${full} @click=${() => this.openImportDialog()}>
+          <button class="start-link" ?disabled=${full} @click=${() => this.openImportDialog()}>
             <span class="ic">${uiIcon("paste")}</span>
             <span class="t"><b>Import a shared one</b><span>Paste a share link or drop a file</span></span>
             ${uiIcon("arrow")}
-          </button>` : nothing}
+          </button>
           <button class="start-link" @click=${() => { this.helpOpen = true; }}>
             <span class="ic">${uiIcon("info")}</span>
             <span class="t"><b>How the editor works</b><span>Layers, states, taps and sending to a device</span></span>
@@ -19574,16 +19544,13 @@ export class WristAssistantPanel extends LitElement {
   private renderAddToDevice(cfg: CustomComplicationConfig) {
     const row = this.openRow();
     const family = supportedFamilies(cfg)[0];
-    const admin = this.hass.user?.is_admin === true;
     const places = row ? this.rowPlaces(row, family) : [];
     const rest = places.filter((p) => !p.on && p.owner.kind !== "library");
-    const why = !admin
-      ? "Only an administrator can put it on another device."
-      : !row
-        ? "Save it first. Then it can go on another device too."
-        : rest.length === 0
-          ? "There is no other device of this kind to put it on."
-          : undefined;
+    const why = !row
+      ? "Save it first. Then it can go on another device too."
+      : rest.length === 0
+        ? "There is no other device of this kind to put it on."
+        : undefined;
     const open = this.openMenu === "add" && why === undefined;
     return html`<span class="case-tool add-tool" data-menu="add">
       <button class="cv-act" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
@@ -19794,9 +19761,7 @@ export class WristAssistantPanel extends LitElement {
           <span class="fr-pic">${pic(t)}</span><span class="fr-name">${t.title}</span><small>${t.blurb}</small>
         </button>`)}
       </div>
-      <div class="fr-foot">Or press <b>+ Add</b> in Layers for everything${this.hass.user?.is_admin
-        ? html`, or <button class="link" @click=${() => this.openImportDialog()}>import a shared one</button>.`
-        : "."}</div>
+      <div class="fr-foot">Or press <b>+ Add</b> in Layers for everything, or <button class="link" @click=${() => this.openImportDialog()}>import a shared one</button>.</div>
     </div>`;
   }
 
@@ -20238,7 +20203,7 @@ export class WristAssistantPanel extends LitElement {
     const armed = this.placeTrashArm === target.ownerId;
     const ask = `Press again to take it off ${label}.`;
     // The Unassigned chip has no x: there is nowhere further to take it off to.
-    const mayEdit = this.canEdit && this.hass.user?.is_admin === true && target.kind !== "library";
+    const mayEdit = this.canEdit && target.kind !== "library";
     const hue = placeColorVar(this.pickerPeople(this.people()), target.ownerId, target.kind);
     return html`<span class="doc-chip ${hue ? "hued" : ""}" aria-current=${here ? "true" : nothing}
       style=${hue ? `--chip-c: ${hue}` : nothing}>

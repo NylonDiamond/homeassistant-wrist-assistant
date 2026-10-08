@@ -591,9 +591,9 @@ function takeOwnerTurn(ownerId: string): boolean {
  * once when the run is done, and again on each step of an Undo. Nothing at all
  * is reported when nothing was changed.
  *
- * Nothing runs for a non-admin (the save, delete and history commands are
- * admin-only anyway), for an owner whose app is below the gate, or for an
- * owner that has already had its turn this session. An owner whose list will
+ * It runs over the owners the server listed for this person, which are the
+ * ones they may write. Nothing runs for an owner whose app is below the gate,
+ * or for an owner that has already had its turn this session. An owner whose list will
  * not load is skipped rather than abandoning the run: unlike the link merge,
  * nothing here reads across devices, so one unreadable device cannot make
  * another device's answer wrong.
@@ -603,8 +603,6 @@ export async function autoSplitShapes(
   owners: readonly OwnerSummary[],
   onNotice: (notice: SplitNotice | undefined) => void,
 ): Promise<void> {
-  if (!hass.user?.is_admin) return;
-
   let writes: SplitWrite[] = [];
   const split: string[] = [];
   const problems: string[] = [];
