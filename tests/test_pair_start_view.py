@@ -94,6 +94,10 @@ def _loaded_logbook_events(rows: list) -> Any:
         "homeassistant.helpers.device_registry",
         async_get=lambda _hass: types.SimpleNamespace(async_get_device=lambda **_: None),
     )
+    _stub(
+        "homeassistant.helpers.entity_registry",
+        async_get=lambda _hass: types.SimpleNamespace(async_get_entity_id=lambda *_: None),
+    )
     _stub(f"{_PKG}.const", DOMAIN=DOMAIN)
     return _load("logbook_events")
 
@@ -371,7 +375,7 @@ def test_a_known_watch_s_replayed_nonce_writes_no_logbook_row(env) -> None:
     the module imports."""
     rows: list = []
     logbook_mod = _loaded_logbook_events(rows)
-    hass = types.SimpleNamespace()
+    hass = types.SimpleNamespace(data={})
 
     logbook_mod.log_hmac_failure(
         hass, watch_id="watch-code-1", reason="replayed_nonce", is_known_watch=True

@@ -20,10 +20,12 @@ import logging
 from homeassistant.components import logbook
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
 from .widget_secret_store import (
     DEVICE_KIND_IPHONE,
+    DEVICE_KIND_WATCH,
     LABEL_IPHONE_SELF_PROVISION,
 )
 
@@ -46,14 +48,46 @@ def _device_name(hass: HomeAssistant, watch_id: str, *, kind: str) -> str:
     return f"{prefix} {_short(watch_id)}"
 
 
-def _entity_id_for(watch_id: str, *, kind: str) -> str | None:
-    """A stable entity_id the Logbook view can scope the entry to. We use the
-    per-device "last activity" / "last provision" sensor since it exists for
-    both watches and iPhones in the registry. Returns None if the kind is
-    unknown — Logbook still accepts entries without an entity_id."""
+def _kind_of(hass: HomeAssistant, watch_id: str) -> str:
+    """The device family the widget secret store holds for this id: an
+    iPhone polls and registers push tokens through the same paths as a
+    watch, so callers that only have the id ask here. A watch when the store
+    is not set up or does not know the id."""
+    domain_data = hass.data.get(DOMAIN)
+    secrets = getattr(domain_data, "widget_secret_store", None)
+    if secrets is None:
+        return DEVICE_KIND_WATCH
+    try:
+        entry = secrets.get(watch_id)
+    except Exception:  # noqa: BLE001 (a log line must never fail its caller)
+        return DEVICE_KIND_WATCH
+    if entry is not None and getattr(entry, "device_kind", None) == DEVICE_KIND_IPHONE:
+        return DEVICE_KIND_IPHONE
+    return DEVICE_KIND_WATCH
+
+
+def _entity_id_for(hass: HomeAssistant, watch_id: str, *, kind: str) -> str | None:
+    """The entity the Logbook view scopes the entry to: the per-device "last
+    activity" sensor of a watch, or the "last provision" sensor of an iPhone.
+
+    These sensors name themselves after their device (``has_entity_name``),
+    so a device that reported a name ("Jesse's Apple Watch") has an entity
+    id built from that name, not from the id. The entity registry is asked
+    for the id it filed under the sensor's unique id (the one ``sensor.py``
+    gives it). Only a sensor not registered yet, such as a device paired in
+    this same tick, falls back to the id an unnamed device's sensor gets."""
     if kind == DEVICE_KIND_IPHONE:
-        return f"sensor.iphone_{_short(watch_id)}_last_provision"
-    return f"sensor.watch_{_short(watch_id)}_last_activity"
+        suffix, fallback = "last_provision", f"sensor.iphone_{_short(watch_id)}_last_provision"
+    else:
+        suffix, fallback = "last_activity", f"sensor.watch_{_short(watch_id)}_last_activity"
+    try:
+        registered = er.async_get(hass).async_get_entity_id(
+            "sensor", DOMAIN, f"wrist_assistant_{watch_id}_{suffix}"
+        )
+    except Exception:  # noqa: BLE001 (a log line must never fail its caller)
+        _LOGGER.debug("No entity registry lookup for %s", watch_id, exc_info=True)
+        registered = None
+    return registered or fallback
 
 
 def log_secret_registered(
@@ -69,7 +103,7 @@ def log_secret_registered(
     kind = (
         DEVICE_KIND_IPHONE
         if label == LABEL_IPHONE_SELF_PROVISION
-        else "watch"
+        else DEVICE_KIND_WATCH
     )
     name = _device_name(hass, watch_id, kind=kind)
     suffix = f" (app {app_version})" if app_version else ""
@@ -78,7 +112,7 @@ def log_secret_registered(
         name,
         f"paired with Home Assistant{suffix}",
         DOMAIN,
-        _entity_id_for(watch_id, kind=kind),
+        _entity_id_for(hass, watch_id, kind=kind),
     )
 
 
@@ -96,7 +130,7 @@ def log_secret_reprovisioned(
     kind = (
         DEVICE_KIND_IPHONE
         if label == LABEL_IPHONE_SELF_PROVISION
-        else "watch"
+        else DEVICE_KIND_WATCH
     )
     name = _device_name(hass, watch_id, kind=kind)
     suffix = f" (app {app_version})" if app_version else ""
@@ -105,7 +139,7 @@ def log_secret_reprovisioned(
         name,
         f"re-paired with Home Assistant{suffix}",
         DOMAIN,
-        _entity_id_for(watch_id, kind=kind),
+        _entity_id_for(hass, watch_id, kind=kind),
     )
 
 
@@ -119,14 +153,15 @@ def log_push_token_registered(
     `is_new=True` means this is the first token we've ever stored for this
     watch_id; False means we replaced an older token (APNs re-issue, build
     flip between dev and prod, etc.)."""
-    name = _device_name(hass, watch_id, kind="watch")
+    kind = _kind_of(hass, watch_id)
+    name = _device_name(hass, watch_id, kind=kind)
     verb = "registered a push token" if is_new else "rotated its push token"
     logbook.async_log_entry(
         hass,
         name,
         verb,
         DOMAIN,
-        _entity_id_for(watch_id, kind="watch"),
+        _entity_id_for(hass, watch_id, kind=kind),
     )
 
 
@@ -135,13 +170,14 @@ def log_first_sync(hass: HomeAssistant, *, watch_id: str) -> None:
     i.e. its first authenticated /v2/delta call after pairing. Distinct from
     "secret registered" because there can be a delay (or a never) between
     iPhone-side provisioning and the watch actually reaching HA."""
-    name = _device_name(hass, watch_id, kind="watch")
+    kind = _kind_of(hass, watch_id)
+    name = _device_name(hass, watch_id, kind=kind)
     logbook.async_log_entry(
         hass,
         name,
         "completed first sync",
         DOMAIN,
-        _entity_id_for(watch_id, kind="watch"),
+        _entity_id_for(hass, watch_id, kind=kind),
     )
 
 
@@ -150,13 +186,14 @@ def log_session_dropped(hass: HomeAssistant, *, watch_id: str, reason: str) -> N
     expiry. The reason ("idle_ttl", "client_disconnect", etc.) lands in the
     Logbook message so a user can tell "I unpaired it" apart from "it fell off
     Wi-Fi and timed out."""
-    name = _device_name(hass, watch_id, kind="watch")
+    kind = _kind_of(hass, watch_id)
+    name = _device_name(hass, watch_id, kind=kind)
     logbook.async_log_entry(
         hass,
         name,
         f"disconnected ({reason})",
         DOMAIN,
-        _entity_id_for(watch_id, kind="watch"),
+        _entity_id_for(hass, watch_id, kind=kind),
     )
 
 
@@ -186,11 +223,12 @@ def log_hmac_failure(
     # refresh. A real replay is refused all the same; it just is not logged.
     if reason in {"missing_headers", "invalid_version", "unsupported_version", "replayed_nonce"}:
         return
-    name = _device_name(hass, watch_id, kind="watch")
+    kind = _kind_of(hass, watch_id)
+    name = _device_name(hass, watch_id, kind=kind)
     logbook.async_log_entry(
         hass,
         name,
         f"rejected a signed request ({reason})",
         DOMAIN,
-        _entity_id_for(watch_id, kind="watch"),
+        _entity_id_for(hass, watch_id, kind=kind),
     )

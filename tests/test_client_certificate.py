@@ -410,8 +410,90 @@ def test_a_record_on_disk_that_is_not_one_is_dropped(pkg, tmp_path) -> None:
     store = new_store(pkg, tmp_path)
     assert store.revision(USER) == 2
     assert store.revision("cleared") == 2 and store.get("cleared").present is False
-    for user in ("bad-fp", "rev-zero", "no-time"):
+    # Only the certificate fails to read: the record and its revision stay.
+    assert store.revision("bad-fp") == 2 and store.get("bad-fp").present is False
+    for user in ("rev-zero", "no-time"):
         assert store.get(user) is None
+
+
+def test_a_certificate_that_no_longer_reads_keeps_its_revision(pkg, tmp_path) -> None:
+    """A record at revision 4 whose .p12 is now over the cap: the watch has
+    seen 4, so the user's next import must be 5, not 1."""
+    too_big = base64.b64encode(b"\x30" * (MAX_P12 + 1)).decode()
+    FakeStore.files[KEY] = {
+        "users": {
+            USER: {
+                "revision": 4,
+                "updated_at": "2026-10-06T10:00:00Z",
+                "certificate": {**cert_body(), "pkcs12": too_big},
+                "source": "panel",
+            }
+        }
+    }
+    store = new_store(pkg, tmp_path)
+    held = store.get(USER)
+    assert held.revision == 4 and held.present is False and held.source == "panel"
+    assert store.revision(USER) == 4
+    record, changed = asyncio.run(store.async_put(USER, cert_body(), source="panel"))
+    assert changed and record.revision == 5
+
+
+def test_a_file_set_aside_as_corrupt_is_refused_then_counted_above_a_floor(
+    pkg, tmp_path
+) -> None:
+    """Home Assistant's Store renames a file it cannot decode and answers
+    None. The start that sees it is refused; the next start counts new
+    records from a floor no earlier revision reached, and saves the floor."""
+    storage = tmp_path / ".storage"
+    storage.mkdir()
+    (storage / KEY).write_text("{not json")
+    set_aside = storage / f"{KEY}.corrupt.2026-10-08T10:00:00+00:00"
+
+    async def load_like_home_assistant():
+        (storage / KEY).rename(set_aside)
+        return None
+
+    store = pkg.store_mod.ClientCertificateStore(FakeHass(tmp_path))
+    store._store.async_load = load_like_home_assistant
+    asyncio.run(store.async_load())
+    assert store.available is False and store.revision(USER) is None
+    with pytest.raises(pkg.store_mod.ClientCertificateError) as exc:
+        asyncio.run(store.async_put(USER, cert_body()))
+    assert exc.value.code == "unavailable"
+    assert FakeStore.writes == []
+
+    # The next start: no file, the set-aside copy beside where it was.
+    store = new_store(pkg, tmp_path)
+    assert store.available is True
+    floor = FakeStore.files[KEY]["revision_floor"]
+    assert floor > 1_000_000 and floor < 2**31
+    record, _ = asyncio.run(store.async_put(USER, cert_body()))
+    assert record.revision == floor + 1
+
+    # The floor outlives the set-aside copy once it is saved.
+    set_aside.unlink()
+    store = new_store(pkg, tmp_path)
+    record, _ = asyncio.run(store.async_put(OTHER_USER, cert_body()))
+    assert record.revision == floor + 1 and store.revision(USER) == floor + 1
+
+
+def test_a_first_start_with_no_file_counts_from_one(pkg, tmp_path) -> None:
+    store = new_store(pkg, tmp_path)
+    assert store.available is True and FakeStore.writes == []
+    record, _ = asyncio.run(store.async_put(USER, cert_body()))
+    assert record.revision == 1
+    assert "revision_floor" not in FakeStore.files[KEY]
+
+
+def test_a_file_that_stays_put_but_reads_as_nothing_is_not_refused(pkg, tmp_path) -> None:
+    """Home Assistant also answers None for a file holding only ``{}``, and
+    leaves it where it is. That is not the set-aside case, so the store
+    starts empty rather than refusing on every start."""
+    storage = tmp_path / ".storage"
+    storage.mkdir()
+    (storage / KEY).write_text("{}")
+    store = new_store(pkg, tmp_path)
+    assert store.available is True
 
 
 def test_diagnostics_show_presence_revision_and_eight_characters(pkg, tmp_path) -> None:

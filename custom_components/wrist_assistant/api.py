@@ -51,6 +51,34 @@ _LOGGER = logging.getLogger(__name__)
 _ATTR_DIFF_SENTINEL = object()
 
 
+@dataclass(frozen=True, slots=True)
+class HeldConfig:
+    """The config numbers a polling device says it holds, sent on the poll
+    under the same keys a reply carries them (``watch_config``,
+    ``http_actions``, ``client_certificate``). None for a number it did not
+    send, and an older app sends none.
+
+    The server records what each reply carried (``_watch_config_sent`` and
+    its siblings) when it builds the reply, before the bytes reach the
+    device. A reply written into a half-open connection is lost, yet counts
+    as delivered. What the device reports on its next poll is the proof: a
+    number that differs from the current one means it never learned of the
+    change (see ``DeltaCoordinator._held_behind``).
+    """
+
+    watch_config: dict[str, int] | None = None
+    http_actions: int | None = None
+    client_certificate: int | None = None
+
+    def watch_config_lags(self, current: dict[str, int]) -> bool:
+        """Whether a kind the device reported differs from the current
+        revision. A kind it left out is not judged."""
+        held = self.watch_config
+        if held is None:
+            return False
+        return any(kind in held and held[kind] != rev for kind, rev in current.items())
+
+
 @dataclass(slots=True)
 class _TemplateDeps:
     """Tracked dependencies for a rendered template."""
@@ -358,6 +386,12 @@ class DeltaCoordinator:
         # watch_id → the certificate revision its last reply with a body
         # carried, kept like _http_actions_sent.
         self._client_certificate_sent: dict[str, int] = {}
+        # watch_id → for each of "watch_config", "http_actions" and
+        # "client_certificate", the value a reply carried to a poll whose own
+        # report (HeldConfig) was behind it. A report still behind that value
+        # earns no second immediate reply: once per change, as for the
+        # complication token, so a device whose pull keeps failing parks.
+        self._held_repeated: dict[str, dict[str, Any]] = {}
         # Answers whether a device id still has a secret here. None until
         # setup attaches it (attach_device_check), and then a poll for an id
         # it says no to gets a bodiless 204 and opens no session.
@@ -474,16 +508,58 @@ class DeltaCoordinator:
             return None
         return {kind: int(held.get(kind, 0)) for kind in DELTA_WATCH_CONFIG_KINDS}
 
-    def _watch_config_behind(self, watch_id: str) -> bool:
+    def _watch_config_behind(
+        self, watch_id: str, held: HeldConfig | None = None
+    ) -> bool:
         """True when the revisions moved since the last reply this watch was
         handed with a body (or recorded before it parked or probed, see
-        _note_watch_config_baseline). A watch with nothing recorded is not
-        behind: its next reply with a body carries the field anyway."""
-        sent = self._watch_config_sent.get(watch_id)
-        if sent is None:
-            return False
+        _note_watch_config_baseline), or when the watch's own report says it
+        never got them (see _held_behind). A watch with nothing recorded and
+        nothing reported is not behind: its next reply with a body carries
+        the field anyway."""
         current = self.watch_config_revisions(watch_id)
-        return current is not None and current != sent
+        if current is None:
+            return False
+        sent = self._watch_config_sent.get(watch_id)
+        if sent is not None and current != sent:
+            return True
+        return held is not None and self._held_behind(
+            watch_id, "watch_config", held.watch_config_lags(current), current
+        )
+
+    def _held_behind(
+        self, watch_id: str, channel: str, lags: bool, current: Any
+    ) -> bool:
+        """True when the device's own report on this poll lags the current
+        value of ``channel`` and no reply has yet answered such a report
+        with that value.
+
+        The ``_sent`` records say what a reply carried, not what arrived: a
+        reply woken into a half-open connection is lost while counting as
+        delivered, and without this the replacement poll would park. The
+        report settles it. The once-per-value rule keeps a device whose pull
+        keeps failing (and so keeps reporting the old number) from turning
+        every poll into an immediate reply."""
+        if not lags:
+            return False
+        return self._held_repeated.get(watch_id, {}).get(channel) != current
+
+    def _note_held(
+        self, watch_id: str, channel: str, lags: bool, carried: Any
+    ) -> None:
+        """After a reply carries ``carried`` for ``channel``: remember it
+        when the poll's report lagged it (see _held_behind), and forget any
+        earlier one when it did not. A mark only ever holds back a report
+        lagging that same value, so one left over after the value moves on
+        does no harm; it goes with the session."""
+        if lags:
+            self._held_repeated.setdefault(watch_id, {})[channel] = carried
+            return
+        repeated = self._held_repeated.get(watch_id)
+        if repeated is not None:
+            repeated.pop(channel, None)
+            if not repeated:
+                del self._held_repeated[watch_id]
 
     def _note_watch_config_baseline(self, watch_id: str) -> None:
         """Record the current revisions for a watch that has none recorded.
@@ -532,23 +608,34 @@ class DeltaCoordinator:
             return None
         return int(store.revision)
 
-    def _http_actions_behind(self, watch_id: str) -> bool:
+    def _http_actions_behind(
+        self, watch_id: str, held: HeldConfig | None = None
+    ) -> bool:
         """True when the library moved since the last reply this watch was
-        handed with a body (or the baseline noted before it parked)."""
-        sent = self._http_actions_sent.get(watch_id)
-        if sent is None:
-            return False
+        handed with a body (or the baseline noted before it parked), or the
+        watch's own report lags it (see _held_behind)."""
         current = self.http_actions_revision()
-        return current is not None and current != sent
+        if current is None:
+            return False
+        sent = self._http_actions_sent.get(watch_id)
+        if sent is not None and current != sent:
+            return True
+        return held is not None and self._held_behind(
+            watch_id,
+            "http_actions",
+            held.http_actions is not None and held.http_actions != current,
+            current,
+        )
 
-    def _config_behind(self, watch_id: str) -> bool:
+    def _config_behind(self, watch_id: str, held: HeldConfig | None = None) -> bool:
         """The watch's own config, the home's library or its user's client
-        certificate moved since it was last told: any of them earns an empty
-        reply carrying the new numbers."""
+        certificate moved since it was last told, or its own report on this
+        poll says it does not have them: any of them earns an empty reply
+        carrying the new numbers."""
         return (
-            self._watch_config_behind(watch_id)
-            or self._http_actions_behind(watch_id)
-            or self._client_certificate_behind(watch_id)
+            self._watch_config_behind(watch_id, held)
+            or self._http_actions_behind(watch_id, held)
+            or self._client_certificate_behind(watch_id, held)
         )
 
     def _note_config_baseline(self, watch_id: str) -> None:
@@ -620,16 +707,26 @@ class DeltaCoordinator:
             return None
         return 0
 
-    def _client_certificate_behind(self, watch_id: str) -> bool:
+    def _client_certificate_behind(
+        self, watch_id: str, held: HeldConfig | None = None
+    ) -> bool:
         """True when the user's record moved since the last reply this
         watch was handed with a body (or the baseline noted before it
-        parked). A watch with nothing noted is not behind: its next reply
-        with a body carries the field anyway."""
-        sent = self._client_certificate_sent.get(watch_id)
-        if sent is None:
-            return False
+        parked), or the watch's own report lags it (see _held_behind). A
+        watch with nothing noted and nothing reported is not behind: its
+        next reply with a body carries the field anyway."""
         current = self.client_certificate_revision(watch_id)
-        return current is not None and current != sent
+        if current is None:
+            return False
+        sent = self._client_certificate_sent.get(watch_id)
+        if sent is not None and current != sent:
+            return True
+        return held is not None and self._held_behind(
+            watch_id,
+            "client_certificate",
+            held.client_certificate is not None and held.client_certificate != current,
+            current,
+        )
 
     @callback
     def client_certificate_changed(self, user_id: str) -> None:
@@ -880,6 +977,7 @@ class DeltaCoordinator:
         self._watch_config_sent.pop(watch_id, None)
         self._http_actions_sent.pop(watch_id, None)
         self._client_certificate_sent.pop(watch_id, None)
+        self._held_repeated.pop(watch_id, None)
         if had_session:
             self._fire_session_callbacks()
         return had_session
@@ -902,6 +1000,7 @@ class DeltaCoordinator:
         custom_entity_ids: list[str] | None = None,
         complications_token: int | None = None,
         voices_hash: str | None = None,
+        held: HeldConfig | None = None,
     ) -> tuple[int, dict[str, Any] | None]:
         """Handle a single long-poll request.
 
@@ -930,6 +1029,12 @@ class DeltaCoordinator:
         certificate with ``client_certificate_get`` when the number moves
         past the one it saw, and a change wakes the parked polls of that
         user's devices.
+
+        ``held`` is what the device says it holds of those three numbers
+        (see HeldConfig). A poll whose report lags a current number is
+        answered at once with an empty reply carrying it, like a poll whose
+        last reply predates the change, once per value. It is how a hint
+        lost in a half-open connection reaches the device on its next poll.
         """
         # A device removed while its request was in flight: no session, no
         # stamps, no body.
@@ -955,23 +1060,42 @@ class DeltaCoordinator:
             templates=templates,
             custom_entity_ids=custom_entity_ids,
             applied_complications_token=complications_token,
+            held=held,
         )
         if body is not None:
             token = self.complications_token(watch_id)
             if token is not None:
                 body["complications_token"] = token
+            reported = held or HeldConfig()
             revisions = self.watch_config_revisions(watch_id)
             if revisions is not None:
                 body["watch_config"] = revisions
                 self._watch_config_sent[watch_id] = revisions
+                self._note_held(
+                    watch_id, "watch_config", reported.watch_config_lags(revisions), revisions
+                )
             library_revision = self.http_actions_revision()
             if library_revision is not None:
                 body["http_actions"] = library_revision
                 self._http_actions_sent[watch_id] = library_revision
+                self._note_held(
+                    watch_id,
+                    "http_actions",
+                    reported.http_actions is not None
+                    and reported.http_actions != library_revision,
+                    library_revision,
+                )
             certificate_revision = self.client_certificate_revision(watch_id)
             if certificate_revision is not None:
                 body["client_certificate"] = certificate_revision
                 self._client_certificate_sent[watch_id] = certificate_revision
+                self._note_held(
+                    watch_id,
+                    "client_certificate",
+                    reported.client_certificate is not None
+                    and reported.client_certificate != certificate_revision,
+                    certificate_revision,
+                )
             if self._voices_wanted(watch_id, voices_hash):
                 body["voices_wanted"] = True
         return status, body
@@ -993,6 +1117,7 @@ class DeltaCoordinator:
         templates: dict[str, str] | None = None,
         custom_entity_ids: list[str] | None = None,
         applied_complications_token: int | None = None,
+        held: HeldConfig | None = None,
     ) -> tuple[int, dict[str, Any] | None]:
         self._prune_sessions()
         session = self._sessions.get(watch_id)
@@ -1240,7 +1365,7 @@ class DeltaCoordinator:
         complications_behind = self._complications_behind(
             watch_id, applied_complications_token
         )
-        if complications_behind or self._config_behind(watch_id):
+        if complications_behind or self._config_behind(watch_id, held):
             if complications_behind:
                 self._note_complications_notified(watch_id)
             return 200, self._response_payload(
@@ -1354,7 +1479,7 @@ class DeltaCoordinator:
                 complications_behind = self._complications_behind(
                     watch_id, applied_complications_token
                 )
-                if complications_behind or self._config_behind(watch_id):
+                if complications_behind or self._config_behind(watch_id, held):
                     if complications_behind:
                         self._note_complications_notified(watch_id)
                     return 200, self._response_payload(
@@ -1797,6 +1922,7 @@ class DeltaCoordinator:
             self._watch_config_sent.pop(watch_id, None)
             self._http_actions_sent.pop(watch_id, None)
             self._client_certificate_sent.pop(watch_id, None)
+            self._held_repeated.pop(watch_id, None)
             # `handle_poll` stamps `_last_poll_at` before this runs, so a watch
             # polling again after a long idle arrives with a fresh stamp and a
             # session that is about to expire. Drop the stamp only when it is

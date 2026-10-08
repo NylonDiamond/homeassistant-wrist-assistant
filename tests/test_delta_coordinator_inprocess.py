@@ -1624,6 +1624,158 @@ def test_a_204_probe_records_what_a_later_save_is_compared_against(coordinator) 
     asyncio.run(run())
 
 
+def test_a_hint_lost_in_a_half_open_reply_reaches_the_next_poll(coordinator) -> None:
+    """The save wakes poll A, whose reply goes into a dead connection: the
+    server counts it as sent, the watch never reads it. Poll B reports the
+    revisions the watch holds, which lag, so B is answered at once with the
+    new ones instead of parking. Once per value: a report still lagging the
+    same revision is not answered again."""
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    store.async_add_listener(coord.watch_config_changed)
+    ent = "wrist_assistant.wc12b"
+    hass.states.set(ent, "off")
+    _device_put(store, "pages")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+        assert body["watch_config"] == _revs(pages=1)
+
+        lost = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=10))
+        await asyncio.sleep(0.05)
+        store.panel_save("w1", "pages", _pages_doc("Renamed"), base_revision=1)
+        status, body = await asyncio.wait_for(lost, timeout=2)
+        assert status == 200 and body["watch_config"] == _revs(pages=2)
+        # The reply above never arrives. The server has it as sent.
+        assert coord._watch_config_sent["w1"] == _revs(pages=2)
+
+        holds_one = module.HeldConfig(watch_config=_revs(pages=1))
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=10, held=holds_one), timeout=1
+        )
+        assert status == 200 and body["events"] == []
+        assert body["watch_config"] == _revs(pages=2)
+
+        # Still reporting 1 (its pull failed, or this reply was lost too):
+        # not answered again for the same revision.
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=0, held=holds_one), timeout=1
+        )
+        assert status == 204 and body is None
+
+        # Caught up: nothing to tell.
+        holds_two = module.HeldConfig(watch_config=_revs(pages=2))
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=0, held=holds_two), timeout=1
+        )
+        assert status == 204 and body is None
+
+        # A probe whose report lags is answered with the revisions too, and
+        # a kind the watch left out of its report is not judged.
+        _device_put(store, "behavior")
+        coord._watch_config_sent["w1"] = _revs(pages=2, behavior=1)
+        status, body = await asyncio.wait_for(
+            _poll(
+                coord, since=c0, entities=[ent], timeout=0,
+                held=module.HeldConfig(watch_config={"behavior": 0}),
+            ),
+            timeout=1,
+        )
+        assert status == 200 and body["watch_config"] == _revs(pages=2, behavior=1)
+        status, body = await asyncio.wait_for(
+            _poll(
+                coord, since=c0, entities=[ent], timeout=0,
+                held=module.HeldConfig(watch_config={"behavior": 1}),
+            ),
+            timeout=1,
+        )
+        assert status == 204 and body is None
+
+    asyncio.run(run())
+
+
+def test_a_lost_library_or_certificate_hint_reaches_the_next_poll(coordinator) -> None:
+    """The same rule for the home's HTTP action library and the bound user's
+    client certificate: a report that lags the current revision earns one
+    immediate reply carrying it, and a poll that reports nothing is judged
+    on what was sent, as before."""
+    module, hass, coord = coordinator
+    library = types.SimpleNamespace(available=True, revision=3)
+    certificates = types.SimpleNamespace(available=True, revision=lambda _user: 5)
+    coord.attach_http_actions_store(library)
+    coord.attach_client_certificate_store(certificates, lambda _watch: "user-1")
+    ent = "wrist_assistant.wc12c"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+        assert (body["http_actions"], body["client_certificate"]) == (3, 5)
+
+        # No report: judged on what was sent, so nothing to tell.
+        status, body = await _poll(coord, since=c0, entities=[ent], timeout=0)
+        assert status == 204
+
+        for held in (
+            module.HeldConfig(http_actions=2),
+            module.HeldConfig(client_certificate=4),
+        ):
+            status, body = await asyncio.wait_for(
+                _poll(coord, since=c0, entities=[ent], timeout=10, held=held), timeout=1
+            )
+            assert status == 200 and body["events"] == []
+            assert (body["http_actions"], body["client_certificate"]) == (3, 5)
+            status, body = await _poll(coord, since=c0, entities=[ent], timeout=0, held=held)
+            assert status == 204
+
+        status, body = await _poll(
+            coord, since=c0, entities=[ent], timeout=0,
+            held=module.HeldConfig(http_actions=3, client_certificate=5),
+        )
+        assert status == 204
+
+        # A new revision lagged by the report is news again.
+        library.revision = 4
+        status, body = await _poll(coord, since=c0, entities=[ent], timeout=0)
+        assert status == 200 and body["http_actions"] == 4
+        status, body = await _poll(
+            coord, since=c0, entities=[ent], timeout=0,
+            held=module.HeldConfig(http_actions=3),
+        )
+        assert status == 200 and body["http_actions"] == 4
+
+        # Forgetting the device forgets the marks with it.
+        coord._held_repeated["w1"] = {"http_actions": 4}
+        coord.drop_session("w1")
+        assert "w1" not in coord._held_repeated
+
+    asyncio.run(run())
+
+
+def test_the_delta_view_reads_what_the_device_holds() -> None:
+    """The poll's ``watch_config``, ``http_actions`` and ``client_certificate``
+    reach the coordinator as a HeldConfig, junk read as absent."""
+    import ast
+
+    source = (_PKG_DIR / "wa_v2_views.py").read_text()
+    tree = ast.parse(source)
+    wanted = {"_held_revision", "_held_revisions"}
+    namespace: dict = {"Any": object}
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name in wanted:
+            exec(compile(ast.Module([node], []), "wa_v2_views.py", "exec"), namespace)
+    held_revision, held_revisions = namespace["_held_revision"], namespace["_held_revisions"]
+    assert held_revision(4) == 4 and held_revision(0) == 0
+    for junk in (True, -1, "4", 4.0, None):
+        assert held_revision(junk) is None
+    assert held_revisions({"pages": 2, "menus": "x", "voice": True, 3: 1}) == {"pages": 2}
+    assert held_revisions({"pages": "x"}) is None and held_revisions([1]) is None
+    assert "held=held," in source
+    assert 'watch_config=_held_revisions(payload.get("watch_config"))' in source
+
+
 def test_a_wake_with_an_unreadable_owner_file_leaves_the_poll_parked(coordinator) -> None:
     """The owner's file cannot be read when the wake arrives: there are no
     revisions to hand out, so the poll stays parked rather than answering
