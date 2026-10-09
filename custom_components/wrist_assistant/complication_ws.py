@@ -231,6 +231,27 @@ def _parts(hass: HomeAssistant) -> PartsStore | None:
     return getattr(domain_data, "parts_store", None)
 
 
+def _is_phone(hass: HomeAssistant, owner: str) -> bool:
+    """Whether ``owner`` is an iPhone entry in the secret store."""
+    secrets = getattr(hass.data.get(DOMAIN), "widget_secret_store", None)
+    entry = secrets.get(owner) if secrets is not None else None
+    return entry is not None and entry.device_kind == DEVICE_KIND_IPHONE
+
+
+def _poll_state(hass: HomeAssistant, coordinator: Any, owner: str) -> tuple[bool, float | None]:
+    """``polling`` and ``last_poll_seconds`` for the complication chips.
+
+    Always ``(False, None)`` for an iPhone owner. A phone may hold a long
+    poll of its own here (its pages, ``phone_pages``), but its complications
+    reach it by push, never on that poll, so the chips read its sync and push
+    fields instead, as ``owners`` already does.
+    """
+    if _is_phone(hass, owner):
+        return False, None
+    polling = bool(coordinator and coordinator.is_polling(owner))
+    return polling, _seconds_since_poll(hass, coordinator, owner)
+
+
 def _seconds_since_poll(hass: HomeAssistant, coordinator: Any, owner: str) -> float | None:
     """How long since this watch last polled, in seconds, or None.
 
@@ -860,6 +881,7 @@ def ws_list(
     coordinator = domain_data.coordinator if domain_data is not None else None
     records = store.list(owner, include_deleted=msg["include_deleted"])
     previews = _previews(hass)
+    polling, last_poll_seconds = _poll_state(hass, coordinator, owner)
     connection.send_result(
         msg["id"],
         {
@@ -875,13 +897,14 @@ def ws_list(
             "pending_changes": store.pending_changes(owner),
             # Whether this watch holds a long-poll on this server right now,
             # which is the only way a save can reach it without the user
-            # tapping Sync now on the watch.
-            "polling": bool(coordinator and coordinator.is_polling(owner)),
+            # tapping Sync now on the watch. False for an iPhone owner
+            # (`_poll_state`).
+            "polling": polling,
             # Seconds since the watch last polled, or null when it has not
             # polled since this server started. "On watch" is true forever
             # once the tokens match, so this is what stops a green tick from
             # implying a watch that went flat two hours ago is still listening.
-            "last_poll_seconds": _seconds_since_poll(hass, coordinator, owner),
+            "last_poll_seconds": last_poll_seconds,
             "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
             # iPhone presets on this watch (slot + name, its last sync
             # report). The panel's auto-assigner must skip these slots (a
@@ -1264,9 +1287,10 @@ def ws_watch_status(
     for as long as the tab stayed open. This is the same few fields without
     the records, cheap enough to ask for on a timer.
 
-    ``last_sync_seconds`` is the phone's answer to ``last_poll_seconds``. An
-    iPhone owner holds no long-poll, so ``polling`` is always false and
-    ``last_poll_seconds`` always null for one. What reaches a phone is a
+    ``last_sync_seconds`` is the phone's answer to ``last_poll_seconds``. For
+    an iPhone owner ``polling`` is always false and ``last_poll_seconds``
+    always null (`_poll_state`), even while the phone holds a long poll for
+    its own pages: its complications never ride it. What reaches a phone is a
     background push instead: ``push_available`` says whether this server holds
     a token to send one to, and ``last_push_seconds`` says how long ago it last
     tried. Both are false and null for a watch owner, which is woken rather
@@ -1282,11 +1306,12 @@ def ws_watch_status(
     coordinator = domain_data.coordinator
     store = domain_data.complication_store
     push = domain_data.complication_push
+    polling, last_poll_seconds = _poll_state(hass, coordinator, owner)
     connection.send_result(
         msg["id"],
         {
-            "polling": coordinator.is_polling(owner),
-            "last_poll_seconds": _seconds_since_poll(hass, coordinator, owner),
+            "polling": polling,
+            "last_poll_seconds": last_poll_seconds,
             "last_sync_seconds": store.seconds_since_sync(owner),
             "token": store.owner_token(owner),
             "applied_token": store.applied_token(owner),
@@ -1323,7 +1348,10 @@ def ws_nudge(
     ``polling`` is whether there was a poll to wake at all.
 
     For an iPhone owner there is no poll to wake, so this sends the background
-    push instead, at once, past both of the timers a save goes through.
+    push instead, at once, past both of the timers a save goes through. A
+    phone may hold a long poll for its own pages (``phone_pages``), which
+    the wake answers like any other, but its complications never ride it, so
+    ``polling`` is false for a phone all the same (`_poll_state`).
     ``pushed`` is whether one was dispatched and ``push_available`` whether
     this server holds a token to dispatch it to; both are false for a watch.
     Nothing here waits for the phone. The relay answers later and the phone
@@ -1342,7 +1370,7 @@ def ws_nudge(
     if not require_owner(hass, connection, msg, owner):
         return
     coordinator = domain_data.coordinator
-    polling = coordinator.is_polling(owner)
+    polling, last_poll_seconds = _poll_state(hass, coordinator, owner)
     coordinator.wake_watch(owner, renotify=True)
     push = domain_data.complication_push
     push_available = push is not None and push.push_available(owner)
@@ -1350,7 +1378,7 @@ def ws_nudge(
         msg["id"],
         {
             "polling": polling,
-            "last_poll_seconds": _seconds_since_poll(hass, coordinator, owner),
+            "last_poll_seconds": last_poll_seconds,
             "token": domain_data.complication_store.owner_token(owner),
             "applied_token": domain_data.complication_store.applied_token(owner),
             "pending_changes": domain_data.complication_store.pending_changes(owner),

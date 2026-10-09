@@ -50,7 +50,7 @@ async def async_setup_entry(
         return (DOMAIN, entry.entry_id)
 
     global_sensors: list[SensorEntity] = [
-        ConnectedWatchesSensor(coordinator, entry),
+        ConnectedWatchesSensor(coordinator, entry, secret_store),
         WatchCountSensor(coordinator, entry),
         PhoneCountSensor(coordinator, entry),
         MonitoredEntitiesSensor(coordinator, entry),
@@ -222,7 +222,13 @@ class _WristAssistantSensorBase(SensorEntity):
 
 
 class ConnectedWatchesSensor(_WristAssistantSensorBase):
-    """Number of watches with a live polling session right now."""
+    """Number of watches with a live polling session right now.
+
+    Watches only, as the name says. An iPhone that polls for its own pages
+    (phone pages) has a session too and is left out. A session whose device
+    the secret store does not know (a removal racing a poll) is counted, as
+    it always was.
+    """
 
     _attr_name = "Connected watches"
     _attr_icon = "mdi:watch"
@@ -238,8 +244,14 @@ class ConnectedWatchesSensor(_WristAssistantSensorBase):
     # _disable_connected_watches_once migration in __init__.py.
     _attr_entity_registry_enabled_default = False
 
-    def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
+    def __init__(
+        self,
+        coordinator: DeltaCoordinator,
+        entry: ConfigEntry,
+        secret_store: WidgetSecretStore,
+    ) -> None:
         super().__init__(coordinator, entry)
+        self._secret_store = secret_store
         # unique_id keeps the historical "active_watches" slug so existing
         # entity_ids, dashboards, and automations continue to resolve after
         # the friendly-name rename.
@@ -247,7 +259,13 @@ class ConnectedWatchesSensor(_WristAssistantSensorBase):
 
     @property
     def native_value(self) -> int:
-        return len(self._coordinator.real_sessions)
+        count = 0
+        for watch_id in self._coordinator.real_sessions:
+            secret_entry = self._secret_store.get(watch_id)
+            if secret_entry is not None and secret_entry.device_kind == DEVICE_KIND_IPHONE:
+                continue
+            count += 1
+        return count
 
 
 class WatchCountSensor(_WristAssistantSensorBase):
@@ -349,7 +367,13 @@ class PhoneCountSensor(_WristAssistantSensorBase):
 
 
 class MonitoredEntitiesSensor(_WristAssistantSensorBase, RestoreSensor):
-    """Total entity subscriptions across all watches — persists across idle/restart.
+    """Total entity subscriptions across all devices — persists across idle/restart.
+
+    Every device that polls counts: the watches, and an iPhone that polls
+    for its own pages (phone pages), since Home Assistant monitors those
+    entities for it all the same. The name says entities, not watches. The
+    attributes keep their historical `per_watch` names; a phone's row there
+    is named after its own device.
 
     Sums the last-known subscription count per watch rather than reading
     `real_sessions` directly. A session only exists while a watch is actively

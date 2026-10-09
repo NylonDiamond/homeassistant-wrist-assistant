@@ -1052,6 +1052,29 @@ def test_watch_status_reports_whether_a_push_can_reach_this_owner(env) -> None:
     assert status["last_push_seconds"] == 12
 
 
+def test_a_phone_polling_for_its_pages_still_reports_no_poll(env) -> None:
+    """Phone pages: an iPhone holds a long poll of its own, signed as itself.
+    Its complications never ride it, so every chip reply says false and null
+    for it, as the owners list does, while a watch's poll still shows."""
+    env.add_phone("phone-1", device_name="Jesse's iPhone")
+    env.add_watch("watch-A", device_name="Apple Watch")
+    env.coordinator.polling.update({"phone-1", "watch-A"})
+
+    status = env.call(env.ws.ws_watch_status, owner_watch_id="phone-1")
+    assert (status["polling"], status["last_poll_seconds"]) == (False, None)
+    listed = env.call(env.ws.ws_list, owner_watch_id="phone-1", include_deleted=False)
+    assert (listed["polling"], listed["last_poll_seconds"]) == (False, None)
+    nudged = env.call(env.ws.ws_nudge, owner_watch_id="phone-1")
+    assert (nudged["polling"], nudged["last_poll_seconds"]) == (False, None)
+
+    status = env.call(env.ws.ws_watch_status, owner_watch_id="watch-A")
+    assert (status["polling"], status["last_poll_seconds"]) == (True, 3.0)
+    listed = env.call(env.ws.ws_list, owner_watch_id="watch-A", include_deleted=False)
+    assert (listed["polling"], listed["last_poll_seconds"]) == (True, 3.0)
+    nudged = env.call(env.ws.ws_nudge, owner_watch_id="watch-A")
+    assert (nudged["polling"], nudged["last_poll_seconds"]) == (True, 3.0)
+
+
 def test_watch_status_on_a_watch_owner_reports_no_push(env) -> None:
     env.add_watch("watch-A", device_name="Apple Watch")
     status = env.call(env.ws.ws_watch_status, owner_watch_id="watch-A")
