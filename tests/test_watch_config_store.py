@@ -53,10 +53,10 @@ _STORE_PATH = (
 _PKG = "wa_watch_config_test_pkg"
 
 INDEX_KEY = "wrist_assistant.watch_config"
-# The real caps, not smaller test values: a 2 MiB string is cheap to build, and
+# The real caps, not smaller test values: a 900 KiB string is cheap to build, and
 # testing the numbers that ship is the point. Kept equal to const.py by
 # test_the_size_caps_match_const below.
-MAX_BYTES = 2 * 1024 * 1024
+MAX_BYTES = 900 * 1024
 MAX_BEHAVIOR_BYTES = 256 * 1024
 MAX_CATALOG_BYTES = 256 * 1024
 MAX_MENUS_BYTES = 256 * 1024
@@ -745,7 +745,7 @@ def test_the_size_caps_match_const() -> None:
         and isinstance(n.target, ast.Name)
         and n.target.id == "WATCH_CONFIG_MAX_DOCUMENT_BYTES"
     ]
-    # The values are products like 2 * 1024 * 1024, which literal_eval refuses;
+    # The values are products like 900 * 1024, which literal_eval refuses;
     # this is the integration's own source, evaluated with no builtins.
     expression = compile(ast.Expression(node.value), "const.py", "eval")
     caps = eval(expression, {"__builtins__": {}})  # noqa: S307

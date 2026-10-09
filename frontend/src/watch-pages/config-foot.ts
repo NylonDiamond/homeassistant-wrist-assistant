@@ -40,11 +40,14 @@ function them(noun: ConfigNoun): string {
 export const REJECTED_TEXT = "The watch could not read this save";
 
 /** A size in the units the caps are set in: 1024 bytes to a KB and 1024 KB
- * to an MB, so the 256 KB and 2 MB caps read as round numbers. */
-function kb(bytes: number): string {
+ * to an MB, so the 900 KB and 256 KB caps read as round numbers. A KB keeps
+ * one decimal and an MB two, rounded by `round`: the footer rounds a size
+ * under the cap down and one over it up, so neither reads as the cap itself
+ * ("900 KB of the 900 KB … Over the limit" for a document 142 bytes over). */
+function kb(bytes: number, round: (n: number) => number = Math.round): string {
   if (bytes < 1024) return `${bytes} bytes`;
-  if (bytes < 1024 * 1024) return `${Number((bytes / 1024).toFixed(1))} KB`;
-  return `${Number((bytes / (1024 * 1024)).toFixed(2))} MB`;
+  if (bytes < 1024 * 1024) return `${round((bytes * 10) / 1024) / 10} KB`;
+  return `${round((bytes * 100) / (1024 * 1024)) / 100} MB`;
 }
 
 /** Said after the size when the document is past the cap. */
@@ -96,7 +99,9 @@ export function configFootStatus(i: {
   const revision = `Revision ${record.revision} · ${savedByWords(record.updated_by)}${when ? ` ${when}` : ""}`;
   const over = i.limit > 0 && i.size > i.limit;
   const near = !over && i.limit > 0 && i.size / i.limit > 0.8;
-  const size = `${kb(i.size)} of the ${kb(i.limit)} Home Assistant keeps${over ? `. ${OVER_LIMIT_TEXT}` : near ? ". Close to the limit." : ""}`;
+  const round = over ? Math.ceil : i.size < i.limit ? Math.floor : Math.round;
+  const note = over ? `. ${OVER_LIMIT_TEXT}` : near ? (i.size === i.limit ? ". At the limit." : ". Close to the limit.") : "";
+  const size = `${kb(i.size, round)} of the ${kb(i.limit)} Home Assistant keeps${note}`;
   if (rejectedNow(record)) {
     return {
       tone: "err", revision, state: REJECTED_TEXT, size, near, over,

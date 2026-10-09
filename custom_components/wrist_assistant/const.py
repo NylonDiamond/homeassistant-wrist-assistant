@@ -207,9 +207,14 @@ WATCH_CONFIG_PANEL_KINDS = frozenset(
 # `updated_by` on a record the panel saved, in place of a device's signing id.
 WATCH_CONFIG_PANEL_WRITER = "panel"
 # Compact UTF-8 JSON size a stored document may reach, per kind. Every kind in
-# WATCH_CONFIG_KINDS needs an entry. The page cap is a guess with headroom (a
-# large real page config has not been measured yet); the behavior settings are
-# a flat object of a few dozen keys, so a much smaller cap still leaves plenty.
+# WATCH_CONFIG_KINDS needs an entry. The page cap is what the watch can hold:
+# the watch keeps its pages in its UserDefaults, and watchOS stops an app whose
+# whole defaults store passes about 1 MiB. Measured on the simulator, a 992,597
+# byte page document applied and a 1,039,905 byte one crashed the app on every
+# launch, so 900 KiB leaves room for the watch's other keys (about 25 KB). It
+# was 2 MiB, which Home Assistant accepted and the watch could not store. The
+# behavior settings are a flat object of a few dozen keys, so a much smaller
+# cap still leaves plenty.
 # A catalog of 200 entries is about 30 KB. The menus are a few dozen slots
 # plus per-entity overrides, the same order as the catalog. The voice settings
 # hold at most eight phrases, the notification style is a flat object of a
@@ -220,7 +225,7 @@ WATCH_CONFIG_PANEL_WRITER = "panel"
 # request bodies up to 16 MiB, so the cap, not the server, is what refuses an
 # oversized upload.
 WATCH_CONFIG_MAX_DOCUMENT_BYTES: dict[str, int] = {
-    "pages": 2 * 1024 * 1024,
+    "pages": 900 * 1024,
     "behavior": 256 * 1024,
     "catalog": 256 * 1024,
     "menus": 256 * 1024,
