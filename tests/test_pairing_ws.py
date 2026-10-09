@@ -344,6 +344,41 @@ def test_confirm_rekeys_a_known_watch_and_renames_its_device(env) -> None:
     assert env.registry.updates == [(f"dev-{WATCH}", "Test Watch")]
 
 
+def test_pairing_the_same_watch_again_keeps_its_iphone(env) -> None:
+    """The test bed's B3: a watch app reinstalled and paired again by code
+    with Replace. The panel kept saying which iPhone it is paired with."""
+    env.secret_store.register(
+        WATCH, SECRET_B, "watch-self-provision", owner_iphone_id=PHONE, user_id="root"
+    )
+    pending = _pending(env)
+    result = _ok(env, env.ws.ws_pair_confirm, code=pending.code, replace=True)
+    assert result["result"] == "rekey"
+    entry = env.secret_store.get(WATCH)
+    assert entry.secret_b64 == SECRET_A
+    assert entry.owner_iphone_id == PHONE
+    # Still a code pairing: no phone holds this key, so no move waits on it.
+    assert entry.label == "watch-code-pair"
+    assert env.store_mod.watch_has_iphone(env.secret_store.all_entries, WATCH) is False
+
+
+def test_an_unbound_watch_paired_again_keeps_its_iphone_too(env) -> None:
+    env.secret_store.register(WATCH, SECRET_B, "watch-self-provision", owner_iphone_id=PHONE)
+    pending = _pending(env)
+    _ok(env, env.ws.ws_pair_confirm, code=pending.code, replace=True)
+    assert env.secret_store.get(WATCH).owner_iphone_id == PHONE
+
+
+def test_a_watch_taken_over_by_another_user_drops_the_old_iphone(env) -> None:
+    env.secret_store.register(
+        WATCH, SECRET_B, "watch-self-provision", owner_iphone_id=PHONE, user_id="bob"
+    )
+    pending = _pending(env)
+    _ok(env, env.ws.ws_pair_confirm, code=pending.code, replace=True)
+    entry = env.secret_store.get(WATCH)
+    assert entry.user_id == "root"
+    assert entry.owner_iphone_id is None
+
+
 def test_a_pairing_tells_the_delta_coordinator(env) -> None:
     """So the new app's first poll hears about its custom complications at
     once (``DeltaCoordinator.note_paired``)."""

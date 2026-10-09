@@ -179,6 +179,17 @@ def store_paired_device(
             existing.user_id,
             user_id,
         )
+    # Pairing the same watch again (Replace, after the app was reinstalled,
+    # say) keeps the iPhone it was paired with, which the panel names on its
+    # card. Only while it stays with the same person: a watch taken over by
+    # another user must not keep pointing at the old owner's phone. The code
+    # label still keeps `watch_has_iphone` false, since no phone holds this
+    # new key.
+    owner_iphone_id = (
+        existing.owner_iphone_id
+        if existing is not None and existing.user_id in (None, user_id)
+        else None
+    )
     result = secret_store.register(
         watch_id=watch_id,
         secret_b64=fields.secret_b64,
@@ -186,7 +197,7 @@ def store_paired_device(
         algo=fields.algo,
         app_version=fields.app_version,
         app_build=fields.app_build,
-        owner_iphone_id=None,
+        owner_iphone_id=owner_iphone_id,
         device_name=fields.device_name,
         screen_size=fields.screen_size,
         user_id=user_id,
