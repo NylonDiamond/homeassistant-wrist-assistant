@@ -889,11 +889,18 @@ class WADeltaView(HomeAssistantView):
         attrs_reset = payload.get("attrs_reset", False) is True
 
         # An iPhone polls for its own pages (phone_pages), signed as itself.
-        # The two watch fields below are the watch's, never the phone's: a
-        # token here would be filed as a watchOS token under the phone's id,
-        # and a delivery mode under it would mean nothing. Both are ignored
-        # for a phone, not refused, so the poll still answers.
+        # Four fields of the poll are the watch's, never the phone's: a
+        # `device_token` would be filed as a watchOS token under the phone's
+        # id, and a `delivery_mode` under it would mean nothing. A
+        # `complications_token` would ack the phone's complication store
+        # token, which only its complication sync acks (`applied_token`; its
+        # designs come by push, never on this poll), and a `voices_hash` would ask the phone to send a voice
+        # list under its id. All four are ignored for a phone, not refused,
+        # so the poll still answers.
         signer_is_iphone = is_iphone_entry(secret_entry)
+        if signer_is_iphone:
+            complications_token = None
+            voices_hash = None
 
         # Push notification token registration piggybacks on long-poll.
         device_token = payload.get("device_token")
