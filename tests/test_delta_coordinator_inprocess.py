@@ -764,6 +764,90 @@ def test_behind_watch_is_told_once_per_token_then_waits(coordinator) -> None:
     asyncio.run(run())
 
 
+def test_a_watch_paired_again_hears_about_its_complications_on_its_next_poll(
+    coordinator,
+) -> None:
+    """The test bed's sequence: a watch app reinstalled and paired again by
+    code under the same id. Its first reply carries the token, but the new
+    app learns the capability list from that same reply (and restarts its
+    loop), so it can drop it. Its next poll, still lagging, used to park for
+    a whole long poll because the first telling was under
+    TOKEN_REPEAT_AFTER_SECONDS old. After a pairing it is told again at once,
+    once."""
+    module, hass, coord = coordinator
+    store = _FakeComplicationStore()
+    coord.attach_complication_store(store)
+    ent = "wrist_assistant.repair"
+    hass.states.set(ent, "off")
+    store.tokens["w1"] = 9
+
+    async def run() -> None:
+        # The earlier app was current and was told about the token.
+        status, body = await _poll(coord, entities=[ent], complications_token=9)
+        coord._token_notified["w1"] = 9
+        coord._token_notified_at["w1"] = hass.loop.time()
+
+        coord.note_paired("w1")
+        assert "w1" not in coord._token_notified
+
+        # The new app's first poll: a snapshot carrying the token.
+        status, body = await _poll(coord, entities=[ent], complications_token=0)
+        assert status == 200 and body["complications_token"] == 9
+        cursor = body["next_cursor"]
+
+        # Its next poll, still at 0: answered at once with the token.
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=cursor, entities=[ent], timeout=10, complications_token=0),
+            timeout=1,
+        )
+        assert status == 200 and body["complications_token"] == 9
+
+        # Once: a poll still lagging after that parks as before.
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=cursor, entities=[ent], timeout=1, complications_token=0),
+            timeout=3,
+        )
+        assert status == 204
+
+    asyncio.run(run())
+
+
+def test_only_the_first_telling_after_a_pairing_skips_the_wait(coordinator) -> None:
+    """``note_paired`` changes only the first telling after a pairing; a later
+    token is held back for TOKEN_REPEAT_AFTER_SECONDS as before."""
+    module, hass, coord = coordinator
+    store = _FakeComplicationStore()
+    coord.attach_complication_store(store)
+    ent = "wrist_assistant.norepair"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        coord.note_paired("w1")
+        status, body = await _poll(coord, entities=[ent], complications_token=0)
+        cursor = body["next_cursor"]
+        # The pairing's telling (token 0 to a watch at 0) told nothing, and
+        # the flag waits for the first real one.
+        store.tokens["w1"] = 1
+        status, body = await _poll(coord, since=cursor, entities=[ent], timeout=10,
+                                   complications_token=0)
+        assert status == 200 and body["complications_token"] == 1
+        assert "w1" not in coord._just_paired
+        status, body = await _poll(coord, since=cursor, entities=[ent], timeout=10,
+                                   complications_token=0)
+        assert status == 200  # the one repeat, at once after a pairing
+        store.tokens["w1"] = 2
+        status, body = await _poll(coord, since=cursor, entities=[ent], timeout=10,
+                                   complications_token=0)
+        assert status == 200 and body["complications_token"] == 2
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=cursor, entities=[ent], timeout=1, complications_token=0),
+            timeout=3,
+        )
+        assert status == 204
+
+    asyncio.run(run())
+
+
 def test_nudge_on_a_current_watch_changes_nothing(coordinator) -> None:
     module, hass, coord = coordinator
     store = _FakeComplicationStore()

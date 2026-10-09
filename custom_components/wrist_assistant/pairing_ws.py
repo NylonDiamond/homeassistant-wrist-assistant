@@ -206,6 +206,12 @@ def store_paired_device(
     # of whatever phone once had it.
     if user_id is not None and existing is not None:
         secret_store.bind_owned_watches(watch_id, user_id)
+    # What the delta coordinator told the earlier pairing does not hold for
+    # the app that paired now: its first poll must hear about the custom
+    # complications at once, not one long poll later.
+    coordinator = getattr(hass.data.get(DOMAIN), "coordinator", None)
+    if coordinator is not None:
+        coordinator.note_paired(watch_id)
     # A device that was paired before keeps its registry entry; show the name
     # it reports now. A user's own rename (`name_by_user`) still wins on display.
     if fields.device_name is not None:

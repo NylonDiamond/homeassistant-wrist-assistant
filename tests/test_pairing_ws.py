@@ -344,6 +344,17 @@ def test_confirm_rekeys_a_known_watch_and_renames_its_device(env) -> None:
     assert env.registry.updates == [(f"dev-{WATCH}", "Test Watch")]
 
 
+def test_a_pairing_tells_the_delta_coordinator(env) -> None:
+    """So the new app's first poll hears about its custom complications at
+    once (``DeltaCoordinator.note_paired``)."""
+    paired: list[str] = []
+    env.hass.data[DOMAIN].coordinator = types.SimpleNamespace(note_paired=paired.append)
+    env.secret_store.register(WATCH, SECRET_B, "watch-self-provision", user_id="root")
+    pending = _pending(env)
+    _ok(env, env.ws.ws_pair_confirm, code=pending.code, replace=True)
+    assert paired == [WATCH]
+
+
 def test_taking_over_another_user_s_watch_is_logged_as_a_warning(env, caplog) -> None:
     env.secret_store.register(WATCH, SECRET_B, "watch-self-provision", user_id="bob")
     pending = _pending(env)

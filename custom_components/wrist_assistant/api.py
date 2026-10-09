@@ -402,6 +402,9 @@ class DeltaCoordinator:
         self._token_repeated: dict[str, int] = {}
         # watch_id → loop time of the first telling of _token_notified.
         self._token_notified_at: dict[str, float] = {}
+        # Devices paired (or paired again) since their last telling of the
+        # token (see note_paired). In memory only, like the marks above.
+        self._just_paired: set[str] = set()
         # Watch config rides the poll the same way: every reply with a body
         # names the signer's revision of every kind a watch applies
         # (DELTA_WATCH_CONFIG_KINDS), and a save wakes the parked poll (see
@@ -554,14 +557,47 @@ class DeltaCoordinator:
     ) -> None:
         """After a reply carries ``token`` to a poll that applied
         ``applied``: a watch that differs has now been told. One told before
-        and still lagging has now been told once more."""
+        and still lagging has now been told once more.
+
+        The first telling after a (re)pair (see ``note_paired``) is recorded
+        without its time, so a report still lagging on the next poll is told
+        once more at once rather than after TOKEN_REPEAT_AFTER_SECONDS. A
+        watch that has just paired starts its long poll several times over
+        and learns the capability list from that same first reply, so it can
+        drop the first telling; waiting out the window then parked its next
+        poll for a whole long poll before its complications came."""
         if applied is None or token == applied:
             return
         if self._token_notified.get(watch_id) == token:
             self._token_repeated[watch_id] = token
+        elif watch_id in self._just_paired:
+            self._token_notified_at.pop(watch_id, None)
         else:
             self._token_notified_at[watch_id] = self.hass.loop.time()
+        self._just_paired.discard(watch_id)
         self._token_notified[watch_id] = token
+
+    @callback
+    def note_paired(self, watch_id: str) -> None:
+        """A device was just paired, or paired again under the same id (a
+        replace-pairing after the watch app was reinstalled, say).
+
+        Whatever the earlier pairing was told belongs to an app that may no
+        longer exist: its complication token marks, the config numbers its
+        replies carried, and the once-per-value marks on its reports are
+        dropped, so the new app's first lagging report is answered at once.
+        Its first telling of the token also does not hold back a repeat (see
+        ``_note_complications_notified``). The session stays: its entity list
+        is the watch's, and a removed device goes through ``drop_session``.
+        """
+        self._token_notified.pop(watch_id, None)
+        self._token_repeated.pop(watch_id, None)
+        self._token_notified_at.pop(watch_id, None)
+        self._watch_config_sent.pop(watch_id, None)
+        self._http_actions_sent.pop(watch_id, None)
+        self._client_certificate_sent.pop(watch_id, None)
+        self._held_repeated.pop(watch_id, None)
+        self._just_paired.add(watch_id)
 
     # ── watch config on the poll ──────────────────────────────────────
 
@@ -1070,6 +1106,7 @@ class DeltaCoordinator:
         self._token_notified.pop(watch_id, None)
         self._token_repeated.pop(watch_id, None)
         self._token_notified_at.pop(watch_id, None)
+        self._just_paired.discard(watch_id)
         self._watch_config_sent.pop(watch_id, None)
         self._http_actions_sent.pop(watch_id, None)
         self._client_certificate_sent.pop(watch_id, None)
@@ -2115,6 +2152,7 @@ class DeltaCoordinator:
             self._token_notified.pop(watch_id, None)
             self._token_repeated.pop(watch_id, None)
             self._token_notified_at.pop(watch_id, None)
+            self._just_paired.discard(watch_id)
             # The same for the watch config revisions: the next reply with a
             # body carries them again and records them afresh.
             self._watch_config_sent.pop(watch_id, None)
