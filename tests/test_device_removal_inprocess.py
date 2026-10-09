@@ -20,6 +20,8 @@ Covered:
 * ``text.py`` adds one Name per device: a phone that polls gets its Name
   from the iPhone path only, a watch from its session only, and no listener
   adds one again while Home Assistant is still registering it.
+* ``sensor.py`` adds the watch session sensors for a watch only, so a phone
+  that polls keeps its iPhone sensors and is never labelled an Apple Watch.
 """
 
 from __future__ import annotations
@@ -350,6 +352,28 @@ def test_a_device_paired_again_under_the_same_id_gets_its_entities_back(module) 
 
 
 # ── text.py: one Name per device, and only a watch's from its session ────
+
+
+def test_a_polling_phone_gets_no_watch_sensors() -> None:
+    """A phone signer polling the delta endpoint has a live session like a
+    watch. Every ``Watch*`` sensor describes its device as an Apple Watch, so
+    adding the session sensors would relabel the phone; it keeps only the
+    iPhone sensors the secret store gives it. A watch still gets them."""
+    coordinator, secrets, _registry, added = _setup("sensor.py")
+    secrets.entries["p1"] = types.SimpleNamespace(device_kind="iphone")
+    secrets.entries["w1"] = types.SimpleNamespace(device_kind="watch")
+    secrets.fire()
+    coordinator.real_sessions["p1"] = object()
+    coordinator.real_sessions["w1"] = object()
+    coordinator.fire()
+
+    phone = sorted(e.kind for e in added if e.watch_id == "p1")
+    assert phone == ["IPhoneAppVersionSensor", "IPhoneLastProvisionSensor"]
+    assert not any(kind.startswith("Watch") for kind in phone)
+    assert _session_entities(added, "sensor.py") == [
+        ("WatchPollIntervalSensor", "w1"),
+        ("WatchConnectedSinceSensor", "w1"),
+    ]
 
 
 def _names(added: list[_Entity]) -> list[tuple[str, str | None]]:

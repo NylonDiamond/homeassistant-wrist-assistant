@@ -74,8 +74,14 @@ async def async_setup_entry(
             # outlive its device by a moment (a removal racing a poll), and
             # adding entities for it would re-create the device as an empty
             # shell with no secret behind it.
-            if secret_store.get(watch_id) is None:
+            secret_entry = secret_store.get(watch_id)
+            if secret_entry is None:
                 known_watches.discard(watch_id)
+                continue
+            # Only a watch. A phone that polls the delta endpoint has a
+            # session too, and these sensors would label its device an Apple
+            # Watch; its own sensors come from the secret store below.
+            if secret_entry.device_kind != DEVICE_KIND_WATCH:
                 continue
             if watch_id in known_watches:
                 # Verify entities still exist in registry (user may have deleted device)
