@@ -888,11 +888,19 @@ class WADeltaView(HomeAssistantView):
         # session's diff baselines must go too (DeltaCoordinator).
         attrs_reset = payload.get("attrs_reset", False) is True
 
+        # An iPhone polls for its own pages (phone_pages), signed as itself.
+        # The two watch fields below are the watch's, never the phone's: a
+        # token here would be filed as a watchOS token under the phone's id,
+        # and a delivery mode under it would mean nothing. Both are ignored
+        # for a phone, not refused, so the poll still answers.
+        signer_is_iphone = is_iphone_entry(secret_entry)
+
         # Push notification token registration piggybacks on long-poll.
         device_token = payload.get("device_token")
         notification_store = domain_data.notification_store
         if (
             notification_store is not None
+            and not signer_is_iphone
             and isinstance(device_token, str)
             and device_token
         ):
@@ -912,7 +920,7 @@ class WADeltaView(HomeAssistantView):
         # The watch reports its per-user notification delivery mode here so
         # send_notification can route mirror (iPhone) vs direct (watch). Stored
         # per watch_id; unknown/absent values leave the default ("mirror").
-        if notification_store is not None:
+        if notification_store is not None and not signer_is_iphone:
             delivery_mode = payload.get("delivery_mode")
             if isinstance(delivery_mode, str) and delivery_mode in ("mirror", "direct"):
                 notification_store.set_watch_metadata(
