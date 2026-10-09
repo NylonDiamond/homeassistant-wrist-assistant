@@ -57,7 +57,6 @@ import base64
 import gzip
 import logging
 import math
-import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -701,26 +700,6 @@ def _held_revisions(raw: Any) -> dict[str, int] | None:
     return held or None
 
 
-_HELD_HASH_RE = re.compile(r"[0-9a-f]{1,64}")
-
-
-def _held_hashes(raw: Any) -> dict[str, str] | None:
-    """The ``watch_config_hashes`` a device reports holding, kind by kind
-    (the short hashes a reply hands out, see ``watch_config_store.short_hash``).
-    A kind whose value is not lowercase hex is left out; anything but an
-    object reads as absent."""
-    if not isinstance(raw, dict):
-        return None
-    held = {
-        kind: value
-        for kind, value in raw.items()
-        if isinstance(kind, str)
-        and isinstance(value, str)
-        and _HELD_HASH_RE.fullmatch(value)
-    }
-    return held or None
-
-
 class WADeltaView(HomeAssistantView):
     """HMAC-authenticated long-poll wrapper for delta updates.
 
@@ -893,11 +872,9 @@ class WADeltaView(HomeAssistantView):
         # `client_certificate`. The coordinator compares them with the
         # current ones so a hint whose reply was lost still reaches the
         # device (see HeldConfig). Absent from older apps; junk reads as
-        # absent, and a junk kind is left out. `watch_config_hashes` is the
-        # short hash of each kind it holds, read only to shape a lean reply.
+        # absent, and a junk kind is left out.
         held = HeldConfig(
             watch_config=_held_revisions(payload.get("watch_config")),
-            watch_config_hashes=_held_hashes(payload.get("watch_config_hashes")),
             http_actions=_held_revision(payload.get("http_actions")),
             client_certificate=_held_revision(payload.get("client_certificate")),
         )
