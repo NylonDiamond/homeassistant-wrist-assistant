@@ -440,13 +440,15 @@ function speakerChecklist(host: VoiceViewHost, label: string, stored: readonly s
 /** The Defaults card: the conversation agent, the engine, the speakers. */
 export function renderDefaultsCard(host: VoiceViewHost): TemplateResult {
   const d = watchVoiceDefaultsOf(host.document);
-  const summary = [d.agent === undefined ? "Default agent" : nameOf(host.hass, d.agent), d.engine === undefined ? "No engine" : nameOf(host.hass, d.engine)].join(" · ");
+  const engines = defaultEngineChoices(host, d.engine);
+  const engineName = d.engine === undefined ? "No engine" : engines.find(([id]) => id === d.engine)?.[1] ?? nameOf(host.hass, d.engine);
+  const summary = [d.agent === undefined ? "Default agent" : nameOf(host.hass, d.agent), engineName].join(" · ");
   const body = html`<fieldset class="vo-body" ?disabled=${host.busy} aria-label="Defaults">
     <div class="vo-stack">${entityField({ hass: host.hass }, "Conversation agent", refOf(host.hass, d.agent ?? ""),
       (ref) => host.edit((doc) => setWatchVoiceAgent(doc, ref.entityId)), "vo:agent", { domain: "conversation", clearable: true })}</div>
     <div class="hint">${d.agent === undefined ? "None picked: Home Assistant's own default agent answers." : "Assist uses this agent unless a tile or a slot picks its own."}</div>
-    <div class="vo-stack">${entityField({ hass: host.hass }, "Text to speech engine", refOf(host.hass, d.engine ?? ""),
-      (ref) => host.edit((doc) => setWatchVoiceEngine(doc, ref.entityId)), "vo:engine", { domain: "tts", clearable: true })}</div>
+    <div class="vo-stack">${selectField("Text to speech engine", d.engine ?? "", engines,
+      (value) => host.edit((doc) => setWatchVoiceEngine(doc, value)), { snapBack: true })}</div>
     <div class="hint ${d.engine === undefined ? "warn" : ""}">${d.engine === undefined ? "Not set. Speaking on speakers needs an engine." : "Speakers say messages and replies with this engine unless a tile, a slot or a phrase picks its own."}</div>
     ${speakerChecklist(host, "Speakers", d.speakers, (id, on) => host.edit((doc) => toggleWatchVoiceSpeaker(doc, id, on)))}
     <div class="hint">${d.speakers.length === 0 ? "None picked. A slot or a phrase set to speakers with none of its own then plays nowhere." : "Assist, Speak and phrases play here unless they pick their own."}</div>
@@ -500,6 +502,17 @@ export function renderWatchCard(host: VoiceViewHost): TemplateResult {
 }
 
 // ── a phrase ─────────────────────────────────────────────────────────────
+
+/** The Defaults card's engine menu: "Not set", then the same engines a
+ * phrase's menu offers (`watchTTSEngines`: every `tts.` state and a
+ * `tts.<platform>` for every `<platform>_say` service), so an engine such as
+ * `tts.demo`, which has a service but no state, is not called missing. A
+ * stored engine Home Assistant has neither of is kept, marked not found. */
+export function defaultEngineChoices(host: Pick<VoiceViewHost, "hass" | "cloudTTS">, stored: string | undefined): [string, string][] {
+  const services = Object.keys(host.hass.services?.tts ?? {});
+  const engines = watchVoiceMenu(watchTTSEngines(host.hass.states, services, host.cloudTTS), stored === undefined ? [] : [stored]);
+  return [["", "Not set"], ...engines.map((c): [string, string] => [c.entityId, c.missing ? `${c.entityId} (not found)` : c.name])];
+}
 
 /** The engine menu's entries: the default, named by the voice defaults, then
  * the engines Home Assistant has, a stored one it does not have kept. */

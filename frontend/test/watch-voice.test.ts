@@ -49,6 +49,7 @@ import {
 import { watchVoiceReplacedText, watchVoiceSaveNote } from "../src/watch-voice/save-note.js";
 import {
   type VoiceViewHost,
+  defaultEngineChoices,
   pickVoicePhrase,
   renderPhrasesCard,
   renderVoiceInspector,
@@ -466,5 +467,28 @@ describe("the views", () => {
     const text = flat(renderVoiceScreen(host(CONFIGURED)));
     expect(text).toContain(`<span class="vo-say-text">Bedtime</span>`);
     expect(text).toContain(`<span class="vo-say-label">Dinner</span>`);
+  });
+});
+
+describe("the Defaults card's engine", () => {
+  // The test bed's A3: `tts.demo` comes from the `demo_say` service and has
+  // no state, so a field that read only states called it missing.
+  const host = (states: Record<string, unknown>, services: string[]) => ({
+    hass: { states, services: { tts: Object.fromEntries(services.map((s) => [s, {}])) } } as unknown as HassLike,
+    cloudTTS: false,
+  });
+
+  it("offers the engines the phrase menu offers, a service-only engine included", () => {
+    const choices = defaultEngineChoices(host({ "tts.piper": { attributes: { friendly_name: "Piper" } } }, ["demo_say", "speak", "clear_cache"]), "tts.demo");
+    expect(choices[0]).toEqual(["", "Not set"]);
+    const ids = choices.map(([id]) => id);
+    expect(ids).toContain("tts.demo");
+    expect(ids).toContain("tts.piper");
+    expect(choices.find(([id]) => id === "tts.demo")![1]).not.toContain("not found");
+  });
+
+  it("keeps a stored engine Home Assistant does not have, marked not found", () => {
+    const choices = defaultEngineChoices(host({}, []), "tts.gone");
+    expect(choices).toContainEqual(["tts.gone", "tts.gone (not found)"]);
   });
 });
