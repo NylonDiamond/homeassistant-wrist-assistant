@@ -92,6 +92,10 @@ for a different document, which a device holding it never fetches. So a load
 that finds an index sets ``revision_floor`` above every revision an earlier
 run can have handed out (:func:`_revision_floor`) and writes it to the index
 before returning, and every new revision, a first one included, is above it.
+A restore from a backup brings an old floor back, so the floor also moves by
+a per-start step taken from the clock, and the watch compares each kind's
+hash (:func:`short_hash`) beside its revision: a number can repeat after a
+restore, a hash of a different document cannot.
 
 Listeners (:meth:`WatchConfigStore.async_add_listener`) hear one
 :class:`WatchConfigChange` per kind whose revision moved: every accepted save,
@@ -140,15 +144,34 @@ _SAVE_DEBOUNCE_SECONDS = 1
 _REVISION_MARGIN = 1000
 
 
-def _revision_floor(saved_floor: int, highest: int) -> int:
-    """Where revisions continue after a load that found an index: above the
-    stored floor and the highest stored revision by ``_REVISION_MARGIN``,
-    and never below the minutes since 1970, which also clears an index that
-    lost both. Stays far inside the 32-bit integer a watch reads it into."""
-    return max(
-        int(time.time() // 60),
-        saved_floor + _REVISION_MARGIN,
-        highest + _REVISION_MARGIN,
+def _revision_floor(saved_floor: int, highest: int, now: float | None = None) -> int:
+    """Where revisions continue after a load that found an index.
+
+    Above the stored floor and the highest stored revision by
+    ``_REVISION_MARGIN``, and never below the minutes since 1970, which also
+    clears an index that lost both; then a per-start step on top: the current
+    Unix second modulo the margin. The result is written to the index before
+    any revision goes out (see ``async_load``).
+
+    The step is there for a restore from a backup. The backup brings the
+    stored floor and revisions back, so without it every start from the same
+    file computes the same floor (the minutes term only overtakes the margin
+    some 16 hours later, and then two starts in one minute agree) and the
+    first save after each start reuses a number
+    an earlier run already handed out for a different document. A watch
+    still holding that number would never fetch the new one. The clock is
+    the one thing a backup cannot bring back, so two starts from the same
+    file land on the same floor only when they start on the same second
+    modulo the margin, and even then the record hash the watch also compares
+    (:func:`short_hash`) tells the documents apart. Seconds rather than a
+    random draw so a test can pin it, and modulo the margin so each start
+    moves the floor by at most twice the margin, which keeps revisions far
+    inside the 32-bit integer a watch reads them into.
+    """
+    now = time.time() if now is None else now
+    step = int(now) % _REVISION_MARGIN
+    return (
+        max(int(now // 60), max(saved_floor, highest) + _REVISION_MARGIN) + step
     )
 
 # The list key a kind's document must carry, for the kinds that have one: a
@@ -172,6 +195,29 @@ _KIND_LIST_KEYS: dict[str, str] = {
 # computes, and a server that quietly lowercased an uppercase hash would hand
 # back a value the phone never computes, which reads as an edit on every pull.
 _HASH_RE = re.compile(r"[0-9a-f]{64}")
+
+# How many hex digits of a record's hash the watch is shown (see short_hash).
+SHORT_HASH_LENGTH = 16
+
+
+def short_hash(document_hash: str | None) -> str | None:
+    """The hash a watch compares beside a revision: the first
+    ``SHORT_HASH_LENGTH`` (16) characters of the record's stored ``hash``.
+
+    The stored hash is SHA-256 as 64 lowercase hex digits: the client's own
+    for a device save, :func:`canonical_hash` for a panel save. 16 of them
+    are 64 bits, plenty to tell two documents of one watch apart. A revision
+    alone can repeat after Home Assistant is restored from a backup (see
+    :func:`_revision_floor`); the hash cannot, so a watch pulls a kind when
+    either differs from what it holds.
+
+    ``None`` for a record with no hash (an empty one off a hand-edited
+    file): nothing to compare, so the watch goes by the revision alone. The
+    delta reply's ``watch_config_hashes``, the signed get's ``short_hash``
+    and the panel summary's ``hash`` all carry this same value."""
+    if not document_hash:
+        return None
+    return document_hash[:SHORT_HASH_LENGTH]
 
 
 class WatchConfigStoreError(Exception):
@@ -1251,6 +1297,19 @@ class WatchConfigStore:
             for kind, record in sorted(self._records.get(owner_watch_id, {}).items())
             if kind in WATCH_CONFIG_KINDS
         }
+
+    def short_hashes(self, owner_watch_id: str) -> dict[str, str]:
+        """The owner's :func:`short_hash` of every kind :meth:`revisions`
+        names, leaving out a record that has no hash."""
+        self._check_available(owner_watch_id)
+        found: dict[str, str] = {}
+        for kind, record in sorted(self._records.get(owner_watch_id, {}).items()):
+            if kind not in WATCH_CONFIG_KINDS:
+                continue
+            digest = short_hash(record.hash)
+            if digest is not None:
+                found[kind] = digest
+        return found
 
     def documents(self, kind: Any) -> tuple[dict[str, dict[str, Any]], bool]:
         """Every owner's current document of ``kind``, and whether that is

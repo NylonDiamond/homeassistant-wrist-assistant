@@ -553,6 +553,71 @@ def test_a_restart_reads_back_every_record_and_its_history(mod):
     assert _put(again, OWNER, base=2, digest=HASH_3).revision == floor + 1
 
 
+def test_the_floor_takes_a_per_start_step_from_the_clock(mod):
+    margin = mod._REVISION_MARGIN
+    # Far past the minutes term would matter: the stored numbers win.
+    saved, highest = 40_000_000, 39_999_000
+    base = max(saved, highest) + margin
+    at = 1_790_000_000.0  # some second in 2026
+    assert mod._revision_floor(saved, highest, at) == base + int(at) % margin
+    # A second later from the same file: a different floor.
+    assert mod._revision_floor(saved, highest, at + 1) == base + (int(at) + 1) % margin
+    # The step never reaches a whole margin.
+    for second in range(0, 3 * margin, 37):
+        floor = mod._revision_floor(saved, highest, float(second) + at)
+        assert base <= floor < base + margin
+    # The minutes since 1970 still win over a small stored floor, and take
+    # the same step, so two starts in one minute differ there too.
+    assert mod._revision_floor(0, 5, at) == int(at // 60) + int(at) % margin
+    assert mod._revision_floor(0, 5, at + 1) == int(at // 60) + (int(at) + 1) % margin
+
+
+@pytest.mark.parametrize("stored_floor", [None, 40_000_000])
+def test_two_starts_from_the_same_backup_hand_out_different_revisions(
+    mod, monkeypatch, stored_floor
+):
+    """A restore brings the index and records back as they were. Two starts
+    from that same file, a few seconds apart, used to give the first save the
+    same number for different documents: with a stored floor above the
+    minutes since 1970 (the test bed's case), and within one minute when the
+    minutes win."""
+    store = _new(mod)
+    _put(store, OWNER, _doc("v1"), digest=HASH_1)
+    backup = copy.deepcopy(_FakeStore.files)
+    if stored_floor is not None:
+        backup[INDEX_KEY]["revision_floor"] = stored_floor
+    clock = {"now": 1_790_000_000.0}
+    monkeypatch.setattr(mod.time, "time", lambda: clock["now"])
+
+    def start_from_backup_and_save(digest: str, name: str):
+        _FakeStore.files = copy.deepcopy(backup)
+        again = _new(mod)
+        # The floor is on disk before any revision above it goes out.
+        assert _FakeStore.files[INDEX_KEY]["revision_floor"] == again._revision_floor
+        return _put(again, OWNER, _doc(name), base=1, digest=digest)
+
+    first = start_from_backup_and_save(HASH_2, "after first restore")
+    clock["now"] += 7
+    second = start_from_backup_and_save(HASH_3, "after second restore")
+    assert first.revision != second.revision
+    assert mod.short_hash(first.hash) != mod.short_hash(second.hash)
+
+
+def test_the_short_hash_is_the_first_16_hex_digits_of_the_stored_hash(mod):
+    assert mod.SHORT_HASH_LENGTH == 16
+    assert mod.short_hash(HASH_2) == HASH_2[:16]
+    assert mod.short_hash("") is None
+    assert mod.short_hash(None) is None
+    store = _new(mod)
+    _put(store, OWNER, digest=HASH_1)
+    _put(store, OWNER, {"wrapPages": True}, digest=HASH_2, kind="behavior")
+    assert store.short_hashes(OWNER) == {"pages": HASH_1[:16], "behavior": HASH_2[:16]}
+    assert store.short_hashes("nobody") == {}
+    # A record with no hash (a hand-edited file) is left out, not sent empty.
+    store.get(OWNER, "behavior").hash = ""
+    assert store.short_hashes(OWNER) == {"pages": HASH_1[:16]}
+
+
 def test_the_owner_file_holds_the_document_and_history_but_the_index_does_not(mod):
     store = _new(mod)
     _put(store, OWNER, _doc("v1"))

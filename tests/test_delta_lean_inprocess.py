@@ -32,6 +32,7 @@ from __future__ import annotations
 import __future__
 import ast
 import asyncio
+import re
 import types
 from datetime import timedelta
 from pathlib import Path
@@ -150,11 +151,101 @@ def test_a_lean_reply_leaves_out_what_the_device_holds(coordinator) -> None:
         assert body == {
             "next_cursor": cursor + 2,
             "watch_config": {"pages": 2},
+            "watch_config_hashes": {"pages": store.get("w1", "pages").hash[:16]},
             "http_actions": 4,
             "complications_token": 6,
         }
 
     asyncio.run(run())
+
+
+def test_every_reply_names_the_hash_beside_each_revision(coordinator) -> None:
+    """``watch_config_hashes`` sits beside ``watch_config``: the first 16 hex
+    digits of each kind's stored hash, a kind with no record left out."""
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    _device_put(store, "pages")
+    _device_put(store, "menus", digest="2" * 64)
+    ent = "light.hashes"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        assert status == 200
+        assert body["watch_config"]["pages"] == store.get("w1", "pages").revision
+        assert body["watch_config"]["behavior"] == 0
+        assert body["watch_config_hashes"] == {"pages": "1" * 16, "menus": "2" * 16}
+        # The revisions alone are what the server records as sent.
+        assert coord._watch_config_sent["w1"] == body["watch_config"]
+
+    asyncio.run(run())
+
+
+def test_a_lean_reply_names_a_hash_only_when_it_can_matter(coordinator) -> None:
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    pages = _device_put(store, "pages")
+    ent = "light.lean_hashes"
+    hass.states.set(ent, "off")
+    revisions = {kind: 0 for kind in module.DELTA_WATCH_CONFIG_KINDS}
+    revisions["pages"] = pages.revision
+    held = module.HeldConfig(watch_config=revisions)
+
+    async def run() -> None:
+        # The first poll after a restart (another epoch) gets every hash:
+        # a restore can repeat a revision under a different document.
+        status, body = await _poll(
+            coord, entities=[ent], lean=True, held=held, epoch="before-restart",
+            caps_hash=coord._caps_hash,
+        )
+        assert status == 200, body
+        assert "watch_config" not in body
+        assert body["watch_config_hashes"] == {"pages": "1" * 16}
+        cursor = body["next_cursor"]
+
+        # Same epoch, revisions held, no hash reported: nothing to say.
+        _change(hass, coord, ent, "on")
+        status, body = await _poll(
+            coord, since=cursor, entities=[ent], timeout=0, lean=True, held=held,
+            epoch=coord.epoch, caps_hash=coord._caps_hash,
+        )
+        assert "watch_config_hashes" not in body
+        cursor = body["next_cursor"]
+
+        # A reported hash that differs is named; one that matches is not.
+        _change(hass, coord, ent, "off")
+        status, body = await _poll(
+            coord, since=cursor, entities=[ent], timeout=0, lean=True,
+            held=module.HeldConfig(
+                watch_config=revisions, watch_config_hashes={"pages": "f" * 16}
+            ),
+            epoch=coord.epoch, caps_hash=coord._caps_hash,
+        )
+        assert body["watch_config_hashes"] == {"pages": "1" * 16}
+        cursor = body["next_cursor"]
+        _change(hass, coord, ent, "on")
+        status, body = await _poll(
+            coord, since=cursor, entities=[ent], timeout=0, lean=True,
+            held=module.HeldConfig(
+                watch_config=revisions, watch_config_hashes={"pages": "1" * 16}
+            ),
+            epoch=coord.epoch, caps_hash=coord._caps_hash,
+        )
+        assert "watch_config_hashes" not in body
+
+    asyncio.run(run())
+
+
+def test_the_view_reads_held_hashes_and_drops_junk() -> None:
+    held = _view_helpers()["_held_hashes"]
+    assert held(None) is None
+    assert held(["pages"]) is None
+    assert held({"pages": "0123456789abcdef", "menus": "XYZ", "voice": 4}) == {
+        "pages": "0123456789abcdef"
+    }
+    assert held({"pages": ""}) is None
 
 
 def test_a_lean_reply_fills_in_a_stale_caps_hash_and_absent_numbers(coordinator) -> None:
@@ -710,6 +801,8 @@ def _view_helpers() -> dict[str, Any]:
         "_read_capped_body",
         "_delta_over_caps",
         "_lean_request",
+        "_held_hashes",
+        "_HELD_HASH_RE",
         "DELTA_MAX_BODY_BYTES",
         "DELTA_MAX_ENTITIES",
         "DELTA_MAX_TEMPLATES",
@@ -730,7 +823,7 @@ def _view_helpers() -> dict[str, Any]:
         )
     ]
     assert len(wanted) == len(names)
-    namespace: dict[str, Any] = {"Any": Any, "Request": object}
+    namespace: dict[str, Any] = {"Any": Any, "Request": object, "re": re}
     exec(  # noqa: S102
         compile(
             ast.Module(body=wanted, type_ignores=[]),

@@ -57,6 +57,7 @@ import base64
 import gzip
 import logging
 import math
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -184,6 +185,7 @@ from .watch_config_store import (
     WatchConfigStoreError,
     WatchConfigUnavailableError,
     WatchConfigValidationError,
+    short_hash,
 )
 from .watch_logs_store import WatchLogsError
 from .watch_voices_store import VOICES_HASH_RE, WatchVoicesValidationError
@@ -628,6 +630,26 @@ def _held_revisions(raw: Any) -> dict[str, int] | None:
     return held or None
 
 
+_HELD_HASH_RE = re.compile(r"[0-9a-f]{1,64}")
+
+
+def _held_hashes(raw: Any) -> dict[str, str] | None:
+    """The ``watch_config_hashes`` a device reports holding, kind by kind
+    (the short hashes a reply hands out, see ``watch_config_store.short_hash``).
+    A kind whose value is not lowercase hex is left out; anything but an
+    object reads as absent."""
+    if not isinstance(raw, dict):
+        return None
+    held = {
+        kind: value
+        for kind, value in raw.items()
+        if isinstance(kind, str)
+        and isinstance(value, str)
+        and _HELD_HASH_RE.fullmatch(value)
+    }
+    return held or None
+
+
 class WADeltaView(HomeAssistantView):
     """HMAC-authenticated long-poll wrapper for delta updates.
 
@@ -795,9 +817,11 @@ class WADeltaView(HomeAssistantView):
         # `client_certificate`. The coordinator compares them with the
         # current ones so a hint whose reply was lost still reaches the
         # device (see HeldConfig). Absent from older apps; junk reads as
-        # absent, and a junk kind is left out.
+        # absent, and a junk kind is left out. `watch_config_hashes` is the
+        # short hash of each kind it holds, read only to shape a lean reply.
         held = HeldConfig(
             watch_config=_held_revisions(payload.get("watch_config")),
+            watch_config_hashes=_held_hashes(payload.get("watch_config_hashes")),
             http_actions=_held_revision(payload.get("http_actions")),
             client_certificate=_held_revision(payload.get("client_certificate")),
         )
@@ -3943,7 +3967,14 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
                     | "control_center" | "rooms",
             "since_revision": <int>?, "unreadable_revision": <int>?,
             "main_house": false?, "observer": true?}
-    Reply: {"ok": true, "kind", "revision", "hash", "updated_at", "document"?}
+    Reply: {"ok": true, "kind", "revision", "hash", "short_hash", "updated_at",
+            "document"?}
+
+    ``hash`` is the record's full SHA-256 (64 hex digits), which the iPhone
+    mirror compares with its own. ``short_hash`` is its first 16 digits
+    (``watch_config_store.short_hash``), the value the delta reply's
+    ``watch_config_hashes`` names for this kind: what a watch keeps beside
+    the revision it applied.
 
     ``main_house`` changes nothing in the reply; it is kept on the watch's
     entry (`_note_main_house`).
@@ -3958,8 +3989,8 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     ``document`` is left out when ``since_revision`` equals the stored
     revision, so an up-to-date device downloads a few bytes rather than its
     whole config on every check. With no record the reply is
-    ``revision: 0`` with ``hash`` and ``updated_at`` null and no document. The
-    save history is never sent.
+    ``revision: 0`` with ``hash``, ``short_hash`` and ``updated_at`` null
+    and no document. The save history is never sent.
 
     Every reply about a stored record, but an observer's, marks that revision
     delivered, whether it carried the document or said "you already have
@@ -4014,6 +4045,7 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
             "kind": kind,
             "revision": phone_record.revision,
             "hash": phone_record.hash,
+            "short_hash": short_hash(phone_record.hash),
             "updated_at": phone_record.updated_at,
         }
         if raw_since != phone_record.revision:
@@ -4028,13 +4060,21 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
         _note_main_house(ctx, kind)
     if record is None:
         return ctx.signed_json(
-            {"ok": True, "kind": kind, "revision": 0, "hash": None, "updated_at": None}
+            {
+                "ok": True,
+                "kind": kind,
+                "revision": 0,
+                "hash": None,
+                "short_hash": None,
+                "updated_at": None,
+            }
         )
     reply: dict[str, Any] = {
         "ok": True,
         "kind": kind,
         "revision": record.revision,
         "hash": record.hash,
+        "short_hash": short_hash(record.hash),
         "updated_at": record.updated_at,
     }
     if raw_since != record.revision:

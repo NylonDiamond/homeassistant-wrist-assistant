@@ -87,6 +87,10 @@ class HeldConfig:
     watch_config: dict[str, int] | None = None
     http_actions: int | None = None
     client_certificate: int | None = None
+    # The short hash of each watch config kind the device holds
+    # (``watch_config_hashes``). Read only to shape a lean reply; whether a
+    # device lags is judged on revisions alone (watch_config_lags).
+    watch_config_hashes: dict[str, str] | None = None
 
     def watch_config_lags(self, current: dict[str, int]) -> bool:
         """Whether a kind the device reported differs from the current
@@ -582,6 +586,21 @@ class DeltaCoordinator:
             _LOGGER.debug("No watch config revisions for %s", watch_id, exc_info=True)
             return None
         return {kind: int(held.get(kind, 0)) for kind in DELTA_WATCH_CONFIG_KINDS}
+
+    def watch_config_hashes(self, watch_id: str) -> dict[str, str] | None:
+        """The signer's short hash (``watch_config_store.short_hash``, the
+        first 16 hex digits of the record's SHA-256) of every kind in
+        DELTA_WATCH_CONFIG_KINDS that has a record with a hash. None when
+        ``watch_config_revisions`` is None."""
+        store = self._watch_config_store
+        if store is None:
+            return None
+        try:
+            held = store.short_hashes(watch_id)
+        except Exception:  # noqa: BLE001 (an unreadable file must not fail the poll)
+            _LOGGER.debug("No watch config hashes for %s", watch_id, exc_info=True)
+            return None
+        return {kind: held[kind] for kind in DELTA_WATCH_CONFIG_KINDS if kind in held}
 
     def _watch_config_behind(
         self, watch_id: str, held: HeldConfig | None = None
@@ -1098,6 +1117,16 @@ class DeltaCoordinator:
         no record), so the watch pulls a kind through ``watch_config_get`` when
         its revision is above the one it applied.
 
+        Beside it, ``watch_config_hashes`` ({kind: short hash}): the first 16
+        hex digits of each kind's stored SHA-256 (``short_hash`` in
+        ``watch_config_store.py``), the same value the signed get returns as
+        ``short_hash``. A kind with no record, or a record with no hash, is
+        left out. A revision can repeat after Home Assistant is restored
+        from a backup; the hash of a different document does not, so a
+        watch that reads it pulls a kind when the revision or the hash
+        differs from what it holds. Older watches ignore the key. A poll may
+        report the hashes it holds under the same key (see ``_lean_reply``).
+
         ``voices_hash`` is the watch's hash of its installed speech voices
         (see ``watch_voices_store.voices_hash``), None from a watch that does
         not report them. When it is not the stored hash, a reply with a body
@@ -1190,6 +1219,11 @@ class DeltaCoordinator:
             self._note_held(
                 watch_id, "watch_config", reported.watch_config_lags(revisions), revisions
             )
+            # Beside the revisions, never in place of them: older watches
+            # read only `watch_config`. Not recorded in _watch_config_sent.
+            hashes = self.watch_config_hashes(watch_id)
+            if hashes is not None:
+                body["watch_config_hashes"] = hashes
         library_revision = self.http_actions_revision()
         if library_revision is not None:
             body["http_actions"] = library_revision
@@ -1232,6 +1266,9 @@ class DeltaCoordinator:
           ``events`` only when there are some. ``next_cursor`` always.
         * Each config number only when it differs from what the poll
           reported holding; ``watch_config`` names only the kinds that differ.
+        * ``watch_config_hashes`` only for those kinds, for a kind whose
+          hash differs from the one the poll reported, and for every kind on
+          the first poll after a restart (the poll's epoch is not this one).
         * ``epoch`` only when the poll's is not this coordinator's.
 
         The device fills a missing number in from the request it sent, so
@@ -1247,6 +1284,7 @@ class DeltaCoordinator:
         if not body.get("events"):
             body.pop("events", None)
         revisions = body.get("watch_config")
+        changed: dict[str, int] = {}
         if revisions is not None:
             held_revisions = reported.watch_config or {}
             changed = {
@@ -1258,6 +1296,25 @@ class DeltaCoordinator:
                 body["watch_config"] = changed
             else:
                 del body["watch_config"]
+        hashes = body.get("watch_config_hashes")
+        if hashes is not None:
+            # A first poll after a restart (its epoch is not this one) gets
+            # every hash: a restore from a backup needs a restart, and it is
+            # what can repeat a revision under a different document. Past
+            # that, a kind whose revision is named, or whose hash the poll
+            # reported differently.
+            held_hashes = reported.watch_config_hashes or {}
+            kept = {
+                kind: digest
+                for kind, digest in hashes.items()
+                if epoch != self._epoch
+                or kind in changed
+                or (kind in held_hashes and held_hashes[kind] != digest)
+            }
+            if kept:
+                body["watch_config_hashes"] = kept
+            else:
+                del body["watch_config_hashes"]
         for key, held_value in (
             ("http_actions", reported.http_actions),
             ("client_certificate", reported.client_certificate),

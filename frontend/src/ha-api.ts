@@ -703,6 +703,10 @@ export async function fetchWatchConfig(hass: HassLike, owner: string, kind: Watc
  * device is known to hold, and the newest a device could not read. */
 export interface WatchConfigDelivery {
   revision: number;
+  /** The record's short hash: the first 16 hex digits of its SHA-256, the
+   * value the watch compares beside the revision. Null for a record with no
+   * hash, absent from integrations older than the field. */
+  hash?: string | null;
   delivered_revision: number;
   rejected_revision: number;
   /** How many items the record lists, on the pages, status pages and Control

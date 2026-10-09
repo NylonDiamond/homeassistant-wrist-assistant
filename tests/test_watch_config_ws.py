@@ -282,6 +282,7 @@ def test_summary_gives_each_watch_its_numbers_and_no_document(env) -> None:
             WATCH: {
                 "behavior": {
                     "revision": 2,
+                    "hash": env.store.get(WATCH, "behavior").hash[:16],
                     "delivered_revision": 1,
                     "rejected_revision": 0,
                 }

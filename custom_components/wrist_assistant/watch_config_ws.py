@@ -64,6 +64,7 @@ from .watch_config_store import (
     WatchConfigChange,
     WatchConfigStore,
     WatchConfigStoreError,
+    short_hash,
 )
 
 if TYPE_CHECKING:
@@ -221,13 +222,16 @@ def ws_watch_config_summary(
 ) -> None:
     """Where every watch's panel-written records have got to, in one answer.
 
-    Result: {"owners": {<owner_watch_id>: {<kind>: {"revision",
+    Result: {"owners": {<owner_watch_id>: {<kind>: {"revision", "hash",
              "delivered_revision", "rejected_revision", "items"?}}},
              "http_actions"?: {"revision", "delivered": {<owner id>: <n>}}}
 
     The panel's Home asks this to say which watches are still waiting, where
     it used to read every record of every watch, document and all. Only
-    numbers travel: no document, no hash, no names. ``items`` is how many
+    numbers travel: no document, no names. ``hash`` is the record's short
+    hash (``watch_config_store.short_hash``, the first 16 hex digits of its
+    SHA-256, null for a record with none), the value the watch is shown
+    beside the revision in the delta reply's ``watch_config_hashes``. ``items`` is how many
     the record lists, on the kinds whose editors list items (`_ITEM_LISTS`):
     the pages (the watch's own system pages left out), the status pages and
     the Control Center controls. Home puts it on each watch's card. Only the kinds the panel
@@ -255,18 +259,19 @@ def ws_watch_config_summary(
     def listed(owner: str) -> bool:
         return admin or may_manage_owner(hass, connection, owner)
 
-    owners: dict[str, dict[str, dict[str, int]]] = {}
+    owners: dict[str, dict[str, dict[str, Any]]] = {}
     for owner_watch_id in store.owners():
         if not listed(owner_watch_id):
             continue
-        kinds: dict[str, dict[str, int]] = {}
+        kinds: dict[str, dict[str, Any]] = {}
         try:
             for kind in sorted(WATCH_CONFIG_PANEL_KINDS):
                 record = store.get(owner_watch_id, kind)
                 if record is None:
                     continue
-                numbers = {
+                numbers: dict[str, Any] = {
                     "revision": record.revision,
+                    "hash": short_hash(record.hash),
                     "delivered_revision": record.delivered_revision,
                     "rejected_revision": record.rejected_revision,
                 }

@@ -133,6 +133,7 @@ def _handlers(store_mod: Any, notif_mod: Any = None) -> dict[str, Any]:
         "WatchConfigStoreError": store_mod.WatchConfigStoreError,
         "WatchConfigUnavailableError": store_mod.WatchConfigUnavailableError,
         "WatchConfigValidationError": store_mod.WatchConfigValidationError,
+        "short_hash": store_mod.short_hash,
         "is_iphone_entry": notif_mod.is_iphone_entry,
         "phone_watch_ids": notif_mod.phone_watch_ids,
     }
@@ -194,6 +195,7 @@ def test_get_with_no_record_is_revision_zero_and_no_document(env) -> None:
         "kind": "pages",
         "revision": 0,
         "hash": None,
+        "short_hash": None,
         "updated_at": None,
     }
 
@@ -218,6 +220,7 @@ def test_put_then_get_round_trips_the_document_hash_and_time(env) -> None:
         "kind": "pages",
         "revision": 1,
         "hash": HASH_1,
+        "short_hash": HASH_1[:16],
         "updated_at": record.updated_at,
         "document": doc,
     }
@@ -247,7 +250,9 @@ def test_get_never_carries_the_history(env) -> None:
     _put(env, _put_body(_doc("v1")))
     _put(env, _put_body(_doc("v2"), base=1, digest=HASH_2))
     reply = _get(env, {"kind": "pages"})
-    assert set(reply.body) == {"ok", "kind", "revision", "hash", "updated_at", "document"}
+    assert set(reply.body) == {
+        "ok", "kind", "revision", "hash", "short_hash", "updated_at", "document"
+    }
     assert "v1" not in repr(reply.body)
 
 
@@ -1032,7 +1037,12 @@ def test_a_phone_whose_watches_hold_no_style_reads_its_own_record(env) -> None:
     )
     reply = _get(env, {"kind": STYLE}, watch_id=PHONE)
     assert reply.body == {
-        "ok": True, "kind": STYLE, "revision": 0, "hash": None, "updated_at": None
+        "ok": True,
+        "kind": STYLE,
+        "revision": 0,
+        "hash": None,
+        "short_hash": None,
+        "updated_at": None,
     }
 
 
