@@ -45,6 +45,9 @@ export interface SettingOption {
   label: string;
 }
 
+/** A device that reads a setting: the watch, or the iPhone for its own pages. */
+export type SettingDevice = "watch" | "iphone";
+
 /**
  * One row of the form. `bool` is a switch, `enum` a choice of `options`,
  * `color` a `#RRGGBB` string, `entity` an entity id of `domain` and `number`
@@ -54,9 +57,6 @@ export interface SettingOption {
  * string under `key`, with the scene and script targets as JSON strings
  * under `sceneKey` and `scriptKey`.
  */
-/** A device that reads a setting: the watch, or the iPhone for its own pages. */
-export type SettingDevice = "watch" | "iphone";
-
 export interface CatalogSetting {
   key: string;
   /** The devices that read this key. Every entry of the catalog says it:
