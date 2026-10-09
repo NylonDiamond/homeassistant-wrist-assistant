@@ -70,6 +70,7 @@ function fakeHass(newWatch: string, opts: {
 } = {}) {
   const sent: Record<string, unknown>[] = [];
   const store = new Map<string, WatchConfigRecord>();
+  const subscriptions: { callback: (event: unknown) => void; msg: Record<string, unknown>; open: boolean }[] = [];
   const hass = {
     user: { id: "root", is_admin: opts.notAdmin !== true, name: "Jesse" },
     states: {},
@@ -117,12 +118,14 @@ function fakeHass(newWatch: string, opts: {
         if (type.endsWith("/pair/offer_cancel")) return null;
         throw Object.assign(new Error("unknown"), { code: "unknown_command" });
       },
-      async subscribeMessage() {
-        return async () => undefined;
+      async subscribeMessage(callback: (event: unknown) => void, msg: Record<string, unknown>) {
+        const entry = { callback, msg, open: true };
+        subscriptions.push(entry);
+        return async () => { entry.open = false; };
       },
     },
   } as unknown as HassLike;
-  return { hass, sent, store };
+  return { hass, sent, store, subscriptions };
 }
 
 interface Inside {
@@ -233,6 +236,43 @@ describe("Watch settings as a page under the Watch app row", () => {
     const main = await page("w1", elsewhere);
     expect(main.text()).not.toContain("takes its settings from your main house");
     expect(main.text()).toContain("data-sec=ws-connection");
+  });
+
+  describe("a save made somewhere else", () => {
+    /** Another writer saves the watch's settings: the store moves on and the
+     * live line says so. */
+    function savedElsewhere(ha: ReturnType<typeof fakeHass>, id: string, extra: Record<string, unknown>) {
+      const held = ha.store.get(id) ?? behavior(1);
+      ha.store.set(id, behavior(held.revision + 1, extra));
+      for (const sub of ha.subscriptions) {
+        if (sub.open && sub.msg.owner_watch_id === id) sub.callback({ kind: "behavior", revision: held.revision + 1 });
+      }
+    }
+
+    it("follows the watch on the page over the live line, and lets go when the page goes", async () => {
+      const { ws, ha } = await page("w2");
+      const live = ha.subscriptions.filter((sub) => sub.open);
+      expect(live.map((sub) => sub.msg)).toEqual([{ type: "wrist_assistant/watch_config/subscribe", owner_watch_id: "w2" }]);
+      ws.leave();
+      expect(ha.subscriptions.some((sub) => sub.open)).toBe(false);
+    });
+
+    it("is shown at once when the form holds no edits", async () => {
+      const { ha, text } = await page("w2");
+      expect(text()).toContain("Chen's Watch · revision 1");
+      savedElsewhere(ha, "w2", { wrapPages: !wrap.default });
+      await vi.waitFor(() => expect(text()).toContain("Chen's Watch · revision 2"));
+    });
+
+    it("keeps the form's edits, and the save then says the settings changed somewhere else", async () => {
+      const { inside, ha, text } = await page("w2");
+      inside.edit(wrap, !wrap.default);
+      savedElsewhere(ha, "w2", { longPressDuration: "Long" });
+      await settle();
+      await settle();
+      expect(text()).toContain("Chen's Watch · revision 1");
+      expect(inside.edits.get("wrapPages")).toBe(!wrap.default);
+    });
   });
 
   it("reads nothing again while it stays on one watch", async () => {

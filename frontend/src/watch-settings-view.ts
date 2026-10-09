@@ -37,6 +37,7 @@ import {
   type WatchConfigRecord,
   fetchWatchConfig,
   saveWatchConfig,
+  subscribeWatchConfig,
 } from "./ha-api.js";
 import { SECTION_COLOR } from "./kinds.js";
 import type { IconProvider } from "./renderer.js";
@@ -192,6 +193,11 @@ export class WatchSettings implements ReactiveController {
    * picked, or after a newer load, is dropped. */
   private loadSeq = 0;
   private pollTimer?: number;
+  // The live line for the watch on the page (`follow`): another writer's
+  // save of its settings or its notification style is shown at once.
+  private subscribeSeq = 0;
+  private unsubscribe?: () => Promise<void>;
+  private followed?: string;
   /** The "Pair a device" card, after the other cards. It starts afresh on
    * each visit, and a watch paired on it becomes the one shown. */
   private readonly pairCard = new PairWatchCard(() => this.changed(), (id, stale, kind) => this.showPaired(id, stale, kind));
@@ -225,11 +231,15 @@ export class WatchSettings implements ReactiveController {
   /** The panel back in the page (Home Assistant moves it in and out): a
    * save still waiting on the page is checked on again. */
   hostConnected(): void {
-    if (this.active) this.pollIfWaiting();
+    if (this.active) {
+      this.pollIfWaiting();
+      if (this.ownerId !== undefined && !this.loading) this.follow(this.ownerId);
+    }
   }
 
   hostDisconnected(): void {
     this.stopPolling();
+    this.unfollow();
     this.pairCard.stopOffer();
   }
 
@@ -283,6 +293,7 @@ export class WatchSettings implements ReactiveController {
       this.loading = false;
       this.clearStyle();
       this.stopPolling();
+      this.unfollow();
       this.changed();
       return;
     }
@@ -296,6 +307,7 @@ export class WatchSettings implements ReactiveController {
     if (!this.active) return;
     this.active = false;
     this.stopPolling();
+    this.unfollow();
     this.confirm = undefined;
     this.pairCard.close();
     this.cert.close();
@@ -324,7 +336,52 @@ export class WatchSettings implements ReactiveController {
     if (restored.moved && !keepNote) this.note = { kind: "warn", text: SETTINGS_MOVED_TEXT };
     this.loading = false;
     this.pollIfWaiting();
+    this.follow(ownerId);
     this.changed();
+  }
+
+  /**
+   * Hear every save of this watch's settings and notification style while
+   * the page shows it, as the other watch editors do. A save made somewhere
+   * else (the iPhone, another panel, a forced write) replaces what is shown
+   * when the form holds no edits to that record; with edits the form is
+   * kept, and Save then says the settings changed somewhere else
+   * (`freshen`, and the save's own conflict).
+   */
+  private follow(ownerId: string): void {
+    const hass = this.hass;
+    if (!hass || this.followed === ownerId) return;
+    this.unfollow();
+    this.followed = ownerId;
+    const seq = ++this.subscribeSeq;
+    subscribeWatchConfig(hass, ownerId, (event) => {
+      if (seq !== this.subscribeSeq || ownerId !== this.ownerId || this.loading || !this.active) return;
+      const now = this.hass;
+      if (!now) return;
+      if (event.kind === "behavior" && event.revision !== (this.record?.revision ?? 0)) {
+        void this.freshen(now, ownerId, "behavior");
+      } else if (event.kind === NOTIFICATION_STYLE_KIND && event.revision !== (this.styleRecord?.revision ?? 0)) {
+        void this.freshen(now, ownerId, "style");
+      }
+    }).then(
+      (unsubscribe) => {
+        if (seq === this.subscribeSeq) this.unsubscribe = unsubscribe;
+        else void unsubscribe().catch(() => undefined);
+      },
+      () => {
+        // No live line (an older integration): the delivery checks still
+        // pick a newer copy up while a save waits.
+        if (seq === this.subscribeSeq) this.followed = undefined;
+      },
+    );
+  }
+
+  private unfollow(): void {
+    this.subscribeSeq++;
+    this.followed = undefined;
+    const unsubscribe = this.unsubscribe;
+    this.unsubscribe = undefined;
+    void unsubscribe?.().catch(() => undefined);
   }
 
   private clearStyle(): void {
