@@ -416,13 +416,13 @@ def test_setup_loads_and_sweeps_the_store() -> None:
     assert f'_FOLDER = "{FOLDER}"' in (_PKG_DIR / "watch_logs_store.py").read_text()
 
 
-def test_the_logs_go_with_the_device_the_forget_and_the_entry() -> None:
+def test_the_logs_go_with_the_device_and_the_forget_but_stay_with_the_entry() -> None:
     init = (_PKG_DIR / "__init__.py").read_text()
     device_removal = init.split("async def async_remove_config_entry_device", 1)[1].split(
         "async def async_remove_entry", 1
     )[0]
     assert "domain_data.watch_logs_store.forget(watch_id)" in device_removal
-    assert "await WatchLogsStore(hass).async_remove()" in init
+    assert "await WatchLogsStore(hass).async_remove()" not in init
     forget = (_PKG_DIR / "complication_ws.py").read_text()
     assert "logs_store.forget(watch_id)" in forget
 

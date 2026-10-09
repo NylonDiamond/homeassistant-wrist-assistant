@@ -4,10 +4,11 @@ Most stores save through Home Assistant's debounce (``Store.async_delay_save``),
 which leaves a timer on the store instance. Unload drops the instance but not
 the timer, so the save used to land after the entry was gone:
 
-* after an uninstall: ``async_remove_entry`` deletes each file through a fresh
-  ``Store``, which cancels nothing on the old one, and the old timer then
-  writes the file back. Pairings with working keys, push tokens, or a user's
-  private key and its password came back on disk.
+* after a file is deleted (a device's removal, or by hand): a fresh ``Store``
+  cancels nothing on the old one, and the old timer then writes the file
+  back. Pairings with working keys, push tokens, or a user's private key and
+  its password came back on disk. (Removing the integration deleted every
+  file this way until it was changed to keep them.)
 * after a reload: the new instance reads the file first, and the old timer
   writes a newer copy a moment later, which the new instance then overwrites
   with the older state. A watch config revision could be reused for
@@ -22,6 +23,8 @@ Covered here, with no Home Assistant:
 * the uninstall and reload sequences above, on the real stores;
 * ``async_unload_entry`` and ``async_remove_entry`` (pulled out of
   ``__init__.py`` by name, as ``test_device_removal_inprocess.py`` does);
+  removing the integration keeps every file, and a re-added entry reads its
+  pairings back;
 * the one-time statistics unit cleanup names the unit class, which Home
   Assistant requires from 2026.11.
 """
@@ -460,58 +463,87 @@ def test_one_store_failing_to_write_does_not_stop_the_others() -> None:
 
 
 def _remove_namespace(journal: _Journal) -> dict[str, Any]:
-    class _Fresh:
-        """A store class whose fresh instance only removes its file."""
-
-        def __init__(self, label: str) -> None:
-            self.label = label
-
-        def __call__(self, *_a: object, **_k: object) -> Any:
-            return journal.recorder(f"fresh {self.label}")
-
+    """``async_remove_entry`` with a ``Store`` that journals any file it is
+    asked to touch, so a test can prove nothing is deleted."""
     namespace: dict[str, Any] = {
         "DOMAIN": DOMAIN,
         "_LOGGER": logging.getLogger("wrist_assistant_remove_test"),
         "Store": lambda _hass, _version, key: journal.recorder(f"fresh {key}"),
-        "WIDGET_SECRET_STORAGE_KEY": "secrets",
-        "WIDGET_SECRET_STORAGE_VERSION": 1,
-        "NOTIFICATION_TOKEN_STORAGE_KEY": "tokens",
-        "NOTIFICATION_TOKEN_STORAGE_VERSION": 1,
     }
-    for name in (
-        "ComplicationStore",
-        "WatchConfigStore",
-        "WatchVoicesStore",
-        "HTTPActionsStore",
-        "PageImagesStore",
-        "ClientCertificateStore",
-        "WatchLogsStore",
-    ):
-        namespace[name] = _Fresh(name)
     return _from_init(namespace, "async_remove_entry", "_async_shutdown_stores", "_DEBOUNCED_STORES")
 
 
-def test_remove_after_a_failed_unload_stops_the_old_stores_before_deleting() -> None:
+def test_remove_after_a_failed_unload_writes_the_old_stores_and_deletes_nothing(
+    caplog,
+) -> None:
     """Home Assistant still calls async_remove_entry when the unload failed,
-    with the old stores alive. Their waiting saves are written and stopped
-    first, so no timer writes a file back after it is deleted."""
+    with the old stores alive. Their waiting saves are written, so the kept
+    files hold the last change, and no file is deleted."""
     journal = _Journal()
     namespace = _remove_namespace(journal)
     hass = types.SimpleNamespace(data={DOMAIN: _runtime_data(journal)})
-    asyncio.run(namespace["async_remove_entry"](hass, object()))
-    shut = [i for i, line in enumerate(journal) if line.endswith(".async_shutdown")]
-    removed = [i for i, line in enumerate(journal) if line.startswith("fresh ")]
+    with caplog.at_level(logging.INFO, logger="wrist_assistant_remove_test"):
+        asyncio.run(namespace["async_remove_entry"](hass, object()))
+    shut = [line for line in journal if line.endswith(".async_shutdown")]
     assert len(shut) == len(namespace["_DEBOUNCED_STORES"])
-    assert removed and max(shut) < min(removed)
+    assert not [line for line in journal if line.startswith("fresh ")]
+    assert not [line for line in journal if line.endswith(".async_remove")]
     assert DOMAIN not in hass.data
+    (record,) = [r for r in caplog.records if r.name == "wrist_assistant_remove_test"]
+    assert record.levelno == logging.INFO
+    assert ".storage/wrist_assistant*" in record.getMessage()
+    assert "kept" in record.getMessage()
 
 
-def test_remove_after_a_clean_unload_only_deletes() -> None:
+def test_remove_after_a_clean_unload_deletes_nothing() -> None:
     journal = _Journal()
     namespace = _remove_namespace(journal)
     hass = types.SimpleNamespace(data={})
     asyncio.run(namespace["async_remove_entry"](hass, object()))
-    assert journal and all(line.startswith("fresh ") for line in journal)
+    assert journal == []
+
+
+def test_a_re_added_integration_keeps_the_device_and_its_key() -> None:
+    """Remove the integration, then add it again: the files are still there,
+    and the new entry's stores read the watch's pairing back, bound to the
+    same user and the same key, with its pages."""
+    key = base64.b64encode(b"k" * 32).decode("ascii")
+
+    async def run() -> None:
+        secrets = await _new_store("widget_secret_store")
+        secrets.register("watch-A", key, "watch", user_id="alice")
+        config = await _new_store("watch_config_store")
+        config.put(
+            "watch-A",
+            "pages",
+            {"schemaVersion": 1, "pages": []},
+            document_hash="a" * 64,
+            base_revision=0,
+            updated_by="watch-A",
+        )
+        # Unload, then the removal.
+        data = types.SimpleNamespace(widget_secret_store=secrets, watch_config_store=config)
+        await secrets.async_shutdown()
+        await config.async_shutdown()
+        journal = _Journal()
+        namespace = _remove_namespace(journal)
+        hass = types.SimpleNamespace(data={DOMAIN: data})
+        await namespace["async_remove_entry"](hass, object())
+        _Store.fire_timers()
+        assert "wrist_assistant.widget_secrets" in _Store.disk
+
+        # The re-added entry's setup loads the same files.
+        again = await _new_store("widget_secret_store")
+        entry = again.get("watch-A")
+        assert entry is not None
+        assert entry.user_id == "alice"
+        assert again.is_paired_watch("watch-A")
+        assert entry.secret_b64 == key
+        pages = await _new_store("watch_config_store")
+        assert pages.get("watch-A", "pages").revision == 1
+
+    with _loaded_package():
+        asyncio.run(run())
 
 
 # ── statistics unit cleanup ──────────────────────────────────────────────

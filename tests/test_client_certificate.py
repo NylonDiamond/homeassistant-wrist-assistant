@@ -897,9 +897,10 @@ def test_setup_loads_the_store_and_attaches_it_to_the_poll() -> None:
     assert "client_certificate_store=client_certificate_store," in init
 
 
-def test_the_file_goes_with_the_entry_but_not_with_a_device() -> None:
+def test_the_file_stays_with_the_entry_and_with_a_device() -> None:
     init = (_PKG_DIR / "__init__.py").read_text()
-    assert "await ClientCertificateStore(hass).async_remove()" in init
+    # Removing the integration keeps every file (a re-add picks it up).
+    assert "await ClientCertificateStore(hass).async_remove()" not in init
     device_removal = init.split("async def async_remove_config_entry_device", 1)[1].split(
         "async def async_remove_entry", 1
     )[0]

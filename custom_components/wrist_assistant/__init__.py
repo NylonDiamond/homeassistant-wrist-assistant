@@ -27,7 +27,6 @@ from homeassistant.helpers import instance_id as ha_instance_id
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.network import NoURLAvailableError, get_url
-from homeassistant.helpers.storage import Store
 
 from .api import DeltaCoordinator
 from .apns_client import APNsClient
@@ -48,8 +47,6 @@ from .const import (
     DOMAIN,
     HTTP_ACTIONS_CAPABILITY,
     LIBRARY_OWNER_ID,
-    NOTIFICATION_TOKEN_STORAGE_KEY,
-    NOTIFICATION_TOKEN_STORAGE_VERSION,
     PAGE_IMAGES_CAPABILITY,
     PHONE_PAIRING_CAPABILITY,
     PUSH_PAIRED_BY_USER_CAPABILITY,
@@ -70,8 +67,6 @@ from .const import (
     WATCH_LOGS_CAPABILITY,
     WATCH_PAIRING_CAPABILITY,
     WATCH_VOICES_CAPABILITY,
-    WIDGET_SECRET_STORAGE_KEY,
-    WIDGET_SECRET_STORAGE_VERSION,
     WristAssistantConfigEntry,
     WristAssistantData,
 )
@@ -1330,10 +1325,10 @@ async def _async_shutdown_stores(data: WristAssistantData) -> None:
     """Write every store's waiting debounced save now and stop it saving.
 
     A debounced save left on an unloaded instance fires after the entry is
-    gone: after an uninstall's async_remove_entry deleted its file, writing
+    gone: after a file was deleted by hand or by a device's removal, writing
     pairings, push tokens or a private key back to disk, or after a reload's
-    new instance already read the file, which then loses that change or
-    reuses a revision number for different content. Each store's
+    or a re-add's new instance already read the file, which then loses that
+    change or reuses a revision number for different content. Each store's
     async_shutdown writes the save at once, which cancels the timer, and
     refuses any later one. One store failing to write must not keep the
     others from it.
@@ -1441,50 +1436,37 @@ async def async_remove_config_entry_device(
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Wipe persisted device pairings when the integration is removed.
+    """Keep every stored file when the integration is removed.
 
-    Without this, deleting and re-adding the integration leaves the widget
-    secret + notification token stores on disk, and on next load every old
-    pairing re-creates its device entry — including ones for phones the user
-    has long since uninstalled. The iOS app's foreground identity check
-    surfaces a re-pair banner and rotates the secret in place, so a still-
-    paired phone recovers without user-visible sign-in.
+    People remove and re-add an integration to fix things, and Home
+    Assistant's dialog says only that the devices and entities go. Removing
+    the files as well used to cost every pairing key, push token, page,
+    complication, HTTP action, page photo and client certificate: the watch
+    and the phone had to pair again and the panel started empty. So nothing
+    is deleted here. A re-added entry loads the same files at setup, and its
+    devices come back from the kept pairings with their keys still valid.
 
-    The complication store is a third file and goes the same way: a re-added
-    integration would otherwise come back holding every complication the user
-    thought they had removed with it, under watch ids that no longer pair.
+    The log says what was kept and how to wipe it for good: every
+    ``.storage/wrist_assistant*`` file and folder, deleted while Home
+    Assistant is stopped. A single device still goes with its own Remove,
+    which does delete its key and records.
 
     Home Assistant unloads a loaded entry before it calls this, and the
-    unload stops every store saving. But a failed unload still leads here,
-    with the old stores alive and their debounced saves waiting; those are
-    stopped first, or a timer would write a file back after it is deleted.
+    unload writes every store's waiting save and stops it. A failed unload
+    still leads here with the old stores alive, so their waiting saves are
+    written now: a kept file must not miss the last change.
     """
     data: WristAssistantData | None = hass.data.pop(DOMAIN, None)
     if data is not None:
         await _async_shutdown_stores(data)
-    for key, version in (
-        (WIDGET_SECRET_STORAGE_KEY, WIDGET_SECRET_STORAGE_VERSION),
-        (NOTIFICATION_TOKEN_STORAGE_KEY, NOTIFICATION_TOKEN_STORAGE_VERSION),
-    ):
-        await Store(hass, version, key).async_remove()
-    # Through the store's own method rather than a bare `Store(...)`: the entry
-    # is already unloaded, so this instance owns nothing, but keeping the one
-    # removal path means the storage key and version cannot drift from it.
-    await ComplicationStore(hass).async_remove()
-    # The watch config files go the same way, every owner's and the index,
-    # and so does the file of watch voice lists.
-    await WatchConfigStore(hass).async_remove()
-    await WatchVoicesStore(hass).async_remove()
-    # The home's HTTP action library too: it holds every URL, token and
-    # global the home's actions use.
-    await HTTPActionsStore(hass).async_remove()
-    # The page photos go with the pages that named them: the index and every
-    # file. The built-in photos ship with the integration and are not touched.
-    await PageImagesStore(hass).async_remove()
-    # Every user's client certificate, private key and password, and every
-    # device's log upload: the index and the folder.
-    await ClientCertificateStore(hass).async_remove()
-    await WatchLogsStore(hass).async_remove()
+    _LOGGER.info(
+        "Wrist Assistant was removed, but its stored data was kept: device "
+        "pairings and push tokens, watch pages and settings, custom "
+        "complications, HTTP actions, page photos, client certificates and "
+        "watch logs. Adding the integration again picks all of it up. To "
+        "delete it for good, stop Home Assistant and delete every "
+        "file and folder named .storage/wrist_assistant*"
+    )
 
 
 async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:

@@ -199,14 +199,13 @@ def test_the_panel_mirrors_the_per_owner_complication_cap() -> None:
     ) == _py_constant("const.py", "COMPLICATION_MAX_PER_OWNER")
 
 
-def test_uninstall_removes_every_store_the_integration_writes() -> None:
-    """`async_remove_entry` must wipe the complication and watch config stores too.
+def test_uninstall_keeps_every_store_and_says_how_to_wipe_them() -> None:
+    """`async_remove_entry` deletes no file: people remove and re-add the
+    integration to fix things, and a re-added entry must find its pairings,
+    pages and complications. It logs what was kept and how to wipe it.
 
     Nothing can check this against a live box, because the test would have to
-    uninstall the integration, and the failure is silent when it happens: a
-    re-added integration comes back holding complications and page configs for
-    watch ids that no longer pair with anything. So it is asserted here,
-    statically.
+    uninstall the integration, so it is asserted here, statically.
     """
     source = (_PKG / "__init__.py").read_text()
     tree = ast.parse(source, filename="__init__.py")
@@ -217,28 +216,22 @@ def test_uninstall_removes_every_store_the_integration_writes() -> None:
     ]
     assert len(removers) == 1, "async_remove_entry is missing or defined twice"
     body = ast.get_source_segment(source, removers[0]) or ""
-    for expected in (
-        "WIDGET_SECRET_STORAGE_KEY",
-        "NOTIFICATION_TOKEN_STORAGE_KEY",
-        "ComplicationStore(hass).async_remove()",
-        "WatchConfigStore(hass).async_remove()",
-        "HTTPActionsStore(hass).async_remove()",
-        "PageImagesStore(hass).async_remove()",
-    ):
-        assert expected in body, f"async_remove_entry no longer removes {expected}"
+    assert "async_remove()" not in body, "async_remove_entry deletes a store again"
+    assert "_LOGGER.info(" in body
+    assert ".storage/wrist_assistant*" in body
 
 
 def test_unload_stops_the_http_action_library_saving() -> None:
     """A debounced save left on the unloaded store would write the library
-    back after an uninstall's `async_remove_entry` deleted it."""
+    after a re-added entry had already read it."""
     body = _function_source("__init__.py", "async_unload_entry")
     assert "await _async_shutdown_stores(data)" in body
     assert '"http_actions_store",' in (_PKG / "__init__.py").read_text()
 
 
 def test_unload_stops_the_page_photo_index_saving() -> None:
-    """The same for the page photo index: a debounced save would write it
-    back after an uninstall removed it, naming files that are gone."""
+    """The same for the page photo index: a debounced save would land after
+    a re-added entry had already read it."""
     body = _function_source("__init__.py", "async_unload_entry")
     assert "await _async_shutdown_stores(data)" in body
     assert '"page_images_store",' in (_PKG / "__init__.py").read_text()

@@ -476,7 +476,8 @@ def test_setup_loads_the_store_and_attaches_it_to_the_poll() -> None:
     assert "await watch_voices_store.async_load()" in init
     assert "coordinator.attach_watch_voices_store(watch_voices_store)" in init
     assert "watch_voices_store=watch_voices_store," in init
-    assert "await WatchVoicesStore(hass).async_remove()" in init
+    # Removing the integration keeps the file, as it keeps every other.
+    assert "await WatchVoicesStore(hass).async_remove()" not in init
 
 
 def test_a_device_removal_and_the_panel_s_forget_drop_the_list() -> None:

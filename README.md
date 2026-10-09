@@ -54,6 +54,12 @@ A watch can also pair on its own, without the iPhone app. Install the integratio
 2. Restart Home Assistant.
 3. Add the `Wrist Assistant` integration from `Settings` -> `Devices & Services`.
 
+### Removing the integration
+
+Deleting the integration in `Settings` -> `Devices & Services` keeps everything it stored: device pairings, watch pages and settings, custom complications, HTTP actions, page photos and client certificates. Adding it again picks all of that up, so your watch and iPhone reconnect without pairing again.
+
+To remove a single watch or iPhone for good, use `Remove` on its card in the panel, or delete its device in Home Assistant. To wipe everything, delete the integration, stop Home Assistant, delete every file and folder whose name starts with `wrist_assistant` in the `.storage` folder of your configuration directory, and start Home Assistant again.
+
 ## The Wrist Assistant panel
 
 The integration adds a `Wrist Assistant` page to the Home Assistant sidebar. Only administrators see it.

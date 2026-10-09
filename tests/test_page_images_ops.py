@@ -357,8 +357,9 @@ def test_setup_builds_the_store_hooks_the_sweep_and_advertises() -> None:
         "async_register_page_images_commands(hass)",
         # Listed among the stores unload writes out and stops.
         '"page_images_store",',
-        "await PageImagesStore(hass).async_remove()",
     ):
         assert expected in init, expected
+    # Removing the integration keeps the photos, as it keeps every file.
+    assert "await PageImagesStore(hass).async_remove()" not in init
     assert 'PAGE_IMAGES_CAPABILITY = "page_images"' in const
     assert 'PAGE_IMAGES_STORAGE_KEY = "wrist_assistant.page_images"' in const
