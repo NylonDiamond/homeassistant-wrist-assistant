@@ -367,7 +367,7 @@ class PhoneCountSensor(_WristAssistantSensorBase):
 
 
 class MonitoredEntitiesSensor(_WristAssistantSensorBase, RestoreSensor):
-    """Total entity subscriptions across all devices — persists across idle/restart.
+    """Total entity subscriptions across all devices, kept across idle and restart.
 
     Every device that polls counts: the watches, and an iPhone that polls
     for its own pages (phone pages), since Home Assistant monitors those
