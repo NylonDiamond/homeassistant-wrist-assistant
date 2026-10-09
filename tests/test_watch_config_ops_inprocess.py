@@ -1094,6 +1094,45 @@ def test_a_watch_still_reads_its_own_style_and_marks_it_delivered(household) -> 
     assert household.store.get(WATCH, STYLE).delivered_revision == 1
 
 
+# ── phone pages: an iPhone pulling its own records ───────────────────────
+
+
+@pytest.mark.parametrize("main_house", [False, None])
+def test_a_phone_s_own_get_never_marks_a_main_house(household, main_house) -> None:
+    """A phone has no main house: it follows the home it is viewing, and
+    each home holds its own phone records. Neither ``false`` nor a behavior
+    get without the field marks its entry."""
+    payload: dict[str, Any] = {}
+    if main_house is not None:
+        payload["main_house"] = main_house
+    for kind in ("behavior", "pages", "rooms"):
+        reply = _get(household, {"kind": kind, **payload}, watch_id=PHONE)
+        assert reply.status == 200
+    assert household.secrets.main_house == {}
+
+
+def test_a_watch_get_still_marks_its_main_house_beside_a_phone(household) -> None:
+    _get(household, {"kind": "pages", "main_house": False}, watch_id=PHONE)
+    _get(household, {"kind": "pages", "main_house": False}, watch_id=WATCH)
+    assert household.secrets.main_house == {WATCH: False}
+
+
+def test_a_phone_s_own_get_marks_its_own_record_delivered(household) -> None:
+    """The delivery marks are per owner. A phone collecting its own pages
+    marks the phone's record, so the panel can say the phone has the latest
+    save, and never a watch's."""
+    assert _put(household, _put_body(), watch_id=WATCH).status == 200
+    assert _put(household, _put_body(), watch_id=PHONE).status == 200
+    for owner in (WATCH, PHONE):
+        record = household.store.get(owner, "pages")
+        record.delivered_revision, record.delivered_at = 0, None
+
+    reply = _get(household, {"kind": "pages"}, watch_id=PHONE)
+    assert reply.body["document"] == _doc()
+    assert household.store.get(PHONE, "pages").delivered_revision == 1
+    assert household.store.get(WATCH, "pages").delivered_revision == 0
+
+
 # ── static: dispatch and capability ──────────────────────────────────────
 
 

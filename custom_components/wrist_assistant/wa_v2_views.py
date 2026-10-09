@@ -3968,7 +3968,14 @@ def _note_main_house(ctx: _OpContext, kind: str) -> None:
     watch or by the iPhone signing for it, and a watch with one home, or an
     app from before the field, asks every home it has. Any other get, and any
     value but ``false``, leaves the mark as it is. Never a reason to refuse.
+
+    Never for an iPhone signing as itself (phone pages): a phone has no main
+    house. It follows the home it is viewing, and each home holds the phone's
+    own settings, so its entry is never marked, whatever the get says. A
+    ``false`` there would have the panel send the phone's settings elsewhere.
     """
+    if _caller_is_iphone(ctx):
+        return
     if ctx.payload.get("main_house") is False:
         main_house = False
     elif kind == "behavior":
@@ -4057,6 +4064,8 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     delivered, whether it carried the document or said "you already have
     it": either way the device now holds it. That is what the panel reads to tell a panel save
     that is still waiting from one the watch or the phone has collected.
+    An iPhone pulling its own pages (phone pages) marks them the same way:
+    the record is its own, so the mark says the phone holds that save.
 
     The one exception is ``unreadable_revision``: "I fetched this revision of
     this kind and could not decode it", sent only by a device that sees the
