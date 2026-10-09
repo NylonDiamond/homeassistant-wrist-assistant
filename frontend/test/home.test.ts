@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { countWord, deviceCardTiles, deviceFacts, homeGroups, homeTotals, lastSeenDevice, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
+import { countWord, deviceCardTiles, deviceFacts, homeGroups, homeTotalBucket, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -180,6 +180,29 @@ describe("homeTotals", () => {
     expect(homeTotals([{ sync: "synced" }, { sync: "waiting" }, { sync: "synced" }, { sync: "idle" }]))
       .toEqual({ all: 4, synced: 2, waiting: 1, idle: 1 });
     expect(homeTotals([])).toEqual({ all: 0, synced: 0, waiting: 0, idle: 0 });
+  });
+
+  it("counts a watch that could not use the last save as waiting, never synced", () => {
+    // Its delivery numbers say synced (it fetched the save), but its card says
+    // Not synced and it is listed under Waiting to sync; the totals agree.
+    const refused = { sync: "synced" as const, rejected: ["pages"] };
+    expect(homeTotals([{ sync: "synced" }, refused]))
+      .toEqual({ all: 2, synced: 1, waiting: 1, idle: 0 });
+    expect(homeTotals([{ sync: "idle", rejected: ["settings"] }]))
+      .toEqual({ all: 1, synced: 0, waiting: 1, idle: 0 });
+    // An empty list of refused parts is no refusal.
+    expect(homeTotals([{ sync: "synced", rejected: [] }]))
+      .toEqual({ all: 1, synced: 1, waiting: 0, idle: 0 });
+  });
+
+  it("puts each device in the bucket Waiting to sync agrees with", () => {
+    expect(homeTotalBucket({ sync: "synced" })).toBe("synced");
+    expect(homeTotalBucket({ sync: "idle" })).toBe("idle");
+    expect(homeTotalBucket({ sync: "waiting" })).toBe("waiting");
+    expect(homeTotalBucket({ sync: "synced", rejected: ["pages"] })).toBe("waiting");
+    for (const row of [{ sync: "synced" as const }, { sync: "synced" as const, rejected: ["pages"] }, { sync: "idle" as const, rejected: ["x"] }]) {
+      expect(homeTotalBucket(row) === "waiting").toBe(needsAttention(row));
+    }
   });
 });
 

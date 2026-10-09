@@ -245,10 +245,20 @@ export function pendingWords(owner: Pick<OwnerSummary, "pending_changes"> | unde
   return `${n} ${n === 1 ? "change" : "changes"} to pick up`;
 }
 
-/** Home's totals: how many devices, and how many are synced, waiting, or
- * have nothing waiting and never synced. */
-export function homeTotals(rows: readonly Pick<HomeDeviceRow, "sync">[]): { all: number; synced: number; waiting: number; idle: number } {
-  const count = (s: DeviceSync) => rows.filter((r) => r.sync === s).length;
+/** Which of Home's totals a device counts under. A device that needs
+ * attention counts as waiting, so a watch that could not use the last save
+ * (it fetched it, so its delivery numbers alone say synced) is never
+ * counted as Synced while its card says Not synced and it is listed under
+ * Waiting to sync. */
+export function homeTotalBucket(row: Pick<HomeDeviceRow, "sync" | "rejected">): DeviceSync {
+  return needsAttention(row) ? "waiting" : row.sync;
+}
+
+/** Home's totals: how many devices, and how many are synced, waiting (or
+ * could not use the last save), or have nothing waiting and never synced.
+ * The thin bar and a person's summary dot read these too. */
+export function homeTotals(rows: readonly Pick<HomeDeviceRow, "sync" | "rejected">[]): { all: number; synced: number; waiting: number; idle: number } {
+  const count = (s: DeviceSync) => rows.filter((r) => homeTotalBucket(r) === s).length;
   return { all: rows.length, synced: count("synced"), waiting: count("waiting"), idle: count("idle") };
 }
 
