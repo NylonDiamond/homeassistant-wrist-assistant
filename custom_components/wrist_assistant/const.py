@@ -190,8 +190,8 @@ WATCH_CONFIG_KINDS = frozenset(
 # voice, notification style and status pages (step 4d batch 2) and the Control
 # Center list (step 4d batch 5) and a second home's rooms (step 8). Never the
 # catalog, which only the phone writes. The panel may create the first record
-# of one of these kinds, but only for a watch that is paired (see
-# WatchConfigStore.panel_save).
+# of one of these kinds, but only for a watch that is paired, or for an iPhone
+# of a kind in WATCH_CONFIG_PHONE_KINDS (see WatchConfigStore.panel_save).
 WATCH_CONFIG_PANEL_KINDS = frozenset(
     {
         "pages",
@@ -202,6 +202,23 @@ WATCH_CONFIG_PANEL_KINDS = frozenset(
         "status_pages",
         "control_center",
         "rooms",
+    }
+)
+# The kinds an iPhone may own (phone pages, app repo
+# docs/phone_pages_mvp_2026-10.md): its own pages, status pages, menus, rooms
+# and settings, drawn with the watch's own page code. Every write whose owner
+# is an iPhone (the device's own put, a panel save, a restore, a move onto
+# it) is refused any other kind with the code "not_for_iphone". Reads are
+# untouched: the phone's notification style read still answers from its
+# user's watches, and every other kind answers the phone's own record, none
+# for a kind it may not own.
+WATCH_CONFIG_PHONE_KINDS = frozenset(
+    {
+        "pages",
+        "status_pages",
+        "menus",
+        "rooms",
+        "behavior",
     }
 )
 # The settings an iPhone's `behavior` record keeps: every key the panel's

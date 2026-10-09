@@ -460,6 +460,13 @@ class WidgetSecretStore:
         entry = self._secrets.get(watch_id)
         return entry is not None and entry.device_kind == DEVICE_KIND_WATCH
 
+    def is_paired_iphone(self, watch_id: str) -> bool:
+        """Whether ``watch_id`` is a paired iPhone. The watch config store
+        asks this to keep an iPhone's records to the phone's own kinds and
+        settings, and to let the panel make a phone's first record."""
+        entry = self._secrets.get(watch_id)
+        return entry is not None and entry.device_kind == DEVICE_KIND_IPHONE
+
     def note_main_house(self, watch_id: str, main_house: bool) -> bool:
         """Record whether this Home Assistant is `watch_id`'s main house.
 

@@ -39,8 +39,10 @@ Commands:
 voice picker. It is not a watch config record and has no revision.
 
 Every refusal is a WebSocket error with the store's code: ``invalid``,
-``unavailable``, ``no_record``, ``conflict`` or ``not_found``, plus
-``unauthorized`` for a watch that is not the caller's (not the store's). A
+``unavailable``, ``no_record``, ``conflict``, ``not_found`` or
+``not_for_iphone`` (a kind an iPhone may not own, saved or restored for an
+iPhone, see ``WATCH_CONFIG_PHONE_KINDS``), plus ``unauthorized`` for a watch
+that is not the caller's (not the store's). A
 conflict's
 message always begins ``stored revision is <N>``, which is how the panel
 learns the revision to reload at; an error carries no data besides its code
@@ -332,6 +334,12 @@ def ws_watch_config_save(
     sits).
     The hash is computed here and ``updated_by`` is ``panel``; the replaced
     document goes into the record's history like any save.
+
+    For an iPhone owner (phone pages) ``base_revision`` 0 with nothing stored
+    creates its first record too, of a kind a phone owns; any other kind is
+    refused ``not_for_iphone``. A phone's ``behavior`` keeps only the phone's
+    settings, the rest dropped without a word: ``get`` then shows what was
+    kept.
     """
     store = _store(hass)
     if store is None:

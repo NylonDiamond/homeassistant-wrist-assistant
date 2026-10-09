@@ -29,6 +29,14 @@ for a watch the secret store knows: a watch with no phone never uploads, so
 without it that watch would have no pages or settings at all, and an id
 nothing has paired as must never gain a record the panel invented.
 
+An iPhone is an owner too (phone pages, app repo
+``docs/phone_pages_mvp_2026-10.md``): it owns its own pages, status pages,
+menus, rooms and settings (``WATCH_CONFIG_PHONE_KINDS``), never a watch's,
+and pulls them signed as itself. Every write for an iPhone owner is refused
+any other kind, and its ``behavior`` keeps only the settings the panel's
+catalog marks for the iPhone (:func:`phone_behavior_document`). The panel may
+create a phone's first record of one of its kinds, as it may a watch's.
+
 A record is keyed on the watch, not the phone: the owner is the id that signed
 the request, which is the watch's own pair even when the phone sends it. The
 watch must own its config from the first day, because the step where it reads
@@ -130,11 +138,14 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.storage import Store
 
 from .const import (
+    PHONE_BEHAVIOR_DECODE_KEYS,
+    PHONE_BEHAVIOR_KEYS,
     WATCH_CONFIG_HISTORY_LIMIT,
     WATCH_CONFIG_KINDS,
     WATCH_CONFIG_MAX_DOCUMENT_BYTES,
     WATCH_CONFIG_PANEL_KINDS,
     WATCH_CONFIG_PANEL_WRITER,
+    WATCH_CONFIG_PHONE_KINDS,
     WATCH_CONFIG_STORAGE_KEY,
     WATCH_CONFIG_STORAGE_VERSION,
 )
@@ -275,6 +286,17 @@ class WatchConfigNotFoundError(WatchConfigStoreError):
     code = "not_found"
 
 
+class WatchConfigPhoneKindError(WatchConfigStoreError):
+    """A write of a kind an iPhone may not own, for an iPhone owner.
+
+    Phone pages: an iPhone owns its pages, status pages, menus, rooms and
+    settings (``WATCH_CONFIG_PHONE_KINDS``) and nothing else, whoever writes:
+    the phone's own put, the panel's save or restore, or a move onto it.
+    """
+
+    code = "not_for_iphone"
+
+
 class WatchConfigUnavailableError(WatchConfigStoreError):
     """The owner's file could not be read at startup.
 
@@ -323,6 +345,25 @@ def validate_kind(kind: Any) -> str:
             f"kind must be one of {', '.join(sorted(WATCH_CONFIG_KINDS))}"
         )
     return kind
+
+
+def phone_behavior_document(document: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """An iPhone's ``behavior`` document: only the phone's settings.
+
+    Keeps the keys the panel's catalog marks for the iPhone
+    (``PHONE_BEHAVIOR_KEYS``) and the ones the app needs to decode the
+    document (``PHONE_BEHAVIOR_DECODE_KEYS``), in the order they came, and
+    returns the dropped keys, sorted. What goes is a watch only setting, the
+    room keys a watch's main house keeps in ``behavior`` (a phone has the
+    ``rooms`` kind for those), a developer flag, or a key this build does not
+    know. A new object; the values are the same ones.
+    """
+    kept = {
+        key: value
+        for key, value in document.items()
+        if key in PHONE_BEHAVIOR_KEYS or key in PHONE_BEHAVIOR_DECODE_KEYS
+    }
+    return kept, sorted(key for key in document if key not in kept)
 
 
 def validate_document(kind: str, document: Any, *, check_items: bool = False) -> int:
@@ -1040,7 +1081,8 @@ class WatchConfigChange:
 
 ChangeListener = Callable[[WatchConfigChange], None]
 # Whether an owner id has a pair in the secret store: the one question the
-# panel's create path asks (see WatchConfigStore.panel_save).
+# panel's create path asks (see WatchConfigStore.panel_save). The same shape
+# answers whether an owner is an iPhone (see WatchConfigStore._for_owner).
 PairedCheck = Callable[[str], bool]
 
 
@@ -1048,15 +1090,26 @@ class WatchConfigStore:
     """Every owner's watch config records, one storage file per owner."""
 
     def __init__(
-        self, hass: HomeAssistant, *, is_paired: PairedCheck | None = None
+        self,
+        hass: HomeAssistant,
+        *,
+        is_paired: PairedCheck | None = None,
+        is_iphone: PairedCheck | None = None,
     ) -> None:
         """``is_paired`` answers whether an owner id is a paired watch in the
         secret store (an iPhone entry does not count). Setup passes
         ``WidgetSecretStore.is_paired_watch``; without it no
         owner counts as paired, so the panel can never create a record (what
-        a store made only to remove its files, or a test, wants)."""
+        a store made only to remove its files, or a test, wants).
+
+        ``is_iphone`` answers whether an owner id is a paired iPhone. Setup
+        passes ``WidgetSecretStore.is_paired_iphone``. Every write for such an
+        owner keeps to the phone's kinds and settings (:meth:`_for_owner`),
+        and the panel may create its first record of one of those kinds.
+        Without it no owner is an iPhone, as before phone pages."""
         self._hass = hass
         self._is_paired = is_paired
+        self._is_iphone = is_iphone
         self._listeners: list[ChangeListener] = []
         # owner_watch_id → kind → record
         self._records: dict[str, dict[str, WatchConfigRecord]] = {}
@@ -1459,12 +1512,22 @@ class WatchConfigStore:
         Only the page level of the shape guard applies here, never the tile
         level (see :func:`_check_pages`), so a device is never refused for a
         fault in its own older tiles.
+
+        For an iPhone owner (phone pages) the kind must be one a phone owns,
+        and a ``behavior`` document keeps only the phone's settings
+        (:meth:`_for_owner`). When that drops a key, the stored hash is the
+        server's (:func:`canonical_hash`) of what was kept rather than the
+        client's of what it sent, so the record's hash describes its
+        document.
         """
         if not isinstance(owner_watch_id, str) or not owner_watch_id:
             raise WatchConfigValidationError("owner_watch_id is required")
         kind = validate_kind(kind)
+        document, trimmed = self._for_owner(owner_watch_id, kind, document)
         size = validate_document(kind, document)
         document_hash = validate_hash(document_hash)
+        if trimmed:
+            document_hash = canonical_hash(document)
         if not isinstance(force, bool):
             raise WatchConfigValidationError("force must be true or false")
         if not force:
@@ -1554,6 +1617,10 @@ class WatchConfigStore:
           no record is ``no_record`` too, and a base of 0 over a stored record
           is a conflict: someone made the first copy since the panel looked.
         * No ``force``. A stale base is a conflict, and the panel reloads.
+        * For an iPhone owner (phone pages), only a kind a phone owns, and a
+          ``behavior`` document keeps only the phone's settings
+          (:meth:`_for_owner`). The panel may create a phone's first record
+          of such a kind, as it may a paired watch's.
 
         The server computes the hash (:func:`canonical_hash`) and writes
         ``updated_by`` as ``panel``. Delivery is left where it was (0 for a
@@ -1563,6 +1630,7 @@ class WatchConfigStore:
         if not isinstance(owner_watch_id, str) or not owner_watch_id:
             raise WatchConfigValidationError("owner_watch_id is required")
         kind = self._panel_kind(kind)
+        document, _trimmed = self._for_owner(owner_watch_id, kind, document)
         size = validate_document(kind, document, check_items=True)
         base_revision = _validate_base_revision(base_revision)
         self._check_available(owner_watch_id)
@@ -1571,7 +1639,10 @@ class WatchConfigStore:
         if existing is None:
             if base_revision != 0:
                 raise self._no_record(kind)
-            if not self._owner_is_paired(owner_watch_id):
+            if not (
+                self._owner_is_paired(owner_watch_id)
+                or self._owner_is_iphone(owner_watch_id)
+            ):
                 raise WatchConfigNoRecordError(
                     f"there is no stored {kind} record and this watch is not "
                     "paired; pair it before starting its config here"
@@ -1603,10 +1674,15 @@ class WatchConfigStore:
         it saw is gone. An entry a device wrote may fail the tile level (a
         device save never checks it); that is refused as ``invalid`` and the
         record is left alone.
+
+        For an iPhone owner the kind must be one a phone owns, refused before
+        anything else, and the restored ``behavior`` keeps only the phone's
+        settings (:meth:`_for_owner`).
         """
         if not isinstance(owner_watch_id, str) or not owner_watch_id:
             raise WatchConfigValidationError("owner_watch_id is required")
         kind = self._panel_kind(kind)
+        self._check_owner_kind(owner_watch_id, kind)
         revision = _validate_revision(revision)
         base_revision = _validate_base_revision(base_revision)
         self._check_available(owner_watch_id)
@@ -1620,6 +1696,7 @@ class WatchConfigStore:
         # A copy: the entry stays in the history, and the record's document
         # must not be the same object as the one filed there.
         document = copy.deepcopy(entry.document)
+        document, _trimmed = self._for_owner(owner_watch_id, kind, document)
         size = validate_document(kind, document, check_items=True)
         return self._panel_commit(existing, document, size)
 
@@ -1637,6 +1714,48 @@ class WatchConfigStore:
         """Whether the secret store knows the owner as a watch. False when no
         check was handed in (see ``__init__``)."""
         return self._is_paired is not None and bool(self._is_paired(owner_watch_id))
+
+    def _owner_is_iphone(self, owner_watch_id: str) -> bool:
+        """Whether the secret store knows the owner as an iPhone. False when
+        no check was handed in (see ``__init__``)."""
+        return self._is_iphone is not None and bool(self._is_iphone(owner_watch_id))
+
+    def _check_owner_kind(self, owner_watch_id: str, kind: str) -> None:
+        """Refuse a kind an iPhone may not own, for an iPhone owner."""
+        if kind not in WATCH_CONFIG_PHONE_KINDS and self._owner_is_iphone(owner_watch_id):
+            raise WatchConfigPhoneKindError(
+                f"an iPhone cannot own {kind}; it may own "
+                f"{', '.join(sorted(WATCH_CONFIG_PHONE_KINDS))}"
+            )
+
+    def _for_owner(
+        self, owner_watch_id: str, kind: str, document: Any
+    ) -> tuple[Any, bool]:
+        """The document as the owner may hold it, and whether keys were
+        dropped.
+
+        A watch's (any owner but an iPhone) is returned as it is. An iPhone's
+        must be of a kind a phone owns (:class:`WatchConfigPhoneKindError`
+        otherwise), and its ``behavior`` keeps only the phone's settings
+        (:func:`phone_behavior_document`). The dropping is silent for the
+        save, logged at debug; the record and its hash then say what was
+        kept, so the panel sees it on its next read. Anything but an object
+        is returned for :func:`validate_document` to refuse.
+        """
+        self._check_owner_kind(owner_watch_id, kind)
+        if kind != "behavior" or not isinstance(document, dict):
+            return document, False
+        if not self._owner_is_iphone(owner_watch_id):
+            return document, False
+        kept, dropped = phone_behavior_document(document)
+        if not dropped:
+            return document, False
+        _LOGGER.debug(
+            "Kept the iPhone settings of %s's behavior, dropped %s",
+            owner_watch_id,
+            ", ".join(dropped),
+        )
+        return kept, True
 
     @staticmethod
     def _no_record(kind: str) -> WatchConfigNoRecordError:
@@ -1820,6 +1939,12 @@ class WatchConfigStore:
         :meth:`forget_owner`), then the target's resulting revision of every
         kind moved, the kept ones included: their history grew, and a repeat
         of a revision the phone holds costs it nothing.
+
+        A move onto an iPhone (phone pages) is refused whole, with
+        :class:`WatchConfigPhoneKindError` and nothing changed, when the
+        source holds a kind a phone may not own or a ``behavior`` with a key
+        that is not a phone setting: a record moves whole, history and all,
+        so it is never trimmed on the way.
         """
         if not isinstance(source_owner, str) or not source_owner:
             raise WatchConfigValidationError("source_owner_watch_id is required")
@@ -1834,6 +1959,16 @@ class WatchConfigStore:
         moving = self._records.get(source_owner)
         if not moving:
             return []
+        if self._owner_is_iphone(target_owner):
+            for kind, source_record in sorted(moving.items()):
+                self._check_owner_kind(target_owner, kind)
+                if kind == "behavior" and isinstance(source_record.document, dict):
+                    _kept, dropped = phone_behavior_document(source_record.document)
+                    if dropped:
+                        raise WatchConfigPhoneKindError(
+                            "the behavior moving onto this iPhone holds settings "
+                            f"an iPhone does not keep: {', '.join(dropped)}"
+                        )
         new_owner = target_owner not in self._records
         target = self._records.setdefault(target_owner, {})
         moved: list[str] = []

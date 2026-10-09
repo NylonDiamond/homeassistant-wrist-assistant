@@ -43,6 +43,8 @@ from typing import Any
 
 import pytest
 
+from test_phone_behavior_keys import _const_set
+
 _STORE_PATH = (
     Path(__file__).resolve().parents[1]
     / "custom_components"
@@ -92,6 +94,15 @@ PANEL_KINDS = frozenset(
         "rooms",
     }
 )
+
+# The kinds an iPhone may own (phone pages). Kept equal to const.py by
+# test_the_kinds_match_const below.
+PHONE_KINDS = frozenset({"pages", "status_pages", "menus", "rooms", "behavior"})
+# The phone's settings and the keys the app needs to decode a behavior
+# document, read out of const.py; test_phone_behavior_keys.py holds them to
+# the panel's catalog.
+PHONE_BEHAVIOR_KEYS = _const_set("PHONE_BEHAVIOR_KEYS")
+PHONE_BEHAVIOR_DECODE_KEYS = _const_set("PHONE_BEHAVIOR_DECODE_KEYS")
 
 OWNER = "watch-A"
 OTHER = "watch-B"
@@ -178,6 +189,9 @@ def _loaded_module():
             WATCH_CONFIG_KINDS=KINDS,
             WATCH_CONFIG_PANEL_KINDS=PANEL_KINDS,
             WATCH_CONFIG_PANEL_WRITER="panel",
+            WATCH_CONFIG_PHONE_KINDS=PHONE_KINDS,
+            PHONE_BEHAVIOR_KEYS=PHONE_BEHAVIOR_KEYS,
+            PHONE_BEHAVIOR_DECODE_KEYS=PHONE_BEHAVIOR_DECODE_KEYS,
             WATCH_CONFIG_MAX_DOCUMENT_BYTES={
                 "pages": MAX_BYTES,
                 "behavior": MAX_BEHAVIOR_BYTES,
@@ -773,11 +787,18 @@ def test_the_kinds_match_const() -> None:
             isinstance(node, ast.Assign)
             and len(node.targets) == 1
             and isinstance(node.targets[0], ast.Name)
-            and node.targets[0].id in ("WATCH_CONFIG_KINDS", "WATCH_CONFIG_PANEL_KINDS")
+            and node.targets[0].id
+            in ("WATCH_CONFIG_KINDS", "WATCH_CONFIG_PANEL_KINDS", "WATCH_CONFIG_PHONE_KINDS")
         ):
             # frozenset({...}): the set literal is the call's one argument.
             found[node.targets[0].id] = frozenset(ast.literal_eval(node.value.args[0]))
-    assert found == {"WATCH_CONFIG_KINDS": KINDS, "WATCH_CONFIG_PANEL_KINDS": PANEL_KINDS}
+    assert found == {
+        "WATCH_CONFIG_KINDS": KINDS,
+        "WATCH_CONFIG_PANEL_KINDS": PANEL_KINDS,
+        "WATCH_CONFIG_PHONE_KINDS": PHONE_KINDS,
+    }
+    # A phone owns only kinds the panel may write.
+    assert PHONE_KINDS <= PANEL_KINDS
 
 
 def test_behavior_is_any_json_object(mod):
@@ -1048,23 +1069,47 @@ def test_a_panel_save_of_pages_for_an_unpaired_watch_needs_a_device_copy_first(m
     assert store.panel_save(OWNER, "pages", _doc("panel"), base_revision=1).revision == 2
 
 
-def test_the_panel_cannot_start_a_watch_config_under_an_iphone(mod):
-    """With the check setup hands in (the real secret store's
-    ``is_paired_watch``), a paired iPhone is not a paired watch: a first
-    panel save under its id is refused, and one under a watch is made."""
+def test_the_panel_starts_only_a_phone_s_own_kinds_under_an_iphone(mod):
+    """With the two checks setup hands in (the real secret store's
+    ``is_paired_watch`` and ``is_paired_iphone``), a paired iPhone is not a
+    paired watch, but it owns its own pages (phone pages): a first panel save
+    of a phone kind under its id is made, one of a watch only kind is refused
+    ``not_for_iphone``, and a watch is started as before."""
     from test_widget_secret_user_binding import SECRET_A, SECRET_B, _loaded_store
 
     with _loaded_store() as secret_mod:
         secrets = secret_mod.WidgetSecretStore(object())
         secrets.register("iphone-1", SECRET_A, "iphone-self-provision", user_id="alice")
         secrets.register(OWNER, SECRET_B, "watch-code-pair", user_id="alice")
-        store = mod.WatchConfigStore(_Hass(), is_paired=secrets.is_paired_watch)
+        assert secrets.is_paired_iphone("iphone-1") is True
+        assert secrets.is_paired_iphone(OWNER) is False
+        assert secrets.is_paired_iphone("unknown") is False
+        store = mod.WatchConfigStore(
+            _Hass(),
+            is_paired=secrets.is_paired_watch,
+            is_iphone=secrets.is_paired_iphone,
+        )
         asyncio.run(store.async_load())
 
+        with pytest.raises(mod.WatchConfigPhoneKindError):
+            store.panel_save("iphone-1", "control_center", _control_center(), base_revision=0)
+        assert store.get("iphone-1", "control_center") is None
+        assert store.panel_save("iphone-1", "pages", _doc(), base_revision=0).revision == 1
+        assert store.panel_save(OWNER, "pages", _doc(), base_revision=0).revision == 1
+
+
+def test_without_the_iphone_check_the_panel_cannot_start_an_iphone(mod):
+    """A store built with the watch check alone (as before phone pages) still
+    refuses a first record under an iPhone's id."""
+    from test_widget_secret_user_binding import SECRET_A, _loaded_store
+
+    with _loaded_store() as secret_mod:
+        secrets = secret_mod.WidgetSecretStore(object())
+        secrets.register("iphone-1", SECRET_A, "iphone-self-provision", user_id="alice")
+        store = mod.WatchConfigStore(_Hass(), is_paired=secrets.is_paired_watch)
+        asyncio.run(store.async_load())
         with pytest.raises(mod.WatchConfigNoRecordError):
             store.panel_save("iphone-1", "pages", _doc(), base_revision=0)
-        assert store.get("iphone-1", "pages") is None
-        assert store.panel_save(OWNER, "pages", _doc(), base_revision=0).revision == 1
 
 
 @pytest.mark.parametrize(
@@ -3076,3 +3121,226 @@ def test_a_file_written_before_step_3_still_loads_and_works(mod):
     again = _new(mod).get(OWNER, "pages")
     assert (again.revision, again.rejected_revision) == (floor + 2, 4)
     assert [e.revision for e in again.history] == [2, 3, 4, floor + 1]
+
+
+# ── phone pages: what an iPhone may own ──────────────────────────────────
+
+PHONE = "iphone-1"
+WATCH_ONLY_KINDS = sorted(KINDS - PHONE_KINDS)
+
+
+def _phone_store(mod):
+    """A loaded store whose secret store knows OWNER as a watch and PHONE as
+    an iPhone, as setup builds it."""
+    store = mod.WatchConfigStore(
+        _Hass(),
+        is_paired=lambda owner: owner == OWNER,
+        is_iphone=lambda owner: owner == PHONE,
+    )
+    asyncio.run(store.async_load())
+    return store
+
+
+def _document_of(kind: str) -> dict:
+    return {
+        "pages": _doc(),
+        "behavior": _behavior(),
+        "catalog": _catalog(),
+        "menus": _menus(),
+        "voice": _voice(),
+        "notification_style": {"schemaVersion": 1},
+        "status_pages": _status_pages(),
+        "control_center": _control_center(),
+        "rooms": _rooms(),
+    }[kind]
+
+
+def _full_behavior() -> dict:
+    """A watch's whole behavior document: every phone setting, the keys the
+    app needs to decode it, and what a phone does not keep (watch only
+    settings, the room keys, a developer flag, a key from a newer app)."""
+    doc: dict[str, Any] = {key: f"phone:{key}" for key in sorted(PHONE_BEHAVIOR_KEYS)}
+    doc.update(
+        schemaVersion=1,
+        crownSensitivity="Normal",
+        crownSwitchesPages=False,
+        doubleTapSpeed="Fast",
+        hapticIntensity="Medium",
+        serverMode="Local",
+        deltaTimeout="45s",
+        handGestureAction="Next Page",
+        sliderCrownSensitivity="Fast",
+        bottomEdgePageSwipeSensitivity="High",
+        motionGestureActionsJSON="{}",
+        roomQuickJumpEnabled=True,
+        pointControlRoomMappingsJSON="[]",
+        showGestureDebug=True,
+        settingFromANewerApp=3,
+    )
+    return doc
+
+
+_DROPPED = sorted(
+    [
+        "bottomEdgePageSwipeSensitivity",
+        "deltaTimeout",
+        "handGestureAction",
+        "motionGestureActionsJSON",
+        "pointControlRoomMappingsJSON",
+        "roomQuickJumpEnabled",
+        "serverMode",
+        "settingFromANewerApp",
+        "showGestureDebug",
+        "sliderCrownSensitivity",
+    ]
+)
+
+
+def _phone_kept(document: dict) -> dict:
+    return {key: value for key, value in document.items() if key not in _DROPPED}
+
+
+def test_the_phone_kinds_are_the_plan_s_five() -> None:
+    assert PHONE_KINDS == {"pages", "status_pages", "menus", "rooms", "behavior"}
+    assert WATCH_ONLY_KINDS == ["catalog", "control_center", "notification_style", "voice"]
+
+
+@pytest.mark.parametrize("kind", sorted(PHONE_KINDS))
+def test_a_phone_s_own_put_of_its_kinds_is_kept(mod, kind):
+    store = _phone_store(mod)
+    record = _put(store, PHONE, _document_of(kind), kind=kind)
+    assert (record.owner_watch_id, record.revision) == (PHONE, 1)
+
+
+@pytest.mark.parametrize("kind", WATCH_ONLY_KINDS)
+def test_every_write_of_a_watch_only_kind_for_a_phone_is_refused(mod, kind):
+    """The phone's own put, the panel's save, its restore: each refused
+    ``not_for_iphone`` before anything else, with nothing stored and nobody
+    told. The same kinds for a watch are untouched."""
+    store = _phone_store(mod)
+    heard: list = []
+    store.async_add_listener(heard.append)
+    document = _document_of(kind)
+    with pytest.raises(mod.WatchConfigPhoneKindError) as refused:
+        _put(store, PHONE, document, kind=kind)
+    assert refused.value.code == "not_for_iphone"
+    assert refused.value.message == (
+        f"an iPhone cannot own {kind}; it may own "
+        "behavior, menus, pages, rooms, status_pages"
+    )
+    if kind in PANEL_KINDS:
+        with pytest.raises(mod.WatchConfigPhoneKindError):
+            store.panel_save(PHONE, kind, document, base_revision=0)
+        # Refused before the record or the revision is looked at.
+        with pytest.raises(mod.WatchConfigPhoneKindError):
+            store.restore(PHONE, kind, 1, base_revision=1)
+    assert store.get(PHONE, kind) is None
+    assert store.owners() == []
+    assert heard == []
+    assert _put(store, OWNER, document, kind=kind).revision == 1
+
+
+def test_a_forced_put_of_a_watch_only_kind_for_a_phone_is_refused_too(mod):
+    store = _phone_store(mod)
+    with pytest.raises(mod.WatchConfigPhoneKindError):
+        _put(store, PHONE, _voice(), kind="voice", force=True)
+
+
+def test_a_phone_s_behavior_keeps_only_the_phone_settings(mod):
+    """A panel save: the dropped keys go silently, the record holds what was
+    kept in the order it came, and the hash is of that."""
+    store = _phone_store(mod)
+    sent = _full_behavior()
+    record = store.panel_save(PHONE, "behavior", copy.deepcopy(sent), base_revision=0)
+    kept = _phone_kept(sent)
+    assert record.document == kept
+    assert list(record.document) == list(kept)
+    assert set(record.document) == PHONE_BEHAVIOR_KEYS | PHONE_BEHAVIOR_DECODE_KEYS
+    assert record.hash == mod.canonical_hash(kept)
+    assert record.size_bytes == mod.document_size(kept)
+    # The next save builds on it as usual.
+    again = store.panel_save(PHONE, "behavior", _full_behavior(), base_revision=record.revision)
+    assert again.document == kept
+
+
+def test_a_phone_s_own_behavior_put_is_trimmed_and_hashed_by_the_server(mod):
+    store = _phone_store(mod)
+    record = _put(store, PHONE, _full_behavior(), kind="behavior", digest=HASH_1)
+    kept = _phone_kept(_full_behavior())
+    assert record.document == kept
+    assert record.hash == mod.canonical_hash(kept)
+    # Nothing to drop: the client's own hash is kept, as for any device save.
+    record = _put(store, PHONE, kept, kind="behavior", base=record.revision, digest=HASH_2)
+    assert record.hash == HASH_2
+
+
+def test_dropping_a_phone_s_settings_is_logged_at_debug(mod, caplog):
+    store = _phone_store(mod)
+    with caplog.at_level("DEBUG"):
+        store.panel_save(PHONE, "behavior", _full_behavior(), base_revision=0)
+    [line] = [r for r in caplog.records if "iPhone settings" in r.getMessage()]
+    assert line.levelname == "DEBUG"
+    assert line.getMessage() == (
+        f"Kept the iPhone settings of {PHONE}'s behavior, dropped " + ", ".join(_DROPPED)
+    )
+
+
+def test_a_watch_s_behavior_keeps_every_key(mod):
+    store = _phone_store(mod)
+    record = store.panel_save(OWNER, "behavior", _full_behavior(), base_revision=0)
+    assert record.document == _full_behavior()
+    record = _put(store, OWNER, _full_behavior(), kind="behavior", base=1, digest=HASH_2)
+    assert (record.document, record.hash) == (_full_behavior(), HASH_2)
+
+
+def test_a_restore_for_a_phone_keeps_only_the_phone_settings(mod):
+    """A behavior written under a phone's id before phone pages (a store with
+    no iPhone check) holds watch settings. Restoring it once the check is on
+    keeps the phone's settings only."""
+    old = mod.WatchConfigStore(_Hass())
+    asyncio.run(old.async_load())
+    _put(old, PHONE, _full_behavior(), kind="behavior")
+    _put(old, PHONE, _behavior(), kind="behavior", base=1, digest=HASH_2)
+
+    store = _phone_store(mod)
+    current = store.get(PHONE, "behavior").revision
+    record = store.restore(PHONE, "behavior", 1, base_revision=current)
+    assert record.document == _phone_kept(_full_behavior())
+    assert record.hash == mod.canonical_hash(record.document)
+
+
+def test_phone_behavior_document_is_a_new_object_and_names_what_it_dropped(mod):
+    sent = _full_behavior()
+    kept, dropped = mod.phone_behavior_document(sent)
+    assert kept == _phone_kept(sent)
+    assert dropped == _DROPPED
+    assert sent == _full_behavior()
+    assert mod.phone_behavior_document({}) == ({}, [])
+
+
+def test_a_move_onto_a_phone_of_watch_only_kinds_is_refused_whole(mod):
+    store = _phone_store(mod)
+    _put(store, OWNER, _doc(), kind="pages")
+    _put(store, OWNER, _voice(), kind="voice")
+    with pytest.raises(mod.WatchConfigPhoneKindError):
+        store.move_owner(OWNER, PHONE, updated_by="ha-panel")
+    assert store.owners() == [OWNER]
+    assert store.get(OWNER, "voice").revision == 1
+
+
+def test_a_move_onto_a_phone_of_a_watch_s_settings_is_refused_whole(mod):
+    store = _phone_store(mod)
+    _put(store, OWNER, _full_behavior(), kind="behavior")
+    with pytest.raises(mod.WatchConfigPhoneKindError, match="serverMode"):
+        store.move_owner(OWNER, PHONE, updated_by="ha-panel")
+    assert store.get(PHONE, "behavior") is None
+    assert store.get(OWNER, "behavior").document == _full_behavior()
+
+
+def test_a_move_onto_a_phone_of_phone_records_goes_through(mod):
+    """A phone that came back under a new id gets its own records back."""
+    store = _phone_store(mod)
+    _put(store, "iphone-old", _doc(), kind="pages")
+    _put(store, "iphone-old", _phone_kept(_full_behavior()), kind="behavior")
+    assert store.move_owner("iphone-old", PHONE, updated_by="ha-panel") == ["behavior", "pages"]
+    assert store.get(PHONE, "pages").document == _doc()

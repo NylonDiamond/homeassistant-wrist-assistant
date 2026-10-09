@@ -1194,3 +1194,62 @@ def test_the_summary_names_the_home_s_http_action_library(env) -> None:
     assert set(summary) == {"owners", "http_actions"}
     domain.http_actions_store = _FakeLibrary(3, {}, available=False)
     assert "http_actions" not in _ok(env, env.ws.ws_watch_config_summary)
+
+
+# ── phone pages: an iPhone's own records ─────────────────────────────────
+
+PHONE = "iphone-1"
+
+
+def _phone_pages_store(env) -> None:
+    """Swap in a store whose secret store knows WATCH as a watch and PHONE
+    as an iPhone, as setup builds it."""
+    store = env.mod.WatchConfigStore(
+        env.hass,
+        is_paired=lambda owner: owner == WATCH,
+        is_iphone=lambda owner: owner == PHONE,
+    )
+    asyncio.run(store.async_load())
+    env.hass.data[DOMAIN].watch_config_store = store
+    env.store = store
+
+
+def test_the_panel_starts_a_phone_s_pages_and_settings(env) -> None:
+    _phone_pages_store(env)
+    subscriber = _subscribe(env, owner=PHONE)
+    assert _save(env, _pages_doc(), 0, kind="pages", owner=PHONE).results[1] == {"revision": 1}
+    sent = {"schemaVersion": 1, "wrapPages": True, "serverMode": "Local", "roomQuickJumpEnabled": True}
+    assert _save(env, sent, 0, kind="behavior", owner=PHONE).results[1] == {"revision": 1}
+    # The watch only setting and the room key are gone, silently, and the
+    # record the panel reads back says so.
+    result = _get(env, "behavior", owner=PHONE)
+    assert result["document"] == {"schemaVersion": 1, "wrapPages": True}
+    assert result["hash"] == env.mod.canonical_hash({"schemaVersion": 1, "wrapPages": True})
+    assert subscriber.events() == [
+        {"kind": "pages", "revision": 1},
+        {"kind": "behavior", "revision": 1},
+    ]
+    # Nothing landed on the watch.
+    assert _get(env, "pages")["revision"] == 0
+    assert _get(env, "behavior")["revision"] == 0
+
+
+@pytest.mark.parametrize("kind", ["voice", "notification_style", "control_center"])
+def test_the_panel_may_not_save_or_restore_a_watch_only_kind_for_a_phone(env, kind) -> None:
+    _phone_pages_store(env)
+    refusal = (
+        "not_for_iphone",
+        f"an iPhone cannot own {kind}; it may own behavior, menus, pages, rooms, status_pages",
+    )
+    connection = _save(env, {"schemaVersion": 1, "entities": [], "phrases": []}, 0, kind=kind, owner=PHONE)
+    assert [(code, message) for _id, code, message in connection.errors] == [refusal]
+    connection = _call(
+        env,
+        env.ws.ws_watch_config_restore,
+        owner_watch_id=PHONE,
+        kind=kind,
+        revision=1,
+        base_revision=1,
+    )
+    assert [(code, message) for _id, code, message in connection.errors] == [refusal]
+    assert _get(env, kind, owner=PHONE)["revision"] == 0

@@ -4197,6 +4197,11 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
     handed back by get; the server never recomputes it (see
     ``watch_config_store.py`` for why). ``updated_by`` is the signing id, and
     the saved revision counts as delivered: the device that wrote it holds it.
+
+    An iPhone signing as itself saves its own records (phone pages): a kind
+    it may not own is a signed 400 ``not_for_iphone``, and its ``behavior``
+    keeps only the phone's settings, hashed by the server when that drops a
+    key (``WatchConfigStore.put``).
     """
     try:
         record = ctx.domain_data.watch_config_store.put(

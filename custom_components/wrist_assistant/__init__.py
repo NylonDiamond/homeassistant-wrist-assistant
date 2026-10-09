@@ -766,12 +766,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # Watch config documents (the phone's pages in step 1). An unreadable file
     # is contained inside the store and never fails setup. The store asks the
     # secret store whether a watch is paired before the panel may create that
-    # watch's first record; it is handed a question, not the secret store.
-    # Only a watch: an iPhone entry is paired too, but it never has a watch's
-    # config, so the panel may not start one under it.
+    # watch's first record; it is handed questions, not the secret store.
+    # An iPhone never has a watch's config, but it owns its own pages and
+    # settings (phone pages): the second question keeps every write for an
+    # iPhone to the phone's kinds and settings, and lets the panel start a
+    # phone's first record of one of them.
     watch_config_store = WatchConfigStore(
         hass,
         is_paired=widget_secret_store.is_paired_watch,
+        is_iphone=widget_secret_store.is_paired_iphone,
     )
     await watch_config_store.async_load()
     # Custom complications ride the watch's long-poll: the owner's store

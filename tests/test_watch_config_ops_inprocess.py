@@ -1133,6 +1133,26 @@ def test_a_phone_s_own_get_marks_its_own_record_delivered(household) -> None:
     assert household.store.get(WATCH, "pages").delivered_revision == 0
 
 
+def test_a_phone_s_own_put_of_a_watch_only_kind_is_a_signed_400(env) -> None:
+    """The store refuses it (``not_for_iphone``); the op hands that back as
+    any other refusal, and nothing is stored."""
+    env.store = env.mod.WatchConfigStore(_Hass(), is_iphone=lambda owner: owner == PHONE)
+    asyncio.run(env.store.async_load())
+    reply = _put(env, _put_body(_batch_2("voice", "Dinner"), kind="voice"), watch_id=PHONE)
+    assert reply.status == 400
+    assert reply.body == {
+        "ok": False,
+        "error": "not_for_iphone",
+        "message": "an iPhone cannot own voice; it may own "
+        "behavior, menus, pages, rooms, status_pages",
+    }
+    assert env.store.get(PHONE, "voice") is None
+    # Its own pages are kept, and the same voice for a watch is too.
+    assert _put(env, _put_body(), watch_id=PHONE).body == {"ok": True, "revision": 1}
+    voice = _put(env, _put_body(_batch_2("voice", "Dinner"), kind="voice"), watch_id=WATCH)
+    assert voice.status == 200
+
+
 # ── static: dispatch and capability ──────────────────────────────────────
 
 
