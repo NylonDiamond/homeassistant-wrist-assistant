@@ -40,6 +40,7 @@ import { property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 import {
+  type ComplicationRecord,
   type HassEntityState,
   type HassLike,
   type OwnerSummary,
@@ -47,6 +48,7 @@ import {
   type WatchConfigRecord,
   fetchCloudStatus,
   fetchConfigEntries,
+  fetchList,
   fetchOwners,
   fetchHttpActions,
   fetchWatchConfig,
@@ -54,9 +56,17 @@ import {
   fetchWatchConfigHistoryEntry,
   renderTemplates,
   restoreWatchConfig,
+  saveRecord,
   saveWatchConfig,
   subscribeWatchConfig,
 } from "../ha-api.js";
+import {
+  clearPageFromComplication,
+  clearPageFromMenus,
+  complicationsOpeningPage,
+  deletedPageIds,
+  menuSlotsOpeningPage,
+} from "./page-refs.js";
 import {
   MUSIC_ASSISTANT_DOMAIN,
   WATCH_TEMPLATE_DEBOUNCE_MS,
@@ -413,6 +423,12 @@ interface DeleteAsk {
   behavior?: Record<string, unknown>;
   behaviorState: "loading" | "ready" | "none";
   removeLinks: boolean;
+  /** The menus document and this watch's complications, once read, for the
+   * menu slots and taps that open the page. Either may be missing when it
+   * could not be read; `refsState` is then still "ready". */
+  menus?: Record<string, unknown>;
+  complications?: ComplicationRecord[];
+  refsState: "loading" | "ready";
 }
 
 type HistoryState = "loading" | "ready" | "error" | "unsupported";
@@ -1936,6 +1952,9 @@ export class WaPageEditor extends LitElement {
       return;
     }
     this.note = undefined;
+    // The pages this save deletes: once it lands, the menu slots and
+    // complication taps that open them are cleared (`clearPageRefs`).
+    const deleted = deletedPageIds(watchPagesOf(draft.base), watchPagesOf(draft.document));
     const running = saveWatchPagesDraft(draft, {
       // A hold and slide direction left on Trigger entity with nothing
       // picked is saved as None, as the phone saves it. Every `all` rule
@@ -1967,6 +1986,61 @@ export class WaPageEditor extends LitElement {
     this.saveEnded(watchId);
     // Which photos a page uses has moved: the delete buttons follow.
     if (result.ok && this.photos.listState !== "idle") void this.photos.refreshList();
+    if (result.ok && deleted.length > 0) {
+      const cleared = await this.clearPageRefs(hass, watchId, deleted);
+      if (cleared !== undefined && watchId === this.watchId && this.note === undefined) this.note = cleared;
+    }
+  }
+
+  /**
+   * After a save that deleted pages: take every menu slot that went to one
+   * of them out of the menus record, and make every complication tap that
+   * opened one do nothing, each in its own save on the revision just read.
+   * A note says what was cleared, or what could not be (the page is gone
+   * either way; a slot left behind only fails on the watch, as before).
+   */
+  private async clearPageRefs(hass: HassLike, watchId: string, pageIds: string[]): Promise<Note | undefined> {
+    let slots = 0;
+    let taps = 0;
+    const failed: string[] = [];
+    try {
+      const record = await fetchWatchConfig(hass, watchId, "menus");
+      if (record.revision > 0 && isJsonObject(record.document)) {
+        const next = clearPageFromMenus(record.document, pageIds);
+        if (next !== record.document) {
+          slots = pageIds.reduce((n, id) => n + menuSlotsOpeningPage(record.document as Record<string, unknown>, id).length, 0);
+          await saveWatchConfig(hass, watchId, "menus", record.revision, next);
+        }
+      }
+    } catch {
+      failed.push("the menus");
+      slots = 0;
+    }
+    try {
+      const list = await fetchList(hass, watchId);
+      for (const record of list.records) {
+        if (record.deleted || !isJsonObject(record.document)) continue;
+        const next = clearPageFromComplication(record.document, pageIds);
+        if (next === undefined) continue;
+        try {
+          await saveRecord(hass, watchId, next, record.revision);
+          taps++;
+        } catch {
+          failed.push(`"${typeof record.document.name === "string" ? record.document.name : "a complication"}"`);
+        }
+      }
+    } catch {
+      failed.push("the complications");
+    }
+    const done = [
+      slots > 0 ? plural(slots, "menu slot", "menu slots") : undefined,
+      taps > 0 ? `the tap of ${plural(taps, "complication", "complications")}` : undefined,
+    ].filter((w): w is string => w !== undefined);
+    if (failed.length > 0) {
+      return { kind: "warn", text: `Saved. Could not clear the deleted page from ${failed.join(", ")}: change ${failed.length === 1 ? "it" : "them"} by hand.` };
+    }
+    if (done.length === 0) return undefined;
+    return { kind: "ok", text: `Saved. Cleared the deleted page from ${done.join(" and ")}.` };
   }
 
   // ── pages ──────────────────────────────────────────────────────────────
@@ -2023,17 +2097,32 @@ export class WaPageEditor extends LitElement {
     const watchId = this.watchId;
     if (!hass || watchId === undefined) return;
     this.menuPageId = undefined;
-    const ask: DeleteAsk = { pageId, behaviorState: "loading", removeLinks: true };
+    const ask: DeleteAsk = { pageId, behaviorState: "loading", removeLinks: true, refsState: "loading" };
     this.deleteAsk = ask;
+    // The menu slots and complication taps that open the page, read beside
+    // the room settings. Either may fail; the dialog then lists what it has.
+    void Promise.all([
+      fetchWatchConfig(hass, watchId, "menus").then(
+        (record) => (record.revision > 0 && isJsonObject(record.document) ? record.document : undefined),
+        () => undefined,
+      ),
+      fetchList(hass, watchId).then((list) => list.records, () => undefined),
+    ]).then(([menus, complications]) => {
+      const now = this.deleteAsk;
+      if (now === undefined || now.pageId !== pageId) return;
+      this.deleteAsk = { ...now, menus, complications, refsState: "ready" };
+    });
     fetchWatchConfig(hass, watchId, "behavior").then(
       (record) => {
-        if (this.deleteAsk !== ask) return;
         const behavior = record.revision > 0 && isJsonObject(record.document) ? record.document : undefined;
-        this.deleteAsk = { ...ask, behavior, behaviorState: behavior === undefined ? "none" : "ready" };
+        const now = this.deleteAsk;
+        if (now === undefined || now.pageId !== pageId) return;
+        this.deleteAsk = { ...now, behavior, behaviorState: behavior === undefined ? "none" : "ready" };
       },
       () => {
         // Not knowing the room settings only means no room lines.
-        if (this.deleteAsk === ask) this.deleteAsk = { ...ask, behaviorState: "none" };
+        const now = this.deleteAsk;
+        if (now !== undefined && now.pageId === pageId) this.deleteAsk = { ...now, behaviorState: "none" };
       },
     );
   }
@@ -4473,12 +4562,37 @@ export class WaPageEditor extends LitElement {
           ${links.roomMappingKeys.map((key) => html`<li>The page for <b>${key}</b></li>`)}
         </ul>
         <p class="pe-muted">After the delete the watch opens another page there instead. The setting itself stays as it is.</p>` : nothing}
-      <p class="pe-muted">The Anywhere menu, the Entity quick menu and complications may also open this page. This list does not include those.</p>
+      ${this.renderDeleteRefs(ask)}
       <div class="pe-ask-foot">
         <button class="pe-btn" @click=${() => this.closeAsk()}>Cancel</button>
         <button class="pe-btn pe-primary pe-danger" @click=${() => this.deletePage()}>Delete page</button>
       </div>
     </dialog>`;
+  }
+
+  /** The delete question's menu slots and complication taps that open the
+   * page (`page-refs.ts`), which the save that deletes the page clears. */
+  private renderDeleteRefs(ask: DeleteAsk): TemplateResult {
+    if (ask.refsState === "loading") return html`<p class="pe-muted">Checking the menus and complications…</p>`;
+    const slots = menuSlotsOpeningPage(ask.menus, ask.pageId);
+    const complications = complicationsOpeningPage(ask.complications ?? [], ask.pageId);
+    const unread = ask.menus === undefined && ask.complications === undefined;
+    if (slots.length === 0 && complications.length === 0) {
+      return unread
+        ? html`<p class="pe-muted">The menus and complications could not be read, so this does not say whether they open this page.</p>`
+        : html``;
+    }
+    const tapWords = (c: { whole: boolean; layers: number }) => [
+      c.whole ? "its tap" : undefined,
+      c.layers > 0 ? plural(c.layers, "tap layer", "tap layers") : undefined,
+    ].filter((w): w is string => w !== undefined).join(" and ");
+    return html`
+      <p>These open this page too:</p>
+      <ul class="pe-ask-list pe-del-refs">
+        ${slots.map((slot) => html`<li><b>${slot.where}</b>: the Go to Page slot${slot.position === "" ? "" : ` (${slot.position})`}</li>`)}
+        ${complications.map((c) => html`<li><b>Complication "${c.name}"</b>: ${tapWords(c)}</li>`)}
+      </ul>
+      <p class="pe-muted">When you save the delete, the menu slots are removed and those taps do nothing.</p>`;
   }
 
   /** The save question: the Speak and Assist tiles on the pages changed
