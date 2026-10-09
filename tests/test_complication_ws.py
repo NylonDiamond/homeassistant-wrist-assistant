@@ -489,7 +489,9 @@ def env():
         push = _Push()
         domain_data = _DomainData(store, secrets, coordinator, push, None)
         hass = _Hass(domain_data)
-        watch_config = watch_config_mod.WatchConfigStore(hass)
+        watch_config = watch_config_mod.WatchConfigStore(
+            hass, is_iphone=secrets.is_paired_iphone
+        )
         asyncio.run(watch_config.async_load())
         domain_data.watch_config_store = watch_config
         yield _Env(ws, store, secrets, coordinator, hass, secrets_mod, push)
@@ -953,6 +955,87 @@ def test_moving_an_owner_carries_its_watch_config(env) -> None:
     moved = watch_config.get("watch-new", "pages")
     assert moved.revision == 1
     assert moved.document["pages"][0]["name"] == "old pages"
+
+
+def _save_behavior(env: _Env, owner: str, document: dict) -> None:
+    env.hass.data[DOMAIN].watch_config_store.put(
+        owner,
+        "behavior",
+        document,
+        document_hash="b" * 64,
+        base_revision=0,
+        updated_by=owner,
+    )
+
+
+def test_a_move_onto_a_phone_of_a_watch_only_config_moves_nothing(env) -> None:
+    """Phone pages: a config an iPhone may not hold refuses the whole move.
+
+    Before the fix the designs moved first and the config's refusal was only
+    logged, so the move was split between two owners and the reply said it
+    worked. Now ``not_for_iphone`` comes back before any design moves."""
+    env.add_phone("phone-1", device_name="Jesse's iPhone")
+    document = env.save_document("watch-old")
+    _save_pages(env, "watch-old", "old pages")
+    _save_behavior(env, "watch-old", {"wrapPages": True, "serverMode": "auto"})
+
+    connection = _Connection()
+    env.ws.ws_move_owner(
+        env.hass,
+        connection,
+        {"id": 1, "source_owner_watch_id": "watch-old", "target_owner_watch_id": "phone-1"},
+    )
+    assert [code for _id, code, _msg in connection.errors] == ["not_for_iphone"]
+    assert connection.results == {}
+    assert [r.id for r in env.store.list("watch-old")] == [document["id"]]
+    assert env.store.list("phone-1") == []
+    watch_config = env.hass.data[DOMAIN].watch_config_store
+    assert watch_config.get("watch-old", "pages").revision == 1
+    assert watch_config.get("watch-old", "behavior").revision == 1
+    assert watch_config.get("phone-1", "pages") is None
+    assert watch_config.get("phone-1", "behavior") is None
+
+
+def test_a_move_onto_a_phone_of_a_phone_shaped_config_moves_it(env) -> None:
+    """Records a phone may hold go onto a phone with the designs, as ever."""
+    env.add_phone("phone-1", device_name="Jesse's iPhone")
+    document = env.save_document("phone-old")
+    _save_pages(env, "phone-old", "phone pages")
+    _save_behavior(env, "phone-old", {"schemaVersion": 1, "wrapPages": True})
+
+    result = env.call(
+        env.ws.ws_move_owner,
+        source_owner_watch_id="phone-old",
+        target_owner_watch_id="phone-1",
+    )
+    assert result["watch_config_moved"] == ["behavior", "pages"]
+    assert [r["id"] for r in result["records"]] == [document["id"]]
+    watch_config = env.hass.data[DOMAIN].watch_config_store
+    assert watch_config.get("phone-old", "pages") is None
+    assert watch_config.get("phone-1", "pages").document["pages"][0]["name"] == "phone pages"
+    assert watch_config.get("phone-1", "behavior").document == {
+        "schemaVersion": 1,
+        "wrapPages": True,
+    }
+
+
+def test_a_move_between_watches_still_carries_watch_only_settings(env) -> None:
+    """The phone check never reaches a watch target: every setting moves."""
+    env.add_watch("watch-new", device_name="Apple Watch")
+    env.save_document("watch-old")
+    _save_behavior(env, "watch-old", {"wrapPages": True, "serverMode": "auto"})
+
+    result = env.call(
+        env.ws.ws_move_owner,
+        source_owner_watch_id="watch-old",
+        target_owner_watch_id="watch-new",
+    )
+    assert result["watch_config_moved"] == ["behavior"]
+    watch_config = env.hass.data[DOMAIN].watch_config_store
+    assert watch_config.get("watch-new", "behavior").document == {
+        "wrapPages": True,
+        "serverMode": "auto",
+    }
 
 
 def test_a_refused_move_leaves_the_watch_config_where_it_was(env) -> None:

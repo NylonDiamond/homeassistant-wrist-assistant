@@ -1905,6 +1905,30 @@ class WatchConfigStore:
         return had
 
     @callback
+    def check_move_owner(self, source_owner: str, target_owner: str) -> None:
+        """Refuse a move onto an iPhone that :meth:`move_owner` would refuse,
+        changing nothing.
+
+        Raises :class:`WatchConfigPhoneKindError` when the target is an iPhone
+        and the source holds a kind a phone may not own, or a ``behavior``
+        with a key that is not a phone setting. Any other move passes,
+        whatever it is: between watches, onto a phone of records a phone may
+        hold, or from an owner with nothing stored. The complication move
+        asks this before it moves any design, so a move is never split
+        between designs that moved and a config that could not.
+        """
+        if not self._owner_is_iphone(target_owner):
+            return
+        for kind, source_record in sorted(self._records.get(source_owner, {}).items()):
+            self._check_owner_kind(target_owner, kind)
+            if kind == "behavior" and isinstance(source_record.document, dict):
+                _kept, dropped = phone_behavior_document(source_record.document)
+                if dropped:
+                    raise WatchConfigPhoneKindError(
+                        "the behavior moving onto this iPhone holds settings "
+                        f"an iPhone does not keep: {', '.join(dropped)}"
+                    )
+
     def move_owner(
         self, source_owner: str, target_owner: str, *, updated_by: str
     ) -> list[str]:
@@ -1944,7 +1968,7 @@ class WatchConfigStore:
         :class:`WatchConfigPhoneKindError` and nothing changed, when the
         source holds a kind a phone may not own or a ``behavior`` with a key
         that is not a phone setting: a record moves whole, history and all,
-        so it is never trimmed on the way.
+        so it is never trimmed on the way (:meth:`check_move_owner`).
         """
         if not isinstance(source_owner, str) or not source_owner:
             raise WatchConfigValidationError("source_owner_watch_id is required")
@@ -1959,16 +1983,7 @@ class WatchConfigStore:
         moving = self._records.get(source_owner)
         if not moving:
             return []
-        if self._owner_is_iphone(target_owner):
-            for kind, source_record in sorted(moving.items()):
-                self._check_owner_kind(target_owner, kind)
-                if kind == "behavior" and isinstance(source_record.document, dict):
-                    _kept, dropped = phone_behavior_document(source_record.document)
-                    if dropped:
-                        raise WatchConfigPhoneKindError(
-                            "the behavior moving onto this iPhone holds settings "
-                            f"an iPhone does not keep: {', '.join(dropped)}"
-                        )
+        self.check_move_owner(source_owner, target_owner)
         new_owner = target_owner not in self._records
         target = self._records.setdefault(target_owner, {})
         moved: list[str] = []

@@ -159,7 +159,7 @@ from .statistics_series import (
 from .card_preview_store import CardPreviewError, CardPreviewStore
 from .gallery_key_store import gallery_key_store
 from .parts_store import PartsStore, PartsStoreError
-from .watch_config_store import WatchConfigStoreError
+from .watch_config_store import WatchConfigPhoneKindError, WatchConfigStoreError
 from .widget_secret_store import DEVICE_KIND_IPHONE, DEVICE_KIND_LIBRARY, watch_has_iphone
 
 _LOGGER = logging.getLogger(__name__)
@@ -1419,6 +1419,10 @@ def ws_move_owner(
     Both sides must be owners the caller may manage. For anyone but an
     administrator that means from their own device or the Library to their
     own device; an orphan is nobody's, so only an administrator moves one.
+
+    A move onto an iPhone whose watch config the phone may not hold is
+    refused whole with ``not_for_iphone`` before anything moves
+    (``WatchConfigStore.check_move_owner``).
     """
     store = _store(hass)
     if store is None:
@@ -1438,6 +1442,16 @@ def ws_move_owner(
             f"{target} is not a registered device; pair it first, then move",
         )
         return
+    watch_config_store = hass.data[DOMAIN].watch_config_store
+    # A config an iPhone may not hold (phone pages: a kind or a setting that
+    # is the watch's alone) refuses the whole move before any design moves,
+    # so a move onto a phone is never split into designs that moved and a
+    # config that stayed behind.
+    try:
+        watch_config_store.check_move_owner(msg["source_owner_watch_id"], target)
+    except WatchConfigPhoneKindError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
     try:
         records = store.move_owner(
             msg["source_owner_watch_id"], target, updated_by=updated_by
@@ -1451,7 +1465,7 @@ def ws_move_owner(
     # logged rather than failing a move that has already been committed.
     watch_config_moved: list[str] = []
     try:
-        watch_config_moved = hass.data[DOMAIN].watch_config_store.move_owner(
+        watch_config_moved = watch_config_store.move_owner(
             msg["source_owner_watch_id"], target, updated_by=updated_by
         )
     except WatchConfigStoreError as err:

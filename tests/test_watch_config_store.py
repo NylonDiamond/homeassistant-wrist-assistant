@@ -3344,3 +3344,24 @@ def test_a_move_onto_a_phone_of_phone_records_goes_through(mod):
     _put(store, "iphone-old", _phone_kept(_full_behavior()), kind="behavior")
     assert store.move_owner("iphone-old", PHONE, updated_by="ha-panel") == ["behavior", "pages"]
     assert store.get(PHONE, "pages").document == _doc()
+
+
+def test_check_move_owner_refuses_what_move_owner_would_and_changes_nothing(mod):
+    """The dry check the complication move asks before it moves a design."""
+    store = _phone_store(mod)
+    _put(store, OWNER, _voice(), kind="voice")
+    with pytest.raises(mod.WatchConfigPhoneKindError):
+        store.check_move_owner(OWNER, PHONE)
+    _put(store, OTHER, _full_behavior(), kind="behavior")
+    with pytest.raises(mod.WatchConfigPhoneKindError, match="serverMode"):
+        store.check_move_owner(OTHER, PHONE)
+    assert sorted(store.owners()) == sorted([OWNER, OTHER])
+    assert store.get(PHONE, "behavior") is None
+
+    # A watch target, a phone shaped source, and an owner with nothing stored
+    # all pass.
+    store.check_move_owner(OWNER, OTHER)
+    store.check_move_owner(OTHER, OWNER)
+    _put(store, "iphone-old", _phone_kept(_full_behavior()), kind="behavior")
+    store.check_move_owner("iphone-old", PHONE)
+    store.check_move_owner("nobody", PHONE)
