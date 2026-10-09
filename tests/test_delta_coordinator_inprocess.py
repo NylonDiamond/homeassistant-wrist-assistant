@@ -875,6 +875,102 @@ def test_nudge_on_a_current_watch_changes_nothing(coordinator) -> None:
     asyncio.run(run())
 
 
+class _RemovedEvent:
+    """HA's state_changed for an entity that left the state machine: no
+    new_state, the old one beside it."""
+
+    def __init__(self, old_state: _State) -> None:
+        self.data = {"new_state": None, "old_state": old_state, "entity_id": old_state.entity_id}
+
+
+def _remove(hass, coord, entity_id: str) -> None:
+    old = hass.states._by_id.pop(entity_id)
+    coord._handle_state_changed(_RemovedEvent(old))
+
+
+@pytest.mark.parametrize("compact", [False, True])
+def test_a_removed_entity_reaches_a_parked_poll_as_unavailable(coordinator, compact) -> None:
+    """The test bed's C6: an entity renamed or deleted in Home Assistant
+    left its tile live looking for minutes, because a removal never entered
+    the delta stream. It wakes the parked poll now, as ``unavailable`` with
+    ``removed: true``, keeping the attributes it had so the name still
+    shows. Old watches read an ordinary unavailable state."""
+    module, hass, coord = coordinator
+    ent = "light.bed_light"
+    hass.states.set(ent, "off")
+    hass.states._by_id[ent].attributes = {"friendly_name": "Bed Light"}
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent], compact=compact)
+        cursor = body["next_cursor"]
+        held = asyncio.create_task(
+            _poll(coord, since=cursor, entities=[ent], timeout=10, compact=compact)
+        )
+        await asyncio.sleep(0.05)
+        _remove(hass, coord, ent)
+        status, body = await asyncio.wait_for(held, timeout=2)
+        assert status == 200, body
+        [event] = body["events"]
+        assert event["entity_id"] == ent
+        assert event["state"] == "unavailable"
+        assert event["removed"] is True
+        if compact:
+            assert event["attributes"] == {"friendly_name": "Bed Light"}
+        else:
+            assert event["new_state"]["state"] == "unavailable"
+            assert event["new_state"]["attributes"] == {"friendly_name": "Bed Light"}
+
+        # Back again (renamed back): an ordinary change, no `removed`.
+        _change(hass, coord, ent, "on")
+        status, body = await _poll(
+            coord, since=body["next_cursor"], entities=[ent], timeout=0, compact=compact
+        )
+        [event] = body["events"]
+        assert event["state"] == "on"
+        assert "removed" not in event
+
+    asyncio.run(run())
+
+
+def test_a_removal_with_attribute_diffs_still_says_unavailable(coordinator) -> None:
+    module, hass, coord = coordinator
+    ent = "input_boolean.helper"
+    hass.states.set(ent, "on")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent], attribute_diffs=True, compact=True)
+        cursor = body["next_cursor"]
+        _remove(hass, coord, ent)
+        status, body = await _poll(
+            coord, since=cursor, entities=[ent], timeout=0, attribute_diffs=True, compact=True
+        )
+        [event] = body["events"]
+        assert event["state"] == "unavailable" and event["removed"] is True
+
+    asyncio.run(run())
+
+
+def test_a_removal_of_an_entity_no_watch_shows_wakes_nobody(coordinator) -> None:
+    module, hass, coord = coordinator
+    shown, other = "light.shown", "light.other"
+    hass.states.set(shown, "off")
+    hass.states.set(other, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[shown])
+        held = asyncio.create_task(
+            _poll(coord, since=body["next_cursor"], entities=[shown], timeout=1)
+        )
+        await asyncio.sleep(0.05)
+        _remove(hass, coord, other)
+        status, body = await asyncio.wait_for(held, timeout=3)
+        # The cursor moved past it, but nothing for this watch.
+        assert status in (200, 204)
+        assert not (body or {}).get("events")
+
+    asyncio.run(run())
+
+
 def test_entity_events_still_win_over_the_token(coordinator) -> None:
     """A wake that carries real events delivers them; the token rides along."""
     module, hass, coord = coordinator

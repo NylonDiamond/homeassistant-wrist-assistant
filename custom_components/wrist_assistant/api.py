@@ -56,6 +56,11 @@ DELTA_WATCH_CONFIG_KINDS = (
     "rooms",
 )
 
+# The state a removed entity's change carries (see _removed_payload): Home
+# Assistant's own STATE_UNAVAILABLE, spelled out so the module reads nothing
+# more from homeassistant.const than it did.
+REMOVED_ENTITY_STATE = "unavailable"
+
 _LOGGER = logging.getLogger(__name__)
 _ATTR_DIFF_SENTINEL = object()
 
@@ -163,6 +168,11 @@ class DeltaEvent:
     entity_id: str
     state: State
     payload: dict[str, Any] | None = None
+    # The entity left the state machine (deleted, or renamed to another id).
+    # ``state`` is then its last state, and the payload says ``unavailable``
+    # with ``removed: true`` (see _event_payload). ``removed_at`` is when.
+    removed: bool = False
+    removed_at: float | None = None
 
 
 _SLIM_ATTRIBUTES: dict[str, set[str]] = {
@@ -1164,6 +1174,14 @@ class DeltaCoordinator:
         differs from what it holds. Older watches ignore the key. A poll may
         report the hashes it holds under the same key (see ``_lean_reply``).
 
+        An entity removed from Home Assistant (deleted, or renamed to another
+        id) is an event like any other change: ``state`` ``unavailable``, the
+        attributes it last had, and ``removed: true`` beside them (in the
+        compact form too). A watch that predates the field shows an
+        unavailable tile; one that reads it knows the entity is gone rather
+        than offline. The entity coming back is an ordinary change without
+        ``removed``. A full snapshot leaves a missing entity out, as before.
+
         ``voices_hash`` is the watch's hash of its installed speech voices
         (see ``watch_voices_store.voices_hash``), None from a watch that does
         not report them. When it is not the stored hash, a reply with a body
@@ -1737,8 +1755,16 @@ class DeltaCoordinator:
         DeltaEvent), so an unwatched house costs a reference per change.
         """
         new_state: State | None = event.data.get("new_state")
+        removed = False
         if new_state is None:
-            return
+            # Removed from the state machine: deleted, or renamed to another
+            # entity id (the new id arrives as a change of its own). Buffered
+            # as a removal, so a watch showing it hears within its poll that
+            # it is gone, rather than keeping a live looking tile.
+            new_state = event.data.get("old_state")
+            if new_state is None:
+                return
+            removed = True
 
         self._cursor += 1
         self._events.append(
@@ -1746,6 +1772,8 @@ class DeltaCoordinator:
                 cursor=self._cursor,
                 entity_id=new_state.entity_id,
                 state=new_state,
+                removed=removed,
+                removed_at=dt_util.utcnow().timestamp() if removed else None,
             )
         )
         self._event_times.append(self.hass.loop.time())
@@ -1784,13 +1812,16 @@ class DeltaCoordinator:
         ns = event.get("new_state")
         if ns is None:
             return event
-        return {
+        compact = {
             "entity_id": event["entity_id"],
             "state": event.get("state", ns.get("state")),
             "attributes": ns.get("attributes", {}),
             "context_id": event.get("context_id"),
             "last_updated": event.get("last_updated", ns.get("last_updated")),
         }
+        if event.get("removed") is True:
+            compact["removed"] = True
+        return compact
 
     def _snapshot_current_state(
         self, entities: set[str], *,
@@ -2401,6 +2432,8 @@ class DeltaCoordinator:
         Every later step (slim, compact, attribute diff) returns a new dict
         rather than editing this one, so one copy serves every watch.
         """
+        if event.payload is None and event.removed:
+            event.payload = self._removed_payload(event)
         if event.payload is None:
             state = event.state
             event.payload = {
@@ -2411,6 +2444,33 @@ class DeltaCoordinator:
                 "last_updated": state.last_updated.timestamp(),
             }
         return event.payload
+
+    def _removed_payload(self, event: DeltaEvent) -> dict[str, Any]:
+        """The change for an entity that left the state machine.
+
+        Shaped like any other change, so every watch reads it: the state is
+        ``unavailable`` (HA's own word for an entity that cannot be used),
+        with the attributes it last had, so its name still shows. A watch
+        that knows the field also reads ``removed: true``: the entity is
+        gone from Home Assistant rather than offline, and a tap on it can
+        only fail. If the entity comes back (renamed back, or added again)
+        its next change is an ordinary one, without ``removed``.
+        """
+        state = event.state
+        at = event.removed_at if event.removed_at is not None else state.last_updated.timestamp()
+        return {
+            "entity_id": state.entity_id,
+            "state": REMOVED_ENTITY_STATE,
+            "removed": True,
+            "new_state": {
+                "entity_id": state.entity_id,
+                "state": REMOVED_ENTITY_STATE,
+                "attributes": self._json_safe(state.attributes),
+                "last_updated": at,
+            },
+            "context_id": None,
+            "last_updated": at,
+        }
 
     def _state_to_payload(self, state: State) -> dict[str, Any]:
         """Return HA state payload shape expected by the watch client."""
