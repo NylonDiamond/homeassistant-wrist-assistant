@@ -191,7 +191,10 @@ def test_the_panel_s_size_footer_uses_the_caps_home_assistant_enforces() -> None
     They used to say 250,000 bytes, a figure from the phone's old sync to the
     watch, and called a 472 KB page config close to a limit it had passed.
     Then they said 2 MB for pages, which Home Assistant accepted and the watch
-    could not store: a 1 MB page config crashed it, so the cap is 900 KB."""
+    could not store: a 1 MB page config crashed it, so the cap became 900 KB.
+    The watch itself saves at most 700 KB of pages, so a 900 KB save was
+    accepted here and refused there; the cap is now the watch's own 700 KB,
+    716,800 bytes."""
     source = (_PKG / "const.py").read_text()
     tree = ast.parse(source, filename="const.py")
     caps = next(
@@ -203,7 +206,7 @@ def test_the_panel_s_size_footer_uses_the_caps_home_assistant_enforces() -> None
     )
 
     def product(node: ast.expr) -> int:
-        """`900 * 1024` and the like, the only shape the caps take."""
+        """`700 * 1024` and the like, the only shape the caps take."""
         if isinstance(node, ast.Constant) and isinstance(node.value, int):
             return node.value
         assert isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult), ast.unparse(node)
@@ -217,10 +220,11 @@ def test_the_panel_s_size_footer_uses_the_caps_home_assistant_enforces() -> None
     model = (
         Path(__file__).resolve().parents[1] / "frontend/src/watch-pages/model.ts"
     ).read_text()
-    pages = re.search(r"^export const WATCH_PAGES_LIMIT_BYTES = 900 \* 1024;", model, re.M)
+    pages = re.search(r"^export const WATCH_PAGES_LIMIT_BYTES = 700 \* 1024;", model, re.M)
     others = re.search(r"^export const WATCH_CONFIG_LIMIT_BYTES = 256 \* 1024;", model, re.M)
     assert pages is not None and others is not None
-    assert cap["pages"] == 900 * 1024
+    # The watch's pages budget (`WatchDefaultsBudgetRules` in the app).
+    assert cap["pages"] == 700 * 1024 == 716_800
     for kind in ("behavior", "menus", "voice", "status_pages", "control_center"):
         assert cap[kind] == 256 * 1024, kind
     assert "WATCH_SYNC_LIMIT_BYTES" not in model

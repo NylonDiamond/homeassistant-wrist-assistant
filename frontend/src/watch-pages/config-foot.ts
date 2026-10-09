@@ -40,7 +40,7 @@ function them(noun: ConfigNoun): string {
 export const REJECTED_TEXT = "The watch could not read this save";
 
 /** A size in the units the caps are set in: 1024 bytes to a KB and 1024 KB
- * to an MB, so the 900 KB and 256 KB caps read as round numbers. A KB keeps
+ * to an MB, so the 700 KB and 256 KB caps read as round numbers. A KB keeps
  * one decimal and an MB two, rounded by `round`: the footer rounds a size
  * under the cap down and one over it up, so neither reads as the cap itself
  * ("900 KB of the 900 KB … Over the limit" for a document 142 bytes over). */

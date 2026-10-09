@@ -79,10 +79,13 @@ export const WATCH_GRID_SIDE_INSET = 2;
  * `WATCH_CONFIG_MAX_DOCUMENT_BYTES["pages"]` in the integration's const.py,
  * which refuses a save past it. It is what the watch can hold: the watch keeps
  * its pages in its UserDefaults, which watchOS caps at about 1 MiB for the
- * whole store, so a 1 MB page config crashed the app. It was 2 MB before
- * that was found, and 250 KB before that (the phone's old sync to the watch,
- * which no longer carries pages). */
-export const WATCH_PAGES_LIMIT_BYTES = 900 * 1024;
+ * whole store, so a 1 MB page config crashed the app. The watch saves at most
+ * 700 KB of pages so the rest of its store keeps room, and this is the same
+ * 716,800 bytes, so a save Home Assistant accepts is one the watch uses. It
+ * was 900 KB (which the watch refused as too large), 2 MB before that, and
+ * 250 KB before that (the phone's old sync to the watch, which no longer
+ * carries pages). */
+export const WATCH_PAGES_LIMIT_BYTES = 700 * 1024;
 /** The same cap for the menus, voice settings, status pages, Control Center
  * list and watch settings (`behavior`). A second home's `rooms` record has
  * its own, smaller one (`HOME_ROOMS_LIMIT_BYTES`). */
