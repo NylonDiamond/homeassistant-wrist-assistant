@@ -3,16 +3,18 @@
 
 import { describe, expect, it } from "vitest";
 
-import { homeDeviceRows, homeDevices } from "../src/home.js";
+import { NOT_SYNCED_TEXT, attentionText, homeDeviceLabel, homeDeviceRows, homeDeviceWhy, homeDevices, needsAttention } from "../src/home.js";
 import type { OwnerSummary } from "../src/ha-api.js";
 import { deviceSyncLabel, homeSync } from "../src/send-state.js";
 import {
   HTTP_ACTIONS_PART_LABEL,
+  REJECTED_SAVE_TEXT,
   WATCH_APP_PARTS,
   type WatchAppSync,
   deviceVerdict,
   httpActionsDeliveryFor,
   readWatchAppSync,
+  rejectedSaveText,
   summaryUnknown,
   summaryWatchAppSyncs,
   waitingForText,
@@ -194,5 +196,75 @@ describe("Home's rows with the watch app", () => {
   it("keys the read on the watches, in any order", () => {
     expect(watchAppSyncKey(["b", "a"])).toBe(watchAppSyncKey(["a", "b"]));
     expect(watchAppSyncKey(["a"])).not.toBe(watchAppSyncKey(["a", "b"]));
+  });
+});
+
+describe("a save the watch could not use", () => {
+  const full = (revision: number, delivered: number, rejected = 0) => ({ revision, delivered_revision: delivered, rejected_revision: rejected });
+  const owner = (o: Partial<OwnerSummary>): OwnerSummary => ({
+    owner_watch_id: "w1", device_name: "Watch", device_kind: "watch", paired_iphone_name: null, app_version: "3.0",
+    screen_size: null, complication_count: 1, token: 5, applied_token: 5, is_orphan: false, ...o,
+  } as OwnerSummary);
+  const devices = (owners: OwnerSummary[]) => homeDevices(owners, (o) => o.device_name ?? o.owner_watch_id, (o) => o.owner_watch_id);
+
+  it("is listed by part from the summary, only while it is the stored revision", () => {
+    const syncs = summaryWatchAppSyncs({ owners: {
+      // The verify run: 88 pages fetched (so delivered) and reported unreadable.
+      w1: { pages: full(12, 12, 12), menus: full(3, 3) },
+      // An old report a later save replaced says nothing.
+      w2: { pages: full(13, 13, 12) },
+      w3: { pages: full(4, 4, 4), voice: full(2, 2, 2) },
+    } }, ["w1", "w2", "w3"]);
+    expect(syncs.get("w1")).toEqual({ waiting: [], delivered: true, rejected: ["pages"] });
+    expect(syncs.get("w2")).toEqual({ waiting: [], delivered: true });
+    expect(syncs.get("w2")?.rejected).toBeUndefined();
+    expect(syncs.get("w3")?.rejected).toEqual(["pages", "voice"]);
+  });
+
+  it("rides along on the verdict without changing it", () => {
+    expect(deviceVerdict("synced", { waiting: [], delivered: true, rejected: ["pages"] }))
+      .toEqual({ sync: "synced", waitingFor: [], rejected: ["pages"] });
+    expect(deviceVerdict("synced", { waiting: ["menus"], delivered: true, rejected: ["pages"] }))
+      .toEqual({ sync: "waiting", waitingFor: ["menus"], rejected: ["pages"] });
+    expect(deviceVerdict("synced", { waiting: [], delivered: true }).rejected).toBeUndefined();
+  });
+
+  it("names the parts in plain words", () => {
+    expect(REJECTED_SAVE_TEXT).toBe("Watch could not use the last save");
+    expect(rejectedSaveText([])).toBe("Watch could not use the last save");
+    expect(rejectedSaveText(["pages"])).toBe("Watch could not use the last save of its pages");
+    expect(rejectedSaveText(["pages", "menus"])).toBe("Watch could not use the last save of its pages and menus");
+    expect(rejectedSaveText(["pages", "menus", "voice"])).toBe("Watch could not use the last save of its pages, menus and voice");
+  });
+
+  it("turns the watch's Home card from Synced to Not synced, says why, and lists it under Waiting to sync", () => {
+    const owners = [
+      owner({ owner_watch_id: "w1", device_name: "Jesse's watch" }),
+      owner({ owner_watch_id: "w2", device_name: "Other watch" }),
+      owner({ owner_watch_id: "p1", device_name: "Phone", device_kind: "iphone" }),
+    ];
+    const syncs = summaryWatchAppSyncs({ owners: { w1: { pages: full(12, 12, 12) }, w2: { pages: full(5, 5) } } }, ["w1", "w2"]);
+    const rows = homeDeviceRows(devices(owners), syncs);
+    const [watch, other, phone] = rows;
+    expect(watch).toMatchObject({ id: "w1", sync: "synced", rejected: ["pages"] });
+    expect(homeDeviceLabel(watch!)).toBe(NOT_SYNCED_TEXT);
+    expect(homeDeviceWhy(watch!, undefined)).toBe("Watch could not use the last save of its pages");
+    expect(homeDeviceWhy(watch!, "2 changes to pick up")).toBe("Watch could not use the last save of its pages · 2 changes to pick up");
+    expect(needsAttention(watch!)).toBe(true);
+    expect(attentionText(watch!, undefined)).toBe("Watch could not use the last save of its pages");
+    // The others are as before.
+    expect(other!.rejected).toBeUndefined();
+    expect(homeDeviceLabel(other!)).toBe("Synced");
+    expect(needsAttention(other!)).toBe(false);
+    expect(homeDeviceWhy(other!, undefined)).toBe("");
+    expect(phone!.rejected).toBeUndefined();
+  });
+
+  it("says both when the watch also waits for something", () => {
+    const row = { sync: "waiting" as const, waitingFor: ["complications", "menus"], rejected: ["pages"] };
+    expect(homeDeviceLabel(row)).toBe(NOT_SYNCED_TEXT);
+    expect(attentionText(row, "1 change to pick up")).toBe("Watch could not use the last save of its pages · Waiting for complications, menus · 1 change to pick up");
+    expect(homeDeviceWhy(row, undefined)).toBe("Watch could not use the last save of its pages · For complications, menus");
+    expect(attentionText({ sync: "waiting", waitingFor: ["menus"] }, undefined)).toBe("Waiting for menus");
   });
 });

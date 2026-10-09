@@ -39,6 +39,15 @@ function them(noun: ConfigNoun): string {
 
 export const REJECTED_TEXT = "The watch could not read this save";
 
+/** What the head and foot say about a save the watch reported it could not
+ * use: its reason when it gave one ("The watch could not use this save: too
+ * large for the watch"), else `REJECTED_TEXT`. A watch app older than the
+ * reason never sends one. */
+export function rejectedText(record: Pick<WatchConfigRecord, "rejected_reason">): string {
+  const reason = typeof record.rejected_reason === "string" ? record.rejected_reason.trim() : "";
+  return reason === "" ? REJECTED_TEXT : `The watch could not use this save: ${reason}`;
+}
+
 /** A size in the units the caps are set in: 1024 bytes to a KB and 1024 KB
  * to an MB, so the 700 KB and 256 KB caps read as round numbers. A KB keeps
  * one decimal and an MB two, rounded by `round`: the footer rounds a size
@@ -104,7 +113,7 @@ export function configFootStatus(i: {
   const size = `${kb(i.size, round)} of the ${kb(i.limit)} Home Assistant keeps${note}`;
   if (rejectedNow(record)) {
     return {
-      tone: "err", revision, state: REJECTED_TEXT, size, near, over,
+      tone: "err", revision, state: rejectedText(record), size, near, over,
       help: i.historyState === "unsupported" ? `Change the ${i.noun} and save ${them(i.noun)} again.` : "Restore an earlier save from History.",
     };
   }
@@ -271,7 +280,7 @@ export function renderConfigHistoryDialog(i: ConfigHistoryInput): TemplateResult
       </div>
       <button type="button" class="cf-close" title="Close" aria-label="Close" @click=${closeOwnDialog}>${uiIcon("close")}</button>
     </div>
-    ${rejected ? html`<p class="pe-warn" role="note">${REJECTED_TEXT}. Restore the save before it.</p>` : nothing}
+    ${rejected ? html`<p class="pe-warn" role="note">${rejectedText(record)}. Restore the save before it.</p>` : nothing}
     <div class="cf-dialog-body">${body}</div>
     <p class="pe-muted">Restoring saves the earlier copy again as a new revision. The copy stored now stays in this list.</p>
     <div class="pe-ask-foot">

@@ -141,8 +141,8 @@ import {
 import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
-import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceRows, homeGroups, homeTotals, lastSeenDevice, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
+import { type SendState, agoWords, describeHomeSync, describeSend, homeSync, sendState, sendWaitMs } from "./send-state.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDeviceWhy, homeGroups, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
 import { homePhoneArt, homeWatchArt } from "./home-art.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
@@ -18831,7 +18831,10 @@ export class WristAssistantPanel extends LitElement {
     const totals = homeTotals(devices);
     const last = lastSeenDevice(devices, (id) => this.ownerOf(id), elapsed);
     const colorOf = new Map(groups.flatMap((g) => g.rows.map((r) => [r.id, personColorVar(g.index) ?? "var(--wa-hue-grey)"] as const)));
-    const waiting = devices.filter((d) => d.sync === "waiting");
+    // A watch that could not use the last save is listed too: it needs a
+    // look as much as one that waits, and "Every device has your latest
+    // changes" would not be true of it.
+    const waiting = devices.filter(needsAttention);
     const bar = (["synced", "waiting", "idle"] as const).filter((k) => totals[k] > 0)
       .map((k) => html`<i class=${k} style=${`flex:${totals[k]}`}></i>`);
     return html`<div class="home-status">
@@ -18859,7 +18862,7 @@ export class WristAssistantPanel extends LitElement {
             const gone = userGone(this.ownerOf(d.id));
             return html`<div class="home-attn-row" style=${`--c:${colorOf.get(d.id) ?? "var(--wa-hue-grey)"}`}>
               <i class="home-attn-who" aria-hidden="true"></i>
-              <span class="home-attn-text"><b>${d.name}</b><span>${gone ? USER_GONE_TEXT : html`Waiting for ${waitingForText(d.waitingFor)}${pending === undefined ? "" : ` · ${pending}`}`}</span></span>
+              <span class="home-attn-text"><b>${d.name}</b><span>${gone ? USER_GONE_TEXT : attentionText(d, pending)}</span></span>
               ${gone
                 ? html`<button type="button" class="home-door" title=${`Remove ${d.name}`} @click=${() => this.openDeviceSheet(d.id, true)}>Remove</button>`
                 : html`<button type="button" class="home-door" title=${`Open ${d.name}`} @click=${() => this.openDeviceSheet(d.id)}>Open</button>`}
@@ -18904,20 +18907,20 @@ export class WristAssistantPanel extends LitElement {
     const facts = deviceFacts(owner, d.kind);
     const heard = seen ?? (neverConnected(owner) ? NEVER_CONNECTED_TEXT : undefined);
     const lines = [facts.slice(0, 2).join(" · "), ...facts.slice(2), ...(heard === undefined ? [] : [heard])];
-    const why = [d.waitingFor.length === 0 ? undefined : `For ${waitingForText(d.waitingFor)}`, pending]
-      .filter((w): w is string => w !== undefined).join(" · ");
+    const why = homeDeviceWhy(d, pending);
     const held = owner?.complication_count ?? 0;
     // Its user was deleted: Home Assistant refuses the device, so the card
     // says so and Remove is the only thing it offers.
     const gone = userGone(owner);
-    return html`<li class="home-device ${d.sync}">
+    const rejected = (d.rejected?.length ?? 0) > 0;
+    return html`<li class="home-device ${d.sync} ${rejected ? "rejected" : ""}">
       <span class="home-stage" aria-hidden="true">${d.kind === "watch" ? homeWatchArt(d.id, held, d.sync) : homePhoneArt(d.id, held, d.sync)}</span>
       <div class="home-device-text">
         <div class="home-device-line">
           <button type="button" class="home-device-open" title=${`Open ${d.name}`} @click=${() => this.openDeviceSheet(d.id, gone)}>
             <span class="home-device-name"><span class="home-device-label">${d.name}</span></span>
           </button>
-          ${gone ? nothing : html`<span class="home-device-sync"><i class="home-dot" aria-hidden="true"></i><b>${deviceSyncLabel(d.sync)}</b></span>`}
+          ${gone ? nothing : html`<span class="home-device-sync"><i class="home-dot" aria-hidden="true"></i><b>${homeDeviceLabel(d)}</b></span>`}
         </div>
         <span class="home-device-facts">${lines.map((line) => html`<span>${line}</span>`)}</span>
         ${gone ? html`<span class="home-device-why">${USER_GONE_TEXT}</span>`
@@ -19066,7 +19069,9 @@ export class WristAssistantPanel extends LitElement {
     const elapsed = this.ownersReadAt > 0 ? (Date.now() - this.ownersReadAt) / 1000 : 0;
     const seen = seenWords(owner, elapsed);
     const held = owner?.complication_count ?? 0;
-    const syncSub = row.sync === "waiting" ? `Waiting for ${waitingForText(row.waitingFor)}`
+    const rejected = (row.rejected?.length ?? 0) > 0;
+    const syncSub = rejected ? attentionText(row, undefined)
+      : row.sync === "waiting" ? `Waiting for ${waitingForText(row.waitingFor)}`
       : row.sync === "synced" ? "Has every change" : "Has never synced anything";
     // One dialog for both steps, so the confirm step keeps the open modal:
     // a second template would swap in a new, closed dialog element.
@@ -19111,9 +19116,9 @@ export class WristAssistantPanel extends LitElement {
     const overview = gone ? goneOverview : html`<div class="xfer-body">
         ${this.devicePaired === ownerId ? html`<div class="dev-paired" role="status">${uiIcon("check")}<span><b>Paired successfully.</b> ${row.name} is now on this Home Assistant.</span></div>` : nothing}
         ${renaming ? html`<div class="xf-stack">${renameForm}</div>` : nothing}
-        <div class="dev-state ${row.sync}">
-          <span class="dev-state-chip" aria-hidden="true">${uiIcon(row.sync === "waiting" ? "clock" : "check")}</span>
-          <span class="dev-state-t"><b>${deviceSyncLabel(row.sync)}</b><span>${syncSub}${pendingWords(owner) === undefined ? "" : ` · ${pendingWords(owner)}`}</span></span>
+        <div class="dev-state ${row.sync} ${rejected ? "rejected" : ""}">
+          <span class="dev-state-chip" aria-hidden="true">${uiIcon(rejected ? "info" : row.sync === "waiting" ? "clock" : "check")}</span>
+          <span class="dev-state-t"><b>${homeDeviceLabel(row)}</b><span>${syncSub}${pendingWords(owner) === undefined ? "" : ` · ${pendingWords(owner)}`}</span></span>
           ${seen === undefined ? nothing : html`<span class="dev-state-seen">${seen}</span>`}
         </div>
         <h3 class="dev-title">Open on this ${row.kind === "watch" ? "watch" : "iPhone"}</h3>

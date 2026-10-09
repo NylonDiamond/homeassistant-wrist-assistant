@@ -64,8 +64,18 @@ describe("Home's device cards", () => {
   it("judges each watch on its watch app records too, for everyone, and says what a waiting card waits for", () => {
     expect(home).toContain("homeDeviceRows(this.homeDevices(), this.watchAppSyncs)");
     expect(home).not.toContain("admin");
-    expect(card).toContain("`For ${waitingForText(d.waitingFor)}`");
+    expect(card).toContain("const why = homeDeviceWhy(d, pending);");
     expect(card).toContain(`<span class="home-device-why">\${why}</span>`);
+  });
+
+  it("says Not synced, in red, for a watch that could not use the last save", () => {
+    expect(card).toContain(`<li class="home-device \${d.sync} \${rejected ? "rejected" : ""}">`);
+    expect(card).toContain("<b>${homeDeviceLabel(d)}</b>");
+    expect(card).not.toContain("deviceSyncLabel(d.sync)");
+    const sheet = method("  private renderDeviceSheet(");
+    expect(sheet).toContain(`<div class="dev-state \${row.sync} \${rejected ? "rejected" : ""}">`);
+    expect(sheet).toContain("<b>${homeDeviceLabel(row)}</b>");
+    expect(sheet).toContain("const syncSub = rejected ? attentionText(row, undefined)");
   });
 
   it("has a count tile per page, each opening that page on this device", () => {
@@ -100,7 +110,9 @@ describe("Home's status row", () => {
 
   it("lists every waiting device under Waiting to sync, lit amber, each opening its sheet", () => {
     expect(status).toContain(`<h2 class="home-title">Waiting to sync</h2>`);
-    expect(status).toContain(`const waiting = devices.filter((d) => d.sync === "waiting");`);
+    // A watch that could not use the last save is listed too (`needsAttention`).
+    expect(status).toContain(`const waiting = devices.filter(needsAttention);`);
+    expect(status).toContain("attentionText(d, pending)");
     expect(status).toContain(`<section class="home-attn \${waiting.length > 0 ? "on" : ""}">`);
     expect(status).toContain("@click=${() => this.openDeviceSheet(d.id)}>Open</button>");
     expect(status).toContain("Every device has your latest changes.");

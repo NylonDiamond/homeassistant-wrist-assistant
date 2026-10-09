@@ -565,6 +565,7 @@ export class WaStatusPagesEditor extends LitElement {
           delivered_at: fresh.delivered_at,
           rejected_revision: fresh.rejected_revision,
           rejected_at: fresh.rejected_at,
+          rejected_reason: fresh.rejected_reason,
         };
       } else if (this.holdReload) {
         this.reloadPending = true;

@@ -224,6 +224,7 @@ def test_get_with_no_record(env) -> None:
         "delivered_at": None,
         "rejected_revision": 0,
         "rejected_at": None,
+        "rejected_reason": None,
     }
 
 
@@ -241,6 +242,7 @@ def test_get_returns_the_record_with_its_delivery(env) -> None:
         "delivered_at": record.delivered_at,
         "rejected_revision": 0,
         "rejected_at": None,
+        "rejected_reason": None,
         "document": settings,
     }
 
@@ -254,6 +256,16 @@ def test_get_shows_the_unreadable_report(env) -> None:
     assert (result["revision"], result["rejected_revision"]) == (2, 2)
     assert result["rejected_at"] == record.rejected_at
     assert result["rejected_at"]
+    # An older watch app gives no reason.
+    assert result["rejected_reason"] is None
+
+
+def test_get_shows_the_watch_s_reason_for_the_report(env) -> None:
+    _phone_upload(env, "pages", _pages_doc())
+    assert _save(env, _pages_doc("Renamed"), 1, kind="pages").errors == []
+    env.store.report_unreadable(WATCH, "pages", 2, "too large for the watch")
+    result = _get(env, "pages")
+    assert (result["rejected_revision"], result["rejected_reason"]) == (2, "too large for the watch")
 
 
 def test_get_may_read_pages(env) -> None:
@@ -987,6 +999,7 @@ def test_save_creates_the_first_menus_for_a_paired_watch(env) -> None:
         "delivered_at": None,
         "rejected_revision": 0,
         "rejected_at": None,
+        "rejected_reason": None,
         "document": _menus(),
     }
     assert result["updated_at"]
@@ -1101,6 +1114,7 @@ def test_save_creates_the_first_batch_2_record_for_a_paired_watch(env, kind) -> 
         "delivered_at": None,
         "rejected_revision": 0,
         "rejected_at": None,
+        "rejected_reason": None,
         "document": document,
     }
     assert subscriber.events() == [{"kind": kind, "revision": 1}]

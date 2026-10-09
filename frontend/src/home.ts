@@ -6,10 +6,10 @@ import { css } from "lit";
 import { litOutline } from "./editor-chrome.js";
 import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
 import type { Person } from "./people.js";
-import { type DeviceSync, type HomeDevice, agoWords, deviceSync } from "./send-state.js";
+import { type DeviceSync, type HomeDevice, agoWords, deviceSync, deviceSyncLabel } from "./send-state.js";
 import { type WatchScreen, WATCH_SCREENS, WATCH_SETTINGS_SCREEN } from "./shell.js";
 import { type DeviceKind, deviceKindOf } from "./version.js";
-import { type WatchAppSync, deviceVerdict } from "./watch-app-sync.js";
+import { type WatchAppSync, deviceVerdict, rejectedSaveText, waitingForText } from "./watch-app-sync.js";
 
 /** A home device as the sync rule reads it, with the id it came from. */
 export interface IdHomeDevice extends HomeDevice {
@@ -48,6 +48,45 @@ export interface HomeDeviceRow {
   sync: DeviceSync;
   /** What it is waiting for, empty unless `sync` is waiting. */
   waitingFor: string[];
+  /** The watch app's parts whose last save the watch reported it could not
+   * use. Absent when there are none, and always on a phone. */
+  rejected?: string[];
+}
+
+/** The word beside a device on Home and in its sheet: "Not synced" for a
+ * watch that could not use the last save of some part (it fetched it, so
+ * the delivery numbers alone would call it Synced), else the sync word. */
+export function homeDeviceLabel(row: Pick<HomeDeviceRow, "sync" | "rejected">): string {
+  return (row.rejected?.length ?? 0) > 0 ? NOT_SYNCED_TEXT : deviceSyncLabel(row.sync);
+}
+
+export const NOT_SYNCED_TEXT = "Not synced";
+
+/** Whether a device belongs under Waiting to sync: it waits for something,
+ * or the watch could not use a save and needs a look. */
+export function needsAttention(row: Pick<HomeDeviceRow, "sync" | "rejected">): boolean {
+  return row.sync === "waiting" || (row.rejected?.length ?? 0) > 0;
+}
+
+/** A device's line under Waiting to sync: what the watch could not use, then
+ * "Waiting for pages", then what its next pull brings. */
+export function attentionText(row: Pick<HomeDeviceRow, "sync" | "waitingFor" | "rejected">, pending: string | undefined): string {
+  return [
+    (row.rejected?.length ?? 0) > 0 ? rejectedSaveText(row.rejected!) : undefined,
+    row.sync === "waiting" ? `Waiting for ${waitingForText(row.waitingFor)}` : undefined,
+    pending,
+  ].filter((w): w is string => w !== undefined).join(" · ");
+}
+
+/** The line under a device's name on Home: what the watch could not use,
+ * then what it waits for, then what its next pull brings. Empty when there
+ * is nothing to say. */
+export function homeDeviceWhy(row: Pick<HomeDeviceRow, "waitingFor" | "rejected">, pending: string | undefined): string {
+  return [
+    (row.rejected?.length ?? 0) > 0 ? rejectedSaveText(row.rejected!) : undefined,
+    row.waitingFor.length === 0 ? undefined : `For ${waitingForText(row.waitingFor)}`,
+    pending,
+  ].filter((w): w is string => w !== undefined).join(" · ");
 }
 
 /** The Devices card's rows: every device the sync rule asks (the Library and
@@ -62,8 +101,8 @@ export function homeDeviceRows(devices: readonly IdHomeDevice[], watchApp: Reado
     if (complications === undefined) continue;
     const kind = deviceKindOf({ owner_watch_id: d.id, device_kind: d.kind });
     if (kind === "library") continue;
-    const { sync, waitingFor } = deviceVerdict(complications, kind === "watch" ? watchApp.get(d.id) : undefined);
-    rows.push({ id: d.id, name: d.name, kind, sync, waitingFor });
+    const { sync, waitingFor, rejected } = deviceVerdict(complications, kind === "watch" ? watchApp.get(d.id) : undefined);
+    rows.push(rejected === undefined ? { id: d.id, name: d.name, kind, sync, waitingFor } : { id: d.id, name: d.name, kind, sync, waitingFor, rejected });
   }
   return [...rows.filter((r) => r.kind === "watch"), ...rows.filter((r) => r.kind === "iphone")];
 }
@@ -416,6 +455,10 @@ export const homeStyles = css`
   .home-device.waiting .home-device-sync b { color: var(--wa-amber); }
   .home-device.synced .home-dot { background: var(--wa-green); }
   .home-device.waiting .home-dot { background: var(--wa-amber); }
+  /* A watch that could not use the last save: the word and its line in red,
+     over whatever its delivery numbers say. */
+  .home-device.rejected .home-device-sync b, .home-device.rejected .home-device-why { color: var(--error-color); }
+  .home-device.rejected .home-dot { background: var(--error-color); }
   /* What it is, then one fact to a line, each wrapping rather than cut. */
   .home-device-facts { display: flex; flex-direction: column; gap: 1px; font-size: 11px; line-height: 1.35; color: var(--wa-muted); overflow-wrap: anywhere; }
   /* What a waiting device waits for and what its next pull brings. */
@@ -511,6 +554,7 @@ export const homeStyles = css`
   }
   .dev-state.synced { --s: var(--wa-green); }
   .dev-state.waiting { --s: var(--wa-amber); border-color: color-mix(in srgb, var(--wa-amber) 45%, var(--wa-line)); }
+  .dev-state.rejected { --s: var(--error-color); border-color: color-mix(in srgb, var(--error-color) 45%, var(--wa-line)); }
   .dev-state-chip {
     width: 28px; height: 28px; flex: none; box-sizing: border-box; border-radius: 8px; display: grid; place-items: center;
     border: 1px solid var(--s); color: var(--s);

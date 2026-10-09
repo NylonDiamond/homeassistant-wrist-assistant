@@ -4019,7 +4019,7 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
                     | "notification_style" | "status_pages"
                     | "control_center" | "rooms",
             "since_revision": <int>?, "unreadable_revision": <int>?,
-            "main_house": false?, "observer": true?}
+            "reason": <str>?, "main_house": false?, "observer": true?}
     Reply: {"ok": true, "kind", "revision", "hash", "short_hash", "updated_at",
             "document"?}
 
@@ -4058,6 +4058,14 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     does not count as a delivery of it. Any other value is stale and ignored.
     The reply is the same either way. A value that is not a non-negative
     integer is refused, like a bad ``since_revision``.
+
+    ``reason`` rides beside ``unreadable_revision``: the device's own few
+    words for why it could not use the save ("too large for the watch"). It
+    is kept with the report as ``rejected_reason`` and shown by the panel.
+    It is optional and never refused: anything but a string, or an empty
+    one, reads as no reason, and a long one is cut
+    (``watch_config_store.reject_reason``). Without ``unreadable_revision``
+    it is ignored.
 
     A get whose ``since_revision`` is the stored revision, with no report
     about it, is the device saying it holds that revision: it read and
@@ -4140,7 +4148,7 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     if observer:
         return response
     if unreadable is None or not store.report_unreadable(
-        ctx.watch_id, kind, unreadable
+        ctx.watch_id, kind, unreadable, ctx.payload.get("reason")
     ):
         store.mark_delivered(
             ctx.watch_id,

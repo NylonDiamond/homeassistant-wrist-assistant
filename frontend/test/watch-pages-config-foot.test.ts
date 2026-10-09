@@ -21,6 +21,7 @@ import {
   renderConfigHistoryDialog,
   renderConfigRawDialog,
   renderConfigSaved,
+  rejectedText,
 } from "../src/watch-pages/config-foot.js";
 import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import { type WatchPagesDocument, WATCH_CONFIG_LIMIT_BYTES, WATCH_PAGES_LIMIT_BYTES } from "../src/watch-pages/model.js";
@@ -80,6 +81,20 @@ describe("the foot bar", () => {
     expect(rejected).toContain("cf-history-btn lit");
     const old = configFootStatus({ record: record({ rejected_revision: 7, kind: "menus" }), size: 1, limit: 10, noun: "menus", historyState: "unsupported" });
     expect(old.help).toBe("Change the menus and save them again.");
+  });
+
+  it("says the watch's reason when it gave one, and the plain words when it did not", () => {
+    const why = configFootStatus({ record: record({ rejected_revision: 7, rejected_reason: "too large for the watch" }), size: 1, limit: 10, noun: "pages", historyState: "ready", now: NOW });
+    expect(why).toMatchObject({ tone: "err", state: "The watch could not use this save: too large for the watch" });
+    expect(foot(record({ rejected_revision: 7, rejected_reason: "too large for the watch" }))).toContain("The watch could not use this save: too large for the watch");
+    // An older watch app sends none; an integration older than the field sends nothing at all.
+    for (const rejected_reason of [null, undefined, "", "   "]) {
+      expect(rejectedText({ rejected_reason })).toBe(REJECTED_TEXT);
+      expect(configFootStatus({ record: record({ rejected_revision: 7, rejected_reason }), size: 1, limit: 10, noun: "pages", historyState: "ready" }).state).toBe(REJECTED_TEXT);
+    }
+    // A reason left from a report a later save replaced says nothing.
+    const stale = configFootStatus({ record: record({ rejected_revision: 6, rejected_reason: "too large for the watch" }), size: 1, limit: 10, noun: "pages", historyState: "ready", now: NOW });
+    expect(stale.state).toBe(COLLECTED_PILL_TEXT);
   });
 
   it("measures against the cap Home Assistant enforces, says over past it, and never calls 189 % close", () => {
@@ -156,6 +171,9 @@ describe("the dialogs", () => {
     const text = history(record({ revision: 8, rejected_revision: 8 }));
     expect(text).toContain(`<li class=offer>`);
     expect(text).toContain("pe-btn pe-primary");
+    expect(text).toContain(`${REJECTED_TEXT}. Restore the save before it.`);
+    expect(history(record({ revision: 8, rejected_revision: 8, rejected_reason: "too large for the watch" })))
+      .toContain("The watch could not use this save: too large for the watch. Restore the save before it.");
   });
 
   it("Raw configuration shows the open document as JSON, read only, with Copy", () => {

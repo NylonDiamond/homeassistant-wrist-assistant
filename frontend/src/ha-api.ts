@@ -505,6 +505,10 @@ export interface WatchConfigRecord {
   rejected_revision?: number;
   /** When the phone said so. Null or absent when it never has. */
   rejected_at?: string | null;
+  /** The watch's own few words for why it could not use that save ("too
+   * large for the watch"). Null or absent when it gave none, as an older
+   * watch app never does, and from integrations older than the field. */
+  rejected_reason?: string | null;
   document?: Record<string, unknown>;
 }
 

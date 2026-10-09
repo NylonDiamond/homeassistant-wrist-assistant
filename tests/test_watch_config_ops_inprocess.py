@@ -518,6 +518,48 @@ def test_a_report_about_the_stored_revision_is_kept_and_is_not_a_delivery(env) -
     assert record.rejected_revision == 2
 
 
+def test_a_report_keeps_the_watch_s_reason(env) -> None:
+    record = _panel_saved(env)
+    plain = _get(env, {"kind": "pages", "since_revision": 1})
+    reply = _get(
+        env,
+        {
+            "kind": "pages",
+            "since_revision": 1,
+            "unreadable_revision": 2,
+            "reason": "too large for the watch",
+        },
+    )
+    # The reason changes nothing in the reply either.
+    assert reply.status == 200
+    assert reply.body == plain.body
+    assert (record.rejected_revision, record.rejected_reason) == (2, "too large for the watch")
+    # A repeat without one keeps it; the watch confirming the revision later
+    # clears it with the report.
+    _get(env, {"kind": "pages", "since_revision": 2, "unreadable_revision": 2})
+    assert record.rejected_reason == "too large for the watch"
+    _get(env, {"kind": "pages", "since_revision": 2})
+    assert (record.rejected_revision, record.rejected_reason) == (0, None)
+
+
+@pytest.mark.parametrize("reason", [None, 7, True, ["x"], {"a": 1}, "", "   ", "\n\t"])
+def test_a_report_with_no_usable_reason_still_lands(env, reason) -> None:
+    record = _panel_saved(env)
+    reply = _get(
+        env,
+        {"kind": "pages", "since_revision": 1, "unreadable_revision": 2, "reason": reason},
+    )
+    assert reply.status == 200
+    assert (record.rejected_revision, record.rejected_reason) == (2, None)
+
+
+def test_a_reason_without_a_report_is_ignored(env) -> None:
+    record = _panel_saved(env)
+    _get(env, {"kind": "pages", "since_revision": 1, "reason": "too large for the watch"})
+    assert (record.rejected_revision, record.rejected_reason) == (0, None)
+    assert record.delivered_revision == 2
+
+
 def test_asking_from_the_reported_revision_clears_the_report(env) -> None:
     """The watch could not read revision 2, read it later (after an app
     update, say) and now asks from it with no report. That is the watch

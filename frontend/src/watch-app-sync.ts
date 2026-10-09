@@ -28,7 +28,7 @@
 
 import type { HttpActionsDelivery, WatchConfigPanelKind, WatchConfigRecord, WatchConfigSummary } from "./ha-api.js";
 import type { DeviceSync } from "./send-state.js";
-import { deliveryState } from "./watch-settings.js";
+import { deliveryState, rejectedNow } from "./watch-settings.js";
 
 /** One watch app record, named the way Home's note names it. */
 export interface WatchAppPart {
@@ -66,26 +66,33 @@ export interface WatchAppSync {
   /** A device has collected at least one record: the watch has synced
    * something, even with no complication at all. */
   delivered: boolean;
+  /** The parts whose stored save the watch reported it could not use
+   * (`rejectedNow`), by label, in part order. Absent when there are none. */
+  rejected?: string[];
 }
 
-type Delivery = Pick<WatchConfigRecord, "revision" | "delivered_revision">;
+type Delivery = Pick<WatchConfigRecord, "revision" | "delivered_revision" | "rejected_revision">;
 
 /** The verdict over the records read, by kind, and the HTTP action library
  * when it is known (`httpActions`). A kind with no record (or none read),
- * and a library at revision 0, count for neither side. */
+ * and a library at revision 0, count for neither side. A record the watch
+ * could not use is listed in `rejected` as well; it still counts as
+ * collected, since the watch did fetch it. */
 export function watchAppSync(records: ReadonlyMap<string, Delivery | undefined>, httpActions?: Delivery): WatchAppSync {
   const waiting: string[] = [];
+  const rejected: string[] = [];
   let delivered = false;
   const count = (record: Delivery | undefined, label: string) => {
     const state = deliveryState(record);
     if (state === "waiting") waiting.push(label);
     else if (state === "delivered") delivered = true;
+    if (rejectedNow(record)) rejected.push(label);
   };
   for (const part of WATCH_APP_PARTS) {
     count(records.get(part.kind), part.label);
     if (part.kind === HTTP_ACTIONS_AFTER) count(httpActions, HTTP_ACTIONS_PART_LABEL);
   }
-  return { waiting, delivered };
+  return rejected.length === 0 ? { waiting, delivered } : { waiting, delivered, rejected };
 }
 
 /** One device's place in the library: the revision Home Assistant holds and
@@ -145,6 +152,9 @@ export interface DeviceVerdict {
   sync: DeviceSync;
   /** "complications" first when they wait, then the watch app's parts. */
   waitingFor: string[];
+  /** The watch app's parts whose last save the watch could not use. Absent
+   * when there are none. */
+  rejected?: string[];
 }
 
 /**
@@ -152,12 +162,28 @@ export interface DeviceVerdict {
  * has collected something on either side. Otherwise idle: nothing waiting,
  * and nothing ever collected. Without a watch app reading (a phone, or a
  * watch whose records could not be read) the complications decide alone.
+ * A save the watch could not use rides along as `rejected`; Home then says
+ * so in place of "Synced" (`homeDeviceLabel`).
  */
 export function deviceVerdict(complications: DeviceSync, watchApp: WatchAppSync | undefined): DeviceVerdict {
   const waitingFor = [...(complications === "waiting" ? ["complications"] : []), ...(watchApp?.waiting ?? [])];
-  if (waitingFor.length > 0) return { sync: "waiting", waitingFor };
-  if (complications === "synced" || watchApp?.delivered === true) return { sync: "synced", waitingFor };
-  return { sync: "idle", waitingFor };
+  const rejected = watchApp?.rejected ?? [];
+  const sync: DeviceSync = waitingFor.length > 0 ? "waiting"
+    : complications === "synced" || watchApp?.delivered === true ? "synced" : "idle";
+  return rejected.length === 0 ? { sync, waitingFor } : { sync, waitingFor, rejected: [...rejected] };
+}
+
+/** What Home says about a watch that reported it could not use the last
+ * save of some part, for its card and its line under Waiting to sync. */
+export const REJECTED_SAVE_TEXT = "Watch could not use the last save";
+
+/** `REJECTED_SAVE_TEXT` naming the parts: "Watch could not use the last
+ * save of its pages", "… of its pages and menus", "… of its pages, menus
+ * and voice". The bare sentence for no parts. */
+export function rejectedSaveText(parts: readonly string[]): string {
+  if (parts.length === 0) return REJECTED_SAVE_TEXT;
+  const list = parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]!}`;
+  return `${REJECTED_SAVE_TEXT} of its ${list}`;
 }
 
 /** The muted note after "Waiting" on Home's row: what it waits for. */

@@ -628,7 +628,7 @@ def test_the_owner_file_holds_the_document_and_history_but_the_index_does_not(mo
     assert set(record) == {
         "revision", "hash", "updated_at", "updated_by",
         "delivered_revision", "delivered_at", "rejected_revision", "rejected_at",
-        "document", "history",
+        "rejected_reason", "document", "history",
     }
     assert [e["revision"] for e in record["history"]] == [1]
     assert _FakeStore.files[INDEX_KEY] == {"owners": [OWNER]}
@@ -705,6 +705,7 @@ def test_diagnostics_report_revision_size_and_time_but_never_the_document(mod):
         "delivered_at": record.delivered_at,
         "rejected_revision": 0,
         "rejected_at": None,
+        "rejected_reason": None,
         "history_count": 1,
     }
     assert "secret" not in repr(report)
@@ -1715,6 +1716,134 @@ def test_junk_report_fields_read_as_no_report(mod, raw_revision, raw_at, expecte
     record = _new(mod).get(OWNER, "pages")
     assert record is not None
     assert (record.rejected_revision, record.rejected_at) == expected
+
+
+# ── the unreadable report's reason ───────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("given", "kept"),
+    [
+        ("too large for the watch", "too large for the watch"),
+        ("  too large\n for\tthe watch  ", "too large for the watch"),
+        ("bad\x00byte", "bad byte"),
+        ("x" * 200, "x" * 120),
+        ("", None),
+        ("  \n", None),
+        (None, None),
+        (12, None),
+        (True, None),
+        (["too large"], None),
+    ],
+)
+def test_a_reason_is_cleaned_or_dropped_never_refused(mod, given, kept):
+    assert mod.reject_reason(given) == kept
+
+
+def test_a_report_keeps_its_reason_on_disk_and_through_a_restart(mod):
+    store = _new(mod)
+    _put(store)
+    _FakeStore.writes.clear()
+    assert store.report_unreadable(OWNER, "pages", 1, "too large for the watch") is True
+    record = store.get(OWNER, "pages")
+    assert record.rejected_reason == "too large for the watch"
+    stored = _FakeStore.files[mod._owner_key(OWNER)]["records"]["pages"]
+    assert stored["rejected_reason"] == "too large for the watch"
+    assert store.diagnostics()[OWNER]["pages"]["rejected_reason"] == "too large for the watch"
+    assert _new(mod).get(OWNER, "pages").rejected_reason == "too large for the watch"
+
+
+def test_a_report_without_a_reason_keeps_none(mod):
+    store = _new(mod)
+    _put(store)
+    assert store.report_unreadable(OWNER, "pages", 1) is True
+    record = store.get(OWNER, "pages")
+    assert (record.rejected_revision, record.rejected_reason) == (1, None)
+    assert _FakeStore.files[mod._owner_key(OWNER)]["records"]["pages"]["rejected_reason"] is None
+
+
+def test_a_repeat_may_add_or_change_the_reason_but_never_drop_it(mod):
+    store = _new(mod)
+    _put(store)
+    store.report_unreadable(OWNER, "pages", 1)
+    record = store.get(OWNER, "pages")
+    record.rejected_at = "2026-10-01T20:00:00Z"
+
+    _FakeStore.writes.clear()
+    assert store.report_unreadable(OWNER, "pages", 1, "too large for the watch") is True
+    assert (record.rejected_reason, record.rejected_at) == ("too large for the watch", "2026-10-01T20:00:00Z")
+    assert _FakeStore.writes == [mod._owner_key(OWNER)]
+
+    # The same reason again, or none at all, writes nothing.
+    _FakeStore.writes.clear()
+    store.report_unreadable(OWNER, "pages", 1, "too large for the watch")
+    store.report_unreadable(OWNER, "pages", 1)
+    assert record.rejected_reason == "too large for the watch"
+    assert _FakeStore.writes == []
+
+    store.report_unreadable(OWNER, "pages", 1, "not a page config")
+    assert record.rejected_reason == "not a page config"
+
+
+def test_a_report_about_a_new_revision_replaces_the_old_reason(mod):
+    store = _new(mod)
+    _put(store)
+    store.report_unreadable(OWNER, "pages", 1, "too large for the watch")
+    _panel_pages(store, _doc("smaller"))
+    record = store.get(OWNER, "pages")
+    # The old report and its reason stay with revision 1 until a new one.
+    assert (record.rejected_revision, record.rejected_reason) == (1, "too large for the watch")
+    store.report_unreadable(OWNER, "pages", 2)
+    assert (record.rejected_revision, record.rejected_reason) == (2, None)
+
+
+def test_a_confirmed_delivery_clears_the_reason(mod):
+    store = _new(mod)
+    _put(store)
+    store.report_unreadable(OWNER, "pages", 1, "too large for the watch")
+    assert store.mark_delivered(OWNER, "pages", 1, confirmed=True) is True
+    record = store.get(OWNER, "pages")
+    assert (record.rejected_revision, record.rejected_reason) == (0, None)
+    assert _new(mod).get(OWNER, "pages").rejected_reason is None
+
+
+def test_a_whole_move_carries_the_reason(mod):
+    store = _new(mod)
+    _put(store)
+    store.report_unreadable(OWNER, "pages", 1, "too large for the watch")
+    store.move_owner(OWNER, OTHER, updated_by="t")
+    assert store.get(OTHER, "pages").rejected_reason == "too large for the watch"
+
+
+@pytest.mark.parametrize(
+    ("raw_revision", "raw_reason", "expected"),
+    [
+        (4, "too large for the watch", "too large for the watch"),
+        (4, 17, None),
+        (4, "", None),
+        (4, "a" * 300, "a" * 120),
+        # A reason with no report standing is no reason.
+        (0, "too large for the watch", None),
+        (9, "too large for the watch", None),
+    ],
+)
+def test_a_stored_reason_is_read_back_cleaned(mod, raw_revision, raw_reason, expected):
+    key = mod._owner_key(OWNER)
+    _FakeStore.files[INDEX_KEY] = {"owners": [OWNER]}
+    _FakeStore.files[key] = {
+        "owner_watch_id": OWNER,
+        "records": {
+            "pages": {
+                "revision": 4, "hash": HASH_1, "updated_at": "", "updated_by": OWNER,
+                "rejected_revision": raw_revision, "rejected_at": "2026-10-01T20:00:00Z",
+                "rejected_reason": raw_reason,
+                "document": _doc(),
+            }
+        },
+    }
+    record = _new(mod).get(OWNER, "pages")
+    assert record is not None
+    assert record.rejected_reason == expected
 
 
 # ── step 3: history and restore ──────────────────────────────────────────

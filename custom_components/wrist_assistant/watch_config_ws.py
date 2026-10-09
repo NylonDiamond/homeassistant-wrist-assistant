@@ -158,7 +158,8 @@ def ws_watch_config_get(
 
     Result: {"kind", "revision", "hash", "updated_at", "updated_by",
              "delivered_revision", "delivered_at",
-             "rejected_revision", "rejected_at", "document"?}
+             "rejected_revision", "rejected_at", "rejected_reason",
+             "document"?}
 
     With no record, ``revision``, ``delivered_revision`` and
     ``rejected_revision`` are 0, the strings are null, and there is no
@@ -167,7 +168,9 @@ def ws_watch_config_get(
     ``rejected_revision`` equal to ``revision`` means a device fetched this
     save and could not decode it, which outranks delivery; any lower value is
     an old report a later save has replaced, and 0 also follows the device
-    confirming it has since read the save. Reading changes nothing,
+    confirming it has since read the save. ``rejected_reason`` is the
+    device's own words for why, null when it gave none (an older watch app
+    never does). Reading changes nothing,
     delivery included: the panel is not the device.
     """
     store = _store(hass)
@@ -195,6 +198,7 @@ def ws_watch_config_get(
                 "delivered_at": None,
                 "rejected_revision": 0,
                 "rejected_at": None,
+                "rejected_reason": None,
             },
         )
         return
@@ -210,6 +214,7 @@ def ws_watch_config_get(
             "delivered_at": record.delivered_at,
             "rejected_revision": record.rejected_revision,
             "rejected_at": record.rejected_at,
+            "rejected_reason": record.rejected_reason,
             "document": record.document,
         },
     )

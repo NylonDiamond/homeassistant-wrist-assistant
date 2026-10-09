@@ -79,6 +79,11 @@ Each record carries:
   iPhone mirror writing, not the watch reading, so both move
   ``delivered_revision`` and leave the report standing. Files written before
   these fields existed load with 0 and no time.
+* ``rejected_reason``: the device's own short words for why it could not use
+  ``rejected_revision`` ("too large for the watch"), or ``None`` when it gave
+  none. It travels beside ``unreadable_revision`` as ``reason`` and is kept
+  and cleared with the report; the panel shows it after "could not use this
+  save". Cut to :data:`REJECT_REASON_MAX_CHARS`, control characters dropped.
 
 Storage is one Home Assistant ``Store`` file per owner, holding every kind for
 that owner, plus a small index naming the owners. A document can be large
@@ -743,6 +748,27 @@ def _text_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+# The longest reason an unreadable report keeps. The watch sends a few words;
+# anything longer is cut rather than refused, so the report itself still lands.
+REJECT_REASON_MAX_CHARS = 120
+
+
+def reject_reason(value: Any) -> str | None:
+    """A device's reason for an unreadable report, made safe to keep and show.
+
+    ``None`` for anything but a string, and for one that is empty once control
+    characters are dropped and runs of white space are made one space. Longer
+    than :data:`REJECT_REASON_MAX_CHARS` is cut to it. Never refuses: a bad
+    reason must not cost the report it came with.
+    """
+    if not isinstance(value, str):
+        return None
+    text = " ".join(
+        "".join(ch if ch.isprintable() else " " for ch in value).split()
+    )
+    return text[:REJECT_REASON_MAX_CHARS].rstrip() or None
+
+
 @dataclass
 class WatchConfigHistoryEntry:
     """One document a later save replaced, with that revision's own envelope.
@@ -831,6 +857,9 @@ class WatchConfigRecord:
     # and when (``None`` for never). See the module docstring.
     rejected_revision: int = 0
     rejected_at: str | None = None
+    # The device's words for why, when it gave any. Kept and cleared with
+    # ``rejected_revision``.
+    rejected_reason: str | None = None
 
     def as_storage_dict(self) -> dict[str, Any]:
         stored: dict[str, Any] = {
@@ -842,6 +871,7 @@ class WatchConfigRecord:
             "delivered_at": self.delivered_at,
             "rejected_revision": self.rejected_revision,
             "rejected_at": self.rejected_at,
+            "rejected_reason": self.rejected_reason,
             "document": self.document,
         }
         if self.history:
@@ -870,6 +900,7 @@ class WatchConfigRecord:
         if confirmed and 0 < self.rejected_revision <= revision:
             self.rejected_revision = 0
             self.rejected_at = None
+            self.rejected_reason = None
             moved = True
         if revision > self.delivered_revision:
             self.delivered_revision = revision
@@ -877,18 +908,25 @@ class WatchConfigRecord:
             moved = True
         return moved
 
-    def mark_rejected(self) -> bool:
-        """Record that a device could not decode the current revision.
-        Returns whether it moved.
+    def mark_rejected(self, reason: str | None = None) -> bool:
+        """Record that a device could not decode the current revision, and
+        why when it said (``reason``, already cleaned by
+        :func:`reject_reason`). Returns whether anything moved.
 
         Always the current revision: a report about an older one says nothing
         about what is stored now. A repeat keeps the first time, so a phone
-        reporting on every check costs no disk write after the first.
+        reporting on every check costs no disk write after the first. A repeat
+        that gives a reason the report lacks, or a different one, updates the
+        reason only; a repeat with no reason keeps the one already given.
         """
         if self.rejected_revision == self.revision:
-            return False
+            if reason is None or reason == self.rejected_reason:
+                return False
+            self.rejected_reason = reason
+            return True
         self.rejected_revision = self.revision
         self.rejected_at = _now_iso()
+        self.rejected_reason = reason
         return True
 
     def history_entry(self, revision: int) -> WatchConfigHistoryEntry | None:
@@ -951,6 +989,7 @@ class WatchConfigRecord:
         ):
             rejected_revision = 0
         rejected_at = _text_or_none(raw.get("rejected_at"))
+        rejected_reason = reject_reason(raw.get("rejected_reason"))
         return cls(
             owner_watch_id=owner_watch_id,
             kind=kind,
@@ -965,6 +1004,7 @@ class WatchConfigRecord:
             delivered_at=delivered_at if delivered_revision > 0 else None,
             rejected_revision=rejected_revision,
             rejected_at=rejected_at if rejected_revision > 0 else None,
+            rejected_reason=rejected_reason if rejected_revision > 0 else None,
         )
 
     def remember(self, entry: WatchConfigHistoryEntry) -> None:
@@ -1383,6 +1423,7 @@ class WatchConfigStore:
                     "delivered_at": record.delivered_at,
                     "rejected_revision": record.rejected_revision,
                     "rejected_at": record.rejected_at,
+                    "rejected_reason": record.rejected_reason,
                     "history_count": len(record.history),
                 }
                 for kind, record in sorted(by_kind.items())
@@ -1690,14 +1731,19 @@ class WatchConfigStore:
         self._schedule_owner_save(owner_watch_id)
         return True
 
-    def report_unreadable(self, owner_watch_id: str, kind: str, revision: int) -> bool:
+    def report_unreadable(
+        self, owner_watch_id: str, kind: str, revision: int, reason: Any = None
+    ) -> bool:
         """A device says it fetched ``revision`` of ``kind`` and could not
         decode it. Returns whether that is the stored revision.
 
-        Called by the signed get carrying ``unreadable_revision``. Only a
-        report about the stored revision counts: it sets ``rejected_revision``
-        and ``rejected_at`` (the first report's time, kept through repeats),
-        and the caller must then not mark that revision delivered. A report
+        Called by the signed get carrying ``unreadable_revision``, with its
+        ``reason`` when the device gave one (cleaned by :func:`reject_reason`;
+        junk reads as none). Only a report about the stored revision counts:
+        it sets ``rejected_revision``, ``rejected_reason`` and
+        ``rejected_at`` (the first report's time, kept through repeats; a
+        repeat may add or change the reason), and the caller must then not
+        mark that revision delivered. A report
         about any other revision is stale (a newer save already replaced what
         the device could not read) and changes nothing. Since delivery never
         runs past the stored revision, that also means a report about a
@@ -1708,7 +1754,7 @@ class WatchConfigStore:
         record = self._records.get(owner_watch_id, {}).get(kind)
         if record is None or revision != record.revision:
             return False
-        if record.mark_rejected():
+        if record.mark_rejected(reject_reason(reason)):
             self._schedule_owner_save(owner_watch_id)
         return True
 
