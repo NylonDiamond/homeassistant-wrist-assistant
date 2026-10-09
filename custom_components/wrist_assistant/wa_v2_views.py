@@ -346,6 +346,73 @@ class _OpContext:
         )
 
 
+# The body of the signed 403 a device gets when the Home Assistant user its
+# key is bound to was deleted. Unlike a plain 401 (unknown key, bad
+# signature), pairing again with the same key cannot help, and the device can
+# say why. Signed, so the device knows this Home Assistant said it.
+USER_GONE_ERROR = "user_gone"
+USER_GONE_MESSAGE = (
+    "The Home Assistant user this device was paired to no longer exists. "
+    "Pair it again."
+)
+
+# Devices already logged as refused for a deleted user, so the INFO line is
+# written once per device per run rather than on every poll.
+_USER_GONE_LOGGED: set[str] = set()
+
+
+async def _async_bound_user_refusal(
+    hass: HomeAssistant, user_id: str | None, request: Request
+) -> str | None:
+    """Why the user a secret is bound to may not act on this request, or
+    None when they may (see ``_async_bound_user_ok``). ``USER_GONE_ERROR``
+    when Home Assistant has no such user any more, ``"not_allowed"`` when
+    the user is disabled or local only on a remote request."""
+    if user_id is None:
+        return None
+    user = await hass.auth.async_get_user(user_id)
+    if user is None:
+        return USER_GONE_ERROR
+    if async_user_not_allowed_do_auth(hass, user, request) is not None:
+        return "not_allowed"
+    return None
+
+
+def _user_gone_response(
+    validated: Any, secret_bytes: bytes, view: str
+) -> Response:
+    """The signed 403 for a device whose bound user was deleted, logged at
+    INFO once per device."""
+    if validated.watch_id not in _USER_GONE_LOGGED:
+        _USER_GONE_LOGGED.add(validated.watch_id)
+        _LOGGER.info(
+            "Refused %s from %s: the Home Assistant user its key is bound to "
+            "was deleted. Remove the device in the Wrist Assistant panel, or "
+            "pair it again",
+            view,
+            validated.watch_id,
+        )
+    json_bytes = orjson.dumps(
+        {"ok": False, "error": USER_GONE_ERROR, "message": USER_GONE_MESSAGE}
+    )
+    ts = int(time.time())
+    sig = sign_response(
+        secret_bytes,
+        validated.op,
+        validated.watch_id,
+        ts,
+        json_bytes,
+        version=validated.version,
+        algo=validated.algo,
+    )
+    return Response(
+        body=json_bytes,
+        status=403,
+        content_type="application/json",
+        headers={"X-WA-Ts": str(ts), "X-WA-Sig": sig},
+    )
+
+
 async def _async_bound_user_ok(
     hass: HomeAssistant, user_id: str | None, request: Request
 ) -> bool:
@@ -363,12 +430,7 @@ async def _async_bound_user_ok(
     network and not through Home Assistant Cloud. A signed request runs as
     that user, so it gets no further than the user's own token would.
     """
-    if user_id is None:
-        return True
-    user = await hass.auth.async_get_user(user_id)
-    if user is None:
-        return False
-    return async_user_not_allowed_do_auth(hass, user, request) is None
+    return await _async_bound_user_refusal(hass, user_id, request) is None
 
 
 async def _async_device_may_stream(
@@ -445,7 +507,11 @@ class WAActionView(HomeAssistantView):
     Lives at `/api/wrist_assistant/v2/action`. Validates HMAC, parses the JSON
     body, looks up the op handler in `_OP_HANDLERS`, returns the handler's
     Response. Unknown op → 400. Auth failure → 401 (uniform reason regardless
-    of which check failed; debug log carries the specific tag).
+    of which check failed; debug log carries the specific tag). One
+    exception: a good signature from a device whose bound Home Assistant
+    user was deleted gets a signed 403 ``{"ok": false, "error":
+    "user_gone", "message"}`` (``_user_gone_response``), as the delta view
+    does, so the device can say that pairing again is the way back.
     """
 
     url = "/api/wrist_assistant/v2/action"
@@ -482,9 +548,14 @@ class WAActionView(HomeAssistantView):
             # corruption — either way, treat as unknown.
             return Response(status=401, text="Unauthorized")
         _note_signed_use(domain_data, validated.watch_id, secret_entry.secret_b64)
-        if not await _async_bound_user_ok(self._hass, secret_entry.user_id, request):
+        refusal = await _async_bound_user_refusal(
+            self._hass, secret_entry.user_id, request
+        )
+        if refusal == USER_GONE_ERROR:
+            return _user_gone_response(validated, secret_entry.secret_bytes, "v2/action")
+        if refusal is not None:
             _LOGGER.debug(
-                "WA request refused (v2/action): bound user of %s is disabled, gone, "
+                "WA request refused (v2/action): bound user of %s is disabled "
                 "or local only on a remote request",
                 validated.watch_id,
             )
@@ -699,9 +770,14 @@ class WADeltaView(HomeAssistantView):
         if secret_entry is None or secret_entry.secret_bytes is None:
             return Response(status=401, text="Unauthorized")
         _note_signed_use(domain_data, validated.watch_id, secret_entry.secret_b64)
-        if not await _async_bound_user_ok(self._hass, secret_entry.user_id, request):
+        refusal = await _async_bound_user_refusal(
+            self._hass, secret_entry.user_id, request
+        )
+        if refusal == USER_GONE_ERROR:
+            return _user_gone_response(validated, secret_entry.secret_bytes, "v2/delta")
+        if refusal is not None:
             _LOGGER.debug(
-                "WA request refused (v2/delta): bound user of %s is disabled, gone, "
+                "WA request refused (v2/delta): bound user of %s is disabled "
                 "or local only on a remote request",
                 validated.watch_id,
             )

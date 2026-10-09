@@ -391,9 +391,23 @@ def ws_parts_delete(
     connection.send_result(msg["id"], {"ok": True})
 
 
+async def _gone_user_ids(hass: HomeAssistant, user_ids: set[str]) -> set[str]:
+    """The ids among ``user_ids`` that Home Assistant no longer has a user
+    for. A device bound to one is refused with ``user_gone`` on every signed
+    call (see ``wa_v2_views._async_bound_user_refusal``)."""
+    auth = getattr(hass, "auth", None)
+    if auth is None:
+        return set()
+    gone: set[str] = set()
+    for user_id in user_ids:
+        if await auth.async_get_user(user_id) is None:
+            gone.add(user_id)
+    return gone
+
+
 @websocket_api.websocket_command({vol.Required("type"): _CMD_OWNERS})
-@callback
-def ws_owners(
+@websocket_api.async_response
+async def ws_owners(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Every provisioned device, with how many live complications it owns.
@@ -439,6 +453,10 @@ def ws_owners(
     ``watch_status``'s fields under the names Home reads, read once with the
     list rather than on a timer per device.
 
+    ``user_gone`` is true when the device's own key is bound to a Home
+    Assistant user that no longer exists: every signed call it makes is
+    refused (``user_gone``), and the panel says so and offers only Remove.
+
     One row is not a device: the Library (``LIBRARY_OWNER_ID``), always
     present and always last. It is the home's shelf for designs that are on no
     device yet, or have been taken off every device without being thrown away.
@@ -465,6 +483,12 @@ def ws_owners(
 
     store: ComplicationStore = domain_data.complication_store
     secret_store = domain_data.widget_secret_store
+    # Asked first, so everything below runs in one go with nothing awaited
+    # between the reads.
+    gone_users = await _gone_user_ids(
+        hass,
+        {entry.user_id for entry in secret_store.all_entries.values() if entry.user_id},
+    )
     # An owner the secret store no longer knows is a device that went away
     # (forgotten on an older build, or back under a new id). Its designs move
     # to the Library here, so the list below never shows an orphan and nobody
@@ -548,6 +572,8 @@ def ws_owners(
                 # paired iPhone for a watch whose own key was never bound.
                 "user_id": entry.user_id
                 or (paired_entry.user_id if paired_entry is not None else None),
+                # Its own key's user was deleted in Home Assistant.
+                "user_gone": entry.user_id is not None and entry.user_id in gone_users,
                 "polling": bool(not phone and coordinator and coordinator.is_polling(device_id)),
                 "last_seen_seconds": None if seen_seconds is None else round(seen_seconds),
                 "pending_changes": store.pending_changes(device_id),

@@ -99,6 +99,12 @@ export interface OwnerSummary {
       Absent from the Library and orphan rows and from integrations older
       than the field. `haPeople` turns it into a person. */
   user_id?: string | null;
+  /** True when the device's own key is bound to a Home Assistant user that
+      was deleted: Home Assistant refuses everything it sends (`user_gone`),
+      so the only thing left to do is remove it (or pair it again). Absent
+      from the Library and orphan rows and from integrations older than the
+      field. */
+  user_gone?: boolean;
   /** Whether a watch holds a long-poll on this server right now. Never true
       for a phone. Absent where `user_id` is. */
   polling?: boolean;

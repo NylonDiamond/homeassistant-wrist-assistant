@@ -466,7 +466,9 @@ class _Env:
     def call(self, command, **msg) -> Any:
         connection = _Connection()
         msg.setdefault("id", 1)
-        command(self.hass, connection, msg)
+        outcome = command(self.hass, connection, msg)
+        if asyncio.iscoroutine(outcome):
+            asyncio.run(outcome)
         assert connection.errors == [], connection.errors
         return connection.results[1]
 
@@ -531,6 +533,7 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
         "has_iphone": True,
         # Neither key is bound to a Home Assistant user.
         "user_id": None,
+        "user_gone": False,
         "polling": False,
         "last_seen_seconds": None,
         "pending_changes": 0,
@@ -592,6 +595,7 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
             "main_house": True,
             "has_iphone": False,
             "user_id": None,
+            "user_gone": False,
             "polling": False,
             "last_seen_seconds": None,
             "pending_changes": 0,

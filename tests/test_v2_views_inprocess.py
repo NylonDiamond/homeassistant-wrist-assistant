@@ -36,6 +36,7 @@ import base64
 import contextlib
 import importlib.util
 import io
+import json
 import logging
 import math
 import sys
@@ -359,7 +360,7 @@ def bound_user():
 
     check = _AuthCheck()
     namespace = _extract(
-        {"_async_bound_user_ok"},
+        {"_async_bound_user_ok", "_async_bound_user_refusal", "USER_GONE_ERROR"},
         {
             "HomeAssistant": object,
             "Request": object,
@@ -368,7 +369,11 @@ def bound_user():
     )
     hass = types.SimpleNamespace(auth=types.SimpleNamespace(async_get_user=async_get_user))
     yield types.SimpleNamespace(
-        ok=namespace["_async_bound_user_ok"], users=users, check=check, hass=hass
+        ok=namespace["_async_bound_user_ok"],
+        refusal=namespace["_async_bound_user_refusal"],
+        users=users,
+        check=check,
+        hass=hass,
     )
 
 
@@ -400,6 +405,73 @@ def test_a_disabled_or_missing_user_is_refused_and_an_unbound_entry_passes(bound
     assert _bound_ok(bound_user, None) is True
 
 
+def test_a_deleted_user_is_told_apart_from_a_disabled_one(bound_user) -> None:
+    bound_user.users["gone-quiet"] = _HAUser(is_active=False)
+    bound_user.users["alice"] = _HAUser()
+    request = types.SimpleNamespace(remote="192.168.1.40")
+
+    def refusal(user_id: str | None) -> str | None:
+        return asyncio.run(bound_user.refusal(bound_user.hass, user_id, request))
+
+    assert refusal("deleted") == "user_gone"
+    assert refusal("gone-quiet") == "not_allowed"
+    assert refusal("alice") is None
+    assert refusal(None) is None
+
+
+def _user_gone_namespace(signed: list) -> dict[str, Any]:
+    def sign_response(secret, op, watch_id, ts, body, *, version, algo):
+        signed.append((secret, op, watch_id, ts, body, version, algo))
+        return "sig"
+
+    class _Resp:
+        def __init__(self, *, body, status, content_type, headers) -> None:
+            self.body, self.status = body, status
+            self.content_type, self.headers = content_type, headers
+
+    return _extract(
+        {"_user_gone_response", "USER_GONE_ERROR", "USER_GONE_MESSAGE"},
+        {
+            "Any": Any,
+            "Response": _Resp,
+            "orjson": types.SimpleNamespace(
+                dumps=lambda obj: json.dumps(obj, separators=(",", ":")).encode()
+            ),
+            "time": types.SimpleNamespace(time=lambda: 1_790_000_000),
+            "sign_response": sign_response,
+            "_LOGGER": logging.getLogger("test_user_gone"),
+            "_USER_GONE_LOGGED": set(),
+        },
+    )
+
+
+def test_a_device_whose_user_was_deleted_gets_a_signed_403(caplog) -> None:
+    signed: list = []
+    namespace = _user_gone_namespace(signed)
+    validated = types.SimpleNamespace(
+        watch_id="SIMULATOR", op="delta", version=2, algo="hmac-sha256"
+    )
+    with caplog.at_level(logging.INFO, logger="test_user_gone"):
+        first = namespace["_user_gone_response"](validated, b"k" * 32, "v2/delta")
+        again = namespace["_user_gone_response"](validated, b"k" * 32, "v2/delta")
+    assert first.status == 403 and again.status == 403
+    assert first.content_type == "application/json"
+    assert json.loads(first.body) == {
+        "ok": False,
+        "error": "user_gone",
+        "message": "The Home Assistant user this device was paired to no longer "
+        "exists. Pair it again.",
+    }
+    # Signed over the exact body, with the device's own key and op.
+    assert signed[0] == (
+        b"k" * 32, "delta", "SIMULATOR", 1_790_000_000, first.body, 2, "hmac-sha256"
+    )
+    assert first.headers == {"X-WA-Ts": "1790000000", "X-WA-Sig": "sig"}
+    # Logged once per device, at INFO.
+    logged = [r for r in caplog.records if r.name == "test_user_gone"]
+    assert len(logged) == 1 and logged[0].levelno == logging.INFO
+
+
 @pytest.mark.parametrize("view", ["WAActionView", "WADeltaView"])
 def test_both_signed_views_pass_the_request_to_the_user_check(view) -> None:
     tree = ast.parse(_MODULE.read_text(), filename=str(_MODULE))
@@ -409,11 +481,20 @@ def test_both_signed_views_pass_the_request_to_the_user_check(view) -> None:
         for node in ast.walk(cls)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
-        and node.func.id == "_async_bound_user_ok"
+        and node.func.id == "_async_bound_user_refusal"
     ]
     assert len(calls) == 1
     args = calls[0].args
     assert len(args) == 3 and isinstance(args[2], ast.Name) and args[2].id == "request"
+    # A deleted user gets the signed 403; anything else the plain 401.
+    gone = [
+        node
+        for node in ast.walk(cls)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_user_gone_response"
+    ]
+    assert len(gone) == 1
 
 
 @pytest.mark.parametrize("view", ["WAActionView", "WADeltaView"])
@@ -600,7 +681,14 @@ def stream_views():
         return _Response(status=200)
 
     namespace = _extract(
-        {"WAStreamView", "WABatchSnapshotView", "_async_device_may_stream", "_async_bound_user_ok"},
+        {
+            "WAStreamView",
+            "WABatchSnapshotView",
+            "_async_device_may_stream",
+            "_async_bound_user_ok",
+            "_async_bound_user_refusal",
+            "USER_GONE_ERROR",
+        },
         {
             "Any": Any,
             "DOMAIN": DOMAIN,

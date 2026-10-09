@@ -190,6 +190,15 @@ export function neverConnected(owner: Pick<OwnerSummary, "app_version" | "applie
 
 export const NEVER_CONNECTED_TEXT = "Never connected";
 
+/** Whether the Home Assistant user a device was paired to was deleted. Home
+ * Assistant then refuses everything the device sends, so its card says so
+ * and offers Remove and nothing else. */
+export function userGone(owner: Pick<OwnerSummary, "user_gone"> | undefined): boolean {
+  return owner?.user_gone === true;
+}
+
+export const USER_GONE_TEXT = "Its Home Assistant user was removed";
+
 /** What a device's next pull brings, when it brings anything. */
 export function pendingWords(owner: Pick<OwnerSummary, "pending_changes"> | undefined): string | undefined {
   const n = owner?.pending_changes;

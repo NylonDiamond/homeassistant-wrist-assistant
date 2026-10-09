@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { countWord, deviceCardTiles, deviceFacts, homeGroups, homeTotals, lastSeenDevice, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected } from "../src/home.js";
+import { countWord, deviceCardTiles, deviceFacts, homeGroups, homeTotals, lastSeenDevice, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -291,6 +291,20 @@ describe("the shell's and Home's look", () => {
     const rule = (sel: string) => text.slice(text.indexOf(sel), text.indexOf("}", text.indexOf(sel)));
     expect(rule(".home-device-label {")).toContain("overflow-wrap: anywhere");
     expect(rule(".home-device-facts {")).toContain("overflow-wrap: anywhere");
+  });
+});
+
+describe("userGone", () => {
+  it("is true only when the integration says the device's user was deleted", () => {
+    expect(userGone(owner({ user_gone: true }))).toBe(true);
+    expect(userGone(owner({ user_gone: false }))).toBe(false);
+    // An integration older than the field, and no row at all.
+    expect(userGone(owner())).toBe(false);
+    expect(userGone(undefined)).toBe(false);
+  });
+
+  it("says what happened in plain words", () => {
+    expect(USER_GONE_TEXT).toBe("Its Home Assistant user was removed");
   });
 });
 

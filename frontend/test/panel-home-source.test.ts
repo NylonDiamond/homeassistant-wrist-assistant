@@ -147,7 +147,7 @@ describe("Home's device sheet", () => {
   const forget = method("  private async forgetDeviceNow(ownerId: string) {");
 
   it("opens from a whole device card, for everyone", () => {
-    expect(card).toContain(`<button type="button" class="home-device-open" title=\${\`Open \${d.name}\`} @click=\${() => this.openDeviceSheet(d.id)}>`);
+    expect(card).toContain(`<button type="button" class="home-device-open" title=\${\`Open \${d.name}\`} @click=\${() => this.openDeviceSheet(d.id, gone)}>`);
     expect(home).toContain("${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices) : nothing}");
   });
 
@@ -266,5 +266,22 @@ describe("Home's Pair a device dialog", () => {
     expect(method("  private closeDeviceSheet() {")).toContain("this.devicePaired = undefined;");
     expect(method("  private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[]) {"))
       .toContain(`\${this.devicePaired === ownerId ? html\`<div class="dev-paired" role="status">`);
+  });
+
+  it("offers only Remove for a device whose Home Assistant user was deleted", () => {
+    // The card: the words instead of the sync state, a Remove in place of the
+    // count doors, and its name opens the sheet on the Remove step.
+    expect(card).toContain("const gone = userGone(owner);");
+    expect(card).toContain("this.openDeviceSheet(d.id, gone)");
+    expect(card).toContain(`\${gone ? html\`<span class="home-device-why">\${USER_GONE_TEXT}</span>\``);
+    expect(between(card, "${gone\n", ": html`<div class=\"home-tiles\">")).toContain("this.openDeviceSheet(d.id, true)");
+    // The sheet: the words and Remove device, no tabs, no Rename.
+    const sheet = method("  private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[]) {");
+    const goneOverview = between(sheet, "const goneOverview = html`", "</div>`;");
+    expect(goneOverview).toContain("${USER_GONE_TEXT}.");
+    expect(goneOverview).toContain("Remove device");
+    expect(goneOverview).not.toContain("dev-tabs");
+    expect(sheet).toContain("const overview = gone ? goneOverview :");
+    expect(sheet).toContain("!this.deviceForgetAsk && !renaming && !gone");
   });
 });

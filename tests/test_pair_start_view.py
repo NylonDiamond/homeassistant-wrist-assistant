@@ -114,8 +114,8 @@ class _HeaderView(_View):
         return reply
 
 
-async def _bound_user_refused(*_args: Any, **_kwargs: Any) -> bool:
-    return False
+async def _bound_user_refused(*_args: Any, **_kwargs: Any) -> str:
+    return "not_allowed"
 
 
 def _untouchable(name: str):
@@ -177,7 +177,8 @@ def _view_classes(pair_mod, log_hmac_failure) -> dict[str, type]:
         "validate_wa_request": _refuse_signature,
         # A signed request that gets past the signature stops here, which is
         # after the pairing store has heard about it.
-        "_async_bound_user_ok": _bound_user_refused,
+        "_async_bound_user_refusal": _bound_user_refused,
+        "USER_GONE_ERROR": "user_gone",
         "log_hmac_failure": log_hmac_failure,
         # A fixed clock, so the replies' `server_time` is known.
         "time": types.SimpleNamespace(time=lambda: SERVER_NOW),

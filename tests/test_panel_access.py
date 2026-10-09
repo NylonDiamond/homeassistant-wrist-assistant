@@ -133,7 +133,9 @@ def env():
 
 def _run(env, command, user: Any, **msg) -> _Connection:
     connection = _Connection(user)
-    command(env.hass, connection, {"id": 1, **msg})
+    outcome = command(env.hass, connection, {"id": 1, **msg})
+    if asyncio.iscoroutine(outcome):
+        asyncio.run(outcome)
     return connection
 
 
