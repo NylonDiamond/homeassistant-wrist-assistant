@@ -381,6 +381,91 @@ def test_the_record_survives_a_restart() -> None:
         again = new_store(loaded.store_mod)
         assert again.get() == before
         assert again.public() == store.public()
+        # The next revision carries on above the floor the restart set,
+        # which is on disk before anything above it is handed out.
+        floor = again._revision_floor
+        assert floor >= before["revision"] + loaded.store_mod._REVISION_MARGIN
+        assert FakeStore.files[KEY]["revision_floor"] == floor
+        assert again.save(library(action(name="Next")), base_revision=before["revision"]) == floor + 1
+
+
+def test_the_floor_takes_a_per_start_step_from_the_clock() -> None:
+    with loaded_package() as loaded:
+        mod = loaded.store_mod
+        margin = mod._REVISION_MARGIN
+        # Far past where the minutes term would matter: the stored numbers win.
+        saved, highest = 40_000_000, 39_999_000
+        base = max(saved, highest) + margin
+        at = 1_790_000_000.0  # some second in 2026
+        assert mod._revision_floor(saved, highest, at) == base + int(at) % margin
+        # A second later from the same file: a different floor.
+        assert mod._revision_floor(saved, highest, at + 1) == base + (int(at) + 1) % margin
+        # The step never reaches a whole margin.
+        for second in range(0, 3 * margin, 37):
+            floor = mod._revision_floor(saved, highest, float(second) + at)
+            assert base <= floor < base + margin
+        # The minutes since 1970 still win over a small stored floor, and take
+        # the same step, so two starts in one minute differ there too.
+        assert mod._revision_floor(0, 5, at) == int(at // 60) + int(at) % margin
+        assert mod._revision_floor(0, 5, at + 1) == int(at // 60) + (int(at) + 1) % margin
+        # Inside the 32-bit integer a watch reads it into, for decades.
+        assert mod._revision_floor(0, 0, 4_102_444_800.0) < 2**31 - 1  # 2100
+
+
+@pytest.mark.parametrize("stored_floor", [None, 40_000_000])
+def test_two_starts_from_the_same_backup_hand_out_different_revisions(monkeypatch, stored_floor) -> None:
+    """A restore brings the file back as it was. Two starts from that same
+    file, a few seconds apart, used to give the first save the same number
+    for different libraries: with a stored floor above the minutes since 1970,
+    and within one minute when the minutes win."""
+    with loaded_package() as loaded:
+        mod = loaded.store_mod
+        store = new_store(mod)
+        store.save(library(action()), base_revision=0)
+        backup = copy.deepcopy(FakeStore.files)
+        if stored_floor is not None:
+            backup[KEY]["revision_floor"] = stored_floor
+        clock = {"now": 1_790_000_000.0}
+        monkeypatch.setattr(mod.time, "time", lambda: clock["now"])
+
+        def start_from_backup_and_save(name: str):
+            FakeStore.files = copy.deepcopy(backup)
+            again = new_store(mod)
+            # The floor is on disk before any revision above it goes out.
+            assert FakeStore.files[KEY]["revision_floor"] == again._revision_floor
+            revision = again.save(library(action(name=name)), base_revision=again.revision)
+            return revision, again.short_hash()
+
+        first = start_from_backup_and_save("After the first restore")
+        clock["now"] += 7
+        second = start_from_backup_and_save("After the second restore")
+        assert first[0] != second[0]
+        assert first[1] != second[1]
+
+
+# ── the short hash ───────────────────────────────────────────────────────
+
+
+def test_the_short_hash_is_the_first_16_digits_of_the_public_list_hash(env) -> None:
+    assert env.mod.SHORT_HASH_LENGTH == 16
+    assert env.store.short_hash() is None
+    env.store.save(library(action(url="https://secret.example/a")), base_revision=0)
+    _revision, _listed, digest = env.store.public()
+    short = env.store.short_hash()
+    assert short == digest[:16]
+    assert re.fullmatch(r"[0-9a-f]{16}", short)
+    # A change only to what no device is sent keeps the list, and the hash.
+    env.store.save(library(action(url="https://secret.example/b")), base_revision=1)
+    assert env.store.short_hash() == short
+    env.store.save(library(action(name="Renamed")), base_revision=2)
+    assert env.store.short_hash() != short
+
+
+def test_an_unreadable_file_has_no_short_hash() -> None:
+    with loaded_package() as loaded:
+        FakeStore.files[KEY] = {"document": library(action()), "revision": 4}
+        FakeStore.unreadable.add(KEY)
+        assert new_store(loaded.store_mod).short_hash() is None
 
 
 def test_an_unreadable_file_is_refused_and_never_saved_over() -> None:

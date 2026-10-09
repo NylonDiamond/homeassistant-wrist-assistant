@@ -744,6 +744,21 @@ class DeltaCoordinator:
             return None
         return int(store.revision)
 
+    def http_actions_hash(self) -> str | None:
+        """The library's public list short hash
+        (``HTTPActionsStore.short_hash``, 16 lowercase hex digits), for the
+        reply's ``http_actions_hash``. None at revision 0, with no store, or
+        for a file that could not be read: the reply then leaves the field
+        out and a device goes by the revision alone."""
+        store = self._http_actions_store
+        if store is None or not store.available:
+            return None
+        try:
+            return store.short_hash()
+        except Exception:  # noqa: BLE001 (a hash must not fail the poll)
+            _LOGGER.debug("No HTTP action library hash", exc_info=True)
+            return None
+
     def _http_actions_behind(
         self, watch_id: str, held: HeldConfig | None = None
     ) -> bool:
@@ -1186,6 +1201,15 @@ class DeltaCoordinator:
         rides the next reply with a body, and a voice list changes only when
         the user installs or removes a voice.
 
+        Every reply with a body also names the home's HTTP action library
+        revision as ``http_actions`` (0 for none) and, once there is a
+        library, ``http_actions_hash`` beside it: the first 16 hex digits of
+        the public list's hash (``HTTPActionsStore.short_hash``), the list a
+        device holds and the ``hash`` the signed ``http_actions_get``
+        returns. Like ``watch_config_hashes`` it is there for a revision
+        repeated after a restore from a backup, and a lean reply carries it
+        whole. Older apps ignore the key.
+
         Once the Home Assistant user the device is bound to has a client
         certificate record, every reply with a body also carries
         ``client_certificate``: that record's revision. The watch fetches the
@@ -1286,6 +1310,11 @@ class DeltaCoordinator:
                 and reported.http_actions != library_revision,
                 library_revision,
             )
+            # Beside the revision, never in place of it, as for
+            # `watch_config_hashes`: older apps read only `http_actions`.
+            library_hash = self.http_actions_hash()
+            if library_hash is not None:
+                body["http_actions_hash"] = library_hash
         certificate_revision = self.client_certificate_revision(watch_id)
         if certificate_revision is not None:
             body["client_certificate"] = certificate_revision
@@ -1318,7 +1347,8 @@ class DeltaCoordinator:
         * Each config number only when it differs from what the poll
           reported holding; ``watch_config`` names only the kinds that differ.
         * ``watch_config_hashes`` always whole, as a full reply carries it:
-          the watch does not report the hashes it holds.
+          the watch does not report the hashes it holds. The same for
+          ``http_actions_hash``.
         * ``epoch`` only when the poll's is not this coordinator's.
 
         The device fills a missing number in from the request it sent, so
@@ -1345,9 +1375,10 @@ class DeltaCoordinator:
                 body["watch_config"] = changed
             else:
                 del body["watch_config"]
-        # `watch_config_hashes` stays whole: the watch reports no hashes on
-        # its poll, so the server cannot tell which it already holds, and a
-        # restore from a backup can repeat a revision under a new document.
+        # `watch_config_hashes` and `http_actions_hash` stay whole: the watch
+        # reports no hashes on its poll, so the server cannot tell which it
+        # already holds, and a restore from a backup can repeat a revision
+        # under a new document.
         for key, held_value in (
             ("http_actions", reported.http_actions),
             ("client_certificate", reported.client_certificate),

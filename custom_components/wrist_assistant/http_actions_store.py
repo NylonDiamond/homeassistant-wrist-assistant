@@ -32,7 +32,12 @@ Saves are debounced, so a hard kill can lose a revision a device was already
 handed, and counting on from the file would hand the same number out again for
 a different library. A load that finds the file sets ``revision_floor`` above
 every revision an earlier run can have handed out (``_revision_floor``) and
-writes it back before returning; every new revision is above it.
+writes it back before returning; every new revision is above it. A restore
+from a backup brings an old floor back, so the floor also moves by a
+per-start step taken from the clock, and a device compares the public list's
+short hash (:meth:`HTTPActionsStore.short_hash`, the delta reply's
+``http_actions_hash``) beside the revision: a number can repeat after a
+restore, a hash of a different list cannot.
 
 Storage is one Home Assistant ``Store`` file. A file that cannot be read is
 logged and left alone: every read and write is then refused with
@@ -76,16 +81,41 @@ _SAVE_DEBOUNCE_SECONDS = 1
 _REVISION_MARGIN = 1000
 
 
-def _revision_floor(saved_floor: int, highest: int) -> int:
-    """Where revisions continue after a load that found the file: above the
-    stored floor and the stored revision by ``_REVISION_MARGIN``, and never
-    below the minutes since 1970, which also clears a file that lost both.
-    Stays far inside the 32-bit integer a watch reads it into."""
-    return max(
-        int(time.time() // 60),
-        saved_floor + _REVISION_MARGIN,
-        highest + _REVISION_MARGIN,
+def _revision_floor(saved_floor: int, highest: int, now: float | None = None) -> int:
+    """Where revisions continue after a load that found the file.
+
+    Above the stored floor and the stored revision by ``_REVISION_MARGIN``,
+    and never below the minutes since 1970, which also clears a file that
+    lost both; then a per-start step on top: the current Unix second modulo
+    the margin. The result is written to the file before any revision goes
+    out (see ``async_load``). The same rule as the watch config store's
+    ``_revision_floor``.
+
+    The step is there for a restore from a backup. The backup brings the
+    stored floor and revision back, so without it every start from the same
+    file computes the same floor (the minutes term only overtakes the margin
+    some 16 hours later, and then two starts in one minute agree) and the
+    first save after each start reuses a number an earlier run already
+    handed out for a different library. A device still holding that number
+    would never fetch the new list. The clock is the one thing a backup
+    cannot bring back, so two starts from the same file land on the same
+    floor only when they start on the same second modulo the margin, and
+    even then the list's short hash the delta reply carries beside the
+    revision (``http_actions_hash``, see :meth:`HTTPActionsStore.short_hash`)
+    tells the lists apart. Seconds rather than a random draw so a test can
+    pin it, and modulo the margin so each start moves the floor by at most
+    twice the margin, which keeps revisions far inside the 32-bit integer a
+    watch reads them into.
+    """
+    now = time.time() if now is None else now
+    step = int(now) % _REVISION_MARGIN
+    return (
+        max(int(now // 60), max(saved_floor, highest) + _REVISION_MARGIN) + step
     )
+
+# How many hex digits of the public list's hash the delta reply carries, as
+# for the watch config (``watch_config_store.SHORT_HASH_LENGTH``).
+SHORT_HASH_LENGTH = 16
 
 # `updated_by` on a panel save, as for the watch config.
 PANEL_WRITER = "panel"
@@ -330,10 +360,36 @@ class HTTPActionsStore:
         record = self._record
         if record.document is None:
             return record.revision, None, None
+        listed, digest = self._public_list()
+        return record.revision, copy.deepcopy(listed), digest
+
+    def _public_list(self) -> tuple[dict[str, Any], str]:
+        """The public list of the stored document and its hash, made once per
+        revision. Only with a document."""
+        record = self._record
+        assert record.document is not None
         if self._public is None or self._public[0] != record.revision:
             listed = public_list(record.document)
             self._public = (record.revision, listed, canonical_hash(listed))
-        return record.revision, copy.deepcopy(self._public[1]), self._public[2]
+        return self._public[1], self._public[2]
+
+    def short_hash(self) -> str | None:
+        """The first ``SHORT_HASH_LENGTH`` (16) lowercase hex digits of the
+        public list's hash, the ``hash`` a signed ``http_actions_get``
+        returns, which is the list a device holds. The delta reply carries it
+        beside the revision as ``http_actions_hash`` and the get as
+        ``short_hash``: a revision can repeat after a restore from a backup
+        (see :func:`_revision_floor`), the hash of a different list cannot,
+        so a device pulls when either differs from what it holds. A change
+        that touches only secrets leaves the public list, and so this hash,
+        as it was.
+
+        None at revision 0 and for a file that could not be read, so the
+        reply leaves the field out and a device goes by the revision alone.
+        Made once per revision, so a poll pays for it once."""
+        if self._load_failed or self._record.document is None:
+            return None
+        return self._public_list()[1][:SHORT_HASH_LENGTH]
 
     def has_handed_over(self, owner_id: str) -> bool:
         return owner_id in self._record.handed_over

@@ -4365,12 +4365,17 @@ async def _op_http_actions_get(ctx: _OpContext) -> Response:
     """The home's public HTTP action list, for a device's pickers and prompts.
 
     Body:  {"since_revision": <int>?}
-    Reply: {"ok": true, "revision", "hash", "handed_over": <bool>,
-            "can_hand_over": <bool>, "document"?}
+    Reply: {"ok": true, "revision", "hash", "short_hash",
+            "handed_over": <bool>, "can_hand_over": <bool>, "document"?}
 
     ``document`` is the public list (``http_actions.public_list``) and
     ``hash`` its canonical hash; both describe the list, never the stored
-    library, which no device is sent. ``document`` is left out when
+    library, which no device is sent. ``short_hash`` is the first 16 digits
+    of ``hash`` (``HTTPActionsStore.short_hash``), the value the delta
+    reply's ``http_actions_hash`` carries. Both come on every reply, the one
+    that leaves the document out included, so a device that holds this
+    revision with another list's hash (a revision repeated after a restore
+    from a backup) can tell and ask again without ``since_revision``. ``document`` is left out when
     ``since_revision`` is the stored revision, and at revision 0 (``hash``
     then null). ``handed_over`` says whether the signer's phone has given
     its library, and ``can_hand_over`` whether it may (it is bound to an
@@ -4394,6 +4399,7 @@ async def _op_http_actions_get(ctx: _OpContext) -> Response:
         "ok": True,
         "revision": revision,
         "hash": digest,
+        "short_hash": store.short_hash(),
         "handed_over": store.has_handed_over(ctx.watch_id),
         "can_hand_over": await _async_bound_user_is_active(ctx),
     }

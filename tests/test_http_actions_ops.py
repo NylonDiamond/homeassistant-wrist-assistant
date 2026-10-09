@@ -361,7 +361,8 @@ def test_a_malformed_hand_over_is_a_signed_400(env, payload) -> None:
 def test_get_at_revision_0(env) -> None:
     reply = op(env, "_op_http_actions_get", {})
     assert reply.body == {
-        "ok": True, "revision": 0, "hash": None, "handed_over": False, "can_hand_over": True,
+        "ok": True, "revision": 0, "hash": None, "short_hash": None,
+        "handed_over": False, "can_hand_over": True,
     }
     assert env.store.delivered() == {}
 
@@ -377,6 +378,7 @@ def test_get_sends_the_public_list_and_marks_delivery(env) -> None:
         "ok": True,
         "revision": 1,
         "hash": digest,
+        "short_hash": digest[:16],
         "handed_over": False,
         "can_hand_over": True,
         "document": listed,
@@ -385,6 +387,9 @@ def test_get_sends_the_public_list_and_marks_delivery(env) -> None:
     assert env.store.delivered() == {"watch-A": 1}
     current = op(env, "_op_http_actions_get", {"since_revision": 1})
     assert "document" not in current.body and current.body["revision"] == 1
+    # The hashes come on the reply that leaves the list out too, so a device
+    # holding revision 1 with another list's hash can tell.
+    assert (current.body["hash"], current.body["short_hash"]) == (digest, digest[:16])
     stale = op(env, "_op_http_actions_get", {"since_revision": 0}, watch_id="watch-B")
     assert "document" in stale.body
     assert env.store.delivered() == {"watch-A": 1, "watch-B": 1}

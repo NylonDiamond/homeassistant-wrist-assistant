@@ -9,6 +9,7 @@ with the new revision, once per change. Uses the in-process coordinator of
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import timedelta
 
 from test_delta_coordinator_inprocess import _poll, coordinator  # noqa: F401
@@ -36,6 +37,37 @@ def test_every_reply_names_the_library_revision(coordinator) -> None:  # noqa: F
         asyncio.run(run())
 
 
+def test_every_reply_names_the_list_hash_beside_the_revision(coordinator) -> None:  # noqa: F811
+    """`http_actions_hash`: the public list's short hash, the `hash` the
+    signed get returns cut to 16 digits. Absent at revision 0, and carried
+    whole on a lean reply that leaves out the revision the device holds."""
+    module, hass, coord = coordinator
+    ent = "wrist_assistant.ha1h"
+    hass.states.set(ent, "off")
+    with loaded_package() as pkg:
+        store = new_store(pkg.store_mod)
+        coord.attach_http_actions_store(store)
+
+        async def run() -> None:
+            _status, body = await _poll(coord, entities=[ent])
+            assert body["http_actions"] == 0 and "http_actions_hash" not in body
+            store.save(library(action()), base_revision=0)
+            _status, body = await _poll(coord, entities=[ent])
+            _revision, _listed, digest = store.public()
+            assert body["http_actions"] == 1
+            assert body["http_actions_hash"] == digest[:16] == store.short_hash()
+            assert re.fullmatch(r"[0-9a-f]{16}", body["http_actions_hash"])
+            # A lean poll that reports holding revision 1 still hears the hash:
+            # the device reports no hash, so the server cannot know it holds it.
+            reported = module.HeldConfig(http_actions=1)
+            lean = {"http_actions": 1, "http_actions_hash": digest[:16], "next_cursor": 0}
+            coord._lean_reply(lean, reported, None, None, None)
+            assert "http_actions" not in lean
+            assert lean["http_actions_hash"] == digest[:16]
+
+        asyncio.run(run())
+
+
 def test_an_unreadable_library_leaves_the_field_out(coordinator) -> None:  # noqa: F811
     module, hass, coord = coordinator
     ent = "wrist_assistant.ha2"
@@ -48,6 +80,7 @@ def test_an_unreadable_library_leaves_the_field_out(coordinator) -> None:  # noq
         async def run() -> None:
             status, body = await _poll(coord, entities=[ent])
             assert "http_actions" not in body
+            assert "http_actions_hash" not in body
 
         asyncio.run(run())
 
