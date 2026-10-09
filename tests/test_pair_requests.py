@@ -659,6 +659,111 @@ def test_a_box_confirmed_with_nothing_to_store_parks_nothing(mod) -> None:
     assert store.take_parked("watch-2") is None
 
 
+# ── the device signs with its new key: the box is done ───────────────────
+
+
+_BOXED_SECRET = base64.b64encode(b"n" * 32).decode()
+_OTHER_SECRET = base64.b64encode(b"x" * 32).decode()
+
+
+def _confirm_parked(mod, store, watch_id: str = "watch-1"):
+    """A sealed confirm as the panel makes it: the box carries a new secret
+    and the pairing to store is parked with it."""
+    boxed = _fields(mod, watch_id, secret_b64=_BOXED_SECRET)
+    pending = store.start(_fields(mod, watch_id))
+    return store.confirm_sealed(pending, _BOX, fields=boxed, user_id="root")
+
+
+def test_a_collected_pairing_lets_a_new_start_through(mod) -> None:
+    """The watch fetched its box and signed with the secret in it, then
+    signs out of the home (or is forgotten) and pairs again a minute later.
+    It gets a code at once instead of a 409 for the rest of ten minutes."""
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock, code_factory=_codes("AAAAAA", "BBBBBB"))
+    _confirm_parked(mod, store)
+    clock.now += 5
+    assert store.take_parked("watch-1") is not None
+
+    assert store.note_signed_use("watch-1", _BOXED_SECRET) is True
+    # The box has done its job and is gone.
+    assert store.status("watch-1") == ("expired", None)
+    assert store.take_parked("watch-1") is None
+
+    clock.now += 60
+    pending = store.start(_fields(mod))
+    assert pending.code == "BBBBBB"
+    assert store.status("watch-1") == ("pending", None)
+    # A second signature finds nothing left to drop.
+    assert store.note_signed_use("watch-1", _BOXED_SECRET) is False
+
+
+def test_an_uncollected_pairing_still_refuses_a_new_start(mod) -> None:
+    """Nothing signed with the boxed secret yet: a start, from anyone, is
+    refused with the seconds left, and the box stays for the device."""
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock, code_factory=_codes("AAAAAA", "BBBBBB"))
+    _confirm_parked(mod, store)
+    clock.now += 100
+    with pytest.raises(mod.ConfirmedPairWaiting) as refused:
+        store.start(_fields(mod), remote="192.0.2.66")
+    assert refused.value.expires_in == 500
+    assert store.status("watch-1") == ("confirmed", _BOX)
+
+
+def test_a_fetch_alone_does_not_end_the_wait(mod) -> None:
+    """Anyone may fetch a box, so a fetch is no proof the device has its key.
+    A stranger who fetches first and then starts must not throw the box away
+    before the real device collects it."""
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock, code_factory=_codes("AAAAAA", "BBBBBB"))
+    _confirm_parked(mod, store)
+    assert store.take_parked("watch-1") is not None
+    clock.now += 10
+    with pytest.raises(mod.ConfirmedPairWaiting) as refused:
+        store.start(_fields(mod), remote="192.0.2.66")
+    assert refused.value.expires_in == 590
+    assert store.status("watch-1") == ("confirmed", _BOX)
+
+
+def test_only_the_boxed_secret_ends_the_wait(mod) -> None:
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock, code_factory=_codes("AAAAAA", "BBBBBB"))
+    _confirm_parked(mod, store)
+    store.take_parked("watch-1")
+    # The device's old key (a Replace whose box it has not opened yet).
+    assert store.note_signed_use("watch-1", _OTHER_SECRET) is False
+    # Another device's signature, even with the same secret, is another id.
+    assert store.note_signed_use("watch-2", _BOXED_SECRET) is False
+    assert store.status("watch-1") == ("confirmed", _BOX)
+    with pytest.raises(mod.ConfirmedPairWaiting):
+        store.start(_fields(mod))
+
+
+def test_a_signature_before_the_fetch_or_with_nothing_parked_ends_nothing(mod) -> None:
+    """The boxed secret is stored only when the box is first fetched, so a
+    signature with it before then cannot happen in practice; the store still
+    asks for the fetch. A box with nothing parked has no secret to match."""
+    store = mod.PairRequestStore(clock=_Clock(), code_factory=_codes("AAAAAA", "BBBBBB"))
+    _confirm_parked(mod, store)
+    assert store.note_signed_use("watch-1", _BOXED_SECRET) is False
+    assert store.status("watch-1") == ("confirmed", _BOX)
+
+    store.confirm_sealed(store.start(_fields(mod, "watch-2")), _BOX)
+    assert store.note_signed_use("watch-2", _BOXED_SECRET) is False
+    assert store.note_signed_use("watch-2", SECRET) is False
+    assert store.status("watch-2") == ("confirmed", _BOX)
+
+
+def test_a_signature_after_the_box_ran_out_changes_nothing(mod) -> None:
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock, code_factory=_codes("AAAAAA", "BBBBBB"))
+    _confirm_parked(mod, store)
+    store.take_parked("watch-1")
+    clock.now += mod.PAIR_SEALED_COPY_TTL_SECONDS
+    assert store.note_signed_use("watch-1", _BOXED_SECRET) is False
+    assert store.start(_fields(mod)).code == "BBBBBB"
+
+
 # ── where a request came from: home or not ───────────────────────────────
 
 

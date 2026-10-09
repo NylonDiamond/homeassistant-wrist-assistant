@@ -388,6 +388,23 @@ async def _async_device_may_stream(
     return await _async_bound_user_ok(hass, secret_entry.user_id, request)
 
 
+def _note_signed_use(domain_data: WristAssistantData, watch_id: str, secret_b64: str) -> None:
+    """Tell the pairing store a request from ``watch_id`` was signed with
+    ``secret_b64``.
+
+    A device that signs with the secret from its sealed pairing box has
+    opened the box, so the box is dropped and a new ``pair/start`` for the
+    id is no longer refused (``PairRequestStore.note_signed_use``). Both
+    signed views call this once the signature checks out.
+    """
+    pair_store = getattr(domain_data, "pair_request_store", None)
+    if pair_store is not None and pair_store.note_signed_use(watch_id, secret_b64):
+        _LOGGER.debug(
+            "watch_id=%s signed with its sealed pairing's secret; its box is dropped",
+            watch_id,
+        )
+
+
 def _log_signed_request_rejected(
     hass: HomeAssistant,
     domain_data: WristAssistantData,
@@ -462,6 +479,7 @@ class WAActionView(HomeAssistantView):
             # Race with deletion between validate and dispatch, or storage
             # corruption — either way, treat as unknown.
             return Response(status=401, text="Unauthorized")
+        _note_signed_use(domain_data, validated.watch_id, secret_entry.secret_b64)
         if not await _async_bound_user_ok(self._hass, secret_entry.user_id, request):
             _LOGGER.debug(
                 "WA request refused (v2/action): bound user of %s is disabled, gone, "
@@ -658,6 +676,7 @@ class WADeltaView(HomeAssistantView):
         secret_entry = domain_data.widget_secret_store.get(validated.watch_id)
         if secret_entry is None or secret_entry.secret_bytes is None:
             return Response(status=401, text="Unauthorized")
+        _note_signed_use(domain_data, validated.watch_id, secret_entry.secret_b64)
         if not await _async_bound_user_ok(self._hass, secret_entry.user_id, request):
             _LOGGER.debug(
                 "WA request refused (v2/delta): bound user of %s is disabled, gone, "
@@ -3015,6 +3034,17 @@ def _came_through_cloud(hass: HomeAssistant) -> bool:
         return False
 
 
+def _confirmed_pairing_waiting_reason(retry_after: int) -> str:
+    """The sentence a 409 ``confirmed_pairing_waiting`` gives the device to
+    show, with the wait in whole minutes, rounded up."""
+    minutes = max(1, -(-retry_after // 60))
+    wait = "a minute" if minutes == 1 else f"{minutes} minutes"
+    return (
+        "This device was just paired and has not picked up its key yet. "
+        f"Try again in {wait}."
+    )
+
+
 class WAPairStartView(HomeAssistantView):
     """Unauthenticated endpoint where a device asks to pair by code.
 
@@ -3042,9 +3072,12 @@ class WAPairStartView(HomeAssistantView):
     one), at most four per address and 64 in all wait at once; past either
     it answers 429. While a confirmed sealed box waits for the id it answers
     409 `confirmed_pairing_waiting` with `retry_after` (seconds, also in a
-    `Retry-After` header) and leaves the box alone, since this endpoint needs
-    no sign-in and anyone who saw the id could otherwise throw the box away
-    (`PairRequestStore.start`). The address is kept for the panel's lookup, with
+    `Retry-After` header) and `reason` (a sentence the device can show; the
+    same text is in `message` too) and leaves the box alone, since this
+    endpoint needs no sign-in and anyone who saw the id could otherwise throw
+    the box away (`PairRequestStore.start`). The box stops waiting once the
+    device signs a request with the secret inside it, so only a pairing the
+    device has not picked up yet holds a new start back. The address is kept for the panel's lookup, with
     whether it is outside the home network (or came through Home Assistant
     Cloud), in which case the confirm needs the user's `allow_remote`.
     """
@@ -3095,14 +3128,13 @@ class WAPairStartView(HomeAssistantView):
                 request.remote,
                 waiting.expires_in,
             )
+            reason = _confirmed_pairing_waiting_reason(waiting.expires_in)
             return self.json(
                 {
                     "ok": False,
                     "error": "confirmed_pairing_waiting",
-                    "message": (
-                        "This device was just confirmed and its pairing is waiting "
-                        "to be fetched. Try again when it runs out."
-                    ),
+                    "reason": reason,
+                    "message": reason,
                     "retry_after": waiting.expires_in,
                     "server_time": int(time.time()),
                 },
@@ -3148,7 +3180,8 @@ class WAPairStatusView(HomeAssistantView):
     * `{"state": "confirmed", "server_public_key_b64", "nonce", "box"}`: the
       secret, sealed to the device's X25519 public key
       (`sealed_box.seal_pair_secret`). Kept for ten minutes after the
-      confirm, and handed out as often as it is asked for in that time.
+      confirm, and handed out as often as it is asked for in that time,
+      until the device signs a request with the secret inside it.
     * `{"state": "expired"}`: no code and no box, whatever the reason.
 
     Every state also carries `server_time` (Unix seconds), as the start
@@ -3161,9 +3194,10 @@ class WAPairStatusView(HomeAssistantView):
     A box nobody fetched in time, or one lost to a restart, so leaves
     nothing behind. Anyone may ask: only the holder of the device's private
     key can open the box. The device then checks the secret with a signed
-    `verify_identity`, as an old-form watch does. A start for the same id
-    is refused while the box waits, so nobody can throw it away before the
-    device fetches it.
+    `verify_identity`, as an old-form watch does, and that signed request
+    drops the box (`_note_signed_use`). A start for the same id is refused
+    while the box waits, so nobody can throw it away before the device
+    fetches it.
     """
 
     url = "/api/wrist_assistant/v2/pair/status"

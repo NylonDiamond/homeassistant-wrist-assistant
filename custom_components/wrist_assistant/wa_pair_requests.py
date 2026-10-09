@@ -32,8 +32,11 @@ the unauthenticated ``/v2/pair/status``, which this store answers too
 (``PairRequestStore.status``). Anybody may fetch it: only the holder of the
 device's private key can open it. Nobody can throw it away either: while it
 waits, a new start for the same id is refused (``ConfirmedPairWaiting``,
-409 from the view). The old, clear form is still accepted from
-a watch, so watches on older builds keep pairing.
+409 from the view). It waits until the device signs a request with the
+secret inside it (``PairRequestStore.note_signed_use``), which only a device
+that opened the box can do, or until its ten minutes run out. A fetch alone
+does not end the wait, since anyone may fetch. The old, clear form is still
+accepted from a watch, so watches on older builds keep pairing.
 
 The sealed confirm writes nothing to the secret store. It parks the pairing
 with the box (``ParkedPairing``), and the first fetch of the box stores it.
@@ -66,6 +69,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import hmac
 import ipaddress
 import math
 import re
@@ -566,6 +570,11 @@ class PairRequestStore:
         is that a device which leaves the code screen between the user's
         confirm and its own fetch (a second or two at the usual poll rate)
         must wait out the box, at most ten minutes, before a new code.
+
+        The wait ends early once the device has signed a request with the
+        secret in the box (``note_signed_use``): it has its key, the box has
+        done its job and is dropped, so signing out of a home or being
+        forgotten and paired again a minute later gets a code at once.
         """
         current = self._clock() if now is None else now
         self._evict_expired(current)
@@ -659,6 +668,35 @@ class PairRequestStore:
             return None
         parked.taken = True
         return parked
+
+    def note_signed_use(
+        self, watch_id: str, secret_b64: str, *, now: float | None = None
+    ) -> bool:
+        """A request from ``watch_id`` was just signed with ``secret_b64``.
+
+        When that is the secret a fetched box carried, the device opened the
+        box and holds its key, so the box is dropped and a new start for the
+        id is taken again. True when a box was dropped.
+
+        A fetch alone proves nothing, since anyone may fetch, and the box
+        stays so the real device can still collect it. A signature does: only
+        the holder of the device's private key could open the box and sign
+        with what was inside. A box nobody fetched, one with nothing parked,
+        or a signature with any other secret leaves the box where it is.
+        """
+        copy = self._sealed.get(watch_id)
+        if copy is None:
+            return False
+        current = self._clock() if now is None else now
+        if copy.expires_at <= current:
+            return False
+        parked = copy.parked
+        if parked is None or not parked.taken or parked.fields.secret_b64 is None:
+            return False
+        if not hmac.compare_digest(parked.fields.secret_b64, secret_b64):
+            return False
+        del self._sealed[watch_id]
+        return True
 
     def status(
         self, watch_id: str, *, now: float | None = None

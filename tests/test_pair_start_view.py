@@ -20,7 +20,10 @@ The device registry and the Logbook helpers raise if touched. Pinned:
   refusals, whether the request is remote (by address, or through Home
   Assistant Cloud whatever its address);
 * ``/v2/pair/status``: pending, confirmed with the box, expired, and its
-  refusals.
+  refusals;
+* the 409 for a confirmed box carries ``retry_after`` and a ``reason`` to
+  show, and ends once the device signs a request with the boxed secret, but
+  not on a fetch alone or a signature with another key.
 """
 
 from __future__ import annotations
@@ -111,6 +114,10 @@ class _HeaderView(_View):
         return reply
 
 
+async def _bound_user_refused(*_args: Any, **_kwargs: Any) -> bool:
+    return False
+
+
 def _untouchable(name: str):
     def _fail(*_args: Any, **_kwargs: Any) -> Any:
         raise AssertionError(f"pair/start touched {name}")
@@ -131,7 +138,9 @@ def _view_classes(pair_mod, log_hmac_failure) -> dict[str, type]:
         "WARegisterSecretView",
         "WAActionView",
         "_log_signed_request_rejected",
+        "_note_signed_use",
         "_came_through_cloud",
+        "_confirmed_pairing_waiting_reason",
     }
     wanted = [
         node
@@ -166,6 +175,9 @@ def _view_classes(pair_mod, log_hmac_failure) -> dict[str, type]:
         "dr": types.SimpleNamespace(async_get=_untouchable("the device registry")),
         "WAHMACError": _HMACError,
         "validate_wa_request": _refuse_signature,
+        # A signed request that gets past the signature stops here, which is
+        # after the pairing store has heard about it.
+        "_async_bound_user_ok": _bound_user_refused,
         "log_hmac_failure": log_hmac_failure,
         # A fixed clock, so the replies' `server_time` is known.
         "time": types.SimpleNamespace(time=lambda: SERVER_NOW),
@@ -521,13 +533,15 @@ def test_a_start_for_a_confirmed_id_answers_409_and_keeps_the_box(env) -> None:
     for body in (_sealed_body(), _body()):
         reply = _start(env, body, remote="192.168.1.99")
         assert reply.status == 409
+        reason = (
+            "This device was just paired and has not picked up its key yet. "
+            "Try again in 10 minutes."
+        )
         assert reply.body == {
             "ok": False,
             "error": "confirmed_pairing_waiting",
-            "message": (
-                "This device was just confirmed and its pairing is waiting "
-                "to be fetched. Try again when it runs out."
-            ),
+            "reason": reason,
+            "message": reason,
             "retry_after": 570,
             "server_time": SERVER_TIME,
         }
@@ -542,6 +556,85 @@ def test_a_start_for_a_confirmed_id_answers_409_and_keeps_the_box(env) -> None:
     # Once the box has run out, the device can ask for a new code.
     env.clock.now += 570
     assert _start(env, _sealed_body()).status == 200
+
+
+@pytest.mark.parametrize(
+    ("retry_after", "wait"),
+    [(1, "a minute"), (60, "a minute"), (61, "2 minutes"), (263, "5 minutes"), (600, "10 minutes")],
+)
+def test_the_409_reason_names_the_wait_in_whole_minutes(env, retry_after, wait) -> None:
+    code = _start(env, _sealed_body()).body["code"]
+    env.pair_store.confirm_sealed(env.pair_store.get(code), {"box": "B"})
+    env.clock.now += 600 - retry_after
+    reply = _start(env, _sealed_body())
+    assert reply.status == 409
+    assert reply.body["retry_after"] == retry_after
+    assert reply.body["reason"].endswith(f"Try again in {wait}.")
+
+
+class _ValidSignature:
+    """``validate_wa_request`` for a request whose signature checks out."""
+
+    def __init__(self, watch_id: str) -> None:
+        self.watch_id = watch_id
+
+    def __call__(self, *_args: Any, **_kwargs: Any) -> Any:
+        return types.SimpleNamespace(watch_id=self.watch_id, op="verify_identity")
+
+
+def _confirm_and_fetch(env) -> str:
+    """A sealed pairing confirmed and its box fetched, which stores the
+    secret the box carries. Returns that secret."""
+    code = _start(env, _sealed_body()).body["code"]
+    pending = env.pair_store.get(code)
+    fields, error = env.pair_mod.validate_pair_fields(
+        {"watch_id": "watch-code-1", "secret_b64": SECRET, "label": "watch-code-pair"}
+    )
+    assert error is None
+    env.pair_store.confirm_sealed(pending, {"box": "B"}, fields=fields, user_id=None)
+    parked = env.pair_store.take_parked("watch-code-1")
+    env.secret_store.register("watch-code-1", parked.fields.secret_b64, "watch-code-pair")
+    return parked.fields.secret_b64
+
+
+def test_a_signed_request_with_the_new_key_lets_the_device_pair_again(env) -> None:
+    """The watch fetched its box and signed with the key inside, then
+    signs out of the home and adds it again a minute later: a code, not
+    a 409 for the rest of ten minutes."""
+    _confirm_and_fetch(env)
+    env.clock.now += 5
+    assert _start(env, _sealed_body()).status == 409
+
+    env.action.post.__globals__["validate_wa_request"] = _ValidSignature("watch-code-1")
+    asyncio.run(env.action.post(_SignedRequest("watch-code-1")))
+    assert _status(env, {"watch_id": "watch-code-1"}).body["state"] == "expired"
+
+    env.clock.now += 60
+    reply = _start(env, _sealed_body())
+    assert reply.status == 200, reply.body
+    assert set(reply.body) == {"ok", "code", "expires_in", "poll_after", "server_time"}
+
+
+def test_a_fetch_with_no_signed_request_still_answers_409(env) -> None:
+    """Anyone may fetch the box. Until the device signs with the key, a
+    start is still refused, so a stranger cannot throw the box away."""
+    _confirm_and_fetch(env)
+    env.clock.now += 30
+    reply = _start(env, _sealed_body(), remote="192.168.1.99")
+    assert reply.status == 409
+    assert reply.body["retry_after"] == 570
+    assert _status(env, {"watch_id": "watch-code-1"}).body["state"] == "confirmed"
+
+
+def test_a_signature_with_another_key_keeps_the_box(env) -> None:
+    """A device that was paired before still signs with its old key until
+    it opens the box; that is no proof it collected the new one."""
+    _confirm_and_fetch(env)
+    env.secret_store.register("watch-code-1", OLD_SECRET, "watch-code-pair")
+    env.action.post.__globals__["validate_wa_request"] = _ValidSignature("watch-code-1")
+    asyncio.run(env.action.post(_SignedRequest("watch-code-1")))
+    assert _status(env, {"watch_id": "watch-code-1"}).body["state"] == "confirmed"
+    assert _start(env, _sealed_body()).status == 409
 
 
 @pytest.mark.parametrize(

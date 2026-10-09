@@ -416,6 +416,22 @@ def test_both_signed_views_pass_the_request_to_the_user_check(view) -> None:
     assert len(args) == 3 and isinstance(args[2], ast.Name) and args[2].id == "request"
 
 
+@pytest.mark.parametrize("view", ["WAActionView", "WADeltaView"])
+def test_both_signed_views_tell_the_pairing_store_of_a_good_signature(view) -> None:
+    """A device whose sealed pairing box is waiting proves it opened the box
+    by signing; either view may carry that first signed request."""
+    tree = ast.parse(_MODULE.read_text(), filename=str(_MODULE))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == view)
+    calls = [
+        node
+        for node in ast.walk(cls)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_note_signed_use"
+    ]
+    assert len(calls) == 1
+
+
 def test_the_user_check_is_home_assistant_s_own() -> None:
     source = _MODULE.read_text()
     assert (
