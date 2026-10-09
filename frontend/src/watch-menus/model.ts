@@ -28,7 +28,7 @@ import menuDefaults from "./menu-defaults.json";
 import menuKeys from "./menu-keys.json";
 import { randomWatchId } from "../watch-pages/edit.js";
 import { sameWatchPagesJson } from "../watch-pages/merge.js";
-import { type JsonObject, WATCH_SYNC_LIMIT_BYTES, isJsonObject, sizeOf } from "../watch-pages/model.js";
+import { type JsonObject, WATCH_CONFIG_LIMIT_BYTES, isJsonObject, sizeOf } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 
 // ── the tables ───────────────────────────────────────────────────────────
@@ -167,8 +167,8 @@ export type MenusDocument = JsonObject;
 export const WATCH_MENUS_SECTIONS = ["quickAction", "entityRadial", "pageSwitcher"] as const;
 export type WatchMenusSection = (typeof WATCH_MENUS_SECTIONS)[number];
 
-/** The watch takes at most this much config in one sync. */
-export const WATCH_MENUS_LIMIT_BYTES = WATCH_SYNC_LIMIT_BYTES;
+/** The most Home Assistant keeps of this document (see WATCH_CONFIG_LIMIT_BYTES). */
+export const WATCH_MENUS_LIMIT_BYTES = WATCH_CONFIG_LIMIT_BYTES;
 
 export function asWatchMenusDocument(value: unknown): MenusDocument | undefined {
   return isJsonObject(value) ? value : undefined;

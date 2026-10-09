@@ -1,24 +1,24 @@
-import{J as y,K as u,L as d,M as $,N as C,O as R,h as x}from"./chunk-NATNYU7L.js";import{b as m,c as n,eh as f,f as l}from"./chunk-466FWFTA.js";function g(e){return e==="Control Center list"?"it":"them"}var T="The watch could not read this save";function v(e){return e<1e3?`${e} bytes`:`${Number((e/1e3).toFixed(1))} KB`}function h(e,t){let o=e?Date.parse(e):NaN;return Number.isNaN(o)?"":x(Math.max(0,(t-o)/1e3))}function N(e){let t=d(e);return t.charAt(0).toUpperCase()+t.slice(1)}function L(e){let{record:t}=e,o=h(t.updated_at,e.now??Date.now()),i=`Revision ${t.revision} \xB7 ${d(t.updated_by)}${o?` ${o}`:""}`,r=e.limit>0&&e.size/e.limit>.8,s=`${v(e.size)} of the ${v(e.limit)} the watch takes${r?". Close to the limit.":""}`;return u(t)?{tone:"err",revision:i,state:T,size:s,near:r,help:e.historyState==="unsupported"?`Change the ${e.noun} and save ${g(e.noun)} again.`:"Restore an earlier save from History."}:y(t)==="delivered"?{tone:"ok",revision:i,state:C,help:`The watch has revision ${t.revision}.`,size:s,near:r}:{tone:"warn",revision:i,state:$,help:R,size:s,near:r}}function H(e,t=Date.now()){if(e===void 0||e.revision<=0)return"";let o=h(e.updated_at,t);return o?`Saved ${o}`:"Saved"}function F(e,t=Date.now()){let o=H(e,t);if(e===void 0||o==="")return l;let i=e.updated_at?Date.parse(e.updated_at):NaN,r=Number.isNaN(i)?"":`, ${new Date(i).toLocaleString()}`;return n`<span class="cf-saved" title=${`Revision ${e.revision}, ${d(e.updated_by)}${r}`}>${o}</span>`}var z=3e4,k=class{constructor(t){this.host=t;this.wanted=!1;this.connected=!1;t.addController(this)}show(t){this.wanted=t,this.sync()}get running(){return this.timer!==void 0}hostConnected(){this.connected=!0,this.sync()}hostDisconnected(){this.connected=!1,this.sync()}sync(){let t=this.wanted&&this.connected;t&&this.timer===void 0?this.timer=setInterval(()=>this.host.requestUpdate(),z):!t&&this.timer!==void 0&&(clearInterval(this.timer),this.timer=void 0)}};function O(e){let t=e.status,o=`${t.revision}. ${t.state}. ${t.help} ${t.size}`;return n`<footer class="cf-bar" aria-label="Stored copy">
+import{J as y,K as u,L as d,M as $,N as C,O as R,h as x}from"./chunk-7KBBX3CZ.js";import{b as m,c as n,eh as f,f as c}from"./chunk-466FWFTA.js";function g(e){return e==="Control Center list"?"it":"them"}var T="The watch could not read this save";function v(e){return e<1024?`${e} bytes`:e<1024*1024?`${Number((e/1024).toFixed(1))} KB`:`${Number((e/(1024*1024)).toFixed(2))} MB`}var N="Over the limit: Home Assistant will refuse this save.";function h(e,t){let o=e?Date.parse(e):NaN;return Number.isNaN(o)?"":x(Math.max(0,(t-o)/1e3))}function H(e){let t=d(e);return t.charAt(0).toUpperCase()+t.slice(1)}function F(e){let{record:t}=e,o=h(t.updated_at,e.now??Date.now()),i=`Revision ${t.revision} \xB7 ${d(t.updated_by)}${o?` ${o}`:""}`,r=e.limit>0&&e.size>e.limit,l=!r&&e.limit>0&&e.size/e.limit>.8,s=`${v(e.size)} of the ${v(e.limit)} Home Assistant keeps${r?`. ${N}`:l?". Close to the limit.":""}`;return u(t)?{tone:"err",revision:i,state:T,size:s,near:l,over:r,help:e.historyState==="unsupported"?`Change the ${e.noun} and save ${g(e.noun)} again.`:"Restore an earlier save from History."}:y(t)==="delivered"?{tone:"ok",revision:i,state:C,help:`The watch has revision ${t.revision}.`,size:s,near:l,over:r}:{tone:"warn",revision:i,state:$,help:R,size:s,near:l,over:r}}function z(e,t=Date.now()){if(e===void 0||e.revision<=0)return"";let o=h(e.updated_at,t);return o?`Saved ${o}`:"Saved"}function O(e,t=Date.now()){let o=z(e,t);if(e===void 0||o==="")return c;let i=e.updated_at?Date.parse(e.updated_at):NaN,r=Number.isNaN(i)?"":`, ${new Date(i).toLocaleString()}`;return n`<span class="cf-saved" title=${`Revision ${e.revision}, ${d(e.updated_by)}${r}`}>${o}</span>`}var E=3e4,k=class{constructor(t){this.host=t;this.wanted=!1;this.connected=!1;t.addController(this)}show(t){this.wanted=t,this.sync()}get running(){return this.timer!==void 0}hostConnected(){this.connected=!0,this.sync()}hostDisconnected(){this.connected=!1,this.sync()}sync(){let t=this.wanted&&this.connected;t&&this.timer===void 0?this.timer=setInterval(()=>this.host.requestUpdate(),E):!t&&this.timer!==void 0&&(clearInterval(this.timer),this.timer=void 0)}};function M(e){let t=e.status,o=`${t.revision}. ${t.state}. ${t.help} ${t.size}`;return n`<footer class="cf-bar" aria-label="Stored copy">
     <span class="cf-dot ${t.tone}" aria-hidden="true"></span>
     <span class="cf-text" title=${o}>
       <span class="cf-rev">${t.revision}</span>
       <span class="cf-sep" aria-hidden="true">·</span>
       <span class="cf-state ${t.tone}">${t.state}</span>
-      ${t.tone==="err"?n`<span class="cf-help">${t.help}</span>`:l}
+      ${t.tone==="err"?n`<span class="cf-help">${t.help}</span>`:c}
     </span>
-    <span class="cf-size ${t.near?"near":""}" title=${t.size}>${t.size}</span>
-    ${e.historyState==="unsupported"?l:n`<button type="button" class="cf-btn cf-history-btn ${t.tone==="err"?"lit":""}"
+    <span class="cf-size ${t.over?"over":t.near?"near":""}" title=${t.size}>${t.size}</span>
+    ${e.historyState==="unsupported"?c:n`<button type="button" class="cf-btn cf-history-btn ${t.tone==="err"?"lit":""}"
       aria-haspopup="dialog" aria-expanded=${e.historyOpen?"true":"false"}
       title="Earlier saves, with Restore" @click=${e.onHistory}>History</button>`}
     <button type="button" class="cf-btn cf-raw-btn" aria-haspopup="dialog" aria-expanded=${e.rawOpen?"true":"false"}
       title="The document as JSON" @click=${e.onRaw}>Raw configuration</button>
-  </footer>`}function j(e){let{record:t,entries:o,dirty:i}=e,r=e.now??Date.now(),s=u(t),c;if(e.historyState==="loading")c=n`<p class="pe-muted">Loading…</p>`;else if(e.historyState==="error")c=n`<p class="pe-muted">Could not load the earlier saves.</p>
-      <button type="button" class="pe-btn" @click=${e.onRetry}>Try again</button>`;else if(o.length===0)c=n`<p class="pe-muted">No earlier saves yet.</p>`;else{let b=s?o.find(a=>a.revision<t.revision)?.revision:void 0;c=n`${i?n`<p class="pe-muted">Save or discard your edits first.</p>`:l}
+  </footer>`}function j(e){let{record:t,entries:o,dirty:i}=e,r=e.now??Date.now(),l=u(t),s;if(e.historyState==="loading")s=n`<p class="pe-muted">Loading…</p>`;else if(e.historyState==="error")s=n`<p class="pe-muted">Could not load the earlier saves.</p>
+      <button type="button" class="pe-btn" @click=${e.onRetry}>Try again</button>`;else if(o.length===0)s=n`<p class="pe-muted">No earlier saves yet.</p>`;else{let b=l?o.find(a=>a.revision<t.revision)?.revision:void 0;s=n`${i?n`<p class="pe-muted">Save or discard your edits first.</p>`:c}
       <ul class="pe-history cf-rows">
       ${o.map(a=>{let S=a.revision===t.revision,w=h(a.updated_at,r);return n`<li class=${a.revision===b?"offer":""}>
           <span class="pe-h-text">
             <b>Revision ${a.revision}</b>
-            <span class="pe-muted">${N(a.updated_by)}${w?` ${w}`:""} · ${v(a.size)}</span>
+            <span class="pe-muted">${H(a.updated_by)}${w?` ${w}`:""} · ${v(a.size)}</span>
           </span>
           ${S?n`<span class="pe-badge">Current</span>`:n`<button type="button" class="pe-btn ${a.revision===b?"pe-primary":""}" ?disabled=${e.restoring||i}
                 title=${i?"Save or discard your edits first.":`Put revision ${a.revision} back as a new revision`}
@@ -32,13 +32,13 @@ import{J as y,K as u,L as d,M as $,N as C,O as R,h as x}from"./chunk-NATNYU7L.js
       </div>
       <button type="button" class="cf-close" title="Close" aria-label="Close" @click=${p}>${f("close")}</button>
     </div>
-    ${s?n`<p class="pe-warn" role="note">${T}. Restore the save before it.</p>`:l}
-    <div class="cf-dialog-body">${c}</div>
+    ${l?n`<p class="pe-warn" role="note">${T}. Restore the save before it.</p>`:c}
+    <div class="cf-dialog-body">${s}</div>
     <p class="pe-muted">Restoring saves the earlier copy again as a new revision. The copy stored now stays in this list.</p>
     <div class="pe-ask-foot">
       <button type="button" class="pe-btn" @click=${p}>Close</button>
     </div>
-  </dialog>`}function E(e){return JSON.stringify(e,null,2)??""}function M(e){let t=E(e.document);return n`<dialog class="cf-dialog cf-raw" aria-labelledby="cf-raw-title" @close=${e.onClosed}>
+  </dialog>`}function _(e){return JSON.stringify(e,null,2)??""}function A(e){let t=_(e.document);return n`<dialog class="cf-dialog cf-raw" aria-labelledby="cf-raw-title" @close=${e.onClosed}>
     <div class="cf-dialog-head">
       <div class="cf-dialog-title">
         <h3 id="cf-raw-title">Raw configuration</h3>
@@ -52,7 +52,7 @@ import{J as y,K as u,L as d,M as $,N as C,O as R,h as x}from"./chunk-NATNYU7L.js
       <button type="button" class="pe-btn" @click=${()=>e.onCopy(t)}>Copy</button>
       <button type="button" class="pe-btn pe-primary" @click=${p}>Close</button>
     </div>
-  </dialog>`}function p(e){e.currentTarget?.closest("dialog")?.close()}function P(e,t){for(let o of e.querySelectorAll("dialog.cf-dialog"))t.has(o)||(t.add(o),o.open||o.showModal())}async function A(e){try{return typeof navigator>"u"||navigator.clipboard===void 0?!1:(await navigator.clipboard.writeText(e),!0)}catch{return!1}}var J=m`
+  </dialog>`}function p(e){e.currentTarget?.closest("dialog")?.close()}function P(e,t){for(let o of e.querySelectorAll("dialog.cf-dialog"))t.has(o)||(t.add(o),o.open||o.showModal())}async function X(e){try{return typeof navigator>"u"||navigator.clipboard===void 0?!1:(await navigator.clipboard.writeText(e),!0)}catch{return!1}}var B=m`
   .cf-bar {
     flex: none; position: sticky; bottom: calc(-1 * var(--cf-pad, 16px)); z-index: 6;
     display: flex; align-items: center; gap: 8px; min-height: 36px;
@@ -72,6 +72,7 @@ import{J as y,K as u,L as d,M as $,N as C,O as R,h as x}from"./chunk-NATNYU7L.js
   .cf-help { margin-left: 6px; }
   .cf-size { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cf-size.near { color: var(--warning-color, var(--wa-amber, #ffa600)); font-weight: 600; }
+  .cf-size.over { color: var(--error-color, #db4437); font-weight: 600; }
   .cf-btn {
     flex: none; font: inherit; font-size: 12px; font-weight: 400; color: var(--wa-soft, var(--wa-muted)); cursor: pointer;
     background: transparent; border: 0; padding: 0 8px; min-height: 24px; border-radius: 6px;
@@ -110,4 +111,4 @@ import{J as y,K as u,L as d,M as $,N as C,O as R,h as x}from"./chunk-NATNYU7L.js
   }
   .cf-json:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .cf-copied { margin-right: auto; align-self: center; }
-`;export{L as a,F as b,k as c,O as d,j as e,M as f,P as g,A as h,J as i};
+`;export{F as a,O as b,k as c,M as d,j as e,A as f,P as g,X as h,B as i};

@@ -10,6 +10,7 @@ import { join } from "node:path";
 
 import type { OwnerSummary, WatchConfigHistoryEntry, WatchConfigRecord } from "../src/ha-api.js";
 import {
+  OVER_LIMIT_TEXT,
   REJECTED_TEXT,
   SAVED_TICK_MS,
   SavedAgoTicker,
@@ -22,7 +23,7 @@ import {
   renderConfigSaved,
 } from "../src/watch-pages/config-foot.js";
 import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
-import type { WatchPagesDocument } from "../src/watch-pages/model.js";
+import { type WatchPagesDocument, WATCH_CONFIG_LIMIT_BYTES, WATCH_PAGES_LIMIT_BYTES } from "../src/watch-pages/model.js";
 import "../src/watch-pages/page-editor.js";
 import { takeWatchMenusRecord } from "../src/watch-menus/draft.js";
 import type { MenusDocument } from "../src/watch-menus/model.js";
@@ -51,8 +52,8 @@ function record(over: Partial<WatchConfigRecord> = {}): WatchConfigRecord {
 
 const noop = () => undefined;
 
-function foot(r: WatchConfigRecord, historyState: "ready" | "unsupported" = "ready", size = 2_000): string {
-  const status = configFootStatus({ record: r, size, limit: 10_000, noun: "pages", historyState, now: NOW });
+function foot(r: WatchConfigRecord, historyState: "ready" | "unsupported" = "ready", size = 2_048): string {
+  const status = configFootStatus({ record: r, size, limit: 10_240, noun: "pages", historyState, now: NOW });
   return flat(renderConfigFoot({ status, historyState, historyOpen: false, rawOpen: false, onHistory: noop, onRaw: noop }));
 }
 
@@ -65,7 +66,7 @@ describe("the foot bar", () => {
     expect(text).toContain(">History</button>");
     expect(text).toContain(">Raw configuration</button>");
     expect(text.indexOf(">History<")).toBeLessThan(text.indexOf(">Raw configuration<"));
-    expect(text).toContain("2 KB of the 10 KB the watch takes");
+    expect(text).toContain("2 KB of the 10 KB Home Assistant keeps");
   });
 
   it("keeps every fact of the old Stored copy card: waiting, rejected, near the limit", () => {
@@ -79,6 +80,27 @@ describe("the foot bar", () => {
     expect(rejected).toContain("cf-history-btn lit");
     const old = configFootStatus({ record: record({ rejected_revision: 7, kind: "menus" }), size: 1, limit: 10, noun: "menus", historyState: "unsupported" });
     expect(old.help).toBe("Change the menus and save them again.");
+  });
+
+  it("measures against the cap Home Assistant enforces, says over past it, and never calls 189 % close", () => {
+    // The test bed's 40 pages: 472,375 bytes, well inside the 2 MB pages cap.
+    const big = configFootStatus({ record: record(), size: 472_375, limit: WATCH_PAGES_LIMIT_BYTES, noun: "pages", historyState: "ready", now: NOW });
+    expect(big.size).toBe("461.3 KB of the 2 MB Home Assistant keeps");
+    expect(big).toMatchObject({ near: false, over: false });
+    const close = configFootStatus({ record: record(), size: 1_900_000, limit: WATCH_PAGES_LIMIT_BYTES, noun: "pages", historyState: "ready", now: NOW });
+    expect(close).toMatchObject({ near: true, over: false });
+    expect(close.size).toContain("Close to the limit.");
+    const past = configFootStatus({ record: record(), size: 300 * 1024, limit: WATCH_CONFIG_LIMIT_BYTES, noun: "menus", historyState: "ready", now: NOW });
+    expect(past).toMatchObject({ near: false, over: true });
+    expect(past.size).toBe(`300 KB of the 256 KB Home Assistant keeps. ${OVER_LIMIT_TEXT}`);
+    expect(past.size).not.toContain("Close to the limit.");
+    const drawn = flat(renderConfigFoot({ status: past, historyState: "ready", historyOpen: false, rawOpen: false, onHistory: noop, onRaw: noop }));
+    expect(drawn).toContain("cf-size over");
+  });
+
+  it("uses the same caps as the integration", () => {
+    expect(WATCH_PAGES_LIMIT_BYTES).toBe(2 * 1024 * 1024);
+    expect(WATCH_CONFIG_LIMIT_BYTES).toBe(256 * 1024);
   });
 
   it("leaves History out on an integration that keeps no earlier saves", () => {

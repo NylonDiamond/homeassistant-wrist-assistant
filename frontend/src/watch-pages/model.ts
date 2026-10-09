@@ -75,9 +75,16 @@ export const WATCH_GRID_TOP_INSET = 34;
  * ignores only the top), so the 12 columns share the screen less twice this.
  * Measured on the 46 mm simulator: tiles span 2 to 206 of 208 points. */
 export const WATCH_GRID_SIDE_INSET = 2;
-/** The most the phone sends the watch in one sync, before compression. A
- * document near this will not reach the watch whole. */
-export const WATCH_SYNC_LIMIT_BYTES = 250_000;
+/** The most Home Assistant keeps of one page config, as compact UTF-8 JSON:
+ * `WATCH_CONFIG_MAX_DOCUMENT_BYTES["pages"]` in the integration's const.py,
+ * which refuses a save past it. The watch pulls the document from Home
+ * Assistant itself, whatever its size; the 250 KB figure this replaced was
+ * the phone's old sync to the watch, which no longer carries pages. */
+export const WATCH_PAGES_LIMIT_BYTES = 2 * 1024 * 1024;
+/** The same cap for the menus, voice settings, status pages, Control Center
+ * list and watch settings (`behavior`). A second home's `rooms` record has
+ * its own, smaller one (`HOME_ROOMS_LIMIT_BYTES`). */
+export const WATCH_CONFIG_LIMIT_BYTES = 256 * 1024;
 
 export function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);

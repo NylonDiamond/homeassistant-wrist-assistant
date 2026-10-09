@@ -475,10 +475,10 @@ describe("Entity quick menu", () => {
 });
 
 describe("budget and shape", () => {
-  it("measures compact UTF-8 JSON against the watch's 250,000 bytes", () => {
+  it("measures compact UTF-8 JSON against Home Assistant's 256 KB cap for menus", () => {
     const b = watchMenusBudget(DEFAULTS);
     expect(b.limit).toBe(WATCH_MENUS_LIMIT_BYTES);
-    expect(b.limit).toBe(250_000);
+    expect(b.limit).toBe(256 * 1024);
     expect(b.size).toBe(Buffer.byteLength(JSON.stringify(DEFAULTS)));
     expect(b.near).toBe(false);
     const big = anywhere(...Array.from({ length: 1 }, () => s("X", "topLeft", { type: "pages" }, { pad: "x".repeat(210_000) })));

@@ -18,7 +18,7 @@
 // Plan: app repo docs/pages_in_home_assistant_step4.md ("4d batch 5 build
 // contract", items 2 to 4).
 
-import { type JsonObject, WATCH_SYNC_LIMIT_BYTES, isJsonObject, sizeOf } from "../watch-pages/model.js";
+import { type JsonObject, WATCH_CONFIG_LIMIT_BYTES, isJsonObject, sizeOf } from "../watch-pages/model.js";
 import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { CONTROL_CENTER_CUSTOM_KEYS, controlCenterDefaultIcon, controlCenterKind } from "./rules.js";
@@ -33,7 +33,7 @@ export const CONTROL_CENTER_KEY = "entities";
 
 export const CONTROL_CENTER_SCHEMA_VERSION = 1;
 
-export const CONTROL_CENTER_LIMIT_BYTES = WATCH_SYNC_LIMIT_BYTES;
+export const CONTROL_CENTER_LIMIT_BYTES = WATCH_CONFIG_LIMIT_BYTES;
 
 export function asControlCenterDocument(value: unknown): ControlCenterDocument | undefined {
   return isJsonObject(value) ? value : undefined;

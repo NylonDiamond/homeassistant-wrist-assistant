@@ -33,7 +33,7 @@
 // and docs/phone_watch_link_removal_2026-10.md, "Step 8 build contract".
 
 import type { OwnerSummary, WatchConfigRecord } from "../ha-api.js";
-import { type WatchPagesDocument, WATCH_SYNC_LIMIT_BYTES, isHiddenWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPagesOf } from "../watch-pages/model.js";
+import { type WatchPagesDocument, WATCH_CONFIG_LIMIT_BYTES, isHiddenWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPagesOf } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { WAIT_FOR_IPHONE_TEXT, takesSettingsFromAnotherHome } from "../watch-settings.js";
 import {
@@ -557,7 +557,7 @@ export const ROOM_HISTORY_HOURS = 24;
 export const HOME_ROOMS_LIMIT_BYTES = 64 * 1024;
 
 export function roomsBudget(document: BehaviorDocument, kind: RoomsKind = "behavior"): { size: number; limit: number } {
-  return { size: new TextEncoder().encode(JSON.stringify(document)).length, limit: kind === "rooms" ? HOME_ROOMS_LIMIT_BYTES : WATCH_SYNC_LIMIT_BYTES };
+  return { size: new TextEncoder().encode(JSON.stringify(document)).length, limit: kind === "rooms" ? HOME_ROOMS_LIMIT_BYTES : WATCH_CONFIG_LIMIT_BYTES };
 }
 
 // ── saving ───────────────────────────────────────────────────────────────

@@ -25,7 +25,7 @@ import statusPageDefaults from "./status-page-defaults.json";
 import statusPageKeys from "./status-page-keys.json";
 import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import { randomWatchId } from "../watch-pages/edit.js";
-import { type JsonObject, WATCH_SYNC_LIMIT_BYTES, isJsonObject, sizeOf } from "../watch-pages/model.js";
+import { type JsonObject, WATCH_CONFIG_LIMIT_BYTES, isJsonObject, sizeOf } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { type StatusPagePreset, type StatusStates, STATUS_PAGE_RULES, defaultStatusIcon, readStatusRow } from "./rules.js";
 
@@ -83,7 +83,7 @@ export type StatusPagesDocument = JsonObject;
 /** The key of the page list. */
 export const STATUS_PAGES_KEY = "statusPages";
 
-export const STATUS_PAGES_LIMIT_BYTES = WATCH_SYNC_LIMIT_BYTES;
+export const STATUS_PAGES_LIMIT_BYTES = WATCH_CONFIG_LIMIT_BYTES;
 
 export function asStatusPagesDocument(value: unknown): StatusPagesDocument | undefined {
   return isJsonObject(value) ? value : undefined;

@@ -1,8 +1,8 @@
 // The bar pinned to the foot of the page and menu editors, after the
 // complication editor's footer (`panel.ts`, `renderFooter`): on the left a dot
 // and one line about the copy Home Assistant holds (its revision, who saved
-// it and when, whether a device has collected it, its size against what the
-// watch takes), on the right "History" and "Raw configuration".
+// it and when, whether a device has collected it, its size against what Home
+// Assistant keeps), on the right "History" and "Raw configuration".
 //
 // History is the earlier saves list that used to be a card of its own, in a
 // dialog, with the same Restore: a row's Restore hands the entry back to the
@@ -39,9 +39,16 @@ function them(noun: ConfigNoun): string {
 
 export const REJECTED_TEXT = "The watch could not read this save";
 
+/** A size in the units the caps are set in: 1024 bytes to a KB and 1024 KB
+ * to an MB, so the 256 KB and 2 MB caps read as round numbers. */
 function kb(bytes: number): string {
-  return bytes < 1000 ? `${bytes} bytes` : `${Number((bytes / 1000).toFixed(1))} KB`;
+  if (bytes < 1024) return `${bytes} bytes`;
+  if (bytes < 1024 * 1024) return `${Number((bytes / 1024).toFixed(1))} KB`;
+  return `${Number((bytes / (1024 * 1024)).toFixed(2))} MB`;
 }
+
+/** Said after the size when the document is past the cap. */
+export const OVER_LIMIT_TEXT = "Over the limit: Home Assistant will refuse this save.";
 
 function ago(iso: string | null | undefined, now: number): string {
   const at = iso ? Date.parse(iso) : NaN;
@@ -64,10 +71,13 @@ export interface ConfigFootStatus {
   state: string;
   /** What to do about the state, or what it means. */
   help: string;
-  /** The size against what the watch takes. */
+  /** The size against what Home Assistant keeps of one document. */
   size: string;
   /** The size is past four fifths of the limit. */
   near: boolean;
+  /** The size is past the limit, which Home Assistant refuses on save. The
+   * panel still lets the save be tried, and says so here. */
+  over: boolean;
 }
 
 /** What the bar says about the stored copy. Every fact the old "Stored copy"
@@ -84,18 +94,19 @@ export function configFootStatus(i: {
   const { record } = i;
   const when = ago(record.updated_at, i.now ?? Date.now());
   const revision = `Revision ${record.revision} · ${savedByWords(record.updated_by)}${when ? ` ${when}` : ""}`;
-  const near = i.limit > 0 && i.size / i.limit > 0.8;
-  const size = `${kb(i.size)} of the ${kb(i.limit)} the watch takes${near ? ". Close to the limit." : ""}`;
+  const over = i.limit > 0 && i.size > i.limit;
+  const near = !over && i.limit > 0 && i.size / i.limit > 0.8;
+  const size = `${kb(i.size)} of the ${kb(i.limit)} Home Assistant keeps${over ? `. ${OVER_LIMIT_TEXT}` : near ? ". Close to the limit." : ""}`;
   if (rejectedNow(record)) {
     return {
-      tone: "err", revision, state: REJECTED_TEXT, size, near,
+      tone: "err", revision, state: REJECTED_TEXT, size, near, over,
       help: i.historyState === "unsupported" ? `Change the ${i.noun} and save ${them(i.noun)} again.` : "Restore an earlier save from History.",
     };
   }
   if (deliveryState(record) === "delivered") {
-    return { tone: "ok", revision, state: COLLECTED_PILL_TEXT, help: `The watch has revision ${record.revision}.`, size, near };
+    return { tone: "ok", revision, state: COLLECTED_PILL_TEXT, help: `The watch has revision ${record.revision}.`, size, near, over };
   }
-  return { tone: "warn", revision, state: WAITING_PILL_TEXT, help: WAITING_HELP_TEXT, size, near };
+  return { tone: "warn", revision, state: WAITING_PILL_TEXT, help: WAITING_HELP_TEXT, size, near, over };
 }
 
 /** The toolbar's quiet fact about the stored copy, left of Discard: "Saved
@@ -190,7 +201,7 @@ export function renderConfigFoot(i: ConfigFootInput): TemplateResult {
       <span class="cf-state ${s.tone}">${s.state}</span>
       ${s.tone === "err" ? html`<span class="cf-help">${s.help}</span>` : nothing}
     </span>
-    <span class="cf-size ${s.near ? "near" : ""}" title=${s.size}>${s.size}</span>
+    <span class="cf-size ${s.over ? "over" : s.near ? "near" : ""}" title=${s.size}>${s.size}</span>
     ${i.historyState === "unsupported" ? nothing : html`<button type="button" class="cf-btn cf-history-btn ${s.tone === "err" ? "lit" : ""}"
       aria-haspopup="dialog" aria-expanded=${i.historyOpen ? "true" : "false"}
       title="Earlier saves, with Restore" @click=${i.onHistory}>History</button>`}
@@ -351,6 +362,7 @@ export const configFootStyles = css`
   .cf-help { margin-left: 6px; }
   .cf-size { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cf-size.near { color: var(--warning-color, var(--wa-amber, #ffa600)); font-weight: 600; }
+  .cf-size.over { color: var(--error-color, #db4437); font-weight: 600; }
   .cf-btn {
     flex: none; font: inherit; font-size: 12px; font-weight: 400; color: var(--wa-soft, var(--wa-muted)); cursor: pointer;
     background: transparent; border: 0; padding: 0 8px; min-height: 24px; border-radius: 6px;

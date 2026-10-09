@@ -45,7 +45,7 @@ import {
 import { WaRoomsEditor } from "../src/watch-rooms/rooms-editor.js";
 import { ROOM_KEYS } from "../src/watch-rooms/rules.js";
 import { type RoomsViewHost, renderRoomsBody } from "../src/watch-rooms/view.js";
-import { WATCH_SYNC_LIMIT_BYTES } from "../src/watch-pages/model.js";
+import { WATCH_CONFIG_LIMIT_BYTES } from "../src/watch-pages/model.js";
 import { PAIR_FIRST_TEXT, START_FRESH_BUTTON, START_FRESH_CONFIRM_TEXT, WAIT_FOR_IPHONE_TEXT } from "../src/watch-settings.js";
 
 // ── reading templates ────────────────────────────────────────────────────
@@ -234,8 +234,8 @@ describe("the record a watch's rooms live in", () => {
   it("is measured against its own 64 KiB cap", () => {
     expect(HOME_ROOMS_LIMIT_BYTES).toBe(65536);
     expect(roomsBudget({ schemaVersion: 1 }, "rooms")).toEqual({ size: 19, limit: 65536 });
-    expect(roomsBudget({ schemaVersion: 1 }).limit).toBe(WATCH_SYNC_LIMIT_BYTES);
-    expect(roomsBudget({ schemaVersion: 1 }, "behavior").limit).toBe(WATCH_SYNC_LIMIT_BYTES);
+    expect(roomsBudget({ schemaVersion: 1 }).limit).toBe(WATCH_CONFIG_LIMIT_BYTES);
+    expect(roomsBudget({ schemaVersion: 1 }, "behavior").limit).toBe(WATCH_CONFIG_LIMIT_BYTES);
   });
 });
 

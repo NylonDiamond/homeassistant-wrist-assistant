@@ -186,6 +186,44 @@ def _py_constant(module: str, name: str) -> int:
     raise AssertionError(f"{module}: no int constant named {name}")
 
 
+def test_the_panel_s_size_footer_uses_the_caps_home_assistant_enforces() -> None:
+    """The watch config editors' footer measures each document against these.
+    They used to say 250,000 bytes, a figure from the phone's old sync to the
+    watch, and called a 472 KB page config close to a limit it had passed."""
+    source = (_PKG / "const.py").read_text()
+    tree = ast.parse(source, filename="const.py")
+    caps = next(
+        node.value
+        for node in tree.body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "WATCH_CONFIG_MAX_DOCUMENT_BYTES"
+    )
+
+    def product(node: ast.expr) -> int:
+        """`2 * 1024 * 1024` and the like, the only shape the caps take."""
+        if isinstance(node, ast.Constant) and isinstance(node.value, int):
+            return node.value
+        assert isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult), ast.unparse(node)
+        return product(node.left) * product(node.right)
+
+    assert isinstance(caps, ast.Dict)
+    cap = {
+        ast.literal_eval(key): product(value)
+        for key, value in zip(caps.keys, caps.values, strict=True)
+    }
+    model = (
+        Path(__file__).resolve().parents[1] / "frontend/src/watch-pages/model.ts"
+    ).read_text()
+    pages = re.search(r"^export const WATCH_PAGES_LIMIT_BYTES = 2 \* 1024 \* 1024;", model, re.M)
+    others = re.search(r"^export const WATCH_CONFIG_LIMIT_BYTES = 256 \* 1024;", model, re.M)
+    assert pages is not None and others is not None
+    assert cap["pages"] == 2 * 1024 * 1024
+    for kind in ("behavior", "menus", "voice", "status_pages", "control_center"):
+        assert cap[kind] == 256 * 1024, kind
+    assert "WATCH_SYNC_LIMIT_BYTES" not in model
+
+
 def test_the_panel_mirrors_the_per_owner_complication_cap() -> None:
     """The panel refuses a split that would pass the cap, so it holds the number.
 

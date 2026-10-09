@@ -181,7 +181,7 @@ import {
   type WatchPagesDocument,
   WATCH_GRID_COLUMNS,
   WATCH_GRID_TOP_INSET,
-  WATCH_SYNC_LIMIT_BYTES,
+  WATCH_PAGES_LIMIT_BYTES,
   asWatchPagesDocument,
   isHiddenWatchPage,
   isJsonObject,
@@ -3029,7 +3029,7 @@ export class WaPageEditor extends LitElement {
     const status = configFootStatus({
       record,
       size: draft === undefined ? 0 : sizeOf(draft.document),
-      limit: WATCH_SYNC_LIMIT_BYTES,
+      limit: WATCH_PAGES_LIMIT_BYTES,
       noun: "pages",
       historyState: this.historyState,
     });
@@ -3276,7 +3276,7 @@ export class WaPageEditor extends LitElement {
   /** The stored copy's line, History and Raw configuration, pinned to the
    * foot of the editor (`config-foot.ts`), with the two dialogs they open. */
   private renderFoot(record: WatchConfigRecord, document: WatchPagesDocument, dirty: boolean): TemplateResult {
-    const status = configFootStatus({ record, size: sizeOf(document), limit: WATCH_SYNC_LIMIT_BYTES, noun: "pages", historyState: this.historyState });
+    const status = configFootStatus({ record, size: sizeOf(document), limit: WATCH_PAGES_LIMIT_BYTES, noun: "pages", historyState: this.historyState });
     const watchId = this.watchId;
     return html`${renderConfigFoot({
       status,
