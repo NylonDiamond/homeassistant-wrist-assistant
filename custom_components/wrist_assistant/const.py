@@ -448,6 +448,16 @@ SEALED_CODE_PAIRING_CAPABILITY = "sealed_code_pairing"
 # offer_cancel) and /v2/pair/redeem, a code confirm that stores an iPhone,
 # and the signed `rekey` op. The app requires it.
 PHONE_PAIRING_CAPABILITY = "phone_pairing"
+# What the integration advertises once an iPhone may own pages of its own
+# (app repo docs/phone_pages_mvp_2026-10.md, step 1): the watch config store
+# keeps an iPhone's pages, status pages, menus, rooms and settings under the
+# phone's own id and refuses it every other kind (WATCH_CONFIG_PHONE_KINDS),
+# a phone's `behavior` keeps only the phone's settings (PHONE_BEHAVIOR_KEYS),
+# the panel may start a phone's first record, and a /v2/delta long poll
+# signed by an iPhone is served as the phone's own, with no watch push token,
+# delivery mode or main house filed under it. The phone polls for its pages,
+# and the panel offers them, only when it sees this.
+PHONE_PAGES_CAPABILITY = "phone_pages"
 # What the integration advertises once an iPhone's push token lives under the
 # phone's own id and is paired with the watches of the same Home Assistant
 # user at send time (notifications.resolve_push_routes). The phone then

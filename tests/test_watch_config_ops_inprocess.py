@@ -1237,6 +1237,18 @@ def test_setup_hands_the_store_its_pairing_check() -> None:
     """The panel's create path asks the secret store whether the owner is a
     paired watch. A setup that forgot to pass the check would build a store
     on which the panel can never create a record, and one that asked only
-    whether the id is paired would let it make one under an iPhone."""
+    whether the id is paired would let it make one under an iPhone. The
+    iPhone check (phone pages) is what keeps a phone's records to its own
+    kinds and settings."""
     init = (_PKG_DIR / "__init__.py").read_text()
     assert "is_paired=widget_secret_store.is_paired_watch," in init
+    assert "is_iphone=widget_secret_store.is_paired_iphone," in init
+
+
+def test_the_phone_pages_capability_is_advertised() -> None:
+    """The phone polls for its own pages, and the panel offers them, only
+    when it sees this."""
+    init = (_PKG_DIR / "__init__.py").read_text()
+    const = (_PKG_DIR / "const.py").read_text()
+    assert "register_capability(PHONE_PAGES_CAPABILITY)" in init
+    assert 'PHONE_PAGES_CAPABILITY = "phone_pages"' in const

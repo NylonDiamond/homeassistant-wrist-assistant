@@ -48,6 +48,7 @@ from .const import (
     HTTP_ACTIONS_CAPABILITY,
     LIBRARY_OWNER_ID,
     PAGE_IMAGES_CAPABILITY,
+    PHONE_PAGES_CAPABILITY,
     PHONE_PAIRING_CAPABILITY,
     PUSH_PAIRED_BY_USER_CAPABILITY,
     PLATFORMS,
@@ -961,6 +962,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # iPhone pairing with no Home Assistant token: the panel's QR offer,
     # WAPairRedeemView, an iPhone by code, and the signed rekey op.
     coordinator.register_capability(PHONE_PAIRING_CAPABILITY)
+    # Phone pages: an iPhone owns its own pages, status pages, menus, rooms
+    # and settings in the watch config store, the panel may start them, and
+    # the phone polls /v2/delta for them signed as itself. The phone holds
+    # that poll, and the panel lists phones in the Pages editor, only when
+    # they see this.
+    coordinator.register_capability(PHONE_PAGES_CAPABILITY)
     # The home's HTTP action library (http_actions_store.py): the signed
     # http_actions_hand_over, http_actions_get and http_action_run ops and
     # `http_actions` on every delta reply. The phone hands its library over,

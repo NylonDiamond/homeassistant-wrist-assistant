@@ -21,6 +21,10 @@ Covered:
   notification style and status pages join the three, and the panel's first
   record of each wakes the parked poll. Control Center (step 4d batch 5) and
   a second home's rooms (step 8) make eight.
+* Phone pages, the sync contract: a panel save of an iPhone's own pages or
+  settings wakes that iPhone's parked poll with the phone's own new
+  revision, and never the watch of the same user, whose records stay as
+  they were; a save for the watch wakes the watch and never the phone.
 """
 
 from __future__ import annotations
@@ -1171,14 +1175,21 @@ def _load_into_test_pkg(name: str):
     return module
 
 
-def _watch_config_store(paired: frozenset[str] = frozenset()):
+def _watch_config_store(
+    paired: frozenset[str] = frozenset(), iphones: frozenset[str] = frozenset()
+):
     """A loaded, empty WatchConfigStore. Call inside the coordinator fixture,
     whose teardown drops every module loaded here. ``paired`` is the owner
-    ids its pairing check answers yes for, as the secret store would."""
+    ids its pairing check answers yes for, as the secret store would, and
+    ``iphones`` the ones its iPhone check does (phone pages)."""
     _stub("homeassistant.helpers.storage", Store=_NoDiskStore)
     const = _load_into_test_pkg("const")
     store_module = _load_into_test_pkg("watch_config_store")
-    store = store_module.WatchConfigStore(_StoreHass(), is_paired=lambda owner: owner in paired)
+    store = store_module.WatchConfigStore(
+        _StoreHass(),
+        is_paired=lambda owner: owner in paired,
+        is_iphone=lambda owner: owner in iphones,
+    )
     asyncio.run(store.async_load())
     return store, const
 
@@ -2265,3 +2276,97 @@ def test_setup_wires_the_secret_store_in_as_the_device_check() -> None:
     init = (_PKG_DIR / "__init__.py").read_text()
     assert "coordinator.attach_device_check(" in init
     assert "widget_secret_store.get(watch_id) is not None" in init
+
+
+# ── phone pages: the sync contract ───────────────────────────────────────
+
+
+def test_a_panel_save_for_a_phone_wakes_the_phone_and_never_its_watch(coordinator) -> None:
+    """The end to end contract the phone is built on (app repo
+    docs/phone_pages_mvp_2026-10.md, "How sync works"). An iPhone and a
+    watch of the same user both hold a parked poll, each signed as itself.
+
+    * The panel's first pages and first settings for the phone each wake the
+      phone's poll at once, and the reply names the phone's own new
+      revision of that kind. The watch's poll stays parked, and the watch's
+      records are as they were.
+    * The phone's settings keep only the phone's keys.
+    * A panel save for the watch wakes the watch and leaves the phone's poll
+      parked and its records as they were.
+    """
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store(
+        paired=frozenset({"w1"}), iphones=frozenset({"phone-1"})
+    )
+    coord.attach_watch_config_store(store)
+    store.async_add_listener(coord.watch_config_changed)
+    ent = "wrist_assistant.pp1"
+    hass.states.set(ent, "off")
+    _device_put(store, "pages")
+    _device_put(store, "behavior")
+    watch_pages = store.get("w1", "pages").document
+    watch_behavior = store.get("w1", "behavior").document
+
+    def parked(watch_id: str, since: int, timeout: int = 10):
+        return asyncio.create_task(
+            _poll(coord, watch_id=watch_id, since=since, entities=[ent], timeout=timeout)
+        )
+
+    async def run() -> None:
+        status, body = await _poll(coord, watch_id="w1", entities=[ent])
+        assert body["watch_config"] == _revs(pages=1, behavior=1)
+        watch_cursor = body["next_cursor"]
+        status, body = await _poll(coord, watch_id="phone-1", entities=[ent])
+        assert body["watch_config"] == _revs()
+        phone_cursor = body["next_cursor"]
+
+        watch_poll = parked("w1", watch_cursor)
+        phone_poll = parked("phone-1", phone_cursor)
+        await asyncio.sleep(0.05)
+        assert {"w1", "phone-1"} <= set(coord._waiters)
+
+        # The phone's first pages.
+        started = hass.loop.time()
+        pages = store.panel_save("phone-1", "pages", _pages_doc("Phone"), base_revision=0)
+        status, body = await asyncio.wait_for(phone_poll, timeout=2)
+        assert hass.loop.time() - started < 1.0
+        assert status == 200, body
+        assert body["watch_config"] == _revs(pages=pages.revision)
+        assert not watch_poll.done() and "w1" in coord._waiters
+
+        # The phone's first settings, a watch only key dropped.
+        phone_poll = parked("phone-1", phone_cursor)
+        await asyncio.sleep(0.05)
+        behavior = store.panel_save(
+            "phone-1",
+            "behavior",
+            {"schemaVersion": 1, "wrapPages": True, "serverMode": "Local"},
+            base_revision=0,
+        )
+        status, body = await asyncio.wait_for(phone_poll, timeout=2)
+        assert status == 200, body
+        assert body["watch_config"] == _revs(pages=pages.revision, behavior=behavior.revision)
+        assert store.get("phone-1", "behavior").document == {"schemaVersion": 1, "wrapPages": True}
+        assert not watch_poll.done() and "w1" in coord._waiters
+
+        # The watch's records were never touched.
+        assert store.get("w1", "pages").revision == 1
+        assert store.get("w1", "pages").document == watch_pages
+        assert store.get("w1", "behavior").revision == 1
+        assert store.get("w1", "behavior").document == watch_behavior
+
+        # The reverse: a save for the watch wakes the watch, not the phone.
+        phone_poll = parked("phone-1", phone_cursor, timeout=1)
+        await asyncio.sleep(0.05)
+        store.panel_save("w1", "pages", _pages_doc("Watch"), base_revision=1)
+        status, body = await asyncio.wait_for(watch_poll, timeout=2)
+        assert status == 200, body
+        assert body["watch_config"] == _revs(pages=2, behavior=1)
+        assert not phone_poll.done()
+        # The phone's poll runs out quietly: nothing of its own moved.
+        status, body = await asyncio.wait_for(phone_poll, timeout=3)
+        assert status == 204 and body is None
+        assert store.get("phone-1", "pages").revision == pages.revision
+        assert store.get("phone-1", "behavior").revision == behavior.revision
+
+    asyncio.run(run())
