@@ -184,6 +184,39 @@ describe("the catalog", () => {
     }
   });
 
+  // The integration keeps only the `iphone` keys on a phone's settings, and
+  // its own copy of that list is held to this file by a Python test.
+  it("says for every row which devices read it: the watch always, the iPhone for 35", () => {
+    for (const s of settings) {
+      expect(s.devices, s.key).toBeDefined();
+      expect([["watch"], ["watch", "iphone"]], s.key).toContainEqual([...s.devices!]);
+    }
+    expect(settings.filter((s) => s.devices!.includes("iphone")).length).toBe(35);
+    expect(
+      settings
+        .filter((s) => !s.devices!.includes("iphone"))
+        .map((s) => s.key)
+        .sort(),
+    ).toEqual([
+      "bottomEdgePageSwipeSensitivity",
+      "deltaTimeout",
+      "handGestureAction",
+      "handGestureSceneTargetId",
+      "handGestureScriptTargetId",
+      "motionGestureActionsJSON",
+      "motionGestureSensitivity",
+      "motionGestureSensitivityLevel",
+      "serverMode",
+      "sliderCrownSensitivity",
+    ]);
+  });
+
+  it("hangs every iPhone row's showIf on another iPhone row", () => {
+    for (const s of settings.filter((x) => x.showIf !== undefined && x.devices!.includes("iphone"))) {
+      expect(byKey.get(s.showIf!.key)!.devices, s.key).toContain("iphone");
+    }
+  });
+
   it("puts every dependent row after the row it depends on", () => {
     for (const section of WATCH_SETTINGS_CATALOG.sections) {
       const order = section.settings.map((s) => s.key);

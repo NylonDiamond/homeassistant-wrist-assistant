@@ -204,6 +204,71 @@ WATCH_CONFIG_PANEL_KINDS = frozenset(
         "rooms",
     }
 )
+# The settings an iPhone's `behavior` record keeps: every key the panel's
+# catalog (frontend/src/watch-settings-catalog.json) marks with
+# `"devices": ["watch", "iphone"]`. A behavior write for an iPhone owner keeps
+# these and PHONE_BEHAVIOR_DECODE_KEYS and drops the rest: the watch only
+# settings (connection, double pinch, crown, bottom edge swipe, wrist
+# motions), the room keys a watch's main house keeps in `behavior` (a phone
+# has the `rooms` kind for those) and the developer flags. The runtime does
+# not ship frontend/src, so the list lives here too, and
+# tests/test_phone_behavior_keys.py keeps it equal to the catalog.
+PHONE_BEHAVIOR_KEYS = frozenset(
+    {
+        # Interaction
+        "longPressDuration",
+        "entityRadialVerticalQuickRadialGestureEnabled",
+        "entityRadialVerticalQuickRadialGestureTrigger",
+        "entityRadialVerticalQuickRadialGestureSpeed",
+        "topSectionDoubleTapAction",
+        "topSectionDoubleTapSceneTargetId",
+        "topSectionDoubleTapScriptTargetId",
+        "pointControlShowHUD",
+        "dismissControlsOnClose",
+        "showControlEntityName",
+        "automationTriggerSkipConditions",
+        "showPendingAnimation",
+        "pendingAnimationDisabledDomains",
+        # Navigation
+        "pageTransitionStyle",
+        "pageTitleMode",
+        "showPageIndicator",
+        "pageIndicatorStyle",
+        "pageIndicatorOpacity",
+        "pageIndicatorPosition",
+        "pageIndicatorSize",
+        "pageIndicatorColorHex",
+        "pullDownAction",
+        "pullDownSceneTargetId",
+        "pullDownScriptTargetId",
+        "wrapPages",
+        "popupBackgroundMaterial",
+        # Camera
+        "cameraStreamMode",
+        "cameraRefreshRate",
+        "cameraHDRefreshRate",
+        "cameraRefreshOnOpen",
+        "cameraRefreshOnOpenDebounce",
+        "cameraRefreshOnPageOpenDelay",
+        "cameraShowLoadingDots",
+        "cameraSwipeSensitivity",
+        "cameraSwipeWrap",
+    }
+)
+# The keys an iPhone's `behavior` keeps beside its settings because the app
+# cannot decode the document without them: `schemaVersion`, and the four
+# `BehaviorPreferences` properties that are not optional in Swift and have no
+# row in the catalog (`BEHAVIOR_APP_DEFAULTS` in frontend/src/watch-settings.ts).
+# The other properties that are not optional are phone settings already.
+PHONE_BEHAVIOR_DECODE_KEYS = frozenset(
+    {
+        "schemaVersion",
+        "crownSensitivity",
+        "crownSwitchesPages",
+        "doubleTapSpeed",
+        "hapticIntensity",
+    }
+)
 # `updated_by` on a record the panel saved, in place of a device's signing id.
 WATCH_CONFIG_PANEL_WRITER = "panel"
 # Compact UTF-8 JSON size a stored document may reach, per kind. Every kind in

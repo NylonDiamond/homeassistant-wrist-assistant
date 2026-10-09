@@ -54,8 +54,17 @@ export interface SettingOption {
  * string under `key`, with the scene and script targets as JSON strings
  * under `sceneKey` and `scriptKey`.
  */
+/** A device that reads a setting: the watch, or the iPhone for its own pages. */
+export type SettingDevice = "watch" | "iphone";
+
 export interface CatalogSetting {
   key: string;
+  /** The devices that read this key. Every entry of the catalog says it:
+   * `["watch"]` for a watch only setting, `["watch", "iphone"]` for one the
+   * iPhone keeps too. The integration keeps only `iphone` keys on a phone's
+   * settings (`PHONE_BEHAVIOR_KEYS`, which a test holds to this file).
+   * Optional for a catalog built in a test. */
+  devices?: readonly SettingDevice[];
   type: "bool" | "enum" | "color" | "entity" | "number" | "domains" | "motionGestures";
   label: string;
   help?: string;
