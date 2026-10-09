@@ -777,6 +777,19 @@ export function pairOtherUserText(kind: PairDeviceKind): string {
 }
 export const PAIR_OTHER_USER_TEXT = pairOtherUserText("watch");
 
+/** What a non-admin reads about a device paired to someone else: they can
+ * never take it over, so no Replace is offered. */
+export function pairOtherPersonText(kind: PairDeviceKind): string {
+  return `This ${deviceWord(kind)} is paired to another person. Only an administrator can replace that pairing.`;
+}
+export const PAIR_OTHER_PERSON_TEXT = pairOtherPersonText("watch");
+
+/** Whether the caller can pair this device at all: a device paired to
+ * another person needs an administrator, whatever is ticked. */
+export function pairNeedsAdmin(lookup: PairLookupFacts, isAdmin: boolean): boolean {
+  return lookup.paired_by_other_user === true && !isAdmin;
+}
+
 /** A code as the server compares it: trimmed, upper-case, without the spaces
  * and hyphens people type to group it, and nothing that is not a letter or
  * a digit from 2 to 9 (the code's alphabet has no 0 or 1). */
@@ -818,9 +831,12 @@ export function pairLookupLine(lookup: PairLookupFacts): string {
   return `${name}, app ${version}${build === undefined ? "" : ` (${build})`}`;
 }
 
-/** The warnings to read before pairing, in the order the card shows them. */
-export function pairLookupWarnings(lookup: PairLookupFacts): string[] {
+/** The warnings to read before pairing, in the order the card shows them.
+ * For a non-admin looking at a device paired to someone else, only that it
+ * needs an administrator (`pairNeedsAdmin`). */
+export function pairLookupWarnings(lookup: PairLookupFacts, isAdmin = true): string[] {
   const kind = pairDeviceKind(lookup);
+  if (pairNeedsAdmin(lookup, isAdmin)) return [pairOtherPersonText(kind)];
   const out: string[] = [];
   if (lookup.already_paired === true) out.push(pairAlreadyPairedText(kind));
   if (lookup.paired_by_other_user === true) out.push(pairOtherUserText(kind));
@@ -1037,6 +1053,7 @@ export function pairErrorText(err: unknown, step: "lookup" | "confirm" | "offer"
       : "Update the Wrist Assistant integration to pair a watch with a code.";
   }
   if (code === "needs_replace") return `This ${deviceWord(kind)} is already paired. Tick ${PAIR_REPLACE_LABEL} to pair it again.`;
+  if (code === "paired_by_other_user") return pairOtherPersonText(kind);
   if (code === "needs_allow_remote") return `The request came from outside your network. Tick ${pairExpectLabel(kind)} to pair it.`;
   const message = String((err as { message?: string } | null | undefined)?.message ?? err);
   if (step === "offer") return `Could not show a QR code: ${message}`;

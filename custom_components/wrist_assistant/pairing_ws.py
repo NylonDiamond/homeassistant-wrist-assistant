@@ -463,6 +463,25 @@ async def ws_pair_confirm(
         )
         return
     existing = secret_store.get(watch_id)
+    is_admin = bool(user is not None and user.is_admin)
+    # A non-admin may re-key only a device that is theirs or bound to no one,
+    # exactly what register_secret lets any signed-in user do; a device bound
+    # to someone else needs an administrator. Checked before Replace, which
+    # they could tick and still never get past this.
+    if (
+        existing is not None
+        and existing.user_id is not None
+        and existing.user_id != user_id
+        and not is_admin
+    ):
+        _LOGGER.warning("Refused pair confirm for watch_id=%s: bound to another user", watch_id)
+        connection.send_error(
+            msg["id"],
+            "paired_by_other_user",
+            f"This {noun} is paired to another person. Only an administrator "
+            "can replace that pairing.",
+        )
+        return
     if existing is not None and msg.get("replace") is not True:
         connection.send_error(
             msg["id"],
@@ -488,25 +507,6 @@ async def ws_pair_confirm(
     )
     if error is not None:
         connection.send_error(msg["id"], error.code, error.message)
-        return
-
-    is_admin = bool(user is not None and user.is_admin)
-    # A non-admin may re-key only a device that is theirs or bound to no one,
-    # exactly what register_secret lets any signed-in user do; a device bound
-    # to someone else needs an administrator.
-    if (
-        existing is not None
-        and existing.user_id is not None
-        and existing.user_id != user_id
-        and not is_admin
-    ):
-        _LOGGER.warning("Refused pair confirm for watch_id=%s: bound to another user", watch_id)
-        connection.send_error(
-            msg["id"],
-            "paired_by_other_user",
-            "This device is paired by another user. Ask an admin to forget "
-            "it in the Wrist Assistant panel first.",
-        )
         return
 
     sealed_reply: dict[str, str] | None = None

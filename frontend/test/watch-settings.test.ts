@@ -55,6 +55,8 @@ import {
   optionsFor,
   pairCodeIsComplete,
   pairErrorText,
+  pairNeedsAdmin,
+  PAIR_OTHER_PERSON_TEXT,
   pairLookupLine,
   pairLookupWarnings,
   pairRemoteWarning,
@@ -699,6 +701,20 @@ describe("pairing a watch by its code", () => {
     expect(pairLookupWarnings({ kind: "iphone", already_paired: true, paired_by_other_user: true }))
       .toEqual(["This iPhone is already paired. Pairing again gives it a new key.", "This iPhone was paired by another user."]);
     expect(pairRemoteWarning("203.0.113.7", "iphone")).toBe("The request came from outside your network. Only pair an iPhone you expect.");
+  });
+
+  it("tells a non-admin that someone else's device needs an administrator, and never to tick Replace", () => {
+    const theirs = { kind: "watch", already_paired: true, paired_by_other_user: true, needs_replace: true };
+    expect(pairNeedsAdmin(theirs, false)).toBe(true);
+    expect(pairNeedsAdmin(theirs, true)).toBe(false);
+    expect(pairNeedsAdmin({ already_paired: true }, false)).toBe(false);
+    expect(PAIR_OTHER_PERSON_TEXT).toBe("This watch is paired to another person. Only an administrator can replace that pairing.");
+    expect(pairLookupWarnings(theirs, false)).toEqual([PAIR_OTHER_PERSON_TEXT]);
+    // The admin path is as it was.
+    expect(pairLookupWarnings(theirs, true))
+      .toEqual(["This watch is already paired. Pairing again gives it a new key.", "This watch was paired by another user."]);
+    expect(pairErrorText({ code: "paired_by_other_user", message: "x" }, "confirm")).toBe(PAIR_OTHER_PERSON_TEXT);
+    expect(pairErrorText({ code: "paired_by_other_user", message: "x" }, "confirm")).not.toContain("Tick");
   });
 
   it("offers the link into the app only on an iPhone, which cannot scan its own screen", () => {

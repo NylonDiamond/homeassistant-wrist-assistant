@@ -464,6 +464,28 @@ def test_a_non_admin_cannot_take_another_user_s_watch(env) -> None:
     assert env.pair_store.get(pending.code) is pending
 
 
+def test_a_non_admin_is_never_told_to_tick_replace_for_someone_else_s_watch(env) -> None:
+    """Without Replace too, the refusal is that it needs an administrator:
+    ticking Replace could never get them past it."""
+    env.secret_store.register(WATCH, SECRET_B, "watch-self-provision", user_id="bob")
+    pending = _pending(env)
+    connection = _call(env, env.ws.ws_pair_confirm, user=_User("alice"), code=pending.code)
+    [(_id, code, message)] = connection.errors
+    assert code == "paired_by_other_user"
+    assert message == (
+        "This watch is paired to another person. Only an administrator can "
+        "replace that pairing."
+    )
+    assert "Replace to" not in message
+
+
+def test_an_admin_is_still_asked_to_tick_replace(env) -> None:
+    env.secret_store.register(WATCH, SECRET_B, "watch-self-provision", user_id="bob")
+    pending = _pending(env)
+    code, _message = _error(env, env.ws.ws_pair_confirm, code=pending.code)
+    assert code == "needs_replace"
+
+
 # ── whose watch it is ────────────────────────────────────────────────────
 
 

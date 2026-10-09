@@ -389,6 +389,25 @@ describe("Watch settings as a page under the Watch app row", () => {
       expect(confirms(ha.sent)[0]!.replace).toBe(true);
     });
 
+    it("offers no Replace and no Pair to someone who is not an administrator for another person's watch", async () => {
+      const { inside, ha, text } = await lookedUp({
+        notAdmin: true, lookup: { already_paired: true, paired_by_other_user: true, needs_replace: true },
+      });
+      const shown = text();
+      expect(shown).toContain("This watch is paired to another person. Only an administrator can replace that pairing.");
+      expect(shown).not.toContain("Replace its pairing");
+      expect(shown).not.toContain("ws-pair-go");
+      expect(shown).not.toContain("Tick");
+      await inside.pairCard.confirmPair();
+      expect(confirms(ha.sent)).toHaveLength(0);
+    });
+
+    it("keeps Replace for an administrator on another person's watch", async () => {
+      const { text } = await lookedUp({ lookup: { already_paired: true, paired_by_other_user: true } });
+      expect(text()).toContain("Replace its pairing");
+      expect(text()).toContain("This watch was paired by another user.");
+    });
+
     it("starts on the person a known watch already belongs to", async () => {
       const { inside, ha } = await lookedUp({ pickUser: true, boundUser: "chen" });
       expect(inside.pairCard.pair.userId).toBe("chen");

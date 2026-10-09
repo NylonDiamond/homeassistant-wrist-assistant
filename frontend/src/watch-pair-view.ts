@@ -58,6 +58,7 @@ import {
   type PairUserChoice,
   errorCode,
   mayPairForOthers,
+  pairNeedsAdmin,
   normalizePairCode,
   pairCanConfirm,
   pairChecksNeeded,
@@ -329,6 +330,7 @@ export class PairWatchCard {
     const { users, userId, asked } = this.pair;
     const ticked = this.pair.ticked ?? UNTICKED;
     const needed = pairChecksNeeded(found, asked);
+    if (pairNeedsAdmin(found, mayPairForOthers(hass.user))) return;
     if (!pairCanConfirm(needed, ticked, users, userId)) return;
     const kind = pairDeviceKind(found);
     const visit = this.visit;
@@ -586,6 +588,17 @@ export class PairWatchCard {
     const needed = pairChecksNeeded(found, p.asked);
     const ticked = p.ticked ?? UNTICKED;
     const busy = p.busy !== undefined;
+    const admin = mayPairForOthers(this.hass?.user);
+    // Paired to someone else and the caller is no administrator: there is
+    // nothing they can tick, so neither box nor Pair is offered.
+    if (pairNeedsAdmin(found, admin)) {
+      return html`<div class="field readout">
+          <span>${pairDeviceTitle(kind)}</span>
+          <div class="readout-v ws-pair-watch">${pairLookupLine(found)}</div>
+        </div>
+        ${this.renderPairRequest(found, kind)}
+        ${pairLookupWarnings(found, admin).map((line) => html`<div class="hint warn ws-pair-admin">${line}</div>`)}`;
+    }
     const ready = pairCanConfirm(needed, ticked, p.users, p.userId);
     const why = !pairPersonPicked(p.users, p.userId)
       ? "Choose a person first"
