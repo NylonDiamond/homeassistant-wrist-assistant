@@ -17,6 +17,9 @@ Covered:
 * The session listeners in ``sensor.py`` and ``text.py`` add per-device
   entities only for a device that still has a secret, so a session that
   outlived its device cannot re-create it as an empty shell.
+* ``text.py`` adds one Name per device: a phone that polls gets its Name
+  from the iPhone path only, a watch from its session only, and no listener
+  adds one again while Home Assistant is still registering it.
 """
 
 from __future__ import annotations
@@ -203,10 +206,12 @@ def test_removing_a_device_registered_as_the_library_touches_nothing(remove_devi
 class _Entity:
     """Stands in for every entity class the listeners construct."""
 
-    def __init__(self, cls_name: str, *args: Any, **_kwargs: Any) -> None:
+    def __init__(self, cls_name: str, *args: Any, **kwargs: Any) -> None:
         self.kind = cls_name
         # The home-wide sensors take no device id.
         self.watch_id = next((a for a in args if isinstance(a, str)), None)
+        # The device kind a Name entity was made for.
+        self.device_kind = kwargs.get("kind")
 
 
 def _entity_factory(cls_name: str):
@@ -230,6 +235,7 @@ class _Coordinator:
 class _SecretStore:
     def __init__(self) -> None:
         self.entries: dict[str, types.SimpleNamespace] = {}
+        self.listeners: list = []
 
     def get(self, watch_id: str):
         return self.entries.get(watch_id)
@@ -238,8 +244,13 @@ class _SecretStore:
     def all_entries(self):
         return dict(self.entries)
 
-    def async_add_listener(self, _cb):
+    def async_add_listener(self, cb):
+        self.listeners.append(cb)
         return lambda: None
+
+    def fire(self) -> None:
+        for cb in list(self.listeners):
+            cb()
 
 
 class _EntityRegistry:
@@ -265,6 +276,8 @@ def _namespace_for(module: str, registry: _EntityRegistry) -> dict[str, Any]:
         callback=lambda f: f,
         er=types.SimpleNamespace(async_get=lambda _hass: registry),
     )
+    if module == "text.py":
+        _function(module, "name_unique_id", namespace)
     return namespace
 
 
@@ -334,3 +347,101 @@ def test_a_device_paired_again_under_the_same_id_gets_its_entities_back(module) 
     secrets.entries["w1"] = types.SimpleNamespace(device_kind="watch")
     coordinator.fire()
     assert {watch_id for _, watch_id in _session_entities(added, module)} == {"w1"}
+
+
+# ── text.py: one Name per device, and only a watch's from its session ────
+
+
+def _names(added: list[_Entity]) -> list[tuple[str, str | None]]:
+    return [(e.watch_id, e.device_kind) for e in added if e.kind == "DeviceNameText"]
+
+
+def test_a_phone_that_polls_gets_one_name_and_it_is_an_iphone_s() -> None:
+    """A phone signer polling the delta endpoint has a live session like a
+    watch. Its Name comes from the iPhone path; the session path used to add
+    a second one with the same unique id, which Home Assistant refused with
+    an error on every start."""
+    coordinator, secrets, registry, added = _setup("text.py")
+    secrets.entries["p1"] = types.SimpleNamespace(device_kind="iphone")
+    secrets.fire()
+    assert _names(added) == [("p1", "iphone")]
+
+    # The phone polls before Home Assistant has registered the entity, and
+    # again after.
+    coordinator.real_sessions["p1"] = object()
+    coordinator.fire()
+    registry.unique_ids.add("wrist_assistant_p1_name")
+    coordinator.fire()
+    secrets.fire()
+    assert _names(added) == [("p1", "iphone")]
+
+
+def test_a_polling_phone_present_at_setup_gets_one_name() -> None:
+    """After a reload or a restart the phone's session and secret are both
+    there when the platform sets up, and its entity is in the registry from
+    the run before."""
+    registry = _EntityRegistry()
+    registry.unique_ids.add("wrist_assistant_p1_name")
+    setup = _function("text.py", "async_setup_entry", _namespace_for("text.py", registry))
+    coordinator = _Coordinator()
+    coordinator.real_sessions["p1"] = object()
+    secrets = _SecretStore()
+    secrets.entries["p1"] = types.SimpleNamespace(device_kind="iphone")
+    added: list[_Entity] = []
+    entry = types.SimpleNamespace(
+        entry_id="entry-123",
+        runtime_data=types.SimpleNamespace(coordinator=coordinator, widget_secret_store=secrets),
+        async_on_unload=lambda _unsub: None,
+    )
+    asyncio.run(setup(object(), entry, lambda entities: added.extend(entities)))
+    coordinator.fire()
+    secrets.fire()
+    assert _names(added) == [("p1", "iphone")]
+
+
+def test_a_watch_gets_its_name_from_its_session_only() -> None:
+    coordinator, secrets, _registry, added = _setup("text.py")
+    secrets.entries["w1"] = types.SimpleNamespace(device_kind="watch")
+    secrets.fire()
+    assert _names(added) == []
+
+    coordinator.real_sessions["w1"] = object()
+    coordinator.fire()
+    coordinator.fire()
+    secrets.fire()
+    assert _names(added) == [("w1", "watch")]
+
+
+def test_a_name_is_never_added_twice_and_comes_back_once_deleted() -> None:
+    """Listeners that fire before Home Assistant has registered a new entity
+    must not add it again; one the user deleted is added back, once."""
+    coordinator, secrets, registry, added = _setup("text.py")
+    secrets.entries["w1"] = types.SimpleNamespace(device_kind="watch")
+    coordinator.real_sessions["w1"] = object()
+    for _ in range(3):
+        coordinator.fire()
+    assert _names(added) == [("w1", "watch")]
+
+    registry.unique_ids.add("wrist_assistant_w1_name")
+    coordinator.fire()
+    assert _names(added) == [("w1", "watch")]
+
+    # The user deletes the entity from the registry.
+    registry.unique_ids.clear()
+    coordinator.fire()
+    coordinator.fire()
+    assert _names(added) == [("w1", "watch"), ("w1", "watch")]
+
+
+def test_an_unpaired_phone_paired_again_gets_its_name_back() -> None:
+    _coordinator, secrets, registry, added = _setup("text.py")
+    secrets.entries["p1"] = types.SimpleNamespace(device_kind="iphone")
+    secrets.fire()
+    registry.unique_ids.add("wrist_assistant_p1_name")
+
+    del secrets.entries["p1"]
+    registry.unique_ids.clear()
+    secrets.fire()
+    secrets.entries["p1"] = types.SimpleNamespace(device_kind="iphone")
+    secrets.fire()
+    assert _names(added) == [("p1", "iphone"), ("p1", "iphone")]

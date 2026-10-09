@@ -19,6 +19,12 @@ from .widget_secret_store import (
 )
 
 
+def name_unique_id(device_id: str) -> str:
+    """The unique id of a device's Name entity, the same for a watch and an
+    iPhone."""
+    return f"wrist_assistant_{device_id}_name"
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: WristAssistantConfigEntry,
@@ -36,11 +42,35 @@ async def async_setup_entry(
         # list. The owner_iphone_id field is still persisted for diagnostics.
         return (DOMAIN, entry.entry_id)
 
-    # Watches: driven by the live poll coordinator — only watches that have
-    # actually checked in get a rename entity. Mirrors how sensor.py spawns its
-    # watch-session sensors.
-    known_watches: set[str] = set()
+    # Every Name entity this setup has added, by device id, shared by the
+    # watch and iPhone paths below so one device never gets two: both would
+    # use the same unique id, and Home Assistant refuses the second with an
+    # error on every start. The value is whether the entity registry has
+    # shown the entity yet; until it has, Home Assistant is still adding it.
+    named: dict[str, bool] = {}
 
+    @callback
+    def _needs_name(ent_reg: er.EntityRegistry, device_id: str) -> bool:
+        """Whether ``device_id`` needs a Name entity added now, claiming it
+        when it does."""
+        registered = (
+            ent_reg.async_get_entity_id("text", DOMAIN, name_unique_id(device_id)) is not None
+        )
+        if device_id in named:
+            if registered:
+                named[device_id] = True
+                return False
+            if not named[device_id]:
+                # Added, and not in the registry yet: still being added.
+                return False
+            # It was registered and has gone since: the user deleted it.
+        named[device_id] = False
+        return True
+
+    # Watches: driven by the live poll coordinator, so only watches that have
+    # actually checked in get a rename entity. Mirrors how sensor.py spawns
+    # its watch-session sensors. Only a watch: a phone that polls the delta
+    # endpoint has a session too, and gets its Name from the iPhone path.
     @callback
     def _check_new_watches() -> None:
         ent_reg = er.async_get(hass)
@@ -48,15 +78,14 @@ async def async_setup_entry(
         for watch_id in coordinator.real_sessions:
             # Only a device with a secret exists; a session that outlived its
             # removal must not re-create the device (see sensor.py).
-            if secret_store.get(watch_id) is None:
-                known_watches.discard(watch_id)
+            secret_entry = secret_store.get(watch_id)
+            if secret_entry is None:
+                named.pop(watch_id, None)
                 continue
-            if watch_id in known_watches:
-                sentinel = f"wrist_assistant_{watch_id}_name"
-                if ent_reg.async_get_entity_id("text", DOMAIN, sentinel) is not None:
-                    continue
-                known_watches.discard(watch_id)
-            known_watches.add(watch_id)
+            if secret_entry.device_kind != DEVICE_KIND_WATCH:
+                continue
+            if not _needs_name(ent_reg, watch_id):
+                continue
             new_entities.append(
                 DeviceNameText(
                     secret_store,
@@ -75,11 +104,9 @@ async def async_setup_entry(
         coordinator.async_add_session_listener(_check_new_watches)
     )
 
-    # iPhones: driven by the secret store. iPhones never poll, so this is the
-    # only surface that creates their rename entity. Spawn the moment
-    # `register_secret` lands.
-    known_iphones: set[str] = set()
-
+    # iPhones: driven by the secret store. The shipping iPhone app never
+    # polls, so this is the only surface that creates their rename entity.
+    # Spawn the moment `register_secret` lands.
     @callback
     def _check_new_iphones() -> None:
         ent_reg = er.async_get(hass)
@@ -88,12 +115,8 @@ async def async_setup_entry(
         for watch_id, secret_entry in entries.items():
             if secret_entry.device_kind != DEVICE_KIND_IPHONE:
                 continue
-            if watch_id in known_iphones:
-                sentinel = f"wrist_assistant_{watch_id}_name"
-                if ent_reg.async_get_entity_id("text", DOMAIN, sentinel) is not None:
-                    continue
-                known_iphones.discard(watch_id)
-            known_iphones.add(watch_id)
+            if not _needs_name(ent_reg, watch_id):
+                continue
             new_entities.append(
                 DeviceNameText(
                     secret_store,
@@ -104,9 +127,11 @@ async def async_setup_entry(
                     hass=hass,
                 )
             )
-        for stale in list(known_iphones):
+        # A device that was unpaired gives up its claim, so pairing it again
+        # brings its Name back.
+        for stale in list(named):
             if stale not in entries:
-                known_iphones.discard(stale)
+                named.pop(stale)
         if new_entities:
             async_add_entities(new_entities)
 
@@ -139,7 +164,7 @@ class DeviceNameText(TextEntity):
         self._kind = kind
         self._short_id = watch_id[:8]
         self._default_prefix = "iPhone" if kind == DEVICE_KIND_IPHONE else "Watch"
-        self._attr_unique_id = f"wrist_assistant_{watch_id}_name"
+        self._attr_unique_id = name_unique_id(watch_id)
         self._attr_device_info = build_device_info(
             secret_store, watch_id, kind=kind, via_device=via_device, hass=hass
         )
