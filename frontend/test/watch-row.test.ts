@@ -218,6 +218,19 @@ describe("the row as drawn", () => {
     expect(calls).toEqual(["go:/settings", "go:/settings"]);
   });
 
+  it("offers pairing beside the iPhone in a home with phone pages and no watch", () => {
+    const { text, tpl, calls } = row({ owners: [OWNERS[1]!], watch: "p1", phones: true, route: route("/pages/p1") });
+    expect(text).toContain(`<span class="wa-wr-k">iPhone</span><b class="wa-wr-name">Jesse's iPhone</b>`);
+    expect(text).toContain(`class="wa-wr-pair"`);
+    expect(text).toContain(WATCH_ROW_NONE_NOTE);
+    expect(text).toContain(">Pages</a>");
+    const [pair] = handlers(tpl, "@click");
+    pair!(click);
+    expect(calls).toEqual(["go:/settings"]);
+    // With a watch too, the pairing button goes.
+    expect(row({ owners: [OWNERS[0]!, OWNERS[1]!], watch: "p1", phones: true, route: route("/pages/p1") }).text).not.toContain("wa-wr-pair");
+  });
+
   it("says Loading while the devices are not in, never Pair a watch", () => {
     const { text } = row({ owners: [], watch: undefined, loaded: false });
     expect(text).toContain("Loading…");

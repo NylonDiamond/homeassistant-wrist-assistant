@@ -133,6 +133,9 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
   const choices = watchRowChoices(input.owners, input.watch, input.phones === true);
   const slot = watchRowSlot(input.loaded, choices.length);
   const shown = choices.find((c) => c.on) ?? choices[0];
+  // A home with phone pages and an iPhone but no watch: the phone fills the
+  // slot, and the way to pair a watch stands beside it.
+  const noWatch = slot === "none" || (slot !== "loading" && choices.every((c) => c.kind === "iphone"));
   const href = (path: string) => panelUrl(input.route, path, globalThis.location?.pathname ?? "");
   const link = (l: WatchRowLink, cls = "", title?: string) => html`<a class="wa-wr-link ${cls}${l.on ? "on" : ""}"
     href=${href(l.path)} aria-current=${l.on ? "page" : "false"} title=${title ?? nothing}
@@ -143,7 +146,8 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
     }}>${l.screen.label}</a>`;
   return html`<nav class="wa-watchrow" aria-label="Watch app">
     ${renderWatchSlot(input, slot, choices)}
-    ${slot === "none" ? html`<span class="wa-wr-note">${WATCH_ROW_NONE_NOTE}</span>` : nothing}
+    ${noWatch && slot !== "none" ? renderPairButton(input) : nothing}
+    ${noWatch ? html`<span class="wa-wr-note">${WATCH_ROW_NONE_NOTE}</span>` : nothing}
     <span class="wa-wr-links">
       ${slot === "none" ? nothing : watchRowLinks(input.route, input.watch, shown?.kind === "iphone").map((l) => link(l))}
       ${link(watchRowSettingsLink(input.route, input.watch), "wa-wr-settings ", watchRowSettingsTitle(shown?.kind))}
@@ -151,15 +155,18 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
   </nav>`;
 }
 
+/** The way to pair the first watch: Settings, where a watch pairs. */
+function renderPairButton(input: WatchRowInput): TemplateResult {
+  const settings = watchRowSettingsLink(input.route, undefined);
+  return html`<button type="button" class="wa-wr-pair" title="Opens Settings, where a watch pairs with a code"
+    @click=${() => { if (!settings.on) input.onGo(settings.path); }}>${uiIcon("watch")}<span>Pair a watch</span></button>`;
+}
+
 function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: readonly WatchRowChoice[]) {
   if (slot === "loading") {
     return html`<span class="wa-wr-watch"><span class="wa-wr-chip" aria-hidden="true">${uiIcon("watch")}</span><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">Loading…</span></span>`;
   }
-  if (slot === "none") {
-    const settings = watchRowSettingsLink(input.route, undefined);
-    return html`<button type="button" class="wa-wr-pair" title="Opens Settings, where a watch pairs with a code"
-      @click=${() => { if (!settings.on) input.onGo(settings.path); }}>${uiIcon("watch")}<span>Pair a watch</span></button>`;
-  }
+  if (slot === "none") return renderPairButton(input);
   const current = choices.find((c) => c.on) ?? choices[0]!;
   const word = current.kind === "iphone" ? "iPhone" : "Watch";
   const chip = html`<span class="wa-wr-chip" aria-hidden="true">${uiIcon(current.kind === "iphone" ? "phone" : "watch")}</span><span class="wa-wr-k">${word}</span>`;
