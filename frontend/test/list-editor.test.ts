@@ -690,9 +690,9 @@ describe("the list presets", () => {
     ]);
   });
 
-  it("is offered on the wide face and the Home Screen tiles only", () => {
+  it("is offered on the wide face, the Home Screen tiles and Dashboard", () => {
     for (const preset of listPresets) {
-      expect(preset.families).toEqual(["rectangular", "small", "medium", "large", "xlarge"]);
+      expect(preset.families).toEqual(["rectangular", "small", "medium", "large", "xlarge", "dashboard"]);
     }
     expect(familyAllowsKind("rectangular", "list")).toBe(true);
     expect(familyAllowsKind("large", "list")).toBe(true);

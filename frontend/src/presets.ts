@@ -11,7 +11,7 @@
 // panel can run a whole preset inside one `Draft.update` and undo removes it
 // in a single step.
 
-import { CANVAS, type DrawableFamily } from "./renderer.js";
+import { CANVAS, designBox, type CanvasSize, type DrawableFamily } from "./renderer.js";
 import type { HassEntityState } from "./ha-api.js";
 import { NOTES_MAX } from "./notes.js";
 import { buildStatesRule, type StatesRowInput } from "./states.js";
@@ -668,9 +668,22 @@ function clamp(n: number, low: number, high: number): number {
   return Math.min(high, Math.max(low, n));
 }
 
+/** The Dashboard canvas of the document a preset is being built into, set by
+ * `applyPreset` for the length of the build. The geometry helpers below take
+ * only a shape, and Dashboard is the one shape whose box is the document's
+ * own, so this carries it to them without threading the document through
+ * every helper. Builds are synchronous, so one build never sees another's. */
+let presetDashboardCanvas: CanvasSize | undefined;
+
+/** One shape's canvas in points: the fixed box, or for Dashboard the canvas of
+ * the document being built into. */
+function canvasOf(family: DrawableFamily): CanvasSize {
+  return family === "dashboard" ? presetDashboardCanvas ?? designBox(undefined, family) : CANVAS[family];
+}
+
 /** A frame that many points wide and tall, in the middle of one shape's canvas. */
 export function centredFrame(family: DrawableFamily, widthPt: number, heightPt: number): NormalizedFrame {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   const width = clamp(round4(widthPt / canvas.width), 0, 1);
   const height = clamp(round4(heightPt / canvas.height), 0, 1);
   return { x: round4((1 - width) / 2), y: round4((1 - height) / 2), width, height, rotationDegrees: 0 };
@@ -687,7 +700,7 @@ export interface PresetGeometry {
  * looks right on one is wrong on the others. Every preset sizes itself from
  * the shape's own canvas instead. */
 function toggleGeometry(family: DrawableFamily): PresetGeometry {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   const side = clamp(Math.round(Math.min(canvas.width, canvas.height) * 0.55), 12, 30);
   // The frame is the tap target as well as the glyph's box, so it is a little
   // bigger than the glyph: a button the size of its own picture is hard to hit.
@@ -695,13 +708,13 @@ function toggleGeometry(family: DrawableFamily): PresetGeometry {
 }
 
 function statusGeometry(family: DrawableFamily): PresetGeometry {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   const size = clamp(Math.round(Math.min(canvas.width, canvas.height) * 0.3), 9, 20);
   return { frame: centredFrame(family, canvas.width * 0.88, size * 1.7), size };
 }
 
 function gaugeGeometry(family: DrawableFamily): PresetGeometry {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   const side = Math.min(canvas.width, canvas.height) * 0.9;
   return { frame: centredFrame(family, side, side), size: Math.max(2.5, Math.round(side * 0.2) / 2) };
 }
@@ -727,7 +740,7 @@ function chartGeometry(family: DrawableFamily): PresetGeometry {
  * timeline is read across, and it needs less height than a chart because there
  * is nothing to plot: the whole reading is which color is where. */
 function timelineGeometry(family: DrawableFamily): PresetGeometry {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   const height = clamp(Math.round(canvas.height * 0.2), 6, 14);
   return {
     frame: { x: 0.06, y: 0.56, width: 0.88, height: round4(height / canvas.height), rotationDegrees: 0 },
@@ -737,7 +750,7 @@ function timelineGeometry(family: DrawableFamily): PresetGeometry {
 /** The name above the strip: a strip of color says nothing about what it is
  * of, and the entity is the one fact a reader needs to make sense of it. */
 function timelineNameGeometry(family: DrawableFamily): PresetGeometry {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   const size = clamp(Math.round(Math.min(canvas.width, canvas.height) * 0.26), 8, 15);
   return {
     frame: { x: 0.06, y: 0.2, width: 0.88, height: round4(clamp((size * 1.5) / canvas.height, 0, 1)), rotationDegrees: 0 },
@@ -756,7 +769,7 @@ function timelineNameGeometry(family: DrawableFamily): PresetGeometry {
  * corner canvas always was.
  */
 function bandGeometry(family: DrawableFamily, y: number, height: number, factor: number, max: number): PresetGeometry {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   return {
     frame: { x: 0.06, y, width: 0.88, height, rotationDegrees: 0 },
     size: clamp(Math.round(canvas.height * height * factor), 7, max),
@@ -782,7 +795,7 @@ function labelBandGeometry(family: DrawableFamily): PresetGeometry {
 /** The number inside a ring: a box across the middle of the arc, wide enough
  * for three digits and a percent sign. */
 function ringCentreGeometry(family: DrawableFamily): PresetGeometry {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   const side = Math.min(canvas.width, canvas.height) * 0.46;
   return { frame: centredFrame(family, side * 1.5, side), size: clamp(Math.round(side * 0.6), 8, 22) };
 }
@@ -803,7 +816,7 @@ function sparkValueGeometry(family: DrawableFamily): PresetGeometry {
 /** One of the two rows the Sun times preset draws: a symbol on the left and a
  * time beside it. `top` is the sunrise row. */
 function sunRowGeometry(family: DrawableFamily, top: boolean, icon: boolean): PresetGeometry {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   const y = top ? 0.2 : 0.54;
   const height = 0.26;
   const size = clamp(Math.round(canvas.height * height * (icon ? 0.85 : 0.8)), 8, 20);
@@ -1607,7 +1620,7 @@ function newCard(kind: "capsule" | "roundedRectangle" = "capsule"): Extract<Elem
  * left end and the count at its right. Three cards with a hair between them
  * fill the face top to bottom. */
 function summaryRowGeometry(family: DrawableFamily, row: number, part: "card" | "icon" | "text"): PresetGeometry {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   const height = 0.3;
   const y = 0.02 + row * 0.33;
   const size = clamp(Math.round(canvas.height * height * (part === "icon" ? 0.72 : 0.7)), 8, 20);
@@ -1713,7 +1726,7 @@ export function addHomeSummary(cfg: CustomComplicationConfig, env: PresetEnv): s
 /** The pill and what sits in it: the pill itself across the middle of the
  * face, the symbol at its left end and the name filling the rest. */
 function pillGeometry(family: DrawableFamily, part: "card" | "icon" | "text"): PresetGeometry {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   const height = 0.5;
   const y = 0.25;
   const size = clamp(Math.round(canvas.height * height * (part === "icon" ? 0.55 : 0.5)), 9, 22);
@@ -1773,7 +1786,7 @@ export function addTogglePill(cfg: CustomComplicationConfig, ref: EntityRef, env
  * height is in points, because a bar that scaled with the face would be a
  * slab on a Home Screen tile. */
 function bottomBarGeometry(family: DrawableFamily): PresetGeometry {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   const height = clamp(Math.round(canvas.height * 0.08), 4, 8);
   return { frame: { x: 0.08, y: round4(0.9 - height / canvas.height), width: 0.84, height: round4(height / canvas.height), rotationDegrees: 0 } };
 }
@@ -1835,15 +1848,20 @@ export function weatherDetailsTemplate(entityId: string): string {
 }
 
 /** Whether a shape is wide enough for a symbol beside its text rather than
- * over it. The two watch bands and the two wide Home Screen tiles are. */
+ * over it. The two watch bands and the two wide Home Screen tiles are, and a
+ * Dashboard card is when its own canvas is clearly wider than tall. */
 function isWide(family: DrawableFamily): boolean {
+  if (family === "dashboard") {
+    const canvas = canvasOf(family);
+    return canvas.width / canvas.height > 1.6;
+  }
   return family === "rectangular" || family === "medium" || family === "large" || family === "xlarge";
 }
 
 /** The weather card's three parts. On a wide shape the symbol takes the left
  * third and the two lines stack beside it; on a square one they stack. */
 function weatherCardGeometry(family: DrawableFamily, part: "icon" | "temp" | "details"): PresetGeometry {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   if (isWide(family)) {
     switch (part) {
       case "icon": return { frame: { x: 0.04, y: 0.14, width: 0.3, height: 0.72, rotationDegrees: 0 }, size: clamp(Math.round(canvas.height * 0.5), 12, 40) };
@@ -1949,7 +1967,7 @@ export function addEventCountdown(cfg: CustomComplicationConfig, ref: EntityRef,
 /** The disc behind the photo, and the photo inside it. The disc is a hair
  * larger than the photo all round, and that hair is the ring. */
 function photoGeometry(family: DrawableFamily, part: "disc" | "photo"): PresetGeometry & { radius?: number } {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   const disc = Math.min(canvas.width, canvas.height) * 0.6;
   const ring = clamp(Math.round(disc * 0.07), 1.5, 4);
   const side = part === "disc" ? disc : disc - ring * 2;
@@ -2565,7 +2583,7 @@ function addSceneNotes(cfg: CustomComplicationConfig, text: string): void {
 
 /** A frame in one shape's own points. */
 function pointFrame(family: DrawableFamily, x: number, y: number, w: number, h: number): PresetGeometry {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   return {
     frame: {
       x: round4(x / canvas.width),
@@ -2588,7 +2606,7 @@ function sceneHeight(family: DrawableFamily): number {
 }
 
 function sceneScale(family: DrawableFamily): { s: number; ox: number; oy: number } {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   const h = sceneHeight(family);
   const s = Math.min(canvas.width / SCENE_WIDTH, canvas.height / h);
   return { s, ox: (canvas.width - SCENE_WIDTH * s) / 2, oy: (canvas.height - h * s) / 2 };
@@ -3055,7 +3073,7 @@ interface PointRect { x: number; y: number; w: number; h: number }
 /** Where the plan sits on each tile, in its points: under the title, with the
  * tile's own margin all round. */
 function planRect(family: DrawableFamily): PointRect {
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   switch (family) {
     case "medium": return { x: 10, y: 42, w: canvas.width - 20, h: canvas.height - 42 - 12 };
     case "large":
@@ -3109,7 +3127,7 @@ export function planCells(count: number, plan: PointRect): PointRect[] {
 export function addFloorPlan(cfg: CustomComplicationConfig, env: PresetEnv): string {
   const family = env.family;
   const medium = family === "medium";
-  const canvas = CANVAS[family];
+  const canvas = canvasOf(family);
   const standIn = standIns(cfg);
   const rooms = planRoomNames(family).map((name) => ({ name, light: standIn("light", `${name} light`) }));
   // The lights first, room by room, since those are what people pick first;
@@ -3235,7 +3253,13 @@ export function applyPreset(
 ): string {
   const before = new Set(cfg.elements.map((e) => e.payload.id));
   const groupsBefore = new Set((cfg.groups ?? []).map((g) => g.id));
-  const id = buildPreset(cfg, kind, ref, env);
+  presetDashboardCanvas = designBox(cfg, env.family);
+  let id: string;
+  try {
+    id = buildPreset(cfg, kind, ref, env);
+  } finally {
+    presetDashboardCanvas = undefined;
+  }
   const added = cfg.elements.filter((e) => !before.has(e.payload.id)).map((e) => e.payload.id);
   createGroup(cfg, added, presetSpec(kind).title);
   if (presetSpec(kind).unlockedGroups) {

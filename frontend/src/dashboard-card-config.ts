@@ -21,7 +21,7 @@ export interface CardConfig {
   background?: "card" | "none";
 }
 
-const SHAPES = new Set(["rectangular", "circular", "corner", "inline", "small", "medium", "large", "xlarge"]);
+const SHAPES = new Set(["rectangular", "circular", "corner", "inline", "small", "medium", "large", "xlarge", "dashboard"]);
 
 /** The config with its defaults filled in, or an error the dashboard shows in
  * place of the card. Unknown keys are kept, so a newer card's options survive

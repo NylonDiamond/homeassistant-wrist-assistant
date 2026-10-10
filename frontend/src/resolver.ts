@@ -89,7 +89,7 @@ import {
   elementsOnPage,
   formatIsEmpty,
   hasFreeTimestamp,
-  DESIGN_BOX,
+  designBoxOf,
   type ChartAnchor,
   type ChartAnchorPoint,
   chartAnchorIsColumn,
@@ -828,6 +828,10 @@ export interface ResolvedLayout {
   cornerBodyShape: CornerBodyShape;
   borderColorHex?: string;
   borderWidth: number;
+  /** The box the layers were laid out in, in points: `designBox` for this
+   * shape, which for Dashboard is the document's own canvas. Optional so a
+   * hand-built layout (tests, stand-ins) still draws at the shape's box. */
+  canvas?: CanvasSize;
 }
 
 /** Which rule branch the preview should force, per rule id. */
@@ -1291,9 +1295,8 @@ export type TextValueColoring = Pick<TextElement, "coloring" | "bands" | "bandAb
  *
  * Mirrors `CustomComplication.resolvedArc` in the app repo.
  */
-export function resolvedTextArc(el: TextElement, family: FamilyKind): ResolvedTextArc | undefined {
+export function resolvedTextArc(el: TextElement, family: FamilyKind, box: CanvasSize = designBoxOf(undefined, family)): ResolvedTextArc | undefined {
   if (el.arc === undefined || el.countdown === true || !familyAllowsArcText(family)) return undefined;
-  const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
   const side = Math.max(0, Math.min(el.frame.width * box.width, el.frame.height * box.height));
   return {
     radius: el.arc.radius * side,
@@ -1720,6 +1723,9 @@ export class Resolver {
   /** The item a row is being resolved against, or undefined outside a row: an
    * `item` value anywhere else is nil. */
   private currentItem: ListItem | undefined;
+  /** The box of the shape `resolveLayout` is resolving, so a curved text sizes
+   * its circle from a Dashboard's own canvas. */
+  private designBoxNow: CanvasSize | undefined;
 
   constructor(private readonly ctx: ResolveContext, config?: CustomComplicationConfig) {
     this.named = new Map(ctx.namedValues.map((n) => [n.id.toUpperCase(), n.value]));
@@ -1763,7 +1769,7 @@ export class Resolver {
   private settleListCells(config: CustomComplicationConfig, elements: readonly Element[], family: FamilyKind, forced?: ForcedBranches): void {
     this.listCells.clear();
     const layout = config.perFamily[family];
-    const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+    const box = designBoxOf(config, family);
     for (const el of elements) {
       if (el.kind !== "list") continue;
       const items = this.lists.get(el.payload.id)?.items ?? [];
@@ -2356,7 +2362,7 @@ export class Resolver {
           alignment: el.payload.alignment ?? "center",
         };
         if (countdownEnd !== undefined) out.countdownEnd = countdownEnd;
-        const arc = resolvedTextArc(el.payload, family);
+        const arc = resolvedTextArc(el.payload, family, this.designBoxNow);
         if (arc !== undefined) out.arc = arc;
         if (rich) {
           // The layer's own color by value is ignored: each part carries its
@@ -2778,7 +2784,8 @@ export class Resolver {
     // read one set of frames. Mirrors `CustomComplication.resolve` in the app repo.
     // Dots settle before the anchors: the dots decide the chart's inset, and the
     // inset moves every reading an anchor sits on.
-    const canvas = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+    const canvas = designBoxOf(config, family);
+    this.designBoxNow = canvas;
     // Pages are a filter on the layer list and nothing else, so every shape
     // draws the same page and nothing downstream has to know pages exist. A
     // layer on another page never reaches the resolver, which is why a document
@@ -2805,6 +2812,7 @@ export class Resolver {
     const out: ResolvedLayout = {
       family,
       elements,
+      canvas,
       cornerBodyShape: layout?.cornerBodyShape ?? "wedge",
       borderWidth: this.styleNumber(style, "borderWidth") ?? layout?.borderWidth ?? 2,
     };

@@ -790,7 +790,7 @@ describe("the card presets", () => {
     expect(hexOf(tableOf(name.payload.rules).rows[0])).toBe("#1C1C1E");
     expect(name.payload.value).toEqual({ kind: { kind: "literal", value: "Kitchen light" } });
     // The pill is wide-shape only: it carries a name, and a corner cannot.
-    expect(presetSpec("togglePill").families).toEqual(["rectangular", "small", "medium", "large", "xlarge"]);
+    expect(presetSpec("togglePill").families).toEqual(["rectangular", "small", "medium", "large", "xlarge", "dashboard"]);
   });
 
   it("uses the entity's own on test for the pill, so a lock's pill lights on locked", () => {

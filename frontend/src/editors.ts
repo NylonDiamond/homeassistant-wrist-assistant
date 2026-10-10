@@ -376,7 +376,8 @@ import { IMAGE_UPLOAD_ACCEPT, encodeInlinePicture, formatKiB } from "./inline-im
 import { CURATED_SYMBOLS, MDI_PREFIX, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols, type SymbolPack } from "./symbols.js";
 import { alignFrame, centerFrame, isAligned, isCentered, typedFrame, type AlignEdge, type CenterAxis } from "./interact.js";
 import {
-  DESIGN_BOX,
+  designBoxOf,
+  type Box,
   CUSTOM_SVG_SYMBOL,
   IMAGE_INLINE_MAX_BYTES,
   type IconElement,
@@ -2124,7 +2125,7 @@ function inlineImageFields(
     // times, which it only does if the input is emptied after each pick.
     input.value = "";
     if (!file) return;
-    const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+    const box = designBoxOf(host.config, family);
     const place = effectivePlacement(host.config, family, { kind: "image", payload: img });
     const result = await encodeInlinePicture(file, {
       width: place.frame.width * box.width,
@@ -4079,8 +4080,9 @@ function listSourceFields(
 }
 
 /** How many points tall one cell is on the shape being edited. */
-export function listCellHeightPoints(l: ListElement, frame: NormalizedFrame, family: FamilyKind): number {
-  const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+export function listCellHeightPoints(
+  l: ListElement, frame: NormalizedFrame, family: FamilyKind, box: Box = designBoxOf(undefined, family),
+): number {
   const cell = listCellFrames({ ...l, frame }, box)[0];
   return cell === undefined ? 0 : cell.height * Math.abs(frame.height) * box.height;
 }
@@ -4100,7 +4102,7 @@ function listLayoutFields(
   const l = el.payload;
   const frame = effectivePlacement(host.config, family, el).frame;
   const grid = listGrid(l);
-  const tall = listCellHeightPoints(l, frame, family);
+  const tall = listCellHeightPoints(l, frame, family, designBoxOf(host.config, family));
   const down = l.direction === "down";
   return html`
     ${numberField("Items shown", l.rows, (v) => set((p) => { p.rows = clampListRows(v); syncListAttributes(p); }, "list-rows"),
@@ -6087,8 +6089,7 @@ function shortDuration(seconds: number): string {
  * The frame is a fraction of the shape's design box, so a 0.5 by 0.5 frame is
  * wide on a rectangular face and square on a circular one; the box aspect
  * decides which side is long, and a quarter turn flips it. */
-function lineIsVertical(family: FamilyKind, f: NormalizedFrame): boolean {
-  const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+function lineIsVertical(box: Box, f: NormalizedFrame): boolean {
   const tall = f.height * box.height > f.width * box.width;
   const turned = Math.round(((f.rotationDegrees % 180) + 180) % 180) === 90;
   return tall !== turned;
@@ -6096,9 +6097,8 @@ function lineIsVertical(family: FamilyKind, f: NormalizedFrame): boolean {
 
 /** Horizontal or Vertical for a line, written as the frame's rotation so the
  * wire carries nothing new: a quarter turn is the whole difference. */
-function lineOrientationField(family: FamilyKind, f: NormalizedFrame, setFrame: (patch: Partial<NormalizedFrame>, k: string) => void) {
-  const vertical = lineIsVertical(family, f);
-  const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+function lineOrientationField(box: Box, f: NormalizedFrame, setFrame: (patch: Partial<NormalizedFrame>, k: string) => void) {
+  const vertical = lineIsVertical(box, f);
   const tall = f.height * box.height > f.width * box.width;
   return html`<div class="grid2">
     ${segField("Direction", vertical ? "vertical" : "horizontal", [["horizontal", "Horizontal"], ["vertical", "Vertical"]], (v) => {
@@ -8443,7 +8443,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             { titles: SHAPE_PICKER_TITLES, def: shapePickerKind(base.kind as ShapeKind) })}
           ${shapeCornerField(el, base, upd)}
         </div>
-        ${el.payload.kind === "line" ? lineOrientationField(family, f, setFrame) : nothing}`;
+        ${el.payload.kind === "line" ? lineOrientationField(designBoxOf(host.config, family), f, setFrame) : nothing}`;
       // A line has no border and no corners: its color is the whole drawing, so
       // the Look card offers its thickness instead.
       look = el.payload.kind === "line"
@@ -8821,7 +8821,7 @@ function ownedExtrasCard(host: EditorHost, el: Extract<CElement, { kind: "timeli
     const own = owner.payload.frame;
     owner.payload.frame = { ...effectivePlacement(c, family, owner).frame };
     if (timeline) convertChartTimes(c, id);
-    else addImageTime(c, id, DESIGN_BOX[family === "inline" ? "rectangular" : family]);
+    else addImageTime(c, id, designBoxOf(c, family));
     owner.payload.frame = own;
   });
   const on = layers.length > 0;

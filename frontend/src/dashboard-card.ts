@@ -20,8 +20,8 @@ import type { HassLike } from "./ha-api.js";
 import { makeIconProvider } from "./icons.js";
 import { isHomeFamily } from "./layouts.js";
 import { LiveComplication, cardShapeOf, drawable, hasLiveCountdown } from "./live-complication.js";
-import { inlineRuns, type CustomComplicationConfig, type DrawableFamily, type TapAction } from "./model.js";
-import { CANVAS, REFERENCE_CASE, REFERENCE_PHONE, cornerContext, cornerTileSide, renderLayout, slotFor, type IconProvider } from "./renderer.js";
+import { designBox, inlineRuns, type CustomComplicationConfig, type DrawableFamily, type TapAction } from "./model.js";
+import { REFERENCE_CASE, REFERENCE_PHONE, cornerContext, cornerTileSide, renderLayout, slotFor, type IconProvider } from "./renderer.js";
 import { countdownRemainingString, type ResolvedAll, type ResolvedInline, type ResolvedLayout } from "./resolver.js";
 import { previewTintFor } from "./shapePreviews.js";
 
@@ -207,7 +207,8 @@ export class WaDashboardCard extends LitElement {
 
   private renderFace(cfg: CustomComplicationConfig, family: DrawableFamily, layout: ResolvedLayout | undefined) {
     if (!layout || !this.icons) return html`<div class="message quiet">Nothing to draw yet.</div>`;
-    const slot = slotFor(isHomeFamily(family) ? REFERENCE_PHONE : REFERENCE_CASE, family);
+    // A Dashboard design is no device's slot: it draws at its own canvas.
+    const slot = slotFor(isHomeFamily(family) ? REFERENCE_PHONE : REFERENCE_CASE, family, layout.canvas);
     const art = renderLayout(layout, {
       icons: this.icons,
       slot,
@@ -281,7 +282,7 @@ export class WaDashboardCard extends LitElement {
     const svg = face?.querySelector<SVGSVGElement>("svg.complication");
     const box = svg?.querySelector<SVGGraphicsElement>("[data-design-box]");
     const ctm = box?.getScreenCTM();
-    const design = CANVAS[family];
+    const design = layout.canvas ?? designBox(cfg, family);
     if (!svg || !ctm || design.width <= 0 || design.height <= 0) return;
     const pt = svg.createSVGPoint();
     pt.x = e.clientX;

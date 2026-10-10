@@ -9,7 +9,7 @@
 import { type TemplateResult, nothing } from "lit";
 
 import {
-  DESIGN_BOX,
+  designBox,
   type CustomComplicationConfig,
   type DrawableFamily,
   type FamilyKind,
@@ -37,8 +37,9 @@ export const PREVIEW_ROOM = { width: 100, height: 66 };
  * is narrow and a wide one is short, and each is legible. How the shapes
  * compare against the device is the stage's job, not the tabs'.
  */
-export function previewBox(family: DrawableFamily, room: { width: number; height: number } = PREVIEW_ROOM): { width: number; height: number; scale: number } {
-  const box = DESIGN_BOX[family];
+export function previewBox(
+  family: DrawableFamily, room: { width: number; height: number } = PREVIEW_ROOM, box: CanvasSize = designBox(undefined, family),
+): { width: number; height: number; scale: number } {
   const scale = Math.min(room.width / box.width, room.height / box.height);
   return { width: box.width * scale, height: box.height * scale, scale };
 }
@@ -82,7 +83,7 @@ function longestWord(text: string): string {
  */
 export function previewWarnings(layout: ResolvedLayout): string[] {
   const family = (hasCanvas(layout.family) ? layout.family : "rectangular") as DrawableFamily;
-  const box = DESIGN_BOX[family];
+  const box = layout.canvas ?? designBox(undefined, family);
   const round = family === "circular" || family === "corner";
   const drawn = layout.elements.filter((el) => !el.isHidden && el.kind !== "tap");
   let off = 0;
@@ -122,7 +123,9 @@ export function previewWarnings(layout: ResolvedLayout): string[] {
  * tiles preview in full color, since that is what the phone really draws.
  */
 export function previewTintFor(family: DrawableFamily, phone: boolean, override: string | undefined): { tint?: string; tintSurface?: TintSurface } {
-  const home = family === "small" || family === "medium" || family === "large" || family === "xlarge";
+  // A dashboard card is drawn in full color by Home Assistant, as a Home
+  // Screen tile is by the phone.
+  const home = family === "small" || family === "medium" || family === "large" || family === "xlarge" || family === "dashboard";
   if (home) return override === undefined ? {} : { tint: override, tintSurface: "phone" };
   const tint = override ?? (phone ? "#FFFFFF" : undefined);
   if (tint === undefined) return {};

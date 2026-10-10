@@ -19,6 +19,7 @@ import {
   LIST_FAMILIES,
   WATCH_CANVAS_FAMILIES,
   defaultLayout,
+  isDashboardFamily,
   literal,
   ownedElements,
   isAttachedTap,
@@ -35,7 +36,7 @@ import {
 } from "./version.js";
 
 /** Every shape, in the order the schema, the pickers and the panel list them. */
-export const ALL_FAMILIES: FamilyKind[] = ["rectangular", "circular", "corner", "inline", ...HOME_FAMILIES];
+export const ALL_FAMILIES: FamilyKind[] = ["rectangular", "circular", "corner", "inline", ...HOME_FAMILIES, "dashboard"];
 
 /** Whether the panel offers the Extra Large Home Screen shape at all.
  *
@@ -60,6 +61,10 @@ export const XLARGE_OFFERED = true;
  * only from the release whose widget extension draws them. A phone below that
  * is not locked out, it simply keeps its three lock screen shapes.
  *
+ * Dashboard is the Library's alone. It is drawn by Home Assistant's own
+ * dashboards, never by a device, and the apps refuse a shape they do not know,
+ * so no device owner is ever offered it (the store refuses one too).
+ *
  * Everywhere the panel lists shapes for the selected owner goes through this,
  * so the picker, the filter, the tabs and the New dialog can never disagree
  * about which shapes exist. */
@@ -71,10 +76,10 @@ export function familiesFor(owner: DeviceOwnerLike | null | undefined): FamilyKi
   // go onto whichever device it is later ticked for without having lost a
   // shape to a gate that was never about it.
   if (kind === "library") return ALL_FAMILIES.filter((f) => f !== "xlarge" || XLARGE_OFFERED);
-  if (kind !== "iphone") return ALL_FAMILIES.filter((f) => !isHomeFamily(f));
+  if (kind !== "iphone") return ALL_FAMILIES.filter((f) => !isHomeFamily(f) && !isDashboardFamily(f));
   const home = watchSupportsShapes(owner?.app_version, MIN_IPHONE_VERSION_FOR_HOME_SCREEN);
   return ALL_FAMILIES.filter((f) => {
-    if (f === "corner") return false;
+    if (f === "corner" || isDashboardFamily(f)) return false;
     if (f === "xlarge") return home && XLARGE_OFFERED;
     if (isHomeFamily(f)) return home;
     return true;
@@ -120,12 +125,22 @@ export function isHomeFamily(family: FamilyKind): family is HomeFamily {
   return (HOME_FAMILIES as FamilyKind[]).includes(family);
 }
 
+export { isDashboardFamily };
+
+/** Whether any of these shapes is Dashboard, which keeps a design in the
+ * Library: nothing may copy, link or move it onto a device. */
+export function hasDashboardFamily(families: Iterable<FamilyKind>): boolean {
+  for (const f of families) if (isDashboardFamily(f)) return true;
+  return false;
+}
+
 /** The device a set of designs was made for, read from their shapes: a Home
  * Screen tile is an iPhone's alone, a corner a watch's alone. Undefined when
  * the shapes are ones both draw, when they say both, or when there are none:
  * then they could go to either. An orphan owner has no kind of its own (the
  * entry that said is the one that went), so this is how Move tells a lost
- * watch's designs from a lost phone's. */
+ * watch's designs from a lost phone's. Dashboard says neither: it belongs to
+ * no device, and `hasDashboardFamily` is how Move keeps it in the Library. */
 export function deviceKindOfShapes(families: Iterable<FamilyKind>): "watch" | "iphone" | undefined {
   let phone = false;
   let watch = false;
@@ -164,16 +179,19 @@ export function isSharedFamily(family: FamilyKind): boolean {
  * widget gallery. Read by the New dialog's shape card and the shape's own
  * editor card, which is why it is here rather than in either of them. */
 export function familyNote(family: FamilyKind): string | undefined {
-  return family === "xlarge" ? "iOS 27 and later" : undefined;
+  if (family === "xlarge") return "iOS 27 and later";
+  if (family === "dashboard") return "Home Assistant dashboards only";
+  return undefined;
 }
 
 /**
  * Where a shape lives on the device.
  *
  * The New dialog asks this before it asks for a shape, because "Home Screen"
- * is somewhere the owner has stood and "Small" is not.
+ * is somewhere the owner has stood and "Small" is not. A dashboard card is a
+ * place of its own, which only the Library has.
  */
-export type ShapePlace = "home" | "lock" | "watch";
+export type ShapePlace = "home" | "lock" | "watch" | "dashboard";
 
 /** One place, with the shapes it holds on this device. */
 export interface PlaceGroup {
@@ -195,7 +213,7 @@ export interface PlaceGroup {
  * one, where the reverse leaves a design with a hole in it. Nothing copies
  * between shapes on its own, so the order is the whole of the advice.
  */
-const BIGGEST_FIRST: readonly FamilyKind[] = ["xlarge", "large", "medium", "small", "rectangular", "circular", "corner", "inline"];
+const BIGGEST_FIRST: readonly FamilyKind[] = ["dashboard", "xlarge", "large", "medium", "small", "rectangular", "circular", "corner", "inline"];
 
 export function biggestFirst(families: readonly FamilyKind[]): FamilyKind[] {
   return [...families].sort((a, b) => BIGGEST_FIRST.indexOf(a) - BIGGEST_FIRST.indexOf(b));
@@ -204,6 +222,7 @@ export function biggestFirst(families: readonly FamilyKind[]): FamilyKind[] {
 /** The place a shape lives in on this device. The four watch shapes are the
  * Lock Screen's on a phone and the face's on a watch, so the owner decides. */
 export function placeOf(family: FamilyKind, owner: DeviceOwnerLike | null | undefined): ShapePlace {
+  if (isDashboardFamily(family)) return "dashboard";
   if (isHomeFamily(family)) return "home";
   return deviceKindOf(owner) === "iphone" ? "lock" : "watch";
 }
@@ -214,6 +233,7 @@ export function placeTitle(place: ShapePlace): string {
     case "home": return "Home Screen";
     case "lock": return "Lock Screen";
     case "watch": return "Watch face";
+    case "dashboard": return "Dashboard";
   }
 }
 
@@ -232,7 +252,7 @@ export function placeGroups(
   comingSoon: readonly FamilyKind[] = [],
 ): PlaceGroup[] {
   const out: PlaceGroup[] = [];
-  for (const place of ["home", "lock", "watch"] as const) {
+  for (const place of ["home", "lock", "watch", "dashboard"] as const) {
     const mine = biggestFirst(families.filter((f) => placeOf(f, owner) === place));
     const soon = biggestFirst(comingSoon.filter((f) => placeOf(f, owner) === place));
     if (mine.length === 0 && soon.length === 0) continue;

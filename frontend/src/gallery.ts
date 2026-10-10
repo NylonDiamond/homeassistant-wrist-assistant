@@ -34,6 +34,17 @@ export const GALLERY_FAMILIES: readonly FamilyKind[] = [
   "rectangular", "circular", "corner", "inline", "small", "medium", "large", "xlarge",
 ];
 
+/** Why a design cannot go to the gallery at all, before any of its details
+ * are looked at, or undefined when it can. Only Dashboard says anything: the
+ * gallery is a catalogue of watch and iPhone designs, its Worker knows no such
+ * shape and holds schema 10 at most, and a Dashboard design is sized for this
+ * home's own dashboards. Shared as text it still goes to another home. */
+export function galleryRefusal(cfg: Pick<CustomComplicationConfig, "supportedFamilies">): string | undefined {
+  return cfg.supportedFamilies.includes("dashboard")
+    ? "Dashboard designs cannot go to the gallery yet. Share it as text instead."
+    : undefined;
+}
+
 /** The two words the gallery files an upload's device under. Nothing at all
  * is the third answer, and the page reads it as "Watch or iPhone". */
 export type GalleryDevice = "watch" | "iphone";
@@ -524,6 +535,10 @@ function steppedBlockers(
   const found: { step: GalleryBlockerStep; text: string }[] = [];
   const out = { push: (text: string) => { found.push({ step: "send", text }); } };
   const detail = (text: string) => { found.push({ step: "details", text }); };
+  // Said alone: the other findings (no shape the gallery files, a schema past
+  // its own) are this one in vaguer words.
+  const refusal = galleryRefusal(cfg);
+  if (refusal !== undefined) return [{ step: "send", text: refusal }];
   const body = buildGallerySubmission(cfg, slots, meta, overrides);
 
   if (hasInstanceFilters(cfg)) {

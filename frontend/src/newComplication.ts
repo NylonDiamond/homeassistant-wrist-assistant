@@ -7,7 +7,7 @@
 // docs/complication_one_shape_per_document.md.
 
 import type { DeviceOwner } from "./copies.js";
-import { ALL_FAMILIES, comingSoonFamilies, familiesFor, isHomeFamily } from "./layouts.js";
+import { ALL_FAMILIES, comingSoonFamilies, familiesFor, isDashboardFamily, isHomeFamily } from "./layouts.js";
 import type { FamilyKind } from "./model.js";
 import { familyTitle } from "./renderer.js";
 
@@ -91,10 +91,10 @@ export function shapeGroups(kind: NewKind, owners: readonly DeviceOwner[]): Shap
     if (families.length > 0 || comingSoon.length > 0) groups.push({ key, title, families, comingSoon });
   };
   if (kind === "watch") {
-    add("watch", "Watch face", ALL_FAMILIES.filter((f) => !isHomeFamily(f)));
+    add("watch", "Watch face", ALL_FAMILIES.filter((f) => !isHomeFamily(f) && !isDashboardFamily(f)));
     return groups;
   }
-  add("lock", "Lock Screen", ALL_FAMILIES.filter((f) => !isHomeFamily(f) && f !== "corner"));
+  add("lock", "Lock Screen", ALL_FAMILIES.filter((f) => !isHomeFamily(f) && !isDashboardFamily(f) && f !== "corner"));
   add("home", "Home Screen", ALL_FAMILIES.filter(isHomeFamily));
   return groups;
 }

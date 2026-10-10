@@ -118,7 +118,7 @@ import {
   setTapOutsetFromFrame,
   hasFreeTimestamp,
   deleteSharedValue,
-  DESIGN_BOX,
+  designBox,
   chartAnchorIsColumn,
   entityLayerIds,
   sharedValueLayerIds,
@@ -379,6 +379,7 @@ import {
   deleteMyUpload,
   galleryBlockers,
   galleryBlockersByStep,
+  galleryRefusal,
   galleryDevice,
   galleryErrorMessage,
   galleryFamily,
@@ -6093,7 +6094,7 @@ export class WristAssistantPanel extends LitElement {
   /** What a drag passes to the gesture: the grid, and whether snapping is on
    * before Alt flips it. */
   private snapTarget(family: DrawableFamily): { snap: { step: Grid; on: boolean } } {
-    return { snap: { step: gridFor(this.gridStep, DESIGN_BOX[family]), on: this.snapGrid } };
+    return { snap: { step: gridFor(this.gridStep, designBox(this.draft?.config, family)), on: this.snapGrid } };
   }
 
   /**
@@ -6110,7 +6111,7 @@ export class WristAssistantPanel extends LitElement {
       .map((el) => effectivePlacement(cfg, family, el))
       .filter((p) => !p.isHidden)
       .map((p) => p.frame);
-    return { guides: { lines: guideCandidates(others), threshold: guideThreshold(DESIGN_BOX[family]) } };
+    return { guides: { lines: guideCandidates(others), threshold: guideThreshold(designBox(cfg, family)) } };
   }
 
   /** What a gesture reports its guides through: straight onto the canvas. */
@@ -9279,7 +9280,7 @@ export class WristAssistantPanel extends LitElement {
   private renderZoomDialog(family: DrawableFamily, layouts: ResolvedAll, deviceCase: PreviewCase) {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
-    const slot = slotFor(deviceCase, family);
+    const slot = slotFor(deviceCase, family, designBox(cfg, family));
     // The picture's own aspect: the slot for rectangular and circular, and the
     // 104 × 124 screen quadrant the corner preview draws (renderer.ts).
     const ratio = family === "corner" ? 104 / 124 : slot.width / slot.height;
@@ -9390,7 +9391,7 @@ export class WristAssistantPanel extends LitElement {
     const layout = layouts[family];
     const cfg = this.canvasConfig();
     if (!layout || !cfg) return nothing;
-    const slot = slotFor(deviceCase, family);
+    const slot = slotFor(deviceCase, family, designBox(cfg, family));
     const ratio = family === "corner" ? 104 / 124 : slot.width / slot.height;
     const ctx = describeContext(this.host());
     const base = { icons: this.icons, imageSizes: this.imageSizes, slot, ...previewTintFor(family, this.previewAsPhone, this.previewTint) };
@@ -9509,7 +9510,7 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.draft?.config;
     const layout = layouts[family];
     if (!cfg || !layout) return nothing;
-    const slot = slotFor(deviceCase, family);
+    const slot = slotFor(deviceCase, family, designBox(cfg, family));
     const ratio = family === "corner" ? 104 / 124 : slot.width / slot.height;
     const pages = usesPages(cfg) ? this.pageCount() : 1;
     const note = this.demoNote;
@@ -9631,7 +9632,7 @@ export class WristAssistantPanel extends LitElement {
     pt.x = e.clientX;
     pt.y = e.clientY;
     const local = pt.matrixTransform(ctm.inverse());
-    const design = CANVAS[family];
+    const design = designBox(this.draft?.config, family);
     if (design.width <= 0 || design.height <= 0) return undefined;
     return { x: local.x / design.width, y: local.y / design.height };
   }
@@ -10295,7 +10296,7 @@ export class WristAssistantPanel extends LitElement {
     // does nothing.
     const ownsX = anchor !== undefined && !chartAnchorIsColumn(anchor.at) && anchor.place !== "through";
     const plotOwnsY = anchor !== undefined && chartAnchorIsColumn(anchor.at) && anchor.place === "through";
-    const design = DESIGN_BOX[family as DrawableFamily];
+    const design = designBox(this.draft?.config, family as DrawableFamily);
     const startNudge = { dx: anchor?.dx ?? 0, dy: anchor?.dy ?? 0 };
     // A move starts from where the anchor draws the layer, not from its saved
     // frame, which for a marker sits in the corner of the face. Starting there
@@ -10561,7 +10562,7 @@ export class WristAssistantPanel extends LitElement {
     const px = dx * step;
     const py = dy * step;
     const family = this.canvasFamily;
-    const box = DESIGN_BOX[family];
+    const box = designBox(cfg, family);
     if (this.multi.size >= 2) return this.nudgeMany([...this.multi], family, box, `nudge-multi-${family}`, px, py);
     if (this.inspect.kind === "group") {
       // The same unit a drag moves: the group, or the locked group around it.
@@ -10651,7 +10652,7 @@ export class WristAssistantPanel extends LitElement {
    * cornerTileSide), so its gestures normalise against the tile.
    */
   private gestureCanvas(family: DrawableFamily): { width: number; height: number } {
-    const fit = fitBox(this.previewSlot(family), family);
+    const fit = fitBox(this.previewSlot(family), designBox(this.draft?.config, family));
     if (family !== "corner") return { width: fit.width, height: fit.height };
     const corner = this.draft?.config.perFamily.corner;
     const hasBezel = !!corner?.bezelText || !!corner?.bezelGauge;
@@ -11511,7 +11512,7 @@ export class WristAssistantPanel extends LitElement {
    * live drawing and the picture a save takes of it are this same drawing. */
   private cardShape(cfg: CustomComplicationConfig, layouts: ResolvedAll, family: DrawableFamily, phone: boolean): LiveShape | undefined {
     if (!cfg.supportedFamilies.includes(family)) return undefined;
-    const slot = slotFor(phone ? REFERENCE_PHONE : REFERENCE_CASE, family);
+    const slot = slotFor(phone ? REFERENCE_PHONE : REFERENCE_CASE, family, designBox(cfg, family));
     const art = renderShapeArt({
       config: cfg, layouts, icons: this.icons, imageSizes: this.imageSizes, phone, slotFor: () => slot,
     }, family);
@@ -14562,13 +14563,15 @@ export class WristAssistantPanel extends LitElement {
         : html`<div class="hint">Pick a shape first.</div>`,
       nothing, !ready);
     const posted = mayPost ? this.galleryLink() : undefined;
+    const refused = galleryRefusal(cfg);
     const send = this.shareSection(++n, "s-send", "Send it", html`
       ${this.renderGalleryStanding(posted)}
       <div class="xf-acts">
-        <button class="xf-act" ?disabled=${!share || !mayPost || !ready} aria-haspopup="dialog"
+        <button class="xf-act" ?disabled=${!share || !mayPost || !ready || refused !== undefined} aria-haspopup="dialog"
           @click=${() => this.openGalleryDialog()}>
           <span class="ic">${uiIcon("globe")}</span><b>${posted?.kind === "live" ? "Update in online gallery" : posted?.kind === "pending" ? "Send to gallery again" : "Post to online gallery"}</b>
           <span>${!share ? "Only shares can go"
+            : refused !== undefined ? "Dashboard designs stay in this home"
             : !mayPost ? "Only an administrator can post to the gallery"
             : posted?.kind === "live" ? "A new version. The link and votes stay"
             : posted?.kind === "pending" ? "Takes the place of the copy in review"
@@ -14690,7 +14693,7 @@ export class WristAssistantPanel extends LitElement {
         const here = spot.filter((id) => layout.elements.some((el) => el.id === id));
         elsewhere = spot.length > 0 && here.length === 0;
         art = renderLayout(layout, {
-          icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(this.referenceCase, family), pictureScene,
+          icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(this.referenceCase, family, layout.canvas), pictureScene,
           ...(here.length > 0 ? { spotlightIds: here } : {}),
         });
       }
@@ -16771,7 +16774,7 @@ export class WristAssistantPanel extends LitElement {
     if (!cfg || family === undefined || !isDrawable(family)) return html`<span class="pt-thumb"></span>`;
     const layout = this.configLayouts(cfg, [])[family];
     return html`<span class="pt-thumb ${family}">${layout
-      ? renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(this.referenceCase, family) })
+      ? renderLayout(layout, { icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(this.referenceCase, family, designBox(cfg, family)) })
       : nothing}</span>`;
   }
 
@@ -19451,7 +19454,7 @@ export class WristAssistantPanel extends LitElement {
    * 104 × 124 screen quadrant the corner preview draws (renderer.ts). The
    * zoom and demo dialogs size their face from the same number. */
   private faceRatio(family: DrawableFamily, deviceCase: PreviewCase): number {
-    const slot = slotFor(deviceCase, family);
+    const slot = slotFor(deviceCase, family, designBox(this.draft?.config, family));
     return family === "corner" ? 104 / 124 : slot.width / slot.height;
   }
 
@@ -19616,7 +19619,7 @@ export class WristAssistantPanel extends LitElement {
     // Layers picked for grouping, in the list or on the face, outline as well,
     // so the pick reads the same in both places.
     const outlineIds = [...new Set([...groupIds, ...this.multi])];
-    const slot = slotFor(deviceCase, family);
+    const slot = slotFor(deviceCase, family, designBox(cfg, family));
     // A tap strip under the pointer in the Layers list shows its tap the way
     // a click on it would: review mode, narrowed to that tap's box (every box
     // for the Background row's strip). Nothing is selected by it, so no
@@ -19740,7 +19743,7 @@ export class WristAssistantPanel extends LitElement {
       if (layout) {
         face = html`<div class="preview ${family}" style=${`--wa-ratio:${this.faceRatio(family, deviceCase)}`}>
           ${renderLayout(layout, {
-            icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(deviceCase, family),
+            icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(deviceCase, family, designBox(cfg, family)),
             ...(shown.kind === "layer" ? { highlightId: shown.id } : {}),
             ...previewTintFor(family, this.previewAsPhone, this.previewTint),
           })}
@@ -20600,7 +20603,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private previewSlot(family: DrawableFamily) {
-    return slotFor(this.currentCase(), family);
+    return slotFor(this.currentCase(), family, designBox(this.draft?.config, family));
   }
 
   // ── inspector ─────────────────────────────────────────────────────────

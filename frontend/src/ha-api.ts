@@ -135,8 +135,9 @@ export interface ComplicationRecord {
  * `fetchCardPreview`. `focus` is a corner's disc within its quadrant. */
 export interface CardPreview {
   revision: number;
-  family: "rectangular" | "circular" | "corner" | "small" | "medium" | "large" | "xlarge";
-  device: "watch" | "iphone";
+  family: "rectangular" | "circular" | "corner" | "small" | "medium" | "large" | "xlarge" | "dashboard";
+  /** `dashboard` for a Dashboard design, which no device draws. */
+  device: "watch" | "iphone" | "dashboard";
   width: number;
   height: number;
   focus?: { cx: number; cy: number; diameter: number };

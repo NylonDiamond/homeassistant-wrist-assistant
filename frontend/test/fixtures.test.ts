@@ -224,8 +224,8 @@ function badUUIDs(value: unknown, found: string[] = []): string[] {
 // to be no shape the loop knows, and silently skipped: green, and checking
 // nothing. So pin the list itself.
 describe("the fixture runner", () => {
-  it("walks all seven canvas shapes", () => {
-    expect(DRAWABLE_FAMILIES).toEqual(["rectangular", "circular", "corner", "small", "medium", "large", "xlarge"]);
+  it("walks all eight canvas shapes", () => {
+    expect(DRAWABLE_FAMILIES).toEqual(["rectangular", "circular", "corner", "small", "medium", "large", "xlarge", "dashboard"]);
   });
 
   it("reads every fixture in the shared folder", () => {

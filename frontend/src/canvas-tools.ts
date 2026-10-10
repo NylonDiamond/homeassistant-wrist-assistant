@@ -130,8 +130,9 @@ export function runFirstRunTile(
 }
 
 /** What the empty face is called: a watch face slot, or on an iPhone a Home
- * Screen or Lock Screen one. */
+ * Screen or Lock Screen one, or a card on a dashboard. */
 export function slotWord(family: FamilyKind, asPhone: boolean): string {
+  if (family === "dashboard") return "dashboard card";
   if (isHomeFamily(family)) return "Home Screen slot";
   return asPhone ? "Lock Screen slot" : "watch face slot";
 }

@@ -15,7 +15,7 @@ import {
   seedFamilyFromSibling,
   setControlShown,
 } from "./model.js";
-import { ALL_FAMILIES, addFamily, dropFamily, isHomeFamily, supportedFamilies } from "./layouts.js";
+import { ALL_FAMILIES, addFamily, dropFamily, isDashboardFamily, isHomeFamily, supportedFamilies } from "./layouts.js";
 import { type DeviceKind, LIBRARY_OWNER_ID, MIN_IPHONE_VERSION_FOR_HOME_SCREEN, watchSupportsShapes } from "./version.js";
 import { familiesFor, comingSoonFamilies } from "./layouts.js";
 
@@ -114,6 +114,8 @@ export function unreadableRefusal(names: readonly string[]): string {
  *     it predates (the Swift decoder reads `supportedFamilies` as a
  *     `Set<FamilyKind>`), and an app on that release resolves and archives up
  *     to four tiles it never draws on every timeline entry.
+ *   - No device carries Dashboard. The apps decode shapes strictly, so one
+ *     would fail the whole document, and the store refuses it under a device.
  *   - The Library keeps everything. No app decodes the shelf, so a shape
  *     trimmed off it would be a shape lost for good.
  */
@@ -121,9 +123,9 @@ export function familiesKeptFor(owner: Pick<DeviceOwner, "kind" | "appVersion">)
   if (owner.kind === "library") return libraryFamilies();
   if (owner.kind === "iphone") {
     const home = watchSupportsShapes(owner.appVersion, MIN_IPHONE_VERSION_FOR_HOME_SCREEN);
-    return ALL_FAMILIES.filter((f) => f !== "corner" && (home || !isHomeFamily(f)));
+    return ALL_FAMILIES.filter((f) => f !== "corner" && !isDashboardFamily(f) && (home || !isHomeFamily(f)));
   }
-  return ALL_FAMILIES.filter((f) => !isHomeFamily(f));
+  return ALL_FAMILIES.filter((f) => !isHomeFamily(f) && !isDashboardFamily(f));
 }
 
 // ── which seat a new record takes ─────────────────────────────────────────

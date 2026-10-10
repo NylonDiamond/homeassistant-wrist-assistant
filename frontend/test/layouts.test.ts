@@ -77,8 +77,18 @@ describe("familiesFor", () => {
   it("gives the library every shape a watch and a phone draw between them", () => {
     const expected = [...WATCH_SHAPES, "small", "medium", "large"];
     expect(familiesFor({ device_kind: "library" })).toEqual(
-      XLARGE_OFFERED ? [...expected, "xlarge"] : expected,
+      XLARGE_OFFERED ? [...expected, "xlarge", "dashboard"] : [...expected, "dashboard"],
     );
+  });
+
+  it("offers Dashboard in the Library and on no device", () => {
+    expect(familiesFor({ device_kind: "library" })).toContain("dashboard");
+    expect(familiesFor({ owner_watch_id: "library" })).toContain("dashboard");
+    expect(familiesFor({ device_kind: "watch" })).not.toContain("dashboard");
+    expect(familiesFor({ device_kind: "watch", app_version: "1.0.0" })).not.toContain("dashboard");
+    expect(familiesFor(NEW_PHONE)).not.toContain("dashboard");
+    expect(familiesFor({ device_kind: "iphone", app_version: "1.0.0" })).not.toContain("dashboard");
+    expect(familiesFor(undefined)).not.toContain("dashboard");
   });
 
   it("narrows the library by neither the version nor the absence of one", () => {
@@ -89,8 +99,8 @@ describe("familiesFor", () => {
     expect(familiesFor({ owner_watch_id: "library" })).toEqual(every);
   });
 
-  it("gives the library the union of what the two newest devices draw", () => {
-    const both = new Set([...familiesFor({ device_kind: "watch" }), ...familiesFor(NEW_PHONE)]);
+  it("gives the library the union of what the two newest devices draw, and Dashboard", () => {
+    const both = new Set([...familiesFor({ device_kind: "watch" }), ...familiesFor(NEW_PHONE), "dashboard"]);
     expect(familiesFor({ device_kind: "library" })).toEqual(ALL_FAMILIES.filter((f) => both.has(f)));
   });
 
@@ -98,7 +108,7 @@ describe("familiesFor", () => {
     familiesFor({ device_kind: "iphone" });
     familiesFor({ device_kind: "watch" });
     familiesFor({ device_kind: "library" });
-    expect(ALL_FAMILIES).toEqual([...WATCH_SHAPES, "small", "medium", "large", "xlarge"]);
+    expect(ALL_FAMILIES).toEqual([...WATCH_SHAPES, "small", "medium", "large", "xlarge", "dashboard"]);
   });
 
   it("knows which shapes are Home Screen tiles", () => {
@@ -378,9 +388,9 @@ describe("helpers", () => {
     const cfg = { supportedFamilies: ["inline", "rectangular"] as const };
     expect(supportedFamilies({ supportedFamilies: [...cfg.supportedFamilies] })).toEqual(["rectangular", "inline"]);
     expect(missingFamilies({ supportedFamilies: [...cfg.supportedFamilies] })).toEqual(
-      ["circular", "corner", "small", "medium", "large", "xlarge"],
+      ["circular", "corner", "small", "medium", "large", "xlarge", "dashboard"],
     );
-    expect(ALL_FAMILIES).toEqual(["rectangular", "circular", "corner", "inline", "small", "medium", "large", "xlarge"]);
+    expect(ALL_FAMILIES).toEqual(["rectangular", "circular", "corner", "inline", "small", "medium", "large", "xlarge", "dashboard"]);
   });
 
   it("finds the first canvas shape, or none for Inline only", () => {
@@ -487,9 +497,13 @@ describe("familyNote", () => {
   });
 
   it("says nothing about any other shape", () => {
-    for (const family of ALL_FAMILIES.filter((f) => f !== "xlarge")) {
+    for (const family of ALL_FAMILIES.filter((f) => f !== "xlarge" && f !== "dashboard")) {
       expect(familyNote(family)).toBeUndefined();
     }
+  });
+
+  it("says where a Dashboard design is drawn", () => {
+    expect(familyNote("dashboard")).toBe("Home Assistant dashboards only");
   });
 });
 

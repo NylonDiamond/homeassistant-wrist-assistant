@@ -20,7 +20,7 @@ import {
   type CustomComplicationConfig,
   type DrawableFamily,
   type Value,
-  DESIGN_BOX,
+  designBox,
   DRAWABLE_FAMILIES,
   chartHistoryKey,
   chartStatisticsKey,
@@ -156,7 +156,7 @@ export async function renderGalleryPreviews(
   if (plan.kind === "none") return [];
   const out: GalleryPreview[] = [];
   for (const { page, layout } of plan.pages) {
-    const png = await templateToPng(renderLayout(layout, { icons, slot: DESIGN_BOX[plan.family], pictureScene: true }));
+    const png = await templateToPng(renderLayout(layout, { icons, slot: layout.canvas ?? designBox(cfg, plan.family), pictureScene: true }));
     out.push(page === undefined ? { family: plan.family, png } : { family: plan.family, page, png });
   }
   return out;

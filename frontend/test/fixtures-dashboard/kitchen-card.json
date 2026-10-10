@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 11,
+  "id": "D45B0A2D-0000-4000-8000-000000000001",
+  "name": "Kitchen card",
+  "values": [],
+  "slotIndex": 0,
+  "elements": [
+    {
+      "kind": "text",
+      "payload": {
+        "id": "D45B0A2D-0000-4000-8000-0000000000A1",
+        "colorSlot": {
+          "baseColorHex": "#FFFFFF"
+        },
+        "rules": [],
+        "frame": {
+          "x": 0.25,
+          "y": 0.25,
+          "width": 0.5,
+          "height": 0.5,
+          "rotationDegrees": 0
+        },
+        "isHidden": false,
+        "value": {
+          "kind": {
+            "kind": "literal",
+            "value": "Text"
+          }
+        },
+        "fontSize": 14,
+        "fontWeight": "regular"
+      }
+    }
+  ],
+  "supportedFamilies": [
+    "dashboard"
+  ],
+  "perFamily": [
+    "dashboard",
+    {
+      "placements": {
+        "D45B0A2D-0000-4000-8000-0000000000A1": {
+          "frame": {
+            "x": 0.1,
+            "y": 0.25,
+            "width": 0.8,
+            "height": 0.5,
+            "rotationDegrees": 0
+          },
+          "size": 24
+        }
+      },
+      "cornerBodyShape": "circle",
+      "borderWidth": 2,
+      "canvas": {
+        "width": 244,
+        "height": 120
+      }
+    }
+  ],
+  "dataSources": [],
+  "tapAction": {
+    "type": "refresh"
+  },
+  "refreshMinutes": 0
+}

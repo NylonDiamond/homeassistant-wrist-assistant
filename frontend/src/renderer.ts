@@ -25,8 +25,10 @@ import {
   type NormalizedFrame,
   type Fill,
   type LevelDirection,
+  type FixedFamily,
   fillColorAt,
   gaugeLabelText,
+  designBox,
 } from "./model.js";
 import type { ImageSizeProvider } from "./image-sizes.js";
 import type { GestureTarget, HandleEdge } from "./interact.js";
@@ -59,9 +61,27 @@ export type { CanvasSize } from "./resolver.js";
 // disabled. Every watch draws a uniformly scaled copy of the watch boxes. It
 // lives in model.ts because growing a tap area needs it too, and one copy
 // cannot drift from the other.
-export const CANVAS: Record<DrawableFamily, CanvasSize> = DESIGN_BOX;
+// Dashboard has no entry: its box is the document's own canvas, which
+// `designBox` reads and `ResolvedLayout.canvas` carries.
+export const CANVAS: Record<FixedFamily, CanvasSize> = DESIGN_BOX;
 
-export type { DrawableFamily, WatchCanvasFamily, HomeFamily } from "./model.js";
+export type { DrawableFamily, WatchCanvasFamily, HomeFamily, FixedFamily } from "./model.js";
+export { designBox } from "./model.js";
+
+/** The rounding a Dashboard card's face is drawn with in the editor, in design
+ * points. Home Assistant's own card radius; on a dashboard `ha-card` draws the
+ * real one around the face. Preview chrome only, nothing on the wire. */
+export const DASHBOARD_CORNER_RADIUS = 12;
+
+/** The shape a resolved layout was resolved as, falling back to rectangular for
+ * a family this renderer has no box for, and the box its layers were laid out
+ * in: the layout's own canvas when the resolver set one. */
+function layoutBox(layout: ResolvedLayout): { family: DrawableFamily; design: CanvasSize } {
+  const family: DrawableFamily = layout.family === "dashboard" || layout.family in CANVAS
+    ? layout.family as DrawableFamily
+    : "rectangular";
+  return { family, design: layout.canvas ?? designBox(undefined, family) };
+}
 
 /** The system's continuous corner on an iPhone Home Screen tile, in design-box
  * points. One radius for every tile size, since it belongs to the device and
@@ -176,9 +196,12 @@ export type PreviewCase = WatchCase | PhoneCase;
  * three watch shapes and nothing else, so a Home Screen tile asked of a watch
  * falls back to its own design box rather than throwing: the panel never
  * offers a watch owner one, and a stray document is drawn at its box. */
-export function slotFor(previewCase: PreviewCase, family: DrawableFamily): CanvasSize {
+export function slotFor(previewCase: PreviewCase, family: DrawableFamily, design?: CanvasSize): CanvasSize {
   const slots: Partial<Record<DrawableFamily, CanvasSize>> = previewCase.slots;
-  return slots[family] ?? CANVAS[family];
+  // Dashboard is no device's slot: it is drawn at its own canvas, on whatever
+  // backdrop the caller gives it. `design` is that canvas when the caller has
+  // the document.
+  return slots[family] ?? design ?? designBox(undefined, family);
 }
 
 /** The phone case matching a `screen_size` string ("393x852", points). The
@@ -220,8 +243,8 @@ export interface Fit {
  * Uniform fit of the family's design box into a real slot, centred. Mirrors
  * `CustomComplication.DesignBox.fit` in Swift; the two must agree to the point.
  */
-export function fitBox(slot: CanvasSize, family: DrawableFamily): Fit {
-  const ref = CANVAS[family];
+export function fitBox(slot: CanvasSize, design: DrawableFamily | CanvasSize): Fit {
+  const ref = typeof design === "string" ? designBox(undefined, design) : design;
   if (slot.width <= 0 || slot.height <= 0) return { scale: 0, x: 0, y: 0, width: 0, height: 0 };
   const scale = Math.min(slot.width / ref.width, slot.height / ref.height);
   const width = ref.width * scale;
@@ -452,7 +475,7 @@ function flashShapeRing(family: DrawableFamily, color: string, canvas: CanvasSiz
     return svg`<circle class="wa-flash" pointer-events="none" cx=${canvas.width / 2} cy=${canvas.height / 2}
       r=${side / 2} fill="none" stroke=${color} stroke-width=${FLASH.circleStroke * scale} />`;
   }
-  const tile = isHomeTile(family);
+  const tile = isHomeTile(family) || family === "dashboard";
   return svg`<rect class="wa-flash" pointer-events="none" width=${canvas.width} height=${canvas.height}
     rx=${(tile ? FLASH.tileRadius : FLASH.rectRadius) * scale} fill="none" stroke=${color}
     stroke-width=${(tile ? FLASH.tileStroke : FLASH.rectStroke) * scale} />`;
@@ -3093,13 +3116,12 @@ function cornerGaugeSvg(g: ResolvedBezelGauge, s: number, uid: string): Template
 }
 
 export function renderLayout(layout: ResolvedLayout, options: RenderOptions): TemplateResult {
-  const family = (layout.family in CANVAS ? layout.family : "rectangular") as DrawableFamily;
   // `canvas` is the real slot: background, body clip, border and bezel fill it,
   // as on the watch. `design` is the box the layers were authored in; it lands
   // inside the slot through `fit` (docs/custom_complication_design_box.md).
-  const canvas = options.slot ?? CANVAS[family];
-  const design = CANVAS[family];
-  const fit = fitBox(canvas, family);
+  const { family, design } = layoutBox(layout);
+  const canvas = options.slot ?? design;
+  const fit = fitBox(canvas, design);
   const uid = `clip-${family}-${Math.random().toString(36).slice(2, 8)}`;
   const bg = parseColor(layout.backgroundColorHex);
   // The background's gradient, over the whole slot, beating the flat color.
@@ -3245,6 +3267,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   // border-radius for that, which stopped clipping once the svg let its
   // resize handles overflow, and the face drew as a black square.
   const rx = isHomeTile(family) ? HOME_TILE_CORNER_RADIUS * fit.scale
+    : family === "dashboard" ? DASHBOARD_CORNER_RADIUS * fit.scale
     : family === "circular" ? Math.min(canvas.width, canvas.height) / 2
     : 0;
   const clip = svg`<rect width=${canvas.width} height=${canvas.height} rx=${rx} />`;
@@ -3531,8 +3554,7 @@ function inkBox(el: ResolvedElement, canvas: CanvasSize): Box {
  * canvas, which is what the background row shows.
  */
 export function thumbCrop(layout: ResolvedLayout, ids: readonly string[], aspect: number): { x: number; y: number; w: number; h: number } {
-  const family = (layout.family in CANVAS ? layout.family : "rectangular") as DrawableFamily;
-  const design = CANVAS[family];
+  const { design } = layoutBox(layout);
   const picked = layout.elements.filter((el) => ids.includes(el.id));
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const el of picked) {
@@ -3574,8 +3596,7 @@ export function thumbCrop(layout: ResolvedLayout, ids: readonly string[], aspect
  * preview. Empty `ids` draw just the canvas: background and border.
  */
 export function renderLayerThumb(layout: ResolvedLayout, ids: readonly string[], options: ThumbOptions): TemplateResult {
-  const family = (layout.family in CANVAS ? layout.family : "rectangular") as DrawableFamily;
-  const design = CANVAS[family];
+  const { family, design } = layoutBox(layout);
   const crop = thumbCrop(layout, ids, options.width / options.height);
   const bg = parseColor(layout.backgroundColorHex);
   // The background's gradient, over the whole face, beating the flat color.
@@ -3594,11 +3615,12 @@ export function renderLayerThumb(layout: ResolvedLayout, ids: readonly string[],
   };
   const picked = layout.elements.filter((el) => ids.includes(el.id));
   // Three shapes of face, not two: a square one for rectangular, a disc for
-  // the round watch shapes, and a rounded tile for the Home Screen sizes.
+  // the round watch shapes, and a rounded tile for the Home Screen sizes and
+  // the Dashboard card.
   const shape: "rect" | "circle" | "rounded" = family === "rectangular"
     ? "rect"
-    : isHomeTile(family) ? "rounded" : "circle";
-  const rx = shape === "rounded" ? HOME_TILE_CORNER_RADIUS : 0;
+    : isHomeTile(family) || family === "dashboard" ? "rounded" : "circle";
+  const rx = shape !== "rounded" ? 0 : family === "dashboard" ? DASHBOARD_CORNER_RADIUS : HOME_TILE_CORNER_RADIUS;
   const chrome = border && bw > 0
     ? (shape === "circle"
       ? svg`<circle cx=${design.width / 2} cy=${design.height / 2} r=${design.width / 2 - bw / 2} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`
@@ -3627,5 +3649,6 @@ export function familyTitle(family: FamilyKind): string {
     case "medium": return "Medium";
     case "large": return "Large";
     case "xlarge": return "Extra Large";
+    case "dashboard": return "Dashboard";
   }
 }

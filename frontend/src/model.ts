@@ -6,7 +6,8 @@
 // v5 is shape-identical to v4 and only marks slotIndex > 7; v6 adds the
 // optional `inline` object and marks a document that lacks a canvas shape or
 // carries Inline (see schemaVersionFor); v7 adds the four iPhone Home Screen
-// shapes and marks any document naming one.
+// shapes and marks any document naming one. v11 is the Dashboard shape, which
+// only the panel and the store know: no watch or phone ever receives one.
 
 import { cleanNotes } from "./notes.js";
 
@@ -17,13 +18,19 @@ export type WatchCanvasFamily = "rectangular" | "circular" | "corner";
 /** The four iPhone Home Screen tile sizes (`systemSmall`, `systemMedium`,
  * `systemLarge`, `systemExtraLargePortrait`). A watch never draws one. */
 export type HomeFamily = "small" | "medium" | "large" | "xlarge";
+/** A card on a Home Assistant dashboard. Its size is the author's, stored as
+ * `canvas` in its `perFamily` entry, and it lives in the Library only: the
+ * apps decode shapes strictly, so a watch or phone must never see one. */
+export type DashboardFamily = "dashboard";
+/** The shapes whose design box is fixed, which is every canvas but Dashboard. */
+export type FixedFamily = WatchCanvasFamily | HomeFamily;
 /** Every shape with a canvas, which is every shape but Inline. */
-export type DrawableFamily = WatchCanvasFamily | HomeFamily;
+export type DrawableFamily = FixedFamily | DashboardFamily;
 export type FamilyKind = DrawableFamily | "inline";
 
 export const WATCH_CANVAS_FAMILIES: WatchCanvasFamily[] = ["rectangular", "circular", "corner"];
 export const HOME_FAMILIES: HomeFamily[] = ["small", "medium", "large", "xlarge"];
-export const DRAWABLE_FAMILIES: DrawableFamily[] = [...WATCH_CANVAS_FAMILIES, ...HOME_FAMILIES];
+export const DRAWABLE_FAMILIES: DrawableFamily[] = [...WATCH_CANVAS_FAMILIES, ...HOME_FAMILIES, "dashboard"];
 
 /** Whether a shape has a canvas, which is every shape but Inline.
  * `layouts.isDrawable` is the panel's name for the same answer; this copy is
@@ -44,7 +51,7 @@ export function hasCanvas(family: FamilyKind): family is DrawableFamily {
  * direction than the real tile, which is why they are measured rather than
  * copied. `xlarge` was measured on an iPhone 15 Pro simulator running iOS 27,
  * where the other three tiles came out identical to the phone. */
-export const DESIGN_BOX: Record<DrawableFamily, { width: number; height: number }> = {
+export const DESIGN_BOX: Record<FixedFamily, Box> = {
   rectangular: { width: 181, height: 65.5 },
   circular: { width: 51, height: 51 },
   corner: { width: 34, height: 34 },
@@ -53,10 +60,88 @@ export const DESIGN_BOX: Record<DrawableFamily, { width: number; height: number 
   large: { width: 344.67, height: 360 },
   xlarge: { width: 344.67, height: 557.33 },
 };
+
+/** A width and a height in points. */
+export interface Box {
+  width: number;
+  height: number;
+}
+
+/** The Home Assistant sections grid a dashboard card sits on: 12 columns to a
+ * section, rows 56 px high, 8 px between both. The column width is the one a
+ * section about 500 px wide gives, which is the default on a desktop. */
+export const DASHBOARD_GRID = { columns: 12, columnWidth: 34, rowHeight: 56, gap: 8 } as const;
+
+/** The canvas a card spanning `columns` by `rows` of the sections grid has. */
+export function dashboardCanvasFor(columns: number, rows: number): Box {
+  const g = DASHBOARD_GRID;
+  return {
+    width: columns * g.columnWidth + (columns - 1) * g.gap,
+    height: rows * g.rowHeight + (rows - 1) * g.gap,
+  };
+}
+
+/** The grid cells a canvas covers, rounded to the nearest and kept to 1...12
+ * columns and at least one row. The card's `getGridOptions` reads this. */
+export function dashboardGridFor(canvas: Box): { columns: number; rows: number } {
+  const g = DASHBOARD_GRID;
+  const columns = Math.round((canvas.width + g.gap) / (g.columnWidth + g.gap));
+  const rows = Math.round((canvas.height + g.gap) / (g.rowHeight + g.gap));
+  return { columns: Math.min(g.columns, Math.max(1, columns)), rows: Math.max(1, rows) };
+}
+
+/** The sizes the editor offers, named by how many quarter-section units they
+ * span: a unit is 3 columns by 2 rows, about square. `full` is a banner across
+ * the whole section. */
+export const DASHBOARD_PRESETS: readonly { id: string; label: string; columns: number; rows: number }[] = [
+  { id: "1x1", label: "Tile", columns: 3, rows: 2 },
+  { id: "2x1", label: "Wide", columns: 6, rows: 2 },
+  { id: "4x2", label: "Large", columns: 12, rows: 4 },
+  { id: "full", label: "Full width", columns: 12, rows: 2 },
+];
+
+/** The canvas a new Dashboard design starts with: two units wide, one high. */
+export const DASHBOARD_DEFAULT_CANVAS: Box = dashboardCanvasFor(6, 2);
+/** Bounds on either side of a dashboard canvas, in points. The store refuses a
+ * document outside them (`_DASHBOARD_CANVAS_MIN`/`_MAX` in
+ * `complication_store.py`), so change both together. */
+export const DASHBOARD_CANVAS_MIN = 32;
+export const DASHBOARD_CANVAS_MAX = 1200;
+
+/** A canvas kept inside the bounds, rounded to a hundredth of a point. A side
+ * that is not a finite number takes the default's. */
+export function clampDashboardCanvas(c: { width?: unknown; height?: unknown } | undefined): Box {
+  const side = (v: unknown, fallback: number): number => {
+    const n = typeof v === "number" && Number.isFinite(v) ? v : fallback;
+    return Math.round(Math.min(DASHBOARD_CANVAS_MAX, Math.max(DASHBOARD_CANVAS_MIN, n)) * 100) / 100;
+  };
+  return { width: side(c?.width, DASHBOARD_DEFAULT_CANVAS.width), height: side(c?.height, DASHBOARD_DEFAULT_CANVAS.height) };
+}
+
+/** The box a shape is drawn in. A fixed shape's is `DESIGN_BOX`; Dashboard's
+ * is the document's own canvas, or the default when it has none. Every lookup
+ * that may meet Dashboard goes through here rather than indexing the table. */
+export function designBox(cfg: { perFamily: Partial<Record<FamilyKind, FamilyLayout>> } | undefined, family: DrawableFamily): Box {
+  if (family === "dashboard") return clampDashboardCanvas(cfg?.perFamily.dashboard?.canvas);
+  return DESIGN_BOX[family];
+}
+
+/** `designBox` for any shape, Inline included: Inline has no canvas of its own
+ * and borrows rectangular's, which is what every resolver lookup did before. */
+export function designBoxOf(cfg: { perFamily: Partial<Record<FamilyKind, FamilyLayout>> } | undefined, family: FamilyKind): Box {
+  return designBox(cfg, family === "inline" ? "rectangular" : family);
+}
+
+/** Whether a shape is Dashboard, which lives in the Library only. */
+export function isDashboardFamily(family: FamilyKind | undefined): family is DashboardFamily {
+  return family === "dashboard";
+}
+
 /** Every shape, in the order the schema lists them. `layouts.ts` re-exports it
  * as ALL_FAMILIES for the panel; it lives here so newConfig can order a set.
- * The Home Screen four go last so an existing document's order never moves. */
-const ALL_FAMILY_ORDER: FamilyKind[] = ["rectangular", "circular", "corner", "inline", ...HOME_FAMILIES];
+ * The Home Screen four go after the watch's so an existing document's order
+ * never moves, and Dashboard goes last for the same reason. */
+const ALL_FAMILY_ORDER: FamilyKind[] = ["rectangular", "circular", "corner", "inline", ...HOME_FAMILIES, "dashboard"];
 
 // The watch face picker always shows the first BASE_SLOTS slots and grows past
 // them only when a higher slot is occupied; MAX_SLOTS is the hard ceiling both
@@ -99,7 +184,12 @@ export function lockedOccupied(recordSlots: Iterable<number>, occupied: readonly
 }
 
 /** The schema a document must carry for its content. Mirrors
- * `CustomComplicationConfig.schemaVersion(for:)` in the app.
+ * `CustomComplicationConfig.schemaVersion(for:)` in the app, apart from 11.
+ *
+ * 11 when the document names Dashboard. No app reads 11: the rung is there so
+ * a document that slipped past the store's device-owner refusal is still
+ * refused whole as "update the app" rather than half decoded. The store keeps
+ * Dashboard in the Library, so in practice a device never meets one.
  *
  * 8 when the document carries a `list` layer, or an `item` or `listStat` value
  * anywhere in it. An app on 7 meets an element kind and a value kind it has no
@@ -126,6 +216,7 @@ export function lockedOccupied(recordSlots: Iterable<number>, occupied: readonly
  * slot 7 (an old app's slot-id parser rejects ids past 8) and 4 below, so an
  * unchanged document stays byte-stable for old apps. */
 export function schemaVersionFor(cfg: CustomComplicationConfig): number {
+  if (cfg.supportedFamilies.includes("dashboard")) return 11;
   if (documentReadsImageTime(cfg)) return 10;
   if (usesPages(cfg)) return 9;
   if (documentNeedsLists(cfg)) return 8;
@@ -877,7 +968,7 @@ function writeLevel(payload: { level?: Level }, o: J): void {
  * there. A wide strip curves too: with a radius past its shorter side the arc
  * is shallow enough to read, which is what a label over a chart wants.
  * Mirrors `TextElement.Arc.allowedFamilies` in the app repo. */
-export const ARC_TEXT_FAMILIES: FamilyKind[] = ["circular", "rectangular", "corner", "small", "medium", "large", "xlarge"];
+export const ARC_TEXT_FAMILIES: FamilyKind[] = ["circular", "rectangular", "corner", "small", "medium", "large", "xlarge", "dashboard"];
 
 export function familyAllowsArcText(family: FamilyKind): boolean {
   return ARC_TEXT_FAMILIES.includes(family);
@@ -2976,7 +3067,7 @@ export const LIST_TEMPLATE_BANNED_KINDS: readonly string[] =
 /** The shapes a list is offered on. Not the round ones and not Inline: a cell
  * on a 51 point circle is not a row, and a placement written for one of those
  * shapes is ignored rather than drawn. */
-export const LIST_FAMILIES: readonly FamilyKind[] = ["rectangular", "small", "medium", "large", "xlarge"];
+export const LIST_FAMILIES: readonly FamilyKind[] = ["rectangular", "small", "medium", "large", "xlarge", "dashboard"];
 
 /**
  * A row template drawn once per item.
@@ -3155,6 +3246,10 @@ export interface FamilyLayout {
   borderColorHex?: string;
   borderWidth: number;
   rules: Rule[];
+  /** Dashboard only: the card's size in points, clamped to
+   * `DASHBOARD_CANVAS_MIN`...`MAX`. Read through `designBox`, which supplies
+   * the default when it is missing. The audit refuses it on any other shape. */
+  canvas?: Box;
 }
 
 /** A raw service call: `domain.service`, an optional target entity, and service
@@ -5202,6 +5297,7 @@ function parseLayout(o: unknown): FamilyLayout {
   const backgroundFill = parseFill(l.backgroundFill);
   if (backgroundFill !== undefined) layout.backgroundFill = backgroundFill;
   if (typeof l.borderColorHex === "string") layout.borderColorHex = l.borderColorHex;
+  if (isObject(l.canvas)) layout.canvas = clampDashboardCanvas(l.canvas);
   return layout;
 }
 
@@ -6131,7 +6227,7 @@ export function convertImageTimeLayer(cfg: CustomComplicationConfig, id: string)
   const seat = DRAWABLE_FAMILIES.find((f) => cfg.perFamily[f]?.placements[id] !== undefined);
   const placed = seat === undefined ? undefined : cfg.perFamily[seat]!.placements[id]!;
   const sized = placed?.frame ?? o.frame;
-  const box = DESIGN_BOX[seat ?? "rectangular"];
+  const box = designBox(cfg, seat ?? "rectangular");
   const size = imageTimeTextSize(sized.width * box.width, sized.height * box.height);
   const [capsule, text] = imageTimestampLayers(o.image, o.frame, size);
   for (const l of [capsule, text]) {
@@ -6310,7 +6406,7 @@ export function liftChartOwnMarks(cfg: CustomComplicationConfig): void {
       convertChartTimes(cfg, c.id);
     }
     if (owner.kind === "image" && owner.payload.timestamp === true) {
-      addImageTime(cfg, c.id, DESIGN_BOX[seat ?? "rectangular"]);
+      addImageTime(cfg, c.id, designBox(cfg, seat ?? "rectangular"));
     }
     c.frame = ownFrame;
     if (seat === undefined || placed === undefined) continue;
@@ -7146,6 +7242,7 @@ function encodeLayout(l: FamilyLayout): J {
   if (l.borderColorHex !== undefined) o.borderColorHex = l.borderColorHex;
   o.borderWidth = encNum(l.borderWidth);
   if (l.rules.length > 0) o.rules = encodeRules(l.rules);
+  if (l.canvas !== undefined) o.canvas = { width: l.canvas.width, height: l.canvas.height };
   return o;
 }
 
@@ -7955,6 +8052,12 @@ const K = {
   // `dataSources` at all. See the note at the end of that function.
 };
 
+// Dashboard's layout carries one key no other shape has: its `canvas`. Kept out
+// of `K` on purpose. The app's converter test mirrors `K` key for key, and no
+// app ever reads a Dashboard document, so the key belongs to the panel alone.
+const DASHBOARD_LAYOUT_KEYS = [...K.layout, "canvas"];
+const DASHBOARD_CANVAS_KEYS = ["width", "height"];
+
 const VALUE_KIND_KEYS: Record<string, string[]> = {
   literal: ["kind", "value"],
   entityState: ["kind", ...K.entityRef],
@@ -8144,8 +8247,9 @@ export function auditUnknownKeys(raw: unknown): string[] {
   }
   for (const [family, l] of layouts) {
     const lp = `$.perFamily.${family}`;
-    check(l, K.layout, lp);
+    check(l, family === "dashboard" ? DASHBOARD_LAYOUT_KEYS : K.layout, lp);
     if (!isObject(l)) continue;
+    if ("canvas" in l) check(l.canvas, DASHBOARD_CANVAS_KEYS, `${lp}.canvas`);
     if (isObject(l.placements)) {
       for (const [id, p] of Object.entries(l.placements)) {
         check(p, K.placement, `${lp}.placements.${id}`);
@@ -8297,6 +8401,7 @@ export function legacyConfig(name: string, slotIndex: number, families: FamilyKi
 function buildConfig(name: string, slotIndex: number, families: readonly FamilyKind[]): CustomComplicationConfig {
   const perFamily: Partial<Record<FamilyKind, FamilyLayout>> = {};
   for (const f of DRAWABLE_FAMILIES) if (families.includes(f)) perFamily[f] = defaultLayout();
+  if (perFamily.dashboard) perFamily.dashboard.canvas = { ...DASHBOARD_DEFAULT_CANVAS };
   const cfg: CustomComplicationConfig = {
     schemaVersion: 4,
     id: newId(),
@@ -8587,11 +8692,17 @@ export function smallestSize(kind: Element["kind"]): number {
  * rectangular text do not fit on a 51 pt circle at a readable size. Nothing
  * goes below the size the editor's own fields allow, so a layout that scaled
  * to the floor says at a glance that it wants laying out by hand.
+ *
+ * `boxes` gives the two canvases when the caller has the document, which is
+ * what a Dashboard needs: its box is the document's own size, and without one
+ * it is taken at the default.
  */
-export function refitPlacement(p: Placement, from: FamilyKind, to: FamilyKind, kind: Element["kind"]): Placement {
+export function refitPlacement(
+  p: Placement, from: FamilyKind, to: FamilyKind, kind: Element["kind"], boxes: { from?: Box; to?: Box } = {},
+): Placement {
   const next = structuredClone(p);
-  const a = DESIGN_BOX[from as keyof typeof DESIGN_BOX];
-  const b = DESIGN_BOX[to as keyof typeof DESIGN_BOX];
+  const a = boxes.from ?? (hasCanvas(from) ? designBox(undefined, from) : undefined);
+  const b = boxes.to ?? (hasCanvas(to) ? designBox(undefined, to) : undefined);
   if (from === to || !a || !b) return next;
   const wasRound = ROUND_FAMILIES.includes(from);
   const isRound = ROUND_FAMILIES.includes(to);
@@ -8615,6 +8726,15 @@ export function refitPlacement(p: Placement, from: FamilyKind, to: FamilyKind, k
     next.size = Math.max(smallestSize(kind), Math.round(next.size * scale * 10) / 10);
   }
   return next;
+}
+
+/** The two canvases a refit runs between, read from the document, for the
+ * shapes that have one. Inline has none, and a refit to or from it is a copy. */
+function boxesOf(cfg: CustomComplicationConfig, from: FamilyKind, to: FamilyKind): { from?: Box; to?: Box } {
+  return {
+    ...(hasCanvas(from) ? { from: designBox(cfg, from) } : {}),
+    ...(hasCanvas(to) ? { to: designBox(cfg, to) } : {}),
+  };
 }
 
 /** One layer with one shape's placement applied: the frame, whether the shape
@@ -8815,7 +8935,7 @@ export function setTapOutsetFromFrame(
   const right = clamp01(frame.x + frame.width);
   const bottom = clamp01(frame.y + frame.height);
   const held = { ...frame, x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
-  tap.payload.outset = outsetBetween(base, held, DESIGN_BOX[family]);
+  tap.payload.outset = outsetBetween(base, held, designBox(cfg, family));
 }
 
 /**
@@ -8833,7 +8953,7 @@ export function tapPointSize(
   const layout = cfg.perFamily[family];
   if (!layout) return undefined;
   const frame = layout.placements[tapId]?.frame ?? tap.payload.frame;
-  const box = DESIGN_BOX[family];
+  const box = designBox(cfg, family);
   return { width: frame.width * box.width, height: frame.height * box.height };
 }
 
@@ -8948,7 +9068,7 @@ export function syncAttachedTaps(cfg: CustomComplicationConfig): void {
       for (const family of DRAWABLE_FAMILIES) {
         const layout = cfg.perFamily[family];
         if (!layout) continue;
-        const box = DESIGN_BOX[family];
+        const box = designBox(cfg, family);
         const p = layout.placements[ownerId];
         if (family !== home || !p) {
           delete layout.placements[tap.payload.id];
@@ -9278,7 +9398,9 @@ export function pasteElementsOnto(cfg: CustomComplicationConfig, clip: LayerClip
     // ids. Left there it would be a second owner, and settling the document
     // would split each copy in two, so it goes.
     for (const f of DRAWABLE_FAMILIES) if (f !== family) delete cfg.perFamily[f]?.placements[id];
-    layout.placements[id] = across ? refitPlacement(base, from, family, el.kind) : base;
+    layout.placements[id] = across
+      ? refitPlacement(base, from, family, el.kind, boxesOf(cfg, from, family))
+      : base;
   }
   normalizeOwnership(cfg, family);
   return landed;
@@ -9661,7 +9783,7 @@ export function copyShapeLayers(cfg: CustomComplicationConfig, from: FamilyKind,
     // Left on the source shape the copy would have two owners, and settling
     // the document would split it in two, so it comes off there.
     for (const f of DRAWABLE_FAMILIES) if (f !== to) delete cfg.perFamily[f]?.placements[id];
-    layout.placements[id] = refitPlacement(base, from, to, el.kind);
+    layout.placements[id] = refitPlacement(base, from, to, el.kind, boxesOf(cfg, from, to));
   }
   normalizeOwnership(cfg, to);
 }
@@ -9700,7 +9822,7 @@ export function seedSourceFor(cfg: CustomComplicationConfig, family: FamilyKind)
   const preferred = hasCanvas(family) ? SEED_SOURCE[family] : undefined;
   if (preferred !== undefined && drawn.includes(preferred)) return preferred;
   let widest: DrawableFamily | undefined;
-  for (const f of drawn) if (widest === undefined || DESIGN_BOX[f].width > DESIGN_BOX[widest].width) widest = f;
+  for (const f of drawn) if (widest === undefined || designBox(cfg, f).width > designBox(cfg, widest).width) widest = f;
   return widest;
 }
 

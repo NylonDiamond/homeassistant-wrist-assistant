@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { DESIGN_BOX, DRAWABLE_FAMILIES, HOME_FAMILIES, WATCH_CANVAS_FAMILIES } from "../src/model.js";
+import { DESIGN_BOX, DRAWABLE_FAMILIES, designBox, HOME_FAMILIES, WATCH_CANVAS_FAMILIES } from "../src/model.js";
 import { CANVAS, CASES, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, fitBox, phoneCaseForScreenSize, slotFor } from "../src/renderer.js";
 
 // Mirror of CustomComplicationDesignBoxTests.swift in the app repo. The two
 // fit functions must agree to the point, or the panel preview drifts from the
 // wrist.
 describe("design box", () => {
-  it("covers all seven canvas shapes and nothing else", () => {
-    expect(DRAWABLE_FAMILIES).toEqual(["rectangular", "circular", "corner", "small", "medium", "large", "xlarge"]);
-    expect(Object.keys(CANVAS).sort()).toEqual([...DRAWABLE_FAMILIES].sort());
+  it("covers the seven fixed canvas shapes, and Dashboard by its own canvas", () => {
+    expect(DRAWABLE_FAMILIES).toEqual(["rectangular", "circular", "corner", "small", "medium", "large", "xlarge", "dashboard"]);
+    expect(Object.keys(CANVAS).sort()).toEqual(DRAWABLE_FAMILIES.filter((f) => f !== "dashboard").sort());
     expect(CANVAS).toBe(DESIGN_BOX);
   });
 
@@ -27,12 +27,13 @@ describe("design box", () => {
 
   it("every shape's own box is the identity fit", () => {
     for (const family of DRAWABLE_FAMILIES) {
-      const fit = fitBox(CANVAS[family], family);
+      const box = designBox(undefined, family);
+      const fit = fitBox(box, family);
       expect(fit.scale).toBe(1);
       expect(fit.x).toBe(0);
       expect(fit.y).toBe(0);
-      expect(fit.width).toBe(CANVAS[family].width);
-      expect(fit.height).toBe(CANVAS[family].height);
+      expect(fit.width).toBe(box.width);
+      expect(fit.height).toBe(box.height);
     }
   });
 
