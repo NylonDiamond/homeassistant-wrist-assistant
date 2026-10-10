@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { familiesKeptFor } from "../src/copies.js";
+import { insertPart, partFromSelection } from "../src/parts.js";
 import { galleryBlockers, galleryRefusal } from "../src/gallery.js";
 import { familiesFor, placeOf, placeTitle } from "../src/layouts.js";
 import {
@@ -18,12 +19,14 @@ import {
   DESIGN_BOX,
   auditUnknownKeys,
   clampDashboardCanvas,
+  copyElements,
   dashboardCanvasFor,
   dashboardGridFor,
   designBox,
   encodeConfig,
   newConfig,
   parseConfig,
+  pasteElementsOnto,
   refitPlacement,
   schemaVersionFor,
 } from "../src/model.js";
@@ -125,6 +128,54 @@ describe("the canvas and the sections grid", () => {
     const p = { frame: { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 }, isHidden: false, size: 20 };
     const down = refitPlacement(p, "dashboard", "rectangular", "text", { from: { width: 362, height: 131 } });
     expect(down.size).toBe(10);
+  });
+});
+
+describe("copying layers off a Dashboard design", () => {
+  const TEXT_ID = "D45B0A2D-0000-4000-8000-0000000000A1";
+  const card = (width: number, height: number) => {
+    const cfg = parseConfig(fixture);
+    cfg.perFamily.dashboard!.canvas = { width, height };
+    // Large enough that no refit below lands on the smallest size text allows.
+    cfg.perFamily.dashboard!.placements[TEXT_ID]!.size = 96;
+    return cfg;
+  };
+  const pastedSize = (target: ReturnType<typeof newConfig>, family: "rectangular" | "dashboard", ids: string[]) =>
+    target.perFamily[family]!.placements[ids[0]!]!.size;
+
+  it("scales a paste into another design by the canvas it was copied on", () => {
+    const sizes = [[244, 120], [1000, 400], [1200, 1200]].map(([w, h]) => {
+      const clip = copyElements(card(w!, h!), [TEXT_ID], "dashboard");
+      expect(clip.canvas).toEqual({ width: w, height: h });
+      const target = newConfig("Target", 0, "rectangular");
+      return pastedSize(target, "rectangular", pasteElementsOnto(target, clip, "rectangular"));
+    });
+    const r = DESIGN_BOX.rectangular;
+    const expected = ([w, h]: number[]) => Math.round(96 * Math.min(r.width / w!, r.height / h!) * 10) / 10;
+    expect(sizes).toEqual([[244, 120], [1000, 400], [1200, 1200]].map(expected));
+    expect(new Set(sizes).size).toBe(3);
+  });
+
+  it("scales a paste between two Dashboard designs of different sizes", () => {
+    const clip = copyElements(card(1200, 1200), [TEXT_ID], "dashboard");
+    const target = card(244, 120);
+    const ids = pasteElementsOnto(target, clip, "dashboard");
+    expect(pastedSize(target, "dashboard", ids)).toBe(Math.round(96 * (120 / 1200) * 10) / 10);
+  });
+
+  it("leaves a paste between two Dashboards of one size alone", () => {
+    const clip = copyElements(card(500, 300), [TEXT_ID], "dashboard");
+    const target = card(500, 300);
+    expect(pastedSize(target, "dashboard", pasteElementsOnto(target, clip, "dashboard"))).toBe(96);
+  });
+
+  it("keeps the canvas on a part, so inserting it scales from the real size", () => {
+    const part = partFromSelection(card(1000, 400), [TEXT_ID], "Header", "dashboard");
+    expect(part.perFamily.dashboard?.canvas).toEqual({ width: 1000, height: 400 });
+    const target = newConfig("Target", 0, "rectangular");
+    const ids = insertPart(target, part, "rectangular");
+    const r = DESIGN_BOX.rectangular;
+    expect(pastedSize(target, "rectangular", ids)).toBe(Math.round(96 * Math.min(r.width / 1000, r.height / 400) * 10) / 10);
   });
 });
 

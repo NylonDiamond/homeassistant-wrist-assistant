@@ -110,6 +110,10 @@ export function partFromSelection(
     if (!placements || Object.keys(placements).length === 0) continue;
     perFamily[f] = { ...defaultLayout(), placements: structuredClone(placements) };
   }
+  // A Dashboard's size is the document's, so the part keeps it: inserting the
+  // part refits its layers from the canvas they were laid out on.
+  const canvas = cfg.perFamily.dashboard?.canvas;
+  if (perFamily.dashboard && canvas) perFamily.dashboard.canvas = { ...canvas };
   // A layer picked before it was ever placed has no placement anywhere, so the
   // shape it was picked on is named here rather than leaving a part with no
   // shape at all, which nothing could draw.
@@ -118,6 +122,7 @@ export function partFromSelection(
       ? family
       : cfg.supportedFamilies.find((f) => hasCanvas(f)) ?? "rectangular";
     perFamily[fallback] = defaultLayout();
+    if (fallback === "dashboard" && canvas) perFamily.dashboard!.canvas = { ...canvas };
   }
   doc.perFamily = perFamily;
   // Never empty: a document with no shape is one nothing can draw, and the

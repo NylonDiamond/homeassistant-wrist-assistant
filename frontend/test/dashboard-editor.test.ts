@@ -29,6 +29,7 @@ import {
   newConfig,
   parseConfig,
   setDashboardCanvas,
+  snapDashboardCanvas,
 } from "../src/model.js";
 import { kindChoices, kindOwners, newReady, newSummary, shapeGroups, shapeOffered } from "../src/newComplication.js";
 import type { DeviceOwner } from "../src/copies.js";
@@ -110,6 +111,12 @@ describe("the canvas size", () => {
 
   it("is one grid, read from its own module or the model", () => {
     expect(DASHBOARD_GRID).toBe(GRID_DIRECT);
+  });
+
+  it("snaps a dragged edge to whole cells, past one section's twelve columns too", () => {
+    expect(snapDashboardCanvas({ width: 250, height: 130 })).toEqual(dashboardCanvasFor(6, 2));
+    expect(snapDashboardCanvas({ width: 700, height: 10 })).toEqual(dashboardCanvasFor(17, 1));
+    expect(snapDashboardCanvas({ width: 5000, height: 5000 })).toEqual({ width: DASHBOARD_CANVAS_MAX, height: DASHBOARD_CANVAS_MAX });
   });
 });
 

@@ -126,6 +126,7 @@ import {
   dashboardGridFor,
   dashboardPresetOf,
   setDashboardCanvas,
+  snapDashboardCanvas,
   chartAnchorIsColumn,
   entityLayerIds,
   sharedValueLayerIds,
@@ -147,6 +148,7 @@ import {
 } from "./model.js";
 import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
+import { live } from "lit/directives/live.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, homeSync, sendState, sendWaitMs } from "./send-state.js";
 import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDeviceWhy, homeGroups, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
@@ -4750,6 +4752,19 @@ export class WristAssistantPanel extends LitElement {
        adds no corner, background or shadow of its own that would show past
        it. */
     .preview.dashboard svg { width: 100%; max-width: 1200px; background: transparent; border-radius: 0; box-shadow: none; }
+    /* An editable card is wrapped with the grips that size it, the wrapper as
+       wide as the card so the grips sit on its edges. */
+    .card-frame { position: relative; max-width: 1200px; margin: 0 auto; }
+    .card-frame > svg.complication { overflow: visible; }
+    .card-edge { position: absolute; z-index: 2; touch-action: none; }
+    .card-edge.e { top: 12px; bottom: 12px; right: -8px; width: 12px; cursor: ew-resize; }
+    .card-edge.s { left: 12px; right: 12px; bottom: -8px; height: 12px; cursor: ns-resize; }
+    .card-edge.se { right: -8px; bottom: -8px; width: 16px; height: 16px; cursor: nwse-resize; }
+    .card-edge::after { content: ""; position: absolute; border-radius: 2px; background: var(--wa-muted); opacity: 0; transition: opacity .12s; }
+    .card-edge.e::after { top: 50%; left: 4px; width: 4px; height: 28px; margin-top: -14px; }
+    .card-edge.s::after { left: 50%; top: 4px; height: 4px; width: 28px; margin-left: -14px; }
+    .card-edge.se::after { right: 4px; bottom: 4px; width: 8px; height: 8px; border-radius: 50%; }
+    .card-frame:hover > .card-edge::after, .card-edge.dragging::after { opacity: .7; }
     .size-tool .row { display: flex; align-items: center; gap: 12px; }
     .size-tool .size-cells { margin-left: auto; font-size: 11px; color: var(--wa-muted); font-variant-numeric: tabular-nums; }
     .size-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 4px 10px 6px; }
@@ -8918,11 +8933,15 @@ export class WristAssistantPanel extends LitElement {
     const side = (key: "width" | "height", label: string) => html`<label class="size-field">
       <span>${label}</span>
       <input type="number" inputmode="numeric" min=${DASHBOARD_CANVAS_MIN} max=${DASHBOARD_CANVAS_MAX} step="1"
-        .value=${String(Math.round(canvas[key]))} ?disabled=${locked} aria-label=${`Card ${label.toLowerCase()} in points`}
+        .value=${live(String(Math.round(canvas[key])))} ?disabled=${locked} aria-label=${`Card ${label.toLowerCase()} in points`}
         @change=${(e: Event) => {
-          const v = Number((e.target as HTMLInputElement).value);
+          // A cleared field is "no change", not zero: Number("") is 0, which
+          // would clamp the card down to its smallest size. The live binding puts the
+          // stored size back, also after a typed value that clamped to it.
+          const raw = (e.target as HTMLInputElement).value.trim();
+          const v = raw === "" ? NaN : Number(raw);
           if (Number.isFinite(v)) this.setCanvasSize({ [key]: v }, `canvas-${key}`);
-          else this.requestUpdate();
+          this.requestUpdate();
         }} />
     </label>`;
     return html`<span class="case-tool preview-tool size-tool" data-menu="size">
@@ -8949,6 +8968,68 @@ export class WristAssistantPanel extends LitElement {
   private setCanvasSize(size: { width?: number; height?: number }, coalesce: string) {
     if (!this.canEdit) return;
     this.mutate((c) => setDashboardCanvas(c, size), coalesce);
+  }
+
+  /** The grips on a Dashboard card's right edge, bottom edge and corner, the
+   * third way to size it beside the menu's presets and typed sides. */
+  private renderCardEdges() {
+    const grip = (edge: "e" | "s" | "se", label: string) => html`<div class="card-edge ${edge}" role="presentation"
+      title=${label} @pointerdown=${(e: PointerEvent) => this.beginCardEdgeDrag(e, edge)}></div>`;
+    return html`${grip("e", "Drag to change the card's width")}${grip("s", "Drag to change the card's height")}${grip("se", "Drag to change the card's size")}`;
+  }
+
+  /**
+   * Drag a Dashboard card's edge. The pointer's travel is read in design
+   * points at the scale the card was drawn at when the press landed, so the
+   * card keeps one steady rate while the stage refits it around the new
+   * shape. With snapping on (Alt turns it off for the drag) each side lands
+   * on whole cells of the sections grid. The whole drag is one undo step.
+   */
+  private beginCardEdgeDrag(e: PointerEvent, edge: "e" | "s" | "se") {
+    if (e.button !== 0 || !this.canEdit || !this.draft) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const grip = e.currentTarget as HTMLElement;
+    const svg = grip.parentElement?.querySelector("svg.complication");
+    const rect = svg?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    const start = designBox(this.draft.config, "dashboard");
+    const perPixel = start.width / rect.width;
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add("dragging");
+    let moved = false;
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
+      const dx = ev.clientX - e.clientX;
+      const dy = ev.clientY - e.clientY;
+      if (!moved) {
+        if (Math.hypot(dx, dy) <= DRAG_SLOP) return;
+        moved = true;
+        this.draft?.beginGesture();
+      }
+      const raw = {
+        width: edge === "s" ? start.width : start.width + dx * perPixel,
+        height: edge === "e" ? start.height : start.height + dy * perPixel,
+      };
+      const snapped = this.snapGrid && !ev.altKey ? snapDashboardCanvas(raw) : raw;
+      // Only the sides being dragged move: snapping must not pull the other
+      // one onto the grid when the card was typed to a size between cells.
+      this.setCanvasSize({
+        ...(edge !== "s" ? { width: snapped.width } : {}),
+        ...(edge !== "e" ? { height: snapped.height } : {}),
+      }, "canvas-drag");
+    };
+    const end = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", end);
+      grip.removeEventListener("pointercancel", end);
+      grip.classList.remove("dragging");
+      if (moved) this.draft?.endGesture();
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", end);
+    grip.addEventListener("pointercancel", end);
   }
 
   /** Select one of a corner's fixed parts: its Curved text row or its Bezel
@@ -19794,7 +19875,9 @@ export class WristAssistantPanel extends LitElement {
       @pointerleave=${() => { this.faceHover = undefined; }}
       @dblclick=${(e: MouseEvent) => this.onPreviewDoubleClick(e)}>
       ${cfg && !(review && focus === undefined) ? this.renderFaceLabel(cfg, focus !== undefined ? { kind: "layer", id: focus } : shown) : nothing}
-      ${renderLayout(layout, opts)}${overlay ?? nothing}
+      ${family === "dashboard" && this.canEdit
+        ? html`<div class="card-frame">${renderLayout(layout, opts)}${this.renderCardEdges()}</div>`
+        : renderLayout(layout, opts)}${overlay ?? nothing}
     </div>`;
   }
 

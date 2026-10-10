@@ -123,6 +123,18 @@ export function dashboardPresetOf(canvas: Box): string | undefined {
   })?.id;
 }
 
+/** A canvas dragged to a size, each side pulled to the nearest whole cells of
+ * the sections grid, the way the stage snaps a card's edge while snapping is
+ * on. Unlike `dashboardGridFor` the columns are not held to one section's
+ * twelve, so a card dragged wider than a section still snaps, in the same
+ * steps. */
+export function snapDashboardCanvas(box: Box): Box {
+  const g = DASHBOARD_GRID;
+  const columns = Math.max(1, Math.round((box.width + g.gap) / (g.columnWidth + g.gap)));
+  const rows = Math.max(1, Math.round((box.height + g.gap) / (g.rowHeight + g.gap)));
+  return clampDashboardCanvas(dashboardCanvasFor(columns, rows));
+}
+
 /**
  * A Dashboard design's size, written. Clamped to the store's bounds, so a
  * typed 5000 lands as 1200 rather than as a save the store refuses.
@@ -8719,7 +8731,9 @@ export function refitPlacement(
   const next = structuredClone(p);
   const a = boxes.from ?? (hasCanvas(from) ? designBox(undefined, from) : undefined);
   const b = boxes.to ?? (hasCanvas(to) ? designBox(undefined, to) : undefined);
-  if (from === to || !a || !b) return next;
+  // The same shape is a copy only when the two canvases match too: two
+  // Dashboard designs of different sizes still want the layer scaled.
+  if (!a || !b || (from === to && a.width === b.width && a.height === b.height)) return next;
   const wasRound = ROUND_FAMILIES.includes(from);
   const isRound = ROUND_FAMILIES.includes(to);
   const inset = wasRound === isRound ? 1 : isRound ? INSCRIBED : 1 / INSCRIBED;
@@ -9337,6 +9351,9 @@ export interface LayerClip {
    * different shape of the same document means "put these here", not "make
    * second copies of them", and this is how the paste can tell. */
   family?: FamilyKind;
+  /** The Dashboard canvas the copy was taken on. A Dashboard's size belongs to
+   * its document, so a paste into another document cannot read it there. */
+  canvas?: Box;
 }
 
 export function copyElements(cfg: CustomComplicationConfig, ids: readonly string[], from?: FamilyKind): LayerClip {
@@ -9371,7 +9388,11 @@ export function copyElements(cfg: CustomComplicationConfig, ids: readonly string
   const groupIds = new Set<string>();
   for (const el of elements) for (const g of groupChain(cfg, el.payload.groupId)) groupIds.add(g.id);
   const groups = (cfg.groups ?? []).filter((g) => groupIds.has(g.id)).map((g) => structuredClone(g));
-  return { elements, placements, groups, ...(from !== undefined ? { family: from } : {}) };
+  return {
+    elements, placements, groups,
+    ...(from !== undefined ? { family: from } : {}),
+    ...(from === "dashboard" ? { canvas: designBox(cfg, from) } : {}),
+  };
 }
 
 /**
@@ -9391,7 +9412,18 @@ export function pasteElementsOnto(cfg: CustomComplicationConfig, clip: LayerClip
   const from = clip.family;
   const across = from !== undefined && from !== family && hasCanvas(from);
   if (!hasCanvas(family)) return pasteElements(cfg, clip);
-  const landed = pasteElements(cfg, clip, across ? { nudge: false } : {});
+  // The canvas the layers were laid out on: the clip's own when it carried
+  // one, since a copy from another Dashboard design has a size this document
+  // does not know. Pasting between two Dashboards of different sizes refits
+  // too, though the shape is the same.
+  const boxes = from !== undefined && hasCanvas(from)
+    ? { ...boxesOf(cfg, from, family), ...(clip.canvas ? { from: clip.canvas } : {}) }
+    : undefined;
+  const refit = boxes !== undefined && from !== undefined
+    && (across || boxes.from?.width !== boxes.to?.width || boxes.from?.height !== boxes.to?.height);
+  const idMap = new Map<string, string>();
+  const landed = pasteElements(cfg, clip, across ? { nudge: false, idMap } : { idMap });
+  const oldIdOf = new Map([...idMap].map(([oldId, id]) => [id, oldId] as const));
   const layout = cfg.perFamily[family] ?? (cfg.perFamily[family] = defaultLayout());
   for (const id of landed) {
     const el = cfg.elements.find((e) => e.payload.id === id);
@@ -9399,7 +9431,11 @@ export function pasteElementsOnto(cfg: CustomComplicationConfig, clip: LayerClip
     // The copies arrived carrying the placement the originals have on the
     // shape they were taken from. Move that onto this shape, refitting when
     // the two canvases differ.
+    // A document without the source shape never took its placements in, so
+    // they are read off the clip instead.
+    const oldId = oldIdOf.get(id);
     const src = (from !== undefined ? cfg.perFamily[from]?.placements[id] : undefined)
+      ?? (from !== undefined && hasCanvas(from) && oldId !== undefined ? clip.placements[from]?.[oldId] : undefined)
       ?? DRAWABLE_FAMILIES.map((f) => cfg.perFamily[f]?.placements[id]).find((p) => p !== undefined);
     // The size travels even when the source shape never set one, so the refit
     // has something to scale and the layer does not arrive at the size it
@@ -9414,8 +9450,8 @@ export function pasteElementsOnto(cfg: CustomComplicationConfig, clip: LayerClip
     // ids. Left there it would be a second owner, and settling the document
     // would split each copy in two, so it goes.
     for (const f of DRAWABLE_FAMILIES) if (f !== family) delete cfg.perFamily[f]?.placements[id];
-    layout.placements[id] = across
-      ? refitPlacement(base, from, family, el.kind, boxesOf(cfg, from, family))
+    layout.placements[id] = refit
+      ? refitPlacement(base, from, family, el.kind, boxes)
       : base;
   }
   normalizeOwnership(cfg, family);
@@ -9433,7 +9469,8 @@ export function pasteElementsOnto(cfg: CustomComplicationConfig, clip: LayerClip
  *
  * `nudge: false` turns that offset off, for the one caller that wants the copy
  * on the exact same spot: giving a second shape its own set of layers, where
- * the point is that the picture does not move.
+ * the point is that the picture does not move. `idMap`, when given, is filled
+ * with each copied id's fresh one.
  */
 /**
  * Which of a clip's groups paste as groups, each mapped to a fresh id. Worked
@@ -9460,8 +9497,10 @@ function pasteGroupIds(groups: readonly LayerGroup[], rows: readonly Element[]):
   return out;
 }
 
-export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip, opts: { nudge?: boolean } = {}): string[] {
-  const idMap = new Map<string, string>();
+export function pasteElements(
+  cfg: CustomComplicationConfig, clip: LayerClip, opts: { nudge?: boolean; idMap?: Map<string, string> } = {},
+): string[] {
+  const idMap = opts.idMap ?? new Map<string, string>();
   for (const el of clip.elements) {
     idMap.set(el.payload.id, newId());
     // A row layer is not a layer of the document, but it has an id of its own
