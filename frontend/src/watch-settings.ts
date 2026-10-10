@@ -488,7 +488,17 @@ export function savedByWords(updatedBy: string | null | undefined): string {
 /** The pill and its help line while a save waits for a device. */
 export const WAITING_PILL_TEXT = "Waiting to be collected";
 export const COLLECTED_PILL_TEXT = "Synced";
-export const WAITING_HELP_TEXT = "The watch picks it up the next time it checks.";
+export const WAITING_HELP_TEXT = waitingHelpText("watch");
+
+/** The help line while a save waits, naming the device it waits for. */
+export function waitingHelpText(device: SettingDevice): string {
+  return `The ${deviceNoun(device)} picks it up the next time it checks.`;
+}
+
+/** The device in a sentence: "watch" or "iPhone". */
+export function deviceNoun(device: SettingDevice): string {
+  return device === "iphone" ? "iPhone" : "watch";
+}
 
 /** The code of a WebSocket error, such as `conflict` or `no_record`. */
 export function errorCode(err: unknown): string | undefined {

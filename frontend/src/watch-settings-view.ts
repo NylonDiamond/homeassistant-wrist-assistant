@@ -64,7 +64,6 @@ import {
   SETTINGS_MAIN_HOUSE_TEXT,
   SETTINGS_UNREADABLE_TEXT,
   START_FRESH_BUTTON,
-  WAITING_HELP_TEXT,
   WAITING_PILL_TEXT,
   buildSaveDocument,
   catalogFor,
@@ -88,6 +87,7 @@ import {
   settingsTitle,
   settingsWatches,
   takesSettingsFromAnotherHome,
+  waitingHelpText,
   watchAppDevices,
   watchName,
   watchRecordUnreadable,
@@ -1267,12 +1267,12 @@ export class WatchSettings implements ReactiveController {
     if (held.length === 0) return nothing;
     const waiting = held.filter((h) => h.state === "waiting");
     if (waiting.length === 0) {
-      const title = held.map((h) => `The watch has ${h.what} revision ${h.revision}.`).join(" ");
+      const title = held.map((h) => `The ${this.noun} has ${h.what} revision ${h.revision}.`).join(" ");
       return html`<span class="tb-sync ok" title=${title}>
         <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${COLLECTED_PILL_TEXT}</span>
       </span>`;
     }
-    const title = `${waiting.map((h) => `${h.what} saved as revision ${h.revision}.`).join(" ")} ${WAITING_HELP_TEXT}`;
+    const title = `${waiting.map((h) => `${h.what} saved as revision ${h.revision}.`).join(" ")} ${waitingHelpText(this.device)}`;
     return html`<span class="tb-sync warn sending" title=${title}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${WAITING_PILL_TEXT}</span>
     </span>`;

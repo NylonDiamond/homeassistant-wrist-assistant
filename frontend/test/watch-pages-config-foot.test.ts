@@ -83,6 +83,15 @@ describe("the foot bar", () => {
     expect(old.help).toBe("Change the menus and save them again.");
   });
 
+  it("names an iPhone in its help lines when the record is a phone's", () => {
+    const waiting = configFootStatus({ record: record({ delivered_revision: 6 }), size: 1, limit: 10, noun: "pages", historyState: "ready", device: "iphone", now: NOW });
+    expect(waiting.help).toBe("The iPhone picks it up the next time it checks.");
+    const collected = configFootStatus({ record: record(), size: 1, limit: 10, noun: "pages", historyState: "ready", device: "iphone", now: NOW });
+    expect(collected.help).toBe("The iPhone has revision 7.");
+    const watch = configFootStatus({ record: record(), size: 1, limit: 10, noun: "pages", historyState: "ready", now: NOW });
+    expect(watch.help).toBe("The watch has revision 7.");
+  });
+
   it("says the watch's reason when it gave one, and the plain words when it did not", () => {
     const why = configFootStatus({ record: record({ rejected_revision: 7, rejected_reason: "too large for the watch" }), size: 1, limit: 10, noun: "pages", historyState: "ready", now: NOW });
     expect(why).toMatchObject({ tone: "err", state: "The watch could not use this save: too large for the watch" });

@@ -22,7 +22,7 @@ import { type ReactiveController, type ReactiveControllerHost, css, html, nothin
 import type { WatchConfigHistoryEntry, WatchConfigRecord } from "../ha-api.js";
 import { agoWords } from "../send-state.js";
 import { uiIcon } from "../ui-icons.js";
-import { COLLECTED_PILL_TEXT, WAITING_HELP_TEXT, WAITING_PILL_TEXT, deliveryState, rejectedNow, savedByWords } from "../watch-settings.js";
+import { type SettingDevice, COLLECTED_PILL_TEXT, WAITING_PILL_TEXT, deliveryState, deviceNoun, rejectedNow, savedByWords, waitingHelpText } from "../watch-settings.js";
 
 export type ConfigHistoryState = "loading" | "ready" | "error" | "unsupported";
 
@@ -101,6 +101,8 @@ export function configFootStatus(i: {
   limit: number;
   noun: ConfigNoun;
   historyState: ConfigHistoryState;
+  /** The device the record is for; a watch when absent. */
+  device?: SettingDevice;
   now?: number;
 }): ConfigFootStatus {
   const { record } = i;
@@ -118,9 +120,9 @@ export function configFootStatus(i: {
     };
   }
   if (deliveryState(record) === "delivered") {
-    return { tone: "ok", revision, state: COLLECTED_PILL_TEXT, help: `The watch has revision ${record.revision}.`, size, near, over };
+    return { tone: "ok", revision, state: COLLECTED_PILL_TEXT, help: `The ${deviceNoun(i.device ?? "watch")} has revision ${record.revision}.`, size, near, over };
   }
-  return { tone: "warn", revision, state: WAITING_PILL_TEXT, help: WAITING_HELP_TEXT, size, near, over };
+  return { tone: "warn", revision, state: WAITING_PILL_TEXT, help: waitingHelpText(i.device ?? "watch"), size, near, over };
 }
 
 /** The toolbar's quiet fact about the stored copy, left of Discard: "Saved

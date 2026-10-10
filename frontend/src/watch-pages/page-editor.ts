@@ -3289,6 +3289,7 @@ export class WaPageEditor extends LitElement {
       limit: WATCH_PAGES_LIMIT_BYTES,
       noun: "pages",
       historyState: this.historyState,
+      device: this.onPhone ? "iphone" : "watch",
     });
     return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
@@ -3628,7 +3629,7 @@ export class WaPageEditor extends LitElement {
   /** The stored copy's line, History and Raw configuration, pinned to the
    * foot of the editor (`config-foot.ts`), with the two dialogs they open. */
   private renderFoot(record: WatchConfigRecord, document: WatchPagesDocument, dirty: boolean): TemplateResult {
-    const status = configFootStatus({ record, size: sizeOf(document), limit: WATCH_PAGES_LIMIT_BYTES, noun: "pages", historyState: this.historyState });
+    const status = configFootStatus({ record, size: sizeOf(document), limit: WATCH_PAGES_LIMIT_BYTES, noun: "pages", historyState: this.historyState, device: this.onPhone ? "iphone" : "watch" });
     const watchId = this.watchId;
     return html`${renderConfigFoot({
       status,

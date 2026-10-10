@@ -51,6 +51,7 @@ import {
   subscribeWatchConfig,
 } from "../ha-api.js";
 import { peopleOf } from "../people.js";
+import { isPhoneId } from "../phone-pages.js";
 import { personColorVar } from "../pickerRows.js";
 import { agoWords } from "../send-state.js";
 import { uiIcon } from "../ui-icons.js";
@@ -68,7 +69,7 @@ import {
 import { watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { asWatchPagesDocument } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
-import { PAIR_FIRST_TEXT, START_FRESH_BUTTON, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, watchAppDevices, watchName } from "../watch-settings.js";
+import { type SettingDevice, PAIR_FIRST_TEXT, START_FRESH_BUTTON, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, watchAppDevices, watchName } from "../watch-settings.js";
 import { type RoomsDraft, anyRoomsDirty, dropAllRooms, forgetRoomsDraft, keptRoomsDraft, saveRoomsDraft, takeRoomsRecord } from "./draft.js";
 import { WATCH_ROOMS_HELP_URL, navigateWatchRooms, registerWatchRoomsDrafts } from "./hook.js";
 import {
@@ -244,6 +245,11 @@ export class WaRoomsEditor extends LitElement {
 
   private get watches(): OwnerSummary[] {
     return watchAppDevices(this.owners.length > 0 ? this.owners : (this.ownList ?? []), this.phones);
+  }
+
+  /** The shown device, for the lines that name it. */
+  private get device(): SettingDevice {
+    return isPhoneId(this.watches, this.watchId) ? "iphone" : "watch";
   }
 
   /** The record the shown watch's rooms live in on this home: `behavior` on
@@ -857,7 +863,7 @@ export class WaRoomsEditor extends LitElement {
     const record = this.record;
     if (record === undefined || draft === undefined) return nothing;
     const budget = roomsBudget(draft.effective, this.kind);
-    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: this.noun, historyState: this.historyState });
+    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: this.noun, historyState: this.historyState, device: this.device });
     return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
     </span>`;
@@ -963,7 +969,7 @@ export class WaRoomsEditor extends LitElement {
     const document = draft.effective;
     const budget = roomsBudget(document, this.kind);
     const noun = this.noun;
-    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun, historyState: this.historyState });
+    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun, historyState: this.historyState, device: this.device });
     const watchId = this.watchId;
     return html`${renderConfigFoot({
       status,

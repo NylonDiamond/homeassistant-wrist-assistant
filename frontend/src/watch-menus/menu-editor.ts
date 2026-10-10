@@ -68,6 +68,7 @@ import {
   subscribeWatchConfig,
 } from "../ha-api.js";
 import { peopleOf } from "../people.js";
+import { isPhoneId } from "../phone-pages.js";
 import { personColorVar } from "../pickerRows.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { agoWords } from "../send-state.js";
@@ -117,6 +118,7 @@ import { scrubWatchOrphanTriggers } from "../watch-pages/tile-settings-model.js"
 import {
   START_FRESH_BUTTON,
   type NoRecordStart,
+  type SettingDevice,
   deliveryState,
   followWatch,
   mayStart,
@@ -458,6 +460,11 @@ export class WaMenuEditor extends LitElement {
 
   private get watches(): OwnerSummary[] {
     return watchAppDevices(this.owners.length > 0 ? this.owners : (this.ownList ?? []), this.phones);
+  }
+
+  /** The shown device, for the lines that name it. */
+  private get device(): SettingDevice {
+    return isPhoneId(this.watches, this.watchId) ? "iphone" : "watch";
   }
 
   private get draft(): WatchMenusDraft | undefined {
@@ -1439,7 +1446,7 @@ export class WaMenuEditor extends LitElement {
     const record = this.record;
     if (record === undefined || record.revision <= 0 || this.unsupported) return nothing;
     const budget = draft === undefined ? { size: 0, limit: 1 } : watchMenusBudget(draft.document);
-    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "menus", historyState: this.historyState });
+    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "menus", historyState: this.historyState, device: this.device });
     return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
     </span>`;
@@ -1677,7 +1684,7 @@ export class WaMenuEditor extends LitElement {
    * foot of the editor (`config-foot.ts`), with the two dialogs they open. */
   private renderFoot(record: WatchConfigRecord, document: MenusDocument, dirty: boolean): TemplateResult {
     const budget = watchMenusBudget(document);
-    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "menus", historyState: this.historyState });
+    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "menus", historyState: this.historyState, device: this.device });
     const watchId = this.watchId;
     return html`${renderConfigFoot({
       status,

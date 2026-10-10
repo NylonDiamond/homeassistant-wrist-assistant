@@ -95,6 +95,7 @@ import {
   settingValue,
   settingsWatches,
   takesSettingsFromAnotherHome,
+  waitingHelpText,
   watchBehaviorDefaults,
   withEdit,
 } from "../src/watch-settings.js";
@@ -496,6 +497,9 @@ describe("a watch with nothing in Home Assistant yet", () => {
     expect(WAITING_HELP_TEXT).toBe("The watch picks it up the next time it checks.");
     // The iPhone passes nothing to the watch any more.
     expect(WAITING_HELP_TEXT).not.toMatch(/iPhone/);
+    // A phone's own records wait for the phone.
+    expect(waitingHelpText("iphone")).toBe("The iPhone picks it up the next time it checks.");
+    expect(waitingHelpText("watch")).toBe(WAITING_HELP_TEXT);
   });
 });
 

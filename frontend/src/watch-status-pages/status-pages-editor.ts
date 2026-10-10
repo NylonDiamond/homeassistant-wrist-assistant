@@ -51,6 +51,7 @@ import {
   subscribeWatchConfig,
 } from "../ha-api.js";
 import { peopleOf } from "../people.js";
+import { isPhoneId } from "../phone-pages.js";
 import { personColorVar } from "../pickerRows.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { agoWords } from "../send-state.js";
@@ -71,7 +72,7 @@ import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/edito
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
 import { watchFrameStyles } from "../watch-frame.js";
-import { START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, watchAppDevices, watchName } from "../watch-settings.js";
+import { START_FRESH_BUTTON, type NoRecordStart, type SettingDevice, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, watchAppDevices, watchName } from "../watch-settings.js";
 import {
   type StatusPagesDraft,
   anyStatusPagesDirty,
@@ -262,6 +263,11 @@ export class WaStatusPagesEditor extends LitElement {
 
   private get watches(): OwnerSummary[] {
     return watchAppDevices(this.owners.length > 0 ? this.owners : (this.ownList ?? []), this.phones);
+  }
+
+  /** The shown device, for the lines that name it. */
+  private get device(): SettingDevice {
+    return isPhoneId(this.watches, this.watchId) ? "iphone" : "watch";
   }
 
   private get draft(): StatusPagesDraft | undefined {
@@ -887,7 +893,7 @@ export class WaStatusPagesEditor extends LitElement {
     const record = this.record;
     if (record === undefined || record.revision <= 0 || this.unsupported) return nothing;
     const budget = draft === undefined ? { size: 0, limit: 1 } : statusPagesBudget(draft.document);
-    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "status pages", historyState: this.historyState });
+    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "status pages", historyState: this.historyState, device: this.device });
     return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
     </span>`;
@@ -1097,7 +1103,7 @@ export class WaStatusPagesEditor extends LitElement {
 
   private renderFoot(record: WatchConfigRecord, document: StatusPagesDocument, dirty: boolean): TemplateResult {
     const budget = statusPagesBudget(document);
-    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "status pages", historyState: this.historyState });
+    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "status pages", historyState: this.historyState, device: this.device });
     const watchId = this.watchId;
     return html`${renderConfigFoot({
       status,
