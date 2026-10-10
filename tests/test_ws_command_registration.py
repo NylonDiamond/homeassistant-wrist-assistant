@@ -25,19 +25,24 @@ each command falls in exactly one of four groups (``panel_access.py``):
 * ``_OPEN``: the home's shared libraries and the editor's renders, plus
   pairing and the client certificate, whose few admin-only parts are
   checked inside the command (pinned below).
+* ``_DISPLAY``: the dashboard card's reads. They name a device's design but
+  are open to every signed-in user on purpose, because a dashboard is the
+  whole household's. They only read, and hand out the document alone
+  (pinned below).
 
 Every set is spelled out rather than derived, so a new command nobody made a
 gating decision about fails here instead of shipping open. And any command
 whose schema names an owner must be owner scoped, so a new one that forgets
 the check fails here too.
 
-Seven modules hold commands: ``complication_ws.py`` (the editor),
+Eight modules hold commands: ``complication_ws.py`` (the editor),
 ``watch_config_ws.py`` (the Watch settings view and the page editor),
 ``pairing_ws.py`` (confirming a pairing code, and the QR offers),
 ``http_actions_ws.py`` (the home's HTTP action library),
 ``page_images_ws.py`` (the home's page photos),
-``camera_framing_ws.py`` (the cameras' notification framing) and
-``client_certificate_ws.py`` (the user's own client certificate). Each is
+``camera_framing_ws.py`` (the cameras' notification framing),
+``client_certificate_ws.py`` (the user's own client certificate) and
+``dashboard_card_ws.py`` (the dashboard card). Each is
 checked on its own, since each has its own registration function.
 """
 
@@ -56,6 +61,7 @@ _HTTP_ACTIONS_MODULE = _PKG / "http_actions_ws.py"
 _PAGE_IMAGES_MODULE = _PKG / "page_images_ws.py"
 _CAMERA_FRAMING_MODULE = _PKG / "camera_framing_ws.py"
 _CLIENT_CERTIFICATE_MODULE = _PKG / "client_certificate_ws.py"
+_DASHBOARD_CARD_MODULE = _PKG / "dashboard_card_ws.py"
 
 _MODULES = [
     _MODULE,
@@ -65,6 +71,7 @@ _MODULES = [
     _PAGE_IMAGES_MODULE,
     _CAMERA_FRAMING_MODULE,
     _CLIENT_CERTIFICATE_MODULE,
+    _DASHBOARD_CARD_MODULE,
 ]
 
 # The gallery key lets whoever holds it delete this home's gallery uploads.
@@ -163,6 +170,16 @@ _OPEN = {
     },
 }
 
+# The dashboard card's reads: open to every signed-in user although they
+# name a device, and read only.
+_DISPLAY = {
+    _DASHBOARD_CARD_MODULE.name: {
+        "ws_card_designs",
+        "ws_card_get",
+        "ws_card_subscribe",
+    },
+}
+
 # Schema keys that name a device. A command whose schema has one must be in
 # `_OWNER`.
 _OWNER_KEYS = {
@@ -257,13 +274,14 @@ def _schema_keys(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
     raise AssertionError(f"{node.name} has no websocket_command schema")
 
 
-def _groups(module: Path) -> tuple[set[str], set[str], set[str], set[str]]:
+def _groups(module: Path) -> tuple[set[str], set[str], set[str], set[str], set[str]]:
     name = module.name
     return (
         _ADMIN.get(name, set()),
         set(_OWNER.get(name, {})),
         _FILTERED.get(name, set()),
         _OPEN.get(name, set()),
+        _DISPLAY.get(name, set()),
     )
 
 
@@ -281,19 +299,19 @@ def test_every_command_is_registered(module: Path) -> None:
 def test_every_command_has_exactly_one_gating_decision(module: Path) -> None:
     """Guards the sets above against a rename that would silently empty
     them, and against a new command nobody made a gating decision about."""
-    admin, owner, filtered, open_ = _groups(module)
-    groups = [admin, owner, filtered, open_]
+    admin, owner, filtered, open_, display = _groups(module)
+    groups = [admin, owner, filtered, open_, display]
     for i, group in enumerate(groups):
         for other in groups[i + 1 :]:
             assert not group & other, sorted(group & other)
     defined = {node.name for node in _command_functions(_tree(module))}
-    expected = admin | owner | filtered | open_
+    expected = admin | owner | filtered | open_ | display
     assert defined == expected, sorted(defined ^ expected)
 
 
 @pytest.mark.parametrize("module", _MODULES, ids=[m.name for m in _MODULES])
 def test_only_the_admin_commands_require_admin(module: Path) -> None:
-    admin, _owner, _filtered, _open = _groups(module)
+    admin, _owner, _filtered, _open, _display = _groups(module)
     gated = {
         node.name
         for node in _command_functions(_tree(module))
@@ -351,7 +369,7 @@ def test_each_filtered_command_leaves_out_what_the_caller_may_not_manage(
 def test_every_command_that_names_a_device_is_owner_scoped(module: Path) -> None:
     """A new command whose schema names an owner must make the owner check,
     or it would hand any signed-in user another person's device."""
-    owner = set(_OWNER.get(module.name, {}))
+    owner = set(_OWNER.get(module.name, {})) | _DISPLAY.get(module.name, set())
     offenders = sorted(
         node.name
         for node in _command_functions(_tree(module))
@@ -495,3 +513,34 @@ def test_the_http_actions_capability_is_advertised() -> None:
     const = (_PKG / "const.py").read_text()
     assert "register_capability(HTTP_ACTIONS_CAPABILITY)" in init
     assert 'HTTP_ACTIONS_CAPABILITY = "http_actions"' in const
+
+
+def test_the_dashboard_card_module_only_reads() -> None:
+    """Open to everyone, so it must never write: no store method that saves,
+    deletes, moves or forgets is called anywhere in the module, and the only
+    store reads are the plain ones."""
+    tree = _tree(_DASHBOARD_CARD_MODULE)
+    store_calls = {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name) and node.func.value.id in {"store", "live"}
+    }
+    assert store_calls <= {"get", "list", "owners"}, sorted(store_calls)
+
+
+def test_the_dashboard_card_hands_out_the_document_and_no_sync_state() -> None:
+    """``card_payload`` is the one shape a card is told, and it carries no
+    token: tokens are what the watch's sync is keyed on."""
+    [node] = [
+        n for n in _tree(_DASHBOARD_CARD_MODULE).body
+        if isinstance(n, _Func) and n.name == "card_payload"
+    ]
+    source = ast.unparse(node)
+    assert "token" not in source
+    assert "'document': record.document" in source
+
+
+def test_the_dashboard_card_commands_are_registered_at_setup() -> None:
+    source = (_PKG / "__init__.py").read_text()
+    assert "async_register_dashboard_card_commands(hass)" in source

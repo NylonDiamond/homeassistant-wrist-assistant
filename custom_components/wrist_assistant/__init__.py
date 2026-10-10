@@ -42,6 +42,7 @@ from .complication_panel import async_register_panel, async_remove_panel
 from .complication_push import ComplicationPhonePush
 from .complication_store import ComplicationStore
 from .complication_ws import async_register_websocket_commands
+from .dashboard_card_ws import async_register_dashboard_card_commands
 from .const import (
     CLIENT_CERTIFICATE_CAPABILITY,
     DOMAIN,
@@ -1041,6 +1042,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # The panel's client certificate import: status, put, delete, each
         # for the signed-in user's own certificate (any signed-in user).
         async_register_client_certificate_commands(hass)
+        # The dashboard card: list the home's designs, read one, follow its
+        # edits (any signed-in user; read only, the document and no more).
+        async_register_dashboard_card_commands(hass)
         # v2 transport: /v2/* HMAC for all watch traffic. A pair comes from
         # the iPhone's sign-in through WARegisterSecretView (bearer), or from
         # a code the watch gets from WAPairStartView (no auth, stores only a

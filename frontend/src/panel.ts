@@ -2318,7 +2318,7 @@ export class WristAssistantPanel extends LitElement {
     this.iconsTick++;
     this.requestUpdate();
     for (const wake of this.symbolWaiters.splice(0)) wake();
-  });
+  }, import.meta.url);
   /** How many times `icons` has said it can draw more. The page editor reads
    * it: the provider wakes only the panel, and the same `icons` object
    * passed down again would not draw the editor. */

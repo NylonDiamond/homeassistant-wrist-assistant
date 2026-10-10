@@ -291,9 +291,13 @@ export class BundledIconProvider implements IconProvider {
 
   /** `file` and `digest` are arguments because two of these exist: the SF
    * Symbol catalogue every panel loads at once, and the much larger Material
-   * Design one that waits until somebody opens its tab. */
+   * Design one that waits until somebody opens its tab. `base` is the URL of
+   * an entry module that sits beside the files, which the entry passes in as
+   * its own `import.meta.url`: this file is shared by the panel and the
+   * dashboard card, so it lands in a chunk and may not read `import.meta`. */
   constructor(
     private readonly onReady: () => void,
+    private readonly base: string,
     private readonly file: string = "symbol-icons.json.gz",
     private readonly digest: string = SYMBOL_DIGEST
   ) {}
@@ -336,11 +340,11 @@ export class BundledIconProvider implements IconProvider {
   private load() {
     if (this.state !== "idle") return;
     this.state = "loading";
-    // Beside the panel bundle, whatever URL that was served from, so the same
+    // Beside the entry bundle, whatever URL that was served from, so the same
     // code works under a subpath or a reverse proxy. The digest is in the query
     // because Home Assistant serves this route with a month of cache, and a
     // rebuilt symbol file would otherwise stay invisible for that long.
-    const url = new URL(`${this.file}?v=${this.digest}`, import.meta.url);
+    const url = new URL(`${this.file}?v=${this.digest}`, this.base);
     fetch(url)
       .then((res) => {
         if (!res.ok || !res.body) throw new Error(`${this.file}: ${res.status}`);
@@ -380,9 +384,10 @@ export class SplitIconProvider implements IconProvider {
 
   constructor(
     private readonly sf: IconProvider,
-    onReady: () => void
+    onReady: () => void,
+    base: string
   ) {
-    this.mdi = new BundledIconProvider(onReady, "mdi-icons.json.gz", MDI_DIGEST);
+    this.mdi = new BundledIconProvider(onReady, base, "mdi-icons.json.gz", MDI_DIGEST);
   }
 
   render(symbol: string, size: number, colorHex: string): TemplateResult | undefined {
@@ -409,9 +414,11 @@ export class SplitIconProvider implements IconProvider {
   }
 }
 
-export function makeIconProvider(onReady: () => void): IconProvider {
+/** `base` is the calling entry's `import.meta.url`: the symbol files sit
+ * beside every entry bundle. */
+export function makeIconProvider(onReady: () => void, base: string): IconProvider {
   const sf = CupertinoIconProvider.available()
     ? new CupertinoIconProvider(onReady)
-    : new BundledIconProvider(onReady);
-  return new SplitIconProvider(sf, onReady);
+    : new BundledIconProvider(onReady, base);
+  return new SplitIconProvider(sf, onReady, base);
 }

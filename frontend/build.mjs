@@ -7,6 +7,10 @@
 // a browser that has cached one never mistakes it for a newer one. The entry
 // imports them by relative path, and the integration serves the whole folder.
 //
+// A second entry, `wrist-assistant-card.js`, is the dashboard card's loader.
+// The integration adds it to every dashboard page, so it imports almost
+// nothing up front; the card's drawing code shares chunks with the panel.
+//
 // A chunk no build wrote is deleted after every successful build, so the
 // folder holds exactly what the entry names and CI can tell a stale or missing
 // chunk from a fresh one. Deleting after rather than before means a failed
@@ -24,6 +28,7 @@ const watch = process.argv.includes("--watch");
 const outdir = "../custom_components/wrist_assistant/frontend";
 const chunkDir = join(outdir, "chunks");
 const entryName = "wrist-assistant-panel";
+const cardEntryName = "wrist-assistant-card";
 
 const fontPackage = "node_modules/@fontsource-variable/geist";
 const fontDir = join(outdir, "fonts");
@@ -37,9 +42,9 @@ function copyFont() {
 
 copyFont();
 
-/** `import.meta.url` is where a module was served from. In the entry that is
- * the folder the symbol files sit in (`icons.ts` fetches them beside it); in
- * a chunk it is `chunks/`, where they are not. So only the entry may use it. */
+/** `import.meta.url` is where a module was served from. In an entry that is
+ * the folder the symbol files sit in (each entry passes it to `icons.ts`); in
+ * a chunk it is `chunks/`, where they are not. So only the entries may use it. */
 function checkImportMeta(outputs) {
   const bad = outputs.filter((file) => file.startsWith(resolve(chunkDir)) && readFileSync(file, "utf8").includes("import.meta"));
   return bad.map((file) => relative(outdir, file));
@@ -66,7 +71,7 @@ const tidyChunks = {
       }
       const bad = checkImportMeta(outputs);
       if (bad.length > 0) {
-        importMetaFault = `import.meta is used in ${bad.join(", ")}. Nothing the page editor imports may import icons.ts, or it leaves the entry.`;
+        importMetaFault = `import.meta is used in ${bad.join(", ")}. Only an entry (panel.ts, dashboard-card-loader.ts) may read it; pass it down instead.`;
         console.error(`error: ${importMetaFault}`);
       }
     });
@@ -74,7 +79,7 @@ const tidyChunks = {
 };
 
 const options = {
-  entryPoints: { [entryName]: "src/panel.ts" },
+  entryPoints: { [entryName]: "src/panel.ts", [cardEntryName]: "src/dashboard-card-loader.ts" },
   bundle: true,
   format: "esm",
   splitting: true,

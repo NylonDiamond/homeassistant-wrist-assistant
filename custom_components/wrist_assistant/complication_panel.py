@@ -31,6 +31,8 @@ PANEL_URL_PATH = "wrist-assistant"
 _STATIC_URL = f"/{DOMAIN}_static"
 _BUNDLE_NAME = "wrist-assistant-panel.js"
 _WEBCOMPONENT = "wrist-assistant-panel"
+_CARD_NAME = "wrist-assistant-card.js"
+_CARD_URL_KEY = f"{DOMAIN}_card_url"
 
 
 def _frontend_dir() -> Path:
@@ -119,6 +121,33 @@ async def async_register_panel(hass: HomeAssistant, version: str) -> None:
     except ValueError as err:
         _LOGGER.warning("Wrist Assistant sidebar panel not registered: %s", err)
 
+    await _async_add_card(hass, version)
+
+
+async def _async_add_card(hass: HomeAssistant, version: str) -> None:
+    """Load the dashboard card on every dashboard page.
+
+    The URL carries the card file's own digest, like the panel's, so a
+    deploy reaches a browser on its next page load. The previous URL is
+    dropped first: a reload would otherwise leave two versions listed.
+    """
+    card = _frontend_dir() / _CARD_NAME
+    if not card.is_file():
+        _LOGGER.warning("Dashboard card bundle missing at %s; card not loaded", card)
+        return
+    digest = await hass.async_add_executor_job(_bundle_digest, card)
+    _remove_card(hass)
+    url = f"{_STATIC_URL}/{_CARD_NAME}?v={version}-{digest}"
+    frontend.add_extra_js_url(hass, url)
+    hass.data[_CARD_URL_KEY] = url
+
+
+def _remove_card(hass: HomeAssistant) -> None:
+    url = hass.data.pop(_CARD_URL_KEY, None)
+    if url is not None:
+        frontend.remove_extra_js_url(hass, url)
+
 
 def async_remove_panel(hass: HomeAssistant) -> None:
     frontend.async_remove_panel(hass, PANEL_URL_PATH)
+    _remove_card(hass)
