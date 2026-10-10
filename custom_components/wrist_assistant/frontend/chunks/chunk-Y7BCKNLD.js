@@ -1,0 +1,1 @@
+var n={columns:12,columnWidth:34,rowHeight:56,gap:8};function a(r,o){let t=n;return{width:r*t.columnWidth+(r-1)*t.gap,height:o*t.rowHeight+(o-1)*t.gap}}function e(r){let o=n,t=Math.round((r.width+o.gap)/(o.columnWidth+o.gap)),h=Math.round((r.height+o.gap)/(o.rowHeight+o.gap));return{columns:Math.min(o.columns,Math.max(1,t)),rows:Math.max(1,h)}}export{n as a,a as b,e as c};

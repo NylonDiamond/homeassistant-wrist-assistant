@@ -8,7 +8,7 @@
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import { fetchCardDesigns, type CardDesign } from "./card-api.js";
-import type { CardConfig } from "./dashboard-card-config.js";
+import { withCanvasHint, type CardConfig } from "./dashboard-card-config.js";
 import type { HassLike } from "./ha-api.js";
 
 const SHAPE_NAMES: Record<string, string> = {
@@ -20,7 +20,27 @@ const SHAPE_NAMES: Record<string, string> = {
   medium: "Medium tile",
   large: "Large tile",
   xlarge: "Extra large tile",
+  dashboard: "Dashboard card",
 };
+
+/** The heading over the designs made for dashboards, which go first: they
+ * are sized for this grid, where a watch's shape is a stand-in. */
+const DASHBOARD_GROUP = "Made for dashboards";
+
+/** The picker's groups: Dashboard designs first, then every other design
+ * under the device it sits on, in the order the store lists them. */
+export function designGroups(designs: readonly CardDesign[]): [string, CardDesign[]][] {
+  const groups = new Map<string, CardDesign[]>();
+  const made = designs.filter((d) => d.families.includes("dashboard"));
+  if (made.length > 0) groups.set(DASHBOARD_GROUP, made);
+  for (const d of designs) {
+    if (d.families.includes("dashboard")) continue;
+    const list = groups.get(d.owner_name) ?? [];
+    list.push(d);
+    groups.set(d.owner_name, list);
+  }
+  return [...groups];
+}
 
 export class WaDashboardCardEditor extends LitElement {
   @property({ attribute: false }) hass?: HassLike;
@@ -38,7 +58,16 @@ export class WaDashboardCardEditor extends LitElement {
     if (this.hass && !this.asked) {
       this.asked = true;
       fetchCardDesigns(this.hass)
-        .then((designs) => { this.designs = designs; })
+        .then((designs) => {
+          this.designs = designs;
+          // A Dashboard design resized in the panel since this card was set
+          // up: its grid hint is brought up to date, so the card's starting
+          // size on the dashboard follows the design.
+          if (this.config) {
+            const next = withCanvasHint(this.config, this.chosen());
+            if (next !== this.config) this.emit(next);
+          }
+        })
         .catch((err: unknown) => { this.loadError = String((err as { message?: unknown })?.message ?? err); });
     }
   }
@@ -65,7 +94,12 @@ export class WaDashboardCardEditor extends LitElement {
       if (design.families[0] !== undefined) next.shape = design.families[0];
       else delete next.shape;
     }
-    this.emit(next);
+    this.emit(withCanvasHint(next, design));
+  }
+
+  private pickShape(shape: string): void {
+    if (!this.config) return;
+    this.emit(withCanvasHint({ ...this.config, shape }, this.chosen()));
   }
 
   protected override render(): TemplateResult {
@@ -75,12 +109,6 @@ export class WaDashboardCardEditor extends LitElement {
       return html`<p class="quiet">No complications yet. Make one in the Wrist Assistant panel first.</p>`;
     }
     const chosen = this.chosen();
-    const groups = new Map<string, CardDesign[]>();
-    for (const d of this.designs) {
-      const list = groups.get(d.owner_name) ?? [];
-      list.push(d);
-      groups.set(d.owner_name, list);
-    }
     const value = chosen ? `${chosen.owner_watch_id}|${chosen.complication_id}` : "";
     const c = this.config;
     return html`
@@ -88,7 +116,7 @@ export class WaDashboardCardEditor extends LitElement {
         <span>Complication</span>
         <select @change=${(e: Event) => this.pickDesign((e.target as HTMLSelectElement).value)}>
           ${chosen ? nothing : html`<option value="" selected disabled>Pick a complication</option>`}
-          ${[...groups].map(([owner, list]) => html`<optgroup label=${owner}>
+          ${designGroups(this.designs).map(([owner, list]) => html`<optgroup label=${owner}>
             ${list.map((d) => {
               const v = `${d.owner_watch_id}|${d.complication_id}`;
               return html`<option value=${v} ?selected=${v === value}>${d.name || "Untitled"}</option>`;
@@ -99,7 +127,7 @@ export class WaDashboardCardEditor extends LitElement {
       ${chosen && chosen.families.length > 1
         ? html`<label>
             <span>Shape</span>
-            <select @change=${(e: Event) => this.emit({ ...c, shape: (e.target as HTMLSelectElement).value })}>
+            <select @change=${(e: Event) => this.pickShape((e.target as HTMLSelectElement).value)}>
               ${chosen.families.map((f) => html`<option value=${f} ?selected=${f === c.shape}>${SHAPE_NAMES[f] ?? f}</option>`)}
             </select>
           </label>`
@@ -114,6 +142,9 @@ export class WaDashboardCardEditor extends LitElement {
           @change=${(e: Event) => this.emit({ ...c, background: (e.target as HTMLInputElement).checked ? "card" : "none" })} />
         <span>Card background</span>
       </label>
+      ${c.shape === "dashboard" && c.canvas
+        ? html`<p class="quiet">Sized ${Math.round(c.canvas.width)} × ${Math.round(c.canvas.height)} points in the panel. It starts at that size on a sections dashboard, and is drawn at its own proportions at any size.</p>`
+        : nothing}
       <p class="quiet">Taps that only the watch can do, such as opening a page, do nothing here.</p>
     `;
   }

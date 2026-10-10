@@ -60,12 +60,14 @@ class WristAssistantCard extends HTMLElement {
 
   /** Masonry dashboards: height in 50 px units. */
   getCardSize(): number {
-    return cardSizeFor(this.config?.shape);
+    return cardSizeFor(this.config?.shape, this.config?.canvas);
   }
 
-  /** Sections dashboards: the starting size on the 12-column grid. */
+  /** Sections dashboards: the starting size on the 12-column grid. A
+   * Dashboard design's comes from its canvas, which the card editor copies
+   * into the config because this is asked before the design is read. */
   getGridOptions() {
-    return gridOptionsFor(this.config?.shape);
+    return gridOptionsFor(this.config?.shape, this.config?.canvas);
   }
 
   static async getConfigElement(): Promise<HTMLElement> {
@@ -73,16 +75,23 @@ class WristAssistantCard extends HTMLElement {
     return document.createElement("wa-dashboard-card-editor");
   }
 
-  /** What the card picker previews: the home's first design, so the preview
+  /** What the card picker previews: the home's first Dashboard design, made
+   * for exactly this, or else its first design of any shape, so the preview
    * draws something real. With none, the picker shows the card's own "pick a
    * complication" message. */
   static async getStubConfig(hass: HassLike): Promise<Record<string, unknown>> {
     try {
       const { fetchCardDesigns } = await import("./card-api.js");
       const designs: CardDesign[] = await fetchCardDesigns(hass);
-      const first = designs[0];
+      const first = designs.find((d) => d.families.includes("dashboard")) ?? designs[0];
       if (first) {
-        return { owner: first.owner_watch_id, complication: first.complication_id, ...(first.families[0] ? { shape: first.families[0] } : {}) };
+        const shape = first.families.includes("dashboard") ? "dashboard" : first.families[0];
+        return {
+          owner: first.owner_watch_id,
+          complication: first.complication_id,
+          ...(shape ? { shape } : {}),
+          ...(shape === "dashboard" && first.canvas ? { canvas: first.canvas } : {}),
+        };
       }
     } catch {
       // An integration too old for the command: the empty stub below.

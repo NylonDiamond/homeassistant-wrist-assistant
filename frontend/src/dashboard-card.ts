@@ -9,7 +9,8 @@
 // edit in the panel shows here without a reload. Its values come from
 // `LiveComplication`. It is drawn by the editor's own renderer, at the
 // reference watch's or iPhone's slot, so the card and the editor's preview are
-// one drawing.
+// one drawing. A Dashboard design is no device's: it fills the card at its own
+// canvas's proportions.
 
 import { LitElement, css, html, nothing, svg, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
@@ -199,7 +200,9 @@ export class WaDashboardCard extends LitElement {
     const body = family === undefined
       ? this.renderInline(layouts.inline)
       : this.renderFace(cfg, family, layouts[family]);
-    return html`<ha-card class=${cls}>
+    // A Dashboard design is the card: it fills it edge to edge rather than
+    // sitting in it the way a watch's shape does.
+    return html`<ha-card class=${`${cls} ${family === "dashboard" ? "dashboard" : ""}`}>
       ${body}
       ${this.note ? html`<div class="note" role="status">${this.note}</div>` : nothing}
     </ha-card>`;
@@ -215,7 +218,10 @@ export class WaDashboardCard extends LitElement {
       ...previewTintFor(family, false, undefined),
     });
     const taps = this.config?.taps !== false;
-    return html`<div class="face ${family} ${taps ? "taps" : ""}"
+    // The face keeps the design's own proportions at whatever size the
+    // dashboard gives the card, letterboxed by the card rather than stretched.
+    const ratio = family === "dashboard" ? `--wa-canvas-ratio:${slot.width} / ${slot.height}` : nothing;
+    return html`<div class="face ${family} ${taps ? "taps" : ""}" style=${ratio}
       aria-label=${cfg.name || "Complication"}
       @pointerdown=${taps ? (e: PointerEvent) => void this.onPress(cfg, family, layout, e) : undefined}>${family === "corner" ? this.cornerCrop(layout, art) : art}</div>`;
   }
@@ -367,6 +373,16 @@ export class WaDashboardCard extends LitElement {
       width: 100%;
       height: 100%;
       max-height: 100%;
+    }
+    ha-card.dashboard {
+      padding: 0;
+    }
+    /* The canvas's own proportions: what gives the face a height in a
+       masonry column, where the card has none of its own. On a sections
+       grid the card's height wins and the drawing, which keeps its viewBox,
+       is fitted inside it, letterboxed rather than stretched. */
+    .face.dashboard {
+      aspect-ratio: var(--wa-canvas-ratio, auto);
     }
     .inline {
       display: flex;
