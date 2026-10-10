@@ -6,7 +6,9 @@
 // settings: every listed page, every status page, the menus and the rooms.
 // One page copies that page and what it links to: the pages its Go to page
 // and Peek page tiles open, theirs in turn, and the status pages any of them
-// opens. Never `behavior`: a phone's settings are its own.
+// opens. A page links to no menu (the menus link to pages, never the other
+// way), so one page carries no menus and no rooms. Never `behavior`: a
+// phone's settings are its own.
 //
 // Every page and status page copied gets a new id, never one the phone or
 // the watch already uses, and every link inside the copy (a tile's target, a
