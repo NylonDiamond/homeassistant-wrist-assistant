@@ -252,6 +252,25 @@ describe("a copy through the editor", () => {
   });
 });
 
+describe("deleting a page on an iPhone", () => {
+  it("reads the phone's rooms record and lists the rooms that open the page", async () => {
+    const mine: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: U(90), name: "Mine", items: [] }] };
+    const rooms = { schemaVersion: 1, roomQuickJumpFallbackPageId: U(90), roomQuickJumpMappings: { kitchen: U(90) } };
+    const { el, phone, ha, call } = phoneEditor(mine, { "PHONE/rooms": rooms });
+    call("askDelete", U(90));
+    await settle();
+    const gets = ha.sent.filter((m) => (m.type as string).endsWith("watch_config/get") && m.owner_watch_id === phone).map((m) => m.kind);
+    expect(gets).toContain("rooms");
+    expect(gets).not.toContain("behavior");
+    expect(el.deleteAsk).toMatchObject({ roomsKind: "rooms", behaviorState: "ready", behavior: rooms });
+    const text = flat(call("renderDeleteAsk", el.deleteAsk, mine));
+    expect(text).toContain("This home's rooms name this page for room quick jump:");
+    expect(text).toContain("The page it opens when no room matches");
+    expect(text).toContain("The page for <b>kitchen</b>");
+    expect(text).toContain("After the delete the iPhone opens another page there instead.");
+  });
+});
+
 describe("the stage on an iPhone", () => {
   it("keeps the watch frame, labelled with the phone's name", () => {
     const mine: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: U(90), name: "Mine", items: [tile(1, "light.a")] }] };

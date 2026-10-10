@@ -121,7 +121,7 @@ import {
 } from "../watch-settings.js";
 import { isPhoneId } from "../phone-pages.js";
 import { type PhoneCopyScope, copyToPhone, phoneCopyNote, phoneCopyReach } from "../phone-copy.js";
-import { roomsKindFor } from "../watch-rooms/model.js";
+import { type RoomsKind, roomsKindFor } from "../watch-rooms/model.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
 import {
   SavedAgoTicker,
@@ -423,7 +423,10 @@ interface Typing {
  * each draw from the draft, so a change merged in meanwhile is shown. */
 interface DeleteAsk {
   pageId: string;
-  /** The behavior document, once read, for the room quick jump lines. */
+  /** Where the device keeps its rooms here (`roomsKindFor`): `behavior` on a
+   * watch's main house, its `rooms` record on another home or an iPhone. */
+  roomsKind: RoomsKind;
+  /** That document, once read, for the room quick jump lines. */
   behavior?: Record<string, unknown>;
   behaviorState: "loading" | "ready" | "none";
   removeLinks: boolean;
@@ -2134,7 +2137,8 @@ export class WaPageEditor extends LitElement {
     const watchId = this.watchId;
     if (!hass || watchId === undefined) return;
     this.menuPageId = undefined;
-    const ask: DeleteAsk = { pageId, behaviorState: "loading", removeLinks: true, refsState: "loading" };
+    const roomsKind = roomsKindFor(this.ownerList.find((o) => o.owner_watch_id === watchId));
+    const ask: DeleteAsk = { pageId, roomsKind, behaviorState: "loading", removeLinks: true, refsState: "loading" };
     this.deleteAsk = ask;
     // The menu slots and complication taps that open the page, read beside
     // the room settings. Either may fail; the dialog then lists what it has.
@@ -2149,7 +2153,7 @@ export class WaPageEditor extends LitElement {
       if (now === undefined || now.pageId !== pageId) return;
       this.deleteAsk = { ...now, menus, complications, refsState: "ready" };
     });
-    fetchWatchConfig(hass, watchId, "behavior").then(
+    fetchWatchConfig(hass, watchId, roomsKind).then(
       (record) => {
         const behavior = record.revision > 0 && isJsonObject(record.document) ? record.document : undefined;
         const now = this.deleteAsk;
@@ -4822,12 +4826,12 @@ export class WaPageEditor extends LitElement {
           <span>Also delete ${links.tiles.length === 1 ? "this tile" : "these tiles"}</span></label>` : nothing}
       ${ask.behaviorState === "loading" ? html`<p class="pe-muted">Checking the room settings…</p>` : nothing}
       ${rooms ? html`
-        <p>The watch settings name this page for room quick jump:</p>
+        <p>${ask.roomsKind === "rooms" ? "This home's rooms name" : "The watch settings name"} this page for room quick jump:</p>
         <ul class="pe-ask-list">
           ${links.roomFallback ? html`<li>The page it opens when no room matches</li>` : nothing}
           ${links.roomMappingKeys.map((key) => html`<li>The page for <b>${key}</b></li>`)}
         </ul>
-        <p class="pe-muted">After the delete the watch opens another page there instead. The setting itself stays as it is.</p>` : nothing}
+        <p class="pe-muted">After the delete the ${this.onPhone ? "iPhone" : "watch"} opens another page there instead. The setting itself stays as it is.</p>` : nothing}
       ${this.renderDeleteRefs(ask)}
       <div class="pe-ask-foot">
         <button class="pe-btn" @click=${() => this.closeAsk()}>Cancel</button>
