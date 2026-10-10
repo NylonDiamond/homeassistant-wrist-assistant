@@ -57,6 +57,7 @@ import {
   type MenuTargets,
   type MenusDocument,
   NO_MENU_TARGETS,
+  PHONE_NO_PHRASES_TEXT,
   setWatchMenuActionKey,
   setWatchMenuSlotColor,
   setWatchMenuSlotVisible,
@@ -839,9 +840,10 @@ describe("the note after saving both", () => {
 
 // ── the hints on an iPhone ───────────────────────────────────────────────
 
-describe("the Show Status Page hint on an iPhone", () => {
+describe("the Speak Phrase and Show Status Page hints on an iPhone", () => {
   const CONFIGURED = JSON.parse(readFileSync(join(__dirname, "fixtures-menus", "02-configured.json"), "utf8")) as MenusDocument;
-  /** The fixture's Anywhere slot that shows a status page. */
+  /** The fixture's Anywhere slots that speak a phrase and show a status page. */
+  const SPEAK_SLOT = "3E4D1000-0000-4000-8000-000000000005";
   const STATUS_SLOT = "3E4D1000-0000-4000-8000-000000000004";
 
   function inspector(slot: string, patch: Partial<MenusViewHost> = {}): string {
@@ -849,6 +851,16 @@ describe("the Show Status Page hint on an iPhone", () => {
     h.uiState.set("me:sel:anywhere", slot);
     return flat(renderMenuInspector(h));
   }
+
+  it("says a phone has no voice phrases under Speak Phrase", () => {
+    const phone = inspector(SPEAK_SLOT, { device: "iphone" });
+    expect(phone).toContain(PHONE_NO_PHRASES_TEXT);
+    expect(phone).not.toContain("No voice settings from this watch yet.");
+    const watch = inspector(SPEAK_SLOT);
+    expect(watch).toContain("No voice settings from this watch yet. Add phrases in Voice.");
+    expect(watch).not.toContain(PHONE_NO_PHRASES_TEXT);
+    expect(PHONE_NO_PHRASES_TEXT).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
+  });
 
   it("names the iPhone when it has no status pages", () => {
     expect(inspector(STATUS_SLOT, { device: "iphone" })).toContain("No status pages on this iPhone yet. Add them in Status pages.");

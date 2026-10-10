@@ -1124,6 +1124,11 @@ export const WATCH_MENUS_NO_RECORD_TEXT = "Start with the defaults to begin.";
 
 export const WATCH_MENUS_START_BUTTON = "Start with the defaults";
 
+/** Under a Speak Phrase slot on an iPhone. Its phrases are the watch's
+ * voice settings, which a phone does not keep, so the slot stays as it is
+ * and does nothing there. */
+export const PHONE_NO_PHRASES_TEXT = "An iPhone has no voice phrases, so Speak Phrase does nothing there.";
+
 export const WATCH_MENUS_PAIR_FIRST_TEXT = "Pair this watch first.";
 
 export const WATCH_MENUS_UPDATE_TEXT = "Update the integration to edit menus here.";

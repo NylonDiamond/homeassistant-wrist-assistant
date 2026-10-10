@@ -15,6 +15,7 @@ import {
   phoneCopyProblems,
   phoneCopyReach,
   planPhoneCopy,
+  speakPhraseSlotCount,
   withCopiedPages,
   withCopiedRooms,
   withCopiedStatusPages,
@@ -358,6 +359,39 @@ describe("the copy", () => {
   });
 });
 
+describe("Speak Phrase slots", () => {
+  const PHRASE = U(80);
+  const SPEAKING: JsonObject = {
+    ...WATCH_MENUS,
+    quickAction: { slots: [...(WATCH_MENUS.quickAction as { slots: JsonObject[] }).slots, slot(6, { type: "speakPhrase", phraseId: PHRASE })] },
+    entityRadial: {
+      ...(WATCH_MENUS.entityRadial as JsonObject),
+      entityOverrides: { "light.hall": [slot(7, { type: "speakPhrase", phraseId: PHRASE }), slot(8, { type: "ttsMenu" })] },
+    },
+  };
+
+  it("are counted in every list, and only Speak Phrase", () => {
+    expect(speakPhraseSlotCount(WATCH_MENUS)).toBe(0);
+    expect(speakPhraseSlotCount(SPEAKING)).toBe(2);
+  });
+
+  it("are copied as they are, and the result says how many", async () => {
+    const s = store({ w1: { pages: WATCH_PAGES as JsonObject, status_pages: WATCH_STATUS, menus: SPEAKING, behavior: WATCH_BEHAVIOR } });
+    const result = await copyToPhone(s.io("p1"), { watch: "w1", watchRooms: "behavior", phone: "p1", scope: { kind: "all" }, phonePages: undefined, newId: ids() });
+    expect(result).toMatchObject({ ok: true, speakPhraseSlots: 2 });
+    const menus = s.writes.find((w) => w.kind === "menus")!.document;
+    expect((menus.quickAction as { slots: JsonObject[] }).slots.at(-1)!.action).toEqual({ type: "speakPhrase", phraseId: PHRASE });
+    expect(phoneCopyNote(result, "W").text).toContain("2 Speak Phrase slots in the menus will not work on the iPhone, which has no voice phrases.");
+  });
+
+  it("are not counted when no menus were copied", async () => {
+    const s = store({ w1: { pages: WATCH_PAGES as JsonObject, status_pages: WATCH_STATUS, menus: SPEAKING } });
+    const result = await copyToPhone(s.io("p1"), { watch: "w1", watchRooms: "rooms", phone: "p1", scope: { kind: "page", pageId: HALL }, phonePages: undefined, newId: ids() });
+    expect(result.ok).toBe(true);
+    expect(result).not.toHaveProperty("speakPhraseSlots");
+  });
+});
+
 describe("the note after a copy", () => {
   it("names what was copied and from which watch", () => {
     expect(phoneCopyNote({ ok: true, pages: 4, statusPages: 3, saved: ["status_pages", "pages", "menus", "rooms"], firstPageId: HALL }, "Jesse's Watch").text)
@@ -367,10 +401,18 @@ describe("the note after a copy", () => {
     expect(phoneCopyNote({ ok: false, code: "invalid", message: "Too big.", saved: [] }, "W")).toEqual({ kind: "err", text: "Not copied: Too big." });
   });
 
+  it("says when a copied Speak Phrase slot will not work on the iPhone", () => {
+    expect(phoneCopyNote({ ok: true, pages: 2, statusPages: 0, saved: ["pages", "menus"], firstPageId: HALL, speakPhraseSlots: 1 }, "W")).toEqual({
+      kind: "ok",
+      text: "Copied 2 pages and the menus from W. The iPhone picks them up the next time it checks. Undo takes the pages back. 1 Speak Phrase slot in the menus will not work on the iPhone, which has no voice phrases.",
+    });
+  });
+
   it("never uses a dash to break a sentence", () => {
     const texts = [
       phoneCopyNote({ ok: true, pages: 2, statusPages: 1, saved: ["status_pages", "pages"], firstPageId: HALL }, "W").text,
       phoneCopyNote({ ok: false, code: "x", message: "m", saved: ["status_pages", "pages", "menus"] }, "W").text,
+      phoneCopyNote({ ok: true, pages: 2, statusPages: 0, saved: ["pages", "menus"], firstPageId: HALL, speakPhraseSlots: 3 }, "W").text,
     ];
     for (const text of texts) expect(text).not.toMatch(/ - |–|—/);
   });

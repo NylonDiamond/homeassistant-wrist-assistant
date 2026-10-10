@@ -48,6 +48,7 @@ import {
 import {
   ANYWHERE,
   MENU_ACTIONS,
+  PHONE_NO_PHRASES_TEXT,
   type MenuHTTPTarget,
   type MenuListRef,
   type MenuPayloadSpec,
@@ -131,7 +132,8 @@ export interface MenusViewHost {
   /** The watch's voice settings as the slot editors read them: the phrases
    * and the defaults. Absent where nothing loaded them (a test). */
   readonly voice?: MenuVoiceContext | undefined;
-  /** The device whose menus these are; a watch when absent. */
+  /** The device whose menus these are; a watch when absent. An iPhone has
+   * no voice settings of its own. */
   readonly device?: SettingDevice;
   /** A save is out: every field is drawn off and every edit refused. */
   readonly busy: boolean;
@@ -1085,7 +1087,8 @@ function targetSelect(host: MenusViewHost, ref: MenuListRef, slot: JsonObject, r
       ${list.map((t) => html`<option value=${t.id} ?selected=${sameId(t.id, stored)}>${label(t)}</option>`)}
     </select></label>
     ${spec.target === "ttsPhrase"
-      ? (host.voice?.phrases === undefined ? html`<div class="hint ts-under">No voice settings from this watch yet. Add phrases in Voice.</div>` : nothing)
+      ? (host.device === "iphone" ? html`<div class="hint ts-under">${PHONE_NO_PHRASES_TEXT}</div>`
+        : host.voice?.phrases === undefined ? html`<div class="hint ts-under">No voice settings from this watch yet. Add phrases in Voice.</div>` : nothing)
       : spec.target === "statusPage"
       ? (fromWatch || host.catalogKnown ? nothing : html`<div class="hint ts-under">${noRecordTitle("status pages", host.device ?? "watch")} Add them in Status pages.</div>`)
       : spec.target === "httpAction"

@@ -20,6 +20,9 @@
 //
 // Pages and status pages are added after the phone's own. The menus and the
 // rooms are one record each, so the watch's take the place of the phone's.
+// A Speak Phrase slot is copied as it is, though its phrase is one of the
+// watch's voice phrases, which a phone does not keep: the note after the
+// copy says how many such slots will not work on the iPhone.
 //
 // The copy is a save of the phone's own records, the way each editor saves
 // them, and never a write to the watch: the watch's records are only read.
@@ -176,6 +179,21 @@ function rewriteMenus(menus: MenusDocument, pageIds: ReadonlyMap<string, string>
     return out;
   };
   return walk(menus) as MenusDocument;
+}
+
+/** How many slots in the menus run Speak Phrase, every list counted. Its
+ * phrase is one of the watch's voice phrases, which a phone does not keep. */
+export function speakPhraseSlotCount(menus: MenusDocument): number {
+  let n = 0;
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) value.forEach(walk);
+    else if (isJsonObject(value)) {
+      if (isJsonObject(value.action) && value.action.type === "speakPhrase") n++;
+      Object.values(value).forEach(walk);
+    }
+  };
+  walk(menus);
+  return n;
 }
 
 /** The watch's six room keys, its pages pointed at the copies: the fallback
@@ -338,7 +356,12 @@ export interface PhoneCopyInput {
 export type PhoneCopyKind = "status_pages" | "pages" | "menus" | "rooms";
 
 export type PhoneCopyResult =
-  | { ok: true; pages: number; statusPages: number; saved: PhoneCopyKind[]; firstPageId: string }
+  | {
+    ok: true; pages: number; statusPages: number; saved: PhoneCopyKind[]; firstPageId: string;
+    /** The copied menus' Speak Phrase slots, which do nothing on a phone;
+     * absent when none were copied. */
+    speakPhraseSlots?: number;
+  }
   | { ok: false; code: string; message: string; stage?: PhoneCopyKind; saved: PhoneCopyKind[]; problems?: string[] };
 
 /** The most saves one record is sent before conflicts end the copy. */
@@ -457,7 +480,11 @@ export async function copyToPhone(io: PhoneCopyIO, input: PhoneCopyInput): Promi
       await saveRebuilt(io, input.phone, "rooms", phoneRooms, (held) => withCopiedRooms(held, roomKeys));
       saved.push("rooms");
     }
-    return { ok: true, pages: plan.pages.length, statusPages: plan.statusPages.length, saved, firstPageId: watchPageId(plan.pages[0]!) };
+    const speak = saved.includes("menus") && plan.menus !== undefined ? speakPhraseSlotCount(plan.menus) : 0;
+    return {
+      ok: true, pages: plan.pages.length, statusPages: plan.statusPages.length, saved, firstPageId: watchPageId(plan.pages[0]!),
+      ...(speak > 0 ? { speakPhraseSlots: speak } : {}),
+    };
   } catch (error) {
     if (error instanceof CopyStop) {
       return {
@@ -490,7 +517,9 @@ export function phoneCopyNote(result: PhoneCopyResult, watchName: string): { kin
     if (result.saved.includes("menus")) what.push("the menus");
     if (result.saved.includes("rooms")) what.push("the rooms");
     const list = what.length === 1 ? what[0]! : `${what.slice(0, -1).join(", ")} and ${what[what.length - 1]}`;
-    return { kind: "ok", text: `Copied ${list} from ${watchName}. The iPhone picks them up the next time it checks. Undo takes the pages back.` };
+    const speak = result.speakPhraseSlots ?? 0;
+    const voice = speak === 0 ? "" : ` ${speak === 1 ? "1 Speak Phrase slot" : `${speak} Speak Phrase slots`} in the menus will not work on the iPhone, which has no voice phrases.`;
+    return { kind: "ok", text: `Copied ${list} from ${watchName}. The iPhone picks them up the next time it checks. Undo takes the pages back.${voice}` };
   }
   const reason = result.message === "" ? "" : `: ${result.message}`;
   if (result.code === "nothing") return { kind: "warn", text: `Nothing copied. ${result.message}` };
