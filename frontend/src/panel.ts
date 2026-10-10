@@ -412,7 +412,7 @@ import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard } from "./watch-pair-view.js";
 import { settingsWatches, watchAppDevices } from "./watch-settings.js";
-import { phonePagesOn } from "./phone-pages.js";
+import { type WatchOnlyFallback, phonePagesOn, watchOnlyFallback } from "./phone-pages.js";
 import {
   formButtonStyles,
   formEntityStyles,
@@ -436,7 +436,7 @@ import {
   panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath,
 } from "./shell.js";
 import { adoptRouteWatch, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
-import { renderWatchRow, watchRowStyles } from "./watch-row.js";
+import { renderWatchOnlyNote, renderWatchRow, watchRowStyles } from "./watch-row.js";
 import { isWatchSettingsRoute, settingsPageSavesOnKey } from "./watch-settings-page.js";
 import { type WatchHttpLibrary, readWatchHttpLibrary, watchHttpLibraryReadMeansNone } from "./watch-pages/http-library.js";
 import { anyWatchSettingsDirty } from "./watch-settings-draft.js";
@@ -10789,8 +10789,25 @@ export class WristAssistantPanel extends LitElement {
     if (!inside) this.toggleWatchRowMenu(false);
   };
 
-  /** A watch screen under the Watch app row. */
+  /** A watch only screen (Control Center, Voice, HTTP actions, Cameras)
+   * opened while the row's pick is an iPhone: the watch it shows instead and
+   * the line that says so. Undefined anywhere else. */
+  private get watchOnlyFallback(): WatchOnlyFallback | undefined {
+    const screen = watchScreenOf(this.route);
+    return screen === undefined ? undefined : watchOnlyFallback(screen, this.owners, this.sharedWatch);
+  }
+
+  /** The device a screen of one watch is handed: the shared pick, or the
+   * fallback watch when the pick is a phone this screen has nothing for. */
+  private get watchOnlyOwner(): string | undefined {
+    const fallback = this.watchOnlyFallback;
+    return fallback === undefined ? this.sharedWatch : fallback.watch;
+  }
+
+  /** A watch screen under the Watch app row, with the fallback's line
+   * between them when there is one. */
   private withWatchRow(view: TemplateResult) {
+    const fallback = this.watchOnlyFallback;
     return html`${renderWatchRow({
       route: this.route,
       owners: this.owners,
@@ -10801,7 +10818,7 @@ export class WristAssistantPanel extends LitElement {
       onMenu: (open) => this.toggleWatchRowMenu(open),
       onPick: (watchId) => this.pickWatch(watchId),
       onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
-    })}${view}`;
+    })}${fallback === undefined ? nothing : renderWatchOnlyNote(fallback.text)}${view}`;
   }
 
   /**
@@ -10868,7 +10885,7 @@ export class WristAssistantPanel extends LitElement {
     // The voice editor likewise, on `/voice` and `/voice/<owner_watch_id>`.
     if (isWatchVoiceRoute(this.route)) {
       return this.withWatchRow(renderWatchVoiceView({
-        hass: this.hass, owners: this.owners, ownerId: watch, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+        hass: this.hass, owners: this.owners, ownerId: this.watchOnlyOwner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
         onBack: () => this.goTo(COMPLICATIONS_PATH),
@@ -10897,7 +10914,7 @@ export class WristAssistantPanel extends LitElement {
     // `/control-center/<owner_watch_id>`.
     if (isWatchControlCenterRoute(this.route)) {
       return this.withWatchRow(renderWatchControlCenterView({
-        hass: this.hass, owners: this.owners, ownerId: watch, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+        hass: this.hass, owners: this.owners, ownerId: this.watchOnlyOwner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
         onBack: () => this.goTo(COMPLICATIONS_PATH),

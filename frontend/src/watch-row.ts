@@ -18,6 +18,7 @@
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import type { OwnerSummary } from "./ha-api.js";
+import { screenTakesPhone } from "./phone-pages.js";
 import { type DeviceSync, deviceSync, deviceSyncLabel } from "./send-state.js";
 import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, isPlainClick, panelUrl, watchScreenOf, watchScreenPath } from "./shell.js";
 import { uiIcon } from "./ui-icons.js";
@@ -67,9 +68,13 @@ export interface WatchRowLink {
   on: boolean;
 }
 
-export function watchRowLinks(route: PanelRoute | undefined, watch: string | undefined): WatchRowLink[] {
+/** The row's screen links. On a phone (`phone`) the watch only screens leave
+ * the row, all but the one on show (`phone-pages.ts`). */
+export function watchRowLinks(route: PanelRoute | undefined, watch: string | undefined, phone = false): WatchRowLink[] {
   const shown = watchScreenOf(route)?.id;
-  return WATCH_SCREENS.map((screen) => ({ screen, path: watchScreenPath(screen, watch), on: screen.id === shown }));
+  return WATCH_SCREENS
+    .filter((screen) => !phone || screenTakesPhone(screen) || screen.id === shown)
+    .map((screen) => ({ screen, path: watchScreenPath(screen, watch), on: screen.id === shown }));
 }
 
 /** The row's last link, Settings, on the shared watch. In a home with no
@@ -117,6 +122,13 @@ export function watchRowSettingsTitle(kind: WatchRowChoice["kind"] | undefined):
     : "How the watch behaves: gestures, pages, cameras and connection";
 }
 
+/** The line under the row on a watch only screen opened on a phone
+ * (`watchOnlyFallback`): what the screen shows instead. Neutral, like the
+ * row. */
+export function renderWatchOnlyNote(text: string): TemplateResult {
+  return html`<div class="wa-wr-only" role="status">${uiIcon("info")}<span>${text}</span></div>`;
+}
+
 export function renderWatchRow(input: WatchRowInput): TemplateResult {
   const choices = watchRowChoices(input.owners, input.watch, input.phones === true);
   const slot = watchRowSlot(input.loaded, choices.length);
@@ -133,7 +145,7 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
     ${renderWatchSlot(input, slot, choices)}
     ${slot === "none" ? html`<span class="wa-wr-note">${WATCH_ROW_NONE_NOTE}</span>` : nothing}
     <span class="wa-wr-links">
-      ${slot === "none" ? nothing : watchRowLinks(input.route, input.watch).map((l) => link(l))}
+      ${slot === "none" ? nothing : watchRowLinks(input.route, input.watch, shown?.kind === "iphone").map((l) => link(l))}
       ${link(watchRowSettingsLink(input.route, input.watch), "wa-wr-settings ", watchRowSettingsTitle(shown?.kind))}
     </span>
   </nav>`;
@@ -251,6 +263,11 @@ export const watchRowStyles = css`
   .wa-wr-check svg.ui-icon { width: 14px; height: 14px; }
   .wa-wr-menu-note { margin: 4px 0 0; padding: 8px 8px 4px; border-top: 1px solid var(--wa-line); font-size: 12px; color: var(--wa-muted); }
   .wa-wr-note { font-size: 12.5px; color: var(--wa-muted); min-width: 0; }
+  .wa-wr-only {
+    display: flex; align-items: center; gap: 8px; flex: none; padding: 8px 12px; box-sizing: border-box;
+    font-size: 13px; color: var(--wa-ink); background: var(--wa-top); border-bottom: 1px solid var(--wa-line);
+  }
+  .wa-wr-only svg.ui-icon { width: 14px; height: 14px; flex: none; color: var(--wa-muted); }
   .wa-wr-links { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
   a.wa-wr-link, button.wa-wr-link {
     display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 6px; box-sizing: border-box;

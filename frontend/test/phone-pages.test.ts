@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { HassLike, OwnerSummary } from "../src/ha-api.js";
-import { PHONE_PAGES_CAPABILITY, isPhoneId, phonePagesOn, screenTakesPhone } from "../src/phone-pages.js";
+import { PHONE_PAGES_CAPABILITY, isPhoneId, phonePagesOn, screenTakesPhone, watchOnlyFallback } from "../src/phone-pages.js";
 import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN } from "../src/shell.js";
 import "../src/watch-control-center/control-center-editor.js";
 import "../src/watch-menus/menu-editor.js";
@@ -14,7 +14,7 @@ import "../src/watch-pages/page-editor.js";
 import { resolveWatchPick } from "../src/watch-pick.js";
 import { roomsKindFor } from "../src/watch-rooms/model.js";
 import "../src/watch-rooms/rooms-editor.js";
-import { WATCH_ROW_PHONES_NOTE, type WatchRowInput, renderWatchRow, watchRowChoices } from "../src/watch-row.js";
+import { WATCH_ROW_PHONES_NOTE, type WatchRowInput, renderWatchOnlyNote, renderWatchRow, watchRowChoices, watchRowLinks } from "../src/watch-row.js";
 import { WATCH_SETTINGS_CATALOG, catalogFor, settingsTitle, watchAppDevices } from "../src/watch-settings.js";
 import "../src/watch-status-pages/status-pages-editor.js";
 import "../src/watch-voice/voice-editor.js";
@@ -176,6 +176,60 @@ describe("the row with phones listed", () => {
     expect(text).not.toContain("data-watch=p1");
     expect(text).toContain(WATCH_ROW_PHONES_NOTE);
     expect(text).toContain("aria-label=Watches");
+  });
+});
+
+describe("the screens a phone does not have", () => {
+  const screen = (id: string) => WATCH_SCREENS.find((s) => s.id === id)!;
+  const route = (path: string) => ({ prefix: "/wrist-assistant", path });
+
+  it("leave the row while the pick is a phone, all but the one on show", () => {
+    const ids = (path: string, phone: boolean) => watchRowLinks(route(path), "p1", phone).map((l) => l.screen.id);
+    expect(ids("/pages/p1", true)).toEqual(["pages", "menus", "status-pages", "rooms"]);
+    expect(ids("/control-center/p1", true)).toEqual(["pages", "menus", "status-pages", "control-center", "rooms"]);
+    expect(ids("/cameras", true)).toEqual(["pages", "menus", "status-pages", "rooms", "cameras"]);
+    expect(ids("/pages/w1", false)).toHaveLength(8);
+  });
+
+  it("leave the row as drawn on a phone, with Settings still last", () => {
+    const text = flat(renderWatchRow({
+      route: route("/pages/p1"), owners: OWNERS, watch: "p1", phones: true, loaded: true, menuOpen: false,
+      onMenu: () => undefined, onPick: () => undefined, onGo: () => undefined,
+    }));
+    for (const gone of [">Control Center</a>", ">Voice</a>", ">HTTP actions</a>", ">Cameras</a>"]) expect(text, gone).not.toContain(gone);
+    for (const kept of [">Pages</a>", ">Menus</a>", ">Status pages</a>", ">Rooms</a>", ">Settings</a>"]) expect(text, kept).toContain(kept);
+    expect(text).toContain("href=/wrist-assistant/settings/p1");
+  });
+
+  it("show the first watch instead when opened on a phone, and say so", () => {
+    expect(watchOnlyFallback(screen("control-center"), OWNERS, "p1")).toEqual({
+      watch: "w1", text: "The iPhone has no Control Center list. Showing Jesse's Watch.",
+    });
+    expect(watchOnlyFallback(screen("voice"), OWNERS, "p1")).toEqual({ watch: "w1", text: "The iPhone has no voice commands. Showing Jesse's Watch." });
+  });
+
+  it("say plainly when the home has no watch to show", () => {
+    const phoneOnly = [OWNERS[0]!];
+    expect(watchOnlyFallback(screen("control-center"), phoneOnly, "p1")).toEqual({
+      watch: undefined, text: "The iPhone has no Control Center list, and no watch has connected yet.",
+    });
+  });
+
+  it("say on a screen every watch shares that it is the watches'", () => {
+    expect(watchOnlyFallback(screen("http-actions"), OWNERS, "p1")).toEqual({ watch: undefined, text: "The iPhone has no HTTP actions. These are for the watches." });
+    expect(watchOnlyFallback(screen("cameras"), OWNERS, "p1")?.text).toBe("The iPhone has no camera alerts. These are for the watches.");
+  });
+
+  it("need no fallback on a watch, or on a screen a phone has", () => {
+    expect(watchOnlyFallback(screen("control-center"), OWNERS, "w2")).toBeUndefined();
+    expect(watchOnlyFallback(screen("control-center"), OWNERS, undefined)).toBeUndefined();
+    expect(watchOnlyFallback(screen("pages"), OWNERS, "p1")).toBeUndefined();
+    expect(watchOnlyFallback(WATCH_SETTINGS_SCREEN, OWNERS, "p1")).toBeUndefined();
+  });
+
+  it("draw their line under the row as plain words", () => {
+    expect(flat(renderWatchOnlyNote("The iPhone has no voice commands."))).toContain(`<div class="wa-wr-only" role="status">`);
+    expect(flat(renderWatchOnlyNote("The iPhone has no voice commands."))).toContain("<span>The iPhone has no voice commands.</span>");
   });
 });
 

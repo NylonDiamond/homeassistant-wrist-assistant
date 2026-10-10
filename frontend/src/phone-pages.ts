@@ -41,7 +41,7 @@ export function screenTakesPhone(screen: Pick<WatchScreen, "id">): boolean {
 
 /** What the phone does not have, for the line on a watch only screen. */
 const WATCH_ONLY_WHAT: Partial<Record<WatchScreen["id"], string>> = {
-  "control-center": "a Control Center list",
+  "control-center": "Control Center list",
   "voice": "voice commands",
   "http-actions": "HTTP actions",
   "cameras": "camera alerts",

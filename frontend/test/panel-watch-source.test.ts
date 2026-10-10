@@ -63,7 +63,14 @@ describe("the watch screens under the row", () => {
     for (const view of ["renderWatchPagesView", "renderWatchMenusView", "renderWatchVoiceView", "renderWatchStatusPagesView", "renderWatchControlCenterView", "renderWatchRoomsView"]) {
       expect(tab, view).toContain(`return this.withWatchRow(${view}({`);
     }
-    expect(count(tab, "ownerId: watch,")).toBe(6);
+    expect(count(tab, "ownerId: watch,")).toBe(4);
+    // Control Center and Voice are a watch's alone: on a phone they get the
+    // fallback watch (`watchOnlyOwner`).
+    expect(count(tab, "ownerId: this.watchOnlyOwner,")).toBe(2);
+    for (const view of ["renderWatchVoiceView", "renderWatchControlCenterView"]) {
+      const at = tab.indexOf(`return this.withWatchRow(${view}({`);
+      expect(tab.slice(at, tab.indexOf("}));", at)), view).toContain("ownerId: this.watchOnlyOwner,");
+    }
     expect(count(tab, "shell: true,")).toBe(6);
     expect(count(tab, "actions: nothing,")).toBe(6);
     expect(count(tab, "dialogs: nothing,")).toBe(6);
@@ -79,6 +86,15 @@ describe("the watch screens under the row", () => {
     }
     expect(count(tab, "phones: this.phonePages,")).toBe(4);
     expect(method("  private withWatchRow(")).toContain("phones: this.phonePages,");
+  });
+
+  it("says under the row what a watch only screen shows on a phone, and hands it the fallback watch", () => {
+    const fallback = method("  private get watchOnlyFallback()");
+    expect(fallback).toContain("watchOnlyFallback(screen, this.owners, this.sharedWatch)");
+    const owner = method("  private get watchOnlyOwner()");
+    expect(owner).toContain("return fallback === undefined ? this.sharedWatch : fallback.watch;");
+    const row = method("  private withWatchRow(");
+    expect(row).toContain("${fallback === undefined ? nothing : renderWatchOnlyNote(fallback.text)}${view}");
   });
 
   it("puts HTTP actions under the row too, handed no watch, as every watch shares it", () => {
