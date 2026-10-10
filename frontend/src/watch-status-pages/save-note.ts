@@ -2,7 +2,7 @@
 // end. Kept apart from the element so the words can be tested without a
 // browser.
 
-import type { WatchPagesNote } from "../watch-pages/save-note.js";
+import { NOT_FOR_IPHONE_TEXT, type WatchPagesNote } from "../watch-pages/save-note.js";
 import type { StatusPageClash, StatusPagesSaveResult } from "./draft.js";
 
 /** A page's name in a sentence, quoted; "a status page" with none. */
@@ -45,6 +45,8 @@ export function statusPagesSaveNote(result: StatusPagesSaveResult): WatchPagesNo
       if (problems.length > 0) return { kind: "err", text: `Not saved. Something in the status pages is not right: ${problems.join(" ")}` };
       return { kind: "err", text: `Not saved. Home Assistant refused the status pages${message === "" ? "." : `: ${message}`}` };
     }
+    case "not_for_iphone":
+      return { kind: "err", text: `Not saved. ${NOT_FOR_IPHONE_TEXT}` };
     case "busy":
       return { kind: "warn", text: "Already saving these status pages. Wait a moment for that save to finish." };
     case "unavailable":

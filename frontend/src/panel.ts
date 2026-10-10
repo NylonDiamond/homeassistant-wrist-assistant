@@ -413,6 +413,7 @@ import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard } from "./watch-pair-view.js";
 import { settingsWatches, watchAppDevices } from "./watch-settings.js";
 import { type WatchOnlyFallback, phonePagesOn, watchOnlyFallback } from "./phone-pages.js";
+import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "./watch-pages/save-note.js";
 import {
   formButtonStyles,
   formEntityStyles,
@@ -21004,6 +21005,7 @@ function saveTextFile(name: string, text: string) {
 }
 
 function errText(err: unknown): string {
+  if (watchCommandError(err).code === "not_for_iphone") return NOT_FOR_IPHONE_TEXT;
   return String((err as { message?: string })?.message ?? err);
 }
 

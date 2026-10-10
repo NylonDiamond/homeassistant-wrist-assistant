@@ -2,7 +2,7 @@
 // can end. Kept apart from the element so the words can be tested without a
 // browser.
 
-import type { WatchPagesNote } from "../watch-pages/save-note.js";
+import { NOT_FOR_IPHONE_TEXT, type WatchPagesNote } from "../watch-pages/save-note.js";
 import type { ControlCenterSaveResult } from "./draft.js";
 import type { ControlCenterClash } from "./merge.js";
 
@@ -46,6 +46,8 @@ export function controlCenterSaveNote(result: ControlCenterSaveResult): WatchPag
       if (problems.length > 0) return { kind: "err", text: `Not saved. Something in the Control Center list is not right: ${problems.join(" ")}` };
       return { kind: "err", text: `Not saved. Home Assistant refused the Control Center list${message === "" ? "." : `: ${message}`}` };
     }
+    case "not_for_iphone":
+      return { kind: "err", text: `Not saved. ${NOT_FOR_IPHONE_TEXT}` };
     case "busy":
       return { kind: "warn", text: "Already saving this Control Center list. Wait a moment for that save to finish." };
     case "unavailable":

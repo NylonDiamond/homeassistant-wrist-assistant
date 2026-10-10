@@ -36,7 +36,7 @@
 
 import type { OwnerSummary, WatchConfigRecord } from "../ha-api.js";
 import { type WatchPagesDocument, WATCH_CONFIG_LIMIT_BYTES, isHiddenWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPagesOf } from "../watch-pages/model.js";
-import { watchCommandError } from "../watch-pages/save-note.js";
+import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "../watch-pages/save-note.js";
 import { WAIT_FOR_IPHONE_TEXT, takesSettingsFromAnotherHome } from "../watch-settings.js";
 import {
   type PointRooms,
@@ -646,6 +646,8 @@ export function roomsSaveNote(result: RoomsSaveResult, kind: RoomsKind = "behavi
       return { kind: "warn", text: `Not saved. ${home ? "This home's rooms" : "The watch's settings"} kept changing elsewhere while saving. Your edits are kept, so try Save again in a moment.` };
     case "no_record":
       return { kind: "warn", text: home ? "Not saved. Home Assistant no longer holds rooms for this home." : "Not saved. Home Assistant no longer holds settings for this watch." };
+    case "not_for_iphone":
+      return { kind: "err", text: `Not saved. ${NOT_FOR_IPHONE_TEXT}` };
     case "busy":
       return { kind: "warn", text: "Already saving. Wait a moment for that save to finish." };
     case "unavailable":

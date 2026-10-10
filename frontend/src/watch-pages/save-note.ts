@@ -17,18 +17,25 @@ function stringField(value: unknown, key: string): string | undefined {
   return typeof field === "string" && field.trim() !== "" ? field.trim() : undefined;
 }
 
+/** What `not_for_iphone` means: Home Assistant refused to give an iPhone a
+ * record or a setting only a watch keeps (phone pages, `phone-pages.ts`). */
+export const NOT_FOR_IPHONE_TEXT = "An iPhone keeps only its own pages, status pages, menus, rooms and settings, so Home Assistant did not take this.";
+
 /**
  * A refused command's code and words, wherever they sit. Home Assistant's
  * own refusals carry `code` and `message` at the top; a dropped connection
  * rejects with the whole result, `{type, success: false, error: {code,
  * message}}`, whose code is a number. A code here is a string, from either
  * level; the message is the first one found, else the code, else the plain
- * fact that there is no connection.
+ * fact that there is no connection. `not_for_iphone` always reads as
+ * `NOT_FOR_IPHONE_TEXT`, whatever the server said, so every "Could not ..."
+ * line built from the message says it in plain words.
  */
 export function watchCommandError(err: unknown): { code?: string; message: string } {
   if (typeof err === "string" && err.trim() !== "") return { message: err.trim() };
   const inner = typeof err === "object" && err !== null ? (err as { error?: unknown }).error : undefined;
   const code = stringField(err, "code") ?? stringField(inner, "code");
+  if (code === "not_for_iphone") return { code, message: NOT_FOR_IPHONE_TEXT };
   const message = stringField(err, "message") ?? stringField(inner, "message") ?? code ?? NO_CONNECTION;
   return code === undefined ? { message } : { code, message };
 }
@@ -60,6 +67,8 @@ export function watchPagesSaveNote(result: WatchPagesSaveResult): WatchPagesNote
       if (problems.length > 0) return { kind: "err", text: `Not saved. Something in the pages is not right: ${problems.join(" ")}` };
       return { kind: "err", text: `Not saved. Home Assistant refused the pages${message === "" ? "." : `: ${message}`}` };
     }
+    case "not_for_iphone":
+      return { kind: "err", text: `Not saved. ${NOT_FOR_IPHONE_TEXT}` };
     case "busy":
       return { kind: "warn", text: "Already saving these pages. Wait a moment for that save to finish." };
     case "unavailable":

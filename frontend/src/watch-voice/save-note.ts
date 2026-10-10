@@ -1,7 +1,7 @@
 // What the voice editor says after a save, one line per way a save can end.
 // Kept apart from the element so the words can be tested without a browser.
 
-import type { WatchPagesNote } from "../watch-pages/save-note.js";
+import { NOT_FOR_IPHONE_TEXT, type WatchPagesNote } from "../watch-pages/save-note.js";
 import type { WatchVoiceSaveResult } from "./draft.js";
 
 const KEY_NAMES: Readonly<Record<string, string>> = {
@@ -52,6 +52,8 @@ export function watchVoiceSaveNote(result: WatchVoiceSaveResult): WatchPagesNote
       if (problems.length > 0) return { kind: "err", text: `Not saved. ${problems.join(" ")}` };
       return { kind: "err", text: `Not saved. Home Assistant refused the voice settings${message === "" ? "." : `: ${message}`}` };
     }
+    case "not_for_iphone":
+      return { kind: "err", text: `Not saved. ${NOT_FOR_IPHONE_TEXT}` };
     case "busy":
       return { kind: "warn", text: "Already saving these voice settings. Wait a moment for that save to finish." };
     case "unavailable":

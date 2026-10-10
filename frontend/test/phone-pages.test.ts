@@ -15,11 +15,18 @@ import "../src/watch-control-center/control-center-editor.js";
 import "../src/watch-menus/menu-editor.js";
 import "../src/watch-pages/page-editor.js";
 import { resolveWatchPick } from "../src/watch-pick.js";
-import { roomsKindFor } from "../src/watch-rooms/model.js";
+import { controlCenterSaveNote } from "../src/watch-control-center/save-note.js";
+import { httpActionsSaveNote } from "../src/watch-http-actions/save-note.js";
+import { watchMenusSaveNote } from "../src/watch-menus/save-note.js";
+import { createWatchPages } from "../src/watch-pages/draft.js";
+import { NOT_FOR_IPHONE_TEXT, watchCommandError, watchPagesSaveNote } from "../src/watch-pages/save-note.js";
+import { roomsKindFor, roomsSaveNote } from "../src/watch-rooms/model.js";
 import "../src/watch-rooms/rooms-editor.js";
 import { WATCH_ROW_PHONES_NOTE, type WatchRowInput, renderWatchOnlyNote, renderWatchRow, watchRowChoices, watchRowLinks } from "../src/watch-row.js";
 import { WATCH_SETTINGS_CATALOG, catalogFor, settingsTitle, watchAppDevices } from "../src/watch-settings.js";
+import { statusPagesSaveNote } from "../src/watch-status-pages/save-note.js";
 import "../src/watch-status-pages/status-pages-editor.js";
+import { watchVoiceSaveNote } from "../src/watch-voice/save-note.js";
 import "../src/watch-voice/voice-editor.js";
 
 const flat = (v: unknown): string => {
@@ -298,5 +305,47 @@ describe("the screens a phone has", () => {
     expect(roomsKindFor({ device_kind: "iphone", main_house: true })).toBe("rooms");
     expect(roomsKindFor({ device_kind: "watch" })).toBe("behavior");
     expect(roomsKindFor({ device_kind: "watch", main_house: false })).toBe("rooms");
+  });
+});
+
+describe("a refusal as not_for_iphone", () => {
+  const refused = { code: "not_for_iphone", message: "kind 'control_center' is not for an iPhone" };
+
+  it("reads in plain words, at the top or inside a lost connection's result", () => {
+    expect(watchCommandError(refused)).toEqual({ code: "not_for_iphone", message: NOT_FOR_IPHONE_TEXT });
+    expect(watchCommandError({ error: refused }).message).toBe(NOT_FOR_IPHONE_TEXT);
+    expect(watchCommandError(Object.assign(new Error(refused.message), { code: refused.code })).message).toBe(NOT_FOR_IPHONE_TEXT);
+    expect(NOT_FOR_IPHONE_TEXT).not.toMatch(/not_for_iphone| - |\u2013|\u2014/);
+  });
+
+  it("leaves every other refusal in Home Assistant's own words", () => {
+    expect(watchCommandError({ code: "invalid", message: "bad page" })).toEqual({ code: "invalid", message: "bad page" });
+  });
+
+  it("is said the same way after a save on every screen", () => {
+    const failed = { ok: false, revision: 3, merged: false, ...refused };
+    const notes = [
+      watchPagesSaveNote(failed),
+      watchMenusSaveNote(failed),
+      statusPagesSaveNote(failed),
+      controlCenterSaveNote(failed),
+      watchVoiceSaveNote(failed),
+      httpActionsSaveNote(failed),
+      roomsSaveNote({ ok: false, ...refused }, "rooms"),
+      roomsSaveNote({ ok: false, ...refused }, "behavior"),
+    ];
+    for (const note of notes) expect(note).toEqual({ kind: "err", text: `Not saved. ${NOT_FOR_IPHONE_TEXT}` });
+  });
+
+  it("is said in plain words when a first record cannot start", async () => {
+    const result = await createWatchPages(() => Promise.reject(refused));
+    expect(result).toEqual({ ok: false, code: "error", message: NOT_FOR_IPHONE_TEXT });
+  });
+
+  it("is said in plain words by the panel and the Settings page too", () => {
+    for (const file of ["panel.ts", "watch-settings-view.ts"]) {
+      const source = readFileSync(join(__dirname, "..", "src", file), "utf8");
+      expect(source).toMatch(/function errText\(err: unknown\): string \{\n  if \(watchCommandError\(err\)\.code === "not_for_iphone"\) return NOT_FOR_IPHONE_TEXT;/);
+    }
   });
 });

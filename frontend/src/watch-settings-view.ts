@@ -95,6 +95,7 @@ import {
   withMotionAction,
   withMotionTarget,
 } from "./watch-settings.js";
+import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "./watch-pages/save-note.js";
 import { SETTINGS_MOVED_TEXT, dropWatchSettingsDrafts, keepSettingsDraft, keptSettingsDraft, restoreSettingsDraft } from "./watch-settings-draft.js";
 import { dealColumns, settingsCanSave, settingsColumnCount, settingsPageStep, settingsPageWidth } from "./watch-settings-page.js";
 import { type TileChoice, domainTiles, gestureIcon, optionPreview, settingIcon, tileChoices, usesTiles } from "./watch-settings-look.js";
@@ -1279,6 +1280,7 @@ export class WatchSettings implements ReactiveController {
 }
 
 function errText(err: unknown): string {
+  if (watchCommandError(err).code === "not_for_iphone") return NOT_FOR_IPHONE_TEXT;
   return String((err as { message?: string })?.message ?? err);
 }
 
