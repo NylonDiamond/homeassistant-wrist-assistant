@@ -237,7 +237,7 @@ import { addWatchTile, watchAddRefusal, watchAddThemeOf, watchKindColor } from "
 import { renderWatchClock, watchPreviewLayout, watchPreviewSideInset, watchTileCornerRadius } from "./preview.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import {
-  DEFAULT_PHONE,
+  PHONE_SIZE_TEXT,
   PHONE_STAGE_ZOOM,
   type PhonePagesLayout,
   phoneFrameStyles,
@@ -630,7 +630,7 @@ const SAVING_TEXT = "Saving. Tiles and pages move again once the save is done.";
 
 /** What the iPhone's picture is: its Pages tab, at the size every iPhone
  * is drawn at, since the phone does not report its screen. */
-export const PHONE_FRAME_TEXT = `The iPhone's Pages tab, drawn as an ${DEFAULT_PHONE.label}. The iPhone does not tell Home Assistant its screen size.`;
+export const PHONE_FRAME_TEXT = `The iPhone's Pages tab. ${PHONE_SIZE_TEXT}`;
 
 
 /** What an iPhone with no pages says under its title (`phone-pages.ts`). */

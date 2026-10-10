@@ -30,6 +30,7 @@
 import { css, html, svg, type TemplateResult, nothing } from "lit";
 
 import type { IconProvider } from "./renderer.js";
+import { renderWatchFrame } from "./watch-frame.js";
 
 /** One iPhone screen: its size, the safe area the app's chrome keeps clear
  * of, the corner radius of its display, and its Dynamic Island, all in
@@ -132,6 +133,10 @@ export function phonePagesLayout(model: PhoneModel = DEFAULT_PHONE, options?: { 
 export function phonePagesScreen(layout: PhonePagesLayout): { width: number; height: number } {
   return { width: layout.area.width, height: layout.area.height };
 }
+
+/** What an editor says of the iPhone it draws, which is always the default
+ * while the phone reports no screen size. */
+export const PHONE_SIZE_TEXT = `Drawn as an ${DEFAULT_PHONE.label}. The iPhone does not tell Home Assistant its screen size.`;
 
 /** The editors draw an iPhone at this share of the watch's zoom, so the
  * phone fits the stage the watch fits: 150% for the watch is 75% of the
@@ -260,6 +265,21 @@ export function renderPhoneFrame(
   </div>`;
 }
 
+/** Wrap a box drawn at `screen` (the page code's screen) in its device: the
+ * watch's case, or with `phone` the iPhone around its pages area, which
+ * `screen` then is. What the menu and status page editors draw with. */
+export function renderDeviceFrame(
+  phone: PhonePagesLayout | undefined,
+  screen: { width: number; height: number },
+  scale: number,
+  body: TemplateResult,
+  label: string,
+  icons?: IconProvider,
+): TemplateResult {
+  if (phone === undefined) return renderWatchFrame(screen, scale, body, label);
+  return renderPhoneFrame(phone, scale, body, { label, ...(icons === undefined ? {} : { icons }) });
+}
+
 /** The phone's own rules. Add to a component's `styles` beside the watch
  * frame's. The rim and the buttons take the panel's `--wa-art-case` token;
  * the screen around the pages is the app's `bg0`. */
@@ -329,8 +349,7 @@ export const phoneFrameStyles = css`
   .wa-phone-battery i { flex: 1; background: #fff; }
   .wa-phone-switcher { border-radius: 999px; background: #222328; }
   .wa-phone-area { position: relative; display: flex; flex-direction: column; }
-  .wa-phone-area > .wp-screen,
-  .wa-phone-area > .sp-screen { flex: none; }
+  .wa-phone-area > * { flex: none; }
   /* The page code's own system font on the phone is SF Pro, not the watch's
      SF Compact. */
   .wa-phone-area .wp-screen { font-family: "SF Pro Text", "SF Pro", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }

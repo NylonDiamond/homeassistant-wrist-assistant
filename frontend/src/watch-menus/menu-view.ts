@@ -30,7 +30,7 @@ import type { EntityRef } from "../model.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import { type UiIconName, uiIcon } from "../ui-icons.js";
-import { renderWatchFrame } from "../watch-frame.js";
+import { type PhonePagesLayout, renderDeviceFrame } from "../phone-frame.js";
 import { type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOpen } from "../watch-pages/fold-memory.js";
 import type { JsonObject } from "../watch-pages/model.js";
 import { STAGE_ZOOM_STEPS } from "../watch-pages/stage.js";
@@ -143,6 +143,10 @@ export interface MenusViewHost {
   readonly screen: MenusScreen;
   /** Points to pixels for the canvas's watch: the stage's zoom. */
   readonly scale: number;
+  /** The device is an iPhone: `screen` is its Pages tab's pages area, where
+   * the phone opens its menus over the pages, and the menus are drawn in the
+   * iPhone (`phone-frame.ts`). */
+  readonly phone?: PhonePagesLayout;
   /** The pages the watch's page switcher shows, in its order. */
   readonly switcherPages: readonly MenuSwitcherPage[];
   /** Every page the switcher could show, in watch order: those it shows and
@@ -785,7 +789,7 @@ function renderScreen(host: MenusViewHost, label: string, content: unknown): Tem
     </svg>
     ${content}
   </div>`;
-  return renderWatchFrame({ width, height }, scale, box, label);
+  return renderDeviceFrame(host.phone, { width, height }, scale, box, label, host.icons);
 }
 
 /** A glyph's size in pixels on the preview: `points` at the preview's scale. */

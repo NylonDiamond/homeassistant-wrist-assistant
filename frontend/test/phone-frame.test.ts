@@ -29,6 +29,13 @@ import {
   watchTileLabelFontSize,
 } from "../src/watch-pages/preview.js";
 import { cellRectPx, stageGrid } from "../src/watch-pages/stage.js";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { HassLike } from "../src/ha-api.js";
+import { SymbolBrowser } from "../src/symbols.js";
+import type { StatusPagesDocument } from "../src/watch-status-pages/model.js";
+import { type StatusPagesViewHost, renderStatusPageScreen } from "../src/watch-status-pages/view.js";
+import { type MenusViewHost, renderMenuScreen } from "../src/watch-menus/menu-view.js";
 
 const flat = (v: unknown): string => {
   if (Array.isArray(v)) return v.map(flat).join("");
@@ -176,3 +183,43 @@ describe("the iPhone's Pages tab", () => {
     expect(PHONE_STAGE_ZOOM).toBe(0.5);
   });
 });
+
+const NO_ICONS = { render: () => undefined, available: () => false, names: () => [] } as unknown as StatusPagesViewHost["icons"];
+
+describe("the iPhone's status pages and menus", () => {
+  const layout = phonePagesLayout();
+  const base = {
+    hass: { states: {} } as unknown as HassLike,
+    icons: NO_ICONS,
+    symbols: new SymbolBrowser(() => undefined),
+    busy: false,
+    uiState: new Map<string, unknown>(),
+    edit: () => false,
+    endCoalesce: () => undefined,
+    requestUpdate: () => undefined,
+  };
+
+  it("draws a status page in the iPhone's pages area, where the phone opens it", () => {
+    const document = JSON.parse(readFileSync(join(__dirname, "fixtures-status-pages", "02-configured.json"), "utf8")) as StatusPagesDocument;
+    const phone = flat(renderStatusPageScreen({ ...base, document, screen: phonePagesScreen(layout), scale: 1, phone: layout }));
+    expect(phone).toContain('class="wa-phone"');
+    expect(phone).toContain("Status page on the iPhone");
+    expect(phone).toContain("width:390px;min-height:695px");
+    expect(phone).not.toContain("wa-watch");
+    const watch = flat(renderStatusPageScreen({ ...base, document, screen: { width: 208, height: 248 }, scale: 1 }));
+    expect(watch).toContain('class="wa-watch"');
+    expect(watch).toContain("Status page on the watch");
+  });
+
+  it("draws the menus over the iPhone's pages area", () => {
+    const host: MenusViewHost = {
+      ...base, document: { schemaVersion: 1 }, targets: { pages: [], statusPages: [], httpActions: [] }, catalogKnown: true,
+      screen: phonePagesScreen(layout), scale: 1, switcherPages: [], phone: layout,
+    } as unknown as MenusViewHost;
+    const text = flat(renderMenuScreen(host));
+    expect(text).toContain('class="wa-phone"');
+    expect(text).toContain("width:390px;height:695px");
+    expect(text).not.toContain("wa-watch");
+  });
+});
+

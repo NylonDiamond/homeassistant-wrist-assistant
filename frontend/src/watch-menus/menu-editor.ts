@@ -100,6 +100,15 @@ import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/edito
 import { anyWatchPagesDirty, dropAllWatchPages, keptWatchPagesDraft, takeWatchPagesRecord } from "../watch-pages/kept.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import {
+  PHONE_SIZE_TEXT,
+  PHONE_STAGE_ZOOM,
+  type PhonePagesLayout,
+  phoneFrameStyles,
+  phoneModelForScreenSize,
+  phonePagesLayout,
+  phonePagesScreen,
+} from "../phone-frame.js";
+import {
   type WatchPagesDocument,
   isHiddenWatchPage,
   isJsonObject,
@@ -1081,8 +1090,18 @@ export class WaMenuEditor extends LitElement {
   /** The open watch's screen in points, as the page editor finds it: the
    * size the watch reported, else the 46 mm reference. */
   private screen(): MenusScreen {
+    const phone = this.phoneLayout();
+    if (phone !== undefined) return phonePagesScreen(phone);
     const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
     return (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
+  }
+
+  /** On an iPhone, where its Pages tab lays itself out: the menus open over
+   * its pages area (`phone-frame.ts`). Undefined on a watch. */
+  private phoneLayout(): PhonePagesLayout | undefined {
+    if (this.device !== "iphone") return undefined;
+    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
+    return phonePagesLayout(phoneModelForScreenSize(owner?.screen_size));
   }
 
   private viewHost(): MenusViewHost | undefined {
@@ -1099,7 +1118,9 @@ export class WaMenuEditor extends LitElement {
       symbols: this.symbols,
       uiState: this.uiState,
       screen: this.screen(),
-      scale: this.stageScale,
+      // An iPhone is drawn at half the watch's zoom, so the taller phone fits.
+      scale: this.phoneLayout() === undefined ? this.stageScale : this.stageScale * PHONE_STAGE_ZOOM,
+      ...(this.phoneLayout() === undefined ? {} : { phone: this.phoneLayout() }),
       switcherPages: rows.filter((p) => !p.hidden).map(({ hidden: _, ...page }) => page),
       switcherRows: rows,
       switcherSettings: (pageId) => this.switcherSettingsHost(pageId),
@@ -1576,7 +1597,8 @@ export class WaMenuEditor extends LitElement {
     const owner = watches.find((w) => w.owner_watch_id === this.watchId);
     const found = caseForScreenSize(owner?.screen_size);
     const watchCase = found ?? REFERENCE_CASE;
-    const facts = [...menuStageFacts(host), watchCase.label];
+    const caseLabel = host.phone === undefined ? watchCase.label : host.phone.model.label;
+    const facts = [...menuStageFacts(host), caseLabel];
     // The pages' steps while a page is picked in the switcher, as the keys.
     const draft = this.undoDraft;
     const name = menuSectionLabel(shownMenu(host));
@@ -1586,7 +1608,7 @@ export class WaMenuEditor extends LitElement {
         ${owner !== undefined ? html`<span class="cv-part cv-where"><span class="cv-slash" aria-hidden="true">/</span>
           <span class="cv-watch">${watchName(owner, watches)}</span></span>` : nothing}
         <span class="cv-part cv-what"><span class="cv-slash" aria-hidden="true">/</span>
-          <span class="cv-shape" title=${found === undefined ? `${watchCase.label}, this watch's size is not known` : facts.join(" · ")}><span class="fam">${facts.join(" · ")}</span></span></span>
+          <span class="cv-shape" title=${host.phone !== undefined ? PHONE_SIZE_TEXT : found === undefined ? `${watchCase.label}, this watch's size is not known` : facts.join(" · ")}><span class="fam">${facts.join(" · ")}</span></span></span>
         <span class="cv-acts">
           <button class="cv-act icon undo" ?disabled=${!draft?.canUndo} title=${`Undo (${MOD}Z)`} aria-label="Undo"
             @click=${() => this.undo()}>${uiIcon("undo")}</button>
@@ -1595,7 +1617,7 @@ export class WaMenuEditor extends LitElement {
         </span>
       </div>
       <div class="stage-area me-stage-area">
-        ${this.renderStageTools(watchCase.label)}
+        ${this.renderStageTools(caseLabel, host.phone !== undefined)}
         <div class="me-stage-body">${renderMenuScreen(host)}</div>
         <div class="under"><span class="tail">${menuStageHint(host)}</span></div>
       </div>
@@ -1604,19 +1626,21 @@ export class WaMenuEditor extends LitElement {
 
   /** The floating tool strip over the stage, the page editor's: the watch's
    * size (read only) and the zoom. */
-  private renderStageTools(caseLabel: string): TemplateResult {
+  private renderStageTools(caseLabel: string, phone = false): TemplateResult {
     const scale = this.stageScale;
     const fit = stageFitZoom(this.narrow || this.stacked);
+    // The percent is of the device's own points.
+    const shownAs = (zoom: number): string => stageZoomLabel(phone ? zoom * PHONE_STAGE_ZOOM : zoom);
     return html`<div class="stage-tools" role="toolbar" aria-label="Stage tools">
-      <button class="tb me-case" aria-disabled="true" tabindex="-1" title=${`This watch's screen, ${caseLabel}.`}>
-        ${uiIcon("watch")}<span class="word keep">${caseLabel}</span></button>
+      <button class="tb me-case" aria-disabled="true" tabindex="-1" title=${phone ? PHONE_SIZE_TEXT : `This watch's screen, ${caseLabel}.`}>
+        ${uiIcon(phone ? "phone" : "watch")}<span class="word keep">${caseLabel}</span></button>
       <span class="tb-sep" aria-hidden="true"></span>
       <span class="tb-zoom" role="group" aria-label="Zoom">
         <button class="tb icon me-zoom-out" ?disabled=${scale <= stageZoomOut(scale)} aria-label="Zoom out" title="Zoom out"
           @click=${() => this.setZoom(stageZoomOut(scale))}>−</button>
-        <button class="tb pct" aria-label=${`Zoom ${stageZoomLabel(scale)}. Back to fit`}
-          title=${`The watch at ${stageZoomLabel(scale)} of its own points. Click to fit it again (${stageZoomLabel(fit)}).`}
-          @click=${() => this.setZoom(undefined)}>${stageZoomLabel(scale)}</button>
+        <button class="tb pct" aria-label=${`Zoom ${shownAs(scale)}. Back to fit`}
+          title=${`The ${phone ? "iPhone" : "watch"} at ${shownAs(scale)} of its own points. Click to fit it again (${shownAs(fit)}).`}
+          @click=${() => this.setZoom(undefined)}>${shownAs(scale)}</button>
         <button class="tb icon me-zoom-in" ?disabled=${scale >= stageZoomIn(scale)} aria-label="Zoom in" title="Zoom in"
           @click=${() => this.setZoom(stageZoomIn(scale))}>+</button>
       </span>
@@ -1737,7 +1761,7 @@ export class WaMenuEditor extends LitElement {
     </dialog>`;
   }
 
-  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchFrameStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchFrameStyles, phoneFrameStyles, css`
     /* A column, so the foot bar (config-foot.ts) can take the space left
        at the foot of a short editor; --cf-pad is the padding it reaches
        through to sit edge to edge. */

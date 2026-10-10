@@ -24,7 +24,7 @@ import type { EntityRef } from "../model.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import { type UiIconName, uiIcon } from "../ui-icons.js";
-import { renderWatchFrame } from "../watch-frame.js";
+import { type PhonePagesLayout, renderDeviceFrame } from "../phone-frame.js";
 import { type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOpen } from "../watch-pages/fold-memory.js";
 import type { JsonObject } from "../watch-pages/model.js";
 import { STAGE_ZOOM_STEPS } from "../watch-pages/stage.js";
@@ -95,6 +95,10 @@ export interface StatusPagesViewHost {
   readonly screen: { width: number; height: number };
   /** Points to pixels for the canvas's watch: the stage's zoom. */
   readonly scale: number;
+  /** The device is an iPhone: `screen` is its Pages tab's pages area, where
+   * the phone draws a status page over the pages, and the page is drawn in
+   * the iPhone (`phone-frame.ts`). */
+  readonly phone?: PhonePagesLayout;
   /** Apply `change` to the document as it is now: one undo step, or with
    * `coalesce` a step the next edits with the same key replace. */
   edit(change: (document: StatusPagesDocument) => StatusPagesDocument, coalesce?: string): boolean;
@@ -613,9 +617,10 @@ export function renderStatusPageScreen(host: StatusPagesViewHost): TemplateResul
       <div class="sp-w-done" style=${`font-size:${15 * s}px;padding:${12 * s}px 0;border-radius:${20 * s}px`}>Done</div>
     </div>`;
   }
-  const box = html`<div class="sp-screen" role="group" aria-label="Status page on the watch"
+  const label = host.phone === undefined ? "Status page on the watch" : "Status page on the iPhone";
+  const box = html`<div class="sp-screen" role="group" aria-label=${label}
     style=${`width:${Math.round(width * s)}px;min-height:${Math.round(height * s)}px`}>${content}</div>`;
-  return renderWatchFrame({ width, height }, s, box, "Status page on the watch");
+  return renderDeviceFrame(host.phone, { width, height }, s, box, label, host.icons);
 }
 
 /** The canvas head's facts: the page's rows and what the watch draws. */

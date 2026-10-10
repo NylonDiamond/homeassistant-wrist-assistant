@@ -72,6 +72,15 @@ import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/edito
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
 import { watchFrameStyles } from "../watch-frame.js";
+import {
+  PHONE_SIZE_TEXT,
+  PHONE_STAGE_ZOOM,
+  type PhonePagesLayout,
+  phoneFrameStyles,
+  phoneModelForScreenSize,
+  phonePagesLayout,
+  phonePagesScreen,
+} from "../phone-frame.js";
 import { START_FRESH_BUTTON, type NoRecordStart, type SettingDevice, deliveryState, deviceNoun, followWatch, mayStart, noRecordStart, noRecordText, noRecordTitle, savedByLine, watchAppDevices, watchName } from "../watch-settings.js";
 import {
   type StatusPagesDraft,
@@ -639,8 +648,18 @@ export class WaStatusPagesEditor extends LitElement {
   /** The open watch's screen in points: the size the watch reported, else
    * the 46 mm reference. */
   private screen(): { width: number; height: number } {
+    const phone = this.phoneLayout();
+    if (phone !== undefined) return phonePagesScreen(phone);
     const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
     return (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
+  }
+
+  /** On an iPhone, where its Pages tab lays itself out: a status page opens
+   * over its pages area (`phone-frame.ts`). Undefined on a watch. */
+  private phoneLayout(): PhonePagesLayout | undefined {
+    if (this.device !== "iphone") return undefined;
+    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
+    return phonePagesLayout(phoneModelForScreenSize(owner?.screen_size));
   }
 
   private viewHost(): StatusPagesViewHost | undefined {
@@ -654,7 +673,9 @@ export class WaStatusPagesEditor extends LitElement {
       symbols: this.symbols,
       uiState: this.uiState,
       screen: this.screen(),
-      scale: this.stageScale,
+      // An iPhone is drawn at half the watch's zoom, so the taller phone fits.
+      scale: this.phoneLayout() === undefined ? this.stageScale : this.stageScale * PHONE_STAGE_ZOOM,
+      ...(this.phoneLayout() === undefined ? {} : { phone: this.phoneLayout() }),
       get document() { return draft.document; },
       get busy() { return self.saving; },
       edit: (change, coalesce) => this.draft === draft && this.edit(change, coalesce),
@@ -999,7 +1020,11 @@ export class WaStatusPagesEditor extends LitElement {
     const owner = watches.find((w) => w.owner_watch_id === this.watchId);
     const found = caseForScreenSize(owner?.screen_size);
     const watchCase = found ?? REFERENCE_CASE;
-    const facts = [...statusStageFacts(host), watchCase.label];
+    const phone = host.phone !== undefined;
+    const caseLabel = host.phone === undefined ? watchCase.label : host.phone.model.label;
+    const facts = [...statusStageFacts(host), caseLabel];
+    // The percent is of the device's own points.
+    const shownAs = (zoom: number): string => stageZoomLabel(phone ? zoom * PHONE_STAGE_ZOOM : zoom);
     const page = shownStatusPage(host);
     const name = page === undefined ? "Status pages" : statusPageName(page) || "Untitled page";
     const draft = this.draft;
@@ -1021,15 +1046,15 @@ export class WaStatusPagesEditor extends LitElement {
       </div>
       <div class="stage-area sp-stage-area">
         <div class="stage-tools" role="toolbar" aria-label="Stage tools">
-          <button class="tb sp-case" aria-disabled="true" tabindex="-1" title=${`This watch's screen, ${watchCase.label}.`}>
-            ${uiIcon("watch")}<span class="word keep">${watchCase.label}</span></button>
+          <button class="tb sp-case" aria-disabled="true" tabindex="-1" title=${phone ? PHONE_SIZE_TEXT : `This watch's screen, ${watchCase.label}.`}>
+            ${uiIcon(phone ? "phone" : "watch")}<span class="word keep">${caseLabel}</span></button>
           <span class="tb-sep" aria-hidden="true"></span>
           <span class="tb-zoom" role="group" aria-label="Zoom">
             <button class="tb icon" ?disabled=${scale <= stageZoomOut(scale)} aria-label="Zoom out" title="Zoom out"
               @click=${() => this.setZoom(stageZoomOut(scale))}>−</button>
-            <button class="tb pct" aria-label=${`Zoom ${stageZoomLabel(scale)}. Back to fit`}
-              title=${`The watch at ${stageZoomLabel(scale)} of its own points. Click to fit it again (${stageZoomLabel(fit)}).`}
-              @click=${() => this.setZoom(undefined)}>${stageZoomLabel(scale)}</button>
+            <button class="tb pct" aria-label=${`Zoom ${shownAs(scale)}. Back to fit`}
+              title=${`The ${phone ? "iPhone" : "watch"} at ${shownAs(scale)} of its own points. Click to fit it again (${shownAs(fit)}).`}
+              @click=${() => this.setZoom(undefined)}>${shownAs(scale)}</button>
             <button class="tb icon" ?disabled=${scale >= stageZoomIn(scale)} aria-label="Zoom in" title="Zoom in"
               @click=${() => this.setZoom(stageZoomIn(scale))}>+</button>
           </span>
@@ -1152,7 +1177,7 @@ export class WaStatusPagesEditor extends LitElement {
     </dialog>`;
   }
 
-  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchFrameStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchFrameStyles, phoneFrameStyles, css`
     :host {
       display: flex;
       flex-direction: column;
