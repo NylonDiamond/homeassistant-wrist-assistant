@@ -135,8 +135,26 @@ function art(device: DeviceKind, inner: unknown): TemplateResult {
  * blank phone in it. `shapeArtKinds` is what stops that being drawn at all.
  */
 export function deviceShapeArt(family: FamilyKind, device: DeviceKind, on: boolean): TemplateResult {
+  if (family === "dashboard") return dashboardShapeArt(on);
   const opacity = on ? "1" : "0.45";
   return art(device, device === "iphone" ? phoneShape(family, opacity) : watchShape(family, opacity));
+}
+
+/**
+ * A Home Assistant dashboard with one card lit: a screen on a stand, holding
+ * a few cards of the sections grid. It is no device, so whichever device a
+ * row asks for, this is the drawing: a Dashboard design is on neither.
+ */
+export function dashboardShapeArt(on: boolean): TemplateResult {
+  const opacity = on ? "1" : "0.45";
+  const card = (x: number, y: number, width: number, height: number) =>
+    svg`<rect x=${x} y=${y} width=${width} height=${height} rx="0.8" fill=${FURNITURE_COLOR} opacity=${GRID} />`;
+  return html`<svg class="shape-art" viewBox=${VIEW_BOX} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <rect x="5.5" y="4" width="21" height="16" rx="1.5" fill="none" stroke=${FURNITURE_COLOR} stroke-opacity="0.45" />
+    <rect x="13" y="21.5" width="6" height="1.5" rx="0.5" fill=${FURNITURE_COLOR} opacity=${GRID} />
+    <rect x="8" y="7" width="9" height="5" rx="0.8" fill="currentColor" opacity=${opacity} />
+    ${card(18.5, 7, 5.5, 5)}${card(8, 13.5, 5.5, 4)}${card(15, 13.5, 9, 4)}
+  </svg>`;
 }
 
 /**
@@ -814,6 +832,7 @@ export function deviceCropArt(
   opts: { shelved?: boolean } = {},
 ): TemplateResult {
   if (family === undefined) return controlBeside(live.control);
+  if (family === "dashboard") return dashboardCard(live.dashboard);
   const shelved = opts.shelved === true;
   const phone = device === "iphone";
   const box = phone ? phoneCrop(family) : watchCrop(family);
@@ -851,6 +870,7 @@ export function shapeOnlyArt(
   live: LiveShapes = {},
 ): TemplateResult {
   if (family === undefined) return controlBeside(live.control);
+  if (family === "dashboard") return dashboardCard(live.dashboard);
   const phone = device === "iphone";
   const slot = phone ? phoneSlot(family) : watchSlot(family);
   if (slot === undefined) return deviceCropArt(family, device, live);
@@ -919,6 +939,33 @@ export function shapeWell(family: FamilyKind | undefined, device: "watch" | "iph
   if (slot === undefined) return undefined;
   const frame = family === "corner" && device === "watch" ? cornerFrame() : bareFrame(slot);
   return Math.min(frame.width / frame.height, WELL_WIDEST);
+}
+
+/** The size a Dashboard card's stand-in is drawn at when there is no picture
+ * of it: the default canvas, six columns by two rows of the sections grid.
+ * A copy of `DASHBOARD_DEFAULT_CANVAS`, kept here so this file stays clear of
+ * the model. */
+const DASHBOARD_STANDIN = { width: 244, height: 120 };
+
+/** The corner a Dashboard card is drawn with, in its own points: Home
+ * Assistant's card radius, as the renderer's `DASHBOARD_CORNER_RADIUS`. */
+const DASHBOARD_RX = 12;
+
+/**
+ * A Dashboard design for a picker card, in either view: the card itself with a
+ * thin margin round it and nothing else. There is no device to show it on, and
+ * a dashboard is any page the author makes, so the only honest picture is the
+ * card at its own proportions. The stand-in, for a design this panel cannot
+ * draw, is the lit fill at the default size.
+ */
+function dashboardCard(live: LiveShape | undefined): TemplateResult {
+  const drawable = live !== undefined && live.art !== nothing && live.width > 0 && live.height > 0;
+  const size = drawable ? { width: live.width, height: live.height } : DASHBOARD_STANDIN;
+  const slot: Slot = { x: 0, y: 0, ...size };
+  const frame = bareFrame(slot);
+  const drawn = drawable ? placed(live, slot, "fit", clipKey(), { rx: DASHBOARD_RX }) : undefined;
+  return html`<svg class="pk-crop bare dashboard" viewBox=${`${frame.x} ${frame.y} ${frame.width} ${frame.height}`}
+    preserveAspectRatio="xMidYMid meet" aria-hidden="true">${drawn ?? bareStandin("dashboard", slot, DASHBOARD_RX)}</svg>`;
 }
 
 /** The corner the device picture rounds this slot by, so a shape drawn on its

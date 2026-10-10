@@ -14,6 +14,7 @@ import {
   type FamilyKind,
   type HomeFamily,
   type InlineLayout,
+  DASHBOARD_DEFAULT_CANVAS,
   DRAWABLE_FAMILIES,
   HOME_FAMILIES,
   LIST_FAMILIES,
@@ -358,7 +359,11 @@ export function addFamily(cfg: CustomComplicationConfig, family: FamilyKind): vo
     cfg.supportedFamilies = ALL_FAMILIES.filter((f) => f === family || cfg.supportedFamilies.includes(f));
   }
   if (isDrawable(family)) {
-    if (!cfg.perFamily[family]) cfg.perFamily[family] = defaultLayout();
+    if (!cfg.perFamily[family]) {
+      cfg.perFamily[family] = defaultLayout();
+      // Dashboard's box is its own, so a new one says what it is.
+      if (isDashboardFamily(family)) cfg.perFamily[family]!.canvas = { ...DASHBOARD_DEFAULT_CANVAS };
+    }
   } else if (!cfg.inline) {
     cfg.inline = blankInline();
   }

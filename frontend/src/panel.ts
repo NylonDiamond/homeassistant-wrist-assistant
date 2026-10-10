@@ -119,6 +119,13 @@ import {
   hasFreeTimestamp,
   deleteSharedValue,
   designBox,
+  DASHBOARD_CANVAS_MAX,
+  DASHBOARD_CANVAS_MIN,
+  DASHBOARD_PRESETS,
+  dashboardCanvasFor,
+  dashboardGridFor,
+  dashboardPresetOf,
+  setDashboardCanvas,
   chartAnchorIsColumn,
   entityLayerIds,
   sharedValueLayerIds,
@@ -164,7 +171,7 @@ import {
 } from "./resolver.js";
 import { CANVAS, CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerContext, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
 import { actionAt, demoTapLabel, groundTapReach, runTapAction, tapRefetches, type DemoOutcome } from "./demo.js";
-import { ALL_FAMILIES, biggestFirst, blankInline, canRemoveControl, comingSoonFamilies, controlNoteLines, deviceKindOfShapes, familiesFor, familyAllowsKind, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, moveKindMatches, opensInControlView, supportedFamilies } from "./layouts.js";
+import { ALL_FAMILIES, biggestFirst, blankInline, canRemoveControl, comingSoonFamilies, controlNoteLines, deviceKindOfShapes, familiesFor, familyAllowsKind, familyNote, firstDrawable, hasDashboardFamily, importableFamilies, isDashboardFamily, isDrawable, isHomeFamily, keepFamilies, moveKindMatches, opensInControlView, supportedFamilies } from "./layouts.js";
 import {
   type DeviceOwner,
   type DevicePlace,
@@ -693,11 +700,12 @@ function cardShapeTitle(family: FamilyKind | undefined, control: boolean): strin
  * of complication.
  *
  * Unassigned is no device and holds every shape there is, so it takes the
- * watch's order with the Home Screen tiles after it.
+ * watch's order with the Home Screen tiles after it, and Dashboard, which
+ * lives nowhere else, last.
  */
 const WATCH_SHAPE_ORDER: readonly string[] = ["rectangular", "circular", "corner", "inline"];
 const PHONE_SHAPE_ORDER: readonly string[] = ["small", "medium", "large", "xlarge", "rectangular", "circular", "inline"];
-const SHELF_SHAPE_ORDER: readonly string[] = [...WATCH_SHAPE_ORDER, "small", "medium", "large", "xlarge"];
+const SHELF_SHAPE_ORDER: readonly string[] = [...WATCH_SHAPE_ORDER, "small", "medium", "large", "xlarge", "dashboard"];
 
 function shapeGroupOrder(kind: DeviceKind): readonly string[] {
   const shapes = kind === "iphone" ? PHONE_SHAPE_ORDER : kind === "library" ? SHELF_SHAPE_ORDER : WATCH_SHAPE_ORDER;
@@ -1816,7 +1824,7 @@ export class WristAssistantPanel extends LitElement {
    * held the next click on the face for most of a second after a native menu
    * closed, so a drag right after a change lagged (measured 2026-09-12: the
    * press was 650 to 900 ms old on arrival, with no long task on the page). */
-  @state() private openMenu?: "grid" | "case" | "tint" | "list" | "place" | "snap" | "add";
+  @state() private openMenu?: "grid" | "case" | "tint" | "list" | "place" | "snap" | "add" | "size";
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
@@ -2557,6 +2565,7 @@ export class WristAssistantPanel extends LitElement {
       --wa-shape-medium: #c2410c;
       --wa-shape-large: #a21caf;
       --wa-shape-xlarge: #4338ca;
+      --wa-shape-dashboard: #475569;
       --wa-r-sm: 7px;
       --wa-r-md: 10px;
       --wa-r-lg: 14px;
@@ -2659,6 +2668,7 @@ export class WristAssistantPanel extends LitElement {
       --wa-shape-medium: #fb923c;
       --wa-shape-large: #e879f9;
       --wa-shape-xlarge: #818cf8;
+      --wa-shape-dashboard: #94a3b8;
       --wa-green: #4cc38a;
       --wa-amber: #f0a23b;
       --wa-rule-if: #60a5fa;
@@ -3484,6 +3494,7 @@ export class WristAssistantPanel extends LitElement {
     .shape-dot.medium { width: 16px; height: 8px; border-radius: 3px; }
     .shape-dot.large { width: 11px; height: 11px; border-radius: 3px; }
     .shape-dot.xlarge { width: 8px; height: 13px; border-radius: 3px; }
+    .shape-dot.dashboard { width: 16px; height: 9px; border-radius: 2px; }
     .shape-dot.on { opacity: 1; }
     /* What stands in for the dots on a complication that is only a control. */
     .shape-none { font-size: 11px; opacity: .7; white-space: nowrap; flex: none; }
@@ -3554,6 +3565,8 @@ export class WristAssistantPanel extends LitElement {
     .xf-prev.medium svg.complication { border-radius: 7.7% / 16.3%; }
     .xf-prev.large svg.complication { border-radius: 7.7% / 7.4%; }
     .xf-prev.xlarge svg.complication { border-radius: 7.7% / 4.8%; }
+    /* A Dashboard card rounds itself (renderer.ts), at any proportions. */
+    .xf-prev.dashboard { background: var(--wa-well); }
     .xf-prev .inline-line { line-height: 1.4; }
     .xf-prev-cap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; font-size: 12px; color: var(--wa-muted); }
     .xf-prev-cap b { color: var(--wa-ink); font-weight: 600; }
@@ -4731,6 +4744,18 @@ export class WristAssistantPanel extends LitElement {
     .preview.medium svg { width: min(100%, 880px); border-radius: 7.7% / 16.3%; }
     .preview.large svg { width: min(100%, 520px); border-radius: 7.7% / 7.4%; }
     .preview.xlarge svg { width: min(100%, 380px); border-radius: 7.7% / 4.8%; }
+    /* A Dashboard card is on no device: no case, no system mask, only the
+       card on the plain work surface. The renderer rounds it by Home
+       Assistant's card radius at whatever size the author picked, so the svg
+       adds no corner, background or shadow of its own that would show past
+       it. */
+    .preview.dashboard svg { width: 100%; max-width: 1200px; background: transparent; border-radius: 0; box-shadow: none; }
+    .size-tool .row { display: flex; align-items: center; gap: 12px; }
+    .size-tool .size-cells { margin-left: auto; font-size: 11px; color: var(--wa-muted); font-variant-numeric: tabular-nums; }
+    .size-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 4px 10px 6px; }
+    .size-field { display: grid; gap: 3px; font-size: 11px; color: var(--wa-muted); }
+    .size-field input { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; color: var(--wa-ink); }
+    .size-tool .place-note { max-width: 220px; padding: 2px 10px 6px; font-size: 11px; line-height: 1.35; color: var(--wa-muted); }
     .preview.inline .inline-line {
       display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 220px;
       padding: 8px 18px; border-radius: 999px; background: #000; color: #fff; font-size: 15px;
@@ -4945,6 +4970,7 @@ export class WristAssistantPanel extends LitElement {
       max-width: none; box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 6px 16px rgba(0,0,0,.3);
     }
     .mini-face > .preview.circular > svg { border-radius: 50%; }
+    .mini-face > .preview.dashboard > svg { border-radius: 0; background: transparent; box-shadow: none; }
     .mini-up {
       position: absolute; right: 12px; top: 50%; translate: 0 -50%;
       display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
@@ -5217,7 +5243,8 @@ export class WristAssistantPanel extends LitElement {
     .zoom-stage .preview.small svg,
     .zoom-stage .preview.medium svg,
     .zoom-stage .preview.large svg,
-    .zoom-stage .preview.xlarge svg {
+    .zoom-stage .preview.xlarge svg,
+    .zoom-stage .preview.dashboard svg {
       width: min(100%, calc((100dvh - 90px) * var(--wa-ratio, 1))); max-width: none;
     }
     /* The 3D layer stack. The rig is the face's size and turns in 3D; each
@@ -5243,6 +5270,7 @@ export class WristAssistantPanel extends LitElement {
     .stack-rig.circular { --r: 50%; }
     .stack-rig.small, .stack-rig.medium, .stack-rig.large, .stack-rig.xlarge { --r: 12%; }
     .stack-rig.corner { --r: 0; }
+    .stack-rig.dashboard { --r: 5%; }
     .stack-rig .sheet {
       position: absolute; inset: 0; border-radius: var(--r); pointer-events: none;
       transform: translateZ(calc(var(--u) * var(--k) * var(--fw)));
@@ -5309,6 +5337,7 @@ export class WristAssistantPanel extends LitElement {
     .demo-face.medium svg { border-radius: 7.7% / 16.3%; }
     .demo-face.large svg { border-radius: 7.7% / 7.4%; }
     .demo-face.xlarge svg { border-radius: 7.7% / 4.8%; }
+    .demo-face.dashboard svg { border-radius: 0; background: transparent; }
     /* The success flash is drawn inside the picture (renderer.ts FlashSpec),
        because the watch's flash is a stroke on the complication's own shape.
        All that is left here is letting it fade rather than blink out. */
@@ -8397,7 +8426,12 @@ export class WristAssistantPanel extends LitElement {
   private async saveLinkedSiblings(saved: CustomComplicationConfig, savedId: string, sourceOwnerId: string, stage?: CustomComplicationConfig) {
     if (saved.linkId === undefined) return;
     await this.loadOtherLists();
-    const siblings = this.linkedSiblings(saved.linkId, sourceOwnerId, savedId);
+    // A Dashboard design is written to the Library alone. A device copy of
+    // its link can only be older than the shape, and the store would refuse
+    // it, so it is left as it is rather than reported as a failure.
+    const dashboard = hasDashboardFamily(saved.supportedFamilies);
+    const siblings = this.linkedSiblings(saved.linkId, sourceOwnerId, savedId)
+      .filter((s) => !dashboard || isLibraryOwner(this.ownerOf(s.ownerId)));
     if (siblings.length === 0) return;
     const failed: string[] = [];
     for (const { ownerId, record } of siblings) {
@@ -8840,7 +8874,7 @@ export class WristAssistantPanel extends LitElement {
           title="Try the complication the way the watch draws it: no grid, no handles, no tap boxes. Taps really run, so a toggle really toggles. Escape closes."
           @click=${() => this.openDemo()}>${glyph(svg`<path d="M3 1.8L11 6.5L3 11.2Z" />`, true)}<span class="word">Demo</span></button>
         ${sep}` : nothing}
-      <span class="case-tool preview-tool" data-menu="case">
+      ${family === "dashboard" ? this.renderSizeTool(off) : html`<span class="case-tool preview-tool" data-menu="case">
         <button class="tb ${tint.on !== undefined ? "lit" : ""}" aria-haspopup="menu" aria-expanded=${caseOpen ? "true" : "false"}
           aria-label=${drawable ? `Preview as ${deviceCase.label}, ${tintWord.toLowerCase()}` : `Preview as ${deviceCase.label}`}
           title=${drawable
@@ -8859,10 +8893,62 @@ export class WristAssistantPanel extends LitElement {
             ${FACE_TINTS.map((c) => html`<button class="row" role="menuitemradio" aria-checked=${c.hex === tint.on ? "true" : "false"}
               @click=${() => pickTint(c.hex)}><i class="tint-dot" style=${`--sw:${c.hex}`}></i>${c.label} ${tint.word}</button>`)}` : nothing}
         </div>` : nothing}
-      </span>
+      </span>`}
       ${drawable ? html`${sep}${this.renderSnapMenu()}
       ${sep}${this.renderZoomTools()}` : nothing}
     </div>`;
+  }
+
+  /**
+   * A Dashboard card's size, where every other shape has Preview as.
+   *
+   * A dashboard card is on no device, so there is no case to preview it in:
+   * the canvas is the card, and its size is the author's. The menu offers the
+   * sections grid's four sizes and the two sides in points, typed. Layers are
+   * placed in fractions of the canvas, so they stretch with it.
+   */
+  private renderSizeTool(off: boolean) {
+    const cfg = this.draft?.config;
+    const canvas = designBox(cfg, "dashboard");
+    const open = this.openMenu === "size";
+    const preset = DASHBOARD_PRESETS.find((p) => p.id === dashboardPresetOf(canvas));
+    const cells = dashboardGridFor(canvas);
+    const word = preset?.label ?? `${Math.round(canvas.width)} × ${Math.round(canvas.height)}`;
+    const locked = off || !this.canEdit;
+    const side = (key: "width" | "height", label: string) => html`<label class="size-field">
+      <span>${label}</span>
+      <input type="number" inputmode="numeric" min=${DASHBOARD_CANVAS_MIN} max=${DASHBOARD_CANVAS_MAX} step="1"
+        .value=${String(Math.round(canvas[key]))} ?disabled=${locked} aria-label=${`Card ${label.toLowerCase()} in points`}
+        @change=${(e: Event) => {
+          const v = Number((e.target as HTMLInputElement).value);
+          if (Number.isFinite(v)) this.setCanvasSize({ [key]: v }, `canvas-${key}`);
+          else this.requestUpdate();
+        }} />
+    </label>`;
+    return html`<span class="case-tool preview-tool size-tool" data-menu="size">
+      <button class="tb" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
+        aria-label=${`Card size, ${word}`}
+        title="The card's size on the dashboard. The four sizes match a sections dashboard's grid; type any other in points."
+        @click=${() => this.toggleMenu("size")}>${uiIcon("expand")}<span class="word keep">${word}</span><span class="caret">${uiIcon("chevron")}</span></button>
+      ${open ? html`<div class="pop-menu preview-menu" role="menu" aria-label="Card size">
+        <div class="pop-title">Card size</div>
+        <div class="pop-head">Sections grid</div>
+        ${DASHBOARD_PRESETS.map((p) => html`<button class="row" role="menuitemradio" ?disabled=${locked}
+          aria-checked=${p.id === preset?.id ? "true" : "false"}
+          @click=${() => { this.toggleMenu("size", false); this.setCanvasSize(dashboardCanvasFor(p.columns, p.rows), "canvas-preset"); }}
+          >${p.label}<span class="size-cells">${p.columns} × ${p.rows}</span></button>`)}
+        <div class="pop-sep" role="separator"></div>
+        <div class="pop-head">Points</div>
+        <div class="size-fields">${side("width", "Width")}${side("height", "Height")}</div>
+        <div class="place-note">About ${cells.columns} ${cells.columns === 1 ? "column" : "columns"} by ${cells.rows} ${cells.rows === 1 ? "row" : "rows"} of a sections dashboard. Layers stretch with the card.</div>
+      </div>` : nothing}
+    </span>`;
+  }
+
+  /** Write a Dashboard card's size, clamped to what the store keeps. */
+  private setCanvasSize(size: { width?: number; height?: number }, coalesce: string) {
+    if (!this.canEdit) return;
+    this.mutate((c) => setDashboardCanvas(c, size), coalesce);
   }
 
   /** Select one of a corner's fixed parts: its Curved text row or its Bezel
@@ -11490,7 +11576,10 @@ export class WristAssistantPanel extends LitElement {
       if (control) out.control = control;
       return out;
     };
-    const watch = pick(["rectangular", "circular", "corner"], false);
+    // Dashboard rides on the watch half because `cardDevice` gives the shelf
+    // the watch for every shape that is not a Home Screen tile. It is drawn at
+    // its own canvas, on no device (`deviceCropArt`).
+    const watch = pick(["rectangular", "circular", "corner", "dashboard"], false);
     // Inline is words rather than a render: its symbol and its text, for the
     // watch drawing to write into the band over the clock the way the watch
     // does, cut where the watch cuts it.
@@ -11978,6 +12067,9 @@ export class WristAssistantPanel extends LitElement {
     };
     for (const owner of ownersByKind(this.owners)) if (!isLibraryOwner(owner)) add(familiesFor(owner));
     if (out.length === 0) add(familiesFor(this.selectedOwner));
+    // Dashboard is no device's, so no device adds it; it is the one shape the
+    // Library holds that is always worth narrowing to.
+    if (this.libraryOwner() !== undefined) add(["dashboard"]);
     return out;
   }
 
@@ -13004,7 +13096,9 @@ export class WristAssistantPanel extends LitElement {
     // watch that is too old is listed greyed with the reason, so nobody
     // wonders where it went.
     const shelf = this.libraryOwner();
-    const devices = ownersByKind(this.owners)
+    // A Dashboard design stays in the Library: no device is listed for it at
+    // all, rather than every one greyed. The store refuses the write anyway.
+    const devices = isDashboardFamily(family) ? [] : ownersByKind(this.owners)
       .filter((o) => !isLibraryOwner(o) && !o.is_orphan)
       .map((o) => this.deviceOwnerOf(o));
     const candidates = shelf ? [...devices, shelf] : devices;
@@ -13487,7 +13581,7 @@ export class WristAssistantPanel extends LitElement {
   /** Open or shut one of the preview bar's menus; opening one shuts the other.
    * A press anywhere outside the open menu's control shuts it, the same way
    * the complication picker closes. */
-  private toggleMenu(menu: "grid" | "case" | "tint" | "list" | "place" | "snap" | "add", next = this.openMenu !== menu) {
+  private toggleMenu(menu: "grid" | "case" | "tint" | "list" | "place" | "snap" | "add" | "size", next = this.openMenu !== menu) {
     this.openMenu = next ? menu : this.openMenu === menu ? undefined : this.openMenu;
     if (this.openMenu !== undefined) window.addEventListener("pointerdown", this.menuOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.menuOutside, { capture: true });
@@ -13854,7 +13948,7 @@ export class WristAssistantPanel extends LitElement {
     const nameProblem = this.newNameProblem();
     const named = this.newName.trim() !== "";
     const owners = this.deviceOwners();
-    const kinds = kindChoices(owners);
+    const kinds = kindChoices(owners, { library: this.libraryOwner() !== undefined });
     const kind = this.newKind;
     const groups = kind === undefined ? [] : shapeGroups(kind, owners);
     const offered = this.newOffered();
@@ -13935,7 +14029,7 @@ export class WristAssistantPanel extends LitElement {
       @click=${() => pick(kind)}>
       <span class="shape-arts">${kind === "control"
         ? html`${controlDeviceArt("watch", on)}${controlDeviceArt("iphone", on)}`
-        : deviceShapeArt("rectangular", device, on)}</span>
+        : deviceShapeArt(kind === "dashboard" ? "dashboard" : "rectangular", device, on)}</span>
       <span class="shape-card-name">${kindTitle(kind)}</span>
       <span class="shape-card-note">${kindNote(kind)}</span>
     </button>`;
@@ -13955,10 +14049,10 @@ export class WristAssistantPanel extends LitElement {
     pick: (family: FamilyKind) => void,
   ) {
     const device: DeviceKind = kind === "iphone" ? "iphone" : "watch";
-    const where = kind === "iphone" ? "an iPhone" : "a watch";
+    const where = kind === "iphone" ? "an iPhone" : kind === "dashboard" ? "a Home Assistant dashboard" : "a watch";
     return html`<div class="shape-row">
       <div class="shape-row-head">
-        <span class="shape-row-kinds" aria-hidden="true">${uiIcon(device === "iphone" ? "phone" : "watch")}</span>
+        <span class="shape-row-kinds" aria-hidden="true">${uiIcon(kind === "dashboard" ? "grid" : device === "iphone" ? "phone" : "watch")}</span>
         <span class="shape-row-title">${group.title}</span>
       </div>
       <div class="shape-cards">
@@ -14063,6 +14157,8 @@ export class WristAssistantPanel extends LitElement {
     if (kind === "control" || !shapeOffered(kind, this.deviceOwners(), this.newFamily)) {
       this.newFamily = undefined;
     }
+    // A dashboard has one shape, so picking the kind is picking it.
+    if (kind === "dashboard") this.newFamily = "dashboard";
     this.newOwners = new Set();
   }
 
@@ -14180,6 +14276,7 @@ export class WristAssistantPanel extends LitElement {
     const owner = this.ownerOf(ownerId);
     this.dupKind = family === undefined
       ? "control"
+      : family === "dashboard" ? "dashboard"
       : isLibraryOwner(owner) ? (isHomeFamily(family) ? "iphone" : "watch") : deviceKindOf(owner) === "iphone" ? "iphone" : "watch";
     this.dupFamily = family;
     this.dupOwners = this.defaultDupTicks();
@@ -14259,7 +14356,7 @@ export class WristAssistantPanel extends LitElement {
     const from = this.dupFrom;
     if (!from) return nothing;
     const owners = this.deviceOwners();
-    const kinds = kindChoices(owners);
+    const kinds = kindChoices(owners, { library: this.libraryOwner() !== undefined });
     const kind = this.dupKind;
     const family = this.dupTargetFamily;
     const groups = kind === undefined ? [] : shapeGroups(kind, owners);
@@ -14271,7 +14368,9 @@ export class WristAssistantPanel extends LitElement {
     const shapeStep = kind !== undefined && kind !== "control";
     const what = kind === "control"
       ? "A Control Center control"
-      : family === undefined ? "" : `${familyTitle(family)} on ${kind === "watch" ? "a watch" : "an iPhone"}`;
+      : family === undefined ? ""
+      : kind === "dashboard" ? "A Dashboard card"
+      : `${familyTitle(family)} on ${kind === "watch" ? "a watch" : "an iPhone"}`;
     const ticked = this.dupTicked();
     const summary = what === ""
       ? "Pick one shape."
@@ -14365,6 +14464,7 @@ export class WristAssistantPanel extends LitElement {
     if (kind === "control" || !shapeOffered(kind, this.deviceOwners(), this.dupFamily)) {
       this.dupFamily = undefined;
     }
+    if (kind === "dashboard") this.dupFamily = "dashboard";
     this.dupOwners = this.defaultDupTicks();
   }
 
@@ -15027,6 +15127,9 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.shareConfig();
     const postable = this.sharePicked().length > 0;
     if (!cfg || !this.hass.user?.is_admin || (tab === "new" && !postable)) return;
+    // A Dashboard design never goes up: its button is disabled, and this is
+    // the same refusal for any other way in.
+    if (tab === "new" && galleryRefusal(cfg) !== undefined) return;
     this.pointAtRow([], undefined, (k) => { this.shareFocus = k; });
     this.galleryOpen = true;
     this.galleryTitle = (this.shareName.trim() || cfg.name.trim()).slice(0, GALLERY_LIMITS.title);
@@ -19322,7 +19425,7 @@ export class WristAssistantPanel extends LitElement {
    */
   private renderStartShapes(full: boolean) {
     const owners = this.deviceOwners();
-    const kinds = kindChoices(owners);
+    const kinds = kindChoices(owners, { library: this.libraryOwner() !== undefined });
     if (kinds.length === 0) return nothing;
     const why = full ? "Every device is full. Delete a complication first." : undefined;
     const tile = (kind: NewKind, family: FamilyKind | undefined, soon: boolean) => {
@@ -19350,7 +19453,7 @@ export class WristAssistantPanel extends LitElement {
           const box = (title: string, tiles: unknown) => html`<div class="start-kind ${kind}">
             <div class="start-kind-head">${kind === "control"
               ? html`${uiIcon("watch")}${uiIcon("phone")}`
-              : uiIcon(device === "iphone" ? "phone" : "watch")}<span>${title}</span></div>
+              : uiIcon(kind === "dashboard" ? "grid" : device === "iphone" ? "phone" : "watch")}<span>${title}</span></div>
             <div class="start-kind-tiles">${tiles}</div>
           </div>`;
           // Control Center is one kind on both devices: one tile, drawn as
@@ -19360,7 +19463,7 @@ export class WristAssistantPanel extends LitElement {
           // Screen and its Home Screen. Each box hugs its own tiles, so no
           // box carries a blank where another's second row would be.
           return shapeGroups(kind, owners).map((group) => box(
-            kind === "watch" ? kindTitle(kind) : `${kindTitle(kind)} · ${group.title}`,
+            kind === "watch" || kind === "dashboard" ? kindTitle(kind) : `${kindTitle(kind)} · ${group.title}`,
             html`${group.families.map((family) => tile(kind, family, false))}
               ${group.comingSoon.map((family) => tile(kind, family, true))}`));
         })}
@@ -19583,7 +19686,9 @@ export class WristAssistantPanel extends LitElement {
     const family = supportedFamilies(cfg)[0];
     const places = row ? this.rowPlaces(row, family) : [];
     const rest = places.filter((p) => !p.on && p.owner.kind !== "library");
-    const why = !row
+    const why = isDashboardFamily(family)
+      ? `A Dashboard design stays in ${UNASSIGNED_LABEL}. Put it on a dashboard with the Wrist Assistant card.`
+      : !row
       ? "Save it first. Then it can go on another device too."
       : rest.length === 0
         ? "There is no other device of this kind to put it on."

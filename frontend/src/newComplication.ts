@@ -9,14 +9,16 @@
 import type { DeviceOwner } from "./copies.js";
 import { ALL_FAMILIES, comingSoonFamilies, familiesFor, isDashboardFamily, isHomeFamily } from "./layouts.js";
 import type { FamilyKind } from "./model.js";
+import { UNASSIGNED_LABEL } from "./pickerRows.js";
 import { familyTitle } from "./renderer.js";
 
-/** What step 2 asks for: a device, or Control Center, which is a complication
- * with no shape at all. */
-export type NewKind = "watch" | "iphone" | "control";
+/** What step 2 asks for: a device, Control Center, which is a complication
+ * with no shape at all, or a Home Assistant dashboard, which is no device. */
+export type NewKind = "watch" | "iphone" | "control" | "dashboard";
 
-/** The three choices in the order they are drawn, watch first because that is
- * where these designs are built. */
+/** The device choices in the order they are drawn, watch first because that
+ * is where these designs are built. Dashboard is added after them by
+ * `kindChoices`, only in a home with a Library to keep it in. */
 export const NEW_KINDS: readonly NewKind[] = ["watch", "iphone", "control"];
 
 export function kindTitle(kind: NewKind): string {
@@ -24,6 +26,7 @@ export function kindTitle(kind: NewKind): string {
     case "watch": return "Watch";
     case "iphone": return "iPhone";
     case "control": return "Control Center";
+    case "dashboard": return "Dashboard";
   }
 }
 
@@ -32,12 +35,14 @@ export function kindNote(kind: NewKind): string {
     case "watch": return "A watch face slot.";
     case "iphone": return "The Lock Screen or the Home Screen.";
     case "control": return "A toggle or a button, and no shape to draw.";
+    case "dashboard": return "A card on a Home Assistant dashboard, any size.";
   }
 }
 
 /** The devices one choice is about: the devices of that kind, or every device
- * that draws a Control Center control. */
+ * that draws a Control Center control. A dashboard card is on no device. */
 export function kindOwners(owners: readonly DeviceOwner[], kind: NewKind): DeviceOwner[] {
+  if (kind === "dashboard") return [];
   if (kind === "control") return owners.filter((o) => o.controls);
   return owners.filter((o) => o.kind === kind);
 }
@@ -48,16 +53,22 @@ export function kindOwners(owners: readonly DeviceOwner[], kind: NewKind): Devic
  * A kind nobody in the home has is left out rather than drawn dead. A home
  * with no device the panel can write to is offered the watch and the iPhone
  * anyway: the design is made in the library and waits there for a device.
+ *
+ * Dashboard goes last, and only when the home has a Library (`library`),
+ * since that is the one place a Dashboard design may live.
  */
-export function kindChoices(owners: readonly DeviceOwner[]): NewKind[] {
+export function kindChoices(owners: readonly DeviceOwner[], opts: { library?: boolean } = {}): NewKind[] {
   const had = NEW_KINDS.filter((kind) => kindOwners(owners, kind).length > 0);
-  return had.length > 0 ? [...had] : ["watch", "iphone"];
+  const out: NewKind[] = had.length > 0 ? [...had] : ["watch", "iphone"];
+  if (opts.library === true) out.push("dashboard");
+  return out;
 }
 
 /** One heading in the shape grid. A watch has one, an iPhone has two because
- * its Lock Screen and its Home Screen are different places to put a thing. */
+ * its Lock Screen and its Home Screen are different places to put a thing, and
+ * a dashboard has its one free-size card. */
 export interface ShapeGroup {
-  key: "watch" | "lock" | "home";
+  key: "watch" | "lock" | "home" | "dashboard";
   title: string;
   /** The shapes offered here, in the panel's order. */
   families: FamilyKind[];
@@ -77,6 +88,8 @@ export interface ShapeGroup {
  */
 export function shapeGroups(kind: NewKind, owners: readonly DeviceOwner[]): ShapeGroup[] {
   if (kind === "control") return [];
+  // No device draws it, so nothing narrows it: the one card, always offered.
+  if (kind === "dashboard") return [{ key: "dashboard", title: "Home Assistant dashboard", families: ["dashboard"], comingSoon: [] }];
   const mine = kindOwners(owners, kind);
   const draws = new Set<FamilyKind>(mine.flatMap((o) => [...o.families]));
   const soon = new Set<FamilyKind>(mine.flatMap((o) => [...o.comingSoon]));
@@ -131,6 +144,7 @@ export function newSummary(o: NewChoice): string {
   if (o.nameProblem !== undefined) return o.nameProblem;
   if (o.kind === undefined) return "Now pick a watch, an iPhone or Control Center.";
   if (o.kind !== "control" && o.family === undefined) return "Now pick one shape.";
+  if (o.kind === "dashboard") return `A Dashboard card, kept in ${UNASSIGNED_LABEL}. Add it to a dashboard with the Wrist Assistant card.`;
   const what = o.kind === "control"
     ? "A Control Center control"
     : `${familyTitle(o.family!)} on ${o.kind === "watch" ? "a watch" : "an iPhone"}`;

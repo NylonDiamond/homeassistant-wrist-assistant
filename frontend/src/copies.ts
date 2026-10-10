@@ -11,9 +11,13 @@ import {
   type CustomComplicationConfig,
   type FamilyKind,
   MAX_SLOTS,
+  dashboardCanvasLike,
+  designBox,
   schemaVersionFor,
   seedFamilyFromSibling,
+  seedSourceFor,
   setControlShown,
+  setDashboardCanvas,
 } from "./model.js";
 import { ALL_FAMILIES, addFamily, dropFamily, isDashboardFamily, isHomeFamily, supportedFamilies } from "./layouts.js";
 import { type DeviceKind, LIBRARY_OWNER_ID, MIN_IPHONE_VERSION_FOR_HOME_SCREEN, watchSupportsShapes } from "./version.js";
@@ -477,7 +481,13 @@ export function duplicateAs(
   } else {
     delete next.control;
     if (!next.supportedFamilies.includes(toFamily)) {
+      const source = seedSourceFor(next, toFamily);
       addFamily(next, toFamily);
+      // A Dashboard copy takes its source's proportions on the sections grid,
+      // so the layers refit onto a card of about their own shape.
+      if (isDashboardFamily(toFamily) && source !== undefined) {
+        setDashboardCanvas(next, dashboardCanvasLike(designBox(next, source)));
+      }
       seedFamilyFromSibling(next, toFamily);
     }
   }

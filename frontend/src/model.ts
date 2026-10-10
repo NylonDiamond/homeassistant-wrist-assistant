@@ -9,6 +9,7 @@
 // shapes and marks any document naming one. v11 is the Dashboard shape, which
 // only the panel and the store know: no watch or phone ever receives one.
 
+import { DASHBOARD_GRID, dashboardCanvasFor, dashboardGridFor } from "./dashboard-grid.js";
 import { cleanNotes } from "./notes.js";
 
 /** The watch's three canvas shapes. This set is the schema-6 predicate: a
@@ -67,28 +68,9 @@ export interface Box {
   height: number;
 }
 
-/** The Home Assistant sections grid a dashboard card sits on: 12 columns to a
- * section, rows 56 px high, 8 px between both. The column width is the one a
- * section about 500 px wide gives, which is the default on a desktop. */
-export const DASHBOARD_GRID = { columns: 12, columnWidth: 34, rowHeight: 56, gap: 8 } as const;
-
-/** The canvas a card spanning `columns` by `rows` of the sections grid has. */
-export function dashboardCanvasFor(columns: number, rows: number): Box {
-  const g = DASHBOARD_GRID;
-  return {
-    width: columns * g.columnWidth + (columns - 1) * g.gap,
-    height: rows * g.rowHeight + (rows - 1) * g.gap,
-  };
-}
-
-/** The grid cells a canvas covers, rounded to the nearest and kept to 1...12
- * columns and at least one row. The card's `getGridOptions` reads this. */
-export function dashboardGridFor(canvas: Box): { columns: number; rows: number } {
-  const g = DASHBOARD_GRID;
-  const columns = Math.round((canvas.width + g.gap) / (g.columnWidth + g.gap));
-  const rows = Math.round((canvas.height + g.gap) / (g.rowHeight + g.gap));
-  return { columns: Math.min(g.columns, Math.max(1, columns)), rows: Math.max(1, rows) };
-}
+// The sections grid itself lives in its own small module, which the dashboard
+// card's loader reads without pulling this file in.
+export { DASHBOARD_GRID, dashboardCanvasFor, dashboardGridFor };
 
 /** The sizes the editor offers, named by how many quarter-section units they
  * span: a unit is 3 columns by 2 rows, about square. `full` is a banner across
@@ -130,6 +112,40 @@ export function designBox(cfg: { perFamily: Partial<Record<FamilyKind, FamilyLay
  * and borrows rectangular's, which is what every resolver lookup did before. */
 export function designBoxOf(cfg: { perFamily: Partial<Record<FamilyKind, FamilyLayout>> } | undefined, family: FamilyKind): Box {
   return designBox(cfg, family === "inline" ? "rectangular" : family);
+}
+
+/** The preset a canvas is, when it is exactly one: what the editor's size
+ * menu ticks. A size typed or dragged by hand is none of them. */
+export function dashboardPresetOf(canvas: Box): string | undefined {
+  return DASHBOARD_PRESETS.find((p) => {
+    const c = dashboardCanvasFor(p.columns, p.rows);
+    return c.width === canvas.width && c.height === canvas.height;
+  })?.id;
+}
+
+/**
+ * A Dashboard design's size, written. Clamped to the store's bounds, so a
+ * typed 5000 lands as 1200 rather than as a save the store refuses.
+ *
+ * Layers are placed in fractions of the canvas, so a new size stretches them
+ * with it: a layer that filled the left half still fills the left half. That
+ * is the same as every other shape, whose box only ever changes by a scale.
+ * No-op on a document with no Dashboard shape.
+ */
+export function setDashboardCanvas(cfg: { perFamily: Partial<Record<FamilyKind, FamilyLayout>> }, size: Partial<Box>): void {
+  const layout = cfg.perFamily.dashboard;
+  if (!layout) return;
+  const now = clampDashboardCanvas(layout.canvas);
+  layout.canvas = clampDashboardCanvas({ width: size.width ?? now.width, height: size.height ?? now.height });
+}
+
+/** The canvas a Dashboard copy of another shape starts at: that shape's box,
+ * snapped to the nearest whole cells of the sections grid, so a Medium tile
+ * becomes a wide card and a Small one a square one rather than every copy
+ * taking the default. */
+export function dashboardCanvasLike(box: Box): Box {
+  const cells = dashboardGridFor(box);
+  return clampDashboardCanvas(dashboardCanvasFor(cells.columns, cells.rows));
 }
 
 /** Whether a shape is Dashboard, which lives in the Library only. */
