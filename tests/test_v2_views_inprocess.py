@@ -47,7 +47,7 @@ from typing import Any
 
 import pytest
 
-from test_complication_store import MAX_PER_OWNER, MAX_SCHEMA, _doc, _loaded_module
+from test_complication_store import DEVICE_MAX_SCHEMA, MAX_PER_OWNER, _doc, _loaded_module
 from test_pair_requests import loaded_pair_module
 
 _MODULE = (
@@ -147,11 +147,12 @@ def _handlers(store_mod: Any) -> dict[str, Any]:
         "APP_UPDATE_MESSAGE": None,
         "DEFAULT_HMAC_ALGO": "hmac-sha256",
         "SUPPORTED_HMAC_ALGOS": frozenset({"hmac-sha256"}),
-        "COMPLICATION_MAX_SCHEMA_VERSION": MAX_SCHEMA,
+        "DEVICE_MAX_SCHEMA_VERSION": DEVICE_MAX_SCHEMA,
         "COMPLICATION_MAX_PER_OWNER": MAX_PER_OWNER,
         "ComplicationConflictError": store_mod.ComplicationConflictError,
         "ComplicationStoreError": store_mod.ComplicationStoreError,
         "ComplicationValidationError": store_mod.ComplicationValidationError,
+        "refuse_off_device": store_mod.refuse_off_device,
         "shapes_of": store_mod.shapes_of,
         "validate_document": store_mod.validate_document,
     }
@@ -249,6 +250,41 @@ def test_a_clean_restore_reports_an_empty_skipped_list(env) -> None:
     reply = _run(env, "_op_complications_restore", {"documents": [_doc()]})
     assert reply.status == 200
     assert reply.body["skipped"] == []
+
+
+# ── the Dashboard shape never reaches a device ───────────────────────────
+
+
+def _dashboard() -> dict:
+    return _doc(
+        schemaVersion=11,
+        slotIndex=1,
+        supportedFamilies=["dashboard"],
+        perFamily=["dashboard", {"canvas": {"width": 244, "height": 120}}],
+    )
+
+
+def test_a_device_is_told_its_own_schema_ceiling_not_the_panel_s(env) -> None:
+    assert _run(env, "_op_complications_sync").body["max_schema_version"] == DEVICE_MAX_SCHEMA
+    assert _run(env, "_op_complications_move_status").body["max_schema_version"] == DEVICE_MAX_SCHEMA
+
+
+def test_a_device_batch_with_a_dashboard_document_is_refused_whole(env) -> None:
+    reply = _run(env, "_op_complications_create", {"documents": [_doc(), _dashboard()]})
+    assert reply.status == 400
+    assert reply.body["ok"] is False
+    assert "stay in the Library" in reply.body["message"]
+    assert env.store.list(OWNER) == []
+
+
+def test_a_device_restore_keeps_a_dashboard_document_in_the_library(env) -> None:
+    dash = _dashboard()
+    reply = _run(env, "_op_complications_restore", {"documents": [_doc(), dash]})
+    assert reply.status == 200
+    [left_out] = reply.body["skipped"]
+    assert (left_out["id"], left_out["library"]) == (dash["id"], "kept")
+    assert [r.id for r in env.store.list("library")] == [dash["id"]]
+    assert dash["id"] not in {r.id for r in env.store.list(OWNER)}
 
 
 # ── version view during a reload ─────────────────────────────────────────

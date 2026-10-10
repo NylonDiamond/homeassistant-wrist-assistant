@@ -34,6 +34,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import math
 import time
 import uuid
 from collections.abc import Callable
@@ -52,6 +53,8 @@ from .const import (
     COMPLICATION_MAX_SLOTS,
     COMPLICATION_STORAGE_KEY,
     COMPLICATION_STORAGE_VERSION,
+    DASHBOARD_FAMILY,
+    DEVICE_MAX_SCHEMA_VERSION,
     LIBRARY_OWNER_ID,
 )
 
@@ -107,9 +110,13 @@ _CANVAS_FAMILY_KINDS = frozenset({"rectangular", "circular", "corner"})
 # systemLarge, systemExtraLargePortrait). They are canvases too, but they are
 # not part of the schema-6 predicate above, which is the watch's three.
 _HOME_FAMILY_KINDS = frozenset({"small", "medium", "large", "xlarge"})
-_FAMILY_KINDS = _CANVAS_FAMILY_KINDS | _HOME_FAMILY_KINDS | {"inline"}
+# The card a Home Assistant dashboard draws. Library only: no app decodes it.
+_DASHBOARD_FAMILY_KINDS = frozenset({DASHBOARD_FAMILY})
+_FAMILY_KINDS = _CANVAS_FAMILY_KINDS | _HOME_FAMILY_KINDS | _DASHBOARD_FAMILY_KINDS | {"inline"}
 # Every accepted family name, in the order the error message lists them.
-_FAMILY_KINDS_TEXT = "rectangular, circular, corner, inline, small, medium, large, xlarge"
+_FAMILY_KINDS_TEXT = (
+    "rectangular, circular, corner, inline, small, medium, large, xlarge, dashboard"
+)
 # First schema whose writers treat supportedFamilies as authoritative. Older
 # apps draw every canvas shape from the shared layers and draw "Custom" for
 # Inline, so a document that lacks a canvas shape or carries Inline must say 6.
@@ -132,6 +139,14 @@ _PAGES_SCHEMA_VERSION = 9
 # time read by a text layer. An app that predates it fails the whole document
 # on the unknown value kind, the list reason again, so the version must say so.
 _IMAGE_TIME_SCHEMA_VERSION = 10
+# First schema that knows the Dashboard shape. No app reads it: the rung is
+# there so a Dashboard document that somehow reached a device is refused whole
+# as "update the app" rather than failing to decode.
+_DASHBOARD_SCHEMA_VERSION = 11
+# Bounds on either side of a Dashboard canvas, in points. The panel clamps to
+# the same numbers (`DASHBOARD_CANVAS_MIN`/`MAX` in frontend/src/model.ts).
+_DASHBOARD_CANVAS_MIN = 32
+_DASHBOARD_CANVAS_MAX = 1200
 # The list layer's own limits. Cells are the frame divided evenly, so the row
 # count is what decides how many items are drawn and how small each one is; a
 # template past eight layers is 96 leaves at twelve rows, which is where a
@@ -524,6 +539,115 @@ def _slot_of(record: ComplicationRecord) -> int:
     return slot
 
 
+def _family_layout(document: dict[str, Any], family: str) -> Any:
+    """One shape's ``perFamily`` entry, in either form a writer uses.
+
+    Swift encodes the map as a flat alternating list (key, layout, key, ...);
+    a hand-written or older document may use a plain object. Returns None when
+    the shape has no entry.
+    """
+    per_family = document.get("perFamily")
+    if isinstance(per_family, dict):
+        return per_family.get(family)
+    if isinstance(per_family, list):
+        for i in range(0, len(per_family) - 1, 2):
+            if per_family[i] == family:
+                return per_family[i + 1]
+    return None
+
+
+def _validate_dashboard(
+    document: dict[str, Any], families: list[Any], schema_version: int
+) -> None:
+    """Check a document naming the Dashboard shape.
+
+    Dashboard is the only shape such a document draws: no Inline beside it and
+    no Control Center control, since both are drawn by a device. It carries
+    its own size, a ``canvas`` of finite numbers inside the bounds, and says
+    schema 11. Where it may be stored is :func:`refuse_off_device`'s question.
+    """
+    if len(families) != 1 or document.get("control") is not None:
+        raise ComplicationValidationError(
+            "a dashboard document draws the dashboard shape and nothing else"
+        )
+    if schema_version < _DASHBOARD_SCHEMA_VERSION:
+        raise ComplicationValidationError(
+            "document with the dashboard shape requires "
+            f"schemaVersion {_DASHBOARD_SCHEMA_VERSION} or newer"
+        )
+    layout = _family_layout(document, DASHBOARD_FAMILY)
+    canvas = layout.get("canvas") if isinstance(layout, dict) else None
+    if not isinstance(canvas, dict):
+        raise ComplicationValidationError(
+            "document.perFamily.dashboard.canvas with a width and a height is required"
+        )
+    for side in ("width", "height"):
+        value = canvas.get(side)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or not _DASHBOARD_CANVAS_MIN <= value <= _DASHBOARD_CANVAS_MAX
+        ):
+            raise ComplicationValidationError(
+                f"document.perFamily.dashboard.canvas.{side} must be a number "
+                f"from {_DASHBOARD_CANVAS_MIN} to {_DASHBOARD_CANVAS_MAX}"
+            )
+
+
+def dashboard_canvas(document: Any) -> dict[str, float] | None:
+    """A Dashboard document's canvas as ``{"width", "height"}``, or None.
+
+    The dashboard card's editor reads it to size the card on the sections
+    grid before the design itself has loaded.
+    """
+    if not isinstance(document, dict) or DASHBOARD_FAMILY not in shapes_of(document):
+        return None
+    layout = _family_layout(document, DASHBOARD_FAMILY)
+    canvas = layout.get("canvas") if isinstance(layout, dict) else None
+    if not isinstance(canvas, dict):
+        return None
+    width, height = canvas.get("width"), canvas.get("height")
+    if not all(
+        isinstance(v, (int, float)) and not isinstance(v, bool) for v in (width, height)
+    ):
+        return None
+    return {"width": width, "height": height}
+
+
+def is_library_only(document: Any) -> bool:
+    """Whether a document may be stored in the Library and nowhere else.
+
+    A document naming the Dashboard shape, or stamped past the schema the apps
+    read, is one no watch or phone can decode: the app's shape enum has no
+    unknown case, so it would fail the whole document and show "update the
+    app" over a blank slot.
+    """
+    if not isinstance(document, dict):
+        return False
+    if DASHBOARD_FAMILY in shapes_of(document):
+        return True
+    schema = document.get("schemaVersion")
+    return (
+        isinstance(schema, int)
+        and not isinstance(schema, bool)
+        and schema > DEVICE_MAX_SCHEMA_VERSION
+    )
+
+
+def refuse_off_device(owner_watch_id: str, document: Any) -> None:
+    """Refuse a Library-only document under any owner but the Library.
+
+    Every write that puts a document under a device goes through ``save``,
+    ``restore`` or ``move_owner``, and each calls this before it writes, so a
+    copy, a link, an import, a history restore or a move cannot land one.
+    """
+    if owner_watch_id != LIBRARY_OWNER_ID and is_library_only(document):
+        raise ComplicationValidationError(
+            "dashboard designs stay in the Library: no watch or iPhone can draw one"
+        )
+
+
 def shapes_of(document: Any) -> frozenset[str]:
     """The shapes a document draws, as the key a slot is shared by.
 
@@ -797,7 +921,9 @@ def validate_document(document: Any) -> dict[str, Any]:
         raise ComplicationValidationError(
             "document.slotIndex above 7 requires schemaVersion 5 or newer"
         )
-    if not _HOME_FAMILY_KINDS.isdisjoint(families):
+    if DASHBOARD_FAMILY in families:
+        _validate_dashboard(document, families, schema_version)
+    elif not _HOME_FAMILY_KINDS.isdisjoint(families):
         if schema_version < _HOME_FAMILY_SCHEMA_VERSION:
             raise ComplicationValidationError(
                 "document with an iPhone Home Screen shape requires "
@@ -1775,6 +1901,7 @@ class ComplicationStore:
         if not isinstance(owner_watch_id, str) or not owner_watch_id:
             raise ComplicationValidationError("owner_watch_id is required")
         document = validate_document(document)
+        refuse_off_device(owner_watch_id, document)
         record_id = _validate_uuid(document["id"], "document.id")
         if base_revision is not None and (
             isinstance(base_revision, bool) or not isinstance(base_revision, int)
@@ -1968,6 +2095,10 @@ class ComplicationStore:
                 raise ComplicationValidationError(f"duplicate id {record_id}")
             seen.add(record_id)
             try:
+                # A Library-only document goes where a seat clash goes: to the
+                # Library, where it is allowed, rather than lost or refused
+                # with the whole replica. No real app replica holds one.
+                refuse_off_device(owner_watch_id, document)
                 self._refuse_held_seat(seated, record_id, document, None)
             except ComplicationValidationError as err:
                 left_out.append((record_id, document, err.message))
@@ -2062,8 +2193,9 @@ class ComplicationStore:
         leaves both owners exactly as they were. It is refused when the source
         and the target are the same watch, when the source has nothing live to
         move, when the target would end up over
-        ``COMPLICATION_MAX_PER_OWNER``, or when a moved record would land on a
-        slot one of the target's own records already holds.
+        ``COMPLICATION_MAX_PER_OWNER``, when a moved record would land on a
+        slot one of the target's own records already holds, or when the target
+        is a device and a moved record is Library-only (a Dashboard design).
         """
         if not isinstance(source_owner, str) or not source_owner:
             raise ComplicationValidationError("source_owner_watch_id is required")
@@ -2077,6 +2209,11 @@ class ComplicationStore:
         moving = self.list(source_owner)
         if not moving:
             raise ComplicationNotFoundError(f"{source_owner} has nothing to move")
+        # The source may be the Library. A Dashboard design there stays there,
+        # and the whole move is refused rather than leaving it behind, so the
+        # all-or-nothing promise above holds.
+        for record in moving:
+            refuse_off_device(target_owner, record.document)
 
         target_by_id = self._records.get(target_owner, {})
         moving_ids = {record.id for record in moving}

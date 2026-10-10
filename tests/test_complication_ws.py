@@ -36,7 +36,7 @@ _SRC = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assist
 
 _PKG = "wa_ws_test_pkg"
 DOMAIN = "wrist_assistant"
-MAX_SCHEMA = 6
+MAX_SCHEMA = 11
 # The reserved owner that is not a device. Spelled here rather than imported
 # because the const module is stubbed above, and the literal is the wire
 # contract two other codebases build against.
@@ -173,6 +173,8 @@ def _loaded_modules():
             COMPLICATION_MAX_LAYERS=64,
             COMPLICATION_MAX_PER_OWNER=8,
             COMPLICATION_MAX_SLOTS=64,
+            DASHBOARD_FAMILY="dashboard",
+            DEVICE_MAX_SCHEMA_VERSION=10,
             LIBRARY_OWNER_ID=LIBRARY,
             WIDGET_SECRET_STORAGE_KEY="wrist_assistant.widget_secrets",
             WIDGET_SECRET_STORAGE_VERSION=1,

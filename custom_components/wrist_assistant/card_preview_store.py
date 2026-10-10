@@ -48,10 +48,12 @@ _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 # What the panel needs to lay the picture back into a card without drawing
 # the complication: which shape on which device it is, the size the shape
-# was drawn at, and for a corner, where its disc sits in the quadrant.
-_DEVICES = {"watch", "iphone"}
+# was drawn at, and for a corner, where its disc sits in the quadrant. A
+# Dashboard design sits on no device, so it names "dashboard" for both.
+_DEVICES = {"watch", "iphone", "dashboard"}
 _FAMILIES = {
     "rectangular", "circular", "corner", "small", "medium", "large", "xlarge",
+    "dashboard",
 }
 _MAX_SIDE = 4000.0
 

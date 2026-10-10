@@ -36,7 +36,10 @@ MAX_PER_OWNER = 8
 MAX_SLOTS = 64
 MAX_LAYERS = 64
 MAX_BYTES = 4096
-MAX_SCHEMA = 10
+MAX_SCHEMA = 11
+# The highest schema a watch or phone reads. Every document under a device owner
+# stays at or below it; only the Library holds an 11.
+DEVICE_MAX_SCHEMA = 10
 
 
 class _FakeStore:
@@ -91,6 +94,8 @@ def _loaded_module():
             COMPLICATION_MAX_LAYERS=MAX_LAYERS,
             COMPLICATION_MAX_PER_OWNER=MAX_PER_OWNER,
             COMPLICATION_MAX_SLOTS=MAX_SLOTS,
+            DASHBOARD_FAMILY="dashboard",
+            DEVICE_MAX_SCHEMA_VERSION=DEVICE_MAX_SCHEMA,
             LIBRARY_OWNER_ID="library",
         )
 
@@ -208,8 +213,9 @@ def test_per_owner_cap(mod):
 
 
 def _seat_doc(**overrides) -> dict:
-    """A document at the newest schema, so it may draw one shape or none."""
-    return _doc(schemaVersion=MAX_SCHEMA, **overrides)
+    """A document at the newest schema a device reads, so it may draw one
+    shape or none."""
+    return _doc(schemaVersion=DEVICE_MAX_SCHEMA, **overrides)
 
 
 def test_second_document_of_a_shape_in_a_slot_is_refused(mod):
@@ -1052,11 +1058,12 @@ def test_an_ordinary_document_still_saves_below_schema_eight(mod):
     assert rec.document["schemaVersion"] == 7
 
 
-def test_the_shipped_schema_ceiling_is_ten():
-    """The store test stubs the constant, so read the real one too. Both the
-    websocket listing and the v2 delta reply hand this number to their client,
-    and a panel will not save a document with a picture's time until it reads
-    10."""
+def test_the_shipped_schema_ceilings_are_eleven_for_the_panel_and_ten_for_devices():
+    """The store test stubs the constants, so read the real ones too. The
+    websocket listing hands the panel the store's own ceiling, 11, which is
+    what lets it save a Dashboard design. Every reply a device signs for hands
+    it 10, the app's own maximum, because an app compares that number against
+    its own before a move or a handover and must never be told 11."""
     const = (
         Path(__file__).resolve().parents[1]
         / "custom_components"
@@ -1071,11 +1078,15 @@ def test_the_shipped_schema_ceiling_is_ten():
         for target in node.targets
         if isinstance(target, ast.Name)
     }
-    assert values["COMPLICATION_MAX_SCHEMA_VERSION"] == MAX_SCHEMA == 10
+    assert values["COMPLICATION_MAX_SCHEMA_VERSION"] == MAX_SCHEMA == 11
+    assert values["DEVICE_MAX_SCHEMA_VERSION"] == DEVICE_MAX_SCHEMA == 10
+    assert values["DASHBOARD_FAMILY"] == "dashboard"
 
-    for name in ("complication_ws.py", "wa_v2_views.py"):
-        source = (const.parent / name).read_text()
-        assert '"max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION' in source, name
+    panel = (const.parent / "complication_ws.py").read_text()
+    assert '"max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION' in panel
+    device = (const.parent / "wa_v2_views.py").read_text()
+    assert '"max_schema_version": DEVICE_MAX_SCHEMA_VERSION' in device
+    assert "COMPLICATION_MAX_SCHEMA_VERSION" not in device
 
 
 @pytest.mark.parametrize(
@@ -2475,3 +2486,126 @@ def test_moving_a_watch_takes_the_history_with_it(mod):
     entries = store.history(OTHER, doc["id"])
     assert [e.revision for e in entries] == [1]
     assert entries[0].document["name"] == "v1"
+
+
+# ── the Dashboard shape: Library only ──────────────────────────────────────
+
+
+def _dashboard_doc(per_family=None, **overrides) -> dict:
+    """A Dashboard design as the panel writes it: schema 11, one shape, and
+    its canvas in the alternating perFamily list Swift's encoder uses."""
+    layout = {"borderWidth": 2, "cornerBodyShape": "wedge", "canvas": {"width": 244, "height": 120}}
+    fields = {
+        "schemaVersion": 11,
+        "supportedFamilies": ["dashboard"],
+        "perFamily": per_family if per_family is not None else ["dashboard", layout],
+    }
+    fields.update(overrides)
+    return _doc(**fields)
+
+
+def test_a_dashboard_design_saves_to_the_library(mod):
+    store = _new(mod)
+    rec = store.save(mod.LIBRARY_OWNER_ID, _dashboard_doc(), base_revision=None, updated_by="panel")
+    assert rec.revision == 1
+    assert rec.document["supportedFamilies"] == ["dashboard"]
+    # The object form of perFamily is read the same way.
+    obj = _dashboard_doc(per_family={"dashboard": {"canvas": {"width": 496, "height": 248}}}, slotIndex=1)
+    store.save(mod.LIBRARY_OWNER_ID, obj, base_revision=None, updated_by="panel")
+    assert mod.dashboard_canvas(obj) == {"width": 496, "height": 248}
+    assert mod.dashboard_canvas(_doc()) is None
+
+
+@pytest.mark.parametrize(
+    ("overrides", "fragment"),
+    [
+        (dict(schemaVersion=10), "requires schemaVersion 11"),
+        (dict(supportedFamilies=["dashboard", "rectangular"]), "nothing else"),
+        (dict(supportedFamilies=["dashboard", "inline"], inline={"value": {}}), "nothing else"),
+        (dict(control={"kind": "toggle"}), "nothing else"),
+        (dict(perFamily=["dashboard", {"borderWidth": 2}]), "canvas with a width and a height"),
+        (dict(perFamily=[]), "canvas with a width and a height"),
+        (dict(perFamily=["dashboard", {"canvas": {"width": 10, "height": 120}}]), "canvas.width"),
+        (dict(perFamily=["dashboard", {"canvas": {"width": 244, "height": 5000}}]), "canvas.height"),
+        (dict(perFamily=["dashboard", {"canvas": {"width": True, "height": 120}}]), "canvas.width"),
+        (dict(perFamily=["dashboard", {"canvas": {"width": "244", "height": 120}}]), "canvas.width"),
+    ],
+)
+def test_a_malformed_dashboard_design_is_refused(mod, overrides, fragment):
+    store = _new(mod)
+    with pytest.raises(mod.ComplicationValidationError) as err:
+        store.save(mod.LIBRARY_OWNER_ID, _dashboard_doc(**overrides), base_revision=None, updated_by="panel")
+    assert fragment in err.value.message
+    assert store.list(mod.LIBRARY_OWNER_ID) == []
+
+
+def test_a_dashboard_design_is_refused_under_a_device(mod):
+    """Copy, link, import and history restore all reach a device through a
+    plain save, so refusing here covers each of them."""
+    store = _new(mod)
+    with pytest.raises(mod.ComplicationValidationError) as err:
+        store.save(OWNER, _dashboard_doc(), base_revision=None, updated_by="panel")
+    assert "stay in the Library" in err.value.message
+    assert store.list(OWNER) == []
+    assert store.token == 0
+
+
+def test_a_linked_copy_of_a_library_dashboard_cannot_land_on_a_device(mod):
+    store = _new(mod)
+    link = str(uuid.uuid4()).upper()
+    shelf = _dashboard_doc(linkId=link)
+    store.save(mod.LIBRARY_OWNER_ID, shelf, base_revision=None, updated_by="panel")
+    copy = dict(shelf, id=str(uuid.uuid4()).upper())
+    with pytest.raises(mod.ComplicationValidationError):
+        store.save(OWNER, copy, base_revision=None, updated_by="panel")
+    assert store.list(OWNER) == []
+
+
+def test_a_document_past_the_device_schema_is_refused_under_a_device(mod):
+    """Only a Dashboard document says 11 today, but the rung itself is what
+    no app reads, so a device never takes one whatever its shapes."""
+    store = _new(mod)
+    with pytest.raises(mod.ComplicationValidationError):
+        store.save(OWNER, _doc(schemaVersion=11), base_revision=None, updated_by="panel")
+    store.save(mod.LIBRARY_OWNER_ID, _doc(schemaVersion=11), base_revision=None, updated_by="panel")
+    # A device still takes everything up to its own ceiling.
+    store.save(OWNER, _seat_doc(), base_revision=None, updated_by="panel")
+
+
+def test_moving_the_library_onto_a_device_is_refused_with_a_dashboard_in_it(mod):
+    store = _new(mod)
+    plain = _doc(slotIndex=1)
+    store.save(mod.LIBRARY_OWNER_ID, plain, base_revision=None, updated_by="panel")
+    store.save(mod.LIBRARY_OWNER_ID, _dashboard_doc(slotIndex=2), base_revision=None, updated_by="panel")
+    token = store.token
+    with pytest.raises(mod.ComplicationValidationError) as err:
+        store.move_owner(mod.LIBRARY_OWNER_ID, OWNER, updated_by="panel")
+    assert "stay in the Library" in err.value.message
+    # All or nothing: the plain design did not go either.
+    assert store.list(OWNER) == []
+    assert len(store.list(mod.LIBRARY_OWNER_ID)) == 2
+    assert store.token == token
+
+
+def test_a_device_restore_sends_a_dashboard_document_to_the_library(mod):
+    store = _new(mod)
+    plain = _doc(slotIndex=1)
+    dash = _dashboard_doc(slotIndex=2)
+    skipped: list[dict] = []
+    records = store.restore(OWNER, [plain, dash], updated_by="watch-restore", skipped=skipped)
+    assert [r.id for r in records] == [plain["id"]]
+    assert [r.id for r in store.list(OWNER)] == [plain["id"]]
+    assert [(s["id"], s["library"]) for s in skipped] == [(dash["id"], "kept")]
+    assert "stay in the Library" in skipped[0]["message"]
+    [shelved] = store.list(mod.LIBRARY_OWNER_ID)
+    assert shelved.id == dash["id"]
+
+
+def test_library_only_reads_the_shape_and_the_schema(mod):
+    assert mod.is_library_only(_dashboard_doc())
+    assert mod.is_library_only(_doc(schemaVersion=11))
+    assert not mod.is_library_only(_doc(schemaVersion=10))
+    assert not mod.is_library_only(None)
+    mod.refuse_off_device(mod.LIBRARY_OWNER_ID, _dashboard_doc())
+    with pytest.raises(mod.ComplicationValidationError):
+        mod.refuse_off_device(OWNER, _dashboard_doc())

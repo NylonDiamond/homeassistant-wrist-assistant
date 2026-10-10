@@ -402,7 +402,19 @@ PUSH_PAIRED_BY_USER_CAPABILITY = "push_paired_by_user"
 # capsule, in a group). An app on 9 fails the whole document on the unknown
 # value kind, the v8 reason again, so a document with one must say 10. The
 # older `imageTime` layer kind needs nothing.
-COMPLICATION_MAX_SCHEMA_VERSION = 10
+# v11 is the Dashboard shape (DASHBOARD_FAMILY): a card on a Home Assistant
+# dashboard, sized by its author (`canvas` in its perFamily entry). Only the
+# panel and this store know it. It lives in the Library alone: the store
+# refuses a document naming it, or stamped past DEVICE_MAX_SCHEMA_VERSION,
+# under any device owner, so no app ever meets one.
+COMPLICATION_MAX_SCHEMA_VERSION = 11
+# Highest schema a watch or phone reads: `currentSchemaVersion` in the app
+# repo. Every reply a device signs for says this, never the panel's maximum
+# above, because the app compares it against its own to decide whether a move
+# or a handover may go ahead.
+DEVICE_MAX_SCHEMA_VERSION = 10
+# The Library-only shape a Home Assistant dashboard draws. See v11 above.
+DASHBOARD_FAMILY = "dashboard"
 COMPLICATION_MAX_DOCUMENT_BYTES = 256 * 1024
 COMPLICATION_MAX_LAYERS = 64
 # Slot indices 0..COMPLICATION_MAX_SLOTS-1 map onto ComplicationStableSlot on

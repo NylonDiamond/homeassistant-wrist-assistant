@@ -129,13 +129,14 @@ from .complication_store import (
     ComplicationConflictError,
     ComplicationStoreError,
     ComplicationValidationError,
+    refuse_off_device,
     shapes_of,
     validate_document,
 )
 from .const import (
     APP_UPDATE_MESSAGE,
     COMPLICATION_MAX_PER_OWNER,
-    COMPLICATION_MAX_SCHEMA_VERSION,
+    DEVICE_MAX_SCHEMA_VERSION,
     DOMAIN,
     MIN_SUPPORTED_APP_PROTOCOL_VERSION,
     WA_PROTOCOL_VERSION,
@@ -3652,7 +3653,9 @@ async def _op_complications_sync(ctx: _OpContext) -> Response:
         {
             "token": store.owner_token(ctx.watch_id),
             "since_token": raw_since,
-            "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
+            # The apps' own maximum, never the panel's: a device compares it
+            # against its own, and the Library-only rung is not for it.
+            "max_schema_version": DEVICE_MAX_SCHEMA_VERSION,
             "records": [r.as_dict() for r in records],
             # True when the user forgot this device and nothing has been put
             # on it since. An empty reply on its own means "keep your copies,
@@ -3771,6 +3774,9 @@ async def _op_complications_create(ctx: _OpContext) -> Response:
     try:
         for document in documents:
             cleaned = validate_document(document)
+            # The batch is refused whole, as for any other bad document, so
+            # nothing of it lands. `save` refuses it again as a backstop.
+            refuse_off_device(ctx.watch_id, cleaned)
             doc_id = str(uuid.UUID(cleaned["id"])).upper()
             if doc_id in batch_ids:
                 raise ComplicationValidationError(f"duplicate document id {doc_id}")
@@ -3903,7 +3909,7 @@ async def _op_complications_move_status(ctx: _OpContext) -> Response:
             "token": store.owner_token(ctx.watch_id),
             "applied_token": store.applied_token(ctx.watch_id),
             "owner_forgotten": store.is_forgotten(ctx.watch_id),
-            "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
+            "max_schema_version": DEVICE_MAX_SCHEMA_VERSION,
             "max_per_owner": COMPLICATION_MAX_PER_OWNER,
             "live_count": len(live),
             "tombstone_count": len(tombstones),

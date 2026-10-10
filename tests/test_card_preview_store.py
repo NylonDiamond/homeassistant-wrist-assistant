@@ -154,6 +154,14 @@ def test_a_preview_keeps_the_way_it_was_drawn(mod, tmp_path) -> None:
             asyncio.run(store.async_put("w1", "A", 4, PNG, {**META, "version": bad}))
 
 
+def test_a_dashboard_design_keeps_a_preview_of_its_own_size(mod, tmp_path) -> None:
+    store = _loaded(mod, tmp_path)
+    meta = {"family": "dashboard", "device": "dashboard", "width": 244, "height": 120}
+    asyncio.run(store.async_put("library", "A", 1, PNG, meta))
+    preview = store.previews_for("library", [_record("A", 1)])["A"]
+    assert (preview["family"], preview["device"], preview["width"]) == ("dashboard", "dashboard", 244.0)
+
+
 def test_what_is_not_a_card_is_refused(mod, tmp_path) -> None:
     store = _loaded(mod, tmp_path)
     with pytest.raises(mod.CardPreviewInvalidError):
