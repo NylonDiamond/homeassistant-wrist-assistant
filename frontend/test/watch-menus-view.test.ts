@@ -837,6 +837,25 @@ describe("the note after saving both", () => {
   });
 });
 
+// ── the hints on an iPhone ───────────────────────────────────────────────
+
+describe("the Show Status Page hint on an iPhone", () => {
+  const CONFIGURED = JSON.parse(readFileSync(join(__dirname, "fixtures-menus", "02-configured.json"), "utf8")) as MenusDocument;
+  /** The fixture's Anywhere slot that shows a status page. */
+  const STATUS_SLOT = "3E4D1000-0000-4000-8000-000000000004";
+
+  function inspector(slot: string, patch: Partial<MenusViewHost> = {}): string {
+    const h = { ...host(CONFIGURED), catalogKnown: false, ...patch } as MenusViewHost;
+    h.uiState.set("me:sel:anywhere", slot);
+    return flat(renderMenuInspector(h));
+  }
+
+  it("names the iPhone when it has no status pages", () => {
+    expect(inspector(STATUS_SLOT, { device: "iphone" })).toContain("No status pages on this iPhone yet. Add them in Status pages.");
+    expect(inspector(STATUS_SLOT)).toContain("No status pages from this watch yet. Add them in Status pages.");
+  });
+});
+
 // ── Run HTTP Action over the home's library ──────────────────────────────
 
 describe("the Run HTTP Action target", () => {

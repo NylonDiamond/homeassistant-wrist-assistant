@@ -120,10 +120,13 @@ import {
   type NoRecordStart,
   type SettingDevice,
   deliveryState,
+  deviceNoun,
   followWatch,
   mayStart,
   noRecordStart,
   noRecordText,
+  noRecordTitle,
+  savedByLine,
   watchAppDevices,
   watchName,
 } from "../watch-settings.js";
@@ -161,7 +164,6 @@ import {
   type MenuTargets,
   type MenusDocument,
   WATCH_MENUS_NO_RECORD_TEXT,
-  WATCH_MENUS_NO_RECORD_TITLE,
   WATCH_MENUS_PAIR_FIRST_TEXT,
   WATCH_MENUS_START_BUTTON,
   WATCH_MENUS_UPDATE_TEXT,
@@ -253,11 +255,6 @@ function kb(bytes: number): string {
 function ago(iso: string | null | undefined): string {
   const at = iso ? Date.parse(iso) : NaN;
   return Number.isNaN(at) ? "" : agoWords(Math.max(0, (Date.now() - at) / 1000));
-}
-
-/** Who made a save: the panel writes `panel`, a device its id. */
-function savedBy(updatedBy: string | null | undefined): string {
-  return updatedBy === "panel" ? "Saved here" : "From the watch";
 }
 
 function isTextField(node: EventTarget | undefined): boolean {
@@ -1112,6 +1109,7 @@ export class WaMenuEditor extends LitElement {
       get httpLibrary() { return self.httpLibrary === undefined ? undefined : self.httpLibrary.revision > 0 ? "held" as const : "empty" as const; },
       get statusPagesKnown() { return self.statusPages !== undefined; },
       get voice() { return self.voiceContext(); },
+      get device() { return self.device; },
       get busy() { return self.saving; },
       edit: (change, coalesce) => this.draft === draft && this.edit(change, coalesce),
       endCoalesce: () => draft.endCoalesce(),
@@ -1313,7 +1311,7 @@ export class WaMenuEditor extends LitElement {
     } catch (err) {
       const code = errCode(err);
       if (code === "conflict") note = { kind: "warn", text: "Not restored. The menus changed somewhere else, so the newest copy is shown." };
-      else if (code === "no_record") note = { kind: "warn", text: "Not restored. Home Assistant no longer holds menus for this watch." };
+      else if (code === "no_record") note = { kind: "warn", text: `Not restored. Home Assistant no longer holds menus for this ${deviceNoun(this.device)}.` };
       else if (code === "not_found") note = { kind: "warn", text: "Not restored. That save is no longer kept." };
       else if (code === "unknown_command") {
         this.historyState = "unsupported";
@@ -1428,9 +1426,9 @@ export class WaMenuEditor extends LitElement {
       ${this.renderSyncPill(editing ? draft : undefined)}
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
-          title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks.` : `Nothing to save (${MOD}S)`}
+          title=${dirty ? `Save (${MOD}S). A save reaches the ${deviceNoun(this.device)} the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
+        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record, undefined, this.device)}</span>` : nothing}
       ${shell ? nothing : html`<button class="tb-btn tb-pages" title="The watch's pages, as Home Assistant keeps them"
         @click=${() => (this.onPages ? this.onPages() : navigatePagesFromMenus(undefined))}>${uiIcon("pages")}<span>Pages</span></button>`}
       ${this.barActions}
@@ -1635,7 +1633,7 @@ export class WaMenuEditor extends LitElement {
     if (this.loadError !== undefined) {
       const id = this.watchId;
       return html`<div class="pe-empty">
-        <span>Could not read this watch's menus: ${this.loadError}</span>
+        <span>Could not read this ${deviceNoun(this.device)}'s menus: ${this.loadError}</span>
         ${id === undefined ? nothing : html`<button class="pe-btn" @click=${() => void this.load(id)}>Try again</button>`}
       </div>`;
     }
@@ -1649,7 +1647,7 @@ export class WaMenuEditor extends LitElement {
       // While the iPhone's move may still come it waits, and the start is a
       // small link that asks first.
       const state = this.noRecordState(watches);
-      return html`<div class="pe-empty"><b>${WATCH_MENUS_NO_RECORD_TITLE}</b><span>${noRecordText(state, WATCH_MENUS_NO_RECORD_TEXT)}</span>
+      return html`<div class="pe-empty"><b>${noRecordTitle("menus", this.device)}</b><span>${noRecordText(state, WATCH_MENUS_NO_RECORD_TEXT)}</span>
         ${state === "wait"
           ? html`<button class="link start-fresh" ?disabled=${this.starting} @click=${() => { if (mayStart(state)) void this.startWithDefaults(); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
           : html`<button class="pe-btn pe-primary" ?disabled=${this.starting} @click=${() => void this.startWithDefaults()}>${this.starting ? "Starting…" : WATCH_MENUS_START_BUTTON}</button>`}
@@ -1696,6 +1694,7 @@ export class WaMenuEditor extends LitElement {
     })}
     ${this.historyOpen ? renderConfigHistoryDialog({
       noun: "menus",
+      device: this.device,
       record,
       entries: this.history,
       historyState: this.historyState,
@@ -1728,7 +1727,7 @@ export class WaMenuEditor extends LitElement {
       @cancel=${(e: Event) => { if (this.restoring) e.preventDefault(); }}
       @close=${() => { this.restoreAsk = undefined; }}>
       <h3 id="me-ask-title">Restore revision ${ask.entry.revision}?</h3>
-      <p>${savedBy(ask.entry.updated_by)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
+      <p>${savedByLine(ask.entry.updated_by, this.device)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
       ${ask.summary ? html`<p class="pe-muted">${ask.summary}</p>` : nothing}
       <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves.</p>
       <div class="pe-ask-foot">

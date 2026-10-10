@@ -465,6 +465,18 @@ describe("the rooms editor on a home that is not the main house", () => {
     expect(HOME_ROOMS_PHONE_TEXT).not.toMatch(DASH);
   });
 
+  it("names the iPhone when it has no rooms yet", async () => {
+    const ha = fakeHass({});
+    const el = editor(ha.hass, { ...owner("p1"), device_kind: "iphone", device_name: "iPhone" } as OwnerSummary);
+    (el as unknown as { phones: boolean }).phones = true;
+    await el.load("p1");
+    const text = flatten(el.renderBody(el.owners));
+    expect(text).toContain("No rooms on this iPhone yet.");
+    expect(text).not.toContain(HOME_ROOMS_NO_RECORD_TITLE);
+    expect(text).not.toContain("watch");
+    expect(text).toContain(HOME_ROOMS_START_BUTTON);
+  });
+
   it("asks for an update when the integration does not keep the kind", async () => {
     const ha = fakeHass({}, { refuse: ["rooms"] });
     const el = editor(ha.hass, owner("w1", SECOND));

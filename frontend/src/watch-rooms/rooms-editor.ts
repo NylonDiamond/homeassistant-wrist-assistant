@@ -69,7 +69,7 @@ import {
 import { watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { asWatchPagesDocument } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
-import { type SettingDevice, PAIR_FIRST_TEXT, START_FRESH_BUTTON, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, watchAppDevices, watchName } from "../watch-settings.js";
+import { type SettingDevice, PAIR_FIRST_TEXT, START_FRESH_BUTTON, deliveryState, deviceNoun, followWatch, mayStart, noRecordStart, noRecordText, noRecordTitle, savedByLine, watchAppDevices, watchName } from "../watch-settings.js";
 import { type RoomsDraft, anyRoomsDirty, dropAllRooms, forgetRoomsDraft, keptRoomsDraft, saveRoomsDraft, takeRoomsRecord } from "./draft.js";
 import { WATCH_ROOMS_HELP_URL, navigateWatchRooms, registerWatchRoomsDrafts } from "./hook.js";
 import {
@@ -846,9 +846,9 @@ export class WaRoomsEditor extends LitElement {
           @click=${() => this.redo()}>${uiIcon("redo")}</button>` : nothing}
       ${this.renderTopMenu(draft)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
-          title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks.` : `Nothing to save (${MOD}S)`}
+          title=${dirty ? `Save (${MOD}S). A save reaches the ${deviceNoun(this.device)} the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
+        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record, undefined, this.device)}</span>` : nothing}
       ${this.barActions}
       <button class="help" title="Help: rooms" aria-label="Help"
         @click=${() => window.open(WATCH_ROOMS_HELP_URL, "_blank", "noopener")}>?</button>
@@ -953,7 +953,7 @@ export class WaRoomsEditor extends LitElement {
   private renderHomeBody(record: WatchConfigRecord, watches: readonly OwnerSummary[]): TemplateResult {
     if (record.revision <= 0) {
       const state = noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId));
-      return html`<div class="pe-empty"><b>${HOME_ROOMS_NO_RECORD_TITLE}</b><span>${noRecordText(state, HOME_ROOMS_NO_RECORD_TEXT)}</span>
+      return html`<div class="pe-empty"><b>${this.device === "iphone" ? noRecordTitle("rooms", "iphone") : HOME_ROOMS_NO_RECORD_TITLE}</b><span>${noRecordText(state, HOME_ROOMS_NO_RECORD_TEXT)}</span>
         ${state === "wait"
           ? html`<button class="link start-fresh" ?disabled=${this.starting} @click=${() => { if (mayStart(state)) void this.start(); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
           : html`<button class="pe-btn pe-primary" ?disabled=${this.starting} @click=${() => void this.start()}>${this.starting ? "Starting…" : HOME_ROOMS_START_BUTTON}</button>`}
@@ -981,6 +981,7 @@ export class WaRoomsEditor extends LitElement {
     })}
     ${this.historyOpen ? renderConfigHistoryDialog({
       noun,
+      device: this.device,
       record,
       entries: this.history,
       historyState: this.historyState,
@@ -1012,7 +1013,7 @@ export class WaRoomsEditor extends LitElement {
       @cancel=${(e: Event) => { if (this.restoring) e.preventDefault(); }}
       @close=${() => { this.restoreAsk = undefined; }}>
       <h3 id="rm-ask-title">Restore revision ${ask.entry.revision}?</h3>
-      <p>${ask.entry.updated_by === "panel" ? "Saved here" : "From the watch"}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
+      <p>${savedByLine(ask.entry.updated_by, this.device)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
       <p>${this.kind === "rooms" ? "This home's rooms come back as they were in that save." : "Every watch setting comes back as it was in that save, not only the rooms."} It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}, and the copy shown now stays in the earlier saves.</p>
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${this.restoring} @click=${() => this.closeAsk()}>Cancel</button>

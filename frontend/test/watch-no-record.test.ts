@@ -20,7 +20,7 @@ import {
 } from "../src/watch-control-center/model.js";
 import { HTTP_ACTIONS_PHONE_TEXT } from "../src/watch-http-actions/model.js";
 import { WaMenuEditor } from "../src/watch-menus/menu-editor.js";
-import { WATCH_MENUS_NO_RECORD_TEXT, WATCH_MENUS_START_BUTTON } from "../src/watch-menus/model.js";
+import { WATCH_MENUS_NO_RECORD_TEXT, WATCH_MENUS_NO_RECORD_TITLE, WATCH_MENUS_START_BUTTON } from "../src/watch-menus/model.js";
 import { STYLE_NO_RECORD_TEXT, STYLE_START_BUTTON } from "../src/watch-notification-style/model.js";
 import { ROOMS_NO_RECORD_TEXT, ROOMS_WAIT_TEXT } from "../src/watch-rooms/model.js";
 import { WaRoomsEditor } from "../src/watch-rooms/rooms-editor.js";
@@ -36,6 +36,7 @@ import {
 } from "../src/watch-settings.js";
 import {
   STATUS_PAGES_NO_RECORD_TEXT,
+  STATUS_PAGES_NO_RECORD_TITLE,
   STATUS_PAGES_START_BUTTON,
   STATUS_PAGES_START_EMPTY_BUTTON,
 } from "../src/watch-status-pages/model.js";
@@ -214,6 +215,31 @@ describe("the rooms editor with no record", () => {
     const waiting = body({ has_iphone: true });
     expect(waiting).toContain(ROOMS_WAIT_TEXT);
     expect(waiting).not.toContain(ROOMS_NO_RECORD_TEXT);
+  });
+});
+
+describe("the menus and status pages editors on an iPhone with no record", () => {
+  const phone = owner("p1", { device_kind: "iphone", device_name: "iPhone", has_iphone: false });
+  const cases = [
+    { make: () => new WaMenuEditor(), kind: "menus", title: "No menus on this iPhone yet.", watchTitle: WATCH_MENUS_NO_RECORD_TITLE, button: WATCH_MENUS_START_BUTTON },
+    { make: () => new WaStatusPagesEditor(), kind: "status_pages", title: "No status pages on this iPhone yet.", watchTitle: STATUS_PAGES_NO_RECORD_TITLE, button: STATUS_PAGES_START_BUTTON },
+  ];
+
+  it.each(cases)("names the iPhone, not a watch, for $kind", ({ make, kind, title, watchTitle, button }) => {
+    const el = make() as unknown as EditorInside & { owners: OwnerSummary[]; phones: boolean };
+    el.owners = [owner("w1"), phone];
+    el.phones = true;
+    el.watchId = "p1";
+    el.record = empty(kind);
+    const text = flatten(el.renderBody(el.owners));
+    expect(text).toContain(title);
+    expect(text).not.toContain(watchTitle);
+    expect(text).toContain(button);
+    expect(text).not.toContain(WAIT_FOR_IPHONE_TEXT);
+
+    // The same editor on the watch keeps the watch's words.
+    el.watchId = "w1";
+    expect(flatten(el.renderBody(el.owners))).toContain(watchTitle);
   });
 });
 

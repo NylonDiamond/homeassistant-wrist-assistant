@@ -37,6 +37,7 @@ import { STAGE_ZOOM_STEPS } from "../watch-pages/stage.js";
 import { WATCH_NOT_IN_LIST_TEXT, WATCH_NOT_ON_IPHONE_TEXT, WATCH_NO_HTTP_ACTIONS_TEXT } from "../watch-pages/catalog.js";
 import { type WatchSkipChoice, WATCH_SKIP_CHOICES, watchSkipChoice, watchSkipValue } from "../watch-pages/tile-settings-options.js";
 import { goToWatchHttpActions } from "../shell.js";
+import { type SettingDevice, deviceNoun, noRecordTitle } from "../watch-settings.js";
 import {
   SWITCHER_SECTION_TITLE,
   type SwitcherSettingsHost,
@@ -130,6 +131,8 @@ export interface MenusViewHost {
   /** The watch's voice settings as the slot editors read them: the phrases
    * and the defaults. Absent where nothing loaded them (a test). */
   readonly voice?: MenuVoiceContext | undefined;
+  /** The device whose menus these are; a watch when absent. */
+  readonly device?: SettingDevice;
   /** A save is out: every field is drawn off and every edit refused. */
   readonly busy: boolean;
   readonly uiState: Map<string, unknown>;
@@ -1073,7 +1076,7 @@ function targetSelect(host: MenusViewHost, ref: MenuListRef, slot: JsonObject, r
   const httpOnlyHome = spec.target === "httpAction" && host.httpLibrary === "held" && !host.catalogKnown;
   const missing = spec.target === "page" ? "A page that is gone"
     : spec.target === "ttsPhrase" ? (host.targets.phrases === undefined ? "A phrase not listed here" : "A phrase that is gone")
-    : fromWatch ? "Not in this watch's status pages" : httpOnlyHome ? WATCH_NOT_IN_LIST_TEXT : WATCH_NOT_ON_IPHONE_TEXT;
+    : fromWatch ? `Not in this ${deviceNoun(host.device ?? "watch")}'s status pages` : httpOnlyHome ? WATCH_NOT_IN_LIST_TEXT : WATCH_NOT_ON_IPHONE_TEXT;
   const label = (t: MenuHTTPTarget) => (spec.target === "httpAction" ? httpTargetLabel(t) : t.name);
   return html`<label class="field"><span>${payloadLabel(raw, spec)}</span>
     <select .value=${live(list.find((t) => sameId(t.id, stored))?.id ?? stored)} @change=${(e: Event) => set((e.target as HTMLSelectElement).value)}>
@@ -1084,7 +1087,7 @@ function targetSelect(host: MenusViewHost, ref: MenuListRef, slot: JsonObject, r
     ${spec.target === "ttsPhrase"
       ? (host.voice?.phrases === undefined ? html`<div class="hint ts-under">No voice settings from this watch yet. Add phrases in Voice.</div>` : nothing)
       : spec.target === "statusPage"
-      ? (fromWatch || host.catalogKnown ? nothing : html`<div class="hint ts-under">No status pages from this watch yet. Add them in Status pages.</div>`)
+      ? (fromWatch || host.catalogKnown ? nothing : html`<div class="hint ts-under">${noRecordTitle("status pages", host.device ?? "watch")} Add them in Status pages.</div>`)
       : spec.target === "httpAction"
       ? httpTargetHints(host, host.targets.httpActions, stored)
       : nothing}`;

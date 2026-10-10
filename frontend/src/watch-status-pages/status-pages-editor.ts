@@ -72,7 +72,7 @@ import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/edito
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
 import { watchFrameStyles } from "../watch-frame.js";
-import { START_FRESH_BUTTON, type NoRecordStart, type SettingDevice, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, watchAppDevices, watchName } from "../watch-settings.js";
+import { START_FRESH_BUTTON, type NoRecordStart, type SettingDevice, deliveryState, deviceNoun, followWatch, mayStart, noRecordStart, noRecordText, noRecordTitle, savedByLine, watchAppDevices, watchName } from "../watch-settings.js";
 import {
   type StatusPagesDraft,
   anyStatusPagesDirty,
@@ -87,7 +87,6 @@ import { WATCH_STATUS_PAGES_HELP_URL, navigateWatchStatusPages, registerWatchSta
 import {
   type StatusPagesDocument,
   STATUS_PAGES_NO_RECORD_TEXT,
-  STATUS_PAGES_NO_RECORD_TITLE,
   STATUS_PAGES_PAIR_FIRST_TEXT,
   STATUS_PAGES_START_BUTTON,
   STATUS_PAGES_START_EMPTY_BUTTON,
@@ -176,10 +175,6 @@ function kb(bytes: number): string {
 function ago(iso: string | null | undefined): string {
   const at = iso ? Date.parse(iso) : NaN;
   return Number.isNaN(at) ? "" : agoWords(Math.max(0, (Date.now() - at) / 1000));
-}
-
-function savedBy(updatedBy: string | null | undefined): string {
-  return updatedBy === "panel" ? "Saved here" : "From the watch";
 }
 
 function isTextField(node: EventTarget | undefined): boolean {
@@ -781,7 +776,7 @@ export class WaStatusPagesEditor extends LitElement {
     } catch (err) {
       const code = errCode(err);
       if (code === "conflict") note = { kind: "warn", text: "Not restored. The status pages changed somewhere else, so the newest copy is shown." };
-      else if (code === "no_record") note = { kind: "warn", text: "Not restored. Home Assistant no longer holds status pages for this watch." };
+      else if (code === "no_record") note = { kind: "warn", text: `Not restored. Home Assistant no longer holds status pages for this ${deviceNoun(this.device)}.` };
       else if (code === "not_found") note = { kind: "warn", text: "Not restored. That save is no longer kept." };
       else if (code === "unknown_command") {
         this.historyState = "unsupported";
@@ -880,9 +875,9 @@ export class WaStatusPagesEditor extends LitElement {
       ${this.renderSyncPill(editing ? draft : undefined)}
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
-          title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks.` : `Nothing to save (${MOD}S)`}
+          title=${dirty ? `Save (${MOD}S). A save reaches the ${deviceNoun(this.device)} the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
+        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record, undefined, this.device)}</span>` : nothing}
       ${this.barActions}
       <button class="help" title="Help: status pages" aria-label="Help"
         @click=${() => window.open(WATCH_STATUS_PAGES_HELP_URL, "_blank", "noopener")}>?</button>
@@ -1055,7 +1050,7 @@ export class WaStatusPagesEditor extends LitElement {
     if (this.loadError !== undefined) {
       const id = this.watchId;
       return html`<div class="pe-empty">
-        <span>Could not read this watch's status pages: ${this.loadError}</span>
+        <span>Could not read this ${deviceNoun(this.device)}'s status pages: ${this.loadError}</span>
         ${id === undefined ? nothing : html`<button class="pe-btn" @click=${() => void this.load(id)}>Try again</button>`}
       </div>`;
     }
@@ -1070,7 +1065,7 @@ export class WaStatusPagesEditor extends LitElement {
       // small link that asks first and starts with the defaults; the ···
       // menu still offers an empty list, behind the same question.
       const state = this.noRecordState(watches);
-      return html`<div class="pe-empty"><b>${STATUS_PAGES_NO_RECORD_TITLE}</b><span>${noRecordText(state, STATUS_PAGES_NO_RECORD_TEXT)}</span>
+      return html`<div class="pe-empty"><b>${noRecordTitle("status pages", this.device)}</b><span>${noRecordText(state, STATUS_PAGES_NO_RECORD_TEXT)}</span>
         ${state === "wait"
           ? html`<button class="link start-fresh" ?disabled=${this.starting} @click=${() => { if (mayStart(state)) void this.start(false); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
           : html`<span class="sp-start">
@@ -1115,6 +1110,7 @@ export class WaStatusPagesEditor extends LitElement {
     })}
     ${this.historyOpen ? renderConfigHistoryDialog({
       noun: "status pages",
+      device: this.device,
       record,
       entries: this.history,
       historyState: this.historyState,
@@ -1146,7 +1142,7 @@ export class WaStatusPagesEditor extends LitElement {
       @cancel=${(e: Event) => { if (this.restoring) e.preventDefault(); }}
       @close=${() => { this.restoreAsk = undefined; }}>
       <h3 id="sp-ask-title">Restore revision ${ask.entry.revision}?</h3>
-      <p>${savedBy(ask.entry.updated_by)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
+      <p>${savedByLine(ask.entry.updated_by, this.device)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
       ${ask.summary ? html`<p class="pe-muted">${ask.summary}</p>` : nothing}
       <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves.</p>
       <div class="pe-ask-foot">

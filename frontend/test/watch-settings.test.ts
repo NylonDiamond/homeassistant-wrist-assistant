@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
 import { applyRoomEdits, roomSwitchTrigger, switchingWritesFor, triggerWrites, withRoomWrites } from "../src/watch-rooms/model.js";
+import { WATCH_MENUS_NO_RECORD_TITLE } from "../src/watch-menus/model.js";
+import { STATUS_PAGES_NO_RECORD_TITLE } from "../src/watch-status-pages/model.js";
 import {
   type CatalogSetting,
   BEHAVIOR_SCHEMA_VERSION,
@@ -90,6 +92,8 @@ import {
   pairUserToSend,
   pairedFor,
   pairedText,
+  noRecordTitle,
+  savedByLine,
   savedByWords,
   sectionRuns,
   settingValue,
@@ -500,6 +504,21 @@ describe("a watch with nothing in Home Assistant yet", () => {
     // A phone's own records wait for the phone.
     expect(waitingHelpText("iphone")).toBe("The iPhone picks it up the next time it checks.");
     expect(waitingHelpText("watch")).toBe(WAITING_HELP_TEXT);
+    // A phone's own record is saved here or by the phone, never by a watch.
+    expect(savedByWords("P1", "iphone")).toBe("from the iPhone");
+    expect(savedByWords("panel", "iphone")).toBe("saved here");
+    expect(savedByWords("W1", "watch")).toBe("from the watch");
+    expect(savedByLine("P1", "iphone")).toBe("From the iPhone");
+    expect(savedByLine("W1")).toBe("From the watch");
+    expect(savedByLine("panel", "iphone")).toBe("Saved here");
+  });
+
+  it("names the device in an editor's no-record title", () => {
+    expect(noRecordTitle("menus", "watch")).toBe(WATCH_MENUS_NO_RECORD_TITLE);
+    expect(noRecordTitle("status pages", "watch")).toBe(STATUS_PAGES_NO_RECORD_TITLE);
+    expect(noRecordTitle("menus", "iphone")).toBe("No menus on this iPhone yet.");
+    expect(noRecordTitle("status pages", "iphone")).toBe("No status pages on this iPhone yet.");
+    expect(noRecordTitle("rooms", "iphone")).toBe("No rooms on this iPhone yet.");
   });
 });
 

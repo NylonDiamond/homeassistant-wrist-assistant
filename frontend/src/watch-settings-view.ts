@@ -856,7 +856,7 @@ export class WatchSettings implements ReactiveController {
     const s = this.styleRecord;
     const style = s !== undefined && s.revision > 0 ? ` · notification style revision ${s.revision}` : "";
     if (r === undefined || r.revision <= 0) return `${name}${style}`;
-    const by = savedByWords(r.updated_by);
+    const by = savedByWords(r.updated_by, this.device);
     const at = r.updated_at ? Date.parse(r.updated_at) : NaN;
     const when = Number.isNaN(at) ? "" : ` ${agoWords(Math.max(0, (Date.now() - at) / 1000))}`;
     return `${name} · revision ${r.revision}, ${by}${when}${style}`;

@@ -109,11 +109,13 @@ import {
   PAIR_FIRST_TEXT,
   START_FRESH_BUTTON,
   type NoRecordStart,
+  type SettingDevice,
   deliveryState,
   followWatch,
   mayStart,
   noRecordStart,
   noRecordText,
+  savedByLine,
   settingsWatches,
   watchAppDevices,
   watchName,
@@ -552,12 +554,6 @@ function kb(bytes: number): string {
 function ago(iso: string | null | undefined): string {
   const at = iso ? Date.parse(iso) : NaN;
   return Number.isNaN(at) ? "" : agoWords(Math.max(0, (Date.now() - at) / 1000));
-}
-
-/** Who made a save, in words: the panel writes `panel`, a device the id of
- * the watch's pair, whether the watch or its iPhone sent it. */
-function savedBy(updatedBy: string | null | undefined): string {
-  return updatedBy === "panel" ? "Saved here" : "From the watch";
 }
 
 function plural(n: number, one: string, many: string): string {
@@ -3104,6 +3100,11 @@ export class WaPageEditor extends LitElement {
     return this.phones && isPhoneId(this.ownerList, this.watchId);
   }
 
+  /** The shown device, for the lines that name it. */
+  private get device(): SettingDevice {
+    return this.onPhone ? "iphone" : "watch";
+  }
+
   /** The watches a copy can come from. */
   private get copySources(): OwnerSummary[] {
     return settingsWatches(this.ownerList);
@@ -3268,7 +3269,7 @@ export class WaPageEditor extends LitElement {
       ${draft ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S)` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
+        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record, undefined, this.device)}</span>` : nothing}
       ${shell ? nothing : html`<button class="tb-btn tb-menus" title="The watch's Anywhere menu, Entity quick menu and page switcher"
         @click=${() => (this.onMenus ? this.onMenus() : navigateMenusFromPages(undefined))}>${uiIcon("radial")}<span>Menus</span></button>`}
       ${this.barActions}
@@ -3289,7 +3290,7 @@ export class WaPageEditor extends LitElement {
       limit: WATCH_PAGES_LIMIT_BYTES,
       noun: "pages",
       historyState: this.historyState,
-      device: this.onPhone ? "iphone" : "watch",
+      device: this.device,
     });
     return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
@@ -3629,7 +3630,7 @@ export class WaPageEditor extends LitElement {
   /** The stored copy's line, History and Raw configuration, pinned to the
    * foot of the editor (`config-foot.ts`), with the two dialogs they open. */
   private renderFoot(record: WatchConfigRecord, document: WatchPagesDocument, dirty: boolean): TemplateResult {
-    const status = configFootStatus({ record, size: sizeOf(document), limit: WATCH_PAGES_LIMIT_BYTES, noun: "pages", historyState: this.historyState, device: this.onPhone ? "iphone" : "watch" });
+    const status = configFootStatus({ record, size: sizeOf(document), limit: WATCH_PAGES_LIMIT_BYTES, noun: "pages", historyState: this.historyState, device: this.device });
     const watchId = this.watchId;
     return html`${renderConfigFoot({
       status,
@@ -3641,6 +3642,7 @@ export class WaPageEditor extends LitElement {
     })}
     ${this.historyOpen ? renderConfigHistoryDialog({
       noun: "pages",
+      device: this.device,
       record,
       entries: this.history,
       historyState: this.historyState,
@@ -4790,7 +4792,7 @@ export class WaPageEditor extends LitElement {
       @cancel=${(e: Event) => { if (this.restoring) e.preventDefault(); }}
       @close=${() => { this.restoreAsk = undefined; }}>
       <h3 id="pe-ask-title">Restore revision ${ask.entry.revision}?</h3>
-      <p>${savedBy(ask.entry.updated_by)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
+      <p>${savedByLine(ask.entry.updated_by, this.device)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
       ${ask.summary ? html`<p class="pe-muted">${ask.summary}</p>` : nothing}
       <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves. The watch picks it up the next time it checks.</p>
       <div class="pe-ask-foot">

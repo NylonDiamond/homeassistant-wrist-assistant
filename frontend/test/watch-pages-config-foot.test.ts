@@ -90,6 +90,12 @@ describe("the foot bar", () => {
     expect(collected.help).toBe("The iPhone has revision 7.");
     const watch = configFootStatus({ record: record(), size: 1, limit: 10, noun: "pages", historyState: "ready", now: NOW });
     expect(watch.help).toBe("The watch has revision 7.");
+    // The revision line names the phone that saved its own record.
+    const byPhone = configFootStatus({ record: record({ updated_by: "P1" }), size: 1, limit: 10, noun: "pages", historyState: "ready", device: "iphone", now: NOW });
+    expect(byPhone.revision).toBe("Revision 7 · from the iPhone 5 min ago");
+    const byWatch = configFootStatus({ record: record({ updated_by: "W1" }), size: 1, limit: 10, noun: "pages", historyState: "ready", now: NOW });
+    expect(byWatch.revision).toBe("Revision 7 · from the watch 5 min ago");
+    expect(flat(renderConfigSaved(record({ updated_by: "P1" }), NOW, "iphone"))).toContain("Revision 7, from the iPhone");
   });
 
   it("says the watch's reason when it gave one, and the plain words when it did not", () => {
@@ -174,6 +180,12 @@ describe("the dialogs", () => {
     expect(text).toContain(">Restore</button>");
     expect(text).not.toContain("Save or discard your edits first.</p>");
     expect(history(record(), true)).toContain("Save or discard your edits first.</p>");
+    const phone = flat(renderConfigHistoryDialog({
+      noun: "pages", record: record(), entries, historyState: "ready", dirty: false, restoring: false,
+      onRetry: noop, onRestore: noop, onClosed: noop, device: "iphone", now: NOW,
+    }));
+    expect(phone).toContain("From the iPhone");
+    expect(phone).not.toContain("From the watch");
   });
 
   it("History offers the save before one a device could not read", () => {

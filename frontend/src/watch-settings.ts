@@ -480,9 +480,16 @@ export function rejectedNow(record: Pick<WatchConfigRecord, "revision" | "reject
 
 /** Who saved a record, for the head lines: "saved here" for the panel, else
  * "from the watch" (the writer signed as the watch's own pair, whether the
- * watch or its iPhone sent it). Lower case; the caller capitalises. */
-export function savedByWords(updatedBy: string | null | undefined): string {
-  return updatedBy === "panel" ? "saved here" : "from the watch";
+ * watch or its iPhone sent it), or "from the iPhone" for a phone's own
+ * record, which only the phone writes. Lower case; the caller capitalises. */
+export function savedByWords(updatedBy: string | null | undefined, device: SettingDevice = "watch"): string {
+  return updatedBy === "panel" ? "saved here" : `from the ${deviceNoun(device)}`;
+}
+
+/** The same at the start of a line: "Saved here", "From the iPhone". */
+export function savedByLine(updatedBy: string | null | undefined, device: SettingDevice = "watch"): string {
+  const words = savedByWords(updatedBy, device);
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /** The pill and its help line while a save waits for a device. */
@@ -493,6 +500,13 @@ export const WAITING_HELP_TEXT = waitingHelpText("watch");
 /** The help line while a save waits, naming the device it waits for. */
 export function waitingHelpText(device: SettingDevice): string {
   return `The ${deviceNoun(device)} picks it up the next time it checks.`;
+}
+
+/** An editor's title while Home Assistant holds no record of its kind:
+ * "No menus from this watch yet.", or "No menus on this iPhone yet." for a
+ * phone, whose records start here and never come from the phone. */
+export function noRecordTitle(what: string, device: SettingDevice): string {
+  return device === "iphone" ? `No ${what} on this iPhone yet.` : `No ${what} from this watch yet.`;
 }
 
 /** The device in a sentence: "watch" or "iPhone". */

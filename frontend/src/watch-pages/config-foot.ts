@@ -22,7 +22,7 @@ import { type ReactiveController, type ReactiveControllerHost, css, html, nothin
 import type { WatchConfigHistoryEntry, WatchConfigRecord } from "../ha-api.js";
 import { agoWords } from "../send-state.js";
 import { uiIcon } from "../ui-icons.js";
-import { type SettingDevice, COLLECTED_PILL_TEXT, WAITING_PILL_TEXT, deliveryState, deviceNoun, rejectedNow, savedByWords, waitingHelpText } from "../watch-settings.js";
+import { type SettingDevice, COLLECTED_PILL_TEXT, WAITING_PILL_TEXT, deliveryState, deviceNoun, rejectedNow, savedByLine, savedByWords, waitingHelpText } from "../watch-settings.js";
 
 export type ConfigHistoryState = "loading" | "ready" | "error" | "unsupported";
 
@@ -67,12 +67,6 @@ function ago(iso: string | null | undefined, now: number): string {
   return Number.isNaN(at) ? "" : agoWords(Math.max(0, (now - at) / 1000));
 }
 
-/** Who made a save, capitalised for the start of a line. */
-function savedBy(updatedBy: string | null | undefined): string {
-  const words = savedByWords(updatedBy);
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
 export interface ConfigFootStatus {
   /** The dot: green once collected, amber while it waits, red when a
    * device could not read it. */
@@ -107,7 +101,7 @@ export function configFootStatus(i: {
 }): ConfigFootStatus {
   const { record } = i;
   const when = ago(record.updated_at, i.now ?? Date.now());
-  const revision = `Revision ${record.revision} · ${savedByWords(record.updated_by)}${when ? ` ${when}` : ""}`;
+  const revision = `Revision ${record.revision} · ${savedByWords(record.updated_by, i.device)}${when ? ` ${when}` : ""}`;
   const over = i.limit > 0 && i.size > i.limit;
   const near = !over && i.limit > 0 && i.size / i.limit > 0.8;
   const round = over ? Math.ceil : i.size < i.limit ? Math.floor : Math.round;
@@ -137,12 +131,12 @@ export function configSavedText(record: WatchConfigRecord | undefined, now: numb
 }
 
 /** The fact as a muted span, the whole stamp in its title. */
-export function renderConfigSaved(record: WatchConfigRecord | undefined, now: number = Date.now()): TemplateResult | typeof nothing {
+export function renderConfigSaved(record: WatchConfigRecord | undefined, now: number = Date.now(), device: SettingDevice = "watch"): TemplateResult | typeof nothing {
   const text = configSavedText(record, now);
   if (record === undefined || text === "") return nothing;
   const at = record.updated_at ? Date.parse(record.updated_at) : NaN;
   const stamp = Number.isNaN(at) ? "" : `, ${new Date(at).toLocaleString()}`;
-  return html`<span class="cf-saved" title=${`Revision ${record.revision}, ${savedByWords(record.updated_by)}${stamp}`}>${text}</span>`;
+  return html`<span class="cf-saved" title=${`Revision ${record.revision}, ${savedByWords(record.updated_by, device)}${stamp}`}>${text}</span>`;
 }
 
 /** How often a shown "Saved 3 min ago" is drawn again: twice a minute, so
@@ -237,6 +231,8 @@ export interface ConfigHistoryInput {
   onRestore: (entry: WatchConfigHistoryEntry) => void;
   /** The dialog shut, however it was shut. */
   onClosed: () => void;
+  /** The device the record is for; a watch when absent. */
+  device?: SettingDevice;
   now?: number;
 }
 
@@ -263,7 +259,7 @@ export function renderConfigHistoryDialog(i: ConfigHistoryInput): TemplateResult
         return html`<li class=${entry.revision === offer ? "offer" : ""}>
           <span class="pe-h-text">
             <b>Revision ${entry.revision}</b>
-            <span class="pe-muted">${savedBy(entry.updated_by)}${when ? ` ${when}` : ""} · ${kb(entry.size)}</span>
+            <span class="pe-muted">${savedByLine(entry.updated_by, i.device)}${when ? ` ${when}` : ""} · ${kb(entry.size)}</span>
           </span>
           ${current
             ? html`<span class="pe-badge">Current</span>`
