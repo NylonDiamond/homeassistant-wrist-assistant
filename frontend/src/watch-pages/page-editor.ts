@@ -196,6 +196,7 @@ import {
   type WatchPageTile,
   type WatchPagesDocument,
   WATCH_GRID_COLUMNS,
+  WATCH_GRID_SIDE_INSET,
   WATCH_GRID_TOP_INSET,
   WATCH_PAGES_LIMIT_BYTES,
   asWatchPagesDocument,
@@ -217,7 +218,9 @@ import {
 } from "./model.js";
 import {
   type WatchPagePreviewInput,
+  PHONE_SCREEN_FOLD_TEXT,
   WATCH_SCREEN_FOLD_TEXT,
+  renderPreviewFrame,
   renderWatchPagePreview,
   renderWatchScreenFold,
   renderWatchTileFace,
@@ -231,8 +234,17 @@ import {
 } from "./preview.js";
 import { PagePhotoStore } from "./page-photo-store.js";
 import { addWatchTile, watchAddRefusal, watchAddThemeOf, watchKindColor } from "./tile-new.js";
-import { renderWatchClock, watchPreviewLayout, watchTileCornerRadius } from "./preview.js";
-import { renderWatchFrame, watchFrameStyles } from "../watch-frame.js";
+import { renderWatchClock, watchPreviewLayout, watchPreviewSideInset, watchTileCornerRadius } from "./preview.js";
+import { watchFrameStyles } from "../watch-frame.js";
+import {
+  DEFAULT_PHONE,
+  PHONE_STAGE_ZOOM,
+  type PhonePagesLayout,
+  phoneFrameStyles,
+  phoneModelForScreenSize,
+  phonePagesLayout,
+  phonePagesScreen,
+} from "../phone-frame.js";
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
 import {
   forgetTileSettingsNotes,
@@ -616,14 +628,10 @@ function typedNumber(text: string): number {
 const PAGE_END_TEXT = `The page ends at row ${WATCH_EDITOR_MAX_ROWS}.`;
 const SAVING_TEXT = "Saving. Tiles and pages move again once the save is done.";
 
-/** Why an iPhone's page is drawn in a watch's frame. */
-export const PHONE_FRAME_TEXT = "The iPhone is drawn in a watch's frame for now.";
+/** What the iPhone's picture is: its Pages tab, at the size every iPhone
+ * is drawn at, since the phone does not report its screen. */
+export const PHONE_FRAME_TEXT = `The iPhone's Pages tab, drawn as an ${DEFAULT_PHONE.label}. The iPhone does not tell Home Assistant its screen size.`;
 
-/** The stage's frame label on an iPhone: the phone's name, in a watch's
- * frame. */
-export function phoneFrameLabel(name: string): string {
-  return `${name}, in a watch frame`;
-}
 
 /** What an iPhone with no pages says under its title (`phone-pages.ts`). */
 export const PHONE_PAGES_EMPTY_TEXT = "Add a page and build it here, or copy pages from one of your watches. Nothing is copied by itself.";
@@ -888,6 +896,9 @@ export class WaPageEditor extends LitElement {
   private swallowTileClick = false;
   /** A tile was picked from the Tiles list: the inspector starts at its top. */
   private inspectorToTop = false;
+  /** The grid's side room in points, as last drawn: the watch's side safe
+   * area, none on an iPhone. */
+  private stageSideInset = WATCH_GRID_SIDE_INSET;
   /** The watch's screen in points, as last drawn, for the pointer arithmetic. */
   private stageScreen = REFERENCE_CASE.screen;
   private scrollFrame?: number;
@@ -2556,7 +2567,7 @@ export class WaPageEditor extends LitElement {
     if (rect.width <= 0 || page === undefined) return undefined;
     const scale = rect.width / this.stageScreen.width;
     const topInset = page.fullScreen === true ? 0 : WATCH_GRID_TOP_INSET;
-    return { grid: stageGrid(this.stageScreen.width, topInset, scale), rect };
+    return { grid: stageGrid(this.stageScreen.width, topInset, scale, this.stageSideInset), rect };
   }
 
   private armWindow(): void {
@@ -3670,19 +3681,36 @@ export class WaPageEditor extends LitElement {
 
   // ── the page list ──────────────────────────────────────────────────────
 
-  /** The watch's screen in points: its case, else the reference case. */
+  /** The page code's screen in points: the watch's case, else the
+   * reference case; on an iPhone its Pages tab's pages area. */
   private screenOf(owner: OwnerSummary | undefined): { width: number; height: number } {
-    // An iPhone is drawn in the reference watch's frame, as on the stage.
-    if (this.onPhone) return REFERENCE_CASE.screen;
+    const phone = this.phoneLayoutOf(owner);
+    if (phone !== undefined) return phonePagesScreen(phone);
     return (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
+  }
+
+  /** The grid's room each side in points: the watch's side safe area, none
+   * in an iPhone's pages area. */
+  private get gridSideInset(): number {
+    return this.onPhone ? 0 : WATCH_GRID_SIDE_INSET;
+  }
+
+  /** On an iPhone, where its Pages tab lays itself out (`phone-frame.ts`);
+   * undefined on a watch. */
+  private phoneLayoutOf(owner: OwnerSummary | undefined): PhonePagesLayout | undefined {
+    if (!this.onPhone) return undefined;
+    const shown = owner ?? this.ownerList.find((o) => o.owner_watch_id === this.watchId);
+    return phonePagesLayout(phoneModelForScreenSize(shown?.screen_size));
   }
 
   /** What a picture of `page` is drawn with at `scale`, the stage's own
    * states, symbols and renders. */
   private previewInput(page: WatchPage, pages: readonly WatchPage[], screen: { width: number; height: number }, scale: number): WatchPagePreviewInput {
+    const phone = this.phoneLayoutOf(undefined);
     return {
       page, pages, screen, states: this.previewStates(), icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
       behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(), photo: this.photoUrl,
+      ...(phone === undefined ? {} : { phone }),
     };
   }
 
@@ -3718,8 +3746,8 @@ export class WaPageEditor extends LitElement {
       return html`<span class="thumb pe-thumb pe-thumb-smart" style=${`background:${watchScreenColor(page)}`} aria-hidden="true">${uiIcon("states")}</span>`;
     }
     const s = THUMB_W / screen.width;
-    const layout = watchPreviewLayout(page, screen);
     const input = this.previewInput(page, pages, screen, s);
+    const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(input) });
     // Only what reaches into the strip: a long page costs no more than a short one.
     const shown = layout.tiles.filter((t) => (layout.topInset + t.y) * s < THUMB_H);
     const back = watchScreenLayers(page, s, screen, this.photoUrl);
@@ -3809,7 +3837,7 @@ export class WaPageEditor extends LitElement {
     else if (tiles.length === 0) body = html`<div class="lc-note">No tiles yet. Add one, or drag one in from another page.</div>`;
     else {
       const screen = this.screenOf(owner);
-      const layout = watchPreviewLayout(page, screen, { flat: true });
+      const layout = watchPreviewLayout(page, screen, { flat: true, sideInset: this.gridSideInset });
       // By the tile itself, else by its id: the layout hands back the page's
       // own tile objects, but a copy would still find its size.
       const sizes = new Map<unknown, PlacedWatchTile>();
@@ -4011,12 +4039,15 @@ export class WaPageEditor extends LitElement {
     watches: readonly OwnerSummary[],
     tile: WatchPageTile | undefined,
   ): TemplateResult {
-    // An iPhone is drawn in the watch's frame for now, at the reference
-    // size, named as the phone (a phone frame is later work).
-    const phone = this.onPhone;
+    // An iPhone is drawn as an iPhone, its page laid out in the Pages tab's
+    // pages area (`phone-frame.ts`), at half the watch's zoom so the taller
+    // phone fits the same stage.
+    const phoneLayout = this.phoneLayoutOf(owner);
+    const phone = phoneLayout !== undefined;
     const found = phone ? undefined : caseForScreenSize(owner?.screen_size);
     const watchCase = found ?? REFERENCE_CASE;
-    const frame = phone ? phoneFrameLabel(owner === undefined ? "iPhone" : watchName(owner, watches)) : watchCase.label;
+    const screen = phoneLayout === undefined ? watchCase.screen : phonePagesScreen(phoneLayout);
+    const frame = phoneLayout === undefined ? watchCase.label : phoneLayout.model.label;
     const smart = isSmartWatchPage(page);
     const tiles = watchPageTiles(page).length;
     const rows = watchPageExtent(page);
@@ -4024,15 +4055,16 @@ export class WaPageEditor extends LitElement {
     // A smart page names itself as the watch does, from its fill.
     const states = this.previewStates();
     const facts = smartStageFacts(page, states) ?? [plural(tiles, "tile", "tiles"), plural(rows, "row", "rows")];
-    facts.push(phone ? "watch frame" : watchCase.label);
+    facts.push(phoneLayout === undefined ? watchCase.label : phoneLayout.model.label);
     if (isHiddenWatchPage(page)) facts.push(phone ? "hidden on the iPhone" : "hidden on the watch");
     const headers = !smart && watchPageHasHeader(page);
     const asOnWatch = headers && this.asOnWatch;
-    const scale = this.stageScale;
+    const scale = phone ? this.stageScale * PHONE_STAGE_ZOOM : this.stageScale;
     const input: WatchPagePreviewInput = {
-      page, pages, screen: watchCase.screen, states, icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
+      page, pages, screen, states, icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
       // The watch's own settings, for its page dots and its page title mode.
       behavior: this.behavior,
+      ...(phoneLayout === undefined ? {} : { phone: phoneLayout }),
       // Live off: every tile lit, as the page looks in use, but for a state
       // being tried in the Live strip. A smart page is always live.
       stateMode: this.liveStates ? "live" : "all-on",
@@ -4049,10 +4081,11 @@ export class WaPageEditor extends LitElement {
         },
       };
     }
-    this.stageScreen = watchCase.screen;
-    const scrolls = !smart && (asOnWatch ? watchPagePreviewScrolls(page, watchCase.screen) : this.editStage(page, input).scrolls);
+    this.stageScreen = screen;
+    this.stageSideInset = this.gridSideInset;
+    const scrolls = !smart && (asOnWatch ? watchPagePreviewScrolls(page, screen, phone) : this.editStage(page, input).scrolls);
     const hint = smart ? undefined
-      : asOnWatch ? "Shown as the watch draws it. Turn off Watch view to edit."
+      : asOnWatch ? `Shown as the ${phone ? "iPhone" : "watch"} draws it. Turn off Watch view to edit.`
       : tiles === 0 ? "No tiles yet. Add one from the Tiles list."
       : "Drag a tile to move it, or onto another tile to swap the two. Drag an edge or the corner of the selected tile to resize it. Arrow keys move the selected tile.";
     return html`<div class="card canvas-card pe-canvas ${this.pageStripOpen === undefined ? "" : "pe-pop-open"}" aria-label="Page">
@@ -4064,7 +4097,7 @@ export class WaPageEditor extends LitElement {
           ${smart || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input)}
         </div>
         ${scrolls || hint !== undefined ? html`<div class="under">
-          ${scrolls ? html`<span class="tail pe-fold-text">${WATCH_SCREEN_FOLD_TEXT}</span>` : nothing}
+          ${scrolls ? html`<span class="tail pe-fold-text">${phone ? PHONE_SCREEN_FOLD_TEXT : WATCH_SCREEN_FOLD_TEXT}</span>` : nothing}
           ${hint !== undefined ? html`<span class="tail ${tiles > 0 && !asOnWatch ? "pe-hint" : ""}">${hint}</span>` : nothing}
         </div>` : nothing}
       </div>
@@ -4237,6 +4270,9 @@ export class WaPageEditor extends LitElement {
     const sep = html`<span class="tb-sep" aria-hidden="true"></span>`;
     const scale = this.stageScale;
     const fit = stageFitZoom(this.narrow || this.stacked);
+    // The percent is of the device's own points: an iPhone is drawn at
+    // `PHONE_STAGE_ZOOM` of the watch's zoom.
+    const shownAs = (zoom: number): string => stageZoomLabel(phone ? zoom * PHONE_STAGE_ZOOM : zoom);
     return html`<div class="stage-tools" role="toolbar" aria-label="Stage tools">
       ${smart ? nothing : html`<label class="pe-switch pe-live pe-tip"
           data-tip=${this.liveStates
@@ -4257,9 +4293,9 @@ export class WaPageEditor extends LitElement {
       <span class="tb-zoom" role="group" aria-label="Zoom">
         <button class="tb icon pe-zoom-out" ?disabled=${scale <= stageZoomOut(scale)} aria-label="Zoom out" title="Zoom out"
           @click=${() => this.setZoom(stageZoomOut(scale))}>−</button>
-        <button class="tb pct" aria-label=${`Zoom ${stageZoomLabel(scale)}. Back to fit`}
-          title=${`The watch at ${stageZoomLabel(scale)} of its own points. Click to fit it again (${stageZoomLabel(fit)}).`}
-          @click=${() => this.setZoom(undefined)}>${stageZoomLabel(scale)}</button>
+        <button class="tb pct" aria-label=${`Zoom ${shownAs(scale)}. Back to fit`}
+          title=${`The ${phone ? "iPhone" : "watch"} at ${shownAs(scale)} of its own points. Click to fit it again (${shownAs(fit)}).`}
+          @click=${() => this.setZoom(undefined)}>${shownAs(scale)}</button>
         <button class="tb icon pe-zoom-in" ?disabled=${scale >= stageZoomIn(scale)} aria-label="Zoom in" title="Zoom in"
           @click=${() => this.setZoom(stageZoomIn(scale))}>+</button>
       </span>
@@ -4396,7 +4432,7 @@ export class WaPageEditor extends LitElement {
     const resize = g?.kind === "resize" ? g : undefined;
     const shown = resize?.preview?.page ?? page;
     const topInset = page.fullScreen === true ? 0 : WATCH_GRID_TOP_INSET;
-    const grid = stageGrid(screen.width, topInset, s);
+    const grid = stageGrid(screen.width, topInset, s, watchPreviewSideInset(input));
     // A pick of several reaches as deep as its lowest tile moved.
     const reach = move?.cell && move.group !== undefined
       ? Math.max(...move.group.map((m) => m.rect.row + moveDelta(move, move.cell!).drows + m.rect.rowSpan))
@@ -4416,7 +4452,8 @@ export class WaPageEditor extends LitElement {
     const { s, screen, move, resize, shown, grid, rows, gridHeight, height } = this.editStage(page, input);
     // The preview's own layout on the flat grid: the same side safe area and
     // unit as the watch, so each tile sits where `cellRectPx` puts its cells.
-    const layout = watchPreviewLayout(shown, screen, { flat: true });
+    const layout = watchPreviewLayout(shown, screen, { flat: true, sideInset: watchPreviewSideInset(input) });
+    const phone = input.phone !== undefined;
     const width = screen.width * s;
     const selected = this.selectedTileId;
     const seen = new Set<string>();
@@ -4435,15 +4472,15 @@ export class WaPageEditor extends LitElement {
         : undefined;
     const back = watchScreenLayers(shown, s, screen, this.photoUrl);
     // The grid's cells show only while a tile is moved or resized.
-    return renderWatchFrame(screen, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""}" tabindex="-1" role="group" aria-label=${`Layout of ${watchPageName(page)}`}
+    return renderPreviewFrame(input, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""}" tabindex="-1" role="group" aria-label=${`Layout of ${watchPageName(page)}`}
       style=${`width:${width}px;height:${height}px;background:${back.background}`}
       @click=${() => this.selectTile(undefined)}>
       ${back.layers}
-      ${renderWatchClock(screen, s, layout.topInset, input.icons)}
+      ${phone ? nothing : renderWatchClock(screen, s, layout.topInset, input.icons)}
       ${renderWatchPageTitle(shown, s, layout.topInset, input.icons, input.behavior)}
       <svg class="pe-cells" width=${width} height=${gridHeight} viewBox=${`0 0 ${width} ${gridHeight}`}
         style=${`top:${grid.top}px`} aria-hidden="true"><path d=${cellsPath(grid, rows, 3 * s)} /></svg>
-      ${height > screen.height * s + 0.5 ? renderWatchScreenFold(screen.height * s) : nothing}
+      ${height > screen.height * s + 0.5 ? renderWatchScreenFold(screen.height * s, phone) : nothing}
       ${move ? this.renderMoveGhosts(move, shown, grid) : nothing}
       ${repeat(layout.tiles, keyOf, (placed) => this.renderStageTile(placed, input, layout.unit, grid, move))}
       ${selBox ? html`<div class="pe-sel ${resize?.preview?.overlaps ? "no" : ""}" aria-hidden="true"
@@ -4452,7 +4489,7 @@ export class WaPageEditor extends LitElement {
             @pointerdown=${(e: PointerEvent) => this.onHandlePointerDown(e, h)}
             @click=${(e: Event) => e.stopPropagation()}></span>`)}
         </div>` : nothing}
-    </div>`, `Watch showing ${watchPageName(page)}`);
+    </div>`, `${phone ? "iPhone" : "Watch"} showing ${watchPageName(page)}`);
   }
 
   private renderStageTile(
@@ -4615,7 +4652,7 @@ export class WaPageEditor extends LitElement {
     const copyable = this.copyableCount(page, ids);
     const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
     const screen = this.screenOf(owner);
-    const layout = watchPreviewLayout(page, screen, { flat: true });
+    const layout = watchPreviewLayout(page, screen, { flat: true, sideInset: this.gridSideInset });
     const states = this.previewStates();
     const rows = ids.flatMap((id) => {
       const tile = this.tileOn(page, id);
@@ -4908,7 +4945,7 @@ export class WaPageEditor extends LitElement {
   // after and win the ties. The two modules' rules come last, so a module can
   // size its own parts of this element (its dialog, say) without outranking
   // anything.
-  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchPagePreviewStyles, watchFrameStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchPagePreviewStyles, watchFrameStyles, phoneFrameStyles, css`
     /* A column, so the foot bar (config-foot.ts) can take the space left
        at the foot of a short editor; --cf-pad is the padding it reaches
        through to sit edge to edge. */

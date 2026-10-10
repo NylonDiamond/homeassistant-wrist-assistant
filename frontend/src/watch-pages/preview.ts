@@ -16,6 +16,11 @@
 // code leaves open were measured against the 46 mm simulator. An effect or
 // an animated border is a tinted hint; nothing moves.
 //
+// An iPhone's page is drawn the same way in the iPhone's pages area
+// (`phone-frame.ts`), which is the page code's screen on the phone: no side
+// safe area, no watch clock, the page dots where the Pages tab puts them,
+// and the phone around it.
+//
 // Drawn in HTML rather than one SVG so a long name can end in an ellipsis.
 // Every size is in points times `scale`, so the picture is the screen grown
 // evenly rather than a layout of its own.
@@ -65,6 +70,7 @@ import {
 } from "./app-model.js";
 import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
 import { renderWatchFrame } from "../watch-frame.js";
+import { type PhonePageDots, type PhonePagesLayout, renderPhoneFrame } from "../phone-frame.js";
 import { readSmartConfig, smartRuleIndexForTile, smartSyntheticPage, smartTrackingWords, smartWord } from "./smart-model.js";
 
 export type WatchPreviewStateMode = "live" | "all-on";
@@ -110,6 +116,9 @@ export interface WatchPagePreviewInput {
    * (the page draws without it, as the watch does until it has the photo).
    * Without one, no photo is drawn. */
   photo?: (id: string) => string | undefined;
+  /** The page is an iPhone's: `screen` is its pages area, and the picture
+   * is drawn in the iPhone (`phone-frame.ts`) rather than a watch. */
+  phone?: PhonePagesLayout;
 }
 
 /** The watch's own page indicator, when the document has more than one
@@ -119,12 +128,24 @@ export interface WatchPagePreviewInput {
  * 0.7 and 0.2, Bright 0.9 and 0.3) and the size's scale (Small 0.75, the
  * default; Medium 1; Large 1.35), all times the screen's uniform scale. */
 export function renderWatchPageIndicator(input: WatchPagePreviewInput, s: number): TemplateResult | typeof nothing {
-  const b = input.behavior ?? {};
-  if (b.showPageIndicator === false) return nothing;
-  const visible = input.pages.filter((p) => p.isHidden !== true && p.isSystemPage !== true);
-  if (visible.length < 2) return nothing;
-  const current = Math.max(0, visible.findIndex((p) => p.id === input.page.id));
+  const dots = watchPageIndicatorRow(input, s);
+  if (dots === undefined) return nothing;
   const { width, height } = input.screen;
+  const px = (pt: number) => `${Math.round(pt * s * 100) / 100}px`;
+  return html`<span class="wp-pages" style=${`top:${px(dots.top ? 0 : height - dots.height)};height:${px(dots.height)};width:${px(width)}`}>${dots.row}</span>`;
+}
+
+/** The page indicator's row, `height` points tall, and whether it sits at
+ * the top: what `renderWatchPageIndicator` places on a watch's screen and
+ * the iPhone's frame places by its pages area. Undefined when it is off or
+ * there is one page to show. */
+export function watchPageIndicatorRow(input: WatchPagePreviewInput, s: number): PhonePageDots | undefined {
+  const b = input.behavior ?? {};
+  if (b.showPageIndicator === false) return undefined;
+  const visible = input.pages.filter((p) => p.isHidden !== true && p.isSystemPage !== true);
+  if (visible.length < 2) return undefined;
+  const current = Math.max(0, visible.findIndex((p) => p.id === input.page.id));
+  const { width } = input.screen;
   const metric = watchUniformScale(input.screen);
   const size = ({ Small: 0.75, Medium: 1, Large: 1.35 } as Record<string, number>)[String(b.pageIndicatorSize ?? "Small")] ?? 0.75;
   const [on, off] = ({ Subtle: [0.5, 0.15], Medium: [0.7, 0.2], Bright: [0.9, 0.3] } as Record<string, [number, number]>)[String(b.pageIndicatorOpacity ?? "Subtle")] ?? [0.5, 0.15];
@@ -154,7 +175,7 @@ export function renderWatchPageIndicator(input: WatchPagePreviewInput, s: number
       return html`<span class="wp-pages-dot" style=${`width:${px(d)};height:${px(d)};margin-left:${px(i === 0 ? 0 : gap)};background:${rgba(ink, i === current ? on : off)}`}></span>`;
     })}`;
   }
-  return html`<span class="wp-pages" style=${`top:${px(top ? 0 : height - rowHeight)};height:${px(rowHeight)};width:${px(width)}`}>${row}</span>`;
+  return { row, height: rowHeight, top };
 }
 
 /** `WatchScreenMetrics.uniformScale`: the screen's width and height against
@@ -188,12 +209,26 @@ const CLOCK_SIDE_BEARING = 1;
  * own constants say, too. */
 export const WATCH_SCREEN_SIDE_INSET = WATCH_GRID_SIDE_INSET;
 
+/** The side room of a picture's grid, in points: the watch's side safe area,
+ * or none in an iPhone's pages area, whose grid runs to its edges (measured
+ * on the iPhone 17 Pro simulator: tiles span 6 to 396 of a pages area 6 to
+ * 396 across). */
+export function watchPreviewSideInset(input: Pick<WatchPagePreviewInput, "phone">): number {
+  return input.phone === undefined ? WATCH_SCREEN_SIDE_INSET : 0;
+}
+
+export interface WatchPreviewLayoutOptions extends WatchPageLayoutOptions {
+  /** The grid's room each side in points, the watch's side safe area
+   * (`WATCH_SCREEN_SIDE_INSET`) when not given. */
+  sideInset?: number;
+}
+
 /** A page placed as the watch places it: `watchPageLayout` on the grid's
  * own width (the screen less the side safe area), moved in by that inset.
  * `flat` as `watchPageLayout` takes it: the editor's grid, with no pull up
  * at headers, in the same columns as the watch's. */
-export function watchPreviewLayout(page: WatchPage, screen: { width: number; height: number }, options?: WatchPageLayoutOptions): WatchPageLayout {
-  const inset = WATCH_SCREEN_SIDE_INSET;
+export function watchPreviewLayout(page: WatchPage, screen: { width: number; height: number }, options?: WatchPreviewLayoutOptions): WatchPageLayout {
+  const inset = options?.sideInset ?? WATCH_SCREEN_SIDE_INSET;
   const inner = watchPageLayout(page, { width: Math.max(1, screen.width - inset * 2), height: screen.height }, options);
   return { ...inner, screen: { ...screen }, tiles: inner.tiles.map((t) => ({ ...t, x: t.x + inset })) };
 }
@@ -3161,19 +3196,45 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
   if (isSmartWatchPage(page)) return renderSmartPreview(input);
   // Tiles hidden while off are gone and the rest packed up, as on the watch;
   // in the all-on picture every tile is on, so none is hidden.
-  const layout = watchPreviewLayout(watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states), screen);
-  const scrolls = layout.height > screen.height + 0.5;
+  const layout = watchPreviewLayout(watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states), screen, { sideInset: watchPreviewSideInset(input) });
+  const phone = input.phone !== undefined;
+  const height = watchPreviewHeight(layout, phone);
+  const scrolls = height > screen.height + 0.5;
   const back = watchScreenLayers(page, s, screen, input.photo);
-  return renderWatchFrame(screen, s, html`<div class="wp-screen" role="group" aria-label=${`Preview of ${name}`}
-    style=${`width:${width}px;height:${layout.height * s}px;background:${back.background}`}>
+  return renderPreviewFrame(input, s, html`<div class="wp-screen" role="group" aria-label=${`Preview of ${name}`}
+    style=${`width:${width}px;height:${height * s}px;background:${back.background}`}>
     ${back.layers}
-    ${renderWatchClock(screen, s, layout.topInset, input.icons)}
+    ${phone ? nothing : renderWatchClock(screen, s, layout.topInset, input.icons)}
     ${renderWatchPageTitle(page, s, layout.topInset, input.icons, input.behavior)}
     ${layout.tiles.length === 0 ? html`<div class="wp-smart"><span>No tiles on this page.</span></div>` : nothing}
     ${layout.tiles.map((placed) => renderTile(placed, input, layout.unit, layout.topInset, s))}
-    ${renderWatchPageIndicator(input, s)}
-    ${scrolls ? renderWatchScreenFold(screen.height * s) : nothing}
+    ${phone ? nothing : renderWatchPageIndicator(input, s)}
+    ${scrolls ? renderWatchScreenFold(screen.height * s, phone) : nothing}
   </div>`);
+}
+
+/**
+ * How tall a picture of a laid out page is, in points: the watch's whole
+ * scroll (`layout.height`, which always runs the top inset past the screen,
+ * as the watch's scroll view does), or on an iPhone the pages area, grown
+ * only as far as the lowest tile reaches, so a page that fits draws the
+ * phone at its real height.
+ */
+export function watchPreviewHeight(layout: WatchPageLayout, phone: boolean): number {
+  if (!phone) return layout.height;
+  return Math.max(layout.screen.height, ...layout.tiles.map((t) => layout.topInset + t.y + t.height));
+}
+
+/**
+ * Wrap a picture of the page code's screen in its device: the watch's case
+ * (`renderWatchFrame`, as before), or for an iPhone the phone around its
+ * pages area with the page dots where the Pages tab puts them
+ * (`renderPhoneFrame`).
+ */
+export function renderPreviewFrame(input: WatchPagePreviewInput, s: number, body: TemplateResult, label?: string): TemplateResult {
+  if (input.phone === undefined) return renderWatchFrame(input.screen, s, body, label);
+  const dots = watchPageIndicatorRow(input, s);
+  return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, ...(dots === undefined ? {} : { dots }) });
 }
 
 /**
@@ -3194,15 +3255,16 @@ function renderSmartPreview(given: WatchPagePreviewInput): TemplateResult {
   const synthetic = smartSyntheticPage(page, input.states);
   const shown: WatchPage = { ...synthetic };
   delete shown.dynamicConfig;
-  const layout = watchPreviewLayout(shown, screen);
+  const layout = watchPreviewLayout(shown, screen, { sideInset: watchPreviewSideInset(input) });
   const back = watchScreenLayers(page, s, screen, input.photo);
+  const phone = input.phone !== undefined;
   if (config === undefined || layout.tiles.length === 0) {
     const tracking = config === undefined ? "" : smartTrackingWords(config);
     const check = input.icons?.render("checkmark.circle.fill", 28 * s, "#34C759");
-    return renderWatchFrame(screen, s, html`<div class="wp-screen" role="img" aria-label=${`${name}: ${smartWord("allOff")}. ${tracking}`}
+    return renderPreviewFrame(input, s, html`<div class="wp-screen" role="img" aria-label=${`${name}: ${smartWord("allOff")}. ${tracking}`}
       style=${`width:${width}px;height:${screen.height * s}px;background:${back.background}`}>
       ${back.layers}
-      ${renderWatchClock(screen, s, layout.topInset, input.icons)}
+      ${phone ? nothing : renderWatchClock(screen, s, layout.topInset, input.icons)}
       ${renderWatchPageTitle(shown, s, layout.topInset, input.icons, input.behavior)}
       <div class="wp-smart">
         ${check === undefined ? nothing : html`<span class="wp-smart-check">${check}</span>`}
@@ -3231,30 +3293,37 @@ function renderSmartPreview(given: WatchPagePreviewInput): TemplateResult {
       aria-label=${label} title=${label} aria-pressed=${selected !== undefined && !dim ? "true" : "false"}
       @click=${(e: Event) => { e.stopPropagation(); pick(target); }}>${face}</button>`;
   };
-  return renderWatchFrame(screen, s, html`<div class="wp-screen" role="group" aria-label=${`Preview of ${name}`}
-    style=${`width:${width}px;height:${layout.height * s}px;background:${back.background}`}>
+  const height = watchPreviewHeight(layout, phone);
+  return renderPreviewFrame(input, s, html`<div class="wp-screen" role="group" aria-label=${`Preview of ${name}`}
+    style=${`width:${width}px;height:${height * s}px;background:${back.background}`}>
     ${back.layers}
-    ${renderWatchClock(screen, s, layout.topInset, input.icons)}
+    ${phone ? nothing : renderWatchClock(screen, s, layout.topInset, input.icons)}
     ${renderWatchPageTitle(shown, s, layout.topInset, input.icons, input.behavior)}
     ${layout.tiles.map(tile)}
-    ${renderWatchPageIndicator(input, s)}
-    ${layout.height > screen.height + 0.5 ? renderWatchScreenFold(screen.height * s) : nothing}
+    ${phone ? nothing : renderWatchPageIndicator(input, s)}
+    ${height > screen.height + 0.5 ? renderWatchScreenFold(screen.height * s, phone) : nothing}
   </div>`);
 }
 
-/** The dashed line where the watch's screen ends. The words that explain it
+/** The dashed line where the watch's screen ends, or with `phone` where the
+ * iPhone's pages area ends, above its tab bar. The words that explain it
  * go outside the picture (`WATCH_SCREEN_FOLD_TEXT`), where they cover no
  * tile. */
-export function renderWatchScreenFold(top: number): TemplateResult {
-  return html`<div class="wp-fold" style=${`top:${top}px`} title=${WATCH_SCREEN_FOLD_TEXT}></div>`;
+export function renderWatchScreenFold(top: number, phone = false): TemplateResult {
+  return html`<div class="wp-fold" style=${`top:${top}px`} title=${phone ? PHONE_SCREEN_FOLD_TEXT : WATCH_SCREEN_FOLD_TEXT}></div>`;
 }
 
 export const WATCH_SCREEN_FOLD_TEXT = "The dashed line marks the end of the watch's screen. The page scrolls on below it.";
 
+/** The fold's words on an iPhone: its pages end above the tab bar. */
+export const PHONE_SCREEN_FOLD_TEXT = "The dashed line marks the end of the iPhone's screen, above its tab bar. The page scrolls on below it.";
+
 /** Whether the picture of a page runs past the screen, so it shows the
- * fold. A smart page never does. */
-export function watchPagePreviewScrolls(page: WatchPage, screen: { width: number; height: number }): boolean {
-  return !isSmartWatchPage(page) && watchPreviewLayout(page, screen).height > screen.height + 0.5;
+ * fold. A smart page never does. With `phone`, an iPhone's pages area. */
+export function watchPagePreviewScrolls(page: WatchPage, screen: { width: number; height: number }, phone = false): boolean {
+  if (isSmartWatchPage(page)) return false;
+  if (!phone) return watchPreviewLayout(page, screen).height > screen.height + 0.5;
+  return watchPreviewHeight(watchPreviewLayout(page, screen, { sideInset: 0 }), true) > screen.height + 0.5;
 }
 
 /** The picture's own rules. The screen is dark in both of the panel's skins,

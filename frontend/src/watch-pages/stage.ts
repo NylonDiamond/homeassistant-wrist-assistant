@@ -3,7 +3,8 @@
 // The editing stage draws a page on a flat grid (`watchPreviewLayout` with
 // `flat`): 12 columns of square units 2 points apart across the screen less
 // the watch's side safe area (`WATCH_GRID_SIDE_INSET` each side), so a tile
-// sits at the same pixel as in the preview and on the watch; rows one step
+// sits at the same pixel as in the preview and on the watch (an iPhone's
+// grid keeps no side room: it fills the phone's pages area); rows one step
 // below the last, starting `topInset` points below the top of the screen.
 // Every number
 // here is in CSS pixels, the points times the scale the stage is drawn at, so
@@ -43,12 +44,13 @@ export interface StageGrid {
 
 /** The grid of a screen `screenWidth` points wide whose rows start `topInset`
  * points down, drawn at `scale` pixels per point: the 12 columns share the
- * screen less the side safe area on each side, and start that far in. */
-export function stageGrid(screenWidth: number, topInset: number, scale: number): StageGrid {
+ * screen less `sideInset` points on each side (the watch's side safe area,
+ * none in an iPhone's pages area), and start that far in. */
+export function stageGrid(screenWidth: number, topInset: number, scale: number, sideInset = WATCH_GRID_SIDE_INSET): StageGrid {
   const spacing = WATCH_GRID_SPACING * scale;
-  const usable = Math.max(1, screenWidth - WATCH_GRID_SIDE_INSET * 2);
+  const usable = Math.max(1, screenWidth - sideInset * 2);
   const unit = ((usable - (COLUMNS - 1) * WATCH_GRID_SPACING) / COLUMNS) * scale;
-  return { scale, unit, spacing, step: unit + spacing, top: topInset * scale, left: WATCH_GRID_SIDE_INSET * scale };
+  return { scale, unit, spacing, step: unit + spacing, top: topInset * scale, left: sideInset * scale };
 }
 
 /** Where a rectangle of cells sits, in pixels from the screen's top left. */

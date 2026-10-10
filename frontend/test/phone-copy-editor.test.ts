@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
 import { forgetWatchPagesDraft, keptWatchPagesDraft, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { JsonObject, WatchPagesDocument } from "../src/watch-pages/model.js";
-import { PHONE_FRAME_TEXT, PHONE_PAGES_EMPTY_TEXT, phoneFrameLabel } from "../src/watch-pages/page-editor.js";
+import { PHONE_FRAME_TEXT, PHONE_PAGES_EMPTY_TEXT } from "../src/watch-pages/page-editor.js";
 
 const flat = (v: unknown): string => {
   if (Array.isArray(v)) return v.map(flat).join("");
@@ -272,15 +272,19 @@ describe("deleting a page on an iPhone", () => {
 });
 
 describe("the stage on an iPhone", () => {
-  it("keeps the watch frame, labelled with the phone's name", () => {
+  it("draws an iPhone, named as the iPhone 17 Pro it is drawn as", () => {
     const mine: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: U(90), name: "Mine", items: [tile(1, "light.a")] }] };
     const { el, whole } = phoneEditor(mine);
     el.selectedPageId = U(90);
     const text = whole();
-    expect(text).toContain(phoneFrameLabel("Jesse's iPhone"));
+    expect(text).toContain("iPhone 17 Pro");
     expect(text).toContain(PHONE_FRAME_TEXT);
-    expect(text).toContain("watch frame");
-    expect(phoneFrameLabel("Jesse's iPhone")).toBe("Jesse's iPhone, in a watch frame");
+    expect(text).toContain('class="wa-phone"');
+    expect(text).not.toContain('class="wa-watch"');
+    expect(text).not.toContain("watch frame");
+    expect(text).toContain("iPhone showing Mine");
+    // The tool strip's zoom is the phone's own: half the watch's 150%.
+    expect(text).toContain(">75%<");
   });
 });
 
