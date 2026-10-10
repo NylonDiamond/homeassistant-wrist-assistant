@@ -231,7 +231,11 @@ export class WaDashboardCard extends LitElement {
     const ctx = cornerContext(1, bezel);
     let box: { x: number; y: number; w: number; h: number };
     if (bezel) {
-      box = { x: 0, y: 0, w: ctx.quad.width, h: ctx.quad.height * 0.75 };
+      // The square from the screen's corner that holds the disc and the
+      // start of the bezel text, which is where a short label sits. A label
+      // long enough to run on round the dial is cut at the square's edge.
+      const side = ctx.quad.width * 0.78;
+      box = { x: 0, y: 0, w: side, h: side };
     } else {
       const side = cornerTileSide(1, false) * 1.2;
       box = { x: ctx.tile.cx - side / 2, y: ctx.tile.cy - side / 2, w: side, h: side };
