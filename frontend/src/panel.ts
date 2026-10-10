@@ -17223,7 +17223,9 @@ export class WristAssistantPanel extends LitElement {
     // a watch can reach them, and the Library reaches nothing. And only the
     // same kind of device: a watch's designs on a phone (or a phone's on a
     // watch) land on shapes it cannot draw. An orphan carries no kind, so its
-    // designs' shapes say; when they cannot tell, every device stays offered.
+    // designs' shapes say; when they cannot tell, every watch stays offered
+    // but no iPhone, which a watch's config may never move onto
+    // (`moveKindMatches`).
     const sourceKind = owner.device_kind ?? deviceKindOfShapes(this.records.flatMap((r) => {
       const shapes = r.deleted ? undefined : r.document?.supportedFamilies;
       return Array.isArray(shapes) ? (shapes.filter((f) => typeof f === "string") as FamilyKind[]) : [];

@@ -512,10 +512,17 @@ describe("Move targets by device kind", () => {
     expect(moveKindMatches("iphone", "watch")).toBe(false);
   });
 
-  it("keeps offering a target when either kind is unknown", () => {
-    expect(moveKindMatches(undefined, "iphone")).toBe(true);
+  it("keeps offering a watch, or a device of unknown kind, when either kind is unknown", () => {
     expect(moveKindMatches(null, "watch")).toBe(true);
+    expect(moveKindMatches(undefined, undefined)).toBe(true);
     expect(moveKindMatches("watch", undefined)).toBe(true);
     expect(moveKindMatches("iphone", null)).toBe(true);
+  });
+
+  it("never offers an iPhone for records that may be a watch's", () => {
+    expect(moveKindMatches(undefined, "iphone")).toBe(false);
+    expect(moveKindMatches(null, "iphone")).toBe(false);
+    expect(moveKindMatches("watch", "iphone")).toBe(false);
+    expect(moveKindMatches("library", "iphone")).toBe(false);
   });
 });

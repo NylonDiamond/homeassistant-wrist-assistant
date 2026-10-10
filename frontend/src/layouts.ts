@@ -138,13 +138,17 @@ export function deviceKindOfShapes(families: Iterable<FamilyKind>): "watch" | "i
 }
 
 /** Whether Move may offer `target` for records of a `source` kind: watch to
- * watch, iPhone to iPhone. A kind unknown on either side (an orphan whose
- * shapes say nothing, an integration from before `device_kind`) keeps the
- * target offered, as Move always did. */
+ * watch, iPhone to iPhone. An iPhone is offered only for records known to be
+ * an iPhone's: the move carries the source's watch config too, and a watch's
+ * (its Control Center, its voice, its watch only settings) has no place on a
+ * phone, so a watch is never moved onto one. Any other kind unknown on
+ * either side (an orphan whose shapes say nothing, an integration from
+ * before `device_kind`) keeps the target offered, as Move always did. */
 export function moveKindMatches(
   source: string | null | undefined,
   target: string | null | undefined,
 ): boolean {
+  if (target === "iphone") return source === "iphone";
   if (!source || !target) return true;
   return source === target;
 }

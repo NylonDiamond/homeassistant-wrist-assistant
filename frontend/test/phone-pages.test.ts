@@ -3,9 +3,12 @@
 // be the shared pick, and Pages, Menus, Status pages and Rooms open the
 // phone's own records. Without `phone_pages` everything is as it was.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { HassLike, OwnerSummary } from "../src/ha-api.js";
+import { moveKindMatches } from "../src/layouts.js";
 import { PHONE_PAGES_CAPABILITY, isPhoneId, phonePagesOn, screenTakesPhone, watchOnlyFallback } from "../src/phone-pages.js";
 import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN } from "../src/shell.js";
 import "../src/watch-control-center/control-center-editor.js";
@@ -230,6 +233,24 @@ describe("the screens a phone does not have", () => {
   it("draw their line under the row as plain words", () => {
     expect(flat(renderWatchOnlyNote("The iPhone has no voice commands."))).toContain(`<div class="wa-wr-only" role="status">`);
     expect(flat(renderWatchOnlyNote("The iPhone has no voice commands."))).toContain("<span>The iPhone has no voice commands.</span>");
+  });
+});
+
+describe("moving a lost device's designs", () => {
+  it("offers the Move list only the devices moveKindMatches lets through", () => {
+    const source = readFileSync(join(__dirname, "..", "src", "panel.ts"), "utf8");
+    const at = source.indexOf("  private renderOrphanBanner()");
+    const banner = source.slice(at, source.indexOf("\n  }\n", at));
+    expect(banner).toContain("const targets = this.owners.filter((o) => !o.is_orphan && !isLibraryOwner(o) && moveKindMatches(sourceKind, o.device_kind));");
+  });
+
+  it("never lists an iPhone for a lost watch, or for designs that cannot say", () => {
+    const targets = (sourceKind: string | undefined) => OWNERS
+      .filter((o) => !o.is_orphan && o.device_kind !== "library" && moveKindMatches(sourceKind, o.device_kind))
+      .map((o) => o.owner_watch_id);
+    expect(targets("watch")).toEqual(["w1", "w2"]);
+    expect(targets(undefined)).toEqual(["w1", "w2"]);
+    expect(targets("iphone")).toEqual(["p1"]);
   });
 });
 
