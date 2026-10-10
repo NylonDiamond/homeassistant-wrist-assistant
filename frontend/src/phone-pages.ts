@@ -43,8 +43,13 @@ export function screenTakesPhone(screen: Pick<WatchScreen, "id">): boolean {
 const WATCH_ONLY_WHAT: Partial<Record<WatchScreen["id"], string>> = {
   "control-center": "Control Center list",
   "voice": "voice commands",
-  "http-actions": "HTTP actions",
   "cameras": "camera alerts",
+};
+
+/** The line on a shared screen the phone does use: the home's HTTP actions,
+ * which a phone's pages can run as tiles too. */
+const SHARED_WITH_PHONE_TEXT: Partial<Record<WatchScreen["id"], string>> = {
+  "http-actions": "HTTP actions belong to the whole home, so the iPhone's pages use these too.",
 };
 
 /** A watch only screen opened while the row's pick is a phone: the watch it
@@ -64,7 +69,7 @@ export interface WatchOnlyFallback {
 export function watchOnlyFallback(screen: WatchScreen, owners: readonly OwnerSummary[], pick: string | undefined): WatchOnlyFallback | undefined {
   if (screenTakesPhone(screen) || !isPhoneId(owners, pick)) return undefined;
   const what = WATCH_ONLY_WHAT[screen.id] ?? screen.label;
-  if (screen.shared === true) return { watch: undefined, text: `The iPhone has no ${what}. These are for the watches.` };
+  if (screen.shared === true) return { watch: undefined, text: SHARED_WITH_PHONE_TEXT[screen.id] ?? `The iPhone has no ${what}. These are for the watches.` };
   const watches = settingsWatches(owners);
   const first = watches[0];
   if (first === undefined) return { watch: undefined, text: `The iPhone has no ${what}, and no watch has connected yet.` };

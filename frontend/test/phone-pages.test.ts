@@ -225,8 +225,8 @@ describe("the screens a phone does not have", () => {
     });
   });
 
-  it("say on a screen every watch shares that it is the watches'", () => {
-    expect(watchOnlyFallback(screen("http-actions"), OWNERS, "p1")).toEqual({ watch: undefined, text: "The iPhone has no HTTP actions. These are for the watches." });
+  it("say on a screen every watch shares whose it is: the watches' cameras, the whole home's HTTP actions", () => {
+    expect(watchOnlyFallback(screen("http-actions"), OWNERS, "p1")).toEqual({ watch: undefined, text: "HTTP actions belong to the whole home, so the iPhone's pages use these too." });
     expect(watchOnlyFallback(screen("cameras"), OWNERS, "p1")?.text).toBe("The iPhone has no camera alerts. These are for the watches.");
   });
 
