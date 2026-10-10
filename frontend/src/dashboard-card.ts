@@ -56,17 +56,14 @@ export class WaDashboardCard extends LitElement {
   private loadedFor = "";
   private countdown?: ReturnType<typeof setInterval>;
   private noteTimer?: ReturnType<typeof setTimeout>;
-  private onVisibility = () => this.syncRunning();
 
   override connectedCallback(): void {
     super.connectedCallback();
-    document.addEventListener("visibilitychange", this.onVisibility);
     this.syncRunning();
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
-    document.removeEventListener("visibilitychange", this.onVisibility);
     this.teardown();
   }
 
@@ -81,10 +78,12 @@ export class WaDashboardCard extends LitElement {
     }
   }
 
-  /** Whether this card should be live: on the page, in a visible tab, with a
-   * connection and a config. A hidden tab costs nothing. */
+  /** Whether this card should be live: on the page, with a connection and a
+   * config. A hidden tab is Home Assistant's to deal with: its frontend closes
+   * the connection after a while in the background and, on the way back,
+   * opens a new one that renews every subscription, these included. */
   private syncRunning(): void {
-    const on = this.isConnected && document.visibilityState !== "hidden" && !!this.hass && !!this.config;
+    const on = this.isConnected && !!this.hass && !!this.config;
     if (!on) {
       this.teardown();
       return;
