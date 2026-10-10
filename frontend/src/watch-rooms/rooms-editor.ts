@@ -628,6 +628,7 @@ export class WaRoomsEditor extends LitElement {
       },
       requestUpdate: () => this.requestUpdate(),
       ...(home ? { home: true } : {}),
+      ...(this.watches.find((w) => w.owner_watch_id === watchId)?.device_kind === "iphone" ? { phone: true } : {}),
     };
   }
 

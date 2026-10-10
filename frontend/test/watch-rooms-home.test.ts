@@ -20,6 +20,7 @@ import {
   HOME_ROOMS_MAIN_HOUSE_TEXT,
   HOME_ROOMS_NO_RECORD_TEXT,
   HOME_ROOMS_NO_RECORD_TITLE,
+  HOME_ROOMS_PHONE_TEXT,
   HOME_ROOMS_START_BUTTON,
   HOME_ROOMS_START_CONFLICT_TEXT,
   HOME_ROOMS_STARTED_TEXT,
@@ -449,6 +450,19 @@ describe("the rooms editor on a home that is not the main house", () => {
     await el.load("w1");
     await el.start();
     expect(el.note).toEqual({ kind: "warn", text: PAIR_FIRST_TEXT });
+  });
+
+  it("points an iPhone at its own settings, not at a main house", async () => {
+    const ha = fakeHass({ rooms: record("rooms", 3, homeRooms()) });
+    const el = editor(ha.hass, { ...owner("p1"), device_kind: "iphone", device_name: "iPhone" } as OwnerSummary);
+    (el as unknown as { phones: boolean }).phones = true;
+    await el.load("p1");
+    expect(ha.of("/get").map((m) => m.kind)).toEqual(["rooms"]);
+    expect(el.viewHost()).toMatchObject({ home: true, phone: true });
+    const text = flatten(el.renderBody(el.owners));
+    expect(text).toContain(HOME_ROOMS_PHONE_TEXT);
+    expect(text).not.toContain(HOME_ROOMS_MAIN_HOUSE_TEXT);
+    expect(HOME_ROOMS_PHONE_TEXT).not.toMatch(DASH);
   });
 
   it("asks for an update when the integration does not keep the kind", async () => {

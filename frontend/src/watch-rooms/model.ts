@@ -757,6 +757,9 @@ export function homeRoomsReadMeansUnsupported(error: unknown): boolean {
 
 /** The one line that stands for the four main house keys. */
 export const HOME_ROOMS_MAIN_HOUSE_TEXT = "Double-Tap Top, Double Pinch and the point control switches come from your main house.";
+/** The same place on an iPhone, which has no main house: its Double-Tap Top
+ * is in its own settings, and it has no Double Pinch. */
+export const HOME_ROOMS_PHONE_TEXT = "Double-Tap Top is in this iPhone's settings.";
 export const HOME_ROOMS_NO_RECORD_TITLE = "No rooms for this home yet.";
 /** The no-record line when no iPhone will send this home's rooms. */
 export const HOME_ROOMS_NO_RECORD_TEXT = "Start with no rooms to begin.";

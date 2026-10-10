@@ -29,6 +29,7 @@ import {
   FALLBACK_LABELS,
   HOME_AUTO_SWITCH_LABEL,
   HOME_ROOMS_MAIN_HOUSE_TEXT,
+  HOME_ROOMS_PHONE_TEXT,
   ZONES_UNREADABLE_TEXT,
   fallbackChoice,
   fallbackWrites,
@@ -78,6 +79,8 @@ export interface RoomsViewHost {
   /** A home that is not the watch's main house: its own `rooms` record,
    * without the four main house keys. Absent or false is the main house. */
   home?: boolean;
+  /** The device is an iPhone: always `home`, with no main house of its own. */
+  phone?: boolean;
 }
 
 const LOOK: Record<string, { color: string; icon: UiIconName }> = {
@@ -423,7 +426,7 @@ export function renderRoomsBody(host: RoomsViewHost): TemplateResult {
   if (host.home === true) {
     return html`<div class="rm-layout">
     <div class="rm-col rm-settings">
-      <p class="hint rm-main-house">${HOME_ROOMS_MAIN_HOUSE_TEXT}</p>
+      <p class="hint rm-main-house">${host.phone === true ? HOME_ROOMS_PHONE_TEXT : HOME_ROOMS_MAIN_HOUSE_TEXT}</p>
       ${renderSensorCard(host)}
       ${renderHomeSwitchingCard(host)}
     </div>
