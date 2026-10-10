@@ -239,6 +239,17 @@ describe("a copy through the editor", () => {
     expect((draft.document.pages as JsonObject[]).map((p) => p.name)).toEqual(["Mine"]);
     expect((el.note as { kind: string }).kind).toBe("ok");
   });
+
+  it("closes its question when another device opened before it ended", async () => {
+    const { el, watch, call } = phoneEditor(undefined);
+    call("openCopy");
+    await settle();
+    const running = call<Promise<void>>("runCopy");
+    el.watchId = watch;
+    await running;
+    expect(el.copying).toBe(false);
+    expect(el.copyAsk).toBeUndefined();
+  });
 });
 
 describe("the stage on an iPhone", () => {

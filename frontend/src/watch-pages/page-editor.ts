@@ -3172,7 +3172,13 @@ export class WaPageEditor extends LitElement {
       savePages: (document) => this.saveCopiedPages(hass, phone, document),
     }, { watch, watchRooms: roomsKindFor(source), phone, scope, phonePages: this.draft?.document });
     this.copying = false;
-    if (phone !== this.watchId) return;
+    if (phone !== this.watchId) {
+      // Another device opened meanwhile, and its `closeAsk` waited for the
+      // copy: the question goes now, not over that device.
+      this.renderRoot.querySelector<HTMLDialogElement>("dialog.pe-copy")?.close();
+      this.copyAsk = undefined;
+      return;
+    }
     this.closeAsk();
     this.note = phoneCopyNote(result, from);
     if (result.saved.includes("status_pages")) void this.loadStatusPages(phone);
