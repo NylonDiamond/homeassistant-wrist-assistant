@@ -122,7 +122,7 @@ import {
   mayStart,
   noRecordStart,
   noRecordText,
-  settingsWatches,
+  watchAppDevices,
   watchName,
 } from "../watch-settings.js";
 import {
@@ -362,6 +362,9 @@ export class WaMenuEditor extends LitElement {
    * other screens, so the bar leaves out its own watch picker, the way back
    * to complications and Pages. Off, the bar is as it always was. */
   @property({ attribute: false }) shellOwnsWatch = false;
+  /** The home keeps phone pages (`phone-pages.ts`): an iPhone is a device
+   * this element opens too, on its own menus. */
+  @property({ attribute: false }) phones = false;
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -454,7 +457,7 @@ export class WaMenuEditor extends LitElement {
   private readyConnection?: HassConnectionEvents;
 
   private get watches(): OwnerSummary[] {
-    return settingsWatches(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
+    return watchAppDevices(this.owners.length > 0 ? this.owners : (this.ownList ?? []), this.phones);
   }
 
   private get draft(): WatchMenusDraft | undefined {

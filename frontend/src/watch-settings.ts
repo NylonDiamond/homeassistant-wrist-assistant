@@ -523,6 +523,27 @@ export function settingsWatches(owners: readonly OwnerSummary[]): OwnerSummary[]
   return owners.filter((o) => deviceKindOf(o) === "watch" && !o.is_orphan);
 }
 
+/**
+ * The devices the Watch app's own screens list: the watches, then the
+ * iPhones when the home has phone pages (`phones`, see `phone-pages.ts`).
+ * A phone keeps its own pages, status pages, menus, rooms and settings, read
+ * and saved like a watch's and never from one. No Library, no orphan.
+ */
+export function watchAppDevices(owners: readonly OwnerSummary[], phones: boolean): OwnerSummary[] {
+  const watches = settingsWatches(owners);
+  if (!phones) return watches;
+  return [...watches, ...owners.filter((o) => deviceKindOf(o) === "iphone" && !o.is_orphan)];
+}
+
+/** The catalog's sections as one device reads them: only the settings whose
+ * `devices` names it, and no section left empty. A setting that names no
+ * device is the watch's alone. */
+export function catalogFor(device: SettingDevice, catalog: WatchSettingsCatalog = WATCH_SETTINGS_CATALOG): CatalogSection[] {
+  return catalog.sections
+    .map((section) => ({ ...section, settings: section.settings.filter((s) => (s.devices ?? ["watch"]).includes(device)) }))
+    .filter((section) => section.settings.length > 0);
+}
+
 /** A watch's name in the tabs and the head. Both real watches report
  * themselves as "Apple Watch", so a name two watches share takes the paired
  * phone's, the way the panel's device list tells them apart. */

@@ -411,7 +411,8 @@ import {
 import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard } from "./watch-pair-view.js";
-import { settingsWatches } from "./watch-settings.js";
+import { settingsWatches, watchAppDevices } from "./watch-settings.js";
+import { phonePagesOn } from "./phone-pages.js";
 import {
   formButtonStyles,
   formEntityStyles,
@@ -1524,6 +1525,11 @@ export class WristAssistantPanel extends LitElement {
   @state() private readOnlyReason?: string;
   @state() private parseError?: string;
   @state() private maxSchemaVersion = 7;
+  /** The integration keeps phone pages (`phone-pages.ts`), from the owners
+   * reply's capabilities: the Watch app lists the iPhones after the
+   * watches, and Pages, Menus, Status pages, Rooms and Settings edit a
+   * phone's own records. */
+  @state() private phonePages = false;
   /** iPhone presets on the selected watch (slot + name). freeSlot() skips
    * their slots; the list shows them as locked rows. */
   @state() private presets: { slot: number; name: string }[] = [];
@@ -6426,10 +6432,11 @@ export class WristAssistantPanel extends LitElement {
     }
     // A watch the address names (a link from the iPhone app, a bookmark, a
     // screen link in the row) becomes the Watch app's remembered watch, once
-    // the device list is in and lists it as a watch of this home. On a first
-    // load the list arrives later, and its arrival runs this again.
-    if (changed.has("route") || changed.has("owners")) {
-      const next = adoptRouteWatch(this.watchPick, watchRouteOwner(this.route), settingsWatches(this.owners));
+    // the device list is in and lists it as a watch of this home (or an
+    // iPhone, on a home with phone pages). On a first load the list arrives
+    // later, and its arrival runs this again.
+    if (changed.has("route") || changed.has("owners") || changed.has("phonePages")) {
+      const next = adoptRouteWatch(this.watchPick, watchRouteOwner(this.route), this.watchAppDevices);
       if (next !== undefined && next !== this.watchPick) this.rememberWatch(next);
     }
     // Home counts every device's complications, so coming back to it reads
@@ -6871,6 +6878,7 @@ export class WristAssistantPanel extends LitElement {
   private async loadOwners() {
     try {
       const reply = await fetchOwners(this.hass);
+      this.phonePages = phonePagesOn(reply.capabilities);
       this.owners = reply.owners;
       this.ownersReadAt = Date.now();
       this.maxSchemaVersion = reply.max_schema_version;
@@ -10735,11 +10743,17 @@ export class WristAssistantPanel extends LitElement {
    * when nothing else is known; picking a complication never moves it.
    */
   private get sharedWatch(): string | undefined {
-    return resolveWatchPick(settingsWatches(this.owners), {
+    return resolveWatchPick(this.watchAppDevices, {
       route: watchRouteOwner(this.route),
       saved: this.watchPick,
       fallback: this.ownerId,
     });
+  }
+
+  /** The devices the Watch app row offers: the watches, then the iPhones on
+   * a home with phone pages. */
+  private get watchAppDevices(): OwnerSummary[] {
+    return watchAppDevices(this.owners, this.phonePages);
   }
 
   /** Remember the shared watch, for this visit and the next. */
@@ -10781,6 +10795,7 @@ export class WristAssistantPanel extends LitElement {
       route: this.route,
       owners: this.owners,
       watch: this.sharedWatch,
+      phones: this.phonePages,
       loaded: this.linkReady || this.owners.length > 0,
       menuOpen: this.watchRowMenu,
       onMenu: (open) => this.toggleWatchRowMenu(open),
@@ -10831,6 +10846,7 @@ export class WristAssistantPanel extends LitElement {
         onBack: () => this.goTo(COMPLICATIONS_PATH),
         actions: nothing,
         shell: true,
+        phones: this.phonePages,
         dialogs: nothing,
         onLoaded: () => this.requestUpdate(),
       }));
@@ -10844,6 +10860,7 @@ export class WristAssistantPanel extends LitElement {
         onBack: () => this.goTo(COMPLICATIONS_PATH),
         actions: nothing,
         shell: true,
+        phones: this.phonePages,
         dialogs: nothing,
         onLoaded: () => this.requestUpdate(),
       }));
@@ -10871,6 +10888,7 @@ export class WristAssistantPanel extends LitElement {
         onBack: () => this.goTo(COMPLICATIONS_PATH),
         actions: nothing,
         shell: true,
+        phones: this.phonePages,
         dialogs: nothing,
         onLoaded: () => this.requestUpdate(),
       }));
@@ -10898,6 +10916,7 @@ export class WristAssistantPanel extends LitElement {
         onBack: () => this.goTo(COMPLICATIONS_PATH),
         actions: nothing,
         shell: true,
+        phones: this.phonePages,
         dialogs: nothing,
         onLoaded: () => this.requestUpdate(),
       }));

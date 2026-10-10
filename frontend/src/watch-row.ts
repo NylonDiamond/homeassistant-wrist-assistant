@@ -7,6 +7,11 @@
 // never name one and a pick on them changes nothing they show. What can be worked out without
 // the panel lives here, where a test can reach it.
 //
+// On a home with phone pages (`phone-pages.ts`) the menu lists the iPhones
+// after the watches, each with a phone glyph, and a phone can be the shared
+// pick: Pages, Menus, Status pages, Rooms and Settings then edit the phone's
+// own records.
+//
 // The row is neutral, like the tabs: the screen on show is marked by weight
 // and a grey fill, never by a hue. Every link and button is a box with a one
 // pixel outline. It wraps on a narrow screen rather than scroll sideways.
@@ -16,26 +21,31 @@ import type { OwnerSummary } from "./ha-api.js";
 import { type DeviceSync, deviceSync, deviceSyncLabel } from "./send-state.js";
 import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, isPlainClick, panelUrl, watchScreenOf, watchScreenPath } from "./shell.js";
 import { uiIcon } from "./ui-icons.js";
+import { deviceKindOf } from "./version.js";
 import type { PanelRoute } from "./watch-pages/hook.js";
-import { settingsWatches, watchName } from "./watch-settings.js";
+import { watchAppDevices, watchName } from "./watch-settings.js";
 
-/** One watch in the row's menu. */
+/** One device in the row's menu. */
 export interface WatchRowChoice {
   id: string;
   name: string;
+  /** A watch, or an iPhone on a home with phone pages. */
+  kind: "watch" | "iphone";
   /** Its complications and widgets, by the rule Home's Devices card uses. */
   sync: DeviceSync | undefined;
-  /** The watch on show. */
+  /** The device on show. */
   on: boolean;
 }
 
-/** The home's watches as the row's menu lists them: watches only (no phone,
- * no Library, no orphan), named as every watch screen names them. */
-export function watchRowChoices(owners: readonly OwnerSummary[], current: string | undefined): WatchRowChoice[] {
-  const watches = settingsWatches(owners);
+/** The home's devices as the row's menu lists them: the watches, then the
+ * iPhones when the home has phone pages (`phones`); never the Library or an
+ * orphan. Named as every watch screen names them. */
+export function watchRowChoices(owners: readonly OwnerSummary[], current: string | undefined, phones = false): WatchRowChoice[] {
+  const watches = watchAppDevices(owners, phones);
   return watches.map((w) => ({
     id: w.owner_watch_id,
     name: watchName(w, watches),
+    kind: deviceKindOf(w) === "iphone" ? "iphone" : "watch",
     sync: deviceSync({
       name: w.device_name ?? w.owner_watch_id,
       kind: w.device_kind,
@@ -86,8 +96,10 @@ export const WATCH_ROW_NONE_NOTE = "No watch has connected yet. Pair one to set 
 export interface WatchRowInput {
   route: PanelRoute | undefined;
   owners: readonly OwnerSummary[];
-  /** The shared watch. */
+  /** The shared watch, or an iPhone on a home with phone pages. */
   watch: string | undefined;
+  /** The home has phone pages: the menu lists the iPhones too. */
+  phones?: boolean;
   /** Whether the device list has been read, so "no watch" is the truth. */
   loaded: boolean;
   menuOpen: boolean;
@@ -98,9 +110,17 @@ export interface WatchRowInput {
   onGo: (path: string) => void;
 }
 
+/** The Settings link's hover text, for the device on show. */
+export function watchRowSettingsTitle(kind: WatchRowChoice["kind"] | undefined): string {
+  return kind === "iphone"
+    ? "How the iPhone app behaves: gestures, pages and cameras"
+    : "How the watch behaves: gestures, pages, cameras and connection";
+}
+
 export function renderWatchRow(input: WatchRowInput): TemplateResult {
-  const choices = watchRowChoices(input.owners, input.watch);
+  const choices = watchRowChoices(input.owners, input.watch, input.phones === true);
   const slot = watchRowSlot(input.loaded, choices.length);
+  const shown = choices.find((c) => c.on) ?? choices[0];
   const href = (path: string) => panelUrl(input.route, path, globalThis.location?.pathname ?? "");
   const link = (l: WatchRowLink, cls = "", title?: string) => html`<a class="wa-wr-link ${cls}${l.on ? "on" : ""}"
     href=${href(l.path)} aria-current=${l.on ? "page" : "false"} title=${title ?? nothing}
@@ -114,8 +134,7 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
     ${slot === "none" ? html`<span class="wa-wr-note">${WATCH_ROW_NONE_NOTE}</span>` : nothing}
     <span class="wa-wr-links">
       ${slot === "none" ? nothing : watchRowLinks(input.route, input.watch).map((l) => link(l))}
-      ${link(watchRowSettingsLink(input.route, input.watch), "wa-wr-settings ",
-        "How the watch behaves: gestures, pages, cameras and connection")}
+      ${link(watchRowSettingsLink(input.route, input.watch), "wa-wr-settings ", watchRowSettingsTitle(shown?.kind))}
     </span>
   </nav>`;
 }
@@ -130,29 +149,34 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
       @click=${() => { if (!settings.on) input.onGo(settings.path); }}>${uiIcon("watch")}<span>Pair a watch</span></button>`;
   }
   const current = choices.find((c) => c.on) ?? choices[0]!;
+  const word = current.kind === "iphone" ? "iPhone" : "Watch";
+  const chip = html`<span class="wa-wr-chip" aria-hidden="true">${uiIcon(current.kind === "iphone" ? "phone" : "watch")}</span><span class="wa-wr-k">${word}</span>`;
   if (slot === "one") {
-    return html`<span class="wa-wr-watch"><span class="wa-wr-chip" aria-hidden="true">${uiIcon("watch")}</span><span class="wa-wr-k">Watch</span><b class="wa-wr-name">${current.name}</b></span>`;
+    return html`<span class="wa-wr-watch">${chip}<b class="wa-wr-name">${current.name}</b></span>`;
   }
   const open = input.menuOpen;
+  const phones = input.phones === true;
   return html`<span class="wa-wr-picker" @keydown=${(e: KeyboardEvent) => {
       if (e.key === "Escape" && open) { e.stopPropagation(); input.onMenu(false); }
     }}>
     <button type="button" class="wa-wr-open" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
-      title="Pick the watch to set up" aria-label=${`Watch: ${current.name}. Pick another`}
+      title=${phones ? "Pick the watch or iPhone to set up" : "Pick the watch to set up"} aria-label=${`${word}: ${current.name}. Pick another`}
       @click=${() => input.onMenu(!open)}>
-      <span class="wa-wr-chip" aria-hidden="true">${uiIcon("watch")}</span><span class="wa-wr-k">Watch</span><b class="wa-wr-name">${current.name}</b>${uiIcon("chevron")}
+      ${chip}<b class="wa-wr-name">${current.name}</b>${uiIcon("chevron")}
     </button>
-    ${open ? html`<div class="wa-wr-menu" role="menu" aria-label="Watches">
+    ${open ? html`<div class="wa-wr-menu" role="menu" aria-label=${phones ? "Devices" : "Watches"}>
       <div class="wa-wr-menu-h">You are editing</div>
       ${choices.map((c) => html`<button type="button" class="wa-wr-row ${c.on ? "on" : ""}" role="menuitemradio"
-        aria-checked=${c.on ? "true" : "false"} data-watch=${c.id}
+        aria-checked=${c.on ? "true" : "false"} data-watch=${c.id} data-kind=${c.kind}
         title=${c.sync ? `Complications and widgets: ${deviceSyncLabel(c.sync)}` : nothing}
         @click=${() => { input.onMenu(false); if (!c.on) input.onPick(c.id); }}>
-        <i class="wa-wr-dot ${c.sync ?? ""}" aria-hidden="true"></i><span class="wa-wr-row-name">${c.name}</span>
+        <i class="wa-wr-dot ${c.sync ?? ""}" aria-hidden="true"></i>${phones
+          ? html`<span class="wa-wr-kind" aria-hidden="true">${uiIcon(c.kind === "iphone" ? "phone" : "watch")}</span>`
+          : nothing}<span class="wa-wr-row-name">${c.name}</span>
         ${c.on ? html`<span class="wa-wr-check" aria-hidden="true">${uiIcon("check")}</span>`
           : c.sync === "synced" || c.sync === "waiting" ? html`<span class="wa-wr-sync">${deviceSyncLabel(c.sync)}</span>` : nothing}
       </button>`)}
-      <p class="wa-wr-menu-note">${WATCH_ROW_PHONES_NOTE}</p>
+      ${phones ? nothing : html`<p class="wa-wr-menu-note">${WATCH_ROW_PHONES_NOTE}</p>`}
     </div>` : nothing}
   </span>`;
 }
@@ -216,6 +240,8 @@ export const watchRowStyles = css`
   button.wa-wr-row:hover { background: var(--wa-hover); border-color: var(--wa-line-strong); }
   button.wa-wr-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.wa-wr-row.on { font-weight: 600; background: color-mix(in srgb, var(--wa-ink) 10%, transparent); border-color: var(--wa-line-strong); }
+  .wa-wr-kind { display: inline-flex; flex: none; color: var(--wa-muted); }
+  .wa-wr-kind svg.ui-icon { width: 13px; height: 13px; }
   .wa-wr-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wa-wr-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--wa-muted); }
   .wa-wr-dot.synced { background: var(--wa-green); }

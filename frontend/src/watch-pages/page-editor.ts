@@ -114,7 +114,7 @@ import {
   mayStart,
   noRecordStart,
   noRecordText,
-  settingsWatches,
+  watchAppDevices,
   watchName,
   watchRecordUnreadable,
 } from "../watch-settings.js";
@@ -662,6 +662,9 @@ export class WaPageEditor extends LitElement {
    * other screens, so the bar leaves out its own watch picker, the way back
    * to complications and Menus. Off, the bar is as it always was. */
   @property({ attribute: false }) shellOwnsWatch = false;
+  /** The home keeps phone pages (`phone-pages.ts`): an iPhone is a device
+   * this element opens too, on its own pages. Off, it opens watches only. */
+  @property({ attribute: false }) phones = false;
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -872,7 +875,7 @@ export class WaPageEditor extends LitElement {
   private readyConnection?: HassConnectionEvents;
 
   private get watches(): OwnerSummary[] {
-    return settingsWatches(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
+    return watchAppDevices(this.owners.length > 0 ? this.owners : (this.ownList ?? []), this.phones);
   }
 
   /** The draft of the watch on screen, while there is a record to edit. */

@@ -22,12 +22,19 @@ const count = (text: string, part: string) => text.split(part).length - 1;
 describe("the panel's shared watch", () => {
   it("works it out from the address, the remembered pick and today's choice, never storing the complications device", () => {
     const get = method("  private get sharedWatch()");
-    expect(get).toContain("resolveWatchPick(settingsWatches(this.owners), {");
+    expect(get).toContain("resolveWatchPick(this.watchAppDevices, {");
     expect(get).toContain("route: watchRouteOwner(this.route),");
     expect(get).toContain("saved: this.watchPick,");
     expect(get).toContain("fallback: this.ownerId,");
     expect(SOURCE).not.toMatch(/watchPick = this\.ownerId/);
     expect(SOURCE).not.toMatch(/rememberWatch\(this\.ownerId/);
+  });
+
+  it("offers the iPhones after the watches only on a home with phone pages", () => {
+    expect(method("  private get watchAppDevices()")).toContain("return watchAppDevices(this.owners, this.phonePages);");
+    const load = method("  private async loadOwners() {");
+    expect(load).toContain("this.phonePages = phonePagesOn(reply.capabilities);");
+    expect(load.indexOf("this.phonePages =")).toBeLessThan(load.indexOf("this.owners = reply.owners;"));
   });
 
   it("remembers it per browser, read once on connect", () => {
@@ -37,8 +44,8 @@ describe("the panel's shared watch", () => {
 
   it("makes a watch the address names the remembered one", () => {
     const will = method("  protected override willUpdate(changed");
-    expect(will).toContain(`if (changed.has("route") || changed.has("owners")) {`);
-    expect(will).toContain("adoptRouteWatch(this.watchPick, watchRouteOwner(this.route), settingsWatches(this.owners))");
+    expect(will).toContain(`if (changed.has("route") || changed.has("owners") || changed.has("phonePages")) {`);
+    expect(will).toContain("adoptRouteWatch(this.watchPick, watchRouteOwner(this.route), this.watchAppDevices)");
     expect(will).toContain("this.rememberWatch(next)");
   });
 
@@ -63,6 +70,15 @@ describe("the watch screens under the row", () => {
     expect(tab).not.toContain("watchSettings.renderButton");
     expect(tab).not.toContain("watchSettings.render(");
     expect(tab).not.toMatch(/RouteOwner\(this\.route\) \?\? this\.ownerId/);
+  });
+
+  it("lets the four screens a phone has open an iPhone on a home with phone pages, and no other", () => {
+    for (const view of ["renderWatchPagesView", "renderWatchMenusView", "renderWatchStatusPagesView", "renderWatchRoomsView"]) {
+      const at = tab.indexOf(`return this.withWatchRow(${view}({`);
+      expect(tab.slice(at, tab.indexOf("}));", at)), view).toContain("phones: this.phonePages,");
+    }
+    expect(count(tab, "phones: this.phonePages,")).toBe(4);
+    expect(method("  private withWatchRow(")).toContain("phones: this.phonePages,");
   });
 
   it("puts HTTP actions under the row too, handed no watch, as every watch shares it", () => {

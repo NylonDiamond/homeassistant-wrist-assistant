@@ -27,7 +27,9 @@
 // six room keys under their `behavior` names and a `schemaVersion`. The four
 // keys that stay with the main house's settings (Double-Tap Top, Double
 // Pinch and the two point control switches) are neither shown nor written
-// there, and the editor can start that record itself.
+// there, and the editor can start that record itself. An iPhone keeps its
+// rooms the same way, on every home: its `behavior` record holds only the
+// phone's own settings, so its room keys live in `rooms`.
 //
 // Plans: app repo docs/pages_in_home_assistant_step4.md, "4d batch 5", 5b,
 // and docs/phone_watch_link_removal_2026-10.md, "Step 8 build contract".
@@ -666,11 +668,12 @@ export function fallbackChoice(stored: string): "stay" | "first" | "page" {
  * main house, a `rooms` record of their own on any other home. */
 export type RoomsKind = "behavior" | "rooms";
 
-/** The kind for the watch being edited. Only an explicit `main_house: false`
- * moves the rooms out of `behavior`: an older integration, and a watch with
- * one home, keep them where they always were. */
-export function roomsKindFor(owner: Pick<OwnerSummary, "main_house"> | undefined): RoomsKind {
-  return takesSettingsFromAnotherHome(owner) ? "rooms" : "behavior";
+/** The kind for the device being edited. Only an explicit `main_house: false`
+ * moves a watch's rooms out of `behavior`: an older integration, and a watch
+ * with one home, keep them where they always were. An iPhone's are always in
+ * `rooms`, since its `behavior` keeps none of the room keys. */
+export function roomsKindFor(owner: Pick<OwnerSummary, "main_house" | "device_kind"> | undefined): RoomsKind {
+  return owner?.device_kind === "iphone" || takesSettingsFromAnotherHome(owner) ? "rooms" : "behavior";
 }
 
 /** `schemaVersion` of a `rooms` record. */

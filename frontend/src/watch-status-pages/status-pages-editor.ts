@@ -71,7 +71,7 @@ import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/edito
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
 import { watchFrameStyles } from "../watch-frame.js";
-import { START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, settingsWatches, watchName } from "../watch-settings.js";
+import { START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, watchAppDevices, watchName } from "../watch-settings.js";
 import {
   type StatusPagesDraft,
   anyStatusPagesDirty,
@@ -211,6 +211,9 @@ export class WaStatusPagesEditor extends LitElement {
    * other screens, so the bar leaves out its own watch picker and the way
    * back to complications. Off, the bar is as it always was. */
   @property({ attribute: false }) shellOwnsWatch = false;
+  /** The home keeps phone pages (`phone-pages.ts`): an iPhone is a device
+   * this element opens too, on its own status pages. */
+  @property({ attribute: false }) phones = false;
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -258,7 +261,7 @@ export class WaStatusPagesEditor extends LitElement {
   private readyConnection?: HassConnectionEvents;
 
   private get watches(): OwnerSummary[] {
-    return settingsWatches(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
+    return watchAppDevices(this.owners.length > 0 ? this.owners : (this.ownList ?? []), this.phones);
   }
 
   private get draft(): StatusPagesDraft | undefined {

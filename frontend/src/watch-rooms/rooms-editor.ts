@@ -68,7 +68,7 @@ import {
 import { watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { asWatchPagesDocument } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
-import { PAIR_FIRST_TEXT, START_FRESH_BUTTON, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, settingsWatches, watchName } from "../watch-settings.js";
+import { PAIR_FIRST_TEXT, START_FRESH_BUTTON, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, watchAppDevices, watchName } from "../watch-settings.js";
 import { type RoomsDraft, anyRoomsDirty, dropAllRooms, forgetRoomsDraft, keptRoomsDraft, saveRoomsDraft, takeRoomsRecord } from "./draft.js";
 import { WATCH_ROOMS_HELP_URL, navigateWatchRooms, registerWatchRoomsDrafts } from "./hook.js";
 import {
@@ -195,6 +195,9 @@ export class WaRoomsEditor extends LitElement {
    * other screens, so the bar leaves out its own watch picker and the way
    * back to complications. Off, the bar is as it always was. */
   @property({ attribute: false }) shellOwnsWatch = false;
+  /** The home keeps phone pages (`phone-pages.ts`): an iPhone is a device
+   * this element opens too, on its own `rooms` record (`roomsKindFor`). */
+  @property({ attribute: false }) phones = false;
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -240,7 +243,7 @@ export class WaRoomsEditor extends LitElement {
   private readyConnection?: HassConnectionEvents;
 
   private get watches(): OwnerSummary[] {
-    return settingsWatches(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
+    return watchAppDevices(this.owners.length > 0 ? this.owners : (this.ownList ?? []), this.phones);
   }
 
   /** The record the shown watch's rooms live in on this home: `behavior` on

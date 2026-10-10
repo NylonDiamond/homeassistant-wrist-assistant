@@ -152,6 +152,9 @@ export interface WatchPagesViewInput {
    * follows `ownerId` and leaves out its own watch picker, the way back and
    * its links to the other screens. Left out, the editor is as it was. */
   shell?: boolean;
+  /** The home keeps phone pages (`phone-pages.ts`): the editor opens an
+   * iPhone too, on the phone's own pages. */
+  phones?: boolean;
   /** To the menu editor. Without it the editor goes there from the address
    * bar (`navigateMenusFromPages`). */
   onMenus?: () => void;
@@ -176,7 +179,8 @@ export function renderWatchPagesView(input: WatchPagesViewInput): TemplateResult
       ? html`<wa-page-editor .hass=${input.hass} .owners=${input.owners} .ownerId=${input.ownerId}
           .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}
           .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack} .onMenus=${input.onMenus}
-          .barActions=${input.actions} .shellOwnsWatch=${input.shell === true}></wa-page-editor>`
+          .barActions=${input.actions} .shellOwnsWatch=${input.shell === true}
+          .phones=${input.phones === true}></wa-page-editor>`
       : html`<div class="wp-loading">
           ${input.shell === true ? nothing : html`<button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>`}
           ${loadFailed ? html`<span>The page editor did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}

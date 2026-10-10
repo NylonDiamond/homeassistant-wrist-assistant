@@ -16,8 +16,14 @@
 // A watch the address names also becomes the remembered pick, so the next
 // visit without one opens on it, but only once the device list says it is a
 // watch of this home.
+//
+// On a home with phone pages the list the panel hands in holds the iPhones
+// too, after the watches (`watchAppDevices`), and a phone can be the pick by
+// the address or by a pick in the row. Today's fallback still never lands on
+// one: it is a watch whenever the home has any.
 
 import type { OwnerSummary } from "./ha-api.js";
+import { deviceKindOf } from "./version.js";
 import { watchControlCenterRouteOwner } from "./watch-control-center/hook.js";
 import { watchMenusRouteOwner } from "./watch-menus/hook.js";
 import { type PanelRoute, watchPagesRouteOwner } from "./watch-pages/hook.js";
@@ -63,7 +69,7 @@ export function resolveWatchPick(watches: readonly OwnerSummary[], input: WatchP
   const listed = (id: string | undefined) => id !== undefined && watches.some((w) => w.owner_watch_id === id);
   if (listed(input.route)) return input.route;
   if (listed(input.saved)) return input.saved;
-  return initialWatch(watches, input.fallback);
+  return initialWatch(watches.filter((w) => deviceKindOf(w) === "watch"), input.fallback) ?? watches[0]?.owner_watch_id;
 }
 
 /** The pick to remember once the address names a watch: that watch, once

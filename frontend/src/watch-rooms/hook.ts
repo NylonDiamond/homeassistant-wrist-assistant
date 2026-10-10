@@ -121,6 +121,8 @@ export interface WatchRoomsViewInput {
    * follows `ownerId` and leaves out its own watch picker, the way back and
    * its links to the other screens. Left out, the editor is as it was. */
   shell?: boolean;
+  /** The home keeps phone pages: the editor opens an iPhone too. */
+  phones?: boolean;
   /** Buttons for the right of the bar: the panel's Watch settings. */
   actions: TemplateResult | typeof nothing;
   /** Dialogs the bar's buttons open. */
@@ -139,7 +141,8 @@ export function renderWatchRoomsView(input: WatchRoomsViewInput): TemplateResult
     ${ready
       ? html`<wa-rooms-editor .hass=${input.hass} .owners=${input.owners} .ownerId=${input.ownerId}
           ?narrow=${input.narrow} .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack}
-          .barActions=${input.actions} .shellOwnsWatch=${input.shell === true}></wa-rooms-editor>`
+          .barActions=${input.actions} .shellOwnsWatch=${input.shell === true}
+          .phones=${input.phones === true}></wa-rooms-editor>`
       : html`<div class="wp-loading">
           ${input.shell === true ? nothing : html`<button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>`}
           ${loadFailed ? html`<span>The Rooms editor did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
