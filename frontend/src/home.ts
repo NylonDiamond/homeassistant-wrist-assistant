@@ -144,13 +144,21 @@ export type DeviceSheetTab =
  * its complications, then every watch screen that belongs to one watch, then
  * Settings; HTTP actions and Cameras are the home's, not a watch's, so they
  * stay on Home's Watch app card. An iPhone has its widgets and its Control
- * Center controls, which is all the panel holds for a phone.
+ * Center controls, and on a home with phone pages (`phones`) its own Pages
+ * first and its Settings last, both in the iPhone app.
  */
-export function deviceSheetTabs(kind: "watch" | "iphone"): DeviceSheetTab[] {
+export function deviceSheetTabs(kind: "watch" | "iphone", phones = false): DeviceSheetTab[] {
   if (kind === "iphone") {
-    return [
+    const lists: DeviceSheetTab[] = [
       { kind: "list", label: "Widgets", filter: "all" },
       { kind: "list", label: "Control Center", filter: "control" },
+    ];
+    if (!phones) return lists;
+    const pages = WATCH_SCREENS[0]!;
+    return [
+      { kind: "screen", label: pages.label, screen: pages, count: "pages" },
+      ...lists,
+      { kind: "screen", label: WATCH_SETTINGS_SCREEN.label, screen: WATCH_SETTINGS_SCREEN },
     ];
   }
   const tabs: DeviceSheetTab[] = [{ kind: "list", label: "Complications", filter: "all" }];
@@ -164,10 +172,11 @@ export function deviceSheetTabs(kind: "watch" | "iphone"): DeviceSheetTab[] {
 /** The count tiles on a device's card on Home, each a door to that page on
  * this device: the sheet's tabs that carry a count. A watch has its
  * complications, then its pages, status pages and Control Center; an iPhone
- * has its widgets and its Control Center controls. Settings, which counts
- * nothing, is the card's own door. */
-export function deviceCardTiles(kind: "watch" | "iphone"): DeviceSheetTab[] {
-  return deviceSheetTabs(kind).filter((t) => t.kind === "list" || t.count !== undefined);
+ * has its widgets and its Control Center controls, after its pages on a
+ * home with phone pages. Settings, which counts nothing, is the card's own
+ * door. */
+export function deviceCardTiles(kind: "watch" | "iphone", phones = false): DeviceSheetTab[] {
+  return deviceSheetTabs(kind, phones).filter((t) => t.kind === "list" || t.count !== undefined);
 }
 
 /** A tile's word under its number: the page's name, cut to one short word
@@ -183,7 +192,9 @@ export function countWord(label: string, n: number | undefined): string {
   return n === 1 && word.endsWith("s") && word !== "status" ? word.slice(0, -1) : word;
 }
 
-/** Each watch's item counts, read off the watch config summary's `items`.
+/** Each watch's item counts, read off the watch config summary's `items`;
+ * an iPhone's too, on a home with phone pages, whose records it lists the
+ * same way.
  * A kind with no record counts none, and so does a watch the summary leaves
  * out, which has no records at all. An integration older than the field
  * sends `items` on no record, and then nothing is given, so the cards show

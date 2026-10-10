@@ -110,6 +110,15 @@ describe("deviceSheetTabs", () => {
     ]);
   });
 
+  it("gives an iPhone its own Pages first and its Settings last on a home with phone pages", () => {
+    const tabs = deviceSheetTabs("iphone", true);
+    expect(tabs.map((t) => t.label)).toEqual(["Pages", "Widgets", "Control Center", "Settings"]);
+    expect(tabs[0]).toMatchObject({ kind: "screen", count: "pages" });
+    expect(tabs.at(-1)).toMatchObject({ kind: "screen" });
+    expect(tabs.at(-1)).not.toHaveProperty("count");
+    expect(deviceSheetTabs("watch", true)).toEqual(deviceSheetTabs("watch"));
+  });
+
   it("puts a count on Pages, Status pages and Control Center", () => {
     const counted = deviceSheetTabs("watch").flatMap((t) => t.kind === "screen" && t.count ? [`${t.label}:${t.count}`] : []);
     expect(counted).toEqual(["Pages:pages", "Status pages:status_pages", "Control Center:control_center"]);
@@ -122,6 +131,11 @@ describe("deviceCardTiles", () => {
   it("gives a watch a tile for each counted page, and an iPhone its widgets and controls", () => {
     expect(labels("watch")).toEqual(["Complications", "Pages", "Status pages", "Control Center"]);
     expect(labels("iphone")).toEqual(["Widgets", "Control Center"]);
+  });
+
+  it("puts an iPhone's pages before its widgets on a home with phone pages", () => {
+    expect(deviceCardTiles("iphone", true).map((t) => t.label)).toEqual(["Pages", "Widgets", "Control Center"]);
+    expect(deviceCardTiles("iphone", true).map((t) => countWord(t.label, 2))).toEqual(["pages", "widgets", "controls"]);
   });
 
   it("cuts a two word page name to one under the number", () => {

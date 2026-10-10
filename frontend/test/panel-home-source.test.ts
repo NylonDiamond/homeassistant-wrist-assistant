@@ -79,7 +79,7 @@ describe("Home's device cards", () => {
   });
 
   it("has a count tile per page, each opening that page on this device", () => {
-    expect(card).toContain("deviceCardTiles(d.kind).map((t) => this.renderHomeTile(t, d, owner))");
+    expect(card).toContain("deviceCardTiles(d.kind, this.phonePages).map((t) => this.renderHomeTile(t, d, owner))");
     expect(tile).toContain("this.pickPickerTab(d.id);");
     expect(tile).toContain("this.pickerFilter = t.filter;");
     expect(tile).toContain("if (this.draft) this.openPicker();");
@@ -135,7 +135,9 @@ describe("Home's status row", () => {
 
   it("reads the counts from the same summary as the watch app's state", () => {
     const load = method("  private async loadWatchAppSync(again: boolean) {");
-    expect(load).toContain("counts = summaryCounts(summary, watches);");
+    expect(load).toContain("const phones = this.rowPhones.map((p) => p.owner_watch_id);");
+    expect(load).toContain("const key = watchAppSyncKey([...watches, ...phones]);");
+    expect(load).toContain("counts = summaryCounts(summary, [...watches, ...phones]);");
     expect(load).toContain("this.watchCounts = counts;");
   });
 
@@ -170,9 +172,10 @@ describe("Home's device sheet", () => {
     expect(sheet).toContain("badge(t.count === undefined ? undefined : counts[t.count])");
   });
 
-  it("reads a watch's counts when its sheet opens, dropping a late reply", () => {
+  it("reads a watch's counts when its sheet opens, and an iPhone's pages on a home with phone pages, dropping a late reply", () => {
     expect(method("  private openDeviceSheet(ownerId: string, forget = false) {")).toContain("void this.loadDeviceCounts(ownerId);");
     const load = method("  private async loadDeviceCounts(ownerId: string) {");
+    expect(load).toContain(`: device === "iphone" && this.phonePages ? ["pages"] : [];`);
     expect(load).toContain("watchConfigCount(kind, record.document)");
     expect(load).toContain("if (this.deviceSheet !== ownerId) return;");
   });
@@ -192,7 +195,7 @@ describe("Home's device sheet", () => {
   });
 
   it("has a tab for each of the device's pages, each opening it on this device", () => {
-    expect(sheet).toContain("${deviceSheetTabs(row.kind).map(tab)}");
+    expect(sheet).toContain("${deviceSheetTabs(row.kind, this.phonePages).map(tab)}");
     expect(sheet).toContain("const path = deviceScreenPath(row.kind, t.screen, ownerId);");
     expect(sheet).toContain("this.pickWatch(ownerId);");
     expect(sheet).toContain("this.pickerFilter = filter;");

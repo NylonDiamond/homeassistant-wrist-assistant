@@ -11219,11 +11219,13 @@ export class WristAssistantPanel extends LitElement {
    * kind per watch. Any other failure leaves the card as it was: on
    * complications alone the first time, on the last reading after that.
    * Without `again`, nothing is read when the same watches were read
-   * already.
+   * already. The same answer counts each iPhone's pages, on a home with
+   * phone pages.
    */
   private async loadWatchAppSync(again: boolean) {
     const watches = settingsWatches(this.owners).map((w) => w.owner_watch_id);
-    const key = watchAppSyncKey(watches);
+    const phones = this.rowPhones.map((p) => p.owner_watch_id);
+    const key = watchAppSyncKey([...watches, ...phones]);
     if (!again && key === this.watchAppSyncFor) return;
     this.watchAppSyncFor = key;
     const run = ++this.watchAppSyncRun;
@@ -11233,7 +11235,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       const summary = await fetchWatchConfigSummary(hass);
       next = summaryWatchAppSyncs(summary, watches);
-      counts = summaryCounts(summary, watches);
+      counts = summaryCounts(summary, [...watches, ...phones]);
     } catch (err) {
       if (!summaryUnknown(err)) {
         // Not read: let the next visit to Home ask again.
@@ -18914,8 +18916,8 @@ export class WristAssistantPanel extends LitElement {
    * from, what a waiting card waits for, and a small door per page that
    * counts something, each opening that page on the device
    * (`deviceCardTiles`). The whole card opens the device's sheet, which also
-   * leads to a watch's Settings. In a home with no devices a card opens
-   * "Pair a device". Nothing but "Loading…" while the devices are still
+   * leads to a watch's Settings, and an iPhone's. In a home with no devices
+   * a card opens "Pair a device". Nothing but "Loading…" while the devices are still
    * loading, so the pairing card never flashes up in a home that has
    * devices.
    */
@@ -19056,7 +19058,7 @@ export class WristAssistantPanel extends LitElement {
       </div>
       ${gone
         ? html`<div class="home-tiles"><button type="button" class="danger" title=${`Remove ${d.name}`} @click=${() => this.openDeviceSheet(d.id, true)}>Remove</button></div>`
-        : html`<div class="home-tiles">${deviceCardTiles(d.kind).map((t) => this.renderHomeTile(t, d, owner))}</div>`}
+        : html`<div class="home-tiles">${deviceCardTiles(d.kind, this.phonePages).map((t) => this.renderHomeTile(t, d, owner))}</div>`}
     </li>`;
   }
 
@@ -19112,12 +19114,14 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** Read the counts the sheet's watch tabs wear, from the stored records.
-   * Only a watch has them. A reply that lands after the sheet moved on is
-   * dropped. */
+   * A watch has three; an iPhone has its pages, on a home with phone pages.
+   * A reply that lands after the sheet moved on is dropped. */
   private async loadDeviceCounts(ownerId: string) {
     this.deviceCounts = undefined;
-    if (deviceKindOf(this.ownerOf(ownerId)) !== "watch") return;
-    const kinds: DeviceCountKind[] = ["pages", "status_pages", "control_center"];
+    const device = deviceKindOf(this.ownerOf(ownerId));
+    const kinds: DeviceCountKind[] = device === "watch" ? ["pages", "status_pages", "control_center"]
+      : device === "iphone" && this.phonePages ? ["pages"] : [];
+    if (kinds.length === 0) return;
     const read = await Promise.all(kinds.map(async (kind) => {
       try {
         const record = await fetchWatchConfig(this.hass, ownerId, kind);
@@ -19148,7 +19152,8 @@ export class WristAssistantPanel extends LitElement {
    * for each of its pages, each opening that page on this device. A tile
    * wears how many its page holds: the device's complications (or its
    * Control Center ones), on a watch its pages, status pages and Control
-   * Center controls. Anyone can forget it, after a second step that says
+   * Center controls, and on an iPhone of a home with phone pages its pages,
+   * which with its Settings open in the iPhone app. Anyone can forget it, after a second step that says
    * what goes with it, and anyone can rename it: the name is Home Assistant's
    * own device name, set through the integration's own command since Home
    * Assistant keeps its registry update to administrators.
@@ -19251,7 +19256,7 @@ export class WristAssistantPanel extends LitElement {
           ${seen === undefined ? nothing : html`<span class="dev-state-seen">${seen}</span>`}
         </div>
         <h3 class="dev-title">Open on this ${row.kind === "watch" ? "watch" : "iPhone"}</h3>
-        <nav class="dev-tabs" aria-label=${`Pages for ${row.name}`}>${deviceSheetTabs(row.kind).map(tab)}</nav>
+        <nav class="dev-tabs" aria-label=${`Pages for ${row.name}`}>${deviceSheetTabs(row.kind, this.phonePages).map(tab)}</nav>
         <div class="dev-acts">
           <button class="danger dev-forget" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon("delete")}<span>Remove device</span></button>
         </div>
