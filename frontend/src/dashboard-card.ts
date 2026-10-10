@@ -11,7 +11,7 @@
 // reference watch's or iPhone's slot, so the card and the editor's preview are
 // one drawing.
 
-import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
+import { LitElement, css, html, nothing, svg, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import { errorCode, fetchCardRecord, subscribeCardRecord, type CardEvent, type CardRecord } from "./card-api.js";
 import type { CardConfig } from "./dashboard-card-config.js";
@@ -21,7 +21,7 @@ import { makeIconProvider } from "./icons.js";
 import { isHomeFamily } from "./layouts.js";
 import { LiveComplication, cardShapeOf, drawable, hasLiveCountdown } from "./live-complication.js";
 import { inlineRuns, type CustomComplicationConfig, type DrawableFamily, type TapAction } from "./model.js";
-import { CANVAS, REFERENCE_CASE, REFERENCE_PHONE, renderLayout, slotFor, type IconProvider } from "./renderer.js";
+import { CANVAS, REFERENCE_CASE, REFERENCE_PHONE, cornerContext, cornerTileSide, renderLayout, slotFor, type IconProvider } from "./renderer.js";
 import { countdownRemainingString, type ResolvedAll, type ResolvedInline, type ResolvedLayout } from "./resolver.js";
 import { previewTintFor } from "./shapePreviews.js";
 
@@ -30,6 +30,15 @@ import { previewTintFor } from "./shapePreviews.js";
 const WATCH_ONLY: ReadonlySet<TapAction["type"]> = new Set([
   "openApp", "openPage", "openRoomPage", "timerStartPause", "timerCancel", "addTodo", "runHTTPAction",
 ]);
+
+/** A stored document this code cannot read, said in words a dashboard can
+ * show. The editor refuses to save one, so this is a design written by
+ * something else, or before a check the editor has now. */
+class UnreadableDesign extends Error {
+  constructor(detail: string) {
+    super(`This complication could not be read. Open it in the Wrist Assistant panel to fix it. (${detail})`);
+  }
+}
 
 /** How long a failed tap's note stays on the card. */
 const NOTE_MS = 4_000;
@@ -127,6 +136,10 @@ export class WaDashboardCard extends LitElement {
     } catch (err) {
       if (run !== this.loadRun) return;
       this.record = undefined;
+      if (err instanceof UnreadableDesign) {
+        this.problem = err.message;
+        return;
+      }
       const code = errorCode(err);
       this.problem = code === "not_found"
         ? "This complication was deleted, or this card names one that never existed."
@@ -145,16 +158,25 @@ export class WaDashboardCard extends LitElement {
       this.problem = "This complication was deleted.";
       return;
     }
-    this.take(event);
+    try {
+      this.take(event);
+    } catch (err) {
+      this.record = undefined;
+      this.problem = (err as Error).message;
+    }
   }
 
   /** The card ships in the integration's own bundle, beside the store that
    * refuses any schema newer than it knows, so every stored document is one
    * this code can draw. */
   private take(record: CardRecord): void {
+    try {
+      this.live.setDocument(record.document);
+    } catch (err) {
+      throw new UnreadableDesign(String((err as { message?: unknown })?.message ?? err));
+    }
     this.problem = undefined;
     this.record = record;
-    this.live.setDocument(record.document);
     if (this.page > this.live.pageCount()) this.page = 1;
   }
 
@@ -194,7 +216,27 @@ export class WaDashboardCard extends LitElement {
     const taps = this.config?.taps !== false;
     return html`<div class="face ${family} ${taps ? "taps" : ""}"
       aria-label=${cfg.name || "Complication"}
-      @pointerdown=${taps ? (e: PointerEvent) => void this.onPress(cfg, family, layout, e) : undefined}>${art}</div>`;
+      @pointerdown=${taps ? (e: PointerEvent) => void this.onPress(cfg, family, layout, e) : undefined}>${family === "corner" ? this.cornerCrop(layout, art) : art}</div>`;
+  }
+
+  /**
+   * The corner is drawn as its whole quarter of the watch screen, most of it
+   * black. A card shows the part that matters: the disc alone, or the disc and
+   * the bezel text curving past it across the top of the quarter. The quarter
+   * is drawn at the reference case, whose scale is one, so its units are the
+   * ones `cornerContext(1, …)` gives.
+   */
+  private cornerCrop(layout: ResolvedLayout, art: TemplateResult) {
+    const bezel = !!layout.bezelText || !!layout.bezelGauge;
+    const ctx = cornerContext(1, bezel);
+    let box: { x: number; y: number; w: number; h: number };
+    if (bezel) {
+      box = { x: 0, y: 0, w: ctx.quad.width, h: ctx.quad.height * 0.75 };
+    } else {
+      const side = cornerTileSide(1, false) * 1.2;
+      box = { x: ctx.tile.cx - side / 2, y: ctx.tile.cy - side / 2, w: side, h: side };
+    }
+    return svg`<svg class="crop" viewBox=${`${box.x} ${box.y} ${box.w} ${box.h}`} xmlns="http://www.w3.org/2000/svg">${art}</svg>`;
   }
 
   private renderInline(inline: ResolvedInline | undefined) {
@@ -315,7 +357,7 @@ export class WaDashboardCard extends LitElement {
     .face.pressed {
       opacity: 0.6;
     }
-    .face svg.complication {
+    .face > svg {
       display: block;
       width: 100%;
       height: 100%;
