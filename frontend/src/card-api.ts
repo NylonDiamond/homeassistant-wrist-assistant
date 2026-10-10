@@ -13,6 +13,8 @@ export interface CardDesign {
   name: string;
   families: string[];
   revision: number;
+  /** A Dashboard design's own size in points. Absent for every other shape. */
+  canvas?: { width: number; height: number };
 }
 
 /** The design a card shows, as `get` and each `subscribe` event carry it.

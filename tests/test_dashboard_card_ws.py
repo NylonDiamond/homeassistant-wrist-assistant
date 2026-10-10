@@ -11,6 +11,7 @@ is for.
 from __future__ import annotations
 
 import types
+import uuid
 from typing import Any
 
 import pytest
@@ -78,6 +79,29 @@ def test_designs_lists_every_owner_for_someone_who_owns_none(env, card) -> None:
             "revision": 1,
         },
     ]
+
+
+def test_designs_carries_a_dashboard_design_s_canvas(env, card) -> None:
+    document = {
+        "schemaVersion": 11,
+        "id": str(uuid.uuid4()).upper(),
+        "name": "Kitchen card",
+        "slotIndex": 0,
+        "supportedFamilies": ["dashboard"],
+        "perFamily": ["dashboard", {"canvas": {"width": 244, "height": 120}}],
+        "elements": [{"kind": "text"}],
+        "tapAction": {"type": "refresh"},
+    }
+    env.store.save(LIBRARY, document, base_revision=None, updated_by="t")
+    plain = env.save_document(LIBRARY)
+
+    reply, errors = _call(env, card.ws_card_designs)
+
+    assert errors == []
+    by_id = {d["complication_id"]: d for d in reply["designs"]}
+    assert by_id[document["id"]]["canvas"] == {"width": 244, "height": 120}
+    assert by_id[document["id"]]["families"] == ["dashboard"]
+    assert "canvas" not in by_id[plain["id"]]
 
 
 def test_designs_leaves_out_a_deleted_design(env, card) -> None:

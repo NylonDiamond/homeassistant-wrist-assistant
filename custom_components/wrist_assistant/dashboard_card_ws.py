@@ -34,6 +34,7 @@ from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 
+from .complication_store import dashboard_canvas
 from .const import DOMAIN, LIBRARY_OWNER_ID
 from .listener_relay import COMPLICATIONS, listener_relay
 
@@ -129,16 +130,20 @@ def ws_card_designs(
         for record in store.list(owner):
             document = record.document or {}
             families = document.get("supportedFamilies")
-            designs.append(
-                {
-                    "owner_watch_id": owner,
-                    "owner_name": names[owner],
-                    "complication_id": record.id,
-                    "name": document.get("name") or "",
-                    "families": families if isinstance(families, list) else [],
-                    "revision": record.revision,
-                }
-            )
+            design: dict[str, Any] = {
+                "owner_watch_id": owner,
+                "owner_name": names[owner],
+                "complication_id": record.id,
+                "name": document.get("name") or "",
+                "families": families if isinstance(families, list) else [],
+                "revision": record.revision,
+            }
+            # A Dashboard design's size, so the editor can size the card on
+            # the sections grid before the design itself loads.
+            canvas = dashboard_canvas(document)
+            if canvas is not None:
+                design["canvas"] = canvas
+            designs.append(design)
     connection.send_result(msg["id"], {"designs": designs})
 
 
