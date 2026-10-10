@@ -221,6 +221,10 @@ export async function fetchOwners(hass: HassLike) {
     owners: OwnerSummary[];
     max_schema_version: number;
     token: number;
+    /** What the server advertises, as its delta reply lists it. Absent from
+     * integrations older than the field; `phone_pages` there is the one the
+     * panel reads (`phone-pages.ts`). */
+    capabilities?: string[];
   }>({ type: `${D}/owners` });
 }
 

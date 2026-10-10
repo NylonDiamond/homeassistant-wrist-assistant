@@ -492,6 +492,10 @@ async def ws_owners(
     paired iPhone that is someone else's; ``paired_iphone_id`` and
     ``paired_iphone_name`` are then null, so every id the reply names is a
     row in it.
+
+    ``capabilities`` beside the rows is the list the delta reply carries,
+    sorted. The panel lists iPhones in its Pages editor only when it holds
+    ``phone_pages``. Empty while the coordinator is not up yet.
     """
     domain_data = hass.data.get(DOMAIN)
     if domain_data is None:
@@ -668,6 +672,7 @@ async def ws_owners(
             "owners": owners,
             "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
             "token": store.token,
+            "capabilities": list(getattr(coordinator, "capabilities", None) or []),
         },
     )
 

@@ -690,6 +690,18 @@ def test_owners_lists_every_watch_before_every_phone_by_name(env) -> None:
     ]
 
 
+def test_owners_carries_the_server_capabilities(env) -> None:
+    """The panel lists iPhones in its Pages editor only on a server that
+    advertises ``phone_pages``, so the list rides with the rows."""
+    env.coordinator.capabilities = ["instant_poll", "phone_pages"]
+    reply = env.call(env.ws.ws_owners)
+    assert reply["capabilities"] == ["instant_poll", "phone_pages"]
+
+
+def test_owners_capabilities_are_empty_without_a_coordinator_list(env) -> None:
+    assert env.call(env.ws.ws_owners)["capabilities"] == []
+
+
 def test_every_row_carries_the_app_build_or_none(env) -> None:
     """The build number, which the panel's split migration gates on.
 
