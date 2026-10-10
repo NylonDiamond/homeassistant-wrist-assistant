@@ -159,15 +159,18 @@ export class LiveComplication {
 
   /** A new revision of the document, or the first one. */
   setDocument(document: unknown): void {
+    // Everything that can throw comes first, so a revision that does not read
+    // leaves the last one whole rather than half replaced.
     const cfg = parseConfig(document);
-    this.config = cfg;
     const compiled = compile(cfg);
-    this.entityIds = [...compiled.entities.keys()];
-    this.iconNames = new Map([...compiled.entities].map(([id, ref]) => [id, ref.iconName ?? ""]));
-    this.seriesEntities = new Set([
+    const seriesEntities = new Set([
       ...chartHistoryRequests(cfg).map((r) => r.entityId),
       ...chartStatisticsRequests(cfg).map((r) => r.entityId),
     ]);
+    this.config = cfg;
+    this.entityIds = [...compiled.entities.keys()];
+    this.iconNames = new Map([...compiled.entities].map(([id, ref]) => [id, ref.iconName ?? ""]));
+    this.seriesEntities = seriesEntities;
     this.lastSeen = new Map();
     this.noteHass();
     const doc = compiled.document;

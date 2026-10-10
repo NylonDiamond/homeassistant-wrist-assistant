@@ -16,6 +16,7 @@ import {
   parseTemplateEvent,
 } from "../src/live-complication.js";
 import { parseConfig } from "../src/model.js";
+import "../src/dashboard-card.js";
 
 const fixture = (name: string) =>
   JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), "utf8")).config as Record<string, unknown>;
@@ -201,5 +202,99 @@ describe("LiveComplication", () => {
     // chart_series has no template, so the old subscription closes and none opens.
     expect(subscriptions).toHaveLength(1);
     expect(subscriptions[0]?.closed).toBe(true);
+  });
+});
+
+describe("the card element", () => {
+  const RECORD = { owner_watch_id: "library", complication_id: "A", revision: 1, updated_at: "t" };
+  const GOOD = fixture("chart_series");
+  // No tap action: a document the editor would never have written.
+  const BAD = Object.fromEntries(Object.entries(GOOD).filter(([key]) => key !== "tapAction"));
+
+  /** The card with a connection that answers `card/get` with `get`, records
+   * each subscription, and answers every other read with nothing. */
+  function card(get: () => unknown) {
+    const subscriptions: { message: Record<string, unknown>; callback: (m: unknown) => void }[] = [];
+    const hass = {
+      states: {},
+      connection: {
+        sendMessagePromise: vi.fn(async (message: Record<string, unknown>) => {
+          if (message.type === "wrist_assistant/card/get") return get();
+          return { results: {} };
+        }),
+        subscribeMessage: vi.fn(async (callback: (m: unknown) => void, message: Record<string, unknown>) => {
+          subscriptions.push({ message, callback });
+          return async () => undefined;
+        }),
+      },
+    } as unknown as HassLike;
+    const Ctor = customElements.get("wa-dashboard-card") as unknown as new () => Record<string, unknown>;
+    const el = new Ctor();
+    el.hass = hass;
+    el.config = { type: "custom:wrist-assistant-card", owner: "library", complication: "A" };
+    const cardEvents = () => subscriptions.filter((s) => s.message.type === "wrist_assistant/card/subscribe");
+    const load = () => (el.load as (o: string, i: string) => Promise<void>).call(el, "library", "A");
+    return { el, load, cardEvents };
+  }
+
+  it("keeps listening after a design it cannot read, and draws the fixed revision", async () => {
+    const t = card(() => ({ ...RECORD, document: BAD }));
+    await t.load();
+    expect(String(t.el.problem)).toMatch(/could not be read/);
+    expect(t.cardEvents()).toHaveLength(1);
+    t.cardEvents()[0]!.callback({ ...RECORD, revision: 2, document: GOOD });
+    expect(t.el.problem).toBeUndefined();
+    expect((t.el.record as { revision: number }).revision).toBe(2);
+    expect(t.cardEvents()).toHaveLength(1);
+  });
+
+  it("keeps the last good revision's values whole when a new one does not read", () => {
+    const live = new LiveComplication({ hass: () => undefined, changed: () => undefined });
+    live.setDocument(GOOD);
+    const before = live.config;
+    expect(() => live.setDocument(BAD)).toThrow();
+    expect(live.config).toBe(before);
+  });
+
+  it("listens for a design that is gone, so a restore draws without a reload", async () => {
+    const t = card(() => { throw { code: "not_found", message: "no such complication" }; });
+    await t.load();
+    expect(String(t.el.problem)).toMatch(/deleted/);
+    expect(t.cardEvents()).toHaveLength(1);
+    t.cardEvents()[0]!.callback({ ...RECORD, document: GOOD });
+    expect(t.el.problem).toBeUndefined();
+  });
+
+  describe("a page tour", () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it("plays each page for its dwell and goes back to page 1, and stops with a new revision", async () => {
+      const t = card(() => ({ ...RECORD, document: fixture("pages") }));
+      await t.load();
+      const cfg = (t.el.live as LiveComplication).config!;
+      const play = () => (t.el.playTour as (c: unknown) => boolean).call(t.el, cfg);
+      expect(play()).toBe(true);
+      const seen = [t.el.page];
+      for (let i = 0; i < 20; i++) {
+        vi.advanceTimersByTime(500);
+        if (seen[seen.length - 1] !== t.el.page) seen.push(t.el.page);
+      }
+      expect(seen).toEqual([1, 2, 3, 1]);
+
+      expect(play()).toBe(true);
+      vi.advanceTimersByTime(1000);
+      expect(t.el.page).toBe(2);
+      t.cardEvents()[0]!.callback({ ...RECORD, revision: 2, document: fixture("pages") });
+      vi.advanceTimersByTime(10_000);
+      expect(t.el.page).toBe(2);
+    });
+
+    it("plays nothing for a design without a tour", async () => {
+      const t = card(() => ({ ...RECORD, document: GOOD }));
+      await t.load();
+      const cfg = (t.el.live as LiveComplication).config!;
+      expect((t.el.playTour as (c: unknown) => boolean).call(t.el, cfg)).toBe(false);
+    });
   });
 });

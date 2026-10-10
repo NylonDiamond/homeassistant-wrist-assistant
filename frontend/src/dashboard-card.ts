@@ -21,10 +21,11 @@ import type { HassLike } from "./ha-api.js";
 import { makeIconProvider } from "./icons.js";
 import { isHomeFamily } from "./layouts.js";
 import { LiveComplication, cardShapeOf, drawable, hasLiveCountdown } from "./live-complication.js";
-import { designBox, inlineRuns, type CustomComplicationConfig, type DrawableFamily, type TapAction } from "./model.js";
+import { designBox, inlineRuns, pagesSpecOf, usesPages, type CustomComplicationConfig, type DrawableFamily, type TapAction } from "./model.js";
 import { REFERENCE_CASE, REFERENCE_PHONE, cornerContext, cornerTileSide, renderLayout, slotFor, type IconProvider } from "./renderer.js";
 import { countdownRemainingString, type ResolvedAll, type ResolvedInline, type ResolvedLayout } from "./resolver.js";
 import { previewTintFor } from "./shapePreviews.js";
+import { TourPlayer } from "./tour-player.js";
 
 /** Tap actions only the watch can run: they open its screens or keep its own
  * state. A press on one does nothing here rather than pretend. */
@@ -60,6 +61,9 @@ export class WaDashboardCard extends LitElement {
     hass: () => this.hass,
     changed: () => this.requestUpdate(),
   });
+  /** A page tour, played as the watch plays it: each page once for its own
+   * dwell, then page 1 again. */
+  private tour = new TourPlayer({ show: (page) => { this.page = page; } });
   private icons?: IconProvider;
   private unsubscribe?: () => Promise<void>;
   private loadRun = 0;
@@ -83,6 +87,7 @@ export class WaDashboardCard extends LitElement {
       this.syncRunning();
     }
     if (changed.has("config")) {
+      this.tour.stop();
       this.page = 1;
       this.syncRunning();
     }
@@ -111,6 +116,7 @@ export class WaDashboardCard extends LitElement {
     this.loadRun++;
     this.loadedFor = "";
     this.live.stop();
+    this.tour.stop();
     const unsubscribe = this.unsubscribe;
     this.unsubscribe = undefined;
     if (unsubscribe) void unsubscribe().catch(() => undefined);
@@ -122,10 +128,23 @@ export class WaDashboardCard extends LitElement {
     const run = ++this.loadRun;
     const hass = this.hass!;
     try {
-      const record = await fetchCardRecord(hass, owner, id);
+      let record: CardRecord | undefined;
+      try {
+        record = await fetchCardRecord(hass, owner, id);
+      } catch (err) {
+        // Gone now can be back later (a restore from history), and the
+        // subscription below says so when it is, so the card still listens.
+        if (errorCode(err) !== "not_found") throw err;
+      }
       if (run !== this.loadRun) return;
-      this.take(record);
-      this.live.start();
+      if (record) {
+        this.takeOrShow(record);
+      } else {
+        this.record = undefined;
+        this.problem = "This complication was deleted, or this card names one that never existed.";
+      }
+      // Opened whatever the first revision was like: a design this code
+      // cannot read is fixed in the panel, and the fixed revision arrives here.
       const unsubscribe = await subscribeCardRecord(hass, owner, id, (event) => {
         if (run === this.loadRun) this.onRecordEvent(event);
       });
@@ -137,18 +156,13 @@ export class WaDashboardCard extends LitElement {
     } catch (err) {
       if (run !== this.loadRun) return;
       this.record = undefined;
-      if (err instanceof UnreadableDesign) {
-        this.problem = err.message;
-        return;
-      }
+      this.live.stop();
       const code = errorCode(err);
-      this.problem = code === "not_found"
-        ? "This complication was deleted, or this card names one that never existed."
-        : code === "unknown_command"
-          ? "Update the Wrist Assistant integration to show complications on dashboards."
-          : `Could not load this complication: ${String((err as { message?: unknown })?.message ?? err)}`;
-      // Not found now can be found later (a restore, a restart), so try again
-      // the next time the card comes back on screen.
+      this.problem = code === "unknown_command"
+        ? "Update the Wrist Assistant integration to show complications on dashboards."
+        : `Could not load this complication: ${String((err as { message?: unknown })?.message ?? err)}`;
+      // A failure now can be gone later (a restart), so try again the next
+      // time the card comes back on screen.
       this.loadedFor = "";
     }
   }
@@ -157,20 +171,36 @@ export class WaDashboardCard extends LitElement {
     if ("deleted" in event) {
       this.record = undefined;
       this.problem = "This complication was deleted.";
+      this.live.stop();
+      this.tour.stop();
       return;
     }
+    this.takeOrShow(event);
+  }
+
+  /** `take`, with a design this code cannot read shown on the card rather
+   * than thrown. Its live values stop with it, and start again with the next
+   * revision that reads. */
+  private takeOrShow(record: CardRecord): boolean {
     try {
-      this.take(event);
+      this.take(record);
     } catch (err) {
+      if (!(err instanceof UnreadableDesign)) throw err;
       this.record = undefined;
-      this.problem = (err as Error).message;
+      this.problem = err.message;
+      this.live.stop();
+      return false;
     }
+    this.live.start();
+    return true;
   }
 
   /** The card ships in the integration's own bundle, beside the store that
    * refuses any schema newer than it knows, so every stored document is one
    * this code can draw. */
   private take(record: CardRecord): void {
+    // The page count may have changed under a running tour.
+    this.tour.stop();
     try {
       this.live.setDocument(record.document);
     } catch (err) {
@@ -295,7 +325,11 @@ export class WaDashboardCard extends LitElement {
     pt.y = e.clientY;
     const local = pt.matrixTransform(ctm.inverse());
     const { action } = actionAt(cfg, layout, { x: local.x / design.width, y: local.y / design.height });
-    if (action.type === "none" || WATCH_ONLY.has(action.type)) return;
+    if (action.type === "none") return;
+    // The watch's rule: a tap during a tour takes over from it, even one that
+    // does nothing here.
+    this.tour.stop();
+    if (WATCH_ONLY.has(action.type)) return;
     e.preventDefault();
     face?.classList.add("pressed");
     setTimeout(() => face?.classList.remove("pressed"), 160);
@@ -319,9 +353,17 @@ export class WaDashboardCard extends LitElement {
         this.page = Math.min(Math.max(1, Math.trunc(page)), pages);
         return true;
       },
-      playTour: () => false,
+      playTour: () => this.playTour(cfg),
     });
     if (outcome.kind === "failed") this.showNote(outcome.text);
+  }
+
+  /** A tour tap: true when the design has a page tour to play, which is the
+   * panel demo's test too. */
+  private playTour(cfg: CustomComplicationConfig): boolean {
+    if (!usesPages(cfg) || pagesSpecOf(cfg).mode !== "tour") return false;
+    this.tour.play(pagesSpecOf(cfg));
+    return true;
   }
 
   private showNote(text: string): void {
