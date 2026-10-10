@@ -69,6 +69,7 @@ def test_designs_lists_every_owner_for_someone_who_owns_none(env, card) -> None:
             "name": "Garage",
             "families": ["rectangular", "circular", "corner"],
             "revision": 1,
+            "preview": None,
         },
         {
             "owner_watch_id": "watch-A",
@@ -77,6 +78,7 @@ def test_designs_lists_every_owner_for_someone_who_owns_none(env, card) -> None:
             "name": "Garage",
             "families": ["rectangular", "circular", "corner"],
             "revision": 1,
+            "preview": None,
         },
     ]
 
@@ -102,6 +104,55 @@ def test_designs_carries_a_dashboard_design_s_canvas(env, card) -> None:
     assert by_id[document["id"]]["canvas"] == {"width": 244, "height": 120}
     assert by_id[document["id"]]["families"] == ["dashboard"]
     assert "canvas" not in by_id[plain["id"]]
+
+
+class _Previews:
+    """The card preview store as far as ``designs`` reads it: one picture,
+    held for one revision of each record."""
+
+    def __init__(self, held: dict[tuple[str, str], int]) -> None:
+        self.held = held
+
+    def previews_for(self, owner: str, records: list[Any]) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for record in records:
+            revision = self.held.get((owner, record.id))
+            if revision == record.revision:
+                out[record.id] = {
+                    "revision": revision, "family": "rectangular", "device": "watch",
+                    "width": 340, "height": 140,
+                }
+        return out
+
+
+def test_designs_carries_the_picture_of_the_current_revision_only(env, card) -> None:
+    current = env.save_document(LIBRARY)
+    stale = env.save_document(LIBRARY)
+    rev_current = env.store.get(LIBRARY, current["id"]).revision
+    rev_stale = env.store.get(LIBRARY, stale["id"]).revision
+    env.hass.data[cws.DOMAIN].card_preview_store = _Previews(
+        {(LIBRARY, current["id"]): rev_current, (LIBRARY, stale["id"]): rev_stale - 1}
+    )
+
+    reply, errors = _call(env, card.ws_card_designs)
+
+    assert errors == []
+    by_id = {d["complication_id"]: d for d in reply["designs"]}
+    assert by_id[current["id"]]["preview"] == {
+        "revision": rev_current, "family": "rectangular", "device": "watch",
+        "width": 340, "height": 140,
+    }
+    assert by_id[stale["id"]]["preview"] is None
+
+
+def test_designs_without_a_preview_store_say_none(env, card) -> None:
+    plain = env.save_document(LIBRARY)
+
+    reply, errors = _call(env, card.ws_card_designs)
+
+    assert errors == []
+    by_id = {d["complication_id"]: d for d in reply["designs"]}
+    assert by_id[plain["id"]]["preview"] is None
 
 
 def test_designs_leaves_out_a_deleted_design(env, card) -> None:

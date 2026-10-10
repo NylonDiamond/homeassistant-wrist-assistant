@@ -1,7 +1,8 @@
 // The dashboard card's three commands (`dashboard_card_ws.py`). Open to every
-// signed-in user, and read only: the card never writes a design.
+// signed-in user, and read only: the card never writes a design. The editor's
+// thumbnails borrow the panel's picture read.
 
-import type { HassLike } from "./ha-api.js";
+import type { CardPreview, HassLike } from "./ha-api.js";
 
 const PREFIX = "wrist_assistant/card";
 
@@ -15,6 +16,9 @@ export interface CardDesign {
   revision: number;
   /** A Dashboard design's own size in points. Absent for every other shape. */
   canvas?: { width: number; height: number };
+  /** The panel's card picture of this revision, when it holds one. Absent
+   * from integrations older than the editor's thumbnails. */
+  preview?: CardPreview | null;
 }
 
 /** The design a card shows, as `get` and each `subscribe` event carry it.
@@ -54,6 +58,17 @@ export function subscribeCardRecord(
     owner_watch_id: owner,
     complication_id: complicationId,
   });
+}
+
+/** A design's card picture as base64 PNG, for the editor's picker. The panel's
+ * own `preview_get`, which reads any owner for an administrator, and only
+ * administrators edit a dashboard. Sent here rather than through `ha-api.ts`,
+ * which would bring the whole model into the card's loader. */
+export async function fetchCardThumb(hass: HassLike, owner: string, id: string, revision: number): Promise<string> {
+  const reply = await hass.connection.sendMessagePromise<{ revision: number; png: string }>({
+    type: "wrist_assistant/complications/preview_get", owner_watch_id: owner, complication_id: id, revision,
+  });
+  return reply.png;
 }
 
 /** The error code a command failed with, when it says one. */

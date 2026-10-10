@@ -5,13 +5,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { nothing } from "lit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { CardDesign } from "../src/card-api.js";
 import { duplicateAs } from "../src/copies.js";
 import { cardSizeFor, gridOptionsFor, parseCardConfig, withCanvasHint, type CardConfig } from "../src/dashboard-card-config.js";
-import { designGroups } from "../src/dashboard-card-editor.js";
+import { designGroups, filterDesigns } from "../src/dashboard-card-editor.js";
 import { DASHBOARD_GRID as GRID_DIRECT } from "../src/dashboard-grid.js";
+import type { HassLike } from "../src/ha-api.js";
 import { addFamily } from "../src/layouts.js";
 import {
   DASHBOARD_CANVAS_MAX,
@@ -220,5 +221,92 @@ describe("the card editor", () => {
     expect(withCanvasHint(hinted, dash)).toBe(hinted);
     const watch = withCanvasHint({ ...hinted, shape: "rectangular" }, design("A", ["rectangular"]));
     expect("canvas" in watch).toBe(false);
+  });
+
+  it("filters by name, ignoring case", () => {
+    const list = [design("Kitchen", ["dashboard"]), design("Garage", ["small"]), design("", ["small"])];
+    expect(filterDesigns(list, "  kit ").map((d) => d.complication_id)).toEqual(["Kitchen"]);
+    expect(filterDesigns(list, "untitled").map((d) => d.complication_id)).toEqual([""]);
+    expect(filterDesigns(list, "")).toHaveLength(3);
+  });
+
+  /** The editor element with designs handed in and a connection that answers
+   * each picture read after `release` is called. */
+  function pictured(designs: CardDesign[], refuse: Set<string> = new Set()) {
+    let running = 0;
+    let most = 0;
+    const waiting: (() => void)[] = [];
+    const sendMessagePromise = vi.fn(async (message: Record<string, unknown>) => {
+      running++;
+      most = Math.max(most, running);
+      await new Promise<void>((resolve) => waiting.push(resolve));
+      running--;
+      if (refuse.has(String(message.complication_id))) throw { code: "not_found", message: "gone" };
+      return { revision: message.revision, png: btoa("png") };
+    });
+    const Ctor = customElements.get("wa-dashboard-card-editor") as unknown as new () => Record<string, unknown>;
+    const el = new Ctor();
+    el.hass = { connection: { sendMessagePromise } } as unknown as HassLike;
+    const done = (el.loadThumbs as (d: CardDesign[]) => Promise<void>).call(el, designs);
+    const release = async () => {
+      while (waiting.length > 0 || running > 0) {
+        waiting.splice(0).forEach((r) => r());
+        await new Promise((r) => setTimeout(r, 0));
+      }
+      await done;
+    };
+    return { el, sendMessagePromise, release, most: () => most, thumbs: () => el.thumbs as Map<string, string> };
+  }
+
+  const PREVIEW = { revision: 1, family: "small", device: "iphone", width: 170, height: 170 } as const;
+
+  it("fetches each design's picture through the panel's read, three at a time, and skips one with none", async () => {
+    const designs = ["A", "B", "C", "D", "E"].map((id) => design(id, ["small"], { preview: { ...PREVIEW } }));
+    designs.push(design("F", ["small"], { preview: null }));
+    const t = pictured(designs);
+    await t.release();
+    expect(t.most()).toBe(3);
+    expect(t.sendMessagePromise).toHaveBeenCalledTimes(5);
+    expect(t.sendMessagePromise.mock.calls[0]![0]).toEqual({
+      type: "wrist_assistant/complications/preview_get", owner_watch_id: "library", complication_id: "A", revision: 1,
+    });
+    expect([...t.thumbs().keys()].sort()).toEqual(["A", "B", "C", "D", "E"].map((id) => `library|${id}|1`));
+  });
+
+  it("leaves a tile with its name when its picture is refused, and lets the URLs go when it closes", async () => {
+    const revoke = vi.spyOn(URL, "revokeObjectURL");
+    const designs = ["A", "B"].map((id) => design(id, ["small"], { preview: { ...PREVIEW } }));
+    const t = pictured(designs, new Set(["B"]));
+    await t.release();
+    expect([...t.thumbs().keys()]).toEqual(["library|A|1"]);
+    (t.el.disconnectedCallback as () => void).call(t.el);
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(t.thumbs().size).toBe(0);
+    revoke.mockRestore();
+  });
+
+  it("draws a corner's tile as its disc, a picture as an image, and a design with none as its shape's name", () => {
+    const flat = (v: unknown): string => {
+      if (Array.isArray(v)) return v.map(flat).join("");
+      if (v !== null && typeof v === "object" && "strings" in v && "values" in v) {
+        const r = v as { strings: readonly string[]; values: unknown[] };
+        return r.strings.map((s, i) => s + (i < r.values.length ? flat(r.values[i]) : "")).join("");
+      }
+      return typeof v === "string" || typeof v === "number" ? String(v) : "";
+    };
+    const Ctor = customElements.get("wa-dashboard-card-editor") as unknown as new () => Record<string, unknown>;
+    const el = new Ctor();
+    const tile = (d: CardDesign) => flat((el.renderTile as (d: CardDesign, c: string) => unknown).call(el, d, "library|C"));
+    const corner = design("C", ["corner"], {
+      preview: { revision: 1, family: "corner", device: "watch", width: 200, height: 200, focus: { cx: 60, cy: 70, diameter: 40 } },
+    });
+    const plain = design("P", ["small"], { preview: { ...PREVIEW } });
+    (el.thumbs as Map<string, string>).set("library|C|1", "blob:c");
+    (el.thumbs as Map<string, string>).set("library|P|1", "blob:p");
+    expect(tile(corner)).toContain("viewBox=40 50 40 40");
+    expect(tile(corner)).toContain("aria-pressed=true");
+    expect(tile(plain)).toContain(`<img class="pic" src=blob:p`);
+    expect(tile(plain)).toContain("aria-pressed=false");
+    expect(tile(design("N", ["small"]))).toContain("Small tile");
   });
 });

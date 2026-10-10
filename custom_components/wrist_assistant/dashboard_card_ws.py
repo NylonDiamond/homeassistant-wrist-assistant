@@ -115,6 +115,11 @@ def ws_card_designs(
 
     The Library first, then each device by name. A design with no canvas
     (inline only) is still listed: the card draws it as a line of text.
+
+    ``preview`` is the meta of the design's card picture when the panel holds
+    one of its current revision, else null. The editor fetches the picture
+    itself with ``complications/preview_get``, which is gated by owner like
+    the panel's own reads; only the meta rides here.
     """
     store = _store(hass)
     if store is None:
@@ -125,9 +130,12 @@ def ws_card_designs(
     ordered = sorted(
         owners, key=lambda o: (o != LIBRARY_OWNER_ID, names[o].casefold(), o)
     )
+    previews = getattr(hass.data.get(DOMAIN), "card_preview_store", None)
     designs: list[dict[str, Any]] = []
     for owner in ordered:
-        for record in store.list(owner):
+        records = store.list(owner)
+        pictured = previews.previews_for(owner, records) if previews is not None else {}
+        for record in records:
             document = record.document or {}
             families = document.get("supportedFamilies")
             design: dict[str, Any] = {
@@ -137,6 +145,7 @@ def ws_card_designs(
                 "name": document.get("name") or "",
                 "families": families if isinstance(families, list) else [],
                 "revision": record.revision,
+                "preview": pictured.get(record.id),
             }
             # A Dashboard design's size, so the editor can size the card on
             # the sections grid before the design itself loads.
