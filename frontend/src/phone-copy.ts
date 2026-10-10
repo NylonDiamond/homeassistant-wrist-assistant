@@ -306,7 +306,7 @@ export function phoneCopyProblems(kind: "pages" | "status_pages" | "menus" | "ro
 /** A stored record as the copy reads it. */
 export interface PhoneCopyRecord {
   revision: number;
-  document: unknown;
+  document?: unknown;
 }
 
 /** The calls a copy needs, so it has no network of its own. Every save goes
