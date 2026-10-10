@@ -1,6 +1,7 @@
-// The panel's wiring of the Watch app's shared watch and its row, read from
-// its source, since no test mounts the panel. The rules themselves are tested
-// in watch-pick, watch-row, watch-shell-mode and watch-settings-shell.
+// The panel's wiring of the Watch app's shared watch and its row, and of the
+// iPhone app's shared iPhone and its row, read from its source, since no test
+// mounts the panel. The rules themselves are tested in watch-pick,
+// watch-row, phone-pages, watch-shell-mode and watch-settings-shell.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,7 +23,7 @@ const count = (text: string, part: string) => text.split(part).length - 1;
 describe("the panel's shared watch", () => {
   it("works it out from the address, the remembered pick and today's choice, never storing the complications device", () => {
     const get = method("  private get sharedWatch()");
-    expect(get).toContain("resolveWatchPick(this.watchAppDevices, {");
+    expect(get).toContain("resolveWatchPick(this.rowWatches, {");
     expect(get).toContain("route: watchRouteOwner(this.route),");
     expect(get).toContain("saved: this.watchPick,");
     expect(get).toContain("fallback: this.ownerId,");
@@ -30,8 +31,12 @@ describe("the panel's shared watch", () => {
     expect(SOURCE).not.toMatch(/rememberWatch\(this\.ownerId/);
   });
 
-  it("offers the iPhones after the watches only on a home with phone pages", () => {
-    expect(method("  private get watchAppDevices()")).toContain("return watchAppDevices(this.owners, this.phonePages);");
+  it("offers the watches alone in the Watch app, and the iPhones in the iPhone app only on a home with phone pages", () => {
+    expect(method("  private get rowWatches()")).toContain("return settingsWatches(this.owners);");
+    expect(method("  private get rowPhones()")).toContain("return this.phonePages ? iphoneDevices(this.owners) : [];");
+    const phone = method("  private get sharedPhone()");
+    expect(phone).toContain("if (phones.length === 0 && (this.linkReady || this.owners.length > 0)) return undefined;");
+    expect(phone).toContain("resolveWatchPick(phones, { route: iphoneRouteOwner(this.route), saved: this.phonePick, fallback: undefined });");
     const load = method("  private async loadOwners() {");
     expect(load).toContain("this.phonePages = phonePagesOn(reply.capabilities);");
     expect(load.indexOf("this.phonePages =")).toBeLessThan(load.indexOf("this.owners = reply.owners;"));
@@ -40,85 +45,115 @@ describe("the panel's shared watch", () => {
   it("remembers it per browser, read once on connect", () => {
     expect(method("  override connectedCallback() {")).toContain("this.watchPick = loadWatchPick(() => window.localStorage);");
     expect(method("  private rememberWatch(")).toContain("saveWatchPick(() => window.localStorage, watchId);");
+    expect(method("  override connectedCallback() {")).toContain(`this.phonePick = loadWatchPick(() => window.localStorage, "iphone");`);
+    expect(method("  private rememberPhone(")).toContain(`saveWatchPick(() => window.localStorage, phoneId, "iphone");`);
   });
 
   it("makes a watch the address names the remembered one", () => {
     const will = method("  protected override willUpdate(changed");
     expect(will).toContain(`if (changed.has("route") || changed.has("owners") || changed.has("phonePages")) {`);
-    expect(will).toContain("adoptRouteWatch(this.watchPick, watchRouteOwner(this.route), this.watchAppDevices)");
+    expect(will).toContain("adoptRouteWatch(this.watchPick, watchRouteOwner(this.route), this.rowWatches)");
     expect(will).toContain("this.rememberWatch(next)");
+    expect(will).toContain("adoptRouteWatch(this.phonePick, iphoneRouteOwner(this.route), this.rowPhones)");
+    expect(will).toContain("this.rememberPhone(phone)");
   });
 
-  it("moves the address with a pick on a watch screen, in place", () => {
+  it("moves an old Watch app address that names an iPhone to the iPhone app, in place, before anything reads the route", () => {
+    const will = method("  protected override willUpdate(changed");
+    const at = will.indexOf("const to = iphoneAddressFor(this.route, this.owners, this.phonePages);");
+    expect(at).toBeGreaterThan(0);
+    expect(will.slice(at, at + 160)).toContain("if (to !== undefined) this.goTo(to, true);");
+    expect(at).toBeLessThan(will.indexOf("this.watchSettings.show("));
+    expect(at).toBeLessThan(will.indexOf("adoptRouteWatch("));
+  });
+
+  it("moves the address with a pick on a watch screen, in place, and hands an iPhone to the iPhone app's pick", () => {
     const pick = method("  private pickWatch(");
     expect(pick).toContain("this.rememberWatch(watchId);");
     expect(pick).toContain("this.goTo(watchScreenPath(screen, watchId), true)");
+    expect(pick.indexOf("this.pickPhone(watchId);")).toBeLessThan(pick.indexOf("this.rememberWatch(watchId);"));
+    const phone = method("  private pickPhone(");
+    expect(phone).toContain("this.rememberPhone(phoneId);");
+    expect(phone).toContain("this.goTo(iphoneScreenPath(screen, phoneId), true)");
   });
 });
 
 describe("the watch screens under the row", () => {
   const tab = method("  private renderTab() {");
+  const screens = method("  private renderWatchScreen(");
+  const call = (view: string) => {
+    const at = screens.indexOf(`return ${view}({`);
+    expect(at, view).toBeGreaterThan(0);
+    return screens.slice(at, screens.indexOf("});", at));
+  };
 
-  it("puts each of the six that follow a watch under the row, handed the shared watch, in the shell's mode, with no Watch settings button of their own", () => {
+  it("puts every watch screen under the Watch app row, handed the shared watch, and every iPhone app screen under its own row, handed the shared iPhone", () => {
+    expect(tab).toContain("if (screen !== undefined) return this.withWatchRow(this.renderWatchScreen(screen.id, this.sharedWatch));");
+    expect(tab).toContain(`if (tab === "iphone") return this.withIphoneRow(this.renderIphoneScreen());`);
+    const iphone = method("  private renderIphoneScreen() {");
+    expect(iphone).toContain("return this.renderWatchScreen(screen.id, phone);");
+    expect(iphone).toContain("const phone = this.sharedPhone;");
+    expect(iphone).toContain("const screen = iphoneScreenOf(this.route);");
+  });
+
+  it("hands each of the six that follow a device the device it is drawn for, in the shell's mode, with no Watch settings button of their own", () => {
     for (const view of ["renderWatchPagesView", "renderWatchMenusView", "renderWatchVoiceView", "renderWatchStatusPagesView", "renderWatchControlCenterView", "renderWatchRoomsView"]) {
-      expect(tab, view).toContain(`return this.withWatchRow(${view}({`);
+      const body = call(view);
+      expect(body, view).toContain("ownerId: owner,");
+      expect(body, view).toContain("shell: true,");
+      expect(body, view).toContain("actions: nothing,");
+      expect(body, view).toContain("dialogs: nothing,");
     }
-    expect(count(tab, "ownerId: watch,")).toBe(4);
-    // Control Center and Voice are a watch's alone: on a phone they get the
-    // fallback watch (`watchOnlyOwner`).
-    expect(count(tab, "ownerId: this.watchOnlyOwner,")).toBe(2);
-    for (const view of ["renderWatchVoiceView", "renderWatchControlCenterView"]) {
-      const at = tab.indexOf(`return this.withWatchRow(${view}({`);
-      expect(tab.slice(at, tab.indexOf("}));", at)), view).toContain("ownerId: this.watchOnlyOwner,");
-    }
-    expect(count(tab, "shell: true,")).toBe(6);
-    expect(count(tab, "actions: nothing,")).toBe(6);
-    expect(count(tab, "dialogs: nothing,")).toBe(6);
-    expect(tab).not.toContain("watchSettings.renderButton");
-    expect(tab).not.toContain("watchSettings.render(");
+    expect(count(screens, "ownerId: owner,")).toBe(6);
+    expect(screens).not.toContain("watchSettings.renderButton");
+    expect(screens).not.toContain("watchSettings.render(");
+    expect(SOURCE).not.toContain("watchOnlyOwner");
+    expect(SOURCE).not.toContain("watchOnlyFallback");
     expect(tab).not.toMatch(/RouteOwner\(this\.route\) \?\? this\.ownerId/);
   });
 
   it("lets the four screens a phone has open an iPhone on a home with phone pages, and no other", () => {
     for (const view of ["renderWatchPagesView", "renderWatchMenusView", "renderWatchStatusPagesView", "renderWatchRoomsView"]) {
-      const at = tab.indexOf(`return this.withWatchRow(${view}({`);
-      expect(tab.slice(at, tab.indexOf("}));", at)), view).toContain("phones: this.phonePages,");
+      expect(call(view), view).toContain("phones: this.phonePages,");
     }
-    expect(count(tab, "phones: this.phonePages,")).toBe(4);
+    expect(count(screens, "phones: this.phonePages,")).toBe(4);
     expect(method("  private withWatchRow(")).toContain("phones: this.phonePages,");
   });
 
-  it("says under the row what a watch only screen shows on a phone, and hands it the fallback watch", () => {
-    const fallback = method("  private get watchOnlyFallback()");
-    expect(fallback).toContain("watchOnlyFallback(screen, this.owners, this.sharedWatch)");
-    const owner = method("  private get watchOnlyOwner()");
-    expect(owner).toContain("return fallback === undefined ? this.sharedWatch : fallback.watch;");
-    const row = method("  private withWatchRow(");
-    expect(row).toContain("${fallback === undefined ? nothing : renderWatchOnlyNote(fallback.text)}${view}");
+  it("draws the iPhone app's row for the iPhones, with Pair an iPhone opening Home's Pair a device", () => {
+    const row = method("  private withIphoneRow(");
+    expect(row).toContain("watch: this.sharedPhone,");
+    expect(row).toContain("iphone: true,");
+    expect(row).toContain("onPick: (phoneId) => this.pickPhone(phoneId),");
+    expect(row).toContain("onPair: () => this.openPairDialog(),");
+    expect(row).toContain("${this.pairOpen ? this.renderPairDialog() : nothing}");
+  });
+
+  it("waits for the device list on the iPhone app, then says how to pair an iPhone in a home with none", () => {
+    const iphone = method("  private renderIphoneScreen() {");
+    expect(iphone.indexOf("if (!this.linkReady && this.owners.length === 0) {")).toBeLessThan(iphone.indexOf("const phone = this.sharedPhone;"));
+    expect(iphone).toContain("if (phone === undefined || screen === undefined) {");
+    expect(iphone).toContain("<h2>No iPhone yet</h2>");
+    expect(iphone).toContain("@click=${() => this.openPairDialog()}");
+    expect(iphone).not.toMatch(/ - |\u2013|\u2014/);
   });
 
   it("puts HTTP actions under the row too, handed no watch, as every watch shares it", () => {
-    const at = tab.indexOf("return this.withWatchRow(renderWatchHttpActionsView({");
-    expect(at).toBeGreaterThan(0);
-    expect(tab.slice(0, at)).toContain("if (isWatchHttpActionsRoute(this.route)) {");
-    const call = tab.slice(at, tab.indexOf("}));", at));
-    expect(call).toContain("hass: this.hass, owners: this.owners, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,");
-    expect(call).not.toContain("ownerId");
-    expect(call).not.toMatch(/\bwatch\b/);
-    expect(call).not.toContain("shell:");
+    const body = call("renderWatchHttpActionsView");
+    expect(body).toContain("hass: this.hass, owners: this.owners, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,");
+    expect(body).not.toContain("ownerId");
+    expect(body).not.toMatch(/\bwatch\b/);
+    expect(body).not.toContain("shell:");
   });
 
   it("puts Cameras under the row too, handed no watch and no owners, as the framing is the camera's", () => {
-    const at = tab.indexOf("return this.withWatchRow(renderWatchCamerasView({");
-    expect(at).toBeGreaterThan(0);
-    expect(tab.slice(0, at)).toContain("if (isWatchCamerasRoute(this.route)) {");
-    const call = tab.slice(at, tab.indexOf("}));", at));
-    expect(call).toContain("hass: this.hass, narrow: this.narrow,");
-    expect(call).not.toContain("ownerId");
-    expect(call).not.toMatch(/\bwatch\b/);
-    expect(call).not.toContain("shell:");
-    expect(call).not.toContain("menu:");
-    expect(call).not.toContain("onBack");
+    const body = call("renderWatchCamerasView");
+    expect(body).toContain("hass: this.hass, narrow: this.narrow,");
+    expect(body).not.toContain("ownerId");
+    expect(body).not.toMatch(/\bwatch\b/);
+    expect(body).not.toContain("shell:");
+    expect(body).not.toContain("menu:");
+    expect(body).not.toContain("onBack");
   });
 
   it("counts HTTP action and camera edits in both leave guards, and drops them on a yes", () => {
@@ -186,14 +221,17 @@ describe("the watch screens under the row", () => {
 });
 
 describe("links into the Watch app carry the shared watch", () => {
-  it("in the Watch app tab", () => {
-    expect(method("  override render() {")).toContain("watch: this.sharedWatch,");
-    expect(method("  private openTab(")).toContain("this.goTo(tabPath(tab, this.sharedWatch));");
+  it("in the Watch app and iPhone app tabs", () => {
+    const render = method("  override render() {");
+    expect(render).toContain("watch: this.sharedWatch,");
+    expect(render).toContain("iphone: this.sharedPhone,");
+    expect(render).toContain("phones: this.phonePages,");
+    expect(method("  private openTab(")).toContain("this.goTo(tabPath(tab, this.sharedWatch, this.sharedPhone));");
   });
 
-  it("on Home's device cards, which open a screen on that card's own watch", () => {
+  it("on Home's device cards, which open a screen on that card's own watch or iPhone", () => {
     const tile = method("  private renderHomeTile(");
-    expect(tile).toContain("const path = watchScreenPath(t.screen, d.id);");
+    expect(tile).toContain("const path = deviceScreenPath(d.kind, t.screen, d.id);");
     expect(tile).toContain(`<a class="home-tile" href=\${panelUrl(this.route, path, window.location.pathname)}`);
     expect(tile).toContain("this.pickWatch(d.id);");
     expect(method("  private renderHome() {")).not.toContain("watchSettings.");
@@ -202,7 +240,7 @@ describe("links into the Watch app carry the shared watch", () => {
 
 describe("the Settings page", () => {
   it("is a watch screen under the row, drawn by the panel", () => {
-    expect(method("  private renderTab() {")).toContain("if (isWatchSettingsRoute(this.route)) return this.withWatchRow(this.renderSettingsPage());");
+    expect(method("  private renderWatchScreen(")).toContain(`case "settings": return this.renderSettingsPage();`);
     const page = method("  private renderSettingsPage() {");
     expect(page).not.toContain("is_admin");
     expect(page).toContain("if (!this.linkReady && this.owners.length === 0) {");
@@ -212,8 +250,14 @@ describe("the Settings page", () => {
   it("follows the shared watch on every draw, once the devices are in, and leaves on any other route", () => {
     const will = method("  protected override willUpdate(changed");
     expect(will).toContain("if (isWatchSettingsRoute(this.route)) {");
-    expect(will).toContain("if (this.linkReady || this.owners.length > 0) this.watchSettings.show(this.hass, this.owners, this.sharedWatch, this.phonePages);");
+    expect(will).toContain("if (listed) this.watchSettings.show(this.hass, this.owners, this.sharedWatch, false);");
     expect(will).toContain("this.watchSettings.leave();");
+  });
+
+  it("shows the iPhone app's Settings only on an iPhone, as iPhone settings", () => {
+    const will = method("  protected override willUpdate(changed");
+    expect(will).toContain("} else if (iphoneScreenOf(this.route) === WATCH_SETTINGS_SCREEN && listed && this.sharedPhone !== undefined) {");
+    expect(will).toContain("this.watchSettings.show(this.hass, this.owners, this.sharedPhone, true);");
   });
 
   it("is drawn nowhere else: no Watch settings dialog over Home, the list, the editor or a watch screen", () => {
@@ -223,7 +267,7 @@ describe("the Settings page", () => {
 
   it("saves on ⌘S or Ctrl+S, which the panel takes before its other keys", () => {
     const keys = SOURCE.slice(SOURCE.indexOf("  private keyHandler = (e: KeyboardEvent) => {"));
-    const save = keys.indexOf("if (settingsPageSavesOnKey(this.route, e)) {");
+    const save = keys.indexOf("if (settingsPageSavesOnKey(iphoneInnerRoute(this.route) ?? this.route, e)) {");
     expect(save).toBeGreaterThan(0);
     expect(save).toBeLessThan(keys.indexOf("if (!editorKeysLive("));
     expect(keys.slice(save, save + 200)).toContain("this.watchSettings.saveFromKey();");

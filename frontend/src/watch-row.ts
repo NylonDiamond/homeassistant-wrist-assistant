@@ -7,10 +7,10 @@
 // never name one and a pick on them changes nothing they show. What can be worked out without
 // the panel lives here, where a test can reach it.
 //
-// On a home with phone pages (`phone-pages.ts`) the menu lists the iPhones
-// after the watches, each with a phone glyph, and a phone can be the shared
-// pick: Pages, Menus, Status pages, Rooms and Settings then edit the phone's
-// own records.
+// The iPhone app tab draws the same row for its iPhones (`iphone`): the
+// shared iPhone at the left, then the screens an iPhone has (Pages, Menus,
+// Status pages, Rooms) and Settings, each at its `/iphone` address. A home
+// with no iPhone gets the way to pair one instead.
 //
 // The row is neutral, like the tabs: the screen on show is marked by weight
 // and a grey fill, never by a hue. Every link and button is a box with a one
@@ -18,35 +18,40 @@
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import type { OwnerSummary } from "./ha-api.js";
-import { screenTakesPhone } from "./phone-pages.js";
+import { iphoneDevices } from "./phone-pages.js";
 import { type DeviceSync, deviceSync, deviceSyncLabel } from "./send-state.js";
-import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, isPlainClick, panelUrl, watchScreenOf, watchScreenPath } from "./shell.js";
+import {
+  IPHONE_SCREENS, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen,
+  iphoneScreenOf, iphoneScreenPath, isPlainClick, panelUrl, watchScreenOf, watchScreenPath,
+} from "./shell.js";
 import { uiIcon } from "./ui-icons.js";
-import { deviceKindOf } from "./version.js";
 import type { PanelRoute } from "./watch-pages/hook.js";
-import { watchAppDevices, watchName } from "./watch-settings.js";
+import { settingsWatches, watchName } from "./watch-settings.js";
+
+/** Which app's row: the Watch app's, or the iPhone app's. */
+export type RowKind = "watch" | "iphone";
 
 /** One device in the row's menu. */
 export interface WatchRowChoice {
   id: string;
   name: string;
-  /** A watch, or an iPhone on a home with phone pages. */
-  kind: "watch" | "iphone";
+  /** A watch in the Watch app's row, an iPhone in the iPhone app's. */
+  kind: RowKind;
   /** Its complications and widgets, by the rule Home's Devices card uses. */
   sync: DeviceSync | undefined;
   /** The device on show. */
   on: boolean;
 }
 
-/** The home's devices as the row's menu lists them: the watches, then the
- * iPhones when the home has phone pages (`phones`); never the Library or an
- * orphan. Named as every watch screen names them. */
-export function watchRowChoices(owners: readonly OwnerSummary[], current: string | undefined, phones = false): WatchRowChoice[] {
-  const watches = watchAppDevices(owners, phones);
+/** The home's devices as the row's menu lists them: the watches, or in the
+ * iPhone app's row the iPhones; never the Library or an orphan. Named as
+ * every watch screen names them. */
+export function watchRowChoices(owners: readonly OwnerSummary[], current: string | undefined, kind: RowKind = "watch"): WatchRowChoice[] {
+  const watches = kind === "iphone" ? iphoneDevices(owners) : settingsWatches(owners);
   return watches.map((w) => ({
     id: w.owner_watch_id,
     name: watchName(w, watches),
-    kind: deviceKindOf(w) === "iphone" ? "iphone" : "watch",
+    kind,
     sync: deviceSync({
       name: w.device_name ?? w.owner_watch_id,
       kind: w.device_kind,
@@ -68,19 +73,22 @@ export interface WatchRowLink {
   on: boolean;
 }
 
-/** The row's screen links. On a phone (`phone`) the watch only screens leave
- * the row, all but the one on show (`phone-pages.ts`). */
-export function watchRowLinks(route: PanelRoute | undefined, watch: string | undefined, phone = false): WatchRowLink[] {
+/** The row's screen links: the Watch app's eight, or in the iPhone app's
+ * row the four an iPhone has, each at its `/iphone` address. */
+export function watchRowLinks(route: PanelRoute | undefined, watch: string | undefined, kind: RowKind = "watch"): WatchRowLink[] {
+  if (kind === "iphone") {
+    const shown = iphoneScreenOf(route)?.id;
+    return IPHONE_SCREENS.map((screen) => ({ screen, path: iphoneScreenPath(screen, watch), on: screen.id === shown }));
+  }
   const shown = watchScreenOf(route)?.id;
-  return WATCH_SCREENS
-    .filter((screen) => !phone || screenTakesPhone(screen) || screen.id === shown)
-    .map((screen) => ({ screen, path: watchScreenPath(screen, watch), on: screen.id === shown }));
+  return WATCH_SCREENS.map((screen) => ({ screen, path: watchScreenPath(screen, watch), on: screen.id === shown }));
 }
 
-/** The row's last link, Settings, on the shared watch. In a home with no
- * watch it is also where the first one pairs. */
-export function watchRowSettingsLink(route: PanelRoute | undefined, watch: string | undefined): WatchRowLink {
+/** The row's last link, Settings, on the shared device. In a home with no
+ * watch the Watch app's is also where the first one pairs. */
+export function watchRowSettingsLink(route: PanelRoute | undefined, watch: string | undefined, kind: RowKind = "watch"): WatchRowLink {
   const screen = WATCH_SETTINGS_SCREEN;
+  if (kind === "iphone") return { screen, path: iphoneScreenPath(screen, watch), on: iphoneScreenOf(route)?.id === screen.id };
   return { screen, path: watchScreenPath(screen, watch), on: watchScreenOf(route)?.id === screen.id };
 }
 
@@ -95,15 +103,21 @@ export function watchRowSlot(loaded: boolean, watches: number): WatchRowSlot {
 
 /** Under the menu's watches. */
 export const WATCH_ROW_PHONES_NOTE = "Phones are not here. Phones only get complications and widgets.";
+/** Under the menu's watches on a home with phone pages. */
+export const WATCH_ROW_IPHONE_TAB_NOTE = "iPhones are set up in the iPhone app tab.";
 /** Beside the pairing button in a home with no watch. */
 export const WATCH_ROW_NONE_NOTE = "No watch has connected yet. Pair one to set up its pages, menus and the rest.";
+/** Beside the pairing button in a home with no iPhone. */
+export const IPHONE_ROW_NONE_NOTE = "No iPhone has connected yet. Pair one to set up its pages, menus and the rest.";
 
 export interface WatchRowInput {
   route: PanelRoute | undefined;
   owners: readonly OwnerSummary[];
-  /** The shared watch, or an iPhone on a home with phone pages. */
+  /** The shared watch, or in the iPhone app's row the shared iPhone. */
   watch: string | undefined;
-  /** The home has phone pages: the menu lists the iPhones too. */
+  /** The iPhone app's row, not the Watch app's. */
+  iphone?: boolean;
+  /** The home has phone pages: the watch menu says where the iPhones are. */
   phones?: boolean;
   /** Whether the device list has been read, so "no watch" is the truth. */
   loaded: boolean;
@@ -113,6 +127,8 @@ export interface WatchRowInput {
   /** A screen link pressed, Settings and Pair a watch included: its path
    * inside the panel. */
   onGo: (path: string) => void;
+  /** Pair an iPhone pressed, in the iPhone app's row of a home with none. */
+  onPair?: () => void;
 }
 
 /** The Settings link's hover text, for the device on show. */
@@ -122,20 +138,10 @@ export function watchRowSettingsTitle(kind: WatchRowChoice["kind"] | undefined):
     : "How the watch behaves: gestures, pages, cameras and connection";
 }
 
-/** The line under the row on a watch only screen opened on a phone
- * (`watchOnlyFallback`): what the screen shows instead. Neutral, like the
- * row. */
-export function renderWatchOnlyNote(text: string): TemplateResult {
-  return html`<div class="wa-wr-only" role="status">${uiIcon("info")}<span>${text}</span></div>`;
-}
-
 export function renderWatchRow(input: WatchRowInput): TemplateResult {
-  const choices = watchRowChoices(input.owners, input.watch, input.phones === true);
+  const kind: RowKind = input.iphone === true ? "iphone" : "watch";
+  const choices = watchRowChoices(input.owners, input.watch, kind);
   const slot = watchRowSlot(input.loaded, choices.length);
-  const shown = choices.find((c) => c.on) ?? choices[0];
-  // A home with phone pages and an iPhone but no watch: the phone fills the
-  // slot, and the way to pair a watch stands beside it.
-  const noWatch = slot === "none" || (slot !== "loading" && choices.every((c) => c.kind === "iphone"));
   const href = (path: string) => panelUrl(input.route, path, globalThis.location?.pathname ?? "");
   const link = (l: WatchRowLink, cls = "", title?: string) => html`<a class="wa-wr-link ${cls}${l.on ? "on" : ""}"
     href=${href(l.path)} aria-current=${l.on ? "page" : "false"} title=${title ?? nothing}
@@ -144,58 +150,63 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
       e.preventDefault();
       if (!l.on) input.onGo(l.path);
     }}>${l.screen.label}</a>`;
-  return html`<nav class="wa-watchrow" aria-label="Watch app">
-    ${renderWatchSlot(input, slot, choices)}
-    ${noWatch && slot !== "none" ? renderPairButton(input) : nothing}
-    ${noWatch ? html`<span class="wa-wr-note">${WATCH_ROW_NONE_NOTE}</span>` : nothing}
-    <span class="wa-wr-links">
-      ${slot === "none" ? nothing : watchRowLinks(input.route, input.watch, shown?.kind === "iphone").map((l) => link(l))}
-      ${link(watchRowSettingsLink(input.route, input.watch), "wa-wr-settings ", watchRowSettingsTitle(shown?.kind))}
-    </span>
+  // An iPhone app with no iPhone has nothing to link to, Settings included:
+  // the way to pair one is all it offers.
+  const links = slot === "none" && kind === "iphone" ? nothing : html`<span class="wa-wr-links">
+      ${slot === "none" ? nothing : watchRowLinks(input.route, input.watch, kind).map((l) => link(l))}
+      ${link(watchRowSettingsLink(input.route, input.watch, kind), "wa-wr-settings ", watchRowSettingsTitle(kind))}
+    </span>`;
+  return html`<nav class="wa-watchrow" aria-label=${kind === "iphone" ? "iPhone app" : "Watch app"}>
+    ${renderWatchSlot(input, slot, choices, kind)}
+    ${slot === "none" ? html`<span class="wa-wr-note">${kind === "iphone" ? IPHONE_ROW_NONE_NOTE : WATCH_ROW_NONE_NOTE}</span>` : nothing}
+    ${links}
   </nav>`;
 }
 
-/** The way to pair the first watch: Settings, where a watch pairs. */
-function renderPairButton(input: WatchRowInput): TemplateResult {
+/** The way to pair the first device: for a watch, Settings, where a watch
+ * pairs; for an iPhone, the panel's Pair a device. */
+function renderPairButton(input: WatchRowInput, kind: RowKind): TemplateResult {
+  if (kind === "iphone") {
+    return html`<button type="button" class="wa-wr-pair" title="Pair an iPhone, by a QR code or a code"
+      @click=${() => input.onPair?.()}>${uiIcon("phone")}<span>Pair an iPhone</span></button>`;
+  }
   const settings = watchRowSettingsLink(input.route, undefined);
   return html`<button type="button" class="wa-wr-pair" title="Opens Settings, where a watch pairs with a code"
     @click=${() => { if (!settings.on) input.onGo(settings.path); }}>${uiIcon("watch")}<span>Pair a watch</span></button>`;
 }
 
-function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: readonly WatchRowChoice[]) {
+function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: readonly WatchRowChoice[], kind: RowKind) {
+  const word = kind === "iphone" ? "iPhone" : "Watch";
+  const chip = html`<span class="wa-wr-chip" aria-hidden="true">${uiIcon(kind === "iphone" ? "phone" : "watch")}</span><span class="wa-wr-k">${word}</span>`;
   if (slot === "loading") {
-    return html`<span class="wa-wr-watch"><span class="wa-wr-chip" aria-hidden="true">${uiIcon("watch")}</span><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">Loading…</span></span>`;
+    return html`<span class="wa-wr-watch">${chip}<span class="wa-wr-wait">Loading…</span></span>`;
   }
-  if (slot === "none") return renderPairButton(input);
+  if (slot === "none") return renderPairButton(input, kind);
   const current = choices.find((c) => c.on) ?? choices[0]!;
-  const word = current.kind === "iphone" ? "iPhone" : "Watch";
-  const chip = html`<span class="wa-wr-chip" aria-hidden="true">${uiIcon(current.kind === "iphone" ? "phone" : "watch")}</span><span class="wa-wr-k">${word}</span>`;
   if (slot === "one") {
     return html`<span class="wa-wr-watch">${chip}<b class="wa-wr-name">${current.name}</b></span>`;
   }
   const open = input.menuOpen;
-  const phones = input.phones === true;
+  const note = kind === "iphone" ? undefined : input.phones === true ? WATCH_ROW_IPHONE_TAB_NOTE : WATCH_ROW_PHONES_NOTE;
   return html`<span class="wa-wr-picker" @keydown=${(e: KeyboardEvent) => {
       if (e.key === "Escape" && open) { e.stopPropagation(); input.onMenu(false); }
     }}>
     <button type="button" class="wa-wr-open" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
-      title=${phones ? "Pick the watch or iPhone to set up" : "Pick the watch to set up"} aria-label=${`${word}: ${current.name}. Pick another`}
+      title=${kind === "iphone" ? "Pick the iPhone to set up" : "Pick the watch to set up"} aria-label=${`${word}: ${current.name}. Pick another`}
       @click=${() => input.onMenu(!open)}>
       ${chip}<b class="wa-wr-name">${current.name}</b>${uiIcon("chevron")}
     </button>
-    ${open ? html`<div class="wa-wr-menu" role="menu" aria-label=${phones ? "Devices" : "Watches"}>
+    ${open ? html`<div class="wa-wr-menu" role="menu" aria-label=${kind === "iphone" ? "iPhones" : "Watches"}>
       <div class="wa-wr-menu-h">You are editing</div>
       ${choices.map((c) => html`<button type="button" class="wa-wr-row ${c.on ? "on" : ""}" role="menuitemradio"
         aria-checked=${c.on ? "true" : "false"} data-watch=${c.id} data-kind=${c.kind}
         title=${c.sync ? `Complications and widgets: ${deviceSyncLabel(c.sync)}` : nothing}
         @click=${() => { input.onMenu(false); if (!c.on) input.onPick(c.id); }}>
-        <i class="wa-wr-dot ${c.sync ?? ""}" aria-hidden="true"></i>${phones
-          ? html`<span class="wa-wr-kind" aria-hidden="true">${uiIcon(c.kind === "iphone" ? "phone" : "watch")}</span>`
-          : nothing}<span class="wa-wr-row-name">${c.name}</span>
+        <i class="wa-wr-dot ${c.sync ?? ""}" aria-hidden="true"></i><span class="wa-wr-row-name">${c.name}</span>
         ${c.on ? html`<span class="wa-wr-check" aria-hidden="true">${uiIcon("check")}</span>`
           : c.sync === "synced" || c.sync === "waiting" ? html`<span class="wa-wr-sync">${deviceSyncLabel(c.sync)}</span>` : nothing}
       </button>`)}
-      ${phones ? nothing : html`<p class="wa-wr-menu-note">${WATCH_ROW_PHONES_NOTE}</p>`}
+      ${note === undefined ? nothing : html`<p class="wa-wr-menu-note">${note}</p>`}
     </div>` : nothing}
   </span>`;
 }
@@ -259,8 +270,6 @@ export const watchRowStyles = css`
   button.wa-wr-row:hover { background: var(--wa-hover); border-color: var(--wa-line-strong); }
   button.wa-wr-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.wa-wr-row.on { font-weight: 600; background: color-mix(in srgb, var(--wa-ink) 10%, transparent); border-color: var(--wa-line-strong); }
-  .wa-wr-kind { display: inline-flex; flex: none; color: var(--wa-muted); }
-  .wa-wr-kind svg.ui-icon { width: 13px; height: 13px; }
   .wa-wr-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wa-wr-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--wa-muted); }
   .wa-wr-dot.synced { background: var(--wa-green); }
@@ -270,12 +279,21 @@ export const watchRowStyles = css`
   .wa-wr-check svg.ui-icon { width: 14px; height: 14px; }
   .wa-wr-menu-note { margin: 4px 0 0; padding: 8px 8px 4px; border-top: 1px solid var(--wa-line); font-size: 12px; color: var(--wa-muted); }
   .wa-wr-note { font-size: 12.5px; color: var(--wa-muted); min-width: 0; }
-  .wa-wr-only {
-    display: flex; align-items: center; gap: 8px; flex: none; padding: 8px 12px; box-sizing: border-box;
-    font-size: 13px; color: var(--wa-ink); background: var(--wa-top); border-bottom: 1px solid var(--wa-line);
-  }
-  .wa-wr-only svg.ui-icon { width: 14px; height: 14px; flex: none; color: var(--wa-muted); }
   .wa-wr-links { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  /* The iPhone app with no iPhone: what it is for and the way to pair one,
+     centred under the row. */
+  .wa-ip-empty {
+    flex: 1 1 auto; min-height: 0; overflow: auto; box-sizing: border-box; padding: 48px 16px;
+    display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center;
+    background: var(--wa-bg); color: var(--wa-ink);
+  }
+  .wa-ip-empty h2 { margin: 0; font-size: 18px; font-weight: 500; }
+  .wa-ip-empty p { margin: 0; max-width: 440px; font-size: 13px; line-height: 1.45; color: var(--wa-muted); }
+  span.wa-ip-empty-chip {
+    display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; box-sizing: border-box;
+    color: var(--wa-muted); border: 1px solid var(--wa-line-strong);
+  }
+  span.wa-ip-empty-chip svg.ui-icon { width: 20px; height: 20px; }
   a.wa-wr-link, button.wa-wr-link {
     display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 6px; box-sizing: border-box;
     font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-muted); text-decoration: none; white-space: nowrap; cursor: pointer;

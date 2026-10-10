@@ -83,7 +83,8 @@ describe("Home's device cards", () => {
     expect(tile).toContain("this.pickPickerTab(d.id);");
     expect(tile).toContain("this.pickerFilter = t.filter;");
     expect(tile).toContain("if (this.draft) this.openPicker();");
-    expect(tile).toContain("const path = watchScreenPath(t.screen, d.id);");
+    // An iPhone's pages open in the iPhone app, a watch's in the Watch app.
+    expect(tile).toContain("const path = deviceScreenPath(d.kind, t.screen, d.id);");
     expect(tile.indexOf("this.pickWatch(d.id);")).toBeLessThan(tile.indexOf("this.goTo(path);"));
     const count = method("  private homeTileCount(");
     expect(count).toContain("this.watchCounts.get(d.id)?.[t.count]");
@@ -192,7 +193,7 @@ describe("Home's device sheet", () => {
 
   it("has a tab for each of the device's pages, each opening it on this device", () => {
     expect(sheet).toContain("${deviceSheetTabs(row.kind).map(tab)}");
-    expect(sheet).toContain("const path = watchScreenPath(t.screen, ownerId);");
+    expect(sheet).toContain("const path = deviceScreenPath(row.kind, t.screen, ownerId);");
     expect(sheet).toContain("this.pickWatch(ownerId);");
     expect(sheet).toContain("this.pickerFilter = filter;");
   });
@@ -263,6 +264,10 @@ describe("Home's Pair a device dialog", () => {
     const made = SOURCE.slice(at, SOURCE.indexOf("});", at));
     expect(made).toContain("await this.loadOwners();");
     expect(made).toContain(`if (kind === "watch") this.pickWatch(watchId);`);
+    expect(made).toContain(`else if (isPhoneId(this.owners, watchId)) this.pickPhone(watchId);`);
+    // Opened from the iPhone app, the dialog closes and no sheet opens.
+    expect(made.indexOf(`if (tabOfRoute(this.route) !== "home") return;`)).toBeGreaterThan(made.indexOf("this.closePairDialog();"));
+    expect(made.indexOf(`if (tabOfRoute(this.route) !== "home") return;`)).toBeLessThan(made.indexOf("this.openDeviceSheet(watchId);"));
   });
 
   it("swaps the dialog for the new device's sheet, saying Paired in green", () => {

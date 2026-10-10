@@ -411,8 +411,8 @@ import {
 import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard } from "./watch-pair-view.js";
-import { settingsWatches, watchAppDevices } from "./watch-settings.js";
-import { type WatchOnlyFallback, phonePagesOn, watchOnlyFallback } from "./phone-pages.js";
+import { settingsWatches } from "./watch-settings.js";
+import { iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "./phone-pages.js";
 import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "./watch-pages/save-note.js";
 import {
   formButtonStyles,
@@ -424,20 +424,21 @@ import {
   formSegStyles,
   rangeFill,
 } from "./form-styles.js";
-import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles } from "./watch-pages/hook.js";
-import { dropWatchMenusDrafts, isWatchMenusRoute, renderWatchMenusView, watchMenusDirty, watchMenusHookStyles } from "./watch-menus/hook.js";
-import { dropWatchVoiceDrafts, isWatchVoiceRoute, renderWatchVoiceView, watchVoiceDirty, watchVoiceHookStyles } from "./watch-voice/hook.js";
-import { dropWatchStatusPagesDrafts, isWatchStatusPagesRoute, renderWatchStatusPagesView, watchStatusPagesDirty, watchStatusPagesHookStyles } from "./watch-status-pages/hook.js";
-import { dropWatchControlCenterDrafts, isWatchControlCenterRoute, renderWatchControlCenterView, watchControlCenterDirty, watchControlCenterHookStyles } from "./watch-control-center/hook.js";
-import { dropWatchRoomsDrafts, isWatchRoomsRoute, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles } from "./watch-rooms/hook.js";
-import { dropWatchHttpActionsDrafts, isWatchHttpActionsRoute, renderWatchHttpActionsView, watchHttpActionsDirty } from "./watch-http-actions/hook.js";
-import { dropWatchCamerasDrafts, isWatchCamerasRoute, renderWatchCamerasView, watchCamerasDirty } from "./watch-cameras/hook.js";
+import { type PanelRoute, dropWatchPagesDrafts, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles } from "./watch-pages/hook.js";
+import { dropWatchMenusDrafts, renderWatchMenusView, watchMenusDirty, watchMenusHookStyles } from "./watch-menus/hook.js";
+import { dropWatchVoiceDrafts, renderWatchVoiceView, watchVoiceDirty, watchVoiceHookStyles } from "./watch-voice/hook.js";
+import { dropWatchStatusPagesDrafts, renderWatchStatusPagesView, watchStatusPagesDirty, watchStatusPagesHookStyles } from "./watch-status-pages/hook.js";
+import { dropWatchControlCenterDrafts, renderWatchControlCenterView, watchControlCenterDirty, watchControlCenterHookStyles } from "./watch-control-center/hook.js";
+import { dropWatchRoomsDrafts, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles } from "./watch-rooms/hook.js";
+import { dropWatchHttpActionsDrafts, renderWatchHttpActionsView, watchHttpActionsDirty } from "./watch-http-actions/hook.js";
+import { dropWatchCamerasDrafts, renderWatchCamerasView, watchCamerasDirty } from "./watch-cameras/hook.js";
 import {
-  COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, editorKeysLive, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
+  COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, deviceScreenPath, editorKeysLive, iphoneInnerRoute, iphoneScreenOf,
+  iphoneScreenPath, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
   panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath,
 } from "./shell.js";
-import { adoptRouteWatch, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
-import { renderWatchOnlyNote, renderWatchRow, watchRowStyles } from "./watch-row.js";
+import { adoptRouteWatch, iphoneRouteOwner, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
+import { renderWatchRow, watchRowStyles } from "./watch-row.js";
 import { isWatchSettingsRoute, settingsPageSavesOnKey } from "./watch-settings-page.js";
 import { type WatchHttpLibrary, readWatchHttpLibrary, watchHttpLibraryReadMeansNone } from "./watch-pages/http-library.js";
 import { anyWatchSettingsDirty } from "./watch-settings-draft.js";
@@ -1453,16 +1454,20 @@ export class WristAssistantPanel extends LitElement {
   /** Home's "Pair a device" dialog is open. */
   @state() private pairOpen = false;
   /** The card in that dialog, the same card the Settings page draws. A
-   * device paired on it joins the device list, and a watch becomes the
-   * shared watch. */
+   * device paired on it joins the device list, and becomes the shared watch,
+   * or the iPhone app's shared iPhone. */
   private homePair = new PairWatchCard(() => this.requestUpdate(), async (watchId, stale, kind) => {
     await this.loadOwners();
     if (watchId === undefined) return;
     if (kind === "watch") this.pickWatch(watchId);
-    // The new device's own sheet takes the dialog's place, with a green
-    // "Paired" line, so it is plain the pairing worked and where it went.
+    else if (isPhoneId(this.owners, watchId)) this.pickPhone(watchId);
+    // On Home the new device's own sheet takes the dialog's place, with a
+    // green "Paired" line, so it is plain the pairing worked and where it
+    // went. Opened from the iPhone app, the dialog closes onto the new
+    // iPhone's pages.
     if (stale() || !this.pairOpen || this.ownerOf(watchId) === undefined) return;
     this.closePairDialog();
+    if (tabOfRoute(this.route) !== "home") return;
     this.openDeviceSheet(watchId);
     this.devicePaired = watchId;
   });
@@ -1491,6 +1496,9 @@ export class WristAssistantPanel extends LitElement {
    * (`watch-pick.ts`). Never the complications device: `sharedWatch` works
    * out the watch on screen from this, the address and today's choice. */
   @state() private watchPick?: string;
+  /** The iPhone app's shared iPhone as last picked, remembered per browser
+   * apart from the watch (`watch-pick.ts`). */
+  @state() private phonePick?: string;
   /** The Watch app row's menu of watches is open. */
   @state() private watchRowMenu = false;
   /** Each watch's watch app records, as Home last read them
@@ -1527,9 +1535,8 @@ export class WristAssistantPanel extends LitElement {
   @state() private parseError?: string;
   @state() private maxSchemaVersion = 7;
   /** The integration keeps phone pages (`phone-pages.ts`), from the owners
-   * reply's capabilities: the Watch app lists the iPhones after the
-   * watches, and Pages, Menus, Status pages, Rooms and Settings edit a
-   * phone's own records. */
+   * reply's capabilities: the iPhone app tab shows, and its Pages, Menus,
+   * Status pages, Rooms and Settings edit a phone's own records. */
   @state() private phonePages = false;
   /** iPhone presets on the selected watch (slot + name). freeSlot() skips
    * their slots; the list shows them as locked rows. */
@@ -2360,8 +2367,8 @@ export class WristAssistantPanel extends LitElement {
   private keyHandler = (e: KeyboardEvent) => {
     if (e.key === "Alt") this.altHeld = true;
     // The Settings page is the panel's own drawing, not an element with keys
-    // of its own, so the panel saves it.
-    if (settingsPageSavesOnKey(this.route, e)) {
+    // of its own, so the panel saves it, in the iPhone app too.
+    if (settingsPageSavesOnKey(iphoneInnerRoute(this.route) ?? this.route, e)) {
       e.preventDefault();
       this.watchSettings.saveFromKey();
       return;
@@ -5987,6 +5994,7 @@ export class WristAssistantPanel extends LitElement {
     this.loadGrid();
     this.loadOpen();
     this.watchPick = loadWatchPick(() => window.localStorage);
+    this.phonePick = loadWatchPick(() => window.localStorage, "iphone");
     this.sizeObserver.observe(this);
     window.addEventListener("keydown", this.keyHandler);
     window.addEventListener("keyup", this.keyUpHandler);
@@ -6422,23 +6430,37 @@ export class WristAssistantPanel extends LitElement {
     // Forward moves without a press, so the move itself shuts it and drops its
     // outside-press listener.
     if (changed.has("route")) this.toggleWatchRowMenu(false);
-    // The Settings page follows the row's shared watch on every draw, and
+    // A Watch app address that names one of the home's iPhones (the iPhone
+    // app's "Add pages in Home Assistant" from before the iPhone app had a
+    // tab) opens the same screen in the iPhone app, rewritten in place. Once
+    // the device list is in, since only it says the id is an iPhone.
+    if (changed.has("route") || changed.has("owners") || changed.has("phonePages")) {
+      const to = iphoneAddressFor(this.route, this.owners, this.phonePages);
+      if (to !== undefined) this.goTo(to, true);
+    }
+    // The Settings page follows the row's shared device on every draw, and
     // reads again on the way back to it. Not before the device list is in,
-    // so a home with watches never shows the "no watch" card first. Any
-    // other route takes it off the screen; its edits stay kept.
+    // so a home with watches never shows the "no watch" card first. The
+    // iPhone app's is shown only on an iPhone. Any other route takes it off
+    // the screen; its edits stay kept.
+    const listed = this.linkReady || this.owners.length > 0;
     if (isWatchSettingsRoute(this.route)) {
-      if (this.linkReady || this.owners.length > 0) this.watchSettings.show(this.hass, this.owners, this.sharedWatch, this.phonePages);
+      if (listed) this.watchSettings.show(this.hass, this.owners, this.sharedWatch, false);
+    } else if (iphoneScreenOf(this.route) === WATCH_SETTINGS_SCREEN && listed && this.sharedPhone !== undefined) {
+      this.watchSettings.show(this.hass, this.owners, this.sharedPhone, true);
     } else {
       this.watchSettings.leave();
     }
     // A watch the address names (a link from the iPhone app, a bookmark, a
     // screen link in the row) becomes the Watch app's remembered watch, once
-    // the device list is in and lists it as a watch of this home (or an
-    // iPhone, on a home with phone pages). On a first load the list arrives
-    // later, and its arrival runs this again.
+    // the device list is in and lists it as a watch of this home; an iPhone
+    // an iPhone app address names becomes the iPhone app's likewise. On a
+    // first load the list arrives later, and its arrival runs this again.
     if (changed.has("route") || changed.has("owners") || changed.has("phonePages")) {
-      const next = adoptRouteWatch(this.watchPick, watchRouteOwner(this.route), this.watchAppDevices);
+      const next = adoptRouteWatch(this.watchPick, watchRouteOwner(this.route), this.rowWatches);
       if (next !== undefined && next !== this.watchPick) this.rememberWatch(next);
+      const phone = adoptRouteWatch(this.phonePick, iphoneRouteOwner(this.route), this.rowPhones);
+      if (phone !== undefined && phone !== this.phonePick) this.rememberPhone(phone);
     }
     // Home counts every device's complications, so coming back to it reads
     // the other devices' lists again, the way opening the list does.
@@ -10723,16 +10745,19 @@ export class WristAssistantPanel extends LitElement {
       onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
       onTab: (tab) => this.openTab(tab),
       watch: this.sharedWatch,
+      iphone: this.sharedPhone,
+      phones: this.phonePages,
     });
     return html`${bar}${this.renderTab()}`;
   }
 
   /** A tab pressed in the bar. The tab already on screen stays as it is, so
    * pressing Watch app on Menus does not throw the person back to Pages. The
-   * Watch app opens on Pages for the shared watch. */
+   * Watch app opens on Pages for the shared watch, the iPhone app on Pages
+   * for the shared iPhone. */
   private openTab(tab: PanelTab) {
     if (tab === tabOfRoute(this.route)) return;
-    this.goTo(tabPath(tab, this.sharedWatch));
+    this.goTo(tabPath(tab, this.sharedWatch, this.sharedPhone));
   }
 
   // ── the Watch app's shared watch ──────────────────────────────────────
@@ -10741,20 +10766,37 @@ export class WristAssistantPanel extends LitElement {
    * The one watch every watch screen and the row's Settings are about: the
    * address's, else the remembered pick, else today's choice
    * (`resolveWatchPick`). The complications device only stands in for it
-   * when nothing else is known; picking a complication never moves it.
+   * when nothing else is known; picking a complication never moves it. None
+   * in a home with no watch, once the device list says so, so a pick left
+   * from when the row listed iPhones never opens one here.
    */
   private get sharedWatch(): string | undefined {
-    return resolveWatchPick(this.watchAppDevices, {
+    if (this.rowWatches.length === 0 && (this.linkReady || this.owners.length > 0)) return undefined;
+    return resolveWatchPick(this.rowWatches, {
       route: watchRouteOwner(this.route),
       saved: this.watchPick,
       fallback: this.ownerId,
     });
   }
 
-  /** The devices the Watch app row offers: the watches, then the iPhones on
-   * a home with phone pages. */
-  private get watchAppDevices(): OwnerSummary[] {
-    return watchAppDevices(this.owners, this.phonePages);
+  /** The devices the Watch app row offers: the watches alone. */
+  private get rowWatches(): OwnerSummary[] {
+    return settingsWatches(this.owners);
+  }
+
+  /** The devices the iPhone app row offers: the iPhones, on a home with
+   * phone pages; none on any other. */
+  private get rowPhones(): OwnerSummary[] {
+    return this.phonePages ? iphoneDevices(this.owners) : [];
+  }
+
+  /** The iPhone the iPhone app's screens are about: the address's, else the
+   * remembered pick, else the first iPhone. None in a home with no iPhone,
+   * once the device list says so. */
+  private get sharedPhone(): string | undefined {
+    const phones = this.rowPhones;
+    if (phones.length === 0 && (this.linkReady || this.owners.length > 0)) return undefined;
+    return resolveWatchPick(phones, { route: iphoneRouteOwner(this.route), saved: this.phonePick, fallback: undefined });
   }
 
   /** Remember the shared watch, for this visit and the next. */
@@ -10763,18 +10805,38 @@ export class WristAssistantPanel extends LitElement {
     saveWatchPick(() => window.localStorage, watchId);
   }
 
+  /** Remember the shared iPhone likewise, under its own key. */
+  private rememberPhone(phoneId: string) {
+    this.phonePick = phoneId;
+    saveWatchPick(() => window.localStorage, phoneId, "iphone");
+  }
+
   /**
    * Make a watch the shared one: picked in the row, or just paired in Watch
    * settings. On a watch screen the address follows, rewritten in place (a
    * step Back would only undo the pick), so the screen, its links and a
    * reload all agree; the screen follows its new `ownerId` and keeps every
-   * watch's draft as it was.
+   * watch's draft as it was. An iPhone handed here is the iPhone app's pick
+   * instead (`pickPhone`).
    */
   private pickWatch(watchId: string) {
+    if (isPhoneId(this.owners, watchId)) {
+      this.pickPhone(watchId);
+      return;
+    }
     this.toggleWatchRowMenu(false);
     this.rememberWatch(watchId);
     const screen = watchScreenOf(this.route);
     if (screen !== undefined && watchRouteOwner(this.route) !== watchId) this.goTo(watchScreenPath(screen, watchId), true);
+  }
+
+  /** Make an iPhone the iPhone app's shared one, the way `pickWatch` does
+   * for a watch: on an iPhone app screen the address follows, in place. */
+  private pickPhone(phoneId: string) {
+    this.toggleWatchRowMenu(false);
+    this.rememberPhone(phoneId);
+    const screen = iphoneScreenOf(this.route);
+    if (screen !== undefined && iphoneRouteOwner(this.route) !== phoneId) this.goTo(iphoneScreenPath(screen, phoneId), true);
   }
 
   private toggleWatchRowMenu(open: boolean) {
@@ -10790,25 +10852,8 @@ export class WristAssistantPanel extends LitElement {
     if (!inside) this.toggleWatchRowMenu(false);
   };
 
-  /** A watch only screen (Control Center, Voice, HTTP actions, Cameras)
-   * opened while the row's pick is an iPhone: the watch it shows instead and
-   * the line that says so. Undefined anywhere else. */
-  private get watchOnlyFallback(): WatchOnlyFallback | undefined {
-    const screen = watchScreenOf(this.route);
-    return screen === undefined ? undefined : watchOnlyFallback(screen, this.owners, this.sharedWatch);
-  }
-
-  /** The device a screen of one watch is handed: the shared pick, or the
-   * fallback watch when the pick is a phone this screen has nothing for. */
-  private get watchOnlyOwner(): string | undefined {
-    const fallback = this.watchOnlyFallback;
-    return fallback === undefined ? this.sharedWatch : fallback.watch;
-  }
-
-  /** A watch screen under the Watch app row, with the fallback's line
-   * between them when there is one. */
+  /** A watch screen under the Watch app row. */
   private withWatchRow(view: TemplateResult) {
-    const fallback = this.watchOnlyFallback;
     return html`${renderWatchRow({
       route: this.route,
       owners: this.owners,
@@ -10819,7 +10864,25 @@ export class WristAssistantPanel extends LitElement {
       onMenu: (open) => this.toggleWatchRowMenu(open),
       onPick: (watchId) => this.pickWatch(watchId),
       onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
-    })}${fallback === undefined ? nothing : renderWatchOnlyNote(fallback.text)}${view}`;
+    })}${view}`;
+  }
+
+  /** An iPhone app screen under the iPhone app row, the same row listing
+   * the iPhones. In a home with none its Pair an iPhone opens Home's Pair a
+   * device, drawn here too. */
+  private withIphoneRow(view: TemplateResult) {
+    return html`${renderWatchRow({
+      route: this.route,
+      owners: this.owners,
+      watch: this.sharedPhone,
+      iphone: true,
+      loaded: this.linkReady || this.owners.length > 0,
+      menuOpen: this.watchRowMenu,
+      onMenu: (open) => this.toggleWatchRowMenu(open),
+      onPick: (phoneId) => this.pickPhone(phoneId),
+      onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
+      onPair: () => this.openPairDialog(),
+    })}${view}${this.pairOpen ? this.renderPairDialog() : nothing}`;
   }
 
   /**
@@ -10844,21 +10907,48 @@ export class WristAssistantPanel extends LitElement {
     if (next) this.route = next;
   }
 
-  private renderTab() {
-    if (tabOfRoute(this.route) === "home") return this.renderHome();
-    // Every watch screen sits under the Watch app row, which owns the watch:
-    // each is handed the shared watch (the address's, when it names one) and
-    // follows it, and leaves its own picker, its way back and its links to
-    // the other screens to the row. Watch settings is the row's Settings, a
-    // page of its own, so no screen gets a Watch settings button or dialog.
-    // The page editor takes the panel's place. An open draft stays as it is
-    // under it, and the leave guards still cover it.
-    // A link to `/pages/<owner_watch_id>` opens it on that watch.
-    const watch = this.sharedWatch;
-    if (isWatchSettingsRoute(this.route)) return this.withWatchRow(this.renderSettingsPage());
-    if (isWatchPagesRoute(this.route)) {
-      return this.withWatchRow(renderWatchPagesView({
-        hass: this.hass, owners: this.owners, ownerId: watch, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+  /**
+   * The iPhone app tab's body, under its row: the screen the address names,
+   * on the shared iPhone, drawn by the same editor the Watch app uses for
+   * that screen. It waits for the device list, which alone says whether the
+   * home keeps phone pages and has an iPhone; with none, it says how to
+   * pair one.
+   */
+  private renderIphoneScreen() {
+    if (!this.linkReady && this.owners.length === 0) {
+      return html`<div class="ws-page"><div class="ws-cols one"><p class="home-empty">Loading…</p></div></div>`;
+    }
+    const phone = this.sharedPhone;
+    const screen = iphoneScreenOf(this.route);
+    if (!this.phonePages) {
+      return html`<div class="wa-ip-empty"><p class="home-empty">This Home Assistant does not keep iPhone pages. Update the Wrist Assistant integration to set them up here.</p></div>`;
+    }
+    if (phone === undefined || screen === undefined) {
+      return html`<div class="wa-ip-empty">
+        <span class="wa-ip-empty-chip" aria-hidden="true">${uiIcon("phone")}</span>
+        <h2>No iPhone yet</h2>
+        <p>Pair an iPhone to give it its own pages, menus, status pages, rooms and settings. Open Wrist Assistant on the iPhone, then scan the QR code or type its code here.</p>
+        <button type="button" class="home-btn add" @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair an iPhone</span></button>
+      </div>`;
+    }
+    return this.renderWatchScreen(screen.id, phone);
+  }
+
+  /**
+   * One watch screen's body, on one device: the Watch app hands it the
+   * shared watch, the iPhone app the shared iPhone. Each editor follows the
+   * device it is handed, and leaves its own picker, its way back and its
+   * links to the other screens to the row. Watch settings is the row's
+   * Settings, a page of its own, so no screen gets a Watch settings button
+   * or dialog. An open draft stays as it is under it, and the leave guards
+   * still cover it.
+   */
+  private renderWatchScreen(id: WatchScreen["id"], owner: string | undefined) {
+    switch (id) {
+      case "settings": return this.renderSettingsPage();
+      // `/pages` and `/pages/<owner_watch_id>`, which opens it on that watch.
+      case "pages": return renderWatchPagesView({
+        hass: this.hass, owners: this.owners, ownerId: owner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
         onBack: () => this.goTo(COMPLICATIONS_PATH),
@@ -10867,12 +10957,10 @@ export class WristAssistantPanel extends LitElement {
         phones: this.phonePages,
         dialogs: nothing,
         onLoaded: () => this.requestUpdate(),
-      }));
-    }
-    // The menu editor likewise, on `/menus` and `/menus/<owner_watch_id>`.
-    if (isWatchMenusRoute(this.route)) {
-      return this.withWatchRow(renderWatchMenusView({
-        hass: this.hass, owners: this.owners, ownerId: watch, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+      });
+      // The menu editor likewise, on `/menus` and `/menus/<owner_watch_id>`.
+      case "menus": return renderWatchMenusView({
+        hass: this.hass, owners: this.owners, ownerId: owner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
         onBack: () => this.goTo(COMPLICATIONS_PATH),
@@ -10881,12 +10969,11 @@ export class WristAssistantPanel extends LitElement {
         phones: this.phonePages,
         dialogs: nothing,
         onLoaded: () => this.requestUpdate(),
-      }));
-    }
-    // The voice editor likewise, on `/voice` and `/voice/<owner_watch_id>`.
-    if (isWatchVoiceRoute(this.route)) {
-      return this.withWatchRow(renderWatchVoiceView({
-        hass: this.hass, owners: this.owners, ownerId: this.watchOnlyOwner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+      });
+      // The voice editor likewise, on `/voice` and `/voice/<owner_watch_id>`.
+      // A watch's alone: the iPhone app has no link to it.
+      case "voice": return renderWatchVoiceView({
+        hass: this.hass, owners: this.owners, ownerId: owner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
         onBack: () => this.goTo(COMPLICATIONS_PATH),
@@ -10894,41 +10981,11 @@ export class WristAssistantPanel extends LitElement {
         shell: true,
         dialogs: nothing,
         onLoaded: () => this.requestUpdate(),
-      }));
-    }
-    // The status page editor likewise, on `/status-pages` and
-    // `/status-pages/<owner_watch_id>`.
-    if (isWatchStatusPagesRoute(this.route)) {
-      return this.withWatchRow(renderWatchStatusPagesView({
-        hass: this.hass, owners: this.owners, ownerId: watch, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
-        menu: false,
-        onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
-        onBack: () => this.goTo(COMPLICATIONS_PATH),
-        actions: nothing,
-        shell: true,
-        phones: this.phonePages,
-        dialogs: nothing,
-        onLoaded: () => this.requestUpdate(),
-      }));
-    }
-    // The Control Center editor likewise, on `/control-center` and
-    // `/control-center/<owner_watch_id>`.
-    if (isWatchControlCenterRoute(this.route)) {
-      return this.withWatchRow(renderWatchControlCenterView({
-        hass: this.hass, owners: this.owners, ownerId: this.watchOnlyOwner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
-        menu: false,
-        onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
-        onBack: () => this.goTo(COMPLICATIONS_PATH),
-        actions: nothing,
-        shell: true,
-        dialogs: nothing,
-        onLoaded: () => this.requestUpdate(),
-      }));
-    }
-    // The Rooms editor likewise, on `/rooms` and `/rooms/<owner_watch_id>`.
-    if (isWatchRoomsRoute(this.route)) {
-      return this.withWatchRow(renderWatchRoomsView({
-        hass: this.hass, owners: this.owners, ownerId: watch, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+      });
+      // The status page editor likewise, on `/status-pages` and
+      // `/status-pages/<owner_watch_id>`.
+      case "status-pages": return renderWatchStatusPagesView({
+        hass: this.hass, owners: this.owners, ownerId: owner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
         onBack: () => this.goTo(COMPLICATIONS_PATH),
@@ -10937,24 +10994,56 @@ export class WristAssistantPanel extends LitElement {
         phones: this.phonePages,
         dialogs: nothing,
         onLoaded: () => this.requestUpdate(),
-      }));
-    }
-    // HTTP actions, on `/http-actions`: the home's one library, shared by
-    // every watch, so it is handed no watch and follows none.
-    if (isWatchHttpActionsRoute(this.route)) {
-      return this.withWatchRow(renderWatchHttpActionsView({
+      });
+      // The Control Center editor likewise, on `/control-center` and
+      // `/control-center/<owner_watch_id>`. A watch's alone, like Voice.
+      case "control-center": return renderWatchControlCenterView({
+        hass: this.hass, owners: this.owners, ownerId: owner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+        menu: false,
+        onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
+        onBack: () => this.goTo(COMPLICATIONS_PATH),
+        actions: nothing,
+        shell: true,
+        dialogs: nothing,
+        onLoaded: () => this.requestUpdate(),
+      });
+      // The Rooms editor likewise, on `/rooms` and `/rooms/<owner_watch_id>`.
+      case "rooms": return renderWatchRoomsView({
+        hass: this.hass, owners: this.owners, ownerId: owner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+        menu: false,
+        onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
+        onBack: () => this.goTo(COMPLICATIONS_PATH),
+        actions: nothing,
+        shell: true,
+        phones: this.phonePages,
+        dialogs: nothing,
+        onLoaded: () => this.requestUpdate(),
+      });
+      // HTTP actions, on `/http-actions`: the home's one library, shared by
+      // every watch, so it is handed no watch and follows none.
+      case "http-actions": return renderWatchHttpActionsView({
         hass: this.hass, owners: this.owners, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         onLoaded: () => this.requestUpdate(),
-      }));
-    }
-    // Cameras, on `/cameras`: how each camera is framed in alerts, which is
-    // the camera's own in Home Assistant, so it too is handed no watch.
-    if (isWatchCamerasRoute(this.route)) {
-      return this.withWatchRow(renderWatchCamerasView({
+      });
+      // Cameras, on `/cameras`: how each camera is framed in alerts, which is
+      // the camera's own in Home Assistant, so it too is handed no watch.
+      case "cameras": return renderWatchCamerasView({
         hass: this.hass, narrow: this.narrow,
         onLoaded: () => this.requestUpdate(),
-      }));
+      });
     }
+  }
+
+  private renderTab() {
+    const tab = tabOfRoute(this.route);
+    if (tab === "home") return this.renderHome();
+    // The iPhone app: its row, then the screen on the shared iPhone.
+    if (tab === "iphone") return this.withIphoneRow(this.renderIphoneScreen());
+    // Every watch screen sits under the Watch app row, which owns the watch:
+    // each is handed the shared watch (the address's, when it names one) and
+    // follows it.
+    const screen = watchScreenOf(this.route);
+    if (screen !== undefined) return this.withWatchRow(this.renderWatchScreen(screen.id, this.sharedWatch));
     const d = this.draft;
     // A complication that was never saved is work to save as it stands: its
     // baseline is the config it was made from, so nothing else says so.
@@ -18984,8 +19073,9 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** One count tile on a device's card, a door to that page on the device:
-   * the device's complications on the Complications tab, or one watch screen
-   * on this watch. The way the sheet's tabs go, without a sheet to close. */
+   * the device's complications on the Complications tab, or one screen on
+   * this watch, or in the iPhone app on this iPhone. The way the sheet's
+   * tabs go, without a sheet to close. */
   private renderHomeTile(t: DeviceSheetTab, d: HomeDeviceRow, owner: OwnerSummary | undefined) {
     const n = this.homeTileCount(t, d, owner);
     const body = html`<b class=${n === 0 ? "none" : ""}>${n ?? "–"}</b><span>${countWord(t.label, n)}</span>`;
@@ -18999,7 +19089,7 @@ export class WristAssistantPanel extends LitElement {
           if (this.draft) this.openPicker();
         }}>${body}</button>`;
     }
-    const path = watchScreenPath(t.screen, d.id);
+    const path = deviceScreenPath(d.kind, t.screen, d.id);
     return html`<a class="home-tile" href=${panelUrl(this.route, path, window.location.pathname)} title=${`${t.label} on ${d.name}`}
       @click=${(e: MouseEvent) => {
         if (!isPlainClick(e)) return;
@@ -19057,7 +19147,7 @@ export class WristAssistantPanel extends LitElement {
    * its person's color, whose it is, what it is, its sync state, and a tile
    * for each of its pages, each opening that page on this device. A tile
    * wears how many its page holds: the device's complications (or its
-   * Control Center ones), and on a watch its pages, status pages and Control
+   * Control Center ones), on a watch its pages, status pages and Control
    * Center controls. Anyone can forget it, after a second step that says
    * what goes with it, and anyone can rename it: the name is Home Assistant's
    * own device name, set through the integration's own command since Home
@@ -19088,7 +19178,7 @@ export class WristAssistantPanel extends LitElement {
       if (t.kind === "list") {
         return html`<button type="button" class="dev-tab" title=${`${t.label} on ${row.name}`} @click=${() => openList(t.filter)}><span class="dev-tab-l">${t.label}</span>${badge(t.filter === "control" ? controls.length : designs.length)}${more}</button>`;
       }
-      const path = watchScreenPath(t.screen, ownerId);
+      const path = deviceScreenPath(row.kind, t.screen, ownerId);
       return html`<a class="dev-tab" href=${href(path)} title=${`${t.label} on ${row.name}`}
         @click=${(e: MouseEvent) => {
           if (!isPlainClick(e)) return;

@@ -29,7 +29,8 @@ describe("the panel's shell wiring", () => {
     const tab = method("  private renderTab() {");
     const home = tab.indexOf("this.renderHome()");
     expect(home).toBeGreaterThan(0);
-    expect(home).toBeLessThan(tab.indexOf("isWatchPagesRoute(this.route)"));
+    expect(home).toBeLessThan(tab.indexOf("this.withIphoneRow("));
+    expect(home).toBeLessThan(tab.indexOf("this.withWatchRow("));
   });
 
   it("keeps the watch screens and Watch settings out of the complication bar", () => {
@@ -52,10 +53,10 @@ describe("the panel's shell wiring", () => {
   });
 
   it("hands HTTP actions neither a menu nor a way back: it only ever stands under the row", () => {
-    const tab = method("  private renderTab() {");
+    const tab = method("  private renderWatchScreen(");
     const at = tab.indexOf("renderWatchHttpActionsView({");
     expect(at).toBeGreaterThan(0);
-    const call = tab.slice(at, tab.indexOf("}));", at));
+    const call = tab.slice(at, tab.indexOf("});", at));
     expect(call).not.toContain("menu:");
     expect(call).not.toContain("onBack");
   });

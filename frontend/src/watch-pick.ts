@@ -17,12 +17,13 @@
 // visit without one opens on it, but only once the device list says it is a
 // watch of this home.
 //
-// On a home with phone pages the list the panel hands in holds the iPhones
-// too, after the watches (`watchAppDevices`), and a phone can be the pick by
-// the address or by a pick in the row. Today's fallback still never lands on
-// one: it is a watch whenever the home has any.
+// The iPhone app tab keeps its own pick the same way: the iPhone its address
+// names (`iphoneRouteOwner`), else the remembered one, else the first iPhone.
+// It is handed the home's iPhones alone, and remembered under its own key,
+// so neither tab's pick ever moves the other's.
 
 import type { OwnerSummary } from "./ha-api.js";
+import { iphoneInnerRoute } from "./shell.js";
 import { deviceKindOf } from "./version.js";
 import { watchControlCenterRouteOwner } from "./watch-control-center/hook.js";
 import { watchMenusRouteOwner } from "./watch-menus/hook.js";
@@ -35,6 +36,11 @@ import { watchVoiceRouteOwner } from "./watch-voice/hook.js";
 
 /** localStorage: `{"watch": "<owner_watch_id>"}`. */
 export const WATCH_PICK_KEY = "wrist-assistant-panel.watch.v1";
+/** localStorage: `{"iphone": "<owner_watch_id>"}`, the iPhone app's pick. */
+export const IPHONE_PICK_KEY = "wrist-assistant-panel.iphone.v1";
+
+/** Which tab's pick: the Watch app's or the iPhone app's. */
+export type PickKind = "watch" | "iphone";
 
 /** The watch a watch screen's address names, decoded the way that screen
  * decodes it; undefined off the Watch app or with no watch in the address. */
@@ -46,6 +52,12 @@ export function watchRouteOwner(route: PanelRoute | undefined): string | undefin
     ?? watchControlCenterRouteOwner(route)
     ?? watchRoomsRouteOwner(route)
     ?? watchSettingsRouteOwner(route);
+}
+
+/** The iPhone an iPhone app address names, decoded the way the screen it
+ * wraps decodes a watch; undefined off the iPhone app or with none in it. */
+export function iphoneRouteOwner(route: PanelRoute | undefined): string | undefined {
+  return watchRouteOwner(iphoneInnerRoute(route));
 }
 
 /** What the shared watch is worked out from. */
@@ -87,23 +99,26 @@ export function adoptRouteWatch(saved: string | undefined, routeOwner: string | 
 /** Storage as far as the pick needs it. */
 export type PickStorage = Pick<Storage, "getItem" | "setItem">;
 
+const PICK_KEY: Record<PickKind, string> = { watch: WATCH_PICK_KEY, iphone: IPHONE_PICK_KEY };
+
 /** The remembered pick, or undefined: none, unreadable, or storage off. The
  * storage itself is asked for inside, since merely reaching it can throw. */
-export function loadWatchPick(storage: () => PickStorage | undefined): string | undefined {
+export function loadWatchPick(storage: () => PickStorage | undefined, kind: PickKind = "watch"): string | undefined {
   try {
-    const raw = storage()?.getItem(WATCH_PICK_KEY);
+    const raw = storage()?.getItem(PICK_KEY[kind]);
     if (!raw) return undefined;
-    const saved = JSON.parse(raw) as { watch?: unknown } | null;
-    return typeof saved?.watch === "string" && saved.watch !== "" ? saved.watch : undefined;
+    const saved = JSON.parse(raw) as Partial<Record<PickKind, unknown>> | null;
+    const id = saved?.[kind];
+    return typeof id === "string" && id !== "" ? id : undefined;
   } catch {
     return undefined;
   }
 }
 
 /** Remember the pick. Storage off: it still holds for this visit. */
-export function saveWatchPick(storage: () => PickStorage | undefined, watch: string): void {
+export function saveWatchPick(storage: () => PickStorage | undefined, watch: string, kind: PickKind = "watch"): void {
   try {
-    storage()?.setItem(WATCH_PICK_KEY, JSON.stringify({ watch }));
+    storage()?.setItem(PICK_KEY[kind], JSON.stringify({ [kind]: watch }));
   } catch {
     /* Storage off. */
   }

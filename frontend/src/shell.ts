@@ -1,6 +1,6 @@
-// The panel's shell: the three tabs across the top (Home, Watch app,
-// Complications), which address each one lives at, and the bar that moves
-// between them.
+// The panel's shell: the four tabs across the top (Home, Watch app, iPhone
+// app, Complications), which address each one lives at, and the bar that
+// moves between them.
 //
 // The tab is never stored. It is read from the route Home Assistant hands the
 // panel, so a reload, a bookmark and the browser's Back button all agree with
@@ -18,9 +18,17 @@
 //                       own and shared likewise
 //   /settings, with an optional /<owner_watch_id>
 //                       the Watch app's Settings page
+//   /iphone/pages, /iphone/menus, /iphone/status-pages, /iphone/rooms,
+//   /iphone/settings, each with an optional /<owner_watch_id>
+//                       the iPhone app, on a home with phone pages: the
+//                       watch address of the same screen behind `/iphone`,
+//                       so each screen's own reader finds the iPhone in it.
+//                       `/iphone` alone is its Pages.
 //
 // Every watch address is the one the iPhone app builds for "Open in Home
-// Assistant", unchanged; this file only reads them.
+// Assistant", unchanged; this file only reads them. An older iPhone app
+// opens its own pages at `/pages/<iphone id>`, which the panel moves to the
+// iPhone app (`iphoneAddressFor` in `phone-pages.ts`).
 //
 // Moving between tabs is the watch hooks' way: a new history entry, then
 // `location-changed`, which makes Home Assistant hand the panel the new route.
@@ -37,15 +45,18 @@ import { WATCH_SETTINGS_PATH, isWatchSettingsRoute } from "./watch-settings-page
 import { WATCH_STATUS_PAGES_PATH, isWatchStatusPagesRoute } from "./watch-status-pages/hook.js";
 import { WATCH_VOICE_PATH, isWatchVoiceRoute } from "./watch-voice/hook.js";
 
-export type PanelTab = "home" | "watch" | "complications";
+export type PanelTab = "home" | "watch" | "iphone" | "complications";
 
 /** Home is the panel's own address, with nothing after it. */
 export const HOME_PATH = "";
 export const COMPLICATIONS_PATH = "/complications";
+/** The iPhone app's addresses all start with this. */
+export const IPHONE_PATH = "/iphone";
 
 export const TAB_LABEL: Record<PanelTab, string> = {
   home: "Home",
   watch: "Watch app",
+  iphone: "iPhone app",
   complications: "Complications",
 };
 
@@ -103,6 +114,47 @@ export function watchScreenOf(route: PanelRoute | undefined): WatchScreen | unde
   return undefined;
 }
 
+/** The screens an iPhone has: the four kinds it keeps, and Settings for the
+ * settings that make sense on a phone. */
+const IPHONE_SCREEN_IDS: ReadonlySet<WatchScreen["id"]> = new Set(["pages", "menus", "status-pages", "rooms", "settings"]);
+
+/** Whether a screen edits an iPhone too. */
+export function screenTakesPhone(screen: Pick<WatchScreen, "id">): boolean {
+  return IPHONE_SCREEN_IDS.has(screen.id);
+}
+
+/** The iPhone app's screens, in the order the watch row walks them. Settings
+ * is drawn last and apart, as on the watch row. */
+export const IPHONE_SCREENS: readonly WatchScreen[] = WATCH_SCREENS.filter(screenTakesPhone);
+
+/** The watch address an iPhone app address wraps: `/iphone/pages/p1` reads
+ * as `/pages/p1`, so every screen's own reader works on it. `/iphone` alone
+ * is Pages. Undefined off the iPhone app. */
+export function iphoneInnerRoute(route: PanelRoute | undefined): PanelRoute | undefined {
+  const path = route?.path ?? "";
+  if (route === undefined || (path !== IPHONE_PATH && !path.startsWith(`${IPHONE_PATH}/`))) return undefined;
+  const rest = path.slice(IPHONE_PATH.length);
+  return { prefix: route.prefix, path: rest === "" || rest === "/" ? WATCH_PAGES_PATH : rest };
+}
+
+/** The iPhone app screen a route is on, or undefined off the iPhone app. A
+ * watch only screen behind `/iphone` is no iPhone screen. */
+export function iphoneScreenOf(route: PanelRoute | undefined): WatchScreen | undefined {
+  const screen = watchScreenOf(iphoneInnerRoute(route));
+  return screen !== undefined && screenTakesPhone(screen) ? screen : undefined;
+}
+
+/** An iPhone app screen's address, on one iPhone when one is named. */
+export function iphoneScreenPath(screen: WatchScreen, owner?: string): string {
+  return `${IPHONE_PATH}${watchScreenPath(screen, owner)}`;
+}
+
+/** A screen's address on one device: the iPhone app's for an iPhone, the
+ * Watch app's for a watch. */
+export function deviceScreenPath(kind: "watch" | "iphone", screen: WatchScreen, owner: string): string {
+  return kind === "iphone" ? iphoneScreenPath(screen, owner) : watchScreenPath(screen, owner);
+}
+
 export function isComplicationsRoute(route: PanelRoute | undefined): boolean {
   const path = route?.path ?? "";
   return path === COMPLICATIONS_PATH || path.startsWith(`${COMPLICATIONS_PATH}/`);
@@ -112,33 +164,46 @@ export function isComplicationsRoute(route: PanelRoute | undefined): boolean {
  * and a missing route included, is Home. */
 export function tabOfRoute(route: PanelRoute | undefined): PanelTab {
   if (watchScreenOf(route) !== undefined) return "watch";
+  if (iphoneScreenOf(route) !== undefined) return "iphone";
   if (isComplicationsRoute(route)) return "complications";
   return "home";
 }
 
 /** The screen a route shows, as the leave question counts screens: one of
- * the Watch app's nine, or the Home or Complications tab. The watch an
- * address names, and anything after it, is not part of it. */
+ * the Watch app's nine, or the Home or Complications tab. An iPhone app
+ * screen counts as the watch screen of the same name: it is the same editor,
+ * with the same drafts kept per device, so moving between the two is a move
+ * to another device. The device an address names, and anything after it, is
+ * not part of it. */
 export function screenIdOf(route: PanelRoute | undefined): WatchScreen["id"] | "home" | "complications" {
-  return watchScreenOf(route)?.id ?? (tabOfRoute(route) as "home" | "complications");
+  return watchScreenOf(route)?.id ?? iphoneScreenOf(route)?.id ?? (tabOfRoute(route) as "home" | "complications");
 }
 
 /** Where a click on a tab goes. The Watch app opens on Pages, on the shared
- * watch when there is one (`watch-pick.ts`). */
-export function tabPath(tab: PanelTab, watch?: string): string {
+ * watch when there is one, and the iPhone app on Pages of its shared iPhone
+ * (`watch-pick.ts`). */
+export function tabPath(tab: PanelTab, watch?: string, iphone?: string): string {
   if (tab === "complications") return COMPLICATIONS_PATH;
   if (tab === "watch") return watchScreenPath(WATCH_SCREENS[0]!, watch);
+  if (tab === "iphone") return iphoneScreenPath(IPHONE_SCREENS[0]!, iphone);
   return HOME_PATH;
 }
 
-/** The tabs across the top, in order. Every signed in person gets all three:
- * the server lists each person only the devices they may manage. */
-export const PANEL_TABS: readonly PanelTab[] = ["home", "watch", "complications"];
+/** The tabs across the top, in order. Every signed in person gets them all:
+ * the server lists each person only the devices they may manage. The iPhone
+ * app only shows on a home with phone pages (`panelTabs`). */
+export const PANEL_TABS: readonly PanelTab[] = ["home", "watch", "iphone", "complications"];
+
+/** The tabs the bar shows: all of them on a home with phone pages, else all
+ * but the iPhone app, unless it is the tab on screen. */
+export function panelTabs(phones: boolean, current?: PanelTab): PanelTab[] {
+  return PANEL_TABS.filter((tab) => tab !== "iphone" || phones || current === "iphone");
+}
 
 /** Every tab's sub-path, as one pattern anchored at the end of an address:
  * the first one in it and everything after. */
 const SUB_PATH = new RegExp(`(${[
-  COMPLICATIONS_PATH, WATCH_PAGES_PATH, WATCH_MENUS_PATH, WATCH_VOICE_PATH,
+  IPHONE_PATH, COMPLICATIONS_PATH, WATCH_PAGES_PATH, WATCH_MENUS_PATH, WATCH_VOICE_PATH,
   WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH, WATCH_HTTP_ACTIONS_PATH, WATCH_CAMERAS_PATH, WATCH_SETTINGS_PATH,
 ].join("|")})(/.*)?$`);
 
@@ -200,11 +265,12 @@ export function isSaveKey(e: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey">)
 
 /** Whether ⌘S or Ctrl+S is held back from the browser while the editor's
  * keys are still: on Home and on the list with nothing open, where it would
- * otherwise open the browser's Save Page dialog. A watch screen saves on it
- * itself, so there the key is left alone; the Settings page is the panel's
- * own, and the panel saves it (`settingsPageSavesOnKey`). */
+ * otherwise open the browser's Save Page dialog. A watch or iPhone screen
+ * saves on it itself, so there the key is left alone; the Settings page is
+ * the panel's own, and the panel saves it (`settingsPageSavesOnKey`). */
 export function swallowsSaveKey(route: PanelRoute | undefined, hasDraft: boolean): boolean {
-  return !editorKeysLive(route, hasDraft) && tabOfRoute(route) !== "watch";
+  const tab = tabOfRoute(route);
+  return !editorKeysLive(route, hasDraft) && tab !== "watch" && tab !== "iphone";
 }
 
 /**
@@ -239,18 +305,22 @@ export interface TabBarInput {
   onTab: (tab: PanelTab) => void;
   /** The Watch app's shared watch, which its tab's link carries. */
   watch?: string;
+  /** The iPhone app's shared iPhone, likewise. */
+  iphone?: string;
+  /** The home has phone pages: the bar shows the iPhone app. */
+  phones?: boolean;
 }
 
 /** The tabs, above whatever the tab draws. Each is a real link, so a middle
  * click opens it in a new browser tab; a plain click moves in place. */
 export function renderTabBar(input: TabBarInput): TemplateResult {
   const current = tabOfRoute(input.route);
-  const href = (tab: PanelTab) => panelUrl(input.route, tabPath(tab, input.watch), globalThis.location?.pathname ?? "");
+  const href = (tab: PanelTab) => panelUrl(input.route, tabPath(tab, input.watch, input.iphone), globalThis.location?.pathname ?? "");
   return html`<nav class="wa-tabs" aria-label="Wrist Assistant">
     ${input.menu ? html`<button class="wa-tabs-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
       @click=${input.onMenu}>${uiIcon("menu")}</button>` : nothing}
     <span class="wa-tabs-name">Wrist Assistant</span>
-    <span class="wa-tabs-list">${PANEL_TABS.map((tab) => html`<a class="wa-tab ${tab === current ? "on" : ""}"
+    <span class="wa-tabs-list">${panelTabs(input.phones === true, current).map((tab) => html`<a class="wa-tab ${tab === current ? "on" : ""}"
       href=${href(tab)} aria-current=${tab === current ? "page" : "false"}
       @click=${(e: MouseEvent) => {
         if (!isPlainClick(e)) return;

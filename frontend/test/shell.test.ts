@@ -1,4 +1,5 @@
-// The panel's shell: which tab a route is, the addresses each tab lives at,
+// The panel's shell: which tab a route is, the addresses each tab lives at
+// (the iPhone app's included),
 // the move between them, the first-open landing, when the complication
 // editor's keys are live, and the tab bar itself, flattened to text.
 
@@ -6,16 +7,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   COMPLICATIONS_PATH,
   HOME_PATH,
+  IPHONE_PATH,
+  IPHONE_SCREENS,
   PANEL_TABS,
   WATCH_SCREENS,
+  WATCH_SETTINGS_SCREEN,
+  deviceScreenPath,
   editorKeysLive,
   isComplicationsRoute,
+  iphoneInnerRoute,
+  iphoneScreenOf,
+  iphoneScreenPath,
   isPlainClick,
   isSaveKey,
   landingPath,
   reopensDesign,
   navigatePanel,
   panelPrefix,
+  panelTabs,
   panelUrl,
   renderTabBar,
   swallowsSaveKey,
@@ -71,6 +80,49 @@ describe("tabOfRoute", () => {
     expect(tabOfRoute(at("/pagesx"))).toBe("home");
     expect(tabOfRoute(at("/other"))).toBe("home");
   });
+
+  it("is the iPhone app on /iphone and every iPhone screen under it, and Home on a watch only screen there", () => {
+    for (const path of ["/iphone", "/iphone/", "/iphone/pages", "/iphone/pages/p1", "/iphone/menus/p1", "/iphone/status-pages",
+      "/iphone/rooms/p1", "/iphone/settings", "/iphone/settings/p1"]) {
+      expect(tabOfRoute(at(path)), path).toBe("iphone");
+    }
+    for (const path of ["/iphone/voice/p1", "/iphone/control-center", "/iphone/http-actions", "/iphone/cameras", "/iphonex"]) {
+      expect(tabOfRoute(at(path)), path).toBe("home");
+    }
+  });
+});
+
+describe("iPhone app screens", () => {
+  it("are Pages, Menus, Status pages and Rooms in the watch row's order, with Settings apart", () => {
+    expect(IPHONE_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Rooms"]);
+    expect(iphoneScreenOf(at("/iphone/settings/p1"))).toBe(WATCH_SETTINGS_SCREEN);
+  });
+
+  it("read as the watch address they wrap, /iphone alone as Pages", () => {
+    expect(iphoneInnerRoute(at("/iphone/rooms/p1"))).toEqual(at("/rooms/p1"));
+    expect(iphoneInnerRoute(at("/iphone"))).toEqual(at("/pages"));
+    expect(iphoneInnerRoute(at("/iphone/"))).toEqual(at("/pages"));
+    expect(iphoneInnerRoute(at("/pages/p1"))).toBeUndefined();
+    expect(iphoneInnerRoute(undefined)).toBeUndefined();
+    expect(iphoneScreenOf(at("/iphone"))).toBe(WATCH_SCREENS[0]);
+    expect(iphoneScreenOf(at("/pages/p1"))).toBeUndefined();
+  });
+
+  it("build an address each screen's own reader gives the iPhone back from", () => {
+    for (const screen of [...IPHONE_SCREENS, WATCH_SETTINGS_SCREEN]) {
+      const path = iphoneScreenPath(screen, "A1/B2 é");
+      expect(path.startsWith(`${IPHONE_PATH}/`)).toBe(true);
+      expect(iphoneScreenOf(at(path))).toBe(screen);
+      expect(watchRouteOwner(iphoneInnerRoute(at(path)))).toBe("A1/B2 é");
+      expect(iphoneScreenPath(screen)).toBe(`${IPHONE_PATH}${screen.path}`);
+    }
+  });
+
+  it("are where a device's screen is for an iPhone, and the Watch app's for a watch", () => {
+    expect(deviceScreenPath("iphone", WATCH_SCREENS[0]!, "p1")).toBe("/iphone/pages/p1");
+    expect(deviceScreenPath("iphone", WATCH_SETTINGS_SCREEN, "p1")).toBe("/iphone/settings/p1");
+    expect(deviceScreenPath("watch", WATCH_SCREENS[0]!, "w1")).toBe("/pages/w1");
+  });
 });
 
 describe("watch screens", () => {
@@ -124,6 +176,7 @@ describe("addresses", () => {
     expect(tabPath("home")).toBe(HOME_PATH);
     expect(tabPath("complications")).toBe(COMPLICATIONS_PATH);
     expect(tabPath("watch")).toBe("/pages");
+    expect(tabPath("iphone")).toBe("/iphone/pages");
   });
 
   it("opens the Watch app on Pages for the shared watch, encoded, and leaves the other tabs alone", () => {
@@ -134,8 +187,17 @@ describe("addresses", () => {
     expect(tabPath("complications", "w2")).toBe(COMPLICATIONS_PATH);
   });
 
-  it("offers every tab to everybody", () => {
-    expect(PANEL_TABS).toEqual(["home", "watch", "complications"]);
+  it("opens the iPhone app on Pages for the shared iPhone, and keeps each app's pick to its own tab", () => {
+    expect(tabPath("iphone", "w2", "p1")).toBe("/iphone/pages/p1");
+    expect(tabPath("iphone", "w2", "a/b")).toBe("/iphone/pages/a%2Fb");
+    expect(tabPath("watch", "w2", "p1")).toBe("/pages/w2");
+  });
+
+  it("offers every tab to everybody, the iPhone app only on a home with phone pages", () => {
+    expect(PANEL_TABS).toEqual(["home", "watch", "iphone", "complications"]);
+    expect(panelTabs(true)).toEqual(["home", "watch", "iphone", "complications"]);
+    expect(panelTabs(false)).toEqual(["home", "watch", "complications"]);
+    expect(panelTabs(false, "iphone")).toEqual(["home", "watch", "iphone", "complications"]);
   });
 
   it("takes the prefix from the route when there is one", () => {
@@ -153,6 +215,8 @@ describe("addresses", () => {
     expect(panelPrefix(undefined, "/wrist-assistant/http-actions")).toBe("/wrist-assistant");
     expect(panelPrefix(undefined, "/wrist-assistant/cameras")).toBe("/wrist-assistant");
     expect(panelPrefix(undefined, "/wrist-assistant/pagesx")).toBe("/wrist-assistant/pagesx");
+    expect(panelPrefix(undefined, "/wrist-assistant/iphone")).toBe("/wrist-assistant");
+    expect(panelPrefix(undefined, "/wrist-assistant/iphone/pages/p1")).toBe("/wrist-assistant");
   });
 });
 
@@ -260,6 +324,9 @@ describe("the save key while the editor's keys are still", () => {
       expect(swallowsSaveKey(at(screen.path), false)).toBe(false);
       expect(swallowsSaveKey(at(`${screen.path}/w1`), true)).toBe(false);
     }
+    for (const screen of [...IPHONE_SCREENS, WATCH_SETTINGS_SCREEN]) {
+      expect(swallowsSaveKey(at(iphoneScreenPath(screen, "p1")), false)).toBe(false);
+    }
   });
 });
 
@@ -291,8 +358,8 @@ describe("reopensDesign", () => {
 });
 
 describe("renderTabBar", () => {
-  const bar = (path: string, menu = false) => flat(renderTabBar({
-    route: at(path), menu, onMenu: () => undefined, onTab: () => undefined,
+  const bar = (path: string, menu = false, phones = false) => flat(renderTabBar({
+    route: at(path), menu, onMenu: () => undefined, onTab: () => undefined, phones,
   }));
 
   it("draws every tab, as links to their addresses", () => {
@@ -302,12 +369,22 @@ describe("renderTabBar", () => {
     expect(text).toContain(">Complications</a>");
     expect(text.indexOf("Home</a>")).toBeLessThan(text.indexOf("Watch app</a>"));
     expect(text.indexOf("Watch app</a>")).toBeLessThan(text.indexOf("Complications</a>"));
+    expect(text).not.toContain("iPhone app</a>");
+  });
+
+  it("draws the iPhone app between the Watch app and Complications on a home with phone pages", () => {
+    const text = bar("", false, true);
+    expect(text.indexOf("Watch app</a>")).toBeLessThan(text.indexOf(">iPhone app</a>"));
+    expect(text.indexOf(">iPhone app</a>")).toBeLessThan(text.indexOf("Complications</a>"));
+    expect(text).toMatch(/href=\/wrist-assistant\/iphone\/pages [^>]*>iPhone app<\/a>/);
+    expect(flat(renderTabBar({ route: at(""), menu: false, onMenu: () => undefined, onTab: () => undefined, phones: true, iphone: "p1" })))
+      .toMatch(/href=\/wrist-assistant\/iphone\/pages\/p1 [^>]*>iPhone app<\/a>/);
   });
 
   it("marks the tab on screen and no other", () => {
     const marks = (text: string) => text.match(/wa-tab on/g)?.length ?? 0;
-    for (const [path, label] of [["", "Home"], ["/menus/w1", "Watch app"], ["/complications", "Complications"]] as const) {
-      const text = bar(path);
+    for (const [path, label] of [["", "Home"], ["/menus/w1", "Watch app"], ["/iphone/menus/p1", "iPhone app"], ["/complications", "Complications"]] as const) {
+      const text = bar(path, false, true);
       expect(marks(text), path).toBe(1);
       expect(text).toMatch(new RegExp(`wa-tab on[^>]*>${label}</a>`));
     }
@@ -328,6 +405,14 @@ describe("renderTabBar", () => {
 });
 
 describe("the screen a route shows, for the leave question", () => {
+  it("counts an iPhone app screen as the watch screen of the same name, the same editor on another device", async () => {
+    const { screenIdOf } = await import("../src/shell.js");
+    const at = (path: string) => screenIdOf({ prefix: "/wrist-assistant", path });
+    expect(["/iphone", "/iphone/pages/p1", "/iphone/menus/p1", "/iphone/status-pages", "/iphone/rooms/p1", "/iphone/settings/p1"].map(at)).toEqual(
+      ["pages", "pages", "menus", "status-pages", "rooms", "settings"],
+    );
+  });
+
   it("names each watch screen whatever watch or page follows, and the two other tabs", async () => {
     const { screenIdOf } = await import("../src/shell.js");
     const at = (path: string) => screenIdOf({ prefix: "/wrist-assistant", path });
