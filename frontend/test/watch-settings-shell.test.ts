@@ -174,7 +174,7 @@ describe("Watch settings as a page under the Watch app row", () => {
   const WATCHES = [owner("w1", "Jesse's Watch"), owner("w2", "Chen's Watch")];
   const wrap = setting("wrapPages");
 
-  async function page(current = "w2", list: readonly OwnerSummary[] = WATCHES, hassOpts: Parameters<typeof fakeHass>[1] = {}) {
+  async function page(current = "w2", list: readonly OwnerSummary[] = WATCHES, hassOpts: Parameters<typeof fakeHass>[1] = {}, phones = false) {
     const ha = fakeHass("w3", hassOpts);
     let owners: OwnerSummary[] = [...list];
     let refreshes = 0;
@@ -194,7 +194,7 @@ describe("Watch settings as a page under the Watch app row", () => {
     );
     const inside = ws as unknown as Inside;
     const show = async (id: string | undefined) => {
-      ws.show(ha.hass, owners, id);
+      ws.show(ha.hass, owners, id, phones);
       await vi.waitFor(() => expect(inside.loading).toBe(false));
     };
     await show(current);
@@ -211,7 +211,8 @@ describe("Watch settings as a page under the Watch app row", () => {
     const { ws, inside, text } = await page("w2");
     const shown = text();
     expect(shown).toContain(`<div class="ws-page" style=`);
-    expect(shown).toContain(`role="toolbar" aria-label="Watch settings"`);
+    expect(shown).toContain(`role="toolbar" aria-label=Watch settings>`);
+    expect(shown).toContain(`<span class="ws-title">Watch settings</span>`);
     expect(shown).not.toContain("ws-tabs");
     expect(shown).not.toContain("<dialog");
     expect(shown).toContain("Chen's Watch · revision 1");
@@ -236,6 +237,61 @@ describe("Watch settings as a page under the Watch app row", () => {
     const main = await page("w1", elsewhere);
     expect(main.text()).not.toContain("takes its settings from your main house");
     expect(main.text()).toContain("data-sec=ws-connection");
+  });
+
+  describe("on an iPhone, with phone pages", () => {
+    const PHONE = { ...owner("p1", "Jesse's iPhone"), device_kind: "iphone" } as OwnerSummary;
+    const DEVICES = [...WATCHES, PHONE];
+
+    it("is iPhone settings, with only the settings the catalog marks for the iPhone and no empty card", async () => {
+      const { inside, text, bar } = await page("p1", DEVICES, {}, true);
+      expect(inside.ownerId).toBe("p1");
+      const shown = text();
+      expect(shown).toContain(`<span class="ws-title">iPhone settings</span>`);
+      expect(shown).toContain(`role="toolbar" aria-label=iPhone settings>`);
+      expect(shown).toContain("Jesse's iPhone · revision 1");
+      expect(bar()).toContain("iPhone settings");
+      for (const key of ["longPressDuration", "pageTransitionStyle", "wrapPages", "cameraStreamMode"]) expect(shown, key).toContain(`data-key=${key}`);
+      for (const key of ["serverMode", "deltaTimeout", "handGestureAction", "sliderCrownSensitivity", "bottomEdgePageSwipeSensitivity", "motionGestureActionsJSON"]) {
+        expect(shown, key).not.toContain(`data-key=${key}`);
+      }
+      for (const card of ["interaction", "navigation", "camera"]) expect(shown, card).toContain(`data-sec=ws-${card}`);
+      expect(shown).not.toContain("data-sec=ws-connection");
+      expect(shown).not.toContain("data-sec=ws-motion");
+      // The pairing card is the home's and stays.
+      expect(shown).toContain(`data-sec="ws-pair"`);
+    });
+
+    it("never reads a notification style for the phone, so none of its cards show", async () => {
+      const { ha, text } = await page("p1", DEVICES, {}, true);
+      const kinds = ha.sent.filter((m) => String(m.type).endsWith("watch_config/get")).map((m) => [m.owner_watch_id, m.kind]);
+      expect(kinds).toEqual([["p1", "behavior"]]);
+      expect(text()).not.toContain("ws-notification-style");
+    });
+
+    it("saves the phone's own record", async () => {
+      const { ws, inside, ha } = await page("p1", DEVICES, {}, true);
+      inside.edit(setting("wrapPages"), true);
+      ws.saveFromKey();
+      await vi.waitFor(() => expect(ha.store.get("p1")?.revision).toBe(2));
+      expect(ha.store.has("w1")).toBe(false);
+      expect(ha.store.has("w2")).toBe(false);
+    });
+
+    it("is Watch settings again on a watch", async () => {
+      const { show, text } = await page("p1", DEVICES, {}, true);
+      await show("w1");
+      const shown = text();
+      expect(shown).toContain(`<span class="ws-title">Watch settings</span>`);
+      expect(shown).toContain("data-key=serverMode");
+      expect(shown).toContain("data-sec=ws-motion");
+    });
+
+    it("shows a watch, never the phone, without phone pages", async () => {
+      const { inside, text } = await page("p1", DEVICES);
+      expect(inside.ownerId).toBe("w1");
+      expect(text()).toContain(`<span class="ws-title">Watch settings</span>`);
+    });
   });
 
   describe("a save made somewhere else", () => {

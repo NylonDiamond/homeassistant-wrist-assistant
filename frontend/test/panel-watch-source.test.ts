@@ -196,7 +196,7 @@ describe("the Settings page", () => {
   it("follows the shared watch on every draw, once the devices are in, and leaves on any other route", () => {
     const will = method("  protected override willUpdate(changed");
     expect(will).toContain("if (isWatchSettingsRoute(this.route)) {");
-    expect(will).toContain("if (this.linkReady || this.owners.length > 0) this.watchSettings.show(this.hass, this.owners, this.sharedWatch);");
+    expect(will).toContain("if (this.linkReady || this.owners.length > 0) this.watchSettings.show(this.hass, this.owners, this.sharedWatch, this.phonePages);");
     expect(will).toContain("this.watchSettings.leave();");
   });
 

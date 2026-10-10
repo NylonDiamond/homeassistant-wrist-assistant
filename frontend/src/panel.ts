@@ -6426,7 +6426,7 @@ export class WristAssistantPanel extends LitElement {
     // so a home with watches never shows the "no watch" card first. Any
     // other route takes it off the screen; its edits stay kept.
     if (isWatchSettingsRoute(this.route)) {
-      if (this.linkReady || this.owners.length > 0) this.watchSettings.show(this.hass, this.owners, this.sharedWatch);
+      if (this.linkReady || this.owners.length > 0) this.watchSettings.show(this.hass, this.owners, this.sharedWatch, this.phonePages);
     } else {
       this.watchSettings.leave();
     }

@@ -15,7 +15,7 @@ import { resolveWatchPick } from "../src/watch-pick.js";
 import { roomsKindFor } from "../src/watch-rooms/model.js";
 import "../src/watch-rooms/rooms-editor.js";
 import { WATCH_ROW_PHONES_NOTE, type WatchRowInput, renderWatchRow, watchRowChoices } from "../src/watch-row.js";
-import { watchAppDevices } from "../src/watch-settings.js";
+import { WATCH_SETTINGS_CATALOG, catalogFor, settingsTitle, watchAppDevices } from "../src/watch-settings.js";
 import "../src/watch-status-pages/status-pages-editor.js";
 import "../src/watch-voice/voice-editor.js";
 
@@ -82,6 +82,31 @@ describe("the Watch app's devices", () => {
 
   it("lists the watches alone without", () => {
     expect(watchAppDevices(OWNERS, false).map((o) => o.owner_watch_id)).toEqual(["w1", "w2"]);
+  });
+});
+
+describe("iPhone settings", () => {
+  it("are the settings the catalog marks for the iPhone, in the catalog's cards, with no card left empty", () => {
+    const sections = catalogFor("iphone");
+    expect(sections.map((s) => s.id)).toEqual(["interaction", "navigation", "camera"]);
+    const settings = sections.flatMap((s) => s.settings);
+    expect(settings).toHaveLength(35);
+    expect(settings.every((s) => s.devices?.includes("iphone"))).toBe(true);
+  });
+
+  it("leave a watch's page as it was", () => {
+    expect(catalogFor("watch")).toEqual(WATCH_SETTINGS_CATALOG.sections);
+  });
+
+  it("count a setting that names no device as the watch's alone", () => {
+    const catalog = { version: 1, sections: [{ id: "x", title: "X", settings: [{ key: "k", type: "bool" as const, label: "K", default: false }] }] };
+    expect(catalogFor("iphone", catalog)).toEqual([]);
+    expect(catalogFor("watch", catalog)).toHaveLength(1);
+  });
+
+  it("are titled for the device", () => {
+    expect(settingsTitle("iphone")).toBe("iPhone settings");
+    expect(settingsTitle("watch")).toBe("Watch settings");
   });
 });
 

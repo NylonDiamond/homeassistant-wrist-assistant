@@ -27,6 +27,11 @@
 // Webhooks cards after the behavior ones. It loads with `behavior`, and the
 // one Save sends whichever of the two changed, each over its own revision.
 // Its thinking is in `watch-notification-style/model.ts`.
+//
+// On a home with phone pages the row's pick can be an iPhone. The page is
+// then "iPhone settings": the same cards, with only the settings the catalog
+// marks for the iPhone (`catalogFor`) and no card left empty. A phone has no
+// notification style, so that record is neither read nor shown.
 
 import { css, html, nothing, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
@@ -43,11 +48,13 @@ import { SECTION_COLOR } from "./kinds.js";
 import type { IconProvider } from "./renderer.js";
 import { agoWords } from "./send-state.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
+import { deviceKindOf } from "./version.js";
 import {
   type CatalogSection,
   type CatalogSetting,
   type MotionActions,
   type PairDeviceKind,
+  type SettingDevice,
   type SettingValue,
   COLLECTED_PILL_TEXT,
   SETTINGS_NO_RECORD_TEXT,
@@ -59,8 +66,8 @@ import {
   START_FRESH_BUTTON,
   WAITING_HELP_TEXT,
   WAITING_PILL_TEXT,
-  WATCH_SETTINGS_CATALOG,
   buildSaveDocument,
+  catalogFor,
   conflictRevision,
   createWatchBehavior,
   deliveryState,
@@ -78,8 +85,10 @@ import {
   savedByWords,
   sectionRuns,
   settingValue,
+  settingsTitle,
   settingsWatches,
   takesSettingsFromAnotherHome,
+  watchAppDevices,
   watchName,
   watchRecordUnreadable,
   withEdit,
@@ -186,6 +195,11 @@ export class WatchSettings implements ReactiveController {
   /** The watch row the page drew last, for its no-record state
    * (`noRecordStart`). */
   private shownOwner?: OwnerSummary;
+  /** The home keeps phone pages: the page opens an iPhone too. */
+  private phones = false;
+  /** What the device on the page is. An iPhone gets its own settings only
+   * and no notification style. */
+  private device: SettingDevice = "watch";
   /** Sections whose help is hidden. Help starts shown: this is a form people
    * fill once, and its short titles ("Delay", "Debounce") need their line. */
   private helpOff: ReadonlySet<string> = new Set();
@@ -267,11 +281,15 @@ export class WatchSettings implements ReactiveController {
    * when it is one of the home's watches, else the first. Called on every
    * draw of the page, so it follows the row's picker; it reads only on the
    * way onto the page and when the watch changes (`settingsPageStep`). A
-   * home with no watch yet shows the pairing card alone.
+   * home with no watch yet shows the pairing card alone. With `phones` (the
+   * home keeps phone pages) an iPhone the row hands it is shown too, as
+   * iPhone settings.
    */
-  show(hass: HassLike, owners: readonly OwnerSummary[], current: string | undefined): void {
+  show(hass: HassLike, owners: readonly OwnerSummary[], current: string | undefined, phones = false): void {
     this.hass = hass;
-    const id = initialWatch(settingsWatches(owners), current);
+    this.phones = phones;
+    const devices = watchAppDevices(owners, phones);
+    const id = initialWatch(devices, current);
     const step = settingsPageStep(this.active, this.ownerId, id);
     if (step === "stay") return;
     if (!this.active) {
@@ -297,7 +315,8 @@ export class WatchSettings implements ReactiveController {
       this.changed();
       return;
     }
-    void this.load(id);
+    const shown = devices.find((d) => d.owner_watch_id === id);
+    void this.load(id, false, deviceKindOf(shown) === "iphone" ? "iphone" : "watch");
   }
 
   /** The page has gone from the screen: another screen, tab or page. The
@@ -314,11 +333,12 @@ export class WatchSettings implements ReactiveController {
     this.changed();
   }
 
-  private async load(ownerId: string, keepNote = false): Promise<void> {
+  private async load(ownerId: string, keepNote = false, device: SettingDevice = "watch"): Promise<void> {
     const hass = this.hass;
     if (!hass) return;
     const seq = ++this.loadSeq;
     this.ownerId = ownerId;
+    this.device = device;
     this.record = undefined;
     this.edits = new Map();
     this.loading = true;
@@ -327,7 +347,8 @@ export class WatchSettings implements ReactiveController {
     this.clearStyle();
     this.stopPolling();
     this.changed();
-    await Promise.all([this.readBehavior(hass, ownerId, seq), this.readStyle(hass, ownerId, seq)]);
+    // A phone has no notification style: nothing to read, and no card.
+    await Promise.all([this.readBehavior(hass, ownerId, seq), device === "watch" ? this.readStyle(hass, ownerId, seq) : undefined]);
     if (seq !== this.loadSeq) return;
     // The edits kept for this watch go back on, over the copies just read.
     const restored = restoreSettingsDraft(keptSettingsDraft(ownerId), this.record, this.styleRecord);
@@ -573,7 +594,7 @@ export class WatchSettings implements ReactiveController {
       return;
     }
     if (result.ok) {
-      this.note = { kind: "note", text: "Started with the defaults. The watch picks them up the next time it checks." };
+      this.note = { kind: "note", text: `Started with the defaults. The ${this.noun} picks them up the next time it checks.` };
     } else if (result.code === "no_record") {
       this.note = { kind: "warn", text: SETTINGS_PAIR_FIRST_TEXT };
       this.changed();
@@ -782,7 +803,7 @@ export class WatchSettings implements ReactiveController {
    */
   render(hass: HassLike, owners: readonly OwnerSummary[], options: { narrow?: boolean; width?: number } = {}): TemplateResult {
     this.hass = hass;
-    const watches = settingsWatches(owners);
+    const watches = watchAppDevices(owners, this.phones);
     const owner = watches.find((w) => w.owner_watch_id === this.ownerId);
     this.shownOwner = owner;
     const name = owner ? watchName(owner, watches) : "Watch";
@@ -822,6 +843,11 @@ export class WatchSettings implements ReactiveController {
       .map((column) => html`<div class="ws-body ws-col">${column.map((i) => cards[i]!.card)}</div>`);
   }
 
+  /** The device on the page, in a sentence: "watch" or "iPhone". */
+  private get noun(): string {
+    return this.device === "iphone" ? "iPhone" : "watch";
+  }
+
   /** Beside the title: which watch, and which revision of its settings. */
   private headLine(name: string): string {
     if (this.ownerId === undefined) return "No watch paired yet";
@@ -840,7 +866,7 @@ export class WatchSettings implements ReactiveController {
     const stand = (card: unknown): SettingsCard[] => [{ weight: 2.5, card }];
     if (this.loadError !== undefined) {
       const id = this.ownerId;
-      return stand(html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this watch's settings: ${this.loadError}</span></div>
+      return stand(html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this ${this.noun}'s settings: ${this.loadError}</span></div>
         ${id === undefined ? nothing : html`<button class="small ws-retry" @click=${() => void this.reread("behavior", id)}>Try again</button>`}`);
     }
     if (this.ownerId === undefined) {
@@ -857,17 +883,19 @@ export class WatchSettings implements ReactiveController {
       // While the iPhone's move may still come it waits, and the start is a
       // small link that asks first.
       const state = noRecordStart(this.shownOwner);
-      return stand(html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this watch yet.</b> ${noRecordText(state, SETTINGS_NO_RECORD_TEXT)}</span></div>
+      return stand(html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this ${this.noun} yet.</b> ${noRecordText(state, SETTINGS_NO_RECORD_TEXT)}</span></div>
         ${state === "wait"
           ? html`<button class="link start-fresh ws-start" ?disabled=${this.starting || this.saving}
               title="Save the app's default settings as this watch's first copy"
               @click=${() => { if (mayStart(state)) void this.start(); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
           : html`<button class="small primary ws-start" ?disabled=${this.starting || this.saving}
-              title="Save the app's default settings as this watch's first copy"
+              title=${`Save the app's default settings as this ${this.noun}'s first copy`}
               @click=${() => void this.start()}>${this.starting ? "Starting…" : SETTINGS_START_BUTTON}</button>`}`);
     }
     const values = formValues(record.document, this.edits);
-    return WATCH_SETTINGS_CATALOG.sections.map((section) => ({
+    // The device's own settings: an iPhone's are the ones the catalog marks
+    // for it, and a card with none of them is left out.
+    return catalogFor(this.device).map((section) => ({
       weight: 1.5 + section.settings.reduce((sum, setting) => sum + settingWeight(setting), 0),
       card: this.renderSection(hass, section, values),
     }));
@@ -1195,10 +1223,11 @@ export class WatchSettings implements ReactiveController {
    * here is on its way to it and no sync pill shows. */
   renderBar(name = "Watch", stacked = false, elsewhere = false) {
     const confirm = this.confirm;
-    const head = html`<span class="ws-title">Watch settings</span><span class="ws-head-line">${this.headLine(name)}</span>
+    const title = settingsTitle(this.device);
+    const head = html`<span class="ws-title">${title}</span><span class="ws-head-line">${this.headLine(name)}</span>
       <span class="spacer"></span>`;
     if (confirm) {
-      return html`<div class="wa-bar ws-bar ${stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch settings">${head}
+      return html`<div class="wa-bar ws-bar ${stacked ? "stacked" : ""}" role="toolbar" aria-label=${title}>${head}
         <span class="xf-sub ws-ask">${confirm.text}</span>
         <button class="tb-btn" @click=${() => { this.confirm = undefined; this.changed(); }}>Keep editing</button>
         <button class="primary" @click=${() => { this.confirm = undefined; confirm.run(); }}>${confirm.label}</button>
@@ -1211,14 +1240,14 @@ export class WatchSettings implements ReactiveController {
     // body; Save sends edits to a record that exists. Both records save under
     // the one button.
     const canSave = this.canSave;
-    return html`<div class="wa-bar ws-bar ${stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch settings">${head}
+    return html`<div class="wa-bar ws-bar ${stacked ? "stacked" : ""}" role="toolbar" aria-label=${title}>${head}
       ${changes > 0
         ? html`<span class="xf-sub ws-changes">${changes} unsaved ${changes === 1 ? "change" : "changes"}</span>`
         : elsewhere ? nothing : this.renderDelivery()}
       ${changes > 0 ? html`<button class="tb-btn ws-discard" ?disabled=${this.saving}
         title="Go back to the copies Home Assistant holds" @click=${() => this.askDiscard()}>Discard</button>` : nothing}
       ${this.ownerId === undefined ? nothing : html`<button class="primary save ${changes > 0 ? "dirty" : ""}" ?disabled=${!canSave}
-        title=${changes > 0 ? `Save (${SAVE_KEY}). The watch picks these settings up the next time it checks.` : `Nothing to save (${SAVE_KEY})`}
+        title=${changes > 0 ? `Save (${SAVE_KEY}). The ${this.noun} picks these settings up the next time it checks.` : `Nothing to save (${SAVE_KEY})`}
         @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>`}
     </div>`;
   }

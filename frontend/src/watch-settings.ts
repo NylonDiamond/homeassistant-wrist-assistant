@@ -535,6 +535,11 @@ export function watchAppDevices(owners: readonly OwnerSummary[], phones: boolean
   return [...watches, ...owners.filter((o) => deviceKindOf(o) === "iphone" && !o.is_orphan)];
 }
 
+/** The Settings page's title for the device on it. */
+export function settingsTitle(device: SettingDevice): string {
+  return device === "iphone" ? "iPhone settings" : "Watch settings";
+}
+
 /** The catalog's sections as one device reads them: only the settings whose
  * `devices` names it, and no section left empty. A setting that names no
  * device is the watch's alone. */
