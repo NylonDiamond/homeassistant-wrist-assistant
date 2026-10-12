@@ -1884,6 +1884,10 @@ function symbolTile(host: SymbolFieldHost, name: string, selected: boolean, pick
  * `defaultOpen` is whether the grid shows before anyone has touched this
  * field. A layer's symbol is most of what the layer is, so its grid starts
  * open; a symbol that is one row of a long properties sheet passes false.
+ *
+ * `typable` false drops the name box and keeps only the Browse icons button,
+ * for a host that already shows the chosen glyph and its name elsewhere (the
+ * page editor's tile header).
  */
 /** What the symbol field reads from its host: the provider that draws and
  * lists the glyphs, and the browser that keeps what is open, typed and recent.
@@ -1898,6 +1902,7 @@ export function symbolField(
   setPath?: (d: string | undefined) => void,
   label = "Symbol",
   defaultOpen = true,
+  typable = true,
 ): TemplateResult {
   const browser = host.symbols;
   const open = browser.isOpen(key, defaultOpen);
@@ -1945,7 +1950,7 @@ export function symbolField(
       ${names === undefined
         ? html`<div class="hint keep">Loading the Material Design catalogue.</div>`
         : matches.length === 0
-          ? html`<div class="hint keep">Nothing matches that search. Any<code>mdi:</code> name can still be typed above.</div>`
+          ? html`<div class="hint keep">Nothing matches that search.${typable ? html` Any <code>mdi:</code> name can still be typed above.` : nothing}</div>`
           // Always the searching wording: the MDI set is thousands of names
           // deep and the grid never shows all of them, so "N available" would
           // claim more than is on screen even with the box empty.
@@ -1974,16 +1979,25 @@ export function symbolField(
         <div class="sym-grid one-row">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>`}
       <div class="sym-grid">${shown.map((n) => symbolTile(host, n, n === current, pick))}</div>
       ${matches.length === 0
-        ? html`<div class="hint keep">Nothing matches that search. Anyname can still be typed above.</div>`
+        ? html`<div class="hint keep">Nothing matches that search.${typable ? " Any name can still be typed above." : ""}</div>`
         : html`<div class="hint keep">
             ${symbolCount(shown.length, matches.length, query.trim() !== "", reachableCount(pack))}
           </div>`}
       ${!host.icons.available()
         ? html`<div class="hint warn">No icon pack is installed, so the list shows names without pictures. Install the Cupertino Icons frontend to see them.</div>`
         : listed !== undefined && listed.length === 0
-          ? html`<div class="hint keep">The icon pack does not list its symbols, so search covers the built-in set only. Any other name can still be typed above.</div>`
+          ? html`<div class="hint keep">The icon pack does not list its symbols, so search covers the built-in set only.${typable ? " Any other name can still be typed above." : ""}</div>`
           : nothing}
     </div>`;
+  }
+
+  const toggle = html`<button type="button" class="small sym-toggle ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
+    @click=${() => browser.toggle(key, defaultOpen)}>${uiIcon("grid")}${open ? "Hide icons" : "Browse icons"}</button>`;
+  if (!typable) {
+    return html`
+    <div class="sym-row solo">${toggle}</div>
+    ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The watch still draws it if the name is a real SF Symbol.</div>` : nothing}
+    ${browsePane}`;
   }
 
   return html`
@@ -2000,8 +2014,7 @@ export function symbolField(
             browser.noteUsed(v);
           }
         })} />
-      <button type="button" class="small sym-toggle ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
-        @click=${() => browser.toggle(key, defaultOpen)}>${uiIcon("grid")}${open ? "Hide icons" : "Browse icons"}</button>
+      ${toggle}
       </div></label>
     ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The watch still draws it if the name is a real SF Symbol.</div>` : nothing}
     ${browsePane}`;

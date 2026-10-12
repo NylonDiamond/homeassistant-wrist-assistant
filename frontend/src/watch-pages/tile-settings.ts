@@ -1107,6 +1107,7 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
       undefined,
       "Symbol",
       false,
+      false,
     ))}
     </div>
     ${renderTileColor(host, defaults.color)}
@@ -1696,6 +1697,7 @@ function renderStateIconPicker(host: TileSettingsHost, state: string, icon: stri
     undefined,
     "Symbol",
     true,
+    false,
   ))}</div>`;
 }
 

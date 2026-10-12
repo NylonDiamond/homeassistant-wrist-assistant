@@ -579,6 +579,7 @@ export const formEntityStyles = css`
        picker looked missing. */
     .sym-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .sym-row > input { flex: 1; min-width: 0; }
+    .sym-row.solo { margin: 2px 0; }
     button.small.sym-toggle { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; font-size: 12px; white-space: nowrap; }
     button.small.sym-toggle svg { width: 13px; height: 13px; flex: none; }
     button.small.sym-toggle.on { background: var(--wa-hover); border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
