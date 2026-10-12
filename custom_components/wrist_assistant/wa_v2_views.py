@@ -38,6 +38,10 @@ Endpoints registered here:
   params) for ~30 s; first GET consumes it and runs the frame loop until the
   client disconnects. Watch reconnects by re-handshaking.
 
+* `GET  /api/wrist_assistant/v2/push_channel` — the iPhone's local push
+  WebSocket, opened with a signed upgrade (`op=push_channel`). Visible
+  alerts for that iPhone go over it before the relay; see `local_push.py`.
+
 Stream lifecycle on /v2/action:
   * `op=stream_open`   — mint a token, get back a signed URL.
   * `op=stream_update` — change viewport / width / quality / fps mid-stream.
@@ -145,6 +149,7 @@ from .const import (
 )
 from .http_actions_runner import HTTPActionRefusal, run_input_problem
 from .http_actions_store import HTTPActionsStoreError, HTTPActionsUnavailableError
+from .local_push import PUSH_CHANNEL_URL, async_open_push_channel
 from .logbook_events import (
     log_hmac_failure,
     log_push_token_registered,
@@ -1828,8 +1833,14 @@ async def _op_notifications_register(ctx: _OpContext) -> Response:
         )
     # Echo the platforms so the caller can self-confirm the token actually
     # landed: the iPhone app checks the mirror (ios) path is wired before
-    # showing its Notifications row green. See _push_status_fields.
-    return ctx.signed_json({"ok": True, **_push_status_fields(ctx, store, companion)})
+    # showing its Notifications row green. See _push_status_fields. The
+    # capability list rides along, as on /version, so the phone learns of
+    # `local_push` when it registers for push.
+    reply: dict[str, Any] = {"ok": True, **_push_status_fields(ctx, store, companion)}
+    coordinator = getattr(ctx.domain_data, "coordinator", None)
+    if coordinator is not None:
+        reply["capabilities"] = coordinator.capabilities
+    return ctx.signed_json(reply)
 
 
 def _caller_is_iphone(ctx: _OpContext) -> bool:
@@ -2781,6 +2792,60 @@ class WAStreamView(HomeAssistantView):
         )
 
 
+class WAPushChannelView(HomeAssistantView):
+    """The iPhone's local push channel, a WebSocket (see ``local_push.py``).
+
+    The upgrade request is signed like ``/v2/action`` with op
+    ``push_channel``: a bad signature, clock or nonce, or an unknown key,
+    is a plain 401; a key that is not an iPhone's, or whose bound user is
+    disabled, deleted or local only on a remote request, is a 403. The
+    channel then lives in the entry's ``LocalPushRegistry`` and checks the
+    key and the user again every five minutes, closing with 4001 when
+    either is gone.
+    """
+
+    url = PUSH_CHANNEL_URL
+    name = "api:wrist_assistant_v2_push_channel"
+    requires_auth = False
+
+    def __init__(self, hass: HomeAssistant, nonce_cache: WANonceCache) -> None:
+        self._hass = hass
+        self._nonce_cache = nonce_cache
+
+    async def get(self, request: Request) -> StreamResponse:
+        domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
+        registry = getattr(domain_data, "local_push", None)
+        if domain_data is None or registry is None:
+            return Response(status=503, text="Integration not loaded")
+        hass = self._hass
+
+        async def _instance_id() -> str | None:
+            try:
+                return await ha_instance_id.async_get(hass)
+            except Exception:  # noqa: BLE001 (the hello then names no home)
+                return None
+
+        async def _user_refusal(user_id: str | None) -> str | None:
+            return await _async_bound_user_refusal(hass, user_id, request)
+
+        def _rejected(reason: str) -> None:
+            _log_signed_request_rejected(hass, domain_data, request, reason)
+
+        def _signed(watch_id: str, secret_b64: str) -> None:
+            _note_signed_use(domain_data, watch_id, secret_b64)
+
+        return await async_open_push_channel(
+            request,
+            secret_store=domain_data.widget_secret_store,
+            nonce_cache=self._nonce_cache,
+            registry=registry,
+            instance_id=_instance_id,
+            user_refusal=_user_refusal,
+            on_rejected=_rejected,
+            on_signed=_signed,
+        )
+
+
 class WABatchSnapshotView(HomeAssistantView):
     """Progressive multipart snapshot stream authed by a single-use token.
 
@@ -3079,13 +3144,18 @@ class WARegisterSecretView(HomeAssistantView):
         # `user_bound` tells the app the integration binds secrets to users,
         # so it can stop re-sending this registration; an integration without
         # the field is one the app keeps nudging until it is updated.
+        # `capabilities` is the list /version and every delta reply carry, so
+        # a phone that just paired knows at once what this server offers
+        # (`local_push` among them) without a second round trip.
         bound_entry = domain_data.widget_secret_store.get(watch_id)
+        coordinator = getattr(domain_data, "coordinator", None)
         return self.json(
             {
                 "ok": True,
                 "protocol_version": WA_PROTOCOL_VERSION,
                 "algo": algo,
                 "user_bound": bool(bound_entry is not None and bound_entry.user_id),
+                "capabilities": coordinator.capabilities if coordinator is not None else [],
             }
         )
 

@@ -259,6 +259,14 @@ def test_a_watch_registration_is_unchanged(env) -> None:
     assert reply.body == {"ok": True, "platforms": ["watchos"], "delivery_mode": "mirror"}
 
 
+def test_the_register_reply_carries_the_capability_list(env) -> None:
+    """A phone registering for push learns `local_push` from the reply."""
+    env.domain_data.coordinator = types.SimpleNamespace(capabilities=["local_push"])
+    reply = _register(env, "p1", "P1")
+    assert reply.body["capabilities"] == ["local_push"]
+    assert reply.body["platforms"] == ["ios"]
+
+
 # ── notifications_status ─────────────────────────────────────────────────
 
 

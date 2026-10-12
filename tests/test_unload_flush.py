@@ -448,6 +448,8 @@ def test_unload_writes_every_store_and_lets_go_of_the_stores() -> None:
     assert set(shut) == set(namespace["_DEBOUNCED_STORES"]) | {
         "http_action_runner",
         "coordinator",
+        # Closes every phone's local push channel; not a store.
+        "local_push",
     }
     assert journal.count("detached") == 2
     assert DOMAIN not in hass.data

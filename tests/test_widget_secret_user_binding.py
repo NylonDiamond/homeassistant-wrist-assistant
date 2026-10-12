@@ -287,6 +287,14 @@ def test_the_reply_says_whether_the_entry_is_bound(env) -> None:
     assert _post(env, {"watch_id": "watch-2"}, None).body["user_bound"] is False
 
 
+def test_the_reply_carries_the_capability_list(env) -> None:
+    """A phone that just paired learns `local_push` from this reply."""
+    domain_data = env.view._hass.data["wrist_assistant"]
+    assert _post(env, {}, ALICE).body["capabilities"] == []
+    domain_data.coordinator = types.SimpleNamespace(capabilities=["local_push", "watch_hmac_v2"])
+    assert _post(env, {}, ALICE).body["capabilities"] == ["local_push", "watch_hmac_v2"]
+
+
 # ── binding a watch through its iPhone ───────────────────────────────────
 
 

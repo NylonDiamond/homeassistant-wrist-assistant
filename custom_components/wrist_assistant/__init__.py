@@ -27,6 +27,7 @@ from homeassistant.helpers import instance_id as ha_instance_id
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.network import NoURLAvailableError, get_url
+from homeassistant.util import dt as dt_util
 
 from .api import DeltaCoordinator
 from .apns_client import APNsClient
@@ -47,6 +48,7 @@ from .const import (
     DOMAIN,
     HTTP_ACTIONS_CAPABILITY,
     LIBRARY_OWNER_ID,
+    LOCAL_PUSH_CAPABILITY,
     PAGE_IMAGES_CAPABILITY,
     PHONE_PAIRING_CAPABILITY,
     PUSH_PAIRED_BY_USER_CAPABILITY,
@@ -78,6 +80,7 @@ from .http_actions_runner import HTTPActionRunner
 from .http_actions_store import HTTPActionsStore
 from .http_actions_ws import async_register_http_actions_commands
 from .listener_relay import COMPLICATIONS, WATCH_CONFIG, listener_relay
+from .local_push import LocalPushRegistry
 from .page_images_store import PageImagesStore
 from .page_images_ws import async_register_page_images_commands
 from .parts_store import PartsStore
@@ -107,6 +110,7 @@ from .wa_v2_views import (
     WAPairRedeemView,
     WAPairStartView,
     WAPairStatusView,
+    WAPushChannelView,
     WARegisterSecretView,
     WAStreamView,
     WAVersionView,
@@ -982,6 +986,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # and test push replies, and the phone signed notification style read.
     # The phone stops naming a watch only when it sees this.
     coordinator.register_capability(PUSH_PAIRED_BY_USER_CAPABILITY)
+    # The iPhone's local push channel (local_push.py, WAPushChannelView):
+    # visible alerts for an iPhone with a live channel go over it first, and
+    # through the relay only when the phone does not ack in time.
+    coordinator.register_capability(LOCAL_PUSH_CAPABILITY)
+    local_push = LocalPushRegistry(now=dt_util.now)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,
@@ -1007,6 +1016,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         page_images_store=page_images_store,
         client_certificate_store=client_certificate_store,
         watch_logs_store=watch_logs_store,
+        local_push=local_push,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
@@ -1058,6 +1068,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         hass.http.register_view(WAVersionView(hass))
         hass.http.register_view(WAActionView(hass, nonce_cache))
         hass.http.register_view(WADeltaView(hass, nonce_cache))
+        # The iPhone's local push WebSocket, signed like /v2/action on the
+        # upgrade. It reads the loaded entry's registry per connection.
+        hass.http.register_view(WAPushChannelView(hass, nonce_cache))
         # Stream view auths via single-use token instead of HMAC headers —
         # the token is minted by op=stream_open and bound to (watch_id,
         # entity_id) for ~30 s, which is the lifetime an attacker has to
@@ -1115,6 +1128,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         pair_request_store.shutdown()
         pair_offer_store.shutdown()
         complication_push.shutdown()
+        # 1001 to every phone, so none holds Home Assistant's shutdown up
+        # and each reconnects with backoff once it is back.
+        hass.async_create_task(
+            local_push.async_shutdown(), name="wrist_assistant_local_push_shutdown"
+        )
 
     entry.async_on_unload(
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _handle_stop)
@@ -1293,6 +1311,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
             # this entry has already let go of.
             if data.complication_push is not None:
                 data.complication_push.shutdown()
+            # The phones reconnect to the next setup's registry.
+            if data.local_push is not None:
+                await data.local_push.async_shutdown()
             await data.http_action_runner.async_shutdown()
             await _async_shutdown_stores(data)
             # Let go of the old stores. The live subscriptions stay open and

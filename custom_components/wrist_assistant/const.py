@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from .complication_store import ComplicationStore
     from .http_actions_runner import HTTPActionRunner
     from .http_actions_store import HTTPActionsStore
+    from .local_push import LocalPushRegistry
     from .notification_snapshot import NotificationSnapshotStore
     from .notifications import NotificationTokenStore
     from .page_images_store import PageImagesStore
@@ -99,6 +100,9 @@ class WristAssistantData:
     # wake. Built after the relay client is resolved, so it is None for the
     # moment between the two and on an instance whose relay never came up.
     complication_push: ComplicationPhonePush | None = field(default=None)
+    # Each iPhone's local push channel, while it is on a home network
+    # (local_push.py). Memory only. None only for a test's stand-in data.
+    local_push: LocalPushRegistry | None = field(default=None)
 
 
 type WristAssistantConfigEntry = ConfigEntry[WristAssistantData]
@@ -373,6 +377,11 @@ PHONE_PAIRING_CAPABILITY = "phone_pairing"
 # companion_watch_id, reads the notification style signed as itself, and
 # may drop its copy of the watch key.
 PUSH_PAIRED_BY_USER_CAPABILITY = "push_paired_by_user"
+# What the integration advertises once it serves the iPhone's local push
+# channel (GET /v2/push_channel, local_push.py) and sends an iPhone's visible
+# alerts over it before the relay. The app offers "Local push on home Wi-Fi"
+# only when it sees this.
+LOCAL_PUSH_CAPABILITY = "local_push"
 # Highest CustomComplicationConfig schemaVersion this integration can edit.
 # Must track `CustomComplicationConfig.currentSchemaVersion` in the app repo.
 # A newer document is displayed read-only and never re-saved.
