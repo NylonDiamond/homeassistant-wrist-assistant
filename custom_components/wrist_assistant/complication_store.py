@@ -1447,6 +1447,13 @@ class ComplicationStore:
     def token(self) -> int:
         return self._token
 
+    @property
+    def load_failed(self) -> bool:
+        """Whether the storage file could not be read at startup. The store
+        then looks empty and saves nothing, so a writer that decides from
+        what is stored (the Control Center move) must not act on it."""
+        return self._load_failed
+
     def owners(self) -> list[str]:
         return sorted(self._records)
 

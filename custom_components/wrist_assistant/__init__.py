@@ -42,6 +42,7 @@ from .complication_panel import async_register_panel, async_remove_panel
 from .complication_push import ComplicationPhonePush
 from .complication_store import ComplicationStore
 from .complication_ws import async_register_websocket_commands
+from .control_center_move import ControlCenterMover
 from .const import (
     CLIENT_CERTIFICATE_CAPABILITY,
     DOMAIN,
@@ -1105,6 +1106,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     )
     runtime_data.complication_push = complication_push
     complication_store.async_set_push_callback(complication_push.on_commit)
+
+    # The old Control Center list becomes complication controls
+    # (control_center_move.py). Started only now, after the wake and the
+    # push hooks are in, so a control it creates reaches the watch the same
+    # way a panel save does. Once for every owner, then after every save of
+    # an owner's `control_center` record. Each run is its own short job on
+    # the loop, and a failure is logged there, never raised into setup.
+    control_center_mover = ControlCenterMover(
+        complication_store,
+        watch_config_store,
+        is_paired=widget_secret_store.is_paired_watch,
+        schedule=hass.loop.call_soon,
+    )
+    entry.async_on_unload(control_center_mover.close)
+    entry.async_on_unload(
+        watch_config_store.async_add_listener(control_center_mover.watch_config_changed)
+    )
+    control_center_mover.schedule_all()
 
     @callback
     def _handle_stop(_event) -> None:
