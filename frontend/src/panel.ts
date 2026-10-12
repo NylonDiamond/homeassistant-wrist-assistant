@@ -8245,6 +8245,9 @@ export class WristAssistantPanel extends LitElement {
         cfg.slotIndex = slot;
         // A copy is a design of its own, not one more device of this one.
         delete cfg.linkId;
+        // Nor the document an old Control Center tile reads: that stays the
+        // one record it was moved into.
+        delete cfg.legacyControlEntityId;
         draft = new Draft(cfg, null);
       }
       const submittedConfig = structuredClone(draft.config);
@@ -8404,6 +8407,9 @@ export class WristAssistantPanel extends LitElement {
         id: record.id,
         slotIndex: Number(record.document?.slotIndex ?? 0),
         hidden: record.document?.hidden === true,
+        ...(typeof record.document?.legacyControlEntityId === "string"
+          ? { legacyControlEntityId: record.document.legacyControlEntityId }
+          : {}),
       });
       try {
         const out = await saveRecord(this.hass, ownerId, new Draft(doc, record.revision).encoded(), record.revision);

@@ -127,6 +127,7 @@ export function partFromSelection(
   // The complication's own settings, which are not the layers'.
   delete doc.inline;
   delete doc.control;
+  delete doc.legacyControlEntityId;
   delete doc.openPageId;
   delete doc.openPageName;
   delete doc.hidden;

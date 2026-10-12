@@ -730,6 +730,36 @@ def test_control_only_document_is_accepted(mod):
     assert saved["control"]["kind"] == "button"
 
 
+def test_moved_control_keeps_its_old_entity(mod):
+    """A control moved from a watch's old Control Center list names the
+    entry's entity, which the watch's old tiles look their document up by."""
+    store = _new(mod)
+    doc = _doc(
+        schemaVersion=8,
+        supportedFamilies=[],
+        elements=[],
+        control=_control(),
+        legacyControlEntityId="scene.movie",
+    )
+    store.save(OWNER, doc, base_revision=None, updated_by="t")
+    assert store.list(OWNER)[0].document["legacyControlEntityId"] == "scene.movie"
+
+
+@pytest.mark.parametrize("value", [7, True, ["scene.movie"], {"id": "scene.movie"}])
+def test_moved_control_entity_must_be_text(mod, value):
+    """The Apple decoder reads the key as a string and throws on anything else."""
+    store = _new(mod)
+    doc = _doc(
+        schemaVersion=8,
+        supportedFamilies=[],
+        elements=[],
+        control=_control(),
+        legacyControlEntityId=value,
+    )
+    with pytest.raises(mod.ComplicationValidationError):
+        store.save(OWNER, doc, base_revision=None, updated_by="t")
+
+
 @pytest.mark.parametrize(
     "control",
     [None, "button", ["button"], 7],

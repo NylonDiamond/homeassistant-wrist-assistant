@@ -248,8 +248,10 @@ export function splitDocument(
     // home's other devices, which is a link the children can still honour.
     setLink(child, family);
     // The control is one per document and becomes its own document below, so
-    // no shape child carries a copy of it.
+    // no shape child carries a copy of it. Nor the old Control Center tile
+    // the control speaks for, which goes with the control.
     delete child.control;
+    if (cut) delete child.legacyControlEntityId;
     child.id = children.length === 0 ? cfg.id : nextId();
     child.schemaVersion = schemaVersionFor(child);
     children.push(child);

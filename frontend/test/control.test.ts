@@ -762,6 +762,23 @@ describe("the Control Center card", () => {
     expect(at, order.join(" < ")).toEqual([...at].sort((a, b) => a - b));
   });
 
+  it("says, on a control moved from the old list, what the old tiles take from it", () => {
+    const cfg = newConfig("Kitchen", 0);
+    setControlShown(cfg, true);
+    expect(flatten(controlCard(host(cfg)))).not.toContain("Old Toggle and Action tiles");
+    cfg.legacyControlEntityId = "light.kitchen";
+    const markup = flatten(controlCard(host(cfg)));
+    expect(markup).toContain("Old Toggle and Action tiles on the watch use this name, symbol and color.");
+    expect(markup).toContain("They still switch <code>light.kitchen</code>.");
+    // One line, under the freshness hint and above Kind.
+    expect(markup.match(/Old Toggle and Action tiles/g)).toHaveLength(1);
+    expect(markup.indexOf("Old Toggle")).toBeGreaterThan(markup.indexOf("Shows the last synced value."));
+    expect(markup.indexOf("Old Toggle")).toBeLessThan(markup.indexOf("Kind"));
+    // A scene, script or automation tile runs rather than switches.
+    cfg.legacyControlEntityId = "scene.movie";
+    expect(flatten(controlCard(host(cfg)))).toContain("They still run <code>scene.movie</code>.");
+  });
+
   it("warns about a toggle with no state, without refusing to save it", () => {
     const cfg = newConfig("Lamp", 0);
     setControlShown(cfg, true);

@@ -493,7 +493,9 @@ describe("backup round trip", () => {
       if (!parsed.ok) return;
       // The link to the same design on this home's other devices is the one
       // thing a backup leaves behind: it comes back as a design of its own.
-      const { linkId: _link, ...want } = withoutIdentity(cfg);
+      // So is the old Control Center tile a moved control stood for: the
+      // import is a new design, which no old tile points at.
+      const { linkId: _link, legacyControlEntityId: _legacy, ...want } = withoutIdentity(cfg);
       expect(withoutIdentity(parsed.config)).toEqual(want);
     });
   }
@@ -512,6 +514,8 @@ describe("share round trip", () => {
       const want = withoutPages(cfg);
       // The link to this home's other devices never travels in a share.
       delete want.linkId;
+      // Nor does the old Control Center tile a moved control stood for.
+      delete want.legacyControlEntityId;
       // The icon a reference carried belonged to the sender's entity.
       const stripIcons = (o: unknown): unknown => {
         if (Array.isArray(o)) return o.map(stripIcons);

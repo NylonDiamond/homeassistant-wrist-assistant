@@ -1,0 +1,46 @@
+{
+  "name": "control_moved",
+  "description": "A control the app moved from the old Control Center list (`docs/control_center_move.md`): one light entry with a custom name, a custom symbol and a tint, on the watch whose owner id is WATCH-1234. It is exactly what `ControlCenterHandover.document` writes, which `ControlCenterHandoverTests` checks against this file: the id is the name-based UUID of `WATCH-1234/light.kitchen`, there are no shapes, the title is a literal of the saved name, the state reads the light, one symbol for both sides, and the tap is `toggleEntity`. `legacyControlEntityId` names the old list entry, which is how the watch's old Toggle tile finds this document. Otherwise it resolves like any control: the light is on, so the toggle reads on.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "44E5931C-79A6-5670-970D-07B5C5C3190C",
+    "name": "Kitchen lights",
+    "values": [],
+    "slotIndex": 3,
+    "elements": [],
+    "supportedFamilies": [],
+    "perFamily": [],
+    "dataSources": [],
+    "refreshMinutes": 0,
+    "tapAction": {"type": "refresh"},
+    "control": {
+      "kind": "toggle",
+      "title": {"kind": {"kind": "literal", "value": "Kitchen lights"}},
+      "state": {"kind": {"kind": "entityState", "entityId": "light.kitchen", "displayName": "Kitchen lights", "domain": "light"}},
+      "symbol": "lightbulb.led",
+      "tintColorHex": "#FF9F0A",
+      "action": {"type": "toggleEntity", "entityId": "light.kitchen", "displayName": "Kitchen lights", "domain": "light"}
+    },
+    "legacyControlEntityId": "light.kitchen"
+  },
+  "inputs": {
+    "entityStates": {
+      "light.kitchen": {"state": "on", "domain": "light"}
+    },
+    "templateResults": {},
+    "dataAgeSeconds": 0
+  },
+  "expectedCompiled": {
+    "entities": ["light.kitchen"],
+    "expressionKeys": []
+  },
+  "expected": {
+    "control": {
+      "kind": "toggle",
+      "title": "Kitchen lights",
+      "symbol": "lightbulb.led",
+      "tintColorHex": "#FF9F0A",
+      "isOn": true
+    }
+  }
+}

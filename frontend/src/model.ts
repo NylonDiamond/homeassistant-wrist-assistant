@@ -4305,6 +4305,13 @@ export interface CustomComplicationConfig {
    * none, which is every document written before this key. It never changes
    * what the document draws: the control is an extra, not a mode. */
   control?: ControlSpec;
+  /** The entity of one watch's old Control Center entry this control-only
+   * document was moved from. The watch's old Toggle and Action tiles find
+   * their document by it and take its name, symbol and tint, while still
+   * switching that entity themselves. It names one watch's old tile and means
+   * nothing anywhere else, so share, gallery upload, import and every copy
+   * onto another record drop it. Absent on everything else. */
+  legacyControlEntityId?: string;
 }
 
 // ── parsing ───────────────────────────────────────────────────────────────
@@ -5409,6 +5416,7 @@ export function parseConfig(raw: unknown): CustomComplicationConfig {
   if (raw.httpShowResult === true) cfg.httpShowResult = true;
   if (raw.hidden === true) cfg.hidden = true;
   if (typeof raw.linkId === "string" && raw.linkId !== "") cfg.linkId = raw.linkId.toUpperCase();
+  if (typeof raw.legacyControlEntityId === "string" && raw.legacyControlEntityId !== "") cfg.legacyControlEntityId = raw.legacyControlEntityId;
   // A spec of one page is a document with no pages, so it lands as absent and
   // is never written back. `parsePagesSpec` folds that in.
   const pages = parsePagesSpec(raw.pages);
@@ -7291,6 +7299,8 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
   const pages = encodePagesSpec(cfg.pages === undefined ? undefined : { ...cfg.pages, mode: pageModeFor(cfg) });
   if (pages !== undefined) o.pages = pages;
   if (cfg.control !== undefined) o.control = encodeControl(cfg.control);
+  // Last, after `control`, where the app writes it too.
+  if (cfg.legacyControlEntityId !== undefined && cfg.legacyControlEntityId !== "") o.legacyControlEntityId = cfg.legacyControlEntityId;
   return o;
 }
 
@@ -7832,8 +7842,9 @@ export function stepGroup(cfg: CustomComplicationConfig, groupId: string, dir: -
 const K = {
   // `linkId` joins the copies of one design across devices: one record per
   // device, the same uuid on each. The panel reads and writes it; the apps
-  // decode it and never write it back.
-  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "httpShowResult", "groups", "notes", "hidden", "linkId", "control", "pages"],
+  // decode it and never write it back. `legacyControlEntityId` ties a
+  // control-only document to one watch's old Control Center tile.
+  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "httpShowResult", "groups", "notes", "hidden", "linkId", "control", "legacyControlEntityId", "pages"],
   group: ["id", "name", "locked", "parentId"],
   // The document's pages. Its own object at the top level, and the only place
   // these three keys appear.

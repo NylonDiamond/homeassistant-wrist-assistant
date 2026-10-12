@@ -5425,6 +5425,23 @@ export function controlTapEdit(cfg: CustomComplicationConfig, mutate: (p: TapAct
  * state, the symbols and the tint (`seedControlFromEntity`), so a control is
  * usually finished by the third row and the rest is there to adjust.
  */
+/** The domains whose old Control Center tile is an Action: a press runs them
+ * rather than switching them. The app's `CuratedEntity.actionDomains`, kept
+ * here rather than read from the Control Center editor's table, which loads
+ * in that editor's own chunk. */
+const LEGACY_ACTION_DOMAINS = new Set(["scene", "script", "automation"]);
+
+/**
+ * The line on a control moved from a watch's old Control Center list: the
+ * old tiles take their look from this document and keep their own entity.
+ * Nothing on any other document.
+ */
+export function legacyControlLine(entityId: string | undefined): TemplateResult | typeof nothing {
+  if (entityId === undefined || entityId === "") return nothing;
+  const verb = LEGACY_ACTION_DOMAINS.has(entityId.split(".")[0] ?? "") ? "run" : "switch";
+  return html`<div class="hint keep legacy-control">Old Toggle and Action tiles on the watch use this name, symbol and color. They still ${verb} <code>${entityId}</code>.</div>`;
+}
+
 function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
   const set = (mutate: (c: ControlSpec) => void, k?: string) => host.update((cfg) => {
     if (cfg.control) mutate(cfg.control);
@@ -5451,6 +5468,7 @@ function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
   return html`
     ${controlPreview(host, spec)}
     <div class="hint keep">Shows the last synced value.</div>
+    ${legacyControlLine(host.config.legacyControlEntityId)}
     <div class="fgroup">
     ${segField("Kind", spec.kind, CONTROL_KINDS, (v) => set((c) => { c.kind = v; }), { def: "toggle" })}
     <div class="hint">A toggle shows on or off and flips it. A button runs the action and shows nothing.</div>

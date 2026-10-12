@@ -279,6 +279,10 @@ export function exportObject(
   // comes back as a design of its own: joining a link is asked for from the
   // card's Devices menu, never smuggled in by a paste.
   delete encoded.linkId;
+  // The old Control Center tile a moved control speaks for is on one watch in
+  // this house. Elsewhere it names nothing, and a backup restored here is a
+  // new record, which must not become a second document for the same tile.
+  delete encoded.legacyControlEntityId;
   // Derived on save. Exporting it would ship a stale answer to a question the
   // reader's own save re-answers correctly.
   encoded.dataSources = [];
@@ -368,6 +372,8 @@ export function parseImportText(text: string, maxSchemaVersion: number): ImportP
   // And it is a design of its own, whatever link the text names: a pasted
   // key must never quietly join a design on somebody's watch.
   delete config.linkId;
+  // Nor may it speak for somebody's old Control Center tile.
+  delete config.legacyControlEntityId;
 
   const unknown = auditUnknownKeys(object);
   if (unknown.length > 0) {

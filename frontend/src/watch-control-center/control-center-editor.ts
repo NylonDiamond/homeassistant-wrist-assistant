@@ -44,6 +44,7 @@ import {
   type OwnerSummary,
   type WatchConfigHistoryEntry,
   type WatchConfigRecord,
+  fetchList,
   fetchOwners,
   fetchWatchConfig,
   fetchWatchConfigHistory,
@@ -102,11 +103,13 @@ import { controlCenterKeptText, controlCenterSaveNote } from "./save-note.js";
 import {
   CONTROL_CENTER_STAGE_HINT,
   type ControlCenterViewHost,
+  controlCenterMoved,
   controlCenterStageFacts,
   controlCenterViewStyles,
   deselectControlCenter,
   loadControlCenterZoom,
   renderControlCenterInspector,
+  renderControlCenterMoved,
   renderControlCenterScreen,
   renderEntriesCard,
   saveControlCenterZoom,
@@ -232,6 +235,11 @@ export class WaControlCenterEditor extends LitElement {
   @state() private columns: ColumnWidths = { ...CC_COLUMNS_DEFAULT };
   @state() private hostWidth = 0;
   @state() private hostHeight = 0;
+  /** Whether the watch owns a complication moved from its old list
+   * (`controlCenterMoved`), for the watch it was asked about. A different
+   * watch, or no answer yet, is not known. */
+  @state() private movedCheck?: { watchId: string; moved: boolean };
+  private movedSeq = 0;
   private ownListAsked = false;
   private sizeObserver?: ResizeObserver;
   private observedTop?: HTMLElement;
@@ -258,7 +266,15 @@ export class WaControlCenterEditor extends LitElement {
     return settingsWatches(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
   }
 
+  /** The open watch's list moved into complications: the screen is the note,
+   * and nothing here edits or saves the old list. */
+  private get moved(): boolean {
+    const check = this.movedCheck;
+    return check !== undefined && check.watchId === this.watchId && check.moved;
+  }
+
   private get draft(): ControlCenterDraft | undefined {
+    if (this.moved) return undefined;
     if (this.watchId === undefined || this.record === undefined || this.record.revision <= 0) return undefined;
     return keptControlCenterDraft(this.watchId);
   }
@@ -442,10 +458,15 @@ export class WaControlCenterEditor extends LitElement {
     }
     const seq = ++this.loadSeq;
     this.stopPolling();
+    // A full load also asks whether the list moved into complications, and
+    // stays loading until both answers are in, so the editor never shows for
+    // a moment on a watch whose list has moved.
+    let movedAsked: Promise<void> | undefined;
     if (!quiet) {
       this.record = undefined;
       this.loading = true;
       this.loadError = undefined;
+      movedAsked = this.checkMoved(watchId);
     }
     try {
       const record = await fetchWatchConfig(hass, watchId, "control_center");
@@ -467,10 +488,32 @@ export class WaControlCenterEditor extends LitElement {
       }
       if (this.restartDraft?.watchId === watchId) this.restartDraft = undefined;
     }
+    if (movedAsked !== undefined) {
+      await movedAsked;
+      if (seq !== this.loadSeq) return;
+    }
     this.loading = false;
     if (this.unsupported) return;
     this.pollIfWaiting();
     void this.loadHistory(watchId);
+  }
+
+  /** Ask whether the watch owns a complication moved from its old list. A
+   * list that cannot be read reads as not moved, which keeps the editor, as
+   * on an integration or a watch from before the move. */
+  private async checkMoved(watchId: string): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.movedSeq;
+    let moved = false;
+    try {
+      const reply = await fetchList(hass, watchId);
+      moved = controlCenterMoved(Array.isArray(reply?.records) ? reply.records : []);
+    } catch {
+      moved = false;
+    }
+    if (seq !== this.movedSeq) return;
+    this.movedCheck = { watchId, moved };
   }
 
   private flushPending(): void {
@@ -878,7 +921,7 @@ export class WaControlCenterEditor extends LitElement {
 
   private renderSyncPill(draft: ControlCenterDraft | undefined): TemplateResult | typeof nothing {
     const record = this.record;
-    if (record === undefined || record.revision <= 0 || this.unsupported) return nothing;
+    if (record === undefined || record.revision <= 0 || this.unsupported || this.moved) return nothing;
     const budget = draft === undefined ? { size: 0, limit: 1 } : controlCenterBudget(draft.document);
     const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "Control Center list", historyState: this.historyState });
     return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
@@ -894,7 +937,7 @@ export class WaControlCenterEditor extends LitElement {
 
   private canStart(): boolean {
     const record = this.record;
-    return this.watchId !== undefined && record !== undefined && record.revision <= 0 && !this.unsupported;
+    return this.watchId !== undefined && record !== undefined && record.revision <= 0 && !this.unsupported && !this.moved;
   }
 
   private renderTopMenu(draft: ControlCenterDraft | undefined): TemplateResult | typeof nothing {
@@ -1033,6 +1076,9 @@ export class WaControlCenterEditor extends LitElement {
     if (watches.length === 0) {
       const waiting = this.owners.length === 0 && this.ownList === undefined;
       return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet."}</div>`;
+    }
+    if (this.moved) {
+      return renderControlCenterMoved(() => (this.onBack ? this.onBack() : navigateWatchControlCenter(undefined, false)));
     }
     if (this.unsupported) return html`<div class="pe-empty"><b>${CONTROL_CENTER_UPDATE_TEXT}</b></div>`;
     if (this.loading) return html`<div class="pe-empty">Loading…</div>`;
