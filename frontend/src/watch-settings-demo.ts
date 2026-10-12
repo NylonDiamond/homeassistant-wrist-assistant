@@ -260,9 +260,13 @@ const cameraB = svg`<rect x="7" y="5" width="18" height="17" rx="2" fill="curren
   <path d="M9 12.5L14 8.5L19 12.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-opacity="0.75" />
   <circle cx="21.5" cy="17" r="2.5" fill="currentColor" fill-opacity="0.4" />`;
 
-/** The screen's own area: what slides out of it is cut off at its edge. */
+/** The screen's own area: what slides out of it is cut off at its edge. A
+ * clip path, not a nested `<svg>`: Chrome runs no SMIL inside a nested one.
+ * Every picture's clip is the same shape under the same id, so whichever one
+ * the id finds first cuts the same edge. */
 function inScreen(body: SVGTemplateResult): SVGTemplateResult {
-  return svg`<svg x="5" y="2" width="22" height="28" viewBox="5 2 22 28" overflow="hidden">${body}</svg>`;
+  return svg`<clipPath id="ws-demo-screen"><rect x="5" y="2" width="22" height="28" rx="7" /></clipPath>
+    <g clip-path="url(#ws-demo-screen)">${body}</g>`;
 }
 
 function pageTransition(value: string, still: boolean): SVGTemplateResult {
