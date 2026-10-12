@@ -51,13 +51,18 @@ def _install_ha_stubs() -> None:
             setattr(module, key, value)
         sys.modules[name] = module
 
-    stub("aiohttp")
-    stub(
-        "aiohttp.web",
-        Request=type("Request", (), {}),
-        Response=type("Response", (), {}),
-        StreamResponse=type("StreamResponse", (), {}),
-    )
+    # Only without a real aiohttp: `stub` sets attributes on a module that is
+    # already loaded, so stubbing over the real one would replace its
+    # Response for every later test in the session (test_local_push.py
+    # serves a real socket with it).
+    if importlib.util.find_spec("aiohttp") is None:
+        stub("aiohttp")
+        stub(
+            "aiohttp.web",
+            Request=type("Request", (), {}),
+            Response=type("Response", (), {}),
+            StreamResponse=type("StreamResponse", (), {}),
+        )
     stub("homeassistant")
     stub("homeassistant.components")
     stub(
