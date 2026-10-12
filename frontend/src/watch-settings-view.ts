@@ -831,11 +831,11 @@ export class WatchSettings implements ReactiveController {
 
   /** The side panel and the cards beside it. A group whose cards are all
    * missing (the notification style on an integration that does not keep
-   * it) is left out of the panel. */
+   * it) is left out of the panel. A search leaves the panel as it is. */
   private renderSplit(hass: HassLike) {
     const terms = searchTerms(this.query);
     const cards = this.loading ? undefined : this.cardsById(hass, terms);
-    const groups = cards === undefined ? SETTINGS_GROUPS : SETTINGS_GROUPS.filter((g) => g.cards.some((c) => cards.has(c)));
+    const groups = this.loading ? SETTINGS_GROUPS : SETTINGS_GROUPS.filter((g) => g.cards.some((c) => this.hasCard(c)));
     const group = groups.find((g) => g.id === this.group) ?? groups[0] ?? settingsGroup(undefined);
     const searching = terms.length > 0;
     return html`<div class="ws-split">
@@ -886,6 +886,14 @@ export class WatchSettings implements ReactiveController {
       return html`<button type="button" class="ws-found" title=${`Show all of ${g.title}`} @click=${() => this.pickGroup(g.id)}>${g.title}</button>
         ${found.map((c) => cards.get(c))}`;
     });
+  }
+
+  /** Whether the page has this card to show without a search, its record's
+   * note counting as one: the side panel lists a group only when it does. */
+  private hasCard(card: SettingsCardId): boolean {
+    if (card === "pair" || card === "cert") return true;
+    if (NOTIFICATION_STYLE_SECTIONS.some((s) => s.id === card)) return !this.styleUnsupported && this.styleStandIn() !== null;
+    return this.behaviorStandIn() !== null;
   }
 
   /** Unsaved changes per group, for the side panel. */

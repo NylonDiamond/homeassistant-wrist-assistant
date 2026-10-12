@@ -416,8 +416,10 @@ describe("the side panel", () => {
     expect(shown).not.toContain("data-key=serverMode");
     expect(shown).toMatch(/class="ws-found"[^>]*>Pages<\/button>/);
     expect(shown).toMatch(/class="ws-found"[^>]*>Cameras<\/button>/);
-    // While it searches, no group is the current one.
+    // While it searches, no group is the current one, and the panel keeps
+    // every group, not only the ones with a match.
     expect(shown).not.toContain("aria-current=page");
+    expect(templates(page(), `class="ws-nav-item`)).toHaveLength(6);
     // A group's name opens it, and the search ends.
     const name = templates(page(), `<button type="button" class="ws-found"`).find((t) => flatten(t).includes(">Cameras<"))!;
     bound(name, "@click")();
