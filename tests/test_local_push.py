@@ -34,6 +34,14 @@ from typing import Any
 import aiohttp
 import pytest
 from aiohttp import web
+from test_notification_tokens import _loaded_notifications
+from test_push_ops_inprocess import (
+    _deliver_push_fn,
+    _Hass,
+    _phone,
+    _RelayClient,
+    _watch,
+)
 
 _SRC = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
 _PKG = "wa_local_push_test_pkg"
@@ -525,6 +533,215 @@ def test_a_channel_that_drops_mid_send_falls_back_at_once(mods) -> None:
     outcome, waited = _run(body, mods, ack_timeout=5.0)
     assert outcome == "fell_back"
     assert waited < 2.0
+
+
+# ── _deliver_push: the channel first, the relay after ────────────────────
+
+
+@pytest.fixture
+def notif():
+    with _loaded_notifications() as loaded:
+        yield loaded
+
+
+class _Deliver:
+    """The real ``_deliver_push`` over the real token store and routing."""
+
+    def __init__(self, notif: Any, server: _Server) -> None:
+        self.tokens = notif.NotificationTokenStore(object())
+        self.secrets = types.SimpleNamespace(
+            all_entries={
+                PHONE: _phone("u1"),
+                "p2": _phone("u1"),
+                "w1": _watch("u1", owner=PHONE),
+            }
+        )
+        self.tokens.register(PHONE, "P1", platform="ios")
+        self.tokens.register("w1", "W1", platform="watchos")
+        self.relay = _RelayClient()
+        self.sent_at: dict[str, float] = {}
+        self.started = 0.0
+        relay, sent_at = self.relay, self.sent_at
+        original = relay.send_push
+
+        async def _timed(**kwargs):
+            sent_at[kwargs["watch_id"]] = time.monotonic() - self.started
+            return await original(**kwargs)
+
+        relay.send_push = _timed
+        self.data = types.SimpleNamespace(
+            apns_client=relay,
+            notification_store=self.tokens,
+            widget_secret_store=self.secrets,
+            local_push=server.registry,
+        )
+        self.fn = _deliver_push_fn(notif)
+
+    async def __call__(self, **kwargs: Any) -> dict:
+        self.started = time.monotonic()
+        return await self.fn(
+            _Hass(), self.data, title=kwargs.pop("title", "t"), message="m", **kwargs
+        )
+
+
+def test_an_acked_alert_skips_the_relay(mods, notif) -> None:
+    async def body(server):
+        deliver = _Deliver(notif, server)
+        ws, _ = await server.connect()
+        seen: list = []
+        phone = asyncio.ensure_future(_phone_that_acks(ws, seen))
+        await _until(lambda: server.registry.is_connected(PHONE))
+        result = await deliver(target_watch_ids=["w1"])
+        await ws.close()
+        await phone
+        return result, deliver.relay.sends, seen
+
+    result, sends, seen = _run(body, mods)
+    assert result == {"sent": 1, "failed": 0, "failures": {}, "local": 1}
+    assert sends == []
+    (alert,) = seen
+    assert alert["type"] == "alert" and len(alert["push_id"]) == 32
+    payload = alert["payload"]
+    # The same fields the relay would have got, and nothing else.
+    assert set(payload) == {"title", "body", "category", "sound", "data"}
+    assert (payload["title"], payload["body"], payload["category"], payload["sound"]) == (
+        "t",
+        "m",
+        "WA_ACTIONS",
+        "default",
+    )
+    assert payload["data"]["tag"] == alert["push_id"]
+    assert payload["data"]["priority"] == "active"
+
+
+def test_a_missed_ack_goes_through_the_relay_and_closes_4003(mods, notif) -> None:
+    async def body(server):
+        deliver = _Deliver(notif, server)
+        ws, _ = await server.connect()
+        await _until(lambda: server.registry.is_connected(PHONE))
+        result = await deliver(target_watch_ids=["w1"])
+        code = await _close_code(ws)
+        return result, deliver.relay.sends, code, server.registry.diagnostics()
+
+    result, sends, code, diag = _run(body, mods, ack_timeout=0.2)
+    assert result == {"sent": 1, "failed": 0, "failures": {}, "local": 0}
+    assert [(s["watch_id"], s["device_token"]) for s in sends] == [(PHONE, "P1")]
+    assert code == 4003
+    assert diag["iphones"][PHONE]["fell_back_today"] == 1
+
+
+def test_a_late_ack_goes_through_the_relay_with_the_same_tag(mods, notif) -> None:
+    async def body(server):
+        deliver = _Deliver(notif, server)
+        ws, _ = await server.connect()
+        seen: list = []
+        phone = asyncio.ensure_future(_phone_that_acks(ws, seen, delay=0.4))
+        await _until(lambda: server.registry.is_connected(PHONE))
+        result = await deliver(target_watch_ids=["w1"])
+        await phone
+        return result, deliver.relay.sends, seen
+
+    result, sends, seen = _run(body, mods, ack_timeout=0.2)
+    assert result["local"] == 0 and result["sent"] == 1
+    (send,) = sends
+    # Both copies carry one identifier, so iOS shows the alert once.
+    assert send["data"]["tag"] == seen[0]["push_id"] == seen[0]["payload"]["data"]["tag"]
+
+
+def test_no_channel_goes_through_the_relay(mods, notif) -> None:
+    async def body(server):
+        deliver = _Deliver(notif, server)
+        result = await deliver(target_watch_ids=["w1"])
+        return result, deliver.relay.sends
+
+    result, sends = _run(body, mods)
+    assert result == {"sent": 1, "failed": 0, "failures": {}, "local": 0}
+    (send,) = sends
+    assert send["watch_id"] == PHONE
+    assert len(send["data"]["tag"]) == 32 and int(send["data"]["tag"], 16) >= 0
+
+
+def test_a_caller_s_tag_is_kept(mods, notif) -> None:
+    async def body(server):
+        deliver = _Deliver(notif, server)
+        await deliver(target_watch_ids=["w1"], extra_data={"tag": "front-door"})
+        return deliver.relay.sends
+
+    (send,) = _run(body, mods)
+    assert send["data"]["tag"] == "front-door"
+
+
+def test_each_send_gets_its_own_push_id(mods, notif) -> None:
+    async def body(server):
+        deliver = _Deliver(notif, server)
+        await deliver(target_watch_ids=["w1"])
+        await deliver(target_watch_ids=["w1"])
+        return deliver.relay.sends
+
+    first, second = _run(body, mods)
+    assert first["data"]["tag"] != second["data"]["tag"]
+
+
+def test_a_watch_route_never_uses_the_channel(mods, notif) -> None:
+    """A Reliable watch is sent its own token; the phone's channel is idle."""
+
+    async def body(server):
+        deliver = _Deliver(notif, server)
+        deliver.tokens.set_watch_metadata("w1", "delivery_mode", "direct")
+        ws, _ = await server.connect()
+        seen: list = []
+        phone = asyncio.ensure_future(_phone_that_acks(ws, seen))
+        await _until(lambda: server.registry.is_connected(PHONE))
+        result = await deliver(target_watch_ids=["w1"])
+        background = await deliver(target_watch_ids=["w1"], push_type="background")
+        await ws.close()
+        await phone
+        return result, background, deliver.relay.sends, seen
+
+    result, background, sends, seen = _run(body, mods)
+    assert result["local"] == 0 and background["local"] == 0
+    assert [s["watch_id"] for s in sends] == ["w1", "w1"]
+    assert seen == []
+
+
+def test_one_silent_channel_delays_no_other_route(mods, notif) -> None:
+    """Two phones of one user: one holds a channel that never acks, the other
+    has none. The second goes to the relay at once, not after the wait."""
+
+    async def body(server):
+        deliver = _Deliver(notif, server)
+        deliver.tokens.register("p2", "P2", platform="ios")
+        ws, _ = await server.connect()
+        await _until(lambda: server.registry.is_connected(PHONE))
+        started = time.monotonic()
+        result = await deliver(target_watch_ids=["w1"])
+        total = time.monotonic() - started
+        await ws.close()
+        return result, deliver.sent_at, total
+
+    result, sent_at, total = _run(body, mods, ack_timeout=0.4)
+    assert result == {"sent": 2, "failed": 0, "failures": {}, "local": 0}
+    assert sent_at["p2"] < 0.2
+    assert sent_at[PHONE] >= 0.35
+    assert total < 1.5
+
+
+def test_a_mixed_send_counts_local_and_relay(mods, notif) -> None:
+    async def body(server):
+        deliver = _Deliver(notif, server)
+        deliver.tokens.register("p2", "P2", platform="ios")
+        ws, _ = await server.connect()
+        seen: list = []
+        phone = asyncio.ensure_future(_phone_that_acks(ws, seen))
+        await _until(lambda: server.registry.is_connected(PHONE))
+        result = await deliver(target_watch_ids=["w1"])
+        await ws.close()
+        await phone
+        return result, deliver.relay.sends
+
+    result, sends = _run(body, mods)
+    assert result == {"sent": 2, "failed": 0, "failures": {}, "local": 1}
+    assert [s["watch_id"] for s in sends] == ["p2"]
 
 
 # ── wiring ───────────────────────────────────────────────────────────────

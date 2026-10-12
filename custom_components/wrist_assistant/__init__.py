@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 from datetime import timedelta
 from pathlib import Path
 
@@ -80,7 +81,7 @@ from .http_actions_runner import HTTPActionRunner
 from .http_actions_store import HTTPActionsStore
 from .http_actions_ws import async_register_http_actions_commands
 from .listener_relay import COMPLICATIONS, WATCH_CONFIG, listener_relay
-from .local_push import LocalPushRegistry
+from .local_push import DELIVERED_LOCAL, LocalPushRegistry
 from .page_images_store import PageImagesStore
 from .page_images_ws import async_register_page_images_commands
 from .parts_store import PartsStore
@@ -323,7 +324,9 @@ async def _deliver_push(
     action dicts run them through ``_enrich_actions`` first). ``target_watch_ids``
     selects which watches (or iPhones) to push to; ``None`` broadcasts to every
     watch. ``failures`` is keyed by the id each failed token is filed under.
-    Returns ``{"sent", "failed", "failures"}``; raises HomeAssistantError
+    Returns ``{"sent", "failed", "failures", "local"}``, where ``sent``
+    counts every delivery and ``local`` those of them that went over an
+    iPhone's local push channel instead of the relay. Raises HomeAssistantError
     when the APNs client is unavailable, no target is registered, or every push
     fails — matching the prior service behavior.
     """
@@ -434,6 +437,14 @@ async def _deliver_push(
     extra_data.setdefault("priority", "active")
     # Strip any None values so a JSON null can't break the mirror path.
     extra_data = _strip_none(extra_data)
+    # One id per send. With no `tag` from the caller it is the tag too, which
+    # the relay turns into apns-collapse-id and the phone's local push uses
+    # as the notification identifier: a late local ack and the relay's copy
+    # of the same alert then show once, not twice.
+    push_id = secrets.token_hex(16)
+    if not extra_data.get("tag"):
+        extra_data["tag"] = push_id
+    local_push = getattr(data, "local_push", None)
 
     # Resolve the targets to the tokens to send to, routing per each watch's
     # "delivery_mode" (resolve_push_routes in notifications.py). "mirror"
@@ -471,12 +482,15 @@ async def _deliver_push(
         )
 
     sent = 0
+    local = 0
     failure_map: dict[str, str] = {}
     routed: list[tuple[str, TokenEntry]] = [
         (route.store_id, route.entry) for route in routes
     ]
 
-    async def _send_one(watch_id: str, tok_entry: TokenEntry) -> tuple[bool, str | None, str]:
+    async def _send_one(
+        watch_id: str, tok_entry: TokenEntry
+    ) -> tuple[bool, str | None, str, bool]:
         # A mirrored (iOS) push with no sound delivers to the wrist silently AND
         # without a haptic — the user never perceives it. Force at least the
         # default alert sound when the chosen token is the companion iPhone.
@@ -487,7 +501,29 @@ async def _deliver_push(
             target_sound = None
         elif tok_entry.platform == "ios" and not target_sound:
             target_sound = "default"
-        return await client.send_push(
+        # A visible alert for an iPhone on its home network goes over the
+        # phone's own channel first (local_push.py), with the same fields the
+        # relay gets. Acked within 2 s: done, no relay call. Otherwise the
+        # registry closes the channel (4003) and the relay sends it as before.
+        if (
+            local_push is not None
+            and push_type == "alert"
+            and tok_entry.platform == "ios"
+        ):
+            outcome = await local_push.async_deliver(
+                watch_id,
+                push_id,
+                {
+                    "title": title,
+                    "body": message,
+                    "category": category,
+                    "sound": target_sound,
+                    "data": extra_data,
+                },
+            )
+            if outcome == DELIVERED_LOCAL:
+                return (True, None, tok_entry.environment, True)
+        success, reason, used_env = await client.send_push(
             watch_id=watch_id,
             device_token=tok_entry.device_token,
             title=title,
@@ -499,6 +535,7 @@ async def _deliver_push(
             environment=tok_entry.environment,
             platform=tok_entry.platform,
         )
+        return (success, reason, used_env, False)
 
     # Fan out: every watch's relay round trip runs concurrently, so a
     # multi-watch household gets the alert on all wrists at once instead of
@@ -517,8 +554,12 @@ async def _deliver_push(
             )
             failure_map[watch_id] = "exception"
             continue
-        success, reason, used_env = result
-        if success:
+        success, reason, used_env, went_local = result
+        if went_local:
+            sent += 1
+            local += 1
+            _LOGGER.debug("deliver_push delivered watch_id=%s over its local channel", watch_id)
+        elif success:
             sent += 1
             _LOGGER.debug(
                 "deliver_push delivered watch_id=%s platform=%s env=%s",
@@ -547,7 +588,12 @@ async def _deliver_push(
         reasons = ", ".join(f"{wid}: {r}" for wid, r in failure_map.items())
         _LOGGER.warning("Some push notifications failed: %s", reasons)
 
-    return {"sent": sent, "failed": len(failure_map), "failures": failure_map}
+    return {
+        "sent": sent,
+        "failed": len(failure_map),
+        "failures": failure_map,
+        "local": local,
+    }
 
 
 # entry.data flag marking that the one-time "Connected watches" disable has

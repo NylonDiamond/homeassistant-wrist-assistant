@@ -23,6 +23,7 @@ import ast
 import asyncio
 import importlib.util
 import logging
+import secrets
 import sys
 import types
 from pathlib import Path
@@ -468,6 +469,8 @@ def _deliver_push_fn(notif: Any):
 
     namespace: dict[str, Any] = {
         "asyncio": asyncio,
+        "secrets": secrets,
+        "DELIVERED_LOCAL": "local",
         "_LOGGER": logging.getLogger("test_deliver_push"),
         "HomeAssistantError": _HomeAssistantError,
         "_get_ha_instance_uuid": _no_uuid,
