@@ -156,12 +156,13 @@ function holdTime(value: string, still: boolean): SVGTemplateResult {
 function doublePinch(still: boolean): SVGTemplateResult {
   // A hand from the left: the finger on top, the thumb under it, their tips
   // meeting twice at the right.
-  const pinch = (deg: number) => turn([[0, 0], [0.4, 0], [0.55, deg], [0.7, 0], [0.85, deg], [1, 0], [DEMO_LOOP, 0]], 6, deg > 0 ? 10 : 22);
-  const digit = (d: string) => svg`<path d=${d} fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" />`;
-  return svg`<rect x="1" y="7" width="7" height="18" rx="3.5" fill="currentColor" fill-opacity="0.3" />
-    <g>${still ? nothing : pinch(13)}${digit("M6 10Q15 6 23 11")}</g>
-    <g>${still ? nothing : pinch(-13)}${digit("M6 22Q14 26 22 21")}</g>
-    ${still ? nothing : svg`${ripple(23, 16, 0.55, 1.5, 6)}${ripple(23, 16, 0.85, 1.5, 6)}`}`;
+  const pinch = (deg: number, cy: number) => turn([[0, 0], [0.4, 0], [0.55, deg], [0.7, 0], [0.85, deg], [1, 0], [DEMO_LOOP, 0]], 8, cy);
+  const digit = (d: string, tipX: number, tipY: number) => svg`<path d=${d} fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" />
+    <circle cx=${tipX} cy=${tipY} r="2.4" fill="currentColor" />`;
+  return svg`<circle cx="6" cy="16" r="6.5" fill="currentColor" fill-opacity="0.3" />
+    <g>${still ? nothing : pinch(14, 11)}${digit("M8 11Q16 7 23 11", 23.5, 11.3)}</g>
+    <g>${still ? nothing : pinch(-14, 21)}${digit("M8 21Q15 25 22 21", 22.5, 20.7)}</g>
+    ${still ? nothing : svg`${ripple(24, 16, 0.55, 1.5, 6)}${ripple(24, 16, 0.85, 1.5, 6)}`}`;
 }
 
 function doubleTap(still: boolean): SVGTemplateResult {
