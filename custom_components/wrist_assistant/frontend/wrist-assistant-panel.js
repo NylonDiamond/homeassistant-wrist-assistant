@@ -1236,10 +1236,10 @@ import{a as cs}from"./chunks/chunk-P7FG3CI7.js";import{a as ji,b as $c,c as Sc,d
   /* One column, as wide as the dialog the page replaced: a home with no
      watch yet, or a watch whose settings live in another home. */
   .ws-cols { box-sizing: border-box; width: min(720px, 100%); margin: 0 auto; padding: 16px 16px 48px; display: grid; gap: 8px; }
-  /* The side panel at the page's right edge, as the page editor keeps its
-     inspector, and the group's cards centred in the room left of it. The
-     panel comes first in the page, so on a narrow page it goes over the
-     cards and its groups wrap as chips. */
+  /* The side panel at the page's left edge and the group's cards filling the
+     room to its right, edge to edge, as the page editor lays out its
+     columns. On a narrow page the panel goes over the cards and its groups
+     wrap as chips. */
   .ws-split {
     box-sizing: border-box; width: 100%; margin: 0; padding: 16px 16px 48px;
     display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 24px;
@@ -1248,7 +1248,7 @@ import{a as cs}from"./chunks/chunk-P7FG3CI7.js";import{a as ji,b as $c,c as Sc,d
     .ws-cols, .ws-split { padding: 12px 12px 32px; }
   }
   /* The panel stays in view while a long group scrolls, just under the bar. */
-  .ws-nav { flex: 0 0 248px; order: 2; min-width: 0; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 64px; }
+  .ws-nav { flex: 0 0 248px; min-width: 0; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 64px; }
   .ws-search {
     display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px; box-sizing: border-box;
     border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-field); color: var(--wa-muted);
@@ -1279,13 +1279,11 @@ import{a as cs}from"./chunks/chunk-P7FG3CI7.js";import{a as ji,b as $c,c as Sc,d
     font-size: 11px; font-weight: 600; color: var(--wa-ink); background: color-mix(in srgb, var(--wa-hue-orange) 30%, transparent);
   }
   @container wspage (max-width: 840px) {
-    .ws-nav { position: static; flex-basis: 100%; order: 0; }
+    .ws-nav { position: static; flex-basis: 100%; }
     .ws-nav-list { flex-direction: row; flex-wrap: wrap; gap: 4px; }
     button.ws-nav-item { min-height: 34px; box-shadow: inset 0 0 0 1px var(--wa-line); }
   }
-  /* The cards keep a reading width, and their auto margins take the room
-     left of the panel, so they sit in its middle. */
-  .ws-main { flex: 999 1 520px; max-width: 920px; margin: 0 auto; }
+  .ws-main { flex: 999 1 520px; }
   .ws-main > .ws-blurb { margin: 0 2px 2px; font-size: 14px; line-height: 1.4; color: var(--wa-muted); }
   .ws-main > button.ws-found {
     align-self: flex-start; font: inherit; margin: 10px 2px 0; padding: 0; border: 0; background: none; cursor: pointer;
