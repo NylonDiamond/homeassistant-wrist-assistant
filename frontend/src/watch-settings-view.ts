@@ -92,7 +92,8 @@ import {
 } from "./watch-settings.js";
 import { SETTINGS_MOVED_TEXT, dropWatchSettingsDrafts, keepSettingsDraft, keptSettingsDraft, restoreSettingsDraft } from "./watch-settings-draft.js";
 import { settingsCanSave, settingsPageStep } from "./watch-settings-page.js";
-import { type TileChoice, domainTiles, gestureIcon, optionPreview, settingIcon, tileChoices, usesTiles } from "./watch-settings-look.js";
+import { demoPicture } from "./watch-settings-demo.js";
+import { type TileChoice, WATCH_SETTING_LOOK, domainTiles, gestureIcon, optionPreview, settingIcon, tileChoices, usesTiles } from "./watch-settings-look.js";
 import { type SettingsCardId, type SettingsGroup, SETTINGS_GROUPS, groupOfCard, matchesSearch, searchTerms, settingsGroup } from "./watch-settings-nav.js";
 import {
   type StyleRow,
@@ -1044,8 +1045,10 @@ export class WatchSettings implements ReactiveController {
     const set = (v: SettingValue) => this.edit(setting, v);
     const helpLine = setting.help ? html`<div class="hint">${setting.help}</div>` : nothing;
     if (usesTiles(setting)) return this.renderTiles(setting, String(value), set);
-    const row = (field: TemplateResult) => html`<div class="ws-row" data-key=${setting.key}>
-      ${this.glyph("ws-ic", settingIcon(setting), 14)}${field}${helpLine}</div>`;
+    // A hand movement the words cannot show plays beside the menu.
+    const demo = WATCH_SETTING_LOOK[setting.key]?.demo;
+    const row = (field: TemplateResult) => html`<div class="ws-row ${demo === undefined ? "" : "has-demo"}" data-key=${setting.key}>
+      ${this.glyph("ws-ic", settingIcon(setting), 14)}${field}${demo === undefined ? nothing : html`<span class="ws-demo-box">${demoPicture(demo)}</span>`}${helpLine}</div>`;
     switch (setting.type) {
       case "number": {
         const def = typeof setting.default === "number" ? setting.default : 0;
@@ -1111,9 +1114,11 @@ export class WatchSettings implements ReactiveController {
   private renderTile(tile: TileChoice, set: (v: string) => void) {
     return html`<button type="button" class="ws-tile ${tile.on ? "on" : ""}" aria-pressed=${tile.on ? "true" : "false"}
       title=${tile.title ?? nothing} @click=${() => { if (!tile.on) set(tile.value); }}>
-      ${tile.preview === undefined
-        ? this.glyph("ws-tile-glyph", tile.icon, 16)
-        : html`<span class="ws-tile-glyph" aria-hidden="true">${optionPreview(tile.preview, tile.value)}</span>`}
+      ${tile.demo !== undefined
+        ? html`<span class="ws-tile-glyph demo" aria-hidden="true">${demoPicture(tile.demo, tile.value)}</span>`
+        : tile.preview === undefined
+          ? this.glyph("ws-tile-glyph", tile.icon, 16)
+          : html`<span class="ws-tile-glyph" aria-hidden="true">${optionPreview(tile.preview, tile.value)}</span>`}
       <span class="ws-tile-name">${tile.name}</span>
       ${tile.detail === undefined ? nothing : html`<span class="ws-tile-detail">${tile.detail}</span>`}
     </button>`;
@@ -1146,8 +1151,10 @@ export class WatchSettings implements ReactiveController {
       const action = motionAction(value, g.value);
       const options = optionsFor(setting, action).map((o): [string, string] => [o.value, o.label]);
       const kind = action === "Activate Scene" ? "scenes" : action === "Run Script" ? "scripts" : undefined;
-      return html`<div class="ws-row" data-key=${`${setting.key}:${g.value}`}>
+      const demo = WATCH_SETTING_LOOK[setting.key]?.demo;
+      return html`<div class="ws-row ${demo === undefined ? "" : "has-demo"}" data-key=${`${setting.key}:${g.value}`}>
           ${this.glyph("ws-ic", gestureIcon(setting, g.value), 14)}${selectField(g.label, action, options, (v) => set(withMotionAction(value, g.value, v)), { def: "Disabled" })}
+          ${demo === undefined ? nothing : html`<span class="ws-demo-box">${demoPicture(demo, g.value)}</span>`}
         </div>
         ${kind === undefined ? nothing : this.renderTwistTarget(hass, setting, value, g.value, kind, set)}`;
     })}`;
@@ -1506,7 +1513,7 @@ export const watchSettingsStyles = css`
   }
   .ws-body :is(.ws-ic, .ws-tile-glyph) svg { display: block; overflow: visible; }
   .ws-body .ws-ic svg { width: 13px; height: 13px; }
-  .ws-body :is(.ws-ic, .ws-tile-glyph) svg:not(.ws-pv) path { fill: currentColor; fill-opacity: 1; }
+  .ws-body :is(.ws-ic, .ws-tile-glyph) svg:not(.ws-pv, .ws-demo) path { fill: currentColor; fill-opacity: 1; }
   /* Settings are a list: a hairline between each, none over the first. */
   .ws-body :is(.sec-b, .fgroup) > :is(.ws-row, .ws-tile-row) { padding: 7px 0; border-top: 1px solid var(--wa-line); }
   .ws-body :is(.sec-b, .fgroup) > :is(.ws-row, .ws-tile-row):first-child { border-top: 0; padding-top: 3px; }
@@ -1525,6 +1532,12 @@ export const watchSettingsStyles = css`
   .ws-row > .field:not(.check) > :not(:first-child) { width: 250px; max-width: 44cqw; box-sizing: border-box; }
   .ws-row > .hint { grid-column: 2; grid-row: 2; }
   .ws-row > :not(.ws-ic, .hint, .field) { grid-column: 2 / -1; min-width: 0; }
+  /* A row with a moving picture of its hand movement: the picture sits
+     between the title and the menu. */
+  .ws-row.has-demo { grid-template-columns: 22px minmax(0, 1fr) 36px auto; }
+  .ws-row.has-demo > .field > :not(:first-child) { grid-column: 4; }
+  .ws-row.has-demo > .ws-demo-box { grid-column: 3; grid-row: 1 / span 2; align-self: center; width: 36px; height: 36px; color: var(--ws-hue, var(--wa-muted)); }
+  .ws-demo-box svg.ws-demo { display: block; width: 36px; height: 36px; }
   /* A row of tiles: the chip, title and help on one line, the strip of
      choices under them, starting where the title starts. */
   .ws-head { position: relative; display: flex; align-items: center; gap: 9px; min-height: 22px; }
@@ -1560,6 +1573,8 @@ export const watchSettingsStyles = css`
   .ws-tile-name:last-child { grid-row: 1 / span 2; }
   .ws-tile-glyph svg { height: 15px; width: auto; max-width: 100%; }
   .ws-tile-glyph svg.ws-pv { width: 32px; height: 18px; }
+  .ws-tile-glyph.demo { height: 30px; }
+  .ws-tile-glyph svg.ws-demo { width: 30px; height: 30px; }
   button.ws-tile.on .ws-tile-glyph { color: color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 55%, var(--wa-ink)); }
   .ws-tile-name { max-width: 100%; font-size: 11.5px; font-weight: 500; line-height: 1.2; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   button.ws-tile.on .ws-tile-name { font-weight: 600; }

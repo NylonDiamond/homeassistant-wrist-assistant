@@ -17,6 +17,7 @@
 // spirit; those are marked "panel's own".
 
 import { type SVGTemplateResult, html, svg } from "lit";
+import type { DemoKind } from "./watch-settings-demo.js";
 import type { CatalogSetting, SettingOption } from "./watch-settings.js";
 
 /** A choice drawn as a small picture of what it does instead of an icon. */
@@ -44,6 +45,9 @@ export interface SettingLook {
   icon: string;
   /** Draw each choice as this kind of picture instead of its icon. */
   preview?: PreviewKind;
+  /** Show the hand movement as a moving picture (`watch-settings-demo.ts`):
+   * on each tile for a choice drawn as tiles, beside the menu otherwise. */
+  demo?: DemoKind;
   /** One entry per catalog choice of an enum or domains setting. */
   options?: Readonly<Record<string, OptionLook>>;
   /** One entry per gesture of the wrist twists' row, the icon of its row. */
@@ -115,6 +119,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   // ── gestures and controls ──
   longPressDuration: {
     icon: "hand.tap.fill",
+    demo: "holdTime",
     options: {
       "Super Fast": { icon: "bolt.fill", name: "Very short", detail: "75ms" },
       "Short": { icon: "hare.fill", name: "Short", detail: "150ms" },
@@ -126,6 +131,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   entityRadialVerticalQuickRadialGestureEnabled: { icon: "arrow.up.and.down.and.arrow.left.and.right" },
   entityRadialVerticalQuickRadialGestureTrigger: {
     icon: "hand.draw",
+    demo: "quickGesture",
     options: same("hand.draw", ["Up/Down x2", "Swipe Up/Down", "Clockwise"], {
       "Up/Down x2": "Up, down, up, down",
       "Swipe Up/Down": "Past the middle and back",
@@ -143,6 +149,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   },
   topSectionDoubleTapAction: {
     icon: "hand.tap", // panel's own
+    demo: "doubleTap",
     options: actions([
       "Disabled", "Toggle Aimed Entity (Point Control)", "Room Jump", "Activate Scene", "Run Script",
       "Refresh", "Next Page", "Previous Page", "Toggle First Tile", "Switch Instance",
@@ -152,6 +159,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   topSectionDoubleTapScriptTargetId: { icon: "scroll.fill" },
   handGestureAction: {
     icon: "hand.pinch.fill", // panel's own
+    demo: "doublePinch",
     options: actions([
       "Disabled", "Point Control", "Activate Scene", "Run Script", "Next Page", "Previous Page",
       "Room Jump", "Toggle First Tile", "Refresh", "Switch Instance",
@@ -230,6 +238,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   pageIndicatorColorHex: { icon: "paintpalette.fill" }, // panel's own
   pullDownAction: {
     icon: "arrow.down.circle.fill",
+    demo: "pullDown",
     options: actions(["Disabled", "Refresh", "Next Page", "Previous Page", "Room Jump", "Activate Scene", "Run Script", "Toggle First Tile"]),
   },
   pullDownSceneTargetId: { icon: "theatermasks" },
@@ -278,6 +287,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   motionGestureSensitivityLevel: { icon: "dial.low.fill" },
   motionGestureActionsJSON: {
     icon: "figure.walk.motion",
+    demo: "twist",
     gestures: {
       "Twist Clockwise": { icon: "arrow.clockwise" },
       "Twist Counter-Clockwise": { icon: "arrow.counterclockwise" },
@@ -303,8 +313,9 @@ export interface TileChoice {
   value: string;
   name: string;
   detail?: string;
-  /** The SF Symbol, unless `preview` is drawn instead. */
+  /** The SF Symbol, unless `demo` or `preview` is drawn instead. */
   icon: string;
+  demo?: DemoKind;
   preview?: PreviewKind;
   /** The catalog's full label, for the tooltip, when the name shortens it. */
   title?: string;
@@ -327,6 +338,7 @@ export function tileChoices(setting: CatalogSetting, options: readonly SettingOp
       name,
       ...(own?.detail === undefined ? {} : { detail: own.detail }),
       icon: own?.icon ?? look?.icon ?? "questionmark.circle",
+      ...(known && look?.demo !== undefined ? { demo: look.demo } : {}),
       ...(known && look?.preview !== undefined ? { preview: look.preview } : {}),
       ...(name === o.label ? {} : { title: o.label }),
       on: o.value === value,

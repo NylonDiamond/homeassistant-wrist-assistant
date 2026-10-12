@@ -35,6 +35,7 @@ import {
   usesTiles,
 } from "../src/watch-settings-look.js";
 import { SETTINGS_GROUPS } from "../src/watch-settings-nav.js";
+import { DEMO_LOOP, HOLD_SECONDS, demoPicture } from "../src/watch-settings-demo.js";
 
 const settings = catalogSettings();
 const byKey = (key: string): CatalogSetting => {
@@ -366,6 +367,79 @@ describe("the dialog", () => {
     expect(shown).toContain('data-sec=ws-gestures data-open="true" data-help=off');
     const row = shown.slice(shown.indexOf("data-key=longPressDuration"));
     expect(row.indexOf('<div class="hint">How long you press a tile before its extra options open.</div>')).toBeLessThan(row.indexOf('class="ws-tiles"'));
+  });
+});
+
+// ── the moving pictures ──────────────────────────────────────────────────
+
+describe("the moving pictures", () => {
+  const demoKeys = settings.filter((s) => WATCH_SETTING_LOOK[s.key]!.demo !== undefined).map((s) => s.key);
+
+  it("show the hand movements the words cannot: the quick menu gesture, the hold time, the pinch, the tap, the pull and the twists", () => {
+    expect(demoKeys.sort()).toEqual([
+      "entityRadialVerticalQuickRadialGestureTrigger", "handGestureAction", "longPressDuration",
+      "motionGestureActionsJSON", "pullDownAction", "topSectionDoubleTapAction",
+    ]);
+  });
+
+  it("move on a loop, and stand still while the system asks for less motion", () => {
+    for (const key of demoKeys) {
+      const look = WATCH_SETTING_LOOK[key]!;
+      const values = byKey(key).gestures?.map((g) => g.value) ?? byKey(key).options!.map((o) => o.value);
+      for (const value of values) {
+        const moving = flatten(demoPicture(look.demo!, value, false));
+        const still = flatten(demoPicture(look.demo!, value, true));
+        expect(moving, `${key} ${value}`).toContain('repeatCount="indefinite"');
+        expect(still, `${key} ${value}`).not.toMatch(/<animate/);
+        // In the tile's own color, nothing literal.
+        expect(moving).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+      }
+    }
+  });
+
+  it("draw a different movement for each quick menu gesture, each hold time and each twist", () => {
+    for (const [kind, values] of [
+      ["quickGesture", byKey("entityRadialVerticalQuickRadialGestureTrigger").options!.map((o) => o.value)],
+      ["holdTime", byKey("longPressDuration").options!.map((o) => o.value)],
+      ["twist", byKey("motionGestureActionsJSON").gestures!.map((g) => g.value)],
+    ] as const) {
+      for (const still of [false, true]) {
+        const drawn = values.map((v) => flatten(demoPicture(kind, v, still)));
+        expect(new Set(drawn).size, `${kind} still=${still}`).toBe(drawn.length);
+      }
+    }
+  });
+
+  it("fill the hold ring in the choice's own time", () => {
+    for (const [value, seconds] of Object.entries(HOLD_SECONDS)) {
+      const drawn = flatten(demoPicture("holdTime", value, false));
+      const fill = /attributeName=stroke-dashoffset[^>]*keyTimes=([\d.;]+)/.exec(drawn.replace(/\s+/g, " "));
+      expect(fill, value).not.toBeNull();
+      const [, press, done] = fill![1]!.split(";").map(Number);
+      expect((done! - press!) * DEMO_LOOP, value).toBeCloseTo(seconds, 3);
+    }
+    expect(Object.keys(HOLD_SECONDS).sort()).toEqual(byKey("longPressDuration").options!.map((o) => o.value).sort());
+  });
+
+  it("play on each tile of the quick menu gesture and the hold time, and beside the menus of the rest", () => {
+    const { tree, text } = dialog({ ...watchBehaviorDefaults(), motionGestureSensitivity: "Medium" });
+    for (const key of ["entityRadialVerticalQuickRadialGestureTrigger", "longPressDuration"]) {
+      const tiles = tilesOf(tree(), key).map(flatten);
+      expect(tiles.length, key).toBeGreaterThan(0);
+      for (const tile of tiles) expect(tile, key).toContain('<span class="ws-tile-glyph demo" aria-hidden="true"><svg class="ws-demo"');
+    }
+    const shown = text();
+    for (const [key, kind] of [
+      ["handGestureAction", "doublePinch"], ["topSectionDoubleTapAction", "doubleTap"], ["pullDownAction", "pullDown"],
+      ["motionGestureActionsJSON:Twist Clockwise", "twist"], ["motionGestureActionsJSON:Twist Counter-Clockwise", "twist"],
+    ]) {
+      const row = shown.slice(shown.indexOf(`data-key=${key}>`));
+      expect(shown.slice(0, shown.indexOf(`data-key=${key}>`)).endsWith('<div class="ws-row has-demo" '), key).toBe(true);
+      expect(row.slice(0, row.indexOf("</div>")), key).toContain(`data-demo=${kind}`);
+    }
+    // A plain choice keeps its icons.
+    expect(tilesOf(tree(), "sliderCrownSensitivity").map(flatten).join("")).not.toContain("ws-demo");
+    expect(shown.match(/<svg class="ws-demo"/g)).toHaveLength(3 + 5 + 3 + 2);
   });
 });
 
