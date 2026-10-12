@@ -1861,14 +1861,45 @@ export function symbolCount(shown: number, matches: number, searching: boolean, 
   return matches === 1 ? "1 symbol matches." : `${matches} symbols match.`;
 }
 
+/** One glyph in the grid. The name is the tooltip and the accessible name,
+ * not a caption: SF names run long and wrapped mid-word under every tile. It
+ * shows as text only when there is no glyph to draw (no icon pack). */
 function symbolTile(host: SymbolFieldHost, name: string, selected: boolean, pick: (n: string) => void): TemplateResult {
   // The color passed here is overridden by CSS `currentColor`, which wins over
   // the presentation attribute the provider writes, so tiles follow the theme.
   const glyph = host.icons.render(name, 22, "#FFFFFF");
-  return html`<button type="button" class="sym ${selected ? "on" : ""}" title=${name} @click=${() => pick(name)}>
-    <span class="sym-glyph">${glyph ?? html`<span class="sym-none">?</span>`}</span>
-    <span class="sym-name">${name}</span>
+  return html`<button type="button" class="sym ${selected ? "on" : ""}" title=${name} aria-label=${name}
+    aria-pressed=${selected ? "true" : "false"} @click=${() => pick(name)}>
+    ${glyph === undefined
+      ? html`<span class="sym-name">${name}</span>`
+      : html`<span class="sym-glyph">${glyph}</span>`}
   </button>`;
+}
+
+/** The search box with its magnifier, shared by both icon sets. */
+function symbolSearch(browser: EditorHost["symbols"], key: string, query: string, placeholder: string): TemplateResult {
+  return html`<label class="sym-search">${uiIcon("search")}
+    <input type="search" placeholder=${placeholder} aria-label=${placeholder} .value=${query}
+      @input=${onInput((v) => browser.setQuery(key, v))} />
+  </label>`;
+}
+
+/** The framed, scrolling well: the recent row (one line, cut to what fits)
+ * over the full grid. Without an icon pack the tiles carry names instead of
+ * glyphs, so the well widens its columns to fit them. */
+function symbolWell(
+  host: SymbolFieldHost,
+  recent: readonly string[],
+  shown: readonly string[],
+  current: string,
+  pick: (n: string) => void,
+): TemplateResult {
+  return html`<div class="sym-well ${host.icons.available() ? "" : "named"}">
+    ${recent.length === 0 ? nothing : html`<div class="sym-sec">Recent</div>
+      <div class="sym-grid recent">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>
+      <div class="sym-sec">All</div>`}
+    <div class="sym-grid">${shown.map((n) => symbolTile(host, n, n === current, pick))}</div>
+  </div>`;
 }
 
 /**
@@ -1905,7 +1936,8 @@ export function symbolField(
   typable = true,
 ): TemplateResult {
   const browser = host.symbols;
-  const open = browser.isOpen(key, defaultOpen);
+  // Without a name box the grid is the only way to choose, so it never shuts.
+  const open = !typable || browser.isOpen(key, defaultOpen);
   const query = browser.query(key);
   const listed = host.icons.names();
   const pack = listed ?? [];
@@ -1941,12 +1973,10 @@ export function symbolField(
     const recent = browser.recent.filter((s) => s.startsWith(MDI_PREFIX));
     browsePane = html`<div class="sym-browse">
       ${packToggle(browser, key, showing)}
-      <div class="sym-controls">
-        <input type="search" placeholder="Search Material Design icons" .value=${query} @input=${onInput((v) => browser.setQuery(key, v))} />
+      <div class="sym-bar">
+        ${symbolSearch(browser, key, query, "Search Material Design icons")}
       </div>
-      ${recent.length === 0 ? nothing : html`<div class="hint keep">Recent</div>
-        <div class="sym-grid one-row">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>`}
-      <div class="sym-grid">${shown.map((n) => symbolTile(host, n, n === current, pick))}</div>
+      ${symbolWell(host, recent, shown, current, pick)}
       ${names === undefined
         ? html`<div class="hint keep">Loading the Material Design catalogue.</div>`
         : matches.length === 0
@@ -1954,7 +1984,7 @@ export function symbolField(
           // Always the searching wording: the MDI set is thousands of names
           // deep and the grid never shows all of them, so "N available" would
           // claim more than is on screen even with the box empty.
-          : html`<div class="hint keep">${symbolCount(shown.length, matches.length, true, names.length)}</div>`}
+          : html`<div class="hint keep sym-count">${symbolCount(shown.length, matches.length, true, names.length)}</div>`}
       ${names !== undefined && isMdiName && !names.includes(current)
         ? html`<div class="hint warn">There is no <code>${current}</code> in this build's Material Design set, so the watch draws a question mark.</div>`
         : nothing}
@@ -1967,20 +1997,18 @@ export function symbolField(
     const recent = known.size === 0 ? sfRecent : sfRecent.filter((s) => known.has(s));
     browsePane = html`<div class="sym-browse">
       ${offersMdi ? packToggle(browser, key, showing) : nothing}
-      <div class="sym-controls">
-        <input type="search" placeholder="Search icons" .value=${query} @input=${onInput((v) => browser.setQuery(key, v))} />
-        <select @change=${onInput((v) => browser.setCategory(key, v))}>
+      <div class="sym-bar">
+        ${symbolSearch(browser, key, query, "Search icons")}
+        <select class="sym-set" aria-label="Icon set" @change=${onInput((v) => browser.setCategory(key, v))}>
           ${symbolChoicesOf(known).map(
             (c) => html`<option value=${c.value} ?selected=${c.value === category}>${c.label}</option>`
           )}
         </select>
       </div>
-      ${recent.length === 0 ? nothing : html`<div class="hint keep">Recent</div>
-        <div class="sym-grid one-row">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>`}
-      <div class="sym-grid">${shown.map((n) => symbolTile(host, n, n === current, pick))}</div>
+      ${symbolWell(host, recent, shown, current, pick)}
       ${matches.length === 0
         ? html`<div class="hint keep">Nothing matches that search.${typable ? " Any name can still be typed above." : ""}</div>`
-        : html`<div class="hint keep">
+        : html`<div class="hint keep sym-count">
             ${symbolCount(shown.length, matches.length, query.trim() !== "", reachableCount(pack))}
           </div>`}
       ${!host.icons.available()
@@ -1995,7 +2023,6 @@ export function symbolField(
     @click=${() => browser.toggle(key, defaultOpen)}>${uiIcon("grid")}${open ? "Hide icons" : "Browse icons"}</button>`;
   if (!typable) {
     return html`
-    <div class="sym-row solo">${toggle}</div>
     ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The watch still draws it if the name is a real SF Symbol.</div>` : nothing}
     ${browsePane}`;
   }

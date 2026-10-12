@@ -579,23 +579,62 @@ export const formEntityStyles = css`
        picker looked missing. */
     .sym-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .sym-row > input { flex: 1; min-width: 0; }
-    .sym-row.solo { margin: 2px 0; }
     button.small.sym-toggle { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; font-size: 12px; white-space: nowrap; }
     button.small.sym-toggle svg { width: 13px; height: 13px; flex: none; }
     button.small.sym-toggle.on { background: var(--wa-hover); border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
-    .sym-browse { margin: 6px 0; }
-    .sym-controls { display: flex; gap: 6px; margin-bottom: 6px; }
-    .sym-controls input[type=search] { flex: 1; min-width: 0; }
-    .sym-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 4px; max-height: 240px; overflow-y: auto; padding: 2px; }
-    .sym-grid.one-row { display: flex; flex-wrap: nowrap; max-height: none; overflow-x: auto; overflow-y: hidden; }
-    .sym-grid.one-row button.sym { flex: 0 0 64px; }
-    button.sym { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 5px 2px; background: none; cursor: pointer; color: var(--wa-ink); border: 1px solid transparent; border-radius: 6px; overflow: hidden; }
-    button.sym:hover { border-color: var(--wa-line); background: var(--wa-panel); }
-    button.sym.on { border-color: var(--wa-accent); }
-    .sym-glyph { display: flex; align-items: center; justify-content: center; height: 24px; }
+    /* The browser: a search bar, then a framed well that scrolls, then a
+       quiet count. Tiles are glyphs only, square, and the picked one wears
+       the hue of the card it is in (--wa-sec), like the card's other marks. */
+    .sym-browse { --sym-hi: var(--wa-sec, var(--wa-ink)); display: flex; flex-direction: column; gap: 8px; margin: 4px 0 6px; min-width: 0; }
+    .sym-bar { display: flex; gap: 6px; min-width: 0; }
+    .sym-search { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
+    .sym-search > svg { position: absolute; left: 9px; width: 14px; height: 14px; color: var(--wa-muted); pointer-events: none; }
+    .sym-search > input[type=search] {
+      width: 100%; min-width: 0; height: 32px; box-sizing: border-box; padding: 0 10px 0 29px; border-radius: 9px;
+      border: 1px solid var(--wa-line-strong); background: var(--wa-field); color: var(--wa-ink); font: inherit; font-size: 12.5px;
+      transition: border-color .12s ease-out, box-shadow .12s ease-out;
+    }
+    .sym-search > input[type=search]:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
+    .sym-search > input[type=search]::placeholder { color: var(--wa-muted); }
+    .sym-bar > select.sym-set { flex: none; max-width: 46%; height: 32px; border-radius: 9px; font-size: 12.5px; }
+    .sym-well {
+      position: relative; max-height: 292px; overflow-y: auto; overscroll-behavior: contain;
+      padding: 8px; border-radius: 12px; border: 1px solid var(--wa-line);
+      background: color-mix(in srgb, var(--wa-panel) 55%, transparent);
+      box-shadow: inset 0 1px 2px color-mix(in srgb, #000 18%, transparent);
+      scrollbar-width: thin; scrollbar-color: var(--wa-line-strong) transparent;
+    }
+    .sym-sec {
+      font-size: 10px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--wa-muted);
+      padding: 2px 4px 6px;
+    }
+    .sym-sec:not(:first-child) { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--wa-line); }
+    .sym-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 3px; }
+    /* One line of recents, cut to what fits rather than scrolled sideways:
+       every row past the first is zero tall and clipped. */
+    .sym-grid.recent { grid-template-rows: auto; grid-auto-rows: 0; row-gap: 0; overflow: hidden; }
+    .sym-well.named .sym-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+    button.sym {
+      display: flex; align-items: center; justify-content: center; aspect-ratio: 1; min-width: 0; padding: 0; margin: 0;
+      background: transparent; border: 0; border-radius: 9px; cursor: pointer; color: var(--wa-ink);
+      transition: background-color .1s ease-out, box-shadow .1s ease-out, transform .1s ease-out;
+    }
+    .sym-well.named button.sym { aspect-ratio: auto; min-height: 34px; padding: 4px 6px; }
+    button.sym .sym-glyph { opacity: .78; transition: opacity .1s ease-out; }
+    button.sym:hover { background: var(--wa-hover); }
+    button.sym:hover .sym-glyph, button.sym.on .sym-glyph { opacity: 1; }
+    button.sym:active { transform: scale(.94); }
+    button.sym:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.sym.on {
+      background: color-mix(in srgb, var(--sym-hi) 20%, transparent);
+      box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--sym-hi) 80%, transparent);
+    }
+    .sym-glyph { display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; }
+    .sym-glyph svg { width: 20px; height: 20px; }
     .sym-glyph svg path { fill: currentColor; fill-opacity: 1; }
-    .sym-none { font-size: 14px; opacity: .4; }
-    .sym-name { font-size: 9px; line-height: 1.1; text-align: center; opacity: .8; overflow-wrap: anywhere; max-height: 22px; overflow: hidden; }
+    .sym-count { font-size: 11px; color: var(--wa-muted); margin: -2px 2px 0; }
+    .sym-name { font-size: 10px; line-height: 1.15; text-align: center; opacity: .85; overflow-wrap: anywhere; max-height: 24px; overflow: hidden; }
+    @media (prefers-reduced-motion: reduce) { button.sym, button.sym .sym-glyph { transition: none; } button.sym:active { transform: none; } }
 `;
 
 /** The panel says this at the end of its own sheet, for every pulse it
