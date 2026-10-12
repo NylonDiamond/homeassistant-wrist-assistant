@@ -26,8 +26,7 @@ export type PreviewKind =
   | "indicatorPosition"
   | "indicatorSize"
   | "indicatorBrightness"
-  | "popupMaterial"
-  | "pageTransition";
+  | "popupMaterial";
 
 export interface OptionLook {
   /** The SF Symbol on the choice's tile, and its mark wherever else it is
@@ -179,7 +178,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   dismissControlsOnClose: { icon: "rectangle.stack.badge.minus" },
   showControlEntityName: { icon: "textformat" },
   automationTriggerSkipConditions: { icon: "bolt.badge.automatic.fill" },
-  showPendingAnimation: { icon: "hourglass.circle.fill" },
+  showPendingAnimation: { icon: "hourglass.circle.fill", demo: "bounce" },
   // The phone's Per Domain screen drew each domain's entity icon; these are
   // the panel's own, one per domain.
   pendingAnimationDisabledDomains: {
@@ -206,7 +205,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   // ── navigation ──
   pageTransitionStyle: {
     icon: "rectangle.2.swap", // panel's own; the app's Default choice
-    preview: "pageTransition",
+    demo: "pageTransition",
     options: {
       "Default": { icon: "rectangle.2.swap" },
       "Slide": { icon: "arrow.left.arrow.right" },
@@ -244,7 +243,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   pullDownSceneTargetId: { icon: "theatermasks" },
   pullDownScriptTargetId: { icon: "scroll.fill" },
   wrapPages: { icon: "arrow.trianglehead.2.counterclockwise.rotate.90" },
-  bottomEdgePageSwipeSensitivity: { icon: "hand.draw.fill", options: PAGE_SWIPE_ICONS },
+  bottomEdgePageSwipeSensitivity: { icon: "hand.draw.fill", demo: "pageSwipe", options: PAGE_SWIPE_ICONS },
   popupBackgroundMaterial: {
     icon: "rectangle.on.rectangle",
     preview: "popupMaterial",
@@ -271,7 +270,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   cameraRefreshOnOpenDebounce: { icon: "timer", options: same("timer", ["5s", "10s", "30s", "60s"]) },
   cameraRefreshOnPageOpenDelay: { icon: "hourglass", options: same("hourglass", ["Off", "250ms", "500ms", "1s"]) },
   cameraShowLoadingDots: { icon: "ellipsis" },
-  cameraSwipeSensitivity: { icon: "hand.draw.fill", options: SWIPE_ICONS },
+  cameraSwipeSensitivity: { icon: "hand.draw.fill", demo: "cameraSwipe", options: SWIPE_ICONS },
   cameraSwipeWrap: { icon: "arrow.trianglehead.2.counterclockwise.rotate.90" },
 
   // ── wrist motions ── the phone's Motion Gestures screen
@@ -434,24 +433,6 @@ function previewShape(kind: PreviewKind, value: string): SVGTemplateResult {
         <rect x="8.5" y="4.5" width="21" height="13" rx="3" style="fill: var(--ws-tile-bg)" fill-opacity=${hide}
           stroke="currentColor" stroke-width="1" stroke-opacity="0.6" />`;
     }
-    case "pageTransition":
-      switch (value) {
-        // The phone's Default: the old page shrinks and fades as the new one
-        // pushes in.
-        case "Default":
-          return svg`<rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor" fill-opacity="0.3" />
-            <rect x="14" y="2.5" width="15" height="15" rx="2.5" fill="currentColor" fill-opacity="0.9" />`;
-        case "Slide":
-          return svg`<rect x="1.5" y="2.5" width="12" height="15" rx="2.5" fill="currentColor" fill-opacity="0.3" />
-            <rect x="15.5" y="2.5" width="12" height="15" rx="2.5" fill="currentColor" fill-opacity="0.9" />
-            <path d="M34 7.5H30.5M34 12.5H30.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />`;
-        case "Fade":
-          return svg`<rect x="6" y="2.5" width="15" height="15" rx="2.5" fill="currentColor" fill-opacity="0.45" />
-            <rect x="15" y="2.5" width="15" height="15" rx="2.5" fill="currentColor" fill-opacity="0.45" />`;
-        default:
-          // None: the next page is simply there.
-          return svg`<rect x="10.5" y="2.5" width="15" height="15" rx="2.5" fill="currentColor" fill-opacity="0.9" />`;
-      }
   }
 }
 

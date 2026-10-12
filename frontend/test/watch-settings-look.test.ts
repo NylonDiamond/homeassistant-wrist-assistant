@@ -35,7 +35,7 @@ import {
   usesTiles,
 } from "../src/watch-settings-look.js";
 import { SETTINGS_GROUPS } from "../src/watch-settings-nav.js";
-import { DEMO_LOOP, HOLD_SECONDS, demoPicture } from "../src/watch-settings-demo.js";
+import { DEMO_LOOP, HOLD_SECONDS, SWIPE_POINTS, demoPicture } from "../src/watch-settings-demo.js";
 
 const settings = catalogSettings();
 const byKey = (key: string): CatalogSetting => {
@@ -284,7 +284,7 @@ describe("the dialog", () => {
 
   it("draws a picture instead of an icon on the page indicator's tiles", () => {
     const { tree } = dialog({ ...watchBehaviorDefaults(), showPageIndicator: true });
-    for (const key of ["pageIndicatorStyle", "pageIndicatorOpacity", "pageIndicatorPosition", "pageIndicatorSize", "popupBackgroundMaterial", "pageTransitionStyle"]) {
+    for (const key of ["pageIndicatorStyle", "pageIndicatorOpacity", "pageIndicatorPosition", "pageIndicatorSize", "popupBackgroundMaterial"]) {
       for (const tile of tilesOf(tree(), key)) expect(flatten(tile), key).toContain('<svg class="ws-pv"');
     }
   });
@@ -375,21 +375,24 @@ describe("the dialog", () => {
 describe("the moving pictures", () => {
   const demoKeys = settings.filter((s) => WATCH_SETTING_LOOK[s.key]!.demo !== undefined).map((s) => s.key);
 
-  it("show the hand movements the words cannot: the quick menu gesture, the hold time, the pinch, the tap, the pull and the twists", () => {
+  it("show the movements the words cannot: the hand gestures, the page animation, the edge swipes and the bounce", () => {
     expect(demoKeys.sort()).toEqual([
-      "entityRadialVerticalQuickRadialGestureTrigger", "handGestureAction", "longPressDuration",
-      "motionGestureActionsJSON", "pullDownAction", "topSectionDoubleTapAction",
+      "bottomEdgePageSwipeSensitivity", "cameraSwipeSensitivity", "entityRadialVerticalQuickRadialGestureTrigger",
+      "handGestureAction", "longPressDuration", "motionGestureActionsJSON", "pageTransitionStyle", "pullDownAction",
+      "showPendingAnimation", "topSectionDoubleTapAction",
     ]);
   });
 
   it("move on a loop, and stand still while the system asks for less motion", () => {
     for (const key of demoKeys) {
       const look = WATCH_SETTING_LOOK[key]!;
-      const values = byKey(key).gestures?.map((g) => g.value) ?? byKey(key).options!.map((o) => o.value);
+      const values = byKey(key).gestures?.map((g) => g.value) ?? byKey(key).options?.map((o) => o.value) ?? [""];
       for (const value of values) {
         const moving = flatten(demoPicture(look.demo!, value, false));
         const still = flatten(demoPicture(look.demo!, value, true));
-        expect(moving, `${key} ${value}`).toContain('repeatCount="indefinite"');
+        // An edge swipe that is off does nothing, so nothing moves.
+        if (value === "Off") expect(moving, key).not.toMatch(/<animate/);
+        else expect(moving, `${key} ${value}`).toContain('repeatCount="indefinite"');
         expect(still, `${key} ${value}`).not.toMatch(/<animate/);
         // In the tile's own color, nothing literal.
         expect(moving).not.toMatch(/#[0-9a-f]{3,8}\b/i);
@@ -402,6 +405,9 @@ describe("the moving pictures", () => {
       ["quickGesture", byKey("entityRadialVerticalQuickRadialGestureTrigger").options!.map((o) => o.value)],
       ["holdTime", byKey("longPressDuration").options!.map((o) => o.value)],
       ["twist", byKey("motionGestureActionsJSON").gestures!.map((g) => g.value)],
+      ["pageTransition", byKey("pageTransitionStyle").options!.map((o) => o.value)],
+      ["pageSwipe", byKey("bottomEdgePageSwipeSensitivity").options!.map((o) => o.value)],
+      ["cameraSwipe", byKey("cameraSwipeSensitivity").options!.map((o) => o.value)],
     ] as const) {
       for (const still of [false, true]) {
         const drawn = values.map((v) => flatten(demoPicture(kind, v, still)));
@@ -421,9 +427,22 @@ describe("the moving pictures", () => {
     expect(Object.keys(HOLD_SECONDS).sort()).toEqual(byKey("longPressDuration").options!.map((o) => o.value).sort());
   });
 
+  it("turn one page or camera per swipe length, so a higher level turns more on the same slide", () => {
+    const turns = (kind: "pageSwipe" | "cameraSwipe", value: string) => {
+      const drawn = flatten(demoPicture(kind, value, false)).replace(/\s+/g, " ");
+      const notches = drawn.match(/V28\.4/g)?.length ?? 0;
+      const flips = /calcMode=discrete keyTimes=([\d.;]+)/.exec(drawn)![1]!.split(";").length - 2;
+      expect(flips, `${kind} ${value}`).toBe(notches);
+      return notches;
+    };
+    expect(["Low", "Medium", "High", "Max"].map((v) => turns("pageSwipe", v))).toEqual([2, 3, 5, 8]);
+    expect(["Low", "Medium", "High"].map((v) => turns("cameraSwipe", v))).toEqual([2, 3, 5]);
+    expect(Object.keys(SWIPE_POINTS).sort()).toEqual(byKey("bottomEdgePageSwipeSensitivity").options!.map((o) => o.value).sort());
+  });
+
   it("play on each tile of the quick menu gesture and the hold time, and beside the menus of the rest", () => {
     const { tree, text } = dialog({ ...watchBehaviorDefaults(), motionGestureSensitivity: "Medium" });
-    for (const key of ["entityRadialVerticalQuickRadialGestureTrigger", "longPressDuration"]) {
+    for (const key of ["entityRadialVerticalQuickRadialGestureTrigger", "longPressDuration", "pageTransitionStyle", "bottomEdgePageSwipeSensitivity", "cameraSwipeSensitivity"]) {
       const tiles = tilesOf(tree(), key).map(flatten);
       expect(tiles.length, key).toBeGreaterThan(0);
       for (const tile of tiles) expect(tile, key).toContain('<span class="ws-tile-glyph demo" aria-hidden="true"><svg class="ws-demo"');
@@ -432,6 +451,7 @@ describe("the moving pictures", () => {
     for (const [key, kind] of [
       ["handGestureAction", "doublePinch"], ["topSectionDoubleTapAction", "doubleTap"], ["pullDownAction", "pullDown"],
       ["motionGestureActionsJSON:Twist Clockwise", "twist"], ["motionGestureActionsJSON:Twist Counter-Clockwise", "twist"],
+      ["showPendingAnimation", "bounce"],
     ]) {
       const row = shown.slice(shown.indexOf(`data-key=${key}>`));
       expect(shown.slice(0, shown.indexOf(`data-key=${key}>`)).endsWith('<div class="ws-row has-demo" '), key).toBe(true);
@@ -439,7 +459,10 @@ describe("the moving pictures", () => {
     }
     // A plain choice keeps its icons.
     expect(tilesOf(tree(), "sliderCrownSensitivity").map(flatten).join("")).not.toContain("ws-demo");
-    expect(shown.match(/<svg class="ws-demo"/g)).toHaveLength(3 + 5 + 3 + 2);
+    // Tiles: 3 quick menu gestures, 5 hold times, 4 page animations, 5 page
+    // swipes and 4 camera swipes. Rows: the pinch, the tap, the pull, the two
+    // twists and the bounce.
+    expect(shown.match(/<svg class="ws-demo"/g)).toHaveLength(3 + 5 + 4 + 5 + 4 + 3 + 2 + 1);
   });
 });
 
