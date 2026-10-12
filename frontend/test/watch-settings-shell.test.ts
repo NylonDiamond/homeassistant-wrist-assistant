@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
 import { PairWatchCard } from "../src/watch-pair-view.js";
 import { WatchSettings } from "../src/watch-settings-view.js";
+import { SETTINGS_GROUPS } from "../src/watch-settings-nav.js";
 import { type CatalogSetting, catalogSettings, watchBehaviorDefaults } from "../src/watch-settings.js";
 import { SETTINGS_MOVED_TEXT, anyWatchSettingsDirty, dropWatchSettingsDrafts, keptSettingsDraft } from "../src/watch-settings-draft.js";
 
@@ -128,7 +129,19 @@ function fakeHass(newWatch: string, opts: {
   return { hass, sent, store, subscriptions };
 }
 
+/** The page shows one group at a time: every group's page it lists, in the
+ * side panel's order, or the one page when it has no side panel. */
+function everyGroup(inside: { group: string }, draw: () => string): string {
+  const pages = SETTINGS_GROUPS.map((g) => {
+    inside.group = g.id;
+    const page = draw();
+    return page.includes(`aria-label=${g.title} settings>`) ? page : "";
+  }).join("");
+  return pages === "" ? draw() : pages;
+}
+
 interface Inside {
+  group: string;
   loading: boolean;
   ownerId?: string;
   edits: ReadonlyMap<string, unknown>;
@@ -201,7 +214,7 @@ describe("Watch settings as a page under the Watch app row", () => {
     return {
       ws, inside, ha, paired, show,
       refreshes: () => refreshes,
-      text: () => flatten(ws.render(ha.hass, owners)),
+      text: () => everyGroup(inside, () => flatten(ws.render(ha.hass, owners))),
       bar: () => flatten(ws.renderBar()),
       addWatch(o: OwnerSummary) { owners = [...owners, o]; },
     };
@@ -210,12 +223,13 @@ describe("Watch settings as a page under the Watch app row", () => {
   it("draws a page with its bar and no watch tabs, on the watch it is handed", async () => {
     const { ws, inside, text } = await page("w2");
     const shown = text();
-    expect(shown).toContain(`<div class="ws-page" style=`);
+    expect(shown).toContain(`<div class="ws-page">`);
     expect(shown).toContain(`role="toolbar" aria-label="Watch settings"`);
     expect(shown).not.toContain("ws-tabs");
     expect(shown).not.toContain("<dialog");
     expect(shown).toContain("Chen's Watch · revision 1");
-    expect(shown).toContain(`<div class="ws-cols " style=`);
+    expect(shown).toContain(`<div class="ws-split">`);
+    expect(shown).toContain(`<nav class="ws-nav" aria-label="Settings groups">`);
     expect(inside.ownerId).toBe("w2");
     expect(ws.shown).toBe(true);
   });
@@ -225,7 +239,8 @@ describe("Watch settings as a page under the Watch app row", () => {
     const { text, bar } = await page("w2", elsewhere);
     const shown = text();
     expect(shown).toContain("This watch takes its settings from your main house. Change them there.");
-    expect(shown).toContain(`<div class="ws-cols one" style=`);
+    expect(shown).toContain(`<div class="ws-cols one">`);
+    expect(shown).not.toContain("ws-nav");
     // A bound attribute flattens without its quotes.
     expect(shown).not.toContain("data-sec=ws-connection");
     expect(shown).not.toContain(`data-sec="ws-notification-style"`);
@@ -712,7 +727,7 @@ describe("Watch settings as a page under the Watch app row", () => {
     expect(inside.ownerId).toBeUndefined();
     const first = flatten(ws.render(ha.hass, owners));
     expect(first).toContain("No watch has connected to this Home Assistant yet.");
-    expect(first).toContain(`<div class="ws-cols one" style=`);
+    expect(first).toContain(`<div class="ws-cols one">`);
     expect(first).toContain(`data-sec="ws-pair"`);
     expect(first).toContain("No watch paired yet");
     // No Save while there is no watch to save for.

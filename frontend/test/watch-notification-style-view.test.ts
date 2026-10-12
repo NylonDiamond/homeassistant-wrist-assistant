@@ -13,6 +13,7 @@ import { join } from "node:path";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
 import { WatchSettings } from "../src/watch-settings-view.js";
+import { SETTINGS_GROUPS } from "../src/watch-settings-nav.js";
 import { type CatalogSetting, catalogSettings, watchBehaviorDefaults } from "../src/watch-settings.js";
 import {
   NOTIFICATION_STYLE_SECTIONS,
@@ -126,6 +127,7 @@ interface Inside {
   styleRecord?: WatchConfigRecord;
   styleEdits: ReadonlyMap<string, StyleValue>;
   styleUnsupported: boolean;
+  group: string;
   note?: { kind: string; text: string };
   save(): Promise<void>;
   startStyle(): Promise<void>;
@@ -171,7 +173,14 @@ describe("Watch settings with the notification style", () => {
     ws.show(ha.hass, owners, "w1");
     const inside = ws as unknown as Inside;
     await vi.waitFor(() => expect(inside.loading).toBe(false));
-    return { ws, inside, ha, text: () => flatten(ws.render(ha.hass, owners)), foot: () => flatten(inside.renderBar()) };
+    // The page shows one group at a time: the text is the page of every
+    // group it lists, in the side panel's order.
+    const text = () => SETTINGS_GROUPS.map((g) => {
+      inside.group = g.id;
+      const page = flatten(ws.render(ha.hass, owners));
+      return page.includes(`aria-label=${g.title} settings>`) ? page : "";
+    }).join("");
+    return { ws, inside, ha, text, foot: () => flatten(inside.renderBar()) };
   }
 
   const both = (style: Record<string, unknown> = fixture("02-configured.json")) => ({
@@ -187,9 +196,10 @@ describe("Watch settings with the notification style", () => {
     const at = (s: string) => shown.indexOf(s);
     expect(at("data-sec=ws-camera")).toBeGreaterThan(0);
     expect(at("data-sec=ws-notifications")).toBeGreaterThan(at("data-sec=ws-camera"));
-    expect(at("data-sec=ws-sounds")).toBeGreaterThan(at("data-sec=ws-notifications"));
-    expect(at("data-sec=ws-wristWebhooks")).toBeGreaterThan(at("data-sec=ws-sounds"));
-    expect(at(`data-sec="ws-pair"`)).toBeGreaterThan(at("data-sec=ws-wristWebhooks"));
+    // Webhook alerts share the Notifications group; Sounds is its own.
+    expect(at("data-sec=ws-wristWebhooks")).toBeGreaterThan(at("data-sec=ws-notifications"));
+    expect(at("data-sec=ws-sounds")).toBeGreaterThan(at("data-sec=ws-wristWebhooks"));
+    expect(at(`data-sec="ws-pair"`)).toBeGreaterThan(at("data-sec=ws-sounds"));
     // The preview leads the Notifications card.
     expect(at('class="ns-pv"')).toBeGreaterThan(at("data-sec=ws-notifications"));
     expect(at('class="ns-pv"')).toBeLessThan(at("data-key=backgroundStyle"));
@@ -388,7 +398,7 @@ describe("Watch settings with the notification style", () => {
     const sound = shown.slice(shown.indexOf("data-key=tileTapSound"), shown.indexOf("data-key=menuOpenSound"));
     expect(sound).toContain("<optgroup label=Short>");
     expect(sound).toContain(">None</option>");
-    expect(sound).toContain(">Default (Button Press Sound)</option>");
+    expect(sound).toContain(">Default (Button press)</option>");
     const delivery = shown.slice(shown.indexOf("data-key=storedDeliveryMode"));
     expect(delivery).toContain('<span class="ws-tile-name">Reliable</span>');
     expect(delivery).toContain("Works without iPhone");

@@ -22,11 +22,15 @@
 // line, so while a save waits the page asks the store again now and then and
 // turns the pill green once the watch has it.
 //
+// The page shows one group of cards at a time, picked in a side panel that
+// also searches every group (`watch-settings-nav.ts` says which card is in
+// which group). Every setting is always in one group: nothing is hidden.
+//
 // The watch's notification style (kind `notification_style`) is a second
 // record shown on the same page, as the Notifications, Sounds and Wrist
-// Webhooks cards after the behavior ones. It loads with `behavior`, and the
-// one Save sends whichever of the two changed, each over its own revision.
-// Its thinking is in `watch-notification-style/model.ts`.
+// Webhooks cards. It loads with `behavior`, and the one Save sends whichever
+// of the two changed, each over its own revision. Its thinking is in
+// `watch-notification-style/model.ts`.
 
 import { css, html, nothing, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
@@ -87,8 +91,9 @@ import {
   withMotionTarget,
 } from "./watch-settings.js";
 import { SETTINGS_MOVED_TEXT, dropWatchSettingsDrafts, keepSettingsDraft, keptSettingsDraft, restoreSettingsDraft } from "./watch-settings-draft.js";
-import { dealColumns, settingsCanSave, settingsColumnCount, settingsPageStep, settingsPageWidth } from "./watch-settings-page.js";
+import { settingsCanSave, settingsPageStep } from "./watch-settings-page.js";
 import { type TileChoice, domainTiles, gestureIcon, optionPreview, settingIcon, tileChoices, usesTiles } from "./watch-settings-look.js";
+import { type SettingsCardId, type SettingsGroup, SETTINGS_GROUPS, groupOfCard, matchesSearch, searchTerms, settingsGroup } from "./watch-settings-nav.js";
 import {
   type StyleRow,
   type StyleSection,
@@ -130,10 +135,11 @@ const SAVE_KEY = IS_MAC ? "⌘S" : "Ctrl+S";
 /** Each card's mark and tint, from the inspector's own palette. */
 const SECTION_LOOK: Record<string, { icon: UiIconName; color: string }> = {
   connection: { icon: "globe", color: SECTION_COLOR.place },
-  interaction: { icon: "tap", color: SECTION_COLOR.tap },
-  navigation: { icon: "pages", color: SECTION_COLOR.numbers },
-  camera: { icon: "image", color: SECTION_COLOR.look },
+  gestures: { icon: "tap", color: SECTION_COLOR.tap },
   motion: { icon: "watch", color: SECTION_COLOR.home },
+  navigation: { icon: "pages", color: SECTION_COLOR.numbers },
+  controls: { icon: "radial", color: "var(--wa-hue-blue)" },
+  camera: { icon: "image", color: SECTION_COLOR.look },
 };
 
 /** The notification style's cards, after the behavior ones. */
@@ -189,6 +195,12 @@ export class WatchSettings implements ReactiveController {
   /** Sections whose help is hidden. Help starts shown: this is a form people
    * fill once, and its short titles ("Delay", "Debounce") need their line. */
   private helpOff: ReadonlySet<string> = new Set();
+  /** The side panel's group on show (`watch-settings-nav.ts`). It stays
+   * when the row moves to another watch, so the same settings stay in view. */
+  private group = SETTINGS_GROUPS[0]!.id;
+  /** The side panel's search. While it holds words the page shows the
+   * matching settings of every group instead of one group. */
+  private query = "";
   /** Bumped by every load, so a reply that arrives after another watch was
    * picked, or after a newer load, is dropped. */
   private loadSeq = 0;
@@ -768,19 +780,31 @@ export class WatchSettings implements ReactiveController {
     this.changed();
   }
 
+  /** A group picked in the side panel: it shows, and a search ends. */
+  private pickGroup(id: string): void {
+    this.group = id;
+    this.query = "";
+    this.host.requestUpdate();
+  }
+
+  private search(query: string): void {
+    this.query = query;
+    this.host.requestUpdate();
+  }
+
   // ── drawing ────────────────────────────────────────────────────────────
 
   /**
-   * The page: a bar that stays at the top while the cards scroll under it
+   * The page: a bar that stays at the top while the page scrolls under it
    * (the title and which watch and revision at the left, where the settings
-   * have got to and Save at the right), then the cards. The cards are dealt
-   * into as many columns as the page's `width` has room for, up to four
-   * (`settingsColumnCount`), each to the shortest column so far
-   * (`dealColumns`): the behavior cards, then the notification style's, then
-   * pairing and the client certificate. A narrow page is one column in that
-   * order. A home with no watch yet has the last two cards alone.
+   * have got to and Save at the right). Under it, the side panel lists the
+   * groups (`watch-settings-nav.ts`) under a search box, and beside it the
+   * picked group's cards show, or every group's matching settings while the
+   * search holds words. A narrow page puts the panel over the cards. A home
+   * with no watch yet, and a watch whose settings live in another home, get
+   * one column instead: the note, then pairing and the client certificate.
    */
-  render(hass: HassLike, owners: readonly OwnerSummary[], options: { narrow?: boolean; width?: number } = {}): TemplateResult {
+  render(hass: HassLike, owners: readonly OwnerSummary[], options: { narrow?: boolean } = {}): TemplateResult {
     this.hass = hass;
     const watches = settingsWatches(owners);
     const owner = watches.find((w) => w.owner_watch_id === this.ownerId);
@@ -790,36 +814,134 @@ export class WatchSettings implements ReactiveController {
     // both editors, and the pairing card stays.
     const elsewhere = takesSettingsFromAnotherHome(owner);
     const one = this.ownerId === undefined || elsewhere;
-    const count = one ? 1 : settingsColumnCount(options.width ?? 0);
-    return html`<div class="ws-page" style=${`--ws-w:${settingsPageWidth(count)}px`}>
+    return html`<div class="ws-page">
       <div class="ws-top">
         ${this.renderBar(name, options.narrow === true, elsewhere)}
         ${this.note ? html`<div class="banner ${this.note.kind} ws-note" role="alert"><span>${this.note.text}</span>
           <button class="link" @click=${() => { this.note = undefined; this.changed(); }}>Dismiss</button></div>` : nothing}
       </div>
-      <div class="ws-cols ${one ? "one" : ""}" style=${`--ws-n:${count}`}>
-        ${elsewhere
-          ? html`<div class="ws-body ws-col"><div class="xf-lead ws-main-house">${uiIcon("info")}<span>${SETTINGS_MAIN_HOUSE_TEXT}</span></div>${this.pairCard.render()}${this.cert.render(hass)}</div>`
-          : one
-          ? html`<div class="ws-body ws-col">${this.behaviorCards(hass).map((c) => c.card)}${this.pairCard.render()}${this.cert.render(hass)}</div>`
-          : this.renderColumns(hass, count)}
+      ${one
+        ? html`<div class="ws-cols one"><div class="ws-body ws-col">
+            ${elsewhere ? html`<div class="xf-lead ws-main-house">${uiIcon("info")}<span>${SETTINGS_MAIN_HOUSE_TEXT}</span></div>` : this.behaviorStandIn() ?? nothing}
+            ${this.pairCard.render()}${this.cert.render(hass)}
+          </div></div>`
+        : this.renderSplit(hass)}
+    </div>`;
+  }
+
+  /** The side panel and the cards beside it. A group whose cards are all
+   * missing (the notification style on an integration that does not keep
+   * it) is left out of the panel. */
+  private renderSplit(hass: HassLike) {
+    const terms = searchTerms(this.query);
+    const cards = this.loading ? undefined : this.cardsById(hass, terms);
+    const groups = cards === undefined ? SETTINGS_GROUPS : SETTINGS_GROUPS.filter((g) => g.cards.some((c) => cards.has(c)));
+    const group = groups.find((g) => g.id === this.group) ?? groups[0] ?? settingsGroup(undefined);
+    const searching = terms.length > 0;
+    return html`<div class="ws-split">
+      ${this.renderNav(group, groups, searching)}
+      <div class="ws-body ws-col ws-main" role="region" aria-label=${searching ? "Settings found" : `${group.title} settings`}>
+        ${cards === undefined
+          ? html`<div class="empty">Loading…</div>`
+          : searching
+          ? this.renderFound(cards)
+          : html`<p class="ws-blurb">${group.blurb}</p>${group.cards.map((c) => cards.get(c) ?? nothing)}`}
       </div>
     </div>`;
   }
 
-  /** Every card on a watch's page, each with a guess at its height, dealt
-   * into `count` columns. The guesses count every setting a card can show,
-   * not only the ones showing now, so turning a setting on never sends a
-   * card to another column. */
-  private renderColumns(hass: HassLike, count: number) {
-    const cards: SettingsCard[] = [
-      ...(this.loading ? [{ weight: 1, card: html`<div class="empty">Loading…</div>` }] : this.behaviorCards(hass)),
-      ...(this.loading ? [] : this.styleCards()),
-      { weight: 4, card: this.pairCard.render() },
-      { weight: 3.5, card: this.cert.render(hass) },
-    ];
-    return dealColumns(cards.map((c) => c.weight), count)
-      .map((column) => html`<div class="ws-body ws-col">${column.map((i) => cards[i]!.card)}</div>`);
+  /** The side panel: the search box, then a button per group, each with its
+   * count of unsaved changes. */
+  private renderNav(current: SettingsGroup, groups: readonly SettingsGroup[], searching: boolean) {
+    const changes = this.changesByGroup();
+    return html`<nav class="ws-nav" aria-label="Settings groups">
+      <label class="ws-search">${uiIcon("search")}
+        <input type="search" placeholder="Find a setting" aria-label="Find a setting" .value=${live(this.query)}
+          @input=${(e: Event) => this.search((e.target as HTMLInputElement).value)}
+          @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape" && this.query !== "") { e.preventDefault(); this.search(""); } }}>
+      </label>
+      <div class="ws-nav-list">
+        ${groups.map((g) => {
+          const on = !searching && g.id === current.id;
+          const n = changes.get(g.id) ?? 0;
+          return html`<button type="button" class="ws-nav-item ${on ? "on" : ""}" data-group=${g.id} aria-current=${on ? "page" : "false"}
+            style=${`--ws-hue:${g.color}`} @click=${() => this.pickGroup(g.id)}>
+            <span class="ws-nav-ic">${uiIcon(g.icon)}</span><span class="ws-nav-t">${g.title}</span>
+            ${n > 0 ? html`<span class="ws-nav-n" title=${`${n} unsaved ${n === 1 ? "change" : "changes"}`}>${n}</span>` : nothing}
+          </button>`;
+        })}
+      </div>
+    </nav>`;
+  }
+
+  /** A search's cards, under the name of the group each is in. The name
+   * opens that group. */
+  private renderFound(cards: ReadonlyMap<SettingsCardId, unknown>) {
+    if (cards.size === 0) {
+      return html`<div class="xf-lead ws-none">${uiIcon("search")}<span>No setting matches “${this.query.trim()}”. Try a shorter word, like “camera”, “sound” or “swipe”.</span></div>`;
+    }
+    return SETTINGS_GROUPS.map((g) => {
+      const found = g.cards.filter((c) => cards.has(c));
+      if (found.length === 0) return nothing;
+      return html`<button type="button" class="ws-found" title=${`Show all of ${g.title}`} @click=${() => this.pickGroup(g.id)}>${g.title}</button>
+        ${found.map((c) => cards.get(c))}`;
+    });
+  }
+
+  /** Unsaved changes per group, for the side panel. */
+  private changesByGroup(): Map<string, number> {
+    const counts = new Map<string, number>();
+    const add = (card: SettingsCardId, n: number) => {
+      const g = groupOfCard(card);
+      if (g !== undefined && n > 0) counts.set(g.id, (counts.get(g.id) ?? 0) + n);
+    };
+    const dirty = new Set(dirtyKeys(this.record?.document, this.edits));
+    for (const s of WATCH_SETTINGS_CATALOG.sections) add(s.id as SettingsCardId, s.settings.filter((x) => dirty.has(x.key)).length);
+    const styleDirty = new Set(styleDirtyKeys(this.styleDocument, this.styleEdits));
+    for (const s of NOTIFICATION_STYLE_SECTIONS) add(s.id, s.groups.reduce((n, g) => n + g.rows.filter((r) => styleDirty.has(r.key)).length, 0));
+    return counts;
+  }
+
+  /**
+   * The page's cards by id. Without a search: every card there is. A record
+   * not there yet, or one that cannot be read, has its one note instead,
+   * drawn once in each group it would fill. With a search: only the cards
+   * holding a match, each cut down to the matching settings, and no notes.
+   */
+  private cardsById(hass: HassLike, terms: readonly string[]): Map<SettingsCardId, unknown> {
+    const cards = new Map<SettingsCardId, unknown>();
+    const searching = terms.length > 0;
+    const standIn = (ids: ReadonlySet<string>, card: TemplateResult) => {
+      for (const g of SETTINGS_GROUPS) {
+        const first = g.cards.find((c) => ids.has(c));
+        if (first !== undefined) cards.set(first, card);
+      }
+    };
+    const behavior = this.behaviorStandIn();
+    if (behavior === undefined) {
+      const values = formValues(this.record?.document, this.edits);
+      for (const section of WATCH_SETTINGS_CATALOG.sections) {
+        const card = this.renderSection(hass, section, values, terms);
+        if (card !== undefined) cards.set(section.id as SettingsCardId, card);
+      }
+    } else if (behavior !== null && !searching) {
+      standIn(new Set(WATCH_SETTINGS_CATALOG.sections.map((s) => s.id)), behavior);
+    }
+    const style = this.styleUnsupported ? null : this.styleStandIn();
+    const styleDocument = this.styleDocument;
+    if (style === undefined && styleDocument !== undefined) {
+      const values = styleFormValues(styleDocument, this.styleEdits);
+      for (const section of NOTIFICATION_STYLE_SECTIONS) {
+        const card = this.renderStyleSection(section, values, terms);
+        if (card !== undefined) cards.set(section.id, card);
+      }
+    } else if (style !== undefined && style !== null && !searching) {
+      standIn(new Set(NOTIFICATION_STYLE_SECTIONS.map((s) => s.id)), style);
+    }
+    const pairing = groupOfCard("pair")?.title;
+    if (matchesSearch(terms, ["Pair a device, watch, iPhone, QR code, pairing code, add", pairing])) cards.set("pair", this.pairCard.render());
+    if (matchesSearch(terms, ["Client certificate, mTLS, proxy, passphrase", pairing])) cards.set("cert", this.cert.render(hass));
+    return cards;
   }
 
   /** Beside the title: which watch, and which revision of its settings. */
@@ -835,51 +957,52 @@ export class WatchSettings implements ReactiveController {
     return `${name} · revision ${r.revision}, ${by}${when}${style}`;
   }
 
-  /** The behavior settings' cards, or the one that stands in for them. */
-  private behaviorCards(hass: HassLike): SettingsCard[] {
-    const stand = (card: unknown): SettingsCard[] => [{ weight: 2.5, card }];
+  /** What stands in for the behavior settings' cards: a note, `null` while
+   * there is nothing to draw yet, or undefined when the record's own cards
+   * draw. */
+  private behaviorStandIn(): TemplateResult | null | undefined {
     if (this.loadError !== undefined) {
       const id = this.ownerId;
-      return stand(html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this watch's settings: ${this.loadError}</span></div>
-        ${id === undefined ? nothing : html`<button class="small ws-retry" @click=${() => void this.reread("behavior", id)}>Try again</button>`}`);
+      return html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this watch's settings: ${this.loadError}</span></div>
+        ${id === undefined ? nothing : html`<button class="small ws-retry" @click=${() => void this.reread("behavior", id)}>Try again</button>`}`;
     }
     if (this.ownerId === undefined) {
-      return stand(html`<div class="xf-lead">${uiIcon("info")}<span><b>No watch has connected to this Home Assistant yet.</b> Pair one below.</span></div>`);
+      return html`<div class="xf-lead">${uiIcon("info")}<span><b>No watch has connected to this Home Assistant yet.</b> Pair one below.</span></div>`;
     }
     const record = this.record;
-    if (record === undefined) return [];
+    if (record === undefined) return null;
     // A record that is there but unreadable is not "no settings yet": a
     // start would only meet a conflict.
     if (watchRecordUnreadable(record, (document) => document)) {
-      return stand(html`<div class="xf-lead warn">${uiIcon("info")}<span>${SETTINGS_UNREADABLE_TEXT}</span></div>`);
+      return html`<div class="xf-lead warn">${uiIcon("info")}<span>${SETTINGS_UNREADABLE_TEXT}</span></div>`;
     }
     if (record.revision <= 0 || record.document === undefined) {
       // While the iPhone's move may still come it waits, and the start is a
       // small link that asks first.
       const state = noRecordStart(this.shownOwner);
-      return stand(html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this watch yet.</b> ${noRecordText(state, SETTINGS_NO_RECORD_TEXT)}</span></div>
+      return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this watch yet.</b> ${noRecordText(state, SETTINGS_NO_RECORD_TEXT)}</span></div>
         ${state === "wait"
           ? html`<button class="link start-fresh ws-start" ?disabled=${this.starting || this.saving}
               title="Save the app's default settings as this watch's first copy"
               @click=${() => { if (mayStart(state)) void this.start(); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
           : html`<button class="small primary ws-start" ?disabled=${this.starting || this.saving}
               title="Save the app's default settings as this watch's first copy"
-              @click=${() => void this.start()}>${this.starting ? "Starting…" : SETTINGS_START_BUTTON}</button>`}`);
+              @click=${() => void this.start()}>${this.starting ? "Starting…" : SETTINGS_START_BUTTON}</button>`}`;
     }
-    const values = formValues(record.document, this.edits);
-    return WATCH_SETTINGS_CATALOG.sections.map((section) => ({
-      weight: 1.5 + section.settings.reduce((sum, setting) => sum + settingWeight(setting), 0),
-      card: this.renderSection(hass, section, values),
-    }));
+    return undefined;
   }
 
   /** One catalog section as an inspector card that is always open: the
-   * inspector's mark, title and "?" for its help. */
-  private renderSection(hass: HassLike, section: CatalogSection, values: ReadonlyMap<string, SettingValue>) {
+   * inspector's mark, title and "?" for its help. With search `terms`, only
+   * the runs holding a match, and nothing at all when none does. */
+  private renderSection(hass: HassLike, section: CatalogSection, values: ReadonlyMap<string, SettingValue>, terms: readonly string[] = []) {
     const look = SECTION_LOOK[section.id];
     const help = !this.helpOff.has(section.id);
     const helpLabel = help ? `Hide the help in ${section.title}` : `Show help for ${section.title}`;
-    const runs = sectionRuns(section, values);
+    const group = groupOfCard(section.id as SettingsCardId)?.title;
+    const runs = sectionRuns(section, values)
+      .filter((run) => [run.setting, ...run.dependents].some((s) => matchesSearch(terms, settingWords(s, section.title, group))));
+    if (runs.length === 0 && terms.length > 0) return undefined;
     return html`<section class="sec" data-sec=${`ws-${section.id}`} data-open="true" data-help=${help ? "on" : "off"}
       style=${look ? `--c:${look.color};--ws-hue:${look.color}` : nothing}>
       <div class="sec-h pinned">
@@ -1036,41 +1159,34 @@ export class WatchSettings implements ReactiveController {
 
   // ── the notification style's cards ─────────────────────────────────────
 
-  /** The Notifications, Sounds and Wrist Webhooks cards; one card in their
-   * place while there is no record yet; none at all on an integration that
-   * does not keep the kind. */
-  private styleCards(): SettingsCard[] {
-    if (this.styleUnsupported) return [];
-    const stand = (card: unknown): SettingsCard[] => [{ weight: 3, card }];
+  /** What stands in for the Notifications, Sounds and Wrist Webhooks cards:
+   * one card while there is no record yet or it cannot be read, `null`
+   * while there is nothing to draw yet, or undefined when the record's own
+   * cards draw. The caller leaves them all out on an integration that does
+   * not keep the kind. */
+  private styleStandIn(): TemplateResult | null | undefined {
     const id = this.ownerId;
     if (this.styleError !== undefined) {
-      return stand(this.renderStyleCard(html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this watch's notification style: ${this.styleError}</span></div>
-        ${id === undefined ? nothing : html`<button class="small ns-retry" @click=${() => void this.reread("style", id)}>Try again</button>`}`));
+      return this.renderStyleCard(html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this watch's notification style: ${this.styleError}</span></div>
+        ${id === undefined ? nothing : html`<button class="small ns-retry" @click=${() => void this.reread("style", id)}>Try again</button>`}`);
     }
     const record = this.styleRecord;
-    if (record === undefined) return [];
+    if (record === undefined) return null;
     if (watchRecordUnreadable(record, readStyleDocument)) {
-      return stand(this.renderStyleCard(html`<div class="xf-lead warn">${uiIcon("info")}<span>${STYLE_UNREADABLE_TEXT}</span></div>`));
+      return this.renderStyleCard(html`<div class="xf-lead warn">${uiIcon("info")}<span>${STYLE_UNREADABLE_TEXT}</span></div>`);
     }
-    const document = this.styleDocument;
-    if (document === undefined) {
+    if (this.styleDocument === undefined) {
       const state = noRecordStart(this.shownOwner);
-      return stand(this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${noRecordText(state, STYLE_NO_RECORD_TEXT)}</span></div>
+      return this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${noRecordText(state, STYLE_NO_RECORD_TEXT)}</span></div>
         ${state === "wait"
           ? html`<button class="link start-fresh ns-start" ?disabled=${this.styleStarting || this.saving}
               title="Save the app's default notification style as this watch's first copy"
               @click=${() => { if (mayStart(state)) void this.startStyle(); }}>${this.styleStarting ? "Starting…" : START_FRESH_BUTTON}</button>`
           : html`<button class="small primary ns-start" ?disabled=${this.styleStarting || this.saving}
               title="Save the app's default notification style as this watch's first copy"
-              @click=${() => void this.startStyle()}>${this.styleStarting ? "Starting…" : STYLE_START_BUTTON}</button>`}`));
+              @click=${() => void this.startStyle()}>${this.styleStarting ? "Starting…" : STYLE_START_BUTTON}</button>`}`);
     }
-    const values = styleFormValues(document, this.styleEdits);
-    return NOTIFICATION_STYLE_SECTIONS.map((section) => ({
-      // The notification's picture stands at the head of its card.
-      weight: 1.5 + (section.id === "notifications" ? 3.5 : 0)
-        + section.groups.reduce((sum, group) => sum + 0.5 + group.rows.reduce((n, row) => n + styleRowWeight(row), 0), 0),
-      card: this.renderStyleSection(section, values),
-    }));
+    return undefined;
   }
 
   /** The one card that stands in for the three. */
@@ -1085,11 +1201,20 @@ export class WatchSettings implements ReactiveController {
     </section>`;
   }
 
-  private renderStyleSection(section: StyleSection, values: ReadonlyMap<string, StyleValue>) {
+  /** One notification style section as a card. With search `terms`, only
+   * the runs holding a match, and nothing at all when none does. */
+  private renderStyleSection(section: StyleSection, values: ReadonlyMap<string, StyleValue>, terms: readonly string[] = []) {
     const look = STYLE_LOOK[section.id];
     const helpKey = `ns-${section.id}`;
     const help = !this.helpOff.has(helpKey);
     const helpLabel = help ? `Hide the help in ${section.title}` : `Show help for ${section.title}`;
+    const group = groupOfCard(section.id)?.title;
+    const groups = section.groups.map((g) => ({
+      label: g.label,
+      runs: styleRuns(g, values)
+        .filter((run) => [run.row, ...run.dependents].some((r) => matchesSearch(terms, styleRowWords(r, g.label, section.title, group)))),
+    }));
+    if (terms.length > 0 && groups.every((g) => g.runs.length === 0)) return undefined;
     return html`<section class="sec" data-sec=${`ws-${section.id}`} data-open="true" data-help=${help ? "on" : "off"}
       style=${`--c:${look.color};--ws-hue:${look.color}`}>
       <div class="sec-h pinned">
@@ -1102,10 +1227,9 @@ export class WatchSettings implements ReactiveController {
         ${section.id === "notifications"
           ? notificationPreview(values, (name, size, color) => this.icons?.()?.render(name, size, color))
           : nothing}
-        ${section.groups.map((group) => {
-          const runs = styleRuns(group, values);
+        ${groups.map(({ label, runs }) => {
           if (runs.length === 0) return nothing;
-          return html`<div class="ws-group">${group.label}</div>
+          return html`<div class="ws-group">${label}</div>
             ${runs.map((run) => html`${this.renderStyleRow(run.row, values)}${run.dependents.length === 0
               ? nothing
               : html`<div class="fgroup">${run.dependents.map((r) => this.renderStyleRow(r, values))}</div>`}`)}`;
@@ -1263,26 +1387,19 @@ function joinNotes(notes: readonly (Note | undefined)[]): Note | undefined {
   return { kind, text: said.map((n) => n.text).join(" ") };
 }
 
-/** One card of the page and a guess at its height, in rows of about 30px. */
-interface SettingsCard {
-  weight: number;
-  card: unknown;
+/** The words a search looks through for one setting: its title, help and
+ * choices, and the names of its card and group. */
+function settingWords(setting: CatalogSetting, card: string, group: string | undefined): (string | undefined)[] {
+  return [
+    setting.label, setting.help, card, group,
+    ...(setting.options ?? []).map((o) => o.label),
+    ...(setting.gestures ?? []).map((g) => g.label),
+  ];
 }
 
-/** About how many rows a behavior setting takes: tiles go under their title,
- * the domain grid and the motion gestures take several, a help line adds a
- * little. */
-function settingWeight(setting: CatalogSetting): number {
-  if (setting.type === "domains") return 4.5;
-  if (setting.type === "motionGestures") return 5;
-  if (usesTiles(setting)) return 2.4;
-  return setting.help ? 1.3 : 1;
-}
-
-/** The same guess for a notification style row. */
-function styleRowWeight(row: StyleRow): number {
-  if (styleUsesTiles(row)) return 2.2;
-  return row.help ? 1.3 : 1;
+/** The same for a notification style row, with the heading it sits under. */
+function styleRowWords(row: StyleRow, heading: string, card: string, group: string | undefined): (string | undefined)[] {
+  return [row.label, row.help, heading, card, group, ...(row.options ?? []).map((o) => o.label)];
 }
 
 /** The page's own rules, added to the panel's sheet. Everything else it
@@ -1301,20 +1418,64 @@ export const watchSettingsStyles = css`
   .ws-bar .ws-head-line { flex: 0 1 auto; min-width: 0; font-size: 12px; color: var(--wa-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ws-bar .ws-changes, .ws-bar .ws-ask { flex: 0 1 auto; min-width: 0; }
   .ws-bar .tb-sync { min-width: 0; flex: 0 1 auto; }
-  .ws-top > .ws-note { display: flex; align-items: center; gap: 10px; box-sizing: border-box; width: min(calc(var(--ws-w, 720px) - 32px), calc(100% - 32px)); margin: 10px auto 0; }
+  .ws-top > .ws-note { display: flex; align-items: center; gap: 10px; box-sizing: border-box; width: min(1088px, calc(100% - 32px)); margin: 10px auto 0; }
   .ws-top > .ws-note > span { flex: 1; min-width: 0; }
-  /* Centred, as many columns as the render dealt the cards into (--ws-n),
-     and no wider than those columns at their widest (--ws-w). One column is
-     as wide as the dialog it replaced. Each column is a container of its
-     own, so a row's narrow rules follow the column. */
-  .ws-cols {
-    box-sizing: border-box; width: min(var(--ws-w, 720px), 100%); margin: 0 auto; padding: 16px 16px 48px;
-    display: grid; grid-template-columns: repeat(var(--ws-n, 1), minmax(0, 1fr)); gap: 8px 20px; align-items: start;
+  /* One column, as wide as the dialog the page replaced: a home with no
+     watch yet, or a watch whose settings live in another home. */
+  .ws-cols { box-sizing: border-box; width: min(720px, 100%); margin: 0 auto; padding: 16px 16px 48px; display: grid; gap: 8px; }
+  /* The side panel and the group's cards beside it, centred. On a narrow
+     page the panel goes over the cards and its groups wrap as chips. */
+  .ws-split {
+    box-sizing: border-box; width: min(1120px, 100%); margin: 0 auto; padding: 16px 16px 48px;
+    display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 24px;
   }
-  .ws-cols.one { width: min(720px, 100%); }
   @media (max-width: 640px) {
-    .ws-cols { padding: 12px 12px 32px; }
+    .ws-cols, .ws-split { padding: 12px 12px 32px; }
   }
+  /* The panel stays in view while a long group scrolls, just under the bar. */
+  .ws-nav { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 64px; }
+  .ws-search {
+    display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; box-sizing: border-box;
+    border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-field); color: var(--wa-muted);
+  }
+  .ws-search:focus-within { border-color: color-mix(in srgb, var(--wa-ink) 45%, var(--wa-line-strong)); }
+  .ws-search svg { width: 15px; height: 15px; flex: none; }
+  .ws-search input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; color: var(--wa-ink); font: inherit; font-size: 13px; }
+  .ws-nav-list { display: flex; flex-direction: column; gap: 2px; }
+  button.ws-nav-item {
+    font: inherit; display: flex; align-items: center; gap: 10px; min-height: 36px; margin: 0; padding: 0 10px;
+    border: 0; border-radius: 8px; background: transparent; color: var(--wa-label); text-align: left; cursor: pointer;
+  }
+  button.ws-nav-item:hover { background: color-mix(in srgb, var(--wa-ink) 6%, transparent); color: var(--wa-ink); }
+  button.ws-nav-item.on {
+    background: color-mix(in srgb, var(--ws-hue) 16%, var(--wa-seg-on)); color: var(--wa-ink);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ws-hue) 40%, transparent);
+  }
+  button.ws-nav-item:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--wa-ink) 60%, transparent); }
+  .ws-nav-ic {
+    width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 6px;
+    color: var(--ws-hue); background: color-mix(in srgb, var(--ws-hue) 15%, transparent);
+  }
+  .ws-nav-ic svg { width: 14px; height: 14px; }
+  .ws-nav-t { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  button.ws-nav-item.on .ws-nav-t { font-weight: 600; }
+  .ws-nav-n {
+    flex: none; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; display: grid; place-items: center;
+    font-size: 11px; font-weight: 600; color: var(--wa-ink); background: color-mix(in srgb, var(--wa-hue-orange) 30%, transparent);
+  }
+  @container wspage (max-width: 760px) {
+    .ws-nav { position: static; flex-basis: 100%; }
+    .ws-nav-list { flex-direction: row; flex-wrap: wrap; gap: 4px; }
+    button.ws-nav-item { min-height: 32px; box-shadow: inset 0 0 0 1px var(--wa-line); }
+  }
+  .ws-main { flex: 999 1 520px; }
+  .ws-main > .ws-blurb { margin: 0 2px 2px; font-size: 13px; line-height: 1.4; color: var(--wa-muted); }
+  .ws-main > button.ws-found {
+    align-self: flex-start; font: inherit; margin: 10px 2px 0; padding: 0; border: 0; background: none; cursor: pointer;
+    font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--wa-muted);
+  }
+  .ws-main > button.ws-found:first-child { margin-top: 0; }
+  .ws-main > button.ws-found:hover { color: var(--wa-ink); }
   .ws-col { display: flex; flex-direction: column; min-width: 0; container: xfer / inline-size; }
   .ws-col > * { flex: none; }
   .ws-col > .empty { padding: 12px 2px; color: var(--wa-muted); }

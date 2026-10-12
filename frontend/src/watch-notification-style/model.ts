@@ -419,7 +419,7 @@ export function soundChoices(row: StyleRow, value: StyleValue): SoundChoices {
   } else {
     const plays = facts?.absentPlays ?? "";
     const fallsBack = plays.startsWith("buttonPressSound");
-    lead.push({ value: ABSENT, label: fallsBack ? "Default (Button Press Sound)" : `Default (${soundLabel(plays)})` });
+    lead.push({ value: ABSENT, label: fallsBack ? "Default (Button press)" : `Default (${soundLabel(plays)})` });
   }
   if (facts?.silentOffered === true) lead.push({ value: SILENT_SOUND, label: "None" });
   const groups = table.sounds.categories.map((c) => ({ label: c.label, options: c.sounds.map((s) => ({ value: s.file, label: s.label })) }));

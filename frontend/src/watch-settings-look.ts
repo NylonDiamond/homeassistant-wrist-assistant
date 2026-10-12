@@ -112,24 +112,24 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   },
   deltaTimeout: { icon: "timer", options: same("timer", ["25s", "35s", "45s", "55s"]) },
 
-  // ── interaction ──
+  // ── gestures and controls ──
   longPressDuration: {
     icon: "hand.tap.fill",
     options: {
-      "Super Fast": { icon: "bolt.fill", name: "Super fast", detail: "75ms" },
+      "Super Fast": { icon: "bolt.fill", name: "Very short", detail: "75ms" },
       "Short": { icon: "hare.fill", name: "Short", detail: "150ms" },
       "Normal": { icon: "clock", name: "Normal", detail: "200ms" },
       "Long": { icon: "tortoise.fill", name: "Long", detail: "300ms" },
-      "Extra Long": { icon: "hand.tap.fill", name: "Extra long", detail: "1s" },
+      "Extra Long": { icon: "hand.tap.fill", name: "Very long", detail: "1s" },
     },
   },
   entityRadialVerticalQuickRadialGestureEnabled: { icon: "arrow.up.and.down.and.arrow.left.and.right" },
   entityRadialVerticalQuickRadialGestureTrigger: {
     icon: "hand.draw",
     options: same("hand.draw", ["Up/Down x2", "Swipe Up/Down", "Clockwise"], {
-      "Up/Down x2": "Double vertical oscillation",
-      "Swipe Up/Down": "Swipe past center & back",
-      "Clockwise": "Circle gesture around center",
+      "Up/Down x2": "Up, down, up, down",
+      "Swipe Up/Down": "Past the middle and back",
+      "Clockwise": "Around the middle",
     }),
   },
   entityRadialVerticalQuickRadialGestureSpeed: {
@@ -240,11 +240,11 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
     icon: "rectangle.on.rectangle",
     preview: "popupMaterial",
     options: {
-      "Ultra Thin": { icon: "rectangle.on.rectangle", name: "Ultra thin", detail: "Most transparent" },
-      "Thin": { icon: "rectangle.on.rectangle", name: "Thin", detail: "Slightly opaque" },
+      "Ultra Thin": { icon: "rectangle.on.rectangle", name: "Ultra thin", detail: "Most see-through" },
+      "Thin": { icon: "rectangle.on.rectangle", name: "Thin", detail: "See-through" },
       "Regular": { icon: "rectangle.on.rectangle", name: "Regular", detail: "Balanced" },
-      "Thick": { icon: "rectangle.on.rectangle", name: "Thick", detail: "More opaque" },
-      "Ultra Thick": { icon: "rectangle.on.rectangle", name: "Ultra thick", detail: "Most opaque" },
+      "Thick": { icon: "rectangle.on.rectangle", name: "Thick", detail: "More solid" },
+      "Ultra Thick": { icon: "rectangle.on.rectangle", name: "Ultra thick", detail: "Most solid" },
     },
   },
 

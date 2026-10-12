@@ -123,7 +123,7 @@ describe("the rows", () => {
       ["Volume", ["soundVolume"]],
       ["Sounds", ["buttonPressSound", "tileTapSound", "menuOpenSound", "slideToIconSound", "arcSlideTickSound", "successSound", "cancelSound"]],
     ]);
-    expect(groups(2)).toEqual([["Notification Appearance", ["storedWebhookButtonSize"]]]);
+    expect(groups(2)).toEqual([["Webhook alerts", ["storedWebhookButtonSize"]]]);
   });
 
   it("offers each enum's values in the Swift order with the phone's labels", () => {
@@ -272,7 +272,7 @@ describe("sounds", () => {
     const sent = buildStyleSaveDocument(base, absent);
     expect(Object.hasOwn(sent, "tileTapSound")).toBe(false);
     expect(soundValueText(r, SILENT_SOUND)).toBe("None");
-    expect(soundValueText(r, ABSENT)).toBe("Default (Button Press Sound)");
+    expect(soundValueText(r, ABSENT)).toBe("Default (Button press)");
     expect(soundValueText(row("menuOpenSound"), ABSENT)).toBe("Default (Click 5)");
     expect(soundValueText(r, "glass_002")).toBe("Glass 2");
   });

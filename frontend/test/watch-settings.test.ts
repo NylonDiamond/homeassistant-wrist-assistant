@@ -108,9 +108,9 @@ const setting = (key: string): CatalogSetting => {
 };
 
 describe("the catalog", () => {
-  it("is version 1 with the phone's four pages in the phone's order, then its Motion Gestures page", () => {
+  it("is version 1, in the side panel's groups: gestures beside wrist twists, then pages, controls and cameras", () => {
     expect(WATCH_SETTINGS_CATALOG.version).toBe(1);
-    expect(WATCH_SETTINGS_CATALOG.sections.map((s) => s.id)).toEqual(["connection", "interaction", "navigation", "camera", "motion"]);
+    expect(WATCH_SETTINGS_CATALOG.sections.map((s) => s.id)).toEqual(["connection", "gestures", "motion", "navigation", "controls", "camera"]);
     for (const section of WATCH_SETTINGS_CATALOG.sections) {
       expect(section.title).not.toBe("");
       expect(section.settings.length).toBeGreaterThan(0);
@@ -944,8 +944,8 @@ describe("the domains that skip the bounce", () => {
   it("is shown under Pending animation only while it is on", () => {
     expect(isShown(domains, formValues({}))).toBe(true);
     expect(isShown(domains, formValues({ showPendingAnimation: false }))).toBe(false);
-    const interaction = WATCH_SETTINGS_CATALOG.sections.find((s) => s.id === "interaction")!;
-    const run = sectionRuns(interaction, formValues({})).find((r) => r.setting.key === "showPendingAnimation")!;
+    const controls = WATCH_SETTINGS_CATALOG.sections.find((s) => s.id === "controls")!;
+    const run = sectionRuns(controls, formValues({})).find((r) => r.setting.key === "showPendingAnimation")!;
     expect(run.dependents.map((s) => s.key)).toEqual(["pendingAnimationDisabledDomains"]);
   });
 

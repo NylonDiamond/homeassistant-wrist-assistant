@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WATCH_SETTINGS_SCREEN, panelPrefix, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath, editorKeysLive, landingPath } from "../src/shell.js";
 import { watchRouteOwner } from "../src/watch-pick.js";
 import { watchRowLinks, watchRowSettingsLink } from "../src/watch-row.js";
-import { catalogSettings, watchBehaviorDefaults } from "../src/watch-settings.js";
+import { WATCH_SETTINGS_CATALOG, catalogSettings, watchBehaviorDefaults } from "../src/watch-settings.js";
 import { watchSettingsStyles } from "../src/watch-settings-view.js";
 import {
   type KeptSettings,
@@ -19,12 +19,11 @@ import {
   keptSettingsDraft,
   restoreSettingsDraft,
 } from "../src/watch-settings-draft.js";
+import { NOTIFICATION_STYLE_SECTIONS } from "../src/watch-notification-style/model.js";
+import { SETTINGS_GROUPS, groupOfCard, matchesSearch, searchTerms, settingsGroup } from "../src/watch-settings-nav.js";
 import {
   WATCH_SETTINGS_PATH,
-  dealColumns,
   isWatchSettingsRoute,
-  settingsColumnCount,
-  settingsPageWidth,
   settingsCanSave,
   settingsPageSavesOnKey,
   settingsPageStep,
@@ -203,11 +202,13 @@ describe("the page's look", () => {
     expect(rule(".ws-top")).toContain("background: var(--wa-bg)");
   });
 
-  it("is centred, as many columns as the render dealt, and never wider than the page", () => {
-    const cols = rule(".ws-cols");
-    expect(cols).toContain("width: min(var(--ws-w, 720px), 100%); margin: 0 auto");
-    expect(cols).toContain("grid-template-columns: repeat(var(--ws-n, 1), minmax(0, 1fr))");
-    expect(rule(".ws-cols.one")).toContain("width: min(720px, 100%)");
+  it("is centred, the side panel beside the cards, and never wider than the page", () => {
+    expect(rule(".ws-cols")).toContain("width: min(720px, 100%); margin: 0 auto");
+    const split = rule(".ws-split");
+    expect(split).toContain("width: min(1120px, 100%); margin: 0 auto");
+    expect(split).toContain("flex-wrap: wrap");
+    expect(rule(".ws-nav")).toContain("position: sticky");
+    expect(rule(".ws-main")).toContain("flex: 999 1 520px");
     expect(rule(".ws-col")).toContain("min-width: 0; container: xfer / inline-size");
   });
 
@@ -225,27 +226,41 @@ describe("the page's look", () => {
   });
 });
 
-describe("the page's columns", () => {
-  it("fits one column per 460px or so, up to four, and one before the page is measured", () => {
-    expect(settingsColumnCount(0)).toBe(1);
-    expect(settingsColumnCount(Number.NaN)).toBe(1);
-    expect(settingsColumnCount(400)).toBe(1);
-    expect(settingsColumnCount(1000)).toBe(2);
-    expect(settingsColumnCount(1500)).toBe(3);
-    expect(settingsColumnCount(2000)).toBe(4);
-    expect(settingsColumnCount(4000)).toBe(4);
+describe("the side panel's groups", () => {
+  const cards = SETTINGS_GROUPS.flatMap((g) => g.cards);
+
+  it("puts every card in exactly one group", () => {
+    expect(new Set(cards).size).toBe(cards.length);
+    const expected = [
+      ...WATCH_SETTINGS_CATALOG.sections.map((s) => s.id),
+      ...NOTIFICATION_STYLE_SECTIONS.map((s) => s.id),
+      "pair", "cert",
+    ];
+    expect([...cards].sort()).toEqual([...expected].sort());
   });
 
-  it("caps the block at the columns' widest, and one column at the dialog's width", () => {
-    expect(settingsPageWidth(1)).toBe(720);
-    expect(settingsPageWidth(2)).toBe(2 * 620 + 20 + 32);
-    expect(settingsPageWidth(4)).toBe(4 * 620 + 3 * 20 + 32);
+  it("gives every group a name, a line and a unique id", () => {
+    expect(new Set(SETTINGS_GROUPS.map((g) => g.id)).size).toBe(SETTINGS_GROUPS.length);
+    for (const g of SETTINGS_GROUPS) {
+      expect(g.title).not.toBe("");
+      expect(g.blurb).toMatch(/\.$/);
+      expect(groupOfCard(g.cards[0]!)).toBe(g);
+    }
   });
 
-  it("deals each card to the shortest column so far, the leftmost on a tie, keeping their order", () => {
-    expect(dealColumns([10, 2, 3, 4], 2)).toEqual([[0], [1, 2, 3]]);
-    expect(dealColumns([5, 5, 5, 1], 3)).toEqual([[0, 3], [1], [2]]);
-    expect(dealColumns([1, 1], 4)).toEqual([[0], [1], [], []]);
-    expect(dealColumns([1, 2, 3], 1)).toEqual([[0, 1, 2]]);
+  it("falls back to the first group for an id it does not know", () => {
+    expect(settingsGroup("sounds").id).toBe("sounds");
+    expect(settingsGroup("nope")).toBe(SETTINGS_GROUPS[0]);
+    expect(settingsGroup(undefined)).toBe(SETTINGS_GROUPS[0]);
+  });
+
+  it("searches for every word, in any case, anywhere in the words given", () => {
+    expect(searchTerms("  Page   DOTS ")).toEqual(["page", "dots"]);
+    expect(searchTerms("   ")).toEqual([]);
+    expect(matchesSearch([], ["anything"])).toBe(true);
+    expect(matchesSearch(["dots"], ["Page dots", undefined])).toBe(true);
+    expect(matchesSearch(["page", "dots"], ["Page dots"])).toBe(true);
+    expect(matchesSearch(["page", "pinch"], ["Page dots"])).toBe(false);
+    expect(matchesSearch(["swip"], ["Swipe the bottom edge"])).toBe(true);
   });
 });

@@ -10802,7 +10802,7 @@ export class WristAssistantPanel extends LitElement {
     if (!this.linkReady && this.owners.length === 0) {
       return html`<div class="ws-page"><div class="ws-cols one"><p class="home-empty">Loading…</p></div></div>`;
     }
-    return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow, width: this.panelWidth });
+    return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow });
   }
 
   private goTo(path: string, replace = false) {

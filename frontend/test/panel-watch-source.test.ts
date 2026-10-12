@@ -174,7 +174,7 @@ describe("the Settings page", () => {
     const page = method("  private renderSettingsPage() {");
     expect(page).not.toContain("is_admin");
     expect(page).toContain("if (!this.linkReady && this.owners.length === 0) {");
-    expect(page).toContain("return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow, width: this.panelWidth });");
+    expect(page).toContain("return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow });");
   });
 
   it("follows the shared watch on every draw, once the devices are in, and leaves on any other route", () => {

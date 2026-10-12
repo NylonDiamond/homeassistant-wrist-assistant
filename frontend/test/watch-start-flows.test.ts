@@ -15,6 +15,7 @@ import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js
 import { WaPageEditor } from "../src/watch-pages/page-editor.js";
 import { findWatchPage } from "../src/watch-pages/edit.js";
 import { WatchSettings } from "../src/watch-settings-view.js";
+import { SETTINGS_GROUPS } from "../src/watch-settings-nav.js";
 import {
   PAGES_NO_RECORD_TEXT,
   PAGES_START_BUTTON,
@@ -280,7 +281,19 @@ describe("the page editor's Start", () => {
 
 // ── Watch settings ───────────────────────────────────────────────────────
 
+/** The page shows one group at a time: every group's page it lists, in the
+ * side panel's order, or the one page when it has no side panel. */
+function everyGroup(inside: { group: string }, draw: () => string): string {
+  const pages = SETTINGS_GROUPS.map((g) => {
+    inside.group = g.id;
+    const page = draw();
+    return page.includes(`aria-label=${g.title} settings>`) ? page : "";
+  }).join("");
+  return pages === "" ? draw() : pages;
+}
+
 interface SettingsInside {
+  group: string;
   record?: WatchConfigRecord;
   loading: boolean;
   note?: { kind: string; text: string };
@@ -316,7 +329,7 @@ describe("Watch settings' Start", () => {
     ws.show(ha.hass, owners, "w1");
     const inside = ws as unknown as SettingsInside;
     await vi.waitFor(() => expect(inside.loading).toBe(false));
-    return { ws, inside, ha, text: () => flatten(ws.render(ha.hass, owners)) };
+    return { ws, inside, ha, text: () => everyGroup(inside, () => flatten(ws.render(ha.hass, owners))) };
   }
 
   it("offers the button while no record is held and no iPhone will send one", async () => {
