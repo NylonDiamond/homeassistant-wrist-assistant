@@ -1554,6 +1554,9 @@ export const watchSettingsStyles = css`
   @container xfer (max-width: 440px) {
     .ws-tiles { grid-template-columns: repeat(var(--cols-narrow, 3), minmax(0, 1fr)); margin-left: 0; }
     .ws-row > .field:not(.check) > :not(:first-child) { width: 150px; }
+    /* The picture and the menu leave the title little room: the help goes
+       under all three, at the row's full width. */
+    .ws-row.has-demo > .hint { grid-column: 2 / -1; grid-row: 3; margin-top: 2px; }
   }
   button.ws-tile {
     --ws-tile-bg: var(--wa-field);
