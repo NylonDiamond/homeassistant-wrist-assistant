@@ -555,7 +555,8 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
     const names = sh.icons.names();
     const known = names === undefined ? undefined : symbolNameSet(names);
     const value = trimmed === "" ? "" : watchStorageIconName(trimmed, (symbol) => known?.has(symbol) === true);
-    commit(sh, "titleIcon", (d) => setWatchPageTitleIcon(d, sh.pageId, value), { typing: true });
+    // A pick from the list is a step of its own.
+    commit(sh, "titleIcon", (d) => setWatchPageTitleIcon(d, sh.pageId, value));
   };
   return html`
     ${stylingEnumField("Display", "pageTitleDisplayStyle", s.titleStyle, (v) => commit(sh, "titleStyle", (d) => setWatchPageTitleStyle(d, sh.pageId, v)))}
@@ -565,7 +566,8 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
         <button type="button" class="pe-chip ${s.titleIcon === "" ? "on" : ""}" aria-pressed=${s.titleIcon === "" ? "true" : "false"}
           @click=${() => commit(sh, "titleIcon", (d) => setWatchPageTitleIcon(d, sh.pageId, ""))}>No icon</button>
       </div>
-      ${typingField(sh, "titleIcon", symbolField({ icons: sh.icons, symbols: sh.symbols }, typed(sh, "titleIcon") ?? s.titleIcon, setIcon, "pe:ps:title-icon", undefined, "Icon", false))}
+      ${typingField(sh, "titleIcon", symbolField({ icons: sh.icons, symbols: sh.symbols }, typed(sh, "titleIcon") ?? s.titleIcon, setIcon, "pe:ps:title-icon",
+        { clearable: false, emptyText: "No icon" }))}
       ${pagePalette(sh, "titleColor", {
         label: "Text color",
         color: () => watchPageSettings(sh.page).titleColor,

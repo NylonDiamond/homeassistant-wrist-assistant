@@ -5639,6 +5639,9 @@ export class WristAssistantPanel extends LitElement {
     button.value-chip:hover { border-color: var(--wa-accent); }
     button.value-chip:focus-visible { outline: 2px solid var(--wa-accent); outline-offset: 1px; }
     .value-chip .chip-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .value-chip .chip-glyph { flex: none; display: grid; place-items: center; width: 16px; height: 16px; color: var(--wa-ink); }
+    .value-chip .chip-glyph svg { width: 14px; height: 14px; display: block; }
+    .value-chip .chip-glyph svg path { fill: currentColor; fill-opacity: 1; }
     .value-chip .chip-now {
       max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       color: var(--wa-val); font-weight: 600;

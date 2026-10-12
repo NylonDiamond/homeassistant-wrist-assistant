@@ -730,7 +730,7 @@ describe("the Control Center card", () => {
     // its own title line goes with the chip, so only the rows this file can
     // see are named here.
     for (const label of ["Kind", "Value line", "State",
-      "Symbol", "Symbol when off", "Color", "Tint", "Status text", "On press", "Target"]) {
+      "<span>Icon</span>", "Icon when off", "Color", "Tint", "Status text", "On press", "Target"]) {
       expect(markup, label).toContain(label);
     }
     // The action row is a press in Control Center, never a tap on a face.
@@ -755,8 +755,8 @@ describe("the Control Center card", () => {
     // the Target row's `entityState` chip, and "Color" a piece of a color
     // attribute, so those two are looked for by their hints.
     const order = ["Kind", "On press", "Target",
-      "The name on the tile", "Value line", "What the toggle reads", "Symbol",
-      "Symbol when off", "One color paints the tint", "Tint", "Status text"];
+      "The name on the tile", "Value line", "What the toggle reads", "<span>Icon</span>",
+      "Icon when off", "One color paints the tint", "Tint", "Status text"];
     const at = order.map((label) => markup.indexOf(label));
     expect(at.filter((i) => i < 0), order.filter((_, i) => at[i]! < 0).join(", ")).toEqual([]);
     expect(at, order.join(" < ")).toEqual([...at].sort((a, b) => a - b));
@@ -792,8 +792,8 @@ describe("the Control Center card", () => {
     cfg.control!.action = { type: "runScene", entityId: "scene.movie", displayName: "Movie", domain: "scene" };
     const markup = flatten(controlCard(host(cfg)));
     expect(markup).toContain("acts as a button");
-    // A button has no state and no off symbol, so neither row is offered.
-    expect(markup).not.toContain("Symbol when off");
+    // A button has no state and no off icon, so neither row is offered.
+    expect(markup).not.toContain("Icon when off");
   });
 
   it("draws the mock tile from the resolver once there is a context to resolve in", () => {

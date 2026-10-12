@@ -718,7 +718,7 @@ function renderRowCard(host: StatusPagesViewHost, page: JsonObject, row: JsonObj
     parts.push(segField("Alignment", r.headerAlignment ?? "leading", statusEnumChoices("HeaderAlignment"), (v) => set("headerAlignment", v)));
   } else {
     parts.push(html`<div class="ts-stack">${symbolField({ icons: host.icons, symbols: host.symbols }, r.iconName,
-      (v) => set("iconName", v, `row:${id}:icon`), `sp:icon:${id}`, undefined, "Icon", false)}</div>`);
+      (v) => set("iconName", v, `row:${id}:icon`), `sp:icon:${id}`)}</div>`);
   }
   if (r.rowType === "entity") {
     parts.push(html`<div class="ts-stack">${entityField({ hass: host.hass }, "Entity", refOf(host.hass, r.entityId), (ref) => {

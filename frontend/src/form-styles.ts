@@ -574,14 +574,67 @@ export const formEntityStyles = css`
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em;
     }
 
-    /* Symbol picker. Its open button sits beside the name box as a real
-       button: drawn as words under the box it read as a label, and the
-       picker looked missing. */
-    .sym-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
-    .sym-row > input { flex: 1; min-width: 0; }
-    button.small.sym-toggle { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; font-size: 12px; white-space: nowrap; }
-    button.small.sym-toggle svg { width: 13px; height: 13px; flex: none; }
-    button.small.sym-toggle.on { background: var(--wa-hover); border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
+    /* Icon field, drawn the way Home Assistant draws its own: a box showing
+       the chosen glyph and its name, with a caret, and a list that drops
+       open under it. The list spans the whole row, label column included,
+       and sits in the flow rather than floating, so no card or popover can
+       cut it off. The box is the height of a text box, so the label beside
+       it and the rows under it never move when one swaps for the other. */
+    .field.sym-field.no-label { grid-template-columns: minmax(0, 1fr); }
+    .sym-line-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .sym-box {
+      flex: 1; min-width: 0; display: flex; align-items: center; height: 30px; border-radius: 7px;
+      background: var(--wa-field); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
+      transition: box-shadow .12s ease-out;
+    }
+    .sym-box:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
+    .sym-box.open { box-shadow: inset 0 0 0 1px var(--wa-accent), var(--wa-ring); }
+    button.sym-pick {
+      flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 8px;
+      font: inherit; font-size: 12.5px; text-align: left; padding: 0 8px 0 4px; border: 0; border-radius: 7px;
+      background: none; color: var(--wa-ink); cursor: pointer;
+    }
+    button.sym-pick:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--wa-accent); }
+    .sym-now {
+      flex: none; width: 22px; height: 22px; border-radius: 5px; display: grid; place-items: center;
+      background: color-mix(in srgb, var(--wa-ink) 9%, transparent); color: var(--wa-ink);
+    }
+    .sym-now svg { width: 16px; height: 16px; display: block; }
+    .sym-now svg path { fill: currentColor; fill-opacity: 1; }
+    .sym-now.none { color: var(--wa-muted); }
+    .sym-now.none svg.ui-icon { width: 13px; height: 13px; }
+    .sym-now.none svg.ui-icon path { fill: none; }
+    .sym-now-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sym-now-name.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .sym-now-name.empty { color: var(--wa-muted); }
+    .sym-caret { flex: none; display: grid; place-items: center; color: var(--wa-muted); transition: transform .12s ease-out; }
+    .sym-caret svg { width: 13px; height: 13px; display: block; }
+    .sym-box.open .sym-caret { transform: rotate(180deg); color: var(--wa-accent); }
+    button.sym-clear {
+      flex: none; width: 24px; height: 24px; margin-right: 3px; display: grid; place-items: center;
+      padding: 0; border: none; border-radius: 5px; background: none; color: var(--wa-muted); cursor: pointer;
+    }
+    button.small.sym-source { flex: none; height: 30px; padding: 0 10px; font-size: 12px; white-space: nowrap; }
+    button.sym-clear:hover { background: var(--wa-panel); color: var(--wa-ink); }
+    button.sym-clear svg { width: 12px; height: 12px; display: block; }
+    .sym-field > .sym-menu {
+      grid-column: 1 / -1; margin: 2px 0 4px; padding: 8px; border-radius: 10px;
+      border: 1px solid var(--wa-line-strong, var(--wa-line)); background: var(--wa-raised, var(--wa-card));
+      box-shadow: 0 10px 28px rgba(0,0,0,.22);
+    }
+    /* One row per icon in the list: the glyph, then its name, like Home
+       Assistant's own list. The picked one wears the card's hue. */
+    .sym-list { display: flex; flex-direction: column; gap: 1px; }
+    .sym-list + .sym-list { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--wa-line); }
+    /* The well's own frame would be a box in a box inside the dropdown. */
+    .sym-menu .sym-well { padding: 2px; border: 0; border-radius: 0; background: none; box-shadow: none; }
+    button.sym.sym-line {
+      aspect-ratio: auto; justify-content: flex-start; gap: 12px; width: 100%; min-height: 34px; padding: 4px 8px;
+      font: inherit; text-align: left;
+    }
+    button.sym.sym-line .sym-glyph { flex: none; }
+    .sym-line-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+    button.sym.sym-line:active { transform: none; }
     /* The browser: a search bar, then a framed well that scrolls, then a
        quiet count. Tiles are glyphs only, square, and the picked one wears
        the hue of the card it is in (--wa-sec), like the card's other marks. */
@@ -598,7 +651,7 @@ export const formEntityStyles = css`
     .sym-search > input[type=search]::placeholder { color: var(--wa-muted); }
     .sym-bar > select.sym-set { flex: none; max-width: 46%; height: 32px; border-radius: 9px; font-size: 12.5px; }
     .sym-well {
-      position: relative; max-height: 292px; overflow-y: auto; overscroll-behavior: contain;
+      position: relative; max-height: 320px; overflow-y: auto; overscroll-behavior: contain;
       padding: 8px; border-radius: 12px; border: 1px solid var(--wa-line);
       background: color-mix(in srgb, var(--wa-panel) 55%, transparent);
       box-shadow: inset 0 1px 2px color-mix(in srgb, #000 18%, transparent);

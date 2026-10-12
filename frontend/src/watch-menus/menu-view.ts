@@ -1242,7 +1242,7 @@ function renderSlotInspector(host: MenusViewHost, ref: MenuListRef, slot: JsonOb
   </fieldset>`;
   const lookBody = html`<fieldset class="me-body" ?disabled=${host.busy} aria-label="Look">
     <div class="ts-stack">${symbolField({ icons: host.icons, symbols: host.symbols }, typeof slot.icon === "string" ? slot.icon : "",
-      (v) => host.edit((d) => setWatchMenuSlotIcon(d, ref, id, v), `slot:${id}:icon`), `me:icon:${id}`, undefined, "Icon", false)}</div>
+      (v) => host.edit((d) => setWatchMenuSlotIcon(d, ref, id, v), `slot:${id}:icon`), `me:icon:${id}`)}</div>
     <div class="ts-no-alpha">${colorField("Color", typeof slot.color === "string" ? slot.color : undefined,
       (v) => { if (v !== undefined) host.edit((d) => setWatchMenuSlotColor(d, ref, id, v), `slot:${id}:color`); }, false, def?.color)}</div>
   </fieldset>`;

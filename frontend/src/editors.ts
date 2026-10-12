@@ -1861,9 +1861,9 @@ export function symbolCount(shown: number, matches: number, searching: boolean, 
   return matches === 1 ? "1 symbol matches." : `${matches} symbols match.`;
 }
 
-/** One glyph in the grid. The name is the tooltip and the accessible name,
- * not a caption: SF names run long and wrapped mid-word under every tile. It
- * shows as text only when there is no glyph to draw (no icon pack). */
+/** One glyph in the recent strip. The name is the tooltip and the accessible
+ * name, not a caption: SF names run long and wrapped mid-word under every
+ * tile. It shows as text only when there is no glyph to draw (no icon pack). */
 function symbolTile(host: SymbolFieldHost, name: string, selected: boolean, pick: (n: string) => void): TemplateResult {
   // The color passed here is overridden by CSS `currentColor`, which wins over
   // the presentation attribute the provider writes, so tiles follow the theme.
@@ -1876,68 +1876,127 @@ function symbolTile(host: SymbolFieldHost, name: string, selected: boolean, pick
   </button>`;
 }
 
-/** The search box with its magnifier, shared by both icon sets. */
-function symbolSearch(browser: EditorHost["symbols"], key: string, query: string, placeholder: string): TemplateResult {
+/** One row of the dropdown list: the glyph, then its name, the way Home
+ * Assistant's own icon picker lists them. A row keeps the `sym` class of the
+ * old grid tile, which is what a host listening for a pick looks for. */
+function symbolLine(host: SymbolFieldHost, name: string, selected: boolean, pick: (n: string) => void, text = name): TemplateResult {
+  const glyph = host.icons.render(name, 20, "#FFFFFF");
+  return html`<button type="button" role="option" class="sym sym-line ${selected ? "on" : ""}" title=${name}
+    aria-selected=${selected ? "true" : "false"} @click=${() => pick(name)}>
+    <span class="sym-glyph">${glyph ?? nothing}</span>
+    <span class="sym-line-name mono">${text}</span>
+  </button>`;
+}
+
+/** The search box with its magnifier, shared by both icon sets. Enter takes
+ * what is typed, like the "Add custom item" of Home Assistant's picker. */
+function symbolSearch(browser: EditorHost["symbols"], key: string, query: string, placeholder: string, enter: (typed: string) => void): TemplateResult {
   return html`<label class="sym-search">${uiIcon("search")}
-    <input type="search" placeholder=${placeholder} aria-label=${placeholder} .value=${query}
-      @input=${onInput((v) => browser.setQuery(key, v))} />
+    <input type="search" placeholder=${placeholder} aria-label=${placeholder} .value=${query} autocomplete="off" spellcheck="false"
+      @input=${onInput((v) => browser.setQuery(key, v))}
+      @keydown=${(e: KeyboardEvent) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        enter((e.target as HTMLInputElement).value);
+      }} />
   </label>`;
 }
 
-/** The framed, scrolling well: the recent row (one line, cut to what fits)
- * over the full grid. Without an icon pack the tiles carry names instead of
- * glyphs, so the well widens its columns to fit them. */
+/** The framed, scrolling list: the recent strip (one line, cut to what fits)
+ * over a row per icon. `custom` is the typed name offered as its own row when
+ * the search does not already list it. */
 function symbolWell(
   host: SymbolFieldHost,
   recent: readonly string[],
   shown: readonly string[],
   current: string,
   pick: (n: string) => void,
+  custom: TemplateResult | typeof nothing,
 ): TemplateResult {
   return html`<div class="sym-well ${host.icons.available() ? "" : "named"}">
     ${recent.length === 0 ? nothing : html`<div class="sym-sec">Recent</div>
       <div class="sym-grid recent">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>
       <div class="sym-sec">All</div>`}
-    <div class="sym-grid">${shown.map((n) => symbolTile(host, n, n === current, pick))}</div>
+    ${custom}
+    <div class="sym-list" role="listbox">${shown.map((n) => symbolLine(host, n, n === current, pick))}</div>
   </div>`;
 }
 
-/**
- * A name field plus a searchable grid of glyphs. Stores the canonical Apple
- * name, never the Home Assistant asset name.
- *
- * With `setPath` given, the field also offers Material Design icons. Those are
- * stored as the literal name `mdi:flash` in the symbol, and the glyph's own SVG
- * path alongside it, because the watch has no MDI catalogue to look a name up
- * in. The icon layer keeps it on the layer and a rule's `setIcon` on the
- * change; the inline symbol has nowhere to keep one, so it stays SF Symbols.
- *
- * `defaultOpen` is whether the grid shows before anyone has touched this
- * field. A layer's symbol is most of what the layer is, so its grid starts
- * open; a symbol that is one row of a long properties sheet passes false.
- *
- * `typable` false drops the name box and keeps only the Browse icons button,
- * for a host that already shows the chosen glyph and its name elsewhere (the
- * page editor's tile header).
- */
 /** What the symbol field reads from its host: the provider that draws and
  * lists the glyphs, and the browser that keeps what is open, typed and recent.
  * Narrower than `EditorHost`, so the page editor can hand in its own two. */
 export type SymbolFieldHost = Pick<EditorHost, "icons" | "symbols">;
 
+export interface SymbolFieldOptions {
+  /** Where a Material Design pick puts its SVG path. Given, the dropdown also
+   * offers Material Design icons; without it the field stays SF-only. */
+  setPath?: (d: string | undefined) => void;
+  /** The row's title. Empty drops the title, for a host that already names
+   * the field. */
+  label?: string;
+  /** Whether the list shows before anyone has touched this field. Only a
+   * field that a click just asked for (a state's icon) starts open. */
+  defaultOpen?: boolean;
+  /** False drops the x, for a host with its own way back to no icon (the
+   * tile's No icon and Default chips) or with no such thing as none. */
+  clearable?: boolean;
+  /** What the box says, and the glyph it shows, while the name is empty: a
+   * default the watch draws in its place, say. */
+  emptyText?: string;
+  emptyGlyph?: string;
+  /** A control at the end of the box's row, such as a value's Source button. */
+  after?: TemplateResult;
+}
+
+/** The one icon dropdown open right now, and how to shut it. One at a time,
+ * like any menu: opening a second shuts the first. */
+let openSymbolMenu: { key: string; close: () => void } | undefined;
+let symbolMenuWired = false;
+
+/**
+ * A click anywhere outside the open dropdown shuts it. A click, not a press:
+ * the list sits in the flow, so shutting it on the press would pull the rows
+ * under it upward before the release, and the click would land on whatever
+ * moved there. Matched by the field's key rather than its element, so a
+ * redraw that replaces the element does not count as outside.
+ */
+function wireSymbolMenu(): void {
+  if (symbolMenuWired || typeof window === "undefined") return;
+  symbolMenuWired = true;
+  window.addEventListener("click", (e) => {
+    const menu = openSymbolMenu;
+    if (menu === undefined) return;
+    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.dataset.symKey === menu.key);
+    if (inside) return;
+    openSymbolMenu = undefined;
+    menu.close();
+  }, true);
+}
+
+/**
+ * An icon field the way Home Assistant draws one: a box that shows the chosen
+ * icon and its name, and a list that drops open under it with a search box on
+ * top. Stores the canonical Apple name, never the Home Assistant asset name.
+ *
+ * With `setPath` given, the list also offers Material Design icons. Those are
+ * stored as the literal name `mdi:flash` in the symbol, and the glyph's own SVG
+ * path alongside it, because the watch has no MDI catalogue to look a name up
+ * in. The icon layer keeps it on the layer and a rule's `setIcon` on the
+ * change; the inline symbol has nowhere to keep one, so it stays SF Symbols.
+ *
+ * A name the lists do not hold is typed into the search box and taken with
+ * Enter or its own "Use" row, the way Home Assistant adds a custom item.
+ */
 export function symbolField(
   host: SymbolFieldHost,
   symbol: string,
   set: (v: string) => void,
   key: string,
-  setPath?: (d: string | undefined) => void,
-  label = "Symbol",
-  defaultOpen = true,
-  typable = true,
+  opts: SymbolFieldOptions = {},
 ): TemplateResult {
+  const { setPath, label = "Icon", defaultOpen = false, clearable = true } = opts;
   const browser = host.symbols;
-  // Without a name box the grid is the only way to choose, so it never shuts.
-  const open = !typable || browser.isOpen(key, defaultOpen);
+  const open = browser.isOpen(key, defaultOpen);
   const query = browser.query(key);
   const listed = host.icons.names();
   const pack = listed ?? [];
@@ -1947,104 +2006,159 @@ export function symbolField(
   const offersMdi = setPath !== undefined;
   const showing: SymbolPack = offersMdi ? (browser.pack(key) ?? (isMdiName ? "mdi" : "sf")) : "sf";
   const missing = symbolIsMissing(current, known);
-  const pick = (name: string) => {
+  // Asked for only when it is needed: the first ask loads the whole catalogue.
+  const mdiNames = offersMdi && (isMdiName || (open && showing === "mdi")) ? host.icons.mdiNames?.() : undefined;
+
+  const close = () => {
+    if (openSymbolMenu?.key === key) openSymbolMenu = undefined;
+    browser.close(key, defaultOpen);
+  };
+  // `note` false for a typed name nobody can vouch for: it only joins the
+  // recents list once it is known to be real, so a half finished name never
+  // sticks around as a tile.
+  const pick = (name: string, note = true) => {
     set(name);
     // A picked SF Symbol drops any path the layer was carrying; a picked MDI
     // icon brings its own. Same undo key as the symbol itself, so the pair is
     // one step.
     setPath?.(name.startsWith(MDI_PREFIX) ? host.icons.mdiPath?.(name) : undefined);
-    browser.noteUsed(name);
+    if (note) browser.noteUsed(name);
+    close();
   };
-  // A name typed by hand: an `mdi:` one gets its path filled in when the
-  // catalogue knows it, and is left without one when it does not, which the
-  // resolver draws as a question mark rather than as nothing.
-  const typed = (v: string) => {
-    set(v);
-    if (!offersMdi) return;
-    const name = v.trim();
-    setPath?.(name.startsWith(MDI_PREFIX) ? host.icons.mdiPath?.(name) : undefined);
+  // A typed name in the catalogue showing: an `mdi:` one gets its prefix and,
+  // when the catalogue knows it, its path; one it does not know is kept
+  // without a path, which the resolver draws as a question mark rather than
+  // as nothing.
+  const typedName = (typed: string) => {
+    const name = typed.trim();
+    return showing === "mdi" && name !== "" && !name.startsWith(MDI_PREFIX) ? MDI_PREFIX + name : name;
   };
+  const isReal = (name: string) =>
+    name.startsWith(MDI_PREFIX) ? host.icons.mdiPath?.(name) !== undefined : known.size === 0 || known.has(name);
 
-  let browsePane: TemplateResult | typeof nothing = nothing;
-  if (open && showing === "mdi") {
-    const names = host.icons.mdiNames?.();
-    const matches = searchMdi(names ?? [], query);
-    const shown = matches.slice(0, SYMBOL_GRID_LIMIT);
-    const recent = browser.recent.filter((s) => s.startsWith(MDI_PREFIX));
-    browsePane = html`<div class="sym-browse">
-      ${packToggle(browser, key, showing)}
-      <div class="sym-bar">
-        ${symbolSearch(browser, key, query, "Search Material Design icons")}
-      </div>
-      ${symbolWell(host, recent, shown, current, pick)}
-      ${names === undefined
+  let menu: TemplateResult | typeof nothing = nothing;
+  if (open) {
+    let shown: string[];
+    let matches: string[];
+    let recent: string[];
+    let foot: TemplateResult | typeof nothing;
+    let notes: TemplateResult | typeof nothing = nothing;
+    let category: TemplateResult | typeof nothing = nothing;
+    if (showing === "mdi") {
+      matches = searchMdi(mdiNames ?? [], query);
+      shown = matches.slice(0, SYMBOL_GRID_LIMIT);
+      recent = browser.recent.filter((s) => s.startsWith(MDI_PREFIX));
+      foot = mdiNames === undefined
         ? html`<div class="hint keep">Loading the Material Design catalogue.</div>`
         : matches.length === 0
-          ? html`<div class="hint keep">Nothing matches that search.${typable ? html` Any <code>mdi:</code> name can still be typed above.` : nothing}</div>`
+          ? html`<div class="hint keep">Nothing matches that search.</div>`
           // Always the searching wording: the MDI set is thousands of names
-          // deep and the grid never shows all of them, so "N available" would
+          // deep and the list never shows all of them, so "N available" would
           // claim more than is on screen even with the box empty.
-          : html`<div class="hint keep sym-count">${symbolCount(shown.length, matches.length, true, names.length)}</div>`}
-      ${names !== undefined && isMdiName && !names.includes(current)
-        ? html`<div class="hint warn">There is no <code>${current}</code> in this build's Material Design set, so the watch draws a question mark.</div>`
-        : nothing}
-    </div>`;
-  } else if (open) {
-    const category = browser.category(key);
-    const { pool, matches } = symbolMatches(category, query, pack, known);
-    const shown = pool.fromPack ? matches.slice(0, SYMBOL_GRID_LIMIT) : matches;
-    const sfRecent = browser.recent.filter((s) => !s.startsWith(MDI_PREFIX));
-    const recent = known.size === 0 ? sfRecent : sfRecent.filter((s) => known.has(s));
-    browsePane = html`<div class="sym-browse">
-      ${offersMdi ? packToggle(browser, key, showing) : nothing}
-      <div class="sym-bar">
-        ${symbolSearch(browser, key, query, "Search icons")}
-        <select class="sym-set" aria-label="Icon set" @change=${onInput((v) => browser.setCategory(key, v))}>
-          ${symbolChoicesOf(known).map(
-            (c) => html`<option value=${c.value} ?selected=${c.value === category}>${c.label}</option>`
-          )}
-        </select>
-      </div>
-      ${symbolWell(host, recent, shown, current, pick)}
-      ${matches.length === 0
-        ? html`<div class="hint keep">Nothing matches that search.${typable ? " Any name can still be typed above." : ""}</div>`
-        : html`<div class="hint keep sym-count">
-            ${symbolCount(shown.length, matches.length, query.trim() !== "", reachableCount(pack))}
-          </div>`}
-      ${!host.icons.available()
+          : html`<div class="hint keep sym-count">${symbolCount(shown.length, matches.length, true, mdiNames.length)}</div>`;
+    } else {
+      const chosen = browser.category(key);
+      const found = symbolMatches(chosen, query, pack, known);
+      matches = found.matches;
+      shown = found.pool.fromPack ? matches.slice(0, SYMBOL_GRID_LIMIT) : matches;
+      const sfRecent = browser.recent.filter((s) => !s.startsWith(MDI_PREFIX));
+      recent = known.size === 0 ? sfRecent : sfRecent.filter((s) => known.has(s));
+      category = html`<select class="sym-set" aria-label="Icon group" @change=${onInput((v) => browser.setCategory(key, v))}>
+        ${symbolChoicesOf(known).map((c) => html`<option value=${c.value} ?selected=${c.value === chosen}>${c.label}</option>`)}
+      </select>`;
+      foot = matches.length === 0
+        ? html`<div class="hint keep">Nothing matches that search.</div>`
+        : html`<div class="hint keep sym-count">${symbolCount(shown.length, matches.length, query.trim() !== "", reachableCount(pack))}</div>`;
+      notes = !host.icons.available()
         ? html`<div class="hint warn">No icon pack is installed, so the list shows names without pictures. Install the Cupertino Icons frontend to see them.</div>`
         : listed !== undefined && listed.length === 0
-          ? html`<div class="hint keep">The icon pack does not list its symbols, so search covers the built-in set only.${typable ? " Any other name can still be typed above." : ""}</div>`
-          : nothing}
+          ? html`<div class="hint keep">The icon pack does not list its symbols, so search covers the built-in set only.</div>`
+          : nothing;
+    }
+    // While searching, recents are noise: the list under them is the answer.
+    if (query.trim() !== "") recent = [];
+    const typed = typedName(query);
+    const custom = typed === "" || matches.includes(typed)
+      ? nothing
+      : html`<div class="sym-list">${symbolLine(host, typed, typed === current, (n) => pick(n, isReal(n)), `Use "${typed}"`)}</div>`;
+    // Enter takes the name typed when the list has it, then the best match,
+    // then the typed name itself.
+    const enter = (text: string) => {
+      const name = typedName(text);
+      if (name === "") return;
+      const best = matches.includes(name) ? name : text === query ? matches[0] : undefined;
+      if (best !== undefined) pick(best);
+      else pick(name, isReal(name));
+    };
+    menu = html`<div class="sym-browse sym-menu"
+      @mousedown=${(e: MouseEvent) => {
+        // Keeps focus in the search box for a press on a row or a tab, so the
+        // keyboard stays where the typing is. The box and the group menu take
+        // their own focus.
+        if (!(e.target instanceof Element) || e.target.closest("input, select") === null) e.preventDefault();
+      }}>
+      ${offersMdi ? packToggle(browser, key, showing) : nothing}
+      <div class="sym-bar">
+        ${symbolSearch(browser, key, query, showing === "mdi" ? "Search Material Design icons, or type a name" : "Search icons, or type a name", enter)}
+        ${category}
+      </div>
+      ${symbolWell(host, recent, shown, current, pick, custom)}
+      ${foot}
+      ${notes}
     </div>`;
   }
 
-  const toggle = html`<button type="button" class="small sym-toggle ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
-    @click=${() => browser.toggle(key, defaultOpen)}>${uiIcon("grid")}${open ? "Hide icons" : "Browse icons"}</button>`;
-  if (!typable) {
-    return html`
-    ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The watch still draws it if the name is a real SF Symbol.</div>` : nothing}
-    ${browsePane}`;
-  }
+  const toggleMenu = (e: Event) => {
+    if (open) {
+      close();
+      return;
+    }
+    if (openSymbolMenu !== undefined && openSymbolMenu.key !== key) openSymbolMenu.close();
+    wireSymbolMenu();
+    openSymbolMenu = { key, close: () => browser.close(key, defaultOpen) };
+    browser.open(key, defaultOpen);
+    const anchor = (e.currentTarget as HTMLElement).closest(".sym-field");
+    requestAnimationFrame(() => anchor?.querySelector<HTMLInputElement>(".sym-search input")?.focus());
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || !open) return;
+    // Swallowed so it shuts the list and not the popover around it.
+    e.preventDefault();
+    e.stopPropagation();
+    const field = (e.currentTarget as HTMLElement);
+    close();
+    requestAnimationFrame(() => field.querySelector<HTMLButtonElement>("button.sym-pick")?.focus());
+  };
 
-  return html`
-    <label class="field"><span>${label}</span>
-      <div class="sym-row">
-      <input type="text" class="mono" .value=${symbol} placeholder="lightbulb.fill"
-        @input=${onInput(typed)} @change=${onInput((v) => {
-          // A typed name only joins the recents list once it is known to be
-          // real, so a half finished name never sticks around as a tile.
-          const name = v.trim();
-          if (name.startsWith(MDI_PREFIX)) {
-            if (host.icons.mdiPath?.(name) !== undefined) browser.noteUsed(v);
-          } else if (known.size === 0 || known.has(name)) {
-            browser.noteUsed(v);
-          }
-        })} />
-      ${toggle}
-      </div></label>
-    ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The watch still draws it if the name is a real SF Symbol.</div>` : nothing}
-    ${browsePane}`;
+  const empty = current === "";
+  const shownName = empty ? opts.emptyGlyph : current;
+  // A Custom SVG layer's marker is not a name anything can draw.
+  const glyph = shownName === undefined || shownName === CUSTOM_SVG_SYMBOL ? undefined : host.icons.render(shownName, 18, "#FFFFFF");
+  const boxText = empty ? (opts.emptyText ?? "Choose an icon") : current;
+
+  return html`<div class="field sym-field ${open ? "open" : ""} ${label === "" ? "no-label" : ""}" data-sym-key=${key} @keydown=${onKey}>
+    ${label === "" ? nothing : html`<span>${label}</span>`}
+    <div class="sym-line-row">
+      <div class="sym-box ${open ? "open" : ""}">
+        <button type="button" class="sym-pick" aria-haspopup="listbox" aria-expanded=${open ? "true" : "false"}
+          title=${empty ? boxText : `${current}\nClick to change`} @click=${toggleMenu}>
+          <span class="sym-now ${glyph === undefined ? "none" : ""}">${glyph ?? uiIcon("icon")}</span>
+          <span class="sym-now-name ${empty ? "empty" : "mono"}">${boxText}</span>
+          <span class="sym-caret" aria-hidden="true">${uiIcon("down")}</span>
+        </button>
+        ${clearable && !empty
+          ? html`<button type="button" class="sym-clear" title="Remove icon" aria-label="Remove icon"
+              @click=${() => { set(""); setPath?.(undefined); }}>${uiIcon("close")}</button>`
+          : nothing}
+      </div>
+      ${opts.after ?? nothing}
+    </div>
+    ${menu}
+  </div>
+  ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The watch still draws it if the name is a real SF Symbol.</div>` : nothing}
+  ${mdiNames !== undefined && isMdiName && !mdiNames.includes(current)
+    ? html`<div class="hint warn">There is no <code>${current}</code> in this build's Material Design set, so the watch draws a question mark.</div>`
+    : nothing}`;
 }
 
 /** What the last paste into a layer's Custom SVG box did, by layer id. Not
@@ -2919,7 +3033,21 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
 
   const id = popoverId(opts.key);
   const label = opts.label ?? "Value";
+  // A fixed icon is picked right in the row, from the same box every other
+  // icon field uses. The popover stays one click away, behind Source, for an
+  // icon read from an entity or a value.
+  if (opts.symbol && value.kind.kind === "literal" && !opts.compact) {
+    const k = value.kind;
+    const source = html`<button type="button" class="small sym-source" popovertarget=${id} aria-haspopup="dialog"
+      title="A fixed icon. Click to read the icon from an entity, a template or a shared value instead.">Source</button>`;
+    return html`${symbolField(host, k.value, (v) => set({ ...value, kind: { ...k, value: v } }), `${opts.key}-box`, {
+        setPath: opts.setSymbolPath, label: opts.noLabel ? "" : label, after: source,
+      })}
+      ${valuePopover(host, id, label, value, set, opts)}`;
+  }
   const resolved = opts.showResolved ? host.resolve(value) : undefined;
+  // An icon's chip shows the glyph it resolves to, beside its name.
+  const chipGlyph = opts.symbol && resolved !== undefined && resolved !== "" ? host.icons.render(resolved, 14, "#FFFFFF") : undefined;
   const summary = describeValue(value, describeContext(host));
   // A chip whose summary is an entity's name says so in the entity color. A
   // typed-in number or a template is the author's own words and stays ink.
@@ -2931,6 +3059,7 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
   return html`<div class="field value-chip-field ${opts.compact ? "compact" : ""}">
     ${opts.compact || opts.noLabel ? nothing : html`<span>${label}</span>`}
     <button type="button" class="value-chip ${opts.compact ? "chip-cell" : ""} ${slot ? "slot" : ""}" popovertarget=${id} aria-haspopup="dialog" title=${`${label}: ${summary}. Click to change it.`}>
+      ${chipGlyph === undefined ? nothing : html`<span class="chip-glyph" aria-hidden="true">${chipGlyph}</span>`}
       <span class="chip-text ${namesEntity ? "ent-tok" : ""}">${summary}</span>
       ${resolved === undefined ? nothing : html`<span class="chip-now mono" title="Value right now">${resolved}</span>`}
       <span class="chip-caret" aria-hidden="true">▾</span>
@@ -3175,7 +3304,7 @@ function valueBody(host: EditorHost, value: Value, set: (v: Value) => void, opts
   switch (k.kind) {
     case "literal":
       body = opts.symbol
-        ? symbolField(host, k.value, (v) => setKind({ ...k, value: v }), key, opts.setSymbolPath)
+        ? symbolField(host, k.value, (v) => setKind({ ...k, value: v }), key, { setPath: opts.setSymbolPath })
         : textField("Text", k.value, (v) => setKind({ ...k, value: v }));
       break;
     case "entityState":
@@ -5504,15 +5633,14 @@ function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
       : html`<div class="hint">What the toggle reads to know if it is on. One of <code>on</code>, <code>open</code>, <code>unlocked</code>, <code>home</code>, <code>playing</code>, <code>heat</code> or <code>cool</code> counts as on.</div>`}
     </div>`}
     <div class="fgroup">
-    ${symbolField(host, spec.symbol, (v) => set((c) => { c.symbol = v; }, "symbol"), "control-symbol",
-      undefined, "Symbol", false)}
+    ${symbolField(host, spec.symbol, (v) => set((c) => { c.symbol = v; }, "symbol"), "control-symbol")}
     ${effective === "button"
       ? html`<div class="hint">The icon on the tile.</div>`
       : html`
       ${symbolField(host, spec.symbolOff ?? "", (v) => set((c) => {
         if (v) c.symbolOff = v; else delete c.symbolOff;
-      }, "symboloff"), "control-symbol-off", undefined, "Symbol when off", false)}
-      <div class="hint">The icon on the tile. Symbol when off is drawn while a toggle reads off. Leave it blank to keep the one symbol on both faces.</div>`}
+      }, "symboloff"), "control-symbol-off", { label: "Icon when off" })}
+      <div class="hint">The icon on the tile. Icon when off is drawn while a toggle reads off. Leave it empty to keep the one icon on both faces.</div>`}
     </div>
     <div class="fgroup">
     ${segField("Color", spec.coloring, CHART_COLORINGS, (v) => set((c) => {
@@ -7874,7 +8002,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     case "icon": {
       const drawn = isCustomSvgIcon(el.payload) ? "svg" : "symbol";
       content = html`
-        ${segField("Drawing", drawn, [["symbol", "Symbol"], ["svg", "Custom SVG"]],
+        ${segField("Drawing", drawn, [["symbol", "Icon"], ["svg", "Custom SVG"]],
           (v) => upd((e) => { setIconDrawing((e as typeof el).payload, v); }, "icon-drawing"),
           { titles: {
               symbol: "An SF Symbol or a Material Design icon, by name",
@@ -7884,7 +8012,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           ? customSvgFields(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k))
           : html`
             ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), {
-              noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol`,
+              noFormat: true, showResolved: true, symbol: true, label: "Icon", key: `${key}-symbol`,
               setSymbolPath: (d) => upd((e) => {
                 const p = (e as typeof el).payload;
                 if (d) p.path = d; else delete p.path;
@@ -9550,7 +9678,7 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
           ? customSvgFields(el.payload, (m, k) => upd((e) => { if (e.kind === "icon") m(e.payload); }, k ?? "svg-path"))
           : valueEditor(host, el.payload.symbol,
           (v) => upd((e) => { if (e.kind === "icon") e.payload.symbol = v; }, "symbol"), {
-            noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol`,
+            noFormat: true, showResolved: true, symbol: true, label: "Icon", key: `${key}-symbol`,
             setSymbolPath: (d) => upd((e) => {
               if (e.kind !== "icon") return;
               if (d) e.payload.path = d; else delete e.payload.path;
@@ -10058,7 +10186,7 @@ function inlinePartsEditor(
           @click=${remove}>${uiIcon("delete")}</button>
       </div>
       ${iconPart
-        ? html`${symbolField(host, part.symbol ?? "", (v) => updPart((x) => { x.symbol = v.trim(); }, "symbol"), `inline-part-${part.id}-symbol`, undefined, "Icon")}
+        ? html`${symbolField(host, part.symbol ?? "", (v) => updPart((x) => { x.symbol = v.trim(); }, "symbol"), `inline-part-${part.id}-symbol`)}
           <div class="hint">${index === 0 ? "First in the line, so it draws ahead of the words with a gap, and stays while the line counts down." : "Drawn inside the line, where the part sits. Needs the watch app from 2.8.0."}</div>`
         : html`${valueEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { showResolved: true, label: literalPart ? "Text" : "Shows", key: `inline-part-${part.id}` })}
           ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}`}
@@ -10726,7 +10854,7 @@ function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange)
     } else {
       body = valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), {
         noFormat: ch.kind === "setIcon", symbol: ch.kind === "setIcon", showResolved: true,
-        label: ch.kind === "setIcon" ? "Symbol" : "To", key: `${key}-value`,
+        label: ch.kind === "setIcon" ? "Icon" : "To", key: `${key}-value`,
         // A swapped-in Material Design icon carries its drawing on the change,
         // as the icon layer's own does on the layer. An icon part draws SF
         // Symbols only, so a change aimed at one is not offered the others.

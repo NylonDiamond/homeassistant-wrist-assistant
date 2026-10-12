@@ -102,41 +102,41 @@ function withControl(): CustomComplicationConfig {
   return cfg;
 }
 
-describe("a symbol field that starts shut", () => {
-  it("reads shut for a key nobody has touched, and open for the default", () => {
+describe("an icon field's list", () => {
+  it("reads shut for a key nobody has touched, and open for one that starts open", () => {
     const browser = new SymbolBrowser(() => {});
-    expect(browser.isOpen("control-symbol", false)).toBe(false);
-    expect(browser.isOpen("icon-symbol")).toBe(true);
+    expect(browser.isOpen("control-symbol")).toBe(false);
+    expect(browser.isOpen("state-symbol", true)).toBe(true);
   });
 
   it("opens on a click and shuts again on the next one", () => {
     const browser = new SymbolBrowser(() => {});
-    browser.toggle("control-symbol", false);
-    expect(browser.isOpen("control-symbol", false)).toBe(true);
-    browser.toggle("control-symbol", false);
-    expect(browser.isOpen("control-symbol", false)).toBe(false);
+    browser.toggle("control-symbol");
+    expect(browser.isOpen("control-symbol")).toBe(true);
+    browser.toggle("control-symbol");
+    expect(browser.isOpen("control-symbol")).toBe(false);
   });
 
-  it("leaves a field that starts open working the way it always did", () => {
+  it("leaves a field that starts open working the same way", () => {
     const browser = new SymbolBrowser(() => {});
-    browser.toggle("icon-symbol");
-    expect(browser.isOpen("icon-symbol")).toBe(false);
-    browser.toggle("icon-symbol");
-    expect(browser.isOpen("icon-symbol")).toBe(true);
+    browser.toggle("state-symbol", true);
+    expect(browser.isOpen("state-symbol", true)).toBe(false);
+    browser.toggle("state-symbol", true);
+    expect(browser.isOpen("state-symbol", true)).toBe(true);
   });
 
-  it("keeps each field's grid to itself", () => {
+  it("keeps each field's list to itself", () => {
     const browser = new SymbolBrowser(() => {});
-    browser.toggle("control-symbol", false);
-    expect(browser.isOpen("control-symbol", false)).toBe(true);
-    expect(browser.isOpen("control-symbol-off", false)).toBe(false);
-    expect(browser.isOpen("icon-symbol")).toBe(true);
+    browser.toggle("control-symbol");
+    expect(browser.isOpen("control-symbol")).toBe(true);
+    expect(browser.isOpen("control-symbol-off")).toBe(false);
+    expect(browser.isOpen("state-symbol", true)).toBe(true);
   });
 
   it("tells the change callback, so the field redraws", () => {
     let changes = 0;
     const browser = new SymbolBrowser(() => { changes += 1; });
-    browser.toggle("control-symbol", false);
+    browser.toggle("control-symbol");
     expect(changes).toBe(1);
   });
 });

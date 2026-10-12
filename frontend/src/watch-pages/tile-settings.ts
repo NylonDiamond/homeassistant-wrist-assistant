@@ -1013,11 +1013,6 @@ function renderTileValue(host: TileSettingsHost, r: ReturnType<typeof watchHTTPR
 
 // ── icon and color ───────────────────────────────────────────────────────
 
-/** Set during a click on a symbol grid's tile, so the edit it sends is told
- * apart from typing in the Symbol box (`symbolField` calls one setter for
- * both). */
-let gridPick = false;
-
 /** The names the symbol provider lists, as a set; undefined while they
  * load. */
 function knownSymbols(host: TileSettingsHost): Set<string> | undefined {
@@ -1057,64 +1052,41 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
   const s = watchTileIconSettings(tile);
   const defaults = kindDefaults(host);
   stripFillWhenListed(host);
-  const shown = s.icon === undefined ? defaults.icon : s.icon === "" ? undefined : s.icon;
-  const ink = watchColorEnds(s.color)?.from ?? "#FFFFFF";
-  const glyph = shown === undefined ? undefined : host.icons.render(shown, 26, ink);
   // A rule's style is at its default only with no icon of its own.
   const atDefaultIcon = s.icon === undefined || (host.domainStyle !== true && defaults.icon !== undefined && s.icon === defaults.icon);
 
+  // Every icon comes from the list now, picked or typed into its search, so
+  // each one is a step of its own.
   const setIcon = (name: string) => {
-    const picked = gridPick;
-    gridPick = false;
     const value = storedSymbol(host, name);
     if (knownSymbols(host) === undefined && value.includes(".fill")) host.uiState.set(`${KEY}:fill:${host.tileId.toUpperCase()}`, value);
-    if (picked) {
-      // A pick from the grid is a step of its own, and the box shows the
-      // picked name, not what was typed before it.
-      host.uiState.delete(typedKey(host, "icon"));
-      host.endCoalesce();
-      host.requestUpdate();
-    }
-    commit(host, "icon", (d) => setWatchTileIcon(d, host.pageId, host.tileId, value), { typing: !picked });
+    host.endCoalesce();
+    commit(host, "icon", (d) => setWatchTileIcon(d, host.pageId, host.tileId, value));
   };
   const noIcon = () => commit(host, "icon", (d) => setWatchTileIcon(d, host.pageId, host.tileId, ""));
   const defaultIcon = () => commit(host, "icon", watchTileDefaultIconEdit(host));
 
-  const typedIcon = typed(host, "icon");
-  const what = s.icon === "" ? "No icon" : shown ?? "Default icon";
   const animation = watchChoiceMenu(WATCH_ICON_TAP_ANIMATIONS, s.tapAnimation);
   const unknownAnimation = s.tapAnimationStored !== undefined && s.tapAnimationStored !== s.tapAnimation ? s.tapAnimationStored : undefined;
   return html`
-    <div class="ts-icon-now">
-      <span class="ts-glyph ${s.icon === "" ? "none" : ""}" aria-hidden="true">${s.icon === "" ? uiIcon("close") : glyph ?? html`<span class="ts-glyph-dot"></span>`}</span>
-      <span class="ts-icon-name">${what}${s.icon === undefined ? html`<span class="ts-faint"> (default)</span>` : nothing}</span>
-    </div>
-    <div class="ts-chips" role="group" aria-label="Icon">
+    ${symbolField(
+      { icons: host.icons, symbols: host.symbols },
+      s.icon ?? "",
+      setIcon,
+      `pe:ts:symbol`,
+      // The chips under the box are the way back to none and to the default,
+      // so the box carries no x of its own.
+      {
+        clearable: false,
+        emptyText: s.icon === "" ? "No icon" : defaults.icon === undefined ? "Default" : `Default (${defaults.icon})`,
+        ...(s.icon === undefined && defaults.icon !== undefined ? { emptyGlyph: defaults.icon } : {}),
+      },
+    )}
+    <div class="ts-after" role="group" aria-label="Icon">
       <button type="button" class="pe-chip ${s.icon === "" ? "on" : ""}" aria-pressed=${s.icon === "" ? "true" : "false"} @click=${noIcon}>No icon</button>
       <button type="button" class="pe-chip ${atDefaultIcon && s.icon !== "" ? "on" : ""}" aria-pressed=${atDefaultIcon && s.icon !== "" ? "true" : "false"}
         title=${host.domainStyle === true ? "No icon of its own: the watch draws its default" : defaults.icon === undefined ? "The watch picks the icon" : `The default for this kind of tile: ${defaults.icon}`}
         @click=${defaultIcon}>Default</button>
-    </div>
-    <div class="ts-symbol" @click=${{
-      // On the way down, before the tile's own click handler sets the icon.
-      capture: true,
-      // Let go after the click either way (a task later: a trusted click
-      // runs microtasks between its listeners).
-      handleEvent: (e: Event) => {
-        gridPick = e.target instanceof Element && e.target.closest("button.sym") !== null;
-        if (gridPick) setTimeout(() => { gridPick = false; }, 0);
-      },
-    }}>
-    ${typingField(host, "icon", symbolField(
-      { icons: host.icons, symbols: host.symbols },
-      typedIcon ?? (s.icon ?? ""),
-      setIcon,
-      `pe:ts:symbol`,
-      undefined,
-      "Symbol",
-      false,
-      false,
-    ))}
     </div>
     ${renderTileColor(host, defaults.color)}
     ${host.domainStyle === true ? nothing : renderStateIcons(host)}
@@ -1696,20 +1668,18 @@ function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothi
 
 function renderStateIconPicker(host: TileSettingsHost, state: string, icon: string | undefined): TemplateResult {
   const setting = `stateIcon:${state}`;
-  return html`<div class="ts-nested">${typingField(host, setting, symbolField(
+  // Starts open: a click on the state's Icon button is what asked for it.
+  return html`<div class="ts-nested">${symbolField(
     { icons: host.icons, symbols: host.symbols },
-    typed(host, setting) ?? icon ?? "",
+    icon ?? "",
     (name) => {
       const value = name.trim();
       if (value === "") return;
-      commit(host, setting, (d) => setWatchTileStateIcon(d, host.pageId, host.tileId, state, value), { typing: true });
+      commit(host, setting, (d) => setWatchTileStateIcon(d, host.pageId, host.tileId, state, value));
     },
     `pe:ts:state:${state}`,
-    undefined,
-    "Symbol",
-    true,
-    false,
-  ))}</div>`;
+    { defaultOpen: true, clearable: false },
+  )}</div>`;
 }
 
 function renderStateColorPicker(host: TileSettingsHost, state: string, color: string | undefined): TemplateResult {
@@ -1845,17 +1815,7 @@ export const tileSettingsStyles = css`
   .ts-note { padding-left: calc(var(--wa-lab) + 8px); }
   .ts-faint { color: var(--wa-muted); font-weight: 400; }
 
-  .ts-icon-now { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 0 6px; }
-  .ts-glyph {
-    flex: none; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center;
-    background: #1c1c1e; color: #fff; box-shadow: inset 0 0 0 1px var(--wa-line);
-  }
-  .ts-glyph svg { display: block; }
-  .ts-glyph.none { color: rgba(255, 255, 255, .45); }
-  .ts-glyph.none svg.ui-icon { width: 18px; height: 18px; }
   .ts-glyph-dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, .55); }
-  .ts-icon-name { min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-    overflow-wrap: anywhere; }
   .ts-target-now { padding: 4px 0 2px; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
   .ts-chips, .ts-after { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 6px; }
   .ts-after { padding-left: calc(var(--wa-lab) + 8px); }
