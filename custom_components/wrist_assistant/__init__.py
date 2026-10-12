@@ -440,9 +440,10 @@ async def _deliver_push(
     # One id per send. With no `tag` from the caller it is the tag too, which
     # the relay turns into apns-collapse-id and the phone's local push uses
     # as the notification identifier: a late local ack and the relay's copy
-    # of the same alert then show once, not twice.
+    # of the same alert then show once, not twice. Visible alerts only: a
+    # background push with no tag keeps collapsing by category at the relay.
     push_id = secrets.token_hex(16)
-    if not extra_data.get("tag"):
+    if push_type == "alert" and not extra_data.get("tag"):
         extra_data["tag"] = push_id
     local_push = getattr(data, "local_push", None)
 
