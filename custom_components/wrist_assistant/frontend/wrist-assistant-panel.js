@@ -1326,6 +1326,10 @@ import{a as ss}from"./chunks/chunk-P7FG3CI7.js";import{a as Ui,b as yc,c as xc,d
     /* The picture and the menu leave the title little room: the help goes
        under all three, at the row's full width. */
     .ws-row.has-demo > .hint { grid-column: 2 / -1; grid-row: 3; margin-top: 2px; }
+    /* A tile with a moving picture puts it over the name, so the name keeps
+       the tile's whole width. */
+    button.ws-tile:has(> .ws-tile-glyph.demo) { grid-template-columns: minmax(0, 1fr); justify-items: center; padding: 5px 4px; }
+    button.ws-tile:has(> .ws-tile-glyph.demo) > * { grid-column: 1; grid-row: auto; text-align: center; }
   }
   button.ws-tile {
     --ws-tile-bg: var(--wa-field);
