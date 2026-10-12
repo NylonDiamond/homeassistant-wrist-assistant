@@ -202,13 +202,15 @@ describe("the page's look", () => {
     expect(rule(".ws-top")).toContain("background: var(--wa-bg)");
   });
 
-  it("is centred, the side panel beside the cards, and never wider than the page", () => {
+  it("keeps the side panel at the right edge, the cards centred beside it, and is never wider than the page", () => {
     expect(rule(".ws-cols")).toContain("width: min(720px, 100%); margin: 0 auto");
     const split = rule(".ws-split");
-    expect(split).toContain("width: min(1120px, 100%); margin: 0 auto");
+    expect(split).toContain("width: 100%; margin: 0");
     expect(split).toContain("flex-wrap: wrap");
-    expect(rule(".ws-nav")).toContain("position: sticky");
-    expect(rule(".ws-main")).toContain("flex: 999 1 520px");
+    const nav = rule(".ws-nav");
+    expect(nav).toContain("position: sticky");
+    expect(nav).toContain("order: 2");
+    expect(rule(".ws-main")).toContain("flex: 999 1 520px; max-width: 920px; margin: 0 auto");
     expect(rule(".ws-col")).toContain("min-width: 0; container: xfer / inline-size");
   });
 

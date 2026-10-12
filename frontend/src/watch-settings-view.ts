@@ -1438,27 +1438,29 @@ export const watchSettingsStyles = css`
   /* One column, as wide as the dialog the page replaced: a home with no
      watch yet, or a watch whose settings live in another home. */
   .ws-cols { box-sizing: border-box; width: min(720px, 100%); margin: 0 auto; padding: 16px 16px 48px; display: grid; gap: 8px; }
-  /* The side panel and the group's cards beside it, centred. On a narrow
-     page the panel goes over the cards and its groups wrap as chips. */
+  /* The side panel at the page's right edge, as the page editor keeps its
+     inspector, and the group's cards centred in the room left of it. The
+     panel comes first in the page, so on a narrow page it goes over the
+     cards and its groups wrap as chips. */
   .ws-split {
-    box-sizing: border-box; width: min(1120px, 100%); margin: 0 auto; padding: 16px 16px 48px;
+    box-sizing: border-box; width: 100%; margin: 0; padding: 16px 16px 48px;
     display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 24px;
   }
   @media (max-width: 640px) {
     .ws-cols, .ws-split { padding: 12px 12px 32px; }
   }
   /* The panel stays in view while a long group scrolls, just under the bar. */
-  .ws-nav { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 64px; }
+  .ws-nav { flex: 0 0 248px; order: 2; min-width: 0; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 64px; }
   .ws-search {
-    display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; box-sizing: border-box;
+    display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px; box-sizing: border-box;
     border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-field); color: var(--wa-muted);
   }
   .ws-search:focus-within { border-color: color-mix(in srgb, var(--wa-ink) 45%, var(--wa-line-strong)); }
   .ws-search svg { width: 15px; height: 15px; flex: none; }
-  .ws-search input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; color: var(--wa-ink); font: inherit; font-size: 13px; }
+  .ws-search input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; color: var(--wa-ink); font: inherit; font-size: 14px; }
   .ws-nav-list { display: flex; flex-direction: column; gap: 2px; }
   button.ws-nav-item {
-    font: inherit; display: flex; align-items: center; gap: 10px; min-height: 36px; margin: 0; padding: 0 10px;
+    font: inherit; display: flex; align-items: center; gap: 10px; min-height: 40px; margin: 0; padding: 0 10px;
     border: 0; border-radius: 8px; background: transparent; color: var(--wa-label); text-align: left; cursor: pointer;
   }
   button.ws-nav-item:hover { background: color-mix(in srgb, var(--wa-ink) 6%, transparent); color: var(--wa-ink); }
@@ -1468,23 +1470,25 @@ export const watchSettingsStyles = css`
   }
   button.ws-nav-item:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--wa-ink) 60%, transparent); }
   .ws-nav-ic {
-    width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 6px;
+    width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 7px;
     color: var(--ws-hue); background: color-mix(in srgb, var(--ws-hue) 15%, transparent);
   }
-  .ws-nav-ic svg { width: 14px; height: 14px; }
-  .ws-nav-t { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ws-nav-ic svg { width: 16px; height: 16px; }
+  .ws-nav-t { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   button.ws-nav-item.on .ws-nav-t { font-weight: 600; }
   .ws-nav-n {
     flex: none; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; display: grid; place-items: center;
     font-size: 11px; font-weight: 600; color: var(--wa-ink); background: color-mix(in srgb, var(--wa-hue-orange) 30%, transparent);
   }
-  @container wspage (max-width: 760px) {
-    .ws-nav { position: static; flex-basis: 100%; }
+  @container wspage (max-width: 840px) {
+    .ws-nav { position: static; flex-basis: 100%; order: 0; }
     .ws-nav-list { flex-direction: row; flex-wrap: wrap; gap: 4px; }
-    button.ws-nav-item { min-height: 32px; box-shadow: inset 0 0 0 1px var(--wa-line); }
+    button.ws-nav-item { min-height: 34px; box-shadow: inset 0 0 0 1px var(--wa-line); }
   }
-  .ws-main { flex: 999 1 520px; }
-  .ws-main > .ws-blurb { margin: 0 2px 2px; font-size: 13px; line-height: 1.4; color: var(--wa-muted); }
+  /* The cards keep a reading width, and their auto margins take the room
+     left of the panel, so they sit in its middle. */
+  .ws-main { flex: 999 1 520px; max-width: 920px; margin: 0 auto; }
+  .ws-main > .ws-blurb { margin: 0 2px 2px; font-size: 14px; line-height: 1.4; color: var(--wa-muted); }
   .ws-main > button.ws-found {
     align-self: flex-start; font: inherit; margin: 10px 2px 0; padding: 0; border: 0; background: none; cursor: pointer;
     font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--wa-muted);
@@ -1498,7 +1502,7 @@ export const watchSettingsStyles = css`
      is wider than the inspector's: these titles are whole phrases with an
      icon in front. The help column is set again beside it, because the
      panel's is worked out from the panel's own title width. */
-  .ws-body { --wa-lab: 172px; --wa-col: 180px; gap: 8px; }
+  .ws-body { --wa-lab: 172px; --wa-col: 180px; gap: 10px; }
   .ws-body > .sec { margin: 0; }
   @container xfer (max-width: 440px) {
     .ws-body .sec { --wa-lab: 122px; --wa-col: 130px; }
@@ -1508,64 +1512,67 @@ export const watchSettingsStyles = css`
      symbol file arrives. The symbol provider paints white; the chip's color
      wins here. */
   .ws-body .ws-ic {
-    width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 6px; pointer-events: none;
+    width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 7px; pointer-events: none;
     color: var(--ws-hue, var(--wa-muted)); background: color-mix(in srgb, var(--ws-hue, var(--wa-muted)) 15%, transparent);
   }
   .ws-body :is(.ws-ic, .ws-tile-glyph) svg { display: block; overflow: visible; }
-  .ws-body .ws-ic svg { width: 13px; height: 13px; }
+  .ws-body .ws-ic svg { width: 15px; height: 15px; }
   .ws-body :is(.ws-ic, .ws-tile-glyph) svg:not(.ws-pv, .ws-demo) path { fill: currentColor; fill-opacity: 1; }
   /* Settings are a list: a hairline between each, none over the first. */
-  .ws-body :is(.sec-b, .fgroup) > :is(.ws-row, .ws-tile-row) { padding: 7px 0; border-top: 1px solid var(--wa-line); }
+  .ws-body :is(.sec-b, .fgroup) > :is(.ws-row, .ws-tile-row) { padding: 10px 0; border-top: 1px solid var(--wa-line); }
   .ws-body :is(.sec-b, .fgroup) > :is(.ws-row, .ws-tile-row):first-child { border-top: 0; padding-top: 3px; }
   .ws-body .sec-b > :is(.ws-row, .ws-tile-row):last-child { padding-bottom: 2px; }
   .ws-body .fgroup { margin: 0 -8px 8px; padding: 2px 8px; }
   .ws-body .fgroup > :last-child { padding-bottom: 5px; }
   /* Help reads as a quiet second line, upright. */
-  .ws-body .sec[data-help] > .sec-b :is(.ws-row, .ws-head) > .hint { padding: 0; margin: 0; font-style: normal !important; font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
+  .ws-body .sec[data-help] > .sec-b :is(.ws-row, .ws-head) > .hint { padding: 0; margin: 0; font-style: normal !important; font-size: 12.5px; line-height: 1.4; color: var(--wa-muted); }
   /* A row drawn by the panel's own field: the chip, then the title with its
      help under it, and the control at the right edge. */
-  .ws-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; column-gap: 9px; align-items: center; }
+  .ws-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; column-gap: 10px; align-items: center; }
   .ws-row > .ws-ic { grid-column: 1; grid-row: 1 / span 2; align-self: start; }
   .ws-row > .field { display: contents; }
-  .ws-row > .field > :first-child { grid-column: 2; grid-row: 1; color: var(--wa-ink); font-size: 12.5px; font-weight: 500; }
+  .ws-row > .field > :first-child { grid-column: 2; grid-row: 1; color: var(--wa-ink); font-size: 13.5px; font-weight: 500; }
   .ws-row > .field > :not(:first-child) { grid-column: 3; grid-row: 1 / span 2; justify-self: end; }
-  .ws-row > .field:not(.check) > :not(:first-child) { width: 250px; max-width: 44cqw; box-sizing: border-box; }
+  .ws-row > .field:not(.check) > :not(:first-child) { width: 270px; max-width: 44cqw; box-sizing: border-box; }
   .ws-row > .hint { grid-column: 2; grid-row: 2; }
   .ws-row > :not(.ws-ic, .hint, .field) { grid-column: 2 / -1; min-width: 0; }
   /* A row with a moving picture of its hand movement: the picture sits
      between the title and the menu. */
-  .ws-row.has-demo { grid-template-columns: 22px minmax(0, 1fr) 36px auto; }
+  .ws-row.has-demo { grid-template-columns: 26px minmax(0, 1fr) 52px auto; }
   .ws-row.has-demo > .field > :not(:first-child) { grid-column: 4; }
-  .ws-row.has-demo > .ws-demo-box { grid-column: 3; grid-row: 1 / span 2; align-self: center; width: 36px; height: 36px; color: var(--ws-hue, var(--wa-muted)); }
-  .ws-demo-box svg.ws-demo { display: block; width: 36px; height: 36px; }
+  .ws-row.has-demo > .ws-demo-box { grid-column: 3; grid-row: 1 / span 2; align-self: center; width: 52px; height: 52px; color: var(--ws-hue, var(--wa-muted)); }
+  .ws-demo-box svg.ws-demo { display: block; width: 52px; height: 52px; }
   /* A row of tiles: the chip, title and help on one line, the strip of
      choices under them, starting where the title starts. */
-  .ws-head { position: relative; display: flex; align-items: center; gap: 9px; min-height: 22px; }
-  .ws-head > span:not(.ws-ic) { flex: none; max-width: 100%; min-width: 0; color: var(--wa-ink); font-size: 12.5px; font-weight: 500; line-height: 1.25; overflow-wrap: break-word; }
+  .ws-head { position: relative; display: flex; align-items: center; gap: 10px; min-height: 26px; }
+  .ws-head > span:not(.ws-ic) { flex: none; max-width: 100%; min-width: 0; color: var(--wa-ink); font-size: 13.5px; font-weight: 500; line-height: 1.25; overflow-wrap: break-word; }
   .ws-head button.reset-dot { top: 50%; margin-top: -2.5px; }
   .ws-body .sec[data-help] > .sec-b .ws-head > .hint { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* The choices are one strip: a single outline with hairlines between the
      choices, the picked one a raised grey with the brighter line. Neutral, no
      hue. Five at most to a line, three on a narrow column. */
   .ws-tiles {
-    display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 1px; margin: 6px 0 0 31px;
+    display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 1px; margin: 8px 0 0 36px;
     border: 1px solid var(--wa-line-strong); border-radius: 8px; overflow: hidden; background: var(--wa-line-strong);
   }
   @container xfer (max-width: 440px) {
     .ws-tiles { grid-template-columns: repeat(var(--cols-narrow, 3), minmax(0, 1fr)); margin-left: 0; }
-    .ws-row > .field:not(.check) > :not(:first-child) { width: 150px; }
+    .ws-row > .field:not(.check) > :not(:first-child) { width: 160px; }
+    /* A smaller picture here, so the title keeps some room. */
+    .ws-row.has-demo { grid-template-columns: 26px minmax(0, 1fr) 40px auto; }
+    .ws-row.has-demo > .ws-demo-box, .ws-row.has-demo > .ws-demo-box svg.ws-demo { width: 40px; height: 40px; }
     /* The picture and the menu leave the title little room: the help goes
        under all three, at the row's full width. */
     .ws-row.has-demo > .hint { grid-column: 2 / -1; grid-row: 3; margin-top: 2px; }
     /* A tile with a moving picture puts it over the name, so the name keeps
        the tile's whole width. */
-    button.ws-tile:has(> .ws-tile-glyph.demo) { grid-template-columns: minmax(0, 1fr); justify-items: center; padding: 5px 4px; }
+    button.ws-tile:has(> .ws-tile-glyph.demo) { grid-template-columns: minmax(0, 1fr); justify-items: center; row-gap: 3px; padding: 7px 4px; }
     button.ws-tile:has(> .ws-tile-glyph.demo) > * { grid-column: 1; grid-row: auto; text-align: center; }
   }
   button.ws-tile {
     --ws-tile-bg: var(--wa-field);
-    font: inherit; min-width: 0; min-height: 32px; margin: 0; padding: 3px 6px; cursor: pointer;
-    display: grid; grid-template-columns: auto minmax(0, auto); align-items: center; justify-content: center; column-gap: 7px; row-gap: 0;
+    font: inherit; min-width: 0; min-height: 40px; margin: 0; padding: 6px 8px; cursor: pointer;
+    display: grid; grid-template-columns: auto minmax(0, auto); align-items: center; justify-content: center; column-gap: 8px; row-gap: 0;
     border: 0; border-radius: 0; background: var(--ws-tile-bg); color: var(--wa-label);
     transition: background-color .12s ease-out, color .12s ease-out;
   }
@@ -1576,17 +1583,17 @@ export const watchSettingsStyles = css`
   }
   button.ws-tile:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--wa-ink) 60%, transparent); }
   button.ws-tile:disabled { opacity: .45; cursor: default; }
-  .ws-tile-glyph { grid-row: 1 / span 2; height: 20px; min-width: 16px; display: grid; place-items: center; color: var(--wa-muted); }
+  .ws-tile-glyph { grid-row: 1 / span 2; height: 24px; min-width: 18px; display: grid; place-items: center; color: var(--wa-muted); }
   .ws-tile-name:last-child { grid-row: 1 / span 2; }
-  .ws-tile-glyph svg { height: 15px; width: auto; max-width: 100%; }
-  .ws-tile-glyph svg.ws-pv { width: 32px; height: 18px; }
-  .ws-tile-glyph.demo { height: 30px; }
-  .ws-tile-glyph svg.ws-demo { width: 30px; height: 30px; }
+  .ws-tile-glyph svg { height: 17px; width: auto; max-width: 100%; }
+  .ws-tile-glyph svg.ws-pv { width: 38px; height: 22px; }
+  .ws-tile-glyph.demo { height: 44px; }
+  .ws-tile-glyph svg.ws-demo { width: 44px; height: 44px; }
   button.ws-tile.on .ws-tile-glyph { color: color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 55%, var(--wa-ink)); }
-  .ws-tile-name { max-width: 100%; font-size: 11.5px; font-weight: 500; line-height: 1.2; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ws-tile-name { max-width: 100%; font-size: 12.5px; font-weight: 500; line-height: 1.2; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   button.ws-tile.on .ws-tile-name { font-weight: 600; }
   .ws-tile-detail {
-    max-width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; line-height: 1.2;
+    max-width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.2;
     grid-column: 2; color: var(--wa-muted); text-align: left; overflow-wrap: break-word;
   }
   button.ws-tile.on .ws-tile-detail { color: var(--wa-label); }
@@ -1596,7 +1603,7 @@ export const watchSettingsStyles = css`
   /* The notification style's cards: the phone's groups as small headings
      between the rows, the volume presets under the slider. */
   .ws-body .sec-b > .ws-group {
-    margin: 8px 0 1px; font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--wa-muted);
+    margin: 10px 0 1px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--wa-muted);
   }
   .ws-body .sec-b > .ws-group:first-child, .ws-body .sec-b > .ns-pv + .ws-group { margin-top: 2px; }
   .ws-body .sec-b > .ws-group + :is(.ws-row, .ws-tile-row) { border-top: 0; padding-top: 3px; }
