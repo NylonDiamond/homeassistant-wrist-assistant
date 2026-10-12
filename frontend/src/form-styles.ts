@@ -239,7 +239,7 @@ export const formResetDotStyles = css`
     button.reset-dot:hover, button.reset-dot:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--wa-sec, var(--wa-accent)) 32%, transparent); }
 `;
 
-/** A button drawn as a link (Browse symbols). */
+/** A button drawn as a link (Start fresh instead). */
 export const formLinkStyles = css`
     button.link { font: inherit; background: none; border: none; color: var(--wa-accent); cursor: pointer; padding: 0; }
     /* A watch editor's "Start fresh instead" while the iPhone's move may
@@ -574,7 +574,10 @@ export const formEntityStyles = css`
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em;
     }
 
-    /* Symbol picker */
+    /* Symbol picker. Its open button is a real button, not a link: drawn as
+       words it read as a label under Symbol, and the picker looked missing. */
+    button.small.sym-toggle { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin: 4px 0; }
+    button.small.sym-toggle svg { width: 14px; height: 14px; flex: none; }
     .sym-browse { margin: 6px 0; }
     .sym-controls { display: flex; gap: 6px; margin-bottom: 6px; }
     .sym-controls input[type=search] { flex: 1; min-width: 0; }

@@ -2000,7 +2000,8 @@ export function symbolField(
           }
         })} /></label>
     ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The watch still draws it if the name is a real SF Symbol.</div>` : nothing}
-    <button type="button" class="link" @click=${() => browser.toggle(key, defaultOpen)}>${open ? "Hide symbols" : "Browse symbols"}</button>
+    <button type="button" class="small sym-toggle" aria-expanded=${open ? "true" : "false"}
+      @click=${() => browser.toggle(key, defaultOpen)}>${uiIcon("search")}${open ? "Hide symbols" : "Browse symbols"}</button>
     ${browsePane}`;
 }
 
