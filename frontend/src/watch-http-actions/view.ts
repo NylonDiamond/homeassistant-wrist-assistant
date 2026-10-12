@@ -548,7 +548,7 @@ function lookPopover(host: HttpActionsViewHost, action: HttpAction): TemplateRes
     <fieldset class="ha-set" ?disabled=${host.busy}>
       <div class="ha-stack">${symbolField({ icons: host.icons, symbols: host.symbols }, action.icon ?? DEFAULT_ICON,
         (v) => host.edit((d) => setHttpActionIcon(d, id, v === DEFAULT_ICON ? "" : v), `a:${id}:icon`), `ha:icon:${id}`,
-        { clearable: (action.icon ?? "") !== "" })}</div>
+        { clearable: (action.icon ?? "") !== "", tint: action.iconColor })}</div>
       ${colorField("Color", action.iconColor, (v) => host.edit((d) => setHttpActionColor(d, id, v), `a:${id}:color`), true, null)}
     </fieldset>
     <div class="ha-pop-foot"><span class="ha-line">The icon and color the action wears on the watch.</span>

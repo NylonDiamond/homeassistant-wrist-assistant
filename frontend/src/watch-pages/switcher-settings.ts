@@ -204,7 +204,7 @@ export function renderSwitcherSettings(host: SwitcherSettingsHost): TemplateResu
         title="The watch picks one from the page's first tile" @click=${() => write(host, (d) => setWatchPageSwitcherIcon(d, host.pageId, ""))}>Automatic icon</button>
     </div>
     ${typingRow(host, "switcherIcon", symbolField({ icons: host.icons, symbols: host.symbols }, typed(host, "switcherIcon") ?? s.switcherIcon ?? "", setIcon, "sw:switcher-icon",
-      { emptyText: "Picked by the watch" }))}
+      { emptyText: "Picked by the watch", tint: s.switcherColor }))}
     ${typingRow(host, "switcherColor", html`<div class="ts-no-alpha">${colorField("Color", typed(host, "switcherColor") ?? s.switcherColor, setColor, true, null, { switchOn: s.switcherColor !== undefined })}</div>`)}
     <div class="hint ts-under">Left empty, the watch shows the page's name and picks the icon and color itself.</div>`;
 }

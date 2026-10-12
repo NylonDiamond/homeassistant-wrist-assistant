@@ -519,7 +519,7 @@ function renderEntryCards(host: ControlCenterViewHost, raw: JsonObject): Templat
   const look = card(host, "look", "look", "Icon and color", html`<fieldset class="cc-body" ?disabled=${host.busy} aria-label="Icon and color">
     <div class="cc-stack">${symbolField({ icons: host.icons, symbols: host.symbols }, controlCenterIcon(entry),
       (v) => host.edit((d) => setControlCenterIcon(d, id, v === entry.iconName ? "" : v), `entry:${id}:icon`), `cc:icon:${id}`,
-      { clearable: entry.customIconName !== undefined })}</div>
+      { clearable: entry.customIconName !== undefined, tint })}</div>
     ${colorField("Color", tint, (v) => host.edit((d) => setControlCenterTint(d, id, v), `entry:${id}:tint`), true, null)}
     <div class="cc-swatches" role="group" aria-label="Suggested colors">
       ${CONTROL_CENTER_SWATCHES.map((hex) => {

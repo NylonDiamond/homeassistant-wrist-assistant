@@ -336,7 +336,7 @@ function renderLaunchers(host: TileSettingsHost): TemplateResult {
           commit(host, labelSetting, (d) => setWatchRemoteLauncherLabel(d, ...at(host), i, v), { typing: true })))}
         ${typingField(host, iconSetting, symbolField({ icons: host.icons, symbols: host.symbols }, typed(host, iconSetting) ?? row.icon, (v) =>
           commit(host, iconSetting, (d) => setWatchRemoteLauncherIcon(d, ...at(host), i, v.trim() === "" ? null : v)),
-          `pe:sp:launcher:${host.tileId}:${i}`))}
+          `pe:sp:launcher:${host.tileId}:${i}`, { tint: row.color }))}
         <div class="ts-chips sp-indent"><button type="button" class="pe-chip ${row.color === "" ? "on" : ""}" aria-pressed=${row.color === "" ? "true" : "false"}
           title="The remote's accent color" @click=${() => writeColor(null)}>Accent</button></div>
         <div class="ts-swatch-row">${swatchRow("Quick action colors", palette, row.color, (v) => writeColor(v))}</div>

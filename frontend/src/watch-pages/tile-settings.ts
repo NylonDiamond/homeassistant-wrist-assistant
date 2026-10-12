@@ -1078,6 +1078,7 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
       // so the box carries no x of its own.
       {
         clearable: false,
+        tint: watchColorEnds(s.color ?? defaults.color)?.from,
         emptyText: s.icon === "" ? "No icon" : defaults.icon === undefined ? "Default" : `Default (${defaults.icon})`,
         ...(s.icon === undefined && defaults.icon !== undefined ? { emptyGlyph: defaults.icon } : {}),
       },
@@ -1654,7 +1655,7 @@ function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothi
                 @click=${() => commit(host, `state:${row.key}`, (d) => resetWatchTileState(d, host.pageId, host.tileId, row.key))}>${uiIcon("undo")}</button>`
             : html`<span class="ts-state-reset"></span>`}
         </div>
-        ${open === "icon" ? renderStateIconPicker(host, row.key, row.icon) : nothing}
+        ${open === "icon" ? renderStateIconPicker(host, row.key, row.icon, watchColorEnds(row.color ?? tileColor)?.from) : nothing}
         ${open === "color" ? renderStateColorPicker(host, row.key, row.color) : nothing}`;
     })}
     ${card.any
@@ -1666,7 +1667,7 @@ function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothi
   </div>`;
 }
 
-function renderStateIconPicker(host: TileSettingsHost, state: string, icon: string | undefined): TemplateResult {
+function renderStateIconPicker(host: TileSettingsHost, state: string, icon: string | undefined, tint: string | undefined): TemplateResult {
   const setting = `stateIcon:${state}`;
   // Starts open: a click on the state's Icon button is what asked for it.
   return html`<div class="ts-nested">${symbolField(
@@ -1678,7 +1679,7 @@ function renderStateIconPicker(host: TileSettingsHost, state: string, icon: stri
       commit(host, setting, (d) => setWatchTileStateIcon(d, host.pageId, host.tileId, state, value));
     },
     `pe:ts:state:${state}`,
-    { defaultOpen: true, clearable: false },
+    { defaultOpen: true, clearable: false, tint },
   )}</div>`;
 }
 

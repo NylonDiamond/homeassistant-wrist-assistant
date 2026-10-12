@@ -541,7 +541,8 @@ function renderPhraseInspector(host: VoiceViewHost, phrase: JsonObject): Templat
   const special = voiceColorWords(color);
   const lookBody = html`<fieldset class="vo-body" ?disabled=${host.busy} aria-label="Look">
     <div class="vo-stack">${symbolField({ icons: host.icons, symbols: host.symbols }, typeof phrase.icon === "string" ? phrase.icon : "",
-      (v) => set("icon", v, true), `vo:icon:${id}`)}</div>
+      (v) => set("icon", v, true), `vo:icon:${id}`,
+      { tint: color })}</div>
     <div class="vo-no-alpha">${colorField("Color", isPlainVoiceColor(color) ? color : undefined,
       (v) => { if (v !== undefined) set("color", v, true); }, false, VOICE_KEYS.newPhrase.color)}</div>
     ${special === undefined ? nothing : html`<div class="hint">${special}, which the panel does not offer. Picking a color here replaces it.</div>`}

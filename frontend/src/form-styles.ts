@@ -602,6 +602,10 @@ export const formEntityStyles = css`
     .sym-now svg { width: 16px; height: 16px; display: block; }
     .sym-now svg path { fill: currentColor; fill-opacity: 1; }
     .sym-now.none { color: var(--wa-muted); }
+    /* The icon's own color, when one is chosen, on the glyph in the box and on
+       every glyph in the list, so the pick is seen the way the watch draws it. */
+    .sym-field.tinted .sym-now:not(.none), .sym-field.tinted .sym-glyph { color: var(--sym-tint); }
+    .sym-field.tinted button.sym .sym-glyph { opacity: 1; }
     .sym-now.none svg.ui-icon { width: 13px; height: 13px; }
     .sym-now.none svg.ui-icon path { fill: none; }
     .sym-now-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

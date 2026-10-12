@@ -567,7 +567,7 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
           @click=${() => commit(sh, "titleIcon", (d) => setWatchPageTitleIcon(d, sh.pageId, ""))}>No icon</button>
       </div>
       ${typingField(sh, "titleIcon", symbolField({ icons: sh.icons, symbols: sh.symbols }, typed(sh, "titleIcon") ?? s.titleIcon, setIcon, "pe:ps:title-icon",
-        { clearable: false, emptyText: "No icon" }))}
+        { clearable: false, emptyText: "No icon", tint: s.titleColor }))}
       ${pagePalette(sh, "titleColor", {
         label: "Text color",
         color: () => watchPageSettings(sh.page).titleColor,

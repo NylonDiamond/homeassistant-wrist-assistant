@@ -1946,6 +1946,20 @@ export interface SymbolFieldOptions {
   emptyGlyph?: string;
   /** A control at the end of the box's row, such as a value's Source button. */
   after?: TemplateResult;
+  /** The color the icon is drawn in, so the box and the list show it the way
+   * the watch will. Anything `iconTint` cannot read leaves the ink color. */
+  tint?: unknown;
+}
+
+/**
+ * A color an icon field can paint its glyphs in: a plain hex, without its
+ * alpha, since a see-through glyph in a picker only reads as faded. A theme
+ * word, a gradient or nothing at all leaves the glyphs in the ink color.
+ */
+export function iconTint(color: unknown): string | undefined {
+  if (typeof color !== "string") return undefined;
+  const m = /^#?([0-9a-f]{6})(?:[0-9a-f]{2})?$/i.exec(color.trim());
+  return m === null ? undefined : `#${m[1]}`;
 }
 
 /** The one icon dropdown open right now, and how to shut it. One at a time,
@@ -1995,6 +2009,7 @@ export function symbolField(
   opts: SymbolFieldOptions = {},
 ): TemplateResult {
   const { setPath, label = "Icon", defaultOpen = false, clearable = true } = opts;
+  const tint = iconTint(opts.tint);
   const browser = host.symbols;
   const open = browser.isOpen(key, defaultOpen);
   const query = browser.query(key);
@@ -2136,7 +2151,8 @@ export function symbolField(
   const glyph = shownName === undefined || shownName === CUSTOM_SVG_SYMBOL ? undefined : host.icons.render(shownName, 18, "#FFFFFF");
   const boxText = empty ? (opts.emptyText ?? "Choose an icon") : current;
 
-  return html`<div class="field sym-field ${open ? "open" : ""} ${label === "" ? "no-label" : ""}" data-sym-key=${key} @keydown=${onKey}>
+  return html`<div class="field sym-field ${open ? "open" : ""} ${label === "" ? "no-label" : ""} ${tint === undefined ? "" : "tinted"}"
+    style=${tint === undefined ? "" : `--sym-tint:${tint}`} data-sym-key=${key} @keydown=${onKey}>
     ${label === "" ? nothing : html`<span>${label}</span>`}
     <div class="sym-line-row">
       <div class="sym-box ${open ? "open" : ""}">
@@ -3005,6 +3021,8 @@ export interface ValueEditorOptions {
    * when the pick was an SF Symbol. Given only by the icon layer: it is the one
    * place with a `path` key to write. Without it the picker stays SF-only. */
   setSymbolPath?: (d: string | undefined) => void;
+  /** The color the icon draws in, for the picker to show it in. */
+  symbolTint?: unknown;
   /** Undo coalescing key prefix. */
   key: string;
   /** What this value is for, shown beside the chip. */
@@ -3041,7 +3059,7 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
     const source = html`<button type="button" class="small sym-source" popovertarget=${id} aria-haspopup="dialog"
       title="A fixed icon. Click to read the icon from an entity, a template or a shared value instead.">Source</button>`;
     return html`${symbolField(host, k.value, (v) => set({ ...value, kind: { ...k, value: v } }), `${opts.key}-box`, {
-        setPath: opts.setSymbolPath, label: opts.noLabel ? "" : label, after: source,
+        setPath: opts.setSymbolPath, label: opts.noLabel ? "" : label, after: source, tint: opts.symbolTint,
       })}
       ${valuePopover(host, id, label, value, set, opts)}`;
   }
@@ -3059,7 +3077,7 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
   return html`<div class="field value-chip-field ${opts.compact ? "compact" : ""}">
     ${opts.compact || opts.noLabel ? nothing : html`<span>${label}</span>`}
     <button type="button" class="value-chip ${opts.compact ? "chip-cell" : ""} ${slot ? "slot" : ""}" popovertarget=${id} aria-haspopup="dialog" title=${`${label}: ${summary}. Click to change it.`}>
-      ${chipGlyph === undefined ? nothing : html`<span class="chip-glyph" aria-hidden="true">${chipGlyph}</span>`}
+      ${chipGlyph === undefined ? nothing : html`<span class="chip-glyph" aria-hidden="true" style=${iconTint(opts.symbolTint) === undefined ? "" : `color:${iconTint(opts.symbolTint)}`}>${chipGlyph}</span>`}
       <span class="chip-text ${namesEntity ? "ent-tok" : ""}">${summary}</span>
       ${resolved === undefined ? nothing : html`<span class="chip-now mono" title="Value right now">${resolved}</span>`}
       <span class="chip-caret" aria-hidden="true">▾</span>
@@ -3304,7 +3322,7 @@ function valueBody(host: EditorHost, value: Value, set: (v: Value) => void, opts
   switch (k.kind) {
     case "literal":
       body = opts.symbol
-        ? symbolField(host, k.value, (v) => setKind({ ...k, value: v }), key, { setPath: opts.setSymbolPath })
+        ? symbolField(host, k.value, (v) => setKind({ ...k, value: v }), key, { setPath: opts.setSymbolPath, tint: opts.symbolTint })
         : textField("Text", k.value, (v) => setKind({ ...k, value: v }));
       break;
     case "entityState":
@@ -5633,7 +5651,7 @@ function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
       : html`<div class="hint">What the toggle reads to know if it is on. One of <code>on</code>, <code>open</code>, <code>unlocked</code>, <code>home</code>, <code>playing</code>, <code>heat</code> or <code>cool</code> counts as on.</div>`}
     </div>`}
     <div class="fgroup">
-    ${symbolField(host, spec.symbol, (v) => set((c) => { c.symbol = v; }, "symbol"), "control-symbol")}
+    ${symbolField(host, spec.symbol, (v) => set((c) => { c.symbol = v; }, "symbol"), "control-symbol", { tint: spec.tintColorHex })}
     ${effective === "button"
       ? html`<div class="hint">The icon on the tile.</div>`
       : html`
@@ -8012,7 +8030,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           ? customSvgFields(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k))
           : html`
             ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), {
-              noFormat: true, showResolved: true, symbol: true, label: "Icon", key: `${key}-symbol`,
+              noFormat: true, showResolved: true, symbol: true, label: "Icon", key: `${key}-symbol`, symbolTint: el.payload.colorSlot.baseColorHex,
               setSymbolPath: (d) => upd((e) => {
                 const p = (e as typeof el).payload;
                 if (d) p.path = d; else delete p.path;
@@ -9678,7 +9696,7 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
           ? customSvgFields(el.payload, (m, k) => upd((e) => { if (e.kind === "icon") m(e.payload); }, k ?? "svg-path"))
           : valueEditor(host, el.payload.symbol,
           (v) => upd((e) => { if (e.kind === "icon") e.payload.symbol = v; }, "symbol"), {
-            noFormat: true, showResolved: true, symbol: true, label: "Icon", key: `${key}-symbol`,
+            noFormat: true, showResolved: true, symbol: true, label: "Icon", key: `${key}-symbol`, symbolTint: el.payload.colorSlot.baseColorHex,
             setSymbolPath: (d) => upd((e) => {
               if (e.kind !== "icon") return;
               if (d) e.payload.path = d; else delete e.payload.path;
