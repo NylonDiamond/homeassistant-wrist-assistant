@@ -1963,7 +1963,7 @@ export function symbolField(
     browsePane = html`<div class="sym-browse">
       ${offersMdi ? packToggle(browser, key, showing) : nothing}
       <div class="sym-controls">
-        <input type="search" placeholder="Search symbols" .value=${query} @input=${onInput((v) => browser.setQuery(key, v))} />
+        <input type="search" placeholder="Search icons" .value=${query} @input=${onInput((v) => browser.setQuery(key, v))} />
         <select @change=${onInput((v) => browser.setCategory(key, v))}>
           ${symbolChoicesOf(known).map(
             (c) => html`<option value=${c.value} ?selected=${c.value === category}>${c.label}</option>`
@@ -1988,6 +1988,7 @@ export function symbolField(
 
   return html`
     <label class="field"><span>${label}</span>
+      <div class="sym-row">
       <input type="text" class="mono" .value=${symbol} placeholder="lightbulb.fill"
         @input=${onInput(typed)} @change=${onInput((v) => {
           // A typed name only joins the recents list once it is known to be
@@ -1998,10 +1999,11 @@ export function symbolField(
           } else if (known.size === 0 || known.has(name)) {
             browser.noteUsed(v);
           }
-        })} /></label>
+        })} />
+      <button type="button" class="small sym-toggle ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
+        @click=${() => browser.toggle(key, defaultOpen)}>${uiIcon("grid")}${open ? "Hide icons" : "Browse icons"}</button>
+      </div></label>
     ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The watch still draws it if the name is a real SF Symbol.</div>` : nothing}
-    <button type="button" class="small sym-toggle" aria-expanded=${open ? "true" : "false"}
-      @click=${() => browser.toggle(key, defaultOpen)}>${uiIcon("search")}${open ? "Hide symbols" : "Browse symbols"}</button>
     ${browsePane}`;
 }
 
