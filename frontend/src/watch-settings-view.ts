@@ -1536,16 +1536,19 @@ export const watchSettingsStyles = css`
   .ws-row > :not(.ws-ic, .hint, .field) { grid-column: 2 / -1; min-width: 0; }
   /* A row with a moving picture of its hand movement: the picture sits
      between the title and the menu. */
-  .ws-row.has-demo { grid-template-columns: 26px minmax(0, 1fr) 52px auto; }
+  .ws-row.has-demo { grid-template-columns: 26px minmax(0, 1fr) 60px auto; }
   .ws-row.has-demo > .field > :not(:first-child) { grid-column: 4; }
-  .ws-row.has-demo > .ws-demo-box { grid-column: 3; grid-row: 1 / span 2; align-self: center; width: 52px; height: 52px; color: var(--ws-hue, var(--wa-muted)); }
-  .ws-demo-box svg.ws-demo { display: block; width: 52px; height: 52px; }
+  .ws-row.has-demo > .ws-demo-box { grid-column: 3; grid-row: 1 / span 2; align-self: center; width: 60px; height: 60px; color: var(--ws-hue, var(--wa-muted)); }
+  .ws-demo-box svg.ws-demo { display: block; width: 60px; height: 60px; }
   /* A row of tiles: the chip, title and help on one line, the strip of
      choices under them, starting where the title starts. */
   .ws-head { position: relative; display: flex; align-items: center; gap: 10px; min-height: 26px; }
   .ws-head > span:not(.ws-ic) { flex: none; max-width: 100%; min-width: 0; color: var(--wa-ink); font-size: 13.5px; font-weight: 500; line-height: 1.25; overflow-wrap: break-word; }
   .ws-head button.reset-dot { top: 50%; margin-top: -2.5px; }
-  .ws-body .sec[data-help] > .sec-b .ws-head > .hint { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The help never gets cut short: with too little room beside the title it
+     goes onto its own line under it. */
+  .ws-head { flex-wrap: wrap; row-gap: 2px; }
+  .ws-body .sec[data-help] > .sec-b .ws-head > .hint { flex: 1 1 220px; min-width: 0; }
   /* The choices are one strip: a single outline with hairlines between the
      choices, the picked one a raised grey with the brighter line. Neutral, no
      hue. Five at most to a line, three on a narrow column. */
@@ -1557,15 +1560,11 @@ export const watchSettingsStyles = css`
     .ws-tiles { grid-template-columns: repeat(var(--cols-narrow, 3), minmax(0, 1fr)); margin-left: 0; }
     .ws-row > .field:not(.check) > :not(:first-child) { width: 160px; }
     /* A smaller picture here, so the title keeps some room. */
-    .ws-row.has-demo { grid-template-columns: 26px minmax(0, 1fr) 40px auto; }
-    .ws-row.has-demo > .ws-demo-box, .ws-row.has-demo > .ws-demo-box svg.ws-demo { width: 40px; height: 40px; }
+    .ws-row.has-demo { grid-template-columns: 26px minmax(0, 1fr) 44px auto; }
+    .ws-row.has-demo > .ws-demo-box, .ws-row.has-demo > .ws-demo-box svg.ws-demo { width: 44px; height: 44px; }
     /* The picture and the menu leave the title little room: the help goes
        under all three, at the row's full width. */
     .ws-row.has-demo > .hint { grid-column: 2 / -1; grid-row: 3; margin-top: 2px; }
-    /* A tile with a moving picture puts it over the name, so the name keeps
-       the tile's whole width. */
-    button.ws-tile:has(> .ws-tile-glyph.demo) { grid-template-columns: minmax(0, 1fr); justify-items: center; row-gap: 3px; padding: 7px 4px; }
-    button.ws-tile:has(> .ws-tile-glyph.demo) > * { grid-column: 1; grid-row: auto; text-align: center; }
   }
   button.ws-tile {
     --ws-tile-bg: var(--wa-field);
@@ -1585,16 +1584,25 @@ export const watchSettingsStyles = css`
   .ws-tile-name:last-child { grid-row: 1 / span 2; }
   .ws-tile-glyph svg { height: 17px; width: auto; max-width: 100%; }
   .ws-tile-glyph svg.ws-pv { width: 38px; height: 22px; }
-  .ws-tile-glyph.demo { height: 44px; }
-  .ws-tile-glyph svg.ws-demo { width: 44px; height: 44px; }
+  .ws-tile-glyph.demo { width: 56px; height: 56px; }
+  .ws-tile-glyph svg.ws-demo { width: 56px; height: 56px; }
   button.ws-tile.on .ws-tile-glyph { color: color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 55%, var(--wa-ink)); }
-  .ws-tile-name { max-width: 100%; font-size: 12.5px; font-weight: 500; line-height: 1.2; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* A name is never cut short: it wraps between words instead. */
+  .ws-tile-name { max-width: 100%; font-size: 12.5px; font-weight: 500; line-height: 1.2; text-align: left; overflow-wrap: normal; text-wrap: balance; }
   button.ws-tile.on .ws-tile-name { font-weight: 600; }
   .ws-tile-detail {
     max-width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.2;
-    grid-column: 2; color: var(--wa-muted); text-align: left; overflow-wrap: break-word;
+    grid-column: 2; color: var(--wa-muted); text-align: left; overflow-wrap: normal; text-wrap: balance;
   }
   button.ws-tile.on .ws-tile-detail { color: var(--wa-label); }
+  /* A tile with a moving picture puts it over the name, so the name and its
+     detail keep the tile's whole width. */
+  button.ws-tile:has(> .ws-tile-glyph.demo) { grid-template-columns: minmax(0, 1fr); justify-items: center; align-content: start; row-gap: 3px; padding: 10px 6px 9px; }
+  button.ws-tile:has(> .ws-tile-glyph.demo) > * { grid-column: 1; grid-row: auto; text-align: center; }
+  button.ws-tile:has(> .ws-tile-glyph.demo) > .ws-tile-glyph { margin-bottom: 3px; }
+  @container xfer (max-width: 440px) {
+    .ws-tile-glyph.demo, .ws-tile-glyph svg.ws-demo { width: 48px; height: 48px; }
+  }
   .ws-body > button.ws-retry, .ws-body > button.ws-start { align-self: flex-start; }
   /* The indicator has no opacity, so the color row drops the percent box. */
   .ws-body .color-box .alpha { display: none; }
