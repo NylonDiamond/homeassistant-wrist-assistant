@@ -110,7 +110,7 @@ export function configFootStatus(i: {
   const near = !over && i.limit > 0 && i.size / i.limit > 0.8;
   const round = over ? Math.ceil : i.size < i.limit ? Math.floor : Math.round;
   const note = over ? `. ${OVER_LIMIT_TEXT}` : near ? (i.size === i.limit ? ". At the limit." : ". Close to the limit.") : "";
-  const size = `${kb(i.size, round)} of the ${kb(i.limit)} Home Assistant keeps${note}`;
+  const size = `${kb(i.size, round)} used of ${kb(i.limit)}${note}`;
   if (rejectedNow(record)) {
     return {
       tone: "err", revision, state: rejectedText(record), size, near, over,
@@ -215,7 +215,7 @@ export function renderConfigFoot(i: ConfigFootInput): TemplateResult {
       <span class="cf-state ${s.tone}">${s.state}</span>
       ${s.tone === "err" ? html`<span class="cf-help">${s.help}</span>` : nothing}
     </span>
-    <span class="cf-size ${s.over ? "over" : s.near ? "near" : ""}" title=${s.size}>${s.size}</span>
+    <span class="cf-size ${s.over ? "over" : s.near ? "near" : ""}" title=${`${s.size}${s.size.endsWith(".") ? "" : "."} The second number is the most Home Assistant keeps for one watch.`}>${s.size}</span>
     ${i.historyState === "unsupported" ? nothing : html`<button type="button" class="cf-btn cf-history-btn ${s.tone === "err" ? "lit" : ""}"
       aria-haspopup="dialog" aria-expanded=${i.historyOpen ? "true" : "false"}
       title="Earlier saves, with Restore" @click=${i.onHistory}>History</button>`}

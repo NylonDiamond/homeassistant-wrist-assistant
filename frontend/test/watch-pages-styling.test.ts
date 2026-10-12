@@ -122,7 +122,7 @@ describe("the State task", () => {
     expect(rows(tile("sensor.temp", { stateValueLabelStyle: "Off" }))).not.toHaveProperty("decimalPlaces");
     expect(rows(tile("climate.hall", { showActivityStatus: false }))).not.toHaveProperty("statusIconSizeOverride");
     expect(rows(tile("person.alex"))).not.toHaveProperty("statusIconSizeOverride");
-    expect(watchTileStateCards(tile("light.desk"))[0]!.title).toBe("Brightness Display");
+    expect(watchTileStateCards(tile("light.desk"))[0]!.title).toBe("Brightness");
 
     expect(watchTileHasStateTask(tile("switch.fan"))).toBe(false);
     expect(watchTileHasStateTask(tile("lock.door"))).toBe(false);

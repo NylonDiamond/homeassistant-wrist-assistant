@@ -58,7 +58,7 @@ import {
 } from "./page-settings-model.js";
 import { pagePhotoIdsInUse, samePagePhotoId } from "./page-photo.js";
 import type { PagePhotoStore } from "./page-photo-store.js";
-import { commit, dropStaleTyping, linkButton, stylingEnumField, swatchRow, typed, typingField } from "./tile-settings.js";
+import { commit, dropStaleTyping, linkButton, resetButton, stylingEnumField, swatchRow, typed, typingField } from "./tile-settings.js";
 import {
   type WatchSectionBadge,
   sameWatchColor,
@@ -184,7 +184,7 @@ export function renderPageSettingBody(host: WatchPagesEditorHost, section: Watch
 export function renderPageReset(host: WatchPagesEditorHost): TemplateResult | typeof nothing {
   if (!watchPageModified(host.document, host.pageId)) return nothing;
   const sh = scoped(host);
-  return html`<span class="ps-reset">${linkButton("Reset page", "The background and title back to their defaults, the photo removed. The theme stays.", () =>
+  return html`<span class="ps-reset">${resetButton("Reset page", "The background and title back to their defaults, the photo removed. The theme stays.", () =>
     commit(sh, "reset", (d) => resetWatchPage(d, host.pageId)))}</span>`;
 }
 

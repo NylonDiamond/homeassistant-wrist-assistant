@@ -810,7 +810,7 @@ const popMenuRun = css`
 const tintDotRun = css`
     .tint-dot {
       display: inline-block; flex: none; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: -1px;
-      background: var(--sw); box-shadow: inset 0 0 0 1px rgba(128,128,128,.5);
+      background: var(--sw); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 45%, transparent);
     }
     button.case-pick .tint-dot { margin-right: 0; }
     .tint-dot.full { background: conic-gradient(#FF453A 0 25%, #FFD60A 0 50%, #30D158 0 75%, #0A84FF 0); }

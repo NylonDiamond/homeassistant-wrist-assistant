@@ -23,7 +23,7 @@ import { type WatchPagesDocument, tileEntityId, tileKind, watchPageTiles } from 
 import { watchPageSwatchTheme } from "./page-settings-model.js";
 import { watchThemeDisplayName, watchThemeSwatches } from "./tile-new.js";
 import { watchColorRefusal, watchCustomBoxColor } from "./tile-settings-options.js";
-import { commit, fieldNote, linkButton, menuField, swatchRow, typed, typingField } from "./tile-settings.js";
+import { commit, fieldNote, linkButton, menuField, resetButton, swatchRow, typed, typingField } from "./tile-settings.js";
 import { appSummary, isWatchAppTaskKind, renderAppTask, watchAppTaskHasReset } from "./app-settings.js";
 import {
   type WatchSpecialResize,
@@ -254,7 +254,7 @@ export function renderSpecial(host: TileSettingsHost): TemplateResult {
  * Person; the others have none). */
 function resetRow(host: TileSettingsHost, task: WatchSpecialTask, title: string): TemplateResult | typeof nothing {
   if (!watchSpecialTaskModified(host.tile, task)) return nothing;
-  return html`<div class="ts-after ts-reset">${linkButton(`Reset ${title}`, `Put every ${title.toLowerCase()} setting back to its default`, () =>
+  return html`<div class="ts-after ts-reset">${resetButton(`Reset ${title.toLowerCase()}`, `Put every ${title.toLowerCase()} setting back to its default`, () =>
     commit(host, `reset:${task}`, (d) => resetWatchSpecialTask(d, ...at(host), task)))}</div>`;
 }
 

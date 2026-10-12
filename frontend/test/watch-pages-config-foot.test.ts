@@ -67,7 +67,7 @@ describe("the foot bar", () => {
     expect(text).toContain(">History</button>");
     expect(text).toContain(">Raw configuration</button>");
     expect(text.indexOf(">History<")).toBeLessThan(text.indexOf(">Raw configuration<"));
-    expect(text).toContain("2 KB of the 10 KB Home Assistant keeps");
+    expect(text).toContain("2 KB used of 10 KB");
   });
 
   it("keeps every fact of the old Stored copy card: waiting, rejected, near the limit", () => {
@@ -100,14 +100,14 @@ describe("the foot bar", () => {
   it("measures against the cap Home Assistant enforces, says over past it, and never calls 189 % close", () => {
     // The test bed's 40 pages: 472,375 bytes, inside the 700 KB pages cap.
     const big = configFootStatus({ record: record(), size: 472_375, limit: WATCH_PAGES_LIMIT_BYTES, noun: "pages", historyState: "ready", now: NOW });
-    expect(big.size).toBe("461.3 KB of the 700 KB Home Assistant keeps");
+    expect(big.size).toBe("461.3 KB used of 700 KB");
     expect(big).toMatchObject({ near: false, over: false });
     const close = configFootStatus({ record: record(), size: 650_000, limit: WATCH_PAGES_LIMIT_BYTES, noun: "pages", historyState: "ready", now: NOW });
     expect(close).toMatchObject({ near: true, over: false });
     expect(close.size).toContain("Close to the limit.");
     const past = configFootStatus({ record: record(), size: 300 * 1024, limit: WATCH_CONFIG_LIMIT_BYTES, noun: "menus", historyState: "ready", now: NOW });
     expect(past).toMatchObject({ near: false, over: true });
-    expect(past.size).toBe(`300 KB of the 256 KB Home Assistant keeps. ${OVER_LIMIT_TEXT}`);
+    expect(past.size).toBe(`300 KB used of 256 KB. ${OVER_LIMIT_TEXT}`);
     expect(past.size).not.toContain("Close to the limit.");
     const drawn = flat(renderConfigFoot({ status: past, historyState: "ready", historyOpen: false, rawOpen: false, onHistory: noop, onRaw: noop }));
     expect(drawn).toContain("cf-size over");
@@ -118,18 +118,18 @@ describe("the foot bar", () => {
     // Exactly at the cap: Home Assistant keeps it, so not over.
     const exact = at(WATCH_PAGES_LIMIT_BYTES);
     expect(exact).toMatchObject({ near: true, over: false });
-    expect(exact.size).toBe("700 KB of the 700 KB Home Assistant keeps. At the limit.");
+    expect(exact.size).toBe("700 KB used of 700 KB. At the limit.");
     expect(exact.size).not.toContain(OVER_LIMIT_TEXT);
     // A few bytes under rounds down, so it does not read as the cap.
     const under = at(WATCH_PAGES_LIMIT_BYTES - 50);
     expect(under).toMatchObject({ near: true, over: false });
-    expect(under.size).toBe("699.9 KB of the 700 KB Home Assistant keeps. Close to the limit.");
+    expect(under.size).toBe("699.9 KB used of 700 KB. Close to the limit.");
     // A few bytes over (the verify run's 142 bytes) rounds up, so it reads as more than the cap.
     const past = at(WATCH_PAGES_LIMIT_BYTES + 142);
     expect(past).toMatchObject({ near: false, over: true });
-    expect(past.size).toBe(`700.2 KB of the 700 KB Home Assistant keeps. ${OVER_LIMIT_TEXT}`);
+    expect(past.size).toBe(`700.2 KB used of 700 KB. ${OVER_LIMIT_TEXT}`);
     const byte = at(WATCH_PAGES_LIMIT_BYTES + 1);
-    expect(byte.size).toBe(`700.1 KB of the 700 KB Home Assistant keeps. ${OVER_LIMIT_TEXT}`);
+    expect(byte.size).toBe(`700.1 KB used of 700 KB. ${OVER_LIMIT_TEXT}`);
   });
 
   it("uses the same caps as the integration", () => {

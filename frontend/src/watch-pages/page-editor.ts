@@ -3356,9 +3356,12 @@ export class WaPageEditor extends LitElement {
    * `insp-note`: on a smart page under its Rules cards, on any other page
    * the inspector's only card, pointing at the page strip. */
   private renderNoTileCard(page: WatchPage): TemplateResult {
-    return html`<p class="insp-note pe-no-tile">${isSmartWatchPage(page)
-      ? "A smart page fills itself from its rules, set above."
-      : "Select a tile to edit it, or add one. The page's own settings are above the watch."}</p>`;
+    return html`<div class="insp-note pe-no-tile">
+      <span class="pe-no-tile-ic" aria-hidden="true">${uiIcon("grid")}</span>
+      <p>${isSmartWatchPage(page)
+        ? "A smart page fills itself from its rules, set above."
+        : "Select a tile to edit it, or add one. The page's own settings are above the watch."}</p>
+    </div>`;
   }
 
   // ── the foot bar ───────────────────────────────────────────────────────
@@ -4434,7 +4437,7 @@ export class WaPageEditor extends LitElement {
         <button type="button" class="pe-size-more" aria-expanded=${fieldsOpen ? "true" : "false"} aria-controls="pe-size-fields"
           title=${fieldsOpen ? "Hide the column, row, width and height boxes" : "Type the column, row, width and height"}
           @click=${() => { this.sizeFieldsOpen = !fieldsOpen; }}>
-          <span class="pe-size-chev" aria-hidden="true">${fieldsOpen ? "▾" : "▸"}</span>
+          <span class="pe-size-chev" aria-hidden="true">${uiIcon("chevron")}</span>
           <span>Column ${rect.col + 1}, row ${rect.row + 1} · ${rect.colSpan}×${rect.rowSpan}</span>
         </button>
         ${fieldsOpen ? html`<div class="pe-fields" id="pe-size-fields">
@@ -4905,10 +4908,10 @@ export class WaPageEditor extends LitElement {
     .pe-watch-check svg.ui-icon { width: 14px; height: 14px; }
     /* The open watch in the canvas head: plain words, as the shape's. */
     .cv-shape.pe-watch-crumb { color: var(--wa-ink); font-weight: 500; }
-    .pe-stage-area { position: relative; padding: 64px 12px 12px; gap: 10px; }
-    @container (max-width: 460px) {
-      .pe-stage-area { padding-top: 92px; }
-    }
+    /* The tool strip rides in the flow at the top, so the area needs no head
+       room above it; the 64px it once kept left a band of empty canvas
+       between the page bar and the strip. */
+    .pe-stage-area { position: relative; padding: 12px 12px 12px; gap: 10px; }
     /* The picture keeps its size and the stage scrolls sideways under it on
        a screen narrower than the watch drawn at this scale. */
     .pe-stage-body { display: flex; justify-content: center; padding: 0 4px 4px; overflow-x: auto; overflow-y: hidden; }
@@ -5061,15 +5064,27 @@ export class WaPageEditor extends LitElement {
     .pe-field > input:disabled { opacity: .55; }
     .pe-presets { display: flex; flex-wrap: wrap; gap: 6px; }
     /* The line under the presets that opens the four boxes: where the tile
-       is, with a disclosure arrow, as a row of text rather than a button. */
+       is, behind a chevron that turns, so it reads as a disclosure. The
+       text arrow it had read as a list bullet. */
     .pe-size-more {
-      display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; margin-top: 6px; padding: 2px 4px 2px 0;
+      display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; margin-top: 6px; padding: 3px 8px 3px 4px;
       border: 0; border-radius: 6px; background: transparent; color: var(--wa-muted); font: inherit; font-size: 12px; cursor: pointer;
     }
-    .pe-size-more:hover { color: var(--wa-ink); }
+    .pe-size-more:hover { color: var(--wa-ink); background: var(--wa-hover); }
     .pe-size-more:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pe-size-more[aria-expanded="true"] { color: var(--wa-ink); }
-    .pe-size-chev { width: 10px; font-size: 10px; text-align: center; }
+    .pe-size-chev { display: inline-flex; width: 14px; height: 14px; transform: rotate(-90deg); transition: transform .15s ease-out; }
+    .pe-size-chev svg { width: 14px; height: 14px; }
+    .pe-size-more[aria-expanded="true"] .pe-size-chev { transform: none; }
+    /* No tile selected: a quiet empty state in the inspector rather than a
+       bare line pressed against the header. */
+    .pe-no-tile {
+      display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 12px 0 0; padding: 22px 18px;
+      border: 1px dashed var(--wa-line-strong); border-radius: 12px; text-align: center;
+    }
+    .pe-no-tile > p { margin: 0; max-width: 32ch; font-size: 12px; line-height: 1.45; color: var(--wa-muted); }
+    .pe-no-tile-ic { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--wa-panel); color: var(--wa-muted); }
+    .pe-no-tile-ic svg { width: 18px; height: 18px; }
     .pe-chip {
       min-height: 28px; padding: 0 10px; border: 1px solid var(--wa-line-strong); border-radius: 999px;
       background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 12px; cursor: pointer;

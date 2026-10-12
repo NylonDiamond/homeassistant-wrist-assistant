@@ -74,7 +74,7 @@ import {
   watchTileTaskHeld,
   watchTileTaskModified,
 } from "./styling-model.js";
-import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider } from "./tile-styling.js";
+import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider, watchStylingTheme, watchTitleSwatches } from "./tile-styling.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
 import type { TileSettingsHost } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
@@ -470,6 +470,12 @@ export function swatchRow(
 /** A small text button beside a row, for a way back to a default. */
 export function linkButton(text: string, title: string, action: () => void): TemplateResult {
   return html`<button type="button" class="link ts-link" title=${title} @click=${action}>${text}</button>`;
+}
+
+/** A section's Reset: a quiet button with the undo glyph, not a link, so it
+ * reads as something to press rather than a line of text. */
+export function resetButton(text: string, title: string, action: () => void): TemplateResult {
+  return html`<button type="button" class="ghost ts-reset-btn" title=${title} @click=${action}>${uiIcon("undo")}${text}</button>`;
 }
 
 /** The defaults of the tile's kind for this page: icon and color. */
@@ -1226,12 +1232,17 @@ function renderText(host: TileSettingsHost): TemplateResult {
       ${numberField("Font size", fontSize, setFontSize, { step: 1, min: WATCH_FONT_SIZE_RANGE.min, max: WATCH_FONT_SIZE_RANGE.max, optional: true, placeholder: "Auto", unit: "pt" })}
       ${t.fontSize === undefined ? nothing : linkButton("Auto", "Let the watch size the label to the tile", () => commit(host, "fontSize", (d) => setWatchTileFontSize(d, host.pageId, host.tileId, null)))}
     </div>`, t.fontSize)}
-    <div class="hint ts-under">Empty is Auto, sized to the tile's width. Or ${WATCH_FONT_SIZE_RANGE.min} to ${WATCH_FONT_SIZE_RANGE.max}.</div>
+    <div class="hint ts-under">Leave empty for Auto, sized to the tile's width, or pick ${WATCH_FONT_SIZE_RANGE.min} to ${WATCH_FONT_SIZE_RANGE.max} pt.</div>
     ${menuField("Weight", watchFontWeightMenu(t.fontWeight), (v) => commit(host, "fontWeight", (d) => setWatchTileFontWeight(d, host.pageId, host.tileId, v)))}
     ${menuField("Design", watchFontDesignMenu(t.fontDesign), (v) => commit(host, "fontDesign", (d) => setWatchTileFontDesign(d, host.pageId, host.tileId, v)))}
     ${checkField("Text shadow", t.textShadow, (on) => commit(host, "textShadow", (d) => setWatchTileTextShadow(d, host.pageId, host.tileId, on)))}
-    ${typingField(host, "labelColor", html`<div class="ts-no-alpha">${colorField("Label color", labelColor, setLabelColor, true, undefined, { switchOn: t.labelColor !== undefined })}</div>`)}
-    <div class="hint ts-under">${t.labelColor === undefined ? "Off: the theme's label color." : "On: this color. Switch it off for the theme's."}</div>`;
+    <div class="ts-sub-h"><span>Label color</span></div>
+    <div class="ts-swatch-row">${swatchRow("Label color", watchStylingTheme(watchPageSwatchTheme(host.page))?.pageTitleSwatches ?? watchTitleSwatches(), t.labelColor, (c) => setLabelColor(c))}</div>
+    ${typingField(host, "labelColor", html`<div class="ts-no-alpha">${colorField("Custom", labelColor, setLabelColor)}</div>`)}
+    <div class="ts-after">
+      <button type="button" class="pe-chip ${t.labelColor === undefined ? "on" : ""}" aria-pressed=${t.labelColor === undefined ? "true" : "false"}
+        title="No color of its own: the theme's label color" @click=${() => setLabelColor(undefined)}>Theme color</button>
+    </div>`;
 }
 
 // ── action ───────────────────────────────────────────────────────────────
@@ -1476,7 +1487,7 @@ function taskModified(host: TileSettingsHost, task: WatchTileStylingTask): boole
 function resetRow(host: TileSettingsHost, task: WatchTileStylingTask, words: string): TemplateResult | typeof nothing {
   if (!taskModified(host, task)) return nothing;
   const domain = host.domainStyle === true;
-  return html`<div class="ts-after ts-reset">${linkButton(`Reset ${words}`,
+  return html`<div class="ts-after ts-reset">${resetButton(`Reset ${words.toLowerCase()}`,
     domain ? `Remove every ${words.toLowerCase()} setting from the rule, so the watch draws its own` : `Put every ${words.toLowerCase()} setting back to its default`, () =>
     commit(host, `reset:${task}`, (d) => (domain ? clearWatchTileTask : resetWatchTileTask)(d, host.pageId, host.tileId, task)))}</div>`;
 }
@@ -1614,8 +1625,8 @@ function renderState(host: TileSettingsHost): TemplateResult {
   return html`
     ${cards.map((card) => html`
       <div class="ts-sub-h"><span>${card.title}</span></div>
-      ${card.rows.map((row) => renderStateRow(host, row))}
-      ${card.subtitle === "" ? nothing : html`<div class="hint ts-under">${card.subtitle}.</div>`}`)}
+      ${card.subtitle === "" ? nothing : html`<div class="hint ts-sub-note">${card.subtitle}.</div>`}
+      ${card.rows.map((row) => renderStateRow(host, row))}`)}
     ${resetRow(host, "state", "State")}`;
 }
 
@@ -1650,6 +1661,7 @@ function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothi
   };
   return html`<div class="ts-sub">
     <div class="ts-sub-h"><span>State icons and colors</span><span class="ts-faint">Optional</span></div>
+    <div class="hint ts-sub-note">An icon or color per state. A state with none uses the tile's.</div>
     ${card.rows.map((row) => {
       const ink = watchColorEnds(row.color ?? tileColor)?.from ?? "#FFFFFF";
       const symbol = row.icon ?? (tileIcon !== undefined && tileIcon !== "" ? tileIcon : row.defaultIcon);
@@ -1658,10 +1670,10 @@ function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothi
       return html`<div class="ts-state-row ${row.overridden ? "own" : ""}">
           <span class="ts-state-glyph" aria-hidden="true">${glyph ?? html`<span class="ts-glyph-dot"></span>`}</span>
           <span class="ts-state-label">${row.label}</span>
-          <button type="button" class="ts-swatch ts-state-color ${open === "color" ? "on" : ""}" aria-expanded=${open === "color" ? "true" : "false"}
+          <button type="button" class="pe-chip ts-state-color ${open === "color" ? "on" : ""}" aria-expanded=${open === "color" ? "true" : "false"}
             title=${row.color === undefined ? `${row.label}: the tile's color` : `${row.label}: ${row.color}`} aria-label=${`${row.label} color`}
-            style=${`--sw:${row.color === undefined ? "transparent" : `linear-gradient(135deg, ${watchColorEnds(row.color)?.from ?? ink}, ${watchColorEnds(row.color)?.to ?? ink})`}`}
-            @click=${() => toggleEdit(row.key, "color")}></button>
+            @click=${() => toggleEdit(row.key, "color")}><i class="ts-state-sw ${row.color === undefined ? "inherit" : ""}"
+              style=${`--sw:${(() => { const ends = watchColorEnds(row.color ?? tileColor); return ends === undefined ? ink : `linear-gradient(135deg, ${ends.from}, ${ends.to})`; })()}`}></i>Color</button>
           <button type="button" class="pe-chip ts-state-icon ${open === "icon" ? "on" : ""}" aria-expanded=${open === "icon" ? "true" : "false"}
             title=${row.icon === undefined ? `${row.label}: no icon of its own` : `${row.label}: ${row.icon}`}
             @click=${() => toggleEdit(row.key, "icon")}>Icon</button>
@@ -1679,7 +1691,6 @@ function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothi
           commit(host, "stateClear", (d) => clearWatchTileStateOverrides(d, host.pageId, host.tileId));
         })}</div>`
       : nothing}
-    <div class="hint ts-under">An icon or color per state. A state with none uses the tile's.</div>
   </div>`;
 }
 
@@ -1770,7 +1781,7 @@ function renderBackground(host: TileSettingsHost): TemplateResult {
   const reset = (key: string) => resetValue("background", key);
   return html`
     <div class="ts-sub-h"><span>Pattern</span></div>
-    ${enumRow(host, "pattern", "Pattern", "backgroundPattern", g.pattern, setWatchTilePattern)}
+    ${enumRow(host, "pattern", "Type", "backgroundPattern", g.pattern, setWatchTilePattern)}
     ${g.pattern === "none" ? nothing : html`
       ${sliderRow(host, "patternOpacity", "Opacity", "patternOpacity", g.patternOpacity, setWatchTilePatternOpacity, { reset: reset("patternOpacity"), percent: true })}
       ${sliderRow(host, "patternScale", "Size", "patternScale", g.patternScale, setWatchTilePatternScale)}
@@ -1788,7 +1799,7 @@ function renderBackground(host: TileSettingsHost): TemplateResult {
 function renderEffect(host: TileSettingsHost, g: ReturnType<typeof watchTileBackgroundSettings>, reset: (key: string) => unknown): TemplateResult {
   return html`
     <div class="ts-sub-h"><span>Effect</span></div>
-    ${enumRow(host, "effect", "Effect", "tileAnimation", g.effect, setWatchTileEffect)}
+    ${enumRow(host, "effect", "Type", "tileAnimation", g.effect, setWatchTileEffect)}
     ${g.effect === "none" ? nothing : html`
       ${boolRow(host, "effectActiveOnly", "Only when on", g.effectActiveOnly, setWatchTileEffectActiveOnly)}
       ${stylingPalette(host, "effectColor", {
@@ -1817,14 +1828,17 @@ export const tileSettingsStyles = css`
   .name-sec .sec-h > .ts-typing { flex: 1 1 auto; min-width: 0; display: flex; }
   .name-sec .sec-h > .ts-typing > input { flex: 1 1 auto; width: 0; min-width: 0; }
   .ts-name-b { display: flex; flex-direction: column; gap: 2px; }
-  .ts-name-b > .hint { margin: 0; }
+  /* Both lines start at the card's edge. The shared rule that starts a card's
+     help where its controls start would push the hint to a column this card
+     does not have. */
+  .name-sec > .sec-b.ts-name-b > .hint.keep, .ts-name-b > .hint { margin: 0; }
   .ts-entity { min-width: 0; font-size: 11.5px; color: var(--wa-muted); overflow-wrap: anywhere; }
   /* The row under the last card: Delete tile. */
   .ts-acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0 0; }
   /* A fieldset only to switch every control off at once while a save is
      out; it draws nothing of its own. */
   fieldset.ts-body, fieldset.ts-plain { margin: 0; padding: 0; border: 0; min-width: 0; }
-  fieldset.ts-body { display: flex; flex-direction: column; gap: 2px; padding: 2px 0 0; --wa-lab: 84px; }
+  fieldset.ts-body { display: flex; flex-direction: column; gap: 2px; padding: 2px 0 0; --wa-lab: 112px; }
   .ts-body .hint { margin: 0 0 4px; }
   .ts-body .hint.ts-under { padding-left: calc(var(--wa-lab) + 8px); margin-top: -2px; }
   .ts-nested .hint.ts-under { padding-left: calc(var(--wa-lab) + 8px); }
@@ -1864,12 +1878,42 @@ export const tileSettingsStyles = css`
   .ts-stack .field.entity-field > :not(:first-child) { grid-column: 1; }
   .ts-with-link { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .ts-with-link > .field { flex: 1; min-width: 0; }
-  .ts-link { flex: none; font-size: 12px; }
+  /* A link drawn as one: the theme's accent is a grey close to the text, so
+     without the underline a link read as plain words. */
+  .ts-link {
+    flex: none; font-size: 12px; color: var(--wa-ink); text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 3px;
+  }
+  .ts-link:hover { text-decoration-color: currentColor; }
   .hint .ts-link { margin-left: 4px; }
+  button.ghost.ts-reset-btn { border-color: var(--wa-line-strong); color: var(--wa-label, var(--wa-muted)); font-size: 12px; }
+  button.ghost.ts-reset-btn svg { width: 13px; height: 13px; flex: none; }
+  button.ghost.ts-reset-btn:hover:not(:disabled) { color: var(--wa-ink); }
 
   .ts-sub { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 4px; }
   .ts-sub-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 6px;
     font-size: 11.5px; font-weight: 650; color: var(--wa-muted); letter-spacing: .02em; }
+  /* A group's one line of description, under its heading and over its rows,
+     so it never reads as the help of whichever row came last. */
+  .ts-body .hint.ts-sub-note { margin: -1px 0 4px; }
+
+  /* One state per row: its glyph and name, then its Color and Icon chips and
+     the Reset that shows once the state has its own. */
+  .ts-state-row {
+    display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto 26px; align-items: center; gap: 6px;
+    min-height: 34px; padding: 2px 4px; border-radius: 8px;
+  }
+  .ts-state-row:hover { background: color-mix(in srgb, var(--wa-hover) 60%, transparent); }
+  .ts-state-glyph { display: grid; place-items: center; width: 22px; height: 22px; }
+  .ts-state-glyph svg { display: block; }
+  .ts-state-label { min-width: 0; font-size: 12.5px; overflow-wrap: anywhere; }
+  .ts-state-row.own .ts-state-label { font-weight: 600; }
+  .pe-chip.ts-state-color, .pe-chip.ts-state-icon { min-height: 26px; padding: 0 9px; display: inline-flex; align-items: center; gap: 6px; }
+  .ts-state-sw { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--sw);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 25%, transparent); }
+  /* No color of its own: the tile's, faded and ringed in dashes. */
+  .ts-state-sw.inherit { opacity: .45; outline: 1px dashed color-mix(in srgb, var(--wa-ink) 55%, transparent); outline-offset: 1px; }
+  .ts-state-reset { width: 26px; height: 26px; }
   .ts-nested { display: flex; flex-direction: column; gap: 2px; margin: 0 0 6px 12px; padding-left: 10px;
     border-left: 2px solid var(--wa-line); --wa-lab: 62px; }
 `;
