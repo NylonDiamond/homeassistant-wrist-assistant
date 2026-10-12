@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from homeassistant.components.sensor import (
     RestoreSensor,
@@ -28,6 +29,9 @@ from .widget_secret_store import (
     build_device_info,
 )
 
+if TYPE_CHECKING:
+    from .local_push import LocalPushRegistry
+
 
 
 async def async_setup_entry(
@@ -39,6 +43,7 @@ async def async_setup_entry(
     coordinator: DeltaCoordinator = entry.runtime_data.coordinator
     secret_store: WidgetSecretStore = entry.runtime_data.widget_secret_store
     notification_store: NotificationTokenStore = entry.runtime_data.notification_store
+    local_push = getattr(entry.runtime_data, "local_push", None)
 
     def _watch_via_device(watch_id: str) -> tuple[str, str]:
         # Watches root directly under the service device so they appear
@@ -137,7 +142,14 @@ async def async_setup_entry(
                 # parents in the device tree, not children of another iPhone.
                 iphone_via = (DOMAIN, entry.entry_id)
                 new_entities.extend([
-                    IPhoneAppVersionSensor(secret_store, entry, watch_id, iphone_via, hass=hass),
+                    IPhoneAppVersionSensor(
+                        secret_store,
+                        entry,
+                        watch_id,
+                        iphone_via,
+                        hass=hass,
+                        local_push=local_push,
+                    ),
                     IPhoneLastProvisionSensor(secret_store, entry, watch_id, iphone_via, hass=hass),
                 ])
             else:
@@ -885,10 +897,18 @@ class _SecretStoreSensorBase(SensorEntity):
 
 
 class IPhoneAppVersionSensor(_SecretStoreSensorBase):
-    """Marketing version of the iOS app on the paired iPhone."""
+    """Marketing version of the iOS app on the paired iPhone.
+
+    Also the iPhone's local push state, as two attributes: ``local_push``
+    (``connected`` while the phone holds its channel open, else ``not
+    connected``) and ``last_local_push``, when an alert last went over it.
+    The second changes with every such alert, so it is kept out of the
+    recorder.
+    """
 
     _attr_name = "App version"
     _attr_icon = "mdi:cellphone-cog"
+    _unrecorded_attributes = frozenset({"last_local_push"})
 
     def __init__(
         self,
@@ -898,16 +918,33 @@ class IPhoneAppVersionSensor(_SecretStoreSensorBase):
         via_device: tuple[str, str],
         *,
         hass: HomeAssistant | None = None,
+        local_push: LocalPushRegistry | None = None,
     ) -> None:
         super().__init__(
             secret_store, entry, watch_id, via_device, kind=DEVICE_KIND_IPHONE, hass=hass
         )
+        self._local_push = local_push
         self._attr_unique_id = f"wrist_assistant_{watch_id}_app_version"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if self._local_push is not None:
+            self.async_on_remove(self._local_push.async_add_listener(self._handle_update))
 
     @property
     def native_value(self) -> str | None:
         secret = self._secret_store.get(self._watch_id)
         return secret.app_version if secret is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | None]:
+        registry = self._local_push
+        connected = registry is not None and registry.is_connected(self._watch_id)
+        last = registry.last_local_push(self._watch_id) if registry is not None else None
+        return {
+            "local_push": "connected" if connected else "not connected",
+            "last_local_push": last.isoformat() if last is not None else None,
+        }
 
 
 class IPhoneLastProvisionSensor(_SecretStoreSensorBase):

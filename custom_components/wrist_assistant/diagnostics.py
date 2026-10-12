@@ -174,7 +174,16 @@ async def async_get_config_entry_diagnostics(
         "watch_logs": data.watch_logs_store.listing(),
         # Per user: present or not, revision, first 8 of the fingerprint.
         "client_certificates": data.client_certificate_store.diagnostics(),
+        # Per iPhone: whether its local push channel is open and since when,
+        # today's alerts sent over it and fallen back to the relay, the last
+        # close and the last local alert. No keys and no push tokens.
+        "local_push": _local_push_diagnostics(data),
     }
+
+
+def _local_push_diagnostics(data: Any) -> dict[str, Any] | None:
+    registry = getattr(data, "local_push", None)
+    return registry.diagnostics() if registry is not None else None
 
 
 def _device_watch_id(device: Any) -> str | None:
@@ -213,9 +222,15 @@ async def async_get_device_diagnostics(
         users = data.client_certificate_store.diagnostics().get("users", {})
         certificate = users.get(user_id, {"present": False, "revision": 0})
 
-    return {
+    out: dict[str, Any] = {
         "watch_id": watch_id,
         "user_bound": user_id is not None,
         "client_certificate": certificate,
         "logs": logs,
     }
+    # An iPhone's own local push numbers; a watch has no channel.
+    if getattr(secret_entry, "device_kind", None) == "iphone":
+        listing = _local_push_diagnostics(data)
+        if listing is not None:
+            out["local_push"] = listing["iphones"].get(watch_id, {"connected": False})
+    return out

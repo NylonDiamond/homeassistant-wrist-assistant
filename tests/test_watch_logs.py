@@ -432,3 +432,33 @@ def test_diagnostics_define_the_device_download() -> None:
     assert "async def async_get_device_diagnostics(" in source
     assert '"client_certificates": data.client_certificate_store.diagnostics()' in source
     assert '"watch_logs": data.watch_logs_store.listing()' in source
+
+
+def test_local_push_numbers_in_both_downloads(diag) -> None:
+    """The entry download lists every iPhone's channel numbers; an iPhone's
+    own download carries its own, and a watch's carries none."""
+    phone = "iphone-1"
+    numbers = {"connected": True, "local_today": 3, "fell_back_today": 1}
+    listing = {"channels_open": 1, "iphones": {phone: numbers}}
+    data = diag.entry.runtime_data
+    data.local_push = types.SimpleNamespace(diagnostics=lambda: listing)
+    entries = {
+        WATCH: types.SimpleNamespace(user_id=USER, device_kind="watch"),
+        phone: types.SimpleNamespace(user_id=USER, device_kind="iphone"),
+        "iphone-2": types.SimpleNamespace(user_id=USER, device_kind="iphone"),
+    }
+    data.widget_secret_store = types.SimpleNamespace(get=entries.get)
+
+    out = asyncio.run(diag.mod.async_get_config_entry_diagnostics(None, diag.entry))
+    assert out["local_push"] == listing
+
+    def device(watch_id):
+        return asyncio.run(
+            diag.mod.async_get_device_diagnostics(
+                None, diag.entry, _Device(("wrist_assistant", f"watch_{watch_id}"))
+            )
+        )
+
+    assert device(phone)["local_push"] == numbers
+    assert device("iphone-2")["local_push"] == {"connected": False}
+    assert "local_push" not in device(WATCH)

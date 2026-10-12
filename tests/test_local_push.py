@@ -14,6 +14,7 @@ and 1001.
 """
 
 from __future__ import annotations
+import __future__
 
 import ast
 import asyncio
@@ -805,3 +806,72 @@ def test_diagnostics_carry_no_secret(mods) -> None:
     }
     assert diag["channels_open"] == 1
 
+
+# ── the iPhone's sensor ──────────────────────────────────────────────────
+
+
+class _SensorBase:
+    """What ``_SecretStoreSensorBase`` gives the iPhone's sensor."""
+
+    def __init__(self, secret_store, entry, watch_id, via_device, *, kind, hass=None) -> None:
+        self._secret_store = secret_store
+        self._watch_id = watch_id
+        self.writes = 0
+        self.removers: list = []
+
+    async def async_added_to_hass(self) -> None:
+        return None
+
+    def async_on_remove(self, remover) -> None:
+        self.removers.append(remover)
+
+    def _handle_update(self) -> None:
+        self.writes += 1
+
+
+def _iphone_sensor_class() -> type:
+    path = _SRC / "sensor.py"
+    tree = ast.parse(path.read_text(), filename=str(path))
+    (node,) = [
+        n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "IPhoneAppVersionSensor"
+    ]
+    code = compile(
+        ast.Module(body=[node], type_ignores=[]),
+        str(path),
+        "exec",
+        flags=__future__.annotations.compiler_flag,
+        dont_inherit=True,
+    )
+    namespace: dict[str, Any] = {"_SecretStoreSensorBase": _SensorBase, "DEVICE_KIND_IPHONE": "iphone"}
+    exec(code, namespace)  # noqa: S102
+    return namespace["IPhoneAppVersionSensor"]
+
+
+def test_the_iphone_sensor_shows_the_channel(mods) -> None:
+    sensor_class = _iphone_sensor_class()
+
+    async def body(server):
+        keys = types.SimpleNamespace(get=lambda _id: types.SimpleNamespace(app_version="3.1"))
+        sensor = sensor_class(keys, None, PHONE, ("d", "e"), local_push=server.registry)
+        await sensor.async_added_to_hass()
+        before = dict(sensor.extra_state_attributes)
+        ws, _ = await server.connect()
+        seen: list = []
+        phone = asyncio.ensure_future(_phone_that_acks(ws, seen))
+        await _until(lambda: server.registry.is_connected(PHONE))
+        await server.registry.async_deliver(PHONE, "f" * 32, {})
+        during = dict(sensor.extra_state_attributes)
+        await ws.close()
+        await phone
+        await _until(lambda: not server.registry.is_connected(PHONE))
+        after = dict(sensor.extra_state_attributes)
+        return sensor, before, during, after
+
+    sensor, before, during, after = _run(body, mods)
+    assert sensor.native_value == "3.1"
+    assert before == {"local_push": "not connected", "last_local_push": None}
+    assert during["local_push"] == "connected" and during["last_local_push"]
+    assert after == {"local_push": "not connected", "last_local_push": during["last_local_push"]}
+    # Open, the local alert and the close each wrote the state.
+    assert sensor.writes >= 3
+    assert "last_local_push" in sensor._unrecorded_attributes
