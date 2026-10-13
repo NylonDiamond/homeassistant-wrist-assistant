@@ -777,8 +777,17 @@ describe("Home's Pair a device dialog card", () => {
     // Nobody is picked yet, so no code a phone could scan for the wrong person.
     expect(card.offer.userId).toBeUndefined();
     expect(offers(ha.sent)).toHaveLength(0);
-    expect(flatten(card.render({ bare: true }))).toContain("Choose whose iPhone it is.");
+    const before = flatten(card.render({ bare: true }));
+    expect(before).toContain("Choose whose iPhone it is.");
+    // Whose iPhone it is comes first, as step 1, lit; the iPhone's steps
+    // follow as 2 to 4, faint until someone is picked.
+    expect(before).toContain(`<li class="ws-qr-who next"><b aria-hidden="true">1</b>`);
+    expect(before.indexOf("Whose iPhone is this?")).toBeLessThan(before.indexOf("Camera at this code."));
+    expect(before).toMatch(/<li class=later><b aria-hidden="true">2<\/b><span>Point the iPhone/);
     await whose(card);
+    const after = flatten(card.render({ bare: true }));
+    expect(after).toContain(`<li class="ws-qr-who "><b aria-hidden="true">1</b>`);
+    expect(after).not.toContain("class=later");
     expect(offers(ha.sent)).toHaveLength(1);
     expect("user_id" in offers(ha.sent)[0]!).toBe(false);
     expect(card.offer.userId).toBe("root");
