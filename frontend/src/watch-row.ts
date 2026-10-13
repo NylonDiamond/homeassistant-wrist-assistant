@@ -1,29 +1,38 @@
-// The Watch app tab's second row, under the tabs on every watch screen: the
-// shared watch at the left, then the screens and Settings, the screen on show
-// marked. Control Center is retired and left out (`retired` in `shell.ts`). The panel draws it (`renderWatchRow`) and owns its state:
-// the shared watch (`watch-pick.ts`), whether the watch menu is open, and what
-// a pick or a screen does. Settings is a screen with an address like the
+// The Watch app tab's header row, under the tabs on every watch screen: the
+// shared watch at the left, then the screens and Settings as one segmented
+// track, the screen on show marked, then the screen's own save controls at
+// the right. Control Center is retired and left out (`retired` in
+// `shell.ts`). The panel draws it (`renderWatchRow`) and owns its state: the
+// shared watch (`watch-pick.ts`), whether the watch menu is open, and what a
+// pick or a screen does. Settings is a screen with an address like the
 // others. HTTP actions and Cameras are shared by every watch, so their links
-// never name one and a pick on them changes nothing they show. What can be worked out without
-// the panel lives here, where a test can reach it.
+// never name one and a pick on them changes nothing they show. What can be
+// worked out without the panel lives here, where a test can reach it.
 //
-// The row is neutral, like the tabs: the screen on show is marked by weight
-// and a grey fill, never by a hue. Every link and button is a box with a one
-// pixel outline. It wraps on a wide screen. On a phone the watch takes a line
-// of its own and the screens are one line that scrolls sideways, so the row
-// stays two lines however many screens there are.
+// The row is neutral: the watch's chip and every button are grey boxes with a
+// one pixel outline. The tab on show is raised in grey, and only its glyph
+// takes the screen's hue. What a screen is lives in its tab's tooltip
+// (`watchScreenSentence`). On a phone the watch and the save controls share
+// the first line and the screens are a second line that scrolls sideways.
 //
-// Under the row, two lines: what the screen on show is (its `blurb`), and,
-// while another screen holds unsaved work, a bar that names every screen
-// that does. Unsaved work is also an orange dot on its screen in the row.
-// Each editor keeps its own drafts and saves them itself, so there is no
-// Save all here: the bar only says where the work is and links to it.
+// The save controls are each screen's own (`head-bar.ts`): the panel puts an
+// empty box at the row's right end (`end`) and the screen draws its bar
+// there. Under the row, only while another screen holds unsaved work, a slim
+// line names every screen that does. Unsaved work is also an orange dot on
+// its screen in the row. Each editor keeps its own drafts and saves them
+// itself, so there is no Save all here: the line only says where the work is
+// and links to it.
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import type { OwnerSummary } from "./ha-api.js";
+import { homeMiniArt } from "./home-art.js";
+import type { Person } from "./people.js";
+import { personColorVar } from "./pickerRows.js";
 import { type DeviceSync, deviceSync, deviceSyncLabel } from "./send-state.js";
-import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, isPlainClick, panelUrl, unsavedDot, watchScreenOf, watchScreenPath } from "./shell.js";
-import { uiIcon } from "./ui-icons.js";
+import {
+  WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, isPlainClick, panelUrl, unsavedDot, watchScreenOf, watchScreenPath, watchScreenSentence,
+} from "./shell.js";
+import { type UiIconName, uiIcon } from "./ui-icons.js";
 import type { PanelRoute } from "./watch-pages/hook.js";
 import { settingsWatches, watchName } from "./watch-settings.js";
 
@@ -144,37 +153,72 @@ export interface WatchRowInput {
   onGo: (path: string) => void;
   /** The screens with unsaved work (`unsavedScreens`). */
   unsaved?: readonly WatchScreen[];
+  /** The household as people (`peopleOf`), so the watch's chip names whose
+   * it is and lights its drawing in their color, as Home does. */
+  people?: readonly Person[];
+  /** What stands at the row's right end: the save controls of the screen on
+   * show, which each screen draws itself (`head-bar.ts`). */
+  end?: unknown;
 }
 
+/** How each screen's tab looks in the row: its glyph, and the section hue
+ * the glyph takes while the screen is on show. The same glyphs and hues as
+ * Home's doors (`homeDoorLook`), so a screen is the same color everywhere. */
+export const WATCH_SCREEN_LOOK: Record<WatchScreenId, { icon: UiIconName; hue: string }> = {
+  "pages": { icon: "pages", hue: "var(--wa-hue-green)" },
+  "menus": { icon: "radial", hue: "var(--wa-hue-orange)" },
+  "status-pages": { icon: "checklist", hue: "var(--wa-hue-yellow)" },
+  "control-center": { icon: "tap", hue: "var(--wa-hue-orange)" },
+  "rooms": { icon: "home", hue: "var(--wa-hue-pink)" },
+  "voice": { icon: "mic", hue: "var(--wa-hue-red)" },
+  "http-actions": { icon: "globe", hue: "var(--wa-hue-blue)" },
+  "cameras": { icon: "image", hue: "var(--wa-hue-grey)" },
+  "settings": { icon: "sliders", hue: "var(--wa-hue-grey)" },
+};
+
+/** A tab's tooltip: what the screen is, as one sentence. A retired screen
+ * has its own note on the screen, so it has none. */
+export function watchRowLinkTitle(screen: WatchScreen): string | undefined {
+  return screen.retired === true ? undefined : watchScreenSentence(screen);
+}
+
+/** The line under the watch's name on its chip: whose it is, then its
+ * complications' verdict, "Jesse · Synced". Either may be missing. */
+export function watchChipSub(person: string | undefined, sync: DeviceSync | undefined): string {
+  return [person, sync === undefined ? undefined : deviceSyncLabel(sync)].filter((w): w is string => w !== undefined && w !== "").join(" · ");
+}
+
+/**
+ * The Watch app's one header row, under the tabs: the watch at the left, as
+ * a chip with its small drawing, its name, whose it is and how it stands;
+ * the screens in the middle, one segmented track that scrolls sideways; and
+ * at the right the screen's own save controls (`end`). Under it, only while
+ * another screen holds unsaved work, a slim line that says where.
+ */
 export function renderWatchRow(input: WatchRowInput): TemplateResult {
   const choices = watchRowChoices(input.owners, input.watch);
   const slot = watchRowSlot(input.loaded, choices.length);
   const href = (path: string) => panelUrl(input.route, path, globalThis.location?.pathname ?? "");
   const unsaved = new Set((input.unsaved ?? []).map((screen) => screen.id));
-  const link = (l: WatchRowLink, cls = "", title?: string) => html`<a class="wa-wr-link ${cls}${l.on ? "on" : ""}"
-    href=${href(l.path)} aria-current=${l.on ? "page" : "false"} title=${title ?? nothing}
+  const link = (l: WatchRowLink, cls = "") => {
+    const look = WATCH_SCREEN_LOOK[l.screen.id];
+    return html`<a class="wa-wr-link ${cls}${l.on ? "on" : ""}"
+    href=${href(l.path)} aria-current=${l.on ? "page" : "false"} title=${watchRowLinkTitle(l.screen) ?? nothing} style=${`--h: ${look.hue}`}
     @click=${(e: MouseEvent) => {
       if (!isPlainClick(e)) return;
       e.preventDefault();
       if (!l.on) input.onGo(l.path);
-    }}>${l.screen.label}${unsaved.has(l.screen.id) ? unsavedDot() : nothing}</a>`;
-  return html`<nav class="wa-watchrow" aria-label="Watch app">
+    }}><span class="wa-wr-ic" aria-hidden="true">${uiIcon(look.icon)}</span>${l.screen.label}${unsaved.has(l.screen.id) ? unsavedDot() : nothing}</a>`;
+  };
+  return html`<div class="wa-watchrow ${slot === "none" ? "no-watch" : ""}">
     ${renderWatchSlot(input, slot, choices)}
     ${slot === "none" ? html`<span class="wa-wr-note">${WATCH_ROW_NONE_NOTE}</span>` : nothing}
-    <span class="wa-wr-links" @scroll=${(e: Event) => markRowMore(e.currentTarget as HTMLElement)}>
+    <nav class="wa-wr-links" aria-label="Watch app" @scroll=${(e: Event) => markRowMore(e.currentTarget as HTMLElement)}>
       ${slot === "none" ? nothing : watchRowLinks(input.route, input.watch).map((l) => link(l))}
-      ${link(watchRowSettingsLink(input.route, input.watch), "wa-wr-settings ",
-        "How the watch behaves: gestures, pages, cameras and connection")}
-    </span>
-  </nav>${renderScreenLine(input.route)}${renderUnsavedBar(input, href)}`;
-}
-
-/** The line that says what the screen on show is: its name in bold, then its
- * blurb. A retired screen has its own note on the screen, so it has none. */
-function renderScreenLine(route: PanelRoute | undefined) {
-  const screen = watchScreenOf(route);
-  if (screen === undefined || screen.retired === true) return nothing;
-  return html`<p class="wa-wr-blurb"><b>${screen.label}</b> ${screen.blurb}</p>`;
+      ${link(watchRowSettingsLink(input.route, input.watch), "wa-wr-settings ")}
+    </nav>
+    <div class="wa-wr-end">${input.end ?? nothing}</div>
+  </div>${renderUnsavedBar(input, href)}`;
 }
 
 /** The bar under the row while another screen holds unsaved work. Each other
@@ -195,7 +239,7 @@ function renderUnsavedBar(input: WatchRowInput, href: (path: string) => string) 
   })}</span></p>`;
 }
 
-/** On a phone the screen links are one line that scrolls sideways: mark
+/** The screens' track scrolls sideways when it cannot show them all: mark
  * whether more of it is hidden past the right edge, and past the left edge
  * once scrolled, which draws the fade at that edge. A pixel of slack, so a
  * line scrolled to its end is not still claiming more under a rounding
@@ -219,7 +263,7 @@ export function rowScrollFor(line: { width: number; scrollWidth: number }, link:
 /** Bring the link on show into view in the line, without moving the page
  * itself, and mark the fade. Called by the panel after it draws the row. */
 export function showRowLink(root: ParentNode): void {
-  const box = root.querySelector<HTMLElement>("nav.wa-watchrow .wa-wr-links");
+  const box = root.querySelector<HTMLElement>(".wa-watchrow .wa-wr-links");
   if (!box) return;
   const on = box.querySelector<HTMLElement>("a.wa-wr-link.on");
   if (on) {
@@ -234,9 +278,28 @@ export function showRowLink(root: ParentNode): void {
   markRowMore(box);
 }
 
+/** The watch's small drawing on its chip, lit in its person's color once it
+ * holds complications, as on Home. */
+function chipArt(input: WatchRowInput, id: string | undefined) {
+  const people = input.people ?? [];
+  const index = id === undefined ? -1 : people.findIndex((p) => p.owners.some((o) => o.owner_watch_id === id));
+  const held = input.owners.find((o) => o.owner_watch_id === id)?.complication_count ?? 0;
+  const color = personColorVar(index) ?? "var(--wa-hue-grey)";
+  return html`<span class="wa-wr-art" style=${`--c: ${color}`} aria-hidden="true">${homeMiniArt("watch", held > 0)}</span>`;
+}
+
+/** The chip's name and the line under it. */
+function chipWords(input: WatchRowInput, c: WatchRowChoice) {
+  const person = (input.people ?? []).find((p) => p.owners.some((o) => o.owner_watch_id === c.id))?.label;
+  const sub = watchChipSub(person, c.sync);
+  return html`<span class="wa-wr-id"><b class="wa-wr-name">${c.name}</b>${sub === ""
+    ? nothing
+    : html`<span class="wa-wr-sub"><i class="wa-wr-dot ${c.sync ?? ""}" aria-hidden="true"></i>${sub}</span>`}</span>`;
+}
+
 function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: readonly WatchRowChoice[]) {
   if (slot === "loading") {
-    return html`<span class="wa-wr-watch"><span class="wa-wr-chip" aria-hidden="true">${uiIcon("watch")}</span><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">Loading…</span></span>`;
+    return html`<span class="wa-wr-watch">${chipArt(input, undefined)}<span class="wa-wr-id"><span class="wa-wr-wait">Loading…</span></span></span>`;
   }
   if (slot === "none") {
     const settings = watchRowSettingsLink(input.route, undefined);
@@ -245,7 +308,7 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
   }
   const current = choices.find((c) => c.on) ?? choices[0]!;
   if (slot === "one") {
-    return html`<span class="wa-wr-watch"><span class="wa-wr-chip" aria-hidden="true">${uiIcon("watch")}</span><span class="wa-wr-k">Watch</span><b class="wa-wr-name">${current.name}</b></span>`;
+    return html`<span class="wa-wr-watch" title="The watch you are setting up">${chipArt(input, current.id)}${chipWords(input, current)}</span>`;
   }
   const open = input.menuOpen;
   return html`<span class="wa-wr-picker" @keydown=${(e: KeyboardEvent) => {
@@ -254,7 +317,7 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
     <button type="button" class="wa-wr-open" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
       title="Pick the watch to set up" aria-label=${`Watch: ${current.name}. Pick another`}
       @click=${() => input.onMenu(!open)}>
-      <span class="wa-wr-chip" aria-hidden="true">${uiIcon("watch")}</span><span class="wa-wr-k">Watch</span><b class="wa-wr-name">${current.name}</b>${uiIcon("chevron")}
+      ${chipArt(input, current.id)}${chipWords(input, current)}${uiIcon("chevron")}
     </button>
     ${open ? html`<div class="wa-wr-menu" role="menu" aria-label="Watches">
       <div class="wa-wr-menu-h">You are editing</div>
@@ -272,49 +335,47 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
 }
 
 /** The row's look, added to the panel's sheet. Every color is a panel token,
- * so the light skin reads as well as the dark one. */
+ * so the light skin reads as well as the dark one. Controls are neutral grey
+ * with a one pixel outline; a section's hue shows only on its tab's glyph
+ * while it is on show. */
 export const watchRowStyles = css`
-  nav.wa-watchrow {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; flex: none;
-    min-height: 44px; box-sizing: border-box; padding: 6px 12px;
+  .wa-watchrow {
+    display: flex; flex-wrap: nowrap; align-items: center; gap: 14px; flex: none;
+    min-height: 60px; box-sizing: border-box; padding: 8px 18px;
     background: var(--wa-top); color: var(--wa-ink); border-bottom: 1px solid var(--wa-line);
     position: relative; z-index: 20;
   }
-  /* Which watch is being set up is the first thing to read on this row: it
-     carries the Watch app's color on its chip and its outline, a larger
-     name, and a rule between it and the screens. The screens stay neutral. */
-  .wa-wr-watch {
-    display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; height: 32px; box-sizing: border-box;
-    padding: 0 10px 0 6px; line-height: 30px; border-radius: 6px; border: 1px solid var(--wa-line-strong);
+  /* The watch: a chip with its small drawing, its name and, under it, whose
+     it is and how its complications stand. */
+  .wa-wr-watch, button.wa-wr-open {
+    display: inline-flex; align-items: center; gap: 10px; min-height: 42px; max-width: 300px; box-sizing: border-box;
+    padding: 5px 12px 5px 6px; border-radius: 11px; text-align: left;
+    font: inherit; color: var(--wa-ink); background: var(--wa-card); border: 1px solid var(--wa-line-strong);
   }
-  .wa-wr-watch, .wa-wr-picker { margin-right: 2px; }
-  .wa-wr-watch::after, .wa-wr-picker::after {
-    content: ""; position: absolute; right: -9px; top: 4px; bottom: 4px; width: 1px; background: var(--wa-line-strong);
+  .wa-wr-watch, .wa-wr-picker, button.wa-wr-pair { flex: none; min-width: 0; }
+  .wa-wr-art {
+    width: 30px; height: 30px; box-sizing: border-box; flex: none; display: grid; place-items: center;
+    border-radius: 8px; background: var(--wa-bg); border: 1px solid var(--wa-line);
   }
-  .wa-wr-watch { position: relative; }
-  span.wa-wr-chip {
-    display: inline-flex; align-items: center; justify-content: center; align-self: center; flex: none;
-    width: 20px; height: 20px; border-radius: 5px;
-    color: var(--wa-top); background: var(--wa-hue-blue);
-  }
-  .wa-wr-k { font-size: 12px; color: var(--wa-label); }
-  .wa-wr-name { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wa-wr-art svg.ha-mini { width: 16px; height: 21px; display: block; }
+  .wa-wr-art .ha-lit { stroke: var(--c); }
+  .wa-wr-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .wa-wr-name { font-size: 13px; font-weight: 500; line-height: 1.2; overflow-wrap: anywhere; }
+  .wa-wr-sub { display: flex; align-items: center; gap: 5px; font-size: 11px; line-height: 1.2; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .wa-wr-sub .wa-wr-dot { width: 6px; height: 6px; }
   .wa-wr-wait { font-size: 13px; color: var(--wa-muted); }
-  .wa-wr-picker { position: relative; display: inline-flex; min-width: 0; }
-  button.wa-wr-open, button.wa-wr-pair {
-    display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; max-width: 100%;
-    border-radius: 6px; font: inherit; cursor: pointer; color: var(--wa-ink);
-    background: var(--wa-field); border: 1px solid var(--wa-line-strong);
+  .wa-wr-picker { position: relative; display: inline-flex; }
+  button.wa-wr-open { cursor: pointer; }
+  button.wa-wr-open:hover { background: var(--wa-hover); }
+  button.wa-wr-open > svg.ui-icon { width: 12px; height: 12px; flex: none; color: var(--wa-muted); }
+  button.wa-wr-pair {
+    display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; max-width: 100%;
+    border-radius: 9px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--wa-ink);
+    background: var(--wa-card); border: 1px solid var(--wa-line-strong);
   }
-  button.wa-wr-open { align-items: baseline; padding: 0 10px 0 6px; line-height: 30px; border-color: var(--wa-hue-blue); background: color-mix(in srgb, var(--wa-hue-blue) 16%, var(--wa-field)); }
   button.wa-wr-pair:hover { background: var(--wa-hover); }
-  button.wa-wr-open:hover { background: color-mix(in srgb, var(--wa-hue-blue) 26%, var(--wa-field)); }
-  button.wa-wr-open .wa-wr-k { color: var(--wa-hue-blue); }
-  button.wa-wr-open:focus-visible, button.wa-wr-pair:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  button.wa-wr-open svg.ui-icon { width: 12px; height: 12px; align-self: center; color: var(--wa-hue-blue); }
-  span.wa-wr-chip svg.ui-icon { width: 13px; height: 13px; color: inherit; }
-  button.wa-wr-pair { font-size: 13px; font-weight: 600; }
   button.wa-wr-pair svg.ui-icon { width: 14px; height: 14px; }
+  button.wa-wr-open:focus-visible, button.wa-wr-pair:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .wa-wr-menu {
     position: absolute; left: 0; top: calc(100% + 6px); width: min(300px, calc(100vw - 24px)); box-sizing: border-box;
     display: flex; flex-direction: column; gap: 2px; padding: 6px;
@@ -330,7 +391,7 @@ export const watchRowStyles = css`
   button.wa-wr-row:hover { background: var(--wa-hover); border-color: var(--wa-line-strong); }
   button.wa-wr-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.wa-wr-row.on { font-weight: 600; background: color-mix(in srgb, var(--wa-ink) 10%, transparent); border-color: var(--wa-line-strong); }
-  .wa-wr-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wa-wr-row-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .wa-wr-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--wa-muted); }
   .wa-wr-dot.synced { background: var(--wa-green); }
   .wa-wr-dot.waiting { background: var(--wa-amber); }
@@ -338,29 +399,53 @@ export const watchRowStyles = css`
   .wa-wr-check { display: inline-flex; flex: none; }
   .wa-wr-check svg.ui-icon { width: 14px; height: 14px; }
   .wa-wr-menu-note { margin: 4px 0 0; padding: 8px 8px 4px; border-top: 1px solid var(--wa-line); font-size: 12px; color: var(--wa-muted); }
-  .wa-wr-note { font-size: 12.5px; color: var(--wa-muted); min-width: 0; }
-  .wa-wr-links { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
-  a.wa-wr-link, button.wa-wr-link {
-    display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 6px; box-sizing: border-box;
-    font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-muted); text-decoration: none; white-space: nowrap; cursor: pointer;
-    border: 1px solid var(--wa-line-strong); background: transparent;
+  .wa-wr-note { font-size: 12.5px; color: var(--wa-muted); min-width: 0; flex: 0 1 auto; }
+  /* The screens: one segmented track. The tab on show is raised in grey and
+     its glyph takes the screen's hue (--h); the others are muted with faint
+     glyphs. The track scrolls sideways, with no scroll bar, when it cannot
+     show every tab, and fades at an edge while more is hidden past it. */
+  nav.wa-wr-links {
+    flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: nowrap; gap: 2px; padding: 3px; box-sizing: border-box;
+    border-radius: 11px; background: var(--wa-card); border: 1px solid var(--wa-line);
+    overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-padding-inline: 12px;
   }
-  a.wa-wr-link:hover, button.wa-wr-link:hover { color: var(--wa-ink); background: var(--wa-hover); }
-  a.wa-wr-link:focus-visible, button.wa-wr-link:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  a.wa-wr-link.on, button.wa-wr-link.on {
-    color: var(--wa-ink); font-weight: 600;
-    background: color-mix(in srgb, var(--wa-ink) 10%, transparent);
+  .wa-watchrow.no-watch nav.wa-wr-links { flex: 0 1 auto; }
+  nav.wa-wr-links::-webkit-scrollbar { display: none; }
+  nav.wa-wr-links[data-more] {
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 56px), transparent);
+    mask-image: linear-gradient(to right, black calc(100% - 56px), transparent);
   }
-  /* What the screen on show is, one quiet line under the row. */
-  p.wa-wr-blurb {
-    margin: 0; flex: none; padding: 8px 12px; font-size: 13px; line-height: 1.4; color: var(--wa-muted);
-    background: var(--wa-top); border-bottom: 1px solid var(--wa-line);
+  nav.wa-wr-links[data-back] {
+    -webkit-mask-image: linear-gradient(to right, transparent, black 40px);
+    mask-image: linear-gradient(to right, transparent, black 40px);
   }
-  p.wa-wr-blurb b { color: var(--wa-ink); font-weight: 600; }
-  /* Where the unsaved work is. Slim and neutral: the orange dot at its start
-     is the same mark the row and the tab carry. */
+  nav.wa-wr-links[data-back][data-more] {
+    -webkit-mask-image: linear-gradient(to right, transparent, black 40px, black calc(100% - 56px), transparent);
+    mask-image: linear-gradient(to right, transparent, black 40px, black calc(100% - 56px), transparent);
+  }
+  a.wa-wr-link {
+    flex: none; display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 11px; box-sizing: border-box;
+    border-radius: 8px; font-size: 12.5px; font-weight: 400; color: var(--wa-muted); text-decoration: none; white-space: nowrap;
+    background: transparent; border: 0;
+  }
+  a.wa-wr-link .wa-wr-ic { display: inline-flex; flex: none; color: var(--wa-faint); }
+  a.wa-wr-link .wa-wr-ic svg.ui-icon { width: 14px; height: 14px; display: block; }
+  a.wa-wr-link:hover { color: var(--wa-ink); background: var(--wa-hover); }
+  a.wa-wr-link:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  a.wa-wr-link.on { color: var(--wa-ink); font-weight: 500; background: var(--wa-hover); box-shadow: var(--wa-seg-shadow); }
+  a.wa-wr-link.on .wa-wr-ic { color: var(--h); }
+  /* The screen's own save controls, at the right end. */
+  .wa-wr-end { flex: none; display: flex; align-items: center; justify-content: flex-end; min-width: 0; }
+  .wa-wr-host { display: contents; }
+  .wa-wr-end .wa-head-bar {
+    display: flex; flex: 0 1 auto; min-width: 0; min-height: 0; padding: 0; margin: 0;
+    overflow: visible; container-type: normal; background: none; border: 0; font-size: 14px; color: var(--wa-ink);
+  }
+  /* Where the unsaved work is, a slim line under the row while there is
+     some on another screen. Neutral: the orange dot at its start is the
+     same mark the row and the tab carry. */
   p.wa-wr-unsaved {
-    display: flex; align-items: baseline; gap: 8px; margin: 0; flex: none; padding: 6px 12px;
+    display: flex; align-items: baseline; gap: 8px; margin: 0; flex: none; padding: 5px 18px;
     font-size: 12.5px; line-height: 1.4; color: var(--wa-ink);
     background: var(--wa-top); border-bottom: 1px solid var(--wa-line);
   }
@@ -368,34 +453,19 @@ export const watchRowStyles = css`
   p.wa-wr-unsaved i.wa-unsaved { margin-left: 0; align-self: center; }
   p.wa-wr-unsaved a { color: var(--wa-ink); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
   p.wa-wr-unsaved a:focus-visible { outline: none; border-radius: 3px; box-shadow: var(--wa-ring); }
-  /* A phone: the watch on a line of its own, then the screens as one line
-     that scrolls sideways, edge to edge, with no scroll bar. While more of it
-     is hidden past the right edge (\`markRowMore\`) that edge fades out. The
-     panel scrolls the screen on show into view (\`showRowLink\`). Wrapped,
-     nine screens took four lines before the screen itself began. */
+  /* A phone: the watch and the save controls share the first line, the
+     watch at the left; the screens are the second line, edge to edge, one
+     line that scrolls sideways. The page itself never scrolls sideways. */
   @media (max-width: 640px) {
-    .wa-wr-watch, .wa-wr-picker, button.wa-wr-pair { flex: 1 1 100%; margin-right: 0; }
-    .wa-wr-watch::after, .wa-wr-picker::after { display: none; }
-    button.wa-wr-open { flex: 1; min-width: 0; }
-    button.wa-wr-open .wa-wr-name { flex: 1; text-align: left; }
-    .wa-wr-links {
-      flex: 1 1 calc(100% + 24px); flex-wrap: nowrap; margin: 0 -12px; padding: 3px 12px;
-      overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
-      scroll-snap-type: x proximity; scroll-padding-inline: 12px;
-    }
-    .wa-wr-links::-webkit-scrollbar { display: none; }
-    .wa-wr-links > a.wa-wr-link { flex: none; scroll-snap-align: start; }
-    .wa-wr-links[data-more] {
-      -webkit-mask-image: linear-gradient(to right, black calc(100% - 72px), transparent);
-      mask-image: linear-gradient(to right, black calc(100% - 72px), transparent);
-    }
-    .wa-wr-links[data-back] {
-      -webkit-mask-image: linear-gradient(to right, transparent, black 40px);
-      mask-image: linear-gradient(to right, transparent, black 40px);
-    }
-    .wa-wr-links[data-back][data-more] {
-      -webkit-mask-image: linear-gradient(to right, transparent, black 40px, black calc(100% - 72px), transparent);
-      mask-image: linear-gradient(to right, transparent, black 40px, black calc(100% - 72px), transparent);
-    }
+    .wa-watchrow { flex-wrap: wrap; gap: 8px 10px; padding: 8px 12px; }
+    .wa-wr-watch, .wa-wr-picker, button.wa-wr-pair { flex: 0 1 auto; max-width: 100%; }
+    .wa-wr-watch, button.wa-wr-open { max-width: 100%; }
+    /* No width of its own to claim, so it shares the first line with the
+       watch however long its words are, and fills what the watch leaves. */
+    .wa-wr-end { order: 1; flex: 1 1 0; }
+    .wa-wr-note { order: 2; flex: 1 1 100%; }
+    nav.wa-wr-links { order: 3; flex: 1 1 100%; scroll-snap-type: x proximity; }
+    nav.wa-wr-links > a.wa-wr-link { scroll-snap-align: start; }
+    p.wa-wr-unsaved { padding: 5px 12px; }
   }
 `;

@@ -72,6 +72,9 @@ export interface WatchHttpActionsViewInput {
   narrow: boolean;
   icons: IconProvider;
   iconsTick: number;
+  /** The box in the panel's Watch app header the editor draws its bar
+   * in (`head-bar.ts`). Left out, the bar is drawn on top of the editor. */
+  barHost?: HTMLElement;
   onLoaded: () => void;
 }
 
@@ -83,7 +86,7 @@ export function renderWatchHttpActionsView(input: WatchHttpActionsViewInput): Te
   if (!ready && !loadFailed) void loadHttpActionsEditor().then(input.onLoaded, input.onLoaded);
   return ready
     ? html`<wa-http-actions-editor .hass=${input.hass} .owners=${input.owners}
-        .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}></wa-http-actions-editor>`
+        .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow} .barHost=${input.barHost}></wa-http-actions-editor>`
     : html`<div class="wp-loading">
         ${loadFailed ? html`<span>The HTTP actions screen did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
       </div>`;
