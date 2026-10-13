@@ -55,9 +55,10 @@ describe("Home's page", () => {
     expect(home).toContain("${lead}${scope}");
   });
 
-  it("says Loading… while the devices load, so the pairing card never flashes up", () => {
+  it("says Loading… while the devices load, so the welcome never flashes up", () => {
     expect(home).toContain("const loading = !this.linkReady && this.owners.length === 0;");
-    expect(home.indexOf("${failed ? this.renderNotReady() : loading")).toBeLessThan(home.indexOf(": add}"));
+    expect(home).toContain("if (!failed && !loading && devices.length === 0) return html`${error}${this.renderHomeWelcome(scope)}${pair}`;");
+    expect(home).toContain("${failed ? this.renderNotReady() : html`<p class=\"home-empty\">Loading…</p>`}");
   });
 
   it("has no New complication button, only Pair a device", () => {
@@ -267,9 +268,8 @@ describe("coming back to Home", () => {
 });
 
 describe("Home's Pair a device dialog", () => {
-  it("opens from the side bar's button, or from the only card in a home with no devices, for everyone", () => {
-    expect(home).toContain("const add = html`<ul class=\"home-devices\"><li><button type=\"button\" class=\"home-device-add\"");
-    expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<b>Pair a device</b>");
+  it("opens from the side bar's button for everyone; a home with no devices pairs in its welcome", () => {
+    expect(home).not.toContain("home-device-add");
     expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<span>Pair a device</span>");
     expect(home).toContain("const pair = this.pairOpen ? this.renderPairDialog() : nothing;");
   });

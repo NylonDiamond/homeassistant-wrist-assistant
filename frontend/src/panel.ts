@@ -143,9 +143,9 @@ import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, homePill, homeSync, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
 import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDoorLook, homeGroups, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_RING_LENGTH, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
-import { type HomeFace, type HomeFacePicture, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
-import { type GettingStarted, type WelcomeMode, gettingStarted, loadWelcomeMode, saveWelcomeMode, watchesWithPages, welcomeShows } from "./getting-started.js";
-import { renderWelcomeCard, welcomeStyles } from "./welcome-card.js";
+import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
+import { APP_STORE_URL, type GettingStarted, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
+import { type QrPicture, qrPicture } from "./qr-code.js";
 import { helpSheetStyles, renderHelpSheet } from "./help-sheet.js";
 import { HOME_PATH } from "./shell.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
@@ -420,7 +420,7 @@ import {
 import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";
-import { pairNextStatus, pairedFactsLine } from "./pair-flow.js";
+import { type PairChoice, pairChoiceNote, pairNextStatus, pairedFactsLine } from "./pair-flow.js";
 import { settingsWatches } from "./watch-settings.js";
 import {
   formButtonStyles,
@@ -1508,6 +1508,22 @@ export class WristAssistantPanel extends LitElement {
   /** The watch just paired in Home's dialog, by owner id: the dialog shows
    * what next for it in place of the card. */
   @state() private pairNext?: string;
+  /** The pairing card in Home's welcome, in a home with no devices yet: its
+   * third step, for the device picked on its stage. Open while the welcome
+   * is on screen (`syncHomeWelcome`). A device paired on it is picked on
+   * Home with a green "Paired" line, the way the dialog's iPhone is. */
+  private welcomePair = new PairWatchCard(() => this.requestUpdate(), async (deviceId, stale, kind) => {
+    await this.loadOwners();
+    if (deviceId === undefined) return;
+    if (kind === "watch") this.pickWatch(deviceId);
+    if (stale() || this.ownerOf(deviceId) === undefined) return;
+    this.openHomeDevice(deviceId);
+    this.devicePaired = deviceId;
+  });
+  private welcomePairOpen = false;
+  /** The App Store page as a QR code, for the welcome's first step. Made
+   * once, the first time the welcome shows. */
+  @state() private appStoreQr?: QrPicture;
 
   /** The device picked on Home, by owner id. Undefined, or a device that has
    * left, shows the one heard from last (`homePickOf`). */
@@ -1550,9 +1566,6 @@ export class WristAssistantPanel extends LitElement {
    * until the summary is read, so the welcome card never flashes up in a
    * home that already has pages. */
   @state() private watchPages?: ReadonlySet<string>;
-  /** Whether Home shows the welcome card: automatic, hidden or shown, as
-   * this browser remembers it. */
-  @state() private welcomeMode: WelcomeMode = loadWelcomeMode(() => window.localStorage);
   /** The Help sheet the tab bar's Help button opens, on every tab. */
   @state() private helpSheetOpen = false;
   /** When the owners list was last read, so Home can age each device's
@@ -6042,7 +6055,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, homeStyles, watchRowStyles, listPageStyles, welcomeStyles, helpSheetStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, homeStyles, watchRowStyles, listPageStyles, helpSheetStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -6323,9 +6336,10 @@ export class WristAssistantPanel extends LitElement {
     super.disconnectedCallback();
     for (const type of UNSAVED_NUDGES) this.removeEventListener(type, this.unsavedSoon, { capture: true });
     this.syncUnsavedTicker(false);
-    // A QR code still open in Home's pairing dialog stops working with the
-    // page that showed it.
+    // A QR code still open in Home's pairing dialog or its welcome stops
+    // working with the page that showed it.
     this.closePairDialog();
+    this.closeHomeWelcome();
     this.sizeObserver.disconnect();
     this.fades.disconnect();
     this.stageObserver?.disconnect();
@@ -6659,6 +6673,7 @@ export class WristAssistantPanel extends LitElement {
       }
     }
     if (tabOfRoute(this.route) === "home") this.animateHomePick();
+    this.syncHomeWelcome();
     if (changed.has("helpSheetOpen") && this.helpSheetOpen) {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.wa-help-sheet");
       if (dialog && !dialog.open) dialog.showModal();
@@ -10882,29 +10897,9 @@ export class WristAssistantPanel extends LitElement {
 
   // ── getting started and the Help sheet ────────────────────────────────
 
-  /** The three getting started steps, as Home's welcome card and the Help
-   * sheet both show them. */
+  /** The three getting started steps, as the Help sheet shows them. */
   private gettingStarted(): GettingStarted {
     return gettingStarted(this.owners, this.watchPages, this.sharedWatch);
-  }
-
-  private setWelcomeMode(mode: WelcomeMode) {
-    this.welcomeMode = mode;
-    saveWelcomeMode(() => window.localStorage, mode);
-  }
-
-  /** Home's welcome card, while it shows (`welcomeShows`). */
-  private renderWelcome() {
-    const gs = this.gettingStarted();
-    if (!welcomeShows(this.welcomeMode, gs, this.linkReady || this.owners.length > 0)) return nothing;
-    return renderWelcomeCard({
-      gs,
-      mode: this.welcomeMode,
-      onPair: () => this.openPairDialog(),
-      onNewPage: (watch) => this.goTo(watchScreenPath(WATCH_SCREENS[0]!, watch)),
-      onHelp: () => this.openHelpSheet(),
-      onHide: () => this.setWelcomeMode("hidden"),
-    });
   }
 
   /** Open the Help sheet. Which watches hold a page is read on the way into
@@ -10923,10 +10918,9 @@ export class WristAssistantPanel extends LitElement {
     if (refocus) void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLElement>("button.wa-tabs-help")?.focus());
   }
 
-  /** The sheet. Pair a device and Show the welcome card again go to Home
-   * first, where the Pair dialog and the card live. A screen with unsaved
-   * work may refuse to be left: then Pair a device opens nothing, and the
-   * card is still remembered as shown for the next visit to Home. */
+  /** The sheet. Pair a device goes to Home first, where the Pair dialog
+   * lives. A screen with unsaved work may refuse to be left: then Pair a
+   * device opens nothing. */
   private renderHelpSheet() {
     const home = () => {
       this.closeHelpSheet(false);
@@ -10940,7 +10934,6 @@ export class WristAssistantPanel extends LitElement {
       onClosed: () => this.closeHelpSheet(true),
       onPair: () => { if (home()) this.openPairDialog(); },
       onNewPage: (watch) => { this.closeHelpSheet(false); this.goTo(watchScreenPath(WATCH_SCREENS[0]!, watch)); },
-      onShowWelcome: () => { this.setWelcomeMode("shown"); home(); },
       ...(tabOfRoute(this.route) === "complications"
         ? { onEditorHelp: () => { this.closeHelpSheet(false); this.helpTab = "basics"; this.helpOpen = true; } }
         : {}),
@@ -19192,11 +19185,11 @@ export class WristAssistantPanel extends LitElement {
    * state, and a door to each of its pages. Picking another slides it in
    * (`animateHomePick`).
    *
-   * In a home with no devices the page is one column with a card that opens
-   * "Pair a device". Nothing but "Loading…" while the devices are still
-   * loading, so the pairing card never flashes up in a home that has
-   * devices, and a device list that would not load says so and offers Try
-   * again (`renderNotReady`).
+   * A home with no devices gets the welcome instead (`renderHomeWelcome`):
+   * install the app, pick the device, pair it. Nothing but "Loading…" while
+   * the devices are still loading, so the welcome never flashes up in a home
+   * that has devices, and a device list that would not load says so and
+   * offers Try again (`renderNotReady`).
    */
   private renderHome() {
     const devices = homeDeviceRows(this.homeDevices(), this.watchAppSyncs);
@@ -19210,20 +19203,17 @@ export class WristAssistantPanel extends LitElement {
     const lead = html`<p class="home-lead">Every watch and iPhone, who it belongs to, and whether it has your latest changes.</p>`;
     const scope = this.hass?.user?.is_admin === false ? html`<p class="home-scope">You see the devices paired to you. Ask an administrator if yours is missing.</p>` : nothing;
     const pair = this.pairOpen ? this.renderPairDialog() : nothing;
+    if (!failed && !loading && devices.length === 0) return html`${error}${this.renderHomeWelcome(scope)}${pair}`;
     if (failed || loading || devices.length === 0) {
-      const add = html`<ul class="home-devices"><li><button type="button" class="home-device-add" title="Pair a watch or iPhone, by a code or a QR code"
-          @click=${() => this.openPairDialog()}>${uiIcon("plus")}<b>Pair a device</b><span>A watch or an iPhone, by a code or a QR code</span></button></li></ul>`;
       return html`${error}
         <div class="home home-pad"><div class="home-wrap">
           <div class="home-head"><div class="home-head-text"><h1>Home</h1>${lead}${scope}</div></div>
-          ${failed ? nothing : this.renderWelcome()}
-          ${failed ? this.renderNotReady() : loading ? html`<p class="home-empty">Loading…</p>` : add}
+          ${failed ? this.renderNotReady() : html`<p class="home-empty">Loading…</p>`}
         </div></div>
         ${pair}`;
     }
     const pick = homePickOf(devices, this.homePick, (id) => this.ownerOf(id));
     const row = devices.find((d) => d.id === pick) ?? devices[0]!;
-    const welcome = this.renderWelcome();
     return html`${error}
       <div class="home hb">
         <aside class="hb-side" aria-label="Devices">
@@ -19235,11 +19225,112 @@ export class WristAssistantPanel extends LitElement {
           <p class="home-small">${HOME_SYNC_NOTE}</p>
         </aside>
         <section class="hb-main" aria-label=${row.name}>
-          ${welcome === nothing ? nothing : html`<div class="home-welcome-slot">${welcome}</div>`}
           ${this.renderHomeDetail(row, devices, groups, elapsed)}
         </section>
       </div>
       ${pair}`;
+  }
+
+  /** Whether Home shows the welcome: on Home, devices read, and none. */
+  private homeWelcomeShows(): boolean {
+    if (tabOfRoute(this.route) !== "home") return false;
+    if (!this.linkReady && this.owners.length === 0) return false;
+    const devices = homeDeviceRows(this.homeDevices(), this.watchAppSyncs);
+    return devices.length === 0 && !this.loadFailedEmpty;
+  }
+
+  /** The welcome's pairing card is open exactly while the welcome is on
+   * screen: opened on the watch the first time it shows, and closed (any QR
+   * code withdrawn) once a device is paired or Home is left. Run after every
+   * drawing. */
+  private syncHomeWelcome() {
+    const shows = this.homeWelcomeShows();
+    if (shows && !this.welcomePairOpen && this.hass) {
+      this.welcomePairOpen = true;
+      this.welcomePair.open(this.hass, { mode: "code" });
+      this.welcomePair.pick("watch", { focus: false });
+      if (this.appStoreQr === undefined) {
+        void qrPicture(APP_STORE_URL).then((picture) => { this.appStoreQr = picture; }).catch(() => undefined);
+      }
+      this.requestUpdate();
+    } else if (!shows) {
+      this.closeHomeWelcome();
+    }
+  }
+
+  private closeHomeWelcome() {
+    if (!this.welcomePairOpen) return;
+    this.welcomePairOpen = false;
+    this.welcomePair.close();
+  }
+
+  /**
+   * Home in a home with no devices yet: a welcome in three steps, top to
+   * bottom. Install the app (the App Store, as a link and a QR code); pick
+   * the device, a watch or an iPhone drawn on Home's lit stage, the one
+   * picked inside a thin green arc that turns slowly; then pair it, with the
+   * pairing card for that device (`welcomePair`): a code to type for a
+   * watch, a QR code to scan for an iPhone. The card's own link across to
+   * the other way moves the pick on the stage with it.
+   */
+  private renderHomeWelcome(scope: TemplateResult | typeof nothing) {
+    const card = this.welcomePair;
+    const picked: PairChoice = card.picked ?? "watch";
+    const choice = (kind: PairChoice, label: string, line: string) => {
+      const on = picked === kind;
+      return html`<button type="button" class="hw-choice ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+          @click=${() => { if (!on) card.pick(kind); }}>
+          <span class="hw-ring">
+            <svg class="hw-ring-track" viewBox="0 0 236 236" aria-hidden="true"><circle cx="118" cy="118" r="117.5"></circle></svg>
+            ${on ? html`<svg class="hw-ring-arc" viewBox="0 0 236 236" aria-hidden="true"><circle cx="118" cy="118" r="117.25" pathLength="100" stroke-dasharray="24 76"></circle></svg>` : nothing}
+            ${homeChoiceArt(kind, on)}
+          </span>
+          <span class="hw-choice-t"><b>${label}</b><span>${line}</span></span>
+        </button>`;
+    };
+    const qr = this.appStoreQr;
+    const step = (n: number, title: string, line: string, body: TemplateResult) => html`<li class="hw-step">
+        <span class="hw-rail" aria-hidden="true"><span class="hw-num">${n}</span><span class="hw-line"></span></span>
+        <div class="hw-body">
+          <div class="hw-step-head"><h2>${title}</h2><span>${line}</span></div>
+          ${body}
+        </div>
+      </li>`;
+    return html`<div class="home home-pad"><div class="hw-wrap">
+        <div class="home-head">
+          <div class="home-head-text"><h1>Welcome to Wrist Assistant</h1><p class="home-lead">Three steps and about two minutes.</p>${scope}</div>
+          <a class="home-btn" href=${SETUP_GUIDE_URL} target="_blank" rel="noreferrer">Setup guide</a>
+        </div>
+        <ol class="hw-steps">
+          ${step(1, "Install the app", "On the iPhone, the watch, or both.", html`<div class="hw-install">
+              <div class="hw-install-t">
+                <p>Install it on your iPhone and it shows up on the watch too. No iPhone? Open the App Store on the watch and search for Wrist Assistant.</p>
+                <a class="home-btn" href=${APP_STORE_URL} target="_blank" rel="noreferrer">Open the App Store${uiIcon("right")}</a>
+              </div>
+              <figure class="hw-qr">
+                ${qr === undefined ? html`<span class="hw-qr-empty" aria-hidden="true"></span>`
+                  : html`<svg viewBox=${`0 0 ${qr.size} ${qr.size}`} role="img" aria-label="QR code for the App Store page" shape-rendering="crispEdges"><rect width=${qr.size} height=${qr.size} fill="#fff"></rect><path d=${qr.path} fill="#000"></path></svg>`}
+                <figcaption><b>Scan with your iPhone</b><span>It opens the App Store page.</span></figcaption>
+              </figure>
+            </div>`)}
+          ${step(2, "Pick one", "Which device are you pairing now? You can pair the other one later.", html`<div class="hb-stage hw-stage">
+              <span class="hb-floor"></span>
+              <div class="hw-choices" role="group" aria-label="Pick one">
+                ${choice("watch", "Apple Watch", "Pairs with a code")}
+                ${choice("iphone", "iPhone", "Pairs with a QR code")}
+              </div>
+            </div>`)}
+          ${step(3, picked === "iphone" ? "Pair your iPhone" : "Pair your watch",
+            picked === "iphone" ? "Scan the code with the iPhone's Camera." : "The watch shows a code. Type it here.",
+            html`<section class="hw-pair" aria-label=${picked === "iphone" ? "Pair your iPhone" : "Pair your watch"}>
+              ${card.render({ bare: true })}
+              <div class="hw-pair-foot">
+                <span>Stuck? <a href=${TROUBLESHOOTING_URL} target="_blank" rel="noreferrer">Something is not working</a></span>
+                <span>${pairChoiceNote(this.hass?.user?.is_admin === true)}</span>
+              </div>
+            </section>`)}
+        </ol>
+      </div></div>`;
   }
 
   /** Home's household state, at the top of the side bar: a ring of every

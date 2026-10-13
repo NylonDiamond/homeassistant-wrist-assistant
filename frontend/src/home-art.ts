@@ -199,3 +199,31 @@ export function homeMiniArt(kind: "watch" | "iphone", lit: boolean): TemplateRes
         ${lit ? svg`<rect class="ha-lit-fill" x="26" y="70" width="40" height="22" rx="6"></rect>` : nothing}
       </svg>`;
 }
+
+/** A device not paired yet, for the welcome's "Pick one": the watch or the
+ * iPhone in dashed outline, drawn in the panel's own tokens through the
+ * `hw-ghost` classes, since it stands for a device rather than showing one.
+ * The one picked (`on`) has its outline lit and its screen says how it
+ * pairs: the watch shows a sample code, the iPhone a camera frame. */
+export function homeChoiceArt(kind: "watch" | "iphone", on: boolean): TemplateResult {
+  if (kind === "watch") {
+    return html`<svg class="ha-art hw-ghost-art" viewBox="0 0 140 180" width="130" height="167" fill="none" aria-hidden="true">
+      <rect class="hw-ghost-faint" x="38.6" y="0.6" width="62.8" height="27" rx="7" stroke-width="1.2" stroke-dasharray="3 4"></rect>
+      <rect class="hw-ghost-faint" x="38.6" y="152.4" width="62.8" height="27" rx="7" stroke-width="1.2" stroke-dasharray="3 4"></rect>
+      <rect class="${on ? "hw-ghost-lit" : "hw-ghost"} hw-ghost-fill" x="12.75" y="18.75" width="114.5" height="142.5" rx="35.25" stroke-width="1.5" stroke-dasharray="5 4"></rect>
+      <rect class="hw-ghost-faint" x="126.6" y="55.6" width="5.8" height="22.8" rx="2.5" stroke-width="1.2"></rect>
+      ${on ? svg`<text class="hw-ghost-ink" x="70" y="70" text-anchor="middle" font-size="7" font-weight="500" letter-spacing="0.8">YOUR CODE</text>
+        <text class="hw-ghost-ink hw-ghost-mono" x="70" y="96" text-anchor="middle" font-size="19" font-weight="500" letter-spacing="2">K7Q 4M2</text>
+        <rect class="hw-ghost-faint" x="40" y="112" width="60" height="16" rx="8" stroke-width="1"></rect>
+        <text class="hw-ghost-ink" x="70" y="123" text-anchor="middle" font-size="6.5">Pair with Home Assistant</text>` : nothing}
+    </svg>`;
+  }
+  return html`<svg class="ha-art hw-ghost-art" viewBox="0 0 92 184" width="80" height="160" fill="none" aria-hidden="true">
+    <rect class="${on ? "hw-ghost-lit" : "hw-ghost"} hw-ghost-fill" x="2.75" y="1.75" width="86.5" height="180.5" rx="17.25" stroke-width="1.5" stroke-dasharray="5 4"></rect>
+    <rect class="hw-ghost-faint" x="35" y="11" width="22" height="7" rx="3.5" stroke-width="1"></rect>
+    ${on ? svg`<path class="hw-ghost-ink-line" d="M26 66v-8h8M58 58h8v8M66 98v8h-8M34 106h-8v-8" stroke-width="1.6" stroke-linecap="round"></path>
+      <path class="hw-ghost-lit" d="M30 82h32" stroke-width="1.2" stroke-linecap="round"></path>
+      <text class="hw-ghost-ink" x="46" y="126" text-anchor="middle" font-size="6.8" font-weight="500">Scan to pair</text>` : nothing}
+    <rect class="hw-ghost-faint-fill" x="31" y="170" width="30" height="3" rx="1.5"></rect>
+  </svg>`;
+}

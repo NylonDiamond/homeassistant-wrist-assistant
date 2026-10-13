@@ -70,6 +70,7 @@ import {
   pairFoundTitle,
   pairGoLabel,
   pairOpening,
+  pairQrLink,
   pairSubtitle,
   pairedHeadline,
 } from "./pair-flow.js";
@@ -316,6 +317,23 @@ export class PairWatchCard {
     this.update();
   }
 
+  /** Home's welcome picks the device on its own stage, in place of the
+   * card's choice. The same as an answer to "What are you pairing?", except
+   * that `focus: false` leaves the cursor where it is (the page has only just
+   * opened). False while a pairing is under way, which keeps its device. */
+  pick(device: PairChoice, options: { focus?: boolean } = {}): boolean {
+    if (this.busy) return false;
+    this.choose(device);
+    if (options.focus === false) this.focusCode = false;
+    return true;
+  }
+
+  /** The device the person said they are pairing, from the choice, a link
+   * in a mode's foot, or `pick`. */
+  get picked(): PairChoice | undefined {
+    return this.device;
+  }
+
   /** Back to "What are you pairing?". Whatever the mode held goes with it:
    * an open QR code is withdrawn and a typed code cleared, so the next
    * answer starts afresh. The people already read are kept. */
@@ -528,7 +546,9 @@ export class PairWatchCard {
       offerId = reply.offer_id;
       const url = appLink(reply.url);
       if (url === undefined) throw new Error("the integration sent a link that is not for Wrist Assistant");
-      const picture = await qrPicture(url);
+      // The code holds the web address, which opens the app from the
+      // Camera; the Open in app link keeps the app's own link.
+      const picture = await qrPicture(pairQrLink(url) ?? url);
       if (seq !== this.offerSeq) {
         void cancelPairOffer(hass, reply.offer_id).catch(() => undefined);
         return;

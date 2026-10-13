@@ -659,6 +659,89 @@ export const homeStyles = css`
     .hb-stage { height: 320px; }
     .hb-device svg.ha-art { height: 200px; }
   }
+  /* The welcome, in a home with no devices yet: three numbered steps down
+     the page, joined by a thin line. Install the app, pick the device on
+     the lit stage, pair it. */
+  .hw-wrap { width: min(1040px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  .hw-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+  .hw-step { display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 16px; }
+  .hw-rail { display: flex; flex-direction: column; align-items: center; }
+  .hw-num {
+    width: 28px; height: 28px; flex: none; box-sizing: border-box; border-radius: 50%; display: grid; place-items: center;
+    font-size: 12px; font-weight: 500; color: var(--wa-ink); background: var(--wa-card); border: 1px solid var(--wa-line-strong);
+  }
+  .hw-line { flex: 1; width: 1px; margin-top: 8px; background: var(--wa-line-strong); }
+  .hw-step:last-child .hw-line { display: none; }
+  .hw-body { min-width: 0; display: flex; flex-direction: column; gap: 14px; padding-bottom: 30px; }
+  .hw-step:last-child .hw-body { padding-bottom: 0; }
+  .hw-step-head { display: flex; flex-direction: column; gap: 3px; padding-top: 3px; }
+  .hw-step-head h2 { margin: 0; font-size: 17px; font-weight: 500; letter-spacing: -.01em; overflow-wrap: anywhere; }
+  .hw-step-head span { font-size: 12.5px; line-height: 1.45; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .hw-install {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 20px 24px; padding: 16px; border-radius: 16px;
+    background: var(--home-card); border: 1px solid var(--wa-line); box-shadow: var(--home-lift);
+  }
+  .hw-install-t { flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+  .hw-install-t p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--wa-ink); overflow-wrap: anywhere; }
+  .hw-qr { flex: none; margin: 0; display: flex; align-items: center; gap: 14px; }
+  .hw-qr svg, .hw-qr-empty { display: block; width: 96px; height: 96px; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--wa-line); }
+  .hw-qr figcaption { display: flex; flex-direction: column; gap: 3px; max-width: 150px; font-size: 11.5px; line-height: 1.4; color: var(--wa-muted); }
+  .hw-qr figcaption b { font-size: 12.5px; font-weight: 500; color: var(--wa-ink); }
+  /* Pick one: both devices on Home's lit stage, its edge plain grey. The one
+     picked is drawn in full with one thin green arc turning slowly round it;
+     the other is faint inside a dashed ring. */
+  .hb-stage.hw-stage { --c: var(--wa-line-strong); height: auto; display: flex; justify-content: center; padding: 28px 20px 30px; }
+  .hw-choices { position: relative; display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 24px 72px; }
+  button.hw-choice {
+    display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 0; margin: 0;
+    border: 0; border-radius: 24px; background: none; font: inherit; color: inherit; cursor: pointer;
+  }
+  button.hw-choice:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .hw-ring { position: relative; width: 236px; height: 236px; display: grid; place-items: center; }
+  .hw-ring > svg.hw-ring-track, .hw-ring > svg.hw-ring-arc { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; fill: none; }
+  .hw-ring-track circle { stroke: var(--wa-line-strong); stroke-width: 1; stroke-dasharray: 4 5; transition: stroke .2s ease; }
+  .hw-choice:hover:not(.on) .hw-ring-track circle { stroke: var(--wa-muted); }
+  .hw-choice.on .hw-ring-track circle { stroke: color-mix(in srgb, var(--wa-hue-green) 28%, transparent); stroke-dasharray: none; }
+  .hw-ring-arc { animation: hw-in .45s ease-out both, hw-spin 6s linear infinite; }
+  .hw-ring-arc circle { stroke: var(--wa-hue-green); stroke-width: 1.5; stroke-linecap: round; }
+  @keyframes hw-spin { to { transform: rotate(360deg); } }
+  @keyframes hw-in { from { opacity: 0; } to { opacity: 1; } }
+  .hw-ghost-art { position: relative; opacity: .45; transition: opacity .25s ease; }
+  .hw-choice:hover .hw-ghost-art { opacity: .9; }
+  .hw-choice.on .hw-ghost-art { opacity: 1; }
+  .hw-ghost { stroke: color-mix(in srgb, var(--wa-ink) 28%, transparent); }
+  .hw-ghost-lit { stroke: color-mix(in srgb, var(--wa-hue-green) 70%, transparent); }
+  .hw-ghost-faint { stroke: color-mix(in srgb, var(--wa-ink) 13%, transparent); }
+  .hw-ghost-faint-fill { fill: color-mix(in srgb, var(--wa-ink) 13%, transparent); }
+  .hw-ghost-fill { fill: color-mix(in srgb, var(--wa-ink) 2.5%, transparent); }
+  .hw-ghost-ink { fill: color-mix(in srgb, var(--wa-ink) 45%, transparent); font-family: inherit; }
+  .hw-ghost-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .hw-ghost-ink-line { stroke: color-mix(in srgb, var(--wa-ink) 45%, transparent); }
+  .hw-choice-t { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .hw-choice-t b { font-size: 14px; font-weight: 500; }
+  .hw-choice.on .hw-choice-t b { color: var(--wa-green); }
+  .hw-choice-t span { font-size: 11.5px; color: var(--wa-muted); }
+  /* Pair it: the pairing card for the device picked, lit green. */
+  .hw-pair {
+    --c: var(--wa-hue-green); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
+    ${litOutline}
+    display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; border-radius: 18px; box-shadow: var(--home-lift);
+  }
+  .hw-pair-foot {
+    display: flex; flex-wrap: wrap; gap: 8px 18px; padding-top: 14px; border-top: 1px solid var(--wa-line);
+    font-size: 12.5px; line-height: 1.45; color: var(--wa-muted);
+  }
+  .hw-pair-foot a { color: var(--wa-ink); }
+  @media (prefers-reduced-motion: reduce) {
+    .hw-ring-arc { animation: none; }
+  }
+  /* On a phone the two stay side by side, smaller. */
+  @media (max-width: 640px) {
+    .hb-stage.hw-stage { padding: 20px 8px 22px; }
+    .hw-ring { width: 118px; height: 118px; }
+    .hw-ghost-art { transform: scale(.5); }
+    .hw-choices { flex-wrap: nowrap; gap: 14px; }
+  }
   /* Under the stage: its name and facts, the sync well, then its doors. */
   .hb-info { display: flex; flex-direction: column; gap: 18px; }
   .hb-name { display: flex; flex-direction: column; gap: 6px; padding: 4px 2px 0; min-width: 0; }

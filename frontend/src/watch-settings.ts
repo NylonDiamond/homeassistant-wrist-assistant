@@ -700,13 +700,13 @@ export type PairMode = "code" | "qr";
 
 /** The line under the title in each mode. */
 export const PAIR_CODE_HINT = "On the watch or iPhone, choose Pair with Home Assistant and type the code it shows.";
-export const PAIR_QR_HINT = "On the iPhone, choose Pair with Home Assistant, then Scan QR code.";
+export const PAIR_QR_HINT = "Point the iPhone's Camera at the QR code and tap the link.";
 
 /** The same, as numbered steps, the way the card draws them. */
 export const PAIR_QR_STEPS = [
-  "Open Wrist Assistant on the iPhone.",
-  "Choose Pair with Home Assistant.",
-  "Choose Scan QR code and point the camera at this code.",
+  "Point the iPhone's Camera at this code.",
+  "Tap the link. Wrist Assistant opens, or its App Store page when the app is not on the iPhone yet.",
+  "Tap Pair in Wrist Assistant.",
 ] as const;
 export const PAIR_CODE_STEPS = [
   "Open Wrist Assistant on the watch or iPhone.",

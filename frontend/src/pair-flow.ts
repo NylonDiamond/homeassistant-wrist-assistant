@@ -121,6 +121,22 @@ export function pairGoLabel(kind: PairChoice): string {
 /** The QR mode's title. */
 export const PAIR_QR_TITLE = "Scan with the iPhone";
 
+/** The web address a pairing QR code holds, in place of the app's own link.
+ * Scanned with the iPhone's Camera, it opens Wrist Assistant straight away
+ * (a universal link). An iPhone without the app gets the page at this
+ * address, which links to the App Store, and an older app is opened from
+ * there by its own link. Everything after the `#` stays on the iPhone: a
+ * browser never sends it to the website. */
+export const PAIR_WEB_LINK = "https://wrist-assistant.com/pair";
+
+/** The QR code's address for the app's link `wristassistant://pair#...`:
+ * the same `#` part on `PAIR_WEB_LINK`. Undefined for any other link. */
+export function pairQrLink(appLink: string): string | undefined {
+  const prefix = "wristassistant://pair";
+  if (!appLink.startsWith(`${prefix}#`)) return undefined;
+  return PAIR_WEB_LINK + appLink.slice(prefix.length);
+}
+
 /** The link from one way to the other, in each step's foot. */
 export const PAIR_TO_QR_TEXT = "Pairing an iPhone? Show a QR code";
 export const PAIR_TO_QR_IPHONE_TEXT = "Show a QR code instead";

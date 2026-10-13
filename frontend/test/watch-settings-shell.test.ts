@@ -564,7 +564,7 @@ describe("Watch settings as a page under the Watch app row", () => {
       const { inside, ha, text, ws } = await qrMode();
       const shown = text();
       expect(shown).toContain("Scan with the iPhone");
-      expect(shown).toContain("Scan QR code");
+      expect(shown).toContain("Camera at this code.");
       // The Settings page opened on Type a code, not on the choice: no Back,
       // only the way across.
       expect(shown).toContain("No camera? Type a code");

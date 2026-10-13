@@ -1,34 +1,22 @@
-// Getting started: the three steps Home's welcome card and the Help sheet
-// share, when the card shows, the words both say, the Help button in the
-// tab bar, and the two drawings flattened to text. The panel's wiring is
-// read from its source, since no test mounts the panel.
+// Getting started: the three steps the Help sheet shows, the words it says,
+// the Help button in the tab bar, and the sheet flattened to text. The
+// panel's wiring is read from its source, since no test mounts the panel.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  APP_STORE_URL,
-  CARD_STEPS,
   REPORT_PROBLEM_URL,
   SETUP_GUIDE_URL,
   TROUBLESHOOTING_URL,
-  WELCOME_FACTS,
-  WELCOME_FOOT,
-  WELCOME_KEY,
-  WELCOME_LEAD,
-  type WelcomeStorage,
   doneWords,
   gettingStarted,
   helpStepWords,
-  loadWelcomeMode,
-  saveWelcomeMode,
   watchesWithPages,
-  welcomeShows,
 } from "../src/getting-started.js";
 import type { OwnerSummary, WatchConfigSummary } from "../src/ha-api.js";
 import { helpScreen, renderHelpSheet } from "../src/help-sheet.js";
 import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN, renderTabBar } from "../src/shell.js";
-import { renderWelcomeCard } from "../src/welcome-card.js";
 
 const owner = (over: Partial<OwnerSummary> = {}): OwnerSummary => ({
   owner_watch_id: "w1",
@@ -130,90 +118,8 @@ describe("watchesWithPages", () => {
   });
 });
 
-describe("the welcome card's mode", () => {
-  const memory = () => {
-    const map = new Map<string, string>();
-    const storage: WelcomeStorage = {
-      getItem: (k) => map.get(k) ?? null,
-      setItem: (k, v) => { map.set(k, v); },
-      removeItem: (k) => { map.delete(k); },
-    };
-    return { map, storage };
-  };
-  const broken: WelcomeStorage = {
-    getItem: () => { throw new Error("blocked"); },
-    setItem: () => { throw new Error("blocked"); },
-    removeItem: () => { throw new Error("blocked"); },
-  };
-
-  it("is automatic with nothing stored, and reads back hidden and shown", () => {
-    const { storage } = memory();
-    expect(loadWelcomeMode(() => storage)).toBe("auto");
-    saveWelcomeMode(() => storage, "hidden");
-    expect(loadWelcomeMode(() => storage)).toBe("hidden");
-    saveWelcomeMode(() => storage, "shown");
-    expect(loadWelcomeMode(() => storage)).toBe("shown");
-  });
-
-  it("stores the two words under its own key, and automatic as no value", () => {
-    const { map, storage } = memory();
-    saveWelcomeMode(() => storage, "hidden");
-    expect(map.get(WELCOME_KEY)).toBe("hidden");
-    saveWelcomeMode(() => storage, "auto");
-    expect(map.has(WELCOME_KEY)).toBe(false);
-  });
-
-  it("is automatic for anything else stored, and when storage throws or is missing", () => {
-    const { map, storage } = memory();
-    map.set(WELCOME_KEY, "maybe");
-    expect(loadWelcomeMode(() => storage)).toBe("auto");
-    expect(loadWelcomeMode(() => broken)).toBe("auto");
-    expect(loadWelcomeMode(() => undefined)).toBe("auto");
-    expect(loadWelcomeMode(() => { throw new Error("no storage"); })).toBe("auto");
-    expect(() => saveWelcomeMode(() => broken, "hidden")).not.toThrow();
-    expect(() => saveWelcomeMode(() => { throw new Error("no storage"); }, "shown")).not.toThrow();
-  });
-});
-
-describe("welcomeShows", () => {
-  const fresh = gettingStarted([owner()], new Set());
-  const done = gettingStarted([owner()], new Set(["w1"]));
-  const unknown = gettingStarted([owner()], undefined);
-
-  it("shows automatically until a watch has its first page", () => {
-    expect(welcomeShows("auto", gettingStarted([], undefined), true)).toBe(true);
-    expect(welcomeShows("auto", fresh, true)).toBe(true);
-    expect(welcomeShows("auto", done, true)).toBe(false);
-  });
-
-  it("waits, automatically, for the devices and the pages to be read", () => {
-    expect(welcomeShows("auto", fresh, false)).toBe(false);
-    expect(welcomeShows("auto", unknown, true)).toBe(false);
-  });
-
-  it("never shows once hidden, and always once shown again", () => {
-    expect(welcomeShows("hidden", fresh, true)).toBe(false);
-    expect(welcomeShows("shown", done, true)).toBe(true);
-    expect(welcomeShows("shown", unknown, false)).toBe(true);
-  });
-});
-
 describe("the words", () => {
-  const all = [
-    WELCOME_LEAD, WELCOME_FOOT,
-    ...Object.values(CARD_STEPS).flatMap((s) => [s.title, s.text]),
-    ...WELCOME_FACTS.flatMap((f) => [f.title, f.text]),
-  ];
-
-  it("never use a dash to break a sentence", () => {
-    for (const text of all) {
-      expect(text, text).not.toMatch(/[–—]| - /);
-    }
-  });
-
-  it("say the steps as the mockup does", () => {
-    expect(CARD_STEPS.app.title).toBe("Get the app");
-    expect(CARD_STEPS.pair.text).toBe("On the watch, open Wrist Assistant and choose Pair with Home Assistant. It shows a 6-character code. Type it here.");
+  it("count the steps done", () => {
     expect(doneWords(2)).toBe("2 of 3 done");
   });
 
@@ -223,47 +129,6 @@ describe("the words", () => {
     expect(helpStepWords("pair", two).text).toBe("2 watches are paired.");
     expect(helpStepWords("pair", gettingStarted([], undefined)).text).toBe("Type the code the watch shows.");
     expect(helpStepWords("app", gettingStarted([phone], undefined)).text).toBe("Wrist Assistant is on the App Store.");
-  });
-});
-
-describe("the welcome card", () => {
-  const card = (gs = gettingStarted([], undefined), mode: "auto" | "shown" = "auto") => flat(renderWelcomeCard({
-    gs, mode, onPair: () => undefined, onNewPage: () => undefined, onHelp: () => undefined, onHide: () => undefined,
-  }));
-
-  it("has the title, the count, the three steps and the three facts", () => {
-    const text = card();
-    expect(text).toContain("Welcome to Wrist Assistant");
-    expect(text).toContain("0 of 3 done");
-    for (const s of Object.values(CARD_STEPS)) expect(text).toContain(s.title);
-    for (const f of WELCOME_FACTS) expect(text).toContain(f.text);
-  });
-
-  it("links the App Store and the setup guide out of the panel", () => {
-    const text = card();
-    expect(text).toContain(`href=${APP_STORE_URL} target="_blank"`);
-    expect(text).toContain(`href=${SETUP_GUIDE_URL} target="_blank"`);
-  });
-
-  it("greys New page with its reason until a watch is paired, then makes it the green next step", () => {
-    const before = card();
-    expect(before).toMatch(/<button type="button" class="home-btn" disabled[^>]*>New page<\/button>/);
-    expect(before).toContain("Pair a watch first.");
-    const after = card(gettingStarted([owner()], new Set()));
-    expect(after).not.toContain("Pair a watch first.");
-    expect(after).toMatch(/class="home-btn add"[^>]*>[\s\S]*?<span>New page<\/span>/);
-    expect(after).toMatch(/wl-step next[^"]*"[\s\S]*?Make your first page/);
-  });
-
-  it("marks only the next step Next", () => {
-    expect(card().match(/>Next</g)).toHaveLength(1);
-    expect(card(gettingStarted([owner()], new Set(["w1"])), "shown")).not.toContain(">Next<");
-  });
-
-  it("says it goes away only while it follows the automatic rule, and always offers Hide", () => {
-    expect(card()).toContain(WELCOME_FOOT);
-    expect(card(undefined, "shown")).not.toContain(WELCOME_FOOT);
-    expect(card(undefined, "shown")).toContain(">Hide</button>");
   });
 });
 
@@ -282,7 +147,7 @@ describe("the Help sheet", () => {
   const at = (path: string) => ({ prefix: "/wrist-assistant", path });
   const sheet = (path: string, gs = gettingStarted([owner()], new Set()), editor = false) => flat(renderHelpSheet({
     gs, route: at(path), version: "3.1.2",
-    onClosed: () => undefined, onPair: () => undefined, onNewPage: () => undefined, onShowWelcome: () => undefined,
+    onClosed: () => undefined, onPair: () => undefined, onNewPage: () => undefined,
     ...(editor ? { onEditorHelp: () => undefined } : {}),
   }));
 
@@ -309,12 +174,12 @@ describe("the Help sheet", () => {
     expect(text).not.toContain(">Open the App Store</a>");
   });
 
-  it("lists the three guides and the version, and can bring the card back", () => {
+  it("lists the three guides and the version", () => {
     const text = sheet("/menus");
     expect(text).toContain("On this screen: Menus");
     for (const url of [SETUP_GUIDE_URL, TROUBLESHOOTING_URL, REPORT_PROBLEM_URL]) expect(text).toContain(`href=${url}`);
     expect(text).toContain("Wrist Assistant 3.1.2");
-    expect(text).toContain("Show the welcome card again");
+    expect(text).not.toContain("welcome card");
   });
 
   it("links the editor's own Help only when the panel hands it over", () => {
@@ -337,11 +202,10 @@ describe("the panel's wiring", () => {
     return SOURCE.slice(at, SOURCE.indexOf("\n  }\n", at));
   };
 
-  it("draws the welcome card at the top of Home, under its head", () => {
+  it("no longer draws a welcome card on Home: a home with no devices gets the welcome instead", () => {
     const home = method("  private renderHome() {");
-    expect(home).toContain("this.renderWelcome()");
-    expect(home.indexOf("this.renderWelcome()")).toBeGreaterThan(home.indexOf("home-head"));
-    expect(home.indexOf("this.renderWelcome()")).toBeLessThan(home.indexOf("this.renderNotReady()"));
+    expect(SOURCE).not.toContain("renderWelcome()");
+    expect(home).toContain("if (!failed && !loading && devices.length === 0) return html`${error}${this.renderHomeWelcome(scope)}${pair}`;");
   });
 
   it("gives the tab bar its Help button and draws the sheet over every tab", () => {
@@ -351,7 +215,7 @@ describe("the panel's wiring", () => {
   });
 
   it("opens New page on the Pages screen of the step's watch", () => {
-    expect(method("  private renderWelcome() {")).toContain("this.goTo(watchScreenPath(WATCH_SCREENS[0]!, watch))");
+    expect(method("  private renderHelpSheet() {")).toContain("this.goTo(watchScreenPath(WATCH_SCREENS[0]!, watch))");
   });
 
   it("puts focus back on the Help button when the sheet closes by itself", () => {
