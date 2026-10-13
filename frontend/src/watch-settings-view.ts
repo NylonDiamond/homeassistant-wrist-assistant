@@ -46,6 +46,7 @@ import {
 } from "./ha-api.js";
 import { SECTION_COLOR } from "./kinds.js";
 import type { IconProvider } from "./renderer.js";
+import { renderHeadStatus } from "./head-bar.js";
 import { agoWords } from "./send-state.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import {
@@ -813,7 +814,7 @@ export class WatchSettings implements ReactiveController {
    * with no watch yet, and a watch whose settings live in another home, get
    * one column instead: the note, then pairing and the client certificate.
    */
-  render(hass: HassLike, owners: readonly OwnerSummary[], options: { narrow?: boolean } = {}): TemplateResult {
+  render(hass: HassLike, owners: readonly OwnerSummary[], options: { narrow?: boolean; inHead?: boolean } = {}): TemplateResult {
     this.hass = hass;
     const watches = settingsWatches(owners);
     const owner = watches.find((w) => w.owner_watch_id === this.ownerId);
@@ -825,8 +826,8 @@ export class WatchSettings implements ReactiveController {
     const one = this.ownerId === undefined || elsewhere;
     return html`<div class="ws-page">
       <div class="ws-top">
-        ${this.renderBar(name, options.narrow === true, elsewhere)}
-        ${!one && this.isNew ? html`<div class="ws-new" role="note">${uiIcon("info")}<span>${NEW_WATCH_TEXT}</span></div>` : nothing}
+        ${options.inHead === true ? nothing : this.renderBar(name, options.narrow === true, elsewhere)}
+        ${!one && this.isNew && options.inHead !== true ? html`<div class="ws-new" role="note">${uiIcon("info")}<span>${NEW_WATCH_TEXT}</span></div>` : nothing}
         ${this.note ? html`<div class="banner ${this.note.kind} ws-note" role="alert"><span>${this.note.text}</span>
           <button class="link" @click=${() => { this.note = undefined; this.changed(); }}>Dismiss</button></div>` : nothing}
       </div>
@@ -1347,12 +1348,15 @@ export class WatchSettings implements ReactiveController {
    * away, and Save. Before edits are thrown away it asks there instead.
    * `elsewhere`: the watch takes its settings from another home, so nothing
    * here is on its way to it and no sync pill shows. */
-  renderBar(name = "Watch", stacked = false, elsewhere = false) {
+  renderBar(name = "Watch", stacked = false, elsewhere = false, inHead = false) {
     const confirm = this.confirm;
-    const head = html`<span class="ws-title">Watch settings</span><span class="ws-head-line" title=${this.headTitle() ?? nothing}>${this.headLine(name)}</span>
+    // In the Watch app's header (`head-bar.ts`) the watch and the screen
+    // are named by the row itself: no title, and the words lead.
+    const head = inHead ? nothing : html`<span class="ws-title">Watch settings</span><span class="ws-head-line" title=${this.headTitle() ?? nothing}>${this.headLine(name)}</span>
       <span class="spacer"></span>`;
+    const cls = inHead ? "in-head" : stacked ? "stacked" : "";
     if (confirm) {
-      return html`<div class="wa-bar ws-bar ${stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch settings">${head}
+      return html`<div class="wa-bar ws-bar ${cls}" role="toolbar" aria-label="Watch settings">${head}
         <span class="xf-sub ws-ask">${confirm.text}</span>
         <button class="tb-btn" @click=${() => { this.confirm = undefined; this.changed(); }}>Keep editing</button>
         <button class="primary" @click=${() => { this.confirm = undefined; confirm.run(); }}>${confirm.label}</button>
@@ -1365,18 +1369,31 @@ export class WatchSettings implements ReactiveController {
     // not hold yet is created by its first Save, from the defaults the page
     // opened on; until a change, Save is greyed out and says why beside it.
     const canSave = this.canSave;
-    return html`<div class="wa-bar ws-bar ${stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch settings">${head}
-      ${changes > 0
+    const words = inHead
+      ? html`${this.ownerId === undefined || (elsewhere && changes === 0) ? nothing
+          : renderHeadStatus({ newWatch: this.isNew, dirty: changes > 0, changes })}
+        ${changes === 0 && !elsewhere && !this.isNew ? this.renderDelivery() : nothing}`
+      : changes > 0
         ? html`<span class="xf-sub ws-changes">${changes} unsaved ${changes === 1 ? "change" : "changes"}</span>`
         : elsewhere ? nothing
         : this.isNew ? html`<span class="xf-sub ws-why" title=${NOTHING_TO_SAVE_TEXT}>${NOTHING_TO_SAVE_TEXT}</span>`
-        : this.renderDelivery()}
+        : this.renderDelivery();
+    return html`<div class="wa-bar ws-bar ${cls}" role="toolbar" aria-label="Watch settings">${head}
+      ${words}
       ${changes > 0 ? html`<button class="tb-btn ws-discard" ?disabled=${this.saving}
         title="Go back to the copies Home Assistant holds" @click=${() => this.askDiscard()}>Discard</button>` : nothing}
       ${this.ownerId === undefined ? nothing : html`<button class="primary save ${changes > 0 ? "dirty" : ""}" ?disabled=${!canSave}
         title=${changes > 0 ? `Save (${SAVE_KEY}). Then open Wrist Assistant on the watch to get these settings.` : `Nothing to save (${SAVE_KEY})`}
         @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>`}
     </div>`;
+  }
+
+  /** The bar for the Watch app's header: the same controls, for the watch
+   * the page shows. */
+  renderHeadBar(owners: readonly OwnerSummary[]): TemplateResult {
+    const watches = settingsWatches(owners);
+    const owner = watches.find((w) => w.owner_watch_id === this.ownerId);
+    return this.renderBar(owner ? watchName(owner, watches) : "Watch", false, takesSettingsFromAnotherHome(owner), true);
   }
 
   /** The header's sync pill, saying whether a device has collected the

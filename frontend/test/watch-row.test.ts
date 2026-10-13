@@ -1,14 +1,18 @@
-// The Watch app tab's second row: the shared watch at the left (a menu of
+// The Watch app tab's header row: the shared watch at the left (a menu of
 // watches, one plain name, or the way to pair the first), then the eight
 // screens (on that watch, but HTTP actions and Cameras, which every watch
-// shares) and Settings, the screen on show marked. Read from
-// its helpers and by flattening the template it draws.
+// shares) and Settings as one track, the screen on show marked, then the
+// screen's own save controls. Read from its helpers and by flattening the
+// template it draws.
 
 import { describe, expect, it } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
+import { type DeviceSheetTab, homeDoorLook } from "../src/home.js";
+import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN, watchScreenSentence } from "../src/shell.js";
 import {
   WATCH_ROW_NONE_NOTE,
+  WATCH_SCREEN_LOOK,
   WATCH_ROW_PHONES_NOTE,
   type WatchRowInput,
   markRowMore,
@@ -20,6 +24,8 @@ import {
   watchRowChoices,
   watchRowLinks,
   watchRowSlot,
+  watchChipSub,
+  watchRowLinkTitle,
   watchRowStyles,
 } from "../src/watch-row.js";
 
@@ -106,6 +112,13 @@ describe("the row's watches", () => {
     expect(watchRowChoices(twins, "a").map((c) => c.name)).toEqual(["Apple Watch (Jesse)", "Apple Watch (Chen)"]);
   });
 
+  it("says under the chip's name whose watch it is and how it stands", () => {
+    expect(watchChipSub("Jesse", "synced")).toBe("Jesse · Synced");
+    expect(watchChipSub(undefined, "waiting")).toBe("Waiting");
+    expect(watchChipSub("Jesse", undefined)).toBe("Jesse");
+    expect(watchChipSub(undefined, undefined)).toBe("");
+  });
+
   it("holds a loading line, the way to pair, one plain name, or a menu", () => {
     expect(watchRowSlot(false, 0)).toBe("loading");
     expect(watchRowSlot(true, 0)).toBe("none");
@@ -168,7 +181,7 @@ describe("the row as drawn", () => {
 
   it("opens a menu of the watches with a check on the shown one, their verdicts, and the phones line", () => {
     const { text } = row({ menuOpen: true });
-    const menu = text.slice(text.indexOf(`class="wa-wr-menu"`));
+    const menu = text.slice(text.indexOf(`class="wa-wr-menu"`), text.indexOf("</p>", text.indexOf(`class="wa-wr-menu-note"`)));
     expect(menu).toContain(">You are editing</div>");
     expect(menu.match(/class="wa-wr-row /g)).toHaveLength(2);
     expect(menu).toMatch(/class="wa-wr-row on" role="menuitemradio"\s+aria-checked=true data-watch=w1/);
@@ -212,7 +225,8 @@ describe("the row as drawn", () => {
 
   it("names a lone watch plainly, with no menu", () => {
     const { text } = row({ owners: [OWNERS[0]!, OWNERS[1]!] });
-    expect(text).toContain(`<span class="wa-wr-k">Watch</span><b class="wa-wr-name">Jesse's Watch</b></span>`);
+    expect(text).toContain(`<span class="wa-wr-id"><b class="wa-wr-name">Jesse's Watch</b>`);
+    expect(text).toMatch(/<span class="wa-wr-watch" title="The watch you are setting up">/);
     expect(text).not.toContain("wa-wr-open");
     expect(text).not.toContain("wa-wr-picker");
   });
@@ -292,12 +306,13 @@ describe("unsaved work across the screens", () => {
     expect(calls).toEqual(["go:/menus/w1"]);
   });
 
-  it("says what the screen on show is under the row, but not on a retired one", () => {
-    expect(row({ route: route("/pages/w1") }).text).toContain(
-      '<p class="wa-wr-blurb"><b>Pages</b> are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.</p>',
-    );
-    expect(row({ route: route("/settings/w1") }).text).toContain("<b>Settings</b> sets how the watch behaves");
-    expect(row({ route: route("/control-center/w1") }).text).not.toContain("wa-wr-blurb");
+  it("says what each screen is in its tab's tooltip, not on a line of its own, and nothing for a retired one", () => {
+    const { text } = row({ route: route("/pages/w1") });
+    expect(text).not.toContain("wa-wr-blurb");
+    expect(text).toContain("title=Pages are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.");
+    expect(text).toContain("title=Settings sets how the watch behaves");
+    expect(watchRowLinkTitle(WATCH_SCREENS.find((s) => s.id === "control-center")!)).toBeUndefined();
+    expect(watchRowLinkTitle(WATCH_SCREENS[1]!)).toBe(watchScreenSentence(WATCH_SCREENS[1]!));
   });
 });
 
@@ -347,39 +362,57 @@ describe("the row's look", () => {
     for (const line of text.split("\n").filter((l) => l.includes("gradient"))) expect(line).toMatch(/^\s*(-webkit-)?mask-image: linear-gradient/);
   });
 
-  it("colors only the watch's chip and its picker, in the Watch app's blue", () => {
-    const hued = text.split("\n").filter((line) => line.includes("--wa-hue"));
-    for (const line of hued) {
-      expect(line.replaceAll("--wa-hue-blue", "")).not.toContain("--wa-hue");
-      expect(line.includes("wa-wr-open") || line.trim().startsWith("color: var(--wa-top)"), line).toBe(true);
-    }
-    expect(hued.some((line) => line.includes("button.wa-wr-open {") && line.includes("border-color: var(--wa-hue-blue)"))).toBe(true);
-    expect(rule("span.wa-wr-chip {")).toContain("var(--wa-hue-blue)");
-    expect(rule("a.wa-wr-link, button.wa-wr-link {")).not.toContain("--wa-hue");
+  it("keeps the section hues off the row's rules: a tab's glyph takes its screen's hue (--h) only while it is on show", () => {
+    expect(text).not.toContain("--wa-hue");
+    expect(rule("a.wa-wr-link.on .wa-wr-ic {")).toContain("color: var(--h)");
+    expect(rule("a.wa-wr-link .wa-wr-ic {")).toContain("color: var(--wa-faint)");
+    expect(rule("a.wa-wr-link {")).not.toContain("var(--h)");
   });
 
-  it("outlines every control with one pixel", () => {
-    for (const sel of ["a.wa-wr-link, button.wa-wr-link {", "button.wa-wr-open, button.wa-wr-pair {", "button.wa-wr-row {"]) {
+  it("gives each screen Home's glyph and hue for it, and no purple", () => {
+    for (const screen of [...WATCH_SCREENS, WATCH_SETTINGS_SCREEN]) {
+      const look = WATCH_SCREEN_LOOK[screen.id];
+      expect(look.hue).toMatch(/^var\(--wa-hue-(green|orange|yellow|pink|red|blue|grey)\)$/);
+      if (screen.shared === true || screen.retired === true) continue;
+      const door = homeDoorLook({ kind: "screen", label: screen.label, screen } as DeviceSheetTab, "watch");
+      expect([look.icon, look.hue], screen.id).toEqual([door.icon, door.hue]);
+    }
+    expect(WATCH_SCREEN_LOOK["http-actions"].hue).toBe("var(--wa-hue-blue)");
+    expect(WATCH_SCREEN_LOOK.cameras.hue).toBe("var(--wa-hue-grey)");
+  });
+
+  it("outlines the watch's chip, the pairing button and the menu's rows with one pixel, and the track once round its tabs", () => {
+    for (const sel of [".wa-wr-watch, button.wa-wr-open {", "  button.wa-wr-pair {", "button.wa-wr-row {"]) {
       expect(rule(sel), sel).toMatch(/border: 1px solid var\(--wa-line(-strong)?\)/);
     }
+    expect(rule("nav.wa-wr-links {")).toContain("border: 1px solid var(--wa-line)");
+    expect(rule("a.wa-wr-link {")).toContain("border: 0");
   });
 
-  it("marks the screen on show with weight and a grey fill, and wraps rather than scroll on a wide screen", () => {
-    const on = rule("a.wa-wr-link.on, button.wa-wr-link.on {");
-    expect(on).toContain("font-weight: 600");
-    expect(on).toContain("var(--wa-ink) 10%");
-    expect(rule("nav.wa-watchrow {")).toContain("flex-wrap: wrap");
-    expect(rule(".wa-wr-links {")).toContain("flex-wrap: wrap");
-    expect(text.slice(0, text.indexOf("@media"))).not.toContain("overflow-x");
+  it("is one row: the tab on show raised in grey, the track one line that scrolls sideways, fading while more is hidden", () => {
+    const on = rule("a.wa-wr-link.on {");
+    expect(on).toContain("font-weight: 500");
+    expect(on).toContain("background: var(--wa-hover)");
+    expect(rule(".wa-watchrow {")).toContain("flex-wrap: nowrap");
+    expect(rule(".wa-watchrow {")).toContain("min-height: 60px");
+    const track = rule("nav.wa-wr-links {");
+    for (const want of ["flex-wrap: nowrap", "overflow-x: auto", "scrollbar-width: none"]) expect(track).toContain(want);
+    expect(text).toMatch(/nav\.wa-wr-links\[data-more\] \{\s*-webkit-mask-image/);
+    expect(text).toMatch(/nav\.wa-wr-links\[data-back\] \{\s*-webkit-mask-image/);
+    expect(rule("a.wa-wr-link {")).toContain("height: 32px");
   });
 
-  it("on a phone puts the watch on its own line and the screens on one line that scrolls sideways, fading while more is hidden", () => {
+  it("never cuts a name short with an ellipsis", () => {
+    expect(text).not.toContain("text-overflow: ellipsis");
+    expect(rule(".wa-wr-name {")).toContain("overflow-wrap: anywhere");
+  });
+
+  it("on a phone puts the watch and the save controls on the first line and the screens on a second that scrolls sideways", () => {
     const phone = text.slice(text.indexOf("@media (max-width: 640px)"));
-    expect(phone).toMatch(/\.wa-wr-watch, \.wa-wr-picker, button\.wa-wr-pair \{ flex: 1 1 100%/);
-    const line = phone.slice(phone.indexOf(".wa-wr-links {"), phone.indexOf("}", phone.indexOf(".wa-wr-links {")));
-    for (const want of ["flex-wrap: nowrap", "overflow-x: auto", "scroll-snap-type: x", "scrollbar-width: none"]) expect(line).toContain(want);
+    expect(phone).toContain(".wa-watchrow { flex-wrap: wrap;");
+    expect(phone).toMatch(/\.wa-wr-end \{ order: 1; flex: 1 1 0;/);
+    expect(phone).toMatch(/nav\.wa-wr-links \{ order: 3; flex: 1 1 100%; scroll-snap-type: x/);
     expect(phone).toContain("scroll-snap-align: start");
-    expect(phone).toMatch(/\.wa-wr-links\[data-more\] \{\s*-webkit-mask-image/);
   });
 
   it("titles the menu in small capitals, weight 500, spaced", () => {

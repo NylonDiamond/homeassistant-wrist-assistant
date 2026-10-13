@@ -93,6 +93,7 @@ import {
   topBarStyles,
 } from "../editor-chrome.js";
 import { formStyles, rangeFill } from "../form-styles.js";
+import { HeadBar, headBarStyles, renderHeadStatus } from "../head-bar.js";
 import { SECTION_COLOR } from "../kinds.js";
 import { peopleOf } from "../people.js";
 import { personColorVar } from "../pickerRows.js";
@@ -665,6 +666,10 @@ export class WaPageEditor extends LitElement {
    * other screens, so the bar leaves out its own watch picker, the way back
    * to complications and Menus. Off, the bar is as it always was. */
   @property({ attribute: false }) shellOwnsWatch = false;
+  /** The box in the panel's Watch app header the bar is drawn in
+   * (`head-bar.ts`). Without one the bar is drawn on top, as it always was. */
+  @property({ attribute: false }) barHost: HTMLElement | undefined = undefined;
+  private readonly headBar = new HeadBar(this);
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -943,12 +948,15 @@ export class WaPageEditor extends LitElement {
     this.listenForReconnect();
     // Back in the tree after a visit elsewhere: the record may have moved.
     if (this.watchId !== undefined) this.openWatch(this.watchId, true);
+    // The bar goes back into the header on the next draw.
+    if (this.barHost !== undefined) this.requestUpdate();
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("pointerdown", this.onWindowPointerDown, true);
+    this.headBar.clear();
     this.sizeObserver?.disconnect();
     this.observedTop = undefined;
     this.stopListeningForReconnect();
@@ -1075,6 +1083,7 @@ export class WaPageEditor extends LitElement {
   }
 
   protected override updated(): void {
+    this.headBar.draw(this.barHost, () => this.renderTopBar(this.draft));
     // A field removed while typed in (an undo took its tile away) never sent
     // a blur: what was typed there is dropped, not shown in another field.
     if (this.typing !== undefined && (this.renderRoot as ShadowRoot).activeElement === null) this.typing = undefined;
@@ -1112,7 +1121,8 @@ export class WaPageEditor extends LitElement {
     }
     openConfigDialogs(this.renderRoot, this.shownFootDialogs);
     this.observeTop();
-    this.savedTicker.show(this.renderRoot.querySelector(".cf-saved") !== null);
+    this.savedTicker.show(this.headBar.query(this.renderRoot, ".cf-saved") !== null
+      || this.renderRoot.querySelector(".cf-saved") !== null);
     if (this.focusHistory) {
       this.focusHistory = false;
       this.renderRoot.querySelector<HTMLElement>(".cf-history-btn")?.focus();
@@ -2394,7 +2404,7 @@ export class WaPageEditor extends LitElement {
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.defaultPrevented) return;
     const path = e.composedPath();
-    if (!path.includes(this) && !nothingFocused()) return;
+    if (!path.includes(this) && !this.headBar.holds(path) && !nothingFocused()) return;
     if (this.renderRoot.querySelector("dialog[open]")) return;
     if (this.scrub.active && SCRUB_HELD_KEYS.has(e.key)) {
       // While a number is dragged, a key that would take its tile away
@@ -2428,7 +2438,7 @@ export class WaPageEditor extends LitElement {
     if (e.key === "Escape" && this.topMenuOpen) {
       e.preventDefault();
       this.topMenuOpen = false;
-      void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLElement>(".wa-bar .tb-more")?.focus());
+      void this.updateComplete.then(() => this.headBar.query(this.renderRoot, ".wa-bar .tb-more")?.focus());
       return;
     }
     if (e.key === "Escape" && this.watchMenuOpen) {
@@ -3058,8 +3068,8 @@ export class WaPageEditor extends LitElement {
     const draft = this.draft;
     return html`
       <div class="pe-top">
-        ${this.renderTopBar(draft)}
-        ${this.isNew ? html`<div class="pe-note info pe-new" role="note">${uiIcon("info")}<span>${NEW_WATCH_TEXT}</span></div>` : nothing}
+        ${this.barHost === undefined ? this.renderTopBar(draft) : nothing}
+        ${this.isNew && this.barHost === undefined ? html`<div class="pe-note info pe-new" role="note">${uiIcon("info")}<span>${NEW_WATCH_TEXT}</span></div>` : nothing}
         ${this.note ? html`<div class="pe-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
           <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
@@ -3090,7 +3100,10 @@ export class WaPageEditor extends LitElement {
     const dirty = draft?.dirty ?? false;
     const watches = this.watches;
     const shell = this.shellOwnsWatch;
-    return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch pages">
+    // In the panel's header: the words first, no stacking, no new watch
+    // banner under it (the words say so instead).
+    const inHead = this.barHost !== undefined;
+    return html`<div class="wa-bar ${inHead ? "in-head" : this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch pages">
       ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
       ${shell ? nothing : html`<button class="tb-btn tb-back" title="Back to complications"
@@ -3100,12 +3113,13 @@ export class WaPageEditor extends LitElement {
         @click=${() => this.addPage()}>${uiIcon("plus")}<span>Add page</span></button>`}
       <span class="spacer"></span>
       ${watches.length > 1 && !shell ? this.renderWatchPicker(watches) : nothing}
+      ${inHead && draft ? renderHeadStatus({ newWatch: this.isNew, dirty, saved: renderConfigSaved(this.record) }) : nothing}
       ${this.renderSyncPill(draft)}
       ${this.renderTopMenu(draft)}
       ${draft ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S)` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        ${!dirty && this.isNew
+        ${inHead ? nothing : !dirty && this.isNew
           // Save is greyed out on the ready page until a change: the reason
           // stands beside it, where the saved line goes once there is one.
           ? html`<span class="tb-why" title=${NOTHING_TO_SAVE_TEXT}>${NOTHING_TO_SAVE_TEXT}</span>`
@@ -5152,7 +5166,7 @@ export class WaPageEditor extends LitElement {
     @container (max-width: 820px) {
       .pe-hint { display: none; }
     }
-  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, configFootStyles];
+  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, configFootStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-page-editor")) {
