@@ -8,6 +8,7 @@ import {
   HOME_PATH,
   PANEL_TABS,
   WATCH_SCREENS,
+  WATCH_SETTINGS_SCREEN,
   editorKeysLive,
   isComplicationsRoute,
   isPlainClick,
@@ -23,6 +24,7 @@ import {
   tabPath,
   watchScreenOf,
   watchScreenPath,
+  watchScreenSentence,
 } from "../src/shell.js";
 import { watchControlCenterRouteOwner } from "../src/watch-control-center/hook.js";
 import { WATCH_CAMERAS_PATH } from "../src/watch-cameras/hook.js";
@@ -113,9 +115,20 @@ describe("watch screens", () => {
 
   it("lists Cameras last, as a shared screen with its own blurb", () => {
     expect(WATCH_SCREENS.at(-1)).toEqual({
-      id: "cameras", label: "Cameras", blurb: "How each camera is framed in alerts", path: WATCH_CAMERAS_PATH, shared: true,
+      id: "cameras", label: "Cameras", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.",
+      path: WATCH_CAMERAS_PATH, shared: true,
     });
     expect(watchScreenOf(at("/cameras"))).toBe(WATCH_SCREENS[7]);
+  });
+
+  it("writes each blurb to follow the screen's name as one plain sentence", () => {
+    expect(watchScreenSentence(WATCH_SCREENS[0]!)).toBe(
+      "Pages are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.",
+    );
+    for (const screen of [...WATCH_SCREENS, WATCH_SETTINGS_SCREEN].filter((s) => s.retired !== true)) {
+      expect(screen.blurb, screen.id).toMatch(/^[a-z][^.]*\.$/);
+      expect(screen.blurb, screen.id).not.toMatch(/[\u2013\u2014]| - /);
+    }
   });
 });
 
@@ -319,6 +332,16 @@ describe("renderTabBar", () => {
     }));
     expect(text).toMatch(/href=\/wrist-assistant\/pages\/w2 [^>]*>Watch app<\/a>/);
     expect(bar("")).toMatch(/href=\/wrist-assistant\/pages [^>]*>Watch app<\/a>/);
+  });
+
+  it("puts an orange dot on the Watch app tab, named for a screen reader, while a watch screen is unsaved", () => {
+    const text = (watchUnsaved?: boolean) => flat(renderTabBar({
+      route: at(""), menu: false, onMenu: () => undefined, onTab: () => undefined, watchUnsaved,
+    }));
+    expect(text(true)).toMatch(/>Watch app<i class="wa-unsaved" role="img" aria-label="unsaved changes"><\/i><\/a>/);
+    expect(text(true).match(/wa-unsaved/g)).toHaveLength(1);
+    expect(text(false)).not.toContain("wa-unsaved");
+    expect(text(undefined)).not.toContain("wa-unsaved");
   });
 
   it("offers Home Assistant's menu only when asked", () => {

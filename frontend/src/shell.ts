@@ -54,7 +54,10 @@ export const TAB_LABEL: Record<PanelTab, string> = {
 export interface WatchScreen {
   id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "voice" | "http-actions" | "cameras" | "settings";
   label: string;
-  /** One line under the name on Home. */
+  /** What the screen is, written to follow its name as one sentence: the
+   * Watch app row's line under it reads "**Pages** are the screens you swipe
+   * between…" (`watchScreenSentence`). Plain words, as the Help sheet reads
+   * them too. */
   blurb: string;
   path: string;
   /** Shared by every watch: the address never names one, and the screen
@@ -68,14 +71,14 @@ export interface WatchScreen {
 
 /** In the order Home and the watch row show them. */
 export const WATCH_SCREENS: readonly WatchScreen[] = [
-  { id: "pages", label: "Pages", blurb: "The screens you swipe between", path: WATCH_PAGES_PATH },
-  { id: "menus", label: "Menus", blurb: "Quick menus and their items", path: WATCH_MENUS_PATH },
-  { id: "status-pages", label: "Status pages", blurb: "Read-only views of your home", path: WATCH_STATUS_PAGES_PATH },
+  { id: "pages", label: "Pages", blurb: "are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.", path: WATCH_PAGES_PATH },
+  { id: "menus", label: "Menus", blurb: "are the quick menus on the watch: the Anywhere menu, a menu for each kind of entity and the page switcher.", path: WATCH_MENUS_PATH },
+  { id: "status-pages", label: "Status pages", blurb: "are lists to read at a glance, like the lights that are on or low batteries, opened from a tile, a menu or Siri.", path: WATCH_STATUS_PAGES_PATH },
   { id: "control-center", label: "Control Center", blurb: "The list of controls", path: WATCH_CONTROL_CENTER_PATH, retired: true },
-  { id: "rooms", label: "Rooms", blurb: "Switch pages by room, and point control", path: WATCH_ROOMS_PATH },
-  { id: "voice", label: "Voice", blurb: "How voice commands work", path: WATCH_VOICE_PATH },
-  { id: "http-actions", label: "HTTP actions", blurb: "Web requests Home Assistant sends for a watch", path: WATCH_HTTP_ACTIONS_PATH, shared: true },
-  { id: "cameras", label: "Cameras", blurb: "How each camera is framed in alerts", path: WATCH_CAMERAS_PATH, shared: true },
+  { id: "rooms", label: "Rooms", blurb: "let the watch open a room's page when you are in that room, and set up point control: point the watch at a thing to control it.", path: WATCH_ROOMS_PATH },
+  { id: "voice", label: "Voice", blurb: "sets how the watch listens and speaks: the Assist and Speak defaults, your saved phrases and the watch voice.", path: WATCH_VOICE_PATH },
+  { id: "http-actions", label: "HTTP actions", blurb: "are web requests Home Assistant sends when a watch runs one from a tile, a menu or a complication, shared by every watch.", path: WATCH_HTTP_ACTIONS_PATH, shared: true },
+  { id: "cameras", label: "Cameras", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.", path: WATCH_CAMERAS_PATH, shared: true },
 ];
 
 /** The Settings page: a screen of the Watch app with an address like the
@@ -83,8 +86,13 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
  * Devices card, and the pairing card in a home with no watch) and the row
  * draws it last, apart from the eight. */
 export const WATCH_SETTINGS_SCREEN: WatchScreen = {
-  id: "settings", label: "Settings", blurb: "How the watch behaves", path: WATCH_SETTINGS_PATH,
+  id: "settings", label: "Settings", blurb: "sets how the watch behaves: gestures, wrist twists, pages, cameras and how it connects.", path: WATCH_SETTINGS_PATH,
 };
+
+/** A screen's name and what it is, as one sentence. */
+export function watchScreenSentence(screen: WatchScreen): string {
+  return `${screen.label} ${screen.blurb}`;
+}
 
 /** A watch screen's address, on one watch when one is named. The owner is
  * encoded the way each screen's `watch*RouteOwner` decodes it. A shared
@@ -243,6 +251,9 @@ export interface TabBarInput {
   onTab: (tab: PanelTab) => void;
   /** The Watch app's shared watch, which its tab's link carries. */
   watch?: string;
+  /** Whether any watch screen holds unsaved work: the Watch app tab then
+   * carries an orange dot, seen from Home and Complications too. */
+  watchUnsaved?: boolean;
 }
 
 /** The tabs, above whatever the tab draws. Each is a real link, so a middle
@@ -260,8 +271,14 @@ export function renderTabBar(input: TabBarInput): TemplateResult {
         if (!isPlainClick(e)) return;
         e.preventDefault();
         input.onTab(tab);
-      }}>${TAB_LABEL[tab]}</a>`)}</span>
+      }}>${TAB_LABEL[tab]}${tab === "watch" && input.watchUnsaved === true ? unsavedDot() : nothing}</a>`)}</span>
   </nav>`;
+}
+
+/** The orange dot that marks unsaved work, on the Watch app tab and on each
+ * screen of the Watch app row. A screen reader hears it as words. */
+export function unsavedDot(): TemplateResult {
+  return html`<i class="wa-unsaved" role="img" aria-label="unsaved changes"></i>`;
 }
 
 /** The tab bar's look, added to the panel's sheet. Neutral: the tab on
@@ -295,4 +312,10 @@ export const shellStyles = css`
   button.wa-tabs-menu:hover { background: var(--wa-hover); }
   button.wa-tabs-menu:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.wa-tabs-menu svg.ui-icon { width: 16px; height: 16px; }
+  /* Orange, the one hue in the tabs and the row: it says "not saved yet",
+     so it never stands for the tab or the screen on show. */
+  i.wa-unsaved {
+    display: inline-block; flex: none; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%;
+    background: var(--wa-hue-orange);
+  }
 `;

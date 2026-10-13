@@ -11,7 +11,12 @@ import {
   WATCH_ROW_NONE_NOTE,
   WATCH_ROW_PHONES_NOTE,
   type WatchRowInput,
+  markRowMore,
   renderWatchRow,
+  rowScrollFor,
+  unsavedNotice,
+  unsavedNoticeText,
+  unsavedScreens,
   watchRowChoices,
   watchRowLinks,
   watchRowSlot,
@@ -244,6 +249,78 @@ describe("the row as drawn", () => {
   });
 });
 
+describe("unsaved work across the screens", () => {
+  const names = (dirty: Parameters<typeof unsavedScreens>[0]) => unsavedScreens(dirty).map((s) => s.label);
+  const notice = (dirty: Parameters<typeof unsavedScreens>[0], shown: Parameters<typeof unsavedNotice>[1]) => {
+    const pieces = unsavedNotice(unsavedScreens(dirty), shown);
+    return pieces === undefined ? undefined : unsavedNoticeText(pieces);
+  };
+
+  it("lists the unsaved screens in the row's order, Settings last", () => {
+    expect(names({ settings: true, menus: true, pages: true, cameras: false })).toEqual(["Pages", "Menus", "Settings"]);
+    expect(names({})).toEqual([]);
+  });
+
+  it("says nothing while only the screen on show is unsaved", () => {
+    expect(notice({ pages: true }, "pages")).toBeUndefined();
+    expect(notice({}, "pages")).toBeUndefined();
+  });
+
+  it("names one other screen on its own", () => {
+    expect(notice({ menus: true }, "pages")).toBe("Menus has unsaved changes.");
+    expect(notice({ settings: true }, undefined)).toBe("Settings has unsaved changes.");
+  });
+
+  it("counts every unsaved screen, the one on show too, and joins the names plainly", () => {
+    expect(notice({ pages: true, menus: true }, "pages")).toBe("2 screens have unsaved changes: Pages and Menus.");
+    expect(notice({ pages: true, menus: true, voice: true }, "voice")).toBe("3 screens have unsaved changes: Pages, Menus and Voice.");
+  });
+
+  it("dots each unsaved screen in the row, named for a screen reader", () => {
+    const { text } = row({ route: route("/pages/w1"), unsaved: unsavedScreens({ menus: true, settings: true }) });
+    expect(text).toMatch(/>Menus<i class="wa-unsaved" role="img" aria-label="unsaved changes"><\/i><\/a>/);
+    expect(text).toMatch(/>Settings<i class="wa-unsaved"/);
+    expect(text).toContain(">Pages</a>");
+  });
+
+  it("draws the bar only while another screen is unsaved, each other screen a link there on the shared watch", () => {
+    expect(row({ route: route("/pages/w1"), unsaved: unsavedScreens({ pages: true }) }).text).not.toContain("wa-wr-unsaved");
+    const { text, tpl, calls } = row({ route: route("/pages/w1"), unsaved: unsavedScreens({ pages: true, menus: true }) });
+    expect(text).toContain('class="wa-wr-unsaved" role="status"');
+    expect(text).toContain("2 screens have unsaved changes: <b>Pages</b> and <a href=/wrist-assistant/menus/w1 @click=>Menus</a>.");
+    handlers(tpl, "@click").at(-1)!(click);
+    expect(calls).toEqual(["go:/menus/w1"]);
+  });
+
+  it("says what the screen on show is under the row, but not on a retired one", () => {
+    expect(row({ route: route("/pages/w1") }).text).toContain(
+      '<p class="wa-wr-blurb"><b>Pages</b> are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.</p>',
+    );
+    expect(row({ route: route("/settings/w1") }).text).toContain("<b>Settings</b> sets how the watch behaves");
+    expect(row({ route: route("/control-center/w1") }).text).not.toContain("wa-wr-blurb");
+  });
+});
+
+describe("the phone's line of screens", () => {
+  it("centres the link on show, held inside the line's ends, and leaves a line that fits alone", () => {
+    expect(rowScrollFor({ width: 300, scrollWidth: 300 }, { left: 200, width: 60 })).toBeUndefined();
+    expect(rowScrollFor({ width: 300, scrollWidth: 800 }, { left: 400, width: 60 })).toBe(280);
+    expect(rowScrollFor({ width: 300, scrollWidth: 800 }, { left: 20, width: 60 })).toBe(0);
+    expect(rowScrollFor({ width: 300, scrollWidth: 800 }, { left: 760, width: 60 })).toBe(500);
+  });
+
+  it("marks more past the right edge until the line is scrolled to its end", () => {
+    const box = (scrollLeft: number, scrollWidth = 800) => {
+      const attrs = new Set<string>();
+      markRowMore({ scrollWidth, clientWidth: 300, scrollLeft, toggleAttribute: (n: string, on: boolean) => { if (on) attrs.add(n); else attrs.delete(n); return on; } } as unknown as HTMLElement);
+      return attrs.has("data-more");
+    };
+    expect(box(0)).toBe(true);
+    expect(box(499.5)).toBe(false);
+    expect(box(0, 300)).toBe(false);
+  });
+});
+
 describe("the row's look", () => {
   const text = watchRowStyles.cssText;
   const rule = (sel: string) => text.slice(text.indexOf(sel), text.indexOf("}", text.indexOf(sel)));
@@ -253,7 +330,9 @@ describe("the row's look", () => {
     expect(text).not.toMatch(/rgba?\(/);
     expect(text).not.toContain("[dark]");
     expect(text).not.toContain("purple");
-    expect(text).not.toContain("gradient");
+    expect(text).not.toContain("radial-gradient");
+    // The one gradient is the phone line's fade mask, never a wash.
+    for (const line of text.split("\n").filter((l) => l.includes("gradient"))) expect(line).toMatch(/^\s*(-webkit-)?mask-image: linear-gradient/);
   });
 
   it("colors only the watch's chip and its picker, in the Watch app's blue", () => {
@@ -273,13 +352,22 @@ describe("the row's look", () => {
     }
   });
 
-  it("marks the screen on show with weight and a grey fill, and wraps rather than scroll", () => {
+  it("marks the screen on show with weight and a grey fill, and wraps rather than scroll on a wide screen", () => {
     const on = rule("a.wa-wr-link.on, button.wa-wr-link.on {");
     expect(on).toContain("font-weight: 600");
     expect(on).toContain("var(--wa-ink) 10%");
     expect(rule("nav.wa-watchrow {")).toContain("flex-wrap: wrap");
     expect(rule(".wa-wr-links {")).toContain("flex-wrap: wrap");
-    expect(text).not.toContain("overflow-x");
+    expect(text.slice(0, text.indexOf("@media"))).not.toContain("overflow-x");
+  });
+
+  it("on a phone puts the watch on its own line and the screens on one line that scrolls sideways, fading while more is hidden", () => {
+    const phone = text.slice(text.indexOf("@media (max-width: 640px)"));
+    expect(phone).toMatch(/\.wa-wr-watch, \.wa-wr-picker, button\.wa-wr-pair \{ flex: 1 1 100%/);
+    const line = phone.slice(phone.indexOf(".wa-wr-links {"), phone.indexOf("}", phone.indexOf(".wa-wr-links {")));
+    for (const want of ["flex-wrap: nowrap", "overflow-x: auto", "scroll-snap-type: x", "scrollbar-width: none"]) expect(line).toContain(want);
+    expect(phone).toContain("scroll-snap-align: start");
+    expect(phone).toMatch(/\.wa-wr-links\[data-more\] \{\s*-webkit-mask-image/);
   });
 
   it("titles the menu in small capitals, weight 500, spaced", () => {
