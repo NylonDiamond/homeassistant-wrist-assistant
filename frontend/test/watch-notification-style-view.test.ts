@@ -1,8 +1,8 @@
 // The Watch settings dialog with its second record, the notification style:
 // both read on open, one Save that sends only what changed, each over its own
-// revision, a conflict on one that costs the other nothing, the card in place
-// of the three when there is no record yet, and nothing at all from an
-// integration that does not keep the kind.
+// revision, a conflict on one that costs the other nothing, the three cards on
+// the defaults when there is no record yet (the first Save creates it), and
+// nothing at all from an integration that does not keep the kind.
 //
 // No DOM: the dialog's templates are flattened to text, over a stand-in Home
 // Assistant connection that holds one record per kind.
@@ -13,12 +13,12 @@ import { join } from "node:path";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
 import { WatchSettings } from "../src/watch-settings-view.js";
+import { dropWatchSettingsDrafts } from "../src/watch-settings-draft.js";
 import { SETTINGS_GROUPS } from "../src/watch-settings-nav.js";
-import { type CatalogSetting, catalogSettings, watchBehaviorDefaults } from "../src/watch-settings.js";
+import { type CatalogSetting, NEW_WATCH_TEXT, SETTINGS_PAIR_FIRST_TEXT, catalogSettings, watchBehaviorDefaults } from "../src/watch-settings.js";
 import {
   NOTIFICATION_STYLE_SECTIONS,
   STYLE_NO_RECORD_TITLE,
-  STYLE_START_BUTTON,
   STYLE_UNREADABLE_TEXT,
   type StyleRow,
   type StyleValue,
@@ -130,7 +130,6 @@ interface Inside {
   group: string;
   note?: { kind: string; text: string };
   save(): Promise<void>;
-  startStyle(): Promise<void>;
   edit(setting: CatalogSetting, value: unknown): void;
   editStyle(row: StyleRow, value: StyleValue): void;
   renderBar(): unknown;
@@ -157,6 +156,9 @@ describe("Watch settings with the notification style", () => {
   });
   afterEach(() => {
     (globalThis as { window?: unknown }).window = realWindow;
+    // Edits a test leaves unsaved are kept per watch, and every test here
+    // shows the same watch.
+    dropWatchSettingsDrafts();
   });
 
   async function dialog(held: Record<string, WatchConfigRecord>, onSave?: SaveHook) {
@@ -350,41 +352,59 @@ describe("Watch settings with the notification style", () => {
     expect(foot()).not.toContain("Notification style");
   });
 
-  it("shows one card with Start with the defaults when there is no record, and starts over revision 0", async () => {
-    const { inside, ha, text } = await dialog({
+  it("opens the three cards on the defaults when there is no record, and the first Save creates it over revision 0", async () => {
+    const { inside, ha, text, foot } = await dialog({
       behavior: record("behavior", 3, watchBehaviorDefaults()),
       [KIND]: record(KIND, 0),
     });
     const before = text();
-    expect(before).toContain(STYLE_NO_RECORD_TITLE);
-    expect(before).toContain(`class="small primary ns-start"`);
-    expect(before).toContain(STYLE_START_BUTTON);
-    for (const id of ["notifications", "sounds", "wristWebhooks"]) expect(before).not.toContain(`data-sec=ws-${id}`);
-    // An edit to the behavior is not lost by starting the other record.
-    inside.edit(setting("wrapPages"), true);
-    await inside.startStyle();
+    expect(before).not.toContain(STYLE_NO_RECORD_TITLE);
+    expect(before).not.toContain("ns-start");
+    expect(before).toContain("data-sec=ws-notifications");
+    expect(before).toContain("data-sec=ws-sounds");
+    expect(before).toContain(NEW_WATCH_TEXT);
+    // Nothing is stored, nothing is unsaved, and Save is greyed out.
+    expect(ha.saves()).toHaveLength(0);
+    expect(inside.styleEdits.size).toBe(0);
+    expect(foot()).toContain("?disabled=true");
+    inside.editStyle(row("cornerStyle"), "square");
+    await inside.save();
     const saves = ha.saves(KIND);
     expect(saves).toHaveLength(1);
-    expect(saves[0]).toMatchObject({ base_revision: 0, document: notificationStyleDefaults() });
-    expect(inside.styleRecord?.revision).toBe(1);
-    expect(inside.edits.get("wrapPages")).toBe(true);
+    expect(saves[0]).toMatchObject({ base_revision: 0, document: { ...notificationStyleDefaults(), cornerStyle: "square" } });
     expect(ha.saves("behavior")).toHaveLength(0);
-    const after = text();
-    expect(after).not.toContain(STYLE_NO_RECORD_TITLE);
-    expect(after).toContain("data-sec=ws-sounds");
+    expect(inside.styleRecord?.revision).toBe(1);
+    expect(inside.styleEdits.size).toBe(0);
+    expect(text()).not.toContain(NEW_WATCH_TEXT);
   });
 
-  it("asks for a pairing when the start is refused as no_record", async () => {
+  it("asks for a pairing when the first save is refused as no_record, and keeps the edits", async () => {
     const { inside, text } = await dialog({
       behavior: record("behavior", 3, watchBehaviorDefaults()),
       [KIND]: record(KIND, 0),
     }, (msg) => (msg.kind === KIND ? Promise.reject(refusal("no_record")) : undefined));
-    await inside.startStyle();
+    inside.editStyle(row("cornerStyle"), "square");
+    await inside.save();
     expect(inside.note?.text).toContain("Pair this watch first");
-    expect(text()).toContain(STYLE_START_BUTTON);
+    expect(inside.styleEdits.get("cornerStyle")).toBe("square");
+    expect(inside.styleRecord?.revision).toBe(0);
+    expect(text()).toContain("data-sec=ws-notifications");
   });
 
-  it("offers no start over a record it cannot read", async () => {
+  it("says the pairing line once when both first saves are refused as no_record", async () => {
+    const { inside } = await dialog({
+      behavior: record("behavior", 0),
+      [KIND]: record(KIND, 0),
+    }, () => Promise.reject(refusal("no_record")));
+    inside.edit(setting("wrapPages"), !(watchBehaviorDefaults().wrapPages as boolean));
+    inside.editStyle(row("cornerStyle"), "square");
+    await inside.save();
+    expect(inside.note).toEqual({ kind: "warn", text: SETTINGS_PAIR_FIRST_TEXT });
+    expect(inside.edits.size).toBe(1);
+    expect(inside.styleEdits.size).toBe(1);
+  });
+
+  it("opens nothing over a record it cannot read", async () => {
     const { inside, ha, text } = await dialog({
       behavior: record("behavior", 3, watchBehaviorDefaults()),
       [KIND]: record(KIND, 4),
@@ -392,18 +412,22 @@ describe("Watch settings with the notification style", () => {
     const shown = text();
     expect(shown).toContain(STYLE_UNREADABLE_TEXT);
     expect(shown).not.toContain(STYLE_NO_RECORD_TITLE);
-    await inside.startStyle();
+    expect(shown).not.toContain("data-sec=ws-notifications");
+    expect(shown).not.toContain(NEW_WATCH_TEXT);
+    await inside.save();
     expect(ha.saves()).toHaveLength(0);
   });
 
-  it("shows the notification style beside a watch with no behavior record yet", async () => {
+  it("opens both records on the defaults for a watch with no behavior record yet", async () => {
     const { text } = await dialog({
       behavior: record("behavior", 0),
       [KIND]: record(KIND, 2, fixture("01-defaults.json")),
     });
     const shown = text();
-    expect(shown).toContain("No settings from this watch yet.");
+    expect(shown).not.toContain("No settings from this watch yet.");
+    expect(shown).toContain("data-sec=ws-camera");
     expect(shown).toContain("data-sec=ws-notifications");
+    expect(shown).toContain(NEW_WATCH_TEXT);
   });
 
   it("draws the volume with its presets, the sounds as menus and delivery as tiles", async () => {

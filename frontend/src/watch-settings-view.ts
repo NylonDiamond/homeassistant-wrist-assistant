@@ -17,10 +17,11 @@
 // panel's leave guards count them.
 //
 // The path a change takes: the panel saves a new revision, and the watch pulls
-// it the next time it checks. A watch with no record yet gets one from "Start
-// with the defaults", or from its iPhone's one-time move. There is no live
-// line, so while a save waits the page asks the store again now and then and
-// turns the pill green once the watch has it.
+// it the next time it checks. A watch with no record yet opens ready on the
+// defaults, unsaved, and its first Save creates the record; or the record
+// comes from its iPhone's one-time move. There is no live line, so while a
+// save waits the page asks the store again now and then and turns the pill
+// green once the watch has it.
 //
 // The page shows one group of cards at a time, picked in a side panel that
 // also searches every group (`watch-settings-nav.ts` says which card is in
@@ -48,25 +49,25 @@ import type { IconProvider } from "./renderer.js";
 import { agoWords } from "./send-state.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import {
+  type BehaviorDocument,
   type CatalogSection,
   type CatalogSetting,
   type MotionActions,
   type PairDeviceKind,
   type SettingValue,
   COLLECTED_PILL_TEXT,
-  SETTINGS_NO_RECORD_TEXT,
+  NEW_WATCH_TEXT,
+  NOTHING_TO_SAVE_TEXT,
   SETTINGS_PAIR_FIRST_TEXT,
-  SETTINGS_START_BUTTON,
-  SETTINGS_START_CONFLICT_TEXT,
   SETTINGS_MAIN_HOUSE_TEXT,
   SETTINGS_UNREADABLE_TEXT,
   START_FRESH_BUTTON,
   WAITING_HELP_TEXT,
   WAITING_TEXT,
+  WAIT_FOR_IPHONE_TEXT,
   WATCH_SETTINGS_CATALOG,
   buildSaveDocument,
   conflictRevision,
-  createWatchBehavior,
   deliveryState,
   dirtyKeys,
   domainList,
@@ -76,7 +77,6 @@ import {
   mayStart,
   motionAction,
   noRecordStart,
-  noRecordText,
   optionsFor,
   readMotionActions,
   savedLine,
@@ -84,35 +84,42 @@ import {
   settingValue,
   settingsWatches,
   takesSettingsFromAnotherHome,
+  watchBehaviorDefaults,
   watchName,
   watchRecordUnreadable,
   withEdit,
   withMotionAction,
   withMotionTarget,
 } from "./watch-settings.js";
-import { SETTINGS_MOVED_TEXT, dropWatchSettingsDrafts, keepSettingsDraft, keptSettingsDraft, restoreSettingsDraft } from "./watch-settings-draft.js";
+import {
+  SETTINGS_MOVED_TEXT,
+  dropWatchSettingsDrafts,
+  keepSettingsDraft,
+  keptSettingsDraft,
+  restoreSettingsDraft,
+  settingsStartedFresh,
+  startSettingsFresh,
+} from "./watch-settings-draft.js";
 import { settingsCanSave, settingsPageStep } from "./watch-settings-page.js";
 import { demoPicture } from "./watch-settings-demo.js";
 import { type TileChoice, WATCH_SETTING_LOOK, domainTiles, gestureIcon, optionPreview, settingIcon, tileChoices, usesTiles } from "./watch-settings-look.js";
 import { type SettingsCardId, type SettingsGroup, SETTINGS_GROUPS, groupOfCard, matchesSearch, searchTerms, settingsGroup } from "./watch-settings-nav.js";
 import {
+  type StyleDocument,
   type StyleRow,
   type StyleSection,
   type StyleValue,
   NOTIFICATION_STYLE_KIND,
   NOTIFICATION_STYLE_SECTIONS,
-  STYLE_NO_RECORD_TEXT,
   STYLE_NO_RECORD_TITLE,
-  STYLE_START_BUTTON,
-  STYLE_START_CONFLICT_TEXT,
   STYLE_UNREADABLE_TEXT,
   VOLUME,
+  notificationStyleDefaults,
   notificationStyleReadMeansUnsupported,
   readStyleDocument,
   saveNotificationStyle,
   soundChoices,
   soundValueText,
-  startNotificationStyle,
   styleDirtyKeys,
   styleFormValues,
   styleOptionsFor,
@@ -179,20 +186,22 @@ export class WatchSettings implements ReactiveController {
   private loadError?: string;
   private edits: ReadonlyMap<string, SettingValue> = new Map();
   private saving = false;
-  /** "Start with the defaults" is out. */
-  private starting = false;
+  /** What a new watch's page opens on while Home Assistant holds no record
+   * of a kind: the defaults the first Save creates. Made once, read only
+   * (a save sends a copy, `buildSaveDocument`). */
+  private readonly readyBehavior: BehaviorDocument = watchBehaviorDefaults();
+  private readonly readyStyle: StyleDocument = notificationStyleDefaults();
   /** The notification style record, beside `record`. */
   private styleRecord?: WatchConfigRecord;
   private styleEdits: ReadonlyMap<string, StyleValue> = new Map();
   /** The integration does not keep the kind: its cards are left out. */
   private styleUnsupported = false;
   private styleError?: string;
-  /** The notification style's "Start with the defaults" is out. */
-  private styleStarting = false;
   private note?: Note;
   private confirm?: Confirm;
-  /** The watch row the page drew last, for its no-record state
-   * (`noRecordStart`). */
+  /** The watch row the page shows, for its no-record state
+   * (`noRecordStart`). Set when the page is handed the watch and on every
+   * draw. */
   private shownOwner?: OwnerSummary;
   /** Sections whose help is hidden. Help starts shown: this is a form people
    * fill once, and its short titles ("Delay", "Debounce") need their line. */
@@ -264,7 +273,7 @@ export class WatchSettings implements ReactiveController {
     if (!this.loading && this.ownerId !== undefined) {
       keepSettingsDraft(this.ownerId, {
         behaviorRevision: this.record?.revision ?? 0,
-        behaviorDocument: this.record?.document,
+        behaviorDocument: this.behaviorDocument,
         edits: this.edits,
         styleRevision: this.styleRecord?.revision ?? 0,
         styleDocument: this.styleDocument,
@@ -286,6 +295,7 @@ export class WatchSettings implements ReactiveController {
   show(hass: HassLike, owners: readonly OwnerSummary[], current: string | undefined): void {
     this.hass = hass;
     const id = initialWatch(settingsWatches(owners), current);
+    this.shownOwner = settingsWatches(owners).find((w) => w.owner_watch_id === id);
     const step = settingsPageStep(this.active, this.ownerId, id);
     if (step === "stay") return;
     if (!this.active) {
@@ -344,7 +354,10 @@ export class WatchSettings implements ReactiveController {
     await Promise.all([this.readBehavior(hass, ownerId, seq), this.readStyle(hass, ownerId, seq)]);
     if (seq !== this.loadSeq) return;
     // The edits kept for this watch go back on, over the copies just read.
-    const restored = restoreSettingsDraft(keptSettingsDraft(ownerId), this.record, this.styleRecord);
+    const restored = restoreSettingsDraft(keptSettingsDraft(ownerId), this.record, this.styleRecord, {
+      behavior: this.behaviorIsNew ? this.readyBehavior : undefined,
+      style: this.styleIsNew ? this.readyStyle : undefined,
+    });
     this.edits = restored.edits;
     this.styleEdits = restored.styleEdits;
     if (restored.moved && !keepNote) this.note = { kind: "warn", text: SETTINGS_MOVED_TEXT };
@@ -450,14 +463,48 @@ export class WatchSettings implements ReactiveController {
     this.changed();
   }
 
-  /** The notification style document shown, when there is one to edit. */
+  /**
+   * Whether `record` is a kind Home Assistant holds nothing of for the watch
+   * shown, and the page opens ready on its defaults: unsaved, held only here,
+   * so nothing asks before leaving until a change, and the first Save
+   * creates the record over revision 0. With no iPhone to wait for this is
+   * how the page opens; while one may still move the watch's setup here,
+   * only after "Start fresh instead".
+   */
+  private opensReady(record: WatchConfigRecord | undefined): boolean {
+    const id = this.ownerId;
+    if (id === undefined || record === undefined || record.revision > 0) return false;
+    return noRecordStart(this.shownOwner) === "start" || settingsStartedFresh(id);
+  }
+
+  /** The behavior settings open ready on the defaults (`opensReady`). */
+  private get behaviorIsNew(): boolean {
+    return this.loadError === undefined && this.opensReady(this.record);
+  }
+
+  /** The notification style opens ready on its defaults (`opensReady`). */
+  private get styleIsNew(): boolean {
+    return !this.styleUnsupported && this.styleError === undefined && this.opensReady(this.styleRecord);
+  }
+
+  /** The behavior document the form edits: the record's, or on a new watch
+   * the defaults (`behaviorIsNew`). Undefined while there is none to edit. */
+  private get behaviorDocument(): BehaviorDocument | undefined {
+    const record = this.record;
+    if (record !== undefined && record.revision > 0) return record.document;
+    return this.behaviorIsNew ? this.readyBehavior : undefined;
+  }
+
+  /** The notification style document shown, when there is one to edit: the
+   * record's, or on a new watch the defaults (`styleIsNew`). */
   private get styleDocument(): Record<string, unknown> | undefined {
     const record = this.styleRecord;
-    return record !== undefined && record.revision > 0 ? readStyleDocument(record.document) : undefined;
+    if (record !== undefined && record.revision > 0) return readStyleDocument(record.document);
+    return this.styleIsNew ? this.readyStyle : undefined;
   }
 
   private get behaviorChanges(): number {
-    return dirtyKeys(this.record?.document, this.edits).length;
+    return dirtyKeys(this.behaviorDocument, this.edits).length;
   }
 
   private get styleChanges(): number {
@@ -471,7 +518,7 @@ export class WatchSettings implements ReactiveController {
     const hass = this.hass;
     const ownerId = this.ownerId;
     if (!hass || ownerId === undefined || this.saving) return;
-    const behavior = this.record?.document !== undefined && this.behaviorChanges > 0;
+    const behavior = this.behaviorDocument !== undefined && this.behaviorChanges > 0;
     const style = this.styleDocument !== undefined && this.styleChanges > 0;
     if (!behavior && !style) return;
     this.saving = true;
@@ -491,11 +538,16 @@ export class WatchSettings implements ReactiveController {
     }
   }
 
+  /** The behavior's save over the revision shown. On a new watch that is
+   * revision 0, so the first Save creates the record from the defaults with
+   * the edits on top. */
   private async saveBehavior(hass: HassLike, ownerId: string): Promise<Note | undefined> {
     const record = this.record;
-    if (record?.document === undefined) return undefined;
+    const base = this.behaviorDocument;
+    if (record === undefined || base === undefined) return undefined;
+    const first = record.revision <= 0;
     const edits = this.edits;
-    const document = buildSaveDocument(record.document, edits);
+    const document = buildSaveDocument(base, edits);
     try {
       const reply = await saveWatchConfig(hass, ownerId, "behavior", record.revision, document);
       if (ownerId !== this.ownerId) return undefined;
@@ -533,20 +585,25 @@ export class WatchSettings implements ReactiveController {
           text: `Your changes were not saved. These settings changed somewhere else${stored === undefined ? "" : ` (now revision ${stored})`}, so the newest copy is shown. Make your changes again on top of it.`,
         };
       }
+      // A first save refused: the watch is not paired. The edits stay for
+      // the Save after pairing.
+      if (code === "no_record" && first) return { kind: "warn", text: SETTINGS_PAIR_FIRST_TEXT };
       if (code === "no_record") {
         await this.reread("behavior", ownerId);
-        return { kind: "warn", text: "Your changes were not saved. Home Assistant no longer holds settings for this watch. Start with the defaults again." };
+        return { kind: "warn", text: "Your changes were not saved. Home Assistant no longer holds settings for this watch." };
       }
       return { kind: "err", text: `Could not save: ${errText(err)}` };
     }
   }
 
   /** The notification style's save: a conflict reads the newer copy and
-   * lays these edits over it key by key, then sends again. */
+   * lays these edits over it key by key, then sends again. On a new watch it
+   * is over revision 0, from the defaults, and creates the record. */
   private async saveStyle(hass: HassLike, ownerId: string): Promise<Note | undefined> {
     const record = this.styleRecord;
     const document = this.styleDocument;
     if (record === undefined || document === undefined) return undefined;
+    const first = record.revision <= 0;
     const edits = this.styleEdits;
     const result = await saveNotificationStyle({
       save: (base, doc) => saveWatchConfig(hass, ownerId, NOTIFICATION_STYLE_KIND, base, doc),
@@ -568,88 +625,25 @@ export class WatchSettings implements ReactiveController {
     if (result.code === "conflict") {
       return { kind: "warn", text: "The notification style was not saved: it kept changing elsewhere. Your changes are kept, so try Save again in a moment." };
     }
+    // A first save refused: the watch is not paired. The edits stay.
+    if (result.code === "no_record" && first && result.fresh === undefined) return { kind: "warn", text: SETTINGS_PAIR_FIRST_TEXT };
     if (result.code === "no_record") {
       if (result.fresh === undefined) await this.reread("style", ownerId);
       else this.styleEdits = new Map();
-      return { kind: "warn", text: "The notification style was not saved. Home Assistant no longer holds one for this watch. Start with the defaults again." };
+      return { kind: "warn", text: "The notification style was not saved. Home Assistant no longer holds one for this watch." };
     }
     return { kind: "err", text: `Could not save the notification style: ${friendlyError(result)}` };
   }
 
-  /**
-   * "Start with the defaults": create the watch's settings record from the
-   * catalog's defaults, a save over revision 0. The integration takes it only
-   * for a paired watch; a record that came meanwhile is read and shown.
-   */
-  private async start(): Promise<void> {
-    const hass = this.hass;
-    const ownerId = this.ownerId;
-    const record = this.record;
-    if (!hass || ownerId === undefined || this.starting || this.saving) return;
-    // A record is there (perhaps one this panel cannot read): never start
-    // over it.
-    if (record !== undefined && record.revision > 0) return;
-    this.starting = true;
+  /** "Start fresh instead", while the page waits for the iPhone's move:
+   * after a yes, the records Home Assistant does not hold open ready on the
+   * defaults. Nothing is saved until Save. */
+  private askStartFresh(): void {
+    const id = this.ownerId;
+    if (id === undefined || !mayStart(noRecordStart(this.shownOwner))) return;
+    startSettingsFresh(id);
     this.note = undefined;
     this.changed();
-    const result = await createWatchBehavior((base, document) => saveWatchConfig(hass, ownerId, "behavior", base, document));
-    this.starting = false;
-    if (ownerId !== this.ownerId) {
-      this.changed();
-      return;
-    }
-    if (result.ok) {
-      this.note = { kind: "note", text: "Started with the defaults. Open Wrist Assistant on the watch to get them." };
-    } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: SETTINGS_PAIR_FIRST_TEXT };
-      this.changed();
-      return;
-    } else if (result.code === "conflict") {
-      this.note = { kind: "warn", text: SETTINGS_START_CONFLICT_TEXT };
-    } else {
-      this.note = { kind: "err", text: `Could not start: ${friendlyError(result)}` };
-      this.changed();
-      return;
-    }
-    await this.reread("behavior", ownerId);
-    this.pollIfWaiting();
-  }
-
-  /**
-   * The notification style's "Start with the defaults": the app's fresh
-   * install document (`01-defaults.json`) saved over revision 0, then read
-   * back. The behavior record and its edits are left alone.
-   */
-  private async startStyle(): Promise<void> {
-    const hass = this.hass;
-    const ownerId = this.ownerId;
-    const record = this.styleRecord;
-    if (!hass || ownerId === undefined || this.styleStarting || this.saving) return;
-    if (record !== undefined && record.revision > 0) return;
-    this.styleStarting = true;
-    this.note = undefined;
-    this.changed();
-    const result = await startNotificationStyle((base, document) => saveWatchConfig(hass, ownerId, NOTIFICATION_STYLE_KIND, base, document));
-    this.styleStarting = false;
-    if (ownerId !== this.ownerId) {
-      this.changed();
-      return;
-    }
-    if (result.ok) {
-      this.note = { kind: "note", text: "Started the notification style with the defaults. Open Wrist Assistant on the watch to get it." };
-    } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: SETTINGS_PAIR_FIRST_TEXT };
-      this.changed();
-      return;
-    } else if (result.code === "conflict") {
-      this.note = { kind: "warn", text: STYLE_START_CONFLICT_TEXT };
-    } else {
-      this.note = { kind: "err", text: `Could not start: ${friendlyError(result)}` };
-      this.changed();
-      return;
-    }
-    await this.reread("style", ownerId);
-    this.pollIfWaiting();
   }
 
   /**
@@ -742,7 +736,8 @@ export class WatchSettings implements ReactiveController {
     this.changed();
   }
 
-  /** Back to the copies Home Assistant holds. */
+  /** Back to the copies Home Assistant holds, or on a new watch to the
+   * defaults it opened on. */
   private discard(): void {
     this.edits = new Map();
     this.styleEdits = new Map();
@@ -775,7 +770,7 @@ export class WatchSettings implements ReactiveController {
   }
 
   private edit(setting: CatalogSetting, value: SettingValue): void {
-    this.edits = withEdit(this.edits, this.record?.document, setting, value);
+    this.edits = withEdit(this.edits, this.behaviorDocument, setting, value);
     this.confirm = undefined;
     this.changed();
   }
@@ -831,6 +826,7 @@ export class WatchSettings implements ReactiveController {
     return html`<div class="ws-page">
       <div class="ws-top">
         ${this.renderBar(name, options.narrow === true, elsewhere)}
+        ${!one && this.isNew ? html`<div class="ws-new" role="note">${uiIcon("info")}<span>${NEW_WATCH_TEXT}</span></div>` : nothing}
         ${this.note ? html`<div class="banner ${this.note.kind} ws-note" role="alert"><span>${this.note.text}</span>
           <button class="link" @click=${() => { this.note = undefined; this.changed(); }}>Dismiss</button></div>` : nothing}
       </div>
@@ -917,7 +913,7 @@ export class WatchSettings implements ReactiveController {
       const g = groupOfCard(card);
       if (g !== undefined && n > 0) counts.set(g.id, (counts.get(g.id) ?? 0) + n);
     };
-    const dirty = new Set(dirtyKeys(this.record?.document, this.edits));
+    const dirty = new Set(dirtyKeys(this.behaviorDocument, this.edits));
     for (const s of WATCH_SETTINGS_CATALOG.sections) add(s.id as SettingsCardId, s.settings.filter((x) => dirty.has(x.key)).length);
     const styleDirty = new Set(styleDirtyKeys(this.styleDocument, this.styleEdits));
     for (const s of NOTIFICATION_STYLE_SECTIONS) add(s.id, s.groups.reduce((n, g) => n + g.rows.filter((r) => styleDirty.has(r.key)).length, 0));
@@ -941,7 +937,7 @@ export class WatchSettings implements ReactiveController {
     };
     const behavior = this.behaviorStandIn();
     if (behavior === undefined) {
-      const values = formValues(this.record?.document, this.edits);
+      const values = formValues(this.behaviorDocument, this.edits);
       for (const section of WATCH_SETTINGS_CATALOG.sections) {
         const card = this.renderSection(hass, section, values, terms);
         if (card !== undefined) cards.set(section.id as SettingsCardId, card);
@@ -1007,20 +1003,14 @@ export class WatchSettings implements ReactiveController {
     if (watchRecordUnreadable(record, (document) => document)) {
       return html`<div class="xf-lead warn">${uiIcon("info")}<span>${SETTINGS_UNREADABLE_TEXT}</span></div>`;
     }
-    if (record.revision <= 0 || record.document === undefined) {
-      // While the iPhone's move may still come it waits, and the start is a
-      // small link that asks first.
-      const state = noRecordStart(this.shownOwner);
-      return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this watch yet.</b> ${noRecordText(state, SETTINGS_NO_RECORD_TEXT)}</span></div>
-        ${state === "wait"
-          ? html`<button class="link start-fresh ws-start" ?disabled=${this.starting || this.saving}
-              title="Save the app's default settings as this watch's first copy"
-              @click=${() => { if (mayStart(state)) void this.start(); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
-          : html`<button class="small primary ws-start" ?disabled=${this.starting || this.saving}
-              title="Save the app's default settings as this watch's first copy"
-              @click=${() => void this.start()}>${this.starting ? "Starting…" : SETTINGS_START_BUTTON}</button>`}`;
-    }
-    return undefined;
+    // No record and nothing to wait for: the cards open on the defaults.
+    if (this.behaviorDocument !== undefined) return undefined;
+    // While the iPhone's move may still come it waits, and a small link that
+    // asks first opens the cards anyway.
+    return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this watch yet.</b> ${WAIT_FOR_IPHONE_TEXT}</span></div>
+      <button class="link start-fresh ws-start" ?disabled=${this.saving}
+        title="Open the settings on the app's defaults. Nothing is saved until you press Save."
+        @click=${() => this.askStartFresh()}>${START_FRESH_BUTTON}</button>`;
   }
 
   /** One catalog section as an inspector card that is always open: the
@@ -1212,16 +1202,13 @@ export class WatchSettings implements ReactiveController {
     if (watchRecordUnreadable(record, readStyleDocument)) {
       return this.renderStyleCard(html`<div class="xf-lead warn">${uiIcon("info")}<span>${STYLE_UNREADABLE_TEXT}</span></div>`);
     }
+    // No record and nothing to wait for: the cards open on the defaults.
+    // Else the page waits for the iPhone's move, with the same small link.
     if (this.styleDocument === undefined) {
-      const state = noRecordStart(this.shownOwner);
-      return this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${noRecordText(state, STYLE_NO_RECORD_TEXT)}</span></div>
-        ${state === "wait"
-          ? html`<button class="link start-fresh ns-start" ?disabled=${this.styleStarting || this.saving}
-              title="Save the app's default notification style as this watch's first copy"
-              @click=${() => { if (mayStart(state)) void this.startStyle(); }}>${this.styleStarting ? "Starting…" : START_FRESH_BUTTON}</button>`
-          : html`<button class="small primary ns-start" ?disabled=${this.styleStarting || this.saving}
-              title="Save the app's default notification style as this watch's first copy"
-              @click=${() => void this.startStyle()}>${this.styleStarting ? "Starting…" : STYLE_START_BUTTON}</button>`}`);
+      return this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${WAIT_FOR_IPHONE_TEXT}</span></div>
+        <button class="link start-fresh ns-start" ?disabled=${this.saving}
+          title="Open the notification style on the app's defaults. Nothing is saved until you press Save."
+          @click=${() => this.askStartFresh()}>${START_FRESH_BUTTON}</button>`);
     }
     return undefined;
   }
@@ -1337,13 +1324,19 @@ export class WatchSettings implements ReactiveController {
       </select></label>`;
   }
 
+  /** Whether the page shows a new watch: a record of either kind opens
+   * ready on its defaults. The line over the page says what that means. */
+  private get isNew(): boolean {
+    return this.ownerId !== undefined && !this.loading && (this.behaviorIsNew || this.styleIsNew);
+  }
+
   /** Whether Save can run (`settingsCanSave`). */
   private get canSave(): boolean {
     return settingsCanSave({
       behaviorChanges: this.behaviorChanges,
       styleChanges: this.styleChanges,
-      busy: this.saving || this.starting || this.styleStarting,
-      behaviorHeld: this.record?.document !== undefined,
+      busy: this.saving,
+      behaviorHeld: this.behaviorDocument !== undefined,
       styleHeld: this.styleDocument !== undefined,
     });
   }
@@ -1368,14 +1361,16 @@ export class WatchSettings implements ReactiveController {
     const behaviorChanges = this.behaviorChanges;
     const styleChanges = this.styleChanges;
     const changes = behaviorChanges + styleChanges;
-    // A watch with no record is created by "Start with the defaults" in the
-    // body; Save sends edits to a record that exists. Both records save under
-    // the one button.
+    // Both records save under the one button. A record Home Assistant does
+    // not hold yet is created by its first Save, from the defaults the page
+    // opened on; until a change, Save is greyed out and says why beside it.
     const canSave = this.canSave;
     return html`<div class="wa-bar ws-bar ${stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch settings">${head}
       ${changes > 0
         ? html`<span class="xf-sub ws-changes">${changes} unsaved ${changes === 1 ? "change" : "changes"}</span>`
-        : elsewhere ? nothing : this.renderDelivery()}
+        : elsewhere ? nothing
+        : this.isNew ? html`<span class="xf-sub ws-why" title=${NOTHING_TO_SAVE_TEXT}>${NOTHING_TO_SAVE_TEXT}</span>`
+        : this.renderDelivery()}
       ${changes > 0 ? html`<button class="tb-btn ws-discard" ?disabled=${this.saving}
         title="Go back to the copies Home Assistant holds" @click=${() => this.askDiscard()}>Discard</button>` : nothing}
       ${this.ownerId === undefined ? nothing : html`<button class="primary save ${changes > 0 ? "dirty" : ""}" ?disabled=${!canSave}
@@ -1415,13 +1410,14 @@ function errText(err: unknown): string {
 }
 
 /** The two saves' notes as one: their words side by side, at the graver of
- * their two kinds. None when neither had anything to say. */
+ * their two kinds, the same words once (both first saves of a watch that is
+ * not paired say the same line). None when neither had anything to say. */
 function joinNotes(notes: readonly (Note | undefined)[]): Note | undefined {
   const said = notes.filter((n): n is Note => n !== undefined);
   if (said.length <= 1) return said[0];
   const rank = { note: 0, warn: 1, err: 2 } as const;
   const kind = said.reduce<Note["kind"]>((k, n) => (rank[n.kind] > rank[k] ? n.kind : k), "note");
-  return { kind, text: said.map((n) => n.text).join(" ") };
+  return { kind, text: [...new Set(said.map((n) => n.text))].join(" ") };
 }
 
 /** The words a search looks through for one setting: its title, help and
@@ -1457,6 +1453,15 @@ export const watchSettingsStyles = css`
   .ws-bar .tb-sync { min-width: 0; flex: 0 1 auto; }
   .ws-top > .ws-note { display: flex; align-items: center; gap: 10px; box-sizing: border-box; width: min(1088px, calc(100% - 32px)); margin: 10px auto 0; }
   .ws-top > .ws-note > span { flex: 1; min-width: 0; }
+  /* The new watch's line: the panel's plain notice (its card fill and a
+     hairline), with the info mark in the accent. */
+  .ws-top > .ws-new {
+    display: flex; align-items: center; gap: 10px; box-sizing: border-box; width: min(1088px, calc(100% - 32px)); margin: 10px auto 0;
+    padding: 10px 14px; border: 1px solid var(--wa-line); border-radius: 8px; background: var(--wa-panel); font-size: 13px;
+  }
+  .ws-top > .ws-new > svg.ui-icon { width: 16px; height: 16px; flex: none; color: var(--wa-accent); }
+  .ws-top > .ws-new > span { flex: 1; min-width: 0; }
+  .ws-bar .ws-why { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* One column, as wide as the dialog the page replaced: a home with no
      watch yet, or a watch whose settings live in another home. */
   .ws-cols { box-sizing: border-box; width: min(720px, 100%); margin: 0 auto; padding: 16px 16px 48px; display: grid; gap: 8px; }

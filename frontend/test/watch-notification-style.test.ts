@@ -26,7 +26,6 @@ import {
   saveNotificationStyle,
   soundChoices,
   soundValueText,
-  startNotificationStyle,
   styleDirtyKeys,
   styleFormValues,
   styleOptionsFor,
@@ -384,14 +383,16 @@ describe("saving", () => {
     expect(result).toMatchObject({ ok: false, code: "no_record" });
   });
 
-  it("starts with the defaults over revision 0", async () => {
+  it("creates the record on a new watch's first save: the defaults over revision 0, the edits on top", async () => {
     const sent: [number, Record<string, unknown>][] = [];
-    const result = await startNotificationStyle(async (b, d) => { sent.push([b, d]); return { revision: 1 }; });
-    expect(result).toMatchObject({ ok: true, revision: 1 });
-    expect(sent).toEqual([[0, fixture("01-defaults.json")]]);
-    expect(await startNotificationStyle(async () => { throw refusal("no_record"); })).toMatchObject({ ok: false, code: "no_record" });
-    expect(await startNotificationStyle(async () => { throw refusal("conflict"); })).toMatchObject({ ok: false, code: "conflict" });
-    expect(await startNotificationStyle(async () => { throw refusal("unknown_command"); })).toMatchObject({ ok: false, code: "unsupported" });
+    const result = await saveNotificationStyle({
+      save: async (b, d) => { sent.push([b, d]); return { revision: 1 }; },
+      fetch: async () => { throw new Error("no read on a plain create"); },
+    }, { revision: 0, document: notificationStyleDefaults() }, new Map([["cornerStyle", "rounded"]]));
+    expect(result).toMatchObject({ ok: true, revision: 1, merged: false });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]![0]).toBe(0);
+    expect(sent[0]![1]).toEqual({ ...fixture("01-defaults.json"), cornerStyle: "rounded" });
   });
 
   it("reads invalid and unknown_command as an integration without the kind", () => {

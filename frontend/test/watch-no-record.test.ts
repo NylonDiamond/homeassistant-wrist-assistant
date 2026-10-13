@@ -22,12 +22,9 @@ import { CONTROL_CENTER_MOVED_LINK, CONTROL_CENTER_MOVED_TITLE } from "../src/wa
 import { HTTP_ACTIONS_PHONE_TEXT } from "../src/watch-http-actions/model.js";
 import { WaMenuEditor } from "../src/watch-menus/menu-editor.js";
 import { WATCH_MENUS_NO_RECORD_TEXT, WATCH_MENUS_START_BUTTON } from "../src/watch-menus/model.js";
-import { STYLE_NO_RECORD_TEXT, STYLE_START_BUTTON } from "../src/watch-notification-style/model.js";
 import { ROOMS_NO_RECORD_TEXT, ROOMS_WAIT_TEXT } from "../src/watch-rooms/model.js";
 import { WaRoomsEditor } from "../src/watch-rooms/rooms-editor.js";
 import {
-  PAGES_NO_RECORD_TEXT,
-  SETTINGS_NO_RECORD_TEXT,
   START_FRESH_BUTTON,
   START_FRESH_CONFIRM_TEXT,
   WAIT_FOR_IPHONE_TEXT,
@@ -101,8 +98,8 @@ describe("the no-record state", () => {
   });
 
   it("says the wait text while waiting, else the editor's own", () => {
-    expect(noRecordText("wait", PAGES_NO_RECORD_TEXT)).toBe(WAIT_FOR_IPHONE_TEXT);
-    expect(noRecordText("start", PAGES_NO_RECORD_TEXT)).toBe(PAGES_NO_RECORD_TEXT);
+    expect(noRecordText("wait", WATCH_MENUS_NO_RECORD_TEXT)).toBe(WAIT_FOR_IPHONE_TEXT);
+    expect(noRecordText("start", WATCH_MENUS_NO_RECORD_TEXT)).toBe(WATCH_MENUS_NO_RECORD_TEXT);
   });
 
   it("asks before starting fresh while waiting, and only then", () => {
@@ -129,12 +126,9 @@ describe("the no-record words", () => {
   });
 
   it("give every editor a start line that matches its button", () => {
-    expect(PAGES_NO_RECORD_TEXT).toBe("Start with an empty page to begin.");
-    expect(SETTINGS_NO_RECORD_TEXT).toBe("Start with the defaults to begin.");
     for (const [text, button] of [
       [WATCH_MENUS_NO_RECORD_TEXT, WATCH_MENUS_START_BUTTON],
       [WATCH_VOICE_NO_RECORD_TEXT, WATCH_VOICE_START_BUTTON],
-      [STYLE_NO_RECORD_TEXT, STYLE_START_BUTTON],
       [STATUS_PAGES_NO_RECORD_TEXT, STATUS_PAGES_START_BUTTON],
       [CONTROL_CENTER_NO_RECORD_TEXT, CONTROL_CENTER_START_EMPTY_BUTTON],
     ]) {
@@ -148,8 +142,8 @@ describe("the no-record words", () => {
   it("never name the iPhone switch the app no longer has, nor break a sentence with a dash", () => {
     for (const text of [
       WAIT_FOR_IPHONE_TEXT, START_FRESH_BUTTON, START_FRESH_CONFIRM_TEXT,
-      PAGES_NO_RECORD_TEXT, SETTINGS_NO_RECORD_TEXT, WATCH_MENUS_NO_RECORD_TEXT, WATCH_VOICE_NO_RECORD_TEXT,
-      STYLE_NO_RECORD_TEXT, STATUS_PAGES_NO_RECORD_TEXT, CONTROL_CENTER_NO_RECORD_TEXT,
+      WATCH_MENUS_NO_RECORD_TEXT, WATCH_VOICE_NO_RECORD_TEXT,
+      STATUS_PAGES_NO_RECORD_TEXT, CONTROL_CENTER_NO_RECORD_TEXT,
       ROOMS_NO_RECORD_TEXT, ROOMS_WAIT_TEXT, HTTP_ACTIONS_PHONE_TEXT,
     ]) {
       expect(text).not.toMatch(/Edit pages in Home Assistant|Pages in Home Assistant|turn on/);

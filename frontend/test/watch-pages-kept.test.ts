@@ -12,7 +12,9 @@ import {
   keepWatchPagesSelection,
   keptWatchPagesDraft,
   keptWatchPagesSelection,
+  readyWatchPagesDraft,
   takeWatchPagesRecord,
+  watchPagesDraftIsNew,
 } from "../src/watch-pages/kept.js";
 import { setWatchPageName } from "../src/watch-pages/edit.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
@@ -121,6 +123,95 @@ describe("kept drafts", () => {
   });
 });
 
+describe("the ready page of a watch with no pages", () => {
+  const ID = "5A17E000-0000-4000-8000-00000000000F";
+
+  it("opens on one empty page at revision 0, with nothing to save and nothing to ask", () => {
+    const draft = readyWatchPagesDraft("w1", true, { newId: () => ID })!;
+    expect(draft.revision).toBe(0);
+    expect(draft.dirty).toBe(false);
+    expect((draft.document.pages as { id: string; name: string }[]).map((p) => [p.id, p.name])).toEqual([[ID, "New Page 1"]]);
+    expect(keptWatchPagesDraft("w1")).toBe(draft);
+    expect(watchPagesDraftIsNew("w1")).toBe(true);
+    expect(anyWatchPagesDirty()).toBe(false);
+    // The same draft every time it is asked for, even where none may be made.
+    expect(readyWatchPagesDraft("w1", true)).toBe(draft);
+    expect(readyWatchPagesDraft("w1", false)).toBe(draft);
+  });
+
+  it("counts as unsaved once changed, and discard brings back the empty page", () => {
+    const draft = readyWatchPagesDraft("w1", true)!;
+    draft.apply(setWatchPageName(draft.document, String((draft.document.pages as { id: string }[])[0]!.id), "Kitchen"));
+    expect(draft.dirty).toBe(true);
+    expect(anyWatchPagesDirty()).toBe(true);
+    expect(draft.discard()).toBe(true);
+    expect(draft.dirty).toBe(false);
+    expect(anyWatchPagesDirty()).toBe(false);
+  });
+
+  it("is made only when open: while waiting for the iPhone, the start fresh link makes it", () => {
+    expect(readyWatchPagesDraft("w1", false)).toBeUndefined();
+    expect(keptWatchPagesDraft("w1")).toBeUndefined();
+    expect(watchPagesDraftIsNew("w1")).toBe(false);
+    expect(readyWatchPagesDraft("w1", true)).toBeDefined();
+  });
+
+  it("never replaces edits kept from a record Home Assistant no longer holds", () => {
+    const { draft } = takeWatchPagesRecord("w1", doc("Home"), 3);
+    draft.apply(setWatchPageName(draft.document, "P1", "Kitchen"));
+    expect(readyWatchPagesDraft("w1", true)).toBeUndefined();
+    expect(keptWatchPagesDraft("w1")).toBe(draft);
+    // Dropped, the ready page opens.
+    forgetWatchPagesDraft("w1");
+    expect(readyWatchPagesDraft("w1", true)?.revision).toBe(0);
+  });
+
+  it("replaces a clean draft of a record that went away", () => {
+    const { draft } = takeWatchPagesRecord("w1", doc("Home"), 3);
+    const ready = readyWatchPagesDraft("w1", true)!;
+    expect(ready).not.toBe(draft);
+    expect(ready.revision).toBe(0);
+  });
+
+  it("is no longer new once its first save lands, and stays the draft shown", () => {
+    const draft = readyWatchPagesDraft("w1", true)!;
+    draft.apply({ ...draft.document, extra: 1 });
+    draft.saved(draft.document, 1);
+    expect(watchPagesDraftIsNew("w1")).toBe(false);
+    expect(readyWatchPagesDraft("w1", false)).toBe(draft);
+    // The record read back is the draft's own revision: kept as it is.
+    const taken = takeWatchPagesRecord("w1", draft.document, 1);
+    expect(taken.draft).toBe(draft);
+    // A record now held: the draft is an ordinary one, and no longer handed
+    // out as the ready page.
+    forgetWatchPagesDraft("w1");
+    takeWatchPagesRecord("w1", doc("Home"), 2);
+    expect(readyWatchPagesDraft("w1", false)).toBeUndefined();
+  });
+
+  it("gives way to a record that comes while it is clean", () => {
+    readyWatchPagesDraft("w1", true);
+    const taken = takeWatchPagesRecord("w1", doc("Theirs"), 4);
+    expect(taken.mergedIntoEdits).toBe(false);
+    expect(taken.draft.revision).toBe(4);
+    expect(taken.draft.undoDepth).toBe(0);
+    expect((taken.draft.document.pages as { name: string }[]).map((p) => p.name)).toEqual(["Theirs"]);
+    expect(watchPagesDraftIsNew("w1")).toBe(false);
+  });
+
+  it("keeps its edits on top of a record that comes meanwhile, and says so", () => {
+    const draft = readyWatchPagesDraft("w1", true)!;
+    const id = String((draft.document.pages as { id: string }[])[0]!.id);
+    draft.apply(setWatchPageName(draft.document, id, "Mine"));
+    const taken = takeWatchPagesRecord("w1", doc("Theirs"), 4);
+    expect(taken.draft).toBe(draft);
+    expect(taken.mergedIntoEdits).toBe(true);
+    expect(draft.revision).toBe(4);
+    expect((draft.document.pages as { name: string }[]).map((p) => p.name)).toEqual(["Theirs", "Mine"]);
+    expect(draft.dirty).toBe(true);
+  });
+});
+
 describe("the leave guard's probe", () => {
   it("asks the editor's chunk once it has said how", () => {
     let dropped = 0;
@@ -155,7 +246,7 @@ describe("the words after a save", () => {
   it("names every way a save can fail in plain words", () => {
     expect(watchPagesSaveNote({ ...base, ok: false, code: "conflict" })?.text).toMatch(/kept changing somewhere else/);
     expect(watchPagesSaveNote({ ...base, ok: false, code: "no_record" })?.text).toBe(
-      "Not saved. Home Assistant no longer holds pages for this watch. Start with an empty page again.",
+      "Not saved. Home Assistant no longer holds pages for this watch.",
     );
     expect(watchPagesSaveNote({ ...base, ok: false, code: "unavailable" })?.kind).toBe("warn");
     expect(watchPagesSaveNote({ ...base, ok: false, code: "invalid", problems: ["Page 1 has no id."] })?.text)
