@@ -7,11 +7,15 @@ import {
   PHONE_SEND_WAIT_MS,
   SEND_WAIT_MS,
   agoWords,
+  afterSaveLine,
   describeHomeSync,
   describeSend,
   deviceSync,
   deviceSyncLabel,
+  homePill,
   homeSync,
+  howItWorksSteps,
+  onTheFaceStep,
   sendState,
   sendWaitMs,
   type HomeDevice,
@@ -240,7 +244,10 @@ describe("the library", () => {
 
   it("says where it went and offers neither Resend nor Refresh", () => {
     const d = describeSend({ kind: "library" });
-    expect(d.label).toBe("Saved, and unassigned.");
+    expect(d.label).toBe("Not on a device yet");
+    // The tooltip used to point at an "Appears on" control that is gone.
+    expect(d.title).not.toContain("Appears on");
+    expect(d.title).toContain("Add it to a device");
     expect(d.note).toBeUndefined();
     expect(d.resend).toBe(false);
     expect(d.refresh).toBe(false);
@@ -365,5 +372,73 @@ describe("deviceSync", () => {
       const v = deviceSync(d);
       expect(one?.kind).toBe(v === "waiting" ? "waiting" : v === "synced" ? "synced" : undefined);
     }
+  });
+});
+
+describe("the header pill over a design on no device", () => {
+  // The pill speaks for the home's devices, so it read Synced over a design
+  // that was never going to reach any of them.
+  it("does not say Synced while the open design is on no device", () => {
+    const p = homePill({ kind: "synced", devices: ["Watch"] }, true);
+    expect(p?.label).toBe("Not on a device yet");
+    expect(p?.tone).toBe("warn");
+  });
+
+  it("says so even when no device in the home counts yet", () => {
+    expect(homePill(undefined, true)?.label).toBe("Not on a device yet");
+  });
+
+  it("keeps a waiting device's news, which is true of the design too", () => {
+    expect(homePill({ kind: "waiting", waiting: ["Watch"] }, true)?.label).toBe("Waiting: Watch");
+  });
+
+  it("reads as before for a design on a device", () => {
+    expect(homePill({ kind: "synced", devices: ["Watch"] }, false)).toEqual({ tone: "ok", label: "Synced", title: "Synced: Watch" });
+    expect(homePill(undefined, false)).toBeUndefined();
+  });
+});
+
+describe("the line beside Save after a save", () => {
+  it("tells a closed watch app to be opened", () => {
+    expect(afterSaveLine({ kind: "offline" })).toEqual({ text: "Saved. Open Wrist Assistant on your watch to get it.", warn: true });
+    expect(afterSaveLine({ kind: "offline", pending: 2 })?.text).toBe("Saved. Open Wrist Assistant on your watch to get it.");
+  });
+
+  it("follows the save to the device", () => {
+    expect(afterSaveLine({ kind: "sending" })?.text).toBe("Saved. Sending to your watch.");
+    expect(afterSaveLine({ kind: "waiting" })?.text).toBe("Saved. Not on your watch yet.");
+    expect(afterSaveLine({ kind: "sent", awaySeconds: 30 })).toEqual({ text: "Saved. On your watch.", warn: false });
+    expect(afterSaveLine({ kind: "sending", device: "iphone" })?.text).toBe("Saved. Sending to your iPhone.");
+    expect(afterSaveLine({ kind: "openApp" })?.text).toBe("Saved. Open Wrist Assistant on your iPhone to get it.");
+    expect(afterSaveLine({ kind: "unsupported" })?.warn).toBe(true);
+  });
+
+  it("leaves a design on no device to its own line", () => {
+    expect(afterSaveLine({ kind: "library" })).toBeUndefined();
+  });
+});
+
+describe("How this works", () => {
+  it("ends on putting it on the face, and never says library", () => {
+    for (const device of ["watch", "iphone", undefined] as const) {
+      for (const shelved of [true, false]) {
+        const steps = howItWorksSteps(device, shelved);
+        expect(steps).toHaveLength(4);
+        expect(steps[3]).toBe(onTheFaceStep(device));
+        expect(steps.join(" ").toLowerCase()).not.toContain("library");
+      }
+    }
+  });
+
+  it("names the watch app for a design on a device, and the device for one on none", () => {
+    expect(howItWorksSteps("watch", false)[2]).toBe("Save, then open Wrist Assistant on your watch to get it.");
+    expect(howItWorksSteps(undefined, true)[2]).toBe("Save, then add it to a device.");
+  });
+
+  it("says where to pick it on each device", () => {
+    expect(onTheFaceStep("watch")).toContain("touch and hold the face, tap Edit");
+    expect(onTheFaceStep("iphone")).toContain("add a Wrist Assistant widget");
+    expect(onTheFaceStep(undefined)).toContain("complication slot");
+    expect(onTheFaceStep(undefined)).toContain("widget");
   });
 });

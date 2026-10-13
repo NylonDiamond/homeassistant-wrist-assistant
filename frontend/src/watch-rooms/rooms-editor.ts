@@ -68,8 +68,11 @@ import {
 import { watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { asWatchPagesDocument } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
+import { friendlyError } from "../friendly-error.js";
+import { restoredText } from "../revision-words.js";
 import { PAIR_FIRST_TEXT, START_FRESH_BUTTON, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, settingsWatches, watchName } from "../watch-settings.js";
 import { type RoomsDraft, anyRoomsDirty, dropAllRooms, forgetRoomsDraft, keptRoomsDraft, saveRoomsDraft, takeRoomsRecord } from "./draft.js";
+import { WATCH_SETTINGS_SCREEN, navigatePanel, watchScreenPath } from "../shell.js";
 import { WATCH_ROOMS_HELP_URL, navigateWatchRooms, registerWatchRoomsDrafts } from "./hook.js";
 import {
   type AreaEntry,
@@ -84,6 +87,7 @@ import {
   HOME_ROOMS_UPDATE_TEXT,
   ROOMS_NO_RECORD_TEXT,
   ROOMS_NO_RECORD_TITLE,
+  ROOMS_OPEN_SETTINGS_BUTTON,
   ROOMS_UNREADABLE_TEXT,
   ROOMS_WAIT_TEXT,
   ROOM_HISTORY_HOURS,
@@ -706,7 +710,7 @@ export class WaRoomsEditor extends LitElement {
       this.unsupported = true;
       return;
     } else {
-      this.note = { kind: "err", text: `Could not start: ${result.message}` };
+      this.note = { kind: "err", text: `Could not start: ${friendlyError(result)}` };
       return;
     }
     void this.load(watchId, true);
@@ -736,7 +740,7 @@ export class WaRoomsEditor extends LitElement {
     let note: Note;
     try {
       await restoreWatchConfig(hass, watchId, this.kind, ask.entry.revision, ask.baseRevision);
-      note = { kind: "ok", text: `Revision ${ask.entry.revision} is back.` };
+      note = { kind: "ok", text: restoredText(ask.entry.updated_at) };
       if (!(keptRoomsDraft(key)?.dirty ?? false)) forgetRoomsDraft(key);
     } catch (err) {
       const code = errCode(err);
@@ -746,7 +750,7 @@ export class WaRoomsEditor extends LitElement {
       else if (code === "unknown_command") {
         this.historyState = "unsupported";
         note = { kind: "warn", text: "This version of the integration cannot restore an earlier save. Update it to restore one." };
-      } else note = { kind: "err", text: `Could not restore: ${errText(err)}` };
+      } else note = { kind: "err", text: `Could not restore: ${friendlyError(err)}` };
     } finally {
       this.restoring = false;
       if (this.restoreAsk === ask) this.closeAsk();
@@ -909,7 +913,7 @@ export class WaRoomsEditor extends LitElement {
   private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
     if (watches.length === 0) {
       const waiting = this.owners.length === 0 && this.ownList === undefined;
-      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet."}</div>`;
+      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet. Pair one on the Home tab."}</div>`;
     }
     const home = this.kindOf(this.watchId, watches) === "rooms";
     if (home && this.unsupported) return html`<div class="pe-empty"><b>${HOME_ROOMS_UPDATE_TEXT}</b></div>`;
@@ -928,7 +932,10 @@ export class WaRoomsEditor extends LitElement {
       // Rooms have no start of their own; while the iPhone's move may still
       // bring the settings, say so rather than point at Watch settings' start.
       const waiting = noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId)) === "wait";
-      return html`<div class="pe-empty"><b>${ROOMS_NO_RECORD_TITLE}</b><span>${waiting ? ROOMS_WAIT_TEXT : ROOMS_NO_RECORD_TEXT}</span></div>`;
+      // Settings on this same watch, the panel's own move between screens.
+      const settings = watchScreenPath(WATCH_SETTINGS_SCREEN, this.watchId);
+      return html`<div class="pe-empty"><b>${ROOMS_NO_RECORD_TITLE}</b><span>${waiting ? ROOMS_WAIT_TEXT : ROOMS_NO_RECORD_TEXT}</span>
+        ${waiting ? nothing : html`<button class="pe-btn pe-primary rm-open-settings" @click=${() => navigatePanel(undefined, settings)}>${ROOMS_OPEN_SETTINGS_BUTTON}</button>`}</div>`;
     }
     const draft = this.draft;
     const host = this.viewHost();

@@ -105,6 +105,12 @@ type WristAssistantConfigEntry = ConfigEntry[WristAssistantData]
 
 DOMAIN = "wrist_assistant"
 PLATFORMS = ["sensor", "binary_sensor", "text"]
+# The sidebar panel's path, and the device page link that opens it. The
+# device registry takes an internal path only as `homeassistant://<path>`
+# (it requires a host, which here is the panel path); the frontend turns it
+# back into `/wrist-assistant`.
+PANEL_URL_PATH = "wrist-assistant"
+PANEL_CONFIGURATION_URL = f"homeassistant://{PANEL_URL_PATH}"
 NOTIFICATION_TOKEN_STORAGE_KEY = "wrist_assistant.notification_tokens"
 NOTIFICATION_TOKEN_STORAGE_VERSION = 1
 WIDGET_SECRET_STORAGE_KEY = "wrist_assistant.widget_secrets"

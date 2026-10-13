@@ -40,6 +40,11 @@ describe("Home's page", () => {
     expect(SOURCE).not.toContain("private startRecent(");
   });
 
+  it("tells a person who is not an administrator that the list shows only their devices", () => {
+    expect(home).toContain(`\${this.hass?.user?.is_admin === false ? html\`<p class="home-scope">You see the devices paired to you. Ask an administrator if yours is missing.</p>\` : nothing}`);
+    expect(home.indexOf("home-scope")).toBeGreaterThan(home.indexOf("home-lead"));
+  });
+
   it("says Loading… while the devices load, so the pairing card never flashes up", () => {
     expect(home).toContain("const loading = !this.linkReady && this.owners.length === 0;");
     expect(home.indexOf("${loading")).toBeLessThan(home.indexOf("}${add}"));
@@ -63,7 +68,9 @@ describe("Home's device cards", () => {
 
   it("judges each watch on its watch app records too, for everyone, and says what a waiting card waits for", () => {
     expect(home).toContain("homeDeviceRows(this.homeDevices(), this.watchAppSyncs)");
-    expect(home).not.toContain("admin");
+    // Only the note under the lead reads the person's role; the devices are
+    // judged the same for everyone.
+    expect(home.replace(/\$\{this\.hass\?\.user\?\.is_admin === false \? html`<p class="home-scope">[^`]*`/, "")).not.toContain("admin");
     expect(card).toContain("const why = homeDeviceWhy(d, pending);");
     expect(card).toContain(`<span class="home-device-why">\${why}</span>`);
   });

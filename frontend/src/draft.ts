@@ -54,13 +54,16 @@ export function draftStatus(i: DraftStatusInput): DraftStatus {
  * in the same words wherever the save was pressed.
  *
  * It also refuses a document with a value that points at nothing: see
- * `blankReferenceRefusal`.
+ * `blankReferenceRefusal`. And one whose name was cleared: Home Assistant
+ * refuses an empty name, and saying so before the press beats the store's
+ * "document.name must not be empty" after it.
  *
  * See docs/complication_one_shape_per_document.md in the app repo.
  */
 export function saveRefusal(cfg: CustomComplicationConfig, nameFor?: LayerNamer): string | undefined {
   const shapes = cfg.supportedFamilies.length;
   if (shapes >= 2) return `This complication has ${shapes} shapes, and a complication is one shape now. Split it into one complication per shape to edit it.`;
+  if (cfg.name.trim() === "") return "Give it a name first.";
   return blankReferenceRefusal(cfg, nameFor);
 }
 

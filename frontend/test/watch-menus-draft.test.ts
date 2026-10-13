@@ -24,7 +24,6 @@ import {
   type MenusDocument,
   WATCH_MENUS_NO_RECORD_TEXT,
   WATCH_MENUS_NO_RECORD_TITLE,
-  WATCH_MENUS_PAIR_FIRST_TEXT,
   WATCH_MENUS_START_BUTTON,
   WATCH_MENUS_UPDATE_TEXT,
   scrubWatchMenuOrphanTriggers,
@@ -310,7 +309,6 @@ describe("no record: Start with the defaults", () => {
   it("says so in plain words, with no iPhone switch", () => {
     expect(WATCH_MENUS_NO_RECORD_TITLE).toBe("No menus from this watch yet.");
     expect(WATCH_MENUS_START_BUTTON).toBe("Start with the defaults");
-    expect(WATCH_MENUS_PAIR_FIRST_TEXT).toBe("Pair this watch first.");
     expect(WATCH_MENUS_UPDATE_TEXT).toBe("Update the integration to edit menus here.");
     expect(WATCH_MENUS_NO_RECORD_TEXT).toBe("Start with the defaults to begin.");
     expect(WATCH_MENUS_NO_RECORD_TEXT.startsWith(WATCH_MENUS_START_BUTTON)).toBe(true);

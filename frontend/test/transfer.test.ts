@@ -23,6 +23,7 @@ import {
   parseConfig,
 } from "../src/model.js";
 import { deriveDataSources } from "../src/compiler.js";
+import { NEWER_VERSION_TEXT } from "../src/friendly-error.js";
 import { addFamily } from "../src/layouts.js";
 import {
   type ShareSlot,
@@ -695,8 +696,9 @@ describe("import refusals", () => {
     const parsed = parseImportText(JSON.stringify({ schemaVersion: 99, name: "X" }), MAX_SCHEMA);
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
-    expect(parsed.error).toContain("schema v99");
-    expect(parsed.error).toContain("update the Wrist Assistant integration");
+    expect(parsed.error).toBe(NEWER_VERSION_TEXT);
+    expect(parsed.error).not.toContain("schema");
+    expect(parsed.detail).toContain("schema v99");
   });
 
   it("refuses a key it would silently drop", () => {
@@ -706,8 +708,8 @@ describe("import refusals", () => {
     const parsed = parseImportText(JSON.stringify(raw), MAX_SCHEMA);
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
-    expect(parsed.error).toContain("$.somethingNew");
-    expect(parsed.error).toContain("update the Wrist Assistant integration");
+    expect(parsed.error).toBe(NEWER_VERSION_TEXT);
+    expect(parsed.detail).toContain("$.somethingNew");
   });
 });
 

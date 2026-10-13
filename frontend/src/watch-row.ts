@@ -1,6 +1,6 @@
 // The Watch app tab's second row, under the tabs on every watch screen: the
-// shared watch at the left, then the eight screens and Settings, the screen
-// on show marked. The panel draws it (`renderWatchRow`) and owns its state:
+// shared watch at the left, then the screens and Settings, the screen on show
+// marked. Control Center is retired and left out (`retired` in `shell.ts`). The panel draws it (`renderWatchRow`) and owns its state:
 // the shared watch (`watch-pick.ts`), whether the watch menu is open, and what
 // a pick or a screen does. Settings is a screen with an address like the
 // others. HTTP actions and Cameras are shared by every watch, so their links
@@ -57,9 +57,12 @@ export interface WatchRowLink {
   on: boolean;
 }
 
+/** The row's screen links. A retired screen (Control Center) is left out,
+ * unless an old link has it on show, so the row still marks where you are. */
 export function watchRowLinks(route: PanelRoute | undefined, watch: string | undefined): WatchRowLink[] {
   const shown = watchScreenOf(route)?.id;
-  return WATCH_SCREENS.map((screen) => ({ screen, path: watchScreenPath(screen, watch), on: screen.id === shown }));
+  return WATCH_SCREENS.filter((screen) => screen.retired !== true || screen.id === shown)
+    .map((screen) => ({ screen, path: watchScreenPath(screen, watch), on: screen.id === shown }));
 }
 
 /** The row's last link, Settings, on the shared watch. In a home with no

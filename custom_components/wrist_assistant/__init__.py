@@ -92,6 +92,7 @@ from .watch_voices_store import WatchVoicesStore
 from .notifications import (
     NotificationTokenStore,
     TokenEntry,
+    is_iphone_entry,
     purge_dead_token,
     resolve_push_routes,
 )
@@ -293,6 +294,27 @@ async def _get_ha_instance_uuid(hass: HomeAssistant) -> str | None:
     return _HA_INSTANCE_UUID
 
 
+def _device_label(
+    hass: HomeAssistant, data: WristAssistantData, device_id: str
+) -> str:
+    """What a person calls a paired watch or iPhone, for an error they read.
+
+    The name on its device page (a rename there wins), then the name the app
+    reported, then the short form the device page falls back to. Never the
+    bare id: nobody knows their watch by it.
+    """
+    device = dr.async_get(hass).async_get_device(
+        identifiers={(DOMAIN, f"watch_{device_id}")}
+    )
+    if device is not None and (device.name_by_user or device.name):
+        return device.name_by_user or device.name
+    entry = data.widget_secret_store.get(device_id)
+    if entry is not None and getattr(entry, "device_name", None):
+        return entry.device_name
+    kind = "iPhone" if is_iphone_entry(entry) else "Watch"
+    return f"{kind} {device_id[:8]}"
+
+
 async def _deliver_push(
     hass: HomeAssistant,
     data: WristAssistantData,
@@ -327,7 +349,8 @@ async def _deliver_push(
     client = data.apns_client
     if client is None:
         raise HomeAssistantError(
-            "APNs client failed to initialize. Check Home Assistant logs for details."
+            "Wrist Assistant could not start sending notifications. Check the "
+            "Home Assistant logs for details, then reload the integration."
         )
     store = data.notification_store
 
@@ -455,16 +478,30 @@ async def _deliver_push(
             route.entry.platform,
         )
     if not routes:
+        names = ", ".join(
+            _device_label(hass, data, wid) for wid in target_watch_ids or ()
+        )
         if push_type == "background":
+            # A silent push goes to a watch's own registration only (see
+            # resolve_push_routes), so the fix is always on the watch.
+            if names:
+                raise HomeAssistantError(
+                    f"{names} has not registered for background pushes. They go "
+                    "to a watch only: open Wrist Assistant on it once, then try "
+                    "again."
+                )
             raise HomeAssistantError(
-                "No watch has its own push token for a background push"
+                "No watch has registered for background pushes yet. Open Wrist "
+                "Assistant on the watch once, then try again."
             )
-        if target_watch_ids is not None:
+        if names:
             raise HomeAssistantError(
-                "No registered push token for the requested target"
+                f"{names} has not registered for notifications yet. Open Wrist "
+                "Assistant on it once, then try again."
             )
         raise HomeAssistantError(
-            "No watches have registered for push notifications"
+            "No watch has registered for notifications yet. Pair a watch in the "
+            "Wrist Assistant panel, then open the app on it once."
         )
 
     sent = 0
@@ -537,8 +574,13 @@ async def _deliver_push(
             failure_map[watch_id] = reason or "unknown"
 
     if failure_map and sent == 0:
-        reasons = ", ".join(f"{wid}: {r}" for wid, r in failure_map.items())
-        raise HomeAssistantError(f"All push notifications failed: {reasons}")
+        reasons = ", ".join(
+            f"{_device_label(hass, data, wid)}: {r}" for wid, r in failure_map.items()
+        )
+        raise HomeAssistantError(
+            f"No notification could be sent ({reasons}). If a device was "
+            "reinstalled, open Wrist Assistant on it once so it registers again."
+        )
 
     if failure_map:
         reasons = ", ".join(f"{wid}: {r}" for wid, r in failure_map.items())
@@ -1249,14 +1291,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             dev_reg = dr.async_get(hass)
             device = dev_reg.async_get(target_raw)
             if device is None:
-                raise HomeAssistantError(f"Unknown device_id: {target_raw}")
+                raise HomeAssistantError(
+                    f"No device has the id {target_raw}. Pick the watch or "
+                    "iPhone again as the target."
+                )
+            # Paired watches and iPhones are filed as "watch_<id>"; the hub
+            # device (the config entry id) is not a target.
             for ident_domain, identifier in device.identifiers:
-                if ident_domain == DOMAIN:
-                    target = identifier.replace("watch_", "")
+                if ident_domain == DOMAIN and identifier.startswith("watch_"):
+                    target = identifier.removeprefix("watch_")
                     break
             if target is None:
+                name = device.name_by_user or device.name or target_raw
                 raise HomeAssistantError(
-                    f"Device '{target_raw}' is not a Wrist Assistant watch or iPhone"
+                    f"{name} is not a watch or iPhone paired with Wrist "
+                    "Assistant. Pick one of those as the target."
                 )
 
         actions = call.data.get("actions")

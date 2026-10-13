@@ -250,13 +250,15 @@ describe("seatClashMessage", () => {
     expect(seatClashMessage([])).toBe("");
   });
 
-  it("names the documents, the seat and the device", () => {
+  // A slot, never a seat, and never its number: nobody can find slot 3.
+  it("names the documents and the device, and no slot number", () => {
     const d = device([
       rec({ id: "k", name: "Kitchen", slotIndex: 3, token: 10 }),
       rec({ id: "h", name: "Hallway", slotIndex: 3, token: 20 }),
     ], { label: "Roel's iPhone" });
-    expect(seatClashMessage(findSeatClashes([d])))
-      .toBe("Kitchen and Hallway share seat 3 on Roel's iPhone. Only one of them can be placed.");
+    const words = seatClashMessage(findSeatClashes([d]));
+    expect(words).toBe("Kitchen and Hallway share a slot on Roel's iPhone. Only one of them can be used.");
+    expect(words).not.toMatch(/seat|\d/);
   });
 
   it("puts two clashes in one line", () => {
@@ -269,8 +271,8 @@ describe("seatClashMessage", () => {
       rec({ id: "s", name: "Study", slotIndex: 0, token: 20 }),
     ], { ownerId: "p1", label: "Jesse's Watch" });
     expect(seatClashMessage(findSeatClashes([watch, phone]))).toBe(
-      "Kitchen and Hallway share seat 3 on Roel's iPhone. "
-      + "Den and Study share seat 0 on Jesse's Watch. Only one of each can be placed.",
+      "Kitchen and Hallway share a slot on Roel's iPhone. "
+      + "Den and Study share a slot on Jesse's Watch. Only one of each can be used.",
     );
   });
 
@@ -281,8 +283,8 @@ describe("seatClashMessage", () => {
       records.push(rec({ id: `b${seat}`, name: `B${seat}`, slotIndex: seat, token: 20 }));
     }
     const words = seatClashMessage(findSeatClashes([device(records)]));
-    expect(words).toContain("A0 and B0 share seat 0");
-    expect(words).toContain("2 more seats clash the same way.");
+    expect(words).toContain("A0 and B0 share a slot");
+    expect(words).toContain("2 more slots are shared the same way.");
     expect(words).not.toContain("A4");
   });
 });
@@ -293,7 +295,7 @@ describe("seatRepairSummary", () => {
       rec({ id: "k", name: "Kitchen", slotIndex: 0, token: 10 }),
       rec({ id: "h", name: "Hallway", slotIndex: 0, token: 20 }),
     ])]);
-    expect(seatRepairSummary(plan)).toBe("Hallway moved to seat 1 on Jesse's Watch.");
+    expect(seatRepairSummary(plan)).toBe("Hallway moved to a slot of its own on Jesse's Watch.");
   });
 
   it("counts them once there are several", () => {
@@ -302,7 +304,7 @@ describe("seatRepairSummary", () => {
       rec({ id: "h", name: "Hallway", slotIndex: 0, token: 20 }),
       rec({ id: "s", name: "Study", slotIndex: 0, token: 30 }),
     ])]);
-    expect(seatRepairSummary(plan)).toBe("2 complications moved to seats of their own.");
+    expect(seatRepairSummary(plan)).toBe("2 complications moved to slots of their own.");
   });
 
   it("says which one stayed put and why", () => {
@@ -314,7 +316,7 @@ describe("seatRepairSummary", () => {
       ...full,
     ])]);
     expect(seatRepairSummary(plan))
-      .toBe("Hallway stayed put: Jesse's Watch has no free seat. Delete something there first.");
+      .toBe("Hallway stayed put: Jesse's Watch is full. Delete something there first.");
   });
 
   it("says so when there was nothing to move", () => {

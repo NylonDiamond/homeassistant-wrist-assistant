@@ -40,7 +40,7 @@
           "key": "handGestureAction",
           "type": "enum",
           "label": "Double pinch",
-          "help": "Tap your thumb and finger together twice. Jump to a room uses the Double pinch trigger in Rooms. Switch house needs two or more homes on this watch.",
+          "help": "Tap your thumb and finger together twice. Jump to a room uses the Double pinch trigger in Rooms. Switch home needs two or more homes on this watch.",
           "default": "Refresh",
           "options": [
             {"value": "Disabled", "label": "Nothing"},
@@ -52,7 +52,7 @@
             {"value": "Room Jump", "label": "Jump to a room"},
             {"value": "Toggle First Tile", "label": "Toggle the first tile"},
             {"value": "Refresh", "label": "Refresh the page"},
-            {"value": "Switch Instance", "label": "Switch house"}
+            {"value": "Switch Instance", "label": "Switch home"}
           ]
         },
         {
@@ -77,7 +77,7 @@
           "key": "topSectionDoubleTapAction",
           "type": "enum",
           "label": "Double-tap the page title",
-          "help": "Tap the name at the top of a page twice. Switch house needs two or more homes on this watch.",
+          "help": "Tap the name at the top of a page twice. Switch home needs two or more homes on this watch.",
           "default": "Disabled",
           "options": [
             {"value": "Disabled", "label": "Nothing"},
@@ -89,7 +89,7 @@
             {"value": "Next Page", "label": "Next page"},
             {"value": "Previous Page", "label": "Previous page"},
             {"value": "Toggle First Tile", "label": "Toggle the first tile"},
-            {"value": "Switch Instance", "label": "Switch house"}
+            {"value": "Switch Instance", "label": "Switch home"}
           ]
         },
         {

@@ -362,7 +362,7 @@ describe("Watch settings' Start", () => {
     expect(saves).toHaveLength(1);
     expect(saves[0]).toMatchObject({ kind: "behavior", base_revision: 0, document: watchBehaviorDefaults() });
     expect(inside.record?.revision).toBe(1);
-    expect(inside.note).toEqual({ kind: "note", text: "Started with the defaults. The watch picks them up the next time it checks." });
+    expect(inside.note).toEqual({ kind: "note", text: "Started with the defaults. Open Wrist Assistant on the watch to get them." });
     const shown = text();
     expect(shown).not.toContain(SETTINGS_START_BUTTON);
     for (const section of WATCH_SETTINGS_CATALOG.sections) expect(shown).toContain(section.title);

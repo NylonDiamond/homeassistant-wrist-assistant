@@ -185,8 +185,14 @@ export function pickerView<T>(
 
 /** What the home's shelf is called wherever anyone reads it. The owner kind
  * stays `library` everywhere in the code; this is the one word for it on
- * screen, and a design kept there is on no device rather than filed away. */
-export const UNASSIGNED_LABEL = "Unassigned";
+ * screen, and a design kept there is on no device rather than filed away.
+ * It used to be "Unassigned", a word that needed explaining before it meant
+ * anything; this one says what it is. */
+export const UNASSIGNED_LABEL = "Not on a device";
+
+/** The shelf as the subject or object of a sentence: "The Not on a device
+ * list is full." reads where "Not on a device is full." would not. */
+export const UNASSIGNED_LIST = `the ${UNASSIGNED_LABEL} list`;
 
 /** Whether a device is the home's shelf rather than somebody's watch. */
 function isShelf(device: PickerDevice): boolean {
@@ -315,7 +321,7 @@ export function rowWhoText(ownerIds: readonly string[], people: readonly PickerP
     parts.push(`${person.label} (${mine.map((d) => deviceWord(d.kind)).join(", ")})`);
   }
   if (parts.length > 0) return parts.join(" · ");
-  return on.has(LIBRARY_OWNER_ID) ? "Unassigned, on no device" : "On no device yet";
+  return on.has(LIBRARY_OWNER_ID) ? UNASSIGNED_LABEL : "On no device yet";
 }
 
 /**

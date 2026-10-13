@@ -196,14 +196,15 @@ describe("Watch settings with the notification style", () => {
     const at = (s: string) => shown.indexOf(s);
     expect(at("data-sec=ws-camera")).toBeGreaterThan(0);
     expect(at("data-sec=ws-notifications")).toBeGreaterThan(at("data-sec=ws-camera"));
-    // Webhook alerts share the Notifications group; Sounds is its own.
-    expect(at("data-sec=ws-wristWebhooks")).toBeGreaterThan(at("data-sec=ws-notifications"));
-    expect(at("data-sec=ws-sounds")).toBeGreaterThan(at("data-sec=ws-wristWebhooks"));
+    // Sounds is its own group. Wrist Webhooks is hidden in the app, so its
+    // card is never drawn.
+    expect(shown).not.toContain("data-sec=ws-wristWebhooks");
+    expect(at("data-sec=ws-sounds")).toBeGreaterThan(at("data-sec=ws-notifications"));
     expect(at(`data-sec="ws-pair"`)).toBeGreaterThan(at("data-sec=ws-sounds"));
     // The preview leads the Notifications card.
     expect(at('class="ns-pv"')).toBeGreaterThan(at("data-sec=ws-notifications"));
     expect(at('class="ns-pv"')).toBeLessThan(at("data-key=backgroundStyle"));
-    for (const r of NOTIFICATION_STYLE_SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.rows))) {
+    for (const r of NOTIFICATION_STYLE_SECTIONS.filter((s) => s.id !== "wristWebhooks").flatMap((s) => s.groups.flatMap((g) => g.rows))) {
       expect(shown, r.key).toContain(`data-key=${r.key}`);
     }
     expect(shown).toContain("notification style revision 5");
@@ -255,7 +256,7 @@ describe("Watch settings with the notification style", () => {
     expect(inside.styleRecord?.revision).toBe(6);
     // The pill speaks for both: neither has been collected yet.
     const shown = foot();
-    expect(shown).toContain("Waiting to be collected");
+    expect(shown).toContain(">Waiting. Open Wrist Assistant on the watch to get it.</span>");
     expect(shown).toContain("Settings saved as revision 4.");
     expect(shown).toContain("Notification style saved as revision 6.");
   });
@@ -317,7 +318,24 @@ describe("Watch settings with the notification style", () => {
     expect(inside.styleRecord?.revision).toBe(6);
     expect(inside.styleEdits.size).toBe(0);
     expect(inside.record?.revision).toBe(9);
-    expect(inside.note?.text).toContain("These settings changed somewhere else (now revision 9)");
+    // The behavior's edit is laid over the newer copy for the next Save.
+    expect(inside.edits.get("wrapPages")).toBe(true);
+    expect(inside.note?.kind).toBe("warn");
+    expect(inside.note?.text).toContain("the newer copy is shown with your changes on top");
+  });
+
+  it("drops a behavior edit the newer copy already holds after a conflict", async () => {
+    const { inside } = await dialog(both(), (msg, store) => {
+      if (msg.kind !== "behavior") return undefined;
+      store.set("behavior", record("behavior", 9, { ...watchBehaviorDefaults(), wrapPages: true }));
+      return Promise.reject(refusal("conflict", "stored revision is 9, save was based on 3"));
+    });
+    inside.edit(setting("wrapPages"), true);
+    await inside.save();
+    expect(inside.record?.revision).toBe(9);
+    expect(inside.edits.size).toBe(0);
+    expect(inside.note?.kind).toBe("note");
+    expect(inside.note?.text).toContain("already has your changes");
   });
 
   it("hides the three cards when the integration does not keep the kind", async () => {

@@ -1132,7 +1132,6 @@ function payloadField(host: MenusViewHost, ref: MenuListRef, slot: JsonObject, r
         ...(spec.max === undefined ? {} : { max: spec.max }),
         step: 1,
         optional: true,
-        clampOnCommit: true,
         placeholder: typeof spec.absentMeans === "number" ? String(spec.absentMeans) : "",
         unit: "s",
         def: null,

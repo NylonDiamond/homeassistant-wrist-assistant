@@ -476,10 +476,22 @@ export function savedByWords(updatedBy: string | null | undefined): string {
   return updatedBy === "panel" ? "saved here" : "from the watch";
 }
 
-/** The pill and its help line while a save waits for a device. */
-export const WAITING_PILL_TEXT = "Waiting to be collected";
+/** The plain line a head or foot shows about the stored copy: "Saved here 3
+ * min ago", "Saved from the watch just now". `when` is `agoWords` output, or
+ * empty for a time that will not parse. The revision number is jargon to a
+ * new user, so callers keep it for a tooltip. */
+export function savedLine(updatedBy: string | null | undefined, when: string): string {
+  const by = updatedBy === "panel" ? "here" : "from the watch";
+  return `Saved ${by}${when ? ` ${when}` : ""}`;
+}
+
+/** While a save waits for a device: the short pill for a tight toolbar, the
+ * line that says what to do (its tooltip, and the foot bar after "Waiting"),
+ * and the whole sentence where there is room. */
+export const WAITING_PILL_TEXT = "Waiting for the watch";
 export const COLLECTED_PILL_TEXT = "Synced";
-export const WAITING_HELP_TEXT = "The watch picks it up the next time it checks.";
+export const WAITING_HELP_TEXT = "Open Wrist Assistant on the watch to get it.";
+export const WAITING_TEXT = `Waiting. ${WAITING_HELP_TEXT}`;
 
 /** The code of a WebSocket error, such as `conflict` or `no_record`. */
 export function errorCode(err: unknown): string | undefined {
@@ -533,7 +545,7 @@ export function watchName(watch: OwnerSummary, watches: readonly OwnerSummary[])
 
 /** What Watch settings shows, in place of both editors, on a home that is not
  * the watch's main house. */
-export const SETTINGS_MAIN_HOUSE_TEXT = "This watch takes its settings from your main house. Change them there.";
+export const SETTINGS_MAIN_HOUSE_TEXT = "This watch takes its settings from its main home. Change them there.";
 
 /** Whether `owner` takes its watch settings and notification style from
  * another home. Only an explicit `false` does: an older integration, and a
@@ -622,9 +634,9 @@ export function watchRecordUnreadable(record: WatchConfigRecord | undefined, rea
 }
 
 /** A start refused as `no_record`: the integration makes a first record only
- * for a watch it has a key for. The path is the one the panel shows: the
- * Watch app tab, its Settings page, the Pair a device card. */
-export const PAIR_FIRST_TEXT = "Pair this watch first. Go to Watch app, Settings, Pair a device.";
+ * for a watch it has a key for. The path is the one a new user finds first:
+ * the Home tab's Pair a device. Every watch editor says this same line. */
+export const PAIR_FIRST_TEXT = "Pair this watch first: on the Home tab, choose Pair a device.";
 
 /** The same, said inside Watch settings, whose pairing card is below. */
 export const SETTINGS_PAIR_FIRST_TEXT = "Pair this watch first, under Pair a device on this page.";

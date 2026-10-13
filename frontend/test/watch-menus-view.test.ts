@@ -342,7 +342,7 @@ describe("the top bar", () => {
     expect(bar).not.toContain(`aria-label="Undo"`);
     expect(text).not.toContain(`class="pe-tools"`);
     expect(text).not.toContain("Watch menus</h2>");
-    expect(WATCH_MENUS_HELP_URL).toBe("https://docs.wrist-assistant.com/watch-app/quick-menu-editor/");
+    expect(WATCH_MENUS_HELP_URL).toBe("https://docs.wrist-assistant.com/watch-app/quick-menu/");
     expect(PAGES_PATH_FROM_MENUS).toBe(WATCH_PAGES_PATH);
   });
 
@@ -352,7 +352,7 @@ describe("the top bar", () => {
     el.topMenuOpen = true;
     const text = whole();
     expect(text).toContain(`class="tb-sync warn"`);
-    expect(text).toContain(">Waiting to be collected</span>");
+    expect(text).toContain(">Waiting for the watch</span>");
     expect(text).toContain(">Discard edits</button>");
   });
 

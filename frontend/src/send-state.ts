@@ -159,6 +159,18 @@ export function agoWords(seconds: number): string {
   return `${days} ${days === 1 ? "day" : "days"} ago`;
 }
 
+/** What a design on no device says about itself, in the editor and in the
+ * header. The home's shelf is where a new design lands when no device is
+ * ticked, and people saved there and waited for a watch that was never going
+ * to get it. */
+export const NOT_ON_A_DEVICE = "Not on a device yet";
+export const NOT_ON_A_DEVICE_LINE = "Not on a device yet. Add it to a device to send it to your watch.";
+/** The same line before the first save, when Add to a device is not offered
+ * yet: it adds a copy of the saved design. */
+export const NOT_ON_A_DEVICE_UNSAVED_LINE = "Not on a device yet. Save it, then add it to a device to send it to your watch.";
+export const NOT_ON_A_DEVICE_HELP =
+  "A design on no device is sent nowhere. Add it to a device to send it to your watch.";
+
 /** Status text and its explanation; `resend` offers the watch's re-wake link,
  * only while the watch is listening (a closed watch app has no long-poll to
  * wake), `refresh` the phone's re-push one (never both), and `note` is the quieter
@@ -218,9 +230,8 @@ export function describeSend(
       };
     case "library":
       return {
-        label: "Saved, and unassigned.",
-        title:
-          "Unassigned is where a design waits until it is put on something. Nothing is sent anywhere until you tick a device under Appears on.",
+        label: NOT_ON_A_DEVICE,
+        title: NOT_ON_A_DEVICE_HELP,
         resend: false,
         refresh: false,
       };
@@ -352,4 +363,82 @@ export function describeHomeSync(s: HomeSync): { label: string; title: string } 
     label: `Waiting: ${names}`,
     title: `Not synced yet: ${names}. Open Wrist Assistant on ${s.waiting.length === 1 ? "it" : "each"} to sync.`,
   };
+}
+
+/**
+ * The header pill with the open design taken into account.
+ *
+ * The pill speaks for the home's devices, and a design on no device is on
+ * none of them, so a green Synced over it read as "it is on your watch" when
+ * it never would be. While such a design is open the pill says so instead.
+ * Waiting still wins: a device that is behind is news either way, and it is
+ * true of the design too, which is on no device at all. Undefined when there
+ * is nothing to show.
+ */
+export function homePill(
+  s: HomeSync | undefined,
+  openOnNoDevice: boolean,
+): { tone: "ok" | "warn"; label: string; title: string } | undefined {
+  if (openOnNoDevice && s?.kind !== "waiting") {
+    return { tone: "warn", label: NOT_ON_A_DEVICE, title: `This design is on no device. ${NOT_ON_A_DEVICE_HELP}` };
+  }
+  if (!s) return undefined;
+  return { tone: s.kind === "synced" ? "ok" : "warn", ...describeHomeSync(s) };
+}
+
+/**
+ * The one line beside Save once the open design is saved: where it has got
+ * to, and what the reader has to do for it to arrive, which for a watch is
+ * nearly always "open the app". `describeSend` has the same facts as a chip;
+ * this is them as a sentence. `warn` marks a line that asks the reader to do
+ * something. Undefined for a design on no device, which has its own line over
+ * the canvas.
+ */
+export function afterSaveLine(s: SendState): { text: string; warn: boolean } | undefined {
+  const phone = "device" in s && s.device === "iphone";
+  const where = phone ? "your iPhone" : "your watch";
+  switch (s.kind) {
+    case "library": return undefined;
+    case "sent": return { text: `Saved. On ${where}.`, warn: false };
+    case "sending": return { text: `Saved. Sending to ${where}.`, warn: false };
+    case "waiting": return { text: `Saved. Not on ${where} yet.`, warn: false };
+    case "offline": return { text: "Saved. Open Wrist Assistant on your watch to get it.", warn: true };
+    case "openApp": return { text: "Saved. Open Wrist Assistant on your iPhone to get it.", warn: true };
+    case "unsupported": return { text: "Saved. Update Wrist Assistant on your watch to get it.", warn: true };
+  }
+}
+
+/** Which device a design's how-to speaks of: the one it is on, or for a
+ * design on no device, the kind its shape belongs to. Undefined when the shape
+ * fits both. */
+export type HowDevice = "watch" | "iphone" | undefined;
+
+/** The last step of every how-to: a saved design shows nowhere until it is
+ * picked on the face or added as a widget, and nothing in the panel said so. */
+export function onTheFaceStep(device: HowDevice): string {
+  const watch = "On the watch, touch and hold the face, tap Edit, then pick Wrist Assistant in a complication slot.";
+  const phone = "touch and hold the Home Screen or Lock Screen, tap Edit, then add a Wrist Assistant widget.";
+  if (device === "watch") return watch;
+  if (device === "iphone") return `On the iPhone, ${phone}`;
+  return `${watch} On an iPhone, ${phone}`;
+}
+
+/**
+ * The "How this works" card on an empty design, as its four steps.
+ *
+ * Step 3 used to read "Save. The watch picks it up.", which is true only
+ * while the watch app is open, and on a design on no device read "The library
+ * picks it up", a word the panel uses nowhere else. Step 4 is new: picking
+ * the design on the face was the step nobody was told about.
+ */
+export function howItWorksSteps(device: HowDevice, onNoDevice: boolean): string[] {
+  const save = onNoDevice
+    ? "Save, then add it to a device."
+    : `Save, then open Wrist Assistant on your ${device === "iphone" ? "iPhone" : "watch"} to get it.`;
+  return [
+    "Add layers. Each one shows an entity.",
+    "Drag them on the face.",
+    save,
+    onTheFaceStep(device),
+  ];
 }

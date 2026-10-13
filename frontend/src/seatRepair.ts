@@ -225,33 +225,37 @@ export function planSeatRepair(devices: readonly SeatDevice[]): SeatRepairPlan {
 const NAMED_CLASHES = 3;
 
 /**
- * The banner's words: which documents share which seat, and on what.
+ * The banner's words: which documents share a slot, and on what.
  *
  * One sentence per clash, in the panel's device order, and one closing line
  * saying why it matters. Empty when nothing clashes, which is what hides the
- * banner.
+ * banner. On screen it is a "slot", the word the rest of the panel uses, and
+ * its number stays out of it: nobody can find slot 3 anywhere.
  */
 export function seatClashMessage(clashes: readonly SeatClash[]): string {
   if (clashes.length === 0) return "";
   const named = clashes.slice(0, NAMED_CLASHES).map((c) =>
-    `${joinNames(c.records.map((r) => r.name))} share seat ${c.slotIndex} on ${c.label}.`);
+    `${joinNames(c.records.map((r) => r.name))} share a slot on ${c.label}.`);
   const rest = clashes.length - named.length;
-  if (rest > 0) named.push(`${rest} more ${rest === 1 ? "seat" : "seats"} clash the same way.`);
-  named.push(clashes.length === 1 ? "Only one of them can be placed." : "Only one of each can be placed.");
+  if (rest > 0) named.push(`${rest} more ${rest === 1 ? "slot is" : "slots are"} shared the same way.`);
+  named.push(clashes.length === 1 ? "Only one of them can be used." : "Only one of each can be used.");
   return named.join(" ");
 }
 
-/** What the Fix button leaves behind: where things went, and what could not
- * go anywhere. Read after the saves, so the panel can say it in the same
+/** The banner's button, named for what it does. */
+export const SEAT_REPAIR_BUTTON = "Move them apart";
+
+/** What the repair button leaves behind: where things went, and what could
+ * not go anywhere. Read after the saves, so the panel can say it in the same
  * quiet banner every other cross-device write uses. */
 export function seatRepairSummary(plan: SeatRepairPlan): string {
   const lines: string[] = [];
   const first = plan.moves[0];
-  if (plan.moves.length === 1 && first) lines.push(`${first.name} moved to seat ${first.to} on ${first.label}.`);
-  else if (plan.moves.length > 1) lines.push(`${plan.moves.length} complications moved to seats of their own.`);
+  if (plan.moves.length === 1 && first) lines.push(`${first.name} moved to a slot of its own on ${first.label}.`);
+  else if (plan.moves.length > 1) lines.push(`${plan.moves.length} complications moved to slots of their own.`);
   if (plan.stuck.length > 0) {
     const where = [...new Set(plan.stuck.map((s) => s.label))];
-    lines.push(`${joinNames(plan.stuck.map((s) => s.name))} stayed put: ${joinNames(where)} has no free seat. Delete something there first.`);
+    lines.push(`${joinNames(plan.stuck.map((s) => s.name))} stayed put: ${joinNames(where)} ${where.length === 1 ? "is" : "are"} full. Delete something there first.`);
   }
   return lines.length > 0 ? lines.join(" ") : "Nothing to move.";
 }

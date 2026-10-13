@@ -617,8 +617,10 @@ export function roomsDocumentOf(record: WatchConfigRecord | undefined): Behavior
 
 export const ROOMS_NO_RECORD_TITLE = "No watch settings from this watch yet.";
 /** The no-record line when no iPhone will send the watch's settings. Rooms
- * have no Start of their own: they come with Watch settings' start. */
-export const ROOMS_NO_RECORD_TEXT = "Rooms are part of the watch's settings. Start them under Watch app, Settings.";
+ * have no Start of their own: they come with Watch settings' start, which
+ * the button beside it opens. */
+export const ROOMS_NO_RECORD_TEXT = "Rooms are part of the watch's settings. Start them in Settings.";
+export const ROOMS_OPEN_SETTINGS_BUTTON = "Open Settings";
 
 /** The same while the iPhone's move may still bring the settings. */
 export const ROOMS_WAIT_TEXT = `Rooms are part of the watch's settings. ${WAIT_FOR_IPHONE_TEXT}`;
@@ -750,8 +752,9 @@ export function homeRoomsReadMeansUnsupported(error: unknown): boolean {
   return code === "invalid" || code === "unknown_command";
 }
 
-/** The one line that stands for the four main house keys. */
-export const HOME_ROOMS_MAIN_HOUSE_TEXT = "Double-Tap Top, Double Pinch and the point control switches come from your main house.";
+/** The one line that stands for the four main house keys, in the words
+ * Watch settings uses for the gestures. */
+export const HOME_ROOMS_MAIN_HOUSE_TEXT = "The double-tap on the page title, the double pinch and the point control switches come from this watch's main home.";
 export const HOME_ROOMS_NO_RECORD_TITLE = "No rooms for this home yet.";
 /** The no-record line when no iPhone will send this home's rooms. */
 export const HOME_ROOMS_NO_RECORD_TEXT = "Start with no rooms to begin.";

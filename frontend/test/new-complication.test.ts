@@ -17,6 +17,7 @@ import {
   newSummary,
   shapeGroups,
   shapeOffered,
+  soleDeviceTick,
 } from "../src/newComplication.js";
 import { LIBRARY_OWNER_ID } from "../src/version.js";
 
@@ -144,7 +145,7 @@ describe("the footer line", () => {
 
   it("says where a design with no device ticked goes", () => {
     expect(newSummary(choice({ kind: "watch", family: "rectangular", devices: 0 })))
-      .toBe("Rectangular on a watch, unassigned. Tick a device any time.");
+      .toBe("Rectangular on a watch, not on a device yet. Tick a device any time.");
   });
 
   it("enables Create once the shape is picked, whatever step 4 says", () => {
@@ -213,5 +214,23 @@ describe("kindTitle", () => {
   it("names the three choices", () => {
     expect([kindTitle("watch"), kindTitle("iphone"), kindTitle("control")])
       .toEqual(["Watch", "iPhone", "Control Center"]);
+  });
+});
+
+describe("soleDeviceTick", () => {
+  const free = () => 0;
+  const full = () => -1;
+
+  it("ticks the home's only device for the design", () => {
+    expect(soleDeviceTick([WATCH], "circular", free)).toBe("w1");
+  });
+
+  it("leaves Unassigned on when there is a choice to make", () => {
+    expect(soleDeviceTick([WATCH, WATCH2], "circular", free)).toBeUndefined();
+    expect(soleDeviceTick([], "circular", free)).toBeUndefined();
+  });
+
+  it("never ticks a device with no free seat", () => {
+    expect(soleDeviceTick([WATCH], "circular", full)).toBeUndefined();
   });
 });

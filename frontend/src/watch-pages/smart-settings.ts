@@ -267,7 +267,7 @@ function spanBox(
     commit(sh, setting, (d) => write(d, v), { typing: true, ...reasonOf(watchWholeRefusal(v, min, max)) });
   };
   return typingField(sh, setting, numberField(label, shown, set, {
-    step: 1, min, max, ...(optional === undefined ? {} : { optional: true, placeholder: optional.placeholder }),
+    step: 1, min, max, rawTyping: true, ...(optional === undefined ? {} : { optional: true, placeholder: optional.placeholder }),
   }), stored);
 }
 
@@ -668,7 +668,7 @@ function renderHeader(host: WatchPagesEditorHost, rh: TileSettingsHost, rule: Wa
     ${rule.header === "label"
       ? html`${typingField(rh, "headerLabel", textField(W("labelText"), typed(rh, "headerLabel") ?? rule.headerLabel ?? "", (v) =>
           commit(rh, "headerLabel", (d) => setSmartRuleHeaderLabel(d, P, R, v), { typing: true }), { placeholder: smartDomainName(rule.domain) }))}
-        ${typingField(rh, "headerSize", numberField(W("textSize"), size, setSize, { step: 1, min, max, optional: true, placeholder: String(auto), unit: "pt" }), rule.headerLabelSize)}
+        ${typingField(rh, "headerSize", numberField(W("textSize"), size, setSize, { step: 1, min, max, optional: true, placeholder: String(auto), unit: "pt", rawTyping: true }), rule.headerLabelSize)}
         <div class="hint ts-under">Empty is ${auto} pt. Or ${min} to ${max}.</div>`
       : nothing}
     ${lined

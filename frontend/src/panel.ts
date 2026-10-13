@@ -141,7 +141,7 @@ import {
 import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
-import { type SendState, agoWords, describeHomeSync, describeSend, homeSync, sendState, sendWaitMs } from "./send-state.js";
+import { type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, homePill, homeSync, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
 import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDeviceWhy, homeGroups, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
 import { homePhoneArt, homeWatchArt } from "./home-art.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
@@ -188,6 +188,7 @@ import {
   type SeatRecord,
   findSeatClashes,
   planSeatRepair,
+  SEAT_REPAIR_BUTTON,
   seatClashMessage,
   seatRepairSummary,
 } from "./seatRepair.js";
@@ -203,6 +204,7 @@ import {
   newSummary,
   shapeGroups,
   shapeOffered,
+  soleDeviceTick,
 } from "./newComplication.js";
 import { type HaPerson, type Person, deviceShortName, haPeople, peopleOf } from "./people.js";
 import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt, shapeOnlyArt, shapeWell, watchWell } from "./shapeArt.js";
@@ -215,6 +217,8 @@ import { installUiFont } from "./font.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
 import { Draft, type LayerNamer, saveRefusal } from "./draft.js";
+import { NEWER_VERSION_TEXT, NOT_READY_TEXT, friendlyError, rawErrorText } from "./friendly-error.js";
+import { conflictText, savedByWords, savedLine, versionLabel, versionWhen } from "./revision-words.js";
 import { ScrollFades } from "./scroll-fade.js";
 import { chromeDarkValues, chromeRuns, chromeTokens, litOutline, plainOutline } from "./editor-chrome.js";
 import { statesSummary } from "./states.js";
@@ -230,6 +234,7 @@ import {
   type PickerTab,
   ALL_DEVICES,
   UNASSIGNED_LABEL,
+  UNASSIGNED_LIST,
   isShelvedRow,
   personColorVar,
   personIndex,
@@ -731,16 +736,32 @@ function tabIcon(kind: DeviceKind | "all"): UiIconName {
  * leaves a design there without being told what it means. */
 const LIBRARY_NOTE = "Not on any device yet. Duplicate one to a device to use it.";
 
-/** A phrase at the head of a sentence. "this watch" and "Unassigned" both go
- * in the same slot, and only one of them starts with a capital already. */
+/** A phrase at the head of a sentence. "this watch" and "the Not on a device
+ * list" both go in the same slot, and neither starts with a capital. */
 function capFirst(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** A device with no slot left for a shape. The iPhone app's own presets hold
+ * slots too, which is why a device can be full with fewer designs on it than
+ * the panel lists, so the sentence says so. `where` is a device's name, or
+ * `UNASSIGNED_LIST` for the shelf. */
+export function fullForShapeText(where: string): string {
+  return `${capFirst(where)} is full for this shape. Presets made in the iPhone app count too.`;
+}
+
+/** The question before unsaved work is thrown away, naming the design. */
+export function discardPrompt(name: string | undefined): string {
+  const named = (name ?? "").trim();
+  return named === ""
+    ? "Leave without saving your changes?"
+    : `Leave without saving your changes to “${named}”?`;
 }
 
 /** What an empty device says, in its own words. A watch with nothing on it and
  * a shelf with nothing on it are different news. */
 function nothingOnText(kind: DeviceKind | "all"): string {
-  if (kind === "library") return "Nothing is unassigned.";
+  if (kind === "library") return "Every design is on a device.";
   if (kind === "iphone") return "Nothing on this iPhone yet.";
   if (kind === "watch") return "Nothing on this watch yet.";
   return "No complications yet.";
@@ -1521,7 +1542,13 @@ export class WristAssistantPanel extends LitElement {
   @state() private records: ComplicationRecord[] = [];
   @state() private selectedId?: string;
   @state() private draft?: Draft;
+  /** The draft a save made here produced, so the line beside Save speaks
+   * only of that save. Any other draft (another design, a reload) is not it. */
+  private savedDraft?: Draft;
   @state() private readOnlyReason?: string;
+  /** The exact reason behind `readOnlyReason` (schema versions, key names),
+   * for the banner's tooltip. */
+  @state() private readOnlyDetail?: string;
   @state() private parseError?: string;
   @state() private maxSchemaVersion = 7;
   /** iPhone presets on the selected watch (slot + name). freeSlot() skips
@@ -2268,6 +2295,12 @@ export class WristAssistantPanel extends LitElement {
    * complication on the next visit. */
   @state() private previewTint?: string;
   @state() private loadError?: string;
+  /** The device list's last read failed, with what it failed with. While no
+   * device has ever been read, Home and the Complications tab show
+   * `renderNotReady` instead of the first-run pages: an integration that is
+   * still starting looks exactly like a home with nothing in it. */
+  @state() private devicesFailure?: { err: unknown };
+  @state() private retryingLoad = false;
   @state() private saveError?: string;
   /** The `saveRefusal` a press of Save last put in `saveError`, so the next
    * edit can take it down again. */
@@ -3802,6 +3835,8 @@ export class WristAssistantPanel extends LitElement {
       border-color: var(--wa-line-strong); border-radius: 7px; background: var(--wa-field);
     }
     .xfer-problem { white-space: pre-line; margin: 0; }
+    .xfer-detail { margin-top: 4px; color: var(--secondary-text-color); }
+    .xfer-detail summary { cursor: pointer; }
     .xfer-link { width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     /* The whole dialog is the drop target, lit while a file is over it. */
     dialog.import-dialog.dropping { border-color: var(--wa-accent); box-shadow: 0 0 0 2px var(--wa-accent), 0 12px 40px rgba(0,0,0,.4); }
@@ -5332,6 +5367,13 @@ export class WristAssistantPanel extends LitElement {
     .ok { color: var(--success-color, #43a047); }
     .warn { color: var(--warning-color, #ffa600); }
     .err, .error { color: var(--error-color, #db4437); }
+    /* Home and the Complications tab while the device list would not load:
+       a plain line and Try again, in place of a first-run page. */
+    .not-ready { display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+      margin: 8px 0; padding: 16px; border-radius: 12px; background: var(--card-background-color, #fff);
+      border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12)); }
+    .not-ready p { margin: 0; font-size: 14px; line-height: 1.4; }
+    .not-ready .not-ready-sub { font-size: 13px; color: var(--wa-muted, var(--secondary-text-color)); }
     .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; }
     .kv dt { opacity: .7; }
     .kv dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -6878,6 +6920,7 @@ export class WristAssistantPanel extends LitElement {
       this.ownersReadAt = Date.now();
       this.maxSchemaVersion = reply.max_schema_version;
       this.loadError = undefined;
+      this.devicesFailure = undefined;
       if (!this.ownerId && this.owners.length > 0) {
         const restored = this.owners.find((o) => o.owner_watch_id === this.restoreOpen?.owner);
         const withData = restored ?? this.owners.find((o) => o.complication_count > 0) ?? this.owners[0]!;
@@ -6887,6 +6930,7 @@ export class WristAssistantPanel extends LitElement {
       if (this.owners.length === 0) this.restoreOpen = undefined;
     } catch (err) {
       this.loadError = `Could not load devices: ${errText(err)}`;
+      this.devicesFailure = { err };
     }
     this.linkReady = true;
     // Not reactive, and the list page and Home both wait on it: a home with
@@ -6902,6 +6946,49 @@ export class WristAssistantPanel extends LitElement {
       this.splitNotice = notice;
       void this.loadRecords();
     });
+  }
+
+  /** Try again: read the devices, then the open device's list. */
+  private async retryLoad() {
+    if (this.retryingLoad) return;
+    this.retryingLoad = true;
+    try {
+      await this.loadOwners();
+      if (this.devicesFailure === undefined && this.ownerId) await this.loadRecords();
+    } finally {
+      this.retryingLoad = false;
+    }
+  }
+
+  /** Whether a load failed with nothing read to show in its place: Home and
+   * the Complications tab then show `renderNotReady` rather than the pages a
+   * new home gets, since a list that never arrived is not an empty one. */
+  private get loadFailedEmpty(): boolean {
+    return this.devicesFailure !== undefined && this.owners.length === 0;
+  }
+
+  /** The Complications tab is showing `renderNotReady` for a failed load, so
+   * the error card over it would say the same thing twice. */
+  private listLoadFailed(): boolean {
+    return this.loadError !== undefined && !this.draft && this.watchSupported && this.pickerRows().length === 0;
+  }
+
+  /** What Home and the Complications tab show while the lists would not
+   * load: what happened in plain words, and Try again. Right after a restart
+   * that is nearly always the integration still starting. */
+  private renderNotReady() {
+    const failure = this.devicesFailure;
+    const raw = failure !== undefined ? rawErrorText(failure.err) : errTitle(this.loadError);
+    const starting = failure !== undefined && friendlyError(failure.err) === NOT_READY_TEXT;
+    const line = failure === undefined
+      ? this.loadError ?? ""
+      : starting ? "Wrist Assistant isn't ready yet." : `Could not load the devices. ${friendlyError(failure.err)}`;
+    return html`<div class="not-ready" role="alert">
+      <p title=${raw ?? nothing}>${line}</p>
+      ${starting ? html`<p class="not-ready-sub">This can happen right after Home Assistant restarts.</p>` : nothing}
+      <button type="button" class="home-btn" ?disabled=${this.retryingLoad}
+        @click=${() => void this.retryLoad()}>${this.retryingLoad ? "Trying…" : "Try again"}</button>
+    </div>`;
   }
 
   private async selectOwner(ownerId: string) {
@@ -7125,6 +7212,7 @@ export class WristAssistantPanel extends LitElement {
     this.compiledDocument = undefined;
     this.historySignature = "";
     this.readOnlyReason = undefined;
+    this.readOnlyDetail = undefined;
     this.parseError = undefined;
     this.remoteRevision = undefined;
     this.conflict = undefined;
@@ -7139,8 +7227,9 @@ export class WristAssistantPanel extends LitElement {
 
   private confirmDiscard(): boolean {
     // window.confirm is the one modal the panel uses; it only appears when
-    // the user is about to lose typed work.
-    return window.confirm("You have unsaved changes. Discard them?");
+    // the user is about to lose typed work. It names the design, since the
+    // work being lost may not be the one on screen.
+    return window.confirm(discardPrompt(this.draft?.config.name));
   }
 
   private selectRecord(record: ComplicationRecord) {
@@ -7166,10 +7255,14 @@ export class WristAssistantPanel extends LitElement {
       this.savedName = String(record.document?.name ?? "");
       const schema = Number(record.document?.schemaVersion ?? 0);
       const unknown = auditUnknownKeys(record.document);
+      // The version numbers and key names mean nothing to most people, so
+      // they are the banner's tooltip (`readOnlyDetail`), not its line.
       if (schema > this.maxSchemaVersion) {
-        this.readOnlyReason = `This document is schema v${schema}; this integration understands up to v${this.maxSchemaVersion}. Update the Wrist Assistant integration to edit it.`;
+        this.readOnlyReason = NEWER_VERSION_TEXT;
+        this.readOnlyDetail = `This design is schema v${schema}. This integration reads up to v${this.maxSchemaVersion}.`;
       } else if (unknown.length > 0) {
-        this.readOnlyReason = `This document has fields the panel does not understand, so saving would drop them: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? ` and ${unknown.length - 5} more` : ""}. Update the integration to edit it.`;
+        this.readOnlyReason = `${NEWER_VERSION_TEXT} Saving here would drop the parts this panel does not know.`;
+        this.readOnlyDetail = `Fields this panel does not know: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? ` and ${unknown.length - 5} more` : ""}.`;
       } else {
         // A document that still draws several shapes on a device whose app
         // cannot resolve a shared slot by shape. Saving it would mean cutting
@@ -7430,9 +7523,9 @@ export class WristAssistantPanel extends LitElement {
           const doc = { ...record.document, slotIndex: move.to };
           const out = await saveRecord(this.hass, move.ownerId, doc, record.revision);
           if (out.ok) done.push(move);
-          else failed.push(`${move.name}: ${out.message ?? out.error ?? "the save failed"}`);
+          else failed.push(`${move.name}: ${clause(outText(out, "the save failed"))}`);
         } catch (err) {
-          failed.push(`${move.name}: ${errText(err)}`);
+          failed.push(`${move.name}: ${clause(errText(err))}`);
         }
       }
       const lines = [seatRepairSummary({ moves: done, stuck: plan.stuck })];
@@ -7959,11 +8052,10 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** The place being edited, as a sentence names it. A device is "this
-   * watch"; Unassigned is not a device, so it is named rather than pointed
-   * at: "this unassigned" is not English and "this library" was the word
-   * nobody reading the picker sees any more. */
+   * watch"; the shelf is not a device, so it is named rather than pointed
+   * at: "the Not on a device list". */
   private get placePhrase(): string {
-    return isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : `this ${this.deviceWord}`;
+    return isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LIST : `this ${this.deviceWord}`;
   }
 
 
@@ -8153,6 +8245,7 @@ export class WristAssistantPanel extends LitElement {
     if (owners.length === 0) return;
     const made: string[] = [];
     const failed: string[] = [];
+    let full = false;
     this.saving = true;
     try {
       await this.loadOtherLists();
@@ -8166,7 +8259,8 @@ export class WristAssistantPanel extends LitElement {
       const plan = newRecords(owners, supportedFamilies(config)[0], (ownerId, f) => this.freeSlotOn(ownerId, f));
       for (const row of plan) {
         if (row.slotIndex < 0) {
-          failed.push(`${row.label} has no free seat (iPhone presets count too)`);
+          failed.push(`${row.label} is full for this shape`);
+          full = true;
           continue;
         }
         const copy = copyForOwner(config, {
@@ -8178,9 +8272,9 @@ export class WristAssistantPanel extends LitElement {
         try {
           const out = await saveRecord(this.hass, row.ownerId, new Draft(copy, null).encoded(), null);
           if (out.ok) made.push(row.label);
-          else failed.push(`${row.label}: ${out.message ?? out.error ?? "the save failed"}`);
+          else failed.push(`${row.label}: ${clause(outText(out, "the save failed"))}`);
         } catch (err) {
-          failed.push(`${row.label}: ${errText(err)}`);
+          failed.push(`${row.label}: ${clause(errText(err))}`);
         }
       }
     } finally {
@@ -8189,6 +8283,7 @@ export class WristAssistantPanel extends LitElement {
     await this.loadOtherLists();
     const lines: string[] = [];
     if (failed.length > 0) lines.push(`${joinNames(failed)}.`);
+    if (full) lines.push("Presets made in the iPhone app count too.");
     this.copyStatus = lines.length > 0 ? lines.join(" ") : undefined;
   }
 
@@ -8262,7 +8357,7 @@ export class WristAssistantPanel extends LitElement {
         if (result.error === "conflict") {
           this.conflict = { current: result.current ?? null, message: result.message ?? "Someone else saved this complication first." };
         } else {
-          this.saveError = result.message ?? result.error ?? "Save failed";
+          this.saveError = outText(result, "Save failed");
         }
         return;
       }
@@ -8275,6 +8370,7 @@ export class WristAssistantPanel extends LitElement {
         // A save moves the baseline; it does not wipe undo. For Save a copy,
         // open the copy only if the source was not edited while it was saved.
         this.draft = draft.commit(result.record.revision, submittedDocument);
+        this.savedDraft = this.draft;
         this.savedName = String(result.record.document?.name ?? "");
         this.pictureTimeMs = Date.now();
         this.recompile();
@@ -8321,7 +8417,7 @@ export class WristAssistantPanel extends LitElement {
       const result = await deleteRecord(this.hass, ownerId, id, revision);
       if (!result.ok) {
         if (result.error === "conflict" && open) this.conflict = { current: result.current ?? null, message: result.message ?? "This complication changed on the server." };
-        else this.saveError = result.message ?? result.error ?? "Delete failed";
+        else this.saveError = outText(result, "Delete failed");
         return;
       }
       if (open) {
@@ -9740,9 +9836,10 @@ export class WristAssistantPanel extends LitElement {
     ];
     const saving: [string, string][] = [
       ["Save", `Writes the complication to Home Assistant (${m}S). It is dimmed while there is nothing to save. Nothing saves by itself.`],
-      ["Unassigned", "A design made with no device ticked is kept as unassigned. Nothing shows it until a copy of it goes on a device."],
-      ["Saved", "Beside Save: when this complication was last saved, or Not saved yet. The footer says whether there are unsaved changes."],
-      ["Reaching the watch", "The watch pulls saved changes by itself while Wrist Assistant is open on this home. There is no separate send step."],
+      [UNASSIGNED_LABEL, `A design made with no device ticked is kept under ${UNASSIGNED_LABEL}, on the Complications tab. Nothing shows it until you add it to a device.`],
+      ["Saved", "Beside Save: when this complication was last saved, or Not saved yet. After a save it also says whether the watch has it. The footer says whether there are unsaved changes."],
+      ["Reaching the watch", "Open Wrist Assistant on the watch and it pulls every save by itself. There is no separate send step."],
+      ["On the face", onTheFaceStep(undefined)],
       ["Hide", "The eye beside a complication in the list. It stops the watch offering that complication when you edit a face, and faces already using it keep it. Hidden ones fold into Hidden at the bottom of the list. For the open complication it saves with Save; for any other it saves at once."],
     ];
     const status: [string, string][] = [
@@ -9753,8 +9850,8 @@ export class WristAssistantPanel extends LitElement {
       ["Share", "In the bar over an open complication, on the Complications tab. Turns the open complication into text anyone can import. Your entity ids and names become numbered slots, and you can label each one."],
       ["Backup", "The other choice in Share: an exact copy, entity ids and names included. For your records, or another watch in this home."],
       ["Copy link", "A link to this panel with the text inside it. Opening it here fills in the Import dialog. On another home, paste the link into Import."],
-      ["Import", "Beside New complication, on the Complications tab and on Home. Paste text or a link, choose a file, or drop one on the dialog. Check the preview, choose your own entity for each slot, then Import. It opens as unsaved work and reaches the watch at the first Save."],
-      ["History", "In the complication's header, beside Duplicate. The last 20 saves of this complication, newest first, with a picture of the one you pick. Restore writes it back as a new revision, so the design you restored over becomes the newest entry and you can come straight back and undo it."],
+      ["Import", "Beside New complication, on the Complications tab: at the top of the list, and in the bar over an open complication. Paste text or a link, choose a file, or drop one on the dialog. Check the preview, choose your own entity for each slot, then Import. It opens as unsaved work and reaches the watch at the first Save."],
+      ["History", "In the complication's header, beside Duplicate. The last 20 saves of this complication, newest first, with a picture of the one you pick. Restore saves it again as the newest version, so the design you restored over joins the list and you can come straight back and undo it."],
       ["Parts", "A few layers kept under a name, for this home. Pick layers in the Layers list and press Save to parts; the Saved parts tab of + Add, in the Layers card, drops them into the complication you have open. A part is stored the way a share is, so it asks which of your entities each slot is on the way in."],
     ];
     const rows = (list: [string, string][]) => list.map(([k, what]) => html`<tr><th scope="row"><kbd>${k}</kbd></th><td>${what}</td></tr>`);
@@ -10938,7 +11035,7 @@ export class WristAssistantPanel extends LitElement {
       : columnFit(this.panelWidth, this.colLeft, this.colRight);
     return html`
       ${this.renderTopBar(fit.columns === 1, dirty)}
-      ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
+      ${this.loadError && !this.listLoadFailed() ? html`<div class="card error" title=${errTitle(this.loadError) ?? nothing}>${this.loadError}</div>` : nothing}
       ${this.linkNote ? html`<div class="banner warn link-note"><span>${this.linkNote}</span>
         <button class="link" @click=${() => { this.linkNote = undefined; }}>Dismiss</button></div>` : nothing}
       ${this.splitNotice ? html`<div class="banner warn link-note"><span>${this.splitNotice.lines.map(
@@ -10948,7 +11045,8 @@ export class WristAssistantPanel extends LitElement {
           : nothing}
         <button class="link" @click=${() => { this.splitNotice = undefined; }}>Dismiss</button></div>` : nothing}
       ${this.seatClash ? html`<div class="banner warn link-note"><span>${this.seatClash}</span>
-        <button class="link" ?disabled=${this.saving} @click=${() => void this.fixSeatClashes()}>Fix</button></div>` : nothing}
+        <button class="link" ?disabled=${this.saving} title="Give each of them a slot of its own"
+          @click=${() => void this.fixSeatClashes()}>${SEAT_REPAIR_BUTTON}</button></div>` : nothing}
       ${this.helpOpen ? this.renderHelpDialog() : nothing}
       ${this.newOpen ? this.renderNewDialog() : nothing}
       ${this.dupOpen ? this.renderDuplicateDialog() : nothing}
@@ -11027,8 +11125,9 @@ export class WristAssistantPanel extends LitElement {
       ${this.renderTopMenu()}
       ${d ? html`<button class="primary save ${dirty ? "dirty" : ""}" @click=${() => void this.save()}
           ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen || refusal !== undefined}
-          title=${refusal !== undefined ? refusal : dirty ? "Save (⌘S)" : "Nothing to save (⌘S)"}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved" title=${dirty && rec ? "Unsaved changes" : caption ?? ""}>${caption}</span>` : nothing}
+          title=${refusal !== undefined ? refusal : dirty ? `Save (${KEY_MOD}S)` : `Nothing to save (${KEY_MOD}S)`}>${this.saving ? "Saving…" : "Save"}</button>
+        <span class="tb-saved" title=${dirty && rec ? "Unsaved changes" : caption ?? ""}>${caption}</span>
+        ${this.renderAfterSave()}` : nothing}
       <button class="help" title="Help" aria-label="Help" @click=${() => { this.helpOpen = true; }}>?</button>
     </header>`;
   }
@@ -11085,14 +11184,32 @@ export class WristAssistantPanel extends LitElement {
    * dot and the words from `send-state.ts`. Green when all are in sync, amber
    * naming the ones that are not. Names are the bare device names unless two
    * waiting devices share one, which then take their paired phone too. Resend
-   * and Refresh now, for the open device, live in the ··· menu beside it. */
+   * and Refresh now, for the open device, live in the ··· menu beside it.
+   * An open design on no device turns a green pill amber (see `homePill`). */
   private renderSendPill() {
-    const s = homeSync(this.homeDevices());
-    if (!s) return nothing;
-    const d = describeHomeSync(s);
-    return html`<span class="tb-sync ${s.kind === "synced" ? "ok" : "warn"}" title=${d.title}>
+    const d = homePill(homeSync(this.homeDevices()), this.openOnNoDevice);
+    if (!d) return nothing;
+    return html`<span class="tb-sync ${d.tone}" title=${d.title}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${d.label}</span>
     </span>`;
+  }
+
+  /** Whether a design is open and it sits in Unassigned, on no device. */
+  private get openOnNoDevice(): boolean {
+    return this.draft !== undefined && isLibraryOwner(this.selectedOwner);
+  }
+
+  /** The line beside Save once the open design is saved (`afterSaveLine`):
+   * where it has got to, and whether the watch app has to be opened. Only
+   * after a save made here and only while nothing has changed since, so it
+   * reports on that save rather than on whatever was opened. */
+  private renderAfterSave() {
+    const d = this.draft;
+    if (!d || d !== this.savedDraft || d.dirty) return nothing;
+    const info = this.sendInfo();
+    const line = info ? afterSaveLine(info.s) : undefined;
+    if (!line) return nothing;
+    return html`<span class="tb-after ${line.warn ? "warn" : ""}" role="status" title=${line.text}>${line.text}</span>`;
   }
 
   /**
@@ -11193,9 +11310,8 @@ export class WristAssistantPanel extends LitElement {
    * but disables it, and the tooltip says why. */
   private renderNewButton() {
     const full = this.freeSlot() < 0;
-    const where = isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : this.deviceWord;
     return html`<button class="tb-btn tb-new" aria-haspopup="dialog" ?disabled=${full || this.ownerBusy}
-      title=${full ? `${where} is full. ${capFirst(this.placePhrase)} has no free slot. Delete a complication first.` : "Make a new complication"}
+      title=${full ? `${capFirst(this.placePhrase)} is full. Delete a complication first.` : "Make a new complication"}
       @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>`;
   }
 
@@ -11203,9 +11319,8 @@ export class WristAssistantPanel extends LitElement {
    * the tooltip says why. */
   private renderImportButton() {
     const full = this.freeSlot() < 0;
-    const where = isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : this.deviceWord;
     return html`<button class="tb-btn tb-import" aria-haspopup="dialog" ?disabled=${full}
-      title=${full ? `${where} is full. ${capFirst(this.placePhrase)} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
+      title=${full ? `${capFirst(this.placePhrase)} is full. Delete a complication first.` : "Paste a complication somebody shared"}
       @click=${() => this.openImportDialog()}>Import</button>`;
   }
 
@@ -12477,24 +12592,25 @@ export class WristAssistantPanel extends LitElement {
     // The seats being counted are the edited device's: that is where New puts
     // a complication, and its dialog is where another device is chosen.
     const full = this.freeSlot() < 0;
-    const where = this.selectedOwner ? ownerLabel(this.selectedOwner) : "This device";
+    const where = isLibraryOwner(this.selectedOwner) ? capFirst(UNASSIGNED_LIST)
+      : this.selectedOwner ? ownerLabel(this.selectedOwner) : "This device";
     const said = page ? undefined : this.saveError ?? this.copyStatus;
     return html`<div class="pk-foot">
       ${said === undefined
         ? html`<span class="pk-foot-hint">${this.touch
           ? "Tap a card to open it. By its name: Devices, hide and delete."
           : "Click a card to open it. Hover a card for Devices, hide and delete by its name."}</span>`
-        : html`<span class="pk-foot-said ${this.saveError ? "err" : ""}">${said}</span>
+        : html`<span class="pk-foot-said ${this.saveError ? "err" : ""}" title=${errTitle(this.saveError) ?? nothing}>${said}</span>
           <button type="button" class="ghost small"
             @click=${() => { this.saveError = undefined; this.copyStatus = undefined; this.copyOpen = undefined; }}>Dismiss</button>`}
       <button type="button" class="new-btn pk-backup" ?disabled=${this.backingUp}
         title="Save every complication in this home to one file"
         @click=${() => void this.backupAll()}>${uiIcon("download")}<span>${this.backingUp ? "Backing up…" : "Back up all"}</span></button>
       ${page ? nothing : html`<button type="button" class="new-btn pk-import" ?disabled=${full || this.ownerBusy}
-        title=${full ? `${where} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
+        title=${full ? `${where} is full. Delete a complication first.` : "Paste a complication somebody shared"}
         @click=${() => this.importFromPicker()}><span>Import</span></button>
       <button type="button" class="new-btn pk-new" ?disabled=${full || this.ownerBusy}
-        title=${full ? `${where} has no free slot. Delete a complication first.` : "Make a new complication"}
+        title=${full ? `${where} is full. Delete a complication first.` : "Make a new complication"}
         @click=${() => this.newFromPicker()}>${uiIcon("plus")}<span>New complication</span></button>`}
     </div>`;
   }
@@ -12606,7 +12722,7 @@ export class WristAssistantPanel extends LitElement {
             @click=${() => void this.batchHidden(true)}>${uiIcon("hide")}<span>Hide</span></button>
           ${this.renderBatchAdd(busy || none)}
           <button type="button" class="ghost small" ?disabled=${busy || none}
-            title="Take each of these off the device its card is under. The last copy of a design is kept as unassigned."
+            title=${`Take each of these off the device its card is under. The last copy of a design is kept, under ${UNASSIGNED_LABEL}.`}
             @click=${() => void this.batchTakeOff()}>${uiIcon("layers")}<span>Take off</span></button>
           <button type="button" class="ghost danger small" ?disabled=${busy || none}
             title="Delete these complications"
@@ -12803,11 +12919,11 @@ export class WristAssistantPanel extends LitElement {
     const family = families[0];
     const control = hasControlOf(drawn);
     // Which list Hide takes it out of. A device has its own list of
-    // complications; Unassigned is a place rather than a device, so it is
-    // named instead of being called "the Unassigned's complication list".
+    // complications; the shelf is a place rather than a device, so it is
+    // named instead.
     const actOwner = this.ownerOf(actOwnerId);
     const listOf = isLibraryOwner(actOwner)
-      ? "the Unassigned list"
+      ? UNASSIGNED_LIST
       : `the ${deviceNoun(actOwner)}'s complication list`;
     const kind = deviceKindOf(this.ownerOf(copy.ownerId));
     const device = this.cardDevice(kind, family);
@@ -12954,15 +13070,15 @@ export class WristAssistantPanel extends LitElement {
       : open
         ? "It is open in the editor. Use Delete there."
         : place.last && target.kind === "library"
-          ? "It is unassigned already. Delete removes it."
+          ? `It is under ${UNASSIGNED_LABEL} already. Delete removes it.`
           : place.last && shelf === undefined
-            ? "This integration has no Unassigned list to move it to. Delete removes it."
+            ? `This integration has no ${UNASSIGNED_LABEL} list to move it to. Delete removes it.`
             : undefined;
     const title = tooOld ?? (full
-      ? `${label} has no free seat for this shape (iPhone presets count too). Delete a complication on it first.`
+      ? `${fullForShapeText(target.kind === "library" ? UNASSIGNED_LIST : label)} Delete a complication on it first.`
       : stuck ?? (place.on
         ? place.last
-          ? "Take it off this device and keep it as unassigned"
+          ? `Take it off this device and keep it under ${UNASSIGNED_LABEL}`
           : `Take it off ${label}. A face or widget already using it keeps it.`
         : `Put it on ${label}. Saving it saves it everywhere it is.`));
     const disabled = this.saving || full || stuck !== undefined || tooOld !== undefined;
@@ -13171,25 +13287,25 @@ export class WristAssistantPanel extends LitElement {
       await this.loadOtherLists();
       const seats = this.seatsOn(shelf.ownerId);
       if (!seats) {
-        this.saveError = unreadableRefusal([UNASSIGNED_LABEL]);
+        this.saveError = unreadableRefusal([capFirst(UNASSIGNED_LIST)]);
         return;
       }
       const family = supportedFamilies(cfg)[0];
       const slot = slotForDuplicate(family, seats.held, seats.blocked);
       if (slot < 0) {
-        this.saveError = `${UNASSIGNED_LABEL} has no free seat for this shape. Delete something in it first.`;
+        this.saveError = `${capFirst(UNASSIGNED_LIST)} is full for this shape. Delete something in it first.`;
         return;
       }
       const kept = copyForOwner(cfg, { id: newId(), slotIndex: slot, hidden: false, families: [...cfg.supportedFamilies] });
       const out = await saveRecord(this.hass, shelf.ownerId, new Draft(kept, null).encoded(), null);
       if (!out.ok) {
-        this.saveError = `${row.name} could not be unassigned, so it is still on ${this.ownerName(copy.ownerId)}: ${out.message ?? out.error ?? "the save failed"}`;
+        this.saveError = `${row.name} could not be taken off ${this.ownerName(copy.ownerId)}, so it is still there: ${outText(out, "the save failed")}`;
         return;
       }
       const gone = await deleteRecord(this.hass, copy.ownerId, record.id, record.revision);
       // A half-done move is news wherever it is pressed: the design is now in
       // two places and one of them was not asked for.
-      if (!gone.ok) this.copyStatus = `${row.name} is unassigned, but the copy on ${this.ownerName(copy.ownerId)} could not be removed. Delete it from its own card.`;
+      if (!gone.ok) this.copyStatus = `${row.name} is under ${UNASSIGNED_LABEL} now, but the copy on ${this.ownerName(copy.ownerId)} could not be removed. Delete it from its own card.`;
       if (followed) this.pickerDupFor = `${shelf.ownerId}|${rowKeyFor({ ownerId: shelf.ownerId, id: kept.id, ...(kept.linkId !== undefined ? { linkId: kept.linkId } : {}) })}`;
       // The draft goes before the lists are read again: the record it was
       // built on is on its way out, and a render in between would draw the
@@ -13265,7 +13381,7 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     const family = supportedFamilies(cfg)[0];
-    const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
+    const label = target.kind === "library" ? UNASSIGNED_LIST : target.label;
     // The menu is open on one card of this row; a design gaining its first
     // link changes the row's key, so the menu is pointed at the new key on
     // the same card.
@@ -13278,12 +13394,12 @@ export class WristAssistantPanel extends LitElement {
       await this.loadOtherLists();
       const seats = this.seatsOn(target.ownerId);
       if (!seats) {
-        this.saveError = unreadableRefusal([label]);
+        this.saveError = unreadableRefusal([capFirst(label)]);
         return;
       }
       const slot = slotForDuplicate(family, seats.held, seats.blocked);
       if (slot < 0) {
-        this.saveError = `${label} has no free seat for this shape (iPhone presets count too). Delete a complication there first.`;
+        this.saveError = `${fullForShapeText(label)} Delete a complication there first.`;
         return;
       }
       let link = cfg.linkId;
@@ -13302,7 +13418,7 @@ export class WristAssistantPanel extends LitElement {
         linked.linkId = link;
         const out = await saveRecord(this.hass, from.ownerId, new Draft(linked, record.revision).encoded(), record.revision);
         if (!out.ok || !out.record) {
-          this.saveError = `${row.name} could not be linked, so nothing was written to ${label}: ${out.message ?? out.error ?? "the save failed"}`;
+          this.saveError = `${row.name} could not be linked, so nothing was written to ${label}: ${outText(out, "the save failed")}`;
           return;
         }
         moved.set(from.id, out.record.revision);
@@ -13316,7 +13432,7 @@ export class WristAssistantPanel extends LitElement {
       const copy = linkedCopy(cfg, link, { id: newId(), slotIndex: slot });
       const out = await saveRecord(this.hass, target.ownerId, new Draft(copy, null).encoded(), null);
       if (!out.ok) {
-        this.saveError = out.message ?? out.error ?? "Save failed";
+        this.saveError = outText(out, "Save failed");
         return;
       }
       // A design on a device is not unassigned any more, so the shelf's copy
@@ -13367,7 +13483,7 @@ export class WristAssistantPanel extends LitElement {
     // Both copies share one card, so "its own card" does not exist, and the
     // editor's Delete takes every copy. The Devices menu's Unassigned box is
     // the one control that drops the shelf's copy alone.
-    if (failed > 0) this.copyStatus = `${row.name} is on the device, and still unassigned as well. To tidy it, open Devices on its card and untick ${UNASSIGNED_LABEL}. Do not use Delete: that removes it everywhere.`;
+    if (failed > 0) this.copyStatus = `${row.name} is on the device, and still under ${UNASSIGNED_LABEL} as well. To tidy it, open Devices on its card and untick ${UNASSIGNED_LABEL}. Do not use Delete: that removes it everywhere.`;
     return { landed: wasOpen, failed };
   }
 
@@ -13458,7 +13574,7 @@ export class WristAssistantPanel extends LitElement {
       if (!result.ok) {
         this.saveError = result.error === "conflict"
           ? `${String(record.document.name ?? "That complication")} changed on the server. Try again.`
-          : result.message ?? result.error ?? "Save failed";
+          : outText(result, "Save failed");
         return;
       }
       // The sync wait is about the device being edited; another device's list
@@ -13669,6 +13785,15 @@ export class WristAssistantPanel extends LitElement {
       }),
     });
     if (state === "empty") return this.renderStartPage();
+    // A failed load would otherwise read "Reading every device's list…" for
+    // ever, since nothing is coming. It says what went wrong instead, with
+    // Try again, and the error card over the page stays away (`listLoadFailed`).
+    if (state === "loading" && this.loadError !== undefined) {
+      return html`<div class="cl-page"><div class="cl-wrap">
+        <div class="cl-head"><div class="cl-head-text"><h1>Complications</h1></div></div>
+        ${this.renderNotReady()}
+      </div></div>`;
+    }
     // Every card the page draws, the locked ones too, so the line and the All
     // tab and the Shape menu give the same number.
     const total = rows.length;
@@ -13739,7 +13864,7 @@ export class WristAssistantPanel extends LitElement {
     // one a watch uses does.
     const targets = newTargets([...this.newOwners]);
     const clash = (ownerId: string) => ownerId === LIBRARY_OWNER_ID
-      ? `A complication in ${UNASSIGNED_LABEL} already has that name.`
+      ? `A complication in ${UNASSIGNED_LIST} already has that name.`
       : undefined;
     if (this.ownerId !== undefined && targets.includes(this.ownerId) && this.takenNames().has(lower)) {
       return clash(this.ownerId) ?? `A complication on ${this.placePhrase} already has that name.`;
@@ -13854,7 +13979,7 @@ export class WristAssistantPanel extends LitElement {
    *
    * Four numbered steps, each a tinted container with a badge, and each one
    * waiting visibly until the step before it has an answer. Nothing is picked
-   * when it opens except the author's own devices in step 4: a tinted default
+   * when it opens except, in step 4, a home's only device: a tinted default
    * reads as a recommendation, and the shape is the one thing about a
    * complication that cannot be changed later without moving every layer.
    */
@@ -13903,13 +14028,13 @@ export class WristAssistantPanel extends LitElement {
           ${this.renderStepHead(3, "Pick one shape", "Blue shows where it sits. One shape per complication.")}
           <div class="shape-rows" role="radiogroup" aria-label="Shape">
             ${groups.map((group) => this.renderShapeGroup(kind!, group, this.newFamily,
-              (family) => { this.newFamily = family; this.keepTickedOwners(); }))}
+              (family) => { this.newFamily = family; this.keepTickedOwners(); this.tickSoleDevice(); }))}
           </div>
         </section>`}
         ${people.length === 0 ? nothing : html`<section class="new-step step-people ${wait(ready)}"
           aria-disabled=${ready ? "false" : "true"}>
           ${this.renderStepHead(shapeStep ? 4 : 3, "Choose whose devices get it",
-            "Each tick is a complication of its own on that device, to edit there. Unassigned keeps it off every device until you pick one.")}
+            `Each tick is a complication of its own on that device, to edit there. ${UNASSIGNED_LABEL} keeps it off every device until you pick one.`)}
           ${this.renderUnassignedTick()}
           <div class="people-grid" role="group" aria-label="Devices">${people.map((row) =>
             this.renderPersonBox(row, this.newOwners, this.newFamily, (id) => this.toggleNewOwner(id)))}</div>
@@ -14006,7 +14131,7 @@ export class WristAssistantPanel extends LitElement {
    */
   private renderUnassignedTick() {
     const on = this.newOwners.size === 0;
-    return html`<div class="unassigned-row" role="group" aria-label="Unassigned">
+    return html`<div class="unassigned-row" role="group" aria-label=${UNASSIGNED_LABEL}>
       <button type="button" role="checkbox" class="dev-tick ${on ? "on" : ""}"
         aria-checked=${on ? "true" : "false"}
         title="Make it and leave it on no device. Put it on one any time."
@@ -14014,7 +14139,7 @@ export class WristAssistantPanel extends LitElement {
         ${on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
         <span class="dev-card-ico">${uiIcon("layers")}</span>
         <span class="dev-card-name">${UNASSIGNED_LABEL}</span>
-        <span class="dev-row-note">on no device</span>
+        <span class="dev-row-note">kept for later</span>
       </button>
     </div>`;
   }
@@ -14042,7 +14167,7 @@ export class WristAssistantPanel extends LitElement {
         const label = deviceShortName(owner, row.person);
         return html`<button type="button" role="checkbox" class="dev-tick ${on ? "on" : ""}"
           aria-checked=${on ? "true" : "false"} ?disabled=${full && !on}
-          title=${full ? `${label} has no free slot for this shape (iPhone presets count too). Delete a complication on it first.` : `Put one on ${label}`}
+          title=${full ? `${fullForShapeText(label)} Delete a complication on it first.` : `Put one on ${label}`}
           @click=${() => toggle(id)}>
           ${on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
           <span class="dev-card-ico">${uiIcon(deviceKindOf(owner) === "iphone" ? "phone" : "watch")}</span>
@@ -14059,12 +14184,14 @@ export class WristAssistantPanel extends LitElement {
    * The shape goes with it unless the new kind still offers it, because a
    * corner picked for a watch means nothing on an iPhone.
    *
-   * No device is ticked. This used to tick the author's own devices of the new
-   * kind, on the theory that "mine" is the answer nearly every time. It reads
-   * as the dialog answering its own question: a tick here writes a record on a
-   * real device, and picking a kind is not consent to that. Unassigned is the
-   * resting answer, drawn as its own ticked row so the step never looks
-   * unanswered, and a device is one click away.
+   * No device is ticked from a choice of several. This used to tick the
+   * author's own devices of the new kind, on the theory that "mine" is the
+   * answer nearly every time. It reads as the dialog answering its own
+   * question: a tick here writes a record on a real device, and picking a kind
+   * is not consent to that. Unassigned is the resting answer, drawn as its own
+   * ticked row so the step never looks unanswered, and a device is one click
+   * away. The one exception is a home with a single device for the design,
+   * where there is nothing to choose (`tickSoleDevice`).
    */
   private pickKind(kind: NewKind) {
     this.newKind = kind;
@@ -14072,6 +14199,7 @@ export class WristAssistantPanel extends LitElement {
       this.newFamily = undefined;
     }
     this.newOwners = new Set();
+    this.tickSoleDevice();
   }
 
   /** Drop a tick on a device the new shape leaves behind, so Create never
@@ -14079,6 +14207,16 @@ export class WristAssistantPanel extends LitElement {
   private keepTickedOwners() {
     const offered = new Set(this.newOffered().map((o) => o.ownerId));
     this.newOwners = new Set([...this.newOwners].filter((id) => offered.has(id)));
+  }
+
+  /** Once the kind and the shape are answered, tick the home's only device
+   * that can take the design (see `soleDeviceTick`). A tick already made is
+   * left alone. */
+  private tickSoleDevice() {
+    if (this.newOwners.size > 0 || this.newKind === undefined) return;
+    if (this.newKind !== "control" && this.newFamily === undefined) return;
+    const only = soleDeviceTick(this.newOffered(), this.newFamily, (id, f) => this.freeSlotOn(id, f));
+    if (only !== undefined) this.newOwners = new Set([only]);
   }
 
   /** Tick or untick one device. Each tick is a complication of its own. */
@@ -14334,15 +14472,15 @@ export class WristAssistantPanel extends LitElement {
   private renderLibraryBox(library: DeviceOwner, family: FamilyKind | undefined) {
     const on = this.dupOwners.has(library.ownerId);
     const full = this.freeSlotOn(library.ownerId, family) < 0;
-    return html`<div class="unassigned-row" role="group" aria-label="Unassigned">
+    return html`<div class="unassigned-row" role="group" aria-label=${UNASSIGNED_LABEL}>
       <button type="button" role="checkbox" class="dev-tick ${on ? "on" : ""}"
         aria-checked=${on ? "true" : "false"} ?disabled=${full && !on}
-        title=${full ? `${UNASSIGNED_LABEL} is full. Delete something in it first.` : "Keep a copy unassigned, on no device"}
+        title=${full ? `${capFirst(UNASSIGNED_LIST)} is full. Delete something in it first.` : "Keep a copy on no device, for later"}
         @click=${() => this.toggleDupOwner(library.ownerId)}>
         ${on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
         <span class="dev-card-ico">${uiIcon("layers")}</span>
         <span class="dev-card-name">${UNASSIGNED_LABEL}</span>
-        <span class="dev-row-note">on no device</span>
+        <span class="dev-row-note">kept for later</span>
       </button>
     </div>`;
   }
@@ -14413,6 +14551,7 @@ export class WristAssistantPanel extends LitElement {
     this.closeDuplicateDialog();
     const made: string[] = [];
     const failed: string[] = [];
+    let full = false;
     let first: { ownerId: string; recordId: string } | undefined;
     this.saving = true;
     this.saveError = undefined;
@@ -14439,7 +14578,8 @@ export class WristAssistantPanel extends LitElement {
           target.ownerId === from.ownerId ? from.cfg.slotIndex : undefined,
         );
         if (slot < 0) {
-          failed.push(`${target.label} has no free seat for this shape (iPhone presets count too)`);
+          failed.push(`${target.label} is full for this shape`);
+          full = true;
           continue;
         }
         const copy = duplicateAs(from.cfg, family, { id: newId(), slotIndex: slot });
@@ -14449,10 +14589,10 @@ export class WristAssistantPanel extends LitElement {
             made.push(target.label);
             first ??= { ownerId: target.ownerId, recordId: copy.id };
           } else {
-            failed.push(`${target.label}: ${out.message ?? out.error ?? "the save failed"}`);
+            failed.push(`${target.label}: ${clause(outText(out, "the save failed"))}`);
           }
         } catch (err) {
-          failed.push(`${target.label}: ${errText(err)}`);
+          failed.push(`${target.label}: ${clause(errText(err))}`);
         }
       }
     } finally {
@@ -14460,7 +14600,9 @@ export class WristAssistantPanel extends LitElement {
     }
     await this.reloadAfterRowWrite(...targets.map((t) => t.ownerId));
     // Only a failure speaks: the new copies show in the list and on the card.
-    this.copyStatus = failed.length > 0 ? `${joinNames(failed)}.` : undefined;
+    this.copyStatus = failed.length > 0
+      ? `${joinNames(failed)}.${full ? " Presets made in the iPhone app count too." : ""}`
+      : undefined;
     this.copyOpen = failed.length > 0 ? first : undefined;
   }
 
@@ -15672,7 +15814,7 @@ export class WristAssistantPanel extends LitElement {
     const shelf = this.libraryOwner();
     if (!backup || this.restoring) return;
     if (!shelf) {
-      this.restoreResult = { text: `${UNASSIGNED_LABEL} is not available. Update the Wrist Assistant integration.`, error: true };
+      this.restoreResult = { text: `${capFirst(UNASSIGNED_LIST)} is not available. Update the Wrist Assistant integration.`, error: true };
       return;
     }
     this.restoring = true;
@@ -15681,7 +15823,7 @@ export class WristAssistantPanel extends LitElement {
       await this.loadOtherLists();
       const seats = this.seatsOn(shelf.ownerId);
       if (!seats) {
-        this.restoreResult = { text: unreadableRefusal([UNASSIGNED_LABEL]), error: true };
+        this.restoreResult = { text: unreadableRefusal([capFirst(UNASSIGNED_LIST)]), error: true };
         return;
       }
       const records = shelf.ownerId === this.ownerId ? this.records : this.otherLists.get(shelf.ownerId)?.records ?? [];
@@ -15706,9 +15848,9 @@ export class WristAssistantPanel extends LitElement {
       const lines = [
         saved === 0
           ? "Nothing was restored."
-          : `Restored ${saved === 1 ? "1 complication" : `${saved} complications`} to ${UNASSIGNED_LABEL}. Open the list and put each one on a device from its card.`,
+          : `Restored ${saved === 1 ? "1 complication" : `${saved} complications`} to ${UNASSIGNED_LIST}. Open the list and put each one on a device from its card.`,
       ];
-      if (plan.full.length > 0) lines.push(`${UNASSIGNED_LABEL} had no free seat for: ${plan.full.join(", ")}.`);
+      if (plan.full.length > 0) lines.push(`${capFirst(UNASSIGNED_LIST)} had no free slot for: ${plan.full.join(", ")}.`);
       if (failed.length > 0) lines.push(`These could not be saved: ${failed.join(", ")}.`);
       this.restoreResult = { text: lines.join(" "), error: saved === 0 || plan.full.length + failed.length > 0 };
     } catch (err) {
@@ -15772,12 +15914,12 @@ export class WristAssistantPanel extends LitElement {
       // An integration from before Unassigned. A link then goes where it
       // always went; a design this device cannot draw does not go at all.
       if (this.importFromLink && deviceSupportsShapes(owner)) return { ...here, dest: { unassigned: false } };
-      return { ...here, dest, problem: `It cannot go here: ${dest.reason}. Update the Wrist Assistant integration to import it to ${UNASSIGNED_LABEL}.` };
+      return { ...here, dest, problem: `It cannot go here: ${dest.reason}. Update the Wrist Assistant integration to import it to ${UNASSIGNED_LIST}.` };
     }
     const target = { ownerId: shelf.owner_watch_id, families: familiesFor(shelf), dest };
     const shapes = parse?.ok ? supportedFamilies(parse.config) : [];
     if (this.freeSlotOn(shelf.owner_watch_id, shapes[0]) < 0) {
-      return { ...target, problem: `${UNASSIGNED_LABEL} is full, so it has nowhere to go. Delete something in it first.` };
+      return { ...target, problem: `${capFirst(UNASSIGNED_LIST)} is full, so it has nowhere to go. Delete something in it first.` };
     }
     return target;
   }
@@ -15819,7 +15961,7 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="xfer-body">
       <div class="xf-lead">${uiIcon("info")}
         <span>A backup${made} with ${count === 1 ? "1 complication" : `${count} complications`}.
-          Restore puts them all in ${UNASSIGNED_LABEL}, with the entities they had.
+          Restore puts them all in ${UNASSIGNED_LIST}, with the entities they had.
           Nothing already here is changed.</span></div>
       <ul class="restore-list">
         ${backup.entries.map((entry) => html`<li><b>${entry.config.name.trim() || "Untitled"}</b>${entry.devices.length > 0
@@ -15827,7 +15969,8 @@ export class WristAssistantPanel extends LitElement {
         ${backup.problems.map((p) => html`<li class="err"><b>${p.name}</b> <span class="restore-from">cannot be restored: ${p.error}</span></li>`)}
       </ul>
       ${this.restoreResult
-        ? html`<div class="hint ${this.restoreResult.error ? "err" : ""}" role="status">${this.restoreResult.text}</div>`
+        ? html`<div class="hint ${this.restoreResult.error ? "err" : ""}" role="status"
+            title=${(this.restoreResult.error ? errTitle(this.restoreResult.text) : undefined) ?? nothing}>${this.restoreResult.text}</div>`
         : nothing}
     </div>
     <div class="xfer-foot">
@@ -15859,7 +16002,9 @@ export class WristAssistantPanel extends LitElement {
           <input type="file" hidden accept=".json,application/json,text/plain" @change=${(e: Event) => void this.readImportFile(e)} />
         </div>
       </div>
-      ${parse && !parse.ok ? html`<div class="hint err xfer-problem" role="alert">${parse.error}</div>` : nothing}
+      ${parse && !parse.ok ? html`<div class="hint err xfer-problem" role="alert">${parse.error}${parse.detail === undefined
+        ? nothing
+        : html`<details class="xfer-detail"><summary>Details</summary>${parse.detail}</details>`}</div>` : nothing}
       ${typing
         ? html`<textarea class="xfer-text xf-typed" rows="6" placeholder="Paste or type the shared text or a share link"
             aria-label="Shared complication text or link" .value=${this.importText}
@@ -15904,7 +16049,7 @@ export class WristAssistantPanel extends LitElement {
     const takenNames = this.importTakenNames();
     const taken = name !== "" && takenNames.has(name.toLowerCase());
     const problem = target.problem ?? importProblem({ parsed: true, name: this.importName, taken: takenNames, unchosen: 0 });
-    const where = target.dest.unassigned && target.problem === undefined ? UNASSIGNED_LABEL : undefined;
+    const where = target.dest.unassigned && target.problem === undefined ? UNASSIGNED_LIST : undefined;
     const clear = () => { this.importFocus = undefined; };
     return html`<div class="xfer-body">
       <div class="xf-hero pin">
@@ -15924,7 +16069,7 @@ export class WristAssistantPanel extends LitElement {
       ${target.problem !== undefined
         ? html`<div class="xf-lead warn" role="alert">${uiIcon("info")}<span>${target.problem}</span></div>`
         : target.dest.unassigned
-        ? html`<div class="xf-lead">${uiIcon("info")}<span>This goes to ${UNASSIGNED_LABEL}: ${target.dest.reason}. Add it to a device from its card.</span></div>`
+        ? html`<div class="xf-lead">${uiIcon("info")}<span>This goes to ${UNASSIGNED_LIST}: ${target.dest.reason}. Add it to a device from its card.</span></div>`
         : nothing}
       ${rows.length === 0
         ? html`<div class="xf-lead">${uiIcon("check")}<span>Every entity this design reads is already in your Home Assistant.</span></div>`
@@ -16316,7 +16461,7 @@ export class WristAssistantPanel extends LitElement {
     this.closeImportDialog();
     await this.save();
     if (target.dest.unassigned && this.draft?.config.id === cfg.id && this.draft.baseRevision !== null) {
-      this.copyStatus = `Imported to ${UNASSIGNED_LABEL}: ${target.dest.reason}. Add it to a device from the card.`;
+      this.copyStatus = `Imported to ${UNASSIGNED_LIST}: ${target.dest.reason}. Add it to a device from the card.`;
     }
   }
 
@@ -16402,26 +16547,32 @@ export class WristAssistantPanel extends LitElement {
     const family = cfg ? this.dialogFamily(cfg) : undefined;
     const dirty = this.draft?.dirty === true;
     const name = this.draft?.config.name.trim() || "Untitled";
+    // Versions go by when they were saved. The number stays only in a row's
+    // badge, where it tells two saves in the same minute apart.
+    const pickedEntry = picked === undefined ? undefined : entries.find((e) => e.revision === picked);
+    const pickedLabel = picked === undefined ? "" : versionLabel(picked, pickedEntry?.savedAt);
+    const pickedWhen = versionWhen(pickedEntry?.savedAt);
+    const openRecord = this.records.find((r) => r.id === this.selectedId);
+    const openWhen = openRecord === undefined ? undefined : versionWhen(openRecord.updatedAt);
     return html`<dialog class="history-dialog xf" @close=${() => this.historyClosed()}>
       ${this.dialogHead(`History of “${name}”`,
-        this.draft?.baseRevision === null || this.draft?.baseRevision === undefined
+        this.draft?.baseRevision === null || this.draft?.baseRevision === undefined || openWhen === undefined
           ? ""
-          : `Revision ${this.draft.baseRevision} is open`,
+          : `Open now: the version from ${openWhen}`,
         () => this.closeHistoryDialog())}
       <div class="xfer-body">
-        ${this.historyNote === undefined ? nothing : html`<div class="hint err" role="alert">${this.historyNote}</div>`}
+        ${this.historyNote === undefined ? nothing : html`<div class="hint err" role="alert" title=${errTitle(this.historyNote) ?? nothing}>${this.historyNote}</div>`}
         ${entries.length === 0
-          ? html`<div class="xf-lead">${uiIcon("info")}<span>No earlier saves yet. Every save from now on leaves the revision it replaced here.</span></div>`
+          ? html`<div class="xf-lead">${uiIcon("info")}<span>No earlier saves yet. From now on, each save keeps the version it replaced here.</span></div>`
           : html`
             <div class="xf-hero">
               ${cfg
-                ? this.dialogPreview(layouts, family, [],
-                    picked === undefined ? "" : `Revision ${picked}`, "")
+                ? this.dialogPreview(layouts, family, [], pickedLabel, "")
                 : html`<div class="xf-prev-wrap"><div class="xf-prev"></div>
-                    <div class="xf-prev-cap"><span>${this.historyBusy ? "Loading" : "Pick a revision"}</span></div></div>`}
+                    <div class="xf-prev-cap"><span>${this.historyBusy ? "Loading" : "Pick a version"}</span></div></div>`}
               <div class="xf-stack">
                 <span class="xf-label">Earlier saves<span class="r">${entries.length}</span></span>
-                <div class="xf-sub">Restoring writes the old design back as a new revision. Nothing is thrown away, so you can come straight back here and undo it.</div>
+                <div class="xf-sub">Restore saves the old design again, as the newest version. Nothing is thrown away, so you can come straight back here and undo it.</div>
               </div>
             </div>
             <div class="xf-rows hs-rows">
@@ -16437,7 +16588,7 @@ export class WristAssistantPanel extends LitElement {
           : html`<span class="spacer"></span>
             <button class="small" @click=${() => this.closeHistoryDialog()}>Close</button>
             <button class="primary" ?disabled=${picked === undefined || this.historyBusy || !this.canEdit}
-              title=${picked === undefined ? "Pick a revision first" : `Put revision ${picked} back as a new revision`}
+              title=${picked === undefined ? "Pick a version first" : `Make ${pickedWhen === undefined ? "this version" : `the version from ${pickedWhen}`} the newest one again`}
               @click=${() => { if (dirty) this.historyConfirm = true; else void this.restoreHistory(); }}>Restore</button>`}
       </div>
     </dialog>`;
@@ -16453,8 +16604,9 @@ export class WristAssistantPanel extends LitElement {
       savedByWords(entry.updatedBy),
     ].filter((part) => part !== "");
     return html`<button class="xf-row hs-row ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+      title=${versionLabel(entry.revision, entry.savedAt)}
       @click=${() => void this.pickHistory(entry.revision)}>
-      <span class="hs-rev">${entry.revision}</span>
+      <span class="hs-rev" title=${`Version ${entry.revision}`}>${entry.revision}</span>
       <span class="xf-main">
         <span class="xf-name">${entry.name || "Untitled"}</span>
         <span class="xf-sub">${savedAgoWords(entry.savedAt)} · ${parts.join(" · ")}</span>
@@ -16542,7 +16694,7 @@ export class WristAssistantPanel extends LitElement {
           this.closeHistoryDialog();
           return;
         }
-        this.historyNote = result.message ?? result.error ?? "Restore failed";
+        this.historyNote = outText(result, "Restore failed");
         return;
       }
       this.closeHistoryDialog();
@@ -16694,7 +16846,7 @@ export class WristAssistantPanel extends LitElement {
           </div>
         </div>
         <div class="xf-lead">${uiIcon("info")}<span>Your entity ids become numbered slots, the way Share does it. Adding the part back asks which of your entities each slot is.</span></div>
-        ${this.savePartError ? html`<div class="hint err" role="alert">${this.savePartError}</div>` : nothing}
+        ${this.savePartError ? html`<div class="hint err" role="alert" title=${errTitle(this.savePartError) ?? nothing}>${this.savePartError}</div>` : nothing}
       </div>
       <div class="xfer-foot">
         <span class="spacer"></span>
@@ -16791,7 +16943,7 @@ export class WristAssistantPanel extends LitElement {
   private renderPartsGrid() {
     const rows = this.parts ?? [];
     return html`<div class="xfer-body">
-      ${this.partsError ? html`<div class="hint err" role="alert">${this.partsError}</div>` : nothing}
+      ${this.partsError ? html`<div class="hint err" role="alert" title=${errTitle(this.partsError) ?? nothing}>${this.partsError}</div>` : nothing}
       ${this.parts === undefined
         ? html`<div class="xf-sub">Reading your parts…</div>`
         : rows.length === 0
@@ -16868,7 +17020,7 @@ export class WristAssistantPanel extends LitElement {
         ? html`<div class="xf-lead warn">${uiIcon("info")}<span>This part filters by areas, labels or floors from the home it was made on. Check its aggregate layers after adding it.</span></div>`
         : nothing}
       ${this.renderImportActions(cfg, "add it")}
-      ${this.partsError ? html`<div class="hint err" role="alert">${this.partsError}</div>` : nothing}
+      ${this.partsError ? html`<div class="hint err" role="alert" title=${errTitle(this.partsError) ?? nothing}>${this.partsError}</div>` : nothing}
     </div>
     <div class="xfer-foot">
       <button class="ghost" @click=${() => { this.partPick = undefined; this.partMap = new Map(); }}>Back to parts</button>
@@ -17145,6 +17297,8 @@ export class WristAssistantPanel extends LitElement {
     const out: TemplateResult[] = [];
     const orphan = this.renderOrphanBanner();
     if (orphan) out.push(orphan);
+    const shelved = this.renderNotOnDeviceBanner();
+    if (shelved) out.push(shelved);
     const open = this.slotInfo()?.rows ?? [];
     if (open.length > 0) {
       const n = open.length;
@@ -17159,24 +17313,29 @@ export class WristAssistantPanel extends LitElement {
         Layers that read ${n === 1 ? "it" : "them"} are marked <span class="badge need">pick entity</span>.</span>
         ${this.canEdit ? html`<button class="slots-pick" @click=${() => this.openSlotsDialog()}>Pick ${n === 1 ? "entity" : "entities"}${uiIcon("arrow")}</button>` : nothing}</div>`);
     }
-    if (this.readOnlyReason) out.push(html`<div class="banner warn"><b>Read only.</b> ${this.readOnlyReason}</div>`);
+    if (this.readOnlyReason) out.push(html`<div class="banner warn" title=${this.readOnlyDetail ?? nothing}><b>Read only.</b> ${this.readOnlyReason}</div>`);
     if (this.conflict) {
       const c = this.conflict;
-      out.push(html`<div class="banner err"><b>Save rejected.</b> ${c.message}
-        ${c.current ? html` The server has revision ${c.current.revision}, saved ${c.current.updatedAt} by ${c.current.updatedBy || "unknown"}.` : " The server no longer has this complication."}
+      // Who saved over the work and when, in words. The store's own line and
+      // the revision numbers are for a bug report, so they are the tooltip.
+      const detail = c.current ? `${c.message}. Stored version ${c.current.revision}.` : c.message;
+      out.push(html`<div class="banner err"><span title=${detail}><b>Not saved.</b> ${conflictText(c.current)}</span>
         <div class="acts">
           <button class="small" @click=${() => this.reloadFromServer()}>Reload the server version (lose my draft)</button>
           <button class="small" @click=${() => void this.save(true)}>Save my draft as a new complication</button>
           <button class="small" @click=${() => { this.conflict = undefined; }}>Keep editing</button>
         </div></div>`);
     } else if (this.remoteRevision !== undefined) {
-      out.push(html`<div class="banner warn">${this.remoteRevision === -1 ? "This complication was deleted on the server while you were editing." : `Revision ${this.remoteRevision} was saved on the server while you were editing.`} Saving now will be rejected.
+      const newer = this.remoteRevision === -1 ? undefined : this.records.find((r) => r.id === this.selectedId);
+      out.push(html`<div class="banner warn"><span title=${this.remoteRevision === -1 ? nothing : `Stored version ${this.remoteRevision}`}>${this.remoteRevision === -1
+          ? "This complication was deleted while you were editing."
+          : newer ? conflictText(newer) : "Someone saved a newer version while you were editing."} Saving now will not work.</span>
         <div class="acts">
           <button class="small" @click=${() => this.reloadFromServer()}>Reload the server version</button>
           <button class="small" @click=${() => void this.save(true)}>Save my draft as a new complication</button>
         </div></div>`);
     }
-    if (this.saveError) out.push(html`<div class="banner err"><b>Could not save.</b> ${this.saveError}</div>`);
+    if (this.saveError) out.push(html`<div class="banner err" title=${errTitle(this.saveError) ?? nothing}><b>Could not save.</b> ${this.saveError}</div>`);
     // Where a write that was not this document landed. A device that has not
     // synced yet is news rather than a fault, so the banner is a quiet one and
     // the author can put it away.
@@ -17186,6 +17345,30 @@ export class WristAssistantPanel extends LitElement {
         <button class="link" @click=${() => { this.copyStatus = undefined; this.copyOpen = undefined; }}>Dismiss</button></div>`);
     }
     return out;
+  }
+
+  /**
+   * The line over the canvas while the open design is on no device.
+   *
+   * Unassigned is where New puts a design when no device is ticked, and from
+   * the editor nothing said so: Save went quiet, the header said Synced, and
+   * the watch never got it. So it is said in words here, every time, with
+   * the canvas head's own Add to a device one click away. Before the first
+   * save there is nothing to add yet, which the line says instead.
+   */
+  private renderNotOnDeviceBanner(): TemplateResult | undefined {
+    const cfg = this.draft?.config;
+    if (!cfg || !this.openOnNoDevice) return undefined;
+    const unsaved = this.draft?.baseRevision === null;
+    const row = this.openRow();
+    const family = supportedFamilies(cfg)[0];
+    const canAdd = this.canEdit && !unsaved && row !== undefined
+      && this.rowPlaces(row, family).some((p) => !p.on && p.owner.kind !== "library");
+    return html`<div class="banner note link-note not-on-device">
+      <span>${unsaved ? NOT_ON_A_DEVICE_UNSAVED_LINE : NOT_ON_A_DEVICE_LINE}</span>
+      ${canAdd ? html`<button class="link" ?disabled=${this.saving}
+        @click=${() => this.toggleMenu("add", true)}>Add to a device</button>` : nothing}
+    </div>`;
   }
 
   /** Offer the Move action on a watch id no device answers for any more. */
@@ -17216,7 +17399,7 @@ export class WristAssistantPanel extends LitElement {
               </select>
               <button class="small" ?disabled=${!this.moveTarget || this.moving} @click=${() => void this.moveAll()}>${this.moving ? "Moving…" : "Move"}</button>
             </div>`}
-      ${this.moveError ? html`<div class="err">${this.moveError}</div>` : nothing}
+      ${this.moveError ? html`<div class="err" title=${errTitle(this.moveError) ?? nothing}>${this.moveError}</div>` : nothing}
     </div>`;
   }
 
@@ -18815,16 +18998,22 @@ export class WristAssistantPanel extends LitElement {
         <button type="button" class="home-btn add" title="Pair a watch or iPhone, by a code or a QR code"
           @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair a device</span></button>
       </div>`;
-    return html`${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
+    // A device list that would not load is not a home with no devices: it
+    // says so and offers Try again, never the Pair a device card.
+    const failed = this.loadFailedEmpty && devices.length === 0;
+    return html`${this.loadError && !failed ? html`<div class="card error" title=${errTitle(this.loadError) ?? nothing}>${this.loadError}</div>` : nothing}
       <div class="home"><div class="home-wrap">
         <div class="home-head">
           <div class="home-head-text">
             <h1>Home</h1>
             <p class="home-lead">Every watch and iPhone, who it belongs to, and whether it has your latest changes.</p>
+            ${this.hass?.user?.is_admin === false ? html`<p class="home-scope">You see the devices paired to you. Ask an administrator if yours is missing.</p>` : nothing}
           </div>
           ${devices.length === 0 ? nothing : acts}
         </div>
-        ${loading
+        ${failed
+          ? this.renderNotReady()
+          : loading
           ? html`<p class="home-empty">Loading…</p>`
           : html`${devices.length === 0 ? nothing : this.renderHomeStatus(devices, groups, elapsed)}${groups.map((g) => this.renderHomeGroup(g, elapsed))}${add}`}
         ${devices.length === 0 ? nothing : html`<p class="home-small">${HOME_SYNC_NOTE}</p>`}
@@ -19087,10 +19276,10 @@ export class WristAssistantPanel extends LitElement {
     const n = designs.length;
     const ask = html`<div class="xfer-body">
           <div class="xf-lead warn">${uiIcon("info")}<span>This removes <b>${row.name}</b> from this Home Assistant.
-            ${n === 0 ? nothing : html`Its ${n === 1 ? "complication moves" : `${n} complications move`} to ${UNASSIGNED_LABEL}, so the ${n === 1 ? "design is" : "designs are"} kept.`}
+            ${n === 0 ? nothing : html`${n === 1 ? "Its complication is" : `Its ${n} complications are`} kept, under ${UNASSIGNED_LABEL} on the Complications tab.`}
             ${row.kind === "watch" ? "Its pages, menus and watch settings are deleted." : nothing}</span></div>
           <div class="xf-lead">${uiIcon("info")}<span>Use this for a device you no longer use. If the app is still on it, the device can connect again later, but it starts empty. This cannot be undone.</span></div>
-          ${this.deviceForgetError ? html`<p class="dev-err">${this.deviceForgetError}</p>` : nothing}
+          ${this.deviceForgetError ? html`<p class="dev-err" title=${errTitle(this.deviceForgetError) ?? nothing}>${this.deviceForgetError}</p>` : nothing}
           <div class="dev-acts">
             <button class="ghost dev-forget" ?disabled=${this.deviceForgetBusy}
               @click=${() => { this.deviceForgetAsk = false; this.deviceForgetError = undefined; }}>Back</button>
@@ -19112,7 +19301,7 @@ export class WristAssistantPanel extends LitElement {
         <button type="button" class="ghost" ?disabled=${this.deviceRenameBusy} @click=${stopRename}>Cancel</button>
       </form>
       <p class="dev-small">Leave it empty to use the name the device reports.</p>
-      ${this.deviceRenameError ? html`<p class="dev-err">${this.deviceRenameError}</p>` : nothing}`;
+      ${this.deviceRenameError ? html`<p class="dev-err" title=${errTitle(this.deviceRenameError) ?? nothing}>${this.deviceRenameError}</p>` : nothing}`;
     // Its user was deleted: nothing on it can sync, so the sheet says so and
     // offers Remove alone.
     const gone = userGone(owner);
@@ -19201,7 +19390,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       await forgetDevice(this.hass, ownerId);
     } catch (err) {
-      this.deviceForgetError = `Could not forget it: ${errText(err)}`;
+      this.deviceForgetError = `Could not remove it: ${errText(err)}`;
       this.deviceForgetBusy = false;
       return;
     }
@@ -19382,6 +19571,7 @@ export class WristAssistantPanel extends LitElement {
     this.openNewDialog();
     this.pickKind(kind);
     if (family !== undefined) this.newFamily = family;
+    this.tickSoleDevice();
   }
 
   // ── canvas column ─────────────────────────────────────────────────────
@@ -19514,8 +19704,8 @@ export class WristAssistantPanel extends LitElement {
   private renderDocActions(cfg: CustomComplicationConfig) {
     if (!this.canEdit) return nothing;
     const d = this.draft;
-    return html`<button class="cv-act icon undo" @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${uiIcon("undo")}</button>
-      <button class="cv-act icon undo" @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${uiIcon("redo")}</button>
+    return html`<button class="cv-act icon undo" @click=${() => this.undo()} ?disabled=${!d?.canUndo} title=${`Undo (${KEY_MOD}Z)`} aria-label="Undo">${uiIcon("undo")}</button>
+      <button class="cv-act icon undo" @click=${() => this.redo()} ?disabled=${!d?.canRedo} title=${`Redo (${KEY_SHIFT}${KEY_MOD}Z)`} aria-label="Redo">${uiIcon("redo")}</button>
       <span class="cv-div" aria-hidden="true"></span>
       <button class="cv-act icon" aria-haspopup="dialog" aria-label="Duplicate as another shape or device"
         title="Duplicate: make this design again as another shape, or on another device"
@@ -19553,7 +19743,7 @@ export class WristAssistantPanel extends LitElement {
     const where = unsaved
       ? html`${quoted} has never been saved. Deleting it closes it, and nothing is left on the server.`
       : shelved && n === 1
-        ? html`${quoted} is ${UNASSIGNED_LABEL.toLowerCase()}: on no device. Deleting it removes the design itself.`
+        ? html`${quoted} is on no device. Deleting it removes the design itself.`
         : n === 1
           ? html`${quoted} is on <b>${hereName}</b>. A face or widget using it loses it.`
           : html`${quoted} is on ${n} devices: <b>${[hereName, ...others].join(", ")}</b>. A face or widget using it loses it.`;
@@ -19565,7 +19755,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="xfer-body">
         <div class="xf-lead warn">${uiIcon("info")}<span>${where}</span></div>
         ${unsaved ? nothing : html`<div class="xf-lead">${uiIcon("info")}<span>This cannot be undone.${keep
-          ? html` To take it off a device and keep the design, close this and press the × on the device chip instead. The last copy goes to ${UNASSIGNED_LABEL}.` : nothing}</span></div>`}
+          ? html` To take it off a device and keep the design, close this and press the × on the device chip instead. The last copy goes to ${UNASSIGNED_LIST}.` : nothing}</span></div>`}
         <div class="del-acts">
           <button class="ghost" @click=${close}>Cancel</button>
           ${!unsaved && n > 1
@@ -20234,14 +20424,14 @@ export class WristAssistantPanel extends LitElement {
     const icon = target.kind === "library" ? "layers" : target.kind === "iphone" ? "phone" : "watch";
     const here = place.copies.some((c) => this.isOpenCopy(c));
     const stuck = place.last && target.kind === "library"
-      ? "It is unassigned already. Delete removes it."
+      ? `It is under ${UNASSIGNED_LABEL} already. Delete removes it.`
       : place.last && this.libraryOwner() === undefined
-        ? "This integration has no Unassigned list to move it to. Delete removes it."
+        ? `This integration has no ${UNASSIGNED_LABEL} list to move it to. Delete removes it.`
         : here && this.draft?.baseRevision === null
           ? "This complication has never been saved. Save it first."
           : undefined;
     const off = place.last
-      ? `Take it off ${label} and keep it as unassigned`
+      ? `Take it off ${label} and keep it under ${UNASSIGNED_LABEL}`
       : `Take it off ${label}. A face or widget already using it keeps it.`;
     const armed = this.placeTrashArm === target.ownerId;
     const ask = `Press again to take it off ${label}.`;
@@ -20298,7 +20488,7 @@ export class WristAssistantPanel extends LitElement {
         : { tag: "app too old", why: updateDeviceMessage(owner) };
     }
     if (this.freeSlotOn(place.owner.ownerId, family) < 0) {
-      return { tag: "full", why: `${label} has no free seat for this shape (iPhone presets count too). Delete a complication there first.` };
+      return { tag: "full", why: `${fullForShapeText(place.owner.kind === "library" ? UNASSIGNED_LIST : label)} Delete a complication there first.` };
     }
     return undefined;
   }
@@ -20672,6 +20862,14 @@ export class WristAssistantPanel extends LitElement {
     return cfg.elements.filter((e) => this.multi.has(e.payload.id));
   }
 
+  /** The device a how-to should speak of: the one the design is on, or for a
+   * design on no device, whichever its shape is drawn on (both when the shape
+   * fits a watch and an iPhone alike). */
+  private howDevice(cfg: CustomComplicationConfig): HowDevice {
+    if (!isLibraryOwner(this.selectedOwner)) return deviceKindOf(this.selectedOwner) === "iphone" ? "iphone" : "watch";
+    return deviceKindOfShapes(supportedFamilies(cfg));
+  }
+
   /**
    * What this complication is, in words, for the read-only Shape row of the
    * Complication card: "Rectangular, on Jesse's Apple Watch".
@@ -20739,16 +20937,12 @@ export class WristAssistantPanel extends LitElement {
       const complication = card(host, "complication", "Complication",
         generalEditor(host, { nameOnly: control, shape: this.whatItIs(cfg) }),
         { color: SECTION_COLOR.complication, icon: "watch", alwaysOpen: true });
-      // A document with no layers yet gets the three steps instead of the line
+      // A document with no layers yet gets the four steps instead of the line
       // about clicking one, since there is nothing to click.
       const next = cfg.elements.length === 0
         ? html`<div class="how-card">
             <b>How this works</b>
-            <ol>
-              <li>Add layers. Each one shows an entity.</li>
-              <li>Drag them on the face.</li>
-              <li>Save. The ${this.deviceWord} picks it up.</li>
-            </ol>
+            <ol>${howItWorksSteps(this.howDevice(cfg), this.openOnNoDevice).map((step) => html`<li>${step}</li>`)}</ol>
             <a href="https://docs.wrist-assistant.com/" target="_blank" rel="noopener">Read the two-minute guide</a>
           </div>`
         : html`<p class="insp-note">${this.touch ? "Tap" : "Click"} a layer ${deviceKindOf(this.selectedOwner) === "iphone" ? "on the preview" : "on the watch"} or in the list to edit it. The shape's own background and border are the Background row at the bottom of the list.</p>`;
@@ -20902,15 +21096,17 @@ export class WristAssistantPanel extends LitElement {
       revision: rec?.revision ?? null,
       dirty: d.dirty,
       updatedBy: rec?.updatedBy ?? "",
+      ...(rec?.updatedAt ? { updatedAt: rec.updatedAt } : {}),
       ...(refusal !== undefined ? { refusal } : {}),
       ...(this.saveError !== undefined ? { error: this.saveError } : {}),
       ...(this.templateError !== undefined ? { templateError: this.templateError } : {}),
     });
+    const raw = errTitle(this.saveError);
     return html`<div class="foot" data-open=${this.rawOpen ? "true" : "false"}>
       ${this.rawOpen ? this.renderRawDetails(d, rec) : nothing}
       <div class="foot-row">
         <span class="foot-dot ${status.tone}" aria-hidden="true"></span>
-        <span class="foot-text" title=${status.text}>${status.text}</span>
+        <span class="foot-text" title=${status.title ?? (raw !== undefined && status.tone === "err" ? raw : status.text)}>${status.text}</span>
         ${this.canEdit ? html`<button class="foot-raw" aria-haspopup="dialog" ?disabled=${d.baseRevision === null}
           title=${d.baseRevision === null ? "Nothing to go back to until it has been saved once" : "Earlier saves of this complication"}
           @click=${() => void this.openHistoryDialog()}>History</button>` : nothing}
@@ -20952,14 +21148,19 @@ export function footerStatus(i: {
   /** Why Save will not write this work (`saveRefusal`), given only while
    * there is work to save. */
   refusal?: string;
-}): { tone: "ok" | "warn" | "none" | "err"; text: string } {
+  /** When the stored version was saved, as the record's ISO stamp. */
+  updatedAt?: string;
+  nowMs?: number;
+}): { tone: "ok" | "warn" | "none" | "err"; text: string; title?: string } {
   if (i.error !== undefined && i.error !== "") return { tone: "err", text: `Not saved: ${i.error}` };
   if (i.templateError !== undefined && i.templateError !== "") return { tone: "err", text: `Template error: ${i.templateError}` };
   if (i.refusal !== undefined && i.refusal !== "") return { tone: "warn", text: `Cannot save yet: ${i.refusal}` };
   if (i.revision === null) return { tone: "none", text: "Not saved yet" };
-  if (i.dirty) return { tone: "warn", text: `Revision ${i.revision} · unsaved changes` };
-  const by = savedByWords(i.updatedBy);
-  return { tone: "ok", text: `Revision ${i.revision} · ${by === "" ? "saved" : `saved ${by}`}` };
+  // The revision number tells two saves apart for anyone who needs it, so it
+  // stays, in the tooltip rather than the line.
+  const title = `Version ${i.revision}`;
+  if (i.dirty) return { tone: "warn", text: "Unsaved changes", title };
+  return { tone: "ok", text: savedLine(i.updatedAt, i.updatedBy, i.nowMs ?? Date.now()), title };
 }
 
 /** Save text as a file: a Blob and one click on a link nobody sees. The panel
@@ -20974,8 +21175,43 @@ function saveTextFile(name: string, text: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+/** The plain words for an error (`friendlyError`). The server's own words
+ * are kept for the line's tooltip (`errTitle`), since they are what a bug
+ * report needs. */
 function errText(err: unknown): string {
-  return String((err as { message?: string })?.message ?? err);
+  const text = friendlyError(err);
+  const raw = rawErrorText(err);
+  if (raw !== text) {
+    // A handful at most are on screen at once; the cap only stops a long
+    // session from growing the map without end.
+    if (rawErrors.size > 50) rawErrors.clear();
+    rawErrors.set(text, raw);
+  }
+  return text;
+}
+
+/** Plain words to the server's words, for every error `errText` changed. */
+const rawErrors = new Map<string, string>();
+
+/** The server's own words behind a shown error line, for its `title`, or
+ * undefined when the line is the server's words already. */
+function errTitle(shown: string | undefined): string | undefined {
+  if (shown === undefined || shown === "") return undefined;
+  for (const [text, raw] of rawErrors) if (shown.includes(text)) return raw;
+  return undefined;
+}
+
+/** A sentence as a clause inside a longer line ("Jesse's Watch: it is too
+ * big"), without its own full stop, so a list of them ends in one. */
+function clause(s: string): string {
+  return s.replace(/\.\s*$/, "");
+}
+
+/** A store reply's refusal (`ok: false` with `error` and `message`) in plain
+ * words, or `fallback` when it says nothing. */
+function outText(out: { error?: string | null; message?: string | null }, fallback: string): string {
+  if (!out.message && !out.error) return fallback;
+  return errText({ code: out.error ?? undefined, message: out.message || out.error });
 }
 
 /** How long ago a history entry was saved, from its ISO stamp. A stamp that
@@ -20985,14 +21221,6 @@ function savedAgoWords(savedAt: string): string {
   const at = Date.parse(savedAt);
   if (Number.isNaN(at)) return "Saved";
   return `Saved ${agoWords(Math.max(0, (Date.now() - at) / 1000))}`;
-}
-
-/** Who saved a revision. The store writes `ha-panel:Name`; the prefix is
- * plumbing, so only the name is shown, and an entry with no name at all says
- * nothing rather than "by". */
-function savedByWords(updatedBy: string): string {
-  const who = updatedBy.startsWith("ha-panel:") ? updatedBy.slice("ha-panel:".length) : updatedBy;
-  return who.trim() === "" ? "" : `by ${who.trim()}`;
 }
 
 /** Watch name plus the iPhone it is paired to, which is what tells two

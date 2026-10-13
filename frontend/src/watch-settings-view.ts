@@ -62,7 +62,7 @@ import {
   SETTINGS_UNREADABLE_TEXT,
   START_FRESH_BUTTON,
   WAITING_HELP_TEXT,
-  WAITING_PILL_TEXT,
+  WAITING_TEXT,
   WATCH_SETTINGS_CATALOG,
   buildSaveDocument,
   conflictRevision,
@@ -79,7 +79,7 @@ import {
   noRecordText,
   optionsFor,
   readMotionActions,
-  savedByWords,
+  savedLine,
   sectionRuns,
   settingValue,
   settingsWatches,
@@ -125,6 +125,7 @@ import {
 import { notificationPreview, notificationPreviewStyles } from "./watch-notification-style/preview.js";
 import { ClientCertCard, clientCertStyles } from "./watch-client-cert-view.js";
 import { PairWatchCard, pairCardStyles } from "./watch-pair-view.js";
+import { friendlyError } from "./friendly-error.js";
 
 /** How often the page asks whether a device has collected a save. */
 const DELIVERY_POLL_MS = 15_000;
@@ -513,8 +514,20 @@ export class WatchSettings implements ReactiveController {
       if (ownerId !== this.ownerId) return undefined;
       const code = errorCode(err);
       if (code === "conflict") {
-        const stored = conflictRevision(err);
         await this.reread("behavior", ownerId);
+        // Lay the edits over the newer copy, the way a watch switch does
+        // (`restoreSettingsDraft`): they are key writes, and only those the
+        // newer copy does not already hold still count. A copy that could
+        // not be read keeps the old behavior and drops them.
+        const fresh = this.record;
+        if (ownerId === this.ownerId && this.loadError === undefined && fresh?.document !== undefined && fresh.revision > 0) {
+          const still = dirtyKeys(fresh.document, edits);
+          this.edits = new Map(still.map((key) => [key, edits.get(key)!]));
+          return still.length === 0
+            ? { kind: "note", text: "These settings changed somewhere else, and the newer copy already has your changes." }
+            : { kind: "warn", text: "Not saved yet. These settings changed somewhere else, so the newer copy is shown with your changes on top. Check them and Save again." };
+        }
+        const stored = conflictRevision(err);
         return {
           kind: "warn",
           text: `Your changes were not saved. These settings changed somewhere else${stored === undefined ? "" : ` (now revision ${stored})`}, so the newest copy is shown. Make your changes again on top of it.`,
@@ -560,7 +573,7 @@ export class WatchSettings implements ReactiveController {
       else this.styleEdits = new Map();
       return { kind: "warn", text: "The notification style was not saved. Home Assistant no longer holds one for this watch. Start with the defaults again." };
     }
-    return { kind: "err", text: `Could not save the notification style: ${result.message}` };
+    return { kind: "err", text: `Could not save the notification style: ${friendlyError(result)}` };
   }
 
   /**
@@ -586,7 +599,7 @@ export class WatchSettings implements ReactiveController {
       return;
     }
     if (result.ok) {
-      this.note = { kind: "note", text: "Started with the defaults. The watch picks them up the next time it checks." };
+      this.note = { kind: "note", text: "Started with the defaults. Open Wrist Assistant on the watch to get them." };
     } else if (result.code === "no_record") {
       this.note = { kind: "warn", text: SETTINGS_PAIR_FIRST_TEXT };
       this.changed();
@@ -594,7 +607,7 @@ export class WatchSettings implements ReactiveController {
     } else if (result.code === "conflict") {
       this.note = { kind: "warn", text: SETTINGS_START_CONFLICT_TEXT };
     } else {
-      this.note = { kind: "err", text: `Could not start: ${result.message}` };
+      this.note = { kind: "err", text: `Could not start: ${friendlyError(result)}` };
       this.changed();
       return;
     }
@@ -623,7 +636,7 @@ export class WatchSettings implements ReactiveController {
       return;
     }
     if (result.ok) {
-      this.note = { kind: "note", text: "Started the notification style with the defaults. The watch picks it up the next time it checks." };
+      this.note = { kind: "note", text: "Started the notification style with the defaults. Open Wrist Assistant on the watch to get it." };
     } else if (result.code === "no_record") {
       this.note = { kind: "warn", text: SETTINGS_PAIR_FIRST_TEXT };
       this.changed();
@@ -631,7 +644,7 @@ export class WatchSettings implements ReactiveController {
     } else if (result.code === "conflict") {
       this.note = { kind: "warn", text: STYLE_START_CONFLICT_TEXT };
     } else {
-      this.note = { kind: "err", text: `Could not start: ${result.message}` };
+      this.note = { kind: "err", text: `Could not start: ${friendlyError(result)}` };
       this.changed();
       return;
     }
@@ -953,17 +966,26 @@ export class WatchSettings implements ReactiveController {
     return cards;
   }
 
-  /** Beside the title: which watch, and which revision of its settings. */
+  /** Beside the title: which watch, and who last saved its settings and
+   * when. The revision numbers are jargon to a new user, so they are only in
+   * the tooltip (`headTitle`). */
   private headLine(name: string): string {
     if (this.ownerId === undefined) return "No watch paired yet";
     const r = this.record;
-    const s = this.styleRecord;
-    const style = s !== undefined && s.revision > 0 ? ` · notification style revision ${s.revision}` : "";
-    if (r === undefined || r.revision <= 0) return `${name}${style}`;
-    const by = savedByWords(r.updated_by);
+    if (r === undefined || r.revision <= 0) return name;
     const at = r.updated_at ? Date.parse(r.updated_at) : NaN;
-    const when = Number.isNaN(at) ? "" : ` ${agoWords(Math.max(0, (Date.now() - at) / 1000))}`;
-    return `${name} · revision ${r.revision}, ${by}${when}${style}`;
+    const when = Number.isNaN(at) ? "" : agoWords(Math.max(0, (Date.now() - at) / 1000));
+    return `${name} · ${savedLine(r.updated_by, when)}`;
+  }
+
+  /** The head line's tooltip: the revisions it leaves out. */
+  private headTitle(): string | undefined {
+    const parts: string[] = [];
+    const r = this.record;
+    const s = this.styleRecord;
+    if (r !== undefined && r.revision > 0) parts.push(`Settings revision ${r.revision}`);
+    if (s !== undefined && s.revision > 0) parts.push(`notification style revision ${s.revision}`);
+    return parts.length === 0 ? undefined : `${parts.join(", ")}.`.replace(/^./, (c) => c.toUpperCase());
   }
 
   /** What stands in for the behavior settings' cards: a note, `null` while
@@ -1334,7 +1356,7 @@ export class WatchSettings implements ReactiveController {
    * here is on its way to it and no sync pill shows. */
   renderBar(name = "Watch", stacked = false, elsewhere = false) {
     const confirm = this.confirm;
-    const head = html`<span class="ws-title">Watch settings</span><span class="ws-head-line">${this.headLine(name)}</span>
+    const head = html`<span class="ws-title">Watch settings</span><span class="ws-head-line" title=${this.headTitle() ?? nothing}>${this.headLine(name)}</span>
       <span class="spacer"></span>`;
     if (confirm) {
       return html`<div class="wa-bar ws-bar ${stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch settings">${head}
@@ -1357,7 +1379,7 @@ export class WatchSettings implements ReactiveController {
       ${changes > 0 ? html`<button class="tb-btn ws-discard" ?disabled=${this.saving}
         title="Go back to the copies Home Assistant holds" @click=${() => this.askDiscard()}>Discard</button>` : nothing}
       ${this.ownerId === undefined ? nothing : html`<button class="primary save ${changes > 0 ? "dirty" : ""}" ?disabled=${!canSave}
-        title=${changes > 0 ? `Save (${SAVE_KEY}). The watch picks these settings up the next time it checks.` : `Nothing to save (${SAVE_KEY})`}
+        title=${changes > 0 ? `Save (${SAVE_KEY}). Then open Wrist Assistant on the watch to get these settings.` : `Nothing to save (${SAVE_KEY})`}
         @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>`}
     </div>`;
   }
@@ -1383,13 +1405,13 @@ export class WatchSettings implements ReactiveController {
     }
     const title = `${waiting.map((h) => `${h.what} saved as revision ${h.revision}.`).join(" ")} ${WAITING_HELP_TEXT}`;
     return html`<span class="tb-sync warn sending" title=${title}>
-      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${WAITING_PILL_TEXT}</span>
+      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${WAITING_TEXT}</span>
     </span>`;
   }
 }
 
 function errText(err: unknown): string {
-  return String((err as { message?: string })?.message ?? err);
+  return friendlyError(err);
 }
 
 /** The two saves' notes as one: their words side by side, at the graver of

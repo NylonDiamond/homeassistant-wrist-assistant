@@ -57,7 +57,7 @@ export function navigateWatchMenus(route: PanelRoute | undefined, menus: boolean
 }
 
 /** The help page the editor's "?" opens. */
-export const WATCH_MENUS_HELP_URL = "https://docs.wrist-assistant.com/watch-app/quick-menu-editor/";
+export const WATCH_MENUS_HELP_URL = "https://docs.wrist-assistant.com/watch-app/quick-menu/";
 
 /** The page editor's sub-path. The same as `WATCH_PAGES_PATH`, written out
  * here so the two hooks do not import each other (a test holds them equal). */

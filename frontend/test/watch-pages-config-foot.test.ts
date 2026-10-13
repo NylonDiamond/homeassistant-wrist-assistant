@@ -59,9 +59,12 @@ function foot(r: WatchConfigRecord, historyState: "ready" | "unsupported" = "rea
 }
 
 describe("the foot bar", () => {
-  it("says the revision and who saved it, then History and Raw configuration", () => {
+  it("says who saved it and when, the revision only in the tooltip, then History and Raw configuration", () => {
     const text = foot(record());
-    expect(text).toContain("Revision 7 · saved here 5 min ago");
+    expect(text).toContain(">Saved here 5 min ago</span>");
+    expect(text).toContain("Saved here 5 min ago (Revision 7).");
+    expect(text).not.toContain(">Revision 7");
+    expect(foot(record({ updated_by: "W1" }))).toContain(">Saved from the watch 5 min ago</span>");
     expect(text).toContain(COLLECTED_PILL_TEXT);
     expect(text).toContain("cf-dot ok");
     expect(text).toContain(">History</button>");
@@ -74,6 +77,8 @@ describe("the foot bar", () => {
     const waiting = configFootStatus({ record: record({ delivered_revision: 6 }), size: 9_000, limit: 10_000, noun: "pages", historyState: "ready", now: NOW });
     expect(waiting).toMatchObject({ tone: "warn", state: WAITING_PILL_TEXT, help: WAITING_HELP_TEXT, near: true });
     expect(waiting.size).toContain("Close to the limit.");
+    // The bar has room to say what to do; the toolbar pill keeps it short.
+    expect(foot(record({ delivered_revision: 6 }))).toContain(">Waiting. Open Wrist Assistant on the watch to get it.</span>");
     const rejected = foot(record({ rejected_revision: 7 }));
     expect(rejected).toContain("cf-dot err");
     expect(rejected).toContain(REJECTED_TEXT);
@@ -208,7 +213,7 @@ describe("the page editor", () => {
   it("pins the foot bar under the columns, with no Stored copy or Earlier saves card", () => {
     const text = body();
     expect(text).toContain(`<footer class="cf-bar"`);
-    expect(text).toContain("Revision 7 · saved here");
+    expect(text).toContain(">Saved here");
     expect(text).toContain(">History</button>");
     expect(text).toContain(">Raw configuration</button>");
     expect(text).not.toContain("Stored copy</h3>");

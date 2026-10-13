@@ -160,6 +160,15 @@ const topBarRun = css`
       background: var(--lo-fill);
     }
     .tb-saved { font-size: 12px; color: var(--wa-muted); white-space: nowrap; padding: 0 4px; }
+    /* After a save: where it has got to, one line. Amber when the reader has
+       to do something (open the watch app). It stays when the bar stacks,
+       on the second row, since on a phone it is the only place it is said. */
+    .tb-after {
+      font-size: 12px; color: var(--wa-muted); white-space: nowrap; padding: 0 4px;
+      min-width: 0; max-width: 340px; overflow: hidden; text-overflow: ellipsis;
+    }
+    .tb-after.warn { color: var(--wa-amber); font-weight: 500; }
+    header.stacked > .tb-after, .wa-bar.stacked > .tb-after { order: 2; }
     header.stacked .tb-saved, header.stacked .tb-pen, header.stacked > .tb-div,
     .wa-bar.stacked .tb-saved, .wa-bar.stacked .tb-pen, .wa-bar.stacked > .tb-div { display: none; }
     /* Stacked (a phone, or a narrow window), the bar is two tidy rows rather

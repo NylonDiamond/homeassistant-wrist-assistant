@@ -176,7 +176,7 @@ describe("the top bar", () => {
     el.topMenuOpen = true;
     const text = whole();
     expect(text).toContain(`class="tb-sync warn"`);
-    expect(text).toContain(">Waiting to be collected</span>");
+    expect(text).toContain(">Waiting for the watch</span>");
     expect(text).toContain(">Discard edits</button>");
   });
 });

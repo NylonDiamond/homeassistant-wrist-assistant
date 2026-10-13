@@ -227,7 +227,10 @@ describe("Watch settings as a page under the Watch app row", () => {
     expect(shown).toContain(`role="toolbar" aria-label="Watch settings"`);
     expect(shown).not.toContain("ws-tabs");
     expect(shown).not.toContain("<dialog");
-    expect(shown).toContain("Chen's Watch · revision 1");
+    // Who saved and when in plain words; the revision only in the tooltip.
+    expect(shown).toContain("Chen's Watch · Saved ");
+    expect(shown).not.toContain("Chen's Watch · revision");
+    expect(shown).toContain("Settings revision 1.");
     expect(shown).toContain(`<div class="ws-split">`);
     expect(shown).toContain(`<nav class="ws-nav" aria-label="Settings groups">`);
     expect(inside.ownerId).toBe("w2");
@@ -238,7 +241,7 @@ describe("Watch settings as a page under the Watch app row", () => {
     const elsewhere = [owner("w1", "Jesse's Watch"), { ...owner("w2", "Chen's Watch"), main_house: false }];
     const { text, bar } = await page("w2", elsewhere);
     const shown = text();
-    expect(shown).toContain("This watch takes its settings from your main house. Change them there.");
+    expect(shown).toContain("This watch takes its settings from its main home. Change them there.");
     expect(shown).toContain(`<div class="ws-cols one">`);
     expect(shown).not.toContain("ws-nav");
     // A bound attribute flattens without its quotes.
@@ -249,7 +252,7 @@ describe("Watch settings as a page under the Watch app row", () => {
 
     // The other watch, whose main house this is, gets the editors.
     const main = await page("w1", elsewhere);
-    expect(main.text()).not.toContain("takes its settings from your main house");
+    expect(main.text()).not.toContain("takes its settings from its main home");
     expect(main.text()).toContain("data-sec=ws-connection");
   });
 
@@ -274,9 +277,9 @@ describe("Watch settings as a page under the Watch app row", () => {
 
     it("is shown at once when the form holds no edits", async () => {
       const { ha, text } = await page("w2");
-      expect(text()).toContain("Chen's Watch · revision 1");
+      expect(text()).toContain("Settings revision 1.");
       savedElsewhere(ha, "w2", { wrapPages: !wrap.default });
-      await vi.waitFor(() => expect(text()).toContain("Chen's Watch · revision 2"));
+      await vi.waitFor(() => expect(text()).toContain("Settings revision 2."));
     });
 
     it("keeps the form's edits, and the save then says the settings changed somewhere else", async () => {
@@ -285,7 +288,7 @@ describe("Watch settings as a page under the Watch app row", () => {
       savedElsewhere(ha, "w2", { longPressDuration: "Long" });
       await settle();
       await settle();
-      expect(text()).toContain("Chen's Watch · revision 1");
+      expect(text()).toContain("Settings revision 1.");
       expect(inside.edits.get("wrapPages")).toBe(!wrap.default);
     });
   });

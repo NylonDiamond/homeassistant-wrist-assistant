@@ -134,6 +134,16 @@ export function sensorReading(hass: HassLike, sensor: string): { line: string; t
   return { line: `Now in ${room}${key === "" ? ", whose name has no letter or digit the watch can match" : ""}.`, tone: key === "" ? "warn" : "ok" };
 }
 
+/** Bermuda, the integration that makes an area sensor from Bluetooth, is
+ * not something a new user knows by name: the word links to it. */
+export const BERMUDA_URL = "https://github.com/agittins/bermuda";
+
+function withBermudaLink(line: string): TemplateResult | string {
+  const at = line.indexOf("Bermuda");
+  if (at < 0) return line;
+  return html`${line.slice(0, at)}<a href=${BERMUDA_URL} target="_blank" rel="noopener noreferrer">Bermuda</a>${line.slice(at + "Bermuda".length)}`;
+}
+
 function renderSensorCard(host: RoomsViewHost): TemplateResult {
   const { view } = host;
   const reading = sensorReading(host.hass, view.sensor);
@@ -142,7 +152,7 @@ function renderSensorCard(host: RoomsViewHost): TemplateResult {
       if (host.busy) return;
       host.write(sensorWrites(host.document, ref.entityId));
     }, "rooms:sensor", { clearable: true })}</div>
-    <div class="rm-reading"><i class="rm-dot ${reading.tone}" aria-hidden="true"></i><span>${reading.line}</span></div>
+    <div class="rm-reading"><i class="rm-dot ${reading.tone}" aria-hidden="true"></i><span>${withBermudaLink(reading.line)}</span></div>
     ${view.sensor !== "" ? html`<div class="hint">Clearing the sensor turns Switch pages by room off.</div>` : nothing}`,
   { summary: view.sensor === "" ? "None" : nameOf(host.hass, view.sensor), dot: anyDirty(host, [ROOM_KEYS.sensor]) });
 }
@@ -181,7 +191,7 @@ function renderSwitchingCard(host: RoomsViewHost): TemplateResult {
         pageOptions(host.pages, fallbackValue, [[STAY_ON_CURRENT_PAGE, FALLBACK_LABELS.stay], ["", FALLBACK_LABELS.first]]),
         (v) => { if (!host.busy) host.write(fallbackWrites(v)); }, { snapBack: true })}
       <div class="hint">When the room cannot be told, or has no page.</div>` : nothing}`,
-  { summary: view.switching ? view.trigger : "Off", dot: anyDirty(host, keys) });
+  { summary: view.switching ? (triggers.find((t) => t.value === view.trigger)?.label ?? view.trigger) : "Off", dot: anyDirty(host, keys) });
 }
 
 /** Switch pages by room on a home that is not the main house: the automatic

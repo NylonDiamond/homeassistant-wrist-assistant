@@ -75,8 +75,10 @@ import {
 } from "../watch-pages/config-foot.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
+import { friendlyError } from "../friendly-error.js";
+import { restoredText } from "../revision-words.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
-import { START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, settingsWatches, watchName } from "../watch-settings.js";
+import { PAIR_FIRST_TEXT, START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, settingsWatches, watchName } from "../watch-settings.js";
 import {
   type WatchVoiceDraft,
   anyWatchVoiceDirty,
@@ -92,7 +94,6 @@ import {
   type VoiceDocument,
   WATCH_VOICE_NO_RECORD_TEXT,
   WATCH_VOICE_NO_RECORD_TITLE,
-  WATCH_VOICE_PAIR_FIRST_TEXT,
   WATCH_VOICE_START_BUTTON,
   WATCH_VOICE_UPDATE_TEXT,
   type WatchVoiceInfo,
@@ -765,7 +766,7 @@ export class WaVoiceEditor extends LitElement {
     if (result.ok) {
       this.note = { kind: "ok", text: "Started with the defaults. The watch picks them up the next time it checks." };
     } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: `${WATCH_VOICE_PAIR_FIRST_TEXT} Go to Watch app, Settings, Pair a device.` };
+      this.note = { kind: "warn", text: PAIR_FIRST_TEXT };
       return;
     } else if (result.code === "conflict") {
       this.note = { kind: "warn", text: "Voice settings arrived meanwhile, so those are shown." };
@@ -773,7 +774,7 @@ export class WaVoiceEditor extends LitElement {
       this.unsupported = true;
       return;
     } else {
-      this.note = { kind: "err", text: `Could not start: ${result.message}` };
+      this.note = { kind: "err", text: `Could not start: ${friendlyError(result)}` };
       return;
     }
     void this.load(watchId, true);
@@ -810,7 +811,7 @@ export class WaVoiceEditor extends LitElement {
     let note: Note;
     try {
       const reply = await restoreWatchConfig(hass, watchId, "voice", ask.entry.revision, ask.baseRevision);
-      note = { kind: "ok", text: `Revision ${ask.entry.revision} is back.` };
+      note = { kind: "ok", text: restoredText(ask.entry.updated_at) };
       if (watchId === this.watchId) this.restartDraft = { watchId, revision: reply.revision };
       else if (!(keptWatchVoiceDraft(watchId)?.dirty ?? false)) forgetWatchVoiceDraft(watchId);
     } catch (err) {
@@ -821,7 +822,7 @@ export class WaVoiceEditor extends LitElement {
       else if (code === "unknown_command") {
         this.historyState = "unsupported";
         note = { kind: "warn", text: "This version of the integration cannot restore voice settings. Update it to restore an earlier save." };
-      } else note = { kind: "err", text: `Could not restore: ${errText(err)}` };
+      } else note = { kind: "err", text: `Could not restore: ${friendlyError(err)}` };
     } finally {
       this.restoring = false;
       if (this.restoreAsk === ask) this.closeAsk();
@@ -1066,7 +1067,7 @@ export class WaVoiceEditor extends LitElement {
   private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
     if (watches.length === 0) {
       const waiting = this.owners.length === 0 && this.ownList === undefined;
-      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet."}</div>`;
+      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet. Pair one on the Home tab."}</div>`;
     }
     if (this.unsupported) return html`<div class="pe-empty"><b>${WATCH_VOICE_UPDATE_TEXT}</b></div>`;
     if (this.loading) return html`<div class="pe-empty">Loading…</div>`;

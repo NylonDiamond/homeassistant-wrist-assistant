@@ -60,6 +60,10 @@ export interface WatchScreen {
   /** Shared by every watch: the address never names one, and the screen
    * follows none. */
   shared?: true;
+  /** No longer linked from the watch row or Home: its address still works,
+   * so an old link lands on the screen. Control Center is one: its tiles
+   * moved into complication controls. */
+  retired?: true;
 }
 
 /** In the order Home and the watch row show them. */
@@ -67,7 +71,7 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
   { id: "pages", label: "Pages", blurb: "The screens you swipe between", path: WATCH_PAGES_PATH },
   { id: "menus", label: "Menus", blurb: "Quick menus and their items", path: WATCH_MENUS_PATH },
   { id: "status-pages", label: "Status pages", blurb: "Read-only views of your home", path: WATCH_STATUS_PAGES_PATH },
-  { id: "control-center", label: "Control Center", blurb: "The list of controls", path: WATCH_CONTROL_CENTER_PATH },
+  { id: "control-center", label: "Control Center", blurb: "The list of controls", path: WATCH_CONTROL_CENTER_PATH, retired: true },
   { id: "rooms", label: "Rooms", blurb: "Switch pages by room, and point control", path: WATCH_ROOMS_PATH },
   { id: "voice", label: "Voice", blurb: "How voice commands work", path: WATCH_VOICE_PATH },
   { id: "http-actions", label: "HTTP actions", blurb: "Web requests Home Assistant sends for a watch", path: WATCH_HTTP_ACTIONS_PATH, shared: true },

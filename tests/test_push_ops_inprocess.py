@@ -444,9 +444,9 @@ def _deliver_push_fn(notif: Any):
         node
         for node in tree.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name in ("_deliver_push", "_strip_none")
+        and node.name in ("_deliver_push", "_strip_none", "_device_label")
     ]
-    assert len(wanted) == 2
+    assert len(wanted) == 3
     code = compile(
         ast.Module(body=wanted, type_ignores=[]),
         str(source),
@@ -462,12 +462,24 @@ def _deliver_push_fn(notif: Any):
         "asyncio": asyncio,
         "_LOGGER": logging.getLogger("test_deliver_push"),
         "HomeAssistantError": _HomeAssistantError,
+        "DOMAIN": "wrist_assistant",
+        "dr": types.SimpleNamespace(async_get=lambda _hass: _DeviceRegistry()),
+        "is_iphone_entry": notif.is_iphone_entry,
         "_get_ha_instance_uuid": _no_uuid,
         "resolve_push_routes": notif.resolve_push_routes,
         "purge_dead_token": notif.purge_dead_token,
     }
     exec(code, namespace)  # noqa: S102
     return namespace["_deliver_push"]
+
+
+class _DeviceRegistry:
+    """One renamed device, "w2"; every other id has no device page."""
+
+    def async_get_device(self, identifiers):
+        if ("wrist_assistant", "watch_w2") in identifiers:
+            return types.SimpleNamespace(name_by_user="Kitchen watch", name="Watch w2")
+        return None
 
 
 def _deliver(env, client: _RelayClient, **kwargs: Any) -> dict:
@@ -517,6 +529,29 @@ def test_an_alert_through_the_phone_still_gets_the_default_sound(env) -> None:
     _deliver(env, client, target_watch_ids=["w1"])
 
     assert [(s["watch_id"], s["sound"]) for s in client.sends] == [("p1", "default")]
+
+
+def test_a_target_with_nothing_registered_is_named_in_the_error(env) -> None:
+    with pytest.raises(_HomeAssistantError) as err:
+        _deliver(env, _RelayClient(), target_watch_ids=["w2"])
+    assert str(err.value).startswith("Kitchen watch has not registered")
+
+
+def test_no_target_and_nothing_registered_says_to_pair_a_watch(env) -> None:
+    with pytest.raises(_HomeAssistantError) as err:
+        _deliver(env, _RelayClient())
+    assert "Pair a watch in the Wrist Assistant panel" in str(err.value)
+
+
+def test_a_failed_send_names_the_device_not_its_id(env) -> None:
+    env.secrets.entries["p1"].device_name = "Jesse's iPhone"
+    env.tokens.register("p1", "P1", platform="ios")
+    client = _RelayClient(answer=(False, "Unregistered", "production"))
+
+    with pytest.raises(_HomeAssistantError) as err:
+        _deliver(env, client, target_watch_ids=["w1"])
+    assert "Jesse's iPhone: Unregistered" in str(err.value)
+    assert "p1" not in str(err.value)
 
 
 def test_a_dead_token_is_removed_after_an_alert(env) -> None:

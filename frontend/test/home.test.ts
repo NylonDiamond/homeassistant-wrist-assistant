@@ -99,8 +99,8 @@ describe("watchConfigCount", () => {
 describe("deviceSheetTabs", () => {
   const labels = (kind: "watch" | "iphone") => deviceSheetTabs(kind).map((t) => t.label);
 
-  it("gives a watch its complications, its own screens and Settings, never the home's shared screens", () => {
-    expect(labels("watch")).toEqual(["Complications", "Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Settings"]);
+  it("gives a watch its complications, its own screens and Settings, never the home's shared screens or the retired Control Center", () => {
+    expect(labels("watch")).toEqual(["Complications", "Pages", "Menus", "Status pages", "Rooms", "Voice", "Settings"]);
   });
 
   it("gives an iPhone its widgets and its Control Center controls", () => {
@@ -110,9 +110,9 @@ describe("deviceSheetTabs", () => {
     ]);
   });
 
-  it("puts a count on Pages, Status pages and Control Center", () => {
+  it("puts a count on Pages and Status pages", () => {
     const counted = deviceSheetTabs("watch").flatMap((t) => t.kind === "screen" && t.count ? [`${t.label}:${t.count}`] : []);
-    expect(counted).toEqual(["Pages:pages", "Status pages:status_pages", "Control Center:control_center"]);
+    expect(counted).toEqual(["Pages:pages", "Status pages:status_pages"]);
   });
 });
 
@@ -120,12 +120,13 @@ describe("deviceCardTiles", () => {
   const labels = (kind: "watch" | "iphone") => deviceCardTiles(kind).map((t) => t.label);
 
   it("gives a watch a tile for each counted page, and an iPhone its widgets and controls", () => {
-    expect(labels("watch")).toEqual(["Complications", "Pages", "Status pages", "Control Center"]);
+    expect(labels("watch")).toEqual(["Complications", "Pages", "Status pages"]);
     expect(labels("iphone")).toEqual(["Widgets", "Control Center"]);
   });
 
   it("cuts a two word page name to one under the number", () => {
-    expect(labels("watch").map(tileWord)).toEqual(["Complications", "Pages", "Status", "Controls"]);
+    expect(labels("watch").map(tileWord)).toEqual(["Complications", "Pages", "Status"]);
+    expect(labels("iphone").map(tileWord)).toEqual(["Widgets", "Controls"]);
   });
 });
 

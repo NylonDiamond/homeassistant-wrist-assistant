@@ -631,8 +631,6 @@ export const STATUS_PAGES_START_BUTTON = "Start with the defaults";
 
 export const STATUS_PAGES_START_EMPTY_BUTTON = "Start with an empty list";
 
-export const STATUS_PAGES_PAIR_FIRST_TEXT = "Pair this watch first.";
-
 export const STATUS_PAGES_UPDATE_TEXT = "Update the integration to edit status pages here.";
 
 /** Whether a failed read means this integration does not keep status pages:

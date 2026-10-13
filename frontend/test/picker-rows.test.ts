@@ -209,7 +209,7 @@ describe("pickerTabs", () => {
 
   it("names each tab after its device, and the shelf Unassigned", () => {
     const tabs = pickerTabs(rows, [...devices, shelf]);
-    expect(tabs.map((t) => t.label)).toEqual(["All", "Chen", "Jesse Apple Watch", "iPhone 15 Pro", "Unassigned"]);
+    expect(tabs.map((t) => t.label)).toEqual(["All", "Chen", "Jesse Apple Watch", "iPhone 15 Pro", "Not on a device"]);
     expect(tabs.map((t) => t.kind)).toEqual(["all", "watch", "watch", "iphone", "library"]);
   });
 
@@ -247,7 +247,7 @@ describe("pickerSections", () => {
 
   it("carries the heading each section wears", () => {
     const shelved = pickerSections(rows, [...devices, shelf]).at(-1);
-    expect(shelved?.label).toBe("Unassigned");
+    expect(shelved?.label).toBe("Not on a device");
     expect(shelved?.kind).toBe("library");
     expect(shelved?.rows.map((r) => r.name)).toEqual(["Draft"]);
   });
@@ -317,7 +317,7 @@ describe("rowWhoText", () => {
   // On nothing and unassigned are both "on no device", and they are not the
   // same news: one is a design waiting on the shelf.
   it("names the library when that is the only place a design is", () => {
-    expect(rowWhoText([LIBRARY_OWNER_ID], people)).toBe("Unassigned, on no device");
+    expect(rowWhoText([LIBRARY_OWNER_ID], people)).toBe("Not on a device");
   });
 
   // The library is not somebody's, so it is never printed beside a person. A

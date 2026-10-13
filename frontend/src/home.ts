@@ -143,8 +143,10 @@ export type DeviceSheetTab =
  * The device sheet's tabs, each opening its page on this device. A watch has
  * its complications, then every watch screen that belongs to one watch, then
  * Settings; HTTP actions and Cameras are the home's, not a watch's, so they
- * stay on Home's Watch app card. An iPhone has its widgets and its Control
- * Center controls, which is all the panel holds for a phone.
+ * stay on Home's Watch app card. A watch's Control Center screen is retired
+ * (its tiles are complication controls now) and left out. An iPhone has its
+ * widgets and its Control Center controls, which is all the panel holds for
+ * a phone.
  */
 export function deviceSheetTabs(kind: "watch" | "iphone"): DeviceSheetTab[] {
   if (kind === "iphone") {
@@ -154,7 +156,7 @@ export function deviceSheetTabs(kind: "watch" | "iphone"): DeviceSheetTab[] {
     ];
   }
   const tabs: DeviceSheetTab[] = [{ kind: "list", label: "Complications", filter: "all" }];
-  for (const screen of [...WATCH_SCREENS.filter((s) => s.shared !== true), WATCH_SETTINGS_SCREEN]) {
+  for (const screen of [...WATCH_SCREENS.filter((s) => s.shared !== true && s.retired !== true), WATCH_SETTINGS_SCREEN]) {
     const count = SCREEN_COUNTS[screen.id];
     tabs.push(count === undefined ? { kind: "screen", label: screen.label, screen } : { kind: "screen", label: screen.label, screen, count });
   }
@@ -163,7 +165,7 @@ export function deviceSheetTabs(kind: "watch" | "iphone"): DeviceSheetTab[] {
 
 /** The count tiles on a device's card on Home, each a door to that page on
  * this device: the sheet's tabs that carry a count. A watch has its
- * complications, then its pages, status pages and Control Center; an iPhone
+ * complications, then its pages and status pages; an iPhone
  * has its widgets and its Control Center controls. Settings, which counts
  * nothing, is the card's own door. */
 export function deviceCardTiles(kind: "watch" | "iphone"): DeviceSheetTab[] {
@@ -341,6 +343,9 @@ export const homeStyles = css`
   .home-head-text { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .home-head h1 { margin: 0; font-size: 30px; font-weight: 500; letter-spacing: -.02em; }
   .home-lead { margin: 0; font-size: 14px; color: var(--wa-muted); }
+  /* A person who is not an administrator sees only their own devices: one
+     quiet line under the lead says so. */
+  .home-scope { margin: 0; font-size: 12.5px; color: var(--wa-muted); }
   .home-head-acts { display: flex; flex-wrap: wrap; gap: 8px; }
   .home-title { margin: 0; font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-ink); }
   a.home-btn, button.home-btn {

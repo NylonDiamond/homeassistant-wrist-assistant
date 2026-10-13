@@ -111,10 +111,13 @@ import {
 } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "../watch-pages/save-note.js";
 import { resolveSmartPagesBeforeSave } from "../watch-pages/smart-model.js";
+import { friendlyError } from "../friendly-error.js";
+import { restoredText } from "../revision-words.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
 import type { SwitcherSettingsHost } from "../watch-pages/switcher-settings.js";
 import { scrubWatchOrphanTriggers } from "../watch-pages/tile-settings-model.js";
 import {
+  PAIR_FIRST_TEXT,
   START_FRESH_BUTTON,
   type NoRecordStart,
   deliveryState,
@@ -160,7 +163,6 @@ import {
   type MenusDocument,
   WATCH_MENUS_NO_RECORD_TEXT,
   WATCH_MENUS_NO_RECORD_TITLE,
-  WATCH_MENUS_PAIR_FIRST_TEXT,
   WATCH_MENUS_START_BUTTON,
   WATCH_MENUS_UPDATE_TEXT,
   asWatchMenusDocument,
@@ -1252,7 +1254,7 @@ export class WaMenuEditor extends LitElement {
     if (result.ok) {
       this.note = { kind: "ok", text: "Started with the defaults. The watch picks them up the next time it checks." };
     } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: `${WATCH_MENUS_PAIR_FIRST_TEXT} Go to Watch app, Settings, Pair a device.` };
+      this.note = { kind: "warn", text: PAIR_FIRST_TEXT };
       return;
     } else if (result.code === "conflict") {
       this.note = { kind: "warn", text: "Menus arrived meanwhile, so those are shown." };
@@ -1260,7 +1262,7 @@ export class WaMenuEditor extends LitElement {
       this.unsupported = true;
       return;
     } else {
-      this.note = { kind: "err", text: `Could not start: ${result.message}` };
+      this.note = { kind: "err", text: `Could not start: ${friendlyError(result)}` };
       return;
     }
     void this.load(watchId, true);
@@ -1297,7 +1299,7 @@ export class WaMenuEditor extends LitElement {
     let note: Note;
     try {
       const reply = await restoreWatchConfig(hass, watchId, "menus", ask.entry.revision, ask.baseRevision);
-      note = { kind: "ok", text: `Revision ${ask.entry.revision} is back.` };
+      note = { kind: "ok", text: restoredText(ask.entry.updated_at) };
       if (watchId === this.watchId) this.restartDraft = { watchId, revision: reply.revision };
       else if (!(keptWatchMenusDraft(watchId)?.dirty ?? false)) forgetWatchMenusDraft(watchId);
     } catch (err) {
@@ -1308,7 +1310,7 @@ export class WaMenuEditor extends LitElement {
       else if (code === "unknown_command") {
         this.historyState = "unsupported";
         note = { kind: "warn", text: "This version of the integration cannot restore menus. Update it to restore an earlier save." };
-      } else note = { kind: "err", text: `Could not restore: ${errText(err)}` };
+      } else note = { kind: "err", text: `Could not restore: ${friendlyError(err)}` };
     } finally {
       this.restoring = false;
       if (this.restoreAsk === ask) this.closeAsk();
@@ -1618,7 +1620,7 @@ export class WaMenuEditor extends LitElement {
   private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
     if (watches.length === 0) {
       const waiting = this.owners.length === 0 && this.ownList === undefined;
-      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet."}</div>`;
+      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet. Pair one on the Home tab."}</div>`;
     }
     if (this.unsupported) return html`<div class="pe-empty"><b>${WATCH_MENUS_UPDATE_TEXT}</b></div>`;
     if (this.loading) return html`<div class="pe-empty">Loading…</div>`;

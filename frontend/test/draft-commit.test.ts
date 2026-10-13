@@ -76,3 +76,25 @@ describe("Draft commit", () => {
     expect(d.commit(1, d.encoded()).dirty).toBe(false);
   });
 });
+
+// The leave guards (the browser's "Leave site?", a Home Assistant link, a
+// move to another tab) ask only `dirty`. A design made with New is not on the
+// server at all, so the panel marks it dirty the moment it opens, and nothing
+// short of a save may make it read clean again.
+describe("a design that was never saved", () => {
+  it("reads unsaved before its first edit and after every edit is undone", () => {
+    const d = new Draft(newConfig("T", 0), null);
+    d.markDirty();
+    expect(d.dirty).toBe(true);
+    d.update((c) => { c.name = "Renamed"; });
+    d.undo();
+    expect(d.config.name).toBe("T");
+    expect(d.dirty).toBe(true);
+  });
+
+  it("reads clean once the save comes back", () => {
+    const d = new Draft(newConfig("T", 0), null);
+    d.markDirty();
+    expect(d.commit(1, d.encoded()).dirty).toBe(false);
+  });
+});

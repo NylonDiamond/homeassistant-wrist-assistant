@@ -296,7 +296,7 @@ describe("the cards on a home that is not the main house", () => {
   });
 
   it("say it in plain words, with no dash", () => {
-    expect(HOME_ROOMS_MAIN_HOUSE_TEXT).toBe("Double-Tap Top, Double Pinch and the point control switches come from your main house.");
+    expect(HOME_ROOMS_MAIN_HOUSE_TEXT).toBe("The double-tap on the page title, the double pinch and the point control switches come from this watch's main home.");
     for (const t of [HOME_ROOMS_MAIN_HOUSE_TEXT, HOME_ROOMS_NO_RECORD_TITLE, HOME_ROOMS_NO_RECORD_TEXT, HOME_ROOMS_START_BUTTON,
       HOME_ROOMS_START_CONFLICT_TEXT, HOME_ROOMS_STARTED_TEXT, HOME_ROOMS_UPDATE_TEXT, HOME_AUTO_SWITCH_LABEL]) {
       expect(t).not.toMatch(DASH);
@@ -387,7 +387,7 @@ describe("the rooms editor on a home that is not the main house", () => {
     expect(text).toContain(HOME_ROOMS_START_BUTTON);
     expect(text).toContain("pe-btn pe-primary");
     expect(text).not.toContain(ROOMS_NO_RECORD_TEXT);
-    expect(text).not.toContain("Start them under Watch app, Settings");
+    expect(text).not.toContain("Start them in Settings");
     expect(text).not.toContain(START_FRESH_BUTTON);
 
     await el.start();
@@ -470,7 +470,9 @@ describe("the rooms editor on the main house", () => {
       const text = flatten(el.renderBody(el.owners));
       expect(text).toContain(ROOMS_NO_RECORD_TEXT);
       expect(text).not.toContain(HOME_ROOMS_START_BUTTON);
-      expect(text).not.toContain("pe-btn");
+      // No Start of its own: the one button opens Settings, where it is.
+      expect(text.match(/pe-btn/g)).toHaveLength(1);
+      expect(text).toContain("rm-open-settings");
     }
     const ha = fakeHass({});
     const el = editor(ha.hass, owner("w1", { has_iphone: true }));

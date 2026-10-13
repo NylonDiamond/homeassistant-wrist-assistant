@@ -1,8 +1,11 @@
 // The Watch settings page's side panel: the groups it lists, the cards each
 // group shows, and the search that looks through every group at once. The
 // page shows one group at a time, so a person new to the app meets a short
-// list of settings instead of all of them. Nothing is hidden: every setting
-// is in one group, and the search finds any of them.
+// list of settings instead of all of them. Every setting the app still uses
+// is in one group, and the search finds any of them. The Wrist Webhooks card
+// is in none: the app hid that feature on 2026-09-28, so the card is never
+// drawn, though its keys stay in the notification style model and are kept
+// on save.
 //
 // A card is one catalog section (`watch-settings-catalog.json`), one of the
 // notification style's sections, or the pairing or client certificate card.
@@ -35,7 +38,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
   { id: "pages", title: "Pages", blurb: "Moving between pages, and what each page shows.", icon: "pages", color: SECTION_COLOR.numbers, cards: ["navigation"] },
   { id: "controls", title: "Controls", blurb: "How lights, locks and sliders look and respond.", icon: "radial", color: "var(--wa-hue-blue)", cards: ["controls"] },
   { id: "cameras", title: "Cameras", blurb: "Live video, and how often pictures update.", icon: "image", color: SECTION_COLOR.look, cards: ["camera"] },
-  { id: "notifications", title: "Notifications", blurb: "How alerts look on your wrist, and how fast they arrive.", icon: "note", color: SECTION_COLOR.position, cards: ["notifications", "wristWebhooks"] },
+  { id: "notifications", title: "Notifications", blurb: "How alerts look on your wrist, and how fast they arrive.", icon: "note", color: SECTION_COLOR.position, cards: ["notifications"] },
   { id: "sounds", title: "Sounds", blurb: "Volume, and the sound for each action.", icon: "states", color: "var(--wa-hue-purple)", cards: ["sounds"] },
   { id: "pairing", title: "Pairing and security", blurb: "Add a watch or iPhone, and a certificate for special setups.", icon: "lock", color: SECTION_COLOR.states, cards: ["pair", "cert"] },
 ];

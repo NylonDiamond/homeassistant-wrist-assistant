@@ -23,11 +23,10 @@ from pathlib import Path
 from homeassistant.components import frontend, panel_custom
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
+from .const import DOMAIN, PANEL_URL_PATH
 
 _LOGGER = logging.getLogger(__name__)
 
-PANEL_URL_PATH = "wrist-assistant"
 _STATIC_URL = f"/{DOMAIN}_static"
 _BUNDLE_NAME = "wrist-assistant-panel.js"
 _WEBCOMPONENT = "wrist-assistant-panel"

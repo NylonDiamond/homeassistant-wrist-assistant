@@ -990,11 +990,11 @@ function renderTileValue(host: TileSettingsHost, r: ReturnType<typeof watchHTTPR
     ${checkField("Show name", r.showName, (on) => commit(host, "httpShowName", (d) => setWatchTileHTTPShowName(d, ...P(), on)))}
     <div class="hint ts-under">Captions the value with the tile's name.</div>
     ${typingField(host, "httpFontSize", html`<div class="ts-with-link">
-      ${numberField("Text size", fontSize, setFontSize, { step: 1, min: R.fontSize.min, max: R.fontSize.max, optional: true, placeholder: "Auto", unit: "pt" })}
+      ${numberField("Text size", fontSize, setFontSize, { step: 1, min: R.fontSize.min, max: R.fontSize.max, optional: true, placeholder: "Auto", unit: "pt", rawTyping: true })}
       ${r.fontSize === undefined ? nothing : linkButton("Auto", "Let the watch size the value", () => commit(host, "httpFontSize", (d) => setWatchTileHTTPValueFontSize(d, ...P(), null)))}
     </div>`, r.fontSize)}
     ${typingField(host, "httpLines", html`<div class="ts-with-link">
-      ${numberField("Lines", lines, setLines, { step: 1, min: R.lineLimit.min, max: R.lineLimit.max, optional: true, placeholder: "Auto" })}
+      ${numberField("Lines", lines, setLines, { step: 1, min: R.lineLimit.min, max: R.lineLimit.max, optional: true, placeholder: "Auto", rawTyping: true })}
       ${r.lineLimit === undefined ? nothing : linkButton("Auto", "More lines on taller tiles", () => commit(host, "httpLines", (d) => setWatchTileHTTPValueLineLimit(d, ...P(), null)))}
     </div>`, r.lineLimit)}
     ${typingField(host, "httpLineSpacing", sliderField("Line spacing", r.lineSpacing, (v) =>
@@ -1171,7 +1171,7 @@ function renderIconSize(host: TileSettingsHost): TemplateResult {
     commit(host, "iconSize", (d) => setWatchTileIconSize(d, host.pageId, host.tileId, v), { typing: true, ...reasonOf(watchIconSizeRefusal(v, max)) });
   };
   return html`${typingField(host, "iconSize", html`<div class="ts-with-link">
-      ${numberField("Icon size", shown, set, { step: 1, min: WATCH_ICON_SIZE_RANGE.min, max: top, optional: true, placeholder: "Auto", unit: "pt" })}
+      ${numberField("Icon size", shown, set, { step: 1, min: WATCH_ICON_SIZE_RANGE.min, max: top, optional: true, placeholder: "Auto", unit: "pt", rawTyping: true })}
       ${s.iconSize === undefined ? nothing : linkButton("Auto", "Let the watch size the icon to the tile", () => commit(host, "iconSize", (d) => setWatchTileIconSize(d, host.pageId, host.tileId, null)))}
     </div>`, s.iconSize)}
     <div class="hint ts-under">${watchIconSizeHint(s.iconSizeMax)}</div>`;
@@ -1202,7 +1202,7 @@ function renderText(host: TileSettingsHost): TemplateResult {
   return html`
     ${checkField("Show label", t.showLabel, (on) => commit(host, "showLabel", (d) => setWatchTileShowLabel(d, host.pageId, host.tileId, on)))}
     ${typingField(host, "fontSize", html`<div class="ts-with-link">
-      ${numberField("Font size", fontSize, setFontSize, { step: 1, min: WATCH_FONT_SIZE_RANGE.min, max: WATCH_FONT_SIZE_RANGE.max, optional: true, placeholder: "Auto", unit: "pt" })}
+      ${numberField("Font size", fontSize, setFontSize, { step: 1, min: WATCH_FONT_SIZE_RANGE.min, max: WATCH_FONT_SIZE_RANGE.max, optional: true, placeholder: "Auto", unit: "pt", rawTyping: true })}
       ${t.fontSize === undefined ? nothing : linkButton("Auto", "Let the watch size the label to the tile", () => commit(host, "fontSize", (d) => setWatchTileFontSize(d, host.pageId, host.tileId, null)))}
     </div>`, t.fontSize)}
     <div class="hint ts-under">Leave empty for Auto, sized to the tile's width, or pick ${WATCH_FONT_SIZE_RANGE.min} to ${WATCH_FONT_SIZE_RANGE.max} pt.</div>
@@ -1365,7 +1365,7 @@ function renderHeader(host: TileSettingsHost): TemplateResult {
         ${typingField(host, "headerLabel", textField("Label", label, (v) =>
           commit(host, "headerLabel", (d) => setWatchHeaderLabel(d, host.pageId, host.tileId, v), { typing: true }), { placeholder: h.domain === "custom" || h.domain === "" ? "Header" : h.domain }))}
         ${typingField(host, "headerTextSize", html`<div class="ts-with-link">
-          ${numberField("Text size", textSize, setTextSize, { step: 1, min: WATCH_HEADER_TEXT_SIZE_RANGE.min, max: WATCH_HEADER_TEXT_SIZE_RANGE.max, optional: true, placeholder: `Auto`, unit: "pt" })}
+          ${numberField("Text size", textSize, setTextSize, { step: 1, min: WATCH_HEADER_TEXT_SIZE_RANGE.min, max: WATCH_HEADER_TEXT_SIZE_RANGE.max, optional: true, placeholder: `Auto`, unit: "pt", rawTyping: true })}
           ${h.textSize === undefined ? nothing : linkButton("Auto", `Back to ${WATCH_HEADER_TEXT_SIZE_RANGE.auto} pt`, () => commit(host, "headerTextSize", (d) => setWatchHeaderTextSize(d, host.pageId, host.tileId, null)))}
         </div>`, h.textSize)}
         <div class="hint ts-under">Empty is Auto (${WATCH_HEADER_TEXT_SIZE_RANGE.auto} pt). Or ${WATCH_HEADER_TEXT_SIZE_RANGE.min} to ${WATCH_HEADER_TEXT_SIZE_RANGE.max}.</div>`
@@ -1437,7 +1437,7 @@ function autoSizeRow(host: TileSettingsHost, setting: string, label: string, sli
       ...(v === undefined ? {} : reasonOf(watchWholeRefusal(v, spec.min, spec.max))),
     });
   return html`${typingField(host, setting, html`<div class="ts-with-link">
-      ${numberField(label, shown, write, { step: 1, min: spec.min, max: spec.max, optional: true, placeholder: `Auto (${spec.auto ?? ""})`, unit: "pt" })}
+      ${numberField(label, shown, write, { step: 1, min: spec.min, max: spec.max, optional: true, placeholder: `Auto (${spec.auto ?? ""})`, unit: "pt", rawTyping: true })}
       ${value === undefined ? nothing : linkButton("Auto", "Let the watch size it", () => commit(host, setting, (d) => set(d, host.pageId, host.tileId, null)))}
     </div>`, value)}`;
 }

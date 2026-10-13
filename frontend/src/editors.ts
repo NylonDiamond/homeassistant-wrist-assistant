@@ -851,15 +851,38 @@ interface NumberInputOptions {
   /** A small glyph inside the box before the number, such as the link that
    * says a part's size still follows the layer. */
   lead?: TemplateResult;
-  /** On commit (Enter or leaving the box), a number outside `min...max` is
-   * clamped into it, written, and shown in the box. While typing, `set`
-   * gets every number as before. */
-  clampOnCommit?: boolean;
+  /** Every typed number reaches `set`, in range or not, and nothing is
+   * clamped on commit. For a setting that checks typed text itself and says
+   * what is wrong with it, as the watch pages' typing fields do. */
+  rawTyping?: boolean;
+}
+
+/**
+ * What one keystroke in a number box writes: a number, `undefined` for an
+ * optional box typed empty, or `null` to write nothing yet.
+ *
+ * A number outside `min...max` is held back while typing. Typing 12 into a box
+ * whose least is 4 passes through 1 on the way, and writing that 1 got it
+ * clamped to 4 and drawn back into the box under the caret, so the 12 could
+ * never be typed (issue #29). The number is clamped once the box is committed
+ * instead, by `commitClamped`. With `rawTyping` every number goes through.
+ */
+export function typedNumber(text: string, opts: Pick<NumberInputOptions, "min" | "max" | "optional" | "rawTyping">): number | undefined | null {
+  if (text.trim() === "") return opts.optional === true ? undefined : null;
+  const n = Number(text);
+  if (!Number.isFinite(n)) return null;
+  if (opts.rawTyping === true) return n;
+  if (opts.min !== undefined && n < opts.min) return null;
+  if (opts.max !== undefined && n > opts.max) return null;
+  return n;
 }
 
 /** The box's committed text clamped into `min...max`, written through `set`
  * and put back in the box; nothing for an empty box, a non-number, or a
- * number already in range (the input event wrote that one). */
+ * number already in range (the input event wrote that one). Every bounded
+ * box runs this on commit (Enter or leaving the box), because `typedNumber`
+ * held the out of range number back while it was being typed. A `rawTyping`
+ * box does not. */
 export function commitClamped(e: Pick<Event, "target">, set: (v: number | undefined) => void, opts: Pick<NumberInputOptions, "min" | "max">): void {
   const box = e.target as HTMLInputElement;
   if (box.value.trim() === "") return;
@@ -878,14 +901,10 @@ function numberInput(value: number | undefined, set: (v: number | undefined) => 
       aria-label=${opts.ariaLabel ?? nothing} placeholder=${opts.placeholder ?? nothing}
       data-scrub @pointerdown=${boxScrubber(value, set, opts)}
       @input=${onInput((v) => {
-        if (v.trim() === "") {
-          if (opts.optional) set(undefined);
-          return;
-        }
-        const n = Number(v);
-        if (!Number.isNaN(n)) set(n);
+        const n = typedNumber(v, opts);
+        if (n !== null) set(n);
       })}
-      @change=${opts.clampOnCommit === true ? (e: Event) => commitClamped(e, set, opts) : nothing} />`;
+      @change=${opts.rawTyping === true || (opts.min === undefined && opts.max === undefined) ? nothing : (e: Event) => commitClamped(e, set, opts)} />`;
   if (opts.unit === undefined && opts.lead === undefined) return input;
   return html`<span class=${opts.lead === undefined ? "num-box" : "num-box lead"} style=${`--wa-unit:${opts.unit?.length ?? 0}`}>${opts.lead === undefined
     ? nothing
@@ -1032,7 +1051,7 @@ export function sliderField(
       ${opts.range === false ? nothing : html`<input type="range" min=${opts.min} max=${opts.max} step=${opts.step} .value=${String(value)} aria-label=${label}
         style=${rangeFill(value, opts.min, opts.max)}
         @input=${onInput((v) => { const n = Number(v); if (!Number.isNaN(n)) set(n); })} />`}
-      ${numberInput(value, typed, { step: opts.step, min: opts.min, max: opts.max, ariaLabel: label, clampOnCommit: true, ...(opts.unit === undefined ? {} : { unit: opts.unit }) })}
+      ${numberInput(value, typed, { step: opts.step, min: opts.min, max: opts.max, ariaLabel: label, ...(opts.unit === undefined ? {} : { unit: opts.unit }) })}
     </div></div>`;
 }
 
@@ -6584,7 +6603,8 @@ function frameLetterField(letter: string, name: string, value: number, set: (v: 
       @pointerdown=${scrubber(pct, setPct, { step: 0.5, min, max })}>${letter}</span>
     <input type="number" step="0.5" min=${min} max=${max} .value=${String(pct)} aria-label=${`${name} in percent`}
       data-scrub @pointerdown=${boxScrubber(pct, setPct, { step: 0.5, min, max })}
-      @input=${onInput((v) => { const n = Number(v); if (v.trim() !== "" && Number.isFinite(n)) setPct(n); })} />
+      @input=${onInput((v) => { const n = typedNumber(v, { min, max }); if (typeof n === "number") setPct(n); })}
+      @change=${(e: Event) => commitClamped(e, (n) => { if (n !== undefined) setPct(n); }, { min, max })} />
     <span class="unit" aria-hidden="true">%</span>
   </label>`;
 }
@@ -10886,7 +10906,7 @@ function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange)
     // layer's own Opacity row shows it.
     if (ch.kind === "setOpacity") {
       body = numberField("Opacity", fractionToPercent(ch.number ?? 0), (n) => upd((c) => { c.number = percentToFraction(n ?? 0); }, "number"),
-        { step: 5, min: 0, max: 100, unit: "%", clampOnCommit: true });
+        { step: 5, min: 0, max: 100, unit: "%" });
     } else {
       const opts = ch.kind === "setRotation" ? { step: 1, unit: "°" }
         : ch.kind === "setFontSize" || ch.kind === "setBorderWidth" ? { step: 0.5, min: 0, unit: "pt" }

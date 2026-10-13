@@ -40,7 +40,7 @@ import { uiIcon } from "../ui-icons.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { deviceKindOf } from "../version.js";
-import { COLLECTED_PILL_TEXT, WAITING_PILL_TEXT, settingsWatches, watchName } from "../watch-settings.js";
+import { COLLECTED_PILL_TEXT, WAITING_HELP_TEXT, WAITING_PILL_TEXT, settingsWatches, watchName } from "../watch-settings.js";
 import {
   type HttpActionsDraft,
   dropHttpActionsDraft,
@@ -600,7 +600,7 @@ export class WaHttpActionsEditor extends LitElement {
     if (record === undefined || record.revision <= 0 || this.unsupported) return nothing;
     const { collected, waiting } = httpActionsDelivery(record, this.watches);
     if (collected.length === 0 && waiting.length === 0) return nothing;
-    const title = [waiting.length > 0 ? `Waiting: ${waiting.join(", ")}.` : "", collected.length > 0 ? `Synced: ${collected.join(", ")}.` : ""].filter((s) => s !== "").join(" ");
+    const title = [waiting.length > 0 ? `Waiting: ${waiting.join(", ")}. ${WAITING_HELP_TEXT}` : "", collected.length > 0 ? `Synced: ${collected.join(", ")}.` : ""].filter((s) => s !== "").join(" ");
     return html`<span class="tb-sync ${waiting.length === 0 ? "ok" : "warn"}" title=${title}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${waiting.length === 0 ? COLLECTED_PILL_TEXT : WAITING_PILL_TEXT}</span>
     </span>`;
@@ -667,14 +667,17 @@ export class WaHttpActionsEditor extends LitElement {
   private renderFoot(record: HttpActionsRecord, draft: HttpActionsDraft): TemplateResult {
     const budget = httpActionsBudget(draft.document);
     const when = ago(record.updated_at);
+    // Who saved and when, in plain words; the revision number is only in
+    // the tooltip.
+    const by = httpActionsSavedBy(record, this.allOwners);
     const stored = record.revision <= 0
       ? "Not saved yet. The first save makes the library."
-      : `Revision ${record.revision} · ${httpActionsSavedBy(record, this.allOwners)}${when ? ` ${when}` : ""}`;
+      : by === "saved here" ? `Saved here${when ? ` ${when}` : ""}` : `${by.charAt(0).toUpperCase()}${by.slice(1)}${when ? ` ${when}` : ""}`;
     const { waiting } = httpActionsDelivery(record, this.watches);
     return html`<div class="ha-foot" role="status">
       <i class="ha-foot-dot ${record.revision <= 0 ? "" : waiting.length === 0 ? "ok" : "warn"}" aria-hidden="true"></i>
-      <span>${stored}</span>
-      ${waiting.length === 0 ? nothing : html`<span class="pe-muted">Waiting for ${waiting.join(", ")}.</span>`}
+      <span title=${record.revision <= 0 ? nothing : `Revision ${record.revision}`}>${stored}</span>
+      ${waiting.length === 0 ? nothing : html`<span class="pe-muted">Waiting for ${waiting.join(", ")}. ${WAITING_HELP_TEXT}</span>`}
       <span class="spacer"></span>
       <span class="pe-muted ${budget.near ? "ha-near" : ""}">${kb(budget.size)} of ${kb(budget.limit)}</span>
     </div>`;

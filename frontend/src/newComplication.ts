@@ -134,7 +134,7 @@ export function newSummary(o: NewChoice): string {
   const what = o.kind === "control"
     ? "A Control Center control"
     : `${familyTitle(o.family!)} on ${o.kind === "watch" ? "a watch" : "an iPhone"}`;
-  if (o.devices === 0) return `${what}, unassigned. Tick a device any time.`;
+  if (o.devices === 0) return `${what}, not on a device yet. Tick a device any time.`;
   return `${what}, on ${o.devices} ${o.devices === 1 ? "device" : "devices"}`;
 }
 
@@ -175,4 +175,25 @@ export function newRecords(
     label: owner.label,
     slotIndex: freeSlot(owner.ownerId, family),
   }));
+}
+
+/**
+ * The device step 4 ticks on its own, or undefined to leave Unassigned on.
+ *
+ * Only when the home offers exactly one device for this design and it has a
+ * seat free. Unassigned as the resting answer made sense with several devices
+ * to choose from, but in a home with one watch it meant nearly every new
+ * design was made on no device, saved, and never reached the wrist. With one
+ * device there is no choice for the tick to make on the author's behalf, and
+ * it can still be unticked. A full device is never ticked, the same rule its
+ * row follows.
+ */
+export function soleDeviceTick(
+  offered: readonly DeviceOwner[],
+  family: FamilyKind | undefined,
+  freeSlot: (ownerId: string, family: FamilyKind | undefined) => number,
+): string | undefined {
+  if (offered.length !== 1) return undefined;
+  const only = offered[0]!;
+  return freeSlot(only.ownerId, family) >= 0 ? only.ownerId : undefined;
 }

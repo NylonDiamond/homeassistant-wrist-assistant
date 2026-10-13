@@ -571,8 +571,6 @@ export const WATCH_VOICE_NO_RECORD_TEXT = "Start with the defaults to begin.";
 
 export const WATCH_VOICE_START_BUTTON = "Start with the defaults";
 
-export const WATCH_VOICE_PAIR_FIRST_TEXT = "Pair this watch first.";
-
 export const WATCH_VOICE_UPDATE_TEXT = "Update the integration to edit voice settings here.";
 
 /** The Watch voice picker's line when the watch has sent no voices. */

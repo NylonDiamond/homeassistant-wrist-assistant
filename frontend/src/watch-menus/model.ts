@@ -1124,8 +1124,6 @@ export const WATCH_MENUS_NO_RECORD_TEXT = "Start with the defaults to begin.";
 
 export const WATCH_MENUS_START_BUTTON = "Start with the defaults";
 
-export const WATCH_MENUS_PAIR_FIRST_TEXT = "Pair this watch first.";
-
 export const WATCH_MENUS_UPDATE_TEXT = "Update the integration to edit menus here.";
 
 /** Whether a failed read of the menus means this integration does not keep

@@ -18,6 +18,7 @@ import {
   CONTROL_CENTER_NO_RECORD_TITLE,
   CONTROL_CENTER_START_EMPTY_BUTTON,
 } from "../src/watch-control-center/model.js";
+import { CONTROL_CENTER_MOVED_LINK, CONTROL_CENTER_MOVED_TITLE } from "../src/watch-control-center/view.js";
 import { HTTP_ACTIONS_PHONE_TEXT } from "../src/watch-http-actions/model.js";
 import { WaMenuEditor } from "../src/watch-menus/menu-editor.js";
 import { WATCH_MENUS_NO_RECORD_TEXT, WATCH_MENUS_START_BUTTON } from "../src/watch-menus/model.js";
@@ -139,7 +140,7 @@ describe("the no-record words", () => {
     ]) {
       expect(text).toBe(`${button} to begin.`);
     }
-    expect(ROOMS_NO_RECORD_TEXT).toBe("Rooms are part of the watch's settings. Start them under Watch app, Settings.");
+    expect(ROOMS_NO_RECORD_TEXT).toBe("Rooms are part of the watch's settings. Start them in Settings.");
     expect(ROOMS_WAIT_TEXT).toBe(`Rooms are part of the watch's settings. ${WAIT_FOR_IPHONE_TEXT}`);
     expect(HTTP_ACTIONS_PHONE_TEXT).toBe("Update Wrist Assistant on your iPhone and open it once. Its HTTP actions move here by themselves.");
   });
@@ -169,8 +170,23 @@ const editors: { name: string; make: () => EditorInside; kind: string; startButt
   { name: "menus", make: () => new WaMenuEditor() as unknown as EditorInside, kind: "menus", startButton: WATCH_MENUS_START_BUTTON },
   { name: "voice", make: () => new WaVoiceEditor() as unknown as EditorInside, kind: "voice", startButton: WATCH_VOICE_START_BUTTON },
   { name: "status pages", make: () => new WaStatusPagesEditor() as unknown as EditorInside, kind: "status_pages", startButton: STATUS_PAGES_START_BUTTON },
-  { name: "Control Center", make: () => new WaControlCenterEditor() as unknown as EditorInside, kind: "control_center", startButton: CONTROL_CENTER_START_EMPTY_BUTTON },
 ];
+
+describe("the Control Center editor with no record", () => {
+  it("shows the moved note and never offers a fresh list, iPhone or not", () => {
+    for (const extra of [{ has_iphone: false }, {}, { has_iphone: true }]) {
+      const el = new WaControlCenterEditor() as unknown as EditorInside;
+      el.watchId = "w1";
+      el.record = empty("control_center");
+      const text = flatten(el.renderBody([owner("w1", extra)]));
+      expect(text).toContain(CONTROL_CENTER_MOVED_TITLE);
+      expect(text).toContain(CONTROL_CENTER_MOVED_LINK);
+      expect(text).not.toContain(CONTROL_CENTER_START_EMPTY_BUTTON);
+      expect(text).not.toContain(START_FRESH_BUTTON);
+      expect(text).not.toContain(WAIT_FOR_IPHONE_TEXT);
+    }
+  });
+});
 
 describe.each(editors)("the $name editor with no record", ({ make, kind, startButton }) => {
   const body = (extra: Partial<OwnerSummary>) => {
@@ -211,9 +227,13 @@ describe("the rooms editor with no record", () => {
   it("points at Watch settings' start without an iPhone, and waits with one", () => {
     expect(body({ has_iphone: false })).toContain(ROOMS_NO_RECORD_TEXT);
     expect(body({})).toContain(ROOMS_NO_RECORD_TEXT);
+    // A button goes to Settings, where the start is.
+    expect(body({})).toContain("rm-open-settings");
+    expect(body({})).toContain(">Open Settings</button>");
     const waiting = body({ has_iphone: true });
     expect(waiting).toContain(ROOMS_WAIT_TEXT);
     expect(waiting).not.toContain(ROOMS_NO_RECORD_TEXT);
+    expect(waiting).not.toContain("Open Settings");
   });
 });
 

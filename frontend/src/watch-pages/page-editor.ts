@@ -228,6 +228,8 @@ import { addWatchTile, watchAddRefusal, watchAddThemeOf, watchKindColor } from "
 import { renderWatchClock, watchPreviewLayout, watchTileCornerRadius } from "./preview.js";
 import { renderWatchFrame, watchFrameStyles } from "../watch-frame.js";
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
+import { friendlyError } from "../friendly-error.js";
+import { restoredText } from "../revision-words.js";
 import {
   forgetTileSettingsNotes,
   renderTileName,
@@ -2983,7 +2985,7 @@ export class WaPageEditor extends LitElement {
       const reply = await restoreWatchConfig(hass, watchId, "pages", ask.entry.revision, ask.baseRevision);
       note = {
         kind: "ok",
-        text: `Revision ${ask.entry.revision} is back. The watch picks it up the next time it checks.`,
+        text: `${restoredText(ask.entry.updated_at)} The watch picks it up the next time it checks.`,
       };
       if (watchId === this.watchId) {
         this.restartDraft = { watchId, revision: reply.revision };
@@ -3004,7 +3006,7 @@ export class WaPageEditor extends LitElement {
         this.historyState = "unsupported";
         note = { kind: "warn", text: "This version of the integration cannot restore pages. Update it to restore an earlier save." };
       } else {
-        note = { kind: "err", text: `Could not restore: ${errText(err)}` };
+        note = { kind: "err", text: `Could not restore: ${friendlyError(err)}` };
       }
     } finally {
       this.restoring = false;
@@ -3042,7 +3044,7 @@ export class WaPageEditor extends LitElement {
     } else if (result.code === "conflict") {
       this.note = { kind: "warn", text: PAGES_START_CONFLICT_TEXT };
     } else {
-      this.note = { kind: "err", text: `Could not start: ${result.message}` };
+      this.note = { kind: "err", text: `Could not start: ${friendlyError(result)}` };
       return;
     }
     void this.load(watchId, true);
@@ -3282,7 +3284,7 @@ export class WaPageEditor extends LitElement {
   private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
     if (watches.length === 0) {
       const waiting = this.owners.length === 0 && this.ownList === undefined;
-      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet."}</div>`;
+      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet. Pair one on the Home tab."}</div>`;
     }
     if (this.loading) return html`<div class="pe-empty">Loading…</div>`;
     if (this.loadError !== undefined) {

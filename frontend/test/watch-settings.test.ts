@@ -23,7 +23,9 @@ import {
   SETTINGS_START_CONFLICT_TEXT,
   WAITING_HELP_TEXT,
   WAITING_PILL_TEXT,
+  WAITING_TEXT,
   WATCH_SETTINGS_CATALOG,
+  savedLine,
   buildSaveDocument,
   catalogSettings,
   TWIST_LEVELS,
@@ -443,7 +445,7 @@ describe("a watch with nothing in Home Assistant yet", () => {
     expect(SETTINGS_NO_RECORD_TEXT).toBe("Start with the defaults to begin.");
     expect(PAGES_START_BUTTON).toBe("Start with an empty page");
     expect(SETTINGS_START_BUTTON).toBe("Start with the defaults");
-    expect(PAIR_FIRST_TEXT).toBe("Pair this watch first. Go to Watch app, Settings, Pair a device.");
+    expect(PAIR_FIRST_TEXT).toBe("Pair this watch first: on the Home tab, choose Pair a device.");
     expect(SETTINGS_PAIR_FIRST_TEXT).toBe("Pair this watch first, under Pair a device on this page.");
     expect(PAGES_START_CONFLICT_TEXT).toBe("Pages for this watch arrived meanwhile, so those are shown.");
     expect(SETTINGS_START_CONFLICT_TEXT).toBe("Settings for this watch arrived meanwhile, so those are shown.");
@@ -458,9 +460,13 @@ describe("a watch with nothing in Home Assistant yet", () => {
     expect(savedByWords("panel")).toBe("saved here");
     expect(savedByWords("W1")).toBe("from the watch");
     expect(savedByWords(null)).toBe("from the watch");
-    expect(WAITING_PILL_TEXT).toBe("Waiting to be collected");
+    expect(savedLine("panel", "3 min ago")).toBe("Saved here 3 min ago");
+    expect(savedLine("W1", "just now")).toBe("Saved from the watch just now");
+    expect(savedLine("panel", "")).toBe("Saved here");
+    expect(WAITING_PILL_TEXT).toBe("Waiting for the watch");
     expect(COLLECTED_PILL_TEXT).toBe("Synced");
-    expect(WAITING_HELP_TEXT).toBe("The watch picks it up the next time it checks.");
+    expect(WAITING_HELP_TEXT).toBe("Open Wrist Assistant on the watch to get it.");
+    expect(WAITING_TEXT).toBe("Waiting. Open Wrist Assistant on the watch to get it.");
     // The iPhone passes nothing to the watch any more.
     expect(WAITING_HELP_TEXT).not.toMatch(/iPhone/);
   });
@@ -821,7 +827,7 @@ describe("the main house", () => {
   });
 
   it("says where to change them, in plain words", () => {
-    expect(SETTINGS_MAIN_HOUSE_TEXT).toBe("This watch takes its settings from your main house. Change them there.");
+    expect(SETTINGS_MAIN_HOUSE_TEXT).toBe("This watch takes its settings from its main home. Change them there.");
     expect(SETTINGS_MAIN_HOUSE_TEXT).not.toMatch(/ \x2d |\u2013|\u2014/);
   });
 });
@@ -886,7 +892,7 @@ describe("Switch house", () => {
   it("is offered on both gestures under the watch's value, and says it needs two homes", () => {
     for (const key of ["topSectionDoubleTapAction", "handGestureAction"]) {
       const s = setting(key);
-      expect(s.options!.find((o) => o.value === "Switch Instance")?.label, key).toBe("Switch house");
+      expect(s.options!.find((o) => o.value === "Switch Instance")?.label, key).toBe("Switch home");
       expect(s.help, key).toContain("two or more homes");
     }
   });

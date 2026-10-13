@@ -111,11 +111,18 @@ describe("the row's watches", () => {
 });
 
 describe("the row's screen links", () => {
-  it("walks the eight screens in Home's order, each on the shared watch but HTTP actions and Cameras, the one on show marked", () => {
+  it("walks the seven screens in Home's order, each on the shared watch but HTTP actions and Cameras, the one on show marked", () => {
     const links = watchRowLinks(route("/status-pages/w1"), "w2");
-    expect(links.map((l) => l.screen.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "HTTP actions", "Cameras"]);
-    expect(links.map((l) => l.path)).toEqual(["/pages/w2", "/menus/w2", "/status-pages/w2", "/control-center/w2", "/rooms/w2", "/voice/w2", "/http-actions", "/cameras"]);
+    expect(links.map((l) => l.screen.label)).toEqual(["Pages", "Menus", "Status pages", "Rooms", "Voice", "HTTP actions", "Cameras"]);
+    expect(links.map((l) => l.path)).toEqual(["/pages/w2", "/menus/w2", "/status-pages/w2", "/rooms/w2", "/voice/w2", "/http-actions", "/cameras"]);
     expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["status-pages"]);
+  });
+
+  it("leaves the retired Control Center out, unless an old link has it on show", () => {
+    expect(watchRowLinks(route("/pages/w1"), "w1").map((l) => l.screen.id)).not.toContain("control-center");
+    const links = watchRowLinks(route("/control-center/w1"), "w1");
+    expect(links.map((l) => l.screen.id)).toContain("control-center");
+    expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["control-center"]);
   });
 
   it("marks HTTP actions on its own address, and keeps the shared watch on every other link from there", () => {
@@ -138,9 +145,10 @@ describe("the row's screen links", () => {
 });
 
 describe("the row as drawn", () => {
-  it("puts the watch first, then the eight screens and Settings, Menus marked as on show", () => {
+  it("puts the watch first, then the seven screens and Settings, Menus marked as on show", () => {
     const { text } = row();
-    const order = [`class="wa-wr-picker"`, ">Pages</a>", ">Menus</a>", ">Status pages</a>", ">Control Center</a>", ">Rooms</a>", ">Voice</a>", ">HTTP actions</a>", ">Cameras</a>", ">Settings</a>"];
+    expect(text).not.toContain(">Control Center</a>");
+    const order = [`class="wa-wr-picker"`, ">Pages</a>", ">Menus</a>", ">Status pages</a>", ">Rooms</a>", ">Voice</a>", ">HTTP actions</a>", ">Cameras</a>", ">Settings</a>"];
     const places = order.map((part) => text.indexOf(part));
     for (const [i, at] of places.entries()) expect(at, order[i]).toBeGreaterThan(-1);
     expect([...places].sort((a, b) => a - b)).toEqual(places);
@@ -168,7 +176,7 @@ describe("the row as drawn", () => {
 
   it("sends a pick, a screen, Settings and the menu's toggle to the panel, Settings as a page on the shared watch", () => {
     const shut = row();
-    const [toggle, pages, , statusPages, , , , httpActions, cameras, settings] = handlers(shut.tpl, "@click");
+    const [toggle, pages, , statusPages, , , httpActions, cameras, settings] = handlers(shut.tpl, "@click");
     toggle!(click);
     pages!(click);
     statusPages!(click);

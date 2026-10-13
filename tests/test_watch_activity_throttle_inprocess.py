@@ -196,7 +196,12 @@ def _load_sensor():
     pkg.__path__ = []
     sys.modules["wa_sensor_pkg"] = pkg
     _stub("wa_sensor_pkg.api", DeltaCoordinator=_Coordinator, MAX_EVENTS_BUFFER=5000)
-    _stub("wa_sensor_pkg.const", DOMAIN="wrist_assistant", WristAssistantConfigEntry=object)
+    _stub(
+        "wa_sensor_pkg.const",
+        DOMAIN="wrist_assistant",
+        PANEL_CONFIGURATION_URL="homeassistant://wrist-assistant",
+        WristAssistantConfigEntry=object,
+    )
     _stub("wa_sensor_pkg.notifications", NotificationTokenStore=object)
     _stub(
         "wa_sensor_pkg.widget_secret_store",

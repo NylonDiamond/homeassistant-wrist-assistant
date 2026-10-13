@@ -54,7 +54,7 @@ import {
   roomFromState,
   wrapHeading,
 } from "../src/watch-rooms/rules.js";
-import { type RoomsViewHost, headingAt, renderRoomsBody, sensorReading } from "../src/watch-rooms/view.js";
+import { type RoomsViewHost, BERMUDA_URL, headingAt, renderRoomsBody, sensorReading } from "../src/watch-rooms/view.js";
 
 const flat = (v: unknown): string => {
   if (Array.isArray(v)) return v.map(flat).join("");
@@ -603,6 +603,14 @@ describe("the cards", () => {
     expect(text).toContain("Tap to Toggle");
     expect(text).toContain("Live Point Control Tile");
     expect(text).toContain("Point control targets");
+  });
+
+  it("name the double-tap the way Watch settings does, and link Bermuda", () => {
+    const text = flat(renderRoomsBody(host(behavior({ roomQuickJumpSourceEntityId: "", roomAutoSwitchEnabled: false, topSectionDoubleTapAction: "Room Jump" }))));
+    expect(text).toContain("Double-tap the page title");
+    expect(text).not.toContain("Double-Tap Top");
+    expect(text).toContain(`<a href=${BERMUDA_URL}`);
+    expect(BERMUDA_URL).toBe("https://github.com/agittins/bermuda");
   });
 
   it("say so when the targets cannot be read", () => {
