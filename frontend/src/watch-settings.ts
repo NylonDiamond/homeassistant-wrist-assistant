@@ -613,6 +613,15 @@ export const PAGES_NO_RECORD_TEXT = "Start with an empty page to begin.";
  * watch yet and no iPhone will send any. */
 export const SETTINGS_NO_RECORD_TEXT = "Start with the defaults to begin.";
 
+/** The line over a watch screen while Home Assistant holds no record of its
+ * kind for the watch and no iPhone will send one. The screen opens ready, on
+ * an empty page or the defaults, and nothing is stored until the first Save.
+ * Until then the watch keeps what it has (`WatchConfigClient`, `.noRecord`). */
+export const NEW_WATCH_TEXT = "New watch. The watch keeps what it has until you save here. Your first Save replaces it.";
+
+/** Beside a greyed-out Save on a new watch's screen before any change. */
+export const NOTHING_TO_SAVE_TEXT = "Nothing to save yet. Make a change first.";
+
 /** The page editor's button that makes the first pages record. */
 export const PAGES_START_BUTTON = "Start with an empty page";
 
