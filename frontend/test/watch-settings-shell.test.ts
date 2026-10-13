@@ -762,11 +762,23 @@ describe("Home's Pair a device dialog card", () => {
     render(options?: { bare?: boolean }): unknown;
   };
 
-  it("opens on the QR code, already showing one for the administrator at the card", async () => {
+  /** The administrator says whose iPhone it is, which makes the code. */
+  const whose = async (card: Card, userId = "root") => {
+    await vi.waitFor(() => expect(card.offer.usersRead).toBe(true));
+    card.pickOfferUser(userId);
+    await vi.waitFor(() => expect(card.offer.open).toBeDefined());
+  };
+
+  it("opens on the QR code, and makes it only once the administrator says whose iPhone it is", async () => {
     const ha = fakeHass("w9");
     const card = new PairWatchCard(() => undefined) as unknown as Card;
     card.open(ha.hass, { mode: "qr", showQr: true });
-    await vi.waitFor(() => expect(card.offer.open).toBeDefined());
+    await vi.waitFor(() => expect(card.offer.usersRead).toBe(true));
+    // Nobody is picked yet, so no code a phone could scan for the wrong person.
+    expect(card.offer.userId).toBeUndefined();
+    expect(offers(ha.sent)).toHaveLength(0);
+    expect(flatten(card.render({ bare: true }))).toContain("Choose whose iPhone it is.");
+    await whose(card);
     expect(offers(ha.sent)).toHaveLength(1);
     expect("user_id" in offers(ha.sent)[0]!).toBe(false);
     expect(card.offer.userId).toBe("root");
@@ -782,7 +794,7 @@ describe("Home's Pair a device dialog card", () => {
     const ha = fakeHass("w9");
     const card = new PairWatchCard(() => undefined) as unknown as Card;
     card.open(ha.hass, { mode: "qr", showQr: true });
-    await vi.waitFor(() => expect(card.offer.open).toBeDefined());
+    await whose(card);
     card.pickOfferUser("chen");
     await vi.waitFor(() => expect(offers(ha.sent)).toHaveLength(2));
     expect(offers(ha.sent)[1]!.user_id).toBe("chen");
@@ -794,7 +806,7 @@ describe("Home's Pair a device dialog card", () => {
     const ha = fakeHass("w9");
     const card = new PairWatchCard(() => undefined) as unknown as Card & { qrMore: boolean };
     card.open(ha.hass, { mode: "qr", showQr: true });
-    await vi.waitFor(() => expect(card.offer.open).toBeDefined());
+    await whose(card);
     let shown = flatten(card.render({ bare: true }));
     expect(shown).toContain("More options");
     expect(shown).not.toContain("Replace an iPhone paired for someone else");
@@ -814,7 +826,7 @@ describe("Home's Pair a device dialog card", () => {
     const ha = fakeHass("w9");
     const card = new PairWatchCard(() => undefined) as unknown as Card & { focusCode: boolean };
     card.open(ha.hass, { mode: "qr", showQr: true });
-    await vi.waitFor(() => expect(card.offer.open).toBeDefined());
+    await whose(card);
     expect(card.focusCode).toBe(false);
     card.setMode("code");
     expect(card.focusCode).toBe(true);
@@ -861,12 +873,12 @@ describe("Home's Pair a device dialog card", () => {
     card.close();
   });
 
-  it("opens the QR code for an iPhone, made at once, and withdraws it on Back", async () => {
+  it("opens the QR code for an iPhone, made as soon as it is picked whose, and withdraws it on Back", async () => {
     const ha = fakeHass("w9");
     const card = new PairWatchCard(() => undefined) as unknown as Chooser;
     card.open(ha.hass, { mode: "choose" });
     card.choose("iphone");
-    await vi.waitFor(() => expect(card.offer.open).toBeDefined());
+    await whose(card);
     expect(card.subtitle).toBe("iPhone, by a QR code");
     expect(flatten(card.render({ bare: true }))).toContain("No camera? Type a code");
     card.backToChoice();
@@ -881,7 +893,7 @@ describe("Home's Pair a device dialog card", () => {
     const card = new PairWatchCard(() => undefined) as unknown as Chooser;
     card.open(ha.hass, { mode: "choose" });
     card.choose("iphone");
-    await vi.waitFor(() => expect(card.offer.open).toBeDefined());
+    await whose(card);
     card.choose("iphone", "code");
     expect(card.mode).toBe("code");
     expect(cancels(ha.sent)).toHaveLength(1);

@@ -206,9 +206,11 @@ export class PairWatchCard {
   private ticks = 0;
   /** An offer state question is out. */
   private polling = false;
-  /** Opened to show a QR code at once (Home's dialog): the QR mode makes its
-   * code without waiting for Show QR code, and starts on the person at the
-   * card rather than on nobody. */
+  /** Opened to show a QR code at once (Home's dialog and welcome): the QR
+   * mode makes its code without waiting for Show QR code, as soon as it knows
+   * whose iPhone it is. With more than one person to choose from, nobody is
+   * picked until the administrator picks, so a code scanned too early can
+   * never pair the iPhone to the wrong person. */
   private autoQr = false;
   /** The code box takes the cursor on its next drawing: the mode was just
    * switched to Type a code. */
@@ -362,13 +364,11 @@ export class PairWatchCard {
     this.update();
   }
 
-  /** Who the QR mode starts on: the menu's own default, else, when the card
-   * shows its code at once, the person at the card. */
+  /** Who the QR mode starts on: the menu's own default, which is the one
+   * person when there is only one, and nobody otherwise. */
   private startUser(users: readonly PairUserChoice[] | undefined): string | undefined {
     if (users === undefined) return undefined;
-    const picked = pairDefaultUser(users, null);
-    if (picked !== undefined || !this.autoQr) return picked;
-    return users.find((u) => u.id === this.hass?.user?.id)?.id;
+    return pairDefaultUser(users, null);
   }
 
   // ── Type a code ────────────────────────────────────────────────────────
