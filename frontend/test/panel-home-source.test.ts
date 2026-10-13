@@ -27,9 +27,11 @@ function between(text: string, from: string, to: string): string {
 }
 
 const home = method("  private renderHome() {");
-const card = method("  private renderHomeDevice(");
-const tile = method("  private renderHomeTile(");
+const status = method("  private renderHomeStatus(");
 const group = method("  private renderHomeGroup(");
+const row = method("  private renderHomeRow(");
+const detail = method("  private renderHomeDetail(");
+const open = method("  private openHomeDevice(ownerId: string, forget = false) {");
 
 describe("Home's page", () => {
   it("is the devices alone: no Watch app card, no complications card, no recent designs", () => {
@@ -40,109 +42,198 @@ describe("Home's page", () => {
     expect(SOURCE).not.toContain("private startRecent(");
   });
 
+  it("is a device browser: the side bar of devices, and the picked device beside it", () => {
+    expect(home).toContain(`<aside class="hb-side" aria-label="Devices">`);
+    expect(home).toContain("const pick = homePickOf(devices, this.homePick, (id) => this.ownerOf(id));");
+    expect(home).toContain("${this.renderHomeDetail(row, devices, groups, elapsed)}");
+    expect(home.indexOf("this.renderHomeStatus(")).toBeLessThan(home.indexOf("hb-pair"));
+    expect(home.indexOf("hb-pair")).toBeLessThan(home.indexOf("groups.map((g) => this.renderHomeGroup("));
+  });
+
   it("tells a person who is not an administrator that the list shows only their devices", () => {
-    expect(home).toContain(`\${this.hass?.user?.is_admin === false ? html\`<p class="home-scope">You see the devices paired to you. Ask an administrator if yours is missing.</p>\` : nothing}`);
-    expect(home.indexOf("home-scope")).toBeGreaterThan(home.indexOf("home-lead"));
+    expect(home).toContain(`const scope = this.hass?.user?.is_admin === false ? html\`<p class="home-scope">You see the devices paired to you. Ask an administrator if yours is missing.</p>\` : nothing;`);
+    expect(home).toContain("${lead}${scope}");
   });
 
   it("says Loading… while the devices load, so the pairing card never flashes up", () => {
     expect(home).toContain("const loading = !this.linkReady && this.owners.length === 0;");
-    expect(home.indexOf("${loading")).toBeLessThan(home.indexOf("}${add}"));
-  });
-});
-
-describe("Home's device cards", () => {
-  it("puts each name in a box of its own, so a long one ends in an ellipsis", () => {
-    expect(card).toContain(`<span class="home-device-label">\${d.name}</span>`);
+    expect(home.indexOf("${failed ? this.renderNotReady() : loading")).toBeLessThan(home.indexOf(": add}"));
   });
 
-  it("draws the device on its stage, a slot lit per thing it holds", () => {
-    expect(card).toContain(`d.kind === "watch" ? homeWatchArt(d.id, held, d.sync) : homePhoneArt(d.id, held, d.sync)`);
-    expect(card).toContain("const held = owner?.complication_count ?? 0;");
+  it("has no New complication button, only Pair a device", () => {
+    expect(home).not.toContain("openNewDialog");
+    expect(home).not.toContain("New complication");
+    expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<span>Pair a device</span>");
   });
 
   it("says in small print what the states cover: the watch app too", () => {
     expect(home).toContain(`<p class="home-small">\${HOME_SYNC_NOTE}</p>`);
-    expect(home).not.toContain("only.</p>");
   });
 
-  it("judges each watch on its watch app records too, for everyone, and says what a waiting card waits for", () => {
+  it("judges each watch on its watch app records too, for everyone", () => {
     expect(home).toContain("homeDeviceRows(this.homeDevices(), this.watchAppSyncs)");
     // Only the note under the lead reads the person's role; the devices are
     // judged the same for everyone.
-    expect(home.replace(/\$\{this\.hass\?\.user\?\.is_admin === false \? html`<p class="home-scope">[^`]*`/, "")).not.toContain("admin");
-    expect(card).toContain("const why = homeDeviceWhy(d, pending);");
-    expect(card).toContain(`<span class="home-device-why">\${why}</span>`);
-  });
-
-  it("says Not synced, in red, for a watch that could not use the last save", () => {
-    expect(card).toContain(`<li class="home-device \${d.sync} \${rejected ? "rejected" : ""}">`);
-    expect(card).toContain("<b>${homeDeviceLabel(d)}</b>");
-    expect(card).not.toContain("deviceSyncLabel(d.sync)");
-    const sheet = method("  private renderDeviceSheet(");
-    expect(sheet).toContain(`<div class="dev-state \${row.sync} \${rejected ? "rejected" : ""}">`);
-    expect(sheet).toContain("<b>${homeDeviceLabel(row)}</b>");
-    expect(sheet).toContain("const syncSub = rejected ? attentionText(row, undefined)");
-  });
-
-  it("has a count tile per page, each opening that page on this device", () => {
-    expect(card).toContain("deviceCardTiles(d.kind).map((t) => this.renderHomeTile(t, d, owner))");
-    expect(tile).toContain("this.pickPickerTab(d.id);");
-    expect(tile).toContain("this.pickerFilter = t.filter;");
-    expect(tile).toContain("if (this.draft) this.openPicker();");
-    expect(tile).toContain("const path = watchScreenPath(t.screen, d.id);");
-    expect(tile.indexOf("this.pickWatch(d.id);")).toBeLessThan(tile.indexOf("this.goTo(path);"));
-    const count = method("  private homeTileCount(");
-    expect(count).toContain("this.watchCounts.get(d.id)?.[t.count]");
-  });
-
-  it("says when it was last heard from and what it will pick up, and leaves Settings to the sheet", () => {
-    expect(card).toContain("const seen = seenWords(owner, elapsed);");
-    expect(card).toContain("const pending = pendingWords(owner);");
-    expect(card).not.toContain("WATCH_SETTINGS_SCREEN");
+    expect(home.replace(/const scope = this\.hass\?\.user\?\.is_admin === false \? html`<p class="home-scope">[^`]*`/, "")).not.toContain("admin");
   });
 });
 
-describe("Home's status row", () => {
-  const status = method("  private renderHomeStatus(");
-
-  it("sits above the people, only once there are devices", () => {
-    expect(home).toContain("${devices.length === 0 ? nothing : this.renderHomeStatus(devices, groups, elapsed)}${groups.map(");
+describe("Home's household state", () => {
+  it("sits at the top of the side bar, only once there are devices", () => {
+    expect(home.indexOf("if (failed || loading || devices.length === 0) {")).toBeLessThan(home.indexOf("this.renderHomeStatus(devices, groups, elapsed)"));
   });
 
-  it("counts the devices and names the one heard from last", () => {
+  it("counts the devices, draws them as a ring, and names the one heard from last", () => {
     expect(status).toContain("const totals = homeTotals(devices);");
+    expect(status).toContain("const ring = homeRing(totals, HOME_RING_LENGTH);");
+    expect(status).toContain("<b>${homeRingHead(totals)}</b>");
     expect(status).toContain("const last = lastSeenDevice(devices, (id) => this.ownerOf(id), elapsed);");
   });
 
-  it("lists every waiting device under Waiting to sync, lit amber, each opening its sheet", () => {
-    expect(status).toContain(`<h2 class="home-title">Waiting to sync</h2>`);
+  it("lists every waiting device under Waiting to sync, lit amber, each picking it", () => {
+    expect(status).toContain(`<h2 class="home-title">Waiting to sync \${waiting.length}</h2>`);
     // A watch that could not use the last save is listed too (`needsAttention`).
-    expect(status).toContain(`const waiting = devices.filter(needsAttention);`);
+    expect(status).toContain("const waiting = devices.filter(needsAttention);");
     expect(status).toContain("attentionText(d, pending)");
-    expect(status).toContain(`<section class="home-attn \${waiting.length > 0 ? "on" : ""}">`);
-    expect(status).toContain("@click=${() => this.openDeviceSheet(d.id)}>Open</button>");
+    expect(status).toContain(`<section class="hb-sum \${waiting.length > 0 ? "on" : ""}"`);
+    expect(status).toContain("@click=${() => this.openHomeDevice(d.id, gone)}");
     expect(status).toContain("Every device has your latest changes.");
   });
+});
 
-  it("puts New complication and Pair a device in the head, for everyone", () => {
-    expect(home).toContain("const acts = html`<div class=\"home-head-acts\">");
-    expect(home).toContain("this.goTo(COMPLICATIONS_PATH); this.openNewDialog();");
-    expect(home).toContain("?disabled=${full || this.ownerBusy}");
-  });
-
-  it("groups the cards by person, in that person's color, with their picture where Home Assistant has one", () => {
+describe("Home's device rows", () => {
+  it("groups the rows by person, in that person's color, with their picture where Home Assistant has one", () => {
     expect(home).toContain("const groups = homeGroups(this.people(), devices);");
     expect(group).toContain(`const color = personColorVar(g.index) ?? "var(--wa-hue-grey)";`);
     expect(group).toContain("<img src=${g.person.picture}");
+    expect(group).toContain("this.renderHomeRow(d, d.id === pick, elapsed)");
     expect(method("  private people(): Person[] {")).toContain("peopleOf(this.owners, this.haPersonsFor.persons)");
     expect(SOURCE).not.toContain("peopleOf(this.owners)");
   });
 
-  it("reads the counts from the same summary as the watch app's state", () => {
-    const load = method("  private async loadWatchAppSync(again: boolean) {");
-    expect(load).toContain("counts = summaryCounts(summary, watches);");
-    expect(load).toContain("this.watchCounts = counts;");
+  it("picks its device, saying what it holds and when it was heard from", () => {
+    expect(row).toContain(`aria-pressed=\${on ? "true" : "false"}`);
+    expect(row).toContain("@click=${() => this.openHomeDevice(d.id, gone)}");
+    expect(row).toContain("homeRowSub(d.kind, held, heard)");
+    expect(row).toContain("homeMiniArt(d.kind, held > 0)");
+  });
+
+  it("marks a watch that could not use the last save in red", () => {
+    expect(row).toContain(`const state = gone ? "" : rejected ? "rejected" : d.sync;`);
+    expect(row).toContain("homeDeviceLabel(d)");
+  });
+});
+
+describe("Home's picked device", () => {
+  it("draws the device on its stage with its own complications on its face", () => {
+    expect(detail).toContain("const face = gone ? undefined : this.homeFace(ownerId);");
+    expect(detail).toContain("homeWatchArt(`pick-${row.id}`, held, row.sync, face)");
+    expect(detail).toContain("const held = owner?.complication_count ?? 0;");
+    const face = method("  private homeFace(ownerId: string): HomeFace | undefined {");
+    expect(face).toContain("this.previewIsCurrent(preview, record)");
+    expect(face).toContain("this.cardPictures.urlFor(key, cardPreviewAddress(ownerId, record.id, record.revision))");
+    // Only as many pictures as the face has slots are asked for.
+    expect(face.indexOf("circles.length + corners.length >= 3")).toBeLessThan(face.indexOf("this.cardPictures.urlFor("));
+  });
+
+  it("slides a newly picked device in, unless the person asks for less motion", () => {
+    const slide = method("  private animateHomePick() {");
+    expect(slide).toContain(`(prefers-reduced-motion: reduce)`);
+    expect(slide).toContain("before === undefined || before === shown");
+    expect(detail).toContain("data-pick=${ownerId}");
+    expect(SOURCE).toContain(`if (tabOfRoute(this.route) === "home") this.animateHomePick();`);
+  });
+
+  it("steps to the device before and after it", () => {
+    expect(detail).toContain("const next = homeStep(devices, ownerId, dir);");
+    expect(detail).toContain(`aria-label="Previous device"`);
+    expect(detail).toContain(`aria-label="Next device"`);
+  });
+
+  it("says Not synced, in red, for a watch that could not use the last save", () => {
+    expect(detail).toContain(`const state = rejected ? "rejected" : row.sync;`);
+    expect(detail).toContain(`<div class="hb-state \${state}">`);
+    expect(detail).toContain("<b>${homeDeviceLabel(row)}</b>");
+    expect(detail).toContain("const syncSub = rejected ? attentionText(row, undefined)");
+  });
+
+  it("has a door for each of the device's pages, each opening it on this device", () => {
+    expect(detail).toContain("${deviceSheetTabs(row.kind).map(door)}");
+    expect(detail).toContain("const look = homeDoorLook(t, row.kind);");
+    expect(detail).toContain("const path = watchScreenPath(t.screen, ownerId);");
+    expect(detail.indexOf("this.pickWatch(ownerId);")).toBeLessThan(detail.indexOf("this.goTo(path);"));
+    expect(detail).toContain("this.pickerFilter = filter;");
+    expect(detail).toContain("this.pickPickerTab(ownerId);");
+    expect(detail).toContain("if (this.draft) this.openPicker();");
+    const count = method("  private homeTileCount(");
+    expect(count).toContain("this.watchCounts.get(d.id)?.[t.count]");
+  });
+
+  it("has no New complication button", () => {
+    expect(detail).not.toContain("openNewDialog");
+  });
+
+  it("reads a watch's counts when it is picked, when the summary has none, dropping a late reply", () => {
+    expect(open).toContain("void this.loadDeviceCounts(ownerId);");
+    const load = method("  private async loadDeviceCounts(ownerId: string) {");
+    expect(load).toContain("watchConfigCount(kind, record.document)");
+    expect(load).toContain("this.watchCounts.has(ownerId)");
+    expect(load).toContain("if (this.homePick !== ownerId) return;");
+  });
+
+  it("opens on its Remove step when asked, never with the browser's own confirm", () => {
+    expect(open).toContain("this.deviceForgetAsk = forget;");
+    expect(home).not.toContain("confirm(");
+    expect(detail).not.toContain("confirm(");
+  });
+
+  it("offers Remove to everyone, behind a second step", () => {
+    expect(detail).not.toContain("is_admin");
+    expect(detail).toContain("@click=${() => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); }}>Remove</button>");
+    expect(detail).toContain("@click=${() => void this.forgetDeviceNow(ownerId)}");
+    expect(detail).toContain("${this.deviceForgetAsk ? ask : gone ? goneNote : overview}");
+  });
+
+  it("renames the device through the integration, from a button on its bar, for everyone", () => {
+    expect(detail).not.toContain("mayRename");
+    expect(detail).toContain("${!this.deviceForgetAsk && !renaming && !gone");
+    expect(detail).toContain("@click=${() => this.startDeviceRename(ownerId)}>Rename</button>");
+    expect(detail).toContain("void this.renameDeviceNow(ownerId);");
+    expect(method("  private startDeviceRename(ownerId: string) {")).toContain(`".hb-detail input.dev-rename-in"`);
+    const save = method("  private async renameDeviceNow(ownerId: string) {");
+    expect(save).toContain("await renameDevice(this.hass, ownerId, name === \"\" ? null : name);");
+    expect(save).toContain("await this.loadOwners();");
+  });
+
+  it("lets Escape leave the name field", () => {
+    expect(detail).toContain(`if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); stopRename(); }`);
+  });
+
+  it("reads the devices and lists again after a Remove, picks the device heard from last, and another complications device when it was the open one", () => {
+    const forget = method("  private async forgetDeviceNow(ownerId: string) {");
+    expect(forget).toContain("await forgetDevice(this.hass, ownerId);");
+    expect(forget).toContain("if (this.ownerId === ownerId && this.draft?.dirty && !this.confirmDiscard()) return;");
+    expect(forget).toContain("this.homePick = undefined;");
+    expect(forget).toContain("this.ownerId = undefined;");
+    expect(forget).toContain("await this.loadOtherLists();");
+  });
+
+  it("offers only Remove for a device whose Home Assistant user was deleted", () => {
+    expect(row).toContain("const gone = userGone(owner);");
+    expect(row).toContain("this.openHomeDevice(d.id, gone)");
+    expect(detail).toContain("const gone = userGone(owner);");
+    const note = between(detail, "const goneNote = html`", "</div>`;");
+    expect(note).toContain("${USER_GONE_TEXT}.");
+    expect(detail).toContain("${!this.deviceForgetAsk && !renaming && !gone");
+  });
+});
+
+describe("coming back to Home", () => {
+  it("reads the other devices' lists again, so its count is current", () => {
+    const will = method("  protected override willUpdate(changed");
+    const back = between(will, `if (changed.has("route") && tabOfRoute(this.route) === "home"`, "}");
+    expect(back).toContain(`tabOfRoute(changed.get("route") as PanelRoute | undefined) !== "home"`);
+    expect(back).toContain("void this.loadOtherLists();");
   });
 
   it("reads the watch app records on the way into Home, and when the watches change", () => {
@@ -158,95 +249,17 @@ describe("Home's status row", () => {
     expect(load.indexOf("fetchWatchConfigSummary")).toBeLessThan(load.indexOf("readWatchAppSync((kind) => fetchWatchConfig(hass, id, kind))"));
     expect(load).toContain("if (run !== this.watchAppSyncRun) return;");
     expect(load).toContain("if (!again && key === this.watchAppSyncFor) return;");
-  });
-});
-
-describe("Home's device sheet", () => {
-  const sheet = method("  private renderDeviceSheet(");
-  const forget = method("  private async forgetDeviceNow(ownerId: string) {");
-
-  it("opens from a whole device card, for everyone", () => {
-    expect(card).toContain(`<button type="button" class="home-device-open" title=\${\`Open \${d.name}\`} @click=\${() => this.openDeviceSheet(d.id, gone)}>`);
-    expect(home).toContain("${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices) : nothing}");
-  });
-
-  it("shows no design cards, only a count on each tab", () => {
-    expect(sheet).not.toContain("renderStartCard(");
-    expect(sheet).toContain("badge(t.filter === \"control\" ? controls.length : designs.length)");
-    expect(sheet).toContain("badge(t.count === undefined ? undefined : counts[t.count])");
-  });
-
-  it("reads a watch's counts when its sheet opens, dropping a late reply", () => {
-    expect(method("  private openDeviceSheet(ownerId: string, forget = false) {")).toContain("void this.loadDeviceCounts(ownerId);");
-    const load = method("  private async loadDeviceCounts(ownerId: string) {");
-    expect(load).toContain("watchConfigCount(kind, record.document)");
-    expect(load).toContain("if (this.deviceSheet !== ownerId) return;");
-  });
-
-  it("still opens on its Forget step when asked, never with the browser's own confirm", () => {
-    const open = method("  private openDeviceSheet(ownerId: string, forget = false) {");
-    expect(open).toContain("this.deviceForgetAsk = forget;");
-    expect(home).not.toContain("confirm(");
-  });
-
-  it("offers Forget to everyone, behind a second step", () => {
-    expect(sheet).toContain("<button class=\"danger dev-forget\" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon(\"delete\")}<span>Remove device</span></button>");
-    expect(sheet).not.toContain("admin ? html`<button class=\"danger dev-forget\"");
-    expect(sheet).toContain("@click=${() => void this.forgetDeviceNow(ownerId)}");
-    expect(sheet).toContain("${this.deviceForgetAsk ? ask : overview}");
-    expect(sheet.match(/<dialog /g)).toHaveLength(1);
-  });
-
-  it("has a tab for each of the device's pages, each opening it on this device", () => {
-    expect(sheet).toContain("${deviceSheetTabs(row.kind).map(tab)}");
-    expect(sheet).toContain("const path = watchScreenPath(t.screen, ownerId);");
-    expect(sheet).toContain("this.pickWatch(ownerId);");
-    expect(sheet).toContain("this.pickerFilter = filter;");
-  });
-
-  it("has no New complication button", () => {
-    expect(sheet).not.toContain("openNewDialog");
-  });
-
-  it("renames the device through the integration, from a button on the head, for everyone", () => {
-    expect(sheet).not.toContain("mayRename");
-    expect(sheet).not.toContain("is_admin");
-    expect(sheet).toContain("${!this.deviceForgetAsk && !renaming");
-    expect(sheet).toContain("@click=${() => this.startDeviceRename(ownerId)}>Rename</button>");
-    expect(sheet).toContain("void this.renameDeviceNow(ownerId);");
-    const save = method("  private async renameDeviceNow(ownerId: string) {");
-    expect(save).toContain("await renameDevice(this.hass, ownerId, name === \"\" ? null : name);");
-    expect(save).toContain("await this.loadOwners();");
-  });
-
-  it("lets Escape leave the name field without shutting the sheet", () => {
-    expect(sheet).toContain(`if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); stopRename(); }`);
-  });
-
-  it("reads the devices and lists again after a Forget, and picks another device when it was the open one", () => {
-    expect(forget).toContain("await forgetDevice(this.hass, ownerId);");
-    expect(forget).toContain("if (this.ownerId === ownerId && this.draft?.dirty && !this.confirmDiscard()) return;");
-    expect(forget).toContain("this.ownerId = undefined;");
-    expect(forget).toContain("await this.loadOtherLists();");
-  });
-});
-
-describe("coming back to Home", () => {
-  it("reads the other devices' lists again, so its count is current", () => {
-    const will = method("  protected override willUpdate(changed");
-    const back = between(will, `if (changed.has("route") && tabOfRoute(this.route) === "home"`, "}");
-    expect(back).toContain(`tabOfRoute(changed.get("route") as PanelRoute | undefined) !== "home"`);
-    expect(back).toContain("void this.loadOtherLists();");
+    expect(load).toContain("counts = summaryCounts(summary, watches);");
+    expect(load).toContain("this.watchCounts = counts;");
   });
 });
 
 describe("Home's Pair a device dialog", () => {
-  it("opens from the head's button, or from the only card in a home with no devices, for everyone", () => {
-    expect(home).toContain("const add = devices.length === 0 ? html`<ul class=\"home-devices\"><li><button type=\"button\" class=\"home-device-add\"");
+  it("opens from the side bar's button, or from the only card in a home with no devices, for everyone", () => {
+    expect(home).toContain("const add = html`<ul class=\"home-devices\"><li><button type=\"button\" class=\"home-device-add\"");
     expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<b>Pair a device</b>");
     expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<span>Pair a device</span>");
-    expect(home).toContain("${groups.map((g) => this.renderHomeGroup(g, elapsed))}${add}");
-    expect(home).toContain("${this.pairOpen ? this.renderPairDialog() : nothing}");
+    expect(home).toContain("const pair = this.pairOpen ? this.renderPairDialog() : nothing;");
   });
 
   it("closes, withdrawing an open QR code, when the panel leaves the page", () => {
@@ -284,7 +297,7 @@ describe("Home's Pair a device dialog", () => {
     expect(dialog).toContain("this.renderPairNextBody(this.pairNext)");
     expect(dialog).toContain("<span>${this.homePair.subtitle}</span>");
     const next = method("  private renderPairNextBody(watchId: string) {");
-    // New page: the Pages screen on this watch, the way the sheet's tabs go.
+    // New page: the Pages screen on this watch, the way Home's doors go.
     expect(next).toContain("const path = watchScreenPath(WATCH_SCREENS[0]!, watchId);");
     expect(next).toContain("this.pickWatch(watchId);\n        this.goTo(path);");
     expect(next).toContain("this.goTo(COMPLICATIONS_PATH);");
@@ -294,35 +307,16 @@ describe("Home's Pair a device dialog", () => {
     expect(next).toContain("status: pairNextStatus(row),");
   });
 
-  it("swaps the dialog for a new iPhone's sheet, saying Paired in green", () => {
+  it("closes on a new iPhone, picked on Home with Paired in green", () => {
     const at = SOURCE.indexOf("private homePair = new PairWatchCard(");
     const made = SOURCE.slice(at, SOURCE.indexOf("});", at));
     expect(made).toContain("if (stale() || !this.pairOpen || this.ownerOf(watchId) === undefined) return;");
-    const order = ["this.closePairDialog();", "this.openDeviceSheet(watchId);", "this.devicePaired = watchId;"]
+    const order = ["this.closePairDialog();", "this.openHomeDevice(watchId);", "this.devicePaired = watchId;"]
       .map((line) => made.indexOf(line));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
-    // Any other opening, and every closing, drops the line.
-    expect(method("  private openDeviceSheet(ownerId: string, forget = false) {")).toContain("this.devicePaired = undefined;");
-    expect(method("  private closeDeviceSheet() {")).toContain("this.devicePaired = undefined;");
-    expect(method("  private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[]) {"))
-      .toContain(`\${this.devicePaired === ownerId ? html\`<div class="dev-paired" role="status">`);
-  });
-
-  it("offers only Remove for a device whose Home Assistant user was deleted", () => {
-    // The card: the words instead of the sync state, a Remove in place of the
-    // count doors, and its name opens the sheet on the Remove step.
-    expect(card).toContain("const gone = userGone(owner);");
-    expect(card).toContain("this.openDeviceSheet(d.id, gone)");
-    expect(card).toContain(`\${gone ? html\`<span class="home-device-why">\${USER_GONE_TEXT}</span>\``);
-    expect(between(card, "${gone\n", ": html`<div class=\"home-tiles\">")).toContain("this.openDeviceSheet(d.id, true)");
-    // The sheet: the words and Remove device, no tabs, no Rename.
-    const sheet = method("  private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[]) {");
-    const goneOverview = between(sheet, "const goneOverview = html`", "</div>`;");
-    expect(goneOverview).toContain("${USER_GONE_TEXT}.");
-    expect(goneOverview).toContain("Remove device");
-    expect(goneOverview).not.toContain("dev-tabs");
-    expect(sheet).toContain("const overview = gone ? goneOverview :");
-    expect(sheet).toContain("!this.deviceForgetAsk && !renaming && !gone");
+    // Picking any device drops the line.
+    expect(open).toContain("this.devicePaired = undefined;");
+    expect(detail).toContain(`\${this.devicePaired === ownerId ? html\`<div class="dev-paired" role="status">`);
   });
 });

@@ -16,7 +16,7 @@ export type UiIconName =
   | "lock" | "unlock" | "folder" | "ungroup" | "watch" | "phone" | "qr" | "keyboard"
   | "compact" | "expanded" | "foldAll" | "unfoldAll" | "grid" | "search" | "undo" | "redo" | "expand" | "left" | "right"
   | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides"
-  | "checklist" | "home" | "more" | "thumbSmall" | "thumbMedium" | "thumbLarge" | "menu" | "note"
+  | "checklist" | "home" | "more" | "mic" | "sliders" | "thumbSmall" | "thumbMedium" | "thumbLarge" | "menu" | "note"
   | "alignLeft" | "alignCenterX" | "alignRight" | "alignTop" | "alignCenterY" | "alignBottom" | "alignCenter";
 
 function shape(name: UiIconName) {
@@ -225,6 +225,12 @@ function shape(name: UiIconName) {
     // The middle both ways: a box with the two middle lines poking out of it.
     case "alignCenter":
       return svg`<rect x="7" y="7" width="10" height="10" rx="1.5" /><path d="M12 3V7M12 17V21M3 12H7M17 12H21" />`;
+    // The watch's Voice screen: a microphone on its stand.
+    case "mic":
+      return svg`<rect x="9" y="3.5" width="6" height="11" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" /><path d="M12 18V20.5" />`;
+    // Settings: two sliders, each with its knob somewhere along it.
+    case "sliders":
+      return svg`<path d="M4 8H11M15 8H20M4 16H7M11 16H20" /><circle cx="13" cy="8" r="2" /><circle cx="9" cy="16" r="2" />`;
     // More choices behind a menu.
     case "more":
       return svg`<circle cx="6" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="18" cy="12" r="1.3" />`;

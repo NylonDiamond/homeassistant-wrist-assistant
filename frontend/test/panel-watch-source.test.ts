@@ -159,11 +159,11 @@ describe("links into the Watch app carry the shared watch", () => {
     expect(method("  private openTab(")).toContain("this.goTo(tabPath(tab, this.sharedWatch));");
   });
 
-  it("on Home's device cards, which open a screen on that card's own watch", () => {
-    const tile = method("  private renderHomeTile(");
-    expect(tile).toContain("const path = watchScreenPath(t.screen, d.id);");
-    expect(tile).toContain(`<a class="home-tile" href=\${panelUrl(this.route, path, window.location.pathname)}`);
-    expect(tile).toContain("this.pickWatch(d.id);");
+  it("on Home's picked device, whose doors open a screen on that device's own watch", () => {
+    const detail = method("  private renderHomeDetail(");
+    expect(detail).toContain("const path = watchScreenPath(t.screen, ownerId);");
+    expect(detail).toContain(`href=\${panelUrl(this.route, path, window.location.pathname)}`);
+    expect(detail).toContain("this.pickWatch(ownerId);");
     expect(method("  private renderHome() {")).not.toContain("watchSettings.");
   });
 });

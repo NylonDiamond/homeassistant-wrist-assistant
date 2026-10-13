@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { countWord, deviceCardTiles, deviceFacts, homeGroups, homeTotalBucket, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
+import { countWord, deviceCardTiles, deviceFacts, homeDoorLook, homeGroups, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotalBucket, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -262,6 +262,72 @@ describe("deviceFacts", () => {
   });
 });
 
+describe("homePickOf and homeStep", () => {
+  const rows = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  const seen: Record<string, Pick<OwnerSummary, "polling" | "last_seen_seconds">> = {
+    a: { last_seen_seconds: 900 }, b: { last_seen_seconds: 60 }, c: {},
+  };
+
+  it("keeps the device asked for while it is in the list", () => {
+    expect(homePickOf(rows, "c", (id) => seen[id])).toBe("c");
+  });
+
+  it("else picks the device heard from last, a polling watch first, else the first", () => {
+    expect(homePickOf(rows, undefined, (id) => seen[id])).toBe("b");
+    expect(homePickOf(rows, "gone", (id) => ({ ...seen, a: { polling: true } })[id])).toBe("a");
+    expect(homePickOf(rows, undefined, () => undefined)).toBe("a");
+    expect(homePickOf([], undefined, () => undefined)).toBeUndefined();
+  });
+
+  it("steps through the list, going round at either end", () => {
+    expect(homeStep(rows, "a", 1)).toBe("b");
+    expect(homeStep(rows, "c", 1)).toBe("a");
+    expect(homeStep(rows, "a", -1)).toBe("c");
+    expect(homeStep(rows, "gone", 1)).toBe("a");
+    expect(homeStep([], "a", 1)).toBeUndefined();
+  });
+});
+
+describe("homeRowSub", () => {
+  it("says what the device holds, then when it was heard from", () => {
+    expect(homeRowSub("watch", 22, "Seen 1 h ago")).toBe("22 complications · 1 h ago");
+    expect(homeRowSub("watch", 1, "Online now")).toBe("1 complication · Online now");
+    expect(homeRowSub("iphone", 1, undefined)).toBe("1 widget");
+    expect(homeRowSub("iphone", 0, "Never connected")).toBe("0 widgets · Never connected");
+  });
+});
+
+describe("homeDoorLook", () => {
+  it("gives every door of a watch and an iPhone a glyph, a section hue and a line", () => {
+    for (const kind of ["watch", "iphone"] as const) {
+      for (const tab of deviceSheetTabs(kind)) {
+        const look = homeDoorLook(tab, kind);
+        expect(look.hue, tab.label).toMatch(/^var\(--wa-hue-/);
+        expect(look.blurb, tab.label).not.toBe("");
+      }
+    }
+  });
+
+  it("tells the doors apart by hue on a watch, Settings alone in grey", () => {
+    const hues = deviceSheetTabs("watch").map((t) => homeDoorLook(t, "watch").hue);
+    expect(new Set(hues).size).toBe(hues.length);
+    expect(hues.at(-1)).toBe("var(--wa-hue-grey)");
+  });
+});
+
+describe("homeRing and homeRingHead", () => {
+  it("draws the synced share from the top and the waiting share after it", () => {
+    expect(homeRing({ all: 4, synced: 3, waiting: 1 }, 100)).toEqual({ synced: "75 100", waiting: "25 100", offset: "-75" });
+    expect(homeRing({ all: 0, synced: 0, waiting: 0 }, 100)).toEqual({ synced: "0 100", waiting: "0 100", offset: "0" });
+  });
+
+  it("says all synced, how many of how many, or just how many devices", () => {
+    expect(homeRingHead({ all: 6, synced: 6 })).toBe("All 6 synced");
+    expect(homeRingHead({ all: 6, synced: 5 })).toBe("5 of 6 synced");
+    expect(homeRingHead({ all: 1, synced: 0 })).toBe("1 device");
+  });
+});
+
 describe("the shell's and Home's look", () => {
   for (const [name, sheet] of [["home", homeStyles], ["shell", shellStyles]] as const) {
     const text = sheet.cssText;
@@ -277,13 +343,25 @@ describe("the shell's and Home's look", () => {
 
     it(`${name}: no purple and no wash`, () => {
       expect(text).not.toContain("purple");
-      expect(text).not.toContain("radial-gradient");
+      // The one radial gradient is the light on Home's stage, and it is a
+      // token, so the light skin gets its own.
+      const stage = text.indexOf(".hb-stage {");
+      const rest = stage < 0 ? text : text.slice(0, stage) + text.slice(text.indexOf("}", stage));
+      expect(rest).not.toContain("radial-gradient");
     });
   }
 
+  it("lights Home's stage with a token, never a fixed light", () => {
+    const text = homeStyles.cssText;
+    const stage = text.slice(text.indexOf(".hb-stage {"), text.indexOf("}", text.indexOf(".hb-stage {")));
+    expect(stage).toContain("radial-gradient(46% 70% at 50% 0%, var(--wa-stage-light) 0%, transparent 80%)");
+    expect(stage).toContain("var(--wa-stage-top)");
+    expect(text).toContain("var(--wa-stage-reflect)");
+  });
+
   it("draws every Home control with a one pixel outline", () => {
     const text = homeStyles.cssText;
-    for (const sel of ["a.home-btn, button.home-btn {", "a.home-door, button.home-door {", "a.home-tile, button.home-tile {"]) {
+    for (const sel of ["a.home-btn, button.home-btn {", "button.hb-step {", "a.hb-door, button.hb-door {"]) {
       const rule = text.slice(text.indexOf(sel), text.indexOf("}", text.indexOf(sel)));
       expect(rule, sel).toContain("border: 1px solid var(--wa-line-strong)");
     }
@@ -310,11 +388,11 @@ describe("the shell's and Home's look", () => {
 
   it("shows every word: no ellipsis anywhere on Home, a long name or fact wraps instead", () => {
     const text = homeStyles.cssText;
-    const home = text.slice(0, text.indexOf("dialog.dev-dialog"));
-    expect(home).not.toContain("text-overflow");
+    expect(text).not.toContain("text-overflow");
     const rule = (sel: string) => text.slice(text.indexOf(sel), text.indexOf("}", text.indexOf(sel)));
-    expect(rule(".home-device-label {")).toContain("overflow-wrap: anywhere");
-    expect(rule(".home-device-facts {")).toContain("overflow-wrap: anywhere");
+    for (const sel of [".hb-row-name {", ".hb-row-sub {", ".hb-facts {", ".hb-name h2 {", ".hb-person-name {", ".hb-door-l {"]) {
+      expect(rule(sel), sel).toContain("overflow-wrap: anywhere");
+    }
   });
 });
 
