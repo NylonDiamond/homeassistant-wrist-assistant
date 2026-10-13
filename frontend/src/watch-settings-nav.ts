@@ -39,7 +39,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
   { id: "controls", title: "Controls", blurb: "How lights, locks and sliders look and respond.", icon: "radial", color: "var(--wa-hue-blue)", cards: ["controls"] },
   { id: "cameras", title: "Cameras", blurb: "Live video, and how often pictures update.", icon: "image", color: SECTION_COLOR.look, cards: ["camera"] },
   { id: "notifications", title: "Notifications", blurb: "How alerts look on your wrist, and how fast they arrive.", icon: "note", color: SECTION_COLOR.position, cards: ["notifications"] },
-  { id: "sounds", title: "Sounds", blurb: "Volume, and the sound for each action.", icon: "states", color: "var(--wa-hue-purple)", cards: ["sounds"] },
+  { id: "sounds", title: "Sounds", blurb: "Volume, and the sound for each action.", icon: "states", color: "var(--wa-hue-blue)", cards: ["sounds"] },
   { id: "pairing", title: "Pairing and security", blurb: "Add a watch or iPhone, and a certificate for special setups.", icon: "lock", color: SECTION_COLOR.states, cards: ["pair", "cert"] },
 ];
 

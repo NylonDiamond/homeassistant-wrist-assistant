@@ -235,7 +235,8 @@ describe("the page's look", () => {
   });
 
   it("keeps the side panel at the left edge, the cards filling the room to its right, and is never wider than the page", () => {
-    expect(rule(".ws-cols")).toContain("width: min(720px, 100%); margin: 0 auto");
+    expect(rule(".ws-cols")).toContain("width: min(960px, 100%); margin: 0 auto");
+    expect(rule(".ws-cols.one > .ws-body")).toContain("grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr))");
     const split = rule(".ws-split");
     expect(split).toContain("width: 100%; margin: 0");
     expect(split).toContain("flex-wrap: wrap");

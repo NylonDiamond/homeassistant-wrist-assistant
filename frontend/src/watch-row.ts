@@ -196,12 +196,14 @@ function renderUnsavedBar(input: WatchRowInput, href: (path: string) => string) 
 }
 
 /** On a phone the screen links are one line that scrolls sideways: mark
- * whether more of it is hidden past the right edge, which draws the fade
- * there. A pixel of slack, so a line scrolled to its end is not still
- * claiming more under a rounding error. */
+ * whether more of it is hidden past the right edge, and past the left edge
+ * once scrolled, which draws the fade at that edge. A pixel of slack, so a
+ * line scrolled to its end is not still claiming more under a rounding
+ * error. */
 export function markRowMore(box: HTMLElement): void {
   const slack = box.scrollWidth - box.clientWidth;
   box.toggleAttribute("data-more", slack > 1 && box.scrollLeft < slack - 1);
+  box.toggleAttribute("data-back", slack > 1 && box.scrollLeft > 1);
 }
 
 /** Where the screen links' line should scroll to so the link on show sits in
@@ -384,8 +386,16 @@ export const watchRowStyles = css`
     .wa-wr-links::-webkit-scrollbar { display: none; }
     .wa-wr-links > a.wa-wr-link { flex: none; scroll-snap-align: start; }
     .wa-wr-links[data-more] {
-      -webkit-mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
-      mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
+      -webkit-mask-image: linear-gradient(to right, black calc(100% - 72px), transparent);
+      mask-image: linear-gradient(to right, black calc(100% - 72px), transparent);
+    }
+    .wa-wr-links[data-back] {
+      -webkit-mask-image: linear-gradient(to right, transparent, black 40px);
+      mask-image: linear-gradient(to right, transparent, black 40px);
+    }
+    .wa-wr-links[data-back][data-more] {
+      -webkit-mask-image: linear-gradient(to right, transparent, black 40px, black calc(100% - 72px), transparent);
+      mask-image: linear-gradient(to right, transparent, black 40px, black calc(100% - 72px), transparent);
     }
   }
 `;
