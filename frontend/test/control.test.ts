@@ -1003,6 +1003,19 @@ describe("the redraw budget hint under a refresh tap", () => {
     }
   });
 
+  it("keeps the timer warning to one amber line, with the reasons behind Why?", () => {
+    const cfg = newControlConfig("Kitchen lamp", 0, "circular");
+    cfg.tapAction = { type: "refresh" };
+    cfg.refreshMinutes = 15;
+    const markup = flatten(generalEditor(host(cfg)));
+    expect(markup).toContain("hint keep budget\">Uses about 96 of the 40 to 70 daily redraws.</span>");
+    expect(markup).toContain("class=\"why-btn\">Why?</span></summary>");
+    // The reasons are plain muted text, not amber.
+    expect(markup).toContain("<div class=\"hint keep\">watchOS gives each complication 40 to 70");
+    cfg.refreshMinutes = 60;
+    expect(flatten(generalEditor(host(cfg)))).toContain("Uses about 24 of the 40 to 70 daily redraws.");
+  });
+
   it("shows the same amber hint under a tap layer's multiple refresh", () => {
     const cfg = newControlConfig("Kitchen lamp", 0, "circular");
     const holder = { action: { type: "refreshAll" as const, targets: [target] } };

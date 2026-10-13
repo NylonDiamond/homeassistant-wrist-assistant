@@ -241,7 +241,6 @@ import {
   UNASSIGNED_LIST,
   isShelvedRow,
   personColorVar,
-  personIndex,
   placeColorVar,
   pickerBands,
   pickerListRows,
@@ -720,19 +719,6 @@ const SHELF_SHAPE_ORDER: readonly string[] = [...WATCH_SHAPE_ORDER, "small", "me
 function shapeGroupOrder(kind: DeviceKind): readonly string[] {
   const shapes = kind === "iphone" ? PHONE_SHAPE_ORDER : kind === "library" ? SHELF_SHAPE_ORDER : WATCH_SHAPE_ORDER;
   return [...shapes, "control", "app", "none"];
-}
-
-/**
- * The custom property holding one shape's hue, ready to be set on its box.
- *
- * Undefined for a shape with no hue, which is the box of documents that have
- * no shape at all: the CSS reads `var(--pk-shape, ...)`, so a box with
- * nothing set falls back to the plain ground and the muted label without a
- * rule of its own. The control has one; it is not a shape, but it is a box
- * like any other and a box is what the colour is for.
- */
-function shapeColorVar(key: string): string | undefined {
-  return key === "none" || key === "app" ? undefined : `--pk-shape: var(--wa-shape-${key})`;
 }
 
 function shapeGroupRank(order: readonly string[], key: string): number {
@@ -2802,9 +2788,8 @@ export class WristAssistantPanel extends LitElement {
       display: flex; align-items: stretch; flex-wrap: wrap; gap: 2px; flex: none;
       padding: 0 12px; border-bottom: 1px solid var(--wa-line);
     }
-    /* The --pk-person property is that person's color, set on the tab itself,
-       so the six colors need no class each. A tab that is nobody's leaves it
-       unset and falls back to the accent. */
+    /* Neutral, every tab alike: the name, the count and the glyph say whose
+       device it is, so the row carries no hue per person. */
     .pk-tab {
       display: inline-flex; align-items: center; gap: 7px; flex: none; cursor: pointer;
       font: inherit; font-size: 12.5px; font-weight: 500; color: var(--wa-muted); white-space: nowrap;
@@ -2813,13 +2798,9 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-tab:hover { color: var(--wa-ink); }
     .pk-tab:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 7px 7px 0 0; }
-    .pk-tab.on { color: var(--wa-ink); font-weight: 600; border-bottom-color: var(--pk-person, var(--wa-ink)); }
+    .pk-tab.on { color: var(--wa-ink); font-weight: 600; border-bottom-color: var(--wa-ink); }
     .pk-tab svg { width: 15px; height: 15px; }
-    /* The glyph and the count wear the color; the name stays ink, so a row of
-       eight tabs is not eight colors of text. One person's watch and one
-       person's iPhone are the same color, which is what makes the row read as
-       people rather than as devices. */
-    .pk-tab-glyph { display: inline-flex; flex: none; color: var(--pk-person, var(--wa-muted)); }
+    .pk-tab-glyph { display: inline-flex; flex: none; color: var(--wa-muted); }
     .pk-tab-count { font-size: 11.5px; font-weight: 400; color: var(--wa-muted); }
     /* One shape at a time, in the head beside the search. A menu rather than
        a chip each: eight pills for a question most visits never ask. */
@@ -2883,22 +2864,17 @@ export class WristAssistantPanel extends LitElement {
     /* One device per block on the All tab, with room between them: the gap is
        what makes the headings read as headings rather than as captions under
        the grid above. */
-    /* Three surfaces, nested: the dialog's body, one device's box on it, and
-       one shape's box inside that. Each step goes toward the card colour, so
-       the nesting reads as going inwards in the light theme and the dark one
-       alike without a single hard-coded colour.
-
-       Nothing here is a coloured rail. A person's hue is a dot on their band
-       and a wash across their devices' headings: enough to pair "Jesse's two"
-       at a glance, with no line down the left edge cutting the grid off from
-       the page. */
+    /* One surface and the cards on it. A person and a device are headings
+       over the cards, not boxes round them: a box per device inside the
+       surface made three frames deep and took the width the cards need.
+       Nothing here wears a hue; the names say whose is whose. */
     /* One person's band: a quiet caption with a rule running off it, holding
        their devices' boxes. It is deliberately lighter than a device heading:
        a person is the group a device is in, not a louder heading above it. */
     .pk-band { display: block; }
     .pk-band + .pk-band, .pk-band + .pk-sec, .pk-sec + .pk-band { margin-top: 18px; }
     .pk-band-top { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; }
-    .pk-band-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--pk-person, var(--wa-muted)); }
+    .pk-band-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--wa-muted); }
     .pk-band-name { font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .09em; color: var(--wa-ink); }
     .pk-band-count { font-size: 11px; font-weight: 500; color: var(--wa-muted); }
     .pk-band-rule { flex: 1; height: 1px; min-width: 12px; background: var(--wa-line); }
@@ -2918,29 +2894,17 @@ export class WristAssistantPanel extends LitElement {
     .pk-fold { display: inline-flex; flex: none; color: var(--wa-muted); transform: rotate(0deg); transition: transform .12s ease; }
     .pk-fold svg { width: 13px; height: 13px; }
     .pk-band.shut .pk-fold, .pk-sec.shut .pk-fold { transform: rotate(-90deg); }
-    /* One device's box. It does not clip: the wash is its own background, so
-       nothing inside needs cutting to its corners, and a card's Devices menu
-       near the bottom of the box has to hang out past it. The box used to
-       clip, and cut that menu off. */
-    /* The whole box is washed with whoever's device it is, heading and cards
-       alike, so a device reads as one coloured surface rather than as a
-       coloured strip with a grey tray hanging off it. A device that is
-       nobody's keeps the accent, so the shelf is still a surface of its own. */
-    .pk-sec {
-      display: flex; flex-direction: column; min-width: 0;
-      --c: var(--pk-person, var(--wa-muted)); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
-      border-radius: var(--wa-lc-r);
-      ${litOutline}
-    }
-    .pk-sec + .pk-sec { margin-top: 10px; }
-    /* A hairline under the heading and nothing else: the fill is already
-       shared, so the line is all that has to say where the cards start. */
+    /* One device: a heading row (fold, chip, name, count) over its cards,
+       with no frame of its own. It never clipped, and still must not: a
+       card's Devices menu near the bottom has to hang out past it. */
+    .pk-sec { display: flex; flex-direction: column; min-width: 0; }
+    .pk-sec + .pk-sec { margin-top: 18px; }
     .pk-sec-top {
-      display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 38px; box-sizing: border-box; padding: 5px 10px;
-      border-bottom: 0;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; min-height: 32px;
+      box-sizing: border-box; padding: 0 2px; margin: 0 0 6px;
     }
-    .pk-sec.shut .pk-sec-top { border-bottom: 0; }
-    .pk-sec-body { padding: 0 10px 10px; min-width: 0; }
+    .pk-sec.shut .pk-sec-top { margin-bottom: 0; }
+    .pk-sec-body { padding: 0; min-width: 0; }
     .pk-sec-head { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 12px; font-weight: 500; letter-spacing: .09em; text-transform: uppercase; flex: none; }
     /* One shape per box inside a device's box, named on a line of its own over
        the cards. The name was stood on its end in a gutter for a while, which
@@ -2948,49 +2912,37 @@ export class WristAssistantPanel extends LitElement {
        caption is set small and spaced instead, so it reads as a label on the
        box rather than as one more thing competing with the cards' own names. */
     .pk-boxes { display: flex; flex-direction: column; gap: 16px; }
-    /* Washed with its own shape's hue, over the same ground every box sits
-       on, so the tint is the only thing telling two boxes apart and every
-       rectangular box in the dialog is the same colour. A shape with no hue
-       of its own, which is a document with no shape at all, falls back to the
-       plain ground rather than borrowing somebody else's. */
-    /* No frame of its own: the device's box is already a frame, and a frame
-       per shape inside it made three boxes deep. The label over the cards
-       and the gap between shapes are enough to tell them apart. */
+    /* No frame and no hue of its own: the label over the cards and the gap
+       between shapes are enough to tell them apart. */
     .pk-box { display: flex; flex-direction: column; min-width: 0; }
     .pk-box-top { display: flex; align-items: center; gap: 7px; min-width: 0; margin: 0 0 8px 2px; }
-    /* The label takes the hue at full strength: the wash alone is too faint to
-       learn a shape's colour from, and the two together teach it in one look. */
     .pk-box-name {
       display: inline-flex; align-items: center; gap: 6px;
       font-size: 10.5px; font-weight: 500; letter-spacing: .11em; text-transform: uppercase;
       color: var(--wa-ink); white-space: nowrap;
     }
-    .pk-box-name::before { content: ""; width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--pk-shape, var(--wa-muted)); }
+    .pk-box-name::before { content: ""; width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--wa-muted); }
     .pk-box-count { font-size: 10.5px; font-weight: 600; color: var(--wa-muted); opacity: .65; }
     .pk-box-pick { flex: none; margin: 0; accent-color: var(--wa-accent); }
-    /* The person's own color, the same one their tabs wear, so the All tab's
-       headings and the row of tabs agree about whose is whose. */
+    /* A grey chip with the device's glyph, the same for everybody. */
     .pk-sec-glyph {
-      display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 6px;
-      background: var(--pk-person, var(--wa-muted)); color: var(--wa-chip-ink);
+      display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; box-sizing: border-box; border-radius: 6px;
+      background: var(--wa-hover); color: var(--wa-ink); border: 1px solid var(--wa-line-strong);
     }
     .pk-sec-glyph svg { width: 13px; height: 13px; }
     .pk-sec-name { color: var(--wa-ink); }
     .pk-sec-count { font-size: 12px; font-weight: 400; letter-spacing: 0; color: var(--wa-muted); }
     /* What Unassigned is, said where it is rather than in a tooltip: nobody
        duplicates a design into it without being told what it is for. */
-    .pk-sec-note {
-      margin: 0; font-size: 12px; font-weight: 400; color: var(--wa-muted); min-width: 0;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .pk-sec-note.lone { margin: 0 0 12px; white-space: normal; }
+    .pk-sec-note { margin: 0; font-size: 12px; font-weight: 400; color: var(--wa-muted); min-width: 0; overflow-wrap: anywhere; }
+    .pk-sec-note.lone { margin: 0 0 12px; }
     .pk-sec-empty { font-size: 12px; color: var(--wa-muted); }
     .pk-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
     /* Fewer columns on a narrow window: a crop of a device stops being
        readable well before the dialog runs out of width. */
     /* The dialog grows with the window, so a wide one takes a fifth column
        rather than stretching four cards past the point where a crop reads. */
-    @media (min-width: 1300px) { .pk-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+    @media (min-width: 1600px) { .pk-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
     @media (max-width: 900px) { .pk-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
     @media (max-width: 640px) { .pk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     /* The Shape view is for somebody with a lot of them. A device window has
@@ -2998,22 +2950,21 @@ export class WristAssistantPanel extends LitElement {
        the columns are as many as fit rather than four, and every box round
        them gives back the room it was holding for the device pictures.
        Two classes deep, so the column counts above do not win it back. */
-    .pk-surface.bare .pk-grid { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 9px; }
+    .pk-surface.bare .pk-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
     /* Each box holds one shape, and each shape's picture fills its card, so
        the card is sized to the shape: a round one small, since a circle wide
        enough for a rectangle's card is a dinner plate, and a wide one wide,
        so a rectangle's rows and an inline line are big enough to read. */
     .pk-surface.bare .pk-grid[data-shape="circular"] {
-      grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
     }
     .pk-surface.bare .pk-grid:is([data-shape="rectangular"], [data-shape="inline"], [data-shape="medium"]) {
-      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     }
     .pk-surface.bare .pk-card { padding: 8px; border-radius: 10px; }
     .pk-surface.bare .pk-card-top { margin-bottom: 6px; min-height: 16px; gap: 6px; }
     .pk-surface.bare .pk-card-name { font-size: 12px; }
     .pk-surface.bare .pk-boxes { gap: 12px; }
-    .pk-surface.bare .pk-sec-body { padding: 8px; }
     .pk-surface.bare .pk-band-body { gap: 8px; }
     .pk-card {
       position: relative; z-index: 1; display: flex; flex-direction: column; min-width: 0;
@@ -3328,17 +3279,15 @@ export class WristAssistantPanel extends LitElement {
       }
       .pk-tabs::-webkit-scrollbar { display: none; }
       .pk-tab { padding: 9px 10px; }
-      /* Less padding round each of the nested boxes, so the two columns of
-         cards get the width instead of the frames round them. */
+      /* Less padding round the grid, so the two columns of cards get the
+         width instead of the frame round them. */
       .pk-body { padding: 10px; }
-      .pk-sec-top { padding: 6px 10px; }
-      .pk-sec-body { padding: 6px; }
       .pk-grid { gap: 8px; }
       .pk-card { padding: 8px; border-radius: 10px; }
       .pk-card-top { margin-bottom: 6px; }
       /* A device with nothing on it: its heading, with its 0, is enough. */
       .pk-sec.none .pk-sec-body { display: none; }
-      .pk-sec.none .pk-sec-top { border-bottom: 0; }
+      .pk-sec.none .pk-sec-top { margin-bottom: 0; }
       /* A card's buttons on a line of their own under its name: a card two
          to a row has no room for both on one. Devices at the left, hide and
          delete at the right. */
@@ -12189,19 +12138,15 @@ export class WristAssistantPanel extends LitElement {
    * pair before any of the names have been read. All and Unassigned belong to
    * nobody and keep the accent.
    */
-  private renderPickerTabs(tabs: readonly PickerTab[], current: string, people: readonly PickerPerson[]) {
+  private renderPickerTabs(tabs: readonly PickerTab[], current: string) {
     return html`<div class="pk-tabs" role="tablist" aria-label="Devices">
-      ${tabs.map((tab) => {
-        const color = personColorVar(personIndex(people, tab.key));
-        return html`<button type="button" role="tab" class="pk-tab ${tab.key === current ? "on" : ""}"
+      ${tabs.map((tab) => html`<button type="button" role="tab" class="pk-tab ${tab.key === current ? "on" : ""}"
           id=${`pk-tab-${tab.key}`} aria-selected=${tab.key === current ? "true" : "false"}
-          style=${color ? `--pk-person: ${color}` : nothing}
           aria-controls="pk-tabpanel" @click=${() => this.pickPickerTab(tab.key)}>
           <span class="pk-tab-glyph" aria-hidden="true">${uiIcon(tabIcon(tab.kind))}</span>
           <span class="pk-tab-name">${tab.label}</span>
           <span class="pk-tab-count">${tab.count}</span>
-        </button>`;
-      })}
+        </button>`)}
     </div>`;
   }
 
@@ -12467,7 +12412,7 @@ export class WristAssistantPanel extends LitElement {
         </label>
         ${page ? nothing : html`<button class="icon" title="Close" aria-label="Close" @click=${() => this.closePicker()}>${uiIcon("close")}</button>`}
       </div>
-      ${this.ownerBusy ? nothing : this.renderPickerTabs(tabs, tab, this.pickerPeople(people))}
+      ${this.ownerBusy ? nothing : this.renderPickerTabs(tabs, tab)}
       ${this.pickerSelecting ? this.renderPickerBar() : nothing}`;
     // On the page the head, the device tabs and the picking bar stay at the
     // top while the cards scroll under them; the dialog has its own scroll.
@@ -12534,7 +12479,7 @@ export class WristAssistantPanel extends LitElement {
     // and their iPhone stand together however far apart the home's own device
     // list put them.
     const bands = pickerBands(sections, people, (i) => people[i]?.label ?? "");
-    return html`${bands.map((band) => this.renderPickerBand(band, unsaved, people))}`;
+    return html`${bands.map((band) => this.renderPickerBand(band, unsaved))}`;
   }
 
   /**
@@ -12547,14 +12492,13 @@ export class WristAssistantPanel extends LitElement {
    * band at all. Their own heading already says what they are, and a band
    * with no name over it would read as a person called nothing.
    */
-  private renderPickerBand(band: PickerBand<PickerItem>, unsaved: Draft | undefined, people: readonly PickerPerson[]) {
-    const blocks = band.sections.map((section) => this.renderPickerSection(section, unsaved, people));
+  private renderPickerBand(band: PickerBand<PickerItem>, unsaved: Draft | undefined) {
+    const blocks = band.sections.map((section) => this.renderPickerSection(section, unsaved));
     if (band.personIndex < 0) return html`${blocks}`;
-    const color = personColorVar(band.personIndex);
     const shut = this.pickerIsShut(band.key);
     const count = band.sections.reduce(
       (n, s) => n + s.rows.length + (this.unsavedBelongsTo(unsaved, s.ownerId) ? 1 : 0), 0);
-    return html`<section class="pk-band ${shut ? "shut" : ""}" style=${color ? `--pk-person: ${color}` : nothing}>
+    return html`<section class="pk-band ${shut ? "shut" : ""}">
       <h3 class="pk-band-top">
         <button type="button" class="pk-fold-btn" aria-expanded=${shut ? "false" : "true"}
           title=${shut ? `Show ${band.label}'s devices` : `Fold ${band.label}'s devices away`}
@@ -12648,12 +12592,11 @@ export class WristAssistantPanel extends LitElement {
 
   /** One device's block of the All tab: its heading, then its cards. The
    * heading wears its owner's color, the same one that person's tabs wear. */
-  private renderPickerSection(section: PickerSection<PickerItem>, unsaved: Draft | undefined, people: readonly PickerPerson[]) {
+  private renderPickerSection(section: PickerSection<PickerItem>, unsaved: Draft | undefined) {
     const mine = this.unsavedBelongsTo(unsaved, section.ownerId) ? unsaved : undefined;
     const count = section.rows.length + (mine ? 1 : 0);
-    const color = personColorVar(personIndex(people, section.ownerId));
     const shut = this.pickerIsShut(section.ownerId);
-    return html`<section class="pk-sec ${shut ? "shut" : ""} ${count === 0 ? "none" : ""}" style=${color ? `--pk-person: ${color}` : nothing}>
+    return html`<section class="pk-sec ${shut ? "shut" : ""} ${count === 0 ? "none" : ""}">
       <div class="pk-sec-top">
         <h4 class="pk-sec-head">
           <button type="button" class="pk-fold-btn" aria-expanded=${shut ? "false" : "true"}
@@ -12706,8 +12649,7 @@ export class WristAssistantPanel extends LitElement {
       }
     }
     return html`<div class="pk-boxes">
-      ${groups.map((group) => html`<section class="pk-box" aria-label=${group.label}
-        style=${shapeColorVar(group.key) ?? nothing}>
+      ${groups.map((group) => html`<section class="pk-box" aria-label=${group.label}>
         <div class="pk-box-top">
           ${this.renderShapePick(group.rows, at)}
           <span class="pk-box-name">${group.label}</span>

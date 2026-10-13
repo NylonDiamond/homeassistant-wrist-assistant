@@ -412,6 +412,23 @@ export const formRowStyles = css`
     /* The one hint that is colored: a timed refresh is spending the redraw
        budget a tap on the face also needs, which is worth noticing. */
     .hint.budget { color: var(--warning-color, #ffa600); }
+    /* The Auto refresh warning: its one amber line and a Why? button on the
+       same row, and the reasons under them, in plain muted text, once opened. */
+    .budget-why { margin: 4px 0; min-width: 0; }
+    .budget-why > summary {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; cursor: pointer; list-style: none;
+    }
+    .budget-why > summary::-webkit-details-marker { display: none; }
+    .budget-why > summary > .hint { margin: 0; flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+    .budget-why > summary:focus-visible { outline: none; }
+    .budget-why > summary:focus-visible > .why-btn { box-shadow: var(--wa-ring); }
+    .why-btn {
+      display: inline-flex; align-items: center; flex: none; box-sizing: border-box; min-height: 20px; padding: 0 7px;
+      border-radius: 5px; font-size: 11.5px; font-weight: 600; line-height: 1;
+      color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong);
+    }
+    .budget-why > summary:hover > .why-btn, .budget-why[open] > summary > .why-btn { background: var(--wa-hover); }
+    .budget-why > .hint { margin: 6px 0 0; overflow-wrap: anywhere; }
     /* The bare .err rule sits above .hint in this sheet, so a hint that is an
        error needs both class names to win the color. */
     .hint.err { color: var(--error-color, #db4437); }
