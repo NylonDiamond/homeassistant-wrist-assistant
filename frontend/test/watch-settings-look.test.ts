@@ -569,9 +569,18 @@ describe("the tiles' look", () => {
     const tile = tileRules.find((r) => r.selector === "button.ws-tile")!.body;
     expect(tile).toContain("--ws-tile-bg: var(--wa-field)");
     const on = tileRules.find((r) => r.selector === "button.ws-tile.on")!.body;
-    expect(on).toContain("--ws-tile-bg: color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 16%, var(--wa-seg-on))");
+    expect(on).toContain("--ws-tile-bg: var(--wa-seg-on)");
     expect(on).toContain("color: var(--wa-ink)");
-    expect(on).toContain("box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 45%, var(--wa-seg-on))");
+    expect(on).toContain("box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 35%, var(--wa-seg-on))");
+  });
+
+  it("keeps the card's hue off the controls: the tiles, the row icons and the open group are grey", () => {
+    for (const r of tileRules) expect(r.body, r.selector).not.toContain("--ws-hue");
+    const icon = tileRules.find((r) => r.selector === ".ws-body .ws-ic")!.body;
+    expect(icon).toContain("color: var(--wa-muted)");
+    expect(icon).not.toContain("background");
+    const open = rules.find((r) => r.selector === "button.ws-nav-item.on")!.body;
+    expect(open).not.toContain("--ws-hue");
   });
 });
 

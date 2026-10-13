@@ -154,7 +154,7 @@ const SECTION_LOOK: Record<string, { icon: UiIconName; color: string }> = {
 /** The notification style's cards, after the behavior ones. */
 const STYLE_LOOK: Record<StyleSection["id"], { icon: UiIconName; color: string }> = {
   notifications: { icon: "note", color: SECTION_COLOR.position },
-  sounds: { icon: "states", color: "var(--wa-hue-purple)" },
+  sounds: { icon: "states", color: "var(--wa-hue-blue)" },
   wristWebhooks: { icon: "link", color: SECTION_COLOR.states },
 };
 
@@ -1462,9 +1462,16 @@ export const watchSettingsStyles = css`
   .ws-top > .ws-new > svg.ui-icon { width: 16px; height: 16px; flex: none; color: var(--wa-accent); }
   .ws-top > .ws-new > span { flex: 1; min-width: 0; }
   .ws-bar .ws-why { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* One column, as wide as the dialog the page replaced: a home with no
-     watch yet, or a watch whose settings live in another home. */
-  .ws-cols { box-sizing: border-box; width: min(720px, 100%); margin: 0 auto; padding: 16px 16px 48px; display: grid; gap: 8px; }
+  /* A home with no watch yet, or a watch whose settings live in another
+     home: the note across the top, then pairing and the client certificate
+     side by side where there is room for both, one over the other where
+     there is not. */
+  .ws-cols { box-sizing: border-box; width: min(960px, 100%); margin: 0 auto; padding: 16px 16px 48px; display: grid; gap: 8px; }
+  .ws-cols.one > .ws-body {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr)); align-items: start; gap: 12px;
+  }
+  .ws-cols.one > .ws-body > :not(.sec) { grid-column: 1 / -1; }
+  .ws-cols.one > .ws-body > button { justify-self: start; }
   /* The side panel at the page's left edge and the group's cards filling the
      room to its right, edge to edge, as the page editor lays out its
      columns. On a narrow page the panel goes over the cards and its groups
@@ -1491,9 +1498,11 @@ export const watchSettingsStyles = css`
     border: 0; border-radius: 8px; background: transparent; color: var(--wa-label); text-align: left; cursor: pointer;
   }
   button.ws-nav-item:hover { background: color-mix(in srgb, var(--wa-ink) 6%, transparent); color: var(--wa-ink); }
+  /* The open group: a raised grey with the brighter line. Its hue stays in
+     its icon chip. */
   button.ws-nav-item.on {
-    background: color-mix(in srgb, var(--ws-hue) 16%, var(--wa-seg-on)); color: var(--wa-ink);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ws-hue) 40%, transparent);
+    background: var(--wa-seg-on); color: var(--wa-ink);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 35%, var(--wa-seg-on));
   }
   button.ws-nav-item:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--wa-ink) 60%, transparent); }
   .ws-nav-ic {
@@ -1532,16 +1541,17 @@ export const watchSettingsStyles = css`
   @container xfer (max-width: 440px) {
     .ws-body .sec { --wa-lab: 122px; --wa-col: 130px; }
   }
-  /* Each setting's icon: a small chip in its card's hue, the one place a
-     setting carries color. A fixed box, so a row does not move when the
-     symbol file arrives. The symbol provider paints white; the chip's color
-     wins here. */
+  /* Each setting's icon: a plain grey symbol, no fill behind it. The card's
+     hue stays on its outline, its title chip and its changed dot. A fixed
+     box, so a row does not move when the symbol file arrives, and with no
+     fill it never shows as an empty square before then. The symbol provider
+     paints white; the box's color wins here. */
   .ws-body .ws-ic {
-    width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 7px; pointer-events: none;
-    color: var(--ws-hue, var(--wa-muted)); background: color-mix(in srgb, var(--ws-hue, var(--wa-muted)) 15%, transparent);
+    width: 26px; height: 26px; flex: none; display: grid; place-items: center; pointer-events: none;
+    color: var(--wa-muted);
   }
   .ws-body :is(.ws-ic, .ws-tile-glyph) svg { display: block; overflow: visible; }
-  .ws-body .ws-ic svg { width: 15px; height: 15px; }
+  .ws-body .ws-ic svg { width: 17px; height: 17px; }
   .ws-body :is(.ws-ic, .ws-tile-glyph) svg:not(.ws-pv, .ws-demo) path { fill: currentColor; fill-opacity: 1; }
   /* Settings are a list: a hairline between each, none over the first. */
   .ws-body :is(.sec-b, .fgroup) > :is(.ws-row, .ws-tile-row) { padding: 10px 0; border-top: 1px solid var(--wa-line); }
@@ -1565,7 +1575,7 @@ export const watchSettingsStyles = css`
      between the title and the menu. */
   .ws-row.has-demo { grid-template-columns: 26px minmax(0, 1fr) 60px auto; }
   .ws-row.has-demo > .field > :not(:first-child) { grid-column: 4; }
-  .ws-row.has-demo > .ws-demo-box { grid-column: 3; grid-row: 1 / span 2; align-self: center; width: 60px; height: 60px; color: var(--ws-hue, var(--wa-muted)); }
+  .ws-row.has-demo > .ws-demo-box { grid-column: 3; grid-row: 1 / span 2; align-self: center; width: 60px; height: 60px; color: var(--wa-label); }
   .ws-demo-box svg.ws-demo { display: block; width: 60px; height: 60px; }
   /* A row of tiles: the chip, title and help on one line, the strip of
      choices under them, starting where the title starts. */
@@ -1602,8 +1612,8 @@ export const watchSettingsStyles = css`
   }
   button.ws-tile:hover:not(:disabled) { --ws-tile-bg: color-mix(in srgb, var(--wa-ink) 6%, var(--wa-field)); color: var(--wa-ink); }
   button.ws-tile.on {
-    --ws-tile-bg: color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 16%, var(--wa-seg-on));
-    color: var(--wa-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 45%, var(--wa-seg-on));
+    --ws-tile-bg: var(--wa-seg-on);
+    color: var(--wa-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 35%, var(--wa-seg-on));
   }
   button.ws-tile:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--wa-ink) 60%, transparent); }
   button.ws-tile:disabled { opacity: .45; cursor: default; }
@@ -1613,7 +1623,7 @@ export const watchSettingsStyles = css`
   .ws-tile-glyph svg.ws-pv { width: 38px; height: 22px; }
   .ws-tile-glyph.demo { width: 56px; height: 56px; }
   .ws-tile-glyph svg.ws-demo { width: 56px; height: 56px; }
-  button.ws-tile.on .ws-tile-glyph { color: color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 55%, var(--wa-ink)); }
+  button.ws-tile.on .ws-tile-glyph { color: var(--wa-ink); }
   /* A name is never cut short: it wraps between words instead. */
   .ws-tile-name { max-width: 100%; font-size: 12.5px; font-weight: 500; line-height: 1.2; text-align: left; overflow-wrap: normal; text-wrap: balance; }
   button.ws-tile.on .ws-tile-name { font-weight: 600; }

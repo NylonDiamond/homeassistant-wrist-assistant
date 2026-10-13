@@ -4786,7 +4786,9 @@ export class WaPageEditor extends LitElement {
     .layer .acts button.icon { display: inline-grid; place-items: center; padding: 0; }
     .layer .acts button.icon.off { color: var(--wa-amber); }
     .layer .acts button.icon:disabled { opacity: .35; cursor: default; }
-    .badge.pe-smart { color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 14%, transparent); }
+    /* Smart is a plain grey tag with a hairline: a solid fill, so the picked
+       row's blue never shows through it. */
+    .badge.pe-smart { color: var(--wa-label); background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
     /* The thumbs: a page's top, or a tile's face, drawn small. */
     .layer .thumb.pe-thumb { position: relative; }
     .pe-thumb-tile { position: absolute; overflow: hidden; pointer-events: none; }
@@ -4820,7 +4822,7 @@ export class WaPageEditor extends LitElement {
       display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600;
       color: var(--wa-muted); background: var(--wa-field); white-space: nowrap;
     }
-    .pe-badge.smart { color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 14%, transparent); }
+    .pe-badge.smart { color: var(--wa-label); background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
 
     /* The canvas card: the complication editor's head, dotted stage, tool
        strip and values bar. Its stage is not the fitted box of a face but

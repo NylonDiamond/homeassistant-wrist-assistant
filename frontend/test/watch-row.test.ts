@@ -319,6 +319,18 @@ describe("the phone's line of screens", () => {
     expect(box(499.5)).toBe(false);
     expect(box(0, 300)).toBe(false);
   });
+
+  it("marks more past the left edge once the line is scrolled from its start", () => {
+    const back = (scrollLeft: number, scrollWidth = 800) => {
+      const attrs = new Set<string>();
+      markRowMore({ scrollWidth, clientWidth: 300, scrollLeft, toggleAttribute: (n: string, on: boolean) => { if (on) attrs.add(n); else attrs.delete(n); return on; } } as unknown as HTMLElement);
+      return attrs.has("data-back");
+    };
+    expect(back(0)).toBe(false);
+    expect(back(120)).toBe(true);
+    expect(back(500)).toBe(true);
+    expect(back(0, 300)).toBe(false);
+  });
 });
 
 describe("the row's look", () => {

@@ -181,7 +181,14 @@ const topBarRun = css`
     header.stacked > *, .wa-bar.stacked > * { margin-block: 4px; }
     header.stacked::after, .wa-bar.stacked::after { content: ""; order: 1; flex: 0 0 100%; height: 0; margin: 0; }
     header.stacked > .tb-sync, header.stacked > button.tb-btn:not(.tb-more), header.stacked > .side-menu,
-    .wa-bar.stacked > .tb-sync, .wa-bar.stacked > button.tb-btn:not(.tb-more), .wa-bar.stacked > .side-menu { order: 2; }
+    .wa-bar.stacked > .tb-sync, .wa-bar.stacked > button.tb-btn:not(.tb-more) { order: 2; }
+    /* A watch screen's bar keeps its buttons together on top (···, Save and
+       the help) and puts the words under them: where the copy has got to, or
+       why Save is grey, wrapping whole across the row rather than cut. Left
+       on the lower row alone, ··· read as a stray. */
+    .wa-bar.stacked > :is(.tb-why, .nw-why, .tb-after) {
+      order: 2; flex: 1 1 100%; max-width: none; white-space: normal; overflow: visible; overflow-wrap: anywhere;
+    }
     /* The pill never shrinks under its words: when the row is too full it
        takes a row of its own, and only past a whole row is its note cut. */
     header.stacked > .tb-sync, .wa-bar.stacked > .tb-sync { flex: 1 0 auto; max-width: 100%; }

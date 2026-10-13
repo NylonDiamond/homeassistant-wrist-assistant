@@ -281,7 +281,7 @@ export function renderTabBar(input: TabBarInput): TemplateResult {
         e.preventDefault();
         input.onTab(tab);
       }}>${TAB_LABEL[tab]}${tab === "watch" && input.watchUnsaved === true ? unsavedDot() : nothing}</a>`)}</span>
-    ${input.onHelp ? html`<button type="button" class="wa-tabs-help" title="Help and setup guide" aria-haspopup="dialog"
+    ${input.onHelp ? html`<button type="button" class="wa-tabs-help" title="Help and setup guide" aria-label="Help" aria-haspopup="dialog"
       @click=${input.onHelp}>${HELP_ICON}<span>Help</span></button>` : nothing}
   </nav>`;
 }
@@ -332,6 +332,28 @@ export const shellStyles = css`
   button.wa-tabs-help:hover { background: var(--wa-hover); }
   button.wa-tabs-help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.wa-tabs-help svg.ui-icon { width: 15px; height: 15px; }
+  /* A phone: the name on top, then the tabs and Help on one line under it.
+     The empty ::after is the line break, a full width item of no height, so
+     the rows carry their own margins instead of a row gap counted twice.
+     Help keeps only its sign, and the tabs slide sideways rather than wrap
+     if a very narrow screen cannot hold all three. */
+  @media (max-width: 480px) {
+    nav.wa-tabs { row-gap: 0; padding-block: 3px; }
+    nav.wa-tabs > * { margin-block: 3px; }
+    nav.wa-tabs::after { content: ""; order: 1; flex: 0 0 100%; height: 0; margin: 0; }
+    .wa-tabs-list, button.wa-tabs-help { order: 2; }
+    .wa-tabs-list {
+      flex: 1 1 0; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+      margin: 0 0 0 -3px; padding: 3px;
+    }
+    .wa-tabs-list::-webkit-scrollbar { display: none; }
+    a.wa-tab { flex: none; padding: 0 10px; }
+    button.wa-tabs-help { width: 28px; padding: 0; justify-content: center; flex: none; }
+    button.wa-tabs-help > span { display: none; }
+  }
+  @media (max-width: 380px) {
+    a.wa-tab { padding: 0 8px; font-size: 12.5px; }
+  }
   /* Orange, the one hue in the tabs and the row: it says "not saved yet",
      so it never stands for the tab or the screen on show. */
   i.wa-unsaved {
