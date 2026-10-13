@@ -144,6 +144,10 @@ import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, tes
 import { type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, homePill, homeSync, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
 import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDeviceWhy, homeGroups, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
 import { homePhoneArt, homeWatchArt } from "./home-art.js";
+import { type GettingStarted, type WelcomeMode, gettingStarted, loadWelcomeMode, saveWelcomeMode, watchesWithPages, welcomeShows } from "./getting-started.js";
+import { renderWelcomeCard, welcomeStyles } from "./welcome-card.js";
+import { helpSheetStyles, renderHelpSheet } from "./help-sheet.js";
+import { HOME_PATH } from "./shell.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -1518,6 +1522,16 @@ export class WristAssistantPanel extends LitElement {
   /** Each watch's pages, status pages and Control Center counts, from the
    * same summary as `watchAppSyncs`, for Home's cards. */
   @state() private watchCounts: ReadonlyMap<string, Partial<Record<DeviceCountKind, number>>> = new Map();
+  /** The watches with a page of their own in Home Assistant, from the same
+   * summary, for the getting started steps (`getting-started.ts`). Undefined
+   * until the summary is read, so the welcome card never flashes up in a
+   * home that already has pages. */
+  @state() private watchPages?: ReadonlySet<string>;
+  /** Whether Home shows the welcome card: automatic, hidden or shown, as
+   * this browser remembers it. */
+  @state() private welcomeMode: WelcomeMode = loadWelcomeMode(() => window.localStorage);
+  /** The Help sheet the tab bar's Help button opens, on every tab. */
+  @state() private helpSheetOpen = false;
   /** When the owners list was last read, so Home can age each device's
    * "Seen … ago" by the time since. */
   private ownersReadAt = 0;
@@ -5995,7 +6009,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, homeStyles, watchRowStyles, listPageStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, homeStyles, watchRowStyles, listPageStyles, welcomeStyles, helpSheetStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -6609,6 +6623,10 @@ export class WristAssistantPanel extends LitElement {
     }
     if (changed.has("deviceSheet") && this.deviceSheet !== undefined) {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.dev-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
+    }
+    if (changed.has("helpSheetOpen") && this.helpSheetOpen) {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.wa-help-sheet");
       if (dialog && !dialog.open) dialog.showModal();
     }
     if (changed.has("helpOpen") && this.helpOpen) {
@@ -10820,8 +10838,76 @@ export class WristAssistantPanel extends LitElement {
       onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
       onTab: (tab) => this.openTab(tab),
       watch: this.sharedWatch,
+      onHelp: () => this.openHelpSheet(),
     });
-    return html`${bar}${this.renderTab()}`;
+    return html`${bar}${this.renderTab()}${this.helpSheetOpen ? this.renderHelpSheet() : nothing}`;
+  }
+
+  // ── getting started and the Help sheet ────────────────────────────────
+
+  /** The three getting started steps, as Home's welcome card and the Help
+   * sheet both show them. */
+  private gettingStarted(): GettingStarted {
+    return gettingStarted(this.owners, this.watchPages, this.sharedWatch);
+  }
+
+  private setWelcomeMode(mode: WelcomeMode) {
+    this.welcomeMode = mode;
+    saveWelcomeMode(() => window.localStorage, mode);
+  }
+
+  /** Home's welcome card, while it shows (`welcomeShows`). */
+  private renderWelcome() {
+    const gs = this.gettingStarted();
+    if (!welcomeShows(this.welcomeMode, gs, this.linkReady || this.owners.length > 0)) return nothing;
+    return renderWelcomeCard({
+      gs,
+      mode: this.welcomeMode,
+      onPair: () => this.openPairDialog(),
+      onNewPage: (watch) => this.goTo(watchScreenPath(WATCH_SCREENS[0]!, watch)),
+      onHelp: () => this.openHelpSheet(),
+      onHide: () => this.setWelcomeMode("hidden"),
+    });
+  }
+
+  /** Open the Help sheet. Which watches hold a page is read on the way into
+   * Home, so a sheet opened first on another tab asks for it here. */
+  private openHelpSheet() {
+    this.helpSheetOpen = true;
+    void this.loadWatchAppSync(false);
+  }
+
+  /** Close the Help sheet. Focus goes back to the Help button, unless the
+   * sheet closes to do something that takes it elsewhere (a dialog, another
+   * screen). */
+  private closeHelpSheet(refocus: boolean) {
+    if (!this.helpSheetOpen) return;
+    this.helpSheetOpen = false;
+    if (refocus) void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLElement>("button.wa-tabs-help")?.focus());
+  }
+
+  /** The sheet. Pair a device and Show the welcome card again go to Home
+   * first, where the Pair dialog and the card live. A screen with unsaved
+   * work may refuse to be left: then Pair a device opens nothing, and the
+   * card is still remembered as shown for the next visit to Home. */
+  private renderHelpSheet() {
+    const home = () => {
+      this.closeHelpSheet(false);
+      if (tabOfRoute(this.route) !== "home") this.goTo(HOME_PATH);
+      return tabOfRoute(this.route) === "home";
+    };
+    return renderHelpSheet({
+      gs: this.gettingStarted(),
+      route: this.route,
+      version: this.panel?.config?.version,
+      onClosed: () => this.closeHelpSheet(true),
+      onPair: () => { if (home()) this.openPairDialog(); },
+      onNewPage: (watch) => { this.closeHelpSheet(false); this.goTo(watchScreenPath(WATCH_SCREENS[0]!, watch)); },
+      onShowWelcome: () => { this.setWelcomeMode("shown"); home(); },
+      ...(tabOfRoute(this.route) === "complications"
+        ? { onEditorHelp: () => { this.closeHelpSheet(false); this.helpTab = "basics"; this.helpOpen = true; } }
+        : {}),
+    });
   }
 
   /** A tab pressed in the bar. The tab already on screen stays as it is, so
@@ -11230,10 +11316,12 @@ export class WristAssistantPanel extends LitElement {
     const hass = this.hass;
     let next: Map<string, WatchAppSync>;
     let counts = new Map<string, Partial<Record<DeviceCountKind, number>>>();
+    let pages: ReadonlySet<string> | undefined;
     try {
       const summary = await fetchWatchConfigSummary(hass);
       next = summaryWatchAppSyncs(summary, watches);
       counts = summaryCounts(summary, watches);
+      pages = watchesWithPages(summary, watches);
     } catch (err) {
       if (!summaryUnknown(err)) {
         // Not read: let the next visit to Home ask again.
@@ -11248,6 +11336,8 @@ export class WristAssistantPanel extends LitElement {
     if (run !== this.watchAppSyncRun) return;
     this.watchAppSyncs = next;
     this.watchCounts = counts;
+    // An integration with no summary cannot say; the last reading stands.
+    if (pages !== undefined) this.watchPages = pages;
   }
 
   /** The household as people, each Home Assistant user's devices together
@@ -19011,6 +19101,7 @@ export class WristAssistantPanel extends LitElement {
           </div>
           ${devices.length === 0 ? nothing : acts}
         </div>
+        ${failed ? nothing : this.renderWelcome()}
         ${failed
           ? this.renderNotReady()
           : loading
