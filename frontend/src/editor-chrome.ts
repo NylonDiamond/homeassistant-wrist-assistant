@@ -1051,9 +1051,15 @@ const canvasHeadTailRun = css`
       .cv-head { padding: 6px 12px 8px; column-gap: 8px; }
       .cv-head::after { content: ""; order: 3; flex: 0 0 100%; height: 0; }
       .cv-head .cv-slash { display: none; }
-      .cv-head .tb-name { order: 0; flex: 1 1 0; }
-      .cv-head .cv-what { order: 1; }
-      .cv-head .cv-acts { order: 2; gap: 8px; }
+      /* The name keeps its own width (a zero basis let the typed name spill
+         over the facts beside it), the actions stay at its right, and the
+         facts take the next line. */
+      .cv-head .tb-name { order: 0; flex: 1 1 auto; }
+      .cv-head .tb-name > input.tb-name-input[type=text] { max-width: 100%; }
+      .cv-head .cv-acts { order: 1; gap: 8px; }
+      .cv-head .cv-what { order: 2; flex: 1 1 100%; }
+      .cv-head .cv-what .cv-shape { white-space: normal; }
+      .cv-head .cv-what .fam { overflow: visible; overflow-wrap: anywhere; }
       .cv-head .cv-where { order: 4; flex: 0 1 auto; }
     }
 `;
