@@ -160,6 +160,27 @@ export function takeRoomsRecord(watchId: string, document: BehaviorDocument, rev
   return { draft: kept, mergedIntoEdits: hadEdits && remain };
 }
 
+/**
+ * The draft a new watch's rooms open on while Home Assistant holds no record
+ * of their kind (`watch-menus/new-watch.ts`): the kept one, else a new one
+ * on `document` at revision 0 with no edits, so nothing is unsaved. That is
+ * the watch settings' defaults on the main house, and no rooms on any other
+ * home. Nothing is written: the first save is a save over revision 0, which
+ * makes the record. A kept draft from an earlier record (Home Assistant
+ * started over) is moved onto `document` at revision 0, its edits kept,
+ * unless it is being saved.
+ */
+export function newRoomsDraft(key: string, document: BehaviorDocument): RoomsDraft {
+  const kept = drafts.get(key);
+  if (kept === undefined) {
+    const draft = new RoomsDraft(document, 0);
+    drafts.set(key, draft);
+    return draft;
+  }
+  if (kept.revision > 0 && !kept.saving) kept.rebase(document, 0);
+  return kept;
+}
+
 export function anyRoomsDirty(): boolean {
   for (const draft of drafts.values()) if (draft.dirty) return true;
   return false;

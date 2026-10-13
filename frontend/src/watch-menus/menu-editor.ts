@@ -29,9 +29,11 @@
 // discards both, and Undo works on the pages while a page is picked in the
 // switcher's Pages card.
 //
-// A watch with no menus record yet can start from the app's defaults
-// (`menu-defaults.json`): a save over revision 0, which Home Assistant takes
-// for a paired watch.
+// A watch with no menus record yet opens ready on the app's defaults
+// (`menu-defaults.json`), unsaved, under the new watch line (`new-watch.ts`);
+// its first Save is a save over revision 0, which Home Assistant takes for a
+// paired watch. While its iPhone may still move the menus here it waits,
+// and "Start fresh instead" opens the same ready screen.
 //
 // The panel loads this module on its own, with one `import()`, when its route
 // is `/menus` (`hook.ts`). Nothing it imports may import `icons.ts`.
@@ -117,14 +119,13 @@ import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watc
 import type { SwitcherSettingsHost } from "../watch-pages/switcher-settings.js";
 import { scrubWatchOrphanTriggers } from "../watch-pages/tile-settings-model.js";
 import {
-  PAIR_FIRST_TEXT,
   START_FRESH_BUTTON,
   type NoRecordStart,
+  WAIT_FOR_IPHONE_TEXT,
   deliveryState,
   followWatch,
   mayStart,
   noRecordStart,
-  noRecordText,
   settingsWatches,
   watchName,
 } from "../watch-settings.js";
@@ -134,8 +135,8 @@ import {
   dropAllWatchMenus,
   forgetWatchMenusDraft,
   keptWatchMenusDraft,
+  newWatchMenusDraft,
   saveWatchMenusDraft,
-  startWatchMenus,
   takeWatchMenusRecord,
 } from "./draft.js";
 import { WATCH_MENUS_HELP_URL, navigatePagesFromMenus, navigateWatchMenus, registerWatchMenusDrafts } from "./hook.js";
@@ -161,9 +162,7 @@ import {
 import {
   type MenuTargets,
   type MenusDocument,
-  WATCH_MENUS_NO_RECORD_TEXT,
   WATCH_MENUS_NO_RECORD_TITLE,
-  WATCH_MENUS_START_BUTTON,
   WATCH_MENUS_UPDATE_TEXT,
   asWatchMenusDocument,
   isMenuUUID,
@@ -173,6 +172,15 @@ import {
   watchMenusBudget,
   watchMenusReadMeansUnsupported,
 } from "./model.js";
+import {
+  chooseStartFresh,
+  firstSaveNote,
+  newWatchStyles,
+  opensReady,
+  renderNewWatchBanner,
+  renderSaveReason,
+  saveBlockedText,
+} from "./new-watch.js";
 import { watchMenusReplacedText, watchMenusSaveNote } from "./save-note.js";
 import type { MenuVoiceContext } from "./slot-voice.js";
 import { voiceDocumentOfRecord, voicePhraseTargets, watchVoiceFallbacks } from "../watch-voice/defaults.js";
@@ -398,7 +406,6 @@ export class WaMenuEditor extends LitElement {
   @state() private note?: Note;
   @state() private restoreAsk?: RestoreAsk;
   @state() private restoring = false;
-  @state() private starting = false;
   /** The foot bar's History dialog is open (`config-foot.ts`). */
   @state() private historyOpen = false;
   /** The foot bar's Raw configuration dialog is open. */
@@ -459,9 +466,31 @@ export class WaMenuEditor extends LitElement {
     return settingsWatches(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
   }
 
+  /** The menus being edited. While Home Assistant holds none for the watch
+   * it is the new watch's ready draft (`new-watch.ts`), on the defaults at
+   * revision 0 and unsaved, once the screen opens ready; none while it waits
+   * for the iPhone. */
   private get draft(): WatchMenusDraft | undefined {
-    if (this.watchId === undefined || this.record === undefined || this.record.revision <= 0) return undefined;
-    return keptWatchMenusDraft(this.watchId);
+    const watchId = this.watchId;
+    const record = this.record;
+    if (watchId === undefined || record === undefined) return undefined;
+    if (record.revision > 0) {
+      // Made from the record when none is kept (the panel's leave guard may
+      // have dropped it); none for a record this panel cannot read.
+      const kept = keptWatchMenusDraft(watchId);
+      if (kept !== undefined) return kept;
+      const document = asWatchMenusDocument(record.document);
+      return document === undefined ? undefined : takeWatchMenusRecord(watchId, document, record.revision).draft;
+    }
+    if (this.unsupported || !this.opensReady()) return undefined;
+    return keptWatchMenusDraft(watchId) ?? newWatchMenusDraft(watchId);
+  }
+
+  /** Home Assistant holds no menus for the watch: the ready screen's banner,
+   * and Save's reason while there is nothing to save. */
+  private get newWatch(): boolean {
+    const record = this.record;
+    return record !== undefined && record.revision <= 0 && !this.unsupported;
   }
 
   /**
@@ -888,6 +917,10 @@ export class WaMenuEditor extends LitElement {
   private show(record: WatchConfigRecord): void {
     const watchId = this.watchId;
     this.record = record;
+    // No menus here: a kept draft from an earlier record moves onto the
+    // defaults at revision 0, its edits kept, so its first save makes the
+    // record (`newWatchMenusDraft`).
+    if (watchId !== undefined && record.revision <= 0) newWatchMenusDraft(watchId);
     const document = record.revision > 0 ? asWatchMenusDocument(record.document) : undefined;
     if (watchId === undefined || document === undefined) return;
     const restart = this.restartDraft;
@@ -1175,13 +1208,15 @@ export class WaMenuEditor extends LitElement {
     const pagesDirty = pages?.dirty ?? false;
     if (!menusDirty && !pagesDirty) return;
     this.note = undefined;
-    const menusNote = menusDirty ? await this.saveMenus(hass, watchId, draft) : undefined;
+    // A first save over revision 0 that Home Assistant refuses as
+    // `no_record` means the watch is not paired (`firstSaveNote`).
+    const menusNote = menusDirty ? await this.saveMenus(hass, watchId, draft, draft.revision <= 0) : undefined;
     const pagesNote = pagesDirty && pages !== undefined && this.pagesDraft === pages ? await this.savePages(hass, watchId, pages) : undefined;
     if (watchId === this.watchId) this.note = joinSaveNotes(menusNote, pagesNote);
   }
 
   /** Save the menus draft; the note for how it ended, or none. */
-  private async saveMenus(hass: HassLike, watchId: string, draft: WatchMenusDraft): Promise<Note | undefined> {
+  private async saveMenus(hass: HassLike, watchId: string, draft: WatchMenusDraft, first = false): Promise<Note | undefined> {
     const running = saveWatchMenusDraft(draft, {
       prepare: scrubWatchMenuOrphanTriggers,
       save: (base, document) => saveWatchConfig(hass, watchId, "menus", base, document).catch((err: unknown) => {
@@ -1204,7 +1239,7 @@ export class WaMenuEditor extends LitElement {
       message: errText(err),
     }));
     this.saveEnded(watchId);
-    return watchMenusSaveNote(result);
+    return firstSaveNote(first, result.code, watchMenusSaveNote(result));
   }
 
   /** Save the page draft as the page editor does (`page-editor.ts`
@@ -1240,32 +1275,15 @@ export class WaMenuEditor extends LitElement {
     return watchPagesSaveNote(result);
   }
 
-  /** "Start with the defaults": create the record from the app's default
-   * menus. */
-  private async startWithDefaults(): Promise<void> {
-    const hass = this.hass;
+  /** "Start fresh instead", asked first: while an iPhone may still move the
+   * menus here, open the same ready screen a watch without one opens on, the
+   * defaults unsaved. Nothing is written until Save. */
+  private startFresh(): void {
     const watchId = this.watchId;
-    if (!hass || watchId === undefined || this.starting) return;
-    this.starting = true;
+    if (watchId === undefined || !mayStart(this.noRecordState())) return;
+    chooseStartFresh("menus", watchId);
     this.note = undefined;
-    const result = await startWatchMenus((base, document) => saveWatchConfig(hass, watchId, "menus", base, document));
-    this.starting = false;
-    if (watchId !== this.watchId) return;
-    if (result.ok) {
-      this.note = { kind: "ok", text: "Started with the defaults. The watch picks them up the next time it checks." };
-    } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: PAIR_FIRST_TEXT };
-      return;
-    } else if (result.code === "conflict") {
-      this.note = { kind: "warn", text: "Menus arrived meanwhile, so those are shown." };
-    } else if (result.code === "unsupported") {
-      this.unsupported = true;
-      return;
-    } else {
-      this.note = { kind: "err", text: `Could not start: ${friendlyError(result)}` };
-      return;
-    }
-    void this.load(watchId, true);
+    this.requestUpdate();
   }
 
   // ── restore ────────────────────────────────────────────────────────────
@@ -1422,7 +1440,8 @@ export class WaMenuEditor extends LitElement {
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
+        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>
+        ${renderSaveReason(saveBlockedText({ newWatch: this.newWatch, dirty, saving: this.saving }))}` : nothing}
       ${shell ? nothing : html`<button class="tb-btn tb-pages" title="The watch's pages, as Home Assistant keeps them"
         @click=${() => (this.onPages ? this.onPages() : navigatePagesFromMenus(undefined))}>${uiIcon("pages")}<span>Pages</span></button>`}
       ${this.barActions}
@@ -1444,23 +1463,28 @@ export class WaMenuEditor extends LitElement {
     </span>`;
   }
 
-  /** The "Start with the defaults" flow applies: Home Assistant holds no
-   * menus for this watch, and the integration keeps them. */
-  /** Whether this watch's iPhone may still move this kind here, so a start
-   * waits behind a confirm (`noRecordStart`). */
+  /** Whether this watch's iPhone may still move this kind here, so the
+   * screen waits and "Start fresh instead" asks first (`noRecordStart`). */
   private noRecordState(watches: readonly OwnerSummary[] = this.watches): NoRecordStart {
     return noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId));
   }
 
-  private canStart(): boolean {
-    const record = this.record;
-    return this.watchId !== undefined && record !== undefined && record.revision <= 0 && !this.unsupported;
+  /** With no menus here, whether the screen opens ready (`new-watch.ts`)
+   * rather than wait for the iPhone. */
+  private opensReady(watches: readonly OwnerSummary[] = this.watches): boolean {
+    return opensReady(this.noRecordState(watches), "menus", this.watchId);
   }
 
-  /** The ··· menu: Discard edits, and Start with the defaults while that
-   * applies. */
+  /** "Start fresh instead" applies: Home Assistant holds no menus for this
+   * watch, the integration keeps them, and the screen waits for the iPhone. */
+  private canStartFresh(): boolean {
+    return this.watchId !== undefined && this.newWatch && !this.opensReady();
+  }
+
+  /** The ··· menu: Discard edits, and Start fresh instead while the screen
+   * waits for the iPhone. */
   private renderTopMenu(draft: WatchMenusDraft | undefined): TemplateResult | typeof nothing {
-    const start = this.canStart();
+    const start = this.canStartFresh();
     if (draft === undefined && !start) return nothing;
     const open = this.topMenuOpen;
     const run = (fn: () => void) => () => { this.topMenuOpen = false; fn(); };
@@ -1469,10 +1493,10 @@ export class WaMenuEditor extends LitElement {
         @click=${() => { this.topMenuOpen = !open; }}>···</button>
       ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="More actions">
         ${draft ? html`<button class="row" role="menuitem" ?disabled=${!this.dirty || this.saving}
-          title="Go back to the copy Home Assistant holds. Undo brings the edits back."
+          title=${this.newWatch ? "Go back to the defaults. Undo brings the edits back." : "Go back to the copy Home Assistant holds. Undo brings the edits back."}
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
-        ${start ? html`<button class="row" role="menuitem" ?disabled=${this.starting}
-          @click=${run(() => { if (mayStart(this.noRecordState())) void this.startWithDefaults(); })}>${this.noRecordState() === "wait" ? START_FRESH_BUTTON : WATCH_MENUS_START_BUTTON}</button>` : nothing}
+        ${start ? html`<button class="row" role="menuitem"
+          @click=${run(() => this.startFresh())}>${START_FRESH_BUTTON}</button>` : nothing}
       </div>` : nothing}
     </span>`;
   }
@@ -1634,28 +1658,31 @@ export class WaMenuEditor extends LitElement {
     const record = this.record;
     if (record === undefined) return html`<div class="pe-empty">Loading…</div>`;
     const draft = this.draft;
-    const host = this.viewHost();
-    if (record.revision <= 0 || draft === undefined || host === undefined) {
+    // A record this panel cannot read, such as one from a newer schema.
+    if (draft === undefined && record.revision > 0) return html`<div class="pe-empty"><b>${WATCH_MENUS_UPDATE_TEXT}</b></div>`;
+    if (draft === undefined) {
       const kept = this.watchId === undefined ? undefined : keptWatchMenusDraft(this.watchId);
       const id = this.watchId;
-      // While the iPhone's move may still come it waits, and the start is a
-      // small link that asks first.
-      const state = this.noRecordState(watches);
-      return html`<div class="pe-empty"><b>${WATCH_MENUS_NO_RECORD_TITLE}</b><span>${noRecordText(state, WATCH_MENUS_NO_RECORD_TEXT)}</span>
-        ${state === "wait"
-          ? html`<button class="link start-fresh" ?disabled=${this.starting} @click=${() => { if (mayStart(state)) void this.startWithDefaults(); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
-          : html`<button class="pe-btn pe-primary" ?disabled=${this.starting} @click=${() => void this.startWithDefaults()}>${this.starting ? "Starting…" : WATCH_MENUS_START_BUTTON}</button>`}
+      // No menus here and the screen does not open ready: the iPhone's move
+      // may still come, so it waits, and "Start fresh instead" is a small
+      // link that asks first.
+      return html`<div class="pe-empty"><b>${WATCH_MENUS_NO_RECORD_TITLE}</b><span>${WAIT_FOR_IPHONE_TEXT}</span>
+        <button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>
         ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when menus are here again.</span>
           <button class="pe-btn" @click=${() => { forgetWatchMenusDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
       </div>`;
     }
+    const host = this.viewHost();
+    if (host === undefined) return html`<div class="pe-empty">Loading…</div>`;
     const fit = this.fittedColumns();
     const view = this.hostHeight > 0 ? `--pe-view-h:${this.hostHeight}px;` : "";
     // The complication editor's three columns (`editor-chrome.ts`), as the
     // page editor lays them out: the Menus and Slots cards, the canvas card,
     // and the inspector, with a drag gutter between each pair. The editor
     // scrolls as a whole and the side columns stick under the top bar.
-    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
+    const fresh = record.revision <= 0;
+    return html`${fresh ? renderNewWatchBanner() : nothing}
+    <div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
       <div class="column left">
         ${renderMenusCard(host)}
         ${renderSlotsCard(host)}
@@ -1669,7 +1696,7 @@ export class WaMenuEditor extends LitElement {
         ${renderMenuInspector(host)}
       </div>
     </div>
-    ${this.renderFoot(record, draft.document, draft.dirty)}`;
+    ${fresh ? nothing : this.renderFoot(record, draft.document, draft.dirty)}`;
   }
 
   /** The stored copy's line, History and Raw configuration, pinned to the
@@ -1730,7 +1757,7 @@ export class WaMenuEditor extends LitElement {
     </dialog>`;
   }
 
-  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchFrameStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchFrameStyles, newWatchStyles, css`
     /* A column, so the foot bar (config-foot.ts) can take the space left
        at the foot of a short editor; --cf-pad is the padding it reaches
        through to sit edge to edge. */

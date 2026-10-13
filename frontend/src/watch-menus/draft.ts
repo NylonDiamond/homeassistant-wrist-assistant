@@ -303,33 +303,6 @@ async function runSave(draft: WatchMenusDraft, io: WatchMenusSaveIO): Promise<Wa
   }
 }
 
-/** How "Start with the defaults" ended. */
-export type WatchMenusStartResult =
-  | { ok: true; revision: number }
-  | { ok: false; code: "no_record" | "conflict" | "unsupported" | "error"; message: string };
-
-/**
- * Create the watch's menus record from the app's defaults: a save over
- * revision 0, which Home Assistant takes only while it holds no record for a
- * paired watch. `no_record` back means the watch is not paired; `conflict`
- * means a record came meanwhile (the caller reads it); `unknown_command`
- * means an integration too old to keep watch config at all. Any other
- * refusal, `invalid` included (the defaults' shape or size refused), is an
- * error with Home Assistant's own words. An integration too old for the
- * `menus` kind is found earlier, by the read (`watchMenusReadMeansUnsupported`).
- */
-export async function startWatchMenus(save: (baseRevision: number, document: MenusDocument) => Promise<{ revision: number }>): Promise<WatchMenusStartResult> {
-  try {
-    const { revision } = await save(0, watchMenusDefaults());
-    return { ok: true, revision };
-  } catch (error) {
-    const { code, message } = watchCommandError(error);
-    if (code === "no_record" || code === "conflict") return { ok: false, code, message };
-    if (code === "unknown_command") return { ok: false, code: "unsupported", message };
-    return { ok: false, code: "error", message };
-  }
-}
-
 // ── the kept drafts ──────────────────────────────────────────────────────
 
 const drafts = new Map<string, WatchMenusDraft>();
@@ -360,6 +333,25 @@ export function takeWatchMenusRecord(
   const dirty = held.dirty;
   const changed = revision < held.revision ? held.restart(document, revision) : held.rebase(document, revision);
   return { draft: held, mergedIntoEdits: dirty && changed, replaced: dirty ? held.replaced : [] };
+}
+
+/**
+ * The draft a new watch's menu screen opens on while Home Assistant holds no
+ * menus for it (`new-watch.ts`): the kept one, else a new one on the app's
+ * defaults at revision 0, unsaved and not dirty. Nothing is written: its
+ * first save is a save over revision 0, which makes the record. A kept
+ * draft from an earlier record (Home Assistant started over) is moved onto
+ * the defaults at revision 0, its edits kept, unless it is being saved.
+ */
+export function newWatchMenusDraft(watchId: string): WatchMenusDraft {
+  const held = drafts.get(watchId);
+  if (held === undefined) {
+    const fresh = new WatchMenusDraft(watchMenusDefaults(), 0);
+    drafts.set(watchId, fresh);
+    return fresh;
+  }
+  if (held.revision > 0 && !held.saving) held.restart(watchMenusDefaults(), 0);
+  return held;
 }
 
 export function forgetWatchMenusDraft(watchId: string): void {

@@ -615,14 +615,12 @@ export function roomsDocumentOf(record: WatchConfigRecord | undefined): Behavior
 
 // ── words ────────────────────────────────────────────────────────────────
 
+/** Over the wait on the main house while an iPhone may still move the
+ * watch's settings here. A watch without one opens ready instead
+ * (`watch-menus/new-watch.ts`). */
 export const ROOMS_NO_RECORD_TITLE = "No watch settings from this watch yet.";
-/** The no-record line when no iPhone will send the watch's settings. Rooms
- * have no Start of their own: they come with Watch settings' start, which
- * the button beside it opens. */
-export const ROOMS_NO_RECORD_TEXT = "Rooms are part of the watch's settings. Start them in Settings.";
-export const ROOMS_OPEN_SETTINGS_BUTTON = "Open Settings";
 
-/** The same while the iPhone's move may still bring the settings. */
+/** The wait line on the main house, whose rooms ride in the settings. */
 export const ROOMS_WAIT_TEXT = `Rooms are part of the watch's settings. ${WAIT_FOR_IPHONE_TEXT}`;
 export const ROOMS_UNREADABLE_TEXT = "Home Assistant holds settings for this watch that this panel cannot read. Update the integration.";
 export const ZONES_UNREADABLE_TEXT = "The point control targets stored for this watch cannot be read, so they are shown as none and left as they are. Update the integration to change them here.";
@@ -715,33 +713,10 @@ export function homeAutoSwitchWrites(doc: BehaviorDocument, on: boolean): Map<st
   return homeRoomWrites(on ? triggerWrites(doc, "Automatic") : new Map([[ROOM_KEYS.autoSwitch, false]]));
 }
 
-/** The first `rooms` record a Start makes: no rooms yet. */
+/** What a new watch's rooms open on, unsaved, on a home that is not the main
+ * house: no rooms yet. Its first save makes the `rooms` record. */
 export function homeRoomsStart(): BehaviorDocument {
   return { schemaVersion: HOME_ROOMS_SCHEMA_VERSION };
-}
-
-/** How a start of a `rooms` record ended. */
-export type HomeRoomsStartResult =
-  | { ok: true; revision: number }
-  | { ok: false; code: "no_record" | "conflict" | "unsupported" | "error"; message: string };
-
-/**
- * Make this home's first `rooms` record: a save over revision 0, which Home
- * Assistant takes only while it holds none for a paired watch. `no_record`
- * back means the watch is not paired, `conflict` that a record came
- * meanwhile (the caller reads it), `unsupported` an integration older than
- * the kind. Any other refusal is an error with Home Assistant's words.
- */
-export async function startHomeRooms(save: (baseRevision: number, document: BehaviorDocument) => Promise<{ revision: number }>): Promise<HomeRoomsStartResult> {
-  try {
-    const { revision } = await save(0, homeRoomsStart());
-    return { ok: true, revision };
-  } catch (error) {
-    const { code, message } = watchCommandError(error);
-    if (code === "no_record" || code === "conflict") return { ok: false, code, message };
-    if (code === "unknown_command" || code === "invalid") return { ok: false, code: "unsupported", message };
-    return { ok: false, code: "error", message };
-  }
 }
 
 /** Whether a failed read of `rooms` means this integration does not keep the
@@ -755,12 +730,9 @@ export function homeRoomsReadMeansUnsupported(error: unknown): boolean {
 /** The one line that stands for the four main house keys, in the words
  * Watch settings uses for the gestures. */
 export const HOME_ROOMS_MAIN_HOUSE_TEXT = "The double-tap on the page title, the double pinch and the point control switches come from this watch's main home.";
+/** Over the wait on another home while an iPhone may still move its rooms
+ * here. */
 export const HOME_ROOMS_NO_RECORD_TITLE = "No rooms for this home yet.";
-/** The no-record line when no iPhone will send this home's rooms. */
-export const HOME_ROOMS_NO_RECORD_TEXT = "Start with no rooms to begin.";
-export const HOME_ROOMS_START_BUTTON = "Start with no rooms";
-export const HOME_ROOMS_START_CONFLICT_TEXT = "Rooms for this home arrived meanwhile, so those are shown.";
-export const HOME_ROOMS_STARTED_TEXT = "Started with no rooms. Pick a room sensor and give rooms a page, then save.";
 export const HOME_ROOMS_UPDATE_TEXT = "Update the integration to edit this home's rooms here.";
 export const HOME_ROOMS_UNREADABLE_TEXT = "Home Assistant holds rooms for this home that this panel cannot read. Update the integration.";
 export const HOME_AUTO_SWITCH_LABEL = "Switch automatically";

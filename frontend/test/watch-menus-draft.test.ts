@@ -1,7 +1,7 @@
 // The menus draft and its save: undo and redo, the merge of a change from
 // elsewhere, a save that meets a conflict, the shape check that stops a send,
-// the drafts kept per watch, and the no-record path ("Start with the
-// defaults").
+// the drafts kept per watch, and a new watch's ready draft (no record yet:
+// the defaults, unsaved, until the first save makes the record).
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -15,16 +15,14 @@ import {
   dropAllWatchMenus,
   forgetWatchMenusDraft,
   keptWatchMenusDraft,
+  newWatchMenusDraft,
   saveWatchMenusDraft,
-  startWatchMenus,
   takeWatchMenusRecord,
 } from "../src/watch-menus/draft.js";
 import {
   ANYWHERE,
   type MenusDocument,
-  WATCH_MENUS_NO_RECORD_TEXT,
   WATCH_MENUS_NO_RECORD_TITLE,
-  WATCH_MENUS_START_BUTTON,
   WATCH_MENUS_UPDATE_TEXT,
   scrubWatchMenuOrphanTriggers,
   setWatchMenuSlotAction,
@@ -284,34 +282,110 @@ describe("the kept drafts", () => {
   });
 });
 
-describe("no record: Start with the defaults", () => {
-  it("saves the defaults over revision 0", async () => {
+describe("no record: a new watch opens ready", () => {
+  it("opens on the defaults at revision 0, unsaved and not dirty", () => {
+    dropAllWatchMenus();
+    const draft = newWatchMenusDraft("n1");
+    expect(draft.revision).toBe(0);
+    expect(draft.document).toEqual(DEFAULTS);
+    expect(draft.document).toEqual(watchMenusDefaults());
+    expect(draft.dirty).toBe(false);
+    expect(anyWatchMenusDirty()).toBe(false);
+    expect(newWatchMenusDraft("n1")).toBe(draft);
+    expect(keptWatchMenusDraft("n1")).toBe(draft);
+    dropAllWatchMenus();
+  });
+
+  it("counts as unsaved only after a change, and Discard goes back to the defaults", () => {
+    dropAllWatchMenus();
+    const draft = newWatchMenusDraft("n2");
+    draft.apply(style(draft.document, "showIconBubble", true));
+    expect(anyWatchMenusDirty()).toBe(true);
+    expect(draft.discard()).toBe(true);
+    expect(draft.document).toEqual(DEFAULTS);
+    expect(draft.dirty).toBe(false);
+    dropAllWatchMenus();
+  });
+
+  it("makes the record with its first save, a save over revision 0", async () => {
+    dropAllWatchMenus();
+    const draft = newWatchMenusDraft("n3");
+    draft.apply(style(draft.document, "showIconBubble", true));
     const calls: [number, MenusDocument][] = [];
-    const result = await startWatchMenus(async (base, document) => { calls.push([base, document]); return { revision: 1 }; });
-    expect(result).toEqual({ ok: true, revision: 1 });
+    const result = await saveWatchMenusDraft(draft, {
+      save: async (base, document) => { calls.push([base, document]); return { revision: 1 }; },
+      fetch: async () => { throw new Error("not read"); },
+    });
+    expect(result).toMatchObject({ ok: true, revision: 1, merged: false });
+    expect(calls).toHaveLength(1);
     expect(calls[0]![0]).toBe(0);
-    expect(calls[0]![1]).toEqual(watchMenusDefaults());
-    expect(calls[0]![1]).toEqual(DEFAULTS);
+    expect(calls[0]![1]).toEqual(style(DEFAULTS, "showIconBubble", true));
+    expect(draft.revision).toBe(1);
+    expect(draft.dirty).toBe(false);
+    dropAllWatchMenus();
   });
 
-  it("tells a watch that is not paired, a record that came meanwhile, and an old integration apart", async () => {
-    expect(await startWatchMenus(async () => { throw refusal("no_record"); })).toMatchObject({ ok: false, code: "no_record" });
-    expect(await startWatchMenus(async () => { throw refusal("conflict"); })).toMatchObject({ ok: false, code: "conflict" });
-    expect(await startWatchMenus(async () => { throw { type: "result", success: false, error: { code: "unknown_command", message: "x" } }; })).toMatchObject({ ok: false, code: "unsupported" });
-    expect(await startWatchMenus(async () => { throw refusal("unavailable"); })).toMatchObject({ ok: false, code: "error" });
+  it("merges onto a record that came meanwhile, as any conflict", async () => {
+    dropAllWatchMenus();
+    const draft = newWatchMenusDraft("n4");
+    draft.apply(style(draft.document, "showIconBubble", true));
+    const theirs = switcher(DEFAULTS, "selectedScale", 1.4);
+    const bases: number[] = [];
+    const result = await saveWatchMenusDraft(draft, {
+      save: async (base) => {
+        bases.push(base);
+        if (base === 0) throw refusal("conflict");
+        return { revision: 4 };
+      },
+      fetch: async () => ({ revision: 3, document: theirs }),
+    });
+    expect(bases).toEqual([0, 3]);
+    expect(result).toMatchObject({ ok: true, revision: 4, merged: true });
+    expect(draft.document).toEqual(style(theirs, "showIconBubble", true));
+    dropAllWatchMenus();
   });
 
-  it("shows a refused document as an error in Home Assistant's words, never as an old integration", async () => {
-    const message = "document is 300000 bytes; the limit for menus is 262144";
-    expect(await startWatchMenus(async () => { throw refusal("invalid", message); })).toEqual({ ok: false, code: "error", message });
+  it("refuses a first save on a watch that is not paired as no_record", async () => {
+    dropAllWatchMenus();
+    const draft = newWatchMenusDraft("n5");
+    draft.apply(style(draft.document, "showIconBubble", true));
+    const result = await saveWatchMenusDraft(draft, {
+      save: async () => { throw refusal("no_record"); },
+      fetch: async () => { throw new Error("not read"); },
+    });
+    expect(result).toMatchObject({ ok: false, code: "no_record" });
+    expect(draft.dirty).toBe(true);
+    dropAllWatchMenus();
   });
 
-  it("says so in plain words, with no iPhone switch", () => {
+  it("moves a kept draft from an earlier record onto the defaults, its edits kept", () => {
+    dropAllWatchMenus();
+    const old = takeWatchMenusRecord("n6", DEFAULTS, 7).draft;
+    old.apply(style(old.document, "showIconBubble", true));
+    const fresh = newWatchMenusDraft("n6");
+    expect(fresh).toBe(old);
+    expect(fresh.revision).toBe(0);
+    expect(fresh.document).toEqual(style(DEFAULTS, "showIconBubble", true));
+    expect(fresh.dirty).toBe(true);
+    dropAllWatchMenus();
+  });
+
+  it("takes the record when one arrives, keeping the edits on top", () => {
+    dropAllWatchMenus();
+    const draft = newWatchMenusDraft("n7");
+    draft.apply(style(draft.document, "showIconBubble", true));
+    const theirs = switcher(DEFAULTS, "selectedScale", 1.4);
+    const taken = takeWatchMenusRecord("n7", theirs, 2);
+    expect(taken.draft).toBe(draft);
+    expect(taken.mergedIntoEdits).toBe(true);
+    expect(draft.revision).toBe(2);
+    expect(draft.document).toEqual(style(theirs, "showIconBubble", true));
+    dropAllWatchMenus();
+  });
+
+  it("says the wait's title in plain words, with no iPhone switch", () => {
     expect(WATCH_MENUS_NO_RECORD_TITLE).toBe("No menus from this watch yet.");
-    expect(WATCH_MENUS_START_BUTTON).toBe("Start with the defaults");
     expect(WATCH_MENUS_UPDATE_TEXT).toBe("Update the integration to edit menus here.");
-    expect(WATCH_MENUS_NO_RECORD_TEXT).toBe("Start with the defaults to begin.");
-    expect(WATCH_MENUS_NO_RECORD_TEXT.startsWith(WATCH_MENUS_START_BUTTON)).toBe(true);
-    for (const text of [WATCH_MENUS_NO_RECORD_TEXT, WATCH_MENUS_NO_RECORD_TITLE]) expect(text).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
+    expect(WATCH_MENUS_NO_RECORD_TITLE).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
   });
 });

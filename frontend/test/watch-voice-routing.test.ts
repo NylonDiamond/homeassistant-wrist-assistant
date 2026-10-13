@@ -236,7 +236,7 @@ describe("a menu slot's voice", () => {
     expect(renderSlotVoiceBody(vhost, ANYWHERE, { id: "T", action: { type: "toggle" } })).toBeUndefined();
     expect(menuSlotHasVoice({ action: { type: "broadcast" } })).toBe(true);
     // Without voice settings the phrase list says where to make them.
-    expect(flat(renderSlotVoiceBody({ hass, edit: () => false }, ANYWHERE, { id: "M", action: { type: "ttsMenu" } }))).toContain("Start them in Voice");
+    expect(flat(renderSlotVoiceBody({ hass, edit: () => false }, ANYWHERE, { id: "M", action: { type: "ttsMenu" } }))).toContain("Save them once in Voice");
   });
 
   it("picks Speak Phrase's phrase from the voice record", () => {

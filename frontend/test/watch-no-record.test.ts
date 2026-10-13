@@ -2,10 +2,12 @@
 // kind. The iPhone app moves the watch's setup here once, the first time the
 // updated app opens, and only for a kind Home Assistant holds none of; so
 // while the watch has an iPhone (`has_iphone` on its owner row) each editor
-// waits, and its start becomes a small "Start fresh instead" link that asks
-// first. A watch with no iPhone, and an integration older than the field,
-// keep the Start button. No text names the iPhone switch the app no longer
-// has. The page editor and Watch settings are driven end to end in
+// waits, with a small "Start fresh instead" link that asks first. A watch
+// with no iPhone, and an integration older than the field, open the menu,
+// status page, voice and rooms screens ready instead: no Start button, the
+// new watch line over the screen, nothing saved until the first Save
+// (`watch-menus/new-watch.ts`). No text names the iPhone switch the app no
+// longer has. The page editor and Watch settings are driven end to end in
 // watch-start-flows.test.ts; this covers the decision, the words, and the
 // other editors' no-record bodies.
 
@@ -20,13 +22,26 @@ import {
 } from "../src/watch-control-center/model.js";
 import { CONTROL_CENTER_MOVED_LINK, CONTROL_CENTER_MOVED_TITLE } from "../src/watch-control-center/view.js";
 import { HTTP_ACTIONS_PHONE_TEXT } from "../src/watch-http-actions/model.js";
+import type { HassLike } from "../src/ha-api.js";
+import { dropAllWatchMenus } from "../src/watch-menus/draft.js";
 import { WaMenuEditor } from "../src/watch-menus/menu-editor.js";
-import { WATCH_MENUS_NO_RECORD_TEXT, WATCH_MENUS_START_BUTTON } from "../src/watch-menus/model.js";
+import { WATCH_MENUS_NO_RECORD_TITLE, WATCH_MENUS_UPDATE_TEXT } from "../src/watch-menus/model.js";
+import {
+  choseStartFresh,
+  firstSaveNote,
+  forgetStartFreshChoices,
+  opensReady,
+  saveBlockedText,
+} from "../src/watch-menus/new-watch.js";
 import { STYLE_NO_RECORD_TEXT, STYLE_START_BUTTON } from "../src/watch-notification-style/model.js";
-import { ROOMS_NO_RECORD_TEXT, ROOMS_WAIT_TEXT } from "../src/watch-rooms/model.js";
+import { forgetRoomsDraft } from "../src/watch-rooms/draft.js";
+import { ROOMS_NO_RECORD_TITLE, ROOMS_WAIT_TEXT } from "../src/watch-rooms/model.js";
 import { WaRoomsEditor } from "../src/watch-rooms/rooms-editor.js";
 import {
+  NEW_WATCH_TEXT,
+  NOTHING_TO_SAVE_TEXT,
   PAGES_NO_RECORD_TEXT,
+  PAIR_FIRST_TEXT,
   SETTINGS_NO_RECORD_TEXT,
   START_FRESH_BUTTON,
   START_FRESH_CONFIRM_TEXT,
@@ -35,13 +50,11 @@ import {
   noRecordStart,
   noRecordText,
 } from "../src/watch-settings.js";
-import {
-  STATUS_PAGES_NO_RECORD_TEXT,
-  STATUS_PAGES_START_BUTTON,
-  STATUS_PAGES_START_EMPTY_BUTTON,
-} from "../src/watch-status-pages/model.js";
+import { dropAllStatusPages } from "../src/watch-status-pages/draft.js";
+import { STATUS_PAGES_NO_RECORD_TITLE, STATUS_PAGES_UPDATE_TEXT } from "../src/watch-status-pages/model.js";
 import { WaStatusPagesEditor } from "../src/watch-status-pages/status-pages-editor.js";
-import { WATCH_VOICE_NO_RECORD_TEXT, WATCH_VOICE_START_BUTTON } from "../src/watch-voice/model.js";
+import { dropAllWatchVoice } from "../src/watch-voice/draft.js";
+import { WATCH_VOICE_NO_RECORD_TITLE, WATCH_VOICE_UPDATE_TEXT } from "../src/watch-voice/model.js";
 import { WaVoiceEditor } from "../src/watch-voice/voice-editor.js";
 
 // ── reading templates ────────────────────────────────────────────────────
@@ -132,15 +145,11 @@ describe("the no-record words", () => {
     expect(PAGES_NO_RECORD_TEXT).toBe("Start with an empty page to begin.");
     expect(SETTINGS_NO_RECORD_TEXT).toBe("Start with the defaults to begin.");
     for (const [text, button] of [
-      [WATCH_MENUS_NO_RECORD_TEXT, WATCH_MENUS_START_BUTTON],
-      [WATCH_VOICE_NO_RECORD_TEXT, WATCH_VOICE_START_BUTTON],
       [STYLE_NO_RECORD_TEXT, STYLE_START_BUTTON],
-      [STATUS_PAGES_NO_RECORD_TEXT, STATUS_PAGES_START_BUTTON],
       [CONTROL_CENTER_NO_RECORD_TEXT, CONTROL_CENTER_START_EMPTY_BUTTON],
     ]) {
       expect(text).toBe(`${button} to begin.`);
     }
-    expect(ROOMS_NO_RECORD_TEXT).toBe("Rooms are part of the watch's settings. Start them in Settings.");
     expect(ROOMS_WAIT_TEXT).toBe(`Rooms are part of the watch's settings. ${WAIT_FOR_IPHONE_TEXT}`);
     expect(HTTP_ACTIONS_PHONE_TEXT).toBe("Update Wrist Assistant on your iPhone and open it once. Its HTTP actions move here by themselves.");
   });
@@ -148,9 +157,9 @@ describe("the no-record words", () => {
   it("never name the iPhone switch the app no longer has, nor break a sentence with a dash", () => {
     for (const text of [
       WAIT_FOR_IPHONE_TEXT, START_FRESH_BUTTON, START_FRESH_CONFIRM_TEXT,
-      PAGES_NO_RECORD_TEXT, SETTINGS_NO_RECORD_TEXT, WATCH_MENUS_NO_RECORD_TEXT, WATCH_VOICE_NO_RECORD_TEXT,
-      STYLE_NO_RECORD_TEXT, STATUS_PAGES_NO_RECORD_TEXT, CONTROL_CENTER_NO_RECORD_TEXT,
-      ROOMS_NO_RECORD_TEXT, ROOMS_WAIT_TEXT, HTTP_ACTIONS_PHONE_TEXT,
+      PAGES_NO_RECORD_TEXT, SETTINGS_NO_RECORD_TEXT, WATCH_MENUS_NO_RECORD_TITLE, WATCH_VOICE_NO_RECORD_TITLE,
+      STYLE_NO_RECORD_TEXT, STATUS_PAGES_NO_RECORD_TITLE, CONTROL_CENTER_NO_RECORD_TEXT,
+      ROOMS_NO_RECORD_TITLE, ROOMS_WAIT_TEXT, HTTP_ACTIONS_PHONE_TEXT, NEW_WATCH_TEXT, NOTHING_TO_SAVE_TEXT,
     ]) {
       expect(text).not.toMatch(/Edit pages in Home Assistant|Pages in Home Assistant|turn on/);
       expect(text).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
@@ -160,17 +169,66 @@ describe("the no-record words", () => {
 
 // ── the other editors' no-record bodies ──────────────────────────────────
 
+// ── a new watch, ready ───────────────────────────────────────────────────
+
+describe("a new watch's ready screen", () => {
+  it("opens ready with no iPhone, and while one may move the setup only after Start fresh", () => {
+    forgetStartFreshChoices();
+    expect(opensReady("start", "menus", "w1")).toBe(true);
+    expect(opensReady("start", "menus", undefined)).toBe(true);
+    expect(opensReady("wait", "menus", "w1")).toBe(false);
+    expect(choseStartFresh("menus", "w1")).toBe(false);
+    forgetStartFreshChoices();
+  });
+
+  it("gives Save's reason only on a new watch with nothing changed and no save running", () => {
+    expect(saveBlockedText({ newWatch: true, dirty: false, saving: false })).toBe(NOTHING_TO_SAVE_TEXT);
+    expect(saveBlockedText({ newWatch: true, dirty: true, saving: false })).toBe("");
+    expect(saveBlockedText({ newWatch: true, dirty: true, saving: true })).toBe("");
+    expect(saveBlockedText({ newWatch: false, dirty: false, saving: false })).toBe("");
+  });
+
+  it("asks to pair first when a first save meets no_record, and keeps the editor's note otherwise", () => {
+    const own = { kind: "warn" as const, text: "own" };
+    expect(firstSaveNote(true, "no_record", own)).toEqual({ kind: "warn", text: PAIR_FIRST_TEXT });
+    expect(firstSaveNote(false, "no_record", own)).toBe(own);
+    expect(firstSaveNote(true, "conflict", own)).toBe(own);
+    expect(firstSaveNote(true, undefined, undefined)).toBeUndefined();
+  });
+
+  it("says it in plain words", () => {
+    expect(NEW_WATCH_TEXT).toBe("New watch. The watch keeps what it has until you save here. Your first Save replaces it.");
+    expect(NOTHING_TO_SAVE_TEXT).toBe("Nothing to save yet. Make a change first.");
+  });
+});
+
 interface EditorInside {
+  hass?: HassLike;
+  owners: readonly OwnerSummary[];
   watchId?: string;
   record?: WatchConfigRecord;
+  draft?: { dirty: boolean; revision: number };
   renderBody(watches: readonly OwnerSummary[]): unknown;
+  renderTopBar(draft: unknown, watches: readonly OwnerSummary[]): unknown;
+  startFresh(): void;
 }
 
-const editors: { name: string; make: () => EditorInside; kind: string; startButton: string }[] = [
-  { name: "menus", make: () => new WaMenuEditor() as unknown as EditorInside, kind: "menus", startButton: WATCH_MENUS_START_BUTTON },
-  { name: "voice", make: () => new WaVoiceEditor() as unknown as EditorInside, kind: "voice", startButton: WATCH_VOICE_START_BUTTON },
-  { name: "status pages", make: () => new WaStatusPagesEditor() as unknown as EditorInside, kind: "status_pages", startButton: STATUS_PAGES_START_BUTTON },
+/** Enough of Home Assistant for the views to draw. */
+const HASS = { states: {}, entities: {}, devices: {}, areas: {}, user: { is_admin: true }, language: "en" } as unknown as HassLike;
+
+const editors: { name: string; make: () => EditorInside; kind: string; title: string; update: string }[] = [
+  { name: "menus", make: () => new WaMenuEditor() as unknown as EditorInside, kind: "menus", title: WATCH_MENUS_NO_RECORD_TITLE, update: WATCH_MENUS_UPDATE_TEXT },
+  { name: "voice", make: () => new WaVoiceEditor() as unknown as EditorInside, kind: "voice", title: WATCH_VOICE_NO_RECORD_TITLE, update: WATCH_VOICE_UPDATE_TEXT },
+  { name: "status pages", make: () => new WaStatusPagesEditor() as unknown as EditorInside, kind: "status_pages", title: STATUS_PAGES_NO_RECORD_TITLE, update: STATUS_PAGES_UPDATE_TEXT },
 ];
+
+function dropDrafts(): void {
+  dropAllWatchMenus();
+  dropAllWatchVoice();
+  dropAllStatusPages();
+  forgetRoomsDraft("w1");
+  forgetStartFreshChoices();
+}
 
 describe("the Control Center editor with no record", () => {
   it("shows the moved note and never offers a fresh list, iPhone or not", () => {
@@ -188,62 +246,104 @@ describe("the Control Center editor with no record", () => {
   });
 });
 
-describe.each(editors)("the $name editor with no record", ({ make, kind, startButton }) => {
-  const body = (extra: Partial<OwnerSummary>) => {
+describe.each(editors)("the $name editor with no record", ({ make, kind, title, update }) => {
+  const opened = (extra: Partial<OwnerSummary>) => {
     const el = make();
+    el.hass = HASS;
+    el.owners = [owner("w1", extra)];
     el.watchId = "w1";
     el.record = empty(kind);
-    return flatten(el.renderBody([owner("w1", extra)]));
+    return el;
   };
+  const body = (el: EditorInside) => flatten(el.renderBody(el.owners));
+  const bar = (el: EditorInside) => flatten(el.renderTopBar(el.draft, el.owners));
 
-  it("keeps its Start button for a watch with no iPhone and for an older integration", () => {
+  afterEach(dropDrafts);
+
+  it("opens ready under the new watch line, with no Start, for a watch with no iPhone and for an older integration", () => {
     for (const extra of [{ has_iphone: false }, {}]) {
-      const text = body(extra);
-      expect(text).toContain(startButton);
-      expect(text).toContain("pe-btn pe-primary");
+      dropDrafts();
+      const el = opened(extra);
+      const text = body(el);
+      expect(text).toContain(NEW_WATCH_TEXT);
+      expect(text).toContain("nw-banner");
+      expect(text).not.toContain(title);
+      expect(text).not.toContain("Start with");
       expect(text).not.toContain(WAIT_FOR_IPHONE_TEXT);
       expect(text).not.toContain(START_FRESH_BUTTON);
+      // Unsaved, not dirty, at revision 0: Save is greyed out and says why.
+      expect(el.draft?.revision).toBe(0);
+      expect(el.draft?.dirty).toBe(false);
+      const top = bar(el);
+      expect(top).toContain(NOTHING_TO_SAVE_TEXT);
+      expect(top).not.toContain("Start with");
     }
   });
 
   it("waits for the iPhone with a small Start fresh link while the watch has one", () => {
-    const text = body({ has_iphone: true });
+    const el = opened({ has_iphone: true });
+    const text = body(el);
+    expect(text).toContain(title);
     expect(text).toContain(WAIT_FOR_IPHONE_TEXT);
     expect(text).toContain(START_FRESH_BUTTON);
     expect(text).toContain("link start-fresh");
-    expect(text).not.toContain(startButton);
     expect(text).not.toContain("pe-btn pe-primary");
+    expect(text).not.toContain(NEW_WATCH_TEXT);
+    expect(el.draft).toBeUndefined();
+  });
+
+  it("never opens ready over a record it cannot read", () => {
+    const el = opened({ has_iphone: false });
+    el.record = { ...empty(kind), revision: 3, document: "not a document" } as unknown as WatchConfigRecord;
+    const text = body(el);
+    expect(text).toContain(update);
+    expect(text).not.toContain(NEW_WATCH_TEXT);
+    expect(text).not.toContain(START_FRESH_BUTTON);
+  });
+
+  it("opens the same ready screen from Start fresh, once confirmed, and writes nothing", () => {
+    const el = opened({ has_iphone: true });
+    vi.stubGlobal("window", { confirm: () => false });
+    el.startFresh();
+    expect(body(el)).toContain(WAIT_FOR_IPHONE_TEXT);
+    vi.stubGlobal("window", { confirm: () => true });
+    el.startFresh();
+    const text = body(el);
+    expect(text).toContain(NEW_WATCH_TEXT);
+    expect(text).not.toContain(WAIT_FOR_IPHONE_TEXT);
+    expect(el.draft?.revision).toBe(0);
+    expect(el.draft?.dirty).toBe(false);
+    vi.unstubAllGlobals();
   });
 });
 
 describe("the rooms editor with no record", () => {
-  const body = (extra: Partial<OwnerSummary>) => {
+  afterEach(dropDrafts);
+
+  const opened = (extra: Partial<OwnerSummary>) => {
     const el = new WaRoomsEditor() as unknown as EditorInside;
+    el.hass = HASS;
+    el.owners = [owner("w1", extra)];
     el.watchId = "w1";
     el.record = empty("behavior");
-    return flatten(el.renderBody([owner("w1", extra)]));
+    return el;
   };
 
-  it("points at Watch settings' start without an iPhone, and waits with one", () => {
-    expect(body({ has_iphone: false })).toContain(ROOMS_NO_RECORD_TEXT);
-    expect(body({})).toContain(ROOMS_NO_RECORD_TEXT);
-    // A button goes to Settings, where the start is.
-    expect(body({})).toContain("rm-open-settings");
-    expect(body({})).toContain(">Open Settings</button>");
-    const waiting = body({ has_iphone: true });
+  it("opens ready without an iPhone, and waits with one", () => {
+    for (const extra of [{ has_iphone: false }, {}]) {
+      dropDrafts();
+      const el = opened(extra);
+      const text = flatten(el.renderBody(el.owners));
+      expect(text).toContain(NEW_WATCH_TEXT);
+      expect(text).not.toContain("Open Settings");
+      expect(text).not.toContain(ROOMS_NO_RECORD_TITLE);
+      expect(flatten(el.renderTopBar(el.draft, el.owners))).toContain(NOTHING_TO_SAVE_TEXT);
+    }
+    dropDrafts();
+    const waiting = flatten(opened({ has_iphone: true }).renderBody([owner("w1", { has_iphone: true })]));
     expect(waiting).toContain(ROOMS_WAIT_TEXT);
-    expect(waiting).not.toContain(ROOMS_NO_RECORD_TEXT);
-    expect(waiting).not.toContain("Open Settings");
-  });
-});
-
-describe("the status pages editor's empty start while waiting", () => {
-  it("leaves the empty list to the ··· menu", () => {
-    const el = new WaStatusPagesEditor() as unknown as EditorInside;
-    el.watchId = "w1";
-    el.record = empty("status_pages");
-    const text = flatten(el.renderBody([owner("w1", { has_iphone: true })]));
-    expect(text).not.toContain(STATUS_PAGES_START_EMPTY_BUTTON);
+    expect(waiting).toContain(START_FRESH_BUTTON);
+    expect(waiting).not.toContain(NEW_WATCH_TEXT);
   });
 });
 
