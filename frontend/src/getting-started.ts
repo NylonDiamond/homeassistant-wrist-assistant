@@ -164,7 +164,7 @@ export const CARD_STEPS: Record<StepId, { title: string; text: string }> = {
   app: { title: "Get the app", text: "Install Wrist Assistant from the App Store, on the watch and/or on the iPhone." },
   pair: {
     title: "Pair your watch",
-    text: `Open Wrist Assistant on the watch. It shows a ${PAIR_CODE_LENGTH}-character code. Type it here, and the watch is yours.`,
+    text: `On the watch, open Wrist Assistant and choose Pair with Home Assistant. It shows a ${PAIR_CODE_LENGTH}-character code. Type it here.`,
   },
   page: { title: "Make your first page", text: "A page is a screen of tiles on the watch: lights, scenes and cameras. You swipe between pages." },
 };

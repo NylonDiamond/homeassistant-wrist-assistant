@@ -28,7 +28,7 @@ import {
   doneWords,
   helpStepWords,
 } from "./getting-started.js";
-import { type WatchScreen, tabOfRoute, watchScreenOf } from "./shell.js";
+import { type WatchScreen, tabOfRoute, watchScreenOf, watchScreenSentence } from "./shell.js";
 import { uiIcon } from "./ui-icons.js";
 import type { PanelRoute } from "./watch-pages/hook.js";
 
@@ -51,11 +51,12 @@ const COMPLICATIONS_TEXT = [
   "Pick one in the list to change it, or make a new one.",
 ];
 
-/** A watch screen's blurb as a sentence, then whose it is. The blurbs are
+/** A watch screen's blurb as a sentence (its name, then the blurb, which
+ * reads on from the name), then whose it is. The blurbs are
  * shell.ts's, which Home and the watch row show too, so the three never say
  * different things about one screen. */
 function watchScreenText(screen: WatchScreen): string[] {
-  const blurb = screen.blurb.trim();
+  const blurb = watchScreenSentence(screen).trim();
   const sentence = /[.!?]$/.test(blurb) ? blurb : `${blurb}.`;
   return [sentence, screen.shared === true ? "Every watch in this home shares it." : "It is for the watch picked at the top."];
 }

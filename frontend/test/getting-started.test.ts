@@ -213,7 +213,7 @@ describe("the words", () => {
 
   it("say the steps as the mockup does", () => {
     expect(CARD_STEPS.app.title).toBe("Get the app");
-    expect(CARD_STEPS.pair.text).toBe("Open Wrist Assistant on the watch. It shows a 6-character code. Type it here, and the watch is yours.");
+    expect(CARD_STEPS.pair.text).toBe("On the watch, open Wrist Assistant and choose Pair with Home Assistant. It shows a 6-character code. Type it here.");
     expect(doneWords(2)).toBe("2 of 3 done");
   });
 

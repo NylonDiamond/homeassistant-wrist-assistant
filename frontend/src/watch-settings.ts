@@ -595,10 +595,6 @@ export const START_FRESH_BUTTON = "Start fresh instead";
 /** What the link asks before it opens the editor. */
 export const START_FRESH_CONFIRM_TEXT = "Your iPhone's setup will not move. Start fresh?";
 
-/** The no-record line for `state`: the wait text, or the editor's own. */
-export function noRecordText(state: NoRecordStart, startText: string): string {
-  return state === "wait" ? WAIT_FOR_IPHONE_TEXT : startText;
-}
 
 /** Whether a start may go ahead. While waiting it asks first, with the one
  * modal the panel uses (`window.confirm`); tests pass their own `ask`. */

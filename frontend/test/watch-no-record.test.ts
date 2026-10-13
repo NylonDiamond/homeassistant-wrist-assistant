@@ -45,7 +45,6 @@ import {
   WAIT_FOR_IPHONE_TEXT,
   mayStart,
   noRecordStart,
-  noRecordText,
 } from "../src/watch-settings.js";
 import { dropAllStatusPages } from "../src/watch-status-pages/draft.js";
 import { STATUS_PAGES_NO_RECORD_TITLE, STATUS_PAGES_UPDATE_TEXT } from "../src/watch-status-pages/model.js";
@@ -108,11 +107,6 @@ describe("the no-record state", () => {
   it("keeps the Start button for an integration older than the field, and for no watch", () => {
     expect(noRecordStart(owner("w"))).toBe("start");
     expect(noRecordStart(undefined)).toBe("start");
-  });
-
-  it("says the wait text while waiting, else the editor's own", () => {
-    expect(noRecordText("wait", WATCH_MENUS_NO_RECORD_TEXT)).toBe(WAIT_FOR_IPHONE_TEXT);
-    expect(noRecordText("start", WATCH_MENUS_NO_RECORD_TEXT)).toBe(WATCH_MENUS_NO_RECORD_TEXT);
   });
 
   it("asks before starting fresh while waiting, and only then", () => {

@@ -442,10 +442,10 @@ import { dropWatchHttpActionsDrafts, isWatchHttpActionsRoute, renderWatchHttpAct
 import { dropWatchCamerasDrafts, isWatchCamerasRoute, renderWatchCamerasView, watchCamerasDirty } from "./watch-cameras/hook.js";
 import {
   COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, editorKeysLive, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
-  panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath,
+  panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, type WatchScreen, watchScreenOf, watchScreenPath,
 } from "./shell.js";
 import { adoptRouteWatch, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
-import { renderWatchRow, watchRowStyles } from "./watch-row.js";
+import { type WatchScreenId, markRowMore, renderWatchRow, showRowLink, unsavedScreens, watchRowStyles } from "./watch-row.js";
 import { isWatchSettingsRoute, settingsPageSavesOnKey } from "./watch-settings-page.js";
 import { type WatchHttpLibrary, readWatchHttpLibrary, watchHttpLibraryReadMeansNone } from "./watch-pages/http-library.js";
 import { anyWatchSettingsDirty } from "./watch-settings-draft.js";
@@ -557,6 +557,15 @@ const TEMPLATE_DEBOUNCE_MS = 500;
  * purpose: it answers "is it there right now", and nobody watches a watch come
  * and go by the second. */
 const WATCH_STATUS_MS = 30_000;
+
+/** The events after which the panel checks the watch screens' unsaved work
+ * (`unsavedSoon`): every way an edit, an Undo, a Save or a Discard begins. */
+const UNSAVED_NUDGES = ["input", "click", "keyup", "pointerup", "drop"] as const;
+
+/** A list of unsaved screens as one string, to compare two checks. */
+function unsavedKey(screens: readonly WatchScreen[]): string {
+  return screens.map((screen) => screen.id).join(",");
+}
 
 /** Search key for the preset dialog's entity field. One dialog, one field, so
  * one key; the field's transient search state lives in editors.ts under it. */
@@ -6065,6 +6074,7 @@ export class WristAssistantPanel extends LitElement {
     this.addEventListener(SCRUB_START, this.scrubStart);
     this.addEventListener(SCRUB_END, this.scrubEnd);
     window.addEventListener("hashchange", this.takeShareLink);
+    for (const type of UNSAVED_NUDGES) this.addEventListener(type, this.unsavedSoon, { capture: true });
     this.takeShareLink();
     void this.loadOwners();
     void this.listenToHome();
@@ -6297,6 +6307,8 @@ export class WristAssistantPanel extends LitElement {
 
   override disconnectedCallback() {
     super.disconnectedCallback();
+    for (const type of UNSAVED_NUDGES) this.removeEventListener(type, this.unsavedSoon, { capture: true });
+    this.syncUnsavedTicker(false);
     // A QR code still open in Home's pairing dialog stops working with the
     // page that showed it.
     this.closePairDialog();
@@ -6577,6 +6589,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   protected override updated(changed: PropertyValues) {    this.keepMenusOnScreen();
+    this.followWatchRow();
     this.watchStage();
     if (changed.has("listFace")) this.followFaceHover();
     this.placeFaceRing();
@@ -10842,6 +10855,8 @@ export class WristAssistantPanel extends LitElement {
    * sidebar hidden, so nothing under it needs its own.
    */
   override render() {
+    this.unsavedNow = this.unsavedWatchScreens();
+    this.unsavedDrawn = unsavedKey(this.unsavedNow);
     const bar = renderTabBar({
       route: this.route,
       menu: this.narrow || this.hass.dockedSidebar === "always_hidden",
@@ -10849,6 +10864,7 @@ export class WristAssistantPanel extends LitElement {
       onTab: (tab) => this.openTab(tab),
       watch: this.sharedWatch,
       onHelp: () => this.openHelpSheet(),
+      watchUnsaved: this.unsavedNow.length > 0,
     });
     return html`${bar}${this.renderTab()}${this.helpSheetOpen ? this.renderHelpSheet() : nothing}`;
   }
@@ -10988,7 +11004,102 @@ export class WristAssistantPanel extends LitElement {
       onMenu: (open) => this.toggleWatchRowMenu(open),
       onPick: (watchId) => this.pickWatch(watchId),
       onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
+      unsaved: this.unsavedNow,
     })}${view}`;
+  }
+
+  // ── unsaved work across the watch screens ─────────────────────────────
+
+  /** The watch screens with unsaved work as this render drew them, for the
+   * tab's dot and the row's dots and bar. */
+  private unsavedNow: WatchScreen[] = [];
+  /** The same, as `unsavedKey`, to tell whether a check found a change. */
+  private unsavedDrawn = "";
+  /** The menus draft's own answer, once asked for (`menusDirty`). */
+  private menusOwnDirty?: () => boolean;
+  private menusOwnAsked = false;
+  private unsavedTimer?: number;
+
+  /** Every watch screen with unsaved work, by each screen's own probe, in
+   * the row's order. */
+  private unsavedWatchScreens(): WatchScreen[] {
+    return unsavedScreens({
+      pages: watchPagesDirty(),
+      menus: this.menusDirty(),
+      "status-pages": watchStatusPagesDirty(),
+      "control-center": watchControlCenterDirty(),
+      rooms: watchRoomsDirty(),
+      voice: watchVoiceDirty(),
+      "http-actions": watchHttpActionsDirty(),
+      cameras: watchCamerasDirty(),
+      settings: anyWatchSettingsDirty(),
+    });
+  }
+
+  /**
+   * Whether the menus themselves are unsaved. The menu editor answers for
+   * its menus and the page drafts as one, since it edits each page's
+   * switcher settings too, so a page edit alone would mark Menus as well.
+   * While a page draft is unsaved the menus draft is asked on its own: its
+   * module is already loaded with the menu editor, so the `import()` costs
+   * no download. Until it answers, the menu editor's word stands.
+   */
+  private menusDirty(): boolean {
+    if (!watchMenusDirty()) return false;
+    if (!watchPagesDirty()) return true;
+    if (this.menusOwnDirty) return this.menusOwnDirty();
+    if (!this.menusOwnAsked) {
+      this.menusOwnAsked = true;
+      void import("./watch-menus/draft.js").then((m) => {
+        this.menusOwnDirty = m.anyWatchMenusDirty;
+        this.requestUpdate();
+      }, () => undefined);
+    }
+    return true;
+  }
+
+  /** Draw again when the unsaved screens are not the ones drawn. */
+  private checkUnsaved = () => {
+    if (unsavedKey(this.unsavedWatchScreens()) !== this.unsavedDrawn) this.requestUpdate();
+  };
+
+  /**
+   * After a press or a key anywhere in the panel, once the editor has taken
+   * it. Each editor is an element of its own that draws itself and tells the
+   * panel nothing, so this is how an edit starting, an Undo or a Discard
+   * reaches the dots at once. Taken on the way down, so an editor that stops
+   * the event still lets it through here.
+   */
+  private unsavedSoon = () => {
+    window.setTimeout(this.checkUnsaved, 0);
+  };
+
+  /** A check once a second while the Watch app is on screen, for what ends
+   * later than the press that began it: a save, a merge from the server. */
+  private syncUnsavedTicker(on: boolean) {
+    if (on && this.unsavedTimer === undefined) this.unsavedTimer = window.setInterval(this.checkUnsaved, 1000);
+    else if (!on && this.unsavedTimer !== undefined) {
+      window.clearInterval(this.unsavedTimer);
+      this.unsavedTimer = undefined;
+    }
+  }
+
+  /** The watch screen the row's line was last scrolled to. */
+  private rowScrolledFor?: WatchScreenId;
+
+  /** After a draw: the unsaved check runs while the Watch app shows, and on a
+   * phone the row's line of screens brings the one on show into view when
+   * the tab opens and when the screen changes, and keeps its fade right. */
+  private followWatchRow() {
+    const screen = watchScreenOf(this.route)?.id;
+    this.syncUnsavedTicker(screen !== undefined);
+    if (screen !== this.rowScrolledFor) {
+      this.rowScrolledFor = screen;
+      if (screen !== undefined) showRowLink(this.renderRoot);
+      return;
+    }
+    const line = this.renderRoot.querySelector<HTMLElement>("nav.wa-watchrow .wa-wr-links");
+    if (line) markRowMore(line);
   }
 
   /**
