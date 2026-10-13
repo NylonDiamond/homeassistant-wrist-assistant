@@ -19,7 +19,7 @@ import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import { isJsonObject } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { mergeStatusPages, statusPagesClashes } from "./merge.js";
-import { type StatusPagesDocument, checkStatusPages } from "./model.js";
+import { type StatusPagesDocument, checkStatusPages, statusPagesDefaults } from "./model.js";
 
 export const STATUS_PAGES_UNDO_LIMIT = 100;
 export const STATUS_PAGES_SAVE_ATTEMPTS = 3;
@@ -293,34 +293,6 @@ async function runSave(draft: StatusPagesDraft, io: StatusPagesSaveIO): Promise<
   }
 }
 
-/** How a start ended. */
-export type StatusPagesStartResult =
-  | { ok: true; revision: number }
-  | { ok: false; code: "no_record" | "conflict" | "unsupported" | "error"; message: string };
-
-/**
- * Create the watch's status pages record from `document` (the defaults, or
- * an empty list): a save over revision 0, which Home Assistant takes only
- * while it holds no record for a paired watch. `no_record` back means the
- * watch is not paired; `conflict` means a record came meanwhile (the caller
- * reads it); `unknown_command` means an integration too old to keep watch
- * config at all. Any other refusal is an error with Home Assistant's words.
- */
-export async function startStatusPages(
-  document: StatusPagesDocument,
-  save: (baseRevision: number, document: StatusPagesDocument) => Promise<{ revision: number }>,
-): Promise<StatusPagesStartResult> {
-  try {
-    const { revision } = await save(0, document);
-    return { ok: true, revision };
-  } catch (error) {
-    const { code, message } = watchCommandError(error);
-    if (code === "no_record" || code === "conflict") return { ok: false, code, message };
-    if (code === "unknown_command") return { ok: false, code: "unsupported", message };
-    return { ok: false, code: "error", message };
-  }
-}
-
 // ── the kept drafts ──────────────────────────────────────────────────────
 
 const drafts = new Map<string, StatusPagesDraft>();
@@ -351,6 +323,26 @@ export function takeStatusPagesRecord(
   const dirty = held.dirty;
   const changed = revision < held.revision ? held.restart(document, revision) : held.rebase(document, revision);
   return { draft: held, mergedIntoEdits: dirty && changed, kept: dirty ? held.kept : [] };
+}
+
+/**
+ * The draft a new watch's status pages screen opens on while Home Assistant
+ * holds none for it (`watch-menus/new-watch.ts`): the kept one, else a new
+ * one on the app's five system pages at revision 0, unsaved and not dirty.
+ * Nothing is written: its first save is a save over revision 0, which makes
+ * the record. A kept draft from an earlier record (Home Assistant started
+ * over) is moved onto the defaults at revision 0, its edits kept, unless it
+ * is being saved.
+ */
+export function newWatchStatusPagesDraft(watchId: string): StatusPagesDraft {
+  const held = drafts.get(watchId);
+  if (held === undefined) {
+    const fresh = new StatusPagesDraft(statusPagesDefaults(), 0);
+    drafts.set(watchId, fresh);
+    return fresh;
+  }
+  if (held.revision > 0 && !held.saving) held.restart(statusPagesDefaults(), 0);
+  return held;
 }
 
 export function forgetStatusPagesDraft(watchId: string): void {

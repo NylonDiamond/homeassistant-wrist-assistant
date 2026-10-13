@@ -13,9 +13,12 @@
 // `watch_config/save` that merges by page when another save landed too, the
 // earlier saves with restore, the delivery check, and the size budget.
 //
-// A watch with no status pages record yet can start from the app's five
-// system pages (`status-page-defaults.json`) or from an empty list: a save
-// over revision 0, which Home Assistant takes for a paired watch.
+// A watch with no status pages record yet opens ready on the app's five
+// system pages (`status-page-defaults.json`), unsaved, under the new watch
+// line (`watch-menus/new-watch.ts`); its first Save is a save over revision
+// 0, which Home Assistant takes for a paired watch. While its iPhone may
+// still move the status pages here it waits, and "Start fresh instead" opens
+// the same ready screen.
 //
 // The panel loads this module on its own, with one `import()`, when its route
 // is `/status-pages` (`hook.ts`). Nothing it imports may import `icons.ts`.
@@ -73,30 +76,34 @@ import { friendlyError } from "../friendly-error.js";
 import { restoredText } from "../revision-words.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
 import { watchFrameStyles } from "../watch-frame.js";
-import { PAIR_FIRST_TEXT, START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, settingsWatches, watchName } from "../watch-settings.js";
+import { START_FRESH_BUTTON, type NoRecordStart, WAIT_FOR_IPHONE_TEXT, deliveryState, followWatch, mayStart, noRecordStart, settingsWatches, watchName } from "../watch-settings.js";
 import {
   type StatusPagesDraft,
   anyStatusPagesDirty,
   dropAllStatusPages,
   forgetStatusPagesDraft,
   keptStatusPagesDraft,
+  newWatchStatusPagesDraft,
   saveStatusPagesDraft,
-  startStatusPages,
   takeStatusPagesRecord,
 } from "./draft.js";
+import {
+  chooseStartFresh,
+  firstSaveNote,
+  newWatchStyles,
+  opensReady,
+  renderNewWatchBanner,
+  renderSaveReason,
+  saveBlockedText,
+} from "../watch-menus/new-watch.js";
 import { WATCH_STATUS_PAGES_HELP_URL, navigateWatchStatusPages, registerWatchStatusPagesDrafts } from "./hook.js";
 import {
   type StatusPagesDocument,
-  STATUS_PAGES_NO_RECORD_TEXT,
   STATUS_PAGES_NO_RECORD_TITLE,
-  STATUS_PAGES_START_BUTTON,
-  STATUS_PAGES_START_EMPTY_BUTTON,
   STATUS_PAGES_UPDATE_TEXT,
   asStatusPagesDocument,
   statusPageName,
   statusPagesBudget,
-  statusPagesDefaults,
-  statusPagesEmpty,
   statusPagesReadMeansUnsupported,
   statusPagesSummary,
 } from "./model.js";
@@ -224,7 +231,6 @@ export class WaStatusPagesEditor extends LitElement {
   @state() private note?: Note;
   @state() private restoreAsk?: RestoreAsk;
   @state() private restoring = false;
-  @state() private starting = false;
   @state() private historyOpen = false;
   @state() private rawOpen = false;
   @state() private rawCopied = false;
@@ -262,9 +268,31 @@ export class WaStatusPagesEditor extends LitElement {
     return settingsWatches(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
   }
 
+  /** The status pages being edited. While Home Assistant holds none for the
+   * watch it is the new watch's ready draft (`new-watch.ts`), on the
+   * defaults at revision 0 and unsaved, once the screen opens ready; none
+   * while it waits for the iPhone. */
   private get draft(): StatusPagesDraft | undefined {
-    if (this.watchId === undefined || this.record === undefined || this.record.revision <= 0) return undefined;
-    return keptStatusPagesDraft(this.watchId);
+    const watchId = this.watchId;
+    const record = this.record;
+    if (watchId === undefined || record === undefined) return undefined;
+    if (record.revision > 0) {
+      // Made from the record when none is kept (the panel's leave guard may
+      // have dropped it); none for a record this panel cannot read.
+      const kept = keptStatusPagesDraft(watchId);
+      if (kept !== undefined) return kept;
+      const document = asStatusPagesDocument(record.document);
+      return document === undefined ? undefined : takeStatusPagesRecord(watchId, document, record.revision).draft;
+    }
+    if (this.unsupported || !this.opensReady()) return undefined;
+    return keptStatusPagesDraft(watchId) ?? newWatchStatusPagesDraft(watchId);
+  }
+
+  /** Home Assistant holds no status pages for the watch: the ready screen's
+   * banner, and Save's reason while there is nothing to save. */
+  private get newWatch(): boolean {
+    const record = this.record;
+    return record !== undefined && record.revision <= 0 && !this.unsupported;
   }
 
   private get saving(): boolean {
@@ -486,6 +514,10 @@ export class WaStatusPagesEditor extends LitElement {
   private show(record: WatchConfigRecord): void {
     const watchId = this.watchId;
     this.record = record;
+    // No status pages here: a kept draft from an earlier record moves onto
+    // the defaults at revision 0, its edits kept, so its first save makes
+    // the record (`newWatchStatusPagesDraft`).
+    if (watchId !== undefined && record.revision <= 0) newWatchStatusPagesDraft(watchId);
     const document = record.revision > 0 ? asStatusPagesDocument(record.document) : undefined;
     if (watchId === undefined || document === undefined) return;
     const restart = this.restartDraft;
@@ -683,6 +715,9 @@ export class WaStatusPagesEditor extends LitElement {
     const draft = this.draft;
     if (!hass || watchId === undefined || !draft || this.saving || !draft.dirty) return;
     this.note = undefined;
+    // A first save over revision 0 that Home Assistant refuses as
+    // `no_record` means the watch is not paired (`firstSaveNote`).
+    const first = draft.revision <= 0;
     const running = saveStatusPagesDraft(draft, {
       save: (base, document) => saveWatchConfig(hass, watchId, "status_pages", base, document).catch((err: unknown) => {
         throw flatError(err);
@@ -704,36 +739,18 @@ export class WaStatusPagesEditor extends LitElement {
       message: errText(err),
     }));
     this.saveEnded(watchId);
-    if (watchId === this.watchId) this.note = statusPagesSaveNote(result);
+    if (watchId === this.watchId) this.note = firstSaveNote(first, result.code, statusPagesSaveNote(result));
   }
 
-  /** "Start with the defaults" or "Start with an empty list": create the
-   * record. */
-  private async start(empty: boolean): Promise<void> {
-    const hass = this.hass;
+  /** "Start fresh instead", asked first: while an iPhone may still move the
+   * status pages here, open the same ready screen a watch without one opens
+   * on, the defaults unsaved. Nothing is written until Save. */
+  private startFresh(): void {
     const watchId = this.watchId;
-    if (!hass || watchId === undefined || this.starting) return;
-    this.starting = true;
+    if (watchId === undefined || !mayStart(this.noRecordState())) return;
+    chooseStartFresh("status_pages", watchId);
     this.note = undefined;
-    const result = await startStatusPages(empty ? statusPagesEmpty() : statusPagesDefaults(),
-      (base, document) => saveWatchConfig(hass, watchId, "status_pages", base, document));
-    this.starting = false;
-    if (watchId !== this.watchId) return;
-    if (result.ok) {
-      this.note = { kind: "ok", text: `${empty ? "Started with an empty list" : "Started with the defaults"}. The watch picks them up the next time it checks.` };
-    } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: PAIR_FIRST_TEXT };
-      return;
-    } else if (result.code === "conflict") {
-      this.note = { kind: "warn", text: "Status pages arrived meanwhile, so those are shown." };
-    } else if (result.code === "unsupported") {
-      this.unsupported = true;
-      return;
-    } else {
-      this.note = { kind: "err", text: `Could not start: ${friendlyError(result)}` };
-      return;
-    }
-    void this.load(watchId, true);
+    this.requestUpdate();
   }
 
   // ── restore ────────────────────────────────────────────────────────────
@@ -874,7 +891,8 @@ export class WaStatusPagesEditor extends LitElement {
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
+        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>
+        ${renderSaveReason(saveBlockedText({ newWatch: this.newWatch, dirty, saving: this.saving }))}` : nothing}
       ${this.barActions}
       <button class="help" title="Help: status pages" aria-label="Help"
         @click=${() => window.open(WATCH_STATUS_PAGES_HELP_URL, "_blank", "noopener")}>?</button>
@@ -891,19 +909,29 @@ export class WaStatusPagesEditor extends LitElement {
     </span>`;
   }
 
-  /** Whether this watch's iPhone may still move this kind here, so a start
-   * waits behind a confirm (`noRecordStart`). */
+  /** Whether this watch's iPhone may still move this kind here, so the
+   * screen waits and "Start fresh instead" asks first (`noRecordStart`). */
   private noRecordState(watches: readonly OwnerSummary[] = this.watches): NoRecordStart {
     return noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId));
   }
 
-  private canStart(): boolean {
-    const record = this.record;
-    return this.watchId !== undefined && record !== undefined && record.revision <= 0 && !this.unsupported;
+  /** With no status pages here, whether the screen opens ready
+   * (`new-watch.ts`) rather than wait for the iPhone. */
+  private opensReady(watches: readonly OwnerSummary[] = this.watches): boolean {
+    return opensReady(this.noRecordState(watches), "status_pages", this.watchId);
   }
 
+  /** "Start fresh instead" applies: Home Assistant holds no status pages for
+   * this watch, the integration keeps them, and the screen waits for the
+   * iPhone. */
+  private canStartFresh(): boolean {
+    return this.watchId !== undefined && this.newWatch && !this.opensReady();
+  }
+
+  /** The ··· menu: Discard edits, and Start fresh instead while the screen
+   * waits for the iPhone. */
   private renderTopMenu(draft: StatusPagesDraft | undefined): TemplateResult | typeof nothing {
-    const start = this.canStart();
+    const start = this.canStartFresh();
     if (draft === undefined && !start) return nothing;
     const open = this.topMenuOpen;
     const run = (fn: () => void) => () => { this.topMenuOpen = false; fn(); };
@@ -912,12 +940,10 @@ export class WaStatusPagesEditor extends LitElement {
         @click=${() => { this.topMenuOpen = !open; }}>···</button>
       ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="More actions">
         ${draft ? html`<button class="row" role="menuitem" ?disabled=${!this.dirty || this.saving}
-          title="Go back to the copy Home Assistant holds. Undo brings the edits back."
+          title=${this.newWatch ? "Go back to the defaults. Undo brings the edits back." : "Go back to the copy Home Assistant holds. Undo brings the edits back."}
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
-        ${start ? html`<button class="row" role="menuitem" ?disabled=${this.starting}
-          @click=${run(() => { if (mayStart(this.noRecordState())) void this.start(false); })}>${STATUS_PAGES_START_BUTTON}</button>
-          <button class="row" role="menuitem" ?disabled=${this.starting}
-          @click=${run(() => { if (mayStart(this.noRecordState())) void this.start(true); })}>${STATUS_PAGES_START_EMPTY_BUTTON}</button>` : nothing}
+        ${start ? html`<button class="row" role="menuitem"
+          @click=${run(() => this.startFresh())}>${START_FRESH_BUTTON}</button>` : nothing}
       </div>` : nothing}
     </span>`;
   }
@@ -1054,29 +1080,27 @@ export class WaStatusPagesEditor extends LitElement {
     const record = this.record;
     if (record === undefined) return html`<div class="pe-empty">Loading…</div>`;
     const draft = this.draft;
-    const host = this.viewHost();
-    if (record.revision <= 0 || draft === undefined || host === undefined) {
+    // A record this panel cannot read, such as one from a newer schema.
+    if (draft === undefined && record.revision > 0) return html`<div class="pe-empty"><b>${STATUS_PAGES_UPDATE_TEXT}</b></div>`;
+    if (draft === undefined) {
       const kept = this.watchId === undefined ? undefined : keptStatusPagesDraft(this.watchId);
       const id = this.watchId;
-      // While the iPhone's move may still come it waits, and the start is a
-      // small link that asks first and starts with the defaults; the ···
-      // menu still offers an empty list, behind the same question.
-      const state = this.noRecordState(watches);
-      return html`<div class="pe-empty"><b>${STATUS_PAGES_NO_RECORD_TITLE}</b><span>${noRecordText(state, STATUS_PAGES_NO_RECORD_TEXT)}</span>
-        ${state === "wait"
-          ? html`<button class="link start-fresh" ?disabled=${this.starting} @click=${() => { if (mayStart(state)) void this.start(false); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
-          : html`<span class="sp-start">
-              <button class="pe-btn pe-primary" ?disabled=${this.starting} @click=${() => void this.start(false)}>${this.starting ? "Starting…" : STATUS_PAGES_START_BUTTON}</button>
-              <button class="pe-btn" ?disabled=${this.starting} @click=${() => void this.start(true)}>${STATUS_PAGES_START_EMPTY_BUTTON}</button>
-            </span>
-            <span class="pe-muted">The defaults are the app's five pages: Lights, Who's Home, Room Temps, Doors & Windows and Low Battery.</span>`}
+      // No status pages here and the screen does not open ready: the
+      // iPhone's move may still come, so it waits, and "Start fresh instead"
+      // is a small link that asks first.
+      return html`<div class="pe-empty"><b>${STATUS_PAGES_NO_RECORD_TITLE}</b><span>${WAIT_FOR_IPHONE_TEXT}</span>
+        <button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>
         ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when status pages are here again.</span>
           <button class="pe-btn" @click=${() => { forgetStatusPagesDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
       </div>`;
     }
+    const host = this.viewHost();
+    if (host === undefined) return html`<div class="pe-empty">Loading…</div>`;
     const fit = this.fittedColumns();
     const view = this.hostHeight > 0 ? `--pe-view-h:${this.hostHeight}px;` : "";
-    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
+    const fresh = record.revision <= 0;
+    return html`${fresh ? renderNewWatchBanner() : nothing}
+    <div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
       <div class="column left">
         ${renderPagesCard(host)}
         ${renderRowsCard(host)}
@@ -1090,7 +1114,7 @@ export class WaStatusPagesEditor extends LitElement {
         ${renderStatusInspector(host)}
       </div>
     </div>
-    ${this.renderFoot(record, draft.document, draft.dirty)}`;
+    ${fresh ? nothing : this.renderFoot(record, draft.document, draft.dirty)}`;
   }
 
   private renderFoot(record: WatchConfigRecord, document: StatusPagesDocument, dirty: boolean): TemplateResult {
@@ -1148,7 +1172,7 @@ export class WaStatusPagesEditor extends LitElement {
     </dialog>`;
   }
 
-  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchFrameStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchFrameStyles, newWatchStyles, css`
     :host {
       display: flex;
       flex-direction: column;
@@ -1198,7 +1222,6 @@ export class WaStatusPagesEditor extends LitElement {
       display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 560px;
       padding: 20px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 16px); background: var(--wa-card);
     }
-    .sp-start { display: flex; flex-wrap: wrap; gap: 8px; }
     .layout.pe-layout { flex: none; min-height: auto; overflow: visible; align-items: start; padding: 0; margin-bottom: 14px; }
     .pe-layout > .column.left, .pe-layout > .column.inspector {
       --pe-under-top: max(0px, calc(var(--pe-top-h, 0px) - var(--cf-pad, 16px)));

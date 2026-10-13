@@ -75,6 +75,7 @@ import { WATCH_PAGE_CHIP_COLOR } from "../src/watch-pages/page-settings.js";
 import { setWatchPageHideFromSwitcher, setWatchPageSwitcherText } from "../src/watch-pages/page-settings-model.js";
 import { STAGE_ZOOM_KEY } from "../src/watch-pages/stage.js";
 import type { SwitcherSettingsHost } from "../src/watch-pages/switcher-settings.js";
+import { NEW_WATCH_TEXT, NOTHING_TO_SAVE_TEXT, START_FRESH_BUTTON } from "../src/watch-settings.js";
 
 const DEFAULTS = JSON.parse(readFileSync(join(__dirname, "fixtures-menus", "01-defaults.json"), "utf8")) as MenusDocument;
 const ANYWHERE_COUNT = watchMenuSlots(DEFAULTS, ANYWHERE).length;
@@ -390,15 +391,18 @@ describe("the top bar", () => {
     expect(single.whole()).not.toContain("me-watch-picker");
   });
 
-  it("offers Start with the defaults in the ··· menu for a watch with no menus yet", () => {
+  it("offers no Start for a watch with no menus yet: Save is greyed out and says why", () => {
     const { el, whole } = editor(0);
     el.topMenuOpen = true;
     const text = whole();
-    const bar = text.slice(text.indexOf(`<div class="wa-bar`), text.indexOf(`<div class="pe-empty`));
-    expect(bar).toContain(">Start with the defaults</button>");
-    expect(bar).not.toContain(">Discard edits</button>");
-    expect(bar).not.toContain(`class="primary save`);
+    const bar = text.slice(text.indexOf(`<div class="wa-bar`), text.indexOf(`<div class="pe-note nw-banner`));
+    expect(bar).not.toContain("Start with");
+    expect(bar).not.toContain(START_FRESH_BUTTON);
+    expect(bar).toMatch(/<button class="row" role="menuitem" \?disabled=true\s+title=Go back to the defaults/);
+    expect(bar).toContain(`class="primary save " ?disabled=true`);
+    expect(bar).toContain(`<span>${NOTHING_TO_SAVE_TEXT}</span>`);
     expect(bar).not.toContain("tb-sync");
+    expect(text).toContain(NEW_WATCH_TEXT);
   });
 });
 
@@ -760,7 +764,7 @@ describe("the element with a page draft", () => {
     const text = whole();
     expect(text).toContain(`class="primary save dirty"`);
     expect(text).toContain(`<span class="tb-saved" title=Unsaved changes>`);
-    expect(text).toMatch(/<button class="row" role="menuitem" \?disabled=false\s+title="Go back to the copy Home Assistant holds/);
+    expect(text).toMatch(/<button class="row" role="menuitem" \?disabled=false\s+title=Go back to the copy Home Assistant holds/);
     expect(watchMenusDirty()).toBe(true);
     // Leaving the panel anyway drops the page draft too.
     dropWatchMenusDrafts();

@@ -14,17 +14,21 @@
 // the earlier saves with restore, and the delivery check. It reads `pages`
 // too, for the page names, and never writes them.
 //
-// Rooms never makes a `behavior` record: a watch without one is told where
-// one comes from (Watch settings, or the iPhone's one-time move).
-//
 // On a home that is not the watch's main house (`main_house: false` on its
 // owner row) the rooms are a `rooms` record of their own instead, and every
 // read, save, restore and the subscription use that kind. The four keys that
 // stay with the main house are hidden behind one line (`view.ts`) and never
-// written, and a watch with no `rooms` record can start one here: a save
-// over revision 0, or, while an iPhone may still move this home's rooms
-// here, a small link that asks first. The main house is drawn and saved as
-// before.
+// written. The main house is drawn and saved as before.
+//
+// While Home Assistant holds no record of the kind, the screen opens ready
+// under the new watch line (`watch-menus/new-watch.ts`), unsaved: on the main
+// house over Watch settings' defaults (`watchBehaviorDefaults`, what its
+// Start used to save), on any other home over no rooms (`homeRoomsStart`).
+// The first Save is a save over revision 0, which makes the record: the
+// whole `behavior` document with the room edits, or the `rooms` one. Until
+// then the watch keeps the rooms it has. While an iPhone may still move the
+// setup here the screen waits, and "Start fresh instead", asked first, opens
+// the same ready screen.
 //
 // The room list also reads Home Assistant's area registry and the room
 // sensor's states of the last 24 hours, over the same socket.
@@ -70,24 +74,37 @@ import { asWatchPagesDocument } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { friendlyError } from "../friendly-error.js";
 import { restoredText } from "../revision-words.js";
-import { PAIR_FIRST_TEXT, START_FRESH_BUTTON, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, settingsWatches, watchName } from "../watch-settings.js";
-import { type RoomsDraft, anyRoomsDirty, dropAllRooms, forgetRoomsDraft, keptRoomsDraft, saveRoomsDraft, takeRoomsRecord } from "./draft.js";
-import { WATCH_SETTINGS_SCREEN, navigatePanel, watchScreenPath } from "../shell.js";
+import {
+  START_FRESH_BUTTON,
+  WAIT_FOR_IPHONE_TEXT,
+  deliveryState,
+  followWatch,
+  mayStart,
+  noRecordStart,
+  settingsWatches,
+  watchBehaviorDefaults,
+  watchName,
+} from "../watch-settings.js";
+import {
+  chooseStartFresh,
+  firstSaveNote,
+  newWatchStyles,
+  opensReady,
+  renderNewWatchBanner,
+  renderSaveReason,
+  saveBlockedText,
+} from "../watch-menus/new-watch.js";
+import { type RoomsDraft, anyRoomsDirty, dropAllRooms, forgetRoomsDraft, keptRoomsDraft, newRoomsDraft, saveRoomsDraft, takeRoomsRecord } from "./draft.js";
 import { WATCH_ROOMS_HELP_URL, navigateWatchRooms, registerWatchRoomsDrafts } from "./hook.js";
 import {
   type AreaEntry,
+  type BehaviorDocument,
   type RoomsKind,
   type SensorHistoryEntry,
-  HOME_ROOMS_NO_RECORD_TEXT,
   HOME_ROOMS_NO_RECORD_TITLE,
-  HOME_ROOMS_START_BUTTON,
-  HOME_ROOMS_START_CONFLICT_TEXT,
-  HOME_ROOMS_STARTED_TEXT,
   HOME_ROOMS_UNREADABLE_TEXT,
   HOME_ROOMS_UPDATE_TEXT,
-  ROOMS_NO_RECORD_TEXT,
   ROOMS_NO_RECORD_TITLE,
-  ROOMS_OPEN_SETTINGS_BUTTON,
   ROOMS_UNREADABLE_TEXT,
   ROOMS_WAIT_TEXT,
   ROOM_HISTORY_HOURS,
@@ -95,6 +112,7 @@ import {
   historyFromReply,
   homeRoomWrites,
   homeRoomsReadMeansUnsupported,
+  homeRoomsStart,
   mergeRoomList,
   readRooms,
   roomDirtyKeys,
@@ -103,7 +121,6 @@ import {
   roomsDocumentOf,
   roomsKindFor,
   roomsSaveNote,
-  startHomeRooms,
 } from "./model.js";
 import { type RoomsViewHost, renderRoomsBody, roomsViewStyles } from "./view.js";
 
@@ -221,8 +238,6 @@ export class WaRoomsEditor extends LitElement {
   @state() private areasRead = false;
   @state() private sensorHistory: SensorHistoryEntry[] = [];
   @state() private sensorHistoryFor?: string;
-  /** Starting a home's first `rooms` record. */
-  @state() private starting = false;
   /** This integration does not keep the `rooms` kind. */
   @state() private unsupported = false;
   /** The kind the shown record was read as. */
@@ -266,13 +281,56 @@ export class WaRoomsEditor extends LitElement {
   }
 
   /** The shown watch's draft, made from the record when none is kept (the
-   * panel's leave guard may have dropped it). */
+   * panel's leave guard may have dropped it). While Home Assistant holds no
+   * record of the kind it is the new watch's ready draft (`newWatchBase`) at
+   * revision 0, once the screen opens ready; none while it waits for the
+   * iPhone. */
   private get draft(): RoomsDraft | undefined {
     const record = this.record;
-    const document = roomsDocumentOf(record);
     const key = this.draftKey;
-    if (key === undefined || record === undefined || document === undefined) return undefined;
+    if (key === undefined || record === undefined) return undefined;
+    if (record.revision <= 0) {
+      if ((this.kind === "rooms" && this.unsupported) || !this.opensReady()) return undefined;
+      return keptRoomsDraft(key) ?? newRoomsDraft(key, this.newWatchBase());
+    }
+    const document = roomsDocumentOf(record);
+    if (document === undefined) return undefined;
     return keptRoomsDraft(key) ?? takeRoomsRecord(key, document, record.revision).draft;
+  }
+
+  /** Home Assistant holds no record of the rooms' kind for the watch: the
+   * ready screen's banner, and Save's reason while there is nothing to save. */
+  private get newWatch(): boolean {
+    const record = this.record;
+    return record !== undefined && record.revision <= 0 && !(this.kind === "rooms" && this.unsupported);
+  }
+
+  /** What a new watch's rooms open on, what a Start used to save: Watch
+   * settings' defaults on the main house (`watchBehaviorDefaults`), no
+   * rooms on any other home (`homeRoomsStart`). A new object each call. */
+  private newWatchBase(): BehaviorDocument {
+    return this.kind === "rooms" ? homeRoomsStart() : watchBehaviorDefaults();
+  }
+
+  /** With no record of the rooms' kind, whether the screen opens ready
+   * (`new-watch.ts`) rather than wait for the iPhone. The main house's
+   * choice is kept under `behavior`, the record its rooms ride in. */
+  private opensReady(watches: readonly OwnerSummary[] = this.watches): boolean {
+    const watchId = this.watchId;
+    const state = noRecordStart(watches.find((w) => w.owner_watch_id === watchId));
+    return opensReady(state, this.kindOf(watchId, watches), watchId);
+  }
+
+  /** "Start fresh instead", asked first: while an iPhone may still move the
+   * setup here, open the same ready screen a watch without one opens on.
+   * Nothing is written until Save. */
+  private startFresh(): void {
+    const watchId = this.watchId;
+    if (watchId === undefined) return;
+    if (!mayStart(noRecordStart(this.watches.find((w) => w.owner_watch_id === watchId)))) return;
+    chooseStartFresh(this.kind, watchId);
+    this.note = undefined;
+    this.requestUpdate();
   }
 
   private get saving(): boolean {
@@ -434,6 +492,10 @@ export class WaRoomsEditor extends LitElement {
   private show(record: WatchConfigRecord): void {
     const key = this.draftKey;
     this.record = record;
+    // No record of the kind here: a kept draft from an earlier record moves
+    // onto the new watch's base at revision 0, its edits kept, so its first
+    // save makes the record (`newRoomsDraft`).
+    if (key !== undefined && record.revision <= 0) newRoomsDraft(key, this.newWatchBase());
     const document = roomsDocumentOf(record);
     if (key === undefined || document === undefined) return;
     const taken = takeRoomsRecord(key, document, record.revision);
@@ -657,6 +719,9 @@ export class WaRoomsEditor extends LitElement {
     this.note = undefined;
     draft.endCoalesce();
     const kind = this.kind;
+    // A first save over revision 0 that Home Assistant refuses as
+    // `no_record` means the watch is not paired (`firstSaveNote`).
+    const first = draft.revision <= 0;
     const running = saveRoomsDraft(draft, {
       save: (base, document) => saveWatchConfig(hass, watchId, kind, base, document).catch((err: unknown) => {
         throw flatError(err);
@@ -676,7 +741,7 @@ export class WaRoomsEditor extends LitElement {
     } else if (result.fresh !== undefined) {
       this.record = result.fresh;
     }
-    this.note = roomsSaveNote(result, kind);
+    this.note = firstSaveNote(first, result.ok ? undefined : result.code, roomsSaveNote(result, kind));
     if (this.reloadPending) {
       this.reloadPending = false;
       void this.load(watchId, true);
@@ -685,35 +750,6 @@ export class WaRoomsEditor extends LitElement {
       void this.loadHistory(watchId);
     }
     this.requestUpdate();
-  }
-
-  /** "Start with no rooms", on a home that is not the main house: make the
-   * watch's first `rooms` record. The main house has no start here: its
-   * rooms come with Watch settings' start. */
-  private async start(): Promise<void> {
-    const hass = this.hass;
-    const watchId = this.watchId;
-    if (!hass || watchId === undefined || this.starting || this.kind !== "rooms") return;
-    this.starting = true;
-    this.note = undefined;
-    const result = await startHomeRooms((base, document) => saveWatchConfig(hass, watchId, "rooms", base, document));
-    this.starting = false;
-    if (watchId !== this.watchId) return;
-    if (result.ok) {
-      this.note = { kind: "ok", text: HOME_ROOMS_STARTED_TEXT };
-    } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: PAIR_FIRST_TEXT };
-      return;
-    } else if (result.code === "conflict") {
-      this.note = { kind: "warn", text: HOME_ROOMS_START_CONFLICT_TEXT };
-    } else if (result.code === "unsupported") {
-      this.unsupported = true;
-      return;
-    } else {
-      this.note = { kind: "err", text: `Could not start: ${friendlyError(result)}` };
-      return;
-    }
-    void this.load(watchId, true);
   }
 
   // ── restore ────────────────────────────────────────────────────────────
@@ -842,7 +878,8 @@ export class WaRoomsEditor extends LitElement {
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
+        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>
+        ${renderSaveReason(saveBlockedText({ newWatch: this.newWatch, dirty, saving: this.saving }))}` : nothing}
       ${this.barActions}
       <button class="help" title="Help: rooms" aria-label="Help"
         @click=${() => window.open(WATCH_ROOMS_HELP_URL, "_blank", "noopener")}>?</button>
@@ -855,7 +892,7 @@ export class WaRoomsEditor extends LitElement {
 
   private renderSyncPill(draft: RoomsDraft | undefined): TemplateResult | typeof nothing {
     const record = this.record;
-    if (record === undefined || draft === undefined) return nothing;
+    if (record === undefined || record.revision <= 0 || draft === undefined) return nothing;
     const budget = roomsBudget(draft.effective, this.kind);
     const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: this.noun, historyState: this.historyState });
     return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
@@ -872,7 +909,7 @@ export class WaRoomsEditor extends LitElement {
         @click=${() => { this.topMenuOpen = !open; }}>···</button>
       ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="More actions">
         <button class="row" role="menuitem" ?disabled=${!this.dirty || this.saving}
-          title="Go back to the copy Home Assistant holds. Undo brings the edits back."
+          title=${this.newWatch ? "Go back to how the screen opened. Undo brings the edits back." : "Go back to the copy Home Assistant holds. Undo brings the edits back."}
           @click=${run(() => this.discard())}>Discard edits</button>
       </div>` : nothing}
     </span>`;
@@ -927,38 +964,24 @@ export class WaRoomsEditor extends LitElement {
     }
     const record = this.record;
     if (record === undefined) return html`<div class="pe-empty">Loading…</div>`;
-    if (home) return this.renderHomeBody(record, watches);
-    if (record.revision <= 0) {
-      // Rooms have no start of their own; while the iPhone's move may still
-      // bring the settings, say so rather than point at Watch settings' start.
-      const waiting = noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId)) === "wait";
-      // Settings on this same watch, the panel's own move between screens.
-      const settings = watchScreenPath(WATCH_SETTINGS_SCREEN, this.watchId);
-      return html`<div class="pe-empty"><b>${ROOMS_NO_RECORD_TITLE}</b><span>${waiting ? ROOMS_WAIT_TEXT : ROOMS_NO_RECORD_TEXT}</span>
-        ${waiting ? nothing : html`<button class="pe-btn pe-primary rm-open-settings" @click=${() => navigatePanel(undefined, settings)}>${ROOMS_OPEN_SETTINGS_BUTTON}</button>`}</div>`;
-    }
-    const draft = this.draft;
-    const host = this.viewHost();
-    if (draft === undefined || host === undefined) return html`<div class="pe-empty"><b>${ROOMS_UNREADABLE_TEXT}</b></div>`;
-    return html`${renderRoomsBody(host)}${this.renderFoot(record, draft)}`;
-  }
-
-  /** The body on a home that is not the main house: its own `rooms` record,
-   * with a Start of its own when there is none. While an iPhone may still
-   * move this home's rooms here it waits, and the start is a small link that
-   * asks first. */
-  private renderHomeBody(record: WatchConfigRecord, watches: readonly OwnerSummary[]): TemplateResult {
-    if (record.revision <= 0) {
-      const state = noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId));
-      return html`<div class="pe-empty"><b>${HOME_ROOMS_NO_RECORD_TITLE}</b><span>${noRecordText(state, HOME_ROOMS_NO_RECORD_TEXT)}</span>
-        ${state === "wait"
-          ? html`<button class="link start-fresh" ?disabled=${this.starting} @click=${() => { if (mayStart(state)) void this.start(); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
-          : html`<button class="pe-btn pe-primary" ?disabled=${this.starting} @click=${() => void this.start()}>${this.starting ? "Starting…" : HOME_ROOMS_START_BUTTON}</button>`}
+    if (record.revision <= 0 && !this.opensReady(watches)) {
+      // No record here and the screen does not open ready: the iPhone's move
+      // may still bring the settings (on the main house) or this home's
+      // rooms, so it waits, and "Start fresh instead" is a small link that
+      // asks first.
+      return html`<div class="pe-empty"><b>${home ? HOME_ROOMS_NO_RECORD_TITLE : ROOMS_NO_RECORD_TITLE}</b>
+        <span>${home ? WAIT_FOR_IPHONE_TEXT : ROOMS_WAIT_TEXT}</span>
+        <button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>
       </div>`;
     }
     const draft = this.draft;
     const host = this.viewHost();
-    if (draft === undefined || host === undefined) return html`<div class="pe-empty"><b>${HOME_ROOMS_UNREADABLE_TEXT}</b></div>`;
+    if (draft === undefined || host === undefined) {
+      return html`<div class="pe-empty"><b>${home ? HOME_ROOMS_UNREADABLE_TEXT : ROOMS_UNREADABLE_TEXT}</b></div>`;
+    }
+    // A new watch: the ready screen under the new watch line, with no stored
+    // copy for the foot bar to tell of.
+    if (record.revision <= 0) return html`${renderNewWatchBanner()}${renderRoomsBody(host)}`;
     return html`${renderRoomsBody(host)}${this.renderFoot(record, draft)}`;
   }
 
@@ -1018,7 +1041,7 @@ export class WaRoomsEditor extends LitElement {
     </dialog>`;
   }
 
-  static override styles = [formStyles, chromeTokens, topBarStyles, inspectorStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, inspectorStyles, newWatchStyles, css`
     :host {
       display: flex;
       flex-direction: column;

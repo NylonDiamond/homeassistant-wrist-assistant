@@ -189,7 +189,7 @@ function phrasesBody(host: SlotVoiceHost, ref: MenuListRef, slot: JsonObject): T
   const id = typeof slot.id === "string" ? slot.id : "";
   const phrases = host.voice?.phrases;
   if (phrases === undefined) {
-    return html`<div class="hint">No voice settings from this watch yet. Start them in Voice to pick the phrases this slot shows.</div>`;
+    return html`<div class="hint">No voice settings saved for this watch yet. Save them once in Voice to pick the phrases this slot shows.</div>`;
   }
   if (phrases.length === 0) return html`<div class="hint">No phrases yet. Add them in Voice.</div>`;
   const library = phrases.map((p) => p.id);
