@@ -17,6 +17,8 @@
 //   open http://localhost:8765/panel-harness.html            first complication
 //   open http://localhost:8765/panel-harness.html#open=rules  the fixture named
 //   open http://localhost:8765/panel-harness.html#dark        dark skin
+//   open http://localhost:8765/panel-harness.html#empty       a new home: no devices, on Home
+//   open http://localhost:8765/panel-harness.html#new         one new watch: nothing made yet, on Home
 
 import "../src/panel.js";
 import type { ComplicationRecord, HassEntityState, HassLike, OwnerSummary } from "../src/ha-api.js";
@@ -64,13 +66,20 @@ const records: ComplicationRecord[] = Object.entries(FIXTURES).map(([name, fixtu
   };
 });
 
-const owners: OwnerSummary[] = [
+/** `#empty` is a home with no device, `#new` one with a watch just paired and
+ * nothing made for it yet. Both open on Home, for the new-person screens. */
+const EMPTY = location.hash.includes("empty");
+const NEW = location.hash.includes("new");
+if (EMPTY || NEW) records.length = 0;
+
+const allOwners: OwnerSummary[] = [
   {
     owner_watch_id: WATCH, device_name: "Apple Watch", device_kind: "watch", paired_iphone_name: "Alex's iPhone",
     paired_iphone_id: PHONE, app_version: "3.0.1", app_build: "2", screen_size: "208x248",
     complication_count: records.length, token: records.length, applied_token: records.length, is_orphan: false,
   },
 ];
+const owners: OwnerSummary[] = EMPTY ? [] : allOwners;
 
 /** A made-up state for every entity a fixture's inputs name, from the state
  * the fixture itself gives. */
@@ -111,6 +120,15 @@ function answer(message: Json): unknown {
       return { parts: [] };
     case `${D}/history`:
       return { owner_watch_id: message.owner_watch_id, complication_id: message.complication_id, revision: 1, entries: [] };
+    // Nothing stored for any watch yet: every kind is a record not made,
+    // as for a watch paired a moment ago.
+    case "wrist_assistant/watch_config/summary":
+      return { owners: {} };
+    case "wrist_assistant/watch_config/get":
+      return {
+        kind: message.kind, revision: 0, hash: null, updated_at: null, updated_by: null,
+        delivered_revision: 0, delivered_at: null, rejected_revision: 0, rejected_at: null,
+      };
     default: {
       console.warn("[panel harness] unknown command", message.type);
       throw { code: "unknown_command", message: `Unknown command ${String(message.type)}` };
@@ -138,6 +156,7 @@ const hass: HassLike = {
 const wanted = /open=([a-z_]+)/.exec(location.hash)?.[1];
 const open = records[Math.max(0, Object.keys(FIXTURES).indexOf(wanted ?? ""))]!;
 try {
+  if (EMPTY || NEW) throw new Error("open on Home");
   sessionStorage.setItem(OPEN_STORE_KEY, JSON.stringify({ owner: WATCH, id: open.id }));
 } catch {
   // No storage: the panel opens on nothing.
@@ -146,5 +165,14 @@ try {
 const panel = document.createElement("wrist-assistant-panel") as HTMLElement & { hass: HassLike; narrow: boolean };
 panel.hass = hass;
 panel.narrow = false;
+if (EMPTY || NEW) {
+  // Home Assistant hands the panel its route and a new one on every move. The
+  // harness does the same from the address, so the tabs and links work.
+  const prefix = location.pathname.replace(/\.html.*$/, ".html");
+  const route = () => ({ prefix, path: location.pathname.slice(prefix.length) });
+  (panel as unknown as { route: unknown }).route = route();
+  window.addEventListener("location-changed", () => { (panel as unknown as { route: unknown }).route = route(); });
+  window.addEventListener("popstate", () => { (panel as unknown as { route: unknown }).route = route(); });
+}
 document.getElementById("frame")!.append(panel);
 (window as unknown as { __panel: unknown }).__panel = panel;
