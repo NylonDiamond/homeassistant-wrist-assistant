@@ -1598,7 +1598,7 @@ export class WaMenuEditor extends LitElement {
     // The pages' steps while a page is picked in the switcher, as the keys.
     const draft = this.undoDraft;
     const name = menuSectionLabel(shownMenu(host));
-    return html`<div class="card canvas-card me-canvas" aria-label="Menu">
+    return html`<div class="card canvas-card lit me-canvas" aria-label="Menu">
       <div class="cv-head">
         <span class="cv-title" title=${name}>${name}</span>
         ${owner !== undefined ? html`<span class="cv-part cv-where"><span class="cv-slash" aria-hidden="true">/</span>
@@ -1866,6 +1866,8 @@ export class WaMenuEditor extends LitElement {
        stage is the watch at a set scale, not a fitted box: it grows with
        the zoom and the editor scrolls. */
     .column.canvas > .card.canvas-card.me-canvas { min-height: 0; flex: none; }
+    /* The lit stage's edge in Menus' hue, Home's Menus door. */
+    .canvas-card.me-canvas { --wa-stage-hue: var(--wa-hue-orange); }
     /* The shown menu's name: read, not typed. */
     .cv-head .cv-title { flex: 0 1 auto; min-width: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* The shown watch's name in the head: a fact; the picker is in the bar. */

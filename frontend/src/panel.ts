@@ -2649,6 +2649,8 @@ export class WristAssistantPanel extends LitElement {
       --wa-stage-top: #fbfbfc;
       --wa-stage-bottom: #e6e6ea;
       --wa-stage-reflect: rgba(0,0,0,.10);
+      /* A control floating over a stage (the watch editors' tool pill). */
+      --wa-shadow-float: 0 10px 30px rgba(20,20,40,.10);
       --wa-ring: 0 0 0 3px color-mix(in srgb, var(--wa-accent) 30%, transparent);
       color: var(--wa-ink);
       background: var(--wa-bg);
@@ -2744,6 +2746,7 @@ export class WristAssistantPanel extends LitElement {
       --wa-stage-top: #131315;
       --wa-stage-bottom: #060607;
       --wa-stage-reflect: rgba(255,255,255,.14);
+      --wa-shadow-float: 0 10px 30px rgba(0,0,0,.45);
       --wa-ring: 0 0 0 2px color-mix(in srgb, var(--wa-accent) 55%, transparent);
       color-scheme: dark;
       scrollbar-color: rgba(255,255,255,.16) transparent;

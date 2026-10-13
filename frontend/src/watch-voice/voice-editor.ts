@@ -1065,7 +1065,7 @@ export class WaVoiceEditor extends LitElement {
     const draft = this.draft;
     const scale = this.stageScale;
     const fit = stageFitZoom(this.narrow || this.stacked);
-    return html`<div class="card canvas-card ve-canvas" aria-label="Pick from List">
+    return html`<div class="card canvas-card lit ve-canvas" aria-label="Pick from List">
       <div class="cv-head">
         <span class="cv-title">Pick from List</span>
         ${owner !== undefined ? html`<span class="cv-part cv-where"><span class="cv-slash" aria-hidden="true">/</span>
@@ -1275,6 +1275,8 @@ export class WaVoiceEditor extends LitElement {
       .pe-layout > .column.left { order: 3; }
     }
     .column.canvas > .card.canvas-card.ve-canvas { min-height: 0; flex: none; }
+    /* The lit stage's edge in Voice's hue, Home's Voice door. */
+    .canvas-card.ve-canvas { --wa-stage-hue: var(--wa-hue-red); }
     .cv-head .cv-title { flex: 0 1 auto; min-width: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .cv-head .cv-watch { min-width: 0; font-size: 12.5px; font-weight: 500; color: var(--wa-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .pe-chip-glyph { display: inline-flex; flex: none; color: var(--pe-person, var(--wa-muted)); }

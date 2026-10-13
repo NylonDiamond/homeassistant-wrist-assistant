@@ -1199,6 +1199,73 @@ const stageToolsTailRun = css`
     .snap-steps button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
 `;
 
+/** The watch editors' lit stage, Home's stage (`.hb-stage` in home.ts) under
+ * the watch: opt in with `lit` on the canvas card and set `--wa-stage-hue`
+ * to the screen's hue (Pages green, Menus orange, Status pages yellow, Voice
+ * red, as Home's doors). The complication editor's card has no `lit`, so its
+ * dotted well and tool strip stay as they are. */
+const litStageRun = css`
+    /* A dark fall from the top to the foot, and a one pixel edge lit from
+       the top left in the screen's hue. */
+    .column.canvas > .card.canvas-card.lit {
+      border-radius: 22px; border: 1px solid transparent;
+      background:
+        linear-gradient(180deg, var(--wa-stage-top) 0%, var(--wa-stage-bottom) 100%) padding-box,
+        linear-gradient(140deg, var(--wa-stage-hue, var(--wa-line-strong)) 0%, color-mix(in srgb, var(--wa-stage-hue, var(--wa-line-strong)) 25%, transparent) 32%,
+          var(--wa-card-mid, var(--wa-line)) 64%, color-mix(in srgb, var(--wa-stage-hue, var(--wa-line-strong)) 15%, transparent) 100%) border-box;
+      box-shadow: inset 0 1px 0 color-mix(in srgb, var(--wa-ink) 7%, transparent);
+    }
+    .canvas-card.lit > .cv-head { border-radius: 16px; }
+    /* The light falls on the watch from the top centre of the stage, under
+       the head and the page's strip, and is a fixed depth, so a long page's
+       stage is not lit all the way down. The floor: a faint band at the
+       stage's foot under a hairline, where the hint and the tool pill sit.
+       All drawn as the stage's background, so always under the watch. */
+    .canvas-card.lit .stage-area {
+      padding: 20px 12px 18px; gap: 10px;
+      background:
+        radial-gradient(48% 420px at 50% 0%, var(--wa-stage-light) 0%, transparent 80%) no-repeat,
+        linear-gradient(color-mix(in srgb, var(--wa-ink) 5%, transparent), color-mix(in srgb, var(--wa-ink) 5%, transparent)) left 0 bottom 120px / 100% 1px no-repeat,
+        linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 3%, transparent), transparent) left 0 bottom 0 / 100% 120px no-repeat;
+    }
+    /* The watch gives back a faint reflection of its lowest edge only, so a
+       tall page's reflection is as short as a small one's. */
+    .canvas-card.lit .stage-area .wa-watch {
+      -webkit-box-reflect: below 6px linear-gradient(transparent calc(100% - 32px), var(--wa-stage-reflect));
+    }
+    /* Each editor's box round the watch scrolls sideways, so it clips: room
+       in its foot for the reflection, the hint under it starting about where
+       the reflection fades. */
+    .canvas-card.lit .stage-area > :is(.pe-stage-body, .me-stage-body, .sp-stage-body, .ve-stage-body) {
+      padding-bottom: 42px; margin-bottom: -10px;
+    }
+    /* The tools: a floating pill centred at the stage's foot, under the
+       watch and its hint. It stays in the flow (moved last by order) rather
+       than floating over the stage, so however it wraps on a narrow stage
+       the stage grows to hold it and it never covers the watch. */
+    .canvas-card.lit .stage-area > .stage-tools {
+      order: 9; align-self: center; position: relative; top: auto; z-index: 8;
+      margin: 8px 0 0; height: auto; min-height: 40px; width: max-content; max-width: calc(100% - 8px);
+      display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; row-gap: 4px; padding: 4px;
+      border-radius: 12px; background: var(--wa-card); border: 1px solid var(--wa-line-strong);
+      box-shadow: var(--wa-shadow-float, var(--wa-shadow-pop));
+    }
+    /* Neutral 30px controls, each with its own one pixel outline. */
+    .canvas-card.lit .stage-tools button.tb {
+      height: 30px; gap: 7px; padding: 0 10px; border-radius: 8px; font-size: 12px;
+      color: var(--wa-label, var(--wa-ink)); background: transparent; border: 1px solid var(--wa-line-strong);
+    }
+    .canvas-card.lit .stage-tools button.tb.icon { width: 30px; padding: 0; justify-content: center; font-size: 15px; }
+    .canvas-card.lit .stage-tools button.tb.pct { min-width: 52px; padding: 0 6px; color: var(--wa-label, var(--wa-ink)); }
+    .canvas-card.lit .stage-tools button.tb:hover:not(:disabled) { background: var(--wa-hover); color: var(--wa-ink); }
+    /* The watch's size is a fact, not a button. */
+    .canvas-card.lit .stage-tools button.tb[aria-disabled="true"] { cursor: default; }
+    .canvas-card.lit .stage-tools button.tb[aria-disabled="true"]:hover { background: transparent; color: var(--wa-label, var(--wa-ink)); }
+    .canvas-card.lit .stage-tools button.tb.lit { color: var(--wa-ink); border-color: var(--wa-ink); }
+    .canvas-card.lit .stage-tools .tb-zoom { gap: 4px; }
+    .canvas-card.lit .stage-tools .tb-sep { height: 18px; margin: 0 2px; background: var(--wa-line-strong); }
+`;
+
 /** The values bar under the face. */
 const valuesFootRun = css`
     /* The values bar, the same floating family as the toolbar. */
@@ -1562,8 +1629,9 @@ export const leftCardStyles = css`${leftCardsRun}${leftCardsTailRun}${popMenuRun
 export const rowListStyles = css`${rowsRun}${rowsTailRun}${groundCapRun}${richRowsRun}${sharedValueRowsRun}`;
 
 /** The canvas card: its head, the stage, the floating toolbar and its
- * menus, and the values bar. Wants `chromeTokens` for its colors. */
-export const canvasStyles = css`${canvasColumnRun}${tintDotRun}${canvasHeadRun}${canvasHeadTailRun}${stageRun}${stageToolsRun}${stageToolsTailRun}${valuesFootRun}`;
+ * menus, the values bar, and the watch editors' opt-in lit stage. Wants
+ * `chromeTokens` for its colors. */
+export const canvasStyles = css`${canvasColumnRun}${tintDotRun}${canvasHeadRun}${canvasHeadTailRun}${stageRun}${stageToolsRun}${stageToolsTailRun}${valuesFootRun}${litStageRun}`;
 
 /** The inspector: its head and breadcrumb, and the `.sec` section cards
  * that `sectionCard()` draws. The narrow `@container insp` rules stay in

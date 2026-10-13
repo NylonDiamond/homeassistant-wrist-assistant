@@ -3787,7 +3787,7 @@ export class WaPageEditor extends LitElement {
       : asOnWatch ? "Shown as the watch draws it. Turn off Watch view to edit."
       : tiles === 0 ? "No tiles yet. Add one from the Tiles list."
       : "Drag a tile to move it, or onto another tile to swap the two. Drag an edge or the corner of the selected tile to resize it. Arrow keys move the selected tile.";
-    return html`<div class="card canvas-card pe-canvas ${this.pageStripOpen === undefined ? "" : "pe-pop-open"}" aria-label="Page">
+    return html`<div class="card canvas-card lit pe-canvas ${this.pageStripOpen === undefined ? "" : "pe-pop-open"}" aria-label="Page">
       ${this.renderCanvasHead(page, watches, facts, found === undefined ? `${watchCase.label}, this watch's size is not known` : undefined, tile)}
       ${this.renderPageStrip(page)}
       <div class="stage-area pe-stage-area">
@@ -4829,6 +4829,8 @@ export class WaPageEditor extends LitElement {
        the watch at a set scale, as tall as the page: the stage grows with
        it and the editor scrolls. */
     .column.canvas > .card.canvas-card.pe-canvas { min-height: 0; flex: none; }
+    /* The lit stage's edge in Pages' hue, Home's Pages door. */
+    .canvas-card.pe-canvas { --wa-stage-hue: var(--wa-hue-green); }
     /* While a page strip popover is open it hangs out of the card over the
        stage, and past the card's foot or side on a short page or a narrow
        column: the card stops clipping and stacks over the sticky columns
@@ -4936,6 +4938,18 @@ export class WaPageEditor extends LitElement {
     .pe-stage-area > .stage-tools { overflow: visible; z-index: 8; }
     /* The Live preview switch, sized as the strip's button words. */
     .stage-tools .pe-switch.pe-live { gap: 7px; height: 26px; padding: 0 8px; font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+    /* In the lit stage's pill: a 30px control with its own outline, a small
+       switch in it, and its hint rising above the pill rather than under
+       it, since the pill sits at the stage's foot. */
+    .canvas-card.lit .stage-tools .pe-switch.pe-live {
+      height: 30px; padding: 0 10px; border: 1px solid var(--wa-line-strong); border-radius: 8px;
+      font-size: 12px; color: var(--wa-label, var(--wa-ink));
+    }
+    .canvas-card.lit .stage-tools .pe-switch.pe-live:hover { background: var(--wa-hover); color: var(--wa-ink); }
+    .canvas-card.lit .stage-tools .pe-switch.pe-live > input { width: 26px; height: 16px; }
+    .canvas-card.lit .stage-tools .pe-switch.pe-live > input::after { width: 12px; height: 12px; }
+    .canvas-card.lit .stage-tools .pe-switch.pe-live > input:checked::after { transform: translateX(10px); }
+    .canvas-card.lit .stage-tools .pe-tip::after { top: auto; bottom: calc(100% + 8px); }
     .vchip.vpill .val {
       flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       font-weight: 700; font-variant-numeric: tabular-nums; color: var(--wa-ink);
