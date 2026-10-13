@@ -70,6 +70,7 @@ import {
   pairFoundTitle,
   pairGoLabel,
   pairOpening,
+  pairQrLink,
   pairSubtitle,
   pairedHeadline,
 } from "./pair-flow.js";
@@ -205,9 +206,11 @@ export class PairWatchCard {
   private ticks = 0;
   /** An offer state question is out. */
   private polling = false;
-  /** Opened to show a QR code at once (Home's dialog): the QR mode makes its
-   * code without waiting for Show QR code, and starts on the person at the
-   * card rather than on nobody. */
+  /** Opened to show a QR code at once (Home's dialog and welcome): the QR
+   * mode makes its code without waiting for Show QR code, as soon as it knows
+   * whose iPhone it is. With more than one person to choose from, nobody is
+   * picked until the administrator picks, so a code scanned too early can
+   * never pair the iPhone to the wrong person. */
   private autoQr = false;
   /** The code box takes the cursor on its next drawing: the mode was just
    * switched to Type a code. */
@@ -316,6 +319,23 @@ export class PairWatchCard {
     this.update();
   }
 
+  /** Home's welcome picks the device on its own stage, in place of the
+   * card's choice. The same as an answer to "What are you pairing?", except
+   * that `focus: false` leaves the cursor where it is (the page has only just
+   * opened). False while a pairing is under way, which keeps its device. */
+  pick(device: PairChoice, options: { focus?: boolean } = {}): boolean {
+    if (this.busy) return false;
+    this.choose(device);
+    if (options.focus === false) this.focusCode = false;
+    return true;
+  }
+
+  /** The device the person said they are pairing, from the choice, a link
+   * in a mode's foot, or `pick`. */
+  get picked(): PairChoice | undefined {
+    return this.device;
+  }
+
   /** Back to "What are you pairing?". Whatever the mode held goes with it:
    * an open QR code is withdrawn and a typed code cleared, so the next
    * answer starts afresh. The people already read are kept. */
@@ -344,13 +364,11 @@ export class PairWatchCard {
     this.update();
   }
 
-  /** Who the QR mode starts on: the menu's own default, else, when the card
-   * shows its code at once, the person at the card. */
+  /** Who the QR mode starts on: the menu's own default, which is the one
+   * person when there is only one, and nobody otherwise. */
   private startUser(users: readonly PairUserChoice[] | undefined): string | undefined {
     if (users === undefined) return undefined;
-    const picked = pairDefaultUser(users, null);
-    if (picked !== undefined || !this.autoQr) return picked;
-    return users.find((u) => u.id === this.hass?.user?.id)?.id;
+    return pairDefaultUser(users, null);
   }
 
   // ── Type a code ────────────────────────────────────────────────────────
@@ -528,7 +546,9 @@ export class PairWatchCard {
       offerId = reply.offer_id;
       const url = appLink(reply.url);
       if (url === undefined) throw new Error("the integration sent a link that is not for Wrist Assistant");
-      const picture = await qrPicture(url);
+      // The code holds the web address, which opens the app from the
+      // Camera; the Open in app link keeps the app's own link.
+      const picture = await qrPicture(pairQrLink(url) ?? url);
       if (seq !== this.offerSeq) {
         void cancelPairOffer(hass, reply.offer_id).catch(() => undefined);
         return;
@@ -793,8 +813,7 @@ export class PairWatchCard {
                 <span class="hint keep ws-qr-count" role="timer">${pairCountdownText(left / 1000)}</span>`}
         </div>
         <div class="ws-qr-side">
-          ${this.steps(PAIR_QR_STEPS)}
-          ${this.renderUserMenu(o.users, o.userId, "iphone", false, (id) => this.pickOfferUser(id))}
+          ${this.renderQrSteps(o, picked)}
           ${!mayPairForOthers(this.hass?.user) ? nothing
             : this.qrMore || o.replace
             ? html`<label class="field check ws-qr-replace"><span>${PAIR_QR_REPLACE_LABEL}</span>
@@ -811,6 +830,19 @@ export class PairWatchCard {
       ${o.done ? html`<div class="hint keep ws-pair-done" role="status">${o.done}</div>` : nothing}
       ${o.error ? html`<div class="hint err" role="alert">${o.error}</div>` : nothing}
       ${this.renderFoot(toCode)}`;
+  }
+
+  /** The QR mode's steps. When the administrator is asked whose iPhone it
+   * is, that comes first, as step 1 with its menu, lit until someone is
+   * picked; the steps on the iPhone follow, faint until then, since no code
+   * shows before it. Otherwise the steps on the iPhone alone. */
+  private renderQrSteps(o: OfferState, picked: boolean) {
+    const menu = this.renderUserMenu(o.users, o.userId, "iphone", false, (id) => this.pickOfferUser(id));
+    if (menu === nothing) return this.steps(PAIR_QR_STEPS);
+    return html`<ol class="ws-pair-steps">
+        <li class="ws-qr-who ${picked ? "" : "next"}"><b aria-hidden="true">1</b><div class="ws-qr-who-menu">${menu}</div></li>
+        ${PAIR_QR_STEPS.map((line, i) => html`<li class=${picked ? "" : "later"}><b aria-hidden="true">${i + 2}</b><span>${line}</span></li>`)}
+      </ol>`;
   }
 
   /** "Whose watch is this?", for an administrator: the Home Assistant users,
@@ -1031,6 +1063,15 @@ export const pairCardStyles = css`
     border: 1px solid var(--wa-line-strong); font-size: 10.5px; font-weight: 500; color: var(--wa-muted); font-variant-numeric: tabular-nums;
   }
   .ws-pair-steps span { min-width: 0; padding-top: 1px; overflow-wrap: anywhere; }
+  /* Whose iPhone it is, as the QR mode's first step: its menu fills the
+     line, its number is lit until someone is picked, and the steps after it
+     wait faint until then. */
+  .ws-qr-who-menu { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .ws-qr-who-menu > .field.ws-pair-user { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+  .ws-qr-who-menu > .field.ws-pair-user > span { padding-top: 1px; font-size: 12.5px; color: var(--wa-ink); }
+  .ws-qr-who-menu > .hint { margin: 0; }
+  .ws-pair-steps li.next b { border-color: color-mix(in srgb, var(--wa-hue-green) 70%, var(--wa-card)); color: var(--wa-green); }
+  .ws-pair-steps li.later { opacity: .55; }
   .ws-pair-entry { display: flex; justify-content: center; margin: 16px 0 8px; }
   .ws-pair-row { display: flex; align-items: stretch; gap: 8px; flex-wrap: nowrap; min-width: 0; }
   .ws-pair input.ws-pair-code {

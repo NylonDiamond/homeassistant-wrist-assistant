@@ -1,12 +1,12 @@
-// Getting started: the three steps a new home walks through, as Home's
-// welcome card and the Help sheet both show them. Get the app, pair a watch,
-// make a first page. Each step is done or not from what Home Assistant
-// already knows (the devices, and which watches hold a page), never from a
-// tick the person sets, so the card and the sheet can never disagree with
-// the devices themselves.
+// Getting started: the three steps a new home walks through, as the Help
+// sheet shows them. Get the app, pair a watch, make a first page. Each step
+// is done or not from what Home Assistant already knows (the devices, and
+// which watches hold a page), never from a tick the person sets, so the sheet
+// can never disagree with the devices themselves. Home's welcome, in a home
+// with no devices, has its own three steps (install, pick, pair).
 //
-// The words live here too, beside the rule, so the two places say the same
-// thing and a test can read them without drawing either.
+// The words live here too, beside the rule, so a test can read them without
+// drawing the sheet.
 
 import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
 import { deviceKindOf } from "./version.js";
@@ -100,87 +100,18 @@ export function watchesWithPages(summary: WatchConfigSummary, watchIds: readonly
   return out;
 }
 
-// ── whether the welcome card shows ──────────────────────────────────────
-//
-// Kept per browser. No value is automatic: the card shows until a watch has
-// its first page. "hidden" is Hide on the card, and the card stays away for
-// good. "shown" is the Help sheet's "Show the welcome card again", and the
-// card stays until it is hidden again, whatever the steps say.
-
-export type WelcomeMode = "auto" | "hidden" | "shown";
-
-export const WELCOME_KEY = "wrist-assistant-panel.welcome.v1";
-
-/** The smallest of localStorage: what the load and the save use. */
-export type WelcomeStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
-
-/** The remembered mode. Storage that is missing or throws (a private window,
- * site data blocked) is automatic, which is what a new person should see. */
-export function loadWelcomeMode(storage: () => WelcomeStorage | undefined): WelcomeMode {
-  try {
-    const raw = storage()?.getItem(WELCOME_KEY);
-    return raw === "hidden" || raw === "shown" ? raw : "auto";
-  } catch {
-    return "auto";
-  }
-}
-
-/** Remember the mode. Automatic removes the key, so the default stays the
- * default. Storage that throws only means it is not remembered. */
-export function saveWelcomeMode(storage: () => WelcomeStorage | undefined, mode: WelcomeMode): void {
-  try {
-    const s = storage();
-    if (s === undefined) return;
-    if (mode === "auto") s.removeItem(WELCOME_KEY);
-    else s.setItem(WELCOME_KEY, mode);
-  } catch {
-    // Not remembered; the card follows the automatic rule next time.
-  }
-}
-
-/** Whether Home shows the welcome card. Automatic waits until the devices
- * are loaded and the page step is known, so the card never flashes up in a
- * home that is already set up. */
-export function welcomeShows(mode: WelcomeMode, steps: Pick<GettingStarted, "steps" | "known">, loaded: boolean): boolean {
-  if (mode === "hidden") return false;
-  if (mode === "shown") return true;
-  if (!loaded || !steps.known) return false;
-  return !steps.steps.find((s) => s.id === "page")!.done;
-}
-
 // ── the words ───────────────────────────────────────────────────────────
-
-export const WELCOME_TITLE = "Welcome to Wrist Assistant";
-export const WELCOME_LEAD = "Three steps put your home on your wrist. You need an Apple Watch. An iPhone is optional: the watch can pair on its own.";
-export const WELCOME_FOOT = "This card goes away once a watch has its first page.";
 
 /** "2 of 3 done". */
 export function doneWords(done: number): string {
   return `${done} of 3 done`;
 }
 
-/** Each step on Home's card: its title and what it asks. */
-export const CARD_STEPS: Record<StepId, { title: string; text: string }> = {
-  app: { title: "Get the app", text: "Install Wrist Assistant from the App Store, on the watch and/or on the iPhone." },
-  pair: {
-    title: "Pair your watch",
-    text: `On the watch, open Wrist Assistant and choose Pair with Home Assistant. It shows a ${PAIR_CODE_LENGTH}-character code. Type it here.`,
-  },
-  page: { title: "Make your first page", text: "A page is a screen of tiles on the watch: lights, scenes and cameras. You swipe between pages." },
-};
-
 export const OPEN_APP_STORE_LABEL = "Open the App Store";
 export const PAIR_DEVICE_LABEL = "Pair a device";
 export const NEW_PAGE_LABEL = "New page";
 /** Beside the greyed New page until a watch is paired. */
 export const PAIR_FIRST_TEXT = "Pair a watch first.";
-
-/** The dashed cards under the welcome card: what else Wrist Assistant does. */
-export const WELCOME_FACTS: readonly { title: string; text: string }[] = [
-  { title: "Pages", text: "Tiles for lights, scenes and cameras, on the watch." },
-  { title: "Complications", text: "Live home state, right on the watch face." },
-  { title: "Notifications", text: "Alerts with camera pictures and buttons. Use the Watch Notification blueprint." },
-];
 
 /** Each step in the Help sheet: shorter, and saying what is true now. */
 export function helpStepWords(id: StepId, gs: Pick<GettingStarted, "steps" | "watchNames">): { title: string; text: string } {

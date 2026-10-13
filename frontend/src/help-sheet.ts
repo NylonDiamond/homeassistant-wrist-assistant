@@ -1,8 +1,7 @@
 // The Help sheet: what the Help button at the right of the tab bar opens, on
-// every tab. A side sheet from the right with the getting started steps (the
-// same three as Home's welcome card, from `getting-started.ts`), a word about
-// the screen in view, and the guides. Its foot names the integration's
-// version and can bring the welcome card back.
+// every tab. A side sheet from the right with the getting started steps
+// (`getting-started.ts`), a word about the screen in view, and the guides.
+// Its foot names the integration's version.
 //
 // The complication editor keeps its own, longer Help dialog (Basics, Pages,
 // Keys and mouse, Syncing and sharing) behind the ? in its bar. This sheet
@@ -78,7 +77,6 @@ export interface HelpSheetInput {
   onClosed: () => void;
   onPair: () => void;
   onNewPage: (watch: string) => void;
-  onShowWelcome: () => void;
   /** Open the complication editor's own Help. Given only on the
    * Complications tab, where that dialog lives. */
   onEditorHelp?: () => void;
@@ -147,7 +145,6 @@ export function renderHelpSheet(input: HelpSheetInput): TemplateResult {
       </div>
       <div class="hs-foot">
         <span class="hs-version">Wrist Assistant${input.version ? ` ${input.version}` : ""}</span>
-        <button type="button" class="hs-more" @click=${input.onShowWelcome}>Show the welcome card again</button>
       </div>
     </div>
   </dialog>`;
@@ -224,7 +221,6 @@ export const helpSheetStyles = css`
     padding: 14px 20px; border-top: 1px solid var(--wa-line); font-size: 12px; color: var(--wa-muted);
   }
   .hs-version { flex: 1 1 auto; min-width: 0; }
-  .hs-foot button.hs-more { font-size: 12px; }
   @media (max-width: 640px) {
     dialog.wa-help-sheet { border-left: 0; }
     .hs-body { padding: 16px; }

@@ -142,10 +142,10 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, homePill, homeSync, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDeviceWhy, homeGroups, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
-import { homePhoneArt, homeWatchArt } from "./home-art.js";
-import { type GettingStarted, type WelcomeMode, gettingStarted, loadWelcomeMode, saveWelcomeMode, watchesWithPages, welcomeShows } from "./getting-started.js";
-import { renderWelcomeCard, welcomeStyles } from "./welcome-card.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDoorLook, homeGroups, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_RING_LENGTH, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
+import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
+import { APP_STORE_URL, type GettingStarted, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
+import { type QrPicture, qrPicture } from "./qr-code.js";
 import { helpSheetStyles, renderHelpSheet } from "./help-sheet.js";
 import { HOME_PATH } from "./shell.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
@@ -420,7 +420,7 @@ import {
 import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";
-import { pairNextStatus, pairedFactsLine } from "./pair-flow.js";
+import { type PairChoice, pairChoiceNote, pairNextStatus, pairedFactsLine } from "./pair-flow.js";
 import { settingsWatches } from "./watch-settings.js";
 import {
   formButtonStyles,
@@ -1499,22 +1499,42 @@ export class WristAssistantPanel extends LitElement {
       this.pairNext = watchId;
       return;
     }
-    // An iPhone's own sheet takes the dialog's place, with a green "Paired"
-    // line, so it is plain the pairing worked and where it went.
+    // The dialog closes on the new iPhone, picked on Home with a green
+    // "Paired" line, so it is plain the pairing worked and where it went.
     this.closePairDialog();
-    this.openDeviceSheet(watchId);
+    this.openHomeDevice(watchId);
     this.devicePaired = watchId;
   });
   /** The watch just paired in Home's dialog, by owner id: the dialog shows
    * what next for it in place of the card. */
   @state() private pairNext?: string;
+  /** The pairing card in Home's welcome, in a home with no devices yet: its
+   * third step, for the device picked on its stage. Open while the welcome
+   * is on screen (`syncHomeWelcome`). A device paired on it is picked on
+   * Home with a green "Paired" line, the way the dialog's iPhone is. */
+  private welcomePair = new PairWatchCard(() => this.requestUpdate(), async (deviceId, stale, kind) => {
+    await this.loadOwners();
+    if (deviceId === undefined) return;
+    if (kind === "watch") this.pickWatch(deviceId);
+    if (stale() || this.ownerOf(deviceId) === undefined) return;
+    this.openHomeDevice(deviceId);
+    this.devicePaired = deviceId;
+  });
+  private welcomePairOpen = false;
+  /** The App Store page as a QR code, for the welcome's first step. Made
+   * once, the first time the welcome shows. */
+  @state() private appStoreQr?: QrPicture;
 
-  /** The device Home's sheet is open on, by owner id. */
-  @state() private deviceSheet?: string;
-  /** The sheet was opened by a pairing just done, on this owner: it shows
-   * "Paired" in green until it closes. */
+  /** The device picked on Home, by owner id. Undefined, or a device that has
+   * left, shows the one heard from last (`homePickOf`). */
+  @state() private homePick?: string;
+  /** The device Home's detail showed when last drawn, so a new pick slides
+   * in (`animateHomePick`). */
+  private homeShown?: string;
+  /** The picked device was paired just now, on this owner: Home shows
+   * "Paired" in green until another device is picked. */
   @state() private devicePaired?: string;
-  /** The sheet is asking whether to forget its device. */
+  /** Home is asking whether to forget the picked device. */
   @state() private deviceForgetAsk = false;
   /** Forget is on its way to the server. */
   @state() private deviceForgetBusy = false;
@@ -1546,9 +1566,6 @@ export class WristAssistantPanel extends LitElement {
    * until the summary is read, so the welcome card never flashes up in a
    * home that already has pages. */
   @state() private watchPages?: ReadonlySet<string>;
-  /** Whether Home shows the welcome card: automatic, hidden or shown, as
-   * this browser remembers it. */
-  @state() private welcomeMode: WelcomeMode = loadWelcomeMode(() => window.localStorage);
   /** The Help sheet the tab bar's Help button opens, on every tab. */
   @state() private helpSheetOpen = false;
   /** When the owners list was last read, so Home can age each device's
@@ -2640,6 +2657,12 @@ export class WristAssistantPanel extends LitElement {
       --wa-amber-bg: color-mix(in srgb, var(--wa-amber) 12%, transparent);
       --wa-amber-line: color-mix(in srgb, var(--wa-amber) 35%, transparent);
       --wa-shadow-pop: 0 12px 36px rgba(0,0,0,.22);
+      /* Home's stage: the light falling on the picked device from above,
+         the floor it stands on, and how strongly the floor gives it back. */
+      --wa-stage-light: #ffffff;
+      --wa-stage-top: #fbfbfc;
+      --wa-stage-bottom: #e6e6ea;
+      --wa-stage-reflect: rgba(0,0,0,.10);
       --wa-ring: 0 0 0 3px color-mix(in srgb, var(--wa-accent) 30%, transparent);
       color: var(--wa-ink);
       background: var(--wa-bg);
@@ -2731,6 +2754,10 @@ export class WristAssistantPanel extends LitElement {
       --wa-rule-then: #3fbf7f;
       --wa-rule-else: #a78bfa;
       --wa-shadow-pop: 0 16px 48px rgba(0,0,0,.7);
+      --wa-stage-light: rgba(255,255,255,.11);
+      --wa-stage-top: #131315;
+      --wa-stage-bottom: #060607;
+      --wa-stage-reflect: rgba(255,255,255,.14);
       --wa-ring: 0 0 0 2px color-mix(in srgb, var(--wa-accent) 55%, transparent);
       color-scheme: dark;
       scrollbar-color: rgba(255,255,255,.16) transparent;
@@ -6028,7 +6055,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, homeStyles, watchRowStyles, listPageStyles, welcomeStyles, helpSheetStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, homeStyles, watchRowStyles, listPageStyles, helpSheetStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -6309,9 +6336,10 @@ export class WristAssistantPanel extends LitElement {
     super.disconnectedCallback();
     for (const type of UNSAVED_NUDGES) this.removeEventListener(type, this.unsavedSoon, { capture: true });
     this.syncUnsavedTicker(false);
-    // A QR code still open in Home's pairing dialog stops working with the
-    // page that showed it.
+    // A QR code still open in Home's pairing dialog or its welcome stops
+    // working with the page that showed it.
     this.closePairDialog();
+    this.closeHomeWelcome();
     this.sizeObserver.disconnect();
     this.fades.disconnect();
     this.stageObserver?.disconnect();
@@ -6644,10 +6672,8 @@ export class WristAssistantPanel extends LitElement {
         dialog.querySelector<HTMLInputElement>("input.ws-pair-code")?.focus();
       }
     }
-    if (changed.has("deviceSheet") && this.deviceSheet !== undefined) {
-      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.dev-dialog");
-      if (dialog && !dialog.open) dialog.showModal();
-    }
+    if (tabOfRoute(this.route) === "home") this.animateHomePick();
+    this.syncHomeWelcome();
     if (changed.has("helpSheetOpen") && this.helpSheetOpen) {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.wa-help-sheet");
       if (dialog && !dialog.open) dialog.showModal();
@@ -10871,29 +10897,9 @@ export class WristAssistantPanel extends LitElement {
 
   // ── getting started and the Help sheet ────────────────────────────────
 
-  /** The three getting started steps, as Home's welcome card and the Help
-   * sheet both show them. */
+  /** The three getting started steps, as the Help sheet shows them. */
   private gettingStarted(): GettingStarted {
     return gettingStarted(this.owners, this.watchPages, this.sharedWatch);
-  }
-
-  private setWelcomeMode(mode: WelcomeMode) {
-    this.welcomeMode = mode;
-    saveWelcomeMode(() => window.localStorage, mode);
-  }
-
-  /** Home's welcome card, while it shows (`welcomeShows`). */
-  private renderWelcome() {
-    const gs = this.gettingStarted();
-    if (!welcomeShows(this.welcomeMode, gs, this.linkReady || this.owners.length > 0)) return nothing;
-    return renderWelcomeCard({
-      gs,
-      mode: this.welcomeMode,
-      onPair: () => this.openPairDialog(),
-      onNewPage: (watch) => this.goTo(watchScreenPath(WATCH_SCREENS[0]!, watch)),
-      onHelp: () => this.openHelpSheet(),
-      onHide: () => this.setWelcomeMode("hidden"),
-    });
   }
 
   /** Open the Help sheet. Which watches hold a page is read on the way into
@@ -10912,10 +10918,9 @@ export class WristAssistantPanel extends LitElement {
     if (refocus) void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLElement>("button.wa-tabs-help")?.focus());
   }
 
-  /** The sheet. Pair a device and Show the welcome card again go to Home
-   * first, where the Pair dialog and the card live. A screen with unsaved
-   * work may refuse to be left: then Pair a device opens nothing, and the
-   * card is still remembered as shown for the next visit to Home. */
+  /** The sheet. Pair a device goes to Home first, where the Pair dialog
+   * lives. A screen with unsaved work may refuse to be left: then Pair a
+   * device opens nothing. */
   private renderHelpSheet() {
     const home = () => {
       this.closeHelpSheet(false);
@@ -10929,7 +10934,6 @@ export class WristAssistantPanel extends LitElement {
       onClosed: () => this.closeHelpSheet(true),
       onPair: () => { if (home()) this.openPairDialog(); },
       onNewPage: (watch) => { this.closeHelpSheet(false); this.goTo(watchScreenPath(WATCH_SCREENS[0]!, watch)); },
-      onShowWelcome: () => { this.setWelcomeMode("shown"); home(); },
       ...(tabOfRoute(this.route) === "complications"
         ? { onEditorHelp: () => { this.closeHelpSheet(false); this.helpTab = "basics"; this.helpOpen = true; } }
         : {}),
@@ -19163,80 +19167,176 @@ export class WristAssistantPanel extends LitElement {
   // ── Home ──────────────────────────────────────────────────────────────
 
   /**
-   * Home, the panel's front page at its own address: the devices, grouped by
-   * the person they belong to, and where each has got to. The tabs above
-   * already lead to the watch app's screens and to the complications, so
-   * Home does not repeat them; it answers "what is in this home, whose is it,
-   * and is each one up to date".
+   * Home, the panel's front page at its own address: a device browser. The
+   * tabs above already lead to the watch app's screens and to the
+   * complications, so Home does not repeat them; it answers "what is in this
+   * home, whose is it, and is each one up to date", one device at a time.
    *
-   * At the top, the totals (devices, Synced, Waiting, the device heard from
-   * last) beside Waiting to sync, a line per waiting device with what it
-   * waits for and a door to its sheet (`renderHomeStatus`). The head has New
-   * complication and Pair a device.
+   * The side bar has the head, the household's state (`renderHomeStatus`:
+   * a ring of every device, Waiting to sync with a line per waiting device,
+   * and the totals), Pair a device, then every device, grouped by the person
+   * it belongs to (`people`), each in that person's color
+   * (`personColorVar`). A device's word is the header pill's rule for its
+   * complications; a watch's is the worse of that and its watch app records
+   * (`deviceVerdict`).
    *
-   * A group is one Home Assistant person's devices, under that person's
-   * picture and name (`people`), or for a device bound to nobody the group
-   * the panel reads from its pairing and name. Each person wears the color
-   * their devices wear on the Complications tab (`personColorVar`), on the
-   * avatar ring and the lit slots of each device's drawing.
+   * The rest of the page is the picked device (`renderHomeDetail`): drawn
+   * large on a lit stage with its own complications on its face, its sync
+   * state, and a door to each of its pages. Picking another slides it in
+   * (`animateHomePick`).
    *
-   * A card draws the device on a lit stage (`homeWatchArt`, `homePhoneArt`),
-   * a slot lit per thing it holds, then its name with Synced or Waiting (or
-   * Nothing waiting, for one that has nothing to pick up and never synced).
-   * A phone's word is the header pill's rule for its complications; a
-   * watch's is the worse of that and its watch app records
-   * (`deviceVerdict`). Under the name, what it is and when it was last heard
-   * from, what a waiting card waits for, and a small door per page that
-   * counts something, each opening that page on the device
-   * (`deviceCardTiles`). The whole card opens the device's sheet, which also
-   * leads to a watch's Settings. In a home with no devices a card opens
-   * "Pair a device". Nothing but "Loading…" while the devices are still
-   * loading, so the pairing card never flashes up in a home that has
-   * devices.
+   * A home with no devices gets the welcome instead (`renderHomeWelcome`):
+   * install the app, pick the device, pair it. Nothing but "Loading…" while
+   * the devices are still loading, so the welcome never flashes up in a home
+   * that has devices, and a device list that would not load says so and
+   * offers Try again (`renderNotReady`).
    */
   private renderHome() {
     const devices = homeDeviceRows(this.homeDevices(), this.watchAppSyncs);
     const loading = !this.linkReady && this.owners.length === 0;
     const groups = homeGroups(this.people(), devices);
     const elapsed = this.ownersReadAt > 0 ? (Date.now() - this.ownersReadAt) / 1000 : 0;
-    const full = this.freeSlot() < 0;
-    const add = devices.length === 0 ? html`<ul class="home-devices"><li><button type="button" class="home-device-add" title="Pair a watch or iPhone, by a code or a QR code"
-        @click=${() => this.openPairDialog()}>${uiIcon("plus")}<b>Pair a device</b><span>A watch or an iPhone, by a code or a QR code</span></button></li></ul>` : nothing;
-    const acts = html`<div class="home-head-acts">
-        <button type="button" class="home-btn add" ?disabled=${full || this.ownerBusy}
-          title=${full ? "Every device is full. Delete a complication first." : "Make a new complication"}
-          @click=${() => { this.goTo(COMPLICATIONS_PATH); this.openNewDialog(); }}>${uiIcon("plus")}<span>New complication</span></button>
-        <button type="button" class="home-btn add" title="Pair a watch or iPhone, by a code or a QR code"
-          @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair a device</span></button>
-      </div>`;
     // A device list that would not load is not a home with no devices: it
     // says so and offers Try again, never the Pair a device card.
     const failed = this.loadFailedEmpty && devices.length === 0;
-    return html`${this.loadError && !failed ? html`<div class="card error" title=${errTitle(this.loadError) ?? nothing}>${this.loadError}</div>` : nothing}
-      <div class="home"><div class="home-wrap">
-        <div class="home-head">
-          <div class="home-head-text">
-            <h1>Home</h1>
-            <p class="home-lead">Every watch and iPhone, who it belongs to, and whether it has your latest changes.</p>
-            ${this.hass?.user?.is_admin === false ? html`<p class="home-scope">You see the devices paired to you. Ask an administrator if yours is missing.</p>` : nothing}
-          </div>
-          ${devices.length === 0 ? nothing : acts}
-        </div>
-        ${failed ? nothing : this.renderWelcome()}
-        ${failed
-          ? this.renderNotReady()
-          : loading
-          ? html`<p class="home-empty">Loading…</p>`
-          : html`${devices.length === 0 ? nothing : this.renderHomeStatus(devices, groups, elapsed)}${groups.map((g) => this.renderHomeGroup(g, elapsed))}${add}`}
-        ${devices.length === 0 ? nothing : html`<p class="home-small">${HOME_SYNC_NOTE}</p>`}
-      </div></div>
-      ${this.pairOpen ? this.renderPairDialog() : nothing}
-      ${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices) : nothing}`;
+    const error = this.loadError && !failed ? html`<div class="card error" title=${errTitle(this.loadError) ?? nothing}>${this.loadError}</div>` : nothing;
+    const lead = html`<p class="home-lead">Every watch and iPhone, who it belongs to, and whether it has your latest changes.</p>`;
+    const scope = this.hass?.user?.is_admin === false ? html`<p class="home-scope">You see the devices paired to you. Ask an administrator if yours is missing.</p>` : nothing;
+    const pair = this.pairOpen ? this.renderPairDialog() : nothing;
+    if (!failed && !loading && devices.length === 0) return html`${error}${this.renderHomeWelcome(scope)}${pair}`;
+    if (failed || loading || devices.length === 0) {
+      return html`${error}
+        <div class="home home-pad"><div class="home-wrap">
+          <div class="home-head"><div class="home-head-text"><h1>Home</h1>${lead}${scope}</div></div>
+          ${failed ? this.renderNotReady() : html`<p class="home-empty">Loading…</p>`}
+        </div></div>
+        ${pair}`;
+    }
+    const pick = homePickOf(devices, this.homePick, (id) => this.ownerOf(id));
+    const row = devices.find((d) => d.id === pick) ?? devices[0]!;
+    return html`${error}
+      <div class="home hb">
+        <aside class="hb-side" aria-label="Devices">
+          <div class="hb-head"><h1>Home</h1>${lead}${scope}</div>
+          ${this.renderHomeStatus(devices, groups, elapsed)}
+          <button type="button" class="home-btn add hb-pair" title="Pair a watch or iPhone, by a code or a QR code"
+            @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair a device</span></button>
+          ${groups.map((g) => this.renderHomeGroup(g, row.id, elapsed))}
+          <p class="home-small">${HOME_SYNC_NOTE}</p>
+        </aside>
+        <section class="hb-main" aria-label=${row.name}>
+          ${this.renderHomeDetail(row, devices, groups, elapsed)}
+        </section>
+      </div>
+      ${pair}`;
   }
 
-  /** Home's status row: the totals, with every device as a share of one bar,
-   * and Waiting to sync, a line per waiting device in its person's color,
-   * saying what it waits for, with a door to its sheet. */
+  /** Whether Home shows the welcome: on Home, devices read, and none. */
+  private homeWelcomeShows(): boolean {
+    if (tabOfRoute(this.route) !== "home") return false;
+    if (!this.linkReady && this.owners.length === 0) return false;
+    const devices = homeDeviceRows(this.homeDevices(), this.watchAppSyncs);
+    return devices.length === 0 && !this.loadFailedEmpty;
+  }
+
+  /** The welcome's pairing card is open exactly while the welcome is on
+   * screen: opened on the watch the first time it shows, and closed (any QR
+   * code withdrawn) once a device is paired or Home is left. Run after every
+   * drawing. */
+  private syncHomeWelcome() {
+    const shows = this.homeWelcomeShows();
+    if (shows && !this.welcomePairOpen && this.hass) {
+      this.welcomePairOpen = true;
+      this.welcomePair.open(this.hass, { mode: "code" });
+      this.welcomePair.pick("watch", { focus: false });
+      if (this.appStoreQr === undefined) {
+        void qrPicture(APP_STORE_URL).then((picture) => { this.appStoreQr = picture; }).catch(() => undefined);
+      }
+      this.requestUpdate();
+    } else if (!shows) {
+      this.closeHomeWelcome();
+    }
+  }
+
+  private closeHomeWelcome() {
+    if (!this.welcomePairOpen) return;
+    this.welcomePairOpen = false;
+    this.welcomePair.close();
+  }
+
+  /**
+   * Home in a home with no devices yet: a welcome in three steps, top to
+   * bottom. Install the app (the App Store, as a link and a QR code); pick
+   * the device, a watch or an iPhone drawn on Home's lit stage, the one
+   * picked inside a thin green arc that turns slowly; then pair it, with the
+   * pairing card for that device (`welcomePair`): a code to type for a
+   * watch, a QR code to scan for an iPhone. The card's own link across to
+   * the other way moves the pick on the stage with it.
+   */
+  private renderHomeWelcome(scope: TemplateResult | typeof nothing) {
+    const card = this.welcomePair;
+    const picked: PairChoice = card.picked ?? "watch";
+    const choice = (kind: PairChoice, label: string, line: string) => {
+      const on = picked === kind;
+      return html`<button type="button" class="hw-choice ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+          @click=${() => { if (!on) card.pick(kind); }}>
+          <span class="hw-ring">
+            <svg class="hw-ring-track" viewBox="0 0 236 236" aria-hidden="true"><circle cx="118" cy="118" r="117.5"></circle></svg>
+            ${on ? html`<svg class="hw-ring-arc" viewBox="0 0 236 236" aria-hidden="true"><circle cx="118" cy="118" r="117.25" pathLength="100" stroke-dasharray="24 76"></circle></svg>` : nothing}
+            ${homeChoiceArt(kind, on)}
+          </span>
+          <span class="hw-choice-t"><b>${label}</b><span>${line}</span></span>
+        </button>`;
+    };
+    const qr = this.appStoreQr;
+    const step = (n: number, title: string, line: string, body: TemplateResult) => html`<li class="hw-step">
+        <span class="hw-rail" aria-hidden="true"><span class="hw-num">${n}</span><span class="hw-line"></span></span>
+        <div class="hw-body">
+          <div class="hw-step-head"><h2>${title}</h2><span>${line}</span></div>
+          ${body}
+        </div>
+      </li>`;
+    return html`<div class="home home-pad"><div class="hw-wrap">
+        <div class="home-head">
+          <div class="home-head-text"><h1>Welcome to Wrist Assistant</h1><p class="home-lead">Three steps and about two minutes.</p>${scope}</div>
+          <a class="home-btn" href=${SETUP_GUIDE_URL} target="_blank" rel="noreferrer">Setup guide</a>
+        </div>
+        <ol class="hw-steps">
+          ${step(1, "Install the app", "On the iPhone, the watch, or both.", html`<div class="hw-install">
+              <div class="hw-install-t">
+                <p>Install it on your iPhone and it shows up on the watch too. No iPhone? Open the App Store on the watch and search for Wrist Assistant.</p>
+                <a class="home-btn" href=${APP_STORE_URL} target="_blank" rel="noreferrer">Open the App Store${uiIcon("right")}</a>
+              </div>
+              <figure class="hw-qr">
+                ${qr === undefined ? html`<span class="hw-qr-empty" aria-hidden="true"></span>`
+                  : html`<svg viewBox=${`0 0 ${qr.size} ${qr.size}`} role="img" aria-label="QR code for the App Store page" shape-rendering="crispEdges"><rect width=${qr.size} height=${qr.size} fill="#fff"></rect><path d=${qr.path} fill="#000"></path></svg>`}
+                <figcaption><b>Scan with your iPhone</b><span>It opens the App Store page.</span></figcaption>
+              </figure>
+            </div>`)}
+          ${step(2, "Pick one", "Which device are you pairing now? You can pair the other one later.", html`<div class="hb-stage hw-stage">
+              <span class="hb-floor"></span>
+              <div class="hw-choices" role="group" aria-label="Pick one">
+                ${choice("watch", "Apple Watch", "Pairs with a code")}
+                ${choice("iphone", "iPhone", "Pairs with a QR code")}
+              </div>
+            </div>`)}
+          ${step(3, picked === "iphone" ? "Pair your iPhone" : "Pair your watch",
+            picked === "iphone" ? "Scan the code with the iPhone's Camera." : "The watch shows a code. Type it here.",
+            html`<section class="hw-pair" aria-label=${picked === "iphone" ? "Pair your iPhone" : "Pair your watch"}>
+              ${card.render({ bare: true })}
+              <div class="hw-pair-foot">
+                <span>Stuck? <a href=${TROUBLESHOOTING_URL} target="_blank" rel="noreferrer">Something is not working</a></span>
+                <span>${pairChoiceNote(this.hass?.user?.is_admin === true)}</span>
+              </div>
+            </section>`)}
+        </ol>
+      </div></div>`;
+  }
+
+  /** Home's household state, at the top of the side bar: a ring of every
+   * device (synced green, waiting amber), its words, Waiting to sync with a
+   * line per waiting device in its person's color that picks it, and the
+   * totals. Lit amber while anything waits. */
   private renderHomeStatus(devices: readonly HomeDeviceRow[], groups: readonly { index: number; rows: HomeDeviceRow[] }[], elapsed: number) {
     const totals = homeTotals(devices);
     const last = lastSeenDevice(devices, (id) => this.ownerOf(id), elapsed);
@@ -19245,159 +19345,154 @@ export class WristAssistantPanel extends LitElement {
     // look as much as one that waits, and "Every device has your latest
     // changes" would not be true of it.
     const waiting = devices.filter(needsAttention);
-    const bar = (["synced", "waiting", "idle"] as const).filter((k) => totals[k] > 0)
-      .map((k) => html`<i class=${k} style=${`flex:${totals[k]}`}></i>`);
-    return html`<div class="home-status">
-      <div class="home-totals">
-        <div class="home-total"><span class="home-total-label">Devices</span>
-          <span class="home-total-n">${totals.all}</span><span class="home-bar" aria-hidden="true">${bar}</span></div>
-        <div class="home-total"><span class="home-total-label"><i class="home-dot synced" aria-hidden="true"></i>Synced</span>
-          <span class="home-total-n">${totals.synced}</span><span class="home-total-sub">Have every change</span></div>
-        <div class="home-total"><span class="home-total-label"><i class="home-dot waiting" aria-hidden="true"></i>Waiting</span>
-          <span class="home-total-n">${totals.waiting}</span><span class="home-total-sub">Pick up when the app opens</span></div>
-        ${last === undefined ? nothing : html`<div class="home-total"><span class="home-total-label">Last seen</span>
-          <span class="home-total-n">${last.n}${last.unit === "" ? nothing : html`<small>${last.unit}</small>`}</span>
-          <span class="home-total-sub" title=${last.name}>${last.name}</span></div>`}
+    const ring = homeRing(totals, HOME_RING_LENGTH);
+    const lastWords = last === undefined ? undefined : last.unit === "" ? last.n : `${last.n} ${last.unit}`;
+    return html`<section class="hb-sum ${waiting.length > 0 ? "on" : ""}" aria-label="Sync">
+      <div class="hb-sum-top">
+        <svg class="hb-ring" viewBox="0 0 44 44" aria-hidden="true">
+          <circle class="track" cx="22" cy="22" r="18"></circle>
+          ${totals.synced > 0 ? svg`<circle class="ok" cx="22" cy="22" r="18" stroke-linecap="round" stroke-dasharray=${ring.synced} transform="rotate(-90 22 22)"></circle>` : nothing}
+          ${totals.waiting > 0 ? svg`<circle class="wait" cx="22" cy="22" r="18" stroke-linecap="round" stroke-dasharray=${ring.waiting} stroke-dashoffset=${ring.offset} transform="rotate(-90 22 22)"></circle>` : nothing}
+        </svg>
+        <div class="hb-sum-t"><b>${homeRingHead(totals)}</b><h2 class="home-title">Waiting to sync ${waiting.length}</h2></div>
       </div>
-      <section class="home-attn ${waiting.length > 0 ? "on" : ""}">
-        <div class="home-attn-head">
-          <span class="home-chip" aria-hidden="true">${uiIcon(waiting.length > 0 ? "clock" : "check")}</span>
-          <h2 class="home-title">Waiting to sync</h2>
-          <span class="home-attn-n">${waiting.length}</span>
-        </div>
-        ${waiting.length === 0
-          ? html`<p class="home-attn-ok">Every device has your latest changes.</p>`
-          : waiting.map((d) => {
-            const pending = pendingWords(this.ownerOf(d.id));
-            const gone = userGone(this.ownerOf(d.id));
-            return html`<div class="home-attn-row" style=${`--c:${colorOf.get(d.id) ?? "var(--wa-hue-grey)"}`}>
-              <i class="home-attn-who" aria-hidden="true"></i>
-              <span class="home-attn-text"><b>${d.name}</b><span>${gone ? USER_GONE_TEXT : attentionText(d, pending)}</span></span>
-              ${gone
-                ? html`<button type="button" class="home-door" title=${`Remove ${d.name}`} @click=${() => this.openDeviceSheet(d.id, true)}>Remove</button>`
-                : html`<button type="button" class="home-door" title=${`Open ${d.name}`} @click=${() => this.openDeviceSheet(d.id)}>Open</button>`}
-            </div>`;
-          })}
-      </section>
-    </div>`;
+      ${waiting.length === 0
+        ? html`<p class="hb-sum-line">Every device has your latest changes.${last === undefined ? nothing : ` Last seen: ${last.name}, ${lastWords}.`}</p>`
+        : html`<div class="hb-waits">${waiting.map((d) => {
+          const pending = pendingWords(this.ownerOf(d.id));
+          const gone = userGone(this.ownerOf(d.id));
+          return html`<button type="button" class="hb-wait" style=${`--c:${colorOf.get(d.id) ?? "var(--wa-hue-grey)"}`}
+            title=${`Open ${d.name}`} @click=${() => this.openHomeDevice(d.id, gone)}>
+            <i aria-hidden="true"></i>
+            <span class="hb-wait-t"><b>${d.name}</b><span>${gone ? USER_GONE_TEXT : attentionText(d, pending)}</span></span>
+          </button>`;
+        })}</div>`}
+      <div class="hb-totals">
+        <div class="hb-total"><b>${totals.all}</b><span>Devices</span></div>
+        <div class="hb-total"><b class="ok">${totals.synced}</b><span>Synced</span></div>
+        <div class="hb-total"><b class=${totals.waiting > 0 ? "wait" : ""}>${totals.waiting}</b><span>Waiting</span></div>
+        ${last === undefined ? nothing : html`<div class="hb-total" title=${`${last.name}, ${lastWords}`}>
+          <b>${last.unit === "" ? last.n : `${last.n} ${last.unit.replace(/ ago$/, "")}`}</b><span>Last seen</span></div>`}
+      </div>
+    </section>`;
   }
 
-  /** One person's devices on Home: their picture (or initial) in their color,
-   * their name, how many devices and how many wait, then a card per device. */
-  private renderHomeGroup(g: { person?: Person; index: number; rows: HomeDeviceRow[] }, elapsed: number) {
+  /** One person's devices in Home's side bar: their picture (or initial) in
+   * their color, their name, how their devices stand, then a row each. */
+  private renderHomeGroup(g: { person?: Person; index: number; rows: HomeDeviceRow[] }, pick: string, elapsed: number) {
     const color = personColorVar(g.index) ?? "var(--wa-hue-grey)";
     const name = g.person?.label ?? "Other devices";
     const n = g.rows.length;
     const { synced, waiting } = homeTotals(g.rows);
     const sum = waiting > 0 ? `${waiting} waiting` : synced === n ? "All synced" : `${synced} of ${n} synced`;
-    return html`<section class="home-person" style=${`--c:${color}`}>
-      <div class="home-person-head">
-        <span class="home-avatar" aria-hidden="true">${g.person?.picture
+    return html`<section class="hb-group" style=${`--c:${color}`}>
+      <div class="hb-person">
+        <span class="hb-avatar" aria-hidden="true">${g.person?.picture
           ? html`<img src=${g.person.picture} alt="" loading="lazy" />`
           : html`<span>${name.trim().charAt(0).toLocaleUpperCase()}</span>`}</span>
-        <h2 class="home-person-name">${name}</h2>
-        <span class="home-person-n">${n} ${n === 1 ? "device" : "devices"}</span>
-        ${g.person !== undefined && g.person.userId === undefined
-          ? html`<span class="home-person-n" title="No Home Assistant user is linked to these devices. The name is read from a device's name.">Not linked to a user</span>`
-          : nothing}
-        <span class="home-person-sum"><i class="home-dot ${waiting > 0 ? "waiting" : synced === n ? "synced" : ""}" aria-hidden="true"></i>${sum}</span>
+        <h2 class="hb-person-name">${name}</h2>
+        <span class="hb-person-sum">${sum}<i class="home-dot ${waiting > 0 ? "waiting" : synced === n ? "synced" : ""}" aria-hidden="true"></i></span>
       </div>
-      <ul class="home-devices">${g.rows.map((d) => this.renderHomeDevice(d, elapsed))}</ul>
+      ${g.person !== undefined && g.person.userId === undefined
+        ? html`<span class="hb-person-note" title="No Home Assistant user is linked to these devices. The name is read from a device's name.">Not linked to a user</span>`
+        : nothing}
+      ${g.rows.map((d) => this.renderHomeRow(d, d.id === pick, elapsed))}
     </section>`;
   }
 
-  /** One device's card on Home. The name's button reaches over the whole
-   * card and opens the sheet; the count doors sit above it. */
-  private renderHomeDevice(d: HomeDeviceRow, elapsed: number) {
+  /** One device's row in Home's side bar, which picks it: its small drawing,
+   * its name, what it holds and when it was heard from, and a dot in its
+   * sync color. A device whose user was deleted says so, and picking it
+   * opens its Remove step. */
+  private renderHomeRow(d: HomeDeviceRow, on: boolean, elapsed: number) {
     const owner = this.ownerOf(d.id);
-    const seen = seenWords(owner, elapsed);
-    const pending = pendingWords(owner);
-    // What it is and its app on one line, then the paired phone and when it
-    // was seen, a line each, so nothing has to be cut.
-    const facts = deviceFacts(owner, d.kind);
-    const heard = seen ?? (neverConnected(owner) ? NEVER_CONNECTED_TEXT : undefined);
-    const lines = [facts.slice(0, 2).join(" · "), ...facts.slice(2), ...(heard === undefined ? [] : [heard])];
-    const why = homeDeviceWhy(d, pending);
     const held = owner?.complication_count ?? 0;
-    // Its user was deleted: Home Assistant refuses the device, so the card
-    // says so and Remove is the only thing it offers.
     const gone = userGone(owner);
     const rejected = (d.rejected?.length ?? 0) > 0;
-    return html`<li class="home-device ${d.sync} ${rejected ? "rejected" : ""}">
-      <span class="home-stage" aria-hidden="true">${d.kind === "watch" ? homeWatchArt(d.id, held, d.sync) : homePhoneArt(d.id, held, d.sync)}</span>
-      <div class="home-device-text">
-        <div class="home-device-line">
-          <button type="button" class="home-device-open" title=${`Open ${d.name}`} @click=${() => this.openDeviceSheet(d.id, gone)}>
-            <span class="home-device-name"><span class="home-device-label">${d.name}</span></span>
-          </button>
-          ${gone ? nothing : html`<span class="home-device-sync"><i class="home-dot" aria-hidden="true"></i><b>${homeDeviceLabel(d)}</b></span>`}
-        </div>
-        <span class="home-device-facts">${lines.map((line) => html`<span>${line}</span>`)}</span>
-        ${gone ? html`<span class="home-device-why">${USER_GONE_TEXT}</span>`
-          : why === "" ? nothing : html`<span class="home-device-why">${why}</span>`}
-      </div>
-      ${gone
-        ? html`<div class="home-tiles"><button type="button" class="danger" title=${`Remove ${d.name}`} @click=${() => this.openDeviceSheet(d.id, true)}>Remove</button></div>`
-        : html`<div class="home-tiles">${deviceCardTiles(d.kind).map((t) => this.renderHomeTile(t, d, owner))}</div>`}
-    </li>`;
+    const heard = seenWords(owner, elapsed) ?? (neverConnected(owner) ? NEVER_CONNECTED_TEXT : undefined);
+    const state = gone ? "" : rejected ? "rejected" : d.sync;
+    return html`<button type="button" class="hb-row ${state} ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+      title=${`${d.name}: ${gone ? USER_GONE_TEXT : homeDeviceLabel(d)}`} @click=${() => this.openHomeDevice(d.id, gone)}>
+      <span class="hb-icon" aria-hidden="true">${homeMiniArt(d.kind, held > 0)}</span>
+      <span class="hb-row-t"><span class="hb-row-name">${d.name}</span><span class="hb-row-sub">${gone ? USER_GONE_TEXT : homeRowSub(d.kind, held, heard)}</span></span>
+      <i class="hb-row-dot" aria-hidden="true"></i>
+    </button>`;
   }
 
-  /** How many one tile's page holds on this device: its complications (the
-   * owner's count), the ones with a control, or a watch config's items from
-   * the summary. Undefined when the summary has not said. */
+  /** How many one page holds on this device: its complications (the owner's
+   * count), the ones with a control, or a watch config's items from the
+   * summary, else from the device's own records when they were read.
+   * Undefined when nothing has said. */
   private homeTileCount(t: DeviceSheetTab, d: HomeDeviceRow, owner: OwnerSummary | undefined): number | undefined {
     if (t.kind === "list") {
       if (t.filter === "all") return owner?.complication_count ?? 0;
       return rowsOnDevice(this.pickerRows(), d.id)
         .filter((r) => r.copies.some((c) => c.ownerId === d.id && c.item.kind === "record" && hasControlOf(c.item.record))).length;
     }
-    return t.count === undefined ? undefined : this.watchCounts.get(d.id)?.[t.count];
+    if (t.count === undefined) return undefined;
+    return this.watchCounts.get(d.id)?.[t.count]
+      ?? (this.deviceCounts?.owner === d.id ? this.deviceCounts.counts[t.count] : undefined);
   }
 
-  /** One count tile on a device's card, a door to that page on the device:
-   * the device's complications on the Complications tab, or one watch screen
-   * on this watch. The way the sheet's tabs go, without a sheet to close. */
-  private renderHomeTile(t: DeviceSheetTab, d: HomeDeviceRow, owner: OwnerSummary | undefined) {
-    const n = this.homeTileCount(t, d, owner);
-    const body = html`<b class=${n === 0 ? "none" : ""}>${n ?? "–"}</b><span>${countWord(t.label, n)}</span>`;
-    if (t.kind === "list") {
-      return html`<button type="button" class="home-tile" title=${`${t.label} on ${d.name}`}
-        @click=${() => {
-          this.pickerFilter = t.filter;
-          this.pickPickerTab(d.id);
-          this.goTo(COMPLICATIONS_PATH);
-          // With a design open the tab is the editor, so the list opens over it.
-          if (this.draft) this.openPicker();
-        }}>${body}</button>`;
+  /**
+   * The device's own complications as card pictures, for its face on Home's
+   * stage: its round ones (circular, then corner) for the round slots, its
+   * first rectangular one, and on an iPhone up to four Home Screen widgets,
+   * in the device's own order. Only pictures of each record's current
+   * revision, and only as many as the face has room for, so picking a device
+   * fetches no more than it shows. Undefined when it has none, and the
+   * drawing keeps its lit slots.
+   */
+  private homeFace(ownerId: string, kind: "watch" | "iphone"): HomeFace | undefined {
+    const copies = this.pickerRows().flatMap((r) => r.copies).filter((c) => c.ownerId === ownerId).sort((a, b) => a.slot - b.slot);
+    const circles: HomeFacePicture[] = [];
+    const corners: HomeFacePicture[] = [];
+    const widgets: NonNullable<HomeFace["widgets"]> = [];
+    let rect: HomeFacePicture | undefined;
+    for (const c of copies) {
+      if (c.item.kind !== "record") continue;
+      const record = c.item.record;
+      const key = `${ownerId}|${record.id}`;
+      const preview = this.cardPreviews.get(key);
+      if (!preview || !this.previewIsCurrent(preview, record) || this.cardPictures.failing(key)) continue;
+      const family = preview.family;
+      const round = family === "circular" || family === "corner";
+      const widget = kind === "iphone" && (family === "small" || family === "medium" || family === "large" || family === "xlarge");
+      const room = round ? circles.length + corners.length < 3
+        : family === "rectangular" ? rect === undefined
+        : widget && widgets.length < 4;
+      if (!room) continue;
+      const url = this.cardPictures.urlFor(key, cardPreviewAddress(ownerId, record.id, record.revision));
+      if (url === undefined) continue;
+      const picture: HomeFacePicture = { url, width: preview.width, height: preview.height, ...(preview.focus ? { focus: preview.focus } : {}) };
+      if (family === "circular") circles.push(picture);
+      else if (family === "corner") corners.push(picture);
+      else if (family === "rectangular") rect = picture;
+      else widgets.push({ size: family === "small" ? "small" : family === "medium" ? "medium" : "large", picture });
     }
-    const path = watchScreenPath(t.screen, d.id);
-    return html`<a class="home-tile" href=${panelUrl(this.route, path, window.location.pathname)} title=${`${t.label} on ${d.name}`}
-      @click=${(e: MouseEvent) => {
-        if (!isPlainClick(e)) return;
-        e.preventDefault();
-        this.pickWatch(d.id);
-        this.goTo(path);
-      }}>${body}</a>`;
+    const round = [...circles, ...corners];
+    if (round.length === 0 && rect === undefined && widgets.length === 0) return undefined;
+    return { circles: round, ...(rect === undefined ? {} : { rect }), ...(widgets.length === 0 ? {} : { widgets }) };
   }
 
-  /** Open Home's sheet on one device, starting on its overview, or on its
-   * Forget step for a row's Remove. */
-  private openDeviceSheet(ownerId: string, forget = false) {
+  /** Pick a device on Home, starting on its overview, or on its Remove step
+   * for a waiting line or row whose user was deleted. */
+  private openHomeDevice(ownerId: string, forget = false) {
     this.devicePaired = undefined;
     this.deviceForgetAsk = forget;
     this.deviceForgetError = undefined;
     this.deviceRename = undefined;
     this.deviceRenameError = undefined;
-    this.deviceSheet = ownerId;
+    this.homePick = ownerId;
     void this.loadDeviceCounts(ownerId);
   }
 
-  /** Read the counts the sheet's watch tabs wear, from the stored records.
-   * Only a watch has them. A reply that lands after the sheet moved on is
-   * dropped. */
+  /** Read the counts a watch's doors wear, from the stored records, for an
+   * integration whose summary leaves them out. Only a watch has them. A
+   * reply that lands after another device was picked is dropped. */
   private async loadDeviceCounts(ownerId: string) {
     this.deviceCounts = undefined;
-    if (deviceKindOf(this.ownerOf(ownerId)) !== "watch") return;
+    if (deviceKindOf(this.ownerOf(ownerId)) !== "watch" || this.watchCounts.has(ownerId)) return;
     const kinds: DeviceCountKind[] = ["pages", "status_pages", "control_center"];
     const read = await Promise.all(kinds.map(async (kind) => {
       try {
@@ -19407,15 +19502,16 @@ export class WristAssistantPanel extends LitElement {
         return undefined;
       }
     }));
-    if (this.deviceSheet !== ownerId) return;
+    if (this.homePick !== ownerId) return;
     const counts: Partial<Record<DeviceCountKind, number>> = {};
     for (const hit of read) if (hit) counts[hit[0]] = hit[1];
     this.deviceCounts = { owner: ownerId, counts };
   }
 
-  private closeDeviceSheet() {
+  /** Leave the picked device's Rename and Remove steps, keeping it picked.
+   * Not while either is on its way to the server. */
+  private resetHomeDetail() {
     if (this.deviceForgetBusy || this.deviceRenameBusy) return;
-    this.deviceSheet = undefined;
     this.devicePaired = undefined;
     this.deviceRename = undefined;
     this.deviceRenameError = undefined;
@@ -19423,148 +19519,196 @@ export class WristAssistantPanel extends LitElement {
     this.deviceForgetError = undefined;
   }
 
+  /** Slide a newly picked device in: the device rises onto its stage, its
+   * counts and the words under it fade in after it. Not on the first
+   * drawing, not for the device already shown, and not for someone who asks
+   * for less motion. On a narrow page, where the detail sits under the list,
+   * it is brought into view. */
+  private animateHomePick() {
+    const detail = this.renderRoot.querySelector<HTMLElement>(".hb-detail");
+    const shown = detail?.dataset.pick;
+    const before = this.homeShown;
+    this.homeShown = shown;
+    if (!detail || shown === undefined || before === undefined || before === shown) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const ease = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+    detail.querySelector(".hb-device")?.animate(
+      [{ opacity: 0, transform: "translateY(22px) scale(0.95)" }, { opacity: 1, transform: "none" }], { duration: 520, easing: ease });
+    detail.querySelector(".hb-calls")?.animate(
+      [{ opacity: 0 }, { opacity: 1 }], { duration: 420, delay: 140, easing: ease, fill: "backwards" });
+    detail.querySelector(".hb-info")?.animate(
+      [{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }], { duration: 380, delay: 60, easing: ease, fill: "backwards" });
+    if (window.matchMedia?.("(max-width: 720px)").matches) detail.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+
   /**
-   * One device, opened from a card on Home: the device drawn on its stage in
-   * its person's color, whose it is, what it is, its sync state, and a tile
-   * for each of its pages, each opening that page on this device. A tile
-   * wears how many its page holds: the device's complications (or its
-   * Control Center ones), and on a watch its pages, status pages and Control
-   * Center controls. Anyone can forget it, after a second step that says
-   * what goes with it, and anyone can rename it: the name is Home Assistant's
-   * own device name, set through the integration's own command since Home
-   * Assistant keeps its registry update to administrators.
+   * The picked device on Home. A bar with whose it is and its name, the
+   * arrows to the device before and after it, Rename and Remove. Then the
+   * device drawn large on its stage in its person's color, wearing its own
+   * complications where they have card pictures (`homeFace`), its sync word,
+   * and two counts pointing at it. Under the stage, its name and facts, its
+   * sync state in a lit well, and a door per page (`deviceSheetTabs`), each
+   * opening that page on this device: its glyph in the page's section hue,
+   * how many it holds, and a line on what it is for.
+   *
+   * Anyone can rename it (the name is Home Assistant's own device name, set
+   * through the integration's own command since Home Assistant keeps its
+   * registry update to administrators) and anyone can remove it, after a
+   * second step that says what goes with it. A device whose user was
+   * deleted says so and offers Remove alone.
    */
-  private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[]) {
-    const row = devices.find((d) => d.id === ownerId);
-    // The device left the home (forgotten here or elsewhere): nothing to show.
-    if (!row) return nothing;
-    const close = () => this.closeDeviceSheet();
+  private renderHomeDetail(row: HomeDeviceRow, devices: readonly HomeDeviceRow[], groups: readonly { person?: Person; index: number; rows: HomeDeviceRow[] }[], elapsed: number) {
+    const ownerId = row.id;
     const owner = this.ownerOf(ownerId);
-    const designs = rowsOnDevice(this.pickerRows(), ownerId).filter((r) => r.copies.some((c) => c.ownerId === ownerId && c.item.kind === "record"));
-    const controls = designs.filter((r) => r.copies.some((c) => c.ownerId === ownerId && c.item.kind === "record" && hasControlOf(c.item.record)));
-    const counts = this.deviceCounts?.owner === ownerId ? this.deviceCounts.counts : {};
-    const badge = (n: number | undefined) => n === undefined ? nothing
-      : html`<span class="dev-tab-n ${n === 0 ? "none" : ""}" aria-label=${`${n}`}>${n}</span>`;
-    const more = html`<span class="dev-tab-go" aria-hidden="true">${uiIcon("right")}</span>`;
-    const toComplications = () => { close(); this.goTo(COMPLICATIONS_PATH); };
-    const openList = (filter: "all" | "control" = "all") => {
-      this.pickerFilter = filter;
-      this.pickPickerTab(ownerId);
-      toComplications();
-      // With a design open the tab is the editor, so the list opens over it.
-      if (this.draft) this.openPicker();
-    };
-    const href = (path: string) => panelUrl(this.route, path, window.location.pathname);
-    const tab = (t: DeviceSheetTab) => {
-      if (t.kind === "list") {
-        return html`<button type="button" class="dev-tab" title=${`${t.label} on ${row.name}`} @click=${() => openList(t.filter)}><span class="dev-tab-l">${t.label}</span>${badge(t.filter === "control" ? controls.length : designs.length)}${more}</button>`;
-      }
-      const path = watchScreenPath(t.screen, ownerId);
-      return html`<a class="dev-tab" href=${href(path)} title=${`${t.label} on ${row.name}`}
-        @click=${(e: MouseEvent) => {
-          if (!isPlainClick(e)) return;
-          e.preventDefault();
-          close();
-          this.pickWatch(ownerId);
-          this.goTo(path);
-        }}><span class="dev-tab-l">${t.label}</span>${badge(t.count === undefined ? undefined : counts[t.count])}${more}</a>`;
-    };
-    const title = this.deviceForgetAsk ? `Remove “${row.name}”?` : row.name;
-    const facts = deviceFacts(owner, row.kind).join(" · ");
-    // The person's color and name, the way the device's card on Home wears
-    // them, so the sheet reads as that card opened up.
-    const group = homeGroups(this.people(), devices).find((g) => g.rows.some((r) => r.id === ownerId));
+    const group = groups.find((g) => g.rows.some((r) => r.id === ownerId));
     const color = (group === undefined ? undefined : personColorVar(group.index)) ?? "var(--wa-hue-grey)";
     const whose = group?.person?.label ?? "Other devices";
-    const elapsed = this.ownersReadAt > 0 ? (Date.now() - this.ownersReadAt) / 1000 : 0;
     const seen = seenWords(owner, elapsed);
+    const heard = seen ?? (neverConnected(owner) ? NEVER_CONNECTED_TEXT : undefined);
     const held = owner?.complication_count ?? 0;
     const rejected = (row.rejected?.length ?? 0) > 0;
+    const gone = userGone(owner);
+    const state = rejected ? "rejected" : row.sync;
+    const pending = pendingWords(owner);
     const syncSub = rejected ? attentionText(row, undefined)
       : row.sync === "waiting" ? `Waiting for ${waitingForText(row.waitingFor)}`
       : row.sync === "synced" ? "Has every change" : "Has never synced anything";
-    // One dialog for both steps, so the confirm step keeps the open modal:
-    // a second template would swap in a new, closed dialog element.
-    const n = designs.length;
-    const ask = html`<div class="xfer-body">
-          <div class="xf-lead warn">${uiIcon("info")}<span>This removes <b>${row.name}</b> from this Home Assistant.
-            ${n === 0 ? nothing : html`${n === 1 ? "Its complication is" : `Its ${n} complications are`} kept, under ${UNASSIGNED_LABEL} on the Complications tab.`}
-            ${row.kind === "watch" ? "Its pages, menus and watch settings are deleted." : nothing}</span></div>
-          <div class="xf-lead">${uiIcon("info")}<span>Use this for a device you no longer use. If the app is still on it, the device can connect again later, but it starts empty. This cannot be undone.</span></div>
-          ${this.deviceForgetError ? html`<p class="dev-err" title=${errTitle(this.deviceForgetError) ?? nothing}>${this.deviceForgetError}</p>` : nothing}
-          <div class="dev-acts">
-            <button class="ghost dev-forget" ?disabled=${this.deviceForgetBusy}
-              @click=${() => { this.deviceForgetAsk = false; this.deviceForgetError = undefined; }}>Back</button>
-            <button class="danger" ?disabled=${this.deviceForgetBusy}
-              @click=${() => void this.forgetDeviceNow(ownerId)}>${this.deviceForgetBusy ? "Removing…" : "Remove device"}</button>
-          </div>
-        </div>`;
+    const facts = deviceFacts(owner, row.kind).join(" · ");
+    const step = (dir: -1 | 1) => {
+      const next = homeStep(devices, ownerId, dir);
+      if (next !== undefined) this.openHomeDevice(next);
+    };
+    const count = (t: DeviceSheetTab) => this.homeTileCount(t, row, owner);
+    const openList = (filter: "all" | "control") => {
+      this.pickerFilter = filter;
+      this.pickPickerTab(ownerId);
+      this.goTo(COMPLICATIONS_PATH);
+      // With a design open the tab is the editor, so the list opens over it.
+      if (this.draft) this.openPicker();
+    };
+    // Open one of the device's pages: its complications on the
+    // Complications tab, or a watch screen on this watch.
+    const go = (t: DeviceSheetTab) => {
+      if (t.kind === "list") { openList(t.filter); return; }
+      this.pickWatch(ownerId);
+      this.goTo(watchScreenPath(t.screen, ownerId));
+    };
+    // The two counts that point at the device, each a door to its page: a
+    // watch's complications and pages, an iPhone's widgets and its Control
+    // Center controls.
+    const call = (t: DeviceSheetTab | undefined, side: "l" | "r") => {
+      if (t === undefined) return nothing;
+      const n = count(t);
+      const word = t.kind === "list" && t.filter === "control" ? "Control Center" : countWord(t.label, n);
+      const body = html`<span class="hb-call-n"><b class=${n === 0 ? "none" : ""}>${n ?? "–"}</b><span>${word}</span></span>`;
+      return html`<button type="button" class="hb-call ${side}" title=${`${t.label} on ${row.name}`} @click=${() => go(t)}>
+        ${side === "l" ? html`${body}<span class="hb-call-line" aria-hidden="true"></span><i aria-hidden="true"></i>`
+          : html`<i aria-hidden="true"></i><span class="hb-call-line" aria-hidden="true"></span>${body}`}
+      </button>`;
+    };
+    const [callL, callR] = deviceCardTiles(row.kind);
+    const face = gone ? undefined : this.homeFace(ownerId, row.kind);
+    const art = row.kind === "watch"
+      ? homeWatchArt(`pick-${row.id}`, held, row.sync, face)
+      : homePhoneArt(`pick-${row.id}`, held, row.sync, face);
+    const door = (t: DeviceSheetTab) => {
+      const look = homeDoorLook(t, row.kind);
+      const n = t.kind === "list" || t.count !== undefined ? count(t) : undefined;
+      const body = html`<span class="hb-door-top">
+          <span class="hb-door-chip" aria-hidden="true">${uiIcon(look.icon)}</span>
+          <span class="hb-door-l">${t.label}</span>
+          ${n === undefined ? nothing : n === 0 ? html`<b class="hb-door-n none">None</b>` : html`<b class="hb-door-n">${n}</b>`}
+        </span>
+        <span class="hb-door-foot"><span class="hb-door-b">${look.blurb}</span><span class="hb-door-go" aria-hidden="true">${uiIcon("right")}</span></span>`;
+      if (t.kind === "list") {
+        return html`<button type="button" class="hb-door" style=${`--h:${look.hue}`} title=${`${t.label} on ${row.name}`}
+          @click=${() => openList(t.filter)}>${body}</button>`;
+      }
+      const path = watchScreenPath(t.screen, ownerId);
+      return html`<a class="hb-door" style=${`--h:${look.hue}`} href=${panelUrl(this.route, path, window.location.pathname)} title=${`${t.label} on ${row.name}`}
+        @click=${(e: MouseEvent) => {
+          if (!isPlainClick(e)) return;
+          e.preventDefault();
+          this.pickWatch(ownerId);
+          this.goTo(path);
+        }}>${body}</a>`;
+    };
+    const designs = rowsOnDevice(this.pickerRows(), ownerId).filter((r) => r.copies.some((c) => c.ownerId === ownerId && c.item.kind === "record"));
+    const kept = designs.length;
+    const busy = this.deviceForgetBusy;
+    const ask = html`<div class="hb-ask">
+        <p>This removes <b>${row.name}</b> from this Home Assistant.
+          ${kept === 0 ? nothing : html`${kept === 1 ? "Its complication is" : `Its ${kept} complications are`} kept, under ${UNASSIGNED_LABEL} on the Complications tab.`}
+          ${row.kind === "watch" ? "Its pages, menus and watch settings are deleted." : nothing}</p>
+        <p class="quiet">Use this for a device you no longer use. If the app is still on it, the device can connect again later, but it starts empty. This cannot be undone.</p>
+        ${this.deviceForgetError ? html`<p class="dev-err" title=${errTitle(this.deviceForgetError) ?? nothing}>${this.deviceForgetError}</p>` : nothing}
+        <div class="dev-acts">
+          <button class="ghost" ?disabled=${busy} @click=${() => { this.deviceForgetAsk = false; this.deviceForgetError = undefined; }}>Back</button>
+          <button class="danger" ?disabled=${busy} @click=${() => void this.forgetDeviceNow(ownerId)}>${uiIcon("delete")}<span>${busy ? "Removing…" : "Remove device"}</span></button>
+        </div>
+      </div>`;
     const renaming = this.deviceRename !== undefined;
     const stopRename = () => { this.deviceRename = undefined; this.deviceRenameError = undefined; };
-    const renameForm = html`<form class="dev-rename" @submit=${(e: Event) => { e.preventDefault(); void this.renameDeviceNow(ownerId); }}>
+    const renameForm = html`<div class="hb-rename">
+      <form class="dev-rename" @submit=${(e: Event) => { e.preventDefault(); void this.renameDeviceNow(ownerId); }}>
         <input type="text" class="dev-rename-in" aria-label="Device name" .value=${this.deviceRename ?? ""}
           placeholder=${owner?.device_name ?? row.name} ?disabled=${this.deviceRenameBusy}
           @input=${(e: Event) => { this.deviceRename = (e.target as HTMLInputElement).value; }}
           @keydown=${(e: KeyboardEvent) => {
-            // Escape leaves the field, not the sheet.
             if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); stopRename(); }
           }} />
         <button type="submit" class="home-btn" ?disabled=${this.deviceRenameBusy}>${this.deviceRenameBusy ? "Saving…" : "Save"}</button>
         <button type="button" class="ghost" ?disabled=${this.deviceRenameBusy} @click=${stopRename}>Cancel</button>
       </form>
       <p class="dev-small">Leave it empty to use the name the device reports.</p>
-      ${this.deviceRenameError ? html`<p class="dev-err" title=${errTitle(this.deviceRenameError) ?? nothing}>${this.deviceRenameError}</p>` : nothing}`;
-    // Its user was deleted: nothing on it can sync, so the sheet says so and
-    // offers Remove alone.
-    const gone = userGone(owner);
-    const goneOverview = html`<div class="xfer-body">
-        <div class="xf-lead warn">${uiIcon("info")}<span><b>${USER_GONE_TEXT}.</b> Home Assistant refuses everything ${row.name} sends. Remove it here, or pair it again for someone who has a user.</span></div>
-        <div class="dev-acts">
-          <button class="danger dev-forget" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon("delete")}<span>Remove device</span></button>
-        </div>
-      </div>`;
-    const overview = gone ? goneOverview : html`<div class="xfer-body">
-        ${this.devicePaired === ownerId ? html`<div class="dev-paired" role="status">${uiIcon("check")}<span><b>Paired successfully.</b> ${row.name} is now on this Home Assistant.</span></div>` : nothing}
-        ${renaming ? html`<div class="xf-stack">${renameForm}</div>` : nothing}
-        <div class="dev-state ${row.sync} ${rejected ? "rejected" : ""}">
-          <span class="dev-state-chip" aria-hidden="true">${uiIcon(rejected ? "info" : row.sync === "waiting" ? "clock" : "check")}</span>
-          <span class="dev-state-t"><b>${homeDeviceLabel(row)}</b><span>${syncSub}${pendingWords(owner) === undefined ? "" : ` · ${pendingWords(owner)}`}</span></span>
-          ${seen === undefined ? nothing : html`<span class="dev-state-seen">${seen}</span>`}
-        </div>
-        <h3 class="dev-title">Open on this ${row.kind === "watch" ? "watch" : "iPhone"}</h3>
-        <nav class="dev-tabs" aria-label=${`Pages for ${row.name}`}>${deviceSheetTabs(row.kind).map(tab)}</nav>
-        <div class="dev-acts">
-          <button class="danger dev-forget" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon("delete")}<span>Remove device</span></button>
-        </div>
-      </div>`;
-    return html`<dialog class="xf dev-dialog ${row.sync}" aria-label=${title} style=${`--c:${color}`} @close=${close}
-      @cancel=${(e: Event) => { if (this.deviceForgetBusy || this.deviceRenameBusy) e.preventDefault(); }}>
-      <div class="dev-hero">
-        <span class="dev-stage" aria-hidden="true">${row.kind === "watch" ? homeWatchArt(`sheet-${row.id}`, held, row.sync) : homePhoneArt(`sheet-${row.id}`, held, row.sync)}</span>
-        <div class="dev-hero-t">
-          <span class="dev-whose"><i aria-hidden="true"></i>${whose}</span>
-          <h2>${title}</h2>
-          <span class="dev-facts">${facts}</span>
-        </div>
-        <div class="dev-hero-acts">
+      ${this.deviceRenameError ? html`<p class="dev-err" title=${errTitle(this.deviceRenameError) ?? nothing}>${this.deviceRenameError}</p>` : nothing}
+    </div>`;
+    const goneNote = html`<div class="hb-ask"><p><b>${USER_GONE_TEXT}.</b> Home Assistant refuses everything ${row.name} sends. Remove it here, or pair it again for someone who has a user.</p></div>`;
+    const overview = html`<div class="hb-state ${state}">
+        <span class="hb-state-chip" aria-hidden="true">${uiIcon(rejected ? "info" : row.sync === "waiting" ? "clock" : "check")}</span>
+        <span class="hb-state-t"><b>${homeDeviceLabel(row)}</b><span>${syncSub}${pending === undefined ? "" : ` · ${pending}`}</span></span>
+        ${heard === undefined ? nothing : html`<span class="hb-seen"><span>Last seen</span><b>${heard.replace(/^Seen /, "")}</b></span>`}
+      </div>
+      <h3 class="home-title">Open on this ${row.kind === "watch" ? "watch" : "iPhone"}</h3>
+      <nav class="hb-doors" aria-label=${`Pages for ${row.name}`}>${deviceSheetTabs(row.kind).map(door)}</nav>`;
+    return html`<div class="hb-detail" data-pick=${ownerId} style=${`--c:${color}`}>
+      <div class="hb-bar">
+        <span class="hb-crumb"><i aria-hidden="true"></i>${whose}${uiIcon("right")}<b>${row.name}</b></span>
+        <div class="hb-acts">
+          ${devices.length > 1 ? html`
+            <button type="button" class="hb-step" title="Previous device" aria-label="Previous device" @click=${() => step(-1)}>${uiIcon("left")}</button>
+            <button type="button" class="hb-step" title="Next device" aria-label="Next device" @click=${() => step(1)}>${uiIcon("right")}</button>
+            <span class="hb-sep" aria-hidden="true"></span>` : nothing}
           ${!this.deviceForgetAsk && !renaming && !gone
-            ? html`<button class="home-btn dev-rename-open" title="Change the name Home Assistant shows for it"
-                @click=${() => this.startDeviceRename(ownerId)}>Rename</button>`
+            ? html`<button type="button" class="home-btn" title="Change the name Home Assistant shows for it" @click=${() => this.startDeviceRename(ownerId)}>Rename</button>`
             : nothing}
-          <button class="icon dev-close" title="Close" aria-label="Close" @click=${close}>${uiIcon("close")}</button>
+          ${this.deviceForgetAsk ? nothing
+            : html`<button type="button" class="home-btn hb-remove" title=${`Remove ${row.name} from this Home Assistant`}
+                @click=${() => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); }}>Remove</button>`}
         </div>
       </div>
-      ${this.deviceForgetAsk ? ask : overview}
-    </dialog>`;
+      <div class="hb-stage">
+        <span class="hb-floor" aria-hidden="true"></span>
+        ${gone ? nothing : html`<span class="hb-badge ${state}" aria-hidden="true"><i></i>${homeDeviceLabel(row)}</span>`}
+        <div class="hb-calls" style=${`--off:${row.kind === "watch" ? 128 : 96}px`}>${gone ? nothing : html`${call(callL, "l")}${call(callR, "r")}`}</div>
+        <div class="hb-device" aria-hidden="true">${art}</div>
+      </div>
+      <div class="hb-info">
+        <div class="hb-name"><h2>${this.deviceForgetAsk ? `Remove “${row.name}”?` : row.name}</h2><span class="hb-facts">${facts}</span></div>
+        ${this.devicePaired === ownerId ? html`<div class="dev-paired" role="status">${uiIcon("check")}<span><b>Paired successfully.</b> ${row.name} is now on this Home Assistant.</span></div>` : nothing}
+        ${renaming ? renameForm : nothing}
+        ${this.deviceForgetAsk ? ask : gone ? goneNote : overview}
+      </div>
+    </div>`;
   }
 
-  /** Open the sheet's name field on the name Home Assistant shows now, and
-   * put the cursor in it. */
+  /** Open the picked device's name field on the name Home Assistant shows
+   * now, and put the cursor in it. */
   private startDeviceRename(ownerId: string) {
     this.deviceRename = this.ownerOf(ownerId)?.device_name ?? "";
     this.deviceRenameError = undefined;
     void this.updateComplete.then(() => {
-      const input = this.renderRoot.querySelector<HTMLInputElement>("dialog.dev-dialog input.dev-rename-in");
+      const input = this.renderRoot.querySelector<HTMLInputElement>(".hb-detail input.dev-rename-in");
       input?.focus();
       input?.select();
     });
@@ -19590,10 +19734,11 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Forget the sheet's device on the server, then read the devices and lists
-   * again: its designs are in Unassigned now. When it was the complications
-   * device, another one is picked, the way a first open picks one. The draft
-   * open on it is asked about first, since it is about to lose its device.
+   * Forget the picked device on the server, then read the devices and lists
+   * again: its designs are in Unassigned now, and Home picks the device
+   * heard from last. When it was the complications device, another one is
+   * picked, the way a first open picks one. The draft open on it is asked
+   * about first, since it is about to lose its device.
    */
   private async forgetDeviceNow(ownerId: string) {
     if (this.ownerId === ownerId && this.draft?.dirty && !this.confirmDiscard()) return;
@@ -19607,7 +19752,8 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     this.deviceForgetBusy = false;
-    this.closeDeviceSheet();
+    this.resetHomeDetail();
+    this.homePick = undefined;
     if (this.ownerId === ownerId) {
       this.clearDraft();
       this.ownerId = undefined;
