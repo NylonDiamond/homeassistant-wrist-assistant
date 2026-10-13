@@ -58,8 +58,9 @@ export function settingsPageStep(active: boolean, shown: string | undefined, tar
 }
 
 /** Whether Save can run: something changed, nothing else is running, and
- * each record with changes is one that exists to be saved over (a watch with
- * no record is started by "Start with the defaults" instead). */
+ * each record with changes has a document to save: the one Home Assistant
+ * holds, or on a new watch the defaults the page opened on, which the first
+ * Save creates. */
 export function settingsCanSave(input: {
   behaviorChanges: number;
   styleChanges: number;

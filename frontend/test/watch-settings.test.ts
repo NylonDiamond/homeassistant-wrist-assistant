@@ -12,15 +12,11 @@ import {
   type CatalogSetting,
   BEHAVIOR_SCHEMA_VERSION,
   COLLECTED_PILL_TEXT,
-  PAGES_NO_RECORD_TEXT,
-  PAGES_START_BUTTON,
-  PAGES_START_CONFLICT_TEXT,
+  NEW_WATCH_TEXT,
+  NOTHING_TO_SAVE_TEXT,
   PAIR_FIRST_TEXT,
   SETTINGS_MAIN_HOUSE_TEXT,
-  SETTINGS_NO_RECORD_TEXT,
   SETTINGS_PAIR_FIRST_TEXT,
-  SETTINGS_START_BUTTON,
-  SETTINGS_START_CONFLICT_TEXT,
   WAITING_HELP_TEXT,
   WAITING_PILL_TEXT,
   WAITING_TEXT,
@@ -30,7 +26,6 @@ import {
   catalogSettings,
   TWIST_LEVELS,
   conflictRevision,
-  createWatchBehavior,
   decodeMotionMap,
   domainList,
   encodeMotionMap,
@@ -440,16 +435,12 @@ describe("which devices the view offers", () => {
 });
 
 describe("a watch with nothing in Home Assistant yet", () => {
-  it("offers the button, and names no iPhone switch", () => {
-    expect(PAGES_NO_RECORD_TEXT).toBe("Start with an empty page to begin.");
-    expect(SETTINGS_NO_RECORD_TEXT).toBe("Start with the defaults to begin.");
-    expect(PAGES_START_BUTTON).toBe("Start with an empty page");
-    expect(SETTINGS_START_BUTTON).toBe("Start with the defaults");
+  it("says what a new watch's screen means, and names no iPhone switch", () => {
+    expect(NEW_WATCH_TEXT).toBe("New watch. The watch keeps what it has until you save here. Your first Save replaces it.");
+    expect(NOTHING_TO_SAVE_TEXT).toBe("Nothing to save yet. Make a change first.");
     expect(PAIR_FIRST_TEXT).toBe("Pair this watch first: on the Home tab, choose Pair a device.");
     expect(SETTINGS_PAIR_FIRST_TEXT).toBe("Pair this watch first, under Pair a device on this page.");
-    expect(PAGES_START_CONFLICT_TEXT).toBe("Pages for this watch arrived meanwhile, so those are shown.");
-    expect(SETTINGS_START_CONFLICT_TEXT).toBe("Settings for this watch arrived meanwhile, so those are shown.");
-    const all = [PAGES_NO_RECORD_TEXT, SETTINGS_NO_RECORD_TEXT, PAIR_FIRST_TEXT, SETTINGS_PAIR_FIRST_TEXT, PAGES_START_CONFLICT_TEXT, SETTINGS_START_CONFLICT_TEXT];
+    const all = [NEW_WATCH_TEXT, NOTHING_TO_SAVE_TEXT, PAIR_FIRST_TEXT, SETTINGS_PAIR_FIRST_TEXT];
     for (const text of all) {
       expect(text).not.toMatch(/Developer|Save pages to Home Assistant/);
       expect(text).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
@@ -472,9 +463,7 @@ describe("a watch with nothing in Home Assistant yet", () => {
   });
 });
 
-describe("Start with the defaults", () => {
-  const refusal = (code: string, message = code) => Object.assign(new Error(message), { code });
-
+describe("the defaults a new watch's settings open on", () => {
   it("builds every catalog setting at its first value or default, schema 1, keys sorted", () => {
     const doc = watchBehaviorDefaults();
     expect(doc.schemaVersion).toBe(BEHAVIOR_SCHEMA_VERSION);
@@ -521,25 +510,6 @@ describe("Start with the defaults", () => {
     const a = watchBehaviorDefaults();
     (a.pendingAnimationDisabledDomains as string[]).push("lock");
     expect(watchBehaviorDefaults().pendingAnimationDisabledDomains).not.toContain("lock");
-  });
-
-  it("saves the defaults over revision 0 for a paired watch", async () => {
-    const calls: [number, Record<string, unknown>][] = [];
-    const result = await createWatchBehavior(async (base, document) => { calls.push([base, document]); return { revision: 1 }; });
-    expect(result).toEqual({ ok: true, revision: 1, document: watchBehaviorDefaults() });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]![0]).toBe(0);
-    expect(calls[0]![1]).toEqual(watchBehaviorDefaults());
-  });
-
-  it("tells a watch that is not paired, a record that came meanwhile, and an old integration apart", async () => {
-    expect(await createWatchBehavior(async () => { throw refusal("no_record"); })).toMatchObject({ ok: false, code: "no_record" });
-    expect(await createWatchBehavior(async () => { throw refusal("conflict", "stored revision is 1, save was based on 0"); }))
-      .toEqual({ ok: false, code: "conflict", message: "stored revision is 1, save was based on 0" });
-    expect(await createWatchBehavior(async () => { throw { type: "result", success: false, error: { code: "unknown_command", message: "x" } }; }))
-      .toMatchObject({ ok: false, code: "unsupported" });
-    expect(await createWatchBehavior(async () => { throw refusal("unavailable", "the store is not ready"); }))
-      .toEqual({ ok: false, code: "error", message: "the store is not ready" });
   });
 });
 

@@ -18,6 +18,8 @@ import {
   keptChanges,
   keptSettingsDraft,
   restoreSettingsDraft,
+  settingsStartedFresh,
+  startSettingsFresh,
 } from "../src/watch-settings-draft.js";
 import { NOTIFICATION_STYLE_SECTIONS } from "../src/watch-notification-style/model.js";
 import { SETTINGS_GROUPS, groupOfCard, matchesSearch, searchTerms, settingsGroup } from "../src/watch-settings-nav.js";
@@ -181,6 +183,36 @@ describe("kept settings drafts", () => {
   it("lets the edits go with a record that has gone", () => {
     const back = restoreSettingsDraft(draft(), { revision: 0 }, undefined);
     expect(back.edits.size).toBe(0);
+  });
+
+  it("lays edits made on a new watch's defaults back on them while there is still no record", () => {
+    const fresh = draft({ behaviorRevision: 0 });
+    const back = restoreSettingsDraft(fresh, { revision: 0 }, undefined, { behavior: doc });
+    expect([...back.edits]).toEqual([["wrapPages", !wrap.default]]);
+    expect(back.moved).toBe(false);
+    // The page did not open ready (it waits for the iPhone): nothing to lay
+    // them on.
+    expect(restoreSettingsDraft(fresh, { revision: 0 }, undefined).edits.size).toBe(0);
+  });
+
+  it("lays them on a record that came meanwhile instead, and says so", () => {
+    const back = restoreSettingsDraft(draft({ behaviorRevision: 0 }), { revision: 2, document: doc }, undefined, { behavior: doc });
+    expect([...back.edits]).toEqual([["wrapPages", !wrap.default]]);
+    expect(back.moved).toBe(true);
+  });
+
+  it("never lays edits from a record that has gone on the defaults", () => {
+    const back = restoreSettingsDraft(draft(), { revision: 0 }, undefined, { behavior: doc });
+    expect(back.edits.size).toBe(0);
+  });
+
+  it("remembers a start fresh per watch until the panel is left", () => {
+    expect(settingsStartedFresh("w1")).toBe(false);
+    startSettingsFresh("w1");
+    expect(settingsStartedFresh("w1")).toBe(true);
+    expect(settingsStartedFresh("w2")).toBe(false);
+    dropWatchSettingsDrafts();
+    expect(settingsStartedFresh("w1")).toBe(false);
   });
 
   it("starts empty for a watch with nothing kept", () => {

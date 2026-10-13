@@ -26,6 +26,21 @@ export interface KeptSettings {
 }
 
 const kept = new Map<string, KeptSettings>();
+/** The watches whose page was opened with "Start fresh instead" while it
+ * waited for the iPhone's move: they open ready, as a watch with no iPhone
+ * does (`noRecordStart`). */
+const fresh = new Set<string>();
+
+/** "Start fresh instead" was taken for this watch: its records that Home
+ * Assistant does not hold open ready, unsaved, until the first Save. */
+export function startSettingsFresh(watchId: string): void {
+  fresh.add(watchId);
+}
+
+/** Whether "Start fresh instead" was taken for this watch. */
+export function settingsStartedFresh(watchId: string): boolean {
+  return fresh.has(watchId);
+}
 
 /** The unsaved changes in a kept draft, both records together. */
 export function keptChanges(draft: KeptSettings): number {
@@ -53,6 +68,7 @@ export function anyWatchSettingsDirty(): boolean {
 /** The person agreed to leave with settings unsaved: drop every watch's. */
 export function dropWatchSettingsDrafts(): void {
   kept.clear();
+  fresh.clear();
 }
 
 /** What the form starts from after reading a watch's records. */
@@ -66,16 +82,29 @@ export interface RestoredSettings {
 
 type Read = Pick<WatchConfigRecord, "revision" | "document"> | undefined;
 
+/** The documents a new watch's page opens on for the records Home Assistant
+ * does not hold yet: the defaults the first Save creates. */
+export interface ReadySettings {
+  behavior?: BehaviorDocument | undefined;
+  style?: StyleDocument | undefined;
+}
+
 /**
  * Lay a kept draft over the records just read. Only edits the copy now held
  * does not already say are kept, and only for a record there is to save
  * over: a record that has gone (or that this panel cannot read) takes its
- * edits with it.
+ * edits with it. Edits made on a new watch's defaults (kept at revision 0)
+ * go back on those defaults (`ready`) while there is still no record, and
+ * onto the record when one has come meanwhile.
  */
-export function restoreSettingsDraft(draft: KeptSettings | undefined, behavior: Read, style: Read): RestoredSettings {
+export function restoreSettingsDraft(draft: KeptSettings | undefined, behavior: Read, style: Read, ready: ReadySettings = {}): RestoredSettings {
   if (draft === undefined) return { edits: new Map(), styleEdits: new Map(), moved: false };
-  const behaviorDocument = behavior !== undefined && behavior.revision > 0 ? behavior.document : undefined;
-  const styleDocument = style !== undefined && style.revision > 0 ? readStyleDocument(style.document) : undefined;
+  const behaviorDocument = behavior !== undefined && behavior.revision > 0
+    ? behavior.document
+    : draft.behaviorRevision <= 0 ? ready.behavior : undefined;
+  const styleDocument = style !== undefined && style.revision > 0
+    ? readStyleDocument(style.document)
+    : draft.styleRevision <= 0 ? ready.style : undefined;
   const edits = behaviorDocument === undefined ? new Map<string, SettingValue>() : only(draft.edits, dirtyKeys(behaviorDocument, draft.edits));
   const styleEdits = styleDocument === undefined ? new Map<string, StyleValue>() : only(draft.styleEdits, styleDirtyKeys(styleDocument, draft.styleEdits));
   const moved = (edits.size > 0 && behavior?.revision !== draft.behaviorRevision)

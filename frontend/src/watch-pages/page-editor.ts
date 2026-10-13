@@ -6,8 +6,8 @@
 // to put one back. Part 3b edits them: pages are added, renamed, hidden,
 // moved and deleted, and tiles are moved, swapped, resized and deleted on the
 // page, with undo, redo and a save that merges when another save landed too. A
-// watch with no pages record yet gets one from "Start with an empty page"
-// (4e).
+// watch with no pages record yet opens ready on one empty page, unsaved, and
+// its first Save creates the record (4e).
 //
 // Every edit is a function of `edit.ts` applied to a `WatchPagesDraft`
 // (`draft.ts`), which keeps the undo steps and merges a change from elsewhere
@@ -102,18 +102,17 @@ import { SymbolBrowser } from "../symbols.js";
 import { type TestControl, testControlFor } from "../test-controls.js";
 import { uiIcon } from "../ui-icons.js";
 import {
-  PAGES_NO_RECORD_TEXT,
-  PAGES_START_BUTTON,
-  PAGES_START_CONFLICT_TEXT,
+  NEW_WATCH_TEXT,
+  NOTHING_TO_SAVE_TEXT,
   PAGES_UNREADABLE_TEXT,
   PAIR_FIRST_TEXT,
   START_FRESH_BUTTON,
+  WAIT_FOR_IPHONE_TEXT,
   type NoRecordStart,
   deliveryState,
   followWatch,
   mayStart,
   noRecordStart,
-  noRecordText,
   settingsWatches,
   watchName,
   watchRecordUnreadable,
@@ -141,7 +140,7 @@ import {
 } from "./catalog.js";
 import { type WatchHttpLibrary, readWatchHttpLibrary, watchCatalogWithHttpLibrary, watchHttpLibraryReadMeansNone } from "./http-library.js";
 import { voiceDocumentOfRecord, watchVoiceFallbacks } from "../watch-voice/defaults.js";
-import { type WatchPagesApplyOptions, type WatchPagesDraft, createWatchPages, saveWatchPagesDraft } from "./draft.js";
+import { type WatchPagesApplyOptions, type WatchPagesDraft, saveWatchPagesDraft } from "./draft.js";
 import { type AddTileHost, type TileSettingsHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun, extendHost, memoIconNames, watchKeysTypeText } from "./editor-host.js";
 import {
   type WatchCell,
@@ -182,7 +181,9 @@ import {
   keepWatchPagesSelection,
   keptWatchPagesDraft,
   keptWatchPagesSelection,
+  readyWatchPagesDraft,
   takeWatchPagesRecord,
+  watchPagesDraftIsNew,
 } from "./kept.js";
 import {
   type PlacedWatchTile,
@@ -722,8 +723,6 @@ export class WaPageEditor extends LitElement {
   @state() private note?: Note;
   @state() private restoreAsk?: RestoreAsk;
   @state() private restoring = false;
-  /** "Start with an empty page" is out. */
-  @state() private starting = false;
   /** The panel's list arrives after the panel's first draw. Until it does,
    * the view asks for the devices itself, to tell "none yet" from "not
    * loaded yet". */
@@ -877,10 +876,31 @@ export class WaPageEditor extends LitElement {
     return settingsWatches(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
   }
 
-  /** The draft of the watch on screen, while there is a record to edit. */
+  /** The draft of the watch on screen, while there is a record to edit, or
+   * the ready page while Home Assistant holds none (`readyDraft`). */
   private get draft(): WatchPagesDraft | undefined {
-    if (this.watchId === undefined || this.record === undefined || this.record.revision <= 0) return undefined;
-    return keptWatchPagesDraft(this.watchId);
+    if (this.watchId === undefined || this.record === undefined) return undefined;
+    if (this.record.revision > 0) return keptWatchPagesDraft(this.watchId);
+    return this.readyDraft(false);
+  }
+
+  /**
+   * The ready page of a watch Home Assistant holds no pages for: one empty
+   * page, unsaved, which the first Save creates (`readyWatchPagesDraft`).
+   * Made when it is first asked for while no iPhone will send pages; while
+   * one may, only the start fresh link makes it (`fresh`). A draft made
+   * either way stays the one shown until a record comes.
+   */
+  private readyDraft(fresh: boolean): WatchPagesDraft | undefined {
+    const watchId = this.watchId;
+    const record = this.record;
+    if (watchId === undefined || record === undefined || record.revision > 0) return undefined;
+    return readyWatchPagesDraft(watchId, fresh || this.noRecordState() === "start");
+  }
+
+  /** Whether the screen shows the ready page: no record yet, nothing saved. */
+  private get isNew(): boolean {
+    return this.watchId !== undefined && (this.record?.revision ?? 1) <= 0 && watchPagesDraftIsNew(this.watchId);
   }
 
   /** Editing is off while a page with headers is shown as on the watch. */
@@ -1958,6 +1978,8 @@ export class WaPageEditor extends LitElement {
     // The pages this save deletes: once it lands, the menu slots and
     // complication taps that open them are cleared (`clearPageRefs`).
     const deleted = deletedPageIds(watchPagesOf(draft.base), watchPagesOf(draft.document));
+    // The ready page's first save, over revision 0: it creates the record.
+    const first = draft.revision <= 0;
     const running = saveWatchPagesDraft(draft, {
       // A hold and slide direction left on Trigger entity with nothing
       // picked is saved as None, as the phone saves it. Every `all` rule
@@ -1985,7 +2007,8 @@ export class WaPageEditor extends LitElement {
       code: errCode(err) ?? "unknown",
       message: errText(err),
     }));
-    if (watchId === this.watchId) this.note = watchPagesSaveNote(result);
+    // A first save refused as `no_record`: the watch is not paired.
+    if (watchId === this.watchId) this.note = first && !result.ok && result.code === "no_record" ? { kind: "warn", text: PAIR_FIRST_TEXT } : watchPagesSaveNote(result);
     this.saveEnded(watchId);
     // Which photos a page uses has moved: the delete buttons follow.
     if (result.ok && this.photos.listState !== "idle") void this.photos.refreshList();
@@ -3017,37 +3040,15 @@ export class WaPageEditor extends LitElement {
     void this.load(watchId, true);
   }
 
-  // ── no record: "Start with an empty page" ──────────────────────────────
+  // ── no record: the ready page ──────────────────────────────────────────
 
-  /** Create the watch's pages record with one empty page, then open that
-   * page. Home Assistant takes it only for a paired watch; a record that came
-   * in meanwhile is read and shown instead. */
-  private async startEmptyPage(): Promise<void> {
-    const hass = this.hass;
-    const watchId = this.watchId;
-    if (!hass || watchId === undefined || this.starting) return;
-    // A record is there (perhaps one this panel cannot read): never start
-    // over it.
-    if (this.record !== undefined && this.record.revision > 0) return;
-    this.starting = true;
+  /** The start fresh link, while the iPhone's move may still come: after a
+   * yes, the ready page opens. Nothing is saved until Save. */
+  private askStartFresh(state: NoRecordStart = this.noRecordState()): void {
+    if (!mayStart(state)) return;
     this.note = undefined;
-    const result = await createWatchPages((base, document) => saveWatchConfig(hass, watchId, "pages", base, document));
-    this.starting = false;
-    if (watchId !== this.watchId) return;
-    if (result.ok) {
-      this.note = { kind: "ok", text: "Started with an empty page. The watch picks it up the next time it checks." };
-      this.selectedPageId = result.pageId;
-      this.selectedTileId = undefined;
-    } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: PAIR_FIRST_TEXT };
-      return;
-    } else if (result.code === "conflict") {
-      this.note = { kind: "warn", text: PAGES_START_CONFLICT_TEXT };
-    } else {
-      this.note = { kind: "err", text: `Could not start: ${friendlyError(result)}` };
-      return;
-    }
-    void this.load(watchId, true);
+    this.readyDraft(true);
+    this.requestUpdate();
   }
 
   // ── drawing ────────────────────────────────────────────────────────────
@@ -3058,6 +3059,7 @@ export class WaPageEditor extends LitElement {
     return html`
       <div class="pe-top">
         ${this.renderTopBar(draft)}
+        ${this.isNew ? html`<div class="pe-note info pe-new" role="note">${uiIcon("info")}<span>${NEW_WATCH_TEXT}</span></div>` : nothing}
         ${this.note ? html`<div class="pe-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
           <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
@@ -3103,7 +3105,11 @@ export class WaPageEditor extends LitElement {
       ${draft ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S)` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
+        ${!dirty && this.isNew
+          // Save is greyed out on the ready page until a change: the reason
+          // stands beside it, where the saved line goes once there is one.
+          ? html`<span class="tb-why" title=${NOTHING_TO_SAVE_TEXT}>${NOTHING_TO_SAVE_TEXT}</span>`
+          : html`<span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>`}` : nothing}
       ${shell ? nothing : html`<button class="tb-btn tb-menus" title="The watch's Anywhere menu, Entity quick menu and page switcher"
         @click=${() => (this.onMenus ? this.onMenus() : navigateMenusFromPages(undefined))}>${uiIcon("radial")}<span>Menus</span></button>`}
       ${this.barActions}
@@ -3130,29 +3136,25 @@ export class WaPageEditor extends LitElement {
     </span>`;
   }
 
-  /** The "Start with an empty page" flow applies: Home Assistant holds no
-   * pages for this watch, and none it cannot read. */
   /** Whether this watch's iPhone may still move its pages here, so the
-   * start waits behind a confirm (`noRecordStart`). */
+   * editor waits and the ready page opens only behind a confirm
+   * (`noRecordStart`). */
   private noRecordState(watches: readonly OwnerSummary[] = this.watches): NoRecordStart {
     return noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId));
   }
 
-  /** A start from the button, the link or the ··· menu: while the iPhone's
-   * move may still come it asks first. */
-  private askStartEmptyPage(state: NoRecordStart = this.noRecordState()): void {
-    if (mayStart(state)) void this.startEmptyPage();
-  }
-
-  private canStart(): boolean {
+  /** The start fresh link applies: Home Assistant holds no pages for this
+   * watch (and none it cannot read), and no ready page is open yet. */
+  private canStartFresh(): boolean {
     const record = this.record;
-    return this.watchId !== undefined && record !== undefined && record.revision <= 0 && !watchRecordUnreadable(record, asWatchPagesDocument);
+    return this.watchId !== undefined && record !== undefined && record.revision <= 0
+      && !watchRecordUnreadable(record, asWatchPagesDocument) && this.draft === undefined;
   }
 
-  /** The ··· menu: Select all tiles, Discard edits, and Start with an empty
-   * page while that applies. */
+  /** The ··· menu: Select all tiles, Discard edits, and Start fresh instead
+   * while the editor waits for the iPhone's move. */
   private renderTopMenu(draft: WatchPagesDraft | undefined): TemplateResult | typeof nothing {
-    const start = this.canStart();
+    const start = this.canStartFresh() && this.noRecordState() === "wait";
     if (draft === undefined && !start) return nothing;
     const open = this.topMenuOpen;
     const run = (fn: () => void) => () => { this.topMenuOpen = false; fn(); };
@@ -3168,10 +3170,10 @@ export class WaPageEditor extends LitElement {
           title=${`Pick every tile on this page (${MOD}A)`}
           @click=${run(() => this.selectAll())}>Select all tiles</button>` : nothing}
         ${draft ? html`<button class="row" role="menuitem" ?disabled=${!draft.dirty || this.saving}
-          title="Go back to the copy Home Assistant holds. Undo brings the edits back."
+          title=${this.isNew ? "Go back to the empty page. Undo brings the edits back." : "Go back to the copy Home Assistant holds. Undo brings the edits back."}
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
-        ${start ? html`<button class="row" role="menuitem" ?disabled=${this.starting}
-          @click=${run(() => this.askStartEmptyPage())}>${this.noRecordState() === "wait" ? START_FRESH_BUTTON : PAGES_START_BUTTON}</button>` : nothing}
+        ${start ? html`<button class="row" role="menuitem"
+          @click=${run(() => this.askStartFresh())}>${START_FRESH_BUTTON}</button>` : nothing}
       </div>` : nothing}
     </span>`;
   }
@@ -3297,30 +3299,26 @@ export class WaPageEditor extends LitElement {
     const record = this.record;
     if (record === undefined) return html`<div class="pe-empty">Loading…</div>`;
     const draft = this.draft;
-    if (record.revision <= 0 || draft === undefined) {
-      // Edits kept from before Home Assistant lost this watch's record (it
-      // was removed, or the store started over). They stay, and are merged
-      // into the record that comes next (a start here, or the iPhone's
-      // upload); said here, with a way to drop them, so the leave question
-      // never asks about edits no one can see.
-      const kept = this.watchId === undefined ? undefined : keptWatchPagesDraft(this.watchId);
+    if (draft === undefined) {
       const id = this.watchId;
       // A record that is there but unreadable (a newer schema) is not "no
-      // pages yet": a start would only meet a conflict.
-      // While the iPhone's move may still come it waits, and the start is a
-      // small link that asks first.
+      // pages yet": a first save would only meet a conflict.
+      if (watchRecordUnreadable(record, asWatchPagesDocument)) return html`<div class="pe-empty"><span>${PAGES_UNREADABLE_TEXT}</span></div>`;
+      // Edits kept from before Home Assistant lost this watch's record (it
+      // was removed, or the store started over). They stay, and are merged
+      // into the record that comes next (the iPhone's upload); said here,
+      // with a way to drop them, so the leave question never asks about
+      // edits no one can see. Dropped, the ready page opens.
+      const kept = id === undefined ? undefined : keptWatchPagesDraft(id);
+      // While the iPhone's move may still come it waits, and a small link
+      // that asks first opens the ready page anyway.
       const state = this.noRecordState(watches);
-      const start = watchRecordUnreadable(record, asWatchPagesDocument)
-        ? html`<span>${PAGES_UNREADABLE_TEXT}</span>`
-        : html`<b>No pages from this watch yet.</b><span>${noRecordText(state, PAGES_NO_RECORD_TEXT)}</span>
-          ${state === "wait"
-            ? html`<button class="link start-fresh" ?disabled=${this.starting || id === undefined}
-                @click=${() => this.askStartEmptyPage(state)}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
-            : html`<button class="pe-btn pe-primary" ?disabled=${this.starting || id === undefined}
-                @click=${() => this.askStartEmptyPage(state)}>${this.starting ? "Starting…" : PAGES_START_BUTTON}</button>`}`;
-      return html`<div class="pe-empty">${start}
+      return html`<div class="pe-empty">
+        ${state === "wait" ? html`<b>No pages from this watch yet.</b><span>${WAIT_FOR_IPHONE_TEXT}</span>` : nothing}
         ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when Home Assistant holds pages for this watch again.</span>
           <button class="pe-btn" @click=${() => { forgetWatchPagesDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
+        ${state === "wait" && !kept?.dirty ? html`<button class="link start-fresh" ?disabled=${id === undefined}
+          @click=${() => this.askStartFresh(state)}>${START_FRESH_BUTTON}</button>` : nothing}
       </div>`;
     }
     const document = draft.document;
@@ -3351,7 +3349,7 @@ export class WaPageEditor extends LitElement {
         ${page ? this.renderInspector(page, tile, pages) : nothing}
       </div>
     </div>
-    ${this.renderFoot(record, document, draft.dirty)}`;
+    ${record.revision > 0 ? this.renderFoot(record, document, draft.dirty) : nothing}`;
   }
 
   /** The inspector's line with no tile selected, the complication editor's
@@ -4702,6 +4700,12 @@ export class WaPageEditor extends LitElement {
     .pe-note.ok { border-color: color-mix(in srgb, var(--wa-green) 40%, transparent); }
     .pe-note.warn { border-color: var(--wa-amber-line); background: var(--wa-amber-bg); }
     .pe-note.err { border-color: color-mix(in srgb, var(--wa-need) 45%, transparent); }
+    /* The ready page's line: the panel's plain notice, hairline and card
+       fill, with the info mark in the accent. */
+    .pe-note.info > svg.ui-icon { width: 16px; height: 16px; flex: none; color: var(--wa-accent); }
+    /* Why Save is greyed out, beside it: muted, cut short on a tight bar,
+       the whole line in its tooltip. */
+    .wa-bar .tb-why { flex: 0 1 auto; min-width: 0; font-size: 12px; color: var(--wa-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px; }
     .pe-link { border: 0; background: none; padding: 0; color: var(--wa-accent); font: inherit; font-size: 13px; cursor: pointer; }
     .pe-link:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 4px; }
 

@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
+import { NEW_WATCH_TEXT } from "../src/watch-settings.js";
 import { type WatchCatalog, readWatchCatalog } from "../src/watch-pages/catalog.js";
 import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
 import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
@@ -222,10 +223,10 @@ describe("the watch picker", () => {
 
   it("is there with no pages, while loading and with no record, and not with one watch", () => {
     const { el, whole } = editor();
-    // A watch with no pages yet: only the empty card under the bar.
+    // A watch with no pages yet: the ready page, unsaved, under the bar.
     el.record = { ...(el.record as WatchConfigRecord), revision: 0, document: null };
     let text = whole();
-    expect(text).toContain("No pages from this watch yet.");
+    expect(text).toContain(NEW_WATCH_TEXT);
     expect(text).toContain(`<div class="picker pe-watch-picker">`);
     el.loading = true;
     text = whole();
