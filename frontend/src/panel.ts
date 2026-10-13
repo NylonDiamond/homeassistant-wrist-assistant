@@ -415,7 +415,8 @@ import {
 } from "./parts.js";
 import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
-import { PairWatchCard } from "./watch-pair-view.js";
+import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";
+import { pairNextStatus, pairedFactsLine } from "./pair-flow.js";
 import { settingsWatches } from "./watch-settings.js";
 import {
   formButtonStyles,
@@ -1478,13 +1479,22 @@ export class WristAssistantPanel extends LitElement {
     await this.loadOwners();
     if (watchId === undefined) return;
     if (kind === "watch") this.pickWatch(watchId);
-    // The new device's own sheet takes the dialog's place, with a green
-    // "Paired" line, so it is plain the pairing worked and where it went.
     if (stale() || !this.pairOpen || this.ownerOf(watchId) === undefined) return;
+    // A watch stays in the dialog, which says what to do next with it
+    // (`renderPairNext`): a new watch has nothing on it yet.
+    if (kind === "watch") {
+      this.pairNext = watchId;
+      return;
+    }
+    // An iPhone's own sheet takes the dialog's place, with a green "Paired"
+    // line, so it is plain the pairing worked and where it went.
     this.closePairDialog();
     this.openDeviceSheet(watchId);
     this.devicePaired = watchId;
   });
+  /** The watch just paired in Home's dialog, by owner id: the dialog shows
+   * what next for it in place of the card. */
+  @state() private pairNext?: string;
 
   /** The device Home's sheet is open on, by owner id. */
   @state() private deviceSheet?: string;
@@ -19409,33 +19419,76 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** Home's "Pair a device" dialog, opened from the Devices card, or from the
-   * Watch app card in a home with no watch yet. */
+   * Watch app card in a home with no watch yet. It asks what is being
+   * paired first: most people start with a watch. */
   private openPairDialog() {
-    this.homePair.open(this.hass, { mode: "qr", showQr: true });
+    this.homePair.open(this.hass, { mode: "choose" });
+    this.pairNext = undefined;
     this.pairOpen = true;
   }
 
   private closePairDialog() {
     if (!this.pairOpen) return;
     this.homePair.close();
+    this.pairNext = undefined;
     this.pairOpen = false;
   }
 
   /** The dialog: the Settings page's own pairing card, under a head of its
-   * own, opening on the QR code with a code already showing. A native
-   * dialog brings the backdrop and Escape with it. It stays open after a
-   * device pairs by code until the new device's sheet takes its place.
-   * Closing it withdraws a QR code still open. */
+   * own that says which step it is on, opening on "What are you pairing?".
+   * A native dialog brings the backdrop and Escape with it. Once a watch
+   * pairs, the same dialog says what next for it; once an iPhone pairs, its
+   * sheet takes the dialog's place. Closing it withdraws a QR code still
+   * open. One dialog element throughout, so the open modal is kept. */
   private renderPairDialog() {
     const close = () => this.closePairDialog();
+    const next = this.pairNext === undefined ? undefined : this.renderPairNextBody(this.pairNext);
     return html`<dialog class="xf pair-dialog" aria-label="Pair a device" @close=${close}>
-      <div class="pair-head">
+      ${next ?? html`<div class="pair-head">
         <span class="pair-chip" aria-hidden="true">${uiIcon("link")}</span>
-        <div class="pair-head-t"><h2>Pair a device</h2><span>A watch or an iPhone, to this Home Assistant</span></div>
+        <div class="pair-head-t"><h2>Pair a device</h2><span>${this.homePair.subtitle}</span></div>
         <button class="icon" title="Close (Escape)" aria-label="Close" @click=${close}>${uiIcon("close")}</button>
       </div>
-      <div class="xfer-body">${this.homePair.render({ bare: true })}</div>
+      <div class="xfer-body">${this.homePair.render({ bare: true })}</div>`}
     </dialog>`;
+  }
+
+  /** What next for a watch just paired in the dialog, from what Home knows
+   * of it: its name, facts and person the way its card and sheet show them,
+   * and its sync word, which Home keeps current. New page goes to the Pages
+   * screen on this watch, Make a complication to the Complications tab, Pair
+   * another device back to the choice. Undefined once the watch has left
+   * the device list. */
+  private renderPairNextBody(watchId: string) {
+    const devices = homeDeviceRows(this.homeDevices(), this.watchAppSyncs);
+    const row = devices.find((d) => d.id === watchId);
+    const owner = this.ownerOf(watchId);
+    if (row === undefined || owner === undefined) return undefined;
+    const group = homeGroups(this.people(), devices).find((g) => g.rows.some((r) => r.id === watchId));
+    const path = watchScreenPath(WATCH_SCREENS[0]!, watchId);
+    return renderPairNext({
+      name: row.name,
+      facts: pairedFactsLine(deviceFacts(owner, "watch"), group?.person?.label),
+      status: pairNextStatus(row),
+      art: homeWatchArt(`paired-${watchId}`, owner.complication_count ?? 0, row.sync),
+      pagesHref: panelUrl(this.route, path, window.location.pathname),
+      onNewPage: (e) => {
+        if (!isPlainClick(e)) return;
+        e.preventDefault();
+        this.closePairDialog();
+        this.pickWatch(watchId);
+        this.goTo(path);
+      },
+      onComplication: () => {
+        this.closePairDialog();
+        this.goTo(COMPLICATIONS_PATH);
+      },
+      onAnother: () => {
+        this.pairNext = undefined;
+        this.homePair.open(this.hass, { mode: "choose" });
+      },
+      onDone: () => this.closePairDialog(),
+    });
   }
 
   // ── start page ────────────────────────────────────────────────────────

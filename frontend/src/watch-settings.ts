@@ -737,11 +737,9 @@ export const PAIR_CODE_LENGTH = 6;
 /** The card's title, in both places it is drawn. */
 export const PAIR_CARD_TITLE = "Pair a device";
 
-/** The card's two ways to pair, as its segmented control names them. The
- * QR code comes first: it is the quicker way for an iPhone, and Home's
- * dialog opens on it with a code already showing. */
+/** The card's two ways to pair: Type a code, and Show a QR code for an
+ * iPhone. Home's dialog asks which device first (`pair-flow.ts`). */
 export type PairMode = "code" | "qr";
-export const PAIR_MODES: readonly [PairMode, string][] = [["qr", "Show a QR code"], ["code", "Type a code"]];
 
 /** The line under the title in each mode. */
 export const PAIR_CODE_HINT = "On the watch or iPhone, choose Pair with Home Assistant and type the code it shows.";
