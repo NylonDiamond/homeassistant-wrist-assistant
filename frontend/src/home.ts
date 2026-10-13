@@ -141,25 +141,23 @@ export type DeviceSheetTab =
   | { kind: "screen"; label: string; screen: WatchScreen; count?: DeviceCountKind };
 
 /**
- * The device sheet's tabs, each opening its page on this device. A watch has
- * its complications, then every watch screen that belongs to one watch, then
- * Settings; HTTP actions and Cameras are the home's, not a watch's, so they
- * stay on Home's Watch app card. A watch's Control Center screen is retired
- * (its tiles are complication controls now) and left out. An iPhone has its
- * widgets and its Control Center controls, which is all the panel holds for
- * a phone.
+ * The picked device's doors, each opening its page on this device. A watch
+ * has its complications, then every watch screen that belongs to one watch,
+ * with its Control Center controls after Status pages, then Settings; HTTP
+ * actions and Cameras are the home's, not a watch's. A watch's old Control
+ * Center screen is retired: its tiles are complication controls now, so the
+ * door opens the watch's designs that have a control, the way an iPhone's
+ * does. An iPhone has its widgets and its Control Center controls, which is
+ * all the panel holds for a phone.
  */
 export function deviceSheetTabs(kind: "watch" | "iphone"): DeviceSheetTab[] {
-  if (kind === "iphone") {
-    return [
-      { kind: "list", label: "Widgets", filter: "all" },
-      { kind: "list", label: "Control Center", filter: "control" },
-    ];
-  }
+  const controls: DeviceSheetTab = { kind: "list", label: "Control Center", filter: "control" };
+  if (kind === "iphone") return [{ kind: "list", label: "Widgets", filter: "all" }, controls];
   const tabs: DeviceSheetTab[] = [{ kind: "list", label: "Complications", filter: "all" }];
   for (const screen of [...WATCH_SCREENS.filter((s) => s.shared !== true && s.retired !== true), WATCH_SETTINGS_SCREEN]) {
     const count = SCREEN_COUNTS[screen.id];
     tabs.push(count === undefined ? { kind: "screen", label: screen.label, screen } : { kind: "screen", label: screen.label, screen, count });
+    if (screen.id === "status-pages") tabs.push(controls);
   }
   return tabs;
 }

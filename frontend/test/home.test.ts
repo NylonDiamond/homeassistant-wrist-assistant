@@ -100,8 +100,10 @@ describe("watchConfigCount", () => {
 describe("deviceSheetTabs", () => {
   const labels = (kind: "watch" | "iphone") => deviceSheetTabs(kind).map((t) => t.label);
 
-  it("gives a watch its complications, its own screens and Settings, never the home's shared screens or the retired Control Center", () => {
-    expect(labels("watch")).toEqual(["Complications", "Pages", "Menus", "Status pages", "Rooms", "Voice", "Settings"]);
+  it("gives a watch its complications, its own screens, its Control Center controls and Settings, never the home's shared screens or the retired Control Center screen", () => {
+    expect(labels("watch")).toEqual(["Complications", "Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Settings"]);
+    expect(deviceSheetTabs("watch")[4]).toEqual({ kind: "list", label: "Control Center", filter: "control" });
+    expect(deviceSheetTabs("watch").some((t) => t.kind === "screen" && t.screen.id === "control-center")).toBe(false);
   });
 
   it("gives an iPhone its widgets and its Control Center controls", () => {
@@ -120,13 +122,13 @@ describe("deviceSheetTabs", () => {
 describe("deviceCardTiles", () => {
   const labels = (kind: "watch" | "iphone") => deviceCardTiles(kind).map((t) => t.label);
 
-  it("gives a watch a tile for each counted page, and an iPhone its widgets and controls", () => {
-    expect(labels("watch")).toEqual(["Complications", "Pages", "Status pages"]);
+  it("gives a watch a tile for each counted page, complications and pages first, and an iPhone its widgets and controls", () => {
+    expect(labels("watch")).toEqual(["Complications", "Pages", "Status pages", "Control Center"]);
     expect(labels("iphone")).toEqual(["Widgets", "Control Center"]);
   });
 
   it("cuts a two word page name to one under the number", () => {
-    expect(labels("watch").map(tileWord)).toEqual(["Complications", "Pages", "Status"]);
+    expect(labels("watch").map(tileWord)).toEqual(["Complications", "Pages", "Status", "Controls"]);
     expect(labels("iphone").map(tileWord)).toEqual(["Widgets", "Controls"]);
   });
 });
@@ -309,10 +311,13 @@ describe("homeDoorLook", () => {
     }
   });
 
-  it("tells the doors apart by hue on a watch, Settings alone in grey", () => {
-    const hues = deviceSheetTabs("watch").map((t) => homeDoorLook(t, "watch").hue);
-    expect(new Set(hues).size).toBe(hues.length);
+  it("gives a watch's Control Center the iPhone's look, and leaves Settings alone in grey", () => {
+    const tabs = deviceSheetTabs("watch");
+    const controls = tabs.find((t) => t.kind === "list" && t.filter === "control")!;
+    expect(homeDoorLook(controls, "watch")).toEqual(homeDoorLook(controls, "iphone"));
+    const hues = tabs.map((t) => homeDoorLook(t, "watch").hue);
     expect(hues.at(-1)).toBe("var(--wa-hue-grey)");
+    expect(hues.filter((h) => h === "var(--wa-hue-grey)")).toHaveLength(1);
   });
 });
 
