@@ -197,10 +197,12 @@ describe("the page editor", () => {
     owner_watch_id: "foot-test-watch", device_name: "Apple Watch", device_kind: "watch", paired_iphone_name: null,
   } as unknown as OwnerSummary;
 
-  /** The element's body with the fixture's pages open, as markup. */
-  function body(): string {
+  /** The element's body with the fixture's pages open, as markup; with
+   * `hass`, Home Assistant is there to edit through. */
+  function body(hass?: Record<string, unknown>): string {
     const Ctor = customElements.get("wa-page-editor") as unknown as new () => Record<string, unknown>;
     const el = new Ctor();
+    if (hass !== undefined) el.hass = hass;
     el.owners = [owner];
     el.watchId = owner.owner_watch_id;
     el.record = record({ document: document as unknown as Record<string, unknown> });
@@ -223,29 +225,38 @@ describe("the page editor", () => {
     expect(inspector).toBeLessThan(text.indexOf(`<footer class="cf-bar"`));
   });
 
-  it("draws the page's own settings in the strip over the watch, and only the line and Delete page in the inspector with no tile selected", () => {
-    const text = body();
+  it("draws the page's own settings in the inspector with no tile selected, and none over the watch", () => {
+    // The page's fields ask for the focused one; Node has no document.
+    vi.stubGlobal("document", { activeElement: null });
+    vi.stubGlobal("HTMLElement", (globalThis as { HTMLElement?: unknown }).HTMLElement ?? class {});
+    let text: string;
+    try {
+      text = body({ states: {}, entities: {} });
+    } finally {
+      vi.unstubAllGlobals();
+    }
     const canvas = text.indexOf(`<div class="column canvas">`);
     const inspector = text.indexOf(`<div class="column inspector card">`);
     expect(canvas).toBeGreaterThan(-1);
     expect(inspector).toBeGreaterThan(canvas);
-    // In the canvas card: the head, then the strip, then the stage.
+    // In the canvas card: the head, then the stage, with no page strip.
     const card = text.slice(canvas, inspector);
     const head = card.indexOf(`<div class="cv-head">`);
-    const strip = card.indexOf(`<div class="pe-pstrip" role="toolbar" aria-label="Page settings">`);
     const stage = card.indexOf(`<div class="stage-area pe-stage-area">`);
     expect(head).toBeGreaterThan(-1);
-    expect(strip).toBeGreaterThan(head);
-    expect(stage).toBeGreaterThan(strip);
+    expect(stage).toBeGreaterThan(head);
+    expect(card).not.toContain("pe-pstrip");
     expect(card).not.toContain(`class="sec name-sec"`);
     const side = text.slice(inspector, text.indexOf(`<footer class="cf-bar"`));
     expect(side).toContain(`<div class="insp-head">`);
     expect(side).toContain(`>Page</span><span class="nm"`);
     expect(side).not.toContain(`class="sec name-sec"`);
     expect(side).not.toContain(`aria-label="Page name"`);
-    expect(side).not.toContain("Hidden on the watch");
-    expect(side).toContain("Select a tile to edit it, or add one. The page's own settings are above the watch.");
-    expect(side).toContain("Delete page…");
+    // Look, then On the watch, then the line and Delete page.
+    const order = ["<h4>Look", "<h4>On the watch", "Click a tile on the watch to edit it.", "Delete page…"].map((p) => side.indexOf(p));
+    expect(order.every((i) => i > -1)).toBe(true);
+    expect([...order].sort((x, y) => x - y)).toEqual(order);
+    expect(side).not.toContain("above the watch");
     expect(side).not.toContain("pe-page-card");
   });
 
