@@ -243,7 +243,16 @@ export interface TabBarInput {
   onTab: (tab: PanelTab) => void;
   /** The Watch app's shared watch, which its tab's link carries. */
   watch?: string;
+  /** Open the Help sheet (`help-sheet.ts`). The Help button sits at the
+   * bar's right end, on every tab; without this there is none. */
+  onHelp?: () => void;
 }
+
+/** A question mark in a circle, the Help button's sign, drawn at the stroke
+ * of `uiIcon`'s set. */
+const HELP_ICON = html`<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" />
+  <path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.7" /><path d="M12 17V17.2" /></svg>`;
 
 /** The tabs, above whatever the tab draws. Each is a real link, so a middle
  * click opens it in a new browser tab; a plain click moves in place. */
@@ -261,6 +270,8 @@ export function renderTabBar(input: TabBarInput): TemplateResult {
         e.preventDefault();
         input.onTab(tab);
       }}>${TAB_LABEL[tab]}</a>`)}</span>
+    ${input.onHelp ? html`<button type="button" class="wa-tabs-help" title="Help and setup guide" aria-haspopup="dialog"
+      @click=${input.onHelp}>${HELP_ICON}<span>Help</span></button>` : nothing}
   </nav>`;
 }
 
@@ -295,4 +306,13 @@ export const shellStyles = css`
   button.wa-tabs-menu:hover { background: var(--wa-hover); }
   button.wa-tabs-menu:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.wa-tabs-menu svg.ui-icon { width: 16px; height: 16px; }
+  /* Help, neutral and outlined like a tab, pushed to the bar's right end. */
+  button.wa-tabs-help {
+    display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px 0 9px; margin-left: auto; border-radius: 6px;
+    font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap;
+    color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line-strong);
+  }
+  button.wa-tabs-help:hover { background: var(--wa-hover); }
+  button.wa-tabs-help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.wa-tabs-help svg.ui-icon { width: 15px; height: 15px; }
 `;
