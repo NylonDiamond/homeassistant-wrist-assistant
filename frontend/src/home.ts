@@ -376,7 +376,7 @@ const SCREEN_DOORS: Partial<Record<WatchScreen["id"] | "settings", HomeDoorLook>
 /** The look of one of the device's doors (`deviceSheetTabs`). */
 export function homeDoorLook(tab: DeviceSheetTab, kind: "watch" | "iphone"): HomeDoorLook {
   if (tab.kind === "list") {
-    if (tab.filter === "control") return { icon: "tap", hue: "var(--wa-hue-orange)", blurb: "Controls in the iPhone Control Center." };
+    if (tab.filter === "control") return { icon: "tap", hue: "var(--wa-hue-orange)", blurb: "Buttons in Control Center, from your designs." };
     return kind === "watch"
       ? { icon: "gauge", hue: "var(--wa-hue-blue)", blurb: "On this watch’s faces." }
       : { icon: "grid", hue: "var(--wa-hue-blue)", blurb: "On the Lock Screen and Home Screen." };
@@ -637,7 +637,13 @@ export const homeStyles = css`
   .hb-badge.rejected { --s: var(--error-color); }
   .hb-badge i { width: 6px; height: 6px; border-radius: 50%; background: var(--s); }
   .hb-calls { position: absolute; inset: 0; pointer-events: none; }
-  .hb-call { position: absolute; top: 132px; display: flex; align-items: center; gap: 10px; }
+  button.hb-call {
+    position: absolute; top: 132px; display: flex; align-items: center; gap: 10px; padding: 6px 8px; margin: -6px -8px;
+    border-radius: 10px; font: inherit; color: var(--wa-ink); background: transparent; border: 0; cursor: pointer; pointer-events: auto;
+  }
+  button.hb-call:hover .hb-call-n span { color: var(--wa-ink); }
+  button.hb-call:hover .hb-call-line { width: 64px; }
+  button.hb-call:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .hb-call.l { right: calc(50% + var(--off)); }
   .hb-call.r { left: calc(50% + var(--off)); }
   .hb-call-n { display: flex; flex-direction: column; gap: 3px; }
@@ -645,7 +651,7 @@ export const homeStyles = css`
   .hb-call-n b { font-size: 28px; font-weight: 300; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   .hb-call-n b.none { color: var(--wa-faint); }
   .hb-call-n span { font-size: 10.5px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--wa-muted); }
-  .hb-call-line { width: 56px; height: 1px; }
+  .hb-call-line { width: 56px; height: 1px; transition: width .2s ease; }
   .hb-call.l .hb-call-line { background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--wa-ink) 30%, transparent)); }
   .hb-call.r .hb-call-line { background: linear-gradient(90deg, color-mix(in srgb, var(--wa-ink) 30%, transparent), transparent); }
   .hb-call i { width: 5px; height: 5px; border-radius: 50%; background: var(--c); }

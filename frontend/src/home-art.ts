@@ -24,11 +24,43 @@ export interface HomeFacePicture {
 }
 
 /** The pictures a device's face is drawn with: up to three round ones for
- * the round slots, and one rectangular one. A slot with no picture keeps its
- * lit ring or dashed outline. */
+ * the round slots, one rectangular one, and on an iPhone its Home Screen
+ * widgets, by size. A slot with no picture keeps its lit ring or dashed
+ * outline. */
 export interface HomeFace {
   circles: HomeFacePicture[];
   rect?: HomeFacePicture;
+  widgets?: { size: "small" | "medium" | "large"; picture: HomeFacePicture }[];
+}
+
+/** Where an iPhone's Home Screen widgets go under its lock screen row: a
+ * large one takes the whole block, a medium one a full-width strip, two
+ * small ones share a strip. Whatever does not fit is left off. */
+export function phoneWidgetPlaces(sizes: readonly ("small" | "medium" | "large")[]): { x: number; y: number; w: number; h: number }[] {
+  const left = 10, full = 72, half = 34, gap = 4, top = 98, bottom = 170;
+  const out: { x: number; y: number; w: number; h: number }[] = [];
+  let y = top;
+  let smallWaiting = false;
+  for (const size of sizes) {
+    if (size === "small") {
+      if (smallWaiting) {
+        out.push({ x: left + half + gap, y, w: half, h: half });
+        y += half + gap;
+        smallWaiting = false;
+        continue;
+      }
+      if (y + half > bottom) break;
+      out.push({ x: left, y, w: half, h: half });
+      smallWaiting = true;
+      continue;
+    }
+    if (smallWaiting) { y += half + gap; smallWaiting = false; }
+    const h = size === "large" ? full : half;
+    if (y + h > bottom) break;
+    out.push({ x: left, y, w: full, h });
+    y += h + gap;
+  }
+  return out;
 }
 
 /** The ring lengths of the three lit slots, out of a 69 unit circle, so the
@@ -109,8 +141,9 @@ export function homeWatchArt(key: string, held: number, state: HomeArtState, fac
 /**
  * An iPhone, 68 by 136 unless the page sizes it, at its lock screen. Its
  * three widget slots under the clock light one by one as it holds widgets.
- * With a face, the two round slots show its round pictures and the wide one
- * its rectangular picture.
+ * With a face, the two round slots show its round pictures, the wide one
+ * its rectangular picture, and its Home Screen widgets stand under them
+ * (`phoneWidgetPlaces`).
  */
 export function homePhoneArt(key: string, held: number, state: HomeArtState, face?: HomeFace): TemplateResult {
   const id = `ha-p-${idKey(key)}`;
@@ -128,6 +161,9 @@ export function homePhoneArt(key: string, held: number, state: HomeArtState, fac
     : held > 2
     ? svg`<rect class="ha-lit" x="58" y="74" width="22" height="16" rx="4" stroke-width="2"></rect>`
     : svg`<rect x="58" y="74" width="22" height="16" rx="4" stroke="#333337" stroke-width="1.2" stroke-dasharray="2 3"></rect>`;
+  const widgets = face?.widgets ?? [];
+  const places = phoneWidgetPlaces(widgets.map((w) => w.size));
+  const home = places.map((p, i) => boxPicture(`${id}-h${i}`, p.x, p.y, p.w, p.h, widgets[i]!.picture));
   return html`<svg class="ha-art ha-phone" viewBox="0 0 92 184" width="68" height="136" fill="none" aria-hidden="true">
     <defs>
       <linearGradient id="${id}-case" x1="0" y1="0" x2="1" y2="1">
@@ -142,7 +178,8 @@ export function homePhoneArt(key: string, held: number, state: HomeArtState, fac
       fill=${state === "idle" ? "#5a5a5f" : "#f2f2f4"}>10:09</text>
     ${round(24, 0)}${round(46, 1)}
     ${wide}
-    <rect x="31" y="170" width="30" height="3" rx="1.5" fill="#3a3a3f"></rect>
+    ${home}
+    <rect x="31" y="172" width="30" height="3" rx="1.5" fill="#3a3a3f"></rect>
   </svg>`;
 }
 

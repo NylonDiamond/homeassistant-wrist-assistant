@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
 import { countWord, deviceCardTiles, deviceFacts, homeDoorLook, homeGroups, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotalBucket, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
+import { phoneWidgetPlaces } from "../src/home-art.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -312,6 +313,24 @@ describe("homeDoorLook", () => {
     const hues = deviceSheetTabs("watch").map((t) => homeDoorLook(t, "watch").hue);
     expect(new Set(hues).size).toBe(hues.length);
     expect(hues.at(-1)).toBe("var(--wa-hue-grey)");
+  });
+});
+
+describe("phoneWidgetPlaces", () => {
+  it("pairs two small widgets on one strip, gives a medium the full width, and stops when the screen is full", () => {
+    expect(phoneWidgetPlaces(["small", "small", "medium"])).toEqual([
+      { x: 10, y: 98, w: 34, h: 34 }, { x: 48, y: 98, w: 34, h: 34 }, { x: 10, y: 136, w: 72, h: 34 },
+    ]);
+    expect(phoneWidgetPlaces(["small", "medium"])).toEqual([{ x: 10, y: 98, w: 34, h: 34 }, { x: 10, y: 136, w: 72, h: 34 }]);
+    expect(phoneWidgetPlaces(["large", "small"])).toEqual([{ x: 10, y: 98, w: 72, h: 72 }]);
+    expect(phoneWidgetPlaces([])).toEqual([]);
+  });
+});
+
+describe("homeDoorLook's Control Center line", () => {
+  it("says the controls are buttons in Control Center, made from designs", () => {
+    const tab = deviceSheetTabs("iphone").find((t) => t.kind === "list" && t.filter === "control")!;
+    expect(homeDoorLook(tab, "iphone").blurb).toBe("Buttons in Control Center, from your designs.");
   });
 });
 

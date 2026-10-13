@@ -19345,16 +19345,18 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * The device's own complications as card pictures, for its face on Home's
-   * stage: its round ones (circular, then corner) for the round slots, and
-   * its first rectangular one, in the device's own order. Only pictures of
-   * each record's current revision, and only as many as the face has slots,
-   * so picking a device fetches no more than it shows. Undefined when it has
-   * none, and the drawing keeps its lit slots.
+   * stage: its round ones (circular, then corner) for the round slots, its
+   * first rectangular one, and on an iPhone up to four Home Screen widgets,
+   * in the device's own order. Only pictures of each record's current
+   * revision, and only as many as the face has room for, so picking a device
+   * fetches no more than it shows. Undefined when it has none, and the
+   * drawing keeps its lit slots.
    */
-  private homeFace(ownerId: string): HomeFace | undefined {
+  private homeFace(ownerId: string, kind: "watch" | "iphone"): HomeFace | undefined {
     const copies = this.pickerRows().flatMap((r) => r.copies).filter((c) => c.ownerId === ownerId).sort((a, b) => a.slot - b.slot);
     const circles: HomeFacePicture[] = [];
     const corners: HomeFacePicture[] = [];
+    const widgets: NonNullable<HomeFace["widgets"]> = [];
     let rect: HomeFacePicture | undefined;
     for (const c of copies) {
       if (c.item.kind !== "record") continue;
@@ -19362,18 +19364,24 @@ export class WristAssistantPanel extends LitElement {
       const key = `${ownerId}|${record.id}`;
       const preview = this.cardPreviews.get(key);
       if (!preview || !this.previewIsCurrent(preview, record) || this.cardPictures.failing(key)) continue;
-      const round = preview.family === "circular" || preview.family === "corner";
-      if (round ? circles.length + corners.length >= 3 : preview.family !== "rectangular" || rect !== undefined) continue;
+      const family = preview.family;
+      const round = family === "circular" || family === "corner";
+      const widget = kind === "iphone" && (family === "small" || family === "medium" || family === "large" || family === "xlarge");
+      const room = round ? circles.length + corners.length < 3
+        : family === "rectangular" ? rect === undefined
+        : widget && widgets.length < 4;
+      if (!room) continue;
       const url = this.cardPictures.urlFor(key, cardPreviewAddress(ownerId, record.id, record.revision));
       if (url === undefined) continue;
       const picture: HomeFacePicture = { url, width: preview.width, height: preview.height, ...(preview.focus ? { focus: preview.focus } : {}) };
-      if (preview.family === "circular") circles.push(picture);
-      else if (preview.family === "corner") corners.push(picture);
-      else rect = picture;
+      if (family === "circular") circles.push(picture);
+      else if (family === "corner") corners.push(picture);
+      else if (family === "rectangular") rect = picture;
+      else widgets.push({ size: family === "small" ? "small" : family === "medium" ? "medium" : "large", picture });
     }
     const round = [...circles, ...corners];
-    if (round.length === 0 && rect === undefined) return undefined;
-    return rect === undefined ? { circles: round } : { circles: round, rect };
+    if (round.length === 0 && rect === undefined && widgets.length === 0) return undefined;
+    return { circles: round, ...(rect === undefined ? {} : { rect }), ...(widgets.length === 0 ? {} : { widgets }) };
   }
 
   /** Pick a device on Home, starting on its overview, or on its Remove step
@@ -19480,23 +19488,6 @@ export class WristAssistantPanel extends LitElement {
       if (next !== undefined) this.openHomeDevice(next);
     };
     const count = (t: DeviceSheetTab) => this.homeTileCount(t, row, owner);
-    // The two counts that point at the device: a watch's complications and
-    // pages, an iPhone's widgets and controls.
-    const calls = deviceCardTiles(row.kind).slice(0, 2).map((t) => {
-      const n = count(t);
-      return { n, word: countWord(t.label, n) };
-    });
-    const call = (c: { n: number | undefined; word: string } | undefined, side: "l" | "r") => {
-      if (c === undefined) return nothing;
-      const n = html`<span class="hb-call-n"><b class=${c.n === 0 ? "none" : ""}>${c.n ?? "–"}</b><span>${c.word}</span></span>`;
-      return side === "l"
-        ? html`<div class="hb-call l">${n}<span class="hb-call-line"></span><i></i></div>`
-        : html`<div class="hb-call r"><i></i><span class="hb-call-line"></span>${n}</div>`;
-    };
-    const face = gone ? undefined : this.homeFace(ownerId);
-    const art = row.kind === "watch"
-      ? homeWatchArt(`pick-${row.id}`, held, row.sync, face)
-      : homePhoneArt(`pick-${row.id}`, held, row.sync, face);
     const openList = (filter: "all" | "control") => {
       this.pickerFilter = filter;
       this.pickPickerTab(ownerId);
@@ -19504,6 +19495,31 @@ export class WristAssistantPanel extends LitElement {
       // With a design open the tab is the editor, so the list opens over it.
       if (this.draft) this.openPicker();
     };
+    // Open one of the device's pages: its complications on the
+    // Complications tab, or a watch screen on this watch.
+    const go = (t: DeviceSheetTab) => {
+      if (t.kind === "list") { openList(t.filter); return; }
+      this.pickWatch(ownerId);
+      this.goTo(watchScreenPath(t.screen, ownerId));
+    };
+    // The two counts that point at the device, each a door to its page: a
+    // watch's complications and pages, an iPhone's widgets and its Control
+    // Center controls.
+    const call = (t: DeviceSheetTab | undefined, side: "l" | "r") => {
+      if (t === undefined) return nothing;
+      const n = count(t);
+      const word = t.kind === "list" && t.filter === "control" ? "Control Center" : countWord(t.label, n);
+      const body = html`<span class="hb-call-n"><b class=${n === 0 ? "none" : ""}>${n ?? "–"}</b><span>${word}</span></span>`;
+      return html`<button type="button" class="hb-call ${side}" title=${`${t.label} on ${row.name}`} @click=${() => go(t)}>
+        ${side === "l" ? html`${body}<span class="hb-call-line" aria-hidden="true"></span><i aria-hidden="true"></i>`
+          : html`<i aria-hidden="true"></i><span class="hb-call-line" aria-hidden="true"></span>${body}`}
+      </button>`;
+    };
+    const [callL, callR] = deviceCardTiles(row.kind);
+    const face = gone ? undefined : this.homeFace(ownerId, row.kind);
+    const art = row.kind === "watch"
+      ? homeWatchArt(`pick-${row.id}`, held, row.sync, face)
+      : homePhoneArt(`pick-${row.id}`, held, row.sync, face);
     const door = (t: DeviceSheetTab) => {
       const look = homeDoorLook(t, row.kind);
       const n = t.kind === "list" || t.count !== undefined ? count(t) : undefined;
@@ -19580,11 +19596,11 @@ export class WristAssistantPanel extends LitElement {
                 @click=${() => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); }}>Remove</button>`}
         </div>
       </div>
-      <div class="hb-stage" aria-hidden="true">
-        <span class="hb-floor"></span>
-        ${gone ? nothing : html`<span class="hb-badge ${state}"><i></i>${homeDeviceLabel(row)}</span>`}
-        <div class="hb-calls" style=${`--off:${row.kind === "watch" ? 128 : 96}px`}>${gone ? nothing : html`${call(calls[0], "l")}${call(calls[1], "r")}`}</div>
-        <div class="hb-device">${art}</div>
+      <div class="hb-stage">
+        <span class="hb-floor" aria-hidden="true"></span>
+        ${gone ? nothing : html`<span class="hb-badge ${state}" aria-hidden="true"><i></i>${homeDeviceLabel(row)}</span>`}
+        <div class="hb-calls" style=${`--off:${row.kind === "watch" ? 128 : 96}px`}>${gone ? nothing : html`${call(callL, "l")}${call(callR, "r")}`}</div>
+        <div class="hb-device" aria-hidden="true">${art}</div>
       </div>
       <div class="hb-info">
         <div class="hb-name"><h2>${this.deviceForgetAsk ? `Remove “${row.name}”?` : row.name}</h2><span class="hb-facts">${facts}</span></div>

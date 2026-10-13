@@ -126,14 +126,26 @@ describe("Home's device rows", () => {
 
 describe("Home's picked device", () => {
   it("draws the device on its stage with its own complications on its face", () => {
-    expect(detail).toContain("const face = gone ? undefined : this.homeFace(ownerId);");
+    expect(detail).toContain("const face = gone ? undefined : this.homeFace(ownerId, row.kind);");
     expect(detail).toContain("homeWatchArt(`pick-${row.id}`, held, row.sync, face)");
+    expect(detail).toContain("homePhoneArt(`pick-${row.id}`, held, row.sync, face)");
     expect(detail).toContain("const held = owner?.complication_count ?? 0;");
-    const face = method("  private homeFace(ownerId: string): HomeFace | undefined {");
+    const face = method("  private homeFace(ownerId: string, kind: \"watch\" | \"iphone\"): HomeFace | undefined {");
     expect(face).toContain("this.previewIsCurrent(preview, record)");
     expect(face).toContain("this.cardPictures.urlFor(key, cardPreviewAddress(ownerId, record.id, record.revision))");
-    // Only as many pictures as the face has slots are asked for.
-    expect(face.indexOf("circles.length + corners.length >= 3")).toBeLessThan(face.indexOf("this.cardPictures.urlFor("));
+    // Only as many pictures as the face has room for are asked for, and only
+    // an iPhone stands Home Screen widgets on its face.
+    expect(face.indexOf("if (!room) continue;")).toBeLessThan(face.indexOf("this.cardPictures.urlFor("));
+    expect(face).toContain("circles.length + corners.length < 3");
+    expect(face).toContain(`const widget = kind === "iphone" &&`);
+    expect(face).toContain("widgets.length < 4");
+  });
+
+  it("makes the two counts beside the device doors to their pages, Control Center by its own name", () => {
+    expect(detail).toContain("const [callL, callR] = deviceCardTiles(row.kind);");
+    expect(detail).toContain(`<button type="button" class="hb-call \${side}" title=\${\`\${t.label} on \${row.name}\`} @click=\${() => go(t)}>`);
+    expect(detail).toContain(`const word = t.kind === "list" && t.filter === "control" ? "Control Center" : countWord(t.label, n);`);
+    expect(detail).toContain("if (t.kind === \"list\") { openList(t.filter); return; }");
   });
 
   it("slides a newly picked device in, unless the person asks for less motion", () => {
