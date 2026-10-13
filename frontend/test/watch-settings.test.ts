@@ -61,7 +61,6 @@ import {
   PAIR_USER_TITLE,
   PAIR_CARD_TITLE,
   PAIR_CODE_HINT,
-  PAIR_MODES,
   pairOnIPhone,
   PAIR_OPEN_APP_TEXT,
   PAIR_QR_EXPIRED_TEXT,
@@ -702,13 +701,11 @@ describe("pairing a watch by its code", () => {
 
   it("names the card and its two modes in plain words", () => {
     expect(PAIR_CARD_TITLE).toBe("Pair a device");
-    expect(PAIR_MODES).toEqual([["qr", "Show a QR code"], ["code", "Type a code"]]);
     expect(PAIR_SHOW_QR_TEXT).toBe("Show QR code");
     expect(PAIR_OPEN_APP_TEXT).toBe("Pair this iPhone instead");
     expect(PAIR_QR_EXPIRED_TEXT).toBe("This code ran out. Show a new one.");
     const words = [PAIR_CARD_TITLE, PAIR_CODE_HINT, PAIR_QR_HINT, PAIR_QR_REPLACE_LABEL, PAIR_QR_REPLACE_HINT, PAIR_MORE_TEXT, PAIR_REPLACE_LABEL, PAIR_SHOW_QR_TEXT,
       PAIR_OPEN_APP_TEXT, PAIR_QR_EXPIRED_TEXT, PAIR_USER_PLACEHOLDER, pairUserHint("watch"), pairUserHint("iphone"),
-      ...PAIR_MODES.map(([, label]) => label),
       pairErrorText({ code: "needs_replace" }, "confirm", "iphone"), pairErrorText({ code: "needs_allow_remote" }, "confirm")];
     for (const w of words) expect(w).not.toMatch(/ \x2d |\u2013|\u2014/);
   });

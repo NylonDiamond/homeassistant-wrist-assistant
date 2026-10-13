@@ -530,8 +530,9 @@ describe("Watch settings as a page under the Watch app row", () => {
     it("names an iPhone that shows a code as an iPhone", async () => {
       const { inside, ha, text, paired } = await lookedUp({ pickUser: true, boundUser: "chen", lookup: { kind: "iphone", device_name: null } });
       const shown = text();
-      expect(shown).toContain("<span>iPhone</span>");
-      expect(shown).toContain(">iPhone</div>");
+      expect(shown).toContain("Is this your iPhone?");
+      expect(shown).toContain(">iPhone</b>");
+      expect(shown).toContain(">Pair this iPhone</button>");
       expect(shown).toContain("Whose iPhone is this?");
       expect(shown).toContain("The iPhone runs with this person's rights.");
       await inside.pairCard.confirmPair();
@@ -562,8 +563,12 @@ describe("Watch settings as a page under the Watch app row", () => {
     it("asks whose iPhone it is, each with its account type, and holds Show QR code until someone is picked", async () => {
       const { inside, ha, text, ws } = await qrMode();
       const shown = text();
-      expect(shown).toContain("Show a QR code");
+      expect(shown).toContain("Scan with the iPhone");
       expect(shown).toContain("Scan QR code");
+      // The Settings page opened on Type a code, not on the choice: no Back,
+      // only the way across.
+      expect(shown).toContain("No camera? Type a code");
+      expect(shown).not.toContain("ws-pair-back");
       expect(shown).toContain("Whose iPhone is this?");
       expect(shown).toContain("Choose a person");
       expect(shown).toContain(">Jesse (you) · Admin</option>");
@@ -752,7 +757,7 @@ describe("Home's Pair a device dialog card", () => {
   const offers = (sent: Record<string, unknown>[]) => sent.filter((m) => String(m.type).endsWith("/pair/offer"));
   const cancels = (sent: Record<string, unknown>[]) => sent.filter((m) => String(m.type).endsWith("/pair/offer_cancel"));
   type Card = PairInside & {
-    open(hass: HassLike, start?: { mode?: "code" | "qr"; showQr?: boolean }): void;
+    open(hass: HassLike, start?: { mode?: "code" | "qr" | "choose"; showQr?: boolean }): void;
     close(): void;
     render(options?: { bare?: boolean }): unknown;
   };
@@ -768,7 +773,7 @@ describe("Home's Pair a device dialog card", () => {
     const shown = flatten(card.render({ bare: true }));
     expect(shown).toContain(`aria-label="QR code for pairing an iPhone"`);
     expect(shown).not.toContain("sec-h");
-    expect(shown.indexOf("Show a QR code")).toBeLessThan(shown.indexOf("Type a code"));
+    expect(shown).toContain("No camera? Type a code");
     card.close();
     expect(cancels(ha.sent)).toHaveLength(1);
   });
@@ -812,6 +817,92 @@ describe("Home's Pair a device dialog card", () => {
     await vi.waitFor(() => expect(card.offer.open).toBeDefined());
     expect(card.focusCode).toBe(false);
     card.setMode("code");
+    expect(card.focusCode).toBe(true);
+    card.close();
+  });
+
+  type Chooser = Card & {
+    focusCode: boolean; choosing: boolean; mode: "code" | "qr"; subtitle: string;
+    choose(device: "watch" | "iphone", mode?: "code" | "qr"): void;
+    backToChoice(): void;
+    notThisOne(): void;
+  };
+
+  it("asks what is being paired first, and makes nothing until it is told", () => {
+    const ha = fakeHass("w9");
+    const card = new PairWatchCard(() => undefined) as unknown as Chooser;
+    card.open(ha.hass, { mode: "choose" });
+    expect(card.choosing).toBe(true);
+    const shown = flatten(card.render({ bare: true }));
+    expect(shown).toContain("What are you pairing?");
+    expect(shown).toContain("<b>Apple Watch</b>");
+    expect(shown).toContain("<b>iPhone</b>");
+    expect(shown).not.toContain("ws-pair-code");
+    expect(offers(ha.sent)).toHaveLength(0);
+    expect(card.subtitle).toBe("A watch or an iPhone, to this Home Assistant");
+    card.close();
+  });
+
+  it("opens Type a code for a watch, with the cursor in the box and Back to the choice", () => {
+    const ha = fakeHass("w9");
+    const card = new PairWatchCard(() => undefined) as unknown as Chooser;
+    card.open(ha.hass, { mode: "choose" });
+    card.choose("watch");
+    expect(card.mode).toBe("code");
+    expect(card.focusCode).toBe(true);
+    const shown = flatten(card.render({ bare: true }));
+    expect(shown).toContain("Type the watch's code");
+    expect(shown).toContain("ws-pair-code");
+    expect(shown).toContain("ws-pair-back");
+    expect(shown).toContain("Pairing an iPhone? Show a QR code");
+    expect(offers(ha.sent)).toHaveLength(0);
+    card.backToChoice();
+    expect(card.choosing).toBe(true);
+    card.close();
+  });
+
+  it("opens the QR code for an iPhone, made at once, and withdraws it on Back", async () => {
+    const ha = fakeHass("w9");
+    const card = new PairWatchCard(() => undefined) as unknown as Chooser;
+    card.open(ha.hass, { mode: "choose" });
+    card.choose("iphone");
+    await vi.waitFor(() => expect(card.offer.open).toBeDefined());
+    expect(card.subtitle).toBe("iPhone, by a QR code");
+    expect(flatten(card.render({ bare: true }))).toContain("No camera? Type a code");
+    card.backToChoice();
+    expect(cancels(ha.sent)).toHaveLength(1);
+    expect(card.offer.open).toBeUndefined();
+    expect(card.choosing).toBe(true);
+    card.close();
+  });
+
+  it("goes from the QR code to an iPhone's code, withdrawing the code", async () => {
+    const ha = fakeHass("w9");
+    const card = new PairWatchCard(() => undefined) as unknown as Chooser;
+    card.open(ha.hass, { mode: "choose" });
+    card.choose("iphone");
+    await vi.waitFor(() => expect(card.offer.open).toBeDefined());
+    card.choose("iphone", "code");
+    expect(card.mode).toBe("code");
+    expect(cancels(ha.sent)).toHaveLength(1);
+    expect(flatten(card.render({ bare: true }))).toContain("Type the iPhone's code");
+    card.close();
+  });
+
+  it("asks Is this your watch?, and Not this one clears the code for another", async () => {
+    const ha = fakeHass("w9");
+    const card = new PairWatchCard(() => undefined) as unknown as Chooser;
+    card.open(ha.hass, { mode: "choose" });
+    card.choose("watch");
+    card.setPairCode("ABC234");
+    await card.lookUpPair();
+    expect(card.pair.found).toBeDefined();
+    const shown = flatten(card.render({ bare: true }));
+    expect(shown).toContain("Is this your watch?");
+    expect(shown).toContain(">Pair this watch</button>");
+    expect(shown).not.toContain("ws-pair-code");
+    card.notThisOne();
+    expect(card.pair.code).toBe("");
     expect(card.focusCode).toBe(true);
     card.close();
   });

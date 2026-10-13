@@ -255,8 +255,8 @@ describe("Home's Pair a device dialog", () => {
   });
 
   it("draws the Settings page's own pairing card, starting afresh on each opening", () => {
-    expect(SOURCE).toContain(`import { PairWatchCard } from "./watch-pair-view.js";`);
-    expect(method("  private openPairDialog() {")).toContain(`this.homePair.open(this.hass, { mode: "qr", showQr: true });`);
+    expect(SOURCE).toContain(`import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";`);
+    expect(method("  private openPairDialog() {")).toContain(`this.homePair.open(this.hass, { mode: "choose" });`);
     expect(method("  private closePairDialog() {")).toContain("this.homePair.close();");
     const dialog = method("  private renderPairDialog() {");
     expect(dialog).toContain(`<dialog class="xf pair-dialog"`);
@@ -272,7 +272,29 @@ describe("Home's Pair a device dialog", () => {
     expect(made).toContain(`if (kind === "watch") this.pickWatch(watchId);`);
   });
 
-  it("swaps the dialog for the new device's sheet, saying Paired in green", () => {
+  it("keeps a watch just paired in the dialog, saying what next, until it closes", () => {
+    const at = SOURCE.indexOf("private homePair = new PairWatchCard(");
+    const made = SOURCE.slice(at, SOURCE.indexOf("});", at));
+    const watch = made.indexOf(`if (kind === "watch") {\n      this.pairNext = watchId;\n      return;\n    }`);
+    expect(watch).toBeGreaterThan(made.indexOf("if (stale() || !this.pairOpen"));
+    expect(watch).toBeLessThan(made.indexOf("this.closePairDialog();"));
+    expect(method("  private openPairDialog() {")).toContain("this.pairNext = undefined;");
+    expect(method("  private closePairDialog() {")).toContain("this.pairNext = undefined;");
+    const dialog = method("  private renderPairDialog() {");
+    expect(dialog).toContain("this.renderPairNextBody(this.pairNext)");
+    expect(dialog).toContain("<span>${this.homePair.subtitle}</span>");
+    const next = method("  private renderPairNextBody(watchId: string) {");
+    // New page: the Pages screen on this watch, the way the sheet's tabs go.
+    expect(next).toContain("const path = watchScreenPath(WATCH_SCREENS[0]!, watchId);");
+    expect(next).toContain("this.pickWatch(watchId);\n        this.goTo(path);");
+    expect(next).toContain("this.goTo(COMPLICATIONS_PATH);");
+    expect(next).toContain(`this.homePair.open(this.hass, { mode: "choose" });`);
+    // The sync word is Home's own row, which Home keeps current.
+    expect(next).toContain("homeDeviceRows(this.homeDevices(), this.watchAppSyncs)");
+    expect(next).toContain("status: pairNextStatus(row),");
+  });
+
+  it("swaps the dialog for a new iPhone's sheet, saying Paired in green", () => {
     const at = SOURCE.indexOf("private homePair = new PairWatchCard(");
     const made = SOURCE.slice(at, SOURCE.indexOf("});", at));
     expect(made).toContain("if (stale() || !this.pairOpen || this.ownerOf(watchId) === undefined) return;");
