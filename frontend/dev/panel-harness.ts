@@ -165,7 +165,7 @@ try {
 const panel = document.createElement("wrist-assistant-panel") as HTMLElement & { hass: HassLike; narrow: boolean };
 panel.hass = hass;
 panel.narrow = false;
-if (EMPTY || NEW) {
+{
   // Home Assistant hands the panel its route and a new one on every move. The
   // harness does the same from the address, so the tabs and links work.
   const prefix = location.pathname.replace(/\.html.*$/, ".html");

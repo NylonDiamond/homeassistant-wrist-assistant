@@ -4814,10 +4814,23 @@ function refreshBudgetHint(): TemplateResult {
 }
 
 /**
+ * The one amber line under the Auto refresh row: how many of the daily
+ * redraws this timer spends. The reasons sit behind its Why? button.
+ */
+export function timedRefreshBudgetLine(minutes: number): string {
+  const perDay = Math.round((24 * 60) / minutes);
+  return `Uses about ${perDay} of the ${REDRAW_BUDGET} daily redraws.`;
+}
+
+/**
  * The warning under the Auto refresh timer row once a timer is picked. Every timed
  * refresh spends one of the complication's daily redraws, so it says how many
  * this choice spends and points at the free alternative: a tap, for the reader
  * who wants the value at one moment rather than all day.
+ *
+ * One short amber line, with a Why? button that opens the full reasons in
+ * plain muted text. The paragraph was the whole warning once, and five lines
+ * of amber under one menu read as an error rather than as a cost.
  */
 function timedRefreshBudgetHint(minutes: number): TemplateResult {
   const perDay = Math.round((24 * 60) / minutes);
@@ -4827,11 +4840,15 @@ function timedRefreshBudgetHint(minutes: number): TemplateResult {
     : perDay >= 40
       ? `${every} is ${perDay} a day, which can use up the whole budget.`
       : `${every} is ${perDay} a day, which fits, but leaves fewer for a Refresh multiple complications tap.`;
-  return html`<div class="hint keep budget">watchOS gives each complication ${REDRAW_BUDGET}
+  return html`<details class="budget-why">
+    <summary><span class="hint keep budget">${timedRefreshBudgetLine(minutes)}</span><span
+      class="why-btn">Why?</span></summary>
+    <div class="hint keep">watchOS gives each complication ${REDRAW_BUDGET}
     redraws a day, and every timed refresh spends one. ${verdict} When the budget runs out, the
     complication keeps showing old data until watchOS allows more. If you want the value at one
     moment rather than all day, set Tap action to "Refresh this complication" instead: a tap is
-    free and always redraws.</div>`;
+    free and always redraws.</div>
+  </details>`;
 }
 
 /**
