@@ -121,6 +121,8 @@ SHORT_HASH_LENGTH = 16
 PANEL_WRITER = "panel"
 
 ChangeListener = Callable[[int], None]
+# Told the id of a device whose pulled revision moved (`mark_delivered`).
+DeliveryListener = Callable[[str], None]
 
 
 class HTTPActionsStoreError(Exception):
@@ -234,6 +236,7 @@ class HTTPActionsStore:
         self._save_pending = False
         self._closed = False
         self._listeners: list[ChangeListener] = []
+        self._delivery_listeners: list[DeliveryListener] = []
         # (revision, public list, its hash), made on first ask per revision.
         self._public: tuple[int, dict[str, Any], str] | None = None
         # Every new revision is above this. 0 until a load finds the file: a
@@ -306,6 +309,19 @@ class HTTPActionsStore:
         def _remove() -> None:
             if listener in self._listeners:
                 self._listeners.remove(listener)
+
+        return _remove
+
+    @callback
+    def async_add_delivery_listener(self, listener: DeliveryListener) -> Callable[[], None]:
+        """Call ``listener(owner_id)`` when a device's pulled revision moves.
+        Apart from ``async_add_listener``, which wakes every watch: only the
+        panel's Home listens here (``watch_config/subscribe_delivery``)."""
+        self._delivery_listeners.append(listener)
+
+        def _remove() -> None:
+            if listener in self._delivery_listeners:
+                self._delivery_listeners.remove(listener)
 
         return _remove
 
@@ -478,6 +494,11 @@ class HTTPActionsStore:
             return
         record.delivered[owner_id] = revision
         self._schedule_save()
+        for listener in list(self._delivery_listeners):
+            try:
+                listener(owner_id)
+            except Exception:
+                _LOGGER.exception("HTTP action delivery listener failed")
 
     def forget(self, owner_id: str) -> bool:
         """Drop one device's hand-over and delivery marks, as a device

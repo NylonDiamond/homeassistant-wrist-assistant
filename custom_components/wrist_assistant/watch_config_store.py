@@ -108,9 +108,14 @@ device or panel, a panel create and a restore included; revision 0 for each
 kind a forget removed; and for a move, the target's resulting revisions and
 revision 0 for each of the source's kinds. Delivery is not a change, and
 neither is an unreadable report: a signed get that only moves
-``delivered_revision`` or ``rejected_revision`` tells nobody. This is what the
-phone's live line (``watch_config/subscribe`` in ``watch_config_ws.py``) and
-the watch's delta wake ride on.
+``delivered_revision`` or ``rejected_revision`` tells none of them. This is
+what the phone's live line (``watch_config/subscribe`` in
+``watch_config_ws.py``) and the watch's delta wake ride on.
+
+Deliveries and reports have listeners of their own
+(:meth:`WatchConfigStore.async_add_delivery_listener`), heard only by the panel's Home
+(``watch_config/subscribe_delivery``), so the watch is never woken by its own
+pick up.
 """
 
 from __future__ import annotations
@@ -1039,6 +1044,21 @@ class WatchConfigChange:
 
 
 ChangeListener = Callable[[WatchConfigChange], None]
+
+
+@dataclass(frozen=True)
+class WatchConfigDelivery:
+    """What a delivery listener receives: what a device holds of one owner's
+    ``kind`` moved, by a delivery or an unreadable report. No revision
+    travels: the panel reads where every kind stands from its summary."""
+
+    owner_watch_id: str
+    kind: str
+
+
+DeliveryListener = Callable[[WatchConfigDelivery], None]
+
+
 # Whether an owner id has a pair in the secret store: the one question the
 # panel's create path asks (see WatchConfigStore.panel_save).
 PairedCheck = Callable[[str], bool]
@@ -1058,6 +1078,9 @@ class WatchConfigStore:
         self._hass = hass
         self._is_paired = is_paired
         self._listeners: list[ChangeListener] = []
+        # Deliveries and unreadable reports, apart from the change listeners
+        # (see the module docstring).
+        self._delivery_listeners: list[DeliveryListener] = []
         # owner_watch_id → kind → record
         self._records: dict[str, dict[str, WatchConfigRecord]] = {}
         # One Store per owner, kept for the life of this instance so a forget
@@ -1287,6 +1310,29 @@ class WatchConfigStore:
                 self._listeners.remove(listener)
 
         return _remove
+
+    @callback
+    def async_add_delivery_listener(self, listener: DeliveryListener) -> Callable[[], None]:
+        """Hear every delivery and unreadable report that moved what a device
+        holds. Kept apart from ``async_add_listener`` on purpose: the watch's
+        delta wake rides on those, and a delivery heard there would wake the
+        watch that was just delivered to. Only the panel's Home listens here
+        (``watch_config/subscribe_delivery``)."""
+        self._delivery_listeners.append(listener)
+
+        def _remove() -> None:
+            if listener in self._delivery_listeners:
+                self._delivery_listeners.remove(listener)
+
+        return _remove
+
+    def _notify_delivery(self, owner_watch_id: str, kind: str) -> None:
+        delivery = WatchConfigDelivery(owner_watch_id, kind)
+        for listener in list(self._delivery_listeners):
+            try:
+                listener(delivery)
+            except Exception:
+                _LOGGER.exception("Watch config delivery listener failed")
 
     def _notify(self, owner_watch_id: str, kind: str, revision: int) -> None:
         """Tell every listener that ``kind`` of the owner is at ``revision``.
@@ -1729,6 +1775,7 @@ class WatchConfigStore:
         if record is None or not record.mark_delivered(revision, confirmed=confirmed):
             return False
         self._schedule_owner_save(owner_watch_id)
+        self._notify_delivery(owner_watch_id, kind)
         return True
 
     def report_unreadable(
@@ -1748,14 +1795,16 @@ class WatchConfigStore:
         the device could not read) and changes nothing. Since delivery never
         runs past the stored revision, that also means a report about a
         revision older than one already delivered never flags anything. Saves
-        only when the value moves. Tells no listener: the revision did not
-        change.
+        only when the value moves. Tells no change listener, since the
+        revision did not change; a report that moved is told to the delivery
+        feed.
         """
         record = self._records.get(owner_watch_id, {}).get(kind)
         if record is None or revision != record.revision:
             return False
         if record.mark_rejected(reject_reason(reason)):
             self._schedule_owner_save(owner_watch_id)
+            self._notify_delivery(owner_watch_id, kind)
         return True
 
     @callback

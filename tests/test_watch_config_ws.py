@@ -910,6 +910,130 @@ def test_subscribe_lets_an_admin_follow_any_watch(env) -> None:
     assert _subscribe_as(env, ROOT, "no-such-watch").errors == []
 
 
+# ── subscribe_delivery (Home's live line) ────────────────────────────────
+
+
+class _Actions:
+    """The HTTP action library's one hook here: its delivery listeners."""
+
+    def __init__(self) -> None:
+        self.listeners: list[Any] = []
+
+    def async_add_delivery_listener(self, listener: Any) -> Any:
+        self.listeners.append(listener)
+        return lambda: self.listeners.remove(listener)
+
+    def deliver(self, owner: str) -> None:
+        for listener in list(self.listeners):
+            listener(owner)
+
+
+def _follow_deliveries(env, user: Any = ROOT) -> _Connection:
+    connection = _Connection()
+    connection.user = user
+    env.ws.ws_watch_config_subscribe_delivery(env.hass, connection, {"id": 1})
+    assert connection.errors == [], connection.errors
+    return connection
+
+
+def test_a_delivery_is_an_event_on_home_s_line_and_not_on_the_phone_s(env) -> None:
+    _phone_upload(env, "behavior", {})
+    _save(env, {"wrapPages": True}, 1)
+    home = _follow_deliveries(env)
+    phone = _subscribe(env)
+    assert home.results[1] is None
+    env.store.mark_delivered(WATCH, "behavior", 2)
+    assert home.events() == [{"owner_watch_id": WATCH, "kind": "behavior"}]
+    assert phone.events() == []
+
+
+def test_a_delivery_that_moves_nothing_is_not_an_event(env) -> None:
+    """The device's own upload already counts as delivered."""
+    _phone_upload(env, "behavior", {})
+    home = _follow_deliveries(env)
+    env.store.mark_delivered(WATCH, "behavior", 1)
+    env.store.mark_delivered(WATCH, "pages", 1)
+    assert home.events() == []
+
+
+def test_a_save_is_not_an_event_on_home_s_line(env) -> None:
+    home = _follow_deliveries(env)
+    _phone_upload(env, "behavior", {})
+    _save(env, {"wrapPages": True}, 1)
+    assert home.events() == []
+
+
+def test_an_unreadable_report_is_an_event_once(env) -> None:
+    _phone_upload(env, "behavior", {})
+    home = _follow_deliveries(env)
+    assert env.store.report_unreadable(WATCH, "behavior", 1) is True
+    assert env.store.report_unreadable(WATCH, "behavior", 1) is True
+    assert home.events() == [{"owner_watch_id": WATCH, "kind": "behavior"}]
+
+
+def test_an_http_actions_pull_is_an_event(env) -> None:
+    actions = _Actions()
+    env.hass.data[DOMAIN].http_actions_store = actions
+    home = _follow_deliveries(env)
+    actions.deliver(WATCH)
+    assert home.events() == [{"owner_watch_id": WATCH, "kind": "http_actions"}]
+
+
+def test_unsubscribing_from_deliveries_stops_both_kinds(env) -> None:
+    actions = _Actions()
+    env.hass.data[DOMAIN].http_actions_store = actions
+    _phone_upload(env, "behavior", {})
+    home = _follow_deliveries(env)
+    home.subscriptions.pop(1)()
+    env.store.mark_delivered(WATCH, "behavior", 1)
+    actions.deliver(WATCH)
+    assert home.events() == []
+
+
+def test_home_s_line_hears_the_new_store_after_a_reload(env) -> None:
+    """A device's own upload counts as delivered, so the panel saves a
+    revision for the device to pick up."""
+    _phone_upload(env, "behavior", {})
+    home = _follow_deliveries(env)
+    relay = env.ws.listener_relay(env.hass, env.ws.WATCH_CONFIG_DELIVERY)
+    old = _reload(env)
+    relay.release()
+    relay.follow(env.store)
+    revision = _save(env, {"wrapPages": True}, 1).results[1]["revision"]
+    old.put(WATCH, "behavior", {}, document_hash=PHONE_HASH, base_revision=1, updated_by="t")
+    old.mark_delivered(WATCH, "behavior", 2)
+    assert home.events() == []
+    env.store.mark_delivered(WATCH, "behavior", revision)
+    assert home.events() == [{"owner_watch_id": WATCH, "kind": "behavior"}]
+
+
+def test_home_s_line_tells_a_non_admin_only_about_their_own_watch(env) -> None:
+    env.hass.data[DOMAIN].widget_secret_store = _Secrets({WATCH: "alice", "watch-B": "bob"})
+    _phone_upload(env, "behavior", {})
+    env.store.put(
+        "watch-B", "behavior", {}, document_hash=PHONE_HASH, base_revision=0, updated_by="watch-B"
+    )
+    _save(env, {"wrapPages": True}, 1)
+    _save(env, {"wrapPages": True}, 1, owner="watch-B")
+    alice = _follow_deliveries(env, ALICE)
+    admin = _follow_deliveries(env, ROOT)
+    env.store.mark_delivered(WATCH, "behavior", 2)
+    env.store.mark_delivered("watch-B", "behavior", 2)
+    assert alice.events() == [{"owner_watch_id": WATCH, "kind": "behavior"}]
+    assert admin.events() == [
+        {"owner_watch_id": WATCH, "kind": "behavior"},
+        {"owner_watch_id": "watch-B", "kind": "behavior"},
+    ]
+
+
+def test_home_s_line_answers_unavailable_before_the_integration_is_ready(env) -> None:
+    env.hass.data = {}
+    connection = _Connection()
+    env.ws.ws_watch_config_subscribe_delivery(env.hass, connection, {"id": 1})
+    assert connection.errors == [(1, "unavailable", "integration not ready")]
+    assert connection.subscriptions == {}
+
+
 # ── step 3e: the catalog (the phone writes it, the panel reads it) ───────
 
 

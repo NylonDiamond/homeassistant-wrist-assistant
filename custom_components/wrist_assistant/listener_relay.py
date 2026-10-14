@@ -31,6 +31,16 @@ _HASS_KEY = "wrist_assistant_listener_relays"
 # The relay of each store that live subscriptions follow.
 COMPLICATIONS = "complications"
 WATCH_CONFIG = "watch_config"
+# The deliveries of the watch config store and the HTTP action library,
+# which are not changes and have listeners of their own.
+WATCH_CONFIG_DELIVERY = "watch_config_delivery"
+HTTP_ACTIONS_DELIVERY = "http_actions_delivery"
+
+# The store method each relay adds its listener with.
+_ADD_METHOD = {
+    WATCH_CONFIG_DELIVERY: "async_add_delivery_listener",
+    HTTP_ACTIONS_DELIVERY: "async_add_delivery_listener",
+}
 
 _ChangeT = TypeVar("_ChangeT")
 
@@ -45,9 +55,10 @@ class ListenerRelay(Generic[_ChangeT]):
     """Hands each change of the store it follows to every listener added
     here, whichever store instance that is."""
 
-    def __init__(self) -> None:
+    def __init__(self, add_method: str = "async_add_listener") -> None:
         self._listeners: list[Callable[[_ChangeT], None]] = []
-        self._store: _Listenable | None = None
+        self._add_method = add_method
+        self._store: Any = None
         self._detach: Callable[[], None] | None = None
 
     def add_listener(
@@ -63,14 +74,14 @@ class ListenerRelay(Generic[_ChangeT]):
 
         return _remove
 
-    def follow(self, store: _Listenable) -> None:
+    def follow(self, store: _Listenable | Any) -> None:
         """Listen to ``store`` from now on, and to no store before it. Calling
         it again with the same store does nothing."""
         if store is self._store:
             return
         self.release()
         self._store = store
-        self._detach = store.async_add_listener(self._dispatch)
+        self._detach = getattr(store, self._add_method)(self._dispatch)
 
     def release(self) -> None:
         """Stop listening to the store followed until now (the entry is
@@ -88,10 +99,10 @@ class ListenerRelay(Generic[_ChangeT]):
 
 
 def listener_relay(hass: Any, name: str) -> ListenerRelay[Any]:
-    """The relay ``name`` (``COMPLICATIONS`` or ``WATCH_CONFIG``), made on
-    first use."""
+    """The relay ``name`` (``COMPLICATIONS``, ``WATCH_CONFIG`` or one of the
+    two delivery relays), made on first use."""
     relays: dict[str, ListenerRelay[Any]] = hass.data.setdefault(_HASS_KEY, {})
     relay = relays.get(name)
     if relay is None:
-        relay = relays[name] = ListenerRelay()
+        relay = relays[name] = ListenerRelay(_ADD_METHOD.get(name, "async_add_listener"))
     return relay

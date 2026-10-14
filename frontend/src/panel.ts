@@ -44,6 +44,7 @@ import {
   saveCardPreview,
   saveRecord,
   subscribeChanges,
+  subscribeDeliveries,
 } from "./ha-api.js";
 import {
   type CustomComplicationConfig,
@@ -6347,6 +6348,8 @@ export class WristAssistantPanel extends LitElement {
     this.unsubscribe = undefined;
     void this.homeUnsubscribe?.().catch(() => undefined);
     this.homeUnsubscribe = undefined;
+    void this.homeDeliveriesUnsubscribe?.().catch(() => undefined);
+    this.homeDeliveriesUnsubscribe = undefined;
     if (this.ownerTokensTimer !== undefined) window.clearTimeout(this.ownerTokensTimer);
     if (this.templateTimer) window.clearInterval(this.templateTimer);
     if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
@@ -11563,11 +11566,9 @@ export class WristAssistantPanel extends LitElement {
 
   /** Read again what each device has picked up: its complication tokens
    * for the pill, and on Home where each watch's watch app records have got
-   * to. Home Assistant tells the panel when a watch takes its complications,
-   * but never when it takes its pages, menus or settings (a delivery is not
-   * a change, so no listener hears it), so Home reads those on every
-   * complication change, on the status clock, and when the tab comes back
-   * into view, the moment someone returns from syncing their watch. */
+   * to. Asked on every complication change and every delivery
+   * (`listenToHome`), and, for an integration that cannot say deliveries,
+   * on the status clock and when the tab comes back into view. */
   private async refreshHomeSync() {
     await this.refreshOwnerTokens();
     if (tabOfRoute(this.route) === "home") await this.loadWatchAppSync(true);
@@ -11582,17 +11583,27 @@ export class WristAssistantPanel extends LitElement {
    * several commits in a row. */
   private ownerTokensTimer?: number;
   private homeUnsubscribe?: () => Promise<void>;
+  private homeDeliveriesUnsubscribe?: () => Promise<void>;
   private async listenToHome() {
+    const soon = () => {
+      if (this.ownerTokensTimer !== undefined) window.clearTimeout(this.ownerTokensTimer);
+      this.ownerTokensTimer = window.setTimeout(() => {
+        this.ownerTokensTimer = undefined;
+        void this.refreshHomeSync();
+      }, 400);
+    };
     try {
-      this.homeUnsubscribe = await subscribeChanges(this.hass, undefined, () => {
-        if (this.ownerTokensTimer !== undefined) window.clearTimeout(this.ownerTokensTimer);
-        this.ownerTokensTimer = window.setTimeout(() => {
-          this.ownerTokensTimer = undefined;
-          void this.refreshHomeSync();
-        }, 400);
-      });
+      this.homeUnsubscribe = await subscribeChanges(this.hass, undefined, soon);
     } catch {
       // No live feed: the slow status clock still refreshes the pill.
+    }
+    // A watch picking up its pages, menus or settings, which no change
+    // says: Home turns Synced the moment it happens. An integration without
+    // the command leaves it to the status clock.
+    try {
+      this.homeDeliveriesUnsubscribe = await subscribeDeliveries(this.hass, soon);
+    } catch {
+      // The status clock and the tab's return still read it.
     }
   }
 

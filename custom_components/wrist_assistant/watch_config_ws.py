@@ -58,10 +58,16 @@ from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN, WATCH_CONFIG_PANEL_KINDS
-from .listener_relay import WATCH_CONFIG, listener_relay
+from .listener_relay import (
+    HTTP_ACTIONS_DELIVERY,
+    WATCH_CONFIG,
+    WATCH_CONFIG_DELIVERY,
+    listener_relay,
+)
 from .panel_access import is_admin, may_manage_owner, require_owner
 from .watch_config_store import (
     WatchConfigChange,
+    WatchConfigDelivery,
     WatchConfigStore,
     WatchConfigStoreError,
     short_hash,
@@ -79,6 +85,7 @@ _CMD_HISTORY = f"{DOMAIN}/watch_config/history"
 _CMD_HISTORY_ENTRY = f"{DOMAIN}/watch_config/history_entry"
 _CMD_RESTORE = f"{DOMAIN}/watch_config/restore"
 _CMD_SUBSCRIBE = f"{DOMAIN}/watch_config/subscribe"
+_CMD_SUBSCRIBE_DELIVERY = f"{DOMAIN}/watch_config/subscribe_delivery"
 _CMD_VOICES_GET = f"{DOMAIN}/watch_voices/get"
 
 
@@ -140,6 +147,7 @@ def async_register_watch_config_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_watch_config_history_entry)
     websocket_api.async_register_command(hass, ws_watch_config_restore)
     websocket_api.async_register_command(hass, ws_watch_config_subscribe)
+    websocket_api.async_register_command(hass, ws_watch_config_subscribe_delivery)
     websocket_api.async_register_command(hass, ws_watch_voices_get)
 
 
@@ -482,6 +490,72 @@ def ws_watch_config_restore(
         record.revision,
     )
     connection.send_result(msg["id"], {"revision": record.revision})
+
+
+@websocket_api.websocket_command({vol.Required("type"): _CMD_SUBSCRIBE_DELIVERY})
+@callback
+def ws_watch_config_subscribe_delivery(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Tell the panel's Home the moment a device picks up what Home waits on.
+
+    Result: null
+    Event:  {"owner_watch_id": owner, "kind": kind}
+
+    One event each time what a device holds of a watch config record moves
+    (a delivery, or an unreadable report: ``mark_delivered`` and
+    ``report_unreadable``), and each time a device's pulled revision of the
+    HTTP action library moves (kind ``http_actions``). Home answers with its
+    ``watch_config/summary``, which says where every kind stands, so only
+    the owner and the kind travel here.
+
+    Kept off ``watch_config/subscribe`` and the store's change listeners on
+    purpose: the watch's delta wake rides on those, and a delivery heard
+    there would wake the watch that was just delivered to.
+
+    An administrator hears about every device. Anyone else hears only about
+    the devices they may manage (``may_manage_owner``), asked on each event
+    as ``watch_config/summary`` asks, so a device paired to them later is
+    heard too.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    admin = is_admin(connection)
+
+    def _send(owner: str, kind: str) -> None:
+        if not admin and not may_manage_owner(hass, connection, owner):
+            return
+        connection.send_message(
+            websocket_api.event_message(msg["id"], {"owner_watch_id": owner, "kind": kind})
+        )
+
+    @callback
+    def _on_delivery(delivery: WatchConfigDelivery) -> None:
+        _send(delivery.owner_watch_id, delivery.kind)
+
+    @callback
+    def _on_http_actions(owner: str) -> None:
+        _send(owner, "http_actions")
+
+    # Through the relays, as for watch_config/subscribe: a reload replaces
+    # the stores but keeps this subscription open.
+    config_relay = listener_relay(hass, WATCH_CONFIG_DELIVERY)
+    config_relay.follow(store)
+    removers = [config_relay.add_listener(_on_delivery)]
+    http_actions = getattr(hass.data.get(DOMAIN), "http_actions_store", None)
+    actions_relay = listener_relay(hass, HTTP_ACTIONS_DELIVERY)
+    if http_actions is not None:
+        actions_relay.follow(http_actions)
+    removers.append(actions_relay.add_listener(_on_http_actions))
+
+    def _unsubscribe() -> None:
+        for remove in removers:
+            remove()
+
+    connection.subscriptions[msg["id"]] = _unsubscribe
+    connection.send_result(msg["id"], None)
 
 
 @websocket_api.websocket_command(

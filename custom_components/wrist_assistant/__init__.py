@@ -78,7 +78,13 @@ from .client_certificate_ws import async_register_client_certificate_commands
 from .http_actions_runner import HTTPActionRunner
 from .http_actions_store import HTTPActionsStore
 from .http_actions_ws import async_register_http_actions_commands
-from .listener_relay import COMPLICATIONS, WATCH_CONFIG, listener_relay
+from .listener_relay import (
+    COMPLICATIONS,
+    HTTP_ACTIONS_DELIVERY,
+    WATCH_CONFIG,
+    WATCH_CONFIG_DELIVERY,
+    listener_relay,
+)
 from .page_images_store import PageImagesStore
 from .page_images_ws import async_register_page_images_commands
 from .parts_store import PartsStore
@@ -1057,6 +1063,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # them at this entry's stores (see listener_relay.py).
     listener_relay(hass, COMPLICATIONS).follow(complication_store)
     listener_relay(hass, WATCH_CONFIG).follow(watch_config_store)
+    listener_relay(hass, WATCH_CONFIG_DELIVERY).follow(watch_config_store)
+    listener_relay(hass, HTTP_ACTIONS_DELIVERY).follow(http_actions_store)
 
     if not hass.data.get(f"{DOMAIN}_views_registered"):
         # The panel is open to every signed-in user; who may do what is
@@ -1367,6 +1375,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
             # follow the stores of the next setup.
             listener_relay(hass, COMPLICATIONS).release()
             listener_relay(hass, WATCH_CONFIG).release()
+            listener_relay(hass, WATCH_CONFIG_DELIVERY).release()
+            listener_relay(hass, HTTP_ACTIONS_DELIVERY).release()
     return unload_ok
 
 

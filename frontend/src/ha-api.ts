@@ -842,6 +842,22 @@ export function subscribeWatchConfig(
   });
 }
 
+/** What Home's live line says when a device picks up what Home waits on:
+ * whose, and which kind (a watch config kind, or `http_actions`). */
+export interface DeliveryEvent {
+  owner_watch_id: string;
+  kind: string;
+}
+
+/** Hear every delivery to every device the caller may manage: a watch
+ * picking up its pages, menus or settings, or a device pulling the HTTP
+ * action library. Deliveries are not changes, so `subscribeWatchConfig`
+ * and `subscribeChanges` never say them. An integration older than this
+ * command refuses it with `unknown_command`. */
+export function subscribeDeliveries(hass: HassLike, callback: (event: DeliveryEvent) => void) {
+  return hass.connection.subscribeMessage<DeliveryEvent>(callback, { type: `${WC}/subscribe_delivery` });
+}
+
 const HA_ACTIONS = "wrist_assistant/http_actions";
 
 /** The home's HTTP action library as the phone writes it: `actions` and

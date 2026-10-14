@@ -109,7 +109,7 @@ _OWNER = {
 # Answer about many owners; a non-admin hears only about their own.
 _FILTERED = {
     _MODULE.name: {"ws_owners"},
-    _WATCH_CONFIG_MODULE.name: {"ws_watch_config_summary"},
+    _WATCH_CONFIG_MODULE.name: {"ws_watch_config_summary", "ws_watch_config_subscribe_delivery"},
 }
 
 # Open to every signed-in user, each one a decision made on purpose:
