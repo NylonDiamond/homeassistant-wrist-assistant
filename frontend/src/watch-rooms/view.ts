@@ -389,7 +389,7 @@ function renderStage(host: RoomsViewHost, room: RoomListEntry | undefined): Temp
             <span class="rm-step-l">2 · Watch opens</span>
             <select class="rm-stage-select" aria-label=${`Page to open in ${room.name}`} ?disabled=${host.busy}
               @change=${(e: Event) => { if (!host.busy) host.write(roomPageWrites(host.document, room.key, (e.target as HTMLSelectElement).value)); }}>
-              ${pageOptions(host.pages, value, [["", "No page"]]).map(([v, label]) => html`<option value=${v} ?selected=${v === value}>${label}</option>`)}
+              ${pageOptions(host.pages, value, [["", "No page"]]).map(([v, label]) => html`<option value=${v} .selected=${v === value}>${label}</option>`)}
             </select>
             ${switching ? nothing : html`<span class="rm-step-note">${host.home === true ? "Switch automatically is off" : "Switch pages by room is off"}</span>
               <button type="button" class="rm-stage-btn" ?disabled=${host.busy} @click=${() => {
