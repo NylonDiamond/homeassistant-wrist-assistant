@@ -332,3 +332,22 @@ describe("Home's Pair a device dialog", () => {
     expect(detail).toContain(`\${this.devicePaired === ownerId ? html\`<div class="dev-paired" role="status">`);
   });
 });
+
+describe("the doors to a device's complications", () => {
+  it("opens a watch's complications on the Watch app's Complications screen, and a phone's on the list", () => {
+    const detail = method("  private renderHomeDetail(");
+    const go = between(detail, "const go = (t: DeviceSheetTab) => {", "\n    };");
+    expect(go).toContain(`t.kind === "list" && t.filter === "all" && row.kind === "watch"`);
+    expect(go).toContain(`WATCH_SCREENS.find((s) => s.id === "watch-complications")`);
+    expect(go).toContain("this.goTo(watchScreenPath(screen, ownerId));");
+    expect(go).toContain(`if (t.kind === "list") { openList(t.filter); return; }`);
+  });
+
+  it("opens the Complications tab on every complication, closing a design with nothing unsaved", () => {
+    expect(method("  private openTab(tab: PanelTab) {")).toContain(`if (tab === "complications") this.showAllComplications();`);
+    const all = method("  private showAllComplications() {");
+    expect(all).toContain("this.setTabMemory(pickTab(this.tabMemory, ALL_DEVICES));");
+    expect(all).toContain(`this.pickerFilter = "all";`);
+    expect(all).toContain("if (d !== undefined && !d.dirty && d.baseRevision !== null) void this.closeToList();");
+  });
+});

@@ -10969,10 +10969,26 @@ export class WristAssistantPanel extends LitElement {
 
   /** A tab pressed in the bar. The tab already on screen stays as it is, so
    * pressing Watch app on Menus does not throw the person back to Pages. The
-   * Watch app opens on Pages for the shared watch. */
+   * Watch app opens on Pages for the shared watch. Complications always
+   * opens the whole list (`showAllComplications`), even from inside it. */
   private openTab(tab: PanelTab) {
+    if (tab === "complications") this.showAllComplications();
     if (tab === tabOfRoute(this.route)) return;
     this.goTo(tabPath(tab, this.sharedWatch));
+  }
+
+  /**
+   * The Complications tab as its button promises: every complication, on the
+   * All device tab with no shape picked. A device's own complications are its
+   * own screen now (the Watch app's Complications), so the tab never opens on
+   * one device. A design left open with nothing unsaved closes to the list;
+   * one with unsaved work stays open, so nothing is lost by a press.
+   */
+  private showAllComplications() {
+    this.setTabMemory(pickTab(this.tabMemory, ALL_DEVICES));
+    this.pickerFilter = "all";
+    const d = this.draft;
+    if (d !== undefined && !d.dirty && d.baseRevision !== null) void this.closeToList();
   }
 
   // ── the Watch app's shared watch ──────────────────────────────────────
@@ -19787,7 +19803,17 @@ export class WristAssistantPanel extends LitElement {
     };
     // Open one of the device's pages: its complications on the
     // Complications tab, or a watch screen on this watch.
+    // A watch's complications open the Watch app's Complications screen on
+    // this watch; an iPhone's widgets and any device's controls the list.
     const go = (t: DeviceSheetTab) => {
+      if (t.kind === "list" && t.filter === "all" && row.kind === "watch") {
+        const screen = WATCH_SCREENS.find((s) => s.id === "watch-complications");
+        if (screen !== undefined) {
+          this.pickWatch(ownerId);
+          this.goTo(watchScreenPath(screen, ownerId));
+          return;
+        }
+      }
       if (t.kind === "list") { openList(t.filter); return; }
       this.pickWatch(ownerId);
       this.goTo(watchScreenPath(t.screen, ownerId));
