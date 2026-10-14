@@ -12,7 +12,7 @@ import {
   WATCH_SHOW_WHEN_OPERATOR_VALUES,
   watchShowWhenCompares,
   watchShowWhenPasses,
-  watchShowWhenStateSuggestions,
+  watchShowWhenStateChoices,
   watchTileShowWhen,
 } from "../src/watch-pages/show-when.js";
 import {
@@ -78,10 +78,37 @@ describe("the comparison", () => {
       .toEqual({ entityId: "person.a", comparisonOperator: "neq", state: "home" });
   });
 
-  it("suggests the state now first, then the domain's usual ones and the zones", () => {
+  it("offers a person home, away and the zones", () => {
     const s = states(state("person.alex", "Work"), state("zone.work", "0", { friendly_name: "Work" }), state("zone.gym", "0", { friendly_name: "Gym" }));
-    expect(watchShowWhenStateSuggestions("person.alex", s)).toEqual(["Work", "home", "not_home", "Gym", "unavailable"]);
-    expect(watchShowWhenStateSuggestions("binary_sensor.car_plugged_in", {})).toEqual(["on", "off", "unavailable"]);
+    expect(watchShowWhenStateChoices("person.alex", s)).toEqual([
+      { value: "home", label: "Home" },
+      { value: "not_home", label: "Away" },
+      { value: "Work", label: "Work" },
+      { value: "Gym", label: "Gym" },
+    ]);
+  });
+
+  it("names a binary sensor's on and off in its device class's words", () => {
+    const s = states(state("binary_sensor.car_plugged_in", "off", { device_class: "plug" }));
+    expect(watchShowWhenStateChoices("binary_sensor.car_plugged_in", s)).toEqual([
+      { value: "on", label: "Plugged in" },
+      { value: "off", label: "Unplugged" },
+    ]);
+    expect(watchShowWhenStateChoices("binary_sensor.unknown", {})).toEqual([{ value: "on", label: "On" }, { value: "off", label: "Off" }]);
+  });
+
+  it("offers a climate entity's own modes, a select's options and a sensor's reading", () => {
+    const s = states(
+      state("climate.hall", "heat", { hvac_modes: ["off", "heat"] }),
+      state("input_select.mode", "Away", { options: ["Home", "Away"] }),
+      state("sensor.car_battery", "42"),
+      state("sensor.gone", "unavailable"),
+    );
+    expect(watchShowWhenStateChoices("climate.hall", s).map((c) => c.value)).toEqual(["off", "heat"]);
+    expect(watchShowWhenStateChoices("input_select.mode", s).map((c) => c.value)).toEqual(["Home", "Away"]);
+    expect(watchShowWhenStateChoices("sensor.car_battery", s)).toEqual([{ value: "42", label: "42" }]);
+    expect(watchShowWhenStateChoices("sensor.gone", s)).toEqual([]);
+    expect(watchShowWhenStateChoices("", s)).toEqual([]);
   });
 });
 

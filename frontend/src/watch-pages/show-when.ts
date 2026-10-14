@@ -83,35 +83,106 @@ export function watchShowWhenPasses(condition: WatchShowWhen, states: Readonly<R
   return state === undefined ? true : watchShowWhenCompares(condition.comparisonOperator, state, condition.state);
 }
 
-/** States the State box offers for an entity: its own now, the domain's
- * usual ones, a select's options and, for a person or tracker, the zones. */
-export function watchShowWhenStateSuggestions(entityId: string, states: Readonly<Record<string, HassEntityState>>): string[] {
+/** A value the Value row offers: what is stored, and the words shown. */
+export interface WatchShowWhenChoice {
+  value: string;
+  label: string;
+}
+
+/** The states each domain can be in, with Home Assistant's words. */
+const DOMAIN_STATES: Readonly<Record<string, readonly [string, string][]>> = {
+  person: [["home", "Home"], ["not_home", "Away"]],
+  device_tracker: [["home", "Home"], ["not_home", "Away"]],
+  lock: [["locked", "Locked"], ["unlocked", "Unlocked"], ["open", "Open"], ["jammed", "Jammed"]],
+  cover: [["open", "Open"], ["closed", "Closed"], ["opening", "Opening"], ["closing", "Closing"]],
+  alarm_control_panel: [["disarmed", "Disarmed"], ["armed_home", "Armed home"], ["armed_away", "Armed away"], ["armed_night", "Armed night"], ["triggered", "Triggered"]],
+  media_player: [["playing", "Playing"], ["paused", "Paused"], ["idle", "Idle"], ["on", "On"], ["off", "Off"]],
+  vacuum: [["cleaning", "Cleaning"], ["docked", "Docked"], ["returning", "Returning"], ["idle", "Idle"], ["paused", "Paused"], ["error", "Error"]],
+  lawn_mower: [["mowing", "Mowing"], ["docked", "Docked"], ["paused", "Paused"], ["error", "Error"]],
+  sun: [["above_horizon", "Above horizon"], ["below_horizon", "Below horizon"]],
+  climate: [["off", "Off"], ["heat", "Heat"], ["cool", "Cool"], ["heat_cool", "Heat/Cool"], ["auto", "Auto"], ["dry", "Dry"], ["fan_only", "Fan only"]],
+  timer: [["active", "Active"], ["paused", "Paused"], ["idle", "Idle"]],
+  update: [["on", "Update available"], ["off", "Up to date"]],
+};
+
+/** Domains whose states are on and off. */
+const ON_OFF_DOMAINS = new Set([
+  "light", "switch", "fan", "input_boolean", "binary_sensor", "remote", "siren", "automation", "humidifier", "script",
+]);
+
+/** A binary sensor's on and off in its device class's words, as Home
+ * Assistant shows them. */
+const BINARY_CLASS_WORDS: Readonly<Record<string, readonly [string, string]>> = {
+  battery: ["Low", "Normal"],
+  battery_charging: ["Charging", "Not charging"],
+  carbon_monoxide: ["Detected", "Clear"],
+  cold: ["Cold", "Normal"],
+  connectivity: ["Connected", "Disconnected"],
+  door: ["Open", "Closed"],
+  garage_door: ["Open", "Closed"],
+  gas: ["Detected", "Clear"],
+  heat: ["Hot", "Normal"],
+  light: ["Light detected", "No light"],
+  lock: ["Unlocked", "Locked"],
+  moisture: ["Wet", "Dry"],
+  motion: ["Detected", "Clear"],
+  moving: ["Moving", "Not moving"],
+  occupancy: ["Detected", "Clear"],
+  opening: ["Open", "Closed"],
+  plug: ["Plugged in", "Unplugged"],
+  power: ["Power detected", "No power"],
+  presence: ["Home", "Away"],
+  problem: ["Problem", "OK"],
+  running: ["Running", "Not running"],
+  safety: ["Unsafe", "Safe"],
+  smoke: ["Detected", "Clear"],
+  sound: ["Detected", "Clear"],
+  tamper: ["Tampering detected", "Clear"],
+  vibration: ["Detected", "Clear"],
+  window: ["Open", "Closed"],
+};
+
+/** Words for a raw state with none of its own: `not_home` reads "Not home". */
+function stateWords(state: string): string {
+  const words = state.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * The values the Value row offers for an entity, as buttons: the states its
+ * domain can be in, in its device class's words for a binary sensor; a
+ * select's options; for a person or tracker, the zones; and its state now
+ * when that is none of those (a sensor's reading). Empty with no entity.
+ */
+export function watchShowWhenStateChoices(entityId: string, states: Readonly<Record<string, HassEntityState>>): WatchShowWhenChoice[] {
+  if (entityId === "") return [];
   const domain = entityId.split(".")[0] ?? "";
-  const out: string[] = [];
-  const add = (s: unknown) => {
-    if (typeof s === "string" && s !== "" && !out.includes(s)) out.push(s);
-  };
   const live = states[entityId];
-  add(live?.state);
-  const usual: Record<string, string[]> = {
-    person: ["home", "not_home"],
-    device_tracker: ["home", "not_home"],
-    lock: ["locked", "unlocked", "open", "jammed"],
-    cover: ["open", "closed", "opening", "closing"],
-    alarm_control_panel: ["disarmed", "armed_home", "armed_away", "armed_night", "triggered"],
-    media_player: ["playing", "paused", "idle", "off", "on"],
-    climate: ["off", "heat", "cool", "heat_cool", "auto"],
-    vacuum: ["cleaning", "docked", "returning", "idle", "paused"],
-    sun: ["above_horizon", "below_horizon"],
+  const out: WatchShowWhenChoice[] = [];
+  const add = (value: unknown, label?: unknown) => {
+    if (typeof value !== "string" || value === "" || out.some((c) => c.value === value)) return;
+    out.push({ value, label: typeof label === "string" && label !== "" ? label : stateWords(value) });
   };
-  for (const s of usual[domain] ?? ["on", "off"]) add(s);
+  if (ON_OFF_DOMAINS.has(domain)) {
+    const words = domain === "binary_sensor" ? BINARY_CLASS_WORDS[String(live?.attributes.device_class ?? "")] : undefined;
+    add("on", words?.[0] ?? "On");
+    add("off", words?.[1] ?? "Off");
+  }
+  // A climate entity lists its own modes; the table is for one that does not.
+  const modes = domain === "climate" ? live?.attributes.hvac_modes : undefined;
+  if (Array.isArray(modes)) {
+    for (const m of modes) add(m, DOMAIN_STATES.climate!.find(([v]) => v === m)?.[1]);
+  } else {
+    for (const [value, label] of DOMAIN_STATES[domain] ?? []) add(value, label);
+  }
   if (domain === "person" || domain === "device_tracker") {
     for (const [id, s] of Object.entries(states)) {
       if (id.startsWith("zone.") && id !== "zone.home") add(s.attributes.friendly_name);
     }
   }
   const options = live?.attributes.options;
-  if (Array.isArray(options)) for (const o of options) add(o);
-  add("unavailable");
+  if (Array.isArray(options)) for (const o of options) add(o, o);
+  // A reading such as 42 % or a zone name the tracker reports.
+  if (live !== undefined && live.state !== "unavailable" && live.state !== "unknown") add(live.state, live.state);
   return out;
 }

@@ -86,7 +86,7 @@ import {
   type WatchShowWhenOperator,
   WATCH_SHOW_WHEN_OPERATORS,
   watchShowWhenPasses,
-  watchShowWhenStateSuggestions,
+  watchShowWhenStateChoices,
   watchTileShowWhen,
 } from "./show-when.js";
 import { type WatchPageTile, type WatchPagesDocument, WATCH_REMOVED_TILE_TEXT, tileEntityId, tileKind, watchPageId, watchPageName, watchPagesOf } from "./model.js";
@@ -1321,13 +1321,23 @@ function renderShowWhen(host: TileSettingsHost, pendingKey: string): TemplateRes
       return commit(host, "showWhen", (d) => setWatchTileShowWhenEntity(d, host.pageId, host.tileId, null));
     }
     if (nextId === id) return;
-    commit(host, "showWhen", (d) => setWatchTileShowWhenEntity(d, host.pageId, host.tileId, nextId, states[nextId]?.state ?? ""), {
+    // Starts on the first value offered (Home, Plugged in, On), else its state now.
+    const first = watchShowWhenStateChoices(nextId, states)[0]?.value ?? states[nextId]?.state ?? "";
+    commit(host, "showWhen", (d) => setWatchTileShowWhenEntity(d, host.pageId, host.tileId, nextId, first), {
       reason: /^[a-z0-9_]+\.[a-z0-9_]+$/i.test(nextId) ? undefined : "Pick an entity, or type a full entity id such as person.alex.",
     });
   };
   const unreadable = stored !== undefined && c === undefined;
-  const listId = `ts-show-when-${host.tileId}`;
   const state = typed(host, "showWhenState") ?? c?.state ?? "";
+  // Above and below compare numbers, so only a number is offered there.
+  const numeric = c?.comparisonOperator === "gt" || c?.comparisonOperator === "lt";
+  const choices = watchShowWhenStateChoices(id, states).filter((ch) => !numeric || /^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(ch.value));
+  const chosen = choices.find((ch) => c !== undefined && ch.value.toLowerCase() === c.state.toLowerCase());
+  const setValue = (value: string) => {
+    host.uiState.delete(typedKey(host, "showWhenState"));
+    commit(host, "showWhenState", (d) => setWatchTileShowWhenState(d, host.pageId, host.tileId, value));
+    host.requestUpdate();
+  };
   const passes = c === undefined || watchShowWhenPasses(c, states);
   // Older documents can hold both keys; the watch then needs both to pass.
   const alsoWhileOn = host.tile.hideWhenInactive === true;
@@ -1349,11 +1359,17 @@ function renderShowWhen(host: TileSettingsHost, pendingKey: string): TemplateRes
         <div class="ts-stack">${segField<WatchShowWhenOperator>("State", c.comparisonOperator, WATCH_SHOW_WHEN_OPERATORS as [WatchShowWhenOperator, string][], (v) =>
           commit(host, "showWhenOperator", (d) => setWatchTileShowWhenOperator(d, host.pageId, host.tileId, v)))}</div>
         ${typingField(host, "showWhenState", textField("Value", state, (v) =>
-          commit(host, "showWhenState", (d) => setWatchTileShowWhenState(d, host.pageId, host.tileId, v), { typing: true }), { list: listId, mono: true }))}
-        <datalist id=${listId}>${watchShowWhenStateSuggestions(id, states).map((s) => html`<option value=${s}></option>`)}</datalist>
+          commit(host, "showWhenState", (d) => setWatchTileShowWhenState(d, host.pageId, host.tileId, v), { typing: true }), { mono: true, placeholder: numeric ? "A number" : "Pick below or type a state" }))}
+        ${choices.length === 0
+          ? nothing
+          : html`<div class="ts-after">${choices.map((ch) => {
+              const on = ch === chosen;
+              return html`<button type="button" class="pe-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+                title=${ch.label === ch.value ? ch.value : `${ch.label}, stored as ${ch.value}`} @click=${() => setValue(ch.value)}>${ch.label}</button>`;
+            })}</div>`}
         <div class="hint ts-under ${c.state === "" ? "warn" : ""}">${c.state === ""
-          ? "Type a state, such as home or on. Empty matches nothing."
-          : `The watch shows this tile only while ${ref.displayName || id} ${WATCH_SHOW_WHEN_OPERATORS.find(([o]) => o === c.comparisonOperator)?.[1] ?? c.comparisonOperator} ${c.state}. Now it is ${passes ? "shown" : "hidden"}.`}</div>`}`;
+          ? "Pick a value above or type one. Empty matches nothing."
+          : `The watch shows this tile only while ${ref.displayName || id} ${WATCH_SHOW_WHEN_OPERATORS.find(([o]) => o === c.comparisonOperator)?.[1] ?? c.comparisonOperator} ${chosen?.label ?? c.state}. Now it is ${passes ? "shown" : "hidden"}.`}</div>`}`;
 }
 
 function renderHoldSlide(host: TileSettingsHost, slides: NonNullable<ReturnType<typeof watchHoldSlideMenus>>): TemplateResult {
