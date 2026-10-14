@@ -565,6 +565,11 @@ export interface EditorHost {
    * in any complication opened in this tab. */
   copiedPosition?: CopiedPosition;
   copyPosition(position: CopiedPosition): void;
+  /** The card whose ··· menu is open, by section id. One at a time, held on
+   * the panel so a press outside it shuts it. */
+  secMenu?: string;
+  /** Open or shut a card's ··· menu. Without it a card draws no menu. */
+  toggleSecMenu?(id: string, open: boolean): void;
   /**
    * The list whose row is being designed right now, or undefined for the
    * ordinary face.
@@ -6329,6 +6334,17 @@ interface CardOptions {
    * click opens the card and runs it, so the common first step needs no
    * unfolding first. */
   action?: { label: string; title: string; run: () => void };
+  /** Rare actions behind a ··· button in the header, such as Position's
+   * Copy and Paste position. Shown only while the card is open. */
+  menu?: CardMenuItem[];
+}
+
+/** One row of a card's ··· menu. */
+export interface CardMenuItem {
+  label: string;
+  title: string;
+  disabled?: boolean;
+  run: () => void;
 }
 
 /** One group of rows behind a card's More line, and its name in that line.
@@ -6406,14 +6422,26 @@ export function card(host: EditorHost, id: string, title: string, body: unknown,
     host.toggleHelp(id);
   };
   const helpLabel = help ? `Hide the help in ${title}` : `Show help for ${title}`;
+  const items = open && host.toggleSecMenu !== undefined && opts.menu !== undefined && opts.menu.length > 0 ? opts.menu : undefined;
+  const menuOpen = items !== undefined && host.secMenu === id;
   const head = html`<span class="swatch">${uiIcon(opts.icon ?? "content")}</span>
       <span class="tt"><h4>${title}${resetButton(opts.reset === undefined ? undefined
         : { atDefault: false, title: opts.resetTitle ?? `Put ${title} back to its defaults`, reset: opts.reset })}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
       ${opts.action === undefined || open ? nothing : html`<button type="button" class="small sec-act" title=${opts.action.title}
         @click=${(e: Event) => { e.stopPropagation(); if (!open) host.toggleSection(id); opts.action?.run(); }}>${uiIcon("plus")}<span>${opts.action.label}</span></button>`}
+      ${items === undefined ? nothing : html`<span class="sec-menu" data-sec-menu=${id}>
+        <button type="button" class="sec-more ${menuOpen ? "on" : ""}" aria-haspopup="menu" aria-expanded=${menuOpen ? "true" : "false"}
+          title=${`More for ${title}`} aria-label=${`More for ${title}`}
+          @click=${(e: Event) => { e.stopPropagation(); host.toggleSecMenu?.(id, !menuOpen); }}
+          @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape" && menuOpen) { e.stopPropagation(); host.toggleSecMenu?.(id, false); } }}>···</button>
+        ${menuOpen ? html`<div class="pop-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
+          ${items.map((it) => html`<button type="button" class="row" role="menuitem" title=${it.title} ?disabled=${it.disabled === true}
+            @click=${() => { host.toggleSecMenu?.(id, false); it.run(); }}>${it.label}</button>`)}
+        </div>` : nothing}
+      </span>`}
       <button type="button" class="sec-help ${help ? "on" : ""}" aria-pressed=${help ? "true" : "false"} title=${helpLabel} aria-label=${helpLabel}
         @click=${(e: Event) => { e.stopPropagation(); toggleHelp(); }}>?</button>`;
-  return html`<section class="sec ${host.litSection === id ? "lit" : ""}" data-sec=${id} data-open=${open ? "true" : "false"} data-help=${help ? "on" : "off"} style=${opts.color ? `--c:${opts.color}` : ""}>
+  return html`<section class="sec ${host.litSection === id ? "lit" : ""} ${menuOpen ? "menu-open" : ""}" data-sec=${id} data-open=${open ? "true" : "false"} data-help=${help ? "on" : "off"} style=${opts.color ? `--c:${opts.color}` : ""}>
     ${pinned
       ? html`<div class="sec-h pinned">${head}</div>`
       : html`<div class="sec-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"} @click=${toggle}
@@ -6934,8 +6962,9 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
     ${sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
       { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°`, unit: "°", range: false })}
     ${checkField("Hidden", eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })), false)}
-    <div class="hint">${anchor === undefined ? "X, Y, W and H are" : "W and H are"} a percent of the face, on the ${familyTitle(family)} shape only. Drag a letter left or right to change its number. Arrow keys nudge 1 pt, shift for 10.${anchor === undefined ? " Copy position and Paste position repeat a spot on another layer, on any shape." : ""}</div>`,
+    <div class="hint">${anchor === undefined ? "X, Y, W and H are" : "W and H are"} a percent of the face, on the ${familyTitle(family)} shape only. Drag a letter left or right to change its number. Arrow keys nudge 1 pt, shift for 10.${anchor === undefined ? " Copy position and Paste position, in the ··· menu, repeat a spot on another layer, on any shape." : ""}</div>`,
     { color: SECTION_COLOR.position, icon: "place", summary: positionSummary(host.config, el, family),
+      ...(anchor === undefined ? { menu: positionMenu(host, el, family, f) } : {}),
       ...(placeChanged ? {
         resetTitle: `Put this layer back to the middle of the ${familyTitle(family)} face at half size, unrotated and shown`,
         reset: () => host.update((c) => setPlacement(c, family, id, { frame: { ...CENTERED_FRAME }, isHidden: false })),
@@ -7013,9 +7042,7 @@ function alreadyAligned(f: NormalizedFrame, move: AlignButton["move"]): boolean 
 function lineUpField(host: EditorHost, el: CElement, family: FamilyKind, f: NormalizedFrame, free: "both" | "across"): TemplateResult {
   const id = el.payload.id;
   const setWhole = (frame: NormalizedFrame, k: string) => host.update((c) => setPlacement(c, family, id, { frame }), `el-${id}-${k}-${family}`);
-  const copied = host.copiedPosition;
   const anchored = el.payload.chartAnchor !== undefined;
-  const copiedHere = copied !== undefined && copied.family === family && same(copied.frame, f);
   const where = listOwning(host.config, id) ? "row" : "complication";
   const groups = alignButtons(free, where);
   return html`<div class="align-field">
@@ -7029,19 +7056,32 @@ function lineUpField(host: EditorHost, el: CElement, family: FamilyKind, f: Norm
       })}`)}
     </div>
   </div>
-  ${anchored ? nothing : html`<div class="field list-field"><span>Copy</span>
-    <div class="chips">
-      <button class="small lined" title="Copy this layer's X, Y, W, H and rotation, to paste onto another layer"
-        @click=${() => host.copyPosition({ frame: { ...f }, family })}>${copiedHere ? "Copied" : "Copy position"}</button>
-      <button class="small lined" ?disabled=${copied === undefined || copiedHere}
-        title=${copied === undefined
-          ? "Copy a position from a layer first"
-          : copied.family === family || (family !== "rectangular" && copied.family !== "rectangular")
-            ? `Put this layer where the copied one sits on the ${familyTitle(copied.family)} face`
-            : `Put this layer where the copied one sits on the ${familyTitle(copied.family)} face, scaled for this shape`}
-        @click=${() => copied && setWhole(pastedFrame(copied, family, el.kind), "paste")}>Paste position</button>
-    </div>
+  ${anchored || host.toggleSecMenu !== undefined ? nothing : html`<div class="field list-field"><span>Copy</span>
+    <div class="chips">${positionMenu(host, el, family, f).map((it) => html`<button class="small lined" title=${it.title}
+      ?disabled=${it.disabled === true} @click=${() => it.run()}>${it.label}</button>`)}</div>
   </div>`}`;
+}
+
+/**
+ * Copy position and Paste position, which repeat a spot on another layer.
+ * They are rare, so the Position card keeps them in its ··· menu; a host
+ * with no menus (a test, the dev harness) draws them as a row instead.
+ */
+export function positionMenu(host: EditorHost, el: CElement, family: FamilyKind, f: NormalizedFrame): CardMenuItem[] {
+  const id = el.payload.id;
+  const copied = host.copiedPosition;
+  const copiedHere = copied !== undefined && copied.family === family && same(copied.frame, f);
+  return [
+    { label: copiedHere ? "Copied" : "Copy position", title: "Copy this layer's X, Y, W, H and rotation, to paste onto another layer",
+      run: () => host.copyPosition({ frame: { ...f }, family }) },
+    { label: "Paste position", disabled: copied === undefined || copiedHere,
+      title: copied === undefined
+        ? "Copy a position from a layer first"
+        : copied.family === family || (family !== "rectangular" && copied.family !== "rectangular")
+          ? `Put this layer where the copied one sits on the ${familyTitle(copied.family)} face`
+          : `Put this layer where the copied one sits on the ${familyTitle(copied.family)} face, scaled for this shape`,
+      run: () => { if (copied) host.update((c) => setPlacement(c, family, id, { frame: pastedFrame(copied, family, el.kind) }), `el-${id}-paste-${family}`); } },
+  ];
 }
 
 /**

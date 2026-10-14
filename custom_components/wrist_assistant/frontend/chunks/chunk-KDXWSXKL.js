@@ -130,7 +130,17 @@ Tap it to \u2026`;function Vo(e){let t=e.trim();return/^https?:\/\/[^\s<>"']+$/i
       --lo-fill: var(--wa-hover);
       background: var(--lo-fill);
     }
-    .tb-saved { font-size: 12px; color: var(--wa-muted); white-space: nowrap; padding: 0 4px; }
+    /* Whether the work is saved, the one place it is said: muted once saved,
+       amber with a dot while there are changes (or Save refuses them), red
+       with a dot for an error. */
+    .tb-saved {
+      display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 300px;
+      font-size: 12px; color: var(--wa-muted); white-space: nowrap; padding: 0 4px;
+    }
+    .tb-saved-l { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .tb-saved-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: currentColor; }
+    .tb-saved.warn { color: var(--wa-amber); font-weight: 500; }
+    .tb-saved.err { color: var(--error-color, #db4437); font-weight: 500; }
     /* After a save: where it has got to, one line. Amber when the reader has
        to do something (open the watch app). It stays when the bar stacks,
        on the second row, since on a phone it is the only place it is said. */
@@ -140,8 +150,11 @@ Tap it to \u2026`;function Vo(e){let t=e.trim();return/^https?:\/\/[^\s<>"']+$/i
     }
     .tb-after.warn { color: var(--wa-amber); font-weight: 500; }
     header.stacked > .tb-after, .wa-bar.stacked > .tb-after { order: 2; }
-    header.stacked .tb-saved, header.stacked .tb-pen, header.stacked > .tb-div,
-    .wa-bar.stacked .tb-saved, .wa-bar.stacked .tb-pen, .wa-bar.stacked > .tb-div { display: none; }
+    /* Stacked, "Saved 3 min ago" gives way, but changes and errors keep
+       their line on the second row: it is the only place they are said. */
+    header.stacked .tb-saved:not(.warn):not(.err), header.stacked .tb-pen, header.stacked > .tb-div,
+    .wa-bar.stacked .tb-saved:not(.warn):not(.err), .wa-bar.stacked .tb-pen, .wa-bar.stacked > .tb-div { display: none; }
+    header.stacked > .tb-saved, .wa-bar.stacked > .tb-saved { order: 2; }
     /* Stacked (a phone, or a narrow window), the bar is two tidy rows rather
        than three ragged ones: what is done to the draft on top (Browse, undo,
        redo, Save, help), and where it has got to underneath (the sync pill,
@@ -666,6 +679,16 @@ Tap it to \u2026`;function Vo(e){let t=e.trim();return/^https?:\/\/[^\s<>"']+$/i
     .lc-note button.link { margin-left: auto; font-weight: 700; color: inherit; text-decoration: underline; }
     .lc-note span { line-height: 1.4; }
     .lc-note b { font-weight: 700; }
+    /* One page: a quiet line over the Layers card, not a card of its own. */
+    .pages-slim {
+      display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 2px 0 10px;
+      font-size: 12px; color: var(--wa-muted);
+    }
+    .pages-slim .spacer { flex: 1; }
+    .pages-slim-ic { display: inline-grid; place-items: center; flex: none; }
+    .pages-slim-ic svg.ui-icon { width: 13px; height: 13px; }
+    .pages-slim button.lc-ghost { border-color: transparent; letter-spacing: 0; font-weight: 500; }
+    .pages-slim button.lc-ghost:hover:not(:disabled) { border-color: var(--wa-line-strong); }
     .pages-card .lc-note { margin: 8px 12px 0; }
     .pages-card .page-tour-bar { margin: 0 12px 10px; }
     /* The Layers card's filter line, and the rows under it. */
@@ -1399,6 +1422,9 @@ Tap it to \u2026`;function Vo(e){let t=e.trim();return/^https?:\/\/[^\s<>"']+$/i
       border-radius: 6px; border-color: var(--wa-line-strong); background-color: var(--wa-field);
     }
     .name-sec .sec-h input[type=text]:focus-visible { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
+    /* An empty name shows the automatic title, which is the layer's real name
+       until one is typed, so it reads as a name and not as a grey hint. */
+    .name-sec .sec-h input[type=text]::placeholder { color: var(--wa-ink); opacity: 1; }
     /* Each card's "?": quiet until the header is hovered, lit while its help
        is showing. A touch screen has no hover, so there it always shows. */
     button.sec-help {
@@ -1412,6 +1438,19 @@ Tap it to \u2026`;function Vo(e){let t=e.trim();return/^https?:\/\/[^\s<>"']+$/i
     button.sec-help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.sec-help.on { color: var(--wa-ink); background: var(--wa-raise); border-color: transparent; }
     @media (hover: none) { button.sec-help { opacity: 1; } }
+    /* A card's ··· menu, for its rare actions. The card clips its corners,
+       so it lets the menu out while the menu is open. */
+    .sec.menu-open { overflow: visible; }
+    .sec-menu { position: relative; flex: none; display: inline-flex; }
+    button.sec-more {
+      height: 20px; padding: 0 5px; border-radius: 6px; cursor: pointer;
+      font: inherit; font-size: 12px; font-weight: 700; line-height: 1; letter-spacing: .04em;
+      border: 1px solid transparent; background: transparent; color: var(--wa-muted);
+    }
+    button.sec-more:hover, button.sec-more.on { color: var(--wa-ink); border-color: var(--wa-line-strong); }
+    button.sec-more:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .sec-menu .pop-menu { min-width: 160px; cursor: default; }
+    .sec-menu .pop-menu .row:disabled { opacity: .45; cursor: default; background: transparent; }
     /* Help text waits behind that "?". A plain hint shows only while its
        card's help is on; a warning, an error, or a hint marked keep (a status,
        an empty state, a step that is required) always shows. A value popover
@@ -1507,6 +1546,11 @@ Tap it to \u2026`;function Vo(e){let t=e.trim();return/^https?:\/\/[^\s<>"']+$/i
     }
     button.primary.save.dirty:not(:disabled):hover { background: color-mix(in srgb, var(--wa-hue-green) 88%, var(--wa-ink)); }
     button.primary.save.dirty:not(:disabled):focus-visible { box-shadow: var(--wa-ring), var(--wa-save-glow); }
+    /* A moment after a save landed: "✓ Saved" in green, then plain Save. */
+    header button.save.flash, .wa-bar button.save.flash {
+      color: var(--wa-hue-green); border-color: color-mix(in srgb, var(--wa-hue-green) 60%, transparent);
+      transition: color .2s ease-out, border-color .2s ease-out;
+    }
     button.danger { color: var(--error-color, #e5484d); border-color: color-mix(in srgb, var(--error-color, #e5484d) 45%, transparent); background: color-mix(in srgb, var(--error-color, #e5484d) 8%, transparent); }
     button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error-color, #e5484d) 16%, transparent); border-color: var(--error-color, #e5484d); }
     button.small { padding: 0 9px; font-size: 13px; min-height: 26px; border-radius: 6px; }
@@ -2179,6 +2223,6 @@ Tap it to \u2026`;function Vo(e){let t=e.trim();return/^https?:\/\/[^\s<>"']+$/i
     .wa-bar.in-head .tb-status > .tb-long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
     .wa-bar.in-head .tb-status > .tb-short { display: inline; }
   }
-`;var Sa="/cameras";function Ly(e){let t=e?.path??"";return t===Sa||t.startsWith(`${Sa}/`)}var Iy="https://docs.wrist-assistant.com/watch-app/cameras/#notification-snapshots",To;function My(e){To=e}function Ry(){return To?.dirty()??!1}function Py(){To?.drop()}var Ta,So=!1;function Bu(){return Ta??=import("./cameras-editor-EKDYNNQF.js").then(()=>{},e=>{throw So=!0,e}),Ta}function $y(e){let t=customElements.get("wa-cameras-editor")!==void 0;return!t&&!So&&Bu().then(e.onLoaded,e.onLoaded),t?$`<wa-cameras-editor .hass=${e.hass} ?narrow=${e.narrow} .barHost=${e.barHost}></wa-cameras-editor>`:$`<div class="wp-loading">
+`;var Sa="/cameras";function Ly(e){let t=e?.path??"";return t===Sa||t.startsWith(`${Sa}/`)}var Iy="https://docs.wrist-assistant.com/watch-app/cameras/#notification-snapshots",To;function My(e){To=e}function Ry(){return To?.dirty()??!1}function Py(){To?.drop()}var Ta,So=!1;function Bu(){return Ta??=import("./cameras-editor-GVWO2H27.js").then(()=>{},e=>{throw So=!0,e}),Ta}function $y(e){let t=customElements.get("wa-cameras-editor")!==void 0;return!t&&!So&&Bu().then(e.onLoaded,e.onLoaded),t?$`<wa-cameras-editor .hass=${e.hass} ?narrow=${e.narrow} .barHost=${e.barHost}></wa-cameras-editor>`:$`<div class="wp-loading">
         ${So?$`<span>The Cameras screen did not load. Reload the page to try again.</span>`:$`<span>Loading…</span>`}
       </div>`}export{Te as a,C as b,$ as c,y as d,he as e,F as f,Xu as g,et as h,_e as i,zo as j,pp as k,gn as l,Np as m,Va as n,Wa as o,Op as p,Dp as q,zp as r,Vp as s,Wp as t,Up as u,Bp as v,Gp as w,Ln as x,L as y,dt as z,N as A,qp as B,Jp as C,In as D,Ga as E,ct as F,ja as G,Dt as H,wn as I,He as J,at as K,xi as L,Mn as M,Rn as N,ts as O,ns as P,wi as Q,vi as R,Pn as S,Cn as T,Sn as U,Tn as V,Xp as W,rs as X,as as Y,Nn as Z,On as _,ss as $,ls as aa,Yp as ba,Zp as ca,ki as da,ds as ea,Qp as fa,cs as ga,eh as ha,ms as ia,gs as ja,th as ka,nh as la,ys as ma,Dn as na,zn as oa,Vn as pa,oh as qa,ih as ra,rh as sa,ks as ta,Cs as ua,ah as va,Ss as wa,Ts as xa,It as ya,As as za,_s as Aa,Fs as Ba,Hs as Ca,Is as Da,Ms as Ea,Ko as Fa,Ci as Ga,sh as Ha,Rs as Ia,qo as Ja,Ps as Ka,lh as La,Si as Ma,Ti as Na,Ai as Oa,dh as Pa,$s as Qa,ch as Ra,uh as Sa,ph as Ta,Un as Ua,zt as Va,Vt as Wa,Vs as Xa,Ws as Ya,Wt as Za,Ut as _a,Us as $a,Bs as ab,hh as bb,fh as cb,mh as db,_i as eb,Ei as fb,An as gb,gh as hb,Ys as ib,Yo as jb,bh as kb,yh as lb,Le as mb,Ie as nb,Zs as ob,G as pb,xh as qb,Qs as rb,wh as sb,vh as tb,kh as ub,el as vb,tl as wb,nl as xb,Ch as yb,Sh as zb,ol as Ab,il as Bb,rl as Cb,al as Db,sl as Eb,ll as Fb,Th as Gb,dl as Hb,cl as Ib,Bt as Jb,ul as Kb,Ah as Lb,_h as Mb,Eh as Nb,Fh as Ob,Me as Pb,Hh as Qb,Gt as Rb,te as Sb,ne as Tb,Ri as Ub,bl as Vb,yl as Wb,xl as Xb,Pi as Yb,Lh as Zb,$i as _b,jt as $b,Ih as ac,wl as bc,vl as cc,Cl as dc,Zo as ec,Qo as fc,Mh as gc,Tl as hc,_l as ic,Rh as jc,Ph as kc,Di as lc,Fl as mc,zi as nc,$h as oc,Nh as pc,Hl as qc,Ll as rc,Il as sc,Ml as tc,Oh as uc,Rl as vc,Pl as wc,Zn as xc,$l as yc,Nl as zc,Qn as Ac,eo as Bc,Ol as Cc,Dl as Dc,Dh as Ec,Wi as Fc,zh as Gc,Vh as Hc,Ne as Ic,to as Jc,Bi as Kc,Wh as Lc,Uh as Mc,Bh as Nc,Vl as Oc,Gh as Pc,jh as Qc,Kh as Rc,qh as Sc,Ul as Tc,Jh as Uc,Xh as Vc,Gl as Wc,Yh as Xc,Zh as Yc,Qh as Zc,ef as _c,tf as $c,nf as ad,of as bd,rf as cd,af as dd,jl as ed,qi as fd,sf as gd,lf as hd,Ji as id,qt as jd,ei as kd,ve as ld,Jt as md,Xi as nd,Yi as od,df as pd,cf as qd,ed as rd,uf as sd,pf as td,hf as ud,ff as vd,mf as wd,gf as xd,bf as yd,td as zd,yf as Ad,xf as Bd,wf as Cd,vf as Dd,kf as Ed,X as Fd,Re as Gd,Cf as Hd,gd as Id,or as Jd,Sf as Kd,Pe as Ld,xd as Md,Tf as Nd,Mt as Od,vd as Pd,dr as Qd,cr as Rd,Sd,Td,Ad as Ud,Af as Vd,Fd as Wd,Ld as Xd,Id as Yd,Md as Zd,Rd as _d,$d,_f as ae,Ef as be,Ff as ce,_ as de,Hf as ee,Lf as fe,If as ge,Mf as he,P as ie,lo as je,U as ke,Rf as le,co as me,Zd as ne,Pf as oe,br as pe,oe as qe,$f as re,Nf as se,Of as te,B as ue,xr as ve,ec as we,tc as xe,Df as ye,zf as ze,Vf as Ae,Wf as Be,Uf as Ce,I as De,Xt as Ee,Bf as Fe,Gf as Ge,jf as He,oc as Ie,vr as Je,Kf as Ke,ac as Le,sc as Me,qf as Ne,z as Oe,T as Pe,kr as Qe,lc as Re,Cr as Se,dc as Te,Jf as Ue,cc as Ve,uc as We,pc as Xe,Xf as Ye,Yf as Ze,ke as _e,R as $e,hc as af,Zf as bf,Ve as cf,Qf as df,fc as ef,ee as ff,em as gf,tm as hf,Tr as if,nm as jf,Nt as kf,po as lf,om as mf,_r as nf,im as of,Cc as pf,rm as qf,fi as rf,Ac as sf,ho as tf,am as uf,de as vf,sm as wf,Fc as xf,lm as yf,dm as zf,Lc as Af,cm as Bf,Ic as Cf,um as Df,pm as Ef,hm as Ff,fm as Gf,mm as Hf,Mc as If,Rc as Jf,Pc as Kf,$c as Lf,Nc as Mf,gm as Nf,bm as Of,ym as Pf,Zt as Qf,Dc as Rf,vm as Sf,Wc as Tf,fo as Uf,km as Vf,Gc as Wf,Cm as Xf,Sm as Yf,jc as Zf,Kc as _f,Tm as $f,Fm as ag,Hm as bg,Lm as cg,Im as dg,Mm as eg,Rm as fg,Pm as gg,$m as hg,Nm as ig,Om as jg,Dm as kg,zm as lg,Vm as mg,Wm as ng,Um as og,Bm as pg,Gm as qg,jm as rg,Km as sg,qm as tg,Jm as ug,Xm as vg,Ym as wg,Zm as xg,Qm as yg,eg as zg,tg as Ag,ng as Bg,og as Cg,ig as Dg,rg as Eg,ag as Fg,sg as Gg,lg as Hg,dg as Ig,cg as Jg,ug as Kg,pg as Lg,hg as Mg,fg as Ng,mg as Og,gg as Pg,bg as Qg,yg as Rg,xg as Sg,wg as Tg,vg as Ug,kg as Vg,Cg as Wg,Sg as Xg,Tg as Yg,Ag as Zg,_g,Eg as $g,Fg as ah,Hg as bh,Lg as ch,Mg as dh,Rg as eh,Pg as fh,$g as gh,Nr as hh,Or as ih,Se as jh,Ug as kh,Bg as lh,Gg as mh,jg as nh,Kg as oh,qg as ph,Jg as qh,Xg as rh,Yg as sh,Zg as th,tb as uh,Zc as vh,Qc as wh,eu as xh,tu as yh,nu as zh,ou as Ah,iu as Bh,nb as Ch,ma as Dh,ib as Eh,au as Fh,rb as Gh,su as Hh,ha as Ih,ft as Jh,ab as Kh,Y as Lh,tn as Mh,da as Nh,sb as Oh,lb as Ph,db as Qh,Be as Rh,vo as Sh,on as Th,ya as Uh,fb as Vh,mb as Wh,gb as Xh,bu as Yh,bb as Zh,yb as _h,xb as $h,wb as ai,vb as bi,kb as ci,Cb as di,Sb as ei,Tb as fi,Ab as gi,Su as hi,_b as ii,Tu as ji,Eb as ki,Fb as li,Hb as mi,Lb as ni,Ib as oi,Mb as pi,Rb as qi,Pb as ri,$b as si,ko as ti,xa as ui,Nb as vi,Ob as wi,Db as xi,zb as yi,Vb as zi,Wb as Ai,Fu as Bi,Ub as Ci,Bb as Di,Gb as Ei,Hu as Fi,jb as Gi,Iu as Hi,Xb as Ii,Yb as Ji,Zb as Ki,ey as Li,Ru as Mi,ty as Ni,Pu as Oi,$u as Pi,Nu as Qi,ny as Ri,oy as Si,Ou as Ti,Du as Ui,ay as Vi,sy as Wi,ly as Xi,dy as Yi,cy as Zi,uy as _i,py as $i,hy as aj,fy as bj,my as cj,gy as dj,by as ej,yy as fj,xy as gj,wy as hj,vy as ij,Vu as jj,ky as kj,Cy as lj,Ca as mj,_y as nj,Ey as oj,Sa as pj,Ly as qj,Iy as rj,My as sj,Ry as tj,Py as uj,$y as vj};
