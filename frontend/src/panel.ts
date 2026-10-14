@@ -19701,14 +19701,13 @@ export class WristAssistantPanel extends LitElement {
     // One screen of each of the watch's first pages, drawn as the page
     // editor draws them, small enough that four sit across a door.
     const pagesStrip = () => {
-      if (pageThumbs === undefined || pageThumbs.shown.length === 0) return undefined;
+      if (pageThumbs === undefined || pageThumbs.length === 0) return undefined;
       const scale = HOME_PAGE_THUMB_WIDTH / screen.width;
       const all = this.homePages.get(ownerId) ?? [];
       return html`<span class="hb-door-pages" aria-hidden="true" style=${`--hb-screen-h:${Math.round(screen.height * scale * 100) / 100}px`}>
-        ${pageThumbs.shown.map((page) => html`<span class="hb-page" title=${watchPageName(page)}>${renderWatchPagePreview({
+        ${pageThumbs.map((page) => html`<span class="hb-page" title=${watchPageName(page)}>${renderWatchPagePreview({
           page, pages: all, screen, states: this.hass.states, icons: this.icons, scale,
         })}</span>`)}
-        ${pageThumbs.more > 0 ? html`<span class="hb-page-more">+${pageThumbs.more}</span>` : nothing}
       </span>`;
     };
     const door = (t: DeviceSheetTab) => {

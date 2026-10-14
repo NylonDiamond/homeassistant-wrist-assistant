@@ -392,16 +392,17 @@ export function homeDoorLook(tab: DeviceSheetTab, kind: "watch" | "iphone"): Hom
 }
 
 /** How many of a watch's pages its Pages door draws, and how wide each
- * screen is drawn, in CSS pixels: four fit across the narrowest door. */
+ * screen is drawn, in CSS pixels. A door too narrow for all of them drops
+ * the last whole rather than cutting it; the door's count says how many
+ * there are. */
 export const HOME_PAGE_THUMBS = 4;
-export const HOME_PAGE_THUMB_WIDTH = 40;
+export const HOME_PAGE_THUMB_WIDTH = 38;
 
 /** The pages a watch's Pages door draws, small, in the watch's order: the
- * ones the watch swipes between (not hidden, not its own system pages), the
- * first `max` of them, and how many more there are after those. */
-export function homePageThumbs(pages: readonly WatchPage[], max = HOME_PAGE_THUMBS): { shown: WatchPage[]; more: number } {
-  const swiped = pages.filter((p) => !isHiddenWatchPage(p) && !isSystemWatchPage(p));
-  return { shown: swiped.slice(0, max), more: Math.max(0, swiped.length - max) };
+ * first `max` the watch swipes between (not hidden, not its own system
+ * pages). */
+export function homePageThumbs(pages: readonly WatchPage[], max = HOME_PAGE_THUMBS): WatchPage[] {
+  return pages.filter((p) => !isHiddenWatchPage(p) && !isSystemWatchPage(p)).slice(0, max);
 }
 
 /** The length round Home's ring, a circle of radius 18 in a 44 box. */
@@ -816,13 +817,15 @@ export const homeStyles = css`
   .hb-door-b { flex: 1; font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
   /* The Pages door draws the watch's first pages instead of its line: one
      screen of each, small, with the screen's corners and no watch case. */
-  .hb-door-pages { flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: 6px; overflow: hidden; pointer-events: none; }
+  .hb-door-pages {
+    flex: 1; min-width: 0; height: var(--hb-screen-h); display: flex; flex-wrap: wrap; align-content: flex-start; gap: 0 5px;
+    overflow: hidden; pointer-events: none;
+  }
   .hb-page { flex: none; display: block; line-height: 0; }
   .hb-page .wa-watch { padding: 0; margin: 0; background: none; box-shadow: 0 0 0 1px var(--wa-line-strong); border-radius: var(--wf-radius, 6px); }
   .hb-page .wa-watch::before, .hb-page .wa-watch::after { display: none; }
   .hb-page .wa-watch > .wp-screen { max-height: var(--hb-screen-h); }
   .hb-page .wp-fold { display: none; }
-  .hb-page-more { flex: none; align-self: center; font-size: 12px; color: var(--wa-muted); font-variant-numeric: tabular-nums; }
   .hb-door-go { flex: none; display: grid; color: var(--wa-label); opacity: 0; transform: translateX(-3px); transition: opacity .15s ease, transform .15s ease; }
   .hb-door-go svg.ui-icon { width: 14px; height: 14px; }
   a.hb-door:hover .hb-door-go, button.hb-door:hover .hb-door-go,

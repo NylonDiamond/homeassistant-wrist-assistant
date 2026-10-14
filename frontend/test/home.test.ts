@@ -122,15 +122,13 @@ describe("deviceSheetTabs", () => {
 describe("homePageThumbs", () => {
   const page = (id: string, over: Record<string, unknown> = {}) => ({ id, name: id, ...over });
 
-  it("draws the first four pages the watch swipes between, and counts the rest", () => {
+  it("draws the first four pages the watch swipes between", () => {
     const pages = [page("a"), page("b", { isHidden: true }), page("c"), page("sys", { isSystemPage: true }), page("d"), page("e"), page("f")];
-    const thumbs = homePageThumbs(pages);
-    expect(thumbs.shown.map((p) => p.id)).toEqual(["a", "c", "d", "e"]);
-    expect(thumbs.more).toBe(1);
+    expect(homePageThumbs(pages).map((p) => p.id)).toEqual(["a", "c", "d", "e"]);
   });
 
   it("draws nothing for a watch with no pages", () => {
-    expect(homePageThumbs([])).toEqual({ shown: [], more: 0 });
+    expect(homePageThumbs([])).toEqual([]);
   });
 });
 
