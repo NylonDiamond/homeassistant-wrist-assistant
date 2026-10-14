@@ -287,7 +287,7 @@ describe("the cards on a home that is not the main house", () => {
       rooms: mergeRoomList({ mappingKeys: Object.keys(view.mappings) }),
       roomsState: "ready",
       busy: false,
-      uiState: new Map(),
+      uiState: new Map<string, unknown>([["sensorOpen", true], ["pointOpen", true]]),
       writes,
       write: (w) => { writes.push(w); },
       endCoalesce: () => undefined,
@@ -301,8 +301,10 @@ describe("the cards on a home that is not the main house", () => {
     const text = flatten(renderRoomsBody(host(homeRooms(), true)));
     expect(text).toContain(HOME_ROOMS_MAIN_HOUSE_TEXT);
     expect(text.split(HOME_ROOMS_MAIN_HOUSE_TEXT)).toHaveLength(2);
-    for (const gone of ["Point control<", "Tap to Toggle", "Live Point Control Tile", "Double Pinch<", "\"When\""]) expect(text).not.toContain(gone);
-    for (const shown of ["Room sensor", "Switch pages by room", HOME_AUTO_SWITCH_LABEL, "Fallback page", "Your rooms", "Kitchen page"]) expect(text).toContain(shown);
+    // Point control stays (its targets are this home's own); its two
+    // switches, the gestures and When are the main house's.
+    for (const gone of ["Every room<", "Tap to Toggle", "Live Point Control Tile", "Double Pinch<", "rm-when"]) expect(text).not.toContain(gone);
+    for (const shown of ["Room sensor", "Switch pages by room", HOME_AUTO_SWITCH_LABEL, "Anywhere else", "When I walk into", "Kitchen page", "Things to point at"]) expect(text).toContain(shown);
   });
 
   it("say it in plain words, with no dash", () => {
@@ -315,7 +317,7 @@ describe("the cards on a home that is not the main house", () => {
   it("leave the main house's four cards as they were", () => {
     const text = flatten(renderRoomsBody(host(homeRooms(), false)));
     expect(text).not.toContain(HOME_ROOMS_MAIN_HOUSE_TEXT);
-    for (const title of ["Room sensor", "Switch pages by room", "Point control", "Tap to Toggle", "Your rooms"]) expect(text).toContain(title);
+    for (const title of ["Room sensor", "Switch pages by room", "Point control", "Tap to Toggle", "When I walk into"]) expect(text).toContain(title);
     expect(text).not.toContain(HOME_AUTO_SWITCH_LABEL);
   });
 
@@ -372,7 +374,7 @@ describe("the rooms editor on a home that is not the main house", () => {
     await el.load("w1");
     const text = flatten(el.renderBody(el.owners));
     expect(text).toContain(NEW_WATCH_TEXT);
-    expect(text).toContain("Your rooms");
+    expect(text).toContain("When I walk into");
     expect(text).toContain(HOME_ROOMS_MAIN_HOUSE_TEXT);
     expect(text).not.toContain(HOME_ROOMS_NO_RECORD_TITLE);
     expect(text).not.toContain(START_FRESH_BUTTON);
@@ -391,7 +393,7 @@ describe("the rooms editor on a home that is not the main house", () => {
     expect(el.record?.revision).toBe(1);
     expect(el.note).toBeUndefined();
     const after = flatten(el.renderBody(el.owners));
-    expect(after).toContain("Your rooms");
+    expect(after).toContain("When I walk into");
     expect(after).not.toContain(NEW_WATCH_TEXT);
   });
 
@@ -418,7 +420,7 @@ describe("the rooms editor on a home that is not the main house", () => {
     click!();
     const ready = flatten(el.renderBody(el.owners));
     expect(ready).toContain(NEW_WATCH_TEXT);
-    expect(ready).toContain("Your rooms");
+    expect(ready).toContain("When I walk into");
     expect(ready).not.toContain(WAIT_FOR_IPHONE_TEXT);
     expect(ha.of("/save")).toEqual([]);
     expect(el.draft?.dirty).toBe(false);
@@ -471,7 +473,8 @@ describe("the rooms editor on the main house", () => {
       expect(ha.of("/get").map((m) => m.kind)).toEqual(["behavior"]);
       const text = flatten(el.renderBody(el.owners));
       expect(text).toContain(NEW_WATCH_TEXT);
-      expect(text).toContain("Tap to Toggle");
+      expect(text).toContain("Switch pages by room");
+      expect(text).not.toContain(HOME_AUTO_SWITCH_LABEL);
       expect(text).not.toContain(HOME_ROOMS_MAIN_HOUSE_TEXT);
       expect(text).not.toContain(ROOMS_NO_RECORD_TITLE);
       expect(text).not.toContain("Open Settings");

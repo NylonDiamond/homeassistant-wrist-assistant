@@ -32,7 +32,7 @@
 // Plans: app repo docs/pages_in_home_assistant_step4.md, "4d batch 5", 5b,
 // and docs/phone_watch_link_removal_2026-10.md, "Step 8 build contract".
 
-import type { OwnerSummary, WatchConfigRecord } from "../ha-api.js";
+import type { HassLike, OwnerSummary, WatchConfigRecord } from "../ha-api.js";
 import { type WatchPagesDocument, WATCH_CONFIG_LIMIT_BYTES, isHiddenWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPagesOf } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { WAIT_FOR_IPHONE_TEXT, takesSettingsFromAnotherHome } from "../watch-settings.js";
@@ -419,6 +419,37 @@ export function roomZonesWrites(doc: BehaviorDocument, roomKey: string, zones: P
   return new Map([[ROOM_KEYS.zones, encodeZones(cleaned)]]);
 }
 
+/**
+ * A room taken off: its page and its point control targets go, every stored
+ * key that normalizes to it, in one set of writes (one undo step). Rooms
+ * the stored targets string cannot be read for keep their targets, as
+ * everywhere else nothing is written over what cannot be read.
+ */
+export function removeRoomWrites(doc: BehaviorDocument, roomKey: string): Map<string, unknown> {
+  const writes = new Map<string, unknown>();
+  const view = readRooms(doc);
+  if (roomPage(view, roomKey) !== "" || Object.keys(view.mappings).some((k) => normalizedRoomKey(k) === roomKey)) {
+    for (const [key, value] of roomPageWrites(doc, roomKey, "")) writes.set(key, value);
+  }
+  const read = decodeZones(doc[ROOM_KEYS.zones]);
+  if (read.ok && read.rooms.some(([key]) => normalizedRoomKey(key) === roomKey)) {
+    const left = cleanZones(read.rooms.filter(([key]) => normalizedRoomKey(key) !== roomKey));
+    writes.set(ROOM_KEYS.zones, left === undefined ? undefined : encodeZones(left));
+  }
+  return writes;
+}
+
+/** Whether a room belongs in the Your rooms list rather than among the
+ * areas offered to add: it has a page or targets stored, was added here by
+ * name, or the room sensor reported it in the last day. An area with none
+ * of these is only offered. */
+export function roomIsListed(view: Pick<RoomsView, "mappings" | "zones">, room: RoomListEntry, added: readonly string[]): boolean {
+  if (room.lastSeen !== undefined) return true;
+  if (roomPage(view, room.key) !== "" || Object.keys(view.mappings).some((k) => normalizedRoomKey(k) === room.key)) return true;
+  if (view.zones.ok && view.zones.rooms.some(([key]) => normalizedRoomKey(key) === room.key)) return true;
+  return added.some((name) => normalizedRoomKey(name) === room.key);
+}
+
 // ── pages ────────────────────────────────────────────────────────────────
 
 export interface RoomPageChoice {
@@ -445,6 +476,14 @@ export function findPageChoice(choices: readonly RoomPageChoice[], id: string): 
 export interface AreaEntry {
   name: string;
   aliases?: readonly string[] | null;
+  /** The floor the area is on, from the area registry. */
+  floorId?: string;
+}
+
+/** One of Home Assistant's floors, in the registry's order. */
+export interface FloorEntry {
+  id: string;
+  name: string;
 }
 
 /** One state the room sensor held, and when (ms since the epoch). */
@@ -463,6 +502,8 @@ export interface RoomListEntry {
   lastSeen?: number;
   /** A Home Assistant area (or alias) has this name. */
   area: boolean;
+  /** The floor of the area with this name, when it has one. */
+  floorId?: string;
 }
 
 /**
@@ -487,16 +528,20 @@ export function mergeRoomList(input: {
     const was = seen.get(key);
     if (was === undefined || h.at > was.at) seen.set(key, { at: h.at, state: h.state.trim() });
   }
-  const put = (raw: string, area: boolean, name?: string) => {
+  const put = (raw: string, area: boolean, name?: string, floorId?: string) => {
     const key = normalizedRoomKey(raw);
     if (key === "" || byKey.has(key)) return;
     const lastSeen = seen.get(key)?.at;
-    byKey.set(key, { key, name: name ?? roomDisplayName(key), area, ...(lastSeen === undefined ? {} : { lastSeen }) });
+    byKey.set(key, {
+      key, name: name ?? roomDisplayName(key), area,
+      ...(lastSeen === undefined ? {} : { lastSeen }),
+      ...(floorId === undefined || floorId === "" ? {} : { floorId }),
+    });
   };
   for (const area of input.areas ?? []) {
     for (const raw of [area.name, ...(area.aliases ?? [])]) {
       const trimmed = typeof raw === "string" ? raw.trim() : "";
-      if (trimmed !== "") put(trimmed, true, trimmed);
+      if (trimmed !== "") put(trimmed, true, trimmed, area.floorId);
     }
   }
   for (const key of input.mappingKeys ?? []) put(key, false);
@@ -519,7 +564,32 @@ export function areasFromReply(reply: unknown): AreaEntry[] {
   for (const item of reply) {
     if (!isObject(item) || typeof item.name !== "string") continue;
     const aliases = Array.isArray(item.aliases) ? item.aliases.filter((a): a is string => typeof a === "string") : [];
-    out.push({ name: item.name, aliases });
+    const floorId = typeof item.floor_id === "string" && item.floor_id !== "" ? item.floor_id : undefined;
+    out.push({ name: item.name, aliases, ...(floorId === undefined ? {} : { floorId }) });
+  }
+  return out;
+}
+
+/** The areas the frontend already has on `hass`, floors and all, for when
+ * the area registry cannot be read. */
+export function areasFromHass(areas: HassLike["areas"]): AreaEntry[] {
+  return Object.values(areas ?? {}).flatMap((a) => {
+    if (typeof a.name !== "string" || a.name.trim() === "") return [];
+    const floorId = typeof a.floor_id === "string" && a.floor_id !== "" ? a.floor_id : undefined;
+    return [{ name: a.name, ...(floorId === undefined ? {} : { floorId }) }];
+  });
+}
+
+/** The floor registry's list (`config/floor_registry/list`), or the floors on
+ * `hass`: id and name, in the registry's order. Nothing usable gives none,
+ * and the rooms then stand in one list. */
+export function floorsFromReply(reply: unknown): FloorEntry[] {
+  const items = Array.isArray(reply) ? reply : isObject(reply) ? Object.values(reply) : [];
+  const out: FloorEntry[] = [];
+  for (const item of items) {
+    if (!isObject(item) || typeof item.floor_id !== "string" || item.floor_id === "") continue;
+    const name = typeof item.name === "string" && item.name.trim() !== "" ? item.name.trim() : item.floor_id;
+    if (!out.some((f) => f.id === item.floor_id)) out.push({ id: item.floor_id, name });
   }
   return out;
 }

@@ -39,7 +39,7 @@ interface KeySpec {
   default?: unknown;
 }
 
-/** One control of the Style card, as `status-page-keys.json` lists it. */
+/** One control of the page's look cards, as `status-page-keys.json` lists it. */
 export interface StatusStyleField {
   key: string;
   label: string;

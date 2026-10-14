@@ -31,6 +31,7 @@ import {
   selectedStatusRow,
   shownStatusPage,
   statusRowSubtitle,
+  statusInspectorFolds,
   statusStageFacts,
 } from "../src/watch-status-pages/view.js";
 
@@ -161,11 +162,18 @@ describe("the watch preview", () => {
 });
 
 describe("the inspector", () => {
-  it("shows the page's Page and Style cards with nothing picked", () => {
+  it("shows the page's Page card and its look cards with nothing picked", () => {
     const h = host(CONFIGURED);
     const text = flat(renderStatusInspector(h));
     expect(text).toContain("Page");
-    expect(text).toContain("Style");
+    for (const title of ["Rows", "Text", "More", "Reset to Defaults"]) expect(text).toContain(title);
+    // Row style, layout, icon, size and font as picture buttons, weight as
+    // a segmented control: every choice named and marked when picked.
+    for (const label of ["Style: Pill Outline", "Layout: Two Column", "Icon: Hidden", "Size: Large", "Font: Serif", "Weight: Bold"]) expect(text).toContain(label);
+    expect(text).toContain("aria-pressed");
+    // The rest keep the phone's controls.
+    for (const label of ["Background", "Dividers", "Round Numbers", "Spacing", "Padding"]) expect(text).toContain(label);
+    expect(statusInspectorFolds(h).map((f) => f.section)).toEqual(["page", "look-rows", "look-text", "look-more"]);
     expect(text).toContain("Select a row to edit it, or add one.");
   });
 
