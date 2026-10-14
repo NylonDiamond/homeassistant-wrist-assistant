@@ -29,6 +29,7 @@ import {
   MENUS_ZOOM_KEY,
   MENU_CHIP_COLOR,
   MENU_PAGE_CHIP_COLOR,
+  MENU_ROW_LINES,
   MENU_SECTION_BADGES,
   MENU_STAGE_HINT,
   type MenuSwitcherPage,
@@ -137,7 +138,7 @@ describe("the Menus card", () => {
     expect(card).toContain("--c: var(--wa-lc-pages, #26a69a)");
     expect(count(card, `<div class="layer me-menu-row`)).toBe(3);
     const at = MENUS_SECTIONS.map(([id, label]) => {
-      expect(card).toContain(`>${label}</span></b>`);
+      expect(card).toContain(`>${label}</span><span class="me-menu-count">`);
       return card.indexOf(`data-menu=${id} `);
     });
     expect(at.every((p) => p > -1)).toBe(true);
@@ -145,11 +146,16 @@ describe("the Menus card", () => {
     // The Anywhere menu is shown first, and only it is lit.
     expect(row(card, "data-menu", "anywhere", "me-menu-row")).toMatch(/^<div class="layer me-menu-row hl"/);
     expect(row(card, "data-menu", "switcher", "me-menu-row")).toMatch(/^<div class="layer me-menu-row "/);
-    // Each row has a small ring and a line under its name.
+    // Each row has a small ring, its count beside its name and one plain
+    // line saying when it opens.
     expect(count(card, `class="thumb me-ring-thumb"`)).toBe(3);
-    expect(card).toContain(`<small>${ANYWHERE_COUNT} slots</small>`);
-    expect(card).toContain("<small>By type · Light</small>");
-    expect(card).toContain("<small>1 page</small>");
+    expect(card).toContain(`<span class="me-menu-count">${ANYWHERE_COUNT} slots</span>`);
+    expect(card).toContain(`<span class="me-menu-count">5 slots</span>`);
+    expect(card).toContain(`<span class="me-menu-count">1 page</span>`);
+    expect(card).toContain("<small>Opens on any screen. Your shortcuts for the whole watch.</small>");
+    expect(card).toContain("<small>Opens over a tile. Controls for that kind of thing.</small>");
+    expect(card).toContain("<small>Jumps to another page. Set how each page shows.</small>");
+    expect(Object.values(MENU_ROW_LINES).every((line) => card.includes(`<small>${line}</small>`))).toBe(true);
     // One watch on the canvas, the shown menu's.
     let screen = flat(renderMenuScreen(h));
     expect(count(screen, `class="wa-watch"`)).toBe(1);

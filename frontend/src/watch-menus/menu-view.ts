@@ -168,6 +168,14 @@ export const SWITCHER_LINE = "Each page's icon, color and name are set here: pic
 /** The note under the switcher's Style card while no page is picked. */
 export const SWITCHER_PICK_NOTE = "Pick a page in the Pages card to set how it shows here.";
 
+/** When each menu opens, in one plain line: what its Menus row says under
+ * its name. */
+export const MENU_ROW_LINES: Readonly<Record<MenusSection, string>> = {
+  anywhere: "Opens on any screen. Your shortcuts for the whole watch.",
+  entity: "Opens over a tile. Controls for that kind of thing.",
+  switcher: "Jumps to another page. Set how each page shows.",
+};
+
 /** What each menu is, one line: the Menus row's tooltip and the inspector's
  * note over the menu's own settings. */
 export const MENU_LINES: Readonly<Record<MenusSection, string>> = {
@@ -574,13 +582,12 @@ function listDots(host: ViewState, ref: MenuListRef | undefined): { x: number; y
   });
 }
 
-/** What a Menus row says under its name. */
-export function menuRowDetail(host: Pick<MenusViewHost, "uiState" | "document" | "hass" | "switcherPages">, menu: MenusSection): string {
-  if (menu === "anywhere") return plural(watchMenuSlots(host.document, ANYWHERE).length, "slot", "slots");
+/** What a Menus row counts beside its name: the Anywhere menu's slots, the
+ * Entity quick menu's shown list's slots, the switcher's pages. */
+export function menuRowCount(host: Pick<MenusViewHost, "uiState" | "document" | "switcherPages">, menu: MenusSection): string {
   if (menu === "switcher") return plural(host.switcherPages.length, "page", "pages");
-  if (entityMode(host) === "domain") return `By type · ${typeLabel(shownDomain(host))}`;
-  const id = shownEntity(host);
-  return `By entity · ${id === undefined ? "none yet" : nameOf(host.hass, id)}`;
+  const ref = menu === "anywhere" ? ANYWHERE : entityList(host);
+  return ref === undefined ? "none yet" : plural(watchMenuSlots(host.document, ref).length, "slot", "slots");
 }
 
 function menuThumb(host: MenusViewHost, menu: MenusSection): TemplateResult {
@@ -615,7 +622,7 @@ export function renderMenusCard(host: MenusViewHost): TemplateResult {
           }}>
           <span class="grip" aria-hidden="true"></span>
           ${menuThumb(host, id)}
-          <span class="name"><b><span class="nm-t">${label}</span></b><small>${menuRowDetail(host, id)}</small></span>
+          <span class="name"><b><span class="nm-t">${label}</span><span class="me-menu-count">${menuRowCount(host, id)}</span></b><small>${MENU_ROW_LINES[id]}</small></span>
           <span class="right"></span>
         </div>`;
       })}
@@ -1398,6 +1405,14 @@ export const menuViewStyles = css`
   .me-menus-card > .layers, .me-slots-card > .layers { padding: 6px 8px 8px; overflow: visible; }
   .me-menus-card > .lc-note, .me-slots-card > .lc-note { margin: 8px 12px; color: var(--wa-muted); }
   .me-slots-card > .lc-filter { border-bottom: 0; }
+  /* A Menus row: its name and count over the line that says when it
+     opens, which wraps rather than being cut. */
+  .me-menu-row { padding-top: 6px; padding-bottom: 6px; align-items: start; }
+  .me-menu-row > .thumb { margin-top: 1px; }
+  .me-menu-row .name b { white-space: normal; flex-wrap: wrap; column-gap: 8px; row-gap: 0; }
+  .me-menu-row .name b .nm-t { white-space: normal; overflow: visible; }
+  .me-menu-row .name .me-menu-count { font-size: 12px; font-weight: 500; color: var(--wa-muted); white-space: nowrap; }
+  .me-menu-row .name small { white-space: normal; overflow: visible; line-height: 1.35; }
   .layer .acts button.icon { display: inline-grid; place-items: center; padding: 0; }
   .layer .acts button.icon:disabled { opacity: .35; cursor: default; }
   /* A slot's or a page's icon in its color, on the black well. */
