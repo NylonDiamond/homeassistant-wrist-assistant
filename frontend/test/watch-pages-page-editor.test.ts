@@ -14,7 +14,7 @@ import { type WatchCatalog, readWatchCatalog } from "../src/watch-pages/catalog.
 import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
 import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
-import { WATCH_PAGES_PLAN_TEXT } from "../src/watch-pages/page-editor.js";
+import { PAGE_LIST_HEIGHT, WATCH_PAGES_PLAN_TEXT, clampPageListHeight, loadPageListHeight } from "../src/watch-pages/page-editor.js";
 import {
   STAGE_ZOOM_KEY,
   loadStageZoom,
@@ -331,6 +331,34 @@ describe("the Tiles card", () => {
     expect(card).toContain(">2 pages</span>");
     expect(card).toMatch(/class="layer pe-page-row hl [^"]*"\s+data-page=P-HALL/);
     expect(card).toMatch(/class="layer pe-page-row  [^"]*"\s+data-page=P-YARD/);
+  });
+
+  it("puts a drag bar between the Pages and Tiles cards that sets the page list's height", () => {
+    const e = editor();
+    const text = e.body();
+    const pagesAt = text.indexOf(`class="card lc pe-pages-card`);
+    const barAt = text.indexOf(`class="pe-list-split"`);
+    const tilesAt = text.indexOf(`class="card lc pe-tiles-card"`);
+    expect(pagesAt).toBeLessThan(barAt);
+    expect(barAt).toBeLessThan(tilesAt);
+    expect(text).toMatch(/class="pe-list-split" role="separator" aria-orientation="horizontal"/);
+    // No height of its own until dragged: the CSS default.
+    expect(text).not.toContain("--pe-list-h");
+    e.el.pageListHeight = 500;
+    expect(e.body()).toContain("--pe-list-h:500px;");
+    expect(rule(sheet(), ".layout.pe-layout.cols-3 .pe-pages-card > .pe-page-list")).toContain("max-height: var(--pe-list-h, min(40dvh, 360px))");
+    expect(rule(sheet(), ".layout.pe-layout.cols-1 .pe-list-split")).toContain("display: none");
+  });
+
+  it("keeps the page list height within its limits and reads back only a saved number", () => {
+    expect(clampPageListHeight(10)).toBe(PAGE_LIST_HEIGHT.min);
+    expect(clampPageListHeight(99_999)).toBe(PAGE_LIST_HEIGHT.max);
+    expect(clampPageListHeight(300.6)).toBe(301);
+    const stored = (value: string | null) => ({ getItem: () => value, setItem: () => {} });
+    expect(loadPageListHeight(stored("420"))).toBe(420);
+    expect(loadPageListHeight(stored("5"))).toBe(PAGE_LIST_HEIGHT.min);
+    for (const value of [null, "", "0", "-3", "junk"]) expect(loadPageListHeight(stored(value))).toBeUndefined();
+    expect(loadPageListHeight(undefined)).toBeUndefined();
   });
 
   it("says under the pages that one page is always free, to a free watch only", () => {

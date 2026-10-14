@@ -82,7 +82,7 @@ import {
 } from "./app-model.js";
 import { appSettingsStyles } from "./app-settings.js";
 import { SCRUB_END, SCRUB_START } from "../editors.js";
-import { type ColumnWidths, beginColumnDrag, fitColumnWidths, loadColumnWidths, saveColumnWidths } from "../column-split.js";
+import { type ColumnStorage, type ColumnWidths, beginColumnDrag, browserStorage, fitColumnWidths, loadColumnWidths, saveColumnWidths } from "../column-split.js";
 import {
   canvasStyles,
   chromeTokens,
@@ -322,6 +322,36 @@ const MOD = IS_MAC ? "⌘" : "Ctrl+";
 const PE_COLUMNS = { min: 200, max: 720, middleMin: 320 } as const;
 const PE_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 320 };
 const PE_COLUMNS_KEY = "wrist-assistant-panel.pages.columns.v1";
+
+/** The page list's height beside the watch, set by dragging the bar between
+ * the Pages and Tiles cards (a preference, saved). Undefined is the CSS
+ * default, `min(40dvh, 360px)`. A list shorter than the height just ends. */
+export const PAGE_LIST_HEIGHT = { min: 96, max: 1600, step: 24 } as const;
+const PAGE_LIST_HEIGHT_KEY = "wrist-assistant-panel.pages.page-list-height.v1";
+
+/** A page list height kept within its limits, in whole pixels. */
+export function clampPageListHeight(n: number): number {
+  return Math.max(PAGE_LIST_HEIGHT.min, Math.min(PAGE_LIST_HEIGHT.max, Math.round(n)));
+}
+
+/** The height saved under the key, or undefined when none was or it does not read. */
+export function loadPageListHeight(storage: ColumnStorage | undefined = browserStorage()): number | undefined {
+  try {
+    const n = Number(storage?.getItem(PAGE_LIST_HEIGHT_KEY) ?? NaN);
+    return Number.isFinite(n) && n > 0 ? clampPageListHeight(n) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function savePageListHeight(height: number | undefined, storage: ColumnStorage | undefined = browserStorage()): void {
+  try {
+    // An empty value reads back as none (`loadPageListHeight`).
+    storage?.setItem(PAGE_LIST_HEIGHT_KEY, height === undefined ? "" : String(height));
+  } catch {
+    /* Storage off: the height still holds for this visit. */
+  }
+}
 /** The grid's own cost beside its three columns, CSS px: two 8px gutters and
  * the complication editor's 2px gap on each side of each. The host's padding
  * is outside the width measured. */
@@ -814,6 +844,8 @@ export class WaPageEditor extends LitElement {
    * host's measured content width and height, which fit them and cap the
    * self-scrolling columns. Zero before the first measurement. */
   @state() private columns: ColumnWidths = { ...PE_COLUMNS_DEFAULT };
+  /** The page list's dragged height beside the watch; undefined for the default. */
+  @state() private pageListHeight?: number;
   @state() private hostWidth = 0;
   @state() private hostHeight = 0;
   private sizeObserver?: ResizeObserver;
@@ -952,6 +984,7 @@ export class WaPageEditor extends LitElement {
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("pointerdown", this.onWindowPointerDown, true);
     this.columns = loadColumnWidths(PE_COLUMNS_KEY, PE_COLUMNS_DEFAULT, PE_COLUMNS);
+    this.pageListHeight = loadPageListHeight();
     this.watchSize();
     this.listenForReconnect();
     // Back in the tree after a visit elsewhere: the record may have moved.
@@ -3273,6 +3306,53 @@ export class WaPageEditor extends LitElement {
       }}></div>`;
   }
 
+  /** The bar between the Pages and Tiles cards beside the watch: drag it to
+   * make the page list taller or shorter, the arrow keys move it a step,
+   * double-click puts it back. Hidden when stacked, where the page scrolls
+   * as one and the list has no height of its own. */
+  private renderListSplit(): TemplateResult {
+    const shownHeight = (): number => {
+      const list = this.renderRoot.querySelector<HTMLElement>(".pe-page-list");
+      return list?.clientHeight ?? this.pageListHeight ?? 360;
+    };
+    const set = (height: number | undefined): void => {
+      this.pageListHeight = height === undefined ? undefined : clampPageListHeight(height);
+      savePageListHeight(this.pageListHeight);
+    };
+    return html`<div class="pe-list-split" role="separator" aria-orientation="horizontal" tabindex="0"
+      aria-label="Resize the page list" title="Drag to resize. Double-click to reset."
+      @pointerdown=${(start: PointerEvent) => {
+        if (start.button !== 0) return;
+        start.preventDefault();
+        const bar = start.currentTarget as HTMLElement;
+        // From the height on screen, so the bar never jumps away from the pointer.
+        const base = shownHeight();
+        bar.setPointerCapture(start.pointerId);
+        bar.classList.add("dragging");
+        const move = (ev: PointerEvent) => {
+          if (ev.pointerId === start.pointerId) this.pageListHeight = clampPageListHeight(base + ev.clientY - start.clientY);
+        };
+        const finish = (ev: PointerEvent) => {
+          if (ev.pointerId !== start.pointerId) return;
+          bar.classList.remove("dragging");
+          bar.removeEventListener("pointermove", move);
+          bar.removeEventListener("pointerup", finish);
+          bar.removeEventListener("pointercancel", finish);
+          savePageListHeight(this.pageListHeight);
+        };
+        bar.addEventListener("pointermove", move);
+        bar.addEventListener("pointerup", finish);
+        bar.addEventListener("pointercancel", finish);
+      }}
+      @keydown=${(e: KeyboardEvent) => {
+        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+        e.preventDefault();
+        e.stopPropagation();
+        set(shownHeight() + (e.key === "ArrowDown" ? PAGE_LIST_HEIGHT.step : -PAGE_LIST_HEIGHT.step));
+      }}
+      @dblclick=${() => set(undefined)}></div>`;
+  }
+
   private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
     if (watches.length === 0) {
       const waiting = this.owners.length === 0 && this.ownList === undefined;
@@ -3323,9 +3403,11 @@ export class WaPageEditor extends LitElement {
     // Pages and Tiles cards, the canvas card, and the inspector, with a
     // drag gutter between each pair. Unlike there, the editor scrolls as a
     // whole and the side columns stick under the top bar.
-    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
+    const listH = this.pageListHeight !== undefined ? `--pe-list-h:${this.pageListHeight}px;` : "";
+    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}${listH}`}>
       <div class="column left">
         ${this.renderPageList(listed, pages, owner)}
+        ${this.renderListSplit()}
         ${this.renderTileList(page, pages, owner)}
       </div>
       ${this.renderGutter("left")}
@@ -4734,10 +4816,25 @@ export class WaPageEditor extends LitElement {
     /* Beside the watch, a long page list scrolls in its own box, so the
        Tiles card under it stays in sight. Stacked, the page scrolls as one. */
     .layout.pe-layout.cols-3 .pe-pages-card > .pe-page-list {
-      position: relative; max-height: min(40dvh, 360px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+      position: relative; max-height: var(--pe-list-h, min(40dvh, 360px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
     }
+    /* The bar between the Pages and Tiles cards: the gutters' look, turned
+       on its side. It sits in the column's gap, so it adds no room. */
+    .pe-list-split {
+      flex: none; height: 10px; margin: -3px 0; cursor: row-resize; position: relative;
+      touch-action: none; border-radius: 4px; outline: none;
+    }
+    .pe-list-split::after {
+      content: ""; position: absolute; inset: 3px 24px; border-radius: 2px;
+      background: var(--wa-line); opacity: 0; transition: opacity .12s ease-out;
+    }
+    .pe-list-split:hover::after, .pe-list-split.dragging::after, .pe-list-split:focus-visible::after {
+      background: var(--wa-accent); opacity: 1;
+    }
+    .layout.pe-layout.cols-1 .pe-list-split { display: none; }
     @container (max-width: 820px) {
       .layout.pe-layout.cols-3 .pe-pages-card > .pe-page-list { max-height: none; overflow: visible; }
+      .pe-list-split { display: none; }
     }
     /* A page row keeps a grip in sight: a finger drags a page by it, and a
        mouse drags the whole row. */
