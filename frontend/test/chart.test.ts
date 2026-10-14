@@ -38,6 +38,8 @@ import {
   type TextElement,
   type IconElement,
   chartMarkerToIcon,
+  chartMarkerToImage,
+  chartImageMarkerToIcon,
   DESIGN_BOX,
   type ChartAnchorPoint,
   type ChartAnchorPlace,
@@ -1563,6 +1565,62 @@ describe("chart markers as layers", () => {
     chartMarkerToIcon(cfg, heart.payload.id);
     expect(literalPartText((cfg.elements.find((el) => el.payload.id === heart.payload.id)!.payload as IconElement).symbol))
       .toBe("circle.fill");
+  });
+
+  it("swaps a marker for an uploaded picture and back, keeping its id, group and anchor", () => {
+    const { cfg, chartId } = withChart();
+    const id = addChartMarker(cfg, chartId, "lowest")!;
+    const marker = cfg.elements.find((el) => el.payload.id === id)!;
+    const groupId = marker.payload.groupId;
+    marker.payload.chartAnchor!.dy = -1;
+    marker.payload.rules = [{
+      id: "r1",
+      cases: [{ id: "c1", when: { kind: "always" } as never, then: [
+        { kind: "setColor", value: literal("#FF0000") },
+        { kind: "setOpacity", value: 0.5 } as never,
+      ] }],
+    }];
+    cfg.perFamily.rectangular!.placements[id] = { frame: { x: 0.4, y: 0.2, width: 0.05, height: 0.1, rotationDegrees: 0 }, isHidden: false };
+
+    chartMarkerToImage(cfg, id);
+    const image = cfg.elements.find((el) => el.payload.id === id)!;
+    expect(image.kind).toBe("image");
+    const p = image.payload as Extract<Element, { kind: "image" }>["payload"];
+    expect(p.source).toBe("inline");
+    expect(p.contentMode).toBe("fit");
+    expect(p.groupId).toBe(groupId);
+    expect(p.chartAnchor).toEqual({ layer: chartId, at: "lowest", place: "above", dy: -1 });
+    // A picture has no color, so only the opacity state survives.
+    expect(p.rules[0]!.cases[0]!.then.map((ch) => ch.kind)).toEqual(["setOpacity"]);
+    // A square box on the face, larger than the glyph, the position left alone.
+    const placed = cfg.perFamily.rectangular!.placements[id]!.frame;
+    expect(placed.width * DESIGN_BOX.rectangular.width).toBeCloseTo(placed.height * DESIGN_BOX.rectangular.height);
+    expect(placed.width).toBeGreaterThan(0.05);
+    expect(placed.x).toBe(0.4);
+    expect(cfg.elements.filter((el) => el.payload.id === id)).toHaveLength(1);
+
+    // The anchor survives a save, on a picture layer. The stand-in rule above
+    // is not a real condition, so it stays out of the save.
+    p.data = "iVBORw0KGgo=";
+    p.rules = [];
+    const round = parseConfig(encodeConfig(cfg)).elements.find((el) => el.payload.id === id)!;
+    expect(round.kind).toBe("image");
+    expect(round.payload.chartAnchor).toEqual({ layer: chartId, at: "lowest", place: "above", dy: -1 });
+
+    chartImageMarkerToIcon(cfg, id);
+    const icon = cfg.elements.find((el) => el.payload.id === id)!;
+    expect(icon.kind).toBe("icon");
+    expect(literalPartText((icon.payload as IconElement).symbol)).toBe("circle.fill");
+    expect(icon.payload.chartAnchor).toEqual({ layer: chartId, at: "lowest", place: "above", dy: -1 });
+    expect(icon.payload.groupId).toBe(groupId);
+  });
+
+  it("leaves a picture that follows no chart alone", () => {
+    const { cfg } = withChart();
+    const text = newElement("text");
+    cfg.elements.push(text);
+    chartMarkerToImage(cfg, text.payload.id);
+    expect(cfg.elements.find((el) => el.payload.id === text.payload.id)!.kind).toBe("text");
   });
 
   it("writes no anchor key on a layer that follows nothing", () => {

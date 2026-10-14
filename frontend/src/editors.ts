@@ -269,6 +269,8 @@ import {
   TODO_STATUSES,
   chartPointDotSize,
   chartMarkerToIcon,
+  chartMarkerToImage,
+  chartImageMarkerToIcon,
   addChartLine,
   chartAnchorIsColumn,
   setChartNow,
@@ -7161,6 +7163,13 @@ function anchorFields(host: EditorHost, el: CElement, family: FamilyKind): Templ
         ${el.kind === "text"
           ? html`<button class="small" title="Swap this text marker for an icon of the same shape, keeping where it sits"
               @click=${() => host.update((c) => { chartMarkerToIcon(c, id); })}><span>Use an icon</span></button>`
+          : el.kind === "image"
+          ? html`<button class="small" title="Swap this picture marker for an icon, keeping where it sits"
+              @click=${() => host.update((c) => { chartImageMarkerToIcon(c, id); })}><span>Use an icon</span></button>`
+          : nothing}
+        ${el.kind === "text" || el.kind === "icon"
+          ? html`<button class="small" title="Swap this marker for a picture you upload, such as a logo, keeping where it sits"
+              @click=${() => host.update((c) => { chartMarkerToImage(c, id); })}><span>Use a picture</span></button>`
           : nothing}
       </div>
     </div>`}
@@ -9730,7 +9739,8 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
       const name = CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "Reading";
       if (place === "through") return { el: m, lead: at === "now" ? "│" : "─", title: at === "zero" ? "Zero" : name, kind: "Line" };
       const glyph = m.kind === "text" ? (host.resolve(m.payload.value) ?? "●")
-        : m.kind === "icon" ? markerGlyph(host.resolve(m.payload.symbol)) : "◆";
+        : m.kind === "icon" ? markerGlyph(host.resolve(m.payload.symbol))
+        : m.kind === "image" ? uiIcon("image") : "◆";
       return { el: m, lead: glyph, title: name, kind: "Marker" };
     }),
     ...times.map((t): LayerRow => ({ el: t, lead: uiIcon("clock"), title: "Clock times", kind: "Times" })),
@@ -9919,7 +9929,11 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
         <div class="grid2">
           ${shapeSizeField(host, el, family, "Icon size", { step: 1, min: 4, def: base.size as number })}
           ${color}
-        </div>`;
+        </div>
+        ${anchor && anchor.place !== "through" ? html`<div class="chips">
+          <button class="small" title="Swap this marker for a picture you upload, such as a logo, keeping where it sits"
+            @click=${() => host.update((c) => { chartMarkerToImage(c, id); })}><span>Use a picture</span></button>
+        </div>` : nothing}`;
     case "shape":
       if (el.payload.kind !== "line") {
         return html`
@@ -9964,6 +9978,19 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
           { label: "States", noShare: true, key: `${key}-value` })}`;
     case "image": {
       const img = el.payload;
+      // A picture marker: which reading it rides on, the picture itself, and
+      // the way back to an icon. Its source is always an upload.
+      if (anchor && anchor.place !== "through") {
+        return html`
+          ${markerReadingFields(host, id, anchor, upd)}
+          ${img.source === "inline"
+            ? inlineImageFields(host, img, family, (m, k) => upd((e) => { if (e.kind === "image") m(e.payload); }, k ?? "img"))
+            : nothing}
+          <div class="chips">
+            <button class="small" title="Swap this picture marker for an icon, keeping where it sits"
+              @click=${() => host.update((c) => { chartImageMarkerToIcon(c, id); })}><span>Use an icon</span></button>
+          </div>`;
+      }
       return html`
         ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"], ["inline", "Custom image"]],
           (v) => upd((e) => { if (e.kind === "image") setImageSource(e.payload, v); }, "source"), { def: base.source as typeof img.source })}
