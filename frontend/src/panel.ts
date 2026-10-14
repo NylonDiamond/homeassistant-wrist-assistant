@@ -1555,6 +1555,12 @@ export class WristAssistantPanel extends LitElement {
   /** Each watch's pages as Home Assistant holds them, read when the watch is
    * shown on Home, for the pictures on its Pages door. */
   @state() private homePages: ReadonlyMap<string, readonly WatchPage[]> = new Map();
+  /** Each watch's pages and menus records as stored, for the pictures of its
+   * three menus on the Menus door (`wa-menu-thumbs`). */
+  @state() private homeMenus: ReadonlyMap<string, { pages: unknown; menus: unknown }> = new Map();
+  /** Whether the menu pictures' element has loaded (`loadMenuThumbs`). */
+  @state() private menuThumbsReady = false;
+  private menuThumbsAsked = false;
   private homePagesAsked = new Set<string>();
 
   /** The Watch app's shared watch as last picked, remembered per browser
@@ -19753,11 +19759,27 @@ export class WristAssistantPanel extends LitElement {
     if (deviceKindOf(this.ownerOf(ownerId)) !== "watch") return;
     this.homePagesAsked.add(ownerId);
     try {
-      const record = await fetchWatchConfig(this.hass, ownerId, "pages");
+      const [record, menus] = await Promise.all([
+        fetchWatchConfig(this.hass, ownerId, "pages"),
+        fetchWatchConfig(this.hass, ownerId, "menus").catch(() => undefined),
+      ]);
       this.homePages = new Map(this.homePages).set(ownerId, watchPagesOf(asWatchPagesDocument(record.document)));
+      this.homeMenus = new Map(this.homeMenus).set(ownerId, {
+        pages: record.document,
+        menus: menus !== undefined && menus.revision > 0 ? menus.document : undefined,
+      });
     } catch {
-      // The door keeps its line.
+      // The doors keep their lines.
     }
+  }
+
+  /** Load the element that draws a watch's three menus small, once. It is in
+   * the menu editor's chunk, so the panel's first download stays as it was;
+   * a failure leaves the Menus door its line. */
+  private loadMenuThumbs() {
+    if (this.menuThumbsAsked) return;
+    this.menuThumbsAsked = true;
+    void import("./watch-menus/menu-thumbs.js").then(() => { this.menuThumbsReady = true; }, () => undefined);
   }
 
   /** Read the counts a watch's doors wear, from the stored records, for an
@@ -19929,10 +19951,24 @@ export class WristAssistantPanel extends LitElement {
         })}
       </span>`;
     };
+    // The Menus door draws the watch's three menus as the Menus screen
+    // does: the Anywhere menu, the Entity quick menu and the page switcher.
+    const menusStrip = () => {
+      const held = this.homeMenus.get(ownerId);
+      if (row.kind !== "watch" || gone || held === undefined) return undefined;
+      this.loadMenuThumbs();
+      if (!this.menuThumbsReady) return undefined;
+      const h = Math.round(screen.height * (HOME_PAGE_THUMB_WIDTH / screen.width) * 100) / 100;
+      return html`<span class="hb-door-pages" aria-hidden="true" style=${`--hb-screen-h:${h}px`}>
+        <wa-menu-thumbs .hass=${this.hass} .icons=${this.icons} .tick=${this.iconsTick} .menus=${held.menus} .pages=${held.pages}
+          .screen=${screen} .height=${h}></wa-menu-thumbs>
+      </span>`;
+    };
     const door = (t: DeviceSheetTab) => {
       const look = homeDoorLook(t, row.kind);
       const n = t.kind === "list" || t.count !== undefined ? count(t) : undefined;
       const strip = t.kind === "screen" && t.screen.id === "pages" ? pagesStrip()
+        : t.kind === "screen" && t.screen.id === "menus" ? menusStrip()
         : t.kind === "list" && t.filter === "all" ? compsStrip() : undefined;
       const body = html`<span class="hb-door-top">
           <span class="hb-door-chip" aria-hidden="true">${uiIcon(look.icon)}</span>
