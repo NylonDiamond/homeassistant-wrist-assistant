@@ -1244,6 +1244,13 @@ export interface TextPart {
    * icon, as on an icon layer. Text-only looks (typeface, width, slant, color
    * by value) mean nothing to it. */
   icon?: Value;
+  /** An icon part's Material Design drawings, by `mdi:` name: the SVG `d`
+   * string of each one the part can draw, in MDI's 24 unit box. The watch has
+   * no MDI catalogue, so a name a template renders draws only when its
+   * drawing is here. The editor keeps it in step (`syncPartIconPaths`): every
+   * name written out in the part's icon value, or in an icon change aimed at
+   * the part, that the catalogue knows. Absent means none. */
+  iconPaths?: Record<string, string>;
   /** Absent means the layer's resolved color. */
   colorHex?: string;
   /** Absent means the layer's resolved weight. */
@@ -4635,6 +4642,10 @@ function parseTextParts(raw: unknown): TextPart[] {
       value: isObject(o.value) ? parseValue(o.value) : literal(""),
     };
     if (isObject(o.icon)) part.icon = parseValue(o.icon);
+    if (isObject(o.iconPaths)) {
+      const paths = Object.entries(o.iconPaths).filter((e): e is [string, string] => typeof e[1] === "string" && e[1] !== "");
+      if (paths.length > 0) part.iconPaths = Object.fromEntries(paths);
+    }
     if (typeof o.colorHex === "string") part.colorHex = o.colorHex;
     const weight = optStr(o.fontWeight);
     if (weight === "regular" || weight === "medium" || weight === "semibold" || weight === "bold") part.fontWeight = weight;
@@ -6646,6 +6657,10 @@ export function encodeRules(rules: Rule[]): J[] {
 function encodeTextPart(p: TextPart): J {
   const o: J = { id: p.id, value: encodeValue(p.value) };
   if (p.icon !== undefined) o.icon = encodeValue(p.icon);
+  // By name, so a part read and written again keeps its bytes whatever order
+  // the names were found in.
+  const paths = Object.keys(p.iconPaths ?? {}).sort();
+  if (paths.length > 0) o.iconPaths = Object.fromEntries(paths.map((n) => [n, p.iconPaths![n]!]));
   if (p.colorHex !== undefined) o.colorHex = p.colorHex;
   if (p.fontWeight !== undefined) o.fontWeight = p.fontWeight;
   if (p.fontSize !== undefined) o.fontSize = encNum(p.fontSize);
@@ -7887,7 +7902,7 @@ const K = {
     "fontDesign", "fontWidth", "italic", "minimumScale", "alignment",
     "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex", "parts",
     "arc", "chartAnchor"],
-  textPart: ["id", "value", "icon", "colorHex", "fontWeight", "fontSize", "fontDesign", "fontWidth", "italic",
+  textPart: ["id", "value", "icon", "iconPaths", "colorHex", "fontWeight", "fontSize", "fontDesign", "fontWidth", "italic",
     "coloring", "bands", "bandAboveColorHex"],
   icon: ["symbol", "path", "viewBox", "size", "level", "chartAnchor"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex",

@@ -252,6 +252,9 @@ export interface IconProvider {
   /** The SVG `d` of one MDI name, or undefined when it is unknown or the
    * catalogue has not arrived yet. This is what the editor writes onto a layer. */
   mdiPath?(name: string): string | undefined;
+  /** Settles once the MDI catalogue has arrived or failed to, starting the
+   * load. A save waits on it before writing icon part drawings. */
+  mdiLoaded?(): Promise<void>;
 }
 
 export interface RenderOptions {
@@ -1076,6 +1079,8 @@ interface PartLook {
   colorHex: string;
   /** Set on an icon part's look, whose one character is `ICON_MARK`. */
   symbol?: string;
+  /** A Material Design icon part's drawing, drawn instead of `symbol`. */
+  path?: string;
 }
 
 type PartRun = { text: string; look: PartLook };
@@ -1113,6 +1118,7 @@ function partLooks(parts: readonly ResolvedTextPart[]): PartLook[] {
         fontSize: part.fontSize, fontWeight: part.fontWeight,
         fontDesign: part.fontDesign, fontWidth: part.fontWidth,
         italic: part.italic, colorHex: part.colorHex, symbol: part.symbol,
+        ...(part.path !== undefined ? { path: part.path } : {}),
       });
       continue;
     }
@@ -1301,6 +1307,14 @@ function renderPartPieces(
         x += ICON_ADVANCE * s;
         // Centred where a capital letter's middle sits, a third of the size
         // above the baseline, so the icon lines up with the words beside it.
+        // A Material Design icon is its own drawing, a little larger than the
+        // size for the margin MDI draws inside its box, as on an icon layer.
+        if (piece.look.path !== undefined) {
+          const d = s * MDI_SIZE_FACTOR;
+          const c = colorAttrs(piece.look.colorHex, "fill");
+          return svg`<g transform="translate(${at + s / 2 - d / 2} ${y - 0.35 * s - d / 2}) scale(${d / 24})">
+            <path d=${piece.look.path} fill=${c.fill} fill-opacity=${c["fill-opacity"]} /></g>`;
+        }
         const glyph = icons.render(piece.symbol, s, piece.look.colorHex);
         return glyph ? svg`<g transform="translate(${at} ${y - 0.35 * s - s / 2})">${glyph}</g>` : nothing;
       }

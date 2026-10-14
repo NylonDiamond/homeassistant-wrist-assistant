@@ -333,6 +333,15 @@ export class BundledIconProvider implements IconProvider {
       <path d=${d} fill=${c.color} fill-opacity=${c.opacity} /></svg>`;
   }
 
+  /** Settles once the file has arrived or failed, starting the load if
+   * nothing has yet. Never rejects: a broken file is a catalogue of nothing. */
+  loaded(): Promise<void> {
+    this.load();
+    return this.loading ?? Promise.resolve();
+  }
+
+  private loading?: Promise<void>;
+
   private load() {
     if (this.state !== "idle") return;
     this.state = "loading";
@@ -341,7 +350,7 @@ export class BundledIconProvider implements IconProvider {
     // because Home Assistant serves this route with a month of cache, and a
     // rebuilt symbol file would otherwise stay invisible for that long.
     const url = new URL(`${this.file}?v=${this.digest}`, import.meta.url);
-    fetch(url)
+    this.loading = fetch(url)
       .then((res) => {
         if (!res.ok || !res.body) throw new Error(`${this.file}: ${res.status}`);
         return new Response(res.body.pipeThrough(new DecompressionStream("gzip"))).json();
@@ -406,6 +415,10 @@ export class SplitIconProvider implements IconProvider {
 
   mdiPath(name: string): string | undefined {
     return this.mdi.path(name);
+  }
+
+  mdiLoaded(): Promise<void> {
+    return this.mdi.loaded();
   }
 }
 
