@@ -3095,8 +3095,7 @@ export function templateBox(host: Pick<EditorHost, "hass">, text: string, opts: 
     land(pending ? applyRecipe(text, cursor, pending, ref.entityId, STARTER_TEMPLATE, states) : insertEntity(text, cursor, ref.entityId));
   };
   return html`<div class="tpl-box" data-tpl=${opts.key}>
-    <div class="tpl-recipes" role="group" aria-label="Recipes">
-      <span class="tpl-h">Recipes</span>
+    <div class="field tpl-recipes-row"><span>Recipes</span><div class="tpl-recipes" role="group" aria-label="Recipes">
       ${recipesFor(opts.use).map((r) => {
         const asks = recipeNeedsEntity(r, entity);
         const on = recipeChosen(r, text, entity) || pending === r;
@@ -3104,7 +3103,7 @@ export function templateBox(host: Pick<EditorHost, "hass">, text: string, opts: 
           title=${asks ? `${r.title}. Asks for ${recipeEntityWords(r)} first.` : entity && r.domains ? `${r.title}, for ${entity}` : r.title}
           @click=${(e: Event) => choose(r, e.currentTarget)}>${r.label}${asks ? "…" : ""}</button>`;
       })}
-    </div>
+    </div></div>
     <label class="field"><span>${opts.label}</span>
       <textarea rows=${opts.rows} class="mono" spellcheck="false" .value=${live(text)} placeholder=${opts.placeholder ?? ""}
         @input=${(e: Event) => { remember(e); opts.write((e.target as HTMLTextAreaElement).value, true); }}
