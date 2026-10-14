@@ -327,17 +327,6 @@ function renderRoomWatch(host: RoomsViewHost, stored: string): TemplateResult {
   </div>`, name === "" ? "Watch" : `Watch showing ${name}`);
 }
 
-function renderTargetsList(host: RoomsViewHost, room: RoomListEntry): TemplateResult {
-  if (!host.view.zones.ok) return html`<span class="rm-step-none">Cannot be read</span>`;
-  const zones = roomZones(host.view.zones.rooms, room.key);
-  if (zones.length === 0) return html`<span class="rm-step-none">Nothing yet</span>`;
-  return html`<ul class="rm-points">${zones.map((z) => html`<li>
-    <span class="rm-point-chip" aria-hidden="true">${uiIcon("tap")}</span>
-    <span class="rm-point-name">${z.label ?? nameOf(host.hass, z.entityId)}</span>
-    <span class="rm-point-dir">${Math.round(z.centerHeading)}° ${compassPoint(z.centerHeading)}</span>
-  </li>`)}</ul>`;
-}
-
 function renderStage(host: RoomsViewHost, room: RoomListEntry | undefined): TemplateResult {
   if (room === undefined) {
     return html`<div class="card canvas-card lit rm-canvas" aria-label="Rooms">
@@ -378,13 +367,9 @@ function renderStage(host: RoomsViewHost, room: RoomListEntry | undefined): Temp
           <span class="rm-wire" aria-hidden="true"><i></i></span>
         </div>
         <div class="rm-stage-body" style=${`--rm-screen-h: ${screenHeightPx(host, host.narrow === true ? 1 : STAGE_SCALE)}px`}>${renderRoomWatch(host, stored)}</div>
-        <div class="rm-flow-side rm-flow-out">
-          <span class="rm-wire" aria-hidden="true"><i></i></span>
-          <div class="rm-step">
-            <span class="rm-step-l">3 · Point at</span>
-            ${renderTargetsList(host, room)}
-          </div>
-        </div>
+        <!-- An empty side, so the watch stays in the middle. Point control is
+             rare, so it lives only in the room's card on the right. -->
+        <div class="rm-flow-side rm-flow-out" aria-hidden="true"></div>
       </div>
     </div>
   </div>`;
@@ -765,7 +750,6 @@ export const roomsViewStyles = css`
   .rm-flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 18px; }
   .rm-flow-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
   .rm-flow-in { align-items: flex-end; text-align: right; }
-  .rm-flow-out { align-items: flex-start; }
   .rm-step { display: flex; flex-direction: column; gap: 5px; min-width: 0; align-items: inherit; }
   .rm-step-l { font-size: 10.5px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--wa-muted); }
   .rm-key {
@@ -773,24 +757,14 @@ export const roomsViewStyles = css`
     color: var(--wa-ink); background: var(--wa-card); border: 1px solid var(--wa-line-strong); overflow-wrap: anywhere;
   }
   .rm-step-v { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
-  .rm-step-v.none, .rm-step-none { font-size: 13px; font-weight: 400; color: var(--wa-muted); }
+  .rm-step-v.none { font-size: 13px; font-weight: 400; color: var(--wa-muted); }
   .rm-step-note { font-size: 11.5px; color: var(--wa-amber); }
   /* The wire from the steps to the watch: a hairline ending in a dot in the
      Rooms hue. */
   .rm-wire { display: flex; align-items: center; width: 70px; height: 7px; }
   .rm-wire::before { content: ""; flex: 1; height: 1px; background: var(--wa-line-strong); }
   .rm-wire i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--wa-stage-hue); }
-  .rm-flow-out .rm-wire { flex-direction: row-reverse; }
   .canvas-card.lit .stage-area > .rm-flow .rm-stage-body { display: flex; justify-content: center; padding-bottom: 32px; }
-  ul.rm-points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-  ul.rm-points li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; }
-  .rm-point-chip {
-    flex: none; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center;
-    border: 1px solid var(--wa-line-strong); color: var(--wa-soft);
-  }
-  .rm-point-chip svg.ui-icon { width: 12px; height: 12px; }
-  .rm-point-name { overflow-wrap: anywhere; min-width: 0; }
-  .rm-point-dir { font-size: 11.5px; color: var(--wa-muted); }
   /* One screen of the page: a taller page is cut at the screen's foot, as
      the watch opens it, rather than drawn on down past the case. */
   :is(.rm-stage-body, .rm-thumb) .wa-watch > .wp-screen { max-height: var(--rm-screen-h); }
@@ -798,10 +772,11 @@ export const roomsViewStyles = css`
   /* A plain watch screen: the page's name on the watch's black. */
   .wp-screen.rm-screen { display: grid; place-items: center; padding: 20px; text-align: center; }
   .wp-screen.rm-screen span { font-size: 15px; font-weight: 600; color: var(--wa-face-muted); overflow-wrap: anywhere; }
-  /* A narrow stage: the steps over the watch, the targets under it. */
+  /* A narrow stage: the steps over the watch. */
   @container rmstage (max-width: 600px) {
     .rm-flow { grid-template-columns: minmax(0, 1fr); justify-items: center; }
-    .rm-flow-in, .rm-flow-out { align-items: center; text-align: center; }
+    .rm-flow-out { display: none; }
+    .rm-flow-in { align-items: center; text-align: center; }
     .rm-wire { display: none; }
     .canvas-card.lit .stage-area > .rm-flow .rm-stage-body { padding-bottom: 20px; }
   }

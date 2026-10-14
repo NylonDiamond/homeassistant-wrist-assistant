@@ -691,12 +691,13 @@ describe("the list, the stage and the inspector", () => {
     expect(pickedRoom(h, listed)?.key).toBe("kitchen");
   });
 
-  it("draw the picked room on the stage: the sensor's word, the page and the targets", () => {
+  it("draw the picked room on the stage: the sensor's word and the page; the targets only in its card", () => {
     const text = flat(renderRoomsBody(host(behavior())));
-    for (const s of ["What the watch does when you walk in", "1 · Sensor says", "2 · Watch opens", "3 · Point at", "Pendant / Bar", "90° E", "Remove", "+ Add a thing", "Page to open", "Every room"]) {
+    for (const s of ["What the watch does when you walk in", "1 · Sensor says", "2 · Watch opens", "Pendant / Bar", "90° E", "Remove", "+ Add a thing", "Page to open", "Every room"]) {
       expect(text).toContain(s);
     }
     expect(text).toContain(`title=${HEADING_HELP_DETAIL}`);
+    expect(text).not.toContain("Point at");
   });
 
   it("draw the page itself on the watch when the watch's pages are at hand", () => {
