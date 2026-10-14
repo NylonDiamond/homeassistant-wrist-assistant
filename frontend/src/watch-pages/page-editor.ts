@@ -335,7 +335,7 @@ const THUMB_W = 44;
 const THUMB_H = 22;
 /** A page row's picture: one whole watch screen, this wide in CSS pixels,
  * as tall as the watch's screen is at that width. */
-const PAGE_THUMB_W = 34;
+const PAGE_THUMB_W = 44;
 
 /** Entity id kinds whose part after the dot is an id of the tile's own
  * (`spacer.<id>`, `template.<id>`): a copy takes a new one. */
