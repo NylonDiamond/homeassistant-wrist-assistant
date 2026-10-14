@@ -11,8 +11,9 @@
 //
 // The row is neutral: the watch's chip and every button are grey boxes with a
 // one pixel outline. The tab on show is raised in grey, and only its glyph
-// takes the screen's hue. What a screen is lives in its tab's tooltip
-// (`watchScreenSentence`). On a phone the watch and the save controls share
+// takes the screen's hue. What a screen is, and how its work is used on the
+// watch, lives in its tab's hover card (`watchScreenSentence` and
+// `screen-howto.ts`), never on the editors. On a phone the watch and the save controls share
 // the first line and the screens are a second line that scrolls sideways.
 //
 // The save controls are each screen's own (`head-bar.ts`): the panel puts an
@@ -28,6 +29,7 @@ import type { OwnerSummary } from "./ha-api.js";
 import { homeMiniArt } from "./home-art.js";
 import type { Person } from "./people.js";
 import { personColorVar } from "./pickerRows.js";
+import { howToStyles, renderHowTo, screenHowTo } from "./screen-howto.js";
 import { type DeviceSync, deviceSync, deviceSyncLabel } from "./send-state.js";
 import {
   WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, isPlainClick, panelUrl, unsavedDot, watchScreenOf, watchScreenPath, watchScreenSentence,
@@ -200,11 +202,22 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
   const slot = watchRowSlot(input.loaded, choices.length);
   const href = (path: string) => panelUrl(input.route, path, globalThis.location?.pathname ?? "");
   const unsaved = new Set((input.unsaved ?? []).map((screen) => screen.id));
+  const links = [
+    ...(slot === "none" ? [] : watchRowLinks(input.route, input.watch).map((l) => ({ l, cls: "" }))),
+    { l: watchRowSettingsLink(input.route, input.watch), cls: "wa-wr-settings " },
+  ];
   const link = (l: WatchRowLink, cls = "") => {
     const look = WATCH_SCREEN_LOOK[l.screen.id];
+    const tip = watchRowLinkTitle(l.screen) === undefined ? undefined : `wa-wr-tip-${l.screen.id}`;
     return html`<a class="wa-wr-link ${cls}${l.on ? "on" : ""}"
-    href=${href(l.path)} aria-current=${l.on ? "page" : "false"} title=${watchRowLinkTitle(l.screen) ?? nothing} style=${`--h: ${look.hue}`}
+    href=${href(l.path)} aria-current=${l.on ? "page" : "false"} aria-describedby=${tip ?? nothing} style=${`--h: ${look.hue}`}
+    @pointerenter=${(e: PointerEvent) => { if (e.pointerType === "mouse") hoverRowTip(e.currentTarget as HTMLElement, true); }}
+    @pointerleave=${(e: PointerEvent) => hoverRowTip(e.currentTarget as HTMLElement, false)}
+    @focus=${(e: FocusEvent) => { const a = e.currentTarget as HTMLElement; if (a.matches(":focus-visible")) hoverRowTip(a, true); }}
+    @blur=${(e: FocusEvent) => hoverRowTip(e.currentTarget as HTMLElement, false)}
+    @pointerdown=${closeRowTip}
     @click=${(e: MouseEvent) => {
+      closeRowTip();
       if (!isPlainClick(e)) return;
       e.preventDefault();
       if (!l.on) input.onGo(l.path);
@@ -213,12 +226,74 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
   return html`<div class="wa-watchrow ${slot === "none" ? "no-watch" : ""}">
     ${renderWatchSlot(input, slot, choices)}
     ${slot === "none" ? html`<span class="wa-wr-note">${WATCH_ROW_NONE_NOTE}</span>` : nothing}
-    <nav class="wa-wr-links" aria-label="Watch app" @scroll=${(e: Event) => markRowMore(e.currentTarget as HTMLElement)}>
-      ${slot === "none" ? nothing : watchRowLinks(input.route, input.watch).map((l) => link(l))}
-      ${link(watchRowSettingsLink(input.route, input.watch), "wa-wr-settings ")}
+    <nav class="wa-wr-links" aria-label="Watch app" @scroll=${(e: Event) => { markRowMore(e.currentTarget as HTMLElement); closeRowTip(); }}>
+      ${links.map(({ l, cls }) => link(l, cls))}
     </nav>
+    ${links.map(({ l }) => renderRowTip(l.screen))}
     <div class="wa-wr-end">${input.end ?? nothing}</div>
   </div>${renderUnsavedBar(input, href)}`;
+}
+
+/** A tab's hover card: what the screen is, then how its work is used on the
+ * watch. A popover, so the row's sideways scroll never clips it. None for a
+ * retired screen. */
+function renderRowTip(screen: WatchScreen) {
+  const what = watchRowLinkTitle(screen);
+  if (what === undefined) return nothing;
+  const how = screenHowTo(screen.id);
+  return html`<div class="wa-wr-tip" id=${`wa-wr-tip-${screen.id}`} popover="manual" role="tooltip"
+    style=${`--howto-hue: ${WATCH_SCREEN_LOOK[screen.id].hue}`}>
+    <p class="wa-wr-tip-what">${what}</p>
+    ${how === undefined ? nothing : renderHowTo(how)}
+  </div>`;
+}
+
+// One hover card open at a time. It opens after a short rest on a tab, so a
+// pointer passing over the row opens nothing; once one is open, the next tab
+// swaps at once.
+let tipTimer: ReturnType<typeof setTimeout> | undefined;
+let tipOpen: HTMLElement | undefined;
+
+function tipOf(link: HTMLElement): HTMLElement | undefined {
+  const id = link.getAttribute("aria-describedby");
+  return id ? link.closest(".wa-watchrow")?.querySelector<HTMLElement>(`#${id}`) ?? undefined : undefined;
+}
+
+/** Where a hover card sits: under its tab, centred on it, kept 8px inside
+ * the window. */
+export function rowTipLeft(tab: { left: number; width: number }, tipWidth: number, viewWidth: number): number {
+  return Math.max(8, Math.min(viewWidth - tipWidth - 8, tab.left + tab.width / 2 - tipWidth / 2));
+}
+
+function openRowTip(link: HTMLElement): void {
+  const tip = tipOf(link);
+  if (tip === undefined || !link.isConnected) return;
+  if (tipOpen !== undefined && tipOpen !== tip) closeRowTip();
+  try {
+    if (!tip.matches(":popover-open")) tip.showPopover();
+  } catch {
+    return;
+  }
+  const r = link.getBoundingClientRect();
+  tip.style.left = `${rowTipLeft(r, tip.offsetWidth, globalThis.innerWidth)}px`;
+  tip.style.top = `${r.bottom + 8}px`;
+  tipOpen = tip;
+}
+
+/** A tab hovered (or focused from the keyboard), or left. */
+function hoverRowTip(link: HTMLElement, on: boolean): void {
+  clearTimeout(tipTimer);
+  tipTimer = on ? setTimeout(() => openRowTip(link), tipOpen === undefined ? 450 : 0) : setTimeout(closeRowTip, 60);
+}
+
+function closeRowTip(): void {
+  clearTimeout(tipTimer);
+  try {
+    if (tipOpen?.matches(":popover-open")) tipOpen.hidePopover();
+  } catch {
+    /* already gone */
+  }
+  tipOpen = undefined;
 }
 
 /** The bar under the row while another screen holds unsaved work. Each other
@@ -339,6 +414,18 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
  * with a one pixel outline; a section's hue shows only on its tab's glyph
  * while it is on show. */
 export const watchRowStyles = css`
+  ${howToStyles}
+  /* A tab's hover card, in the top layer. The script places it under its
+     tab; it never takes the pointer, so the tab under it stays hovered. */
+  .wa-wr-tip {
+    position: fixed; inset: auto; margin: 0; box-sizing: border-box; width: 360px; max-width: calc(100vw - 16px);
+    padding: 12px 14px; border: 1px solid var(--wa-line-strong); border-radius: 12px;
+    background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop); pointer-events: none;
+  }
+  .wa-wr-tip-what { margin: 0 0 10px; font-size: 13px; line-height: 1.45; color: var(--wa-label); }
+  .wa-wr-tip .howto { width: auto; margin: 0; padding: 10px 0 0; border: 0; border-top: 1px solid var(--wa-line); border-radius: 0; background: none; }
+  .wa-wr-tip .howto-chip { width: 32px; height: 32px; border-radius: 8px; }
+  .wa-wr-tip .howto-art { width: 18px; height: 18px; }
   .wa-watchrow {
     display: flex; flex-wrap: nowrap; align-items: center; gap: 14px; flex: none;
     min-height: 60px; box-sizing: border-box; padding: 8px 18px;

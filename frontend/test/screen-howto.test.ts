@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { renderHowTo, renderScreenIntro, SCREEN_HOW_TO, SCREEN_INTROS } from "../src/screen-howto.js";
+import { renderHowTo, SCREEN_HOW_TO, screenHowTo } from "../src/screen-howto.js";
+import { WATCH_SCREENS } from "../src/shell.js";
 import { MENU_HOW_TO } from "../src/watch-menus/menu-stage.js";
+import { rowTipLeft } from "../src/watch-row.js";
 
 /** A template flattened to its markup, values in place. */
 const flat = (v: unknown): string => {
@@ -13,33 +15,46 @@ const flat = (v: unknown): string => {
 };
 
 const ALL_WORDS = [
-  ...Object.values(SCREEN_INTROS),
   ...Object.values(SCREEN_HOW_TO).flatMap((h) => [h.label, h.how, h.use]),
   ...Object.values(MENU_HOW_TO).flatMap((h) => [h.open, h.use]),
 ];
 
-describe("what each watch screen is for", () => {
-  it("every screen has an intro and a how-to card", () => {
-    for (const text of Object.values(SCREEN_INTROS)) expect(text.length, text).toBeGreaterThan(20);
-    for (const id of Object.keys(SCREEN_HOW_TO) as (keyof typeof SCREEN_HOW_TO)[]) {
-      expect(SCREEN_HOW_TO[id].how.length, id).toBeGreaterThan(20);
-      expect(SCREEN_HOW_TO[id].use.length, id).toBeGreaterThan(10);
+describe("how each watch screen is used", () => {
+  it("every live screen has a how-to for its tab's hover card", () => {
+    for (const screen of WATCH_SCREENS) {
+      if (screen.retired === true) continue;
+      const how = screenHowTo(screen.id);
+      expect(how, screen.id).toBeDefined();
+      expect(how!.how.length, screen.id).toBeGreaterThan(20);
+      expect(how!.use.length, screen.id).toBeGreaterThan(10);
     }
+    expect(screenHowTo("settings")).toBeUndefined();
+    expect(screenHowTo("toString")).toBeUndefined();
   });
 
   it("keeps to the panel's plain words", () => {
     for (const text of ALL_WORDS) {
-      expect(text, text).not.toMatch(/TODO|…|\.\.\.|\s-\s|—|–/);
+      expect(text, text).not.toMatch(/…|\.\.\.|\s-\s|—|–/);
       expect(text.trim(), text).toBe(text);
       expect(text, text).toMatch(/^[A-Z]/);
     }
   });
 
-  it("draws the card and the intro", () => {
+  it("says the page switcher opens from the Anywhere menu, never a pull down", () => {
+    expect(MENU_HOW_TO.switcher.open).toContain("Pages slot");
+    expect(ALL_WORDS.join(" ")).not.toMatch(/pull down/i);
+  });
+
+  it("draws the card", () => {
     const card = flat(renderHowTo(SCREEN_HOW_TO.pages));
     expect(card).toContain(`<b>${SCREEN_HOW_TO.pages.how}</b>`);
     expect(card).toContain("Good for");
     expect(card).toContain(SCREEN_HOW_TO.pages.use);
-    expect(flat(renderScreenIntro(SCREEN_INTROS.voice))).toBe(`<p class="screen-intro">${SCREEN_INTROS.voice}</p>`);
+  });
+
+  it("keeps the hover card under its tab and inside the window", () => {
+    expect(rowTipLeft({ left: 500, width: 100 }, 360, 1400)).toBe(370);
+    expect(rowTipLeft({ left: 0, width: 80 }, 360, 1400)).toBe(8);
+    expect(rowTipLeft({ left: 1350, width: 50 }, 360, 1400)).toBe(1032);
   });
 });

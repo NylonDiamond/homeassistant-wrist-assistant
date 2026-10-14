@@ -1,12 +1,13 @@
-// What each Watch app screen is for, said where a new user looks first: a
-// line under the screen's first card, and a card above the watch that says
-// how the thing is used on the wrist. The Menus screen's "How it opens" card
-// (watch-menus/menu-stage.ts) is the same card with its own words.
+// How each Watch app screen's work is used on the wrist, for someone who has
+// never opened it. The words show in the hover card on each screen's tab in
+// the Watch app row (`watch-row.ts`), never on the editors themselves. The
+// Menus screen's "How it opens" card (watch-menus/menu-stage.ts) draws the
+// same card with one set of words per menu.
 
 import { css, html, svg, type TemplateResult } from "lit";
 
 /** The small drawing in a how-to card's chip. */
-export type HowToArt = "hold" | "tile" | "pull" | "swipe" | "list" | "voice" | "room" | "web" | "crop";
+export type HowToArt = "hold" | "tile" | "swipe" | "list" | "voice" | "room" | "web" | "crop" | "radial";
 
 export interface HowTo {
   art: HowToArt;
@@ -21,28 +22,18 @@ export interface HowTo {
 const ART: Readonly<Record<HowToArt, TemplateResult>> = {
   hold: svg`<circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="9.5" opacity=".45"></circle>`,
   tile: svg`<rect x="4" y="5" width="16" height="14" rx="4"></rect><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="5" opacity=".5"></circle>`,
-  pull: svg`<path d="M5 3.5h14"></path><path d="M12 6.5v11"></path><path d="M8 13.5l4 4 4-4"></path>`,
   swipe: svg`<rect x="3" y="5" width="7.5" height="7.5" rx="2"></rect><rect x="13.5" y="5" width="7.5" height="7.5" rx="2" opacity=".5"></rect><path d="M7 18h10"></path><path d="M14 15l3 3-3 3"></path>`,
   list: svg`<circle cx="5.5" cy="7" r="1.4" fill="currentColor" stroke="none"></circle><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"></circle><circle cx="5.5" cy="17" r="1.4" fill="currentColor" stroke="none"></circle><path d="M9.5 7h10"></path><path d="M9.5 12h10"></path><path d="M9.5 17h7"></path>`,
   voice: svg`<rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0"></path><path d="M12 18v3"></path>`,
   room: svg`<path d="M4 11l8-6.5 8 6.5"></path><path d="M6 9.5V20h12V9.5"></path><circle cx="12" cy="14.5" r="2" fill="currentColor" stroke="none"></circle>`,
   web: svg`<circle cx="12" cy="12" r="8.5"></circle><path d="M3.5 12h17"></path><path d="M12 3.5c2.5 2.6 3.5 5.4 3.5 8.5s-1 5.9-3.5 8.5c-2.5-2.6-3.5-5.4-3.5-8.5s1-5.9 3.5-8.5z"></path>`,
   crop: svg`<path d="M7 3v14h14"></path><path d="M3 7h14v14"></path>`,
+  radial: svg`<circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"></circle><circle cx="12" cy="4.5" r="1.8"></circle><circle cx="19.5" cy="12" r="1.8"></circle><circle cx="12" cy="19.5" r="1.8"></circle><circle cx="4.5" cy="12" r="1.8"></circle>`,
 };
 
-/** The screens that carry an intro line and a how-to card. Menus has its
- * own, one per menu. */
-export type HowToScreen = "pages" | "status-pages" | "rooms" | "voice" | "http-actions" | "cameras";
-
-/** What each screen is for, in one or two sentences, for someone who has
- * never opened it: under the first card's head. Rooms and Cameras have no
- * list card; their how-to card says it. */
-export const SCREEN_INTROS: Readonly<Record<Exclude<HowToScreen, "rooms" | "cameras">, string>> = {
-  "pages": "The screens of tiles you swipe between on your watch. Pick a page, then click a tile to set what it shows and does.",
-  "status-pages": "Lists to read at a glance, like the lights that are on or who is home. Pick a list, then set which rows it shows.",
-  "voice": "How your watch talks to Home Assistant: who answers when you ask Assist, which speakers play your messages, and your saved phrases.",
-  "http-actions": "Web requests your watch can send, like a webhook to another app. Add one here, then put it on a tile, a menu slot or a complication.",
-};
+/** The screens whose tab carries a how-to. Settings and the retired
+ * Control Center have none. */
+export type HowToScreen = "pages" | "menus" | "status-pages" | "rooms" | "voice" | "http-actions" | "cameras";
 
 /** How each screen's work is used on the watch, checked against the watch
  * app's code (WatchHomeView, InteractiveGrid, StatusPageIntent,
@@ -52,6 +43,11 @@ export const SCREEN_HOW_TO: Readonly<Record<HowToScreen, HowTo>> = {
     art: "swipe", label: "On your watch",
     how: "Swipe left or right to move between pages. Tap a tile to use it. Touch and hold a tile for its quick menu.",
     use: "Your everyday controls, like lights, scenes and cameras. The first page is the one the app starts on.",
+  },
+  "menus": {
+    art: "radial", label: "On your watch",
+    how: "Touch and hold an empty spot for the Anywhere menu, or hold a tile for its quick menu. Slide to a slot, then lift your finger.",
+    use: "Shortcuts and quick controls without leaving the page you are on.",
   },
   "status-pages": {
     art: "list", label: "On your watch",
@@ -80,6 +76,11 @@ export const SCREEN_HOW_TO: Readonly<Record<HowToScreen, HowTo>> = {
   },
 };
 
+/** The how-to for a screen, or undefined for one without (Settings). */
+export function screenHowTo(id: string): HowTo | undefined {
+  return Object.hasOwn(SCREEN_HOW_TO, id) ? SCREEN_HOW_TO[id as HowToScreen] : undefined;
+}
+
 /** A how-to card: a chip with a small drawing, then how the thing is used on
  * the watch and what it is good for. Set `--howto-hue` on the card or a
  * parent to give the chip's outline the screen's hue. */
@@ -93,11 +94,6 @@ export function renderHowTo(how: HowTo): TemplateResult {
       <span class="howto-use"><span class="howto-k">Good for</span> ${how.use}</span>
     </span>
   </section>`;
-}
-
-/** A screen's one-line "what this is for", under its first card's head. */
-export function renderScreenIntro(text: string): TemplateResult {
-  return html`<p class="screen-intro">${text}</p>`;
 }
 
 export const howToStyles = css`
@@ -116,5 +112,4 @@ export const howToStyles = css`
   .howto-k { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); }
   .howto-use { font-size: 12.5px; color: var(--wa-label); }
   .howto-use > .howto-k { margin-right: 4px; }
-  .screen-intro { margin: 2px 12px 4px; font-size: 12.5px; line-height: 1.45; color: var(--wa-label); }
 `;

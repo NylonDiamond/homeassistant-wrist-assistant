@@ -24,7 +24,6 @@ import { colorField, numberField, segField, selectField, symbolField, textField 
 import type { HassLike, HttpActionTestReply } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
-import { renderScreenIntro, SCREEN_INTROS } from "../screen-howto.js";
 import { uiIcon } from "../ui-icons.js";
 import { colorBody, formatJsonBody, piecesText, prettyJson, sizeText } from "./pretty.js";
 import { type JsonObject } from "../watch-pages/model.js";
@@ -520,7 +519,6 @@ export function renderHttpList(host: HttpActionsViewHost): TemplateResult {
       <button type="button" class="lc-btn pri ha-add" aria-label="Add an action" ?disabled=${host.busy}
         title="A new action" @click=${() => addHttpActionTo(host)}>${uiIcon("plus")}<span>Add</span></button>
     </div>
-    ${renderScreenIntro(SCREEN_INTROS["http-actions"])}
     ${actions.length === 0
       ? html`<div class="lc-note ha-list-note">No actions yet. Add one to send a request from the watch.</div>`
       : html`<div class="ha-items" role="list">${actions.map((a, i) => actionRow(host, a, i, actions.length, selection?.kind === "action" && selection.id === a.id))}</div>`}

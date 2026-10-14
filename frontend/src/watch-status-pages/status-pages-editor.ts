@@ -59,7 +59,6 @@ import { personColorVar } from "../pickerRows.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
-import { howToStyles, renderHowTo, SCREEN_HOW_TO } from "../screen-howto.js";
 import { uiIcon } from "../ui-icons.js";
 import {
   SavedAgoTicker,
@@ -1069,7 +1068,6 @@ export class WaStatusPagesEditor extends LitElement {
               @click=${() => this.setZoom(stageZoomIn(scale))}>+</button>
           </span>
         </div>
-        ${renderHowTo(SCREEN_HOW_TO["status-pages"])}
         <div class="sp-stage-body">${renderStatusPageScreen(host)}</div>
         <div class="under"><span class="tail">${STATUS_PAGES_STAGE_HINT}</span></div>
       </div>
@@ -1311,7 +1309,7 @@ export class WaStatusPagesEditor extends LitElement {
     dialog.pe-ask p.pe-muted { font-size: 13px; }
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
     :host([narrow]) { --cf-pad: 12px; }
-  `, statusPagesViewStyles, configFootStyles, howToStyles, headBarStyles];
+  `, statusPagesViewStyles, configFootStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-status-pages-editor")) {

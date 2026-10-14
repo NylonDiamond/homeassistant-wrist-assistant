@@ -102,7 +102,6 @@ import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../rendere
 import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
 import { type TestControl, testControlFor } from "../test-controls.js";
-import { howToStyles, renderHowTo, renderScreenIntro, SCREEN_HOW_TO, SCREEN_INTROS } from "../screen-howto.js";
 import { uiIcon } from "../ui-icons.js";
 import {
   NEW_WATCH_TEXT,
@@ -3402,7 +3401,6 @@ export class WaPageEditor extends LitElement {
         <button class="lc-btn pri" ?disabled=${this.saving} title=${this.saving ? SAVING_TEXT : "Add an empty page after the last one"}
           @click=${() => this.addPage()}>${uiIcon("plus")}<span>Add</span></button>
       </div>
-      ${renderScreenIntro(SCREEN_INTROS.pages)}
       ${listed.length === 0 ? html`<div class="lc-note">This watch has no pages.</div>` : nothing}
       ${allHidden ? html`<div class="lc-note warn">Every page is hidden, so the watch shows "No pages".</div>` : nothing}
       <div class="layers pe-page-list" role="list">
@@ -3756,7 +3754,6 @@ export class WaPageEditor extends LitElement {
       ${this.renderCanvasHead(page, watches, facts, found === undefined ? `${watchCase.label}, this watch's size is not known` : undefined, tile)}
       <div class="stage-area pe-stage-area">
         ${this.renderStageTools(page, watchCase.label, headers, smart)}
-        ${renderHowTo(SCREEN_HOW_TO.pages)}
         <div class="pe-stage-body">
           ${smart || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input)}
         </div>
@@ -5055,7 +5052,7 @@ export class WaPageEditor extends LitElement {
     @container (max-width: 820px) {
       .pe-hint { display: none; }
     }
-  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, configFootStyles, howToStyles, headBarStyles];
+  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, configFootStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-page-editor")) {

@@ -28,7 +28,6 @@ import { HeadBar, headBarStyles, renderHeadStatus } from "../head-bar.js";
 import { type CameraFraming, type CameraViewport, type HassLike, fetchCameras, saveCameraFraming, sendCameraTest } from "../ha-api.js";
 import { SECTION_COLOR } from "../kinds.js";
 import { PictureCache } from "../picture-cache.js";
-import { howToStyles, renderHowTo, SCREEN_HOW_TO } from "../screen-howto.js";
 import { uiIcon } from "../ui-icons.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import {
@@ -428,7 +427,7 @@ export class WaCamerasEditor extends LitElement {
       <div class="cm-top">
         ${this.barHost === undefined ? this.renderBar(draft, camera)
           : draft !== undefined && camera !== undefined ? html`<div class="cm-crumbline">${this.renderCrumb(camera)}</div>` : nothing}
-        ${draft !== undefined && camera !== undefined ? html`<p class="cm-lead">${CAMERAS_LEAD}</p>` : renderHowTo(SCREEN_HOW_TO.cameras)}
+        <p class="cm-lead">${CAMERAS_LEAD}</p>
         ${this.note ? html`<div class="cm-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
           <button class="cm-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
@@ -674,7 +673,6 @@ export class WaCamerasEditor extends LitElement {
     .cm-crumbline { display: flex; align-items: center; padding: 10px var(--cf-pad, 16px) 0; }
     .wa-bar button.primary.save:disabled { opacity: .45; cursor: default; }
     .cm-lead { margin: 10px var(--cf-pad, 16px) 0; font-size: 13px; color: var(--wa-muted); }
-    .cm-top > .howto { --howto-hue: var(--wa-hue-blue); width: auto; max-width: 720px; margin: 12px var(--cf-pad, 16px) 0; }
     .cm-note {
       display: flex; align-items: center; gap: 10px; margin: 10px var(--cf-pad, 16px) 0; padding: 10px 12px;
       border-radius: var(--wa-r-md, 12px); border: 1px solid var(--wa-line); background: var(--wa-card); font-size: 13px;
@@ -790,7 +788,7 @@ export class WaCamerasEditor extends LitElement {
       .cm-edit { grid-template-columns: minmax(0, 1fr); }
     }
     :host([narrow]) { --cf-pad: 12px; }
-  `, howToStyles, headBarStyles];
+  `, headBarStyles];
 }
 
 if (!customElements.get("wa-cameras-editor")) {

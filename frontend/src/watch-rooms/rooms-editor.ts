@@ -60,7 +60,6 @@ import { peopleOf } from "../people.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { personColorVar } from "../pickerRows.js";
 import { agoWords } from "../send-state.js";
-import { howToStyles } from "../screen-howto.js";
 import { uiIcon } from "../ui-icons.js";
 import {
   SavedAgoTicker,
@@ -1183,7 +1182,7 @@ export class WaRoomsEditor extends LitElement {
     dialog.pe-ask p { font-size: 14px; line-height: 1.4; }
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
     :host([narrow]) { --cf-pad: 12px; }
-  `, roomsViewStyles, configFootStyles, howToStyles, headBarStyles];
+  `, roomsViewStyles, configFootStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-rooms-editor")) {
