@@ -611,7 +611,8 @@ const SAVING_TEXT = "Saving. Tiles and pages move again once the save is done.";
 export const WATCH_PAGES_PLAN_TEXT = {
   title: "One page is always free.",
   body: "On the free plan, the watch shows your first page that is not hidden. Pro shows every page, with no limit. "
-    + "Pro also pays for development: Wrist Assistant is my full-time job, so it keeps getting better.",
+    + "Pro is one purchase for life, with no subscription. "
+    + "It also pays for development: Wrist Assistant is my full-time job, so it keeps getting better.",
 } as const;
 /** An empty page's line, beside its Add a tile button. */
 const NO_TILES_TEXT = "No tiles yet.";
