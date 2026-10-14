@@ -42,6 +42,7 @@ import { LitElement, css, html, nothing, type PropertyValues, type TemplateResul
 import { property, state } from "lit/decorators.js";
 import { chromeTokens, inspectorStyles, topBarStyles } from "../editor-chrome.js";
 import { formStyles } from "../form-styles.js";
+import { HeadBar, headBarStyles, renderHeadStatus } from "../head-bar.js";
 import {
   type HassLike,
   type OwnerSummary,
@@ -216,6 +217,10 @@ export class WaRoomsEditor extends LitElement {
    * other screens, so the bar leaves out its own watch picker and the way
    * back to complications. Off, the bar is as it always was. */
   @property({ attribute: false }) shellOwnsWatch = false;
+  /** The box in the panel's Watch app header the bar is drawn in
+   * (`head-bar.ts`). Without one the bar is drawn on top, as it always was. */
+  @property({ attribute: false }) barHost: HTMLElement | undefined = undefined;
+  private readonly headBar = new HeadBar(this);
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -343,6 +348,8 @@ export class WaRoomsEditor extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    // The bar goes back into the header on the next draw.
+    if (this.barHost !== undefined) this.requestUpdate();
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("pointerdown", this.onWindowPointerDown, true);
     this.watchSize();
@@ -352,6 +359,7 @@ export class WaRoomsEditor extends LitElement {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.headBar.clear();
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("pointerdown", this.onWindowPointerDown, true);
     this.sizeObserver?.disconnect();
@@ -389,13 +397,15 @@ export class WaRoomsEditor extends LitElement {
   }
 
   protected override updated(): void {
+    this.headBar.draw(this.barHost, () => this.renderTopBar(this.draft, this.watches));
     const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.pe-ask") ?? undefined;
     if (dialog !== this.shownDialog) {
       this.shownDialog = dialog;
       if (dialog && !dialog.open) dialog.showModal();
     }
     openConfigDialogs(this.renderRoot, this.shownFootDialogs);
-    this.savedTicker.show(this.renderRoot.querySelector(".cf-saved") !== null);
+    this.savedTicker.show(this.headBar.query(this.renderRoot, ".cf-saved") !== null
+      || this.renderRoot.querySelector(".cf-saved") !== null);
   }
 
   private watchSize(): void {
@@ -801,7 +811,7 @@ export class WaRoomsEditor extends LitElement {
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.defaultPrevented) return;
     const path = e.composedPath();
-    if (!path.includes(this) && !nothingFocused()) return;
+    if (!path.includes(this) && !this.headBar.holds(path) && !nothingFocused()) return;
     if (this.renderRoot.querySelector("dialog[open]")) return;
     const mod = e.metaKey || e.ctrlKey;
     const key = e.key.toLowerCase();
@@ -844,7 +854,7 @@ export class WaRoomsEditor extends LitElement {
     const draft = this.draft;
     return html`
       <div class="pe-top">
-        ${this.renderTopBar(draft, watches)}
+        ${this.barHost === undefined ? this.renderTopBar(draft, watches) : nothing}
         ${this.note ? html`<div class="pe-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
           <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
@@ -860,14 +870,15 @@ export class WaRoomsEditor extends LitElement {
   private renderTopBar(draft: RoomsDraft | undefined, watches: readonly OwnerSummary[]): TemplateResult {
     const editing = draft !== undefined;
     const dirty = editing && this.dirty;
-    return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch rooms">
+    return html`<div class="wa-bar ${this.barHost !== undefined ? "in-head" : this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch rooms">
       ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
       ${this.shellOwnsWatch ? nothing : html`<button class="tb-btn tb-back" title="Back to complications"
         @click=${() => (this.onBack ? this.onBack() : navigateWatchRooms(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>`}
-      <span class="rm-title">Rooms</span>
+      ${this.barHost === undefined ? html`<span class="rm-title">Rooms</span>` : nothing}
       <span class="spacer"></span>
       ${this.shellOwnsWatch ? nothing : this.renderWatchPicker(watches)}
+      ${this.barHost !== undefined && editing ? renderHeadStatus({ newWatch: this.newWatch, dirty, saved: renderConfigSaved(this.record) }) : nothing}
       ${this.renderSyncPill(draft)}
       ${editing ? html`
         <button class="tb-btn icon rm-undo" ?disabled=${!draft.canUndo || this.saving} title=${`Undo (${MOD}Z)`} aria-label="Undo"
@@ -878,8 +889,8 @@ export class WaRoomsEditor extends LitElement {
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>
-        ${renderSaveReason(saveBlockedText({ newWatch: this.newWatch, dirty, saving: this.saving }))}` : nothing}
+        ${this.barHost !== undefined ? nothing : html`<span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>
+        ${renderSaveReason(saveBlockedText({ newWatch: this.newWatch, dirty, saving: this.saving }))}`}` : nothing}
       ${this.barActions}
       <button class="help" title="Help: rooms" aria-label="Help"
         @click=${() => window.open(WATCH_ROOMS_HELP_URL, "_blank", "noopener")}>?</button>
@@ -981,7 +992,7 @@ export class WaRoomsEditor extends LitElement {
     }
     // A new watch: the ready screen under the new watch line, with no stored
     // copy for the foot bar to tell of.
-    if (record.revision <= 0) return html`${renderNewWatchBanner()}${renderRoomsBody(host)}`;
+    if (record.revision <= 0) return html`${this.barHost === undefined ? renderNewWatchBanner() : nothing}${renderRoomsBody(host)}`;
     return html`${renderRoomsBody(host)}${this.renderFoot(record, draft)}`;
   }
 
@@ -1129,7 +1140,7 @@ export class WaRoomsEditor extends LitElement {
     dialog.pe-ask p { font-size: 14px; line-height: 1.4; }
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
     :host([narrow]) { --cf-pad: 12px; }
-  `, roomsViewStyles, configFootStyles];
+  `, roomsViewStyles, configFootStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-rooms-editor")) {

@@ -143,6 +143,9 @@ export interface WatchMenusViewInput {
   actions: TemplateResult | typeof nothing;
   /** Dialogs the bar's buttons open. */
   dialogs: TemplateResult | typeof nothing;
+  /** The box in the panel's Watch app header the editor draws its bar
+   * in (`head-bar.ts`). Left out, the bar is drawn on top of the editor. */
+  barHost?: HTMLElement;
   onLoaded: () => void;
 }
 
@@ -159,7 +162,7 @@ export function renderWatchMenusView(input: WatchMenusViewInput): TemplateResult
       ? html`<wa-menu-editor .hass=${input.hass} .owners=${input.owners} .ownerId=${input.ownerId}
           .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}
           .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack} .onPages=${input.onPages}
-          .barActions=${input.actions} .shellOwnsWatch=${input.shell === true}></wa-menu-editor>`
+          .barActions=${input.actions} .shellOwnsWatch=${input.shell === true} .barHost=${input.barHost}></wa-menu-editor>`
       : html`<div class="wp-loading">
           ${input.shell === true ? nothing : html`<button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>`}
           ${loadFailed ? html`<span>The menu editor did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}

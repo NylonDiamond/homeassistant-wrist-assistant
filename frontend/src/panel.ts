@@ -445,6 +445,7 @@ import {
 } from "./shell.js";
 import { adoptRouteWatch, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
 import { type WatchScreenId, markRowMore, renderWatchRow, showRowLink, unsavedScreens, watchRowStyles } from "./watch-row.js";
+import { headBarStyles } from "./head-bar.js";
 import { isWatchSettingsRoute, settingsPageSavesOnKey } from "./watch-settings-page.js";
 import { type WatchHttpLibrary, readWatchHttpLibrary, watchHttpLibraryReadMeansNone } from "./watch-pages/http-library.js";
 import { anyWatchSettingsDirty } from "./watch-settings-draft.js";
@@ -2649,6 +2650,8 @@ export class WristAssistantPanel extends LitElement {
       --wa-stage-top: #fbfbfc;
       --wa-stage-bottom: #e6e6ea;
       --wa-stage-reflect: rgba(0,0,0,.10);
+      /* A control floating over a stage (the watch editors' tool pill). */
+      --wa-shadow-float: 0 10px 30px rgba(20,20,40,.10);
       --wa-ring: 0 0 0 3px color-mix(in srgb, var(--wa-accent) 30%, transparent);
       color: var(--wa-ink);
       background: var(--wa-bg);
@@ -2744,6 +2747,7 @@ export class WristAssistantPanel extends LitElement {
       --wa-stage-top: #131315;
       --wa-stage-bottom: #060607;
       --wa-stage-reflect: rgba(255,255,255,.14);
+      --wa-shadow-float: 0 10px 30px rgba(0,0,0,.45);
       --wa-ring: 0 0 0 2px color-mix(in srgb, var(--wa-accent) 55%, transparent);
       color-scheme: dark;
       scrollbar-color: rgba(255,255,255,.16) transparent;
@@ -6004,7 +6008,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, homeStyles, watchRowStyles, listPageStyles, helpSheetStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, homeStyles, watchRowStyles, headBarStyles, listPageStyles, helpSheetStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -10946,8 +10950,25 @@ export class WristAssistantPanel extends LitElement {
     if (!inside) this.toggleWatchRowMenu(false);
   };
 
-  /** A watch screen under the Watch app row. */
+  /** The empty box at the Watch app row's right end that the screen on show
+   * draws its save controls into (`head-bar.ts`). One box for the panel's
+   * life: each editor adds its own bar to it and takes it away again. */
+  private watchBarBox?: HTMLElement;
+  private get watchBarHost(): HTMLElement {
+    if (this.watchBarBox === undefined) {
+      this.watchBarBox = document.createElement("div");
+      this.watchBarBox.className = "wa-wr-host";
+    }
+    return this.watchBarBox;
+  }
+
+  /** A watch screen under the Watch app row. The row's right end holds the
+   * screen's save controls: the Settings page's, which the panel draws, or
+   * the box an editor draws its own into. */
   private withWatchRow(view: TemplateResult) {
+    const settings = isWatchSettingsRoute(this.route) && (this.linkReady || this.owners.length > 0)
+      ? this.watchSettings.renderHeadBar(this.owners)
+      : nothing;
     return html`${renderWatchRow({
       route: this.route,
       owners: this.owners,
@@ -10958,6 +10979,8 @@ export class WristAssistantPanel extends LitElement {
       onPick: (watchId) => this.pickWatch(watchId),
       onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
       unsaved: this.unsavedNow,
+      people: this.people(),
+      end: html`${settings}${this.watchBarHost}`,
     })}${view}`;
   }
 
@@ -11051,7 +11074,7 @@ export class WristAssistantPanel extends LitElement {
       if (screen !== undefined) showRowLink(this.renderRoot);
       return;
     }
-    const line = this.renderRoot.querySelector<HTMLElement>("nav.wa-watchrow .wa-wr-links");
+    const line = this.renderRoot.querySelector<HTMLElement>(".wa-watchrow .wa-wr-links");
     if (line) markRowMore(line);
   }
 
@@ -11068,7 +11091,7 @@ export class WristAssistantPanel extends LitElement {
     if (!this.linkReady && this.owners.length === 0) {
       return html`<div class="ws-page"><div class="ws-cols one"><p class="home-empty">Loading…</p></div></div>`;
     }
-    return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow });
+    return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow, inHead: true });
   }
 
   private goTo(path: string, replace = false) {
@@ -11098,6 +11121,7 @@ export class WristAssistantPanel extends LitElement {
         actions: nothing,
         shell: true,
         dialogs: nothing,
+        barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
       }));
     }
@@ -11111,6 +11135,7 @@ export class WristAssistantPanel extends LitElement {
         actions: nothing,
         shell: true,
         dialogs: nothing,
+        barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
       }));
     }
@@ -11124,6 +11149,7 @@ export class WristAssistantPanel extends LitElement {
         actions: nothing,
         shell: true,
         dialogs: nothing,
+        barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
       }));
     }
@@ -11138,6 +11164,7 @@ export class WristAssistantPanel extends LitElement {
         actions: nothing,
         shell: true,
         dialogs: nothing,
+        barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
       }));
     }
@@ -11152,6 +11179,7 @@ export class WristAssistantPanel extends LitElement {
         actions: nothing,
         shell: true,
         dialogs: nothing,
+        barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
       }));
     }
@@ -11165,6 +11193,7 @@ export class WristAssistantPanel extends LitElement {
         actions: nothing,
         shell: true,
         dialogs: nothing,
+        barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
       }));
     }
@@ -11173,6 +11202,7 @@ export class WristAssistantPanel extends LitElement {
     if (isWatchHttpActionsRoute(this.route)) {
       return this.withWatchRow(renderWatchHttpActionsView({
         hass: this.hass, owners: this.owners, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+        barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
       }));
     }
@@ -11181,6 +11211,7 @@ export class WristAssistantPanel extends LitElement {
     if (isWatchCamerasRoute(this.route)) {
       return this.withWatchRow(renderWatchCamerasView({
         hass: this.hass, narrow: this.narrow,
+        barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
       }));
     }

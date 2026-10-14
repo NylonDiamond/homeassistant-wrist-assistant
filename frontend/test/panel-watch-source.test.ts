@@ -174,7 +174,16 @@ describe("the Settings page", () => {
     const page = method("  private renderSettingsPage() {");
     expect(page).not.toContain("is_admin");
     expect(page).toContain("if (!this.linkReady && this.owners.length === 0) {");
-    expect(page).toContain("return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow });");
+    expect(page).toContain("return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow, inHead: true });");
+  });
+
+  it("puts its save controls at the right end of the row, and gives every editor the row's box for its own", () => {
+    const row = method("  private withWatchRow(");
+    expect(row).toContain("isWatchSettingsRoute(this.route) && (this.linkReady || this.owners.length > 0)");
+    expect(row).toContain("this.watchSettings.renderHeadBar(this.owners)");
+    expect(row).toContain("end: html`${settings}${this.watchBarHost}`");
+    const tab = method("  private renderTab() {");
+    expect(tab.match(/barHost: this\.watchBarHost,/g)).toHaveLength(8);
   });
 
   it("follows the shared watch on every draw, once the devices are in, and leaves on any other route", () => {
