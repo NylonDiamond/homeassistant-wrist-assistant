@@ -34,17 +34,28 @@ describe("the Watch app's Complications screen", () => {
     expect(panelPrefix(undefined, "/wrist-assistant/watch-complications/w1")).toBe("/wrist-assistant");
   });
 
-  it("puts the watch's designs first, and the rest under it with the shelf last", () => {
-    const rows = [row("a", "phone"), row("b", "w1", "phone"), row("c", LIBRARY_OWNER_ID), row("d", "w2"), row("e", "w1")];
-    const { on, off } = splitForWatch(rows, "w1");
+  const rules = {
+    isWatch: (ownerId: string) => ownerId.startsWith("w"),
+    shelfFitsWatch: (r: PickerListRow<null>) => r.key !== "phoneShelf",
+  };
+
+  it("puts the watch's designs first, then other watches' designs, then watch designs on the shelf", () => {
+    const rows = [row("a", "phone"), row("b", "w1", "phone"), row("c", LIBRARY_OWNER_ID), row("d", "phone", "w2"), row("e", "w1"),
+      row("phoneShelf", LIBRARY_OWNER_ID)];
+    const { on, off } = splitForWatch(rows, "w1", rules);
     expect(on.map((r) => r.key)).toEqual(["b", "e"]);
-    expect(off.map((r) => r.key)).toEqual(["a", "d", "c"]);
+    expect(off.map((c) => [c.row.key, c.at])).toEqual([["d", "w2"], ["c", LIBRARY_OWNER_ID]]);
   });
 
-  it("puts everything under Not on this watch with no watch", () => {
-    const { on, off } = splitForWatch([row("a", "w1")], undefined);
+  it("leaves out designs only on phones", () => {
+    const { off } = splitForWatch([row("a", "phone"), row("b", "phone2")], "w1", rules);
+    expect(off).toEqual([]);
+  });
+
+  it("puts every watch design under Not on this watch with no watch", () => {
+    const { on, off } = splitForWatch([row("a", "w1")], undefined, rules);
     expect(on).toEqual([]);
-    expect(off.map((r) => r.key)).toEqual(["a"]);
+    expect(off.map((c) => c.row.key)).toEqual(["a"]);
   });
 
   it("says how many are on the watch, or how to add one", () => {

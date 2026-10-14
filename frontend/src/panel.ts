@@ -660,6 +660,10 @@ type PickerItem =
 /** One row of the header picker: one complication, on however many devices. */
 type PickerRow = PickerListRow<PickerItem>;
 
+/** The shapes a watch face draws: a shelved design with none of them is a
+ * phone design, left off the Watch app's Complications screen. */
+const WATCH_SHAPES: readonly string[] = ["rectangular", "circular", "corner", "inline"];
+
 /** The shapes one row draws, read off whichever copy the row opens. */
 function familiesOfItem(item: PickerItem): readonly string[] {
   return item.kind === "record" ? familiesOf(item.record) : item.families;
@@ -14079,15 +14083,15 @@ export class WristAssistantPanel extends LitElement {
     });
     const name = watchName(watch, watches);
     const devices = this.pickerDevices();
-    const { on, off } = splitForWatch(this.pickerRows(), watch.owner_watch_id);
+    const { on, off } = splitForWatch(this.pickerRows(), watch.owner_watch_id, {
+      isWatch: (ownerId) => deviceKindOf(this.ownerOf(ownerId)) === "watch",
+      shelfFitsWatch: (row) => familiesOfItem(row.open.item).some((f) => WATCH_SHAPES.includes(f)),
+    });
     const full = this.freeSlot() < 0;
     // A card not on this watch draws the copy it has, on its own device.
     const offBoxes = () => {
       const byOwner = new Map<string, PickerRow[]>();
-      for (const row of off) {
-        const at = row.open.ownerId;
-        byOwner.set(at, [...(byOwner.get(at) ?? []), row]);
-      }
+      for (const { row, at } of off) byOwner.set(at, [...(byOwner.get(at) ?? []), row]);
       // A heading per device only when there is more than one, so the shape
       // boxes under each say whose they are.
       const many = byOwner.size > 1;
@@ -14111,13 +14115,13 @@ export class WristAssistantPanel extends LitElement {
         </div>
       </div>
       <section class="wc-sec on" aria-label=${`On ${name}`}>
-        <div class="wc-sec-top"><h2>On this watch</h2><span class="wc-sec-count">${on.length}</span></div>
+        <div class="wc-sec-top"><h2><i aria-hidden="true"></i>On this watch</h2><span class="wc-sec-count">${on.length}</span></div>
         ${on.length === 0
           ? html`<div class="wc-empty">${ready ? "Nothing yet." : "Loading…"}</div>`
           : this.renderPickerGroups(sortPickerRows(on, devices, watch.owner_watch_id), watch.owner_watch_id, undefined)}
       </section>
       ${off.length === 0 ? nothing : html`<section class="wc-sec off" aria-label="Not on this watch">
-        <div class="wc-sec-top"><h2>Not on this watch</h2><span class="wc-sec-count">${off.length}</span>
+        <div class="wc-sec-top"><h2><i aria-hidden="true"></i>Not on this watch</h2><span class="wc-sec-count">${off.length}</span>
           <p class="wc-sec-note">${NOT_ON_WATCH_NOTE}</p></div>
         ${offBoxes()}
       </section>`}
