@@ -12,7 +12,8 @@
 // `watch_config/subscribe`, the edits kept in a draft (`draft.ts`) with undo
 // and redo, a save over the base revision that merges by key on a conflict,
 // the earlier saves with restore, and the delivery check. It reads `pages`
-// too, for the page names, and never writes them.
+// too, for the page names and the picture of the page a room opens, and
+// never writes them.
 //
 // On a home that is not the watch's main house (`main_house: false` on its
 // owner row) the rooms are a `rooms` record of their own instead, and every
@@ -40,7 +41,7 @@
 
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
-import { chromeTokens, inspectorStyles, topBarStyles } from "../editor-chrome.js";
+import { canvasStyles, chromeTokens, inspectorStyles, leftCardStyles, topBarStyles } from "../editor-chrome.js";
 import { formStyles } from "../form-styles.js";
 import { HeadBar, headBarStyles, renderHeadStatus } from "../head-bar.js";
 import {
@@ -56,6 +57,7 @@ import {
   subscribeWatchConfig,
 } from "../ha-api.js";
 import { peopleOf } from "../people.js";
+import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { personColorVar } from "../pickerRows.js";
 import { agoWords } from "../send-state.js";
 import { uiIcon } from "../ui-icons.js";
@@ -70,7 +72,9 @@ import {
   renderConfigRawDialog,
   renderConfigSaved,
 } from "../watch-pages/config-foot.js";
-import { watchKeysTypeText } from "../watch-pages/editor-host.js";
+import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
+import { watchPagePreviewStyles } from "../watch-pages/preview.js";
+import { watchFrameStyles } from "../watch-frame.js";
 import { asWatchPagesDocument } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { friendlyError } from "../friendly-error.js";
@@ -124,6 +128,7 @@ import {
   roomsSaveNote,
 } from "./model.js";
 import { type RoomsViewHost, renderRoomsBody, roomsViewStyles } from "./view.js";
+import { normalizedRoomKey } from "./rules.js";
 
 registerWatchRoomsDrafts({ dirty: anyRoomsDirty, drop: dropAllRooms });
 
@@ -220,6 +225,10 @@ export class WaRoomsEditor extends LitElement {
   /** The box in the panel's Watch app header the bar is drawn in
    * (`head-bar.ts`). Without one the bar is drawn on top, as it always was. */
   @property({ attribute: false }) barHost: HTMLElement | undefined = undefined;
+  /** The panel's symbols, for the picture of the page a room opens. */
+  @property({ attribute: false }) icons?: IconProvider;
+  @property({ attribute: false }) iconsTick = 0;
+  private iconMemo?: { provider: IconProvider; tick: number; icons: IconProvider };
   private readonly headBar = new HeadBar(this);
 
   @state() private watchId?: string;
@@ -661,6 +670,22 @@ export class WaRoomsEditor extends LitElement {
     return draft === undefined ? "" : readRooms(draft.effective).sensor;
   }
 
+  private memoIcons(): IconProvider {
+    const provider = this.icons ?? NO_ICONS;
+    const memo = this.iconMemo;
+    if (memo !== undefined && memo.provider === provider && memo.tick === this.iconsTick) return memo.icons;
+    const icons = memoIconNames(provider);
+    this.iconMemo = { provider, tick: this.iconsTick, icons };
+    return icons;
+  }
+
+  /** The shown watch's screen in points: the size it reported, else the
+   * 46 mm reference. */
+  private screen(): { width: number; height: number } {
+    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
+    return (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
+  }
+
   private viewHost(): RoomsViewHost | undefined {
     const draft = this.draft;
     const hass = this.hass;
@@ -699,6 +724,15 @@ export class WaRoomsEditor extends LitElement {
         if (!list.includes(name)) addedRooms.set(watchId, [...list, name]);
         this.requestUpdate();
       },
+      added,
+      forgetRoom: (key) => {
+        const list = addedRooms.get(watchId) ?? [];
+        addedRooms.set(watchId, list.filter((name) => normalizedRoomKey(name) !== key));
+      },
+      pagesDocument: asWatchPagesDocument(this.pagesRecord?.document),
+      screen: this.screen(),
+      icons: this.memoIcons(),
+      narrow: this.stacked,
       requestUpdate: () => this.requestUpdate(),
       ...(home ? { home: true } : {}),
     };
@@ -1052,7 +1086,7 @@ export class WaRoomsEditor extends LitElement {
     </dialog>`;
   }
 
-  static override styles = [formStyles, chromeTokens, topBarStyles, inspectorStyles, newWatchStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, leftCardStyles, canvasStyles, inspectorStyles, watchFrameStyles, watchPagePreviewStyles, newWatchStyles, css`
     :host {
       display: flex;
       flex-direction: column;

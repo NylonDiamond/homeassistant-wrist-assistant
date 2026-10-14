@@ -141,7 +141,7 @@ export function renderWatchRoomsView(input: WatchRoomsViewInput): TemplateResult
   return html`${input.dialogs}
     ${ready
       ? html`<wa-rooms-editor .hass=${input.hass} .owners=${input.owners} .ownerId=${input.ownerId}
-          ?narrow=${input.narrow} .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack}
+          .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow} .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack}
           .barActions=${input.actions} .shellOwnsWatch=${input.shell === true} .barHost=${input.barHost}></wa-rooms-editor>`
       : html`<div class="wp-loading">
           ${input.shell === true ? nothing : html`<button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>`}
