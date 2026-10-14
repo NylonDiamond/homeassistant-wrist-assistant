@@ -350,14 +350,20 @@ import {
 import { seedEntityOf, seedStates, seedStatesRows } from "./states-seeds.js";
 import { seedControlFromEntity } from "./presets.js";
 import {
+  LIGHTS_ON_TEMPLATE,
+  TEMPLATE_RECIPES,
   applyRecipe,
   insertEntity,
   namedEntity,
-  recipeBlocked,
+  pendingRecipes,
+  recipeChosen,
+  recipeEntityWords,
+  recipeNeedsEntity,
   recipesFor,
   templateCursors,
   templateHint,
   type Inserted,
+  type TemplateRecipe,
   type TemplateUse,
 } from "./template-help.js";
 import {
@@ -2999,7 +3005,7 @@ const TIME_FIELDS: [TimeField, string][] = [
  * behind a bulb. With no lights at all it prints "💡 0 Lights On" rather than
  * failing. The bulb is an emoji because a text layer's template is one string
  * and has no symbol slot of its own. */
-export const STARTER_TEMPLATE = "💡 {{ states.light | selectattr('state', 'eq', 'on') | list | count }} Lights On";
+export const STARTER_TEMPLATE = LIGHTS_ON_TEMPLATE;
 
 /**
  * A template to start from that renders on any Home Assistant, so a new
@@ -3053,6 +3059,8 @@ function focusTemplateSoon(key: string, cursor: number): void {
 export function templateBox(host: Pick<EditorHost, "hass">, text: string, opts: TemplateBoxOptions): TemplateResult {
   const states = host.hass.states;
   const entity = namedEntity(text, states);
+  const pendingId = pendingRecipes.get(opts.key);
+  const pending = TEMPLATE_RECIPES.find((r) => r.id === pendingId);
   const land = (next: Inserted) => {
     opts.write(next.text, false);
     templateCursors.set(opts.key, next.cursor);
@@ -3064,14 +3072,37 @@ export function templateBox(host: Pick<EditorHost, "hass">, text: string, opts: 
     const root = box.getRootNode();
     if (root instanceof ShadowRoot || root instanceof Document) templateRoots.set(opts.key, root);
   };
+  const choose = (r: TemplateRecipe, node: EventTarget | null) => {
+    if (!recipeNeedsEntity(r, entity)) {
+      pendingRecipes.delete(opts.key);
+      land(applyRecipe(text, templateCursors.get(opts.key), r, entity, STARTER_TEMPLATE, states));
+      return;
+    }
+    // Ask for the entity first; the pick below puts the recipe in.
+    pendingRecipes.set(opts.key, r.id);
+    requestRerender(node);
+    const root = node instanceof Node ? node.getRootNode() : null;
+    if (root instanceof ShadowRoot || root instanceof Document) {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        root.querySelector<HTMLInputElement>(`[data-tpl="${CSS.escape(opts.key)}"] .ent-box input`)?.focus();
+      }));
+    }
+  };
+  const picked = (ref: EntityRef, source?: EntityPickSource) => {
+    if (ref.entityId === "" || (source !== "pick" && source !== "typed")) return;
+    const cursor = templateCursors.get(opts.key);
+    pendingRecipes.delete(opts.key);
+    land(pending ? applyRecipe(text, cursor, pending, ref.entityId, STARTER_TEMPLATE, states) : insertEntity(text, cursor, ref.entityId));
+  };
   return html`<div class="tpl-box" data-tpl=${opts.key}>
     <div class="tpl-recipes" role="group" aria-label="Recipes">
       <span class="tpl-h">Recipes</span>
       ${recipesFor(opts.use).map((r) => {
-        const blocked = recipeBlocked(r, entity);
-        return html`<button type="button" class="small tpl-recipe ${blocked ? "blocked" : ""}" aria-disabled=${blocked ? "true" : "false"}
-          title=${blocked ?? (entity && r.domains ? `${r.title}, for ${entity}` : r.title)}
-          @click=${() => { if (!blocked) land(applyRecipe(text, templateCursors.get(opts.key), r, entity, STARTER_TEMPLATE, states)); }}>${r.label}</button>`;
+        const asks = recipeNeedsEntity(r, entity);
+        const on = recipeChosen(r, text, entity) || pending === r;
+        return html`<button type="button" class="small tpl-recipe ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+          title=${asks ? `${r.title}. Asks for ${recipeEntityWords(r)} first.` : entity && r.domains ? `${r.title}, for ${entity}` : r.title}
+          @click=${(e: Event) => choose(r, e.currentTarget)}>${r.label}${asks ? "…" : ""}</button>`;
       })}
     </div>
     <label class="field"><span>${opts.label}</span>
@@ -3079,9 +3110,10 @@ export function templateBox(host: Pick<EditorHost, "hass">, text: string, opts: 
         @input=${(e: Event) => { remember(e); opts.write((e.target as HTMLTextAreaElement).value, true); }}
         @keyup=${remember} @click=${remember}
         @blur=${(e: Event) => { remember(e); opts.onBlur?.(); }}></textarea></label>
-    ${entityField(host, "Insert entity", EMPTY_REF, (ref, source) => {
-      if (ref.entityId !== "" && (source === "pick" || source === "typed")) land(insertEntity(text, templateCursors.get(opts.key), ref.entityId));
-    }, `${opts.key}-insert`)}
+    ${entityField(host, pending ? "For entity" : "Insert entity", EMPTY_REF, picked, `${opts.key}-insert`,
+      pending && pending.domains && pending.domains.length > 0 ? { domain: pending.domains } : {})}
+    ${pending ? html`<div class="hint tpl-asks">Pick ${recipeEntityWords(pending)} for “${pending.label}”.
+      <button type="button" class="link" @click=${(e: Event) => { pendingRecipes.delete(opts.key); requestRerender(e.currentTarget); }}>Cancel</button></div>` : nothing}
     ${templateHint(opts.use, opts.bare).map((line) => html`<div class="hint">${line}</div>`)}
   </div>`;
 }

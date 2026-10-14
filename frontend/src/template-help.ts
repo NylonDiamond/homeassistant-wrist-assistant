@@ -27,6 +27,10 @@ export interface TemplateRecipe {
   build(entityId: string): string;
 }
 
+/** Counts the lights that are on, in words. Also the starter a new Template
+ * source opens with, so the Lights on recipe shows as chosen there. */
+export const LIGHTS_ON_TEMPLATE = "💡 {{ states.light | selectattr('state', 'eq', 'on') | list | count }} Lights On";
+
 const TEXT: readonly TemplateUse[] = ["text"];
 const ICONS: readonly TemplateUse[] = ["symbol", "symbolMdi"];
 const ANY: readonly string[] = [];
@@ -60,12 +64,12 @@ export const TEMPLATE_RECIPES: readonly TemplateRecipe[] = [
   {
     id: "lights", label: "Lights on", title: "How many lights are on",
     uses: TEXT,
-    build: () => "{{ states.light | selectattr('state', 'eq', 'on') | list | count }}",
+    build: () => LIGHTS_ON_TEMPLATE,
   },
   {
     id: "doors", label: "Doors open", title: "How many doors and windows are open",
     uses: TEXT,
-    build: () => DOORS_OPEN_TEMPLATE,
+    build: () => `🚪 ${DOORS_OPEN_TEMPLATE} Open`,
   },
   {
     id: "mdi", label: "MDI icon by state", title: "One Material Design icon when on, another when off",
@@ -97,15 +101,31 @@ export function namedEntity(template: string, states: Record<string, unknown>): 
   return found;
 }
 
-/** Why a recipe cannot be used right now, or undefined when it can. */
-export function recipeBlocked(recipe: TemplateRecipe, entityId: string | undefined): string | undefined {
-  if (recipe.domains === undefined) return undefined;
-  if (entityId === undefined) return "Insert an entity first";
-  if (recipe.domains.length > 0 && !recipe.domains.includes(entityId.split(".")[0]!)) {
-    return `Insert a ${recipe.domains.join(" or ")} entity first`;
-  }
-  return undefined;
+/** Whether a recipe needs an entity picked before it can go in: it reads
+ * one, and the template names none it can read. */
+export function recipeNeedsEntity(recipe: TemplateRecipe, entityId: string | undefined): boolean {
+  if (recipe.domains === undefined) return false;
+  if (entityId === undefined) return true;
+  return recipe.domains.length > 0 && !recipe.domains.includes(entityId.split(".")[0]!);
 }
+
+/** "an entity", or "a calendar entity" for a recipe that reads one kind. */
+export function recipeEntityWords(recipe: TemplateRecipe): string {
+  const kinds = recipe.domains ?? [];
+  return kinds.length === 0 ? "an entity" : `a ${kinds.join(" or ")} entity`;
+}
+
+/** Whether the box holds exactly what this recipe prints, so its button
+ * shows as chosen. */
+export function recipeChosen(recipe: TemplateRecipe, template: string, entityId: string | undefined): boolean {
+  if (recipeNeedsEntity(recipe, entityId)) return false;
+  return recipe.build(entityId ?? "").trim() === template.trim();
+}
+
+/** A recipe clicked before its entity was picked, by the box's key: the
+ * entity search below the box then asks for one, and the pick puts the
+ * recipe in instead of the bare entity. */
+export const pendingRecipes = new Map<string, string>();
 
 /** A template that is only a start, which a recipe may replace whole: empty,
  * the starter, one plain state, or what a recipe printed. */

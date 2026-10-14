@@ -35,7 +35,11 @@ import {
   insideBlock,
   isReplaceable,
   namedEntity,
-  recipeBlocked,
+  LIGHTS_ON_TEMPLATE,
+  pendingRecipes,
+  recipeChosen,
+  recipeEntityWords,
+  recipeNeedsEntity,
   recipesFor,
   templateHint,
 } from "../src/template-help.js";
@@ -211,11 +215,39 @@ describe("recipes", () => {
     const unit = TEMPLATE_RECIPES.find((r) => r.id === "unit")!;
     const event = TEMPLATE_RECIPES.find((r) => r.id === "event")!;
     const lights = TEMPLATE_RECIPES.find((r) => r.id === "lights")!;
-    expect(recipeBlocked(unit, undefined)).toBe("Insert an entity first");
-    expect(recipeBlocked(unit, "sensor.power")).toBeUndefined();
-    expect(recipeBlocked(event, "sensor.power")).toBe("Insert a calendar entity first");
-    expect(recipeBlocked(event, "calendar.home")).toBeUndefined();
-    expect(recipeBlocked(lights, undefined)).toBeUndefined();
+    expect(recipeNeedsEntity(unit, undefined)).toBe(true);
+    expect(recipeNeedsEntity(unit, "sensor.power")).toBe(false);
+    expect(recipeNeedsEntity(event, "sensor.power")).toBe(true);
+    expect(recipeNeedsEntity(event, "calendar.home")).toBe(false);
+    expect(recipeNeedsEntity(lights, undefined)).toBe(false);
+    expect(recipeEntityWords(unit)).toBe("an entity");
+    expect(recipeEntityWords(event)).toBe("a calendar entity");
+  });
+
+  it("is the starter for Lights on, so a new Template shows that recipe as chosen", () => {
+    expect(STARTER_TEMPLATE).toBe(LIGHTS_ON_TEMPLATE);
+    const lights = TEMPLATE_RECIPES.find((r) => r.id === "lights")!;
+    const doors = TEMPLATE_RECIPES.find((r) => r.id === "doors")!;
+    expect(recipeChosen(lights, STARTER_TEMPLATE, undefined)).toBe(true);
+    expect(recipeChosen(doors, STARTER_TEMPLATE, undefined)).toBe(false);
+    expect(doors.build("")).toMatch(/^🚪 \{\{ states\.binary_sensor.* \}\} Open$/);
+    const cfg = newConfig("Chosen", 0);
+    const out = flatten(valueEditor(host(cfg), jinja(STARTER_TEMPLATE), () => {}, { key: "v", inline: true }));
+    // Recipes that need an entity say so with an ellipsis, and the box's own is pressed.
+    expect(out).toContain("With unit…");
+    expect(out).toMatch(/tpl-recipe on" aria-pressed=true[^>]*>Lights on</);
+  });
+
+  it("asks for the entity below the box when a recipe that needs one is clicked first", () => {
+    const cfg = newConfig("Pending", 0);
+    pendingRecipes.set("v-tpl", "event");
+    try {
+      const out = flatten(valueEditor(host(cfg), jinja(""), () => {}, { key: "v", inline: true }));
+      expect(out).toContain("For entity");
+      expect(out).toContain("Pick a calendar entity for “Next event”.");
+    } finally {
+      pendingRecipes.delete("v-tpl");
+    }
   });
 
   it("replaces a box that is only a start, and goes in at the caret otherwise", () => {
