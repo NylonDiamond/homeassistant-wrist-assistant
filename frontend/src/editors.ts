@@ -7886,12 +7886,15 @@ function richPartsEditor(
       </div>
       ${targeted && count > 1 ? html`<div class="hint keep">A state changes this part. Change or delete that state first.</div>` : nothing}
       ${iconPart
-        // SF Symbols only: no `setSymbolPath`, so the picker never offers a
-        // Material Design icon, which a part has nowhere to carry the drawing of.
+        // A `setSymbolPath` that does nothing turns the picker's Material
+        // Design tab on. The drawing itself is not kept here: every edit puts
+        // the part's `iconPaths` in step with the names it writes out
+        // (`syncPartIconPaths`), a picked name and a template's alike.
         ? html`${valueEditor(host, part.icon!, (v) => updPart((x) => { x.icon = v; }, "icon"), {
             noFormat: true, showResolved: true, symbol: true, label: "Icon", key: `${key}-part-${part.id}-icon`,
+            setSymbolPath: () => {},
           })}
-          <div class="hint">An entity draws its own icon. A template can pick the symbol, and one that renders empty leaves the part out.</div>
+          <div class="hint">An entity draws its own icon. A template can pick the symbol, and one that renders empty leaves the part out. A template can also pick a Material Design icon when it writes the whole name out, like 'mdi:water'.</div>
           ${curved ? html`<div class="hint warn">Curved text leaves icons out. Only the words follow the curve.</div>` : nothing}`
         : html`${sourceEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { key: `${key}-part-${part.id}` })}
           ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}`}
@@ -10894,7 +10897,7 @@ const COLOR_KINDS: StyleChangeKind[] = ["setColor", "setBorderColor", "setBackgr
 /** The controls behind one style change: a color, a symbol, a value, a number
  * or a weight. Shared by the Advanced editor's change box and by a states
  * table cell, so the two can never offer different things. */
-function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange) => void, k?: string) => void, key: string, sfOnly = false): TemplateResult | typeof nothing {
+function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange) => void, k?: string) => void, key: string, forIconPart = false): TemplateResult | typeof nothing {
   const payload = styleChangePayload(ch.kind);
   let body: TemplateResult | typeof nothing = nothing;
   if (payload === "value") {
@@ -10911,11 +10914,15 @@ function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange)
         noFormat: ch.kind === "setIcon", symbol: ch.kind === "setIcon", showResolved: true,
         label: ch.kind === "setIcon" ? "Icon" : "To", key: `${key}-value`,
         // A swapped-in Material Design icon carries its drawing on the change,
-        // as the icon layer's own does on the layer. An icon part draws SF
-        // Symbols only, so a change aimed at one is not offered the others.
-        setSymbolPath: ch.kind === "setIcon" && !sfOnly
-          ? (d) => upd((c) => { if (d) c.path = d; else delete c.path; }, "value")
-          : undefined,
+        // as the icon layer's own does on the layer. A change aimed at an icon
+        // part keeps none: the part carries the drawing of every name its
+        // changes write out (`syncPartIconPaths`), so its setter only turns
+        // the Material Design tab on.
+        setSymbolPath: ch.kind !== "setIcon"
+          ? undefined
+          : forIconPart
+            ? () => {}
+            : (d) => upd((c) => { if (d) c.path = d; else delete c.path; }, "value"),
       });
     }
   } else if (payload === "number") {
@@ -11545,7 +11552,7 @@ function statesRow(host: EditorHost, o: StatesRowOptions): TemplateResult {
         ${set.length === 0 ? html`<span class="no-change">No change</span>` : nothing}
         ${set.map((p) => statesChip(host, p, o.changes, o.updChanges, `${o.key}-${p}`, {
           ignored: (p === "color" && o.colorIgnored) || (o.forPart !== false && !aimReads(o.target, o.forPart, p)),
-          sfOnly: o.forPart === "icon",
+          forIconPart: o.forPart === "icon",
         }))}
         ${spare.length === 0 ? nothing : changeMenu(o.key, spare, add)}
       </span></div>
@@ -11561,7 +11568,7 @@ function statesChip(
   changes: StyleChange[],
   updChanges: (m: (list: StyleChange[]) => void, k?: string) => void,
   key: string,
-  o: { ignored: boolean; sfOnly?: boolean },
+  o: { ignored: boolean; forIconPart?: boolean },
 ): TemplateResult | typeof nothing {
   const ch = cellChange(changes, property);
   if (!ch) return nothing;
@@ -11585,7 +11592,7 @@ function changeChip(
   id: string,
   upd: (m: (c: StyleChange) => void, k?: string) => void,
   remove: () => void,
-  o: { ignored: boolean; sfOnly?: boolean },
+  o: { ignored: boolean; forIconPart?: boolean },
 ): TemplateResult {
   const label = PROPERTY_LABELS[property];
   return html`
@@ -11601,7 +11608,7 @@ function changeChip(
         ? html`${o.ignored ? html`<div class="hint warn">This layer does not draw this setting here, so the change does nothing.</div>` : nothing}
           ${property === "visibility"
             ? segField("This state", ch.kind === "hide" ? "hide" : "show", [["show", "Shown"], ["hide", "Hidden"]], (v) => upd((c) => { c.kind = v as StyleChangeKind; }))
-            : changeBody(host, ch, upd, id, o.sfOnly === true)}
+            : changeBody(host, ch, upd, id, o.forIconPart === true)}
           <button class="link" @click=${(e: Event) => {
             // Closed first: removing the change takes this popover's own chip
             // out of the document, and a popover removed while open never

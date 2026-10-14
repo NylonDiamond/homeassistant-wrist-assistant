@@ -221,6 +221,7 @@ import { installUiFont } from "./font.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
 import { Draft, type LayerNamer, saveRefusal } from "./draft.js";
+import { documentNamesPartMdi } from "./part-icons.js";
 import { NEWER_VERSION_TEXT, NOT_READY_TEXT, friendlyError, rawErrorText } from "./friendly-error.js";
 import { conflictText, savedByWords, savedLine, versionLabel, versionWhen } from "./revision-words.js";
 import { ScrollFades } from "./scroll-fade.js";
@@ -2385,6 +2386,9 @@ export class WristAssistantPanel extends LitElement {
   /** `listItemsRequests().signature` as of the last scheduled refresh. */
   private listSignature = "";
   private icons: IconProvider = makeIconProvider(() => {
+    // The catalogue may have arrived after an edit that named an MDI icon in
+    // an icon part; that edit's drawings are filled in now.
+    this.draft?.refreshIconPaths();
     this.iconsTick++;
     this.requestUpdate();
     for (const wake of this.symbolWaiters.splice(0)) wake();
@@ -6031,6 +6035,10 @@ export class WristAssistantPanel extends LitElement {
     // Beside the bundle, wherever it was served from, the same way the
     // symbol files are found. Only the entry may read import.meta.
     installUiFont(this.ownerDocument, import.meta.url);
+    // Every draft's icon parts read the Material Design catalogue this panel
+    // owns. Asked only for a name an icon part writes out, so a document that
+    // names none never loads the catalogue.
+    Draft.mdiPath = (name) => this.icons.mdiPath?.(name);
     this.clearLegacyPickerHidden();
     this.loadColumnWidths();
     this.loadListView();
@@ -8351,6 +8359,12 @@ export class WristAssistantPanel extends LitElement {
     this.saving = true;
     this.saveError = undefined;
     try {
+      // An icon part's Material Design drawings come from the catalogue, which
+      // loads on first use and may not have arrived when the template was typed.
+      if (documentNamesPartMdi(openedDraft.config)) {
+        await this.icons.mdiLoaded?.();
+        openedDraft.refreshIconPaths();
+      }
       let draft = this.draft;
       if (asNew) {
         const slot = this.freeSlot(supportedFamilies(draft.config)[0]);
