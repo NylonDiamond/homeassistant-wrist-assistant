@@ -3,27 +3,30 @@
 // the bar; this file only draws and turns a change into the writes the
 // phone makes for it (`model.ts`).
 //
-// Three columns, as the other watch editors lay theirs out:
+// The page reads top to bottom as rules, with the watch beside them:
 //
-// - Your rooms on the left: one row per room the watch knows (a page or
-//   targets stored, added here by name, or reported by the room sensor in
-//   the last day), the picked one lit, the add-by-name field under them and
-//   the Home Assistant areas not yet in the list as chips to add.
-// - The lit stage in the middle: what the watch does when you walk into the
-//   picked room. The sensor's word for it, the page it opens drawn on the
-//   watch (`renderWatchPagePreview`, from the watch's pages record) and the
-//   things to point at.
-// - The inspector on the right: the picked room's card (its page, its point
-//   control targets, Remove), then Every room: the room sensor, Switch pages
-//   by room and the point control switches.
+// - Right now: where the room sensor says you are and the page the watch
+//   shows for it, the sensor (Change opens its field), Switch pages by room
+//   and When. With no sensor picked it is a Start here card instead: the
+//   Bermuda pitch and the sensor field.
+// - The rules: "When I walk into" a room, "the watch opens" a page. One row
+//   per room (`listedRooms`), grouped by Home Assistant's floors when it has
+//   them, each with its page's thumbnail and a page picker, then Anywhere
+//   else (the fallback page), then a fold with the areas not listed yet and
+//   the add-by-name field.
+// - Point control, folded: the picked room's things to point at, and the
+//   Tap to Toggle and Live tile switches.
+// - Beside them a sticky lit stage: the watch drawing the picked room's page
+//   (`renderWatchPagePreview`, from the watch's pages record). Under 1000px
+//   it goes under the rules, in the one column.
 //
 // On a home that is not the watch's main house (`home`), the gestures and the
 // point control switches are the main house's: one line says so in place of
-// them, and Switch pages by room offers only the automatic switch and the
-// fallback page, which are this home's own.
+// them, and the switch is Switch automatically, which is this home's own.
 
 import { css, html, nothing, svg, type TemplateResult } from "lit";
-import { checkField, entityField, segField, selectField, textField } from "../editors.js";
+import { litOutline } from "../editor-chrome.js";
+import { checkField, entityField, textField } from "../editors.js";
 import type { HassLike } from "../ha-api.js";
 import type { EntityRef } from "../model.js";
 import type { IconProvider } from "../renderer.js";
@@ -33,6 +36,7 @@ import { type WatchPage, type WatchPagesDocument, watchPageId, watchPageName, wa
 import { renderWatchPagePreview, watchScreenBackground } from "../watch-pages/preview.js";
 import {
   type BehaviorDocument,
+  type FloorEntry,
   type RoomListEntry,
   type RoomPageChoice,
   type RoomsView,
@@ -79,6 +83,9 @@ export interface RoomsViewHost {
   dirty: ReadonlySet<string>;
   pages: readonly RoomPageChoice[];
   rooms: readonly RoomListEntry[];
+  /** Home Assistant's floors, in its order, to group the rooms by. None, and
+   * the rooms stand in one list. */
+  floors?: readonly FloorEntry[];
   /** "loading" while the areas and the sensor's states are read. */
   roomsState: "loading" | "ready";
   busy: boolean;
@@ -100,12 +107,12 @@ export interface RoomsViewHost {
   /** The watch's screen in points. Absent, the 46 mm watch's. */
   screen?: { width: number; height: number };
   icons?: IconProvider;
-  /** The stage is one column: the watch drawn a little smaller. */
+  /** The page is one column: the watch drawn a little smaller. */
   narrow?: boolean;
 }
 
-/** The Rooms hue, Home's Rooms door: the card outlines, the icon chips and
- * the stage's edge. */
+/** The Rooms hue, Home's Rooms door: the card outlines, the icon chips, the
+ * picked row's edge and the stage's edge. */
 const ROOMS_HUE = "var(--wa-hue-pink)";
 
 /** The 46 mm watch's screen, when the watch has not said its own. */
@@ -126,7 +133,18 @@ function anyDirty(host: RoomsViewHost, keys: readonly string[]): boolean {
 }
 
 function dirtyDot(on: boolean): TemplateResult | typeof nothing {
-  return on ? html`<span class="sec-dot" title="Changed, not saved yet" aria-label="Changed"></span>` : nothing;
+  return on ? html`<span class="sec-dot rm-dirty" title="Changed, not saved yet" aria-label="Changed"></span>` : nothing;
+}
+
+/** Whether a fold is open: kept per editor session in `uiState`. */
+function isOpen(host: RoomsViewHost, key: string, fallback = false): boolean {
+  const value = host.uiState.get(key);
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function flip(host: RoomsViewHost, key: string, now: boolean): void {
+  host.uiState.set(key, !now);
+  host.requestUpdate();
 }
 
 // ── Room sensor ──────────────────────────────────────────────────────────
@@ -159,7 +177,7 @@ export const BERMUDA_URL = "https://github.com/agittins/bermuda";
  * "room" and the like), which can find the wrong one or none. */
 export const NO_SENSOR_TEXT = "No room sensor picked. The watch looks for one by its name, such as a Bermuda area sensor. Pick one to be sure.";
 
-/** Why Bermuda, in the card that stands at the top until one is picked. */
+/** Why Bermuda, in the card that stands at the top until a sensor is picked. */
 export const BERMUDA_PITCH = "Bermuda uses Bluetooth to tell which room your watch is in. Rooms works best with its area sensor. Add Bermuda to Home Assistant, then pick its sensor here.";
 
 /** A Bermuda area sensor: Bermuda marks its sensors with its own device
@@ -171,14 +189,6 @@ export function isBermudaSensor(hass: HassLike, sensor: string): boolean {
   if (deviceClass.toLowerCase().startsWith("bermuda")) return true;
   const name = typeof state?.attributes?.friendly_name === "string" ? state.attributes.friendly_name : "";
   return `${sensor} ${name}`.toLowerCase().includes("bermuda");
-}
-
-/** Puts the cursor in the room sensor field, from the stage's button. */
-function focusSensor(e: Event): void {
-  const root = (e.currentTarget as HTMLElement).getRootNode() as ParentNode;
-  const field = root.querySelector<HTMLElement>(".rm-sensor-field");
-  field?.scrollIntoView({ block: "center", behavior: "smooth" });
-  field?.querySelector<HTMLElement>("input, button")?.focus();
 }
 
 function withBermudaLink(line: string): TemplateResult | string {
@@ -215,23 +225,47 @@ function watchPageFor(host: RoomsViewHost, stored: string): WatchPage | undefine
   return watchPagesOf(host.pagesDocument).find((p) => watchPageId(p).toLowerCase() === want);
 }
 
+/** A native select whose picked option is bound as a property: an attribute
+ * binding left the wrong option shown once the pages loaded. */
+function pageSelect(label: string, value: string, options: [string, string][], set: (v: string) => void, busy: boolean, cls = ""): TemplateResult {
+  return html`<select class="rm-select ${cls}" aria-label=${label} ?disabled=${busy}
+    @click=${(e: Event) => e.stopPropagation()}
+    @change=${(e: Event) => { if (!busy) set((e.target as HTMLSelectElement).value); }}>
+    ${options.map(([v, text]) => html`<option value=${v} .selected=${v === value}>${text}</option>`)}
+  </select>`;
+}
+
 // ── the list ─────────────────────────────────────────────────────────────
 
-/** The rooms in the Your rooms list, in the merged list's order. */
+/** The rooms in the rules, in the merged list's order. */
 export function listedRooms(host: Pick<RoomsViewHost, "rooms" | "view" | "added">): RoomListEntry[] {
   return host.rooms.filter((r) => roomIsListed(host.view, r, host.added ?? []));
 }
 
-/** The Home Assistant areas not in the list yet, offered as chips. */
+/** The Home Assistant areas not in the rules yet, offered in the fold. */
 export function offeredAreas(host: Pick<RoomsViewHost, "rooms" | "view" | "added">): RoomListEntry[] {
   return host.rooms.filter((r) => r.area && !roomIsListed(host.view, r, host.added ?? []));
 }
 
-/** The room the stage and the inspector show: the one picked, else the
- * first in the list. */
-export function pickedRoom(host: Pick<RoomsViewHost, "uiState">, listed: readonly RoomListEntry[]): RoomListEntry | undefined {
+/** The room the stage and point control show: the one picked, else the
+ * one you are in, else the first in the list. */
+export function pickedRoom(host: Pick<RoomsViewHost, "uiState"> & Partial<Pick<RoomsViewHost, "hass" | "view">>, listed: readonly RoomListEntry[]): RoomListEntry | undefined {
   const key = host.uiState.get("pick");
-  return listed.find((r) => r.key === key) ?? listed[0];
+  const here = host.hass !== undefined && host.view !== undefined ? currentRoomKey(host.hass, host.view.sensor) : "";
+  return listed.find((r) => r.key === key) ?? listed.find((r) => r.key === here) ?? listed[0];
+}
+
+/** The rooms grouped by Home Assistant's floors, in the floors' order. A
+ * room on no floor (or not an area) goes in a last group, headed Other when
+ * there are floors above it and with no heading when there are none. */
+export function roomGroups(rooms: readonly RoomListEntry[], floors: readonly FloorEntry[] = []): { name: string; rooms: RoomListEntry[] }[] {
+  const known = new Set(floors.map((f) => f.id));
+  const groups = floors
+    .map((f) => ({ name: f.name, rooms: rooms.filter((r) => r.floorId === f.id) }))
+    .filter((g) => g.rooms.length > 0);
+  const rest = rooms.filter((r) => r.floorId === undefined || !known.has(r.floorId));
+  if (rest.length > 0) groups.push({ name: groups.length > 0 ? "Other" : "", rooms: rest });
+  return groups;
 }
 
 function pick(host: RoomsViewHost, key: string): void {
@@ -239,28 +273,11 @@ function pick(host: RoomsViewHost, key: string): void {
   host.requestUpdate();
 }
 
-function pointWords(n: number): string {
-  if (n === 0) return "nothing to point at";
+/** A room row's small line: how many things to point at in it, "" for none. */
+export function roomPointLine(host: Pick<RoomsViewHost, "view">, room: RoomListEntry): string {
+  const n = host.view.zones.ok ? roomZones(host.view.zones.rooms, room.key).length : 0;
+  if (n === 0) return "";
   return n === 1 ? "1 thing to point at" : `${n} things to point at`;
-}
-
-/** A room row's second line: the page it opens and how many targets. */
-export function roomRowLine(host: RoomsViewHost, room: RoomListEntry): string {
-  const page = pageNameOf(host, roomPage(host.view, room.key));
-  const zones = host.view.zones.ok ? roomZones(host.view.zones.rooms, room.key).length : 0;
-  return `${page === "" ? "No page yet" : `Opens ${page}`} · ${pointWords(zones)}`;
-}
-
-function renderRoomRow(host: RoomsViewHost, room: RoomListEntry, on: boolean, here: boolean): TemplateResult {
-  return html`<li>
-    <button type="button" class="rm-room ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"} @click=${() => pick(host, room.key)}>
-      <span class="rm-chip" aria-hidden="true">${uiIcon("home")}</span>
-      <span class="rm-room-text">
-        <span class="rm-room-top"><b class="rm-room-name">${room.name}</b>${here ? html`<span class="rm-here"><i aria-hidden="true"></i>You are here</span>` : nothing}</span>
-        <span class="rm-room-sub">${roomRowLine(host, room)}</span>
-      </span>
-    </button>
-  </li>`;
 }
 
 function addRoomNamed(host: RoomsViewHost, name: string): void {
@@ -270,10 +287,201 @@ function addRoomNamed(host: RoomsViewHost, name: string): void {
   pick(host, key);
 }
 
-function renderAddRoom(host: RoomsViewHost): TemplateResult {
+// ── Right now ────────────────────────────────────────────────────────────
+
+/** One piece of the Right now sentence: plain words, or a name set in bold. */
+export type StatusWord = string | { bold: string };
+
+/** The switch that turns room switching on: Switch pages by room on the main
+ * house, Switch automatically on any other home. */
+function switchingOn(host: RoomsViewHost): boolean {
+  return host.home === true ? homeAutoSwitch(host.document) : host.view.switching;
+}
+
+/** What the watch does where no room has a page: the fallback, as the end of
+ * a sentence. */
+function fallbackWords(host: RoomsViewHost): StatusWord[] {
+  const choice = fallbackChoice(host.view.fallback);
+  if (choice === "stay") return ["the watch stays on the page it is on."];
+  if (choice === "first") return ["the watch shows ", { bold: FALLBACK_LABELS.first }, "."];
+  return ["the watch shows ", { bold: pageInSentence(host, host.view.fallback) }, "."];
+}
+
+/** A stored page's name inside a sentence. */
+function pageInSentence(host: RoomsViewHost, stored: string): string {
+  return findPageChoice(host.pages, stored)?.name ?? "a page not on this watch";
+}
+
+const SWITCHING_OFF = "Switching is off, so the watch stays on its page.";
+
+/**
+ * The Right now sentence, from the sensor's state now: the room you are in
+ * and the page the watch shows for it (or the fallback's), or plainly that
+ * the sensor names no room. With switching off, that the watch stays put.
+ */
+export function statusWords(host: RoomsViewHost): StatusWord[] {
+  const sensor = host.view.sensor;
+  const switching = switchingOn(host);
+  const state = host.hass.states[sensor];
+  if (state === undefined) {
+    return [`Home Assistant has no entity ${sensor} now, so the watch cannot tell which room you are in.`];
+  }
+  const room = roomFromState(sensor, state);
+  const key = room === undefined ? "" : normalizedRoomKey(room);
+  if (room === undefined || key === "") {
+    const raw = typeof state.state === "string" ? state.state.trim() : "";
+    const lead = raw === "" ? "The sensor names no room now" : `The sensor says "${raw}" now, which names no room`;
+    if (!switching) return [`${lead}. ${SWITCHING_OFF}`];
+    return [`${lead}, so `, ...fallbackWords(host)];
+  }
+  const name = host.rooms.find((r) => r.key === key)?.name ?? room;
+  if (!switching) return ["You are in ", { bold: name }, ` now. ${SWITCHING_OFF}`];
+  const stored = roomPage(host.view, key);
+  if (stored !== "") return ["You are in ", { bold: name }, " now. The watch shows ", { bold: pageInSentence(host, stored) }, "."];
+  return ["You are in ", { bold: name }, " now, which has no page, so ", ...fallbackWords(host)];
+}
+
+function renderWords(words: readonly StatusWord[]): TemplateResult {
+  return html`${words.map((w) => (typeof w === "string" ? w : html`<b>${w.bold}</b>`))}`;
+}
+
+function renderSensorField(host: RoomsViewHost): TemplateResult {
+  const { view } = host;
+  return html`<div class="rm-stack rm-sensor-field" title=${view.sensor === "" ? "" : "Clearing the sensor turns Switch pages by room off."}>${entityField({ hass: host.hass }, "Room sensor", refOf(host.hass, view.sensor), (ref) => {
+    if (host.busy) return;
+    host.write(sensorWrites(host.document, ref.entityId));
+  }, "rooms:sensor", { clearable: true })}</div>`;
+}
+
+/** Switch pages by room (or Switch automatically on another home), then
+ * When under a hairline while it is on. */
+function renderSwitching(host: RoomsViewHost): TemplateResult {
+  const home = host.home === true;
+  const on = switchingOn(host);
+  const label = home ? HOME_AUTO_SWITCH_LABEL : "Switch pages by room";
+  const set = (v: boolean) => {
+    if (host.busy) return;
+    host.write(home ? homeAutoSwitchWrites(host.document, v) : switchingWritesFor(host.document, v));
+  };
+  const triggers = ROOM_RULES.switching.triggers;
+  const help = triggers.find((t) => t.value === host.view.trigger)?.help ?? "";
+  return html`<div class="rm-status-switch">${checkField(label, on, set)}</div>
+    ${home ? html`<p class="rm-help rm-status-wide rm-main-house">${HOME_ROOMS_MAIN_HOUSE_TEXT}</p>`
+      : on ? html`<div class="rm-when rm-status-wide">
+        <span class="rm-when-l" id="rm-when-l">Switch</span>
+        <div class="seg rm-seg" role="radiogroup" aria-labelledby="rm-when-l">
+          ${triggers.map((t) => {
+            const picked = t.value === host.view.trigger;
+            return html`<button type="button" role="radio" aria-checked=${picked ? "true" : "false"} class=${picked ? "on" : ""} ?disabled=${host.busy}
+              @click=${() => { if (!host.busy && !picked) host.write(triggerWrites(host.document, t.value as RoomTrigger)); }}>${t.label}</button>`;
+          })}
+        </div>
+        <span class="rm-when-help">${help}</span>
+      </div>` : nothing}`;
+}
+
+const STATUS_KEYS = [ROOM_KEYS.sensor, ROOM_KEYS.autoSwitch, ROOM_KEYS.legacyQuickJump, ROOM_KEYS.topSectionDoubleTap, ROOM_KEYS.handGesture];
+
+/** The card at the top: where you are and what the watch shows, or, with no
+ * sensor picked, Start here. */
+function renderStatusCard(host: RoomsViewHost): TemplateResult {
+  const { view } = host;
+  const dirty = dirtyDot(anyDirty(host, STATUS_KEYS));
+  if (view.sensor === "") {
+    return html`<section class="rm-card rm-lit rm-start" aria-label="Start here">
+      <span class="rm-eyebrow">Start here${dirty}</span>
+      <h3 class="rm-start-title">Tell the watch which room you are in</h3>
+      <p class="rm-pitch">${BERMUDA_PITCH}</p>
+      <div class="rm-start-row">
+        ${renderSensorField(host)}
+        <a class="rm-btn rm-bermuda-link" href=${BERMUDA_URL} target="_blank" rel="noopener noreferrer">Get Bermuda</a>
+      </div>
+      <p class="rm-help">${withBermudaLink(NO_SENSOR_TEXT)}</p>
+      <div class="rm-start-switch">${renderSwitching(host)}</div>
+    </section>`;
+  }
+  const changing = isOpen(host, "sensorOpen");
+  const bermuda = isBermudaSensor(host.hass, view.sensor);
+  const reading = sensorReading(host.hass, view.sensor);
+  return html`<section class="rm-card rm-lit rm-status" aria-label="Right now">
+    <span class="rm-ichip" aria-hidden="true">${uiIcon("home")}</span>
+    <div class="rm-status-text">
+      <p class="rm-now">${renderWords(statusWords(host))}${dirty}</p>
+      <div class="rm-sensor-line">
+        ${bermuda
+          ? html`<span class="rm-bermuda-ok">${uiIcon("check")}<span>${nameOf(host.hass, view.sensor)}, a Bermuda sensor</span></span>`
+          : html`<span class="rm-sensor-name">${nameOf(host.hass, view.sensor)}.</span>
+            <span class="rm-sensor-hint"><a href=${BERMUDA_URL} target="_blank" rel="noopener noreferrer">Bermuda</a> works best.</span>`}
+        <button type="button" class="rm-btn rm-small" aria-expanded=${changing ? "true" : "false"}
+          @click=${() => flip(host, "sensorOpen", changing)}>${changing ? "Done" : "Change"}</button>
+      </div>
+    </div>
+    ${changing ? html`<div class="rm-sensor-edit rm-status-wide">
+      ${renderSensorField(host)}
+      <div class="rm-reading"><i class="rm-dot ${reading.tone}" aria-hidden="true"></i><span>${reading.line}</span></div>
+    </div>` : nothing}
+    ${renderSwitching(host)}
+  </section>`;
+}
+
+// ── the rules ────────────────────────────────────────────────────────────
+
+/** The thumbnail beside a page picker: one screen of the page, small. An
+ * empty box when there is no page to draw, so the pickers line up. */
+const THUMB_SCALE = 0.16;
+
+/** The screen's height in pixels at a scale: the picture of a page shows one
+ * screen of it, what the watch opens on, and no more. */
+function screenHeightPx(host: RoomsViewHost, scale: number): number {
+  return Math.round((host.screen ?? DEFAULT_SCREEN).height * scale * 100) / 100;
+}
+
+function renderPageThumb(host: RoomsViewHost, stored: string): TemplateResult {
+  const page = watchPageFor(host, stored);
+  const screen = host.screen ?? DEFAULT_SCREEN;
+  const size = `--rm-screen-h: ${screenHeightPx(host, THUMB_SCALE)}px; --rm-thumb-w: ${Math.round(screen.width * THUMB_SCALE)}px`;
+  if (page === undefined) return html`<span class="rm-thumb empty" aria-hidden="true" style=${size}></span>`;
+  return html`<span class="rm-thumb" aria-hidden="true" title=${watchPageName(page)} style=${size}>${renderWatchPagePreview({
+    page, pages: [page], screen, states: host.hass.states, ...(host.icons ? { icons: host.icons } : {}), scale: THUMB_SCALE,
+  })}</span>`;
+}
+
+function renderRuleRow(host: RoomsViewHost, room: RoomListEntry, on: boolean, here: boolean): TemplateResult {
+  const stored = roomPage(host.view, room.key);
+  const value = pageValue(host.pages, stored);
+  const removal = removeRoomWrites(host.document, room.key);
+  const removable = removal.size > 0 || (host.added ?? []).some((n) => normalizedRoomKey(n) === room.key);
+  const remove = (e: Event) => {
+    e.stopPropagation();
+    if (host.busy) return;
+    host.forgetRoom?.(room.key);
+    if (removal.size > 0) host.write(removal);
+    host.requestUpdate();
+  };
+  const line = roomPointLine(host, room);
+  return html`<li class="rm-row ${on ? "on" : ""}" @click=${() => pick(host, room.key)}>
+    <span class="rm-row-room">
+      <button type="button" class="rm-row-name" aria-pressed=${on ? "true" : "false"} title="Show this room on the watch"
+        @click=${(e: Event) => { e.stopPropagation(); pick(host, room.key); }}>${room.name}</button>
+      ${here ? html`<span class="rm-here"><i aria-hidden="true"></i>You are here</span>` : nothing}
+      ${line === "" ? nothing : html`<span class="rm-row-sub">${line}</span>`}
+    </span>
+    <span class="rm-arrow" aria-hidden="true">${uiIcon("arrow")}</span>
+    <span class="rm-row-page">
+      ${renderPageThumb(host, stored)}
+      ${pageSelect(`Page for ${room.name}`, value, pageOptions(host.pages, value, [["", "No page"]]), (v) => {
+        host.write(roomPageWrites(host.document, room.key, v));
+        pick(host, room.key);
+      }, host.busy)}
+    </span>
+    <span class="rm-row-end">${removable ? html`<button type="button" class="rm-row-x" aria-label=${`Remove ${room.name}`} ?disabled=${host.busy}
+      title="Take this room off: its page and its things to point at go. Undo brings them back." @click=${remove}>${uiIcon("close")}</button>` : nothing}</span>
+  </li>`;
+}
+
+function renderAddRoom(host: RoomsViewHost, listed: readonly RoomListEntry[]): TemplateResult {
   const text = String(host.uiState.get("addRoom") ?? "");
   const key = normalizedRoomKey(text);
-  const listed = listedRooms(host);
   const exists = key !== "" && listed.some((r) => r.key === key);
   const add = () => {
     if (key === "" || exists) return;
@@ -284,128 +492,62 @@ function renderAddRoom(host: RoomsViewHost): TemplateResult {
     <input type="text" placeholder="Add a room by name" aria-label="Room name" .value=${text}
       @input=${(e: Event) => { host.uiState.set("addRoom", (e.target as HTMLInputElement).value); host.requestUpdate(); }}
       @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); add(); } }} />
-    <button type="button" class="lc-btn rm-add" ?disabled=${key === "" || exists} @click=${add}>${uiIcon("plus")}<span>Add</span></button>
+    <button type="button" class="rm-btn" ?disabled=${key === "" || exists} @click=${add}>${uiIcon("plus")}<span>Add</span></button>
   </div>
   ${text.trim() !== "" && key === "" ? html`<p class="rm-help warn">The watch matches room names by their letters a to z and digits, and this name has none.</p>` : nothing}
-  ${exists ? html`<p class="rm-help">That room is in the list.</p>` : nothing}`;
+  ${exists ? html`<p class="rm-help">That room is in the list.</p>` : html`<p class="rm-help">For a name the sensor says that is not an area in Home Assistant.</p>`}`;
 }
 
-function renderRoomsCard(host: RoomsViewHost, listed: readonly RoomListEntry[], picked: RoomListEntry | undefined): TemplateResult {
+function renderFallbackRow(host: RoomsViewHost): TemplateResult {
+  const fallback = fallbackChoice(host.view.fallback);
+  const value = fallback === "first" ? "" : fallback === "stay" ? STAY_ON_CURRENT_PAGE : pageValue(host.pages, host.view.fallback);
+  return html`<div class="rm-row rm-else">
+    <span class="rm-row-room">
+      <b class="rm-else-name">Anywhere else</b>
+      <span class="rm-row-sub">A room with no page, or when the room cannot be told</span>
+    </span>
+    <span class="rm-arrow" aria-hidden="true">${uiIcon("arrow")}</span>
+    <span class="rm-row-page">
+      ${renderPageThumb(host, fallback === "page" ? host.view.fallback : "")}
+      ${pageSelect("Page anywhere else", value, pageOptions(host.pages, value, [[STAY_ON_CURRENT_PAGE, FALLBACK_LABELS.stay], ["", FALLBACK_LABELS.first]]),
+        (v) => host.write(fallbackWrites(v)), host.busy)}
+    </span>
+    <span class="rm-row-end"></span>
+  </div>`;
+}
+
+function renderRulesCard(host: RoomsViewHost, listed: readonly RoomListEntry[], picked: RoomListEntry | undefined): TemplateResult {
   const here = currentRoomKey(host.hass, host.view.sensor);
   const areas = offeredAreas(host);
-  return html`<section class="card lc rm-rooms-card" aria-label="Your rooms" style=${`--c: ${ROOMS_HUE}`}>
-    <div class="lc-head">
-      <span class="swatch">${uiIcon("home")}</span><span class="lc-title">Your rooms</span>
-      <span class="lc-sub">${listed.length}</span>${dirtyDot(anyDirty(host, [ROOM_KEYS.mappings, ROOM_KEYS.zones]))}
+  const groups = roomGroups(listed, host.floors);
+  const moreOpen = isOpen(host, "moreOpen", listed.length === 0);
+  const moreLabel = areas.length === 0 ? "Add a room" : `${areas.length} more ${areas.length === 1 ? "area" : "areas"} in Home Assistant`;
+  return html`<section class="rm-card rm-rules" aria-label="Room pages">
+    <div class="rm-rules-head">
+      <span class="rm-cap">When I walk into${dirtyDot(anyDirty(host, [ROOM_KEYS.mappings, ROOM_KEYS.fallback]))}</span>
+      <span class="rm-cap rm-cap-page">the watch opens</span>
     </div>
-    <div class="rm-rooms-body">
-      ${listed.length === 0
-        ? html`<div class="rm-none">
-            <b>${host.roomsState === "loading" ? "Reading your rooms" : "No rooms yet"}</b>
-            <span>${host.roomsState === "loading" ? "The areas and what the room sensor reported." : areas.length > 0 ? "Pick an area below, or type a name." : "Type a room's name below."}</span>
-          </div>`
-        : html`<ul class="rm-rooms" aria-label="Rooms">${listed.map((r) => renderRoomRow(host, r, r.key === picked?.key, r.key === here))}</ul>`}
-      ${renderAddRoom(host)}
+    ${listed.length === 0
+      ? html`<div class="rm-none">
+          <b>${host.roomsState === "loading" ? "Reading your rooms" : "No rooms yet"}</b>
+          <span>${host.roomsState === "loading" ? "The areas and what the room sensor reported." : areas.length > 0 ? "Pick an area below, or type a name." : "Type a room's name below."}</span>
+        </div>`
+      : groups.map((g) => html`<div class="rm-group" role="group" aria-label=${g.name === "" ? "Rooms" : g.name}>
+          ${g.name === "" ? nothing : html`<span class="rm-floor">${g.name}</span>`}
+          <ul class="rm-rows">${g.rooms.map((r) => renderRuleRow(host, r, r.key === picked?.key, r.key === here))}</ul>
+        </div>`)}
+    ${renderFallbackRow(host)}
+    <button type="button" class="rm-fold" aria-expanded=${moreOpen ? "true" : "false"} @click=${() => flip(host, "moreOpen", moreOpen)}>
+      <span class="rm-chev" aria-hidden="true">${uiIcon("right")}</span>${moreLabel}
+    </button>
+    ${moreOpen ? html`<div class="rm-more">
       ${areas.length > 0 ? html`<div class="rm-areas">
-        <span class="rm-areas-l">From your Home Assistant areas</span>
         ${areas.map((a) => html`<button type="button" class="rm-area" title=${`Add ${a.name} to your rooms`} @click=${() => addRoomNamed(host, a.name)}>+ ${a.name}</button>`)}
+        <span class="rm-help rm-areas-help">Click one to give it a page.</span>
       </div>` : nothing}
-    </div>
+      ${renderAddRoom(host, listed)}
+    </div>` : nothing}
   </section>`;
-}
-
-// ── the stage ────────────────────────────────────────────────────────────
-
-/** The watch's size on the stage, in pixels per point. */
-const STAGE_SCALE = 1.15;
-/** The page picker's thumbnail, in pixels per point. */
-const THUMB_SCALE = 0.2;
-
-/** The screen's height in pixels at a scale: the picture of a page shows one
- * screen of it, what the watch opens on, and no more. */
-function screenHeightPx(host: RoomsViewHost, scale: number): number {
-  return Math.round((host.screen ?? DEFAULT_SCREEN).height * scale * 100) / 100;
-}
-
-/** The watch showing the page a room opens: the page itself when the
- * watch's pages are at hand, else a plain screen with its name. */
-function renderRoomWatch(host: RoomsViewHost, stored: string): TemplateResult {
-  const screen = host.screen ?? DEFAULT_SCREEN;
-  const scale = host.narrow === true ? 1 : STAGE_SCALE;
-  const page = watchPageFor(host, stored);
-  if (page !== undefined) {
-    return renderWatchPagePreview({
-      page,
-      pages: watchPagesOf(host.pagesDocument),
-      screen,
-      states: host.hass.states,
-      ...(host.icons ? { icons: host.icons } : {}),
-      scale,
-      ...(host.home === true ? {} : { behavior: host.document }),
-    });
-  }
-  const name = pageNameOf(host, stored);
-  return renderWatchFrame(screen, scale, html`<div class="wp-screen rm-screen"
-    style=${`width:${screen.width * scale}px;height:${screen.height * scale}px;background:${watchScreenBackground({}, scale, screen)}`}>
-    <span>${name === "" ? "No page yet" : name}</span>
-  </div>`, name === "" ? "Watch" : `Watch showing ${name}`);
-}
-
-function renderStage(host: RoomsViewHost, room: RoomListEntry | undefined): TemplateResult {
-  if (room === undefined) {
-    return html`<div class="card canvas-card lit rm-canvas" aria-label="Rooms">
-      <div class="stage-area rm-stage-area rm-empty">
-        <div class="rm-empty-watch" aria-hidden="true">${uiIcon("home")}</div>
-        <div class="rm-empty-text">
-          <b>Your watch can follow you around the house</b>
-          <span>Add a room and give it a page. When you walk in, the watch opens that page. Point the watch at a lamp to control it.</span>
-        </div>
-        <ol class="rm-steps">
-          <li><b>1</b>Add a room</li>
-          <li><b>2</b>Pick its page</li>
-          <li><b>3</b>Pick a room sensor</li>
-        </ol>
-      </div>
-    </div>`;
-  }
-  const stored = roomPage(host.view, room.key);
-  const value = pageValue(host.pages, stored);
-  const switching = host.home === true ? homeAutoSwitch(host.document) : host.view.switching;
-  return html`<div class="card canvas-card lit rm-canvas" aria-label=${`What the watch does in ${room.name}`}>
-    <div class="rm-stage-head">
-      <b class="rm-stage-title">${room.name}</b>
-      <span class="rm-stage-sub">What the watch does when you walk in</span>
-    </div>
-    <div class="stage-area rm-stage-area">
-      <div class="rm-flow">
-        <div class="rm-flow-side rm-flow-in">
-          <div class="rm-step">
-            <span class="rm-step-l">1 · Sensor says</span>
-            <code class="rm-key" title="The room sensor's state that names this room. The watch matches its letters and digits.">${room.key}</code>
-            ${host.view.sensor === "" ? html`<span class="rm-step-note">No room sensor picked</span>
-              <button type="button" class="rm-stage-btn" @click=${focusSensor}>Pick a sensor</button>` : nothing}
-          </div>
-          <div class="rm-step">
-            <span class="rm-step-l">2 · Watch opens</span>
-            <select class="rm-stage-select" aria-label=${`Page to open in ${room.name}`} ?disabled=${host.busy}
-              @change=${(e: Event) => { if (!host.busy) host.write(roomPageWrites(host.document, room.key, (e.target as HTMLSelectElement).value)); }}>
-              ${pageOptions(host.pages, value, [["", "No page"]]).map(([v, label]) => html`<option value=${v} .selected=${v === value}>${label}</option>`)}
-            </select>
-            ${switching ? nothing : html`<span class="rm-step-note">${host.home === true ? "Switch automatically is off" : "Switch pages by room is off"}</span>
-              <button type="button" class="rm-stage-btn" ?disabled=${host.busy} @click=${() => {
-                if (host.busy) return;
-                host.write(host.home === true ? homeAutoSwitchWrites(host.document, true) : switchingWritesFor(host.document, true));
-              }}>Turn on</button>`}
-          </div>
-          <span class="rm-wire" aria-hidden="true"><i></i></span>
-        </div>
-        <div class="rm-stage-body" style=${`--rm-screen-h: ${screenHeightPx(host, host.narrow === true ? 1 : STAGE_SCALE)}px`}>${renderRoomWatch(host, stored)}</div>
-        <!-- An empty side, so the watch stays in the middle. Point control is
-             rare, so it lives only in the room's card on the right. -->
-        <div class="rm-flow-side rm-flow-out" aria-hidden="true"></div>
-      </div>
-    </div>
-  </div>`;
 }
 
 // ── the heading dial ─────────────────────────────────────────────────────
@@ -471,7 +613,7 @@ function renderDial(host: RoomsViewHost, zones: readonly PointZone[], index: num
   </svg>`;
 }
 
-// ── the picked room's card ───────────────────────────────────────────────
+// ── a room's things to point at ──────────────────────────────────────────────────────────────────────────────────────
 
 function renderTarget(host: RoomsViewHost, roomKey: string, zones: readonly PointZone[], index: number): TemplateResult {
   const zone = zones[index]!;
@@ -548,123 +690,18 @@ function renderTargets(host: RoomsViewHost, room: RoomListEntry): TemplateResult
     ${zones.length > 0 ? html`<p class="rm-help" title=${HEADING_HELP_DETAIL}>Heading is degrees clockwise from north. Drag the dial or type it.</p>` : nothing}`;
 }
 
-/** The thumbnail beside the page picker: the page at a small scale. */
-function renderPageThumb(host: RoomsViewHost, stored: string): TemplateResult | typeof nothing {
-  const page = watchPageFor(host, stored);
-  if (page === undefined) return nothing;
-  const screen = host.screen ?? DEFAULT_SCREEN;
-  return html`<span class="rm-thumb" aria-hidden="true" title=${watchPageName(page)} style=${`--rm-screen-h: ${screenHeightPx(host, THUMB_SCALE)}px`}>${renderWatchPagePreview({
-    page, pages: [page], screen, states: host.hass.states, ...(host.icons ? { icons: host.icons } : {}), scale: THUMB_SCALE,
-  })}</span>`;
-}
-
-function renderRoomCard(host: RoomsViewHost, room: RoomListEntry): TemplateResult {
-  const stored = roomPage(host.view, room.key);
-  const value = pageValue(host.pages, stored);
-  const remove = () => {
-    if (host.busy) return;
-    const writes = removeRoomWrites(host.document, room.key);
-    host.forgetRoom?.(room.key);
-    if (writes.size > 0) host.write(writes);
-    host.requestUpdate();
-  };
-  return html`<section class="sec rm-card rm-room-card" data-open="true" aria-label=${room.name} style=${`--c: ${ROOMS_HUE}`}>
-    <div class="sec-h pinned">
-      <span class="swatch">${uiIcon("home")}</span>
-      <span class="tt"><h4>${room.name}${dirtyDot(anyDirty(host, [ROOM_KEYS.mappings, ROOM_KEYS.zones]))}</h4></span>
-      <button type="button" class="rm-danger" ?disabled=${host.busy}
-        title="Take this room off: its page and its things to point at go. Undo brings them back." @click=${remove}>Remove</button>
-    </div>
-    <div class="sec-b">
-      ${room.key !== room.name.toLowerCase() ? html`<p class="rm-help">The sensor has to say <code>${room.key}</code>, in any case or spacing.</p>` : nothing}
-      <div class="rm-page-pick">
-        ${renderPageThumb(host, stored)}
-        <div class="rm-stack">${selectField("Page to open", value, pageOptions(host.pages, value, [["", "None"]]), (v) => {
-          if (!host.busy) host.write(roomPageWrites(host.document, room.key, v));
-        }, { snapBack: true })}</div>
-      </div>
-      ${renderTargets(host, room)}
-    </div>
-  </section>`;
-}
-
-// ── Every room ───────────────────────────────────────────────────────────
+// ── Point control ────────────────────────────────────────────────────────
 
 /** One switch with its line under it. */
 function switchRow(label: string, on: boolean, line: string, set: (v: boolean) => void): TemplateResult {
   return html`<div class="rm-switch">${checkField(label, on, set)}<p class="rm-help">${line}</p></div>`;
 }
 
-function renderSensor(host: RoomsViewHost): TemplateResult {
-  const { view } = host;
-  const reading = view.sensor === "" ? undefined : sensorReading(host.hass, view.sensor);
-  const bermuda = isBermudaSensor(host.hass, view.sensor);
-  return html`<div class="rm-stack rm-sensor-field" title=${view.sensor === "" ? "" : "Clearing the sensor turns Switch pages by room off."}>${entityField({ hass: host.hass }, "Room sensor", refOf(host.hass, view.sensor), (ref) => {
-      if (host.busy) return;
-      host.write(sensorWrites(host.document, ref.entityId));
-    }, "rooms:sensor", { clearable: true })}</div>
-    ${reading ? html`<div class="rm-reading"><i class="rm-dot ${reading.tone}" aria-hidden="true"></i><span>${reading.line}</span></div>` : nothing}
-    ${bermuda ? html`<p class="rm-bermuda-ok">${uiIcon("check")}<span>A Bermuda area sensor, the best kind for Rooms.</span></p>`
-      : view.sensor === "" ? html`<p class="rm-help">${withBermudaLink(NO_SENSOR_TEXT)}</p>` : nothing}`;
-}
-
-/** Bermuda, standing out at the top of the inspector until its sensor is
- * the one picked. With no sensor at all the sensor field comes up here too,
- * so picking one is the first thing on the page. */
-function renderBermudaCard(host: RoomsViewHost): TemplateResult | typeof nothing {
-  const sensor = host.view.sensor;
-  if (isBermudaSensor(host.hass, sensor)) return nothing;
-  return html`<section class="sec rm-card rm-bermuda" data-open="true" aria-label="Best with Bermuda" style=${`--c: ${ROOMS_HUE}`}>
-    <div class="sec-h pinned">
-      <span class="swatch">${uiIcon("place")}</span>
-      <span class="tt"><h4>Best with Bermuda</h4></span>
-    </div>
-    <div class="sec-b">
-      <p class="rm-pitch">${BERMUDA_PITCH}</p>
-      <a class="rm-bermuda-link" href=${BERMUDA_URL} target="_blank" rel="noopener noreferrer">Get Bermuda</a>
-      ${sensor === "" ? renderSensor(host) : nothing}
-    </div>
-  </section>`;
-}
-
-function fallbackField(host: RoomsViewHost): TemplateResult {
-  const fallback = fallbackChoice(host.view.fallback);
-  const fallbackValue = fallback === "first" ? "" : fallback === "stay" ? STAY_ON_CURRENT_PAGE : pageValue(host.pages, host.view.fallback);
-  return html`<div class="rm-stack">${selectField("Fallback page", fallbackValue,
-    pageOptions(host.pages, fallbackValue, [[STAY_ON_CURRENT_PAGE, FALLBACK_LABELS.stay], ["", FALLBACK_LABELS.first]]),
-    (v) => { if (!host.busy) host.write(fallbackWrites(v)); }, { snapBack: true })}</div>
-    <p class="rm-help">When the room cannot be told, or has no page.</p>`;
-}
-
-function renderSwitching(host: RoomsViewHost): TemplateResult {
-  const { view } = host;
-  const triggers = ROOM_RULES.switching.triggers;
-  const help = triggers.find((t) => t.value === view.trigger)?.help ?? "";
-  return html`${switchRow("Switch pages by room", view.switching, "Jump to the page you give a room.", (on) => { if (!host.busy) host.write(switchingWritesFor(host.document, on)); })}
-    ${view.switching ? html`<div class="rm-sub-group">
-      <div class="rm-stack">${segField("When", view.trigger, triggers.map((t): [RoomTrigger, string] => [t.value, t.label]), (v) => {
-        if (!host.busy) host.write(triggerWrites(host.document, v));
-      })}</div>
-      <p class="rm-help">${help}</p>
-      ${fallbackField(host)}
-    </div>` : nothing}`;
-}
-
-/** Switch pages by room on a home that is not the main house: the automatic
- * switch and the fallback page, which this home keeps. The gestures that
- * also switch are the main house's. */
-function renderHomeSwitching(host: RoomsViewHost): TemplateResult {
-  const auto = homeAutoSwitch(host.document);
-  const help = ROOM_RULES.switching.triggers.find((t) => t.value === "Automatic")?.help ?? "";
-  return html`${switchRow(HOME_AUTO_SWITCH_LABEL, auto, help, (on) => { if (!host.busy) host.write(homeAutoSwitchWrites(host.document, on)); })}
-    <div class="rm-sub-group">${fallbackField(host)}</div>`;
-}
-
 function renderPointSwitches(host: RoomsViewHost): TemplateResult {
   const { view } = host;
   const values: Record<string, boolean> = { [ROOM_KEYS.tapToToggle]: view.tapToToggle, [ROOM_KEYS.liveTile]: view.liveTile };
   return html`<div class="rm-point-switches" title="One value for every point control tile on this watch.">
-    <div class="rm-sub-h"><span>Point control</span></div>
+    <div class="rm-sub-h"><span>Every room</span></div>
     ${ROOM_RULES.pointControl.switches.map((s) => {
       const on = values[s.key] ?? s.absent;
       return switchRow(s.label, on, on ? s.onDetail : s.offDetail, (v) => { if (!host.busy) host.write(pointSwitchWrites(s.key, v)); });
@@ -672,70 +709,144 @@ function renderPointSwitches(host: RoomsViewHost): TemplateResult {
   </div>`;
 }
 
-function renderEveryRoomCard(host: RoomsViewHost): TemplateResult {
+/** Point control's line while folded: how many things in how many rooms. */
+export function pointSummary(view: Pick<RoomsView, "zones">): string {
+  if (!view.zones.ok) return "The stored targets cannot be read.";
+  const counts = view.zones.rooms.map(([, zones]) => zones.length).filter((n) => n > 0);
+  const things = counts.reduce((a, b) => a + b, 0);
+  if (things === 0) return "Off in every room.";
+  return `${things} ${things === 1 ? "thing" : "things"} in ${counts.length} ${counts.length === 1 ? "room" : "rooms"}.`;
+}
+
+function renderPointCard(host: RoomsViewHost, listed: readonly RoomListEntry[], picked: RoomListEntry | undefined): TemplateResult {
+  const open = isOpen(host, "pointOpen");
   const home = host.home === true;
-  const keys = home
-    ? [ROOM_KEYS.sensor, ROOM_KEYS.autoSwitch, ROOM_KEYS.legacyQuickJump, ROOM_KEYS.fallback]
-    : [ROOM_KEYS.sensor, ROOM_KEYS.autoSwitch, ROOM_KEYS.legacyQuickJump, ROOM_KEYS.topSectionDoubleTap, ROOM_KEYS.handGesture, ROOM_KEYS.fallback, ROOM_KEYS.tapToToggle, ROOM_KEYS.liveTile];
-  return html`<section class="sec rm-card rm-every" data-open="true" aria-label="Every room">
-    <div class="sec-h pinned"><span class="tt"><h4>Every room${dirtyDot(anyDirty(host, keys))}</h4></span></div>
-    <div class="sec-b">
-      ${home ? html`<p class="rm-help rm-main-house">${HOME_ROOMS_MAIN_HOUSE_TEXT}</p>` : nothing}
-      ${host.view.sensor === "" ? nothing : renderSensor(host)}
-      ${home ? renderHomeSwitching(host) : renderSwitching(host)}
+  const keys = home ? [ROOM_KEYS.zones] : [ROOM_KEYS.zones, ROOM_KEYS.tapToToggle, ROOM_KEYS.liveTile];
+  return html`<section class="rm-card rm-point" aria-label="Point control">
+    <button type="button" class="rm-point-head" aria-expanded=${open ? "true" : "false"} @click=${() => flip(host, "pointOpen", open)}>
+      <span class="rm-chev" aria-hidden="true">${uiIcon("right")}</span>
+      <span class="rm-point-text">
+        <span class="rm-point-title">Point control${dirtyDot(anyDirty(host, keys))}</span>
+        <span class="rm-point-sub">Point the watch at a lamp to control it. ${pointSummary(host.view)}</span>
+      </span>
+    </button>
+    ${open ? html`<div class="rm-point-body">
+      ${picked === undefined
+        ? html`<p class="rm-help">Add a room first, then the things you point at in it.</p>`
+        : html`<label class="rm-point-room">
+            <span>Room</span>
+            ${pageSelect("Room for point control", picked.key, listed.map((r): [string, string] => [r.key, r.name]), (v) => pick(host, v), false)}
+          </label>
+          ${renderTargets(host, picked)}`}
       ${home ? nothing : renderPointSwitches(host)}
-    </div>
+    </div>` : nothing}
   </section>`;
 }
 
-/** The whole body: the rooms, the stage and the inspector. */
+// ── the stage ────────────────────────────────────────────────────────────
+
+/** The watch's size on the stage, in pixels per point. */
+const STAGE_SCALE = 1.15;
+
+/** The watch showing a page: the page itself when the watch's pages are at
+ * hand, else a plain screen with its name, or `blank` when there is none. */
+function renderRoomWatch(host: RoomsViewHost, stored: string, blank: string): TemplateResult {
+  const screen = host.screen ?? DEFAULT_SCREEN;
+  const scale = host.narrow === true ? 1 : STAGE_SCALE;
+  const page = watchPageFor(host, stored);
+  if (page !== undefined) {
+    return renderWatchPagePreview({
+      page,
+      pages: watchPagesOf(host.pagesDocument),
+      screen,
+      states: host.hass.states,
+      ...(host.icons ? { icons: host.icons } : {}),
+      scale,
+      ...(host.home === true ? {} : { behavior: host.document }),
+    });
+  }
+  const name = pageNameOf(host, stored);
+  return renderWatchFrame(screen, scale, html`<div class="wp-screen rm-screen ${name === "" ? "blank" : ""}"
+    style=${`width:${screen.width * scale}px;height:${screen.height * scale}px;background:${watchScreenBackground({}, scale, screen)}`}>
+    <span>${name === "" ? blank : name}</span>
+  </div>`, name === "" ? "Watch" : `Watch showing ${name}`);
+}
+
+/** The sticky stage beside the rules: the picked room's page on the watch. */
+function renderStage(host: RoomsViewHost, room: RoomListEntry | undefined): TemplateResult {
+  const scale = host.narrow === true ? 1 : STAGE_SCALE;
+  if (room === undefined) {
+    return html`<div class="card canvas-card lit rm-canvas" aria-label="Preview">
+      <div class="rm-stage-head"><span class="rm-eyebrow">Preview</span><b class="rm-stage-title">No rooms yet</b></div>
+      <div class="stage-area rm-stage-area rm-empty">
+        <div class="rm-empty-watch" aria-hidden="true">${uiIcon("home")}</div>
+        <span class="rm-empty-text">Add a room and give it a page. When you walk in, the watch opens that page.</span>
+      </div>
+    </div>`;
+  }
+  const here = currentRoomKey(host.hass, host.view.sensor) === room.key;
+  const stored = roomPage(host.view, room.key);
+  // A room with no page opens Anywhere else: that page when it is one.
+  const fallback = host.view.fallback;
+  const shown = stored !== "" ? stored : fallbackChoice(fallback) === "page" ? fallback : "";
+  const note = stored !== "" ? "" : shown !== "" ? "No page for this room, so the watch opens Anywhere else." : "";
+  return html`<div class="card canvas-card lit rm-canvas" aria-label=${`What the watch opens in ${room.name}`}>
+    <div class="rm-stage-head">
+      <span class="rm-eyebrow">${here ? "You are here" : "Preview"}</span>
+      <b class="rm-stage-title">${room.name}</b>
+      ${note === "" ? nothing : html`<span class="rm-stage-note">${note}</span>`}
+    </div>
+    <div class="stage-area rm-stage-area">
+      <div class="rm-stage-body" style=${`--rm-screen-h: ${screenHeightPx(host, scale)}px`}>${renderRoomWatch(host, shown, "No page for this room. The watch uses Anywhere else.")}</div>
+    </div>
+    <p class="rm-stage-foot">Click a room to see what the watch opens there.</p>
+  </div>`;
+}
+
+/** The whole body: the rules in the main column, the stage beside them. */
 export function renderRoomsBody(host: RoomsViewHost): TemplateResult {
   const listed = listedRooms(host);
   const picked = pickedRoom(host, listed);
-  return html`<div class="rm-layout" style=${`--wa-stage-hue: ${ROOMS_HUE}`}>
-    <div class="rm-col rm-list-col">${renderRoomsCard(host, listed, picked)}</div>
-    <div class="rm-col column canvas rm-stage-col">${renderStage(host, picked)}</div>
-    <div class="rm-col rm-insp-col">
-      ${renderBermudaCard(host)}
-      ${picked === undefined ? nothing : renderRoomCard(host, picked)}
-      ${renderEveryRoomCard(host)}
-    </div>
+  return html`<div class="rm-layout" style=${`--wa-stage-hue: ${ROOMS_HUE}; --rm-hue: ${ROOMS_HUE}`}>
+    <div class="rm-cell rm-cell-status">${renderStatusCard(host)}</div>
+    <div class="rm-cell rm-cell-rules">${renderRulesCard(host, listed, picked)}</div>
+    <aside class="rm-side column canvas" aria-label="Preview">${renderStage(host, picked)}</aside>
+    <div class="rm-cell rm-cell-point">${renderPointCard(host, listed, picked)}</div>
   </div>`;
 }
 
 export const roomsViewStyles = css`
-  /* Three columns: the rooms, the stage, the inspector. Under 1100px the
-     inspector goes under the other two, under 820px everything is one
-     column in reading order. */
+  /* A main column of rules and a sticky stage beside it, the page no wider
+     than 1240px and centred. Under 1000px one column: the stage goes under
+     the rules, before point control, and scrolls with the page. */
   .rm-layout {
-    display: grid; grid-template-columns: minmax(240px, 290px) minmax(0, 1fr) minmax(300px, 360px);
-    gap: 10px; align-items: start; margin-bottom: 14px;
+    width: 100%; max-width: 1240px; margin: 0 auto 14px;
+    display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto auto 1fr;
+    column-gap: 16px; row-gap: 14px; align-items: start;
   }
-  @container (max-width: 1100px) {
-    .rm-layout { grid-template-columns: minmax(240px, 290px) minmax(0, 1fr); }
-    .rm-layout > .rm-insp-col { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 10px; align-items: start; }
+  .rm-cell { min-width: 0; }
+  .rm-cell-status { grid-column: 1; grid-row: 1; }
+  .rm-cell-rules { grid-column: 1; grid-row: 2; }
+  .rm-cell-point { grid-column: 1; grid-row: 3; }
+  .rm-side { grid-column: 2; grid-row: 1 / span 3; position: sticky; top: 12px; min-width: 0; }
+  @container (max-width: 1000px) {
+    .rm-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
+    .rm-cell-status, .rm-cell-rules, .rm-cell-point, .rm-side { grid-column: 1; grid-row: auto; }
+    .rm-side { position: static; }
   }
-  @container (max-width: 820px) {
-    .rm-layout { grid-template-columns: minmax(0, 1fr); }
-    .rm-layout > .rm-insp-col { grid-column: auto; display: flex; align-items: stretch; }
-  }
-  .rm-col { min-width: 0; display: flex; flex-direction: column; }
-  .rm-insp-col > .sec:first-child { margin-top: 0; }
-  @container (max-width: 1100px) { .rm-insp-col > .sec { margin-top: 0; } }
-  @container (max-width: 820px) { .rm-insp-col > .sec + .sec { margin-top: 10px; } }
 
   /* Help is one plain line: muted, never italic. */
   .rm-help { margin: 2px 0 8px; font-size: 12px; line-height: 1.45; font-style: normal; color: var(--wa-muted); overflow-wrap: anywhere; }
   .rm-help.warn { color: var(--wa-amber); }
-  .rm-help a { color: var(--wa-ink); }
-  .rm-help code, .rm-key, .rm-room-card code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .rm-help a, .rm-sensor-hint a { color: var(--wa-ink); }
+  .rm-help code, .rm-card code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .rm-stack .field { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 2px 0; }
   .rm-stack .field.entity-field > :not(:first-child) { grid-column: 1; }
   .rm-card .field :is(input[type=text], input[type=number], select) {
     height: 30px; min-height: 30px; padding: 0 9px; font-size: 13px; border-radius: 7px;
     border-color: var(--wa-line-strong); background-color: var(--wa-field);
   }
-  .rm-card .field.check { grid-template-columns: minmax(0, 1fr) auto; min-height: 30px; padding: 0; font-size: 13px; }
+  .rm-card .field.check { grid-template-columns: minmax(0, 1fr) auto; min-height: 30px; padding: 0; font-size: 13px; gap: 10px; }
   .rm-card .field.check > span { color: var(--wa-ink); font-size: 13px; }
   /* A picked entity wraps its name, id and state rather than cutting them
      short; the box grows a line instead. */
@@ -743,168 +854,197 @@ export const roomsViewStyles = css`
   .rm-card button.ent-pick { flex-wrap: wrap; row-gap: 0; padding-top: 3px; padding-bottom: 3px; }
   .rm-card .ent-pick :is(.ent-name, .ent-id, .ent-state) { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; max-width: none; }
   .rm-card .ent-pick .ent-id { flex: 0 1 auto; }
-  /* When's three choices wrap their words rather than cut them short. */
-  .rm-card .seg.wide { height: auto; min-height: 28px; }
-  .rm-card .seg.wide button { height: auto; min-height: 28px; padding: 4px 6px; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; overflow-wrap: anywhere; }
+  .rm-dirty { display: inline-block; width: 7px; height: 7px; margin-left: 7px; vertical-align: middle; border-radius: 50%; background: var(--rm-hue); }
 
-  /* The left card: the rooms, the add field and the areas. */
-  .rm-rooms-card .lc-head .sec-dot { display: block; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
-  .rm-rooms-body { display: flex; flex-direction: column; gap: 10px; padding: 0 10px 12px; }
-  ul.rm-rooms { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-  button.rm-room {
-    display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px; border-radius: 10px;
-    border: 1px solid var(--wa-line); background: transparent; color: var(--wa-ink);
-    font: inherit; text-align: left; cursor: pointer;
+  /* The cards: plain, the Rooms hue only on the lit outline of the card at
+     the top, the icon chip and the picked row's edge. */
+  .rm-card {
+    border-radius: var(--wa-lc-r, 16px); background: var(--wa-card); border: 1px solid var(--wa-line); color: var(--wa-ink);
   }
-  button.rm-room:hover { background: var(--wa-hover); }
-  button.rm-room.on { background: var(--wa-raise); border-color: var(--wa-line-strong); }
-  button.rm-room:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .rm-chip {
-    flex: none; width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center;
-    background: var(--wa-field); border: 1px solid var(--wa-line); color: var(--wa-muted);
+  .rm-card.rm-lit { --c: var(--rm-hue); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid); ${litOutline} }
+  /* The hue stays on the outline: the controls inside are neutral. */
+  .rm-card.rm-lit > * { --c: var(--wa-accent); }
+  .rm-eyebrow { font-size: 11px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--wa-muted); }
+  .rm-start .rm-eyebrow { color: var(--rm-hue); }
+  .rm-cap { font-size: 11px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--wa-soft); }
+  /* Every button and link button: a visible one pixel outline, neutral. */
+  .rm-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: none;
+    height: 32px; padding: 0 12px; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+    text-decoration: none; color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line-strong);
   }
-  .rm-room.on .rm-chip { border-color: var(--c); color: var(--c); }
-  .rm-chip svg.ui-icon { width: 15px; height: 15px; }
-  .rm-room-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .rm-room-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; }
-  .rm-room-name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
-  .rm-room-sub { font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); overflow-wrap: anywhere; }
-  .rm-here {
-    display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 7px; border-radius: 999px;
-    font-size: 10.5px; font-weight: 500; color: var(--wa-ink); border: 1px solid color-mix(in srgb, var(--wa-hue-green) 60%, transparent);
+  .rm-btn.rm-small { height: 24px; padding: 0 9px; border-radius: 6px; font-size: 12px; font-weight: 400; color: var(--wa-soft); }
+  .rm-btn:hover:not(:disabled) { background: var(--wa-hover); }
+  .rm-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .rm-btn:disabled { opacity: .45; cursor: default; }
+  .rm-btn svg.ui-icon { width: 13px; height: 13px; }
+  select.rm-select {
+    min-width: 0; max-width: 100%; height: 30px; padding: 0 8px; border-radius: 7px; font: inherit; font-size: 13px;
+    color: var(--wa-ink); background-color: var(--wa-field); border: 1px solid var(--wa-line-strong); cursor: pointer;
   }
-  .rm-here i { width: 5px; height: 5px; border-radius: 50%; background: var(--wa-hue-green); }
-  .rm-none { display: flex; flex-direction: column; gap: 4px; padding: 14px 8px; text-align: center; }
-  .rm-none b { font-size: 13px; font-weight: 600; }
-  .rm-none span { font-size: 12px; line-height: 1.45; color: var(--wa-muted); }
-  .rm-add-room { display: flex; gap: 6px; }
-  .rm-add-room input {
-    flex: 1 1 auto; min-width: 0; height: 30px; padding: 0 10px; border-radius: 7px;
-    border: 1px solid var(--wa-line-strong); background: var(--wa-field); color: var(--wa-ink); font: inherit; font-size: 13px;
-  }
-  .rm-add-room input:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
-  button.lc-btn.rm-add { height: 30px; }
-  .rm-rooms-body > .rm-help { margin: -4px 0 0; }
-  .rm-areas { display: flex; flex-wrap: wrap; gap: 5px; }
-  .rm-areas-l { width: 100%; font-size: 11.5px; color: var(--wa-muted); }
-  button.rm-area {
-    min-height: 24px; padding: 2px 9px; border-radius: 999px; font: inherit; font-size: 12px; cursor: pointer;
-    color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line-strong); overflow-wrap: anywhere; text-align: left;
-  }
-  button.rm-area:hover { background: var(--wa-hover); }
-  button.rm-area:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  select.rm-select:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  select.rm-select:disabled { opacity: .45; cursor: default; }
 
-  /* The stage: what the watch does when you walk into the picked room. */
-  .column.canvas.rm-stage-col { gap: 0; }
-  .column.canvas > .card.canvas-card.rm-canvas { min-height: 560px; flex: none; }
-  @container (max-width: 820px) { .column.canvas > .card.canvas-card.rm-canvas { min-height: 0; } }
-  .rm-stage-head { display: flex; flex-direction: column; gap: 2px; padding: 14px 18px 0; }
-  .rm-stage-title { font-size: 18px; font-weight: 500; letter-spacing: -.015em; overflow-wrap: anywhere; }
-  .rm-stage-sub { font-size: 12px; color: var(--wa-muted); }
-  .canvas-card.lit .stage-area.rm-stage-area { flex: 1 1 auto; justify-content: center; padding: 20px 18px 60px; container: rmstage / inline-size; }
-  .rm-flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 18px; }
-  .rm-flow-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-  .rm-flow-in { align-items: flex-end; text-align: right; }
-  .rm-step { display: flex; flex-direction: column; gap: 5px; min-width: 0; align-items: inherit; }
-  .rm-step-l { font-size: 10.5px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--wa-muted); }
-  .rm-key {
-    display: inline-flex; align-items: center; min-height: 28px; padding: 3px 11px; border-radius: 8px; font-size: 12px;
-    color: var(--wa-ink); background: var(--wa-card); border: 1px solid var(--wa-line-strong); overflow-wrap: anywhere;
+  /* Right now: the chip, the sentence and the sensor, the switch at the
+     right end, When under a hairline. */
+  .rm-status {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
+    column-gap: 16px; row-gap: 12px; padding: 16px 18px;
   }
-  .rm-step-v { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
-  .rm-step-v.none { font-size: 13px; font-weight: 400; color: var(--wa-muted); }
-  .rm-step-note { font-size: 11.5px; color: var(--wa-amber); }
-  /* The stage's own controls: the page to open and the quick fixes beside
-     a step, outlined like every other control. */
-  select.rm-stage-select {
-    max-width: 100%; height: 30px; padding: 0 8px; border-radius: 7px; font: inherit; font-size: 13.5px; font-weight: 500;
-    color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong); cursor: pointer;
+  .rm-ichip {
+    width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center;
+    border: 1px solid var(--rm-hue); color: var(--rm-hue);
   }
-  select.rm-stage-select:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  button.rm-stage-btn {
-    height: 26px; padding: 0 10px; border-radius: 7px; font: inherit; font-size: 12px; cursor: pointer;
-    color: var(--wa-ink); background: var(--wa-card); border: 1px solid var(--wa-line-strong);
+  .rm-ichip svg.ui-icon { width: 18px; height: 18px; stroke-width: 2; }
+  .rm-status-text { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .rm-now { margin: 0; font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
+  .rm-now b { font-weight: 600; }
+  .rm-sensor-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; color: var(--wa-muted); }
+  .rm-sensor-name, .rm-sensor-hint { overflow-wrap: anywhere; }
+  .rm-bermuda-ok { display: inline-flex; align-items: center; gap: 6px; color: var(--wa-green); overflow-wrap: anywhere; }
+  .rm-bermuda-ok svg.ui-icon { width: 13px; height: 13px; flex: none; stroke-width: 2.4; }
+  .rm-status-switch { min-width: 0; }
+  .rm-status > .rm-status-switch { grid-column: 3; grid-row: 1; }
+  .rm-status-wide { grid-column: 1 / -1; }
+  .rm-status > .rm-help.rm-main-house { margin: 0; }
+  .rm-sensor-edit { display: flex; flex-direction: column; gap: 4px; padding-top: 10px; border-top: 1px solid var(--wa-line); }
+  .rm-when { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding-top: 12px; border-top: 1px solid var(--wa-line); }
+  .rm-when-l { font-size: 12px; color: var(--wa-muted); }
+  .seg.rm-seg { flex: 0 1 auto; max-width: 100%; height: auto; min-height: 30px; flex-wrap: wrap; }
+  .seg.rm-seg button { min-height: 26px; padding: 3px 11px; font-size: 12px; font-weight: 500; letter-spacing: 0; line-height: 1.2; white-space: normal; overflow-wrap: anywhere; text-align: center; }
+  .seg.rm-seg button:disabled { opacity: .45; cursor: default; }
+  .rm-when-help { flex: 1 1 220px; min-width: 0; font-size: 12px; line-height: 1.4; color: var(--wa-muted); overflow-wrap: anywhere; }
+  @container (max-width: 560px) {
+    .rm-status { grid-template-columns: auto minmax(0, 1fr); }
+    .rm-status > .rm-status-switch { grid-column: 1 / -1; grid-row: auto; }
   }
-  button.rm-stage-btn:hover:not(:disabled) { background: var(--wa-hover); }
-  button.rm-stage-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  button.rm-stage-btn:disabled { opacity: .45; cursor: default; }
-  /* Bermuda's card, and the tick once its sensor is the one picked. */
-  .rm-pitch { margin: 0 0 10px; font-size: 13px; line-height: 1.5; color: var(--wa-ink); overflow-wrap: anywhere; }
-  a.rm-bermuda-link {
-    display: inline-flex; align-items: center; height: 28px; padding: 0 11px; margin-bottom: 12px; border-radius: 7px;
-    font-size: 12.5px; font-weight: 500; text-decoration: none; color: var(--wa-ink); border: 1px solid var(--wa-line-strong);
-  }
-  a.rm-bermuda-link:hover { background: var(--wa-hover); }
-  a.rm-bermuda-link:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .rm-bermuda-ok { display: flex; align-items: center; gap: 6px; margin: 2px 0 8px; font-size: 12px; color: var(--wa-green); }
-  .rm-bermuda-ok svg.ui-icon { width: 13px; height: 13px; flex: none; }
-  /* The wire from the steps to the watch: a hairline ending in a dot in the
-     Rooms hue. */
-  .rm-wire { display: flex; align-items: center; width: 70px; height: 7px; }
-  .rm-wire::before { content: ""; flex: 1; height: 1px; background: var(--wa-line-strong); }
-  .rm-wire i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--wa-stage-hue); }
-  .canvas-card.lit .stage-area > .rm-flow .rm-stage-body { display: flex; justify-content: center; padding-bottom: 32px; }
-  /* One screen of the page: a taller page is cut at the screen's foot, as
-     the watch opens it, rather than drawn on down past the case. */
-  :is(.rm-stage-body, .rm-thumb) .wa-watch > .wp-screen { max-height: var(--rm-screen-h); }
-  :is(.rm-stage-body, .rm-thumb) .wp-fold { display: none; }
-  /* A plain watch screen: the page's name on the watch's black. */
-  .wp-screen.rm-screen { display: grid; place-items: center; padding: 20px; text-align: center; }
-  .wp-screen.rm-screen span { font-size: 15px; font-weight: 600; color: var(--wa-face-muted); overflow-wrap: anywhere; }
-  /* A narrow stage: the steps over the watch. */
-  @container rmstage (max-width: 600px) {
-    .rm-flow { grid-template-columns: minmax(0, 1fr); justify-items: center; }
-    .rm-flow-out { display: none; }
-    .rm-flow-in { align-items: center; text-align: center; }
-    .rm-wire { display: none; }
-    .canvas-card.lit .stage-area > .rm-flow .rm-stage-body { padding-bottom: 20px; }
-  }
-  /* No rooms yet: the dashed watch, the line and the three steps. */
-  .canvas-card.lit .stage-area.rm-empty { align-items: center; gap: 22px; padding: 30px 24px 70px; text-align: center; }
-  .rm-empty-watch {
-    width: 200px; height: 242px; border-radius: 56px; display: grid; place-items: center;
-    border: 1.5px dashed var(--wa-line-strong); color: var(--wa-stage-hue);
-  }
-  .rm-empty-watch svg.ui-icon { width: 46px; height: 46px; stroke-width: 1.6; }
-  .rm-empty-text { display: flex; flex-direction: column; gap: 6px; max-width: 440px; }
-  .rm-empty-text b { font-size: 20px; font-weight: 500; letter-spacing: -.02em; }
-  .rm-empty-text span { font-size: 13px; line-height: 1.5; color: var(--wa-muted); }
-  ol.rm-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
-  ol.rm-steps li {
-    display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 4px 12px; border-radius: 9px;
-    font-size: 12.5px; color: var(--wa-soft); border: 1px solid var(--wa-line-strong);
-  }
-  ol.rm-steps b { font-weight: 600; color: var(--wa-stage-hue); }
-
-  /* The inspector's cards: the picked room in the Rooms hue, Every room
-     plain. */
-  .rm-card .sec-h { height: auto; min-height: 40px; }
-  .rm-card .sec-h h4 { white-space: normal; overflow-wrap: anywhere; flex: 0 1 auto; }
-  .rm-card .sec-h .tt { min-width: 0; }
-  .sec.rm-every { --c: var(--wa-line-strong); background: var(--wa-card); border: 1px solid var(--wa-line); }
-  button.rm-danger {
-    flex: none; height: 26px; padding: 0 9px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer;
-    color: var(--wa-hue-red); background: transparent; border: 1px solid color-mix(in srgb, var(--wa-hue-red) 50%, transparent);
-  }
-  button.rm-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-hue-red) 10%, transparent); }
-  button.rm-danger:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  button.rm-danger:disabled { opacity: .45; cursor: default; }
-  .rm-page-pick { display: flex; align-items: flex-end; gap: 10px; }
-  .rm-page-pick > .rm-stack { flex: 1; min-width: 0; }
-  .rm-thumb { flex: none; display: block; margin-bottom: 4px; }
-  .rm-thumb .wa-watch { margin: 0; }
-  .rm-sub-h { display: flex; align-items: center; gap: 8px; margin: 12px 0 4px; font-size: 12px; color: var(--wa-muted); }
-  .rm-sub-h > span { flex: 1; }
-  .rm-sub-h button.lc-btn { height: 26px; font-size: 12px; font-weight: 500; }
-  .rm-switch { margin-top: 6px; }
-  .rm-switch .rm-help { margin: 0 0 4px; }
-  .rm-sub-group { margin: 2px 0 6px; padding-left: 10px; border-left: 1px solid var(--wa-line); }
-  .rm-point-switches { margin-top: 6px; padding-top: 2px; border-top: 1px solid var(--wa-line); }
-  .rm-point-switches > .rm-sub-h { margin-top: 8px; }
-  .rm-reading { display: flex; align-items: flex-start; gap: 8px; margin: 4px 0 2px; font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+  .rm-reading { display: flex; align-items: flex-start; gap: 8px; margin: 2px 0; font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
   .rm-dot { flex: none; width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--wa-line-strong); }
   .rm-dot.ok { background: var(--wa-green); }
   .rm-dot.warn { background: var(--wa-amber); }
+
+  /* Start here: no sensor picked yet. */
+  .rm-start { display: flex; flex-direction: column; gap: 10px; padding: 18px; }
+  .rm-start-title { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -.015em; text-transform: none; color: var(--wa-ink); overflow-wrap: anywhere; }
+  .rm-pitch { margin: 0; max-width: 640px; font-size: 13px; line-height: 1.5; color: var(--wa-soft); overflow-wrap: anywhere; }
+  .rm-start-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+  .rm-start-row > .rm-stack { flex: 1 1 280px; min-width: 0; }
+  .rm-start-row > .rm-bermuda-link { margin-bottom: 2px; }
+  .rm-start > .rm-help { margin: 0; }
+  .rm-start-switch { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--wa-line); }
+
+  /* The rules: a head of two small capitals, the floors, a row per room. */
+  .rm-rules { display: flex; flex-direction: column; overflow: hidden; }
+  .rm-rules-head { display: flex; align-items: baseline; gap: 10px; padding: 14px 16px 8px; }
+  .rm-rules-head > .rm-cap:first-child { flex: 1; }
+  .rm-group { display: flex; flex-direction: column; }
+  .rm-floor { padding: 8px 16px 4px; font-size: 11.5px; color: var(--wa-faint); overflow-wrap: anywhere; }
+  ul.rm-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .rm-row {
+    display: flex; align-items: center; gap: 12px; padding: 8px 10px 8px 16px; cursor: pointer;
+    transition: background-color .15s ease;
+  }
+  li.rm-row:hover { background: var(--wa-hover); }
+  li.rm-row.on { background: var(--wa-raise); box-shadow: inset 2px 0 0 var(--rm-hue); }
+  /* On the raised and hovered fills the controls' outline is lifted, so it
+     stays visible. */
+  li.rm-row:is(.on, :hover) :is(select.rm-select, button.rm-row-x) { border-color: color-mix(in srgb, var(--wa-ink) 26%, var(--wa-raise)); }
+  .rm-row-room { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; }
+  button.rm-row-name {
+    padding: 0; border: 0; background: transparent; font: inherit; font-size: 14px; font-weight: 500; text-align: left;
+    color: var(--wa-ink); cursor: pointer; overflow-wrap: anywhere; border-radius: 4px;
+  }
+  button.rm-row-name:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .rm-row-sub { flex-basis: 100%; font-size: 12px; line-height: 1.35; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .rm-here {
+    display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 7px; border-radius: 999px;
+    font-size: 10.5px; font-weight: 500; color: var(--wa-green); border: 1px solid color-mix(in srgb, var(--wa-hue-green) 60%, transparent);
+  }
+  .rm-here i { width: 5px; height: 5px; border-radius: 50%; background: var(--wa-hue-green); }
+  .rm-arrow { flex: none; display: inline-flex; color: var(--wa-faint); }
+  .rm-arrow svg.ui-icon { width: 16px; height: 16px; }
+  .rm-row-page { flex: 0 0 260px; min-width: 0; display: flex; align-items: center; gap: 8px; }
+  .rm-row-page > select.rm-select { flex: 1 1 auto; }
+  .rm-row-end { flex: 0 0 26px; display: flex; justify-content: flex-end; }
+  button.rm-row-x {
+    width: 26px; height: 26px; padding: 0; display: grid; place-items: center; border-radius: 6px; cursor: pointer;
+    color: var(--wa-muted); background: transparent; border: 1px solid var(--wa-line-strong); opacity: 0;
+  }
+  li.rm-row:hover button.rm-row-x, li.rm-row:focus-within button.rm-row-x, li.rm-row.on button.rm-row-x { opacity: 1; }
+  @media (hover: none) { button.rm-row-x { opacity: 1; } }
+  button.rm-row-x:hover:not(:disabled) { color: var(--wa-ink); background: var(--wa-hover); }
+  button.rm-row-x:focus-visible { outline: none; opacity: 1; box-shadow: var(--wa-ring); }
+  button.rm-row-x:disabled { cursor: default; }
+  button.rm-row-x svg.ui-icon { width: 12px; height: 12px; }
+  .rm-else { margin-top: 6px; padding-top: 12px; padding-bottom: 12px; cursor: default; border-top: 1px solid var(--wa-line); background: var(--wa-panel); }
+  .rm-else-name { font-size: 14px; font-weight: 500; }
+  /* One screen of the page, small, beside each picker; an empty box when
+     there is none. */
+  .rm-thumb { flex: none; display: block; width: var(--rm-thumb-w); }
+  .rm-thumb .wa-watch { margin: 0; }
+  .rm-thumb.empty { height: var(--rm-screen-h); border-radius: 6px; border: 1px dashed var(--wa-line-strong); }
+  :is(.rm-stage-body, .rm-thumb) .wa-watch > .wp-screen { max-height: var(--rm-screen-h); }
+  :is(.rm-stage-body, .rm-thumb) .wp-fold { display: none; }
+  @container (max-width: 640px) {
+    .rm-row { flex-wrap: wrap; row-gap: 8px; }
+    .rm-row-room { flex-basis: calc(100% - 40px); }
+    .rm-arrow { display: none; }
+    .rm-row-page { flex: 1 1 auto; }
+    .rm-row-end { order: 0; }
+    .rm-row > .rm-row-room { order: -1; }
+  }
+  .rm-none { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; }
+  .rm-none b { font-size: 13px; font-weight: 600; }
+  .rm-none span { font-size: 12px; line-height: 1.45; color: var(--wa-muted); }
+  /* The fold under the rules: the areas not listed yet and the name field. */
+  button.rm-fold {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 16px; font: inherit; font-size: 12.5px;
+    text-align: left; cursor: pointer; color: var(--wa-muted); background: transparent; border: 0; border-top: 1px solid var(--wa-line);
+  }
+  button.rm-fold:hover { background: var(--wa-hover); color: var(--wa-ink); }
+  button.rm-fold:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .rm-chev { display: inline-flex; flex: none; transition: transform .15s ease; }
+  .rm-chev svg.ui-icon { width: 12px; height: 12px; stroke-width: 2.2; }
+  [aria-expanded="true"] > .rm-chev { transform: rotate(90deg); }
+  .rm-more { display: flex; flex-direction: column; gap: 10px; padding: 0 16px 14px; }
+  .rm-areas { display: flex; flex-wrap: wrap; gap: 6px; }
+  .rm-areas-help { width: 100%; margin: 2px 0 0; }
+  button.rm-area {
+    min-height: 26px; padding: 2px 10px; border-radius: 999px; font: inherit; font-size: 12px; cursor: pointer;
+    color: var(--wa-soft); background: transparent; border: 1px solid var(--wa-line-strong); overflow-wrap: anywhere; text-align: left;
+  }
+  button.rm-area:hover { background: var(--wa-hover); color: var(--wa-ink); }
+  button.rm-area:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .rm-add-room { display: flex; gap: 6px; max-width: 480px; }
+  .rm-add-room input {
+    flex: 1 1 auto; min-width: 0; height: 32px; padding: 0 10px; border-radius: 8px;
+    border: 1px solid var(--wa-line-strong); background: var(--wa-field); color: var(--wa-ink); font: inherit; font-size: 13px;
+  }
+  .rm-add-room input:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
+  .rm-more > .rm-help { margin: -4px 0 0; }
+
+  /* Point control, folded: one line, then the picked room's targets and the
+     two switches. */
+  button.rm-point-head {
+    display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 16px; border-radius: var(--wa-lc-r, 16px);
+    font: inherit; text-align: left; cursor: pointer; color: var(--wa-ink); background: transparent; border: 0;
+  }
+  button.rm-point-head:hover { background: var(--wa-hover); }
+  button.rm-point-head:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.rm-point-head > .rm-chev { color: var(--wa-muted); }
+  .rm-point-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .rm-point-title { font-size: 13.5px; font-weight: 500; }
+  .rm-point-sub { font-size: 12px; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .rm-point-body { display: flex; flex-direction: column; padding: 2px 16px 14px 38px; }
+  @container (max-width: 560px) { .rm-point-body { padding-left: 16px; } }
+  .rm-point-room { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--wa-muted); }
+  .rm-point-room > select.rm-select { flex: 0 1 260px; }
+  .rm-sub-h { display: flex; align-items: center; gap: 8px; margin: 12px 0 4px; font-size: 12px; color: var(--wa-muted); }
+  .rm-sub-h > span { flex: 1; }
+  .rm-sub-h button.lc-btn { height: 26px; font-size: 12px; font-weight: 500; border: 1px solid var(--wa-line-strong); background: transparent; }
+  .rm-switch { margin-top: 6px; }
+  .rm-switch .rm-help { margin: 0 0 4px; }
+  .rm-point-switches { margin-top: 8px; padding-top: 2px; border-top: 1px solid var(--wa-line); }
   .rm-target {
     display: grid; grid-template-columns: 64px minmax(0, 1fr) 28px; gap: 10px; align-items: start;
     margin: 8px 0; padding: 10px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-md, 12px); background: var(--wa-field);
@@ -931,4 +1071,28 @@ export const roomsViewStyles = css`
   .rm-remove:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .rm-remove svg.ui-icon { width: 13px; height: 13px; }
   .rm-add-target { margin: 4px 0 8px; }
+
+  /* The stage: the lit card (the watch editors' recipe, its edge in the
+     Rooms hue), the picked room over the watch, one line at its foot. */
+  .column.canvas.rm-side { gap: 0; }
+  .column.canvas > .card.canvas-card.rm-canvas { min-height: 0; flex: none; }
+  .rm-stage-head { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px 0; }
+  .rm-stage-title { font-size: 16px; font-weight: 500; overflow-wrap: anywhere; }
+  .rm-stage-note { font-size: 12px; line-height: 1.4; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .canvas-card.lit .stage-area.rm-stage-area { flex: none; align-items: center; justify-content: center; padding: 18px 12px 24px; }
+  .canvas-card.lit .stage-area > .rm-stage-body { display: flex; justify-content: center; max-width: 100%; padding-bottom: 32px; }
+  .rm-stage-foot { margin: 0; padding: 0 16px 16px; font-size: 12px; line-height: 1.45; color: var(--wa-muted); overflow-wrap: anywhere; }
+  /* A plain watch screen: the page's name, or why there is none, on the
+     watch's black. */
+  .wp-screen.rm-screen { display: grid; place-items: center; padding: 20px; text-align: center; }
+  .wp-screen.rm-screen span { font-size: 15px; font-weight: 600; color: var(--wa-face-muted); overflow-wrap: anywhere; }
+  .wp-screen.rm-screen.blank span { font-size: 13px; font-weight: 500; line-height: 1.4; }
+  /* No rooms yet: a dashed watch and one line. */
+  .canvas-card.lit .stage-area.rm-empty { flex-direction: column; gap: 18px; padding: 24px 20px 40px; text-align: center; }
+  .rm-empty-watch {
+    width: 180px; height: 218px; border-radius: 50px; display: grid; place-items: center;
+    border: 1.5px dashed var(--wa-line-strong); color: var(--wa-stage-hue);
+  }
+  .rm-empty-watch svg.ui-icon { width: 42px; height: 42px; stroke-width: 1.6; }
+  .rm-empty-text { max-width: 280px; font-size: 13px; line-height: 1.5; color: var(--wa-muted); }
 `;

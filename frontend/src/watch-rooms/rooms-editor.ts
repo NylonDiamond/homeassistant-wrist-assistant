@@ -104,6 +104,7 @@ import { WATCH_ROOMS_HELP_URL, navigateWatchRooms, registerWatchRoomsDrafts } fr
 import {
   type AreaEntry,
   type BehaviorDocument,
+  type FloorEntry,
   type RoomsKind,
   type SensorHistoryEntry,
   HOME_ROOMS_NO_RECORD_TITLE,
@@ -113,7 +114,9 @@ import {
   ROOMS_UNREADABLE_TEXT,
   ROOMS_WAIT_TEXT,
   ROOM_HISTORY_HOURS,
+  areasFromHass,
   areasFromReply,
+  floorsFromReply,
   historyFromReply,
   homeRoomWrites,
   homeRoomsReadMeansUnsupported,
@@ -250,6 +253,7 @@ export class WaRoomsEditor extends LitElement {
   @state() private hostWidth = 0;
   @state() private areas: AreaEntry[] = [];
   @state() private areasRead = false;
+  @state() private floors: FloorEntry[] = [];
   @state() private sensorHistory: SensorHistoryEntry[] = [];
   @state() private sensorHistoryFor?: string;
   /** This integration does not keep the `rooms` kind. */
@@ -550,18 +554,21 @@ export class WaRoomsEditor extends LitElement {
     }
   }
 
-  /** Home Assistant's areas, names and aliases, once per connection. */
+  /** Home Assistant's areas (names, aliases and floors) and its floors,
+   * once per connection. The rooms are grouped by floor; without floors
+   * they stand in one list. */
   private async loadAreas(): Promise<void> {
     const hass = this.hass;
     if (!hass) return;
     this.areasAsked = hass.connection;
-    try {
-      const reply = await hass.connection.sendMessagePromise<unknown>({ type: "config/area_registry/list" });
-      this.areas = areasFromReply(reply);
-    } catch {
-      // Without the registry, the names the frontend already has.
-      this.areas = Object.values(hass.areas ?? {}).flatMap((a) => (typeof a.name === "string" && a.name.trim() !== "" ? [{ name: a.name }] : []));
-    }
+    const [areas, floors] = await Promise.allSettled([
+      hass.connection.sendMessagePromise<unknown>({ type: "config/area_registry/list" }),
+      hass.connection.sendMessagePromise<unknown>({ type: "config/floor_registry/list" }),
+    ]);
+    // Without a registry, what the frontend already has on `hass`.
+    this.areas = areas.status === "fulfilled" ? areasFromReply(areas.value) : areasFromHass(hass.areas);
+    const read = floors.status === "fulfilled" ? floorsFromReply(floors.value) : [];
+    this.floors = read.length > 0 ? read : floorsFromReply(hass.floors);
     this.areasRead = true;
   }
 
@@ -709,6 +716,7 @@ export class WaRoomsEditor extends LitElement {
       dirty: new Set(roomDirtyKeys(draft.document, draft.pending)),
       pages: roomPageChoices(asWatchPagesDocument(this.pagesRecord?.document)),
       rooms,
+      floors: this.floors,
       roomsState: this.areasRead ? "ready" : "loading",
       busy: draft.saving,
       uiState: this.uiState,

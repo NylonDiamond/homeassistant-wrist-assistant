@@ -25,7 +25,9 @@ export interface HassLike {
       does not put them on `hass`, and against the tests, which do not. */
   entities?: Record<string, { area_id?: string | null; device_id?: string | null; entity_category?: string | null; hidden?: boolean }>;
   devices?: Record<string, { area_id?: string | null; name?: string | null }>;
-  areas?: Record<string, { name?: string | null }>;
+  areas?: Record<string, { name?: string | null; floor_id?: string | null }>;
+  /** The floor registry, on a Home Assistant new enough to put it on `hass`. */
+  floors?: Record<string, { floor_id?: string; name?: string | null; level?: number | null }>;
   user?: { id?: string; is_admin?: boolean; name?: string };
   /** The frontend's services by domain, then by name: the voice engine list
       reads `tts.<platform>_say` from it. Optional, as the registries are. */
