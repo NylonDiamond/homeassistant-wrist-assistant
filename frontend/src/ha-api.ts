@@ -511,6 +511,11 @@ export interface WatchConfigRecord {
    * large for the watch"). Null or absent when it gave none, as an older
    * watch app never does, and from integrations older than the field. */
   rejected_reason?: string | null;
+  /** Pages only: the plan the watch last said it is on. False on the free
+   * plan, where the watch shows only the first page that is not hidden; true
+   * when it shows every page. Null or absent when the watch never said (an
+   * older watch app) and from integrations older than the field. */
+  multiple_pages?: boolean | null;
   document?: Record<string, unknown>;
 }
 

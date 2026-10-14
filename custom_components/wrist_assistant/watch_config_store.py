@@ -84,6 +84,11 @@ Each record carries:
   none. It travels beside ``unreadable_revision`` as ``reason`` and is kept
   and cleared with the report; the panel shows it after "could not use this
   save". Cut to :data:`REJECT_REASON_MAX_CHARS`, control characters dropped.
+* ``multiple_pages``: on a pages record, the plan the watch last said it is
+  on: ``True`` when it shows every page, ``False`` on the free plan (first
+  page only), ``None`` when it never said (an older watch app). Sent as
+  ``multiple_pages`` on the signed pages get. The panel shows its free plan
+  note only for ``False``. Files written before the field load with ``None``.
 
 Storage is one Home Assistant ``Store`` file per owner, holding every kind for
 that owner, plus a small index naming the owners. A document can be large
@@ -865,6 +870,8 @@ class WatchConfigRecord:
     # The device's words for why, when it gave any. Kept and cleared with
     # ``rejected_revision``.
     rejected_reason: str | None = None
+    # The watch's plan, pages only. See the module docstring.
+    multiple_pages: bool | None = None
 
     def as_storage_dict(self) -> dict[str, Any]:
         stored: dict[str, Any] = {
@@ -879,6 +886,8 @@ class WatchConfigRecord:
             "rejected_reason": self.rejected_reason,
             "document": self.document,
         }
+        if self.multiple_pages is not None:
+            stored["multiple_pages"] = self.multiple_pages
         if self.history:
             stored["history"] = [entry.as_dict() for entry in self.history]
         return stored
@@ -995,6 +1004,7 @@ class WatchConfigRecord:
             rejected_revision = 0
         rejected_at = _text_or_none(raw.get("rejected_at"))
         rejected_reason = reject_reason(raw.get("rejected_reason"))
+        multiple_pages = raw.get("multiple_pages")
         return cls(
             owner_watch_id=owner_watch_id,
             kind=kind,
@@ -1010,6 +1020,7 @@ class WatchConfigRecord:
             rejected_revision=rejected_revision,
             rejected_at=rejected_at if rejected_revision > 0 else None,
             rejected_reason=rejected_reason if rejected_revision > 0 else None,
+            multiple_pages=multiple_pages if isinstance(multiple_pages, bool) else None,
         )
 
     def remember(self, entry: WatchConfigHistoryEntry) -> None:
@@ -1470,6 +1481,7 @@ class WatchConfigStore:
                     "rejected_revision": record.rejected_revision,
                     "rejected_at": record.rejected_at,
                     "rejected_reason": record.rejected_reason,
+                    "multiple_pages": record.multiple_pages,
                     "history_count": len(record.history),
                 }
                 for kind, record in sorted(by_kind.items())
@@ -1774,6 +1786,26 @@ class WatchConfigStore:
         record = self._records.get(owner_watch_id, {}).get(kind)
         if record is None or not record.mark_delivered(revision, confirmed=confirmed):
             return False
+        self._schedule_owner_save(owner_watch_id)
+        self._notify_delivery(owner_watch_id, kind)
+        return True
+
+    def note_multiple_pages(
+        self, owner_watch_id: str, kind: str, multiple_pages: Any
+    ) -> bool:
+        """A device says which plan it is on (``multiple_pages``, see the
+        module docstring). Returns whether anything moved.
+
+        Called by the signed pages get. Anything but a bool, and any kind but
+        pages, changes nothing. Saves and tells the delivery feed only when
+        the value moves, so a watch checking in costs no disk write.
+        """
+        if kind != "pages" or not isinstance(multiple_pages, bool):
+            return False
+        record = self._records.get(owner_watch_id, {}).get(kind)
+        if record is None or record.multiple_pages is multiple_pages:
+            return False
+        record.multiple_pages = multiple_pages
         self._schedule_owner_save(owner_watch_id)
         self._notify_delivery(owner_watch_id, kind)
         return True

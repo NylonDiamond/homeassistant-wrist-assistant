@@ -706,6 +706,7 @@ def test_diagnostics_report_revision_size_and_time_but_never_the_document(mod):
         "rejected_revision": 0,
         "rejected_at": None,
         "rejected_reason": None,
+        "multiple_pages": None,
         "history_count": 1,
     }
     assert "secret" not in repr(report)
@@ -874,6 +875,52 @@ def test_delivery_survives_a_restart(mod):
 
     after = _new(mod).get(OWNER, "behavior")
     assert (after.delivered_revision, after.delivered_at) == (2, before.delivered_at)
+
+
+# ── the watch's plan ─────────────────────────────────────────────────────
+
+
+def test_the_plan_is_kept_on_pages_and_saved_only_when_it_moves(mod):
+    store = _new(mod)
+    record = _put(store)
+    assert record.multiple_pages is None
+
+    _FakeStore.writes.clear()
+    assert store.note_multiple_pages(OWNER, "pages", False) is True
+    assert record.multiple_pages is False
+    assert _FakeStore.writes == [mod._owner_key(OWNER)]
+
+    _FakeStore.writes.clear()
+    assert store.note_multiple_pages(OWNER, "pages", False) is False
+    assert _FakeStore.writes == []
+    assert store.note_multiple_pages(OWNER, "pages", True) is True
+    assert record.multiple_pages is True
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "false", [], {}])
+def test_a_plan_that_is_not_a_bool_changes_nothing(mod, value):
+    store = _new(mod)
+    record = _put(store)
+    store.note_multiple_pages(OWNER, "pages", False)
+    assert store.note_multiple_pages(OWNER, "pages", value) is False
+    assert record.multiple_pages is False
+
+
+def test_the_plan_is_kept_on_pages_only(mod):
+    store = _new(mod)
+    record = _put(store, kind="behavior", doc=_behavior())
+    assert store.note_multiple_pages(OWNER, "behavior", False) is False
+    assert record.multiple_pages is None
+    assert store.note_multiple_pages(OWNER, "pages", False) is False
+
+
+def test_the_plan_survives_a_restart_and_a_save(mod):
+    store = _new(mod)
+    _put(store)
+    store.note_multiple_pages(OWNER, "pages", False)
+    store.panel_save(OWNER, "pages", _doc("panel"), base_revision=1)
+    assert store.get(OWNER, "pages").multiple_pages is False
+    assert _new(mod).get(OWNER, "pages").multiple_pages is False
 
 
 def test_a_file_written_before_delivery_existed_still_loads(mod):

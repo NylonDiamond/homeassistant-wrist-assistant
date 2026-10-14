@@ -606,8 +606,10 @@ const PAGE_END_TEXT = `The page ends at row ${WATCH_EDITOR_MAX_ROWS}.`;
 const SAVING_TEXT = "Saving. Tiles and pages move again once the save is done.";
 
 /** The plan line under the Pages card. A free watch shows only the first
- * page that is not hidden (the app's `WatchPagesSyncRules.limitToFirstUserPage`);
- * the panel cannot see a watch's plan, so the line is the same for everyone. */
+ * page that is not hidden (the app's `WatchPagesSyncRules.limitToFirstUserPage`).
+ * Shown only to a watch that said it is on the free plan (`multiple_pages`
+ * false on its pages record): never to Pro, a trial or TestFlight, and not to
+ * a watch app too old to say. */
 export const WATCH_PAGES_PLAN_TEXT = {
   title: "One page is always free.",
   body: "On the free plan, the watch shows your first page that is not hidden. Pro shows every page, with no limit. "
@@ -1778,6 +1780,7 @@ export class WaPageEditor extends LitElement {
           rejected_revision: fresh.rejected_revision,
           rejected_at: fresh.rejected_at,
           rejected_reason: fresh.rejected_reason,
+          multiple_pages: fresh.multiple_pages,
         };
       } else if (this.holdReload) {
         this.reloadPending = true;
@@ -3441,7 +3444,9 @@ export class WaPageEditor extends LitElement {
         ${repeat(listed, (p) => watchPageId(p), (p, i) => this.renderPageRow(p, i, listed.length, pages, screen))}
         ${drag ? html`<div class="pe-drop-line" style=${`top:${drag.lineY}px`} aria-hidden="true"></div>` : nothing}
       </div>
-      <div class="lc-note pe-plan-note" role="note"><span><b>${WATCH_PAGES_PLAN_TEXT.title}</b> ${WATCH_PAGES_PLAN_TEXT.body}</span></div>
+      ${this.record?.multiple_pages === false
+        ? html`<div class="lc-note pe-plan-note" role="note"><span><b>${WATCH_PAGES_PLAN_TEXT.title}</b> ${WATCH_PAGES_PLAN_TEXT.body}</span></div>`
+        : nothing}
     </section>`;
   }
 

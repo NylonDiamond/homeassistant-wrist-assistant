@@ -333,9 +333,15 @@ describe("the Tiles card", () => {
     expect(card).toMatch(/class="layer pe-page-row  [^"]*"\s+data-page=P-YARD/);
   });
 
-  it("says under the pages that one page is always free and Pro shows every page", () => {
-    const text = editor().body();
-    const card = text.slice(text.indexOf(`class="card lc pe-pages-card`), text.indexOf(`class="card lc pe-tiles-card"`));
+  it("says under the pages that one page is always free, to a free watch only", () => {
+    const pagesCard = (text: string) => text.slice(text.indexOf(`class="card lc pe-pages-card`), text.indexOf(`class="card lc pe-tiles-card"`));
+    const e = editor();
+    // A watch that never said (an older app), then one that shows every page.
+    expect(pagesCard(e.body())).not.toContain("pe-plan-note");
+    e.el.record = { ...(e.el.record as WatchConfigRecord), multiple_pages: true };
+    expect(pagesCard(e.body())).not.toContain("pe-plan-note");
+    e.el.record = { ...(e.el.record as WatchConfigRecord), multiple_pages: false };
+    const card = pagesCard(e.body());
     expect(card).toContain(`class="lc-note pe-plan-note"`);
     expect(card).toContain(WATCH_PAGES_PLAN_TEXT.title);
     expect(card).toContain(WATCH_PAGES_PLAN_TEXT.body);

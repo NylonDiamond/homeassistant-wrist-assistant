@@ -225,6 +225,7 @@ def test_get_with_no_record(env) -> None:
         "rejected_revision": 0,
         "rejected_at": None,
         "rejected_reason": None,
+        "multiple_pages": None,
     }
 
 
@@ -243,6 +244,7 @@ def test_get_returns_the_record_with_its_delivery(env) -> None:
         "rejected_revision": 0,
         "rejected_at": None,
         "rejected_reason": None,
+        "multiple_pages": None,
         "document": settings,
     }
 
@@ -1124,6 +1126,7 @@ def test_save_creates_the_first_menus_for_a_paired_watch(env) -> None:
         "rejected_revision": 0,
         "rejected_at": None,
         "rejected_reason": None,
+        "multiple_pages": None,
         "document": _menus(),
     }
     assert result["updated_at"]
@@ -1239,6 +1242,7 @@ def test_save_creates_the_first_batch_2_record_for_a_paired_watch(env, kind) -> 
         "rejected_revision": 0,
         "rejected_at": None,
         "rejected_reason": None,
+        "multiple_pages": None,
         "document": document,
     }
     assert subscriber.events() == [{"kind": kind, "revision": 1}]

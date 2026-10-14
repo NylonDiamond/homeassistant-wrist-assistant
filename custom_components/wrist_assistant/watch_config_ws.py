@@ -167,7 +167,7 @@ def ws_watch_config_get(
     Result: {"kind", "revision", "hash", "updated_at", "updated_by",
              "delivered_revision", "delivered_at",
              "rejected_revision", "rejected_at", "rejected_reason",
-             "document"?}
+             "multiple_pages", "document"?}
 
     With no record, ``revision``, ``delivered_revision`` and
     ``rejected_revision`` are 0, the strings are null, and there is no
@@ -178,7 +178,9 @@ def ws_watch_config_get(
     an old report a later save has replaced, and 0 also follows the device
     confirming it has since read the save. ``rejected_reason`` is the
     device's own words for why, null when it gave none (an older watch app
-    never does). Reading changes nothing,
+    never does). ``multiple_pages`` is the plan the watch last said it is on
+    (pages only): false on the free plan, null when it never said. Reading
+    changes nothing,
     delivery included: the panel is not the device.
     """
     store = _store(hass)
@@ -207,6 +209,7 @@ def ws_watch_config_get(
                 "rejected_revision": 0,
                 "rejected_at": None,
                 "rejected_reason": None,
+                "multiple_pages": None,
             },
         )
         return
@@ -223,6 +226,7 @@ def ws_watch_config_get(
             "rejected_revision": record.rejected_revision,
             "rejected_at": record.rejected_at,
             "rejected_reason": record.rejected_reason,
+            "multiple_pages": record.multiple_pages,
             "document": record.document,
         },
     )
