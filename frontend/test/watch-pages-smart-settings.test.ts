@@ -273,7 +273,7 @@ describe("the smart page rows", () => {
     const s = setup(smartPage([]));
     expect(flatten(renderSmartPageRows(s.host))).not.toContain("Live Updates");
     const body = flatten(renderSmartPageBody(s.host));
-    expect(body).toMatch(/^<fieldset class="ts-body" id="sm-body-page" \?disabled=false aria-label=Smart Page>/);
+    expect(body).toMatch(/^<fieldset class="ts-body" id="sm-body-page" \?disabled=false aria-label=Smart page>/);
     expect(body).not.toContain("<section");
     expect(renderSmartPageBody(setup(plainPage(1)).host)).toBe(nothing);
   });

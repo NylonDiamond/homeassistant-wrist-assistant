@@ -404,7 +404,7 @@ describe("the inspector with no tile", () => {
     expect(card(body, "Look")).toContain(swatch("look"));
     expect(card(body, "On the watch")).toContain(`--c:${SECTION_COLOR.place}`);
     expect(body).not.toContain(`aria-label="Page name"`);
-    const order = ["<h4>Look", "<h4>On the watch", "Click a tile on the watch to edit it.", "Delete page…"].map((p) => body.indexOf(p));
+    const order = ["<h4>Look", "<h4>On the watch", "Click a tile on the watch to edit it.", "Delete page"].map((p) => body.indexOf(p));
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(body).not.toContain("above the watch");
     // No duplicate page action exists, so none is offered.
@@ -413,7 +413,8 @@ describe("the inspector with no tile", () => {
 
   it("says to add a tile on a page with none", () => {
     const text = flat(inspector(editor(hallPage({ items: [] }))));
-    expect(text).toContain("No tiles yet. Add one from the Tiles list.");
+    expect(text).toContain("No tiles yet.");
+    expect(text).toContain("Add a tile</span></button>");
     expect(text).not.toContain("Click a tile on the watch to edit it.");
   });
 
@@ -421,8 +422,8 @@ describe("the inspector with no tile", () => {
     const el = editor(hallPage());
     const watch = card(flat(inspector(el)), "On the watch");
     expect(watch).toContain(`<span class="pe-ow-l">Hidden</span><span class="pe-ow-d">Kept here, but the watch does not show it.</span>`);
-    expect(watch).toContain(`<span class="pe-ow-l">Smart Page</span><span class="pe-ow-d">Fills itself from its rules with what is on right now.</span>`);
-    expect(watch.indexOf(">Hidden<")).toBeLessThan(watch.indexOf(">Smart Page<"));
+    expect(watch).toContain(`<span class="pe-ow-l">Smart page</span><span class="pe-ow-d">Fills itself from its rules with what is on right now.</span>`);
+    expect(watch.indexOf(">Hidden<")).toBeLessThan(watch.indexOf(">Smart page<"));
     expect(watch).not.toContain("sec-dot");
     // The page's own rows of a smart page are not on a plain page.
     expect(watch).not.toContain("Live Updates");
@@ -447,7 +448,7 @@ describe("the inspector with no tile", () => {
     const watch = card(text, "On the watch");
     expect(watch).toContain(`id="sm-body-page"`);
     expect(watch).toContain("Live Updates");
-    expect(watch.indexOf(">Smart Page<")).toBeLessThan(watch.indexOf("Live Updates"));
+    expect(watch.indexOf(">Smart page<")).toBeLessThan(watch.indexOf("Live Updates"));
     expect(text).toContain("Click a tile on the watch to pick its rule.");
     expect(text).not.toContain("above the watch");
   });

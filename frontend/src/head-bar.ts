@@ -23,6 +23,8 @@ import { NEW_WATCH_TEXT, NOTHING_TO_SAVE_TEXT } from "./watch-settings.js";
  * `NEW_WATCH_TEXT` as its tooltip. It stands in for the banner the screens
  * drew over themselves. */
 export const NEW_WATCH_STATUS = "New watch, not saved yet";
+/** The same on a phone, where the header's bar is narrow. */
+export const NEW_WATCH_SHORT = "Not saved yet";
 
 /** One editor's bar in the header. */
 export class HeadBar {
@@ -97,7 +99,9 @@ export interface HeadStatusInput {
 export function renderHeadStatus(input: HeadStatusInput): TemplateResult | typeof nothing {
   if (input.newWatch) {
     const title = input.dirty ? NEW_WATCH_TEXT : `${NEW_WATCH_TEXT} ${NOTHING_TO_SAVE_TEXT}`;
-    return html`<span class="tb-status new" role="status" title=${title}><i class="tb-status-dot" aria-hidden="true"></i><span>${NEW_WATCH_STATUS}</span></span>`;
+    // A phone's bar is narrow: there the line is the short one, so it keeps
+    // to one line beside its dot. The tooltip says the whole of it.
+    return html`<span class="tb-status new" role="status" title=${title}><i class="tb-status-dot" aria-hidden="true"></i><span class="tb-long">${NEW_WATCH_STATUS}</span><span class="tb-short" aria-hidden="true">${NEW_WATCH_SHORT}</span></span>`;
   }
   if (input.dirty) {
     const n = input.changes;
@@ -155,6 +159,7 @@ export const headBarStyles = css`
   .wa-bar.in-head .tb-status-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--wa-muted); }
   .wa-bar.in-head .tb-status:is(.new, .unsaved) { color: var(--wa-hue-orange); }
   .wa-bar.in-head .tb-status:is(.new, .unsaved) .tb-status-dot { background: var(--wa-hue-orange); }
+  .wa-bar.in-head .tb-status > .tb-short { display: none; }
   .wa-bar.in-head .tb-note { font-size: 12px; color: var(--wa-muted); min-width: 0; overflow-wrap: anywhere; }
   .wa-bar.in-head .pop-menu { z-index: 60; }
   /* A phone: the bar sits beside the watch on the first line and may take
@@ -164,5 +169,8 @@ export const headBarStyles = css`
     .wa-bar.in-head::before { content: ""; order: 1; flex: 0 0 100%; height: 0; }
     .wa-bar.in-head > :is(.tb-status, .tb-sync, .tb-note) { order: 2; flex: 0 1 auto; text-align: right; }
     .wa-bar.in-head .tb-sync { height: auto; }
+    .wa-bar.in-head .tb-status { white-space: nowrap; }
+    .wa-bar.in-head .tb-status > .tb-long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .wa-bar.in-head .tb-status > .tb-short { display: inline; }
   }
 `;

@@ -253,7 +253,7 @@ describe("the page editor", () => {
     expect(side).not.toContain(`class="sec name-sec"`);
     expect(side).not.toContain(`aria-label="Page name"`);
     // Look, then On the watch, then the line and Delete page.
-    const order = ["<h4>Look", "<h4>On the watch", "Click a tile on the watch to edit it.", "Delete page…"].map((p) => side.indexOf(p));
+    const order = ["<h4>Look", "<h4>On the watch", "Click a tile on the watch to edit it.", "Delete page"].map((p) => side.indexOf(p));
     expect(order.every((i) => i > -1)).toBe(true);
     expect([...order].sort((x, y) => x - y)).toEqual(order);
     expect(side).not.toContain("above the watch");

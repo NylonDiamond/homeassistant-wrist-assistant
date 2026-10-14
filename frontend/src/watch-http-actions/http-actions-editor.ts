@@ -598,7 +598,7 @@ export class WaHttpActionsEditor extends LitElement {
           title=${dirty ? `Save (${MOD}S). A save reaches every watch the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
         ${inHead ? nothing : html`<span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${this.savedText()}</span>`}` : nothing}
-      <button class="help" title="Help: HTTP actions" aria-label="Help"
+      <button class="help" title="Help with HTTP actions" aria-label="Help with HTTP actions"
         @click=${() => window.open(WATCH_HTTP_ACTIONS_HELP_URL, "_blank", "noopener")}>?</button>
     </div>`;
   }
