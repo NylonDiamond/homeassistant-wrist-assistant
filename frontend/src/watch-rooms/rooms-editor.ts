@@ -934,7 +934,7 @@ export class WaRoomsEditor extends LitElement {
         ${this.barHost !== undefined ? nothing : html`<span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>
         ${renderSaveReason(saveBlockedText({ newWatch: this.newWatch, dirty, saving: this.saving }))}`}` : nothing}
       ${this.barActions}
-      <button class="help" title="Help: rooms" aria-label="Help"
+      <button class="help" title="Help with Rooms" aria-label="Help with Rooms"
         @click=${() => window.open(WATCH_ROOMS_HELP_URL, "_blank", "noopener")}>?</button>
     </div>`;
   }

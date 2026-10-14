@@ -598,6 +598,8 @@ function typedNumber(text: string): number {
 
 const PAGE_END_TEXT = `The page ends at row ${WATCH_EDITOR_MAX_ROWS}.`;
 const SAVING_TEXT = "Saving. Tiles and pages move again once the save is done.";
+/** An empty page's line, beside its Add a tile button. */
+const NO_TILES_TEXT = "No tiles yet.";
 
 /** How long the edge handles are: four tenths of the side, 8 to 20 pixels,
  * so even a one cell tile shows its handles apart from the corner. */
@@ -2856,11 +2858,16 @@ export class WaPageEditor extends LitElement {
     const r = this.rowDrag;
     const list = this.renderRoot.querySelector<HTMLElement>(".pe-page-list");
     if (!r || !list) return;
+    // A long list scrolls in its own box: a drag near its top or bottom
+    // edge scrolls it, so every place is in reach.
+    const box = list.getBoundingClientRect();
+    if (list.scrollHeight > list.clientHeight) list.scrollTop += autoScrollStep(clientY, box.top, box.bottom, 32, 14);
     const rows = [...list.querySelectorAll<HTMLElement>(".pe-page-row")].map((row) => row.getBoundingClientRect());
     const top = list.getBoundingClientRect().top;
     r.drop = listDropIndex(rows.map((b) => b.top + b.height / 2), clientY);
     const edge = r.drop < rows.length ? rows[r.drop]!.top - 2 : (rows[rows.length - 1]?.bottom ?? top) + 1;
-    r.lineY = edge - top;
+    // The line sits in the list's content, which its scroll has moved.
+    r.lineY = edge - top + list.scrollTop;
     this.requestUpdate();
   }
 
@@ -3077,7 +3084,7 @@ export class WaPageEditor extends LitElement {
       ${shell ? nothing : html`<button class="tb-btn tb-menus" title="The watch's Anywhere menu, Entity quick menu and page switcher"
         @click=${() => (this.onMenus ? this.onMenus() : navigateMenusFromPages(undefined))}>${uiIcon("radial")}<span>Menus</span></button>`}
       ${this.barActions}
-      <button class="help" title="Help: pages in Home Assistant" aria-label="Help"
+      <button class="help" title="Help with Pages" aria-label="Help with Pages"
         @click=${() => window.open(WATCH_PAGES_HELP_URL, "_blank", "noopener")}>?</button>
     </div>`;
   }
@@ -3319,13 +3326,23 @@ export class WaPageEditor extends LitElement {
   /** The inspector's line under the page's cards with no tile selected:
    * how to reach a tile, or on a smart page a rule. */
   private renderNoTileCard(page: WatchPage): TemplateResult {
+    const empty = !isSmartWatchPage(page) && watchPageTiles(page).length === 0;
     const text = isSmartWatchPage(page) ? "Click a tile on the watch to pick its rule."
-      : watchPageTiles(page).length === 0 ? "No tiles yet. Add one from the Tiles list."
+      : empty ? NO_TILES_TEXT
       : "Click a tile on the watch to edit it.";
     return html`<div class="pe-no-tile">
       <span class="pe-no-tile-ic" aria-hidden="true">${uiIcon("tap")}</span>
       <p>${text}</p>
+      ${empty ? this.renderAddFirstTile(page) : nothing}
     </div>`;
+  }
+
+  /** An empty page's Add a tile, next to the watch and in the inspector:
+   * on a phone the Tiles card and its own Add are far down the page. */
+  private renderAddFirstTile(page: WatchPage): TemplateResult {
+    const off = this.busy || this.editingOff(page);
+    return html`<button type="button" class="pe-btn pe-add-first" aria-haspopup="dialog" ?disabled=${off}
+      title=${this.saving ? SAVING_TEXT : "Add a tile to this page"} @click=${() => this.openAddTile()}>${uiIcon("plus")}<span>Add a tile</span></button>`;
   }
 
   // ── the foot bar ───────────────────────────────────────────────────────
@@ -3488,7 +3505,7 @@ export class WaPageEditor extends LitElement {
           <button class="row" role="menuitem" @click=${() => this.startRename(id)}>Rename</button>
           <button class="row" role="menuitem" ?disabled=${index === 0} @click=${() => this.movePage(id, index - 1, true)}>Move up</button>
           <button class="row" role="menuitem" ?disabled=${index >= count - 1} @click=${() => this.movePage(id, index + 1, true)}>Move down</button>
-          <button class="row pe-danger" role="menuitem" @click=${() => this.askDelete(id)}>Delete…</button>
+          <button class="row pe-danger" role="menuitem" @click=${() => this.askDelete(id)}>Delete</button>
         </div>` : nothing}
     </div>`;
   }
@@ -3746,9 +3763,10 @@ export class WaPageEditor extends LitElement {
     }
     this.stageScreen = watchCase.screen;
     const scrolls = !smart && (asOnWatch ? watchPagePreviewScrolls(page, watchCase.screen) : this.editStage(page, input).scrolls);
+    const empty = !smart && !asOnWatch && tiles === 0;
     const hint = smart ? undefined
       : asOnWatch ? "Shown as the watch draws it. Turn off Watch view to edit."
-      : tiles === 0 ? "No tiles yet. Add one from the Tiles list."
+      : empty ? NO_TILES_TEXT
       : "Drag a tile to move it, or onto another tile to swap the two. Drag an edge or the corner of the selected tile to resize it. Arrow keys move the selected tile.";
     return html`<div class="card canvas-card lit pe-canvas" aria-label="Page">
       ${this.renderCanvasHead(page, watches, facts, found === undefined ? `${watchCase.label}, this watch's size is not known` : undefined, tile)}
@@ -3760,6 +3778,7 @@ export class WaPageEditor extends LitElement {
         ${scrolls || hint !== undefined ? html`<div class="under">
           ${scrolls ? html`<span class="tail pe-fold-text">${WATCH_SCREEN_FOLD_TEXT}</span>` : nothing}
           ${hint !== undefined ? html`<span class="tail ${tiles > 0 && !asOnWatch ? "pe-hint" : ""}">${hint}</span>` : nothing}
+          ${empty ? this.renderAddFirstTile(page) : nothing}
         </div>` : nothing}
       </div>
       ${this.renderLiveStrip(page, tile)}
@@ -4213,7 +4232,7 @@ export class WaPageEditor extends LitElement {
       ${this.renderOnWatchCard(page, host)}
       ${this.renderNoTileCard(page)}
       <div class="pe-page-acts">
-        <button type="button" class="pe-btn pe-danger" @click=${() => this.askDelete(id)}>${uiIcon("delete")}<span>Delete page…</span></button>
+        <button type="button" class="pe-btn pe-danger" @click=${() => this.askDelete(id)}>${uiIcon("delete")}<span>Delete page</span></button>
       </div>
     </div>`;
   }
@@ -4685,6 +4704,14 @@ export class WaPageEditor extends LitElement {
     .pe-pages-card > .layers, .pe-tiles-card > .layers { padding: 6px 8px 8px; overflow: visible; }
     .pe-pages-card > .lc-note, .pe-tiles-card > .lc-note { margin: 8px 12px; color: var(--wa-muted); }
     .pe-pages-card > .lc-note.warn { color: var(--wa-amber); }
+    /* Beside the watch, a long page list scrolls in its own box, so the
+       Tiles card under it stays in sight. Stacked, the page scrolls as one. */
+    .layout.pe-layout.cols-3 .pe-pages-card > .pe-page-list {
+      position: relative; max-height: min(40dvh, 360px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+    }
+    @container (max-width: 820px) {
+      .layout.pe-layout.cols-3 .pe-pages-card > .pe-page-list { max-height: none; overflow: visible; }
+    }
     /* A page row keeps a grip in sight: a finger drags a page by it, and a
        mouse drags the whole row. */
     .pe-page-row { grid-template-columns: 14px var(--thumb-w) minmax(0, 1fr) auto; }
@@ -4967,6 +4994,8 @@ export class WaPageEditor extends LitElement {
     .pe-no-tile > p { margin: 0; flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.4; color: var(--wa-muted); overflow-wrap: anywhere; }
     .pe-no-tile-ic { display: grid; place-items: center; flex: none; color: var(--wa-muted); }
     .pe-no-tile-ic svg { width: 16px; height: 16px; }
+    .pe-add-first { flex: none; }
+    .under > .pe-add-first { margin-left: 8px; }
     .pe-page-acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0 0; }
     .pe-page-acts > .pe-btn { flex: 1 1 0; min-width: 0; min-height: 30px; font-size: 12.5px; white-space: normal; overflow-wrap: anywhere; }
     .pe-page-acts > .pe-btn.pe-danger { align-self: auto; border-color: color-mix(in srgb, var(--wa-need) 55%, var(--wa-line-strong)); background: transparent; }
