@@ -137,6 +137,19 @@ export const watchComplicationsStyles = css`
   .wc-page .pk-card { padding: 6px; border-radius: 8px; }
   .wc-page .pk-card-top { margin-bottom: 5px; min-height: 16px; gap: 5px; }
   .wc-page .pk-card-name { font-size: 11.5px; }
+  /* A small card's hover buttons must fit inside it: Devices shrinks to a
+     watch glyph and its chevron, and the buttons to 22px. The menu it opens
+     keeps a readable width of its own, whatever the card's, and the panel
+     slides it back inside the page if it would run off an edge
+     (\`fitPickerDupMenu\`). */
+  .wc-page .pk-card-acts { gap: 2px; padding-left: 12px; max-width: 100%; }
+  .wc-page .pk-card-acts button.icon { width: 22px; height: 22px; }
+  .wc-page .pk-card-acts button.icon svg { width: 14px; height: 14px; }
+  .wc-page .pk-dup-open { gap: 2px; padding: 3px 4px; }
+  .wc-page .pk-dup-l { display: none; }
+  .wc-page .pk-dup-ic { display: inline-flex; }
+  .wc-page .pk-dup-ic svg { width: 13px; height: 13px; }
+  .wc-page .pk-dup-menu { right: auto; width: 240px; max-width: calc(100vw - 32px); }
   /* Each list's head is a band across the card's top, washed in its hue from
      the left: a chip with a tick or a plus, the name large, a line on what
      the list is, and the count in a pill of the same hue. */

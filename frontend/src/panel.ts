@@ -3187,6 +3187,8 @@ export class WristAssistantPanel extends LitElement {
     .pk-dup-open:disabled { opacity: .45; cursor: not-allowed; }
     .pk-dup-open.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent); }
     .pk-dup-open svg { width: 10px; height: 10px; }
+    /* The glyph stands in for the word only where cards are small. */
+    .pk-dup-ic { display: none; }
     .pk-dup-menu {
       position: absolute; top: 4px; left: 0; right: 0; z-index: 5;
       display: flex; flex-direction: column; gap: 4px; padding: 8px;
@@ -13348,7 +13350,8 @@ export class WristAssistantPanel extends LitElement {
     return html`<span class="pk-dup" data-dup=${cardKey}>
       <button type="button" class="pk-dup-open ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
         title="Pick the devices this design is on" ?disabled=${this.saving}
-        @click=${() => { if (open) this.closePickerDup(); else this.openPickerDup(cardKey); }}>Devices${uiIcon("chevron")}</button>
+        @click=${() => { if (open) this.closePickerDup(); else this.openPickerDup(cardKey); }}
+        ><span class="pk-dup-ic">${uiIcon("watch")}</span><span class="pk-dup-l">Devices</span>${uiIcon("chevron")}</button>
     </span>`;
   }
 
@@ -13836,9 +13839,25 @@ export class WristAssistantPanel extends LitElement {
     // visible end, so the list scrolls just far enough to show all of it.
     void this.updateComplete.then(() => {
       const menu = [...this.renderRoot.querySelectorAll<HTMLElement>(".pk-dup-menu")].find((m) => m.dataset.dup === key);
+      if (menu) this.fitPickerDupMenu(menu);
       menu?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     });
     window.addEventListener("pointerdown", this.pickerDupOutside, { capture: true });
+  }
+
+  /** Keep an open Devices menu inside the box that scrolls it, sideways: a
+   * menu wider than its card (the Watch app's Complications screen draws
+   * small cards) would otherwise run off the page's edge. */
+  private fitPickerDupMenu(menu: HTMLElement) {
+    menu.style.marginLeft = "";
+    const box = menu.closest<HTMLElement>(".wc-page, .cl-page, .pk-body") ?? this;
+    const edge = box.getBoundingClientRect();
+    const r = menu.getBoundingClientRect();
+    const pad = 8;
+    let shift = 0;
+    if (r.right > edge.right - pad) shift = edge.right - pad - r.right;
+    if (r.left + shift < edge.left + pad) shift = edge.left + pad - r.left;
+    if (shift !== 0) menu.style.marginLeft = `${Math.round(shift)}px`;
   }
 
   private closePickerDup() {
