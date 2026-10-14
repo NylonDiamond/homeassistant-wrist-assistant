@@ -1838,6 +1838,9 @@ export class WristAssistantPanel extends LitElement {
   @state() private secMenu?: string;
   /** Whether the canvas spells out how to drag a layer, under its "?". */
   @state() private dragHelpOpen = false;
+  /** True for a moment after a save landed: Save shows "✓ Saved". */
+  @state() private savedFlash = false;
+  private savedFlashTimer: number | undefined;
 
   // ── Parts ──────────────────────────────────────────────────────────
   //
@@ -8425,6 +8428,7 @@ export class WristAssistantPanel extends LitElement {
         this.pictureTimeMs = Date.now();
         this.recompile();
         this.beginSendWait();
+        this.flashSaved();
         // Browse shows this picture of it until the next save.
         const saved = this.draft.config;
         void this.captureCardPreview(ownerId, result.record.id, result.record.revision, saved, saved).catch(() => undefined);
@@ -8437,6 +8441,15 @@ export class WristAssistantPanel extends LitElement {
     } finally {
       this.saving = false;
     }
+  }
+
+  /** Save turns into a green "✓ Saved" for a moment after a save that
+   * landed, then back. That is the whole confirmation: what the watch has
+   * got is the sync pill's to say. */
+  private flashSaved() {
+    window.clearTimeout(this.savedFlashTimer);
+    this.savedFlash = true;
+    this.savedFlashTimer = window.setTimeout(() => { this.savedFlash = false; }, 1200);
   }
 
   private async deleteCurrent(everywhere = true) {
@@ -11365,12 +11378,13 @@ export class WristAssistantPanel extends LitElement {
       <span class="spacer"></span>
       ${this.renderSendPill()}
       ${this.renderTopMenu()}
-      ${d ? html`<button class="primary save ${dirty ? "dirty" : ""}" @click=${() => void this.save()}
-          ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen || refusal !== undefined}
-          title=${refusal !== undefined ? refusal : dirty ? `Save (${KEY_MOD}S)` : `Nothing to save (${KEY_MOD}S)`}>${this.saving ? "Saving…" : "Save"}</button>
-        ${status ? html`<span class="tb-saved ${status.tone}" role="status"
+      ${d ? html`${status && status.tone !== "ok" ? html`<span class="tb-saved ${status.tone}" role="status"
           title=${status.title ?? (raw !== undefined && status.tone === "err" ? raw : status.text)}>${status.tone === "warn" || status.tone === "err"
             ? html`<i class="tb-saved-dot" aria-hidden="true"></i>` : nothing}<span class="tb-saved-l">${status.text}</span></span>` : nothing}
+        <button class="primary save ${dirty ? "dirty" : ""} ${this.savedFlash && !dirty ? "flash" : ""}" @click=${() => void this.save()}
+          ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen || refusal !== undefined}
+          title=${refusal !== undefined ? refusal : dirty ? `Save (${KEY_MOD}S)` : `Nothing to save. ${status?.text ?? ""}`.trim()}>${this.saving
+            ? "Saving…" : this.savedFlash && !dirty ? html`<span aria-hidden="true">✓</span> Saved` : "Save"}</button>
         ${this.renderAfterSave()}` : nothing}
       <button class="help" title="Help" aria-label="Help" @click=${() => { this.helpOpen = true; }}>?</button>
     </header>`;
@@ -11451,7 +11465,11 @@ export class WristAssistantPanel extends LitElement {
     const d = this.draft;
     if (!d || d !== this.savedDraft || d.dirty) return nothing;
     const info = this.sendInfo();
-    const line = info ? afterSaveLine(info.s) : undefined;
+    // Waiting for the watch is the sync pill's to say, with "open the app" in
+    // its tooltip. The line stays only for an app too old to take the design,
+    // which the pill cannot tell from a watch that is just behind.
+    if (info?.s.kind !== "unsupported") return nothing;
+    const line = afterSaveLine(info.s);
     if (!line) return nothing;
     return html`<span class="tb-after ${line.warn ? "warn" : ""}" role="status" title=${line.text}>${line.text}</span>`;
   }

@@ -83,6 +83,11 @@ export const formButtonStyles = css`
     }
     button.primary.save.dirty:not(:disabled):hover { background: color-mix(in srgb, var(--wa-hue-green) 88%, var(--wa-ink)); }
     button.primary.save.dirty:not(:disabled):focus-visible { box-shadow: var(--wa-ring), var(--wa-save-glow); }
+    /* A moment after a save landed: "✓ Saved" in green, then plain Save. */
+    header button.save.flash, .wa-bar button.save.flash {
+      color: var(--wa-hue-green); border-color: color-mix(in srgb, var(--wa-hue-green) 60%, transparent);
+      transition: color .2s ease-out, border-color .2s ease-out;
+    }
     button.danger { color: var(--error-color, #e5484d); border-color: color-mix(in srgb, var(--error-color, #e5484d) 45%, transparent); background: color-mix(in srgb, var(--error-color, #e5484d) 8%, transparent); }
     button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error-color, #e5484d) 16%, transparent); border-color: var(--error-color, #e5484d); }
     button.small { padding: 0 9px; font-size: 13px; min-height: 26px; border-radius: 6px; }
