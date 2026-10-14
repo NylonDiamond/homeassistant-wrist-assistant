@@ -2245,6 +2245,23 @@ function setIconDrawing(p: IconElement, to: "symbol" | "svg"): void {
   delete p.viewBox;
 }
 
+type MarkerDrawing = "symbol" | "svg" | "picture";
+
+const MARKER_DRAWING_TITLES: Partial<Record<MarkerDrawing, string>> = {
+  symbol: "An SF Symbol or a Material Design icon, by name",
+  svg: "An SVG path you paste yourself",
+  picture: "A picture you upload, such as a logo, that rides on the reading",
+};
+
+/** The choices in an icon's Drawing row. A chart marker also offers a picture,
+ * which swaps the layer for a picture layer on the same reading; any other icon
+ * offers only the two an icon can draw. */
+function markerDrawings(el: CElement): [MarkerDrawing, string][] {
+  const both: [MarkerDrawing, string][] = [["symbol", "Icon"], ["svg", "Custom SVG"]];
+  const anchor = el.payload.chartAnchor;
+  return anchor !== undefined && anchor.place !== "through" ? [...both, ["picture", "Picture"]] : both;
+}
+
 /**
  * The Custom SVG box: paste a path or whole markup, and see what landed.
  *
@@ -7163,13 +7180,6 @@ function anchorFields(host: EditorHost, el: CElement, family: FamilyKind): Templ
         ${el.kind === "text"
           ? html`<button class="small" title="Swap this text marker for an icon of the same shape, keeping where it sits"
               @click=${() => host.update((c) => { chartMarkerToIcon(c, id); })}><span>Use an icon</span></button>`
-          : el.kind === "image"
-          ? html`<button class="small" title="Swap this picture marker for an icon, keeping where it sits"
-              @click=${() => host.update((c) => { chartImageMarkerToIcon(c, id); })}><span>Use an icon</span></button>`
-          : nothing}
-        ${el.kind === "text" || el.kind === "icon"
-          ? html`<button class="small" title="Swap this marker for a picture you upload, such as a logo, keeping where it sits"
-              @click=${() => host.update((c) => { chartMarkerToImage(c, id); })}><span>Use a picture</span></button>`
           : nothing}
       </div>
     </div>`}
@@ -8242,12 +8252,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     case "icon": {
       const drawn = isCustomSvgIcon(el.payload) ? "svg" : "symbol";
       content = html`
-        ${segField("Drawing", drawn, [["symbol", "Icon"], ["svg", "Custom SVG"]],
-          (v) => upd((e) => { setIconDrawing((e as typeof el).payload, v); }, "icon-drawing"),
-          { titles: {
-              symbol: "An SF Symbol or a Material Design icon, by name",
-              svg: "An SVG path you paste yourself",
-            }, def: "symbol" })}
+        ${segField("Drawing", drawn, markerDrawings(el), (v) => {
+            // A chart marker can also be a picture, which is another layer kind,
+            // so that choice swaps the layer rather than setting a field.
+            if (v === "picture") host.update((c) => { chartMarkerToImage(c, el.payload.id); }, "icon-drawing");
+            else upd((e) => { setIconDrawing((e as typeof el).payload, v); }, "icon-drawing");
+          },
+          { titles: MARKER_DRAWING_TITLES, def: "symbol" })}
         ${drawn === "svg"
           ? customSvgFields(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k))
           : html`
@@ -8901,6 +8912,14 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       const picturePath = typeof livePicture === "string" ? livePicture : undefined;
       const externalPicture = picturePath !== undefined && !picturePath.startsWith("/");
       content = html`
+        ${img.chartAnchor !== undefined && img.chartAnchor.place !== "through"
+          ? segField("Drawing", "picture", markerDrawings(el), (v) => host.update((c) => {
+              if (v === "picture") return;
+              chartImageMarkerToIcon(c, img.id);
+              const icon = c.elements.find((e) => e.payload.id === img.id);
+              if (v === "svg" && icon?.kind === "icon") setIconDrawing(icon.payload, "svg");
+            }, "icon-drawing"), { titles: MARKER_DRAWING_TITLES, def: "symbol" })
+          : nothing}
         ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"], ["inline", "Custom image"]],
           (v) => host.update((c) => {
             const target = c.elements.find((e) => e.payload.id === img.id);
