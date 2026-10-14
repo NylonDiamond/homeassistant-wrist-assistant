@@ -333,6 +333,9 @@ const PE_STACK_WIDTH = 820;
 /** The row thumbnails' box, CSS px: the complication editor's layer thumbs. */
 const THUMB_W = 44;
 const THUMB_H = 22;
+/** A page row's picture: one whole watch screen, this wide in CSS pixels,
+ * as tall as the watch's screen is at that width. */
+const PAGE_THUMB_W = 34;
 
 /** Entity id kinds whose part after the dot is an id of the tile's own
  * (`spacer.<id>`, `template.<id>`): a copy takes a new one. */
@@ -3409,8 +3412,9 @@ export class WaPageEditor extends LitElement {
     const allHidden = listed.length > 0 && listed.every(isHiddenWatchPage);
     const drag = this.rowDrag?.started ? this.rowDrag : undefined;
     const screen = this.screenOf(owner);
+    const pageThumbH = Math.round(screen.height * PAGE_THUMB_W / screen.width);
     return html`<section class="card lc pe-pages-card ${this.saving ? "saving" : ""}" aria-label="Pages"
-      style=${`--c: var(--wa-lc-pages, #26a69a); --thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px`}>
+      style=${`--c: var(--wa-lc-pages, #26a69a); --thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px; --page-thumb-w: ${PAGE_THUMB_W}px; --page-thumb-h: ${pageThumbH}px`}>
       <div class="lc-head">
         <span class="swatch">${uiIcon("pages")}</span><span class="lc-title">Pages</span>
         <span class="lc-sub">${plural(listed.length, "page", "pages")}</span>
@@ -3427,18 +3431,18 @@ export class WaPageEditor extends LitElement {
     </section>`;
   }
 
-  /** A page's top as a 44 by 22 picture: its background and the tiles that
-   * reach into that strip, at the scale that fits the screen's width. A
+  /** A page as one watch screen, small: its background and the tiles that
+   * reach onto the screen, at the scale that fits the screen's width. A
    * smart page, which fills itself, shows its glyph instead. */
   private renderPageThumb(page: WatchPage, pages: readonly WatchPage[], screen: { width: number; height: number }): TemplateResult {
     if (isSmartWatchPage(page)) {
       return html`<span class="thumb pe-thumb pe-thumb-smart" style=${`background:${watchScreenColor(page)}`} aria-hidden="true">${uiIcon("states")}</span>`;
     }
-    const s = THUMB_W / screen.width;
+    const s = PAGE_THUMB_W / screen.width;
     const layout = watchPreviewLayout(page, screen);
     const input = this.previewInput(page, pages, screen, s);
-    // Only what reaches into the strip: a long page costs no more than a short one.
-    const shown = layout.tiles.filter((t) => (layout.topInset + t.y) * s < THUMB_H);
+    // Only what reaches onto the screen: a long page costs no more than a short one.
+    const shown = layout.tiles.filter((t) => layout.topInset + t.y < screen.height);
     const back = watchScreenLayers(page, s, screen, this.photoUrl);
     return html`<span class="thumb pe-thumb" style=${`background:${back.background}`} aria-hidden="true">
       ${back.layers}
@@ -4714,7 +4718,12 @@ export class WaPageEditor extends LitElement {
     }
     /* A page row keeps a grip in sight: a finger drags a page by it, and a
        mouse drags the whole row. */
-    .pe-page-row { grid-template-columns: 14px var(--thumb-w) minmax(0, 1fr) auto; }
+    .pe-page-row { grid-template-columns: 14px var(--page-thumb-w) minmax(0, 1fr) auto; }
+    /* A page row's picture is a watch screen, with the screen's corners. */
+    .pe-page-row .thumb.pe-thumb {
+      width: var(--page-thumb-w); height: var(--page-thumb-h); border-radius: calc(var(--page-thumb-w) * .145);
+      box-shadow: 0 0 0 1px var(--wa-line-strong);
+    }
     .pe-page-row .grip {
       visibility: visible; width: 14px; display: flex; align-items: center; justify-content: center; align-self: stretch;
       color: var(--wa-muted); cursor: grab; touch-action: none; opacity: .5;
