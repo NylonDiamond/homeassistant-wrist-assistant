@@ -6081,13 +6081,14 @@ export class WristAssistantPanel extends LitElement {
     this.addEventListener(SCRUB_START, this.scrubStart);
     this.addEventListener(SCRUB_END, this.scrubEnd);
     window.addEventListener("hashchange", this.takeShareLink);
+    document.addEventListener("visibilitychange", this.homeVisible);
     for (const type of UNSAVED_NUDGES) this.addEventListener(type, this.unsavedSoon, { capture: true });
     this.takeShareLink();
     void this.loadOwners();
     void this.listenToHome();
     this.watchStatusTimer = window.setInterval(() => {
       void this.refreshWatchStatus();
-      void this.refreshOwnerTokens();
+      void this.refreshHomeSync();
     }, WATCH_STATUS_MS);
   }
 
@@ -6341,6 +6342,7 @@ export class WristAssistantPanel extends LitElement {
     this.removeEventListener(SCRUB_START, this.scrubStart);
     this.removeEventListener(SCRUB_END, this.scrubEnd);
     window.removeEventListener("hashchange", this.takeShareLink);
+    document.removeEventListener("visibilitychange", this.homeVisible);
     void this.unsubscribe?.().catch(() => undefined);
     this.unsubscribe = undefined;
     void this.homeUnsubscribe?.().catch(() => undefined);
@@ -11559,6 +11561,22 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
+  /** Read again what each device has picked up: its complication tokens
+   * for the pill, and on Home where each watch's watch app records have got
+   * to. Home Assistant tells the panel when a watch takes its complications,
+   * but never when it takes its pages, menus or settings (a delivery is not
+   * a change, so no listener hears it), so Home reads those on every
+   * complication change, on the status clock, and when the tab comes back
+   * into view, the moment someone returns from syncing their watch. */
+  private async refreshHomeSync() {
+    await this.refreshOwnerTokens();
+    if (tabOfRoute(this.route) === "home") await this.loadWatchAppSync(true);
+  }
+
+  private homeVisible = () => {
+    if (document.visibilityState === "visible") void this.refreshHomeSync();
+  };
+
   /** Every commit and ack on any device, so the home pill turns green the
    * moment the last device confirms. Debounced: a save to linked copies is
    * several commits in a row. */
@@ -11570,7 +11588,7 @@ export class WristAssistantPanel extends LitElement {
         if (this.ownerTokensTimer !== undefined) window.clearTimeout(this.ownerTokensTimer);
         this.ownerTokensTimer = window.setTimeout(() => {
           this.ownerTokensTimer = undefined;
-          void this.refreshOwnerTokens();
+          void this.refreshHomeSync();
         }, 400);
       });
     } catch {
