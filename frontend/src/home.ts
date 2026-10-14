@@ -161,7 +161,7 @@ export function deviceSheetTabs(kind: "watch" | "iphone"): DeviceSheetTab[] {
   // The watch's complications are the sheet's own list tab, not a screen.
   const own = WATCH_SCREENS.filter((s) => s.shared !== true && s.retired !== true && s.id !== "watch-complications");
   const pages = own.filter((s) => s.id === "pages");
-  const tabs: DeviceSheetTab[] = [...pages, WATCH_SETTINGS_SCREEN].map(screenTab);
+  const tabs: DeviceSheetTab[] = [WATCH_SETTINGS_SCREEN, ...pages].map(screenTab);
   tabs.push({ kind: "list", label: "Complications", filter: "all" });
   for (const screen of own.filter((s) => s.id !== "pages")) {
     tabs.push(screenTab(screen));
