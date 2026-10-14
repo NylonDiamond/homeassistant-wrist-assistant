@@ -184,6 +184,7 @@ import {
 import { menuStageStyles, renderMenuStage, renderMenuStageFoot, renderMenuStageTools } from "./menu-stage.js";
 import { watchMenusReplacedText, watchMenusSaveNote } from "./save-note.js";
 import type { MenuVoiceContext } from "./slot-voice.js";
+import { menuInspectorLookStyles } from "./menu-inspector-look.js";
 import { voiceDocumentOfRecord, voicePhraseTargets, watchVoiceFallbacks } from "../watch-voice/defaults.js";
 
 /** Whether this editor holds unsaved edits: to the menus, or to the pages
@@ -1974,7 +1975,7 @@ export class WaMenuEditor extends LitElement {
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
 
     :host([narrow]) { --cf-pad: 12px; }
-  `, menuViewStyles, menuStageStyles, configFootStyles, headBarStyles];
+  `, menuViewStyles, menuStageStyles, menuInspectorLookStyles, configFootStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-menu-editor")) {
