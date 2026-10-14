@@ -256,7 +256,7 @@ describe("the Tiles card", () => {
     expect(tileRow(card, "T-BOTTOM")).not.toContain("badge tap");
     expect(tileRow(card, "T-BOTTOM")).toContain(" · 4×3</small>");
     // Each row has its face in the thumb, and on hover Duplicate and Delete.
-    expect(tileRow(card, "T-BOTTOM")).toContain(`<span class="thumb pe-thumb"`);
+    expect(tileRow(card, "T-BOTTOM")).toContain(`<span class="thumb pe-thumb pe-tile-thumb"`);
     expect(tileRow(card, "T-BOTTOM")).toContain(`aria-label=Duplicate Bottom`);
     expect(tileRow(card, "T-BOTTOM")).toContain(`aria-label=Delete Bottom`);
   });

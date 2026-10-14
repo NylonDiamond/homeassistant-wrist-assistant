@@ -335,7 +335,10 @@ const THUMB_W = 44;
 const THUMB_H = 22;
 /** A page row's picture: one whole watch screen, this wide in CSS pixels,
  * as tall as the watch's screen is at that width. */
-const PAGE_THUMB_W = 44;
+const PAGE_THUMB_W = 56;
+/** A tile row's picture: the tile's own face, as large as fits this box,
+ * with no well around it. */
+const TILE_THUMB_H = 30;
 
 /** Entity id kinds whose part after the dot is an id of the tile's own
  * (`spacer.<id>`, `template.<id>`): a copy takes a new one. */
@@ -3630,8 +3633,8 @@ export class WaPageEditor extends LitElement {
     </div>`;
   }
 
-  /** A tile's face in the 44 by 22 thumb, at the largest scale that fits,
-   * centred on the page's screen color. */
+  /** A tile's face in a 44 by 30 box, at the largest scale that fits,
+   * centred, in its own shape rather than on a black well. */
   private renderTileThumb(
     page: WatchPage,
     tile: WatchPageTile,
@@ -3640,14 +3643,16 @@ export class WaPageEditor extends LitElement {
     placed: PlacedWatchTile | undefined,
     unit: number,
   ): TemplateResult {
-    const bg = `background:${watchScreenColor(page)}`;
-    if (placed === undefined || placed.width <= 0 || placed.height <= 0) return html`<span class="thumb pe-thumb" style=${bg} aria-hidden="true"></span>`;
-    const s = Math.min(THUMB_W / placed.width, THUMB_H / placed.height);
+    const box = `width:${THUMB_W}px;height:${TILE_THUMB_H}px`;
+    if (placed === undefined || placed.width <= 0 || placed.height <= 0) {
+      return html`<span class="thumb pe-thumb pe-tile-thumb empty" style=${`${box};background:${watchScreenColor(page)}`} aria-hidden="true"></span>`;
+    }
+    const s = Math.min(THUMB_W / placed.width, TILE_THUMB_H / placed.height);
     const w = placed.width * s;
     const h = placed.height * s;
     const input = this.previewInput(page, pages, screen, s);
-    return html`<span class="thumb pe-thumb" style=${bg} aria-hidden="true">
-      <span class="pe-thumb-tile" style=${`left:${(THUMB_W - w) / 2}px;top:${(THUMB_H - h) / 2}px;width:${w}px;height:${h}px`}>${renderWatchTileFace(tile, { width: placed.width, height: placed.height }, input, unit)}</span>
+    return html`<span class="thumb pe-thumb pe-tile-thumb" style=${box} aria-hidden="true">
+      <span class="pe-thumb-tile" style=${`left:${(THUMB_W - w) / 2}px;top:${(TILE_THUMB_H - h) / 2}px;width:${w}px;height:${h}px`}>${renderWatchTileFace(tile, { width: placed.width, height: placed.height }, input, unit)}</span>
     </span>`;
   }
 
@@ -4718,7 +4723,7 @@ export class WaPageEditor extends LitElement {
     }
     /* A page row keeps a grip in sight: a finger drags a page by it, and a
        mouse drags the whole row. */
-    .pe-page-row { grid-template-columns: 14px var(--page-thumb-w) minmax(0, 1fr) auto; }
+    .pe-page-row { grid-template-columns: 14px var(--page-thumb-w) minmax(0, 1fr) auto; padding-block: 5px; }
     /* A page row's picture is a watch screen, with the screen's corners. */
     .pe-page-row .thumb.pe-thumb {
       width: var(--page-thumb-w); height: var(--page-thumb-h); border-radius: calc(var(--page-thumb-w) * .145);
@@ -4745,6 +4750,8 @@ export class WaPageEditor extends LitElement {
     /* The thumbs: a page's top, or a tile's face, drawn small. */
     .layer .thumb.pe-thumb { position: relative; }
     .pe-thumb-tile { position: absolute; overflow: hidden; pointer-events: none; }
+    /* A tile's thumb is the tile alone, in its own shape and corners. */
+    .layer .thumb.pe-tile-thumb:not(.empty) { background: none; border-radius: 0; overflow: visible; }
     .layer .thumb.pe-thumb-smart { display: grid; place-items: center; color: rgba(255, 255, 255, .7); }
     .pe-thumb-smart svg.ui-icon { width: 12px; height: 12px; }
     .pe-rename {

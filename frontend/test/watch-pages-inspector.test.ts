@@ -481,7 +481,7 @@ describe("the inspector with several tiles picked", () => {
     // Each picked tile, in reading order, with its face, name and kind.
     const rows = [...picked.matchAll(/data-picked-tile=([^\s>]+)/g)].map((m) => m[1]);
     expect(rows).toEqual([DIMMER, SPACER]);
-    expect(picked).toContain(`<span class="thumb pe-thumb"`);
+    expect(picked).toContain(`<span class="thumb pe-thumb pe-tile-thumb"`);
     expect(picked).toContain(`<span class="nm-t">Smart Plug Dimmer</span></b><small><span class="kind">Light</span>`);
     expect(picked).toContain(`<span class="kind">Spacer</span>`);
     // A second light has nowhere to go; the spacer copies.
