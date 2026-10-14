@@ -15,8 +15,7 @@
 // contract".
 
 import { css, html, nothing, type TemplateResult } from "lit";
-import { live } from "lit/directives/live.js";
-import { checkField, segField, sliderField, textField } from "../editors.js";
+import { checkField, segField, sliderField, templateBox, textField } from "../editors.js";
 import { uiIcon } from "../ui-icons.js";
 import type { TileSettingsHost } from "./editor-host.js";
 import { tileEntityId } from "./model.js";
@@ -170,12 +169,11 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
   const tile = host.tile;
   const text = watchTemplateText(tile);
   const look = watchTemplateTileLook(tile, { page: host.page, templates: host.templateRenders });
-  // Each input writes at once, as typed; one visit to the field is one undo
-  // step, as one opening of the phone's editor sheet is.
-  const write = (e: Event) => {
-    const value = (e.target as HTMLTextAreaElement).value;
-    commit(host, "template", (d) => setWatchTemplateText(d, ...at(host), value), { typing: true });
-  };
+  // Each keystroke writes at once, as typed; one visit to the field is one
+  // undo step, as one opening of the phone's editor sheet is. A recipe or an
+  // entity put in is a step of its own.
+  const write = (value: string, typing: boolean) =>
+    commit(host, "template", (d) => setWatchTemplateText(d, ...at(host), value), typing ? { typing: true } : {});
   let result: TemplateResult;
   // The rich text as the tile draws it (symbols, their colors, the tile's
   // color, centered for one line), never the markup.
@@ -193,9 +191,12 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
       return html`<button type="button" class="pe-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
         @click=${() => commit(host, "templatePreset", (d) => setWatchTemplatePreset(d, ...at(host), p.id))}>${p.label}</button>`;
     })}</div>
-    <label class="field ap-text"><span>Jinja2 Template</span>
-      <textarea rows="6" class="mono" spellcheck="false" .value=${live(text)} placeholder="Tap to edit template..."
-        @input=${write} @focusout=${() => host.endCoalesce()}></textarea></label>
+    <div class="ap-text">${templateBox(host, text, {
+      label: "Jinja2 Template", rows: 6, key: `tile-${host.tileId}-tpl`, use: "text", bare: false,
+      placeholder: "Tap to edit template...",
+      write,
+      onBlur: () => host.endCoalesce(),
+    })}</div>
     <div class="ts-sub-h"><span>Preview</span></div>
     ${result}
     <div class="hint">Add [icon:symbolName] for inline SF Symbols, e.g. [icon:lightbulb.fill]</div>

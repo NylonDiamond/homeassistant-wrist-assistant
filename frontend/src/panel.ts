@@ -150,7 +150,7 @@ import { helpSheetStyles, renderHelpSheet } from "./help-sheet.js";
 import { HOME_PATH } from "./shell.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
-import { compile, parseValueDocument, type Compiled } from "./compiler.js";
+import { compile, elementKeys, keyFor, mergeSplitRenders, parseValueDocument, splitDocuments, type Compiled } from "./compiler.js";
 import {
   type EntityState,
   type ForcedBranches,
@@ -1654,6 +1654,10 @@ export class WristAssistantPanel extends LitElement {
   /** The list whose row is being designed on the canvas, if any. */
   @state() private rowEditListId?: string;
   @state() private templateError?: string;
+  /** Home Assistant's error for each value key that broke the template
+   * document, found by rendering the keys one by one. Empty while the whole
+   * document renders. */
+  @state() private templateKeyErrors = new Map<string, string>();
   @state() private templateFetchedAt?: number;
   @state() private forced: ForcedBranches = new Map();
   @state() private showRaw = false;
@@ -7776,6 +7780,11 @@ export class WristAssistantPanel extends LitElement {
       update: (m, c) => this.mutate(m, c),
       endGesture: () => this.draft?.endGesture(),
       resolve: (v: Value) => resolver.resolve(v),
+      templateError: (v: Value) => {
+        if (this.templateKeyErrors.size === 0) return undefined;
+        const key = keyFor(v, this.draft!.config.values);
+        return key === undefined ? undefined : this.templateKeyErrors.get(key);
+      },
       resolveContext: () => this.buildContext(),
       canCountDown: (v: Value) => resolver.canCountDown(v),
       historySeries: (key: string) => this.historySeries.get(key),
@@ -8765,6 +8774,7 @@ export class WristAssistantPanel extends LitElement {
     const doc = this.compiled?.document;
     if (!doc) {
       this.templateResults = new Map();
+      this.templateKeyErrors = new Map();
       this.templateError = undefined;
       this.templateFetchedAt = Date.now();
       return;
@@ -8774,16 +8784,23 @@ export class WristAssistantPanel extends LitElement {
       if (run !== this.liveTemplateRun || this.draft?.config !== cfg) return;
       const result = reply.doc;
       if (!result) return;
-      if (!result.ok) {
-        this.templateError = result.error;
-        return;
-      }
-      const parsed = parseValueDocument(result.value);
+      const parsed = result.ok ? parseValueDocument(result.value) : undefined;
       if (!parsed) {
-        this.templateError = "Template did not render to a JSON object";
+        // The whole document failed, so find the value that broke it. The
+        // rest still fill the preview, and the broken one shows its error
+        // under its own field.
+        const whole = result.ok ? "Template did not render to a JSON object" : result.error;
+        const expressions = this.compiled?.expressions ?? new Map<string, string>();
+        const split = mergeSplitRenders(await renderTemplates(this.hass, splitDocuments(expressions)));
+        if (run !== this.liveTemplateRun || this.draft?.config !== cfg) return;
+        this.templateResults = split.values;
+        this.templateKeyErrors = split.errors;
+        this.templateError = split.errors.values().next().value ?? whole;
+        this.templateFetchedAt = Date.now();
         return;
       }
       this.templateResults = parsed.values;
+      this.templateKeyErrors = new Map();
       this.templateError = undefined;
       this.templateFetchedAt = Date.now();
     } catch (err) {
@@ -18212,6 +18229,8 @@ export class WristAssistantPanel extends LitElement {
       const tapAct = el.kind === "tap" ? el.payload.action : undefined;
       const tapTitle = el.kind === "tap" ? `Tappable · ${describeTapAction(el.payload.action)}` : undefined;
       const states = statesSummary(el.payload.rules);
+      const templateError = this.templateKeyErrors.size === 0 ? undefined
+        : [...elementKeys(el, cfg.values)].map((k) => this.templateKeyErrors.get(k)).find((e) => e !== undefined);
       const d = this.rowDrag(id, edit);
       const peekAt = rowPage;
       // A layer's attached tap is the bottom part of the layer's own row, under
@@ -18255,6 +18274,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="right">
           <span class="badges">
             ${tapTitle ? html`<span class="badge tap" title=${tapTitle}>${tapAct ? tapBadge(tapAct, el.payload.page ?? this.page, pageCount) : "tap"}</span>` : nothing}
+            ${templateError === undefined ? nothing : html`<span class="badge template-error" title=${`Template error: ${templateError}`}>template error</span>`}
             ${el.payload.rules.length === 0 ? nothing : html`<span class="badge states" title=${states}>${states.replace(/\.$/, "").toLowerCase()}</span>`}
             ${hidden ? html`<span class="badge">hidden</span>` : nothing}
           </span>
@@ -21541,7 +21561,9 @@ export function footerStatus(i: {
   nowMs?: number;
 }): { tone: "ok" | "warn" | "none" | "err"; text: string; title?: string } {
   if (i.error !== undefined && i.error !== "") return { tone: "err", text: `Not saved: ${i.error}` };
-  if (i.templateError !== undefined && i.templateError !== "") return { tone: "err", text: `Template error: ${i.templateError}` };
+  if (i.templateError !== undefined && i.templateError !== "") {
+    return { tone: "err", text: `Template error: ${i.templateError}`, title: "Until it is fixed, the watch shows no values for this complication. The layer with the error has a red badge." };
+  }
   if (i.refusal !== undefined && i.refusal !== "") return { tone: "warn", text: `Cannot save yet: ${i.refusal}` };
   if (i.revision === null) return { tone: "none", text: "Not saved yet" };
   // The revision number tells two saves apart for anyone who needs it, so it
