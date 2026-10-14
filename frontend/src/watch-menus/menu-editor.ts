@@ -153,7 +153,6 @@ import {
   menuStageHint,
   menuViewStyles,
   renderMenuInspector,
-  renderMenuScreen,
   renderMenusCard,
   renderSlotsCard,
   saveMenusZoom,
@@ -182,6 +181,7 @@ import {
   renderSaveReason,
   saveBlockedText,
 } from "./new-watch.js";
+import { menuStageStyles, renderMenuStage, renderMenuStageFoot, renderMenuStageTools } from "./menu-stage.js";
 import { watchMenusReplacedText, watchMenusSaveNote } from "./save-note.js";
 import type { MenuVoiceContext } from "./slot-voice.js";
 import { voiceDocumentOfRecord, voicePhraseTargets, watchVoiceFallbacks } from "../watch-voice/defaults.js";
@@ -1641,19 +1641,21 @@ export class WaMenuEditor extends LitElement {
         </span>
       </div>
       <div class="stage-area me-stage-area" @click=${this.onStageClick}>
-        ${this.renderStageTools(watchCase.label)}
-        <div class="me-stage-body">${renderMenuScreen(host)}</div>
-        <div class="under"><span class="tail">${menuStageHint(host)}</span></div>
+        ${this.renderStageTools(watchCase.label, host)}
+        ${renderMenuStage(host)}
+        <div class="under"><span class="tail">${menuStageHint(host)}</span>${renderMenuStageFoot(host)}</div>
       </div>
     </div>`;
   }
 
-  /** The floating tool strip over the stage, the page editor's: the watch's
-   * size (read only) and the zoom. */
-  private renderStageTools(caseLabel: string): TemplateResult {
+  /** The floating tool strip over the stage, the page editor's: the shown
+   * menu's Add and Play opening (`menu-stage.ts`), the watch's size (read
+   * only) and the zoom. */
+  private renderStageTools(caseLabel: string, host: MenusViewHost): TemplateResult {
     const scale = this.stageScale;
     const fit = stageFitZoom(this.narrow || this.stacked);
     return html`<div class="stage-tools" role="toolbar" aria-label="Stage tools">
+      ${renderMenuStageTools(host)}
       <button class="tb me-case" aria-disabled="true" tabindex="-1" title=${`This watch's screen, ${caseLabel}.`}>
         ${uiIcon("watch")}<span class="word keep">${caseLabel}</span></button>
       <span class="tb-sep" aria-hidden="true"></span>
@@ -1972,7 +1974,7 @@ export class WaMenuEditor extends LitElement {
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
 
     :host([narrow]) { --cf-pad: 12px; }
-  `, menuViewStyles, configFootStyles, headBarStyles];
+  `, menuViewStyles, menuStageStyles, configFootStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-menu-editor")) {
