@@ -620,6 +620,10 @@ function menuThumb(host: MenusViewHost, menu: MenusSection): TemplateResult {
   return ringThumb(listDots(host, menu === "anywhere" ? ANYWHERE : entityList(host)));
 }
 
+/** What the Menus page is for, at the top of its Menus card, for someone
+ * who has never opened one of these menus. */
+export const MENUS_INTRO = "Round shortcut menus on your watch. Each opens with its own gesture. Pick one to see how it opens, then click its slots to choose what they do.";
+
 /** The Menus card: one row per menu, the shown one lit. A row picks the
  * menu the canvas and the inspector show. */
 export function renderMenusCard(host: MenusViewHost): TemplateResult {
@@ -630,6 +634,7 @@ export function renderMenusCard(host: MenusViewHost): TemplateResult {
       <span class="swatch">${uiIcon("radial")}</span><span class="lc-title">Menus</span>
       <span class="lc-sub" title=${MENUS_CARD_LINE}>on the watch</span>
     </div>
+    <p class="me-intro">${MENUS_INTRO}</p>
     <div class="layers me-menu-list" role="list">
       ${MENUS_SECTIONS.map(([id, label]) => {
         const on = id === shown;
@@ -1281,6 +1286,7 @@ function renderMenuSettings(host: MenusViewHost, menu: MenusSection): TemplateRe
 export const menuViewStyles = css`
   /* The Menus and Slots cards: the page editor's Pages and Tiles cards. */
   .me-menus-card > .layers, .me-slots-card > .layers { padding: 6px 8px 8px; overflow: visible; }
+  .me-intro { margin: 2px 12px 4px; font-size: 12.5px; line-height: 1.45; color: var(--wa-label); }
   .me-menus-card > .lc-note, .me-slots-card > .lc-note { margin: 8px 12px; color: var(--wa-muted); }
   /* A Menus row: its name and count over the line that says when it
      opens, which wraps rather than being cut. */

@@ -181,7 +181,7 @@ import {
   renderSaveReason,
   saveBlockedText,
 } from "./new-watch.js";
-import { menuStageStyles, renderMenuStage, renderMenuStageFoot, renderMenuStageTools } from "./menu-stage.js";
+import { menuStageStyles, renderMenuHowTo, renderMenuStage, renderMenuStageFoot, renderMenuStageTools } from "./menu-stage.js";
 import { watchMenusReplacedText, watchMenusSaveNote } from "./save-note.js";
 import type { MenuVoiceContext } from "./slot-voice.js";
 import { menuInspectorLookStyles } from "./menu-inspector-look.js";
@@ -1643,6 +1643,7 @@ export class WaMenuEditor extends LitElement {
       </div>
       <div class="stage-area me-stage-area" @click=${this.onStageClick}>
         ${this.renderStageTools(watchCase.label, host)}
+        ${renderMenuHowTo(host)}
         ${renderMenuStage(host)}
         <div class="under"><span class="tail">${menuStageHint(host)}</span>${renderMenuStageFoot(host)}</div>
       </div>

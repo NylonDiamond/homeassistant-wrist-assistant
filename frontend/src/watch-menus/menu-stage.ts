@@ -699,7 +699,72 @@ export function renderMenuStageFoot(host: MenusViewHost): TemplateResult | typeo
 // ── styles ───────────────────────────────────────────────────────────────
 
 /** The stage's rules, after `menuViewStyles` in the editor's sheet. */
+// ── how each menu opens ──────────────────────────────────────────────────
+
+/** How each menu opens on the watch and what it is for (InteractiveGrid:
+ * a long press on empty space, a long press on a tile, a pull down from the
+ * top), shown above the watch. */
+export const MENU_HOW_TO: Readonly<Record<"anywhere" | "entity" | "switcher", { open: string; use: string; gesture: "hold" | "tile" | "pull" }>> = {
+  anywhere: {
+    gesture: "hold",
+    open: "Touch and hold an empty spot on any page, slide to a slot, then lift your finger.",
+    use: "Shortcuts you want everywhere, like Assist, a status page or another page.",
+  },
+  entity: {
+    gesture: "tile",
+    open: "Touch and hold a tile, slide to a slot, then lift your finger.",
+    use: "Quick controls for that kind of tile, like brightness for a light. Each type has its own menu.",
+  },
+  switcher: {
+    gesture: "pull",
+    open: "Pull down from the top of the screen, slide to a page, then lift your finger.",
+    use: "Jumping between your pages. Pick a page in the Pages card to set how it shows here.",
+  },
+};
+
+/** A small drawing of the gesture: a finger held on empty space, on a tile,
+ * or pulling down from the top edge. */
+function gestureArt(gesture: "hold" | "tile" | "pull"): TemplateResult {
+  const body = gesture === "hold"
+    ? svg`<circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="9.5" opacity=".45"></circle>`
+    : gesture === "tile"
+      ? svg`<rect x="4" y="5" width="16" height="14" rx="4"></rect><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="5" opacity=".5"></circle>`
+      : svg`<path d="M5 3.5h14"></path><path d="M12 6.5v11"></path><path d="M8 13.5l4 4 4-4"></path>`;
+  return html`<svg class="ms-howto-art" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+}
+
+/** Above the watch: how the shown menu opens and what it is for, so a new
+ * user knows what they are editing before they edit it. */
+export function renderMenuHowTo(host: Pick<MenusViewHost, "uiState">): TemplateResult {
+  const how = MENU_HOW_TO[shownMenu(host)];
+  return html`<section class="ms-howto" aria-label="How it opens">
+    <span class="ms-howto-chip">${gestureArt(how.gesture)}</span>
+    <span class="ms-howto-t">
+      <span class="ms-howto-k">How it opens</span>
+      <b>${how.open}</b>
+      <span class="ms-howto-use"><span class="ms-howto-k">Good for</span> ${how.use}</span>
+    </span>
+  </section>`;
+}
+
 export const menuStageStyles = css`
+  /* How the shown menu opens, above the watch. */
+  .ms-howto {
+    position: relative; z-index: 1; display: flex; align-items: flex-start; gap: 12px;
+    width: min(560px, calc(100% - 24px)); box-sizing: border-box; margin: 4px auto 10px; padding: 12px 14px;
+    border: 1px solid var(--wa-line-strong); border-radius: 12px; background: var(--wa-card); color: var(--wa-ink);
+  }
+  .ms-howto-chip {
+    flex: none; width: 38px; height: 38px; box-sizing: border-box; display: grid; place-items: center;
+    border: 1px solid var(--wa-hue-orange); border-radius: 10px; color: var(--wa-ink);
+  }
+  .ms-howto-art { width: 22px; height: 22px; }
+  .ms-howto-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 13px; line-height: 1.4; }
+  .ms-howto-t > b { font-weight: 600; }
+  .ms-howto-k { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); }
+  .ms-howto-use { font-size: 12.5px; color: var(--wa-label); }
+  .ms-howto-use > .ms-howto-k { margin-right: 4px; }
+
   /* The watch screen's layers: the stand-in page, its veil, then the
      guide ring, the beam and the dots. Watch drawing, not panel chrome. */
   .ms-screen { isolation: isolate; }

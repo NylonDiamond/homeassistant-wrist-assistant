@@ -45,6 +45,7 @@ import {
   menuSlotLookChanged,
   menuStyleChanged,
   renderMenuInspector,
+  MENUS_INTRO,
   renderMenusCard,
   renderSlotsCard,
   saveMenusZoom,
@@ -65,6 +66,8 @@ import {
   switcherLook,
   switcherBubbleText,
   switcherTrackPoint,
+  MENU_HOW_TO,
+  renderMenuHowTo,
 } from "../src/watch-menus/menu-stage.js";
 import {
   ANYWHERE,
@@ -703,6 +706,22 @@ describe("a click on the blank stage", () => {
     host.uiState.set("me:sel:anywhere", REFRESH);
     onStageClick(click([]));
     expect(picked()).toBeUndefined();
+  });
+});
+
+describe("how each menu opens", () => {
+  it("says above the watch how the shown menu opens and what it is for, and the Menus card says what the page is for", () => {
+    const h = host(DEFAULTS);
+    let out = flat(renderMenuHowTo(h));
+    expect(out).toContain("How it opens");
+    expect(out).toContain(MENU_HOW_TO.anywhere.open);
+    expect(out).toContain(MENU_HOW_TO.anywhere.use);
+    selectMenu(h, "entity");
+    expect(flat(renderMenuHowTo(h))).toContain("Touch and hold a tile");
+    selectMenu(h, "switcher");
+    out = flat(renderMenuHowTo(h));
+    expect(out).toContain("Pull down from the top of the screen");
+    expect(flat(renderMenusCard(host(DEFAULTS)))).toContain(`<p class="me-intro">${MENUS_INTRO}</p>`);
   });
 });
 
