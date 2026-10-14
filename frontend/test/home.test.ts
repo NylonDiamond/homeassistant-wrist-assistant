@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { countWord, deviceCardTiles, deviceFacts, homeDoorLook, homeGroups, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotalBucket, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
+import { countWord, deviceCardTiles, deviceFacts, homeDoorLook, homeGroups, homePageThumbs, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotalBucket, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
 import { phoneWidgetPlaces } from "../src/home-art.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
@@ -116,6 +116,21 @@ describe("deviceSheetTabs", () => {
   it("puts a count on Pages and Status pages", () => {
     const counted = deviceSheetTabs("watch").flatMap((t) => t.kind === "screen" && t.count ? [`${t.label}:${t.count}`] : []);
     expect(counted).toEqual(["Pages:pages", "Status pages:status_pages"]);
+  });
+});
+
+describe("homePageThumbs", () => {
+  const page = (id: string, over: Record<string, unknown> = {}) => ({ id, name: id, ...over });
+
+  it("draws the first four pages the watch swipes between, and counts the rest", () => {
+    const pages = [page("a"), page("b", { isHidden: true }), page("c"), page("sys", { isSystemPage: true }), page("d"), page("e"), page("f")];
+    const thumbs = homePageThumbs(pages);
+    expect(thumbs.shown.map((p) => p.id)).toEqual(["a", "c", "d", "e"]);
+    expect(thumbs.more).toBe(1);
+  });
+
+  it("draws nothing for a watch with no pages", () => {
+    expect(homePageThumbs([])).toEqual({ shown: [], more: 0 });
   });
 });
 

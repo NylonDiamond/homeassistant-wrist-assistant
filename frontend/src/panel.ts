@@ -142,7 +142,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, homePill, homeSync, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDoorLook, homeGroups, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_RING_LENGTH, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDoorLook, homeGroups, homePageThumbs, HOME_PAGE_THUMB_WIDTH, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_RING_LENGTH, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
 import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
 import { APP_STORE_URL, type GettingStarted, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
 import { type QrPicture, qrPicture } from "./qr-code.js";
@@ -432,6 +432,9 @@ import {
   formSegStyles,
   rangeFill,
 } from "./form-styles.js";
+import { renderWatchPagePreview, watchPagePreviewStyles } from "./watch-pages/preview.js";
+import { type WatchPage, asWatchPagesDocument, watchPageName, watchPagesOf } from "./watch-pages/model.js";
+import { watchFrameStyles } from "./watch-frame.js";
 import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles } from "./watch-pages/hook.js";
 import { dropWatchMenusDrafts, isWatchMenusRoute, renderWatchMenusView, watchMenusDirty, watchMenusHookStyles } from "./watch-menus/hook.js";
 import { dropWatchVoiceDrafts, isWatchVoiceRoute, renderWatchVoiceView, watchVoiceDirty, watchVoiceHookStyles } from "./watch-voice/hook.js";
@@ -1536,6 +1539,10 @@ export class WristAssistantPanel extends LitElement {
   @state() private deviceRenameBusy = false;
   @state() private deviceRenameError?: string;
   @state() private deviceCounts?: { owner: string; counts: Partial<Record<DeviceCountKind, number>> };
+  /** Each watch's pages as Home Assistant holds them, read when the watch is
+   * shown on Home, for the pictures on its Pages door. */
+  @state() private homePages: ReadonlyMap<string, readonly WatchPage[]> = new Map();
+  private homePagesAsked = new Set<string>();
 
   /** The Watch app's shared watch as last picked, remembered per browser
    * (`watch-pick.ts`). Never the complications device: `sharedWatch` works
@@ -6024,7 +6031,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, homeStyles, watchRowStyles, headBarStyles, listPageStyles, helpSheetStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, watchRowStyles, headBarStyles, listPageStyles, helpSheetStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -19547,6 +19554,21 @@ export class WristAssistantPanel extends LitElement {
     this.deviceRenameError = undefined;
     this.homePick = ownerId;
     void this.loadDeviceCounts(ownerId);
+    void this.loadHomePages(ownerId);
+  }
+
+  /** Read a watch's pages for the pictures on its Pages door. Read again
+   * each time the watch is picked, so the pictures follow its edits; a
+   * failed read leaves the door its line. */
+  private async loadHomePages(ownerId: string) {
+    if (deviceKindOf(this.ownerOf(ownerId)) !== "watch") return;
+    this.homePagesAsked.add(ownerId);
+    try {
+      const record = await fetchWatchConfig(this.hass, ownerId, "pages");
+      this.homePages = new Map(this.homePages).set(ownerId, watchPagesOf(asWatchPagesDocument(record.document)));
+    } catch {
+      // The door keeps its line.
+    }
   }
 
   /** Read the counts a watch's doors wear, from the stored records, for an
@@ -19673,15 +19695,32 @@ export class WristAssistantPanel extends LitElement {
     const art = row.kind === "watch"
       ? homeWatchArt(`pick-${row.id}`, held, row.sync, face)
       : homePhoneArt(`pick-${row.id}`, held, row.sync, face);
+    if (row.kind === "watch" && !gone && !this.homePagesAsked.has(ownerId)) void this.loadHomePages(ownerId);
+    const pageThumbs = row.kind === "watch" && !gone ? homePageThumbs(this.homePages.get(ownerId) ?? []) : undefined;
+    const screen = (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
+    // One screen of each of the watch's first pages, drawn as the page
+    // editor draws them, small enough that four sit across a door.
+    const pagesStrip = () => {
+      if (pageThumbs === undefined || pageThumbs.shown.length === 0) return undefined;
+      const scale = HOME_PAGE_THUMB_WIDTH / screen.width;
+      const all = this.homePages.get(ownerId) ?? [];
+      return html`<span class="hb-door-pages" aria-hidden="true" style=${`--hb-screen-h:${Math.round(screen.height * scale * 100) / 100}px`}>
+        ${pageThumbs.shown.map((page) => html`<span class="hb-page" title=${watchPageName(page)}>${renderWatchPagePreview({
+          page, pages: all, screen, states: this.hass.states, icons: this.icons, scale,
+        })}</span>`)}
+        ${pageThumbs.more > 0 ? html`<span class="hb-page-more">+${pageThumbs.more}</span>` : nothing}
+      </span>`;
+    };
     const door = (t: DeviceSheetTab) => {
       const look = homeDoorLook(t, row.kind);
       const n = t.kind === "list" || t.count !== undefined ? count(t) : undefined;
+      const strip = t.kind === "screen" && t.screen.id === "pages" ? pagesStrip() : undefined;
       const body = html`<span class="hb-door-top">
           <span class="hb-door-chip" aria-hidden="true">${uiIcon(look.icon)}</span>
           <span class="hb-door-l">${t.label}</span>
           ${n === undefined ? nothing : n === 0 ? html`<b class="hb-door-n none">None</b>` : html`<b class="hb-door-n">${n}</b>`}
         </span>
-        <span class="hb-door-foot"><span class="hb-door-b">${look.blurb}</span><span class="hb-door-go" aria-hidden="true">${uiIcon("right")}</span></span>`;
+        <span class="hb-door-foot">${strip ?? html`<span class="hb-door-b">${look.blurb}</span>`}<span class="hb-door-go" aria-hidden="true">${uiIcon("right")}</span></span>`;
       if (t.kind === "list") {
         return html`<button type="button" class="hb-door" style=${`--h:${look.hue}`} title=${`${t.label} on ${row.name}`}
           @click=${() => openList(t.filter)}>${body}</button>`;

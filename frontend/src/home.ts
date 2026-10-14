@@ -9,6 +9,7 @@ import type { Person } from "./people.js";
 import { type DeviceSync, type HomeDevice, agoWords, deviceSync, deviceSyncLabel } from "./send-state.js";
 import { type WatchScreen, WATCH_SCREENS, WATCH_SETTINGS_SCREEN } from "./shell.js";
 import type { UiIconName } from "./ui-icons.js";
+import { type WatchPage, isHiddenWatchPage, isSystemWatchPage } from "./watch-pages/model.js";
 import { type DeviceKind, deviceKindOf } from "./version.js";
 import { type WatchAppSync, deviceVerdict, rejectedSaveText, waitingForText } from "./watch-app-sync.js";
 
@@ -388,6 +389,19 @@ export function homeDoorLook(tab: DeviceSheetTab, kind: "watch" | "iphone"): Hom
       : { icon: "grid", hue: "var(--wa-hue-blue)", blurb: "On the Lock Screen and Home Screen." };
   }
   return SCREEN_DOORS[tab.screen.id] ?? { icon: "pages", hue: "var(--wa-hue-grey)", blurb: "" };
+}
+
+/** How many of a watch's pages its Pages door draws, and how wide each
+ * screen is drawn, in CSS pixels: four fit across the narrowest door. */
+export const HOME_PAGE_THUMBS = 4;
+export const HOME_PAGE_THUMB_WIDTH = 40;
+
+/** The pages a watch's Pages door draws, small, in the watch's order: the
+ * ones the watch swipes between (not hidden, not its own system pages), the
+ * first `max` of them, and how many more there are after those. */
+export function homePageThumbs(pages: readonly WatchPage[], max = HOME_PAGE_THUMBS): { shown: WatchPage[]; more: number } {
+  const swiped = pages.filter((p) => !isHiddenWatchPage(p) && !isSystemWatchPage(p));
+  return { shown: swiped.slice(0, max), more: Math.max(0, swiped.length - max) };
 }
 
 /** The length round Home's ring, a circle of radius 18 in a 44 box. */
@@ -800,6 +814,15 @@ export const homeStyles = css`
   .hb-door-n.none { font-size: 12.5px; font-weight: 400; letter-spacing: 0; color: var(--wa-faint); }
   .hb-door-foot { display: flex; align-items: flex-end; gap: 8px; }
   .hb-door-b { flex: 1; font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
+  /* The Pages door draws the watch's first pages instead of its line: one
+     screen of each, small, with the screen's corners and no watch case. */
+  .hb-door-pages { flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: 6px; overflow: hidden; pointer-events: none; }
+  .hb-page { flex: none; display: block; line-height: 0; }
+  .hb-page .wa-watch { padding: 0; margin: 0; background: none; box-shadow: 0 0 0 1px var(--wa-line-strong); border-radius: var(--wf-radius, 6px); }
+  .hb-page .wa-watch::before, .hb-page .wa-watch::after { display: none; }
+  .hb-page .wa-watch > .wp-screen { max-height: var(--hb-screen-h); }
+  .hb-page .wp-fold { display: none; }
+  .hb-page-more { flex: none; align-self: center; font-size: 12px; color: var(--wa-muted); font-variant-numeric: tabular-nums; }
   .hb-door-go { flex: none; display: grid; color: var(--wa-label); opacity: 0; transform: translateX(-3px); transition: opacity .15s ease, transform .15s ease; }
   .hb-door-go svg.ui-icon { width: 14px; height: 14px; }
   a.hb-door:hover .hb-door-go, button.hb-door:hover .hb-door-go,
