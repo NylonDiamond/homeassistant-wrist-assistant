@@ -419,6 +419,37 @@ export function roomZonesWrites(doc: BehaviorDocument, roomKey: string, zones: P
   return new Map([[ROOM_KEYS.zones, encodeZones(cleaned)]]);
 }
 
+/**
+ * A room taken off: its page and its point control targets go, every stored
+ * key that normalizes to it, in one set of writes (one undo step). Rooms
+ * the stored targets string cannot be read for keep their targets, as
+ * everywhere else nothing is written over what cannot be read.
+ */
+export function removeRoomWrites(doc: BehaviorDocument, roomKey: string): Map<string, unknown> {
+  const writes = new Map<string, unknown>();
+  const view = readRooms(doc);
+  if (roomPage(view, roomKey) !== "" || Object.keys(view.mappings).some((k) => normalizedRoomKey(k) === roomKey)) {
+    for (const [key, value] of roomPageWrites(doc, roomKey, "")) writes.set(key, value);
+  }
+  const read = decodeZones(doc[ROOM_KEYS.zones]);
+  if (read.ok && read.rooms.some(([key]) => normalizedRoomKey(key) === roomKey)) {
+    const left = cleanZones(read.rooms.filter(([key]) => normalizedRoomKey(key) !== roomKey));
+    writes.set(ROOM_KEYS.zones, left === undefined ? undefined : encodeZones(left));
+  }
+  return writes;
+}
+
+/** Whether a room belongs in the Your rooms list rather than among the
+ * areas offered to add: it has a page or targets stored, was added here by
+ * name, or the room sensor reported it in the last day. An area with none
+ * of these is only offered. */
+export function roomIsListed(view: Pick<RoomsView, "mappings" | "zones">, room: RoomListEntry, added: readonly string[]): boolean {
+  if (room.lastSeen !== undefined) return true;
+  if (roomPage(view, room.key) !== "" || Object.keys(view.mappings).some((k) => normalizedRoomKey(k) === room.key)) return true;
+  if (view.zones.ok && view.zones.rooms.some(([key]) => normalizedRoomKey(key) === room.key)) return true;
+  return added.some((name) => normalizedRoomKey(name) === room.key);
+}
+
 // ── pages ────────────────────────────────────────────────────────────────
 
 export interface RoomPageChoice {
