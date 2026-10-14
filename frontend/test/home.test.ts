@@ -100,9 +100,9 @@ describe("watchConfigCount", () => {
 describe("deviceSheetTabs", () => {
   const labels = (kind: "watch" | "iphone") => deviceSheetTabs(kind).map((t) => t.label);
 
-  it("gives a watch its complications, its own screens, its Control Center controls and Settings, never the home's shared screens or the retired Control Center screen", () => {
-    expect(labels("watch")).toEqual(["Complications", "Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Settings"]);
-    expect(deviceSheetTabs("watch")[4]).toEqual({ kind: "list", label: "Control Center", filter: "control" });
+  it("gives a watch its Pages, Settings, complications, its other screens and its Control Center controls, never the home's shared screens or the retired Control Center screen", () => {
+    expect(labels("watch")).toEqual(["Pages", "Settings", "Complications", "Menus", "Status pages", "Control Center", "Rooms", "Voice"]);
+    expect(deviceSheetTabs("watch")[5]).toEqual({ kind: "list", label: "Control Center", filter: "control" });
     expect(deviceSheetTabs("watch").some((t) => t.kind === "screen" && t.screen.id === "control-center")).toBe(false);
   });
 
@@ -316,7 +316,7 @@ describe("homeDoorLook", () => {
     const controls = tabs.find((t) => t.kind === "list" && t.filter === "control")!;
     expect(homeDoorLook(controls, "watch")).toEqual(homeDoorLook(controls, "iphone"));
     const hues = tabs.map((t) => homeDoorLook(t, "watch").hue);
-    expect(hues.at(-1)).toBe("var(--wa-hue-grey)");
+    expect(hues[1]).toBe("var(--wa-hue-grey)");
     expect(hues.filter((h) => h === "var(--wa-hue-grey)")).toHaveLength(1);
   });
 });

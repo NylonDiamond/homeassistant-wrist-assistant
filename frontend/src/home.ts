@@ -142,21 +142,27 @@ export type DeviceSheetTab =
 
 /**
  * The picked device's doors, each opening its page on this device. A watch
- * has its complications, then every watch screen that belongs to one watch,
- * with its Control Center controls after Status pages, then Settings; HTTP
- * actions and Cameras are the home's, not a watch's. A watch's old Control
- * Center screen is retired: its tiles are complication controls now, so the
- * door opens the watch's designs that have a control, the way an iPhone's
- * does. An iPhone has its widgets and its Control Center controls, which is
- * all the panel holds for a phone.
+ * has its Pages, then Settings, then its complications, then every other
+ * watch screen that belongs to one watch, with its Control Center controls
+ * after Status pages; HTTP actions and Cameras are the home's, not a
+ * watch's. A watch's old Control Center screen is retired: its tiles are
+ * complication controls now, so the door opens the watch's designs that
+ * have a control, the way an iPhone's does. An iPhone has its widgets and
+ * its Control Center controls, which is all the panel holds for a phone.
  */
 export function deviceSheetTabs(kind: "watch" | "iphone"): DeviceSheetTab[] {
   const controls: DeviceSheetTab = { kind: "list", label: "Control Center", filter: "control" };
   if (kind === "iphone") return [{ kind: "list", label: "Widgets", filter: "all" }, controls];
-  const tabs: DeviceSheetTab[] = [{ kind: "list", label: "Complications", filter: "all" }];
-  for (const screen of [...WATCH_SCREENS.filter((s) => s.shared !== true && s.retired !== true), WATCH_SETTINGS_SCREEN]) {
+  const screenTab = (screen: WatchScreen): DeviceSheetTab => {
     const count = SCREEN_COUNTS[screen.id];
-    tabs.push(count === undefined ? { kind: "screen", label: screen.label, screen } : { kind: "screen", label: screen.label, screen, count });
+    return count === undefined ? { kind: "screen", label: screen.label, screen } : { kind: "screen", label: screen.label, screen, count };
+  };
+  const own = WATCH_SCREENS.filter((s) => s.shared !== true && s.retired !== true);
+  const pages = own.filter((s) => s.id === "pages");
+  const tabs: DeviceSheetTab[] = [...pages, WATCH_SETTINGS_SCREEN].map(screenTab);
+  tabs.push({ kind: "list", label: "Complications", filter: "all" });
+  for (const screen of own.filter((s) => s.id !== "pages")) {
+    tabs.push(screenTab(screen));
     if (screen.id === "status-pages") tabs.push(controls);
   }
   return tabs;
@@ -168,7 +174,9 @@ export function deviceSheetTabs(kind: "watch" | "iphone"): DeviceSheetTab[] {
  * has its widgets and its Control Center controls. Settings, which counts
  * nothing, is the card's own door. */
 export function deviceCardTiles(kind: "watch" | "iphone"): DeviceSheetTab[] {
-  return deviceSheetTabs(kind).filter((t) => t.kind === "list" || t.count !== undefined);
+  const tiles = deviceSheetTabs(kind).filter((t) => t.kind === "list" || t.count !== undefined);
+  const all = tiles.filter((t) => t.kind === "list" && t.filter === "all");
+  return [...all, ...tiles.filter((t) => !all.includes(t))];
 }
 
 /** A tile's word under its number: the page's name, cut to one short word
