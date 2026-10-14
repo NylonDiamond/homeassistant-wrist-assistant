@@ -337,7 +337,6 @@ export interface MenuActionTile {
   label: string;
   icon: string;
   color: string;
-  pro: boolean;
   /** Why it cannot be picked now. */
   why?: string;
 }
@@ -359,7 +358,7 @@ export function actionTiles(icons: IconProvider, current: string, groups: readon
       return html`<button type="button" class="mi-act ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"} ?disabled=${off} data-action=${t.raw}
         title=${t.why ?? nothing} @click=${() => { if (!on) pick(t.raw); }}>
         <span class="mi-icon-well" aria-hidden="true">${glyph(icons, t.icon, 14, t.color)}</span>
-        <span class="mi-act-t"><span class="mi-act-name">${t.label}</span>${t.pro ? html`<span class="mi-pro" title="Needs Wrist Assistant Pro on the watch">Pro</span>` : nothing}
+        <span class="mi-act-t"><span class="mi-act-name">${t.label}</span>
           ${t.why === undefined || on ? nothing : html`<small class="mi-act-why">${t.why}</small>`}</span>
       </button>`;
     })}</div>
@@ -522,10 +521,6 @@ export const menuInspectorLookStyles = css`
   .mi-act-t { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 5px; min-width: 0; }
   .mi-act-name { overflow-wrap: anywhere; }
   .mi-act-why { flex-basis: 100%; font-size: 11px; font-weight: 400; color: var(--wa-muted); }
-  .mi-pro {
-    padding: 0 6px; border: 1px solid var(--wa-hue-orange); border-radius: 999px;
-    font-size: 10px; font-weight: 600; line-height: 15px; color: var(--wa-ink);
-  }
   .mi-desc {
     margin: 4px 0 6px; padding: 7px 9px; border: 1px solid var(--wa-line); border-radius: 8px;
     background: var(--wa-panel); color: var(--wa-label); font-size: 12px; line-height: 1.4;

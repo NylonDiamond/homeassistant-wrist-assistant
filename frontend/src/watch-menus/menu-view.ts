@@ -893,7 +893,7 @@ export function menuActionTileGroups(host: Pick<MenusViewHost, "targets">, ref: 
     const spec = watchMenuAction(raw);
     const look = spec === undefined ? { icon: MENU_ACTIONS.unknownActionIcon, color: MENU_ACTIONS.unknownActionColor } : spec;
     const why = raw === current ? undefined : watchMenuActionUnavailable(raw, host.targets);
-    return { raw, label: menuActionWords(raw), icon: look.icon, color: look.color, pro: spec?.requiresPremium === true, ...(why === undefined ? {} : { why }) };
+    return { raw, label: menuActionWords(raw), icon: look.icon, color: look.color, ...(why === undefined ? {} : { why }) };
   };
   const offered = groups.some((g) => g.actions.includes(current));
   return [
@@ -1089,16 +1089,14 @@ export function menuSlotLookChanged(slot: JsonObject): boolean {
 }
 
 /** The pinned Name card: a slot keeps no name of its own, so the name it is
- * listed by shows, read only, with Pro for an action that needs it. */
+ * listed by shows, read only. */
 function renderNameCard(host: MenusViewHost, slot: JsonObject): TemplateResult {
   const mark = MENU_SECTION_BADGES.name;
-  const spec = watchMenuAction(slotActionType(slot));
   return html`<section class="sec name-sec" data-open="true" style=${`--c:${mark.color}`}>
     <div class="sec-h pinned">
       <span class="swatch">${uiIcon(mark.icon)}</span>
       <h4>Name</h4>
       <span class="me-name" title="A slot is named by what it runs, else by its action">${menuSlotName(host, slot)}</span>
-      ${spec?.requiresPremium ? html`<span class="pe-badge" title="Needs Wrist Assistant Pro on the watch">Pro</span>` : nothing}
     </div>
   </section>`;
 }

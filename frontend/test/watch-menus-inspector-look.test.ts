@@ -253,7 +253,7 @@ describe("the Entity quick menu's Which menu", () => {
 });
 
 describe("a slot's What it does", () => {
-  it("draws the actions as tiles under plain headings, the current one lit, Pro marked, and one with no target off with its reason", () => {
+  it("draws the actions as tiles under plain headings, the current one lit, no Pro mark, and one with no target off with its reason", () => {
     const { h } = host(DEFAULTS);
     h.uiState.set("me:sel:anywhere", SERVER);
     const text = flat(renderMenuInspector(h));
@@ -264,7 +264,7 @@ describe("a slot's What it does", () => {
     expect(what).toMatch(/data-action=runHTTPAction\s+title=No HTTP actions/);
     expect(what).toMatch(/\?disabled=true data-action=runHTTPAction/);
     expect(what).toContain(`<small class="mi-act-why">No HTTP actions</small>`);
-    expect(what).toContain(`<span class="mi-pro" title="Needs Wrist Assistant Pro on the watch">Pro</span>`);
+    expect(what).not.toContain("Pro<");
   });
 
   it("puts an action the list does not offer under Now, and heads an entity's own actions with its type", () => {
@@ -393,8 +393,8 @@ describe("the words and the rules", () => {
     expect(sheet).not.toMatch(/rgba?\(/);
     expect(sheet).not.toMatch(/purple/);
     expect(sheet).not.toMatch(/font-style:\s*italic/);
-    // The Menus hue shows only on a chip's outline.
-    expect(sheet.match(/--wa-hue-orange/g)).toHaveLength(1);
+    // The Menus hue is not used here: the Pro chip that wore it is gone.
+    expect(sheet).not.toMatch(/--wa-hue-orange/);
   });
 });
 

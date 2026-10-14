@@ -63,6 +63,8 @@ import {
   renderMenuStageFoot,
   renderMenuStageTools,
   switcherLook,
+  switcherBubbleText,
+  switcherTrackPoint,
 } from "../src/watch-menus/menu-stage.js";
 import {
   ANYWHERE,
@@ -383,13 +385,17 @@ describe("the menu's look on the watch", () => {
     selectMenu(h, "switcher");
     let out = flat(renderMenuScreen(h));
     expect(out).toContain("ms-switcher");
-    expect(out).toContain("--ms-k-on:1.5");
-    expect(out).toMatch(/class=me-page ms-active style=[^>]*--ms-pr:22px;--ms-pa:70%/);
-    expect(out).toMatch(/class=me-dot me-page-dot style=[^>]*--ms-pr:14px;--ms-pa:15%/);
+    // The page the finger points at: 70% of Glow, the wider glow, Selected
+    // Scale. The rest: 15%.
+    expect(out).toMatch(/class=ms-sw ms-active style=[^>]*--ms-ga:70%;--ms-gr:45;--ms-k:1.5[^>]*title=Kitchen/);
+    expect(out).toMatch(/class=ms-sw style=[^>]*--ms-ga:15%;--ms-gr:30;--ms-k:1[^>]*title=Garden/);
     selectSwitcherPage(h, "b");
     out = flat(renderMenuScreen(h));
-    expect(out).toMatch(/class=me-dot me-page-dot on ms-active style=/);
-    expect(out).toMatch(/class=me-page style=/);
+    expect(out).toMatch(/class=ms-sw ms-active style=[^>]*title=Garden/);
+    // The page you are on (the first) keeps its ring and 40% of Glow.
+    expect(out).toMatch(/class=ms-sw ms-current style=[^>]*--ms-ga:40%[^>]*title=Kitchen/);
+    // Its name at the top of the screen.
+    expect(out).toContain(">Garden</span>");
   });
 });
 
@@ -713,8 +719,9 @@ describe("the watch screen", () => {
     const h = host(DEFAULTS, pages);
     selectMenu(h, "switcher");
     const out = flat(renderMenuScreen(h));
-    expect(out).toContain("title=Kitchen>Kitchen</span>");
-    expect(out).toContain("class=me-dot me-page-dot ");
+    // A page by text shows its first four letters; a page by icon, its icon.
+    expect(out).toMatch(/title=Kitchen[^>]*>[\s\S]*?<span class="ms-sw-text">Kitc<\/span>/);
+    expect(out).toMatch(/title=Garden[^>]*>\s*<i class="ms-sw-glow"><\/i><i class="ms-sw-disc"><\/i>(?!<span class="ms-sw-text">)/);
     const none = host(DEFAULTS);
     selectMenu(none, "switcher");
     expect(flat(renderMenuScreen(none))).toContain("No pages in the switcher yet.");
@@ -728,6 +735,25 @@ describe("the watch screen", () => {
     expect(menuScreenPoint(screen, watchMenuRingPoint("rightCenter")!)).toEqual({ x: 0.86, y: 0.5 });
     // On a square screen the unit square is the screen.
     expect(menuScreenPoint({ width: 100, height: 100 }, { x: 0.2, y: 0.7 })).toEqual({ x: 0.2, y: 0.7 });
+  });
+
+  it("places the switcher's pages on the watch's track near the screen's edge", () => {
+    // The 45 mm screen the watch measures from: scales of 1.
+    const screen = { width: 198, height: 242 };
+    expect(switcherTrackPoint(screen, 0, 1)).toEqual({ x: 99, y: 38 });
+    expect(switcherTrackPoint(screen, 0, 8)).toEqual({ x: 99, y: 38 });
+    // Counterclockwise: the second of four is on the left, the fourth on the right.
+    const left = switcherTrackPoint(screen, 1, 4);
+    const right = switcherTrackPoint(screen, 3, 4);
+    expect(left.x).toBeLessThan(99);
+    expect(right.x).toBeGreaterThan(99);
+    expect(left.y).toBeCloseTo(right.y, 5);
+    // The bottom of four sits under the centre, near the bottom edge.
+    const bottom = switcherTrackPoint(screen, 2, 4);
+    expect(bottom.x).toBeCloseTo(99, 5);
+    expect(bottom.y).toBeCloseTo(242 - 30 + 8, 5);
+    expect(switcherBubbleText("New Page 1")).toBe("New");
+    expect(switcherBubbleText("Lights")).toBe("Ligh");
   });
 
   it("places switcher pages from top centre, counterclockwise and evenly", () => {
@@ -870,7 +896,7 @@ describe("the switcher's Pages card", () => {
     expect(row(text, "data-page", LIVING, "me-page-row")).toMatch(/^<div class="layer me-page-row hl /);
     expect(row(text, "data-page", LIVING, "me-page-row")).toContain("aria-current=true");
     expect(row(text, "data-page", HOME, "me-page-row")).toMatch(/^<div class="layer me-page-row  /);
-    expect(flat(renderMenuScreen(h))).toMatch(/class=me-page on ms-active style=[^>]*title=Living room>/);
+    expect(flat(renderMenuScreen(h))).toMatch(/class=ms-sw ms-active style=[^>]*title=Living room /);
     selectMenu(h, "anywhere");
     selectMenu(h, "switcher");
     expect(selectedSwitcherPage(h)).toBeUndefined();
@@ -1001,7 +1027,7 @@ describe("the element with a page draft", () => {
     (el.uiState as Map<string, unknown>).set("me:menu", "switcher");
     pages.apply(setWatchPageSwitcherText(PAGES, HOME, "Front"));
     const text = body();
-    expect(text).toContain("title=Home>Front</span>");
+    expect(text).toMatch(/title=Home[^>]*>[\s\S]*?<span class="ms-sw-text">Fron<\/span>/);
     expect(text).toContain("<small>Shown as Front</small>");
   });
 

@@ -49,7 +49,6 @@ import {
   selectedSwitcherPage,
   shownMenu,
   shownMenuList,
-  switcherRingPoint,
 } from "./menu-view.js";
 import {
   type MenuListRef,
@@ -239,9 +238,13 @@ function placeOn(screen: MenusScreen, point: { x: number; y: number }): { x: num
  * its shadow, cast away from the finger at the centre (`--sx`, `--sy`).
  */
 function dotStyle(host: MenusViewHost, look: MenuLook, point: { x: number; y: number }, color?: string): string {
+  return dotStyleAt(host, look, placeOn(host.screen, point), color);
+}
+
+/** `dotStyle` for a point already placed on the screen: shares and points. */
+function dotStyleAt(host: MenusViewHost, look: MenuLook, at: { x: number; y: number; px: number; py: number }, color?: string): string {
   const { width, height } = host.screen;
   const s = host.scale;
-  const at = placeOn(host.screen, point);
   const parts = [`left:${at.x * 100}%`, `top:${at.y * 100}%`];
   if (color !== undefined) parts.push(`--c:${color}`);
   parts.push(`--fx:${round((width / 2 - at.px) * s)}px`, `--fy:${round((height / 2 - at.py) * s)}px`);
@@ -472,14 +475,79 @@ function renderRing(host: MenusViewHost, ref: MenuListRef, selected: JsonObject 
   return renderScreen(host, `${label} on the watch`, look, dots, { beamTo: { x: beamTo.px, y: beamTo.py } });
 }
 
+/** The watch's own screen scales (`WatchScreenMetrics`): each axis against
+ * the 45 mm screen of 198 by 242 points, held to 0.82 to 1.18. */
+function screenScales(screen: MenusScreen): { w: number; h: number } {
+  const clamp = (n: number) => Math.min(1.18, Math.max(0.82, n));
+  return { w: clamp(screen.width / 198), h: clamp(screen.height / 242) };
+}
+
 /**
- * The page switcher as the watch draws it: each page the switcher shows,
- * spread around the ring from top centre, by its switcher text in its color
- * or by its icon, each with its Glow; the page the finger points at (the one
- * picked in the Pages card, else the first) at Selected Scale with the
- * stronger glow, and the quick menus' look around them. A page is picked in
- * that card, so nothing here is a button. A page left out of the switcher is
- * not drawn.
+ * Where page `index` of `count` sits in the page switcher, in the screen's
+ * points: the watch's `dynamicSlotPosition`. Eight anchors trace a track
+ * near the screen's edge (`textRadialSlotPosition`), counterclockwise from
+ * top centre, and the pages are spread along it at equal distances.
+ */
+export function switcherTrackPoint(screen: MenusScreen, index: number, count: number): { x: number; y: number } {
+  const { width, height } = screen;
+  const k = screenScales(screen);
+  const left = 34 * k.w;
+  const right = width - 34 * k.w;
+  const top = 52 * k.h;
+  const bottom = height - 30 * k.h;
+  const mid = (top + bottom) / 2;
+  const cx = width / 2;
+  const ix = 18 * k.w;
+  const iy = 8 * k.h;
+  const anchors = [
+    { x: cx, y: top - 14 * k.h }, // top centre
+    { x: left + ix, y: top + iy }, // top left
+    { x: left, y: mid }, // left centre
+    { x: left + ix, y: bottom - iy }, // bottom left
+    { x: cx, y: bottom + 8 * k.h }, // bottom centre
+    { x: right - ix, y: bottom - iy }, // bottom right
+    { x: right, y: mid }, // right centre
+    { x: right - ix, y: top + iy }, // top right
+  ];
+  if (count <= 1) return anchors[0]!;
+  const lengths = [0];
+  for (let i = 1; i <= anchors.length; i++) {
+    const a = anchors[i - 1]!;
+    const b = anchors[i % anchors.length]!;
+    lengths.push(lengths[i - 1]! + Math.hypot(b.x - a.x, b.y - a.y));
+  }
+  const total = lengths[anchors.length]!;
+  const arc = ((index * total) / count) % total;
+  for (let i = 0; i < anchors.length; i++) {
+    const from = lengths[i]!;
+    const to = lengths[i + 1]!;
+    if (arc >= from && arc <= to) {
+      const t = to > from ? (arc - from) / (to - from) : 0;
+      const a = anchors[i]!;
+      const b = anchors[(i + 1) % anchors.length]!;
+      return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    }
+  }
+  return anchors[0]!;
+}
+
+/** What a page's bubble says: the first four characters of its switcher
+ * text, as the watch cuts it (`text.prefix(4)`). */
+export function switcherBubbleText(text: string): string {
+  return [...text].slice(0, 4).join("").trim();
+}
+
+/**
+ * The page switcher as the watch draws it (`PageSwitcherOverlay`,
+ * `RadialMenuTextIcon`): the pages spread along the track near the screen's
+ * edge, each a small round bubble with the first four letters of its text
+ * (or its icon) in its color, a soft glow by Glow behind it. Without Glass
+ * the bubble is a faint white disc and the page you are on has a ring in its
+ * color; with Glass it is a larger frosted bubble. The page the finger
+ * points at (the one picked in the Pages card, else the first) is drawn at
+ * Selected Scale, lit in its color, with its name at the top. No guide ring
+ * and no centre dot: the watch draws neither here. A page is picked in that
+ * card, so nothing here is a button.
  */
 function renderSwitcherScreen(host: MenusViewHost): TemplateResult {
   const look = menuLook(host.document);
@@ -487,27 +555,37 @@ function renderSwitcherScreen(host: MenusViewHost): TemplateResult {
   const pages = host.switcherPages;
   const picked = selectedSwitcherPage(host);
   const activeIndex = Math.max(0, picked === undefined ? 0 : pages.findIndex((p) => sameMenuId(p.id, picked.id)));
+  const { width, height } = host.screen;
+  const share = (pt: { x: number; y: number }) => ({ x: pt.x / width, y: pt.y / height, px: pt.x, py: pt.y });
   const content = pages.length === 0
     ? html`<p class="me-screen-note">No pages in the switcher yet.</p>`
     : pages.map((page, i) => {
-      const point = switcherRingPoint(i, pages.length);
+      const at = share(switcherTrackPoint(host.screen, i, pages.length));
       const active = i === activeIndex;
-      // The watch's radial glow behind each page: 70% of Glow on the one
-      // the finger points at, 15% on the rest.
-      const glow = `--ms-pr:${active ? 22 : 14}px;--ms-pa:${Math.round((active ? 0.7 : 0.15) * own.glow * 100)}%`;
-      const style = `${dotStyle(host, look, point, page.color)};${glow}`;
-      const on = picked !== undefined && sameMenuId(picked.id, page.id) ? "on" : "";
-      const classes = [on, active ? "ms-active" : ""].filter((c) => c !== "").join(" ");
-      const name = look.labels && page.text === undefined ? iconLabel(host, look, point, page.color, page.name) : nothing;
-      return page.text === undefined
-        ? html`<span class=${`me-dot me-page-dot${classes === "" ? "" : ` ${classes}`}`} style=${style} title=${page.name}>${menuGlyph(host, page.icon, dotGlyph(host, 14), page.color)}</span>${name}`
-        : html`<span class=${`me-page${classes === "" ? "" : ` ${classes}`}`} style=${style} title=${page.name}>${page.text}</span>`;
+      const current = i === 0 && !active;
+      // The radial glow behind the bubble: 70% of Glow on the page the
+      // finger points at, 40% on the page you are on, 15% on the rest.
+      const glow = Math.round((active ? 0.7 : current ? 0.4 : 0.15) * own.glow * 100);
+      const style = [
+        dotStyleAt(host, look, at, page.color),
+        `--ms-ga:${glow}%`,
+        `--ms-gr:${active ? 45 : 30}`,
+        `--ms-k:${active ? own.scale : 1}`,
+      ].join(";");
+      const classes = ["ms-sw", active ? "ms-active" : "", current ? "ms-current" : ""].filter((c) => c !== "").join(" ");
+      const face = page.text === undefined
+        ? menuGlyph(host, page.icon, dotGlyph(host, look.glass ? 18 : active ? 16 : 14), active && !look.glass ? "white" : page.color)
+        : html`<span class="ms-sw-text">${switcherBubbleText(page.text)}</span>`;
+      return html`<span class=${classes} style=${style} title=${page.name} aria-hidden="true">
+        <i class="ms-sw-glow"></i><i class="ms-sw-disc"></i>${face}</span>`;
     });
-  const target = pages.length === 0 ? undefined : placeOn(host.screen, switcherRingPoint(activeIndex, pages.length));
-  return renderScreen(host, "Page switcher on the watch", look, content, {
-    beamTo: target === undefined ? undefined : { x: target.px, y: target.py },
+  const activePage = pages[activeIndex];
+  const name = activePage === undefined ? nothing
+    : html`<span class="ms-sw-name" style=${`top:${round(((8 * screenScales(host.screen).h) / height) * 10000) / 100}%`}>${activePage.name}</span>`;
+  const target = pages.length === 0 ? undefined : switcherTrackPoint(host.screen, activeIndex, pages.length);
+  return renderScreen(host, "Page switcher on the watch", look, html`${content}${name}`, {
+    beamTo: target,
     classes: "ms-switcher",
-    style: `--ms-k-on:${own.scale}`,
   });
 }
 
@@ -666,12 +744,63 @@ export const menuStageStyles = css`
   .ms-screen:not(.ms-switcher) .me-dot.ms-active {
     --ms-glow: 0 0 calc(var(--ms-g-r, 0px) * var(--me-s, 1)) calc(var(--ms-g-r, 0px) * .3 * var(--me-s, 1)) color-mix(in srgb, var(--c, white) var(--ms-g-a, 0%), transparent);
   }
-  /* The switcher: every page glows by its own Glow, and the one the finger
-     points at is drawn at Selected Scale. */
-  .ms-switcher .me-dot.me-page-dot, .ms-switcher .me-page {
-    --ms-glow: 0 0 calc(var(--ms-pr, 14px) * var(--me-s, 1)) calc(var(--ms-pr, 14px) * .3 * var(--me-s, 1)) color-mix(in srgb, var(--c, white) var(--ms-pa, 0%), transparent);
+  /* The page switcher, in the watch's points times --me-s: no guide ring,
+     no centre dot, no finger spot. Each page is a bubble (RadialMenuTextIcon):
+     an 80 point glow by Glow, a 36 point faint disc, and four letters. */
+  .ms-switcher .me-track, .ms-switcher .me-center, .ms-switcher .ms-finger-spot { display: none; }
+  .ms-sw {
+    position: absolute; transform: translate(-50%, -50%) scale(var(--ms-k, 1));
+    width: calc(80px * var(--me-s, 1)); height: calc(80px * var(--me-s, 1));
+    display: grid; place-items: center; pointer-events: none;
   }
-  .ms-switcher .ms-active { --ms-k: var(--ms-k-on, 1.2); z-index: 1; }
+  .ms-sw > * { grid-area: 1 / 1; }
+  /* The glass disc's blur and the neon ring's blur paint in a layer of their
+     own, over anything plain: the letters (or icon) are lifted above both. */
+  .ms-sw > :not(.ms-sw-glow, .ms-sw-disc) { position: relative; z-index: 1; }
+  .ms-sw.ms-active { z-index: 1; }
+  .ms-sw-glow {
+    width: 100%; height: 100%; border-radius: 50%;
+    background: radial-gradient(circle closest-side, color-mix(in srgb, var(--c, white) var(--ms-ga, 0%), transparent) calc(8 / 40 * 100%), transparent calc(var(--ms-gr, 30) / 40 * 100%));
+  }
+  .ms-sw-disc {
+    width: calc(36px * var(--me-s, 1)); height: calc(36px * var(--me-s, 1)); border-radius: 50%; box-sizing: border-box;
+    background: color-mix(in srgb, white 10%, transparent);
+    box-shadow: var(--sx, 0px) var(--sy, 0px) calc(6px * var(--me-s, 1)) color-mix(in srgb, var(--c, white) 30%, transparent);
+  }
+  .ms-sw.ms-current .ms-sw-disc {
+    background: color-mix(in srgb, white 20%, transparent);
+    outline: calc(2px * var(--me-s, 1)) solid color-mix(in srgb, var(--c, white) 60%, transparent); outline-offset: calc(1px * var(--me-s, 1));
+  }
+  .ms-sw.ms-active .ms-sw-disc { background: color-mix(in srgb, var(--c, white) 30%, transparent); }
+  .ms-sw-text {
+    font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; font-weight: 700; white-space: nowrap;
+    font-size: calc(12px * var(--me-s, 1)); line-height: 1; color: var(--c, white);
+    text-shadow: var(--sx, 0px) var(--sy, 0px) calc(6px * var(--me-s, 1)) color-mix(in srgb, var(--c, white) 60%, transparent);
+  }
+  .ms-sw.ms-active .ms-sw-text { font-size: calc(14px * var(--me-s, 1)); color: white; }
+  /* Glass: a 44 point frosted bubble, the letters at 16 points in the color. */
+  .ms-glass .ms-sw-disc {
+    width: calc(44px * var(--me-s, 1)); height: calc(44px * var(--me-s, 1));
+    background: color-mix(in srgb, white 14%, transparent); outline: none;
+    border: calc(.5px * var(--me-s, 1)) solid color-mix(in srgb, var(--c, white) 20%, transparent);
+    -webkit-backdrop-filter: blur(calc(8px * var(--me-s, 1))); backdrop-filter: blur(calc(8px * var(--me-s, 1)));
+    box-shadow: var(--sx, 0px) var(--sy, 0px) calc(10px * var(--me-s, 1)) color-mix(in srgb, var(--c, white) 50%, transparent);
+  }
+  .ms-glass .ms-sw.ms-active .ms-sw-disc { border-color: color-mix(in srgb, var(--c, white) 50%, transparent); }
+  .ms-glass .ms-sw-text, .ms-glass .ms-sw.ms-active .ms-sw-text { font-size: calc(16px * var(--me-s, 1)); color: var(--c, white); }
+  /* Neon: a blurred ring in the page's color. */
+  .ms-neon .ms-sw::after {
+    content: ""; grid-area: 1 / 1; border-radius: 50%; filter: blur(calc(3px * var(--me-s, 1)));
+    width: calc(42px * var(--me-s, 1)); height: calc(42px * var(--me-s, 1));
+    border: calc(1.5px * var(--me-s, 1)) solid color-mix(in srgb, var(--c, white) 70%, transparent);
+  }
+  .ms-glass.ms-neon .ms-sw::after { width: calc(46px * var(--me-s, 1)); height: calc(46px * var(--me-s, 1)); }
+  /* The name of the page the finger points at, at the top of the screen. */
+  .ms-sw-name {
+    position: absolute; left: 50%; transform: translate(-50%, -50%); white-space: nowrap; pointer-events: none;
+    font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; font-weight: 600;
+    font-size: calc(13px * var(--me-s, 1)); color: white; text-shadow: 0 0 calc(4px * var(--me-s, 1)) black;
+  }
   /* Icon Labels: the name under each icon. */
   .ms-name {
     position: absolute; transform: translate(-50%, -50%); pointer-events: none; white-space: nowrap;
@@ -687,12 +816,12 @@ export const menuStageStyles = css`
   @keyframes ms-pop-b { from { transform: translate(-50%, -50%) scale(.1); } }
   @keyframes ms-fade-a { from { opacity: 0; } }
   @keyframes ms-fade-b { from { opacity: 0; } }
-  .ms-play-a.ms-enter-spring :is(.me-dot:not(.free), .me-page) { animation: ms-fly-a .5s cubic-bezier(.34, 1.56, .64, 1) backwards; }
-  .ms-play-b.ms-enter-spring :is(.me-dot:not(.free), .me-page) { animation: ms-fly-b .5s cubic-bezier(.34, 1.56, .64, 1) backwards; }
-  .ms-play-a.ms-enter-popIn :is(.me-dot:not(.free), .me-page) { animation: ms-pop-a .35s cubic-bezier(.3, 1.9, .55, 1) backwards; }
-  .ms-play-b.ms-enter-popIn :is(.me-dot:not(.free), .me-page) { animation: ms-pop-b .35s cubic-bezier(.3, 1.9, .55, 1) backwards; }
-  .ms-play-a.ms-enter-fade :is(.me-dot:not(.free), .me-page) { animation: ms-fade-a .3s ease-in backwards; }
-  .ms-play-b.ms-enter-fade :is(.me-dot:not(.free), .me-page) { animation: ms-fade-b .3s ease-in backwards; }
+  .ms-play-a.ms-enter-spring :is(.me-dot:not(.free), .me-page, .ms-sw) { animation: ms-fly-a .5s cubic-bezier(.34, 1.56, .64, 1) backwards; }
+  .ms-play-b.ms-enter-spring :is(.me-dot:not(.free), .me-page, .ms-sw) { animation: ms-fly-b .5s cubic-bezier(.34, 1.56, .64, 1) backwards; }
+  .ms-play-a.ms-enter-popIn :is(.me-dot:not(.free), .me-page, .ms-sw) { animation: ms-pop-a .35s cubic-bezier(.3, 1.9, .55, 1) backwards; }
+  .ms-play-b.ms-enter-popIn :is(.me-dot:not(.free), .me-page, .ms-sw) { animation: ms-pop-b .35s cubic-bezier(.3, 1.9, .55, 1) backwards; }
+  .ms-play-a.ms-enter-fade :is(.me-dot:not(.free), .me-page, .ms-sw) { animation: ms-fade-a .3s ease-in backwards; }
+  .ms-play-b.ms-enter-fade :is(.me-dot:not(.free), .me-page, .ms-sw) { animation: ms-fade-b .3s ease-in backwards; }
   .ms-play-a :is(.ms-veil, .ms-name, .ms-beam) { animation: ms-fade-a .35s ease-out backwards; }
   .ms-play-b :is(.ms-veil, .ms-name, .ms-beam) { animation: ms-fade-b .35s ease-out backwards; }
   @media (prefers-reduced-motion: reduce) {
