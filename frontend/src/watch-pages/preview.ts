@@ -66,6 +66,7 @@ import {
 import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
 import { renderWatchFrame } from "../watch-frame.js";
 import { readSmartConfig, smartRuleIndexForTile, smartSyntheticPage, smartTrackingWords, smartWord } from "./smart-model.js";
+import { watchShowWhenPasses, watchTileShowWhen } from "./show-when.js";
 
 export type WatchPreviewStateMode = "live" | "all-on";
 
@@ -235,9 +236,18 @@ export function watchEntityActive(entityId: string, states: Readonly<Record<stri
   }
 }
 
+/** Whether the watch leaves the tile out right now
+ * (`GridItemConfig.isVisible`). */
+export function watchTileHidden(tile: WatchPageTile, states: Readonly<Record<string, HassEntityState>>): boolean {
+  if (tile.hideWhenInactive === true && tileEntityId(tile) !== "" && !watchEntityActive(tileEntityId(tile), states)) return true;
+  const condition = watchTileShowWhen(tile);
+  return condition !== undefined && !watchShowWhenPasses(condition, states);
+}
+
 /**
  * A page as the watch lays it out once its "hide when off" tiles that are
- * off are gone (`InteractiveGrid.computeReflow`): with nothing hidden, the
+ * off, and its "show only when" tiles whose condition fails, are gone
+ * (`InteractiveGrid.computeReflow`): with nothing hidden, the
  * page itself; else every other tile but the headers is packed again, in
  * row then column order, into the first free place at or below the top of
  * its section (the rows between the headers around it), headers keeping
@@ -247,7 +257,7 @@ export function watchEntityActive(entityId: string, states: Readonly<Record<stri
 export function watchReflowPage(page: WatchPage, states: Readonly<Record<string, HassEntityState>> | undefined, columns = 12): WatchPage {
   if (states === undefined) return page;
   const items = watchPageTiles(page);
-  const hidden = new Set(items.filter((t) => t.hideWhenInactive === true && tileEntityId(t) !== "" && !watchEntityActive(tileEntityId(t), states)));
+  const hidden = new Set(items.filter((t) => watchTileHidden(t, states)));
   if (hidden.size === 0) return page;
   const isDivider = (t: WatchPageTile) => tileKind(tileEntityId(t)) === "divider";
   const dividerRows = items.filter(isDivider).flatMap((t) => {
