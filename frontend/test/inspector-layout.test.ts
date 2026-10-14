@@ -200,7 +200,7 @@ describe("the less used rows in a Look card", () => {
     const markup = flatten(layerEditor(host(cfg, { openSections: new Set(["content", "look"]) }), el, "rectangular"));
     expect(markup).not.toContain("more-line");
     expect(markup).toContain("Mono digits");
-    expect(markup).toContain(">Opacity<");
+    expect(markup).toContain(">Layer opacity<");
     expect(markup).toContain("Weight");
     expect(markup).toContain("Shrink to fit");
   });
@@ -209,7 +209,7 @@ describe("the less used rows in a Look card", () => {
     const { cfg, el } = withLayer("shape");
     const markup = flatten(layerEditor(host(cfg, { openSections: new Set(["content", "look"]) }), el, "rectangular"));
     expect(markup).toContain("Gradient");
-    expect(markup).toContain(">Opacity<");
+    expect(markup).toContain(">Layer opacity<");
   });
 
   it("offers one Rectangle with a corner radius, for both rectangle kinds", () => {

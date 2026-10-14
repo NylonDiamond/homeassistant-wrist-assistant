@@ -1303,7 +1303,7 @@ function colorBox(label: string, value: string | undefined, set: (v: string | un
       <input type="text" class="mono hex" .value=${value ?? ""} placeholder=${placeholder} spellcheck="false" aria-label=${`${label}: hex`} ?disabled=${off}
         @input=${onInput((v) => { const t = v.trim(); if (/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(t)) set(t.startsWith("#") ? t.toUpperCase() : `#${t.toUpperCase()}`); })} />
       <span class="num-box alpha" style="--wa-unit:1">
-        <input type="number" min="0" max="100" step="1" .value=${String(alpha)} title="Opacity" aria-label=${`${label}: opacity`} ?disabled=${off}
+        <input type="number" min="0" max="100" step="1" .value=${String(alpha)} title="This color's opacity. Layer opacity fades the whole layer, shadow and all." aria-label=${`${label}: opacity`} ?disabled=${off}
           data-scrub @pointerdown=${boxScrubber(alpha, (n) => set(composeColor(rgb, n)), { step: 1, min: 0, max: 100 })}
           @input=${onInput((v) => { const n = Number(v); if (v.trim() !== "" && n >= 0 && n <= 100) set(composeColor(rgb, Math.round(n))); })} />
         <span class="unit" aria-hidden="true">%</span>
@@ -6953,7 +6953,7 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
     ${lineUpField(host, el, family, f, "across")}
     </div>`
     : nothing}
-    <div class="field xy-field"><span>Size</span>
+    <div class="field xy-field"><span title="The layer's area on the face. An icon or text is drawn inside it at its own size, set in Look.">Box</span>
       <div class="xy">
         ${frameLetterField("W", "Width", f.width, (v) => setFrame({ width: v }, "w"), 4, 200)}
         ${frameLetterField("H", "Height", f.height, (v) => setFrame({ height: v }, "h"), 4, 200)}
@@ -6962,7 +6962,7 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
     ${sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
       { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°`, unit: "°", range: false })}
     ${checkField("Hidden", eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })), false)}
-    <div class="hint">${anchor === undefined ? "X, Y, W and H are" : "W and H are"} a percent of the face, on the ${familyTitle(family)} shape only. Drag a letter left or right to change its number. Arrow keys nudge 1 pt, shift for 10.${anchor === undefined ? " Copy position and Paste position, in the ··· menu, repeat a spot on another layer, on any shape." : ""}</div>`,
+    <div class="hint">${anchor === undefined ? "X, Y, W and H are" : "W and H are"} a percent of the face, on the ${familyTitle(family)} shape only. Box is the layer's area: an icon or text is drawn inside it at the size set in Look. Drag a letter left or right to change its number. Arrow keys nudge 1 pt, shift for 10.${anchor === undefined ? " Copy position and Paste position, in the ··· menu, repeat a spot on another layer, on any shape." : ""}</div>`,
     { color: SECTION_COLOR.position, icon: "place", summary: positionSummary(host.config, el, family),
       ...(anchor === undefined ? { menu: positionMenu(host, el, family, f) } : {}),
       ...(placeChanged ? {
@@ -9354,7 +9354,7 @@ function layerLookFields(
   const smallGlow = el.kind === "text" && shadow !== undefined
     && shadow.dx === 0 && shadow.dy === 0 && shadow.radius > 0 && el.payload.fontSize < 10;
   return html`
-    ${percentSliderField("Opacity", p.opacity ?? 1, (v) => upd((e) => {
+    ${percentSliderField("Layer opacity", p.opacity ?? 1, (v) => upd((e) => {
       const n = clampLayerOpacity(v);
       if (n === 1) delete e.payload.opacity; else e.payload.opacity = n;
     }, "opacity"), { step: 0.05, def: 1 })}
