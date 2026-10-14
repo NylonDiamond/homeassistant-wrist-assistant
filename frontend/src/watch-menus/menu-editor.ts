@@ -221,6 +221,9 @@ const MOD = IS_MAC ? "⌘" : "Ctrl+";
 const ME_COLUMNS = { min: 200, max: 720, middleMin: 320 } as const;
 const ME_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 320 };
 export const ME_COLUMNS_KEY = "wrist-assistant-panel.menus.columns.v1";
+/** What a stage click may land on and still keep the selection: anything
+ * that does something itself, and the dots and page labels on the watch. */
+const STAGE_KEEPS_SELECTION = "button, a, input, select, textarea, label, [role=toolbar], .me-dot, .me-page";
 /** The grid's own cost beside its three columns, CSS px: two 8px gutters and
  * the 2px gap on each side of each. */
 const ME_GRID_CHROME = 2 * 8 + 4 * 2;
@@ -1394,6 +1397,20 @@ export class WaMenuEditor extends LitElement {
     }
   };
 
+  /** A click on the stage that lands on nothing, the watch's black screen
+   * or the ground around it, lets go of the selected slot (or the
+   * switcher's picked page), back to the menu's own settings. A slot, an
+   * add button, a picked page's label and the tool strip keep theirs. */
+  private onStageClick = (e: MouseEvent): void => {
+    const path = e.composedPath();
+    const stage = path.indexOf(e.currentTarget as EventTarget);
+    // Only what is inside the stage counts, not the cards around it.
+    const inside = stage < 0 ? path : path.slice(0, stage);
+    if (inside.some((n) => typeof (n as Partial<Element>).matches === "function" && (n as Element).matches(STAGE_KEEPS_SELECTION))) return;
+    const host = this.viewHost();
+    if (host !== undefined) deselectMenuSlot(host);
+  };
+
   /** A press anywhere outside an open menu of the top bar (the ··· menu, the
    * watch picker) closes it. */
   private onWindowPointerDown = (e: PointerEvent): void => {
@@ -1623,7 +1640,7 @@ export class WaMenuEditor extends LitElement {
             @click=${() => this.redo()}>${uiIcon("redo")}</button>
         </span>
       </div>
-      <div class="stage-area me-stage-area">
+      <div class="stage-area me-stage-area" @click=${this.onStageClick}>
         ${this.renderStageTools(watchCase.label)}
         <div class="me-stage-body">${renderMenuScreen(host)}</div>
         <div class="under"><span class="tail">${menuStageHint(host)}</span></div>

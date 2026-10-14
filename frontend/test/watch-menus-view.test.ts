@@ -475,6 +475,32 @@ describe("the canvas", () => {
   });
 });
 
+describe("a click on the blank stage", () => {
+  /** A stand-in element: matches the selector when it names `tag` or `cls`. */
+  const node = (tag: string, cls = "") => ({ matches: (sel: string) => sel.split(",").map((x) => x.trim()).some((x) => x === tag || (cls !== "" && x === `.${cls}`)) });
+  const click = (path: object[]) => {
+    const stage = node("div", "stage-area");
+    return { composedPath: () => [...path, stage, node("div", "canvas-card")], currentTarget: stage } as unknown as MouseEvent;
+  };
+
+  it("lets go of the slot on the watch's screen or the ground, and keeps it on a dot or a tool", () => {
+    const { el } = editor();
+    const host = (el.viewHost as () => MenusViewHost).call(el);
+    const onStageClick = el.onStageClick as (e: MouseEvent) => void;
+    const picked = () => host.uiState.get("me:sel:anywhere");
+    host.uiState.set("me:sel:anywhere", REFRESH);
+    onStageClick(click([node("button", "me-dot")]));
+    expect(picked()).toBe(REFRESH);
+    onStageClick(click([node("svg"), node("div", "stage-tools"), node("div", "me-stage-body")].map((n, i) => i === 1 ? { matches: (sel: string) => sel.includes("[role=toolbar]") } : n)));
+    expect(picked()).toBe(REFRESH);
+    onStageClick(click([node("svg", "me-screen-bg"), node("div", "me-screen"), node("div", "me-stage-body")]));
+    expect(picked()).toBeUndefined();
+    host.uiState.set("me:sel:anywhere", REFRESH);
+    onStageClick(click([]));
+    expect(picked()).toBeUndefined();
+  });
+});
+
 describe("the watch screen", () => {
   it("draws at the watch's proportions, at the stage's scale", () => {
     const out = flat(renderMenuScreen(host(DEFAULTS)));
