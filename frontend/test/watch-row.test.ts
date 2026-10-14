@@ -130,10 +130,10 @@ describe("the row's watches", () => {
 });
 
 describe("the row's screen links", () => {
-  it("walks the seven screens in Home's order, each on the shared watch but HTTP actions and Cameras, the one on show marked", () => {
+  it("walks the eight screens in Home's order, each on the shared watch but HTTP actions and Cameras, the one on show marked", () => {
     const links = watchRowLinks(route("/status-pages/w1"), "w2");
-    expect(links.map((l) => l.screen.label)).toEqual(["Pages", "Menus", "Status pages", "Rooms", "Voice", "HTTP actions", "Cameras"]);
-    expect(links.map((l) => l.path)).toEqual(["/pages/w2", "/menus/w2", "/status-pages/w2", "/rooms/w2", "/voice/w2", "/http-actions", "/cameras"]);
+    expect(links.map((l) => l.screen.label)).toEqual(["Pages", "Menus", "Status pages", "Rooms", "Voice", "Complications", "HTTP actions", "Cameras"]);
+    expect(links.map((l) => l.path)).toEqual(["/pages/w2", "/menus/w2", "/status-pages/w2", "/rooms/w2", "/voice/w2", "/watch-complications/w2", "/http-actions", "/cameras"]);
     expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["status-pages"]);
   });
 
@@ -195,14 +195,15 @@ describe("the row as drawn", () => {
 
   it("sends a pick, a screen, Settings and the menu's toggle to the panel, Settings as a page on the shared watch", () => {
     const shut = row();
-    const [toggle, pages, , statusPages, , , httpActions, cameras, settings] = handlers(shut.tpl, "@click");
+    const [toggle, pages, , statusPages, , , complications, httpActions, cameras, settings] = handlers(shut.tpl, "@click");
     toggle!(click);
     pages!(click);
     statusPages!(click);
+    complications!(click);
     httpActions!(click);
     cameras!(click);
     settings!(click);
-    expect(shut.calls).toEqual(["menu:true", "go:/pages/w1", "go:/status-pages/w1", "go:/http-actions", "go:/cameras", "go:/settings/w1"]);
+    expect(shut.calls).toEqual(["menu:true", "go:/pages/w1", "go:/status-pages/w1", "go:/watch-complications/w1", "go:/http-actions", "go:/cameras", "go:/settings/w1"]);
     expect(shut.text).toContain("href=/wrist-assistant/settings/w1");
 
     const open = row({ menuOpen: true });

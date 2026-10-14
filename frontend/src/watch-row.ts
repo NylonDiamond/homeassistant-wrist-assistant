@@ -173,6 +173,7 @@ export const WATCH_SCREEN_LOOK: Record<WatchScreenId, { icon: UiIconName; hue: s
   "control-center": { icon: "tap", hue: "var(--wa-hue-orange)" },
   "rooms": { icon: "home", hue: "var(--wa-hue-pink)" },
   "voice": { icon: "mic", hue: "var(--wa-hue-red)" },
+  "watch-complications": { icon: "gauge", hue: "var(--wa-hue-blue)" },
   "http-actions": { icon: "globe", hue: "var(--wa-hue-blue)" },
   "cameras": { icon: "image", hue: "var(--wa-hue-grey)" },
   "settings": { icon: "sliders", hue: "var(--wa-hue-grey)" },

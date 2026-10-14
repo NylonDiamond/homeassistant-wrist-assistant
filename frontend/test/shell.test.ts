@@ -3,6 +3,7 @@
 // editor's keys are live, and the tab bar itself, flattened to text.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { watchComplicationsRouteOwner } from "../src/watch-complications.js";
 import {
   COMPLICATIONS_PATH,
   HOME_PATH,
@@ -76,8 +77,8 @@ describe("tabOfRoute", () => {
 });
 
 describe("watch screens", () => {
-  it("lists the eight screens in Home's order", () => {
-    expect(WATCH_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "HTTP actions", "Cameras"]);
+  it("lists the nine screens in Home's order", () => {
+    expect(WATCH_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Complications", "HTTP actions", "Cameras"]);
   });
 
   it("finds the screen a route is on", () => {
@@ -91,7 +92,7 @@ describe("watch screens", () => {
 
   it("builds an address each screen's own reader gives the watch back from", () => {
     const readers = [watchPagesRouteOwner, watchMenusRouteOwner, watchStatusPagesRouteOwner,
-      watchControlCenterRouteOwner, watchRoomsRouteOwner, watchVoiceRouteOwner];
+      watchControlCenterRouteOwner, watchRoomsRouteOwner, watchVoiceRouteOwner, watchComplicationsRouteOwner];
     const own = WATCH_SCREENS.filter((screen) => screen.shared !== true);
     expect(own).toHaveLength(readers.length);
     own.forEach((screen, i) => {
@@ -118,7 +119,7 @@ describe("watch screens", () => {
       id: "cameras", label: "Cameras", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.",
       path: WATCH_CAMERAS_PATH, shared: true,
     });
-    expect(watchScreenOf(at("/cameras"))).toBe(WATCH_SCREENS[7]);
+    expect(watchScreenOf(at("/cameras"))).toBe(WATCH_SCREENS[8]);
   });
 
   it("writes each blurb to follow the screen's name as one plain sentence", () => {

@@ -422,7 +422,7 @@ import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";
 import { type PairChoice, pairChoiceNote, pairNextStatus, pairedFactsLine } from "./pair-flow.js";
-import { settingsWatches } from "./watch-settings.js";
+import { settingsWatches, watchName } from "./watch-settings.js";
 import {
   formButtonStyles,
   formEntityStyles,
@@ -444,6 +444,7 @@ import { dropWatchControlCenterDrafts, isWatchControlCenterRoute, renderWatchCon
 import { dropWatchRoomsDrafts, isWatchRoomsRoute, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles } from "./watch-rooms/hook.js";
 import { dropWatchHttpActionsDrafts, isWatchHttpActionsRoute, renderWatchHttpActionsView, watchHttpActionsDirty } from "./watch-http-actions/hook.js";
 import { dropWatchCamerasDrafts, isWatchCamerasRoute, renderWatchCamerasView, watchCamerasDirty } from "./watch-cameras/hook.js";
+import { NOT_ON_WATCH_NOTE, isWatchComplicationsRoute, splitForWatch, watchComplicationsLead, watchComplicationsStyles } from "./watch-complications.js";
 import {
   COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, editorKeysLive, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
   panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, type WatchScreen, watchScreenOf, watchScreenPath,
@@ -658,6 +659,10 @@ type PickerItem =
 
 /** One row of the header picker: one complication, on however many devices. */
 type PickerRow = PickerListRow<PickerItem>;
+
+/** The shapes a watch face draws: a shelved design with none of them is a
+ * phone design, left off the Watch app's Complications screen. */
+const WATCH_SHAPES: readonly string[] = ["rectangular", "circular", "corner", "inline"];
 
 /** The shapes one row draws, read off whichever copy the row opens. */
 function familiesOfItem(item: PickerItem): readonly string[] {
@@ -6032,7 +6037,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, watchRowStyles, headBarStyles, listPageStyles, helpSheetStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, watchRowStyles, headBarStyles, listPageStyles, watchComplicationsStyles, helpSheetStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -6528,6 +6533,11 @@ export class WristAssistantPanel extends LitElement {
     }
     // Home counts every device's complications, so coming back to it reads
     // the other devices' lists again, the way opening the list does.
+    if (changed.has("route") && isWatchComplicationsRoute(this.route)
+      && !isWatchComplicationsRoute(changed.get("route") as PanelRoute | undefined) && this.owners.length > 0) {
+      if (this.pickerSelecting) this.setPickerSelecting(false);
+      if (!this.ownerBusy) void this.loadOtherLists();
+    }
     if (changed.has("route") && tabOfRoute(this.route) === "home" && changed.get("route") !== undefined
       && tabOfRoute(changed.get("route") as PanelRoute | undefined) !== "home" && this.owners.length > 0) {
       void this.loadOtherLists();
@@ -11272,6 +11282,7 @@ export class WristAssistantPanel extends LitElement {
     }
     // Cameras, on `/cameras`: how each camera is framed in alerts, which is
     // the camera's own in Home Assistant, so it too is handed no watch.
+    if (isWatchComplicationsRoute(this.route)) return this.withWatchRow(this.renderWatchComplications(watch));
     if (isWatchCamerasRoute(this.route)) {
       return this.withWatchRow(renderWatchCamerasView({
         hass: this.hass, narrow: this.narrow,
@@ -12421,8 +12432,12 @@ export class WristAssistantPanel extends LitElement {
     // The dialog shuts first. From the list page, or a recent card on Home,
     // there is no dialog to shut.
     if (this.pickerOpen) this.togglePicker(false);
+    // From the Watch app's Complications screen the editor is on the
+    // Complications tab, so the panel moves there once the design is open.
+    const fromWatch = isWatchComplicationsRoute(this.route);
     if (target === this.ownerId) {
       this.selectRecord(this.records.find((r) => r.id === record.id) ?? record);
+      if (fromWatch) this.goTo(COMPLICATIONS_PATH);
       return;
     }
     await this.selectOwner(target);
@@ -12431,6 +12446,7 @@ export class WristAssistantPanel extends LitElement {
     if (this.ownerId !== target) return;
     // Prefer the copy the switch just loaded: it carries the current revision.
     this.selectRecord(this.records.find((r) => r.id === record.id) ?? record);
+    if (fromWatch) this.goTo(COMPLICATIONS_PATH);
   }
 
   /** New from inside the picker. One button, whatever the chips are on: the
@@ -14040,6 +14056,76 @@ export class WristAssistantPanel extends LitElement {
       this.startListsAsked = true;
       if (!this.ownerBusy) void this.loadOtherLists();
     }
+  }
+
+  /**
+   * The Watch app's Complications screen: the designs on the shared watch,
+   * then every other one under "Not on this watch". The cards are the
+   * Complications tab's own, so Devices, Hide and Delete work the same, and
+   * a card opens its design in that tab's editor. Ticking this watch in a
+   * card's Devices menu moves the card up into the first list.
+   */
+  private renderWatchComplications(watchId: string | undefined) {
+    const watches = settingsWatches(this.owners);
+    const watch = watches.find((w) => w.owner_watch_id === watchId);
+    if (watch === undefined) {
+      const loading = !this.linkReady && this.owners.length === 0;
+      return html`<div class="wc-page"><div class="wc-wrap">
+        <p class="wc-empty">${loading ? "Loading…" : "No watch has connected yet. Pair one in Settings to see its complications here."}</p>
+      </div></div>`;
+    }
+    const ready = listsReady({
+      devicesLoaded: this.linkReady && this.loadError === undefined,
+      ownerBusy: this.ownerBusy,
+      ownerId: this.ownerId,
+      otherListsOwner: this.otherListsOwner,
+      otherListsRead: this.otherListsRead,
+    });
+    const name = watchName(watch, watches);
+    const devices = this.pickerDevices();
+    const { on, off } = splitForWatch(this.pickerRows(), watch.owner_watch_id, {
+      isWatch: (ownerId) => deviceKindOf(this.ownerOf(ownerId)) === "watch",
+      shelfFitsWatch: (row) => familiesOfItem(row.open.item).some((f) => WATCH_SHAPES.includes(f)),
+    });
+    const full = this.freeSlot() < 0;
+    // A card not on this watch draws the copy it has, on its own device.
+    const offBoxes = () => {
+      const byOwner = new Map<string, PickerRow[]>();
+      for (const { row, at } of off) byOwner.set(at, [...(byOwner.get(at) ?? []), row]);
+      // A heading per device only when there is more than one, so the shape
+      // boxes under each say whose they are.
+      const many = byOwner.size > 1;
+      return [...byOwner].map(([at, rows]) => html`<div class="wc-dev">
+        ${many ? html`<h3 class="wc-dev-name">${uiIcon(tabIcon(deviceKindOf(this.ownerOf(at))))}<span>${devices.find((dv) => dv.ownerId === at)?.label ?? this.ownerName(at)}</span></h3>` : nothing}
+        ${this.renderPickerGroups(sortPickerRows(rows, devices, at), at, undefined)}
+      </div>`);
+    };
+    return html`<div class="wc-page"><div class="wc-wrap">
+      <div class="wc-head">
+        <div class="wc-head-text">
+          <h1>Complications on ${name}</h1>
+          <p class="wc-lead">${ready ? watchComplicationsLead(on.length, name) : "Reading every device's list…"}</p>
+        </div>
+        <div class="wc-acts">
+          <button class="cl-btn" title="See every complication and widget in the home"
+            @click=${() => this.goTo(COMPLICATIONS_PATH)}>${uiIcon("compact")}<span>All complications</span></button>
+          <button class="cl-btn cl-new" ?disabled=${full || this.ownerBusy}
+            title=${full ? "Every device is full. Delete a complication first." : "Make a new complication"}
+            @click=${() => { this.goTo(COMPLICATIONS_PATH); this.openNewDialog(); }}>${uiIcon("plus")}<span>New complication</span></button>
+        </div>
+      </div>
+      <section class="wc-sec on" aria-label=${`On ${name}`}>
+        <div class="wc-sec-top"><h2><i aria-hidden="true"></i>On this watch</h2><span class="wc-sec-count">${on.length}</span></div>
+        ${on.length === 0
+          ? html`<div class="wc-empty">${ready ? "Nothing yet." : "Loading…"}</div>`
+          : this.renderPickerGroups(sortPickerRows(on, devices, watch.owner_watch_id), watch.owner_watch_id, undefined)}
+      </section>
+      ${off.length === 0 ? nothing : html`<section class="wc-sec off" aria-label="Not on this watch">
+        <div class="wc-sec-top"><h2><i aria-hidden="true"></i>Not on this watch</h2><span class="wc-sec-count">${off.length}</span>
+          <p class="wc-sec-note">${NOT_ON_WATCH_NOTE}</p></div>
+        ${offBoxes()}
+      </section>`}
+    </div></div>`;
   }
 
   /** The list page has gone: a design opened, or another tab. It lets go of

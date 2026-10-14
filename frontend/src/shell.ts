@@ -18,6 +18,9 @@
 //                       own and shared likewise
 //   /settings, with an optional /<owner_watch_id>
 //                       the Watch app's Settings page
+//   /watch-complications, with an optional /<owner_watch_id>
+//                       the complications on one watch, a view of the
+//                       Complications tab's cards
 //
 // Every watch address is the one the iPhone app builds for "Open in Home
 // Assistant", unchanged; this file only reads them.
@@ -28,6 +31,7 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import { uiIcon } from "./ui-icons.js";
 import { WATCH_CAMERAS_PATH, isWatchCamerasRoute } from "./watch-cameras/hook.js";
+import { WATCH_COMPLICATIONS_PATH, isWatchComplicationsRoute } from "./watch-complications.js";
 import { WATCH_CONTROL_CENTER_PATH, isWatchControlCenterRoute } from "./watch-control-center/hook.js";
 import { WATCH_HTTP_ACTIONS_PATH, isWatchHttpActionsRoute } from "./watch-http-actions/hook.js";
 import { WATCH_MENUS_PATH, isWatchMenusRoute } from "./watch-menus/hook.js";
@@ -52,7 +56,7 @@ export const TAB_LABEL: Record<PanelTab, string> = {
 /** One of the watch app's screens, as Home lists them and the watch row
  * walks them. */
 export interface WatchScreen {
-  id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "voice" | "http-actions" | "cameras" | "settings";
+  id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "voice" | "watch-complications" | "http-actions" | "cameras" | "settings";
   label: string;
   /** What the screen is, written to follow its name as one sentence: the
    * Watch app row's line under it reads "**Pages** are the screens you swipe
@@ -77,6 +81,7 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
   { id: "control-center", label: "Control Center", blurb: "The list of controls", path: WATCH_CONTROL_CENTER_PATH, retired: true },
   { id: "rooms", label: "Rooms", blurb: "let the watch open a room's page when you are in that room, and set up point control: point the watch at a thing to control it.", path: WATCH_ROOMS_PATH },
   { id: "voice", label: "Voice", blurb: "sets how the watch listens and speaks: the Assist and Speak defaults, your saved phrases and the watch voice.", path: WATCH_VOICE_PATH },
+  { id: "watch-complications", label: "Complications", blurb: "are what this watch's faces show, with every other design you could add under them, made in the Complications tab.", path: WATCH_COMPLICATIONS_PATH },
   { id: "http-actions", label: "HTTP actions", blurb: "are web requests Home Assistant sends when a watch runs one from a tile, a menu or a complication, shared by every watch.", path: WATCH_HTTP_ACTIONS_PATH, shared: true },
   { id: "cameras", label: "Cameras", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.", path: WATCH_CAMERAS_PATH, shared: true },
 ];
@@ -103,14 +108,16 @@ export function watchScreenPath(screen: WatchScreen, owner?: string): string {
 
 /** The watch screen a route is on, or undefined off the Watch app. */
 export function watchScreenOf(route: PanelRoute | undefined): WatchScreen | undefined {
-  if (isWatchPagesRoute(route)) return WATCH_SCREENS[0];
-  if (isWatchMenusRoute(route)) return WATCH_SCREENS[1];
-  if (isWatchStatusPagesRoute(route)) return WATCH_SCREENS[2];
-  if (isWatchControlCenterRoute(route)) return WATCH_SCREENS[3];
-  if (isWatchRoomsRoute(route)) return WATCH_SCREENS[4];
-  if (isWatchVoiceRoute(route)) return WATCH_SCREENS[5];
-  if (isWatchHttpActionsRoute(route)) return WATCH_SCREENS[6];
-  if (isWatchCamerasRoute(route)) return WATCH_SCREENS[7];
+  const of = (id: WatchScreen["id"]) => WATCH_SCREENS.find((screen) => screen.id === id);
+  if (isWatchPagesRoute(route)) return of("pages");
+  if (isWatchMenusRoute(route)) return of("menus");
+  if (isWatchStatusPagesRoute(route)) return of("status-pages");
+  if (isWatchControlCenterRoute(route)) return of("control-center");
+  if (isWatchRoomsRoute(route)) return of("rooms");
+  if (isWatchVoiceRoute(route)) return of("voice");
+  if (isWatchComplicationsRoute(route)) return of("watch-complications");
+  if (isWatchHttpActionsRoute(route)) return of("http-actions");
+  if (isWatchCamerasRoute(route)) return of("cameras");
   if (isWatchSettingsRoute(route)) return WATCH_SETTINGS_SCREEN;
   return undefined;
 }
@@ -152,6 +159,7 @@ export const PANEL_TABS: readonly PanelTab[] = ["home", "watch", "complications"
 const SUB_PATH = new RegExp(`(${[
   COMPLICATIONS_PATH, WATCH_PAGES_PATH, WATCH_MENUS_PATH, WATCH_VOICE_PATH,
   WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH, WATCH_HTTP_ACTIONS_PATH, WATCH_CAMERAS_PATH, WATCH_SETTINGS_PATH,
+  WATCH_COMPLICATIONS_PATH,
 ].join("|")})(/.*)?$`);
 
 /** The panel's own address without any tab's sub-path. Without a route (a
