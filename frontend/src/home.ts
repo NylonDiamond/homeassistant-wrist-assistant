@@ -824,6 +824,18 @@ export const homeStyles = css`
     overflow: hidden; pointer-events: none;
   }
   .hb-page { flex: none; display: block; line-height: 0; }
+  /* The Complications door's strip: each complication's card picture on a
+     black tile, all one height, a round one cut to a circle. */
+  .hb-door-comps {
+    flex: 1; min-width: 0; height: var(--hb-comp-h); display: flex; flex-wrap: wrap; align-content: flex-start; gap: 0 5px;
+    overflow: hidden; pointer-events: none;
+  }
+  .hb-comp {
+    flex: none; display: block; height: var(--hb-comp-h); box-sizing: border-box; border-radius: 6px;
+    background-color: var(--wa-art-screen); background-repeat: no-repeat; background-position: center; background-size: contain;
+    box-shadow: 0 0 0 1px var(--wa-line-strong);
+  }
+  .hb-comp.round { border-radius: 50%; }
   .hb-page .wa-watch { padding: 0; margin: 0; background: none; box-shadow: 0 0 0 1px var(--wa-line-strong); border-radius: var(--wf-radius, 6px); }
   .hb-page .wa-watch::before, .hb-page .wa-watch::after { display: none; }
   .hb-page .wa-watch > .wp-screen { max-height: var(--hb-screen-h); }

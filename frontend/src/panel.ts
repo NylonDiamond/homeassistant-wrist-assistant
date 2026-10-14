@@ -660,6 +660,13 @@ type PickerItem =
 /** One row of the header picker: one complication, on however many devices. */
 type PickerRow = PickerListRow<PickerItem>;
 
+/** How many complications a device's Complications door on Home draws, and
+ * how tall each, in CSS pixels. A tile that does not fit the door's width
+ * wraps to a second line, which the strip's one-tile height hides, so no
+ * tile is ever cut in half. */
+const HOME_COMP_THUMBS = 8;
+const HOME_COMP_THUMB_HEIGHT = 34;
+
 /** The shapes a watch face draws: a shelved design with none of them is a
  * phone design, left off the Watch app's Complications screen. */
 const WATCH_SHAPES: readonly string[] = ["rectangular", "circular", "corner", "inline"];
@@ -19701,6 +19708,31 @@ export class WristAssistantPanel extends LitElement {
     return { circles: round, ...(rect === undefined ? {} : { rect }), ...(widgets.length === 0 ? {} : { widgets }) };
   }
 
+  /** The pictures on a device's Complications door on Home: its saved
+   * complications in seat order, those with a current card picture, at most
+   * `HOME_COMP_THUMBS`. On an iPhone the Home Screen widgets lead, since they
+   * are what it mostly holds. */
+  private homeCompThumbs(ownerId: string, kind: "watch" | "iphone"): { picture: HomeFacePicture; round: boolean; name: string }[] {
+    const copies = this.pickerRows().flatMap((r) => r.copies).filter((c) => c.ownerId === ownerId).sort((a, b) => a.slot - b.slot);
+    const out: { picture: HomeFacePicture; round: boolean; name: string; rank: number }[] = [];
+    for (const c of copies) {
+      if (c.item.kind !== "record") continue;
+      const record = c.item.record;
+      const key = `${ownerId}|${record.id}`;
+      const preview = this.cardPreviews.get(key);
+      if (!preview || !this.previewIsCurrent(preview, record) || this.cardPictures.failing(key)) continue;
+      const url = this.cardPictures.urlFor(key, cardPreviewAddress(ownerId, record.id, record.revision));
+      if (url === undefined) continue;
+      const family = preview.family;
+      const round = family === "circular" || family === "corner";
+      const widget = family === "small" || family === "medium" || family === "large" || family === "xlarge";
+      const picture: HomeFacePicture = { url, width: preview.width, height: preview.height, ...(preview.focus ? { focus: preview.focus } : {}) };
+      out.push({ picture, round, name: c.name, rank: kind === "iphone" && widget ? 0 : 1 });
+    }
+    return out.sort((a, b) => a.rank - b.rank).slice(0, HOME_COMP_THUMBS)
+      .map(({ picture, round, name }) => ({ picture, round, name }));
+  }
+
   /** Pick a device on Home, starting on its overview, or on its Remove step
    * for a waiting line or row whose user was deleted. */
   private openHomeDevice(ownerId: string, forget = false) {
@@ -19873,10 +19905,35 @@ export class WristAssistantPanel extends LitElement {
         })}</span>`)}
       </span>`;
     };
+    // The Complications door (Widgets on an iPhone) draws the device's first
+    // complications, small, the way the Pages door draws its pages: each
+    // card picture on a black tile of one height, a round one cut to its
+    // disc, a wide one at its own proportions.
+    const compsStrip = () => {
+      const thumbs = this.homeCompThumbs(ownerId, row.kind);
+      if (thumbs.length === 0) return undefined;
+      const h = HOME_COMP_THUMB_HEIGHT;
+      return html`<span class="hb-door-comps" aria-hidden="true" style=${`--hb-comp-h:${h}px`}>
+        ${thumbs.map(({ picture: p, round, name }) => {
+          if (round) {
+            const d = p.focus?.diameter ?? Math.max(p.width, p.height);
+            const s = h / d;
+            const fx = p.focus?.cx ?? p.width / 2;
+            const fy = p.focus?.cy ?? p.height / 2;
+            return html`<span class="hb-comp round" title=${name} style=${`width:${h}px;background-image:url("${p.url}");`
+              + `background-size:${(p.width * s).toFixed(1)}px ${(p.height * s).toFixed(1)}px;`
+              + `background-position:${(h / 2 - fx * s).toFixed(1)}px ${(h / 2 - fy * s).toFixed(1)}px`}></span>`;
+          }
+          const w = Math.min(h * 2.6, Math.max(h, h * p.width / Math.max(1, p.height)));
+          return html`<span class="hb-comp" title=${name} style=${`width:${w.toFixed(1)}px;background-image:url("${p.url}")`}></span>`;
+        })}
+      </span>`;
+    };
     const door = (t: DeviceSheetTab) => {
       const look = homeDoorLook(t, row.kind);
       const n = t.kind === "list" || t.count !== undefined ? count(t) : undefined;
-      const strip = t.kind === "screen" && t.screen.id === "pages" ? pagesStrip() : undefined;
+      const strip = t.kind === "screen" && t.screen.id === "pages" ? pagesStrip()
+        : t.kind === "list" && t.filter === "all" ? compsStrip() : undefined;
       const body = html`<span class="hb-door-top">
           <span class="hb-door-chip" aria-hidden="true">${uiIcon(look.icon)}</span>
           <span class="hb-door-l">${t.label}</span>
