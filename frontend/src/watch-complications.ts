@@ -114,20 +114,16 @@ export const watchComplicationsStyles = css`
      for what is not. */
   .wc-sec {
     --c: var(--wa-line-strong);
-    display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px;
+    display: flex; flex-direction: column; gap: 10px; padding: 0 12px 12px; overflow: hidden;
     border-radius: var(--wa-r-lg);
     background:
       linear-gradient(var(--wa-card), var(--wa-card)) padding-box,
       linear-gradient(140deg, var(--c) 0%, color-mix(in srgb, var(--c) 45%, transparent) 30%,
         color-mix(in srgb, var(--c) 30%, var(--wa-line-strong)) 62%, color-mix(in srgb, var(--c) 35%, transparent) 100%) border-box;
-    border: 1.5px solid transparent;
+    border: 2px solid transparent;
   }
   .wc-sec.on { --c: var(--wa-hue-green); }
   .wc-sec.off { --c: var(--wa-hue-red); }
-  .wc-sec-top h2 > i {
-    display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; vertical-align: 1px;
-    background: var(--c);
-  }
   /* Compact cards: as many columns as fit, each sized to its shape, small
      names and tight padding. Two classes deep, so the Complications tab's
      fixed column counts do not win it back. */
@@ -141,11 +137,26 @@ export const watchComplicationsStyles = css`
   .wc-page .pk-card { padding: 6px; border-radius: 8px; }
   .wc-page .pk-card-top { margin-bottom: 5px; min-height: 16px; gap: 5px; }
   .wc-page .pk-card-name { font-size: 11.5px; }
-  .wc-sec-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
-  .wc-sec-top h2 {
-    margin: 0; font-size: 12px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-label);
+  /* Each list's head is a band across the card's top, washed in its hue from
+     the left: a chip with a tick or a plus, the name large, a line on what
+     the list is, and the count in a pill of the same hue. */
+  .wc-sec-top {
+    display: flex; align-items: center; gap: 12px; margin: 0 -12px; padding: 12px 14px;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--c) 16%, transparent), transparent 70%);
+    border-bottom: 1px solid color-mix(in srgb, var(--c) 28%, var(--wa-line));
   }
-  .wc-sec-count { font-size: 12px; color: var(--wa-muted); }
+  .wc-sec-chip {
+    flex: none; display: grid; place-items: center; width: 32px; height: 32px; box-sizing: border-box; border-radius: 9px;
+    color: var(--c); border: 1.5px solid var(--c); background: color-mix(in srgb, var(--c) 12%, transparent);
+  }
+  .wc-sec-chip svg.ui-icon { width: 17px; height: 17px; }
+  .wc-sec-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .wc-sec-top h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; color: var(--wa-ink); }
+  .wc-sec-count {
+    flex: none; min-width: 30px; box-sizing: border-box; padding: 3px 10px; border-radius: 999px; text-align: center;
+    font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums;
+    color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 60%, transparent);
+  }
   .wc-sec-note { margin: 0; font-size: 12.5px; color: var(--wa-muted); }
   .wc-dev { display: flex; flex-direction: column; gap: 8px; }
   .wc-dev + .wc-dev { margin-top: 6px; }
@@ -157,6 +168,7 @@ export const watchComplicationsStyles = css`
   .wc-sec.off .pk-card:not(:hover):not(.over) { opacity: .75; }
   @media (max-width: 640px) {
     .wc-page { padding: 14px 12px 32px; }
-    .wc-sec { padding: 10px; }
+    .wc-sec { padding: 0 10px 10px; }
+    .wc-sec-top { margin: 0 -10px; padding: 10px 12px; }
   }
 `;

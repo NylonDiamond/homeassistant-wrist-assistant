@@ -14131,14 +14131,21 @@ export class WristAssistantPanel extends LitElement {
         </div>
       </div>
       <section class="wc-sec on" aria-label=${`On ${name}`}>
-        <div class="wc-sec-top"><h2><i aria-hidden="true"></i>On this watch</h2><span class="wc-sec-count">${on.length}</span></div>
+        <div class="wc-sec-top">
+          <span class="wc-sec-chip" aria-hidden="true">${uiIcon("check")}</span>
+          <span class="wc-sec-t"><h2>On this watch</h2><span class="wc-sec-note">Ready to pick when you edit a watch face.</span></span>
+          <span class="wc-sec-count">${on.length}</span>
+        </div>
         ${on.length === 0
           ? html`<div class="wc-empty">${ready ? "Nothing yet." : "Loading…"}</div>`
           : this.renderPickerGroups(sortPickerRows(on, devices, watch.owner_watch_id), watch.owner_watch_id, undefined)}
       </section>
       ${off.length === 0 ? nothing : html`<section class="wc-sec off" aria-label="Not on this watch">
-        <div class="wc-sec-top"><h2><i aria-hidden="true"></i>Not on this watch</h2><span class="wc-sec-count">${off.length}</span>
-          <p class="wc-sec-note">${NOT_ON_WATCH_NOTE}</p></div>
+        <div class="wc-sec-top">
+          <span class="wc-sec-chip" aria-hidden="true">${uiIcon("plus")}</span>
+          <span class="wc-sec-t"><h2>Not on this watch</h2><span class="wc-sec-note">${NOT_ON_WATCH_NOTE}</span></span>
+          <span class="wc-sec-count">${off.length}</span>
+        </div>
         ${offBoxes()}
       </section>`}
     </div></div>`;
