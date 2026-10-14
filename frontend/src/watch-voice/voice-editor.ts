@@ -30,7 +30,7 @@
 
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
-import { type ColumnWidths, beginColumnDrag, fitColumnWidths, loadColumnWidths, saveColumnWidths } from "../column-split.js";
+import { type ColumnWidths, beginColumnDrag, fitSettingsFirst, loadColumnWidths, saveColumnWidths } from "../column-split.js";
 import {
   canvasStyles,
   chromeTokens,
@@ -145,9 +145,9 @@ const DELIVERY_POLL_MS = 15_000;
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = IS_MAC ? "⌘" : "Ctrl+";
 
-const VE_COLUMNS = { min: 200, max: 720, middleMin: 320 } as const;
-const VE_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 340 };
-export const VE_COLUMNS_KEY = "wrist-assistant-panel.voice.columns.v1";
+const VE_COLUMNS = { min: 200, max: 720, middleMin: 400 } as const;
+const VE_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 0 };
+export const VE_COLUMNS_KEY = "wrist-assistant-panel.voice.columns.v2";
 const VE_GRID_CHROME = 2 * 8 + 4 * 2;
 const VE_STACK_WIDTH = 820;
 
@@ -1041,7 +1041,7 @@ export class WaVoiceEditor extends LitElement {
 
   private fittedColumns(): ColumnWidths {
     if (this.hostWidth > 0 && this.hostWidth <= VE_STACK_WIDTH) return this.columns;
-    return fitColumnWidths(this.hostWidth - VE_GRID_CHROME, this.columns, VE_COLUMNS);
+    return fitSettingsFirst(this.hostWidth - VE_GRID_CHROME, this.columns, VE_COLUMNS);
   }
 
   private renderGutter(side: "left" | "right"): TemplateResult {
@@ -1053,6 +1053,9 @@ export class WaVoiceEditor extends LitElement {
         beginColumnDrag(e, {
           side,
           base: side === "left" ? shown.left : shown.right,
+          // The settings column sits in the middle: its gutter is on its
+          // right, so it grows as the pointer moves right.
+          growsRight: true,
           limits: VE_COLUMNS,
           onWidth: (width) => { this.columns = { ...this.columns, [side]: width }; },
           onEnd: () => saveColumnWidths(VE_COLUMNS_KEY, this.columns),
@@ -1145,18 +1148,18 @@ export class WaVoiceEditor extends LitElement {
     const view = this.hostHeight > 0 ? `--pe-view-h:${this.hostHeight}px;` : "";
     const fresh = record.revision <= 0;
     return html`${fresh && this.barHost === undefined ? renderNewWatchBanner() : nothing}
-    <div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
+    <div class="layout pe-layout settings-first ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
       <div class="column left">
         ${renderVoiceCard(host)}
         ${renderPhrasesCard(host)}
       </div>
       ${this.renderGutter("left")}
-      <div class="column canvas">
-        ${this.renderStage(host, watches)}
-      </div>
-      ${this.renderGutter("right")}
       <div class="column inspector card">
         ${renderVoiceInspector(host)}
+      </div>
+      ${this.renderGutter("right")}
+      <div class="column canvas">
+        ${this.renderStage(host, watches)}
       </div>
     </div>
     ${fresh ? nothing : this.renderFoot(record, draft.document, draft.dirty)}`;

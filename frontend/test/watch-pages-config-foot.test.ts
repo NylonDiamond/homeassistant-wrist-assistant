@@ -237,17 +237,18 @@ describe("the page editor", () => {
     }
     const canvas = text.indexOf(`<div class="column canvas">`);
     const inspector = text.indexOf(`<div class="column inspector card">`);
-    expect(canvas).toBeGreaterThan(-1);
-    expect(inspector).toBeGreaterThan(canvas);
+    // Settings first: the inspector comes before the watch.
+    expect(inspector).toBeGreaterThan(-1);
+    expect(canvas).toBeGreaterThan(inspector);
     // In the canvas card: the head, then the stage, with no page strip.
-    const card = text.slice(canvas, inspector);
+    const card = text.slice(canvas, text.indexOf(`<footer class="cf-bar"`));
     const head = card.indexOf(`<div class="cv-head">`);
     const stage = card.indexOf(`<div class="stage-area pe-stage-area">`);
     expect(head).toBeGreaterThan(-1);
     expect(stage).toBeGreaterThan(head);
     expect(card).not.toContain("pe-pstrip");
     expect(card).not.toContain(`class="sec name-sec"`);
-    const side = text.slice(inspector, text.indexOf(`<footer class="cf-bar"`));
+    const side = text.slice(inspector, canvas);
     expect(side).toContain(`<div class="insp-head">`);
     expect(side).toContain(`>Page</span><span class="nm"`);
     expect(side).not.toContain(`class="sec name-sec"`);

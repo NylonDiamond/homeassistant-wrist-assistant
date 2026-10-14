@@ -801,7 +801,7 @@ describe("the stacked layout", () => {
     const reset = css.indexOf(".pe-layout > .column.left, .pe-layout > .column.canvas, .pe-layout > .column.inspector {");
     expect(sticky).toBeGreaterThan(-1);
     expect(reset).toBeGreaterThan(sticky);
-    expect(editor().body()).toContain(`<div class="layout pe-layout cols-3"`);
+    expect(editor().body()).toContain(`<div class="layout pe-layout settings-first cols-3"`);
   });
 });
 

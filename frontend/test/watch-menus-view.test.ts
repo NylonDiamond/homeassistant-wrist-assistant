@@ -428,7 +428,7 @@ describe("the canvas", () => {
     expect(text).toContain(`<div class="under"><span class="tail">${MENU_STAGE_HINT}</span></div>`);
     expect(text).not.toContain(`class="values-foot"`);
     // The three columns, with the gutters between them.
-    expect(text).toContain(`<div class="layout pe-layout cols-3"`);
+    expect(text).toContain(`<div class="layout pe-layout settings-first cols-3"`);
     expect(count(text, `class="gutter `)).toBe(2);
     expect(text).toContain(`class="card lc me-menus-card"`);
     expect(text).toContain(`class="card lc me-slots-card"`);
@@ -460,7 +460,7 @@ describe("the canvas", () => {
   it("remembers the zoom under the menus' own key, and the column widths under theirs", () => {
     expect(MENUS_ZOOM_KEY).toBe("wrist-assistant-panel.menus.zoom.v1");
     expect(MENUS_ZOOM_KEY).not.toBe(STAGE_ZOOM_KEY);
-    expect(ME_COLUMNS_KEY).toBe("wrist-assistant-panel.menus.columns.v1");
+    expect(ME_COLUMNS_KEY).toBe("wrist-assistant-panel.menus.columns.v2");
     const store = new Map<string, string>();
     const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); } };
     expect(loadMenusZoom(storage)).toBeUndefined();

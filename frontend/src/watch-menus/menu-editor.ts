@@ -43,7 +43,7 @@
 
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
-import { type ColumnWidths, beginColumnDrag, fitColumnWidths, loadColumnWidths, saveColumnWidths } from "../column-split.js";
+import { type ColumnWidths, beginColumnDrag, fitSettingsFirst, loadColumnWidths, saveColumnWidths } from "../column-split.js";
 import {
   canvasStyles,
   chromeTokens,
@@ -218,9 +218,9 @@ const MOD = IS_MAC ? "⌘" : "Ctrl+";
 
 /** The Menus and Slots column and the inspector, each widened by dragging
  * the gutter beside it, with the page editor's limits and defaults. */
-const ME_COLUMNS = { min: 200, max: 720, middleMin: 320 } as const;
-const ME_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 320 };
-export const ME_COLUMNS_KEY = "wrist-assistant-panel.menus.columns.v1";
+const ME_COLUMNS = { min: 200, max: 720, middleMin: 400 } as const;
+const ME_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 0 };
+export const ME_COLUMNS_KEY = "wrist-assistant-panel.menus.columns.v2";
 /** The grid's own cost beside its three columns, CSS px: two 8px gutters and
  * the 2px gap on each side of each. */
 const ME_GRID_CHROME = 2 * 8 + 4 * 2;
@@ -1557,7 +1557,7 @@ export class WaMenuEditor extends LitElement {
   /** The side widths the grid can afford right now. */
   private fittedColumns(): ColumnWidths {
     if (this.hostWidth > 0 && this.hostWidth <= ME_STACK_WIDTH) return this.columns;
-    return fitColumnWidths(this.hostWidth - ME_GRID_CHROME, this.columns, ME_COLUMNS);
+    return fitSettingsFirst(this.hostWidth - ME_GRID_CHROME, this.columns, ME_COLUMNS);
   }
 
   private renderGutter(side: "left" | "right"): TemplateResult {
@@ -1570,6 +1570,9 @@ export class WaMenuEditor extends LitElement {
         beginColumnDrag(e, {
           side,
           base: side === "left" ? shown.left : shown.right,
+          // The settings column sits in the middle: its gutter is on its
+          // right, so it grows as the pointer moves right.
+          growsRight: true,
           limits: ME_COLUMNS,
           onWidth: (width) => { this.columns = { ...this.columns, [side]: width }; },
           onEnd: () => saveColumnWidths(ME_COLUMNS_KEY, this.columns),
@@ -1693,18 +1696,18 @@ export class WaMenuEditor extends LitElement {
     // scrolls as a whole and the side columns stick under the top bar.
     const fresh = record.revision <= 0;
     return html`${fresh && this.barHost === undefined ? renderNewWatchBanner() : nothing}
-    <div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
+    <div class="layout pe-layout settings-first ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
       <div class="column left">
         ${renderMenusCard(host)}
         ${renderSlotsCard(host)}
       </div>
       ${this.renderGutter("left")}
-      <div class="column canvas">
-        ${this.renderStage(host, watches)}
-      </div>
-      ${this.renderGutter("right")}
       <div class="column inspector card">
         ${renderMenuInspector(host)}
+      </div>
+      ${this.renderGutter("right")}
+      <div class="column canvas">
+        ${this.renderStage(host, watches)}
       </div>
     </div>
     ${fresh ? nothing : this.renderFoot(record, draft.document, draft.dirty)}`;
@@ -1840,7 +1843,7 @@ export class WaMenuEditor extends LitElement {
     /* The complication editor's three columns (editor-chrome.ts), laid out
        as the page editor lays them: the editor scrolls as a whole, the stage
        with it, and the side widths come in as custom properties already
-       fitted to the measured host width (fitColumnWidths). */
+       fitted to the measured host width (fitSettingsFirst). */
     .layout.pe-layout {
       flex: none; min-height: auto; overflow: visible; align-items: start; padding: 0;
       /* The room above the foot bar. */

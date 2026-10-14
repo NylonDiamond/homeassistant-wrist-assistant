@@ -28,7 +28,7 @@
 
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
-import { type ColumnWidths, beginColumnDrag, fitColumnWidths, loadColumnWidths, saveColumnWidths } from "../column-split.js";
+import { type ColumnWidths, beginColumnDrag, fitSettingsFirst, loadColumnWidths, saveColumnWidths } from "../column-split.js";
 import {
   canvasStyles,
   chromeTokens,
@@ -134,9 +134,9 @@ const MOD = IS_MAC ? "⌘" : "Ctrl+";
 
 /** The lists column and the inspector, each widened by dragging the gutter
  * beside it, with the page editor's limits and defaults. */
-const CC_COLUMNS = { min: 200, max: 720, middleMin: 320 } as const;
-const CC_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 340 };
-export const CC_COLUMNS_KEY = "wrist-assistant-panel.control-center.columns.v1";
+const CC_COLUMNS = { min: 200, max: 720, middleMin: 400 } as const;
+const CC_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 0 };
+export const CC_COLUMNS_KEY = "wrist-assistant-panel.control-center.columns.v2";
 /** The grid's own cost beside its three columns, CSS px. */
 const CC_GRID_CHROME = 2 * 8 + 4 * 2;
 /** At or below this content width the columns stack. */
@@ -1007,7 +1007,7 @@ export class WaControlCenterEditor extends LitElement {
 
   private fittedColumns(): ColumnWidths {
     if (this.hostWidth > 0 && this.hostWidth <= CC_STACK_WIDTH) return this.columns;
-    return fitColumnWidths(this.hostWidth - CC_GRID_CHROME, this.columns, CC_COLUMNS);
+    return fitSettingsFirst(this.hostWidth - CC_GRID_CHROME, this.columns, CC_COLUMNS);
   }
 
   private renderGutter(side: "left" | "right"): TemplateResult {
@@ -1019,6 +1019,9 @@ export class WaControlCenterEditor extends LitElement {
         beginColumnDrag(e, {
           side,
           base: side === "left" ? shown.left : shown.right,
+          // The settings column sits in the middle: its gutter is on its
+          // right, so it grows as the pointer moves right.
+          growsRight: true,
           limits: CC_COLUMNS,
           onWidth: (width) => { this.columns = { ...this.columns, [side]: width }; },
           onEnd: () => saveColumnWidths(CC_COLUMNS_KEY, this.columns),
@@ -1119,17 +1122,17 @@ export class WaControlCenterEditor extends LitElement {
     if (draft === undefined || host === undefined) return html`<div class="pe-empty">Loading…</div>`;
     const fit = this.fittedColumns();
     const view = this.hostHeight > 0 ? `--pe-view-h:${this.hostHeight}px;` : "";
-    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
+    return html`<div class="layout pe-layout settings-first ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
       <div class="column left">
         ${renderEntriesCard(host)}
       </div>
       ${this.renderGutter("left")}
-      <div class="column canvas">
-        ${this.renderStage(host, watches)}
-      </div>
-      ${this.renderGutter("right")}
       <div class="column inspector card">
         ${renderControlCenterInspector(host)}
+      </div>
+      ${this.renderGutter("right")}
+      <div class="column canvas">
+        ${this.renderStage(host, watches)}
       </div>
     </div>
     ${this.renderFoot(record, draft.document, draft.dirty)}`;

@@ -272,6 +272,13 @@ const columnsRun = css`
     }
     .layout.cols-2 > .column.inspector { grid-column: 1 / -1; }
     .layout.cols-2 > .gutter.right { display: none; }
+    /* The watch editors' order: the lists, the settings, then the watch.
+       A tile is picked and edited side by side, and the watch, which is
+       narrow, takes what is left (Jesse, 2026-10-13). The markup is in the
+       same order, so Tab follows the eye. */
+    .layout.settings-first {
+      grid-template-columns: var(--wa-left, 300px) 8px var(--wa-right, 460px) 8px minmax(0, 1fr);
+    }
     .layout.bare { grid-template-columns: minmax(0, 1fr); overflow: auto; }
     .layout.cols-1 { grid-template-columns: minmax(0, 1fr); overflow: auto; }
     .layout.cols-1 > .column { grid-column: auto; }

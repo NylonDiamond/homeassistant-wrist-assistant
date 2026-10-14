@@ -56,6 +56,25 @@ export function fitColumnWidths(available: number, want: ColumnWidths, limits: C
   return { left, right };
 }
 
+/** The watch editors' settings-first columns: the lists, then the settings,
+ * then the watch. Until the settings column is dragged (its stored width is
+ * 0), it takes what the lists and a watch-sized preview leave, within
+ * these bounds. */
+export const SETTINGS_AUTO = { preview: 460, min: 360, max: 640 } as const;
+
+/**
+ * `fitColumnWidths` for the settings-first order. `want.right` is the
+ * settings column; 0 means never dragged, so it is sized to leave the
+ * preview about `SETTINGS_AUTO.preview` wide. `limits.middleMin` is then the
+ * preview's floor, the last column taking what is left.
+ */
+export function fitSettingsFirst(available: number, want: ColumnWidths, limits: ColumnLimits): ColumnWidths {
+  if (want.right > 0) return fitColumnWidths(available, want, limits);
+  const room = available > 0 ? available - want.left - SETTINGS_AUTO.preview : SETTINGS_AUTO.min;
+  const right = Math.max(SETTINGS_AUTO.min, Math.min(SETTINGS_AUTO.max, Math.round(room)));
+  return fitColumnWidths(available, { left: want.left, right }, limits);
+}
+
 /** The browser's localStorage, or undefined where there is none (storage off,
  * or a test outside a browser). */
 export function browserStorage(): ColumnStorage | undefined {
@@ -102,6 +121,10 @@ export interface ColumnDrag {
    * the stored one makes the bar jump away from the pointer. */
   base: number;
   limits: Pick<ColumnLimits, "min" | "max">;
+  /** The column grows as the pointer moves right. Unset, the left column
+   * does and the right one grows leftward; the settings-first order's
+   * middle settings column sets it on its right-hand gutter. */
+  growsRight?: boolean;
   /** Each new width while the pointer moves. */
   onWidth(width: number): void;
   /** The drag is over: save. */
@@ -121,7 +144,7 @@ export function beginColumnDrag(start: PointerEvent, drag: ColumnDrag): void {
   const move = (ev: PointerEvent) => {
     if (ev.pointerId !== start.pointerId) return;
     const dx = ev.clientX - startX;
-    drag.onWidth(clampColumnWidth(drag.side === "left" ? drag.base + dx : drag.base - dx, drag.limits));
+    drag.onWidth(clampColumnWidth((drag.growsRight ?? drag.side === "left") ? drag.base + dx : drag.base - dx, drag.limits));
   };
   const finish = (ev: PointerEvent) => {
     if (ev.pointerId !== start.pointerId) return;

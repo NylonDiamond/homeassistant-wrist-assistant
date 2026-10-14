@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { type ColumnStorage, clampColumnWidth, fitColumnWidths, loadColumnWidths, saveColumnWidths } from "../src/column-split.js";
+import { type ColumnStorage, SETTINGS_AUTO, clampColumnWidth, fitColumnWidths, fitSettingsFirst, loadColumnWidths, saveColumnWidths } from "../src/column-split.js";
 
 const LIMITS = { min: 200, max: 720, middleMin: 320 };
 const DEFAULTS = { left: 250, right: 300 };
@@ -90,5 +90,24 @@ describe("loadColumnWidths and saveColumnWidths", () => {
     };
     expect(() => saveColumnWidths(KEY, DEFAULTS, broken)).not.toThrow();
     expect(loadColumnWidths(KEY, DEFAULTS, LIMITS, broken)).toEqual(DEFAULTS);
+  });
+});
+
+describe("the settings-first fit", () => {
+  const WATCH = { min: 200, max: 720, middleMin: 400 };
+
+  it("sizes a never-dragged settings column to leave the watch its room, within bounds", () => {
+    // 1300 wide: 280 lists, the settings take what a 460 watch leaves.
+    expect(fitSettingsFirst(1300, { left: 280, right: 0 }, WATCH)).toEqual({ left: 280, right: 1300 - 280 - SETTINGS_AUTO.preview });
+    // Very wide: the settings stop at their most, the watch takes the rest.
+    expect(fitSettingsFirst(2400, { left: 280, right: 0 }, WATCH)).toEqual({ left: 280, right: SETTINGS_AUTO.max });
+    // Narrow: never under their least, then squeezed with the lists as usual.
+    expect(fitSettingsFirst(1000, { left: 280, right: 0 }, WATCH).right).toBeLessThanOrEqual(SETTINGS_AUTO.min);
+    expect(fitSettingsFirst(0, { left: 280, right: 0 }, WATCH)).toEqual({ left: 280, right: SETTINGS_AUTO.min });
+  });
+
+  it("keeps a dragged width, fitted like any other", () => {
+    expect(fitSettingsFirst(2400, { left: 280, right: 500 }, WATCH)).toEqual({ left: 280, right: 500 });
+    expect(fitSettingsFirst(1000, { left: 280, right: 500 }, WATCH)).toEqual(fitColumnWidths(1000, { left: 280, right: 500 }, WATCH));
   });
 });

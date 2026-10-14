@@ -82,7 +82,7 @@ import {
 } from "./app-model.js";
 import { appSettingsStyles } from "./app-settings.js";
 import { SCRUB_END, SCRUB_START } from "../editors.js";
-import { type ColumnWidths, beginColumnDrag, fitColumnWidths, loadColumnWidths, saveColumnWidths } from "../column-split.js";
+import { type ColumnWidths, beginColumnDrag, fitSettingsFirst, loadColumnWidths, saveColumnWidths } from "../column-split.js";
 import {
   canvasStyles,
   chromeTokens,
@@ -319,9 +319,9 @@ const MOD = IS_MAC ? "⌘" : "Ctrl+";
 
 /** The page list and the cards column, each widened by dragging the gutter
  * beside it, as the complication editor's columns are. */
-const PE_COLUMNS = { min: 200, max: 720, middleMin: 320 } as const;
-const PE_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 320 };
-const PE_COLUMNS_KEY = "wrist-assistant-panel.pages.columns.v1";
+const PE_COLUMNS = { min: 200, max: 720, middleMin: 400 } as const;
+const PE_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 0 };
+const PE_COLUMNS_KEY = "wrist-assistant-panel.pages.columns.v2";
 /** The grid's own cost beside its three columns, CSS px: two 8px gutters and
  * the complication editor's 2px gap on each side of each. The host's padding
  * is outside the width measured. */
@@ -3223,7 +3223,7 @@ export class WaPageEditor extends LitElement {
   /** The side widths the grid can afford right now. */
   private fittedColumns(): ColumnWidths {
     if (this.hostWidth > 0 && this.hostWidth <= PE_STACK_WIDTH) return this.columns;
-    return fitColumnWidths(this.hostWidth - PE_GRID_CHROME, this.columns, PE_COLUMNS);
+    return fitSettingsFirst(this.hostWidth - PE_GRID_CHROME, this.columns, PE_COLUMNS);
   }
 
   private renderGutter(side: "left" | "right"): TemplateResult {
@@ -3236,6 +3236,9 @@ export class WaPageEditor extends LitElement {
         beginColumnDrag(e, {
           side,
           base: side === "left" ? shown.left : shown.right,
+          // The settings column sits in the middle: its gutter is on its
+          // right, so it grows as the pointer moves right.
+          growsRight: true,
           limits: PE_COLUMNS,
           onWidth: (width) => { this.columns = { ...this.columns, [side]: width }; },
           onEnd: () => saveColumnWidths(PE_COLUMNS_KEY, this.columns),
@@ -3293,24 +3296,24 @@ export class WaPageEditor extends LitElement {
     const tile = page === undefined || this.selectedTileId === undefined ? undefined : this.tileOn(page, this.selectedTileId);
     const fit = this.fittedColumns();
     const view = this.hostHeight > 0 ? `--pe-view-h:${this.hostHeight}px;` : "";
-    // The complication editor's three columns (`editor-chrome.ts`): the
-    // Pages and Tiles cards, the canvas card, and the inspector, with a
-    // drag gutter between each pair. Unlike there, the editor scrolls as a
+    // The complication editor's three columns (`editor-chrome.ts`) in the
+    // settings-first order: the Pages and Tiles cards, the inspector, then
+    // the canvas card, with a drag gutter between each pair. Unlike there, the editor scrolls as a
     // whole and the side columns stick under the top bar.
-    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
+    return html`<div class="layout pe-layout settings-first ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
       <div class="column left">
         ${this.renderPageList(listed, pages, owner)}
         ${this.renderTileList(page, pages, owner)}
       </div>
       ${this.renderGutter("left")}
+      <div class="column inspector card">
+        ${page ? this.renderInspector(page, tile, pages) : nothing}
+      </div>
+      ${this.renderGutter("right")}
       <div class="column canvas">
         ${page ? this.renderStage(page, pages, owner, watches, tile) : html`<div class="card canvas-card pe-no-page">
             <p class="pe-muted">${listed.length === 0 ? "Add a page to start." : "Pick a page."}</p>
           </div>`}
-      </div>
-      ${this.renderGutter("right")}
-      <div class="column inspector card">
-        ${page ? this.renderInspector(page, tile, pages) : nothing}
       </div>
     </div>
     ${record.revision > 0 ? this.renderFoot(record, document, draft.dirty) : nothing}`;
@@ -4636,7 +4639,7 @@ export class WaPageEditor extends LitElement {
        scrolls inside it; here the editor scrolls as a whole, the stage with
        it, so a long page can be dragged down its length. The side widths come
        in as custom properties already fitted to the measured host width
-       (fitColumnWidths). */
+       (fitSettingsFirst). */
     .layout.pe-layout {
       flex: none; min-height: auto; overflow: visible; align-items: start; padding: 0;
       /* The room above the foot bar. */

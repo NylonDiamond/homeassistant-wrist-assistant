@@ -28,7 +28,7 @@
 
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
-import { type ColumnWidths, beginColumnDrag, fitColumnWidths, loadColumnWidths, saveColumnWidths } from "../column-split.js";
+import { type ColumnWidths, beginColumnDrag, fitSettingsFirst, loadColumnWidths, saveColumnWidths } from "../column-split.js";
 import {
   canvasStyles,
   chromeTokens,
@@ -142,9 +142,9 @@ const MOD = IS_MAC ? "⌘" : "Ctrl+";
 
 /** The lists column and the inspector, each widened by dragging the gutter
  * beside it, with the page editor's limits and defaults. */
-const SP_COLUMNS = { min: 200, max: 720, middleMin: 320 } as const;
-const SP_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 340 };
-export const SP_COLUMNS_KEY = "wrist-assistant-panel.status-pages.columns.v1";
+const SP_COLUMNS = { min: 200, max: 720, middleMin: 400 } as const;
+const SP_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 0 };
+export const SP_COLUMNS_KEY = "wrist-assistant-panel.status-pages.columns.v2";
 /** The grid's own cost beside its three columns, CSS px. */
 const SP_GRID_CHROME = 2 * 8 + 4 * 2;
 /** At or below this content width the columns stack. */
@@ -995,7 +995,7 @@ export class WaStatusPagesEditor extends LitElement {
 
   private fittedColumns(): ColumnWidths {
     if (this.hostWidth > 0 && this.hostWidth <= SP_STACK_WIDTH) return this.columns;
-    return fitColumnWidths(this.hostWidth - SP_GRID_CHROME, this.columns, SP_COLUMNS);
+    return fitSettingsFirst(this.hostWidth - SP_GRID_CHROME, this.columns, SP_COLUMNS);
   }
 
   private renderGutter(side: "left" | "right"): TemplateResult {
@@ -1007,6 +1007,9 @@ export class WaStatusPagesEditor extends LitElement {
         beginColumnDrag(e, {
           side,
           base: side === "left" ? shown.left : shown.right,
+          // The settings column sits in the middle: its gutter is on its
+          // right, so it grows as the pointer moves right.
+          growsRight: true,
           limits: SP_COLUMNS,
           onWidth: (width) => { this.columns = { ...this.columns, [side]: width }; },
           onEnd: () => saveColumnWidths(SP_COLUMNS_KEY, this.columns),
@@ -1111,18 +1114,18 @@ export class WaStatusPagesEditor extends LitElement {
     const view = this.hostHeight > 0 ? `--pe-view-h:${this.hostHeight}px;` : "";
     const fresh = record.revision <= 0;
     return html`${fresh && this.barHost === undefined ? renderNewWatchBanner() : nothing}
-    <div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
+    <div class="layout pe-layout settings-first ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
       <div class="column left">
         ${renderPagesCard(host)}
         ${renderRowsCard(host)}
       </div>
       ${this.renderGutter("left")}
-      <div class="column canvas">
-        ${this.renderStage(host, watches)}
-      </div>
-      ${this.renderGutter("right")}
       <div class="column inspector card">
         ${renderStatusInspector(host)}
+      </div>
+      ${this.renderGutter("right")}
+      <div class="column canvas">
+        ${this.renderStage(host, watches)}
       </div>
     </div>
     ${fresh ? nothing : this.renderFoot(record, draft.document, draft.dirty)}`;
