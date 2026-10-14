@@ -31,6 +31,7 @@ import { checkField, entityField, textField } from "../editors.js";
 import type { HassLike } from "../ha-api.js";
 import type { EntityRef } from "../model.js";
 import type { IconProvider } from "../renderer.js";
+import { renderHowTo, SCREEN_HOW_TO } from "../screen-howto.js";
 import { uiIcon } from "../ui-icons.js";
 import { renderWatchFrame } from "../watch-frame.js";
 import { type WatchPage, type WatchPagesDocument, watchPageId, watchPageName, watchPagesOf } from "../watch-pages/model.js";
@@ -750,7 +751,7 @@ export function renderRoomsBody(host: RoomsViewHost): TemplateResult {
   const listed = listedRooms(host);
   const picked = pickedRoom(host, listed);
   return html`<div class="rm-layout" style=${`--wa-stage-hue: ${ROOMS_HUE}; --rm-hue: ${ROOMS_HUE}`}>
-    <div class="rm-cell rm-cell-status">${renderStatusCard(host)}</div>
+    <div class="rm-cell rm-cell-status">${renderHowTo(SCREEN_HOW_TO.rooms)}${renderStatusCard(host)}</div>
     <div class="rm-cell rm-cell-rules">${renderRulesCard(host, listed, picked)}</div>
     <aside class="rm-side column canvas" aria-label="Preview">${renderStage(host, picked)}</aside>
     <div class="rm-cell rm-cell-point">${renderPointCard(host, listed, picked)}</div>
@@ -768,6 +769,7 @@ export const roomsViewStyles = css`
   }
   .rm-cell { min-width: 0; }
   .rm-cell-status { grid-column: 1; grid-row: 1; }
+  .rm-cell-status > .howto { width: 100%; margin: 0 0 14px; }
   .rm-cell-rules { grid-column: 1; grid-row: 2; }
   .rm-cell-point { grid-column: 1; grid-row: 3; }
   .rm-side { grid-column: 2; grid-row: 1 / span 3; position: sticky; top: 12px; min-width: 0; }

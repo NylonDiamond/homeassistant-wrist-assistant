@@ -23,6 +23,7 @@ import { SECTION_COLOR } from "../kinds.js";
 import type { EntityRef } from "../model.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
+import { renderScreenIntro, SCREEN_INTROS } from "../screen-howto.js";
 import { type UiIconName, uiIcon } from "../ui-icons.js";
 import { renderWatchFrame } from "../watch-frame.js";
 import { type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOpen } from "../watch-pages/fold-memory.js";
@@ -399,6 +400,7 @@ export function renderPagesCard(host: StatusPagesViewHost): TemplateResult {
       <button type="button" class="lc-btn pri sp-add-page" aria-label="Add status page" ?disabled=${host.busy}
         title="Add a status page" @click=${() => addPage(host)}>${uiIcon("plus")}<span>Add</span></button>
     </div>
+    ${renderScreenIntro(SCREEN_INTROS["status-pages"])}
     ${pages.length === 0
       ? html`<div class="lc-note">No status pages. Add one to show the live state of entities you pick.</div>`
       : html`<div class="layers sp-page-list" role="list">${pages.map((p, i) => pageRow(host, p, i, pages.length, shown))}</div>`}

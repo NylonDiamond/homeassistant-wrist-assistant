@@ -63,6 +63,7 @@ import { personColorVar } from "../pickerRows.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
+import { howToStyles, renderHowTo, SCREEN_HOW_TO } from "../screen-howto.js";
 import { uiIcon } from "../ui-icons.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import { watchCloudTTSAvailable } from "../watch-pages/app-model.js";
@@ -1102,6 +1103,7 @@ export class WaVoiceEditor extends LitElement {
               @click=${() => { this.zoom = stageZoomIn(scale); }}>+</button>
           </span>
         </div>
+        ${renderHowTo(SCREEN_HOW_TO.voice)}
         <div class="ve-stage-body">${renderVoiceScreen(host)}</div>
         <div class="under"><span class="tail">${VOICE_STAGE_HINT}</span></div>
       </div>
@@ -1337,7 +1339,7 @@ export class WaVoiceEditor extends LitElement {
     dialog.pe-ask p.pe-muted { font-size: 13px; }
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
     :host([narrow]) { --cf-pad: 12px; }
-  `, voiceViewStyles, configFootStyles, headBarStyles];
+  `, voiceViewStyles, configFootStyles, howToStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-voice-editor")) {

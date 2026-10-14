@@ -22,6 +22,7 @@ import { SECTION_COLOR } from "../kinds.js";
 import type { EntityRef } from "../model.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
+import { renderScreenIntro, SCREEN_INTROS } from "../screen-howto.js";
 import { type UiIconName, uiIcon } from "../ui-icons.js";
 import { renderWatchFrame } from "../watch-frame.js";
 import { watchSpeakerChoices, watchTTSEngines, watchVoiceMenu, type WatchVoiceChoice } from "../watch-pages/app-model.js";
@@ -256,6 +257,7 @@ export function renderVoiceCard(host: VoiceViewHost): TemplateResult {
       <span class="swatch">${voiceGlyph()}</span><span class="lc-title">Voice</span>
       <span class="lc-sub" title=${VOICE_CARD_LINE}>for the watch</span>
     </div>
+    ${renderScreenIntro(SCREEN_INTROS.voice)}
     <div class="layers vo-section-list" role="list">
       ${VOICE_SECTIONS.map(([id, label]) => {
         const on = id === shown;

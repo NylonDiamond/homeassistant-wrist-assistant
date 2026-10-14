@@ -37,6 +37,7 @@ import { type HassLike, type HttpActionsRecord, type OwnerSummary, fetchHttpActi
 import type { IconProvider } from "../renderer.js";
 import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
+import { howToStyles, renderHowTo, SCREEN_HOW_TO } from "../screen-howto.js";
 import { uiIcon } from "../ui-icons.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
@@ -659,14 +660,16 @@ export class WaHttpActionsEditor extends LitElement {
     const draft = this.draft;
     const host = this.viewHost();
     if (draft === undefined || host === undefined) {
-      return html`<div class="ha-calm"><div class="pe-empty ha-empty"><b>${HTTP_ACTIONS_EMPTY_TITLE}</b>
+      return html`<div class="ha-howto">${renderHowTo(SCREEN_HOW_TO["http-actions"])}</div>
+      <div class="ha-calm"><div class="pe-empty ha-empty"><b>${HTTP_ACTIONS_EMPTY_TITLE}</b>
         <span>An HTTP action is a web request a watch asks Home Assistant to send. ${HTTP_ACTIONS_SHARED_TEXT}</span>
         <span class="ha-start"><button class="pe-btn pe-primary" @click=${() => this.startLibrary()}>${uiIcon("plus")}<span>${HTTP_ACTIONS_ADD_BUTTON}</span></button></span>
         ${homeHasPhone(this.allOwners) ? html`<span class="pe-muted">${HTTP_ACTIONS_PHONE_TEXT}</span>` : nothing}
       </div></div>`;
     }
     const certs = httpActionList(draft.document).filter((a) => a.presentsClientCertificate === true).length;
-    return html`${certs === 0 ? nothing : html`<p class="ha-cert-line">${certs === 1 ? "An action asks" : `${certs} actions ask`} for a client certificate. ${HTTP_ACTIONS_CLIENT_CERT_TEXT}</p>`}
+    return html`<div class="ha-howto">${renderHowTo(SCREEN_HOW_TO["http-actions"])}</div>
+    ${certs === 0 ? nothing : html`<p class="ha-cert-line">${certs === 1 ? "An action asks" : `${certs} actions ask`} for a client certificate. ${HTTP_ACTIONS_CLIENT_CERT_TEXT}</p>`}
     <div class="layout pe-layout ha-two ${this.stacked ? "cols-1" : ""}" style=${`--wa-left:${this.listWidth()}px`}>
       <div class="column left">
         ${renderHttpList(host)}
@@ -756,6 +759,8 @@ export class WaHttpActionsEditor extends LitElement {
     }
     .pe-empty > b { font-size: 15px; }
     .ha-start { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+    .ha-howto { flex: none; --howto-hue: var(--wa-hue-blue); }
+    .ha-howto > .howto { width: auto; max-width: 720px; margin: 0 0 10px; }
     .ha-cert-line {
       flex: none; margin: 0 0 10px; padding: 8px 12px; font-size: 13px;
       border: 1px solid var(--wa-amber-line); border-radius: var(--wa-r-md, 12px);
@@ -809,7 +814,7 @@ export class WaHttpActionsEditor extends LitElement {
     .ha-foot-dot.warn { background: var(--wa-amber); }
     .ha-near { color: var(--wa-amber); }
     :host([narrow]) { --cf-pad: 12px; }
-  `, httpActionsViewStyles, headBarStyles];
+  `, httpActionsViewStyles, howToStyles, headBarStyles];
 }
 
 function flatError(err: unknown): Error {
