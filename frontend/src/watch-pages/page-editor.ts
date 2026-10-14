@@ -604,6 +604,15 @@ function typedNumber(text: string): number {
 
 const PAGE_END_TEXT = `The page ends at row ${WATCH_EDITOR_MAX_ROWS}.`;
 const SAVING_TEXT = "Saving. Tiles and pages move again once the save is done.";
+
+/** The plan line under the Pages card. A free watch shows only the first
+ * page that is not hidden (the app's `WatchPagesSyncRules.limitToFirstUserPage`);
+ * the panel cannot see a watch's plan, so the line is the same for everyone. */
+export const WATCH_PAGES_PLAN_TEXT = {
+  title: "One page is always free.",
+  body: "On the free plan, the watch shows your first page that is not hidden. Pro shows every page, with no limit. "
+    + "Pro also pays for development: Wrist Assistant is my full-time job, so it keeps getting better.",
+} as const;
 /** An empty page's line, beside its Add a tile button. */
 const NO_TILES_TEXT = "No tiles yet.";
 
@@ -3431,6 +3440,7 @@ export class WaPageEditor extends LitElement {
         ${repeat(listed, (p) => watchPageId(p), (p, i) => this.renderPageRow(p, i, listed.length, pages, screen))}
         ${drag ? html`<div class="pe-drop-line" style=${`top:${drag.lineY}px`} aria-hidden="true"></div>` : nothing}
       </div>
+      <div class="lc-note pe-plan-note" role="note"><span><b>${WATCH_PAGES_PLAN_TEXT.title}</b> ${WATCH_PAGES_PLAN_TEXT.body}</span></div>
     </section>`;
   }
 
@@ -4713,6 +4723,8 @@ export class WaPageEditor extends LitElement {
     .pe-pages-card > .layers, .pe-tiles-card > .layers { padding: 6px 8px 8px; overflow: visible; }
     .pe-pages-card > .lc-note, .pe-tiles-card > .lc-note { margin: 8px 12px; color: var(--wa-muted); }
     .pe-pages-card > .lc-note.warn { color: var(--wa-amber); }
+    .pe-pages-card > .lc-note.pe-plan-note { margin-top: 2px; font-size: 11px; }
+    .pe-plan-note b { color: var(--wa-ink); }
     /* Beside the watch, a long page list scrolls in its own box, so the
        Tiles card under it stays in sight. Stacked, the page scrolls as one. */
     .layout.pe-layout.cols-3 .pe-pages-card > .pe-page-list {

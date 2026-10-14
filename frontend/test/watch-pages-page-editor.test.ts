@@ -14,7 +14,7 @@ import { type WatchCatalog, readWatchCatalog } from "../src/watch-pages/catalog.
 import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
 import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
-import "../src/watch-pages/page-editor.js";
+import { WATCH_PAGES_PLAN_TEXT } from "../src/watch-pages/page-editor.js";
 import {
   STAGE_ZOOM_KEY,
   loadStageZoom,
@@ -331,6 +331,15 @@ describe("the Tiles card", () => {
     expect(card).toContain(">2 pages</span>");
     expect(card).toMatch(/class="layer pe-page-row hl [^"]*"\s+data-page=P-HALL/);
     expect(card).toMatch(/class="layer pe-page-row  [^"]*"\s+data-page=P-YARD/);
+  });
+
+  it("says under the pages that one page is always free and Pro shows every page", () => {
+    const text = editor().body();
+    const card = text.slice(text.indexOf(`class="card lc pe-pages-card`), text.indexOf(`class="card lc pe-tiles-card"`));
+    expect(card).toContain(`class="lc-note pe-plan-note"`);
+    expect(card).toContain(WATCH_PAGES_PLAN_TEXT.title);
+    expect(card).toContain(WATCH_PAGES_PLAN_TEXT.body);
+    expect(`${WATCH_PAGES_PLAN_TEXT.title} ${WATCH_PAGES_PLAN_TEXT.body}`).not.toMatch(/[–—]| - /);
   });
 });
 
