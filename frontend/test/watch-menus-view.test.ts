@@ -720,7 +720,8 @@ describe("how each menu opens", () => {
     expect(flat(renderMenuHowTo(h))).toContain("Touch and hold a tile");
     selectMenu(h, "switcher");
     out = flat(renderMenuHowTo(h));
-    expect(out).toContain("Pull down from the top of the screen");
+    expect(out).toContain("slide to its Pages slot");
+    expect(out).not.toMatch(/pull down/i);
     expect(flat(renderMenusCard(host(DEFAULTS)))).toContain(`<p class="me-intro">${MENUS_INTRO}</p>`);
   });
 });

@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
 import { type DeviceSheetTab, homeDoorLook } from "../src/home.js";
+import { SCREEN_HOW_TO } from "../src/screen-howto.js";
 import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN, watchScreenSentence } from "../src/shell.js";
 import {
   WATCH_ROW_NONE_NOTE,
@@ -306,11 +307,17 @@ describe("unsaved work across the screens", () => {
     expect(calls).toEqual(["go:/menus/w1"]);
   });
 
-  it("says what each screen is in its tab's tooltip, not on a line of its own, and nothing for a retired one", () => {
+  it("says what each screen is, and how it is used on the watch, in its tab's hover card, and nothing for a retired one", () => {
     const { text } = row({ route: route("/pages/w1") });
     expect(text).not.toContain("wa-wr-blurb");
-    expect(text).toContain("title=Pages are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.");
-    expect(text).toContain("title=Settings sets how the watch behaves");
+    expect(text).not.toMatch(/class="wa-wr-link[^>]*title=/);
+    expect(text).toContain("aria-describedby=wa-wr-tip-pages");
+    expect(text).toContain(`id=wa-wr-tip-pages popover="manual" role="tooltip"`);
+    expect(text).toContain("Pages are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.");
+    expect(text).toContain(SCREEN_HOW_TO.pages.how);
+    expect(text).toContain(SCREEN_HOW_TO.menus.how);
+    expect(text).toContain("Settings sets how the watch behaves");
+    expect(text).not.toContain("wa-wr-tip-control-center");
     expect(watchRowLinkTitle(WATCH_SCREENS.find((s) => s.id === "control-center")!)).toBeUndefined();
     expect(watchRowLinkTitle(WATCH_SCREENS[1]!)).toBe(watchScreenSentence(WATCH_SCREENS[1]!));
   });

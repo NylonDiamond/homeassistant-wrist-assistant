@@ -181,6 +181,7 @@ import {
   renderSaveReason,
   saveBlockedText,
 } from "./new-watch.js";
+import { howToStyles } from "../screen-howto.js";
 import { menuStageStyles, renderMenuHowTo, renderMenuStage, renderMenuStageFoot, renderMenuStageTools } from "./menu-stage.js";
 import { watchMenusReplacedText, watchMenusSaveNote } from "./save-note.js";
 import type { MenuVoiceContext } from "./slot-voice.js";
@@ -1976,7 +1977,7 @@ export class WaMenuEditor extends LitElement {
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
 
     :host([narrow]) { --cf-pad: 12px; }
-  `, menuViewStyles, menuStageStyles, menuInspectorLookStyles, configFootStyles, headBarStyles];
+  `, menuViewStyles, menuStageStyles, menuInspectorLookStyles, configFootStyles, howToStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-menu-editor")) {
