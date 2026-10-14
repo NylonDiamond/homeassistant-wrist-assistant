@@ -23,7 +23,7 @@ import { css, html, nothing, svg, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import { browserStorage, type ColumnStorage } from "../column-split.js";
 import { sectionCard } from "../editor-chrome.js";
-import { checkField, colorField, entityField, numberField, segField, selectField, sliderField, symbolField } from "../editors.js";
+import { checkField, colorField, entityField, numberField, segField, selectField, symbolField } from "../editors.js";
 import type { HassLike } from "../ha-api.js";
 import { SECTION_COLOR } from "../kinds.js";
 import type { EntityRef } from "../model.js";
@@ -50,13 +50,13 @@ import {
   type MenuHTTPTarget,
   type MenuListRef,
   type MenuPayloadSpec,
-  type MenuStyleField,
   type MenuStyleSection,
   type MenuTargets,
   type MenusDocument,
   addWatchMenuOverride,
   addWatchMenuSlot,
   entityDomain,
+  menuListDomain,
   menuListKey,
   moveWatchMenuSlot,
   removeWatchMenuOverride,
@@ -69,7 +69,6 @@ import {
   setWatchMenuSlotIcon,
   setWatchMenuSlotSkipConditions,
   setWatchMenuSlotVisible,
-  setWatchMenuStyle,
   slotAction,
   slotActionType,
   watchMenuAction,
@@ -98,14 +97,33 @@ import {
   watchMenuSlotSkipConditions,
   watchMenuSlots,
   watchMenuStyleFields,
-  watchMenuStyleShown,
-  watchMenuStyleValue,
   watchTriggerLook,
   watchTriggerModeLabel,
   watchTriggerModes,
   watchTriggerTargetDomains,
 } from "./model.js";
 import { type MenuVoiceContext, menuSlotHasVoice, menuSlotVoiceChanged, menuSlotVoiceSummary, renderSlotVoiceBody } from "./slot-voice.js";
+import {
+  ANYWHERE_LOOK_KEYS,
+  ANYWHERE_MOTION_KEYS,
+  MENU_TYPE_TILES,
+  type MenuActionTile,
+  type MenuActionTileGroup,
+  type MenuTypeChoice,
+  type MenuWhereCell,
+  SWITCHER_LOOK_KEYS,
+  actionTiles,
+  anywhereLookSummary,
+  anywhereMotionSummary,
+  menuStyleKeysChanged,
+  renderAnywhereLookBody,
+  renderAnywhereMotionBody,
+  renderSwitcherLookBody,
+  switchRow,
+  switcherLookSummary,
+  typeTiles,
+  whereGrid,
+} from "./menu-inspector-look.js";
 
 /** What the views are handed on every draw. `document`, `targets` and
  * `busy` are read live. */
@@ -268,7 +286,7 @@ export function saveMenusZoom(scale: number | undefined, storage: ColumnStorage 
 // ── the inspector's badges ───────────────────────────────────────────────
 
 /** A card of the inspector. */
-export type MenuInspectorSection = "name" | "slot" | "look" | "menu" | "style" | "switcherPage";
+export type MenuInspectorSection = "name" | "slot" | "where" | "look" | "shows" | "menu" | "style" | "motion" | "switcherPage";
 
 /** A section card's mark: the color it is tinted with and the glyph in its
  * badge. */
@@ -281,16 +299,20 @@ export interface MenuSectionBadge {
  * Each inspector card's badge, in the complication editor's colors as the
  * page editor's tile cards have them (`WATCH_TILE_SECTION_BADGES`): the Name
  * card is Place grey, what a slot does and which list a menu shows are
- * Content blue, and how a slot or a menu looks is Look purple. A page's
- * place in the switcher is Content, with the watch glyph, as its chip was in
- * the page editor's strip.
+ * Content blue, how a slot or a menu looks and moves is Look, where a slot
+ * sits is Position, and the tiles an Anywhere slot shows over are States,
+ * as a layer's rules are. A page's place in the switcher is Content, with
+ * the watch glyph, as its chip was in the page editor's strip.
  */
 export const MENU_SECTION_BADGES: Readonly<Record<MenuInspectorSection, MenuSectionBadge>> = {
   name: { color: SECTION_COLOR.place, icon: "text" },
   slot: { color: SECTION_COLOR.content, icon: "content" },
+  where: { color: SECTION_COLOR.position, icon: "place" },
   look: { color: SECTION_COLOR.look, icon: "look" },
+  shows: { color: SECTION_COLOR.states, icon: "states" },
   menu: { color: SECTION_COLOR.content, icon: "content" },
   style: { color: SECTION_COLOR.look, icon: "look" },
+  motion: { color: SECTION_COLOR.look, icon: "radial" },
   switcherPage: { color: SECTION_COLOR.content, icon: "watch" },
 };
 
@@ -907,11 +929,14 @@ export function menuInspectorFolds(host: ViewState & SwitcherState & Pick<MenusV
   if (picked !== undefined) {
     return [
       { module: FOLD_MODULE, section: "slot" },
+      { module: FOLD_MODULE, section: "where" },
       ...(menuSlotHasVoice(picked) ? [{ module: FOLD_MODULE, section: "voice" }] : []),
       { module: FOLD_MODULE, section: "look" },
+      ...(ref?.list === "anywhere" ? [{ module: FOLD_MODULE, section: "shows" }] : []),
     ];
   }
   const menu = shownMenu(host);
+  if (menu === "anywhere") return [{ module: FOLD_MODULE, section: "style-anywhere" }, { module: FOLD_MODULE, section: "motion-anywhere" }];
   return [{ module: FOLD_MODULE, section: menu === "entity" ? "menu" : `style-${menu}` }];
 }
 
@@ -1009,24 +1034,47 @@ function payloadLabel(raw: string, spec: MenuPayloadSpec): string {
   return PAYLOAD_LABELS[spec.key] ?? spec.key;
 }
 
-function actionSelect(host: MenusViewHost, ref: MenuListRef, slot: JsonObject): TemplateResult {
-  const id = watchMenuSlotId(slot);
+/** The action categories in plain words. The entity's own actions are
+ * headed by its type. */
+const CATEGORY_HEADINGS: Readonly<Record<string, string>> = {
+  navigation: "Go around",
+  quickAction: "Do something",
+  information: "Show something",
+  remote: "Remote control",
+};
+
+/** An action's name as the inspector prints it: the table's "Speak Message
+ * - TTS" reads "Speak Message (TTS)", with no dash breaking it. */
+export function menuActionWords(raw: string): string {
+  return watchMenuActionLabel(raw).replace(/ - (.+)$/, " ($1)");
+}
+
+function categoryHeading(ref: MenuListRef, category: string): string {
+  if (category === "entityControl") {
+    const domain = menuListDomain(ref) ?? "all";
+    return domain === "all" ? "Any entity" : typeLabel(domain);
+  }
+  return CATEGORY_HEADINGS[category] ?? watchMenuCategoryLabel(category);
+}
+
+/** The actions the slot can take, as tiles under their headings: those its
+ * list offers, after the action it holds when the list does not offer it.
+ * One that needs a target the panel has none of says so and cannot be
+ * picked. */
+export function menuActionTileGroups(host: Pick<MenusViewHost, "targets">, ref: MenuListRef, slot: JsonObject): MenuActionTileGroup[] {
   const current = slotActionType(slot);
   const groups = watchMenuOfferedActions(ref);
-  const offered = new Set(groups.flatMap((g) => g.actions));
-  const option = (raw: string) => {
+  const tile = (raw: string): MenuActionTile => {
     const spec = watchMenuAction(raw);
+    const look = spec === undefined ? { icon: MENU_ACTIONS.unknownActionIcon, color: MENU_ACTIONS.unknownActionColor } : spec;
     const why = raw === current ? undefined : watchMenuActionUnavailable(raw, host.targets);
-    const label = `${spec?.label ?? watchMenuActionLabel(raw)}${spec?.requiresPremium ? " (Pro)" : ""}${why === undefined ? "" : ` (${why})`}`;
-    return html`<option value=${raw} ?selected=${raw === current} ?disabled=${why !== undefined}>${label}</option>`;
+    return { raw, label: menuActionWords(raw), icon: look.icon, color: look.color, pro: spec?.requiresPremium === true, ...(why === undefined ? {} : { why }) };
   };
-  const set = (raw: string) => host.edit((d) => setWatchMenuSlotAction(d, ref, id, raw, host.targets));
-  // `.value` is the document's on every draw, so a refused pick goes back.
-  return html`<label class="field"><span>Action</span>
-    <select .value=${live(current)} @change=${(e: Event) => set((e.target as HTMLSelectElement).value)}>
-      ${offered.has(current) ? nothing : html`<optgroup label="Now"><option value=${current} selected>${watchMenuActionLabel(current)}</option></optgroup>`}
-      ${groups.map((g) => html`<optgroup label=${watchMenuCategoryLabel(g.category)}>${g.actions.map(option)}</optgroup>`)}
-    </select></label>`;
+  const offered = groups.some((g) => g.actions.includes(current));
+  return [
+    ...(offered ? [] : [{ heading: "Now", tiles: [tile(current)] }]),
+    ...groups.map((g) => ({ heading: categoryHeading(ref, g.category), tiles: g.actions.map(tile) })),
+  ];
 }
 
 /** An HTTP action as the picker names it: its name, then "needs setup"
@@ -1150,24 +1198,28 @@ function renderSkipConditions(host: MenusViewHost, ref: MenuListRef, slot: JsonO
     <div class="hint ts-under">Whether running the automation from this menu skips its conditions. Default follows the tile, then "Skip conditions by default" in the watch's Settings.</div>`;
 }
 
+/** The Shows on card's summary: every screen, or the types it shows over. */
+function showsOnSummary(slot: JsonObject): string {
+  const types = watchMenuSlotEntityTypes(slot);
+  return types === undefined ? "Every screen" : types.length === 0 ? "No entity under the finger" : types.map(typeLabel).join(", ");
+}
+
 /**
- * The Anywhere slot's "show for" filter. Only the types the watch reports
- * under the finger are offered. A stored type it never reports is kept,
- * drawn as a chip with a note, and can be taken off. With every chip off the
- * list is empty, which the watch reads as "only where no entity is under the
- * finger".
+ * The Anywhere slot's Shows on: every screen, or only over some tiles. Only
+ * the types the watch reports under the finger are offered. A stored type it
+ * never reports is kept, drawn as a chip with a note, and can be taken off.
+ * With every chip off the list is empty, which the watch reads as "only
+ * where no entity is under the finger".
  */
-function renderShowFor(host: MenusViewHost, slot: JsonObject): TemplateResult {
+function renderShowsOnBody(host: MenusViewHost, slot: JsonObject): TemplateResult {
   const id = watchMenuSlotId(slot);
   const types = watchMenuSlotEntityTypes(slot);
   const every = types === undefined;
   const set = (next: string[] | undefined) => host.edit((d) => setWatchMenuSlotEntityTypes(d, id, next));
   const offered = watchMenuShowForTypes();
   const unreported = (types ?? []).filter((t) => !watchMenuReportsType(t));
-  const summary = every ? "Every screen" : types.length === 0 ? "No entity under the finger" : types.map(typeLabel).join(", ");
-  return html`<details class="me-show-for">
-    <summary><span>Show for</span><b>${summary}</b></summary>
-    ${checkField("Every screen", every, (v) => set(v ? undefined : offered.slice(0, 1)), true)}
+  return html`<div class="mi-wrap">${segField("Show on", every ? "every" : "some", [["every", "Every screen"], ["some", "Only over some tiles"]] as ["every" | "some", string][],
+      (v) => set(v === "every" ? undefined : offered.slice(0, 1)), { def: "every" })}</div>
     ${every ? nothing : html`<div class="me-chips" role="group" aria-label="Entity types">
       ${[...offered, ...unreported].map((type) => {
         const on = types.includes(type);
@@ -1178,16 +1230,29 @@ function renderShowFor(host: MenusViewHost, slot: JsonObject): TemplateResult {
       })}
     </div>
     ${unreported.length === 0 ? nothing : html`<div class="hint warn">${unreported.map(typeLabel).join(", ")}: Not reported by the watch.</div>`}
-    <div class="hint">The slot shows only while the finger is over an entity of these types. With none picked, it shows only where no entity is under the finger.</div>`}
-  </details>`;
+    <div class="hint">The slot shows only while the finger is over an entity of these types. With none picked, it shows only where no entity is under the finger.</div>`}`;
 }
 
-/** Whether the Slot card holds a value away from a new slot's: hidden,
- * shown only for some types, or its own Skip conditions. The place and the
- * action are always a choice. */
+/** Whether the slot holds a value away from a new slot's: hidden, shown
+ * only for some types, or its own Skip conditions. The place and the action
+ * are always a choice. */
 export function menuSlotChanged(slot: JsonObject, ref: MenuListRef): boolean {
-  return slot.isVisible === false || (ref.list === "anywhere" && watchMenuSlotEntityTypes(slot) !== undefined)
-    || (watchMenuSlotHasSkipConditions(ref, slot) && watchMenuSlotSkipConditions(slot) !== null);
+  return menuSlotWhereChanged(slot) || (ref.list === "anywhere" && menuSlotShowsOnChanged(slot)) || menuSlotActionChanged(slot, ref);
+}
+
+/** What it does: away from the slot's default only by its Skip conditions. */
+export function menuSlotActionChanged(slot: JsonObject, ref: MenuListRef): boolean {
+  return watchMenuSlotHasSkipConditions(ref, slot) && watchMenuSlotSkipConditions(slot) !== null;
+}
+
+/** Where: hidden on the watch. */
+export function menuSlotWhereChanged(slot: JsonObject): boolean {
+  return slot.isVisible === false;
+}
+
+/** Shows on: only over some tiles. */
+export function menuSlotShowsOnChanged(slot: JsonObject): boolean {
+  return watchMenuSlotEntityTypes(slot) !== undefined;
 }
 
 /** Whether the Look card is away from the action's own icon and color. */
@@ -1213,6 +1278,27 @@ function renderNameCard(host: MenusViewHost, slot: JsonObject): TemplateResult {
   </section>`;
 }
 
+/** A place's name in sentence case, "Top right", for the Where grid's
+ * words. */
+function placeWords(position: string): string {
+  const label = watchMenuPositionLabel(position);
+  return label.charAt(0) + label.slice(1).toLowerCase();
+}
+
+/** The eight places as the Where grid draws them: the slot's own, and for
+ * each other the slot of the list that holds it (a click there swaps the
+ * two, as the old Place list did), or none. */
+export function menuWhereCells(host: Pick<MenusViewHost, "document" | "hass" | "targets">, ref: MenuListRef, slot: JsonObject): MenuWhereCell[] {
+  const id = watchMenuSlotId(slot);
+  const others = watchMenuSlots(host.document, ref).filter((s) => !sameId(watchMenuSlotId(s), id));
+  return watchMenuPositions().map((p) => {
+    const holder = others.find((s) => s.position === p);
+    const cell: MenuWhereCell = { position: p, label: placeWords(p), here: slot.position === p };
+    if (holder !== undefined) cell.holder = { name: menuSlotName(host, holder), ...slotLook(holder) };
+    return cell;
+  });
+}
+
 function renderSlotInspector(host: MenusViewHost, ref: MenuListRef, slot: JsonObject): TemplateResult {
   const id = watchMenuSlotId(slot);
   const raw = slotActionType(slot);
@@ -1220,26 +1306,19 @@ function renderSlotInspector(host: MenusViewHost, ref: MenuListRef, slot: JsonOb
   const look = slotLook(slot);
   const def = menuSlotDefaultLook(slot);
   const position = typeof slot.position === "string" ? slot.position : "";
-  // A place another slot of the list holds: picking it swaps the two. The
-  // slot's own place says so when another slot shares it.
-  const others = watchMenuSlots(host.document, ref).filter((s) => !sameId(watchMenuSlotId(s), id));
-  const positions: [string, string][] = watchMenuPositions().map((p) => {
-    const label = watchMenuPositionLabel(p);
-    if (!others.some((s) => s.position === p)) return [p, label];
-    return [p, p === position ? `${label} (shared)` : `${label} (swap)`];
-  });
-  const slotBody = html`<fieldset class="me-body" ?disabled=${host.busy} aria-label="Slot">
+  const whatBody = html`<fieldset class="me-body" ?disabled=${host.busy} aria-label="What it does">
     ${spec === undefined ? html`<div class="hint warn">A newer app wrote this action. A watch with an older app shows Sync Needed for it until the app is updated. Pick another action to replace it.</div>` : nothing}
-    ${selectField("Place", position, positions, (v) => host.edit((d) => moveWatchMenuSlot(d, ref, id, v)), { snapBack: true })}
-    ${checkField("Shown", slot.isVisible !== false, (v) => host.edit((d) => setWatchMenuSlotVisible(d, ref, id, v)), true)}
-    ${actionSelect(host, ref, slot)}
-    ${spec?.description ? html`<div class="hint ts-under">${spec.description}</div>` : nothing}
-    ${watchMenuActionNeedsInstances(raw) ? html`<div class="hint ts-under keep">Only for a watch with more than one Home Assistant.</div>` : nothing}
+    ${actionTiles(host.icons, raw, menuActionTileGroups(host, ref, slot), (next) => host.edit((d) => setWatchMenuSlotAction(d, ref, id, next, host.targets)))}
+    ${spec?.description ? html`<div class="mi-desc">${spec.description}</div>` : nothing}
+    ${watchMenuActionNeedsInstances(raw) ? html`<div class="hint keep">Only for a watch with more than one Home Assistant.</div>` : nothing}
     ${(spec?.payload ?? []).map((p) => payloadField(host, ref, slot, raw, p))}
     ${renderSkipConditions(host, ref, slot)}
-    ${ref.list === "anywhere" ? renderShowFor(host, slot) : nothing}
   </fieldset>`;
-  const lookBody = html`<fieldset class="me-body" ?disabled=${host.busy} aria-label="Look">
+  const whereBody = html`<fieldset class="me-body" ?disabled=${host.busy} aria-label="Where">
+    ${whereGrid(host.icons, look, menuWhereCells(host, ref, slot), (p) => host.edit((d) => moveWatchMenuSlot(d, ref, id, p)))}
+    ${checkField("Shown on the watch", slot.isVisible !== false, (v) => host.edit((d) => setWatchMenuSlotVisible(d, ref, id, v)), true)}
+  </fieldset>`;
+  const lookBody = html`<fieldset class="me-body" ?disabled=${host.busy} aria-label="Icon and color">
     <div class="ts-stack">${symbolField({ icons: host.icons, symbols: host.symbols }, typeof slot.icon === "string" ? slot.icon : "",
       (v) => host.edit((d) => setWatchMenuSlotIcon(d, ref, id, v), `slot:${id}:icon`), `me:icon:${id}`,
       { tint: typeof slot.color === "string" ? slot.color : def?.color })}</div>
@@ -1248,11 +1327,16 @@ function renderSlotInspector(host: MenusViewHost, ref: MenuListRef, slot: JsonOb
   </fieldset>`;
   const voiceBody = renderSlotVoiceBody(host, ref, slot);
   return html`${renderNameCard(host, slot)}
-    ${card(host, "slot", "slot", "Slot", slotBody, { summary: menuSlotDetail(slot), dot: menuSlotChanged(slot, ref) })}
+    ${card(host, "slot", "slot", "What it does", whatBody, { summary: menuActionWords(raw), dot: menuSlotActionChanged(slot, ref) })}
+    ${card(host, "where", "where", "Where", whereBody, {
+      summary: `${watchMenuPositionLabel(position)}${slot.isVisible === false ? ", hidden" : ""}`, dot: menuSlotWhereChanged(slot) })}
     ${voiceBody === undefined ? nothing : card(host, "slot", "voice", "Voice",
       html`<fieldset class="me-body me-voice" ?disabled=${host.busy} aria-label="Voice">${voiceBody}</fieldset>`,
       { summary: menuSlotVoiceSummary(host, slot), dot: menuSlotVoiceChanged(slot) })}
-    ${card(host, "look", "look", "Look", lookBody, { summary: look.icon, dot: menuSlotLookChanged(slot) })}
+    ${card(host, "look", "look", "Icon and color", lookBody, { summary: look.icon, dot: menuSlotLookChanged(slot) })}
+    ${ref.list === "anywhere" ? card(host, "shows", "shows", "Shows on",
+      html`<fieldset class="me-body" ?disabled=${host.busy} aria-label="Shows on">${renderShowsOnBody(host, slot)}</fieldset>`,
+      { summary: showsOnSummary(slot), dot: menuSlotShowsOnChanged(slot) }) : nothing}
     <div class="me-acts">
       <button type="button" class="pe-btn pe-danger" ?disabled=${host.busy} title="Remove this slot from the menu"
         @click=${() => host.edit((d) => removeWatchMenuSlot(d, ref, id))}>${uiIcon("delete")}<span>Remove</span></button>
@@ -1261,68 +1345,38 @@ function renderSlotInspector(host: MenusViewHost, ref: MenuListRef, slot: JsonOb
 
 // ── a menu's own settings ────────────────────────────────────────────────
 
-function renderStyleField(host: MenusViewHost, section: MenuStyleSection, field: MenuStyleField): TemplateResult | typeof nothing {
-  if (!watchMenuStyleShown(host.document, section, field)) return nothing;
-  const value = watchMenuStyleValue(host.document, section, field);
-  const coalesce = `style:${section}:${field.key}`;
-  const set = (v: unknown, typing = false) => host.edit((d) => setWatchMenuStyle(d, section, field.key, v), typing ? coalesce : undefined);
-  switch (field.type) {
-    case "bool":
-      return checkField(field.label, value === true, (v) => set(v), field.default as boolean);
-    case "enum": {
-      const choices = watchMenuEnumChoices(field.enum);
-      const current = String(value);
-      return choices.length <= 4
-        ? segField(field.label, current, choices, (v) => set(v), { def: String(field.default) })
-        : selectField(field.label, current, choices, (v) => set(v), { def: String(field.default), snapBack: true });
-    }
-    case "number": {
-      const n = typeof value === "number" ? value : Number(field.default);
-      return html`${sliderField(field.label, n, (v) => set(v, true), {
-        min: field.min ?? 0,
-        max: field.max ?? 1,
-        step: field.step ?? 0.01,
-        def: Number(field.default),
-      })}
-      ${field.presets === undefined ? nothing : html`<div class="ts-after">${field.presets.map((p) => html`<button type="button"
-        class="pe-chip ${p.value === n ? "on" : ""}" aria-pressed=${p.value === n ? "true" : "false"} @click=${() => set(p.value)}>${p.label}</button>`)}</div>`}`;
-    }
-    case "color": {
-      const hex = typeof value === "string" ? value : String(field.default);
-      return html`<div class="ts-no-alpha">${colorField(field.label, hex, (v) => { if (v !== undefined) set(v, true); }, false, String(field.default))}</div>
-        ${field.swatches === undefined ? nothing : html`<div class="ts-swatch-row"><div class="ts-swatches" role="group" aria-label=${field.label}>
-          ${field.swatches.map((s) => {
-            const on = s.toUpperCase() === hex.toUpperCase();
-            return html`<button type="button" class="ts-swatch ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"} title=${s} aria-label=${s}
-              style=${`--sw:${s}`} @click=${() => set(s)}></button>`;
-          })}</div></div>`}`;
-    }
-  }
-}
-
-function sameStyleValue(a: unknown, b: unknown): boolean {
-  if (typeof a === "number" && typeof b === "number") return Math.abs(a - b) < 1e-9;
-  if (typeof a === "string" && typeof b === "string") return a.toUpperCase() === b.toUpperCase();
-  return a === b;
-}
-
-/** Whether any style row shown reads other than its default: the Style
- * card's changed dot, the same rule as the rows' reset dots. */
+/** Whether any style row shown reads other than its default, across the
+ * section's cards. */
 export function menuStyleChanged(document: MenusDocument, section: MenuStyleSection): boolean {
-  return watchMenuStyleFields(section).some((f) => watchMenuStyleShown(document, section, f)
-    && !sameStyleValue(watchMenuStyleValue(document, section, f), f.default));
+  return menuStyleKeysChanged(document, section, watchMenuStyleFields(section).map((f) => f.key));
 }
 
-function renderStyleCard(host: MenusViewHost, section: MenuStyleSection, fold: string): TemplateResult {
-  const changed = menuStyleChanged(host.document, section);
-  return card(host, "style", fold, "Style", html`<fieldset class="me-body me-style" ?disabled=${host.busy} aria-label="Style">
-    ${watchMenuStyleFields(section).map((f) => renderStyleField(host, section, f))}
-  </fieldset>`, { summary: changed ? "Changed" : "Defaults", dot: changed });
+/** The Anywhere menu's two cards: Look (what is behind the ring, how dark,
+ * the buttons, the glow) and Motion (how it opens, the beam, the finger's
+ * shadow). */
+function renderAnywhereStyleCards(host: MenusViewHost): TemplateResult {
+  const lookChanged = menuStyleKeysChanged(host.document, "quickAction", ANYWHERE_LOOK_KEYS);
+  const motionChanged = menuStyleKeysChanged(host.document, "quickAction", ANYWHERE_MOTION_KEYS);
+  return html`${card(host, "style", "style-anywhere", "Look", html`<fieldset class="me-body me-style" ?disabled=${host.busy} aria-label="Look">
+      ${renderAnywhereLookBody(host)}
+    </fieldset>`, { summary: anywhereLookSummary(host.document), dot: lookChanged })}
+    ${card(host, "motion", "motion-anywhere", "Motion", html`<fieldset class="me-body me-style" ?disabled=${host.busy} aria-label="Motion">
+      ${renderAnywhereMotionBody(host)}
+    </fieldset>`, { summary: anywhereMotionSummary(host.document), dot: motionChanged })}`;
 }
 
-/** The Entity quick menu's Menu card: by type or by entity; the type, and
- * whether its menu adds the All slots; or the entities with a menu of their
- * own, the one shown, and a way to add one. */
+/** The page switcher's Look: its glow and how big the picked page grows. */
+function renderSwitcherStyleCard(host: MenusViewHost): TemplateResult {
+  const changed = menuStyleKeysChanged(host.document, "pageSwitcher", SWITCHER_LOOK_KEYS);
+  return card(host, "style", "style-switcher", "Look", html`<fieldset class="me-body me-style" ?disabled=${host.busy} aria-label="Look">
+    ${renderSwitcherLookBody(host)}
+  </fieldset>`, { summary: switcherLookSummary(host.document), dot: changed });
+}
+
+/** The Entity quick menu's Which menu card: by type or by entity; the type,
+ * as tiles and a list, and whether its menu fills its gaps with the All
+ * menu's slots; or the entities with a menu of their own, the one shown,
+ * and a way to add one. */
 function renderEntityMenuCard(host: MenusViewHost): TemplateResult {
   const mode = entityMode(host);
   const setMode = (v: "domain" | "entity") => {
@@ -1338,16 +1392,21 @@ function renderEntityMenuCard(host: MenusViewHost): TemplateResult {
     const info = watchMenuDomain(domain);
     const sharing = watchMenuDomainsSharing(domain);
     const choices: [string, string][] = watchMenuDomains().map((d) => [d.domain, d.label]);
+    const tiles: MenuTypeChoice[] = MENU_TYPE_TILES.flatMap((t) => {
+      const d = watchMenuDomain(t);
+      return d === undefined ? [] : [{ domain: d.domain, label: d.label, icon: d.icon, color: watchTriggerLook(d.domain).color }];
+    });
     const inherits = info?.inheritKey ? watchMenuInherits(host.document, domain) : false;
     dot = inherits;
     summary = `By type · ${info?.label ?? domain}`;
-    body = html`${selectField("Type", domain, choices, (v) => {
+    body = html`<p class="hint keep">Each kind of thing gets its own menu. Pick one to edit it.</p>
+      ${typeTiles(host.icons, domain, tiles, choices, (v) => {
         host.uiState.set(ENTITY_DOMAIN_KEY, v);
         host.requestUpdate();
       })}
       ${sharing.length > 0 ? html`<div class="hint ts-under keep">The same menu as ${sharing.map((d) => d.label).join(", ")}.</div>` : nothing}
-      ${info?.inheritKey ? html`${checkField("Add the All slots", inherits, (v) => host.edit((d) => setWatchMenuInherits(d, domain, v)), false)}
-        <div class="hint ts-under">The All menu's slots fill the places this menu leaves free.</div>` : nothing}`;
+      ${info?.inheritKey ? switchRow("Fill gaps with the All menu", inherits, (v) => host.edit((d) => setWatchMenuInherits(d, domain, v)), false,
+        "Its slots show in places this menu leaves free. They are dashed on the watch.") : nothing}`;
   } else {
     const ids = watchMenuOverrideIds(host.document);
     const shown = shownEntity(host);
@@ -1377,18 +1436,21 @@ function renderEntityMenuCard(host: MenusViewHost): TemplateResult {
       </div>
     </div>`;
   }
-  return card(host, "menu", "menu", "Menu", html`<fieldset class="me-body me-pick" ?disabled=${host.busy} aria-label="Menu">
+  return card(host, "menu", "menu", "Which menu", html`<fieldset class="me-body me-pick" ?disabled=${host.busy} aria-label="Which menu">
     ${modeRow}${body}
   </fieldset>`, { summary, dot });
 }
 
+/** The line under a menu's own cards that has slots. */
+export const MENU_PICK_NOTE = "Click a slot on the watch to change what it does.";
+
 /** The shown menu's own settings, with no slot selected. */
 function renderMenuSettings(host: MenusViewHost, menu: MenusSection): TemplateResult {
-  const cards = menu === "anywhere" ? renderStyleCard(host, "quickAction", "style-anywhere")
-    : menu === "switcher" ? renderStyleCard(host, "pageSwitcher", "style-switcher")
+  const cards = menu === "anywhere" ? renderAnywhereStyleCards(host)
+    : menu === "switcher" ? renderSwitcherStyleCard(host)
     : renderEntityMenuCard(host);
   return html`<p class="me-menu-note">${MENU_LINES[menu]}</p>${cards}
-    <p class="me-menu-note me-pick-note">${menu === "switcher" ? SWITCHER_PICK_NOTE : "Select a slot to edit it, or add one."}</p>`;
+    <p class="me-menu-note me-pick-note">${menu === "switcher" ? SWITCHER_PICK_NOTE : MENU_PICK_NOTE}</p>`;
 }
 
 /** The views' rules, after the shared chrome and the editor's own in the
@@ -1462,7 +1524,7 @@ export const menuViewStyles = css`
   .me-menu-note { margin: 6px 2px 2px; font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
   .me-menu-note.me-pick-note { margin-top: 10px; }
   .name-sec .sec-h > .me-name {
-    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere;
     font-size: 12.5px; font-weight: 600; color: var(--wa-ink);
   }
   .me-acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0 0; }
@@ -1470,9 +1532,6 @@ export const menuViewStyles = css`
   .me-sub-h { margin: 8px 0 2px; font-size: 12px; font-weight: 600; color: var(--wa-muted); }
   .me-voice-list { display: flex; flex-direction: column; margin-bottom: 2px; }
   .me-body .hint.warn { color: var(--wa-amber); }
-  .me-show-for { margin-top: 6px; border-top: 1px solid var(--wa-line); padding-top: 6px; }
-  .me-show-for > summary { display: flex; gap: 8px; align-items: baseline; cursor: pointer; font-size: 12px; color: var(--wa-muted); padding: 4px 0; }
-  .me-show-for > summary b { color: var(--wa-ink); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .me-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0; }
   .me-entities { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
   .me-entity { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border: 1px solid transparent; border-radius: var(--wa-r-sm, 8px); }

@@ -30,6 +30,7 @@ import {
   MENU_CHIP_COLOR,
   MENU_PAGE_CHIP_COLOR,
   MENU_SECTION_BADGES,
+  MENU_PICK_NOTE,
   MENU_STAGE_HINT,
   type MenuSwitcherPage,
   type MenusViewHost,
@@ -217,26 +218,32 @@ describe("the inspector", () => {
     expect(head).toContain(`<span class="kchip" style=--k:${MENU_CHIP_COLOR}>Menu</span><span class="nm" title=Anywhere menu>Anywhere menu</span>`);
     expect(head).toContain(">Collapse all</button>");
     expect(text).toContain("data-sec=menu-editor:style-anywhere");
+    expect(text).toContain("data-sec=menu-editor:motion-anywhere");
+    expect(text.indexOf("<h4>Look</h4>")).toBeLessThan(text.indexOf("<h4>Motion</h4>"));
     expect(text).toContain(`style=--c:${SECTION_COLOR.look}`);
     expect(text).not.toContain("name-sec");
+    expect(text).toContain(`<p class="me-menu-note me-pick-note">${MENU_PICK_NOTE}</p>`);
+    expect(MENU_PICK_NOTE).toBe("Click a slot on the watch to change what it does.");
   });
 
-  it("crumbs a selected slot as Menu › SLOT › name, in the slot's color, over its Name, Slot and Look cards", () => {
+  it("crumbs a selected slot as Menu › SLOT › name, in the slot's color, over its Name, What it does, Where, Icon and color and Shows on cards", () => {
     const h = host(DEFAULTS);
     h.uiState.set("me:sel:anywhere", REFRESH);
     const text = flat(renderMenuInspector(h));
     const head = text.slice(text.indexOf(`<div class="insp-head">`), text.indexOf(`<div class="insp-body">`));
     expect(head).toContain(`<button class="root" title="Edit the menu"`);
     expect(head).toContain(">Anywhere menu</button><span class=\"sep\">›</span><span class=\"kchip\" style=--k:#4DBFE0>Slot</span><span class=\"nm\" title=Refresh>Refresh</span>");
-    const name = text.indexOf(`class="sec name-sec"`);
-    const slot = text.indexOf("data-sec=menu-editor:slot");
-    const look = text.indexOf("data-sec=menu-editor:look");
-    expect(name).toBeGreaterThan(-1);
-    expect(slot).toBeGreaterThan(name);
-    expect(look).toBeGreaterThan(slot);
+    const order = [`class="sec name-sec"`, "data-sec=menu-editor:slot ", "data-sec=menu-editor:where ", "data-sec=menu-editor:look ", "data-sec=menu-editor:shows ", ">Remove</span>"]
+      .map((part) => text.indexOf(part));
+    expect(order.every((p) => p > -1)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    for (const title of ["What it does", "Where", "Icon and color", "Shows on"]) expect(text, title).toContain(`<h4>${title}</h4>`);
     expect(text).toContain(`<span class="me-name" title="A slot is named by what it runs, else by its action">Refresh</span>`);
-    // The slot's controls, every one kept.
-    for (const label of [">Place<", ">Shown<", ">Action<", ">Show for<", ">Icon<", ">Color<", ">Remove</span>"]) expect(text, label).toContain(label);
+    // The slot's controls, every one kept: the action tiles, the place grid
+    // and Shown, the icon and color, the types it shows over.
+    for (const label of [`role="group" aria-label="Place on the ring"`, ">Shown on the watch<", "data-action=refresh", ">Icon<", ">Color<", ">Show on<", ">Remove</span>"]) {
+      expect(text, label).toContain(label);
+    }
     // Escape, or the crumb, lets go of the slot.
     expect(deselectMenuSlot(h)).toBe(true);
     expect(flat(renderMenuInspector(h))).toContain("data-sec=menu-editor:style-anywhere");
@@ -247,9 +254,12 @@ describe("the inspector", () => {
     expect(MENU_SECTION_BADGES).toEqual({
       name: { color: SECTION_COLOR.place, icon: "text" },
       slot: { color: SECTION_COLOR.content, icon: "content" },
+      where: { color: SECTION_COLOR.position, icon: "place" },
       look: { color: SECTION_COLOR.look, icon: "look" },
+      shows: { color: SECTION_COLOR.states, icon: "states" },
       menu: { color: SECTION_COLOR.content, icon: "content" },
       style: { color: SECTION_COLOR.look, icon: "look" },
+      motion: { color: SECTION_COLOR.look, icon: "radial" },
       switcherPage: { color: SECTION_COLOR.content, icon: "watch" },
     });
     const h = host(DEFAULTS);
@@ -260,6 +270,8 @@ describe("the inspector", () => {
     // group, so the openings are compared as plain text.
     expect(card("slot").startsWith(`<section class="sec" data-sec=menu-editor:slot data-open=true data-help="on" style=--c:${SECTION_COLOR.content}`)).toBe(true);
     expect(card("look").startsWith(`<section class="sec" data-sec=menu-editor:look data-open=true data-help="on" style=--c:${SECTION_COLOR.look}`)).toBe(true);
+    expect(card("where").startsWith(`<section class="sec" data-sec=menu-editor:where data-open=true data-help="on" style=--c:${SECTION_COLOR.position}`)).toBe(true);
+    expect(card("shows").startsWith(`<section class="sec" data-sec=menu-editor:shows data-open=true data-help="on" style=--c:${SECTION_COLOR.states}`)).toBe(true);
     expect(text).toContain(`<section class="sec name-sec" data-open="true" style=--c:${SECTION_COLOR.place}>`);
   });
 
@@ -269,14 +281,16 @@ describe("the inspector", () => {
     const entity = flat(renderMenuInspector(h));
     expect(entity).toContain("data-sec=menu-editor:menu");
     expect(entity).toContain(`style=--c:${SECTION_COLOR.content}`);
+    expect(entity).toContain("<h4>Which menu</h4>");
     expect(entity).toContain("By type");
-    expect(entity).toContain(">Type<");
-    expect(entity).toContain("Add the All slots");
+    expect(entity).toContain(">More types<");
+    expect(entity).toContain(">Fill gaps with the All menu<");
     selectMenu(h, "switcher");
     const switcher = flat(renderMenuInspector(h));
     expect(switcher).toContain("data-sec=menu-editor:style-switcher");
-    expect(switcher).toContain("Glow");
-    expect(switcher).toContain("Selected Scale");
+    expect(switcher).toContain("<h4>Look</h4>");
+    expect(switcher).toContain(">Glow<");
+    expect(switcher).toContain(">Picked page size<");
   });
 
   it("marks a card changed where a value is away from its default", () => {
