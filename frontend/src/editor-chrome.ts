@@ -159,7 +159,17 @@ const topBarRun = css`
       --lo-fill: var(--wa-hover);
       background: var(--lo-fill);
     }
-    .tb-saved { font-size: 12px; color: var(--wa-muted); white-space: nowrap; padding: 0 4px; }
+    /* Whether the work is saved, the one place it is said: muted once saved,
+       amber with a dot while there are changes (or Save refuses them), red
+       with a dot for an error. */
+    .tb-saved {
+      display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 300px;
+      font-size: 12px; color: var(--wa-muted); white-space: nowrap; padding: 0 4px;
+    }
+    .tb-saved-l { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .tb-saved-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: currentColor; }
+    .tb-saved.warn { color: var(--wa-amber); font-weight: 500; }
+    .tb-saved.err { color: var(--error-color, #db4437); font-weight: 500; }
     /* After a save: where it has got to, one line. Amber when the reader has
        to do something (open the watch app). It stays when the bar stacks,
        on the second row, since on a phone it is the only place it is said. */
@@ -169,8 +179,11 @@ const topBarRun = css`
     }
     .tb-after.warn { color: var(--wa-amber); font-weight: 500; }
     header.stacked > .tb-after, .wa-bar.stacked > .tb-after { order: 2; }
-    header.stacked .tb-saved, header.stacked .tb-pen, header.stacked > .tb-div,
-    .wa-bar.stacked .tb-saved, .wa-bar.stacked .tb-pen, .wa-bar.stacked > .tb-div { display: none; }
+    /* Stacked, "Saved 3 min ago" gives way, but changes and errors keep
+       their line on the second row: it is the only place they are said. */
+    header.stacked .tb-saved:not(.warn):not(.err), header.stacked .tb-pen, header.stacked > .tb-div,
+    .wa-bar.stacked .tb-saved:not(.warn):not(.err), .wa-bar.stacked .tb-pen, .wa-bar.stacked > .tb-div { display: none; }
+    header.stacked > .tb-saved, .wa-bar.stacked > .tb-saved { order: 2; }
     /* Stacked (a phone, or a narrow window), the bar is two tidy rows rather
        than three ragged ones: what is done to the draft on top (Browse, undo,
        redo, Save, help), and where it has got to underneath (the sync pill,
@@ -721,6 +734,16 @@ const leftCardsRun = css`
     .lc-note button.link { margin-left: auto; font-weight: 700; color: inherit; text-decoration: underline; }
     .lc-note span { line-height: 1.4; }
     .lc-note b { font-weight: 700; }
+    /* One page: a quiet line over the Layers card, not a card of its own. */
+    .pages-slim {
+      display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 2px 0 10px;
+      font-size: 12px; color: var(--wa-muted);
+    }
+    .pages-slim .spacer { flex: 1; }
+    .pages-slim-ic { display: inline-grid; place-items: center; flex: none; }
+    .pages-slim-ic svg.ui-icon { width: 13px; height: 13px; }
+    .pages-slim button.lc-ghost { border-color: transparent; letter-spacing: 0; font-weight: 500; }
+    .pages-slim button.lc-ghost:hover:not(:disabled) { border-color: var(--wa-line-strong); }
     .pages-card .lc-note { margin: 8px 12px 0; }
     .pages-card .page-tour-bar { margin: 0 12px 10px; }
     /* The Layers card's filter line, and the rows under it. */
@@ -1532,6 +1555,9 @@ const sectionCardTailRun = css`
       border-radius: 6px; border-color: var(--wa-line-strong); background-color: var(--wa-field);
     }
     .name-sec .sec-h input[type=text]:focus-visible { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
+    /* An empty name shows the automatic title, which is the layer's real name
+       until one is typed, so it reads as a name and not as a grey hint. */
+    .name-sec .sec-h input[type=text]::placeholder { color: var(--wa-ink); opacity: 1; }
     /* Each card's "?": quiet until the header is hovered, lit while its help
        is showing. A touch screen has no hover, so there it always shows. */
     button.sec-help {
@@ -1545,6 +1571,19 @@ const sectionCardTailRun = css`
     button.sec-help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.sec-help.on { color: var(--wa-ink); background: var(--wa-raise); border-color: transparent; }
     @media (hover: none) { button.sec-help { opacity: 1; } }
+    /* A card's ··· menu, for its rare actions. The card clips its corners,
+       so it lets the menu out while the menu is open. */
+    .sec.menu-open { overflow: visible; }
+    .sec-menu { position: relative; flex: none; display: inline-flex; }
+    button.sec-more {
+      height: 20px; padding: 0 5px; border-radius: 6px; cursor: pointer;
+      font: inherit; font-size: 12px; font-weight: 700; line-height: 1; letter-spacing: .04em;
+      border: 1px solid transparent; background: transparent; color: var(--wa-muted);
+    }
+    button.sec-more:hover, button.sec-more.on { color: var(--wa-ink); border-color: var(--wa-line-strong); }
+    button.sec-more:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .sec-menu .pop-menu { min-width: 160px; cursor: default; }
+    .sec-menu .pop-menu .row:disabled { opacity: .45; cursor: default; background: transparent; }
     /* Help text waits behind that "?". A plain hint shows only while its
        card's help is on; a warning, an error, or a hint marked keep (a status,
        an empty state, a step that is required) always shows. A value popover

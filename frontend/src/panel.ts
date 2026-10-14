@@ -1834,6 +1834,10 @@ export class WristAssistantPanel extends LitElement {
   /** A layer's position lifted by the Position card's Copy position, for its
    * Paste position on another layer. Kept for the tab, like `clipboard`. */
   @state() private copiedPosition?: CopiedPosition;
+  /** The inspector card whose ··· menu is open, by section id. */
+  @state() private secMenu?: string;
+  /** Whether the canvas spells out how to drag a layer, under its "?". */
+  @state() private dragHelpOpen = false;
 
   // ── Parts ──────────────────────────────────────────────────────────
   //
@@ -4831,6 +4835,15 @@ export class WristAssistantPanel extends LitElement {
     .under .size { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     .under .dot { color: var(--wa-line-strong); }
     .under .tail b { font-weight: 700; }
+    /* How to drag a layer, behind a small "?" like the inspector cards'. */
+    button.under-help {
+      display: inline-grid; place-items: center; width: 18px; height: 18px; padding: 0; margin-left: 4px; vertical-align: -4px;
+      border-radius: 50%; cursor: pointer; font: inherit; font-size: 10.5px; font-weight: 700; line-height: 1;
+      border: 1px solid var(--wa-line-strong); background: transparent; color: var(--wa-muted);
+    }
+    button.under-help:hover, button.under-help.on { color: var(--wa-ink); border-color: var(--wa-muted); }
+    button.under-help.on { background: var(--wa-raise); border-color: transparent; }
+    button.under-help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     /* The two lists under the face: what the complication defines for itself,
        and what the house is telling it right now. Stacked, so each title and
        each value line gets the whole width instead of wrapping into a column
@@ -5071,15 +5084,7 @@ export class WristAssistantPanel extends LitElement {
       background: var(--wa-top); border-top: 1px solid var(--wa-line);
     }
     .foot-row { display: flex; align-items: center; gap: 14px; height: 26px; padding: 0 10px; font-size: 12px; color: var(--wa-muted); }
-    .foot-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--wa-muted); opacity: .7; }
-    .foot-dot.ok { background: var(--wa-green); opacity: 1; }
-    .foot-dot.warn { background: var(--wa-amber); opacity: 1; }
-    .foot-dot.err { background: var(--error-color, #db4437); opacity: 1; }
-    /* Same color on the words as on the dot, so the footer agrees with the
-       header's Save button about there being work to save. */
-    .foot-dot.warn + .foot-text { color: var(--wa-amber); }
-    .foot-dot.err + .foot-text { color: var(--error-color, #db4437); }
-    .foot-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .foot-fill { flex: 1; }
     .foot-raw {
       flex: none; font: inherit; font-size: 12px; font-weight: 400; color: var(--wa-soft); cursor: pointer;
       background: transparent; border: 0; padding: 0 4px; min-height: 20px; border-radius: 5px;
@@ -7818,6 +7823,8 @@ export class WristAssistantPanel extends LitElement {
       fillSlot: (slot, ref, apply) => this.fillSlot(slot, ref, apply),
       copiedPosition: this.copiedPosition,
       copyPosition: (position) => { this.copiedPosition = position; },
+      ...(this.secMenu !== undefined ? { secMenu: this.secMenu } : {}),
+      toggleSecMenu: (id, open) => this.toggleSecMenu(id, open),
       ...(this.rowEditList() ? { rowEditListId: this.rowEditListId! } : {}),
       setRowEdit: (listId) => this.setRowEdit(listId),
     };
@@ -9351,13 +9358,14 @@ export class WristAssistantPanel extends LitElement {
     // No pages and no edit rights: nothing to switch and nothing to press.
     if (!on && !edit) return nothing;
     if (!on) {
-      return html`<div class="card pages-card lc">
-        <div class="lc-head">
-          <span class="swatch">${uiIcon("pages")}</span><span class="lc-title">Pages</span><span class="lc-sub">just one</span>
-          <span class="spacer"></span>
-          <button class="lc-btn" title="Start a second page. What is here now becomes page 1, and a new empty page 2 opens for you to draw on."
-            @click=${() => { let page = 1; this.mutate((c) => { page = startPages(c); }); this.showPage(page); }}>${uiIcon("plus")}<span>Add page</span></button>
-        </div>
+      // One page is how most complications stay, so it is a quiet line with
+      // no card and no green button: Add layer below is the first thing to
+      // press, and a second page is the rarer step.
+      return html`<div class="pages-card pages-slim">
+        <span class="pages-slim-ic" aria-hidden="true">${uiIcon("pages")}</span><span class="pages-slim-l">One page</span>
+        <span class="spacer"></span>
+        <button class="lc-ghost sm" title="Start a second page. What is here now becomes page 1, and a new empty page 2 opens for you to draw on."
+          @click=${() => { let page = 1; this.mutate((c) => { page = startPages(c); }); this.showPage(page); }}>${uiIcon("plus")}<span>Add page</span></button>
       </div>`;
     }
     const spec = pagesSpecOf(cfg);
@@ -11323,10 +11331,22 @@ export class WristAssistantPanel extends LitElement {
   private renderTopBar(stacked: boolean, dirty: boolean) {
     const d = this.draft;
     const rec = this.records.find((r) => r.id === this.selectedId);
-    const caption = d ? savedCaption(d.baseRevision === null, rec?.updatedAt, Date.now()) : undefined;
-    // Work that cannot be written says why on the button, the footer saying
-    // the same, rather than a live Save that only answers with an error.
+    // Work that cannot be written says why on the button, the line beside it
+    // saying the same, rather than a live Save that only answers with an error.
     const refusal = d && dirty ? saveRefusal(d.config, this.layerNamer()) : undefined;
+    // The one place that says whether the work is saved: when and by whom,
+    // "Unsaved changes", or an error. The footer used to say it too, and the
+    // two read as three statuses beside the sync pill.
+    const status = d ? footerStatus({
+      revision: rec?.revision ?? null,
+      dirty,
+      updatedBy: rec?.updatedBy ?? "",
+      ...(rec?.updatedAt ? { updatedAt: rec.updatedAt } : {}),
+      ...(refusal !== undefined ? { refusal } : {}),
+      ...(this.saveError !== undefined ? { error: this.saveError } : {}),
+      ...(this.templateError !== undefined ? { templateError: this.templateError } : {}),
+    }) : undefined;
+    const raw = errTitle(this.saveError);
     // Home Assistant's menu button is the tab bar's, above this one. The
     // watch screens and Watch settings are reached from Home and the Watch
     // app tab, so this bar holds only what is about complications.
@@ -11348,7 +11368,9 @@ export class WristAssistantPanel extends LitElement {
       ${d ? html`<button class="primary save ${dirty ? "dirty" : ""}" @click=${() => void this.save()}
           ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen || refusal !== undefined}
           title=${refusal !== undefined ? refusal : dirty ? `Save (${KEY_MOD}S)` : `Nothing to save (${KEY_MOD}S)`}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved" title=${dirty && rec ? "Unsaved changes" : caption ?? ""}>${caption}</span>
+        ${status ? html`<span class="tb-saved ${status.tone}" role="status"
+          title=${status.title ?? (raw !== undefined && status.tone === "err" ? raw : status.text)}>${status.tone === "warn" || status.tone === "err"
+            ? html`<i class="tb-saved-dot" aria-hidden="true"></i>` : nothing}<span class="tb-saved-l">${status.text}</span></span>` : nothing}
         ${this.renderAfterSave()}` : nothing}
       <button class="help" title="Help" aria-label="Help" @click=${() => { this.helpOpen = true; }}>?</button>
     </header>`;
@@ -13835,6 +13857,21 @@ export class WristAssistantPanel extends LitElement {
     if (this.openMenu !== undefined) window.addEventListener("pointerdown", this.menuOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.menuOutside, { capture: true });
   }
+
+  /** Open or shut an inspector card's ··· menu (`CardOptions.menu`). A press
+   * outside it shuts it, the same as the preview bar's menus. */
+  private toggleSecMenu(id: string, open: boolean) {
+    this.secMenu = open ? id : this.secMenu === id ? undefined : this.secMenu;
+    if (this.secMenu !== undefined) window.addEventListener("pointerdown", this.secMenuOutside, { capture: true });
+    else window.removeEventListener("pointerdown", this.secMenuOutside, { capture: true });
+  }
+
+  private secMenuOutside = (e: PointerEvent) => {
+    const open = this.secMenu;
+    if (open === undefined) return;
+    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.dataset.secMenu === open);
+    if (!inside) this.toggleSecMenu(open, false);
+  };
 
   private menuOutside = (e: PointerEvent) => {
     const open = this.openMenu;
@@ -20493,17 +20530,23 @@ export class WristAssistantPanel extends LitElement {
       const unit = g ? groupMoveUnit(cfg, g.id) ?? g : undefined;
       const n = unit ? groupLayers(cfg, unit.id).length : 0;
       tail = g && unit ? html`A drag moves all ${n} layers of <b>${unit.name}</b>.${g.locked || unit !== g ? "" : ` ${this.touch ? "Tap" : "Click"} one layer to move it alone.`}` : "";
-    } else if (sel && this.touch) {
-      // No keys and no Alt under a finger: say what a finger can do.
-      const g = lockedUnitOf(cfg, sel.payload.id);
-      tail = g
+    } else if (sel && lockedUnitOf(cfg, sel.payload.id)) {
+      const g = lockedUnitOf(cfg, sel.payload.id)!;
+      tail = this.touch
         ? html`A drag moves the whole group <b>${g.name}</b>; pull a corner or side to resize this layer.`
-        : `Drag it, or pull a corner or side.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers." : this.snapGrid ? " It snaps to the grid." : this.snapLayers ? " It snaps to the other layers." : ""}`;
+        : html`A drag moves the whole group <b>${g.name}</b>; pull a corner or side to resize this layer. Arrow keys nudge the group.`;
     } else if (sel) {
-      const g = lockedUnitOf(cfg, sel.payload.id);
-      tail = g
-        ? html`A drag moves the whole group <b>${g.name}</b>; pull a corner or side to resize this layer. Arrow keys nudge the group.`
-        : html`Drag it, or pull a corner or side. Arrow keys nudge it.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers. Hold Alt to drag freely." : this.snapGrid ? " It snaps to the grid. Hold Alt to drag freely." : this.snapLayers ? " It snaps to the other layers. Hold Alt to drag freely." : " Hold Alt while dragging to snap to the grid."}`;
+      // How to drag a layer is the same every time, so it waits behind a
+      // small "?" rather than filling three lines under every selection.
+      // No keys and no Alt under a finger: there it says what a finger can do.
+      const full = this.touch
+        ? `Drag it, or pull a corner or side.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers." : this.snapGrid ? " It snaps to the grid." : this.snapLayers ? " It snaps to the other layers." : ""}`
+        : `Drag it, or pull a corner or side. Arrow keys nudge it.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers. Hold Alt to drag freely." : this.snapGrid ? " It snaps to the grid. Hold Alt to drag freely." : this.snapLayers ? " It snaps to the other layers. Hold Alt to drag freely." : " Hold Alt while dragging to snap to the grid."}`;
+      const open = this.dragHelpOpen;
+      return html`<div class="under"><span class="tail">${open ? full : nothing}
+        <button type="button" class="under-help ${open ? "on" : ""}" aria-pressed=${open ? "true" : "false"}
+          title=${open ? "Hide how to move it" : full} aria-label=${open ? "Hide how to move it" : "How to move it"}
+          @click=${() => { this.dragHelpOpen = !open; }}>?</button></span></div>`;
     } else if (family === "corner" && ins.kind === "cornerText") {
       tail = `The watch bends this text along the corner and draws no layers. Edit it ${this.stackedLayout() ? "below" : "on the right"}, or pick Layers in the Layers list to draw layers instead.`;
     } else if (family === "corner" && ins.kind === "bezel") {
@@ -21499,22 +21542,11 @@ export class WristAssistantPanel extends LitElement {
     const d = this.draft;
     if (!d) return nothing;
     const rec = this.records.find((r) => r.id === this.selectedId);
-    const refusal = d.dirty || d.baseRevision === null ? saveRefusal(d.config, this.layerNamer()) : undefined;
-    const status = footerStatus({
-      revision: rec?.revision ?? null,
-      dirty: d.dirty,
-      updatedBy: rec?.updatedBy ?? "",
-      ...(rec?.updatedAt ? { updatedAt: rec.updatedAt } : {}),
-      ...(refusal !== undefined ? { refusal } : {}),
-      ...(this.saveError !== undefined ? { error: this.saveError } : {}),
-      ...(this.templateError !== undefined ? { templateError: this.templateError } : {}),
-    });
-    const raw = errTitle(this.saveError);
+    // Whether the work is saved is said once, beside Save in the top bar.
     return html`<div class="foot" data-open=${this.rawOpen ? "true" : "false"}>
       ${this.rawOpen ? this.renderRawDetails(d, rec) : nothing}
       <div class="foot-row">
-        <span class="foot-dot ${status.tone}" aria-hidden="true"></span>
-        <span class="foot-text" title=${status.title ?? (raw !== undefined && status.tone === "err" ? raw : status.text)}>${status.text}</span>
+        <span class="foot-fill"></span>
         ${this.canEdit ? html`<button class="foot-raw" aria-haspopup="dialog" ?disabled=${d.baseRevision === null}
           title=${d.baseRevision === null ? "Nothing to go back to until it has been saved once" : "Earlier saves of this complication"}
           @click=${() => void this.openHistoryDialog()}>History</button>` : nothing}
