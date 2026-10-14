@@ -161,7 +161,7 @@ describe("links into the Watch app carry the shared watch", () => {
 
   it("on Home's picked device, whose doors open a screen on that device's own watch", () => {
     const detail = method("  private renderHomeDetail(");
-    expect(detail).toContain("const path = watchScreenPath(t.screen, ownerId);");
+    expect(detail).toContain("const path = watchScreenPath(screen, ownerId);");
     expect(detail).toContain(`href=\${panelUrl(this.route, path, window.location.pathname)}`);
     expect(detail).toContain("this.pickWatch(ownerId);");
     expect(method("  private renderHome() {")).not.toContain("watchSettings.");

@@ -146,7 +146,7 @@ describe("Home's picked device", () => {
     expect(detail).toContain("const [callL, callR] = deviceCardTiles(row.kind);");
     expect(detail).toContain(`<button type="button" class="hb-call \${side}" title=\${\`\${t.label} on \${row.name}\`} @click=\${() => go(t)}>`);
     expect(detail).toContain(`const word = t.kind === "list" && t.filter === "control" ? "Control Center" : countWord(t.label, n);`);
-    expect(detail).toContain("if (t.kind === \"list\") { openList(t.filter); return; }");
+    expect(detail).toContain("if (t.kind === \"list\") openList(t.filter); return;");
   });
 
   it("slides a newly picked device in, unless the person asks for less motion", () => {
@@ -173,7 +173,7 @@ describe("Home's picked device", () => {
   it("has a door for each of the device's pages, each opening it on this device", () => {
     expect(detail).toContain("${deviceSheetTabs(row.kind).map(door)}");
     expect(detail).toContain("const look = homeDoorLook(t, row.kind);");
-    expect(detail).toContain("const path = watchScreenPath(t.screen, ownerId);");
+    expect(detail).toContain("const path = watchScreenPath(screen, ownerId);");
     expect(detail.indexOf("this.pickWatch(ownerId);")).toBeLessThan(detail.indexOf("this.goTo(path);"));
     expect(detail).toContain("this.pickerFilter = filter;");
     expect(detail).toContain("this.pickPickerTab(ownerId);");
@@ -336,11 +336,15 @@ describe("Home's Pair a device dialog", () => {
 describe("the doors to a device's complications", () => {
   it("opens a watch's complications on the Watch app's Complications screen, and a phone's on the list", () => {
     const detail = method("  private renderHomeDetail(");
+    const screenOf = between(detail, "const screenOf = (t: DeviceSheetTab)", "\n    const go");
+    expect(screenOf).toContain(`t.filter === "all" && row.kind === "watch" ? WATCH_SCREENS.find((s) => s.id === "watch-complications")`);
     const go = between(detail, "const go = (t: DeviceSheetTab) => {", "\n    };");
-    expect(go).toContain(`t.kind === "list" && t.filter === "all" && row.kind === "watch"`);
-    expect(go).toContain(`WATCH_SCREENS.find((s) => s.id === "watch-complications")`);
     expect(go).toContain("this.goTo(watchScreenPath(screen, ownerId));");
-    expect(go).toContain(`if (t.kind === "list") { openList(t.filter); return; }`);
+    expect(go).toContain(`if (t.kind === "list") openList(t.filter); return;`);
+    // The door under the device takes the same way as the count by it.
+    const door = between(detail, "const door = (t: DeviceSheetTab) => {", "\n    };");
+    expect(door).toContain("const screen = screenOf(t);");
+    expect(door).toContain("const path = watchScreenPath(screen, ownerId);");
   });
 
   it("opens the Complications tab on every complication, closing a design with nothing unsaved", () => {

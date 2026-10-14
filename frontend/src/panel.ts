@@ -19805,18 +19805,14 @@ export class WristAssistantPanel extends LitElement {
     // Complications tab, or a watch screen on this watch.
     // A watch's complications open the Watch app's Complications screen on
     // this watch; an iPhone's widgets and any device's controls the list.
+    const screenOf = (t: DeviceSheetTab): WatchScreen | undefined => t.kind === "screen"
+      ? t.screen
+      : t.filter === "all" && row.kind === "watch" ? WATCH_SCREENS.find((s) => s.id === "watch-complications") : undefined;
     const go = (t: DeviceSheetTab) => {
-      if (t.kind === "list" && t.filter === "all" && row.kind === "watch") {
-        const screen = WATCH_SCREENS.find((s) => s.id === "watch-complications");
-        if (screen !== undefined) {
-          this.pickWatch(ownerId);
-          this.goTo(watchScreenPath(screen, ownerId));
-          return;
-        }
-      }
-      if (t.kind === "list") { openList(t.filter); return; }
+      const screen = screenOf(t);
+      if (screen === undefined) { if (t.kind === "list") openList(t.filter); return; }
       this.pickWatch(ownerId);
-      this.goTo(watchScreenPath(t.screen, ownerId));
+      this.goTo(watchScreenPath(screen, ownerId));
     };
     // The two counts that point at the device, each a door to its page: a
     // watch's complications and pages, an iPhone's widgets and its Control
@@ -19861,11 +19857,12 @@ export class WristAssistantPanel extends LitElement {
           ${n === undefined ? nothing : n === 0 ? html`<b class="hb-door-n none">None</b>` : html`<b class="hb-door-n">${n}</b>`}
         </span>
         <span class="hb-door-foot">${strip ?? html`<span class="hb-door-b">${look.blurb}</span>`}<span class="hb-door-go" aria-hidden="true">${uiIcon("right")}</span></span>`;
-      if (t.kind === "list") {
+      const screen = screenOf(t);
+      if (screen === undefined) {
         return html`<button type="button" class="hb-door" style=${`--h:${look.hue}`} title=${`${t.label} on ${row.name}`}
-          @click=${() => openList(t.filter)}>${body}</button>`;
+          @click=${() => { if (t.kind === "list") openList(t.filter); }}>${body}</button>`;
       }
-      const path = watchScreenPath(t.screen, ownerId);
+      const path = watchScreenPath(screen, ownerId);
       return html`<a class="hb-door" style=${`--h:${look.hue}`} href=${panelUrl(this.route, path, window.location.pathname)} title=${`${t.label} on ${row.name}`}
         @click=${(e: MouseEvent) => {
           if (!isPlainClick(e)) return;
