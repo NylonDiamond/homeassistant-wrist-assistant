@@ -3031,6 +3031,8 @@ export interface TemplateBoxOptions {
   /** One expression without braces works here (see `templateHint`). */
   bare: boolean;
   placeholder?: string;
+  /** Home Assistant's error for this template, which rings the box in red. */
+  error?: string;
   /** `typing` is true for keystrokes, false for a recipe or an entity put in. */
   write(next: string, typing: boolean): void;
   onBlur?(): void;
@@ -3105,7 +3107,8 @@ export function templateBox(host: Pick<EditorHost, "hass">, text: string, opts: 
       })}
     </div></div>
     <label class="field"><span>${opts.label}</span>
-      <textarea rows=${opts.rows} class="mono" spellcheck="false" .value=${live(text)} placeholder=${opts.placeholder ?? ""}
+      <textarea rows=${opts.rows} class="mono ${opts.error ? "tpl-err" : ""}" spellcheck="false" .value=${live(text)} placeholder=${opts.placeholder ?? ""}
+        aria-invalid=${opts.error ? "true" : "false"} title=${opts.error ?? ""}
         @input=${(e: Event) => { remember(e); opts.write((e.target as HTMLTextAreaElement).value, true); }}
         @keyup=${remember} @click=${remember}
         @blur=${(e: Event) => { remember(e); opts.onBlur?.(); }}></textarea></label>
@@ -3485,7 +3488,7 @@ function valueBody(host: EditorHost, value: Value, set: (v: Value) => void, opts
       break;
     case "jinja":
       body = templateBox(host, k.value, {
-        label: "Template", rows: 4, key: `${key}-tpl`, bare: true,
+        label: "Template", rows: 4, key: `${key}-tpl`, bare: true, error: host.templateError?.(opts.resolveAs ?? value),
         use: opts.symbol ? (opts.mdiTemplates ? "symbolMdi" : "symbol") : "text",
         write: (v) => setKind({ ...k, value: v }),
       });

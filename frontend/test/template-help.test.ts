@@ -157,12 +157,16 @@ describe("the error under the template box", () => {
     expect(out).toContain("This template does not work.");
     expect(out).toContain("TemplateSyntaxError: unexpected '}'");
     expect(out).toContain("the watch shows no values for the whole complication");
+    // The box itself is ringed, so the eye lands on what to fix.
+    expect(out).toContain("mono tpl-err");
+    expect(out).toContain("aria-invalid=true");
   });
 
   it("shows the reading as before when there is no error", () => {
     const cfg = newConfig("Fine", 0);
     const out = flatten(valueEditor(host(cfg, { resolve: () => "42" }), jinja("{{ 42 }}"), () => {}, { key: "v", inline: true, showResolved: true }));
     expect(out).not.toContain("does not work");
+    expect(out).not.toContain("tpl-err");
     expect(out).toContain("42");
   });
 

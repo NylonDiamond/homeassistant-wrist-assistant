@@ -442,6 +442,9 @@ export const formRowStyles = css`
     .tpl-recipes button.small { min-height: 24px; padding: 0 8px; font-size: 12px; }
     .tpl-recipes button.small.on { background: var(--wa-sel-bg); border-color: var(--wa-sel-ring); font-weight: 600; }
     .tpl-asks { color: var(--wa-ink); }
+    .tpl-box textarea.tpl-err, .tpl-box textarea.tpl-err:focus {
+      border-color: var(--error-color, #db4437); box-shadow: 0 0 0 1px var(--error-color, #db4437);
+    }
 `;
 
 /** The entity search (box, chosen row, result list, its pulses), the entity

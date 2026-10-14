@@ -193,7 +193,7 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     })}</div>
     <div class="ap-text">${templateBox(host, text, {
       label: "Jinja2 Template", rows: 6, key: `tile-${host.tileId}-tpl`, use: "text", bare: false,
-      placeholder: "Tap to edit template...",
+      placeholder: "Tap to edit template...", error: look.kind === "error" ? look.error : undefined,
       write,
       onBlur: () => host.endCoalesce(),
     })}</div>
