@@ -5,9 +5,10 @@
 //
 // The page reads top to bottom as rules, with the watch beside them:
 //
-// - Right now: where the room sensor says you are and the page the watch
-//   shows for it, the sensor (Change opens its field), Switch pages by room
-//   and When. With no sensor picked it is a Start here card instead: the
+// - Switching: one line that says what Rooms does, the sensor (Change opens
+//   its field and what it reads now), Switch pages by room and When. Never
+//   the room the sensor names now: it moves as you walk and the page jumped
+//   with it, and the watch only acts on it while its app is open. With no sensor picked it is a Start here card instead: the
 //   Bermuda pitch and the sensor field.
 // - The rules: "When I walk into" a room, "the watch opens" a page. One row
 //   per room (`listedRooms`), grouped by Home Assistant's floors when it has
@@ -161,13 +162,6 @@ export function sensorReading(hass: HassLike, sensor: string): { line: string; t
   return { line: `Now in ${room}${key === "" ? ", whose name has no letter or digit the watch can match" : ""}.`, tone: key === "" ? "warn" : "ok" };
 }
 
-/** The room the sensor names now, as the watch matches it; "" for none. */
-function currentRoomKey(hass: HassLike, sensor: string): string {
-  if (sensor === "") return "";
-  const room = roomFromState(sensor, hass.states[sensor]);
-  return room === undefined ? "" : normalizedRoomKey(room);
-}
-
 /** Bermuda, the integration that makes an area sensor from Bluetooth, is
  * not something a new user knows by name: the word links to it. */
 export const BERMUDA_URL = "https://github.com/agittins/bermuda";
@@ -248,11 +242,11 @@ export function offeredAreas(host: Pick<RoomsViewHost, "rooms" | "view" | "added
 }
 
 /** The room the stage and point control show: the one picked, else the
- * one you are in, else the first in the list. */
-export function pickedRoom(host: Pick<RoomsViewHost, "uiState"> & Partial<Pick<RoomsViewHost, "hass" | "view">>, listed: readonly RoomListEntry[]): RoomListEntry | undefined {
+ * first in the list. Never the room the sensor names now: that moves as you
+ * walk, and the page would move with it. */
+export function pickedRoom(host: Pick<RoomsViewHost, "uiState">, listed: readonly RoomListEntry[]): RoomListEntry | undefined {
   const key = host.uiState.get("pick");
-  const here = host.hass !== undefined && host.view !== undefined ? currentRoomKey(host.hass, host.view.sensor) : "";
-  return listed.find((r) => r.key === key) ?? listed.find((r) => r.key === here) ?? listed[0];
+  return listed.find((r) => r.key === key) ?? listed[0];
 }
 
 /** The rooms grouped by Home Assistant's floors, in the floors' order. A
@@ -287,62 +281,12 @@ function addRoomNamed(host: RoomsViewHost, name: string): void {
   pick(host, key);
 }
 
-// ── Right now ────────────────────────────────────────────────────────────
-
-/** One piece of the Right now sentence: plain words, or a name set in bold. */
-export type StatusWord = string | { bold: string };
+// ── the switching card ────────────────────────────────────────────────────────────
 
 /** The switch that turns room switching on: Switch pages by room on the main
  * house, Switch automatically on any other home. */
 function switchingOn(host: RoomsViewHost): boolean {
   return host.home === true ? homeAutoSwitch(host.document) : host.view.switching;
-}
-
-/** What the watch does where no room has a page: the fallback, as the end of
- * a sentence. */
-function fallbackWords(host: RoomsViewHost): StatusWord[] {
-  const choice = fallbackChoice(host.view.fallback);
-  if (choice === "stay") return ["the watch stays on the page it is on."];
-  if (choice === "first") return ["the watch shows ", { bold: FALLBACK_LABELS.first }, "."];
-  return ["the watch shows ", { bold: pageInSentence(host, host.view.fallback) }, "."];
-}
-
-/** A stored page's name inside a sentence. */
-function pageInSentence(host: RoomsViewHost, stored: string): string {
-  return findPageChoice(host.pages, stored)?.name ?? "a page not on this watch";
-}
-
-const SWITCHING_OFF = "Switching is off, so the watch stays on its page.";
-
-/**
- * The Right now sentence, from the sensor's state now: the room you are in
- * and the page the watch shows for it (or the fallback's), or plainly that
- * the sensor names no room. With switching off, that the watch stays put.
- */
-export function statusWords(host: RoomsViewHost): StatusWord[] {
-  const sensor = host.view.sensor;
-  const switching = switchingOn(host);
-  const state = host.hass.states[sensor];
-  if (state === undefined) {
-    return [`Home Assistant has no entity ${sensor} now, so the watch cannot tell which room you are in.`];
-  }
-  const room = roomFromState(sensor, state);
-  const key = room === undefined ? "" : normalizedRoomKey(room);
-  if (room === undefined || key === "") {
-    const raw = typeof state.state === "string" ? state.state.trim() : "";
-    const lead = raw === "" ? "The sensor names no room now" : `The sensor says "${raw}" now, which names no room`;
-    if (!switching) return [`${lead}. ${SWITCHING_OFF}`];
-    return [`${lead}, so `, ...fallbackWords(host)];
-  }
-  const name = host.rooms.find((r) => r.key === key)?.name ?? room;
-  if (!switching) return ["You are in ", { bold: name }, ` now. ${SWITCHING_OFF}`];
-  const stored = roomPage(host.view, key);
-  if (stored !== "") return ["You are in ", { bold: name }, " now. The watch shows ", { bold: pageInSentence(host, stored) }, "."];
-  return ["You are in ", { bold: name }, " now, which has no page, so ", ...fallbackWords(host)];
-}
-
-function renderWords(words: readonly StatusWord[]): TemplateResult {
-  return html`${words.map((w) => (typeof w === "string" ? w : html`<b>${w.bold}</b>`))}`;
 }
 
 function renderSensorField(host: RoomsViewHost): TemplateResult {
@@ -403,10 +347,10 @@ function renderStatusCard(host: RoomsViewHost): TemplateResult {
   const changing = isOpen(host, "sensorOpen");
   const bermuda = isBermudaSensor(host.hass, view.sensor);
   const reading = sensorReading(host.hass, view.sensor);
-  return html`<section class="rm-card rm-lit rm-status" aria-label="Right now">
+  return html`<section class="rm-card rm-lit rm-status" aria-label="Switch pages by room">
     <span class="rm-ichip" aria-hidden="true">${uiIcon("home")}</span>
     <div class="rm-status-text">
-      <p class="rm-now">${renderWords(statusWords(host))}${dirty}</p>
+      <p class="rm-now">The watch opens a room's page when the room sensor says you walked in.${dirty}</p>
       <div class="rm-sensor-line">
         ${bermuda
           ? html`<span class="rm-bermuda-ok">${uiIcon("check")}<span>${nameOf(host.hass, view.sensor)}, a Bermuda sensor</span></span>`
@@ -416,6 +360,7 @@ function renderStatusCard(host: RoomsViewHost): TemplateResult {
           @click=${() => flip(host, "sensorOpen", changing)}>${changing ? "Done" : "Change"}</button>
       </div>
     </div>
+    ${!changing && reading.tone === "warn" ? html`<div class="rm-reading rm-status-wide"><i class="rm-dot warn" aria-hidden="true"></i><span>${reading.line}</span></div>` : nothing}
     ${changing ? html`<div class="rm-sensor-edit rm-status-wide">
       ${renderSensorField(host)}
       <div class="rm-reading"><i class="rm-dot ${reading.tone}" aria-hidden="true"></i><span>${reading.line}</span></div>
@@ -446,7 +391,7 @@ function renderPageThumb(host: RoomsViewHost, stored: string): TemplateResult {
   })}</span>`;
 }
 
-function renderRuleRow(host: RoomsViewHost, room: RoomListEntry, on: boolean, here: boolean): TemplateResult {
+function renderRuleRow(host: RoomsViewHost, room: RoomListEntry, on: boolean): TemplateResult {
   const stored = roomPage(host.view, room.key);
   const value = pageValue(host.pages, stored);
   const removal = removeRoomWrites(host.document, room.key);
@@ -463,7 +408,6 @@ function renderRuleRow(host: RoomsViewHost, room: RoomListEntry, on: boolean, he
     <span class="rm-row-room">
       <button type="button" class="rm-row-name" aria-pressed=${on ? "true" : "false"} title="Show this room on the watch"
         @click=${(e: Event) => { e.stopPropagation(); pick(host, room.key); }}>${room.name}</button>
-      ${here ? html`<span class="rm-here"><i aria-hidden="true"></i>You are here</span>` : nothing}
       ${line === "" ? nothing : html`<span class="rm-row-sub">${line}</span>`}
     </span>
     <span class="rm-arrow" aria-hidden="true">${uiIcon("arrow")}</span>
@@ -517,7 +461,6 @@ function renderFallbackRow(host: RoomsViewHost): TemplateResult {
 }
 
 function renderRulesCard(host: RoomsViewHost, listed: readonly RoomListEntry[], picked: RoomListEntry | undefined): TemplateResult {
-  const here = currentRoomKey(host.hass, host.view.sensor);
   const areas = offeredAreas(host);
   const groups = roomGroups(listed, host.floors);
   const moreOpen = isOpen(host, "moreOpen", listed.length === 0);
@@ -534,7 +477,7 @@ function renderRulesCard(host: RoomsViewHost, listed: readonly RoomListEntry[], 
         </div>`
       : groups.map((g) => html`<div class="rm-group" role="group" aria-label=${g.name === "" ? "Rooms" : g.name}>
           ${g.name === "" ? nothing : html`<span class="rm-floor">${g.name}</span>`}
-          <ul class="rm-rows">${g.rooms.map((r) => renderRuleRow(host, r, r.key === picked?.key, r.key === here))}</ul>
+          <ul class="rm-rows">${g.rooms.map((r) => renderRuleRow(host, r, r.key === picked?.key))}</ul>
         </div>`)}
     ${renderFallbackRow(host)}
     <button type="button" class="rm-fold" aria-expanded=${moreOpen ? "true" : "false"} @click=${() => flip(host, "moreOpen", moreOpen)}>
@@ -784,7 +727,6 @@ function renderStage(host: RoomsViewHost, room: RoomListEntry | undefined): Temp
       </div>
     </div>`;
   }
-  const here = currentRoomKey(host.hass, host.view.sensor) === room.key;
   const stored = roomPage(host.view, room.key);
   // A room with no page opens Anywhere else: that page when it is one.
   const fallback = host.view.fallback;
@@ -792,7 +734,7 @@ function renderStage(host: RoomsViewHost, room: RoomListEntry | undefined): Temp
   const note = stored !== "" ? "" : shown !== "" ? "No page for this room, so the watch opens Anywhere else." : "";
   return html`<div class="card canvas-card lit rm-canvas" aria-label=${`What the watch opens in ${room.name}`}>
     <div class="rm-stage-head">
-      <span class="rm-eyebrow">${here ? "You are here" : "Preview"}</span>
+      <span class="rm-eyebrow">Preview</span>
       <b class="rm-stage-title">${room.name}</b>
       ${note === "" ? nothing : html`<span class="rm-stage-note">${note}</span>`}
     </div>
@@ -885,7 +827,7 @@ export const roomsViewStyles = css`
   select.rm-select:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   select.rm-select:disabled { opacity: .45; cursor: default; }
 
-  /* Right now: the chip, the sentence and the sensor, the switch at the
+  /* Switching: the chip, the line and the sensor, the switch at the
      right end, When under a hairline. */
   .rm-status {
     display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
@@ -956,11 +898,6 @@ export const roomsViewStyles = css`
   }
   button.rm-row-name:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .rm-row-sub { flex-basis: 100%; font-size: 12px; line-height: 1.35; color: var(--wa-muted); overflow-wrap: anywhere; }
-  .rm-here {
-    display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 7px; border-radius: 999px;
-    font-size: 10.5px; font-weight: 500; color: var(--wa-green); border: 1px solid color-mix(in srgb, var(--wa-hue-green) 60%, transparent);
-  }
-  .rm-here i { width: 5px; height: 5px; border-radius: 50%; background: var(--wa-hue-green); }
   .rm-arrow { flex: none; display: inline-flex; color: var(--wa-faint); }
   .rm-arrow svg.ui-icon { width: 16px; height: 16px; }
   .rm-row-page { flex: 0 0 260px; min-width: 0; display: flex; align-items: center; gap: 8px; }
