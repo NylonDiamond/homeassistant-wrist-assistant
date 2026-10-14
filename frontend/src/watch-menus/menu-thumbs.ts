@@ -73,7 +73,7 @@ export class WaMenuThumbs extends LitElement {
   }
 
   static override styles = [watchFrameStyles, menuViewStyles, menuStageStyles, css`
-    :host { display: flex; gap: 6px; pointer-events: none; line-height: 0; }
+    :host { flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 6px; pointer-events: none; line-height: 0; }
     .mt { flex: none; display: block; }
     /* The screen alone, as the Pages door draws its pages: no case, no
        crown, a hairline round the screen's corners. */

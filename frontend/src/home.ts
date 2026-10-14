@@ -819,8 +819,12 @@ export const homeStyles = css`
   .hb-door-b { flex: 1; font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
   /* The Pages door draws the watch's first pages instead of its line: one
      screen of each, small, with the screen's corners and no watch case. */
+  /* The pictures spread across the door's width, the first at its left
+     edge and the last at its right, so a door with two or three lines up
+     with the text above it rather than bunching at the left. */
   .hb-door-pages {
     flex: 1; min-width: 0; height: var(--hb-screen-h); display: flex; flex-wrap: wrap; align-content: flex-start; gap: 0 5px;
+    justify-content: space-between;
     overflow: hidden; pointer-events: none;
   }
   .hb-page { flex: none; display: block; line-height: 0; }
@@ -828,6 +832,7 @@ export const homeStyles = css`
      black tile, all one height, a round one cut to a circle. */
   .hb-door-comps {
     flex: 1; min-width: 0; height: var(--hb-comp-h); display: flex; flex-wrap: wrap; align-content: flex-start; gap: 0 5px;
+    justify-content: space-between;
     overflow: hidden; pointer-events: none;
   }
   .hb-comp {
