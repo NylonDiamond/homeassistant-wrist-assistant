@@ -495,6 +495,7 @@ const rowsRun = css`
     /* A layer with rules: the Rules card's yellow as a quiet fill with yellow
        words and no outline, the same shape as the tap badge. */
     .badge.states { color: var(--wa-hue-yellow); background: color-mix(in srgb, var(--wa-hue-yellow) 14%, transparent); }
+    .badge.template-error { color: #fff; background: var(--error-color, #db4437); }
     /* Outlined, so it never reads as one more filled tag beside tap and
        states: it is a job, and a click opens it. */
     .badge.need {
@@ -1504,6 +1505,8 @@ const sectionCardRun = css`
     .field.readout > span:first-child { padding-top: 6px; }
     .readout-v { min-width: 0; padding: 6px 0 5px; font-size: 11.5px; line-height: 1.4; color: var(--wa-muted); overflow-wrap: anywhere; }
     .field.list-field > .readout-v { padding-bottom: 2px; }
+    .readout-v.template-error { color: var(--error-color, #db4437); }
+    .readout-v.template-error b { font-weight: 600; }
 `;
 
 /** The section cards, continued: the reset dot in a title, the name card,

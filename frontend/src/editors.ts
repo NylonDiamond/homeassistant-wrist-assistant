@@ -350,6 +350,23 @@ import {
 import { seedEntityOf, seedStates, seedStatesRows } from "./states-seeds.js";
 import { seedControlFromEntity } from "./presets.js";
 import {
+  LIGHTS_ON_TEMPLATE,
+  TEMPLATE_RECIPES,
+  applyRecipe,
+  insertEntity,
+  namedEntity,
+  pendingRecipes,
+  recipeChosen,
+  recipeEntityWords,
+  recipeNeedsEntity,
+  recipesFor,
+  templateCursors,
+  templateHint,
+  type Inserted,
+  type TemplateRecipe,
+  type TemplateUse,
+} from "./template-help.js";
+import {
   type RulePresetKind,
   RULE_PRESETS,
   WEEKDAY_LABELS,
@@ -475,6 +492,9 @@ export interface EditorHost {
   endGesture(): void;
   /** Resolved text for a value, for the "current value" line. */
   resolve(value: Value): string | undefined;
+  /** Home Assistant's error for a value whose template does not render, or
+   * undefined. Absent in a test host, which reads as no error. */
+  templateError?(value: Value): string | undefined;
   /** The whole context behind `resolve`, for the one card that settles
    * something bigger than a string: the Control Center tile goes through
    * `resolveControl`, so the mock cannot drift from what the device draws.
@@ -2985,7 +3005,7 @@ const TIME_FIELDS: [TimeField, string][] = [
  * behind a bulb. With no lights at all it prints "💡 0 Lights On" rather than
  * failing. The bulb is an emoji because a text layer's template is one string
  * and has no symbol slot of its own. */
-export const STARTER_TEMPLATE = "💡 {{ states.light | selectattr('state', 'eq', 'on') | list | count }} Lights On";
+export const STARTER_TEMPLATE = LIGHTS_ON_TEMPLATE;
 
 /**
  * A template to start from that renders on any Home Assistant, so a new
@@ -3000,6 +3020,104 @@ export function starterTemplate(current: ValueKind, prefer?: EntityRef): string 
   const own = "entityId" in current && current.entityId !== "" ? current.entityId : undefined;
   const id = own ?? (prefer?.entityId || undefined);
   return id === undefined ? STARTER_TEMPLATE : `{{ states('${id}') }}`;
+}
+
+export interface TemplateBoxOptions {
+  label: string;
+  rows: number;
+  /** Names this box for the caret it remembers between renders. */
+  key: string;
+  use: TemplateUse;
+  /** One expression without braces works here (see `templateHint`). */
+  bare: boolean;
+  placeholder?: string;
+  /** Home Assistant's error for this template, which rings the box in red. */
+  error?: string;
+  /** `typing` is true for keystrokes, false for a recipe or an entity put in. */
+  write(next: string, typing: boolean): void;
+  onBlur?(): void;
+}
+
+/** Each template box's root, kept from its last blur, so an entity picked in
+ * the search below can put the caret back in the box. */
+const templateRoots = new Map<string, ShadowRoot | Document>();
+
+function focusTemplateSoon(key: string, cursor: number): void {
+  const root = templateRoots.get(key);
+  if (!root) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const box = root.querySelector<HTMLTextAreaElement>(`[data-tpl="${CSS.escape(key)}"] textarea`);
+    if (!box) return;
+    box.focus();
+    box.setSelectionRange(cursor, cursor);
+  }));
+}
+
+/**
+ * A template's box with its help: recipes above it, a search that puts an
+ * entity in at the caret below it, and the words on what the result can be.
+ * A complication's Template source and a page's Template tile both use it.
+ */
+export function templateBox(host: Pick<EditorHost, "hass">, text: string, opts: TemplateBoxOptions): TemplateResult {
+  const states = host.hass.states;
+  const entity = namedEntity(text, states);
+  const pendingId = pendingRecipes.get(opts.key);
+  const pending = TEMPLATE_RECIPES.find((r) => r.id === pendingId);
+  const land = (next: Inserted) => {
+    opts.write(next.text, false);
+    templateCursors.set(opts.key, next.cursor);
+    focusTemplateSoon(opts.key, next.cursor);
+  };
+  const remember = (e: Event) => {
+    const box = e.target as HTMLTextAreaElement;
+    templateCursors.set(opts.key, box.selectionStart);
+    const root = box.getRootNode();
+    if (root instanceof ShadowRoot || root instanceof Document) templateRoots.set(opts.key, root);
+  };
+  const choose = (r: TemplateRecipe, node: EventTarget | null) => {
+    if (!recipeNeedsEntity(r, entity)) {
+      pendingRecipes.delete(opts.key);
+      land(applyRecipe(text, templateCursors.get(opts.key), r, entity, STARTER_TEMPLATE, states));
+      return;
+    }
+    // Ask for the entity first; the pick below puts the recipe in.
+    pendingRecipes.set(opts.key, r.id);
+    requestRerender(node);
+    const root = node instanceof Node ? node.getRootNode() : null;
+    if (root instanceof ShadowRoot || root instanceof Document) {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        root.querySelector<HTMLInputElement>(`[data-tpl="${CSS.escape(opts.key)}"] .ent-box input`)?.focus();
+      }));
+    }
+  };
+  const picked = (ref: EntityRef, source?: EntityPickSource) => {
+    if (ref.entityId === "" || (source !== "pick" && source !== "typed")) return;
+    const cursor = templateCursors.get(opts.key);
+    pendingRecipes.delete(opts.key);
+    land(pending ? applyRecipe(text, cursor, pending, ref.entityId, STARTER_TEMPLATE, states) : insertEntity(text, cursor, ref.entityId));
+  };
+  return html`<div class="tpl-box" data-tpl=${opts.key}>
+    <div class="field tpl-recipes-row"><span>Recipes</span><div class="tpl-recipes" role="group" aria-label="Recipes">
+      ${recipesFor(opts.use).map((r) => {
+        const asks = recipeNeedsEntity(r, entity);
+        const on = recipeChosen(r, text, entity) || pending === r;
+        return html`<button type="button" class="small tpl-recipe ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+          title=${asks ? `${r.title}. Asks for ${recipeEntityWords(r)} first.` : entity && r.domains ? `${r.title}, for ${entity}` : r.title}
+          @click=${(e: Event) => choose(r, e.currentTarget)}>${r.label}${asks ? "…" : ""}</button>`;
+      })}
+    </div></div>
+    <label class="field"><span>${opts.label}</span>
+      <textarea rows=${opts.rows} class="mono ${opts.error ? "tpl-err" : ""}" spellcheck="false" .value=${live(text)} placeholder=${opts.placeholder ?? ""}
+        aria-invalid=${opts.error ? "true" : "false"} title=${opts.error ?? ""}
+        @input=${(e: Event) => { remember(e); opts.write((e.target as HTMLTextAreaElement).value, true); }}
+        @keyup=${remember} @click=${remember}
+        @blur=${(e: Event) => { remember(e); opts.onBlur?.(); }}></textarea></label>
+    ${entityField(host, pending ? "For entity" : "Insert entity", EMPTY_REF, picked, `${opts.key}-insert`,
+      pending && pending.domains && pending.domains.length > 0 ? { domain: pending.domains } : {})}
+    ${pending ? html`<div class="hint tpl-asks">Pick ${recipeEntityWords(pending)} for “${pending.label}”.
+      <button type="button" class="link" @click=${(e: Event) => { pendingRecipes.delete(opts.key); requestRerender(e.currentTarget); }}>Cancel</button></div>` : nothing}
+    ${templateHint(opts.use, opts.bare).map((line) => html`<div class="hint">${line}</div>`)}
+  </div>`;
 }
 
 function switchKind(current: ValueKind, kind: ValueKind["kind"]): ValueKind {
@@ -3042,6 +3160,10 @@ export interface ValueEditorOptions {
   setSymbolPath?: (d: string | undefined) => void;
   /** The color the icon draws in, for the picker to show it in. */
   symbolTint?: unknown;
+  /** A template here may pick a Material Design icon by its whole name, which
+   * only a rich text icon part can draw. Changes the template's recipes and
+   * hint, nothing else. */
+  mdiTemplates?: boolean;
   /** Undo coalescing key prefix. */
   key: string;
   /** What this value is for, shown beside the chip. */
@@ -3327,7 +3449,7 @@ function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts
       <button type="button" class="link" title="Move this into a shared value that other layers can read too" @click=${() => makeShared(host, value, set)}>Make shared</button>
       so other layers can read this too.</div>` : nothing}
     ${opts.noFormat ? nothing : formatEditor(value.format, (f) => set(formatIsEmpty(f) ? { kind: value.kind } : { ...value, format: f }), formatFits(sourceKind(host, value)))}
-    ${opts.showResolved ? nowReadout(host, value, host.resolve(opts.resolveAs ?? value)) : nothing}`;
+    ${opts.showResolved ? nowReadout(host, value, host.resolve(opts.resolveAs ?? value), opts.resolveAs) : nothing}`;
 }
 
 /** The rows one source needs under the Source picker: a box to type in, an
@@ -3365,8 +3487,11 @@ function valueBody(host: EditorHost, value: Value, set: (v: Value) => void, opts
     case "dataAge":
       break;
     case "jinja":
-      body = html`${textArea("Template", k.value, (v) => setKind({ ...k, value: v }), 4)}
-        <div class="hint">Rendered by Home Assistant. The result should be one value, not a whole document.</div>`;
+      body = templateBox(host, k.value, {
+        label: "Template", rows: 4, key: `${key}-tpl`, bare: true, error: host.templateError?.(opts.resolveAs ?? value),
+        use: opts.symbol ? (opts.mdiTemplates ? "symbolMdi" : "symbol") : "text",
+        write: (v) => setKind({ ...k, value: v }),
+      });
       break;
     case "named": {
       const named = host.config.values.find((n) => n.id === k.id);
@@ -3728,7 +3853,15 @@ export function formatFits(kind: ValueKind | undefined): FormatFits {
 
 /** The Now line: what the value prints right now, spaces and all, or in
  * plain words why it prints nothing yet. */
-function nowReadout(host: EditorHost, value: Value, resolved: string | undefined): TemplateResult {
+/** `readAs` is what the device reads in place of `value` (a shared value's
+ * reference to itself), which is the key a template error is filed under. */
+function nowReadout(host: EditorHost, value: Value, resolved: string | undefined, readAs?: Value): TemplateResult {
+  const error = host.templateError?.(readAs ?? value);
+  if (error !== undefined) {
+    return html`<div class="field readout now-field"><span>Now</span><span class="readout-v now-v template-error" role="alert">
+      <b>This template does not work.</b> ${error}<br>
+      Until it is fixed, the watch shows no values for the whole complication.</span></div>`;
+  }
   const body = resolved === undefined
     ? html`<span class="readout-v now-v none">${whyUnresolved(host, value)}</span>`
     : resolved.trim() === ""
@@ -7891,7 +8024,7 @@ function richPartsEditor(
         // the part's `iconPaths` in step with the names it writes out
         // (`syncPartIconPaths`), a picked name and a template's alike.
         ? html`${valueEditor(host, part.icon!, (v) => updPart((x) => { x.icon = v; }, "icon"), {
-            noFormat: true, showResolved: true, symbol: true, label: "Icon", key: `${key}-part-${part.id}-icon`,
+            noFormat: true, showResolved: true, symbol: true, mdiTemplates: true, label: "Icon", key: `${key}-part-${part.id}-icon`,
             setSymbolPath: () => {},
           })}
           <div class="hint">An entity draws its own icon. A template can pick the symbol, and one that renders empty leaves the part out. A template can also pick a Material Design icon when it writes the whole name out, like 'mdi:water'.</div>

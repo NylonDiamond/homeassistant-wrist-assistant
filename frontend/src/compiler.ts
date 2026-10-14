@@ -316,10 +316,12 @@ export function expression(kind: ValueKind): string | undefined {
 
 // ── compile ───────────────────────────────────────────────────────────────
 
-export function compile(config: CustomComplicationConfig): Compiled {
+/** What one walk fetches: the entities to read and the keyed expressions.
+ * `compile` walks the whole document with it; `elementKeys` walks one layer. */
+function collector(namedValues: NamedValue[]) {
   const entities = new Map<string, EntityRef>();
   const expressions = new Map<string, string>();
-  const lookup = namedLookup(config.values);
+  const lookup = namedLookup(namedValues);
 
   const visit = (value: Value, depth = 0) => {
     const kind = value.kind;
@@ -412,6 +414,19 @@ export function compile(config: CustomComplicationConfig): Compiled {
     for (const v of ruleValues(el.payload.rules)) visit(v);
   };
 
+  return { entities, expressions, visit, visitElement };
+}
+
+/** The value keys one layer reads, its row layers and rules included, so a
+ * template error can be pinned on the layer that has it. */
+export function elementKeys(el: Element, namedValues: NamedValue[]): Set<string> {
+  const walk = collector(namedValues);
+  walk.visitElement(el);
+  return new Set(walk.expressions.keys());
+}
+
+export function compile(config: CustomComplicationConfig): Compiled {
+  const { entities, expressions, visit, visitElement } = collector(config.values);
   for (const named of config.values) visit({ kind: { kind: "named", id: named.id } });
   for (const el of config.elements) visitElement(el);
   // Only the shapes the document supports: a layout left behind by a removed
@@ -463,6 +478,44 @@ export function buildDocument(expressions: Map<string, string>): string {
   const dict = keys.map((k) => `"${k}": v_${k}`).join(", ");
   lines.push(`{{ { ${dict} } | to_json }}`);
   return lines.join("\n");
+}
+
+/**
+ * Every expression as a document of its own, keyed like the whole one. Jinja
+ * cannot catch an error, so one broken template fails the whole document and
+ * every value with it. Rendered one by one, these say which value broke it,
+ * and let every other value still fill the preview.
+ */
+export function splitDocuments(expressions: Map<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, expr] of expressions) out[key] = buildDocument(new Map([[key, expr]]));
+  return out;
+}
+
+/** What `splitDocuments` rendered: the values that worked, and Home
+ * Assistant's error for each one that did not. */
+export interface SplitRender {
+  values: Map<string, string>;
+  errors: Map<string, string>;
+}
+
+export function mergeSplitRenders(
+  results: Record<string, { ok: true; value: string } | { ok: false; error: string }>,
+): SplitRender {
+  const values = new Map<string, string>();
+  const errors = new Map<string, string>();
+  for (const key of Object.keys(results).sort()) {
+    const result = results[key]!;
+    if (!result.ok) {
+      errors.set(key, result.error);
+      continue;
+    }
+    const parsed = parseValueDocument(result.value);
+    const value = parsed?.values.get(key);
+    if (value !== undefined) values.set(key, value);
+    else if (!parsed) errors.set(key, "Did not render to a value");
+  }
+  return { values, errors };
 }
 
 // ── response parsing ──────────────────────────────────────────────────────

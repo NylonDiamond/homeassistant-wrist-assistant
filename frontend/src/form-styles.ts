@@ -432,6 +432,19 @@ export const formRowStyles = css`
     /* The bare .err rule sits above .hint in this sheet, so a hint that is an
        error needs both class names to win the color. */
     .hint.err { color: var(--error-color, #db4437); }
+    /* A template box's recipes: small buttons in the value column, wrapping
+       under each other rather than under the label. The
+       one the box holds shows as chosen, like a page tile's Examples. */
+    .tpl-box { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .tpl-recipes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+    .tpl-recipes-row { align-items: start; }
+    .tpl-recipes-row > span { padding-top: 5px; }
+    .tpl-recipes button.small { min-height: 24px; padding: 0 8px; font-size: 12px; }
+    .tpl-recipes button.small.on { background: var(--wa-sel-bg); border-color: var(--wa-sel-ring); font-weight: 600; }
+    .tpl-asks { color: var(--wa-ink); }
+    .tpl-box textarea.tpl-err, .tpl-box textarea.tpl-err:focus {
+      border-color: var(--error-color, #db4437); box-shadow: 0 0 0 1px var(--error-color, #db4437);
+    }
 `;
 
 /** The entity search (box, chosen row, result list, its pulses), the entity
