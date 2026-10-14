@@ -30,7 +30,6 @@ import type { EntityRef } from "../model.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import { type UiIconName, uiIcon } from "../ui-icons.js";
-import { renderWatchFrame } from "../watch-frame.js";
 import { type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOpen } from "../watch-pages/fold-memory.js";
 import type { JsonObject } from "../watch-pages/model.js";
 import { STAGE_ZOOM_STEPS } from "../watch-pages/stage.js";
@@ -82,8 +81,6 @@ import {
   watchMenuDomains,
   watchMenuDomainsSharing,
   watchMenuEnumChoices,
-  watchMenuFreePositions,
-  watchMenuInheritedSlots,
   watchMenuInherits,
   watchMenuOfferedActions,
   watchMenuOverrideIds,
@@ -168,6 +165,14 @@ export const SWITCHER_LINE = "Each page's icon, color and name are set here: pic
 /** The note under the switcher's Style card while no page is picked. */
 export const SWITCHER_PICK_NOTE = "Pick a page in the Pages card to set how it shows here.";
 
+/** When each menu opens, in one plain line: what its Menus row says under
+ * its name. */
+export const MENU_ROW_LINES: Readonly<Record<MenusSection, string>> = {
+  anywhere: "Opens on any screen. Your shortcuts for the whole watch.",
+  entity: "Opens over a tile. Controls for that kind of thing.",
+  switcher: "Jumps to another page. Set how each page shows.",
+};
+
 /** What each menu is, one line: the Menus row's tooltip and the inspector's
  * note over the menu's own settings. */
 export const MENU_LINES: Readonly<Record<MenusSection, string>> = {
@@ -180,7 +185,7 @@ export const MENU_LINES: Readonly<Record<MenusSection, string>> = {
 export const MENUS_CARD_LINE = "The Anywhere menu, the Entity quick menu and the page switcher. A save reaches the watch the next time it checks.";
 
 /** The hint under the watch while a menu with slots is shown. */
-export const MENU_STAGE_HINT = "Tap a slot on the watch or in the list to edit it.";
+export const MENU_STAGE_HINT = "Click a slot or its label to edit it. Click anywhere else for the menu's look.";
 
 /** A watch screen's size in points. */
 export interface MenusScreen {
@@ -389,16 +394,6 @@ export function menuSlotDetail(slot: JsonObject): string {
   return `${watchMenuPositionLabel(typeof slot.position === "string" ? slot.position : "")} · ${watchMenuActionLabel(slotActionType(slot))}`;
 }
 
-/** Slots in the order of the places around the ring. */
-function byPlace(slots: JsonObject[]): JsonObject[] {
-  const order = watchMenuPositions();
-  const at = (s: JsonObject) => {
-    const i = order.indexOf(typeof s.position === "string" ? s.position : "");
-    return i < 0 ? order.length : i;
-  };
-  return slots.slice().sort((a, b) => at(a) - at(b));
-}
-
 /** An entity type's name, from the domain list. */
 function typeLabel(type: string): string {
   return watchMenuDomain(type)?.label ?? type;
@@ -551,6 +546,19 @@ function addAt(host: MenusViewHost, ref: MenuListRef, position?: string): void {
   if (added !== undefined) select(host, ref, added);
 }
 
+/** What the stage (`menu-stage.ts`) draws with: the watch, its dots and the
+ * labels around it pick, add and look up slots the way the cards do. */
+export {
+  RING_RADIUS as MENU_RING_RADIUS,
+  addAt as addMenuSlotAt,
+  glyph as menuGlyph,
+  listLabel as menuListLabel,
+  plural as menuPlural,
+  sameId as sameMenuId,
+  select as selectMenuSlotOf,
+  slotLook as menuSlotLook,
+};
+
 // ── the Menus card ───────────────────────────────────────────────────────
 
 /** A ring drawn small, for a row's thumb: the guide ring and one dot per
@@ -574,13 +582,12 @@ function listDots(host: ViewState, ref: MenuListRef | undefined): { x: number; y
   });
 }
 
-/** What a Menus row says under its name. */
-export function menuRowDetail(host: Pick<MenusViewHost, "uiState" | "document" | "hass" | "switcherPages">, menu: MenusSection): string {
-  if (menu === "anywhere") return plural(watchMenuSlots(host.document, ANYWHERE).length, "slot", "slots");
+/** What a Menus row counts beside its name: the Anywhere menu's slots, the
+ * Entity quick menu's shown list's slots, the switcher's pages. */
+export function menuRowCount(host: Pick<MenusViewHost, "uiState" | "document" | "switcherPages">, menu: MenusSection): string {
   if (menu === "switcher") return plural(host.switcherPages.length, "page", "pages");
-  if (entityMode(host) === "domain") return `By type · ${typeLabel(shownDomain(host))}`;
-  const id = shownEntity(host);
-  return `By entity · ${id === undefined ? "none yet" : nameOf(host.hass, id)}`;
+  const ref = menu === "anywhere" ? ANYWHERE : entityList(host);
+  return ref === undefined ? "none yet" : plural(watchMenuSlots(host.document, ref).length, "slot", "slots");
 }
 
 function menuThumb(host: MenusViewHost, menu: MenusSection): TemplateResult {
@@ -615,7 +622,7 @@ export function renderMenusCard(host: MenusViewHost): TemplateResult {
           }}>
           <span class="grip" aria-hidden="true"></span>
           ${menuThumb(host, id)}
-          <span class="name"><b><span class="nm-t">${label}</span></b><small>${menuRowDetail(host, id)}</small></span>
+          <span class="name"><b><span class="nm-t">${label}</span><span class="me-menu-count">${menuRowCount(host, id)}</span></b><small>${MENU_ROW_LINES[id]}</small></span>
           <span class="right"></span>
         </div>`;
       })}
@@ -629,47 +636,12 @@ function slotThumb(host: Pick<MenusViewHost, "icons">, icon: string, color: stri
   return html`<span class="thumb me-thumb" style=${`--c:${color}`} aria-hidden="true"><span class="me-thumb-glyph">${glyph(host, icon, 14, color)}</span></span>`;
 }
 
-function slotRow(host: MenusViewHost, ref: MenuListRef, slot: JsonObject, selected: JsonObject | undefined): TemplateResult {
-  const id = watchMenuSlotId(slot);
-  const look = slotLook(slot);
-  const on = selected !== undefined && sameId(id, watchMenuSlotId(selected));
-  const hidden = slot.isVisible === false;
-  const name = menuSlotName(host, slot);
-  const detail = menuSlotDetail(slot);
-  const pick = () => select(host, ref, id);
-  return html`<div class="layer me-slot-row ${on ? "hl" : ""} ${hidden ? "dim" : ""}" data-slot=${id} style=${`--k:${look.color}`}
-    role="listitem" tabindex="0" aria-current=${on ? "true" : "false"} aria-label=${name}
-    title=${`${name} · ${detail}${hidden ? ", hidden" : ""}`}
-    @click=${(e: Event) => { if (!(e.target instanceof Element && e.target.closest("button"))) pick(); }}
-    @keydown=${(e: KeyboardEvent) => {
-      if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
-      e.preventDefault();
-      pick();
-    }}>
-    <span class="grip" aria-hidden="true"></span>
-    ${slotThumb(host, look.icon, look.color)}
-    <span class="name"><b><span class="nm-t">${name}</span></b><small>${detail}</small></span>
-    <span class="right">
-      <span class="badges">${hidden ? html`<span class="badge">hidden</span>` : nothing}</span>
-      <span class="acts">
-        <button type="button" class="icon danger" ?disabled=${host.busy} title="Remove" aria-label=${`Remove ${name}`}
-          @click=${() => host.edit((d) => removeWatchMenuSlot(d, ref, id))}>${uiIcon("delete")}</button>
-      </span>
-    </span>
-  </div>`;
-}
-
-/** The line at the top of the Entity quick menu's Slots card: which list it
- * shows, and with a slot selected a way back to the menu's own settings,
- * where the type and the entity are picked. */
-function entityFilter(host: MenusViewHost, ref: MenuListRef | undefined, selected: JsonObject | undefined): TemplateResult {
-  const words = ref === undefined || ref.list === "anywhere" ? "By entity: none has a menu of its own yet."
+/** Which list the Entity quick menu shows, in words: the canvas head's fact
+ * where the Slots card's filter line used to say it. */
+export function entityMenuWords(host: Pick<MenusViewHost, "hass">, ref: MenuListRef | undefined): string {
+  return ref === undefined || ref.list === "anywhere" ? "By entity: none has a menu of its own yet"
     : ref.list === "domain" ? `${typeLabel(ref.domain)} menu, by type`
     : `${nameOf(host.hass, ref.entityId)}'s own menu`;
-  return html`<div class="lc-filter me-filter"><span class="lc-sub">${words}</span>
-    ${selected === undefined ? nothing : html`<button type="button" class="lc-ghost sm" title="Pick the type or the entity in the menu's settings"
-      @click=${() => deselectMenuSlot(host)}>Change</button>`}
-  </div>`;
 }
 
 /** How a page shows in the switcher, in words. */
@@ -717,169 +689,22 @@ function renderSwitcherPagesCard(host: MenusViewHost): TemplateResult {
   </section>`;
 }
 
-/** The Slots card: the shown menu's slots around the ring, in ring order,
- * each with its icon in its color, its name over its place and action, and
- * on hover Remove; + Add puts one at the first free place. For the page
- * switcher, its pages, one picked at a time. */
-export function renderSlotsCard(host: MenusViewHost): TemplateResult {
-  const menu = shownMenu(host);
-  if (menu === "switcher") return renderSwitcherPagesCard(host);
-  const ref = shownMenuList(host);
-  const slots = ref === undefined ? [] : byPlace(watchMenuSlots(host.document, ref));
-  const selected = ref === undefined ? undefined : selectedMenuSlot(host, ref);
-  const free = ref === undefined ? [] : watchMenuFreePositions(host.document, ref);
-  const addTitle = ref === undefined ? "Add an entity first, in the menu's settings."
-    : free.length === 0 ? "Every place around the ring is taken." : "Add a slot at the first free place";
-  let body: TemplateResult;
-  if (ref === undefined) body = html`<div class="lc-note">Add an entity to edit its menu.</div>`;
-  else if (slots.length === 0) body = html`<div class="lc-note">No slots yet.</div>`;
-  else body = html`<div class="layers me-slot-list" role="list">${slots.map((slot) => slotRow(host, ref, slot, selected))}</div>`;
-  return html`<section class="card lc me-slots-card" aria-label="Slots"
-    style=${`--c: var(--wa-lc-layers, #4a7fe8); --thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px`}>
-    <div class="lc-head">
-      <span class="swatch">${uiIcon("layers")}</span><span class="lc-title">Slots</span>
-      ${ref === undefined ? nothing : html`<span class="lc-sub">${plural(slots.length, "slot", "slots")}</span>`}
-      <span class="spacer"></span>
-      <button type="button" class="lc-btn pri me-add-slot" aria-label="Add slot" ?disabled=${host.busy || ref === undefined || free.length === 0}
-        title=${addTitle} @click=${() => { if (ref !== undefined) addAt(host, ref); }}>${uiIcon("plus")}<span>Add</span></button>
-    </div>
-    ${menu === "entity" ? entityFilter(host, ref, selected) : nothing}
-    ${body}
-  </section>`;
-}
-
-// ── the watch screen and the ring ────────────────────────────────────────
-
-/** A point of the unit square placed on the screen, as a style. */
-function screenStyle(screen: MenusScreen, point: { x: number; y: number }): string {
-  const at = menuScreenPoint(screen, point);
-  return `left:${at.x * 100}%;top:${at.y * 100}%`;
-}
-
-/** Where a dot sits on the ring preview, as a style. */
-function pointStyle(screen: MenusScreen, position: string, radius?: number): string | undefined {
-  const point = watchMenuRingPoint(position, radius ?? RING_RADIUS);
-  return point === undefined ? undefined : screenStyle(screen, point);
-}
-
-/**
- * The watch screen in its case, at the screen's real proportions: black, a
- * dashed guide ring around the centre, a centre dot where the finger rests,
- * and `content` over them (dots placed in shares of the screen). The dots'
- * sizes follow the scale through `--me-s`.
- */
-function renderScreen(host: MenusViewHost, label: string, content: unknown): TemplateResult {
-  const { width, height } = host.screen;
-  const scale = host.scale;
-  const side = Math.min(width, height);
-  const box = html`<div class="me-screen" role="group" aria-label=${label}
-    style=${`width:${Math.round(width * scale)}px;height:${Math.round(height * scale)}px;--me-s:${scale}`}>
-    <svg class="me-screen-bg" viewBox=${`0 0 ${width} ${height}`} aria-hidden="true">
-      <circle cx=${width / 2} cy=${height / 2} r=${side * RING_RADIUS} class="me-track"></circle>
-      <circle cx=${width / 2} cy=${height / 2} r=${side * 0.05} class="me-center"></circle>
-    </svg>
-    ${content}
-  </div>`;
-  return renderWatchFrame({ width, height }, scale, box, label);
-}
-
-/** A glyph's size in pixels on the preview: `points` at the preview's scale. */
-function dotGlyph(host: MenusViewHost, points: number): number {
-  return Math.round(points * host.scale);
-}
-
-/**
- * The ring preview, one place at a time. The dot at a place is the first of
- * the list's own visible slots there; else a visible All slot the list takes
- * in (dashed, not a button); else the list's own hidden slot; else an add
- * button when the place is free. Any other slot of the list's own at that
- * place is drawn as a second, smaller dot nearer the center, and a main dot
- * of the list's own carries a count of the list's slots there (the phone's
- * climate defaults put two at top center).
- */
-function renderRing(host: MenusViewHost, ref: MenuListRef, selected: JsonObject | undefined, label: string): TemplateResult {
-  const screen = host.screen;
-  const slots = watchMenuSlots(host.document, ref);
-  const inherited = watchMenuInheritedSlots(host.document, ref);
-  const free = new Set(watchMenuFreePositions(host.document, ref));
-  const selectedId = selected === undefined ? undefined : watchMenuSlotId(selected);
-  const ownDot = (slot: JsonObject, position: string, style: string, extra: string, count: number): TemplateResult => {
-    const look = slotLook(slot);
-    const id = watchMenuSlotId(slot);
-    const on = selectedId !== undefined && sameId(id, selectedId);
-    const label = `${watchMenuPositionLabel(position)}: ${watchMenuActionLabel(slotActionType(slot))}${slot.isVisible === false ? ", hidden" : ""}`;
-    return html`<button type="button" class="me-dot ${extra} ${on ? "on" : ""} ${slot.isVisible === false ? "off" : ""}" style=${`${style};--c:${look.color}`}
-      title=${label} aria-label=${label} aria-pressed=${on ? "true" : "false"} @click=${() => select(host, ref, id)}>
-      ${glyph(host, look.icon, dotGlyph(host, extra === "" ? 15 : 11), look.color)}${count > 1 ? html`<span class="me-count" aria-hidden="true">${count}</span>` : nothing}</button>`;
-  };
-  return renderScreen(host, `${label} on the watch`, watchMenuPositions().map((position) => {
-      const style = pointStyle(screen, position);
-      if (style === undefined) return nothing;
-      const here = slots.filter((s) => s.position === position);
-      const shown = here.find((s) => s.isVisible !== false);
-      const shared = shown === undefined ? inherited.find((s) => s.position === position && s.isVisible !== false) : undefined;
-      const main = shown ?? (shared === undefined ? here[0] : undefined);
-      const second = here.find((s) => s !== main);
-      let dot: TemplateResult | typeof nothing;
-      if (main !== undefined) {
-        dot = ownDot(main, position, style, "", here.length);
-      } else if (shared !== undefined) {
-        const look = slotLook(shared);
-        dot = html`<span class="me-dot inh" style=${`${style};--c:${look.color}`} title=${`${watchMenuPositionLabel(position)}: ${watchMenuActionLabel(slotActionType(shared))}, from All`}>
-          ${glyph(host, look.icon, dotGlyph(host, 13), look.color)}</span>`;
-      } else if (free.has(position)) {
-        dot = html`<button type="button" class="me-dot free" style=${style} ?disabled=${host.busy}
-          title=${`Add a slot at ${watchMenuPositionLabel(position)}`} aria-label=${`Add a slot at ${watchMenuPositionLabel(position)}`}
-          @click=${() => addAt(host, ref, position)}>${uiIcon("plus")}</button>`;
-      } else {
-        dot = nothing;
-      }
-      const inner = second === undefined ? undefined : pointStyle(screen, position, 0.2);
-      return html`${dot}${second === undefined || inner === undefined ? nothing : ownDot(second, position, inner, "two", 0)}`;
-    }));
-}
-
-/** The page switcher as the watch draws it: each page the switcher shows,
- * spread around the ring from top centre, by its switcher text in its color,
- * or by its icon, the page picked in the Pages card lit. A page is picked in
- * that card, so nothing here is a button. A page left out of the switcher is
- * not drawn. */
-function renderSwitcherScreen(host: MenusViewHost): TemplateResult {
-  const pages = host.switcherPages;
-  const screen = host.screen;
-  const picked = selectedSwitcherPage(host);
-  const content = pages.length === 0
-    ? html`<p class="me-screen-note">No pages in the switcher yet.</p>`
-    : pages.map((page, i) => {
-      const style = `${screenStyle(screen, switcherRingPoint(i, pages.length))};--c:${page.color}`;
-      const on = picked !== undefined && sameId(picked.id, page.id) ? "on" : "";
-      return page.text === undefined
-        ? html`<span class="me-dot me-page-dot ${on}" style=${style} title=${page.name}>${glyph(host, page.icon, dotGlyph(host, 14), page.color)}</span>`
-        : html`<span class="me-page ${on}" style=${style} title=${page.name}>${page.text}</span>`;
-    });
-  return renderScreen(host, "Page switcher on the watch", content);
-}
-
-/** The shown menu on the watch, for the canvas: its ring with the selected
- * slot lit, or the page switcher. */
-export function renderMenuScreen(host: MenusViewHost): TemplateResult {
-  if (shownMenu(host) === "switcher") return renderSwitcherScreen(host);
-  const ref = shownMenuList(host);
-  if (ref === undefined) {
-    return renderScreen(host, "Entity quick menu on the watch", html`<p class="me-screen-note">Add an entity to edit its menu.</p>`);
-  }
-  return renderRing(host, ref, selectedMenuSlot(host, ref), listLabel(host, ref));
+/** The left column's second card: the page switcher's Pages card. The
+ * Anywhere menu and the Entity quick menu have none: their slots are the
+ * labels around the watch on the stage (`menu-stage.ts`). */
+export function renderSlotsCard(host: MenusViewHost): TemplateResult | typeof nothing {
+  return shownMenu(host) === "switcher" ? renderSwitcherPagesCard(host) : nothing;
 }
 
 /** What the canvas head says about the shown menu, before the watch's size:
- * "8 slots", "Light · 5 slots", "4 pages". */
+ * "8 slots", "Light menu, by type · 5 slots", "4 pages". */
 export function menuStageFacts(host: Pick<MenusViewHost, "uiState" | "document" | "hass" | "switcherPages">): string[] {
   if (shownMenu(host) === "switcher") return [plural(host.switcherPages.length, "page", "pages")];
   const ref = shownMenuList(host);
-  if (ref === undefined) return ["No entity yet"];
+  if (ref === undefined) return [entityMenuWords(host, ref)];
   const count = plural(watchMenuSlots(host.document, ref).length, "slot", "slots");
   if (ref.list === "anywhere") return [count];
-  return [ref.list === "domain" ? typeLabel(ref.domain) : nameOf(host.hass, ref.entityId), count];
+  return [entityMenuWords(host, ref), count];
 }
 
 /** The hint under the watch. */
@@ -1397,7 +1222,14 @@ export const menuViewStyles = css`
   /* The Menus and Slots cards: the page editor's Pages and Tiles cards. */
   .me-menus-card > .layers, .me-slots-card > .layers { padding: 6px 8px 8px; overflow: visible; }
   .me-menus-card > .lc-note, .me-slots-card > .lc-note { margin: 8px 12px; color: var(--wa-muted); }
-  .me-slots-card > .lc-filter { border-bottom: 0; }
+  /* A Menus row: its name and count over the line that says when it
+     opens, which wraps rather than being cut. */
+  .me-menu-row { padding-top: 6px; padding-bottom: 6px; align-items: start; }
+  .me-menu-row > .thumb { margin-top: 1px; }
+  .me-menu-row .name b { white-space: normal; flex-wrap: wrap; column-gap: 8px; row-gap: 0; }
+  .me-menu-row .name b .nm-t { white-space: normal; overflow: visible; }
+  .me-menu-row .name .me-menu-count { font-size: 12px; font-weight: 500; color: var(--wa-muted); white-space: nowrap; }
+  .me-menu-row .name small { white-space: normal; overflow: visible; line-height: 1.35; }
   .layer .acts button.icon { display: inline-grid; place-items: center; padding: 0; }
   .layer .acts button.icon:disabled { opacity: .35; cursor: default; }
   /* A slot's or a page's icon in its color, on the black well. */
