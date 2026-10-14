@@ -1328,6 +1328,27 @@ export function setWatchTileHideWhenOff(
   return setKey(document, pageId, tileId, "hideWhenInactive", () => (on ? true : REMOVE));
 }
 
+/** The Show Tile choice: Always, Only While On (`hideWhenInactive`) or Only
+ * When (`showWhen`). */
+export type WatchShowTileMode = "always" | "on" | "when";
+
+/** What Show Tile reads for a tile. A stored condition wins, readable or
+ * not, so the row that can replace or remove it is the one shown. */
+export function watchShowTileMode(tile: WatchPageTile): WatchShowTileMode {
+  if (Object.hasOwn(tile, "showWhen")) return "when";
+  return tile.hideWhenInactive === true ? "on" : "always";
+}
+
+/** Show Tile → Always: neither key. */
+export function setWatchTileShowAlways(document: WatchPagesDocument, pageId: string, tileId: string): WatchPagesDocument {
+  return editTile(document, pageId, tileId, (tile) => withoutKey(withoutKey(tile, "hideWhenInactive"), "showWhen"));
+}
+
+/** Show Tile → Only While On: `hideWhenInactive: true` and no condition. */
+export function setWatchTileShowWhileOn(document: WatchPagesDocument, pageId: string, tileId: string): WatchPagesDocument {
+  return editTile(document, pageId, tileId, (tile) => withoutKey(withKey(tile, "hideWhenInactive", true), "showWhen"));
+}
+
 const SHOW_WHEN_ENTITY_RE = /^[a-z0-9_]+\.[a-z0-9_]+$/i;
 
 /** The condition written in the phone's sorted key order. */
@@ -1338,8 +1359,9 @@ function showWhenValue(c: WatchShowWhen): Record<string, unknown> {
 /**
  * Show Only When's entity: a new condition starts as "is `state`"; on a
  * condition already there the entity changes, the operator stays and the
- * state becomes `state`. `null` removes the condition. An id that is not
- * shaped like an entity id is refused.
+ * state becomes `state`. Either way Only While On goes, as Show Tile holds
+ * one choice. `null` removes the condition. An id that is not shaped like
+ * an entity id is refused.
  */
 export function setWatchTileShowWhenEntity(
   document: WatchPagesDocument,
@@ -1351,9 +1373,10 @@ export function setWatchTileShowWhenEntity(
   if (entityId === null) return setKey(document, pageId, tileId, "showWhen", () => REMOVE);
   const id = typeof entityId === "string" ? entityId.trim() : "";
   if (!SHOW_WHEN_ENTITY_RE.test(id) || typeof state !== "string") return document;
-  return setKey(document, pageId, tileId, "showWhen", (tile) => {
+  return editTile(document, pageId, tileId, (tile) => {
     const old = watchTileShowWhen(tile);
-    return showWhenValue({ entityId: id, comparisonOperator: old?.comparisonOperator ?? "eq", state });
+    const value = showWhenValue({ entityId: id, comparisonOperator: old?.comparisonOperator ?? "eq", state });
+    return withoutKey(withKey(tile, "showWhen", value), "hideWhenInactive");
   });
 }
 

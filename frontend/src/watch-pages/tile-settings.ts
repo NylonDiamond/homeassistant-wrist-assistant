@@ -148,9 +148,13 @@ import {
   setWatchTileFontSize,
   setWatchTileFontWeight,
   setWatchTileHideWhenOff,
+  type WatchShowTileMode,
+  setWatchTileShowAlways,
   setWatchTileShowWhenEntity,
   setWatchTileShowWhenOperator,
   setWatchTileShowWhenState,
+  setWatchTileShowWhileOn,
+  watchShowTileMode,
   setWatchTileHoldSlide,
   setWatchTileHoldSlideHTTP,
   setWatchTileHoldSlideHTTPBanner,
@@ -1252,9 +1256,7 @@ function renderAction(host: TileSettingsHost): TemplateResult {
           commit(host, "singleTap", (d) => setWatchTileSingleTap(d, host.pageId, host.tileId, v === WATCH_DEFAULT_CHOICE ? null : v)))}
     ${slides === undefined ? nothing : renderHoldSlide(host, slides)}
     ${ask}
-    ${checkField("Hide when off", a.hideWhenOff, (on) => commit(host, "hideWhenOff", (d) => setWatchTileHideWhenOff(d, host.pageId, host.tileId, on)))}
-    <div class="hint ts-under">The watch leaves the tile out while it is off.</div>
-    ${renderShowWhen(host)}
+    ${renderShowTile(host)}
     ${a.skipConditions.shown
       ? html`<div class="ts-stack">${segField<WatchSkipChoice>("Skip conditions", watchSkipChoice(a.skipConditions.value), WATCH_SKIP_CHOICES as [WatchSkipChoice, string][], (v) =>
           commit(host, "skipConditions", (d) => setWatchTileSkipConditions(d, host.pageId, host.tileId, watchSkipValue(v))))}</div>
@@ -1262,9 +1264,45 @@ function renderAction(host: TileSettingsHost): TemplateResult {
       : nothing}`;
 }
 
-/** Show Only When: an entity, a comparison and a state. Picking an entity
- * makes the condition, starting at that entity's state now; the x removes it. */
-function renderShowWhen(host: TileSettingsHost): TemplateResult {
+const SHOW_TILE_CHOICES: [WatchShowTileMode, string][] = [
+  ["always", "Always"],
+  ["on", "Only while on"],
+  ["when", "Only when…"],
+];
+
+/**
+ * Show Tile: Always, Only While On (`hideWhenInactive`) or Only When
+ * (`showWhen`). Only When stores nothing until an entity is picked, so the
+ * choice is held in `uiState` until then and the tile keeps what it had.
+ */
+function renderShowTile(host: TileSettingsHost): TemplateResult {
+  const stored = watchShowTileMode(host.tile);
+  const pendingKey = `${KEY}:showTile:${host.tileId.toUpperCase()}`;
+  const mode: WatchShowTileMode = stored !== "when" && host.uiState.get(pendingKey) === "when" ? "when" : stored;
+  const pick = (v: WatchShowTileMode) => {
+    if (v === "when") {
+      host.uiState.set(pendingKey, "when");
+      host.requestUpdate();
+      return;
+    }
+    host.uiState.delete(pendingKey);
+    if (v === "always") commit(host, "showTile", (d) => setWatchTileShowAlways(d, host.pageId, host.tileId));
+    else commit(host, "showTile", (d) => setWatchTileShowWhileOn(d, host.pageId, host.tileId));
+    host.requestUpdate();
+  };
+  return html`<div class="ts-sub">
+    <div class="ts-stack">${segField<WatchShowTileMode>("Show tile", mode, SHOW_TILE_CHOICES, (v) => pick(v))}</div>
+    ${mode === "always"
+      ? html`<div class="hint ts-under">The watch always shows this tile.</div>`
+      : mode === "on"
+        ? html`<div class="hint ts-under">The watch leaves the tile out while it is off.</div>`
+        : renderShowWhen(host, pendingKey)}
+  </div>`;
+}
+
+/** Only When: an entity, a comparison and a state. Picking an entity makes
+ * the condition, starting at that entity's state now; the x removes it. */
+function renderShowWhen(host: TileSettingsHost, pendingKey: string): TemplateResult {
   const stored = host.tile.showWhen;
   const c = watchTileShowWhen(host.tile);
   const states = host.hass.states;
@@ -1278,6 +1316,8 @@ function renderShowWhen(host: TileSettingsHost): TemplateResult {
   const pick = (next: EntityRef, source?: EntityPickSource) => {
     const nextId = next.entityId.trim();
     if (source === "clear" || nextId === "") {
+      // The rows stay open for another entity.
+      host.uiState.set(pendingKey, "when");
       return commit(host, "showWhen", (d) => setWatchTileShowWhenEntity(d, host.pageId, host.tileId, null));
     }
     if (nextId === id) return;
@@ -1289,16 +1329,22 @@ function renderShowWhen(host: TileSettingsHost): TemplateResult {
   const listId = `ts-show-when-${host.tileId}`;
   const state = typed(host, "showWhenState") ?? c?.state ?? "";
   const passes = c === undefined || watchShowWhenPasses(c, states);
-  return html`<div class="ts-sub">
-    <div class="ts-sub-h"><span>Show only when</span></div>
+  // Older documents can hold both keys; the watch then needs both to pass.
+  const alsoWhileOn = host.tile.hideWhenInactive === true;
+  return html`
     ${unreadable
       ? html`<div class="hint warn">This tile's condition could not be read here. Pick an entity to replace it, or remove it.</div>
           ${linkButton("Remove", "Remove the condition", () => commit(host, "showWhen", (d) => setWatchTileShowWhenEntity(d, host.pageId, host.tileId, null)))}`
       : nothing}
-    <div class="ts-stack">${entityField({ hass: host.hass }, "Entity", ref, pick, `pe:ts:showWhen:${host.tileId}`)}</div>
+    <div class="ts-stack">${entityField({ hass: host.hass }, "Entity", ref, pick, `pe:ts:showWhen:${host.tileId}`, { needed: true })}</div>
     ${fieldNote(host, "showWhen")}
+    ${alsoWhileOn && stored !== undefined
+      ? html`<div class="hint warn ts-under">This tile also hides while it is off.
+          ${linkButton("Stop that", "Show it while off too, when the condition holds", () =>
+            commit(host, "hideWhenOff", (d) => setWatchTileHideWhenOff(d, host.pageId, host.tileId, false)))}</div>`
+      : nothing}
     ${c === undefined
-      ? html`<div class="hint ts-under">Pick an entity to show this tile only at some times, for example a door lock only while someone is home.</div>`
+      ? html`<div class="hint ts-under">Pick an entity, for example yourself to show a door lock only while you are home.${alsoWhileOn ? " Until then the tile still hides while it is off." : ""}</div>`
       : html`
         <div class="ts-stack">${segField<WatchShowWhenOperator>("State", c.comparisonOperator, WATCH_SHOW_WHEN_OPERATORS as [WatchShowWhenOperator, string][], (v) =>
           commit(host, "showWhenOperator", (d) => setWatchTileShowWhenOperator(d, host.pageId, host.tileId, v)))}</div>
@@ -1307,8 +1353,7 @@ function renderShowWhen(host: TileSettingsHost): TemplateResult {
         <datalist id=${listId}>${watchShowWhenStateSuggestions(id, states).map((s) => html`<option value=${s}></option>`)}</datalist>
         <div class="hint ts-under ${c.state === "" ? "warn" : ""}">${c.state === ""
           ? "Type a state, such as home or on. Empty matches nothing."
-          : `The watch shows this tile only while ${ref.displayName || id} ${WATCH_SHOW_WHEN_OPERATORS.find(([o]) => o === c.comparisonOperator)?.[1] ?? c.comparisonOperator} ${c.state}. Now it is ${passes ? "shown" : "hidden"}.`}</div>`}
-  </div>`;
+          : `The watch shows this tile only while ${ref.displayName || id} ${WATCH_SHOW_WHEN_OPERATORS.find(([o]) => o === c.comparisonOperator)?.[1] ?? c.comparisonOperator} ${c.state}. Now it is ${passes ? "shown" : "hidden"}.`}</div>`}`;
 }
 
 function renderHoldSlide(host: TileSettingsHost, slides: NonNullable<ReturnType<typeof watchHoldSlideMenus>>): TemplateResult {

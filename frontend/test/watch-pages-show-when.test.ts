@@ -16,7 +16,10 @@ import {
   watchTileShowWhen,
 } from "../src/watch-pages/show-when.js";
 import {
+  setWatchTileShowAlways,
   setWatchTileShowWhenEntity,
+  setWatchTileShowWhileOn,
+  watchShowTileMode,
   setWatchTileShowWhenOperator,
   setWatchTileShowWhenState,
 } from "../src/watch-pages/tile-settings-model.js";
@@ -116,6 +119,36 @@ describe("the setters", () => {
     expect(setWatchTileShowWhenEntity(doc, PAGE, DOOR, "person.alex", "home")).toBe(doc);
     expect(setWatchTileShowWhenOperator(doc, PAGE, DOOR, "eq")).toBe(doc);
     expect(setWatchTileShowWhenState(doc, PAGE, DOOR, "home")).toBe(doc);
+  });
+});
+
+describe("Show tile", () => {
+  const condition = { comparisonOperator: "eq", entityId: "person.alex", state: "home" };
+
+  it("reads one choice, a stored condition first", () => {
+    expect(watchShowTileMode(door as WatchPageTile)).toBe("always");
+    expect(watchShowTileMode({ ...door, hideWhenInactive: true } as WatchPageTile)).toBe("on");
+    expect(watchShowTileMode({ ...door, showWhen: condition } as WatchPageTile)).toBe("when");
+    expect(watchShowTileMode({ ...door, hideWhenInactive: true, showWhen: { bad: 1 } } as WatchPageTile)).toBe("when");
+  });
+
+  it("writes only the chosen key", () => {
+    const both = docWith({ ...door, hideWhenInactive: true, showWhen: condition });
+    const always = tileIn(setWatchTileShowAlways(both, PAGE, DOOR));
+    expect(Object.hasOwn(always, "hideWhenInactive") || Object.hasOwn(always, "showWhen")).toBe(false);
+    const on = tileIn(setWatchTileShowWhileOn(both, PAGE, DOOR));
+    expect(on.hideWhenInactive).toBe(true);
+    expect(Object.hasOwn(on, "showWhen")).toBe(false);
+    const when = tileIn(setWatchTileShowWhenEntity(docWith({ ...door, hideWhenInactive: true }), PAGE, DOOR, "person.alex", "home"));
+    expect(when.showWhen).toEqual(condition);
+    expect(Object.hasOwn(when, "hideWhenInactive")).toBe(false);
+  });
+
+  it("returns the document as given when the choice is already stored", () => {
+    const plain = docWith(door);
+    expect(setWatchTileShowAlways(plain, PAGE, DOOR)).toBe(plain);
+    const on = docWith({ ...door, hideWhenInactive: true });
+    expect(setWatchTileShowWhileOn(on, PAGE, DOOR)).toBe(on);
   });
 });
 
