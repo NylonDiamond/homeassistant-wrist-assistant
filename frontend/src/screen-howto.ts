@@ -7,7 +7,7 @@
 import { css, html, svg, type TemplateResult } from "lit";
 
 /** The small drawing in a how-to card's chip. */
-export type HowToArt = "hold" | "tile" | "swipe" | "list" | "voice" | "room" | "web" | "crop" | "radial";
+export type HowToArt = "hold" | "tile" | "swipe" | "list" | "voice" | "room" | "web" | "crop" | "radial" | "face";
 
 export interface HowTo {
   art: HowToArt;
@@ -28,12 +28,13 @@ const ART: Readonly<Record<HowToArt, TemplateResult>> = {
   room: svg`<path d="M4 11l8-6.5 8 6.5"></path><path d="M6 9.5V20h12V9.5"></path><circle cx="12" cy="14.5" r="2" fill="currentColor" stroke="none"></circle>`,
   web: svg`<circle cx="12" cy="12" r="8.5"></circle><path d="M3.5 12h17"></path><path d="M12 3.5c2.5 2.6 3.5 5.4 3.5 8.5s-1 5.9-3.5 8.5c-2.5-2.6-3.5-5.4-3.5-8.5s1-5.9 3.5-8.5z"></path>`,
   crop: svg`<path d="M7 3v14h14"></path><path d="M3 7h14v14"></path>`,
+  face: svg`<rect x="5" y="3" width="14" height="18" rx="5"></rect><path d="M8.5 9h7"></path><circle cx="9.5" cy="15" r="1.6"></circle><circle cx="14.5" cy="15" r="1.6"></circle>`,
   radial: svg`<circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"></circle><circle cx="12" cy="4.5" r="1.8"></circle><circle cx="19.5" cy="12" r="1.8"></circle><circle cx="12" cy="19.5" r="1.8"></circle><circle cx="4.5" cy="12" r="1.8"></circle>`,
 };
 
 /** The screens whose tab carries a how-to. Settings and the retired
  * Control Center have none. */
-export type HowToScreen = "pages" | "menus" | "status-pages" | "rooms" | "voice" | "http-actions" | "cameras";
+export type HowToScreen = "pages" | "menus" | "status-pages" | "rooms" | "voice" | "watch-complications" | "http-actions" | "cameras";
 
 /** How each screen's work is used on the watch, checked against the watch
  * app's code (WatchHomeView, InteractiveGrid, StatusPageIntent,
@@ -63,6 +64,11 @@ export const SCREEN_HOW_TO: Readonly<Record<HowToScreen, HowTo>> = {
     art: "voice", label: "On your watch",
     how: "Tap an Assist tile or an Ask Assist menu slot, then talk. A Speak tile or slot plays your words on your speakers.",
     use: "Asking Home Assistant things hands free, and one tap phrases like \"Dinner is ready\" from Pick from List.",
+  },
+  "watch-complications": {
+    art: "face", label: "On your watch",
+    how: "Touch and hold the watch face, tap Edit, then pick Wrist Assistant for a complication spot.",
+    use: "Seeing things at a glance without opening the app, like the temperature or whether the door is locked.",
   },
   "http-actions": {
     art: "web", label: "On your watch",

@@ -158,7 +158,8 @@ export function deviceSheetTabs(kind: "watch" | "iphone"): DeviceSheetTab[] {
     const count = SCREEN_COUNTS[screen.id];
     return count === undefined ? { kind: "screen", label: screen.label, screen } : { kind: "screen", label: screen.label, screen, count };
   };
-  const own = WATCH_SCREENS.filter((s) => s.shared !== true && s.retired !== true);
+  // The watch's complications are the sheet's own list tab, not a screen.
+  const own = WATCH_SCREENS.filter((s) => s.shared !== true && s.retired !== true && s.id !== "watch-complications");
   const pages = own.filter((s) => s.id === "pages");
   const tabs: DeviceSheetTab[] = [...pages, WATCH_SETTINGS_SCREEN].map(screenTab);
   tabs.push({ kind: "list", label: "Complications", filter: "all" });
@@ -375,6 +376,7 @@ const SCREEN_DOORS: Partial<Record<WatchScreen["id"] | "settings", HomeDoorLook>
   "pages": { icon: "pages", hue: "var(--wa-hue-green)", blurb: "The screens you swipe between." },
   "menus": { icon: "radial", hue: "var(--wa-hue-orange)", blurb: "The quick menus and the page switcher." },
   "status-pages": { icon: "checklist", hue: "var(--wa-hue-yellow)", blurb: "Lists to read at a glance." },
+  "watch-complications": { icon: "gauge", hue: "var(--wa-hue-blue)", blurb: "On this watch’s faces." },
   "rooms": { icon: "home", hue: "var(--wa-hue-pink)", blurb: "Room pages and point control." },
   "voice": { icon: "mic", hue: "var(--wa-hue-red)", blurb: "How the watch listens and speaks." },
   "settings": { icon: "sliders", hue: "var(--wa-hue-grey)", blurb: "Gestures, wrist twists and how it connects." },
