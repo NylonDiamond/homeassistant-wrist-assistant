@@ -133,7 +133,7 @@ function dirtyDot(on: boolean): TemplateResult | typeof nothing {
 
 /** What the sensor says now, and whether the watch reads it as a room. */
 export function sensorReading(hass: HassLike, sensor: string): { line: string; tone: "ok" | "warn" | "none" } {
-  if (sensor === "") return { line: "No room sensor. The watch guesses the room from its sensors, which works best with a Bermuda area sensor.", tone: "none" };
+  if (sensor === "") return { line: NO_SENSOR_TEXT, tone: "none" };
   const state = hass.states[sensor];
   if (state === undefined) return { line: "Home Assistant has no entity with this id now.", tone: "warn" };
   const room = roomFromState(sensor, state);
@@ -154,8 +154,32 @@ function currentRoomKey(hass: HassLike, sensor: string): string {
  * not something a new user knows by name: the word links to it. */
 export const BERMUDA_URL = "https://github.com/agittins/bermuda";
 
-/** The one line of help under the room sensor. */
-export const ROOM_SENSOR_HELP = "Works best with a Bermuda area sensor.";
+/** With no sensor picked the watch looks for one itself, by name
+ * (`detectCurrentRoomName` in the watch app scores "bermuda", "area",
+ * "room" and the like), which can find the wrong one or none. */
+export const NO_SENSOR_TEXT = "No room sensor picked. The watch looks for one by its name, such as a Bermuda area sensor. Pick one to be sure.";
+
+/** Why Bermuda, in the card that stands at the top until one is picked. */
+export const BERMUDA_PITCH = "Bermuda uses Bluetooth to tell which room your watch is in. Rooms works best with its area sensor. Add Bermuda to Home Assistant, then pick its sensor here.";
+
+/** A Bermuda area sensor: Bermuda marks its sensors with its own device
+ * class, and its names often say Bermuda. */
+export function isBermudaSensor(hass: HassLike, sensor: string): boolean {
+  if (sensor === "") return false;
+  const state = hass.states[sensor];
+  const deviceClass = typeof state?.attributes?.device_class === "string" ? state.attributes.device_class : "";
+  if (deviceClass.toLowerCase().startsWith("bermuda")) return true;
+  const name = typeof state?.attributes?.friendly_name === "string" ? state.attributes.friendly_name : "";
+  return `${sensor} ${name}`.toLowerCase().includes("bermuda");
+}
+
+/** Puts the cursor in the room sensor field, from the stage's button. */
+function focusSensor(e: Event): void {
+  const root = (e.currentTarget as HTMLElement).getRootNode() as ParentNode;
+  const field = root.querySelector<HTMLElement>(".rm-sensor-field");
+  field?.scrollIntoView({ block: "center", behavior: "smooth" });
+  field?.querySelector<HTMLElement>("input, button")?.focus();
+}
 
 function withBermudaLink(line: string): TemplateResult | string {
   const at = line.indexOf("Bermuda");
@@ -345,7 +369,7 @@ function renderStage(host: RoomsViewHost, room: RoomListEntry | undefined): Temp
     </div>`;
   }
   const stored = roomPage(host.view, room.key);
-  const page = pageNameOf(host, stored);
+  const value = pageValue(host.pages, stored);
   const switching = host.home === true ? homeAutoSwitch(host.document) : host.view.switching;
   return html`<div class="card canvas-card lit rm-canvas" aria-label=${`What the watch does in ${room.name}`}>
     <div class="rm-stage-head">
@@ -358,11 +382,20 @@ function renderStage(host: RoomsViewHost, room: RoomListEntry | undefined): Temp
           <div class="rm-step">
             <span class="rm-step-l">1 · Sensor says</span>
             <code class="rm-key" title="The room sensor's state that names this room. The watch matches its letters and digits.">${room.key}</code>
+            ${host.view.sensor === "" ? html`<span class="rm-step-note">No room sensor picked</span>
+              <button type="button" class="rm-stage-btn" @click=${focusSensor}>Pick a sensor</button>` : nothing}
           </div>
           <div class="rm-step">
             <span class="rm-step-l">2 · Watch opens</span>
-            <span class="rm-step-v ${page === "" ? "none" : ""}">${page === "" ? "No page yet" : page}</span>
-            ${switching ? nothing : html`<span class="rm-step-note">${host.home === true ? "Switch automatically is off" : "Switch pages by room is off"}</span>`}
+            <select class="rm-stage-select" aria-label=${`Page to open in ${room.name}`} ?disabled=${host.busy}
+              @change=${(e: Event) => { if (!host.busy) host.write(roomPageWrites(host.document, room.key, (e.target as HTMLSelectElement).value)); }}>
+              ${pageOptions(host.pages, value, [["", "No page"]]).map(([v, label]) => html`<option value=${v} ?selected=${v === value}>${label}</option>`)}
+            </select>
+            ${switching ? nothing : html`<span class="rm-step-note">${host.home === true ? "Switch automatically is off" : "Switch pages by room is off"}</span>
+              <button type="button" class="rm-stage-btn" ?disabled=${host.busy} @click=${() => {
+                if (host.busy) return;
+                host.write(host.home === true ? homeAutoSwitchWrites(host.document, true) : switchingWritesFor(host.document, true));
+              }}>Turn on</button>`}
           </div>
           <span class="rm-wire" aria-hidden="true"><i></i></span>
         </div>
@@ -565,12 +598,33 @@ function switchRow(label: string, on: boolean, line: string, set: (v: boolean) =
 function renderSensor(host: RoomsViewHost): TemplateResult {
   const { view } = host;
   const reading = view.sensor === "" ? undefined : sensorReading(host.hass, view.sensor);
-  return html`<div class="rm-stack" title=${view.sensor === "" ? "" : "Clearing the sensor turns Switch pages by room off."}>${entityField({ hass: host.hass }, "Room sensor", refOf(host.hass, view.sensor), (ref) => {
+  const bermuda = isBermudaSensor(host.hass, view.sensor);
+  return html`<div class="rm-stack rm-sensor-field" title=${view.sensor === "" ? "" : "Clearing the sensor turns Switch pages by room off."}>${entityField({ hass: host.hass }, "Room sensor", refOf(host.hass, view.sensor), (ref) => {
       if (host.busy) return;
       host.write(sensorWrites(host.document, ref.entityId));
     }, "rooms:sensor", { clearable: true })}</div>
     ${reading ? html`<div class="rm-reading"><i class="rm-dot ${reading.tone}" aria-hidden="true"></i><span>${reading.line}</span></div>` : nothing}
-    <p class="rm-help">${withBermudaLink(ROOM_SENSOR_HELP)}</p>`;
+    ${bermuda ? html`<p class="rm-bermuda-ok">${uiIcon("check")}<span>A Bermuda area sensor, the best kind for Rooms.</span></p>`
+      : view.sensor === "" ? html`<p class="rm-help">${withBermudaLink(NO_SENSOR_TEXT)}</p>` : nothing}`;
+}
+
+/** Bermuda, standing out at the top of the inspector until its sensor is
+ * the one picked. With no sensor at all the sensor field comes up here too,
+ * so picking one is the first thing on the page. */
+function renderBermudaCard(host: RoomsViewHost): TemplateResult | typeof nothing {
+  const sensor = host.view.sensor;
+  if (isBermudaSensor(host.hass, sensor)) return nothing;
+  return html`<section class="sec rm-card rm-bermuda" data-open="true" aria-label="Best with Bermuda" style=${`--c: ${ROOMS_HUE}`}>
+    <div class="sec-h pinned">
+      <span class="swatch">${uiIcon("place")}</span>
+      <span class="tt"><h4>Best with Bermuda</h4></span>
+    </div>
+    <div class="sec-b">
+      <p class="rm-pitch">${BERMUDA_PITCH}</p>
+      <a class="rm-bermuda-link" href=${BERMUDA_URL} target="_blank" rel="noopener noreferrer">Get Bermuda</a>
+      ${sensor === "" ? renderSensor(host) : nothing}
+    </div>
+  </section>`;
 }
 
 function fallbackField(host: RoomsViewHost): TemplateResult {
@@ -627,7 +681,7 @@ function renderEveryRoomCard(host: RoomsViewHost): TemplateResult {
     <div class="sec-h pinned"><span class="tt"><h4>Every room${dirtyDot(anyDirty(host, keys))}</h4></span></div>
     <div class="sec-b">
       ${home ? html`<p class="rm-help rm-main-house">${HOME_ROOMS_MAIN_HOUSE_TEXT}</p>` : nothing}
-      ${renderSensor(host)}
+      ${host.view.sensor === "" ? nothing : renderSensor(host)}
       ${home ? renderHomeSwitching(host) : renderSwitching(host)}
       ${home ? nothing : renderPointSwitches(host)}
     </div>
@@ -642,6 +696,7 @@ export function renderRoomsBody(host: RoomsViewHost): TemplateResult {
     <div class="rm-col rm-list-col">${renderRoomsCard(host, listed, picked)}</div>
     <div class="rm-col column canvas rm-stage-col">${renderStage(host, picked)}</div>
     <div class="rm-col rm-insp-col">
+      ${renderBermudaCard(host)}
       ${picked === undefined ? nothing : renderRoomCard(host, picked)}
       ${renderEveryRoomCard(host)}
     </div>
@@ -759,6 +814,30 @@ export const roomsViewStyles = css`
   .rm-step-v { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
   .rm-step-v.none { font-size: 13px; font-weight: 400; color: var(--wa-muted); }
   .rm-step-note { font-size: 11.5px; color: var(--wa-amber); }
+  /* The stage's own controls: the page to open and the quick fixes beside
+     a step, outlined like every other control. */
+  select.rm-stage-select {
+    max-width: 100%; height: 30px; padding: 0 8px; border-radius: 7px; font: inherit; font-size: 13.5px; font-weight: 500;
+    color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong); cursor: pointer;
+  }
+  select.rm-stage-select:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.rm-stage-btn {
+    height: 26px; padding: 0 10px; border-radius: 7px; font: inherit; font-size: 12px; cursor: pointer;
+    color: var(--wa-ink); background: var(--wa-card); border: 1px solid var(--wa-line-strong);
+  }
+  button.rm-stage-btn:hover:not(:disabled) { background: var(--wa-hover); }
+  button.rm-stage-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.rm-stage-btn:disabled { opacity: .45; cursor: default; }
+  /* Bermuda's card, and the tick once its sensor is the one picked. */
+  .rm-pitch { margin: 0 0 10px; font-size: 13px; line-height: 1.5; color: var(--wa-ink); overflow-wrap: anywhere; }
+  a.rm-bermuda-link {
+    display: inline-flex; align-items: center; height: 28px; padding: 0 11px; margin-bottom: 12px; border-radius: 7px;
+    font-size: 12.5px; font-weight: 500; text-decoration: none; color: var(--wa-ink); border: 1px solid var(--wa-line-strong);
+  }
+  a.rm-bermuda-link:hover { background: var(--wa-hover); }
+  a.rm-bermuda-link:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .rm-bermuda-ok { display: flex; align-items: center; gap: 6px; margin: 2px 0 8px; font-size: 12px; color: var(--wa-green); }
+  .rm-bermuda-ok svg.ui-icon { width: 13px; height: 13px; flex: none; }
   /* The wire from the steps to the watch: a hairline ending in a dot in the
      Rooms hue. */
   .rm-wire { display: flex; align-items: center; width: 70px; height: 7px; }

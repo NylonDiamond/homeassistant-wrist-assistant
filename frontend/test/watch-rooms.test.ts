@@ -57,7 +57,7 @@ import {
   roomFromState,
   wrapHeading,
 } from "../src/watch-rooms/rules.js";
-import { type RoomsViewHost, BERMUDA_URL, HEADING_HELP_DETAIL, ROOM_SENSOR_HELP, headingAt, listedRooms, offeredAreas, pickedRoom, renderRoomsBody, roomRowLine, roomsViewStyles, sensorReading } from "../src/watch-rooms/view.js";
+import { type RoomsViewHost, BERMUDA_PITCH, BERMUDA_URL, HEADING_HELP_DETAIL, NO_SENSOR_TEXT, headingAt, isBermudaSensor, listedRooms, offeredAreas, pickedRoom, renderRoomsBody, roomRowLine, roomsViewStyles, sensorReading } from "../src/watch-rooms/view.js";
 
 const flat = (v: unknown): string => {
   if (Array.isArray(v)) return v.map(flat).join("");
@@ -713,7 +713,34 @@ describe("the list, the stage and the inspector", () => {
     const text = flat(renderRoomsBody(h));
     for (const s of ["No rooms yet", "Your watch can follow you around the house", "Add a room", "Pick its page", "Pick a room sensor"]) expect(text).toContain(s);
     expect(text).not.toContain("Page to open");
-    expect(text).toContain(ROOM_SENSOR_HELP.slice(0, ROOM_SENSOR_HELP.indexOf("Bermuda")));
+    expect(text).toContain(NO_SENSOR_TEXT.slice(0, NO_SENSOR_TEXT.indexOf("Bermuda")));
+  });
+
+  it("put Bermuda and the sensor field first while no sensor is picked", () => {
+    const text = flat(renderRoomsBody(host({})));
+    expect(text).toContain("Best with Bermuda");
+    expect(text).toContain(BERMUDA_PITCH);
+    expect(text).toContain(`href=${BERMUDA_URL}`);
+    expect(text.indexOf("rm-sensor-field")).toBeLessThan(text.indexOf("Every room"));
+    for (const line of [NO_SENSOR_TEXT, BERMUDA_PITCH]) expect(line).not.toMatch(/[–—]| - /);
+  });
+
+  it("know a Bermuda sensor by its device class or its name", () => {
+    const hass = { states: {
+      "sensor.watch_ble_area": { entity_id: "sensor.watch_ble_area", state: "Kitchen", attributes: { device_class: "bermuda__custom_device_class" } },
+      "sensor.bermuda_phone": { entity_id: "sensor.bermuda_phone", state: "Kitchen", attributes: {} },
+      "sensor.other_room": { entity_id: "sensor.other_room", state: "Kitchen", attributes: {} },
+    } } as unknown as Parameters<typeof isBermudaSensor>[0];
+    expect(isBermudaSensor(hass, "sensor.watch_ble_area")).toBe(true);
+    expect(isBermudaSensor(hass, "sensor.bermuda_phone")).toBe(true);
+    expect(isBermudaSensor(hass, "sensor.other_room")).toBe(false);
+    expect(isBermudaSensor(hass, "")).toBe(false);
+  });
+
+  it("pick the room's page right on the stage", () => {
+    const text = flat(renderRoomsBody(host(behavior())));
+    expect(text).toContain('class="rm-stage-select"');
+    expect(text).toContain("No page");
   });
 
   it("take a room off in one set of writes, its page and its targets", () => {
