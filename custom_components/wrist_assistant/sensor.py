@@ -19,7 +19,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
 from .api import DeltaCoordinator, MAX_EVENTS_BUFFER
-from .const import DOMAIN, WristAssistantConfigEntry
+from .const import DOMAIN, PANEL_CONFIGURATION_URL, WristAssistantConfigEntry
 from .notifications import NotificationTokenStore
 from .widget_secret_store import (
     DEVICE_KIND_IPHONE,
@@ -197,8 +197,9 @@ class _WristAssistantSensorBase(SensorEntity):
             identifiers={(DOMAIN, entry.entry_id)},
             name="Wrist Assistant",
             manufacturer="Wrist Assistant",
-            model="Delta Coordinator",
+            model="Hub",
             entry_type=DeviceEntryType.SERVICE,
+            configuration_url=PANEL_CONFIGURATION_URL,
         )
 
     async def async_added_to_hass(self) -> None:

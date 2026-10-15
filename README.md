@@ -37,7 +37,7 @@ The iPhone app is the easy path.
 2. Follow the onboarding steps in the app.
 3. The iPhone app installs the Home Assistant integration automatically for you.
 
-A watch can also pair on its own, without the iPhone app. Install the integration with HACS (below), then pair the watch by code from the panel (see "The Wrist Assistant panel").
+A watch can also pair on its own, without the iPhone app. Install the integration with HACS (below), then pair the watch with a code from the panel (see "Pairing a device").
 
 ### HACS
 
@@ -47,6 +47,7 @@ A watch can also pair on its own, without the iPhone app. Install the integratio
 4. Install it and restart Home Assistant.
 5. Go to `Settings` -> `Devices & Services`.
 6. Add the `Wrist Assistant` integration.
+7. Open `Wrist Assistant` in the sidebar and choose `Pair a device` on the Home tab.
 
 ### Manual
 
@@ -58,32 +59,34 @@ A watch can also pair on its own, without the iPhone app. Install the integratio
 
 Deleting the integration in `Settings` -> `Devices & Services` keeps everything it stored: device pairings, watch pages and settings, custom complications, HTTP actions, page photos and client certificates. Adding it again picks all of that up, so your watch and iPhone reconnect without pairing again.
 
-To remove a single watch or iPhone for good, use `Remove` on its card in the panel, or delete its device in Home Assistant. To wipe everything, delete the integration, stop Home Assistant, delete every file and folder whose name starts with `wrist_assistant` in the `.storage` folder of your configuration directory, and start Home Assistant again.
+To remove a single watch or iPhone for good, open it on the panel's Home tab and choose `Remove device`, or delete its device in Home Assistant. To wipe everything, delete the integration, stop Home Assistant, delete every file and folder whose name starts with `wrist_assistant` in the `.storage` folder of your configuration directory, and start Home Assistant again.
 
 ## The Wrist Assistant panel
 
-The integration adds a `Wrist Assistant` page to the Home Assistant sidebar. Only administrators see it.
+The integration adds a `Wrist Assistant` page to the Home Assistant sidebar. Everyone who signs in to Home Assistant sees it and manages their own devices. Administrators can also pair a device for someone else.
 
-In the panel you can build and edit:
+The panel has three tabs:
 
-- Complications for the watch face
-- Widgets for the iPhone Lock Screen, Home Screen and Control Center
-- The watch's pages and their tiles (`Pages`)
-- The watch's settings (`Watch settings`)
-- The Anywhere menu, the Entity quick menu and the page switcher (`Menus`)
+- **Home** lists your paired watches and iPhones. `Pair a device` adds one. Open a device to see how it is doing, or to remove it with `Remove device`.
+- **Watch app** sets up one watch at a time. Pick the watch, then: `Pages` (the screens you swipe between and their tiles), `Menus` (the Anywhere menu, the Entity quick menu and the page switcher), `Status pages`, `Rooms` (switching pages by room, and point control), `Voice`, `HTTP actions`, `Cameras` (how each camera is framed in alerts) and `Settings`. Notification style and delivery are under `Settings`, `Notifications`.
+- **Complications** builds complications for the watch face, and widgets for the iPhone Lock Screen, Home Screen and Control Center. The watch's old Control Center lists live here now: each tile is a complication control.
 
 A watch picks up a save the next time it checks. If the watch has none yet, the panel offers a start: an empty page, or the default settings and menus.
 
-There are two ways to pair a watch:
+A watch with more than one home takes its watch settings and notification style from one of them, its main house (the first home it was set up with). On any other home, the Watch app's `Settings` says so instead of offering them.
 
-1. **With the iPhone app.** Its onboarding pairs the watch for you.
-2. **With a code, without an iPhone.** On the watch, choose `Pair with Home Assistant`. It shows a six character code. In the panel, open `Watch settings`, type the code under `Pair a watch`, check that the watch named is yours, and press `Pair`. Codes last 10 minutes.
+Pro can be bought on the watch (`Settings`, `Wrist Assistant Pro`) or on the iPhone.
 
-A watch with more than one home takes its watch settings and notification style from one of them, its main house (the first home it was set up with). On any other home, `Watch settings` says so instead of offering them.
+### Pairing a device
 
-Some things still come from the iPhone app: HTTP actions, status pages, voice, notification style, rooms and point control, Control Center lists, page background pictures and a second home. Pro can be bought on the watch (`Settings`, `Wrist Assistant Pro`) or on the iPhone.
+On the Home tab, choose `Pair a device`. The same card is also in the Watch app, under `Settings`, `Pairing and security`. It pairs two ways:
 
-If your Home Assistant sits behind a proxy that asks for a client certificate (mTLS), import it once in the iPhone app. The phone hands it to Home Assistant, which keeps it for your Home Assistant user, and each of your watches gets it from there, including a watch paired with a code. A watch fetches it over a path the proxy does not guard, so pair it on your home address the first time. The certificate and its password are stored privately and never appear in a diagnostics download.
+1. **An iPhone: `Show a QR code`.** On the iPhone, open Wrist Assistant, choose `Pair with Home Assistant`, then `Scan QR code`, and point the camera at the code.
+2. **A watch, or an iPhone, with a code: `Type a code`.** On the device, choose `Pair with Home Assistant`. It shows a six character code. Type it in the panel and choose `Look up`, check that the device named is yours, then press `Pair`. Codes last 10 minutes.
+
+A device you pair is yours. An administrator can pick someone else under `Whose watch is this?`.
+
+If your Home Assistant sits behind a proxy that asks for a client certificate (mTLS), import it once in the iPhone app. The phone hands it to Home Assistant, which keeps it for your Home Assistant user, and each of your watches gets it from there, including a watch paired with a code. You can also upload it in the panel, under the Watch app's `Settings`, `Pairing and security`. A watch fetches it over a path the proxy does not guard, so pair it on your home address the first time. The certificate and its password are stored privately and never appear in a diagnostics download.
 
 A watch can send its logs to Home Assistant from `Connection Health` on the watch. To read them, open the watch's device page (`Settings` -> `Devices & Services` -> `Wrist Assistant`) and choose `Download diagnostics`. Tokens, passwords and the certificate are removed from the download.
 
@@ -130,7 +133,7 @@ Turn the `Pre-release` switch off after the stable release ships, then use HACS
 The easiest option is the bundled script blueprint called `Watch Notification`.
 In Home Assistant, go to `Settings` -> `Automations & Scenes` -> `Blueprints` -> `Scripts`, then create a script from `Watch Notification`.
 
-The blueprint is easier to set up in the UI and lets you choose a watch, title, message, up to 4 entity buttons, custom labels, sound, priority, and auto-dismiss behavior.
+The blueprint is easier to set up in the UI and lets you choose a watch or iPhone, title, message, up to 4 entity buttons, custom labels, sound, priority, and auto-dismiss behavior.
 
 If you want to call the service directly, use `wrist_assistant.send_notification` to send a message to one or all paired watches using Apple notifications.
 
@@ -138,7 +141,7 @@ If you want to call the service directly, use `wrist_assistant.send_notification
 
 A watch set to Fast gets its alerts through the iPhones of the same Home Assistant user, which mirror them to the wrist. A watch set to Reliable, or one whose user has no iPhone with the app, gets them directly. Each phone gets an alert once, however many of its user's watches it is for.
 
-If you see `No registered push token for watch ...`, the watch app has not re-registered for notifications yet. Open Wrist Assistant on the Apple Watch and let it fully sync once, then try the notification again.
+If you see `<device> has not registered for notifications yet`, that watch or iPhone has not checked in for notifications. Open Wrist Assistant on it and let it fully sync once, then try the notification again. `No watch has registered for notifications yet` means no paired watch has: pair one first (see "Pairing a device").
 
 If it still fails:
 
@@ -191,7 +194,7 @@ data:
 
 ## Security and privacy
 
-**Pairing.** When the iPhone app pairs a watch, the integration stores a per-device secret and binds it to the Home Assistant user who was signed in. A watch paired by code works the same way: the watch makes its own secret, and the integration binds it to the administrator who typed the code in the panel. Nothing is paired until an administrator confirms the code, a code lasts 10 minutes, and the panel warns when the request came from outside your network. Every call from a paired device then runs as its user, the same way the Home Assistant Companion app works. A watch paired by a non-admin cannot call admin-only services (restart, add-on control, and so on). Only the user who paired a device, or an admin, can pair it again. If a phone or watch is lost, open the Wrist Assistant panel and choose "Forget device" on it; disabling the user in Home Assistant also cuts off every device they paired.
+**Pairing.** When the iPhone app pairs a watch, the integration stores a per-device secret and binds it to the Home Assistant user who was signed in. A device paired by code works the same way: the device makes its own secret, and the integration binds it to the Home Assistant user who typed the code in the panel (or, for an administrator, the person picked under `Whose watch is this?`). Nothing is paired until someone signed in to Home Assistant confirms the code, a code lasts 10 minutes, and the panel warns when the request came from outside your network. Every call from a paired device then runs as its user, the same way the Home Assistant Companion app works. A watch paired by a non-admin cannot call admin-only services (restart, add-on control, and so on). Only the user who paired a device, or an admin, can pair it again. If a phone or watch is lost, open it on the panel's Home tab and choose `Remove device`; disabling the user in Home Assistant also cuts off every device they paired.
 
 **Push relay.** Apple push notifications must be signed with the app's APNs key, which cannot ship inside a public integration. Notifications are therefore sent through a relay at `push.wrist-assistant.com`, run by the developer, which signs them and hands them to Apple. The relay receives the notification title, body, action buttons and data, the device push token, and the watch id. It keeps nothing after Apple accepts the message. Camera images in notifications are never sent to the relay: the push carries a short-lived link back to your own Home Assistant, and the device fetches the image from there.
 

@@ -4,6 +4,7 @@
 // editor's keys are live, and the tab bar itself, flattened to text.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { watchComplicationsRouteOwner } from "../src/watch-complications.js";
 import {
   COMPLICATIONS_PATH,
   HOME_PATH,
@@ -32,6 +33,7 @@ import {
   tabPath,
   watchScreenOf,
   watchScreenPath,
+  watchScreenSentence,
 } from "../src/shell.js";
 import { watchControlCenterRouteOwner } from "../src/watch-control-center/hook.js";
 import { WATCH_CAMERAS_PATH } from "../src/watch-cameras/hook.js";
@@ -126,8 +128,8 @@ describe("iPhone app screens", () => {
 });
 
 describe("watch screens", () => {
-  it("lists the eight screens in Home's order", () => {
-    expect(WATCH_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "HTTP actions", "Cameras"]);
+  it("lists the nine screens in Home's order", () => {
+    expect(WATCH_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Complications", "HTTP actions", "Cameras"]);
   });
 
   it("finds the screen a route is on", () => {
@@ -141,7 +143,7 @@ describe("watch screens", () => {
 
   it("builds an address each screen's own reader gives the watch back from", () => {
     const readers = [watchPagesRouteOwner, watchMenusRouteOwner, watchStatusPagesRouteOwner,
-      watchControlCenterRouteOwner, watchRoomsRouteOwner, watchVoiceRouteOwner];
+      watchControlCenterRouteOwner, watchRoomsRouteOwner, watchVoiceRouteOwner, watchComplicationsRouteOwner];
     const own = WATCH_SCREENS.filter((screen) => screen.shared !== true);
     expect(own).toHaveLength(readers.length);
     own.forEach((screen, i) => {
@@ -165,9 +167,20 @@ describe("watch screens", () => {
 
   it("lists Cameras last, as a shared screen with its own blurb", () => {
     expect(WATCH_SCREENS.at(-1)).toEqual({
-      id: "cameras", label: "Cameras", blurb: "How each camera is framed in alerts", path: WATCH_CAMERAS_PATH, shared: true,
+      id: "cameras", label: "Cameras", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.",
+      path: WATCH_CAMERAS_PATH, shared: true,
     });
-    expect(watchScreenOf(at("/cameras"))).toBe(WATCH_SCREENS[7]);
+    expect(watchScreenOf(at("/cameras"))).toBe(WATCH_SCREENS[8]);
+  });
+
+  it("writes each blurb to follow the screen's name as one plain sentence", () => {
+    expect(watchScreenSentence(WATCH_SCREENS[0]!)).toBe(
+      "Pages are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.",
+    );
+    for (const screen of [...WATCH_SCREENS, WATCH_SETTINGS_SCREEN].filter((s) => s.retired !== true)) {
+      expect(screen.blurb, screen.id).toMatch(/^[a-z][^.]*\.$/);
+      expect(screen.blurb, screen.id).not.toMatch(/[\u2013\u2014]| - /);
+    }
   });
 });
 
@@ -396,6 +409,16 @@ describe("renderTabBar", () => {
     }));
     expect(text).toMatch(/href=\/wrist-assistant\/pages\/w2 [^>]*>Watch app<\/a>/);
     expect(bar("")).toMatch(/href=\/wrist-assistant\/pages [^>]*>Watch app<\/a>/);
+  });
+
+  it("puts an orange dot on the Watch app tab, named for a screen reader, while a watch screen is unsaved", () => {
+    const text = (watchUnsaved?: boolean) => flat(renderTabBar({
+      route: at(""), menu: false, onMenu: () => undefined, onTab: () => undefined, watchUnsaved,
+    }));
+    expect(text(true)).toMatch(/>Watch app<i class="wa-unsaved" role="img" aria-label="unsaved changes"><\/i><\/a>/);
+    expect(text(true).match(/wa-unsaved/g)).toHaveLength(1);
+    expect(text(false)).not.toContain("wa-unsaved");
+    expect(text(undefined)).not.toContain("wa-unsaved");
   });
 
   it("offers Home Assistant's menu only when asked", () => {

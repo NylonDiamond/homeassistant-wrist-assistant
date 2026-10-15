@@ -33,7 +33,7 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import type { EntityRef } from "../model.js";
-import { checkField, colorField, entityField, numberField, segField, sliderField, symbolField, symbolNameSet, textField } from "../editors.js";
+import { type EntityPickSource, checkField, colorField, entityField, numberField, segField, sliderField, symbolField, symbolNameSet, textField } from "../editors.js";
 import { sectionCard } from "../editor-chrome.js";
 import { goToWatchHttpActions } from "../shell.js";
 import { uiIcon } from "../ui-icons.js";
@@ -74,7 +74,7 @@ import {
   watchTileTaskHeld,
   watchTileTaskModified,
 } from "./styling-model.js";
-import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider } from "./tile-styling.js";
+import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider, watchStylingTheme, watchTitleSwatches } from "./tile-styling.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
 import type { TileSettingsHost } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
@@ -82,6 +82,13 @@ import { forgetSpecialStatus, renderSpecial, specialSummary, watchSpecialSection
 import { renderInboxLine } from "./app-settings.js";
 import { watchSpecialTask } from "./special-model.js";
 import { findWatchPage } from "./edit.js";
+import {
+  type WatchShowWhenOperator,
+  WATCH_SHOW_WHEN_OPERATORS,
+  watchShowWhenPasses,
+  watchShowWhenStateChoices,
+  watchTileShowWhen,
+} from "./show-when.js";
 import { type WatchPageTile, type WatchPagesDocument, WATCH_REMOVED_TILE_TEXT, tileEntityId, tileKind, watchPageId, watchPageName, watchPagesOf } from "./model.js";
 import {
   type WatchLibraryKind,
@@ -141,6 +148,13 @@ import {
   setWatchTileFontSize,
   setWatchTileFontWeight,
   setWatchTileHideWhenOff,
+  type WatchShowTileMode,
+  setWatchTileShowAlways,
+  setWatchTileShowWhenEntity,
+  setWatchTileShowWhenOperator,
+  setWatchTileShowWhenState,
+  setWatchTileShowWhileOn,
+  watchShowTileMode,
   setWatchTileHoldSlide,
   setWatchTileHoldSlideHTTP,
   setWatchTileHoldSlideHTTPBanner,
@@ -472,6 +486,12 @@ export function linkButton(text: string, title: string, action: () => void): Tem
   return html`<button type="button" class="link ts-link" title=${title} @click=${action}>${text}</button>`;
 }
 
+/** A section's Reset: a quiet button with the undo glyph, not a link, so it
+ * reads as something to press rather than a line of text. */
+export function resetButton(text: string, title: string, action: () => void): TemplateResult {
+  return html`<button type="button" class="ghost ts-reset-btn" title=${title} @click=${action}>${uiIcon("undo")}${text}</button>`;
+}
+
 /** The defaults of the tile's kind for this page: icon and color. */
 function kindDefaults(host: TileSettingsHost): { icon: string | undefined; color: string | undefined } {
   const entityId = tileEntityId(host.tile);
@@ -596,7 +616,7 @@ const SECTION_KEYS: Readonly<Partial<Record<WatchTileSettingsSection, readonly s
   text: ["showLabel", "labelFontSizeOverride", "labelFontWeight", "labelFontDesign", "labelShadow", "labelColorHex"],
   action: [
     "singleTapAction", "holdSlideActions", "holdSlideTriggerTargets", "holdSlideHTTPActionTargets", "holdSlideHTTPActionShowBanner",
-    "holdSlideHTTPActionBannerSeconds", "requiresConfirmation", "hideWhenInactive", "automationSkipConditionOverride",
+    "holdSlideHTTPActionBannerSeconds", "requiresConfirmation", "hideWhenInactive", "showWhen", "automationSkipConditionOverride",
   ],
 };
 
@@ -636,7 +656,7 @@ const SECTION_READS: Readonly<Partial<Record<WatchTileSettingsSection, (tile: Wa
     const a = watchTileActionSettings(t);
     const slides = ["holdSlideActions", "holdSlideTriggerTargets", "holdSlideHTTPActionTargets", "holdSlideHTTPActionShowBanner", "holdSlideHTTPActionBannerSeconds"]
       .map((key) => t[key]);
-    return [watchSingleTapSettings(t).resolvedLabel, a.askBeforeRunning.value, a.hideWhenOff, a.skipConditions.value, slides];
+    return [watchSingleTapSettings(t).resolvedLabel, a.askBeforeRunning.value, a.hideWhenOff, t.showWhen, a.skipConditions.value, slides];
   },
 };
 
@@ -984,11 +1004,11 @@ function renderTileValue(host: TileSettingsHost, r: ReturnType<typeof watchHTTPR
     ${checkField("Show name", r.showName, (on) => commit(host, "httpShowName", (d) => setWatchTileHTTPShowName(d, ...P(), on)))}
     <div class="hint ts-under">Captions the value with the tile's name.</div>
     ${typingField(host, "httpFontSize", html`<div class="ts-with-link">
-      ${numberField("Text size", fontSize, setFontSize, { step: 1, min: R.fontSize.min, max: R.fontSize.max, optional: true, placeholder: "Auto", unit: "pt" })}
+      ${numberField("Text size", fontSize, setFontSize, { step: 1, min: R.fontSize.min, max: R.fontSize.max, optional: true, placeholder: "Auto", unit: "pt", rawTyping: true })}
       ${r.fontSize === undefined ? nothing : linkButton("Auto", "Let the watch size the value", () => commit(host, "httpFontSize", (d) => setWatchTileHTTPValueFontSize(d, ...P(), null)))}
     </div>`, r.fontSize)}
     ${typingField(host, "httpLines", html`<div class="ts-with-link">
-      ${numberField("Lines", lines, setLines, { step: 1, min: R.lineLimit.min, max: R.lineLimit.max, optional: true, placeholder: "Auto" })}
+      ${numberField("Lines", lines, setLines, { step: 1, min: R.lineLimit.min, max: R.lineLimit.max, optional: true, placeholder: "Auto", rawTyping: true })}
       ${r.lineLimit === undefined ? nothing : linkButton("Auto", "More lines on taller tiles", () => commit(host, "httpLines", (d) => setWatchTileHTTPValueLineLimit(d, ...P(), null)))}
     </div>`, r.lineLimit)}
     ${typingField(host, "httpLineSpacing", sliderField("Line spacing", r.lineSpacing, (v) =>
@@ -1006,11 +1026,6 @@ function renderTileValue(host: TileSettingsHost, r: ReturnType<typeof watchHTTPR
 }
 
 // ── icon and color ───────────────────────────────────────────────────────
-
-/** Set during a click on a symbol grid's tile, so the edit it sends is told
- * apart from typing in the Symbol box (`symbolField` calls one setter for
- * both). */
-let gridPick = false;
 
 /** The names the symbol provider lists, as a set; undefined while they
  * load. */
@@ -1051,63 +1066,42 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
   const s = watchTileIconSettings(tile);
   const defaults = kindDefaults(host);
   stripFillWhenListed(host);
-  const shown = s.icon === undefined ? defaults.icon : s.icon === "" ? undefined : s.icon;
-  const ink = watchColorEnds(s.color)?.from ?? "#FFFFFF";
-  const glyph = shown === undefined ? undefined : host.icons.render(shown, 26, ink);
   // A rule's style is at its default only with no icon of its own.
   const atDefaultIcon = s.icon === undefined || (host.domainStyle !== true && defaults.icon !== undefined && s.icon === defaults.icon);
 
+  // Every icon comes from the list now, picked or typed into its search, so
+  // each one is a step of its own.
   const setIcon = (name: string) => {
-    const picked = gridPick;
-    gridPick = false;
     const value = storedSymbol(host, name);
     if (knownSymbols(host) === undefined && value.includes(".fill")) host.uiState.set(`${KEY}:fill:${host.tileId.toUpperCase()}`, value);
-    if (picked) {
-      // A pick from the grid is a step of its own, and the box shows the
-      // picked name, not what was typed before it.
-      host.uiState.delete(typedKey(host, "icon"));
-      host.endCoalesce();
-      host.requestUpdate();
-    }
-    commit(host, "icon", (d) => setWatchTileIcon(d, host.pageId, host.tileId, value), { typing: !picked });
+    host.endCoalesce();
+    commit(host, "icon", (d) => setWatchTileIcon(d, host.pageId, host.tileId, value));
   };
   const noIcon = () => commit(host, "icon", (d) => setWatchTileIcon(d, host.pageId, host.tileId, ""));
   const defaultIcon = () => commit(host, "icon", watchTileDefaultIconEdit(host));
 
-  const typedIcon = typed(host, "icon");
-  const what = s.icon === "" ? "No icon" : shown ?? "Default icon";
   const animation = watchChoiceMenu(WATCH_ICON_TAP_ANIMATIONS, s.tapAnimation);
   const unknownAnimation = s.tapAnimationStored !== undefined && s.tapAnimationStored !== s.tapAnimation ? s.tapAnimationStored : undefined;
   return html`
-    <div class="ts-icon-now">
-      <span class="ts-glyph ${s.icon === "" ? "none" : ""}" aria-hidden="true">${s.icon === "" ? uiIcon("close") : glyph ?? html`<span class="ts-glyph-dot"></span>`}</span>
-      <span class="ts-icon-name">${what}${s.icon === undefined ? html`<span class="ts-faint"> (default)</span>` : nothing}</span>
-    </div>
-    <div class="ts-chips" role="group" aria-label="Icon">
+    ${symbolField(
+      { icons: host.icons, symbols: host.symbols },
+      s.icon ?? "",
+      setIcon,
+      `pe:ts:symbol`,
+      // The chips under the box are the way back to none and to the default,
+      // so the box carries no x of its own.
+      {
+        clearable: false,
+        tint: watchColorEnds(s.color ?? defaults.color)?.from,
+        emptyText: s.icon === "" ? "No icon" : defaults.icon === undefined ? "Default" : `Default (${defaults.icon})`,
+        ...(s.icon === undefined && defaults.icon !== undefined ? { emptyGlyph: defaults.icon } : {}),
+      },
+    )}
+    <div class="ts-after" role="group" aria-label="Icon">
       <button type="button" class="pe-chip ${s.icon === "" ? "on" : ""}" aria-pressed=${s.icon === "" ? "true" : "false"} @click=${noIcon}>No icon</button>
       <button type="button" class="pe-chip ${atDefaultIcon && s.icon !== "" ? "on" : ""}" aria-pressed=${atDefaultIcon && s.icon !== "" ? "true" : "false"}
         title=${host.domainStyle === true ? "No icon of its own: the watch draws its default" : defaults.icon === undefined ? "The watch picks the icon" : `The default for this kind of tile: ${defaults.icon}`}
         @click=${defaultIcon}>Default</button>
-    </div>
-    <div class="ts-symbol" @click=${{
-      // On the way down, before the tile's own click handler sets the icon.
-      capture: true,
-      // Let go after the click either way (a task later: a trusted click
-      // runs microtasks between its listeners).
-      handleEvent: (e: Event) => {
-        gridPick = e.target instanceof Element && e.target.closest("button.sym") !== null;
-        if (gridPick) setTimeout(() => { gridPick = false; }, 0);
-      },
-    }}>
-    ${typingField(host, "icon", symbolField(
-      { icons: host.icons, symbols: host.symbols },
-      typedIcon ?? (s.icon ?? ""),
-      setIcon,
-      `pe:ts:symbol`,
-      undefined,
-      "Symbol",
-      false,
-    ))}
     </div>
     ${renderTileColor(host, defaults.color)}
     ${host.domainStyle === true ? nothing : renderStateIcons(host)}
@@ -1191,7 +1185,7 @@ function renderIconSize(host: TileSettingsHost): TemplateResult {
     commit(host, "iconSize", (d) => setWatchTileIconSize(d, host.pageId, host.tileId, v), { typing: true, ...reasonOf(watchIconSizeRefusal(v, max)) });
   };
   return html`${typingField(host, "iconSize", html`<div class="ts-with-link">
-      ${numberField("Icon size", shown, set, { step: 1, min: WATCH_ICON_SIZE_RANGE.min, max: top, optional: true, placeholder: "Auto", unit: "pt" })}
+      ${numberField("Icon size", shown, set, { step: 1, min: WATCH_ICON_SIZE_RANGE.min, max: top, optional: true, placeholder: "Auto", unit: "pt", rawTyping: true })}
       ${s.iconSize === undefined ? nothing : linkButton("Auto", "Let the watch size the icon to the tile", () => commit(host, "iconSize", (d) => setWatchTileIconSize(d, host.pageId, host.tileId, null)))}
     </div>`, s.iconSize)}
     <div class="hint ts-under">${watchIconSizeHint(s.iconSizeMax)}</div>`;
@@ -1222,15 +1216,20 @@ function renderText(host: TileSettingsHost): TemplateResult {
   return html`
     ${checkField("Show label", t.showLabel, (on) => commit(host, "showLabel", (d) => setWatchTileShowLabel(d, host.pageId, host.tileId, on)))}
     ${typingField(host, "fontSize", html`<div class="ts-with-link">
-      ${numberField("Font size", fontSize, setFontSize, { step: 1, min: WATCH_FONT_SIZE_RANGE.min, max: WATCH_FONT_SIZE_RANGE.max, optional: true, placeholder: "Auto", unit: "pt" })}
+      ${numberField("Font size", fontSize, setFontSize, { step: 1, min: WATCH_FONT_SIZE_RANGE.min, max: WATCH_FONT_SIZE_RANGE.max, optional: true, placeholder: "Auto", unit: "pt", rawTyping: true })}
       ${t.fontSize === undefined ? nothing : linkButton("Auto", "Let the watch size the label to the tile", () => commit(host, "fontSize", (d) => setWatchTileFontSize(d, host.pageId, host.tileId, null)))}
     </div>`, t.fontSize)}
-    <div class="hint ts-under">Empty is Auto, sized to the tile's width. Or ${WATCH_FONT_SIZE_RANGE.min} to ${WATCH_FONT_SIZE_RANGE.max}.</div>
+    <div class="hint ts-under">Leave empty for Auto, sized to the tile's width, or pick ${WATCH_FONT_SIZE_RANGE.min} to ${WATCH_FONT_SIZE_RANGE.max} pt.</div>
     ${menuField("Weight", watchFontWeightMenu(t.fontWeight), (v) => commit(host, "fontWeight", (d) => setWatchTileFontWeight(d, host.pageId, host.tileId, v)))}
     ${menuField("Design", watchFontDesignMenu(t.fontDesign), (v) => commit(host, "fontDesign", (d) => setWatchTileFontDesign(d, host.pageId, host.tileId, v)))}
     ${checkField("Text shadow", t.textShadow, (on) => commit(host, "textShadow", (d) => setWatchTileTextShadow(d, host.pageId, host.tileId, on)))}
-    ${typingField(host, "labelColor", html`<div class="ts-no-alpha">${colorField("Label color", labelColor, setLabelColor, true, undefined, { switchOn: t.labelColor !== undefined })}</div>`)}
-    <div class="hint ts-under">${t.labelColor === undefined ? "Off: the theme's label color." : "On: this color. Switch it off for the theme's."}</div>`;
+    <div class="ts-sub-h"><span>Label color</span></div>
+    <div class="ts-swatch-row">${swatchRow("Label color", watchStylingTheme(watchPageSwatchTheme(host.page))?.pageTitleSwatches ?? watchTitleSwatches(), t.labelColor, (c) => setLabelColor(c))}</div>
+    ${typingField(host, "labelColor", html`<div class="ts-no-alpha">${colorField("Custom", labelColor, setLabelColor)}</div>`)}
+    <div class="ts-after">
+      <button type="button" class="pe-chip ${t.labelColor === undefined ? "on" : ""}" aria-pressed=${t.labelColor === undefined ? "true" : "false"}
+        title="No color of its own: the theme's label color" @click=${() => setLabelColor(undefined)}>Theme color</button>
+    </div>`;
 }
 
 // ── action ───────────────────────────────────────────────────────────────
@@ -1257,13 +1256,120 @@ function renderAction(host: TileSettingsHost): TemplateResult {
           commit(host, "singleTap", (d) => setWatchTileSingleTap(d, host.pageId, host.tileId, v === WATCH_DEFAULT_CHOICE ? null : v)))}
     ${slides === undefined ? nothing : renderHoldSlide(host, slides)}
     ${ask}
-    ${checkField("Hide when off", a.hideWhenOff, (on) => commit(host, "hideWhenOff", (d) => setWatchTileHideWhenOff(d, host.pageId, host.tileId, on)))}
-    <div class="hint ts-under">The watch leaves the tile out while it is off.</div>
+    ${renderShowTile(host)}
     ${a.skipConditions.shown
       ? html`<div class="ts-stack">${segField<WatchSkipChoice>("Skip conditions", watchSkipChoice(a.skipConditions.value), WATCH_SKIP_CHOICES as [WatchSkipChoice, string][], (v) =>
           commit(host, "skipConditions", (d) => setWatchTileSkipConditions(d, host.pageId, host.tileId, watchSkipValue(v))))}</div>
           <div class="hint">Whether running the automation from the watch skips its conditions. Default follows "Skip conditions by default" in the watch's Settings.</div>`
       : nothing}`;
+}
+
+const SHOW_TILE_CHOICES: [WatchShowTileMode, string][] = [
+  ["always", "Always"],
+  ["on", "Only while on"],
+  ["when", "Only when…"],
+];
+
+/**
+ * Show Tile: Always, Only While On (`hideWhenInactive`) or Only When
+ * (`showWhen`). Only When stores nothing until an entity is picked, so the
+ * choice is held in `uiState` until then and the tile keeps what it had.
+ */
+function renderShowTile(host: TileSettingsHost): TemplateResult {
+  const stored = watchShowTileMode(host.tile);
+  const pendingKey = `${KEY}:showTile:${host.tileId.toUpperCase()}`;
+  const mode: WatchShowTileMode = stored !== "when" && host.uiState.get(pendingKey) === "when" ? "when" : stored;
+  const pick = (v: WatchShowTileMode) => {
+    if (v === "when") {
+      host.uiState.set(pendingKey, "when");
+      host.requestUpdate();
+      return;
+    }
+    host.uiState.delete(pendingKey);
+    if (v === "always") commit(host, "showTile", (d) => setWatchTileShowAlways(d, host.pageId, host.tileId));
+    else commit(host, "showTile", (d) => setWatchTileShowWhileOn(d, host.pageId, host.tileId));
+    host.requestUpdate();
+  };
+  return html`<div class="ts-sub">
+    <div class="ts-stack">${segField<WatchShowTileMode>("Show tile", mode, SHOW_TILE_CHOICES, (v) => pick(v))}</div>
+    ${mode === "always"
+      ? html`<div class="hint ts-under">The watch always shows this tile.</div>`
+      : mode === "on"
+        ? html`<div class="hint ts-under">The watch leaves the tile out while it is off.</div>`
+        : renderShowWhen(host, pendingKey)}
+  </div>`;
+}
+
+/** Only When: an entity, a comparison and a state. Picking an entity makes
+ * the condition, starting at that entity's state now; the x removes it. */
+function renderShowWhen(host: TileSettingsHost, pendingKey: string): TemplateResult {
+  const stored = host.tile.showWhen;
+  const c = watchTileShowWhen(host.tile);
+  const states = host.hass.states;
+  const id = c?.entityId ?? "";
+  const friendly = states[id]?.attributes?.friendly_name;
+  const ref: EntityRef = {
+    entityId: id,
+    displayName: typeof friendly === "string" && friendly.trim() !== "" ? friendly : id,
+    domain: tileKind(id),
+  };
+  const pick = (next: EntityRef, source?: EntityPickSource) => {
+    const nextId = next.entityId.trim();
+    if (source === "clear" || nextId === "") {
+      // The rows stay open for another entity.
+      host.uiState.set(pendingKey, "when");
+      return commit(host, "showWhen", (d) => setWatchTileShowWhenEntity(d, host.pageId, host.tileId, null));
+    }
+    if (nextId === id) return;
+    // Starts on the first value offered (Home, Plugged in, On), else its state now.
+    const first = watchShowWhenStateChoices(nextId, states)[0]?.value ?? states[nextId]?.state ?? "";
+    commit(host, "showWhen", (d) => setWatchTileShowWhenEntity(d, host.pageId, host.tileId, nextId, first), {
+      reason: /^[a-z0-9_]+\.[a-z0-9_]+$/i.test(nextId) ? undefined : "Pick an entity, or type a full entity id such as person.alex.",
+    });
+  };
+  const unreadable = stored !== undefined && c === undefined;
+  const state = typed(host, "showWhenState") ?? c?.state ?? "";
+  // Above and below compare numbers, so only a number is offered there.
+  const numeric = c?.comparisonOperator === "gt" || c?.comparisonOperator === "lt";
+  const choices = watchShowWhenStateChoices(id, states).filter((ch) => !numeric || /^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(ch.value));
+  const chosen = choices.find((ch) => c !== undefined && ch.value.toLowerCase() === c.state.toLowerCase());
+  const setValue = (value: string) => {
+    host.uiState.delete(typedKey(host, "showWhenState"));
+    commit(host, "showWhenState", (d) => setWatchTileShowWhenState(d, host.pageId, host.tileId, value));
+    host.requestUpdate();
+  };
+  const passes = c === undefined || watchShowWhenPasses(c, states);
+  // Older documents can hold both keys; the watch then needs both to pass.
+  const alsoWhileOn = host.tile.hideWhenInactive === true;
+  return html`
+    ${unreadable
+      ? html`<div class="hint warn">This tile's condition could not be read here. Pick an entity to replace it, or remove it.</div>
+          ${linkButton("Remove", "Remove the condition", () => commit(host, "showWhen", (d) => setWatchTileShowWhenEntity(d, host.pageId, host.tileId, null)))}`
+      : nothing}
+    <div class="ts-stack">${entityField({ hass: host.hass }, "Entity", ref, pick, `pe:ts:showWhen:${host.tileId}`, { needed: true })}</div>
+    ${fieldNote(host, "showWhen")}
+    ${alsoWhileOn && stored !== undefined
+      ? html`<div class="hint warn ts-under">This tile also hides while it is off.
+          ${linkButton("Stop that", "Show it while off too, when the condition holds", () =>
+            commit(host, "hideWhenOff", (d) => setWatchTileHideWhenOff(d, host.pageId, host.tileId, false)))}</div>`
+      : nothing}
+    ${c === undefined
+      ? html`<div class="hint ts-under">Pick an entity, for example yourself to show a door lock only while you are home.${alsoWhileOn ? " Until then the tile still hides while it is off." : ""}</div>`
+      : html`
+        <div class="ts-stack">${segField<WatchShowWhenOperator>("State", c.comparisonOperator, WATCH_SHOW_WHEN_OPERATORS as [WatchShowWhenOperator, string][], (v) =>
+          commit(host, "showWhenOperator", (d) => setWatchTileShowWhenOperator(d, host.pageId, host.tileId, v)))}</div>
+        ${typingField(host, "showWhenState", textField("Value", state, (v) =>
+          commit(host, "showWhenState", (d) => setWatchTileShowWhenState(d, host.pageId, host.tileId, v), { typing: true }), { mono: true, placeholder: numeric ? "A number" : "Pick below or type a state" }))}
+        ${choices.length === 0
+          ? nothing
+          : html`<div class="ts-after">${choices.map((ch) => {
+              const on = ch === chosen;
+              return html`<button type="button" class="pe-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+                title=${ch.label === ch.value ? ch.value : `${ch.label}, stored as ${ch.value}`} @click=${() => setValue(ch.value)}>${ch.label}</button>`;
+            })}</div>`}
+        <div class="hint ts-under ${c.state === "" ? "warn" : ""}">${c.state === ""
+          ? "Pick a value above or type one. Empty matches nothing."
+          : `The watch shows this tile only while ${ref.displayName || id} ${WATCH_SHOW_WHEN_OPERATORS.find(([o]) => o === c.comparisonOperator)?.[1] ?? c.comparisonOperator} ${chosen?.label ?? c.state}. Now it is ${passes ? "shown" : "hidden"}.`}</div>`}`;
 }
 
 function renderHoldSlide(host: TileSettingsHost, slides: NonNullable<ReturnType<typeof watchHoldSlideMenus>>): TemplateResult {
@@ -1380,7 +1486,7 @@ function renderHeader(host: TileSettingsHost): TemplateResult {
         ${typingField(host, "headerLabel", textField("Label", label, (v) =>
           commit(host, "headerLabel", (d) => setWatchHeaderLabel(d, host.pageId, host.tileId, v), { typing: true }), { placeholder: h.domain === "custom" || h.domain === "" ? "Header" : h.domain }))}
         ${typingField(host, "headerTextSize", html`<div class="ts-with-link">
-          ${numberField("Text size", textSize, setTextSize, { step: 1, min: WATCH_HEADER_TEXT_SIZE_RANGE.min, max: WATCH_HEADER_TEXT_SIZE_RANGE.max, optional: true, placeholder: `Auto`, unit: "pt" })}
+          ${numberField("Text size", textSize, setTextSize, { step: 1, min: WATCH_HEADER_TEXT_SIZE_RANGE.min, max: WATCH_HEADER_TEXT_SIZE_RANGE.max, optional: true, placeholder: `Auto`, unit: "pt", rawTyping: true })}
           ${h.textSize === undefined ? nothing : linkButton("Auto", `Back to ${WATCH_HEADER_TEXT_SIZE_RANGE.auto} pt`, () => commit(host, "headerTextSize", (d) => setWatchHeaderTextSize(d, host.pageId, host.tileId, null)))}
         </div>`, h.textSize)}
         <div class="hint ts-under">Empty is Auto (${WATCH_HEADER_TEXT_SIZE_RANGE.auto} pt). Or ${WATCH_HEADER_TEXT_SIZE_RANGE.min} to ${WATCH_HEADER_TEXT_SIZE_RANGE.max}.</div>`
@@ -1452,7 +1558,7 @@ function autoSizeRow(host: TileSettingsHost, setting: string, label: string, sli
       ...(v === undefined ? {} : reasonOf(watchWholeRefusal(v, spec.min, spec.max))),
     });
   return html`${typingField(host, setting, html`<div class="ts-with-link">
-      ${numberField(label, shown, write, { step: 1, min: spec.min, max: spec.max, optional: true, placeholder: `Auto (${spec.auto ?? ""})`, unit: "pt" })}
+      ${numberField(label, shown, write, { step: 1, min: spec.min, max: spec.max, optional: true, placeholder: `Auto (${spec.auto ?? ""})`, unit: "pt", rawTyping: true })}
       ${value === undefined ? nothing : linkButton("Auto", "Let the watch size it", () => commit(host, setting, (d) => set(d, host.pageId, host.tileId, null)))}
     </div>`, value)}`;
 }
@@ -1475,7 +1581,7 @@ function taskModified(host: TileSettingsHost, task: WatchTileStylingTask): boole
 function resetRow(host: TileSettingsHost, task: WatchTileStylingTask, words: string): TemplateResult | typeof nothing {
   if (!taskModified(host, task)) return nothing;
   const domain = host.domainStyle === true;
-  return html`<div class="ts-after ts-reset">${linkButton(`Reset ${words}`,
+  return html`<div class="ts-after ts-reset">${resetButton(`Reset ${words.toLowerCase()}`,
     domain ? `Remove every ${words.toLowerCase()} setting from the rule, so the watch draws its own` : `Put every ${words.toLowerCase()} setting back to its default`, () =>
     commit(host, `reset:${task}`, (d) => (domain ? clearWatchTileTask : resetWatchTileTask)(d, host.pageId, host.tileId, task)))}</div>`;
 }
@@ -1613,8 +1719,8 @@ function renderState(host: TileSettingsHost): TemplateResult {
   return html`
     ${cards.map((card) => html`
       <div class="ts-sub-h"><span>${card.title}</span></div>
-      ${card.rows.map((row) => renderStateRow(host, row))}
-      ${card.subtitle === "" ? nothing : html`<div class="hint ts-under">${card.subtitle}.</div>`}`)}
+      ${card.subtitle === "" ? nothing : html`<div class="hint ts-sub-note">${card.subtitle}.</div>`}
+      ${card.rows.map((row) => renderStateRow(host, row))}`)}
     ${resetRow(host, "state", "State")}`;
 }
 
@@ -1649,6 +1755,7 @@ function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothi
   };
   return html`<div class="ts-sub">
     <div class="ts-sub-h"><span>State icons and colors</span><span class="ts-faint">Optional</span></div>
+    <div class="hint ts-sub-note">An icon or color per state. A state with none uses the tile's.</div>
     ${card.rows.map((row) => {
       const ink = watchColorEnds(row.color ?? tileColor)?.from ?? "#FFFFFF";
       const symbol = row.icon ?? (tileIcon !== undefined && tileIcon !== "" ? tileIcon : row.defaultIcon);
@@ -1657,10 +1764,10 @@ function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothi
       return html`<div class="ts-state-row ${row.overridden ? "own" : ""}">
           <span class="ts-state-glyph" aria-hidden="true">${glyph ?? html`<span class="ts-glyph-dot"></span>`}</span>
           <span class="ts-state-label">${row.label}</span>
-          <button type="button" class="ts-swatch ts-state-color ${open === "color" ? "on" : ""}" aria-expanded=${open === "color" ? "true" : "false"}
+          <button type="button" class="pe-chip ts-state-color ${open === "color" ? "on" : ""}" aria-expanded=${open === "color" ? "true" : "false"}
             title=${row.color === undefined ? `${row.label}: the tile's color` : `${row.label}: ${row.color}`} aria-label=${`${row.label} color`}
-            style=${`--sw:${row.color === undefined ? "transparent" : `linear-gradient(135deg, ${watchColorEnds(row.color)?.from ?? ink}, ${watchColorEnds(row.color)?.to ?? ink})`}`}
-            @click=${() => toggleEdit(row.key, "color")}></button>
+            @click=${() => toggleEdit(row.key, "color")}><i class="ts-state-sw ${row.color === undefined ? "inherit" : ""}"
+              style=${`--sw:${(() => { const ends = watchColorEnds(row.color ?? tileColor); return ends === undefined ? ink : `linear-gradient(135deg, ${ends.from}, ${ends.to})`; })()}`}></i>Color</button>
           <button type="button" class="pe-chip ts-state-icon ${open === "icon" ? "on" : ""}" aria-expanded=${open === "icon" ? "true" : "false"}
             title=${row.icon === undefined ? `${row.label}: no icon of its own` : `${row.label}: ${row.icon}`}
             @click=${() => toggleEdit(row.key, "icon")}>Icon</button>
@@ -1669,7 +1776,7 @@ function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothi
                 @click=${() => commit(host, `state:${row.key}`, (d) => resetWatchTileState(d, host.pageId, host.tileId, row.key))}>${uiIcon("undo")}</button>`
             : html`<span class="ts-state-reset"></span>`}
         </div>
-        ${open === "icon" ? renderStateIconPicker(host, row.key, row.icon) : nothing}
+        ${open === "icon" ? renderStateIconPicker(host, row.key, row.icon, watchColorEnds(row.color ?? tileColor)?.from) : nothing}
         ${open === "color" ? renderStateColorPicker(host, row.key, row.color) : nothing}`;
     })}
     ${card.any
@@ -1678,25 +1785,23 @@ function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothi
           commit(host, "stateClear", (d) => clearWatchTileStateOverrides(d, host.pageId, host.tileId));
         })}</div>`
       : nothing}
-    <div class="hint ts-under">An icon or color per state. A state with none uses the tile's.</div>
   </div>`;
 }
 
-function renderStateIconPicker(host: TileSettingsHost, state: string, icon: string | undefined): TemplateResult {
+function renderStateIconPicker(host: TileSettingsHost, state: string, icon: string | undefined, tint: string | undefined): TemplateResult {
   const setting = `stateIcon:${state}`;
-  return html`<div class="ts-nested">${typingField(host, setting, symbolField(
+  // Starts open: a click on the state's Icon button is what asked for it.
+  return html`<div class="ts-nested">${symbolField(
     { icons: host.icons, symbols: host.symbols },
-    typed(host, setting) ?? icon ?? "",
+    icon ?? "",
     (name) => {
       const value = name.trim();
       if (value === "") return;
-      commit(host, setting, (d) => setWatchTileStateIcon(d, host.pageId, host.tileId, state, value), { typing: true });
+      commit(host, setting, (d) => setWatchTileStateIcon(d, host.pageId, host.tileId, state, value));
     },
     `pe:ts:state:${state}`,
-    undefined,
-    "Symbol",
-    true,
-  ))}</div>`;
+    { defaultOpen: true, clearable: false, tint },
+  )}</div>`;
 }
 
 function renderStateColorPicker(host: TileSettingsHost, state: string, color: string | undefined): TemplateResult {
@@ -1768,7 +1873,7 @@ function renderBackground(host: TileSettingsHost): TemplateResult {
   const reset = (key: string) => resetValue("background", key);
   return html`
     <div class="ts-sub-h"><span>Pattern</span></div>
-    ${enumRow(host, "pattern", "Pattern", "backgroundPattern", g.pattern, setWatchTilePattern)}
+    ${enumRow(host, "pattern", "Type", "backgroundPattern", g.pattern, setWatchTilePattern)}
     ${g.pattern === "none" ? nothing : html`
       ${sliderRow(host, "patternOpacity", "Opacity", "patternOpacity", g.patternOpacity, setWatchTilePatternOpacity, { reset: reset("patternOpacity"), percent: true })}
       ${sliderRow(host, "patternScale", "Size", "patternScale", g.patternScale, setWatchTilePatternScale)}
@@ -1786,7 +1891,7 @@ function renderBackground(host: TileSettingsHost): TemplateResult {
 function renderEffect(host: TileSettingsHost, g: ReturnType<typeof watchTileBackgroundSettings>, reset: (key: string) => unknown): TemplateResult {
   return html`
     <div class="ts-sub-h"><span>Effect</span></div>
-    ${enumRow(host, "effect", "Effect", "tileAnimation", g.effect, setWatchTileEffect)}
+    ${enumRow(host, "effect", "Type", "tileAnimation", g.effect, setWatchTileEffect)}
     ${g.effect === "none" ? nothing : html`
       ${boolRow(host, "effectActiveOnly", "Only when on", g.effectActiveOnly, setWatchTileEffectActiveOnly)}
       ${stylingPalette(host, "effectColor", {
@@ -1815,31 +1920,24 @@ export const tileSettingsStyles = css`
   .name-sec .sec-h > .ts-typing { flex: 1 1 auto; min-width: 0; display: flex; }
   .name-sec .sec-h > .ts-typing > input { flex: 1 1 auto; width: 0; min-width: 0; }
   .ts-name-b { display: flex; flex-direction: column; gap: 2px; }
-  .ts-name-b > .hint { margin: 0; }
+  /* Both lines start at the card's edge. The shared rule that starts a card's
+     help where its controls start would push the hint to a column this card
+     does not have. */
+  .name-sec > .sec-b.ts-name-b > .hint.keep, .ts-name-b > .hint { margin: 0; }
   .ts-entity { min-width: 0; font-size: 11.5px; color: var(--wa-muted); overflow-wrap: anywhere; }
   /* The row under the last card: Delete tile. */
   .ts-acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0 0; }
   /* A fieldset only to switch every control off at once while a save is
      out; it draws nothing of its own. */
   fieldset.ts-body, fieldset.ts-plain { margin: 0; padding: 0; border: 0; min-width: 0; }
-  fieldset.ts-body { display: flex; flex-direction: column; gap: 2px; padding: 2px 0 0; --wa-lab: 84px; }
+  fieldset.ts-body { display: flex; flex-direction: column; gap: 2px; padding: 2px 0 0; --wa-lab: 112px; }
   .ts-body .hint { margin: 0 0 4px; }
   .ts-body .hint.ts-under { padding-left: calc(var(--wa-lab) + 8px); margin-top: -2px; }
   .ts-nested .hint.ts-under { padding-left: calc(var(--wa-lab) + 8px); }
   .ts-note { padding-left: calc(var(--wa-lab) + 8px); }
   .ts-faint { color: var(--wa-muted); font-weight: 400; }
 
-  .ts-icon-now { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 0 6px; }
-  .ts-glyph {
-    flex: none; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center;
-    background: #1c1c1e; color: #fff; box-shadow: inset 0 0 0 1px var(--wa-line);
-  }
-  .ts-glyph svg { display: block; }
-  .ts-glyph.none { color: rgba(255, 255, 255, .45); }
-  .ts-glyph.none svg.ui-icon { width: 18px; height: 18px; }
   .ts-glyph-dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, .55); }
-  .ts-icon-name { min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-    overflow-wrap: anywhere; }
   .ts-target-now { padding: 4px 0 2px; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
   .ts-chips, .ts-after { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 6px; }
   .ts-after { padding-left: calc(var(--wa-lab) + 8px); }
@@ -1862,12 +1960,42 @@ export const tileSettingsStyles = css`
   .ts-stack .field.entity-field > :not(:first-child) { grid-column: 1; }
   .ts-with-link { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .ts-with-link > .field { flex: 1; min-width: 0; }
-  .ts-link { flex: none; font-size: 12px; }
+  /* A link drawn as one: the theme's accent is a grey close to the text, so
+     without the underline a link read as plain words. */
+  .ts-link {
+    flex: none; font-size: 12px; color: var(--wa-ink); text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 3px;
+  }
+  .ts-link:hover { text-decoration-color: currentColor; }
   .hint .ts-link { margin-left: 4px; }
+  button.ghost.ts-reset-btn { border-color: var(--wa-line-strong); color: var(--wa-label, var(--wa-muted)); font-size: 12px; }
+  button.ghost.ts-reset-btn svg { width: 13px; height: 13px; flex: none; }
+  button.ghost.ts-reset-btn:hover:not(:disabled) { color: var(--wa-ink); }
 
   .ts-sub { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 4px; }
   .ts-sub-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 6px;
     font-size: 11.5px; font-weight: 650; color: var(--wa-muted); letter-spacing: .02em; }
+  /* A group's one line of description, under its heading and over its rows,
+     so it never reads as the help of whichever row came last. */
+  .ts-body .hint.ts-sub-note { margin: -1px 0 4px; }
+
+  /* One state per row: its glyph and name, then its Color and Icon chips and
+     the Reset that shows once the state has its own. */
+  .ts-state-row {
+    display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto 26px; align-items: center; gap: 6px;
+    min-height: 34px; padding: 2px 4px; border-radius: 8px;
+  }
+  .ts-state-row:hover { background: color-mix(in srgb, var(--wa-hover) 60%, transparent); }
+  .ts-state-glyph { display: grid; place-items: center; width: 22px; height: 22px; }
+  .ts-state-glyph svg { display: block; }
+  .ts-state-label { min-width: 0; font-size: 12.5px; overflow-wrap: anywhere; }
+  .ts-state-row.own .ts-state-label { font-weight: 600; }
+  .pe-chip.ts-state-color, .pe-chip.ts-state-icon { min-height: 26px; padding: 0 9px; display: inline-flex; align-items: center; gap: 6px; }
+  .ts-state-sw { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--sw);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 25%, transparent); }
+  /* No color of its own: the tile's, faded and ringed in dashes. */
+  .ts-state-sw.inherit { opacity: .45; outline: 1px dashed color-mix(in srgb, var(--wa-ink) 55%, transparent); outline-offset: 1px; }
+  .ts-state-reset { width: 26px; height: 26px; }
   .ts-nested { display: flex; flex-direction: column; gap: 2px; margin: 0 0 6px 12px; padding-left: 10px;
     border-left: 2px solid var(--wa-line); --wa-lab: 62px; }
 `;

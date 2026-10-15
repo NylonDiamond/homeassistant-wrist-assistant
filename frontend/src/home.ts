@@ -8,6 +8,8 @@ import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
 import type { Person } from "./people.js";
 import { type DeviceSync, type HomeDevice, agoWords, deviceSync, deviceSyncLabel } from "./send-state.js";
 import { type WatchScreen, WATCH_SCREENS, WATCH_SETTINGS_SCREEN } from "./shell.js";
+import type { UiIconName } from "./ui-icons.js";
+import { type WatchPage, isHiddenWatchPage, isSystemWatchPage } from "./watch-pages/model.js";
 import { type DeviceKind, deviceKindOf } from "./version.js";
 import { type WatchAppSync, deviceVerdict, rejectedSaveText, waitingForText } from "./watch-app-sync.js";
 
@@ -140,43 +142,49 @@ export type DeviceSheetTab =
   | { kind: "screen"; label: string; screen: WatchScreen; count?: DeviceCountKind };
 
 /**
- * The device sheet's tabs, each opening its page on this device. A watch has
- * its complications, then every watch screen that belongs to one watch, then
- * Settings; HTTP actions and Cameras are the home's, not a watch's, so they
- * stay on Home's Watch app card. An iPhone has its widgets and its Control
- * Center controls, and on a home with phone pages (`phones`) its own Pages
- * first and its Settings last, both in the iPhone app.
+ * The picked device's doors, each opening its page on this device. A watch
+ * has its Pages, then Settings, then its complications, then every other
+ * watch screen that belongs to one watch, with its Control Center controls
+ * after Status pages; HTTP actions and Cameras are the home's, not a
+ * watch's. A watch's old Control Center screen is retired: its tiles are
+ * complication controls now, so the door opens the watch's designs that
+ * have a control, the way an iPhone's does. An iPhone has its widgets and
+ * its Control Center controls, and on a home with phone pages (`phones`)
+ * its own Settings and Pages first, both in the iPhone app.
  */
 export function deviceSheetTabs(kind: "watch" | "iphone", phones = false): DeviceSheetTab[] {
-  if (kind === "iphone") {
-    const lists: DeviceSheetTab[] = [
-      { kind: "list", label: "Widgets", filter: "all" },
-      { kind: "list", label: "Control Center", filter: "control" },
-    ];
-    if (!phones) return lists;
-    const pages = WATCH_SCREENS[0]!;
-    return [
-      { kind: "screen", label: pages.label, screen: pages, count: "pages" },
-      ...lists,
-      { kind: "screen", label: WATCH_SETTINGS_SCREEN.label, screen: WATCH_SETTINGS_SCREEN },
-    ];
-  }
-  const tabs: DeviceSheetTab[] = [{ kind: "list", label: "Complications", filter: "all" }];
-  for (const screen of [...WATCH_SCREENS.filter((s) => s.shared !== true), WATCH_SETTINGS_SCREEN]) {
+  const controls: DeviceSheetTab = { kind: "list", label: "Control Center", filter: "control" };
+  const screenTab = (screen: WatchScreen): DeviceSheetTab => {
     const count = SCREEN_COUNTS[screen.id];
-    tabs.push(count === undefined ? { kind: "screen", label: screen.label, screen } : { kind: "screen", label: screen.label, screen, count });
+    return count === undefined ? { kind: "screen", label: screen.label, screen } : { kind: "screen", label: screen.label, screen, count };
+  };
+  if (kind === "iphone") {
+    const lists: DeviceSheetTab[] = [{ kind: "list", label: "Widgets", filter: "all" }, controls];
+    if (!phones) return lists;
+    const pages = WATCH_SCREENS.find((s) => s.id === "pages")!;
+    return [screenTab(WATCH_SETTINGS_SCREEN), screenTab(pages), ...lists];
+  }
+  // The watch's complications are the sheet's own list tab, not a screen.
+  const own = WATCH_SCREENS.filter((s) => s.shared !== true && s.retired !== true && s.id !== "watch-complications");
+  const pages = own.filter((s) => s.id === "pages");
+  const tabs: DeviceSheetTab[] = [WATCH_SETTINGS_SCREEN, ...pages].map(screenTab);
+  tabs.push({ kind: "list", label: "Complications", filter: "all" });
+  for (const screen of own.filter((s) => s.id !== "pages")) {
+    tabs.push(screenTab(screen));
+    if (screen.id === "status-pages") tabs.push(controls);
   }
   return tabs;
 }
 
 /** The count tiles on a device's card on Home, each a door to that page on
  * this device: the sheet's tabs that carry a count. A watch has its
- * complications, then its pages, status pages and Control Center; an iPhone
- * has its widgets and its Control Center controls, after its pages on a
- * home with phone pages. Settings, which counts nothing, is the card's own
- * door. */
+ * complications, then its pages and status pages; an iPhone has its
+ * widgets, then its pages on a home with phone pages, then its Control
+ * Center controls. Settings, which counts nothing, is the card's own door. */
 export function deviceCardTiles(kind: "watch" | "iphone", phones = false): DeviceSheetTab[] {
-  return deviceSheetTabs(kind, phones).filter((t) => t.kind === "list" || t.count !== undefined);
+  const tiles = deviceSheetTabs(kind, phones).filter((t) => t.kind === "list" || t.count !== undefined);
+  const all = tiles.filter((t) => t.kind === "list" && t.filter === "all");
+  return [...all, ...tiles.filter((t) => !all.includes(t))];
 }
 
 /** A tile's word under its number: the page's name, cut to one short word
@@ -328,18 +336,123 @@ export function deviceFacts(owner: OwnerSummary | undefined, kind: "watch" | "ip
 }
 
 /**
- * Home's look, added to the panel's sheet. Black ground, graphite cards,
- * neutral controls each with a one pixel outline. A section's hue shows in
- * three places only: its card's lit outline, the chip behind its title glyph,
- * and a dot. Titles are small capitals, weight 500, spaced. Every color is a
- * panel token, so the light skin reads as well as the dark one.
+ * The device Home shows on its right: the one asked for while it is still in
+ * the list, else the one heard from last (a watch holding a long-poll first),
+ * else the first. Undefined only for an empty list.
+ */
+export function homePickOf(
+  rows: readonly Pick<HomeDeviceRow, "id">[],
+  wanted: string | undefined,
+  ownerOf: (id: string) => Pick<OwnerSummary, "polling" | "last_seen_seconds"> | undefined,
+): string | undefined {
+  if (wanted !== undefined && rows.some((r) => r.id === wanted)) return wanted;
+  let best: { id: string; seconds: number } | undefined;
+  for (const r of rows) {
+    const owner = ownerOf(r.id);
+    const seconds = owner?.polling === true ? 0 : owner?.last_seen_seconds;
+    if (typeof seconds !== "number") continue;
+    if (best === undefined || seconds < best.seconds) best = { id: r.id, seconds };
+  }
+  return best?.id ?? rows[0]?.id;
+}
+
+/** The device before (`step` -1) or after (+1) one, in the list's order,
+ * going round from the last to the first. */
+export function homeStep(rows: readonly Pick<HomeDeviceRow, "id">[], current: string | undefined, step: -1 | 1): string | undefined {
+  if (rows.length === 0) return undefined;
+  const at = rows.findIndex((r) => r.id === current);
+  if (at < 0) return rows[0]!.id;
+  return rows[(at + step + rows.length) % rows.length]!.id;
+}
+
+/** A list row's line under the device's name: what it holds, then when it
+ * was heard from. "22 complications · 1 h ago", "1 widget · Online now". */
+export function homeRowSub(kind: "watch" | "iphone", held: number, heard: string | undefined): string {
+  const word = kind === "watch" ? (held === 1 ? "complication" : "complications") : (held === 1 ? "widget" : "widgets");
+  return [`${held} ${word}`, heard?.replace(/^Seen /, "")].filter((w): w is string => w !== undefined).join(" · ");
+}
+
+/** How one door on the picked device looks: its glyph, the section hue its
+ * chip is outlined in, and one line on what the page is for. */
+export interface HomeDoorLook {
+  icon: UiIconName;
+  hue: string;
+  blurb: string;
+}
+
+const SCREEN_DOORS: Partial<Record<WatchScreen["id"] | "settings", HomeDoorLook>> = {
+  "pages": { icon: "pages", hue: "var(--wa-hue-green)", blurb: "The screens you swipe between." },
+  "menus": { icon: "radial", hue: "var(--wa-hue-orange)", blurb: "The quick menus and the page switcher." },
+  "status-pages": { icon: "checklist", hue: "var(--wa-hue-yellow)", blurb: "Lists to read at a glance." },
+  "watch-complications": { icon: "gauge", hue: "var(--wa-hue-blue)", blurb: "On this watch’s faces." },
+  "rooms": { icon: "home", hue: "var(--wa-hue-pink)", blurb: "Room pages and point control." },
+  "voice": { icon: "mic", hue: "var(--wa-hue-red)", blurb: "How the watch listens and speaks." },
+  "settings": { icon: "sliders", hue: "var(--wa-hue-grey)", blurb: "Gestures, wrist twists and how it connects." },
+};
+
+/** The look of one of the device's doors (`deviceSheetTabs`). */
+export function homeDoorLook(tab: DeviceSheetTab, kind: "watch" | "iphone"): HomeDoorLook {
+  if (tab.kind === "list") {
+    if (tab.filter === "control") return { icon: "tap", hue: "var(--wa-hue-orange)", blurb: "Buttons in Control Center, from your designs." };
+    return kind === "watch"
+      ? { icon: "gauge", hue: "var(--wa-hue-blue)", blurb: "On this watch’s faces." }
+      : { icon: "grid", hue: "var(--wa-hue-blue)", blurb: "On the Lock Screen and Home Screen." };
+  }
+  return SCREEN_DOORS[tab.screen.id] ?? { icon: "pages", hue: "var(--wa-hue-grey)", blurb: "" };
+}
+
+/** How many of a watch's pages its Pages door draws, and how wide each
+ * screen is drawn, in CSS pixels. A door too narrow for all of them drops
+ * the last whole rather than cutting it; the door's count says how many
+ * there are. */
+export const HOME_PAGE_THUMBS = 4;
+export const HOME_PAGE_THUMB_WIDTH = 38;
+
+/** The pages a watch's Pages door draws, small, in the watch's order: the
+ * first `max` the watch swipes between (not hidden, not its own system
+ * pages). */
+export function homePageThumbs(pages: readonly WatchPage[], max = HOME_PAGE_THUMBS): WatchPage[] {
+  return pages.filter((p) => !isHiddenWatchPage(p) && !isSystemWatchPage(p)).slice(0, max);
+}
+
+/** The length round Home's ring, a circle of radius 18 in a 44 box. */
+export const HOME_RING_LENGTH = 2 * Math.PI * 18;
+
+/** Home's ring of every device: the synced share in green from the top,
+ * then the waiting share in amber after it, as stroke dash lengths on a
+ * circle of `length`. A device that never synced leaves its share empty. */
+export function homeRing(totals: { all: number; synced: number; waiting: number }, length: number): { synced: string; waiting: string; offset: string } {
+  const share = (n: number) => (totals.all === 0 ? 0 : (n / totals.all) * length);
+  const synced = share(totals.synced);
+  const waiting = share(totals.waiting);
+  const fmt = (n: number) => `${Math.round(n * 10) / 10}`;
+  return { synced: `${fmt(synced)} ${fmt(length)}`, waiting: `${fmt(waiting)} ${fmt(length)}`, offset: fmt(-synced) };
+}
+
+/** The ring's words: "All 6 synced", "5 of 6 synced", or "1 device" with
+ * nothing synced yet. */
+export function homeRingHead(totals: { all: number; synced: number }): string {
+  if (totals.all > 0 && totals.synced === totals.all) return `All ${totals.all} synced`;
+  if (totals.synced === 0) return `${totals.all} ${totals.all === 1 ? "device" : "devices"}`;
+  return `${totals.synced} of ${totals.all} synced`;
+}
+
+/**
+ * Home's look, added to the panel's sheet. A device browser: the household's
+ * devices down a side bar, grouped by person, and the picked device on the
+ * right, standing on a lit stage over the doors to its pages. Graphite
+ * cards, neutral controls each with a one pixel outline, and a hue only on a
+ * lit outline, a chip or a dot. Titles are small capitals, weight 500,
+ * spaced. Every color is a panel token, so the light skin reads as well as
+ * the dark one; the stage's light is the one radial gradient, and it is a
+ * token too (`--wa-stage-light`).
  */
 export const homeStyles = css`
   .home {
     flex: 1 1 auto; min-height: 0; overflow: auto; box-sizing: border-box;
-    padding: clamp(20px, 4vh, 40px) clamp(16px, 4vw, 40px) 48px;
     background: var(--wa-bg); color: var(--wa-ink);
   }
+  .home-pad { padding: clamp(20px, 4vh, 40px) clamp(16px, 4vw, 40px) 48px; }
   .home-wrap { width: min(1240px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
   /* The sheen every Home card shares: a fill a shade lighter at the top, and
      a hairline of light along the top edge, so a card reads as a surface
@@ -352,6 +465,9 @@ export const homeStyles = css`
   .home-head-text { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .home-head h1 { margin: 0; font-size: 30px; font-weight: 500; letter-spacing: -.02em; }
   .home-lead { margin: 0; font-size: 14px; color: var(--wa-muted); }
+  /* A person who is not an administrator sees only their own devices: one
+     quiet line under the lead says so. */
+  .home-scope { margin: 0; font-size: 12.5px; color: var(--wa-muted); }
   .home-head-acts { display: flex; flex-wrap: wrap; gap: 8px; }
   .home-title { margin: 0; font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-ink); }
   a.home-btn, button.home-btn {
@@ -370,141 +486,17 @@ export const homeStyles = css`
   .home-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--wa-muted); }
   .home-dot.synced { background: var(--wa-green); }
   .home-dot.waiting { background: var(--wa-amber); }
-  /* The status row: the totals beside the devices that still wait, wrapping
-     onto two rows when the page is narrow. */
-  .home-status { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; }
-  .home-totals {
-    flex: 3 1 520px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    border-radius: 12px; border: 1px solid var(--wa-line); background: var(--home-card); box-shadow: var(--home-lift); overflow: hidden;
-  }
-  .home-total { min-width: 0; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; border-right: 1px solid var(--wa-line); }
-  .home-total:last-child { border-right: 0; }
-  .home-total-label {
-    display: flex; align-items: center; gap: 6px;
-    font-size: 10.5px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-muted);
-  }
-  .home-total-n { font-size: 34px; font-weight: 300; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .home-total-n small { margin-left: 5px; font-size: 13px; font-weight: 400; letter-spacing: 0; color: var(--wa-muted); }
-  .home-total-sub { font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); overflow-wrap: anywhere; }
-  /* Every device as a share of one thin bar: synced, waiting, never synced. */
-  .home-bar { display: flex; gap: 3px; }
-  .home-bar i { height: 3px; border-radius: 2px; background: var(--wa-line-strong); }
-  .home-bar i.synced { background: var(--wa-green); }
-  .home-bar i.waiting { background: var(--wa-amber); }
-  /* Waiting to sync: the waiting devices, one line each. Lit amber while any
-     waits; a quiet card with a green check when none does. */
-  .home-attn {
-    --c: var(--wa-green);
-    flex: 2 1 360px; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; padding: 14px 16px;
-    border-radius: 12px; border: 1px solid var(--wa-line); background: var(--home-card); box-shadow: var(--home-lift);
-  }
-  .home-attn.on {
-    --c: var(--wa-amber); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
-    ${litOutline}
-    border-width: 1px;
-  }
-  .home-attn-head { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; }
-  .home-attn-n { font-size: 12px; color: var(--wa-muted); font-variant-numeric: tabular-nums; }
-  .home-chip {
-    width: 20px; height: 20px; flex: none; box-sizing: border-box; border-radius: 6px; display: grid; place-items: center;
-    border: 1px solid var(--c); color: var(--c);
-  }
-  .home-chip svg.ui-icon { width: 12px; height: 12px; }
-  .home-attn-row { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 9px 0; border-top: 1px solid var(--wa-line); }
-  .home-attn-who { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--c); }
-  .home-attn-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-  .home-attn-text b, .home-attn-text span { overflow-wrap: anywhere; }
-  .home-attn-text b { font-size: 13px; font-weight: 500; }
-  .home-attn-text span { font-size: 11.5px; color: var(--wa-muted); }
-  .home-attn-ok { margin: 0; padding: 10px 0 2px; border-top: 1px solid var(--wa-line); font-size: 12.5px; color: var(--wa-muted); }
-  /* One person's devices: the person on the left, their picture or initial
-     ringed in their color (--c, the color their devices wear on the
-     Complications tab), and their devices beside them. */
-  .home-person { display: flex; flex-wrap: wrap; gap: 20px; min-width: 0; padding-top: 22px; border-top: 1px solid var(--wa-line); }
-  .home-person-head { flex: 0 0 160px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-  .home-avatar {
-    width: 36px; height: 36px; flex: none; box-sizing: border-box; border-radius: 50%; overflow: hidden;
-    display: grid; place-items: center; border: 1.5px solid var(--c); background: var(--wa-field);
-    font-size: 14px; font-weight: 600; color: var(--c);
-  }
-  .home-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .home-person-name { margin: 4px 0 0; min-width: 0; font-size: 16px; font-weight: 500; letter-spacing: -.01em; overflow-wrap: anywhere; }
-  .home-person-n { font-size: 11.5px; color: var(--wa-muted); }
-  .home-person-sum { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--wa-label); }
-  /* The devices, one card each, as many to a row as fit. */
-  .home-devices {
-    flex: 999 1 560px; min-width: 0; align-content: start;
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(min(196px, 100%), 1fr)); gap: 10px;
-    margin: 0; padding: 0; list-style: none;
-  }
-  .home-device {
-    position: relative; display: flex; flex-direction: column; gap: 10px; min-width: 0; box-sizing: border-box;
-    padding: 8px; border-radius: 12px; background: var(--home-card); border: 1px solid var(--wa-line); box-shadow: var(--home-lift);
-  }
-  .home-device:hover { border-color: var(--wa-line-strong); }
-  /* A waiting device is lit amber from its top left corner. */
-  .home-device.waiting {
-    background:
-      linear-gradient(var(--wa-card), var(--wa-card)) padding-box,
-      linear-gradient(140deg, var(--wa-amber) 0%, color-mix(in srgb, var(--wa-amber) 33%, transparent) 30%,
-        var(--wa-card-mid) 62%, color-mix(in srgb, var(--wa-amber) 25%, transparent) 100%) border-box;
-    border-color: transparent;
-  }
-  /* The device, standing in a soft light from above. */
-  .home-stage {
-    height: 148px; border-radius: 8px; display: grid; place-items: center;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 8%, var(--wa-bg)) 0%, var(--wa-bg) 80%);
-  }
+  .home-small { margin: 0; font-size: 11.5px; line-height: 1.45; color: var(--wa-muted); }
+  .home-empty { margin: 0; font-size: 13px; color: var(--wa-muted); }
+  /* The devices drawn on Home and in the pairing dialog light their slots
+     in their person's color (--c). */
   .ha-art { display: block; }
   .ha-lit { stroke: var(--c); }
   .ha-lit-fill { fill: var(--c); }
   .ha-edge-wait { stroke: var(--wa-amber); stroke-opacity: .7; }
-  /* The whole card opens the device's sheet: the name's button reaches over
-     the card, and the count doors sit above it. */
-  button.home-device-open { all: unset; cursor: pointer; flex: 1; min-width: 0; }
-  button.home-device-open::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
-  .home-device:has(button.home-device-open:focus-visible) { box-shadow: var(--wa-ring); }
-  .home-device-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 0 4px; }
-  .home-device-line { display: flex; align-items: flex-start; gap: 8px; min-width: 0; line-height: 1.35; }
-  .home-device-name { min-width: 0; display: flex; align-items: center; font-size: 13px; font-weight: 500; }
-  /* The name in its own box, wrapping onto as many lines as it needs: Home
-     shows every word, never an ellipsis. */
-  .home-device-label { min-width: 0; overflow-wrap: anywhere; }
-  .home-device-sync { flex: none; display: flex; align-items: center; gap: 5px; font-size: 11px; line-height: 17.5px; color: var(--wa-muted); }
-  .home-device-sync b { font-weight: 500; }
-  .home-device.synced .home-device-sync b { color: var(--wa-green); }
-  .home-device.waiting .home-device-sync b { color: var(--wa-amber); }
-  .home-device.synced .home-dot { background: var(--wa-green); }
-  .home-device.waiting .home-dot { background: var(--wa-amber); }
-  /* A watch that could not use the last save: the word and its line in red,
-     over whatever its delivery numbers say. */
-  .home-device.rejected .home-device-sync b, .home-device.rejected .home-device-why { color: var(--error-color); }
-  .home-device.rejected .home-dot { background: var(--error-color); }
-  /* What it is, then one fact to a line, each wrapping rather than cut. */
-  .home-device-facts { display: flex; flex-direction: column; gap: 1px; font-size: 11px; line-height: 1.35; color: var(--wa-muted); overflow-wrap: anywhere; }
-  /* What a waiting device waits for and what its next pull brings. */
-  .home-device-why { font-size: 11px; color: var(--wa-label); overflow-wrap: anywhere; }
-  /* A small door per page that counts something, each opening that page on
-     this device: its number, then its name. */
-  .home-tiles { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 4px 2px; border-top: 1px solid var(--wa-line); margin-top: auto; }
-  a.home-tile, button.home-tile {
-    display: inline-flex; align-items: center; gap: 4px; box-sizing: border-box; height: 22px; padding: 0 7px;
-    border-radius: 6px; font: inherit; font-size: 11px; cursor: pointer; text-decoration: none; white-space: nowrap;
-    color: var(--wa-muted); background: transparent; border: 1px solid var(--wa-line-strong);
-  }
-  a.home-tile:hover, button.home-tile:hover { color: var(--wa-ink); background: var(--wa-hover); }
-  a.home-tile:focus-visible, button.home-tile:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .home-tile b { font-weight: 600; color: var(--wa-ink); font-variant-numeric: tabular-nums; }
-  .home-tile b.none { font-weight: 500; color: var(--wa-muted); }
-  a.home-door, button.home-door {
-    display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 26px; padding: 0 10px;
-    border-radius: 6px; font: inherit; font-size: 11.5px; font-weight: 500; cursor: pointer; white-space: nowrap; text-decoration: none;
-    color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong);
-  }
-  a.home-door:hover, button.home-door:hover { background: var(--wa-hover); }
-  a.home-door:focus-visible, button.home-door:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   /* Pair a device, the only card in a home with no devices yet: a dashed
      outline, nothing lit. */
+  .home-devices { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 10px; }
   .home-devices > li:has(> button.home-device-add) { display: flex; }
   button.home-device-add {
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 120px;
@@ -516,19 +508,382 @@ export const homeStyles = css`
   button.home-device-add b { font-size: 14px; font-weight: 600; color: var(--wa-ink); }
   button.home-device-add span { font-size: 12.5px; }
   button.home-device-add svg.ui-icon { width: 20px; height: 20px; }
-  /* The device sheet: the device's card opened up. The device on its stage
-     in its person's color (--c, set on the dialog), whose it is, its sync
-     state in a well, and a tile per page. The frame is the transfer
-     dialogs' (dialog.xf), given Home's sheen; the dialog sits outside .home,
-     so it carries the sheen's tokens itself. */
-  dialog.dev-dialog {
-    --home-card: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 4%, var(--wa-card)), var(--wa-card));
-    --home-lift: inset 0 1px 0 color-mix(in srgb, var(--wa-ink) 7%, transparent);
-    width: min(600px, calc(100vw - 32px)); border-radius: 16px; border-color: var(--wa-line-strong);
-    background: var(--home-card); box-shadow: var(--home-lift), var(--wa-shadow-pop);
+
+  /* ── The device browser ── */
+  .hb { display: flex; flex-wrap: wrap; align-items: stretch; min-height: 100%; }
+  /* The side bar: the head, the household's state, Pair a device, then
+     every device by person. */
+  .hb-side {
+    flex: 1 1 280px; max-width: 340px; min-width: 0; box-sizing: border-box;
+    display: flex; flex-direction: column; gap: 16px; padding: 20px 12px 18px;
+    background: color-mix(in srgb, var(--wa-card) 45%, var(--wa-bg)); border-right: 1px solid var(--wa-line);
   }
-  /* Pair a device: the same frame and sheen, a head with the link glyph in
-     an outlined chip. */
+  .hb-head { display: flex; flex-direction: column; gap: 4px; padding: 0 8px; }
+  .hb-head h1 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.02em; }
+  .hb-head .home-lead { font-size: 12px; line-height: 1.45; }
+  .hb-head .home-scope { font-size: 11.5px; }
+  /* The household's state: a ring of every device, synced in green and
+     waiting in amber, its words, the waiting devices, then the four totals.
+     Lit green from its top left, or amber while anything waits. */
+  .hb-sum {
+    --c: var(--wa-green); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
+    ${litOutline}
+    border-width: 1px;
+    display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 14px; box-shadow: var(--home-lift);
+  }
+  .hb-sum.on { --c: var(--wa-amber); }
+  .hb-sum-top { display: flex; align-items: center; gap: 12px; }
+  .hb-ring { flex: none; width: 44px; height: 44px; }
+  .hb-ring circle { fill: none; stroke-width: 4; }
+  .hb-ring .track { stroke: var(--wa-line-strong); }
+  .hb-ring .ok { stroke: var(--wa-green); }
+  .hb-ring .wait { stroke: var(--wa-amber); }
+  .hb-sum-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .hb-sum-t b { font-size: 15px; font-weight: 500; letter-spacing: -.01em; }
+  .hb-sum-t .home-title { font-size: 10.5px; color: var(--c); }
+  .hb-sum-line { margin: 0; font-size: 12px; line-height: 1.45; color: var(--wa-label); }
+  /* A waiting device: its name and what it waits for, opening it. */
+  .hb-waits { display: flex; flex-direction: column; }
+  button.hb-wait {
+    display: flex; align-items: flex-start; gap: 9px; width: 100%; padding: 8px 0; box-sizing: border-box;
+    font: inherit; text-align: left; cursor: pointer; color: var(--wa-ink);
+    background: transparent; border: 0; border-top: 1px solid var(--wa-line);
+  }
+  button.hb-wait:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
+  button.hb-wait i { width: 6px; height: 6px; flex: none; margin-top: 6px; border-radius: 50%; background: var(--c); }
+  .hb-wait-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .hb-wait-t b { font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; }
+  .hb-wait-t span { font-size: 11.5px; color: var(--wa-muted); overflow-wrap: anywhere; }
+  button.hb-wait:hover .hb-wait-t b { text-decoration: underline; }
+  .hb-totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding-top: 10px; border-top: 1px solid var(--wa-line); }
+  .hb-total { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .hb-total b { font-size: 17px; font-weight: 400; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .hb-total b.ok { color: var(--wa-green); }
+  .hb-total b.wait { color: var(--wa-amber); }
+  .hb-total span { font-size: 10px; letter-spacing: .04em; color: var(--wa-muted); overflow-wrap: anywhere; }
+  button.home-btn.hb-pair { width: 100%; height: 36px; justify-content: center; border-radius: 10px; }
+  .hb-pair svg.ui-icon { color: var(--wa-green); }
+  /* One person: their picture (or initial) ringed in their color, their
+     name in small capitals, how their devices stand, then a row each. */
+  .hb-group { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .hb-person { display: flex; align-items: center; gap: 9px; padding: 8px 8px 6px; min-width: 0; }
+  .hb-avatar {
+    width: 22px; height: 22px; flex: none; box-sizing: border-box; border-radius: 50%; overflow: hidden;
+    display: grid; place-items: center; border: 1.5px solid var(--c); background: var(--wa-field);
+    font-size: 10px; font-weight: 600; color: var(--c);
+  }
+  .hb-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .hb-person-name {
+    flex: 1; min-width: 0; margin: 0; overflow-wrap: anywhere;
+    font-size: 11px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--wa-label);
+  }
+  .hb-person-sum { flex: none; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--wa-muted); }
+  .hb-person-note { padding: 0 8px 4px; font-size: 11px; color: var(--wa-muted); }
+  /* A device's row: its small drawing, its name, what it holds and when it
+     was heard from, and a dot in its sync color. The picked one is lit in
+     its person's color from the top left. */
+  button.hb-row {
+    --s: var(--wa-muted);
+    display: flex; align-items: center; gap: 11px; width: 100%; box-sizing: border-box; padding: 6px 10px 6px 6px;
+    border-radius: 11px; font: inherit; text-align: left; cursor: pointer; color: var(--wa-ink);
+    background: transparent; border: 1px solid transparent;
+    transition: background-color .15s ease;
+  }
+  button.hb-row.synced { --s: var(--wa-green); }
+  button.hb-row.waiting { --s: var(--wa-amber); }
+  button.hb-row.rejected { --s: var(--error-color); }
+  button.hb-row:hover { background-color: var(--wa-hover); }
+  button.hb-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.hb-row.on {
+    --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
+    ${litOutline}
+    border-width: 1px;
+    box-shadow: var(--home-lift);
+  }
+  .hb-icon {
+    width: 38px; height: 38px; flex: none; box-sizing: border-box; border-radius: 9px;
+    display: grid; place-items: center; background: var(--wa-field); border: 1px solid var(--wa-line);
+  }
+  .hb-row-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .hb-row-name { font-size: 13px; font-weight: 500; line-height: 1.3; overflow-wrap: anywhere; }
+  .hb-row-sub { font-size: 11px; line-height: 1.3; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .hb-row-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--s); }
+  button.hb-row.on .hb-row-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--s) 22%, transparent); }
+  .hb-side > .home-small { margin-top: auto; padding: 10px 8px 0; font-size: 11px; }
+
+  /* The picked device. */
+  .hb-main { flex: 999 1 520px; min-width: 0; box-sizing: border-box; padding: 18px clamp(16px, 3vw, 32px) 48px; container-type: inline-size; }
+  .hb-detail { max-width: 940px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+  .hb-main > .home-welcome-slot { max-width: 940px; margin: 0 auto 18px; }
+  /* Its bar: whose it is and its name, the arrows to the device before and
+     after it, Rename and Remove. */
+  .hb-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; }
+  .hb-crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; color: var(--wa-muted); }
+  .hb-crumb i { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--c); }
+  .hb-crumb b { font-weight: 500; color: var(--wa-ink); overflow-wrap: anywhere; }
+  .hb-crumb svg.ui-icon { width: 12px; height: 12px; color: var(--wa-faint); }
+  .hb-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  button.hb-step {
+    width: 32px; height: 32px; box-sizing: border-box; border-radius: 9px; display: grid; place-items: center; cursor: pointer;
+    color: var(--wa-label); background: var(--home-card); border: 1px solid var(--wa-line-strong); box-shadow: var(--home-lift);
+  }
+  button.hb-step:hover { background: var(--wa-hover); }
+  button.hb-step:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.hb-step svg.ui-icon { width: 14px; height: 14px; }
+  .hb-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--wa-line-strong); }
+  .hb-acts .home-btn { height: 32px; border-radius: 9px; }
+  button.home-btn.hb-remove { color: var(--error-color); background: transparent; border-color: color-mix(in srgb, var(--error-color) 50%, var(--wa-line)); }
+  button.home-btn.hb-remove:hover { background: color-mix(in srgb, var(--error-color) 10%, transparent); }
+  /* The stage: the device standing in a soft light from above, on a floor
+     that gives back its reflection, lit along its edge in its person's
+     color. Two counts point at it from either side. */
+  .hb-stage {
+    position: relative; height: 380px; border-radius: 24px; overflow: hidden; box-sizing: border-box;
+    border: 1px solid transparent;
+    background:
+      radial-gradient(46% 70% at 50% 0%, var(--wa-stage-light) 0%, transparent 80%) padding-box,
+      linear-gradient(180deg, var(--wa-stage-top) 0%, var(--wa-stage-bottom) 100%) padding-box,
+      linear-gradient(140deg, var(--c) 0%, color-mix(in srgb, var(--c) 25%, transparent) 32%,
+        var(--wa-card-mid) 64%, color-mix(in srgb, var(--c) 15%, transparent) 100%) border-box;
+    box-shadow: var(--home-lift);
+  }
+  .hb-floor {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 96px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 3%, transparent), transparent);
+    border-top: 1px solid color-mix(in srgb, var(--wa-ink) 5%, transparent);
+  }
+  .hb-device { position: absolute; left: 0; right: 0; top: 44px; display: flex; justify-content: center; }
+  .hb-device svg.ha-art {
+    width: auto; height: 236px;
+    -webkit-box-reflect: below 4px linear-gradient(transparent 72%, var(--wa-stage-reflect));
+  }
+  .hb-badge {
+    --s: var(--wa-muted);
+    position: absolute; top: 16px; right: 16px; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px;
+    border-radius: 999px; font-size: 12px; font-weight: 500; color: var(--s);
+    background: color-mix(in srgb, var(--s) 10%, transparent); border: 1px solid color-mix(in srgb, var(--s) 35%, transparent);
+  }
+  .hb-badge.synced { --s: var(--wa-green); }
+  .hb-badge.waiting { --s: var(--wa-amber); }
+  .hb-badge.rejected { --s: var(--error-color); }
+  .hb-badge i { width: 6px; height: 6px; border-radius: 50%; background: var(--s); }
+  .hb-calls { position: absolute; inset: 0; pointer-events: none; }
+  button.hb-call {
+    position: absolute; top: 132px; display: flex; align-items: center; gap: 10px; padding: 6px 8px; margin: -6px -8px;
+    border-radius: 10px; font: inherit; color: var(--wa-ink); background: transparent; border: 0; cursor: pointer; pointer-events: auto;
+  }
+  button.hb-call:hover .hb-call-n span { color: var(--wa-ink); }
+  button.hb-call:hover .hb-call-line { width: 64px; }
+  button.hb-call:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .hb-call.l { right: calc(50% + var(--off)); }
+  .hb-call.r { left: calc(50% + var(--off)); }
+  .hb-call-n { display: flex; flex-direction: column; gap: 3px; }
+  .hb-call.l .hb-call-n { align-items: flex-end; }
+  .hb-call-n b { font-size: 28px; font-weight: 300; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .hb-call-n b.none { color: var(--wa-faint); }
+  .hb-call-n span { font-size: 10.5px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--wa-muted); }
+  .hb-call-line { width: 56px; height: 1px; transition: width .2s ease; }
+  .hb-call.l .hb-call-line { background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--wa-ink) 30%, transparent)); }
+  .hb-call.r .hb-call-line { background: linear-gradient(90deg, color-mix(in srgb, var(--wa-ink) 30%, transparent), transparent); }
+  .hb-call i { width: 5px; height: 5px; border-radius: 50%; background: var(--c); }
+  .hb-call.r i { background: var(--wa-label); }
+  @container (max-width: 620px) {
+    .hb-calls { display: none; }
+    .hb-stage { height: 320px; }
+    .hb-device svg.ha-art { height: 200px; }
+  }
+  /* The welcome, in a home with no devices yet: three numbered steps down
+     the page, joined by a thin line. Install the app, pick the device on
+     the lit stage, pair it. */
+  .hw-wrap { width: min(1040px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  .hw-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+  .hw-step { display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 16px; }
+  .hw-rail { display: flex; flex-direction: column; align-items: center; }
+  .hw-num {
+    width: 28px; height: 28px; flex: none; box-sizing: border-box; border-radius: 50%; display: grid; place-items: center;
+    font-size: 12px; font-weight: 500; color: var(--wa-ink); background: var(--wa-card); border: 1px solid var(--wa-line-strong);
+  }
+  .hw-line { flex: 1; width: 1px; margin-top: 8px; background: var(--wa-line-strong); }
+  .hw-step:last-child .hw-line { display: none; }
+  .hw-body { min-width: 0; display: flex; flex-direction: column; gap: 14px; padding-bottom: 30px; }
+  .hw-step:last-child .hw-body { padding-bottom: 0; }
+  .hw-step-head { display: flex; flex-direction: column; gap: 3px; padding-top: 3px; }
+  .hw-step-head h2 { margin: 0; font-size: 17px; font-weight: 500; letter-spacing: -.01em; overflow-wrap: anywhere; }
+  .hw-step-head span { font-size: 12.5px; line-height: 1.45; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .hw-install {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 20px 24px; padding: 16px; border-radius: 16px;
+    background: var(--home-card); border: 1px solid var(--wa-line); box-shadow: var(--home-lift);
+  }
+  .hw-install-t { flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+  .hw-install-t p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--wa-ink); overflow-wrap: anywhere; }
+  .hw-qr { flex: none; margin: 0; display: flex; align-items: center; gap: 14px; }
+  .hw-qr svg, .hw-qr-empty { display: block; width: 96px; height: 96px; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--wa-line); }
+  .hw-qr figcaption { display: flex; flex-direction: column; gap: 3px; max-width: 150px; font-size: 11.5px; line-height: 1.4; color: var(--wa-muted); }
+  .hw-qr figcaption b { font-size: 12.5px; font-weight: 500; color: var(--wa-ink); }
+  /* Pick one: both devices on Home's lit stage, its edge plain grey. The one
+     picked is drawn in full with one thin green arc turning slowly round it;
+     the other is faint inside a dashed ring. */
+  .hb-stage.hw-stage { --c: var(--wa-line-strong); height: auto; display: flex; justify-content: center; padding: 28px 20px 30px; }
+  .hw-choices { position: relative; display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 24px 72px; }
+  button.hw-choice {
+    display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 0; margin: 0;
+    border: 0; border-radius: 24px; background: none; font: inherit; color: inherit; cursor: pointer;
+  }
+  button.hw-choice:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .hw-ring { position: relative; width: 236px; height: 236px; display: grid; place-items: center; }
+  .hw-ring > svg.hw-ring-track, .hw-ring > svg.hw-ring-arc { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; fill: none; }
+  .hw-ring-track circle { stroke: var(--wa-line-strong); stroke-width: 1; stroke-dasharray: 4 5; transition: stroke .2s ease; }
+  .hw-choice:hover:not(.on) .hw-ring-track circle { stroke: var(--wa-muted); }
+  .hw-choice.on .hw-ring-track circle { stroke: color-mix(in srgb, var(--wa-hue-green) 28%, transparent); stroke-dasharray: none; }
+  .hw-ring-arc { animation: hw-in .45s ease-out both, hw-spin 6s linear infinite; }
+  .hw-ring-arc circle { stroke: var(--wa-hue-green); stroke-width: 1.5; stroke-linecap: round; }
+  @keyframes hw-spin { to { transform: rotate(360deg); } }
+  @keyframes hw-in { from { opacity: 0; } to { opacity: 1; } }
+  .hw-ghost-art { position: relative; opacity: .45; transition: opacity .25s ease; }
+  .hw-choice:hover .hw-ghost-art { opacity: .9; }
+  .hw-choice.on .hw-ghost-art { opacity: 1; }
+  .hw-ghost { stroke: color-mix(in srgb, var(--wa-ink) 28%, transparent); }
+  .hw-ghost-lit { stroke: color-mix(in srgb, var(--wa-hue-green) 70%, transparent); }
+  .hw-ghost-faint { stroke: color-mix(in srgb, var(--wa-ink) 13%, transparent); }
+  .hw-ghost-faint-fill { fill: color-mix(in srgb, var(--wa-ink) 13%, transparent); }
+  .hw-ghost-fill { fill: color-mix(in srgb, var(--wa-ink) 2.5%, transparent); }
+  .hw-ghost-ink { fill: color-mix(in srgb, var(--wa-ink) 45%, transparent); font-family: inherit; }
+  .hw-ghost-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .hw-ghost-ink-line { stroke: color-mix(in srgb, var(--wa-ink) 45%, transparent); }
+  .hw-choice-t { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .hw-choice-t b { font-size: 14px; font-weight: 500; }
+  .hw-choice.on .hw-choice-t b { color: var(--wa-green); }
+  .hw-choice-t span { font-size: 11.5px; color: var(--wa-muted); }
+  /* Pair it: the pairing card for the device picked, lit green. */
+  .hw-pair {
+    --c: var(--wa-hue-green); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
+    ${litOutline}
+    display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; border-radius: 18px; box-shadow: var(--home-lift);
+  }
+  .hw-pair-foot {
+    display: flex; flex-wrap: wrap; gap: 8px 18px; padding-top: 14px; border-top: 1px solid var(--wa-line);
+    font-size: 12.5px; line-height: 1.45; color: var(--wa-muted);
+  }
+  .hw-pair-foot a { color: var(--wa-ink); }
+  @media (prefers-reduced-motion: reduce) {
+    .hw-ring-arc { animation: none; }
+  }
+  /* On a phone the two stay side by side, smaller. */
+  @media (max-width: 640px) {
+    .hb-stage.hw-stage { padding: 20px 8px 22px; }
+    .hw-ring { width: 118px; height: 118px; }
+    .hw-ghost-art { transform: scale(.5); }
+    .hw-choices { flex-wrap: nowrap; gap: 14px; }
+  }
+  /* Under the stage: its name and facts, the sync well, then its doors. */
+  .hb-info { display: flex; flex-direction: column; gap: 18px; }
+  .hb-name { display: flex; flex-direction: column; gap: 6px; padding: 4px 2px 0; min-width: 0; }
+  .hb-name h2 { margin: 0; font-size: 30px; font-weight: 500; letter-spacing: -.025em; line-height: 1.15; overflow-wrap: anywhere; }
+  .hb-facts { font-size: 13px; line-height: 1.45; color: var(--wa-muted); overflow-wrap: anywhere; }
+  /* The sync state in a well lit in its color: a chip, its word and what it
+     means, and when the device was last heard from. */
+  .hb-state {
+    --c: var(--wa-muted); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
+    ${litOutline}
+    border-width: 1px;
+    display: flex; align-items: center; gap: 14px; padding: 13px 16px; border-radius: 14px;
+  }
+  .hb-state.synced { --c: var(--wa-green); }
+  .hb-state.waiting { --c: var(--wa-amber); }
+  .hb-state.rejected { --c: var(--error-color); }
+  .hb-state-chip {
+    width: 32px; height: 32px; flex: none; box-sizing: border-box; border-radius: 9px; display: grid; place-items: center;
+    border: 1px solid var(--c); color: var(--c);
+  }
+  .hb-state-chip svg.ui-icon { width: 15px; height: 15px; }
+  .hb-state-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .hb-state-t b { font-size: 14px; font-weight: 500; color: var(--c); }
+  .hb-state-t span { font-size: 12.5px; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .hb-seen { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .hb-seen span { font-size: 10px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--wa-faint); }
+  .hb-seen b { font-size: 12.5px; font-weight: 400; color: var(--wa-label); }
+  .hb-info .home-title { padding: 6px 2px 0; color: var(--wa-muted); }
+  /* A door per page, each opening it on this device: a chip in the page's
+     section hue, its name, how many it holds, and a line on what it is for. */
+  .hb-doors { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(208px, 100%), 1fr)); gap: 10px; margin-top: -6px; }
+  a.hb-door, button.hb-door {
+    display: flex; flex-direction: column; gap: 12px; min-height: 104px; box-sizing: border-box; padding: 13px 14px 14px;
+    border-radius: 14px; font: inherit; text-align: left; cursor: pointer; text-decoration: none; color: var(--wa-ink);
+    background: var(--home-card); border: 1px solid var(--wa-line-strong); box-shadow: var(--home-lift);
+    transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
+  }
+  a.hb-door:hover, button.hb-door:hover { background: var(--wa-hover); transform: translateY(-1px); }
+  a.hb-door:focus-visible, button.hb-door:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .hb-door-top { display: flex; align-items: center; gap: 10px; }
+  .hb-door-chip {
+    width: 26px; height: 26px; flex: none; box-sizing: border-box; border-radius: 7px; display: grid; place-items: center;
+    border: 1px solid var(--h); color: var(--h);
+  }
+  .hb-door-chip svg.ui-icon { width: 14px; height: 14px; }
+  .hb-door-l { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 500; overflow-wrap: anywhere; }
+  .hb-door-n { flex: none; font-size: 20px; font-weight: 300; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .hb-door-n.none { font-size: 12.5px; font-weight: 400; letter-spacing: 0; color: var(--wa-faint); }
+  .hb-door-foot { display: flex; align-items: flex-end; gap: 8px; }
+  .hb-door-b { flex: 1; font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
+  /* The Pages door draws the watch's first pages instead of its line: one
+     screen of each, small, with the screen's corners and no watch case. */
+  /* The pictures sit from the left, so two pages read as a pair. The Menus
+     door's three spread across instead (\`wa-menu-thumbs\`): there are always
+     three, so they line up with both edges. */
+  .hb-door-pages {
+    flex: 1; min-width: 0; height: var(--hb-screen-h); display: flex; flex-wrap: wrap; align-content: flex-start; gap: 0 5px;
+    overflow: hidden; pointer-events: none;
+  }
+  .hb-page { flex: none; display: block; line-height: 0; }
+  /* The Complications door's strip: each complication's card picture on a
+     black tile, all one height, a round one cut to a circle. */
+  .hb-door-comps {
+    flex: 1; min-width: 0; height: var(--hb-comp-h); display: flex; flex-wrap: wrap; align-content: flex-start; gap: 0 5px;
+    overflow: hidden; pointer-events: none;
+  }
+  .hb-comp {
+    flex: none; display: block; height: var(--hb-comp-h); box-sizing: border-box; border-radius: 6px;
+    background-color: var(--wa-art-screen); background-repeat: no-repeat; background-position: center; background-size: contain;
+    box-shadow: 0 0 0 1px var(--wa-line-strong);
+  }
+  .hb-comp.round { border-radius: 50%; }
+  .hb-page .wa-watch { padding: 0; margin: 0; background: none; box-shadow: 0 0 0 1px var(--wa-line-strong); border-radius: var(--wf-radius, 6px); }
+  .hb-page .wa-watch::before, .hb-page .wa-watch::after { display: none; }
+  .hb-page .wa-watch > .wp-screen { max-height: var(--hb-screen-h); }
+  .hb-page .wp-fold { display: none; }
+  .hb-door-go { flex: none; display: grid; color: var(--wa-label); opacity: 0; transform: translateX(-3px); transition: opacity .15s ease, transform .15s ease; }
+  .hb-door-go svg.ui-icon { width: 14px; height: 14px; }
+  a.hb-door:hover .hb-door-go, button.hb-door:hover .hb-door-go,
+  a.hb-door:focus-visible .hb-door-go, button.hb-door:focus-visible .hb-door-go { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    button.hb-row, a.hb-door, button.hb-door, .hb-door-go { transition: none; }
+    a.hb-door:hover, button.hb-door:hover { transform: none; }
+  }
+  /* The rename field, the Remove step and the notes, in the detail. */
+  .dev-paired {
+    display: flex; align-items: flex-start; gap: 8px; padding: 9px 11px;
+    border: 1px solid var(--wa-green); border-radius: 10px;
+    font-size: 13px; line-height: 1.4; color: var(--wa-ink);
+  }
+  .dev-paired svg { flex: none; width: 16px; height: 16px; margin-top: 1px; color: var(--wa-green); }
+  .dev-paired b { font-weight: 600; color: var(--wa-green); }
+  .hb-ask {
+    display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--error-color) 45%, var(--wa-line)); background: var(--wa-card);
+  }
+  .hb-ask p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--wa-ink); }
+  .hb-ask p.quiet { color: var(--wa-muted); }
+  .dev-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .dev-acts button { height: 32px; padding: 0 14px; border-radius: 8px; }
+  .dev-acts button.danger { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+  .dev-acts button.danger svg.ui-icon { width: 14px; height: 14px; }
+  .dev-rename { display: flex; align-items: center; gap: 8px; }
+  .dev-rename input { flex: 1; min-width: 0; height: 32px; box-sizing: border-box; }
+  .dev-rename button { height: 32px; }
+  .dev-small { margin: 0; font-size: 11.5px; color: var(--wa-muted); }
+  .dev-err { margin: 0; font-size: 12.5px; color: var(--error-color); }
+  /* Pair a device: the transfer dialogs' frame with Home's sheen, a head
+     with the link glyph in an outlined chip. */
   dialog.pair-dialog {
     --home-card: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 4%, var(--wa-card)), var(--wa-card));
     --home-lift: inset 0 1px 0 color-mix(in srgb, var(--wa-ink) 7%, transparent);
@@ -546,102 +901,13 @@ export const homeStyles = css`
   .pair-head-t > span { font-size: 12px; color: var(--wa-muted); overflow-wrap: anywhere; }
   .pair-head > button.icon { width: 30px; height: 30px; flex: none; }
   .pair-head > button.icon svg.ui-icon { width: 16px; height: 16px; }
-  .dev-hero { display: flex; align-items: center; gap: 16px; padding: 16px 12px 16px 16px; border-bottom: 1px solid var(--wa-line); flex: none; }
-  .dev-stage {
-    flex: none; width: 96px; height: 112px; box-sizing: border-box; border-radius: 12px; display: grid; place-items: center;
-    border: 1px solid var(--wa-line);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 8%, var(--wa-bg)) 0%, var(--wa-bg) 85%);
+  @media (max-width: 720px) {
+    .hb-side { max-width: none; border-right: 0; border-bottom: 1px solid var(--wa-line); }
+    .hb-main { padding: 16px 12px 32px; }
+    .hb-name h2 { font-size: 24px; }
   }
-  .dev-stage svg.ha-art { width: auto; height: 92px; }
-  dialog.dev-dialog.waiting .dev-stage { border-color: color-mix(in srgb, var(--wa-amber) 45%, var(--wa-line)); }
-  .dev-hero-t { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-  .dev-whose {
-    display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere;
-    font-size: 10.5px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-muted);
-  }
-  .dev-whose i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--c); }
-  .dev-hero h2 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.01em; line-height: 1.25; overflow-wrap: anywhere; }
-  .dev-facts { font-size: 12px; line-height: 1.4; color: var(--wa-muted); overflow-wrap: anywhere; }
-  .dev-hero-acts { flex: none; align-self: flex-start; display: flex; align-items: center; gap: 6px; }
-  .dev-hero-acts button.icon { width: 30px; height: 30px; }
-  .dev-hero-acts button.icon svg.ui-icon { width: 16px; height: 16px; }
-  .dev-hero button.dev-rename-open { height: 28px; padding: 0 11px; font-size: 12px; }
-  /* The sync state in a sunken well: a chip in the state's color, its word
-     and what it means, and when the device was last heard from. */
-  .dev-state {
-    --s: var(--wa-muted);
-    display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px;
-    border: 1px solid var(--wa-line); background: color-mix(in srgb, var(--wa-bg) 45%, var(--wa-card));
-  }
-  .dev-state.synced { --s: var(--wa-green); }
-  .dev-state.waiting { --s: var(--wa-amber); border-color: color-mix(in srgb, var(--wa-amber) 45%, var(--wa-line)); }
-  .dev-state.rejected { --s: var(--error-color); border-color: color-mix(in srgb, var(--error-color) 45%, var(--wa-line)); }
-  .dev-state-chip {
-    width: 28px; height: 28px; flex: none; box-sizing: border-box; border-radius: 8px; display: grid; place-items: center;
-    border: 1px solid var(--s); color: var(--s);
-  }
-  .dev-state-chip svg.ui-icon { width: 14px; height: 14px; }
-  .dev-state-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .dev-state-t b { font-size: 13.5px; font-weight: 500; color: var(--s); }
-  .dev-state-t span { font-size: 12px; color: var(--wa-muted); overflow-wrap: anywhere; }
-  .dev-state-seen { flex: none; font-size: 11.5px; color: var(--wa-muted); }
-  .dev-title { margin: 2px 0 -8px; font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-muted); }
-  /* A tile per page, each opening it on this device: its name, how many it
-     holds, and an arrow. Outlined like every Home control; the person's
-     color lights the outline under the pointer. */
-  .dev-tabs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(164px, 100%), 1fr)); gap: 8px; }
-  a.dev-tab, button.dev-tab {
-    display: flex; align-items: center; gap: 8px; box-sizing: border-box; min-height: 44px; padding: 6px 8px 6px 14px;
-    border-radius: 10px; font: inherit; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; text-decoration: none;
-    color: var(--wa-ink); background: var(--home-card); border: 1px solid var(--wa-line-strong); box-shadow: var(--home-lift);
-  }
-  a.dev-tab:hover, button.dev-tab:hover { border-color: var(--c); background: var(--wa-hover); }
-  a.dev-tab:focus-visible, button.dev-tab:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .dev-tab-l { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  /* How many the page holds on this device. None is drawn quieter, so a
-     full tile stands out. */
-  .dev-tab-n { flex: none; font-size: 18px; font-weight: 300; line-height: 1; font-variant-numeric: tabular-nums; color: var(--wa-ink); }
-  .dev-tab-n.none { color: var(--wa-muted); }
-  .dev-tab-go { flex: none; display: grid; color: var(--wa-muted); }
-  .dev-tab-go svg.ui-icon { width: 14px; height: 14px; }
-  a.dev-tab:hover .dev-tab-go, button.dev-tab:hover .dev-tab-go { color: var(--c); }
-  .dev-paired {
-    display: flex; align-items: flex-start; gap: 8px; padding: 9px 11px;
-    border: 1px solid var(--wa-green); border-radius: 10px;
-    font-size: 13px; line-height: 1.4; color: var(--wa-ink);
-  }
-  .dev-paired svg { flex: none; width: 16px; height: 16px; margin-top: 1px; color: var(--wa-green); }
-  .dev-paired b { font-weight: 600; color: var(--wa-green); }
-  /* The foot: Remove device on its own, under a hairline, outlined in red
-     rather than filled, since it is the one thing here that cannot be
-     undone. Its confirm step fills it. */
-  .dev-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 14px; border-top: 1px solid var(--wa-line); }
-  .dev-acts .dev-forget { margin-left: auto; }
-  .dev-acts button { height: 32px; padding: 0 14px; border-radius: 8px; }
-  .dev-acts button.danger { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
-  .dev-acts button.danger.dev-forget {
-    color: var(--error-color); background: transparent;
-    border: 1px solid color-mix(in srgb, var(--error-color) 50%, var(--wa-line));
-  }
-  .dev-acts button.danger.dev-forget:hover { background: color-mix(in srgb, var(--error-color) 10%, transparent); }
-  .dev-acts button.danger svg.ui-icon { width: 14px; height: 14px; }
-  .dev-rename { display: flex; align-items: center; gap: 8px; }
-  .dev-rename input { flex: 1; min-width: 0; height: 32px; box-sizing: border-box; }
-  .dev-rename button { height: 32px; }
-  .dev-small { margin: 0; font-size: 11.5px; color: var(--wa-muted); }
-  .dev-err { margin: 0; font-size: 12.5px; color: var(--error-color); }
-  .home-small { margin: 0; font-size: 11.5px; color: var(--wa-muted); }
-  .home-empty { margin: 0; font-size: 13px; color: var(--wa-muted); }
   @media (max-width: 640px) {
-    .home { padding: 14px 12px 32px; }
+    .home-pad { padding: 14px 12px 32px; }
     .home-head h1 { font-size: 22px; }
-    /* The person goes on one line above their devices. */
-    .home-person-head { flex-basis: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-    .home-person-name { margin: 0; }
-    /* The sheet's stage shrinks, so the name keeps its room beside it. */
-    .dev-hero { gap: 12px; padding: 12px 8px 12px 12px; }
-    .dev-stage { width: 68px; height: 84px; }
-    .dev-stage svg.ha-art { height: 66px; }
-    .dev-hero h2 { font-size: 17px; }
   }
 `;

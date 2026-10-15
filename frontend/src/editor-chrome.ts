@@ -159,9 +159,31 @@ const topBarRun = css`
       --lo-fill: var(--wa-hover);
       background: var(--lo-fill);
     }
-    .tb-saved { font-size: 12px; color: var(--wa-muted); white-space: nowrap; padding: 0 4px; }
-    header.stacked .tb-saved, header.stacked .tb-pen, header.stacked > .tb-div,
-    .wa-bar.stacked .tb-saved, .wa-bar.stacked .tb-pen, .wa-bar.stacked > .tb-div { display: none; }
+    /* Whether the work is saved, the one place it is said: muted once saved,
+       amber with a dot while there are changes (or Save refuses them), red
+       with a dot for an error. */
+    .tb-saved {
+      display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 300px;
+      font-size: 12px; color: var(--wa-muted); white-space: nowrap; padding: 0 4px;
+    }
+    .tb-saved-l { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .tb-saved-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: currentColor; }
+    .tb-saved.warn { color: var(--wa-amber); font-weight: 500; }
+    .tb-saved.err { color: var(--error-color, #db4437); font-weight: 500; }
+    /* After a save: where it has got to, one line. Amber when the reader has
+       to do something (open the watch app). It stays when the bar stacks,
+       on the second row, since on a phone it is the only place it is said. */
+    .tb-after {
+      font-size: 12px; color: var(--wa-muted); white-space: nowrap; padding: 0 4px;
+      min-width: 0; max-width: 340px; overflow: hidden; text-overflow: ellipsis;
+    }
+    .tb-after.warn { color: var(--wa-amber); font-weight: 500; }
+    header.stacked > .tb-after, .wa-bar.stacked > .tb-after { order: 2; }
+    /* Stacked, "Saved 3 min ago" gives way, but changes and errors keep
+       their line on the second row: it is the only place they are said. */
+    header.stacked .tb-saved:not(.warn):not(.err), header.stacked .tb-pen, header.stacked > .tb-div,
+    .wa-bar.stacked .tb-saved:not(.warn):not(.err), .wa-bar.stacked .tb-pen, .wa-bar.stacked > .tb-div { display: none; }
+    header.stacked > .tb-saved, .wa-bar.stacked > .tb-saved { order: 2; }
     /* Stacked (a phone, or a narrow window), the bar is two tidy rows rather
        than three ragged ones: what is done to the draft on top (Browse, undo,
        redo, Save, help), and where it has got to underneath (the sync pill,
@@ -172,7 +194,14 @@ const topBarRun = css`
     header.stacked > *, .wa-bar.stacked > * { margin-block: 4px; }
     header.stacked::after, .wa-bar.stacked::after { content: ""; order: 1; flex: 0 0 100%; height: 0; margin: 0; }
     header.stacked > .tb-sync, header.stacked > button.tb-btn:not(.tb-more), header.stacked > .side-menu,
-    .wa-bar.stacked > .tb-sync, .wa-bar.stacked > button.tb-btn:not(.tb-more), .wa-bar.stacked > .side-menu { order: 2; }
+    .wa-bar.stacked > .tb-sync, .wa-bar.stacked > button.tb-btn:not(.tb-more) { order: 2; }
+    /* A watch screen's bar keeps its buttons together on top (···, Save and
+       the help) and puts the words under them: where the copy has got to, or
+       why Save is grey, wrapping whole across the row rather than cut. Left
+       on the lower row alone, ··· read as a stray. */
+    .wa-bar.stacked > :is(.tb-why, .nw-why, .tb-after) {
+      order: 2; flex: 1 1 100%; max-width: none; white-space: normal; overflow: visible; overflow-wrap: anywhere;
+    }
     /* The pill never shrinks under its words: when the row is too full it
        takes a row of its own, and only past a whole row is its note cut. */
     header.stacked > .tb-sync, .wa-bar.stacked > .tb-sync { flex: 1 0 auto; max-width: 100%; }
@@ -479,6 +508,7 @@ const rowsRun = css`
     /* A layer with rules: the Rules card's yellow as a quiet fill with yellow
        words and no outline, the same shape as the tap badge. */
     .badge.states { color: var(--wa-hue-yellow); background: color-mix(in srgb, var(--wa-hue-yellow) 14%, transparent); }
+    .badge.template-error { color: #fff; background: var(--error-color, #db4437); }
     /* Outlined, so it never reads as one more filled tag beside tap and
        states: it is a job, and a click opens it. */
     .badge.need {
@@ -704,6 +734,16 @@ const leftCardsRun = css`
     .lc-note button.link { margin-left: auto; font-weight: 700; color: inherit; text-decoration: underline; }
     .lc-note span { line-height: 1.4; }
     .lc-note b { font-weight: 700; }
+    /* One page: a quiet line over the Layers card, not a card of its own. */
+    .pages-slim {
+      display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 2px 0 10px;
+      font-size: 12px; color: var(--wa-muted);
+    }
+    .pages-slim .spacer { flex: 1; }
+    .pages-slim-ic { display: inline-grid; place-items: center; flex: none; }
+    .pages-slim-ic svg.ui-icon { width: 13px; height: 13px; }
+    .pages-slim button.lc-ghost { border-color: transparent; letter-spacing: 0; font-weight: 500; }
+    .pages-slim button.lc-ghost:hover:not(:disabled) { border-color: var(--wa-line-strong); }
     .pages-card .lc-note { margin: 8px 12px 0; }
     .pages-card .page-tour-bar { margin: 0 12px 10px; }
     /* The Layers card's filter line, and the rows under it. */
@@ -810,7 +850,7 @@ const popMenuRun = css`
 const tintDotRun = css`
     .tint-dot {
       display: inline-block; flex: none; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; vertical-align: -1px;
-      background: var(--sw); box-shadow: inset 0 0 0 1px rgba(128,128,128,.5);
+      background: var(--sw); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 45%, transparent);
     }
     button.case-pick .tint-dot { margin-right: 0; }
     .tint-dot.full { background: conic-gradient(#FF453A 0 25%, #FFD60A 0 50%, #30D158 0 75%, #0A84FF 0); }
@@ -1035,9 +1075,15 @@ const canvasHeadTailRun = css`
       .cv-head { padding: 6px 12px 8px; column-gap: 8px; }
       .cv-head::after { content: ""; order: 3; flex: 0 0 100%; height: 0; }
       .cv-head .cv-slash { display: none; }
-      .cv-head .tb-name { order: 0; flex: 1 1 0; }
-      .cv-head .cv-what { order: 1; }
-      .cv-head .cv-acts { order: 2; gap: 8px; }
+      /* The name keeps its own width (a zero basis let the typed name spill
+         over the facts beside it), the actions stay at its right, and the
+         facts take the next line. */
+      .cv-head .tb-name { order: 0; flex: 1 1 auto; }
+      .cv-head .tb-name > input.tb-name-input[type=text] { max-width: 100%; }
+      .cv-head .cv-acts { order: 1; gap: 8px; }
+      .cv-head .cv-what { order: 2; flex: 1 1 100%; }
+      .cv-head .cv-what .cv-shape { white-space: normal; }
+      .cv-head .cv-what .fam { overflow: visible; overflow-wrap: anywhere; }
       .cv-head .cv-where { order: 4; flex: 0 1 auto; }
     }
 `;
@@ -1181,6 +1227,73 @@ const stageToolsTailRun = css`
     }
     .snap-steps button.on { background: var(--wa-seg-on); color: var(--wa-ink); }
     .snap-steps button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+`;
+
+/** The watch editors' lit stage, Home's stage (`.hb-stage` in home.ts) under
+ * the watch: opt in with `lit` on the canvas card and set `--wa-stage-hue`
+ * to the screen's hue (Pages green, Menus orange, Status pages yellow, Voice
+ * red, as Home's doors). The complication editor's card has no `lit`, so its
+ * dotted well and tool strip stay as they are. */
+const litStageRun = css`
+    /* A dark fall from the top to the foot, and a one pixel edge lit from
+       the top left in the screen's hue. */
+    .column.canvas > .card.canvas-card.lit {
+      border-radius: 22px; border: 1px solid transparent;
+      background:
+        linear-gradient(180deg, var(--wa-stage-top) 0%, var(--wa-stage-bottom) 100%) padding-box,
+        linear-gradient(140deg, var(--wa-stage-hue, var(--wa-line-strong)) 0%, color-mix(in srgb, var(--wa-stage-hue, var(--wa-line-strong)) 25%, transparent) 32%,
+          var(--wa-card-mid, var(--wa-line)) 64%, color-mix(in srgb, var(--wa-stage-hue, var(--wa-line-strong)) 15%, transparent) 100%) border-box;
+      box-shadow: inset 0 1px 0 color-mix(in srgb, var(--wa-ink) 7%, transparent);
+    }
+    .canvas-card.lit > .cv-head { border-radius: 16px; }
+    /* The light falls on the watch from the top centre of the stage, under
+       the head and the page's strip, and is a fixed depth, so a long page's
+       stage is not lit all the way down. The floor: a faint band at the
+       stage's foot under a hairline, where the hint and the tool pill sit.
+       All drawn as the stage's background, so always under the watch. */
+    .canvas-card.lit .stage-area {
+      padding: 20px 12px 18px; gap: 10px;
+      background:
+        radial-gradient(48% 420px at 50% 0%, var(--wa-stage-light) 0%, transparent 80%) no-repeat,
+        linear-gradient(color-mix(in srgb, var(--wa-ink) 5%, transparent), color-mix(in srgb, var(--wa-ink) 5%, transparent)) left 0 bottom 120px / 100% 1px no-repeat,
+        linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 3%, transparent), transparent) left 0 bottom 0 / 100% 120px no-repeat;
+    }
+    /* The watch gives back a faint reflection of its lowest edge only, so a
+       tall page's reflection is as short as a small one's. */
+    .canvas-card.lit .stage-area .wa-watch {
+      -webkit-box-reflect: below 6px linear-gradient(transparent calc(100% - 32px), var(--wa-stage-reflect));
+    }
+    /* Each editor's box round the watch scrolls sideways, so it clips: room
+       in its foot for the reflection, the hint under it starting about where
+       the reflection fades. */
+    .canvas-card.lit .stage-area > :is(.pe-stage-body, .me-stage-body, .sp-stage-body, .ve-stage-body) {
+      padding-bottom: 42px; margin-bottom: -10px;
+    }
+    /* The tools: a floating pill centred at the stage's foot, under the
+       watch and its hint. It stays in the flow (moved last by order) rather
+       than floating over the stage, so however it wraps on a narrow stage
+       the stage grows to hold it and it never covers the watch. */
+    .canvas-card.lit .stage-area > .stage-tools {
+      order: 9; align-self: center; position: relative; top: auto; z-index: 8;
+      margin: 8px 0 0; height: auto; min-height: 40px; width: max-content; max-width: calc(100% - 8px);
+      display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; row-gap: 4px; padding: 4px;
+      border-radius: 12px; background: var(--wa-card); border: 1px solid var(--wa-line-strong);
+      box-shadow: var(--wa-shadow-float, var(--wa-shadow-pop));
+    }
+    /* Neutral 30px controls, each with its own one pixel outline. */
+    .canvas-card.lit .stage-tools button.tb {
+      height: 30px; gap: 7px; padding: 0 10px; border-radius: 8px; font-size: 12px;
+      color: var(--wa-label, var(--wa-ink)); background: transparent; border: 1px solid var(--wa-line-strong);
+    }
+    .canvas-card.lit .stage-tools button.tb.icon { width: 30px; padding: 0; justify-content: center; font-size: 15px; }
+    .canvas-card.lit .stage-tools button.tb.pct { min-width: 52px; padding: 0 6px; color: var(--wa-label, var(--wa-ink)); }
+    .canvas-card.lit .stage-tools button.tb:hover:not(:disabled) { background: var(--wa-hover); color: var(--wa-ink); }
+    /* The watch's size is a fact, not a button. */
+    .canvas-card.lit .stage-tools button.tb[aria-disabled="true"] { cursor: default; }
+    .canvas-card.lit .stage-tools button.tb[aria-disabled="true"]:hover { background: transparent; color: var(--wa-label, var(--wa-ink)); }
+    .canvas-card.lit .stage-tools button.tb.lit { color: var(--wa-ink); border-color: var(--wa-ink); }
+    .canvas-card.lit .stage-tools .tb-zoom { gap: 4px; }
+    .canvas-card.lit .stage-tools .tb-sep { height: 18px; margin: 0 2px; background: var(--wa-line-strong); }
 `;
 
 /** The values bar under the face. */
@@ -1415,6 +1528,8 @@ const sectionCardRun = css`
     .field.readout > span:first-child { padding-top: 6px; }
     .readout-v { min-width: 0; padding: 6px 0 5px; font-size: 11.5px; line-height: 1.4; color: var(--wa-muted); overflow-wrap: anywhere; }
     .field.list-field > .readout-v { padding-bottom: 2px; }
+    .readout-v.template-error { color: var(--error-color, #db4437); }
+    .readout-v.template-error b { font-weight: 600; }
 `;
 
 /** The section cards, continued: the reset dot in a title, the name card,
@@ -1440,6 +1555,9 @@ const sectionCardTailRun = css`
       border-radius: 6px; border-color: var(--wa-line-strong); background-color: var(--wa-field);
     }
     .name-sec .sec-h input[type=text]:focus-visible { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
+    /* An empty name shows the automatic title, which is the layer's real name
+       until one is typed, so it reads as a name and not as a grey hint. */
+    .name-sec .sec-h input[type=text]::placeholder { color: var(--wa-ink); opacity: 1; }
     /* Each card's "?": quiet until the header is hovered, lit while its help
        is showing. A touch screen has no hover, so there it always shows. */
     button.sec-help {
@@ -1453,6 +1571,19 @@ const sectionCardTailRun = css`
     button.sec-help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.sec-help.on { color: var(--wa-ink); background: var(--wa-raise); border-color: transparent; }
     @media (hover: none) { button.sec-help { opacity: 1; } }
+    /* A card's ··· menu, for its rare actions. The card clips its corners,
+       so it lets the menu out while the menu is open. */
+    .sec.menu-open { overflow: visible; }
+    .sec-menu { position: relative; flex: none; display: inline-flex; }
+    button.sec-more {
+      height: 20px; padding: 0 5px; border-radius: 6px; cursor: pointer;
+      font: inherit; font-size: 12px; font-weight: 700; line-height: 1; letter-spacing: .04em;
+      border: 1px solid transparent; background: transparent; color: var(--wa-muted);
+    }
+    button.sec-more:hover, button.sec-more.on { color: var(--wa-ink); border-color: var(--wa-line-strong); }
+    button.sec-more:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .sec-menu .pop-menu { min-width: 160px; cursor: default; }
+    .sec-menu .pop-menu .row:disabled { opacity: .45; cursor: default; background: transparent; }
     /* Help text waits behind that "?". A plain hint shows only while its
        card's help is on; a warning, an error, or a hint marked keep (a status,
        an empty state, a step that is required) always shows. A value popover
@@ -1546,8 +1677,9 @@ export const leftCardStyles = css`${leftCardsRun}${leftCardsTailRun}${popMenuRun
 export const rowListStyles = css`${rowsRun}${rowsTailRun}${groundCapRun}${richRowsRun}${sharedValueRowsRun}`;
 
 /** The canvas card: its head, the stage, the floating toolbar and its
- * menus, and the values bar. Wants `chromeTokens` for its colors. */
-export const canvasStyles = css`${canvasColumnRun}${tintDotRun}${canvasHeadRun}${canvasHeadTailRun}${stageRun}${stageToolsRun}${stageToolsTailRun}${valuesFootRun}`;
+ * menus, the values bar, and the watch editors' opt-in lit stage. Wants
+ * `chromeTokens` for its colors. */
+export const canvasStyles = css`${canvasColumnRun}${tintDotRun}${canvasHeadRun}${canvasHeadTailRun}${stageRun}${stageToolsRun}${stageToolsTailRun}${valuesFootRun}${litStageRun}`;
 
 /** The inspector: its head and breadcrumb, and the `.sec` section cards
  * that `sectionCard()` draws. The narrow `@container insp` rules stay in

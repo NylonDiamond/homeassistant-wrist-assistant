@@ -83,6 +83,11 @@ export const formButtonStyles = css`
     }
     button.primary.save.dirty:not(:disabled):hover { background: color-mix(in srgb, var(--wa-hue-green) 88%, var(--wa-ink)); }
     button.primary.save.dirty:not(:disabled):focus-visible { box-shadow: var(--wa-ring), var(--wa-save-glow); }
+    /* A moment after a save landed: "✓ Saved" in green, then plain Save. */
+    header button.save.flash, .wa-bar button.save.flash {
+      color: var(--wa-hue-green); border-color: color-mix(in srgb, var(--wa-hue-green) 60%, transparent);
+      transition: color .2s ease-out, border-color .2s ease-out;
+    }
     button.danger { color: var(--error-color, #e5484d); border-color: color-mix(in srgb, var(--error-color, #e5484d) 45%, transparent); background: color-mix(in srgb, var(--error-color, #e5484d) 8%, transparent); }
     button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error-color, #e5484d) 16%, transparent); border-color: var(--error-color, #e5484d); }
     button.small { padding: 0 9px; font-size: 13px; min-height: 26px; border-radius: 6px; }
@@ -239,7 +244,7 @@ export const formResetDotStyles = css`
     button.reset-dot:hover, button.reset-dot:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--wa-sec, var(--wa-accent)) 32%, transparent); }
 `;
 
-/** A button drawn as a link (Browse symbols). */
+/** A button drawn as a link. */
 export const formLinkStyles = css`
     button.link { font: inherit; background: none; border: none; color: var(--wa-accent); cursor: pointer; padding: 0; }
     /* A watch editor's "Start fresh instead" while the iPhone's move may
@@ -412,9 +417,39 @@ export const formRowStyles = css`
     /* The one hint that is colored: a timed refresh is spending the redraw
        budget a tap on the face also needs, which is worth noticing. */
     .hint.budget { color: var(--warning-color, #ffa600); }
+    /* The Auto refresh warning: its one amber line and a Why? button on the
+       same row, and the reasons under them, in plain muted text, once opened. */
+    .budget-why { margin: 4px 0; min-width: 0; }
+    .budget-why > summary {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; cursor: pointer; list-style: none;
+    }
+    .budget-why > summary::-webkit-details-marker { display: none; }
+    .budget-why > summary > .hint { margin: 0; flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+    .budget-why > summary:focus-visible { outline: none; }
+    .budget-why > summary:focus-visible > .why-btn { box-shadow: var(--wa-ring); }
+    .why-btn {
+      display: inline-flex; align-items: center; flex: none; box-sizing: border-box; min-height: 20px; padding: 0 7px;
+      border-radius: 5px; font-size: 11.5px; font-weight: 600; line-height: 1;
+      color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong);
+    }
+    .budget-why > summary:hover > .why-btn, .budget-why[open] > summary > .why-btn { background: var(--wa-hover); }
+    .budget-why > .hint { margin: 6px 0 0; overflow-wrap: anywhere; }
     /* The bare .err rule sits above .hint in this sheet, so a hint that is an
        error needs both class names to win the color. */
     .hint.err { color: var(--error-color, #db4437); }
+    /* A template box's recipes: small buttons in the value column, wrapping
+       under each other rather than under the label. The
+       one the box holds shows as chosen, like a page tile's Examples. */
+    .tpl-box { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .tpl-recipes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+    .tpl-recipes-row { align-items: start; }
+    .tpl-recipes-row > span { padding-top: 5px; }
+    .tpl-recipes button.small { min-height: 24px; padding: 0 8px; font-size: 12px; }
+    .tpl-recipes button.small.on { background: var(--wa-sel-bg); border-color: var(--wa-sel-ring); font-weight: 600; }
+    .tpl-asks { color: var(--wa-ink); }
+    .tpl-box textarea.tpl-err, .tpl-box textarea.tpl-err:focus {
+      border-color: var(--error-color, #db4437); box-shadow: 0 0 0 1px var(--error-color, #db4437);
+    }
 `;
 
 /** The entity search (box, chosen row, result list, its pulses), the entity
@@ -574,20 +609,124 @@ export const formEntityStyles = css`
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em;
     }
 
-    /* Symbol picker */
-    .sym-browse { margin: 6px 0; }
-    .sym-controls { display: flex; gap: 6px; margin-bottom: 6px; }
-    .sym-controls input[type=search] { flex: 1; min-width: 0; }
-    .sym-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 4px; max-height: 240px; overflow-y: auto; padding: 2px; }
-    .sym-grid.one-row { display: flex; flex-wrap: nowrap; max-height: none; overflow-x: auto; overflow-y: hidden; }
-    .sym-grid.one-row button.sym { flex: 0 0 64px; }
-    button.sym { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 5px 2px; background: none; cursor: pointer; color: var(--wa-ink); border: 1px solid transparent; border-radius: 6px; overflow: hidden; }
-    button.sym:hover { border-color: var(--wa-line); background: var(--wa-panel); }
-    button.sym.on { border-color: var(--wa-accent); }
-    .sym-glyph { display: flex; align-items: center; justify-content: center; height: 24px; }
+    /* Icon field, drawn the way Home Assistant draws its own: a box showing
+       the chosen glyph and its name, with a caret, and a list that drops
+       open under it. The list spans the whole row, label column included,
+       and sits in the flow rather than floating, so no card or popover can
+       cut it off. The box is the height of a text box, so the label beside
+       it and the rows under it never move when one swaps for the other. */
+    .field.sym-field.no-label { grid-template-columns: minmax(0, 1fr); }
+    .sym-line-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .sym-box {
+      flex: 1; min-width: 0; display: flex; align-items: center; height: 30px; border-radius: 7px;
+      background: var(--wa-field); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
+      transition: box-shadow .12s ease-out;
+    }
+    .sym-box:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
+    .sym-box.open { box-shadow: inset 0 0 0 1px var(--wa-accent), var(--wa-ring); }
+    button.sym-pick {
+      flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 8px;
+      font: inherit; font-size: 12.5px; text-align: left; padding: 0 8px 0 4px; border: 0; border-radius: 7px;
+      background: none; color: var(--wa-ink); cursor: pointer;
+    }
+    button.sym-pick:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--wa-accent); }
+    .sym-now {
+      flex: none; width: 22px; height: 22px; border-radius: 5px; display: grid; place-items: center;
+      background: color-mix(in srgb, var(--wa-ink) 9%, transparent); color: var(--wa-ink);
+    }
+    .sym-now svg { width: 16px; height: 16px; display: block; }
+    .sym-now svg path { fill: currentColor; fill-opacity: 1; }
+    .sym-now.none { color: var(--wa-muted); }
+    /* The icon's own color, when one is chosen, on the glyph in the box and on
+       every glyph in the list, so the pick is seen the way the watch draws it. */
+    .sym-field.tinted .sym-now:not(.none), .sym-field.tinted .sym-glyph { color: var(--sym-tint); }
+    .sym-field.tinted button.sym .sym-glyph { opacity: 1; }
+    .sym-now.none svg.ui-icon { width: 13px; height: 13px; }
+    .sym-now.none svg.ui-icon path { fill: none; }
+    .sym-now-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sym-now-name.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .sym-now-name.empty { color: var(--wa-muted); }
+    .sym-caret { flex: none; display: grid; place-items: center; color: var(--wa-muted); transition: transform .12s ease-out; }
+    .sym-caret svg { width: 13px; height: 13px; display: block; }
+    .sym-box.open .sym-caret { transform: rotate(180deg); color: var(--wa-accent); }
+    button.sym-clear {
+      flex: none; width: 24px; height: 24px; margin-right: 3px; display: grid; place-items: center;
+      padding: 0; border: none; border-radius: 5px; background: none; color: var(--wa-muted); cursor: pointer;
+    }
+    button.small.sym-source { flex: none; height: 30px; padding: 0 10px; font-size: 12px; white-space: nowrap; }
+    button.sym-clear:hover { background: var(--wa-panel); color: var(--wa-ink); }
+    button.sym-clear svg { width: 12px; height: 12px; display: block; }
+    .sym-field > .sym-menu {
+      grid-column: 1 / -1; margin: 2px 0 4px; padding: 8px; border-radius: 10px;
+      border: 1px solid var(--wa-line-strong, var(--wa-line)); background: var(--wa-raised, var(--wa-card));
+      box-shadow: 0 10px 28px rgba(0,0,0,.22);
+    }
+    /* One row per icon in the list: the glyph, then its name, like Home
+       Assistant's own list. The picked one wears the card's hue. */
+    .sym-list { display: flex; flex-direction: column; gap: 1px; }
+    .sym-list + .sym-list { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--wa-line); }
+    /* The well's own frame would be a box in a box inside the dropdown. */
+    .sym-menu .sym-well { padding: 2px; border: 0; border-radius: 0; background: none; box-shadow: none; }
+    button.sym.sym-line {
+      aspect-ratio: auto; justify-content: flex-start; gap: 12px; width: 100%; min-height: 34px; padding: 4px 8px;
+      font: inherit; text-align: left;
+    }
+    button.sym.sym-line .sym-glyph { flex: none; }
+    .sym-line-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+    button.sym.sym-line:active { transform: none; }
+    /* The browser: a search bar, then a framed well that scrolls, then a
+       quiet count. Tiles are glyphs only, square, and the picked one wears
+       the hue of the card it is in (--wa-sec), like the card's other marks. */
+    .sym-browse { --sym-hi: var(--wa-sec, var(--wa-ink)); display: flex; flex-direction: column; gap: 8px; margin: 4px 0 6px; min-width: 0; }
+    .sym-bar { display: flex; gap: 6px; min-width: 0; }
+    .sym-search { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
+    .sym-search > svg { position: absolute; left: 9px; width: 14px; height: 14px; color: var(--wa-muted); pointer-events: none; }
+    .sym-search > input[type=search] {
+      width: 100%; min-width: 0; height: 32px; box-sizing: border-box; padding: 0 10px 0 29px; border-radius: 9px;
+      border: 1px solid var(--wa-line-strong); background: var(--wa-field); color: var(--wa-ink); font: inherit; font-size: 12.5px;
+      transition: border-color .12s ease-out, box-shadow .12s ease-out;
+    }
+    .sym-search > input[type=search]:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
+    .sym-search > input[type=search]::placeholder { color: var(--wa-muted); }
+    .sym-bar > select.sym-set { flex: none; max-width: 46%; height: 32px; border-radius: 9px; font-size: 12.5px; }
+    .sym-well {
+      position: relative; max-height: 320px; overflow-y: auto; overscroll-behavior: contain;
+      padding: 8px; border-radius: 12px; border: 1px solid var(--wa-line);
+      background: color-mix(in srgb, var(--wa-panel) 55%, transparent);
+      box-shadow: inset 0 1px 2px color-mix(in srgb, #000 18%, transparent);
+      scrollbar-width: thin; scrollbar-color: var(--wa-line-strong) transparent;
+    }
+    .sym-sec {
+      font-size: 10px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--wa-muted);
+      padding: 2px 4px 6px;
+    }
+    .sym-sec:not(:first-child) { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--wa-line); }
+    .sym-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 3px; }
+    /* One line of recents, cut to what fits rather than scrolled sideways:
+       every row past the first is zero tall and clipped. */
+    .sym-grid.recent { grid-template-rows: auto; grid-auto-rows: 0; row-gap: 0; overflow: hidden; }
+    .sym-well.named .sym-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+    button.sym {
+      display: flex; align-items: center; justify-content: center; aspect-ratio: 1; min-width: 0; padding: 0; margin: 0;
+      background: transparent; border: 0; border-radius: 9px; cursor: pointer; color: var(--wa-ink);
+      transition: background-color .1s ease-out, box-shadow .1s ease-out, transform .1s ease-out;
+    }
+    .sym-well.named button.sym { aspect-ratio: auto; min-height: 34px; padding: 4px 6px; }
+    button.sym .sym-glyph { opacity: .78; transition: opacity .1s ease-out; }
+    button.sym:hover { background: var(--wa-hover); }
+    button.sym:hover .sym-glyph, button.sym.on .sym-glyph { opacity: 1; }
+    button.sym:active { transform: scale(.94); }
+    button.sym:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.sym.on {
+      background: color-mix(in srgb, var(--sym-hi) 20%, transparent);
+      box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--sym-hi) 80%, transparent);
+    }
+    .sym-glyph { display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; }
+    .sym-glyph svg { width: 20px; height: 20px; }
     .sym-glyph svg path { fill: currentColor; fill-opacity: 1; }
-    .sym-none { font-size: 14px; opacity: .4; }
-    .sym-name { font-size: 9px; line-height: 1.1; text-align: center; opacity: .8; overflow-wrap: anywhere; max-height: 22px; overflow: hidden; }
+    .sym-count { font-size: 11px; color: var(--wa-muted); margin: -2px 2px 0; }
+    .sym-name { font-size: 10px; line-height: 1.15; text-align: center; opacity: .85; overflow-wrap: anywhere; max-height: 24px; overflow: hidden; }
+    @media (prefers-reduced-motion: reduce) { button.sym, button.sym .sym-glyph { transition: none; } button.sym:active { transform: none; } }
 `;
 
 /** The panel says this at the end of its own sheet, for every pulse it

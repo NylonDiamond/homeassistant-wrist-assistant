@@ -229,11 +229,11 @@ describe("links into the Watch app carry the shared watch", () => {
     expect(method("  private openTab(")).toContain("this.goTo(tabPath(tab, this.sharedWatch, this.sharedPhone));");
   });
 
-  it("on Home's device cards, which open a screen on that card's own watch or iPhone", () => {
-    const tile = method("  private renderHomeTile(");
-    expect(tile).toContain("const path = deviceScreenPath(d.kind, t.screen, d.id);");
-    expect(tile).toContain(`<a class="home-tile" href=\${panelUrl(this.route, path, window.location.pathname)}`);
-    expect(tile).toContain("this.pickWatch(d.id);");
+  it("on Home's picked device, whose doors open a screen on that device's own watch or iPhone", () => {
+    const detail = method("  private renderHomeDetail(");
+    expect(detail).toContain("const path = deviceScreenPath(row.kind, screen, ownerId);");
+    expect(detail).toContain(`href=\${panelUrl(this.route, path, window.location.pathname)}`);
+    expect(detail).toContain("this.pickWatch(ownerId);");
     expect(method("  private renderHome() {")).not.toContain("watchSettings.");
   });
 });
@@ -244,7 +244,18 @@ describe("the Settings page", () => {
     const page = method("  private renderSettingsPage() {");
     expect(page).not.toContain("is_admin");
     expect(page).toContain("if (!this.linkReady && this.owners.length === 0) {");
-    expect(page).toContain("return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow, width: this.panelWidth });");
+    expect(page).toContain("return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow, inHead: true });");
+  });
+
+  it("puts its save controls at the right end of the row, and gives every editor the row's box for its own", () => {
+    const row = method("  private withWatchRow(");
+    expect(row).toContain("isWatchSettingsRoute(this.route) && (this.linkReady || this.owners.length > 0)");
+    expect(row).toContain("this.watchSettings.renderHeadBar(this.owners)");
+    expect(row).toContain("end: html`${settings}${this.watchBarHost}`");
+    // The editors are drawn by one switch, for the Watch app and the iPhone
+    // app alike (`renderWatchScreen`).
+    const screens = method("  private renderWatchScreen(");
+    expect(screens.match(/barHost: this\.watchBarHost,/g)).toHaveLength(8);
   });
 
   it("follows the shared watch on every draw, once the devices are in, and leaves on any other route", () => {

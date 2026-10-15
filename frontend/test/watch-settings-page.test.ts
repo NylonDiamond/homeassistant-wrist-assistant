@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WATCH_SETTINGS_SCREEN, panelPrefix, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath, editorKeysLive, landingPath } from "../src/shell.js";
 import { watchRouteOwner } from "../src/watch-pick.js";
 import { watchRowLinks, watchRowSettingsLink } from "../src/watch-row.js";
-import { catalogSettings, watchBehaviorDefaults } from "../src/watch-settings.js";
+import { WATCH_SETTINGS_CATALOG, catalogSettings, watchBehaviorDefaults } from "../src/watch-settings.js";
 import { watchSettingsStyles } from "../src/watch-settings-view.js";
 import {
   type KeptSettings,
@@ -18,13 +18,14 @@ import {
   keptChanges,
   keptSettingsDraft,
   restoreSettingsDraft,
+  settingsStartedFresh,
+  startSettingsFresh,
 } from "../src/watch-settings-draft.js";
+import { NOTIFICATION_STYLE_SECTIONS } from "../src/watch-notification-style/model.js";
+import { SETTINGS_GROUPS, groupOfCard, matchesSearch, searchTerms, settingsGroup } from "../src/watch-settings-nav.js";
 import {
   WATCH_SETTINGS_PATH,
-  dealColumns,
   isWatchSettingsRoute,
-  settingsColumnCount,
-  settingsPageWidth,
   settingsCanSave,
   settingsPageSavesOnKey,
   settingsPageStep,
@@ -184,6 +185,36 @@ describe("kept settings drafts", () => {
     expect(back.edits.size).toBe(0);
   });
 
+  it("lays edits made on a new watch's defaults back on them while there is still no record", () => {
+    const fresh = draft({ behaviorRevision: 0 });
+    const back = restoreSettingsDraft(fresh, { revision: 0 }, undefined, { behavior: doc });
+    expect([...back.edits]).toEqual([["wrapPages", !wrap.default]]);
+    expect(back.moved).toBe(false);
+    // The page did not open ready (it waits for the iPhone): nothing to lay
+    // them on.
+    expect(restoreSettingsDraft(fresh, { revision: 0 }, undefined).edits.size).toBe(0);
+  });
+
+  it("lays them on a record that came meanwhile instead, and says so", () => {
+    const back = restoreSettingsDraft(draft({ behaviorRevision: 0 }), { revision: 2, document: doc }, undefined, { behavior: doc });
+    expect([...back.edits]).toEqual([["wrapPages", !wrap.default]]);
+    expect(back.moved).toBe(true);
+  });
+
+  it("never lays edits from a record that has gone on the defaults", () => {
+    const back = restoreSettingsDraft(draft(), { revision: 0 }, undefined, { behavior: doc });
+    expect(back.edits.size).toBe(0);
+  });
+
+  it("remembers a start fresh per watch until the panel is left", () => {
+    expect(settingsStartedFresh("w1")).toBe(false);
+    startSettingsFresh("w1");
+    expect(settingsStartedFresh("w1")).toBe(true);
+    expect(settingsStartedFresh("w2")).toBe(false);
+    dropWatchSettingsDrafts();
+    expect(settingsStartedFresh("w1")).toBe(false);
+  });
+
   it("starts empty for a watch with nothing kept", () => {
     expect(restoreSettingsDraft(undefined, { revision: 3, document: doc }, undefined)).toEqual({ edits: new Map(), styleEdits: new Map(), moved: false });
   });
@@ -203,11 +234,17 @@ describe("the page's look", () => {
     expect(rule(".ws-top")).toContain("background: var(--wa-bg)");
   });
 
-  it("is centred, as many columns as the render dealt, and never wider than the page", () => {
-    const cols = rule(".ws-cols");
-    expect(cols).toContain("width: min(var(--ws-w, 720px), 100%); margin: 0 auto");
-    expect(cols).toContain("grid-template-columns: repeat(var(--ws-n, 1), minmax(0, 1fr))");
-    expect(rule(".ws-cols.one")).toContain("width: min(720px, 100%)");
+  it("keeps the side panel at the left edge, the cards filling the room to its right, and is never wider than the page", () => {
+    expect(rule(".ws-cols")).toContain("width: min(960px, 100%); margin: 0 auto");
+    expect(rule(".ws-cols.one > .ws-body")).toContain("grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr))");
+    const split = rule(".ws-split");
+    expect(split).toContain("width: 100%; margin: 0");
+    expect(split).toContain("flex-wrap: wrap");
+    const nav = rule(".ws-nav");
+    expect(nav).toContain("flex: 0 0 248px");
+    expect(nav).toContain("position: sticky");
+    expect(nav).not.toContain("order");
+    expect(rule(".ws-main")).toContain("flex: 999 1 520px");
     expect(rule(".ws-col")).toContain("min-width: 0; container: xfer / inline-size");
   });
 
@@ -225,27 +262,41 @@ describe("the page's look", () => {
   });
 });
 
-describe("the page's columns", () => {
-  it("fits one column per 460px or so, up to four, and one before the page is measured", () => {
-    expect(settingsColumnCount(0)).toBe(1);
-    expect(settingsColumnCount(Number.NaN)).toBe(1);
-    expect(settingsColumnCount(400)).toBe(1);
-    expect(settingsColumnCount(1000)).toBe(2);
-    expect(settingsColumnCount(1500)).toBe(3);
-    expect(settingsColumnCount(2000)).toBe(4);
-    expect(settingsColumnCount(4000)).toBe(4);
+describe("the side panel's groups", () => {
+  const cards = SETTINGS_GROUPS.flatMap((g) => g.cards);
+
+  it("puts every card in exactly one group, and the hidden Wrist Webhooks in none", () => {
+    expect(new Set(cards).size).toBe(cards.length);
+    const expected = [
+      ...WATCH_SETTINGS_CATALOG.sections.map((s) => s.id),
+      ...NOTIFICATION_STYLE_SECTIONS.map((s) => s.id).filter((id) => id !== "wristWebhooks"),
+      "pair", "cert",
+    ];
+    expect([...cards].sort()).toEqual([...expected].sort());
   });
 
-  it("caps the block at the columns' widest, and one column at the dialog's width", () => {
-    expect(settingsPageWidth(1)).toBe(720);
-    expect(settingsPageWidth(2)).toBe(2 * 620 + 20 + 32);
-    expect(settingsPageWidth(4)).toBe(4 * 620 + 3 * 20 + 32);
+  it("gives every group a name, a line and a unique id", () => {
+    expect(new Set(SETTINGS_GROUPS.map((g) => g.id)).size).toBe(SETTINGS_GROUPS.length);
+    for (const g of SETTINGS_GROUPS) {
+      expect(g.title).not.toBe("");
+      expect(g.blurb).toMatch(/\.$/);
+      expect(groupOfCard(g.cards[0]!)).toBe(g);
+    }
   });
 
-  it("deals each card to the shortest column so far, the leftmost on a tie, keeping their order", () => {
-    expect(dealColumns([10, 2, 3, 4], 2)).toEqual([[0], [1, 2, 3]]);
-    expect(dealColumns([5, 5, 5, 1], 3)).toEqual([[0, 3], [1], [2]]);
-    expect(dealColumns([1, 1], 4)).toEqual([[0], [1], [], []]);
-    expect(dealColumns([1, 2, 3], 1)).toEqual([[0, 1, 2]]);
+  it("falls back to the first group for an id it does not know", () => {
+    expect(settingsGroup("sounds").id).toBe("sounds");
+    expect(settingsGroup("nope")).toBe(SETTINGS_GROUPS[0]);
+    expect(settingsGroup(undefined)).toBe(SETTINGS_GROUPS[0]);
+  });
+
+  it("searches for every word, in any case, anywhere in the words given", () => {
+    expect(searchTerms("  Page   DOTS ")).toEqual(["page", "dots"]);
+    expect(searchTerms("   ")).toEqual([]);
+    expect(matchesSearch([], ["anything"])).toBe(true);
+    expect(matchesSearch(["dots"], ["Page dots", undefined])).toBe(true);
+    expect(matchesSearch(["page", "dots"], ["Page dots"])).toBe(true);
+    expect(matchesSearch(["page", "pinch"], ["Page dots"])).toBe(false);
+    expect(matchesSearch(["swip"], ["Swipe the bottom edge"])).toBe(true);
   });
 });

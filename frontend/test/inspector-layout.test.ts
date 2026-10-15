@@ -200,7 +200,7 @@ describe("the less used rows in a Look card", () => {
     const markup = flatten(layerEditor(host(cfg, { openSections: new Set(["content", "look"]) }), el, "rectangular"));
     expect(markup).not.toContain("more-line");
     expect(markup).toContain("Mono digits");
-    expect(markup).toContain(">Opacity<");
+    expect(markup).toContain(">Layer opacity<");
     expect(markup).toContain("Weight");
     expect(markup).toContain("Shrink to fit");
   });
@@ -209,7 +209,7 @@ describe("the less used rows in a Look card", () => {
     const { cfg, el } = withLayer("shape");
     const markup = flatten(layerEditor(host(cfg, { openSections: new Set(["content", "look"]) }), el, "rectangular"));
     expect(markup).toContain("Gradient");
-    expect(markup).toContain(">Opacity<");
+    expect(markup).toContain(">Layer opacity<");
   });
 
   it("offers one Rectangle with a corner radius, for both rectangle kinds", () => {
@@ -249,10 +249,15 @@ describe("the shape's cards", () => {
 });
 
 describe("the footer row", () => {
-  it("says the revision and who saved it, or that it is not saved yet", () => {
+  // When and by whom, in words; the revision number is only the tooltip.
+  it("says when and who saved it, or that it is not saved yet", () => {
+    const now = Date.parse("2026-10-13T12:00:00Z");
     expect(footerStatus({ revision: null, dirty: true, updatedBy: "" })).toEqual({ tone: "none", text: "Not saved yet" });
-    expect(footerStatus({ revision: 12, dirty: false, updatedBy: "ha-panel:Jesse" })).toEqual({ tone: "ok", text: "Revision 12 · saved by Jesse" });
-    expect(footerStatus({ revision: 12, dirty: true, updatedBy: "ha-panel:Jesse" }).tone).toBe("warn");
+    expect(footerStatus({ revision: 12, dirty: false, updatedBy: "ha-panel:Jesse", updatedAt: "2026-10-13T11:57:00Z", nowMs: now }))
+      .toEqual({ tone: "ok", text: "Saved 3 min ago by Jesse", title: "Version 12" });
+    expect(footerStatus({ revision: 12, dirty: false, updatedBy: "ha-panel:Jesse" }).text).toBe("Saved by Jesse");
+    expect(footerStatus({ revision: 12, dirty: true, updatedBy: "ha-panel:Jesse" }))
+      .toEqual({ tone: "warn", text: "Unsaved changes", title: "Version 12" });
     expect(footerStatus({ revision: 12, dirty: false, updatedBy: "", error: "offline" })).toEqual({ tone: "err", text: "Not saved: offline" });
   });
 });

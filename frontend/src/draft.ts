@@ -7,6 +7,7 @@
 import { type CustomComplicationConfig, type FamilyKind, type ValueKind, describeSite, encodeConfig, forEachValue, liftChartOwnMarks, normalizeOwnership, parseConfig, syncAttachedTaps } from "./model.js";
 import { deriveDataSources } from "./compiler.js";
 import { inlineToParts, syncInlineParts } from "./rich-text.js";
+import { syncPartIconPaths } from "./part-icons.js";
 
 const HISTORY_LIMIT = 100;
 
@@ -54,13 +55,16 @@ export function draftStatus(i: DraftStatusInput): DraftStatus {
  * in the same words wherever the save was pressed.
  *
  * It also refuses a document with a value that points at nothing: see
- * `blankReferenceRefusal`.
+ * `blankReferenceRefusal`. And one whose name was cleared: Home Assistant
+ * refuses an empty name, and saying so before the press beats the store's
+ * "document.name must not be empty" after it.
  *
  * See docs/complication_one_shape_per_document.md in the app repo.
  */
 export function saveRefusal(cfg: CustomComplicationConfig, nameFor?: LayerNamer): string | undefined {
   const shapes = cfg.supportedFamilies.length;
   if (shapes >= 2) return `This complication has ${shapes} shapes, and a complication is one shape now. Split it into one complication per shape to edit it.`;
+  if (cfg.name.trim() === "") return "Give it a name first.";
   return blankReferenceRefusal(cfg, nameFor);
 }
 
@@ -114,6 +118,11 @@ interface Step {
 }
 
 export class Draft {
+  /** The Material Design catalogue, by name, for the drawings an icon part
+   * carries (`syncPartIconPaths`). Set once by the panel, which owns the
+   * catalogue; unset, an edit leaves those drawings as they are. */
+  static mdiPath?: (name: string) => string | undefined;
+
   /** Revision the draft was loaded from; null for a brand-new complication. */
   readonly baseRevision: number | null;
   /**
@@ -187,7 +196,17 @@ export class Draft {
     // this edit changed. A line this edit added arrives with no parts.
     inlineToParts(next);
     syncInlineParts(next);
+    // An icon part carries the drawing of every Material Design icon its
+    // template names, and the template may be what this edit typed.
+    if (Draft.mdiPath) syncPartIconPaths(next, Draft.mdiPath);
     this.config = next;
+  }
+
+  /** Fill in icon part drawings the catalogue could not give at the last edit,
+   * because it was still loading. In place and with no undo step: it is the
+   * same edit, finished. True when anything changed. */
+  refreshIconPaths(): boolean {
+    return Draft.mdiPath ? syncPartIconPaths(this.config, Draft.mdiPath) : false;
   }
 
   /** Try other values in the preview, as an undo step of its own. `coalesce`

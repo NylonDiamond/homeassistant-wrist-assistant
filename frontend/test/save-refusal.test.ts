@@ -28,6 +28,13 @@ describe("saveRefusal", () => {
     expect(saveRefusal(newControlConfig("Kettle", 0))).toBeUndefined();
   });
 
+  // Home Assistant refuses an empty name, so Save says so before the press.
+  it("asks for a name when the name was cleared", () => {
+    const cfg = newConfig("Kitchen", 0, "rectangular");
+    cfg.name = "   ";
+    expect(saveRefusal(cfg)).toBe("Give it a name first.");
+  });
+
   it("refuses a document with two shapes, and says how many", () => {
     const refusal = saveRefusal(legacyConfig("Kitchen", 0, ["rectangular", "circular"]));
     expect(refusal).toContain("2 shapes");

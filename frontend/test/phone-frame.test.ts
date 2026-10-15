@@ -35,7 +35,8 @@ import type { HassLike } from "../src/ha-api.js";
 import { SymbolBrowser } from "../src/symbols.js";
 import type { StatusPagesDocument } from "../src/watch-status-pages/model.js";
 import { type StatusPagesViewHost, renderStatusPageScreen } from "../src/watch-status-pages/view.js";
-import { type MenusViewHost, renderMenuScreen } from "../src/watch-menus/menu-view.js";
+import type { MenusViewHost } from "../src/watch-menus/menu-view.js";
+import { renderMenuScreen } from "../src/watch-menus/menu-stage.js";
 
 const flat = (v: unknown): string => {
   if (Array.isArray(v)) return v.map(flat).join("");

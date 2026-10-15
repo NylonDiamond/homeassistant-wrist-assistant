@@ -1244,6 +1244,13 @@ export interface TextPart {
    * icon, as on an icon layer. Text-only looks (typeface, width, slant, color
    * by value) mean nothing to it. */
   icon?: Value;
+  /** An icon part's Material Design drawings, by `mdi:` name: the SVG `d`
+   * string of each one the part can draw, in MDI's 24 unit box. The watch has
+   * no MDI catalogue, so a name a template renders draws only when its
+   * drawing is here. The editor keeps it in step (`syncPartIconPaths`): every
+   * name written out in the part's icon value, or in an icon change aimed at
+   * the part, that the catalogue knows. Absent means none. */
+  iconPaths?: Record<string, string>;
   /** Absent means the layer's resolved color. */
   colorHex?: string;
   /** Absent means the layer's resolved weight. */
@@ -4305,6 +4312,13 @@ export interface CustomComplicationConfig {
    * none, which is every document written before this key. It never changes
    * what the document draws: the control is an extra, not a mode. */
   control?: ControlSpec;
+  /** The entity of one watch's old Control Center entry this control-only
+   * document was moved from. The watch's old Toggle and Action tiles find
+   * their document by it and take its name, symbol and tint, while still
+   * switching that entity themselves. It names one watch's old tile and means
+   * nothing anywhere else, so share, gallery upload, import and every copy
+   * onto another record drop it. Absent on everything else. */
+  legacyControlEntityId?: string;
 }
 
 // ── parsing ───────────────────────────────────────────────────────────────
@@ -4628,6 +4642,10 @@ function parseTextParts(raw: unknown): TextPart[] {
       value: isObject(o.value) ? parseValue(o.value) : literal(""),
     };
     if (isObject(o.icon)) part.icon = parseValue(o.icon);
+    if (isObject(o.iconPaths)) {
+      const paths = Object.entries(o.iconPaths).filter((e): e is [string, string] => typeof e[1] === "string" && e[1] !== "");
+      if (paths.length > 0) part.iconPaths = Object.fromEntries(paths);
+    }
     if (typeof o.colorHex === "string") part.colorHex = o.colorHex;
     const weight = optStr(o.fontWeight);
     if (weight === "regular" || weight === "medium" || weight === "semibold" || weight === "bold") part.fontWeight = weight;
@@ -5409,6 +5427,7 @@ export function parseConfig(raw: unknown): CustomComplicationConfig {
   if (raw.httpShowResult === true) cfg.httpShowResult = true;
   if (raw.hidden === true) cfg.hidden = true;
   if (typeof raw.linkId === "string" && raw.linkId !== "") cfg.linkId = raw.linkId.toUpperCase();
+  if (typeof raw.legacyControlEntityId === "string" && raw.legacyControlEntityId !== "") cfg.legacyControlEntityId = raw.legacyControlEntityId;
   // A spec of one page is a document with no pages, so it lands as absent and
   // is never written back. `parsePagesSpec` folds that in.
   const pages = parsePagesSpec(raw.pages);
@@ -5688,6 +5707,109 @@ export function chartMarkerToIcon(cfg: CustomComplicationConfig, id: string): vo
     size: t.fontSize,
   };
   cfg.elements[index] = icon;
+}
+
+/** How many times the glyph size a picture marker's square box is. A logo
+ * needs more room than a glyph to read at all. */
+const CHART_PICTURE_MARKER_SCALE = 2;
+
+/**
+ * Turn a text or icon marker into a picture marker in place, keeping its id,
+ * so its tap, its group, its anchor and its place in Layers all stay. The new
+ * picture is an uploaded one with nothing in it yet, fitted inside a square box
+ * twice the glyph's size on every shape it is placed on. States keep only what a
+ * picture reads (opacity, rotation, visibility). Does nothing to any other layer.
+ *
+ * Asked for 2026-10-14: a brand logo that rides on the cheapest bar of a tariff
+ * chart. The watch has drawn an anchored picture since anchors arrived; only the
+ * panel had no way to make one.
+ */
+export function chartMarkerToImage(cfg: CustomComplicationConfig, id: string): void {
+  const index = cfg.elements.findIndex((e) => e.payload.id === id);
+  const old = cfg.elements[index];
+  if (!old || (old.kind !== "text" && old.kind !== "icon") || old.payload.chartAnchor === undefined) return;
+  const p = old.payload;
+  const glyph = old.kind === "text" ? old.payload.fontSize : old.payload.size;
+  const side = Math.max(12, glyph * CHART_PICTURE_MARKER_SCALE);
+  const allowed = new Set(RULE_TARGET_PROPERTIES.image);
+  const changes = (list: StyleChange[]): StyleChange[] => list.filter((ch) => allowed.has(STYLE_PROPERTY[ch.kind]));
+  const rules = p.rules
+    .filter((r) => r.partId === undefined)
+    .map((r): Rule => ({
+      ...r,
+      cases: r.cases.map((c) => ({ ...c, then: changes(c.then) })),
+      ...(r.otherwise !== undefined ? { otherwise: changes(r.otherwise) } : {}),
+    }));
+  const squareIn = (frame: NormalizedFrame, box: { width: number; height: number }): NormalizedFrame => ({
+    ...frame,
+    width: Math.min(1, side / box.width),
+    height: Math.min(1, side / box.height),
+  });
+  const image = newElement("image") as Extract<Element, { kind: "image" }>;
+  image.payload = {
+    ...image.payload,
+    id: p.id,
+    rules,
+    frame: squareIn(p.frame, DESIGN_BOX.rectangular),
+    isHidden: p.isHidden,
+    ...(p.groupId !== undefined ? { groupId: p.groupId } : {}),
+    ...(p.name !== undefined ? { name: p.name } : {}),
+    ...(p.opacity !== undefined ? { opacity: p.opacity } : {}),
+    ...(p.page !== undefined ? { page: p.page } : {}),
+    chartAnchor: p.chartAnchor,
+    entity: { entityId: "", displayName: "", domain: "" },
+    source: "inline",
+    contentMode: "fit",
+    cornerRadius: 0,
+  };
+  cfg.elements[index] = image;
+  for (const family of DRAWABLE_FAMILIES) {
+    const placed = cfg.perFamily[family]?.placements[id];
+    if (placed) placed.frame = squareIn(placed.frame, DESIGN_BOX[family]);
+  }
+}
+
+/**
+ * Turn a picture marker back into an icon marker in place, keeping its id, the
+ * way `chartMarkerToImage` came. The icon is the one a new marker over that
+ * reading starts as, at the default marker size. Does nothing to any other layer.
+ */
+export function chartImageMarkerToIcon(cfg: CustomComplicationConfig, id: string): void {
+  const index = cfg.elements.findIndex((e) => e.payload.id === id);
+  const old = cfg.elements[index];
+  if (!old || old.kind !== "image" || old.payload.chartAnchor === undefined) return;
+  const p = old.payload;
+  const anchor = p.chartAnchor!;
+  const chart = cfg.elements.find((e) => e.payload.id === anchor.layer);
+  const icon = newElement("icon") as Extract<Element, { kind: "icon" }>;
+  icon.payload = {
+    ...icon.payload,
+    id: p.id,
+    // Every property a picture reads, an icon reads too.
+    rules: p.rules.filter((r) => r.partId === undefined),
+    frame: { ...p.frame, ...chartMarkerFrame(CHART_MARKER_SIZE), x: p.frame.x, y: p.frame.y },
+    isHidden: p.isHidden,
+    ...(p.groupId !== undefined ? { groupId: p.groupId } : {}),
+    ...(p.name !== undefined ? { name: p.name } : {}),
+    ...(p.opacity !== undefined ? { opacity: p.opacity } : {}),
+    ...(p.page !== undefined ? { page: p.page } : {}),
+    chartAnchor: anchor,
+    symbol: literal(CHART_MARKER_SYMBOLS[anchor.at]),
+    size: CHART_MARKER_SIZE,
+    ...(chart?.kind === "chart" ? { colorSlot: { baseColorHex: chartMarkerColor(chart, anchor.at) } } : {}),
+  };
+  cfg.elements[index] = icon;
+  const glyphBox = chartMarkerFrame(CHART_MARKER_SIZE);
+  for (const family of DRAWABLE_FAMILIES) {
+    const placed = cfg.perFamily[family]?.placements[id];
+    if (!placed) continue;
+    const box = DESIGN_BOX[family];
+    placed.frame = {
+      ...placed.frame,
+      width: Math.min(1, (glyphBox.width * DESIGN_BOX.rectangular.width) / box.width),
+      height: Math.min(1, (glyphBox.height * DESIGN_BOX.rectangular.height) / box.height),
+    };
+  }
 }
 
 /** A box just big enough for one glyph of `fontSize` points, in the
@@ -6638,6 +6760,10 @@ export function encodeRules(rules: Rule[]): J[] {
 function encodeTextPart(p: TextPart): J {
   const o: J = { id: p.id, value: encodeValue(p.value) };
   if (p.icon !== undefined) o.icon = encodeValue(p.icon);
+  // By name, so a part read and written again keeps its bytes whatever order
+  // the names were found in.
+  const paths = Object.keys(p.iconPaths ?? {}).sort();
+  if (paths.length > 0) o.iconPaths = Object.fromEntries(paths.map((n) => [n, p.iconPaths![n]!]));
   if (p.colorHex !== undefined) o.colorHex = p.colorHex;
   if (p.fontWeight !== undefined) o.fontWeight = p.fontWeight;
   if (p.fontSize !== undefined) o.fontSize = encNum(p.fontSize);
@@ -7291,6 +7417,8 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
   const pages = encodePagesSpec(cfg.pages === undefined ? undefined : { ...cfg.pages, mode: pageModeFor(cfg) });
   if (pages !== undefined) o.pages = pages;
   if (cfg.control !== undefined) o.control = encodeControl(cfg.control);
+  // Last, after `control`, where the app writes it too.
+  if (cfg.legacyControlEntityId !== undefined && cfg.legacyControlEntityId !== "") o.legacyControlEntityId = cfg.legacyControlEntityId;
   return o;
 }
 
@@ -7832,8 +7960,9 @@ export function stepGroup(cfg: CustomComplicationConfig, groupId: string, dir: -
 const K = {
   // `linkId` joins the copies of one design across devices: one record per
   // device, the same uuid on each. The panel reads and writes it; the apps
-  // decode it and never write it back.
-  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "httpShowResult", "groups", "notes", "hidden", "linkId", "control", "pages"],
+  // decode it and never write it back. `legacyControlEntityId` ties a
+  // control-only document to one watch's old Control Center tile.
+  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "httpShowResult", "groups", "notes", "hidden", "linkId", "control", "legacyControlEntityId", "pages"],
   group: ["id", "name", "locked", "parentId"],
   // The document's pages. Its own object at the top level, and the only place
   // these three keys appear.
@@ -7876,7 +8005,7 @@ const K = {
     "fontDesign", "fontWidth", "italic", "minimumScale", "alignment",
     "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex", "parts",
     "arc", "chartAnchor"],
-  textPart: ["id", "value", "icon", "colorHex", "fontWeight", "fontSize", "fontDesign", "fontWidth", "italic",
+  textPart: ["id", "value", "icon", "iconPaths", "colorHex", "fontWeight", "fontSize", "fontDesign", "fontWidth", "italic",
     "coloring", "bands", "bandAboveColorHex"],
   icon: ["symbol", "path", "viewBox", "size", "level", "chartAnchor"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex",

@@ -90,7 +90,7 @@ export function asWatchVoiceDocument(value: unknown): VoiceDocument | undefined 
 }
 
 /**
- * The document "Start with the defaults" saves: every key the app always
+ * The document a new watch's voice screen opens on: every key the app always
  * writes at its default, and `schemaVersion`, sorted as the phone's encoder
  * writes them. The same bytes as `test/fixtures-voice/01-defaults.json`. A
  * fresh copy each call.
@@ -564,14 +564,10 @@ export function checkWatchVoice(document: unknown): string[] {
 
 // ── no record ────────────────────────────────────────────────────────────
 
+/** Over the wait while an iPhone may still move the voice settings here. A
+ * watch without one opens ready on the defaults instead
+ * (`watch-menus/new-watch.ts`). */
 export const WATCH_VOICE_NO_RECORD_TITLE = "No voice settings from this watch yet.";
-
-/** The no-record line when no iPhone will send voice settings. */
-export const WATCH_VOICE_NO_RECORD_TEXT = "Start with the defaults to begin.";
-
-export const WATCH_VOICE_START_BUTTON = "Start with the defaults";
-
-export const WATCH_VOICE_PAIR_FIRST_TEXT = "Pair this watch first.";
 
 export const WATCH_VOICE_UPDATE_TEXT = "Update the integration to edit voice settings here.";
 

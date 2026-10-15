@@ -101,6 +101,10 @@ _OPTIONAL_DOCUMENT_KEYS: dict[str, type | tuple[type, ...]] = {
     # The document's Control Center control. The only key that lets
     # supportedFamilies be empty: a control is drawn by the OS, not by a shape.
     "control": dict,
+    # The entity of the watch's old Control Center entry a control-only
+    # document was moved from. The watch's old tiles find their document by
+    # it. The Apple decoder reads it as a string, so nothing else may land.
+    "legacyControlEntityId": str,
 }
 _CANVAS_FAMILY_KINDS = frozenset({"rectangular", "circular", "corner"})
 # The four iPhone Home Screen tile sizes (systemSmall, systemMedium,
@@ -1442,6 +1446,13 @@ class ComplicationStore:
     @property
     def token(self) -> int:
         return self._token
+
+    @property
+    def load_failed(self) -> bool:
+        """Whether the storage file could not be read at startup. The store
+        then looks empty and saves nothing, so a writer that decides from
+        what is stored (the Control Center move) must not act on it."""
+        return self._load_failed
 
     def owners(self) -> list[str]:
         return sorted(self._records)

@@ -447,7 +447,7 @@ describe("galleryBlockers", () => {
     expect(GALLERY_MAX_SCHEMA).toBeGreaterThanOrEqual(9);
     const domains = domainsOf(cfg);
     const out = galleryBlockers(cfg, shareSlots(cfg, domains), META, domains);
-    expect(out.some((s) => s.includes("the gallery takes up to"))).toBe(false);
+    expect(out.some((s) => s.includes("the gallery does not take yet"))).toBe(false);
   });
 
   it("refuses area, label and floor filters", () => {

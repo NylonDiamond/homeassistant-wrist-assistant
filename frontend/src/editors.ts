@@ -269,6 +269,8 @@ import {
   TODO_STATUSES,
   chartPointDotSize,
   chartMarkerToIcon,
+  chartMarkerToImage,
+  chartImageMarkerToIcon,
   addChartLine,
   chartAnchorIsColumn,
   setChartNow,
@@ -349,6 +351,23 @@ import {
 } from "./states.js";
 import { seedEntityOf, seedStates, seedStatesRows } from "./states-seeds.js";
 import { seedControlFromEntity } from "./presets.js";
+import {
+  LIGHTS_ON_TEMPLATE,
+  TEMPLATE_RECIPES,
+  applyRecipe,
+  insertEntity,
+  namedEntity,
+  pendingRecipes,
+  recipeChosen,
+  recipeEntityWords,
+  recipeNeedsEntity,
+  recipesFor,
+  templateCursors,
+  templateHint,
+  type Inserted,
+  type TemplateRecipe,
+  type TemplateUse,
+} from "./template-help.js";
 import {
   type RulePresetKind,
   RULE_PRESETS,
@@ -475,6 +494,9 @@ export interface EditorHost {
   endGesture(): void;
   /** Resolved text for a value, for the "current value" line. */
   resolve(value: Value): string | undefined;
+  /** Home Assistant's error for a value whose template does not render, or
+   * undefined. Absent in a test host, which reads as no error. */
+  templateError?(value: Value): string | undefined;
   /** The whole context behind `resolve`, for the one card that settles
    * something bigger than a string: the Control Center tile goes through
    * `resolveControl`, so the mock cannot drift from what the device draws.
@@ -545,6 +567,11 @@ export interface EditorHost {
    * in any complication opened in this tab. */
   copiedPosition?: CopiedPosition;
   copyPosition(position: CopiedPosition): void;
+  /** The card whose ··· menu is open, by section id. One at a time, held on
+   * the panel so a press outside it shuts it. */
+  secMenu?: string;
+  /** Open or shut a card's ··· menu. Without it a card draws no menu. */
+  toggleSecMenu?(id: string, open: boolean): void;
   /**
    * The list whose row is being designed right now, or undefined for the
    * ordinary face.
@@ -851,15 +878,38 @@ interface NumberInputOptions {
   /** A small glyph inside the box before the number, such as the link that
    * says a part's size still follows the layer. */
   lead?: TemplateResult;
-  /** On commit (Enter or leaving the box), a number outside `min...max` is
-   * clamped into it, written, and shown in the box. While typing, `set`
-   * gets every number as before. */
-  clampOnCommit?: boolean;
+  /** Every typed number reaches `set`, in range or not, and nothing is
+   * clamped on commit. For a setting that checks typed text itself and says
+   * what is wrong with it, as the watch pages' typing fields do. */
+  rawTyping?: boolean;
+}
+
+/**
+ * What one keystroke in a number box writes: a number, `undefined` for an
+ * optional box typed empty, or `null` to write nothing yet.
+ *
+ * A number outside `min...max` is held back while typing. Typing 12 into a box
+ * whose least is 4 passes through 1 on the way, and writing that 1 got it
+ * clamped to 4 and drawn back into the box under the caret, so the 12 could
+ * never be typed (issue #29). The number is clamped once the box is committed
+ * instead, by `commitClamped`. With `rawTyping` every number goes through.
+ */
+export function typedNumber(text: string, opts: Pick<NumberInputOptions, "min" | "max" | "optional" | "rawTyping">): number | undefined | null {
+  if (text.trim() === "") return opts.optional === true ? undefined : null;
+  const n = Number(text);
+  if (!Number.isFinite(n)) return null;
+  if (opts.rawTyping === true) return n;
+  if (opts.min !== undefined && n < opts.min) return null;
+  if (opts.max !== undefined && n > opts.max) return null;
+  return n;
 }
 
 /** The box's committed text clamped into `min...max`, written through `set`
  * and put back in the box; nothing for an empty box, a non-number, or a
- * number already in range (the input event wrote that one). */
+ * number already in range (the input event wrote that one). Every bounded
+ * box runs this on commit (Enter or leaving the box), because `typedNumber`
+ * held the out of range number back while it was being typed. A `rawTyping`
+ * box does not. */
 export function commitClamped(e: Pick<Event, "target">, set: (v: number | undefined) => void, opts: Pick<NumberInputOptions, "min" | "max">): void {
   const box = e.target as HTMLInputElement;
   if (box.value.trim() === "") return;
@@ -878,14 +928,10 @@ function numberInput(value: number | undefined, set: (v: number | undefined) => 
       aria-label=${opts.ariaLabel ?? nothing} placeholder=${opts.placeholder ?? nothing}
       data-scrub @pointerdown=${boxScrubber(value, set, opts)}
       @input=${onInput((v) => {
-        if (v.trim() === "") {
-          if (opts.optional) set(undefined);
-          return;
-        }
-        const n = Number(v);
-        if (!Number.isNaN(n)) set(n);
+        const n = typedNumber(v, opts);
+        if (n !== null) set(n);
       })}
-      @change=${opts.clampOnCommit === true ? (e: Event) => commitClamped(e, set, opts) : nothing} />`;
+      @change=${opts.rawTyping === true || (opts.min === undefined && opts.max === undefined) ? nothing : (e: Event) => commitClamped(e, set, opts)} />`;
   if (opts.unit === undefined && opts.lead === undefined) return input;
   return html`<span class=${opts.lead === undefined ? "num-box" : "num-box lead"} style=${`--wa-unit:${opts.unit?.length ?? 0}`}>${opts.lead === undefined
     ? nothing
@@ -1032,7 +1078,7 @@ export function sliderField(
       ${opts.range === false ? nothing : html`<input type="range" min=${opts.min} max=${opts.max} step=${opts.step} .value=${String(value)} aria-label=${label}
         style=${rangeFill(value, opts.min, opts.max)}
         @input=${onInput((v) => { const n = Number(v); if (!Number.isNaN(n)) set(n); })} />`}
-      ${numberInput(value, typed, { step: opts.step, min: opts.min, max: opts.max, ariaLabel: label, clampOnCommit: true, ...(opts.unit === undefined ? {} : { unit: opts.unit }) })}
+      ${numberInput(value, typed, { step: opts.step, min: opts.min, max: opts.max, ariaLabel: label, ...(opts.unit === undefined ? {} : { unit: opts.unit }) })}
     </div></div>`;
 }
 
@@ -1259,7 +1305,7 @@ function colorBox(label: string, value: string | undefined, set: (v: string | un
       <input type="text" class="mono hex" .value=${value ?? ""} placeholder=${placeholder} spellcheck="false" aria-label=${`${label}: hex`} ?disabled=${off}
         @input=${onInput((v) => { const t = v.trim(); if (/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(t)) set(t.startsWith("#") ? t.toUpperCase() : `#${t.toUpperCase()}`); })} />
       <span class="num-box alpha" style="--wa-unit:1">
-        <input type="number" min="0" max="100" step="1" .value=${String(alpha)} title="Opacity" aria-label=${`${label}: opacity`} ?disabled=${off}
+        <input type="number" min="0" max="100" step="1" .value=${String(alpha)} title="This color's opacity. Layer opacity fades the whole layer, shadow and all." aria-label=${`${label}: opacity`} ?disabled=${off}
           data-scrub @pointerdown=${boxScrubber(alpha, (n) => set(composeColor(rgb, n)), { step: 1, min: 0, max: 100 })}
           @input=${onInput((v) => { const n = Number(v); if (v.trim() !== "" && n >= 0 && n <= 100) set(composeColor(rgb, Math.round(n))); })} />
         <span class="unit" aria-hidden="true">%</span>
@@ -1861,44 +1907,155 @@ export function symbolCount(shown: number, matches: number, searching: boolean, 
   return matches === 1 ? "1 symbol matches." : `${matches} symbols match.`;
 }
 
+/** One glyph in the recent strip. The name is the tooltip and the accessible
+ * name, not a caption: SF names run long and wrapped mid-word under every
+ * tile. It shows as text only when there is no glyph to draw (no icon pack). */
 function symbolTile(host: SymbolFieldHost, name: string, selected: boolean, pick: (n: string) => void): TemplateResult {
   // The color passed here is overridden by CSS `currentColor`, which wins over
   // the presentation attribute the provider writes, so tiles follow the theme.
   const glyph = host.icons.render(name, 22, "#FFFFFF");
-  return html`<button type="button" class="sym ${selected ? "on" : ""}" title=${name} @click=${() => pick(name)}>
-    <span class="sym-glyph">${glyph ?? html`<span class="sym-none">?</span>`}</span>
-    <span class="sym-name">${name}</span>
+  return html`<button type="button" class="sym ${selected ? "on" : ""}" title=${name} aria-label=${name}
+    aria-pressed=${selected ? "true" : "false"} @click=${() => pick(name)}>
+    ${glyph === undefined
+      ? html`<span class="sym-name">${name}</span>`
+      : html`<span class="sym-glyph">${glyph}</span>`}
   </button>`;
 }
 
-/**
- * A name field plus a searchable grid of glyphs. Stores the canonical Apple
- * name, never the Home Assistant asset name.
- *
- * With `setPath` given, the field also offers Material Design icons. Those are
- * stored as the literal name `mdi:flash` in the symbol, and the glyph's own SVG
- * path alongside it, because the watch has no MDI catalogue to look a name up
- * in. The icon layer keeps it on the layer and a rule's `setIcon` on the
- * change; the inline symbol has nowhere to keep one, so it stays SF Symbols.
- *
- * `defaultOpen` is whether the grid shows before anyone has touched this
- * field. A layer's symbol is most of what the layer is, so its grid starts
- * open; a symbol that is one row of a long properties sheet passes false.
- */
+/** One row of the dropdown list: the glyph, then its name, the way Home
+ * Assistant's own icon picker lists them. A row keeps the `sym` class of the
+ * old grid tile, which is what a host listening for a pick looks for. */
+function symbolLine(host: SymbolFieldHost, name: string, selected: boolean, pick: (n: string) => void, text = name): TemplateResult {
+  const glyph = host.icons.render(name, 20, "#FFFFFF");
+  return html`<button type="button" role="option" class="sym sym-line ${selected ? "on" : ""}" title=${name}
+    aria-selected=${selected ? "true" : "false"} @click=${() => pick(name)}>
+    <span class="sym-glyph">${glyph ?? nothing}</span>
+    <span class="sym-line-name mono">${text}</span>
+  </button>`;
+}
+
+/** The search box with its magnifier, shared by both icon sets. Enter takes
+ * what is typed, like the "Add custom item" of Home Assistant's picker. */
+function symbolSearch(browser: EditorHost["symbols"], key: string, query: string, placeholder: string, enter: (typed: string) => void): TemplateResult {
+  return html`<label class="sym-search">${uiIcon("search")}
+    <input type="search" placeholder=${placeholder} aria-label=${placeholder} .value=${query} autocomplete="off" spellcheck="false"
+      @input=${onInput((v) => browser.setQuery(key, v))}
+      @keydown=${(e: KeyboardEvent) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        enter((e.target as HTMLInputElement).value);
+      }} />
+  </label>`;
+}
+
+/** The framed, scrolling list: the recent strip (one line, cut to what fits)
+ * over a row per icon. `custom` is the typed name offered as its own row when
+ * the search does not already list it. */
+function symbolWell(
+  host: SymbolFieldHost,
+  recent: readonly string[],
+  shown: readonly string[],
+  current: string,
+  pick: (n: string) => void,
+  custom: TemplateResult | typeof nothing,
+): TemplateResult {
+  return html`<div class="sym-well ${host.icons.available() ? "" : "named"}">
+    ${recent.length === 0 ? nothing : html`<div class="sym-sec">Recent</div>
+      <div class="sym-grid recent">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>
+      <div class="sym-sec">All</div>`}
+    ${custom}
+    <div class="sym-list" role="listbox">${shown.map((n) => symbolLine(host, n, n === current, pick))}</div>
+  </div>`;
+}
+
 /** What the symbol field reads from its host: the provider that draws and
  * lists the glyphs, and the browser that keeps what is open, typed and recent.
  * Narrower than `EditorHost`, so the page editor can hand in its own two. */
 export type SymbolFieldHost = Pick<EditorHost, "icons" | "symbols">;
 
+export interface SymbolFieldOptions {
+  /** Where a Material Design pick puts its SVG path. Given, the dropdown also
+   * offers Material Design icons; without it the field stays SF-only. */
+  setPath?: (d: string | undefined) => void;
+  /** The row's title. Empty drops the title, for a host that already names
+   * the field. */
+  label?: string;
+  /** Whether the list shows before anyone has touched this field. Only a
+   * field that a click just asked for (a state's icon) starts open. */
+  defaultOpen?: boolean;
+  /** False drops the x, for a host with its own way back to no icon (the
+   * tile's No icon and Default chips) or with no such thing as none. */
+  clearable?: boolean;
+  /** What the box says, and the glyph it shows, while the name is empty: a
+   * default the watch draws in its place, say. */
+  emptyText?: string;
+  emptyGlyph?: string;
+  /** A control at the end of the box's row, such as a value's Source button. */
+  after?: TemplateResult;
+  /** The color the icon is drawn in, so the box and the list show it the way
+   * the watch will. Anything `iconTint` cannot read leaves the ink color. */
+  tint?: unknown;
+}
+
+/**
+ * A color an icon field can paint its glyphs in: a plain hex, without its
+ * alpha, since a see-through glyph in a picker only reads as faded. A theme
+ * word, a gradient or nothing at all leaves the glyphs in the ink color.
+ */
+export function iconTint(color: unknown): string | undefined {
+  if (typeof color !== "string") return undefined;
+  const m = /^#?([0-9a-f]{6})(?:[0-9a-f]{2})?$/i.exec(color.trim());
+  return m === null ? undefined : `#${m[1]}`;
+}
+
+/** The one icon dropdown open right now, and how to shut it. One at a time,
+ * like any menu: opening a second shuts the first. */
+let openSymbolMenu: { key: string; close: () => void } | undefined;
+let symbolMenuWired = false;
+
+/**
+ * A click anywhere outside the open dropdown shuts it. A click, not a press:
+ * the list sits in the flow, so shutting it on the press would pull the rows
+ * under it upward before the release, and the click would land on whatever
+ * moved there. Matched by the field's key rather than its element, so a
+ * redraw that replaces the element does not count as outside.
+ */
+function wireSymbolMenu(): void {
+  if (symbolMenuWired || typeof window === "undefined") return;
+  symbolMenuWired = true;
+  window.addEventListener("click", (e) => {
+    const menu = openSymbolMenu;
+    if (menu === undefined) return;
+    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.dataset.symKey === menu.key);
+    if (inside) return;
+    openSymbolMenu = undefined;
+    menu.close();
+  }, true);
+}
+
+/**
+ * An icon field the way Home Assistant draws one: a box that shows the chosen
+ * icon and its name, and a list that drops open under it with a search box on
+ * top. Stores the canonical Apple name, never the Home Assistant asset name.
+ *
+ * With `setPath` given, the list also offers Material Design icons. Those are
+ * stored as the literal name `mdi:flash` in the symbol, and the glyph's own SVG
+ * path alongside it, because the watch has no MDI catalogue to look a name up
+ * in. The icon layer keeps it on the layer and a rule's `setIcon` on the
+ * change; the inline symbol has nowhere to keep one, so it stays SF Symbols.
+ *
+ * A name the lists do not hold is typed into the search box and taken with
+ * Enter or its own "Use" row, the way Home Assistant adds a custom item.
+ */
 export function symbolField(
   host: SymbolFieldHost,
   symbol: string,
   set: (v: string) => void,
   key: string,
-  setPath?: (d: string | undefined) => void,
-  label = "Symbol",
-  defaultOpen = true,
+  opts: SymbolFieldOptions = {},
 ): TemplateResult {
+  const { setPath, label = "Icon", defaultOpen = false, clearable = true } = opts;
+  const tint = iconTint(opts.tint);
   const browser = host.symbols;
   const open = browser.isOpen(key, defaultOpen);
   const query = browser.query(key);
@@ -1910,98 +2067,160 @@ export function symbolField(
   const offersMdi = setPath !== undefined;
   const showing: SymbolPack = offersMdi ? (browser.pack(key) ?? (isMdiName ? "mdi" : "sf")) : "sf";
   const missing = symbolIsMissing(current, known);
-  const pick = (name: string) => {
+  // Asked for only when it is needed: the first ask loads the whole catalogue.
+  const mdiNames = offersMdi && (isMdiName || (open && showing === "mdi")) ? host.icons.mdiNames?.() : undefined;
+
+  const close = () => {
+    if (openSymbolMenu?.key === key) openSymbolMenu = undefined;
+    browser.close(key, defaultOpen);
+  };
+  // `note` false for a typed name nobody can vouch for: it only joins the
+  // recents list once it is known to be real, so a half finished name never
+  // sticks around as a tile.
+  const pick = (name: string, note = true) => {
     set(name);
     // A picked SF Symbol drops any path the layer was carrying; a picked MDI
     // icon brings its own. Same undo key as the symbol itself, so the pair is
     // one step.
     setPath?.(name.startsWith(MDI_PREFIX) ? host.icons.mdiPath?.(name) : undefined);
-    browser.noteUsed(name);
+    if (note) browser.noteUsed(name);
+    close();
   };
-  // A name typed by hand: an `mdi:` one gets its path filled in when the
-  // catalogue knows it, and is left without one when it does not, which the
-  // resolver draws as a question mark rather than as nothing.
-  const typed = (v: string) => {
-    set(v);
-    if (!offersMdi) return;
-    const name = v.trim();
-    setPath?.(name.startsWith(MDI_PREFIX) ? host.icons.mdiPath?.(name) : undefined);
+  // A typed name in the catalogue showing: an `mdi:` one gets its prefix and,
+  // when the catalogue knows it, its path; one it does not know is kept
+  // without a path, which the resolver draws as a question mark rather than
+  // as nothing.
+  const typedName = (typed: string) => {
+    const name = typed.trim();
+    return showing === "mdi" && name !== "" && !name.startsWith(MDI_PREFIX) ? MDI_PREFIX + name : name;
   };
+  const isReal = (name: string) =>
+    name.startsWith(MDI_PREFIX) ? host.icons.mdiPath?.(name) !== undefined : known.size === 0 || known.has(name);
 
-  let browsePane: TemplateResult | typeof nothing = nothing;
-  if (open && showing === "mdi") {
-    const names = host.icons.mdiNames?.();
-    const matches = searchMdi(names ?? [], query);
-    const shown = matches.slice(0, SYMBOL_GRID_LIMIT);
-    const recent = browser.recent.filter((s) => s.startsWith(MDI_PREFIX));
-    browsePane = html`<div class="sym-browse">
-      ${packToggle(browser, key, showing)}
-      <div class="sym-controls">
-        <input type="search" placeholder="Search Material Design icons" .value=${query} @input=${onInput((v) => browser.setQuery(key, v))} />
-      </div>
-      ${recent.length === 0 ? nothing : html`<div class="hint keep">Recent</div>
-        <div class="sym-grid one-row">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>`}
-      <div class="sym-grid">${shown.map((n) => symbolTile(host, n, n === current, pick))}</div>
-      ${names === undefined
+  let menu: TemplateResult | typeof nothing = nothing;
+  if (open) {
+    let shown: string[];
+    let matches: string[];
+    let recent: string[];
+    let foot: TemplateResult | typeof nothing;
+    let notes: TemplateResult | typeof nothing = nothing;
+    let category: TemplateResult | typeof nothing = nothing;
+    if (showing === "mdi") {
+      matches = searchMdi(mdiNames ?? [], query);
+      shown = matches.slice(0, SYMBOL_GRID_LIMIT);
+      recent = browser.recent.filter((s) => s.startsWith(MDI_PREFIX));
+      foot = mdiNames === undefined
         ? html`<div class="hint keep">Loading the Material Design catalogue.</div>`
         : matches.length === 0
-          ? html`<div class="hint keep">Nothing matches that search. Any<code>mdi:</code> name can still be typed above.</div>`
+          ? html`<div class="hint keep">Nothing matches that search.</div>`
           // Always the searching wording: the MDI set is thousands of names
-          // deep and the grid never shows all of them, so "N available" would
+          // deep and the list never shows all of them, so "N available" would
           // claim more than is on screen even with the box empty.
-          : html`<div class="hint keep">${symbolCount(shown.length, matches.length, true, names.length)}</div>`}
-      ${names !== undefined && isMdiName && !names.includes(current)
-        ? html`<div class="hint warn">There is no <code>${current}</code> in this build's Material Design set, so the watch draws a question mark.</div>`
-        : nothing}
-    </div>`;
-  } else if (open) {
-    const category = browser.category(key);
-    const { pool, matches } = symbolMatches(category, query, pack, known);
-    const shown = pool.fromPack ? matches.slice(0, SYMBOL_GRID_LIMIT) : matches;
-    const sfRecent = browser.recent.filter((s) => !s.startsWith(MDI_PREFIX));
-    const recent = known.size === 0 ? sfRecent : sfRecent.filter((s) => known.has(s));
-    browsePane = html`<div class="sym-browse">
-      ${offersMdi ? packToggle(browser, key, showing) : nothing}
-      <div class="sym-controls">
-        <input type="search" placeholder="Search symbols" .value=${query} @input=${onInput((v) => browser.setQuery(key, v))} />
-        <select @change=${onInput((v) => browser.setCategory(key, v))}>
-          ${symbolChoicesOf(known).map(
-            (c) => html`<option value=${c.value} ?selected=${c.value === category}>${c.label}</option>`
-          )}
-        </select>
-      </div>
-      ${recent.length === 0 ? nothing : html`<div class="hint keep">Recent</div>
-        <div class="sym-grid one-row">${recent.map((n) => symbolTile(host, n, n === current, pick))}</div>`}
-      <div class="sym-grid">${shown.map((n) => symbolTile(host, n, n === current, pick))}</div>
-      ${matches.length === 0
-        ? html`<div class="hint keep">Nothing matches that search. Anyname can still be typed above.</div>`
-        : html`<div class="hint keep">
-            ${symbolCount(shown.length, matches.length, query.trim() !== "", reachableCount(pack))}
-          </div>`}
-      ${!host.icons.available()
+          : html`<div class="hint keep sym-count">${symbolCount(shown.length, matches.length, true, mdiNames.length)}</div>`;
+    } else {
+      const chosen = browser.category(key);
+      const found = symbolMatches(chosen, query, pack, known);
+      matches = found.matches;
+      shown = found.pool.fromPack ? matches.slice(0, SYMBOL_GRID_LIMIT) : matches;
+      const sfRecent = browser.recent.filter((s) => !s.startsWith(MDI_PREFIX));
+      recent = known.size === 0 ? sfRecent : sfRecent.filter((s) => known.has(s));
+      category = html`<select class="sym-set" aria-label="Icon group" @change=${onInput((v) => browser.setCategory(key, v))}>
+        ${symbolChoicesOf(known).map((c) => html`<option value=${c.value} ?selected=${c.value === chosen}>${c.label}</option>`)}
+      </select>`;
+      foot = matches.length === 0
+        ? html`<div class="hint keep">Nothing matches that search.</div>`
+        : html`<div class="hint keep sym-count">${symbolCount(shown.length, matches.length, query.trim() !== "", reachableCount(pack))}</div>`;
+      notes = !host.icons.available()
         ? html`<div class="hint warn">No icon pack is installed, so the list shows names without pictures. Install the Cupertino Icons frontend to see them.</div>`
         : listed !== undefined && listed.length === 0
-          ? html`<div class="hint keep">The icon pack does not list its symbols, so search covers the built-in set only. Any other name can still be typed above.</div>`
-          : nothing}
+          ? html`<div class="hint keep">The icon pack does not list its symbols, so search covers the built-in set only.</div>`
+          : nothing;
+    }
+    // While searching, recents are noise: the list under them is the answer.
+    if (query.trim() !== "") recent = [];
+    const typed = typedName(query);
+    const custom = typed === "" || matches.includes(typed)
+      ? nothing
+      : html`<div class="sym-list">${symbolLine(host, typed, typed === current, (n) => pick(n, isReal(n)), `Use "${typed}"`)}</div>`;
+    // Enter takes the name typed when the list has it, then the best match,
+    // then the typed name itself.
+    const enter = (text: string) => {
+      const name = typedName(text);
+      if (name === "") return;
+      const best = matches.includes(name) ? name : text === query ? matches[0] : undefined;
+      if (best !== undefined) pick(best);
+      else pick(name, isReal(name));
+    };
+    menu = html`<div class="sym-browse sym-menu"
+      @mousedown=${(e: MouseEvent) => {
+        // Keeps focus in the search box for a press on a row or a tab, so the
+        // keyboard stays where the typing is. The box and the group menu take
+        // their own focus.
+        if (!(e.target instanceof Element) || e.target.closest("input, select") === null) e.preventDefault();
+      }}>
+      ${offersMdi ? packToggle(browser, key, showing) : nothing}
+      <div class="sym-bar">
+        ${symbolSearch(browser, key, query, showing === "mdi" ? "Search Material Design icons, or type a name" : "Search icons, or type a name", enter)}
+        ${category}
+      </div>
+      ${symbolWell(host, recent, shown, current, pick, custom)}
+      ${foot}
+      ${notes}
     </div>`;
   }
 
-  return html`
-    <label class="field"><span>${label}</span>
-      <input type="text" class="mono" .value=${symbol} placeholder="lightbulb.fill"
-        @input=${onInput(typed)} @change=${onInput((v) => {
-          // A typed name only joins the recents list once it is known to be
-          // real, so a half finished name never sticks around as a tile.
-          const name = v.trim();
-          if (name.startsWith(MDI_PREFIX)) {
-            if (host.icons.mdiPath?.(name) !== undefined) browser.noteUsed(v);
-          } else if (known.size === 0 || known.has(name)) {
-            browser.noteUsed(v);
-          }
-        })} /></label>
-    ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The watch still draws it if the name is a real SF Symbol.</div>` : nothing}
-    <button type="button" class="link" @click=${() => browser.toggle(key, defaultOpen)}>${open ? "Hide symbols" : "Browse symbols"}</button>
-    ${browsePane}`;
+  const toggleMenu = (e: Event) => {
+    if (open) {
+      close();
+      return;
+    }
+    if (openSymbolMenu !== undefined && openSymbolMenu.key !== key) openSymbolMenu.close();
+    wireSymbolMenu();
+    openSymbolMenu = { key, close: () => browser.close(key, defaultOpen) };
+    browser.open(key, defaultOpen);
+    const anchor = (e.currentTarget as HTMLElement).closest(".sym-field");
+    requestAnimationFrame(() => anchor?.querySelector<HTMLInputElement>(".sym-search input")?.focus());
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || !open) return;
+    // Swallowed so it shuts the list and not the popover around it.
+    e.preventDefault();
+    e.stopPropagation();
+    const field = (e.currentTarget as HTMLElement);
+    close();
+    requestAnimationFrame(() => field.querySelector<HTMLButtonElement>("button.sym-pick")?.focus());
+  };
+
+  const empty = current === "";
+  const shownName = empty ? opts.emptyGlyph : current;
+  // A Custom SVG layer's marker is not a name anything can draw.
+  const glyph = shownName === undefined || shownName === CUSTOM_SVG_SYMBOL ? undefined : host.icons.render(shownName, 18, "#FFFFFF");
+  const boxText = empty ? (opts.emptyText ?? "Choose an icon") : current;
+
+  return html`<div class="field sym-field ${open ? "open" : ""} ${label === "" ? "no-label" : ""} ${tint === undefined ? "" : "tinted"}"
+    style=${tint === undefined ? "" : `--sym-tint:${tint}`} data-sym-key=${key} @keydown=${onKey}>
+    ${label === "" ? nothing : html`<span>${label}</span>`}
+    <div class="sym-line-row">
+      <div class="sym-box ${open ? "open" : ""}">
+        <button type="button" class="sym-pick" aria-haspopup="listbox" aria-expanded=${open ? "true" : "false"}
+          title=${empty ? boxText : `${current}\nClick to change`} @click=${toggleMenu}>
+          <span class="sym-now ${glyph === undefined ? "none" : ""}">${glyph ?? uiIcon("icon")}</span>
+          <span class="sym-now-name ${empty ? "empty" : "mono"}">${boxText}</span>
+          <span class="sym-caret" aria-hidden="true">${uiIcon("down")}</span>
+        </button>
+        ${clearable && !empty
+          ? html`<button type="button" class="sym-clear" title="Remove icon" aria-label="Remove icon"
+              @click=${() => { set(""); setPath?.(undefined); }}>${uiIcon("close")}</button>`
+          : nothing}
+      </div>
+      ${opts.after ?? nothing}
+    </div>
+    ${menu}
+  </div>
+  ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The watch still draws it if the name is a real SF Symbol.</div>` : nothing}
+  ${mdiNames !== undefined && isMdiName && !mdiNames.includes(current)
+    ? html`<div class="hint warn">There is no <code>${current}</code> in this build's Material Design set, so the watch draws a question mark.</div>`
+    : nothing}`;
 }
 
 /** What the last paste into a layer's Custom SVG box did, by layer id. Not
@@ -2024,6 +2243,23 @@ function setIconDrawing(p: IconElement, to: "symbol" | "svg"): void {
   p.symbol = literal("lightbulb");
   delete p.path;
   delete p.viewBox;
+}
+
+type MarkerDrawing = "symbol" | "svg" | "picture";
+
+const MARKER_DRAWING_TITLES: Partial<Record<MarkerDrawing, string>> = {
+  symbol: "An SF Symbol or a Material Design icon, by name",
+  svg: "An SVG path you paste yourself",
+  picture: "A picture you upload, such as a logo, that rides on the reading",
+};
+
+/** The choices in an icon's Drawing row. A chart marker also offers a picture,
+ * which swaps the layer for a picture layer on the same reading; any other icon
+ * offers only the two an icon can draw. */
+function markerDrawings(el: CElement): [MarkerDrawing, string][] {
+  const both: [MarkerDrawing, string][] = [["symbol", "Icon"], ["svg", "Custom SVG"]];
+  const anchor = el.payload.chartAnchor;
+  return anchor !== undefined && anchor.place !== "through" ? [...both, ["picture", "Picture"]] : both;
 }
 
 /**
@@ -2793,7 +3029,7 @@ const TIME_FIELDS: [TimeField, string][] = [
  * behind a bulb. With no lights at all it prints "💡 0 Lights On" rather than
  * failing. The bulb is an emoji because a text layer's template is one string
  * and has no symbol slot of its own. */
-export const STARTER_TEMPLATE = "💡 {{ states.light | selectattr('state', 'eq', 'on') | list | count }} Lights On";
+export const STARTER_TEMPLATE = LIGHTS_ON_TEMPLATE;
 
 /**
  * A template to start from that renders on any Home Assistant, so a new
@@ -2808,6 +3044,104 @@ export function starterTemplate(current: ValueKind, prefer?: EntityRef): string 
   const own = "entityId" in current && current.entityId !== "" ? current.entityId : undefined;
   const id = own ?? (prefer?.entityId || undefined);
   return id === undefined ? STARTER_TEMPLATE : `{{ states('${id}') }}`;
+}
+
+export interface TemplateBoxOptions {
+  label: string;
+  rows: number;
+  /** Names this box for the caret it remembers between renders. */
+  key: string;
+  use: TemplateUse;
+  /** One expression without braces works here (see `templateHint`). */
+  bare: boolean;
+  placeholder?: string;
+  /** Home Assistant's error for this template, which rings the box in red. */
+  error?: string;
+  /** `typing` is true for keystrokes, false for a recipe or an entity put in. */
+  write(next: string, typing: boolean): void;
+  onBlur?(): void;
+}
+
+/** Each template box's root, kept from its last blur, so an entity picked in
+ * the search below can put the caret back in the box. */
+const templateRoots = new Map<string, ShadowRoot | Document>();
+
+function focusTemplateSoon(key: string, cursor: number): void {
+  const root = templateRoots.get(key);
+  if (!root) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const box = root.querySelector<HTMLTextAreaElement>(`[data-tpl="${CSS.escape(key)}"] textarea`);
+    if (!box) return;
+    box.focus();
+    box.setSelectionRange(cursor, cursor);
+  }));
+}
+
+/**
+ * A template's box with its help: recipes above it, a search that puts an
+ * entity in at the caret below it, and the words on what the result can be.
+ * A complication's Template source and a page's Template tile both use it.
+ */
+export function templateBox(host: Pick<EditorHost, "hass">, text: string, opts: TemplateBoxOptions): TemplateResult {
+  const states = host.hass.states;
+  const entity = namedEntity(text, states);
+  const pendingId = pendingRecipes.get(opts.key);
+  const pending = TEMPLATE_RECIPES.find((r) => r.id === pendingId);
+  const land = (next: Inserted) => {
+    opts.write(next.text, false);
+    templateCursors.set(opts.key, next.cursor);
+    focusTemplateSoon(opts.key, next.cursor);
+  };
+  const remember = (e: Event) => {
+    const box = e.target as HTMLTextAreaElement;
+    templateCursors.set(opts.key, box.selectionStart);
+    const root = box.getRootNode();
+    if (root instanceof ShadowRoot || root instanceof Document) templateRoots.set(opts.key, root);
+  };
+  const choose = (r: TemplateRecipe, node: EventTarget | null) => {
+    if (!recipeNeedsEntity(r, entity)) {
+      pendingRecipes.delete(opts.key);
+      land(applyRecipe(text, templateCursors.get(opts.key), r, entity, STARTER_TEMPLATE, states));
+      return;
+    }
+    // Ask for the entity first; the pick below puts the recipe in.
+    pendingRecipes.set(opts.key, r.id);
+    requestRerender(node);
+    const root = node instanceof Node ? node.getRootNode() : null;
+    if (root instanceof ShadowRoot || root instanceof Document) {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        root.querySelector<HTMLInputElement>(`[data-tpl="${CSS.escape(opts.key)}"] .ent-box input`)?.focus();
+      }));
+    }
+  };
+  const picked = (ref: EntityRef, source?: EntityPickSource) => {
+    if (ref.entityId === "" || (source !== "pick" && source !== "typed")) return;
+    const cursor = templateCursors.get(opts.key);
+    pendingRecipes.delete(opts.key);
+    land(pending ? applyRecipe(text, cursor, pending, ref.entityId, STARTER_TEMPLATE, states) : insertEntity(text, cursor, ref.entityId));
+  };
+  return html`<div class="tpl-box" data-tpl=${opts.key}>
+    <div class="field tpl-recipes-row"><span>Recipes</span><div class="tpl-recipes" role="group" aria-label="Recipes">
+      ${recipesFor(opts.use).map((r) => {
+        const asks = recipeNeedsEntity(r, entity);
+        const on = recipeChosen(r, text, entity) || pending === r;
+        return html`<button type="button" class="small tpl-recipe ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+          title=${asks ? `${r.title}. Asks for ${recipeEntityWords(r)} first.` : entity && r.domains ? `${r.title}, for ${entity}` : r.title}
+          @click=${(e: Event) => choose(r, e.currentTarget)}>${r.label}${asks ? "…" : ""}</button>`;
+      })}
+    </div></div>
+    <label class="field"><span>${opts.label}</span>
+      <textarea rows=${opts.rows} class="mono ${opts.error ? "tpl-err" : ""}" spellcheck="false" .value=${live(text)} placeholder=${opts.placeholder ?? ""}
+        aria-invalid=${opts.error ? "true" : "false"} title=${opts.error ?? ""}
+        @input=${(e: Event) => { remember(e); opts.write((e.target as HTMLTextAreaElement).value, true); }}
+        @keyup=${remember} @click=${remember}
+        @blur=${(e: Event) => { remember(e); opts.onBlur?.(); }}></textarea></label>
+    ${entityField(host, pending ? "For entity" : "Insert entity", EMPTY_REF, picked, `${opts.key}-insert`,
+      pending && pending.domains && pending.domains.length > 0 ? { domain: pending.domains } : {})}
+    ${pending ? html`<div class="hint tpl-asks">Pick ${recipeEntityWords(pending)} for “${pending.label}”.
+      <button type="button" class="link" @click=${(e: Event) => { pendingRecipes.delete(opts.key); requestRerender(e.currentTarget); }}>Cancel</button></div>` : nothing}
+    ${templateHint(opts.use, opts.bare).map((line) => html`<div class="hint">${line}</div>`)}
+  </div>`;
 }
 
 function switchKind(current: ValueKind, kind: ValueKind["kind"]): ValueKind {
@@ -2848,6 +3182,12 @@ export interface ValueEditorOptions {
    * when the pick was an SF Symbol. Given only by the icon layer: it is the one
    * place with a `path` key to write. Without it the picker stays SF-only. */
   setSymbolPath?: (d: string | undefined) => void;
+  /** The color the icon draws in, for the picker to show it in. */
+  symbolTint?: unknown;
+  /** A template here may pick a Material Design icon by its whole name, which
+   * only a rich text icon part can draw. Changes the template's recipes and
+   * hint, nothing else. */
+  mdiTemplates?: boolean;
   /** Undo coalescing key prefix. */
   key: string;
   /** What this value is for, shown beside the chip. */
@@ -2876,7 +3216,21 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
 
   const id = popoverId(opts.key);
   const label = opts.label ?? "Value";
+  // A fixed icon is picked right in the row, from the same box every other
+  // icon field uses. The popover stays one click away, behind Source, for an
+  // icon read from an entity or a value.
+  if (opts.symbol && value.kind.kind === "literal" && !opts.compact) {
+    const k = value.kind;
+    const source = html`<button type="button" class="small sym-source" popovertarget=${id} aria-haspopup="dialog"
+      title="A fixed icon. Click to read the icon from an entity, a template or a shared value instead.">Source</button>`;
+    return html`${symbolField(host, k.value, (v) => set({ ...value, kind: { ...k, value: v } }), `${opts.key}-box`, {
+        setPath: opts.setSymbolPath, label: opts.noLabel ? "" : label, after: source, tint: opts.symbolTint,
+      })}
+      ${valuePopover(host, id, label, value, set, opts)}`;
+  }
   const resolved = opts.showResolved ? host.resolve(value) : undefined;
+  // An icon's chip shows the glyph it resolves to, beside its name.
+  const chipGlyph = opts.symbol && resolved !== undefined && resolved !== "" ? host.icons.render(resolved, 14, "#FFFFFF") : undefined;
   const summary = describeValue(value, describeContext(host));
   // A chip whose summary is an entity's name says so in the entity color. A
   // typed-in number or a template is the author's own words and stays ink.
@@ -2888,6 +3242,7 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
   return html`<div class="field value-chip-field ${opts.compact ? "compact" : ""}">
     ${opts.compact || opts.noLabel ? nothing : html`<span>${label}</span>`}
     <button type="button" class="value-chip ${opts.compact ? "chip-cell" : ""} ${slot ? "slot" : ""}" popovertarget=${id} aria-haspopup="dialog" title=${`${label}: ${summary}. Click to change it.`}>
+      ${chipGlyph === undefined ? nothing : html`<span class="chip-glyph" aria-hidden="true" style=${iconTint(opts.symbolTint) === undefined ? "" : `color:${iconTint(opts.symbolTint)}`}>${chipGlyph}</span>`}
       <span class="chip-text ${namesEntity ? "ent-tok" : ""}">${summary}</span>
       ${resolved === undefined ? nothing : html`<span class="chip-now mono" title="Value right now">${resolved}</span>`}
       <span class="chip-caret" aria-hidden="true">▾</span>
@@ -3118,7 +3473,7 @@ function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts
       <button type="button" class="link" title="Move this into a shared value that other layers can read too" @click=${() => makeShared(host, value, set)}>Make shared</button>
       so other layers can read this too.</div>` : nothing}
     ${opts.noFormat ? nothing : formatEditor(value.format, (f) => set(formatIsEmpty(f) ? { kind: value.kind } : { ...value, format: f }), formatFits(sourceKind(host, value)))}
-    ${opts.showResolved ? nowReadout(host, value, host.resolve(opts.resolveAs ?? value)) : nothing}`;
+    ${opts.showResolved ? nowReadout(host, value, host.resolve(opts.resolveAs ?? value), opts.resolveAs) : nothing}`;
 }
 
 /** The rows one source needs under the Source picker: a box to type in, an
@@ -3132,7 +3487,7 @@ function valueBody(host: EditorHost, value: Value, set: (v: Value) => void, opts
   switch (k.kind) {
     case "literal":
       body = opts.symbol
-        ? symbolField(host, k.value, (v) => setKind({ ...k, value: v }), key, opts.setSymbolPath)
+        ? symbolField(host, k.value, (v) => setKind({ ...k, value: v }), key, { setPath: opts.setSymbolPath, tint: opts.symbolTint })
         : textField("Text", k.value, (v) => setKind({ ...k, value: v }));
       break;
     case "entityState":
@@ -3156,8 +3511,11 @@ function valueBody(host: EditorHost, value: Value, set: (v: Value) => void, opts
     case "dataAge":
       break;
     case "jinja":
-      body = html`${textArea("Template", k.value, (v) => setKind({ ...k, value: v }), 4)}
-        <div class="hint">Rendered by Home Assistant. The result should be one value, not a whole document.</div>`;
+      body = templateBox(host, k.value, {
+        label: "Template", rows: 4, key: `${key}-tpl`, bare: true, error: host.templateError?.(opts.resolveAs ?? value),
+        use: opts.symbol ? (opts.mdiTemplates ? "symbolMdi" : "symbol") : "text",
+        write: (v) => setKind({ ...k, value: v }),
+      });
       break;
     case "named": {
       const named = host.config.values.find((n) => n.id === k.id);
@@ -3519,7 +3877,15 @@ export function formatFits(kind: ValueKind | undefined): FormatFits {
 
 /** The Now line: what the value prints right now, spaces and all, or in
  * plain words why it prints nothing yet. */
-function nowReadout(host: EditorHost, value: Value, resolved: string | undefined): TemplateResult {
+/** `readAs` is what the device reads in place of `value` (a shared value's
+ * reference to itself), which is the key a template error is filed under. */
+function nowReadout(host: EditorHost, value: Value, resolved: string | undefined, readAs?: Value): TemplateResult {
+  const error = host.templateError?.(readAs ?? value);
+  if (error !== undefined) {
+    return html`<div class="field readout now-field"><span>Now</span><span class="readout-v now-v template-error" role="alert">
+      <b>This template does not work.</b> ${error}<br>
+      Until it is fixed, the watch shows no values for the whole complication.</span></div>`;
+  }
   const body = resolved === undefined
     ? html`<span class="readout-v now-v none">${whyUnresolved(host, value)}</span>`
     : resolved.trim() === ""
@@ -4605,10 +4971,23 @@ function refreshBudgetHint(): TemplateResult {
 }
 
 /**
+ * The one amber line under the Auto refresh row: how many of the daily
+ * redraws this timer spends. The reasons sit behind its Why? button.
+ */
+export function timedRefreshBudgetLine(minutes: number): string {
+  const perDay = Math.round((24 * 60) / minutes);
+  return `Uses about ${perDay} of the ${REDRAW_BUDGET} daily redraws.`;
+}
+
+/**
  * The warning under the Auto refresh timer row once a timer is picked. Every timed
  * refresh spends one of the complication's daily redraws, so it says how many
  * this choice spends and points at the free alternative: a tap, for the reader
  * who wants the value at one moment rather than all day.
+ *
+ * One short amber line, with a Why? button that opens the full reasons in
+ * plain muted text. The paragraph was the whole warning once, and five lines
+ * of amber under one menu read as an error rather than as a cost.
  */
 function timedRefreshBudgetHint(minutes: number): TemplateResult {
   const perDay = Math.round((24 * 60) / minutes);
@@ -4618,11 +4997,15 @@ function timedRefreshBudgetHint(minutes: number): TemplateResult {
     : perDay >= 40
       ? `${every} is ${perDay} a day, which can use up the whole budget.`
       : `${every} is ${perDay} a day, which fits, but leaves fewer for a Refresh multiple complications tap.`;
-  return html`<div class="hint keep budget">watchOS gives each complication ${REDRAW_BUDGET}
+  return html`<details class="budget-why">
+    <summary><span class="hint keep budget">${timedRefreshBudgetLine(minutes)}</span><span
+      class="why-btn">Why?</span></summary>
+    <div class="hint keep">watchOS gives each complication ${REDRAW_BUDGET}
     redraws a day, and every timed refresh spends one. ${verdict} When the budget runs out, the
     complication keeps showing old data until watchOS allows more. If you want the value at one
     moment rather than all day, set Tap action to "Refresh this complication" instead: a tap is
-    free and always redraws.</div>`;
+    free and always redraws.</div>
+  </details>`;
 }
 
 /**
@@ -5382,6 +5765,23 @@ export function controlTapEdit(cfg: CustomComplicationConfig, mutate: (p: TapAct
  * state, the symbols and the tint (`seedControlFromEntity`), so a control is
  * usually finished by the third row and the rest is there to adjust.
  */
+/** The domains whose old Control Center tile is an Action: a press runs them
+ * rather than switching them. The app's `CuratedEntity.actionDomains`, kept
+ * here rather than read from the Control Center editor's table, which loads
+ * in that editor's own chunk. */
+const LEGACY_ACTION_DOMAINS = new Set(["scene", "script", "automation"]);
+
+/**
+ * The line on a control moved from a watch's old Control Center list: the
+ * old tiles take their look from this document and keep their own entity.
+ * Nothing on any other document.
+ */
+export function legacyControlLine(entityId: string | undefined): TemplateResult | typeof nothing {
+  if (entityId === undefined || entityId === "") return nothing;
+  const verb = LEGACY_ACTION_DOMAINS.has(entityId.split(".")[0] ?? "") ? "run" : "switch";
+  return html`<div class="hint keep legacy-control">Old Toggle and Action tiles on the watch use this name, symbol and color. They still ${verb} <code>${entityId}</code>.</div>`;
+}
+
 function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
   const set = (mutate: (c: ControlSpec) => void, k?: string) => host.update((cfg) => {
     if (cfg.control) mutate(cfg.control);
@@ -5408,6 +5808,7 @@ function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
   return html`
     ${controlPreview(host, spec)}
     <div class="hint keep">Shows the last synced value.</div>
+    ${legacyControlLine(host.config.legacyControlEntityId)}
     <div class="fgroup">
     ${segField("Kind", spec.kind, CONTROL_KINDS, (v) => set((c) => { c.kind = v; }), { def: "toggle" })}
     <div class="hint">A toggle shows on or off and flips it. A button runs the action and shows nothing.</div>
@@ -5443,15 +5844,14 @@ function controlSection(host: EditorHost, spec: ControlSpec): TemplateResult {
       : html`<div class="hint">What the toggle reads to know if it is on. One of <code>on</code>, <code>open</code>, <code>unlocked</code>, <code>home</code>, <code>playing</code>, <code>heat</code> or <code>cool</code> counts as on.</div>`}
     </div>`}
     <div class="fgroup">
-    ${symbolField(host, spec.symbol, (v) => set((c) => { c.symbol = v; }, "symbol"), "control-symbol",
-      undefined, "Symbol", false)}
+    ${symbolField(host, spec.symbol, (v) => set((c) => { c.symbol = v; }, "symbol"), "control-symbol", { tint: spec.tintColorHex })}
     ${effective === "button"
       ? html`<div class="hint">The icon on the tile.</div>`
       : html`
       ${symbolField(host, spec.symbolOff ?? "", (v) => set((c) => {
         if (v) c.symbolOff = v; else delete c.symbolOff;
-      }, "symboloff"), "control-symbol-off", undefined, "Symbol when off", false)}
-      <div class="hint">The icon on the tile. Symbol when off is drawn while a toggle reads off. Leave it blank to keep the one symbol on both faces.</div>`}
+      }, "symboloff"), "control-symbol-off", { label: "Icon when off" })}
+      <div class="hint">The icon on the tile. Icon when off is drawn while a toggle reads off. Leave it empty to keep the one icon on both faces.</div>`}
     </div>
     <div class="fgroup">
     ${segField("Color", spec.coloring, CHART_COLORINGS, (v) => set((c) => {
@@ -5953,6 +6353,17 @@ interface CardOptions {
    * click opens the card and runs it, so the common first step needs no
    * unfolding first. */
   action?: { label: string; title: string; run: () => void };
+  /** Rare actions behind a ··· button in the header, such as Position's
+   * Copy and Paste position. Shown only while the card is open. */
+  menu?: CardMenuItem[];
+}
+
+/** One row of a card's ··· menu. */
+export interface CardMenuItem {
+  label: string;
+  title: string;
+  disabled?: boolean;
+  run: () => void;
 }
 
 /** One group of rows behind a card's More line, and its name in that line.
@@ -6030,14 +6441,26 @@ export function card(host: EditorHost, id: string, title: string, body: unknown,
     host.toggleHelp(id);
   };
   const helpLabel = help ? `Hide the help in ${title}` : `Show help for ${title}`;
+  const items = open && host.toggleSecMenu !== undefined && opts.menu !== undefined && opts.menu.length > 0 ? opts.menu : undefined;
+  const menuOpen = items !== undefined && host.secMenu === id;
   const head = html`<span class="swatch">${uiIcon(opts.icon ?? "content")}</span>
       <span class="tt"><h4>${title}${resetButton(opts.reset === undefined ? undefined
         : { atDefault: false, title: opts.resetTitle ?? `Put ${title} back to its defaults`, reset: opts.reset })}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
       ${opts.action === undefined || open ? nothing : html`<button type="button" class="small sec-act" title=${opts.action.title}
         @click=${(e: Event) => { e.stopPropagation(); if (!open) host.toggleSection(id); opts.action?.run(); }}>${uiIcon("plus")}<span>${opts.action.label}</span></button>`}
+      ${items === undefined ? nothing : html`<span class="sec-menu" data-sec-menu=${id}>
+        <button type="button" class="sec-more ${menuOpen ? "on" : ""}" aria-haspopup="menu" aria-expanded=${menuOpen ? "true" : "false"}
+          title=${`More for ${title}`} aria-label=${`More for ${title}`}
+          @click=${(e: Event) => { e.stopPropagation(); host.toggleSecMenu?.(id, !menuOpen); }}
+          @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape" && menuOpen) { e.stopPropagation(); host.toggleSecMenu?.(id, false); } }}>···</button>
+        ${menuOpen ? html`<div class="pop-menu" role="menu" @click=${(e: Event) => e.stopPropagation()}>
+          ${items.map((it) => html`<button type="button" class="row" role="menuitem" title=${it.title} ?disabled=${it.disabled === true}
+            @click=${() => { host.toggleSecMenu?.(id, false); it.run(); }}>${it.label}</button>`)}
+        </div>` : nothing}
+      </span>`}
       <button type="button" class="sec-help ${help ? "on" : ""}" aria-pressed=${help ? "true" : "false"} title=${helpLabel} aria-label=${helpLabel}
         @click=${(e: Event) => { e.stopPropagation(); toggleHelp(); }}>?</button>`;
-  return html`<section class="sec ${host.litSection === id ? "lit" : ""}" data-sec=${id} data-open=${open ? "true" : "false"} data-help=${help ? "on" : "off"} style=${opts.color ? `--c:${opts.color}` : ""}>
+  return html`<section class="sec ${host.litSection === id ? "lit" : ""} ${menuOpen ? "menu-open" : ""}" data-sec=${id} data-open=${open ? "true" : "false"} data-help=${help ? "on" : "off"} style=${opts.color ? `--c:${opts.color}` : ""}>
     ${pinned
       ? html`<div class="sec-h pinned">${head}</div>`
       : html`<div class="sec-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"} @click=${toggle}
@@ -6377,7 +6800,8 @@ function frameLetterField(letter: string, name: string, value: number, set: (v: 
       @pointerdown=${scrubber(pct, setPct, { step: 0.5, min, max })}>${letter}</span>
     <input type="number" step="0.5" min=${min} max=${max} .value=${String(pct)} aria-label=${`${name} in percent`}
       data-scrub @pointerdown=${boxScrubber(pct, setPct, { step: 0.5, min, max })}
-      @input=${onInput((v) => { const n = Number(v); if (v.trim() !== "" && Number.isFinite(n)) setPct(n); })} />
+      @input=${onInput((v) => { const n = typedNumber(v, { min, max }); if (typeof n === "number") setPct(n); })}
+      @change=${(e: Event) => commitClamped(e, (n) => { if (n !== undefined) setPct(n); }, { min, max })} />
     <span class="unit" aria-hidden="true">%</span>
   </label>`;
 }
@@ -6548,7 +6972,7 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
     ${lineUpField(host, el, family, f, "across")}
     </div>`
     : nothing}
-    <div class="field xy-field"><span>Size</span>
+    <div class="field xy-field"><span title="The layer's area on the face. An icon or text is drawn inside it at its own size, set in Look.">Box</span>
       <div class="xy">
         ${frameLetterField("W", "Width", f.width, (v) => setFrame({ width: v }, "w"), 4, 200)}
         ${frameLetterField("H", "Height", f.height, (v) => setFrame({ height: v }, "h"), 4, 200)}
@@ -6557,8 +6981,9 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
     ${sliderField("Rotation", f.rotationDegrees, (v) => setFrame({ rotationDegrees: v }, "rot"),
       { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°`, unit: "°", range: false })}
     ${checkField("Hidden", eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })), false)}
-    <div class="hint">${anchor === undefined ? "X, Y, W and H are" : "W and H are"} a percent of the face, on the ${familyTitle(family)} shape only. Drag a letter left or right to change its number. Arrow keys nudge 1 pt, shift for 10.${anchor === undefined ? " Copy position and Paste position repeat a spot on another layer, on any shape." : ""}</div>`,
+    <div class="hint">${anchor === undefined ? "X, Y, W and H are" : "W and H are"} a percent of the face, on the ${familyTitle(family)} shape only. Box is the layer's area: an icon or text is drawn inside it at the size set in Look. Drag a letter left or right to change its number. Arrow keys nudge 1 pt, shift for 10.${anchor === undefined ? " Copy position and Paste position, in the ··· menu, repeat a spot on another layer, on any shape." : ""}</div>`,
     { color: SECTION_COLOR.position, icon: "place", summary: positionSummary(host.config, el, family),
+      ...(anchor === undefined ? { menu: positionMenu(host, el, family, f) } : {}),
       ...(placeChanged ? {
         resetTitle: `Put this layer back to the middle of the ${familyTitle(family)} face at half size, unrotated and shown`,
         reset: () => host.update((c) => setPlacement(c, family, id, { frame: { ...CENTERED_FRAME }, isHidden: false })),
@@ -6636,9 +7061,7 @@ function alreadyAligned(f: NormalizedFrame, move: AlignButton["move"]): boolean 
 function lineUpField(host: EditorHost, el: CElement, family: FamilyKind, f: NormalizedFrame, free: "both" | "across"): TemplateResult {
   const id = el.payload.id;
   const setWhole = (frame: NormalizedFrame, k: string) => host.update((c) => setPlacement(c, family, id, { frame }), `el-${id}-${k}-${family}`);
-  const copied = host.copiedPosition;
   const anchored = el.payload.chartAnchor !== undefined;
-  const copiedHere = copied !== undefined && copied.family === family && same(copied.frame, f);
   const where = listOwning(host.config, id) ? "row" : "complication";
   const groups = alignButtons(free, where);
   return html`<div class="align-field">
@@ -6652,19 +7075,32 @@ function lineUpField(host: EditorHost, el: CElement, family: FamilyKind, f: Norm
       })}`)}
     </div>
   </div>
-  ${anchored ? nothing : html`<div class="field list-field"><span>Copy</span>
-    <div class="chips">
-      <button class="small lined" title="Copy this layer's X, Y, W, H and rotation, to paste onto another layer"
-        @click=${() => host.copyPosition({ frame: { ...f }, family })}>${copiedHere ? "Copied" : "Copy position"}</button>
-      <button class="small lined" ?disabled=${copied === undefined || copiedHere}
-        title=${copied === undefined
-          ? "Copy a position from a layer first"
-          : copied.family === family || (family !== "rectangular" && copied.family !== "rectangular")
-            ? `Put this layer where the copied one sits on the ${familyTitle(copied.family)} face`
-            : `Put this layer where the copied one sits on the ${familyTitle(copied.family)} face, scaled for this shape`}
-        @click=${() => copied && setWhole(pastedFrame(copied, family, el.kind), "paste")}>Paste position</button>
-    </div>
+  ${anchored || host.toggleSecMenu !== undefined ? nothing : html`<div class="field list-field"><span>Copy</span>
+    <div class="chips">${positionMenu(host, el, family, f).map((it) => html`<button class="small lined" title=${it.title}
+      ?disabled=${it.disabled === true} @click=${() => it.run()}>${it.label}</button>`)}</div>
   </div>`}`;
+}
+
+/**
+ * Copy position and Paste position, which repeat a spot on another layer.
+ * They are rare, so the Position card keeps them in its ··· menu; a host
+ * with no menus (a test, the dev harness) draws them as a row instead.
+ */
+export function positionMenu(host: EditorHost, el: CElement, family: FamilyKind, f: NormalizedFrame): CardMenuItem[] {
+  const id = el.payload.id;
+  const copied = host.copiedPosition;
+  const copiedHere = copied !== undefined && copied.family === family && same(copied.frame, f);
+  return [
+    { label: copiedHere ? "Copied" : "Copy position", title: "Copy this layer's X, Y, W, H and rotation, to paste onto another layer",
+      run: () => host.copyPosition({ frame: { ...f }, family }) },
+    { label: "Paste position", disabled: copied === undefined || copiedHere,
+      title: copied === undefined
+        ? "Copy a position from a layer first"
+        : copied.family === family || (family !== "rectangular" && copied.family !== "rectangular")
+          ? `Put this layer where the copied one sits on the ${familyTitle(copied.family)} face`
+          : `Put this layer where the copied one sits on the ${familyTitle(copied.family)} face, scaled for this shape`,
+      run: () => { if (copied) host.update((c) => setPlacement(c, family, id, { frame: pastedFrame(copied, family, el.kind) }), `el-${id}-paste-${family}`); } },
+  ];
 }
 
 /**
@@ -7642,12 +8078,15 @@ function richPartsEditor(
       </div>
       ${targeted && count > 1 ? html`<div class="hint keep">A state changes this part. Change or delete that state first.</div>` : nothing}
       ${iconPart
-        // SF Symbols only: no `setSymbolPath`, so the picker never offers a
-        // Material Design icon, which a part has nowhere to carry the drawing of.
+        // A `setSymbolPath` that does nothing turns the picker's Material
+        // Design tab on. The drawing itself is not kept here: every edit puts
+        // the part's `iconPaths` in step with the names it writes out
+        // (`syncPartIconPaths`), a picked name and a template's alike.
         ? html`${valueEditor(host, part.icon!, (v) => updPart((x) => { x.icon = v; }, "icon"), {
-            noFormat: true, showResolved: true, symbol: true, label: "Icon", key: `${key}-part-${part.id}-icon`,
+            noFormat: true, showResolved: true, symbol: true, mdiTemplates: true, label: "Icon", key: `${key}-part-${part.id}-icon`,
+            setSymbolPath: () => {},
           })}
-          <div class="hint">An entity draws its own icon. A template can pick the symbol, and one that renders empty leaves the part out.</div>
+          <div class="hint">An entity draws its own icon. A template can pick the symbol, and one that renders empty leaves the part out. A template can also pick a Material Design icon when it writes the whole name out, like 'mdi:water'.</div>
           ${curved ? html`<div class="hint warn">Curved text leaves icons out. Only the words follow the curve.</div>` : nothing}`
         : html`${sourceEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { key: `${key}-part-${part.id}` })}
           ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}`}
@@ -7813,17 +8252,18 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     case "icon": {
       const drawn = isCustomSvgIcon(el.payload) ? "svg" : "symbol";
       content = html`
-        ${segField("Drawing", drawn, [["symbol", "Symbol"], ["svg", "Custom SVG"]],
-          (v) => upd((e) => { setIconDrawing((e as typeof el).payload, v); }, "icon-drawing"),
-          { titles: {
-              symbol: "An SF Symbol or a Material Design icon, by name",
-              svg: "An SVG path you paste yourself",
-            }, def: "symbol" })}
+        ${segField("Drawing", drawn, markerDrawings(el), (v) => {
+            // A chart marker can also be a picture, which is another layer kind,
+            // so that choice swaps the layer rather than setting a field.
+            if (v === "picture") host.update((c) => { chartMarkerToImage(c, el.payload.id); }, "icon-drawing");
+            else upd((e) => { setIconDrawing((e as typeof el).payload, v); }, "icon-drawing");
+          },
+          { titles: MARKER_DRAWING_TITLES, def: "symbol" })}
         ${drawn === "svg"
           ? customSvgFields(el.payload, (m, k) => upd((e) => m((e as typeof el).payload), k))
           : html`
             ${valueEditor(host, el.payload.symbol, (v) => upd((e) => { (e as typeof el).payload.symbol = v; }, "symbol"), {
-              noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol`,
+              noFormat: true, showResolved: true, symbol: true, label: "Icon", key: `${key}-symbol`, symbolTint: el.payload.colorSlot.baseColorHex,
               setSymbolPath: (d) => upd((e) => {
                 const p = (e as typeof el).payload;
                 if (d) p.path = d; else delete p.path;
@@ -8472,6 +8912,14 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       const picturePath = typeof livePicture === "string" ? livePicture : undefined;
       const externalPicture = picturePath !== undefined && !picturePath.startsWith("/");
       content = html`
+        ${img.chartAnchor !== undefined && img.chartAnchor.place !== "through"
+          ? segField("Drawing", "picture", markerDrawings(el), (v) => host.update((c) => {
+              if (v === "picture") return;
+              chartImageMarkerToIcon(c, img.id);
+              const icon = c.elements.find((e) => e.payload.id === img.id);
+              if (v === "svg" && icon?.kind === "icon") setIconDrawing(icon.payload, "svg");
+            }, "icon-drawing"), { titles: MARKER_DRAWING_TITLES, def: "symbol" })
+          : nothing}
         ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"], ["inline", "Custom image"]],
           (v) => host.update((c) => {
             const target = c.elements.find((e) => e.payload.id === img.id);
@@ -8934,7 +9382,7 @@ function layerLookFields(
   const smallGlow = el.kind === "text" && shadow !== undefined
     && shadow.dx === 0 && shadow.dy === 0 && shadow.radius > 0 && el.payload.fontSize < 10;
   return html`
-    ${percentSliderField("Opacity", p.opacity ?? 1, (v) => upd((e) => {
+    ${percentSliderField("Layer opacity", p.opacity ?? 1, (v) => upd((e) => {
       const n = clampLayerOpacity(v);
       if (n === 1) delete e.payload.opacity; else e.payload.opacity = n;
     }, "opacity"), { step: 0.05, def: 1 })}
@@ -9310,7 +9758,8 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
       const name = CHART_ANCHOR_POINTS.find(([k]) => k === at)?.[1] ?? "Reading";
       if (place === "through") return { el: m, lead: at === "now" ? "│" : "─", title: at === "zero" ? "Zero" : name, kind: "Line" };
       const glyph = m.kind === "text" ? (host.resolve(m.payload.value) ?? "●")
-        : m.kind === "icon" ? markerGlyph(host.resolve(m.payload.symbol)) : "◆";
+        : m.kind === "icon" ? markerGlyph(host.resolve(m.payload.symbol))
+        : m.kind === "image" ? uiIcon("image") : "◆";
       return { el: m, lead: glyph, title: name, kind: "Marker" };
     }),
     ...times.map((t): LayerRow => ({ el: t, lead: uiIcon("clock"), title: "Clock times", kind: "Times" })),
@@ -9489,7 +9938,7 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
           ? customSvgFields(el.payload, (m, k) => upd((e) => { if (e.kind === "icon") m(e.payload); }, k ?? "svg-path"))
           : valueEditor(host, el.payload.symbol,
           (v) => upd((e) => { if (e.kind === "icon") e.payload.symbol = v; }, "symbol"), {
-            noFormat: true, showResolved: true, symbol: true, label: "Symbol", key: `${key}-symbol`,
+            noFormat: true, showResolved: true, symbol: true, label: "Icon", key: `${key}-symbol`, symbolTint: el.payload.colorSlot.baseColorHex,
             setSymbolPath: (d) => upd((e) => {
               if (e.kind !== "icon") return;
               if (d) e.payload.path = d; else delete e.payload.path;
@@ -9499,7 +9948,11 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
         <div class="grid2">
           ${shapeSizeField(host, el, family, "Icon size", { step: 1, min: 4, def: base.size as number })}
           ${color}
-        </div>`;
+        </div>
+        ${anchor && anchor.place !== "through" ? html`<div class="chips">
+          <button class="small" title="Swap this marker for a picture you upload, such as a logo, keeping where it sits"
+            @click=${() => host.update((c) => { chartMarkerToImage(c, id); })}><span>Use a picture</span></button>
+        </div>` : nothing}`;
     case "shape":
       if (el.payload.kind !== "line") {
         return html`
@@ -9544,6 +9997,19 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
           { label: "States", noShare: true, key: `${key}-value` })}`;
     case "image": {
       const img = el.payload;
+      // A picture marker: which reading it rides on, the picture itself, and
+      // the way back to an icon. Its source is always an upload.
+      if (anchor && anchor.place !== "through") {
+        return html`
+          ${markerReadingFields(host, id, anchor, upd)}
+          ${img.source === "inline"
+            ? inlineImageFields(host, img, family, (m, k) => upd((e) => { if (e.kind === "image") m(e.payload); }, k ?? "img"))
+            : nothing}
+          <div class="chips">
+            <button class="small" title="Swap this picture marker for an icon, keeping where it sits"
+              @click=${() => host.update((c) => { chartImageMarkerToIcon(c, id); })}><span>Use an icon</span></button>
+          </div>`;
+      }
       return html`
         ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"], ["inline", "Custom image"]],
           (v) => upd((e) => { if (e.kind === "image") setImageSource(e.payload, v); }, "source"), { def: base.source as typeof img.source })}
@@ -9997,7 +10463,7 @@ function inlinePartsEditor(
           @click=${remove}>${uiIcon("delete")}</button>
       </div>
       ${iconPart
-        ? html`${symbolField(host, part.symbol ?? "", (v) => updPart((x) => { x.symbol = v.trim(); }, "symbol"), `inline-part-${part.id}-symbol`, undefined, "Icon")}
+        ? html`${symbolField(host, part.symbol ?? "", (v) => updPart((x) => { x.symbol = v.trim(); }, "symbol"), `inline-part-${part.id}-symbol`)}
           <div class="hint">${index === 0 ? "First in the line, so it draws ahead of the words with a gap, and stays while the line counts down." : "Drawn inside the line, where the part sits. Needs the watch app from 2.8.0."}</div>`
         : html`${valueEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { showResolved: true, label: literalPart ? "Text" : "Shows", key: `inline-part-${part.id}` })}
           ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}`}
@@ -10650,7 +11116,7 @@ const COLOR_KINDS: StyleChangeKind[] = ["setColor", "setBorderColor", "setBackgr
 /** The controls behind one style change: a color, a symbol, a value, a number
  * or a weight. Shared by the Advanced editor's change box and by a states
  * table cell, so the two can never offer different things. */
-function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange) => void, k?: string) => void, key: string, sfOnly = false): TemplateResult | typeof nothing {
+function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange) => void, k?: string) => void, key: string, forIconPart = false): TemplateResult | typeof nothing {
   const payload = styleChangePayload(ch.kind);
   let body: TemplateResult | typeof nothing = nothing;
   if (payload === "value") {
@@ -10665,13 +11131,17 @@ function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange)
     } else {
       body = valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), {
         noFormat: ch.kind === "setIcon", symbol: ch.kind === "setIcon", showResolved: true,
-        label: ch.kind === "setIcon" ? "Symbol" : "To", key: `${key}-value`,
+        label: ch.kind === "setIcon" ? "Icon" : "To", key: `${key}-value`,
         // A swapped-in Material Design icon carries its drawing on the change,
-        // as the icon layer's own does on the layer. An icon part draws SF
-        // Symbols only, so a change aimed at one is not offered the others.
-        setSymbolPath: ch.kind === "setIcon" && !sfOnly
-          ? (d) => upd((c) => { if (d) c.path = d; else delete c.path; }, "value")
-          : undefined,
+        // as the icon layer's own does on the layer. A change aimed at an icon
+        // part keeps none: the part carries the drawing of every name its
+        // changes write out (`syncPartIconPaths`), so its setter only turns
+        // the Material Design tab on.
+        setSymbolPath: ch.kind !== "setIcon"
+          ? undefined
+          : forIconPart
+            ? () => {}
+            : (d) => upd((c) => { if (d) c.path = d; else delete c.path; }, "value"),
       });
     }
   } else if (payload === "number") {
@@ -10679,7 +11149,7 @@ function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange)
     // layer's own Opacity row shows it.
     if (ch.kind === "setOpacity") {
       body = numberField("Opacity", fractionToPercent(ch.number ?? 0), (n) => upd((c) => { c.number = percentToFraction(n ?? 0); }, "number"),
-        { step: 5, min: 0, max: 100, unit: "%", clampOnCommit: true });
+        { step: 5, min: 0, max: 100, unit: "%" });
     } else {
       const opts = ch.kind === "setRotation" ? { step: 1, unit: "°" }
         : ch.kind === "setFontSize" || ch.kind === "setBorderWidth" ? { step: 0.5, min: 0, unit: "pt" }
@@ -11301,7 +11771,7 @@ function statesRow(host: EditorHost, o: StatesRowOptions): TemplateResult {
         ${set.length === 0 ? html`<span class="no-change">No change</span>` : nothing}
         ${set.map((p) => statesChip(host, p, o.changes, o.updChanges, `${o.key}-${p}`, {
           ignored: (p === "color" && o.colorIgnored) || (o.forPart !== false && !aimReads(o.target, o.forPart, p)),
-          sfOnly: o.forPart === "icon",
+          forIconPart: o.forPart === "icon",
         }))}
         ${spare.length === 0 ? nothing : changeMenu(o.key, spare, add)}
       </span></div>
@@ -11317,7 +11787,7 @@ function statesChip(
   changes: StyleChange[],
   updChanges: (m: (list: StyleChange[]) => void, k?: string) => void,
   key: string,
-  o: { ignored: boolean; sfOnly?: boolean },
+  o: { ignored: boolean; forIconPart?: boolean },
 ): TemplateResult | typeof nothing {
   const ch = cellChange(changes, property);
   if (!ch) return nothing;
@@ -11341,7 +11811,7 @@ function changeChip(
   id: string,
   upd: (m: (c: StyleChange) => void, k?: string) => void,
   remove: () => void,
-  o: { ignored: boolean; sfOnly?: boolean },
+  o: { ignored: boolean; forIconPart?: boolean },
 ): TemplateResult {
   const label = PROPERTY_LABELS[property];
   return html`
@@ -11357,7 +11827,7 @@ function changeChip(
         ? html`${o.ignored ? html`<div class="hint warn">This layer does not draw this setting here, so the change does nothing.</div>` : nothing}
           ${property === "visibility"
             ? segField("This state", ch.kind === "hide" ? "hide" : "show", [["show", "Shown"], ["hide", "Hidden"]], (v) => upd((c) => { c.kind = v as StyleChangeKind; }))
-            : changeBody(host, ch, upd, id, o.sfOnly === true)}
+            : changeBody(host, ch, upd, id, o.forIconPart === true)}
           <button class="link" @click=${(e: Event) => {
             // Closed first: removing the change takes this popover's own chip
             // out of the document, and a popover removed while open never

@@ -1,35 +1,41 @@
-// The two Start buttons as the person meets them: the page editor's "Start
-// with an empty page" and Watch settings' "Start with the defaults". The
-// builders and create helpers have their own tests; this drives the element
-// and the dialog controller over a stand-in Home Assistant connection, so the
-// wiring around them is covered: what is selected or shown after a start,
-// the note each refusal leaves, the reload after a conflict, and a record
-// this panel cannot read, which offers no Start at all.
+// A new watch as the person meets it on the two screens that open ready: the
+// page editor on one empty page and Watch settings on the defaults, while
+// Home Assistant holds no record and no iPhone will send one. Nothing is
+// stored and nothing counts as unsaved until a change; Save is greyed out with
+// its reason beside it; the first Save creates the record over revision 0;
+// Discard goes back to the opening state. While an iPhone may still move the
+// watch's setup here, the screen waits, and "Start fresh instead" opens the
+// same ready screen without saving. A record this panel cannot read opens
+// nothing. The builders have their own tests; this drives the element and
+// the page controller over a stand-in Home Assistant connection.
 //
-// No DOM: the page editor is made but never connected (so it never draws or
-// polls), and both are read by flattening the Lit templates they return.
+// No DOM: the page editor is made but never connected (so it never draws,
+// polls or reloads), and both are read by flattening the Lit templates they
+// return.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
 import { WaPageEditor } from "../src/watch-pages/page-editor.js";
-import { findWatchPage } from "../src/watch-pages/edit.js";
+import { newWatchPage, setWatchPageName } from "../src/watch-pages/edit.js";
+import { anyWatchPagesDirty, dropAllWatchPages, keptWatchPagesDraft, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
+import type { WatchPagesDocument } from "../src/watch-pages/model.js";
 import { WatchSettings } from "../src/watch-settings-view.js";
+import { anyWatchSettingsDirty, dropWatchSettingsDrafts } from "../src/watch-settings-draft.js";
+import { SETTINGS_GROUPS } from "../src/watch-settings-nav.js";
 import {
-  PAGES_NO_RECORD_TEXT,
-  PAGES_START_BUTTON,
-  PAGES_START_CONFLICT_TEXT,
+  type CatalogSetting,
+  NEW_WATCH_TEXT,
+  NOTHING_TO_SAVE_TEXT,
   PAGES_UNREADABLE_TEXT,
   PAIR_FIRST_TEXT,
-  SETTINGS_NO_RECORD_TEXT,
   SETTINGS_PAIR_FIRST_TEXT,
-  SETTINGS_START_BUTTON,
-  SETTINGS_START_CONFLICT_TEXT,
   SETTINGS_UNREADABLE_TEXT,
   START_FRESH_BUTTON,
   START_FRESH_CONFIRM_TEXT,
   WAIT_FOR_IPHONE_TEXT,
   WATCH_SETTINGS_CATALOG,
+  catalogSettings,
   watchBehaviorDefaults,
   watchRecordUnreadable,
 } from "../src/watch-settings.js";
@@ -122,22 +128,34 @@ const owner = (id: string, extra: Partial<OwnerSummary> = {}): OwnerSummary => (
   is_orphan: false,
 } as OwnerSummary);
 
-/** Let the voided loads a start kicks off run to their end. */
+/** Let the voided loads a save kicks off run to their end. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** `window.confirm` for the start fresh question, and nothing else. */
+const realWindow = (globalThis as { window?: unknown }).window;
+function answer(yes: boolean) {
+  const confirm = vi.fn(() => yes);
+  (globalThis as { window?: unknown }).window = { confirm, setTimeout: () => 1, clearTimeout: () => undefined };
+  return confirm;
+}
 
 // ── the page editor ──────────────────────────────────────────────────────
 
 /** The element's private parts this file reads and drives. */
 interface PageEditorInside {
   hass?: HassLike;
+  owners: readonly OwnerSummary[];
   watchId?: string;
   record?: WatchConfigRecord;
   note?: { kind: string; text: string };
-  selectedPageId?: string;
-  draft?: { document: Record<string, unknown>; revision: number };
-  startEmptyPage(): Promise<void>;
-  askStartEmptyPage(state?: "wait" | "start"): void;
+  draft?: { document: WatchPagesDocument; revision: number; dirty: boolean; apply(next: WatchPagesDocument): boolean };
+  isNew: boolean;
+  save(): Promise<void>;
+  discard(): void;
+  askStartFresh(state?: "wait" | "start"): void;
+  render(): unknown;
   renderBody(watches: readonly OwnerSummary[]): unknown;
+  renderTopBar(draft: unknown): unknown;
 }
 
 let pageWatch = 0;
@@ -153,156 +171,232 @@ function pageEditor(
   const ha = fakeHass("pages", held, onSave);
   const el = new WaPageEditor() as unknown as PageEditorInside;
   el.hass = ha.hass;
+  el.owners = [owner(id, extra)];
   el.watchId = id;
   el.record = held;
-  return { el, ha, id, body: () => flatten(el.renderBody([owner(id, extra)])) };
+  return {
+    el,
+    ha,
+    id,
+    body: () => flatten(el.renderBody(el.owners)),
+    bar: () => flatten(el.renderTopBar(el.draft)),
+    all: () => flatten(el.render()),
+  };
 }
 
-describe("the page editor's Start", () => {
-  it("offers the button while no record is held and no iPhone will send one", () => {
+/** Rename the ready page: the person's first change. */
+function renameFirstPage(el: PageEditorInside, name: string): void {
+  const draft = el.draft!;
+  const id = String((draft.document.pages as { id: string }[])[0]!.id);
+  draft.apply(setWatchPageName(draft.document, id, name));
+}
+
+describe("the page editor on a new watch", () => {
+  beforeEach(() => answer(false));
+  afterEach(() => {
+    (globalThis as { window?: unknown }).window = realWindow;
+    dropAllWatchPages();
+  });
+
+  it("opens ready on one empty page, with no Start, nothing stored and nothing unsaved", () => {
     for (const extra of [{ has_iphone: false }, {}]) {
-      // `{}` is an integration older than the field: the same Start.
-      const { body } = pageEditor(record(0), undefined, extra);
-      const text = body();
-      expect(text).toContain(PAGES_NO_RECORD_TEXT);
-      expect(text).toContain(PAGES_START_BUTTON);
-      expect(text).toContain("pe-btn pe-primary");
+      // `{}` is an integration older than the field: the same ready page.
+      const { el, ha, all } = pageEditor(record(0), undefined, extra);
+      const draft = el.draft!;
+      expect(draft.revision).toBe(0);
+      expect(draft.dirty).toBe(false);
+      expect(draft.document.pages as unknown[]).toHaveLength(1);
+      expect(el.isNew).toBe(true);
+      expect(anyWatchPagesDirty()).toBe(false);
+      expect(ha.saves()).toHaveLength(0);
+      const text = all();
+      expect(text).toContain(NEW_WATCH_TEXT);
+      expect(text).toContain("pe-note info pe-new");
+      expect(text).not.toContain("Start with");
       expect(text).not.toContain(WAIT_FOR_IPHONE_TEXT);
       expect(text).not.toContain(START_FRESH_BUTTON);
-      expect(text).not.toContain("Edit pages in Home Assistant");
       expect(text).not.toContain(PAGES_UNREADABLE_TEXT);
+      dropAllWatchPages();
     }
   });
 
-  it("waits for the iPhone's move, with a small link to start fresh, while the watch has an iPhone", () => {
-    const { body } = pageEditor(record(0), undefined, { has_iphone: true });
-    const text = body();
-    expect(text).toContain(WAIT_FOR_IPHONE_TEXT);
-    expect(text).toContain(START_FRESH_BUTTON);
-    expect(text).toContain("link start-fresh");
-    expect(text).not.toContain(PAGES_NO_RECORD_TEXT);
-    expect(text).not.toContain(PAGES_START_BUTTON);
-    expect(text.indexOf(START_FRESH_BUTTON)).toBeGreaterThan(text.indexOf(WAIT_FOR_IPHONE_TEXT));
+  it("greys Save out with its reason beside it until a change", () => {
+    const { el, bar } = pageEditor(record(0));
+    expect(bar()).toMatch(/class="primary save "\s*\?disabled=true/);
+    expect(bar()).toContain(NOTHING_TO_SAVE_TEXT);
+    renameFirstPage(el, "Living room");
+    expect(el.draft!.dirty).toBe(true);
+    expect(anyWatchPagesDirty()).toBe(true);
+    expect(bar()).toMatch(/class="primary save dirty"\s*\?disabled=false/);
+    expect(bar()).not.toContain(NOTHING_TO_SAVE_TEXT);
   });
 
-  describe("starting fresh while waiting", () => {
-    const realWindow = (globalThis as { window?: unknown }).window;
-    afterEach(() => {
-      (globalThis as { window?: unknown }).window = realWindow;
-    });
-
-    it("asks first, and a no saves nothing", async () => {
-      const confirm = vi.fn(() => false);
-      (globalThis as { window?: unknown }).window = { confirm };
-      const { el, ha } = pageEditor(record(0), undefined, { has_iphone: true });
-      el.askStartEmptyPage("wait");
-      await settle();
-      expect(confirm).toHaveBeenCalledWith(START_FRESH_CONFIRM_TEXT);
-      expect(ha.saves()).toHaveLength(0);
-    });
-
-    it("does what Start does after a yes", async () => {
-      const confirm = vi.fn(() => true);
-      (globalThis as { window?: unknown }).window = { confirm };
-      const { el, ha } = pageEditor(record(0), undefined, { has_iphone: true });
-      el.askStartEmptyPage("wait");
-      await settle();
-      await settle();
-      expect(confirm).toHaveBeenCalledTimes(1);
-      expect(ha.saves()).toHaveLength(1);
-      expect(ha.saves()[0]).toMatchObject({ kind: "pages", base_revision: 0 });
-    });
-
-    it("never asks when no iPhone will send pages", async () => {
-      const confirm = vi.fn(() => false);
-      (globalThis as { window?: unknown }).window = { confirm };
-      const { el, ha } = pageEditor(record(0));
-      el.askStartEmptyPage("start");
-      await settle();
-      await settle();
-      expect(confirm).not.toHaveBeenCalled();
-      expect(ha.saves()).toHaveLength(1);
-    });
+  it("goes back to the empty page on Discard", () => {
+    const { el, bar } = pageEditor(record(0));
+    const opened = structuredClone(el.draft!.document);
+    renameFirstPage(el, "Living room");
+    el.discard();
+    expect(el.draft!.dirty).toBe(false);
+    expect(el.draft!.document).toEqual(opened);
+    expect(el.isNew).toBe(true);
+    expect(bar()).toContain(NOTHING_TO_SAVE_TEXT);
   });
 
-  it("saves one empty page over revision 0, then selects it once the record is read back", async () => {
-    const { el, ha } = pageEditor(record(0));
-    await el.startEmptyPage();
+  it("creates the record on the first Save, over revision 0, with the change in it", async () => {
+    const { el, ha, all } = pageEditor(record(0));
+    renameFirstPage(el, "Living room");
+    await el.save();
     await settle();
     const saves = ha.saves();
     expect(saves).toHaveLength(1);
     expect(saves[0]).toMatchObject({ kind: "pages", base_revision: 0 });
-    const pages = (saves[0]!.document as { pages: { id: string }[] }).pages;
-    expect(pages).toHaveLength(1);
-    expect(el.selectedPageId).toBe(pages[0]!.id);
-    expect(el.note).toEqual({ kind: "ok", text: "Started with an empty page. The watch picks it up the next time it checks." });
-    expect(el.record?.revision).toBe(1);
+    const pages = (saves[0]!.document as { pages: { name: string }[] }).pages;
+    expect(pages.map((p) => p.name)).toEqual(["Living room"]);
     expect(el.draft?.revision).toBe(1);
-    expect(findWatchPage(el.draft!.document, pages[0]!.id)).toBeDefined();
+    expect(el.draft?.dirty).toBe(false);
+    expect(el.isNew).toBe(false);
+    expect(el.note).toBeUndefined();
+    expect(all()).not.toContain(NEW_WATCH_TEXT);
   });
 
-  it("asks for a pairing first when the watch is not paired, and reads nothing", async () => {
+  it("asks for a pairing first when the first Save is refused as no_record, and keeps the change", async () => {
     const { el, ha } = pageEditor(record(0), async () => { throw refusal("no_record"); });
-    await el.startEmptyPage();
+    renameFirstPage(el, "Living room");
+    await el.save();
     await settle();
     expect(el.note).toEqual({ kind: "warn", text: PAIR_FIRST_TEXT });
-    expect(el.selectedPageId).toBeUndefined();
     expect(ha.gets()).toHaveLength(0);
-    expect(el.record?.revision).toBe(0);
+    expect(el.draft?.revision).toBe(0);
+    expect(el.draft?.dirty).toBe(true);
+    expect(el.isNew).toBe(true);
   });
 
-  it("reads the record that came meanwhile on a conflict, and says so", async () => {
-    const theirs = { schemaVersion: 1, pages: [{ id: "THEIRS", name: "Home", items: [] }] };
+  it("merges a record that came meanwhile under the change on a conflict, then saves over it", async () => {
+    const theirs = { schemaVersion: 1, pages: [newWatchPage("7E1A0000-0000-4000-8000-000000000001", "Home")] };
     const fake: { ha?: ReturnType<typeof fakeHass> } = {};
-    const { el, ha } = pageEditor(record(0), async () => {
-      fake.ha!.hold(record(1, theirs));
-      throw refusal("conflict", "stored revision is 1, save was based on 0");
+    const bases: unknown[] = [];
+    const { el, ha } = pageEditor(record(0), async (msg) => {
+      bases.push(msg.base_revision);
+      if (msg.base_revision === 0) {
+        fake.ha!.hold(record(1, theirs));
+        throw refusal("conflict", "stored revision is 1, save was based on 0");
+      }
+      return { revision: 2 };
     });
     fake.ha = ha;
-    await el.startEmptyPage();
+    renameFirstPage(el, "Mine");
+    await el.save();
     await settle();
-    expect(el.note).toEqual({ kind: "warn", text: PAGES_START_CONFLICT_TEXT });
-    expect(ha.gets()).toHaveLength(1);
-    expect(el.record?.revision).toBe(1);
-    expect(el.draft?.document).toEqual(theirs);
+    expect(bases).toEqual([0, 1]);
+    expect(el.note).toEqual({ kind: "ok", text: "Saved. Changes made somewhere else were merged in." });
+    expect(el.draft?.revision).toBe(2);
+    const names = (el.draft!.document.pages as { name: string }[]).map((p) => p.name);
+    expect(names).toContain("Home");
+    expect(names).toContain("Mine");
   });
 
-  it("offers no Start over a record it cannot read, and never saves over one", async () => {
+  it("waits for the iPhone's move, with a small link to start fresh, while the watch has an iPhone", () => {
+    const { el, body } = pageEditor(record(0), undefined, { has_iphone: true });
+    const text = body();
+    expect(el.draft).toBeUndefined();
+    expect(el.isNew).toBe(false);
+    expect(text).toContain(WAIT_FOR_IPHONE_TEXT);
+    expect(text).toContain(START_FRESH_BUTTON);
+    expect(text).toContain("link start-fresh");
+    expect(text).not.toContain(NEW_WATCH_TEXT);
+    expect(text.indexOf(START_FRESH_BUTTON)).toBeGreaterThan(text.indexOf(WAIT_FOR_IPHONE_TEXT));
+  });
+
+  it("opens the same ready page from the link after a yes, and saves nothing", async () => {
+    const no = answer(false);
+    const { el, ha, all } = pageEditor(record(0), undefined, { has_iphone: true });
+    el.askStartFresh("wait");
+    expect(no).toHaveBeenCalledWith(START_FRESH_CONFIRM_TEXT);
+    expect(el.draft).toBeUndefined();
+    const yes = answer(true);
+    el.askStartFresh("wait");
+    await settle();
+    expect(yes).toHaveBeenCalledTimes(1);
+    expect(el.draft?.revision).toBe(0);
+    expect(el.draft?.dirty).toBe(false);
+    expect(el.isNew).toBe(true);
+    expect(ha.saves()).toHaveLength(0);
+    const text = all();
+    expect(text).toContain(NEW_WATCH_TEXT);
+    expect(text).not.toContain(WAIT_FOR_IPHONE_TEXT);
+  });
+
+  it("opens nothing over a record it cannot read, and never saves over one", async () => {
     const { el, ha, body } = pageEditor(record(3));
     const text = body();
     expect(text).toContain(PAGES_UNREADABLE_TEXT);
-    expect(text).not.toContain(PAGES_START_BUTTON);
     expect(text).not.toContain(START_FRESH_BUTTON);
-    await el.startEmptyPage();
+    expect(text).not.toContain(NEW_WATCH_TEXT);
+    expect(el.draft).toBeUndefined();
+    await el.save();
     expect(ha.saves()).toHaveLength(0);
+  });
+
+  it("keeps edits from a record that went away, instead of opening the ready page over them", () => {
+    const { el, id, body } = pageEditor(record(0));
+    const kept = takeWatchPagesRecord(id, { schemaVersion: 1, pages: [{ id: "P1", name: "Home", items: [] }] }, 3).draft;
+    kept.apply(setWatchPageName(kept.document, "P1", "Kitchen"));
+    expect(el.draft).toBeUndefined();
+    const text = body();
+    expect(text).toContain("Your unsaved edits from before are kept.");
+    expect(text).toContain("Discard the kept edits");
+    expect(text).not.toContain(START_FRESH_BUTTON);
+    expect(keptWatchPagesDraft(id)).toBe(kept);
   });
 });
 
 // ── Watch settings ───────────────────────────────────────────────────────
 
-interface SettingsInside {
-  record?: WatchConfigRecord;
-  loading: boolean;
-  note?: { kind: string; text: string };
-  start(): Promise<void>;
+/** The page shows one group at a time: every group's page it lists, in the
+ * side panel's order, or the one page when it has no side panel. */
+function everyGroup(inside: { group: string }, draw: () => string): string {
+  const pages = SETTINGS_GROUPS.map((g) => {
+    inside.group = g.id;
+    const page = draw();
+    return page.includes(`aria-label=${g.title} settings>`) ? page : "";
+  }).join("");
+  return pages === "" ? draw() : pages;
 }
 
-describe("Watch settings' Start", () => {
-  // The dialog polls for delivery once a save waits for the watch; Node has
-  // no window to time it with.
-  const realWindow = (globalThis as { window?: unknown }).window;
-  beforeEach(() => {
-    (globalThis as { window?: unknown }).window = { setTimeout: () => 1, clearTimeout: () => undefined };
-  });
+interface SettingsInside {
+  group: string;
+  record?: WatchConfigRecord;
+  edits: ReadonlyMap<string, unknown>;
+  loading: boolean;
+  note?: { kind: string; text: string };
+  save(): Promise<void>;
+  discard(): void;
+  askStartFresh(): void;
+  edit(setting: CatalogSetting, value: unknown): void;
+  renderBar(): unknown;
+}
+
+const setting = (key: string): CatalogSetting => {
+  const s = catalogSettings().find((x) => x.key === key);
+  if (s === undefined) throw new Error(`no setting ${key}`);
+  return s;
+};
+
+let settingsWatch = 0;
+
+describe("Watch settings on a new watch", () => {
+  beforeEach(() => answer(false));
   afterEach(() => {
     (globalThis as { window?: unknown }).window = realWindow;
+    dropWatchSettingsDrafts();
   });
 
-  async function dialog(
+  async function page(
     held: WatchConfigRecord,
     onSave?: (msg: Record<string, unknown>) => Promise<{ revision: number }>,
     extra: Partial<OwnerSummary> = {},
   ) {
+    const id = `start-settings-${++settingsWatch}`;
     const ha = fakeHass("behavior", held, onSave);
     const host = {
       addController: () => undefined,
@@ -312,80 +406,136 @@ describe("Watch settings' Start", () => {
       renderRoot: { querySelector: () => null },
     };
     const ws = new WatchSettings(host as unknown as ConstructorParameters<typeof WatchSettings>[0]);
-    const owners = [owner("w1", extra)];
-    ws.show(ha.hass, owners, "w1");
+    const owners = [owner(id, extra)];
+    ws.show(ha.hass, owners, id);
     const inside = ws as unknown as SettingsInside;
     await vi.waitFor(() => expect(inside.loading).toBe(false));
-    return { ws, inside, ha, text: () => flatten(ws.render(ha.hass, owners)) };
+    return {
+      ws, inside, ha, owners, id,
+      text: () => everyGroup(inside, () => flatten(ws.render(ha.hass, owners))),
+      bar: () => flatten(inside.renderBar()),
+    };
   }
 
-  it("offers the button while no record is held and no iPhone will send one", async () => {
+  it("opens ready on the defaults, with no Start, nothing stored and nothing unsaved", async () => {
     for (const extra of [{ has_iphone: false }, {}]) {
-      const { text } = await dialog(record(0, undefined, "behavior"), undefined, extra);
+      const { ha, text, bar } = await page(record(0, undefined, "behavior"), undefined, extra);
       const shown = text();
-      expect(shown).toContain(SETTINGS_NO_RECORD_TEXT);
-      expect(shown).toContain(SETTINGS_START_BUTTON);
-      expect(shown).toContain("small primary ws-start");
+      expect(shown).toContain(NEW_WATCH_TEXT);
+      expect(shown).toContain('class="ws-new"');
+      for (const section of WATCH_SETTINGS_CATALOG.sections) expect(shown).toContain(section.title);
+      expect(shown).not.toContain("No settings from this watch yet.");
+      expect(shown).not.toContain("Start with");
       expect(shown).not.toContain(WAIT_FOR_IPHONE_TEXT);
       expect(shown).not.toContain(START_FRESH_BUTTON);
-      expect(shown).not.toContain("Edit pages in Home Assistant");
+      expect(ha.saves()).toHaveLength(0);
+      expect(anyWatchSettingsDirty()).toBe(false);
+      expect(bar()).toContain(NOTHING_TO_SAVE_TEXT);
+      expect(bar()).toContain("?disabled=true");
     }
   });
 
-  it("waits for the iPhone's move, with a small link to start fresh, while the watch has an iPhone", async () => {
-    const { text } = await dialog(record(0, undefined, "behavior"), undefined, { has_iphone: true });
-    const shown = text();
-    expect(shown).toContain(WAIT_FOR_IPHONE_TEXT);
-    expect(shown).toContain(START_FRESH_BUTTON);
-    expect(shown).toContain("link start-fresh ws-start");
-    expect(shown).not.toContain(SETTINGS_NO_RECORD_TEXT);
-    expect(shown).not.toContain(SETTINGS_START_BUTTON);
+  it("counts a change as unsaved, and Discard goes back to the defaults", async () => {
+    const { inside, bar } = await page(record(0, undefined, "behavior"));
+    const wrap = setting("wrapPages");
+    inside.edit(wrap, !(watchBehaviorDefaults().wrapPages as boolean));
+    expect(anyWatchSettingsDirty()).toBe(true);
+    expect(bar()).toContain("1 unsaved change");
+    expect(bar()).not.toContain(NOTHING_TO_SAVE_TEXT);
+    inside.discard();
+    expect(inside.edits.size).toBe(0);
+    expect(anyWatchSettingsDirty()).toBe(false);
+    expect(bar()).toContain(NOTHING_TO_SAVE_TEXT);
   });
 
-  it("saves the defaults over revision 0 and opens the settings on them", async () => {
-    const { inside, ha, text } = await dialog(record(0, undefined, "behavior"));
-    await inside.start();
+  it("creates the record on the first Save, over revision 0, from the defaults with the change on top", async () => {
+    const { inside, ha, text } = await page(record(0, undefined, "behavior"));
+    const flipped = !(watchBehaviorDefaults().wrapPages as boolean);
+    inside.edit(setting("wrapPages"), flipped);
+    await inside.save();
     const saves = ha.saves();
     expect(saves).toHaveLength(1);
-    expect(saves[0]).toMatchObject({ kind: "behavior", base_revision: 0, document: watchBehaviorDefaults() });
+    expect(saves[0]).toMatchObject({ kind: "behavior", base_revision: 0, document: { ...watchBehaviorDefaults(), wrapPages: flipped } });
     expect(inside.record?.revision).toBe(1);
-    expect(inside.note).toEqual({ kind: "note", text: "Started with the defaults. The watch picks them up the next time it checks." });
-    const shown = text();
-    expect(shown).not.toContain(SETTINGS_START_BUTTON);
-    for (const section of WATCH_SETTINGS_CATALOG.sections) expect(shown).toContain(section.title);
+    expect(inside.edits.size).toBe(0);
+    expect(inside.note).toBeUndefined();
+    expect(text()).not.toContain(NEW_WATCH_TEXT);
   });
 
-  it("asks for a pairing first when the watch is not paired, and keeps the button", async () => {
-    const { inside, ha, text } = await dialog(record(0, undefined, "behavior"), async () => { throw refusal("no_record"); });
+  it("asks for a pairing first when the first Save is refused as no_record, and keeps the change", async () => {
+    const { inside, ha } = await page(record(0, undefined, "behavior"), async () => { throw refusal("no_record"); });
     const before = ha.gets().length;
-    await inside.start();
+    inside.edit(setting("wrapPages"), !(watchBehaviorDefaults().wrapPages as boolean));
+    await inside.save();
     expect(inside.note).toEqual({ kind: "warn", text: SETTINGS_PAIR_FIRST_TEXT });
     expect(ha.gets()).toHaveLength(before);
-    expect(text()).toContain(SETTINGS_START_BUTTON);
+    expect(inside.edits.size).toBe(1);
+    expect(inside.record?.revision).toBe(0);
   });
 
-  it("reads the record that came meanwhile on a conflict, and says so", async () => {
+  it("shows the record that came meanwhile on a conflict, with the change on top", async () => {
     const theirs = { ...watchBehaviorDefaults(), crownSwitchesPages: true };
     const fake: { ha?: ReturnType<typeof fakeHass> } = {};
-    const opened = await dialog(record(0, undefined, "behavior"), async () => {
+    const opened = await page(record(0, undefined, "behavior"), async () => {
       fake.ha!.hold(record(1, theirs, "behavior"));
       throw refusal("conflict", "stored revision is 1, save was based on 0");
     });
     fake.ha = opened.ha;
-    await opened.inside.start();
-    expect(opened.inside.note).toEqual({ kind: "warn", text: SETTINGS_START_CONFLICT_TEXT });
+    const flipped = !(watchBehaviorDefaults().wrapPages as boolean);
+    opened.inside.edit(setting("wrapPages"), flipped);
+    await opened.inside.save();
     expect(opened.inside.record?.revision).toBe(1);
     expect(opened.inside.record?.document).toEqual(theirs);
-    expect(opened.text()).not.toContain(SETTINGS_START_BUTTON);
+    expect([...opened.inside.edits]).toEqual([["wrapPages", flipped]]);
+    expect(opened.inside.note?.kind).toBe("warn");
+    expect(opened.text()).not.toContain(NEW_WATCH_TEXT);
   });
 
-  it("offers no Start over a record it cannot read, and never saves over one", async () => {
-    const { inside, ha, text } = await dialog(record(2, undefined, "behavior"));
+  it("keeps a change made on the defaults when the page is left and opened again", async () => {
+    const { ws, inside, ha, owners, id, bar } = await page(record(0, undefined, "behavior"));
+    const flipped = !(watchBehaviorDefaults().wrapPages as boolean);
+    inside.edit(setting("wrapPages"), flipped);
+    ws.leave();
+    ws.show(ha.hass, owners, id);
+    await vi.waitFor(() => expect(inside.loading).toBe(false));
+    expect([...inside.edits]).toEqual([["wrapPages", flipped]]);
+    expect(inside.note).toBeUndefined();
+    expect(bar()).toContain("1 unsaved change");
+  });
+
+  it("waits for the iPhone's move, with a small link to start fresh, while the watch has an iPhone", async () => {
+    const { text, bar } = await page(record(0, undefined, "behavior"), undefined, { has_iphone: true });
+    const shown = text();
+    expect(shown).toContain(WAIT_FOR_IPHONE_TEXT);
+    expect(shown).toContain(START_FRESH_BUTTON);
+    expect(shown).toContain("link start-fresh ws-start");
+    expect(shown).not.toContain(NEW_WATCH_TEXT);
+    expect(bar()).not.toContain(NOTHING_TO_SAVE_TEXT);
+  });
+
+  it("opens the same ready page from the link after a yes, and saves nothing", async () => {
+    const { inside, ha, text } = await page(record(0, undefined, "behavior"), undefined, { has_iphone: true });
+    const no = answer(false);
+    inside.askStartFresh();
+    expect(no).toHaveBeenCalledWith(START_FRESH_CONFIRM_TEXT);
+    expect(text()).toContain(WAIT_FOR_IPHONE_TEXT);
+    answer(true);
+    inside.askStartFresh();
+    const shown = text();
+    expect(shown).toContain(NEW_WATCH_TEXT);
+    expect(shown).not.toContain(WAIT_FOR_IPHONE_TEXT);
+    for (const section of WATCH_SETTINGS_CATALOG.sections) expect(shown).toContain(section.title);
+    expect(ha.saves()).toHaveLength(0);
+    expect(anyWatchSettingsDirty()).toBe(false);
+  });
+
+  it("opens nothing over a record it cannot read, and never saves over one", async () => {
+    const { inside, ha, text } = await page(record(2, undefined, "behavior"));
     const shown = text();
     expect(shown).toContain(SETTINGS_UNREADABLE_TEXT);
-    expect(shown).not.toContain(SETTINGS_START_BUTTON);
     expect(shown).not.toContain(START_FRESH_BUTTON);
-    await inside.start();
+    expect(shown).not.toContain(NEW_WATCH_TEXT);
+    await inside.save();
     expect(ha.saves()).toHaveLength(0);
   });
 });

@@ -64,6 +64,7 @@ import {
 import { layerListRows } from "../src/panel.js";
 import { type EntityState, type ResolveContext, resolveAll } from "../src/resolver.js";
 import { exportText, parseImportText } from "../src/transfer.js";
+import { NEWER_VERSION_TEXT } from "../src/friendly-error.js";
 
 /** A document with three text layers: one on every page, one on page 1, one on
  * page 2. `pages` is set only when `spec` is given, so the same builder makes
@@ -746,8 +747,9 @@ describe("the version gate a paged document meets", () => {
     const parsed = parseImportText(exportText(cfg, "backup"), 8);
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
-    expect(parsed.error).toContain("schema v9");
-    expect(parsed.error).toContain("update the Wrist Assistant integration");
+    // The line is plain; the schema number is in the fold under it.
+    expect(parsed.error).toBe(NEWER_VERSION_TEXT);
+    expect(parsed.detail).toContain("schema v9");
   });
 
   it("goes through once the integration understands 9", () => {

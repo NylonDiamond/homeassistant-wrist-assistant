@@ -152,7 +152,7 @@
       "label": "Wrist Webhooks",
       "groups": [
         {
-          "label": "Notification Appearance",
+          "label": "Webhook alerts",
           "keys": ["storedWebhookButtonSize"]
         }
       ]
@@ -171,7 +171,7 @@
       "default": "tinted",
       "section": "notifications",
       "group": "Style",
-      "label": "Button Style"
+      "label": "Button style"
     },
     "accentColor": {
       "type": "enum",
@@ -189,8 +189,8 @@
       "default": true,
       "section": "notifications",
       "group": "Color",
-      "label": "Match Entity Color",
-      "help": "Tint each row with its domain icon color"
+      "label": "Color by device type",
+      "help": "Each button takes its device's color, like yellow for lights."
     },
     "cornerStyle": {
       "type": "enum",
@@ -199,7 +199,7 @@
       "default": "sharp",
       "section": "notifications",
       "group": "Style",
-      "label": "Corner Style"
+      "label": "Corners"
     },
     "backgroundStyle": {
       "type": "enum",
@@ -218,7 +218,7 @@
       "default": "medium",
       "section": "notifications",
       "group": "Style",
-      "label": "Button Size"
+      "label": "Button size"
     },
     "showButtonIcons": {
       "type": "bool",
@@ -226,8 +226,8 @@
       "default": true,
       "section": "notifications",
       "group": "Content",
-      "label": "Show Icons",
-      "help": "Display icons on notification buttons"
+      "label": "Show icons",
+      "help": "Icons on the notification's buttons."
     },
     "showStateBadge": {
       "type": "bool",
@@ -235,8 +235,8 @@
       "default": false,
       "section": "notifications",
       "group": "Content",
-      "label": "State Badge",
-      "help": "Show entity state on buttons"
+      "label": "Show device state",
+      "help": "For example On or Open, on each button."
     },
     "stateBadgePosition": {
       "type": "enum",
@@ -245,7 +245,7 @@
       "default": "inside",
       "section": "notifications",
       "group": "Content",
-      "label": "Position",
+      "label": "State position",
       "shownWhen": "showStateBadge is true"
     },
     "stateBadgeSize": {
@@ -255,7 +255,7 @@
       "default": "medium",
       "section": "notifications",
       "group": "Content",
-      "label": "Size",
+      "label": "State size",
       "shownWhen": "showStateBadge is true"
     },
     "stateBadgePill": {
@@ -264,7 +264,7 @@
       "default": true,
       "section": "notifications",
       "group": "Content",
-      "label": "Pill",
+      "label": "State in a pill",
       "shownWhen": "showStateBadge is true"
     },
     "tapAnimation": {
@@ -274,7 +274,7 @@
       "default": "bounce",
       "section": "notifications",
       "group": "Animation",
-      "label": "Tap Animation"
+      "label": "Tap animation"
     },
     "buttonPressSound": {
       "type": "sound",
@@ -283,8 +283,8 @@
       "absentReadsAs": null,
       "section": "notifications",
       "group": "Sound",
-      "label": "Button Press Sound",
-      "help": "Plays alongside haptic feedback after a successful action tap.",
+      "label": "Button press",
+      "help": "Plays with the tap you feel when an action works.",
       "sound": true
     },
     "tileTapSound": {
@@ -294,8 +294,8 @@
       "absentReadsAs": null,
       "section": "sounds",
       "group": "Sounds",
-      "label": "Tile Tap",
-      "help": "Sound when tapping a tile on the grid.",
+      "label": "Tile tap",
+      "help": "When you tap a tile on a page.",
       "sound": true
     },
     "menuOpenSound": {
@@ -305,8 +305,8 @@
       "absentReadsAs": null,
       "section": "sounds",
       "group": "Sounds",
-      "label": "Menu Open",
-      "help": "Sound when quick menu or page switcher activates.",
+      "label": "Menu opens",
+      "help": "When the quick menu or the page switcher opens.",
       "sound": true
     },
     "slideToIconSound": {
@@ -316,8 +316,8 @@
       "absentReadsAs": null,
       "section": "sounds",
       "group": "Sounds",
-      "label": "Slide to Icon",
-      "help": "Sound when sliding over icons in quick menus, page switcher, and sub-menus.",
+      "label": "Slide across icons",
+      "help": "When you slide over icons in quick menus, the page switcher and sub-menus.",
       "sound": true
     },
     "arcSlideTickSound": {
@@ -327,8 +327,8 @@
       "absentReadsAs": null,
       "section": "sounds",
       "group": "Sounds",
-      "label": "Arc Slider Tick",
-      "help": "Tick sound every 5% while dragging brightness, temperature, and other arc sliders.",
+      "label": "Slider tick",
+      "help": "Every 5% while you drag brightness, temperature and other sliders.",
       "sound": true
     },
     "successSound": {
@@ -338,8 +338,8 @@
       "absentReadsAs": null,
       "section": "sounds",
       "group": "Sounds",
-      "label": "Success / Confirm",
-      "help": "Played after releasing an arc slider, selecting a page, or confirming an action.",
+      "label": "Confirm",
+      "help": "When you let go of a slider, pick a page or confirm an action.",
       "sound": true
     },
     "cancelSound": {
@@ -349,8 +349,8 @@
       "absentReadsAs": null,
       "section": "sounds",
       "group": "Sounds",
-      "label": "Cancel / Dismiss",
-      "help": "Played when cancelling via the red X zone or dismissing without a selection.",
+      "label": "Cancel",
+      "help": "When you cancel with the red X, or close without picking.",
       "sound": true
     },
     "soundVolume": {
@@ -368,8 +368,8 @@
       "default": null,
       "section": "delivery",
       "group": "Delivery",
-      "label": "Mode",
-      "help": "Fast arrives in about a second but needs your iPhone nearby. Reliable works even without your iPhone, but when your iPhone is nearby an Apple quirk delays it up to 15 seconds."
+      "label": "How alerts arrive",
+      "help": "Fast takes about a second but needs your iPhone nearby. Reliable works without your iPhone, but when your iPhone is nearby an Apple quirk can delay it up to 15 seconds."
     },
     "storedWebhookButtonSize": {
       "type": "enum",
@@ -378,9 +378,9 @@
       "strict": false,
       "default": null,
       "section": "wristWebhooks",
-      "group": "Notification Appearance",
-      "label": "Button Size",
-      "help": "How large the action buttons on webhook notifications appear, on both your watch and iPhone."
+      "group": "Webhook alerts",
+      "label": "Button size",
+      "help": "How big the buttons are on webhook alerts, on your watch and your iPhone."
     }
   },
   "volume": {

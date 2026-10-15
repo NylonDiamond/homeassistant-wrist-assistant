@@ -105,20 +105,40 @@ describe("SymbolBrowser", () => {
     return { browser, changed: () => changes };
   };
 
-  it("shows every grid until one is folded away", () => {
+  it("keeps every list shut until one is opened", () => {
     const { browser, changed } = make();
-    expect(browser.isOpen("a")).toBe(true);
-    browser.toggle("a");
     expect(browser.isOpen("a")).toBe(false);
     browser.toggle("a");
     expect(browser.isOpen("a")).toBe(true);
+    browser.toggle("a");
+    expect(browser.isOpen("a")).toBe(false);
     expect(changed()).toBe(2);
   });
 
-  it("folds one grid away without touching the others", () => {
+  it("opens one list without touching the others", () => {
     const { browser } = make();
     browser.toggle("a");
-    expect(browser.isOpen("b")).toBe(true);
+    expect(browser.isOpen("b")).toBe(false);
+  });
+
+  it("forgets a list's search when it shuts, and keeps its group", () => {
+    const { browser } = make();
+    browser.open("a");
+    browser.setQuery("a", "bolt");
+    browser.setCategory("a", "Home");
+    browser.close("a");
+    expect(browser.isOpen("a")).toBe(false);
+    expect(browser.query("a")).toBe("");
+    expect(browser.category("a")).toBe("Home");
+  });
+
+  it("shuts a list that starts open", () => {
+    const { browser } = make();
+    expect(browser.isOpen("s", true)).toBe(true);
+    browser.close("s", true);
+    expect(browser.isOpen("s", true)).toBe(false);
+    browser.open("s", true);
+    expect(browser.isOpen("s", true)).toBe(true);
   });
 
   it("keeps each field's search to itself", () => {

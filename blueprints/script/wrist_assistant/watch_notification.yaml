@@ -5,7 +5,7 @@ blueprint:
     min_version: "2024.8.0"
   source_url: "https://github.com/NylonDiamond/homeassistant-wrist-assistant/blob/main/blueprints/script/wrist_assistant/watch_notification.yaml"
   description: >
-    Send push notifications to your Apple Watch with smart entity
+    Send push notifications to your Apple Watch or iPhone with smart entity
     buttons, plus a snapshot from a camera or image entity if you want
     (e.g. a doorbell feed or a 3D-printer job snapshot). Each entity
     becomes a button that knows how to control itself:
@@ -29,8 +29,8 @@ blueprint:
 
 
     On the watch, notifications expand automatically to show the snapshot
-    and buttons. On iPhone, **long press** the notification — or **slide it
-    down** when it banners in — to expand it in place. Tapping works too,
+    and buttons. On iPhone, **long press** the notification (or **slide it
+    down** when it banners in) to expand it in place. Tapping works too,
     but it also opens the app.
 
 
@@ -38,16 +38,18 @@ blueprint:
   domain: script
   input:
     target:
-      name: Target Watch
+      name: Target watch or iPhone
       description: >
-        *(Optional)* Watch to send to. Leave empty to send to
-        **all** registered watches.
+        *(Optional)* Watch or iPhone to send to. Leave empty to send to
+        **all** paired watches.
       default: ""
       selector:
         device:
           filter:
             - integration: wrist_assistant
               model: Apple Watch
+            - integration: wrist_assistant
+              model: iPhone
     title:
       name: Title
       description: "*(Optional)* Displayed above the message."
@@ -78,7 +80,7 @@ blueprint:
             still (it has no live stream).
 
 
-            **Requires the Wrist Assistant iOS app v2.1.0 or newer** — older
+            **Requires the Wrist Assistant iOS app v2.1.0 or newer.** Older
             versions won't display the snapshot; the live stream on iPhone
             needs **v2.3.0 or newer** (older versions keep the snapshot).
             Also requires remote Home Assistant access (Nabu Casa or an
@@ -89,10 +91,10 @@ blueprint:
             (e.g. Reolink's "Snapshots" variants, which you may need to enable
             under Settings → Entities), pick it: it grabs frames faster. And if
             the camera also has a low-resolution **"Fluent"** variant, prefer it
-            over "Clear" — the image is downscaled for the notification anyway,
+            over "Clear": the image is downscaled for the notification anyway,
             and the smaller file loads much faster, especially over cellular.
             (A **"Snapshots Fluent"** entity is the best of both.) Either way
-            the live stream still works — it automatically uses the camera's
+            the live stream still works, since it automatically uses the camera's
             streamable feed.
           default: ""
           selector:
@@ -106,7 +108,7 @@ blueprint:
           description: >
             How sharp vs. small the snapshot is. **Sharpest** sends the
             full-size image; **Balanced** and **Fast** send a smaller image that
-            loads quicker on the watch and over cellular — handy for a detailed
+            loads quicker on the watch and over cellular, handy for a detailed
             camera or a weak connection. Only applies when a camera or image
             entity is set above.
           default: sharpest
@@ -116,9 +118,9 @@ blueprint:
               options:
                 - label: "Sharpest (default)"
                   value: sharpest
-                - label: "Balanced — smaller, faster"
+                - label: "Balanced (smaller, faster)"
                   value: balanced
-                - label: "Fast — smallest, fastest"
+                - label: "Fast (smallest, fastest)"
                   value: fast
         live_stream:
           name: Live stream on iPhone
@@ -126,7 +128,7 @@ blueprint:
             When on (the default), expanding the notification on iPhone
             replaces the snapshot with a live view of the camera (requires
             the iOS app v2.3.0 or newer). Turn off
-            to keep the snapshot from the moment the event happened — handy
+            to keep the snapshot from the moment the event happened, handy
             when that frame is the whole point (who rang the doorbell), or
             for battery and cloud cameras, which the live view keeps polling
             while the notification is open. The watch has its own
@@ -143,7 +145,7 @@ blueprint:
             showing (requires a recent Wrist Assistant watch app update).
             Tapping the image still opens the full-screen live stream in the
             app. Turn off to keep the snapshot from the moment the event
-            happened — handy when that frame is the whole point, or for
+            happened, handy when that frame is the whole point, or for
             battery and cloud cameras, which the live view keeps polling.
             Only applies when a camera is set above (image entities have
             no live stream).
@@ -283,56 +285,53 @@ blueprint:
       collapsed: true
       description: >
         **Not getting notifications?** The first time you open Wrist
-        Assistant on your watch it asks for notification permission — tap
+        Assistant on your watch it asks for notification permission: tap
         Allow. If you declined it, watchOS won't ask again and there's no
-        Settings toggle to turn it back on: delete Wrist Assistant from
+        Settings toggle to turn it back on. Delete Wrist Assistant from
         your watch, reinstall it, then tap Allow when it asks.
 
 
         Notifications default to **Fast** delivery, which mirrors from your
-        iPhone — your watch gets nothing when you're away from your phone,
-        and the Wrist Assistant iOS app must also have notifications allowed
-        (iPhone Settings → Notifications → Wrist Assistant). For alerts that
-        reach your wrist on their own, switch to **Reliable** in the iOS app
-        under Settings → Notification Style → Delivery, or in Home Assistant
-        under **Wrist Assistant** in the sidebar → Watch settings →
-        Notifications. Reliable arrives in
-        about a second when your iPhone isn't connected, but can take up to
-        ~15s when it is — an Apple delivery quirk outside the app's control.
+        iPhone. Your watch gets nothing when you're away from your phone,
+        and the Wrist Assistant iPhone app must also have notifications
+        allowed (iPhone Settings, Notifications, Wrist Assistant). For alerts
+        that reach your wrist on their own, switch to **Reliable** under
+        **Wrist Assistant** in the sidebar, Watch app, Settings,
+        Notifications. Reliable arrives in about a second when your iPhone
+        isn't connected, but can take up to about 15 seconds when it is (an
+        Apple delivery quirk outside the app's control).
 
 
-        If you see `No registered push token`, open Wrist Assistant on
-        the watch and let it sync once. If needed, pull to refresh or
-        force-close and reopen the watch app, then try again.
+        If Home Assistant says a device **has not registered for
+        notifications yet**, open Wrist Assistant on it and let it sync
+        once. If needed, close and reopen the app, then try again.
 
 
-        **Tip:** Customize how notifications look and behave in the Wrist
-        Assistant iOS app under Settings → Notification Style, or in Home
-        Assistant under **Wrist Assistant** in the sidebar → Watch settings →
-        Notifications.
+        **Tip:** Change how notifications look and behave under **Wrist
+        Assistant** in the sidebar, Watch app, Settings, Notifications.
       input:
         auto_dismiss:
           name: Auto-Dismiss
           description: >
             Automatically dismiss the notification after a successful
-            button tap. Off by default — the notification stays visible.
+            button tap. Off by default, so the notification stays visible.
           default: false
           selector:
             boolean:
         priority:
           name: Priority
           description: >
-            How insistently the alert reaches you — most can stay on **Active**.
+            How insistently the alert reaches you. Most can stay on **Active**.
 
 
-            **Passive** — silent, no haptic or screen wake.
+            **Passive:** silent, no haptic or screen wake.
 
 
-            **Active** (default) — sound and haptic when you're free, but silent
+            **Active** (default): sound and haptic when you're free, but silent
             during Focus, Do Not Disturb, and Sleep.
 
 
-            **Time Sensitive** — breaks through Focus/DND/Sleep and skips the
+            **Time Sensitive:** breaks through Focus/DND/Sleep and skips the
             low-power batch window, so it's faster and harder to miss. Use it for
             doorbells, cameras, or leak/smoke alerts.
           default: "active"
@@ -349,18 +348,15 @@ blueprint:
         sound:
           name: Sound
           description: >
-            Pick a preset or type a custom file name. Browse and
-            preview all sounds in the iOS app under
-            Settings → Notification Style → Notification Sound.
+            Pick a preset or type a custom file name.
 
 
-            Custom sounds — and Silent — only apply in Reliable delivery
+            Custom sounds (and Silent) only apply in Reliable delivery
             mode. In Fast mode, watchOS ignores the chosen sound and always
             plays its default alert (a silent mirrored notification reaches
             the wrist with no haptic, so it would be missed entirely). Set
-            the mode in the iOS app under
-            Settings → Notification Style → Delivery, or in the Wrist
-            Assistant sidebar panel under Watch settings → Notifications.
+            the mode under **Wrist Assistant** in the sidebar, Watch app,
+            Settings, Notifications.
           default: "default"
           selector:
             select:
@@ -640,7 +636,7 @@ blueprint:
         tag:
           name: Tag
           description: >
-            *(Optional)* Collapse key — a new notification with the same
+            *(Optional)* Collapse key: a new notification with the same
             tag **replaces** the previous one instead of stacking. E.g.
             set to `front_door` on a door-open alert so repeated opens
             show only the latest notification.

@@ -3,8 +3,9 @@
 // of its own, and its rooms are a `rooms` record: the six room keys under
 // their `behavior` names and a `schemaVersion`. The editor reads, saves,
 // restores and hears that kind, hides the four keys that stay with the main
-// house behind one line, and offers its own Start, or waits for the iPhone's
-// move while the watch has one. The main house is unchanged.
+// house behind one line. With no record it opens ready, unsaved, and its
+// first save makes the record, or it waits for the iPhone's move while the
+// watch has one. The main house is unchanged, but for opening ready too.
 //
 // No DOM: the editor is made but never connected, and read by flattening the
 // Lit templates it returns, as watch-start-flows.test.ts does.
@@ -12,22 +13,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
-import { forgetRoomsDraft } from "../src/watch-rooms/draft.js";
+import { anyRoomsDirty, forgetRoomsDraft } from "../src/watch-rooms/draft.js";
+import { forgetStartFreshChoices } from "../src/watch-menus/new-watch.js";
 import {
   type BehaviorDocument,
   HOME_AUTO_SWITCH_LABEL,
   HOME_ROOMS_LIMIT_BYTES,
   HOME_ROOMS_MAIN_HOUSE_TEXT,
-  HOME_ROOMS_NO_RECORD_TEXT,
   HOME_ROOMS_NO_RECORD_TITLE,
   HOME_ROOMS_PHONE_TEXT,
-  HOME_ROOMS_START_BUTTON,
-  HOME_ROOMS_START_CONFLICT_TEXT,
-  HOME_ROOMS_STARTED_TEXT,
   HOME_ROOMS_UPDATE_TEXT,
   HOME_ROOM_KEYS,
   MAIN_HOUSE_ROOM_KEYS,
-  ROOMS_NO_RECORD_TEXT,
+  ROOMS_NO_RECORD_TITLE,
   ROOMS_WAIT_TEXT,
   clearSensorWrites,
   homeAutoSwitch,
@@ -39,7 +37,6 @@ import {
   roomsBudget,
   roomsKindFor,
   roomsSaveNote,
-  startHomeRooms,
   switchingWritesFor,
   triggerWrites,
 } from "../src/watch-rooms/model.js";
@@ -47,7 +44,16 @@ import { WaRoomsEditor } from "../src/watch-rooms/rooms-editor.js";
 import { ROOM_KEYS } from "../src/watch-rooms/rules.js";
 import { type RoomsViewHost, renderRoomsBody } from "../src/watch-rooms/view.js";
 import { WATCH_CONFIG_LIMIT_BYTES } from "../src/watch-pages/model.js";
-import { PAIR_FIRST_TEXT, START_FRESH_BUTTON, START_FRESH_CONFIRM_TEXT, WAIT_FOR_IPHONE_TEXT } from "../src/watch-settings.js";
+import {
+  NEW_WATCH_TEXT,
+  NOTHING_TO_SAVE_TEXT,
+  PAIR_FIRST_TEXT,
+  START_FRESH_BUTTON,
+  START_FRESH_CONFIRM_TEXT,
+  WAIT_FOR_IPHONE_TEXT,
+  newDeviceText,
+  watchBehaviorDefaults,
+} from "../src/watch-settings.js";
 
 // ── reading templates ────────────────────────────────────────────────────
 
@@ -158,13 +164,17 @@ interface EditorInside {
   unsupported: boolean;
   draft?: { effective: BehaviorDocument; dirty: boolean; pending: ReadonlyMap<string, unknown> };
   load(watchId: string, quiet?: boolean): Promise<void>;
-  start(): Promise<void>;
+  startFresh(): void;
   save(): Promise<void>;
   restore(): Promise<void>;
   restoreAsk?: { entry: { revision: number }; baseRevision: number };
   viewHost(): RoomsViewHost | undefined;
   renderBody(watches: readonly OwnerSummary[]): unknown;
+  renderTopBar(draft: unknown, watches: readonly OwnerSummary[]): unknown;
 }
+
+/** The top bar as drawn now. */
+const bar = (el: EditorInside) => flatten(el.renderTopBar(el.draft, el.owners));
 
 function editor(hass: HassLike, row: OwnerSummary): EditorInside {
   const el = new WaRoomsEditor() as unknown as EditorInside;
@@ -194,6 +204,7 @@ afterEach(() => {
     forgetRoomsDraft(id);
     forgetRoomsDraft(`${id}\u0000rooms`);
   }
+  forgetStartFreshChoices();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -278,7 +289,7 @@ describe("the cards on a home that is not the main house", () => {
       rooms: mergeRoomList({ mappingKeys: Object.keys(view.mappings) }),
       roomsState: "ready",
       busy: false,
-      uiState: new Map(),
+      uiState: new Map<string, unknown>([["sensorOpen", true], ["pointOpen", true]]),
       writes,
       write: (w) => { writes.push(w); },
       endCoalesce: () => undefined,
@@ -292,23 +303,23 @@ describe("the cards on a home that is not the main house", () => {
     const text = flatten(renderRoomsBody(host(homeRooms(), true)));
     expect(text).toContain(HOME_ROOMS_MAIN_HOUSE_TEXT);
     expect(text.split(HOME_ROOMS_MAIN_HOUSE_TEXT)).toHaveLength(2);
-    for (const gone of ["Point control<", "Tap to Toggle", "Live Point Control Tile", "Double Pinch<", "\"When\""]) expect(text).not.toContain(gone);
-    for (const shown of ["Room sensor", "Switch pages by room", HOME_AUTO_SWITCH_LABEL, "Fallback page", "Your rooms", "Kitchen page"]) expect(text).toContain(shown);
+    // Point control stays (its targets are this home's own); its two
+    // switches, the gestures and When are the main house's.
+    for (const gone of ["Every room<", "Tap to Toggle", "Live Point Control Tile", "Double Pinch<", "rm-when"]) expect(text).not.toContain(gone);
+    for (const shown of ["Room sensor", "Switch pages by room", HOME_AUTO_SWITCH_LABEL, "Anywhere else", "When I walk into", "Kitchen page", "Things to point at"]) expect(text).toContain(shown);
   });
 
   it("say it in plain words, with no dash", () => {
-    expect(HOME_ROOMS_MAIN_HOUSE_TEXT).toBe("Double-Tap Top, Double Pinch and the point control switches come from your main house.");
-    for (const t of [HOME_ROOMS_MAIN_HOUSE_TEXT, HOME_ROOMS_NO_RECORD_TITLE, HOME_ROOMS_NO_RECORD_TEXT, HOME_ROOMS_START_BUTTON,
-      HOME_ROOMS_START_CONFLICT_TEXT, HOME_ROOMS_STARTED_TEXT, HOME_ROOMS_UPDATE_TEXT, HOME_AUTO_SWITCH_LABEL]) {
+    expect(HOME_ROOMS_MAIN_HOUSE_TEXT).toBe("The double-tap on the page title, the double pinch and the point control switches come from this watch's main home.");
+    for (const t of [HOME_ROOMS_MAIN_HOUSE_TEXT, HOME_ROOMS_NO_RECORD_TITLE, HOME_ROOMS_UPDATE_TEXT, HOME_AUTO_SWITCH_LABEL]) {
       expect(t).not.toMatch(DASH);
     }
-    expect(HOME_ROOMS_NO_RECORD_TEXT).toBe(`${HOME_ROOMS_START_BUTTON} to begin.`);
   });
 
   it("leave the main house's four cards as they were", () => {
     const text = flatten(renderRoomsBody(host(homeRooms(), false)));
     expect(text).not.toContain(HOME_ROOMS_MAIN_HOUSE_TEXT);
-    for (const title of ["Room sensor", "Switch pages by room", "Point control", "Tap to Toggle", "Your rooms"]) expect(text).toContain(title);
+    for (const title of ["Room sensor", "Switch pages by room", "Point control", "Tap to Toggle", "When I walk into"]) expect(text).toContain(title);
     expect(text).not.toContain(HOME_AUTO_SWITCH_LABEL);
   });
 
@@ -317,25 +328,6 @@ describe("the cards on a home that is not the main house", () => {
     expect(roomsSaveNote(conflict, "rooms")?.text).toBe("Not saved. This home's rooms kept changing elsewhere while saving. Your edits are kept, so try Save again in a moment.");
     expect(roomsSaveNote(conflict)?.text).toBe("Not saved. The watch's settings kept changing elsewhere while saving. Your edits are kept, so try Save again in a moment.");
     expect(roomsSaveNote({ ok: false, code: "no_record", message: "" }, "rooms")?.text).toBe("Not saved. Home Assistant no longer holds rooms for this home.");
-  });
-});
-
-// ── the start ────────────────────────────────────────────────────────────
-
-describe("startHomeRooms", () => {
-  it("saves the empty record over revision 0", async () => {
-    const save = vi.fn(async () => ({ revision: 1 }));
-    expect(await startHomeRooms(save)).toEqual({ ok: true, revision: 1 });
-    expect(save).toHaveBeenCalledWith(0, { schemaVersion: 1 });
-  });
-
-  it("names each refusal", async () => {
-    const fail = (code: string) => startHomeRooms(async () => { throw refusal(code); });
-    expect(await fail("no_record")).toMatchObject({ ok: false, code: "no_record" });
-    expect(await fail("conflict")).toMatchObject({ ok: false, code: "conflict" });
-    expect(await fail("invalid")).toMatchObject({ ok: false, code: "unsupported" });
-    expect(await fail("unknown_command")).toMatchObject({ ok: false, code: "unsupported" });
-    expect(await fail("boom")).toMatchObject({ ok: false, code: "error" });
   });
 });
 
@@ -378,38 +370,36 @@ describe("the rooms editor on a home that is not the main house", () => {
     expect(ha.of("/restore")).toEqual([expect.objectContaining({ kind: "rooms", revision: 2, base_revision: 3 })]);
   });
 
-  it("offers its own Start with no record and no iPhone, and starts over revision 0", async () => {
+  it("opens ready with no record and no iPhone, unsaved, and its first save makes the record over revision 0", async () => {
     const ha = fakeHass({});
     const el = editor(ha.hass, owner("w1", { ...SECOND, has_iphone: false }));
     await el.load("w1");
     const text = flatten(el.renderBody(el.owners));
-    expect(text).toContain(HOME_ROOMS_NO_RECORD_TITLE);
-    expect(text).toContain(HOME_ROOMS_NO_RECORD_TEXT);
-    expect(text).toContain(HOME_ROOMS_START_BUTTON);
-    expect(text).toContain("pe-btn pe-primary");
-    expect(text).not.toContain(ROOMS_NO_RECORD_TEXT);
-    expect(text).not.toContain("Start them under Watch app, Settings");
+    expect(text).toContain(NEW_WATCH_TEXT);
+    expect(text).toContain("When I walk into");
+    expect(text).toContain(HOME_ROOMS_MAIN_HOUSE_TEXT);
+    expect(text).not.toContain(HOME_ROOMS_NO_RECORD_TITLE);
     expect(text).not.toContain(START_FRESH_BUTTON);
+    expect(text).not.toContain(WAIT_FOR_IPHONE_TEXT);
+    // Nothing written, nothing unsaved, and Save says why it is greyed out.
+    expect(ha.of("/save")).toEqual([]);
+    expect(el.draft?.dirty).toBe(false);
+    expect(anyRoomsDirty()).toBe(false);
+    expect(bar(el)).toContain(NOTHING_TO_SAVE_TEXT);
 
-    await el.start();
-    await settle();
-    expect(ha.of("/save")).toEqual([expect.objectContaining({ kind: "rooms", base_revision: 0, document: { schemaVersion: 1 } })]);
-    expect(el.note).toEqual({ kind: "ok", text: HOME_ROOMS_STARTED_TEXT });
+    el.viewHost()!.write(new Map<string, unknown>([[ROOM_KEYS.fallback, "__stay__"], [ROOM_KEYS.tapToToggle, true]]));
+    expect(el.draft?.dirty).toBe(true);
+    expect(bar(el)).not.toContain(NOTHING_TO_SAVE_TEXT);
+    await el.save();
+    expect(ha.of("/save")).toEqual([expect.objectContaining({ kind: "rooms", base_revision: 0, document: { schemaVersion: 1, roomQuickJumpFallbackPageId: "__stay__" } })]);
     expect(el.record?.revision).toBe(1);
-    expect(flatten(el.renderBody(el.owners))).toContain("Your rooms");
+    expect(el.note).toBeUndefined();
+    const after = flatten(el.renderBody(el.owners));
+    expect(after).toContain("When I walk into");
+    expect(after).not.toContain(NEW_WATCH_TEXT);
   });
 
-  it("the Start button runs the start", async () => {
-    const ha = fakeHass({});
-    const el = editor(ha.hass, owner("w1", SECOND));
-    await el.load("w1");
-    const start = vi.spyOn(el, "start").mockResolvedValue();
-    const [click] = listeners(el.renderBody(el.owners));
-    click!();
-    expect(start).toHaveBeenCalledTimes(1);
-  });
-
-  it("waits for the iPhone while the watch has one, with a small link that asks first", async () => {
+  it("waits for the iPhone while the watch has one; the link asks first and opens the ready screen, unsaved", async () => {
     const ha = fakeHass({});
     const el = editor(ha.hass, owner("w1", { ...SECOND, has_iphone: true }));
     await el.load("w1");
@@ -419,37 +409,51 @@ describe("the rooms editor on a home that is not the main house", () => {
     expect(text).toContain(WAIT_FOR_IPHONE_TEXT);
     expect(text).toContain("link start-fresh");
     expect(text).toContain(START_FRESH_BUTTON);
-    expect(text).not.toContain(HOME_ROOMS_START_BUTTON);
     expect(text).not.toContain("pe-btn pe-primary");
+    expect(text).not.toContain(NEW_WATCH_TEXT);
+    expect(el.draft).toBeUndefined();
 
-    const start = vi.spyOn(el, "start").mockResolvedValue();
     const ask = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
     vi.stubGlobal("window", { confirm: ask });
     const [click] = listeners(tpl);
     click!();
     expect(ask).toHaveBeenCalledWith(START_FRESH_CONFIRM_TEXT);
-    expect(start).not.toHaveBeenCalled();
+    expect(flatten(el.renderBody(el.owners))).toContain(WAIT_FOR_IPHONE_TEXT);
     click!();
-    expect(start).toHaveBeenCalledTimes(1);
+    const ready = flatten(el.renderBody(el.owners));
+    expect(ready).toContain(NEW_WATCH_TEXT);
+    expect(ready).toContain("When I walk into");
+    expect(ready).not.toContain(WAIT_FOR_IPHONE_TEXT);
+    expect(ha.of("/save")).toEqual([]);
+    expect(el.draft?.dirty).toBe(false);
   });
 
-  it("shows the iPhone's rooms when they came meanwhile", async () => {
-    const ha = fakeHass({}, { onSave: async () => { throw refusal("conflict"); } });
+  it("lays its edits over the iPhone's rooms when they came meanwhile", async () => {
+    const ha = fakeHass({}, {
+      onSave: async (msg) => {
+        if (msg.base_revision === 0) throw refusal("conflict");
+        return { revision: 2 };
+      },
+    });
     const el = editor(ha.hass, owner("w1", SECOND));
     await el.load("w1");
+    el.viewHost()!.write(new Map<string, unknown>([[ROOM_KEYS.fallback, "__stay__"]]));
     ha.hold("rooms", record("rooms", 1, homeRooms()));
-    await el.start();
-    await settle();
-    expect(el.note).toEqual({ kind: "warn", text: HOME_ROOMS_START_CONFLICT_TEXT });
-    expect(el.record?.revision).toBe(1);
+    await el.save();
+    const saves = ha.of("/save");
+    expect(saves.map((m) => m.base_revision)).toEqual([0, 1]);
+    expect(saves[1]!.document).toEqual({ ...homeRooms(), roomQuickJumpFallbackPageId: "__stay__" });
+    expect(el.record?.revision).toBe(2);
   });
 
-  it("asks to pair first when the watch is not paired here", async () => {
+  it("asks to pair first when its first save meets a watch that is not paired here", async () => {
     const ha = fakeHass({}, { onSave: async () => { throw refusal("no_record"); } });
     const el = editor(ha.hass, owner("w1", SECOND));
     await el.load("w1");
-    await el.start();
+    el.viewHost()!.write(new Map<string, unknown>([[ROOM_KEYS.fallback, "__stay__"]]));
+    await el.save();
     expect(el.note).toEqual({ kind: "warn", text: PAIR_FIRST_TEXT });
+    expect(el.draft?.dirty).toBe(true);
   });
 
   it("points an iPhone at its own settings, not at a main house", async () => {
@@ -465,16 +469,16 @@ describe("the rooms editor on a home that is not the main house", () => {
     expect(HOME_ROOMS_PHONE_TEXT).not.toMatch(DASH);
   });
 
-  it("names the iPhone when it has no rooms yet", async () => {
+  it("opens ready as a new iPhone when it has no rooms yet", async () => {
     const ha = fakeHass({});
     const el = editor(ha.hass, { ...owner("p1"), device_kind: "iphone", device_name: "iPhone" } as OwnerSummary);
     (el as unknown as { phones: boolean }).phones = true;
     await el.load("p1");
     const text = flatten(el.renderBody(el.owners));
-    expect(text).toContain("No rooms on this iPhone yet.");
+    expect(text).toContain(newDeviceText("iphone"));
+    expect(text).not.toContain(NEW_WATCH_TEXT);
     expect(text).not.toContain(HOME_ROOMS_NO_RECORD_TITLE);
-    expect(text).not.toContain("watch");
-    expect(text).toContain(HOME_ROOMS_START_BUTTON);
+    expect(text).toContain(HOME_ROOMS_PHONE_TEXT);
   });
 
   it("asks for an update when the integration does not keep the kind", async () => {
@@ -487,21 +491,51 @@ describe("the rooms editor on a home that is not the main house", () => {
 });
 
 describe("the rooms editor on the main house", () => {
-  it("reads behavior and keeps its no-record words and no Start", async () => {
+  it("reads behavior and, with no record and no iPhone, opens ready on Watch settings' defaults", async () => {
     for (const row of [owner("w1"), owner("w1", { main_house: true })]) {
+      forgetRoomsDraft("w1");
       const ha = fakeHass({});
       const el = editor(ha.hass, row);
       await el.load("w1");
       expect(ha.of("/get").map((m) => m.kind)).toEqual(["behavior"]);
       const text = flatten(el.renderBody(el.owners));
-      expect(text).toContain(ROOMS_NO_RECORD_TEXT);
-      expect(text).not.toContain(HOME_ROOMS_START_BUTTON);
-      expect(text).not.toContain("pe-btn");
+      expect(text).toContain(NEW_WATCH_TEXT);
+      expect(text).toContain("Switch pages by room");
+      expect(text).not.toContain(HOME_AUTO_SWITCH_LABEL);
+      expect(text).not.toContain(HOME_ROOMS_MAIN_HOUSE_TEXT);
+      expect(text).not.toContain(ROOMS_NO_RECORD_TITLE);
+      expect(text).not.toContain("Open Settings");
+      expect(el.draft?.effective).toEqual(watchBehaviorDefaults());
+      expect(el.draft?.dirty).toBe(false);
+      expect(ha.of("/save")).toEqual([]);
     }
+  });
+
+  it("makes the whole settings record with its first save, the room edits on Watch settings' defaults", async () => {
+    const ha = fakeHass({});
+    const el = editor(ha.hass, owner("w1"));
+    await el.load("w1");
+    el.viewHost()!.write(new Map<string, unknown>([[ROOM_KEYS.fallback, "__stay__"]]));
+    await el.save();
+    const [save] = ha.of("/save");
+    expect(save).toMatchObject({ kind: "behavior", base_revision: 0 });
+    expect(save!.document).toEqual({ ...watchBehaviorDefaults(), roomQuickJumpFallbackPageId: "__stay__" });
+    expect(el.record?.revision).toBe(1);
+  });
+
+  it("waits for the iPhone with a Start fresh link while the watch has one", async () => {
     const ha = fakeHass({});
     const el = editor(ha.hass, owner("w1", { has_iphone: true }));
     await el.load("w1");
-    expect(flatten(el.renderBody(el.owners))).toContain(ROOMS_WAIT_TEXT);
+    const text = flatten(el.renderBody(el.owners));
+    expect(text).toContain(ROOMS_NO_RECORD_TITLE);
+    expect(text).toContain(ROOMS_WAIT_TEXT);
+    expect(text).toContain(START_FRESH_BUTTON);
+    expect(text).not.toContain(NEW_WATCH_TEXT);
+    vi.stubGlobal("window", { confirm: () => true });
+    el.startFresh();
+    expect(flatten(el.renderBody(el.owners))).toContain(NEW_WATCH_TEXT);
+    expect(ha.of("/save")).toEqual([]);
   });
 
   it("saves behavior with the four keys as before", async () => {

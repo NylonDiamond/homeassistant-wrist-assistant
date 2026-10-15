@@ -16,8 +16,11 @@ import {
 } from "../src/watch-rooms/hook.js";
 import {
   type BehaviorDocument,
+  HOME_ROOMS_MAIN_HOUSE_TEXT,
   applyRoomEdits,
+  areasFromHass,
   areasFromReply,
+  floorsFromReply,
   clearSensorWrites,
   fallbackChoice,
   fallbackWrites,
@@ -25,7 +28,9 @@ import {
   mergeRoomList,
   pointSwitchWrites,
   readRooms,
+  removeRoomWrites,
   roomDirtyKeys,
+  roomIsListed,
   roomPage,
   roomPageChoices,
   roomPageWrites,
@@ -44,7 +49,9 @@ import {
   type PointRooms,
   type PointZone,
   POINT_CONTROL_DOMAINS,
+  ROOM_KEYS,
   ROOM_RULES,
+  STAY_ON_CURRENT_PAGE,
   cleanZones,
   compassPoint,
   decodeZones,
@@ -54,7 +61,7 @@ import {
   roomFromState,
   wrapHeading,
 } from "../src/watch-rooms/rules.js";
-import { type RoomsViewHost, headingAt, renderRoomsBody, sensorReading } from "../src/watch-rooms/view.js";
+import { type RoomsViewHost, BERMUDA_PITCH, BERMUDA_URL, HEADING_HELP_DETAIL, NO_SENSOR_TEXT, headingAt, isBermudaSensor, listedRooms, offeredAreas, pickedRoom, pointSummary, renderRoomsBody, roomGroups, roomPointLine, roomsViewStyles, sensorReading } from "../src/watch-rooms/view.js";
 
 const flat = (v: unknown): string => {
   if (Array.isArray(v)) return v.map(flat).join("");
@@ -357,6 +364,30 @@ describe("the pages and the room list", () => {
     expect(list.find((r) => r.key === "office")?.name).toBe("Office");
   });
 
+  it("carries each area's floor onto its rooms, aliases and all", () => {
+    const list = mergeRoomList({
+      areas: [{ name: "Kitchen", aliases: ["Cook"], floorId: "main" }, { name: "Attic" }],
+      mappingKeys: ["office"],
+    });
+    expect(list.find((r) => r.key === "kitchen")?.floorId).toBe("main");
+    expect(list.find((r) => r.key === "cook")?.floorId).toBe("main");
+    expect(list.find((r) => r.key === "attic")).toEqual({ key: "attic", name: "Attic", area: true });
+    expect(list.find((r) => r.key === "office")?.floorId).toBeUndefined();
+  });
+
+  it("reads the floors from the registry's reply or from hass", () => {
+    expect(areasFromReply([{ area_id: "k", name: "Kitchen", floor_id: "main" }, { area_id: "g", name: "Garage", floor_id: null }]))
+      .toEqual([{ name: "Kitchen", aliases: [], floorId: "main" }, { name: "Garage", aliases: [] }]);
+    expect(areasFromHass({ k: { name: "Kitchen", floor_id: "main" }, x: { name: " " }, g: { name: "Garage" } }))
+      .toEqual([{ name: "Kitchen", floorId: "main" }, { name: "Garage" }]);
+    expect(areasFromHass(undefined)).toEqual([]);
+    expect(floorsFromReply([{ floor_id: "up", name: "Upstairs", level: 1 }, { floor_id: "main", name: "Main floor" }, { name: "No id" }, { floor_id: "up", name: "Again" }]))
+      .toEqual([{ id: "up", name: "Upstairs" }, { id: "main", name: "Main floor" }]);
+    expect(floorsFromReply({ main: { floor_id: "main", name: "Main floor" }, base: { floor_id: "base", name: "" } }))
+      .toEqual([{ id: "main", name: "Main floor" }, { id: "base", name: "base" }]);
+    expect(floorsFromReply(undefined)).toEqual([]);
+  });
+
   it("reads Home Assistant's replies", () => {
     expect(areasFromReply([{ area_id: "k", name: "Kitchen", aliases: ["Cook", 3] }, { area_id: "x" }])).toEqual([{ name: "Kitchen", aliases: ["Cook"] }]);
     expect(areasFromReply(null)).toEqual([]);
@@ -573,7 +604,7 @@ describe("the cards", () => {
   function host(doc: BehaviorDocument): RoomsViewHost & { writes: ReadonlyMap<string, unknown>[] } {
     const writes: ReadonlyMap<string, unknown>[] = [];
     const view = readRooms(doc);
-    const uiState = new Map<string, unknown>([["room:kitchen", true]]);
+    const uiState = new Map<string, unknown>([["sensorOpen", true], ["pointOpen", true]]);
     return {
       hass: { states: { "sensor.watch_area": { state: "Kitchen", attributes: { friendly_name: "Watch area" } } } } as unknown as HassLike,
       document: doc,
@@ -594,15 +625,23 @@ describe("the cards", () => {
 
   it("draw the four cards with what the document says", () => {
     const text = flat(renderRoomsBody(host(behavior())));
-    for (const title of ["Room sensor", "Switch pages by room", "Point control", "Your rooms"]) expect(text).toContain(title);
-    expect(text).toContain("Now in Kitchen.");
+    for (const title of ["Room sensor", "Switch pages by room", "Point control", "When I walk into", "the watch opens", "Anywhere else"]) expect(text).toContain(title);
+    expect(text).toContain("The watch opens a room's page when the room sensor says you walked in.");
     expect(text).toContain("Automatic");
     expect(text).toContain("Stay on current page");
     expect(text).toContain("First available page");
     expect(text).toContain("Kitchen page");
     expect(text).toContain("Tap to Toggle");
     expect(text).toContain("Live Point Control Tile");
-    expect(text).toContain("Point control targets");
+    expect(text).toContain("Things to point at");
+  });
+
+  it("name the double-tap the way Watch settings does, and link Bermuda", () => {
+    const text = flat(renderRoomsBody(host(behavior({ roomQuickJumpSourceEntityId: "", roomAutoSwitchEnabled: false, topSectionDoubleTapAction: "Room Jump" }))));
+    expect(text).toContain("Double-tap the page title");
+    expect(text).not.toContain("Double-Tap Top");
+    expect(text).toContain(`<a href=${BERMUDA_URL}`);
+    expect(BERMUDA_URL).toBe("https://github.com/agittins/bermuda");
   });
 
   it("say so when the targets cannot be read", () => {
@@ -610,3 +649,228 @@ describe("the cards", () => {
     expect(text).toContain("cannot be read");
   });
 });
+
+describe("the list, the stage and the inspector", () => {
+  function host(doc: BehaviorDocument, extra: Partial<RoomsViewHost> = {}): RoomsViewHost & { writes: ReadonlyMap<string, unknown>[] } {
+    const writes: ReadonlyMap<string, unknown>[] = [];
+    const view = readRooms(doc);
+    const added = extra.added ?? [];
+    return {
+      hass: { states: { "sensor.watch_area": { state: "Kitchen", attributes: { friendly_name: "Watch area" } } } } as unknown as HassLike,
+      document: doc,
+      view,
+      dirty: new Set(),
+      pages: [{ id: KITCHEN_PAGE, name: "Kitchen page" }],
+      rooms: mergeRoomList({
+        areas: [{ name: "Kitchen" }, { name: "Garage" }, { name: "Office" }],
+        mappingKeys: Object.keys(view.mappings),
+        zoneKeys: view.zones.ok ? view.zones.rooms.map(([k]) => k) : [],
+        added,
+      }),
+      roomsState: "ready",
+      busy: false,
+      uiState: new Map(),
+      writes,
+      write: (w) => { writes.push(w); },
+      endCoalesce: () => undefined,
+      addRoom: () => undefined,
+      requestUpdate: () => undefined,
+      ...extra,
+    };
+  }
+
+  it("list the rooms with a page, targets or a name added here, and offer the other areas", () => {
+    const h = host(behavior(), { added: ["Office"] });
+    expect(listedRooms(h).map((r) => r.key)).toEqual(["kitchen", "living room", "office"]);
+    expect(offeredAreas(h).map((r) => r.name)).toEqual(["Garage"]);
+    const folded = flat(renderRoomsBody(h));
+    expect(folded).toContain("1 more area in Home Assistant");
+    expect(folded).not.toContain("+ Garage");
+    expect(folded).not.toContain("Add a room by name");
+    h.uiState.set("moreOpen", true);
+    const text = flat(renderRoomsBody(h));
+    expect(text).toContain("+ Garage");
+    expect(text).not.toContain("+ Kitchen");
+    expect(text).toContain("Add a room by name");
+  });
+
+  it("group the rooms by Home Assistant's floors, the rest last", () => {
+    const rooms = mergeRoomList({ areas: [{ name: "Kitchen", floorId: "main" }, { name: "Bedroom", floorId: "up" }, { name: "Shed", floorId: "gone" }], mappingKeys: ["office"] });
+    const floors = [{ id: "up", name: "Upstairs" }, { id: "main", name: "Main floor" }, { id: "base", name: "Basement" }];
+    expect(roomGroups(rooms, floors).map((g) => [g.name, g.rooms.map((r) => r.key)])).toEqual([
+      ["Upstairs", ["bedroom"]],
+      ["Main floor", ["kitchen"]],
+      ["Other", ["office", "shed"]],
+    ]);
+    expect(roomGroups(rooms, []).map((g) => [g.name, g.rooms.length])).toEqual([["", 4]]);
+    expect(roomGroups([], floors)).toEqual([]);
+    const h = host(behavior());
+    h.rooms = mergeRoomList({ areas: [{ name: "Kitchen", floorId: "main" }], mappingKeys: Object.keys(h.view.mappings) });
+    const text = flat(renderRoomsBody({ ...h, floors }));
+    expect(text).toContain("Main floor");
+    expect(text).toContain("Other");
+    expect(text).not.toContain("Upstairs");
+  });
+
+  it("list a room the sensor reported even with nothing set", () => {
+    const view = readRooms({});
+    expect(roomIsListed(view, { key: "garage", name: "Garage", area: true, lastSeen: 1 }, [])).toBe(true);
+    expect(roomIsListed(view, { key: "garage", name: "Garage", area: true }, [])).toBe(false);
+    expect(roomIsListed(view, { key: "garage", name: "Garage", area: true }, ["GARAGE"])).toBe(true);
+  });
+
+  it("say what each room opens and how many things to point at", () => {
+    const h = host(behavior(), { added: ["Office"] });
+    const [kitchen, den, office] = listedRooms(h);
+    expect(roomPointLine(h, kitchen!)).toBe("1 thing to point at");
+    expect(roomPointLine(h, den!)).toBe("");
+    expect(roomPointLine(h, office!)).toBe("");
+    const text = flat(renderRoomsBody(h));
+    for (const s of ["Page for Kitchen", "Page for Living Room", "Page for Office", "A page not on this watch", "Kitchen page"]) expect(text).toContain(s);
+    expect(pointSummary(h.view)).toBe("1 thing in 1 room.");
+    expect(pointSummary(readRooms({}))).toBe("Off in every room.");
+    expect(pointSummary(readRooms(behavior({ pointControlRoomMappingsJSON: "{\"a\":[{\"centerHeading\":1,\"entityId\":\"light.a\"},{\"centerHeading\":2,\"entityId\":\"light.b\"}],\"b\":[{\"centerHeading\":3,\"entityId\":\"light.c\"}]}" })))).toBe("3 things in 2 rooms.");
+  });
+
+  it("never show the room the sensor names now, which moves as you walk", () => {
+    const text = flat(renderRoomsBody(host(behavior())));
+    for (const s of ["You are here", "You are in", "rm-here", "Now in Kitchen."]) expect(text).not.toContain(s);
+  });
+
+  it("read the sensor only when Change is open, or when it is broken", () => {
+    const h = host(behavior());
+    h.uiState.set("sensorOpen", true);
+    expect(flat(renderRoomsBody(h))).toContain("Now in Kitchen.");
+    const gone = host(behavior());
+    gone.hass = { states: {} } as unknown as HassLike;
+    expect(flat(renderRoomsBody(gone))).toContain("Home Assistant has no entity with this id now.");
+  });
+
+  it("show the picked room, else the first", () => {
+    const h = host(behavior());
+    const listed = listedRooms(h);
+    expect(pickedRoom(h, listed)?.key).toBe("kitchen");
+    h.uiState.set("pick", "living room");
+    expect(pickedRoom(h, listed)?.key).toBe("living room");
+    h.uiState.set("pick", "gone");
+    expect(pickedRoom(h, listed)?.key).toBe("kitchen");
+    // Never the room the sensor names now: the first, so the page holds still.
+    const den = host(behavior());
+    den.hass = { states: { "sensor.watch_area": { state: "Living Room", attributes: {} } } } as unknown as HassLike;
+    expect(pickedRoom(den, listedRooms(den))?.key).toBe("kitchen");
+  });
+
+  it("draw the picked room on the stage, and its targets only in the open point control", () => {
+    const h = host(behavior());
+    const folded = flat(renderRoomsBody(h));
+    for (const s of ["What the watch opens in Kitchen", "Preview", "Click a room to see what the watch opens there.", "Remove Kitchen", "Point control", "1 thing in 1 room."]) {
+      expect(folded).toContain(s);
+    }
+    expect(folded).not.toContain("Pendant / Bar");
+    h.uiState.set("pointOpen", true);
+    const text = flat(renderRoomsBody(h));
+    for (const s of ["Room for point control", "Pendant / Bar", "° E", "+ Add a thing", "Tap to Toggle", "Live Point Control Tile"]) expect(text).toContain(s);
+    expect(text).toContain(`title=${HEADING_HELP_DETAIL}`);
+    h.uiState.set("pick", "living room");
+    const den = flat(renderRoomsBody(h));
+    expect(den).toContain("What the watch opens in Living Room");
+    expect(den).not.toContain("Pendant / Bar");
+  });
+
+  it("show Anywhere else's page on the watch for a room with none", () => {
+    const pagesDocument = { schemaVersion: 1, pages: [{ id: KITCHEN_PAGE, name: "Kitchen page", items: [] }] };
+    const h = host(behavior({ roomQuickJumpFallbackPageId: KITCHEN_PAGE }), { added: ["Office"], pagesDocument });
+    h.uiState.set("pick", "office");
+    const text = flat(renderRoomsBody(h));
+    expect(text).toContain("No page for this room, so the watch opens Anywhere else.");
+    const blank = host(behavior(), { added: ["Office"] });
+    blank.uiState.set("pick", "office");
+    expect(flat(renderRoomsBody(blank))).toContain("No page for this room. The watch uses Anywhere else.");
+  });
+
+  it("keep the other home's own switch and say the rest is the main home's", () => {
+    const h = host(behavior(), { home: true });
+    h.uiState.set("pointOpen", true);
+    const text = flat(renderRoomsBody(h));
+    expect(text).toContain("Switch automatically");
+    expect(text.split(HOME_ROOMS_MAIN_HOUSE_TEXT)).toHaveLength(2);
+    expect(text).toContain("Things to point at");
+    expect(text).not.toContain("Tap to Toggle");
+    expect(text).not.toContain("Double-tap the page title");
+  });
+
+  it("draw the page itself on the watch when the watch's pages are at hand", () => {
+    const pagesDocument = { schemaVersion: 1, pages: [{ id: KITCHEN_PAGE, name: "Kitchen page", items: [] }] };
+    const text = flat(renderRoomsBody(host(behavior(), { pagesDocument })));
+    expect(text).toContain("Preview of Kitchen page");
+    expect(flat(renderRoomsBody(host(behavior())))).not.toContain("Preview of");
+  });
+
+  it("open the way to add a room while there are none", () => {
+    const h = host({});
+    h.rooms = [];
+    const text = flat(renderRoomsBody(h));
+    for (const s of ["No rooms yet", "Add a room and give it a page", "Add a room by name", "Anywhere else"]) expect(text).toContain(s);
+    expect(text).not.toContain("Page for ");
+    expect(text).toContain(NO_SENSOR_TEXT.slice(0, NO_SENSOR_TEXT.indexOf("Bermuda")));
+  });
+
+  it("put Bermuda and the sensor field first while no sensor is picked", () => {
+    const text = flat(renderRoomsBody(host({})));
+    expect(text).toContain("Start here");
+    expect(text).toContain("Tell the watch which room you are in");
+    expect(text).toContain(BERMUDA_PITCH);
+    expect(text).toContain(`href=${BERMUDA_URL}`);
+    expect(text).toContain("Get Bermuda");
+    expect(text.indexOf("rm-sensor-field")).toBeLessThan(text.indexOf("When I walk into"));
+    // A sensor picked: the sentence first, the field behind Change.
+    const picked = flat(renderRoomsBody(host(behavior())));
+    expect(picked).not.toContain("Start here");
+    expect(picked).not.toContain("rm-sensor-field");
+    expect(picked).toContain("Change");
+    for (const line of [NO_SENSOR_TEXT, BERMUDA_PITCH]) expect(line).not.toMatch(/[–—]| - /);
+  });
+
+  it("know a Bermuda sensor by its device class or its name", () => {
+    const hass = { states: {
+      "sensor.watch_ble_area": { entity_id: "sensor.watch_ble_area", state: "Kitchen", attributes: { device_class: "bermuda__custom_device_class" } },
+      "sensor.bermuda_phone": { entity_id: "sensor.bermuda_phone", state: "Kitchen", attributes: {} },
+      "sensor.other_room": { entity_id: "sensor.other_room", state: "Kitchen", attributes: {} },
+    } } as unknown as Parameters<typeof isBermudaSensor>[0];
+    expect(isBermudaSensor(hass, "sensor.watch_ble_area")).toBe(true);
+    expect(isBermudaSensor(hass, "sensor.bermuda_phone")).toBe(true);
+    expect(isBermudaSensor(hass, "sensor.other_room")).toBe(false);
+    expect(isBermudaSensor(hass, "")).toBe(false);
+  });
+
+  it("pick each room's page right in its row, the option bound as a property", () => {
+    const text = flat(renderRoomsBody(host(behavior())));
+    expect(text).toContain("Page for Kitchen");
+    expect(text).toContain("No page");
+    expect(text).toContain("Page anywhere else");
+    expect(text).toContain(".selected=");
+    expect(text).not.toContain("?selected=");
+  });
+
+  it("take a room off in one set of writes, its page and its targets", () => {
+    const doc = behavior({ pointControlRoomMappingsJSON: "{\"kitchen\":[{\"centerHeading\":90,\"entityId\":\"light.kitchen\"}],\"den\":[{\"centerHeading\":10,\"entityId\":\"light.den\"}]}" });
+    const writes = removeRoomWrites(doc, "kitchen");
+    expect(writes.get(ROOM_KEYS.mappings)).toEqual({ "Living-Room": DEN_PAGE });
+    expect(writes.get(ROOM_KEYS.zones)).toBe("{\"den\":[{\"entityId\":\"light.den\",\"centerHeading\":10}]}");
+    const last = removeRoomWrites(behavior(), "kitchen");
+    expect(last.has(ROOM_KEYS.zones)).toBe(true);
+    expect(last.get(ROOM_KEYS.zones)).toBeUndefined();
+    expect(removeRoomWrites(behavior(), "garage").size).toBe(0);
+    expect(removeRoomWrites(behavior({ pointControlRoomMappingsJSON: "not json" }), "kitchen").has(ROOM_KEYS.zones)).toBe(false);
+  });
+
+  it("help in plain words: no italics, no dashes, no cut text", () => {
+    const sheet = roomsViewStyles.cssText;
+    expect(sheet).not.toMatch(/font-style:\s*italic/);
+    expect(sheet).not.toMatch(/text-overflow:\s*ellipsis/);
+    expect(sheet).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
+    const text = flat(renderRoomsBody(host(behavior())));
+    expect(text).not.toMatch(/[\u2013\u2014]| - /);
+  });
+});
+

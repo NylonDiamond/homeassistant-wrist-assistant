@@ -4171,6 +4171,7 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     # An observer's read does neither.
     if observer:
         return response
+    store.note_multiple_pages(ctx.watch_id, kind, ctx.payload.get("multiple_pages"))
     if unreadable is None or not store.report_unreadable(
         ctx.watch_id, kind, unreadable, ctx.payload.get("reason")
     ):

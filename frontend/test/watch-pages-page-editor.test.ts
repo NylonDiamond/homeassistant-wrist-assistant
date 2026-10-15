@@ -9,11 +9,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
+import { NEW_WATCH_TEXT } from "../src/watch-settings.js";
 import { type WatchCatalog, readWatchCatalog } from "../src/watch-pages/catalog.js";
 import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
 import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
-import "../src/watch-pages/page-editor.js";
+import { PAGE_LIST_HEIGHT, WATCH_PAGES_PLAN_TEXT, clampPageListHeight, loadPageListHeight } from "../src/watch-pages/page-editor.js";
 import {
   STAGE_ZOOM_KEY,
   loadStageZoom,
@@ -176,7 +177,7 @@ describe("the top bar", () => {
     el.topMenuOpen = true;
     const text = whole();
     expect(text).toContain(`class="tb-sync warn"`);
-    expect(text).toContain(">Waiting to be collected</span>");
+    expect(text).toContain(">Waiting for the watch</span>");
     expect(text).toContain(">Discard edits</button>");
   });
 });
@@ -222,10 +223,10 @@ describe("the watch picker", () => {
 
   it("is there with no pages, while loading and with no record, and not with one watch", () => {
     const { el, whole } = editor();
-    // A watch with no pages yet: only the empty card under the bar.
+    // A watch with no pages yet: the ready page, unsaved, under the bar.
     el.record = { ...(el.record as WatchConfigRecord), revision: 0, document: null };
     let text = whole();
-    expect(text).toContain("No pages from this watch yet.");
+    expect(text).toContain(NEW_WATCH_TEXT);
     expect(text).toContain(`<div class="picker pe-watch-picker">`);
     el.loading = true;
     text = whole();
@@ -255,7 +256,7 @@ describe("the Tiles card", () => {
     expect(tileRow(card, "T-BOTTOM")).not.toContain("badge tap");
     expect(tileRow(card, "T-BOTTOM")).toContain(" · 4×3</small>");
     // Each row has its face in the thumb, and on hover Duplicate and Delete.
-    expect(tileRow(card, "T-BOTTOM")).toContain(`<span class="thumb pe-thumb"`);
+    expect(tileRow(card, "T-BOTTOM")).toContain(`<span class="thumb pe-thumb pe-tile-thumb"`);
     expect(tileRow(card, "T-BOTTOM")).toContain(`aria-label=Duplicate Bottom`);
     expect(tileRow(card, "T-BOTTOM")).toContain(`aria-label=Delete Bottom`);
   });
@@ -330,6 +331,49 @@ describe("the Tiles card", () => {
     expect(card).toContain(">2 pages</span>");
     expect(card).toMatch(/class="layer pe-page-row hl [^"]*"\s+data-page=P-HALL/);
     expect(card).toMatch(/class="layer pe-page-row  [^"]*"\s+data-page=P-YARD/);
+  });
+
+  it("puts a drag bar between the Pages and Tiles cards that sets the page list's height", () => {
+    const e = editor();
+    const text = e.body();
+    const pagesAt = text.indexOf(`class="card lc pe-pages-card`);
+    const barAt = text.indexOf(`class="pe-list-split"`);
+    const tilesAt = text.indexOf(`class="card lc pe-tiles-card"`);
+    expect(pagesAt).toBeLessThan(barAt);
+    expect(barAt).toBeLessThan(tilesAt);
+    expect(text).toMatch(/class="pe-list-split" role="separator" aria-orientation="horizontal"/);
+    // No height of its own until dragged: the CSS default.
+    expect(text).not.toContain("--pe-list-h");
+    e.el.pageListHeight = 500;
+    expect(e.body()).toContain("--pe-list-h:500px;");
+    expect(rule(sheet(), ".layout.pe-layout.cols-3 .pe-pages-card > .pe-page-list")).toContain("max-height: var(--pe-list-h, min(40dvh, 360px))");
+    expect(rule(sheet(), ".layout.pe-layout.cols-1 .pe-list-split")).toContain("display: none");
+  });
+
+  it("keeps the page list height within its limits and reads back only a saved number", () => {
+    expect(clampPageListHeight(10)).toBe(PAGE_LIST_HEIGHT.min);
+    expect(clampPageListHeight(99_999)).toBe(PAGE_LIST_HEIGHT.max);
+    expect(clampPageListHeight(300.6)).toBe(301);
+    const stored = (value: string | null) => ({ getItem: () => value, setItem: () => {} });
+    expect(loadPageListHeight(stored("420"))).toBe(420);
+    expect(loadPageListHeight(stored("5"))).toBe(PAGE_LIST_HEIGHT.min);
+    for (const value of [null, "", "0", "-3", "junk"]) expect(loadPageListHeight(stored(value))).toBeUndefined();
+    expect(loadPageListHeight(undefined)).toBeUndefined();
+  });
+
+  it("says under the pages that one page is always free, to a free watch only", () => {
+    const pagesCard = (text: string) => text.slice(text.indexOf(`class="card lc pe-pages-card`), text.indexOf(`class="card lc pe-tiles-card"`));
+    const e = editor();
+    // A watch that never said (an older app), then one that shows every page.
+    expect(pagesCard(e.body())).not.toContain("pe-plan-note");
+    e.el.record = { ...(e.el.record as WatchConfigRecord), multiple_pages: true };
+    expect(pagesCard(e.body())).not.toContain("pe-plan-note");
+    e.el.record = { ...(e.el.record as WatchConfigRecord), multiple_pages: false };
+    const card = pagesCard(e.body());
+    expect(card).toContain(`class="lc-note pe-plan-note"`);
+    expect(card).toContain(WATCH_PAGES_PLAN_TEXT.title);
+    expect(card).toContain(WATCH_PAGES_PLAN_TEXT.body);
+    expect(`${WATCH_PAGES_PLAN_TEXT.title} ${WATCH_PAGES_PLAN_TEXT.body}`).not.toMatch(/[–—]| - /);
   });
 });
 
@@ -808,11 +852,11 @@ describe("the canvas head", () => {
   it("reads page / watch / facts: the page's name to type over, the open watch's name as words, no watch chips", () => {
     const { body } = editor();
     const text = body();
-    // The head ends where the page strip starts, and the stage follows it.
-    const strip = text.indexOf(`<div class="pe-pstrip"`);
-    expect(strip).toBeGreaterThan(text.indexOf(`<div class="cv-head">`));
-    expect(text.indexOf(`<div class="stage-area`)).toBeGreaterThan(strip);
-    const head = text.slice(text.indexOf(`<div class="cv-head">`), strip);
+    // The head ends where the stage starts: no page strip between them.
+    const stage = text.indexOf(`<div class="stage-area`);
+    expect(stage).toBeGreaterThan(text.indexOf(`<div class="cv-head">`));
+    expect(text).not.toContain("pe-pstrip");
+    const head = text.slice(text.indexOf(`<div class="cv-head">`), stage);
     expect(head).toContain(`class="tb-name-input"`);
     expect(head).toContain(`.value=Hall`);
     expect(head).not.toContain("doc-chip");
@@ -826,7 +870,7 @@ describe("the canvas head", () => {
   });
 
   it("offers Duplicate and Delete for the selected tile only, and Duplicate only where the copy may go", () => {
-    const head = (text: string) => text.slice(text.indexOf(`<div class="cv-head">`), text.indexOf(`<div class="pe-pstrip"`));
+    const head = (text: string) => text.slice(text.indexOf(`<div class="cv-head">`), text.indexOf(`<div class="stage-area`));
     const none = head(editor().body());
     expect(none).toContain(`?disabled=true title=Select a tile to duplicate it.`);
     expect(none).toMatch(/<button class="cv-act icon danger" \?disabled=true/);

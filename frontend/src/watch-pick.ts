@@ -33,6 +33,7 @@ import { initialWatch } from "./watch-settings.js";
 import { watchSettingsRouteOwner } from "./watch-settings-page.js";
 import { watchStatusPagesRouteOwner } from "./watch-status-pages/hook.js";
 import { watchVoiceRouteOwner } from "./watch-voice/hook.js";
+import { watchComplicationsRouteOwner } from "./watch-complications.js";
 
 /** localStorage: `{"watch": "<owner_watch_id>"}`. */
 export const WATCH_PICK_KEY = "wrist-assistant-panel.watch.v1";
@@ -51,6 +52,7 @@ export function watchRouteOwner(route: PanelRoute | undefined): string | undefin
     ?? watchStatusPagesRouteOwner(route)
     ?? watchControlCenterRouteOwner(route)
     ?? watchRoomsRouteOwner(route)
+    ?? watchComplicationsRouteOwner(route)
     ?? watchSettingsRouteOwner(route);
 }
 

@@ -79,7 +79,7 @@ describe("ownerGroups", () => {
       owner({ owner_watch_id: "p1", device_kind: "iphone" }),
       owner({ owner_watch_id: "w1" }),
     ]);
-    expect(groups.map((g) => g.label)).toEqual(["Watch", "iPhone", "Unassigned"]);
+    expect(groups.map((g) => g.label)).toEqual(["Watch", "iPhone", "Not on a device"]);
     expect(ownersByKind([
       owner({ owner_watch_id: "library", device_kind: "library", device_name: "Library" }),
       owner({ owner_watch_id: "w1" }),

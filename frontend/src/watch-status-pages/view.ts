@@ -17,7 +17,7 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import { browserStorage, type ColumnStorage } from "../column-split.js";
 import { sectionCard } from "../editor-chrome.js";
-import { checkField, entityField, numberField, segField, selectField, sliderField, symbolField, textField } from "../editors.js";
+import { checkField, entityField, numberField, segField, selectField, settingTitle, sliderField, symbolField, textField } from "../editors.js";
 import type { HassLike } from "../ha-api.js";
 import { SECTION_COLOR } from "../kinds.js";
 import type { EntityRef } from "../model.js";
@@ -26,6 +26,7 @@ import type { SymbolBrowser } from "../symbols.js";
 import { type UiIconName, uiIcon } from "../ui-icons.js";
 import { type PhonePagesLayout, renderDeviceFrame } from "../phone-frame.js";
 import { type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOpen } from "../watch-pages/fold-memory.js";
+import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import type { JsonObject } from "../watch-pages/model.js";
 import { STAGE_ZOOM_STEPS } from "../watch-pages/stage.js";
 import {
@@ -647,8 +648,15 @@ const BADGES: Readonly<Record<string, { color: string; icon: UiIconName }>> = {
   row: { color: SECTION_COLOR.content, icon: "content" },
   add: { color: SECTION_COLOR.content, icon: "plus" },
   page: { color: SECTION_COLOR.place, icon: "text" },
-  style: { color: SECTION_COLOR.look, icon: "look" },
+  /** The page's look in three cards: its rows in the Status pages hue, its
+   * text and the rest neutral. */
+  rows: { color: "var(--wa-hue-yellow)", icon: "checklist" },
+  text: { color: SECTION_COLOR.place, icon: "text" },
+  more: { color: SECTION_COLOR.place, icon: "look" },
 };
+
+/** The fold ids of the page's look cards, in their order. */
+const LOOK_FOLDS = ["look-rows", "look-text", "look-more"] as const;
 
 function card(host: StatusPagesViewHost, badge: keyof typeof BADGES, fold: string, title: string, body: TemplateResult, extra: { summary?: string; dot?: boolean } = {}): TemplateResult {
   const open = isOpen(host, fold);
@@ -668,8 +676,9 @@ function card(host: StatusPagesViewHost, badge: keyof typeof BADGES, fold: strin
 /** The cards drawn now that fold, for the inspector's Collapse all. */
 export function statusInspectorFolds(host: ViewState): FoldId[] {
   if (addState(host) !== undefined) return [{ module: FOLD_MODULE, section: "add" }];
-  if (selectedStatusRow(host) !== undefined) return [{ module: FOLD_MODULE, section: "row" }, { module: FOLD_MODULE, section: "style" }];
-  return [{ module: FOLD_MODULE, section: "page" }, { module: FOLD_MODULE, section: "style" }];
+  const look = LOOK_FOLDS.map((section) => ({ module: FOLD_MODULE, section }));
+  if (selectedStatusRow(host) !== undefined) return [{ module: FOLD_MODULE, section: "row" }, ...look];
+  return [{ module: FOLD_MODULE, section: "page" }, ...look];
 }
 
 /** A searchable list of entities with a box each: the picked ones first,
@@ -723,7 +732,7 @@ function renderRowCard(host: StatusPagesViewHost, page: JsonObject, row: JsonObj
     parts.push(segField("Alignment", r.headerAlignment ?? "leading", statusEnumChoices("HeaderAlignment"), (v) => set("headerAlignment", v)));
   } else {
     parts.push(html`<div class="ts-stack">${symbolField({ icons: host.icons, symbols: host.symbols }, r.iconName,
-      (v) => set("iconName", v, `row:${id}:icon`), `sp:icon:${id}`, undefined, "Icon", false)}</div>`);
+      (v) => set("iconName", v, `row:${id}:icon`), `sp:icon:${id}`)}</div>`);
   }
   if (r.rowType === "entity") {
     parts.push(html`<div class="ts-stack">${entityField({ hass: host.hass }, "Entity", refOf(host.hass, r.entityId), (ref) => {
@@ -822,18 +831,133 @@ function renderStyleField(host: StatusPagesViewHost, pageId: string, page: JsonO
   }
 }
 
-/** The Style card: every style key with the phone's controls and ranges,
- * and Reset to Defaults. */
-function renderStyleCard(host: StatusPagesViewHost, page: JsonObject): TemplateResult {
+/** The style keys the Rows and Text cards draw as pictures; the More card
+ * has the rest, with the phone's own controls. */
+const ROWS_KEYS = ["rowStyle", "columnLayout", "iconPosition"] as const;
+const TEXT_KEYS = ["textSize", "fontDesign", "fontWeight"] as const;
+const PICTURE_KEYS: ReadonlySet<string> = new Set([...ROWS_KEYS, ...TEXT_KEYS]);
+
+/** The "Aa" of each text size's button, in panel pixels. */
+const SIZE_SAMPLE_PX: Readonly<Record<string, number>> = { small: 12, medium: 15, large: 18 };
+
+/** One style key as the look cards read and write it. */
+interface LookChoice {
+  field: StatusStyleField;
+  value: string;
+  choices: [string, string][];
+  /** The picked choice's name, for the card's summary. */
+  name: string;
+  set: (v: string) => void;
+}
+
+function lookChoice(host: StatusPagesViewHost, page: JsonObject, key: string): LookChoice | undefined {
+  const field = statusStyleFields().find((f) => f.key === key);
+  if (field === undefined) return undefined;
   const pageId = statusPageId(page);
-  const changed = statusPageStyleChanged(page);
-  return card(host, "style", "style", "Style", html`<fieldset class="sp-body" ?disabled=${host.busy} aria-label="Style">
-    ${statusStyleFields().map((f) => renderStyleField(host, pageId, page, f))}
-    <div class="sp-acts">
-      <button type="button" class="pe-btn" ?disabled=${host.busy || !changed} @click=${() => host.edit((d) => resetStatusPageStyle(d, pageId))}>
-        ${uiIcon("reset")}<span>Reset to Defaults</span></button>
+  const value = String(statusStyleValue(page, field));
+  const choices = statusEnumChoices(STATUS_PAGE_KEYS.types.page.keys[key]?.enum ?? "");
+  const name = choices.find(([v]) => v === value)?.[1] ?? value;
+  // A pick already on writes nothing, as the segmented controls did.
+  const set = (v: string) => { if (v !== String(statusStyleValue(shownStatusPage(host) ?? page, field))) host.edit((d) => setStatusPageStyle(d, pageId, key, v)); };
+  return { field, value, choices, name, set };
+}
+
+function styleKeysChanged(page: JsonObject, keys: (key: string) => boolean): boolean {
+  return statusStyleFields().some((f) => keys(f.key) && !sameWatchPagesJson(statusStyleValue(page, f), f.default));
+}
+
+/** A group of picture buttons under its title, which carries the reset dot
+ * back to the default. `draw` is each choice's picture. */
+function pictureGroup(title: string, c: LookChoice, draw: (value: string, name: string) => TemplateResult, cls = ""): TemplateResult {
+  const nameOf = (v: string) => c.choices.find(([o]) => o === v)?.[1] ?? v;
+  return html`<div class="sp-look">
+    <div class="sp-look-title">${settingTitle(title, c.value, String(c.field.default), (v) => c.set(v), nameOf)}</div>
+    <div class="sp-pics ${cls}" role="group" aria-label=${title} style=${`--n:${c.choices.length}`}>
+      ${c.choices.map(([v, name]) => {
+        const on = v === c.value;
+        return html`<button type="button" class="sp-pic ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"} aria-label=${`${title}: ${name}`}
+          @click=${() => c.set(v)}>${draw(v, name)}</button>`;
+      })}
     </div>
-  </fieldset>`, { summary: changed ? "Changed" : "Defaults", dot: changed });
+  </div>`;
+}
+
+/** Row style: two mini rows on the watch's black, drawn in that style. */
+function rowStylePicture(value: string, name: string): TemplateResult {
+  return html`<span class="sp-pic-well ${value}" aria-hidden="true"><i></i><i></i></span><span class="sp-pic-name">${name}</span>`;
+}
+
+/** Layout: a tiny grid of one or two columns. */
+function layoutPicture(value: string, name: string): TemplateResult {
+  return html`<span class="sp-pic-grid ${value === "twoColumn" ? "two" : ""}" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="sp-pic-name">${name}</span>`;
+}
+
+/** Icon: a dot on the side the icon sits, none when hidden. */
+function iconPicture(value: string, name: string): TemplateResult {
+  const dot = html`<i class="sp-pic-dot" aria-hidden="true"></i>`;
+  return html`${value === "leading" ? dot : nothing}<span class="sp-pic-name">${name}</span>${value === "trailing" ? dot : nothing}`;
+}
+
+function sizePicture(value: string, name: string): TemplateResult {
+  return html`<span class="sp-pic-sample" aria-hidden="true" style=${`font-size:${SIZE_SAMPLE_PX[value] ?? 15}px`}>Aa</span><span class="sp-pic-name sub">${name}</span>`;
+}
+
+function fontPicture(value: string, name: string): TemplateResult {
+  return html`<span class="sp-pic-sample" aria-hidden="true" style=${`font-size:18px;font-family:${FONT_FAMILIES[value] ?? FONT_FAMILIES.default}`}>Ag</span><span class="sp-pic-name sub">${name}</span>`;
+}
+
+/** Weight: a compact segmented control, each choice set in its own weight. */
+function weightField(c: LookChoice): TemplateResult {
+  const nameOf = (v: string) => c.choices.find(([o]) => o === v)?.[1] ?? v;
+  return html`<div class="field seg-field sp-weight-field">${settingTitle("Weight", c.value, String(c.field.default), (v) => c.set(v), nameOf)}
+    <div class="seg wide sp-weight" role="group" aria-label="Weight">
+      ${c.choices.map(([v, name]) => {
+        const on = v === c.value;
+        return html`<button type="button" class=${on ? "on" : ""} aria-pressed=${on ? "true" : "false"} aria-label=${`Weight: ${name}`}
+          style=${`--w:${FONT_WEIGHTS[v] ?? 400}`} @click=${() => c.set(v)}>${name}</button>`;
+      })}
+    </div></div>`;
+}
+
+/**
+ * The page's look, in three cards with the phone's keys and values: Rows
+ * (style, layout and icon as pictures), Text (size and font as pictures,
+ * weight as a segmented control set in each weight), and More (background,
+ * dividers, numbers and spacing, with the phone's controls). Reset to
+ * Defaults after them puts every one back.
+ */
+function renderLookCards(host: StatusPagesViewHost, page: JsonObject): TemplateResult {
+  const pageId = statusPageId(page);
+  const pick = (key: string) => lookChoice(host, page, key);
+  const [rowStyle, layout, icon] = ROWS_KEYS.map(pick);
+  const [size, font, weight] = TEXT_KEYS.map(pick);
+  const summary = (cs: (LookChoice | undefined)[]) => cs.filter((c) => c !== undefined).map((c) => c.name).join(", ");
+  const rowsChanged = styleKeysChanged(page, (k) => (ROWS_KEYS as readonly string[]).includes(k));
+  const textChanged = styleKeysChanged(page, (k) => (TEXT_KEYS as readonly string[]).includes(k));
+  const moreChanged = styleKeysChanged(page, (k) => !PICTURE_KEYS.has(k));
+  const changed = statusPageStyleChanged(page);
+
+  const rows = card(host, "rows", "look-rows", "Rows", html`<fieldset class="sp-body sp-looks" ?disabled=${host.busy} aria-label="Rows">
+    ${rowStyle === undefined ? nothing : pictureGroup("Style", rowStyle, rowStylePicture)}
+    ${layout === undefined ? nothing : pictureGroup("Layout", layout, layoutPicture, "across")}
+    ${icon === undefined ? nothing : pictureGroup("Icon", icon, iconPicture, "inline")}
+  </fieldset>`, { summary: summary([rowStyle, layout]), dot: rowsChanged });
+
+  const text = card(host, "text", "look-text", "Text", html`<fieldset class="sp-body sp-looks" ?disabled=${host.busy} aria-label="Text">
+    ${size === undefined ? nothing : pictureGroup("Size", size, sizePicture, "type")}
+    ${font === undefined ? nothing : pictureGroup("Font", font, fontPicture, "type")}
+    ${weight === undefined ? nothing : weightField(weight)}
+  </fieldset>`, { summary: summary([size, weight, font]), dot: textChanged });
+
+  const more = card(host, "more", "look-more", "More", html`<fieldset class="sp-body" ?disabled=${host.busy} aria-label="More">
+    ${statusStyleFields().filter((f) => !PICTURE_KEYS.has(f.key)).map((f) => renderStyleField(host, pageId, page, f))}
+  </fieldset>`, { summary: moreChanged ? "Changed" : "Defaults", dot: moreChanged });
+
+  return html`${rows}${text}${more}
+    <div class="sp-acts">
+      <button type="button" class="pe-btn" ?disabled=${host.busy || !changed} title="Put the page's whole look back to the app's defaults"
+        @click=${() => host.edit((d) => resetStatusPageStyle(d, pageId))}>${uiIcon("reset")}<span>Reset to Defaults</span></button>
+    </div>`;
 }
 
 /** The Page card: the name, and Delete. */
@@ -942,9 +1066,9 @@ function renderAddCard(host: StatusPagesViewHost, page: JsonObject, state: AddSt
 /**
  * The inspector: a sticky head with the breadcrumb (the page, then a picked
  * row's chip and name; the page's name is the way back) and Collapse all,
- * then the cards. A picked row has its Row card and the page's Style card;
- * adding a row, the Add a row card; with neither, the Page card and the
- * Style card.
+ * then the cards. A picked row has its Row card and the page's look cards
+ * (Rows, Text, More); adding a row, the Add a row card; with neither, the
+ * Page card and the look cards.
  */
 export function renderStatusInspector(host: StatusPagesViewHost): TemplateResult {
   const page = shownStatusPage(host);
@@ -966,10 +1090,10 @@ export function renderStatusInspector(host: StatusPagesViewHost): TemplateResult
     const r = readStatusRow(row);
     const label = r.displayName === "" ? "Display Name" : r.displayName;
     crumbs = html`<div class="crumbs"><button class="root" title="The page's own settings" @click=${() => selectStatusRow(host, undefined)}>${name}</button><span class="sep">›</span><span class="kchip" style=${`--k:${rowColor(host, row)}`}>${rowTypeLabel(r.rowType)}</span><span class="nm" title=${label}>${label}</span></div>`;
-    body = html`${renderRowCard(host, page, row)}${renderStyleCard(host, page)}`;
+    body = html`${renderRowCard(host, page, row)}${renderLookCards(host, page)}`;
   } else {
     crumbs = html`<div class="crumbs"><span class="kchip" style="--k:#5B8FD4">Page</span><span class="nm" title=${name}>${name}</span></div>`;
-    body = html`${renderPageCard(host, page)}${renderStyleCard(host, page)}
+    body = html`${renderPageCard(host, page)}${renderLookCards(host, page)}
       <p class="sp-note">Select a row to edit it, or add one.</p>`;
   }
   return html`<div class="insp-head">
@@ -1051,6 +1175,50 @@ export const statusPagesViewStyles = css`
   .sp-pick-row > code { grid-column: 2; color: var(--wa-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sp-pick-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
   .sp-pick-none { padding: 8px; color: var(--wa-muted); font-size: 12px; }
+
+  /* The page's look as pictures: a titled group of buttons, each a small
+     drawing with its name. A pick is the neutral raised fill and a brighter
+     line, the rest a plain grey outline; the mini drawings sit on the
+     watch's black and use the panel's own watch art tokens. */
+  fieldset.sp-looks { gap: 10px; padding-top: 4px; }
+  .sp-look { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .sp-look-title > span { position: relative; display: inline-block; font-size: 12px; color: var(--wa-muted); }
+  .sp-look-title > span.changed { color: var(--wa-ink); }
+  .sp-look-title button.reset-dot { top: 50%; margin-top: -2.5px; }
+  .sp-pics { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap: 6px; }
+  .sp-pic {
+    display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 6px; min-width: 0;
+    padding: 7px 6px 6px; border: 1px solid var(--wa-line-strong); border-radius: 9px; background: transparent;
+    color: var(--wa-label); font: inherit; font-size: 11.5px; line-height: 1.2; cursor: pointer;
+    transition: background-color .12s ease-out, border-color .12s ease-out;
+  }
+  .sp-pic:hover:not(:disabled):not(.on) { background: color-mix(in srgb, var(--wa-ink) 4%, transparent); color: var(--wa-ink); }
+  .sp-pic.on { background: var(--wa-panel); border-color: var(--wa-accent); color: var(--wa-ink); }
+  .sp-pic:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .sp-pic:disabled { opacity: .45; cursor: default; }
+  .sp-pic-name { text-align: center; overflow-wrap: anywhere; }
+  .sp-pic-name.sub { font-size: 10.5px; color: var(--wa-muted); }
+  .sp-pic.on .sp-pic-name.sub { color: var(--wa-label); }
+  /* Row style: two mini rows in the style on the watch's black. */
+  .sp-pic-well { display: flex; flex-direction: column; gap: 3px; padding: 5px; border-radius: 6px; background: var(--wa-art-screen); }
+  .sp-pic-well > i { display: block; height: 9px; }
+  .sp-pic-well.plain > i { border-radius: 3px; background: var(--wa-art-dim); }
+  .sp-pic-well.pillOutline > i { border-radius: 999px; box-shadow: inset 0 0 0 1px var(--wa-faint); }
+  .sp-pic-well.pillFilled > i { border-radius: 999px; background: var(--wa-art-case); }
+  /* Layout: the picture beside its name. */
+  .sp-pics.across .sp-pic { flex-direction: row; align-items: center; gap: 8px; padding: 6px 8px; }
+  .sp-pics.across .sp-pic-name { text-align: left; }
+  .sp-pic-grid { flex: none; width: 34px; display: grid; grid-template-columns: 1fr; gap: 2px; padding: 4px; border-radius: 5px; background: var(--wa-art-screen); }
+  .sp-pic-grid.two { grid-template-columns: 1fr 1fr; }
+  .sp-pic-grid > i { display: block; height: 5px; border-radius: 2px; background: var(--wa-art-clock); }
+  /* Icon: the name with a dot on the icon's side. */
+  .sp-pics.inline .sp-pic { flex-direction: row; align-items: center; gap: 6px; min-height: 32px; padding: 4px 8px; }
+  .sp-pic-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  /* Text size and font: a sample set as the watch would set it. */
+  .sp-pics.type .sp-pic { align-items: center; gap: 3px; min-height: 50px; padding: 6px 4px; }
+  .sp-pic-sample { line-height: 1; color: inherit; }
+  /* Weight: each choice set in its own weight, the pick included. */
+  .seg.wide.sp-weight button, .seg.wide.sp-weight button.on { font-weight: var(--w, 400); }
 
   /* The phone's add lists as a grid of buttons. */
   .sp-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; margin: 4px 0 8px; }

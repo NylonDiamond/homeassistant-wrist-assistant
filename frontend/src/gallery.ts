@@ -553,7 +553,9 @@ function steppedBlockers(
   // true while the panel is ahead of the deployed Worker.
   const schema = schemaVersionFor(cfg);
   if (schema > GALLERY_MAX_SCHEMA) {
-    out.push(`It is schema v${schema}, and the gallery takes up to v${GALLERY_MAX_SCHEMA}. Share it as text until the gallery catches up.`);
+    // The other way round from an import: this panel is newer than the
+    // gallery. The schema numbers mean nothing to the person sharing.
+    out.push("It uses something the gallery does not take yet. Share it as text until the gallery catches up.");
   }
 
   if (body.slots.length > GALLERY_LIMITS.slots) {

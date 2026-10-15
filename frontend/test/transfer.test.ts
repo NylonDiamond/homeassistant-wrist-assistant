@@ -23,6 +23,7 @@ import {
   parseConfig,
 } from "../src/model.js";
 import { deriveDataSources } from "../src/compiler.js";
+import { NEWER_VERSION_TEXT } from "../src/friendly-error.js";
 import { addFamily } from "../src/layouts.js";
 import {
   type ShareSlot,
@@ -493,7 +494,9 @@ describe("backup round trip", () => {
       if (!parsed.ok) return;
       // The link to the same design on this home's other devices is the one
       // thing a backup leaves behind: it comes back as a design of its own.
-      const { linkId: _link, ...want } = withoutIdentity(cfg);
+      // So is the old Control Center tile a moved control stood for: the
+      // import is a new design, which no old tile points at.
+      const { linkId: _link, legacyControlEntityId: _legacy, ...want } = withoutIdentity(cfg);
       expect(withoutIdentity(parsed.config)).toEqual(want);
     });
   }
@@ -512,6 +515,8 @@ describe("share round trip", () => {
       const want = withoutPages(cfg);
       // The link to this home's other devices never travels in a share.
       delete want.linkId;
+      // Nor does the old Control Center tile a moved control stood for.
+      delete want.legacyControlEntityId;
       // The icon a reference carried belonged to the sender's entity.
       const stripIcons = (o: unknown): unknown => {
         if (Array.isArray(o)) return o.map(stripIcons);
@@ -691,8 +696,9 @@ describe("import refusals", () => {
     const parsed = parseImportText(JSON.stringify({ schemaVersion: 99, name: "X" }), MAX_SCHEMA);
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
-    expect(parsed.error).toContain("schema v99");
-    expect(parsed.error).toContain("update the Wrist Assistant integration");
+    expect(parsed.error).toBe(NEWER_VERSION_TEXT);
+    expect(parsed.error).not.toContain("schema");
+    expect(parsed.detail).toContain("schema v99");
   });
 
   it("refuses a key it would silently drop", () => {
@@ -702,8 +708,8 @@ describe("import refusals", () => {
     const parsed = parseImportText(JSON.stringify(raw), MAX_SCHEMA);
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
-    expect(parsed.error).toContain("$.somethingNew");
-    expect(parsed.error).toContain("update the Wrist Assistant integration");
+    expect(parsed.error).toBe(NEWER_VERSION_TEXT);
+    expect(parsed.detail).toContain("$.somethingNew");
   });
 });
 

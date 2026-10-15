@@ -25,7 +25,9 @@ export interface HassLike {
       does not put them on `hass`, and against the tests, which do not. */
   entities?: Record<string, { area_id?: string | null; device_id?: string | null; entity_category?: string | null; hidden?: boolean }>;
   devices?: Record<string, { area_id?: string | null; name?: string | null }>;
-  areas?: Record<string, { name?: string | null }>;
+  areas?: Record<string, { name?: string | null; floor_id?: string | null }>;
+  /** The floor registry, on a Home Assistant new enough to put it on `hass`. */
+  floors?: Record<string, { floor_id?: string; name?: string | null; level?: number | null }>;
   user?: { id?: string; is_admin?: boolean; name?: string };
   /** The frontend's services by domain, then by name: the voice engine list
       reads `tts.<platform>_say` from it. Optional, as the registries are. */
@@ -513,6 +515,11 @@ export interface WatchConfigRecord {
    * large for the watch"). Null or absent when it gave none, as an older
    * watch app never does, and from integrations older than the field. */
   rejected_reason?: string | null;
+  /** Pages only: the plan the watch last said it is on. False on the free
+   * plan, where the watch shows only the first page that is not hidden; true
+   * when it shows every page. Null or absent when the watch never said (an
+   * older watch app) and from integrations older than the field. */
+  multiple_pages?: boolean | null;
   document?: Record<string, unknown>;
 }
 
@@ -842,6 +849,22 @@ export function subscribeWatchConfig(
     type: `${WC}/subscribe`,
     owner_watch_id: owner,
   });
+}
+
+/** What Home's live line says when a device picks up what Home waits on:
+ * whose, and which kind (a watch config kind, or `http_actions`). */
+export interface DeliveryEvent {
+  owner_watch_id: string;
+  kind: string;
+}
+
+/** Hear every delivery to every device the caller may manage: a watch
+ * picking up its pages, menus or settings, or a device pulling the HTTP
+ * action library. Deliveries are not changes, so `subscribeWatchConfig`
+ * and `subscribeChanges` never say them. An integration older than this
+ * command refuses it with `unknown_command`. */
+export function subscribeDeliveries(hass: HassLike, callback: (event: DeliveryEvent) => void) {
+  return hass.connection.subscribeMessage<DeliveryEvent>(callback, { type: `${WC}/subscribe_delivery` });
 }
 
 const HA_ACTIONS = "wrist_assistant/http_actions";

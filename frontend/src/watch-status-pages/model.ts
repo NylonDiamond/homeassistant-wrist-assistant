@@ -14,8 +14,8 @@
 // `status-page-keys.json` (every key with its type and default, the enums and
 // their words, the style controls, what a new page and a new row hold),
 // `status-page-rules.json` (the fill rules and the add lists, read in
-// `rules.ts`) and `status-page-defaults.json` (the document "Start with the
-// defaults" saves). The app repo's `WatchStatusPagesDocumentTests` checks the
+// `rules.ts`) and `status-page-defaults.json` (the document a new watch's
+// screen opens on). The app repo's `WatchStatusPagesDocumentTests` checks the
 // parts the watch decides against the watch's code.
 //
 // Plan: app repo docs/pages_in_home_assistant_step4.md ("4d batch 2 build
@@ -39,7 +39,7 @@ interface KeySpec {
   default?: unknown;
 }
 
-/** One control of the Style card, as `status-page-keys.json` lists it. */
+/** One control of the page's look cards, as `status-page-keys.json` lists it. */
 export interface StatusStyleField {
   key: string;
   label: string;
@@ -64,13 +64,13 @@ interface KeysTable {
 
 export const STATUS_PAGE_KEYS = statusPageKeys as unknown as KeysTable;
 
-/** The document "Start with the defaults" saves: the app's five system
- * pages with their fixed ids. A fresh copy each call. */
+/** The document a new watch's status pages screen opens on, unsaved: the
+ * app's five system pages with their fixed ids. A fresh copy each call. */
 export function statusPagesDefaults(): StatusPagesDocument {
   return structuredClone((statusPageDefaults as unknown as { document: StatusPagesDocument }).document);
 }
 
-/** The document "Start with an empty list" saves. */
+/** A document with no status pages, the app's empty list. */
 export function statusPagesEmpty(): StatusPagesDocument {
   return { schemaVersion: STATUS_PAGE_KEYS.document.schemaVersion, statusPages: [] };
 }
@@ -622,16 +622,10 @@ export function statusPagesSummary(document: unknown): string {
 
 // ── no record ────────────────────────────────────────────────────────────
 
+/** Over the wait while an iPhone may still move the status pages here. A
+ * watch without one opens ready on the defaults instead
+ * (`watch-menus/new-watch.ts`). */
 export const STATUS_PAGES_NO_RECORD_TITLE = "No status pages from this watch yet.";
-
-/** The no-record line when no iPhone will send status pages. */
-export const STATUS_PAGES_NO_RECORD_TEXT = "Start with the defaults to begin.";
-
-export const STATUS_PAGES_START_BUTTON = "Start with the defaults";
-
-export const STATUS_PAGES_START_EMPTY_BUTTON = "Start with an empty list";
-
-export const STATUS_PAGES_PAIR_FIRST_TEXT = "Pair this watch first.";
 
 export const STATUS_PAGES_UPDATE_TEXT = "Update the integration to edit status pages here.";
 

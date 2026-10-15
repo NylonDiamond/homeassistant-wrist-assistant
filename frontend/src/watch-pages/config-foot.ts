@@ -1,8 +1,9 @@
 // The bar pinned to the foot of the page and menu editors, after the
 // complication editor's footer (`panel.ts`, `renderFooter`): on the left a dot
-// and one line about the copy Home Assistant holds (its revision, who saved
-// it and when, whether a device has collected it, its size against what Home
-// Assistant keeps), on the right "History" and "Raw configuration".
+// and one line about the copy Home Assistant holds (who saved it and when,
+// whether a device has collected it, its size against what Home Assistant
+// keeps; the revision number only in the tooltip), on the right "History"
+// and "Raw configuration".
 //
 // History is the earlier saves list that used to be a card of its own, in a
 // dialog, with the same Restore: a row's Restore hands the entry back to the
@@ -22,7 +23,7 @@ import { type ReactiveController, type ReactiveControllerHost, css, html, nothin
 import type { WatchConfigHistoryEntry, WatchConfigRecord } from "../ha-api.js";
 import { agoWords } from "../send-state.js";
 import { uiIcon } from "../ui-icons.js";
-import { type SettingDevice, COLLECTED_PILL_TEXT, WAITING_PILL_TEXT, deliveryState, deviceNoun, rejectedNow, savedByLine, savedByWords, waitingHelpText } from "../watch-settings.js";
+import { type SettingDevice, COLLECTED_PILL_TEXT, deliveryState, deviceNoun, rejectedNow, savedByLine, savedByWords, savedLine, waitingHelpText, waitingPillText } from "../watch-settings.js";
 
 export type ConfigHistoryState = "loading" | "ready" | "error" | "unsupported";
 
@@ -71,8 +72,10 @@ export interface ConfigFootStatus {
   /** The dot: green once collected, amber while it waits, red when a
    * device could not read it. */
   tone: "ok" | "warn" | "err";
-  /** "Revision 12 · saved here 3 minutes ago". */
+  /** "Saved here 3 min ago": who saved it and when, in plain words. */
   revision: string;
+  /** "Revision 12", for the line's tooltip only. */
+  stamp: string;
   /** Collected, waiting, or could not be read. */
   state: string;
   /** What to do about the state, or what it means. */
@@ -101,22 +104,23 @@ export function configFootStatus(i: {
 }): ConfigFootStatus {
   const { record } = i;
   const when = ago(record.updated_at, i.now ?? Date.now());
-  const revision = `Revision ${record.revision} · ${savedByWords(record.updated_by, i.device)}${when ? ` ${when}` : ""}`;
+  const revision = savedLine(record.updated_by, when, i.device);
+  const stamp = `Revision ${record.revision}`;
   const over = i.limit > 0 && i.size > i.limit;
   const near = !over && i.limit > 0 && i.size / i.limit > 0.8;
   const round = over ? Math.ceil : i.size < i.limit ? Math.floor : Math.round;
   const note = over ? `. ${OVER_LIMIT_TEXT}` : near ? (i.size === i.limit ? ". At the limit." : ". Close to the limit.") : "";
-  const size = `${kb(i.size, round)} of the ${kb(i.limit)} Home Assistant keeps${note}`;
+  const size = `${kb(i.size, round)} used of ${kb(i.limit)}${note}`;
   if (rejectedNow(record)) {
     return {
-      tone: "err", revision, state: rejectedText(record), size, near, over,
+      tone: "err", revision, stamp, state: rejectedText(record), size, near, over,
       help: i.historyState === "unsupported" ? `Change the ${i.noun} and save ${them(i.noun)} again.` : "Restore an earlier save from History.",
     };
   }
   if (deliveryState(record) === "delivered") {
-    return { tone: "ok", revision, state: COLLECTED_PILL_TEXT, help: `The ${deviceNoun(i.device ?? "watch")} has revision ${record.revision}.`, size, near, over };
+    return { tone: "ok", revision, stamp, state: COLLECTED_PILL_TEXT, help: `The ${deviceNoun(i.device ?? "watch")} has the latest save.`, size, near, over };
   }
-  return { tone: "warn", revision, state: WAITING_PILL_TEXT, help: waitingHelpText(i.device ?? "watch"), size, near, over };
+  return { tone: "warn", revision, stamp, state: waitingPillText(i.device ?? "watch"), help: waitingHelpText(i.device ?? "watch"), size, near, over };
 }
 
 /** The toolbar's quiet fact about the stored copy, left of Discard: "Saved
@@ -202,16 +206,20 @@ export interface ConfigFootInput {
  * lights History, where the earlier save to go back to is offered. */
 export function renderConfigFoot(i: ConfigFootInput): TemplateResult {
   const s = i.status;
-  const whole = `${s.revision}. ${s.state}. ${s.help} ${s.size}`;
+  const whole = `${s.revision} (${s.stamp}). ${s.state}. ${s.help} ${s.size}`;
+  // The bar has room to say what to do while a save waits, not just the
+  // toolbar pill's short "Waiting for the watch". The help line names the
+  // device (`waitingText`).
+  const state = s.tone === "warn" ? `Waiting. ${s.help}` : s.state;
   return html`<footer class="cf-bar" aria-label="Stored copy">
     <span class="cf-dot ${s.tone}" aria-hidden="true"></span>
     <span class="cf-text" title=${whole}>
       <span class="cf-rev">${s.revision}</span>
       <span class="cf-sep" aria-hidden="true">·</span>
-      <span class="cf-state ${s.tone}">${s.state}</span>
+      <span class="cf-state ${s.tone}">${state}</span>
       ${s.tone === "err" ? html`<span class="cf-help">${s.help}</span>` : nothing}
     </span>
-    <span class="cf-size ${s.over ? "over" : s.near ? "near" : ""}" title=${s.size}>${s.size}</span>
+    <span class="cf-size ${s.over ? "over" : s.near ? "near" : ""}" title=${`${s.size}${s.size.endsWith(".") ? "" : "."} The second number is the most Home Assistant keeps for one watch.`}>${s.size}</span>
     ${i.historyState === "unsupported" ? nothing : html`<button type="button" class="cf-btn cf-history-btn ${s.tone === "err" ? "lit" : ""}"
       aria-haspopup="dialog" aria-expanded=${i.historyOpen ? "true" : "false"}
       title="Earlier saves, with Restore" @click=${i.onHistory}>History</button>`}

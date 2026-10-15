@@ -19,7 +19,6 @@ import { IPHONE_PICK_KEY, WATCH_PICK_KEY, iphoneRouteOwner, loadWatchPick, resol
 import { controlCenterSaveNote } from "../src/watch-control-center/save-note.js";
 import { httpActionsSaveNote } from "../src/watch-http-actions/save-note.js";
 import { watchMenusSaveNote } from "../src/watch-menus/save-note.js";
-import { createWatchPages } from "../src/watch-pages/draft.js";
 import { NOT_FOR_IPHONE_TEXT, watchCommandError, watchPagesSaveNote } from "../src/watch-pages/save-note.js";
 import { roomsKindFor, roomsSaveNote } from "../src/watch-rooms/model.js";
 import "../src/watch-rooms/rooms-editor.js";
@@ -99,7 +98,7 @@ describe("the Watch app's devices", () => {
 describe("iPhone settings", () => {
   it("are the settings the catalog marks for the iPhone, in the catalog's cards, with no card left empty", () => {
     const sections = catalogFor("iphone");
-    expect(sections.map((s) => s.id)).toEqual(["interaction", "navigation", "camera"]);
+    expect(sections.map((s) => s.id)).toEqual(["gestures", "navigation", "controls", "camera"]);
     const settings = sections.flatMap((s) => s.settings);
     expect(settings).toHaveLength(35);
     expect(settings.every((s) => s.devices?.includes("iphone"))).toBe(true);
@@ -175,7 +174,7 @@ describe("the iPhone app's row", () => {
   it("names the picked iPhone, offers the others, and says nothing of watches", () => {
     const text = row({ menuOpen: true });
     expect(text).toContain(`aria-label=iPhone app`);
-    expect(text).toContain(`<span class="wa-wr-k">iPhone</span><b class="wa-wr-name">Jesse's iPhone</b>`);
+    expect(text).toContain(`<b class="wa-wr-name">Jesse's iPhone</b>`);
     expect(text).toContain("aria-label=iPhone: Jesse's iPhone. Pick another");
     expect(text).toContain("title=Pick the iPhone to set up");
     expect(text).toContain("How the iPhone app behaves");
@@ -225,7 +224,7 @@ describe("the iPhone app's row", () => {
 
   it("says Loading with an iPhone chip while the devices are not in", () => {
     const text = row({ owners: [], watch: undefined, loaded: false });
-    expect(text).toContain(`<span class="wa-wr-k">iPhone</span><span class="wa-wr-wait">Loading…</span>`);
+    expect(text).toContain(`<span class="wa-wr-wait">Loading…</span>`);
     expect(text).not.toContain("Pair an iPhone");
   });
 });
@@ -248,7 +247,7 @@ describe("the Watch app's row on a home with phone pages", () => {
 
   it("keeps all eight screens and Settings on the watch", () => {
     expect(watchRowLinks({ prefix: "/wrist-assistant", path: "/control-center/w1" }, "w1").map((l) => l.path))
-      .toEqual(["/pages/w1", "/menus/w1", "/status-pages/w1", "/control-center/w1", "/rooms/w1", "/voice/w1", "/http-actions", "/cameras"]);
+      .toEqual(["/pages/w1", "/menus/w1", "/status-pages/w1", "/control-center/w1", "/rooms/w1", "/voice/w1", "/watch-complications/w1", "/http-actions", "/cameras"]);
   });
 
   it("offers Pair a watch in a home with an iPhone and no watch, with no iPhone in the slot", () => {
@@ -379,11 +378,6 @@ describe("a refusal as not_for_iphone", () => {
       roomsSaveNote({ ok: false, ...refused }, "behavior"),
     ];
     for (const note of notes) expect(note).toEqual({ kind: "err", text: `Not saved. ${NOT_FOR_IPHONE_TEXT}` });
-  });
-
-  it("is said in plain words when a first record cannot start", async () => {
-    const result = await createWatchPages(() => Promise.reject(refused));
-    expect(result).toEqual({ ok: false, code: "error", message: NOT_FOR_IPHONE_TEXT });
   });
 
   it("is said in plain words by the panel and the Settings page too", () => {

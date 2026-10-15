@@ -553,6 +553,26 @@ def test_a_report_with_no_usable_reason_still_lands(env, reason) -> None:
     assert (record.rejected_revision, record.rejected_reason) == (2, None)
 
 
+def test_a_pages_get_keeps_the_watch_s_plan_and_its_reply_is_unchanged(env) -> None:
+    record = _panel_saved(env)
+    plain = _get(env, {"kind": "pages", "since_revision": 2})
+    reply = _get(env, {"kind": "pages", "since_revision": 2, "multiple_pages": False})
+    assert reply.status == 200
+    assert reply.body == plain.body
+    assert record.multiple_pages is False
+    # A get without the field (an older watch app) leaves it as it was.
+    _get(env, {"kind": "pages", "since_revision": 2})
+    assert record.multiple_pages is False
+    _get(env, {"kind": "pages", "since_revision": 2, "multiple_pages": True})
+    assert record.multiple_pages is True
+
+
+def test_an_observer_s_plan_is_not_kept(env) -> None:
+    record = _panel_saved(env)
+    _get(env, {"kind": "pages", "since_revision": 2, "multiple_pages": False, "observer": True})
+    assert record.multiple_pages is None
+
+
 def test_a_reason_without_a_report_is_ignored(env) -> None:
     record = _panel_saved(env)
     _get(env, {"kind": "pages", "since_revision": 1, "reason": "too large for the watch"})

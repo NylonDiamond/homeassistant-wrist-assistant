@@ -42,6 +42,7 @@ from .complication_panel import async_register_panel, async_remove_panel
 from .complication_push import ComplicationPhonePush
 from .complication_store import ComplicationStore
 from .complication_ws import async_register_websocket_commands
+from .control_center_move import ControlCenterMover
 from .const import (
     CLIENT_CERTIFICATE_CAPABILITY,
     DOMAIN,
@@ -78,7 +79,13 @@ from .client_certificate_ws import async_register_client_certificate_commands
 from .http_actions_runner import HTTPActionRunner
 from .http_actions_store import HTTPActionsStore
 from .http_actions_ws import async_register_http_actions_commands
-from .listener_relay import COMPLICATIONS, WATCH_CONFIG, listener_relay
+from .listener_relay import (
+    COMPLICATIONS,
+    HTTP_ACTIONS_DELIVERY,
+    WATCH_CONFIG,
+    WATCH_CONFIG_DELIVERY,
+    listener_relay,
+)
 from .page_images_store import PageImagesStore
 from .page_images_ws import async_register_page_images_commands
 from .parts_store import PartsStore
@@ -92,6 +99,7 @@ from .watch_voices_store import WatchVoicesStore
 from .notifications import (
     NotificationTokenStore,
     TokenEntry,
+    is_iphone_entry,
     purge_dead_token,
     resolve_push_routes,
 )
@@ -293,6 +301,27 @@ async def _get_ha_instance_uuid(hass: HomeAssistant) -> str | None:
     return _HA_INSTANCE_UUID
 
 
+def _device_label(
+    hass: HomeAssistant, data: WristAssistantData, device_id: str
+) -> str:
+    """What a person calls a paired watch or iPhone, for an error they read.
+
+    The name on its device page (a rename there wins), then the name the app
+    reported, then the short form the device page falls back to. Never the
+    bare id: nobody knows their watch by it.
+    """
+    device = dr.async_get(hass).async_get_device(
+        identifiers={(DOMAIN, f"watch_{device_id}")}
+    )
+    if device is not None and (device.name_by_user or device.name):
+        return device.name_by_user or device.name
+    entry = data.widget_secret_store.get(device_id)
+    if entry is not None and getattr(entry, "device_name", None):
+        return entry.device_name
+    kind = "iPhone" if is_iphone_entry(entry) else "Watch"
+    return f"{kind} {device_id[:8]}"
+
+
 async def _deliver_push(
     hass: HomeAssistant,
     data: WristAssistantData,
@@ -327,7 +356,8 @@ async def _deliver_push(
     client = data.apns_client
     if client is None:
         raise HomeAssistantError(
-            "APNs client failed to initialize. Check Home Assistant logs for details."
+            "Wrist Assistant could not start sending notifications. Check the "
+            "Home Assistant logs for details, then reload the integration."
         )
     store = data.notification_store
 
@@ -455,16 +485,30 @@ async def _deliver_push(
             route.entry.platform,
         )
     if not routes:
+        names = ", ".join(
+            _device_label(hass, data, wid) for wid in target_watch_ids or ()
+        )
         if push_type == "background":
+            # A silent push goes to a watch's own registration only (see
+            # resolve_push_routes), so the fix is always on the watch.
+            if names:
+                raise HomeAssistantError(
+                    f"{names} has not registered for background pushes. They go "
+                    "to a watch only: open Wrist Assistant on it once, then try "
+                    "again."
+                )
             raise HomeAssistantError(
-                "No watch has its own push token for a background push"
+                "No watch has registered for background pushes yet. Open Wrist "
+                "Assistant on the watch once, then try again."
             )
-        if target_watch_ids is not None:
+        if names:
             raise HomeAssistantError(
-                "No registered push token for the requested target"
+                f"{names} has not registered for notifications yet. Open Wrist "
+                "Assistant on it once, then try again."
             )
         raise HomeAssistantError(
-            "No watches have registered for push notifications"
+            "No watch has registered for notifications yet. Pair a watch in the "
+            "Wrist Assistant panel, then open the app on it once."
         )
 
     sent = 0
@@ -537,8 +581,13 @@ async def _deliver_push(
             failure_map[watch_id] = reason or "unknown"
 
     if failure_map and sent == 0:
-        reasons = ", ".join(f"{wid}: {r}" for wid, r in failure_map.items())
-        raise HomeAssistantError(f"All push notifications failed: {reasons}")
+        reasons = ", ".join(
+            f"{_device_label(hass, data, wid)}: {r}" for wid, r in failure_map.items()
+        )
+        raise HomeAssistantError(
+            f"No notification could be sent ({reasons}). If a device was "
+            "reinstalled, open Wrist Assistant on it once so it registers again."
+        )
 
     if failure_map:
         reasons = ", ".join(f"{wid}: {r}" for wid, r in failure_map.items())
@@ -1024,6 +1073,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # them at this entry's stores (see listener_relay.py).
     listener_relay(hass, COMPLICATIONS).follow(complication_store)
     listener_relay(hass, WATCH_CONFIG).follow(watch_config_store)
+    listener_relay(hass, WATCH_CONFIG_DELIVERY).follow(watch_config_store)
+    listener_relay(hass, HTTP_ACTIONS_DELIVERY).follow(http_actions_store)
 
     if not hass.data.get(f"{DOMAIN}_views_registered"):
         # The panel is open to every signed-in user; who may do what is
@@ -1115,6 +1166,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     )
     runtime_data.complication_push = complication_push
     complication_store.async_set_push_callback(complication_push.on_commit)
+
+    # The old Control Center list becomes complication controls
+    # (control_center_move.py). Started only now, after the wake and the
+    # push hooks are in, so a control it creates reaches the watch the same
+    # way a panel save does. Once for every owner, then after every save of
+    # an owner's `control_center` record. Each run is its own short job on
+    # the loop, and a failure is logged there, never raised into setup.
+    control_center_mover = ControlCenterMover(
+        complication_store,
+        watch_config_store,
+        is_paired=widget_secret_store.is_paired_watch,
+        schedule=hass.loop.call_soon,
+    )
+    entry.async_on_unload(control_center_mover.close)
+    entry.async_on_unload(
+        watch_config_store.async_add_listener(control_center_mover.watch_config_changed)
+    )
+    control_center_mover.schedule_all()
 
     @callback
     def _handle_stop(_event) -> None:
@@ -1240,14 +1309,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             dev_reg = dr.async_get(hass)
             device = dev_reg.async_get(target_raw)
             if device is None:
-                raise HomeAssistantError(f"Unknown device_id: {target_raw}")
+                raise HomeAssistantError(
+                    f"No device has the id {target_raw}. Pick the watch or "
+                    "iPhone again as the target."
+                )
+            # Paired watches and iPhones are filed as "watch_<id>"; the hub
+            # device (the config entry id) is not a target.
             for ident_domain, identifier in device.identifiers:
-                if ident_domain == DOMAIN:
-                    target = identifier.replace("watch_", "")
+                if ident_domain == DOMAIN and identifier.startswith("watch_"):
+                    target = identifier.removeprefix("watch_")
                     break
             if target is None:
+                name = device.name_by_user or device.name or target_raw
                 raise HomeAssistantError(
-                    f"Device '{target_raw}' is not a Wrist Assistant watch or iPhone"
+                    f"{name} is not a watch or iPhone paired with Wrist "
+                    "Assistant. Pick one of those as the target."
                 )
 
         actions = call.data.get("actions")
@@ -1309,6 +1385,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
             # follow the stores of the next setup.
             listener_relay(hass, COMPLICATIONS).release()
             listener_relay(hass, WATCH_CONFIG).release()
+            listener_relay(hass, WATCH_CONFIG_DELIVERY).release()
+            listener_relay(hass, HTTP_ACTIONS_DELIVERY).release()
     return unload_ok
 
 

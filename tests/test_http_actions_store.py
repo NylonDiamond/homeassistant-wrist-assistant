@@ -330,6 +330,24 @@ def test_delivery_only_moves_forward_and_never_past_the_revision(env) -> None:
     assert "watch-B" not in env.store.delivered()
 
 
+def test_a_delivery_that_moves_tells_the_delivery_listeners_and_wakes_nobody(env) -> None:
+    env.store.save(library(action()), base_revision=0)
+    env.store.save(library(action(name="2")), base_revision=1)
+    heard: list[str] = []
+    changes: list[int] = []
+    remove = env.store.async_add_delivery_listener(heard.append)
+    env.store.async_add_listener(changes.append)
+    env.store.mark_delivered("watch-A", 1)
+    env.store.mark_delivered("watch-A", 1)
+    env.store.mark_delivered("watch-A", 2)
+    assert heard == ["watch-A", "watch-A"]
+    assert changes == []
+    remove()
+    env.store.save(library(action(name="3")), base_revision=2)
+    env.store.mark_delivered("watch-A", 3)
+    assert heard == ["watch-A", "watch-A"]
+
+
 def test_forget_drops_a_device_s_marks_and_keeps_the_library(env) -> None:
     env.store.hand_over("watch-A", library(action()))
     env.store.mark_delivered("watch-A", 1)

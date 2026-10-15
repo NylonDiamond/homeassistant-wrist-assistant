@@ -1,0 +1,320 @@
+{
+  "name": "Text icon parts MDI",
+  "description": "Material Design icons in rich text icon parts. The watch has no MDI catalogue, so an icon part carries the drawing of every mdi: name it can draw in iconPaths, keyed by name and written in name order. A template that renders an mdi: name the part carries draws that drawing, here the water-alert icon of a flow template. A typed mdi: name draws its carried drawing. A typed mdi: name with no drawing is left out, as is a template name the part carries no drawing of. An icon change aimed at a part can swap in an mdi: name the part carries. An SF Symbol part draws its symbol with no path, whatever drawings it carries. A resolved Material Design part carries its name as symbol and its drawing as path.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000600",
+    "name": "Text icon parts MDI",
+    "slotIndex": 2,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [
+      {
+        "id": "AAAAAAA1-0000-4000-8000-000000000601",
+        "name": "Flow icon",
+        "value": {
+          "kind": {
+            "kind": "jinja",
+            "value": "{{ 'mdi:water-alert' if states('sensor.water_flow') | float(0) > 0 else 'mdi:water' }}"
+          }
+        }
+      },
+      {
+        "id": "AAAAAAA2-0000-4000-8000-000000000602",
+        "name": "Off icon",
+        "value": {
+          "kind": {
+            "kind": "jinja",
+            "value": "{{ 'mdi:water-off' }}"
+          }
+        }
+      }
+    ],
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000601",
+          "value": {
+            "kind": {
+              "kind": "literal",
+              "value": " 3 L "
+            }
+          },
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "parts": [
+            {
+              "id": "A0000000-0000-4000-8000-000000000611",
+              "value": {
+                "kind": {
+                  "kind": "literal",
+                  "value": ""
+                }
+              },
+              "icon": {
+                "kind": {
+                  "kind": "named",
+                  "id": "AAAAAAA1-0000-4000-8000-000000000601"
+                }
+              },
+              "iconPaths": {
+                "mdi:water": "M12,20A6,6 0 0,1 6,14C6,10 12,3.25 12,3.25C12,3.25 18,10 18,14A6,6 0 0,1 12,20Z",
+                "mdi:water-alert": "M8,2C8,2 2,8.75 2,12.5A6,6 0 0,0 8,18.5A6,6 0 0,0 14,12.5C14,8.75 8,2 8,2M19,8V14H21V8H19M19,16V18H21V16H19Z"
+              },
+              "colorHex": "#64D2FF"
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000612",
+              "value": {
+                "kind": {
+                  "kind": "literal",
+                  "value": " 3 L "
+                }
+              }
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000613",
+              "value": {
+                "kind": {
+                  "kind": "literal",
+                  "value": ""
+                }
+              },
+              "icon": {
+                "kind": {
+                  "kind": "literal",
+                  "value": "mdi:flash"
+                }
+              },
+              "iconPaths": {
+                "mdi:flash": "M7,2V13H10V22L17,10H13L17,2H7Z"
+              }
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000614",
+              "value": {
+                "kind": {
+                  "kind": "literal",
+                  "value": ""
+                }
+              },
+              "icon": {
+                "kind": {
+                  "kind": "literal",
+                  "value": "mdi:home"
+                }
+              }
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000615",
+              "value": {
+                "kind": {
+                  "kind": "literal",
+                  "value": ""
+                }
+              },
+              "icon": {
+                "kind": {
+                  "kind": "literal",
+                  "value": "drop.fill"
+                }
+              },
+              "iconPaths": {
+                "mdi:fire": "M17.66,11.2C17.43,10.9 17.15,10.64 16.89,10.38C16.22,9.78 15.46,9.35 14.82,8.72C13.33,7.26 13,4.85 13.95,3C13,3.23 12.17,3.75 11.46,4.32C8.87,6.4 7.85,10.07 9.07,13.22C9.11,13.32 9.15,13.42 9.15,13.55C9.15,13.77 9,13.97 8.8,14.05C8.57,14.15 8.33,14.09 8.14,13.93C8.08,13.88 8.04,13.83 8,13.76C6.87,12.33 6.69,10.28 7.45,8.64C5.78,10 4.87,12.3 5,14.47C5.06,14.97 5.12,15.47 5.29,15.97C5.43,16.57 5.7,17.17 6,17.7C7.08,19.43 8.95,20.67 10.96,20.92C13.1,21.19 15.39,20.8 17.03,19.32C18.86,17.66 19.5,15 18.56,12.72L18.43,12.46C18.22,12 17.66,11.2 17.66,11.2Z"
+              }
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000616",
+              "value": {
+                "kind": {
+                  "kind": "literal",
+                  "value": ""
+                }
+              },
+              "icon": {
+                "kind": {
+                  "kind": "named",
+                  "id": "AAAAAAA2-0000-4000-8000-000000000602"
+                }
+              },
+              "iconPaths": {
+                "mdi:water": "M12,20A6,6 0 0,1 6,14C6,10 12,3.25 12,3.25C12,3.25 18,10 18,14A6,6 0 0,1 12,20Z"
+              }
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000617",
+              "value": {
+                "kind": {
+                  "kind": "literal",
+                  "value": ""
+                }
+              },
+              "icon": {
+                "kind": {
+                  "kind": "literal",
+                  "value": "drop.fill"
+                }
+              },
+              "iconPaths": {
+                "mdi:water": "M12,20A6,6 0 0,1 6,14C6,10 12,3.25 12,3.25C12,3.25 18,10 18,14A6,6 0 0,1 12,20Z"
+              }
+            }
+          ],
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000621",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000622",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000623",
+                        "value": {
+                          "kind": {
+                            "kind": "literal",
+                            "value": "a"
+                          }
+                        },
+                        "comparison": {
+                          "kind": "equals",
+                          "value": {
+                            "kind": {
+                              "kind": "literal",
+                              "value": "a"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    {
+                      "kind": "setIcon",
+                      "value": {
+                        "kind": {
+                          "kind": "literal",
+                          "value": "mdi:fire"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ],
+              "partId": "A0000000-0000-4000-8000-000000000615"
+            }
+          ],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 1,
+            "height": 0.4,
+            "rotationDegrees": 0
+          },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "wedge",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {},
+    "templateResults": {
+      "n_aaaaaaa1000040008000000000000601": "mdi:water-alert",
+      "n_aaaaaaa2000040008000000000000602": "mdi:water-off"
+    }
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000601",
+          "kind": "text",
+          "text": " 3 L ",
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "colorHex": "#FFFFFF",
+          "spans": null,
+          "parts": [
+            {
+              "text": "",
+              "fontSize": 14,
+              "fontWeight": "regular",
+              "fontDesign": "default",
+              "fontWidth": "standard",
+              "italic": false,
+              "colorHex": "#64D2FF",
+              "symbol": "mdi:water-alert",
+              "path": "M8,2C8,2 2,8.75 2,12.5A6,6 0 0,0 8,18.5A6,6 0 0,0 14,12.5C14,8.75 8,2 8,2M19,8V14H21V8H19M19,16V18H21V16H19Z"
+            },
+            {
+              "text": " 3 L ",
+              "fontSize": 14,
+              "fontWeight": "regular",
+              "fontDesign": "default",
+              "fontWidth": "standard",
+              "italic": false,
+              "colorHex": "#FFFFFF"
+            },
+            {
+              "text": "",
+              "fontSize": 14,
+              "fontWeight": "regular",
+              "fontDesign": "default",
+              "fontWidth": "standard",
+              "italic": false,
+              "colorHex": "#FFFFFF",
+              "symbol": "mdi:flash",
+              "path": "M7,2V13H10V22L17,10H13L17,2H7Z"
+            },
+            {
+              "text": "",
+              "fontSize": 14,
+              "fontWeight": "regular",
+              "fontDesign": "default",
+              "fontWidth": "standard",
+              "italic": false,
+              "colorHex": "#FFFFFF",
+              "symbol": "mdi:fire",
+              "path": "M17.66,11.2C17.43,10.9 17.15,10.64 16.89,10.38C16.22,9.78 15.46,9.35 14.82,8.72C13.33,7.26 13,4.85 13.95,3C13,3.23 12.17,3.75 11.46,4.32C8.87,6.4 7.85,10.07 9.07,13.22C9.11,13.32 9.15,13.42 9.15,13.55C9.15,13.77 9,13.97 8.8,14.05C8.57,14.15 8.33,14.09 8.14,13.93C8.08,13.88 8.04,13.83 8,13.76C6.87,12.33 6.69,10.28 7.45,8.64C5.78,10 4.87,12.3 5,14.47C5.06,14.97 5.12,15.47 5.29,15.97C5.43,16.57 5.7,17.17 6,17.7C7.08,19.43 8.95,20.67 10.96,20.92C13.1,21.19 15.39,20.8 17.03,19.32C18.86,17.66 19.5,15 18.56,12.72L18.43,12.46C18.22,12 17.66,11.2 17.66,11.2Z"
+            },
+            {
+              "text": "",
+              "fontSize": 14,
+              "fontWeight": "regular",
+              "fontDesign": "default",
+              "fontWidth": "standard",
+              "italic": false,
+              "colorHex": "#FFFFFF",
+              "symbol": "drop.fill"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "expectedCompiled": {
+    "entities": [],
+    "expressionKeys": [
+      "n_aaaaaaa1000040008000000000000601",
+      "n_aaaaaaa2000040008000000000000602"
+    ]
+  }
+}

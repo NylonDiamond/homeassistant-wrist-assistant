@@ -92,6 +92,11 @@ Each record carries:
   none. It travels beside ``unreadable_revision`` as ``reason`` and is kept
   and cleared with the report; the panel shows it after "could not use this
   save". Cut to :data:`REJECT_REASON_MAX_CHARS`, control characters dropped.
+* ``multiple_pages``: on a pages record, the plan the watch last said it is
+  on: ``True`` when it shows every page, ``False`` on the free plan (first
+  page only), ``None`` when it never said (an older watch app). Sent as
+  ``multiple_pages`` on the signed pages get. The panel shows its free plan
+  note only for ``False``. Files written before the field load with ``None``.
 
 Storage is one Home Assistant ``Store`` file per owner, holding every kind for
 that owner, plus a small index naming the owners. A document can be large
@@ -116,9 +121,14 @@ device or panel, a panel create and a restore included; revision 0 for each
 kind a forget removed; and for a move, the target's resulting revisions and
 revision 0 for each of the source's kinds. Delivery is not a change, and
 neither is an unreadable report: a signed get that only moves
-``delivered_revision`` or ``rejected_revision`` tells nobody. This is what the
-phone's live line (``watch_config/subscribe`` in ``watch_config_ws.py``) and
-the watch's delta wake ride on.
+``delivered_revision`` or ``rejected_revision`` tells none of them. This is
+what the phone's live line (``watch_config/subscribe`` in
+``watch_config_ws.py``) and the watch's delta wake ride on.
+
+Deliveries and reports have listeners of their own
+(:meth:`WatchConfigStore.async_add_delivery_listener`), heard only by the panel's Home
+(``watch_config/subscribe_delivery``), so the watch is never woken by its own
+pick up.
 """
 
 from __future__ import annotations
@@ -901,6 +911,8 @@ class WatchConfigRecord:
     # The device's words for why, when it gave any. Kept and cleared with
     # ``rejected_revision``.
     rejected_reason: str | None = None
+    # The watch's plan, pages only. See the module docstring.
+    multiple_pages: bool | None = None
 
     def as_storage_dict(self) -> dict[str, Any]:
         stored: dict[str, Any] = {
@@ -915,6 +927,8 @@ class WatchConfigRecord:
             "rejected_reason": self.rejected_reason,
             "document": self.document,
         }
+        if self.multiple_pages is not None:
+            stored["multiple_pages"] = self.multiple_pages
         if self.history:
             stored["history"] = [entry.as_dict() for entry in self.history]
         return stored
@@ -1031,6 +1045,7 @@ class WatchConfigRecord:
             rejected_revision = 0
         rejected_at = _text_or_none(raw.get("rejected_at"))
         rejected_reason = reject_reason(raw.get("rejected_reason"))
+        multiple_pages = raw.get("multiple_pages")
         return cls(
             owner_watch_id=owner_watch_id,
             kind=kind,
@@ -1046,6 +1061,7 @@ class WatchConfigRecord:
             rejected_revision=rejected_revision,
             rejected_at=rejected_at if rejected_revision > 0 else None,
             rejected_reason=rejected_reason if rejected_revision > 0 else None,
+            multiple_pages=multiple_pages if isinstance(multiple_pages, bool) else None,
         )
 
     def remember(self, entry: WatchConfigHistoryEntry) -> None:
@@ -1080,6 +1096,21 @@ class WatchConfigChange:
 
 
 ChangeListener = Callable[[WatchConfigChange], None]
+
+
+@dataclass(frozen=True)
+class WatchConfigDelivery:
+    """What a delivery listener receives: what a device holds of one owner's
+    ``kind`` moved, by a delivery or an unreadable report. No revision
+    travels: the panel reads where every kind stands from its summary."""
+
+    owner_watch_id: str
+    kind: str
+
+
+DeliveryListener = Callable[[WatchConfigDelivery], None]
+
+
 # Whether an owner id has a pair in the secret store: the one question the
 # panel's create path asks (see WatchConfigStore.panel_save). The same shape
 # answers whether an owner is an iPhone (see WatchConfigStore._for_owner).
@@ -1111,6 +1142,9 @@ class WatchConfigStore:
         self._is_paired = is_paired
         self._is_iphone = is_iphone
         self._listeners: list[ChangeListener] = []
+        # Deliveries and unreadable reports, apart from the change listeners
+        # (see the module docstring).
+        self._delivery_listeners: list[DeliveryListener] = []
         # owner_watch_id → kind → record
         self._records: dict[str, dict[str, WatchConfigRecord]] = {}
         # One Store per owner, kept for the life of this instance so a forget
@@ -1341,6 +1375,29 @@ class WatchConfigStore:
 
         return _remove
 
+    @callback
+    def async_add_delivery_listener(self, listener: DeliveryListener) -> Callable[[], None]:
+        """Hear every delivery and unreadable report that moved what a device
+        holds. Kept apart from ``async_add_listener`` on purpose: the watch's
+        delta wake rides on those, and a delivery heard there would wake the
+        watch that was just delivered to. Only the panel's Home listens here
+        (``watch_config/subscribe_delivery``)."""
+        self._delivery_listeners.append(listener)
+
+        def _remove() -> None:
+            if listener in self._delivery_listeners:
+                self._delivery_listeners.remove(listener)
+
+        return _remove
+
+    def _notify_delivery(self, owner_watch_id: str, kind: str) -> None:
+        delivery = WatchConfigDelivery(owner_watch_id, kind)
+        for listener in list(self._delivery_listeners):
+            try:
+                listener(delivery)
+            except Exception:
+                _LOGGER.exception("Watch config delivery listener failed")
+
     def _notify(self, owner_watch_id: str, kind: str, revision: int) -> None:
         """Tell every listener that ``kind`` of the owner is at ``revision``.
 
@@ -1477,6 +1534,7 @@ class WatchConfigStore:
                     "rejected_revision": record.rejected_revision,
                     "rejected_at": record.rejected_at,
                     "rejected_reason": record.rejected_reason,
+                    "multiple_pages": record.multiple_pages,
                     "history_count": len(record.history),
                 }
                 for kind, record in sorted(by_kind.items())
@@ -1848,6 +1906,27 @@ class WatchConfigStore:
         if record is None or not record.mark_delivered(revision, confirmed=confirmed):
             return False
         self._schedule_owner_save(owner_watch_id)
+        self._notify_delivery(owner_watch_id, kind)
+        return True
+
+    def note_multiple_pages(
+        self, owner_watch_id: str, kind: str, multiple_pages: Any
+    ) -> bool:
+        """A device says which plan it is on (``multiple_pages``, see the
+        module docstring). Returns whether anything moved.
+
+        Called by the signed pages get. Anything but a bool, and any kind but
+        pages, changes nothing. Saves and tells the delivery feed only when
+        the value moves, so a watch checking in costs no disk write.
+        """
+        if kind != "pages" or not isinstance(multiple_pages, bool):
+            return False
+        record = self._records.get(owner_watch_id, {}).get(kind)
+        if record is None or record.multiple_pages is multiple_pages:
+            return False
+        record.multiple_pages = multiple_pages
+        self._schedule_owner_save(owner_watch_id)
+        self._notify_delivery(owner_watch_id, kind)
         return True
 
     def report_unreadable(
@@ -1867,14 +1946,16 @@ class WatchConfigStore:
         the device could not read) and changes nothing. Since delivery never
         runs past the stored revision, that also means a report about a
         revision older than one already delivered never flags anything. Saves
-        only when the value moves. Tells no listener: the revision did not
-        change.
+        only when the value moves. Tells no change listener, since the
+        revision did not change; a report that moved is told to the delivery
+        feed.
         """
         record = self._records.get(owner_watch_id, {}).get(kind)
         if record is None or revision != record.revision:
             return False
         if record.mark_rejected(reject_reason(reason)):
             self._schedule_owner_save(owner_watch_id)
+            self._notify_delivery(owner_watch_id, kind)
         return True
 
     @callback

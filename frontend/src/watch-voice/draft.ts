@@ -283,31 +283,6 @@ async function runSave(draft: WatchVoiceDraft, io: WatchVoiceSaveIO): Promise<Wa
   }
 }
 
-/** How "Start with the defaults" ended. */
-export type WatchVoiceStartResult =
-  | { ok: true; revision: number }
-  | { ok: false; code: "no_record" | "conflict" | "unsupported" | "error"; message: string };
-
-/**
- * Create the watch's voice record from the app's defaults: a save over
- * revision 0, which Home Assistant takes only while it holds no record for a
- * paired watch. `no_record` back means the watch is not paired; `conflict`
- * means a record came meanwhile (the caller reads it); `unknown_command`
- * means an integration too old to keep watch config at all. Any other
- * refusal is an error with Home Assistant's own words.
- */
-export async function startWatchVoice(save: (baseRevision: number, document: VoiceDocument) => Promise<{ revision: number }>): Promise<WatchVoiceStartResult> {
-  try {
-    const { revision } = await save(0, watchVoiceDefaults());
-    return { ok: true, revision };
-  } catch (error) {
-    const { code, message } = watchCommandError(error);
-    if (code === "no_record" || code === "conflict") return { ok: false, code, message };
-    if (code === "unknown_command") return { ok: false, code: "unsupported", message };
-    return { ok: false, code: "error", message };
-  }
-}
-
 // ── the kept drafts ──────────────────────────────────────────────────────
 
 const drafts = new Map<string, WatchVoiceDraft>();
@@ -338,6 +313,26 @@ export function takeWatchVoiceRecord(
   const dirty = held.dirty;
   const changed = revision < held.revision ? held.restart(document, revision) : held.rebase(document, revision);
   return { draft: held, mergedIntoEdits: dirty && changed, replaced: dirty ? held.replaced : [] };
+}
+
+/**
+ * The draft a new watch's voice screen opens on while Home Assistant holds
+ * no voice settings for it (`watch-menus/new-watch.ts`): the kept one, else
+ * a new one on the app's defaults at revision 0, unsaved and not dirty.
+ * Nothing is written: its first save is a save over revision 0, which makes
+ * the record. A kept draft from an earlier record (Home Assistant started
+ * over) is moved onto the defaults at revision 0, its edits kept, unless it
+ * is being saved.
+ */
+export function newWatchVoiceDraft(watchId: string): WatchVoiceDraft {
+  const held = drafts.get(watchId);
+  if (held === undefined) {
+    const fresh = new WatchVoiceDraft(watchVoiceDefaults(), 0);
+    drafts.set(watchId, fresh);
+    return fresh;
+  }
+  if (held.revision > 0 && !held.saving) held.restart(watchVoiceDefaults(), 0);
+  return held;
 }
 
 export function forgetWatchVoiceDraft(watchId: string): void {

@@ -1,14 +1,13 @@
-// The selected page's styling, drawn in the page strip over the watch: the
-// theme strip with its role colors and the Solid or Gradient switch, the
-// background decoration (one at a time, as the phone's Page task), the page
-// title, and Reset (part 3d). Each is one chip of the strip, and its chip
-// opens a popover holding the section's body. How the page shows in the page
-// switcher is set in the menu editor (`switcher-settings.ts`), beside the
-// switcher's own look, as on the iPhone.
+// The selected page's styling, drawn in the inspector's Look card while no
+// tile is selected: the theme pictures with its role colors and the Solid or
+// Gradient switch, the background decoration (one at a time, as the phone's
+// Page task), the page title, and Reset (part 3d). How the page shows in the
+// page switcher is set in the menu editor (`switcher-settings.ts`), beside
+// the switcher's own look, as on the iPhone.
 //
-// `<wa-page-editor>` draws the strip itself and asks this module for each
-// section's words (`pageSettingSummary`), its body (`renderPageSettingBody`)
-// and Reset page (`renderPageReset`). The fields are the tile settings' own
+// `<wa-page-editor>` draws the card through `renderPageLookCard`, which holds
+// each section's body (`renderPageSettingBody`) under its heading and ends
+// with Reset page (`renderPageReset`). The fields are the tile settings' own
 // (`tile-settings.ts`), under a scope of the page so their typed text and
 // refusals never mix with a tile's. Every edit goes through the setters of
 // `page-settings-model.ts` and reads the document at the moment it commits.
@@ -17,8 +16,11 @@
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import { checkField, colorField, segField, sliderField, symbolField, symbolNameSet } from "../editors.js";
+import { sectionCard } from "../editor-chrome.js";
 import { SECTION_COLOR } from "../kinds.js";
+import { uiIcon } from "../ui-icons.js";
 import { type TileSettingsHost, type WatchPagesEditorHost, extendHost } from "./editor-host.js";
+import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import { type WatchPage, type WatchPageTile, type WatchPagesDocument, isHiddenWatchPage } from "./model.js";
 import {
   type WatchPageDecoration,
@@ -58,9 +60,8 @@ import {
 } from "./page-settings-model.js";
 import { pagePhotoIdsInUse, samePagePhotoId } from "./page-photo.js";
 import type { PagePhotoStore } from "./page-photo-store.js";
-import { commit, dropStaleTyping, linkButton, stylingEnumField, swatchRow, typed, typingField } from "./tile-settings.js";
+import { commit, dropStaleTyping, linkButton, resetButton, stylingEnumField, swatchRow, typed, typingField } from "./tile-settings.js";
 import {
-  type WatchSectionBadge,
   sameWatchColor,
   watchColorEnds,
   watchColorModeChoice,
@@ -82,46 +83,31 @@ import {
 
 const KEY = "page-settings";
 
-/** This module's sections, each a chip of the page strip. */
+/** This module's sections, each a heading of the Look card. */
 export type WatchPageSettingSection = "theme" | "background" | "title";
 
-/** The page strip's chips, in the order drawn: the page editor's Page chip
- * (its switches and facts), then this module's. */
-export type WatchPageStripSection = "page" | WatchPageSettingSection;
+/** The page's own sections: the inspector's On the watch card (Page), then
+ * this module's. */
+export type WatchPageSection = "page" | WatchPageSettingSection;
 
-/** Each section's full name: its popover's title and its chip's tooltip. */
-export const WATCH_PAGE_SECTION_TITLES: Readonly<Record<WatchPageStripSection, string>> = {
+/** Each section's full name: its heading in the Look card. */
+export const WATCH_PAGE_SECTION_TITLES: Readonly<Record<WatchPageSection, string>> = {
   page: "Page",
   theme: "Theme",
   background: "Background",
   title: "Page title",
 };
 
-/** Each section's chip word, short so the chips fit one row over the watch. */
-export const WATCH_PAGE_CHIP_LABELS: Readonly<Record<WatchPageStripSection, string>> = {
-  page: "Page",
-  theme: "Theme",
-  background: "Background",
-  title: "Title",
-};
-
-/** Each section's badge, in the complication editor's colors: the page's
- * switches are Content, its theme and background are Look, its title is
- * Extras (teal). */
-export const WATCH_PAGE_SECTION_BADGES: Readonly<Record<WatchPageStripSection, WatchSectionBadge>> = {
-  page: { color: SECTION_COLOR.content, icon: "content" },
-  theme: { color: SECTION_COLOR.look, icon: "look" },
-  background: { color: SECTION_COLOR.look, icon: "shape" },
-  title: { color: SECTION_COLOR.numbers, icon: "text" },
-};
+/** The Look card's sections, in the order drawn. */
+const LOOK_SECTIONS: readonly WatchPageSettingSection[] = ["theme", "background", "title"];
 
 /** The breadcrumb chip's color for the page itself, the complication's in
  * the complication editor. */
 export const WATCH_PAGE_CHIP_COLOR = SECTION_COLOR.complication;
 
 /**
- * Whether a page section holds a value of the page's own, which its chip
- * marks with the changed dot: Page while the page is hidden on the watch;
+ * Whether a page section holds a value of the page's own, which its card or
+ * heading marks with the changed dot: Page while the page is hidden on the watch;
  * Theme while one of its keys reads other than its absence would (a theme
  * other than the watch's fallback, gradient colors on); Background and Page
  * title
@@ -129,7 +115,7 @@ export const WATCH_PAGE_CHIP_COLOR = SECTION_COLOR.complication;
  * shown for (an absent background brightness reads 0 where the phone's
  * default is 0.6, so absence is no measure there).
  */
-export function watchPageSectionChanged(page: WatchPage, section: WatchPageStripSection): boolean {
+export function watchPageSectionChanged(page: WatchPage, section: WatchPageSection): boolean {
   const resetChanges = (prefix: string): boolean =>
     Object.entries(watchStylingReset("page")).some(([key, value]) => {
       if (!key.startsWith(prefix) || !Object.hasOwn(page, key)) return false;
@@ -168,8 +154,8 @@ function scoped(host: WatchPagesEditorHost): TileSettingsHost {
 }
 
 /**
- * One section's body for `host.page`, as its popover in the page strip
- * holds it: a fieldset that switches every control off while a save is out.
+ * One section's body for `host.page`, as the Look card holds it under its
+ * heading: a fieldset that switches every control off while a save is out.
  * Typed text left over from a field no longer drawn is dropped first, as
  * every draw of the page's fields does.
  */
@@ -184,11 +170,12 @@ export function renderPageSettingBody(host: WatchPagesEditorHost, section: Watch
 export function renderPageReset(host: WatchPagesEditorHost): TemplateResult | typeof nothing {
   if (!watchPageModified(host.document, host.pageId)) return nothing;
   const sh = scoped(host);
-  return html`<span class="ps-reset">${linkButton("Reset page", "The background and title back to their defaults, the photo removed. The theme stays.", () =>
+  return html`<span class="ps-reset">${resetButton("Reset page", "The background and title back to their defaults, the photo removed. The theme stays.", () =>
     commit(sh, "reset", (d) => resetWatchPage(d, host.pageId)))}</span>`;
 }
 
-/** What a section is set to now, in a word or two: its chip's value. */
+/** What a section is set to now, in a word or two: the folded Look card's
+ * summary. */
 export function pageSettingSummary(page: WatchPage, section: WatchPageSettingSection): string {
   const s = watchPageSettings(page);
   switch (section) {
@@ -201,15 +188,50 @@ export function pageSettingSummary(page: WatchPage, section: WatchPageSettingSec
   }
 }
 
-/** A theme's dot (`.ps-theme`): its first and fifth role colors in a ring
- * around its page background, as the custom properties the dot reads. */
-export function watchPageThemeDot(theme: string): string {
+/** A theme's picture (`.ps-theme-pic`): its first three role colors on its
+ * page background, as the custom properties the picture reads. */
+export function watchPageThemeSwatch(theme: string): string {
   const r = watchStylingTheme(theme)?.roles ?? {};
   const swatches = watchPageRoleSwatches();
   const a = r[swatches[0]?.role ?? ""] ?? "#888888";
-  const b = r[swatches[4]?.role ?? ""] ?? a;
+  const b = r[swatches[1]?.role ?? ""] ?? a;
+  const c = r[swatches[2]?.role ?? ""] ?? a;
   const ground = watchStylingTheme(theme)?.pageDefaultBackground ?? "#000000";
-  return `--ps-a:${a};--ps-b:${b};--ps-g:${ground}`;
+  return `--ps-a:${a};--ps-b:${b};--ps-c:${c};--ps-g:${ground}`;
+}
+
+/** The page editor's On the watch card's fold, kept beside the Look card's. */
+export const PAGE_WATCH_FOLD: FoldId = Object.freeze({ module: KEY, section: "watch" });
+
+/** The fold the inspector's Collapse all turns for the Look card. */
+export function pageLookFoldIds(): FoldId[] {
+  return [{ module: KEY, section: "look" }];
+}
+
+/**
+ * The inspector's Look card for `host.page`, in the Look hue: Theme,
+ * Background and Page title, each under a heading with the changed dot while
+ * it holds a value of the page's own, then Reset page while it would change
+ * something. Folded, it says the three in a line.
+ */
+export function renderPageLookCard(host: WatchPagesEditorHost): TemplateResult {
+  const page = host.page;
+  const open = sectionOpen(host.uiState, KEY, "look");
+  const changed = LOOK_SECTIONS.filter((section) => watchPageSectionChanged(page, section));
+  return sectionCard({
+    color: SECTION_COLOR.look,
+    icon: uiIcon("look"),
+    title: "Look",
+    open,
+    onToggle: () => { setSectionOpen(host.uiState, KEY, "look", !open); host.requestUpdate(); },
+    dot: changed.length > 0,
+    ...(open ? {} : { summary: LOOK_SECTIONS.map((section) => pageSettingSummary(page, section)).join(", ") }),
+    id: `${KEY}:look`,
+  }, open ? html`${LOOK_SECTIONS.map((section) => html`
+    <div class="ts-sub-h ps-sub-h" data-section=${section}><span>${WATCH_PAGE_SECTION_TITLES[section]}</span>${changed.includes(section)
+      ? html`<span class="ps-sub-dot" aria-label="Changed"></span>` : nothing}</div>
+    ${renderPageSettingBody(host, section)}`)}
+    ${renderPageReset(host)}` : html``);
 }
 
 function body(sh: TileSettingsHost, section: WatchPageSettingSection): TemplateResult {
@@ -233,12 +255,12 @@ function renderTheme(sh: TileSettingsHost): TemplateResult {
       ${watchPageThemes().map((theme) => {
         const on = theme === s.theme;
         const name = watchThemeDisplayName(theme);
-        return html`<button type="button" role="radio" class="ps-theme ${on ? "on" : ""}" aria-checked=${on ? "true" : "false"} title=${name} aria-label=${name}
-          style=${watchPageThemeDot(theme)}
-          @click=${() => commit(sh, "theme", (d) => setWatchPageTheme(d, sh.pageId, theme))}></button>`;
+        return html`<button type="button" role="radio" class="ps-theme ${on ? "on" : ""}" aria-checked=${on ? "true" : "false"} title=${name}
+          style=${watchPageThemeSwatch(theme)}
+          @click=${() => commit(sh, "theme", (d) => setWatchPageTheme(d, sh.pageId, theme))}>
+          <span class="ps-theme-pic" aria-hidden="true"><i></i><i></i><i></i></span><span class="ps-theme-nm">${name}</span></button>`;
       })}
     </div>
-    <div class="ps-theme-name">${watchThemeDisplayName(s.theme)}</div>
     <div class="ps-roles" aria-label="The theme's colors">
       ${watchPageRoleSwatches().map(({ role, label }) => html`<span class="ps-role" title=${`${label}: ${roles[role] ?? ""}`}>
         <span class="ps-role-sw" style=${`background:${roles[role] ?? "transparent"}`}></span><span>${label}</span></span>`)}
@@ -555,7 +577,8 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
     const names = sh.icons.names();
     const known = names === undefined ? undefined : symbolNameSet(names);
     const value = trimmed === "" ? "" : watchStorageIconName(trimmed, (symbol) => known?.has(symbol) === true);
-    commit(sh, "titleIcon", (d) => setWatchPageTitleIcon(d, sh.pageId, value), { typing: true });
+    // A pick from the list is a step of its own.
+    commit(sh, "titleIcon", (d) => setWatchPageTitleIcon(d, sh.pageId, value));
   };
   return html`
     ${stylingEnumField("Display", "pageTitleDisplayStyle", s.titleStyle, (v) => commit(sh, "titleStyle", (d) => setWatchPageTitleStyle(d, sh.pageId, v)))}
@@ -565,7 +588,8 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
         <button type="button" class="pe-chip ${s.titleIcon === "" ? "on" : ""}" aria-pressed=${s.titleIcon === "" ? "true" : "false"}
           @click=${() => commit(sh, "titleIcon", (d) => setWatchPageTitleIcon(d, sh.pageId, ""))}>No icon</button>
       </div>
-      ${typingField(sh, "titleIcon", symbolField({ icons: sh.icons, symbols: sh.symbols }, typed(sh, "titleIcon") ?? s.titleIcon, setIcon, "pe:ps:title-icon", undefined, "Icon", false))}
+      ${typingField(sh, "titleIcon", symbolField({ icons: sh.icons, symbols: sh.symbols }, typed(sh, "titleIcon") ?? s.titleIcon, setIcon, "pe:ps:title-icon",
+        { clearable: false, emptyText: "No icon", tint: s.titleColor }))}
       ${pagePalette(sh, "titleColor", {
         label: "Text color",
         color: () => watchPageSettings(sh.page).titleColor,
@@ -582,20 +606,32 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
 /** This module's rules, after the tile settings' in the page editor's
  * sheet. */
 export const pageSettingsStyles = css`
-  /* The Page popover's rows: switches and facts, left aligned. */
-  .ps-page-b { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 4px 0 2px; }
-  /* The row under the last card: Delete page. */
-  .ps-acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0 0; }
-  .ps-themes { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 0 2px; }
+  /* A heading of the Look card (Theme, Background, Page title), with the
+     changed dot in the card's hue while the section holds a value of its own. */
+  .ps-sub-h { justify-content: flex-start; align-items: center; margin-top: 10px; }
+  .ps-sub-h:first-child { margin-top: 2px; }
+  .ps-sub-dot { display: block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--wa-sec); }
+  /* The themes as small pictures: three of each theme's role colors on its
+     page background, its name under it. Neutral buttons, the picked one in
+     the selection's colors. */
+  .ps-themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; padding: 6px 0 4px; }
   .ps-theme {
-    width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
-    background: radial-gradient(circle at 50% 50%, var(--ps-g) 0 34%, transparent 35%), linear-gradient(135deg, var(--ps-a), var(--ps-b));
-    box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .45);
+    display: flex; flex-direction: column; align-items: stretch; gap: 5px; min-width: 0; padding: 5px; cursor: pointer;
+    font: inherit; font-size: 10.5px; line-height: 1.25; color: var(--wa-muted); text-align: center;
+    background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 8px;
   }
-  .ps-theme:hover:not(:disabled) { transform: scale(1.08); }
-  .ps-theme.on { box-shadow: 0 0 0 2px var(--wa-card), 0 0 0 4px var(--wa-accent); }
-  .ps-theme:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--wa-card), 0 0 0 4px var(--wa-accent), var(--wa-ring); }
-  .ps-theme-name { font-size: 12px; font-weight: 600; padding: 2px 0 4px; }
+  .ps-theme:hover:not(:disabled) { background: var(--wa-panel); color: var(--wa-ink); }
+  .ps-theme.on { background: var(--wa-sel-bg); border-color: var(--wa-sel-ring); color: var(--wa-ink); font-weight: 600; }
+  .ps-theme:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .ps-theme-pic {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; height: 24px; padding: 3px; box-sizing: border-box;
+    border-radius: 5px; background: var(--ps-g); box-shadow: inset 0 0 0 1px var(--wa-line);
+  }
+  .ps-theme-pic > i { border-radius: 2px; }
+  .ps-theme-pic > i:nth-child(1) { background: var(--ps-a); }
+  .ps-theme-pic > i:nth-child(2) { background: var(--ps-b); }
+  .ps-theme-pic > i:nth-child(3) { background: var(--ps-c); }
+  .ps-theme-nm { overflow-wrap: anywhere; }
   .ps-roles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px 6px; padding: 2px 0 8px; }
   .ps-role { display: flex; flex-direction: column; align-items: stretch; gap: 2px; font-size: 9.5px; color: var(--wa-muted); text-align: center; min-width: 0; }
   .ps-role-sw { height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); }
@@ -628,6 +664,6 @@ export const pageSettingsStyles = css`
   /* The file input is the label's own: hidden, the label opens it. */
   .ps-upload > input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
   .ps-upload:focus-within { box-shadow: var(--wa-ring); }
-  /* Reset page, at the end of the page strip's row of chips. */
-  .ps-reset { display: inline-flex; align-items: center; min-height: 28px; padding: 0 4px; }
+  /* Reset page, at the foot of the Look card. */
+  .ps-reset { display: flex; align-items: center; min-height: 28px; padding: 8px 0 0; }
 `;

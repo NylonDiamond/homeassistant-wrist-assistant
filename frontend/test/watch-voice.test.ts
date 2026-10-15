@@ -1,7 +1,7 @@
 // The voice editor's model, draft, merge and views: the shared voice
 // fixtures (`fixtures-voice`, a copy of the app repo's canonical
 // `WristAssistantTests/Fixtures/voice`) open and save back as the same bytes,
-// "Start with the defaults" writes the defaults fixture, and each section's
+// a new watch opens on the defaults fixture, and each section's
 // setters write only what they change.
 
 import { describe, expect, it } from "vitest";
@@ -11,7 +11,15 @@ import { join } from "node:path";
 import type { HassLike } from "../src/ha-api.js";
 import type { JsonObject } from "../src/watch-pages/model.js";
 import { SymbolBrowser } from "../src/symbols.js";
-import { WatchVoiceDraft, saveWatchVoiceDraft, startWatchVoice, takeWatchVoiceRecord, forgetWatchVoiceDraft } from "../src/watch-voice/draft.js";
+import {
+  WatchVoiceDraft,
+  anyWatchVoiceDirty,
+  forgetWatchVoiceDraft,
+  keptWatchVoiceDraft,
+  newWatchVoiceDraft,
+  saveWatchVoiceDraft,
+  takeWatchVoiceRecord,
+} from "../src/watch-voice/draft.js";
 import { WATCH_VOICE_PATH, isWatchVoiceRoute, watchVoiceRouteOwner, watchVoiceUrl } from "../src/watch-voice/hook.js";
 import { mergeWatchVoice, mergeWatchVoicePhrases, watchVoiceClashes } from "../src/watch-voice/merge.js";
 import {
@@ -94,30 +102,50 @@ describe("the voice fixtures", () => {
     });
   }
 
-  it("Start with the defaults writes the defaults fixture's bytes", () => {
+  it("the defaults a new watch opens on are the defaults fixture's bytes", () => {
     expect(JSON.stringify(watchVoiceDefaults())).toBe(read("01-defaults.json").text.trimEnd());
     // A fresh copy each time.
     expect(watchVoiceDefaults()).not.toBe(watchVoiceDefaults());
   });
 });
 
-describe("no record yet", () => {
-  it("starts over revision 0 with the defaults", async () => {
-    const calls: [number, VoiceDocument][] = [];
-    const result = await startWatchVoice(async (base, doc) => {
-      calls.push([base, doc]);
-      return { revision: 1 };
-    });
-    expect(result).toEqual({ ok: true, revision: 1 });
-    expect(calls).toEqual([[0, watchVoiceDefaults()]]);
+describe("no record yet: a new watch opens ready", () => {
+  it("opens on the defaults at revision 0, unsaved and not dirty", () => {
+    forgetWatchVoiceDraft("v-new");
+    const draft = newWatchVoiceDraft("v-new");
+    expect(draft.revision).toBe(0);
+    expect(draft.document).toEqual(watchVoiceDefaults());
+    expect(draft.dirty).toBe(false);
+    expect(anyWatchVoiceDirty()).toBe(false);
+    expect(keptWatchVoiceDraft("v-new")).toBe(draft);
+    expect(newWatchVoiceDraft("v-new")).toBe(draft);
+    forgetWatchVoiceDraft("v-new");
   });
 
-  it("says why a start was refused", async () => {
-    const refuse = (code: string) => startWatchVoice(async () => { throw { code, message: `said ${code}` }; });
-    expect(await refuse("no_record")).toEqual({ ok: false, code: "no_record", message: "said no_record" });
-    expect(await refuse("conflict")).toEqual({ ok: false, code: "conflict", message: "said conflict" });
-    expect(await refuse("unknown_command")).toMatchObject({ ok: false, code: "unsupported" });
-    expect(await refuse("invalid")).toMatchObject({ ok: false, code: "error", message: "said invalid" });
+  it("makes the record with its first save, a save over revision 0", async () => {
+    forgetWatchVoiceDraft("v-save");
+    const draft = newWatchVoiceDraft("v-save");
+    draft.apply(setWatchVoiceSilentMode(draft.document, false));
+    expect(anyWatchVoiceDirty()).toBe(true);
+    const calls: [number, VoiceDocument][] = [];
+    const result = await saveWatchVoiceDraft(draft, {
+      save: async (base, doc) => { calls.push([base, doc]); return { revision: 1 }; },
+      fetch: async () => { throw new Error("not read"); },
+    });
+    expect(result).toMatchObject({ ok: true, revision: 1 });
+    expect(calls).toEqual([[0, setWatchVoiceSilentMode(watchVoiceDefaults(), false)]]);
+    expect(draft.dirty).toBe(false);
+    forgetWatchVoiceDraft("v-save");
+  });
+
+  it("goes back to the defaults on Discard", () => {
+    forgetWatchVoiceDraft("v-discard");
+    const draft = newWatchVoiceDraft("v-discard");
+    draft.apply(setWatchVoiceSilentMode(draft.document, false));
+    expect(draft.discard()).toBe(true);
+    expect(draft.document).toEqual(watchVoiceDefaults());
+    expect(draft.dirty).toBe(false);
+    forgetWatchVoiceDraft("v-discard");
   });
 });
 

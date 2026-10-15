@@ -190,7 +190,7 @@ export function renderSwitcherSettings(host: SwitcherSettingsHost): TemplateResu
   const mode = s.switcherDisplayMode ?? "text";
   const modes = WATCH_PAGE_SWITCHER_MODES.map((m) => [m, m === "icon" ? "Icon" : "Name"] as [string, string]);
   const name = typeof page.name === "string" ? page.name : "";
-  const setIcon = (value: string) => write(host, (d) => setWatchPageSwitcherIcon(d, host.pageId, value), true);
+  const setIcon = (value: string) => write(host, (d) => setWatchPageSwitcherIcon(d, host.pageId, value));
   const setColor = (value: string | undefined) => write(host, (d) => setWatchPageSwitcherColor(d, host.pageId, value), true);
   return html`
     ${checkField("Hidden", s.hideFromSwitcher, (v) => write(host, (d) => setWatchPageHideFromSwitcher(d, host.pageId, v)), false)}
@@ -203,7 +203,8 @@ export function renderSwitcherSettings(host: SwitcherSettingsHost): TemplateResu
       <button type="button" class="pe-chip ${s.switcherIcon === undefined ? "on" : ""}" aria-pressed=${s.switcherIcon === undefined ? "true" : "false"}
         title="The watch picks one from the page's first tile" @click=${() => write(host, (d) => setWatchPageSwitcherIcon(d, host.pageId, ""))}>Automatic icon</button>
     </div>
-    ${typingRow(host, "switcherIcon", symbolField({ icons: host.icons, symbols: host.symbols }, typed(host, "switcherIcon") ?? s.switcherIcon ?? "", setIcon, "sw:switcher-icon", undefined, "Icon", false))}
+    ${typingRow(host, "switcherIcon", symbolField({ icons: host.icons, symbols: host.symbols }, typed(host, "switcherIcon") ?? s.switcherIcon ?? "", setIcon, "sw:switcher-icon",
+      { emptyText: "Picked by the watch", tint: s.switcherColor }))}
     ${typingRow(host, "switcherColor", html`<div class="ts-no-alpha">${colorField("Color", typed(host, "switcherColor") ?? s.switcherColor, setColor, true, null, { switchOn: s.switcherColor !== undefined })}</div>`)}
     <div class="hint ts-under">Left empty, the watch shows the page's name and picks the icon and color itself.</div>`;
 }

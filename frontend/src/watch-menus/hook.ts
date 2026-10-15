@@ -57,7 +57,7 @@ export function navigateWatchMenus(route: PanelRoute | undefined, menus: boolean
 }
 
 /** The help page the editor's "?" opens. */
-export const WATCH_MENUS_HELP_URL = "https://docs.wrist-assistant.com/watch-app/quick-menu-editor/";
+export const WATCH_MENUS_HELP_URL = "https://docs.wrist-assistant.com/watch-app/quick-menu/";
 
 /** The page editor's sub-path. The same as `WATCH_PAGES_PATH`, written out
  * here so the two hooks do not import each other (a test holds them equal). */
@@ -145,6 +145,9 @@ export interface WatchMenusViewInput {
   actions: TemplateResult | typeof nothing;
   /** Dialogs the bar's buttons open. */
   dialogs: TemplateResult | typeof nothing;
+  /** The box in the panel's Watch app header the editor draws its bar
+   * in (`head-bar.ts`). Left out, the bar is drawn on top of the editor. */
+  barHost?: HTMLElement;
   onLoaded: () => void;
 }
 
@@ -161,7 +164,7 @@ export function renderWatchMenusView(input: WatchMenusViewInput): TemplateResult
       ? html`<wa-menu-editor .hass=${input.hass} .owners=${input.owners} .ownerId=${input.ownerId}
           .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}
           .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack} .onPages=${input.onPages}
-          .barActions=${input.actions} .shellOwnsWatch=${input.shell === true}
+          .barActions=${input.actions} .shellOwnsWatch=${input.shell === true} .barHost=${input.barHost}
           .phones=${input.phones === true}></wa-menu-editor>`
       : html`<div class="wp-loading">
           ${input.shell === true ? nothing : html`<button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>`}

@@ -353,8 +353,6 @@ export const CONTROL_CENTER_NO_RECORD_TEXT = "Start with an empty list to begin.
 
 export const CONTROL_CENTER_START_EMPTY_BUTTON = "Start with an empty list";
 
-export const CONTROL_CENTER_PAIR_FIRST_TEXT = "Pair this watch first.";
-
 export const CONTROL_CENTER_UPDATE_TEXT = "Update the integration to edit the Control Center list here.";
 
 /** Whether a failed read means this integration does not keep the Control

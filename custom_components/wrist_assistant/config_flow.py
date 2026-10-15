@@ -6,6 +6,10 @@ from homeassistant.config_entries import ConfigFlow
 
 from .const import DOMAIN
 
+# Linked from the setup step. Home Assistant wants URLs in placeholders, not in
+# the translation strings themselves.
+SETUP_GUIDE_URL = "https://docs.wrist-assistant.com/getting-started/setup/"
+
 
 class WristAssistantConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Wrist Assistant."""
@@ -23,4 +27,7 @@ class WristAssistantConfigFlow(ConfigFlow, domain=DOMAIN):
                 data={},
             )
 
-        return self.async_show_form(step_id="user")
+        return self.async_show_form(
+            step_id="user",
+            description_placeholders={"docs_url": SETUP_GUIDE_URL},
+        )

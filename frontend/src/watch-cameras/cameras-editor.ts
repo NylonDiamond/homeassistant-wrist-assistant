@@ -24,6 +24,7 @@ import { LitElement, css, html, nothing, type PropertyValues, type TemplateResul
 import { property, state } from "lit/decorators.js";
 import { chromeTokens, inspectorStyles, litOutline, topBarStyles } from "../editor-chrome.js";
 import { formStyles } from "../form-styles.js";
+import { HeadBar, headBarStyles, renderHeadStatus } from "../head-bar.js";
 import { type CameraFraming, type CameraViewport, type HassLike, fetchCameras, saveCameraFraming, sendCameraTest } from "../ha-api.js";
 import { SECTION_COLOR } from "../kinds.js";
 import { PictureCache } from "../picture-cache.js";
@@ -108,6 +109,10 @@ function pct(n: number): string {
 export class WaCamerasEditor extends LitElement {
   @property({ attribute: false }) hass?: HassLike;
   @property({ type: Boolean, reflect: true }) narrow = false;
+  /** The box in the panel's Watch app header the bar is drawn in
+   * (`head-bar.ts`). Without one the bar is drawn on top. */
+  @property({ attribute: false }) barHost: HTMLElement | undefined = undefined;
+  private readonly headBar = new HeadBar(this);
 
   @state() private cameras?: CameraFraming[];
   @state() private unsupported = false;
@@ -135,6 +140,8 @@ export class WaCamerasEditor extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    // The bar goes back into the header on the next draw.
+    if (this.barHost !== undefined) this.requestUpdate();
     window.addEventListener("keydown", this.onKeyDown);
     this.listenForReconnect();
     if (this.askedOnce) void this.load(true);
@@ -142,6 +149,7 @@ export class WaCamerasEditor extends LitElement {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.headBar.clear();
     window.removeEventListener("keydown", this.onKeyDown);
     this.stopListeningForReconnect();
     this.endDrag?.();
@@ -393,7 +401,8 @@ export class WaCamerasEditor extends LitElement {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.defaultPrevented) return;
-    if (!e.composedPath().includes(this) && !nothingFocused()) return;
+    const path = e.composedPath();
+    if (!path.includes(this) && !this.headBar.holds(path) && !nothingFocused()) return;
     if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "s") {
       e.preventDefault();
       void this.save();
@@ -402,12 +411,22 @@ export class WaCamerasEditor extends LitElement {
 
   // ── drawing ────────────────────────────────────────────────────────────
 
+  protected override updated(): void {
+    this.headBar.draw(this.barHost, () => {
+      const draft = openCameraDraft();
+      return this.renderBar(draft, draft === undefined ? undefined : this.cameraOf(draft.entityId));
+    });
+  }
+
   override render(): TemplateResult {
     const draft = openCameraDraft();
     const camera = draft === undefined ? undefined : this.cameraOf(draft.entityId);
+    // In the panel's header the bar keeps only the save controls: the way
+    // back to every camera and the camera's name stay here, on a line.
     return html`
       <div class="cm-top">
-        ${this.renderBar(draft, camera)}
+        ${this.barHost === undefined ? this.renderBar(draft, camera)
+          : draft !== undefined && camera !== undefined ? html`<div class="cm-crumbline">${this.renderCrumb(camera)}</div>` : nothing}
         <p class="cm-lead">${CAMERAS_LEAD}</p>
         ${this.note ? html`<div class="cm-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
           <button class="cm-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
@@ -419,23 +438,30 @@ export class WaCamerasEditor extends LitElement {
   private renderBar(draft: CameraDraft | undefined, camera: CameraFraming | undefined): TemplateResult {
     const editing = draft !== undefined && camera !== undefined;
     const dirty = editing && cameraDraftDirty();
-    return html`<div class="wa-bar ${this.narrow ? "stacked" : ""}" role="toolbar" aria-label="Cameras">
-      <span class="cm-title"><b>Cameras</b>${editing ? html`<span class="cm-crumb">
-        <button class="cm-back" ?disabled=${this.saving || this.testing} title="Back to every camera" @click=${() => this.closeCamera()}>${uiIcon("left")}<span>All cameras</span></button>
-        <span class="cm-cur">${camera.name}</span></span>` : nothing}</span>
+    const inHead = this.barHost !== undefined;
+    return html`<div class="wa-bar ${inHead ? "in-head" : this.narrow ? "stacked" : ""}" role="toolbar" aria-label="Cameras">
+      ${inHead ? nothing : html`<span class="cm-title"><b>Cameras</b>${editing ? this.renderCrumb(camera) : nothing}</span>`}
       <span class="spacer"></span>
+      ${inHead && editing ? renderHeadStatus({ newWatch: false, dirty }) : nothing}
       ${editing ? html`
         <button class="cm-btn" ?disabled=${!dirty || this.saving} title="Go back to the framing Home Assistant holds"
           @click=${() => this.discard()}>Discard</button>
         <button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S)` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved">${dirty ? "Unsaved changes" : ""}</span>`
+        ${inHead ? nothing : html`<span class="tb-saved">${dirty ? "Unsaved changes" : ""}</span>`}`
         : this.cameras !== undefined && this.cameras.length > 0 ? html`<button class="cm-btn" title="Take a new frame from every camera"
           @click=${() => this.refreshPictures()}>${uiIcon("reset")}<span>Refresh pictures</span></button>` : nothing}
-      <button class="help" title="Help: Cameras" aria-label="Help"
+      <button class="help" title="Help with Cameras" aria-label="Help with Cameras"
         @click=${() => window.open(WATCH_CAMERAS_HELP_URL, "_blank", "noopener")}>?</button>
     </div>`;
+  }
+
+  /** The way back to every camera and the open camera's name. */
+  private renderCrumb(camera: CameraFraming): TemplateResult {
+    return html`<span class="cm-crumb">
+      <button class="cm-back" ?disabled=${this.saving || this.testing} title="Back to every camera" @click=${() => this.closeCamera()}>${uiIcon("left")}<span>All cameras</span></button>
+      <span class="cm-cur">${camera.name}</span></span>`;
   }
 
   private renderBody(): TemplateResult {
@@ -643,7 +669,8 @@ export class WaCamerasEditor extends LitElement {
     button.cm-back:hover:not(:disabled) { color: var(--wa-ink); background: var(--wa-hover); }
     button.cm-back:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.cm-back:disabled { opacity: .45; cursor: default; }
-    .cm-cur { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cm-cur { font-size: 14px; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+    .cm-crumbline { display: flex; align-items: center; padding: 10px var(--cf-pad, 16px) 0; }
     .wa-bar button.primary.save:disabled { opacity: .45; cursor: default; }
     .cm-lead { margin: 10px var(--cf-pad, 16px) 0; font-size: 13px; color: var(--wa-muted); }
     .cm-note {
@@ -761,7 +788,7 @@ export class WaCamerasEditor extends LitElement {
       .cm-edit { grid-template-columns: minmax(0, 1fr); }
     }
     :host([narrow]) { --cf-pad: 12px; }
-  `];
+  `, headBarStyles];
 }
 
 if (!customElements.get("wa-cameras-editor")) {

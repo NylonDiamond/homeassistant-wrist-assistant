@@ -9,21 +9,21 @@
           "key": "serverMode",
           "devices": ["watch"],
           "type": "enum",
-          "label": "Server",
-          "help": "Switch between home and away.",
+          "label": "Where to connect",
+          "help": "Auto uses your home Wi-Fi when you are home and the internet when you are out. Leave it on Auto unless something is wrong.",
           "default": "Auto",
           "options": [
             {"value": "Auto", "label": "Auto"},
-            {"value": "Local", "label": "Local"},
-            {"value": "Remote", "label": "Remote"}
+            {"value": "Local", "label": "Home only"},
+            {"value": "Remote", "label": "Away only"}
           ]
         },
         {
           "key": "deltaTimeout",
           "devices": ["watch"],
           "type": "enum",
-          "label": "Timeout",
-          "help": "Delta request wait time.",
+          "label": "Wait for updates",
+          "help": "How long the watch keeps a request open while it waits for changes. Longer uses less battery.",
           "default": "45s",
           "options": [
             {"value": "25s", "label": "25s"},
@@ -35,79 +35,67 @@
       ]
     },
     {
-      "id": "interaction",
-      "title": "Interaction",
+      "id": "gestures",
+      "title": "Gestures",
       "settings": [
         {
-          "key": "longPressDuration",
-          "devices": ["watch", "iphone"],
+          "key": "handGestureAction",
+          "devices": ["watch"],
           "type": "enum",
-          "label": "Long press",
-          "help": "Hold to open quick actions.",
-          "default": "Short",
+          "label": "Double pinch",
+          "help": "Tap your thumb and finger together twice. Jump to a room uses the Double pinch trigger in Rooms. Switch home needs two or more homes on this watch.",
+          "default": "Refresh",
           "options": [
-            {"value": "Super Fast", "label": "Super fast (75 ms)"},
-            {"value": "Short", "label": "Short (150 ms)"},
-            {"value": "Normal", "label": "Normal (200 ms)"},
-            {"value": "Long", "label": "Long (300 ms)"},
-            {"value": "Extra Long", "label": "Extra long (1 s)"}
+            {"value": "Disabled", "label": "Nothing"},
+            {"value": "Point Control", "label": "Toggle what you point at"},
+            {"value": "Activate Scene", "label": "Turn on a scene"},
+            {"value": "Run Script", "label": "Run a script"},
+            {"value": "Next Page", "label": "Next page"},
+            {"value": "Previous Page", "label": "Previous page"},
+            {"value": "Room Jump", "label": "Jump to a room"},
+            {"value": "Toggle First Tile", "label": "Toggle the first tile"},
+            {"value": "Refresh", "label": "Refresh the page"},
+            {"value": "Switch Instance", "label": "Switch home"}
           ]
         },
         {
-          "key": "entityRadialVerticalQuickRadialGestureEnabled",
-          "devices": ["watch", "iphone"],
-          "type": "bool",
-          "label": "Quick radial gesture",
-          "help": "In entity radial menus, a quick gesture opens the Quick Radial Menu.",
-          "default": true
+          "key": "handGestureSceneTargetId",
+          "devices": ["watch"],
+          "type": "entity",
+          "domain": "scene",
+          "label": "Scene",
+          "help": "The scene a double pinch turns on. With none, it turns on the scene you point at.",
+          "default": "",
+          "showIf": {"key": "handGestureAction", "equals": "Activate Scene"}
         },
         {
-          "key": "entityRadialVerticalQuickRadialGestureTrigger",
-          "devices": ["watch", "iphone"],
-          "type": "enum",
-          "label": "Trigger",
-          "help": "Gesture type to activate Quick Radial Menu.",
-          "default": "Swipe Up/Down",
-          "options": [
-            {"value": "Up/Down x2", "label": "Up/down x2"},
-            {"value": "Swipe Up/Down", "label": "Swipe up/down"},
-            {"value": "Clockwise", "label": "Clockwise"}
-          ],
-          "showIf": {"key": "entityRadialVerticalQuickRadialGestureEnabled", "equals": true}
-        },
-        {
-          "key": "entityRadialVerticalQuickRadialGestureSpeed",
-          "devices": ["watch", "iphone"],
-          "type": "enum",
-          "label": "Speed",
-          "help": "How fast the gesture must be completed: 0.35, 0.45, 0.6 or 0.8 seconds.",
-          "default": "Fast",
-          "options": [
-            {"value": "Fast", "label": "Fast"},
-            {"value": "Normal", "label": "Normal"},
-            {"value": "Slow", "label": "Slow"},
-            {"value": "Very Slow", "label": "Very slow"}
-          ],
-          "showIf": {"key": "entityRadialVerticalQuickRadialGestureEnabled", "equals": true}
+          "key": "handGestureScriptTargetId",
+          "devices": ["watch"],
+          "type": "entity",
+          "domain": "script",
+          "label": "Script",
+          "help": "The script a double pinch runs. With none, it runs the script you point at.",
+          "default": "",
+          "showIf": {"key": "handGestureAction", "equals": "Run Script"}
         },
         {
           "key": "topSectionDoubleTapAction",
           "devices": ["watch", "iphone"],
           "type": "enum",
-          "label": "Double-tap top section",
-          "help": "Double-tap the page title or top area. Switch house works only on a watch with two or more homes.",
+          "label": "Double-tap the page title",
+          "help": "Tap the name at the top of a page twice. Switch home needs two or more homes on this watch.",
           "default": "Disabled",
           "options": [
-            {"value": "Disabled", "label": "Disabled"},
-            {"value": "Toggle Aimed Entity (Point Control)", "label": "Toggle aimed entity (Point Control)"},
-            {"value": "Room Jump", "label": "Room jump"},
-            {"value": "Activate Scene", "label": "Activate scene"},
-            {"value": "Run Script", "label": "Run script"},
-            {"value": "Refresh", "label": "Refresh"},
+            {"value": "Disabled", "label": "Nothing"},
+            {"value": "Toggle Aimed Entity (Point Control)", "label": "Toggle what you point at"},
+            {"value": "Room Jump", "label": "Jump to a room"},
+            {"value": "Activate Scene", "label": "Turn on a scene"},
+            {"value": "Run Script", "label": "Run a script"},
+            {"value": "Refresh", "label": "Refresh the page"},
             {"value": "Next Page", "label": "Next page"},
             {"value": "Previous Page", "label": "Previous page"},
-            {"value": "Toggle First Tile", "label": "Toggle first tile"},
-            {"value": "Switch Instance", "label": "Switch house"}
+            {"value": "Toggle First Tile", "label": "Toggle the first tile"},
+            {"value": "Switch Instance", "label": "Switch home"}
           ]
         },
         {
@@ -116,7 +104,7 @@
           "type": "entity",
           "domain": "scene",
           "label": "Scene",
-          "help": "The scene a double-tap activates.",
+          "help": "The scene a double-tap turns on.",
           "default": "",
           "showIf": {"key": "topSectionDoubleTapAction", "equals": "Activate Scene"}
         },
@@ -131,245 +119,21 @@
           "showIf": {"key": "topSectionDoubleTapAction", "equals": "Run Script"}
         },
         {
-          "key": "handGestureAction",
-          "devices": ["watch"],
-          "type": "enum",
-          "label": "Double pinch",
-          "help": "Tap thumb and finger together twice. Room jump here is the Double pinch trigger in Rooms. Switch house works only on a watch with two or more homes.",
-          "default": "Refresh",
-          "options": [
-            {"value": "Disabled", "label": "Disabled"},
-            {"value": "Point Control", "label": "Toggle aimed entity (Point Control)"},
-            {"value": "Activate Scene", "label": "Activate scene"},
-            {"value": "Run Script", "label": "Run script"},
-            {"value": "Next Page", "label": "Next page"},
-            {"value": "Previous Page", "label": "Previous page"},
-            {"value": "Room Jump", "label": "Room jump"},
-            {"value": "Toggle First Tile", "label": "Toggle first tile"},
-            {"value": "Refresh", "label": "Refresh"},
-            {"value": "Switch Instance", "label": "Switch house"}
-          ]
-        },
-        {
-          "key": "handGestureSceneTargetId",
-          "devices": ["watch"],
-          "type": "entity",
-          "domain": "scene",
-          "label": "Scene",
-          "help": "The scene a double pinch activates. With none, it activates the scene you aim at.",
-          "default": "",
-          "showIf": {"key": "handGestureAction", "equals": "Activate Scene"}
-        },
-        {
-          "key": "handGestureScriptTargetId",
-          "devices": ["watch"],
-          "type": "entity",
-          "domain": "script",
-          "label": "Script",
-          "help": "The script a double pinch runs. With none, it runs the script you aim at.",
-          "default": "",
-          "showIf": {"key": "handGestureAction", "equals": "Run Script"}
-        },
-        {
-          "key": "pointControlShowHUD",
-          "devices": ["watch", "iphone"],
-          "type": "bool",
-          "label": "Point control overlay",
-          "help": "Show the entity you aim at while point control runs. Point targets are set up in Rooms.",
-          "default": false
-        },
-        {
-          "key": "sliderCrownSensitivity",
-          "devices": ["watch"],
-          "type": "enum",
-          "label": "Slider speed",
-          "help": "Crown speed for brightness sliders.",
-          "default": "Normal",
-          "options": [
-            {"value": "Precise", "label": "Precise"},
-            {"value": "Normal", "label": "Normal"},
-            {"value": "Fast", "label": "Fast"}
-          ]
-        },
-        {
-          "key": "dismissControlsOnClose",
-          "devices": ["watch", "iphone"],
-          "type": "bool",
-          "label": "Reset view on exit",
-          "help": "Close open control panels and peeked pages when you leave the app, returning to your main page instead of reopening to them.",
-          "default": true
-        },
-        {
-          "key": "showControlEntityName",
-          "devices": ["watch", "iphone"],
-          "type": "bool",
-          "label": "Show entity name",
-          "help": "Show the entity's name beneath the dial on value controls (thermostat, light, fan, shade, number) so you can confirm which one is open.",
-          "default": true
-        },
-        {
-          "key": "automationTriggerSkipConditions",
-          "devices": ["watch", "iphone"],
-          "type": "bool",
-          "label": "Skip conditions by default",
-          "help": "Run automation actions without re-evaluating conditions when triggered from the watch. Triggers are always bypassed.",
-          "default": true
-        },
-        {
-          "key": "showPendingAnimation",
-          "devices": ["watch", "iphone"],
-          "type": "bool",
-          "label": "Pending animation",
-          "help": "Bounce icon until confirmed.",
-          "default": true
-        },
-        {
-          "key": "pendingAnimationDisabledDomains",
-          "devices": ["watch", "iphone"],
-          "type": "domains",
-          "label": "Bounce for",
-          "help": "Lit types bounce while they wait.",
-          "default": [],
-          "initial": ["automation", "fan", "input_boolean", "input_number", "input_select", "light", "media_player", "switch", "timer"],
-          "options": [
-            {"value": "light", "label": "Lights"},
-            {"value": "switch", "label": "Switches"},
-            {"value": "lock", "label": "Locks"},
-            {"value": "cover", "label": "Covers"},
-            {"value": "valve", "label": "Valves"},
-            {"value": "climate", "label": "Climate"},
-            {"value": "fan", "label": "Fans"},
-            {"value": "media_player", "label": "Media players"},
-            {"value": "vacuum", "label": "Vacuums"},
-            {"value": "timer", "label": "Timers"},
-            {"value": "input_boolean", "label": "Toggle helpers"},
-            {"value": "input_number", "label": "Number helpers"},
-            {"value": "input_select", "label": "Dropdown helpers"},
-            {"value": "automation", "label": "Automations"},
-            {"value": "alarm_control_panel", "label": "Alarm panels"}
-          ],
-          "showIf": {"key": "showPendingAnimation", "equals": true}
-        }
-      ]
-    },
-    {
-      "id": "navigation",
-      "title": "Navigation",
-      "settings": [
-        {
-          "key": "pageTransitionStyle",
-          "devices": ["watch", "iphone"],
-          "type": "enum",
-          "label": "Page transition",
-          "help": "Animation when switching pages.",
-          "default": "None",
-          "options": [
-            {"value": "Default", "label": "Default"},
-            {"value": "Slide", "label": "Slide"},
-            {"value": "Fade", "label": "Fade"},
-            {"value": "None", "label": "None"}
-          ]
-        },
-        {
-          "key": "pageTitleMode",
-          "devices": ["watch", "iphone"],
-          "type": "enum",
-          "label": "Page title",
-          "help": "The page's name at the top. Auto shows it for two seconds when the page opens, then fades it.",
-          "default": "On",
-          "options": [
-            {"value": "Off", "label": "Off"},
-            {"value": "On", "label": "On"},
-            {"value": "Auto", "label": "Auto"}
-          ]
-        },
-        {
-          "key": "showPageIndicator",
-          "devices": ["watch", "iphone"],
-          "type": "bool",
-          "label": "Page dots",
-          "help": "Show current page position.",
-          "default": true
-        },
-        {
-          "key": "pageIndicatorStyle",
-          "devices": ["watch", "iphone"],
-          "type": "enum",
-          "label": "Indicator style",
-          "default": "Dots",
-          "options": [
-            {"value": "Lines", "label": "Lines"},
-            {"value": "Dots", "label": "Dots"},
-            {"value": "Dash", "label": "Dash"}
-          ],
-          "showIf": {"key": "showPageIndicator", "equals": true}
-        },
-        {
-          "key": "pageIndicatorOpacity",
-          "devices": ["watch", "iphone"],
-          "type": "enum",
-          "label": "Brightness",
-          "help": "Indicator visibility.",
-          "default": "Subtle",
-          "options": [
-            {"value": "Subtle", "label": "Subtle"},
-            {"value": "Medium", "label": "Medium"},
-            {"value": "Bright", "label": "Bright"}
-          ],
-          "showIf": {"key": "showPageIndicator", "equals": true}
-        },
-        {
-          "key": "pageIndicatorPosition",
-          "devices": ["watch", "iphone"],
-          "type": "enum",
-          "label": "Position",
-          "help": "Where to show indicator.",
-          "default": "Bottom",
-          "options": [
-            {"value": "Bottom", "label": "Bottom"},
-            {"value": "Top", "label": "Top"}
-          ],
-          "showIf": {"key": "showPageIndicator", "equals": true}
-        },
-        {
-          "key": "pageIndicatorSize",
-          "devices": ["watch", "iphone"],
-          "type": "enum",
-          "label": "Size",
-          "help": "Indicator scale.",
-          "default": "Small",
-          "options": [
-            {"value": "Small", "label": "Small"},
-            {"value": "Medium", "label": "Medium"},
-            {"value": "Large", "label": "Large"}
-          ],
-          "showIf": {"key": "showPageIndicator", "equals": true}
-        },
-        {
-          "key": "pageIndicatorColorHex",
-          "devices": ["watch", "iphone"],
-          "type": "color",
-          "label": "Color",
-          "help": "The indicator's color. White unless you pick one.",
-          "default": "#FFFFFF",
-          "showIf": {"key": "showPageIndicator", "equals": true}
-        },
-        {
           "key": "pullDownAction",
           "devices": ["watch", "iphone"],
           "type": "enum",
-          "label": "Pull down action",
-          "help": "Swipe down from the top of a page.",
+          "label": "Pull down from the top",
+          "help": "Drag down from the top of a page.",
           "default": "Refresh",
           "options": [
-            {"value": "Disabled", "label": "Disabled"},
-            {"value": "Refresh", "label": "Refresh"},
+            {"value": "Disabled", "label": "Nothing"},
+            {"value": "Refresh", "label": "Refresh the page"},
             {"value": "Next Page", "label": "Next page"},
             {"value": "Previous Page", "label": "Previous page"},
-            {"value": "Room Jump", "label": "Room jump"},
-            {"value": "Activate Scene", "label": "Activate scene"},
-            {"value": "Run Script", "label": "Run script"},
-            {"value": "Toggle First Tile", "label": "Toggle first tile"}
+            {"value": "Room Jump", "label": "Jump to a room"},
+            {"value": "Activate Scene", "label": "Turn on a scene"},
+            {"value": "Run Script", "label": "Run a script"},
+            {"value": "Toggle First Tile", "label": "Toggle the first tile"}
           ]
         },
         {
@@ -378,7 +142,7 @@
           "type": "entity",
           "domain": "scene",
           "label": "Scene",
-          "help": "The scene a pull down activates.",
+          "help": "The scene a pull down turns on.",
           "default": "",
           "showIf": {"key": "pullDownAction", "equals": "Activate Scene"}
         },
@@ -393,171 +157,69 @@
           "showIf": {"key": "pullDownAction", "equals": "Run Script"}
         },
         {
-          "key": "wrapPages",
+          "key": "longPressDuration",
+          "devices": ["watch", "iphone"],
+          "type": "enum",
+          "label": "Hold time",
+          "help": "How long you press a tile before its extra options open.",
+          "default": "Short",
+          "options": [
+            {"value": "Super Fast", "label": "Very short (75 ms)"},
+            {"value": "Short", "label": "Short (150 ms)"},
+            {"value": "Normal", "label": "Normal (200 ms)"},
+            {"value": "Long", "label": "Long (300 ms)"},
+            {"value": "Extra Long", "label": "Very long (1 s)"}
+          ]
+        },
+        {
+          "key": "entityRadialVerticalQuickRadialGestureEnabled",
           "devices": ["watch", "iphone"],
           "type": "bool",
-          "label": "Loop pages",
-          "help": "Last page returns to first.",
-          "default": false
-        },
-        {
-          "key": "bottomEdgePageSwipeSensitivity",
-          "devices": ["watch"],
-          "type": "enum",
-          "label": "Edge swipe",
-          "help": "Slide bottom edge to switch pages. The level is the distance needed to switch.",
-          "default": "High",
-          "options": [
-            {"value": "Off", "label": "Off"},
-            {"value": "Low", "label": "Low"},
-            {"value": "Medium", "label": "Medium"},
-            {"value": "High", "label": "High"},
-            {"value": "Max", "label": "Max"}
-          ]
-        },
-        {
-          "key": "popupBackgroundMaterial",
-          "devices": ["watch", "iphone"],
-          "type": "enum",
-          "label": "Popup background",
-          "help": "Material blur for tile control overlays.",
-          "default": "Regular",
-          "options": [
-            {"value": "Ultra Thin", "label": "Ultra thin (most transparent)"},
-            {"value": "Thin", "label": "Thin"},
-            {"value": "Regular", "label": "Regular"},
-            {"value": "Thick", "label": "Thick"},
-            {"value": "Ultra Thick", "label": "Ultra thick (most opaque)"}
-          ]
-        }
-      ]
-    },
-    {
-      "id": "camera",
-      "title": "Camera",
-      "settings": [
-        {
-          "key": "cameraStreamMode",
-          "devices": ["watch", "iphone"],
-          "type": "enum",
-          "label": "Streaming",
-          "help": "Live streams smooth real-time video and falls back on its own if a camera can't stream. Switch to Snapshots only if live video has trouble on your network.",
-          "default": "Auto",
-          "options": [
-            {"value": "Auto", "label": "Live"},
-            {"value": "Polling", "label": "Snapshots"}
-          ]
-        },
-        {
-          "key": "cameraRefreshRate",
-          "devices": ["watch", "iphone"],
-          "type": "enum",
-          "label": "Standard rate",
-          "help": "Polling interval when streaming is unavailable.",
-          "default": "1s",
-          "options": [
-            {"value": "0.5s", "label": "0.5s"},
-            {"value": "1s", "label": "1s"},
-            {"value": "2s", "label": "2s"},
-            {"value": "3s", "label": "3s"},
-            {"value": "5s", "label": "5s"}
-          ]
-        },
-        {
-          "key": "cameraHDRefreshRate",
-          "devices": ["watch", "iphone"],
-          "type": "enum",
-          "label": "HD rate",
-          "help": "Polling interval in HD when streaming is unavailable.",
-          "default": "2s",
-          "options": [
-            {"value": "0.5s", "label": "0.5s"},
-            {"value": "1s", "label": "1s"},
-            {"value": "2s", "label": "2s"},
-            {"value": "3s", "label": "3s"},
-            {"value": "5s", "label": "5s"}
-          ]
-        },
-        {
-          "key": "cameraRefreshOnOpen",
-          "devices": ["watch", "iphone"],
-          "type": "bool",
-          "label": "Refresh on page open",
-          "help": "Default for camera tiles when a page becomes visible. A camera tile can change it under Refresh on open in Pages.",
+          "label": "Quick menu gesture",
+          "help": "Inside a control's ring menu, a fast gesture opens the quick menu.",
           "default": true
         },
         {
-          "key": "cameraRefreshOnOpenDebounce",
+          "key": "entityRadialVerticalQuickRadialGestureTrigger",
           "devices": ["watch", "iphone"],
           "type": "enum",
-          "label": "Debounce",
-          "help": "Skip if snapshot is newer than this.",
-          "default": "10s",
+          "label": "Gesture",
+          "help": "The movement that opens the quick menu.",
+          "default": "Swipe Up/Down",
           "options": [
-            {"value": "5s", "label": "5s"},
-            {"value": "10s", "label": "10s"},
-            {"value": "30s", "label": "30s"},
-            {"value": "60s", "label": "60s"}
+            {"value": "Up/Down x2", "label": "Up and down twice"},
+            {"value": "Swipe Up/Down", "label": "Swipe and back"},
+            {"value": "Clockwise", "label": "Circle"}
           ],
-          "showIf": {"key": "cameraRefreshOnOpen", "equals": true}
+          "showIf": {"key": "entityRadialVerticalQuickRadialGestureEnabled", "equals": true}
         },
         {
-          "key": "cameraRefreshOnPageOpenDelay",
+          "key": "entityRadialVerticalQuickRadialGestureSpeed",
           "devices": ["watch", "iphone"],
           "type": "enum",
-          "label": "Delay",
-          "help": "Wait before refreshing. Cancels if you swipe away.",
-          "default": "Off",
+          "label": "Gesture speed",
+          "help": "How fast you must finish the gesture.",
+          "default": "Fast",
           "options": [
-            {"value": "Off", "label": "Off"},
-            {"value": "250ms", "label": "250ms"},
-            {"value": "500ms", "label": "500ms"},
-            {"value": "1s", "label": "1s"}
+            {"value": "Fast", "label": "Fast"},
+            {"value": "Normal", "label": "Normal"},
+            {"value": "Slow", "label": "Slow"},
+            {"value": "Very Slow", "label": "Very slow"}
           ],
-          "showIf": {"key": "cameraRefreshOnOpen", "equals": true}
-        },
-        {
-          "key": "cameraShowLoadingDots",
-          "devices": ["watch", "iphone"],
-          "type": "bool",
-          "label": "Loading dots",
-          "help": "Show per-camera progress dots at the top of the page while cameras load.",
-          "default": true
-        },
-        {
-          "key": "cameraSwipeSensitivity",
-          "devices": ["watch", "iphone"],
-          "type": "enum",
-          "label": "Swipe next camera",
-          "help": "Slide bottom edge to switch.",
-          "default": "Medium",
-          "options": [
-            {"value": "Off", "label": "Off"},
-            {"value": "Low", "label": "Low"},
-            {"value": "Medium", "label": "Medium"},
-            {"value": "High", "label": "High"}
-          ]
-        },
-        {
-          "key": "cameraSwipeWrap",
-          "devices": ["watch", "iphone"],
-          "type": "bool",
-          "label": "Loop cameras",
-          "help": "Wrap around after last camera.",
-          "default": false
+          "showIf": {"key": "entityRadialVerticalQuickRadialGestureEnabled", "equals": true}
         }
       ]
     },
     {
       "id": "motion",
-      "title": "Wrist motions",
+      "title": "Wrist twists",
       "settings": [
         {
           "key": "motionGestureSensitivity",
           "devices": ["watch"],
           "type": "enum",
           "label": "Wrist twists",
-          "help": "Twist your wrist quickly to run an action. Higher catches gentler twists.",
+          "help": "Twist your wrist quickly to run an action. High reacts to gentler twists.",
           "default": "Off",
           "options": [
             {"value": "Off", "label": "Off"},
@@ -582,26 +244,368 @@
           "key": "motionGestureActionsJSON",
           "devices": ["watch"],
           "type": "motionGestures",
-          "label": "Twist actions",
-          "help": "A scene or script with no target uses the one you aim at with point control.",
+          "label": "What each twist does",
+          "help": "A scene or script with none picked uses the one you point at.",
           "default": "",
           "gestures": [
             {"value": "Twist Clockwise", "label": "Twist clockwise"},
             {"value": "Twist Counter-Clockwise", "label": "Twist counterclockwise"}
           ],
           "options": [
-            {"value": "Disabled", "label": "Disabled"},
-            {"value": "Toggle Aimed Entity", "label": "Toggle aimed entity (Point Control)"},
-            {"value": "Run Script", "label": "Run script"},
-            {"value": "Activate Scene", "label": "Activate scene"},
-            {"value": "Refresh", "label": "Refresh"},
+            {"value": "Disabled", "label": "Nothing"},
+            {"value": "Toggle Aimed Entity", "label": "Toggle what you point at"},
+            {"value": "Run Script", "label": "Run a script"},
+            {"value": "Activate Scene", "label": "Turn on a scene"},
+            {"value": "Refresh", "label": "Refresh the page"},
             {"value": "Next Page", "label": "Next page"},
             {"value": "Previous Page", "label": "Previous page"},
-            {"value": "Toggle First Tile", "label": "Toggle first tile"}
+            {"value": "Toggle First Tile", "label": "Toggle the first tile"}
           ],
           "sceneKey": "motionGestureSceneTargetsJSON",
           "scriptKey": "motionGestureScriptTargetsJSON",
           "showIf": {"key": "motionGestureSensitivity", "notEquals": "Off"}
+        }
+      ]
+    },
+    {
+      "id": "navigation",
+      "title": "Pages",
+      "settings": [
+        {
+          "key": "pageTitleMode",
+          "devices": ["watch", "iphone"],
+          "type": "enum",
+          "label": "Page name",
+          "help": "The name of the page, at the top of the screen. Auto shows it for two seconds when the page opens.",
+          "default": "On",
+          "options": [
+            {"value": "Off", "label": "Hide"},
+            {"value": "On", "label": "Show"},
+            {"value": "Auto", "label": "Auto"}
+          ]
+        },
+        {
+          "key": "showPageIndicator",
+          "devices": ["watch", "iphone"],
+          "type": "bool",
+          "label": "Page dots",
+          "help": "Small dots that show which page you are on.",
+          "default": true
+        },
+        {
+          "key": "pageIndicatorStyle",
+          "devices": ["watch", "iphone"],
+          "type": "enum",
+          "label": "Dot shape",
+          "default": "Dots",
+          "options": [
+            {"value": "Lines", "label": "Lines"},
+            {"value": "Dots", "label": "Dots"},
+            {"value": "Dash", "label": "Dash"}
+          ],
+          "showIf": {"key": "showPageIndicator", "equals": true}
+        },
+        {
+          "key": "pageIndicatorOpacity",
+          "devices": ["watch", "iphone"],
+          "type": "enum",
+          "label": "Dot brightness",
+          "help": "How easy the dots are to see.",
+          "default": "Subtle",
+          "options": [
+            {"value": "Subtle", "label": "Subtle"},
+            {"value": "Medium", "label": "Medium"},
+            {"value": "Bright", "label": "Bright"}
+          ],
+          "showIf": {"key": "showPageIndicator", "equals": true}
+        },
+        {
+          "key": "pageIndicatorPosition",
+          "devices": ["watch", "iphone"],
+          "type": "enum",
+          "label": "Dot position",
+          "default": "Bottom",
+          "options": [
+            {"value": "Bottom", "label": "Bottom"},
+            {"value": "Top", "label": "Top"}
+          ],
+          "showIf": {"key": "showPageIndicator", "equals": true}
+        },
+        {
+          "key": "pageIndicatorSize",
+          "devices": ["watch", "iphone"],
+          "type": "enum",
+          "label": "Dot size",
+          "default": "Small",
+          "options": [
+            {"value": "Small", "label": "Small"},
+            {"value": "Medium", "label": "Medium"},
+            {"value": "Large", "label": "Large"}
+          ],
+          "showIf": {"key": "showPageIndicator", "equals": true}
+        },
+        {
+          "key": "pageIndicatorColorHex",
+          "devices": ["watch", "iphone"],
+          "type": "color",
+          "label": "Dot color",
+          "help": "White unless you pick another color.",
+          "default": "#FFFFFF",
+          "showIf": {"key": "showPageIndicator", "equals": true}
+        },
+        {
+          "key": "bottomEdgePageSwipeSensitivity",
+          "devices": ["watch"],
+          "type": "enum",
+          "label": "Swipe the bottom edge",
+          "help": "Slide along the bottom of the screen to go to the next page. Higher needs a shorter swipe.",
+          "default": "High",
+          "options": [
+            {"value": "Off", "label": "Off"},
+            {"value": "Low", "label": "Low"},
+            {"value": "Medium", "label": "Medium"},
+            {"value": "High", "label": "High"},
+            {"value": "Max", "label": "Max"}
+          ]
+        },
+        {
+          "key": "wrapPages",
+          "devices": ["watch", "iphone"],
+          "type": "bool",
+          "label": "Loop pages",
+          "help": "After the last page, go back to the first.",
+          "default": false
+        },
+        {
+          "key": "pageTransitionStyle",
+          "devices": ["watch", "iphone"],
+          "type": "enum",
+          "label": "Page animation",
+          "help": "The movement you see when the page changes.",
+          "default": "None",
+          "options": [
+            {"value": "Default", "label": "Default"},
+            {"value": "Slide", "label": "Slide"},
+            {"value": "Fade", "label": "Fade"},
+            {"value": "None", "label": "None"}
+          ]
+        },
+        {
+          "key": "popupBackgroundMaterial",
+          "devices": ["watch", "iphone"],
+          "type": "enum",
+          "label": "Popup background",
+          "help": "How much you can see through the panel behind a control.",
+          "default": "Regular",
+          "options": [
+            {"value": "Ultra Thin", "label": "Ultra thin (most see-through)"},
+            {"value": "Thin", "label": "Thin"},
+            {"value": "Regular", "label": "Regular"},
+            {"value": "Thick", "label": "Thick"},
+            {"value": "Ultra Thick", "label": "Ultra thick (most solid)"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "controls",
+      "title": "Controls",
+      "settings": [
+        {
+          "key": "showControlEntityName",
+          "devices": ["watch", "iphone"],
+          "type": "bool",
+          "label": "Show the device name",
+          "help": "Shows the name under the dial on lights, thermostats, fans, shades and numbers, so you know which one is open.",
+          "default": true
+        },
+        {
+          "key": "sliderCrownSensitivity",
+          "devices": ["watch"],
+          "type": "enum",
+          "label": "Digital Crown speed",
+          "help": "How fast brightness and other sliders move when you turn the crown.",
+          "default": "Normal",
+          "options": [
+            {"value": "Precise", "label": "Precise"},
+            {"value": "Normal", "label": "Normal"},
+            {"value": "Fast", "label": "Fast"}
+          ]
+        },
+        {
+          "key": "showPendingAnimation",
+          "devices": ["watch", "iphone"],
+          "type": "bool",
+          "label": "Bounce while waiting",
+          "help": "The icon bounces until Home Assistant confirms the change.",
+          "default": true
+        },
+        {
+          "key": "pendingAnimationDisabledDomains",
+          "devices": ["watch", "iphone"],
+          "type": "domains",
+          "label": "Which devices bounce",
+          "help": "Lit types bounce. Tap a type to turn it on or off.",
+          "default": [],
+          "initial": ["automation", "fan", "input_boolean", "input_number", "input_select", "light", "media_player", "switch", "timer"],
+          "options": [
+            {"value": "light", "label": "Lights"},
+            {"value": "switch", "label": "Switches"},
+            {"value": "lock", "label": "Locks"},
+            {"value": "cover", "label": "Covers"},
+            {"value": "valve", "label": "Valves"},
+            {"value": "climate", "label": "Climate"},
+            {"value": "fan", "label": "Fans"},
+            {"value": "media_player", "label": "Media players"},
+            {"value": "vacuum", "label": "Vacuums"},
+            {"value": "timer", "label": "Timers"},
+            {"value": "input_boolean", "label": "Toggle helpers"},
+            {"value": "input_number", "label": "Number helpers"},
+            {"value": "input_select", "label": "Dropdown helpers"},
+            {"value": "automation", "label": "Automations"},
+            {"value": "alarm_control_panel", "label": "Alarm panels"}
+          ],
+          "showIf": {"key": "showPendingAnimation", "equals": true}
+        },
+        {
+          "key": "dismissControlsOnClose",
+          "devices": ["watch", "iphone"],
+          "type": "bool",
+          "label": "Start fresh when you come back",
+          "help": "When you leave the app, close open controls and peeked pages, so you come back to your main page.",
+          "default": true
+        },
+        {
+          "key": "pointControlShowHUD",
+          "devices": ["watch", "iphone"],
+          "type": "bool",
+          "label": "Point Control label",
+          "help": "While Point Control runs, show the name of the device you point at. You set up what to point at in Rooms.",
+          "default": false
+        },
+        {
+          "key": "automationTriggerSkipConditions",
+          "devices": ["watch", "iphone"],
+          "type": "bool",
+          "label": "Run automations right away",
+          "help": "When you run an automation from the watch, do its actions without checking its conditions first. Its triggers are always skipped.",
+          "default": true
+        }
+      ]
+    },
+    {
+      "id": "camera",
+      "title": "Cameras",
+      "settings": [
+        {
+          "key": "cameraStreamMode",
+          "devices": ["watch", "iphone"],
+          "type": "enum",
+          "label": "Camera view",
+          "help": "Live video changes to still pictures by itself if a camera cannot stream. Pick Still pictures only if live video has trouble on your network.",
+          "default": "Auto",
+          "options": [
+            {"value": "Auto", "label": "Live video"},
+            {"value": "Polling", "label": "Still pictures"}
+          ]
+        },
+        {
+          "key": "cameraRefreshRate",
+          "devices": ["watch", "iphone"],
+          "type": "enum",
+          "label": "How often pictures update",
+          "help": "Used when live video is not available. Faster uses more battery.",
+          "default": "1s",
+          "options": [
+            {"value": "0.5s", "label": "0.5s"},
+            {"value": "1s", "label": "1s"},
+            {"value": "2s", "label": "2s"},
+            {"value": "3s", "label": "3s"},
+            {"value": "5s", "label": "5s"}
+          ]
+        },
+        {
+          "key": "cameraHDRefreshRate",
+          "devices": ["watch", "iphone"],
+          "type": "enum",
+          "label": "How often HD pictures update",
+          "help": "The same, for full-screen HD pictures.",
+          "default": "2s",
+          "options": [
+            {"value": "0.5s", "label": "0.5s"},
+            {"value": "1s", "label": "1s"},
+            {"value": "2s", "label": "2s"},
+            {"value": "3s", "label": "3s"},
+            {"value": "5s", "label": "5s"}
+          ]
+        },
+        {
+          "key": "cameraSwipeSensitivity",
+          "devices": ["watch", "iphone"],
+          "type": "enum",
+          "label": "Swipe to the next camera",
+          "help": "Slide along the bottom edge to change camera.",
+          "default": "Medium",
+          "options": [
+            {"value": "Off", "label": "Off"},
+            {"value": "Low", "label": "Low"},
+            {"value": "Medium", "label": "Medium"},
+            {"value": "High", "label": "High"}
+          ]
+        },
+        {
+          "key": "cameraSwipeWrap",
+          "devices": ["watch", "iphone"],
+          "type": "bool",
+          "label": "Loop cameras",
+          "help": "After the last camera, go back to the first.",
+          "default": false
+        },
+        {
+          "key": "cameraRefreshOnOpen",
+          "devices": ["watch", "iphone"],
+          "type": "bool",
+          "label": "New picture when a page opens",
+          "help": "Get a fresh picture each time a page with a camera opens. Each camera tile can change this under Refresh on open in Pages.",
+          "default": true
+        },
+        {
+          "key": "cameraRefreshOnOpenDebounce",
+          "devices": ["watch", "iphone"],
+          "type": "enum",
+          "label": "Skip if newer than",
+          "help": "Keep the picture you have if it is newer than this.",
+          "default": "10s",
+          "options": [
+            {"value": "5s", "label": "5s"},
+            {"value": "10s", "label": "10s"},
+            {"value": "30s", "label": "30s"},
+            {"value": "60s", "label": "60s"}
+          ],
+          "showIf": {"key": "cameraRefreshOnOpen", "equals": true}
+        },
+        {
+          "key": "cameraRefreshOnPageOpenDelay",
+          "devices": ["watch", "iphone"],
+          "type": "enum",
+          "label": "Wait before loading",
+          "help": "If you swipe away before this time, nothing loads.",
+          "default": "Off",
+          "options": [
+            {"value": "Off", "label": "Off"},
+            {"value": "250ms", "label": "250ms"},
+            {"value": "500ms", "label": "500ms"},
+            {"value": "1s", "label": "1s"}
+          ],
+          "showIf": {"key": "cameraRefreshOnOpen", "equals": true}
+        },
+        {
+          "key": "cameraShowLoadingDots",
+          "devices": ["watch", "iphone"],
+          "type": "bool",
+          "label": "Loading dots",
+          "help": "Small dots at the top of the page while cameras load.",
+          "default": true
         }
       ]
     }

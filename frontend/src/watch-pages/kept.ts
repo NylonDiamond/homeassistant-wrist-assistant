@@ -7,7 +7,8 @@
 // through `hook.ts` whether any of them holds edits, without importing this
 // chunk.
 
-import { WatchPagesDraft } from "./draft.js";
+import { WatchPagesDraft, startWatchPages } from "./draft.js";
+import type { WatchEditOptions } from "./edit.js";
 import type { WatchPagesDocument } from "./model.js";
 
 /** The page and tile selected when the editor last showed a watch. */
@@ -18,6 +19,9 @@ export interface WatchPagesSelection {
 
 const drafts = new Map<string, WatchPagesDraft>();
 const selections = new Map<string, WatchPagesSelection>();
+/** The watches whose kept draft began with no record in Home Assistant, on
+ * the ready page (`readyWatchPagesDraft`), until a record is taken. */
+const ready = new Set<string>();
 
 /** The draft kept for a watch, if any. */
 export function keptWatchPagesDraft(watchId: string): WatchPagesDraft | undefined {
@@ -54,6 +58,10 @@ export interface TakenWatchPagesRecord {
  *
  * Revision 0 is no record at all, never a document: the draft is left as it
  * is (the view says a dirty one is kept) until a record comes.
+ *
+ * A draft on the ready page (`readyWatchPagesDraft`) is no copy of a record:
+ * the first record taken replaces it when it holds no edits, and is merged
+ * under its edits when it does, as any other newer record is.
  */
 export function takeWatchPagesRecord(
   watchId: string,
@@ -62,7 +70,8 @@ export function takeWatchPagesRecord(
 ): TakenWatchPagesRecord {
   const held = drafts.get(watchId);
   if (held !== undefined && revision <= 0) return { draft: held, mergedIntoEdits: false };
-  if (held === undefined || (revision < held.revision && !held.dirty)) {
+  ready.delete(watchId);
+  if (held === undefined || (revision < held.revision && !held.dirty) || (held.revision <= 0 && !held.dirty)) {
     const fresh = new WatchPagesDraft(document, revision);
     drafts.set(watchId, fresh);
     return { draft: fresh, mergedIntoEdits: false };
@@ -77,6 +86,36 @@ export function takeWatchPagesRecord(
  * new one, with no undo step that could take the restore back. */
 export function forgetWatchPagesDraft(watchId: string): void {
   drafts.delete(watchId);
+  ready.delete(watchId);
+}
+
+/**
+ * The draft a watch with no pages in Home Assistant opens on: one empty page
+ * (`startWatchPages`), held at revision 0 and only in memory. It holds no
+ * edits, so nothing asks before leaving, and its first save, over revision
+ * 0, creates the record. Discard comes back to the empty page.
+ *
+ * A draft that began this way is handed back as it is, its first save
+ * included, until a record is taken (`takeWatchPagesRecord`). `open` says
+ * whether a new one may be made now: false while the editor waits for the
+ * iPhone's move, so only the start fresh link makes one. Never over edits
+ * kept from a record Home Assistant no longer holds: those wait for a
+ * record, as before. A clean draft of a record that went away is replaced.
+ */
+export function readyWatchPagesDraft(watchId: string, open: boolean, options?: WatchEditOptions): WatchPagesDraft | undefined {
+  const held = drafts.get(watchId);
+  if (held !== undefined && ready.has(watchId)) return held;
+  if (!open || held?.dirty === true) return undefined;
+  const fresh = new WatchPagesDraft(startWatchPages(options), 0);
+  drafts.set(watchId, fresh);
+  ready.add(watchId);
+  return fresh;
+}
+
+/** Whether the watch's kept draft is still on the ready page: it began with
+ * no record and no save of it has landed yet. */
+export function watchPagesDraftIsNew(watchId: string): boolean {
+  return ready.has(watchId) && (drafts.get(watchId)?.revision ?? 1) <= 0;
 }
 
 /** Whether any kept draft holds edits. */
@@ -89,4 +128,5 @@ export function anyWatchPagesDirty(): boolean {
 export function dropAllWatchPages(): void {
   drafts.clear();
   selections.clear();
+  ready.clear();
 }

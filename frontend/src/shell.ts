@@ -24,6 +24,9 @@
 //                       watch address of the same screen behind `/iphone`,
 //                       so each screen's own reader finds the iPhone in it.
 //                       `/iphone` alone is its Pages.
+//   /watch-complications, with an optional /<owner_watch_id>
+//                       the complications on one watch, a view of the
+//                       Complications tab's cards
 //
 // Every watch address is the one the iPhone app builds for "Open in Home
 // Assistant", unchanged; this file only reads them. An older iPhone app
@@ -36,6 +39,7 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import { uiIcon } from "./ui-icons.js";
 import { WATCH_CAMERAS_PATH, isWatchCamerasRoute } from "./watch-cameras/hook.js";
+import { WATCH_COMPLICATIONS_PATH, isWatchComplicationsRoute } from "./watch-complications.js";
 import { WATCH_CONTROL_CENTER_PATH, isWatchControlCenterRoute } from "./watch-control-center/hook.js";
 import { WATCH_HTTP_ACTIONS_PATH, isWatchHttpActionsRoute } from "./watch-http-actions/hook.js";
 import { WATCH_MENUS_PATH, isWatchMenusRoute } from "./watch-menus/hook.js";
@@ -63,26 +67,34 @@ export const TAB_LABEL: Record<PanelTab, string> = {
 /** One of the watch app's screens, as Home lists them and the watch row
  * walks them. */
 export interface WatchScreen {
-  id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "voice" | "http-actions" | "cameras" | "settings";
+  id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "voice" | "watch-complications" | "http-actions" | "cameras" | "settings";
   label: string;
-  /** One line under the name on Home. */
+  /** What the screen is, written to follow its name as one sentence: the
+   * Watch app row's line under it reads "**Pages** are the screens you swipe
+   * between…" (`watchScreenSentence`). Plain words, as the Help sheet reads
+   * them too. */
   blurb: string;
   path: string;
   /** Shared by every watch: the address never names one, and the screen
    * follows none. */
   shared?: true;
+  /** No longer linked from the watch row or Home: its address still works,
+   * so an old link lands on the screen. Control Center is one: its tiles
+   * moved into complication controls. */
+  retired?: true;
 }
 
 /** In the order Home and the watch row show them. */
 export const WATCH_SCREENS: readonly WatchScreen[] = [
-  { id: "pages", label: "Pages", blurb: "The screens you swipe between", path: WATCH_PAGES_PATH },
-  { id: "menus", label: "Menus", blurb: "Quick menus and their items", path: WATCH_MENUS_PATH },
-  { id: "status-pages", label: "Status pages", blurb: "Read-only views of your home", path: WATCH_STATUS_PAGES_PATH },
-  { id: "control-center", label: "Control Center", blurb: "The list of controls", path: WATCH_CONTROL_CENTER_PATH },
-  { id: "rooms", label: "Rooms", blurb: "Switch pages by room, and point control", path: WATCH_ROOMS_PATH },
-  { id: "voice", label: "Voice", blurb: "How voice commands work", path: WATCH_VOICE_PATH },
-  { id: "http-actions", label: "HTTP actions", blurb: "Web requests Home Assistant sends for a watch", path: WATCH_HTTP_ACTIONS_PATH, shared: true },
-  { id: "cameras", label: "Cameras", blurb: "How each camera is framed in alerts", path: WATCH_CAMERAS_PATH, shared: true },
+  { id: "pages", label: "Pages", blurb: "are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.", path: WATCH_PAGES_PATH },
+  { id: "menus", label: "Menus", blurb: "are the quick menus on the watch: the Anywhere menu, a menu for each kind of entity and the page switcher.", path: WATCH_MENUS_PATH },
+  { id: "status-pages", label: "Status pages", blurb: "are lists to read at a glance, like the lights that are on or low batteries, opened from a tile, a menu or Siri.", path: WATCH_STATUS_PAGES_PATH },
+  { id: "control-center", label: "Control Center", blurb: "The list of controls", path: WATCH_CONTROL_CENTER_PATH, retired: true },
+  { id: "rooms", label: "Rooms", blurb: "let the watch open a room's page when you are in that room, and set up point control: point the watch at a thing to control it.", path: WATCH_ROOMS_PATH },
+  { id: "voice", label: "Voice", blurb: "sets how the watch listens and speaks: the Assist and Speak defaults, your saved phrases and the watch voice.", path: WATCH_VOICE_PATH },
+  { id: "watch-complications", label: "Complications", blurb: "are what this watch's faces show, with every other design you could add under them, made in the Complications tab.", path: WATCH_COMPLICATIONS_PATH },
+  { id: "http-actions", label: "HTTP actions", blurb: "are web requests Home Assistant sends when a watch runs one from a tile, a menu or a complication, shared by every watch.", path: WATCH_HTTP_ACTIONS_PATH, shared: true },
+  { id: "cameras", label: "Cameras", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.", path: WATCH_CAMERAS_PATH, shared: true },
 ];
 
 /** The Settings page: a screen of the Watch app with an address like the
@@ -90,8 +102,13 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
  * Devices card, and the pairing card in a home with no watch) and the row
  * draws it last, apart from the eight. */
 export const WATCH_SETTINGS_SCREEN: WatchScreen = {
-  id: "settings", label: "Settings", blurb: "How the watch behaves", path: WATCH_SETTINGS_PATH,
+  id: "settings", label: "Settings", blurb: "sets how the watch behaves: gestures, wrist twists, pages, cameras and how it connects.", path: WATCH_SETTINGS_PATH,
 };
+
+/** A screen's name and what it is, as one sentence. */
+export function watchScreenSentence(screen: WatchScreen): string {
+  return `${screen.label} ${screen.blurb}`;
+}
 
 /** A watch screen's address, on one watch when one is named. The owner is
  * encoded the way each screen's `watch*RouteOwner` decodes it. A shared
@@ -102,14 +119,16 @@ export function watchScreenPath(screen: WatchScreen, owner?: string): string {
 
 /** The watch screen a route is on, or undefined off the Watch app. */
 export function watchScreenOf(route: PanelRoute | undefined): WatchScreen | undefined {
-  if (isWatchPagesRoute(route)) return WATCH_SCREENS[0];
-  if (isWatchMenusRoute(route)) return WATCH_SCREENS[1];
-  if (isWatchStatusPagesRoute(route)) return WATCH_SCREENS[2];
-  if (isWatchControlCenterRoute(route)) return WATCH_SCREENS[3];
-  if (isWatchRoomsRoute(route)) return WATCH_SCREENS[4];
-  if (isWatchVoiceRoute(route)) return WATCH_SCREENS[5];
-  if (isWatchHttpActionsRoute(route)) return WATCH_SCREENS[6];
-  if (isWatchCamerasRoute(route)) return WATCH_SCREENS[7];
+  const of = (id: WatchScreen["id"]) => WATCH_SCREENS.find((screen) => screen.id === id);
+  if (isWatchPagesRoute(route)) return of("pages");
+  if (isWatchMenusRoute(route)) return of("menus");
+  if (isWatchStatusPagesRoute(route)) return of("status-pages");
+  if (isWatchControlCenterRoute(route)) return of("control-center");
+  if (isWatchRoomsRoute(route)) return of("rooms");
+  if (isWatchVoiceRoute(route)) return of("voice");
+  if (isWatchComplicationsRoute(route)) return of("watch-complications");
+  if (isWatchHttpActionsRoute(route)) return of("http-actions");
+  if (isWatchCamerasRoute(route)) return of("cameras");
   if (isWatchSettingsRoute(route)) return WATCH_SETTINGS_SCREEN;
   return undefined;
 }
@@ -205,6 +224,7 @@ export function panelTabs(phones: boolean, current?: PanelTab): PanelTab[] {
 const SUB_PATH = new RegExp(`(${[
   IPHONE_PATH, COMPLICATIONS_PATH, WATCH_PAGES_PATH, WATCH_MENUS_PATH, WATCH_VOICE_PATH,
   WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH, WATCH_HTTP_ACTIONS_PATH, WATCH_CAMERAS_PATH, WATCH_SETTINGS_PATH,
+  WATCH_COMPLICATIONS_PATH,
 ].join("|")})(/.*)?$`);
 
 /** The panel's own address without any tab's sub-path. Without a route (a
@@ -309,7 +329,19 @@ export interface TabBarInput {
   iphone?: string;
   /** The home has phone pages: the bar shows the iPhone app. */
   phones?: boolean;
+  /** Open the Help sheet (`help-sheet.ts`). The Help button sits at the
+   * bar's right end, on every tab; without this there is none. */
+  onHelp?: () => void;
+  /** Whether any watch screen holds unsaved work: the Watch app tab then
+   * carries an orange dot, seen from Home and Complications too. */
+  watchUnsaved?: boolean;
 }
+
+/** A question mark in a circle, the Help button's sign, drawn at the stroke
+ * of `uiIcon`'s set. */
+const HELP_ICON = html`<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" />
+  <path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.7" /><path d="M12 17V17.2" /></svg>`;
 
 /** The tabs, above whatever the tab draws. Each is a real link, so a middle
  * click opens it in a new browser tab; a plain click moves in place. */
@@ -326,8 +358,16 @@ export function renderTabBar(input: TabBarInput): TemplateResult {
         if (!isPlainClick(e)) return;
         e.preventDefault();
         input.onTab(tab);
-      }}>${TAB_LABEL[tab]}</a>`)}</span>
+      }}>${TAB_LABEL[tab]}${tab === "watch" && input.watchUnsaved === true ? unsavedDot() : nothing}</a>`)}</span>
+    ${input.onHelp ? html`<button type="button" class="wa-tabs-help" title="Help and setup guide" aria-label="Help" aria-haspopup="dialog"
+      @click=${input.onHelp}>${HELP_ICON}<span>Help</span></button>` : nothing}
   </nav>`;
+}
+
+/** The orange dot that marks unsaved work, on the Watch app tab and on each
+ * screen of the Watch app row. A screen reader hears it as words. */
+export function unsavedDot(): TemplateResult {
+  return html`<i class="wa-unsaved" role="img" aria-label="unsaved changes"></i>`;
 }
 
 /** The tab bar's look, added to the panel's sheet. Neutral: the tab on
@@ -361,4 +401,41 @@ export const shellStyles = css`
   button.wa-tabs-menu:hover { background: var(--wa-hover); }
   button.wa-tabs-menu:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.wa-tabs-menu svg.ui-icon { width: 16px; height: 16px; }
+  /* Help, neutral and outlined like a tab, pushed to the bar's right end. */
+  button.wa-tabs-help {
+    display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px 0 9px; margin-left: auto; border-radius: 6px;
+    font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap;
+    color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line-strong);
+  }
+  button.wa-tabs-help:hover { background: var(--wa-hover); }
+  button.wa-tabs-help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.wa-tabs-help svg.ui-icon { width: 15px; height: 15px; }
+  /* A phone: the name on top, then the tabs and Help on one line under it.
+     The empty ::after is the line break, a full width item of no height, so
+     the rows carry their own margins instead of a row gap counted twice.
+     Help keeps only its sign, and the tabs slide sideways rather than wrap
+     if a very narrow screen cannot hold all three. */
+  @media (max-width: 480px) {
+    nav.wa-tabs { row-gap: 0; padding-block: 3px; }
+    nav.wa-tabs > * { margin-block: 3px; }
+    nav.wa-tabs::after { content: ""; order: 1; flex: 0 0 100%; height: 0; margin: 0; }
+    .wa-tabs-list, button.wa-tabs-help { order: 2; }
+    .wa-tabs-list {
+      flex: 1 1 0; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+      margin: 0 0 0 -3px; padding: 3px;
+    }
+    .wa-tabs-list::-webkit-scrollbar { display: none; }
+    a.wa-tab { flex: none; padding: 0 10px; }
+    button.wa-tabs-help { width: 28px; padding: 0; justify-content: center; flex: none; }
+    button.wa-tabs-help > span { display: none; }
+  }
+  @media (max-width: 380px) {
+    a.wa-tab { padding: 0 8px; font-size: 12.5px; }
+  }
+  /* Orange, the one hue in the tabs and the row: it says "not saved yet",
+     so it never stands for the tab or the screen on show. */
+  i.wa-unsaved {
+    display: inline-block; flex: none; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%;
+    background: var(--wa-hue-orange);
+  }
 `;

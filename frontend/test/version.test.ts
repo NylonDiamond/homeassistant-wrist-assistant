@@ -136,7 +136,8 @@ describe("deviceKindOf", () => {
     // An older integration names the id without knowing the kind, and the id
     // is the reserved word itself, so it wins over the fallback to "watch".
     expect(deviceKindOf({ owner_watch_id: LIBRARY_OWNER_ID, device_kind: null })).toBe("library");
-    expect(deviceNoun({ device_kind: "library" })).toBe("library");
+    // Named as the panel shows it; "library" is on no screen.
+    expect(deviceNoun({ device_kind: "library" })).toBe("Not on a device list");
   });
 });
 

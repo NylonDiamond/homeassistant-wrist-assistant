@@ -134,10 +134,14 @@ export function deviceKindOf(owner: DeviceOwnerLike | null | undefined): DeviceK
 }
 
 /** The word for the device in copy the owner reads. The Library is a place
- * rather than a device, so it is named as one. */
+ * rather than a device, so it is named as one, the way the picker names it
+ * (`UNASSIGNED_LIST` in pickerRows.ts, which this file cannot import).
+ * "Library" is the store's word and appears nowhere on screen, so a sentence
+ * built on it ("Save. The library picks it up.") named a place nobody could
+ * find. */
 export function deviceNoun(owner: DeviceOwnerLike | null | undefined): string {
   const kind = deviceKindOf(owner);
-  if (kind === "library") return "library";
+  if (kind === "library") return "Not on a device list";
   return kind === "iphone" ? "iPhone" : "watch";
 }
 

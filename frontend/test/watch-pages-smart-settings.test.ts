@@ -273,7 +273,7 @@ describe("the smart page rows", () => {
     const s = setup(smartPage([]));
     expect(flatten(renderSmartPageRows(s.host))).not.toContain("Live Updates");
     const body = flatten(renderSmartPageBody(s.host));
-    expect(body).toMatch(/^<fieldset class="ts-body" id="sm-body-page" \?disabled=false aria-label=Smart Page>/);
+    expect(body).toMatch(/^<fieldset class="ts-body" id="sm-body-page" \?disabled=false aria-label=Smart page>/);
     expect(body).not.toContain("<section");
     expect(renderSmartPageBody(setup(plainPage(1)).host)).toBe(nothing);
   });
@@ -630,16 +630,16 @@ describe("a rule's style through the stand-in tile", () => {
     const style = smartStyleHost(s.host, R1);
     for (const section of ["state", "border", "background"]) style.uiState.set(`tile-settings:open:${section}`, true);
     const view = () => flatten(renderTileSettings(style, { sections: ["state", "border", "background"] }));
-    expect(view()).toContain("Reset State");
-    expect(view()).toContain("Reset Border");
+    expect(view()).toContain("Reset state");
+    expect(view()).toContain("Reset border");
     // Nothing of the background in the style: no row.
-    expect(view()).not.toContain("Reset Background");
-    click(renderTileSettings(style, { sections: ["state", "border", "background"] }), "Reset Border");
+    expect(view()).not.toContain("Reset background");
+    click(renderTileSettings(style, { sections: ["state", "border", "background"] }), "Reset border");
     expect(s.rule(R1).tileStyle).toEqual({ color: "#FFCC00", statusTextShadow: false });
-    click(renderTileSettings(style, { sections: ["state", "border", "background"] }), "Reset State");
+    click(renderTileSettings(style, { sections: ["state", "border", "background"] }), "Reset state");
     expect(s.rule(R1).tileStyle).toEqual({ color: "#FFCC00" });
-    expect(view()).not.toContain("Reset State");
-    expect(view()).not.toContain("Reset Border");
+    expect(view()).not.toContain("Reset state");
+    expect(view()).not.toContain("Reset border");
     expect(checkWatchPagesValues(s.draft.document)).toEqual([]);
     // A fresh rule reads no "Changed" on its folded State section.
     style.uiState.set("tile-settings:open:state", false);

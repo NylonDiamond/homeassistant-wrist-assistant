@@ -12,7 +12,6 @@ import {
   WATCH_PAGES_UNDO_LIMIT,
   WatchPagesDraft,
   type WatchPagesSaveIO,
-  createWatchPages,
   saveWatchPagesDraft,
   startWatchPages,
 } from "../src/watch-pages/draft.js";
@@ -689,9 +688,9 @@ describe("a save that tidies the document first", () => {
   });
 });
 
-// ── no record: "Start with an empty page" ────────────────────────────────
+// ── no record: the ready page ────────────────────────────────────────────
 
-describe("Start with an empty page", () => {
+describe("the ready page of a watch with no pages", () => {
   const NEW_PAGE_FIXTURE = readFileSync(join(__dirname, "fixtures-pages", "06-new-page.json"), "utf8");
   const PHONE_ID = "5A17E000-0000-4000-8000-00000000000F";
   const refusal = (code: string, message = code) => Object.assign(new Error(message), { code });
@@ -715,23 +714,56 @@ describe("Start with an empty page", () => {
     expect(a).not.toBe(b);
   });
 
-  it("saves it over revision 0 for a paired watch and names the new page", async () => {
+  it("is clean on a draft at revision 0, and its first save goes over revision 0", async () => {
+    const draft = new WatchPagesDraft(startWatchPages({ newId: () => PHONE_ID }), 0);
+    expect(draft.dirty).toBe(false);
+    const page = (draft.document.pages as JsonObject[])[0]!;
+    draft.apply({ ...draft.document, pages: [{ ...page, name: "Living room" }] });
+    expect(draft.dirty).toBe(true);
     const calls: [number, WatchPagesDocument][] = [];
-    const result = await createWatchPages(async (base, doc) => { calls.push([base, doc]); return { revision: 1 }; }, { newId: () => PHONE_ID });
-    expect(result).toEqual({ ok: true, revision: 1, pageId: PHONE_ID });
+    const result = await saveWatchPagesDraft(draft, {
+      save: async (base, doc) => { calls.push([base, doc]); return { revision: 1 }; },
+      fetch: async () => { throw new Error("no read on a plain create"); },
+    });
+    expect(result).toEqual({ ok: true, revision: 1, merged: false });
     expect(calls).toHaveLength(1);
     expect(calls[0]![0]).toBe(0);
-    expect(JSON.stringify(calls[0]![1])).toBe(NEW_PAGE_FIXTURE.trimEnd());
+    expect((calls[0]![1].pages as JsonObject[])[0]).toMatchObject({ id: PHONE_ID, name: "Living room" });
+    expect(draft.revision).toBe(1);
+    expect(draft.dirty).toBe(false);
   });
 
-  it("tells a watch that is not paired, a record that came meanwhile, and an old integration apart", async () => {
-    expect(await createWatchPages(async () => { throw refusal("no_record"); })).toMatchObject({ ok: false, code: "no_record" });
-    expect(await createWatchPages(async () => { throw refusal("conflict", "stored revision is 3, save was based on 0"); }))
-      .toEqual({ ok: false, code: "conflict", message: "stored revision is 3, save was based on 0" });
-    expect(await createWatchPages(async () => { throw { type: "result", success: false, error: { code: "unknown_command", message: "x" } }; }))
-      .toMatchObject({ ok: false, code: "unsupported" });
-    expect(await createWatchPages(async () => { throw refusal("invalid", "document is too big"); }))
-      .toEqual({ ok: false, code: "error", message: "document is too big" });
+  it("ends a first save refused as no_record with that code, the edits kept", async () => {
+    const draft = new WatchPagesDraft(startWatchPages({ newId: () => PHONE_ID }), 0);
+    draft.apply({ ...draft.document, extra: 1 });
+    const result = await saveWatchPagesDraft(draft, {
+      save: async () => { throw refusal("no_record"); },
+      fetch: async () => ({ revision: 0, document: undefined }),
+    });
+    expect(result).toMatchObject({ ok: false, code: "no_record", revision: 0 });
+    expect(draft.dirty).toBe(true);
+  });
+
+  it("merges a record that came meanwhile under the edits on a conflict, and saves over it", async () => {
+    const draft = new WatchPagesDraft(startWatchPages({ newId: () => PHONE_ID }), 0);
+    const page = (draft.document.pages as JsonObject[])[0]!;
+    draft.apply({ ...draft.document, pages: [{ ...page, name: "Mine" }] });
+    const theirs = document();
+    const bases: number[] = [];
+    const result = await saveWatchPagesDraft(draft, {
+      save: async (base) => {
+        bases.push(base);
+        if (base === 0) throw refusal("conflict", "stored revision is 2, save was based on 0");
+        return { revision: 3 };
+      },
+      fetch: async () => ({ revision: 2, document: theirs }),
+    });
+    expect(bases).toEqual([0, 2]);
+    expect(result).toMatchObject({ ok: true, revision: 3, merged: true });
+    // Their page, and the ready page with the edit on it.
+    const names = (draft.base.pages as JsonObject[]).map((p) => p.name);
+    expect(names).toContain("Home");
+    expect(names).toContain("Mine");
   });
 
   it("a kept draft with edits takes the new record in, merged", async () => {

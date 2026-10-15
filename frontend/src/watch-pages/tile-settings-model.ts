@@ -33,6 +33,7 @@ import {
   tileKind,
   tileTarget,
 } from "./model.js";
+import { type WatchShowWhen, type WatchShowWhenOperator, isWatchShowWhenOperator, watchTileShowWhen } from "./show-when.js";
 
 // ── the table ────────────────────────────────────────────────────────────
 
@@ -165,6 +166,7 @@ export const WATCH_TILE_SETTING_KEYS: readonly string[] = [
   "holdSlideHTTPActionBannerSeconds",
   "requiresConfirmation",
   "hideWhenInactive",
+  "showWhen",
   "automationSkipConditionOverride",
   "entityId",
 ];
@@ -1324,6 +1326,87 @@ export function setWatchTileHideWhenOff(
 ): WatchPagesDocument {
   if (!isBool(on)) return document;
   return setKey(document, pageId, tileId, "hideWhenInactive", () => (on ? true : REMOVE));
+}
+
+/** The Show Tile choice: Always, Only While On (`hideWhenInactive`) or Only
+ * When (`showWhen`). */
+export type WatchShowTileMode = "always" | "on" | "when";
+
+/** What Show Tile reads for a tile. A stored condition wins, readable or
+ * not, so the row that can replace or remove it is the one shown. */
+export function watchShowTileMode(tile: WatchPageTile): WatchShowTileMode {
+  if (Object.hasOwn(tile, "showWhen")) return "when";
+  return tile.hideWhenInactive === true ? "on" : "always";
+}
+
+/** Show Tile → Always: neither key. */
+export function setWatchTileShowAlways(document: WatchPagesDocument, pageId: string, tileId: string): WatchPagesDocument {
+  return editTile(document, pageId, tileId, (tile) => withoutKey(withoutKey(tile, "hideWhenInactive"), "showWhen"));
+}
+
+/** Show Tile → Only While On: `hideWhenInactive: true` and no condition. */
+export function setWatchTileShowWhileOn(document: WatchPagesDocument, pageId: string, tileId: string): WatchPagesDocument {
+  return editTile(document, pageId, tileId, (tile) => withoutKey(withKey(tile, "hideWhenInactive", true), "showWhen"));
+}
+
+const SHOW_WHEN_ENTITY_RE = /^[a-z0-9_]+\.[a-z0-9_]+$/i;
+
+/** The condition written in the phone's sorted key order. */
+function showWhenValue(c: WatchShowWhen): Record<string, unknown> {
+  return { comparisonOperator: c.comparisonOperator, entityId: c.entityId, state: c.state };
+}
+
+/**
+ * Show Only When's entity: a new condition starts as "is `state`"; on a
+ * condition already there the entity changes, the operator stays and the
+ * state becomes `state`. Either way Only While On goes, as Show Tile holds
+ * one choice. `null` removes the condition. An id that is not shaped like
+ * an entity id is refused.
+ */
+export function setWatchTileShowWhenEntity(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  entityId: string | null,
+  state = "",
+): WatchPagesDocument {
+  if (entityId === null) return setKey(document, pageId, tileId, "showWhen", () => REMOVE);
+  const id = typeof entityId === "string" ? entityId.trim() : "";
+  if (!SHOW_WHEN_ENTITY_RE.test(id) || typeof state !== "string") return document;
+  return editTile(document, pageId, tileId, (tile) => {
+    const old = watchTileShowWhen(tile);
+    const value = showWhenValue({ entityId: id, comparisonOperator: old?.comparisonOperator ?? "eq", state });
+    return withoutKey(withKey(tile, "showWhen", value), "hideWhenInactive");
+  });
+}
+
+/** Show Only When's comparison. Refused while the tile has no condition. */
+export function setWatchTileShowWhenOperator(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  operator: WatchShowWhenOperator,
+): WatchPagesDocument {
+  if (!isWatchShowWhenOperator(operator)) return document;
+  return setKey(document, pageId, tileId, "showWhen", (tile) => {
+    const old = watchTileShowWhen(tile);
+    return old === undefined ? undefined : showWhenValue({ ...old, comparisonOperator: operator });
+  });
+}
+
+/** Show Only When's state, as typed. Refused while the tile has no
+ * condition. */
+export function setWatchTileShowWhenState(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  state: string,
+): WatchPagesDocument {
+  if (typeof state !== "string") return document;
+  return setKey(document, pageId, tileId, "showWhen", (tile) => {
+    const old = watchTileShowWhen(tile);
+    return old === undefined ? undefined : showWhenValue({ ...old, state });
+  });
 }
 
 /** Skip Conditions on an automation: `true` (Skip), `false` (Don't Skip),

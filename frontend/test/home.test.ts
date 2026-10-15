@@ -4,7 +4,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { countWord, deviceCardTiles, deviceFacts, homeGroups, homeTotalBucket, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
+import { countWord, deviceCardTiles, deviceFacts, homeDoorLook, homeGroups, homePageThumbs, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotalBucket, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
+import { phoneWidgetPlaces } from "../src/home-art.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -99,8 +100,10 @@ describe("watchConfigCount", () => {
 describe("deviceSheetTabs", () => {
   const labels = (kind: "watch" | "iphone") => deviceSheetTabs(kind).map((t) => t.label);
 
-  it("gives a watch its complications, its own screens and Settings, never the home's shared screens", () => {
-    expect(labels("watch")).toEqual(["Complications", "Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Settings"]);
+  it("gives a watch its Settings, Pages, complications, its other screens and its Control Center controls, never the home's shared screens or the retired Control Center screen", () => {
+    expect(labels("watch")).toEqual(["Settings", "Pages", "Complications", "Menus", "Status pages", "Control Center", "Rooms", "Voice"]);
+    expect(deviceSheetTabs("watch")[5]).toEqual({ kind: "list", label: "Control Center", filter: "control" });
+    expect(deviceSheetTabs("watch").some((t) => t.kind === "screen" && t.screen.id === "control-center")).toBe(false);
   });
 
   it("gives an iPhone its widgets and its Control Center controls", () => {
@@ -110,36 +113,50 @@ describe("deviceSheetTabs", () => {
     ]);
   });
 
-  it("gives an iPhone its own Pages first and its Settings last on a home with phone pages", () => {
+  it("gives an iPhone its own Settings and Pages first on a home with phone pages", () => {
     const tabs = deviceSheetTabs("iphone", true);
-    expect(tabs.map((t) => t.label)).toEqual(["Pages", "Widgets", "Control Center", "Settings"]);
-    expect(tabs[0]).toMatchObject({ kind: "screen", count: "pages" });
-    expect(tabs.at(-1)).toMatchObject({ kind: "screen" });
-    expect(tabs.at(-1)).not.toHaveProperty("count");
+    expect(tabs.map((t) => t.label)).toEqual(["Settings", "Pages", "Widgets", "Control Center"]);
+    expect(tabs[1]).toMatchObject({ kind: "screen", count: "pages" });
+    expect(tabs[0]).toMatchObject({ kind: "screen" });
+    expect(tabs[0]).not.toHaveProperty("count");
     expect(deviceSheetTabs("watch", true)).toEqual(deviceSheetTabs("watch"));
   });
 
-  it("puts a count on Pages, Status pages and Control Center", () => {
+  it("puts a count on Pages and Status pages", () => {
     const counted = deviceSheetTabs("watch").flatMap((t) => t.kind === "screen" && t.count ? [`${t.label}:${t.count}`] : []);
-    expect(counted).toEqual(["Pages:pages", "Status pages:status_pages", "Control Center:control_center"]);
+    expect(counted).toEqual(["Pages:pages", "Status pages:status_pages"]);
+  });
+});
+
+describe("homePageThumbs", () => {
+  const page = (id: string, over: Record<string, unknown> = {}) => ({ id, name: id, ...over });
+
+  it("draws the first four pages the watch swipes between", () => {
+    const pages = [page("a"), page("b", { isHidden: true }), page("c"), page("sys", { isSystemPage: true }), page("d"), page("e"), page("f")];
+    expect(homePageThumbs(pages).map((p) => p.id)).toEqual(["a", "c", "d", "e"]);
+  });
+
+  it("draws nothing for a watch with no pages", () => {
+    expect(homePageThumbs([])).toEqual([]);
   });
 });
 
 describe("deviceCardTiles", () => {
   const labels = (kind: "watch" | "iphone") => deviceCardTiles(kind).map((t) => t.label);
 
-  it("gives a watch a tile for each counted page, and an iPhone its widgets and controls", () => {
+  it("gives a watch a tile for each counted page, complications and pages first, and an iPhone its widgets and controls", () => {
     expect(labels("watch")).toEqual(["Complications", "Pages", "Status pages", "Control Center"]);
     expect(labels("iphone")).toEqual(["Widgets", "Control Center"]);
   });
 
-  it("puts an iPhone's pages before its widgets on a home with phone pages", () => {
-    expect(deviceCardTiles("iphone", true).map((t) => t.label)).toEqual(["Pages", "Widgets", "Control Center"]);
-    expect(deviceCardTiles("iphone", true).map((t) => countWord(t.label, 2))).toEqual(["pages", "widgets", "controls"]);
+  it("puts an iPhone's pages after its widgets on a home with phone pages", () => {
+    expect(deviceCardTiles("iphone", true).map((t) => t.label)).toEqual(["Widgets", "Pages", "Control Center"]);
+    expect(deviceCardTiles("iphone", true).map((t) => countWord(t.label, 2))).toEqual(["widgets", "pages", "controls"]);
   });
 
   it("cuts a two word page name to one under the number", () => {
     expect(labels("watch").map(tileWord)).toEqual(["Complications", "Pages", "Status", "Controls"]);
+    expect(labels("iphone").map(tileWord)).toEqual(["Widgets", "Controls"]);
   });
 });
 
@@ -275,6 +292,93 @@ describe("deviceFacts", () => {
   });
 });
 
+describe("homePickOf and homeStep", () => {
+  const rows = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  const seen: Record<string, Pick<OwnerSummary, "polling" | "last_seen_seconds">> = {
+    a: { last_seen_seconds: 900 }, b: { last_seen_seconds: 60 }, c: {},
+  };
+
+  it("keeps the device asked for while it is in the list", () => {
+    expect(homePickOf(rows, "c", (id) => seen[id])).toBe("c");
+  });
+
+  it("else picks the device heard from last, a polling watch first, else the first", () => {
+    expect(homePickOf(rows, undefined, (id) => seen[id])).toBe("b");
+    expect(homePickOf(rows, "gone", (id) => ({ ...seen, a: { polling: true } })[id])).toBe("a");
+    expect(homePickOf(rows, undefined, () => undefined)).toBe("a");
+    expect(homePickOf([], undefined, () => undefined)).toBeUndefined();
+  });
+
+  it("steps through the list, going round at either end", () => {
+    expect(homeStep(rows, "a", 1)).toBe("b");
+    expect(homeStep(rows, "c", 1)).toBe("a");
+    expect(homeStep(rows, "a", -1)).toBe("c");
+    expect(homeStep(rows, "gone", 1)).toBe("a");
+    expect(homeStep([], "a", 1)).toBeUndefined();
+  });
+});
+
+describe("homeRowSub", () => {
+  it("says what the device holds, then when it was heard from", () => {
+    expect(homeRowSub("watch", 22, "Seen 1 h ago")).toBe("22 complications · 1 h ago");
+    expect(homeRowSub("watch", 1, "Online now")).toBe("1 complication · Online now");
+    expect(homeRowSub("iphone", 1, undefined)).toBe("1 widget");
+    expect(homeRowSub("iphone", 0, "Never connected")).toBe("0 widgets · Never connected");
+  });
+});
+
+describe("homeDoorLook", () => {
+  it("gives every door of a watch and an iPhone a glyph, a section hue and a line", () => {
+    for (const kind of ["watch", "iphone"] as const) {
+      for (const tab of deviceSheetTabs(kind)) {
+        const look = homeDoorLook(tab, kind);
+        expect(look.hue, tab.label).toMatch(/^var\(--wa-hue-/);
+        expect(look.blurb, tab.label).not.toBe("");
+      }
+    }
+  });
+
+  it("gives a watch's Control Center the iPhone's look, and leaves Settings alone in grey", () => {
+    const tabs = deviceSheetTabs("watch");
+    const controls = tabs.find((t) => t.kind === "list" && t.filter === "control")!;
+    expect(homeDoorLook(controls, "watch")).toEqual(homeDoorLook(controls, "iphone"));
+    const hues = tabs.map((t) => homeDoorLook(t, "watch").hue);
+    expect(hues[0]).toBe("var(--wa-hue-grey)");
+    expect(hues.filter((h) => h === "var(--wa-hue-grey)")).toHaveLength(1);
+  });
+});
+
+describe("phoneWidgetPlaces", () => {
+  it("pairs two small widgets on one strip, gives a medium the full width, and stops when the screen is full", () => {
+    expect(phoneWidgetPlaces(["small", "small", "medium"])).toEqual([
+      { x: 10, y: 98, w: 34, h: 34 }, { x: 48, y: 98, w: 34, h: 34 }, { x: 10, y: 136, w: 72, h: 34 },
+    ]);
+    expect(phoneWidgetPlaces(["small", "medium"])).toEqual([{ x: 10, y: 98, w: 34, h: 34 }, { x: 10, y: 136, w: 72, h: 34 }]);
+    expect(phoneWidgetPlaces(["large", "small"])).toEqual([{ x: 10, y: 98, w: 72, h: 72 }]);
+    expect(phoneWidgetPlaces([])).toEqual([]);
+  });
+});
+
+describe("homeDoorLook's Control Center line", () => {
+  it("says the controls are buttons in Control Center, made from designs", () => {
+    const tab = deviceSheetTabs("iphone").find((t) => t.kind === "list" && t.filter === "control")!;
+    expect(homeDoorLook(tab, "iphone").blurb).toBe("Buttons in Control Center, from your designs.");
+  });
+});
+
+describe("homeRing and homeRingHead", () => {
+  it("draws the synced share from the top and the waiting share after it", () => {
+    expect(homeRing({ all: 4, synced: 3, waiting: 1 }, 100)).toEqual({ synced: "75 100", waiting: "25 100", offset: "-75" });
+    expect(homeRing({ all: 0, synced: 0, waiting: 0 }, 100)).toEqual({ synced: "0 100", waiting: "0 100", offset: "0" });
+  });
+
+  it("says all synced, how many of how many, or just how many devices", () => {
+    expect(homeRingHead({ all: 6, synced: 6 })).toBe("All 6 synced");
+    expect(homeRingHead({ all: 6, synced: 5 })).toBe("5 of 6 synced");
+    expect(homeRingHead({ all: 1, synced: 0 })).toBe("1 device");
+  });
+});
+
 describe("the shell's and Home's look", () => {
   for (const [name, sheet] of [["home", homeStyles], ["shell", shellStyles]] as const) {
     const text = sheet.cssText;
@@ -290,13 +394,25 @@ describe("the shell's and Home's look", () => {
 
     it(`${name}: no purple and no wash`, () => {
       expect(text).not.toContain("purple");
-      expect(text).not.toContain("radial-gradient");
+      // The one radial gradient is the light on Home's stage, and it is a
+      // token, so the light skin gets its own.
+      const stage = text.indexOf(".hb-stage {");
+      const rest = stage < 0 ? text : text.slice(0, stage) + text.slice(text.indexOf("}", stage));
+      expect(rest).not.toContain("radial-gradient");
     });
   }
 
+  it("lights Home's stage with a token, never a fixed light", () => {
+    const text = homeStyles.cssText;
+    const stage = text.slice(text.indexOf(".hb-stage {"), text.indexOf("}", text.indexOf(".hb-stage {")));
+    expect(stage).toContain("radial-gradient(46% 70% at 50% 0%, var(--wa-stage-light) 0%, transparent 80%)");
+    expect(stage).toContain("var(--wa-stage-top)");
+    expect(text).toContain("var(--wa-stage-reflect)");
+  });
+
   it("draws every Home control with a one pixel outline", () => {
     const text = homeStyles.cssText;
-    for (const sel of ["a.home-btn, button.home-btn {", "a.home-door, button.home-door {", "a.home-tile, button.home-tile {"]) {
+    for (const sel of ["a.home-btn, button.home-btn {", "button.hb-step {", "a.hb-door, button.hb-door {"]) {
       const rule = text.slice(text.indexOf(sel), text.indexOf("}", text.indexOf(sel)));
       expect(rule, sel).toContain("border: 1px solid var(--wa-line-strong)");
     }
@@ -323,11 +439,11 @@ describe("the shell's and Home's look", () => {
 
   it("shows every word: no ellipsis anywhere on Home, a long name or fact wraps instead", () => {
     const text = homeStyles.cssText;
-    const home = text.slice(0, text.indexOf("dialog.dev-dialog"));
-    expect(home).not.toContain("text-overflow");
+    expect(text).not.toContain("text-overflow");
     const rule = (sel: string) => text.slice(text.indexOf(sel), text.indexOf("}", text.indexOf(sel)));
-    expect(rule(".home-device-label {")).toContain("overflow-wrap: anywhere");
-    expect(rule(".home-device-facts {")).toContain("overflow-wrap: anywhere");
+    for (const sel of [".hb-row-name {", ".hb-row-sub {", ".hb-facts {", ".hb-name h2 {", ".hb-person-name {", ".hb-door-l {"]) {
+      expect(rule(sel), sel).toContain("overflow-wrap: anywhere");
+    }
   });
 });
 

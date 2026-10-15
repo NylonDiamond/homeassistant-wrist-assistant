@@ -286,8 +286,13 @@ export interface ResolvedTextPart {
   /** Empty on an icon part. */
   text: string;
   /** An icon part's SF Symbol, drawn in the line at the part's size, weight
-   * and color. Absent on every part of words. */
+   * and color. Absent on every part of words. An `mdi:` name when `path` is
+   * set. */
   symbol?: string;
+  /** The SVG `d` string drawn instead of an SF Symbol when `symbol` is a
+   * Material Design name the part carries the drawing of, in MDI's 24 unit
+   * box. Absent otherwise. */
+  path?: string;
   fontSize: number;
   fontWeight: FontWeight;
   fontDesign: FontDesign;
@@ -2107,14 +2112,19 @@ export class Resolver {
    * icon, then the value, as an icon layer settles its symbol. Unlike a layer
    * there is no question mark to fall back on: a part sits inside words, so a
    * template that renders empty, a reading that is missing, a Material Design
-   * name or the custom-drawing marker (only an icon layer can carry the
-   * drawing for either) leaves the part out and the words close up. Mirrors
+   * name the part carries no drawing of (`TextPart.iconPaths`) or the
+   * custom-drawing marker leaves the part out and the words close up. Mirrors
    * the app's resolver.
    */
-  private partSymbol(icon: Value, style: Map<StyleProperty, StyleChange>): string | undefined {
+  private partSymbol(part: TextPart, style: Map<StyleProperty, StyleChange>): { symbol: string; path?: string } | undefined {
+    const icon = part.icon!;
     const name = (this.styleText(style, "icon") ?? this.entityIcon(icon) ?? this.resolve(icon))?.trim();
-    if (name === undefined || name === "" || name.startsWith("mdi:") || name === CUSTOM_SVG_SYMBOL) return undefined;
-    return name;
+    if (name === undefined || name === "" || name === CUSTOM_SVG_SYMBOL) return undefined;
+    if (name.startsWith("mdi:")) {
+      const path = part.iconPaths?.[name];
+      return path === undefined || path === "" ? undefined : { symbol: name, path };
+    }
+    return { symbol: name };
   }
 
   // ── rules ─────────────────────────────────────────────────────────────
@@ -2293,8 +2303,9 @@ export class Resolver {
       if (part.icon !== undefined && layer.arc !== undefined) continue;
       const style = this.applyRules(rules.filter((r) => r.partId === part.id), forced);
       if (style.get("visibility")?.kind === "hide") continue;
-      const symbol = part.icon === undefined ? undefined : this.partSymbol(part.icon, style);
-      if (part.icon !== undefined && symbol === undefined) continue;
+      const glyph = part.icon === undefined ? undefined : this.partSymbol(part, style);
+      if (part.icon !== undefined && glyph === undefined) continue;
+      const symbol = glyph?.symbol;
       const resolved: ResolvedTextPart = {
         text: symbol !== undefined ? "" : this.styleText(style, "text") ?? this.resolve(part.value) ?? "--",
         fontSize: this.styleNumber(style, "fontSize") ?? part.fontSize ?? layer.fontSize,
@@ -2306,6 +2317,7 @@ export class Resolver {
       };
       if (symbol !== undefined) {
         resolved.symbol = symbol;
+        if (glyph?.path !== undefined) resolved.path = glyph.path;
       } else if (part.coloring === "bands" && (part.bands?.length ?? 0) > 0) {
         resolved.spans = textValueSpans(resolved.text, resolved.colorHex, part);
       }

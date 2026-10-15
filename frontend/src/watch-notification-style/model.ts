@@ -419,7 +419,7 @@ export function soundChoices(row: StyleRow, value: StyleValue): SoundChoices {
   } else {
     const plays = facts?.absentPlays ?? "";
     const fallsBack = plays.startsWith("buttonPressSound");
-    lead.push({ value: ABSENT, label: fallsBack ? "Default (Button Press Sound)" : `Default (${soundLabel(plays)})` });
+    lead.push({ value: ABSENT, label: fallsBack ? "Default (Button press)" : `Default (${soundLabel(plays)})` });
   }
   if (facts?.silentOffered === true) lead.push({ value: SILENT_SOUND, label: "None" });
   const groups = table.sounds.categories.map((c) => ({ label: c.label, options: c.sounds.map((s) => ({ value: s.file, label: s.label })) }));
@@ -437,11 +437,12 @@ export function soundValueText(row: StyleRow, value: StyleValue): string {
 // ── the first record ─────────────────────────────────────────────────────
 
 /**
- * The first notification style of a watch, which "Start with the defaults"
- * saves: every key the app writes on a fresh install, at its default, in
- * sorted order as the phone's encoder writes them. The two optional keys
- * whose default is "absent" (delivery and the webhook button size) are left
- * out. The app's `01-defaults.json` fixture, byte for byte. A new object on
+ * The first notification style of a watch: what Watch settings opens on for
+ * a watch Home Assistant holds none for, and what its first Save sends with
+ * the edits on top. Every key the app writes on a fresh install, at its
+ * default, in sorted order as the phone's encoder writes them. The two
+ * optional keys whose default is "absent" (delivery and the webhook button
+ * size) are left out. The app's `01-defaults.json` fixture, byte for byte. A new object on
  * every call.
  */
 export function notificationStyleDefaults(): StyleDocument {
@@ -533,31 +534,8 @@ export async function saveNotificationStyle(io: StyleSaveIO, record: { revision:
   }
 }
 
-/** How "Start with the defaults" ended. */
-export type StyleStartResult =
-  | { ok: true; revision: number; document: StyleDocument }
-  | { ok: false; code: "no_record" | "conflict" | "unsupported" | "error"; message: string };
-
-/** Create the watch's notification style from `notificationStyleDefaults()`:
- * a save over revision 0, taken only for a paired watch with no record. */
-export async function startNotificationStyle(save: (baseRevision: number, document: StyleDocument) => Promise<{ revision: number }>): Promise<StyleStartResult> {
-  const document = notificationStyleDefaults();
-  try {
-    const { revision } = await save(0, document);
-    return { ok: true, revision, document };
-  } catch (err) {
-    const { code, message } = watchCommandError(err);
-    if (code === "no_record" || code === "conflict") return { ok: false, code, message };
-    if (code === "unknown_command") return { ok: false, code: "unsupported", message };
-    return { ok: false, code: "error", message };
-  }
-}
-
 // ── words ────────────────────────────────────────────────────────────────
 
 export const STYLE_NO_RECORD_TITLE = "No notification style from this watch yet.";
-export const STYLE_NO_RECORD_TEXT = "Start with the defaults to begin.";
-export const STYLE_START_BUTTON = "Start with the defaults";
-export const STYLE_START_CONFLICT_TEXT = "A notification style arrived meanwhile, so that is shown.";
 export const STYLE_UNREADABLE_TEXT =
   "Home Assistant holds a notification style for this watch that this panel cannot read. Update the integration.";

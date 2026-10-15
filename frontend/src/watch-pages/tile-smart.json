@@ -1245,14 +1245,14 @@
     "noRow": ["usePersonPhoto"]
   },
   "words": {
-    "convertTitle": "Switch to Smart Page?",
+    "convertTitle": "Switch to a smart page?",
     "convertMessageOne": "This will remove all 1 tile on this page. Smart pages manage entities automatically via domain rules.",
     "convertMessageMany": "This will remove all {count} tiles on this page. Smart pages manage entities automatically via domain rules.",
     "cancel": "Cancel",
     "convert": "Convert",
-    "smartPage": "Smart Page",
+    "smartPage": "Smart page",
     "smartPageDetail": "Auto-show active entities",
-    "smartPageActive": "Smart Page Active",
+    "smartPageActive": "Smart page active",
     "smartPageActiveDetail": "Entities are added automatically based on domain rules. Use the Rules task to configure which domains appear.",
     "editRules": "Edit Rules",
     "disable": "Disable",

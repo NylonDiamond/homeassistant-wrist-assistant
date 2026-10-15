@@ -169,7 +169,9 @@ describe("an iPhone with no pages", () => {
     const { el, watch, owners, call } = phoneEditor(undefined);
     el.watchId = watch;
     const text = flat(call("renderBody", owners));
-    expect(text).toContain("No pages from this watch yet.");
+    // A watch with no pages opens ready on one empty page.
+    expect(text).toContain("pe-layout");
+    expect(text).not.toContain("No pages on this iPhone yet.");
     expect(text).not.toContain("pe-copy-open");
   });
 });

@@ -59,21 +59,26 @@ function foot(r: WatchConfigRecord, historyState: "ready" | "unsupported" = "rea
 }
 
 describe("the foot bar", () => {
-  it("says the revision and who saved it, then History and Raw configuration", () => {
+  it("says who saved it and when, the revision only in the tooltip, then History and Raw configuration", () => {
     const text = foot(record());
-    expect(text).toContain("Revision 7 · saved here 5 min ago");
+    expect(text).toContain(">Saved here 5 min ago</span>");
+    expect(text).toContain("Saved here 5 min ago (Revision 7).");
+    expect(text).not.toContain(">Revision 7");
+    expect(foot(record({ updated_by: "W1" }))).toContain(">Saved from the watch 5 min ago</span>");
     expect(text).toContain(COLLECTED_PILL_TEXT);
     expect(text).toContain("cf-dot ok");
     expect(text).toContain(">History</button>");
     expect(text).toContain(">Raw configuration</button>");
     expect(text.indexOf(">History<")).toBeLessThan(text.indexOf(">Raw configuration<"));
-    expect(text).toContain("2 KB of the 10 KB Home Assistant keeps");
+    expect(text).toContain("2 KB used of 10 KB");
   });
 
   it("keeps every fact of the old Stored copy card: waiting, rejected, near the limit", () => {
     const waiting = configFootStatus({ record: record({ delivered_revision: 6 }), size: 9_000, limit: 10_000, noun: "pages", historyState: "ready", now: NOW });
     expect(waiting).toMatchObject({ tone: "warn", state: WAITING_PILL_TEXT, help: WAITING_HELP_TEXT, near: true });
     expect(waiting.size).toContain("Close to the limit.");
+    // The bar has room to say what to do; the toolbar pill keeps it short.
+    expect(foot(record({ delivered_revision: 6 }))).toContain(">Waiting. Open Wrist Assistant on the watch to get it.</span>");
     const rejected = foot(record({ rejected_revision: 7 }));
     expect(rejected).toContain("cf-dot err");
     expect(rejected).toContain(REJECTED_TEXT);
@@ -85,16 +90,17 @@ describe("the foot bar", () => {
 
   it("names an iPhone in its help lines when the record is a phone's", () => {
     const waiting = configFootStatus({ record: record({ delivered_revision: 6 }), size: 1, limit: 10, noun: "pages", historyState: "ready", device: "iphone", now: NOW });
-    expect(waiting.help).toBe("The iPhone picks it up the next time it checks.");
+    expect(waiting.help).toBe("Open Wrist Assistant on the iPhone to get it.");
+    expect(waiting.state).toBe("Waiting for the iPhone");
     const collected = configFootStatus({ record: record(), size: 1, limit: 10, noun: "pages", historyState: "ready", device: "iphone", now: NOW });
-    expect(collected.help).toBe("The iPhone has revision 7.");
+    expect(collected.help).toBe("The iPhone has the latest save.");
     const watch = configFootStatus({ record: record(), size: 1, limit: 10, noun: "pages", historyState: "ready", now: NOW });
-    expect(watch.help).toBe("The watch has revision 7.");
+    expect(watch.help).toBe("The watch has the latest save.");
     // The revision line names the phone that saved its own record.
     const byPhone = configFootStatus({ record: record({ updated_by: "P1" }), size: 1, limit: 10, noun: "pages", historyState: "ready", device: "iphone", now: NOW });
-    expect(byPhone.revision).toBe("Revision 7 · from the iPhone 5 min ago");
+    expect(byPhone.revision).toBe("Saved from the iPhone 5 min ago");
     const byWatch = configFootStatus({ record: record({ updated_by: "W1" }), size: 1, limit: 10, noun: "pages", historyState: "ready", now: NOW });
-    expect(byWatch.revision).toBe("Revision 7 · from the watch 5 min ago");
+    expect(byWatch.revision).toBe("Saved from the watch 5 min ago");
     expect(flat(renderConfigSaved(record({ updated_by: "P1" }), NOW, "iphone"))).toContain("Revision 7, from the iPhone");
   });
 
@@ -115,14 +121,14 @@ describe("the foot bar", () => {
   it("measures against the cap Home Assistant enforces, says over past it, and never calls 189 % close", () => {
     // The test bed's 40 pages: 472,375 bytes, inside the 700 KB pages cap.
     const big = configFootStatus({ record: record(), size: 472_375, limit: WATCH_PAGES_LIMIT_BYTES, noun: "pages", historyState: "ready", now: NOW });
-    expect(big.size).toBe("461.3 KB of the 700 KB Home Assistant keeps");
+    expect(big.size).toBe("461.3 KB used of 700 KB");
     expect(big).toMatchObject({ near: false, over: false });
     const close = configFootStatus({ record: record(), size: 650_000, limit: WATCH_PAGES_LIMIT_BYTES, noun: "pages", historyState: "ready", now: NOW });
     expect(close).toMatchObject({ near: true, over: false });
     expect(close.size).toContain("Close to the limit.");
     const past = configFootStatus({ record: record(), size: 300 * 1024, limit: WATCH_CONFIG_LIMIT_BYTES, noun: "menus", historyState: "ready", now: NOW });
     expect(past).toMatchObject({ near: false, over: true });
-    expect(past.size).toBe(`300 KB of the 256 KB Home Assistant keeps. ${OVER_LIMIT_TEXT}`);
+    expect(past.size).toBe(`300 KB used of 256 KB. ${OVER_LIMIT_TEXT}`);
     expect(past.size).not.toContain("Close to the limit.");
     const drawn = flat(renderConfigFoot({ status: past, historyState: "ready", historyOpen: false, rawOpen: false, onHistory: noop, onRaw: noop }));
     expect(drawn).toContain("cf-size over");
@@ -133,18 +139,18 @@ describe("the foot bar", () => {
     // Exactly at the cap: Home Assistant keeps it, so not over.
     const exact = at(WATCH_PAGES_LIMIT_BYTES);
     expect(exact).toMatchObject({ near: true, over: false });
-    expect(exact.size).toBe("700 KB of the 700 KB Home Assistant keeps. At the limit.");
+    expect(exact.size).toBe("700 KB used of 700 KB. At the limit.");
     expect(exact.size).not.toContain(OVER_LIMIT_TEXT);
     // A few bytes under rounds down, so it does not read as the cap.
     const under = at(WATCH_PAGES_LIMIT_BYTES - 50);
     expect(under).toMatchObject({ near: true, over: false });
-    expect(under.size).toBe("699.9 KB of the 700 KB Home Assistant keeps. Close to the limit.");
+    expect(under.size).toBe("699.9 KB used of 700 KB. Close to the limit.");
     // A few bytes over (the verify run's 142 bytes) rounds up, so it reads as more than the cap.
     const past = at(WATCH_PAGES_LIMIT_BYTES + 142);
     expect(past).toMatchObject({ near: false, over: true });
-    expect(past.size).toBe(`700.2 KB of the 700 KB Home Assistant keeps. ${OVER_LIMIT_TEXT}`);
+    expect(past.size).toBe(`700.2 KB used of 700 KB. ${OVER_LIMIT_TEXT}`);
     const byte = at(WATCH_PAGES_LIMIT_BYTES + 1);
-    expect(byte.size).toBe(`700.1 KB of the 700 KB Home Assistant keeps. ${OVER_LIMIT_TEXT}`);
+    expect(byte.size).toBe(`700.1 KB used of 700 KB. ${OVER_LIMIT_TEXT}`);
   });
 
   it("uses the same caps as the integration", () => {
@@ -213,10 +219,12 @@ describe("the page editor", () => {
     owner_watch_id: "foot-test-watch", device_name: "Apple Watch", device_kind: "watch", paired_iphone_name: null,
   } as unknown as OwnerSummary;
 
-  /** The element's body with the fixture's pages open, as markup. */
-  function body(): string {
+  /** The element's body with the fixture's pages open, as markup; with
+   * `hass`, Home Assistant is there to edit through. */
+  function body(hass?: Record<string, unknown>): string {
     const Ctor = customElements.get("wa-page-editor") as unknown as new () => Record<string, unknown>;
     const el = new Ctor();
+    if (hass !== undefined) el.hass = hass;
     el.owners = [owner];
     el.watchId = owner.owner_watch_id;
     el.record = record({ document: document as unknown as Record<string, unknown> });
@@ -229,7 +237,7 @@ describe("the page editor", () => {
   it("pins the foot bar under the columns, with no Stored copy or Earlier saves card", () => {
     const text = body();
     expect(text).toContain(`<footer class="cf-bar"`);
-    expect(text).toContain("Revision 7 · saved here");
+    expect(text).toContain(">Saved here");
     expect(text).toContain(">History</button>");
     expect(text).toContain(">Raw configuration</button>");
     expect(text).not.toContain("Stored copy</h3>");
@@ -239,29 +247,38 @@ describe("the page editor", () => {
     expect(inspector).toBeLessThan(text.indexOf(`<footer class="cf-bar"`));
   });
 
-  it("draws the page's own settings in the strip over the watch, and only the line and Delete page in the inspector with no tile selected", () => {
-    const text = body();
+  it("draws the page's own settings in the inspector with no tile selected, and none over the watch", () => {
+    // The page's fields ask for the focused one; Node has no document.
+    vi.stubGlobal("document", { activeElement: null });
+    vi.stubGlobal("HTMLElement", (globalThis as { HTMLElement?: unknown }).HTMLElement ?? class {});
+    let text: string;
+    try {
+      text = body({ states: {}, entities: {} });
+    } finally {
+      vi.unstubAllGlobals();
+    }
     const canvas = text.indexOf(`<div class="column canvas">`);
     const inspector = text.indexOf(`<div class="column inspector card">`);
     expect(canvas).toBeGreaterThan(-1);
     expect(inspector).toBeGreaterThan(canvas);
-    // In the canvas card: the head, then the strip, then the stage.
+    // In the canvas card: the head, then the stage, with no page strip.
     const card = text.slice(canvas, inspector);
     const head = card.indexOf(`<div class="cv-head">`);
-    const strip = card.indexOf(`<div class="pe-pstrip" role="toolbar" aria-label="Page settings">`);
     const stage = card.indexOf(`<div class="stage-area pe-stage-area">`);
     expect(head).toBeGreaterThan(-1);
-    expect(strip).toBeGreaterThan(head);
-    expect(stage).toBeGreaterThan(strip);
+    expect(stage).toBeGreaterThan(head);
+    expect(card).not.toContain("pe-pstrip");
     expect(card).not.toContain(`class="sec name-sec"`);
     const side = text.slice(inspector, text.indexOf(`<footer class="cf-bar"`));
     expect(side).toContain(`<div class="insp-head">`);
     expect(side).toContain(`>Page</span><span class="nm"`);
     expect(side).not.toContain(`class="sec name-sec"`);
     expect(side).not.toContain(`aria-label="Page name"`);
-    expect(side).not.toContain("Hidden on the watch");
-    expect(side).toContain("Select a tile to edit it, or add one. The page's own settings are above the watch.");
-    expect(side).toContain("Delete page…");
+    // Look, then On the watch, then the line and Delete page.
+    const order = ["<h4>Look", "<h4>On the watch", "Click a tile on the watch to edit it.", "Delete page"].map((p) => side.indexOf(p));
+    expect(order.every((i) => i > -1)).toBe(true);
+    expect([...order].sort((x, y) => x - y)).toEqual(order);
+    expect(side).not.toContain("above the watch");
     expect(side).not.toContain("pe-page-card");
   });
 

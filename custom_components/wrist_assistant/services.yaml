@@ -8,14 +8,16 @@ force_resync:
 send_notification:
   name: Send notification
   description: >-
-    Send a push notification to one or all paired Apple Watches via the Wrist Assistant push relay.
-    Watches register their push tokens automatically during pairing.
+    Send a notification to every paired watch, or to one watch or iPhone.
+    For the easy way, with buttons and a camera snapshot picked from lists,
+    make a script from the bundled Watch Notification blueprint (Settings,
+    Automations & scenes, Blueprints). A device can get notifications after
+    it is paired and the app on it has been opened once.
   fields:
     message:
       name: Message
       description: >-
-        Notification body text. Optional — you can omit it if you set a
-        title and/or a camera snapshot.
+        Notification body text. Optional when you set a title or an image.
       example: "Front door was opened"
       selector:
         text:
@@ -40,8 +42,8 @@ send_notification:
       name: Actions
       description: >-
         List of entity action buttons (1-4) shown on the notification.
-        Each action targets an entity_id — the watch determines the
-        appropriate service call based on the entity's domain and state.
+        Each action names an entity_id, and the watch picks the right
+        action for the entity's domain and state.
         The server enriches each action with the entity's current state
         and attributes before sending. Optional keys: label (custom
         button text, defaults to friendly_name), icon (SF Symbol name),
@@ -54,12 +56,12 @@ send_notification:
     image:
       name: Image (camera or image entity)
       description: >-
-        Camera or image entity to snapshot and show in the notification (e.g. a
-        doorbell feed, or a 3D-printer job snapshot). The frame is captured when
-        the notification is sent and shown in the expanded notification and on
-        the watch. Requires remote Home Assistant access (Nabu Casa or an
-        external URL) to load away from home. Live stream applies to cameras
-        only; an image entity shows the captured still.
+        Camera or image entity to snapshot and show in the notification (for
+        example a doorbell camera, or a 3D printer's job snapshot). The frame is
+        captured when the notification is sent. Tapping a camera snapshot opens
+        the camera's live view; an image entity shows the still only. Away from
+        home, the snapshot loads only with remote access (Home Assistant Cloud
+        or an external URL).
       example: "camera.front_door"
       selector:
         entity:
@@ -98,16 +100,20 @@ send_notification:
     data:
       name: Data
       description: >-
-        Additional data payload. Notification-level keys: auto_dismiss
-        (dismiss after button tap), subtitle (custom text below message),
-        entity_state (entity state text below message), show_state (false
-        to hide entity_state). All keys are passed to the watch app.
+        Extra keys passed to the app. Known keys: auto_dismiss (true to
+        dismiss after a button tap), subtitle (text below the message),
+        entity_state (state text below the message), show_state (false to
+        hide entity_state), live_stream and live_stream_watch (false to keep
+        a camera snapshot still instead of playing live on the iPhone or the
+        watch).
       selector:
         object:
     sound:
       name: Sound
       description: >-
-        Sound to play. Use "default" for the default sound, or omit for silent.
+        Sound to play. Pick one, or type a custom file name. Silent and
+        custom sounds apply only with Reliable delivery; with Fast delivery
+        the watch always plays its default alert.
       example: "default"
       selector:
         select:
@@ -179,15 +185,16 @@ send_notification:
     push_type:
       name: Push type
       description: >-
-        APNs push type. "alert" (default) for visible notifications,
-        "background" for silent background updates. A background push goes
-        only to a watch's own push token, never through the iPhone, and
-        carries no sound.
+        Alert (the default) shows a notification. Background is a silent
+        update with nothing shown: it goes only to a watch that has
+        registered itself (never through the iPhone) and plays no sound.
       selector:
         select:
           options:
-            - "alert"
-            - "background"
+            - label: "Alert (show a notification)"
+              value: "alert"
+            - label: "Background (silent update, watch only)"
+              value: "background"
     tag:
       name: Tag
       description: >-
@@ -207,9 +214,9 @@ send_notification:
     priority:
       name: Priority
       description: >-
-        Interruption level. "passive" delivers silently, "active" (default)
-        is standard, "time-sensitive" breaks through Focus/DND and is best
-        for urgent alerts like doorbells or cameras.
+        How strongly the alert interrupts. Passive arrives silently, Active
+        (the default) is a normal alert, and Time Sensitive breaks through
+        Focus and Do Not Disturb, which suits doorbells and cameras.
       selector:
         select:
           mode: dropdown

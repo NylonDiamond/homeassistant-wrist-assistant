@@ -1,8 +1,9 @@
 // The menu editor in the complication editor's chrome, as the page editor
 // wears it: the top bar, the Menus card that picks the one menu the canvas
-// and the inspector show, the Slots card, the canvas with its watch chips,
-// facts, zoom and hint, and the inspector's crumbs and cards. Then the watch
-// screen itself: the ring placed on a screen of the watch's real proportions,
+// and the inspector show, the labels around the watch that stand for the
+// slots, the canvas with its watch chips, facts, tools, zoom and hint, and
+// the inspector's crumbs and cards. Then the watch screen itself: the ring
+// placed on a screen of the watch's real proportions with the menu's look,
 // and the page switcher drawn from the pages record.
 
 import { html } from "lit";
@@ -29,7 +30,9 @@ import {
   MENUS_ZOOM_KEY,
   MENU_CHIP_COLOR,
   MENU_PAGE_CHIP_COLOR,
+  MENU_ROW_LINES,
   MENU_SECTION_BADGES,
+  MENU_PICK_NOTE,
   MENU_STAGE_HINT,
   type MenuSwitcherPage,
   type MenusViewHost,
@@ -42,7 +45,7 @@ import {
   menuSlotLookChanged,
   menuStyleChanged,
   renderMenuInspector,
-  renderMenuScreen,
+  MENUS_INTRO,
   renderMenusCard,
   renderSlotsCard,
   saveMenusZoom,
@@ -53,12 +56,29 @@ import {
   switcherRingPoint,
 } from "../src/watch-menus/menu-view.js";
 import {
+  beamArt,
+  menuLook,
+  playMenuOpening,
+  renderMenuScreen,
+  renderMenuStage,
+  renderMenuStageFoot,
+  renderMenuStageTools,
+  switcherLook,
+  switcherBubbleText,
+  switcherTrackPoint,
+  MENU_HOW_TO,
+  renderMenuHowTo,
+} from "../src/watch-menus/menu-stage.js";
+import {
   ANYWHERE,
   type MenuTargets,
   type MenusDocument,
   NO_MENU_TARGETS,
   PHONE_NO_PHRASES_TEXT,
+  addWatchMenuSlot,
+  removeWatchMenuSlot,
   setWatchMenuActionKey,
+  setWatchMenuInherits,
   setWatchMenuSlotColor,
   setWatchMenuSlotVisible,
   setWatchMenuStyle,
@@ -76,6 +96,7 @@ import { WATCH_PAGE_CHIP_COLOR } from "../src/watch-pages/page-settings.js";
 import { setWatchPageHideFromSwitcher, setWatchPageSwitcherText } from "../src/watch-pages/page-settings-model.js";
 import { STAGE_ZOOM_KEY } from "../src/watch-pages/stage.js";
 import type { SwitcherSettingsHost } from "../src/watch-pages/switcher-settings.js";
+import { NEW_WATCH_TEXT, NOTHING_TO_SAVE_TEXT, START_FRESH_BUTTON } from "../src/watch-settings.js";
 
 const DEFAULTS = JSON.parse(readFileSync(join(__dirname, "fixtures-menus", "01-defaults.json"), "utf8")) as MenusDocument;
 const ANYWHERE_COUNT = watchMenuSlots(DEFAULTS, ANYWHERE).length;
@@ -137,7 +158,7 @@ describe("the Menus card", () => {
     expect(card).toContain("--c: var(--wa-lc-pages, #26a69a)");
     expect(count(card, `<div class="layer me-menu-row`)).toBe(3);
     const at = MENUS_SECTIONS.map(([id, label]) => {
-      expect(card).toContain(`>${label}</span></b>`);
+      expect(card).toContain(`>${label}</span><span class="me-menu-count">`);
       return card.indexOf(`data-menu=${id} `);
     });
     expect(at.every((p) => p > -1)).toBe(true);
@@ -145,11 +166,16 @@ describe("the Menus card", () => {
     // The Anywhere menu is shown first, and only it is lit.
     expect(row(card, "data-menu", "anywhere", "me-menu-row")).toMatch(/^<div class="layer me-menu-row hl"/);
     expect(row(card, "data-menu", "switcher", "me-menu-row")).toMatch(/^<div class="layer me-menu-row "/);
-    // Each row has a small ring and a line under its name.
+    // Each row has a small ring, its count beside its name and one plain
+    // line saying when it opens.
     expect(count(card, `class="thumb me-ring-thumb"`)).toBe(3);
-    expect(card).toContain(`<small>${ANYWHERE_COUNT} slots</small>`);
-    expect(card).toContain("<small>By type · Light</small>");
-    expect(card).toContain("<small>1 page</small>");
+    expect(card).toContain(`<span class="me-menu-count">${ANYWHERE_COUNT} slots</span>`);
+    expect(card).toContain(`<span class="me-menu-count">5 slots</span>`);
+    expect(card).toContain(`<span class="me-menu-count">1 page</span>`);
+    expect(card).toContain("<small>Opens on any screen. Your shortcuts for the whole watch.</small>");
+    expect(card).toContain("<small>Opens over a tile. Controls for that kind of thing.</small>");
+    expect(card).toContain("<small>Jumps to another page. Set how each page shows.</small>");
+    expect(Object.values(MENU_ROW_LINES).every((line) => card.includes(`<small>${line}</small>`))).toBe(true);
     // One watch on the canvas, the shown menu's.
     let screen = flat(renderMenuScreen(h));
     expect(count(screen, `class="wa-watch"`)).toBe(1);
@@ -166,47 +192,214 @@ describe("the Menus card", () => {
   });
 });
 
-describe("the Slots card", () => {
-  it("lists the shown menu's slots in ring order, each with its icon, name, place and action", () => {
-    const text = flat(renderSlotsCard(host(DEFAULTS)));
-    expect(text).toContain(`<span class="lc-title">Slots</span>`);
-    expect(text).toContain("--c: var(--wa-lc-layers, #4a7fe8)");
-    expect(text).toContain(`class="lc-btn pri me-add-slot" aria-label="Add slot"`);
-    expect(count(text, `<div class="layer me-slot-row`)).toBe(ANYWHERE_COUNT);
-    const refresh = row(text, "data-slot", REFRESH, "me-slot-row");
-    expect(refresh).toContain(`<span class="nm-t">Refresh</span>`);
-    expect(refresh).toContain("<small>Top Left · Refresh</small>");
-    expect(refresh).toContain(`class="thumb me-thumb" style=--c:#4DBFE0`);
-    expect(refresh).toContain("aria-label=Remove Refresh");
-    expect(refresh).not.toContain(">hidden</span>");
-    // Ring order: top left before right centre.
-    expect(text.search(new RegExp(`data-slot=${REFRESH}\\s`, "i"))).toBeLessThan(text.search(new RegExp(`data-slot=${INFO}\\s`, "i")));
+describe("the labels around the watch", () => {
+  /** The markup of one place's label, by its place. */
+  const place = (text: string, position: string) => {
+    const at = text.search(new RegExp(`data-place=${position}\\s`));
+    if (at < 0) return "";
+    const start = text.lastIndexOf(`<div class=ms-place`, at);
+    const next = text.indexOf(`<div class=ms-place`, at);
+    return text.slice(start, next < 0 ? undefined : next);
+  };
+
+  it("replace the Slots card: one label per place, each slot a button with its color, name and action", () => {
+    const h = host(DEFAULTS);
+    expect(flat(renderSlotsCard(h))).toBe("");
+    const text = flat(renderMenuStage(h));
+    expect(count(text, "<div class=ms-place ")).toBe(8);
+    expect(count(text, "<button type=\"button\" class=ms-label")).toBe(ANYWHERE_COUNT);
+    const refresh = place(text, "topLeft");
+    expect(refresh).toContain("ms-at-topLeft ms-left");
+    expect(refresh).toContain(`data-slot=${REFRESH}`);
+    expect(refresh).toContain("style=--k:#4DBFE0");
+    expect(refresh).toContain("<b>Refresh</b><small>Refresh</small>");
+    expect(place(text, "topCenter")).toContain("ms-at-topCenter ms-top");
+    expect(place(text, "rightCenter")).toContain("ms-at-rightCenter ms-right");
+    expect(place(text, "bottomCenter")).toContain("ms-at-bottomCenter ms-bottom");
+    // The watch itself sits in the same grid.
+    expect(text).toContain(`<div class="ms-watch">`);
+    expect(count(text, `class="wa-watch"`)).toBe(1);
   });
 
-  it("lights the selected slot's row and no other, and marks a hidden slot", () => {
+  it("light the selected slot's label and its dot, mark a hidden slot, and pick a slot with a click", () => {
     const h = host(setWatchMenuSlotVisible(DEFAULTS, ANYWHERE, INFO, false));
     h.uiState.set("me:sel:anywhere", REFRESH);
-    const text = flat(renderSlotsCard(h));
-    expect(row(text, "data-slot", REFRESH, "me-slot-row")).toMatch(/^<div class="layer me-slot-row hl /);
-    expect(row(text, "data-slot", INFO, "me-slot-row")).toMatch(/^<div class="layer me-slot-row  dim"/);
-    expect(row(text, "data-slot", INFO, "me-slot-row")).toContain(`<span class="badge">hidden</span>`);
+    const text = flat(renderMenuStage(h));
+    expect(place(text, "topLeft")).toMatch(/class=ms-label on data-slot=/);
+    expect(place(text, "topLeft")).toContain("aria-pressed=true");
+    expect(place(text, "rightCenter")).toMatch(/class=ms-label off data-slot=/);
+    expect(place(text, "rightCenter")).toContain(", hidden</small>");
     // The ring lights the same slot.
-    expect(flat(renderMenuScreen(h))).toMatch(/class="me-dot  on "/);
+    expect(flat(renderMenuScreen(h))).toMatch(/class=me-dot on ms-active style=/);
+    handler(renderMenuStage(h), `data-slot=${INFO}`, "click")(new Event("click"));
+    expect(h.uiState.get("me:sel:anywhere")).toBe(INFO);
   });
 
-  it("says which list the Entity quick menu shows, and lists the switcher's pages with no Add", () => {
+  it("offer Add a slot at a free place, and say which places come from the All menu", () => {
+    const edits: string[] = [];
+    const free = removeWatchMenuSlot(DEFAULTS, ANYWHERE, REFRESH);
+    const h = { ...host(free), edit: () => { edits.push("add"); return true; } } as MenusViewHost;
+    const text = flat(renderMenuStage(h));
+    const left = place(text, "topLeft");
+    expect(left).toContain("class=\"ms-label ms-add\"");
+    expect(left).toContain("aria-label=Add a slot at Top Left");
+    expect(left).toContain("<b>Add a slot</b>");
+    handler(renderMenuStage(h), "Add a slot at Top Left", "click")(new Event("click"));
+    expect(edits).toEqual(["add"]);
+    // The Light menu with the All slots: an All slot at a place it leaves
+    // free is a dashed label, not a button.
+    const all = addWatchMenuSlot(DEFAULTS, { list: "domain", domain: "all" }, { position: "rightCenter" }).document;
+    const light = host(setWatchMenuInherits(all, "light", true));
+    selectMenu(light, "entity");
+    const entity = place(flat(renderMenuStage(light)), "rightCenter");
+    expect(entity).toContain(`<span class="ms-label ms-inh"`);
+    expect(entity).toContain("<small>From the All menu</small>");
+    expect(entity).not.toContain("<button");
+  });
+
+  it("keep the Entity quick menu's list in the head facts and its Change under the hint, and the switcher's Pages card on the left", () => {
     const h = host(DEFAULTS, [KITCHEN]);
     selectMenu(h, "entity");
-    const entity = flat(renderSlotsCard(h));
-    expect(entity).toContain(`class="lc-filter me-filter"`);
-    expect(entity).toContain("Light menu, by type");
-    expect(entity).toContain("me-slot-row");
+    expect(flat(renderSlotsCard(h))).toBe("");
+    expect(flat(renderMenuStageFoot(h))).toBe("");
+    const light = watchMenuSlots(DEFAULTS, { list: "domain", domain: "light" })[0]!;
+    h.uiState.set("me:sel:domain:light", light.id as string);
+    const foot = flat(renderMenuStageFoot(h));
+    expect(foot).toContain("Change the type or entity</button>");
+    handler(renderMenuStageFoot(h), "Change the type", "click")(new Event("click"));
+    expect(h.uiState.get("me:sel:domain:light")).toBeUndefined();
     selectMenu(h, "switcher");
     const switcher = flat(renderSlotsCard(h));
     expect(switcher).toContain(`<span class="lc-title">Pages</span>`);
     expect(switcher).toContain("<small>Shown by name</small>");
-    expect(switcher).not.toContain("me-add-slot");
     expect(switcher).not.toContain(`class="acts"`);
+    // The switcher has no labels round its watch: its pages are picked in
+    // the card.
+    expect(flat(renderMenuStage(h))).not.toContain("ms-place");
+  });
+
+  it("put Add and Play opening in the stage tools, Add off with the same reasons as before", () => {
+    const h = host(DEFAULTS);
+    let tools = flat(renderMenuStageTools(h));
+    expect(tools).toContain(`<button class="tb ms-add-slot" aria-label="Add slot" ?disabled=true`);
+    expect(tools).toContain("title=Every place around the ring is taken.");
+    // The defaults open with no entrance: nothing to play.
+    expect(tools).not.toContain("Play opening");
+    const free = host(setWatchMenuStyle(removeWatchMenuSlot(DEFAULTS, ANYWHERE, REFRESH), "quickAction", "entranceStyle", "spring"));
+    tools = flat(renderMenuStageTools(free));
+    expect(tools).toContain(`aria-label="Add slot" ?disabled=false`);
+    expect(tools).toContain("title=Add a slot at the first free place");
+    expect(tools).toContain(`<span class="word">Play opening</span>`);
+    selectMenu(free, "switcher");
+    tools = flat(renderMenuStageTools(free));
+    expect(tools).not.toContain("ms-add-slot");
+    expect(tools).toContain("Play opening");
+  });
+});
+
+describe("the menu's look on the watch", () => {
+  const styled = (changes: Record<string, unknown>, section: "quickAction" | "pageSwitcher" = "quickAction") =>
+    Object.entries(changes).reduce((d, [k, v]) => setWatchMenuStyle(d, section, k, v), DEFAULTS);
+  const screenTag = (text: string) => text.slice(text.indexOf("<div class=me-screen"), text.indexOf("<div class=\"ms-backdrop\""));
+
+  it("reads the style keys as the watch does, defaults filled in and numbers held to their range", () => {
+    expect(menuLook(DEFAULTS)).toEqual({
+      glass: false, neon: false, labels: false, finger: true, entrance: "none", dim: 1,
+      beam: "none", beamColor: "#FFFFFF", beamIntensity: 0.5, glow: 0.5,
+    });
+    const look = menuLook(styled({ showIconBubble: true, showNeonOutline: true, showContextLabel: true, entranceStyle: "popIn", backgroundDim: 0.3, beamStyle: "auroraWash", beamColor: "#E76F51", glowIntensity: 1 }));
+    expect(look).toMatchObject({ glass: true, neon: true, labels: true, entrance: "popIn", dim: 0.3, beam: "auroraWash", beamColor: "#E76F51", glow: 1 });
+    expect(switcherLook(DEFAULTS)).toEqual({ glow: 0.5, scale: 1.2 });
+    expect(switcherLook(styled({ selectedScale: 1.5, glowIntensity: 0 }, "pageSwitcher"))).toEqual({ glow: 0, scale: 1.5 });
+  });
+
+  it("draws the stand-in page under a veil as dark as Background Dim, and switches each effect on the screen", () => {
+    let tag = screenTag(flat(renderMenuScreen(host(DEFAULTS))));
+    expect(tag).toContain("ms-enter-none ms-finger");
+    expect(tag).not.toContain("ms-neon");
+    expect(tag).toContain("--ms-veil:0.85");
+    expect(flat(renderMenuScreen(host(DEFAULTS)))).toContain(`<svg class="ms-page"`);
+    tag = screenTag(flat(renderMenuScreen(host(styled({ backgroundDim: 0.4, showIconBubble: true, showNeonOutline: true, showFingerShadow: false, glowIntensity: 1 })))));
+    expect(tag).toContain("ms-glass ms-neon");
+    expect(tag).not.toContain("ms-finger");
+    expect(tag).toContain("--ms-veil:0.34");
+    expect(tag).toContain("--ms-g-r:15px;--ms-g-a:60%");
+  });
+
+  it("names each slot under its dot with Icon Labels, and casts each dot's shadow away from the finger", () => {
+    const plain = flat(renderMenuScreen(host(DEFAULTS)));
+    expect(plain).not.toContain(`class="ms-name"`);
+    // Finger Shadow is on by default: the top left dot's shadow falls up
+    // and to the left.
+    expect(plain).toMatch(/--sx:-\d[\d.]*px;--sy:-\d[\d.]*px/);
+    const named = flat(renderMenuScreen(host(styled({ showContextLabel: true, showFingerShadow: false }))));
+    expect(count(named, `class="ms-name"`)).toBe(ANYWHERE_COUNT);
+    expect(named).toContain(">Refresh</span>");
+    expect(named).not.toContain("--sx:");
+  });
+
+  it("points the beam at the selected slot, else the top one, in its color and intensity", () => {
+    expect(flat(renderMenuScreen(host(DEFAULTS)))).not.toContain(`class="ms-beam"`);
+    const screen = { width: 200, height: 200 };
+    const look = (beam: string) => ({ ...menuLook(DEFAULTS), beam, beamColor: "#E76F51", beamIntensity: 1 }) as ReturnType<typeof menuLook>;
+    const wedge = flat(beamArt(look("sectorWedge"), screen, { x: 100, y: 28 }));
+    expect(count(wedge, "<polygon")).toBe(2);
+    expect(wedge).toContain("fill=#E76F51 fill-opacity=0.5");
+    expect(count(flat(beamArt(look("ripplePulse"), screen, { x: 100, y: 28 })), "fill=\"none\" stroke=#E76F51")).toBe(2);
+    expect(flat(beamArt(look("radiantBloom"), screen, { x: 100, y: 28 }))).toContain(`fill="url(#ms-bloom)"`);
+    expect(flat(beamArt(look("auroraWash"), screen, { x: 100, y: 28 }))).toContain(`fill="url(#ms-wash)"`);
+    expect(flat(beamArt(look("wakeWave"), screen, { x: 100, y: 28 }))).toContain("<line x1=100 y1=100 x2=100 y2=28");
+    expect(flat(beamArt(look("none"), screen, { x: 100, y: 28 }))).toBe("");
+    // On the watch: toward the top slot, then toward the selected one.
+    const h = host(styled({ beamStyle: "sectorWedge" }), [], 1);
+    const top = watchMenuRingPoint("topCenter")!;
+    expect(flat(renderMenuScreen(h))).toMatch(new RegExp(`class=me-dot ms-active style=left:50%;top:${Math.round(menuScreenPoint({ width: 208, height: 248 }, top).y * 10000) / 100}%`));
+    h.uiState.set("me:sel:anywhere", REFRESH);
+    expect(flat(renderMenuScreen(h))).toMatch(/class=me-dot on ms-active style=left:2/);
+  });
+
+  it("replays the opening on every Play, flipping between two equal animations, and only for a while", () => {
+    const h = host(styled({ entranceStyle: "spring" }));
+    expect(screenTag(flat(renderMenuScreen(h)))).toContain("ms-enter-spring");
+    expect(screenTag(flat(renderMenuScreen(h)))).not.toContain("ms-play-");
+    playMenuOpening(h);
+    expect(screenTag(flat(renderMenuScreen(h)))).toContain("ms-play-a");
+    playMenuOpening(h);
+    expect(screenTag(flat(renderMenuScreen(h)))).toContain("ms-play-b");
+    // Another menu does not play the Anywhere menu's opening.
+    selectMenu(h, "switcher");
+    expect(screenTag(flat(renderMenuScreen(h)))).not.toContain("ms-play-");
+    selectMenu(h, "anywhere");
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(Date.now() + 5000);
+      expect(screenTag(flat(renderMenuScreen(h)))).not.toContain("ms-play-");
+    } finally {
+      vi.useRealTimers();
+    }
+    // With no entrance there is nothing to play.
+    const none = host(DEFAULTS);
+    playMenuOpening(none);
+    expect(screenTag(flat(renderMenuScreen(none)))).not.toContain("ms-play-");
+  });
+
+  it("draws the switcher's pages with their Glow, the picked page (else the first) at Selected Scale", () => {
+    const pages: MenuSwitcherPage[] = [KITCHEN, { id: "b", name: "Garden", icon: "leaf", color: "#00FF00" }];
+    const h = host(styled({ selectedScale: 1.5, glowIntensity: 1 }, "pageSwitcher"), pages);
+    selectMenu(h, "switcher");
+    let out = flat(renderMenuScreen(h));
+    expect(out).toContain("ms-switcher");
+    // The page the finger points at: 70% of Glow, the wider glow, Selected
+    // Scale. The rest: 15%.
+    expect(out).toMatch(/class=ms-sw ms-active style=[^>]*--ms-ga:70%;--ms-gr:45;--ms-k:1.5[^>]*title=Kitchen/);
+    expect(out).toMatch(/class=ms-sw style=[^>]*--ms-ga:15%;--ms-gr:30;--ms-k:1[^>]*title=Garden/);
+    selectSwitcherPage(h, "b");
+    out = flat(renderMenuScreen(h));
+    expect(out).toMatch(/class=ms-sw ms-active style=[^>]*title=Garden/);
+    // The page you are on (the first) keeps its ring and 40% of Glow.
+    expect(out).toMatch(/class=ms-sw ms-current style=[^>]*--ms-ga:40%[^>]*title=Kitchen/);
+    // Its name at the top of the screen.
+    expect(out).toContain(">Garden</span>");
   });
 });
 
@@ -217,26 +410,32 @@ describe("the inspector", () => {
     expect(head).toContain(`<span class="kchip" style=--k:${MENU_CHIP_COLOR}>Menu</span><span class="nm" title=Anywhere menu>Anywhere menu</span>`);
     expect(head).toContain(">Collapse all</button>");
     expect(text).toContain("data-sec=menu-editor:style-anywhere");
+    expect(text).toContain("data-sec=menu-editor:motion-anywhere");
+    expect(text.indexOf("<h4>Look</h4>")).toBeLessThan(text.indexOf("<h4>Motion</h4>"));
     expect(text).toContain(`style=--c:${SECTION_COLOR.look}`);
     expect(text).not.toContain("name-sec");
+    expect(text).toContain(`<p class="me-menu-note me-pick-note">${MENU_PICK_NOTE}</p>`);
+    expect(MENU_PICK_NOTE).toBe("Click a slot on the watch to change what it does.");
   });
 
-  it("crumbs a selected slot as Menu › SLOT › name, in the slot's color, over its Name, Slot and Look cards", () => {
+  it("crumbs a selected slot as Menu › SLOT › name, in the slot's color, over its Name, What it does, Where, Icon and color and Shows on cards", () => {
     const h = host(DEFAULTS);
     h.uiState.set("me:sel:anywhere", REFRESH);
     const text = flat(renderMenuInspector(h));
     const head = text.slice(text.indexOf(`<div class="insp-head">`), text.indexOf(`<div class="insp-body">`));
     expect(head).toContain(`<button class="root" title="Edit the menu"`);
     expect(head).toContain(">Anywhere menu</button><span class=\"sep\">›</span><span class=\"kchip\" style=--k:#4DBFE0>Slot</span><span class=\"nm\" title=Refresh>Refresh</span>");
-    const name = text.indexOf(`class="sec name-sec"`);
-    const slot = text.indexOf("data-sec=menu-editor:slot");
-    const look = text.indexOf("data-sec=menu-editor:look");
-    expect(name).toBeGreaterThan(-1);
-    expect(slot).toBeGreaterThan(name);
-    expect(look).toBeGreaterThan(slot);
+    const order = [`class="sec name-sec"`, "data-sec=menu-editor:slot ", "data-sec=menu-editor:where ", "data-sec=menu-editor:look ", "data-sec=menu-editor:shows ", ">Remove</span>"]
+      .map((part) => text.indexOf(part));
+    expect(order.every((p) => p > -1)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    for (const title of ["What it does", "Where", "Icon and color", "Shows on"]) expect(text, title).toContain(`<h4>${title}</h4>`);
     expect(text).toContain(`<span class="me-name" title="A slot is named by what it runs, else by its action">Refresh</span>`);
-    // The slot's controls, every one kept.
-    for (const label of [">Place<", ">Shown<", ">Action<", ">Show for<", ">Icon<", ">Color<", ">Remove</span>"]) expect(text, label).toContain(label);
+    // The slot's controls, every one kept: the action tiles, the place grid
+    // and Shown, the icon and color, the types it shows over.
+    for (const label of [`role="group" aria-label="Place on the ring"`, ">Shown on the watch<", "data-action=refresh", ">Icon<", ">Color<", ">Show on<", ">Remove</span>"]) {
+      expect(text, label).toContain(label);
+    }
     // Escape, or the crumb, lets go of the slot.
     expect(deselectMenuSlot(h)).toBe(true);
     expect(flat(renderMenuInspector(h))).toContain("data-sec=menu-editor:style-anywhere");
@@ -247,9 +446,12 @@ describe("the inspector", () => {
     expect(MENU_SECTION_BADGES).toEqual({
       name: { color: SECTION_COLOR.place, icon: "text" },
       slot: { color: SECTION_COLOR.content, icon: "content" },
+      where: { color: SECTION_COLOR.position, icon: "place" },
       look: { color: SECTION_COLOR.look, icon: "look" },
+      shows: { color: SECTION_COLOR.states, icon: "states" },
       menu: { color: SECTION_COLOR.content, icon: "content" },
       style: { color: SECTION_COLOR.look, icon: "look" },
+      motion: { color: SECTION_COLOR.look, icon: "radial" },
       switcherPage: { color: SECTION_COLOR.content, icon: "watch" },
     });
     const h = host(DEFAULTS);
@@ -260,6 +462,8 @@ describe("the inspector", () => {
     // group, so the openings are compared as plain text.
     expect(card("slot").startsWith(`<section class="sec" data-sec=menu-editor:slot data-open=true data-help="on" style=--c:${SECTION_COLOR.content}`)).toBe(true);
     expect(card("look").startsWith(`<section class="sec" data-sec=menu-editor:look data-open=true data-help="on" style=--c:${SECTION_COLOR.look}`)).toBe(true);
+    expect(card("where").startsWith(`<section class="sec" data-sec=menu-editor:where data-open=true data-help="on" style=--c:${SECTION_COLOR.position}`)).toBe(true);
+    expect(card("shows").startsWith(`<section class="sec" data-sec=menu-editor:shows data-open=true data-help="on" style=--c:${SECTION_COLOR.states}`)).toBe(true);
     expect(text).toContain(`<section class="sec name-sec" data-open="true" style=--c:${SECTION_COLOR.place}>`);
   });
 
@@ -269,14 +473,16 @@ describe("the inspector", () => {
     const entity = flat(renderMenuInspector(h));
     expect(entity).toContain("data-sec=menu-editor:menu");
     expect(entity).toContain(`style=--c:${SECTION_COLOR.content}`);
+    expect(entity).toContain("<h4>Which menu</h4>");
     expect(entity).toContain("By type");
-    expect(entity).toContain(">Type<");
-    expect(entity).toContain("Add the All slots");
+    expect(entity).toContain(">More types<");
+    expect(entity).toContain(">Fill gaps with the All menu<");
     selectMenu(h, "switcher");
     const switcher = flat(renderMenuInspector(h));
     expect(switcher).toContain("data-sec=menu-editor:style-switcher");
-    expect(switcher).toContain("Glow");
-    expect(switcher).toContain("Selected Scale");
+    expect(switcher).toContain("<h4>Look</h4>");
+    expect(switcher).toContain(">Glow<");
+    expect(switcher).toContain(">Picked page size<");
   });
 
   it("marks a card changed where a value is away from its default", () => {
@@ -343,7 +549,7 @@ describe("the top bar", () => {
     expect(bar).not.toContain(`aria-label="Undo"`);
     expect(text).not.toContain(`class="pe-tools"`);
     expect(text).not.toContain("Watch menus</h2>");
-    expect(WATCH_MENUS_HELP_URL).toBe("https://docs.wrist-assistant.com/watch-app/quick-menu-editor/");
+    expect(WATCH_MENUS_HELP_URL).toBe("https://docs.wrist-assistant.com/watch-app/quick-menu/");
     expect(PAGES_PATH_FROM_MENUS).toBe(WATCH_PAGES_PATH);
   });
 
@@ -353,7 +559,7 @@ describe("the top bar", () => {
     el.topMenuOpen = true;
     const text = whole();
     expect(text).toContain(`class="tb-sync warn"`);
-    expect(text).toContain(">Waiting to be collected</span>");
+    expect(text).toContain(">Waiting for the watch</span>");
     expect(text).toContain(">Discard edits</button>");
   });
 
@@ -391,15 +597,18 @@ describe("the top bar", () => {
     expect(single.whole()).not.toContain("me-watch-picker");
   });
 
-  it("offers Start with the defaults in the ··· menu for a watch with no menus yet", () => {
+  it("offers no Start for a watch with no menus yet: Save is greyed out and says why", () => {
     const { el, whole } = editor(0);
     el.topMenuOpen = true;
     const text = whole();
-    const bar = text.slice(text.indexOf(`<div class="wa-bar`), text.indexOf(`<div class="pe-empty`));
-    expect(bar).toContain(">Start with the defaults</button>");
-    expect(bar).not.toContain(">Discard edits</button>");
-    expect(bar).not.toContain(`class="primary save`);
+    const bar = text.slice(text.indexOf(`<div class="wa-bar`), text.indexOf(`<div class="pe-note nw-banner`));
+    expect(bar).not.toContain("Start with");
+    expect(bar).not.toContain(START_FRESH_BUTTON);
+    expect(bar).toMatch(/<button class="row" role="menuitem" \?disabled=true\s+title=Go back to the defaults/);
+    expect(bar).toContain(`class="primary save " ?disabled=true`);
+    expect(bar).toContain(`<span>${NOTHING_TO_SAVE_TEXT}</span>`);
     expect(bar).not.toContain("tb-sync");
+    expect(text).toContain(NEW_WATCH_TEXT);
   });
 });
 
@@ -428,7 +637,10 @@ describe("the canvas", () => {
     expect(text).toContain(`<div class="layout pe-layout cols-3"`);
     expect(count(text, `class="gutter `)).toBe(2);
     expect(text).toContain(`class="card lc me-menus-card"`);
-    expect(text).toContain(`class="card lc me-slots-card"`);
+    // No Slots card: the slots are the labels around the watch.
+    expect(text).not.toContain(`class="card lc me-slots-card"`);
+    expect(text).toContain("<div class=ms-place ");
+    expect(text).toContain(`<button class="tb ms-add-slot"`);
     expect(text).toContain(`<div class="column inspector card">`);
   });
 
@@ -472,6 +684,49 @@ describe("the canvas", () => {
   });
 });
 
+describe("a click on the blank stage", () => {
+  /** A stand-in element: matches the selector when it names `tag` or `cls`. */
+  const node = (tag: string, cls = "") => ({ matches: (sel: string) => sel.split(",").map((x) => x.trim()).some((x) => x === tag || (cls !== "" && x === `.${cls}`)) });
+  const click = (path: object[]) => {
+    const stage = node("div", "stage-area");
+    return { composedPath: () => [...path, stage, node("div", "canvas-card")], currentTarget: stage } as unknown as MouseEvent;
+  };
+
+  it("lets go of the slot on the watch's screen or the ground, and keeps it on a dot or a tool", () => {
+    const { el } = editor();
+    const host = (el.viewHost as () => MenusViewHost).call(el);
+    const onStageClick = el.onStageClick as (e: MouseEvent) => void;
+    const picked = () => host.uiState.get("me:sel:anywhere");
+    host.uiState.set("me:sel:anywhere", REFRESH);
+    onStageClick(click([node("button", "me-dot")]));
+    expect(picked()).toBe(REFRESH);
+    onStageClick(click([node("svg"), node("div", "stage-tools"), node("div", "me-stage-body")].map((n, i) => i === 1 ? { matches: (sel: string) => sel.includes("[role=toolbar]") } : n)));
+    expect(picked()).toBe(REFRESH);
+    onStageClick(click([node("svg", "me-screen-bg"), node("div", "me-screen"), node("div", "me-stage-body")]));
+    expect(picked()).toBeUndefined();
+    host.uiState.set("me:sel:anywhere", REFRESH);
+    onStageClick(click([]));
+    expect(picked()).toBeUndefined();
+  });
+});
+
+describe("how each menu opens", () => {
+  it("says above the watch how the shown menu opens and what it is for, and the Menus card says what the page is for", () => {
+    const h = host(DEFAULTS);
+    let out = flat(renderMenuHowTo(h));
+    expect(out).toContain("How it opens");
+    expect(out).toContain(MENU_HOW_TO.anywhere.open);
+    expect(out).toContain(MENU_HOW_TO.anywhere.use);
+    selectMenu(h, "entity");
+    expect(flat(renderMenuHowTo(h))).toContain("Touch and hold a tile");
+    selectMenu(h, "switcher");
+    out = flat(renderMenuHowTo(h));
+    expect(out).toContain("slide to its Pages slot");
+    expect(out).not.toMatch(/pull down/i);
+    expect(flat(renderMenusCard(host(DEFAULTS)))).toContain(`<p class="me-intro">${MENUS_INTRO}</p>`);
+  });
+});
+
 describe("the watch screen", () => {
   it("draws at the watch's proportions, at the stage's scale", () => {
     const out = flat(renderMenuScreen(host(DEFAULTS)));
@@ -485,8 +740,9 @@ describe("the watch screen", () => {
     const h = host(DEFAULTS, pages);
     selectMenu(h, "switcher");
     const out = flat(renderMenuScreen(h));
-    expect(out).toContain("title=Kitchen>Kitchen</span>");
-    expect(out).toContain('class="me-dot me-page-dot ');
+    // A page by text shows its first four letters; a page by icon, its icon.
+    expect(out).toMatch(/title=Kitchen[^>]*>[\s\S]*?<span class="ms-sw-text">Kitc<\/span>/);
+    expect(out).toMatch(/title=Garden[^>]*>\s*<i class="ms-sw-glow"><\/i><i class="ms-sw-disc"><\/i>(?!<span class="ms-sw-text">)/);
     const none = host(DEFAULTS);
     selectMenu(none, "switcher");
     expect(flat(renderMenuScreen(none))).toContain("No pages in the switcher yet.");
@@ -500,6 +756,25 @@ describe("the watch screen", () => {
     expect(menuScreenPoint(screen, watchMenuRingPoint("rightCenter")!)).toEqual({ x: 0.86, y: 0.5 });
     // On a square screen the unit square is the screen.
     expect(menuScreenPoint({ width: 100, height: 100 }, { x: 0.2, y: 0.7 })).toEqual({ x: 0.2, y: 0.7 });
+  });
+
+  it("places the switcher's pages on the watch's track near the screen's edge", () => {
+    // The 45 mm screen the watch measures from: scales of 1.
+    const screen = { width: 198, height: 242 };
+    expect(switcherTrackPoint(screen, 0, 1)).toEqual({ x: 99, y: 38 });
+    expect(switcherTrackPoint(screen, 0, 8)).toEqual({ x: 99, y: 38 });
+    // Counterclockwise: the second of four is on the left, the fourth on the right.
+    const left = switcherTrackPoint(screen, 1, 4);
+    const right = switcherTrackPoint(screen, 3, 4);
+    expect(left.x).toBeLessThan(99);
+    expect(right.x).toBeGreaterThan(99);
+    expect(left.y).toBeCloseTo(right.y, 5);
+    // The bottom of four sits under the centre, near the bottom edge.
+    const bottom = switcherTrackPoint(screen, 2, 4);
+    expect(bottom.x).toBeCloseTo(99, 5);
+    expect(bottom.y).toBeCloseTo(242 - 30 + 8, 5);
+    expect(switcherBubbleText("New Page 1")).toBe("New");
+    expect(switcherBubbleText("Lights")).toBe("Ligh");
   });
 
   it("places switcher pages from top centre, counterclockwise and evenly", () => {
@@ -642,7 +917,7 @@ describe("the switcher's Pages card", () => {
     expect(row(text, "data-page", LIVING, "me-page-row")).toMatch(/^<div class="layer me-page-row hl /);
     expect(row(text, "data-page", LIVING, "me-page-row")).toContain("aria-current=true");
     expect(row(text, "data-page", HOME, "me-page-row")).toMatch(/^<div class="layer me-page-row  /);
-    expect(flat(renderMenuScreen(h))).toMatch(/class="me-page on" style=[^>]*title=Living room>/);
+    expect(flat(renderMenuScreen(h))).toMatch(/class=ms-sw ms-active style=[^>]*title=Living room /);
     selectMenu(h, "anywhere");
     selectMenu(h, "switcher");
     expect(selectedSwitcherPage(h)).toBeUndefined();
@@ -761,7 +1036,7 @@ describe("the element with a page draft", () => {
     const text = whole();
     expect(text).toContain(`class="primary save dirty"`);
     expect(text).toContain(`<span class="tb-saved" title=Unsaved changes>`);
-    expect(text).toMatch(/<button class="row" role="menuitem" \?disabled=false\s+title="Go back to the copy Home Assistant holds/);
+    expect(text).toMatch(/<button class="row" role="menuitem" \?disabled=false\s+title=Go back to the copy Home Assistant holds/);
     expect(watchMenusDirty()).toBe(true);
     // Leaving the panel anyway drops the page draft too.
     dropWatchMenusDrafts();
@@ -773,7 +1048,7 @@ describe("the element with a page draft", () => {
     (el.uiState as Map<string, unknown>).set("me:menu", "switcher");
     pages.apply(setWatchPageSwitcherText(PAGES, HOME, "Front"));
     const text = body();
-    expect(text).toContain("title=Home>Front</span>");
+    expect(text).toMatch(/title=Home[^>]*>[\s\S]*?<span class="ms-sw-text">Fron<\/span>/);
     expect(text).toContain("<small>Shown as Front</small>");
   });
 

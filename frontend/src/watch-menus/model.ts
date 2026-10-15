@@ -14,7 +14,7 @@
 // The three tables are the panel's own and are edited by hand:
 // `menu-actions.json` (every action, its payload and where each menu offers
 // it), `menu-keys.json` (every key the panel may write, with its enum values)
-// and `menu-defaults.json` (the document "Start with the defaults" saves). The
+// and `menu-defaults.json` (the document a new watch's screen opens on). The
 // app repo's `WatchMenusTablesTests` and `WatchMenusKeysTests` check the parts
 // the watch decides (enum values, keys, payloads, default ids) against the
 // watch's code. The panel never writes a key or an enum value they do not
@@ -152,7 +152,7 @@ export const MENU_KEYS = menuKeys as unknown as MenuKeysTable;
 
 const ACTIONS_BY_RAW: ReadonlyMap<string, MenuActionSpec> = new Map(MENU_ACTIONS.actions.map((a) => [a.raw, a]));
 
-/** The document "Start with the defaults" saves: the app's default menus,
+/** The document a new watch's menu screen opens on: the app's default menus,
  * with fixed slot ids. A fresh copy each call. */
 export function watchMenusDefaults(): MenusDocument {
   return structuredClone((menuDefaults as unknown as { document: MenusDocument }).document);
@@ -1116,20 +1116,14 @@ function capital(text: string): string {
 
 // ── no record ────────────────────────────────────────────────────────────
 
+/** Over the wait while an iPhone may still move the menus here. A watch
+ * without one opens ready on the defaults instead (`new-watch.ts`). */
 export const WATCH_MENUS_NO_RECORD_TITLE = "No menus from this watch yet.";
-
-/** The no-record line when no iPhone will send menus. While one may, the
- * editor says `WAIT_FOR_IPHONE_TEXT` instead (`noRecordText`). */
-export const WATCH_MENUS_NO_RECORD_TEXT = "Start with the defaults to begin.";
-
-export const WATCH_MENUS_START_BUTTON = "Start with the defaults";
 
 /** Under a Speak Phrase slot on an iPhone. Its phrases are the watch's
  * voice settings, which a phone does not keep, so the slot stays as it is
  * and does nothing there. */
 export const PHONE_NO_PHRASES_TEXT = "An iPhone has no voice phrases, so Speak Phrase does nothing there.";
-
-export const WATCH_MENUS_PAIR_FIRST_TEXT = "Pair this watch first.";
 
 export const WATCH_MENUS_UPDATE_TEXT = "Update the integration to edit menus here.";
 

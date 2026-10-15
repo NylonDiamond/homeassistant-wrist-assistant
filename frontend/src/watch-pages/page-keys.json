@@ -1249,6 +1249,11 @@
           "type": "bool",
           "required": false
         },
+        "showWhen": {
+          "type": "object",
+          "ref": "tileCondition",
+          "required": false
+        },
         "peekDisableAnimation": {
           "type": "bool",
           "required": false,
@@ -2019,6 +2024,28 @@
         "labelOverride": {
           "type": "string",
           "required": false
+        }
+      }
+    },
+    "tileCondition": {
+      "swift": "TileCondition",
+      "keys": {
+        "entityId": {
+          "type": "entity",
+          "required": true,
+          "fresh": true
+        },
+        "comparisonOperator": {
+          "type": "enum",
+          "enum": "VisibilityOperator",
+          "required": true,
+          "default": "eq",
+          "fresh": true
+        },
+        "state": {
+          "type": "string",
+          "required": true,
+          "fresh": true
         }
       }
     },

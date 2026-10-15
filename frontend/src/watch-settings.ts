@@ -25,7 +25,6 @@
 import catalogJson from "./watch-settings-catalog.json";
 import type { OwnerSummary, WatchConfigRecord } from "./ha-api.js";
 import { deviceKindOf } from "./version.js";
-import { watchCommandError } from "./watch-pages/save-note.js";
 
 /**
  * The wrist twists' row as the form holds it: the three maps behind the
@@ -492,14 +491,36 @@ export function savedByLine(updatedBy: string | null | undefined, device: Settin
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** The pill and its help line while a save waits for a device. */
-export const WAITING_PILL_TEXT = "Waiting to be collected";
+/** The plain line a head or foot shows about the stored copy: "Saved here 3
+ * min ago", "Saved from the watch just now". `when` is `agoWords` output, or
+ * empty for a time that will not parse. The revision number is jargon to a
+ * new user, so callers keep it for a tooltip. */
+export function savedLine(updatedBy: string | null | undefined, when: string, device: SettingDevice = "watch"): string {
+  const by = updatedBy === "panel" ? "here" : `from the ${deviceNoun(device)}`;
+  return `Saved ${by}${when ? ` ${when}` : ""}`;
+}
+
+/** While a save waits for a device: the short pill for a tight toolbar, the
+ * line that says what to do (its tooltip, and the foot bar after "Waiting"),
+ * and the whole sentence where there is room. */
+export const WAITING_PILL_TEXT = waitingPillText("watch");
 export const COLLECTED_PILL_TEXT = "Synced";
 export const WAITING_HELP_TEXT = waitingHelpText("watch");
+export const WAITING_TEXT = waitingText("watch");
+
+/** The pill while a save waits, naming the device it waits for. */
+export function waitingPillText(device: SettingDevice): string {
+  return `Waiting for the ${deviceNoun(device)}`;
+}
 
 /** The help line while a save waits, naming the device it waits for. */
 export function waitingHelpText(device: SettingDevice): string {
-  return `The ${deviceNoun(device)} picks it up the next time it checks.`;
+  return `Open Wrist Assistant on the ${deviceNoun(device)} to get it.`;
+}
+
+/** The whole sentence while a save waits, naming the device. */
+export function waitingText(device: SettingDevice): string {
+  return `Waiting. ${waitingHelpText(device)}`;
 }
 
 /** An editor's title while Home Assistant holds no record of its kind:
@@ -592,7 +613,7 @@ export function watchName(watch: OwnerSummary, watches: readonly OwnerSummary[])
 
 /** What Watch settings shows, in place of both editors, on a home that is not
  * the watch's main house. */
-export const SETTINGS_MAIN_HOUSE_TEXT = "This watch takes its settings from your main house. Change them there.";
+export const SETTINGS_MAIN_HOUSE_TEXT = "This watch takes its settings from its main home. Change them there.";
 
 /** Whether `owner` takes its watch settings and notification style from
  * another home. Only an explicit `false` does: an older integration, and a
@@ -603,27 +624,31 @@ export function takesSettingsFromAnotherHome(owner: Pick<OwnerSummary, "main_hou
 
 // ── no record yet ────────────────────────────────────────────────────────
 //
-// Home Assistant holds nothing of a kind for the watch yet. The panel can
-// make the first record itself (a save over revision 0, which the
-// integration takes for a paired watch), or the iPhone app moves its own
-// copy here once, the first time the updated app opens. That move sends a
-// kind only while Home Assistant holds none, so a start here first would
-// leave the iPhone's setup behind for good. While an iPhone may still send
-// it (`has_iphone` on the owner row) every watch editor waits instead, and
-// the start becomes a small link that asks first. Plans: app repo
-// docs/pages_in_home_assistant_step4.md, "4e build contract", and
+// Home Assistant holds nothing of a kind for the watch yet. The panel makes
+// the first record itself, a save over revision 0 that the integration takes
+// for a paired watch, or the iPhone app moves its own copy here once, the
+// first time the updated app opens. That move sends a kind only while Home
+// Assistant holds none, so a save here first would leave the iPhone's setup
+// behind for good. While an iPhone may still send it (`has_iphone` on the
+// owner row) every watch editor waits, and a small link that asks first
+// opens the editor anyway. With no iPhone to wait for, the editor opens
+// ready on what its first record would hold (one empty page, the defaults),
+// unsaved and only in memory, and its first Save creates the record. Until
+// then the watch keeps what it has (`WatchConfigClient`, `.noRecord`). Plans:
+// app repo docs/pages_in_home_assistant_step4.md, "4e build contract", and
 // docs/phone_watch_link_removal_2026-10.md, step 6, "Panel waits for the
 // move".
 
-/** What a watch editor offers when Home Assistant holds no record of its
- * kind. `wait`: an iPhone may still move the watch's setup here, so the text
- * says so and the start is a small link that asks first. `start`: the
- * editor's own Start button, as before. */
+/** What a watch editor does when Home Assistant holds no record of its kind.
+ * `wait`: an iPhone may still move the watch's setup here, so the text says
+ * so, and a small link that asks first opens the editor anyway. `start`:
+ * nothing is coming, so the editor opens ready and the first Save creates
+ * the record. */
 export type NoRecordStart = "wait" | "start";
 
 /** The no-record state for the watch being edited. Only an explicit `true`
  * waits: a watch with no iPhone, and an integration older than the field,
- * keep the Start button, so old data meets no new block. */
+ * open ready, so old data meets no new block. */
 export function noRecordStart(owner: Pick<OwnerSummary, "has_iphone"> | undefined): NoRecordStart {
   return owner?.has_iphone === true ? "wait" : "start";
 }
@@ -632,16 +657,13 @@ export function noRecordStart(owner: Pick<OwnerSummary, "has_iphone"> | undefine
 export const WAIT_FOR_IPHONE_TEXT =
   "Waiting for your iPhone. Update Wrist Assistant on your iPhone and open it once. Your watch setup moves here by itself.";
 
-/** The small link that starts anyway while the move may still come. */
+/** The small link that opens the editor anyway while the move may still
+ * come. */
 export const START_FRESH_BUTTON = "Start fresh instead";
 
-/** What the link asks before it starts. */
+/** What the link asks before it opens the editor. */
 export const START_FRESH_CONFIRM_TEXT = "Your iPhone's setup will not move. Start fresh?";
 
-/** The no-record line for `state`: the wait text, or the editor's own. */
-export function noRecordText(state: NoRecordStart, startText: string): string {
-  return state === "wait" ? WAIT_FOR_IPHONE_TEXT : startText;
-}
 
 /** Whether a start may go ahead. While waiting it asks first, with the one
  * modal the panel uses (`window.confirm`); tests pass their own `ask`. */
@@ -652,46 +674,45 @@ export function mayStart(
   return state === "start" || ask(START_FRESH_CONFIRM_TEXT);
 }
 
-/** What the page editor says when Home Assistant holds no pages from the
- * watch yet and no iPhone will send any. */
-export const PAGES_NO_RECORD_TEXT = "Start with an empty page to begin.";
+/** The line over a watch screen while Home Assistant holds no record of its
+ * kind for the watch and no iPhone will send one. The screen opens ready, on
+ * an empty page or the defaults, and nothing is stored until the first Save.
+ * Until then the watch keeps what it has (`WatchConfigClient`, `.noRecord`). */
+export const NEW_WATCH_TEXT = newDeviceText("watch");
 
-/** What Watch settings says when Home Assistant holds no settings from the
- * watch yet and no iPhone will send any. */
-export const SETTINGS_NO_RECORD_TEXT = "Start with the defaults to begin.";
+/** `NEW_WATCH_TEXT` for the device on the screen: an iPhone's own records
+ * start here the same way. */
+export function newDeviceText(device: SettingDevice): string {
+  const noun = deviceNoun(device);
+  return `New ${noun}. The ${noun} keeps what it has until you save here. Your first Save replaces it.`;
+}
 
-/** The page editor's button that makes the first pages record. */
-export const PAGES_START_BUTTON = "Start with an empty page";
-
-/** Watch settings' button that makes the first settings record. */
-export const SETTINGS_START_BUTTON = "Start with the defaults";
+/** Beside a greyed-out Save on a new watch's screen before any change. */
+export const NOTHING_TO_SAVE_TEXT = "Nothing to save yet. Make a change first.";
 
 /** What the page editor says when Home Assistant holds a pages record this
- * panel cannot read, such as one from a newer schema. There is no Start: a
- * save over revision 0 would only meet a conflict. */
+ * panel cannot read, such as one from a newer schema. The editor does not
+ * open ready: a save over revision 0 would only meet a conflict. */
 export const PAGES_UNREADABLE_TEXT = "Home Assistant holds pages for this watch that this panel cannot read. Update the integration.";
 
 /** The same for Watch settings. */
 export const SETTINGS_UNREADABLE_TEXT = "Home Assistant holds settings for this watch that this panel cannot read. Update the integration.";
 
 /** Whether Home Assistant holds a record (revision above 0) whose document
- * `read` cannot take: not "no record yet", so no Start is offered. */
+ * `read` cannot take: not "no record yet", so the editor does not open
+ * ready. */
 export function watchRecordUnreadable(record: WatchConfigRecord | undefined, read: (document: unknown) => unknown): boolean {
   return record !== undefined && record.revision > 0 && read(record.document) === undefined;
 }
 
-/** A start refused as `no_record`: the integration makes a first record only
- * for a watch it has a key for. The path is the one the panel shows: the
- * Watch app tab, its Settings page, the Pair a device card. */
-export const PAIR_FIRST_TEXT = "Pair this watch first. Go to Watch app, Settings, Pair a device.";
+/** A first save refused as `no_record`: the integration makes a first record
+ * only for a watch it has a key for. The path is the one a new user finds
+ * first: the Home tab's Pair a device. Every watch editor says this same
+ * line. */
+export const PAIR_FIRST_TEXT = "Pair this watch first: on the Home tab, choose Pair a device.";
 
 /** The same, said inside Watch settings, whose pairing card is below. */
 export const SETTINGS_PAIR_FIRST_TEXT = "Pair this watch first, under Pair a device on this page.";
-
-/** A start refused as `conflict`: a record came in meanwhile (the iPhone's
- * one-time move, or another panel) and is shown. */
-export const PAGES_START_CONFLICT_TEXT = "Pages for this watch arrived meanwhile, so those are shown.";
-export const SETTINGS_START_CONFLICT_TEXT = "Settings for this watch arrived meanwhile, so those are shown.";
 
 /** `BehaviorPreferences.currentSchemaVersion` in the app. */
 export const BEHAVIOR_SCHEMA_VERSION = 1;
@@ -712,10 +733,11 @@ const BEHAVIOR_APP_DEFAULTS: Readonly<Record<string, unknown>> = {
 };
 
 /**
- * The first behavior document of a watch, which "Start with the defaults"
- * saves: `schemaVersion`, every catalog setting at its `initial` value or
- * else its default, and the keys the app's decoder needs beside them
- * (`BEHAVIOR_APP_DEFAULTS`). A row whose default is nothing stored (an
+ * The first behavior document of a watch: what Watch settings opens on for
+ * a watch Home Assistant holds no settings for, and what its first Save
+ * sends with the edits on top. `schemaVersion`, every catalog setting at its
+ * `initial` value or else its default, and the keys the app's decoder needs
+ * beside them (`BEHAVIOR_APP_DEFAULTS`). A row whose default is nothing stored (an
  * entity with no target, no twist actions) is left out, as the phone stores
  * none. Keys in sorted order, as the phone's encoder writes them. A new
  * object on every call.
@@ -734,33 +756,6 @@ export function watchBehaviorDefaults(catalog: WatchSettingsCatalog = WATCH_SETT
   return sorted;
 }
 
-/** How "Start with the defaults" ended in Watch settings. */
-export type WatchBehaviorStartResult =
-  | { ok: true; revision: number; document: BehaviorDocument }
-  | { ok: false; code: "no_record" | "conflict" | "unsupported" | "error"; message: string };
-
-/**
- * Create the watch's behavior record from `watchBehaviorDefaults()`: a save
- * over revision 0. `no_record` back means the watch is not paired,
- * `conflict` that a record came meanwhile (the caller reads it),
- * `unknown_command` an integration too old to keep watch config. Any other
- * refusal is an error in Home Assistant's own words.
- */
-export async function createWatchBehavior(
-  save: (baseRevision: number, document: BehaviorDocument) => Promise<{ revision: number }>,
-): Promise<WatchBehaviorStartResult> {
-  const document = watchBehaviorDefaults();
-  try {
-    const { revision } = await save(0, document);
-    return { ok: true, revision, document };
-  } catch (err) {
-    const { code, message } = watchCommandError(err);
-    if (code === "no_record" || code === "conflict") return { ok: false, code, message };
-    if (code === "unknown_command") return { ok: false, code: "unsupported", message };
-    return { ok: false, code: "error", message };
-  }
-}
-
 // ── pairing a device ─────────────────────────────────────────────────────
 //
 // A watch, or an iPhone, asks Home Assistant for a pairing and shows a six
@@ -775,21 +770,19 @@ export const PAIR_CODE_LENGTH = 6;
 /** The card's title, in both places it is drawn. */
 export const PAIR_CARD_TITLE = "Pair a device";
 
-/** The card's two ways to pair, as its segmented control names them. The
- * QR code comes first: it is the quicker way for an iPhone, and Home's
- * dialog opens on it with a code already showing. */
+/** The card's two ways to pair: Type a code, and Show a QR code for an
+ * iPhone. Home's dialog asks which device first (`pair-flow.ts`). */
 export type PairMode = "code" | "qr";
-export const PAIR_MODES: readonly [PairMode, string][] = [["qr", "Show a QR code"], ["code", "Type a code"]];
 
 /** The line under the title in each mode. */
 export const PAIR_CODE_HINT = "On the watch or iPhone, choose Pair with Home Assistant and type the code it shows.";
-export const PAIR_QR_HINT = "On the iPhone, choose Pair with Home Assistant, then Scan QR code.";
+export const PAIR_QR_HINT = "Point the iPhone's Camera at the QR code and tap the link.";
 
 /** The same, as numbered steps, the way the card draws them. */
 export const PAIR_QR_STEPS = [
-  "Open Wrist Assistant on the iPhone.",
-  "Choose Pair with Home Assistant.",
-  "Choose Scan QR code and point the camera at this code.",
+  "Point the iPhone's Camera at this code.",
+  "Tap the link. Wrist Assistant opens, or its App Store page when the app is not on the iPhone yet.",
+  "Tap Pair in Wrist Assistant.",
 ] as const;
 export const PAIR_CODE_STEPS = [
   "Open Wrist Assistant on the watch or iPhone.",

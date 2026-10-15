@@ -372,6 +372,9 @@ export function copyForOwner(
   next.slotIndex = write.slotIndex;
   if (write.hidden) next.hidden = true;
   else delete next.hidden;
+  // A new record never speaks for an old Control Center tile: that tile reads
+  // the one document it was moved into, on its own watch.
+  delete next.legacyControlEntityId;
   next.schemaVersion = schemaVersionFor(next);
   return next;
 }
@@ -405,18 +408,24 @@ export function linkedCopy(
  * A saved edit as one linked sibling should store it.
  *
  * Everything travels but what is that sibling's own: its record id, its seat
- * on its device, and its hidden flag. The link stays. This is what a save
- * of one copy writes to each of the others.
+ * on its device, its hidden flag, and the old Control Center tile it speaks
+ * for, if any. The link stays. This is what a save of one copy writes to each
+ * of the others.
  */
 export function linkedDocumentFor(
   saved: CustomComplicationConfig,
-  sibling: { id: string; slotIndex: number; hidden: boolean },
+  sibling: { id: string; slotIndex: number; hidden: boolean; legacyControlEntityId?: string },
 ): CustomComplicationConfig {
   const next = structuredClone(saved);
   next.id = sibling.id;
   next.slotIndex = sibling.slotIndex;
   if (sibling.hidden) next.hidden = true;
   else delete next.hidden;
+  if (sibling.legacyControlEntityId !== undefined && sibling.legacyControlEntityId !== "") {
+    next.legacyControlEntityId = sibling.legacyControlEntityId;
+  } else {
+    delete next.legacyControlEntityId;
+  }
   return next;
 }
 

@@ -16,8 +16,11 @@
 // installed voices are read beside it (`watch_voices/get`) for the Watch
 // voice picker.
 //
-// A watch with no voice record yet can start from the app's defaults: a save
-// over revision 0, which Home Assistant takes for a paired watch.
+// A watch with no voice record yet opens ready on the app's defaults,
+// unsaved, under the new watch line (`watch-menus/new-watch.ts`); its first
+// Save is a save over revision 0, which Home Assistant takes for a paired
+// watch. While its iPhone may still move the voice settings here it waits,
+// and "Start fresh instead" opens the same ready screen.
 //
 // The panel loads this module on its own, with one `import()`, when its route
 // is `/voice` (`hook.ts`). Nothing it imports may import `icons.ts`.
@@ -39,6 +42,7 @@ import {
 } from "../editor-chrome.js";
 import { SCRUB_END, SCRUB_START } from "../editors.js";
 import { formStyles } from "../form-styles.js";
+import { HeadBar, headBarStyles, renderHeadStatus } from "../head-bar.js";
 import {
   type HassLike,
   type OwnerSummary,
@@ -75,25 +79,33 @@ import {
 } from "../watch-pages/config-foot.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
+import { friendlyError } from "../friendly-error.js";
+import { restoredText } from "../revision-words.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
-import { START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, settingsWatches, watchName } from "../watch-settings.js";
+import { START_FRESH_BUTTON, type NoRecordStart, WAIT_FOR_IPHONE_TEXT, deliveryState, followWatch, mayStart, noRecordStart, settingsWatches, watchName } from "../watch-settings.js";
+import {
+  chooseStartFresh,
+  firstSaveNote,
+  newWatchStyles,
+  opensReady,
+  renderNewWatchBanner,
+  renderSaveReason,
+  saveBlockedText,
+} from "../watch-menus/new-watch.js";
 import {
   type WatchVoiceDraft,
   anyWatchVoiceDirty,
   dropAllWatchVoice,
   forgetWatchVoiceDraft,
   keptWatchVoiceDraft,
+  newWatchVoiceDraft,
   saveWatchVoiceDraft,
-  startWatchVoice,
   takeWatchVoiceRecord,
 } from "./draft.js";
 import { WATCH_VOICE_HELP_URL, navigateWatchVoice, registerWatchVoiceDrafts } from "./hook.js";
 import {
   type VoiceDocument,
-  WATCH_VOICE_NO_RECORD_TEXT,
   WATCH_VOICE_NO_RECORD_TITLE,
-  WATCH_VOICE_PAIR_FIRST_TEXT,
-  WATCH_VOICE_START_BUTTON,
   WATCH_VOICE_UPDATE_TEXT,
   type WatchVoiceInfo,
   asWatchVoiceDocument,
@@ -215,6 +227,10 @@ export class WaVoiceEditor extends LitElement {
    * other screens, so the bar leaves out its own watch picker and the way
    * back to complications. Off, the bar is as it always was. */
   @property({ attribute: false }) shellOwnsWatch = false;
+  /** The box in the panel's Watch app header the bar is drawn in
+   * (`head-bar.ts`). Without one the bar is drawn on top, as it always was. */
+  @property({ attribute: false }) barHost: HTMLElement | undefined = undefined;
+  private readonly headBar = new HeadBar(this);
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -230,7 +246,6 @@ export class WaVoiceEditor extends LitElement {
   @state() private note?: Note;
   @state() private restoreAsk?: RestoreAsk;
   @state() private restoring = false;
-  @state() private starting = false;
   @state() private historyOpen = false;
   @state() private rawOpen = false;
   @state() private rawCopied = false;
@@ -272,9 +287,31 @@ export class WaVoiceEditor extends LitElement {
     return settingsWatches(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
   }
 
+  /** The voice settings being edited. While Home Assistant holds none for
+   * the watch it is the new watch's ready draft (`new-watch.ts`), on the
+   * defaults at revision 0 and unsaved, once the screen opens ready; none
+   * while it waits for the iPhone. */
   private get draft(): WatchVoiceDraft | undefined {
-    if (this.watchId === undefined || this.record === undefined || this.record.revision <= 0) return undefined;
-    return keptWatchVoiceDraft(this.watchId);
+    const watchId = this.watchId;
+    const record = this.record;
+    if (watchId === undefined || record === undefined) return undefined;
+    if (record.revision > 0) {
+      // Made from the record when none is kept (the panel's leave guard may
+      // have dropped it); none for a record this panel cannot read.
+      const kept = keptWatchVoiceDraft(watchId);
+      if (kept !== undefined) return kept;
+      const document = asWatchVoiceDocument(record.document);
+      return document === undefined ? undefined : takeWatchVoiceRecord(watchId, document, record.revision).draft;
+    }
+    if (this.unsupported || !this.opensReady()) return undefined;
+    return keptWatchVoiceDraft(watchId) ?? newWatchVoiceDraft(watchId);
+  }
+
+  /** Home Assistant holds no voice settings for the watch: the ready
+   * screen's banner, and Save's reason while there is nothing to save. */
+  private get newWatch(): boolean {
+    const record = this.record;
+    return record !== undefined && record.revision <= 0 && !this.unsupported;
   }
 
   private get saving(): boolean {
@@ -294,6 +331,8 @@ export class WaVoiceEditor extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    // The bar goes back into the header on the next draw.
+    if (this.barHost !== undefined) this.requestUpdate();
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("pointerdown", this.onWindowPointerDown, true);
     this.columns = loadColumnWidths(VE_COLUMNS_KEY, VE_COLUMNS_DEFAULT, VE_COLUMNS);
@@ -305,6 +344,7 @@ export class WaVoiceEditor extends LitElement {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.headBar.clear();
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("pointerdown", this.onWindowPointerDown, true);
     this.sizeObserver?.disconnect();
@@ -344,6 +384,7 @@ export class WaVoiceEditor extends LitElement {
   }
 
   protected override updated(): void {
+    this.headBar.draw(this.barHost, () => this.renderTopBar(this.draft, this.watches));
     const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.pe-ask") ?? undefined;
     if (dialog !== this.shownDialog) {
       this.shownDialog = dialog;
@@ -351,7 +392,8 @@ export class WaVoiceEditor extends LitElement {
     }
     openConfigDialogs(this.renderRoot, this.shownFootDialogs);
     this.observeTop();
-    this.savedTicker.show(this.renderRoot.querySelector(".cf-saved") !== null);
+    this.savedTicker.show(this.headBar.query(this.renderRoot, ".cf-saved") !== null
+      || this.renderRoot.querySelector(".cf-saved") !== null);
   }
 
   private watchSize(): void {
@@ -532,6 +574,10 @@ export class WaVoiceEditor extends LitElement {
   private show(record: WatchConfigRecord): void {
     const watchId = this.watchId;
     this.record = record;
+    // No voice settings here: a kept draft from an earlier record moves onto
+    // the defaults at revision 0, its edits kept, so its first save makes
+    // the record (`newWatchVoiceDraft`).
+    if (watchId !== undefined && record.revision <= 0) newWatchVoiceDraft(watchId);
     const document = record.revision > 0 ? asWatchVoiceDocument(record.document) : undefined;
     if (watchId === undefined || document === undefined) return;
     const restart = this.restartDraft;
@@ -728,6 +774,9 @@ export class WaVoiceEditor extends LitElement {
     const draft = this.draft;
     if (!hass || watchId === undefined || !draft || this.saving || !draft.dirty) return;
     this.note = undefined;
+    // A first save over revision 0 that Home Assistant refuses as
+    // `no_record` means the watch is not paired (`firstSaveNote`).
+    const first = draft.revision <= 0;
     const running = saveWatchVoiceDraft(draft, {
       save: (base, document) => saveWatchConfig(hass, watchId, "voice", base, document).catch((err: unknown) => {
         throw flatError(err);
@@ -749,34 +798,18 @@ export class WaVoiceEditor extends LitElement {
       message: errText(err),
     }));
     this.saveEnded(watchId);
-    if (watchId === this.watchId) this.note = watchVoiceSaveNote(result);
+    if (watchId === this.watchId) this.note = firstSaveNote(first, result.code, watchVoiceSaveNote(result));
   }
 
-  /** "Start with the defaults": create the record from the app's defaults. */
-  private async startWithDefaults(): Promise<void> {
-    const hass = this.hass;
+  /** "Start fresh instead", asked first: while an iPhone may still move the
+   * voice settings here, open the same ready screen a watch without one
+   * opens on, the defaults unsaved. Nothing is written until Save. */
+  private startFresh(): void {
     const watchId = this.watchId;
-    if (!hass || watchId === undefined || this.starting) return;
-    this.starting = true;
+    if (watchId === undefined || !mayStart(this.noRecordState())) return;
+    chooseStartFresh("voice", watchId);
     this.note = undefined;
-    const result = await startWatchVoice((base, document) => saveWatchConfig(hass, watchId, "voice", base, document));
-    this.starting = false;
-    if (watchId !== this.watchId) return;
-    if (result.ok) {
-      this.note = { kind: "ok", text: "Started with the defaults. The watch picks them up the next time it checks." };
-    } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: `${WATCH_VOICE_PAIR_FIRST_TEXT} Go to Watch app, Settings, Pair a device.` };
-      return;
-    } else if (result.code === "conflict") {
-      this.note = { kind: "warn", text: "Voice settings arrived meanwhile, so those are shown." };
-    } else if (result.code === "unsupported") {
-      this.unsupported = true;
-      return;
-    } else {
-      this.note = { kind: "err", text: `Could not start: ${result.message}` };
-      return;
-    }
-    void this.load(watchId, true);
+    this.requestUpdate();
   }
 
   // ── restore ────────────────────────────────────────────────────────────
@@ -810,7 +843,7 @@ export class WaVoiceEditor extends LitElement {
     let note: Note;
     try {
       const reply = await restoreWatchConfig(hass, watchId, "voice", ask.entry.revision, ask.baseRevision);
-      note = { kind: "ok", text: `Revision ${ask.entry.revision} is back.` };
+      note = { kind: "ok", text: restoredText(ask.entry.updated_at) };
       if (watchId === this.watchId) this.restartDraft = { watchId, revision: reply.revision };
       else if (!(keptWatchVoiceDraft(watchId)?.dirty ?? false)) forgetWatchVoiceDraft(watchId);
     } catch (err) {
@@ -821,7 +854,7 @@ export class WaVoiceEditor extends LitElement {
       else if (code === "unknown_command") {
         this.historyState = "unsupported";
         note = { kind: "warn", text: "This version of the integration cannot restore voice settings. Update it to restore an earlier save." };
-      } else note = { kind: "err", text: `Could not restore: ${errText(err)}` };
+      } else note = { kind: "err", text: `Could not restore: ${friendlyError(err)}` };
     } finally {
       this.restoring = false;
       if (this.restoreAsk === ask) this.closeAsk();
@@ -836,7 +869,7 @@ export class WaVoiceEditor extends LitElement {
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.defaultPrevented) return;
     const path = e.composedPath();
-    if (!path.includes(this) && !nothingFocused()) return;
+    if (!path.includes(this) && !this.headBar.holds(path) && !nothingFocused()) return;
     if (this.renderRoot.querySelector("dialog[open]")) return;
     const mod = e.metaKey || e.ctrlKey;
     const key = e.key.toLowerCase();
@@ -888,7 +921,7 @@ export class WaVoiceEditor extends LitElement {
     const draft = this.draft;
     return html`
       <div class="pe-top">
-        ${this.renderTopBar(draft, watches)}
+        ${this.barHost === undefined ? this.renderTopBar(draft, watches) : nothing}
         ${this.note ? html`<div class="pe-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
           <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
@@ -904,21 +937,23 @@ export class WaVoiceEditor extends LitElement {
   private renderTopBar(draft: WatchVoiceDraft | undefined, watches: readonly OwnerSummary[]): TemplateResult {
     const editing = draft !== undefined && !this.unsupported;
     const dirty = editing && draft.dirty;
-    return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch voice">
+    return html`<div class="wa-bar ${this.barHost !== undefined ? "in-head" : this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch voice">
       ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
       ${this.shellOwnsWatch ? nothing : html`<button class="tb-btn tb-back" title="Back to complications"
         @click=${() => (this.onBack ? this.onBack() : navigateWatchVoice(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>`}
       <span class="spacer"></span>
       ${this.shellOwnsWatch ? nothing : this.renderWatchPicker(watches)}
+      ${this.barHost !== undefined && editing ? renderHeadStatus({ newWatch: this.newWatch, dirty, saved: renderConfigSaved(this.record) }) : nothing}
       ${this.renderSyncPill(editing ? draft : undefined)}
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
+        ${this.barHost !== undefined ? nothing : html`<span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>
+        ${renderSaveReason(saveBlockedText({ newWatch: this.newWatch, dirty, saving: this.saving }))}`}` : nothing}
       ${this.barActions}
-      <button class="help" title="Help: voice" aria-label="Help"
+      <button class="help" title="Help with Voice" aria-label="Help with Voice"
         @click=${() => window.open(WATCH_VOICE_HELP_URL, "_blank", "noopener")}>?</button>
     </div>`;
   }
@@ -933,19 +968,29 @@ export class WaVoiceEditor extends LitElement {
     </span>`;
   }
 
-  /** Whether this watch's iPhone may still move this kind here, so a start
-   * waits behind a confirm (`noRecordStart`). */
+  /** Whether this watch's iPhone may still move this kind here, so the
+   * screen waits and "Start fresh instead" asks first (`noRecordStart`). */
   private noRecordState(watches: readonly OwnerSummary[] = this.watches): NoRecordStart {
     return noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId));
   }
 
-  private canStart(): boolean {
-    const record = this.record;
-    return this.watchId !== undefined && record !== undefined && record.revision <= 0 && !this.unsupported;
+  /** With no voice settings here, whether the screen opens ready
+   * (`new-watch.ts`) rather than wait for the iPhone. */
+  private opensReady(watches: readonly OwnerSummary[] = this.watches): boolean {
+    return opensReady(this.noRecordState(watches), "voice", this.watchId);
   }
 
+  /** "Start fresh instead" applies: Home Assistant holds no voice settings
+   * for this watch, the integration keeps them, and the screen waits for
+   * the iPhone. */
+  private canStartFresh(): boolean {
+    return this.watchId !== undefined && this.newWatch && !this.opensReady();
+  }
+
+  /** The ··· menu: Discard edits, and Start fresh instead while the screen
+   * waits for the iPhone. */
   private renderTopMenu(draft: WatchVoiceDraft | undefined): TemplateResult | typeof nothing {
-    const start = this.canStart();
+    const start = this.canStartFresh();
     if (draft === undefined && !start) return nothing;
     const open = this.topMenuOpen;
     const run = (fn: () => void) => () => { this.topMenuOpen = false; fn(); };
@@ -954,10 +999,10 @@ export class WaVoiceEditor extends LitElement {
         @click=${() => { this.topMenuOpen = !open; }}>···</button>
       ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="More actions">
         ${draft ? html`<button class="row" role="menuitem" ?disabled=${!draft.dirty || this.saving}
-          title="Go back to the copy Home Assistant holds. Undo brings the edits back."
+          title=${this.newWatch ? "Go back to the defaults. Undo brings the edits back." : "Go back to the copy Home Assistant holds. Undo brings the edits back."}
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
-        ${start ? html`<button class="row" role="menuitem" ?disabled=${this.starting}
-          @click=${run(() => { if (mayStart(this.noRecordState())) void this.startWithDefaults(); })}>${this.noRecordState() === "wait" ? START_FRESH_BUTTON : WATCH_VOICE_START_BUTTON}</button>` : nothing}
+        ${start ? html`<button class="row" role="menuitem"
+          @click=${run(() => this.startFresh())}>${START_FRESH_BUTTON}</button>` : nothing}
       </div>` : nothing}
     </span>`;
   }
@@ -1031,7 +1076,7 @@ export class WaVoiceEditor extends LitElement {
     const draft = this.draft;
     const scale = this.stageScale;
     const fit = stageFitZoom(this.narrow || this.stacked);
-    return html`<div class="card canvas-card ve-canvas" aria-label="Pick from List">
+    return html`<div class="card canvas-card lit ve-canvas" aria-label="Pick from List">
       <div class="cv-head">
         <span class="cv-title">Pick from List</span>
         ${owner !== undefined ? html`<span class="cv-part cv-where"><span class="cv-slash" aria-hidden="true">/</span>
@@ -1066,7 +1111,7 @@ export class WaVoiceEditor extends LitElement {
   private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
     if (watches.length === 0) {
       const waiting = this.owners.length === 0 && this.ownList === undefined;
-      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet."}</div>`;
+      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet. Pair one on the Home tab."}</div>`;
     }
     if (this.unsupported) return html`<div class="pe-empty"><b>${WATCH_VOICE_UPDATE_TEXT}</b></div>`;
     if (this.loading) return html`<div class="pe-empty">Loading…</div>`;
@@ -1080,24 +1125,27 @@ export class WaVoiceEditor extends LitElement {
     const record = this.record;
     if (record === undefined) return html`<div class="pe-empty">Loading…</div>`;
     const draft = this.draft;
-    const host = this.viewHost();
-    if (record.revision <= 0 || draft === undefined || host === undefined) {
+    // A record this panel cannot read, such as one from a newer schema.
+    if (draft === undefined && record.revision > 0) return html`<div class="pe-empty"><b>${WATCH_VOICE_UPDATE_TEXT}</b></div>`;
+    if (draft === undefined) {
       const kept = this.watchId === undefined ? undefined : keptWatchVoiceDraft(this.watchId);
       const id = this.watchId;
-      // While the iPhone's move may still come it waits, and the start is a
-      // small link that asks first.
-      const state = this.noRecordState(watches);
-      return html`<div class="pe-empty"><b>${WATCH_VOICE_NO_RECORD_TITLE}</b><span>${noRecordText(state, WATCH_VOICE_NO_RECORD_TEXT)}</span>
-        ${state === "wait"
-          ? html`<button class="link start-fresh" ?disabled=${this.starting} @click=${() => { if (mayStart(state)) void this.startWithDefaults(); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
-          : html`<button class="pe-btn pe-primary" ?disabled=${this.starting} @click=${() => void this.startWithDefaults()}>${this.starting ? "Starting…" : WATCH_VOICE_START_BUTTON}</button>`}
+      // No voice settings here and the screen does not open ready: the
+      // iPhone's move may still come, so it waits, and "Start fresh instead"
+      // is a small link that asks first.
+      return html`<div class="pe-empty"><b>${WATCH_VOICE_NO_RECORD_TITLE}</b><span>${WAIT_FOR_IPHONE_TEXT}</span>
+        <button class="link start-fresh" @click=${() => this.startFresh()}>${START_FRESH_BUTTON}</button>
         ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when voice settings are here again.</span>
           <button class="pe-btn" @click=${() => { forgetWatchVoiceDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
       </div>`;
     }
+    const host = this.viewHost();
+    if (host === undefined) return html`<div class="pe-empty">Loading…</div>`;
     const fit = this.fittedColumns();
     const view = this.hostHeight > 0 ? `--pe-view-h:${this.hostHeight}px;` : "";
-    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
+    const fresh = record.revision <= 0;
+    return html`${fresh && this.barHost === undefined ? renderNewWatchBanner() : nothing}
+    <div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
       <div class="column left">
         ${renderVoiceCard(host)}
         ${renderPhrasesCard(host)}
@@ -1111,7 +1159,7 @@ export class WaVoiceEditor extends LitElement {
         ${renderVoiceInspector(host)}
       </div>
     </div>
-    ${this.renderFoot(record, draft.document, draft.dirty)}`;
+    ${fresh ? nothing : this.renderFoot(record, draft.document, draft.dirty)}`;
   }
 
   private renderFoot(record: WatchConfigRecord, document: VoiceDocument, dirty: boolean): TemplateResult {
@@ -1169,7 +1217,7 @@ export class WaVoiceEditor extends LitElement {
     </dialog>`;
   }
 
-  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchFrameStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchFrameStyles, newWatchStyles, css`
     :host {
       display: flex;
       flex-direction: column;
@@ -1232,12 +1280,16 @@ export class WaVoiceEditor extends LitElement {
     @container (max-width: 820px) {
       .layout.pe-layout { grid-template-columns: minmax(0, 1fr); }
       .pe-layout > .gutter { display: none; }
-      .pe-layout > .column { grid-column: auto; position: static; max-height: none; overflow: visible; }
+      /* As strong as the sticky rule, so a stacked list or inspector stops
+         sliding over the cards above it (the page editor's fix). */
+      .pe-layout > .column.left, .pe-layout > .column.canvas, .pe-layout > .column.inspector { grid-column: auto; position: static; max-height: none; overflow: visible; }
       .pe-layout > .column.canvas { order: 1; }
       .pe-layout > .column.inspector { order: 2; }
       .pe-layout > .column.left { order: 3; }
     }
     .column.canvas > .card.canvas-card.ve-canvas { min-height: 0; flex: none; }
+    /* The lit stage's edge in Voice's hue, Home's Voice door. */
+    .canvas-card.ve-canvas { --wa-stage-hue: var(--wa-hue-red); }
     .cv-head .cv-title { flex: 0 1 auto; min-width: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .cv-head .cv-watch { min-width: 0; font-size: 12.5px; font-weight: 500; color: var(--wa-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .pe-chip-glyph { display: inline-flex; flex: none; color: var(--pe-person, var(--wa-muted)); }
@@ -1285,7 +1337,7 @@ export class WaVoiceEditor extends LitElement {
     dialog.pe-ask p.pe-muted { font-size: 13px; }
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
     :host([narrow]) { --cf-pad: 12px; }
-  `, voiceViewStyles, configFootStyles];
+  `, voiceViewStyles, configFootStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-voice-editor")) {

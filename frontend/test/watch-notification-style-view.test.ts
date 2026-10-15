@@ -1,8 +1,8 @@
 // The Watch settings dialog with its second record, the notification style:
 // both read on open, one Save that sends only what changed, each over its own
-// revision, a conflict on one that costs the other nothing, the card in place
-// of the three when there is no record yet, and nothing at all from an
-// integration that does not keep the kind.
+// revision, a conflict on one that costs the other nothing, the three cards on
+// the defaults when there is no record yet (the first Save creates it), and
+// nothing at all from an integration that does not keep the kind.
 //
 // No DOM: the dialog's templates are flattened to text, over a stand-in Home
 // Assistant connection that holds one record per kind.
@@ -13,11 +13,12 @@ import { join } from "node:path";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
 import { WatchSettings } from "../src/watch-settings-view.js";
-import { type CatalogSetting, catalogSettings, watchBehaviorDefaults } from "../src/watch-settings.js";
+import { dropWatchSettingsDrafts } from "../src/watch-settings-draft.js";
+import { SETTINGS_GROUPS } from "../src/watch-settings-nav.js";
+import { type CatalogSetting, NEW_WATCH_TEXT, SETTINGS_PAIR_FIRST_TEXT, catalogSettings, watchBehaviorDefaults } from "../src/watch-settings.js";
 import {
   NOTIFICATION_STYLE_SECTIONS,
   STYLE_NO_RECORD_TITLE,
-  STYLE_START_BUTTON,
   STYLE_UNREADABLE_TEXT,
   type StyleRow,
   type StyleValue,
@@ -126,9 +127,9 @@ interface Inside {
   styleRecord?: WatchConfigRecord;
   styleEdits: ReadonlyMap<string, StyleValue>;
   styleUnsupported: boolean;
+  group: string;
   note?: { kind: string; text: string };
   save(): Promise<void>;
-  startStyle(): Promise<void>;
   edit(setting: CatalogSetting, value: unknown): void;
   editStyle(row: StyleRow, value: StyleValue): void;
   renderBar(): unknown;
@@ -155,6 +156,9 @@ describe("Watch settings with the notification style", () => {
   });
   afterEach(() => {
     (globalThis as { window?: unknown }).window = realWindow;
+    // Edits a test leaves unsaved are kept per watch, and every test here
+    // shows the same watch.
+    dropWatchSettingsDrafts();
   });
 
   async function dialog(held: Record<string, WatchConfigRecord>, onSave?: SaveHook) {
@@ -171,7 +175,14 @@ describe("Watch settings with the notification style", () => {
     ws.show(ha.hass, owners, "w1");
     const inside = ws as unknown as Inside;
     await vi.waitFor(() => expect(inside.loading).toBe(false));
-    return { ws, inside, ha, text: () => flatten(ws.render(ha.hass, owners)), foot: () => flatten(inside.renderBar()) };
+    // The page shows one group at a time: the text is the page of every
+    // group it lists, in the side panel's order.
+    const text = () => SETTINGS_GROUPS.map((g) => {
+      inside.group = g.id;
+      const page = flatten(ws.render(ha.hass, owners));
+      return page.includes(`aria-label=${g.title} settings>`) ? page : "";
+    }).join("");
+    return { ws, inside, ha, text, foot: () => flatten(inside.renderBar()) };
   }
 
   const both = (style: Record<string, unknown> = fixture("02-configured.json")) => ({
@@ -187,13 +198,15 @@ describe("Watch settings with the notification style", () => {
     const at = (s: string) => shown.indexOf(s);
     expect(at("data-sec=ws-camera")).toBeGreaterThan(0);
     expect(at("data-sec=ws-notifications")).toBeGreaterThan(at("data-sec=ws-camera"));
+    // Sounds is its own group. Wrist Webhooks is hidden in the app, so its
+    // card is never drawn.
+    expect(shown).not.toContain("data-sec=ws-wristWebhooks");
     expect(at("data-sec=ws-sounds")).toBeGreaterThan(at("data-sec=ws-notifications"));
-    expect(at("data-sec=ws-wristWebhooks")).toBeGreaterThan(at("data-sec=ws-sounds"));
-    expect(at(`data-sec="ws-pair"`)).toBeGreaterThan(at("data-sec=ws-wristWebhooks"));
+    expect(at(`data-sec="ws-pair"`)).toBeGreaterThan(at("data-sec=ws-sounds"));
     // The preview leads the Notifications card.
     expect(at('class="ns-pv"')).toBeGreaterThan(at("data-sec=ws-notifications"));
     expect(at('class="ns-pv"')).toBeLessThan(at("data-key=backgroundStyle"));
-    for (const r of NOTIFICATION_STYLE_SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.rows))) {
+    for (const r of NOTIFICATION_STYLE_SECTIONS.filter((s) => s.id !== "wristWebhooks").flatMap((s) => s.groups.flatMap((g) => g.rows))) {
       expect(shown, r.key).toContain(`data-key=${r.key}`);
     }
     expect(shown).toContain("notification style revision 5");
@@ -245,7 +258,7 @@ describe("Watch settings with the notification style", () => {
     expect(inside.styleRecord?.revision).toBe(6);
     // The pill speaks for both: neither has been collected yet.
     const shown = foot();
-    expect(shown).toContain("Waiting to be collected");
+    expect(shown).toContain(">Waiting. Open Wrist Assistant on the watch to get it.</span>");
     expect(shown).toContain("Settings saved as revision 4.");
     expect(shown).toContain("Notification style saved as revision 6.");
   });
@@ -307,7 +320,24 @@ describe("Watch settings with the notification style", () => {
     expect(inside.styleRecord?.revision).toBe(6);
     expect(inside.styleEdits.size).toBe(0);
     expect(inside.record?.revision).toBe(9);
-    expect(inside.note?.text).toContain("These settings changed somewhere else (now revision 9)");
+    // The behavior's edit is laid over the newer copy for the next Save.
+    expect(inside.edits.get("wrapPages")).toBe(true);
+    expect(inside.note?.kind).toBe("warn");
+    expect(inside.note?.text).toContain("the newer copy is shown with your changes on top");
+  });
+
+  it("drops a behavior edit the newer copy already holds after a conflict", async () => {
+    const { inside } = await dialog(both(), (msg, store) => {
+      if (msg.kind !== "behavior") return undefined;
+      store.set("behavior", record("behavior", 9, { ...watchBehaviorDefaults(), wrapPages: true }));
+      return Promise.reject(refusal("conflict", "stored revision is 9, save was based on 3"));
+    });
+    inside.edit(setting("wrapPages"), true);
+    await inside.save();
+    expect(inside.record?.revision).toBe(9);
+    expect(inside.edits.size).toBe(0);
+    expect(inside.note?.kind).toBe("note");
+    expect(inside.note?.text).toContain("already has your changes");
   });
 
   it("hides the three cards when the integration does not keep the kind", async () => {
@@ -322,41 +352,59 @@ describe("Watch settings with the notification style", () => {
     expect(foot()).not.toContain("Notification style");
   });
 
-  it("shows one card with Start with the defaults when there is no record, and starts over revision 0", async () => {
-    const { inside, ha, text } = await dialog({
+  it("opens the three cards on the defaults when there is no record, and the first Save creates it over revision 0", async () => {
+    const { inside, ha, text, foot } = await dialog({
       behavior: record("behavior", 3, watchBehaviorDefaults()),
       [KIND]: record(KIND, 0),
     });
     const before = text();
-    expect(before).toContain(STYLE_NO_RECORD_TITLE);
-    expect(before).toContain(`class="small primary ns-start"`);
-    expect(before).toContain(STYLE_START_BUTTON);
-    for (const id of ["notifications", "sounds", "wristWebhooks"]) expect(before).not.toContain(`data-sec=ws-${id}`);
-    // An edit to the behavior is not lost by starting the other record.
-    inside.edit(setting("wrapPages"), true);
-    await inside.startStyle();
+    expect(before).not.toContain(STYLE_NO_RECORD_TITLE);
+    expect(before).not.toContain("ns-start");
+    expect(before).toContain("data-sec=ws-notifications");
+    expect(before).toContain("data-sec=ws-sounds");
+    expect(before).toContain(NEW_WATCH_TEXT);
+    // Nothing is stored, nothing is unsaved, and Save is greyed out.
+    expect(ha.saves()).toHaveLength(0);
+    expect(inside.styleEdits.size).toBe(0);
+    expect(foot()).toContain("?disabled=true");
+    inside.editStyle(row("cornerStyle"), "square");
+    await inside.save();
     const saves = ha.saves(KIND);
     expect(saves).toHaveLength(1);
-    expect(saves[0]).toMatchObject({ base_revision: 0, document: notificationStyleDefaults() });
-    expect(inside.styleRecord?.revision).toBe(1);
-    expect(inside.edits.get("wrapPages")).toBe(true);
+    expect(saves[0]).toMatchObject({ base_revision: 0, document: { ...notificationStyleDefaults(), cornerStyle: "square" } });
     expect(ha.saves("behavior")).toHaveLength(0);
-    const after = text();
-    expect(after).not.toContain(STYLE_NO_RECORD_TITLE);
-    expect(after).toContain("data-sec=ws-sounds");
+    expect(inside.styleRecord?.revision).toBe(1);
+    expect(inside.styleEdits.size).toBe(0);
+    expect(text()).not.toContain(NEW_WATCH_TEXT);
   });
 
-  it("asks for a pairing when the start is refused as no_record", async () => {
+  it("asks for a pairing when the first save is refused as no_record, and keeps the edits", async () => {
     const { inside, text } = await dialog({
       behavior: record("behavior", 3, watchBehaviorDefaults()),
       [KIND]: record(KIND, 0),
     }, (msg) => (msg.kind === KIND ? Promise.reject(refusal("no_record")) : undefined));
-    await inside.startStyle();
+    inside.editStyle(row("cornerStyle"), "square");
+    await inside.save();
     expect(inside.note?.text).toContain("Pair this watch first");
-    expect(text()).toContain(STYLE_START_BUTTON);
+    expect(inside.styleEdits.get("cornerStyle")).toBe("square");
+    expect(inside.styleRecord?.revision).toBe(0);
+    expect(text()).toContain("data-sec=ws-notifications");
   });
 
-  it("offers no start over a record it cannot read", async () => {
+  it("says the pairing line once when both first saves are refused as no_record", async () => {
+    const { inside } = await dialog({
+      behavior: record("behavior", 0),
+      [KIND]: record(KIND, 0),
+    }, () => Promise.reject(refusal("no_record")));
+    inside.edit(setting("wrapPages"), !(watchBehaviorDefaults().wrapPages as boolean));
+    inside.editStyle(row("cornerStyle"), "square");
+    await inside.save();
+    expect(inside.note).toEqual({ kind: "warn", text: SETTINGS_PAIR_FIRST_TEXT });
+    expect(inside.edits.size).toBe(1);
+    expect(inside.styleEdits.size).toBe(1);
+  });
+
+  it("opens nothing over a record it cannot read", async () => {
     const { inside, ha, text } = await dialog({
       behavior: record("behavior", 3, watchBehaviorDefaults()),
       [KIND]: record(KIND, 4),
@@ -364,18 +412,22 @@ describe("Watch settings with the notification style", () => {
     const shown = text();
     expect(shown).toContain(STYLE_UNREADABLE_TEXT);
     expect(shown).not.toContain(STYLE_NO_RECORD_TITLE);
-    await inside.startStyle();
+    expect(shown).not.toContain("data-sec=ws-notifications");
+    expect(shown).not.toContain(NEW_WATCH_TEXT);
+    await inside.save();
     expect(ha.saves()).toHaveLength(0);
   });
 
-  it("shows the notification style beside a watch with no behavior record yet", async () => {
+  it("opens both records on the defaults for a watch with no behavior record yet", async () => {
     const { text } = await dialog({
       behavior: record("behavior", 0),
       [KIND]: record(KIND, 2, fixture("01-defaults.json")),
     });
     const shown = text();
-    expect(shown).toContain("No settings from this watch yet.");
+    expect(shown).not.toContain("No settings from this watch yet.");
+    expect(shown).toContain("data-sec=ws-camera");
     expect(shown).toContain("data-sec=ws-notifications");
+    expect(shown).toContain(NEW_WATCH_TEXT);
   });
 
   it("draws the volume with its presets, the sounds as menus and delivery as tiles", async () => {
@@ -388,7 +440,7 @@ describe("Watch settings with the notification style", () => {
     const sound = shown.slice(shown.indexOf("data-key=tileTapSound"), shown.indexOf("data-key=menuOpenSound"));
     expect(sound).toContain("<optgroup label=Short>");
     expect(sound).toContain(">None</option>");
-    expect(sound).toContain(">Default (Button Press Sound)</option>");
+    expect(sound).toContain(">Default (Button press)</option>");
     const delivery = shown.slice(shown.indexOf("data-key=storedDeliveryMode"));
     expect(delivery).toContain('<span class="ws-tile-name">Reliable</span>');
     expect(delivery).toContain("Works without iPhone");

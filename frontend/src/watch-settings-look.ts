@@ -17,6 +17,7 @@
 // spirit; those are marked "panel's own".
 
 import { type SVGTemplateResult, html, svg } from "lit";
+import type { DemoKind } from "./watch-settings-demo.js";
 import type { CatalogSetting, SettingOption } from "./watch-settings.js";
 
 /** A choice drawn as a small picture of what it does instead of an icon. */
@@ -25,8 +26,7 @@ export type PreviewKind =
   | "indicatorPosition"
   | "indicatorSize"
   | "indicatorBrightness"
-  | "popupMaterial"
-  | "pageTransition";
+  | "popupMaterial";
 
 export interface OptionLook {
   /** The SF Symbol on the choice's tile, and its mark wherever else it is
@@ -44,6 +44,9 @@ export interface SettingLook {
   icon: string;
   /** Draw each choice as this kind of picture instead of its icon. */
   preview?: PreviewKind;
+  /** Show the hand movement as a moving picture (`watch-settings-demo.ts`):
+   * on each tile for a choice drawn as tiles, beside the menu otherwise. */
+  demo?: DemoKind;
   /** One entry per catalog choice of an enum or domains setting. */
   options?: Readonly<Record<string, OptionLook>>;
   /** One entry per gesture of the wrist twists' row, the icon of its row. */
@@ -112,24 +115,26 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   },
   deltaTimeout: { icon: "timer", options: same("timer", ["25s", "35s", "45s", "55s"]) },
 
-  // ── interaction ──
+  // ── gestures and controls ──
   longPressDuration: {
     icon: "hand.tap.fill",
+    demo: "holdTime",
     options: {
-      "Super Fast": { icon: "bolt.fill", name: "Super fast", detail: "75ms" },
+      "Super Fast": { icon: "bolt.fill", name: "Very short", detail: "75ms" },
       "Short": { icon: "hare.fill", name: "Short", detail: "150ms" },
       "Normal": { icon: "clock", name: "Normal", detail: "200ms" },
       "Long": { icon: "tortoise.fill", name: "Long", detail: "300ms" },
-      "Extra Long": { icon: "hand.tap.fill", name: "Extra long", detail: "1s" },
+      "Extra Long": { icon: "hand.tap.fill", name: "Very long", detail: "1s" },
     },
   },
   entityRadialVerticalQuickRadialGestureEnabled: { icon: "arrow.up.and.down.and.arrow.left.and.right" },
   entityRadialVerticalQuickRadialGestureTrigger: {
     icon: "hand.draw",
+    demo: "quickGesture",
     options: same("hand.draw", ["Up/Down x2", "Swipe Up/Down", "Clockwise"], {
-      "Up/Down x2": "Double vertical oscillation",
-      "Swipe Up/Down": "Swipe past center & back",
-      "Clockwise": "Circle gesture around center",
+      "Up/Down x2": "Up, down, up, down",
+      "Swipe Up/Down": "Past the middle and back",
+      "Clockwise": "Around the middle",
     }),
   },
   entityRadialVerticalQuickRadialGestureSpeed: {
@@ -143,6 +148,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   },
   topSectionDoubleTapAction: {
     icon: "hand.tap", // panel's own
+    demo: "doubleTap",
     options: actions([
       "Disabled", "Toggle Aimed Entity (Point Control)", "Room Jump", "Activate Scene", "Run Script",
       "Refresh", "Next Page", "Previous Page", "Toggle First Tile", "Switch Instance",
@@ -152,6 +158,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   topSectionDoubleTapScriptTargetId: { icon: "scroll.fill" },
   handGestureAction: {
     icon: "hand.pinch.fill", // panel's own
+    demo: "doublePinch",
     options: actions([
       "Disabled", "Point Control", "Activate Scene", "Run Script", "Next Page", "Previous Page",
       "Room Jump", "Toggle First Tile", "Refresh", "Switch Instance",
@@ -171,7 +178,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   dismissControlsOnClose: { icon: "rectangle.stack.badge.minus" },
   showControlEntityName: { icon: "textformat" },
   automationTriggerSkipConditions: { icon: "bolt.badge.automatic.fill" },
-  showPendingAnimation: { icon: "hourglass.circle.fill" },
+  showPendingAnimation: { icon: "hourglass.circle.fill", demo: "bounce" },
   // The phone's Per Domain screen drew each domain's entity icon; these are
   // the panel's own, one per domain.
   pendingAnimationDisabledDomains: {
@@ -198,7 +205,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   // ── navigation ──
   pageTransitionStyle: {
     icon: "rectangle.2.swap", // panel's own; the app's Default choice
-    preview: "pageTransition",
+    demo: "pageTransition",
     options: {
       "Default": { icon: "rectangle.2.swap" },
       "Slide": { icon: "arrow.left.arrow.right" },
@@ -230,21 +237,22 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   pageIndicatorColorHex: { icon: "paintpalette.fill" }, // panel's own
   pullDownAction: {
     icon: "arrow.down.circle.fill",
+    demo: "pullDown",
     options: actions(["Disabled", "Refresh", "Next Page", "Previous Page", "Room Jump", "Activate Scene", "Run Script", "Toggle First Tile"]),
   },
   pullDownSceneTargetId: { icon: "theatermasks" },
   pullDownScriptTargetId: { icon: "scroll.fill" },
   wrapPages: { icon: "arrow.trianglehead.2.counterclockwise.rotate.90" },
-  bottomEdgePageSwipeSensitivity: { icon: "hand.draw.fill", options: PAGE_SWIPE_ICONS },
+  bottomEdgePageSwipeSensitivity: { icon: "hand.draw.fill", demo: "pageSwipe", options: PAGE_SWIPE_ICONS },
   popupBackgroundMaterial: {
     icon: "rectangle.on.rectangle",
     preview: "popupMaterial",
     options: {
-      "Ultra Thin": { icon: "rectangle.on.rectangle", name: "Ultra thin", detail: "Most transparent" },
-      "Thin": { icon: "rectangle.on.rectangle", name: "Thin", detail: "Slightly opaque" },
+      "Ultra Thin": { icon: "rectangle.on.rectangle", name: "Ultra thin", detail: "Most see-through" },
+      "Thin": { icon: "rectangle.on.rectangle", name: "Thin", detail: "See-through" },
       "Regular": { icon: "rectangle.on.rectangle", name: "Regular", detail: "Balanced" },
-      "Thick": { icon: "rectangle.on.rectangle", name: "Thick", detail: "More opaque" },
-      "Ultra Thick": { icon: "rectangle.on.rectangle", name: "Ultra thick", detail: "Most opaque" },
+      "Thick": { icon: "rectangle.on.rectangle", name: "Thick", detail: "More solid" },
+      "Ultra Thick": { icon: "rectangle.on.rectangle", name: "Ultra thick", detail: "Most solid" },
     },
   },
 
@@ -262,7 +270,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   cameraRefreshOnOpenDebounce: { icon: "timer", options: same("timer", ["5s", "10s", "30s", "60s"]) },
   cameraRefreshOnPageOpenDelay: { icon: "hourglass", options: same("hourglass", ["Off", "250ms", "500ms", "1s"]) },
   cameraShowLoadingDots: { icon: "ellipsis" },
-  cameraSwipeSensitivity: { icon: "hand.draw.fill", options: SWIPE_ICONS },
+  cameraSwipeSensitivity: { icon: "hand.draw.fill", demo: "cameraSwipe", options: SWIPE_ICONS },
   cameraSwipeWrap: { icon: "arrow.trianglehead.2.counterclockwise.rotate.90" },
 
   // ── wrist motions ── the phone's Motion Gestures screen
@@ -278,6 +286,7 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   motionGestureSensitivityLevel: { icon: "dial.low.fill" },
   motionGestureActionsJSON: {
     icon: "figure.walk.motion",
+    demo: "twist",
     gestures: {
       "Twist Clockwise": { icon: "arrow.clockwise" },
       "Twist Counter-Clockwise": { icon: "arrow.counterclockwise" },
@@ -303,8 +312,9 @@ export interface TileChoice {
   value: string;
   name: string;
   detail?: string;
-  /** The SF Symbol, unless `preview` is drawn instead. */
+  /** The SF Symbol, unless `demo` or `preview` is drawn instead. */
   icon: string;
+  demo?: DemoKind;
   preview?: PreviewKind;
   /** The catalog's full label, for the tooltip, when the name shortens it. */
   title?: string;
@@ -327,6 +337,7 @@ export function tileChoices(setting: CatalogSetting, options: readonly SettingOp
       name,
       ...(own?.detail === undefined ? {} : { detail: own.detail }),
       icon: own?.icon ?? look?.icon ?? "questionmark.circle",
+      ...(known && look?.demo !== undefined ? { demo: look.demo } : {}),
       ...(known && look?.preview !== undefined ? { preview: look.preview } : {}),
       ...(name === o.label ? {} : { title: o.label }),
       on: o.value === value,
@@ -422,24 +433,6 @@ function previewShape(kind: PreviewKind, value: string): SVGTemplateResult {
         <rect x="8.5" y="4.5" width="21" height="13" rx="3" style="fill: var(--ws-tile-bg)" fill-opacity=${hide}
           stroke="currentColor" stroke-width="1" stroke-opacity="0.6" />`;
     }
-    case "pageTransition":
-      switch (value) {
-        // The phone's Default: the old page shrinks and fades as the new one
-        // pushes in.
-        case "Default":
-          return svg`<rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor" fill-opacity="0.3" />
-            <rect x="14" y="2.5" width="15" height="15" rx="2.5" fill="currentColor" fill-opacity="0.9" />`;
-        case "Slide":
-          return svg`<rect x="1.5" y="2.5" width="12" height="15" rx="2.5" fill="currentColor" fill-opacity="0.3" />
-            <rect x="15.5" y="2.5" width="12" height="15" rx="2.5" fill="currentColor" fill-opacity="0.9" />
-            <path d="M34 7.5H30.5M34 12.5H30.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />`;
-        case "Fade":
-          return svg`<rect x="6" y="2.5" width="15" height="15" rx="2.5" fill="currentColor" fill-opacity="0.45" />
-            <rect x="15" y="2.5" width="15" height="15" rx="2.5" fill="currentColor" fill-opacity="0.45" />`;
-        default:
-          // None: the next page is simply there.
-          return svg`<rect x="10.5" y="2.5" width="15" height="15" rx="2.5" fill="currentColor" fill-opacity="0.9" />`;
-      }
   }
 }
 

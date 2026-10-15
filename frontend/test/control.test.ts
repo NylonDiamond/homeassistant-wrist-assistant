@@ -730,7 +730,7 @@ describe("the Control Center card", () => {
     // its own title line goes with the chip, so only the rows this file can
     // see are named here.
     for (const label of ["Kind", "Value line", "State",
-      "Symbol", "Symbol when off", "Color", "Tint", "Status text", "On press", "Target"]) {
+      "<span>Icon</span>", "Icon when off", "Color", "Tint", "Status text", "On press", "Target"]) {
       expect(markup, label).toContain(label);
     }
     // The action row is a press in Control Center, never a tap on a face.
@@ -755,11 +755,28 @@ describe("the Control Center card", () => {
     // the Target row's `entityState` chip, and "Color" a piece of a color
     // attribute, so those two are looked for by their hints.
     const order = ["Kind", "On press", "Target",
-      "The name on the tile", "Value line", "What the toggle reads", "Symbol",
-      "Symbol when off", "One color paints the tint", "Tint", "Status text"];
+      "The name on the tile", "Value line", "What the toggle reads", "<span>Icon</span>",
+      "Icon when off", "One color paints the tint", "Tint", "Status text"];
     const at = order.map((label) => markup.indexOf(label));
     expect(at.filter((i) => i < 0), order.filter((_, i) => at[i]! < 0).join(", ")).toEqual([]);
     expect(at, order.join(" < ")).toEqual([...at].sort((a, b) => a - b));
+  });
+
+  it("says, on a control moved from the old list, what the old tiles take from it", () => {
+    const cfg = newConfig("Kitchen", 0);
+    setControlShown(cfg, true);
+    expect(flatten(controlCard(host(cfg)))).not.toContain("Old Toggle and Action tiles");
+    cfg.legacyControlEntityId = "light.kitchen";
+    const markup = flatten(controlCard(host(cfg)));
+    expect(markup).toContain("Old Toggle and Action tiles on the watch use this name, symbol and color.");
+    expect(markup).toContain("They still switch <code>light.kitchen</code>.");
+    // One line, under the freshness hint and above Kind.
+    expect(markup.match(/Old Toggle and Action tiles/g)).toHaveLength(1);
+    expect(markup.indexOf("Old Toggle")).toBeGreaterThan(markup.indexOf("Shows the last synced value."));
+    expect(markup.indexOf("Old Toggle")).toBeLessThan(markup.indexOf("Kind"));
+    // A scene, script or automation tile runs rather than switches.
+    cfg.legacyControlEntityId = "scene.movie";
+    expect(flatten(controlCard(host(cfg)))).toContain("They still run <code>scene.movie</code>.");
   });
 
   it("warns about a toggle with no state, without refusing to save it", () => {
@@ -775,8 +792,8 @@ describe("the Control Center card", () => {
     cfg.control!.action = { type: "runScene", entityId: "scene.movie", displayName: "Movie", domain: "scene" };
     const markup = flatten(controlCard(host(cfg)));
     expect(markup).toContain("acts as a button");
-    // A button has no state and no off symbol, so neither row is offered.
-    expect(markup).not.toContain("Symbol when off");
+    // A button has no state and no off icon, so neither row is offered.
+    expect(markup).not.toContain("Icon when off");
   });
 
   it("draws the mock tile from the resolver once there is a context to resolve in", () => {
@@ -984,6 +1001,19 @@ describe("the redraw budget hint under a refresh tap", () => {
       expect(markup, String(minutes)).toContain(line);
       expect(markup, String(minutes)).toContain("Refresh this complication\" instead");
     }
+  });
+
+  it("keeps the timer warning to one amber line, with the reasons behind Why?", () => {
+    const cfg = newControlConfig("Kitchen lamp", 0, "circular");
+    cfg.tapAction = { type: "refresh" };
+    cfg.refreshMinutes = 15;
+    const markup = flatten(generalEditor(host(cfg)));
+    expect(markup).toContain("hint keep budget\">Uses about 96 of the 40 to 70 daily redraws.</span>");
+    expect(markup).toContain("class=\"why-btn\">Why?</span></summary>");
+    // The reasons are plain muted text, not amber.
+    expect(markup).toContain("<div class=\"hint keep\">watchOS gives each complication 40 to 70");
+    cfg.refreshMinutes = 60;
+    expect(flatten(generalEditor(host(cfg)))).toContain("Uses about 24 of the 40 to 70 daily redraws.");
   });
 
   it("shows the same amber hint under a tap layer's multiple refresh", () => {

@@ -15,9 +15,10 @@
 // that merges by entity when another save landed too, the earlier saves with
 // restore, the delivery check, and the size budget.
 //
-// A paired watch with no Control Center record yet can start from an empty
-// list: a save over revision 0, which Home Assistant takes for a paired
-// watch.
+// The tiles moved into complication controls, so this screen is kept only for
+// old links and for a watch whose old list Home Assistant moved. A watch with
+// no list sees the same moved note and is never offered a fresh list. The
+// Watch app row and Home no longer link here (`retired` in `shell.ts`).
 //
 // The panel loads this module on its own, with one `import()`, when its route
 // is `/control-center` (`hook.ts`). Nothing it imports may import `icons.ts`.
@@ -39,11 +40,13 @@ import {
 } from "../editor-chrome.js";
 import { SCRUB_END, SCRUB_START } from "../editors.js";
 import { formStyles } from "../form-styles.js";
+import { HeadBar, headBarStyles, renderHeadStatus } from "../head-bar.js";
 import {
   type HassLike,
   type OwnerSummary,
   type WatchConfigHistoryEntry,
   type WatchConfigRecord,
+  fetchList,
   fetchOwners,
   fetchWatchConfig,
   fetchWatchConfigHistory,
@@ -71,9 +74,11 @@ import {
 } from "../watch-pages/config-foot.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
+import { friendlyError } from "../friendly-error.js";
+import { restoredText } from "../revision-words.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
 import { watchFrameStyles } from "../watch-frame.js";
-import { START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, settingsWatches, watchName } from "../watch-settings.js";
+import { PAIR_FIRST_TEXT, START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayStart, noRecordStart, settingsWatches, watchName } from "../watch-settings.js";
 import {
   type ControlCenterDraft,
   anyControlCenterDirty,
@@ -87,9 +92,6 @@ import {
 import { WATCH_CONTROL_CENTER_HELP_URL, navigateWatchControlCenter, registerWatchControlCenterDrafts } from "./hook.js";
 import {
   type ControlCenterDocument,
-  CONTROL_CENTER_NO_RECORD_TEXT,
-  CONTROL_CENTER_NO_RECORD_TITLE,
-  CONTROL_CENTER_PAIR_FIRST_TEXT,
   CONTROL_CENTER_START_EMPTY_BUTTON,
   CONTROL_CENTER_UPDATE_TEXT,
   asControlCenterDocument,
@@ -102,11 +104,13 @@ import { controlCenterKeptText, controlCenterSaveNote } from "./save-note.js";
 import {
   CONTROL_CENTER_STAGE_HINT,
   type ControlCenterViewHost,
+  controlCenterMoved,
   controlCenterStageFacts,
   controlCenterViewStyles,
   deselectControlCenter,
   loadControlCenterZoom,
   renderControlCenterInspector,
+  renderControlCenterMoved,
   renderControlCenterScreen,
   renderEntriesCard,
   saveControlCenterZoom,
@@ -208,6 +212,10 @@ export class WaControlCenterEditor extends LitElement {
    * other screens, so the bar leaves out its own watch picker and the way
    * back to complications. Off, the bar is as it always was. */
   @property({ attribute: false }) shellOwnsWatch = false;
+  /** The box in the panel's Watch app header the bar is drawn in
+   * (`head-bar.ts`). Without one the bar is drawn on top, as it always was. */
+  @property({ attribute: false }) barHost: HTMLElement | undefined = undefined;
+  private readonly headBar = new HeadBar(this);
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -232,6 +240,11 @@ export class WaControlCenterEditor extends LitElement {
   @state() private columns: ColumnWidths = { ...CC_COLUMNS_DEFAULT };
   @state() private hostWidth = 0;
   @state() private hostHeight = 0;
+  /** Whether the watch owns a complication moved from its old list
+   * (`controlCenterMoved`), for the watch it was asked about. A different
+   * watch, or no answer yet, is not known. */
+  @state() private movedCheck?: { watchId: string; moved: boolean };
+  private movedSeq = 0;
   private ownListAsked = false;
   private sizeObserver?: ResizeObserver;
   private observedTop?: HTMLElement;
@@ -258,7 +271,15 @@ export class WaControlCenterEditor extends LitElement {
     return settingsWatches(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
   }
 
+  /** The open watch's list moved into complications: the screen is the note,
+   * and nothing here edits or saves the old list. */
+  private get moved(): boolean {
+    const check = this.movedCheck;
+    return check !== undefined && check.watchId === this.watchId && check.moved;
+  }
+
   private get draft(): ControlCenterDraft | undefined {
+    if (this.moved) return undefined;
     if (this.watchId === undefined || this.record === undefined || this.record.revision <= 0) return undefined;
     return keptControlCenterDraft(this.watchId);
   }
@@ -284,6 +305,8 @@ export class WaControlCenterEditor extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    // The bar goes back into the header on the next draw.
+    if (this.barHost !== undefined) this.requestUpdate();
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("pointerdown", this.onWindowPointerDown, true);
     this.columns = loadColumnWidths(CC_COLUMNS_KEY, CC_COLUMNS_DEFAULT, CC_COLUMNS);
@@ -294,6 +317,7 @@ export class WaControlCenterEditor extends LitElement {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.headBar.clear();
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("pointerdown", this.onWindowPointerDown, true);
     this.sizeObserver?.disconnect();
@@ -328,6 +352,7 @@ export class WaControlCenterEditor extends LitElement {
   }
 
   protected override updated(): void {
+    this.headBar.draw(this.barHost, () => this.renderTopBar(this.draft, this.watches));
     const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.pe-ask") ?? undefined;
     if (dialog !== this.shownDialog) {
       this.shownDialog = dialog;
@@ -335,7 +360,8 @@ export class WaControlCenterEditor extends LitElement {
     }
     openConfigDialogs(this.renderRoot, this.shownFootDialogs);
     this.observeTop();
-    this.savedTicker.show(this.renderRoot.querySelector(".cf-saved") !== null);
+    this.savedTicker.show(this.headBar.query(this.renderRoot, ".cf-saved") !== null
+      || this.renderRoot.querySelector(".cf-saved") !== null);
   }
 
   private watchSize(): void {
@@ -442,10 +468,15 @@ export class WaControlCenterEditor extends LitElement {
     }
     const seq = ++this.loadSeq;
     this.stopPolling();
+    // A full load also asks whether the list moved into complications, and
+    // stays loading until both answers are in, so the editor never shows for
+    // a moment on a watch whose list has moved.
+    let movedAsked: Promise<void> | undefined;
     if (!quiet) {
       this.record = undefined;
       this.loading = true;
       this.loadError = undefined;
+      movedAsked = this.checkMoved(watchId);
     }
     try {
       const record = await fetchWatchConfig(hass, watchId, "control_center");
@@ -467,10 +498,32 @@ export class WaControlCenterEditor extends LitElement {
       }
       if (this.restartDraft?.watchId === watchId) this.restartDraft = undefined;
     }
+    if (movedAsked !== undefined) {
+      await movedAsked;
+      if (seq !== this.loadSeq) return;
+    }
     this.loading = false;
     if (this.unsupported) return;
     this.pollIfWaiting();
     void this.loadHistory(watchId);
+  }
+
+  /** Ask whether the watch owns a complication moved from its old list. A
+   * list that cannot be read reads as not moved, which keeps the editor, as
+   * on an integration or a watch from before the move. */
+  private async checkMoved(watchId: string): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.movedSeq;
+    let moved = false;
+    try {
+      const reply = await fetchList(hass, watchId);
+      moved = controlCenterMoved(Array.isArray(reply?.records) ? reply.records : []);
+    } catch {
+      moved = false;
+    }
+    if (seq !== this.movedSeq) return;
+    this.movedCheck = { watchId, moved };
   }
 
   private flushPending(): void {
@@ -717,7 +770,7 @@ export class WaControlCenterEditor extends LitElement {
     if (result.ok) {
       this.note = { kind: "ok", text: "Started with an empty list. Add entities, then save; the watch picks them up the next time it checks." };
     } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: `${CONTROL_CENTER_PAIR_FIRST_TEXT} Go to Watch app, Settings, Pair a device.` };
+      this.note = { kind: "warn", text: PAIR_FIRST_TEXT };
       return;
     } else if (result.code === "conflict") {
       this.note = { kind: "warn", text: "A Control Center list arrived meanwhile, so that is shown." };
@@ -725,7 +778,7 @@ export class WaControlCenterEditor extends LitElement {
       this.unsupported = true;
       return;
     } else {
-      this.note = { kind: "err", text: `Could not start: ${result.message}` };
+      this.note = { kind: "err", text: `Could not start: ${friendlyError(result)}` };
       return;
     }
     void this.load(watchId, true);
@@ -762,7 +815,7 @@ export class WaControlCenterEditor extends LitElement {
     let note: Note;
     try {
       const reply = await restoreWatchConfig(hass, watchId, "control_center", ask.entry.revision, ask.baseRevision);
-      note = { kind: "ok", text: `Revision ${ask.entry.revision} is back.` };
+      note = { kind: "ok", text: restoredText(ask.entry.updated_at) };
       if (watchId === this.watchId) this.restartDraft = { watchId, revision: reply.revision };
       else if (!(keptControlCenterDraft(watchId)?.dirty ?? false)) forgetControlCenterDraft(watchId);
     } catch (err) {
@@ -773,7 +826,7 @@ export class WaControlCenterEditor extends LitElement {
       else if (code === "unknown_command") {
         this.historyState = "unsupported";
         note = { kind: "warn", text: "This version of the integration cannot restore the Control Center list. Update it to restore an earlier save." };
-      } else note = { kind: "err", text: `Could not restore: ${errText(err)}` };
+      } else note = { kind: "err", text: `Could not restore: ${friendlyError(err)}` };
     } finally {
       this.restoring = false;
       if (this.restoreAsk === ask) this.closeAsk();
@@ -788,7 +841,7 @@ export class WaControlCenterEditor extends LitElement {
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.defaultPrevented) return;
     const path = e.composedPath();
-    if (!path.includes(this) && !nothingFocused()) return;
+    if (!path.includes(this) && !this.headBar.holds(path) && !nothingFocused()) return;
     if (this.renderRoot.querySelector("dialog[open]")) return;
     const mod = e.metaKey || e.ctrlKey;
     const key = e.key.toLowerCase();
@@ -841,7 +894,7 @@ export class WaControlCenterEditor extends LitElement {
     const draft = this.draft;
     return html`
       <div class="pe-top">
-        ${this.renderTopBar(draft, watches)}
+        ${this.barHost === undefined ? this.renderTopBar(draft, watches) : nothing}
         ${this.note ? html`<div class="pe-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
           <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
@@ -857,28 +910,29 @@ export class WaControlCenterEditor extends LitElement {
   private renderTopBar(draft: ControlCenterDraft | undefined, watches: readonly OwnerSummary[]): TemplateResult {
     const editing = draft !== undefined && !this.unsupported;
     const dirty = editing && this.dirty;
-    return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch Control Center list">
+    return html`<div class="wa-bar ${this.barHost !== undefined ? "in-head" : this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch Control Center list">
       ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
       ${this.shellOwnsWatch ? nothing : html`<button class="tb-btn tb-back" title="Back to complications"
         @click=${() => (this.onBack ? this.onBack() : navigateWatchControlCenter(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>`}
       <span class="spacer"></span>
       ${this.shellOwnsWatch ? nothing : this.renderWatchPicker(watches)}
+      ${this.barHost !== undefined && editing ? renderHeadStatus({ newWatch: false, dirty, saved: renderConfigSaved(this.record) }) : nothing}
       ${this.renderSyncPill(editing ? draft : undefined)}
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
+        ${this.barHost !== undefined ? nothing : html`<span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>`}` : nothing}
       ${this.barActions}
-      <button class="help" title="Help: Control Center" aria-label="Help"
+      <button class="help" title="Help with Control Center" aria-label="Help with Control Center"
         @click=${() => window.open(WATCH_CONTROL_CENTER_HELP_URL, "_blank", "noopener")}>?</button>
     </div>`;
   }
 
   private renderSyncPill(draft: ControlCenterDraft | undefined): TemplateResult | typeof nothing {
     const record = this.record;
-    if (record === undefined || record.revision <= 0 || this.unsupported) return nothing;
+    if (record === undefined || record.revision <= 0 || this.unsupported || this.moved) return nothing;
     const budget = draft === undefined ? { size: 0, limit: 1 } : controlCenterBudget(draft.document);
     const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "Control Center list", historyState: this.historyState });
     return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
@@ -892,9 +946,11 @@ export class WaControlCenterEditor extends LitElement {
     return noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId));
   }
 
+  /** Never: a watch with no old list has nothing to move, and its Control
+   * Center tiles are complication controls now, so the screen sends it to
+   * Complications instead of starting a list the watch would not draw. */
   private canStart(): boolean {
-    const record = this.record;
-    return this.watchId !== undefined && record !== undefined && record.revision <= 0 && !this.unsupported;
+    return false;
   }
 
   private renderTopMenu(draft: ControlCenterDraft | undefined): TemplateResult | typeof nothing {
@@ -1032,7 +1088,10 @@ export class WaControlCenterEditor extends LitElement {
   private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
     if (watches.length === 0) {
       const waiting = this.owners.length === 0 && this.ownList === undefined;
-      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet."}</div>`;
+      return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet. Pair one on the Home tab."}</div>`;
+    }
+    if (this.moved) {
+      return renderControlCenterMoved(() => (this.onBack ? this.onBack() : navigateWatchControlCenter(undefined, false)));
     }
     if (this.unsupported) return html`<div class="pe-empty"><b>${CONTROL_CENTER_UPDATE_TEXT}</b></div>`;
     if (this.loading) return html`<div class="pe-empty">Loading…</div>`;
@@ -1047,22 +1106,17 @@ export class WaControlCenterEditor extends LitElement {
     if (record === undefined) return html`<div class="pe-empty">Loading…</div>`;
     const draft = this.draft;
     const host = this.viewHost();
-    if (record.revision <= 0 || draft === undefined || host === undefined) {
+    if (record.revision <= 0) {
+      // No old list from this watch: nothing to move, and nothing to start.
+      // Its Control Center tiles are complication controls now, so the
+      // screen is the same note a moved watch sees.
       const kept = this.watchId === undefined ? undefined : keptControlCenterDraft(this.watchId);
       const id = this.watchId;
-      // While the iPhone's move may still come it waits, and the start is a
-      // small link that asks first.
-      const state = this.noRecordState(watches);
-      return html`<div class="pe-empty"><b>${CONTROL_CENTER_NO_RECORD_TITLE}</b><span>${noRecordText(state, CONTROL_CENTER_NO_RECORD_TEXT)}</span>
-        ${state === "wait"
-          ? html`<button class="link start-fresh" ?disabled=${this.starting} @click=${() => { if (mayStart(state)) void this.start(); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
-          : html`<span class="cc-start">
-              <button class="pe-btn pe-primary" ?disabled=${this.starting} @click=${() => void this.start()}>${this.starting ? "Starting…" : CONTROL_CENTER_START_EMPTY_BUTTON}</button>
-            </span>`}
-        ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when the Control Center list is here again.</span>
-          <button class="pe-btn" @click=${() => { forgetControlCenterDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
-      </div>`;
+      return html`${renderControlCenterMoved(() => (this.onBack ? this.onBack() : navigateWatchControlCenter(undefined, false)))}
+        ${kept?.dirty && id !== undefined ? html`<div class="pe-empty"><span class="pe-warn">Your unsaved edits from before are kept.</span>
+          <button class="pe-btn" @click=${() => { forgetControlCenterDraft(id); this.requestUpdate(); }}>Discard the kept edits</button></div>` : nothing}`;
     }
+    if (draft === undefined || host === undefined) return html`<div class="pe-empty">Loading…</div>`;
     const fit = this.fittedColumns();
     const view = this.hostHeight > 0 ? `--pe-view-h:${this.hostHeight}px;` : "";
     return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
@@ -1200,7 +1254,9 @@ export class WaControlCenterEditor extends LitElement {
     @container (max-width: 820px) {
       .layout.pe-layout { grid-template-columns: minmax(0, 1fr); }
       .pe-layout > .gutter { display: none; }
-      .pe-layout > .column { grid-column: auto; position: static; max-height: none; overflow: visible; }
+      /* As strong as the sticky rule, so a stacked list or inspector stops
+         sliding over the cards above it (the page editor's fix). */
+      .pe-layout > .column.left, .pe-layout > .column.canvas, .pe-layout > .column.inspector { grid-column: auto; position: static; max-height: none; overflow: visible; }
       .pe-layout > .column.canvas { order: 1; }
       .pe-layout > .column.inspector { order: 2; }
       .pe-layout > .column.left { order: 3; }
@@ -1259,7 +1315,7 @@ export class WaControlCenterEditor extends LitElement {
     dialog.pe-ask p.pe-muted { font-size: 13px; }
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
     :host([narrow]) { --cf-pad: 12px; }
-  `, controlCenterViewStyles, configFootStyles];
+  `, controlCenterViewStyles, configFootStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-control-center-editor")) {

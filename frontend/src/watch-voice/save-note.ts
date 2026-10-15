@@ -46,7 +46,7 @@ export function watchVoiceSaveNote(result: WatchVoiceSaveResult): WatchPagesNote
     case "conflict":
       return { kind: "warn", text: "Not saved. The voice settings kept changing somewhere else while saving. Your edits are kept, so try Save again in a moment." };
     case "no_record":
-      return { kind: "warn", text: "Not saved. Home Assistant no longer holds voice settings for this watch. Start with the defaults again." };
+      return { kind: "warn", text: "Not saved. Home Assistant no longer holds voice settings for this watch. Your edits are kept, so save again." };
     case "invalid": {
       const problems = result.problems ?? [];
       if (problems.length > 0) return { kind: "err", text: `Not saved. ${problems.join(" ")}` };

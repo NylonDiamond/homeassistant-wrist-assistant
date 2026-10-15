@@ -17,7 +17,7 @@ import { css, html, nothing, type TemplateResult } from "lit";
 import { browserStorage, type ColumnStorage } from "../column-split.js";
 import { sectionCard } from "../editor-chrome.js";
 import { colorField, entityField, segField, symbolField, textField } from "../editors.js";
-import type { HassLike } from "../ha-api.js";
+import type { ComplicationRecord, HassLike } from "../ha-api.js";
 import { SECTION_COLOR } from "../kinds.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
@@ -119,6 +119,40 @@ export const CONTROL_CENTER_STAGE_HINT =
   "Drawn from Home Assistant's states now. Each button is a control you can add to the watch's Control Center. Hidden entries and other domains are left out. Tap a button to edit it.";
 
 export const CONTROL_CENTER_NOT_SHOWN = "Not shown on the watch";
+
+// ── moved to complications ───────────────────────────────────────────────
+// The iPhone moves a watch's old list into control-only complication
+// documents, one per entry, each naming the entry's entity in
+// `legacyControlEntityId`. Once a watch owns one, its old tiles read their
+// look from those documents, so this list is no longer what the watch draws
+// and the screen sends the person to Complications instead.
+// Plan: app repo docs/control_center_move.md, slice 5.
+
+export const CONTROL_CENTER_MOVED_TITLE = "These tiles now live under Complications";
+
+export const CONTROL_CENTER_MOVED_TEXT =
+  "Each tile on this watch's Control Center is a complication control now. Change its name, symbol and color there. Tiles you already placed keep working.";
+
+export const CONTROL_CENTER_MOVED_LINK = "Open Complications";
+
+/** Whether the watch owns at least one live complication document moved from
+ * its old Control Center list. */
+export function controlCenterMoved(records: readonly Pick<ComplicationRecord, "deleted" | "document">[]): boolean {
+  return records.some((r) => {
+    if (r.deleted || r.document === null) return false;
+    const id = r.document.legacyControlEntityId;
+    return typeof id === "string" && id !== "";
+  });
+}
+
+/** What the screen shows instead of the editor on a watch whose list moved. */
+export function renderControlCenterMoved(openComplications: () => void): TemplateResult {
+  return html`<div class="pe-empty cc-moved">
+    <b>${CONTROL_CENTER_MOVED_TITLE}</b>
+    <span>${CONTROL_CENTER_MOVED_TEXT}</span>
+    <button class="pe-btn pe-primary cc-moved-open" @click=${openComplications}>${CONTROL_CENTER_MOVED_LINK}</button>
+  </div>`;
+}
 
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -484,7 +518,8 @@ function renderEntryCards(host: ControlCenterViewHost, raw: JsonObject): Templat
   const tint = entry.tintColorHex;
   const look = card(host, "look", "look", "Icon and color", html`<fieldset class="cc-body" ?disabled=${host.busy} aria-label="Icon and color">
     <div class="cc-stack">${symbolField({ icons: host.icons, symbols: host.symbols }, controlCenterIcon(entry),
-      (v) => host.edit((d) => setControlCenterIcon(d, id, v === entry.iconName ? "" : v), `entry:${id}:icon`), `cc:icon:${id}`, undefined, "Icon", false)}</div>
+      (v) => host.edit((d) => setControlCenterIcon(d, id, v === entry.iconName ? "" : v), `entry:${id}:icon`), `cc:icon:${id}`,
+      { clearable: entry.customIconName !== undefined, tint })}</div>
     ${colorField("Color", tint, (v) => host.edit((d) => setControlCenterTint(d, id, v), `entry:${id}:tint`), true, null)}
     <div class="cc-swatches" role="group" aria-label="Suggested colors">
       ${CONTROL_CENTER_SWATCHES.map((hex) => {

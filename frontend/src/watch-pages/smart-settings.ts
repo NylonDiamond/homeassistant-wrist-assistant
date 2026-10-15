@@ -1,14 +1,14 @@
 // Smart pages in the page editor (part 3f batch 3): the Smart Page switch
 // with the phone's convert question and a smart page's own rows (Updates,
-// Tile Size, Show labels, Sort order) in the page strip's Page popover, and
-// the inspector's Rules cards (`sectionCard`, editor-chrome.ts) in the Rules
+// Tile Size, Show labels, Sort order) in the inspector's On the watch card,
+// and the inspector's Rules cards (`sectionCard`, editor-chrome.ts) in the Rules
 // color: a chip per rule, the Add Domain dialog and the selected rule's
 // rows, then its Header and its per-domain style through the tile settings'
 // cards.
 //
-// `<wa-page-editor>` calls `renderSmartPageRows` and `renderSmartPageBody`
-// from its Page popover and `renderSmartRulesCard` from the inspector on a
-// smart page, and puts `smartSettingsStyles` in its
+// `<wa-page-editor>` calls `renderSmartPageSwitch` and `renderSmartPageBody`
+// from its On the watch card and `renderSmartRulesCard` from the inspector on
+// a smart page, and puts `smartSettingsStyles` in its
 // sheet. Every edit goes through `commit` with a
 // writer of `smart-model.ts`, read against the document as it is when it
 // commits: each action is one undo step, a run of typing in one field one
@@ -267,7 +267,7 @@ function spanBox(
     commit(sh, setting, (d) => write(d, v), { typing: true, ...reasonOf(watchWholeRefusal(v, min, max)) });
   };
   return typingField(sh, setting, numberField(label, shown, set, {
-    step: 1, min, max, ...(optional === undefined ? {} : { optional: true, placeholder: optional.placeholder }),
+    step: 1, min, max, rawTyping: true, ...(optional === undefined ? {} : { optional: true, placeholder: optional.placeholder }),
   }), stored);
 }
 
@@ -329,8 +329,8 @@ export function smartConvertConfirmed(host: WatchPagesEditorHost, target?: Event
   endAsk(host, target);
 }
 
-/** The switch and the line under it, in the page strip's Page popover; the
- * convert question when it is open. A smart page's own rows follow them there
+/** The switch and the line under it; the convert question when it is
+ * open. A smart page's own rows follow them there
  * (`renderSmartPageBody`). */
 export function renderSmartPageRows(host: WatchPagesEditorHost): TemplateResult {
   const config = readSmartConfig(host.page);
@@ -340,22 +340,22 @@ export function renderSmartPageRows(host: WatchPagesEditorHost): TemplateResult 
 }
 
 /** The Smart Page switch alone, with the convert question while it is
- * asked: the page strip draws it beside Hidden. With `tip`, the strip's
- * own instant hint stands in for the native tooltip, so none is set here. */
-export function renderSmartPageSwitch(host: WatchPagesEditorHost, opts: { tip?: boolean } = {}): TemplateResult {
+ * asked. With `detail`, it is a row of the inspector's On the watch card:
+ * its name over that line, the switch at the row's end, no tooltip. */
+export function renderSmartPageSwitch(host: WatchPagesEditorHost, opts: { detail?: string } = {}): TemplateResult {
   const smart = readSmartConfig(host.page) !== undefined;
+  const input = html`<input type="checkbox" role="switch" .checked=${live(smart)} ?disabled=${host.busy}
+        @change=${(e: Event) => smartSwitchPressed(host, (e.target as HTMLInputElement).checked)} />`;
   return html`
-    <label class="pe-switch sm-switch" title=${opts.tip === true ? nothing : W("smartPageDetail")}>
-      <input type="checkbox" role="switch" .checked=${live(smart)} ?disabled=${host.busy}
-        @change=${(e: Event) => smartSwitchPressed(host, (e.target as HTMLInputElement).checked)} />
-      <span>${W("smartPage")}</span>
-    </label>
+    ${opts.detail === undefined
+      ? html`<label class="pe-switch sm-switch" title=${W("smartPageDetail")}>${input}<span>${W("smartPage")}</span></label>`
+      : html`<label class="pe-switch sm-switch pe-ow-row"><span class="pe-ow-t"><span class="pe-ow-l">${W("smartPage")}</span><span class="pe-ow-d">${opts.detail}</span></span>${input}</label>`}
     ${askOf(host) === "convert" ? renderConvertAsk(host) : nothing}`;
 }
 
 /** On a smart page, its own rows (Updates, Tile size, Show labels, Sort
  * order) in a fieldset that switches every control off while a save is out,
- * for the page strip's Page popover; nothing on a page that is not one. */
+ * for the inspector's On the watch card; nothing on a page that is not one. */
 export function renderSmartPageBody(host: WatchPagesEditorHost): TemplateResult | typeof nothing {
   const config = readSmartConfig(host.page);
   if (config === undefined) return nothing;
@@ -668,7 +668,7 @@ function renderHeader(host: WatchPagesEditorHost, rh: TileSettingsHost, rule: Wa
     ${rule.header === "label"
       ? html`${typingField(rh, "headerLabel", textField(W("labelText"), typed(rh, "headerLabel") ?? rule.headerLabel ?? "", (v) =>
           commit(rh, "headerLabel", (d) => setSmartRuleHeaderLabel(d, P, R, v), { typing: true }), { placeholder: smartDomainName(rule.domain) }))}
-        ${typingField(rh, "headerSize", numberField(W("textSize"), size, setSize, { step: 1, min, max, optional: true, placeholder: String(auto), unit: "pt" }), rule.headerLabelSize)}
+        ${typingField(rh, "headerSize", numberField(W("textSize"), size, setSize, { step: 1, min, max, optional: true, placeholder: String(auto), unit: "pt", rawTyping: true }), rule.headerLabelSize)}
         <div class="hint ts-under">Empty is ${auto} pt. Or ${min} to ${max}.</div>`
       : nothing}
     ${lined

@@ -256,25 +256,17 @@ export const MDI_PREFIX = "mdi:";
 
 export class SymbolBrowser {
   /**
-   * A layer's symbol field shows its grid, so the state worth keeping is which
-   * ones the user has folded away. Pictures are the whole point of the picker
-   * and a name field alone gives no clue what it will draw, so the grid is not
-   * something to go looking for behind a button.
+   * Which icon lists are dropped open. A field says which way it starts
+   * (`defaultOpen`), almost always shut, and these two sets record only the
+   * fields that have been moved off that default, so a key never has to be
+   * seeded to be read. `collapsed` is the half for the rare field that starts
+   * open: a state's icon, whose list a click on its Icon button asked for.
    */
   private collapsed = new Set<string>();
-  /**
-   * The other half, for a field that starts shut: which grids the user has
-   * opened. A field says which way it starts (`defaultOpen`), and these two
-   * sets record only the fields that have been moved off that default, so a
-   * key never has to be seeded to be read.
-   *
-   * The Control Center card is what needs it. Its two symbol fields sit in a
-   * properties sheet of a dozen rows, and two open grids there push every row
-   * below them off the screen.
-   */
+  /** The other half: which shut-by-default lists are open. */
   private expanded = new Set<string>();
-  /** Per field, because several grids are on screen at once and a search typed
-   * into one must not disturb the others. */
+  /** Per field, because several icon fields are on screen at once and a
+   * search typed into one must not disturb the others. */
   private browsing = new Map<string, BrowseState>();
   recent: string[] = [];
 
@@ -285,17 +277,17 @@ export class SymbolBrowser {
     this.recent = SymbolBrowser.loadRecent();
   }
 
-  /** Whether one field's grid is showing. `defaultOpen` is how that field
+  /** Whether one field's list is showing. `defaultOpen` is how that field
    * starts, for a key nobody has touched yet. */
-  isOpen(key: string, defaultOpen = true): boolean {
+  isOpen(key: string, defaultOpen = false): boolean {
     if (this.collapsed.has(key)) return false;
     if (this.expanded.has(key)) return true;
     return defaultOpen;
   }
 
-  /** Flip one field's grid. Pass the same `defaultOpen` the field reads with,
-   * or the first click on a field that starts shut would do nothing. */
-  toggle(key: string, defaultOpen = true) {
+  /** Flip one field's list. Pass the same `defaultOpen` the field reads with,
+   * or the first click on a field that starts open would do nothing. */
+  toggle(key: string, defaultOpen = false) {
     if (this.isOpen(key, defaultOpen)) {
       this.expanded.delete(key);
       this.collapsed.add(key);
@@ -304,6 +296,20 @@ export class SymbolBrowser {
       this.expanded.add(key);
     }
     this.onChange();
+  }
+
+  /** Drop one field's list open. */
+  open(key: string, defaultOpen = false) {
+    if (!this.isOpen(key, defaultOpen)) this.toggle(key, defaultOpen);
+  }
+
+  /** Shut one field's list and forget its search, so it opens fresh next
+   * time. The group and the catalogue it was showing stay. */
+  close(key: string, defaultOpen = false) {
+    const was = this.browsing.get(key);
+    if (was !== undefined && was.query !== "") this.browsing.set(key, { ...was, query: "" });
+    if (this.isOpen(key, defaultOpen)) this.toggle(key, defaultOpen);
+    else this.onChange();
   }
 
   query(key: string): string {

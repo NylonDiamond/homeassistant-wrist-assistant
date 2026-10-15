@@ -14,23 +14,20 @@ import {
   type CatalogSetting,
   BEHAVIOR_SCHEMA_VERSION,
   COLLECTED_PILL_TEXT,
-  PAGES_NO_RECORD_TEXT,
-  PAGES_START_BUTTON,
-  PAGES_START_CONFLICT_TEXT,
+  NEW_WATCH_TEXT,
+  NOTHING_TO_SAVE_TEXT,
   PAIR_FIRST_TEXT,
   SETTINGS_MAIN_HOUSE_TEXT,
-  SETTINGS_NO_RECORD_TEXT,
   SETTINGS_PAIR_FIRST_TEXT,
-  SETTINGS_START_BUTTON,
-  SETTINGS_START_CONFLICT_TEXT,
   WAITING_HELP_TEXT,
   WAITING_PILL_TEXT,
+  WAITING_TEXT,
   WATCH_SETTINGS_CATALOG,
+  savedLine,
   buildSaveDocument,
   catalogSettings,
   TWIST_LEVELS,
   conflictRevision,
-  createWatchBehavior,
   decodeMotionMap,
   domainList,
   encodeMotionMap,
@@ -66,7 +63,6 @@ import {
   PAIR_USER_TITLE,
   PAIR_CARD_TITLE,
   PAIR_CODE_HINT,
-  PAIR_MODES,
   pairOnIPhone,
   PAIR_OPEN_APP_TEXT,
   PAIR_QR_EXPIRED_TEXT,
@@ -113,9 +109,9 @@ const setting = (key: string): CatalogSetting => {
 };
 
 describe("the catalog", () => {
-  it("is version 1 with the phone's four pages in the phone's order, then its Motion Gestures page", () => {
+  it("is version 1, in the side panel's groups: gestures beside wrist twists, then pages, controls and cameras", () => {
     expect(WATCH_SETTINGS_CATALOG.version).toBe(1);
-    expect(WATCH_SETTINGS_CATALOG.sections.map((s) => s.id)).toEqual(["connection", "interaction", "navigation", "camera", "motion"]);
+    expect(WATCH_SETTINGS_CATALOG.sections.map((s) => s.id)).toEqual(["connection", "gestures", "motion", "navigation", "controls", "camera"]);
     for (const section of WATCH_SETTINGS_CATALOG.sections) {
       expect(section.title).not.toBe("");
       expect(section.settings.length).toBeGreaterThan(0);
@@ -476,16 +472,12 @@ describe("which devices the view offers", () => {
 });
 
 describe("a watch with nothing in Home Assistant yet", () => {
-  it("offers the button, and names no iPhone switch", () => {
-    expect(PAGES_NO_RECORD_TEXT).toBe("Start with an empty page to begin.");
-    expect(SETTINGS_NO_RECORD_TEXT).toBe("Start with the defaults to begin.");
-    expect(PAGES_START_BUTTON).toBe("Start with an empty page");
-    expect(SETTINGS_START_BUTTON).toBe("Start with the defaults");
-    expect(PAIR_FIRST_TEXT).toBe("Pair this watch first. Go to Watch app, Settings, Pair a device.");
+  it("says what a new watch's screen means, and names no iPhone switch", () => {
+    expect(NEW_WATCH_TEXT).toBe("New watch. The watch keeps what it has until you save here. Your first Save replaces it.");
+    expect(NOTHING_TO_SAVE_TEXT).toBe("Nothing to save yet. Make a change first.");
+    expect(PAIR_FIRST_TEXT).toBe("Pair this watch first: on the Home tab, choose Pair a device.");
     expect(SETTINGS_PAIR_FIRST_TEXT).toBe("Pair this watch first, under Pair a device on this page.");
-    expect(PAGES_START_CONFLICT_TEXT).toBe("Pages for this watch arrived meanwhile, so those are shown.");
-    expect(SETTINGS_START_CONFLICT_TEXT).toBe("Settings for this watch arrived meanwhile, so those are shown.");
-    const all = [PAGES_NO_RECORD_TEXT, SETTINGS_NO_RECORD_TEXT, PAIR_FIRST_TEXT, SETTINGS_PAIR_FIRST_TEXT, PAGES_START_CONFLICT_TEXT, SETTINGS_START_CONFLICT_TEXT];
+    const all = [NEW_WATCH_TEXT, NOTHING_TO_SAVE_TEXT, PAIR_FIRST_TEXT, SETTINGS_PAIR_FIRST_TEXT];
     for (const text of all) {
       expect(text).not.toMatch(/Developer|Save pages to Home Assistant/);
       expect(text).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
@@ -496,13 +488,17 @@ describe("a watch with nothing in Home Assistant yet", () => {
     expect(savedByWords("panel")).toBe("saved here");
     expect(savedByWords("W1")).toBe("from the watch");
     expect(savedByWords(null)).toBe("from the watch");
-    expect(WAITING_PILL_TEXT).toBe("Waiting to be collected");
+    expect(savedLine("panel", "3 min ago")).toBe("Saved here 3 min ago");
+    expect(savedLine("W1", "just now")).toBe("Saved from the watch just now");
+    expect(savedLine("panel", "")).toBe("Saved here");
+    expect(WAITING_PILL_TEXT).toBe("Waiting for the watch");
     expect(COLLECTED_PILL_TEXT).toBe("Synced");
-    expect(WAITING_HELP_TEXT).toBe("The watch picks it up the next time it checks.");
+    expect(WAITING_HELP_TEXT).toBe("Open Wrist Assistant on the watch to get it.");
+    expect(WAITING_TEXT).toBe("Waiting. Open Wrist Assistant on the watch to get it.");
     // The iPhone passes nothing to the watch any more.
     expect(WAITING_HELP_TEXT).not.toMatch(/iPhone/);
     // A phone's own records wait for the phone.
-    expect(waitingHelpText("iphone")).toBe("The iPhone picks it up the next time it checks.");
+    expect(waitingHelpText("iphone")).toBe("Open Wrist Assistant on the iPhone to get it.");
     expect(waitingHelpText("watch")).toBe(WAITING_HELP_TEXT);
     // A phone's own record is saved here or by the phone, never by a watch.
     expect(savedByWords("P1", "iphone")).toBe("from the iPhone");
@@ -522,9 +518,7 @@ describe("a watch with nothing in Home Assistant yet", () => {
   });
 });
 
-describe("Start with the defaults", () => {
-  const refusal = (code: string, message = code) => Object.assign(new Error(message), { code });
-
+describe("the defaults a new watch's settings open on", () => {
   it("builds every catalog setting at its first value or default, schema 1, keys sorted", () => {
     const doc = watchBehaviorDefaults();
     expect(doc.schemaVersion).toBe(BEHAVIOR_SCHEMA_VERSION);
@@ -571,25 +565,6 @@ describe("Start with the defaults", () => {
     const a = watchBehaviorDefaults();
     (a.pendingAnimationDisabledDomains as string[]).push("lock");
     expect(watchBehaviorDefaults().pendingAnimationDisabledDomains).not.toContain("lock");
-  });
-
-  it("saves the defaults over revision 0 for a paired watch", async () => {
-    const calls: [number, Record<string, unknown>][] = [];
-    const result = await createWatchBehavior(async (base, document) => { calls.push([base, document]); return { revision: 1 }; });
-    expect(result).toEqual({ ok: true, revision: 1, document: watchBehaviorDefaults() });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]![0]).toBe(0);
-    expect(calls[0]![1]).toEqual(watchBehaviorDefaults());
-  });
-
-  it("tells a watch that is not paired, a record that came meanwhile, and an old integration apart", async () => {
-    expect(await createWatchBehavior(async () => { throw refusal("no_record"); })).toMatchObject({ ok: false, code: "no_record" });
-    expect(await createWatchBehavior(async () => { throw refusal("conflict", "stored revision is 1, save was based on 0"); }))
-      .toEqual({ ok: false, code: "conflict", message: "stored revision is 1, save was based on 0" });
-    expect(await createWatchBehavior(async () => { throw { type: "result", success: false, error: { code: "unknown_command", message: "x" } }; }))
-      .toMatchObject({ ok: false, code: "unsupported" });
-    expect(await createWatchBehavior(async () => { throw refusal("unavailable", "the store is not ready"); }))
-      .toEqual({ ok: false, code: "error", message: "the store is not ready" });
   });
 });
 
@@ -782,13 +757,11 @@ describe("pairing a watch by its code", () => {
 
   it("names the card and its two modes in plain words", () => {
     expect(PAIR_CARD_TITLE).toBe("Pair a device");
-    expect(PAIR_MODES).toEqual([["qr", "Show a QR code"], ["code", "Type a code"]]);
     expect(PAIR_SHOW_QR_TEXT).toBe("Show QR code");
     expect(PAIR_OPEN_APP_TEXT).toBe("Pair this iPhone instead");
     expect(PAIR_QR_EXPIRED_TEXT).toBe("This code ran out. Show a new one.");
     const words = [PAIR_CARD_TITLE, PAIR_CODE_HINT, PAIR_QR_HINT, PAIR_QR_REPLACE_LABEL, PAIR_QR_REPLACE_HINT, PAIR_MORE_TEXT, PAIR_REPLACE_LABEL, PAIR_SHOW_QR_TEXT,
       PAIR_OPEN_APP_TEXT, PAIR_QR_EXPIRED_TEXT, PAIR_USER_PLACEHOLDER, pairUserHint("watch"), pairUserHint("iphone"),
-      ...PAIR_MODES.map(([, label]) => label),
       pairErrorText({ code: "needs_replace" }, "confirm", "iphone"), pairErrorText({ code: "needs_allow_remote" }, "confirm")];
     for (const w of words) expect(w).not.toMatch(/ \x2d |\u2013|\u2014/);
   });
@@ -877,7 +850,7 @@ describe("the main house", () => {
   });
 
   it("says where to change them, in plain words", () => {
-    expect(SETTINGS_MAIN_HOUSE_TEXT).toBe("This watch takes its settings from your main house. Change them there.");
+    expect(SETTINGS_MAIN_HOUSE_TEXT).toBe("This watch takes its settings from its main home. Change them there.");
     expect(SETTINGS_MAIN_HOUSE_TEXT).not.toMatch(/ \x2d |\u2013|\u2014/);
   });
 });
@@ -942,7 +915,7 @@ describe("Switch house", () => {
   it("is offered on both gestures under the watch's value, and says it needs two homes", () => {
     for (const key of ["topSectionDoubleTapAction", "handGestureAction"]) {
       const s = setting(key);
-      expect(s.options!.find((o) => o.value === "Switch Instance")?.label, key).toBe("Switch house");
+      expect(s.options!.find((o) => o.value === "Switch Instance")?.label, key).toBe("Switch home");
       expect(s.help, key).toContain("two or more homes");
     }
   });
@@ -1000,8 +973,8 @@ describe("the domains that skip the bounce", () => {
   it("is shown under Pending animation only while it is on", () => {
     expect(isShown(domains, formValues({}))).toBe(true);
     expect(isShown(domains, formValues({ showPendingAnimation: false }))).toBe(false);
-    const interaction = WATCH_SETTINGS_CATALOG.sections.find((s) => s.id === "interaction")!;
-    const run = sectionRuns(interaction, formValues({})).find((r) => r.setting.key === "showPendingAnimation")!;
+    const controls = WATCH_SETTINGS_CATALOG.sections.find((s) => s.id === "controls")!;
+    const run = sectionRuns(controls, formValues({})).find((r) => r.setting.key === "showPendingAnimation")!;
     expect(run.dependents.map((s) => s.key)).toEqual(["pendingAnimationDisabledDomains"]);
   });
 

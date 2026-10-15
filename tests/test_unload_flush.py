@@ -419,6 +419,8 @@ def _unload_namespace(journal: _Journal, relay: types.ModuleType) -> dict[str, A
         "listener_relay": relay.listener_relay,
         "COMPLICATIONS": relay.COMPLICATIONS,
         "WATCH_CONFIG": relay.WATCH_CONFIG,
+        "WATCH_CONFIG_DELIVERY": relay.WATCH_CONFIG_DELIVERY,
+        "HTTP_ACTIONS_DELIVERY": relay.HTTP_ACTIONS_DELIVERY,
     }
     return _from_init(namespace, "async_unload_entry", "_async_shutdown_stores", "_DEBOUNCED_STORES")
 
@@ -439,9 +441,12 @@ def test_unload_writes_every_store_and_lets_go_of_the_stores() -> None:
     namespace = _unload_namespace(journal, relay)
     hass = _hass_with(_runtime_data(journal))
     # The live subscriptions follow this entry's stores until it unloads.
-    followed = types.SimpleNamespace(async_add_listener=lambda _l: (lambda: journal.append("detached")))
+    detach = lambda _l: (lambda: journal.append("detached"))  # noqa: E731
+    followed = types.SimpleNamespace(async_add_listener=detach, async_add_delivery_listener=detach)
     relay.listener_relay(hass, relay.COMPLICATIONS).follow(followed)
     relay.listener_relay(hass, relay.WATCH_CONFIG).follow(followed)
+    relay.listener_relay(hass, relay.WATCH_CONFIG_DELIVERY).follow(followed)
+    relay.listener_relay(hass, relay.HTTP_ACTIONS_DELIVERY).follow(followed)
 
     assert asyncio.run(namespace["async_unload_entry"](hass, object())) is True
     shut = [line.split(".")[0] for line in journal if line.endswith(".async_shutdown")]
@@ -449,7 +454,7 @@ def test_unload_writes_every_store_and_lets_go_of_the_stores() -> None:
         "http_action_runner",
         "coordinator",
     }
-    assert journal.count("detached") == 2
+    assert journal.count("detached") == 4
     assert DOMAIN not in hass.data
 
 

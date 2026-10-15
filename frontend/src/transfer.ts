@@ -38,6 +38,7 @@ import {
   schemaVersionFor,
 } from "./model.js";
 import { type SlotHolder, freeSlotForFamily } from "./copies.js";
+import { NEWER_VERSION_TEXT } from "./friendly-error.js";
 import { familiesFor, importableFamilies, isHomeFamily, supportedFamilies } from "./layouts.js";
 import { familyTitle } from "./renderer.js";
 import { type DeviceOwnerLike, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls } from "./version.js";
@@ -279,6 +280,10 @@ export function exportObject(
   // comes back as a design of its own: joining a link is asked for from the
   // card's Devices menu, never smuggled in by a paste.
   delete encoded.linkId;
+  // The old Control Center tile a moved control speaks for is on one watch in
+  // this house. Elsewhere it names nothing, and a backup restored here is a
+  // new record, which must not become a second document for the same tile.
+  delete encoded.legacyControlEntityId;
   // Derived on save. Exporting it would ship a stale answer to a question the
   // reader's own save re-answers correctly.
   encoded.dataSources = [];
@@ -303,12 +308,15 @@ const NOT_AN_OBJECT = "This is valid JSON but not a complication. A complication
 const DECODE_FAILED = "This does not look like a complication.";
 
 /** The two refusals that are about the panel being behind, not the text being
- * wrong. Importing either would only open read-only anyway. */
-const UPDATE_INTEGRATION = "It was made by a newer panel, so update the Wrist Assistant integration before importing it.";
+ * wrong. Importing either would only open read-only anyway. Both say the same
+ * plain line (`NEWER_VERSION_TEXT`); the schema numbers and key names go in
+ * `detail`, which the dialog folds away. */
+const UPDATE_INTEGRATION = NEWER_VERSION_TEXT;
 
+/** A refusal's `detail` is the exact reason, for a fold under the line. */
 export type ImportParse =
   | { ok: true; config: CustomComplicationConfig; raw: unknown }
-  | { ok: false; error: string };
+  | { ok: false; error: string; detail?: string };
 
 /** The identity a parsed document carries until the caller stamps its own. */
 const IMPORT_PLACEHOLDER_ID = "00000000-0000-4000-8000-000000000000";
@@ -348,7 +356,8 @@ export function parseImportText(text: string, maxSchemaVersion: number): ImportP
   if (typeof schema === "number" && schema > maxSchemaVersion) {
     return {
       ok: false,
-      error: `This complication is schema v${schema}; this panel understands up to v${maxSchemaVersion}. ${UPDATE_INTEGRATION}`,
+      error: UPDATE_INTEGRATION,
+      detail: `This complication is schema v${schema}. This panel reads up to v${maxSchemaVersion}.`,
     };
   }
   // Parsing comes before the unknown-key audit, because text that is not a
@@ -368,6 +377,8 @@ export function parseImportText(text: string, maxSchemaVersion: number): ImportP
   // And it is a design of its own, whatever link the text names: a pasted
   // key must never quietly join a design on somebody's watch.
   delete config.linkId;
+  // Nor may it speak for somebody's old Control Center tile.
+  delete config.legacyControlEntityId;
 
   const unknown = auditUnknownKeys(object);
   if (unknown.length > 0) {
@@ -375,7 +386,8 @@ export function parseImportText(text: string, maxSchemaVersion: number): ImportP
     const rest = unknown.length > 3 ? `, and ${unknown.length - 3} more` : "";
     return {
       ok: false,
-      error: `This complication uses keys this panel does not know: ${shown}${rest}. ${UPDATE_INTEGRATION}`,
+      error: UPDATE_INTEGRATION,
+      detail: `It uses keys this panel does not know: ${shown}${rest}.`,
     };
   }
 

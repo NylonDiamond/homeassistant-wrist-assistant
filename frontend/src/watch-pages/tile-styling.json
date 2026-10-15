@@ -739,13 +739,13 @@
       "alarm_control_panel": [
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         },
         {
           "id": "activity",
-          "title": "Alarm State",
+          "title": "Alarm state",
           "subtitle": "Show armed/disarmed state in top left of tile",
           "rows": ["showActivityStatus"]
         }
@@ -753,13 +753,13 @@
       "automation": [
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         },
         {
           "id": "activity",
-          "title": "Enabled Status",
+          "title": "Enabled status",
           "subtitle": "Show ON/OFF label in top left of tile",
           "rows": ["showActivityStatus"]
         }
@@ -767,33 +767,33 @@
       "binary_sensor": [
         {
           "id": "valueLabel",
-          "title": "Value Display",
+          "title": "Value",
           "subtitle": "Show sensor reading on tile",
           "rows": ["stateValueLabelStyle", "statusTextShadow"]
         },
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         }
       ],
       "climate": [
         {
           "id": "temperature",
-          "title": "Temperature Display",
+          "title": "Temperature",
           "subtitle": "Show temperature readings on tile",
           "rows": ["showTargetTempOnTile", "showCurrentTempOnTile", "statusTextShadow"]
         },
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         },
         {
           "id": "activity",
-          "title": "HVAC Activity",
+          "title": "HVAC activity",
           "subtitle": "Show heating, cooling, or fan icon in top right of tile",
           "rows": ["showActivityStatus", "statusIconSizeOverride"]
         }
@@ -801,59 +801,59 @@
       "counter": [
         {
           "id": "valueLabel",
-          "title": "Count Display",
+          "title": "Count",
           "subtitle": "Show counter value on tile",
           "rows": ["stateValueLabelStyle", "statusTextShadow"]
         },
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         }
       ],
       "cover": [
         {
           "id": "valueLabel",
-          "title": "Position Display",
+          "title": "Position",
           "subtitle": "Show position percentage on tile",
           "rows": ["stateValueLabelStyle", "statusTextShadow"]
         },
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         },
         {
           "id": "bar",
-          "title": "State Bar",
-          "subtitle": "Line along top edge or filled background",
+          "title": "State bar",
+          "subtitle": "A line along the top of the tile, or the whole tile filled",
           "rows": ["stateBarStyle", "stateBarColorStyle", "stateBarBorder", "stateBarShadow"]
         }
       ],
       "fan": [
         {
           "id": "valueLabel",
-          "title": "Speed Display",
+          "title": "Speed",
           "subtitle": "Show speed percentage on tile",
           "rows": ["stateValueLabelStyle", "statusTextShadow"]
         },
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         },
         {
           "id": "bar",
-          "title": "State Bar",
-          "subtitle": "Line along top edge or filled background",
+          "title": "State bar",
+          "subtitle": "A line along the top of the tile, or the whole tile filled",
           "rows": ["stateBarStyle", "stateBarColorStyle", "stateBarBorder", "stateBarShadow"]
         },
         {
           "id": "activity",
-          "title": "Activity Badge",
+          "title": "Activity badge",
           "subtitle": "Show status icon in top right of tile",
           "rows": ["showActivityStatus", "statusIconSizeOverride"]
         }
@@ -861,13 +861,13 @@
       "lawn_mower": [
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         },
         {
           "id": "activity",
-          "title": "Mower Activity",
+          "title": "Mower activity",
           "subtitle": "Show mowing, returning, or paused icon in top right of tile",
           "rows": ["showActivityStatus", "statusIconSizeOverride"]
         }
@@ -875,45 +875,45 @@
       "light": [
         {
           "id": "valueLabel",
-          "title": "Brightness Display",
+          "title": "Brightness",
           "subtitle": "Show brightness percentage on tile",
           "rows": ["stateValueLabelStyle", "statusTextShadow"]
         },
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         },
         {
           "id": "bar",
-          "title": "State Bar",
-          "subtitle": "Line along top edge or filled background",
+          "title": "State bar",
+          "subtitle": "A line along the top of the tile, or the whole tile filled",
           "rows": ["stateBarStyle", "stateBarColorStyle", "stateBarBorder", "stateBarShadow"]
         }
       ],
       "media_player": [
         {
           "id": "valueLabel",
-          "title": "Volume Display",
+          "title": "Volume",
           "subtitle": "Show volume level on tile",
           "rows": ["stateValueLabelStyle", "statusTextShadow"]
         },
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         },
         {
           "id": "bar",
-          "title": "State Bar",
-          "subtitle": "Line along top edge or filled background",
+          "title": "State bar",
+          "subtitle": "A line along the top of the tile, or the whole tile filled",
           "rows": ["stateBarStyle", "stateBarColorStyle", "stateBarBorder", "stateBarShadow"]
         },
         {
           "id": "activity",
-          "title": "Playback Status",
+          "title": "Playback status",
           "subtitle": "Show play or pause icon in top right of tile",
           "rows": ["showActivityStatus", "statusIconSizeOverride"]
         }
@@ -921,13 +921,13 @@
       "music_hub": [
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         },
         {
           "id": "activity",
-          "title": "Playback Status",
+          "title": "Playback status",
           "subtitle": "Show play or pause icon in top right of tile",
           "rows": ["showActivityStatus", "statusIconSizeOverride"]
         }
@@ -935,13 +935,13 @@
       "person": [
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         },
         {
           "id": "activity",
-          "title": "Location Badge",
+          "title": "Location badge",
           "subtitle": "Show location name in top left of tile",
           "rows": ["showActivityStatus"]
         }
@@ -949,13 +949,13 @@
       "remote": [
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         },
         {
           "id": "activity",
-          "title": "Activity Badge",
+          "title": "Activity badge",
           "subtitle": "Show status icon in top right of tile",
           "rows": ["showActivityStatus", "statusIconSizeOverride"]
         }
@@ -963,27 +963,27 @@
       "sensor": [
         {
           "id": "valueLabel",
-          "title": "Value Display",
+          "title": "Value",
           "subtitle": "Show sensor reading on tile",
           "rows": ["stateValueLabelStyle", "decimalPlaces", "statusTextShadow"]
         },
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         }
       ],
       "timer": [
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         },
         {
           "id": "activity",
-          "title": "Time Remaining",
+          "title": "Time remaining",
           "subtitle": "Show countdown in top right of tile",
           "rows": ["showActivityStatus"]
         }
@@ -991,13 +991,13 @@
       "vacuum": [
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         },
         {
           "id": "activity",
-          "title": "Vacuum Activity",
+          "title": "Vacuum activity",
           "subtitle": "Show cleaning, returning, or paused icon in top right of tile",
           "rows": ["showActivityStatus", "statusIconSizeOverride"]
         }
@@ -1005,20 +1005,20 @@
       "valve": [
         {
           "id": "valueLabel",
-          "title": "Position Display",
+          "title": "Position",
           "subtitle": "Show position percentage on tile",
           "rows": ["stateValueLabelStyle", "statusTextShadow"]
         },
         {
           "id": "textSize",
-          "title": "State Text Size",
-          "subtitle": "Font size for state badges (OFF, %, sensor values, countdown, alarm state)",
+          "title": "State text",
+          "subtitle": "The small state words and numbers on the tile, like OFF or 50%",
           "rows": ["badgeFontSizeOverride"]
         },
         {
           "id": "bar",
-          "title": "State Bar",
-          "subtitle": "Line along top edge or filled background",
+          "title": "State bar",
+          "subtitle": "A line along the top of the tile, or the whole tile filled",
           "rows": ["stateBarStyle", "stateBarColorStyle", "stateBarBorder", "stateBarShadow"]
         }
       ]

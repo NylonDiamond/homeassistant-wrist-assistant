@@ -32,6 +32,7 @@ import { property, state } from "lit/decorators.js";
 import { type ColumnWidths, beginColumnDrag, clampColumnWidth, loadColumnWidths, saveColumnWidths } from "../column-split.js";
 import { chromeTokens, columnStyles, inspectorStyles, leftCardStyles, rowListStyles, topBarStyles } from "../editor-chrome.js";
 import { formStyles } from "../form-styles.js";
+import { HeadBar, headBarStyles, renderHeadStatus } from "../head-bar.js";
 import { type HassLike, type HttpActionsRecord, type OwnerSummary, fetchHttpActions, fetchOwners, saveHttpActions, testHttpAction } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import { agoWords } from "../send-state.js";
@@ -40,7 +41,7 @@ import { uiIcon } from "../ui-icons.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { deviceKindOf } from "../version.js";
-import { COLLECTED_PILL_TEXT, WAITING_PILL_TEXT, settingsWatches, watchName } from "../watch-settings.js";
+import { COLLECTED_PILL_TEXT, WAITING_HELP_TEXT, WAITING_PILL_TEXT, settingsWatches, watchName } from "../watch-settings.js";
 import {
   type HttpActionsDraft,
   dropHttpActionsDraft,
@@ -169,6 +170,10 @@ export class WaHttpActionsEditor extends LitElement {
   @property({ type: Boolean, reflect: true }) narrow = false;
   @property({ attribute: false }) icons?: IconProvider;
   @property({ attribute: false }) iconsTick = 0;
+  /** The box in the panel's Watch app header the bar is drawn in
+   * (`head-bar.ts`). Without one the bar is drawn on top. */
+  @property({ attribute: false }) barHost: HTMLElement | undefined = undefined;
+  private readonly headBar = new HeadBar(this);
 
   @state() private record?: HttpActionsRecord;
   /** The integration keeps no HTTP action library (too old for it). */
@@ -222,6 +227,8 @@ export class WaHttpActionsEditor extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    // The bar goes back into the header on the next draw.
+    if (this.barHost !== undefined) this.requestUpdate();
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("pointerdown", this.onWindowPointerDown, true);
     this.columns = loadColumnWidths(HA_COLUMNS_KEY, HA_COLUMNS_DEFAULT, HA_COLUMNS);
@@ -232,6 +239,7 @@ export class WaHttpActionsEditor extends LitElement {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.headBar.clear();
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("pointerdown", this.onWindowPointerDown, true);
     this.sizeObserver?.disconnect();
@@ -261,6 +269,7 @@ export class WaHttpActionsEditor extends LitElement {
   }
 
   protected override updated(): void {
+    this.headBar.draw(this.barHost, () => this.renderTopBar(this.draft));
     this.observeTop();
   }
 
@@ -499,7 +508,7 @@ export class WaHttpActionsEditor extends LitElement {
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.defaultPrevented) return;
     const path = e.composedPath();
-    if (!path.includes(this) && !nothingFocused()) return;
+    if (!path.includes(this) && !this.headBar.holds(path) && !nothingFocused()) return;
     if (this.renderRoot.querySelector("dialog[open]")) return;
     const mod = e.metaKey || e.ctrlKey;
     const key = e.key.toLowerCase();
@@ -549,7 +558,7 @@ export class WaHttpActionsEditor extends LitElement {
     const draft = this.draft;
     return html`
       <div class="pe-top">
-        ${this.renderTopBar(draft)}
+        ${this.barHost === undefined ? this.renderTopBar(draft) : nothing}
         ${this.note ? html`<div class="pe-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
           <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
@@ -564,9 +573,15 @@ export class WaHttpActionsEditor extends LitElement {
   private renderTopBar(draft: HttpActionsDraft | undefined): TemplateResult {
     const editing = draft !== undefined;
     const dirty = editing && this.dirty;
-    return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="HTTP actions">
-      <span class="ha-title"><b>HTTP actions</b><span class="ha-shared">${HTTP_ACTIONS_SHARED_TEXT}</span></span>
+    // In the panel's header the screen's name is its tab's: what is left
+    // of the title is that the library is every watch's.
+    const inHead = this.barHost !== undefined;
+    return html`<div class="wa-bar ${inHead ? "in-head" : this.stacked ? "stacked" : ""}" role="toolbar" aria-label="HTTP actions">
+      ${inHead
+        ? html`<span class="tb-note">${HTTP_ACTIONS_SHARED_TEXT}</span>`
+        : html`<span class="ha-title"><b>HTTP actions</b><span class="ha-shared">${HTTP_ACTIONS_SHARED_TEXT}</span></span>`}
       <span class="spacer"></span>
+      ${inHead && editing ? renderHeadStatus({ newWatch: false, dirty, saved: this.savedText() }) : nothing}
       ${this.renderSyncPill()}
       ${editing ? html`<span class="side-menu pe-top-menu">
           <button class="tb-btn tb-more" aria-haspopup="menu" aria-expanded=${this.topMenuOpen ? "true" : "false"} aria-label="More actions" title="More"
@@ -582,8 +597,8 @@ export class WaHttpActionsEditor extends LitElement {
         <button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S). A save reaches every watch the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${this.savedText()}</span>` : nothing}
-      <button class="help" title="Help: HTTP actions" aria-label="Help"
+        ${inHead ? nothing : html`<span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${this.savedText()}</span>`}` : nothing}
+      <button class="help" title="Help with HTTP actions" aria-label="Help with HTTP actions"
         @click=${() => window.open(WATCH_HTTP_ACTIONS_HELP_URL, "_blank", "noopener")}>?</button>
     </div>`;
   }
@@ -600,7 +615,7 @@ export class WaHttpActionsEditor extends LitElement {
     if (record === undefined || record.revision <= 0 || this.unsupported) return nothing;
     const { collected, waiting } = httpActionsDelivery(record, this.watches);
     if (collected.length === 0 && waiting.length === 0) return nothing;
-    const title = [waiting.length > 0 ? `Waiting: ${waiting.join(", ")}.` : "", collected.length > 0 ? `Synced: ${collected.join(", ")}.` : ""].filter((s) => s !== "").join(" ");
+    const title = [waiting.length > 0 ? `Waiting: ${waiting.join(", ")}. ${WAITING_HELP_TEXT}` : "", collected.length > 0 ? `Synced: ${collected.join(", ")}.` : ""].filter((s) => s !== "").join(" ");
     return html`<span class="tb-sync ${waiting.length === 0 ? "ok" : "warn"}" title=${title}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${waiting.length === 0 ? COLLECTED_PILL_TEXT : WAITING_PILL_TEXT}</span>
     </span>`;
@@ -667,14 +682,17 @@ export class WaHttpActionsEditor extends LitElement {
   private renderFoot(record: HttpActionsRecord, draft: HttpActionsDraft): TemplateResult {
     const budget = httpActionsBudget(draft.document);
     const when = ago(record.updated_at);
+    // Who saved and when, in plain words; the revision number is only in
+    // the tooltip.
+    const by = httpActionsSavedBy(record, this.allOwners);
     const stored = record.revision <= 0
       ? "Not saved yet. The first save makes the library."
-      : `Revision ${record.revision} · ${httpActionsSavedBy(record, this.allOwners)}${when ? ` ${when}` : ""}`;
+      : by === "saved here" ? `Saved here${when ? ` ${when}` : ""}` : `${by.charAt(0).toUpperCase()}${by.slice(1)}${when ? ` ${when}` : ""}`;
     const { waiting } = httpActionsDelivery(record, this.watches);
     return html`<div class="ha-foot" role="status">
       <i class="ha-foot-dot ${record.revision <= 0 ? "" : waiting.length === 0 ? "ok" : "warn"}" aria-hidden="true"></i>
-      <span>${stored}</span>
-      ${waiting.length === 0 ? nothing : html`<span class="pe-muted">Waiting for ${waiting.join(", ")}.</span>`}
+      <span title=${record.revision <= 0 ? nothing : `Revision ${record.revision}`}>${stored}</span>
+      ${waiting.length === 0 ? nothing : html`<span class="pe-muted">Waiting for ${waiting.join(", ")}. ${WAITING_HELP_TEXT}</span>`}
       <span class="spacer"></span>
       <span class="pe-muted ${budget.near ? "ha-near" : ""}">${kb(budget.size)} of ${kb(budget.limit)}</span>
     </div>`;
@@ -791,7 +809,7 @@ export class WaHttpActionsEditor extends LitElement {
     .ha-foot-dot.warn { background: var(--wa-amber); }
     .ha-near { color: var(--wa-amber); }
     :host([narrow]) { --cf-pad: 12px; }
-  `, httpActionsViewStyles];
+  `, httpActionsViewStyles, headBarStyles];
 }
 
 function flatError(err: unknown): Error {

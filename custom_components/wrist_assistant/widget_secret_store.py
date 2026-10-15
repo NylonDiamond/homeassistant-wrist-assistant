@@ -639,7 +639,7 @@ def build_device_info(
     # them keep doing that.
     from homeassistant.helpers.device_registry import DeviceInfo, async_get as async_get_device_registry
 
-    from .const import DOMAIN
+    from .const import DOMAIN, PANEL_CONFIGURATION_URL
 
     short_id = watch_id[:8]
     entry = secret_store.get(watch_id)
@@ -667,6 +667,8 @@ def build_device_info(
         manufacturer="Wrist Assistant",
         model=model,
         via_device=via_device,
+        # "Visit" on the device page opens the panel, where the device is set up.
+        configuration_url=PANEL_CONFIGURATION_URL,
     )
     if name is not None:
         info["name"] = name

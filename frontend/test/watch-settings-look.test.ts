@@ -34,6 +34,8 @@ import {
   tileChoices,
   usesTiles,
 } from "../src/watch-settings-look.js";
+import { SETTINGS_GROUPS } from "../src/watch-settings-nav.js";
+import { DEMO_LOOP, HOLD_SECONDS, SWIPE_POINTS, demoPicture } from "../src/watch-settings-demo.js";
 
 const settings = catalogSettings();
 const byKey = (key: string): CatalogSetting => {
@@ -126,9 +128,9 @@ describe("the look map", () => {
     expect(details("longPressDuration")).toEqual(["75ms", "150ms", "200ms", "300ms", "1s"]);
     expect(details("entityRadialVerticalQuickRadialGestureSpeed")).toEqual(["0.35s", "0.45s", "0.60s", "0.80s"]);
     expect(details("entityRadialVerticalQuickRadialGestureTrigger")).toEqual([
-      "Double vertical oscillation", "Swipe past center & back", "Circle gesture around center",
+      "Up, down, up, down", "Past the middle and back", "Around the middle",
     ]);
-    expect(details("popupBackgroundMaterial")).toEqual(["Most transparent", "Slightly opaque", "Balanced", "More opaque", "Most opaque"]);
+    expect(details("popupBackgroundMaterial")).toEqual(["Most see-through", "See-through", "Balanced", "More solid", "Most solid"]);
   });
 });
 
@@ -149,7 +151,7 @@ describe("tiles", () => {
   it("names a tile shortly and keeps the catalog's whole label for its tooltip", () => {
     const setting = byKey("longPressDuration");
     const tiles = tileChoices(setting, setting.options!, "Short");
-    expect(tiles.map((t) => t.name)).toEqual(["Super fast", "Short", "Normal", "Long", "Extra long"]);
+    expect(tiles.map((t) => t.name)).toEqual(["Very short", "Short", "Normal", "Long", "Very long"]);
     expect(tiles[1]).toMatchObject({ value: "Short", title: "Short (150 ms)", icon: "hare.fill", on: true });
     expect(tiles.filter((t) => t.on)).toHaveLength(1);
   });
@@ -204,6 +206,7 @@ interface Inside {
   record?: WatchConfigRecord;
   edits: ReadonlyMap<string, unknown>;
   helpOff: ReadonlySet<string>;
+  group: string;
 }
 
 function dialog(document: Record<string, unknown> = watchBehaviorDefaults(), icons?: IconProvider) {
@@ -224,8 +227,14 @@ function dialog(document: Record<string, unknown> = watchBehaviorDefaults(), ico
   };
   const hass = { states: {}, user: { is_admin: true } } as unknown as HassLike;
   const owners = [owner("w1")];
-  const tree = () => ws.render(hass, owners);
-  return { ws, inside, tree, text: () => flatten(tree()) };
+  // The page shows one group at a time: the tree is the page of every group
+  // it lists. With no notification style record, its two groups are not.
+  const tree = () => SETTINGS_GROUPS.flatMap((g) => {
+    inside.group = g.id;
+    const page = ws.render(hass, owners);
+    return flatten(page).includes(`aria-label=${g.title} settings>`) ? [page] : [];
+  });
+  return { ws, inside, tree, text: () => flatten(tree()), page: () => ws.render(hass, owners) };
 }
 
 function tilesOf(tree: unknown, key: string): Tpl[] {
@@ -255,7 +264,7 @@ describe("the dialog", () => {
     expect(longPress[1]).toContain("aria-pressed=true");
     expect(longPress[1]).toContain('<span class="ws-tile-name">Short</span>');
     expect(longPress[1]).toContain('<span class="ws-tile-detail">150ms</span>');
-    expect(shown).toContain('role="group" aria-label=Long press');
+    expect(shown).toContain('role="group" aria-label=Hold time');
   });
 
   it("puts a fixed icon box in front of every title, filled once the symbols can draw", () => {
@@ -275,7 +284,7 @@ describe("the dialog", () => {
 
   it("draws a picture instead of an icon on the page indicator's tiles", () => {
     const { tree } = dialog({ ...watchBehaviorDefaults(), showPageIndicator: true });
-    for (const key of ["pageIndicatorStyle", "pageIndicatorOpacity", "pageIndicatorPosition", "pageIndicatorSize", "popupBackgroundMaterial", "pageTransitionStyle"]) {
+    for (const key of ["pageIndicatorStyle", "pageIndicatorOpacity", "pageIndicatorPosition", "pageIndicatorSize", "popupBackgroundMaterial"]) {
       for (const tile of tilesOf(tree(), key)) expect(flatten(tile), key).toContain('<svg class="ws-pv"');
     }
   });
@@ -284,7 +293,7 @@ describe("the dialog", () => {
     const shown = dialog({ ...watchBehaviorDefaults(), showPageIndicator: true }).text();
     const parent = shown.indexOf("data-key=showPageIndicator");
     const open = shown.indexOf('<div class="fgroup">', parent);
-    const next = shown.indexOf("data-key=pullDownAction", parent);
+    const next = shown.indexOf("data-key=bottomEdgePageSwipeSensitivity", parent);
     expect(parent).toBeGreaterThan(0);
     expect(open).toBeGreaterThan(parent);
     for (const key of ["pageIndicatorStyle", "pageIndicatorOpacity", "pageIndicatorPosition", "pageIndicatorSize", "pageIndicatorColorHex"]) {
@@ -353,11 +362,189 @@ describe("the dialog", () => {
 
   it("hides the tiles' help with the rest of the card's help, keeping it in the tile row", () => {
     const { inside, text } = dialog();
-    inside.helpOff = new Set(["interaction"]);
+    inside.helpOff = new Set(["gestures"]);
     const shown = text();
-    expect(shown).toContain('data-sec=ws-interaction data-open="true" data-help=off');
+    expect(shown).toContain('data-sec=ws-gestures data-open="true" data-help=off');
     const row = shown.slice(shown.indexOf("data-key=longPressDuration"));
-    expect(row.indexOf('<div class="hint">Hold to open quick actions.</div>')).toBeLessThan(row.indexOf('class="ws-tiles"'));
+    expect(row.indexOf('<div class="hint">How long you press a tile before its extra options open.</div>')).toBeLessThan(row.indexOf('class="ws-tiles"'));
+  });
+});
+
+// ── the moving pictures ──────────────────────────────────────────────────
+
+describe("the moving pictures", () => {
+  const demoKeys = settings.filter((s) => WATCH_SETTING_LOOK[s.key]!.demo !== undefined).map((s) => s.key);
+
+  it("show the movements the words cannot: the hand gestures, the page animation, the edge swipes and the bounce", () => {
+    expect(demoKeys.sort()).toEqual([
+      "bottomEdgePageSwipeSensitivity", "cameraSwipeSensitivity", "entityRadialVerticalQuickRadialGestureTrigger",
+      "handGestureAction", "longPressDuration", "motionGestureActionsJSON", "pageTransitionStyle", "pullDownAction",
+      "showPendingAnimation", "topSectionDoubleTapAction",
+    ]);
+  });
+
+  it("move on a loop, and stand still while the system asks for less motion", () => {
+    for (const key of demoKeys) {
+      const look = WATCH_SETTING_LOOK[key]!;
+      const values = byKey(key).gestures?.map((g) => g.value) ?? byKey(key).options?.map((o) => o.value) ?? [""];
+      for (const value of values) {
+        const moving = flatten(demoPicture(look.demo!, value, false));
+        const still = flatten(demoPicture(look.demo!, value, true));
+        // An edge swipe that is off does nothing, so nothing moves.
+        if (value === "Off") expect(moving, key).not.toMatch(/<animate/);
+        else expect(moving, `${key} ${value}`).toContain('repeatCount="indefinite"');
+        expect(still, `${key} ${value}`).not.toMatch(/<animate/);
+        // In the tile's own color, nothing literal.
+        expect(moving).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+      }
+    }
+  });
+
+  it("draw a different movement for each quick menu gesture, each hold time and each twist", () => {
+    for (const [kind, values] of [
+      ["quickGesture", byKey("entityRadialVerticalQuickRadialGestureTrigger").options!.map((o) => o.value)],
+      ["holdTime", byKey("longPressDuration").options!.map((o) => o.value)],
+      ["twist", byKey("motionGestureActionsJSON").gestures!.map((g) => g.value)],
+      ["pageTransition", byKey("pageTransitionStyle").options!.map((o) => o.value)],
+      ["pageSwipe", byKey("bottomEdgePageSwipeSensitivity").options!.map((o) => o.value)],
+      ["cameraSwipe", byKey("cameraSwipeSensitivity").options!.map((o) => o.value)],
+    ] as const) {
+      for (const still of [false, true]) {
+        const drawn = values.map((v) => flatten(demoPicture(kind, v, still)));
+        expect(new Set(drawn).size, `${kind} still=${still}`).toBe(drawn.length);
+      }
+    }
+  });
+
+  it("fill the hold ring in the choice's own time", () => {
+    for (const [value, seconds] of Object.entries(HOLD_SECONDS)) {
+      const drawn = flatten(demoPicture("holdTime", value, false));
+      const fill = /attributeName=stroke-dashoffset[^>]*keyTimes=([\d.;]+)/.exec(drawn.replace(/\s+/g, " "));
+      expect(fill, value).not.toBeNull();
+      const [, press, done] = fill![1]!.split(";").map(Number);
+      expect((done! - press!) * DEMO_LOOP, value).toBeCloseTo(seconds, 3);
+    }
+    expect(Object.keys(HOLD_SECONDS).sort()).toEqual(byKey("longPressDuration").options!.map((o) => o.value).sort());
+  });
+
+  it("turn one page or camera per swipe length, so a higher level turns more on the same slide", () => {
+    const turns = (kind: "pageSwipe" | "cameraSwipe", value: string) => {
+      const drawn = flatten(demoPicture(kind, value, false)).replace(/\s+/g, " ");
+      const notches = drawn.match(/V28\.4/g)?.length ?? 0;
+      const flips = /calcMode=discrete keyTimes=([\d.;]+)/.exec(drawn)![1]!.split(";").length - 2;
+      expect(flips, `${kind} ${value}`).toBe(notches);
+      return notches;
+    };
+    expect(["Low", "Medium", "High", "Max"].map((v) => turns("pageSwipe", v))).toEqual([2, 3, 5, 8]);
+    expect(["Low", "Medium", "High"].map((v) => turns("cameraSwipe", v))).toEqual([2, 3, 5]);
+    expect(Object.keys(SWIPE_POINTS).sort()).toEqual(byKey("bottomEdgePageSwipeSensitivity").options!.map((o) => o.value).sort());
+  });
+
+  it("play on each tile of the quick menu gesture and the hold time, and beside the menus of the rest", () => {
+    const { tree, text } = dialog({ ...watchBehaviorDefaults(), motionGestureSensitivity: "Medium" });
+    for (const key of ["entityRadialVerticalQuickRadialGestureTrigger", "longPressDuration", "pageTransitionStyle", "bottomEdgePageSwipeSensitivity", "cameraSwipeSensitivity"]) {
+      const tiles = tilesOf(tree(), key).map(flatten);
+      expect(tiles.length, key).toBeGreaterThan(0);
+      for (const tile of tiles) expect(tile, key).toContain('<span class="ws-tile-glyph demo" aria-hidden="true"><svg class="ws-demo"');
+    }
+    const shown = text();
+    for (const [key, kind] of [
+      ["handGestureAction", "doublePinch"], ["topSectionDoubleTapAction", "doubleTap"], ["pullDownAction", "pullDown"],
+      ["motionGestureActionsJSON:Twist Clockwise", "twist"], ["motionGestureActionsJSON:Twist Counter-Clockwise", "twist"],
+      ["showPendingAnimation", "bounce"],
+    ]) {
+      const row = shown.slice(shown.indexOf(`data-key=${key}>`));
+      expect(shown.slice(0, shown.indexOf(`data-key=${key}>`)).endsWith('<div class="ws-row has-demo" '), key).toBe(true);
+      expect(row.slice(0, row.indexOf("</div>")), key).toContain(`data-demo=${kind}`);
+    }
+    // A plain choice keeps its icons.
+    expect(tilesOf(tree(), "sliderCrownSensitivity").map(flatten).join("")).not.toContain("ws-demo");
+    // Tiles: 3 quick menu gestures, 5 hold times, 4 page animations, 5 page
+    // swipes and 4 camera swipes. Rows: the pinch, the tap, the pull, the two
+    // twists and the bounce.
+    expect(shown.match(/<svg class="ws-demo"/g)).toHaveLength(3 + 5 + 4 + 5 + 4 + 3 + 2 + 1);
+  });
+});
+
+// ── the side panel ───────────────────────────────────────────────────────
+
+describe("the side panel", () => {
+  const navItem = (page: unknown, group: string) => {
+    const item = templates(page, `class="ws-nav-item`).find((t) => t.values.includes(group));
+    if (item === undefined) throw new Error(`no group ${group} in the side panel`);
+    return item;
+  };
+  const searchFor = (page: unknown, words: string) => {
+    const box = templates(page, `<label class="ws-search">`)[0]!;
+    bound(box, "@input")({ target: { value: words } });
+  };
+
+  it("lists the groups that have cards, and shows the first group's alone", () => {
+    const shown = flatten(dialog().page());
+    // No notification style record here: Notifications and Sounds are left out.
+    const listed = templates(dialog().page(), `class="ws-nav-item`).map((t) => t.values.find((v) => typeof v === "string" && SETTINGS_GROUPS.some((g) => g.id === v)));
+    expect(listed).toEqual(["connection", "gestures", "pages", "controls", "cameras", "pairing"]);
+    expect(shown).toContain('aria-current=page');
+    expect(shown).toContain('<p class="ws-blurb">How your watch reaches Home Assistant.</p>');
+    expect(shown).toContain("data-sec=ws-connection");
+    for (const id of ["gestures", "navigation", "camera"]) expect(shown).not.toContain(`data-sec=ws-${id}`);
+    expect(shown).not.toContain(`data-sec="ws-pair"`);
+  });
+
+  it("shows a group's cards when it is picked, both of them for Gestures", () => {
+    const { page } = dialog();
+    bound(navItem(page(), "gestures"), "@click")();
+    const shown = flatten(page());
+    expect(shown).toContain("data-sec=ws-gestures");
+    expect(shown).toContain("data-sec=ws-motion");
+    expect(shown).not.toContain("data-sec=ws-connection");
+    bound(navItem(page(), "pairing"), "@click")();
+    expect(flatten(page())).toContain(`data-sec="ws-pair"`);
+    expect(flatten(page())).toContain(`data-sec="ws-cert"`);
+  });
+
+  it("finds settings in every group, only the matching rows, under each group's name", () => {
+    const { page } = dialog();
+    searchFor(page(), "dots");
+    const shown = flatten(page());
+    expect(shown).toContain("data-key=showPageIndicator");
+    expect(shown).toContain("data-key=cameraShowLoadingDots");
+    expect(shown).not.toContain("data-key=wrapPages");
+    expect(shown).not.toContain("data-key=serverMode");
+    expect(shown).toMatch(/class="ws-found"[^>]*>Pages<\/button>/);
+    expect(shown).toMatch(/class="ws-found"[^>]*>Cameras<\/button>/);
+    // While it searches, no group is the current one, and the panel keeps
+    // every group, not only the ones with a match.
+    expect(shown).not.toContain("aria-current=page");
+    expect(templates(page(), `class="ws-nav-item`)).toHaveLength(6);
+    // A group's name opens it, and the search ends.
+    const name = templates(page(), `<button type="button" class="ws-found"`).find((t) => flatten(t).includes(">Cameras<"))!;
+    bound(name, "@click")();
+    const after = flatten(page());
+    expect(after).toContain("data-key=cameraStreamMode");
+    expect(after).not.toContain("data-key=showPageIndicator");
+  });
+
+  it("finds a setting by one of its choices, and says so when nothing matches", () => {
+    const { page } = dialog();
+    searchFor(page(), "jump to a room");
+    const shown = flatten(page());
+    expect(shown).toContain("data-key=handGestureAction");
+    expect(shown).toContain("data-key=pullDownAction");
+    expect(shown).not.toContain("data-key=longPressDuration");
+    searchFor(page(), "zzzz");
+    expect(flatten(page())).toContain("No setting matches “zzzz”.");
+  });
+
+  it("counts each group's unsaved changes", () => {
+    const { ws, page } = dialog();
+    expect(flatten(page())).not.toContain('class="ws-nav-n"');
+    (ws as unknown as { edit(s: CatalogSetting, v: unknown): void }).edit(byKey("longPressDuration"), "Long");
+    (ws as unknown as { edit(s: CatalogSetting, v: unknown): void }).edit(byKey("wrapPages"), true);
+    const gestures = flatten(navItem(page(), "gestures"));
+    expect(gestures).toContain('<span class="ws-nav-n" title=1 unsaved change>1</span>');
+    expect(flatten(navItem(page(), "pages"))).toContain(">1</span>");
+    expect(flatten(navItem(page(), "connection"))).not.toContain("ws-nav-n");
   });
 });
 
@@ -382,9 +569,18 @@ describe("the tiles' look", () => {
     const tile = tileRules.find((r) => r.selector === "button.ws-tile")!.body;
     expect(tile).toContain("--ws-tile-bg: var(--wa-field)");
     const on = tileRules.find((r) => r.selector === "button.ws-tile.on")!.body;
-    expect(on).toContain("--ws-tile-bg: color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 16%, var(--wa-seg-on))");
+    expect(on).toContain("--ws-tile-bg: var(--wa-seg-on)");
     expect(on).toContain("color: var(--wa-ink)");
-    expect(on).toContain("box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 45%, var(--wa-seg-on))");
+    expect(on).toContain("box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 35%, var(--wa-seg-on))");
+  });
+
+  it("keeps the card's hue off the controls: the tiles, the row icons and the open group are grey", () => {
+    for (const r of tileRules) expect(r.body, r.selector).not.toContain("--ws-hue");
+    const icon = tileRules.find((r) => r.selector === ".ws-body .ws-ic")!.body;
+    expect(icon).toContain("color: var(--wa-muted)");
+    expect(icon).not.toContain("background");
+    const open = rules.find((r) => r.selector === "button.ws-nav-item.on")!.body;
+    expect(open).not.toContain("--ws-hue");
   });
 });
 

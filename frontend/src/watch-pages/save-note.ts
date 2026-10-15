@@ -60,7 +60,7 @@ export function watchPagesSaveNote(result: WatchPagesSaveResult): WatchPagesNote
     case "no_record":
       return {
         kind: "warn",
-        text: "Not saved. Home Assistant no longer holds pages for this watch. Start with an empty page again.",
+        text: "Not saved. Home Assistant no longer holds pages for this watch.",
       };
     case "invalid": {
       const problems = result.problems ?? [];

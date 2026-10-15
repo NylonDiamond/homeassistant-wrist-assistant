@@ -850,11 +850,11 @@ export function watchIconSizeWords(max: number): string {
 
 /** The line under the icon size field. A largest size with a fraction is
  * what the next whole number up stores, as the phone's slider does at its
- * end. */
+ * end. The line gives only the whole range: the refusal names the fraction
+ * when someone goes past it. */
 export function watchIconSizeHint(max: number): string {
   const top = watchTileIconSizeTop(max);
-  if (Number.isInteger(max)) return `Empty is Auto. At this tile's size, 8 to ${top}.`;
-  return `Empty is Auto. At this tile's size, 8 to ${top}; ${top} stores the largest, ${watchIconSizeWords(max)}.`;
+  return `Leave empty for Auto, or pick 8 to ${top} pt. ${top} is the biggest this tile allows.`;
 }
 
 export function watchFontSizeRefusal(value: number): string | undefined {
