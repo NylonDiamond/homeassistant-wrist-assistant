@@ -738,6 +738,17 @@ function shapeGroupOrder(kind: DeviceKind): readonly string[] {
   return [...shapes, "control", "app", "none"];
 }
 
+/** Where a shape box's shape is used, said after its name on the All tab,
+ * which mixes watch and iPhone designs: a corner is the watch's alone, the
+ * Home Screen sizes the iPhone's, and the rest are watch complications and
+ * iPhone Lock Screen widgets both. Undefined for a box with no shape. */
+export function shapeDevicesTag(key: string): { text: string; icons: readonly ("watch" | "phone")[] } | undefined {
+  if (key === "corner") return { text: "Watch", icons: ["watch"] };
+  if (key === "small" || key === "medium" || key === "large" || key === "xlarge") return { text: "iPhone Home Screen", icons: ["phone"] };
+  if (key === "rectangular" || key === "circular" || key === "inline") return { text: "Watch and iPhone Lock Screen", icons: ["watch", "phone"] };
+  return undefined;
+}
+
 function shapeGroupRank(order: readonly string[], key: string): number {
   const i = order.indexOf(key);
   return i < 0 ? order.length : i;
@@ -2970,6 +2981,12 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-box-name::before { content: ""; width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--wa-muted); }
     .pk-box-count { font-size: 10.5px; font-weight: 600; color: var(--wa-muted); opacity: .65; }
+    .pk-box-where {
+      display: inline-flex; align-items: center; gap: 5px; margin-left: 4px; padding: 1px 7px 1px 5px; border-radius: 999px;
+      font-size: 10.5px; font-weight: 500; color: var(--wa-muted); border: 1px solid var(--wa-line); white-space: nowrap;
+    }
+    .pk-box-where-ic { display: inline-flex; gap: 2px; }
+    .pk-box-where-ic svg { width: 11px; height: 11px; }
     .pk-box-pick { flex: none; margin: 0; accent-color: var(--wa-accent); }
     /* A grey chip with the device's glyph, outlined and tinted in its
        device's color (\`--dc\`); Unassigned has none and stays grey. */
@@ -12819,6 +12836,14 @@ export class WristAssistantPanel extends LitElement {
     return this.renderPickerGroups(sortPickerRows(rows, devices), ALL_DEVICES, unsaved);
   }
 
+  /** After a shape box's name on the All tab: which devices use that shape. */
+  private renderShapeDevicesTag(key: string) {
+    const tag = shapeDevicesTag(key);
+    if (tag === undefined) return nothing;
+    return html`<span class="pk-box-where" title=${`This shape is for: ${tag.text}`}>
+      <span class="pk-box-where-ic" aria-hidden="true">${tag.icons.map((i) => uiIcon(i))}</span>${tag.text}</span>`;
+  }
+
   /** The devices a design is on, a chip each in the device's color, under
    * its card on the All tab. A copy hidden from its device's list is dim. */
   private renderPickerCardDevices(row: PickerRow) {
@@ -12937,6 +12962,7 @@ export class WristAssistantPanel extends LitElement {
           ${this.renderShapePick(group.rows, at)}
           <span class="pk-box-name">${group.label}</span>
           <span class="pk-box-count">(${group.rows.length + (group.unsaved ? 1 : 0)})</span>
+          ${at === ALL_DEVICES ? this.renderShapeDevicesTag(group.key) : nothing}
         </div>
         <div class="pk-grid" data-shape=${group.key}>
           ${group.rows.map((row) => this.renderPickerCard(row, at))}
