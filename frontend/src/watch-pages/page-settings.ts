@@ -413,7 +413,7 @@ function renderBackground(sh: TileSettingsHost): TemplateResult {
     ${segment === "color" ? html`
       <div class="ts-after">
         <button type="button" class="pe-chip ${sameWatchColor(s.backgroundColor, "#000000") ? "on" : ""}"
-          title="Pure black, best for the watch's battery" @click=${() => commit(sh, "bgColor", (d) => setWatchPageBackgroundColor(d, sh.pageId, "#000000"))}>OLED black</button>
+          title=${`Pure black, best for the ${sh.device === "iphone" ? "iPhone" : "watch"}'s battery`} @click=${() => commit(sh, "bgColor", (d) => setWatchPageBackgroundColor(d, sh.pageId, "#000000"))}>OLED black</button>
       </div>
       ${pagePalette(sh, "bgColor", {
         label: "Background color",
@@ -553,7 +553,7 @@ function renderImage(sh: TileSettingsHost): TemplateResult {
       </div>` : nothing}
     ${photos?.error !== undefined ? html`<p class="hint warn">${photos.error}</p>` : nothing}
     ${s.imageId === undefined ? (list !== undefined ? html`<div class="hint ts-under">No photo yet: pick one.</div>` : nothing) : html`
-      ${missing ? html`<p class="hint warn">Photo missing. Home Assistant does not have it, so the watch shows none. Pick another or remove it.</p>` : nothing}
+      ${missing ? html`<p class="hint warn">Photo missing. Home Assistant does not have it, so the ${sh.device === "iphone" ? "iPhone" : "watch"} shows none. Pick another or remove it.</p>` : nothing}
       ${pageSlider(sh, "imageOpacity", "Opacity", "backgroundImageOpacity", s.imageOpacity, setWatchPageImageOpacity, 1, true)}
       ${pageSlider(sh, "imageBlur", "Blur", "backgroundImageBlur", s.imageBlur, setWatchPageImageBlur, 0, blurText)}
       ${segField("Fit", s.imageFit, fits, (v) => commit(sh, "imageFit", (d) => setWatchPageImageFit(d, sh.pageId, v)))}
@@ -598,7 +598,7 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
         modeKey: "pageTitleTextColor",
       })}
       ${s.titleColor === undefined ? html`<div class="hint ts-under">None set: the theme's title color.</div>` : nothing}
-      ${s.fullScreen ? html`<div class="hint warn">Full screen is on: the watch hides the title.</div>` : nothing}`}
+      ${s.fullScreen ? html`<div class="hint warn">Full screen is on: the ${sh.device === "iphone" ? "iPhone" : "watch"} hides the title.</div>` : nothing}`}
     ${checkField("Full screen", s.fullScreen, (on) => commit(sh, "fullScreen", (d) => setWatchPageFullScreen(d, sh.pageId, on)), false)}
     <div class="hint ts-under">The tiles run up behind the clock, with no title.</div>`;
 }

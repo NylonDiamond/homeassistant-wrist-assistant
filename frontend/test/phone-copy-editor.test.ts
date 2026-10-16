@@ -344,7 +344,7 @@ describe("linked pages in the editor", () => {
     expect(el.places).toBeUndefined();
     const text = body();
     expect(text).not.toContain("Also on");
-    expect(text).not.toContain("Not on this iPhone");
+    expect(text).not.toContain("on other devices.");
   });
 
   it("badge a linked row with the other device", async () => {
@@ -353,18 +353,12 @@ describe("linked pages in the editor", () => {
     expect(body()).toMatch(/pe-linked[^>]*>Also on Jesse's Watch</);
   });
 
-  it("list the watch's other pages under Not on this iPhone, and + adds one here, linked", async () => {
-    const { el, watch, phone, ha, call, body } = await linked();
+  it("count the watch's other pages in one line under the list, with a link to the Pages tab", async () => {
+    const { body } = await linked();
     const text = body();
-    expect(text).toContain("Not on this iPhone");
-    expect(text).toMatch(/Not on this iPhone[\s\S]*Yard[\s\S]*Den/);
-    expect(text).not.toMatch(/pe-else-name[^>]*>Hall</);
-    await call<Promise<void>>("addHere", { ownerId: watch, pageId: DEN, name: "Den", page: {} });
-    expect(ha.linksSent()).toEqual([{ source: watch, pages: [DEN], targets: [phone] }]);
-    const pages = ha.held.get(`${phone}/pages`)!.document as WatchPagesDocument;
-    expect((pages.pages as JsonObject[]).map((p) => p.name)).toEqual(["Hall", "Mine", "Den"]);
-    expect((el.note as { text: string }).text).toBe("Added Den from Jesse's Watch. It stays linked: an edit on one device shows on both.");
-    expect(el.selectedPageId).toBe(DEN);
+    expect(text).not.toContain("Not on this iPhone");
+    expect(text).toMatch(/pe-else-line[^>]*>2 pages on other devices\.</);
+    expect(text).toContain(">See all pages</a>");
   });
 
   it("show a Devices menu with a switch per device, this one fixed on", async () => {
@@ -466,6 +460,20 @@ describe("the stage on an iPhone", () => {
     expect(text).toContain("iPhone showing Mine");
     // The tool strip's zoom is the phone's own: half the watch's 150%.
     expect(text).toContain(">75%<");
+  });
+});
+
+describe("the page's cards on an iPhone", () => {
+  it("name the iPhone, not the watch", () => {
+    const mine: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: U(90), name: "Mine", items: [tile(1, "light.a")] }] };
+    const { el, call } = phoneEditor(mine);
+    el.selectedPageId = U(90);
+    const page = (mine.pages as JsonObject[])[0]!;
+    const text = flat(call("renderPageCards", page, undefined));
+    expect(text).toContain("On the iPhone");
+    expect(text).toContain("Click a tile on the iPhone to edit it.");
+    expect(text).not.toContain("On the watch");
+    expect(text).not.toContain("tile on the watch");
   });
 });
 

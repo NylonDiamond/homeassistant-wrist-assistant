@@ -13,7 +13,9 @@
 // the one write the panel makes on another device (taking a page off it).
 // Plan: app repo docs/linked_pages_plan_2026-10.md, step 3.
 
-import type { WatchConfigRecord, WatchPagesLinkReply, WatchPagesPlaces } from "../ha-api.js";
+import type { OwnerSummary, WatchConfigRecord, WatchPagesLinkReply, WatchPagesPlaces } from "../ha-api.js";
+import { deviceKindOf } from "../version.js";
+import { watchAppDevices, watchName } from "../watch-settings.js";
 import { deleteWatchPage, findWatchPage, listedWatchPages } from "./edit.js";
 import { type WatchPage, type WatchPagesDocument, asWatchPagesDocument, isSystemWatchPage, watchPageId, watchPageName, watchPagesOf } from "./model.js";
 import { watchCommandError } from "./save-note.js";
@@ -27,6 +29,14 @@ export interface LinkDevice {
   /** The name the editor shows for it, "Jesse's iPhone". */
   name: string;
   kind: "watch" | "iphone";
+}
+
+/** Every device a page can be on: the Watch app's devices (the watches
+ * and, on a home that keeps phone pages, the iPhones), named as the editor
+ * names them. */
+export function linkDevicesOf(owners: readonly OwnerSummary[], phones: boolean): LinkDevice[] {
+  const devices = watchAppDevices(owners, phones);
+  return devices.map((o) => ({ ownerId: o.owner_watch_id, name: watchName(o, devices), kind: deviceKindOf(o) === "iphone" ? "iphone" : "watch" }));
 }
 
 /** "iPhone" or "watch", as the lines name the device on screen. */
@@ -119,7 +129,8 @@ export interface ElsewhereGroup {
 }
 
 /**
- * The "Not on this iPhone" list: every page the other devices hold that this
+ * The pages the page editor's other devices line counts (it used to list
+ * them, as "Not on this iPhone"): every page the other devices hold that this
  * one does not, grouped by the device it comes from, in device order. A
  * linked page is listed once, under the first device that holds it. A page
  * whose id this device holds already is not listed: adding it here could
@@ -159,6 +170,14 @@ export function elsewherePages(
 /** The heading over that list. */
 export function elsewhereTitle(kind: LinkDevice["kind"]): string {
   return `Not on this ${deviceWord(kind)}`;
+}
+
+/** The page editor's one line under its page list in place of that list:
+ * "3 pages on other devices.", or undefined when there are none. */
+export function elsewhereLine(groups: readonly ElsewhereGroup[]): string | undefined {
+  const n = groups.reduce((sum, g) => sum + g.pages.length, 0);
+  if (n === 0) return undefined;
+  return `${n} ${n === 1 ? "page" : "pages"} on other devices.`;
 }
 
 /** The delete question's two answers for a page on several devices, or

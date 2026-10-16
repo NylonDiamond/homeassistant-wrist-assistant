@@ -1,0 +1,50 @@
+import{b as X}from"./chunk-SPTKBBHW.js";import{A as E,B as O,E as U,M as q,f as z,l as F,m as K,u as V,x as Y}from"./chunk-J23RLD45.js";import{d as v,e as H,f as D,h as G}from"./chunk-4I5F75IY.js";import{j}from"./chunk-DK2DZHWA.js";import{j as u,k as C,l as N,n as b,o as $,q as J}from"./chunk-YDWRUXOV.js";import{$h as A,Eg as x,Gg as P,b as M,ci as _,d as f,g,jg as T,kh as I,qg as L,rh as S}from"./chunk-D2VEH7YA.js";import{b as h}from"./chunk-5XITPOUG.js";var ae="navigateToPage",se="pageId";function Q(e){let t=[{ref:Y,where:"Anywhere menu"}],n=new Set;for(let i of V())n.has(i.slotKey)||(n.add(i.slotKey),t.push({ref:{list:"domain",domain:i.domain},where:`Entity quick menu, ${i.label}`}));let o=z(e,"entityRadial").entityOverrides;if(u(o))for(let i of Object.keys(o))t.push({ref:{list:"entity",entityId:i},where:`Entity quick menu for ${i}`});return t}function Z(e,t){if(F(e)!==ae)return!1;let n=K(e)[se];return t.some(o=>v(n,o))}function ee(e,t){if(e===void 0)return[];let n=[];for(let{ref:o,where:i}of Q(e))for(let r of E(e,o)){if(!Z(r,[t]))continue;let c=typeof r.position=="string"?U(r.position):"";n.push({ref:o,slotId:O(r),where:i,position:c})}return n}function ne(e,t){let n=e;for(let{ref:o}of Q(e))for(let i of E(n,o))Z(i,t)&&(n=q(n,o,O(i)));return n}function w(e,t){return t.some(n=>v(e.openPageId,n))}function ce(e){return(Array.isArray(e.elements)?e.elements:[]).filter(n=>u(n)&&n.kind==="tap"&&u(n.payload)).map(n=>n.payload)}function ke(e,t){let n=[];for(let o of e){let i=o.document;if(o.deleted||!u(i))continue;let r=w(i,[t]),c=ce(i).filter(s=>w(s,[t])).length;if(!r&&c===0)continue;let a=typeof i.name=="string"&&i.name.trim()!==""?i.name:"A complication";n.push({id:o.id,name:a,whole:r,layers:c})}return n}function B(e,t){let{openPageId:n,openPageName:o,...i}=e,r=i[t];return u(r)&&r.type==="openPage"&&(i[t]={type:"none"}),i}function te(e,t){let n=!1,o=e;if(w(e,t)&&(o=B(e,"tapAction"),n=!0),Array.isArray(e.elements)){let i=e.elements.map(r=>!u(r)||r.kind!=="tap"||!u(r.payload)||!w(r.payload,t)?r:(n=!0,{...r,payload:B(r.payload,"action")}));n&&(o={...o,elements:i})}return n?o:void 0}function ye(e,t){return e.map(n=>n.id).filter(n=>typeof n=="string"&&n!=="").filter(n=>!t.some(o=>v(o.id,n)))}var de="linkId";function Oe(e,t){let n=A(e,t);return n.map(o=>({ownerId:o.owner_watch_id,name:_(o,n),kind:S(o)==="iphone"?"iphone":"watch"}))}function R(e){return e==="iphone"?"iPhone":"watch"}var k=e=>e.toUpperCase();function W(e){let t=e?.[de];return typeof t=="string"&&t!==""?t:void 0}function ue(e,t,n){let o=W(e),i=o===void 0?[]:n?.pages[o]??[];return[t,...i.filter(r=>r!==t)]}var pe="Delete takes it off this device.",oe="A system page stays on its own device.";function We(e,t,n,o){let i=new Set(ue(t,n,o)),r=J(t);return e.map(c=>{let a=c.ownerId===n,s=r?oe:a?pe:void 0;return{device:c,on:i.has(c.ownerId),here:a,...s===void 0?{}:{stuck:s}}})}function Re(e,t,n){let o=e.filter(i=>i!==t);if(o.length!==0){if(o.length===1){let i=n.find(r=>r.ownerId===o[0])?.name;return i===void 0?"On 2 devices":`Also on ${i}`}return`On ${e.length} devices`}}function Me(e,t,n,o){let i=t===void 0?[]:N(t),r=new Set(i.map(s=>k(b(s)))),c=new Set(i.flatMap(s=>W(s)??[])),a=[];for(let s of n){if(s.ownerId===e)continue;let d=o.get(s.ownerId);if(d===void 0)continue;let p=[];for(let m of H(d)){let y=b(m);if(y===""||r.has(k(y)))continue;let l=W(m);if(l!==void 0){if(c.has(l))continue;c.add(l)}p.push({ownerId:s.ownerId,pageId:y,name:$(m),page:m,...l===void 0?{}:{linkId:l}})}p.length>0&&a.push({device:s,pages:p})}return a}function Te(e){let t=e.reduce((n,o)=>n+o.pages.length,0);if(t!==0)return`${t} ${t===1?"page":"pages"} on other devices.`}function Le(e,t){if(!(e.length<2))return{here:`Delete on this ${R(t)}`,all:`Delete on all ${e.length} devices`,count:e.length}}function fe(e){return e.length<=1?e[0]??"":`${e.slice(0,-1).join(", ")} and ${e[e.length-1]}`}function Ie(e,t,n,o){let i=e.targets?.[t];if(i===void 0)return;let r=new Set(n.map(k)),c=(i.pages??[]).filter(d=>!r.has(k(d))).map(d=>{let p=o===void 0?void 0:D(o,d);return p===void 0?"a page":$(p)}),a=(i.status_pages??[]).length,s=[...c];return a>0&&s.push(a===1?"1 status page":`${a} status pages`),s.length===0?void 0:`Also added: ${fe(s)}.`}function Se(e){let{code:t,message:n}=h(e);switch(t){case"unknown_device":return"That device is not paired with this Home Assistant any more.";case"not_found":return"That page is not saved there yet. Save first, then try again.";case"system_page":return oe;case"id_taken":return"That device already has a page of its own with the same id, so it was not added.";case"unknown_command":return"This version of the integration cannot share pages between devices. Update it first.";default:return n}}var le=3;async function ie(e,t,n){for(let o=1;;o++){let i;try{i=await e.read(t)}catch(c){let{code:a="unknown",message:s}=h(c);return{ok:!1,code:a,message:s}}let r=i.revision>0?C(i.document):void 0;if(r===void 0||D(r,n)===void 0)return{ok:!0,removed:!1};try{return await e.save(t,i.revision,G(r,n)),{ok:!0,removed:!0}}catch(c){let{code:a="unknown",message:s}=h(c);if(a!=="conflict"||o>=le)return{ok:!1,code:a,message:s}}}}function re(e,t,n){return`${e} ${e===1?t:n}`}async function ge(e,t,n){let o=0,i=0,r=[];try{let a=await x(e,t,"menus");if(a.revision>0&&u(a.document)){let s=ne(a.document,n);s!==a.document&&(o=n.reduce((d,p)=>d+ee(a.document,p).length,0),await P(e,t,"menus",a.revision,s))}}catch{r.push("the menus"),o=0}try{let a=await T(e,t);for(let s of a.records){if(s.deleted||!u(s.document))continue;let d=te(s.document,n);if(d!==void 0)try{await L(e,t,d,s.revision),i++}catch{r.push(`"${typeof s.document.name=="string"?s.document.name:"a complication"}"`)}}}catch{r.push("the complications")}let c=[o>0?re(o,"menu slot","menu slots"):void 0,i>0?`the tap of ${re(i,"complication","complications")}`:void 0].filter(a=>a!==void 0);if(r.length>0)return{kind:"warn",text:`Saved. Could not clear the deleted page from ${r.join(", ")}: change ${r.length===1?"it":"them"} by hand.`};if(c.length!==0)return{kind:"ok",text:`Saved. Cleared the deleted page from ${c.join(" and ")}.`}}async function He(e,t,n,o){if(!e)return`Not taken off ${o}.`;if(X(t)?.dirty??!1)return`Not taken off ${o}: its pages have unsaved edits. Save or discard them first.`;let i=await ie({read:r=>x(e,r,"pages"),save:(r,c,a)=>P(e,r,"pages",c,a)},t,n);if(!i.ok)return`Not taken off ${o}: ${i.message}`;i.removed&&await ge(e,t,[n])}var me="On means the page is on that device. An edit on one device shows on all of them. Each device keeps its own order and Hidden.";function Ye(e){let{name:t,places:n,blocked:o,busy:i,note:r}=e;return f`<div class="pk-dup-menu pe-dev-menu ${e.className??""}" role="group" aria-label=${`Devices for ${t}`}>
+    <div class="pk-dup-head">This page is on</div>
+    ${o===void 0?g:f`<div class="pe-dev-note warn">${o}</div>`}
+    ${n.map(c=>{let a=c.device.name,s=c.stuck!==void 0||o!==void 0||i,d=c.stuck??o??(c.on?`Take it off ${a}. Its own order and Hidden go with it.`:`Put it on ${a}. An edit on one device then shows on both.`);return f`<div class="pk-dup-row check ${s?"off":""}">
+        <label class="pk-dup-pick" title=${d}>
+          <input type="checkbox" role="switch" .checked=${j(c.on)} ?disabled=${s}
+            aria-label=${`${t} on ${a}`}
+            @change=${p=>{p.currentTarget.checked=c.on,e.onToggle(c)}}>
+          ${I(c.device.kind==="iphone"?"phone":"watch")}
+          <span class="pk-dup-name">${a}</span>
+          ${c.here?f`<span class="pk-dup-full">this ${R(c.device.kind)}</span>`:g}
+        </label>
+      </div>`})}
+    ${i?f`<div class="pe-dev-note">Saving…</div>`:g}
+    ${r===void 0?g:f`<div class="pe-dev-note ${r.kind}" role="status">${r.text}</div>`}
+    <div class="pk-dup-note">${me}</div>
+    <button type="button" class="pk-dup-done" @click=${()=>e.onDone()}>Done</button>
+  </div>`}var Ue=M`
+  .pk-dup-menu {
+    display: flex; flex-direction: column; gap: 4px; padding: 8px; cursor: default;
+    border: 1px solid var(--wa-line-strong); border-radius: 10px;
+    background: var(--wa-card); box-shadow: var(--wa-shadow-pop); text-align: left;
+  }
+  .pk-dup-row {
+    display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; cursor: pointer;
+    font: inherit; font-size: 12px; color: var(--wa-ink);
+    padding: 5px 7px; border: 1px solid var(--wa-line); border-radius: 7px; background: var(--wa-card);
+  }
+  .pk-dup-row svg { flex: none; width: 14px; height: 14px; }
+  .pk-dup-row.check { padding: 0; gap: 0; cursor: default; }
+  .pk-dup-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 5px 7px; cursor: pointer; }
+  .pk-dup-pick svg { flex: none; width: 14px; height: 14px; }
+  .pk-dup-row.check input { margin: 0; cursor: inherit; }
+  .pk-dup-row.check.off .pk-dup-pick { opacity: .5; cursor: default; }
+  .pk-dup-row.check:hover:not(.off) { border-color: var(--wa-line-strong); }
+  .pk-dup-head { font-size: 11.5px; font-weight: 700; color: var(--wa-muted); margin: 2px 0; }
+  .pk-dup-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pk-dup-full { flex: none; font-size: 10px; color: var(--wa-muted); }
+  .pk-dup-note { font-size: 10px; line-height: 1.4; color: var(--wa-muted); border-top: 1px solid var(--wa-line); padding-top: 6px; }
+  .pk-dup-done {
+    align-self: flex-end; margin-top: 2px; font: inherit; font-size: 11px; font-weight: 600;
+    padding: 4px 12px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent);
+  }
+  .pk-dup-done:hover { filter: brightness(1.1); }
+  .pk-dup-done:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .pe-dev-note { font-size: 11px; line-height: 1.4; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .pe-dev-note.ok { color: var(--wa-ok, var(--wa-ink)); }
+  .pe-dev-note.warn, .pe-dev-note.err { color: var(--wa-need); }
+`;export{ee as a,ke as b,ye as c,Oe as d,R as e,W as f,ue as g,oe as h,We as i,Re as j,Me as k,Te as l,Le as m,fe as n,Ie as o,Se as p,ge as q,He as r,Ye as s,Ue as t};

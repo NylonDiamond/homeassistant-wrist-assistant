@@ -60,17 +60,17 @@ import {
   linkWatchPages,
   renderTemplates,
   restoreWatchConfig,
-  saveRecord,
   saveWatchConfig,
   subscribeWatchConfig,
 } from "../ha-api.js";
 import {
-  clearPageFromComplication,
-  clearPageFromMenus,
   complicationsOpeningPage,
   deletedPageIds,
   menuSlotsOpeningPage,
 } from "./page-refs.js";
+import { clearPageRefs as clearPageRefsOn, takePageOff as takePageOffDevice } from "./page-links-io.js";
+import { devicesMenuStyles, renderPageDevicesMenu } from "./devices-menu.js";
+import { allPagesHref, goToAllPages, isPlainClick } from "../shell.js";
 import {
   MUSIC_ASSISTANT_DOMAIN,
   WATCH_TEMPLATE_DEBOUNCE_MS,
@@ -128,24 +128,20 @@ import {
 } from "../watch-settings.js";
 import { isPhoneId } from "../phone-pages.js";
 import { addWatchPagesToPhone, phoneAddNote, watchPagesToAdd } from "../phone-copy.js";
-import { deviceKindOf } from "../version.js";
 import {
-  type ElsewhereGroup,
-  type ElsewherePage,
   type LinkDevice,
-  type PageDevicePlace,
   deleteChoices,
   deviceWord,
+  elsewhereLine,
   elsewherePages,
-  elsewhereTitle,
   joinWords,
   linkAlsoAddedText,
   linkBadgeText,
+  linkDevicesOf,
   linkErrorText,
   pageDevicePlaces,
   pageHolders,
   pageLinkId,
-  removePageFrom,
 } from "./links.js";
 import { type RoomsKind, roomsKindFor } from "../watch-rooms/model.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
@@ -843,9 +839,9 @@ export class WaPageEditor extends LitElement {
   private addSeq = 0;
   /** Where every linked page is (`watch_pages/places`), undefined before
    * the first answer and on an integration without linked pages, which
-   * turns the Devices menu, the badges and the Not on this list off. */
+   * turns the Devices menu, the badges and the other devices line off. */
   @state() private places?: WatchPagesPlaces;
-  /** The other devices' pages, as last read, for the Not on this list. */
+  /** The other devices' pages, as last read, for the other devices line. */
   @state() private elsewhere: ReadonlyMap<string, WatchPagesDocument> = new Map();
   private linksSeq = 0;
   /** The open Devices menu. */
@@ -2007,6 +2003,7 @@ export class WaPageEditor extends LitElement {
       hass,
       icons: this.memoIcons(),
       symbols: this.symbols,
+      device: this.linkKind,
       pageId,
       uiState: this.uiState,
       // A refused edit (`busy`) changes nothing, as a drag during a save
@@ -2147,54 +2144,12 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * After a save that deleted pages: take every menu slot that went to one
-   * of them out of the menus record, and make every complication tap that
-   * opened one do nothing, each in its own save on the revision just read.
-   * A note says what was cleared, or what could not be (the page is gone
-   * either way; a slot left behind only fails on the watch, as before).
+   * After a save that deleted pages: clear the menu slots and complication
+   * taps that opened them (`clearPageRefs`), with a note on what was
+   * cleared or could not be.
    */
-  private async clearPageRefs(hass: HassLike, watchId: string, pageIds: string[]): Promise<Note | undefined> {
-    let slots = 0;
-    let taps = 0;
-    const failed: string[] = [];
-    try {
-      const record = await fetchWatchConfig(hass, watchId, "menus");
-      if (record.revision > 0 && isJsonObject(record.document)) {
-        const next = clearPageFromMenus(record.document, pageIds);
-        if (next !== record.document) {
-          slots = pageIds.reduce((n, id) => n + menuSlotsOpeningPage(record.document as Record<string, unknown>, id).length, 0);
-          await saveWatchConfig(hass, watchId, "menus", record.revision, next);
-        }
-      }
-    } catch {
-      failed.push("the menus");
-      slots = 0;
-    }
-    try {
-      const list = await fetchList(hass, watchId);
-      for (const record of list.records) {
-        if (record.deleted || !isJsonObject(record.document)) continue;
-        const next = clearPageFromComplication(record.document, pageIds);
-        if (next === undefined) continue;
-        try {
-          await saveRecord(hass, watchId, next, record.revision);
-          taps++;
-        } catch {
-          failed.push(`"${typeof record.document.name === "string" ? record.document.name : "a complication"}"`);
-        }
-      }
-    } catch {
-      failed.push("the complications");
-    }
-    const done = [
-      slots > 0 ? plural(slots, "menu slot", "menu slots") : undefined,
-      taps > 0 ? `the tap of ${plural(taps, "complication", "complications")}` : undefined,
-    ].filter((w): w is string => w !== undefined);
-    if (failed.length > 0) {
-      return { kind: "warn", text: `Saved. Could not clear the deleted page from ${failed.join(", ")}: change ${failed.length === 1 ? "it" : "them"} by hand.` };
-    }
-    if (done.length === 0) return undefined;
-    return { kind: "ok", text: `Saved. Cleared the deleted page from ${done.join(" and ")}.` };
+  private clearPageRefs(hass: HassLike, watchId: string, pageIds: string[]): Promise<Note | undefined> {
+    return clearPageRefsOn(hass, watchId, pageIds);
   }
 
   // ── pages ──────────────────────────────────────────────────────────────
@@ -3168,7 +3123,7 @@ export class WaPageEditor extends LitElement {
       const reply = await restoreWatchConfig(hass, watchId, "pages", ask.entry.revision, ask.baseRevision);
       note = {
         kind: "ok",
-        text: `${restoredText(ask.entry.updated_at)} The watch picks it up the next time it checks.`,
+        text: `${restoredText(ask.entry.updated_at)} The ${deviceWord(this.linkKind)} picks it up the next time it checks.`,
       };
       if (watchId === this.watchId) {
         this.restartDraft = { watchId, revision: reply.revision };
@@ -3182,7 +3137,7 @@ export class WaPageEditor extends LitElement {
       if (code === "conflict") {
         note = { kind: "warn", text: "Not restored. The pages changed somewhere else, so the newest copy is shown." };
       } else if (code === "no_record") {
-        note = { kind: "warn", text: "Not restored. Home Assistant no longer holds pages for this watch." };
+        note = { kind: "warn", text: `Not restored. Home Assistant no longer holds pages for this ${deviceWord(this.linkKind)}.` };
       } else if (code === "not_found") {
         note = { kind: "warn", text: "Not restored. That save is no longer kept." };
       } else if (code === "unknown_command") {
@@ -3251,8 +3206,7 @@ export class WaPageEditor extends LitElement {
   /** Every device a page can be on (`links.ts`): the Watch app's devices,
    * the watches and, on a home that keeps phone pages, the iPhones. */
   private get linkDevices(): LinkDevice[] {
-    const devices = this.watches;
-    return devices.map((o) => ({ ownerId: o.owner_watch_id, name: watchName(o, devices), kind: deviceKindOf(o) === "iphone" ? "iphone" : "watch" }));
+    return linkDevicesOf(this.ownerList, this.phones);
   }
 
   private deviceName(ownerId: string): string {
@@ -3261,7 +3215,7 @@ export class WaPageEditor extends LitElement {
 
   /**
    * Read where the linked pages are (`watch_pages/places`), then the other
-   * devices' pages for the Not on this list. Only the newest read lands. An
+   * devices' pages for the other devices line. Only the newest read lands. An
    * integration without linked pages answers `unknown_command`, which
    * leaves the Devices menu, the badges and the list off; any other failure
    * keeps what was known.
@@ -3358,58 +3312,10 @@ export class WaPageEditor extends LitElement {
     void this.loadLinks(watchId);
   }
 
-  /**
-   * Take one page off another device at once (`removePageFrom`): its pages
-   * saved without it, over the revision read. The tiles there that open it
-   * stay, since a linked page's tiles are shared. Then that device's menu
-   * slots and complication taps that opened it are cleared, as after a
-   * delete here. A device whose page editor holds unsaved edits in this tab
-   * is left alone. Undefined when done, else what to say.
-   */
-  private async takePageOff(owner: string, pageId: string): Promise<string | undefined> {
-    const hass = this.hass;
-    const name = this.deviceName(owner);
-    if (!hass) return `Not taken off ${name}.`;
-    if (keptWatchPagesDraft(owner)?.dirty ?? false) {
-      return `Not taken off ${name}: its pages have unsaved edits. Save or discard them first.`;
-    }
-    const result = await removePageFrom({
-      read: (o) => fetchWatchConfig(hass, o, "pages"),
-      save: (o, base, document) => saveWatchConfig(hass, o, "pages", base, document),
-    }, owner, pageId);
-    if (!result.ok) return `Not taken off ${name}: ${result.message}`;
-    if (result.removed) await this.clearPageRefs(hass, owner, [pageId]);
-    return undefined;
-  }
-
-  /** The + on a page of the Not on this list: it goes on this device too,
-   * linked, from the device it is on. Unsaved edits here stay: the new page
-   * arrives as a change and is merged in. */
-  private async addHere(item: ElsewherePage): Promise<void> {
-    const hass = this.hass;
-    const watchId = this.watchId;
-    if (!hass || watchId === undefined || this.linking || this.saving) return;
-    this.linking = true;
-    this.note = undefined;
-    try {
-      const reply = await linkWatchPages(hass, item.ownerId, [item.pageId], [watchId]);
-      if (watchId !== this.watchId) return;
-      const also = linkAlsoAddedText(reply, watchId, [item.pageId], this.elsewhere.get(item.ownerId));
-      await this.load(watchId, true);
-      if (watchId !== this.watchId) return;
-      this.note = { kind: "ok", text: `Added ${item.name} from ${this.deviceName(item.ownerId)}. It stays linked: an edit on one device shows on both.${also === undefined ? "" : ` ${also}`}` };
-      void this.loadStatusPages(watchId);
-      const draft = this.draft;
-      if (draft !== undefined && findWatchPage(draft.document, item.pageId) !== undefined) {
-        this.selectedPageId = watchPageId(findWatchPage(draft.document, item.pageId)!);
-        this.selectedTileId = undefined;
-        this.multi = new Set();
-      }
-    } catch (err) {
-      if (watchId === this.watchId) this.note = { kind: "err", text: `Not added. ${linkErrorText(err)}` };
-    } finally {
-      this.linking = false;
-    }
+  /** Take one page off another device at once (`takePageOff` in
+   * `page-links-io.ts`). Undefined when done, else what to say. */
+  private takePageOff(owner: string, pageId: string): Promise<string | undefined> {
+    return takePageOffDevice(this.hass, owner, pageId, this.deviceName(owner));
   }
 
   // ── an iPhone: Add all watch pages ─────────────────────────────────────
@@ -3805,7 +3711,7 @@ export class WaPageEditor extends LitElement {
     if (this.loadError !== undefined) {
       const id = this.watchId;
       return html`<div class="pe-empty">
-        <span>Could not read this watch's pages: ${this.loadError}</span>
+        <span>Could not read this ${deviceWord(this.linkKind)}'s pages: ${this.loadError}</span>
         ${id === undefined ? nothing : html`<button class="pe-btn" @click=${() => void this.load(id)}>Try again</button>`}
       </div>`;
     }
@@ -3876,8 +3782,9 @@ export class WaPageEditor extends LitElement {
 
   /** An iPhone with no pages: a phone starts with none. Add page starts its
    * pages with one empty page (the first record, or one more in a record
-   * that lists none); Add all watch pages links a watch's pages here. The
-   * other devices' pages are listed under it, each to add on its own. A
+   * that lists none); Add all watch pages links a watch's pages here. A
+   * line under it counts the other devices' pages, with the way to the
+   * Pages tab, where each can be added on its own. A
    * record already there keeps its foot bar, so an earlier save can still
    * be put back. */
   private renderPhoneEmpty(record: WatchConfigRecord, draft: WatchPagesDraft | undefined): TemplateResult {
@@ -3947,89 +3854,59 @@ export class WaPageEditor extends LitElement {
   }
 
   /**
-   * The Not on this iPhone (or watch) section under the page list: the
-   * pages the other devices hold and this one does not (`elsewherePages`),
-   * dimmed, each with a + that puts it here, linked. Under a heading per
-   * device when more than one brings pages. Nothing on an integration
-   * without linked pages.
+   * The line under the page list: how many pages the other devices hold
+   * that this one does not (`elsewherePages`), and See all pages, which
+   * opens the Pages tab. Adding one here is a tick in its card's Devices
+   * menu there. Nothing on an integration without linked pages, or with no
+   * such page.
    */
   private renderElsewhere(document: WatchPagesDocument | undefined, standalone = false): TemplateResult | typeof nothing {
     const watchId = this.watchId;
     if (this.places === undefined || watchId === undefined) return nothing;
-    const groups: ElsewhereGroup[] = elsewherePages(watchId, document, this.linkDevices, this.elsewhere);
-    if (groups.length === 0) return nothing;
-    const many = groups.length > 1;
-    const off = this.linking || this.saving;
-    const kind = this.linkKind;
-    return html`<div class="pe-elsewhere ${standalone ? "standalone" : ""}" role="group" aria-label=${elsewhereTitle(kind)}>
-      <div class="pe-else-h">${elsewhereTitle(kind)}</div>
-      ${groups.map((group) => html`
-        ${many ? html`<div class="pe-else-from">${group.device.name}</div>` : nothing}
-        ${group.pages.map((item) => html`<div class="pe-else-row" data-else-page=${item.pageId}>
-          <span class="pe-else-name" title=${item.name}>${item.name}</span>
-          ${many ? nothing : html`<span class="pe-else-on">${group.device.name}</span>`}
-          <button type="button" class="pe-icon-btn pe-else-add" ?disabled=${off}
-            title=${this.saving ? SAVING_TEXT : `Add ${item.name} to this ${deviceWord(kind)}, linked to ${group.device.name}`}
-            aria-label=${`Add ${item.name} to this ${deviceWord(kind)}`}
-            @click=${() => void this.addHere(item)}>${uiIcon("plus")}</button>
-        </div>`)}`)}
+    const line = elsewhereLine(elsewherePages(watchId, document, this.linkDevices, this.elsewhere));
+    if (line === undefined) return nothing;
+    return html`<div class="pe-elsewhere ${standalone ? "standalone" : ""}">
+      <span class="pe-else-line">${line}</span>
+      <a class="pe-else-all" href=${allPagesHref()} title="Every page on your watches and iPhones, and the devices each is on"
+        @click=${(e: MouseEvent) => {
+          if (!isPlainClick(e)) return;
+          e.preventDefault();
+          goToAllPages();
+        }}>See all pages</a>
     </div>`;
   }
 
   /**
-   * One page's Devices menu, the complication cards' look: a switch per
-   * device, on where the page is. Ticking puts it on that device, linked;
-   * unticking takes it off there. This device's switch stays on (Delete
-   * takes it off), and a system page's never move. It stays open across
-   * switches, with Done to close it.
+   * One page's Devices menu (`devices-menu.ts`): a switch per device, on
+   * where the page is. Ticking puts it on that device, linked; unticking
+   * takes it off there. This device's switch stays on (Delete takes it
+   * off), and a system page's never move.
    */
   private renderDevicesMenu(page: WatchPage, where: DevicesMenu["where"]): TemplateResult | typeof nothing {
     const watchId = this.watchId;
     if (watchId === undefined) return nothing;
-    const name = watchPageName(page);
     const pageId = watchPageId(page);
-    const places: PageDevicePlace[] = pageDevicePlaces(this.linkDevices, page, watchId, this.places);
     const blocked = this.devicesBlocked();
-    return html`<div class="pk-dup-menu pe-dev-menu at-${where}" role="group" aria-label=${`Devices for ${name}`}>
-      <div class="pk-dup-head">This page is on</div>
-      ${blocked === undefined ? nothing : html`<div class="pe-dev-note warn">${blocked}</div>`}
-      ${places.map((place) => {
-        const label = place.device.name;
-        const off = place.stuck !== undefined || blocked !== undefined || this.linking;
-        const title = place.stuck ?? blocked ?? (place.on
-          ? `Take it off ${label}. Its own order and Hidden go with it.`
-          : `Put it on ${label}. An edit on one device then shows on both.`);
-        return html`<div class="pk-dup-row check ${off ? "off" : ""}">
-          <label class="pk-dup-pick" title=${title}>
-            <input type="checkbox" role="switch" .checked=${live(place.on)} ?disabled=${off}
-              aria-label=${`${name} on ${label}`}
-              @change=${(e: Event) => {
-                const box = e.currentTarget as HTMLInputElement;
-                // The switch follows the places, not the click: it is drawn
-                // again from them once the write lands.
-                box.checked = place.on;
-                void (place.on ? this.unlinkFrom(pageId, place.device.ownerId) : this.linkTo(pageId, place.device.ownerId));
-              }}>
-            ${uiIcon(place.device.kind === "iphone" ? "phone" : "watch")}
-            <span class="pk-dup-name">${label}</span>
-            ${place.here ? html`<span class="pk-dup-full">this ${deviceWord(place.device.kind)}</span>` : nothing}
-          </label>
-        </div>`;
-      })}
-      ${this.linking ? html`<div class="pe-dev-note">Saving…</div>` : nothing}
-      ${this.devicesNote === undefined ? nothing : html`<div class="pe-dev-note ${this.devicesNote.kind}" role="status">${this.devicesNote.text}</div>`}
-      <div class="pk-dup-note">On means the page is on that device. An edit on one device shows on all of them. Each device keeps its own order and Hidden.</div>
-      <button type="button" class="pk-dup-done" @click=${() => { this.closeDevices(); this.focusPageRow = pageId; }}>Done</button>
-    </div>`;
+    return renderPageDevicesMenu({
+      name: watchPageName(page),
+      places: pageDevicePlaces(this.linkDevices, page, watchId, this.places),
+      ...(blocked === undefined ? {} : { blocked }),
+      busy: this.linking,
+      ...(this.devicesNote === undefined ? {} : { note: this.devicesNote }),
+      className: `at-${where}`,
+      onToggle: (place) => void (place.on ? this.unlinkFrom(pageId, place.device.ownerId) : this.linkTo(pageId, place.device.ownerId)),
+      onDone: () => { this.closeDevices(); this.focusPageRow = pageId; },
+    });
   }
 
   /** The inspector's line under the page's cards with no tile selected:
    * how to reach a tile, or on a smart page a rule. */
   private renderNoTileCard(page: WatchPage): TemplateResult {
     const empty = !isSmartWatchPage(page) && watchPageTiles(page).length === 0;
-    const text = isSmartWatchPage(page) ? "Click a tile on the watch to pick its rule."
+    const on = deviceWord(this.linkKind);
+    const text = isSmartWatchPage(page) ? `Click a tile on the ${on} to pick its rule.`
       : empty ? NO_TILES_TEXT
-      : "Click a tile on the watch to edit it.";
+      : `Click a tile on the ${on} to edit it.`;
     return html`<div class="pe-no-tile">
       <span class="pe-no-tile-ic" aria-hidden="true">${uiIcon("tap")}</span>
       <p>${text}</p>
@@ -4139,8 +4016,8 @@ export class WaPageEditor extends LitElement {
         <button class="lc-btn pri" ?disabled=${this.saving} title=${this.saving ? SAVING_TEXT : "Add an empty page after the last one"}
           @click=${() => this.addPage()}>${uiIcon("plus")}<span>Add</span></button>
       </div>
-      ${listed.length === 0 ? html`<div class="lc-note">This watch has no pages.</div>` : nothing}
-      ${allHidden ? html`<div class="lc-note warn">Every page is hidden, so the watch shows "No pages".</div>` : nothing}
+      ${listed.length === 0 ? html`<div class="lc-note">This ${deviceWord(this.linkKind)} has no pages.</div>` : nothing}
+      ${allHidden ? html`<div class="lc-note warn">Every page is hidden, so the ${deviceWord(this.linkKind)} shows "No pages".</div>` : nothing}
       <div class="layers pe-page-list" role="list">
         ${repeat(listed, (p) => watchPageId(p), (p, i) => this.renderPageRow(p, i, listed.length, pages, screen))}
         ${drag ? html`<div class="pe-drop-line" style=${`top:${drag.lineY}px`} aria-hidden="true"></div>` : nothing}
@@ -4192,6 +4069,7 @@ export class WaPageEditor extends LitElement {
     const devices = linksOn ? this.linkDevices : [];
     const shared = linksOn && pageLinkId(page) !== undefined ? linkBadgeText(pageHolders(page, this.watchId!, this.places), this.watchId!, devices) : undefined;
     const devicesOpen = this.devicesMenu?.where === "row" && sameWatchId(this.devicesMenu.pageId, id);
+    const where = deviceWord(this.linkKind);
     return html`<div class="layer pe-page-row ${on ? "hl" : ""} ${hidden ? "dim" : ""} ${dragging ? "pe-dragging" : ""} ${menu ? "menu-open" : ""}"
       data-page=${id} role="listitem" tabindex="0" aria-current=${on ? "true" : "false"} aria-label=${name}
       title=${this.saving ? `${SAVING_TEXT} Double click to rename.` : "Double click to rename. Drag, or Alt and the arrow keys, to move the page."}
@@ -4220,8 +4098,8 @@ export class WaPageEditor extends LitElement {
           ${hidden ? html`<span class="badge">hidden</span>` : nothing}
         </span>
         <span class="acts">
-          <button type="button" class="icon ${hidden ? "off" : ""}" title=${hidden ? "Hidden on the watch. Show it" : "Shown on the watch. Hide it"}
-            aria-label=${hidden ? `Show ${name} on the watch` : `Hide ${name} on the watch`}
+          <button type="button" class="icon ${hidden ? "off" : ""}" title=${hidden ? `Hidden on the ${where}. Show it` : `Shown on the ${where}. Hide it`}
+            aria-label=${hidden ? `Show ${name} on the ${where}` : `Hide ${name} on the ${where}`}
             @click=${() => this.setHidden(id, !hidden)}>${uiIcon(hidden ? "hide" : "show")}</button>
           <button type="button" class="icon pe-more" title="More" aria-label=${`More for ${name}`}
             aria-haspopup="menu" aria-expanded=${menu ? "true" : "false"}
@@ -4615,8 +4493,8 @@ export class WaPageEditor extends LitElement {
         title=${phone ? `${PHONE_FRAME_TEXT} The page's background color beside it.` : `This watch's screen, ${caseLabel}. The page's background color beside it.`}>
         ${uiIcon(phone ? "phone" : "watch")}<span class="word keep">${caseLabel}</span><i class="tint-dot" style=${`--sw:${watchScreenColor(page)}`}></i></button>
       ${headers ? html`${sep}<button class="tb pe-watch-view ${this.asOnWatch ? "lit" : ""}" aria-pressed=${this.asOnWatch ? "true" : "false"}
-          title="Headers pull the rows below them up on the watch. Editing is off while this is on."
-          @click=${() => { this.asOnWatch = !this.asOnWatch; this.cancelGestures(); }}><span class="word">Watch view</span></button>` : nothing}
+          title=${`Headers pull the rows below them up on the ${deviceWord(this.linkKind)}. Editing is off while this is on.`}
+          @click=${() => { this.asOnWatch = !this.asOnWatch; this.cancelGestures(); }}><span class="word">${this.onPhone ? "iPhone view" : "Watch view"}</span></button>` : nothing}
       ${sep}
       <span class="tb-zoom" role="group" aria-label="Zoom">
         <button class="tb icon pe-zoom-out" ?disabled=${scale <= stageZoomOut(scale)} aria-label="Zoom out" title="Zoom out"
@@ -5009,8 +4887,8 @@ export class WaPageEditor extends LitElement {
     const summary = [hidden ? "Hidden" : "Shown", ...(smart ? ["smart"] : [])].join(", ");
     return sectionCard({
       color: SECTION_COLOR.place,
-      icon: uiIcon("watch"),
-      title: "On the watch",
+      icon: uiIcon(this.onPhone ? "phone" : "watch"),
+      title: `On the ${deviceWord(this.linkKind)}`,
       open,
       onToggle: () => { setSectionOpen(this.uiState, module, section, !open); this.requestUpdate(); },
       dot: watchPageSectionChanged(page, "page"),
@@ -5018,7 +4896,7 @@ export class WaPageEditor extends LitElement {
       id: `${module}:${section}`,
     }, open ? html`<div class="pe-ow">
       <label class="pe-switch pe-ow-row">
-        <span class="pe-ow-t"><span class="pe-ow-l">Hidden</span><span class="pe-ow-d">Kept here, but the watch does not show it.</span></span>
+        <span class="pe-ow-t"><span class="pe-ow-l">Hidden</span><span class="pe-ow-d">Kept here, but the ${deviceWord(this.linkKind)} does not show it.</span></span>
         <input type="checkbox" role="switch" .checked=${live(hidden)} ?disabled=${this.busy}
           @change=${(e: Event) => this.setHidden(id, (e.target as HTMLInputElement).checked)} />
       </label>
@@ -5219,7 +5097,7 @@ export class WaPageEditor extends LitElement {
       <h3 id="pe-ask-title">Restore revision ${ask.entry.revision}?</h3>
       <p>${savedByLine(ask.entry.updated_by, this.device)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
       ${ask.summary ? html`<p class="pe-muted">${ask.summary}</p>` : nothing}
-      <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves. The watch picks it up the next time it checks.</p>
+      <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves. The ${deviceWord(this.linkKind)} picks it up the next time it checks.</p>
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${this.restoring} @click=${() => this.closeAsk()}>Cancel</button>
         <button class="pe-btn pe-primary" ?disabled=${this.restoring} @click=${() => void this.restore()}>${this.restoring ? "Restoring…" : "Restore"}</button>
@@ -5345,7 +5223,7 @@ export class WaPageEditor extends LitElement {
   // after and win the ties. The two modules' rules come last, so a module can
   // size its own parts of this element (its dialog, say) without outranking
   // anything.
-  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchPagePreviewStyles, watchFrameStyles, phoneFrameStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchPagePreviewStyles, watchFrameStyles, phoneFrameStyles, devicesMenuStyles, css`
     /* A column, so the foot bar (config-foot.ts) can take the space left
        at the foot of a short editor; --cf-pad is the padding it reaches
        through to sit edge to edge. */
@@ -5878,56 +5756,21 @@ export class WaPageEditor extends LitElement {
       color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 12%, transparent);
     }
 
-    /* The Devices menu: the complication cards' (panel.ts .pk-dup-*), copied
-       in, since this element's shadow root sees none of the panel's rules. */
-    .pk-dup-menu {
-      display: flex; flex-direction: column; gap: 4px; padding: 8px; cursor: default;
-      border: 1px solid var(--wa-line-strong); border-radius: 10px;
-      background: var(--wa-card); box-shadow: var(--wa-shadow-pop); text-align: left;
-    }
-    /* On a page row it hangs under the row, as the ··· menu does; on the
-       inspector's page card it sits in the flow under the buttons. */
+    /* The Devices menu (\`devices-menu.ts\`, whose look is in
+       devicesMenuStyles). On a page row it hangs under the row, as the ···
+       menu does; on the inspector's page card it sits in the flow under the
+       buttons. */
     .layer > .pe-dev-menu.at-row { position: absolute; top: calc(100% - 4px); left: 6px; right: 6px; z-index: 31; }
     .pe-dev-menu.at-card { margin-top: 8px; box-shadow: none; }
-    .pk-dup-row {
-      display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; cursor: pointer;
-      font: inherit; font-size: 12px; color: var(--wa-ink);
-      padding: 5px 7px; border: 1px solid var(--wa-line); border-radius: 7px; background: var(--wa-card);
-    }
-    .pk-dup-row svg { flex: none; width: 14px; height: 14px; }
-    .pk-dup-row.check { padding: 0; gap: 0; cursor: default; }
-    .pk-dup-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 5px 7px; cursor: pointer; }
-    .pk-dup-pick svg { flex: none; width: 14px; height: 14px; }
-    .pk-dup-row.check input { margin: 0; cursor: inherit; }
-    .pk-dup-row.check.off .pk-dup-pick { opacity: .5; cursor: default; }
-    .pk-dup-row.check:hover:not(.off) { border-color: var(--wa-line-strong); }
-    .pk-dup-head { font-size: 11.5px; font-weight: 700; color: var(--wa-muted); margin: 2px 0; }
-    .pk-dup-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pk-dup-full { flex: none; font-size: 10px; color: var(--wa-muted); }
-    .pk-dup-note { font-size: 10px; line-height: 1.4; color: var(--wa-muted); border-top: 1px solid var(--wa-line); padding-top: 6px; }
-    .pk-dup-done {
-      align-self: flex-end; margin-top: 2px; font: inherit; font-size: 11px; font-weight: 600;
-      padding: 4px 12px; border-radius: 7px; cursor: pointer;
-      border: 1px solid var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent);
-    }
-    .pk-dup-done:hover { filter: brightness(1.1); }
-    .pk-dup-done:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .pe-dev-note { font-size: 11px; line-height: 1.4; color: var(--wa-muted); overflow-wrap: anywhere; }
-    .pe-dev-note.ok { color: var(--wa-ok, var(--wa-ink)); }
-    .pe-dev-note.warn, .pe-dev-note.err { color: var(--wa-need); }
     .pe-btn.pe-dev-open.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent); }
 
-    /* Not on this iPhone (or watch): the other devices' pages, dimmed, one
-       compact line each with a + to put it here. */
-    .pe-elsewhere { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 10px; border-top: 1px solid var(--wa-line); }
-    .pe-elsewhere.standalone { align-self: stretch; max-width: 420px; width: 100%; margin: 12px auto 0; border: 1px solid var(--wa-line); border-radius: var(--wa-r-sm, 8px); text-align: left; }
-    .pe-else-h { font-size: 11.5px; font-weight: 700; color: var(--wa-muted); padding-bottom: 2px; }
-    .pe-else-from { font-size: 11px; font-weight: 600; color: var(--wa-muted); padding-top: 4px; }
-    .pe-else-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 2px 0 6px; border-radius: 6px; font-size: 12.5px; }
-    .pe-else-row:hover { background: var(--wa-hover); }
-    .pe-else-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .6; }
-    .pe-else-on { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--wa-muted); }
-    .pe-else-add { flex: none; }
+    /* Under the page list: how many pages only other devices hold, and the
+       way to the Pages tab, where each can be added here. */
+    .pe-elsewhere { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 8px 12px 10px; border-top: 1px solid var(--wa-line); font-size: 12px; color: var(--wa-muted); }
+    .pe-elsewhere.standalone { align-self: stretch; justify-content: center; max-width: 420px; width: 100%; margin: 12px auto 0; border: 1px solid var(--wa-line); border-radius: var(--wa-r-sm, 8px); }
+    a.pe-else-all { font-size: 12px; font-weight: 600; color: var(--wa-accent); text-decoration: none; }
+    a.pe-else-all:hover { text-decoration: underline; }
+    a.pe-else-all:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 4px; }
     /* The Add tile dialog (dialog.pe-add-dialog): its title and a close
        button, then the module's body. */
     .pe-ask-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }

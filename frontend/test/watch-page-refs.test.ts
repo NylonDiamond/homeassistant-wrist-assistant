@@ -152,7 +152,10 @@ describe("the page editor's delete", () => {
   it("clears them once the save that deletes the page has landed", () => {
     expect(source).toContain("const deleted = deletedPageIds(watchPagesOf(draft.base), watchPagesOf(draft.document));");
     expect(source).toContain("if (result.ok && deleted.length > 0) {");
-    expect(source).toContain(`await saveWatchConfig(hass, watchId, "menus", record.revision, next);`);
-    expect(source).toContain("await saveRecord(hass, watchId, next, record.revision);");
+    expect(source).toContain("const cleared = await this.clearPageRefs(hass, watchId, deleted);");
+    // The clearing itself is shared with the Pages tab (page-links-io.ts).
+    const io = readFileSync(join(__dirname, "..", "src", "watch-pages", "page-links-io.ts"), "utf8");
+    expect(io).toContain(`await saveWatchConfig(hass, ownerId, "menus", record.revision, next);`);
+    expect(io).toContain("await saveRecord(hass, ownerId, next, record.revision);");
   });
 });

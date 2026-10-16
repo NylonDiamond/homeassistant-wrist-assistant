@@ -1,6 +1,6 @@
-// The panel's shell: the four tabs across the top (Home, Watch app, iPhone
-// app, Complications), which address each one lives at, and the bar that
-// moves between them.
+// The panel's shell: the five tabs across the top (Home, Watch app, iPhone
+// app, Pages, Complications), which address each one lives at, and the bar
+// that moves between them.
 //
 // The tab is never stored. It is read from the route Home Assistant hands the
 // panel, so a reload, a bookmark and the browser's Back button all agree with
@@ -27,6 +27,9 @@
 //   /watch-complications, with an optional /<owner_watch_id>
 //                       the complications on one watch, a view of the
 //                       Complications tab's cards
+//   /all-pages          the Pages tab: every page on every watch and
+//                       iPhone (`watch-pages/all-pages.ts`). Not `/pages`,
+//                       which is the Watch app's page editor
 //
 // Every watch address is the one the iPhone app builds for "Open in Home
 // Assistant", unchanged; this file only reads them. An older iPhone app
@@ -43,13 +46,14 @@ import { WATCH_COMPLICATIONS_PATH, isWatchComplicationsRoute } from "./watch-com
 import { WATCH_CONTROL_CENTER_PATH, isWatchControlCenterRoute } from "./watch-control-center/hook.js";
 import { WATCH_HTTP_ACTIONS_PATH, isWatchHttpActionsRoute } from "./watch-http-actions/hook.js";
 import { WATCH_MENUS_PATH, isWatchMenusRoute } from "./watch-menus/hook.js";
+import { ALL_PAGES_PATH, isAllPagesRoute } from "./watch-pages/all-pages-hook.js";
 import { type PanelRoute, WATCH_PAGES_PATH, isWatchPagesRoute } from "./watch-pages/hook.js";
 import { WATCH_ROOMS_PATH, isWatchRoomsRoute } from "./watch-rooms/hook.js";
 import { WATCH_SETTINGS_PATH, isWatchSettingsRoute } from "./watch-settings-page.js";
 import { WATCH_STATUS_PAGES_PATH, isWatchStatusPagesRoute } from "./watch-status-pages/hook.js";
 import { WATCH_VOICE_PATH, isWatchVoiceRoute } from "./watch-voice/hook.js";
 
-export type PanelTab = "home" | "watch" | "iphone" | "complications";
+export type PanelTab = "home" | "watch" | "iphone" | "pages" | "complications";
 
 /** Home is the panel's own address, with nothing after it. */
 export const HOME_PATH = "";
@@ -61,6 +65,7 @@ export const TAB_LABEL: Record<PanelTab, string> = {
   home: "Home",
   watch: "Watch app",
   iphone: "iPhone app",
+  pages: "Pages",
   complications: "Complications",
 };
 
@@ -185,17 +190,22 @@ export function tabOfRoute(route: PanelRoute | undefined): PanelTab {
   if (watchScreenOf(route) !== undefined) return "watch";
   if (iphoneScreenOf(route) !== undefined) return "iphone";
   if (isComplicationsRoute(route)) return "complications";
+  if (isAllPagesRoute(route)) return "pages";
   return "home";
 }
 
 /** The screen a route shows, as the leave question counts screens: one of
- * the Watch app's nine, or the Home or Complications tab. An iPhone app
+ * the Watch app's nine, or the Home, Pages or Complications tab. The Pages
+ * tab is "all-pages", never the page editor's "pages". An iPhone app
  * screen counts as the watch screen of the same name: it is the same editor,
  * with the same drafts kept per device, so moving between the two is a move
  * to another device. The device an address names, and anything after it, is
  * not part of it. */
-export function screenIdOf(route: PanelRoute | undefined): WatchScreen["id"] | "home" | "complications" {
-  return watchScreenOf(route)?.id ?? iphoneScreenOf(route)?.id ?? (tabOfRoute(route) as "home" | "complications");
+export function screenIdOf(route: PanelRoute | undefined): WatchScreen["id"] | "home" | "all-pages" | "complications" {
+  const id = watchScreenOf(route)?.id ?? iphoneScreenOf(route)?.id;
+  if (id !== undefined) return id;
+  const tab = tabOfRoute(route);
+  return tab === "pages" ? "all-pages" : (tab as "home" | "complications");
 }
 
 /** Where a click on a tab goes. The Watch app opens on Pages, on the shared
@@ -203,6 +213,7 @@ export function screenIdOf(route: PanelRoute | undefined): WatchScreen["id"] | "
  * (`watch-pick.ts`). */
 export function tabPath(tab: PanelTab, watch?: string, iphone?: string): string {
   if (tab === "complications") return COMPLICATIONS_PATH;
+  if (tab === "pages") return ALL_PAGES_PATH;
   if (tab === "watch") return watchScreenPath(WATCH_SCREENS[0]!, watch);
   if (tab === "iphone") return iphoneScreenPath(IPHONE_SCREENS[0]!, iphone);
   return HOME_PATH;
@@ -211,7 +222,7 @@ export function tabPath(tab: PanelTab, watch?: string, iphone?: string): string 
 /** The tabs across the top, in order. Every signed in person gets them all:
  * the server lists each person only the devices they may manage. The iPhone
  * app only shows on a home with phone pages (`panelTabs`). */
-export const PANEL_TABS: readonly PanelTab[] = ["home", "watch", "iphone", "complications"];
+export const PANEL_TABS: readonly PanelTab[] = ["home", "watch", "iphone", "pages", "complications"];
 
 /** The tabs the bar shows: all of them on a home with phone pages, else all
  * but the iPhone app, unless it is the tab on screen. */
@@ -224,7 +235,7 @@ export function panelTabs(phones: boolean, current?: PanelTab): PanelTab[] {
 const SUB_PATH = new RegExp(`(${[
   IPHONE_PATH, COMPLICATIONS_PATH, WATCH_PAGES_PATH, WATCH_MENUS_PATH, WATCH_VOICE_PATH,
   WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH, WATCH_HTTP_ACTIONS_PATH, WATCH_CAMERAS_PATH, WATCH_SETTINGS_PATH,
-  WATCH_COMPLICATIONS_PATH,
+  WATCH_COMPLICATIONS_PATH, ALL_PAGES_PATH,
 ].join("|")})(/.*)?$`);
 
 /** The panel's own address without any tab's sub-path. Without a route (a
@@ -261,6 +272,17 @@ export function navigatePanel(route: PanelRoute | undefined, path: string, repla
  * nothing is lost and the leave guards still cover it. */
 export function goToWatchHttpActions(): void {
   navigatePanel(undefined, WATCH_HTTP_ACTIONS_PATH);
+}
+
+/** From inside an editor to the Pages tab, the panel's own way, as
+ * `goToWatchHttpActions`. */
+export function goToAllPages(): void {
+  navigatePanel(undefined, ALL_PAGES_PATH);
+}
+
+/** The Pages tab's full address, for a link's own `href`. */
+export function allPagesHref(): string {
+  return panelUrl(undefined, ALL_PAGES_PATH, globalThis.location?.pathname ?? "");
 }
 
 /** A plain left click, which the panel turns into its own move. Anything

@@ -1,0 +1,197 @@
+// The Pages tab's rules: every page as cards (a linked page once), the
+// filter chips, what a filter and a search show, which device a card opens
+// on, its Devices menu, where a link copies from, and its words. Plus the
+// page editor's one line in place of the Not on this list.
+
+import { describe, expect, it } from "vitest";
+
+import {
+  ALL_FILTER,
+  DEVICES_LAST_TEXT,
+  cardDetail,
+  cardDevicePlaces,
+  emptyText,
+  filterChips,
+  linkSource,
+  openCopy,
+  pageCards,
+  resolveFilter,
+  shownCards,
+} from "../src/watch-pages/all-pages-model.js";
+import { DEVICES_SYSTEM_TEXT, type LinkDevice, elsewhereLine, elsewherePages, linkDevicesOf } from "../src/watch-pages/links.js";
+import type { WatchPage, WatchPagesDocument } from "../src/watch-pages/model.js";
+import type { OwnerSummary } from "../src/ha-api.js";
+
+const U = (n: number) => `5A17E000-0000-4000-8000-${n.toString(16).toUpperCase().padStart(12, "0")}`;
+const HALL = U(1), YARD = U(2), DEN = U(3), MINE = U(4), SYS = U(5), SMART = U(6);
+
+const W1: LinkDevice = { ownerId: "w1", name: "Jesse's Watch", kind: "watch" };
+const W2: LinkDevice = { ownerId: "w2", name: "Chen's Watch", kind: "watch" };
+const P1: LinkDevice = { ownerId: "p1", name: "Jesse's iPhone", kind: "iphone" };
+const DEVICES = [W1, W2, P1];
+
+const tile = (n: number) => ({ id: U(100 + n), entityId: `light.l${n}`, gridCol: 0, gridRow: n * 3, colSpan: 6, rowSpan: 3 });
+const page = (id: string, name: string, extra: Partial<WatchPage> = {}): WatchPage => ({ id, name, items: [], ...extra });
+const doc = (...pages: WatchPage[]): WatchPagesDocument => ({ schemaVersion: 1, pages });
+
+/** Hall linked on all three (hidden on the phone), Yard linked on the
+ * first watch and the phone, Den on the first watch alone, Mine on the
+ * phone alone, a system page on the second watch, and a smart page there. */
+const DOCS = new Map<string, WatchPagesDocument>([
+  ["w1", doc(page(HALL, "Hall", { linkId: "L1", items: [tile(1), tile(2)] }), page(YARD, "Yard", { linkId: "L2" }), page(DEN, "Den", { items: [tile(1)] }))],
+  ["w2", doc(page(SYS, "Now playing", { isSystemPage: true }), page(HALL, "Hall", { linkId: "L1", items: [tile(1), tile(2)] }), page(SMART, "Lights on", { dynamicConfig: {} }))],
+  ["p1", doc(page(MINE, "Mine"), page(YARD, "Yard", { linkId: "L2" }), page(HALL, "Hall", { linkId: "L1", isHidden: true, items: [tile(1), tile(2)] }))],
+]);
+
+describe("the cards", () => {
+  const cards = pageCards(DEVICES, DOCS);
+
+  it("are one per page, a linked page once, in device order then page order", () => {
+    expect(cards.map((c) => c.name)).toEqual(["Hall", "Yard", "Den", "Lights on", "Mine"]);
+  });
+
+  it("carry a copy per device that holds the page, in device order, hidden where that device hides it", () => {
+    const hall = cards[0]!;
+    expect(hall.linkId).toBe("L1");
+    expect(hall.copies.map((c) => [c.device.ownerId, c.hidden, c.index])).toEqual([["w1", false, 0], ["w2", false, 0], ["p1", true, 2]]);
+    expect(cards[2]!.copies.map((c) => c.device.ownerId)).toEqual(["w1"]);
+    expect(cards[2]!.linkId).toBeUndefined();
+  });
+
+  it("leave system pages out, as the page editor lists none", () => {
+    expect(cards.some((c) => c.pageId === SYS)).toBe(false);
+  });
+
+  it("keep two unlinked pages with one id apart: only a link joins pages", () => {
+    const docs = new Map([["w1", doc(page(DEN, "Den"))], ["w2", doc(page(DEN, "Den"))]]);
+    expect(pageCards(DEVICES, docs).map((c) => c.copies.length)).toEqual([1, 1]);
+  });
+
+  it("are none for a device not read", () => {
+    expect(pageCards([P1], new Map())).toEqual([]);
+  });
+
+  it("say their tiles, or Smart page", () => {
+    expect(cardDetail(cards[0]!)).toBe("2 tiles");
+    expect(cardDetail(cards[2]!)).toBe("1 tile");
+    expect(cardDetail(cards[1]!)).toBe("0 tiles");
+    expect(cardDetail(cards[3]!)).toBe("Smart page");
+  });
+});
+
+describe("the filter", () => {
+  const cards = pageCards(DEVICES, DOCS);
+
+  it("has All, then a chip per device, each with its count", () => {
+    expect(filterChips(DEVICES, cards)).toEqual([
+      { id: "all", label: "All", count: 5 },
+      { id: "w1", label: "Jesse's Watch", kind: "watch", count: 3 },
+      { id: "w2", label: "Chen's Watch", kind: "watch", count: 2 },
+      { id: "p1", label: "Jesse's iPhone", kind: "iphone", count: 3 },
+    ]);
+  });
+
+  it("shows one device's pages in that device's own order", () => {
+    expect(shownCards(cards, "p1").map((c) => c.name)).toEqual(["Mine", "Yard", "Hall"]);
+    expect(shownCards(cards, ALL_FILTER).map((c) => c.name)).toEqual(["Hall", "Yard", "Den", "Lights on", "Mine"]);
+  });
+
+  it("finds a page by name in any case, under the filter too", () => {
+    expect(shownCards(cards, ALL_FILTER, "  ha ").map((c) => c.name)).toEqual(["Hall"]);
+    expect(shownCards(cards, "w2", "yard")).toEqual([]);
+  });
+
+  it("goes back to All when its device is gone", () => {
+    expect(resolveFilter("p1", DEVICES)).toBe("p1");
+    expect(resolveFilter("gone", DEVICES)).toBe("all");
+    expect(resolveFilter(undefined, DEVICES)).toBe("all");
+  });
+});
+
+describe("which device a card opens on", () => {
+  const cards = pageCards(DEVICES, DOCS);
+  const [hall, yard, , , mine] = cards;
+
+  it("is the filtered device when the page is there", () => {
+    expect(openCopy(hall!, "p1").device.ownerId).toBe("p1");
+    expect(openCopy(hall!, "w2").device.ownerId).toBe("w2");
+  });
+
+  it("is otherwise the first watch, else the first device", () => {
+    expect(openCopy(yard!, ALL_FILTER).device.ownerId).toBe("w1");
+    expect(openCopy(yard!, "w2").device.ownerId).toBe("w1");
+    expect(openCopy(mine!, ALL_FILTER).device.ownerId).toBe("p1");
+    const phoneFirst = pageCards([P1, W1], new Map([["p1", doc(page(HALL, "Hall", { linkId: "L1" }))], ["w1", doc(page(HALL, "Hall", { linkId: "L1" }))]]));
+    expect(openCopy(phoneFirst[0]!, ALL_FILTER).device.ownerId).toBe("w1");
+  });
+});
+
+describe("a card's Devices menu", () => {
+  const cards = pageCards(DEVICES, DOCS);
+
+  it("has a switch per device, on where the page is, none of them this device", () => {
+    const places = cardDevicePlaces(DEVICES, cards[1]!);
+    expect(places.map((p) => [p.device.ownerId, p.on, p.here, p.stuck])).toEqual([
+      ["w1", true, false, undefined], ["w2", false, false, undefined], ["p1", true, false, undefined],
+    ]);
+  });
+
+  it("cannot switch off a page's only device", () => {
+    const places = cardDevicePlaces(DEVICES, cards[2]!);
+    expect(places.map((p) => p.stuck)).toEqual([DEVICES_LAST_TEXT, undefined, undefined]);
+  });
+
+  it("moves nothing for a system page", () => {
+    const sys = pageCards([W1], new Map([["w1", doc(page(SYS, "Now playing", { isSystemPage: true }))]]));
+    expect(sys).toEqual([]);
+    const card = { ...cards[2]!, copies: [{ ...cards[2]!.copies[0]!, page: page(SYS, "Now playing", { isSystemPage: true }) }] };
+    expect(cardDevicePlaces(DEVICES, card).every((p) => p.stuck === DEVICES_SYSTEM_TEXT)).toBe(true);
+  });
+
+  it("links from the first device with no unsaved edits, or from none", () => {
+    const hall = cards[0]!;
+    expect(linkSource(hall, () => false)).toBe("w1");
+    expect(linkSource(hall, (id) => id === "w1")).toBe("w2");
+    expect(linkSource(hall, () => true)).toBeUndefined();
+  });
+});
+
+describe("the tab's words", () => {
+  it("say why there is nothing to show", () => {
+    expect(emptyText(ALL_FILTER, [], "")).toBe("No watch or iPhone has connected yet. Pair one on the Home tab.");
+    expect(emptyText(ALL_FILTER, DEVICES, "")).toBe("No device has pages yet. Open a device's Pages to make one.");
+    expect(emptyText("p1", DEVICES, "")).toBe("No pages on Jesse's iPhone yet.");
+    expect(emptyText("p1", DEVICES, "zz")).toBe("No page has that name.");
+  });
+
+  it("never break a sentence with a dash", async () => {
+    const model = await import("../src/watch-pages/all-pages-model.js");
+    for (const text of [model.ALL_PAGES_LEAD, model.DEVICES_LAST_TEXT, model.DEVICES_DIRTY_TEXT]) {
+      expect(text).not.toMatch(/[–—]| - /);
+    }
+  });
+});
+
+describe("the page editor's line for the other devices' pages", () => {
+  it("counts the pages this device does not hold, a linked page once", () => {
+    const groups = elsewherePages("p1", DOCS.get("p1"), DEVICES, DOCS);
+    expect(elsewhereLine(groups)).toBe("2 pages on other devices.");
+    const one = elsewherePages("w2", DOCS.get("w2"), DEVICES, new Map([["w1", doc(page(DEN, "Den"))]]));
+    expect(elsewhereLine(one)).toBe("1 page on other devices.");
+    expect(elsewhereLine([])).toBeUndefined();
+  });
+});
+
+describe("the devices a page can be on", () => {
+  const owner = (id: string, kind: string, name: string, extra: Partial<OwnerSummary> = {}): OwnerSummary =>
+    ({ owner_watch_id: id, device_name: name, device_kind: kind, ...extra }) as unknown as OwnerSummary;
+
+  it("are the watches, then the iPhones on a home with phone pages", () => {
+    const owners = [owner("p1", "iphone", "Jesse's iPhone"), owner("w1", "watch", "Apple Watch")];
+    expect(linkDevicesOf(owners, true)).toEqual([
+      { ownerId: "w1", name: "Apple Watch", kind: "watch" },
+      { ownerId: "p1", name: "Jesse's iPhone", kind: "iphone" },
+    ]);
+    expect(linkDevicesOf(owners, false).map((d) => d.ownerId)).toEqual(["w1"]);
+  });
+});

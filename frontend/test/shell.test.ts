@@ -190,6 +190,17 @@ describe("addresses", () => {
     expect(tabPath("complications")).toBe(COMPLICATIONS_PATH);
     expect(tabPath("watch")).toBe("/pages");
     expect(tabPath("iphone")).toBe("/iphone/pages");
+    expect(tabPath("pages")).toBe("/all-pages");
+    expect(tabPath("pages", "w2", "p1")).toBe("/all-pages");
+  });
+
+  it("puts the Pages tab at /all-pages, apart from the page editor's /pages", () => {
+    expect(tabOfRoute(at("/all-pages"))).toBe("pages");
+    expect(tabOfRoute(at("/all-pages/x"))).toBe("pages");
+    expect(tabOfRoute(at("/all-pagesx"))).toBe("home");
+    expect(tabOfRoute(at("/pages"))).toBe("watch");
+    expect(watchPagesRouteOwner(at("/all-pages"))).toBeUndefined();
+    expect(panelPrefix(undefined, "/wrist-assistant/all-pages")).toBe("/wrist-assistant");
   });
 
   it("opens the Watch app on Pages for the shared watch, encoded, and leaves the other tabs alone", () => {
@@ -207,10 +218,10 @@ describe("addresses", () => {
   });
 
   it("offers every tab to everybody, the iPhone app only on a home with phone pages", () => {
-    expect(PANEL_TABS).toEqual(["home", "watch", "iphone", "complications"]);
-    expect(panelTabs(true)).toEqual(["home", "watch", "iphone", "complications"]);
-    expect(panelTabs(false)).toEqual(["home", "watch", "complications"]);
-    expect(panelTabs(false, "iphone")).toEqual(["home", "watch", "iphone", "complications"]);
+    expect(PANEL_TABS).toEqual(["home", "watch", "iphone", "pages", "complications"]);
+    expect(panelTabs(true)).toEqual(["home", "watch", "iphone", "pages", "complications"]);
+    expect(panelTabs(false)).toEqual(["home", "watch", "pages", "complications"]);
+    expect(panelTabs(false, "iphone")).toEqual(["home", "watch", "iphone", "pages", "complications"]);
   });
 
   it("takes the prefix from the route when there is one", () => {
@@ -443,5 +454,10 @@ describe("the screen a route shows, for the leave question", () => {
       ["home", "complications", "complications", "pages", "pages", "pages", "menus", "status-pages", "control-center", "rooms", "voice", "http-actions", "cameras", "settings"],
     );
     expect(screenIdOf(undefined)).toBe("home");
+  });
+  it("counts the Pages tab as a screen of its own, never the page editor", async () => {
+    const { screenIdOf } = await import("../src/shell.js");
+    const at = (path: string) => screenIdOf({ prefix: "/wrist-assistant", path });
+    expect(["/all-pages", "/all-pages/x", "/pages", "/pages/W1"].map(at)).toEqual(["all-pages", "all-pages", "pages", "pages"]);
   });
 });

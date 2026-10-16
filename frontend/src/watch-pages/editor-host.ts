@@ -49,6 +49,9 @@ export interface WatchPagesEditorHost {
   readonly symbols: SymbolBrowser;
   /** The whole pages document as edited now. Every edit starts from this. */
   readonly document: WatchPagesDocument;
+  /** The device whose pages these are, for the lines that name it ("the
+   * iPhone hides the title"). Absent: a watch. */
+  readonly device?: "watch" | "iphone";
   /** The selected page: its id as the document has it, and the page. */
   readonly pageId: string;
   readonly page: WatchPage;

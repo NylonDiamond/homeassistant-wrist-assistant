@@ -439,6 +439,7 @@ import { renderWatchPagePreview, watchPagePreviewStyles } from "./watch-pages/pr
 import { type WatchPage, asWatchPagesDocument, watchPageName, watchPagesOf } from "./watch-pages/model.js";
 import { watchFrameStyles } from "./watch-frame.js";
 import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles } from "./watch-pages/hook.js";
+import { allPagesHookStyles, renderAllPagesView } from "./watch-pages/all-pages-hook.js";
 import { dropWatchMenusDrafts, isWatchMenusRoute, renderWatchMenusView, watchMenusDirty, watchMenusHookStyles } from "./watch-menus/hook.js";
 import { dropWatchVoiceDrafts, isWatchVoiceRoute, renderWatchVoiceView, watchVoiceDirty, watchVoiceHookStyles } from "./watch-voice/hook.js";
 import { dropWatchStatusPagesDrafts, isWatchStatusPagesRoute, renderWatchStatusPagesView, watchStatusPagesDirty, watchStatusPagesHookStyles } from "./watch-status-pages/hook.js";
@@ -6066,7 +6067,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, watchRowStyles, headBarStyles, listPageStyles, watchComplicationsStyles, helpSheetStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, watchComplicationsStyles, helpSheetStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -11449,6 +11450,19 @@ export class WristAssistantPanel extends LitElement {
     if (tab === "home") return this.renderHome();
     // The iPhone app: its row, then the screen on the shared iPhone.
     if (tab === "iphone") return this.withIphoneRow(this.renderIphoneScreen());
+    // The Pages tab, on `/all-pages`: every page on every watch and iPhone.
+    // A card opens its page in that device's page editor.
+    if (tab === "pages") {
+      return renderAllPagesView({
+        hass: this.hass, owners: this.owners, ownersReady: this.linkReady, phones: this.phonePages,
+        icons: this.icons, iconsTick: this.iconsTick,
+        onOpen: (ownerId, kind) => {
+          this.pickWatch(ownerId);
+          this.goTo(deviceScreenPath(kind, WATCH_SCREENS[0]!, ownerId));
+        },
+        onLoaded: () => this.requestUpdate(),
+      });
+    }
     // Every watch screen sits under the Watch app row, which owns the watch:
     // each is handed the shared watch (the address's, when it names one) and
     // follows it.
