@@ -22,6 +22,9 @@ export interface DevicesMenuInput {
   note?: WatchPagesNote;
   /** Extra classes on the menu, for where it hangs. */
   className?: string;
+  /** Each device's color (`deviceColorVar`), on its glyph and the row's
+   * edge, as on the Pages tab. None leaves the rows plain. */
+  colorOf?(ownerId: string): string | undefined;
   onToggle(place: PageDevicePlace): void;
   onDone(): void;
 }
@@ -45,7 +48,9 @@ export function renderPageDevicesMenu(input: DevicesMenuInput): TemplateResult {
       const title = place.stuck ?? blocked ?? (place.on
         ? `Take it off ${label}. Its own order and Hidden go with it.`
         : `Put it on ${label}. An edit on one device then shows on both.`);
-      return html`<div class="pk-dup-row check ${off ? "off" : ""}">
+      const color = input.colorOf?.(place.device.ownerId);
+      return html`<div class="pk-dup-row check ${off ? "off" : ""} ${color === undefined ? "" : "tinted"}"
+        style=${color === undefined ? nothing : `--dc:${color}`}>
         <label class="pk-dup-pick" title=${title}>
           <input type="checkbox" role="switch" .checked=${live(place.on)} ?disabled=${off}
             aria-label=${`${name} on ${label}`}
@@ -86,6 +91,8 @@ export const devicesMenuStyles = css`
   .pk-dup-pick svg { flex: none; width: 14px; height: 14px; }
   .pk-dup-row.check input { margin: 0; cursor: inherit; }
   .pk-dup-row.check.off .pk-dup-pick { opacity: .5; cursor: default; }
+  .pk-dup-row.tinted { box-shadow: inset 3px 0 0 var(--dc); }
+  .pk-dup-row.tinted .pk-dup-pick svg { color: var(--dc); }
   .pk-dup-row.check:hover:not(.off) { border-color: var(--wa-line-strong); }
   .pk-dup-head { font-size: 11.5px; font-weight: 700; color: var(--wa-muted); margin: 2px 0; }
   .pk-dup-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -749,6 +749,7 @@ export class WaAllPages extends LitElement {
       busy: this.linking,
       ...(this.devicesNote === undefined ? {} : { note: this.devicesNote }),
       className: "at-card",
+      colorOf: (ownerId) => deviceColorVar(devices, ownerId),
       onToggle: (place) => void this.toggle(card, place),
       onDone: () => this.closeDevices(),
     });
@@ -808,6 +809,7 @@ export class WaAllPages extends LitElement {
           const dirty = dirtyHere(device.ownerId);
           const why = dirty ? "unsaved edits" : add ? (holds === n ? "has them all" : undefined) : (holds === 0 ? "has none" : undefined);
           return html`<button type="button" class="pk-bar-row" ?disabled=${why !== undefined}
+            style=${`--dc:${deviceColorVar(devices, device.ownerId) ?? "var(--wa-muted)"}`}
             title=${dirty ? "Its pages have unsaved edits. Save or discard them first." : `${add ? "Add to" : "Remove from"} ${device.name}`}
             @click=${() => void this.runBulk(kind, [device.ownerId])}>
             ${uiIcon(device.kind === "iphone" ? "phone" : "watch")}
@@ -1028,7 +1030,8 @@ export class WaAllPages extends LitElement {
     .pk-bar-row:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-ink) 9%, transparent); }
     .pk-bar-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pk-bar-row:disabled { opacity: .5; cursor: default; }
-    .pk-bar-row svg { width: 15px; height: 15px; flex: none; color: var(--wa-muted); }
+    .pk-bar-row svg { width: 15px; height: 15px; flex: none; color: var(--dc, var(--wa-muted)); }
+    .pk-bar-row { box-shadow: inset 3px 0 0 var(--dc, transparent); }
     .pk-bar-row-n { flex: none; font-size: 10.5px; color: var(--wa-muted); }
     .pk-bar-note { margin: 4px 4px 2px; padding-top: 6px; border-top: 1px solid var(--wa-line); font-size: 10.5px; line-height: 1.4; color: var(--wa-muted); }
     /* A card's tick while picking: a box, not the panel's switch. */

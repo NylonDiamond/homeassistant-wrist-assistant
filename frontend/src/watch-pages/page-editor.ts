@@ -69,6 +69,7 @@ import {
   menuSlotsOpeningPage,
 } from "./page-refs.js";
 import { clearPageRefs as clearPageRefsOn, takePageOff as takePageOffDevice } from "./page-links-io.js";
+import { deviceColorVar } from "./all-pages-model.js";
 import { devicesMenuStyles, renderPageDevicesMenu } from "./devices-menu.js";
 import { allPagesHref, goToAllPages, isPlainClick } from "../shell.js";
 import {
@@ -3894,6 +3895,7 @@ export class WaPageEditor extends LitElement {
       busy: this.linking,
       ...(this.devicesNote === undefined ? {} : { note: this.devicesNote }),
       className: `at-${where}`,
+      colorOf: (ownerId) => deviceColorVar(this.linkDevices, ownerId),
       onToggle: (place) => void (place.on ? this.unlinkFrom(pageId, place.device.ownerId) : this.linkTo(pageId, place.device.ownerId)),
       onDone: () => { this.closeDevices(); this.focusPageRow = pageId; },
     });
