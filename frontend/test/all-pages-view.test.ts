@@ -6,7 +6,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { HassLike, OwnerSummary } from "../src/ha-api.js";
-import "../src/watch-pages/all-pages.js";
+import { pageCrop } from "../src/watch-pages/all-pages.js";
+import { REFERENCE_CASE } from "../src/renderer.js";
 import { keptWatchPagesSelection } from "../src/watch-pages/kept.js";
 import type { JsonObject, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { type PageCard, cardDevicePlaces } from "../src/watch-pages/all-pages-model.js";
@@ -103,12 +104,12 @@ describe("the Pages tab", () => {
     expect(text).toContain("Devices");
   });
 
-  it("has the Complications list's head: On device | Page only, Multi select, the Device menu and the search, over device tabs", async () => {
-    const { el, call, whole } = tab();
+  it("has the Complications list's head: Multi select, the Device menu and the search, over device tabs", async () => {
+    const { call, whole } = tab();
     await call<Promise<void>>("loadAll");
     const text = whole();
-    expect(text).toContain("On device");
-    expect(text).toContain("Page only");
+    expect(text).not.toContain("On device");
+    expect(text).not.toContain("Page only");
     expect(text).toContain("Multi select");
     expect(text).toContain("Search by name");
     expect(text).toMatch(/pk-shape-lead">Device</);
@@ -120,15 +121,21 @@ describe("the Pages tab", () => {
     expect(text).toContain("--dc:var(--wa-person-2)");
     expect(text).not.toContain("Not on a device");
     expect(text).not.toContain("ap-chip");
-    // A page on two devices shows a strip with a segment per device.
-    expect(text.match(/class="ap-strip"/g)?.length).toBe(1);
-    // Page only draws the page without its device, and is remembered.
-    expect(text).toContain("ap-pic watch framed");
-    call("setBare", true);
-    expect(whole()).toContain("ap-pic watch bare");
-    expect(whole()).toContain("pk-surface pk-page bare");
-    expect(el.bare).toBe(true);
-    call("setBare", false);
+    // Every card shows a strip with a segment per device it is on.
+    expect(text.match(/class="ap-strip"/g)?.length).toBe(3);
+    // A card draws the page alone: no iPhone, whatever device it is on.
+    expect(text).toContain("ap-pic");
+    expect(text).not.toContain("wa-phone");
+  });
+
+  it("crops a page's picture to its tiles", async () => {
+    const { card, call } = tab();
+    await call<Promise<void>>("loadAll");
+    const page = card("Hall").copies[0]!.page;
+    const crop = pageCrop(page, undefined, undefined);
+    const empty = pageCrop({ ...page, tiles: [] }, undefined, undefined);
+    expect(crop.height).toBeGreaterThan(0);
+    expect(empty).toEqual({ top: 0, height: REFERENCE_CASE.screen.height });
   });
 
   it("narrows the cards to one kind of device with the Device menu", async () => {

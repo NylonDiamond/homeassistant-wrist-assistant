@@ -24,10 +24,9 @@ import { property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 import { type HassLike, type OwnerSummary, fetchWatchConfig, fetchWatchPagesPlaces, linkWatchPages, subscribeWatchConfig } from "../ha-api.js";
 import { deviceColor, deviceColorsCache } from "../device-colors.js";
-import { phoneFrameStyles, phoneModelForScreenSize, phonePagesLayout, phonePagesScreen } from "../phone-frame.js";
-import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
+import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
-import { WATCH_BEZEL_RATIO, WATCH_RIM_RATIO, watchFrameStyles } from "../watch-frame.js";
+import { watchFrameStyles } from "../watch-frame.js";
 import {
   ALL_FILTER,
   DEVICES_DIRTY_TEXT,
@@ -70,13 +69,37 @@ import {
 import { devicesMenuStyles, renderPageDevicesMenu } from "./devices-menu.js";
 import { keepWatchPagesSelection, keptWatchPagesDraft } from "./kept.js";
 import { type LinkDevice, type PageDevicePlace, linkAlsoAddedText, linkDevicesOf, linkErrorText } from "./links.js";
-import { type WatchPagesDocument, asWatchPagesDocument, watchPageId, watchPagesOf } from "./model.js";
+import { type WatchPage, type WatchPagesDocument, asWatchPagesDocument, isSmartWatchPage, watchPageId, watchPagesOf } from "./model.js";
 import { pagesBulkIO, takePageOff } from "./page-links-io.js";
-import { renderWatchPagePreview, watchPagePreviewStyles } from "./preview.js";
+import { renderWatchPagePreview, renderWatchPageTitle, watchPagePreviewStyles, watchPreviewLayout, watchReflowPage } from "./preview.js";
 import { type WatchPagesNote, watchCommandError } from "./save-note.js";
 
-/** How tall a card's picture of its page is, in CSS pixels. */
-const THUMB_H = 92;
+/** How wide a card's picture of its page is, in CSS pixels. */
+const PIC_W = 200;
+/** The tallest a picture grows before it is cut, in CSS pixels. */
+const PIC_MAX_H = 320;
+/** The room kept above the top tile and under the lowest, in points. */
+const PIC_PAD_PT = 6;
+
+/** A page is one page on every device, so its picture is the page alone:
+ * no watch case, no iPhone, laid out on one screen for every card. */
+const PIC_SCREEN = REFERENCE_CASE.screen;
+
+/**
+ * The part of a page's picture a card shows, in points from the top of the
+ * page: from its title (or its top tile when it has no title) to just under
+ * its lowest tile. A smart page, or one with no tiles, shows one screen.
+ */
+export function pageCrop(page: WatchPage, states: Record<string, unknown> | undefined, icons: IconProvider | undefined,
+  screen: { width: number; height: number } = PIC_SCREEN): { top: number; height: number } {
+  if (isSmartWatchPage(page)) return { top: 0, height: screen.height };
+  const layout = watchPreviewLayout(watchReflowPage(page, states as Parameters<typeof watchReflowPage>[1]), screen);
+  if (layout.tiles.length === 0) return { top: 0, height: screen.height };
+  const titled = renderWatchPageTitle(page, 1, layout.topInset, icons) !== nothing;
+  const top = titled ? 0 : Math.max(0, layout.topInset + Math.min(...layout.tiles.map((t) => t.y)) - PIC_PAD_PT);
+  const bottom = layout.topInset + Math.max(...layout.tiles.map((t) => t.y + t.height)) + PIC_PAD_PT;
+  return { top, height: Math.max(1, bottom - top) };
+}
 /** How often a stream of state changes draws the pictures again. */
 const STATES_EVERY_MS = 2000;
 /** How long after a change event a device's pages are read again, so a
@@ -87,10 +110,9 @@ const RELOAD_DELAY_MS = 250;
  * list remembers its tab and its On device | Shape only toggle. */
 const VIEW_STORE_KEY = "wrist-assistant-panel.all-pages.v1";
 
-/** The device tab, the Page only toggle and the Device menu last used. */
+/** The device tab and the Device menu last used. */
 interface KeptView {
   filter?: PagesFilter;
-  bare: boolean;
   kind: PagesKind;
 }
 
@@ -100,12 +122,11 @@ let kept: KeptView | undefined;
  * off keeps it while the panel is open. */
 function keptView(): KeptView {
   if (kept !== undefined) return kept;
-  const view: KeptView = { bare: false, kind: "all" };
+  const view: KeptView = { kind: "all" };
   try {
     const raw = window.localStorage.getItem(VIEW_STORE_KEY);
-    const saved = raw ? (JSON.parse(raw) as { filter?: unknown; bare?: unknown; kind?: unknown }) : {};
+    const saved = raw ? (JSON.parse(raw) as { filter?: unknown; kind?: unknown }) : {};
     if (typeof saved.filter === "string") view.filter = saved.filter;
-    if (typeof saved.bare === "boolean") view.bare = saved.bare;
     if (saved.kind === "watch" || saved.kind === "iphone") view.kind = saved.kind;
   } catch {
     /* Storage off: the defaults. */
@@ -156,8 +177,6 @@ export class WaAllPages extends LitElement {
   @state() private linksOn = true;
   @state() private filter: PagesFilter | undefined = keptView().filter;
   @state() private search = "";
-  /** Page only: a card draws the page alone, with no device round it. */
-  @state() private bare = keptView().bare;
   /** The head's Device menu. */
   @state() private kind: PagesKind = keptView().kind;
   @state() private menuAt?: MenuAt;
@@ -364,12 +383,6 @@ export class WaAllPages extends LitElement {
     keepView({ kind });
     this.closeDevices();
     this.pruneSelected();
-  }
-
-  /** Turn the device round a card's picture off, or on again, and remember it. */
-  private setBare(bare: boolean): void {
-    this.bare = bare;
-    keepView({ bare });
   }
 
   /** Open the page in its device's page editor, on that page. */
@@ -627,7 +640,7 @@ export class WaAllPages extends LitElement {
         </div>
       </div>
       ${failed.length === 0 ? nothing : html`<p class="ap-warn" role="status">Could not read the pages of ${failed.join(", ")}. They show as last read.</p>`}
-      <div class="pk-surface pk-page ${this.bare ? "bare" : ""}" role="region" aria-label="Your pages">
+      <div class="pk-surface pk-page" role="region" aria-label="Your pages">
         <div class="pk-pin">
           ${this.renderHead(cards, filter, devices)}
           ${tabbed ? this.renderTabs(devices, cards, filter) : nothing}
@@ -644,22 +657,14 @@ export class WaAllPages extends LitElement {
   }
 
   /**
-   * The head, the Complications list's: how a card draws its page, Multi
-   * select, the Device menu, and the search at the right.
+   * The head, the Complications list's: Multi select, the Device menu, and
+   * the search at the right. A page is the same page on a watch and on an
+   * iPhone, so there is no On device toggle: a card draws the page alone.
    */
   private renderHead(cards: readonly PageCard[], filter: PagesFilter, devices: readonly LinkDevice[]): TemplateResult {
-    const bare = this.bare;
     const on = this.selecting;
     const busy = this.bulkBusy !== undefined;
     return html`<div class="pk-head">
-      <div class="pk-seg" role="group" aria-label="How a card draws its page">
-        <button type="button" class="pk-seg-btn ${bare ? "" : "on"}" aria-pressed=${bare ? "false" : "true"}
-          title="Draw each page on the device it is on"
-          @click=${() => this.setBare(false)}>${uiIcon("watch")}<span>On device</span></button>
-        <button type="button" class="pk-seg-btn ${bare ? "on" : ""}" aria-pressed=${bare ? "true" : "false"}
-          title="Draw the page on its own, with no device round it"
-          @click=${() => this.setBare(true)}>${uiIcon("pages")}<span>Page only</span></button>
-      </div>
       <button type="button" class="pk-pick-btn ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
         title=${on ? "Back to opening one page at a time" : "Pick several pages to add, remove or delete together"}
         ?disabled=${busy} @click=${() => (on ? this.endSelect() : this.startSelect())}>
@@ -711,28 +716,26 @@ export class WaAllPages extends LitElement {
     const title = selecting ? `${picked ? "Let" : "Pick"} ${card.name}${picked ? " go" : ""}` : `Edit ${card.name} on ${copy.device.name}`;
     const click = (e: MouseEvent) => this.cardClick(e, card, filter);
     const color = (ownerId: string) => `--dc:${this.colorOf(ownerId) ?? "var(--wa-line-strong)"}`;
-    // A page on several devices, or any page drawn with no device round it,
-    // shows a strip along its top edge in its devices' colors, one each.
-    const strip = card.copies.length > 1 || this.bare;
+    // A strip along the card's top edge in its devices' colors, one each.
     return html`<div class="ap-card ${menuOpen ? "over" : ""} ${selecting ? "picking" : ""} ${picked ? "picked" : ""}" role="listitem" data-card=${card.key}
       @click=${(e: MouseEvent) => { if (selecting) click(e); }}>
-      ${strip ? html`<span class="ap-strip" aria-hidden="true">${card.copies.map((c) => html`<i class=${c.hidden ? "dim" : ""} style=${color(c.device.ownerId)}></i>`)}</span>` : nothing}
+      <span class="ap-strip" aria-hidden="true">${card.copies.map((c) => html`<i class=${c.hidden ? "dim" : ""} style=${color(c.device.ownerId)}></i>`)}</span>
+      <div class="ap-top">
+        ${selecting ? html`<input type="checkbox" class="pk-card-pick" .checked=${live(picked)} ?disabled=${this.bulkBusy !== undefined}
+          aria-label=${title}
+          @click=${(e: MouseEvent) => {
+            e.stopPropagation();
+            this.pick(card, e.shiftKey);
+          }} />` : nothing}
+        <button type="button" class="ap-open" title=${title} tabindex=${selecting ? "-1" : "0"} @click=${click}>
+          <b class="ap-name">${card.name}</b>
+          <small class="ap-detail">${cardDetail(card)}</small>
+        </button>
+      </div>
       <button type="button" class="ap-thumb" tabindex="-1" aria-hidden="true" title=${title} @click=${click}>
-        ${this.renderThumb(copy, this.colorOf(copy.device.ownerId))}
+        ${this.renderThumb(copy)}
       </button>
-      <div class="ap-body">
-        <div class="ap-top">
-          ${selecting ? html`<input type="checkbox" class="pk-card-pick" .checked=${live(picked)} ?disabled=${this.bulkBusy !== undefined}
-            aria-label=${title}
-            @click=${(e: MouseEvent) => {
-              e.stopPropagation();
-              this.pick(card, e.shiftKey);
-            }} />` : nothing}
-          <button type="button" class="ap-open" title=${title} tabindex=${selecting ? "-1" : "0"} @click=${click}>
-            <b class="ap-name">${card.name}</b>
-            <small class="ap-detail">${cardDetail(card)}</small>
-          </button>
-        </div>
+      <div class="ap-foot">
         <span class="ap-devs">${card.copies.map((c) => html`<span class="ap-dev ${c.hidden ? "dim" : ""}" style=${color(c.device.ownerId)}
           title=${c.hidden ? `On ${c.device.name}, hidden there` : `On ${c.device.name}`}>
           ${uiIcon(c.device.kind === "iphone" ? "phone" : "watch")}<span class="ap-dev-n">${c.device.name}</span>${c.hidden ? html`<em>hidden</em>` : nothing}
@@ -840,38 +843,30 @@ export class WaAllPages extends LitElement {
   }
 
   /**
-   * The page small. On device: in its device, a watch in its case or the
-   * iPhone round its pages area. Page only: the page's own screen, no
-   * device, no clock and no bars. Cut at the picture's height. On device,
-   * the frame is outlined in the device's color.
+   * The page alone, with a plain outline: no watch case, no iPhone, no
+   * clock and no page dots, since the same page is on a watch and on an
+   * iPhone. One screen width for every card. Only as tall as its tiles
+   * (`pageCrop`), and cut with a fade past `PIC_MAX_H`.
    */
-  private renderThumb(copy: PageCopy, color: string | undefined): TemplateResult {
-    const owner = this.owners.find((o) => o.owner_watch_id === copy.device.ownerId);
+  private renderThumb(copy: PageCopy): TemplateResult {
     const doc = this.docs.get(copy.device.ownerId);
     const pages = doc === undefined ? [copy.page] : watchPagesOf(doc);
     const states = this.hassNow?.states;
     const icons = this.icons;
-    const bare = this.bare;
-    const look = bare ? "bare" : "framed";
-    if (copy.device.kind === "iphone") {
-      const phone = phonePagesLayout(phoneModelForScreenSize(owner?.screen_size));
-      const area = phonePagesScreen(phone);
-      const scale = THUMB_H / (bare ? area.height : phone.model.screen.height);
-      return html`<span class="ap-pic phone ${look}" style=${color === undefined ? nothing : `--dc:${color}`}>${renderWatchPagePreview({
-        page: copy.page, pages, screen: area, scale, phone,
+    const scale = PIC_W / PIC_SCREEN.width;
+    const crop = pageCrop(copy.page, states, icons);
+    const tall = crop.height * scale;
+    const cut = tall > PIC_MAX_H;
+    const px = (n: number) => `${Math.round(n * 100) / 100}px`;
+    return html`<span class="ap-pic ${cut ? "cut" : ""}" style=${`width:${px(PIC_W)};height:${px(Math.min(tall, PIC_MAX_H))}`}>
+      <span class="ap-pic-in" style=${`transform:translateY(${px(-crop.top * scale)})`}>${renderWatchPagePreview({
+        page: copy.page, pages, screen: PIC_SCREEN, scale,
         ...(states === undefined ? {} : { states }), ...(icons === undefined ? {} : { icons }),
-      })}</span>`;
-    }
-    const screen = (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
-    // On device, the case's bezel and rim sit inside the picture's height.
-    const scale = THUMB_H / (bare ? screen.height : screen.height + screen.width * 2 * (WATCH_BEZEL_RATIO + WATCH_RIM_RATIO));
-    return html`<span class="ap-pic watch ${look}" style=${`--ap-screen-h:${Math.round(screen.height * scale * 100) / 100}px${color === undefined ? "" : `;--dc:${color}`}`}>${renderWatchPagePreview({
-      page: copy.page, pages, screen, scale,
-      ...(states === undefined ? {} : { states }), ...(icons === undefined ? {} : { icons }),
-    })}</span>`;
+      })}</span>
+    </span>`;
   }
 
-  static override styles = [watchPagePreviewStyles, watchFrameStyles, phoneFrameStyles, devicesMenuStyles, css`
+  static override styles = [watchPagePreviewStyles, watchFrameStyles, devicesMenuStyles, css`
     :host { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; color: var(--wa-ink); }
     * { box-sizing: border-box; }
     svg { display: block; }
@@ -1057,12 +1052,12 @@ export class WaAllPages extends LitElement {
     input.pk-card-pick:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     input.pk-card-pick:disabled { opacity: .45; cursor: default; }
 
-    /* The cards: as many columns as fit, each the picture and, beside it,
-       the name, the devices and Devices. The Complications card's edge. */
-    .ap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
-    .pk-page.bare .ap-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+    /* The cards, the Complications cards' shape: the name on top, the page
+       big under it, then the devices and Devices. Each card is as tall as
+       its page. */
+    .ap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 12px; align-items: start; }
     .ap-card {
-      position: relative; z-index: 1; display: flex; gap: 10px; min-width: 0; padding: 8px;
+      position: relative; z-index: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 9px 10px 10px;
       border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-card);
       transition: border-color .12s ease-out;
     }
@@ -1077,43 +1072,38 @@ export class WaAllPages extends LitElement {
     .ap-strip > i { flex: 1; background: var(--dc); }
     .ap-strip > i.dim { opacity: .4; }
     .ap-thumb {
-      flex: none; display: grid; place-items: center; width: 84px; height: ${THUMB_H + 4}px; padding: 0; overflow: hidden;
+      display: grid; place-items: start center; width: 100%; padding: 10px; overflow: hidden;
       border: 0; border-radius: 6px; background: var(--wa-bg); cursor: pointer;
     }
-    .ap-pic { display: block; line-height: 0; pointer-events: none; }
-    /* On device: a watch in its case, an iPhone in its, both without the
-       crown and the side buttons, and without the case's drop shadow. */
-    /* The frame's outer edge is the device's color. */
-    .ap-pic.watch.framed .wa-watch {
-      margin: calc(var(--wf-rim, 3px) + 1px);
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 0 0 var(--wf-rim, 3px) var(--wa-art-case, #2b2f3d),
-        0 0 0 calc(var(--wf-rim, 3px) + 1.5px) var(--dc, rgba(255, 255, 255, 0.1));
+    /* The page alone in a plain outline: no case, no clock, no page dots,
+       no fold line. */
+    .ap-pic {
+      position: relative; display: block; max-width: 100%; overflow: hidden; line-height: 0; pointer-events: none;
+      border-radius: 10px; box-shadow: 0 0 0 1px var(--wa-line-strong);
     }
+    .ap-pic-in { display: block; }
+    .ap-pic .wa-watch { padding: 0; margin: 0; background: none; box-shadow: none; border-radius: 0; }
     .ap-pic .wa-watch::before, .ap-pic .wa-watch::after { display: none; }
-    .ap-pic.watch .wa-watch > .wp-screen { max-height: var(--ap-screen-h); }
-    .ap-pic .wp-fold { display: none; }
-    .ap-pic.phone.framed .wa-phone { margin: 0; box-shadow: 0 0 0 1.5px var(--dc, var(--wa-line-strong)); }
-    .ap-pic .wa-phone::before, .ap-pic .wa-phone::after { display: none; }
-    /* Page only: the page's own screen, with no case, no clock, no bars. */
-    .ap-pic.watch.bare .wa-watch { padding: 0; margin: 0; background: none; box-shadow: none; border-radius: 6px; }
-    .ap-pic.watch.bare .wa-watch > .wp-screen { border-radius: 6px; }
-    .ap-pic.watch.bare .wp-clock, .ap-pic.watch.bare .wp-pages { display: none; }
-    .ap-pic.phone.bare .wa-phone { padding: 0; margin: 0; background: none; box-shadow: none; border-radius: 6px; }
-    .ap-pic.phone.bare .wa-phone-screen { width: auto !important; min-height: 0 !important; border-radius: 6px; }
-    .ap-pic.phone.bare :is(.wa-phone-status, .wa-phone-switcher, .wa-phone-gap, .wa-phone-dots-bar, .wa-phone-tabs, .wa-phone-foot, .wa-phone-dots) { display: none; }
-    .ap-pic.phone.bare .wa-phone-area { margin: 0 !important; min-height: 0 !important; }
-    .ap-body { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-    .ap-top { display: flex; align-items: flex-start; gap: 8px; max-width: 100%; }
-    .ap-top > .pk-card-pick { margin-top: 1px; }
+    .ap-pic .wa-watch > .wp-screen { border-radius: 0; }
+    .ap-pic :is(.wp-clock, .wp-pages, .wp-fold) { display: none; }
+    /* A page taller than the picture fades out at its foot. */
+    .ap-pic.cut::after {
+      content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 36px;
+      background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, .75));
+    }
+    .ap-top { display: flex; align-items: center; gap: 8px; max-width: 100%; padding-top: 2px; }
     .ap-open {
-      display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; max-width: 100%;
+      display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1;
       padding: 0; border: 0; background: none; cursor: pointer; text-align: left;
     }
+    .ap-open .ap-detail { margin-left: auto; flex: none; }
+    .ap-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+    .ap-foot > .ap-dev-open { margin-left: auto; }
     .ap-open:focus-visible, .ap-thumb:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
-    .ap-name { max-width: 100%; font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ap-name { min-width: 0; font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ap-card:not(.picking) .ap-open:hover .ap-name { text-decoration: underline; text-underline-offset: 2px; }
     .ap-detail { font-size: 11.5px; color: var(--wa-muted); }
-    .ap-devs { display: flex; flex-wrap: wrap; gap: 4px; max-width: 100%; }
+    .ap-devs { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
     .ap-dev {
       display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 7px 2px 5px; border-radius: 999px;
       font-size: 11px; color: var(--wa-ink); background: var(--wa-hover); border: 1px solid var(--wa-line);
@@ -1124,7 +1114,7 @@ export class WaAllPages extends LitElement {
     .ap-dev.dim { opacity: .55; }
     .ap-dev em { font-style: normal; font-size: 10px; color: var(--wa-muted); }
     .ap-dev-open {
-      display: inline-flex; align-items: center; gap: 4px; margin-top: auto; padding: 3px 6px 3px 7px; border-radius: 6px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px 3px 7px; border-radius: 6px; cursor: pointer;
       font-size: 11.5px; font-weight: 600; color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line-strong);
     }
     .ap-dev-open svg { width: 13px; height: 13px; }
