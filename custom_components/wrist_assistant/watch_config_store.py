@@ -125,6 +125,14 @@ neither is an unreadable report: a signed get that only moves
 what the phone's live line (``watch_config/subscribe`` in
 ``watch_config_ws.py``) and the watch's delta wake ride on.
 
+Linked pages (``page_links.py``, app repo ``docs/linked_pages_plan_2026-10.md``):
+a page on several devices is the same page id in each owner's ``pages`` (or
+``status_pages``) record, marked with a ``linkId``. Every accepted write of
+those kinds is handed on to each other owner holding one of its links, as a
+new revision there (``_spread_links``), so a change made on one device's
+copy reaches every copy in the same call. A link left on one owner only is
+dropped there. ``link_pages`` and ``link_device`` make links.
+
 Deliveries and reports have listeners of their own
 (:meth:`WatchConfigStore.async_add_delivery_listener`), heard only by the panel's Home
 (``watch_config/subscribe_delivery``), so the watch is never woken by its own
@@ -158,6 +166,20 @@ from .const import (
     WATCH_CONFIG_PHONE_KINDS,
     WATCH_CONFIG_STORAGE_KEY,
     WATCH_CONFIG_STORAGE_VERSION,
+)
+from .page_links import (
+    LINKED_KINDS,
+    PageLinkError,
+    apply_link,
+    check_link,
+    drop_link,
+    fan_out,
+    ids_in,
+    link_ids,
+    link_places,
+    link_reach,
+    listed_page_ids,
+    rooms_from_behavior,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -305,6 +327,20 @@ class WatchConfigPhoneKindError(WatchConfigStoreError):
     """
 
     code = "not_for_iphone"
+
+
+class WatchConfigLinkError(WatchConfigStoreError):
+    """A page link that cannot be made (:meth:`WatchConfigStore.link_pages`).
+
+    ``code`` is the reason: ``unknown_device`` for a source or target that is
+    not a paired device, ``not_found`` for a page the source does not hold,
+    ``system_page`` for a system page, ``id_taken`` for a target that holds
+    another page under the same id.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class WatchConfigUnavailableError(WatchConfigStoreError):
@@ -1603,6 +1639,7 @@ class WatchConfigStore:
                 existing.hash if existing is not None else None,
             )
 
+        before = existing.document if existing is not None else None
         if existing is None:
             record = WatchConfigRecord(
                 owner_watch_id=owner_watch_id,
@@ -1629,6 +1666,7 @@ class WatchConfigStore:
         # Announced even though the writer already knows: the phone's own
         # upload echoes back to it, and it ignores a revision it has stored.
         self._notify(owner_watch_id, kind, record.revision)
+        self._spread_links(record, before)
         return record
 
     def _replace(
@@ -1705,9 +1743,14 @@ class WatchConfigStore:
                     f"there is no stored {kind} record and this watch is not "
                     "paired; pair it before starting its config here"
                 )
-            return self._panel_create(owner_watch_id, kind, document, size)
+            record = self._panel_create(owner_watch_id, kind, document, size)
+            self._spread_links(record, None)
+            return record
         self._check_panel_base(existing, base_revision, "save")
-        return self._panel_commit(existing, document, size)
+        before = existing.document
+        record = self._panel_commit(existing, document, size)
+        self._spread_links(record, before)
+        return record
 
     def restore(
         self,
@@ -1756,7 +1799,10 @@ class WatchConfigStore:
         document = copy.deepcopy(entry.document)
         document, _trimmed = self._for_owner(owner_watch_id, kind, document)
         size = validate_document(kind, document, check_items=True)
-        return self._panel_commit(existing, document, size)
+        before = existing.document
+        record = self._panel_commit(existing, document, size)
+        self._spread_links(record, before)
+        return record
 
     @staticmethod
     def _panel_kind(kind: Any) -> str:
@@ -1885,6 +1931,307 @@ class WatchConfigStore:
         self._schedule_owner_save(record.owner_watch_id)
         self._notify(record.owner_watch_id, record.kind, record.revision)
         return record
+
+    # ── linked pages ───────────────────────────────────────────────────
+    #
+    # A page on more than one device is the same page id in each device's
+    # record plus a `linkId` (page_links.py). The store keeps the copies in
+    # step: every accepted write of a linked kind (a device put, a panel save
+    # or create, a restore) is handed on to each other owner holding one of
+    # its links (`_spread_links`). Everything runs in the one call that made
+    # the write, on the event loop, so no other write lands between them.
+
+    def _write(
+        self, owner_watch_id: str, kind: str, document: dict[str, Any], updated_by: str
+    ) -> WatchConfigRecord:
+        """Write a document Home Assistant made itself (a linked copy kept in
+        step, a link, a ``linkId`` dropped, a device's menus copied) as the
+        owner's next revision, or its first. The server's hash, ``updated_by``
+        as given, delivery left where it was so the panel shows it waiting,
+        listeners told so the device wakes. It never spreads links itself: its
+        callers write every owner a change reaches, so a write never sets off
+        another one."""
+        self._check_owner_kind(owner_watch_id, kind)
+        self._check_available(owner_watch_id)
+        size = validate_document(kind, document)
+        existing = self._records.get(owner_watch_id, {}).get(kind)
+        if existing is None:
+            record = WatchConfigRecord(
+                owner_watch_id=owner_watch_id,
+                kind=kind,
+                revision=self._next_revision(0),
+                hash=canonical_hash(document),
+                updated_at=_now_iso(),
+                updated_by=updated_by,
+                document=document,
+                size_bytes=size,
+            )
+            new_owner = owner_watch_id not in self._records
+            self._records.setdefault(owner_watch_id, {})[kind] = record
+            if new_owner:
+                self._schedule_index_save()
+        else:
+            record = existing
+            self._replace(record, document, canonical_hash(document), size, updated_by)
+        self._schedule_owner_save(owner_watch_id)
+        self._notify(owner_watch_id, kind, record.revision)
+        return record
+
+    def _spread_links(self, record: WatchConfigRecord, before: Any) -> None:
+        """Hand a write of a linked kind on to the other owners.
+
+        Each other owner whose document of the kind holds one of the saved
+        document's links gets its linked pages replaced by the saved ones,
+        keeping its own order and ``isHidden`` (:func:`page_links.fan_out`).
+        And a link the write took away (``before`` held it, the saved
+        document does not) that is now left on exactly one other owner is
+        dropped there: a page on one device is not linked to anything. Each
+        owner that changes gets one new revision, written by whoever made the
+        save. An owner whose copy cannot take the change (over its size cap)
+        is logged and left as it was; the save itself stands.
+        """
+        key = LINKED_KINDS.get(record.kind)
+        if key is None:
+            return
+        owner = record.owner_watch_id
+        saved = link_ids(record.document, key)
+        lost = link_ids(before, key) - saved
+        if not saved and not lost:
+            return
+        others = {
+            other: by_kind[record.kind]
+            for other, by_kind in self._records.items()
+            if other != owner and other not in self._failed_owners and record.kind in by_kind
+        }
+        held = {other: link_ids(other_record.document, key) for other, other_record in others.items()}
+        last_copies = {
+            link
+            for link in lost
+            if sum(1 for links in held.values() if link in links) == 1
+        }
+        for other, other_record in sorted(others.items()):
+            document = (
+                fan_out(record.document, other_record.document, key)
+                if held[other] & saved
+                else None
+            )
+            for link in sorted(held[other] & last_copies):
+                dropped = drop_link(
+                    document if document is not None else other_record.document, key, link
+                )
+                if dropped is not None:
+                    document = dropped
+            if document is None:
+                continue
+            try:
+                self._write(other, record.kind, document, record.updated_by)
+            except WatchConfigStoreError as err:
+                _LOGGER.warning(
+                    "Could not keep the linked %s of %s in step with %s: %s",
+                    record.kind,
+                    other,
+                    owner,
+                    err.message,
+                )
+
+    def _check_link_owner(self, owner_watch_id: Any) -> str:
+        """A link's source or target: a paired watch or iPhone."""
+        if not isinstance(owner_watch_id, str) or not (
+            self._owner_is_paired(owner_watch_id) or self._owner_is_iphone(owner_watch_id)
+        ):
+            raise WatchConfigLinkError(
+                "unknown_device", f"{owner_watch_id} is not a paired device"
+            )
+        self._check_available(owner_watch_id)
+        return owner_watch_id
+
+    def _document(self, owner_watch_id: str, kind: str) -> dict[str, Any] | None:
+        record = self._records.get(owner_watch_id, {}).get(kind)
+        return record.document if record is not None else None
+
+    def _plan_link(
+        self,
+        source_owner: Any,
+        page_ids: list[str],
+        status_ids: list[str] | None,
+        targets: Any,
+    ) -> tuple[list[tuple[str, str, dict[str, Any]]], dict[str, Any]]:
+        """What a link writes, checked whole before anything is written.
+
+        ``page_ids`` are the source's pages to link; ``status_ids`` its status
+        pages, or None for the ones those pages reach
+        (:func:`page_links.link_reach`). Returns the writes in the order they
+        go (the source's when it gained links, then each target's status
+        pages before its pages, so a tile is never saved before what it
+        opens) and the reply. Every refusal is a
+        :class:`WatchConfigLinkError` (or ``invalid`` for a document a link
+        would take past its size cap), raised before any write.
+        """
+        source_owner = self._check_link_owner(source_owner)
+        if not isinstance(targets, list) or not all(isinstance(t, str) for t in targets):
+            raise WatchConfigValidationError("targets must be a list of device ids")
+        for target in targets:
+            if target == source_owner:
+                raise WatchConfigValidationError("a page cannot be linked to its own device")
+            self._check_link_owner(target)
+        pages_doc = self._document(source_owner, "pages")
+        status_doc = self._document(source_owner, "status_pages")
+        try:
+            check_link(pages_doc, page_ids)
+            reach_pages, reach_status = link_reach(pages_doc, status_doc, page_ids)
+            if status_ids is not None:
+                reach_status = status_ids
+            source_pages, source_status = pages_doc, status_doc
+            plans: list[tuple[str, dict[str, Any] | None, dict[str, Any] | None]] = []
+            reply_targets: dict[str, dict[str, list[str]]] = {}
+            page_links: dict[str, str] = {}
+            for target in dict.fromkeys(targets):
+                target_status = self._document(target, "status_pages")
+                new_status = None
+                added_status: list[str] = []
+                if reach_status:
+                    source_status, new_status, added_status, _links = apply_link(
+                        source_status, target_status, LINKED_KINDS["status_pages"], reach_status
+                    )
+                target_pages = self._document(target, "pages")
+                new_pages = None
+                added_pages: list[str] = []
+                if reach_pages:
+                    source_pages, new_pages, added_pages, links = apply_link(
+                        source_pages, target_pages, LINKED_KINDS["pages"], reach_pages
+                    )
+                    page_links.update(links)
+                plans.append(
+                    (
+                        target,
+                        new_status if new_status != target_status else None,
+                        new_pages if new_pages != target_pages else None,
+                    )
+                )
+                reply_targets[target] = {"pages": added_pages, "status_pages": added_status}
+        except PageLinkError as err:
+            raise WatchConfigLinkError(err.code, err.message) from err
+        writes: list[tuple[str, str, dict[str, Any]]] = []
+        if source_status is not None and source_status != status_doc:
+            writes.append((source_owner, "status_pages", source_status))
+        if source_pages is not None and source_pages != pages_doc:
+            writes.append((source_owner, "pages", source_pages))
+        for target, new_status, new_pages in plans:
+            if new_status is not None:
+                writes.append((target, "status_pages", new_status))
+            if new_pages is not None:
+                writes.append((target, "pages", new_pages))
+        return writes, {"targets": reply_targets, "link_ids": page_links}
+
+    def _commit_writes(
+        self, writes: list[tuple[str, str, dict[str, Any]]], updated_by: str
+    ) -> None:
+        """Check every write, then make them all, so a link is never half
+        written for a document over its cap."""
+        for owner, kind, document in writes:
+            self._check_owner_kind(owner, kind)
+            validate_document(kind, document)
+        for owner, kind, document in writes:
+            self._write(owner, kind, document, updated_by)
+
+    def link_pages(
+        self,
+        source_owner: Any,
+        page_ids: Any,
+        targets: Any,
+        *,
+        updated_by: str = WATCH_CONFIG_PANEL_WRITER,
+    ) -> dict[str, Any]:
+        """Put pages of one device on other devices, linked
+        (``watch_pages/link``).
+
+        Each page in ``page_ids`` and every page and status page it reaches
+        through its tiles (:func:`page_links.link_reach`) is added to each
+        target with the same id and the source's ``linkId`` (a new one when
+        it has none, written to the source too), at the end of the target's
+        list. A page a target already holds under the same link stays as it
+        is. Every source and target must be a paired device
+        (``unknown_device``), every page one the source lists (``not_found``)
+        and not a system page (``system_page``), and no target may hold
+        another page under one of the ids (``id_taken``); everything is
+        checked before anything is written.
+
+        Returns ``{"targets": {target: {"pages": [ids added],
+        "status_pages": [ids added]}}, "link_ids": {page id: linkId}}``.
+        """
+        if (
+            not isinstance(page_ids, list)
+            or not page_ids
+            or not all(isinstance(page_id, str) and page_id for page_id in page_ids)
+        ):
+            raise WatchConfigValidationError("page_ids must be a non-empty list of page ids")
+        writes, reply = self._plan_link(source_owner, page_ids, None, targets)
+        self._commit_writes(writes, updated_by)
+        if writes:
+            _LOGGER.info(
+                "Linked %d page(s) of %s to %s",
+                len(page_ids),
+                source_owner,
+                ", ".join(reply["targets"]),
+            )
+        return reply
+
+    def link_device(
+        self, source_owner: Any, target_owner: Any, *, updated_by: str
+    ) -> dict[str, Any]:
+        """Link every page of one device to another (``phone_pages_link_watch``).
+
+        Every page but the system pages, and every status page, linked as
+        :meth:`link_pages` links them, with the same refusals. Then the
+        source's menus and rooms are copied once, unlinked, for a kind the
+        target holds no record of: the ids match, so the menu slots and the
+        rooms open the same pages. A source whose rooms live in its
+        ``behavior`` (a watch's main house) gives the room keys from there.
+
+        Returns :meth:`link_pages`'s reply, plus ``copied``: the kinds copied.
+        """
+        source_owner = self._check_link_owner(source_owner)
+        target_owner = self._check_link_owner(target_owner)
+        page_ids = listed_page_ids(self._document(source_owner, "pages"))
+        status_ids = ids_in(self._document(source_owner, "status_pages"), "statusPages")
+        writes, reply = self._plan_link(source_owner, page_ids, status_ids, [target_owner])
+        copied: list[str] = []
+        for kind in ("menus", "rooms"):
+            if self._document(target_owner, kind) is not None:
+                continue
+            document = self._document(source_owner, kind)
+            if document is None and kind == "rooms":
+                document = rooms_from_behavior(self._document(source_owner, "behavior"))
+            if document is None:
+                continue
+            writes.append((target_owner, kind, copy.deepcopy(document)))
+            copied.append(kind)
+        self._commit_writes(writes, updated_by)
+        _LOGGER.info(
+            "Linked %d page(s) and %d status page(s) of %s to %s, copied %s",
+            len(page_ids),
+            len(status_ids),
+            source_owner,
+            target_owner,
+            ", ".join(copied) or "nothing else",
+        )
+        return {**reply, "copied": copied}
+
+    def link_places(self) -> dict[str, dict[str, list[str]]]:
+        """For each ``linkId``, the owners that hold it, per linked kind:
+        ``{"pages": {linkId: [owner, ...]}, "status_pages": {...}}``. An
+        owner whose file could not be read is left out."""
+        return {
+            kind: link_places(
+                {
+                    owner: by_kind[kind].document
+                    for owner, by_kind in self._records.items()
+                    if kind in by_kind and owner not in self._failed_owners
+                },
+                key,
+            )
+            for kind, key in LINKED_KINDS.items()
+        }
 
     def mark_delivered(
         self, owner_watch_id: str, kind: str, revision: int, *, confirmed: bool = False

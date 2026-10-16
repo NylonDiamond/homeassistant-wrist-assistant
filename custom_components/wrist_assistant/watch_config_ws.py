@@ -33,6 +33,13 @@ Commands:
                                                  base_revision}
     wrist_assistant/watch_config/subscribe      {owner_watch_id}
     wrist_assistant/watch_voices/get            {watch_id}
+    wrist_assistant/watch_pages/link            {source_id, page_ids, targets}
+    wrist_assistant/watch_pages/link_all        {source_id, target_id}
+    wrist_assistant/watch_pages/places          {}
+
+``watch_pages/link``, ``watch_pages/link_all`` and ``watch_pages/places`` make linked pages (one page
+on several devices, ``page_links.py``) and say where each one is. A link's
+refusals add ``unknown_device``, ``system_page`` and ``id_taken``.
 
 ``watch_voices/get`` is the voice list a watch reported over the signed
 ``watch_voices_put`` (see ``watch_voices_store.py``), for the panel's Watch
@@ -59,7 +66,7 @@ from homeassistant.components import websocket_api
 from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.core import HomeAssistant, callback
 
-from .const import DOMAIN, WATCH_CONFIG_PANEL_KINDS
+from .const import DOMAIN, WATCH_CONFIG_PANEL_KINDS, WATCH_CONFIG_PANEL_WRITER
 from .listener_relay import (
     HTTP_ACTIONS_DELIVERY,
     WATCH_CONFIG,
@@ -89,6 +96,9 @@ _CMD_RESTORE = f"{DOMAIN}/watch_config/restore"
 _CMD_SUBSCRIBE = f"{DOMAIN}/watch_config/subscribe"
 _CMD_SUBSCRIBE_DELIVERY = f"{DOMAIN}/watch_config/subscribe_delivery"
 _CMD_VOICES_GET = f"{DOMAIN}/watch_voices/get"
+_CMD_PAGES_LINK = f"{DOMAIN}/watch_pages/link"
+_CMD_PAGES_PLACES = f"{DOMAIN}/watch_pages/places"
+_CMD_PAGES_LINK_ALL = f"{DOMAIN}/watch_pages/link_all"
 
 
 # The kinds whose documents are a list of items, and the key holding it.
@@ -151,6 +161,9 @@ def async_register_watch_config_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_watch_config_subscribe)
     websocket_api.async_register_command(hass, ws_watch_config_subscribe_delivery)
     websocket_api.async_register_command(hass, ws_watch_voices_get)
+    websocket_api.async_register_command(hass, ws_watch_pages_link)
+    websocket_api.async_register_command(hass, ws_watch_pages_places)
+    websocket_api.async_register_command(hass, ws_watch_pages_link_all)
 
 
 @websocket_api.websocket_command(
@@ -630,6 +643,124 @@ def ws_watch_config_subscribe(
     relay.follow(store)
     connection.subscriptions[msg["id"]] = relay.add_listener(_on_change)
     connection.send_result(msg["id"], {"revisions": revisions})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_PAGES_LINK,
+        vol.Required("source_id"): str,
+        vol.Required("page_ids"): [str],
+        vol.Required("targets"): [str],
+    }
+)
+@callback
+def ws_watch_pages_link(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put pages of one device on other devices, as linked pages.
+
+    Result: {"targets": {<target id>: {"pages": [ids added],
+                                       "status_pages": [ids added]}},
+             "link_ids": {<page id>: <linkId>}}
+
+    Each page and every page and status page it reaches through its tiles
+    goes onto each target with the same id and one ``linkId``
+    (``WatchConfigStore.link_pages``); from then on a save of any copy
+    reaches every copy. Checked whole before anything is written. Refused
+    ``unknown_device`` (a source or target that is not a paired device),
+    ``not_found`` (a page the source does not list), ``system_page``,
+    ``id_taken`` (a target holds another page under that id), ``invalid``,
+    and ``unauthorized`` for a device the caller may not manage: the source
+    and every target follow the ``save`` rule.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    if not require_owner(hass, connection, msg, msg["source_id"], *msg["targets"]):
+        return
+    try:
+        result = store.link_pages(msg["source_id"], msg["page_ids"], msg["targets"])
+    except WatchConfigStoreError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_PAGES_LINK_ALL,
+        vol.Required("source_id"): str,
+        vol.Required("target_id"): str,
+    }
+)
+@callback
+def ws_watch_pages_link_all(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put every page of one device on another, as linked pages (the
+    panel's Add all watch pages).
+
+    Result: {"pages": [ids added], "status_pages": [ids added],
+             "copied": ["menus"?, "rooms"?]}
+
+    Every page but the system pages and every status page, linked as
+    ``link`` links them, then the source's menus and rooms copied once for a
+    kind the target holds no record of (``WatchConfigStore.link_device``,
+    the code the iPhone's signed ``phone_pages_link_watch`` runs). The same
+    refusals as ``link``; both devices follow the ``save`` rule.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    if not require_owner(hass, connection, msg, msg["source_id"], msg["target_id"]):
+        return
+    try:
+        result = store.link_device(
+            msg["source_id"], msg["target_id"], updated_by=WATCH_CONFIG_PANEL_WRITER
+        )
+    except WatchConfigStoreError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    added = result["targets"][msg["target_id"]]
+    connection.send_result(
+        msg["id"],
+        {
+            "pages": added["pages"],
+            "status_pages": added["status_pages"],
+            "copied": result["copied"],
+        },
+    )
+
+
+@websocket_api.websocket_command({vol.Required("type"): _CMD_PAGES_PLACES})
+@callback
+def ws_watch_pages_places(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Which devices hold each linked page, for the Devices menu and badges.
+
+    Result: {"pages": {<linkId>: [owner id, ...]},
+             "status_pages": {<linkId>: [owner id, ...]}}
+
+    Only the devices the caller may manage are named (all of them for an
+    administrator), and a link none of them holds is left out.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    admin = is_admin(connection)
+    result: dict[str, dict[str, list[str]]] = {}
+    for kind, places in store.link_places().items():
+        shown: dict[str, list[str]] = {}
+        for link, owners in places.items():
+            kept = [o for o in owners if admin or may_manage_owner(hass, connection, o)]
+            if kept:
+                shown[link] = kept
+        result[kind] = shown
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command(

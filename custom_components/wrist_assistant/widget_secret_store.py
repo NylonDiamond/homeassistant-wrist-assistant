@@ -132,12 +132,6 @@ class WidgetSecretEntry:
     iPhone entry. Kept on disk only while False. Not secret material, so a
     `register()` keeps it."""
 
-    pages_from: str | None = None
-    """For an iPhone entry, whose pages it draws (`phone_pages_source`):
-    ``None`` for a watch picked for it (the default), ``"own"`` for its own,
-    or a watch id. Set by the phone (`set_pages_from`). Kept on disk only
-    while set. Not secret material, so a `register()` keeps it."""
-
     secret_bytes: bytes | None = field(init=False, repr=False, default=None)
     """Decoded HMAC key bytes, cached on construction to avoid base64-decoding
     on every signed request and every signed response. None if `secret_b64`
@@ -210,11 +204,6 @@ class WidgetSecretStore:
                     screen_size=entry.get("screen_size"),
                     user_id=entry.get("user_id"),
                     main_house=entry.get("main_house") is not False,
-                    pages_from=(
-                        entry.get("pages_from")
-                        if isinstance(entry.get("pages_from"), str)
-                        else None
-                    ),
                 )
         _LOGGER.debug("Loaded %d widget secrets from storage", len(self._secrets))
 
@@ -256,11 +245,6 @@ class WidgetSecretStore:
                     # Only while False, so the file of a watch that never
                     # said otherwise is the one it always was.
                     **({} if entry.main_house else {"main_house": False}),
-                    **(
-                        {"pages_from": entry.pages_from}
-                        if entry.pages_from is not None
-                        else {}
-                    ),
                 }
                 for watch_id, entry in self._secrets.items()
             }
@@ -339,7 +323,6 @@ class WidgetSecretStore:
             screen_size=screen_size,
             user_id=user_id,
             main_house=existing.main_house if existing is not None else True,
-            pages_from=existing.pages_from if existing is not None else None,
         )
         _LOGGER.info(
             "Registered widget secret for watch_id=%s algo=%s app_version=%s owner_iphone_id=%s user=%s",
@@ -501,28 +484,6 @@ class WidgetSecretStore:
             "watch_id=%s takes its settings from %s",
             watch_id,
             "this home" if main_house else "another home",
-        )
-        return True
-
-    def set_pages_from(self, phone_id: str, pages_from: str | None) -> bool:
-        """Record whose pages the iPhone ``phone_id`` draws
-        (`WidgetSecretEntry.pages_from`). Returns whether it changed. An id
-        with no entry changes nothing. No listeners are told: the device
-        entities do not show it; the op that sets it wakes the phone's poll.
-        """
-        entry = self._secrets.get(phone_id)
-        if entry is None or entry.pages_from == pages_from:
-            return False
-        entry.pages_from = pages_from
-        self._schedule_save()
-        _LOGGER.info(
-            "iphone_id=%s draws %s",
-            phone_id,
-            "its own pages"
-            if pages_from == "own"
-            else f"the pages of watch_id={pages_from}"
-            if pages_from
-            else "a watch's pages, picked for it",
         )
         return True
 

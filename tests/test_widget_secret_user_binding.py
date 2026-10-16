@@ -554,31 +554,6 @@ def test_a_new_pair_keeps_the_main_house_mark(env) -> None:
     assert env.store.get("watch-1").main_house is False
 
 
-def test_a_phone_s_pages_choice_is_kept_on_disk_only_while_set(env) -> None:
-    """Whose pages an iPhone draws (phone_pages_source) is kept on its entry:
-    written only while set, read back on load, kept by a new pair."""
-    env.store.register("phone-1", SECRET_A, "iphone-self-provision", user_id="alice")
-    assert env.store.get("phone-1").pages_from is None
-    assert "pages_from" not in env.store._store.saved["secrets"]["phone-1"]
-
-    assert env.store.set_pages_from("phone-1", "own") is True
-    assert env.store.set_pages_from("phone-1", "own") is False
-    saved = env.store._store.saved
-    assert saved["secrets"]["phone-1"]["pages_from"] == "own"
-
-    reloaded = env.store_mod.WidgetSecretStore(object())
-    reloaded._store.saved = saved
-    asyncio.run(reloaded.async_load())
-    assert reloaded.get("phone-1").pages_from == "own"
-
-    assert env.store.register("phone-1", SECRET_B, "iphone-self-provision", user_id="alice") == "rekey"
-    assert env.store.get("phone-1").pages_from == "own"
-
-    assert env.store.set_pages_from("phone-1", None) is True
-    assert "pages_from" not in env.store._store.saved["secrets"]["phone-1"]
-    assert env.store.set_pages_from("nope", "own") is False
-
-
 # ── the live snapshot cap ────────────────────────────────────────────────
 
 

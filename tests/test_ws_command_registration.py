@@ -101,6 +101,10 @@ _OWNER = {
         "ws_watch_config_history_entry": "require_owner",
         "ws_watch_config_restore": "require_owner",
         "ws_watch_voices_get": "require_owner",
+        # Linking writes the source's pages and every target's: the caller
+        # must manage each one (pinned below).
+        "ws_watch_pages_link": "require_owner",
+        "ws_watch_pages_link_all": "require_owner",
         # The iPhone app's live line: hands out nothing but revision numbers.
         "ws_watch_config_subscribe": "_may_follow_owner",
     },
@@ -109,7 +113,11 @@ _OWNER = {
 # Answer about many owners; a non-admin hears only about their own.
 _FILTERED = {
     _MODULE.name: {"ws_owners"},
-    _WATCH_CONFIG_MODULE.name: {"ws_watch_config_summary", "ws_watch_config_subscribe_delivery"},
+    _WATCH_CONFIG_MODULE.name: {
+        "ws_watch_config_summary",
+        "ws_watch_config_subscribe_delivery",
+        "ws_watch_pages_places",
+    },
 }
 
 # Open to every signed-in user, each one a decision made on purpose:
@@ -334,6 +342,28 @@ def test_a_move_checks_both_of_its_owners() -> None:
         if isinstance(arg, ast.Subscript) and isinstance(arg.slice, ast.Constant)
     }
     assert named == {"source_owner_watch_id", "target_owner_watch_id"}
+
+
+def test_a_page_link_checks_its_source_and_every_target() -> None:
+    """A link writes the source's pages and each target's; a non-admin must
+    manage all of them, or they could put pages on someone else's watch."""
+    node = _command(_WATCH_CONFIG_MODULE, "ws_watch_pages_link")
+    [call] = [
+        c
+        for c in ast.walk(node)
+        if isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id == "require_owner"
+    ]
+    named = {
+        ast.unparse(arg.value if isinstance(arg, ast.Starred) else arg) for arg in call.args[3:]
+    }
+    assert named == {"msg['source_id']", "msg['targets']"}
+    node = _command(_WATCH_CONFIG_MODULE, "ws_watch_pages_link_all")
+    [call] = [
+        c
+        for c in ast.walk(node)
+        if isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id == "require_owner"
+    ]
+    assert {ast.unparse(arg) for arg in call.args[3:]} == {"msg['source_id']", "msg['target_id']"}
 
 
 @pytest.mark.parametrize(

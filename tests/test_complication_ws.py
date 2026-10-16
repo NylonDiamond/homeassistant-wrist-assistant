@@ -239,6 +239,7 @@ def _loaded_modules():
         secrets_mod = _load("widget_secret_store")
         # The real one: forget and move reach into it, and what they leave
         # behind is asserted below.
+        _load("page_links")
         watch_config_mod = _load("watch_config_store")
         # The real one: the live subscriptions reach the store through it.
         _load("listener_relay")

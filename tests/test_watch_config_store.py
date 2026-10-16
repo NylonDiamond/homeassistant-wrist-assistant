@@ -206,6 +206,15 @@ def _loaded_module():
             WATCH_CONFIG_HISTORY_LIMIT=HISTORY_LIMIT,
         )
 
+        # The store's pure helper for linked pages, loaded first so its
+        # relative import finds it.
+        links_spec = importlib.util.spec_from_file_location(
+            f"{_PKG}.page_links", _STORE_PATH.parent / "page_links.py"
+        )
+        links = importlib.util.module_from_spec(links_spec)
+        sys.modules[f"{_PKG}.page_links"] = links
+        links_spec.loader.exec_module(links)
+
         spec = importlib.util.spec_from_file_location(
             f"{_PKG}.watch_config_store", _STORE_PATH
         )

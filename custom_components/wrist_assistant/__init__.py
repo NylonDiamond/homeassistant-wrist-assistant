@@ -50,7 +50,7 @@ from .const import (
     LIBRARY_OWNER_ID,
     PAGE_IMAGES_CAPABILITY,
     PHONE_PAGES_CAPABILITY,
-    PHONE_PAGES_FOLLOW_CAPABILITY,
+    PHONE_PAGES_LINK_CAPABILITY,
     PHONE_PAIRING_CAPABILITY,
     PUSH_PAIRED_BY_USER_CAPABILITY,
     PLATFORMS,
@@ -97,7 +97,6 @@ from .watch_config_store import WatchConfigStore
 from .watch_config_ws import async_register_watch_config_commands
 from .watch_logs_store import WatchLogsStore
 from .watch_voices_store import WatchVoicesStore
-from .phone_pages_source import pages_owner
 from .notifications import (
     NotificationTokenStore,
     TokenEntry,
@@ -842,17 +841,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     entry.async_on_unload(
         watch_config_store.async_add_listener(coordinator.watch_config_changed)
     )
-
-    # An iPhone draws a watch's pages unless it chose its own
-    # (phone_pages_source): its poll names that watch's revisions of the
-    # pages, status pages and menus, and `pages_from`.
-    def _pages_owner(device_id: str) -> str | None:
-        secrets = widget_secret_store.all_entries
-        if not is_iphone_entry(secrets.get(device_id)):
-            return None
-        return pages_owner(secrets, watch_config_store, device_id)
-
-    coordinator.attach_pages_owner(_pages_owner)
     # Each watch's installed speech voices, for the panel's Watch voice
     # picker. The poll asks a watch for its list when the hash it reports is
     # not the stored one; an unreadable file is logged and starts empty.
@@ -1030,10 +1018,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # that poll, and the panel lists phones in the Pages editor, only when
     # they see this.
     coordinator.register_capability(PHONE_PAGES_CAPABILITY)
-    # An iPhone draws a watch's pages by default (phone_pages_source): the
-    # signed phone_pages_source_get and _set ops, and `pages_from` on its
-    # delta replies. The phone offers the choice only when it sees this.
-    coordinator.register_capability(PHONE_PAGES_FOLLOW_CAPABILITY)
+    # Linked pages (page_links.py): a page on several devices kept in step
+    # by the store, and the signed phone_pages_offer and
+    # phone_pages_link_watch ops. The phone offers a watch's pages only when
+    # it sees this.
+    coordinator.register_capability(PHONE_PAGES_LINK_CAPABILITY)
     # The home's HTTP action library (http_actions_store.py): the signed
     # http_actions_hand_over, http_actions_get and http_action_run ops and
     # `http_actions` on every delta reply. The phone hands its library over,
