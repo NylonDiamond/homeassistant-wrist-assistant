@@ -92,24 +92,6 @@ export function pageCards(devices: readonly LinkDevice[], docs: ReadonlyMap<stri
   return cards;
 }
 
-/** How many device colors there are: the panel's six person colors
- * (`--wa-person-1` to `-6`, set for the light and the dark skin). A seventh
- * device starts the six again. */
-export const DEVICE_COLORS = 6;
-
-/**
- * Each device's color on this tab, by its place in the device list (the
- * watches, then the iPhones, as the tabs list them), so a device keeps its
- * color between visits and while other devices' pages change. Per device
- * rather than per person: one person's watch and iPhone are the two devices
- * most often told apart here.
- */
-export function deviceColorVar(devices: readonly LinkDevice[], ownerId: string): string | undefined {
-  const index = devices.findIndex((d) => d.ownerId === ownerId);
-  if (index < 0) return undefined;
-  return `var(--wa-person-${(index % DEVICE_COLORS) + 1})`;
-}
-
 /** "all", or one device's owner id. */
 export type PagesFilter = string;
 export const ALL_FILTER: PagesFilter = "all";
@@ -120,18 +102,25 @@ export interface FilterChip {
   id: PagesFilter;
   label: string;
   kind?: LinkDevice["kind"];
-  /** The device's color (`deviceColorVar`); All has none. */
+  /** The device's color (`device-colors.ts`); All has none. */
   color?: string;
   count: number;
 }
 
-export function filterChips(devices: readonly LinkDevice[], cards: readonly PageCard[]): FilterChip[] {
+export function filterChips(
+  devices: readonly LinkDevice[],
+  cards: readonly PageCard[],
+  colorOf: (ownerId: string) => string | undefined = () => undefined,
+): FilterChip[] {
   return [
     { id: ALL_FILTER, label: "All", count: cards.length },
-    ...devices.map((d) => ({
-      id: d.ownerId, label: d.name, kind: d.kind, color: deviceColorVar(devices, d.ownerId)!,
-      count: cards.filter((c) => copyOn(c, d.ownerId) !== undefined).length,
-    })),
+    ...devices.map((d) => {
+      const color = colorOf(d.ownerId);
+      return {
+        id: d.ownerId, label: d.name, kind: d.kind, ...(color === undefined ? {} : { color }),
+        count: cards.filter((c) => copyOn(c, d.ownerId) !== undefined).length,
+      };
+    }),
   ];
 }
 

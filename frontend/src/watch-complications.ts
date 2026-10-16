@@ -174,7 +174,8 @@ export const watchComplicationsStyles = css`
   .wc-dev { display: flex; flex-direction: column; gap: 8px; }
   .wc-dev + .wc-dev { margin-top: 6px; }
   .wc-dev-name { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 600; color: var(--wa-ink); }
-  .wc-dev-name svg.ui-icon { width: 14px; height: 14px; color: var(--wa-muted); }
+  /* The device's glyph in its own color (\`--dc\`, device-colors.ts). */
+  .wc-dev-name svg.ui-icon { width: 14px; height: 14px; color: var(--dc, var(--wa-muted)); }
   .wc-empty { padding: 18px 4px; font-size: 13px; color: var(--wa-muted); }
   /* The other designs are a step quieter, so the watch's own read first. A
      card under the pointer or with its menu open comes up to full. */

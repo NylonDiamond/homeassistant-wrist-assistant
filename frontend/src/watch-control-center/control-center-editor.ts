@@ -55,8 +55,7 @@ import {
   saveWatchConfig,
   subscribeWatchConfig,
 } from "../ha-api.js";
-import { peopleOf } from "../people.js";
-import { personColorVar } from "../pickerRows.js";
+import { deviceColor, deviceColors } from "../device-colors.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
@@ -971,9 +970,9 @@ export class WaControlCenterEditor extends LitElement {
     </span>`;
   }
 
-  private personColor(watchId: string): string | undefined {
-    const people = peopleOf(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
-    return personColorVar(people.findIndex((p) => p.owners.some((o) => o.owner_watch_id === watchId)));
+  /** A watch's device color (`device-colors.ts`), for its glyph. */
+  private colorOf(watchId: string): string | undefined {
+    return deviceColor(deviceColors(this.owners.length > 0 ? this.owners : (this.ownList ?? [])), watchId);
   }
 
   private renderWatchPicker(watches: readonly OwnerSummary[]): TemplateResult | typeof nothing {
@@ -981,7 +980,7 @@ export class WaControlCenterEditor extends LitElement {
     const current = watches.find((w) => w.owner_watch_id === this.watchId);
     const open = this.watchMenuOpen;
     const glyph = (id: string | undefined) => {
-      const color = id === undefined ? undefined : this.personColor(id);
+      const color = id === undefined ? undefined : this.colorOf(id);
       return html`<span class="pe-chip-glyph" style=${color ? `--pe-person: ${color}` : nothing} aria-hidden="true">${uiIcon("watch")}</span>`;
     };
     return html`<span class="picker cc-watch-picker">

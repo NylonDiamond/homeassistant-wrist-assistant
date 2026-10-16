@@ -23,6 +23,7 @@ import { LitElement, css, html, nothing, type PropertyValues, type TemplateResul
 import { property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 import { type HassLike, type OwnerSummary, fetchWatchConfig, fetchWatchPagesPlaces, linkWatchPages, subscribeWatchConfig } from "../ha-api.js";
+import { deviceColor, deviceColorsCache } from "../device-colors.js";
 import { phoneFrameStyles, phoneModelForScreenSize, phonePagesLayout, phonePagesScreen } from "../phone-frame.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
@@ -38,7 +39,6 @@ import {
   cardDetail,
   cardDevicePlaces,
   copyOn,
-  deviceColorVar,
   emptyText,
   filterChips,
   hasBothKinds,
@@ -231,6 +231,11 @@ export class WaAllPages extends LitElement {
       this.startSubscriptions(devices);
     }
   }
+
+  private colorsFor = deviceColorsCache();
+
+  /** A device's color (`device-colors.ts`), the one it wears on every tab. */
+  private colorOf = (ownerId: string): string | undefined => deviceColor(this.colorsFor(this.owners), ownerId);
 
   /** Every device a page can be on, the editor's list. */
   private get devices(): LinkDevice[] {
@@ -686,7 +691,7 @@ export class WaAllPages extends LitElement {
    * holds, the selected one underlined. */
   private renderTabs(devices: readonly LinkDevice[], cards: readonly PageCard[], filter: PagesFilter): TemplateResult {
     return html`<div class="pk-tabs" role="tablist" aria-label="Devices">
-      ${filterChips(devices, cards).map((chip) => html`<button type="button" role="tab" class="pk-tab ${chip.id === filter ? "on" : ""}"
+      ${filterChips(devices, cards, this.colorOf).map((chip) => html`<button type="button" role="tab" class="pk-tab ${chip.id === filter ? "on" : ""}"
         style=${chip.color === undefined ? nothing : `--dc:${chip.color}`} id=${`ap-tab-${chip.id}`} aria-selected=${chip.id === filter ? "true" : "false"}
         title=${chip.id === ALL_FILTER ? "Every page on every device" : `The pages on ${chip.label}`}
         @click=${() => this.setFilter(chip.id)}>
@@ -705,7 +710,7 @@ export class WaAllPages extends LitElement {
     const picked = selecting && this.selected.has(card.key);
     const title = selecting ? `${picked ? "Let" : "Pick"} ${card.name}${picked ? " go" : ""}` : `Edit ${card.name} on ${copy.device.name}`;
     const click = (e: MouseEvent) => this.cardClick(e, card, filter);
-    const color = (ownerId: string) => `--dc:${deviceColorVar(devices, ownerId) ?? "var(--wa-line-strong)"}`;
+    const color = (ownerId: string) => `--dc:${this.colorOf(ownerId) ?? "var(--wa-line-strong)"}`;
     // A page on several devices, or any page drawn with no device round it,
     // shows a strip along its top edge in its devices' colors, one each.
     const strip = card.copies.length > 1 || this.bare;
@@ -713,7 +718,7 @@ export class WaAllPages extends LitElement {
       @click=${(e: MouseEvent) => { if (selecting) click(e); }}>
       ${strip ? html`<span class="ap-strip" aria-hidden="true">${card.copies.map((c) => html`<i class=${c.hidden ? "dim" : ""} style=${color(c.device.ownerId)}></i>`)}</span>` : nothing}
       <button type="button" class="ap-thumb" tabindex="-1" aria-hidden="true" title=${title} @click=${click}>
-        ${this.renderThumb(copy, deviceColorVar(devices, copy.device.ownerId))}
+        ${this.renderThumb(copy, this.colorOf(copy.device.ownerId))}
       </button>
       <div class="ap-body">
         <div class="ap-top">
@@ -749,7 +754,7 @@ export class WaAllPages extends LitElement {
       busy: this.linking,
       ...(this.devicesNote === undefined ? {} : { note: this.devicesNote }),
       className: "at-card",
-      colorOf: (ownerId) => deviceColorVar(devices, ownerId),
+      colorOf: (ownerId) => this.colorOf(ownerId),
       onToggle: (place) => void this.toggle(card, place),
       onDone: () => this.closeDevices(),
     });
@@ -809,7 +814,7 @@ export class WaAllPages extends LitElement {
           const dirty = dirtyHere(device.ownerId);
           const why = dirty ? "unsaved edits" : add ? (holds === n ? "has them all" : undefined) : (holds === 0 ? "has none" : undefined);
           return html`<button type="button" class="pk-bar-row" ?disabled=${why !== undefined}
-            style=${`--dc:${deviceColorVar(devices, device.ownerId) ?? "var(--wa-muted)"}`}
+            style=${`--dc:${this.colorOf(device.ownerId) ?? "var(--wa-muted)"}`}
             title=${dirty ? "Its pages have unsaved edits. Save or discard them first." : `${add ? "Add to" : "Remove from"} ${device.name}`}
             @click=${() => void this.runBulk(kind, [device.ownerId])}>
             ${uiIcon(device.kind === "iphone" ? "phone" : "watch")}

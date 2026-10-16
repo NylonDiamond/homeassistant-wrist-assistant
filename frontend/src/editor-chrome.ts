@@ -1044,9 +1044,9 @@ const canvasHeadTailRun = css`
       font-size: 13px; font-weight: 500; color: var(--wa-ink);
     }
     .cv-head .doc-chip > svg { width: 13px; height: 13px; flex: none; }
-    /* A device chip wears its person's color, the one Browse gives that
-       person's tabs and sections (placeColorVar), so a device is one color
-       everywhere: a low wash of it over the card and a thin edge of it. The
+    /* A device chip wears its device's color, the one its tab wears in
+       Browse and on the Pages tab (device-colors.ts), so a device is one
+       color everywhere: a low wash of it over the card and a thin edge of it. The
        glyph is the hue pulled a quarter toward the ink, the name is ink.
        Unassigned is nobody's, so it stays a plain card with a visible edge. */
     .cv-head .doc-chip.hued {

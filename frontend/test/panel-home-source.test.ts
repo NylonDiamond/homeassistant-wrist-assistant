@@ -81,7 +81,7 @@ describe("Home's page", () => {
 
 describe("Home's household state", () => {
   it("sits at the top of the side bar, only once there are devices", () => {
-    expect(home.indexOf("if (failed || loading || devices.length === 0) {")).toBeLessThan(home.indexOf("this.renderHomeStatus(devices, groups, elapsed)"));
+    expect(home.indexOf("if (failed || loading || devices.length === 0) {")).toBeLessThan(home.indexOf("this.renderHomeStatus(devices, elapsed)"));
   });
 
   it("counts the devices, draws them as a ring, and names the one heard from last", () => {

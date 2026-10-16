@@ -12,7 +12,6 @@ import {
   allPagesLead,
   cardDetail,
   cardDevicePlaces,
-  deviceColorVar,
   emptyText,
   filterChips,
   hasBothKinds,
@@ -27,6 +26,7 @@ import {
 import { DEVICES_SYSTEM_TEXT, type LinkDevice, elsewhereLine, elsewherePages, linkDevicesOf } from "../src/watch-pages/links.js";
 import type { WatchPage, WatchPagesDocument } from "../src/watch-pages/model.js";
 import type { OwnerSummary } from "../src/ha-api.js";
+import { deviceColor, deviceColors } from "../src/device-colors.js";
 
 const U = (n: number) => `5A17E000-0000-4000-8000-${n.toString(16).toUpperCase().padStart(12, "0")}`;
 const HALL = U(1), YARD = U(2), DEN = U(3), MINE = U(4), SYS = U(5), SMART = U(6);
@@ -89,7 +89,8 @@ describe("the filter", () => {
   const cards = pageCards(DEVICES, DOCS);
 
   it("has All, then a tab per device, each with its color and its count", () => {
-    expect(filterChips(DEVICES, cards)).toEqual([
+    const colors = new Map([["w1", "var(--wa-person-1)"], ["w2", "var(--wa-person-2)"], ["p1", "var(--wa-person-3)"]]);
+    expect(filterChips(DEVICES, cards, (id) => colors.get(id))).toEqual([
       { id: "all", label: "All", count: 5 },
       { id: "w1", label: "Jesse's Watch", kind: "watch", color: "var(--wa-person-1)", count: 3 },
       { id: "w2", label: "Chen's Watch", kind: "watch", color: "var(--wa-person-2)", count: 2 },
@@ -157,15 +158,21 @@ describe("which device a card opens on", () => {
 });
 
 describe("each device's color", () => {
-  it("is set by its place in the device list, and starts the six again after six", () => {
-    expect(DEVICES.map((d) => deviceColorVar(DEVICES, d.ownerId))).toEqual(["var(--wa-person-1)", "var(--wa-person-2)", "var(--wa-person-3)"]);
-    const many: LinkDevice[] = Array.from({ length: 7 }, (_, i) => ({ ownerId: `d${i}`, name: `D${i}`, kind: "watch" }));
-    expect(deviceColorVar(many, "d6")).toBe("var(--wa-person-1)");
-    expect(deviceColorVar(DEVICES, "gone")).toBeUndefined();
+  const owner = (id: string, kind: string): OwnerSummary =>
+    ({ owner_watch_id: id, device_name: id, device_kind: kind, is_orphan: false }) as unknown as OwnerSummary;
+  const owners = [owner("p1", "iphone"), owner("w1", "watch"), owner("w2", "watch")];
+
+  it("is the shared device color, in the device tabs' order", () => {
+    const colors = deviceColors(owners);
+    const devices = linkDevicesOf(owners, true);
+    const chips = filterChips(devices, [], (id) => deviceColor(colors, id)).slice(1);
+    expect(chips.map((c) => [c.id, c.color])).toEqual([
+      ["w1", "var(--wa-person-1)"], ["w2", "var(--wa-person-2)"], ["p1", "var(--wa-person-3)"],
+    ]);
   });
 
-  it("stays with its device whatever pages the devices hold", () => {
-    expect(deviceColorVar(DEVICES, "p1")).toBe(filterChips(DEVICES, []).find((c) => c.id === "p1")!.color);
+  it("leaves a tab plain with no colors given", () => {
+    expect(filterChips(DEVICES, []).every((c) => c.color === undefined)).toBe(true);
   });
 });
 

@@ -185,7 +185,9 @@ describe("the row as drawn", () => {
     const menu = text.slice(text.indexOf(`class="wa-wr-menu"`), text.indexOf("</p>", text.indexOf(`class="wa-wr-menu-note"`)));
     expect(menu).toContain(">You are editing</div>");
     expect(menu.match(/class="wa-wr-row /g)).toHaveLength(2);
-    expect(menu).toMatch(/class="wa-wr-row on" role="menuitemradio"\s+aria-checked=true data-watch=w1/);
+    expect(menu).toMatch(/class="wa-wr-row on tinted" role="menuitemradio"\s+style=--dc:var\(--wa-person-1\)\s+aria-checked=true data-watch=w1/);
+    // Each device's row has its own color on its edge, as on the Pages tab.
+    expect(menu).toMatch(/style=--dc:var\(--wa-person-2\)\s+aria-checked=false data-watch=w2/);
     expect(menu).toContain(`<span class="wa-wr-check" aria-hidden="true">`);
     expect(menu).toContain(`<i class="wa-wr-dot waiting" aria-hidden="true"></i><span class="wa-wr-row-name">Chen's Watch</span>`);
     expect(menu).toContain(`<span class="wa-wr-sync">Waiting</span>`);

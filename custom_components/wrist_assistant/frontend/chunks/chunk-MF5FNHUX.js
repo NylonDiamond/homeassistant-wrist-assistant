@@ -914,9 +914,9 @@ import{a as d,b as e,c as g,d as r,g as s,i as h,ji as b,kh as u,ki as x}from"./
       font-size: 13px; font-weight: 500; color: var(--wa-ink);
     }
     .cv-head .doc-chip > svg { width: 13px; height: 13px; flex: none; }
-    /* A device chip wears its person's color, the one Browse gives that
-       person's tabs and sections (placeColorVar), so a device is one color
-       everywhere: a low wash of it over the card and a thin edge of it. The
+    /* A device chip wears its device's color, the one its tab wears in
+       Browse and on the Pages tab (device-colors.ts), so a device is one
+       color everywhere: a low wash of it over the card and a thin edge of it. The
        glyph is the hue pulled a quarter toward the ink, the name is ink.
        Unassigned is nobody's, so it stays a plain card with a visible edge. */
     .cv-head .doc-chip.hued {
@@ -1086,7 +1086,7 @@ import{a as d,b as e,c as g,d as r,g as s,i as h,ji as b,kh as u,ki as x}from"./
     }
     .snap-steps button.on { background: var(--wa-seg-on); color: var(--wa-ink); }
     .snap-steps button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-`,G=e`
+`,K=e`
     /* A dark fall from the top to the foot, and a one pixel edge lit from
        the top left in the screen's hue. */
     .column.canvas > .card.canvas-card.lit {
@@ -1464,7 +1464,7 @@ import{a as d,b as e,c as g,d as r,g as s,i as h,ji as b,kh as u,ki as x}from"./
     .align-row button.align:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .align-row button.align svg.ui-icon { width: 17px; height: 17px; }
     .align-row .align-sep { flex: none; width: 1px; margin: 4px 5px; background: var(--wa-line-strong); }
-`,ue={topBar:f,picker:m,helpButton:y,columns:k,card:T,rows:z,rowsTail:A,leftCards:R,leftCardsTail:S,groundCap:C,richRows:$,canvasColumn:E,popMenu:L,tintDot:F,sharedValueRows:I,canvasHead:H,canvasHeadTail:O,stage:j,stageTools:q,stageToolsTail:D,valuesFoot:P,inspectorHead:M,sectionCard:N,sectionCardTail:W},be=e`${f}${m}${y}`,xe=e`${k}${T}`,ve=e`${R}${S}${L}`,fe=e`${z}${A}${C}${$}${I}`,me=e`${E}${F}${H}${O}${j}${q}${D}${P}${G}`,ye=e`${M}${N}${W}`;function ke(t,a){let{open:o,onToggle:n}=t;return r`<section class="sec" data-sec=${t.id??s} data-open=${o?"true":"false"} data-help="on" style=${`--c:${t.color}`}>
+`,ue={topBar:f,picker:m,helpButton:y,columns:k,card:T,rows:z,rowsTail:A,leftCards:R,leftCardsTail:S,groundCap:C,richRows:$,canvasColumn:E,popMenu:L,tintDot:F,sharedValueRows:I,canvasHead:H,canvasHeadTail:O,stage:j,stageTools:q,stageToolsTail:D,valuesFoot:P,inspectorHead:M,sectionCard:N,sectionCardTail:W},be=e`${f}${m}${y}`,xe=e`${k}${T}`,ve=e`${R}${S}${L}`,fe=e`${z}${A}${C}${$}${I}`,me=e`${E}${F}${H}${O}${j}${q}${D}${P}${K}`,ye=e`${M}${N}${W}`;function ke(t,a){let{open:o,onToggle:n}=t;return r`<section class="sec" data-sec=${t.id??s} data-open=${o?"true":"false"} data-help="on" style=${`--c:${t.color}`}>
     <div class="sec-h" role="button" tabindex="0" aria-expanded=${o?"true":"false"} @click=${n}
       @keydown=${i=>{i.target===i.currentTarget&&(i.key==="Enter"||i.key===" ")&&(i.preventDefault(),n())}}>
       <span class="swatch">${t.icon}</span>
@@ -1472,7 +1472,7 @@ import{a as d,b as e,c as g,d as r,g as s,i as h,ji as b,kh as u,ki as x}from"./
       <span class="chev">${u("chevron")}</span>
     </div>
     ${o?r`<div class="sec-b">${t.help?r`<p class="hint">${t.help}</p>`:s}${a}</div>`:s}
-  </section>`}function Ae(t,a,o){let n=o-a,i=n>0&&Number.isFinite(t)?(t-a)/n:0;return`--p:${Math.round(Math.max(0,Math.min(1,i))*1e3)/10}%`}var K=e`
+  </section>`}function Ae(t,a,o){let n=o-a,i=n>0&&Number.isFinite(t)?(t-a)/n:0;return`--p:${Math.round(Math.max(0,Math.min(1,i))*1e3)/10}%`}var V=e`
     /* Buttons: one quiet neutral shape everywhere, the ink fill kept for the
        single action that matters, and a soft ring on focus instead of a hard
        outline. No button is filled with a hue. */
@@ -2138,7 +2138,7 @@ import{a as d,b as e,c as g,d as r,g as s,i as h,ji as b,kh as u,ki as x}from"./
     @media (prefers-reduced-motion: reduce) { button.sym, button.sym .sym-glyph { transition: none; } button.sym:active { transform: none; } }
 `,ee=e`
     @media (prefers-reduced-motion: reduce) { .ent-box.needs { animation: none; } }
-`,Re=[K,U,J,X,Q,Y,Z,ee];var te="New watch, not saved yet",ae="New iPhone, not saved yet",oe="Not saved yet",B=class{constructor(a){this.owner=a}get root(){return this.box?.shadowRoot??void 0}draw(a,o){if(a===void 0){this.clear();return}let n=this.box;if(n===void 0){n=document.createElement("div"),n.className="wa-head-bar";let i=n.attachShadow({mode:"open"});g(i,this.owner.constructor.elementStyles),this.box=n}n.parentNode!==a&&a.append(n),h(o(),n.shadowRoot,{host:this.owner})}clear(){let a=this.box;a!==void 0&&(this.box=void 0,a.shadowRoot&&h(s,a.shadowRoot,{host:this.owner}),a.remove())}holds(a){let o=this.root;return o!==void 0&&a.includes(o)}query(a,o){return(this.root??a).querySelector(o)}};function Ee(t){if(t.newWatch){let o=t.device??"watch",n=b(o),i=t.dirty?n:`${n} ${x}`;return r`<span class="tb-status new" role="status" title=${i}><i class="tb-status-dot" aria-hidden="true"></i><span class="tb-long">${o==="iphone"?ae:te}</span><span class="tb-short" aria-hidden="true">${oe}</span></span>`}if(t.dirty){let o=t.changes,n=o===void 0||o<=0?"Unsaved changes":`${o} ${o===1?"change":"changes"}`;return r`<span class="tb-status unsaved" role="status" title="Not saved yet"><i class="tb-status-dot" aria-hidden="true"></i><span>${n}</span></span>`}let a=t.saved;return a===void 0||a===s||a===""?s:r`<span class="tb-status" role="status">${a}</span>`}var Le=e`
+`,Re=[V,U,J,X,Q,Y,Z,ee];var te="New watch, not saved yet",ae="New iPhone, not saved yet",oe="Not saved yet",B=class{constructor(a){this.owner=a}get root(){return this.box?.shadowRoot??void 0}draw(a,o){if(a===void 0){this.clear();return}let n=this.box;if(n===void 0){n=document.createElement("div"),n.className="wa-head-bar";let i=n.attachShadow({mode:"open"});g(i,this.owner.constructor.elementStyles),this.box=n}n.parentNode!==a&&a.append(n),h(o(),n.shadowRoot,{host:this.owner})}clear(){let a=this.box;a!==void 0&&(this.box=void 0,a.shadowRoot&&h(s,a.shadowRoot,{host:this.owner}),a.remove())}holds(a){let o=this.root;return o!==void 0&&a.includes(o)}query(a,o){return(this.root??a).querySelector(o)}};function Ee(t){if(t.newWatch){let o=t.device??"watch",n=b(o),i=t.dirty?n:`${n} ${x}`;return r`<span class="tb-status new" role="status" title=${i}><i class="tb-status-dot" aria-hidden="true"></i><span class="tb-long">${o==="iphone"?ae:te}</span><span class="tb-short" aria-hidden="true">${oe}</span></span>`}if(t.dirty){let o=t.changes,n=o===void 0||o<=0?"Unsaved changes":`${o} ${o===1?"change":"changes"}`;return r`<span class="tb-status unsaved" role="status" title="Not saved yet"><i class="tb-status-dot" aria-hidden="true"></i><span>${n}</span></span>`}let a=t.saved;return a===void 0||a===s||a===""?s:r`<span class="tb-status" role="status">${a}</span>`}var Le=e`
   .wa-bar.in-head {
     display: flex; align-items: center; justify-content: flex-end; flex-wrap: nowrap; gap: 8px;
     min-height: 0; padding: 0; margin: 0; border: 0; background: none; position: static; z-index: auto;
@@ -2192,6 +2192,6 @@ import{a as d,b as e,c as g,d as r,g as s,i as h,ji as b,kh as u,ki as x}from"./
     .wa-bar.in-head .tb-status > .tb-long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
     .wa-bar.in-head .tb-status > .tb-short { display: inline; }
   }
-`;var _="/cameras";function He(t){let a=t?.path??"";return a===_||a.startsWith(`${_}/`)}var Oe="https://docs.wrist-assistant.com/watch-app/cameras/#notification-snapshots",w;function je(t){w=t}function qe(){return w?.dirty()??!1}function De(){w?.drop()}var V,c=!1;function ne(){return V??=import("./cameras-editor-HRQCWRPM.js").then(()=>{},t=>{throw c=!0,t}),V}function Pe(t){let a=customElements.get("wa-cameras-editor")!==void 0;return!a&&!c&&ne().then(t.onLoaded,t.onLoaded),a?r`<wa-cameras-editor .hass=${t.hass} ?narrow=${t.narrow} .barHost=${t.barHost}></wa-cameras-editor>`:r`<div class="wp-loading">
+`;var _="/cameras";function He(t){let a=t?.path??"";return a===_||a.startsWith(`${_}/`)}var Oe="https://docs.wrist-assistant.com/watch-app/cameras/#notification-snapshots",w;function je(t){w=t}function qe(){return w?.dirty()??!1}function De(){w?.drop()}var G,c=!1;function ne(){return G??=import("./cameras-editor-X57KUJSP.js").then(()=>{},t=>{throw c=!0,t}),G}function Pe(t){let a=customElements.get("wa-cameras-editor")!==void 0;return!a&&!c&&ne().then(t.onLoaded,t.onLoaded),a?r`<wa-cameras-editor .hass=${t.hass} ?narrow=${t.narrow} .barHost=${t.barHost}></wa-cameras-editor>`:r`<div class="wp-loading">
         ${c?r`<span>The Cameras screen did not load. Reload the page to try again.</span>`:r`<span>Loading…</span>`}
-      </div>`}export{re as a,ie as b,se as c,le as d,v as e,l as f,we as g,ge as h,ue as i,be as j,xe as k,ve as l,fe as m,me as n,ye as o,ke as p,Ae as q,K as r,U as s,J as t,X as u,Q as v,Y as w,Z as x,Re as y,B as z,Ee as A,Le as B,_ as C,He as D,Oe as E,je as F,qe as G,De as H,Pe as I};
+      </div>`}export{re as a,ie as b,se as c,le as d,v as e,l as f,we as g,ge as h,ue as i,be as j,xe as k,ve as l,fe as m,me as n,ye as o,ke as p,Ae as q,V as r,U as s,J as t,X as u,Q as v,Y as w,Z as x,Re as y,B as z,Ee as A,Le as B,_ as C,He as D,Oe as E,je as F,qe as G,De as H,Pe as I};

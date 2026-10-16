@@ -30,11 +30,11 @@
 // and links to it.
 
 import { css, html, nothing, type TemplateResult } from "lit";
+import { deviceColor, deviceColors } from "./device-colors.js";
 import type { OwnerSummary } from "./ha-api.js";
 import { homeMiniArt } from "./home-art.js";
 import type { Person } from "./people.js";
 import { iphoneDevices } from "./phone-pages.js";
-import { personColorVar } from "./pickerRows.js";
 import { howToStyles, renderHowTo, screenHowTo } from "./screen-howto.js";
 import { type DeviceSync, deviceSync, deviceSyncLabel } from "./send-state.js";
 import {
@@ -185,7 +185,7 @@ export interface WatchRowInput {
   /** The screens with unsaved work (`unsavedScreens`). */
   unsaved?: readonly WatchScreen[];
   /** The household as people (`peopleOf`), so the watch's chip names whose
-   * it is and lights its drawing in their color, as Home does. */
+   * it is. Its drawing wears the device's own color (`device-colors.ts`). */
   people?: readonly Person[];
   /** What stands at the row's right end: the save controls of the screen on
    * show, which each screen draws itself (`head-bar.ts`). */
@@ -398,14 +398,14 @@ export function showRowLink(root: ParentNode): void {
   markRowMore(box);
 }
 
-/** The watch's small drawing on its chip, lit in its person's color once it
- * holds complications, as on Home. */
+/** The watch's small drawing on its chip, in its device's color
+ * (`device-colors.ts`, the color it wears on the Pages and Complications
+ * tabs): the box round it outlined in it, and the drawing lit in it once it
+ * holds complications. */
 function chipArt(input: WatchRowInput, id: string | undefined, kind: RowKind = "watch") {
-  const people = input.people ?? [];
-  const index = id === undefined ? -1 : people.findIndex((p) => p.owners.some((o) => o.owner_watch_id === id));
   const held = input.owners.find((o) => o.owner_watch_id === id)?.complication_count ?? 0;
-  const color = personColorVar(index) ?? "var(--wa-hue-grey)";
-  return html`<span class="wa-wr-art" style=${`--c: ${color}`} aria-hidden="true">${homeMiniArt(kind, held > 0)}</span>`;
+  const color = deviceColor(deviceColors(input.owners), id);
+  return html`<span class="wa-wr-art ${color === undefined ? "" : "tinted"}" style=${`--c: ${color ?? "var(--wa-hue-grey)"}`} aria-hidden="true">${homeMiniArt(kind, held > 0)}</span>`;
 }
 
 /** The chip's name and the line under it. */
@@ -442,6 +442,7 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
       : html`<span class="wa-wr-watch" title="The watch you are setting up">${chipArt(input, current.id, kind)}${chipWords(input, current)}</span>`;
   }
   const open = input.menuOpen;
+  const colors = deviceColors(input.owners);
   const note = kind === "iphone" ? undefined : input.phones === true ? WATCH_ROW_IPHONE_TAB_NOTE : WATCH_ROW_PHONES_NOTE;
   return html`<span class="wa-wr-picker" @keydown=${(e: KeyboardEvent) => {
       if (e.key === "Escape" && open) { e.stopPropagation(); input.onMenu(false); }
@@ -453,7 +454,8 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
     </button>
     ${open ? html`<div class="wa-wr-menu" role="menu" aria-label=${kind === "iphone" ? "iPhones" : "Watches"}>
       <div class="wa-wr-menu-h">You are editing</div>
-      ${choices.map((c) => html`<button type="button" class="wa-wr-row ${c.on ? "on" : ""}" role="menuitemradio"
+      ${choices.map((c) => [c, deviceColor(colors, c.id)] as const).map(([c, color]) => html`<button type="button" class="wa-wr-row ${c.on ? "on" : ""} ${color === undefined ? "" : "tinted"}" role="menuitemradio"
+        style=${color === undefined ? nothing : `--dc:${color}`}
         aria-checked=${c.on ? "true" : "false"} data-watch=${c.id} data-kind=${c.kind}
         title=${c.sync ? `Complications and widgets: ${deviceSyncLabel(c.sync)}` : nothing}
         @click=${() => { input.onMenu(false); if (!c.on) input.onPick(c.id); }}>
@@ -503,6 +505,7 @@ export const watchRowStyles = css`
   }
   .wa-wr-art svg.ha-mini { width: 16px; height: 21px; display: block; }
   .wa-wr-art .ha-lit { stroke: var(--c); }
+  .wa-wr-art.tinted { border-color: color-mix(in srgb, var(--c) 60%, transparent); }
   .wa-wr-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .wa-wr-name { font-size: 13px; font-weight: 500; line-height: 1.2; overflow-wrap: anywhere; }
   .wa-wr-sub { display: flex; align-items: center; gap: 5px; font-size: 11px; line-height: 1.2; color: var(--wa-muted); overflow-wrap: anywhere; }
@@ -536,6 +539,9 @@ export const watchRowStyles = css`
   button.wa-wr-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.wa-wr-row.on { font-weight: 600; background: color-mix(in srgb, var(--wa-ink) 10%, transparent); border-color: var(--wa-line-strong); }
   .wa-wr-row-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  /* Each device's color on the row's left edge, as in the Pages tab's menus. */
+  button.wa-wr-row.tinted { box-shadow: inset 3px 0 0 var(--dc); }
+  button.wa-wr-row.tinted:focus-visible { box-shadow: inset 3px 0 0 var(--dc), var(--wa-ring); }
   .wa-wr-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--wa-muted); }
   .wa-wr-dot.synced { background: var(--wa-green); }
   .wa-wr-dot.waiting { background: var(--wa-amber); }

@@ -70,9 +70,8 @@ import {
   saveWatchConfig,
   subscribeWatchConfig,
 } from "../ha-api.js";
-import { peopleOf } from "../people.js";
 import { isPhoneId } from "../phone-pages.js";
-import { personColorVar } from "../pickerRows.js";
+import { deviceColor, deviceColors } from "../device-colors.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
@@ -1560,15 +1559,14 @@ export class WaMenuEditor extends LitElement {
     </span>`;
   }
 
-  /** A watch's person color, for its glyph. */
-  private personColor(watchId: string): string | undefined {
-    const people = peopleOf(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
-    return personColorVar(people.findIndex((p) => p.owners.some((o) => o.owner_watch_id === watchId)));
+  /** A watch's device color (`device-colors.ts`), for its glyph. */
+  private colorOf(watchId: string): string | undefined {
+    return deviceColor(deviceColors(this.owners.length > 0 ? this.owners : (this.ownList ?? [])), watchId);
   }
 
   /**
    * The watch picker, the complication editor's Browse picker: the shown
-   * watch's glyph in its person's color, its name and a caret, opening a
+   * watch's glyph in its device's color, its name and a caret, opening a
    * menu of every watch with a check on the shown one. Drawn whenever there
    * is more than one watch, in every state of the body, so a watch with no
    * menus yet (only the empty card) can still be switched away from.
@@ -1578,7 +1576,7 @@ export class WaMenuEditor extends LitElement {
     const current = watches.find((w) => w.owner_watch_id === this.watchId);
     const open = this.watchMenuOpen;
     const glyph = (id: string | undefined) => {
-      const color = id === undefined ? undefined : this.personColor(id);
+      const color = id === undefined ? undefined : this.colorOf(id);
       return html`<span class="pe-chip-glyph" style=${color ? `--pe-person: ${color}` : nothing} aria-hidden="true">${uiIcon("watch")}</span>`;
     };
     return html`<span class="picker me-watch-picker">
@@ -1942,7 +1940,7 @@ export class WaMenuEditor extends LitElement {
     /* The shown watch's name in the head: a fact; the picker is in the bar. */
     .cv-head .cv-watch { min-width: 0; font-size: 12.5px; font-weight: 500; color: var(--wa-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* The watch picker, the complication editor's Browse picker: its glyph
-       in the watch's person color, the name, a caret; the menu lists every
+       in the watch's device color, the name, a caret; the menu lists every
        watch with a check on the shown one. */
     .pe-chip-glyph { display: inline-flex; flex: none; color: var(--pe-person, var(--wa-muted)); }
     .pe-chip-glyph svg.ui-icon { width: 13px; height: 13px; }

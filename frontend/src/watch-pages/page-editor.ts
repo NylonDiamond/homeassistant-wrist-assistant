@@ -69,7 +69,7 @@ import {
   menuSlotsOpeningPage,
 } from "./page-refs.js";
 import { clearPageRefs as clearPageRefsOn, takePageOff as takePageOffDevice } from "./page-links-io.js";
-import { deviceColorVar } from "./all-pages-model.js";
+import { deviceColor, deviceColorsCache } from "../device-colors.js";
 import { devicesMenuStyles, renderPageDevicesMenu } from "./devices-menu.js";
 import { allPagesHref, goToAllPages, isPlainClick } from "../shell.js";
 import {
@@ -101,8 +101,6 @@ import { sectionCard } from "../editor-chrome.js";
 import { formStyles, rangeFill } from "../form-styles.js";
 import { HeadBar, headBarStyles, renderHeadStatus } from "../head-bar.js";
 import { SECTION_COLOR } from "../kinds.js";
-import { peopleOf } from "../people.js";
-import { personColorVar } from "../pickerRows.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
@@ -3188,6 +3186,13 @@ export class WaPageEditor extends LitElement {
     return this.owners.length > 0 ? this.owners : (this.ownList ?? []);
   }
 
+  private colorsFor = deviceColorsCache();
+
+  /** A device's color (`device-colors.ts`), the one it wears on every tab. */
+  private colorOf(ownerId: string): string | undefined {
+    return deviceColor(this.colorsFor(this.ownerList), ownerId);
+  }
+
   /** The device on show is one of the home's iPhones (`phone-pages.ts`):
    * its pages start empty, and Add all watch pages can fill them. */
   private get onPhone(): boolean {
@@ -3551,11 +3556,9 @@ export class WaPageEditor extends LitElement {
     </span>`;
   }
 
-  /** The watch glyph in its person's color, for the picker. */
+  /** The watch glyph in its device's color, for the picker. */
   private watchGlyph(watch: OwnerSummary): TemplateResult {
-    const people = peopleOf(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
-    const index = people.findIndex((p) => p.owners.some((o) => o.owner_watch_id === watch.owner_watch_id));
-    const color = personColorVar(index);
+    const color = this.colorOf(watch.owner_watch_id);
     return html`<span class="pe-chip-glyph" style=${color ? `--pe-person: ${color}` : nothing} aria-hidden="true">${uiIcon("watch")}</span>`;
   }
 
@@ -3895,7 +3898,7 @@ export class WaPageEditor extends LitElement {
       busy: this.linking,
       ...(this.devicesNote === undefined ? {} : { note: this.devicesNote }),
       className: `at-${where}`,
-      colorOf: (ownerId) => deviceColorVar(this.linkDevices, ownerId),
+      colorOf: (ownerId) => this.colorOf(ownerId),
       onToggle: (place) => void (place.on ? this.unlinkFrom(pageId, place.device.ownerId) : this.linkTo(pageId, place.device.ownerId)),
       onDone: () => { this.closeDevices(); this.focusPageRow = pageId; },
     });
@@ -5465,7 +5468,7 @@ export class WaPageEditor extends LitElement {
        switch keeps focus then, and the hint stayed up until a click away. */
     .pe-tip:hover::after, .pe-tip:has(:focus-visible)::after { opacity: 1; visibility: visible; }
     /* The watch picker in the top bar, the complication editor's Browse
-       button, and its menu: each watch's glyph in its person's color, its
+       button, and its menu: each watch's glyph in its device's color, its
        name, and a check on the open one. */
     .pe-chip-glyph { display: inline-flex; flex: none; color: var(--pe-person, var(--wa-muted)); }
     .pe-chip-glyph svg.ui-icon { width: 13px; height: 13px; }

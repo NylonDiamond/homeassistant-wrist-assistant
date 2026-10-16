@@ -604,6 +604,8 @@ export const homeStyles = css`
     width: 38px; height: 38px; flex: none; box-sizing: border-box; border-radius: 9px;
     display: grid; place-items: center; background: var(--wa-field); border: 1px solid var(--wa-line);
   }
+  /* The device's own color (device-colors.ts) on its drawing's box. */
+  .hb-icon.tinted { border-color: color-mix(in srgb, var(--c) 60%, transparent); }
   .hb-row-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .hb-row-name { font-size: 13px; font-weight: 500; line-height: 1.3; overflow-wrap: anywhere; }
   .hb-row-sub { font-size: 11px; line-height: 1.3; color: var(--wa-muted); overflow-wrap: anywhere; }

@@ -215,6 +215,7 @@ import { type HaPerson, type Person, deviceShortName, haPeople, peopleOf } from 
 import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt, shapeOnlyArt, shapeWell, watchWell } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { STACK_FLAT, STACK_HOME, sheetUnits, stackRigStyle, turnStack, zoomStack, type StackView } from "./stack3d.js";
+import { deviceColor, deviceColorsCache } from "./device-colors.js";
 import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
 import { type SplitNotice, autoSplitShapes, editBlockedBySplitGate, ownerCanSplit } from "./splitShapes.js";
 import { makeIconProvider } from "./icons.js";
@@ -243,7 +244,6 @@ import {
   UNASSIGNED_LIST,
   isShelvedRow,
   personColorVar,
-  placeColorVar,
   pickerBands,
   pickerListRows,
   rowKeyFor,
@@ -2848,8 +2848,8 @@ export class WristAssistantPanel extends LitElement {
       display: flex; align-items: stretch; flex-wrap: wrap; gap: 2px; flex: none;
       padding: 0 12px; border-bottom: 1px solid var(--wa-line);
     }
-    /* Neutral, every tab alike: the name, the count and the glyph say whose
-       device it is, so the row carries no hue per person. */
+    /* Every tab alike but for its device's color (\`--dc\`, \`device-colors.ts\`)
+       on the glyph and the selected one's underline, as on the Pages tab. */
     .pk-tab {
       display: inline-flex; align-items: center; gap: 7px; flex: none; cursor: pointer;
       font: inherit; font-size: 12.5px; font-weight: 500; color: var(--wa-muted); white-space: nowrap;
@@ -2858,9 +2858,9 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-tab:hover { color: var(--wa-ink); }
     .pk-tab:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 7px 7px 0 0; }
-    .pk-tab.on { color: var(--wa-ink); font-weight: 600; border-bottom-color: var(--wa-ink); }
+    .pk-tab.on { color: var(--wa-ink); font-weight: 600; border-bottom-color: var(--dc, var(--wa-ink)); }
     .pk-tab svg { width: 15px; height: 15px; }
-    .pk-tab-glyph { display: inline-flex; flex: none; color: var(--wa-muted); }
+    .pk-tab-glyph { display: inline-flex; flex: none; color: var(--dc, var(--wa-muted)); }
     .pk-tab-count { font-size: 11.5px; font-weight: 400; color: var(--wa-muted); }
     /* One shape at a time, in the head beside the search. A menu rather than
        a chip each: eight pills for a question most visits never ask. */
@@ -2927,7 +2927,7 @@ export class WristAssistantPanel extends LitElement {
     /* One surface and the cards on it. A person and a device are headings
        over the cards, not boxes round them: a box per device inside the
        surface made three frames deep and took the width the cards need.
-       Nothing here wears a hue; the names say whose is whose. */
+       Only a device's glyph wears a hue, its own (device-colors.ts). */
     /* One person's band: a quiet caption with a rule running off it, holding
        their devices' boxes. It is deliberately lighter than a device heading:
        a person is the group a device is in, not a louder heading above it. */
@@ -2984,10 +2984,12 @@ export class WristAssistantPanel extends LitElement {
     .pk-box-name::before { content: ""; width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--wa-muted); }
     .pk-box-count { font-size: 10.5px; font-weight: 600; color: var(--wa-muted); opacity: .65; }
     .pk-box-pick { flex: none; margin: 0; accent-color: var(--wa-accent); }
-    /* A grey chip with the device's glyph, the same for everybody. */
+    /* A grey chip with the device's glyph, outlined and tinted in its
+       device's color (\`--dc\`); Unassigned has none and stays grey. */
     .pk-sec-glyph {
       display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; box-sizing: border-box; border-radius: 6px;
-      background: var(--wa-hover); color: var(--wa-ink); border: 1px solid var(--wa-line-strong);
+      background: var(--wa-hover); color: var(--dc, var(--wa-ink));
+      border: 1px solid color-mix(in srgb, var(--dc, var(--wa-line-strong)) 60%, transparent);
     }
     .pk-sec-glyph svg { width: 13px; height: 13px; }
     .pk-sec-name { color: var(--wa-ink); }
@@ -3120,7 +3122,9 @@ export class WristAssistantPanel extends LitElement {
       font: inherit; font-size: 12.5px; color: var(--wa-ink); background: transparent; cursor: pointer; text-align: left;
     }
     .pk-bar-row:hover { background: color-mix(in srgb, var(--wa-ink) 9%, transparent); }
-    .pk-bar-row svg { width: 15px; height: 15px; flex: none; color: var(--wa-muted); }
+    .pk-bar-row svg { width: 15px; height: 15px; flex: none; color: var(--dc, var(--wa-muted)); }
+    /* Each device's color on the row's left edge, as in the Pages tab's menus. */
+    .pk-bar-row { box-shadow: inset 3px 0 0 var(--dc, transparent); }
     /* The one filled button on the bar: every other act is one of several
        things to do to a pick, and this is the way back out of the mode. */
     .pk-bar-done { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-left: 4px; }
@@ -3244,6 +3248,10 @@ export class WristAssistantPanel extends LitElement {
     .pk-dup-row.check input { margin: 0; cursor: inherit; }
     .pk-dup-row.check.off .pk-dup-pick { opacity: .5; cursor: default; }
     .pk-dup-row.check:hover:not(.off) { border-color: var(--wa-line-strong); }
+    /* Each device's color, on its glyph and the row's left edge, as in the
+       Pages tab's Devices menu (\`devices-menu.ts\`). */
+    .pk-dup-row.tinted { box-shadow: inset 3px 0 0 var(--dc); }
+    .pk-dup-row.tinted .pk-dup-pick svg { color: var(--dc); }
     .pk-dup-eye {
       flex: none; width: 24px; height: 24px; margin-right: 3px; display: inline-flex; align-items: center; justify-content: center;
       border: 0; border-radius: 6px; background: transparent; color: var(--wa-muted); cursor: pointer;
@@ -3534,6 +3542,8 @@ export class WristAssistantPanel extends LitElement {
        reads as a checkbox and the name beside it as its label. */
     .dev-tick .pick-tick { position: static; flex: none; }
     .dev-tick .dev-card-name { font-weight: 600; }
+    /* A device's glyph in its own color (\`--dc\`, device-colors.ts). */
+    .dev-tick .dev-card-ico { color: var(--dc, inherit); }
     /* Not one of them starts picked. A tinted default reads as a
        recommendation, and the shape is the one thing about a complication
        that cannot be changed later without moving every layer. */
@@ -4622,7 +4632,9 @@ export class WristAssistantPanel extends LitElement {
     button.doc-add:disabled { opacity: .5; cursor: default; }
     button.doc-add svg { width: 12px; height: 12px; }
     .pop-menu .row.place-row { display: flex; align-items: center; gap: 7px; }
-    .place-row svg { width: 14px; height: 14px; flex: none; opacity: .8; }
+    .place-row svg { width: 14px; height: 14px; flex: none; opacity: .8; color: var(--dc, inherit); }
+    /* Each device's color on the row's left edge, as in the Pages tab's menus. */
+    .pop-menu .row.place-row { box-shadow: inset 3px 0 0 var(--dc, transparent); }
     .place-row .place-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .place-row .place-no { flex: none; font-size: 10.5px; font-weight: 600; color: var(--wa-muted); }
     .place-row:disabled { opacity: .55; cursor: default; }
@@ -12461,16 +12473,15 @@ export class WristAssistantPanel extends LitElement {
    * scroll is what this surface is for; the tab that was last used comes back
    * on the next visit.
    *
-   * Each person's devices wear that person's color, on the glyph, the count
-   * and the underline of the selected one. A household of four has eight
-   * device tabs over two rows, and hue is what makes "Jesse's two" read as a
-   * pair before any of the names have been read. All and Unassigned belong to
-   * nobody and keep the accent.
+   * Each device wears its own color (`device-colors.ts`), on the glyph and
+   * the underline of the selected one: the same color it has on the Pages
+   * tab, the Watch app's picker and Home. All and Unassigned are no device
+   * and stay neutral.
    */
   private renderPickerTabs(tabs: readonly PickerTab[], current: string) {
     return html`<div class="pk-tabs" role="tablist" aria-label="Devices">
       ${tabs.map((tab) => html`<button type="button" role="tab" class="pk-tab ${tab.key === current ? "on" : ""}"
-          id=${`pk-tab-${tab.key}`} aria-selected=${tab.key === current ? "true" : "false"}
+          style=${this.deviceStyle(tab.key)} id=${`pk-tab-${tab.key}`} aria-selected=${tab.key === current ? "true" : "false"}
           aria-controls="pk-tabpanel" @click=${() => this.pickPickerTab(tab.key)}>
           <span class="pk-tab-glyph" aria-hidden="true">${uiIcon(tabIcon(tab.kind))}</span>
           <span class="pk-tab-name">${tab.label}</span>
@@ -12536,6 +12547,20 @@ export class WristAssistantPanel extends LitElement {
   private setTabMemory(memory: TabMemory) {
     this.pickerDevice = memory.shown;
     this.listDevice = memory.remembered;
+  }
+
+  private deviceColorsFor = deviceColorsCache();
+
+  /** A device's color (`device-colors.ts`), the one it wears on every tab;
+   * undefined for All, Unassigned and an id the home does not have. */
+  private deviceColorOf(ownerId: string | undefined): string | undefined {
+    return deviceColor(this.deviceColorsFor(this.owners), ownerId);
+  }
+
+  /** `--dc` set to a device's color, for a style attribute, or nothing. */
+  private deviceStyle(ownerId: string | undefined) {
+    const color = this.deviceColorOf(ownerId);
+    return color === undefined ? nothing : `--dc:${color}`;
   }
 
   /** The tab the picker is on, checked against the tabs there are: a device
@@ -12925,7 +12950,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** One device's block of the All tab: its heading, then its cards. The
-   * heading wears its owner's color, the same one that person's tabs wear. */
+   * heading's glyph wears the device's color, the one its tab wears. */
   private renderPickerSection(section: PickerSection<PickerItem>, unsaved: Draft | undefined) {
     const mine = this.unsavedBelongsTo(unsaved, section.ownerId) ? unsaved : undefined;
     const count = section.rows.length + (mine ? 1 : 0);
@@ -12937,7 +12962,7 @@ export class WristAssistantPanel extends LitElement {
             title=${shut ? `Show ${section.label}` : `Fold ${section.label} away`}
             @click=${() => this.togglePickerShut(section.ownerId)}>
             <span class="pk-fold" aria-hidden="true">${uiIcon("chevron")}</span>
-            <span class="pk-sec-glyph" aria-hidden="true">${uiIcon(tabIcon(section.kind))}</span>
+            <span class="pk-sec-glyph" style=${this.deviceStyle(section.ownerId)} aria-hidden="true">${uiIcon(tabIcon(section.kind))}</span>
             <span class="pk-sec-name">${section.label}</span>
             <span class="pk-sec-count">${count}</span>
           </button>
@@ -13236,7 +13261,7 @@ export class WristAssistantPanel extends LitElement {
         @click=${() => { this.pickerBatchAdd = !open; }}>${uiIcon("plus")}<span>Put on…</span></button>
       ${open
         ? html`<div class="pk-bar-list" role="group" aria-label="Put the picked complications on">
-          ${targets.map((target) => html`<button type="button" class="pk-bar-row"
+          ${targets.map((target) => html`<button type="button" class="pk-bar-row" style=${this.deviceStyle(target.ownerId)}
             @click=${() => void this.batchAddTo(target)}>
             ${uiIcon(target.kind === "iphone" ? "phone" : "watch")}
             <span class="pk-dup-name">${target.label}</span></button>`)}
@@ -13578,7 +13603,9 @@ export class WristAssistantPanel extends LitElement {
     // ticked row flips that device's. The open copy's goes through its draft.
     const here = place.on ? this.recordAt(target.ownerId, place.copies[0]!.id) : undefined;
     const hid = here !== undefined && this.rowHidden(here);
-    return html`<div class="pk-dup-row check ${disabled ? "off" : ""}">
+    const color = this.deviceColorOf(target.ownerId);
+    return html`<div class="pk-dup-row check ${disabled ? "off" : ""} ${color === undefined ? "" : "tinted"}"
+      style=${color === undefined ? nothing : `--dc:${color}`}>
       <label class="pk-dup-pick" title=${title}>
         <input type="checkbox" .checked=${place.on} ?disabled=${disabled}
           aria-label=${`${row.name} on ${label}`}
@@ -14293,7 +14320,7 @@ export class WristAssistantPanel extends LitElement {
       // boxes under each say whose they are.
       const many = byOwner.size > 1;
       return [...byOwner].map(([at, rows]) => html`<div class="wc-dev">
-        ${many ? html`<h3 class="wc-dev-name">${uiIcon(tabIcon(deviceKindOf(this.ownerOf(at))))}<span>${devices.find((dv) => dv.ownerId === at)?.label ?? this.ownerName(at)}</span></h3>` : nothing}
+        ${many ? html`<h3 class="wc-dev-name" style=${this.deviceStyle(at)}>${uiIcon(tabIcon(deviceKindOf(this.ownerOf(at))))}<span>${devices.find((dv) => dv.ownerId === at)?.label ?? this.ownerName(at)}</span></h3>` : nothing}
         ${this.renderPickerGroups(sortPickerRows(rows, devices, at), at, undefined)}
       </div>`);
     };
@@ -14765,7 +14792,7 @@ export class WristAssistantPanel extends LitElement {
         const on = ticked.has(id);
         const full = this.freeSlotOn(id, family) < 0;
         const label = deviceShortName(owner, row.person);
-        return html`<button type="button" role="checkbox" class="dev-tick ${on ? "on" : ""}"
+        return html`<button type="button" role="checkbox" class="dev-tick ${on ? "on" : ""}" style=${this.deviceStyle(id)}
           aria-checked=${on ? "true" : "false"} ?disabled=${full && !on}
           title=${full ? `${fullForShapeText(label)} Delete a complication on it first.` : `Put one on ${label}`}
           @click=${() => toggle(id)}>
@@ -19608,7 +19635,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="home hb">
         <aside class="hb-side" aria-label="Devices">
           <div class="hb-head"><h1>Home</h1>${lead}${scope}</div>
-          ${this.renderHomeStatus(devices, groups, elapsed)}
+          ${this.renderHomeStatus(devices, elapsed)}
           <button type="button" class="home-btn add hb-pair" title="Pair a watch or iPhone, by a code or a QR code"
             @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair a device</span></button>
           ${groups.map((g) => this.renderHomeGroup(g, row.id, elapsed))}
@@ -19725,12 +19752,11 @@ export class WristAssistantPanel extends LitElement {
 
   /** Home's household state, at the top of the side bar: a ring of every
    * device (synced green, waiting amber), its words, Waiting to sync with a
-   * line per waiting device in its person's color that picks it, and the
-   * totals. Lit amber while anything waits. */
-  private renderHomeStatus(devices: readonly HomeDeviceRow[], groups: readonly { index: number; rows: HomeDeviceRow[] }[], elapsed: number) {
+   * line per waiting device in its device's color (`device-colors.ts`) that
+   * picks it, and the totals. Lit amber while anything waits. */
+  private renderHomeStatus(devices: readonly HomeDeviceRow[], elapsed: number) {
     const totals = homeTotals(devices);
     const last = lastSeenDevice(devices, (id) => this.ownerOf(id), elapsed);
-    const colorOf = new Map(groups.flatMap((g) => g.rows.map((r) => [r.id, personColorVar(g.index) ?? "var(--wa-hue-grey)"] as const)));
     // A watch that could not use the last save is listed too: it needs a
     // look as much as one that waits, and "Every device has your latest
     // changes" would not be true of it.
@@ -19751,7 +19777,7 @@ export class WristAssistantPanel extends LitElement {
         : html`<div class="hb-waits">${waiting.map((d) => {
           const pending = pendingWords(this.ownerOf(d.id));
           const gone = userGone(this.ownerOf(d.id));
-          return html`<button type="button" class="hb-wait" style=${`--c:${colorOf.get(d.id) ?? "var(--wa-hue-grey)"}`}
+          return html`<button type="button" class="hb-wait" style=${`--c:${this.deviceColorOf(d.id) ?? "var(--wa-hue-grey)"}`}
             title=${`Open ${d.name}`} @click=${() => this.openHomeDevice(d.id, gone)}>
             <i aria-hidden="true"></i>
             <span class="hb-wait-t"><b>${d.name}</b><span>${gone ? USER_GONE_TEXT : attentionText(d, pending)}</span></span>
@@ -19801,9 +19827,12 @@ export class WristAssistantPanel extends LitElement {
     const rejected = (d.rejected?.length ?? 0) > 0;
     const heard = seenWords(owner, elapsed) ?? (neverConnected(owner) ? NEVER_CONNECTED_TEXT : undefined);
     const state = gone ? "" : rejected ? "rejected" : d.sync;
+    // The device's own color (`device-colors.ts`), on its drawing's box and
+    // its lit slot; the row's group keeps its person's color.
+    const color = this.deviceColorOf(d.id);
     return html`<button type="button" class="hb-row ${state} ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
       title=${`${d.name}: ${gone ? USER_GONE_TEXT : homeDeviceLabel(d)}`} @click=${() => this.openHomeDevice(d.id, gone)}>
-      <span class="hb-icon" aria-hidden="true">${homeMiniArt(d.kind, held > 0)}</span>
+      <span class="hb-icon ${color === undefined ? "" : "tinted"}" style=${color === undefined ? nothing : `--c:${color}`} aria-hidden="true">${homeMiniArt(d.kind, held > 0)}</span>
       <span class="hb-row-t"><span class="hb-row-name">${d.name}</span><span class="hb-row-sub">${gone ? USER_GONE_TEXT : homeRowSub(d.kind, held, heard)}</span></span>
       <i class="hb-row-dot" aria-hidden="true"></i>
     </button>`;
@@ -21357,7 +21386,8 @@ export class WristAssistantPanel extends LitElement {
     const ask = `Press again to take it off ${label}.`;
     // The Unassigned chip has no x: there is nowhere further to take it off to.
     const mayEdit = this.canEdit && target.kind !== "library";
-    const hue = placeColorVar(this.pickerPeople(this.people()), target.ownerId, target.kind);
+    // The device's own color (`device-colors.ts`), the one its tab wears.
+    const hue = target.kind === "library" ? undefined : this.deviceColorOf(target.ownerId);
     return html`<span class="doc-chip ${hue ? "hued" : ""}" aria-current=${here ? "true" : nothing}
       style=${hue ? `--chip-c: ${hue}` : nothing}>
       ${uiIcon(icon)}<span class="doc-chip-name">${label}</span>
@@ -21390,7 +21420,7 @@ export class WristAssistantPanel extends LitElement {
     const icon = target.kind === "iphone" ? "phone" : "watch";
     const block = this.placeBlock(place, family, label);
     const title = block?.why ?? `Put it on ${label}. Saving it saves it everywhere it is.`;
-    return html`<button type="button" class="row place-row" role="menuitem"
+    return html`<button type="button" class="row place-row" role="menuitem" style=${this.deviceStyle(target.ownerId)}
       ?disabled=${this.saving || block !== undefined} title=${title}
       @click=${() => { this.toggleMenu("add", false); void this.addRowTo(row, target, true); }}>
       ${uiIcon(icon)}<span class="place-name">${label}</span>
