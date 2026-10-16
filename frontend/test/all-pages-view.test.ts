@@ -1,7 +1,7 @@
 // The Pages tab's element against a stand-in Home Assistant: it reads every
-// device's pages, draws a card per page with a chip per device, opens a page
-// on its device, and its Devices menu links a page to another device or
-// takes it off one.
+// device's pages, draws a card per page with a chip per device under the
+// Complications list's head and device tabs, opens a page on its device,
+// and its Devices menu links a page to another device or takes it off one.
 
 import { describe, expect, it } from "vitest";
 
@@ -97,11 +97,49 @@ describe("the Pages tab", () => {
     await call<Promise<void>>("loadAll");
     expect(cards().map((c) => c.name)).toEqual(["Hall", "Den", "Mine"]);
     const text = whole();
-    expect(text).toContain("Every page on your watches and iPhones.");
+    expect(text).toContain("3 pages on your watches and iPhones.");
     expect(text).toMatch(/ap-name">Hall</);
     expect(text).toContain("<em>hidden</em>");
-    expect(text).toMatch(/ap-chip-n">3</);
     expect(text).toContain("Devices");
+  });
+
+  it("has the Complications list's head: On device | Page only, Multi select, the Device menu and the search, over device tabs", async () => {
+    const { el, call, whole } = tab();
+    await call<Promise<void>>("loadAll");
+    const text = whole();
+    expect(text).toContain("On device");
+    expect(text).toContain("Page only");
+    expect(text).toContain("Multi select");
+    expect(text).toContain("Search by name");
+    expect(text).toMatch(/pk-shape-lead">Device</);
+    expect(text).toContain("Watches (2)");
+    expect(text).toContain("iPhones (2)");
+    // All 3, then each device with its count and its color.
+    expect(text).toMatch(/pk-tab-name">All<\/span>\s*<span class="pk-tab-count">3</);
+    expect(text).toMatch(/pk-tab-name">Jesse's Watch<\/span>\s*<span class="pk-tab-count">2</);
+    expect(text).toContain("--dc:var(--wa-person-2)");
+    expect(text).not.toContain("Not on a device");
+    expect(text).not.toContain("ap-chip");
+    // A page on two devices shows a strip with a segment per device.
+    expect(text.match(/class="ap-strip"/g)?.length).toBe(1);
+    // Page only draws the page without its device, and is remembered.
+    expect(text).toContain("ap-pic watch framed");
+    call("setBare", true);
+    expect(whole()).toContain("ap-pic watch bare");
+    expect(whole()).toContain("pk-surface pk-page bare");
+    expect(el.bare).toBe(true);
+    call("setBare", false);
+  });
+
+  it("narrows the cards to one kind of device with the Device menu", async () => {
+    const { call, whole } = tab();
+    await call<Promise<void>>("loadAll");
+    call("setKind", "iphone");
+    const text = whole();
+    expect(text).toMatch(/ap-name">Hall</);
+    expect(text).toMatch(/ap-name">Mine</);
+    expect(text).not.toMatch(/ap-name">Den</);
+    call("setKind", "all");
   });
 
   it("opens a page on its device, picked in the page editor", async () => {
@@ -163,16 +201,44 @@ describe("the Pages tab", () => {
       expect((el.selected as Set<string>).has(card("Den").key)).toBe(false);
       expect(opened).toEqual([]);
       const text = whole();
-      expect(text).toContain("ap-pick");
-      expect(text).toContain("2 selected");
+      expect(text).toContain("pk-card-pick");
+      expect(text).toContain("2 picked");
+      expect(text).toContain("All shown");
       expect(text).toContain("Add to…");
       expect(text).toContain("Remove from…");
       expect(text).toContain("Delete…");
+      expect(text).toContain("Done");
       expect(text).not.toContain("Pick the devices this page is on");
       call("onKeyDown", { key: "Escape", preventDefault: () => undefined });
       expect(el.selecting).toBe(false);
       expect((el.selected as Set<string>).size).toBe(0);
-      expect(whole()).not.toContain("ap-bar");
+      expect(whole()).not.toContain("pk-bar");
+    });
+
+    it("Multi select shows the bar under the tabs at once, with All shown, None and Done", async () => {
+      const { el, call, whole } = tab();
+      await call<Promise<void>>("loadAll");
+      call("startSelect");
+      expect(whole()).toContain("Pick a page to start.");
+      call("selectShown", true);
+      expect(whole()).toContain("3 picked");
+      expect(whole()).toMatch(/>None</);
+      call("endSelect");
+      expect(el.selecting).toBe(false);
+    });
+
+    it("lists the devices under Add to, one press each, greying a device that has them all", async () => {
+      const { call, card, whole } = tab();
+      await call<Promise<void>>("loadAll");
+      call("startSelect");
+      call("pick", card("Mine"), false);
+      call("openBulkMenu", "add");
+      const text = whole();
+      expect(text).toContain("Add 1 page to");
+      expect(text.match(/class="pk-bar-row"/g)?.length).toBe(2);
+      expect(text).toMatch(/pk-dup-name">Jesse's iPhone<\/span>\s*<span class="pk-bar-row-n">has them all</);
+      call("openBulkMenu", "add");
+      expect(whole()).not.toContain("pk-bar-list");
     });
 
     it("Select all and none act on the shown cards, and a filter unpicks what it hides", async () => {
@@ -193,8 +259,7 @@ describe("the Pages tab", () => {
       await call<Promise<void>>("loadAll");
       call("cardClick", click({ ctrl: true }), card("Den"), "all");
       call("openBulkMenu", "add");
-      call("tickDevice", phone, true);
-      await call<Promise<void>>("runBulk", "add");
+      await call<Promise<void>>("runBulk", "add", [phone]);
       expect(sent.filter((m) => (m.type as string).endsWith("watch_pages/link")).map((m) => [m.source_id, m.page_ids, m.targets]))
         .toEqual([[watch, [DEN], [phone]]]);
       expect((el.bulkNote as { text: string }).text).toBe("Added 1 page to Jesse's iPhone.");
@@ -210,6 +275,7 @@ describe("the Pages tab", () => {
       call("pick", card("Mine"), false);
       call("openBulkMenu", "delete");
       expect(whole()).toContain("Delete 2 pages from 2 devices?");
+      expect(whole()).toContain("Really delete");
       await call<Promise<void>>("runBulk", "delete");
       const saves = sent.filter((m) => (m.type as string).endsWith("watch_config/save") && m.kind === "pages").map((m) => m.owner_watch_id);
       expect(saves).toEqual([watch, phone]);
@@ -226,8 +292,7 @@ describe("the Pages tab", () => {
       call("startSelect");
       call("pick", card("Mine"), false);
       call("openBulkMenu", "remove");
-      call("tickDevice", phone, true);
-      await call<Promise<void>>("runBulk", "remove");
+      await call<Promise<void>>("runBulk", "remove", [phone]);
       expect(sent.some((m) => (m.type as string).endsWith("watch_config/save"))).toBe(false);
       expect((el.bulkNote as { text: string }).text).toBe("Kept Mine: it would be left on no device. Use Delete for those.");
     });

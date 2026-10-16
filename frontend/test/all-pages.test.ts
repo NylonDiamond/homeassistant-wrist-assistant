@@ -1,5 +1,6 @@
 // The Pages tab's rules: every page as cards (a linked page once), the
-// filter chips, what a filter and a search show, which device a card opens
+// device tabs and their colors, the Device menu, what a tab, a search and
+// the menu show, which device a card opens
 // on, its Devices menu, where a link copies from, and its words. Plus the
 // page editor's one line in place of the Not on this list.
 
@@ -8,14 +9,19 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_FILTER,
   DEVICES_LAST_TEXT,
+  allPagesLead,
   cardDetail,
   cardDevicePlaces,
+  deviceColorVar,
   emptyText,
   filterChips,
+  hasBothKinds,
+  kindOptions,
   linkSource,
   openCopy,
   pageCards,
   resolveFilter,
+  resolveKind,
   shownCards,
 } from "../src/watch-pages/all-pages-model.js";
 import { DEVICES_SYSTEM_TEXT, type LinkDevice, elsewhereLine, elsewherePages, linkDevicesOf } from "../src/watch-pages/links.js";
@@ -82,12 +88,12 @@ describe("the cards", () => {
 describe("the filter", () => {
   const cards = pageCards(DEVICES, DOCS);
 
-  it("has All, then a chip per device, each with its count", () => {
+  it("has All, then a tab per device, each with its color and its count", () => {
     expect(filterChips(DEVICES, cards)).toEqual([
       { id: "all", label: "All", count: 5 },
-      { id: "w1", label: "Jesse's Watch", kind: "watch", count: 3 },
-      { id: "w2", label: "Chen's Watch", kind: "watch", count: 2 },
-      { id: "p1", label: "Jesse's iPhone", kind: "iphone", count: 3 },
+      { id: "w1", label: "Jesse's Watch", kind: "watch", color: "var(--wa-person-1)", count: 3 },
+      { id: "w2", label: "Chen's Watch", kind: "watch", color: "var(--wa-person-2)", count: 2 },
+      { id: "p1", label: "Jesse's iPhone", kind: "iphone", color: "var(--wa-person-3)", count: 3 },
     ]);
   });
 
@@ -99,6 +105,25 @@ describe("the filter", () => {
   it("finds a page by name in any case, under the filter too", () => {
     expect(shownCards(cards, ALL_FILTER, "  ha ").map((c) => c.name)).toEqual(["Hall"]);
     expect(shownCards(cards, "w2", "yard")).toEqual([]);
+  });
+
+  it("keeps the pages on one kind of device under the Device menu, counted for the menu", () => {
+    expect(shownCards(cards, ALL_FILTER, "", "iphone").map((c) => c.name)).toEqual(["Hall", "Yard", "Mine"]);
+    expect(shownCards(cards, ALL_FILTER, "", "watch").map((c) => c.name)).toEqual(["Hall", "Yard", "Den", "Lights on"]);
+    expect(shownCards(cards, "w1", "", "iphone").map((c) => c.name)).toEqual(["Hall", "Yard"]);
+    expect(kindOptions(cards)).toEqual([
+      { key: "all", label: "All", count: 5 },
+      { key: "watch", label: "Watches", count: 4 },
+      { key: "iphone", label: "iPhones", count: 3 },
+    ]);
+  });
+
+  it("has a Device menu only on a home with watches and iPhones", () => {
+    expect(hasBothKinds(DEVICES)).toBe(true);
+    expect(hasBothKinds([W1, W2])).toBe(false);
+    expect(resolveKind("iphone", DEVICES)).toBe("iphone");
+    expect(resolveKind("iphone", [W1, W2])).toBe("all");
+    expect(resolveKind(undefined, DEVICES)).toBe("all");
   });
 
   it("goes back to All when its device is gone", () => {
@@ -117,12 +142,30 @@ describe("which device a card opens on", () => {
     expect(openCopy(hall!, "w2").device.ownerId).toBe("w2");
   });
 
+  it("is the Device menu's kind next, when the page is on one", () => {
+    expect(openCopy(hall!, ALL_FILTER, "iphone").device.ownerId).toBe("p1");
+    expect(openCopy(hall!, "w2", "iphone").device.ownerId).toBe("w2");
+  });
+
   it("is otherwise the first watch, else the first device", () => {
     expect(openCopy(yard!, ALL_FILTER).device.ownerId).toBe("w1");
     expect(openCopy(yard!, "w2").device.ownerId).toBe("w1");
     expect(openCopy(mine!, ALL_FILTER).device.ownerId).toBe("p1");
     const phoneFirst = pageCards([P1, W1], new Map([["p1", doc(page(HALL, "Hall", { linkId: "L1" }))], ["w1", doc(page(HALL, "Hall", { linkId: "L1" }))]]));
     expect(openCopy(phoneFirst[0]!, ALL_FILTER).device.ownerId).toBe("w1");
+  });
+});
+
+describe("each device's color", () => {
+  it("is set by its place in the device list, and starts the six again after six", () => {
+    expect(DEVICES.map((d) => deviceColorVar(DEVICES, d.ownerId))).toEqual(["var(--wa-person-1)", "var(--wa-person-2)", "var(--wa-person-3)"]);
+    const many: LinkDevice[] = Array.from({ length: 7 }, (_, i) => ({ ownerId: `d${i}`, name: `D${i}`, kind: "watch" }));
+    expect(deviceColorVar(many, "d6")).toBe("var(--wa-person-1)");
+    expect(deviceColorVar(DEVICES, "gone")).toBeUndefined();
+  });
+
+  it("stays with its device whatever pages the devices hold", () => {
+    expect(deviceColorVar(DEVICES, "p1")).toBe(filterChips(DEVICES, []).find((c) => c.id === "p1")!.color);
   });
 });
 
@@ -162,11 +205,17 @@ describe("the tab's words", () => {
     expect(emptyText(ALL_FILTER, DEVICES, "")).toBe("No device has pages yet. Open a device's Pages to make one.");
     expect(emptyText("p1", DEVICES, "")).toBe("No pages on Jesse's iPhone yet.");
     expect(emptyText("p1", DEVICES, "zz")).toBe("No page has that name.");
+    expect(emptyText("w2", DEVICES, "", "iphone")).toBe("No page here is on an iPhone.");
+  });
+
+  it("count the pages in the line under the title", () => {
+    expect(allPagesLead(1)).toBe("1 page on your watches and iPhones. A page on more than one device is the same page: an edit shows on all of them.");
+    expect(allPagesLead(4)).toMatch(/^4 pages on/);
   });
 
   it("never break a sentence with a dash", async () => {
     const model = await import("../src/watch-pages/all-pages-model.js");
-    for (const text of [model.ALL_PAGES_LEAD, model.DEVICES_LAST_TEXT, model.DEVICES_DIRTY_TEXT]) {
+    for (const text of [model.allPagesLead(2), model.DEVICES_LAST_TEXT, model.DEVICES_DIRTY_TEXT, model.emptyText("w1", DEVICES, "", "watch")]) {
       expect(text).not.toMatch(/[–—]| - /);
     }
   });
