@@ -34,6 +34,17 @@ declare global {
   }
 }
 
+/**
+ * Set on every symbol's own `<svg>`. The faces round their black with rules
+ * like `.preview svg { border-radius: 18px }`, and those reach this inner
+ * `<svg>` too. Firefox clips an inner `<svg>` to its border radius, measured
+ * in the face's units, so a symbol wider than tall (`wallet.bifold.fill`) came
+ * out with round sides. Chrome ignores the radius there, which hid it. Inline,
+ * because the face rules carry two classes and would outrank a stylesheet
+ * reset.
+ */
+const GLYPH_STYLE = "border-radius: 0";
+
 export function sfToCupertino(symbol: string): string {
   return symbol.trim().replace(/\./g, "-");
 }
@@ -118,7 +129,7 @@ export class CupertinoIconProvider implements IconProvider {
     if (cached === null || !cached.path) return undefined;
     const c = parseColor(colorHex) ?? { color: "#FFFFFF", opacity: 1 };
     const viewBox = cached.viewBox ?? "0 0 24 24";
-    return svg`<svg x="0" y="0" width=${size} height=${size} viewBox=${viewBox}>
+    return svg`<svg x="0" y="0" width=${size} height=${size} viewBox=${viewBox} style=${GLYPH_STYLE}>
       <path d=${cached.path} fill=${c.color} fill-opacity=${c.opacity} /></svg>`;
   }
 
@@ -329,7 +340,7 @@ export class BundledIconProvider implements IconProvider {
       this.drawn.set(name, d);
     }
     const c = parseColor(colorHex) ?? { color: "#FFFFFF", opacity: 1 };
-    return svg`<svg x="0" y="0" width=${size} height=${size} viewBox=${icon[1]}>
+    return svg`<svg x="0" y="0" width=${size} height=${size} viewBox=${icon[1]} style=${GLYPH_STYLE}>
       <path d=${d} fill=${c.color} fill-opacity=${c.opacity} /></svg>`;
   }
 
