@@ -132,6 +132,14 @@ class WidgetSecretEntry:
     iPhone entry. Kept on disk only while False. Not secret material, so a
     `register()` keeps it."""
 
+    phone_pages: bool = False
+    """Whether this iPhone's app shows its own pages: it has long polled
+    ``/v2/delta`` signed as itself, which only an app with phone pages does
+    (`note_phone_pages`). The panel offers a phone for pages only once this
+    is True, so a phone on an older app is never handed pages it cannot show.
+    False for every watch. Kept on disk only while True. Not secret
+    material, so a `register()` keeps it."""
+
     secret_bytes: bytes | None = field(init=False, repr=False, default=None)
     """Decoded HMAC key bytes, cached on construction to avoid base64-decoding
     on every signed request and every signed response. None if `secret_b64`
@@ -204,6 +212,7 @@ class WidgetSecretStore:
                     screen_size=entry.get("screen_size"),
                     user_id=entry.get("user_id"),
                     main_house=entry.get("main_house") is not False,
+                    phone_pages=entry.get("phone_pages") is True,
                 )
         _LOGGER.debug("Loaded %d widget secrets from storage", len(self._secrets))
 
@@ -245,6 +254,7 @@ class WidgetSecretStore:
                     # Only while False, so the file of a watch that never
                     # said otherwise is the one it always was.
                     **({} if entry.main_house else {"main_house": False}),
+                    **({"phone_pages": True} if entry.phone_pages else {}),
                 }
                 for watch_id, entry in self._secrets.items()
             }
@@ -323,6 +333,7 @@ class WidgetSecretStore:
             screen_size=screen_size,
             user_id=user_id,
             main_house=existing.main_house if existing is not None else True,
+            phone_pages=existing.phone_pages if existing is not None else False,
         )
         _LOGGER.info(
             "Registered widget secret for watch_id=%s algo=%s app_version=%s owner_iphone_id=%s user=%s",
@@ -485,6 +496,22 @@ class WidgetSecretStore:
             watch_id,
             "this home" if main_house else "another home",
         )
+        return True
+
+    def note_phone_pages(self, watch_id: str) -> bool:
+        """Record that `watch_id`'s app shows its own pages.
+
+        Called on every ``/v2/delta`` poll an iPhone signs as itself. Returns
+        whether it changed: once True it stays True. A watch, or an id with
+        no entry, changes nothing. No listeners are told: the device entities
+        do not show it, and the panel reads it with the owners.
+        """
+        entry = self._secrets.get(watch_id)
+        if entry is None or entry.phone_pages or entry.device_kind != DEVICE_KIND_IPHONE:
+            return False
+        entry.phone_pages = True
+        self._schedule_save()
+        _LOGGER.info("watch_id=%s runs an iPhone app that shows its own pages", watch_id)
         return True
 
     def bind_owned_watches(self, owner_iphone_id: str, user_id: str) -> list[str]:

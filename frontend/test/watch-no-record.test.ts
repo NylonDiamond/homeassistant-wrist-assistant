@@ -337,7 +337,7 @@ describe("the rooms editor with no record", () => {
 });
 
 describe("the menus and status pages editors on an iPhone with no record", () => {
-  const phone = owner("p1", { device_kind: "iphone", device_name: "iPhone", has_iphone: false });
+  const phone = owner("p1", { device_kind: "iphone", phone_pages: true, device_name: "iPhone", has_iphone: false });
   const cases = [
     { make: () => new WaMenuEditor(), kind: "menus", watchTitle: WATCH_MENUS_NO_RECORD_TITLE },
     { make: () => new WaStatusPagesEditor(), kind: "status_pages", watchTitle: STATUS_PAGES_NO_RECORD_TITLE },

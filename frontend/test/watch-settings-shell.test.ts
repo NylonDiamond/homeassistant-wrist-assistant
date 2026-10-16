@@ -258,7 +258,7 @@ describe("Watch settings as a page under the Watch app row", () => {
   });
 
   describe("on an iPhone, with phone pages", () => {
-    const PHONE = { ...owner("p1", "Jesse's iPhone"), device_kind: "iphone" } as OwnerSummary;
+    const PHONE = { ...owner("p1", "Jesse's iPhone"), device_kind: "iphone", phone_pages: true } as OwnerSummary;
     const DEVICES = [...WATCHES, PHONE];
 
     it("is iPhone settings, with only the settings the catalog marks for the iPhone and no empty card", async () => {
@@ -700,7 +700,7 @@ describe("Watch settings as a page under the Watch app row", () => {
       await vi.waitFor(() => expect(inside.pairCard.polling).toBe(false));
       expect(inside.pairCard.offer.open).toBeDefined();
 
-      opened.addWatch({ ...owner("p1", "Chen's iPhone"), device_kind: "iphone" } as OwnerSummary);
+      opened.addWatch({ ...owner("p1", "Chen's iPhone"), device_kind: "iphone", phone_pages: true } as OwnerSummary);
       const reads = opened.refreshes();
       // The phone scans it: the next question finds it redeemed.
       const hass = ha.hass as unknown as { connection: { sendMessagePromise(msg: Record<string, unknown>): Promise<unknown> } };

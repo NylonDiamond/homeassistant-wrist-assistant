@@ -24,7 +24,7 @@
 
 import catalogJson from "./watch-settings-catalog.json";
 import type { OwnerSummary, WatchConfigRecord } from "./ha-api.js";
-import { deviceKindOf } from "./version.js";
+import { deviceKindOf, phoneShowsPages } from "./version.js";
 
 /**
  * The wrist twists' row as the form holds it: the three maps behind the
@@ -570,14 +570,15 @@ export function settingsWatches(owners: readonly OwnerSummary[]): OwnerSummary[]
 
 /**
  * The devices the Watch app's own screens list: the watches, then the
- * iPhones when the home has phone pages (`phones`, see `phone-pages.ts`).
+ * iPhones when the home has phone pages (`phones`, see `phone-pages.ts`)
+ * and the phone's app shows them (`phoneShowsPages`).
  * A phone keeps its own pages, status pages, menus, rooms and settings, read
  * and saved like a watch's and never from one. No Library, no orphan.
  */
 export function watchAppDevices(owners: readonly OwnerSummary[], phones: boolean): OwnerSummary[] {
   const watches = settingsWatches(owners);
   if (!phones) return watches;
-  return [...watches, ...owners.filter((o) => deviceKindOf(o) === "iphone" && !o.is_orphan)];
+  return [...watches, ...owners.filter((o) => phoneShowsPages(o) && !o.is_orphan)];
 }
 
 /** The Settings page's title for the device on it. */

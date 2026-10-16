@@ -159,7 +159,7 @@ describe("which device a card opens on", () => {
 
 describe("each device's color", () => {
   const owner = (id: string, kind: string): OwnerSummary =>
-    ({ owner_watch_id: id, device_name: id, device_kind: kind, is_orphan: false }) as unknown as OwnerSummary;
+    ({ owner_watch_id: id, device_name: id, device_kind: kind, phone_pages: kind === "iphone", is_orphan: false }) as unknown as OwnerSummary;
   const owners = [owner("p1", "iphone"), owner("w1", "watch"), owner("w2", "watch")];
 
   it("is the shared device color, in the device tabs' order", () => {
@@ -240,7 +240,7 @@ describe("the page editor's line for the other devices' pages", () => {
 
 describe("the devices a page can be on", () => {
   const owner = (id: string, kind: string, name: string, extra: Partial<OwnerSummary> = {}): OwnerSummary =>
-    ({ owner_watch_id: id, device_name: name, device_kind: kind, ...extra }) as unknown as OwnerSummary;
+    ({ owner_watch_id: id, device_name: name, device_kind: kind, phone_pages: kind === "iphone", ...extra }) as unknown as OwnerSummary;
 
   it("are the watches, then the iPhones on a home with phone pages", () => {
     const owners = [owner("p1", "iphone", "Jesse's iPhone"), owner("w1", "watch", "Apple Watch")];
@@ -249,5 +249,10 @@ describe("the devices a page can be on", () => {
       { ownerId: "p1", name: "Jesse's iPhone", kind: "iphone" },
     ]);
     expect(linkDevicesOf(owners, false).map((d) => d.ownerId)).toEqual(["w1"]);
+  });
+
+  it("leave out an iPhone whose app is too old to show pages", () => {
+    const owners = [owner("p1", "iphone", "Old iPhone", { phone_pages: false }), owner("w1", "watch", "Apple Watch")];
+    expect(linkDevicesOf(owners, true).map((d) => d.ownerId)).toEqual(["w1"]);
   });
 });

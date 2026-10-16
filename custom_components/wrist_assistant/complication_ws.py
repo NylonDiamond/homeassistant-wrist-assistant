@@ -591,6 +591,10 @@ async def ws_owners(
                 # (`_note_main_house`). True for a phone and for every watch
                 # that never said otherwise.
                 "main_house": entry.main_house,
+                # Whether this iPhone's app shows its own pages (it has polled
+                # as itself, `note_phone_pages`). The panel offers a phone for
+                # pages only then. False for a watch.
+                "phone_pages": entry.phone_pages,
                 # Whether an iPhone may still move this watch's setup here
                 # (`watch_has_iphone`): the panel then waits for that move
                 # rather than offering to start a fresh record over it.

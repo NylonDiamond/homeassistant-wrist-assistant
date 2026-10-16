@@ -458,7 +458,7 @@ describe("the rooms editor on a home that is not the main house", () => {
 
   it("points an iPhone at its own settings, not at a main house", async () => {
     const ha = fakeHass({ rooms: record("rooms", 3, homeRooms()) });
-    const el = editor(ha.hass, { ...owner("p1"), device_kind: "iphone", device_name: "iPhone" } as OwnerSummary);
+    const el = editor(ha.hass, { ...owner("p1"), device_kind: "iphone", phone_pages: true, device_name: "iPhone" } as OwnerSummary);
     (el as unknown as { phones: boolean }).phones = true;
     await el.load("p1");
     expect(ha.of("/get").map((m) => m.kind)).toEqual(["rooms"]);
@@ -471,7 +471,7 @@ describe("the rooms editor on a home that is not the main house", () => {
 
   it("opens ready as a new iPhone when it has no rooms yet", async () => {
     const ha = fakeHass({});
-    const el = editor(ha.hass, { ...owner("p1"), device_kind: "iphone", device_name: "iPhone" } as OwnerSummary);
+    const el = editor(ha.hass, { ...owner("p1"), device_kind: "iphone", phone_pages: true, device_name: "iPhone" } as OwnerSummary);
     (el as unknown as { phones: boolean }).phones = true;
     await el.load("p1");
     const text = flatten(el.renderBody(el.owners));

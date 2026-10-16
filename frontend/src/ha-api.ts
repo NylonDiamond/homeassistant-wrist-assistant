@@ -87,6 +87,11 @@ export interface OwnerSummary {
       than the field and from the Library and orphan rows; anything but
       `false` means this home is the main house. */
   main_house?: boolean | null;
+  /** True once this iPhone's app has polled Home Assistant as itself, which
+      only an app with phone pages does. The panel offers a phone for pages
+      only then (`phoneShowsPages`). False on a watch, absent from the Library
+      and orphan rows and from integrations older than the field. */
+  phone_pages?: boolean | null;
   /** True when an iPhone may still move this watch's own setup into Home
       Assistant: the old phone link set the watch up, so it names the iPhone
       that paired it, and its key did not come from a pairing code. Another

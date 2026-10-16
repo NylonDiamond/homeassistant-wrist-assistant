@@ -34,7 +34,7 @@ function tab() {
   const phone = `ap-p1-${n}`;
   const owners = [
     { owner_watch_id: watch, device_name: "Jesse's Watch", device_kind: "watch" },
-    { owner_watch_id: phone, device_name: "Jesse's iPhone", device_kind: "iphone" },
+    { owner_watch_id: phone, device_name: "Jesse's iPhone", device_kind: "iphone", phone_pages: true },
   ] as unknown as OwnerSummary[];
   const held = new Map<string, { revision: number; document: JsonObject }>([
     [`${watch}/pages`, { revision: 3, document: { schemaVersion: 1, pages: [{ id: HALL, name: "Hall", linkId: "L1", items: [] }, { id: DEN, name: "Den", items: [] }] } }],

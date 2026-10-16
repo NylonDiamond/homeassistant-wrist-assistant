@@ -15,7 +15,7 @@
 import type { OwnerSummary } from "./ha-api.js";
 import type { PanelRoute } from "./watch-pages/hook.js";
 import { IPHONE_PATH, screenTakesPhone, watchScreenOf } from "./shell.js";
-import { deviceKindOf } from "./version.js";
+import { deviceKindOf, phoneShowsPages } from "./version.js";
 import { watchRouteOwner } from "./watch-pick.js";
 
 /** What the integration advertises once it keeps a phone's own pages. */
@@ -32,9 +32,16 @@ export function isPhoneId(owners: readonly OwnerSummary[], id: string | undefine
   return id !== undefined && owners.some((o) => o.owner_watch_id === id && deviceKindOf(o) === "iphone");
 }
 
-/** The home's iPhones, as the iPhone app tab lists them: no orphan. */
+/** The home's iPhones, as the iPhone app tab lists them: no orphan, and
+ * only those whose app shows its own pages (`phoneShowsPages`). */
 export function iphoneDevices(owners: readonly OwnerSummary[]): OwnerSummary[] {
-  return owners.filter((o) => deviceKindOf(o) === "iphone" && !o.is_orphan);
+  return owners.filter((o) => phoneShowsPages(o) && !o.is_orphan);
+}
+
+/** Whether the home has a paired iPhone whose app is too old for pages of
+ * its own: the iPhone app tab then asks for an update rather than a pairing. */
+export function hasPhoneAwaitingUpdate(owners: readonly OwnerSummary[]): boolean {
+  return owners.some((o) => deviceKindOf(o) === "iphone" && !o.is_orphan && !phoneShowsPages(o));
 }
 
 /**

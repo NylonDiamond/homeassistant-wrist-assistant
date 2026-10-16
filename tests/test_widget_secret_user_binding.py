@@ -559,6 +559,44 @@ def test_a_new_pair_keeps_the_main_house_mark(env) -> None:
     assert env.store.get("watch-1").main_house is False
 
 
+# ── an iPhone app that shows its own pages ───────────────────────────────
+
+
+def test_phone_pages_is_on_disk_only_while_true(env) -> None:
+    """A phone is marked once and for good; the file of a phone that never
+    polled is the one it always was."""
+    env.store.register("phone-1", SECRET_A, "iphone-self-provision")
+    env.store.register("phone-2", SECRET_B, "iphone-self-provision")
+    assert env.store.get("phone-1").phone_pages is False
+    assert "phone_pages" not in env.store._store.saved["secrets"]["phone-1"]
+
+    assert env.store.note_phone_pages("phone-1") is True
+    assert env.store.note_phone_pages("phone-1") is False
+    saved = env.store._store.saved
+    assert saved["secrets"]["phone-1"]["phone_pages"] is True
+    assert "phone_pages" not in saved["secrets"]["phone-2"]
+
+    reloaded = env.store_mod.WidgetSecretStore(object())
+    reloaded._store.saved = saved
+    asyncio.run(reloaded.async_load())
+    assert reloaded.get("phone-1").phone_pages is True
+    assert reloaded.get("phone-2").phone_pages is False
+
+
+def test_only_an_iphone_is_marked_for_phone_pages(env) -> None:
+    env.store.register("watch-1", SECRET_A, "watch-self-provision")
+    assert env.store.note_phone_pages("watch-1") is False
+    assert env.store.get("watch-1").phone_pages is False
+    assert env.store.note_phone_pages("nope") is False
+
+
+def test_a_new_pair_keeps_the_phone_pages_mark(env) -> None:
+    env.store.register("phone-1", SECRET_A, "iphone-self-provision")
+    env.store.note_phone_pages("phone-1")
+    assert env.store.register("phone-1", SECRET_B, "iphone-self-provision") == "rekey"
+    assert env.store.get("phone-1").phone_pages is True
+
+
 # ── the live snapshot cap ────────────────────────────────────────────────
 
 

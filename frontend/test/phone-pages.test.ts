@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import type { HassLike, OwnerSummary } from "../src/ha-api.js";
 import { moveKindMatches } from "../src/layouts.js";
-import { PHONE_PAGES_CAPABILITY, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "../src/phone-pages.js";
+import { PHONE_PAGES_CAPABILITY, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "../src/phone-pages.js";
 import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN, screenTakesPhone } from "../src/shell.js";
 import "../src/watch-control-center/control-center-editor.js";
 import "../src/watch-menus/menu-editor.js";
@@ -55,7 +55,7 @@ const owner = (o: Partial<OwnerSummary>): OwnerSummary => ({
 // A phone listed first, as no reply sends it, to show the order is the
 // panel's own.
 const OWNERS = [
-  owner({ owner_watch_id: "p1", device_name: "Jesse's iPhone", device_kind: "iphone" }),
+  owner({ owner_watch_id: "p1", device_name: "Jesse's iPhone", device_kind: "iphone", phone_pages: true }),
   owner({ owner_watch_id: "w1", device_name: "Jesse's Watch" }),
   owner({ owner_watch_id: "old-phone", device_kind: null, is_orphan: true }),
   owner({ owner_watch_id: "w2", device_name: "Chen's Watch" }),
@@ -121,10 +121,18 @@ describe("iPhone settings", () => {
 });
 
 describe("the iPhone app's pick", () => {
-  const phones = iphoneDevices([...OWNERS, owner({ owner_watch_id: "p2", device_name: "Chen's iPhone", device_kind: "iphone" })]);
+  const phones = iphoneDevices([...OWNERS, owner({ owner_watch_id: "p2", device_name: "Chen's iPhone", device_kind: "iphone", phone_pages: true })]);
 
   it("lists the home's iPhones alone, never an orphan, a watch or the Library", () => {
     expect(phones.map((o) => o.owner_watch_id)).toEqual(["p1", "p2"]);
+  });
+
+  it("leaves out an iPhone whose app has not polled as itself, and says it needs an update", () => {
+    const old = owner({ owner_watch_id: "p3", device_name: "Old iPhone", device_kind: "iphone" });
+    expect(iphoneDevices([...OWNERS, old]).map((o) => o.owner_watch_id)).toEqual(["p1"]);
+    expect(watchAppDevices([...OWNERS, old], true).map((o) => o.owner_watch_id)).toEqual(["w1", "w2", "p1"]);
+    expect(hasPhoneAwaitingUpdate([...OWNERS, old])).toBe(true);
+    expect(hasPhoneAwaitingUpdate(OWNERS)).toBe(false);
   });
 
   it("takes the iPhone the address names, else the one remembered, else the first", () => {
@@ -155,7 +163,7 @@ describe("the iPhone app's pick", () => {
 
 describe("the iPhone app's row", () => {
   const route = { prefix: "/wrist-assistant", path: "/iphone/menus/p1" };
-  const PHONES = [...OWNERS, owner({ owner_watch_id: "p2", device_name: "Chen's iPhone", device_kind: "iphone" })];
+  const PHONES = [...OWNERS, owner({ owner_watch_id: "p2", device_name: "Chen's iPhone", device_kind: "iphone", phone_pages: true })];
   function row(over: Partial<WatchRowInput> = {}) {
     const input: WatchRowInput = {
       route, owners: PHONES, watch: "p1", iphone: true, loaded: true, menuOpen: false,
@@ -312,7 +320,7 @@ describe("the screens a phone has", () => {
     const n = ++made;
     const owners = [
       owner({ owner_watch_id: `pp-w1-${n}`, device_name: "Jesse's Watch" }),
-      owner({ owner_watch_id: `pp-p1-${n}`, device_name: "Jesse's iPhone", device_kind: "iphone" }),
+      owner({ owner_watch_id: `pp-p1-${n}`, device_name: "Jesse's iPhone", device_kind: "iphone", phone_pages: true }),
     ];
     const Ctor = customElements.get(tag) as unknown as new () => Record<string, unknown>;
     const el = new Ctor();

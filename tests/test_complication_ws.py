@@ -535,6 +535,8 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
         "applied_token": 1,
         # A watch that never said it takes its settings from another home.
         "main_house": True,
+        # Only an iPhone's app shows pages of its own.
+        "phone_pages": False,
         # It names the iPhone that paired it, so that phone may still move
         # its setup here.
         "has_iphone": True,
@@ -600,6 +602,8 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
             "token": 2,
             "applied_token": 2,
             "main_house": True,
+            # Its app has not polled as itself yet.
+            "phone_pages": False,
             "has_iphone": False,
             "user_id": None,
             "user_gone": False,
@@ -610,6 +614,17 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
         },
         _library_row(),
     ]
+
+
+def test_a_phone_whose_app_polled_as_itself_shows_pages(env) -> None:
+    """``phone_pages`` follows the phone's entry: the panel offers a phone
+    for pages only once its app has polled as itself."""
+    env.add_phone("phone-1", device_name="Jesse's iPhone")
+    env.add_phone("phone-2", device_name="Chen's iPhone")
+    assert env.secrets.note_phone_pages("phone-1") is True
+    rows = {r["owner_watch_id"]: r for r in env.owners()}
+    assert rows["phone-1"]["phone_pages"] is True
+    assert rows["phone-2"]["phone_pages"] is False
 
 
 def test_a_watch_that_takes_its_settings_elsewhere_says_so(env) -> None:

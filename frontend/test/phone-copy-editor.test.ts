@@ -149,7 +149,7 @@ function phoneEditor(pages: WatchPagesDocument | undefined, records: Record<stri
   const phone = `ce-p1-${n}`;
   const owners = [
     owner({ owner_watch_id: watch, device_name: "Jesse's Watch", main_house: true }),
-    owner({ owner_watch_id: phone, device_name: "Jesse's iPhone", device_kind: "iphone" }),
+    owner({ owner_watch_id: phone, device_name: "Jesse's iPhone", device_kind: "iphone", phone_pages: true }),
   ];
   const all: Record<string, JsonObject> = {
     [`${watch}/pages`]: WATCH_PAGES as JsonObject,
@@ -499,7 +499,7 @@ describe("the iPhone across homes", () => {
     expect(el.onPhone).toBe(false);
     expect((el.watches as OwnerSummary[]).map((o) => o.owner_watch_id)).toEqual(["other-home-watch"]);
     // And back on a home that lists the same phone with phone pages.
-    el.owners = [owner({ owner_watch_id: "w9" }), owner({ owner_watch_id: phone, device_kind: "iphone" })];
+    el.owners = [owner({ owner_watch_id: "w9" }), owner({ owner_watch_id: phone, device_kind: "iphone", phone_pages: true })];
     el.phones = true;
     expect(el.onPhone).toBe(true);
   });

@@ -34,7 +34,7 @@ import { deviceColor, deviceColors } from "./device-colors.js";
 import type { OwnerSummary } from "./ha-api.js";
 import { homeMiniArt } from "./home-art.js";
 import type { Person } from "./people.js";
-import { iphoneDevices } from "./phone-pages.js";
+import { hasPhoneAwaitingUpdate, iphoneDevices } from "./phone-pages.js";
 import { howToStyles, renderHowTo, screenHowTo } from "./screen-howto.js";
 import { type DeviceSync, deviceSync, deviceSyncLabel } from "./send-state.js";
 import {
@@ -164,6 +164,9 @@ export const WATCH_ROW_IPHONE_TAB_NOTE = "iPhones are set up in the iPhone app t
 export const WATCH_ROW_NONE_NOTE = "No watch has connected yet. Pair one to set up its pages, menus and the rest.";
 /** Beside the pairing button in a home with no iPhone. */
 export const IPHONE_ROW_NONE_NOTE = "No iPhone has connected yet. Pair one to set up its pages, menus and the rest.";
+/** Beside the pairing button in a home whose iPhones all run an app too old
+ * for pages of their own (`hasPhoneAwaitingUpdate`). */
+export const IPHONE_ROW_UPDATE_NOTE = "Update the Wrist Assistant app on your iPhone to set up its pages, menus and the rest.";
 
 export interface WatchRowInput {
   route: PanelRoute | undefined;
@@ -267,7 +270,7 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
   };
   return html`<div class="wa-watchrow ${slot === "none" ? "no-watch" : ""}">
     ${renderWatchSlot(input, slot, choices, kind)}
-    ${slot === "none" ? html`<span class="wa-wr-note">${kind === "iphone" ? IPHONE_ROW_NONE_NOTE : WATCH_ROW_NONE_NOTE}</span>` : nothing}
+    ${slot === "none" ? html`<span class="wa-wr-note">${kind === "iphone" ? (hasPhoneAwaitingUpdate(input.owners) ? IPHONE_ROW_UPDATE_NOTE : IPHONE_ROW_NONE_NOTE) : WATCH_ROW_NONE_NOTE}</span>` : nothing}
     ${links.length === 0 ? nothing : html`<nav class="wa-wr-links" aria-label=${kind === "iphone" ? "iPhone app" : "Watch app"} @scroll=${(e: Event) => { markRowMore(e.currentTarget as HTMLElement); closeRowTip(); }}>
       ${links.map(({ l, cls }) => link(l, cls))}
     </nav>`}

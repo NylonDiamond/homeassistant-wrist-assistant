@@ -98,8 +98,14 @@ class _Secrets:
     def __init__(self, entries: dict[str, Any]) -> None:
         self._entries = entries
 
+        self.noted_phone_pages: list[str] = []
+
     def get(self, watch_id: str) -> Any:
         return self._entries.get(watch_id)
+
+    def note_phone_pages(self, watch_id: str) -> bool:
+        self.noted_phone_pages.append(watch_id)
+        return True
 
 
 def _entry(kind: str) -> Any:
@@ -211,15 +217,16 @@ def delta():
 
         tokens = _Tokens()
         coordinator = _Coordinator()
+        secrets = _Secrets({WATCH: _entry("watch"), PHONE: _entry("iphone")})
         domain_data = types.SimpleNamespace(
-            widget_secret_store=_Secrets({WATCH: _entry("watch"), PHONE: _entry("iphone")}),
+            widget_secret_store=secrets,
             notification_store=tokens,
             coordinator=coordinator,
         )
         hass = types.SimpleNamespace(data={DOMAIN: domain_data})
         view = namespace["WADeltaView"](hass, object())
         yield types.SimpleNamespace(
-            view=view, tokens=tokens, coordinator=coordinator, prebound=prebound
+            view=view, tokens=tokens, coordinator=coordinator, prebound=prebound, secrets=secrets
         )
     finally:
         for key in list(sys.modules):
@@ -245,6 +252,14 @@ def test_a_phone_s_poll_files_no_push_token_and_no_delivery_mode(delta) -> None:
     assert delta.tokens.registered == []
     assert delta.tokens.metadata == []
     assert delta.prebound == []
+
+
+def test_every_poll_tells_the_secret_store_who_polled(delta) -> None:
+    """The store marks an iPhone that polls as itself as one whose app shows
+    its own pages (and ignores a watch), so the view hands it every signer."""
+    _poll(delta, PHONE)
+    _poll(delta, WATCH)
+    assert delta.secrets.noted_phone_pages == [PHONE, WATCH]
 
 
 def test_a_watch_s_poll_still_files_both(delta) -> None:

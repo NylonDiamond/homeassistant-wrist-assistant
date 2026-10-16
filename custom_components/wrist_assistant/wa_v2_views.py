@@ -800,6 +800,9 @@ class WADeltaView(HomeAssistantView):
 
         if not isinstance(config_hash, str) or not config_hash:
             return Response(status=400, text="config_hash is required")
+        # Only an iPhone app with phone pages polls as itself, so this is
+        # what lets the panel offer the phone for pages.
+        domain_data.widget_secret_store.note_phone_pages(watch_id)
         if since is not None and not isinstance(since, (str, int)):
             return Response(status=400, text="since must be a cursor")
         if entities is not None and not isinstance(entities, list):

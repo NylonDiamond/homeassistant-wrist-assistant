@@ -110,6 +110,7 @@ export const LIBRARY_OWNER_ID = "library";
 export interface DeviceOwnerLike {
   app_version?: string | null;
   device_kind?: DeviceKind | null;
+  phone_pages?: boolean | null;
   /** The owner's id. Read only to recognise the Library, which an older
    * integration's reply would name without knowing the kind. */
   owner_watch_id?: string;
@@ -131,6 +132,14 @@ export function isLibraryOwner(owner: DeviceOwnerLike | null | undefined): boole
 export function deviceKindOf(owner: DeviceOwnerLike | null | undefined): DeviceKind {
   if (isLibraryOwner(owner)) return "library";
   return owner?.device_kind === "iphone" ? "iphone" : "watch";
+}
+
+/** Whether the panel offers this owner for pages as an iPhone: an iPhone
+ * whose app has polled Home Assistant as itself, which only an app with phone
+ * pages does. An iPhone on an older app has no Pages tab to show them on, so
+ * it is left out until it updates. */
+export function phoneShowsPages(owner: DeviceOwnerLike | null | undefined): boolean {
+  return deviceKindOf(owner) === "iphone" && owner?.phone_pages === true;
 }
 
 /** The word for the device in copy the owner reads. The Library is a place

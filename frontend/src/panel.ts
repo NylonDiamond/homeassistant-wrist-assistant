@@ -418,7 +418,7 @@ import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";
 import { type PairChoice, pairChoiceNote, pairNextStatus, pairedFactsLine } from "./pair-flow.js";
 import { settingsWatches, watchName } from "./watch-settings.js";
-import { iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "./phone-pages.js";
+import { hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "./phone-pages.js";
 import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "./watch-pages/save-note.js";
 import {
   formButtonStyles,
@@ -11362,6 +11362,13 @@ export class WristAssistantPanel extends LitElement {
     const screen = iphoneScreenOf(this.route);
     if (!this.phonePages) {
       return html`<div class="wa-ip-empty"><p class="home-empty">This Home Assistant does not keep iPhone pages. Update the Wrist Assistant integration to set them up here.</p></div>`;
+    }
+    if (phone === undefined && hasPhoneAwaitingUpdate(this.owners)) {
+      return html`<div class="wa-ip-empty">
+        <span class="wa-ip-empty-chip" aria-hidden="true">${uiIcon("phone")}</span>
+        <h2>Update the iPhone app</h2>
+        <p>Your iPhone is paired, but its Wrist Assistant app is too old to show pages of its own. Update the app from the App Store, then open its Pages tab. The iPhone shows up here once it does.</p>
+      </div>`;
     }
     if (phone === undefined || screen === undefined) {
       return html`<div class="wa-ip-empty">

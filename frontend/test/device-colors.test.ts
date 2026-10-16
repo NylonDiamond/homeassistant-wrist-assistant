@@ -16,6 +16,7 @@ const owner = (id: string, kind: "watch" | "iphone" | "library", over: Partial<O
   owner_watch_id: id,
   device_name: id,
   device_kind: kind,
+  phone_pages: kind === "iphone",
   paired_iphone_name: null,
   app_version: "3.0.0",
   screen_size: null,
