@@ -251,6 +251,39 @@ def test_removing_one_of_three_copies_keeps_the_link(env) -> None:
     assert env.changes == [(PHONE, "pages")]
 
 
+def test_forgetting_one_of_two_holders_drops_the_link_on_the_other(env) -> None:
+    env.store.link_pages(WATCH, [HOME], [PHONE])
+    revision = env.store.get(WATCH, "pages").revision
+    status_revision = env.store.get(WATCH, "status_pages").revision
+    env.changes.clear()
+    assert env.store.forget_owner(PHONE) is True
+    watch = _doc(env, WATCH)
+    assert all("linkId" not in page for page in watch["pages"])
+    assert [p["id"] for p in watch["pages"]] == [SYSTEM, HOME, LIGHTS, SOLO], "the pages stay"
+    assert "linkId" not in _doc(env, WATCH, "status_pages")["statusPages"][0]
+    assert env.store.get(WATCH, "pages").revision > revision
+    assert env.store.get(WATCH, "status_pages").revision > status_revision
+    assert env.store.get(WATCH, "pages").updated_by == f"forget:{PHONE}"
+    # The forget's own revision-0 announcements, then one write per kind.
+    assert env.changes == [
+        (PHONE, "pages"),
+        (PHONE, "status_pages"),
+        (WATCH, "pages"),
+        (WATCH, "status_pages"),
+    ]
+    assert env.store.link_places() == {"pages": {}, "status_pages": {}}
+
+
+def test_forgetting_one_of_three_holders_keeps_the_link(env) -> None:
+    env.store.link_pages(WATCH, [SOLO], [PHONE, WATCH_2])
+    link = _page(_doc(env, WATCH), SOLO)["linkId"]
+    env.changes.clear()
+    env.store.forget_owner(PHONE)
+    assert _page(_doc(env, WATCH), SOLO)["linkId"] == link
+    assert _page(_doc(env, WATCH_2), SOLO)["linkId"] == link
+    assert env.changes == [(PHONE, "pages")]
+
+
 def test_a_copy_over_its_cap_is_left_and_the_save_stands(env, monkeypatch) -> None:
     env.store.link_pages(WATCH, [SOLO], [PHONE])
     watch = _doc(env, WATCH)

@@ -1998,17 +1998,7 @@ class WatchConfigStore:
         lost = link_ids(before, key) - saved
         if not saved and not lost:
             return
-        others = {
-            other: by_kind[record.kind]
-            for other, by_kind in self._records.items()
-            if other != owner and other not in self._failed_owners and record.kind in by_kind
-        }
-        held = {other: link_ids(other_record.document, key) for other, other_record in others.items()}
-        last_copies = {
-            link
-            for link in lost
-            if sum(1 for links in held.values() if link in links) == 1
-        }
+        others, held, last_copies = self._link_holders(record.kind, key, owner, lost)
         for other, other_record in sorted(others.items()):
             document = (
                 fan_out(record.document, other_record.document, key)
@@ -2033,6 +2023,58 @@ class WatchConfigStore:
                     owner,
                     err.message,
                 )
+
+    def _link_holders(
+        self, kind: str, key: str, owner: str, lost: set[str]
+    ) -> tuple[dict[str, WatchConfigRecord], dict[str, set[str]], set[str]]:
+        """Every owner but ``owner`` (and any unreadable one) holding a record
+        of ``kind``, the links each holds, and which of the ``lost`` links are
+        now left on exactly one of them: its last copy, no longer linked."""
+        others = {
+            other: by_kind[kind]
+            for other, by_kind in self._records.items()
+            if other != owner and other not in self._failed_owners and kind in by_kind
+        }
+        held = {other: link_ids(other_record.document, key) for other, other_record in others.items()}
+        last_copies = {
+            link
+            for link in lost
+            if sum(1 for links in held.values() if link in links) == 1
+        }
+        return others, held, last_copies
+
+    def _drop_last_copies(
+        self, owner: str, lost_by_kind: dict[str, set[str]], updated_by: str
+    ) -> None:
+        """After ``owner``'s records went, drop each link it held that is now
+        left on exactly one other owner, as one new revision there (the same
+        last-copy rule as :meth:`_spread_links`, with nothing to fan out). An
+        owner whose copy cannot take the change is logged and left."""
+        for kind, lost in lost_by_kind.items():
+            if not lost:
+                continue
+            key = LINKED_KINDS[kind]
+            others, held, last_copies = self._link_holders(kind, key, owner, lost)
+            for other, other_record in sorted(others.items()):
+                document = None
+                for link in sorted(held[other] & last_copies):
+                    dropped = drop_link(
+                        document if document is not None else other_record.document, key, link
+                    )
+                    if dropped is not None:
+                        document = dropped
+                if document is None:
+                    continue
+                try:
+                    self._write(other, kind, document, updated_by)
+                except WatchConfigStoreError as err:
+                    _LOGGER.warning(
+                        "Could not drop the last link of %s on %s after %s went: %s",
+                        kind,
+                        other,
+                        owner,
+                        err.message,
+                    )
 
     def _check_link_owner(self, owner_watch_id: Any) -> str:
         """A link's source or target: a paired watch or iPhone."""
@@ -2306,7 +2348,7 @@ class WatchConfigStore:
         return True
 
     @callback
-    def forget_owner(self, owner_watch_id: str) -> bool:
+    def forget_owner(self, owner_watch_id: str, *, updated_by: str | None = None) -> bool:
         """Delete everything stored for one watch. Returns whether there was any.
 
         Called beside the complication store's release on both forget paths.
@@ -2320,9 +2362,21 @@ class WatchConfigStore:
         Listeners hear revision 0 for each kind removed, so a phone forgotten
         while open stops treating its stored revision as current. An
         unreadable file had no kinds anyone could see, so it announces none.
+
+        A linked page (page_links.py) the owner held that is now left on
+        exactly one other owner is no longer linked to anything, so its
+        ``linkId`` is dropped there, as that owner's next revision written by
+        ``updated_by`` (``forget:<owner>`` when not given), after the forget's
+        own announcements.
         """
         had = owner_watch_id in self._records or owner_watch_id in self._failed_owners
-        removed = sorted(self._records.pop(owner_watch_id, {}))
+        records = self._records.pop(owner_watch_id, {})
+        removed = sorted(records)
+        lost = {
+            kind: link_ids(records[kind].document, key)
+            for kind, key in LINKED_KINDS.items()
+            if kind in records
+        }
         self._failed_owners.discard(owner_watch_id)
         if had:
             self._remove_owner_file(owner_watch_id)
@@ -2330,6 +2384,9 @@ class WatchConfigStore:
             _LOGGER.info("Forgot watch config for %s", owner_watch_id)
         for kind in removed:
             self._notify(owner_watch_id, kind, 0)
+        self._drop_last_copies(
+            owner_watch_id, lost, updated_by or f"forget:{owner_watch_id}"
+        )
         return had
 
     @callback
@@ -2429,7 +2486,7 @@ class WatchConfigStore:
         self._schedule_owner_save(target_owner)
         if new_owner:
             self._schedule_index_save()
-        self.forget_owner(source_owner)
+        self.forget_owner(source_owner, updated_by=updated_by)
         for kind in moved:
             self._notify(target_owner, kind, target[kind].revision)
         _LOGGER.info(
