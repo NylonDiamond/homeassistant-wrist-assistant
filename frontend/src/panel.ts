@@ -236,17 +236,13 @@ import {
   type PickerDevice,
   type PickerListRow,
   type PickerPerson,
-  type PickerBand,
-  type PickerSection,
   type PickerTab,
   ALL_DEVICES,
   UNASSIGNED_LABEL,
   UNASSIGNED_LIST,
   isShelvedRow,
-  pickerBands,
   pickerListRows,
   rowKeyFor,
-  pickerSections,
   pickerShapeGroups,
   pickerTabs,
   pickerView,
@@ -1737,14 +1733,6 @@ export class WristAssistantPanel extends LitElement {
   /** What has been typed into the picker's search field. It narrows on the
    * name and on the people who have it, and combines with the chip. */
   @state() private pickerQuery = "";
-  /** Which of the picker's blocks are folded away, by key: `who:<n>` for a
-   * person's band and a device's owner id for one device's block. Kept in
-   * this browser with the tab, because a household with four watches folds
-   * the three it does not work on and means it next time.
-   *
-   * Folded rather than open is the list, so a device added later opens
-   * unfolded: the other way round, a new watch would arrive already shut. */
-  @state() private pickerShut: readonly string[] = [];
   /** Whether a card draws the complication on its own rather than on its
    * device. The device says where a shape sits, which is what somebody
    * placing one asks; the shape on its own is bigger and is what somebody
@@ -3200,6 +3188,19 @@ export class WristAssistantPanel extends LitElement {
     .pk-card-top { position: relative; display: flex; align-items: center; gap: 7px; min-height: 18px; margin-bottom: 9px; min-width: 0; }
     /* The picture, and the Devices menu when it is open over it. */
     .pk-card-pic { position: relative; min-width: 0; }
+    /* The All tab's card: the devices the design is on, a chip each in the
+       device's color, the Pages tab's chips. */
+    .pk-card-devs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; min-width: 0; }
+    .pk-card-dev {
+      display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 7px 2px 5px; border-radius: 999px;
+      font-size: 11px; color: var(--wa-ink); background: var(--wa-hover);
+      border: 1px solid color-mix(in srgb, var(--dc, var(--wa-line)) 60%, transparent);
+    }
+    .pk-card-dev svg { flex: none; width: 12px; height: 12px; color: var(--dc, var(--wa-muted)); }
+    .pk-card-dev-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pk-card-dev.dim { opacity: .55; }
+    .pk-card-dev.shelf { border-style: dashed; color: var(--wa-muted); }
+    .pk-card-dev em { font-style: normal; font-size: 10px; color: var(--wa-muted); }
     .pk-card-name {
       flex: 1; min-width: 0; text-align: left; font: inherit; font-size: 13px; font-weight: 600;
       color: inherit; background: transparent; border: 0; padding: 0; cursor: pointer;
@@ -6259,16 +6260,16 @@ export class WristAssistantPanel extends LitElement {
     try {
       const raw = window.localStorage.getItem(LIST_STORE_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; pickerDevice?: unknown; pickerShut?: unknown; pickerBare?: unknown };
+      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; pickerDevice?: unknown; pickerBare?: unknown };
       if (saved.thumbStep === 0 || saved.thumbStep === 1 || saved.thumbStep === 2) this.thumbStep = saved.thumbStep;
       if (saved.detail === "compact" || saved.detail === "expanded") this.layerDetail = saved.detail;
       // The owner it names is checked when the tabs are drawn, not here: the
       // devices are not read yet, and a watch that has gone falls back to All
       // rather than to nothing. `pickerLook` was the Preview or Devices
       // choice, which went when a card became one picture (2026-09-20); an
-      // older browser's copy of it is read past.
+      // older browser's copy of it is read past, as is `pickerShut`, the
+      // folded person and device blocks the All tab had until 2026-10-15.
       if (typeof saved.pickerDevice === "string") this.pickerDevice = this.listDevice = saved.pickerDevice;
-      if (Array.isArray(saved.pickerShut)) this.pickerShut = saved.pickerShut.filter((k): k is string => typeof k === "string");
       if (typeof saved.pickerBare === "boolean") this.pickerBare = saved.pickerBare;
     } catch {
       /* A browser with storage off keeps the defaults. */
@@ -6279,7 +6280,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       window.localStorage.setItem(LIST_STORE_KEY, JSON.stringify({
         thumbStep: this.thumbStep, detail: this.layerDetail, pickerDevice: this.listDevice,
-        pickerShut: this.pickerShut, pickerBare: this.pickerBare,
+        pickerBare: this.pickerBare,
       }));
     } catch {
       /* Storage off: the choice still holds for this visit. */
@@ -12740,13 +12741,10 @@ export class WristAssistantPanel extends LitElement {
     // on, whatever the search and the shape say: it is the one thing on this
     // surface that would be lost by being filtered away.
     const unsaved = d && d.baseRevision === null ? d : undefined;
-    // What the grid is about to draw, for the bar's "Pick all shown". A card
-    // is one record on one device, so the All tab's key for a row is that
-    // row's key once per device it is under.
-    this.pickerShown = tab === ALL_DEVICES
-      ? pickerSections(rows, devices).flatMap((sec) => sec.rows.map((row) => this.pickKeyOf(row, sec.ownerId)))
-        .filter((k): k is string => k !== undefined)
-      : rows.map((row) => this.pickKeyOf(row, tab)).filter((k): k is string => k !== undefined);
+    // What the grid is about to draw, for the bar's "Pick all shown". On a
+    // device tab a card is that device's record; on the All tab a card is
+    // the design, so it picks the design's record on every device.
+    this.pickerShown = rows.flatMap((row) => this.pickKeysOf(row, tab));
     // What an empty grid is empty of. The search wins when something has been
     // typed, because that is the last thing the author did; then the shape;
     // then the tab says what it is a tab of.
@@ -12779,7 +12777,7 @@ export class WristAssistantPanel extends LitElement {
         ${this.ownerBusy
           ? html`<div class="empty">Loading…</div>`
           : tab === ALL_DEVICES
-            ? this.renderPickerSections(rows, devices, query !== "" || filter !== "all", unsaved, emptyOf, this.pickerPeople(people))
+            ? this.renderPickerAll(rows, devices, unsaved, emptyOf)
             : this.renderPickerTabBody(rows, devices, tab, unsaved, emptyOf)}
       </div>
       ${this.renderPickerFoot(page)}`;
@@ -12806,70 +12804,36 @@ export class WristAssistantPanel extends LitElement {
   };
 
   /**
-   * The All tab: one block per device, in the tabs' own order.
-   *
-   * A device with nothing on it still gets its heading and a line saying so,
-   * because an empty watch is part of the answer to "what has this home got".
-   * That only holds while nothing is being narrowed: under a search or a
-   * shape an empty device is not news, so the block goes and the devices that
-   * did match stay together.
-   *
-   * The library comes last and only when something is on the shelf: a shelf
-   * nobody has used is not a fact worth a heading.
+   * The All tab: one card per design, however many devices it is on, in a
+   * box per shape. Each card names the devices it is on under its picture,
+   * as the Pages tab does, and its Devices menu changes them. A device tab
+   * is where one device's own cards are.
    */
-  private renderPickerSections(
+  private renderPickerAll(
     rows: readonly PickerRow[],
     devices: readonly PickerDevice[],
-    narrowed: boolean,
     unsaved: Draft | undefined,
     emptyOf: string,
-    people: readonly PickerPerson[],
   ) {
-    // A home holding nothing at all says that once, rather than once per
-    // device: four headings over four apologies is a wall of nothing.
     if (rows.length === 0 && unsaved === undefined) return html`<div class="empty">${emptyOf}</div>`;
-    const sections = pickerSections(rows, devices).filter((section) =>
-      section.rows.length > 0
-      || this.unsavedBelongsTo(unsaved, section.ownerId)
-      || (!narrowed && section.kind !== "library"));
-    if (sections.length === 0) return html`<div class="empty">${emptyOf}</div>`;
-    // The blocks are grouped by whose devices they are, so a person's watch
-    // and their iPhone stand together however far apart the home's own device
-    // list put them.
-    const bands = pickerBands(sections, people, (i) => people[i]?.label ?? "");
-    return html`${bands.map((band) => this.renderPickerBand(band, unsaved))}`;
+    return this.renderPickerGroups(sortPickerRows(rows, devices), ALL_DEVICES, unsaved);
   }
 
-  /**
-   * One person's band: their name over their devices' blocks.
-   *
-   * A band folds away as a whole, which is the fold a four-watch household
-   * reaches for first: "not mine" is one press rather than one per device.
-   *
-   * Devices that are nobody's, which is Unassigned and any orphan, get no
-   * band at all. Their own heading already says what they are, and a band
-   * with no name over it would read as a person called nothing.
-   */
-  private renderPickerBand(band: PickerBand<PickerItem>, unsaved: Draft | undefined) {
-    const blocks = band.sections.map((section) => this.renderPickerSection(section, unsaved));
-    if (band.personIndex < 0) return html`${blocks}`;
-    const shut = this.pickerIsShut(band.key);
-    const count = band.sections.reduce(
-      (n, s) => n + s.rows.length + (this.unsavedBelongsTo(unsaved, s.ownerId) ? 1 : 0), 0);
-    return html`<section class="pk-band ${shut ? "shut" : ""}">
-      <h3 class="pk-band-top">
-        <button type="button" class="pk-fold-btn" aria-expanded=${shut ? "false" : "true"}
-          title=${shut ? `Show ${band.label}'s devices` : `Fold ${band.label}'s devices away`}
-          @click=${() => this.togglePickerShut(band.key)}>
-          <span class="pk-fold" aria-hidden="true">${uiIcon("chevron")}</span>
-          <span class="pk-band-dot" aria-hidden="true"></span>
-          <span class="pk-band-name">${band.label}</span>
-          <span class="pk-band-count">${count}</span>
-        </button>
-        <span class="pk-band-rule" aria-hidden="true"></span>
-      </h3>
-      ${shut ? nothing : html`<div class="pk-band-body">${blocks}</div>`}
-    </section>`;
+  /** The devices a design is on, a chip each in the device's color, under
+   * its card on the All tab. A copy hidden from its device's list is dim. */
+  private renderPickerCardDevices(row: PickerRow) {
+    return html`<div class="pk-card-devs">${row.copies.map((c) => {
+      const owner = this.ownerOf(c.ownerId);
+      const kind = deviceKindOf(owner);
+      const shelf = kind === "library";
+      const name = shelf ? UNASSIGNED_LABEL : this.ownerName(c.ownerId);
+      const rec = c.item.kind === "record" ? this.recordAt(c.ownerId, c.id) : undefined;
+      const hid = rec !== undefined && this.rowHidden(rec);
+      return html`<span class="pk-card-dev ${hid ? "dim" : ""} ${shelf ? "shelf" : ""}" style=${this.deviceStyle(c.ownerId)}
+        title=${shelf ? "On no device yet" : hid ? `On ${name}, hidden from its list` : `On ${name}`}>
+        ${uiIcon(tabIcon(kind))}<span class="pk-card-dev-n">${name}</span>${hid ? html`<em>hidden</em>` : nothing}
+      </span>`;
+    })}</div>`;
   }
 
   /**
@@ -12919,19 +12883,6 @@ export class WristAssistantPanel extends LitElement {
       >${shapeOnlyArt(family, device, live)}</span>`;
   }
 
-  /** Whether one of the picker's blocks is folded away. */
-  private pickerIsShut(key: string): boolean {
-    return this.pickerShut.includes(key);
-  }
-
-  /** Fold one block away, or open it again, and remember which. */
-  private togglePickerShut(key: string) {
-    this.pickerShut = this.pickerIsShut(key)
-      ? this.pickerShut.filter((k) => k !== key)
-      : [...this.pickerShut, key];
-    this.saveListView();
-  }
-
   /** One device tab: that device's cards on their own, with no heading over
    * them. The tab is the heading. */
   private renderPickerTabBody(
@@ -12946,34 +12897,6 @@ export class WristAssistantPanel extends LitElement {
     const note = kind === "library" ? html`<p class="pk-sec-note lone">${LIBRARY_NOTE}</p>` : nothing;
     if (rows.length === 0 && mine === undefined) return html`${note}<div class="empty">${emptyOf}</div>`;
     return html`${note}${this.renderPickerGroups(sortPickerRows(rows, devices, tab), tab, mine)}`;
-  }
-
-  /** One device's block of the All tab: its heading, then its cards. The
-   * heading's glyph wears the device's color, the one its tab wears. */
-  private renderPickerSection(section: PickerSection<PickerItem>, unsaved: Draft | undefined) {
-    const mine = this.unsavedBelongsTo(unsaved, section.ownerId) ? unsaved : undefined;
-    const count = section.rows.length + (mine ? 1 : 0);
-    const shut = this.pickerIsShut(section.ownerId);
-    return html`<section class="pk-sec ${shut ? "shut" : ""} ${count === 0 ? "none" : ""}">
-      <div class="pk-sec-top">
-        <h4 class="pk-sec-head">
-          <button type="button" class="pk-fold-btn" aria-expanded=${shut ? "false" : "true"}
-            title=${shut ? `Show ${section.label}` : `Fold ${section.label} away`}
-            @click=${() => this.togglePickerShut(section.ownerId)}>
-            <span class="pk-fold" aria-hidden="true">${uiIcon("chevron")}</span>
-            <span class="pk-sec-glyph" style=${this.deviceStyle(section.ownerId)} aria-hidden="true">${uiIcon(tabIcon(section.kind))}</span>
-            <span class="pk-sec-name">${section.label}</span>
-            <span class="pk-sec-count">${count}</span>
-          </button>
-        </h4>
-        ${section.kind === "library" ? html`<p class="pk-sec-note">${LIBRARY_NOTE}</p>` : nothing}
-      </div>
-      ${shut
-        ? nothing
-        : html`<div class="pk-sec-body">${count === 0
-          ? html`<div class="pk-sec-empty">${nothingOnText(section.kind)}</div>`
-          : this.renderPickerGroups(section.rows, section.ownerId, mine)}</div>`}
-    </section>`;
   }
 
   /**
@@ -12994,7 +12917,9 @@ export class WristAssistantPanel extends LitElement {
    * has none of them yet.
    */
   private renderPickerGroups(rows: readonly PickerRow[], at: string, unsaved: Draft | undefined) {
-    const order = shapeGroupOrder(deviceKindOf(this.ownerOf(at)));
+    // The All tab holds every kind of device: the watch shapes, then the
+    // iPhone's, the order the shelf uses.
+    const order = shapeGroupOrder(at === ALL_DEVICES ? "library" : deviceKindOf(this.ownerOf(at)));
     const groups = pickerShapeGroups(rows, (row) => this.pickerShapeOf(row, at), order)
       .map((g) => ({ key: g.key, label: g.label, rows: g.rows, unsaved: false }));
     if (unsaved) {
@@ -13026,7 +12951,7 @@ export class WristAssistantPanel extends LitElement {
    * "every rectangular one on this watch" is what a sweep is usually of. */
   private renderShapePick(rows: readonly PickerRow[], at: string) {
     if (!this.pickerSelecting) return nothing;
-    const keys = rows.map((row) => this.pickKeyOf(row, at)).filter((k): k is string => k !== undefined);
+    const keys = rows.flatMap((row) => this.pickKeysOf(row, at));
     if (keys.length === 0) return nothing;
     const all = keys.every((k) => this.pickerPicked.includes(k));
     // Half the box picked is worth saying now that the control is a tick box:
@@ -13171,6 +13096,17 @@ export class WristAssistantPanel extends LitElement {
     return `${copy.ownerId}|${copy.item.record.id}`;
   }
 
+  /** Every pick key one card stands for: on the All tab the card is the
+   * design, so it is the design's record on each device; on a device tab it
+   * is that device's one record. */
+  private pickKeysOf(row: PickerRow, at: string): string[] {
+    if (at !== ALL_DEVICES) {
+      const key = this.pickKeyOf(row, at);
+      return key === undefined ? [] : [key];
+    }
+    return row.copies.flatMap((c) => (c.item.kind === "record" ? [`${c.ownerId}|${c.item.record.id}`] : []));
+  }
+
   /** A pick key read back: which device, and which record on it. */
   private cardAt(key: string): { ownerId: string; id: string } | undefined {
     const cut = key.indexOf("|");
@@ -13192,12 +13128,6 @@ export class WristAssistantPanel extends LitElement {
     const copy = row.copies.find((c) => c.ownerId === at) ?? row.open;
     const families = familiesOfItem(copy.item);
     return ALL_FAMILIES.find((f) => families.includes(f));
-  }
-
-  private togglePickedCard(key: string) {
-    this.pickerPicked = this.pickerPicked.includes(key)
-      ? this.pickerPicked.filter((k) => k !== key)
-      : [...this.pickerPicked, key];
   }
 
   private pickMany(keys: readonly string[], on: boolean) {
@@ -13466,9 +13396,13 @@ export class WristAssistantPanel extends LitElement {
     // find, and the hover actions stand down because the bar under the grid is
     // what acts on a pick.
     const picking = this.pickerSelecting;
-    const pickKey = `${actOwnerId}|${record.id}`;
-    const picked = picking && this.pickerPicked.includes(pickKey);
-    const hit = () => { if (picking) this.togglePickedCard(pickKey); else void this.openFromPicker(row, actOn); };
+    // On the All tab the card is the design, so it picks its record on every
+    // device; on a device tab, that device's one.
+    const all = at === ALL_DEVICES;
+    const pickKeys = all ? this.pickKeysOf(row, at) : [`${actOwnerId}|${record.id}`];
+    const picked = picking && pickKeys.length > 0 && pickKeys.every((k) => this.pickerPicked.includes(k));
+    const togglePick = () => this.pickMany(pickKeys, !picked);
+    const hit = () => { if (picking) togglePick(); else void this.openFromPicker(row, actOn); };
     const doing = picking ? (picked ? `Let ${recName} go` : `Pick ${recName}`) : "Open this complication";
     return html`<div class="pk-card ${hidden ? "dim" : ""} ${menu ? "over" : ""} ${shelved ? "shelved" : ""}
       ${picking ? "picking" : ""} ${picked ? "picked" : ""}"
@@ -13476,7 +13410,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="pk-card-top">
         ${picking
           ? html`<input type="checkbox" class="pk-card-pick" .checked=${picked} aria-label=${doing}
-              ?disabled=${this.saving} @change=${() => this.togglePickedCard(pickKey)}>`
+              ?disabled=${this.saving} @change=${togglePick}>`
           : nothing}
         <button type="button" class="pk-card-name" title=${doing} @click=${hit}>${recName}</button>
         ${hidden ? html`<span class="pk-tag" title="These do not show in their device's own list of complications. A face or widget that already has one keeps it.">hidden</span>` : nothing}
@@ -13510,6 +13444,7 @@ export class WristAssistantPanel extends LitElement {
         </button>
         ${menu ? this.renderPickerDupMenu(row, family, cardKey) : nothing}
       </div>
+      ${all ? this.renderPickerCardDevices(row) : nothing}
     </div>`;
   }
 
@@ -13799,6 +13734,8 @@ export class WristAssistantPanel extends LitElement {
     // The menu follows the card: the record moves to Unassigned under a new
     // id, so the menu is pointed at the card that will draw it there.
     const followed = this.pickerDupFor?.endsWith(`|${row.key}`) === true;
+    // A menu opened on the All tab's card stays on the All tab's card.
+    const followAt = this.pickerDupFor?.startsWith(`${ALL_DEVICES}|`) ? ALL_DEVICES : undefined;
     this.saving = true;
     this.saveError = undefined;
     try {
@@ -13824,7 +13761,7 @@ export class WristAssistantPanel extends LitElement {
       // A half-done move is news wherever it is pressed: the design is now in
       // two places and one of them was not asked for.
       if (!gone.ok) this.copyStatus = `${row.name} is under ${UNASSIGNED_LABEL} now, but the copy on ${this.ownerName(copy.ownerId)} could not be removed. Delete it from its own card.`;
-      if (followed) this.pickerDupFor = `${shelf.ownerId}|${rowKeyFor({ ownerId: shelf.ownerId, id: kept.id, ...(kept.linkId !== undefined ? { linkId: kept.linkId } : {}) })}`;
+      if (followed) this.pickerDupFor = `${followAt ?? shelf.ownerId}|${rowKeyFor({ ownerId: shelf.ownerId, id: kept.id, ...(kept.linkId !== undefined ? { linkId: kept.linkId } : {}) })}`;
       // The draft goes before the lists are read again: the record it was
       // built on is on its way out, and a render in between would draw the
       // editor over a document that has moved.
