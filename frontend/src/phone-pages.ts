@@ -1,8 +1,10 @@
 // iPhones in the panel. On a home whose integration advertises `phone_pages`,
 // an iPhone keeps its own pages, status pages, menus, rooms and settings,
 // read and saved like a watch's and never a watch's own records; a phone
-// starts with none and nothing is copied to it by itself. They are set up in
-// the iPhone app tab, beside the Watch app, which lists the watches alone.
+// starts with none. A page can be on several devices at once as a linked
+// page (`watch-pages/links.ts`), which Home Assistant keeps in step. They are
+// set up in the iPhone app tab, beside the Watch app, which lists the
+// watches alone.
 //
 // Every other watch screen stays the watch's: Control Center and Voice
 // belong to one watch, HTTP actions and Cameras to every watch. The iPhone

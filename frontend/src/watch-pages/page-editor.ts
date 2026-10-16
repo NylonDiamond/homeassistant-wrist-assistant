@@ -46,6 +46,7 @@ import {
   type OwnerSummary,
   type WatchConfigHistoryEntry,
   type WatchConfigRecord,
+  type WatchPagesPlaces,
   fetchCloudStatus,
   fetchConfigEntries,
   fetchList,
@@ -54,6 +55,9 @@ import {
   fetchWatchConfig,
   fetchWatchConfigHistory,
   fetchWatchConfigHistoryEntry,
+  fetchWatchPagesPlaces,
+  linkAllWatchPages,
+  linkWatchPages,
   renderTemplates,
   restoreWatchConfig,
   saveRecord,
@@ -123,7 +127,26 @@ import {
   watchRecordUnreadable,
 } from "../watch-settings.js";
 import { isPhoneId } from "../phone-pages.js";
-import { type PhoneCopyScope, copyToPhone, phoneCopyNote, phoneCopyReach } from "../phone-copy.js";
+import { addWatchPagesToPhone, phoneAddNote, watchPagesToAdd } from "../phone-copy.js";
+import { deviceKindOf } from "../version.js";
+import {
+  type ElsewhereGroup,
+  type ElsewherePage,
+  type LinkDevice,
+  type PageDevicePlace,
+  deleteChoices,
+  deviceWord,
+  elsewherePages,
+  elsewhereTitle,
+  joinWords,
+  linkAlsoAddedText,
+  linkBadgeText,
+  linkErrorText,
+  pageDevicePlaces,
+  pageHolders,
+  pageLinkId,
+  removePageFrom,
+} from "./links.js";
 import { type RoomsKind, roomsKindFor } from "../watch-rooms/model.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
 import {
@@ -417,7 +440,7 @@ function pressedRowControl(e: Event): boolean {
     const el = node as Partial<Element>;
     const tag = typeof el.tagName === "string" ? el.tagName.toUpperCase() : "";
     if (tag === "BUTTON" || tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return true;
-    if (el.classList?.contains("pe-menu") === true) return true;
+    if (el.classList?.contains("pe-menu") === true || el.classList?.contains("pe-dev-menu") === true) return true;
   }
   return false;
 }
@@ -485,15 +508,20 @@ interface DeleteAsk {
   refsState: "loading" | "ready";
 }
 
-/** The Copy from watch question, on an iPhone (`phone-copy.ts`): the watch
- * to copy from, its pages once read, and what to copy, all pages or one
- * page's id. */
-interface CopyAsk {
+/** The Add all watch pages question, on an iPhone (`phone-copy.ts`): the
+ * watch to add from and its pages once read. */
+interface AddAsk {
   watch?: string;
   state: "loading" | "ready" | "error";
   pages?: WatchPagesDocument;
   error?: string;
-  scope: "all" | string;
+}
+
+/** A page's Devices menu (`links.ts`), open on its row or on the
+ * inspector's page card. */
+interface DevicesMenu {
+  pageId: string;
+  where: "row" | "card";
 }
 
 type HistoryState = "loading" | "ready" | "error" | "unsupported";
@@ -667,7 +695,7 @@ export const PHONE_FRAME_TEXT = `The iPhone's Pages tab. ${PHONE_SIZE_TEXT}`;
 
 
 /** What an iPhone with no pages says under its title (`phone-pages.ts`). */
-export const PHONE_PAGES_EMPTY_TEXT = "Add a page and build it here, or copy pages from one of your watches. Nothing is copied by itself.";
+export const PHONE_PAGES_EMPTY_TEXT = "Add a page and build it here, or add pages from one of your watches. A page added from a watch stays linked: an edit on one device shows on both.";
 
 /** The plan line under the Pages card. A free watch shows only the first
  * page that is not hidden (the app's `WatchPagesSyncRules.limitToFirstUserPage`).
@@ -808,11 +836,26 @@ export class WaPageEditor extends LitElement {
   @state() private note?: Note;
   @state() private restoreAsk?: RestoreAsk;
   @state() private restoring = false;
-  /** The Copy from watch question is open. */
-  @state() private copyAsk?: CopyAsk;
-  /** A copy from a watch is out. */
-  @state() private copying = false;
-  private copySeq = 0;
+  /** The Add all watch pages question is open. */
+  @state() private addAsk?: AddAsk;
+  /** An add from a watch is out. */
+  @state() private adding = false;
+  private addSeq = 0;
+  /** Where every linked page is (`watch_pages/places`), undefined before
+   * the first answer and on an integration without linked pages, which
+   * turns the Devices menu, the badges and the Not on this list off. */
+  @state() private places?: WatchPagesPlaces;
+  /** The other devices' pages, as last read, for the Not on this list. */
+  @state() private elsewhere: ReadonlyMap<string, WatchPagesDocument> = new Map();
+  private linksSeq = 0;
+  /** The open Devices menu. */
+  @state() private devicesMenu?: DevicesMenu;
+  /** A link or an unlink is out. */
+  @state() private linking = false;
+  /** What the open Devices menu says after its last switch. */
+  @state() private devicesNote?: Note;
+  /** A delete on every device is out. */
+  @state() private deletingAll = false;
   /** The panel's list arrives after the panel's first draw. Until it does,
    * the view asks for the devices itself, to tell "none yet" from "not
    * loaded yet". */
@@ -986,7 +1029,7 @@ export class WaPageEditor extends LitElement {
     const record = this.record;
     if (watchId === undefined || record === undefined || record.revision > 0) return undefined;
     // An iPhone starts with no pages: its ready page opens only from Add
-    // page (`renderPhoneEmpty`), so Copy from watch is offered first.
+    // page (`renderPhoneEmpty`), so Add all watch pages is offered first.
     return readyWatchPagesDraft(watchId, fresh || (!this.onPhone && this.noRecordState() === "start"));
   }
 
@@ -1059,6 +1102,7 @@ export class WaPageEditor extends LitElement {
     this.statusPagesSeq++;
     this.httpLibrarySeq++;
     this.historySeq++;
+    this.linksSeq++;
   }
 
   protected override willUpdate(changed: PropertyValues): void {
@@ -1481,6 +1525,11 @@ export class WaPageEditor extends LitElement {
       this.multi = new Set();
       this.renaming = undefined;
       this.menuPageId = undefined;
+      this.devicesMenu = undefined;
+      this.devicesNote = undefined;
+      // The other devices are not this one's others.
+      this.elsewhere = new Map();
+      this.linksSeq++;
       this.closeAsk();
       this.fieldNote = undefined;
       this.endScrub();
@@ -1729,6 +1778,9 @@ export class WaPageEditor extends LitElement {
       }
       this.show(record);
       this.loadError = undefined;
+      // Where the linked pages are moves with every save of any device's
+      // pages, and a link made here arrives as one.
+      void this.loadLinks(watchId);
     } catch (err) {
       if (seq !== this.loadSeq) return;
       if (!quiet) this.loadError = errText(err);
@@ -1867,6 +1919,7 @@ export class WaPageEditor extends LitElement {
       } else {
         this.show(fresh);
         void this.loadHistory(watchId);
+        void this.loadLinks(watchId);
       }
     } catch {
       // A missed check is not news: the next one will tell.
@@ -2233,13 +2286,13 @@ export class WaPageEditor extends LitElement {
    * close event, which comes a task later. A copy under way keeps its
    * question open until it ends (its pages save closes questions too). */
   private closeAsk(): void {
-    if (this.copying) return;
+    if (this.adding || this.deletingAll) return;
     this.renderRoot.querySelector<HTMLDialogElement>("dialog.pe-ask")?.close();
     this.restoreAsk = undefined;
     this.deleteAsk = undefined;
     this.saveAsk = false;
     this.addTileOpen = false;
-    this.copyAsk = undefined;
+    this.addAsk = undefined;
   }
 
   private deletePage(): void {
@@ -2259,6 +2312,34 @@ export class WaPageEditor extends LitElement {
     this.selectedPageId = neighbour === undefined ? undefined : watchPageId(neighbour);
     this.selectedTileId = undefined;
     if (this.selectedPageId !== undefined) this.focusPageRow = this.selectedPageId;
+  }
+
+  /**
+   * Delete on every device: the page comes off each other device that holds
+   * it at once (`takePageOff`, as unticking it there does), then off this one
+   * the usual way, as an edit that Save sends. A device whose copy could not
+   * be taken off is named in the note; this device's delete goes ahead.
+   */
+  private async deleteEverywhere(): Promise<void> {
+    const ask = this.deleteAsk;
+    const hass = this.hass;
+    const watchId = this.watchId;
+    const page = ask === undefined ? undefined : this.draft === undefined ? undefined : findWatchPage(this.draft.document, ask.pageId);
+    if (!ask || !hass || watchId === undefined || page === undefined || this.deletingAll) return;
+    const others = pageHolders(page, watchId, this.places).filter((id) => id !== watchId);
+    this.deletingAll = true;
+    const failed: string[] = [];
+    for (const owner of others) {
+      const refusal = await this.takePageOff(owner, ask.pageId);
+      if (refusal !== undefined) failed.push(refusal);
+    }
+    this.deletingAll = false;
+    if (watchId !== this.watchId) return;
+    this.deletePage();
+    this.note = failed.length > 0
+      ? { kind: "warn", text: `Deleted here. ${failed.join(" ")} Save to finish the delete on this ${deviceWord(this.linkKind)}.` }
+      : { kind: "ok", text: `Deleted on the other devices. Save to finish the delete on this ${deviceWord(this.linkKind)}.` };
+    void this.loadLinks(watchId);
   }
 
   // ── tiles ──────────────────────────────────────────────────────────────
@@ -2496,6 +2577,13 @@ export class WaPageEditor extends LitElement {
       this.cancelGestures();
       return;
     }
+    if (e.key === "Escape" && this.devicesMenu !== undefined) {
+      e.preventDefault();
+      const id = this.devicesMenu.pageId;
+      this.closeDevices();
+      this.focusPageRow = id;
+      return;
+    }
     if (e.key === "Escape" && this.menuPageId !== undefined) {
       e.preventDefault();
       const id = this.menuPageId;
@@ -2586,10 +2674,11 @@ export class WaPageEditor extends LitElement {
   /** A press anywhere outside an open menu (a page row's, the top bar's
    * ···, or the watch picker) closes it. */
   private onWindowPointerDown = (e: PointerEvent): void => {
-    if (this.menuPageId === undefined && !this.topMenuOpen && !this.watchMenuOpen) return;
+    if (this.menuPageId === undefined && !this.topMenuOpen && !this.watchMenuOpen && this.devicesMenu === undefined) return;
     const path = e.composedPath();
     const within = (...names: string[]) => path.some((n) => n instanceof HTMLElement && names.some((c) => n.classList.contains(c)));
     if (this.menuPageId !== undefined && !within("pe-menu", "pe-more")) this.menuPageId = undefined;
+    if (this.devicesMenu !== undefined && !within("pe-dev-menu", "pe-dev-open", "pe-menu")) this.closeDevices();
     if (this.topMenuOpen && !within("pe-top-menu")) this.topMenuOpen = false;
     if (this.watchMenuOpen && !within("pe-watch-picker")) this.watchMenuOpen = false;
   };
@@ -3136,7 +3225,7 @@ export class WaPageEditor extends LitElement {
     this.requestUpdate();
   }
 
-  // ── an iPhone: Copy from watch ─────────────────────────────────────────
+  // ── linked pages ───────────────────────────────────────────────────────
 
   /** Every device this element may list, from the panel or read itself. */
   private get ownerList(): readonly OwnerSummary[] {
@@ -3144,7 +3233,7 @@ export class WaPageEditor extends LitElement {
   }
 
   /** The device on show is one of the home's iPhones (`phone-pages.ts`):
-   * its pages start empty, and Copy from watch can fill them. */
+   * its pages start empty, and Add all watch pages can fill them. */
   private get onPhone(): boolean {
     return this.phones && isPhoneId(this.ownerList, this.watchId);
   }
@@ -3154,114 +3243,267 @@ export class WaPageEditor extends LitElement {
     return this.onPhone ? "iphone" : "watch";
   }
 
-  /** The watches a copy can come from. */
-  private get copySources(): OwnerSummary[] {
-    return settingsWatches(this.ownerList);
+  /** The shown device as the link rules name it. */
+  private get linkKind(): LinkDevice["kind"] {
+    return this.onPhone ? "iphone" : "watch";
   }
 
-  /** Open the Copy from watch question on the first watch, and read its
-   * pages for the list. */
-  private openCopy(): void {
-    if (!this.onPhone || this.copying) return;
-    this.topMenuOpen = false;
-    this.closeAsk();
-    this.pickCopyWatch(this.copySources[0]?.owner_watch_id);
+  /** Every device a page can be on (`links.ts`): the Watch app's devices,
+   * the watches and, on a home that keeps phone pages, the iPhones. */
+  private get linkDevices(): LinkDevice[] {
+    const devices = this.watches;
+    return devices.map((o) => ({ ownerId: o.owner_watch_id, name: watchName(o, devices), kind: deviceKindOf(o) === "iphone" ? "iphone" : "watch" }));
   }
 
-  /** The question on another watch: its pages are read again, and the
-   * choice goes back to all pages. */
-  private pickCopyWatch(watch: string | undefined): void {
-    this.copyAsk = { watch, state: watch === undefined ? "ready" : "loading", scope: "all" };
-    if (watch !== undefined) void this.readCopySource(watch);
+  private deviceName(ownerId: string): string {
+    return this.linkDevices.find((d) => d.ownerId === ownerId)?.name ?? "the other device";
   }
 
-  /** Read the picked watch's pages, for the question's list. Only the newest
-   * read lands. It is read again when the copy runs. */
-  private async readCopySource(watch: string): Promise<void> {
+  /**
+   * Read where the linked pages are (`watch_pages/places`), then the other
+   * devices' pages for the Not on this list. Only the newest read lands. An
+   * integration without linked pages answers `unknown_command`, which
+   * leaves the Devices menu, the badges and the list off; any other failure
+   * keeps what was known.
+   */
+  private async loadLinks(watchId: string): Promise<void> {
     const hass = this.hass;
     if (!hass) return;
-    const seq = ++this.copySeq;
+    const seq = ++this.linksSeq;
+    let reply: WatchPagesPlaces;
     try {
-      const record = await fetchWatchConfig(hass, watch, "pages");
-      if (seq !== this.copySeq || this.copyAsk?.watch !== watch) return;
-      const pages = record.revision > 0 ? asWatchPagesDocument(record.document) : undefined;
-      this.copyAsk = { ...this.copyAsk, state: "ready", ...(pages === undefined ? {} : { pages }) };
+      reply = await fetchWatchPagesPlaces(hass);
     } catch (err) {
-      if (seq !== this.copySeq || this.copyAsk?.watch !== watch) return;
-      this.copyAsk = { ...this.copyAsk, state: "error", error: errText(err) };
+      if (seq === this.linksSeq && errCode(err) === "unknown_command") this.places = undefined;
+      return;
+    }
+    if (seq !== this.linksSeq || watchId !== this.watchId) return;
+    this.places = {
+      pages: isJsonObject(reply?.pages) ? (reply.pages as WatchPagesPlaces["pages"]) : {},
+      status_pages: isJsonObject(reply?.status_pages) ? (reply.status_pages as WatchPagesPlaces["status_pages"]) : {},
+    };
+    const others = this.watches.filter((o) => o.owner_watch_id !== watchId);
+    const read = await Promise.all(others.map(async (o): Promise<[string, WatchPagesDocument][]> => {
+      try {
+        const record = await fetchWatchConfig(hass, o.owner_watch_id, "pages");
+        const doc = record.revision > 0 ? asWatchPagesDocument(record.document) : undefined;
+        return doc === undefined ? [] : [[o.owner_watch_id, doc]];
+      } catch {
+        // A device whose pages could not be read lists nothing this time.
+        return [];
+      }
+    }));
+    if (seq !== this.linksSeq || watchId !== this.watchId) return;
+    this.elsewhere = new Map(read.flat());
+  }
+
+  /** Open a page's Devices menu, and read the places again for it. */
+  private openDevices(pageId: string, where: DevicesMenu["where"]): void {
+    this.menuPageId = undefined;
+    this.devicesNote = undefined;
+    this.devicesMenu = { pageId, where };
+    if (this.watchId !== undefined) void this.loadLinks(this.watchId);
+    // The page list and the inspector scroll on their own: bring the whole
+    // menu into view, as the ··· menu is.
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector?.<HTMLElement>(".pe-dev-menu")?.scrollIntoView({ block: "nearest" });
+    });
+  }
+
+  private closeDevices(): void {
+    this.devicesMenu = undefined;
+    this.devicesNote = undefined;
+  }
+
+  /** Why the Devices menu's switches cannot be flipped now, or undefined.
+   * A page goes on another device as it is saved, so not over edits. */
+  private devicesBlocked(): string | undefined {
+    if (this.saving) return SAVING_TEXT;
+    if (this.draft?.dirty ?? false) return "Save or discard your edits first. A page goes on another device as it is saved here.";
+    return undefined;
+  }
+
+  /** Tick a device: the page, as saved, goes on it as a linked page, with
+   * the pages and status pages its tiles open (`watch_pages/link`). This
+   * device's copy gets its link too, and arrives as a change. */
+  private async linkTo(pageId: string, target: string): Promise<void> {
+    const hass = this.hass;
+    const watchId = this.watchId;
+    if (!hass || watchId === undefined || target === watchId || this.linking || this.devicesBlocked() !== undefined) return;
+    this.linking = true;
+    this.devicesNote = undefined;
+    try {
+      const reply = await linkWatchPages(hass, watchId, [pageId], [target]);
+      if (watchId !== this.watchId) return;
+      const also = linkAlsoAddedText(reply, target, [pageId], this.draft?.document);
+      this.devicesNote = { kind: "ok", text: `Added to ${this.deviceName(target)}.${also === undefined ? "" : ` ${also}`}` };
+      void this.load(watchId, true);
+    } catch (err) {
+      if (watchId === this.watchId) this.devicesNote = { kind: "err", text: `Not added. ${linkErrorText(err)}` };
+    } finally {
+      this.linking = false;
     }
   }
 
-  /** Why Copy cannot run now, or undefined when it can. */
-  private copyBlocked(ask: CopyAsk): string | undefined {
+  /** Untick a device: the page comes off it (`takePageOff`). */
+  private async unlinkFrom(pageId: string, target: string): Promise<void> {
+    const watchId = this.watchId;
+    if (watchId === undefined || target === watchId || this.linking || this.devicesBlocked() !== undefined) return;
+    this.linking = true;
+    this.devicesNote = undefined;
+    const refusal = await this.takePageOff(target, pageId);
+    this.linking = false;
+    if (watchId !== this.watchId) return;
+    this.devicesNote = refusal === undefined ? { kind: "ok", text: `Taken off ${this.deviceName(target)}.` } : { kind: "err", text: refusal };
+    void this.loadLinks(watchId);
+  }
+
+  /**
+   * Take one page off another device at once (`removePageFrom`): its pages
+   * saved without it, over the revision read. The tiles there that open it
+   * stay, since a linked page's tiles are shared. Then that device's menu
+   * slots and complication taps that opened it are cleared, as after a
+   * delete here. A device whose page editor holds unsaved edits in this tab
+   * is left alone. Undefined when done, else what to say.
+   */
+  private async takePageOff(owner: string, pageId: string): Promise<string | undefined> {
+    const hass = this.hass;
+    const name = this.deviceName(owner);
+    if (!hass) return `Not taken off ${name}.`;
+    if (keptWatchPagesDraft(owner)?.dirty ?? false) {
+      return `Not taken off ${name}: its pages have unsaved edits. Save or discard them first.`;
+    }
+    const result = await removePageFrom({
+      read: (o) => fetchWatchConfig(hass, o, "pages"),
+      save: (o, base, document) => saveWatchConfig(hass, o, "pages", base, document),
+    }, owner, pageId);
+    if (!result.ok) return `Not taken off ${name}: ${result.message}`;
+    if (result.removed) await this.clearPageRefs(hass, owner, [pageId]);
+    return undefined;
+  }
+
+  /** The + on a page of the Not on this list: it goes on this device too,
+   * linked, from the device it is on. Unsaved edits here stay: the new page
+   * arrives as a change and is merged in. */
+  private async addHere(item: ElsewherePage): Promise<void> {
+    const hass = this.hass;
+    const watchId = this.watchId;
+    if (!hass || watchId === undefined || this.linking || this.saving) return;
+    this.linking = true;
+    this.note = undefined;
+    try {
+      const reply = await linkWatchPages(hass, item.ownerId, [item.pageId], [watchId]);
+      if (watchId !== this.watchId) return;
+      const also = linkAlsoAddedText(reply, watchId, [item.pageId], this.elsewhere.get(item.ownerId));
+      await this.load(watchId, true);
+      if (watchId !== this.watchId) return;
+      this.note = { kind: "ok", text: `Added ${item.name} from ${this.deviceName(item.ownerId)}. It stays linked: an edit on one device shows on both.${also === undefined ? "" : ` ${also}`}` };
+      void this.loadStatusPages(watchId);
+      const draft = this.draft;
+      if (draft !== undefined && findWatchPage(draft.document, item.pageId) !== undefined) {
+        this.selectedPageId = watchPageId(findWatchPage(draft.document, item.pageId)!);
+        this.selectedTileId = undefined;
+        this.multi = new Set();
+      }
+    } catch (err) {
+      if (watchId === this.watchId) this.note = { kind: "err", text: `Not added. ${linkErrorText(err)}` };
+    } finally {
+      this.linking = false;
+    }
+  }
+
+  // ── an iPhone: Add all watch pages ─────────────────────────────────────
+
+  /** The watches whose pages can be added. */
+  private get addSources(): OwnerSummary[] {
+    return settingsWatches(this.ownerList);
+  }
+
+  /** Open the Add all watch pages question on the first watch, and read its
+   * pages for the count. */
+  private openAdd(): void {
+    if (!this.onPhone || this.adding || this.places === undefined) return;
+    this.topMenuOpen = false;
+    this.closeAsk();
+    this.pickAddWatch(this.addSources[0]?.owner_watch_id);
+  }
+
+  /** The question on another watch: its pages are read again. */
+  private pickAddWatch(watch: string | undefined): void {
+    this.addAsk = { watch, state: watch === undefined ? "ready" : "loading" };
+    if (watch !== undefined) void this.readAddSource(watch);
+  }
+
+  /** Read the picked watch's pages, for the question. Only the newest read
+   * lands. It is read again when the add runs. */
+  private async readAddSource(watch: string): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.addSeq;
+    try {
+      const record = await fetchWatchConfig(hass, watch, "pages");
+      if (seq !== this.addSeq || this.addAsk?.watch !== watch) return;
+      const pages = record.revision > 0 ? asWatchPagesDocument(record.document) : undefined;
+      this.addAsk = { ...this.addAsk, state: "ready", ...(pages === undefined ? {} : { pages }) };
+    } catch (err) {
+      if (seq !== this.addSeq || this.addAsk?.watch !== watch) return;
+      this.addAsk = { ...this.addAsk, state: "error", error: errText(err) };
+    }
+  }
+
+  /** Why Add cannot run now, or undefined when it can. */
+  private addBlocked(ask: AddAsk): string | undefined {
     if (ask.watch === undefined) return "No watch has connected yet.";
     if (ask.state !== "ready") return ask.state === "loading" ? "Reading the watch's pages." : "The watch's pages could not be read.";
-    if (ask.pages === undefined || listedWatchPages(ask.pages).length === 0) return "This watch has no pages to copy.";
-    if (this.draft?.dirty ?? false) return "Save or discard your edits first. A copy is saved at once.";
+    if (ask.pages === undefined || listedWatchPages(ask.pages).length === 0) return "This watch has no pages to add.";
     if (this.busy) return SAVING_TEXT;
     return undefined;
   }
 
   /**
-   * Copy from the picked watch onto this iPhone (`copyToPhone`): the phone's
-   * status pages, menus and rooms are saved here, and its pages through the
-   * draft, as one undo step and a save like any other. Nothing of the
-   * watch's is written. The first copied page opens.
+   * Add the picked watch's pages to this iPhone (`addWatchPagesToPhone`,
+   * one `watch_pages/link_all`): every page and status page goes on it
+   * linked, and Home Assistant copies the watch's menus and rooms where the
+   * phone has none. The pages arrive here as a change, merged into any
+   * edits. The first added page opens.
    */
-  private async runCopy(): Promise<void> {
-    const ask = this.copyAsk;
+  private async runAdd(): Promise<void> {
+    const ask = this.addAsk;
     const hass = this.hass;
     const phone = this.watchId;
-    if (ask === undefined || this.copyBlocked(ask) !== undefined || !hass || phone === undefined || this.copying || !this.onPhone) return;
+    if (ask === undefined || this.addBlocked(ask) !== undefined || !hass || phone === undefined || this.adding || !this.onPhone) return;
     const watch = ask.watch!;
-    const sources = this.copySources;
+    const sources = this.addSources;
     const source = sources.find((w) => w.owner_watch_id === watch);
     const from = source === undefined ? "the watch" : watchName(source, sources);
-    const scope: PhoneCopyScope = ask.scope === "all" ? { kind: "all" } : { kind: "page", pageId: ask.scope };
-    this.copying = true;
+    this.adding = true;
     this.note = undefined;
-    const result = await copyToPhone({
+    const result = await addWatchPagesToPhone({
+      linkAll: (src, target) => linkAllWatchPages(hass, src, target),
       read: (owner, kind) => fetchWatchConfig(hass, owner, kind),
-      savePhone: (kind, base, document) => saveWatchConfig(hass, phone, kind, base, document),
-      savePages: (document) => this.saveCopiedPages(hass, phone, document),
-    }, { watch, watchRooms: roomsKindFor(source), phone, scope, phonePages: this.draft?.document });
-    this.copying = false;
+    }, { watch, phone });
+    this.adding = false;
     if (phone !== this.watchId) {
       // Another device opened meanwhile, and its `closeAsk` waited for the
-      // copy: the question goes now, not over that device.
-      this.renderRoot.querySelector<HTMLDialogElement>("dialog.pe-copy")?.close();
-      this.copyAsk = undefined;
+      // add: the question goes now, not over that device.
+      this.renderRoot.querySelector<HTMLDialogElement>("dialog.pe-add-all")?.close();
+      this.addAsk = undefined;
       return;
     }
     this.closeAsk();
-    this.note = phoneCopyNote(result, from);
-    if (result.saved.includes("status_pages")) void this.loadStatusPages(phone);
-    if (result.ok) {
-      this.selectedPageId = result.firstPageId;
+    if (result.saved.includes("pages")) {
+      void this.loadStatusPages(phone);
+      await this.load(phone, true);
+      if (phone !== this.watchId) return;
+    }
+    this.note = phoneAddNote(result, from);
+    const draft = this.draft;
+    const first = result.ok && result.firstPageId !== undefined && draft !== undefined ? findWatchPage(draft.document, result.firstPageId) : undefined;
+    if (first !== undefined) {
+      this.selectedPageId = watchPageId(first);
       this.selectedTileId = undefined;
       this.multi = new Set();
     }
-  }
-
-  /** The copy's pages, saved as this editor saves pages: into the draft as
-   * one undo step, then a save. A phone with no pages record yet gets its
-   * first, over revision 0, read back at once. */
-  private async saveCopiedPages(hass: HassLike, phone: string, document: WatchPagesDocument): Promise<{ ok: boolean; code?: string; message?: string }> {
-    if (phone !== this.watchId) return { ok: false, code: "moved", message: "Another device was opened meanwhile." };
-    const draft = this.draft;
-    if (draft === undefined) {
-      try {
-        await saveWatchConfig(hass, phone, "pages", 0, document);
-      } catch (err) {
-        return { ok: false, code: errCode(err) ?? "unknown", message: errText(err) };
-      }
-      await this.load(phone, true);
-      return { ok: true };
-    }
-    draft.apply(document);
-    this.requestUpdate();
-    const result = await this.save(true);
-    return result ?? { ok: false, code: "busy", message: SAVING_TEXT };
   }
 
   // ── drawing ────────────────────────────────────────────────────────────
@@ -3281,7 +3523,7 @@ export class WaPageEditor extends LitElement {
       ${this.deleteAsk && draft ? this.renderDeleteAsk(this.deleteAsk, draft.document) : nothing}
       ${this.saveAsk && draft ? this.renderSaveAsk(draft.document, draft.base) : nothing}
       ${this.addTileOpen ? this.renderAddTileDialog() : nothing}
-      ${this.copyAsk ? this.renderCopyAsk(this.copyAsk) : nothing}
+      ${this.addAsk ? this.renderAddAsk(this.addAsk) : nothing}
     `;
   }
 
@@ -3374,7 +3616,8 @@ export class WaPageEditor extends LitElement {
    * while the editor waits for the iPhone's move. */
   private renderTopMenu(draft: WatchPagesDraft | undefined): TemplateResult | typeof nothing {
     const start = this.canStartFresh() && this.noRecordState() === "wait";
-    const phone = this.onPhone;
+    // Add all watch pages, on an integration that links pages.
+    const phone = this.onPhone && this.places !== undefined;
     if (draft === undefined && !start && !phone) return nothing;
     const open = this.topMenuOpen;
     const run = (fn: () => void) => () => { this.topMenuOpen = false; fn(); };
@@ -3394,9 +3637,9 @@ export class WaPageEditor extends LitElement {
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
         ${start ? html`<button class="row" role="menuitem"
           @click=${run(() => this.askStartFresh())}>${START_FRESH_BUTTON}</button>` : nothing}
-        ${phone ? html`<button class="row pe-copy-menu" role="menuitem" ?disabled=${this.copying || this.copySources.length === 0}
-          title=${this.copySources.length === 0 ? "No watch has connected yet" : "Copy one page or all pages from a watch"}
-          @click=${run(() => this.openCopy())}>Copy from watch…</button>` : nothing}
+        ${phone ? html`<button class="row pe-add-all-menu" role="menuitem" ?disabled=${this.adding || this.addSources.length === 0}
+          title=${this.addSources.length === 0 ? "No watch has connected yet" : "Put every page of a watch on this iPhone, linked"}
+          @click=${run(() => this.openAdd())}>Add all watch pages…</button>` : nothing}
       </div>` : nothing}
     </span>`;
   }
@@ -3571,7 +3814,7 @@ export class WaPageEditor extends LitElement {
     const draft = this.draft;
     // An iPhone starts with no pages, and is never waiting for any: until
     // Add page opens its ready page, or once its pages list none, it shows
-    // Add page and Copy from watch.
+    // Add page and Add all watch pages.
     if (this.onPhone && !watchRecordUnreadable(record, asWatchPagesDocument)
       && (draft === undefined || (record.revision > 0 && listedWatchPages(draft.document).length === 0))) {
       return this.renderPhoneEmpty(record, draft);
@@ -3631,90 +3874,153 @@ export class WaPageEditor extends LitElement {
     ${record.revision > 0 ? this.renderFoot(record, document, draft.dirty) : nothing}`;
   }
 
-  /** An iPhone with no pages: a phone starts with none, and nothing is
-   * copied to it by itself. Add page starts its pages with one empty page
-   * (the first record, or one more in a record that lists none); Copy from
-   * watch fills them from a watch. A record already there keeps its foot
-   * bar, so an earlier save can still be put back. */
+  /** An iPhone with no pages: a phone starts with none. Add page starts its
+   * pages with one empty page (the first record, or one more in a record
+   * that lists none); Add all watch pages links a watch's pages here. The
+   * other devices' pages are listed under it, each to add on its own. A
+   * record already there keeps its foot bar, so an earlier save can still
+   * be put back. */
   private renderPhoneEmpty(record: WatchConfigRecord, draft: WatchPagesDraft | undefined): TemplateResult {
     const id = this.watchId;
     const first = record.revision <= 0;
     const kept = first && id !== undefined ? keptWatchPagesDraft(id) : undefined;
-    const sources = this.copySources;
-    const off = this.copying || this.busy;
+    const sources = this.addSources;
+    const off = this.adding || this.busy;
     return html`<div class="pe-empty pe-phone-empty">
         <b>No pages on this iPhone yet.</b>
         <span>${PHONE_PAGES_EMPTY_TEXT}</span>
         <span class="pe-empty-actions">
           <button class="pe-btn pe-primary pe-add-first" ?disabled=${off || id === undefined}
             @click=${() => (first ? this.openPhonePages() : this.addPage())}>${uiIcon("plus")}<span>Add page</span></button>
-          <button class="pe-btn pe-copy-open" ?disabled=${off || sources.length === 0}
-            title=${sources.length === 0 ? "No watch has connected yet" : "Copy one page or all pages from a watch"}
-            @click=${() => this.openCopy()}>Copy from watch</button>
+          ${this.places === undefined ? nothing : html`<button class="pe-btn pe-add-all-open" ?disabled=${off || sources.length === 0}
+            title=${sources.length === 0 ? "No watch has connected yet" : "Put every page of a watch on this iPhone, linked"}
+            @click=${() => this.openAdd()}>Add all watch pages</button>`}
         </span>
         ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when Home Assistant holds pages for this iPhone again.</span>
           <button class="pe-btn" @click=${() => { forgetWatchPagesDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
+        ${this.renderElsewhere(draft?.document, true)}
       </div>
       ${first || draft === undefined ? nothing : this.renderFoot(record, draft.document, draft.dirty)}`;
   }
 
-  /** The Copy from watch question: the watch to copy from (when there are
-   * several), then all pages or one page, each with what comes along. */
-  private renderCopyAsk(ask: CopyAsk): TemplateResult {
-    const sources = this.copySources;
+  /** The Add all watch pages question: the watch to add from (when there
+   * are several), then how many of its pages come and what else does. */
+  private renderAddAsk(ask: AddAsk): TemplateResult {
+    const sources = this.addSources;
     const source = sources.find((w) => w.owner_watch_id === ask.watch);
     const listed = ask.pages === undefined ? [] : listedWatchPages(ask.pages);
-    const blocked = this.copyBlocked(ask);
-    const choose = (scope: CopyAsk["scope"]) => { if (this.copyAsk !== undefined) this.copyAsk = { ...this.copyAsk, scope }; };
-    const option = (scope: CopyAsk["scope"], name: string, sub: string) => html`<label class="pe-check pe-copy-opt">
-        <input type="radio" name="pe-copy-scope" .checked=${live(ask.scope === scope)} ?disabled=${this.copying}
-          @change=${() => choose(scope)} />
-        <span class="pe-copy-l"><b>${name}</b>${sub === "" ? nothing : html`<span class="pe-muted">${sub}</span>`}</span>
-      </label>`;
+    const fresh = ask.pages === undefined ? [] : watchPagesToAdd(ask.pages, this.draft?.document);
+    const blocked = this.addBlocked(ask);
     let body: TemplateResult;
     if (ask.watch === undefined) body = html`<p class="pe-muted">No watch has connected to this Home Assistant yet.</p>`;
     else if (ask.state === "loading") body = html`<p class="pe-muted">Reading the watch's pages…</p>`;
     else if (ask.state === "error") body = html`<p class="pe-warn">Could not read the watch's pages: ${ask.error ?? ""}</p>`;
-    else if (listed.length === 0) body = html`<p class="pe-muted">This watch has no pages to copy.</p>`;
+    else if (listed.length === 0) body = html`<p class="pe-muted">This watch has no pages to add.</p>`;
     else {
-      body = html`<div class="pe-copy-list" role="radiogroup" aria-label="What to copy">
-          ${option("all", "All pages", `${plural(listed.length, "page", "pages")}, with the watch's status pages, menus and rooms`)}
-          ${listed.map((page) => {
-            const pageId = watchPageId(page);
-            const reach = phoneCopyReach(ask.pages!, pageId);
-            const linked = reach.pageIds.length - 1;
-            const along = [
-              linked > 0 ? plural(linked, "page it links to", "pages it links to") : undefined,
-              reach.statusPageIds.length > 0 ? "the status pages it opens" : undefined,
-            ].filter((w): w is string => w !== undefined);
-            return option(pageId, watchPageName(page), along.length === 0 ? "" : `With ${along.join(" and ")}`);
-          })}
-        </div>
-        <p class="pe-muted">${ask.scope === "all"
-          ? "The watch's pages and status pages are added after the iPhone's own. Its menus and rooms take the place of the iPhone's."
-          : "The page is added after the iPhone's own pages, with what it links to."}
-          Everything copied gets new ids, so the iPhone and the watch never share a page. The watch is not changed.</p>`;
+      const held = listed.length - fresh.length;
+      body = html`<p>${fresh.length === 0
+          ? "This iPhone has every page of this watch already."
+          : `${plural(fresh.length, "page", "pages")} and the watch's status pages go on this iPhone, after its own.`}
+        ${held > 0 && fresh.length > 0 ? ` ${plural(held, "page is", "pages are")} here already.` : ""}</p>
+        <p class="pe-muted">They stay linked: an edit on one device shows on both. Order and Hidden stay each device's own.
+          The watch's menus and rooms come too, but only where this iPhone has none.</p>`;
     }
-    return html`<dialog class="pe-ask pe-copy" aria-labelledby="pe-copy-title"
-      @cancel=${(e: Event) => { if (this.copying) e.preventDefault(); }}
-      @close=${() => { if (!this.copying) this.copyAsk = undefined; }}>
-      <h3 id="pe-copy-title">Copy from watch</h3>
-      ${sources.length > 1 ? html`<div class="pe-copy-from" role="radiogroup" aria-label="Watch to copy from">
+    return html`<dialog class="pe-ask pe-add-all" aria-labelledby="pe-add-all-title"
+      @cancel=${(e: Event) => { if (this.adding) e.preventDefault(); }}
+      @close=${() => { if (!this.adding) this.addAsk = undefined; }}>
+      <h3 id="pe-add-all-title">Add all watch pages</h3>
+      ${sources.length > 1 ? html`<div class="pe-add-from" role="radiogroup" aria-label="Watch to add from">
           ${sources.map((w) => html`<label class="pe-check">
-            <input type="radio" name="pe-copy-watch" .checked=${live(w.owner_watch_id === ask.watch)} ?disabled=${this.copying}
-              @change=${() => this.pickCopyWatch(w.owner_watch_id)} />
+            <input type="radio" name="pe-add-watch" .checked=${live(w.owner_watch_id === ask.watch)} ?disabled=${this.adding}
+              @change=${() => this.pickAddWatch(w.owner_watch_id)} />
             <span>${watchName(w, sources)}</span>
           </label>`)}
         </div>`
         : source === undefined ? nothing : html`<p>From <b>${watchName(source, sources)}</b>.</p>`}
       ${body}
-      ${blocked !== undefined && (this.draft?.dirty ?? false) ? html`<p class="pe-warn">${blocked}</p>` : nothing}
       <div class="pe-ask-foot">
-        <button class="pe-btn" ?disabled=${this.copying} @click=${() => this.closeAsk()}>Cancel</button>
-        <button class="pe-btn pe-primary pe-copy-go" ?disabled=${blocked !== undefined || this.copying}
-          title=${blocked ?? "Copy onto this iPhone"} @click=${() => void this.runCopy()}>${this.copying ? "Copying…" : "Copy"}</button>
+        <button class="pe-btn" ?disabled=${this.adding} @click=${() => this.closeAsk()}>Cancel</button>
+        <button class="pe-btn pe-primary pe-add-all-go" ?disabled=${blocked !== undefined || this.adding}
+          title=${blocked ?? "Add to this iPhone"} @click=${() => void this.runAdd()}>${this.adding ? "Adding…" : "Add"}</button>
       </div>
     </dialog>`;
+  }
+
+  /**
+   * The Not on this iPhone (or watch) section under the page list: the
+   * pages the other devices hold and this one does not (`elsewherePages`),
+   * dimmed, each with a + that puts it here, linked. Under a heading per
+   * device when more than one brings pages. Nothing on an integration
+   * without linked pages.
+   */
+  private renderElsewhere(document: WatchPagesDocument | undefined, standalone = false): TemplateResult | typeof nothing {
+    const watchId = this.watchId;
+    if (this.places === undefined || watchId === undefined) return nothing;
+    const groups: ElsewhereGroup[] = elsewherePages(watchId, document, this.linkDevices, this.elsewhere);
+    if (groups.length === 0) return nothing;
+    const many = groups.length > 1;
+    const off = this.linking || this.saving;
+    const kind = this.linkKind;
+    return html`<div class="pe-elsewhere ${standalone ? "standalone" : ""}" role="group" aria-label=${elsewhereTitle(kind)}>
+      <div class="pe-else-h">${elsewhereTitle(kind)}</div>
+      ${groups.map((group) => html`
+        ${many ? html`<div class="pe-else-from">${group.device.name}</div>` : nothing}
+        ${group.pages.map((item) => html`<div class="pe-else-row" data-else-page=${item.pageId}>
+          <span class="pe-else-name" title=${item.name}>${item.name}</span>
+          ${many ? nothing : html`<span class="pe-else-on">${group.device.name}</span>`}
+          <button type="button" class="pe-icon-btn pe-else-add" ?disabled=${off}
+            title=${this.saving ? SAVING_TEXT : `Add ${item.name} to this ${deviceWord(kind)}, linked to ${group.device.name}`}
+            aria-label=${`Add ${item.name} to this ${deviceWord(kind)}`}
+            @click=${() => void this.addHere(item)}>${uiIcon("plus")}</button>
+        </div>`)}`)}
+    </div>`;
+  }
+
+  /**
+   * One page's Devices menu, the complication cards' look: a switch per
+   * device, on where the page is. Ticking puts it on that device, linked;
+   * unticking takes it off there. This device's switch stays on (Delete
+   * takes it off), and a system page's never move. It stays open across
+   * switches, with Done to close it.
+   */
+  private renderDevicesMenu(page: WatchPage, where: DevicesMenu["where"]): TemplateResult | typeof nothing {
+    const watchId = this.watchId;
+    if (watchId === undefined) return nothing;
+    const name = watchPageName(page);
+    const pageId = watchPageId(page);
+    const places: PageDevicePlace[] = pageDevicePlaces(this.linkDevices, page, watchId, this.places);
+    const blocked = this.devicesBlocked();
+    return html`<div class="pk-dup-menu pe-dev-menu at-${where}" role="group" aria-label=${`Devices for ${name}`}>
+      <div class="pk-dup-head">This page is on</div>
+      ${blocked === undefined ? nothing : html`<div class="pe-dev-note warn">${blocked}</div>`}
+      ${places.map((place) => {
+        const label = place.device.name;
+        const off = place.stuck !== undefined || blocked !== undefined || this.linking;
+        const title = place.stuck ?? blocked ?? (place.on
+          ? `Take it off ${label}. Its own order and Hidden go with it.`
+          : `Put it on ${label}. An edit on one device then shows on both.`);
+        return html`<div class="pk-dup-row check ${off ? "off" : ""}">
+          <label class="pk-dup-pick" title=${title}>
+            <input type="checkbox" role="switch" .checked=${live(place.on)} ?disabled=${off}
+              aria-label=${`${name} on ${label}`}
+              @change=${(e: Event) => {
+                const box = e.currentTarget as HTMLInputElement;
+                // The switch follows the places, not the click: it is drawn
+                // again from them once the write lands.
+                box.checked = place.on;
+                void (place.on ? this.unlinkFrom(pageId, place.device.ownerId) : this.linkTo(pageId, place.device.ownerId));
+              }}>
+            ${uiIcon(place.device.kind === "iphone" ? "phone" : "watch")}
+            <span class="pk-dup-name">${label}</span>
+            ${place.here ? html`<span class="pk-dup-full">this ${deviceWord(place.device.kind)}</span>` : nothing}
+          </label>
+        </div>`;
+      })}
+      ${this.linking ? html`<div class="pe-dev-note">Saving…</div>` : nothing}
+      ${this.devicesNote === undefined ? nothing : html`<div class="pe-dev-note ${this.devicesNote.kind}" role="status">${this.devicesNote.text}</div>`}
+      <div class="pk-dup-note">On means the page is on that device. An edit on one device shows on all of them. Each device keeps its own order and Hidden.</div>
+      <button type="button" class="pk-dup-done" @click=${() => { this.closeDevices(); this.focusPageRow = pageId; }}>Done</button>
+    </div>`;
   }
 
   /** The inspector's line under the page's cards with no tile selected:
@@ -3842,6 +4148,7 @@ export class WaPageEditor extends LitElement {
       ${this.record?.multiple_pages === false
         ? html`<div class="lc-note pe-plan-note" role="note"><span><b>${WATCH_PAGES_PLAN_TEXT.title}</b> ${WATCH_PAGES_PLAN_TEXT.body}</span></div>`
         : nothing}
+      ${this.renderElsewhere(this.draft?.document)}
     </section>`;
   }
 
@@ -3881,6 +4188,10 @@ export class WaPageEditor extends LitElement {
     const dragging = this.rowDrag?.started === true && sameWatchId(this.rowDrag.pageId, id);
     const own = pressedRowControl;
     const detail = smart ? "Smart page" : `${plural(tiles, "tile", "tiles")} · ${plural(watchPageExtent(page), "row", "rows")}`;
+    const linksOn = this.places !== undefined && this.watchId !== undefined;
+    const devices = linksOn ? this.linkDevices : [];
+    const shared = linksOn && pageLinkId(page) !== undefined ? linkBadgeText(pageHolders(page, this.watchId!, this.places), this.watchId!, devices) : undefined;
+    const devicesOpen = this.devicesMenu?.where === "row" && sameWatchId(this.devicesMenu.pageId, id);
     return html`<div class="layer pe-page-row ${on ? "hl" : ""} ${hidden ? "dim" : ""} ${dragging ? "pe-dragging" : ""} ${menu ? "menu-open" : ""}"
       data-page=${id} role="listitem" tabindex="0" aria-current=${on ? "true" : "false"} aria-label=${name}
       title=${this.saving ? `${SAVING_TEXT} Double click to rename.` : "Double click to rename. Drag, or Alt and the arrow keys, to move the page."}
@@ -3904,6 +4215,7 @@ export class WaPageEditor extends LitElement {
       </span>
       <span class="right">
         <span class="badges">
+          ${shared === undefined ? nothing : html`<span class="badge pe-linked" title=${shared}>${shared}</span>`}
           ${smart ? html`<span class="badge pe-smart">smart</span>` : nothing}
           ${hidden ? html`<span class="badge">hidden</span>` : nothing}
         </span>
@@ -3923,8 +4235,12 @@ export class WaPageEditor extends LitElement {
           <button class="row" role="menuitem" @click=${() => this.startRename(id)}>Rename</button>
           <button class="row" role="menuitem" ?disabled=${index === 0} @click=${() => this.movePage(id, index - 1, true)}>Move up</button>
           <button class="row" role="menuitem" ?disabled=${index >= count - 1} @click=${() => this.movePage(id, index + 1, true)}>Move down</button>
+          ${linksOn && devices.length > 1 ? html`<button class="row pe-dev-item" role="menuitem"
+            title="Pick the devices this page is on"
+            @click=${() => this.openDevices(id, "row")}>Devices…</button>` : nothing}
           <button class="row pe-danger" role="menuitem" @click=${() => this.askDelete(id)}>Delete</button>
         </div>` : nothing}
+      ${devicesOpen ? this.renderDevicesMenu(page, "row") : nothing}
     </div>`;
   }
 
@@ -4660,14 +4976,22 @@ export class WaPageEditor extends LitElement {
    */
   private renderPageCards(page: WatchPage, host: WatchPagesEditorHost | undefined): TemplateResult {
     const id = watchPageId(page);
+    // Devices, as the page row's ··· menu has it, while the integration
+    // shares pages and there is another device to share with.
+    const devices = this.places !== undefined && this.linkDevices.length > 1;
+    const open = devices && this.devicesMenu?.where === "card" && sameWatchId(this.devicesMenu.pageId, id);
     return html`<div class="pe-page-insp">
       ${this.renderRulesCard(page)}
       ${host === undefined ? nothing : renderPageLookCard(host)}
       ${this.renderOnWatchCard(page, host)}
       ${this.renderNoTileCard(page)}
       <div class="pe-page-acts">
+        ${devices ? html`<button type="button" class="pe-btn pe-dev-open ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
+          title="Pick the devices this page is on"
+          @click=${() => (open ? this.closeDevices() : this.openDevices(id, "card"))}>${uiIcon("phone")}<span>Devices</span></button>` : nothing}
         <button type="button" class="pe-btn pe-danger" @click=${() => this.askDelete(id)}>${uiIcon("delete")}<span>Delete page</span></button>
       </div>
+      ${open ? this.renderDevicesMenu(page, "card") : nothing}
     </div>`;
   }
 
@@ -4913,10 +5237,18 @@ export class WaPageEditor extends LitElement {
     const pages = watchPagesOf(document);
     const tiles = watchPageTiles(page).length;
     const rooms = links.roomFallback || links.roomMappingKeys.length > 0;
+    // A linked page asks where: here, or on every device that holds it.
+    const holders = this.watchId === undefined ? [] : pageHolders(page, this.watchId, this.places);
+    const choices = this.places === undefined ? undefined : deleteChoices(holders, this.linkKind);
+    const others = holders.filter((h) => h !== this.watchId).map((h) => this.deviceName(h));
+    const busy = this.deletingAll;
     return html`<dialog class="pe-ask" aria-labelledby="pe-del-title"
-      @close=${() => { this.deleteAsk = undefined; }}>
+      @cancel=${(e: Event) => { if (busy) e.preventDefault(); }}
+      @close=${() => { if (!this.deletingAll) this.deleteAsk = undefined; }}>
       <h3 id="pe-del-title">Delete "${name}"?</h3>
       <p>${isSmartWatchPage(page) ? "A smart page." : `It holds ${plural(tiles, "tile", "tiles")}.`} You can undo the delete until you leave this page.</p>
+      ${choices === undefined ? nothing : html`<p class="pe-del-linked">It is also on ${joinWords(others)}.
+        Delete on all ${choices.count} devices takes it off ${others.length === 1 ? "that device" : "those devices"} at once, which undo here does not bring back.</p>`}
       ${links.tiles.length > 0 ? html`
         <p>${links.tiles.length === 1 ? "A tile opens this page:" : "These tiles open this page:"}</p>
         <ul class="pe-ask-list">${links.tiles.map((link) => {
@@ -4938,8 +5270,12 @@ export class WaPageEditor extends LitElement {
         <p class="pe-muted">After the delete the ${this.onPhone ? "iPhone" : "watch"} opens another page there instead. The setting itself stays as it is.</p>` : nothing}
       ${this.renderDeleteRefs(ask)}
       <div class="pe-ask-foot">
-        <button class="pe-btn" @click=${() => this.closeAsk()}>Cancel</button>
-        <button class="pe-btn pe-primary pe-danger" @click=${() => this.deletePage()}>Delete page</button>
+        <button class="pe-btn" ?disabled=${busy} @click=${() => this.closeAsk()}>Cancel</button>
+        ${choices === undefined
+          ? html`<button class="pe-btn pe-primary pe-danger" @click=${() => this.deletePage()}>Delete page</button>`
+          : html`<button class="pe-btn pe-danger pe-del-here" ?disabled=${busy} @click=${() => this.deletePage()}>${choices.here}</button>
+            <button class="pe-btn pe-primary pe-danger pe-del-all" ?disabled=${busy || this.saving}
+              @click=${() => void this.deleteEverywhere()}>${busy ? "Deleting…" : choices.all}</button>`}
       </div>
     </dialog>`;
   }
@@ -5532,19 +5868,66 @@ export class WaPageEditor extends LitElement {
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
     /* An iPhone with no pages: its two ways to start, side by side. */
     .pe-empty-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px; }
-    /* Copy from watch: the watches, then what to copy, a list that scrolls
-       on its own when a watch has many pages. */
-    .pe-copy-from { display: flex; flex-wrap: wrap; gap: 6px 16px; }
-    .pe-copy-list {
-      display: flex; flex-direction: column; gap: 2px; max-height: min(320px, 45vh); overflow-y: auto;
-      padding: 4px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-sm, 8px);
+    /* Add all watch pages: the watches to add from. */
+    .pe-add-from { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+
+    /* A linked page's badge: the device it is also on, cut short in a
+       narrow list (its title holds the whole name). */
+    .badge.pe-linked {
+      max-width: 140px; overflow: hidden; text-overflow: ellipsis; display: inline-block; line-height: 20px;
+      color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 12%, transparent);
     }
-    .pe-check.pe-copy-opt { align-items: flex-start; padding: 6px; border-radius: 6px; }
-    .pe-check.pe-copy-opt:hover { background: var(--wa-panel); }
-    .pe-check.pe-copy-opt > input { margin-top: 2px; }
-    .pe-copy-l { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
-    .pe-copy-l > b { font-weight: 600; }
-    .pe-copy-l > .pe-muted { font-size: 12px; }
+
+    /* The Devices menu: the complication cards' (panel.ts .pk-dup-*), copied
+       in, since this element's shadow root sees none of the panel's rules. */
+    .pk-dup-menu {
+      display: flex; flex-direction: column; gap: 4px; padding: 8px; cursor: default;
+      border: 1px solid var(--wa-line-strong); border-radius: 10px;
+      background: var(--wa-card); box-shadow: var(--wa-shadow-pop); text-align: left;
+    }
+    /* On a page row it hangs under the row, as the ··· menu does; on the
+       inspector's page card it sits in the flow under the buttons. */
+    .layer > .pe-dev-menu.at-row { position: absolute; top: calc(100% - 4px); left: 6px; right: 6px; z-index: 31; }
+    .pe-dev-menu.at-card { margin-top: 8px; box-shadow: none; }
+    .pk-dup-row {
+      display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; cursor: pointer;
+      font: inherit; font-size: 12px; color: var(--wa-ink);
+      padding: 5px 7px; border: 1px solid var(--wa-line); border-radius: 7px; background: var(--wa-card);
+    }
+    .pk-dup-row svg { flex: none; width: 14px; height: 14px; }
+    .pk-dup-row.check { padding: 0; gap: 0; cursor: default; }
+    .pk-dup-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 5px 7px; cursor: pointer; }
+    .pk-dup-pick svg { flex: none; width: 14px; height: 14px; }
+    .pk-dup-row.check input { margin: 0; cursor: inherit; }
+    .pk-dup-row.check.off .pk-dup-pick { opacity: .5; cursor: default; }
+    .pk-dup-row.check:hover:not(.off) { border-color: var(--wa-line-strong); }
+    .pk-dup-head { font-size: 11.5px; font-weight: 700; color: var(--wa-muted); margin: 2px 0; }
+    .pk-dup-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pk-dup-full { flex: none; font-size: 10px; color: var(--wa-muted); }
+    .pk-dup-note { font-size: 10px; line-height: 1.4; color: var(--wa-muted); border-top: 1px solid var(--wa-line); padding-top: 6px; }
+    .pk-dup-done {
+      align-self: flex-end; margin-top: 2px; font: inherit; font-size: 11px; font-weight: 600;
+      padding: 4px 12px; border-radius: 7px; cursor: pointer;
+      border: 1px solid var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent);
+    }
+    .pk-dup-done:hover { filter: brightness(1.1); }
+    .pk-dup-done:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pe-dev-note { font-size: 11px; line-height: 1.4; color: var(--wa-muted); overflow-wrap: anywhere; }
+    .pe-dev-note.ok { color: var(--wa-ok, var(--wa-ink)); }
+    .pe-dev-note.warn, .pe-dev-note.err { color: var(--wa-need); }
+    .pe-btn.pe-dev-open.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent); }
+
+    /* Not on this iPhone (or watch): the other devices' pages, dimmed, one
+       compact line each with a + to put it here. */
+    .pe-elsewhere { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 10px; border-top: 1px solid var(--wa-line); }
+    .pe-elsewhere.standalone { align-self: stretch; max-width: 420px; width: 100%; margin: 12px auto 0; border: 1px solid var(--wa-line); border-radius: var(--wa-r-sm, 8px); text-align: left; }
+    .pe-else-h { font-size: 11.5px; font-weight: 700; color: var(--wa-muted); padding-bottom: 2px; }
+    .pe-else-from { font-size: 11px; font-weight: 600; color: var(--wa-muted); padding-top: 4px; }
+    .pe-else-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 2px 0 6px; border-radius: 6px; font-size: 12.5px; }
+    .pe-else-row:hover { background: var(--wa-hover); }
+    .pe-else-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .6; }
+    .pe-else-on { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--wa-muted); }
+    .pe-else-add { flex: none; }
     /* The Add tile dialog (dialog.pe-add-dialog): its title and a close
        button, then the module's body. */
     .pe-ask-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }

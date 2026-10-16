@@ -778,6 +778,70 @@ export async function saveWatchConfig(
   });
 }
 
+// ── linked pages ─────────────────────────────────────────────────────────
+//
+// A page on several devices is the same page id in each device's `pages`
+// record, with a `linkId` key on the page. Home Assistant writes every save
+// of a linked page to the other devices' copies itself, so the panel saves
+// one device as always. Plan: app repo docs/linked_pages_plan_2026-10.md.
+
+const WP = "wrist_assistant/watch_pages";
+
+/** What `watch_pages/link` put on each target: the page ids and status page
+ * ids it added there (the ones asked for, and what their tiles open), and
+ * the link id each asked page now carries. */
+export interface WatchPagesLinkReply {
+  targets: Record<string, { pages: string[]; status_pages: string[] }>;
+  link_ids: Record<string, string>;
+}
+
+/** Put pages of `sourceId` on the `targets` devices as linked copies, with
+ * the pages and status pages their tiles open. Checked first, then written.
+ * Refusals: `unknown_device`, `not_found`, `system_page`, `id_taken` (a
+ * target holds that id for a page that is not linked), and the generic ones.
+ * An integration older than linked pages answers `unknown_command`. */
+export async function linkWatchPages(hass: HassLike, sourceId: string, pageIds: readonly string[], targets: readonly string[]) {
+  return hass.connection.sendMessagePromise<WatchPagesLinkReply>({
+    type: `${WP}/link`,
+    source_id: sourceId,
+    page_ids: [...pageIds],
+    targets: [...targets],
+  });
+}
+
+/** What `watch_pages/link_all` did: the page ids and status page ids it put
+ * on the target, and the kinds it copied there because the target had none
+ * (`menus`, `rooms`). */
+export interface WatchPagesLinkAllReply {
+  pages: string[];
+  status_pages: string[];
+  copied: string[];
+}
+
+/** Link every page (never a system page) and every status page of
+ * `sourceId` onto `targetId`, then copy its menus and rooms there, each only
+ * when the target has none. All in Home Assistant, in one step. Refusals as
+ * `linkWatchPages`; an integration older than it answers `unknown_command`. */
+export async function linkAllWatchPages(hass: HassLike, sourceId: string, targetId: string) {
+  return hass.connection.sendMessagePromise<WatchPagesLinkAllReply>({
+    type: `${WP}/link_all`,
+    source_id: sourceId,
+    target_id: targetId,
+  });
+}
+
+/** For every link id, the devices that hold a copy of it. */
+export interface WatchPagesPlaces {
+  pages: Record<string, string[]>;
+  status_pages: Record<string, string[]>;
+}
+
+/** Where each linked page and status page is. An integration older than
+ * linked pages answers `unknown_command`. */
+export async function fetchWatchPagesPlaces(hass: HassLike) {
+  return hass.connection.sendMessagePromise<WatchPagesPlaces>({ type: `${WP}/places` });
+}
+
 /** One earlier save of a watch config, as the history list names it. No
  * document: `fetchWatchConfigHistoryEntry` reads the one that is wanted.
  * `size` is the document's size in bytes as the store measured it. */

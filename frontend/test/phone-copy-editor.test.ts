@@ -1,7 +1,8 @@
-// The page editor on an iPhone: the empty editor with Add page and Copy from
-// watch, the Copy from watch question, and a copy run through it against a
-// stand-in Home Assistant that records every command. Every save names the
-// phone; the watch's records are only read. Then the stage's label, and the
+// The page editor on an iPhone: the empty editor with Add page and Add all
+// watch pages, that question, and an add run through it against a stand-in
+// Home Assistant that records every command and links pages as the store
+// does. Then linked pages in the editor: the badge, the Devices menu, the Not
+// on this iPhone list and the delete choices. Then the stage's label, and the
 // phone across homes with and without phone pages.
 
 import { describe, expect, it } from "vitest";
@@ -49,14 +50,66 @@ const owner = (o: Partial<OwnerSummary>): OwnerSummary => ({
 let made = 0;
 
 /** A stand-in Home Assistant: records by `owner/kind`, every command sent,
- * and saves that check their base revision as the store does. */
-function home(records: Record<string, JsonObject>) {
+ * and saves that check their base revision as the store does. With `links`
+ * it answers the linked pages commands too: `places` from the stored pages,
+ * and `link` by putting the asked pages on each target with a link id,
+ * appended, and the link id on the source's page. */
+function home(records: Record<string, JsonObject>, links = false) {
   const held = new Map<string, { revision: number; document: unknown }>();
   for (const [at, document] of Object.entries(records)) held.set(at, { revision: 4, document });
   const sent: JsonObject[] = [];
   const record = (at: string): WatchConfigRecord => {
     const r = held.get(at) ?? { revision: 0, document: null };
     return { kind: at.split("/")[1]!, revision: r.revision, hash: null, updated_at: null, updated_by: "panel", delivered_revision: 0, delivered_at: null, document: r.document } as WatchConfigRecord;
+  };
+  const pagesOf = (owner: string): JsonObject[] => (((held.get(`${owner}/pages`)?.document as WatchPagesDocument | undefined)?.pages ?? []) as JsonObject[]);
+  const put = (owner: string, pages: JsonObject[]) => {
+    const now = held.get(`${owner}/pages`);
+    held.set(`${owner}/pages`, { revision: (now?.revision ?? 0) + 1, document: { ...((now?.document as JsonObject | undefined) ?? { schemaVersion: 1 }), pages } });
+  };
+  const places = () => {
+    const out: Record<string, string[]> = {};
+    for (const [at, r] of held) {
+      if (!at.endsWith("/pages") || r.revision <= 0) continue;
+      for (const p of ((r.document as WatchPagesDocument).pages ?? []) as JsonObject[]) {
+        if (typeof p.linkId === "string") (out[p.linkId] ??= []).push(at.split("/")[0]!);
+      }
+    }
+    return { pages: out, status_pages: {} };
+  };
+  const link = (msg: JsonObject) => {
+    const source = msg.source_id as string;
+    const ids = msg.page_ids as string[];
+    const from = pagesOf(source).map((p) => (ids.includes(p.id as string) ? { ...p, linkId: (p.linkId as string | undefined) ?? `L-${p.id as string}` } : p));
+    put(source, from);
+    const targets: Record<string, { pages: string[]; status_pages: string[] }> = {};
+    for (const target of msg.targets as string[]) {
+      const add = from.filter((p) => ids.includes(p.id as string));
+      put(target, [...pagesOf(target), ...add.map((p) => ({ ...p, isHidden: undefined }))]);
+      targets[target] = { pages: ids, status_pages: [] };
+    }
+    return { targets, link_ids: Object.fromEntries(from.filter((p) => ids.includes(p.id as string)).map((p) => [p.id, p.linkId])) };
+  };
+  /** `link_all`: every listed page the target lacks, every status page, and
+   * the menus and rooms the target has none of. */
+  const linkAll = (msg: JsonObject) => {
+    const source = msg.source_id as string;
+    const target = msg.target_id as string;
+    const held_ = new Set(pagesOf(target).map((p) => p.id));
+    const ids = pagesOf(source).filter((p) => p.isSystemPage !== true && !held_.has(p.id)).map((p) => p.id as string);
+    if (ids.length > 0) link({ source_id: source, page_ids: ids, targets: [target] });
+    const status = (((held.get(`${source}/status_pages`)?.document as JsonObject | undefined)?.statusPages ?? []) as JsonObject[]).map((p) => p.id as string);
+    const copied: string[] = [];
+    if ((held.get(`${target}/menus`)?.revision ?? 0) === 0 && held.has(`${source}/menus`)) {
+      held.set(`${target}/menus`, { revision: 1, document: held.get(`${source}/menus`)!.document });
+      copied.push("menus");
+    }
+    const behavior = held.get(`${source}/behavior`)?.document as JsonObject | undefined;
+    if ((held.get(`${target}/rooms`)?.revision ?? 0) === 0 && behavior?.roomQuickJumpFallbackPageId !== undefined) {
+      held.set(`${target}/rooms`, { revision: 1, document: { schemaVersion: 1, roomQuickJumpFallbackPageId: behavior.roomQuickJumpFallbackPageId } });
+      copied.push("rooms");
+    }
+    return { pages: ids, status_pages: status, copied };
   };
   const hass = {
     user: { is_admin: true },
@@ -74,17 +127,23 @@ function home(records: Record<string, JsonObject>) {
           held.set(at, { revision: now + 1, document: msg.document });
           return Promise.resolve({ revision: now + 1 });
         }
+        if (links && type.endsWith("watch_pages/places")) return Promise.resolve(places());
+        if (links && type.endsWith("watch_pages/link")) return Promise.resolve(link(msg));
+        if (links && type.endsWith("watch_pages/link_all")) return Promise.resolve(linkAll(msg));
+        if (type.endsWith("/list")) return Promise.resolve({ records: [] });
         return Promise.reject({ code: "unknown_command", message: type });
       },
     },
   } as unknown as HassLike;
   const saves = () => sent.filter((m) => (m.type as string).endsWith("watch_config/save")).map((m) => `${m.owner_watch_id as string}/${m.kind as string}`);
-  return { hass, held, sent, saves };
+  const linksSent = () => sent.filter((m) => (m.type as string).endsWith("watch_pages/link")).map((m) => ({ source: m.source_id, pages: m.page_ids, targets: m.targets }));
+  const linkAllsSent = () => sent.filter((m) => (m.type as string).endsWith("watch_pages/link_all")).map((m) => ({ source: m.source_id, target: m.target_id }));
+  return { hass, held, sent, saves, linksSent, linkAllsSent };
 }
 
 /** The page editor on the home's iPhone, in the shell with phone pages, its
  * pages record as given (none for revision 0). */
-function phoneEditor(pages: WatchPagesDocument | undefined, records: Record<string, JsonObject> = {}, phones = true) {
+function phoneEditor(pages: WatchPagesDocument | undefined, records: Record<string, JsonObject> = {}, phones = true, links = false) {
   const n = ++made;
   const watch = `ce-w1-${n}`;
   const phone = `ce-p1-${n}`;
@@ -100,7 +159,7 @@ function phoneEditor(pages: WatchPagesDocument | undefined, records: Record<stri
   };
   for (const [k, v] of Object.entries(records)) all[k.replace("PHONE", phone)] = v;
   if (pages !== undefined) all[`${phone}/pages`] = pages as JsonObject;
-  const ha = home(all);
+  const ha = home(all, links);
   const Ctor = customElements.get("wa-page-editor") as unknown as new () => Record<string, unknown>;
   const el = new Ctor();
   el.hass = ha.hass;
@@ -113,6 +172,8 @@ function phoneEditor(pages: WatchPagesDocument | undefined, records: Record<stri
     ? { kind: "pages", revision: 0, hash: null, updated_at: null, updated_by: null, delivered_revision: 0, delivered_at: null }
     : { kind: "pages", revision: 4, hash: null, updated_at: null, updated_by: "panel", delivered_revision: 4, delivered_at: null, document: pages }) as unknown as WatchConfigRecord;
   if (pages !== undefined) takeWatchPagesRecord(phone, pages, 4);
+  // An integration with linked pages, as if its places were read already.
+  if (links) el.places = { pages: {}, status_pages: {} };
   el.renderInspector = () => "";
   // Never connected: nothing is drawn into a shadow root to look in.
   el.renderRoot = { activeElement: null, querySelector: () => null };
@@ -123,7 +184,7 @@ function phoneEditor(pages: WatchPagesDocument | undefined, records: Record<stri
     el, watch, phone, owners, ha, call,
     body: () => flat(call("renderBody", owners)),
     whole: () => flat(call("render")),
-    ask: () => el.copyAsk as { state: string; scope: string; pages?: WatchPagesDocument } | undefined,
+    ask: () => el.addAsk as { state: string; pages?: WatchPagesDocument } | undefined,
   };
 }
 
@@ -131,22 +192,24 @@ function phoneEditor(pages: WatchPagesDocument | undefined, records: Record<stri
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
 describe("an iPhone with no pages", () => {
-  it("shows an empty editor with Add page and Copy from watch, never the watch's start", () => {
-    const { body } = phoneEditor(undefined);
+  it("shows an empty editor with Add page and Add all watch pages, never the watch's start", () => {
+    const { body } = phoneEditor(undefined, {}, true, true);
     const text = body();
     expect(text).toContain("No pages on this iPhone yet.");
     expect(text).toContain(PHONE_PAGES_EMPTY_TEXT);
+    expect(PHONE_PAGES_EMPTY_TEXT).not.toContain("Nothing is copied");
     expect(text).toMatch(/pe-add-first[\s\S]*Add page/);
-    expect(text).toMatch(/pe-copy-open[\s\S]*Copy from watch/);
+    expect(text).toMatch(/pe-add-all-open[\s\S]*Add all watch pages/);
+    expect(text).not.toContain("Copy from watch");
     expect(text).not.toContain("Start with an empty page");
     expect(text).not.toContain("No pages from this watch yet.");
   });
 
   it("shows the same once a record lists no pages, with the foot bar for its earlier saves", () => {
-    const { body } = phoneEditor({ schemaVersion: 1, pages: [] });
+    const { body } = phoneEditor({ schemaVersion: 1, pages: [] }, {}, true, true);
     const text = body();
     expect(text).toContain("No pages on this iPhone yet.");
-    expect(text).toContain("pe-copy-open");
+    expect(text).toContain("pe-add-all-open");
     expect(text).toContain("History");
   });
 
@@ -159,10 +222,22 @@ describe("an iPhone with no pages", () => {
     expect(el.renaming).toBeDefined();
   });
 
-  it("offers Copy from watch on a phone that has pages too, in the ··· menu", () => {
-    const { el, whole } = phoneEditor({ schemaVersion: 1, pages: [{ id: U(90), name: "Mine", items: [] }] });
+  it("offers Add all watch pages on a phone that has pages too, in the ··· menu", () => {
+    const { el, whole } = phoneEditor({ schemaVersion: 1, pages: [{ id: U(90), name: "Mine", items: [] }] }, {}, true, true);
     el.topMenuOpen = true;
-    expect(whole()).toMatch(/pe-copy-menu[\s\S]*Copy from watch…/);
+    const text = whole();
+    expect(text).toMatch(/pe-add-all-menu[\s\S]*Add all watch pages…/);
+    expect(text).not.toContain("Copy from watch");
+  });
+
+  it("offers no Add all watch pages on an integration without linked pages", () => {
+    const { el, body, whole, call } = phoneEditor(undefined);
+    expect(body()).toContain("pe-add-first");
+    expect(body()).not.toContain("pe-add-all-open");
+    el.topMenuOpen = true;
+    expect(whole()).not.toContain("pe-add-all-menu");
+    call("openAdd");
+    expect(el.addAsk).toBeUndefined();
   });
 
   it("is not how a watch with no pages reads", () => {
@@ -172,85 +247,189 @@ describe("an iPhone with no pages", () => {
     // A watch with no pages opens ready on one empty page.
     expect(text).toContain("pe-layout");
     expect(text).not.toContain("No pages on this iPhone yet.");
-    expect(text).not.toContain("pe-copy-open");
+    expect(text).not.toContain("pe-add-all-open");
   });
 });
 
-describe("the Copy from watch question", () => {
-  it("reads the watch's pages and offers all pages or one, each with what comes along", async () => {
-    const { call, ask, whole } = phoneEditor(undefined);
-    call("openCopy");
+describe("the Add all watch pages question", () => {
+  it("reads the watch's pages and says how many go on the iPhone, linked", async () => {
+    const { call, ask, whole } = phoneEditor(undefined, {}, true, true);
+    call("openAdd");
     expect(ask()?.state).toBe("loading");
     await settle();
-    expect(ask()).toMatchObject({ state: "ready", scope: "all" });
+    expect(ask()).toMatchObject({ state: "ready" });
     const text = whole();
     expect(text).toContain("From <b>Jesse's Watch</b>.");
-    expect(text).toContain("3 pages, with the watch's status pages, menus and rooms");
-    expect(text).toMatch(/Hall<\/b>[\s\S]*With 1 page it links to and the status pages it opens/);
-    expect(text).toContain("never share a page");
+    expect(text).toContain("3 pages and the watch's status pages go on this iPhone, after its own.");
+    expect(text).toContain("They stay linked: an edit on one device shows on both.");
+    expect(text).toContain("only where this iPhone has none");
   });
 
-  it("will not copy over unsaved edits", async () => {
-    const mine: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: U(90), name: "Mine", items: [] }] };
-    const { phone, call, ask } = phoneEditor(mine);
-    keptWatchPagesDraft(phone)!.apply({ ...mine, pages: [{ id: U(90), name: "Renamed", items: [] }] });
-    call("openCopy");
+  it("counts only the pages the iPhone does not hold yet", async () => {
+    const mine: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: HALL, name: "Hall", linkId: "L-H", items: [] }] };
+    const { call, whole } = phoneEditor(mine, {}, true, true);
+    call("openAdd");
     await settle();
-    expect(call("copyBlocked", ask())).toBe("Save or discard your edits first. A copy is saved at once.");
+    const text = whole();
+    expect(text).toContain("2 pages and the watch's status pages go on this iPhone");
+    expect(text).toContain("1 page is here already.");
   });
 });
 
-describe("a copy through the editor", () => {
-  it("of one page saves the phone's status pages, then its first pages record, and never writes the watch", async () => {
-    const { el, phone, watch, ha, call, ask } = phoneEditor(undefined);
-    call("openCopy");
+describe("an add through the editor", () => {
+  it("is one link_all from the watch, which copies the menus and rooms in Home Assistant, and the panel saves nothing", async () => {
+    const { el, phone, watch, ha, call } = phoneEditor(undefined, {}, true, true);
+    call("openAdd");
     await settle();
-    el.copyAsk = { ...ask(), scope: HALL };
-    await call<Promise<void>>("runCopy");
-    expect(ha.saves()).toEqual([`${phone}/status_pages`, `${phone}/pages`]);
-    expect(ha.sent.filter((m) => (m.type as string).endsWith("/save") && m.owner_watch_id === watch)).toEqual([]);
+    await call<Promise<void>>("runAdd");
+    expect(ha.linkAllsSent()).toEqual([{ source: watch, target: phone }]);
+    expect(ha.saves()).toEqual([]);
     const pages = ha.held.get(`${phone}/pages`)!.document as WatchPagesDocument;
-    expect((pages.pages as JsonObject[]).map((p) => p.name)).toEqual(["Hall", "Yard"]);
-    expect(ha.held.get(`${watch}/pages`)).toEqual({ revision: 4, document: WATCH_PAGES });
-    expect((el.note as { text: string }).text).toMatch(/^Copied 2 pages and 1 status page from Jesse's Watch\./);
-    expect(el.selectedPageId).toBe((pages.pages as JsonObject[])[0]!.id);
-    expect(el.copyAsk).toBeUndefined();
+    expect((pages.pages as JsonObject[]).map((p) => [p.id, p.linkId])).toEqual([[HALL, `L-${HALL}`], [YARD, `L-${YARD}`], [DEN, `L-${DEN}`]]);
+    expect((el.note as { text: string }).text).toBe("Added 3 pages, 1 status page, the menus and the rooms from Jesse's Watch. They stay linked: an edit on one device shows on both.");
+    expect(el.addAsk).toBeUndefined();
+    // The phone's new record is read back, and the first page opens.
+    expect(el.selectedPageId).toBe(HALL);
   });
 
-  it("of all pages adds them to the phone's own as one undo step, and saves its menus and rooms too", async () => {
+  it("keeps the phone's own menus and rooms", async () => {
     const mine: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: U(90), name: "Mine", items: [] }] };
-    const { el, phone, watch, ha, call } = phoneEditor(mine);
-    call("openCopy");
+    const menus = { quickAction: { slots: [] }, entityRadial: {}, pageSwitcher: {}, schemaVersion: 1 };
+    const { el, phone, ha, call } = phoneEditor(mine, { "PHONE/menus": menus, "PHONE/rooms": { schemaVersion: 1 } }, true, true);
+    call("openAdd");
     await settle();
-    await call<Promise<void>>("runCopy");
-    expect(ha.saves()).toEqual([`${phone}/status_pages`, `${phone}/pages`, `${phone}/menus`, `${phone}/rooms`]);
-    expect(ha.sent.some((m) => (m.type as string).endsWith("/save") && m.owner_watch_id === watch)).toBe(false);
-    const saved = ha.held.get(`${phone}/pages`)!;
-    expect(saved.revision).toBe(5);
-    expect(((saved.document as WatchPagesDocument).pages as JsonObject[]).map((p) => p.name)).toEqual(["Mine", "Hall", "Yard", "Den"]);
-    // The menus' Den slot opens the phone's Den, and the rooms record holds
-    // the room keys alone.
-    const den = ((saved.document as WatchPagesDocument).pages as JsonObject[])[3]!.id;
-    expect(((ha.held.get(`${phone}/menus`)!.document as JsonObject).quickAction as { slots: JsonObject[] }).slots[0]!.action).toEqual({ type: "navigateToPage", pageId: den });
-    expect(ha.held.get(`${phone}/rooms`)!.document).toEqual({ schemaVersion: 1, roomQuickJumpFallbackPageId: ((saved.document as WatchPagesDocument).pages as JsonObject[])[1]!.id });
-    // Undo takes the copied pages back off the phone's draft.
-    const draft = keptWatchPagesDraft(phone)!;
-    expect(draft.dirty).toBe(false);
-    expect(draft.canUndo).toBe(true);
-    draft.undo();
-    expect((draft.document.pages as JsonObject[]).map((p) => p.name)).toEqual(["Mine"]);
-    expect((el.note as { kind: string }).kind).toBe("ok");
+    await call<Promise<void>>("runAdd");
+    expect(ha.saves()).toEqual([]);
+    expect(ha.held.get(`${phone}/menus`)!.document).toEqual(menus);
+    const pages = ha.held.get(`${phone}/pages`)!.document as WatchPagesDocument;
+    expect((pages.pages as JsonObject[]).map((p) => p.name)).toEqual(["Mine", "Hall", "Yard", "Den"]);
+    expect((el.note as { text: string }).text).toBe("Added 3 pages and 1 status page from Jesse's Watch. They stay linked: an edit on one device shows on both.");
+  });
+
+  it("says why when the integration refuses", async () => {
+    const { el, call } = phoneEditor(undefined, {}, true, false);
+    el.places = { pages: {}, status_pages: {} };
+    call("openAdd");
+    await settle();
+    await call<Promise<void>>("runAdd");
+    expect((el.note as { kind: string; text: string })).toEqual({ kind: "err", text: "Not added: This version of the integration cannot share pages between devices. Update it first." });
   });
 
   it("closes its question when another device opened before it ended", async () => {
-    const { el, watch, call } = phoneEditor(undefined);
-    call("openCopy");
+    const { el, watch, call } = phoneEditor(undefined, {}, true, true);
+    call("openAdd");
     await settle();
-    const running = call<Promise<void>>("runCopy");
+    const running = call<Promise<void>>("runAdd");
     el.watchId = watch;
     await running;
-    expect(el.copying).toBe(false);
-    expect(el.copyAsk).toBeUndefined();
+    expect(el.adding).toBe(false);
+    expect(el.addAsk).toBeUndefined();
+  });
+});
+
+describe("linked pages in the editor", () => {
+  /** The phone holding Hall linked to the watch, and Mine of its own. */
+  const linked = async () => {
+    const watchPages = { schemaVersion: 1, pages: [{ ...(WATCH_PAGES.pages as JsonObject[])[0]!, linkId: "L1" }, ...(WATCH_PAGES.pages as JsonObject[]).slice(1)] };
+    const mine: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: HALL, name: "Hall", linkId: "L1", items: [] }, { id: U(90), name: "Mine", items: [] }] };
+    const e = phoneEditor(mine, {}, true, true);
+    e.ha.held.set(`${e.watch}/pages`, { revision: 4, document: watchPages });
+    await e.call<Promise<void>>("loadLinks", e.phone);
+    return { ...e, mine };
+  };
+
+  it("are off on an integration without them", async () => {
+    const { el, phone, call, body } = phoneEditor({ schemaVersion: 1, pages: [{ id: HALL, name: "Hall", linkId: "L1", items: [] }] });
+    await call<Promise<void>>("loadLinks", phone);
+    expect(el.places).toBeUndefined();
+    const text = body();
+    expect(text).not.toContain("Also on");
+    expect(text).not.toContain("Not on this iPhone");
+  });
+
+  it("badge a linked row with the other device", async () => {
+    const { el, body } = await linked();
+    expect(el.places).toBeDefined();
+    expect(body()).toMatch(/pe-linked[^>]*>Also on Jesse's Watch</);
+  });
+
+  it("list the watch's other pages under Not on this iPhone, and + adds one here, linked", async () => {
+    const { el, watch, phone, ha, call, body } = await linked();
+    const text = body();
+    expect(text).toContain("Not on this iPhone");
+    expect(text).toMatch(/Not on this iPhone[\s\S]*Yard[\s\S]*Den/);
+    expect(text).not.toMatch(/pe-else-name[^>]*>Hall</);
+    await call<Promise<void>>("addHere", { ownerId: watch, pageId: DEN, name: "Den", page: {} });
+    expect(ha.linksSent()).toEqual([{ source: watch, pages: [DEN], targets: [phone] }]);
+    const pages = ha.held.get(`${phone}/pages`)!.document as WatchPagesDocument;
+    expect((pages.pages as JsonObject[]).map((p) => p.name)).toEqual(["Hall", "Mine", "Den"]);
+    expect((el.note as { text: string }).text).toBe("Added Den from Jesse's Watch. It stays linked: an edit on one device shows on both.");
+    expect(el.selectedPageId).toBe(DEN);
+  });
+
+  it("show a Devices menu with a switch per device, this one fixed on", async () => {
+    const { el, call } = await linked();
+    call("openDevices", HALL, "row");
+    const text = flat(call("renderDevicesMenu", { id: HALL, name: "Hall", linkId: "L1", items: [] }, "row"));
+    expect(text).toContain("This page is on");
+    expect(text).toMatch(/Hall on Jesse's Watch/);
+    expect(text).toMatch(/Hall on Jesse's iPhone/);
+    expect(text).toContain("this iPhone");
+    expect(text).toContain("Delete takes it off this device.");
+    expect(el.devicesMenu).toEqual({ pageId: HALL, where: "row" });
+  });
+
+  it("put a page on another device from its switch, and take it off again", async () => {
+    const { el, watch, phone, ha, call } = await linked();
+    call("openDevices", U(90), "card");
+    await call<Promise<void>>("linkTo", U(90), watch);
+    expect(ha.linksSent()).toEqual([{ source: phone, pages: [U(90)], targets: [watch] }]);
+    expect(((ha.held.get(`${watch}/pages`)!.document as WatchPagesDocument).pages as JsonObject[]).map((p) => p.name)).toEqual(["Hall", "Yard", "Den", "Mine"]);
+    expect((el.devicesNote as { text: string }).text).toBe("Added to Jesse's Watch.");
+    await call<Promise<void>>("unlinkFrom", U(90), watch);
+    expect(((ha.held.get(`${watch}/pages`)!.document as WatchPagesDocument).pages as JsonObject[]).map((p) => p.name)).toEqual(["Hall", "Yard", "Den"]);
+    expect((el.devicesNote as { text: string }).text).toBe("Taken off Jesse's Watch.");
+  });
+
+  it("refuse a switch over unsaved edits", async () => {
+    const { el, watch, phone, ha, call, mine } = await linked();
+    keptWatchPagesDraft(phone)!.apply({ ...mine, pages: [...(mine.pages as JsonObject[]), { id: U(91), name: "New", items: [] }] });
+    expect(call("devicesBlocked")).toMatch(/^Save or discard your edits first\./);
+    await call<Promise<void>>("linkTo", U(90), watch);
+    expect(ha.linksSent()).toEqual([]);
+    expect(el.devicesNote).toBeUndefined();
+  });
+
+  it("will not take a page off a device whose editor holds unsaved edits", async () => {
+    const { watch, call } = await linked();
+    takeWatchPagesRecord(watch, WATCH_PAGES, 4);
+    keptWatchPagesDraft(watch)!.apply({ ...WATCH_PAGES, pages: [] });
+    expect(await call<Promise<string | undefined>>("takePageOff", watch, HALL)).toBe("Not taken off Jesse's Watch: its pages have unsaved edits. Save or discard them first.");
+    forgetWatchPagesDraft(watch);
+  });
+
+  it("ask on delete whether to delete here or on every device, and delete everywhere", async () => {
+    const { el, watch, phone, ha, call, mine } = await linked();
+    call("askDelete", HALL);
+    await settle();
+    const text = flat(call("renderDeleteAsk", el.deleteAsk, mine));
+    expect(text).toContain("It is also on Jesse's Watch.");
+    expect(text).toContain("Delete on this iPhone");
+    expect(text).toContain("Delete on all 2 devices");
+    await call<Promise<void>>("deleteEverywhere");
+    expect(((ha.held.get(`${watch}/pages`)!.document as WatchPagesDocument).pages as JsonObject[]).map((p) => p.name)).toEqual(["Yard", "Den"]);
+    // Here it is an edit, saved with Save like any delete.
+    expect((keptWatchPagesDraft(phone)!.document.pages as JsonObject[]).map((p) => p.name)).toEqual(["Mine"]);
+    expect((el.note as { text: string }).text).toBe("Deleted on the other devices. Save to finish the delete on this iPhone.");
+  });
+
+  it("ask nothing more on delete for a page on this device alone", async () => {
+    const { el, call, mine } = await linked();
+    call("askDelete", U(90));
+    await settle();
+    const text = flat(call("renderDeleteAsk", el.deleteAsk, mine));
+    expect(text).toContain(">Delete page<");
+    expect(text).not.toContain("Delete on all");
   });
 });
 
