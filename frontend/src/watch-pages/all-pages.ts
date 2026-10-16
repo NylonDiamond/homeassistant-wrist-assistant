@@ -716,10 +716,8 @@ export class WaAllPages extends LitElement {
     const title = selecting ? `${picked ? "Let" : "Pick"} ${card.name}${picked ? " go" : ""}` : `Edit ${card.name} on ${copy.device.name}`;
     const click = (e: MouseEvent) => this.cardClick(e, card, filter);
     const color = (ownerId: string) => `--dc:${this.colorOf(ownerId) ?? "var(--wa-line-strong)"}`;
-    // A strip along the card's top edge in its devices' colors, one each.
     return html`<div class="ap-card ${menuOpen ? "over" : ""} ${selecting ? "picking" : ""} ${picked ? "picked" : ""}" role="listitem" data-card=${card.key}
       @click=${(e: MouseEvent) => { if (selecting) click(e); }}>
-      <span class="ap-strip" aria-hidden="true">${card.copies.map((c) => html`<i class=${c.hidden ? "dim" : ""} style=${color(c.device.ownerId)}></i>`)}</span>
       <div class="ap-top">
         ${selecting ? html`<input type="checkbox" class="pk-card-pick" .checked=${live(picked)} ?disabled=${this.bulkBusy !== undefined}
           aria-label=${title}
@@ -1063,14 +1061,6 @@ export class WaAllPages extends LitElement {
     }
     .ap-card:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     .ap-card.over { z-index: 5; }
-    /* The devices a page is on, one segment each in its color, along the
-       card's top edge. A device that hides the page is fainter. */
-    .ap-strip {
-      position: absolute; top: 0; left: 0; right: 0; height: 3px; display: flex; gap: 2px;
-      border-radius: 7px 7px 0 0; overflow: hidden; pointer-events: none;
-    }
-    .ap-strip > i { flex: 1; background: var(--dc); }
-    .ap-strip > i.dim { opacity: .4; }
     .ap-thumb {
       display: grid; place-items: start center; width: 100%; padding: 10px; overflow: hidden;
       border: 0; border-radius: 6px; background: var(--wa-bg); cursor: pointer;

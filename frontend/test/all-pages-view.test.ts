@@ -121,8 +121,8 @@ describe("the Pages tab", () => {
     expect(text).toContain("--dc:var(--wa-person-2)");
     expect(text).not.toContain("Not on a device");
     expect(text).not.toContain("ap-chip");
-    // Every card shows a strip with a segment per device it is on.
-    expect(text.match(/class="ap-strip"/g)?.length).toBe(3);
+    // No colored strip along a card's top: the device chips say where it is.
+    expect(text).not.toContain("ap-strip");
     // A card draws the page alone: no iPhone, whatever device it is on.
     expect(text).toContain("ap-pic");
     expect(text).not.toContain("wa-phone");
