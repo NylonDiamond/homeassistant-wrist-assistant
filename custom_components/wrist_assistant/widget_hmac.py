@@ -46,7 +46,6 @@ from aiohttp.web import Request
 
 from .const import (
     WA_ACCEPTED_PROTOCOL_VERSIONS,
-    WA_HMAC_NONCE_TTL_SECONDS,
     WA_HMAC_TIMESTAMP_WINDOW_SECONDS,
     WA_PROTOCOL_VERSION,
 )
@@ -128,7 +127,7 @@ class WANonceCache:
     def _evict_expired(self, now: float) -> None:
         # OrderedDict insertion order matches expiry order because TTL is constant.
         while self._entries:
-            key, expires_at = next(iter(self._entries.items()))
+            expires_at = next(iter(self._entries.values()))
             if expires_at > now:
                 return
             self._entries.popitem(last=False)
@@ -200,7 +199,7 @@ def validate_wa_request(
         )
         raise WAHMACError("unsupported_algo")
 
-    canonical = f"v{version}|{op}|{watch_id}|{ts}|{nonce}".encode("utf-8") + b"\n" + body
+    canonical = f"v{version}|{op}|{watch_id}|{ts}|{nonce}".encode() + b"\n" + body
     expected = hmac.new(secret, canonical, digest).hexdigest()
     if not hmac.compare_digest(expected, sig_hex.lower()):
         raise WAHMACError("bad_signature")
@@ -248,7 +247,7 @@ def sign_response(
     if digest is None:
         raise ValueError(f"Unsupported HMAC algo: {algo!r}")
     canonical = (
-        f"v{version}|{op}|{watch_id}|{ts}|response".encode("utf-8")
+        f"v{version}|{op}|{watch_id}|{ts}|response".encode()
         + b"\n"
         + body
     )

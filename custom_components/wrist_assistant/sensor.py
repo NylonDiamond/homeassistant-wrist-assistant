@@ -13,12 +13,13 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, UnitOfTime
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
-from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
-from .api import DeltaCoordinator, MAX_EVENTS_BUFFER
+from .api import MAX_EVENTS_BUFFER, DeltaCoordinator
 from .const import DOMAIN, PANEL_CONFIGURATION_URL, WristAssistantConfigEntry
 from .notifications import NotificationTokenStore
 from .widget_secret_store import (
@@ -27,7 +28,6 @@ from .widget_secret_store import (
     WidgetSecretStore,
     build_device_info,
 )
-
 
 
 async def async_setup_entry(

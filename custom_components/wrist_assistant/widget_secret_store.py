@@ -604,7 +604,7 @@ def watch_has_iphone(entries: Mapping[str, WidgetSecretEntry], watch_id: str) ->
 
 
 def build_device_info(
-    secret_store: "WidgetSecretStore",
+    secret_store: WidgetSecretStore,
     watch_id: str,
     *,
     kind: str,
@@ -637,7 +637,10 @@ def build_device_info(
     # this otherwise-pure storage module. Tests import WidgetSecretEntry without
     # a Home Assistant runtime; keeping the import inside the function lets
     # them keep doing that.
-    from homeassistant.helpers.device_registry import DeviceInfo, async_get as async_get_device_registry
+    from homeassistant.helpers.device_registry import DeviceInfo
+    from homeassistant.helpers.device_registry import (
+        async_get as async_get_device_registry,
+    )
 
     from .const import DOMAIN, PANEL_CONFIGURATION_URL
 

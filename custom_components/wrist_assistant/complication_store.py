@@ -1312,7 +1312,7 @@ class ComplicationStore:
                     for candidate in _SLOT_RANGE
                     if not any((candidate, shape) in taken for shape in shapes)
                 ),
-                slot if slot >= 0 else 0,
+                max(slot, 0),
             )
             if isinstance(document, dict):
                 document["slotIndex"] = slot

@@ -94,6 +94,7 @@ from .bundle_ops import (
 )
 from .camera_devices import build_camera_device_groups
 from .camera_stream import (
+    _UNSET,
     DEFAULT_FPS,
     DEFAULT_QUALITY,
     DEFAULT_WIDTH,
@@ -117,7 +118,6 @@ from .camera_stream import (
     ViewportState,
     _process_frame,
     _process_snapshot,
-    _UNSET,
     batch_snapshot_box,
     capture_notification_snapshot,
     jpeg_aspect,
@@ -162,10 +162,19 @@ from .page_images_store import (
     PageImagesError,
     PageImagesTooLargeError,
     PageImagesUnavailableError,
+)
+from .page_images_store import (
     decode_data as decode_page_image,
 )
+from .page_links import listed_page_ids
 from .pairing_ws import async_pair_status, store_paired_device
-from .sealed_box import PAIRED_SECRET_BYTES, SealedBoxError, open_box, open_offer_secret, seal
+from .sealed_box import (
+    PAIRED_SECRET_BYTES,
+    SealedBoxError,
+    open_box,
+    open_offer_secret,
+    seal,
+)
 from .wa_pair_requests import (
     OFFER_STATE_EXPIRED,
     OFFER_STATE_OPEN,
@@ -179,7 +188,6 @@ from .wa_pair_requests import (
     validate_pair_fields,
     validate_pair_start,
 )
-from .page_links import listed_page_ids
 from .watch_config_store import (
     WatchConfigConflictError,
     WatchConfigLinkError,
@@ -2217,7 +2225,7 @@ async def _op_entity_picture(ctx: _OpContext) -> Response:
                 return Response(status=503, text="Picture unavailable")
             data = await resp.read()
             content_type = resp.headers.get("Content-Type", "image/jpeg")
-    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+    except (TimeoutError, aiohttp.ClientError) as err:
         _LOGGER.debug("entity_picture: %s fetch failed: %s", entity_id, err)
         return Response(status=503, text="Picture fetch failed")
 

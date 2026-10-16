@@ -33,7 +33,7 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import partial
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -256,7 +256,7 @@ async def async_history_result(
     if not isinstance(start_raw, (int, float)):
         raise OpError("start_ms required")
     try:
-        start = datetime.fromtimestamp(start_raw / 1000.0, tz=timezone.utc)
+        start = datetime.fromtimestamp(start_raw / 1000.0, tz=UTC)
     except (ValueError, OSError, OverflowError) as err:
         raise OpError("start_ms invalid") from err
 
@@ -264,14 +264,14 @@ async def async_history_result(
     end_raw = payload.get("end_ms")
     if isinstance(end_raw, (int, float)):
         try:
-            end = datetime.fromtimestamp(end_raw / 1000.0, tz=timezone.utc)
+            end = datetime.fromtimestamp(end_raw / 1000.0, tz=UTC)
         except (ValueError, OSError, OverflowError) as err:
             raise OpError("end_ms invalid") from err
 
     # Chart form. The window is already known, so the span is derived from it
     # rather than re-sent, and the shared module does the rest.
     if payload.get("points") is not None:
-        window_end = end or datetime.now(timezone.utc)
+        window_end = end or datetime.now(UTC)
         minutes = max(1, int((window_end - start).total_seconds() // 60))
         try:
             series = await async_history_series(

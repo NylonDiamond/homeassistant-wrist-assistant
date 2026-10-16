@@ -8,7 +8,6 @@ from datetime import timedelta
 from pathlib import Path
 
 import voluptuous as vol
-
 from homeassistant import loader
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
@@ -30,6 +29,7 @@ from homeassistant.helpers.network import NoURLAvailableError, get_url
 
 from .api import DeltaCoordinator
 from .apns_client import APNsClient
+from .audio_upload import CLEANUP_INTERVAL_SECONDS, async_cleanup_clips
 from .batch_snapshot_settings_store import BatchSnapshotSettingsStore
 from .camera_devices import resolve_stream_sibling
 from .camera_framing_ws import async_register_camera_framing_commands
@@ -38,11 +38,13 @@ from .camera_stream import (
     capture_notification_snapshot,
     jpeg_aspect,
 )
+from .card_preview_store import CardPreviewStore
+from .client_certificate_store import ClientCertificateStore
+from .client_certificate_ws import async_register_client_certificate_commands
 from .complication_panel import async_register_panel, async_remove_panel
 from .complication_push import ComplicationPhonePush
 from .complication_store import ComplicationStore
 from .complication_ws import async_register_websocket_commands
-from .control_center_move import ControlCenterMover
 from .const import (
     CLIENT_CERTIFICATE_CAPABILITY,
     DOMAIN,
@@ -52,8 +54,8 @@ from .const import (
     PHONE_PAGES_CAPABILITY,
     PHONE_PAGES_LINK_CAPABILITY,
     PHONE_PAIRING_CAPABILITY,
-    PUSH_PAIRED_BY_USER_CAPABILITY,
     PLATFORMS,
+    PUSH_PAIRED_BY_USER_CAPABILITY,
     SEALED_CODE_PAIRING_CAPABILITY,
     WA_HMAC_NONCE_TTL_SECONDS,
     WATCH_CONFIG_CAPABILITY,
@@ -73,10 +75,7 @@ from .const import (
     WristAssistantConfigEntry,
     WristAssistantData,
 )
-from .notification_snapshot import NotificationSnapshotStore
-from .card_preview_store import CardPreviewStore
-from .client_certificate_store import ClientCertificateStore
-from .client_certificate_ws import async_register_client_certificate_commands
+from .control_center_move import ControlCenterMover
 from .http_actions_runner import HTTPActionRunner
 from .http_actions_store import HTTPActionsStore
 from .http_actions_ws import async_register_http_actions_commands
@@ -87,16 +86,7 @@ from .listener_relay import (
     WATCH_CONFIG_DELIVERY,
     listener_relay,
 )
-from .page_images_store import PageImagesStore
-from .page_images_ws import async_register_page_images_commands
-from .parts_store import PartsStore
-from .snapshot_aspect_store import SnapshotAspectStore
-from .snapshot_crop_store import SnapshotCropStore
-from .snapshot_stream_store import SnapshotStreamStore
-from .watch_config_store import WatchConfigStore
-from .watch_config_ws import async_register_watch_config_commands
-from .watch_logs_store import WatchLogsStore
-from .watch_voices_store import WatchVoicesStore
+from .notification_snapshot import NotificationSnapshotStore
 from .notifications import (
     NotificationTokenStore,
     TokenEntry,
@@ -104,8 +94,13 @@ from .notifications import (
     purge_dead_token,
     resolve_push_routes,
 )
-from .audio_upload import CLEANUP_INTERVAL_SECONDS, async_cleanup_clips
+from .page_images_store import PageImagesStore
+from .page_images_ws import async_register_page_images_commands
 from .pairing_ws import async_register_pairing_commands
+from .parts_store import PartsStore
+from .snapshot_aspect_store import SnapshotAspectStore
+from .snapshot_crop_store import SnapshotCropStore
+from .snapshot_stream_store import SnapshotStreamStore
 from .wa_pair_requests import PairOfferStore, PairRequestStore
 from .wa_stream_tokens import BatchSnapshotTokenStore, StreamTokenStore
 from .wa_v2_views import (
@@ -121,6 +116,10 @@ from .wa_v2_views import (
     WAStreamView,
     WAVersionView,
 )
+from .watch_config_store import WatchConfigStore
+from .watch_config_ws import async_register_watch_config_commands
+from .watch_logs_store import WatchLogsStore
+from .watch_voices_store import WatchVoicesStore
 from .widget_hmac import WANonceCache
 from .widget_secret_store import WidgetSecretStore
 

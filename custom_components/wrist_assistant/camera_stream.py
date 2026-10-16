@@ -8,12 +8,13 @@ camera transport.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable, Iterable
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from io import BytesIO
-import logging
 from typing import Any, Protocol
+
 from aiohttp.web import Request, Response, StreamResponse
 
 # NOTE: Pillow (PIL) is imported lazily inside _process_frame / _process_snapshot
@@ -22,8 +23,8 @@ from aiohttp.web import Request, Response, StreamResponse
 # `from PIL import Image` would make a missing/old Pillow fail the *entire*
 # integration (push, delta API, everything) at import time, not just camera
 # snapshots. Deferring it confines a Pillow problem to the camera-image path.
-
-from homeassistant.components.camera import Image as CameraImage, async_get_image
+from homeassistant.components.camera import Image as CameraImage
+from homeassistant.components.camera import async_get_image
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
@@ -197,7 +198,7 @@ class CameraStreamCoordinator:
 
     def resolve_quality_level(
         self,
-        hass: "HomeAssistant",
+        hass: HomeAssistant,
         entity_id: str,
         quality_level: str,
     ) -> str | None:
@@ -208,6 +209,7 @@ class CameraStreamCoordinator:
         or None if no mapping found.
         """
         import time
+
         from .camera_devices import build_camera_device_groups
 
         now = time.monotonic()
@@ -469,7 +471,7 @@ async def run_mjpeg_stream(
             return
         try:
             await asyncio.wait_for(session.closed_event.wait(), delay)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
     try:
@@ -863,7 +865,7 @@ async def run_batch_snapshot_stream(
             entity_id, data = await fut
             pending.discard(entity_id)
             await _write_part(entity_id, data)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         # Deadline hit: stop waiting on stragglers, emit error parts for them.
         for entity_id in list(pending):
             try:

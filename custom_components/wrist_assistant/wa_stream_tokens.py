@@ -52,7 +52,7 @@ class StreamTokenEntry:
     width: int
     quality: int
     fps: float
-    viewport: "ViewportState"
+    viewport: ViewportState
     expires_at: float
     consumed: bool = False
 
@@ -82,7 +82,7 @@ class StreamTokenStore:
         width: int,
         quality: int,
         fps: float,
-        viewport: "ViewportState",
+        viewport: ViewportState,
         ttl_seconds: float,
         now: float | None = None,
     ) -> tuple[str, float]:

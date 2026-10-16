@@ -14,7 +14,7 @@ not the chart that appears on the wrist.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import quote
@@ -603,7 +603,7 @@ async def async_history_series_detail(
     mode = normalize_mode(mode)
     combine = normalize_combine(combine)
     group = normalize_entities(entities)
-    end = now or datetime.now(timezone.utc)
+    end = now or datetime.now(UTC)
     start = end - timedelta(minutes=minutes)
 
     try:

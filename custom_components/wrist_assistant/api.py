@@ -9,13 +9,13 @@ handlers call directly.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import logging
+import secrets
 from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-import hashlib
-import logging
-import secrets
 from typing import Any
 
 from homeassistant.const import EVENT_STATE_CHANGED
@@ -24,7 +24,6 @@ from homeassistant.helpers.template import Template
 from homeassistant.util import dt as dt_util
 
 from .logbook_events import log_first_sync
-
 
 DEFAULT_TIMEOUT_SECONDS = 45
 MIN_TIMEOUT_SECONDS = 5
@@ -1835,7 +1834,7 @@ class DeltaCoordinator:
     def _snapshot_current_state(
         self, entities: set[str], *,
         slim: bool = False, compact: bool = False,
-        session: "WatchSession | None" = None, attribute_diffs: bool = False,
+        session: WatchSession | None = None, attribute_diffs: bool = False,
     ) -> list[dict[str, Any]]:
         """Build a full state snapshot from HA's state machine for the given entities.
 
@@ -1910,7 +1909,7 @@ class DeltaCoordinator:
     def _collect_events(
         self, since_cursor: int, entities: set[str], limit: int,
         *, slim: bool = False, compact: bool = False,
-        session: "WatchSession | None" = None, attribute_diffs: bool = False,
+        session: WatchSession | None = None, attribute_diffs: bool = False,
     ) -> tuple[list[dict[str, Any]], int]:
         """Collect filtered events after the provided cursor."""
         matched: list[dict[str, Any]] = []
@@ -1949,7 +1948,7 @@ class DeltaCoordinator:
     def _apply_attribute_diff(
         self,
         payload: dict[str, Any],
-        session: "WatchSession",
+        session: WatchSession,
         compact: bool,
     ) -> dict[str, Any] | None:
         """Replace full attributes with a diff against last-sent values.
@@ -2023,7 +2022,7 @@ class DeltaCoordinator:
         return max(cursor, 0), False
 
     @property
-    def real_sessions(self) -> dict[str, "WatchSession"]:
+    def real_sessions(self) -> dict[str, WatchSession]:
         """Return sessions excluding diagnostic probes."""
         return {
             wid: s

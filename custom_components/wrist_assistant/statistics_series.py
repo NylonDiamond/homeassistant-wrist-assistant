@@ -27,7 +27,7 @@ without a full HA install.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
@@ -160,7 +160,7 @@ def row_start_ts(row: Any) -> float | None:
     start = row.get("start") if isinstance(row, dict) else getattr(row, "start", None)
     if isinstance(start, datetime):
         if start.tzinfo is None:
-            start = start.replace(tzinfo=timezone.utc)
+            start = start.replace(tzinfo=UTC)
         return start.timestamp()
     if isinstance(start, bool) or start is None:
         return None
@@ -293,7 +293,7 @@ async def async_statistics_series(
     minutes = clamp_minutes(minutes)
     period = normalize_period(period)
     stat_type = normalize_type(stat_type)
-    end = now or datetime.now(timezone.utc)
+    end = now or datetime.now(UTC)
     start = end - timedelta(minutes=minutes)
 
     try:

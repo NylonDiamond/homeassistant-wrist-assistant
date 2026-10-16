@@ -546,7 +546,7 @@ def validate_document(document: Any) -> dict[str, Any]:
 # ── the public list ──────────────────────────────────────────────────────
 
 
-def _plain_number(value: float | int) -> float | int:
+def _plain_number(value: float) -> float | int:
     """15.0 as 15, the way Swift's encoder writes a whole Double."""
     if isinstance(value, float) and value.is_integer() and abs(value) < 2**53:
         return int(value)

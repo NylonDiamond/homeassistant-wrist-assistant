@@ -11,11 +11,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from homeassistant.helpers.storage import Store
 
 from .const import NOTIFICATION_TOKEN_STORAGE_KEY, NOTIFICATION_TOKEN_STORAGE_VERSION
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 

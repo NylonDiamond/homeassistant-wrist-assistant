@@ -427,7 +427,7 @@ async def async_send(
     try:
         async with asyncio.timeout(clamp_timeout(built.timeout)):
             return await _send_hops(built, allows_untrusted, session_for, certificate)
-    except (TimeoutError, asyncio.TimeoutError) as err:
+    except TimeoutError as err:
         return Answer(error=_error_words(err))
     except aiohttp.ClientError as err:
         return Answer(error=_error_words(err))
