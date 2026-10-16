@@ -8,8 +8,10 @@ describe("shapeDevicesTag", () => {
     expect(shapeDevicesTag("corner")?.text).toBe("Watch");
     for (const size of ["small", "medium", "large", "xlarge"]) expect(shapeDevicesTag(size)?.text).toBe("iPhone Home Screen");
     for (const shape of ["rectangular", "circular", "inline"]) {
-      expect(shapeDevicesTag(shape)).toEqual({ text: "Watch and iPhone Lock Screen", icons: ["watch", "phone"] });
+      expect(shapeDevicesTag(shape)).toEqual({ text: "Watch and iPhone Lock Screen", icons: ["watch", "phone"], where: "both" });
     }
+    expect(shapeDevicesTag("corner")?.where).toBe("watch");
+    expect(shapeDevicesTag("medium")?.where).toBe("phone");
   });
 
   it("says nothing for a box with no shape", () => {

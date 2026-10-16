@@ -742,10 +742,10 @@ function shapeGroupOrder(kind: DeviceKind): readonly string[] {
  * which mixes watch and iPhone designs: a corner is the watch's alone, the
  * Home Screen sizes the iPhone's, and the rest are watch complications and
  * iPhone Lock Screen widgets both. Undefined for a box with no shape. */
-export function shapeDevicesTag(key: string): { text: string; icons: readonly ("watch" | "phone")[] } | undefined {
-  if (key === "corner") return { text: "Watch", icons: ["watch"] };
-  if (key === "small" || key === "medium" || key === "large" || key === "xlarge") return { text: "iPhone Home Screen", icons: ["phone"] };
-  if (key === "rectangular" || key === "circular" || key === "inline") return { text: "Watch and iPhone Lock Screen", icons: ["watch", "phone"] };
+export function shapeDevicesTag(key: string): { text: string; icons: readonly ("watch" | "phone")[]; where: "watch" | "phone" | "both" } | undefined {
+  if (key === "corner") return { text: "Watch", icons: ["watch"], where: "watch" };
+  if (key === "small" || key === "medium" || key === "large" || key === "xlarge") return { text: "iPhone Home Screen", icons: ["phone"], where: "phone" };
+  if (key === "rectangular" || key === "circular" || key === "inline") return { text: "Watch and iPhone Lock Screen", icons: ["watch", "phone"], where: "both" };
   return undefined;
 }
 
@@ -2970,10 +2970,21 @@ export class WristAssistantPanel extends LitElement {
        caption is set small and spaced instead, so it reads as a label on the
        box rather than as one more thing competing with the cards' own names. */
     .pk-boxes { display: flex; flex-direction: column; gap: 16px; }
-    /* No frame and no hue of its own: the label over the cards and the gap
-       between shapes are enough to tell them apart. */
-    .pk-box { display: flex; flex-direction: column; min-width: 0; }
-    .pk-box-top { display: flex; align-items: center; gap: 7px; min-width: 0; margin: 0 0 8px 2px; }
+    /* A light frame round each shape, so one shape's cards do not run into
+       the next one's. On the All tab the frame takes a hue for where the
+       shape is used (\`--bx\`): orange for the watch only, blue for the
+       iPhone only, and none for both. */
+    .pk-box {
+      display: flex; flex-direction: column; min-width: 0; padding: 10px 12px 12px;
+      border: 1px solid color-mix(in srgb, var(--bx, var(--wa-ink)) 22%, transparent); border-radius: 12px;
+      background: color-mix(in srgb, var(--bx, var(--wa-ink)) 4%, transparent);
+    }
+    .pk-box[data-where="watch"] { --bx: var(--wa-hue-orange); }
+    .pk-box[data-where="phone"] { --bx: var(--wa-hue-blue); }
+    .pk-box[data-where] .pk-box-name::before { background: var(--bx, var(--wa-muted)); }
+    .pk-box[data-where] .pk-box-where { border-color: color-mix(in srgb, var(--bx, var(--wa-ink)) 40%, transparent); }
+    .pk-box[data-where] .pk-box-where-ic { color: var(--bx, var(--wa-muted)); }
+    .pk-box-top { display: flex; align-items: center; gap: 7px; min-width: 0; margin: 0 0 10px 2px; }
     .pk-box-name {
       display: inline-flex; align-items: center; gap: 6px;
       font-size: 10.5px; font-weight: 500; letter-spacing: .11em; text-transform: uppercase;
@@ -12957,7 +12968,8 @@ export class WristAssistantPanel extends LitElement {
       }
     }
     return html`<div class="pk-boxes">
-      ${groups.map((group) => html`<section class="pk-box" aria-label=${group.label}>
+      ${groups.map((group) => html`<section class="pk-box" aria-label=${group.label}
+        data-where=${at === ALL_DEVICES ? shapeDevicesTag(group.key)?.where ?? nothing : nothing}>
         <div class="pk-box-top">
           ${this.renderShapePick(group.rows, at)}
           <span class="pk-box-name">${group.label}</span>
