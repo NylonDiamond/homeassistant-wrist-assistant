@@ -251,6 +251,20 @@ export type PageRemoveResult = { ok: true; removed: boolean } | { ok: false; cod
  * device. `removed` false: the page was not there.
  */
 export async function removePageFrom(io: PageRemoveIO, owner: string, pageId: string): Promise<PageRemoveResult> {
+  const result = await removePagesFrom(io, owner, [pageId]);
+  return result.ok ? { ok: true, removed: result.removed.length > 0 } : result;
+}
+
+export type PagesRemoveResult = { ok: true; removed: string[] } | { ok: false; code: string; message: string };
+
+/**
+ * Take several pages off one device in one save, as `removePageFrom` takes
+ * one: read its pages, save them without every listed page among `pageIds`
+ * over the revision read, and read again on a conflict. `removed` names the
+ * ids that were there (as the document spells them); empty when none was,
+ * and then nothing is saved.
+ */
+export async function removePagesFrom(io: PageRemoveIO, owner: string, pageIds: readonly string[]): Promise<PagesRemoveResult> {
   for (let attempt = 1; ; attempt++) {
     let record: Pick<WatchConfigRecord, "revision" | "document">;
     try {
@@ -260,10 +274,19 @@ export async function removePageFrom(io: PageRemoveIO, owner: string, pageId: st
       return { ok: false, code, message };
     }
     const doc = record.revision > 0 ? asWatchPagesDocument(record.document) : undefined;
-    if (doc === undefined || findWatchPage(doc, pageId) === undefined) return { ok: true, removed: false };
+    if (doc === undefined) return { ok: true, removed: [] };
+    let next = doc;
+    const removed: string[] = [];
+    for (const pageId of pageIds) {
+      const page = findWatchPage(next, pageId);
+      if (page === undefined) continue;
+      removed.push(watchPageId(page));
+      next = deleteWatchPage(next, pageId);
+    }
+    if (removed.length === 0) return { ok: true, removed };
     try {
-      await io.save(owner, record.revision, deleteWatchPage(doc, pageId));
-      return { ok: true, removed: true };
+      await io.save(owner, record.revision, next);
+      return { ok: true, removed };
     } catch (err) {
       const { code = "unknown", message } = watchCommandError(err);
       if (code !== "conflict" || attempt >= PAGE_REMOVE_ATTEMPTS) return { ok: false, code, message };

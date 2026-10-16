@@ -142,4 +142,94 @@ describe("the Pages tab", () => {
     await call<Promise<void>>("toggle", card("Den"), only);
     expect(sent.some((m) => (m.type as string).endsWith("watch_config/save"))).toBe(false);
   });
+
+  describe("multi-select", () => {
+    const click = (mods: { meta?: boolean; ctrl?: boolean; shift?: boolean } = {}) => ({
+      metaKey: mods.meta ?? false, ctrlKey: mods.ctrl ?? false, shiftKey: mods.shift ?? false,
+      preventDefault: () => undefined, stopPropagation: () => undefined,
+    });
+
+    it("Cmd+click picks a card and starts select mode; then a click picks, Shift+click a run, and Esc leaves", async () => {
+      const { el, call, card, whole } = tab();
+      await call<Promise<void>>("loadAll");
+      const opened: string[] = [];
+      el.onOpen = (owner: string) => opened.push(owner);
+      call("cardClick", click({ meta: true }), card("Hall"), "all");
+      expect(el.selecting).toBe(true);
+      expect([...(el.selected as Set<string>)]).toEqual([card("Hall").key]);
+      call("cardClick", click({ shift: true }), card("Mine"), "all");
+      expect((el.selected as Set<string>).size).toBe(3);
+      call("cardClick", click(), card("Den"), "all");
+      expect((el.selected as Set<string>).has(card("Den").key)).toBe(false);
+      expect(opened).toEqual([]);
+      const text = whole();
+      expect(text).toContain("ap-pick");
+      expect(text).toContain("2 selected");
+      expect(text).toContain("Add to…");
+      expect(text).toContain("Remove from…");
+      expect(text).toContain("Delete…");
+      expect(text).not.toContain("Pick the devices this page is on");
+      call("onKeyDown", { key: "Escape", preventDefault: () => undefined });
+      expect(el.selecting).toBe(false);
+      expect((el.selected as Set<string>).size).toBe(0);
+      expect(whole()).not.toContain("ap-bar");
+    });
+
+    it("Select all and none act on the shown cards, and a filter unpicks what it hides", async () => {
+      const { el, phone, call } = tab();
+      await call<Promise<void>>("loadAll");
+      call("startSelect");
+      call("selectShown", true);
+      expect((el.selected as Set<string>).size).toBe(3);
+      call("setFilter", phone);
+      expect((el.selected as Set<string>).size).toBe(2);
+      call("selectShown", false);
+      expect((el.selected as Set<string>).size).toBe(0);
+      call("setFilter", "all");
+    });
+
+    it("adds the picked pages to a device, linked, and keeps them picked", async () => {
+      const { el, watch, phone, sent, call, card } = tab();
+      await call<Promise<void>>("loadAll");
+      call("cardClick", click({ ctrl: true }), card("Den"), "all");
+      call("openBulkMenu", "add");
+      call("tickDevice", phone, true);
+      await call<Promise<void>>("runBulk", "add");
+      expect(sent.filter((m) => (m.type as string).endsWith("watch_pages/link")).map((m) => [m.source_id, m.page_ids, m.targets]))
+        .toEqual([[watch, [DEN], [phone]]]);
+      expect((el.bulkNote as { text: string }).text).toBe("Added 1 page to Jesse's iPhone.");
+      expect(card("Den").copies.map((c) => c.device.ownerId)).toEqual([watch, phone]);
+      expect([...(el.selected as Set<string>)]).toEqual([card("Den").key]);
+    });
+
+    it("asks before a delete, then takes the pages off every device in one save each", async () => {
+      const { el, watch, phone, held, sent, call, card, cards, whole } = tab();
+      await call<Promise<void>>("loadAll");
+      call("startSelect");
+      call("pick", card("Hall"), false);
+      call("pick", card("Mine"), false);
+      call("openBulkMenu", "delete");
+      expect(whole()).toContain("Delete 2 pages from 2 devices?");
+      await call<Promise<void>>("runBulk", "delete");
+      const saves = sent.filter((m) => (m.type as string).endsWith("watch_config/save") && m.kind === "pages").map((m) => m.owner_watch_id);
+      expect(saves).toEqual([watch, phone]);
+      expect((held.get(`${phone}/pages`)!.document.pages as JsonObject[]).map((p) => p.name)).toEqual([]);
+      expect((held.get(`${watch}/pages`)!.document.pages as JsonObject[]).map((p) => p.name)).toEqual(["Den"]);
+      expect((el.bulkNote as { text: string }).text).toBe("Deleted 2 pages.");
+      expect(cards().map((c) => c.name)).toEqual(["Den"]);
+      expect((el.selected as Set<string>).size).toBe(0);
+    });
+
+    it("will not take a page off its only device", async () => {
+      const { el, phone, sent, call, card } = tab();
+      await call<Promise<void>>("loadAll");
+      call("startSelect");
+      call("pick", card("Mine"), false);
+      call("openBulkMenu", "remove");
+      call("tickDevice", phone, true);
+      await call<Promise<void>>("runBulk", "remove");
+      expect(sent.some((m) => (m.type as string).endsWith("watch_config/save"))).toBe(false);
+      expect((el.bulkNote as { text: string }).text).toBe("Kept Mine: it would be left on no device. Use Delete for those.");
+    });
+  });
 });

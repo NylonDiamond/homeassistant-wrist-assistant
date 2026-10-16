@@ -12,9 +12,14 @@
 // whenever Home Assistant says its pages changed (`subscribeWatchConfig`).
 // The panel loads this file the first time the tab opens
 // (`all-pages-hook.ts`).
+//
+// Select (or Cmd/Ctrl+click on a card) picks several cards at once, and a bar
+// at the foot then adds them to devices, takes them off devices or deletes
+// them everywhere. Its rules and writes are `all-pages-bulk.ts`.
 
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
+import { live } from "lit/directives/live.js";
 import { type HassLike, type OwnerSummary, fetchWatchConfig, fetchWatchPagesPlaces, linkWatchPages, subscribeWatchConfig } from "../ha-api.js";
 import { phoneFrameStyles, phoneModelForScreenSize, phonePagesLayout, phonePagesScreen } from "../phone-frame.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
@@ -38,11 +43,28 @@ import {
   resolveFilter,
   shownCards,
 } from "./all-pages-model.js";
+import {
+  type BulkResult,
+  addPlan,
+  bulkResultText,
+  deleteAskText,
+  deletePlan,
+  keepPresent,
+  rangeSelected,
+  remapSelection,
+  removePlan,
+  runAdd,
+  runDelete,
+  runRemove,
+  toggleSelected,
+  withAll,
+  withNone,
+} from "./all-pages-bulk.js";
 import { devicesMenuStyles, renderPageDevicesMenu } from "./devices-menu.js";
 import { keepWatchPagesSelection, keptWatchPagesDraft } from "./kept.js";
 import { type LinkDevice, type PageDevicePlace, linkAlsoAddedText, linkDevicesOf, linkErrorText } from "./links.js";
 import { type WatchPagesDocument, asWatchPagesDocument, watchPageId, watchPagesOf } from "./model.js";
-import { takePageOff } from "./page-links-io.js";
+import { pagesBulkIO, takePageOff } from "./page-links-io.js";
 import { renderWatchPagePreview, watchPagePreviewStyles } from "./preview.js";
 import { type WatchPagesNote, watchCommandError } from "./save-note.js";
 
@@ -66,6 +88,12 @@ interface MenuAt {
 
 const sameId = (a: string, b: string): boolean => a.toUpperCase() === b.toUpperCase();
 
+/** What the multi-select bar's open menu does. */
+type BulkKind = "add" | "remove" | "delete";
+
+/** Whether a device's page editor holds unsaved edits in this tab. */
+const dirtyHere = (ownerId: string): boolean => keptWatchPagesDraft(ownerId)?.dirty ?? false;
+
 export class WaAllPages extends LitElement {
   @property({ attribute: false }) owners: readonly OwnerSummary[] = [];
   @property({ attribute: false }) ownersReady = false;
@@ -86,8 +114,20 @@ export class WaAllPages extends LitElement {
   @state() private menuAt?: MenuAt;
   @state() private linking = false;
   @state() private devicesNote?: WatchPagesNote;
+  /** Select mode: a click picks a card instead of opening it. */
+  @state() private selecting = false;
+  /** The picked cards, by key. Only those shown count. */
+  @state() private selected: ReadonlySet<string> = new Set();
+  /** The bar's open menu, and the devices ticked in it. */
+  @state() private bulkMenu?: BulkKind;
+  @state() private bulkTicks: ReadonlySet<string> = new Set();
+  /** The line while an action runs, and what the last one did. */
+  @state() private bulkBusy?: string;
+  @state() private bulkNote?: WatchPagesNote;
 
   private hassNow?: HassLike;
+  /** The last card clicked in select mode, where a Shift+click run starts. */
+  private anchor?: string;
   private hassDrawnAt = 0;
   private loadSeq = 0;
   private readSeq = new Map<string, number>();
@@ -256,6 +296,12 @@ export class WaAllPages extends LitElement {
     this.filter = filter;
     keptFilter = filter;
     this.closeDevices();
+    this.pruneSelected();
+  }
+
+  private setSearch(search: string): void {
+    this.search = search;
+    this.pruneSelected();
   }
 
   /** Open the page in its device's page editor, on that page. */
@@ -327,19 +373,165 @@ export class WaAllPages extends LitElement {
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
-    if (e.key === "Escape" && this.menuAt !== undefined) {
+    if (e.key !== "Escape") return;
+    if (this.bulkMenu !== undefined && this.bulkBusy === undefined) {
+      e.preventDefault();
+      this.closeBulkMenu();
+    } else if (this.menuAt !== undefined) {
       e.preventDefault();
       this.closeDevices();
+    } else if (this.selecting && this.bulkBusy === undefined) {
+      e.preventDefault();
+      this.endSelect();
     }
   };
 
-  /** A press outside the open menu and its button closes it. */
+  /** A press outside an open menu and its button closes it. */
   private onWindowPointerDown = (e: PointerEvent): void => {
-    if (this.menuAt === undefined) return;
-    const inside = e.composedPath().some((el) => el instanceof Element
-      && (el.classList.contains("pe-dev-menu") || el.classList.contains("ap-dev-open")));
-    if (!inside) this.closeDevices();
+    if (this.menuAt === undefined && (this.bulkMenu === undefined || this.bulkBusy !== undefined)) return;
+    const path = e.composedPath();
+    const within = (...names: string[]) => path.some((el) => el instanceof Element && names.some((n) => el.classList.contains(n)));
+    if (this.menuAt !== undefined && !within("pe-dev-menu", "ap-dev-open")) this.closeDevices();
+    if (this.bulkMenu !== undefined && this.bulkBusy === undefined && !within("ap-bulk-menu", "ap-bar-open")) this.closeBulkMenu();
   };
+
+  // ── picking ────────────────────────────────────────────────────────────
+
+  /** The cards shown now, under the filter and the search. */
+  private shownNow(): PageCard[] {
+    return shownCards(this.cards, resolveFilter(this.filter, this.devices), this.search);
+  }
+
+  /** The picked cards among those shown, in the order shown. */
+  private pickedCards(): PageCard[] {
+    return this.shownNow().filter((c) => this.selected.has(c.key));
+  }
+
+  /** Unpick the cards a filter or a search hides. */
+  private pruneSelected(): void {
+    if (this.selected.size === 0) return;
+    this.selected = keepPresent(this.selected, this.shownNow().map((c) => c.key));
+  }
+
+  private startSelect(): void {
+    this.selecting = true;
+    this.closeDevices();
+    this.bulkNote = undefined;
+  }
+
+  private endSelect(): void {
+    if (this.bulkBusy !== undefined) return;
+    this.selecting = false;
+    this.selected = new Set();
+    this.anchor = undefined;
+    this.bulkMenu = undefined;
+    this.bulkNote = undefined;
+  }
+
+  /**
+   * A click on a card. Outside select mode it opens the page, unless
+   * Cmd/Ctrl is held: that picks it and starts select mode. In select mode
+   * it picks or unpicks the card, and Shift+click picks every card from the
+   * last one clicked.
+   */
+  private cardClick(e: MouseEvent, card: PageCard, filter: PagesFilter): void {
+    const toggle = e.metaKey || e.ctrlKey;
+    if (!this.selecting && !toggle) {
+      this.open(card, filter);
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    this.pick(card, e.shiftKey && this.selecting && !toggle);
+  }
+
+  private pick(card: PageCard, range: boolean): void {
+    if (this.bulkBusy !== undefined) return;
+    if (!this.selecting) this.startSelect();
+    this.selected = range
+      ? rangeSelected(this.selected, this.shownNow().map((c) => c.key), this.anchor, card.key)
+      : toggleSelected(this.selected, card.key);
+    this.anchor = card.key;
+    this.bulkNote = undefined;
+    if (this.selected.size === 0) this.bulkMenu = undefined;
+  }
+
+  private selectShown(all: boolean): void {
+    if (this.bulkBusy !== undefined) return;
+    const keys = this.shownNow().map((c) => c.key);
+    this.selected = all ? withAll(this.selected, keys) : withNone(this.selected, keys);
+    this.bulkNote = undefined;
+    if (this.selected.size === 0) this.bulkMenu = undefined;
+  }
+
+  // ── the bar's actions ──────────────────────────────────────────────────
+
+  private openBulkMenu(kind: BulkKind): void {
+    if (this.bulkBusy !== undefined) return;
+    if (this.bulkMenu === kind) {
+      this.closeBulkMenu();
+      return;
+    }
+    this.bulkMenu = kind;
+    this.bulkTicks = new Set();
+    this.bulkNote = undefined;
+    void this.updateComplete.then(() => {
+      const menu = this.renderRoot.querySelector?.<HTMLElement>(".ap-bulk-menu");
+      menu?.querySelector<HTMLElement>(kind === "delete" ? ".ap-bulk-cancel" : "input:not(:disabled)")?.focus();
+    });
+  }
+
+  private closeBulkMenu(): void {
+    this.bulkMenu = undefined;
+    this.bulkTicks = new Set();
+  }
+
+  private tickDevice(ownerId: string, on: boolean): void {
+    const next = new Set(this.bulkTicks);
+    if (on) next.add(ownerId);
+    else next.delete(ownerId);
+    this.bulkTicks = next;
+  }
+
+  /**
+   * Run the open menu's action on the picked cards, one device at a time,
+   * then read every device again and say in one line what happened. The
+   * cards stay picked where their pages are still there.
+   */
+  private async runBulk(kind: BulkKind): Promise<void> {
+    const hass = this.hassNow;
+    if (!hass || this.bulkBusy !== undefined) return;
+    const devices = this.devices;
+    const picked = this.pickedCards();
+    if (picked.length === 0) return;
+    const targets = devices.map((d) => d.ownerId).filter((id) => this.bulkTicks.has(id));
+    if (kind !== "delete" && targets.length === 0) return;
+    const io = pagesBulkIO(hass);
+    const step = (text: string) => { this.bulkBusy = text; };
+    this.bulkMenu = undefined;
+    this.bulkTicks = new Set();
+    this.bulkNote = undefined;
+    this.bulkBusy = "Working…";
+    let note: WatchPagesNote;
+    try {
+      let result: BulkResult;
+      if (kind === "add") result = await runAdd(io, addPlan(picked, targets, this.docs, dirtyHere), devices, step);
+      else if (kind === "remove") result = await runRemove(io, removePlan(picked, targets, dirtyHere), devices, step);
+      else result = await runDelete(io, deletePlan(picked, devices, dirtyHere), devices, step);
+      note = bulkResultText(result, devices);
+    } catch (err) {
+      note = { kind: "err", text: watchCommandError(err).message };
+    }
+    this.bulkBusy = "Reading the pages again…";
+    try {
+      await this.loadAll();
+    } finally {
+      this.bulkBusy = undefined;
+    }
+    this.selected = keepPresent(remapSelection(picked, this.cards), this.shownNow().map((c) => c.key));
+    this.anchor = undefined;
+    this.bulkNote = note;
+  }
 
   // ── drawing ────────────────────────────────────────────────────────────
 
@@ -352,15 +544,28 @@ export class WaAllPages extends LitElement {
     const device = devices.find((d) => d.ownerId === filter);
     const loading = this.readState !== "ready" && cards.length === 0;
     const failed = this.failed.map((id) => devices.find((d) => d.ownerId === id)?.name).filter((n): n is string => n !== undefined);
+    const picked = shown.filter((c) => this.selected.has(c.key));
+    const busy = this.bulkBusy !== undefined;
+    const note = this.selecting
+      ? "Click pages to pick them. Shift+click picks every page between two."
+      : `Click a page to edit it.${this.linksOn && devices.length > 1 ? " Devices puts it on another watch or iPhone." : ""}`;
     return html`<div class="ap-page"><div class="ap-wrap">
       <div class="ap-head">
         <div class="ap-head-text">
           <h1>Pages</h1>
           <p class="ap-lead">${ALL_PAGES_LEAD}</p>
         </div>
-        ${cards.length > 0 ? html`<label class="ap-search">${uiIcon("search")}
-          <input type="search" class="ap-search-input" placeholder="Find a page" aria-label="Find a page by name"
-            .value=${this.search} @input=${(e: InputEvent) => { this.search = (e.target as HTMLInputElement).value; }} /></label>` : nothing}
+        ${cards.length > 0 ? html`<div class="ap-tools">
+          <label class="ap-search">${uiIcon("search")}
+            <input type="search" class="ap-search-input" placeholder="Find a page" aria-label="Find a page by name"
+              .value=${this.search} @input=${(e: InputEvent) => this.setSearch((e.target as HTMLInputElement).value)} /></label>
+          ${this.selecting ? html`
+            <button type="button" class="ap-btn" ?disabled=${busy || shown.length === 0} @click=${() => this.selectShown(true)}>Select all</button>
+            <button type="button" class="ap-btn" ?disabled=${busy || picked.length === 0} @click=${() => this.selectShown(false)}>Select none</button>` : nothing}
+          <button type="button" class="ap-btn ap-select ${this.selecting ? "on" : ""}" aria-pressed=${this.selecting ? "true" : "false"} ?disabled=${busy}
+            title=${this.selecting ? "Stop picking pages" : "Pick several pages to add, remove or delete together"}
+            @click=${() => (this.selecting ? this.endSelect() : this.startSelect())}>${this.selecting ? "Done" : "Select"}</button>
+        </div>` : nothing}
       </div>
       ${devices.length > 1 ? this.renderChips(devices, cards, filter) : nothing}
       ${failed.length === 0 ? nothing : html`<p class="ap-warn" role="status">Could not read the pages of ${failed.join(", ")}. They show as last read.</p>`}
@@ -369,7 +574,7 @@ export class WaAllPages extends LitElement {
           <span class="ap-sec-chip" aria-hidden="true">${uiIcon(device === undefined ? "pages" : device.kind === "iphone" ? "phone" : "watch")}</span>
           <span class="ap-sec-t">
             <h2>${device === undefined ? "Every page" : `On ${device.name}`}</h2>
-            <span class="ap-sec-note">Click a page to edit it.${this.linksOn && devices.length > 1 ? " Devices puts it on another watch or iPhone." : ""}</span>
+            <span class="ap-sec-note">${note}</span>
           </span>
           <span class="ap-sec-count">${shown.length}</span>
         </div>
@@ -377,6 +582,7 @@ export class WaAllPages extends LitElement {
           : shown.length === 0 ? html`<p class="ap-empty">${emptyText(filter, devices, this.search)}</p>`
           : html`<div class="ap-grid" role="list">${shown.map((card) => this.renderCard(card, filter, devices, cards))}</div>`}
       </section>
+      ${this.selecting && (picked.length > 0 || busy || this.bulkNote !== undefined) ? this.renderBar(picked, devices) : nothing}
     </div></div>`;
   }
 
@@ -395,15 +601,25 @@ export class WaAllPages extends LitElement {
 
   private renderCard(card: PageCard, filter: PagesFilter, devices: readonly LinkDevice[], cards: readonly PageCard[]): TemplateResult {
     const copy = openCopy(card, filter);
-    const menuOpen = this.cardOfMenu(cards)?.key === card.key;
-    const devicesOn = this.linksOn && devices.length > 1;
-    const title = `Edit ${card.name} on ${copy.device.name}`;
-    return html`<div class="ap-card ${menuOpen ? "over" : ""}" role="listitem" data-card=${card.key}>
-      <button type="button" class="ap-thumb" tabindex="-1" aria-hidden="true" title=${title} @click=${() => this.open(card, filter)}>
+    const selecting = this.selecting;
+    const menuOpen = !selecting && this.cardOfMenu(cards)?.key === card.key;
+    const devicesOn = !selecting && this.linksOn && devices.length > 1;
+    const picked = selecting && this.selected.has(card.key);
+    const title = selecting ? `${picked ? "Unpick" : "Pick"} ${card.name}` : `Edit ${card.name} on ${copy.device.name}`;
+    const click = (e: MouseEvent) => this.cardClick(e, card, filter);
+    return html`<div class="ap-card ${menuOpen ? "over" : ""} ${selecting ? "picking" : ""} ${picked ? "picked" : ""}" role="listitem" data-card=${card.key}
+      @click=${(e: MouseEvent) => { if (selecting) click(e); }}>
+      ${selecting ? html`<input type="checkbox" class="ap-pick" .checked=${live(picked)} ?disabled=${this.bulkBusy !== undefined}
+        aria-label=${`Pick ${card.name}`}
+        @click=${(e: MouseEvent) => {
+          e.stopPropagation();
+          this.pick(card, e.shiftKey);
+        }} />` : nothing}
+      <button type="button" class="ap-thumb" tabindex="-1" aria-hidden="true" title=${title} @click=${click}>
         ${this.renderThumb(copy)}
       </button>
       <div class="ap-body">
-        <button type="button" class="ap-open" title=${title} @click=${() => this.open(card, filter)}>
+        <button type="button" class="ap-open" title=${title} tabindex=${selecting ? "-1" : "0"} @click=${click}>
           <b class="ap-name">${card.name}</b>
           <small class="ap-detail">${cardDetail(card)}</small>
         </button>
@@ -431,6 +647,79 @@ export class WaAllPages extends LitElement {
       onToggle: (place) => void this.toggle(card, place),
       onDone: () => this.closeDevices(),
     });
+  }
+
+  /**
+   * The bar at the foot while pages are picked: how many, the actions, and
+   * a line on what is running or what the last action did. A menu opens
+   * above it for the devices to add to or take off, or the delete question.
+   */
+  private renderBar(picked: readonly PageCard[], devices: readonly LinkDevice[]): TemplateResult {
+    const busy = this.bulkBusy !== undefined;
+    const none = picked.length === 0;
+    const multi = devices.length > 1;
+    const open = (kind: BulkKind, label: string, extra = "") => html`<button type="button" class="ap-btn ap-bar-open ${extra} ${this.bulkMenu === kind ? "on" : ""}"
+      aria-expanded=${this.bulkMenu === kind ? "true" : "false"} ?disabled=${busy || none} @click=${() => this.openBulkMenu(kind)}>${label}</button>`;
+    const line = this.bulkBusy ?? this.bulkNote?.text;
+    return html`<div class="ap-bar" role="region" aria-label="Picked pages">
+      <span class="ap-bar-n">${picked.length} selected</span>
+      <span class="ap-bar-note ${busy ? "" : (this.bulkNote?.kind ?? "")}" role="status">${line ?? ""}</span>
+      <span class="ap-bar-acts">
+        ${multi && this.linksOn ? open("add", "Add to…") : nothing}
+        ${multi ? open("remove", "Remove from…") : nothing}
+        ${open("delete", "Delete…", "ap-danger")}
+        <button type="button" class="ap-btn" ?disabled=${busy} @click=${() => this.endSelect()}>Cancel</button>
+      </span>
+      ${this.bulkMenu === undefined || none ? nothing : this.bulkMenu === "delete" ? this.renderDeleteMenu(picked, devices) : this.renderDevicesPick(this.bulkMenu, picked, devices)}
+    </div>`;
+  }
+
+  /** Add to or Remove from: a box per device, then the button that runs it.
+   * A device none of the picked pages could change is greyed. */
+  private renderDevicesPick(kind: "add" | "remove", picked: readonly PageCard[], devices: readonly LinkDevice[]): TemplateResult {
+    const add = kind === "add";
+    const n = picked.length;
+    const count = `${n} ${n === 1 ? "page" : "pages"}`;
+    return html`<div class="pk-dup-menu ap-bulk-menu" role="group" aria-label=${add ? `Add ${count} to` : `Remove ${count} from`}>
+      <div class="pk-dup-head">${add ? `Add ${count} to` : `Remove ${count} from`}</div>
+      ${devices.map((device) => {
+        const holds = picked.filter((c) => copyOn(c, device.ownerId) !== undefined).length;
+        const dirty = dirtyHere(device.ownerId);
+        const why = dirty ? "unsaved edits" : add ? (holds === n ? "has them all" : undefined) : (holds === 0 ? "has none" : undefined);
+        const off = why !== undefined;
+        const ticked = !off && this.bulkTicks.has(device.ownerId);
+        return html`<div class="pk-dup-row check ${off ? "off" : ""}">
+          <label class="pk-dup-pick" title=${dirty ? "Its pages have unsaved edits. Save or discard them first." : device.name}>
+            <input type="checkbox" .checked=${live(ticked)} ?disabled=${off}
+              @change=${(e: Event) => this.tickDevice(device.ownerId, (e.currentTarget as HTMLInputElement).checked)} />
+            ${uiIcon(device.kind === "iphone" ? "phone" : "watch")}
+            <span class="pk-dup-name">${device.name}</span>
+            ${why === undefined ? (add ? nothing : html`<span class="pk-dup-full">${holds} of ${n}</span>`) : html`<span class="pk-dup-full">${why}</span>`}
+          </label>
+        </div>`;
+      })}
+      <div class="pk-dup-note">${add
+        ? "They go on linked: an edit on one device shows on all of them."
+        : "A page these would leave on no device stays. Use Delete for those."}</div>
+      <div class="ap-bulk-foot">
+        <button type="button" class="ap-btn ap-bulk-cancel" @click=${() => this.closeBulkMenu()}>Cancel</button>
+        <button type="button" class="ap-btn ap-primary" ?disabled=${this.bulkTicks.size === 0}
+          @click=${() => void this.runBulk(kind)}>${add ? "Add" : "Remove"}</button>
+      </div>
+    </div>`;
+  }
+
+  /** The delete question: how many pages, from which devices. */
+  private renderDeleteMenu(picked: readonly PageCard[], devices: readonly LinkDevice[]): TemplateResult {
+    const ask = deleteAskText(deletePlan(picked, devices, dirtyHere), devices);
+    return html`<div class="pk-dup-menu ap-bulk-menu" role="alertdialog" aria-labelledby="ap-del-title" aria-describedby="ap-del-body">
+      <div class="ap-bulk-title" id="ap-del-title">${ask.title}</div>
+      <p class="ap-bulk-body" id="ap-del-body">${ask.body}</p>
+      <div class="ap-bulk-foot">
+        <button type="button" class="ap-btn ap-bulk-cancel" @click=${() => this.closeBulkMenu()}>Cancel</button>
+        <button type="button" class="ap-btn ap-primary ap-danger" @click=${() => void this.runBulk("delete")}>Delete</button>
+      </div>
+    </div>`;
   }
 
   /** The page small, as its device draws it: a watch screen, or the iPhone
@@ -474,6 +763,21 @@ export class WaAllPages extends LitElement {
     .ap-head-text { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
     .ap-head h1 { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -.02em; }
     .ap-lead { margin: 0; font-size: 13px; color: var(--wa-muted); max-width: 720px; }
+    .ap-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; max-width: 100%; }
+    .ap-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none;
+      height: 30px; padding: 0 12px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+      font: inherit; font-size: 13px; color: var(--wa-ink); background: var(--wa-card); border: 1px solid var(--wa-line-strong);
+    }
+    .ap-btn:hover:not(:disabled) { background: var(--wa-hover); }
+    .ap-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .ap-btn:disabled { opacity: .55; cursor: default; }
+    .ap-btn.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent); }
+    .ap-btn.ap-primary { border-color: transparent; background: var(--wa-primary-bg); color: var(--wa-primary-ink); font-weight: 600; }
+    .ap-btn.ap-primary:hover:not(:disabled) { background: var(--wa-primary-bg); filter: brightness(1.1); }
+    .ap-btn.ap-danger { color: var(--wa-need); border-color: color-mix(in srgb, var(--wa-need) 55%, var(--wa-line-strong)); }
+    .ap-btn.ap-danger.on { background: color-mix(in srgb, var(--wa-need) 10%, transparent); }
+    .ap-btn.ap-primary.ap-danger { color: #fff; background: var(--wa-need); border-color: transparent; }
     .ap-search {
       display: flex; align-items: center; gap: 8px; flex: none; width: 240px; max-width: 100%;
       height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--wa-line-strong); background: var(--wa-field, var(--wa-card));
@@ -575,6 +879,30 @@ export class WaAllPages extends LitElement {
     .ap-dev-open:hover { background: var(--wa-hover); }
     .ap-dev-open:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .ap-dev-open.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent); }
+    /* Select mode: a box in the picture's corner, and a lit card when
+       picked. Every click on the card picks it. */
+    .ap-card.picking { cursor: pointer; user-select: none; }
+    .ap-card.picked { border-color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 10%, var(--wa-card)); }
+    .ap-pick {
+      position: absolute; top: 12px; left: 12px; z-index: 2; width: 18px; height: 18px; margin: 0; cursor: pointer;
+      accent-color: var(--wa-accent);
+    }
+    .ap-pick:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 4px; }
+    /* The bar: held at the foot of the tab while pages are picked. */
+    .ap-bar {
+      position: sticky; bottom: 12px; z-index: 8; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+      padding: 8px 10px 8px 14px; border-radius: 10px;
+      border: 1px solid var(--wa-line-strong); background: var(--wa-card); box-shadow: var(--wa-shadow-pop);
+    }
+    .ap-bar-n { flex: none; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .ap-bar-note { flex: 1 1 200px; min-width: 0; font-size: 12.5px; line-height: 1.4; color: var(--wa-muted); }
+    .ap-bar-note.ok { color: var(--wa-ok, var(--wa-ink)); }
+    .ap-bar-note.warn, .ap-bar-note.err { color: var(--wa-need); }
+    .ap-bar-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+    .ap-bar > .ap-bulk-menu { position: absolute; right: 8px; bottom: calc(100% + 6px); width: 280px; max-width: calc(100vw - 32px); }
+    .ap-bulk-foot { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
+    .ap-bulk-title { font-size: 13.5px; font-weight: 600; }
+    .ap-bulk-body { margin: 0; font-size: 12px; line-height: 1.45; color: var(--wa-muted); }
     /* The Devices menu hangs under its card, over the cards below. */
     .ap-card > .pe-dev-menu { position: absolute; top: calc(100% - 4px); left: 8px; width: 250px; max-width: calc(100vw - 32px); z-index: 6; }
     @media (max-width: 640px) {
@@ -582,6 +910,8 @@ export class WaAllPages extends LitElement {
       .ap-sec { padding: 0 10px 10px; }
       .ap-sec-top { margin: 0 -10px; padding: 10px 12px; }
       .ap-search { width: 100%; }
+      .ap-tools { width: 100%; justify-content: flex-start; }
+      .ap-bar-acts { margin-left: 0; }
     }
   `];
 }
