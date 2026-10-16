@@ -14,6 +14,7 @@
 
 import { type EntityChoice, areaLookup, entityChoices, searchEntities } from "../editors.js";
 import type { HassEntityState, HassLike } from "../ha-api.js";
+import { type SettingDevice, deviceNoun } from "../watch-settings.js";
 import {
   type WatchAddRefusal,
   type WatchHassView,
@@ -313,13 +314,14 @@ export function watchAddedCountText(count: number): string {
   return count === 1 ? "1 tile added." : `${count} tiles added.`;
 }
 
-/** The line under the list about entities the watch has no tile for, or
- * undefined when there are none. */
-export function watchLeftOutText(count: number): string | undefined {
+/** The line under the list about entities the device showing the page
+ * (`device`) has no tile for, or undefined when there are none. */
+export function watchLeftOutText(count: number, device: SettingDevice = "watch"): string | undefined {
   if (count <= 0) return undefined;
+  const noun = deviceNoun(device);
   return count === 1
-    ? "1 entity is left out: the watch has no tile for its kind."
-    : `${count} entities are left out: the watch has no tile for their kind.`;
+    ? `1 entity is left out: the ${noun} has no tile for its kind.`
+    : `${count} entities are left out: the ${noun} has no tile for their kind.`;
 }
 
 /** The "Show more" row: how many the next press adds, of how many left. */
@@ -332,20 +334,22 @@ export function watchAddMoreText(left: number): string {
  * finds among the page's own entities: a person looking for a light that is
  * on the page already learns that it is, rather than that it does not
  * exist. `onPageCount` is how many addable entities the page holds, so an
- * empty pool can tell a full page from a home with nothing to add. */
+ * empty pool can tell a full page from a home with nothing to add.
+ * `device` is the device showing the page. */
 export function watchAddEmptyText(
   query: string,
   kind: string,
   poolSize: number,
   onPage: readonly { name: string }[] = [],
   onPageCount?: number,
+  device: SettingDevice = "watch",
 ): string {
   if (poolSize === 0) {
     // `onPageCount`, the entities of the pool on the page already: none at
     // all means Home Assistant has nothing the watch has a tile for.
     return onPageCount === 0
-      ? "Home Assistant has no entity the watch has a tile for."
-      : "Every entity the watch has a tile for is on this page already.";
+      ? `Home Assistant has no entity the ${deviceNoun(device)} has a tile for.`
+      : `Every entity the ${deviceNoun(device)} has a tile for is on this page already.`;
   }
   if (query.trim() !== "" && onPage.length > 0) {
     return onPage.length === 1

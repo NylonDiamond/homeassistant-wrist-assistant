@@ -43,10 +43,13 @@ export const REJECTED_TEXT = "The watch could not read this save";
 /** What the head and foot say about a save the watch reported it could not
  * use: its reason when it gave one ("The watch could not use this save: too
  * large for the watch"), else `REJECTED_TEXT`. A watch app older than the
- * reason never sends one. */
-export function rejectedText(record: Pick<WatchConfigRecord, "rejected_reason">): string {
+ * reason never sends one. `device` names the device that reported it:
+ * "The iPhone could not read this save" for an iPhone. */
+export function rejectedText(record: Pick<WatchConfigRecord, "rejected_reason">, device: SettingDevice = "watch"): string {
   const reason = typeof record.rejected_reason === "string" ? record.rejected_reason.trim() : "";
-  return reason === "" ? REJECTED_TEXT : `The watch could not use this save: ${reason}`;
+  const noun = deviceNoun(device);
+  if (reason === "") return device === "watch" ? REJECTED_TEXT : `The ${noun} could not read this save`;
+  return `The ${noun} could not use this save: ${reason}`;
 }
 
 /** A size in the units the caps are set in: 1024 bytes to a KB and 1024 KB
@@ -113,7 +116,7 @@ export function configFootStatus(i: {
   const size = `${kb(i.size, round)} used of ${kb(i.limit)}${note}`;
   if (rejectedNow(record)) {
     return {
-      tone: "err", revision, stamp, state: rejectedText(record), size, near, over,
+      tone: "err", revision, stamp, state: rejectedText(record, i.device), size, near, over,
       help: i.historyState === "unsupported" ? `Change the ${i.noun} and save ${them(i.noun)} again.` : "Restore an earlier save from History.",
     };
   }
@@ -199,6 +202,8 @@ export interface ConfigFootInput {
   rawOpen: boolean;
   onHistory: () => void;
   onRaw: () => void;
+  /** The device the record is for; a watch when absent. */
+  device?: SettingDevice;
 }
 
 /** The bar itself: the dot and the stored copy's line on the left, History
@@ -219,7 +224,7 @@ export function renderConfigFoot(i: ConfigFootInput): TemplateResult {
       <span class="cf-state ${s.tone}">${state}</span>
       ${s.tone === "err" ? html`<span class="cf-help">${s.help}</span>` : nothing}
     </span>
-    <span class="cf-size ${s.over ? "over" : s.near ? "near" : ""}" title=${`${s.size}${s.size.endsWith(".") ? "" : "."} The second number is the most Home Assistant keeps for one watch.`}>${s.size}</span>
+    <span class="cf-size ${s.over ? "over" : s.near ? "near" : ""}" title=${`${s.size}${s.size.endsWith(".") ? "" : "."} The second number is the most Home Assistant keeps for one ${deviceNoun(i.device ?? "watch")}.`}>${s.size}</span>
     ${i.historyState === "unsupported" ? nothing : html`<button type="button" class="cf-btn cf-history-btn ${s.tone === "err" ? "lit" : ""}"
       aria-haspopup="dialog" aria-expanded=${i.historyOpen ? "true" : "false"}
       title="Earlier saves, with Restore" @click=${i.onHistory}>History</button>`}
@@ -286,7 +291,7 @@ export function renderConfigHistoryDialog(i: ConfigHistoryInput): TemplateResult
       </div>
       <button type="button" class="cf-close" title="Close" aria-label="Close" @click=${closeOwnDialog}>${uiIcon("close")}</button>
     </div>
-    ${rejected ? html`<p class="pe-warn" role="note">${rejectedText(record)}. Restore the save before it.</p>` : nothing}
+    ${rejected ? html`<p class="pe-warn" role="note">${rejectedText(record, i.device)}. Restore the save before it.</p>` : nothing}
     <div class="cf-dialog-body">${body}</div>
     <p class="pe-muted">Restoring saves the earlier copy again as a new revision. The copy stored now stays in this list.</p>
     <div class="pe-ask-foot">

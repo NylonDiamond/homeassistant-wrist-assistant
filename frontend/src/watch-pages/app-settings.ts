@@ -17,7 +17,7 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import { checkField, segField, sliderField, templateBox, textField } from "../editors.js";
 import { uiIcon } from "../ui-icons.js";
-import type { TileSettingsHost } from "./editor-host.js";
+import { type TileSettingsHost, hostDeviceNoun } from "./editor-host.js";
 import { tileEntityId } from "./model.js";
 import { watchTemplateRichText, watchTemplateTileLook } from "./preview.js";
 import { commit, linkButton, menuField, typed, typingField } from "./tile-settings.js";
@@ -377,7 +377,7 @@ function renderAssist(host: TileSettingsHost): TemplateResult {
     ${segField("Assist Mode", s.mode, seg(A.assist.modes), (v) => commit(host, "assistMode", (d) => setWatchAssistMode(d, ...at(host), v)))}
     <div class="hint ts-under">${detailOf(A.assist.modes, s.mode) ?? ""}</div>
     ${s.replyOutputMode !== undefined
-      ? html`<div class="hint warn">An older reply setting decides this tile's reply on the watch. An Assist Mode or Reply Speaker change removes it.</div>`
+      ? html`<div class="hint warn">An older reply setting decides this tile's reply on the ${hostDeviceNoun(host)}. An Assist Mode or Reply Speaker change removes it.</div>`
       : nothing}
     ${speakReply
       ? html`${segField("Reply Speaker", s.replySpeaker, seg(A.assist.replySpeakers), (v) => commit(host, "replySpeaker", (d) => setWatchAssistReplySpeaker(d, ...at(host), v)))}

@@ -215,10 +215,12 @@ export function readWatchSmartTable(raw: unknown): WatchSmartTable {
 /** The table, from `tile-smart.json`. */
 export const WATCH_SMART: Readonly<WatchSmartTable> = readWatchSmartTable(tileSmart);
 
-/** A word of the table with its `{name}` placeholders filled. */
+/** A word of the table with its `{name}` placeholders filled. `{device}`,
+ * the device showing the page, is "watch" unless `values` names another. */
 export function smartWord(name: string, values: Readonly<Record<string, string | number>> = {}, table: WatchSmartTable = WATCH_SMART): string {
   const word = table.words[name] ?? "";
-  return word.replace(/\{(\w+)\}/g, (all, key: string) => (Object.hasOwn(values, key) ? String(values[key]) : all));
+  const filled: Readonly<Record<string, string | number>> = { device: "watch", ...values };
+  return word.replace(/\{(\w+)\}/g, (all, key: string) => (Object.hasOwn(filled, key) ? String(filled[key]) : all));
 }
 
 /** A domain's table entry, or undefined for a domain the watch cannot fill. */
@@ -1450,12 +1452,13 @@ export function smartSharedDomains(config: WatchSmartConfig): string[] {
 
 /** The note for rules that share a domain (the watch draws every group of
  * the domain with the first rule's header and style), one sentence per
- * shared domain, naming the domain as stored; undefined when no two rules
- * share one. A note, never a refusal. */
-export function smartDuplicateDomainNote(config: WatchSmartConfig, table: WatchSmartTable = WATCH_SMART): string | undefined {
+ * shared domain, naming the domain as stored and `device`, the device
+ * showing the page ("watch" or "iPhone"); undefined when no two rules share
+ * one. A note, never a refusal. */
+export function smartDuplicateDomainNote(config: WatchSmartConfig, table: WatchSmartTable = WATCH_SMART, device = "watch"): string | undefined {
   const shared = smartSharedDomains(config);
   if (shared.length === 0) return undefined;
-  return shared.map((domain) => smartWord("sharedDomain", { domain }, table)).join(" ");
+  return shared.map((domain) => smartWord("sharedDomain", { domain, device }, table)).join(" ");
 }
 
 /** Which rule drew a synthetic tile, by index in `config.rules`: the first

@@ -17,6 +17,8 @@ import { html, nothing, type TemplateResult } from "lit";
 import { checkField, colorField, segField, symbolField, textField } from "../editors.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
+import type { SettingDevice } from "../watch-settings.js";
+import { hostDevice, hostDeviceNoun } from "./editor-host.js";
 import type { WatchPage, WatchPagesDocument } from "./model.js";
 import {
   WATCH_PAGE_SWITCHER_MODES,
@@ -37,6 +39,9 @@ export interface SwitcherSettingsHost {
   readonly pageId: string;
   readonly icons: IconProvider;
   readonly symbols: SymbolBrowser;
+  /** The device whose switcher this is, for the lines that name it. Absent:
+   * a watch. */
+  readonly device?: SettingDevice;
   /** A save is out: every row is drawn off and every edit refused. */
   readonly busy: boolean;
   /** View state kept between draws (text typed and not committed yet).
@@ -192,19 +197,20 @@ export function renderSwitcherSettings(host: SwitcherSettingsHost): TemplateResu
   const name = typeof page.name === "string" ? page.name : "";
   const setIcon = (value: string) => write(host, (d) => setWatchPageSwitcherIcon(d, host.pageId, value));
   const setColor = (value: string | undefined) => write(host, (d) => setWatchPageSwitcherColor(d, host.pageId, value), true);
+  const device = hostDeviceNoun(host);
   return html`
     ${checkField("Hidden", s.hideFromSwitcher, (v) => write(host, (d) => setWatchPageHideFromSwitcher(d, host.pageId, v)), false)}
-    ${s.hideFromSwitcher ? html`<div class="hint ts-under">The page stays on the watch. Only the switcher leaves it out.</div>` : nothing}
+    ${s.hideFromSwitcher ? html`<div class="hint ts-under">The page stays on the ${device}. Only the switcher leaves it out.</div>` : nothing}
     ${segField("Show as", modes.some(([m]) => m === mode) ? mode : "text", modes, (v) =>
       write(host, (d) => setWatchPageSwitcherDisplayMode(d, host.pageId, v)))}
     ${typingRow(host, "switcherText", textField("Name", typed(host, "switcherText") ?? s.switcherText ?? "", (v) =>
       write(host, (d) => setWatchPageSwitcherText(d, host.pageId, v), true), { placeholder: name }))}
     <div class="ts-chips" role="group" aria-label="Switcher icon">
       <button type="button" class="pe-chip ${s.switcherIcon === undefined ? "on" : ""}" aria-pressed=${s.switcherIcon === undefined ? "true" : "false"}
-        title="The watch picks one from the page's first tile" @click=${() => write(host, (d) => setWatchPageSwitcherIcon(d, host.pageId, ""))}>Automatic icon</button>
+        title=${`The ${device} picks one from the page's first tile`} @click=${() => write(host, (d) => setWatchPageSwitcherIcon(d, host.pageId, ""))}>Automatic icon</button>
     </div>
-    ${typingRow(host, "switcherIcon", symbolField({ icons: host.icons, symbols: host.symbols }, typed(host, "switcherIcon") ?? s.switcherIcon ?? "", setIcon, "sw:switcher-icon",
-      { emptyText: "Picked by the watch", tint: s.switcherColor }))}
+    ${typingRow(host, "switcherIcon", symbolField({ icons: host.icons, symbols: host.symbols, device: hostDevice(host) }, typed(host, "switcherIcon") ?? s.switcherIcon ?? "", setIcon, "sw:switcher-icon",
+      { emptyText: `Picked by the ${device}`, tint: s.switcherColor }))}
     ${typingRow(host, "switcherColor", html`<div class="ts-no-alpha">${colorField("Color", typed(host, "switcherColor") ?? s.switcherColor, setColor, true, null, { switchOn: s.switcherColor !== undefined })}</div>`)}
-    <div class="hint ts-under">Left empty, the watch shows the page's name and picks the icon and color itself.</div>`;
+    <div class="hint ts-under">Left empty, the ${device} shows the page's name and picks the icon and color itself.</div>`;
 }

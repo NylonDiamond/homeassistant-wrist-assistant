@@ -41,7 +41,7 @@ import { checkField, colorField, numberField, segField, sliderField, textField }
 import { sectionCard } from "../editor-chrome.js";
 import { SECTION_COLOR } from "../kinds.js";
 import { uiIcon } from "../ui-icons.js";
-import { type TileSettingsHost, type WatchPagesEditorHost, extendHost } from "./editor-host.js";
+import { type TileSettingsHost, type WatchPagesEditorHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
 import { sameWatchId } from "./edit.js";
@@ -465,7 +465,7 @@ export function renderSmartRulesCard(host: WatchPagesEditorHost): TemplateResult
   if (config === undefined) return nothing;
   const index = smartSelectedRuleIndex(config, host.smartRuleId);
   const rule = index === undefined ? undefined : config.rules[index];
-  const note = smartDuplicateDomainNote(config);
+  const note = smartDuplicateDomainNote(config, undefined, hostDeviceNoun(host));
   const open = isOpen(host, "rules");
   // The strip and the rule's heading hold buttons, so this card's body is no
   // fieldset; every one of them is off while a save is out by itself.
@@ -657,7 +657,7 @@ function renderHeader(host: WatchPagesEditorHost, rh: TileSettingsHost, rule: Wa
   const theme = watchPageSwatchTheme(host.page);
   const writeColor = (v: string | undefined, typing = false) => commit(rh, "headerColor", (d) => setSmartRuleHeaderColor(d, P, R, v), { typing });
   const custom = (v: string | undefined) => {
-    const reason = watchColorRefusal(v);
+    const reason = watchColorRefusal(v, hostDevice(host));
     if (reason !== undefined || v === undefined) return commit(rh, "headerColor", (d) => d, { reason: reason ?? "Pick a color." });
     writeColor(v, true);
   };
@@ -681,7 +681,7 @@ function renderHeader(host: WatchPagesEditorHost, rh: TileSettingsHost, rule: Wa
     <div class="ts-sub-h"><span>${W("color")}</span></div>
     <div class="ts-swatch-row">${swatchRow(`${watchThemeDisplayName(theme)} colors`, watchThemeSwatches(theme, false), rule.headerColor, (v) => writeColor(v))}</div>
     ${typingField(rh, "headerColor", html`<div class="ts-no-alpha">${colorField("Custom", typed(rh, "headerColor") ?? watchCustomBoxColor(rule.headerColor), custom)}</div>`)}
-    <div class="ts-after">${chip(W("colorDefault"), rule.headerColor === undefined, "No color of its own: the watch draws the header white", () => writeColor(undefined))}</div>`;
+    <div class="ts-after">${chip(W("colorDefault", { device: hostDeviceNoun(host) }), rule.headerColor === undefined, `No color of its own: the ${hostDeviceNoun(host)} draws the header white`, () => writeColor(undefined))}</div>`;
 }
 
 // ── a rule's size ────────────────────────────────────────────────────────

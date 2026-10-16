@@ -19,7 +19,7 @@ import { checkField, colorField, segField, sliderField, symbolField, symbolNameS
 import { sectionCard } from "../editor-chrome.js";
 import { SECTION_COLOR } from "../kinds.js";
 import { uiIcon } from "../ui-icons.js";
-import { type TileSettingsHost, type WatchPagesEditorHost, extendHost } from "./editor-host.js";
+import { type TileSettingsHost, type WatchPagesEditorHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import { type WatchPage, type WatchPageTile, type WatchPagesDocument, isHiddenWatchPage } from "./model.js";
 import {
@@ -355,7 +355,7 @@ export function pagePaletteActions(sh: TileSettingsHost, setting: string, source
     sh.requestUpdate();
   };
   const custom = (value: string | undefined): void => {
-    const reason = watchColorRefusal(value);
+    const reason = watchColorRefusal(value, hostDevice(sh));
     if (reason !== undefined || value === undefined) return commit(sh, setting, (d) => d, { reason: reason ?? "Pick a color." });
     write(gradient() ? watchGradientOf(value) : value, true);
   };
@@ -413,7 +413,7 @@ function renderBackground(sh: TileSettingsHost): TemplateResult {
     ${segment === "color" ? html`
       <div class="ts-after">
         <button type="button" class="pe-chip ${sameWatchColor(s.backgroundColor, "#000000") ? "on" : ""}"
-          title=${`Pure black, best for the ${sh.device === "iphone" ? "iPhone" : "watch"}'s battery`} @click=${() => commit(sh, "bgColor", (d) => setWatchPageBackgroundColor(d, sh.pageId, "#000000"))}>OLED black</button>
+          title=${`Pure black, best for the ${hostDeviceNoun(sh)}'s battery`} @click=${() => commit(sh, "bgColor", (d) => setWatchPageBackgroundColor(d, sh.pageId, "#000000"))}>OLED black</button>
       </div>
       ${pagePalette(sh, "bgColor", {
         label: "Background color",
@@ -553,7 +553,7 @@ function renderImage(sh: TileSettingsHost): TemplateResult {
       </div>` : nothing}
     ${photos?.error !== undefined ? html`<p class="hint warn">${photos.error}</p>` : nothing}
     ${s.imageId === undefined ? (list !== undefined ? html`<div class="hint ts-under">No photo yet: pick one.</div>` : nothing) : html`
-      ${missing ? html`<p class="hint warn">Photo missing. Home Assistant does not have it, so the ${sh.device === "iphone" ? "iPhone" : "watch"} shows none. Pick another or remove it.</p>` : nothing}
+      ${missing ? html`<p class="hint warn">Photo missing. Home Assistant does not have it, so the ${hostDeviceNoun(sh)} shows none. Pick another or remove it.</p>` : nothing}
       ${pageSlider(sh, "imageOpacity", "Opacity", "backgroundImageOpacity", s.imageOpacity, setWatchPageImageOpacity, 1, true)}
       ${pageSlider(sh, "imageBlur", "Blur", "backgroundImageBlur", s.imageBlur, setWatchPageImageBlur, 0, blurText)}
       ${segField("Fit", s.imageFit, fits, (v) => commit(sh, "imageFit", (d) => setWatchPageImageFit(d, sh.pageId, v)))}
@@ -588,7 +588,7 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
         <button type="button" class="pe-chip ${s.titleIcon === "" ? "on" : ""}" aria-pressed=${s.titleIcon === "" ? "true" : "false"}
           @click=${() => commit(sh, "titleIcon", (d) => setWatchPageTitleIcon(d, sh.pageId, ""))}>No icon</button>
       </div>
-      ${typingField(sh, "titleIcon", symbolField({ icons: sh.icons, symbols: sh.symbols }, typed(sh, "titleIcon") ?? s.titleIcon, setIcon, "pe:ps:title-icon",
+      ${typingField(sh, "titleIcon", symbolField({ icons: sh.icons, symbols: sh.symbols, device: hostDevice(sh) }, typed(sh, "titleIcon") ?? s.titleIcon, setIcon, "pe:ps:title-icon",
         { clearable: false, emptyText: "No icon", tint: s.titleColor }))}
       ${pagePalette(sh, "titleColor", {
         label: "Text color",
@@ -598,7 +598,7 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
         modeKey: "pageTitleTextColor",
       })}
       ${s.titleColor === undefined ? html`<div class="hint ts-under">None set: the theme's title color.</div>` : nothing}
-      ${s.fullScreen ? html`<div class="hint warn">Full screen is on: the ${sh.device === "iphone" ? "iPhone" : "watch"} hides the title.</div>` : nothing}`}
+      ${s.fullScreen ? html`<div class="hint warn">Full screen is on: the ${hostDeviceNoun(sh)} hides the title.</div>` : nothing}`}
     ${checkField("Full screen", s.fullScreen, (on) => commit(sh, "fullScreen", (d) => setWatchPageFullScreen(d, sh.pageId, on)), false)}
     <div class="hint ts-under">The tiles run up behind the clock, with no title.</div>`;
 }

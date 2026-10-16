@@ -1289,13 +1289,13 @@
     "off": "Off",
     "percent": "{value}%",
     "color": "Color",
-    "colorDefault": "Default (white on the watch)",
+    "colorDefault": "Default (white on the {device})",
     "allOff": "All Off",
     "domainOn": "{count} {name} On",
     "active": "{count} Active",
     "tracking": "Tracking {parts}",
     "noEntities": "No entities configured",
-    "sharedDomain": "Two rules share {domain}. The watch draws every {domain} group with the first rule's header and style."
+    "sharedDomain": "Two rules share {domain}. The {device} draws every {domain} group with the first rule's header and style."
   },
   "resets": {
     "rule": {

@@ -18,7 +18,7 @@
 import { type TemplateResult, html, nothing } from "lit";
 import { colorField, sliderField } from "../editors.js";
 import { uiIcon } from "../ui-icons.js";
-import type { TileSettingsHost } from "./editor-host.js";
+import { type TileSettingsHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { leaveWatchTileGroup, makeWatchTileGroup, ungroupWatchTileGroup, watchTilesAdjacent } from "./edit.js";
 import {
   WATCH_GROUP_SLIDERS,
@@ -104,7 +104,7 @@ function groupColor(
 ): TemplateResult {
   const swatches = watchThemeSwatches(watchPageSwatchTheme(host.page), false);
   const custom = (value: string | undefined): void => {
-    const reason = watchColorRefusal(value);
+    const reason = watchColorRefusal(value, hostDevice(host));
     if (reason !== undefined || value === undefined) return commit(host, setting, (d) => d, { reason: reason ?? "Pick a color." });
     commit(host, setting, (d) => set(d, value), { typing: true });
   };
@@ -134,7 +134,7 @@ function renderGroupLook(host: TileSettingsHost, groupId: string): TemplateResul
       ${groupSlider(host, groupId, key("patternScale"), "Size", WATCH_GROUP_SLIDERS.patternScale, g.patternScale, 1, setWatchGroupPatternScale, times)}
       ${groupColor(host, key("patternColor"), "Pattern color", g.patternColor,
         (d, v) => setWatchGroupPatternColor(d, pid, groupId, v),
-        { label: "Default gray", title: "No color of its own: the watch draws the pattern in gray", write: (d) => setWatchGroupPatternColor(d, pid, groupId, null) })}`}
+        { label: "Default gray", title: `No color of its own: the ${hostDeviceNoun(host)} draws the pattern in gray`, write: (d) => setWatchGroupPatternColor(d, pid, groupId, null) })}`}
     <div class="ts-sub-h"><span>Animated overlay</span></div>
     ${stylingEnumField("Overlay", "tileAnimation", g.overlay, (v) => commit(host, key("overlay"), (d) => setWatchGroupOverlay(d, pid, groupId, v)))}
     ${g.overlay === "none" ? nothing : html`

@@ -65,7 +65,7 @@ import {
   watchLibraryLister,
   watchNoPhoneLibraryText,
 } from "./catalog.js";
-import type { AddTileHost } from "./editor-host.js";
+import { type AddTileHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import {
   type WatchPage,
   isHiddenWatchPage,
@@ -348,7 +348,7 @@ function renderLibrary(host: AddTileHost, view: AddTileView, kind: WatchLibraryK
   const fromWatch = watchCatalogFromWatch(catalog, kind);
   const listed = watchCatalogListedFor(catalog, kind);
   const screen = kind === "httpAction" && watchHttpScreenOffered(catalog);
-  const label = fromWatch ? `This watch's ${words.many}` : kind === "httpAction" && catalog.httpLibrary === "held" ? "HTTP actions" : `The iPhone's ${words.many}`;
+  const label = fromWatch ? `This ${hostDeviceNoun(host)}'s ${words.many}` : kind === "httpAction" && catalog.httpLibrary === "held" ? "HTTP actions" : `The iPhone's ${words.many}`;
   const goToScreen = () => {
     host.close();
     goToWatchHttpActions();
@@ -357,7 +357,7 @@ function renderLibrary(host: AddTileHost, view: AddTileView, kind: WatchLibraryK
     <div class="at-sub">${LIBRARY_WORDS[kind].question}</div>
     ${entries.length === 0
       ? html`<div class="at-muted">${fromWatch
-        ? `${watchLibraryLister(catalog, kind)} has no ${words.many} yet. Make one in Status pages and it shows here.`
+        ? `${watchLibraryLister(catalog, kind, hostDevice(host))} has no ${words.many} yet. Make one in Status pages and it shows here.`
         : screen ? WATCH_NO_HTTP_ACTIONS_TEXT
         : `The iPhone's list has no ${words.many}.`}</div>
         ${screen ? html`<div><button type="button" class="pe-btn" @click=${goToScreen}>Open HTTP actions</button></div>` : nothing}`
@@ -419,7 +419,7 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
   const hl = watchAddHighlightIndex(results, view.highlighted);
   const count = watchAddRowCount(results.length, view.shown, hl);
   const left = results.length - count;
-  const leftOut = watchLeftOutText(pool.leftOut);
+  const leftOut = watchLeftOutText(pool.leftOut, hostDevice(host));
   const kinds = view.kind !== "" && !pool.kinds.some((k) => k.name === view.kind)
     ? [...pool.kinds, { name: view.kind, count: 0 }]
     : pool.kinds;
@@ -529,7 +529,7 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
     ${appBlocked === undefined ? nothing : html`<div class="at-muted" id="at-app-blocked">${appBlocked}</div>`}
     ${catalog === undefined
       ? html`<div class="at-muted at-lib-none">${WATCH_NO_CATALOG_TEXT}</div>`
-      : html`<div class="at-kinds at-lib" role="group" aria-label=${catalog.noPhone === true ? (catalog.statusPagesFromWatch === true ? "From the watch" : "From Home Assistant") : "From the iPhone"}>
+      : html`<div class="at-kinds at-lib" role="group" aria-label=${catalog.noPhone === true ? (catalog.statusPagesFromWatch === true ? `From the ${hostDeviceNoun(host)}` : "From Home Assistant") : "From the iPhone"}>
           ${(Object.keys(LIBRARY_WORDS) as WatchLibraryKind[]).filter((kind) => watchCatalogKnows(catalog, kind)).map((kind) => listButton(kind, LIBRARY_WORDS[kind].button))}
         </div>
         ${catalog.noPhone === true ? noPhoneLine(watchNoPhoneLibraryText(catalog)) : nothing}`}
@@ -558,7 +558,7 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
         <div role="listbox" id="at-listbox" aria-label="Entities">${guard([results, count, hl, onPageKey, host.page, host.icons, busy], rows)}</div>
         ${results.length === 0
           ? html`<div class="at-empty">${watchAddEmptyText(view.query, view.kind, pool.candidates.length,
-              view.query.trim() === "" ? [] : watchAddResults(pool.onPage, view.query, view.kind), pool.onPage.length)}</div>`
+              view.query.trim() === "" ? [] : watchAddResults(pool.onPage, view.query, view.kind), pool.onPage.length, hostDevice(host))}</div>`
           : nothing}
         ${left > 0
           ? html`<button type="button" class="at-more" @click=${showMore}>${watchAddMoreText(left)}</button>`

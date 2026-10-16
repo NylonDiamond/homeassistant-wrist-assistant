@@ -18,7 +18,7 @@ import { css, html, nothing, type TemplateResult } from "lit";
 import type { EntityRef } from "../model.js";
 import { checkField, colorField, entityField, segField, sliderField, symbolField, textField } from "../editors.js";
 import { uiIcon } from "../ui-icons.js";
-import { type TileSettingsHost, extendHost } from "./editor-host.js";
+import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type WatchPagesDocument, tileEntityId, tileKind, watchPageTiles } from "./model.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
 import { watchThemeDisplayName, watchThemeSwatches } from "./tile-new.js";
@@ -323,7 +323,7 @@ function renderLaunchers(host: TileSettingsHost): TemplateResult {
       const writeColor = (value: string | null, typing = false) =>
         commit(host, colorSetting, (d) => setWatchRemoteLauncherColor(d, ...at(host), i, value), { typing });
       const custom = (value: string | undefined) => {
-        const reason = watchColorRefusal(value);
+        const reason = watchColorRefusal(value, hostDevice(host));
         if (reason !== undefined || value === undefined) return commit(host, colorSetting, (d) => d, { reason: reason ?? "Pick a color." });
         writeColor(value.toUpperCase(), true);
       };
@@ -334,7 +334,7 @@ function renderLaunchers(host: TileSettingsHost): TemplateResult {
             @click=${() => commit(host, `launcherRemove`, (d) => removeWatchRemoteLauncher(d, ...at(host), i))}>${uiIcon("delete")}</button></div>
         ${typingField(host, labelSetting, textField("Label", typed(host, labelSetting) ?? row.label, (v) =>
           commit(host, labelSetting, (d) => setWatchRemoteLauncherLabel(d, ...at(host), i, v), { typing: true })))}
-        ${typingField(host, iconSetting, symbolField({ icons: host.icons, symbols: host.symbols }, typed(host, iconSetting) ?? row.icon, (v) =>
+        ${typingField(host, iconSetting, symbolField({ icons: host.icons, symbols: host.symbols, device: hostDevice(host) }, typed(host, iconSetting) ?? row.icon, (v) =>
           commit(host, iconSetting, (d) => setWatchRemoteLauncherIcon(d, ...at(host), i, v.trim() === "" ? null : v)),
           `pe:sp:launcher:${host.tileId}:${i}`, { tint: row.color }))}
         <div class="ts-chips sp-indent"><button type="button" class="pe-chip ${row.color === "" ? "on" : ""}" aria-pressed=${row.color === "" ? "true" : "false"}
@@ -345,7 +345,7 @@ function renderLaunchers(host: TileSettingsHost): TemplateResult {
     })}
     <div class="ts-stack">${entityField({ hass: host.hass }, "Add quick action", refOf(host, undefined), add, `pe:sp:launcherAdd:${host.tileId}`, { domain: "script", clearable: false })}</div>
     ${noteOf(host, "launcherAdd")}
-    <div class="hint">Scripts the remote runs from its quick action list on the watch.</div>
+    <div class="hint">Scripts the remote runs from its quick action list on the ${hostDeviceNoun(host)}.</div>
   </div>`;
 }
 
@@ -386,7 +386,7 @@ function renderLayout(host: TileSettingsHost): TemplateResult {
   };
   return html`<div class="ts-sub">
     <div class="ts-sub-h"><span>Button layout</span>
-      ${s.layoutStored ? linkButton("Reset", "Back to the watch's own layout, which adapts to the player", () => {
+      ${s.layoutStored ? linkButton("Reset", `Back to the ${hostDeviceNoun(host)}'s own layout, which adapts to the player`, () => {
         select(undefined);
         commit(host, "layout", (d) => resetWatchRemoteLayout(d, ...at(host)));
       }) : nothing}</div>
@@ -405,7 +405,7 @@ function renderLayout(host: TileSettingsHost): TemplateResult {
       })}
     </div>
     <div class="hint">${selected === undefined
-      ? s.layoutStored ? "Pick a slot, then a button for it. Pick two slots to swap them." : "The watch's own layout, which swaps Prev and Next for -10s and +10s when the player can seek. Pick a slot to change it."
+      ? s.layoutStored ? "Pick a slot, then a button for it. Pick two slots to swap them." : `The ${hostDeviceNoun(host)}'s own layout, which swaps Prev and Next for -10s and +10s when the player can seek. Pick a slot to change it.`
       : `Slot ${selected + 1}: pick a button below, or another slot to swap with.`}</div>
     ${selectedReason === "" || typeof note === "string"
       ? nothing
@@ -563,7 +563,7 @@ function refreshMenu(host: TileSettingsHost, refresh: boolean | undefined): Temp
     options: choices.map((c) => ({ value: value(c.value), label: c.label })),
     selected: value(refresh),
   }, (v) => commit(host, "refresh", (doc) => setWatchCameraRefresh(doc, ...at(host), v === "default" ? null : v === "on")))}
-    <div class="hint ts-under">Takes a new snapshot each time the page opens. Default follows the watch's camera setting.</div>`;
+    <div class="hint ts-under">Takes a new snapshot each time the page opens. Default follows the ${hostDeviceNoun(host)}'s camera setting.</div>`;
 }
 
 function renderCamera(host: TileSettingsHost): TemplateResult {
@@ -668,7 +668,7 @@ function renderCameraGroup(host: TileSettingsHost): TemplateResult {
   };
   const writeColor = (value: string, typing = false) => commit(host, "borderColor", (d) => setWatchCameraBorderColor(d, ...at(host), value), { typing });
   const customColor = (value: string | undefined) => {
-    const reason = watchColorRefusal(value);
+    const reason = watchColorRefusal(value, hostDevice(host));
     if (reason !== undefined || value === undefined) return commit(host, "borderColor", (d) => d, { reason: reason ?? "Pick a color." });
     writeColor(value, true);
   };
@@ -878,7 +878,7 @@ function renderCalendars(host: TileSettingsHost): TemplateResult {
     commit(host, "calendarAdd", (d) => addWatchCalendars(d, ...at(host), [id]));
   };
   return html`
-    <div class="hint">Calendars merged into this tile. The watch's calendar sheet colors each one's events.</div>
+    <div class="hint">Calendars merged into this tile. The ${hostDeviceNoun(host)}'s calendar sheet colors each one's events.</div>
     ${ids.map((id, i) => {
       const color = watchCalendarSourceColor(tile, id);
       return html`<div class="sp-card">
@@ -924,7 +924,7 @@ function renderWeather(host: TileSettingsHost): TemplateResult {
       format: (v) => (Math.abs(v - s.auto) < 0.001 ? "Default" : `${Math.round(v * 100)}%`),
     }), w.textScale)}</div>
     ${checkField("Show icons", w.showIcons, (on) => commit(host, "weatherIcons", (d) => setWatchWeatherShowIcons(d, ...at(host), on)))}
-    <div class="hint">Both change the watch's weather detail and forecast rows, not the tile.</div>`;
+    <div class="hint">Both change the ${hostDeviceNoun(host)}'s weather detail and forecast rows, not the tile.</div>`;
 }
 
 function renderPerson(host: TileSettingsHost): TemplateResult {

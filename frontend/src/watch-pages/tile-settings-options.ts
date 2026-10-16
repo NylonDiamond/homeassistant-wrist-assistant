@@ -69,6 +69,7 @@ import {
 import type { HassEntityState } from "../ha-api.js";
 import { SECTION_COLOR } from "../kinds.js";
 import type { UiIconName } from "../ui-icons.js";
+import { type SettingDevice, deviceNoun } from "../watch-settings.js";
 import { type WatchHTTPRefresh, WATCH_HTTP_REFRESH_SECONDS } from "./library-model.js";
 
 // ── sections ─────────────────────────────────────────────────────────────
@@ -371,9 +372,11 @@ export interface WatchHoldSlideMenus {
  * the action and its target together (`watchHTTPSlideChoice`). A direction
  * stored as Run HTTP Action selects its action's entry, or shows its target
  * as not on the iPhone, and carries its banner settings. Without a catalog a
- * stored Run HTTP Action is shown, not offered.
+ * stored Run HTTP Action is shown, not offered. The notes name `device`,
+ * the device showing the page.
  */
-export function watchHoldSlideMenus(tile: WatchPageTile, catalog?: WatchCatalog): WatchHoldSlideMenus | undefined {
+export function watchHoldSlideMenus(tile: WatchPageTile, catalog?: WatchCatalog, device: SettingDevice = "watch"): WatchHoldSlideMenus | undefined {
+  const shows = `the ${deviceNoun(device)}`;
   // A slide's target is typed `UUID` on the phone: an entry whose id is not
   // one could never be stored.
   const actions = (catalog?.httpActions ?? []).filter((a) => isWatchUUID(a.id));
@@ -404,15 +407,15 @@ export function watchHoldSlideMenus(tile: WatchPageTile, catalog?: WatchCatalog)
       } else {
         // "not on the iPhone", or "not in the list" when the home's library
         // is the only list.
-        const missing = watchLibraryMissingText(catalog, "httpAction");
+        const missing = watchLibraryMissingText(catalog, "httpAction", device);
         const inList = missing === WATCH_NOT_IN_LIST_TEXT;
         selected = STORED + "httpAction";
         options.push({ value: selected, label: `${runLabel} (${targetId === "" ? "no action picked" : missing.charAt(0).toLowerCase() + missing.slice(1)})`, disabled: true });
         note = targetId === ""
-          ? "No action is picked, so the watch shows Sync Needed. Pick one."
+          ? `No action is picked, so ${shows} shows Sync Needed. Pick one.`
           : inList
-            ? "This action is no longer in the list. Pick another, or the watch fails the slide."
-            : "The iPhone no longer lists this action. Pick another, or the watch fails the slide.";
+            ? `This action is no longer in the list. Pick another, or ${shows} fails the slide.`
+            : `The iPhone no longer lists this action. Pick another, or ${shows} fails the slide.`;
       }
     } else if (d.stored !== undefined && !offered.some((c) => c.value === d.stored)) {
       selected = STORED + d.stored;
@@ -611,9 +614,10 @@ function libraryEntryLabel(kind: WatchLibraryKind, entry: WatchCatalogEntry): st
  * other tile. The catalog's entries of the tile's kind in library order. A
  * target the catalog does not list is shown first, disabled, with the
  * tile's stored label and "Not on the iPhone"; picking another retargets
- * the tile, and nothing rewrites it on its own.
+ * the tile, and nothing rewrites it on its own. The notes name `device`,
+ * the device showing the page.
  */
-export function watchLibraryTargetMenu(tile: WatchPageTile, catalog: WatchCatalog): WatchLibraryTargetMenu | undefined {
+export function watchLibraryTargetMenu(tile: WatchPageTile, catalog: WatchCatalog, device: SettingDevice = "watch"): WatchLibraryTargetMenu | undefined {
   const target = watchLibraryTarget(tileEntityId(tile));
   if (target === undefined) return undefined;
   const entries = watchCatalogEntries(catalog, target.kind);
@@ -631,8 +635,8 @@ export function watchLibraryTargetMenu(tile: WatchPageTile, catalog: WatchCatalo
   // watch's status pages", and "Not in the list" when the home's HTTP action
   // library is the only list.
   // With nothing else to pick, the HTTP actions screen can add one.
-  const missing = watchLibraryMissingText(catalog, target.kind);
-  const lister = watchLibraryLister(catalog, target.kind);
+  const missing = watchLibraryMissingText(catalog, target.kind, device);
+  const lister = watchLibraryLister(catalog, target.kind, device);
   const screen = target.kind === "httpAction" && watchHttpScreenOffered(catalog);
   return {
     ...base,
@@ -641,7 +645,7 @@ export function watchLibraryTargetMenu(tile: WatchPageTile, catalog: WatchCatalo
     note: entries.length === 0
       ? screen
         ? `${missing}. ${WATCH_NO_HTTP_ACTIONS_TEXT}`
-        : `${missing}, and ${lister === "The iPhone" ? "the iPhone lists" : "this watch has"} no other ${WATCH_LIBRARY_WORDS[target.kind].many}. The tile stays as it is.`
+        : `${missing}, and ${lister === "The iPhone" ? "the iPhone lists" : `this ${deviceNoun(device)} has`} no other ${WATCH_LIBRARY_WORDS[target.kind].many}. The tile stays as it is.`
       : `${missing}. The tile stays as it is until another is picked.`,
   };
 }
@@ -668,9 +672,10 @@ export const WATCH_HTTP_REPLY_OFF = "off";
  * selectable. A stored string the watch does not know reads as Off, as on
  * the watch, and is named under the menu. The notes name where the action
  * is kept: Home Assistant for one of the home's library (or one missing
- * when that library is the only list), else the iPhone.
+ * when that library is the only list), else the iPhone. `device` is the
+ * device showing the page.
  */
-export function watchHTTPReplyMenu(tile: WatchPageTile, action: WatchCatalogHTTPAction | undefined, catalog?: WatchCatalog): WatchMenu {
+export function watchHTTPReplyMenu(tile: WatchPageTile, action: WatchCatalogHTTPAction | undefined, catalog?: WatchCatalog, device: SettingDevice = "watch"): WatchMenu {
   const reply = tile.httpResponseDisplay === "toast" || tile.httpResponseDisplay === "tileValue" ? tile.httpResponseDisplay : undefined;
   const tileValue = action?.hasReply === true || reply === "tileValue";
   const options: WatchMenuOption[] = [
@@ -681,7 +686,7 @@ export function watchHTTPReplyMenu(tile: WatchPageTile, action: WatchCatalogHTTP
   const menu: WatchMenu = { options, selected: reply ?? WATCH_HTTP_REPLY_OFF };
   const unknown = typeof tile.httpResponseDisplay === "string" && reply === undefined ? tile.httpResponseDisplay : undefined;
   const home = action === undefined ? watchLibraryMissingText(catalog, "httpAction") === WATCH_NOT_IN_LIST_TEXT : action.source === "home";
-  if (unknown !== undefined) menu.note = `Stored as "${unknown}", which the watch reads as Off.`;
+  if (unknown !== undefined) menu.note = `Stored as "${unknown}", which the ${deviceNoun(device)} reads as Off.`;
   else if (!tileValue && action === undefined) {
     menu.note = home
       ? "This action is not in the list, so Tile value cannot be offered."
@@ -717,16 +722,17 @@ export function watchTileFallbackName(
   return tileLabel(rest, states, pages);
 }
 
-/** The line under the label field. */
-export function watchLabelNote(tile: WatchPageTile): string {
+/** The line under the label field, naming `device`, the device showing the
+ * page. */
+export function watchLabelNote(tile: WatchPageTile, device: SettingDevice = "watch"): string {
   if (watchPageLinkTarget(tile) !== undefined) return "Leave it empty to show the name of the page it opens.";
   const library = watchLibraryTarget(tileEntityId(tile))?.kind;
-  if (library === "httpAction") return "Leave it empty and the watch shows \"Action\".";
+  if (library === "httpAction") return `Leave it empty and the ${deviceNoun(device)} shows "Action".`;
   if (library === "statusPage") return "Leave it empty to show the status page's name.";
   const kind = tileKind(tileEntityId(tile));
   if (kind === "webhook_inbox") return "Leave it empty to show the topic, or \"Inbox\" for every topic.";
   const fallback = WATCH_KIND_FALLBACK_LABELS[kind];
-  if (fallback !== undefined) return `Leave it empty and the watch shows "${fallback}".`;
+  if (fallback !== undefined) return `Leave it empty and the ${deviceNoun(device)} shows "${fallback}".`;
   return "Leave it empty to show the name Home Assistant has.";
 }
 
@@ -807,12 +813,13 @@ export function sameWatchColor(a: unknown, b: unknown): boolean {
   return norm(a) === norm(b);
 }
 
-/** Why a typed color is refused: the watch has no opacity, and only six hex
- * digits. Undefined for a color the field takes. */
-export function watchColorRefusal(value: string | undefined): string | undefined {
+/** Why a typed color is refused: the device showing the page (`device`) has
+ * no opacity, and only six hex digits. Undefined for a color the field
+ * takes. */
+export function watchColorRefusal(value: string | undefined, device: SettingDevice = "watch"): string | undefined {
   if (value === undefined) return undefined;
   const t = value.trim().replace(/^#/, "");
-  if (/^[0-9a-fA-F]{8}$/.test(t)) return "The watch has no opacity. Use six digits, #RRGGBB.";
+  if (/^[0-9a-fA-F]{8}$/.test(t)) return `The ${deviceNoun(device)} has no opacity. Use six digits, #RRGGBB.`;
   if (!/^[0-9a-fA-F]{6}$/.test(t)) return "Use six hex digits, #RRGGBB.";
   return undefined;
 }

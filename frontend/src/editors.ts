@@ -1971,7 +1971,11 @@ function symbolWell(
 /** What the symbol field reads from its host: the provider that draws and
  * lists the glyphs, and the browser that keeps what is open, typed and recent.
  * Narrower than `EditorHost`, so the page editor can hand in its own two. */
-export type SymbolFieldHost = Pick<EditorHost, "icons" | "symbols">;
+export type SymbolFieldHost = Pick<EditorHost, "icons" | "symbols"> & {
+  /** The device that draws the icon, for the warnings that name it: an
+   * iPhone for an iPhone's page, else a watch. */
+  readonly device?: "watch" | "iphone";
+};
 
 export interface SymbolFieldOptions {
   /** Where a Material Design pick puts its SVG path. Given, the dropdown also
@@ -2067,6 +2071,7 @@ export function symbolField(
   const offersMdi = setPath !== undefined;
   const showing: SymbolPack = offersMdi ? (browser.pack(key) ?? (isMdiName ? "mdi" : "sf")) : "sf";
   const missing = symbolIsMissing(current, known);
+  const drawer = host.device === "iphone" ? "iPhone" : "watch";
   // Asked for only when it is needed: the first ask loads the whole catalogue.
   const mdiNames = offersMdi && (isMdiName || (open && showing === "mdi")) ? host.icons.mdiNames?.() : undefined;
 
@@ -2217,9 +2222,9 @@ export function symbolField(
     </div>
     ${menu}
   </div>
-  ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The watch still draws it if the name is a real SF Symbol.</div>` : nothing}
+  ${missing ? html`<div class="hint warn">The installed icon pack has no <code>${current}</code>, so the preview shows a placeholder. The ${drawer} still draws it if the name is a real SF Symbol.</div>` : nothing}
   ${mdiNames !== undefined && isMdiName && !mdiNames.includes(current)
-    ? html`<div class="hint warn">There is no <code>${current}</code> in this build's Material Design set, so the watch draws a question mark.</div>`
+    ? html`<div class="hint warn">There is no <code>${current}</code> in this build's Material Design set, so the ${drawer} draws a question mark.</div>`
     : nothing}`;
 }
 

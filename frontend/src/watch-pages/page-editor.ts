@@ -2131,7 +2131,7 @@ export class WaPageEditor extends LitElement {
       message: errText(err),
     }));
     // A first save refused as `no_record`: the watch is not paired.
-    if (watchId === this.watchId) this.note = first && !result.ok && result.code === "no_record" ? { kind: "warn", text: PAIR_FIRST_TEXT } : watchPagesSaveNote(result);
+    if (watchId === this.watchId) this.note = first && !result.ok && result.code === "no_record" ? { kind: "warn", text: PAIR_FIRST_TEXT } : watchPagesSaveNote(result, this.device);
     this.saveEnded(watchId);
     // Which photos a page uses has moved: the delete buttons follow.
     if (result.ok && this.photos.listState !== "idle") void this.photos.refreshList();
@@ -3745,7 +3745,7 @@ export class WaPageEditor extends LitElement {
       const state = this.noRecordState(watches);
       return html`<div class="pe-empty">
         ${state === "wait" ? html`<b>No pages from this watch yet.</b><span>${WAIT_FOR_IPHONE_TEXT}</span>` : nothing}
-        ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when Home Assistant holds pages for this watch again.</span>
+        ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when Home Assistant holds pages for this ${deviceWord(this.linkKind)} again.</span>
           <button class="pe-btn" @click=${() => { forgetWatchPagesDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
         ${state === "wait" && !kept?.dirty ? html`<button class="link start-fresh" ?disabled=${id === undefined}
           @click=${() => this.askStartFresh(state)}>${START_FRESH_BUTTON}</button>` : nothing}
@@ -3941,6 +3941,7 @@ export class WaPageEditor extends LitElement {
       rawOpen: this.rawOpen,
       onHistory: () => { this.historyOpen = true; },
       onRaw: () => { this.rawCopied = false; this.rawOpen = true; },
+      device: this.device,
     })}
     ${this.historyOpen ? renderConfigHistoryDialog({
       noun: "pages",

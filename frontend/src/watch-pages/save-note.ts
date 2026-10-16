@@ -2,6 +2,7 @@
 // save can end. Kept apart from the element so the words can be tested
 // without a browser.
 
+import { type SettingDevice, deviceNoun } from "../watch-settings.js";
 import type { WatchPagesSaveResult } from "./draft.js";
 
 export interface WatchPagesNote {
@@ -42,8 +43,9 @@ export function watchCommandError(err: unknown): { code?: string; message: strin
 
 /** The note after a save, or none: a plain save that went through says
  * nothing, since the toolbar's "Saved just now" already does. A note is
- * there only when it tells something more. */
-export function watchPagesSaveNote(result: WatchPagesSaveResult): WatchPagesNote | undefined {
+ * there only when it tells something more. `device` is the device whose
+ * pages these are. */
+export function watchPagesSaveNote(result: WatchPagesSaveResult, device: SettingDevice = "watch"): WatchPagesNote | undefined {
   if (result.ok) {
     if (result.alreadySaved === true) {
       return { kind: "ok", text: `Nothing left to save. The same changes were saved somewhere else, as revision ${result.revision}.` };
@@ -60,7 +62,7 @@ export function watchPagesSaveNote(result: WatchPagesSaveResult): WatchPagesNote
     case "no_record":
       return {
         kind: "warn",
-        text: "Not saved. Home Assistant no longer holds pages for this watch.",
+        text: `Not saved. Home Assistant no longer holds pages for this ${deviceNoun(device)}.`,
       };
     case "invalid": {
       const problems = result.problems ?? [];

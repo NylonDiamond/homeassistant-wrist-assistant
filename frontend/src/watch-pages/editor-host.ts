@@ -15,6 +15,7 @@
 import type { HassLike } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
+import { type SettingDevice, deviceNoun } from "../watch-settings.js";
 import type { WatchTemplateRender } from "./app-model.js";
 import type { WatchCatalog, WatchCatalogVoice } from "./catalog.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
@@ -51,7 +52,7 @@ export interface WatchPagesEditorHost {
   readonly document: WatchPagesDocument;
   /** The device whose pages these are, for the lines that name it ("the
    * iPhone hides the title"). Absent: a watch. */
-  readonly device?: "watch" | "iphone";
+  readonly device?: SettingDevice;
   /** The selected page: its id as the document has it, and the page. */
   readonly pageId: string;
   readonly page: WatchPage;
@@ -160,6 +161,18 @@ export interface AddTileHost extends WatchPagesEditorHost {
   readonly tile: WatchPageTile | undefined;
   /** Close the dialog, as Cancel or Escape does. */
   close(): void;
+}
+
+/** The device showing the host's page: a watch unless the host names an
+ * iPhone. */
+export function hostDevice(host: Pick<WatchPagesEditorHost, "device">): SettingDevice {
+  return host.device ?? "watch";
+}
+
+/** "watch" or "iPhone", for the lines that name the device showing the
+ * page: `The ${hostDeviceNoun(host)} picks the icon`. */
+export function hostDeviceNoun(host: Pick<WatchPagesEditorHost, "device">): string {
+  return deviceNoun(hostDevice(host));
 }
 
 /** A provider that draws nothing, for an element the panel gave no icons. */

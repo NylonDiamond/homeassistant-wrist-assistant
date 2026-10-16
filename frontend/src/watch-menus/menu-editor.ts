@@ -1202,6 +1202,7 @@ export class WaMenuEditor extends LitElement {
       icons,
       symbols: this.symbols,
       uiState: this.uiState,
+      get device() { return self.device; },
       // The page as the draft has it now; an empty one when an undo took it
       // away mid-task, so a row's handler still has a page to read (its
       // setters then change nothing).

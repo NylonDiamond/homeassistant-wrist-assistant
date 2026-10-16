@@ -24,6 +24,7 @@
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("3e build contract").
 
 import type { WatchConfigRecord } from "../ha-api.js";
+import { type SettingDevice, deviceNoun } from "../watch-settings.js";
 import { sameWatchId } from "./edit.js";
 import { isJsonObject, tileKind, tileTarget } from "./model.js";
 import { isWatchUUID } from "./tile-settings-model.js";
@@ -243,6 +244,12 @@ export function watchCatalogFromWatch(catalog: WatchCatalog | undefined, kind: W
 /** What a tile whose status page the watch's own record does not list says. */
 export const WATCH_NOT_IN_STATUS_PAGES_TEXT = "Not in this watch's status pages";
 
+/** The same line for the device on show: "Not in this iPhone's status pages"
+ * on an iPhone. */
+export function notInStatusPagesText(device: SettingDevice = "watch"): string {
+  return device === "watch" ? WATCH_NOT_IN_STATUS_PAGES_TEXT : `Not in this ${deviceNoun(device)}'s status pages`;
+}
+
 /** The line in place of the HTTP action list when the watch's status pages
  * are known and no iPhone catalog is. */
 export const WATCH_NO_PHONE_LIBRARY_TEXT = "Open the iPhone app to list its HTTP actions here.";
@@ -277,8 +284,8 @@ function httpLibraryOnly(catalog: WatchCatalog | undefined): boolean {
  * for a status page from the watch's own record "Not in this watch's
  * status pages"; for an HTTP action when the home's library is the only
  * list, "Not in the list". */
-export function watchLibraryMissingText(catalog: WatchCatalog | undefined, kind: WatchLibraryKind): string {
-  if (watchCatalogFromWatch(catalog, kind)) return WATCH_NOT_IN_STATUS_PAGES_TEXT;
+export function watchLibraryMissingText(catalog: WatchCatalog | undefined, kind: WatchLibraryKind, device: SettingDevice = "watch"): string {
+  if (watchCatalogFromWatch(catalog, kind)) return notInStatusPagesText(device);
   if (kind === "httpAction" && httpLibraryOnly(catalog)) return WATCH_NOT_IN_LIST_TEXT;
   return WATCH_NOT_ON_IPHONE_TEXT;
 }
@@ -288,9 +295,10 @@ export function watchLibraryMissingText(catalog: WatchCatalog | undefined, kind:
 export const WATCH_NO_HTTP_ACTIONS_TEXT = "No HTTP actions yet. Add one on the HTTP actions screen.";
 
 /** Who lists the entries of a kind, for "The iPhone lists no …": the
- * iPhone, or this watch for its own status pages. */
-export function watchLibraryLister(catalog: WatchCatalog | undefined, kind: WatchLibraryKind): string {
-  return watchCatalogFromWatch(catalog, kind) ? "This watch" : "The iPhone";
+ * iPhone, or this device (`device`, a watch unless named) for its own
+ * status pages. */
+export function watchLibraryLister(catalog: WatchCatalog | undefined, kind: WatchLibraryKind, device: SettingDevice = "watch"): string {
+  return watchCatalogFromWatch(catalog, kind) ? `This ${deviceNoun(device)}` : "The iPhone";
 }
 
 /** Whether a failed read of the catalog means there is none: an integration

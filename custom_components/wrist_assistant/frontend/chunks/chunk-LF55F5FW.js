@@ -1,0 +1,53 @@
+import{b as Q}from"./chunk-T6XUMK27.js";import{A as O,B as R,E as q,M as X,f as K,l as B,m as V,u as Y,x as U}from"./chunk-SUT6NIQS.js";import{d as y,e as F,f as D,h as z}from"./chunk-UPANJPAF.js";import{j as N}from"./chunk-C5WTPD4K.js";import{j as p,k as J,l as H,n as w,o as $,q as G}from"./chunk-ESIOP3D4.js";import{Eg as h,Gg as v,Hg as S,b as M,d as f,g,jg as L,kh as A,qg as T}from"./chunk-IHFAZWMC.js";import{Q as j,T as C,Ua as k,g as _}from"./chunk-RXIM2BXJ.js";var ce="navigateToPage",ue="pageId";function ee(e){let n=[{ref:U,where:"Anywhere menu"}],t=new Set;for(let i of Y())t.has(i.slotKey)||(t.add(i.slotKey),n.push({ref:{list:"domain",domain:i.domain},where:`Entity quick menu, ${i.label}`}));let o=K(e,"entityRadial").entityOverrides;if(p(o))for(let i of Object.keys(o))n.push({ref:{list:"entity",entityId:i},where:`Entity quick menu for ${i}`});return n}function ne(e,n){if(B(e)!==ce)return!1;let t=V(e)[ue];return n.some(o=>y(t,o))}function te(e,n){if(e===void 0)return[];let t=[];for(let{ref:o,where:i}of ee(e))for(let r of O(e,o)){if(!ne(r,[n]))continue;let a=typeof r.position=="string"?q(r.position):"";t.push({ref:o,slotId:R(r),where:i,position:a})}return t}function oe(e,n){let t=e;for(let{ref:o}of ee(e))for(let i of O(t,o))ne(i,n)&&(t=X(t,o,R(i)));return t}function x(e,n){return n.some(t=>y(e.openPageId,t))}function pe(e){return(Array.isArray(e.elements)?e.elements:[]).filter(t=>p(t)&&t.kind==="tap"&&p(t.payload)).map(t=>t.payload)}function xe(e,n){let t=[];for(let o of e){let i=o.document;if(o.deleted||!p(i))continue;let r=x(i,[n]),a=pe(i).filter(s=>x(s,[n])).length;if(!r&&a===0)continue;let d=typeof i.name=="string"&&i.name.trim()!==""?i.name:"A complication";t.push({id:o.id,name:d,whole:r,layers:a})}return t}function Z(e,n){let{openPageId:t,openPageName:o,...i}=e,r=i[n];return p(r)&&r.type==="openPage"&&(i[n]={type:"none"}),i}function ie(e,n){let t=!1,o=e;if(x(e,n)&&(o=Z(e,"tapAction"),t=!0),Array.isArray(e.elements)){let i=e.elements.map(r=>!p(r)||r.kind!=="tap"||!p(r.payload)||!x(r.payload,n)?r:(t=!0,{...r,payload:Z(r.payload,"action")}));t&&(o={...o,elements:i})}return t?o:void 0}function Pe(e,n){return e.map(t=>t.id).filter(t=>typeof t=="string"&&t!=="").filter(t=>!n.some(o=>y(o.id,t)))}var fe="linkId";function We(e,n){let t=j(e,n);return t.map(o=>({ownerId:o.owner_watch_id,name:C(o,t),kind:_(o)==="iphone"?"iphone":"watch"}))}function W(e){return e==="iphone"?"iPhone":"watch"}var P=e=>e.toUpperCase();function E(e){let n=e?.[fe];return typeof n=="string"&&n!==""?n:void 0}function le(e,n,t){let o=E(e),i=o===void 0?[]:t?.pages[o]??[];return[n,...i.filter(r=>r!==n)]}var ge="Delete takes it off this device.",re="A system page stays on its own device.";function Ie(e,n,t,o){let i=new Set(le(n,t,o)),r=G(n);return e.map(a=>{let d=a.ownerId===t,s=r?re:d?ge:void 0;return{device:a,on:i.has(a.ownerId),here:d,...s===void 0?{}:{stuck:s}}})}function Me(e,n,t){let o=e.filter(i=>i!==n);if(o.length!==0){if(o.length===1){let i=t.find(r=>r.ownerId===o[0])?.name;return i===void 0?"On 2 devices":`Also on ${i}`}return`On ${e.length} devices`}}function Le(e,n,t,o){let i=n===void 0?[]:H(n),r=new Set(i.map(s=>P(w(s)))),a=new Set(i.flatMap(s=>E(s)??[])),d=[];for(let s of t){if(s.ownerId===e)continue;let c=o.get(s.ownerId);if(c===void 0)continue;let u=[];for(let l of F(c)){let b=w(l);if(b===""||r.has(P(b)))continue;let m=E(l);if(m!==void 0){if(a.has(m))continue;a.add(m)}u.push({ownerId:s.ownerId,pageId:b,name:$(l),page:l,...m===void 0?{}:{linkId:m}})}u.length>0&&d.push({device:s,pages:u})}return d}function Te(e){let n=e.reduce((t,o)=>t+o.pages.length,0);if(n!==0)return`${n} ${n===1?"page":"pages"} on other devices.`}function Se(e,n){if(!(e.length<2))return{here:`Delete on this ${W(n)}`,all:`Delete on all ${e.length} devices`,count:e.length}}function me(e){return e.length<=1?e[0]??"":`${e.slice(0,-1).join(", ")} and ${e[e.length-1]}`}function Ae(e,n,t,o){let i=e.targets?.[n];if(i===void 0)return;let r=new Set(t.map(P)),a=(i.pages??[]).filter(c=>!r.has(P(c))).map(c=>{let u=o===void 0?void 0:D(o,c);return u===void 0?"a page":$(u)}),d=(i.status_pages??[]).length,s=[...a];return d>0&&s.push(d===1?"1 status page":`${d} status pages`),s.length===0?void 0:`Also added: ${me(s)}.`}function _e(e){let{code:n,message:t}=k(e);switch(n){case"unknown_device":return"That device is not paired with this Home Assistant any more.";case"not_found":return"That page is not saved there yet. Save first, then try again.";case"system_page":return re;case"id_taken":return"That device already has a page of its own with the same id, so it was not added.";case"unknown_command":return"This version of the integration cannot share pages between devices. Update it first.";default:return t}}var he=3;async function se(e,n,t){let o=await I(e,n,[t]);return o.ok?{ok:!0,removed:o.removed.length>0}:o}async function I(e,n,t){for(let o=1;;o++){let i;try{i=await e.read(n)}catch(s){let{code:c="unknown",message:u}=k(s);return{ok:!1,code:c,message:u}}let r=i.revision>0?J(i.document):void 0;if(r===void 0)return{ok:!0,removed:[]};let a=r,d=[];for(let s of t){let c=D(a,s);c!==void 0&&(d.push(w(c)),a=z(a,s))}if(d.length===0)return{ok:!0,removed:d};try{return await e.save(n,i.revision,a),{ok:!0,removed:d}}catch(s){let{code:c="unknown",message:u}=k(s);if(c!=="conflict"||o>=he)return{ok:!1,code:c,message:u}}}}function ae(e,n,t){return`${e} ${e===1?n:t}`}async function de(e,n,t){let o=0,i=0,r=[];try{let d=await h(e,n,"menus");if(d.revision>0&&p(d.document)){let s=oe(d.document,t);s!==d.document&&(o=t.reduce((c,u)=>c+te(d.document,u).length,0),await v(e,n,"menus",d.revision,s))}}catch{r.push("the menus"),o=0}try{let d=await L(e,n);for(let s of d.records){if(s.deleted||!p(s.document))continue;let c=ie(s.document,t);if(c!==void 0)try{await T(e,n,c,s.revision),i++}catch{r.push(`"${typeof s.document.name=="string"?s.document.name:"a complication"}"`)}}}catch{r.push("the complications")}let a=[o>0?ae(o,"menu slot","menu slots"):void 0,i>0?`the tap of ${ae(i,"complication","complications")}`:void 0].filter(d=>d!==void 0);if(r.length>0)return{kind:"warn",text:`Saved. Could not clear the deleted page from ${r.join(", ")}: change ${r.length===1?"it":"them"} by hand.`};if(a.length!==0)return{kind:"ok",text:`Saved. Cleared the deleted page from ${a.join(" and ")}.`}}function Fe(e){return{link:(n,t,o)=>S(e,n,t,[o]),remove:(n,t)=>I({read:o=>h(e,o,"pages"),save:(o,i,r)=>v(e,o,"pages",i,r)},n,t),clearRefs:(n,t)=>de(e,n,t)}}async function ze(e,n,t,o){if(!e)return`Not taken off ${o}.`;if(Q(n)?.dirty??!1)return`Not taken off ${o}: its pages have unsaved edits. Save or discard them first.`;let i=await se({read:r=>h(e,r,"pages"),save:(r,a,d)=>v(e,r,"pages",a,d)},n,t);if(!i.ok)return`Not taken off ${o}: ${i.message}`;i.removed&&await de(e,n,[t])}var ve="On means the page is on that device. An edit on one device shows on all of them. Each device keeps its own order and Hidden.";function qe(e){let{name:n,places:t,blocked:o,busy:i,note:r}=e;return f`<div class="pk-dup-menu pe-dev-menu ${e.className??""}" role="group" aria-label=${`Devices for ${n}`}>
+    <div class="pk-dup-head">This page is on</div>
+    ${o===void 0?g:f`<div class="pe-dev-note warn">${o}</div>`}
+    ${t.map(a=>{let d=a.device.name,s=a.stuck!==void 0||o!==void 0||i,c=a.stuck??o??(a.on?`Take it off ${d}. Its own order and Hidden go with it.`:`Put it on ${d}. An edit on one device then shows on both.`),u=e.colorOf?.(a.device.ownerId);return f`<div class="pk-dup-row check ${s?"off":""} ${u===void 0?"":"tinted"}"
+        style=${u===void 0?g:`--dc:${u}`}>
+        <label class="pk-dup-pick" title=${c}>
+          <input type="checkbox" role="switch" .checked=${N(a.on)} ?disabled=${s}
+            aria-label=${`${n} on ${d}`}
+            @change=${l=>{l.currentTarget.checked=a.on,e.onToggle(a)}}>
+          ${A(a.device.kind==="iphone"?"phone":"watch")}
+          <span class="pk-dup-name">${d}</span>
+          ${a.here?f`<span class="pk-dup-full">this ${W(a.device.kind)}</span>`:g}
+        </label>
+      </div>`})}
+    ${i?f`<div class="pe-dev-note">Saving…</div>`:g}
+    ${r===void 0?g:f`<div class="pe-dev-note ${r.kind}" role="status">${r.text}</div>`}
+    <div class="pk-dup-note">${ve}</div>
+    <button type="button" class="pk-dup-done" @click=${()=>e.onDone()}>Done</button>
+  </div>`}var Xe=M`
+  .pk-dup-menu {
+    display: flex; flex-direction: column; gap: 4px; padding: 8px; cursor: default;
+    border: 1px solid var(--wa-line-strong); border-radius: 10px;
+    background: var(--wa-card); box-shadow: var(--wa-shadow-pop); text-align: left;
+  }
+  .pk-dup-row {
+    display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; cursor: pointer;
+    font: inherit; font-size: 12px; color: var(--wa-ink);
+    padding: 5px 7px; border: 1px solid var(--wa-line); border-radius: 7px; background: var(--wa-card);
+  }
+  .pk-dup-row svg { flex: none; width: 14px; height: 14px; }
+  .pk-dup-row.check { padding: 0; gap: 0; cursor: default; }
+  .pk-dup-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 5px 7px; cursor: pointer; }
+  .pk-dup-pick svg { flex: none; width: 14px; height: 14px; }
+  .pk-dup-row.check input { margin: 0; cursor: inherit; }
+  .pk-dup-row.check.off .pk-dup-pick { opacity: .5; cursor: default; }
+  .pk-dup-row.tinted { box-shadow: inset 3px 0 0 var(--dc); }
+  .pk-dup-row.tinted .pk-dup-pick svg { color: var(--dc); }
+  .pk-dup-row.check:hover:not(.off) { border-color: var(--wa-line-strong); }
+  .pk-dup-head { font-size: 11.5px; font-weight: 700; color: var(--wa-muted); margin: 2px 0; }
+  .pk-dup-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pk-dup-full { flex: none; font-size: 10px; color: var(--wa-muted); }
+  .pk-dup-note { font-size: 10px; line-height: 1.4; color: var(--wa-muted); border-top: 1px solid var(--wa-line); padding-top: 6px; }
+  .pk-dup-done {
+    align-self: flex-end; margin-top: 2px; font: inherit; font-size: 11px; font-weight: 600;
+    padding: 4px 12px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent);
+  }
+  .pk-dup-done:hover { filter: brightness(1.1); }
+  .pk-dup-done:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .pe-dev-note { font-size: 11px; line-height: 1.4; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .pe-dev-note.ok { color: var(--wa-ok, var(--wa-ink)); }
+  .pe-dev-note.warn, .pe-dev-note.err { color: var(--wa-need); }
+`;export{te as a,xe as b,Pe as c,We as d,W as e,E as f,le as g,re as h,Ie as i,Me as j,Le as k,Te as l,Se as m,me as n,Ae as o,_e as p,de as q,Fe as r,ze as s,qe as t,Xe as u};
