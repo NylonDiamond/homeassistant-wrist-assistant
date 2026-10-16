@@ -56,6 +56,11 @@ DELTA_WATCH_CONFIG_KINDS = (
     "rooms",
 )
 
+# The kinds an iPhone drawing a watch's pages reads from that watch
+# (phone_pages_source.FOLLOWED_KINDS, kept the same by a test; not imported,
+# so this module keeps its few imports).
+FOLLOWED_KINDS = frozenset({"pages", "status_pages", "menus"})
+
 # The state a removed entity's change carries (see _removed_payload): Home
 # Assistant's own STATE_UNAVAILABLE, spelled out so the module reads nothing
 # more from homeassistant.const than it did.
@@ -417,6 +422,10 @@ class DeltaCoordinator:
         # watch_config_changed). None until setup attaches the store
         # (attach_watch_config_store).
         self._watch_config_store: Any | None = None
+        # Answers whose pages an iPhone draws (phone_pages_source.pages_owner),
+        # None for a device that is not an iPhone. None until setup attaches
+        # it (attach_pages_owner); every device then reads its own records.
+        self._pages_owner: Callable[[str], str | None] | None = None
         # watch_id → the watch_config revisions its last reply with a body
         # carried. A poll whose revisions moved since then is answered at once
         # with an empty reply, once per change, like _token_notified. A poll
@@ -614,11 +623,33 @@ class DeltaCoordinator:
         adds watch_config_changed as a store listener."""
         self._watch_config_store = store
 
-    def watch_config_revisions(self, watch_id: str) -> dict[str, int] | None:
-        """The signer's own revision of every kind in DELTA_WATCH_CONFIG_KINDS,
-        0 for a kind it holds no record of. None when no store is attached or
-        this owner's file could not be read: the reply then leaves the field
-        out rather than saying "no record", which would be wrong."""
+    @callback
+    def attach_pages_owner(self, pages_owner: Callable[[str], str | None]) -> None:
+        """Wire in whose pages an iPhone draws (phone_pages_source): its
+        replies then name that owner's revisions and hashes of the followed
+        kinds, and carry ``pages_from``."""
+        self._pages_owner = pages_owner
+
+    def pages_owner(self, watch_id: str) -> str | None:
+        """The owner whose followed kinds ``watch_id`` reads, None for a
+        device that is not an iPhone or before setup attached the answer."""
+        if self._pages_owner is None:
+            return None
+        try:
+            return self._pages_owner(watch_id)
+        except Exception:  # noqa: BLE001 (the answer must not fail the poll)
+            _LOGGER.debug("No pages owner for %s", watch_id, exc_info=True)
+            return None
+
+    def _followed_owner(self, watch_id: str) -> str | None:
+        """The owner ``watch_id`` reads its followed kinds from, when that is
+        another owner: an iPhone drawing a watch's pages. None otherwise."""
+        owner = self.pages_owner(watch_id)
+        return owner if owner is not None and owner != watch_id else None
+
+    def _own_watch_config_revisions(self, watch_id: str) -> dict[str, int] | None:
+        """``watch_id``'s own revision of every kind in
+        DELTA_WATCH_CONFIG_KINDS, 0 for none, whatever pages it draws."""
         store = self._watch_config_store
         if store is None:
             return None
@@ -629,19 +660,50 @@ class DeltaCoordinator:
             return None
         return {kind: int(held.get(kind, 0)) for kind in DELTA_WATCH_CONFIG_KINDS}
 
-    def watch_config_hashes(self, watch_id: str) -> dict[str, str] | None:
-        """The signer's short hash (``watch_config_store.short_hash``, the
-        first 16 hex digits of the record's SHA-256) of every kind in
-        DELTA_WATCH_CONFIG_KINDS that has a record with a hash. None when
-        ``watch_config_revisions`` is None."""
+    def watch_config_revisions(self, watch_id: str) -> dict[str, int] | None:
+        """The revision of every kind in DELTA_WATCH_CONFIG_KINDS the signer
+        reads, 0 for a kind with no record: its own, but for an iPhone
+        drawing a watch's pages, whose followed kinds are that watch's
+        (phone_pages_source.FOLLOWED_KINDS). None when no store is attached
+        or a file could not be read: the reply then leaves the field out
+        rather than saying "no record", which would be wrong."""
+        current = self._own_watch_config_revisions(watch_id)
+        followed = self._followed_owner(watch_id)
+        if current is None or followed is None:
+            return current
+        source = self._own_watch_config_revisions(followed)
+        if source is None:
+            return None
+        for kind in FOLLOWED_KINDS:
+            if kind in current:
+                current[kind] = source.get(kind, 0)
+        return current
+
+    def _short_hashes(self, owner_id: str) -> dict[str, str] | None:
         store = self._watch_config_store
         if store is None:
             return None
         try:
-            held = store.short_hashes(watch_id)
+            return store.short_hashes(owner_id)
         except Exception:  # noqa: BLE001 (an unreadable file must not fail the poll)
-            _LOGGER.debug("No watch config hashes for %s", watch_id, exc_info=True)
+            _LOGGER.debug("No watch config hashes for %s", owner_id, exc_info=True)
             return None
+
+    def watch_config_hashes(self, watch_id: str) -> dict[str, str] | None:
+        """The short hash (``watch_config_store.short_hash``, the first 16
+        hex digits of the record's SHA-256) of every kind in
+        DELTA_WATCH_CONFIG_KINDS that has a record with a hash, read from the
+        owners ``watch_config_revisions`` reads. None when it is None."""
+        held = self._short_hashes(watch_id)
+        if held is None:
+            return None
+        followed = self._followed_owner(watch_id)
+        if followed is not None:
+            source = self._short_hashes(followed)
+            if source is None:
+                return None
+            held = {kind: digest for kind, digest in held.items() if kind not in FOLLOWED_KINDS}
+            held.update({kind: source[kind] for kind in FOLLOWED_KINDS if kind in source})
         return {kind: held[kind] for kind in DELTA_WATCH_CONFIG_KINDS if kind in held}
 
     def _watch_config_behind(
@@ -725,6 +787,12 @@ class DeltaCoordinator:
         if change.kind not in DELTA_WATCH_CONFIG_KINDS:
             return
         self.wake_watch(change.owner_watch_id, renotify=False)
+        if change.kind in FOLLOWED_KINDS:
+            # An iPhone drawing a watch's pages reads them too, and a save
+            # can change which watch it draws (the one saved last).
+            for watch_id in list(self._waiters):
+                if watch_id != change.owner_watch_id and self.pages_owner(watch_id) is not None:
+                    self.wake_watch(watch_id, renotify=False)
 
     # ── the home's HTTP action library on the poll ────────────────────
 
@@ -1299,6 +1367,12 @@ class DeltaCoordinator:
             hashes = self.watch_config_hashes(watch_id)
             if hashes is not None:
                 body["watch_config_hashes"] = hashes
+        # An iPhone's: the owner whose pages, status pages and menus the
+        # revisions above name, its own id when it draws its own. The phone
+        # starts those kinds over when it changes (phone_pages_source).
+        pages_from = self.pages_owner(watch_id)
+        if pages_from is not None:
+            body["pages_from"] = pages_from
         library_revision = self.http_actions_revision()
         if library_revision is not None:
             body["http_actions"] = library_revision
@@ -1398,10 +1472,16 @@ class DeltaCoordinator:
         store = self._watch_config_store
         if not held or store is None:
             return
-        current = self.watch_config_revisions(watch_id)
+        current = self._own_watch_config_revisions(watch_id)
         if current is None:
             return
+        # The revisions an iPhone drawing a watch's pages reports for the
+        # followed kinds are the watch's: they confirm nothing of its own,
+        # and the watch collects its own.
+        followed = self._followed_owner(watch_id) is not None
         for kind, revision in current.items():
+            if followed and kind in FOLLOWED_KINDS:
+                continue
             if revision > 0 and held.get(kind) == revision:
                 try:
                     store.mark_delivered(watch_id, kind, revision, confirmed=True)

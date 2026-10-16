@@ -33,13 +33,14 @@ from __future__ import annotations
 import __future__
 import ast
 import asyncio
+import sys
 import types
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from test_notification_tokens import _loaded_notifications
+from test_phone_pages_source import loaded_source
 from test_watch_config_store import _FakeStore, _Hass, _loaded_module
 
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
@@ -52,6 +53,8 @@ _NAMES = (
     "_phone_style_record",
     "_op_watch_config_get",
     "_op_watch_config_put",
+    "_op_phone_pages_source_get",
+    "_op_phone_pages_source_set",
 )
 
 WATCH = "watch-A"
@@ -107,10 +110,10 @@ class _Ctx:
         return _Response(status=status, body=payload)
 
 
-def _handlers(store_mod: Any, notif_mod: Any = None) -> dict[str, Any]:
-    if notif_mod is None:
-        with _loaded_notifications() as loaded:
-            return _handlers(store_mod, loaded)
+def _handlers(store_mod: Any, notif_mod: Any = None, source_mod: Any = None) -> dict[str, Any]:
+    if notif_mod is None or source_mod is None:
+        with loaded_source() as source:
+            return _handlers(store_mod, sys.modules[source.__name__.rsplit(".", 1)[0] + ".notifications"], source)
     source = _MODULE.read_text()
     tree = ast.parse(source, filename=str(_MODULE))
     wanted = [
@@ -136,6 +139,10 @@ def _handlers(store_mod: Any, notif_mod: Any = None) -> dict[str, Any]:
         "short_hash": store_mod.short_hash,
         "is_iphone_entry": notif_mod.is_iphone_entry,
         "phone_watch_ids": notif_mod.phone_watch_ids,
+        "FOLLOWED_KINDS": source_mod.FOLLOWED_KINDS,
+        "pages_owner": source_mod.pages_owner,
+        "parse_choice": source_mod.parse_choice,
+        "source_reply": source_mod.source_reply,
     }
     exec(code, namespace)  # noqa: S102
     return namespace
@@ -143,13 +150,14 @@ def _handlers(store_mod: Any, notif_mod: Any = None) -> dict[str, Any]:
 
 @pytest.fixture
 def env():
-    with _loaded_module() as store_mod, _loaded_notifications() as notif_mod:
+    with _loaded_module() as store_mod, loaded_source() as source_mod:
+        notif_mod = sys.modules[source_mod.__name__.rsplit(".", 1)[0] + ".notifications"]
         store = store_mod.WatchConfigStore(_Hass())
         asyncio.run(store.async_load())
         yield types.SimpleNamespace(
             store=store,
             mod=store_mod,
-            views=_handlers(store_mod, notif_mod),
+            views=_handlers(store_mod, notif_mod, source_mod),
             secrets=_Secrets(),
         )
 
@@ -1141,6 +1149,7 @@ def test_a_phone_s_own_get_marks_its_own_record_delivered(household) -> None:
     """The delivery marks are per owner. A phone collecting its own pages
     marks the phone's record, so the panel can say the phone has the latest
     save, and never a watch's."""
+    household.secrets.entries[PHONE].pages_from = "own"
     assert _put(household, _put_body(), watch_id=WATCH).status == 200
     assert _put(household, _put_body(), watch_id=PHONE).status == 200
     for owner in (WATCH, PHONE):
@@ -1272,3 +1281,116 @@ def test_the_phone_pages_capability_is_advertised() -> None:
     const = (_PKG_DIR / "const.py").read_text()
     assert "register_capability(PHONE_PAGES_CAPABILITY)" in init
     assert 'PHONE_PAGES_CAPABILITY = "phone_pages"' in const
+
+
+# ── an iPhone drawing a watch's pages (phone_pages_source) ──────────────
+
+
+def test_a_phone_reads_its_watch_s_pages_by_default_and_marks_nothing(household) -> None:
+    """Out of the box the phone draws its user's watch's pages: the get of
+    its pages reads the watch's record, read only, so the watch's delivery
+    mark stays the watch's to make."""
+    assert _put(household, _put_body(_doc("Watch pages")), watch_id=WATCH).status == 200
+    record = household.store.get(WATCH, "pages")
+    record.delivered_revision, record.delivered_at = 0, None
+
+    reply = _get(household, {"kind": "pages"}, watch_id=PHONE)
+    assert reply.status == 200
+    assert reply.body["document"] == _doc("Watch pages")
+    assert household.store.get(WATCH, "pages").delivered_revision == 0
+    assert household.store.get(PHONE, "pages") is None
+    assert household.secrets.main_house == {}
+
+
+def test_a_phone_drawing_a_watch_s_pages_files_no_report_there(household) -> None:
+    assert _put(household, _put_body(), watch_id=WATCH).status == 200
+    _get(household, {"kind": "pages", "unreadable_revision": 1}, watch_id=PHONE)
+    assert household.store.get(WATCH, "pages").rejected_revision == 0
+
+
+def test_a_phone_keeps_its_own_settings_while_drawing_a_watch_s_pages(household) -> None:
+    assert _put(household, _put_body(), watch_id=WATCH).status == 200
+    reply = _get(household, {"kind": "behavior"}, watch_id=PHONE)
+    assert reply.body["revision"] == 0
+
+
+def test_a_phone_with_no_watch_pages_reads_its_own(household) -> None:
+    assert _put(household, _put_body(_doc("Phone pages")), watch_id=PHONE).status == 200
+    reply = _get(household, {"kind": "pages"}, watch_id=PHONE)
+    assert reply.body["document"] == _doc("Phone pages")
+
+
+def _source(env, op: str, payload: dict, watch_id: str = PHONE) -> _Response:
+    return asyncio.run(env.views[op](_Ctx(env.store, watch_id, payload, env.secrets)))
+
+
+class _PickSecrets:
+    """`set_pages_from` on the test's secret entries."""
+
+    @staticmethod
+    def install(env) -> list[str]:
+        woken: list[str] = []
+
+        def set_pages_from(phone_id: str, pages_from: str | None) -> bool:
+            entry = env.secrets.entries[phone_id]
+            if getattr(entry, "pages_from", None) == pages_from:
+                return False
+            entry.pages_from = pages_from
+            return True
+
+        env.secrets.set_pages_from = set_pages_from
+        return woken
+
+
+def _ctx_with_coordinator(env, payload: dict, woken: list[str]) -> _Ctx:
+    ctx = _Ctx(env.store, PHONE, payload, env.secrets)
+    ctx.domain_data.coordinator = types.SimpleNamespace(wake_watch=woken.append)
+    return ctx
+
+
+def test_the_source_get_names_the_choice_the_owner_and_the_watches(household) -> None:
+    assert _put(household, _put_body(), watch_id=OTHER).status == 200
+    reply = _source(household, "_op_phone_pages_source_get", {})
+    assert reply.status == 200
+    assert reply.body["ok"] is True
+    assert reply.body["choice"] == "auto"
+    assert reply.body["pages_from"] == OTHER
+    assert [w["id"] for w in reply.body["watches"]] == [WATCH, OTHER]
+    assert [w["has_pages"] for w in reply.body["watches"]] == [False, True]
+
+
+def test_a_watch_may_not_ask_whose_pages_it_draws(household) -> None:
+    for op in ("_op_phone_pages_source_get", "_op_phone_pages_source_set"):
+        reply = _source(household, op, {"choice": "own"}, watch_id=WATCH)
+        assert reply.status == 403
+        assert reply.body["error"] == "not_an_iphone"
+
+
+def test_picking_own_pages_is_kept_and_wakes_the_phone(household) -> None:
+    _PickSecrets.install(household)
+    woken: list[str] = []
+    assert _put(household, _put_body(), watch_id=WATCH).status == 200
+    reply = asyncio.run(
+        household.views["_op_phone_pages_source_set"](
+            _ctx_with_coordinator(household, {"choice": "own"}, woken)
+        )
+    )
+    assert reply.status == 200
+    assert (reply.body["choice"], reply.body["pages_from"]) == ("own", PHONE)
+    assert woken == [PHONE]
+    assert _get(household, {"kind": "pages"}, watch_id=PHONE).body["revision"] == 0
+
+    # The same choice again changes nothing and wakes nothing.
+    asyncio.run(
+        household.views["_op_phone_pages_source_set"](
+            _ctx_with_coordinator(household, {"choice": "own"}, woken)
+        )
+    )
+    assert woken == [PHONE]
+
+
+def test_a_choice_outside_the_phone_s_watches_is_refused(household) -> None:
+    _PickSecrets.install(household)
+    reply = _source(household, "_op_phone_pages_source_set", {"choice": "watch-C"})
+    assert reply.status == 400
+    assert reply.body["error"] == "invalid_choice"

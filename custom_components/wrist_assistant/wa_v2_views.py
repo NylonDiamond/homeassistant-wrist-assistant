@@ -179,6 +179,12 @@ from .wa_pair_requests import (
     validate_pair_fields,
     validate_pair_start,
 )
+from .phone_pages_source import (
+    FOLLOWED_KINDS,
+    pages_owner,
+    parse_choice,
+    source_reply,
+)
 from .watch_config_store import (
     WatchConfigConflictError,
     WatchConfigStoreError,
@@ -4035,7 +4041,10 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     watch itself pulling with that same signature (the record may have come
     from the iPhone mirror or from the panel). One exception (step 6): an
     iPhone signing as itself for ``notification_style`` reads the newest
-    style among its user's watches, read only (`_phone_style_record`).
+    style among its user's watches, read only (`_phone_style_record`). And
+    an iPhone drawing a watch's pages reads that watch's pages, status pages
+    and menus (`phone_pages_source`), read only: as an observer's, the get
+    leaves no trace on the watch's record.
 
     Body:  {"kind": "pages" | "behavior" | "catalog" | "menus" | "voice"
                     | "notification_style" | "status_pages"
@@ -4136,11 +4145,17 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
         if raw_since != phone_record.revision:
             reply["document"] = phone_record.document
         return ctx.signed_json(reply)
+    owner = ctx.watch_id
+    secrets = ctx.domain_data.widget_secret_store
+    if kind in FOLLOWED_KINDS and secrets is not None and _caller_is_iphone(ctx):
+        owner = pages_owner(secrets.all_entries, store, ctx.watch_id)
     try:
-        record = store.get(ctx.watch_id, kind)
+        record = store.get(owner, kind)
     except WatchConfigStoreError as err:
         return _watch_config_refusal(ctx, err)
-    observer = ctx.payload.get("observer") is True
+    # A watch's record read by the phone that draws its pages: the watch
+    # collects its own, so nothing is marked or filed there.
+    observer = ctx.payload.get("observer") is True or owner != ctx.watch_id
     if not observer:
         _note_main_house(ctx, kind)
     if record is None:
@@ -4224,6 +4239,59 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
     except WatchConfigStoreError as err:
         return _watch_config_refusal(ctx, err)
     return ctx.signed_json({"ok": True, "revision": record.revision})
+
+
+async def _op_phone_pages_source_get(ctx: _OpContext) -> Response:
+    """Whose pages the iPhone that signs draws (`phone_pages_source`).
+
+    Body:  {}
+    Reply: {"ok": true, "choice": "auto" | "own" | <watch id>,
+            "pages_from": <owner id>,
+            "watches": [{"id", "name", "has_pages"}]}
+
+    ``pages_from`` is the owner whose pages it draws now: a watch's id, or
+    its own for its own pages. ``watches`` are the ones it may pick. Refused
+    ``not_an_iphone`` (403) for a watch.
+    """
+    secrets = ctx.domain_data.widget_secret_store
+    store = ctx.domain_data.watch_config_store
+    if secrets is None or store is None or not _caller_is_iphone(ctx):
+        return ctx.signed_json(
+            {"ok": False, "error": "not_an_iphone", "message": "Only an iPhone picks whose pages it draws."},
+            status=403,
+        )
+    return ctx.signed_json({"ok": True, **source_reply(secrets.all_entries, store, ctx.watch_id)})
+
+
+async def _op_phone_pages_source_set(ctx: _OpContext) -> Response:
+    """Pick whose pages the iPhone that signs draws (`phone_pages_source`).
+
+    Body:  {"choice": "auto" | "own" | <watch id>}
+    Reply: as ``phone_pages_source_get``, after the change.
+
+    ``auto`` lets Home Assistant pick a watch (the default). A watch id must
+    be one of the phone's watches; anything else is refused
+    ``invalid_choice`` (400). A change wakes the phone's parked poll, whose
+    reply then names the new owner as ``pages_from``.
+    """
+    secrets = ctx.domain_data.widget_secret_store
+    store = ctx.domain_data.watch_config_store
+    if secrets is None or store is None or not _caller_is_iphone(ctx):
+        return ctx.signed_json(
+            {"ok": False, "error": "not_an_iphone", "message": "Only an iPhone picks whose pages it draws."},
+            status=403,
+        )
+    valid, choice = parse_choice(secrets.all_entries, ctx.watch_id, ctx.payload.get("choice"))
+    if not valid:
+        return ctx.signed_json(
+            {"ok": False, "error": "invalid_choice", "message": "choice must be auto, own, or one of this iPhone's watches"},
+            status=400,
+        )
+    if secrets.set_pages_from(ctx.watch_id, choice):
+        coordinator = ctx.domain_data.coordinator
+        if coordinator is not None:
+            coordinator.wake_watch(ctx.watch_id)
+    return ctx.signed_json({"ok": True, **source_reply(secrets.all_entries, store, ctx.watch_id)})
 
 
 async def _op_watch_voices_put(ctx: _OpContext) -> Response:
@@ -4779,6 +4847,8 @@ _OP_HANDLERS: dict[str, Any] = {
     "watch_config_get": _op_watch_config_get,
     "watch_config_put": _op_watch_config_put,
     "watch_voices_put": _op_watch_voices_put,
+    "phone_pages_source_get": _op_phone_pages_source_get,
+    "phone_pages_source_set": _op_phone_pages_source_set,
     "http_actions_hand_over": _op_http_actions_hand_over,
     "http_actions_get": _op_http_actions_get,
     "http_action_run": _op_http_action_run,
