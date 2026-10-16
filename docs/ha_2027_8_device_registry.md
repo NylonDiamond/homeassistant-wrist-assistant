@@ -2,7 +2,25 @@
 
 Found 2026-09-26 in the Home Assistant log while testing 2.1.0-beta.16.
 Not fixed in 3.0.0 (the release tested as 2.1.0 betas) on purpose: the release was already tested on devices,
-and the deadline is far away. Fix it in the next integration release.
+and the deadline is far away.
+
+## Fixed 2026-10-16, after 3.1.2-beta.2
+
+Home Assistant 2026.8.0 added `async_get_device_by_identifier` and
+`async_get_devices`, and the `via_device_id` key of a DeviceInfo. Older
+releases have only the old forms, so `hacs.json` keeps its minimum and
+`device_lookup.py` picks the call by what the registry has:
+
+- `find_paired_device` / `find_device` replace every `async_get_device`
+  lookup. On 2026.8 and later they use `async_get_device_by_identifier` (with
+  a config entry id) or `async_get_devices`.
+- `build_device_info` takes its parent link from `parent_device_fields`:
+  `via_device_id` on 2026.8 and later, `via_device` before.
+- The new form names the parent by registry id, so `async_setup_entry`
+  creates the hub device before any platform sets up.
+
+`tests/test_device_lookup.py` pins both paths. The rest of this file is the
+original write-up.
 
 ## What Home Assistant says
 

@@ -38,6 +38,7 @@ from typing import Any
 
 import pytest
 
+from device_lookup_loader import find_paired_device
 from test_pair_requests import loaded_pair_module
 
 _PKG = "custom_components.wrist_assistant"
@@ -109,7 +110,9 @@ def _loaded_store():
             f"{_PKG}.const",
             WIDGET_SECRET_STORAGE_KEY="wrist_assistant.widget_secrets",
             WIDGET_SECRET_STORAGE_VERSION=1,
+            DOMAIN="wrist_assistant",
         )
+        _load("device_lookup")
         yield _load("widget_secret_store")
     finally:
         for key in list(sys.modules):
@@ -195,6 +198,7 @@ def _register_view_class() -> type:
         "log_secret_registered": lambda *a, **k: None,
         "log_secret_reprovisioned": lambda *a, **k: None,
         "dr": types.SimpleNamespace(async_get=lambda _hass: registry),
+        "find_paired_device": find_paired_device,
     }
     exec(code, namespace)  # noqa: S102
     return namespace["WARegisterSecretView"]
@@ -384,6 +388,7 @@ def _update_metadata(env, watch_id: str, payload: dict) -> _Response:
         "DOMAIN": "wrist_assistant",
         "REGISTER_TEXT_MAX_LEN": text_max,
         "dr": types.SimpleNamespace(async_get=lambda _hass: registry),
+        "find_paired_device": find_paired_device,
     }
     exec(code, namespace)  # noqa: S102
     return asyncio.run(namespace["_op_update_metadata"](_MetadataCtx(env, watch_id, payload)))

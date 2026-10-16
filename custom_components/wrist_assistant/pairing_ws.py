@@ -70,6 +70,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import instance_id as ha_instance_id
 
 from .const import DOMAIN
+from .device_lookup import find_paired_device
 from .logbook_events import log_secret_registered, log_secret_reprovisioned
 from .sealed_box import PAIRED_SECRET_BYTES, SealedBoxError, seal_pair_secret
 from .wa_pair_requests import (
@@ -227,7 +228,7 @@ def store_paired_device(
     # it reports now. A user's own rename (`name_by_user`) still wins on display.
     if fields.device_name is not None:
         device_registry = dr.async_get(hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, f"watch_{watch_id}")})
+        device = find_paired_device(device_registry, watch_id)
         if device is not None and device.name != fields.device_name:
             device_registry.async_update_device(device.id, name=fields.device_name)
     return result

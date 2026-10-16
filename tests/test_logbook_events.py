@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from device_lookup_loader import load_into
+
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
 _PKG = "wa_logbook_events_test_pkg"
 DOMAIN = "wrist_assistant"
@@ -82,6 +84,7 @@ def loaded_module():
         pkg.__path__ = []
         sys.modules[_PKG] = pkg
         _stub(f"{_PKG}.const", DOMAIN=DOMAIN)
+        load_into(_PKG)
         _stub(
             f"{_PKG}.widget_secret_store",
             DEVICE_KIND_IPHONE="iphone",

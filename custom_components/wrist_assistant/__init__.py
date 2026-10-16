@@ -51,6 +51,7 @@ from .const import (
     HTTP_ACTIONS_CAPABILITY,
     LIBRARY_OWNER_ID,
     PAGE_IMAGES_CAPABILITY,
+    PANEL_CONFIGURATION_URL,
     PHONE_PAGES_CAPABILITY,
     PHONE_PAGES_LINK_CAPABILITY,
     PHONE_PAIRING_CAPABILITY,
@@ -76,6 +77,7 @@ from .const import (
     WristAssistantData,
 )
 from .control_center_move import ControlCenterMover
+from .device_lookup import find_paired_device
 from .http_actions_runner import HTTPActionRunner
 from .http_actions_store import HTTPActionsStore
 from .http_actions_ws import async_register_http_actions_commands
@@ -310,9 +312,7 @@ def _device_label(
     reported, then the short form the device page falls back to. Never the
     bare id: nobody knows their watch by it.
     """
-    device = dr.async_get(hass).async_get_device(
-        identifiers={(DOMAIN, f"watch_{device_id}")}
-    )
+    device = find_paired_device(dr.async_get(hass), device_id)
     if device is not None and (device.name_by_user or device.name):
         return device.name_by_user or device.name
     entry = data.widget_secret_store.get(device_id)
@@ -1242,6 +1242,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         )
     )
     hass.async_create_task(async_cleanup_clips(hass))
+
+    # Watches and iPhones hang under the hub device, and on Home Assistant
+    # 2026.8 and later their DeviceInfo names it by registry id, so it must
+    # exist before any platform builds one. Same fields as the hub sensors'
+    # DeviceInfo in sensor.py.
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="Wrist Assistant",
+        manufacturer="Wrist Assistant",
+        model="Hub",
+        entry_type=dr.DeviceEntryType.SERVICE,
+        configuration_url=PANEL_CONFIGURATION_URL,
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

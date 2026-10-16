@@ -236,6 +236,7 @@ def _loaded_modules():
         )
 
         store_mod = _load("complication_store")
+        _load("device_lookup")
         secrets_mod = _load("widget_secret_store")
         # The real one: forget and move reach into it, and what they leave
         # behind is asserted below.

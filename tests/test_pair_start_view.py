@@ -102,6 +102,7 @@ def _loaded_logbook_events(rows: list) -> Any:
         async_get=lambda _hass: types.SimpleNamespace(async_get_entity_id=lambda *_: None),
     )
     _stub(f"{_PKG}.const", DOMAIN=DOMAIN)
+    _load("device_lookup")
     return _load("logbook_events")
 
 

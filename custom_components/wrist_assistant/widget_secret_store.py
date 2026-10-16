@@ -642,7 +642,12 @@ def build_device_info(
         async_get as async_get_device_registry,
     )
 
-    from .const import DOMAIN, PANEL_CONFIGURATION_URL
+    from .const import PANEL_CONFIGURATION_URL
+    from .device_lookup import (
+        find_paired_device,
+        paired_identifier,
+        parent_device_fields,
+    )
 
     short_id = watch_id[:8]
     entry = secret_store.get(watch_id)
@@ -659,19 +664,19 @@ def build_device_info(
     # Respect manual renames: if the device already exists in HA's registry
     # with `name_by_user` set, don't push a new `name` value. HA leaves the
     # stored `name` alone when DeviceInfo omits the field.
-    if hass is not None:
-        dev_reg = async_get_device_registry(hass)
-        existing = dev_reg.async_get_device(identifiers={(DOMAIN, f"watch_{watch_id}")})
+    dev_reg = async_get_device_registry(hass) if hass is not None else None
+    if dev_reg is not None:
+        existing = find_paired_device(dev_reg, watch_id)
         if existing is not None and existing.name_by_user:
             name = None
 
     info = DeviceInfo(
-        identifiers={(DOMAIN, f"watch_{watch_id}")},
+        identifiers={paired_identifier(watch_id)},
         manufacturer="Wrist Assistant",
         model=model,
-        via_device=via_device,
         # "Visit" on the device page opens the panel, where the device is set up.
         configuration_url=PANEL_CONFIGURATION_URL,
+        **parent_device_fields(dev_reg, via_device),
     )
     if name is not None:
         info["name"] = name

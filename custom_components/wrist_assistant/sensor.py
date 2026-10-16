@@ -21,6 +21,7 @@ from homeassistant.helpers.event import async_call_later
 
 from .api import MAX_EVENTS_BUFFER, DeltaCoordinator
 from .const import DOMAIN, PANEL_CONFIGURATION_URL, WristAssistantConfigEntry
+from .device_lookup import find_paired_device
 from .notifications import NotificationTokenStore
 from .widget_secret_store import (
     DEVICE_KIND_IPHONE,
@@ -436,7 +437,7 @@ class MonitoredEntitiesSensor(_WristAssistantSensorBase, RestoreSensor):
         kept = {
             wid: count
             for wid, count in self._counts.items()
-            if dev_reg.async_get_device(identifiers={(DOMAIN, f"watch_{wid}")})
+            if find_paired_device(dev_reg, wid)
             is not None
         }
         # Write even when nothing was dropped: a renamed watch changes the
@@ -453,9 +454,7 @@ class MonitoredEntitiesSensor(_WristAssistantSensorBase, RestoreSensor):
         dev_reg = dr.async_get(self.hass)
         per_watch: dict[str, int] = {}
         for wid, count in self._counts.items():
-            device = dev_reg.async_get_device(
-                identifiers={(DOMAIN, f"watch_{wid}")}
-            )
+            device = find_paired_device(dev_reg, wid)
             name = device.name if device else f"Watch {wid[:8]}"
             per_watch[name] = count
         # `per_watch_counts` (keyed by watch_id) is the restore source; per_watch

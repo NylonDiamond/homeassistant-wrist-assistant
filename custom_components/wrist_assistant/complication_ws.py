@@ -132,6 +132,7 @@ from .complication_store import (
     ComplicationStoreError,
 )
 from .const import COMPLICATION_MAX_SCHEMA_VERSION, DOMAIN, LIBRARY_OWNER_ID
+from .device_lookup import find_paired_device
 from .gallery_key_store import gallery_key_store
 from .history_series import (
     COMBINE_ALL,
@@ -531,9 +532,7 @@ async def ws_owners(
 
     def registry_name(device_id: str) -> str | None:
         """What HA calls this device, honouring a manual rename."""
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, f"watch_{device_id}")}
-        )
+        device = find_paired_device(device_registry, device_id)
         if device is None:
             return None
         return device.name_by_user or device.name
@@ -784,9 +783,7 @@ def ws_forget_device(
     # empty shell until a restart pruned it. Drop it here so the UI matches
     # the store, exactly as the UI-initiated removal leaves things.
     device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(
-        identifiers={(DOMAIN, f"watch_{watch_id}")}
-    )
+    device = find_paired_device(device_registry, watch_id)
     if device is not None:
         device_registry.async_remove_device(device.id)
 
@@ -855,9 +852,7 @@ def ws_rename_device(
         return
 
     device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(
-        identifiers={(DOMAIN, f"watch_{watch_id}")}
-    )
+    device = find_paired_device(device_registry, watch_id)
     if device is None:
         connection.send_error(
             msg["id"], "not_found", "Home Assistant has no device entry for it"

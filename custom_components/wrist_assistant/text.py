@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import DeltaCoordinator
 from .const import DOMAIN, WristAssistantConfigEntry
+from .device_lookup import find_paired_device
 from .widget_secret_store import (
     DEVICE_KIND_IPHONE,
     DEVICE_KIND_WATCH,
@@ -179,9 +180,7 @@ class DeviceNameText(TextEntity):
         # race fallback, and finally the anonymous "iPhone <short_id>" form
         # for entries that predate device_name reporting entirely.
         dev_reg = dr.async_get(self.hass)
-        device = dev_reg.async_get_device(
-            identifiers={(DOMAIN, f"watch_{self._watch_id}")}
-        )
+        device = find_paired_device(dev_reg, self._watch_id)
         if device and device.name_by_user:
             return device.name_by_user
         if device and device.name:
@@ -194,9 +193,7 @@ class DeviceNameText(TextEntity):
     async def async_set_value(self, value: str) -> None:
         """Update the device name in the device registry."""
         dev_reg = dr.async_get(self.hass)
-        device = dev_reg.async_get_device(
-            identifiers={(DOMAIN, f"watch_{self._watch_id}")}
-        )
+        device = find_paired_device(dev_reg, self._watch_id)
         if device:
             dev_reg.async_update_device(device.id, name_by_user=value)
         self.async_write_ha_state()

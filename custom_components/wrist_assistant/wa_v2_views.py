@@ -143,6 +143,7 @@ from .const import (
     WATCH_LOGS_MAX_BODY_BYTES,
     WristAssistantData,
 )
+from .device_lookup import find_paired_device
 from .http_actions_runner import HTTPActionRefusal, run_input_problem
 from .http_actions_store import HTTPActionsStoreError, HTTPActionsUnavailableError
 from .logbook_events import (
@@ -2632,9 +2633,7 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
     # renames (`name_by_user`) always win on display and are left untouched.
     if device_name is not None:
         device_registry = dr.async_get(ctx.hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, f"watch_{ctx.watch_id}")}
-        )
+        device = find_paired_device(device_registry, ctx.watch_id)
         if device is not None and device.name != device_name:
             device_registry.async_update_device(device.id, name=device_name)
 
@@ -3096,9 +3095,7 @@ class WARegisterSecretView(HomeAssistantView):
         # (`name_by_user`) wins on display and is left untouched.
         if device_name is not None:
             device_registry = dr.async_get(self._hass)
-            device = device_registry.async_get_device(
-                identifiers={(DOMAIN, f"watch_{watch_id}")}
-            )
+            device = find_paired_device(device_registry, watch_id)
             if device is not None and device.name != device_name:
                 device_registry.async_update_device(device.id, name=device_name)
         # `user_bound` tells the app the integration binds secrets to users,

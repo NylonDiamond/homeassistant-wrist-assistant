@@ -262,7 +262,7 @@ def _real_hmac():
         pkg.__path__ = []
         sys.modules[pkg_name] = pkg
         loaded = None
-        for name in ("const", "widget_secret_store", "widget_hmac"):
+        for name in ("const", "device_lookup", "widget_secret_store", "widget_hmac"):
             spec = importlib.util.spec_from_file_location(f"{pkg_name}.{name}", _SRC / f"{name}.py")
             loaded = importlib.util.module_from_spec(spec)
             sys.modules[f"{pkg_name}.{name}"] = loaded

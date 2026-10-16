@@ -23,6 +23,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
+from .device_lookup import find_paired_device
 from .widget_secret_store import (
     DEVICE_KIND_IPHONE,
     DEVICE_KIND_WATCH,
@@ -41,7 +42,7 @@ def _device_name(hass: HomeAssistant, watch_id: str, *, kind: str) -> str:
     short form if the device registry entry hasn't been created yet (e.g. an
     iPhone whose sensors are about to be added in this same tick)."""
     dev_reg = dr.async_get(hass)
-    device = dev_reg.async_get_device(identifiers={(DOMAIN, f"watch_{watch_id}")})
+    device = find_paired_device(dev_reg, watch_id)
     if device is not None and device.name:
         return device.name
     prefix = "iPhone" if kind == DEVICE_KIND_IPHONE else "Watch"

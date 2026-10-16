@@ -26,6 +26,8 @@ from pathlib import Path
 
 import pytest
 
+from device_lookup_loader import load_into
+
 _SENSOR_PATH = (
     Path(__file__).resolve().parents[1]
     / "custom_components"
@@ -202,6 +204,7 @@ def _load_sensor():
         PANEL_CONFIGURATION_URL="homeassistant://wrist-assistant",
         WristAssistantConfigEntry=object,
     )
+    load_into("wa_sensor_pkg")
     _stub("wa_sensor_pkg.notifications", NotificationTokenStore=object)
     _stub(
         "wa_sensor_pkg.widget_secret_store",
