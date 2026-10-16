@@ -243,7 +243,6 @@ import {
   UNASSIGNED_LABEL,
   UNASSIGNED_LIST,
   isShelvedRow,
-  personColorVar,
   pickerBands,
   pickerListRows,
   rowKeyFor,
@@ -19592,8 +19591,8 @@ export class WristAssistantPanel extends LitElement {
    * The side bar has the head, the household's state (`renderHomeStatus`:
    * a ring of every device, Waiting to sync with a line per waiting device,
    * and the totals), Pair a device, then every device, grouped by the person
-   * it belongs to (`people`), each in that person's color
-   * (`personColorVar`). A device's word is the header pill's rule for its
+   * it belongs to (`people`), each device in its own color
+   * (`device-colors.ts`). A device's word is the header pill's rule for its
    * complications; a watch's is the worse of that and its watch app records
    * (`deviceVerdict`).
    *
@@ -19793,10 +19792,12 @@ export class WristAssistantPanel extends LitElement {
     </section>`;
   }
 
-  /** One person's devices in Home's side bar: their picture (or initial) in
-   * their color, their name, how their devices stand, then a row each. */
+  /** One person's devices in Home's side bar: their picture (or initial),
+   * their name, how their devices stand, then a row each. The color belongs
+   * to the devices (`device-colors.ts`), so the person stays grey, as on the
+   * Complications tab. */
   private renderHomeGroup(g: { person?: Person; index: number; rows: HomeDeviceRow[] }, pick: string, elapsed: number) {
-    const color = personColorVar(g.index) ?? "var(--wa-hue-grey)";
+    const color = "var(--wa-hue-grey)";
     const name = g.person?.label ?? "Other devices";
     const n = g.rows.length;
     const { synced, waiting } = homeTotals(g.rows);
@@ -19827,10 +19828,11 @@ export class WristAssistantPanel extends LitElement {
     const rejected = (d.rejected?.length ?? 0) > 0;
     const heard = seenWords(owner, elapsed) ?? (neverConnected(owner) ? NEVER_CONNECTED_TEXT : undefined);
     const state = gone ? "" : rejected ? "rejected" : d.sync;
-    // The device's own color (`device-colors.ts`), on its drawing's box and
-    // its lit slot; the row's group keeps its person's color.
+    // The device's own color (`device-colors.ts`), on its drawing's box, its
+    // lit slot, and the picked row's outline.
     const color = this.deviceColorOf(d.id);
     return html`<button type="button" class="hb-row ${state} ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+      style=${color === undefined ? nothing : `--c:${color}`}
       title=${`${d.name}: ${gone ? USER_GONE_TEXT : homeDeviceLabel(d)}`} @click=${() => this.openHomeDevice(d.id, gone)}>
       <span class="hb-icon ${color === undefined ? "" : "tinted"}" style=${color === undefined ? nothing : `--c:${color}`} aria-hidden="true">${homeMiniArt(d.kind, held > 0)}</span>
       <span class="hb-row-t"><span class="hb-row-name">${d.name}</span><span class="hb-row-sub">${gone ? USER_GONE_TEXT : homeRowSub(d.kind, held, heard)}</span></span>
@@ -20041,7 +20043,7 @@ export class WristAssistantPanel extends LitElement {
     const ownerId = row.id;
     const owner = this.ownerOf(ownerId);
     const group = groups.find((g) => g.rows.some((r) => r.id === ownerId));
-    const color = (group === undefined ? undefined : personColorVar(group.index)) ?? "var(--wa-hue-grey)";
+    const color = this.deviceColorOf(ownerId) ?? "var(--wa-hue-grey)";
     const whose = group?.person?.label ?? "Other devices";
     const seen = seenWords(owner, elapsed);
     const heard = seen ?? (neverConnected(owner) ? NEVER_CONNECTED_TEXT : undefined);

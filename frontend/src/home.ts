@@ -563,7 +563,8 @@ export const homeStyles = css`
   .hb-total span { font-size: 10px; letter-spacing: .04em; color: var(--wa-muted); overflow-wrap: anywhere; }
   button.home-btn.hb-pair { width: 100%; height: 36px; justify-content: center; border-radius: 10px; }
   .hb-pair svg.ui-icon { color: var(--wa-green); }
-  /* One person: their picture (or initial) ringed in their color, their
+  /* One person: their picture (or initial) ringed in grey (the colors are
+     the devices'), their
      name in small capitals, how their devices stand, then a row each. */
   .hb-group { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .hb-person { display: flex; align-items: center; gap: 9px; padding: 8px 8px 6px; min-width: 0; }
@@ -581,7 +582,7 @@ export const homeStyles = css`
   .hb-person-note { padding: 0 8px 4px; font-size: 11px; color: var(--wa-muted); }
   /* A device's row: its small drawing, its name, what it holds and when it
      was heard from, and a dot in its sync color. The picked one is lit in
-     its person's color from the top left. */
+     its device's color from the top left. */
   button.hb-row {
     --s: var(--wa-muted);
     display: flex; align-items: center; gap: 11px; width: 100%; box-sizing: border-box; padding: 6px 10px 6px 6px;
@@ -637,7 +638,7 @@ export const homeStyles = css`
   button.home-btn.hb-remove { color: var(--error-color); background: transparent; border-color: color-mix(in srgb, var(--error-color) 50%, var(--wa-line)); }
   button.home-btn.hb-remove:hover { background: color-mix(in srgb, var(--error-color) 10%, transparent); }
   /* The stage: the device standing in a soft light from above, on a floor
-     that gives back its reflection, lit along its edge in its person's
+     that gives back its reflection, lit along its edge in its device's
      color. Two counts point at it from either side. */
   .hb-stage {
     position: relative; height: 380px; border-radius: 24px; overflow: hidden; box-sizing: border-box;

@@ -103,9 +103,10 @@ describe("Home's household state", () => {
 });
 
 describe("Home's device rows", () => {
-  it("groups the rows by person, in that person's color, with their picture where Home Assistant has one", () => {
+  it("groups the rows by person, the person in grey and each device in its own color, with their picture where Home Assistant has one", () => {
     expect(home).toContain("const groups = homeGroups(this.people(), devices);");
-    expect(group).toContain(`const color = personColorVar(g.index) ?? "var(--wa-hue-grey)";`);
+    expect(group).toContain(`const color = "var(--wa-hue-grey)";`);
+    expect(row).toContain("const color = this.deviceColorOf(d.id);");
     expect(group).toContain("<img src=${g.person.picture}");
     expect(group).toContain("this.renderHomeRow(d, d.id === pick, elapsed)");
     expect(method("  private people(): Person[] {")).toContain("peopleOf(this.owners, this.haPersonsFor.persons)");
