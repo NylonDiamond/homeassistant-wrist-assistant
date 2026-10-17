@@ -11,6 +11,7 @@ import "../src/watch-menus/all-menus.js";
 import {
   ALL_MENUS_LEAD,
   MENU_CARD_DIRTY_TEXT,
+  SAME_MENU_CHANGED_TEXT,
   MENU_CARD_ONLY_TEXT,
   type MenuCard,
   allMenusLead,
@@ -268,12 +269,12 @@ describe("menus that are the same on two devices", () => {
   });
 
   it("says whose it is the same as", () => {
-    expect(sameMenuText([DEVICES[2]!])).toBe("Same as Chen's Watch's.");
-    expect(sameMenuText([DEVICES[1]!, DEVICES[2]!])).toBe("Same as Jesse's iPhone's and Chen's Watch's.");
+    expect(sameMenuText([DEVICES[2]!])).toBe("Same as the one on Chen's Watch.");
+    expect(sameMenuText([DEVICES[1]!, DEVICES[2]!])).toBe("Same as the one on Jesse's iPhone and Chen's Watch.");
     expect(sameMenuLinkedText("anywhere", ["Chen's Watch"])).toBe("The Anywhere menu is linked with Chen's Watch now. An edit on one shows on all of them.");
   });
 
-  it("links from the card's own device onto every twin, with replace, unless an editor holds edits", () => {
+  it("links from the card's own device onto every twin, unless an editor holds edits", () => {
     const cards = menuCards(DEVICES, new Map([[WATCH, DEFAULTS], [PHONE, DEFAULTS], [OTHER, anywhereWith(1)]]));
     const same = sameMenuDevices(cards);
     const phoneAnywhere = cards.find((c) => c.key === `menu:${PHONE}:anywhere`)!;
@@ -404,7 +405,7 @@ describe("the Menus tab", () => {
     expect(undone.t.el.replaceAsk).toBeUndefined();
   });
 
-  it("says a menu is the same as another device's, and Link links them with replace and no question", async () => {
+  it("says a menu is the same as another device's, and Link links them with no question and no replace", async () => {
     const sent: Record<string, unknown>[] = [];
     let linkedNow = false;
     const t = tab(new Map([[WATCH, DEFAULTS], [OTHER, anywhereWith(2)]]), async (m) => {
@@ -420,14 +421,14 @@ describe("the Menus tab", () => {
     });
     const before = t.whole();
     // The Entity quick menus are the same; the Anywhere menus differ.
-    expect(before).toContain("Same as Chen's Watch's.");
-    expect(before).toContain("Same as Jesse's Watch's.");
+    expect(before).toContain("Same as the one on Chen's Watch.");
+    expect(before).toContain("Same as the one on Jesse's Watch.");
     expect(before.split("Same as").length - 1).toBe(2);
     expect(before).toContain("<span>Link</span>");
     const entity = t.cards().find((c) => c.key === `menu:${WATCH}:entity`)!;
     await (t.el.linkSame as (c: MenuCard) => Promise<void>).call(t.el, entity);
     const links = sent.filter((m) => m.type === "wrist_assistant/watch_pages/link");
-    expect(links.map((m) => [m.source_id, m.kind, m.units, m.targets, m.replace])).toEqual([[WATCH, "menus", ["entity"], [OTHER], true]]);
+    expect(links.map((m) => [m.source_id, m.kind, m.units, m.targets, m.replace])).toEqual([[WATCH, "menus", ["entity"], [OTHER], false]]);
     // No fresh read to judge the target: the content is the same.
     expect(sent.filter((m) => m.type === "wrist_assistant/watch_config/get" && m.owner_watch_id === OTHER && m.kind === "menus")).toHaveLength(1);
     expect(t.el.replaceAsk).toBeUndefined();
@@ -436,6 +437,37 @@ describe("the Menus tab", () => {
     const after = t.whole();
     expect(after).not.toContain("Same as");
     expect(after).toContain("The Entity quick menu is linked with Chen's Watch now. An edit on one shows on all of them.");
+  });
+
+  function sameTab(fresh: MenusDocument) {
+    const sent: Record<string, unknown>[] = [];
+    const t = tab(new Map([[WATCH, DEFAULTS], [OTHER, DEFAULTS]]), async (m) => {
+      sent.push(m);
+      if (m.type === "wrist_assistant/watch_pages/link" && m.replace !== true) throw Object.assign(new Error("taken"), { code: "unit_taken" });
+      if (m.type === "wrist_assistant/watch_pages/link") return { targets: { [OTHER]: { pages: [], status_pages: [], units: ["anywhere"] } }, link_ids: { anywhere: ANY_LINK } };
+      if (m.type === "wrist_assistant/watch_pages/places") return { pages: {}, status_pages: {}, menus: {} };
+      if (m.kind !== "menus") return { revision: 0, document: null };
+      // The tab holds both as the defaults; a read now finds `fresh` there.
+      return { revision: 4, document: m.owner_watch_id === OTHER ? fresh : DEFAULTS };
+    });
+    const links = () => sent.filter((m) => m.type === "wrist_assistant/watch_pages/link").map((m) => m.replace);
+    const anywhere = () => t.cards().find((c) => c.key === `menu:${WATCH}:anywhere`)!;
+    return { t, links, anywhere };
+  }
+
+  it("links a refused Same as with replace when a fresh read still finds the menus the same", async () => {
+    const { t, links, anywhere } = sameTab(DEFAULTS);
+    await (t.el.linkSame as (c: MenuCard) => Promise<void>).call(t.el, anywhere());
+    expect(links()).toEqual([false, true]);
+    expect(t.whole()).toContain("The Anywhere menu is linked with Chen's Watch now.");
+  });
+
+  it("replaces nothing when a menu changed since the tab read it", async () => {
+    const { t, links, anywhere } = sameTab(anywhereWith(2));
+    await (t.el.linkSame as (c: MenuCard) => Promise<void>).call(t.el, anywhere());
+    expect(links()).toEqual([false]);
+    expect(t.el.replaceAsk).toBeUndefined();
+    expect(t.whole()).toContain(SAME_MENU_CHANGED_TEXT);
   });
 
   it("says nothing of a menu unlike every other device's", () => {

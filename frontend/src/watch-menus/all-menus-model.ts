@@ -15,6 +15,9 @@
 // both still the app's own). Each then says whose it is the same as
 // (`sameMenuDevices`), and its Link links them with no question
 // (`sameMenuLink`): replacing a menu with one just like it loses nothing.
+// The link goes without `replace`, so a menu that changed since the tab read
+// it is refused, not written over; only a fresh read that still finds them
+// the same (`menusStillSame`) sends it again with `replace`.
 
 import type { WatchPagesPlaces } from "../ha-api.js";
 import {
@@ -39,11 +42,12 @@ import {
   type MenuLinkUnit,
   menuAlsoAddsText,
   menuHasSpeakPhrase,
+  type MenuUnlinkIO,
   menuLinksKnown,
   menuUnitLinkId,
 } from "./menu-links.js";
 import { menuRowCount } from "./menu-view.js";
-import type { MenusDocument } from "./model.js";
+import { type MenusDocument, asWatchMenusDocument } from "./model.js";
 
 /** The second half of the line under the tab's title. */
 export const ALL_MENUS_LEAD = "A menu on more than one device is the same menu: an edit shows on all of them. The page switcher goes with the Anywhere menu.";
@@ -291,13 +295,15 @@ export function sameMenuDevices(cards: readonly MenuCard[]): Map<string, LinkDev
 }
 
 /** The line on a card that holds the same menu as other devices: "Same as
- * Jesse's iPhone's." */
+ * the one on Jesse's iPhone." Device names are most often possessive
+ * already, so none is made one. */
 export function sameMenuText(devices: readonly LinkDevice[]): string {
-  return `Same as ${joinWords(devices.map((d) => `${d.name}'s`))}.`;
+  return `Same as the one on ${joinWords(devices.map((d) => d.name))}.`;
 }
 
 /** What a card's Link sends: `linkWatchMenus` from `source` for `unit` onto
- * `targets`, with `replace`, since their menus are the same. */
+ * `targets`. Without `replace` first, so a menu that changed since it was
+ * read is refused rather than written over (`menusStillSame`). */
 export interface SameMenuLink {
   source: string;
   unit: MenuLinkUnit;
@@ -318,6 +324,29 @@ export function sameMenuLink(card: MenuCard, same: ReadonlyMap<string, readonly 
   if ([source, ...targets].some(dirty)) return "dirty";
   return { source, unit: card.unit, targets };
 }
+
+/**
+ * Whether `source`'s menu for `unit` is still the same as each of
+ * `targets`', every one linked to nothing, all read fresh through `read`.
+ * Home Assistant compares the menus exactly, where `sameMenuUnit` takes a
+ * key set to null for one left out, so it can refuse menus the tab calls the
+ * same. A fresh read that still finds them the same lets the link go again
+ * with `replace`; any read that fails, or any change since, does not.
+ */
+export async function menusStillSame(read: MenuUnlinkIO["read"], source: string, targets: readonly string[], unit: MenuLinkUnit): Promise<boolean> {
+  try {
+    const records = await Promise.all([source, ...targets].map((owner) => read(owner)));
+    const docs = records.map((r) => (r.revision > 0 ? asWatchMenusDocument(r.document) : undefined));
+    const [mine, ...theirs] = docs;
+    if (mine === undefined) return false;
+    return theirs.every((doc) => doc !== undefined && menuUnitLinkId(doc, unit) === undefined && sameMenuUnit(mine, doc, unit));
+  } catch {
+    return false;
+  }
+}
+
+/** What a card's Link says when a menu changed after the tab read it. */
+export const SAME_MENU_CHANGED_TEXT = "Not linked. One of these menus changed since the tab read it, so nothing was replaced.";
 
 /** What a card's Link said once it was done. */
 export function sameMenuLinkedText(unit: MenuLinkUnit, names: readonly string[]): string {

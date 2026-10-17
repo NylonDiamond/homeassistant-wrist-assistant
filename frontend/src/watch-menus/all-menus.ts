@@ -12,8 +12,10 @@
 // element is in `all-menus-model.ts`.
 //
 // An unlinked card whose menu is the very same as another device's says so
-// ("Same as Chen's Watch's."), and its Link links them in one call with
-// `replace`, asking nothing (`sameMenuLink`). The cards then fold into one.
+// ("Same as the one on Chen's Watch."), and its Link links them in one call,
+// asking nothing (`sameMenuLink`). The cards then fold into one. That call
+// goes without `replace`, so a menu changed since the tab read it is never
+// written over; a refusal is judged again on a fresh read (`menusStillSame`).
 //
 // Every device's menus are read when the tab opens, with its pages and its
 // status pages for the lines of a card's Devices menu, and a device's again
@@ -25,6 +27,7 @@ import { property, state } from "lit/decorators.js";
 import {
   type HassLike,
   type OwnerSummary,
+  type WatchMenusLinkReply,
   type WatchPagesPlaces,
   fetchWatchConfig,
   fetchWatchPagesPlaces,
@@ -71,6 +74,8 @@ import {
   sameMenuLink,
   sameMenuLinkedText,
   sameMenuText,
+  SAME_MENU_CHANGED_TEXT,
+  menusStillSame,
   shownMenuCards,
 } from "./all-menus-model.js";
 import { askWatchMenu, keptWatchMenusDraft } from "./draft.js";
@@ -541,10 +546,16 @@ export class WaAllMenus extends LitElement {
 
   /**
    * A card's Same as Link: the menu, as saved on the card's device, onto
-   * every device that holds the same one (`sameMenuLink`), in one call with
-   * `replace` and no question, since nothing differs. The pages and status
-   * pages its slots open come along, as for any menu link. Then every device
-   * is read again, and the one card left says what happened.
+   * every device that holds the same one (`sameMenuLink`), in one call and
+   * no question, since nothing differs. It goes without `replace`: Home
+   * Assistant links menus whose values match and refuses `unit_taken` for one
+   * that changed since the tab read it. A refusal is judged again on a fresh
+   * read of every device (`menusStillSame`), since Home Assistant also
+   * refuses a key left out on one side and set to null on the other; still
+   * the same, the link goes again with `replace`, and otherwise it says so
+   * and replaces nothing. The pages and status pages its slots open come
+   * along, as for any menu link. Then every device is read again, and the
+   * one card left says what happened.
    */
   private async linkSame(card: MenuCard): Promise<void> {
     const hass = this.hassNow;
@@ -560,9 +571,22 @@ export class WaAllMenus extends LitElement {
     this.sameNote = undefined;
     let note: WatchPagesNote;
     try {
-      const reply = await linkWatchMenus(hass, plan.source, [plan.unit], plan.targets, true);
-      const also = [...new Set(plan.targets.flatMap((t) => linkAlsoAddedText(reply, t, [], this.pages.get(plan.source)) ?? []))];
-      note = { kind: "ok", text: [sameMenuLinkedText(plan.unit, plan.targets.map((t) => this.deviceName(t))), ...also].join(" ") };
+      let reply: WatchMenusLinkReply | undefined;
+      try {
+        reply = await linkWatchMenus(hass, plan.source, [plan.unit], plan.targets);
+      } catch (err) {
+        if (watchCommandError(err).code !== "unit_taken") throw err;
+        if (await menusStillSame((o) => fetchWatchConfig(hass, o, "menus"), plan.source, plan.targets, plan.unit)) {
+          reply = await linkWatchMenus(hass, plan.source, [plan.unit], plan.targets, true);
+        }
+      }
+      if (reply === undefined) {
+        note = { kind: "warn", text: SAME_MENU_CHANGED_TEXT };
+      } else {
+        const done = reply;
+        const also = [...new Set(plan.targets.flatMap((t) => linkAlsoAddedText(done, t, [], this.pages.get(plan.source)) ?? []))];
+        note = { kind: "ok", text: [sameMenuLinkedText(plan.unit, plan.targets.map((t) => this.deviceName(t))), ...also].join(" ") };
+      }
     } catch (err) {
       note = { kind: "err", text: `Not linked. ${menuLinkErrorText(err)}` };
     } finally {
@@ -710,7 +734,7 @@ export class WaAllMenus extends LitElement {
   }
 
   /** Over an unlinked card's chips while another device holds the very same
-   * menu: "Same as Chen's Watch's." and Link, when menus can be linked here.
+   * menu: "Same as the one on Chen's Watch." and Link, when menus can be linked here.
    * Then what the last Link did, on the card it was for. */
   private renderSame(card: MenuCard, cards: readonly MenuCard[], linkable: boolean): TemplateResult | typeof nothing {
     const twins = this.sameOf(cards).get(card.key);
