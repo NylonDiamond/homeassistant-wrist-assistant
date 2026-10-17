@@ -169,6 +169,10 @@ async def async_get_config_entry_diagnostics(
         # oversized config shows up in a diagnostics download. Never the
         # document: it names the user's entities and pages.
         "watch_config": data.watch_config_store.diagnostics(),
+        # How many pages, status pages and menus the home's library holds,
+        # how many devices pick from it and how many items are shared.
+        # Counts only.
+        "library": data.watch_config_store.library_diagnostics(),
         # Which devices sent logs, when and how big. The logs themselves are
         # in each device's own download.
         "watch_logs": data.watch_logs_store.listing(),

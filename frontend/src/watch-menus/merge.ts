@@ -4,6 +4,9 @@
 // (`quickAction`), the Entity quick menu (`entityRadial`) and the page
 // switcher (`pageSwitcher`), each one value. A key the local side changed
 // since the base keeps the local value; every other key takes the server's.
+// A top-level key the editor does not know merges by key the same way: the
+// editor never changes it, so whatever Home Assistant wrote or dropped there
+// meanwhile always comes through, and it is never a clash to show.
 // The iPhone used to run the same rule (`WatchConfigMirror`, `.mergeByKey`)
 // with itself as the local side; in the panel the local side is the draft. The
 // case files in `frontend/test/fixtures-menus/merge` are the specification

@@ -102,6 +102,7 @@ def loaded_package():
         rules = _load_into_pkg("page_images")
         store_mod = _load_into_pkg("page_images_store")
         _load_into_pkg("page_links")
+        _load_into_pkg("library")
         wc_mod = _load_into_pkg("watch_config_store")
         yield types.SimpleNamespace(
             rules=rules, store_mod=store_mod, wc_mod=wc_mod, load=_load_into_pkg

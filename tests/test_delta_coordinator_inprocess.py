@@ -1185,6 +1185,7 @@ def _watch_config_store(
     _stub("homeassistant.helpers.storage", Store=_NoDiskStore)
     const = _load_into_test_pkg("const")
     _load_into_test_pkg("page_links")
+    _load_into_test_pkg("library")
     store_module = _load_into_test_pkg("watch_config_store")
     store = store_module.WatchConfigStore(
         _StoreHass(),
@@ -1199,10 +1200,10 @@ _HASH_1 = "1" * 64
 _HASH_2 = "2" * 64
 
 
-def _pages_doc(name: str = "Home") -> dict:
+def _pages_doc(name: str = "Home", page_id: str = "6F1C2D0E-0000-4000-8000-000000000001") -> dict:
     return {
         "schemaVersion": 1,
-        "pages": [{"id": "6F1C2D0E-0000-4000-8000-000000000001", "name": name, "items": []}],
+        "pages": [{"id": page_id, "name": name, "items": []}],
     }
 
 
@@ -1233,7 +1234,9 @@ def _revs(**given: int) -> dict:
 
 def _device_put(store, kind: str, owner: str = "w1", *, base: int = 0, digest: str = _HASH_1):
     document = {
-        "pages": _pages_doc(),
+        # Each other owner's page has an id of its own: one page id on two
+        # devices is one library page, which would link their records.
+        "pages": _pages_doc() if owner == "w1" else _pages_doc(page_id=f"{owner}-PAGE"),
         "behavior": {"wrapPages": True},
         "catalog": {"macros": [{"id": "m1", "name": "Morning"}]},
         "menus": _menus_doc(),

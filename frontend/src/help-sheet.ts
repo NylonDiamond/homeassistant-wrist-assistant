@@ -52,11 +52,27 @@ export interface HelpScreen {
 const HOME_TEXT = [
   "Home lists every watch and iPhone, who it belongs to, and whether it has your latest changes.",
   "Waiting means the device gets them the next time Wrist Assistant opens on it.",
+  "Its Library holds what every device shares: HTTP actions and camera framing.",
 ];
 
 const COMPLICATIONS_TEXT = [
   "Complications put live home state on the watch face, and widgets on the iPhone.",
   "Pick one in the list to change it, or make a new one.",
+];
+
+const PAGES_TEXT = [
+  "Pages lists every page in your home, one card each. Tick a device on a card and the page is on it: one page, the same everywhere, so an edit shows on every device that has it.",
+  "Pick a page to edit it, or make a new one. A device's tab sets its order and what it hides.",
+];
+
+const STATUS_PAGES_TEXT = [
+  "Status pages lists every status page in your home. A status page is a read-only screen of rows that a tile or a menu slot opens.",
+  "Tick a device on a card to put it there. It is the same page on every device that has it: an edit shows on all of them. Pick one to edit it, or make a new one.",
+];
+
+const MENUS_TEXT = [
+  "Menus lists every menu in your home. Each device uses one Anywhere menu and one Entity quick menu, and a menu used by more than one device is the same menu: an edit shows on all of them.",
+  "The page switcher goes with the Anywhere menu. Pick a menu to edit it, or pick a device on its card to have that device use it. For a menu of one device's own, open it there and use Make a copy for this watch. New menu makes a menu no device uses yet: tick a device on its card to use it there.",
 ];
 
 /** Each screen's guide in the docs: what the ? in the screen's own bar
@@ -73,6 +89,9 @@ const SCREEN_GUIDES: Partial<Record<WatchScreen["id"], string>> = {
   "cameras": WATCH_CAMERAS_HELP_URL,
 };
 
+/** What the sheet says of whose a Library screen is. */
+export const HELP_LIBRARY_TEXT = "It is in Home's Library, shared by every device in this home.";
+
 /** A watch screen's blurb as a sentence (its name, then the blurb, which
  * reads on from the name), then whose it is. The blurbs are
  * shell.ts's, which Home and the watch row show too, so the three never say
@@ -80,7 +99,7 @@ const SCREEN_GUIDES: Partial<Record<WatchScreen["id"], string>> = {
 function watchScreenText(screen: WatchScreen, device: "watch" | "iPhone"): string[] {
   const blurb = watchScreenSentence(screen).trim();
   const sentence = /[.!?]$/.test(blurb) ? blurb : `${blurb}.`;
-  return [sentence, screen.shared === true ? "Every watch in this home shares it." : `It is for the ${device} picked at the top.`];
+  return [sentence, screen.shared === true ? HELP_LIBRARY_TEXT : `It is for the ${device} picked at the top.`];
 }
 
 /** A device screen as the sheet shows it, with its guide when it has one. */
@@ -90,13 +109,18 @@ function deviceScreen(screen: WatchScreen, device: "watch" | "iPhone"): HelpScre
 }
 
 /** The screen a route shows, as the sheet names and explains it: a watch's
- * screen, an iPhone's (`/iphone/pages/p1`), Complications, else Home. */
+ * screen, an iPhone's (`/iphone/pages/p1`), Complications, the Pages tab,
+ * the Status pages tab, the Menus tab, else Home. */
 export function helpScreen(route: PanelRoute | undefined): HelpScreen {
   const phone = iphoneScreenOf(route);
   if (phone !== undefined) return deviceScreen(phone, "iPhone");
   const screen = watchScreenOf(route);
   if (screen !== undefined) return deviceScreen(screen, "watch");
-  if (tabOfRoute(route) === "complications") return { name: "Complications", text: COMPLICATIONS_TEXT };
+  const tab = tabOfRoute(route);
+  if (tab === "complications") return { name: "Complications", text: COMPLICATIONS_TEXT };
+  if (tab === "pages") return { name: "Pages", text: PAGES_TEXT, more: WATCH_PAGES_HELP_URL };
+  if (tab === "status-pages") return { name: "Status pages", text: STATUS_PAGES_TEXT, more: WATCH_STATUS_PAGES_HELP_URL };
+  if (tab === "menus") return { name: "Menus", text: MENUS_TEXT, more: WATCH_MENUS_HELP_URL };
   return { name: "Home", text: HOME_TEXT, more: DOCS_URL };
 }
 

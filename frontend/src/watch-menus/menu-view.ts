@@ -172,6 +172,17 @@ export interface MenusViewHost {
   /** The host of a page's switcher settings, editing the pages draft;
    * undefined while there is no pages draft or no such page. */
   switcherSettings?(pageId: string): SwitcherSettingsHost | undefined;
+  /** The foot of a menu's row in the Menus card: which library menu this
+   * device uses for it, its name, Used by with a tick per device, and Make
+   * a copy for this watch (the editor's `libraryHead`). Absent, or nothing,
+   * before the library is read, and for the page switcher. */
+  menuFoot?(menu: MenusSection): TemplateResult | typeof nothing;
+  /** The badge on a menu's row, after its count: the library menu's own
+   * name, "Home menu". */
+  menuBadge?(menu: MenusSection): string | undefined;
+  /** The rows the Menus card shows, when not all three: one library menu
+   * edited on its own shows only its unit's (`librarySections`). */
+  readonly sections?: readonly MenusSection[];
   /** Apply `change` to the document as it is now: one undo step, or with
    * `coalesce` a step the next edits with the same key replace. */
   edit(change: (document: MenusDocument) => MenusDocument, coalesce?: string): boolean;
@@ -187,6 +198,12 @@ export const MENUS_SECTIONS: readonly [MenusSection, string][] = [
   ["entity", "Entity quick menu"],
   ["switcher", "Page switcher"],
 ];
+
+/** The Menus card's rows for one library menu of `unit`: an Anywhere menu
+ * with the page switcher, or the Entity quick menu alone. */
+export function librarySections(unit: "anywhere" | "entity"): readonly MenusSection[] {
+  return unit === "entity" ? ["entity"] : ["anywhere", "switcher"];
+}
 
 export const SWITCHER_LINE = "Each page's icon, color and name are set here: pick a page in the Pages card.";
 
@@ -456,6 +473,15 @@ export function selectMenu(host: Pick<MenusViewHost, "uiState" | "requestUpdate"
   host.requestUpdate();
 }
 
+/** Show `menu` on its own settings, where its Devices line is: no slot of
+ * any list picked, and no switcher page. A card on the Menus tab opens the
+ * editor this way. */
+export function showMenuSettings(host: Pick<MenusViewHost, "uiState" | "requestUpdate">, menu: MenusSection): void {
+  for (const key of [...host.uiState.keys()]) if (key.startsWith(SELECTION_PREFIX)) host.uiState.delete(key);
+  host.uiState.delete(SWITCHER_PAGE_KEY);
+  selectMenu(host, menu);
+}
+
 const SWITCHER_PAGE_KEY = "me:sw:page";
 
 type SwitcherState = Pick<MenusViewHost, "uiState" | "switcherPages" | "switcherRows">;
@@ -537,8 +563,10 @@ function listLabel(host: Pick<MenusViewHost, "hass">, ref: MenuListRef): string 
   return `${nameOf(host.hass, ref.entityId)} menu`;
 }
 
+const SELECTION_PREFIX = "me:sel:";
+
 function selectionKey(ref: MenuListRef): string {
-  return `me:sel:${menuListKey(ref)}`;
+  return `${SELECTION_PREFIX}${menuListKey(ref)}`;
 }
 
 /** The selected slot of a list: the one picked last while it is still
@@ -646,9 +674,10 @@ export function renderMenusCard(host: MenusViewHost): TemplateResult {
     </div>
     <p class="me-intro">${MENUS_INTRO}</p>
     <div class="layers me-menu-list" role="list">
-      ${MENUS_SECTIONS.map(([id, label]) => {
+      ${MENUS_SECTIONS.filter(([id]) => host.sections === undefined || host.sections.includes(id)).map(([id, label]) => {
         const on = id === shown;
         const pick = () => { if (!on) selectMenu(host, id); };
+        const named = host.menuBadge?.(id);
         return html`<div class="layer me-menu-row ${on ? "hl" : ""}" data-menu=${id} role="listitem" tabindex="0"
           aria-current=${on ? "true" : "false"} aria-label=${label} title=${MENU_LINES[id]}
           @click=${pick}
@@ -659,8 +688,9 @@ export function renderMenusCard(host: MenusViewHost): TemplateResult {
           }}>
           <span class="grip" aria-hidden="true"></span>
           ${menuThumb(host, id)}
-          <span class="name"><b><span class="nm-t">${label}</span><span class="me-menu-count">${menuRowCount(host, id)}</span></b><small>${MENU_ROW_LINES[id]}</small></span>
-          <span class="right"></span>
+          <span class="name"><b><span class="nm-t">${label}</span><span class="me-menu-count">${menuRowCount(host, id)}</span>${named === undefined
+            ? nothing : html`<span class="badge me-named" title=${`This device uses "${named}"`}>${named}</span>`}</b><small>${MENU_ROW_LINES[id]}</small>
+            ${host.menuFoot?.(id) ?? nothing}</span>
         </div>`;
       })}
     </div>
@@ -1283,7 +1313,9 @@ function renderEntityMenuCard(host: MenusViewHost): TemplateResult {
 /** The line under a menu's own cards that has slots. */
 export const MENU_PICK_NOTE = "Click a slot on the watch to change what it does.";
 
-/** The shown menu's own settings, with no slot selected. */
+/** The shown menu's own settings, with no slot selected: what it is and its
+ * cards. Which library menu it is (its name, Used by and the copy) is the
+ * editor's card under the Menus list on the left. */
 function renderMenuSettings(host: MenusViewHost, menu: MenusSection): TemplateResult {
   const cards = menu === "anywhere" ? renderAnywhereStyleCards(host)
     : menu === "switcher" ? renderSwitcherStyleCard(host)
@@ -1307,6 +1339,7 @@ export const menuViewStyles = css`
   .me-menu-row .name b .nm-t { white-space: normal; overflow: visible; }
   .me-menu-row .name .me-menu-count { font-size: 12px; font-weight: 500; color: var(--wa-muted); white-space: nowrap; }
   .me-menu-row .name small { white-space: normal; overflow: visible; line-height: 1.35; }
+  .me-menu-row .name .me-lib { margin-top: 6px; }
   .layer .acts button.icon { display: inline-grid; place-items: center; padding: 0; }
   .layer .acts button.icon:disabled { opacity: .35; cursor: default; }
   /* A slot's or a page's icon in its color, on the black well. */

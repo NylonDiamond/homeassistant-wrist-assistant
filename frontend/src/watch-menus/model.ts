@@ -6,7 +6,8 @@
 // takes the document and returns a new one in which only the objects on the
 // path of the change are new; every key it does not model goes back as it
 // came, the `keep` keys of `menu-keys.json` (a slot's voice routing, its
-// phrase lists, its linked slot and its automation override) included. A key
+// phrase lists, its linked slot and its automation override) included, and so
+// is any top-level key the panel does not know. A key
 // the document did not have goes in at its sorted place, as the phone's
 // sorted-key encoder writes it. A setter refuses by returning the document it
 // was given, and so does an edit that changes nothing.

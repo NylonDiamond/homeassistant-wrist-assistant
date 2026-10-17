@@ -1,0 +1,181 @@
+// The row of device ticks on a library card: one chip per device, ticked
+// when the device has the item. Square for pages and status pages (tick to
+// put it on that device, untick to take it off), round for menus (a device
+// uses one menu of each kind, so ticking one moves the device to it, and
+// the ticked one cannot be unticked). Mock frames 1a and 1c.
+//
+// On a device tab's "Not on this device" cards the row is the item's own
+// devices, then a dashed "Add to this watch" chip for that device (frame
+// 2a). A tick shows the state asked for while its write is out, and the
+// item's last refusal shows under the row in the tabs' warning ink.
+//
+// `tickChips` is the pure part (testable without a browser);
+// `renderTicks` draws it. The writes are the caller's: usually the shared
+// store's `pick` and `pickMenu` (`store.ts`).
+
+import { css, html, nothing, type TemplateResult } from "lit";
+import { type LinkDevice, deviceWord } from "../watch-pages/devices.js";
+import type { LibraryKind } from "./client.js";
+import { type Library, libraryItem, libraryMenu, sameId } from "./model.js";
+import { type PendingPick, pendingKey } from "./store.js";
+
+/** What a tick row is drawn from. */
+export interface TicksInput {
+  library: Library;
+  kind: LibraryKind;
+  itemId: string;
+  /** Every device that can have it, in device order (`linkDevicesOf`). */
+  devices: readonly LinkDevice[];
+  /** A device's color var (`device-colors.ts`). */
+  colorOf: (ownerId: string) => string | undefined;
+  /** The store's pending ticks (`LibraryStore.pending`). */
+  pending?: ReadonlyMap<string, PendingPick>;
+  /** The item's last refusal (`LibraryStore.noteFor`). */
+  note?: string;
+  /** The signed in user is an administrator: only one can put on a device
+   * an item no device has. */
+  admin?: boolean;
+  /** Why a device's tick cannot be clicked now (a watch waiting for its
+   * iPhone's move, an editor there holding unsaved edits), or undefined. */
+  locked?: (ownerId: string) => string | undefined;
+  /** A device tab's "Not on this device" card: only the item's devices,
+   * then "Add to this watch" for this one. */
+  addFor?: string;
+  /** The words over a menu's row; "Used by" unless given, none with
+   * false. Never drawn for pages or status pages. */
+  hint?: string | false;
+}
+
+/** One chip of the row. */
+export interface TickChip {
+  ownerId: string;
+  name: string;
+  device: LinkDevice["kind"];
+  color: string | undefined;
+  shape: "square" | "round";
+  /** Drawn ticked: the device has it, or a write asking for that is out. */
+  on: boolean;
+  /** On, and hidden on that device (Hide here). */
+  hidden: boolean;
+  /** Its write is out. */
+  busy: boolean;
+  /** The dashed "Add to this watch" chip. */
+  add: boolean;
+  /** What the chip says. */
+  label: string;
+  /** Its tooltip. */
+  title: string;
+  /** What a click asks for (on true, off false), or undefined when a click
+   * does nothing: busy, locked, or a menu's ticked chip. */
+  next: boolean | undefined;
+  /** Why a click does nothing, when it is not plain. */
+  stuck?: string;
+}
+
+/** Why a device cannot take an item no device has. */
+export const TICK_ADMIN_TEXT = "Only an administrator can put this on a device.";
+
+/** The tooltip of a menu's ticked chip. */
+export function menuOnTitle(name: string, unitTitle: string): string {
+  return `${name} uses this menu. To change that, pick another ${unitTitle} for it.`;
+}
+
+/** The chips of one item's row. */
+export function tickChips(input: TicksInput): TickChip[] {
+  const { library, kind, itemId, devices } = input;
+  const round = kind === "menus";
+  const menu = round ? libraryMenu(library, itemId) : undefined;
+  const entry = round ? undefined : libraryItem(library, kind, itemId);
+  const owners = (round ? menu?.owners : entry?.owners) ?? [];
+  const unitTitle = menu?.unit === "entity" ? "Entity quick menu" : "Anywhere menu";
+  const has = (ownerId: string) => owners.some((o) => sameId(o, ownerId));
+  const hiddenOn = (ownerId: string) => {
+    if (round) return false;
+    const list = library.picks.get(ownerId.toUpperCase())?.[kind as "pages" | "status_pages"];
+    return Array.isArray(list) && list.some((p) => typeof p?.id === "string" && sameId(p.id, itemId) && p.isHidden === true);
+  };
+  const shown = input.addFor === undefined ? devices : [
+    ...devices.filter((d) => !sameId(d.ownerId, input.addFor) && has(d.ownerId)),
+    ...devices.filter((d) => sameId(d.ownerId, input.addFor)),
+  ];
+  return shown.map((device): TickChip => {
+    const ownerId = device.ownerId;
+    const asked = input.pending?.get(pendingKey(kind, ownerId, round ? (menu?.unit ?? "") : itemId));
+    const busy = asked !== undefined && (!round || ("menuId" in asked && (sameId(asked.menuId, itemId) || has(ownerId))));
+    let on = has(ownerId);
+    if (asked !== undefined) on = "on" in asked ? asked.on : sameId(asked.menuId, itemId);
+    const add = input.addFor !== undefined && sameId(ownerId, input.addFor) && !on;
+    const hidden = on && !busy && hiddenOn(ownerId);
+    const color = input.colorOf(ownerId);
+    const label = add ? `Add to this ${deviceWord(device.kind)}` : device.name;
+    const base = { ownerId, name: device.name, device: device.kind, color, shape: round ? "round" as const : "square" as const, on, hidden, busy, add, label };
+    if (busy) return { ...base, title: "Saving…", next: undefined };
+    const locked = input.locked?.(ownerId);
+    if (locked !== undefined) return { ...base, title: locked, next: undefined, stuck: locked };
+    if (!on && owners.length === 0 && input.admin === false) return { ...base, title: TICK_ADMIN_TEXT, next: undefined, stuck: TICK_ADMIN_TEXT };
+    if (round) {
+      if (on) return { ...base, title: menuOnTitle(device.name, unitTitle), next: undefined };
+      return { ...base, title: `Use this menu on ${device.name}.`, next: true };
+    }
+    const noun = kind === "status_pages" ? "status page" : "page";
+    if (on) return { ...base, title: hidden ? `On ${device.name}, hidden there. Untick to take the ${noun} off it.` : `On ${device.name}. Untick to take the ${noun} off it.`, next: false };
+    return { ...base, title: `Not on ${device.name}. Tick to put the ${noun} there.`, next: true };
+  });
+}
+
+/**
+ * The row: the chips, and the item's last refusal under them. A click asks
+ * `onPick(ownerId, on)`; for a menu `on` is always true (use this menu
+ * there). Clicks stop at the row, so a card that opens on click does not.
+ */
+export function renderTicks(input: TicksInput, onPick: (ownerId: string, on: boolean) => void): TemplateResult {
+  const chips = tickChips(input);
+  const hint = input.kind === "menus" && input.hint !== false ? (input.hint ?? "Used by") : undefined;
+  return html`<div class="lt-ticks" @click=${(e: Event) => e.stopPropagation()}>
+    ${hint === undefined ? nothing : html`<span class="lt-hint">${hint}</span>`}
+    <span class="lt-chips" role="group" aria-label=${hint ?? "Devices"}>${chips.map((chip) => html`<button type="button"
+      class="lt-chip ${chip.on ? "on" : "off"} ${chip.shape === "round" ? "rd" : ""} ${chip.add ? "add" : ""} ${chip.busy ? "busy" : ""} ${chip.stuck === undefined ? "" : "stuck"} ${chip.hidden ? "dim" : ""}"
+      style=${chip.color === undefined ? nothing : `--dc:${chip.color}`} title=${chip.title}
+      aria-pressed=${chip.on ? "true" : "false"} aria-disabled=${chip.next === undefined ? "true" : "false"}
+      @click=${(e: Event) => {
+        e.stopPropagation();
+        if (chip.next !== undefined) onPick(chip.ownerId, chip.next);
+      }}><span class="lt-box" aria-hidden="true"></span><span class="lt-name">${chip.label}</span>${chip.hidden ? html`<em>hidden</em>` : nothing}</button>`)}</span>
+    ${input.note === undefined ? nothing : html`<p class="lt-note" role="alert">${input.note}</p>`}
+  </div>`;
+}
+
+/** The row's look, in the panel's tokens: the mock's chip, 22px tall. */
+export const libraryTicksStyles = css`
+  .lt-ticks { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .lt-hint { font-size: 11.5px; line-height: 1.4; color: var(--wa-muted); }
+  .lt-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+  .lt-chip {
+    display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 22px; padding: 0 8px 0 6px;
+    border-radius: 999px; border: 1px solid var(--wa-line-strong); background: var(--wa-input, var(--wa-hover));
+    font: inherit; font-size: 11px; color: var(--wa-ink); cursor: pointer;
+    transition: border-color .12s ease-out, background-color .12s ease-out;
+  }
+  .lt-chip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .lt-box {
+    flex: none; width: 11px; height: 11px; border-radius: 3px; box-sizing: border-box;
+    border: 1.5px solid var(--dc, var(--wa-muted));
+  }
+  .lt-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lt-chip.on {
+    border-color: color-mix(in srgb, var(--dc, var(--wa-muted)) 60%, transparent);
+    background: color-mix(in srgb, var(--dc, var(--wa-muted)) 18%, var(--wa-card));
+  }
+  .lt-chip.on .lt-box { background: var(--dc, var(--wa-muted)); border-color: var(--dc, var(--wa-muted)); }
+  .lt-chip.off { color: var(--wa-muted); }
+  .lt-chip.off:hover:not(.stuck):not(.busy) { color: var(--wa-ink); border-color: color-mix(in srgb, var(--dc, var(--wa-ink)) 60%, transparent); }
+  .lt-chip.rd .lt-box { border-radius: 50%; }
+  .lt-chip.on.rd .lt-box { box-shadow: inset 0 0 0 2.5px var(--wa-card); }
+  .lt-chip.on.rd { cursor: default; }
+  .lt-chip.add { border-style: dashed; background: transparent; color: var(--wa-muted); }
+  .lt-chip.dim { opacity: .55; }
+  .lt-chip em { font-style: normal; font-size: 10px; color: var(--wa-muted); }
+  .lt-chip.busy { opacity: .6; cursor: progress; }
+  .lt-chip.stuck { opacity: .45; cursor: not-allowed; }
+  .lt-note { margin: 0; font-size: 11.5px; line-height: 1.35; color: var(--wa-need); }
+`;

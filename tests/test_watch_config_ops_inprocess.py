@@ -164,10 +164,10 @@ def _put(env, payload: dict, watch_id: str = WATCH) -> _Response:
     return asyncio.run(env.views["_op_watch_config_put"](_Ctx(env.store, watch_id, payload)))
 
 
-def _doc(name: str = "Home") -> dict:
+def _doc(name: str = "Home", page_id: str = "6F1C2D0E-0000-4000-8000-000000000001") -> dict:
     return {
         "schemaVersion": 1,
-        "pages": [{"id": "6F1C2D0E-0000-4000-8000-000000000001", "name": name, "items": []}],
+        "pages": [{"id": page_id, "name": name, "items": []}],
     }
 
 
@@ -1140,15 +1140,17 @@ def test_a_watch_get_still_marks_its_main_house_beside_a_phone(household) -> Non
 def test_a_phone_s_own_get_marks_its_own_record_delivered(household) -> None:
     """The delivery marks are per owner. A phone collecting its own pages
     marks the phone's record, so the panel can say the phone has the latest
-    save, and never a watch's."""
+    save, and never a watch's. The phone's page has an id of its own: one
+    page id on both would be one library page, linked."""
+    phone_doc = _doc(page_id="6F1C2D0E-0000-4000-8000-0000000000F1")
     assert _put(household, _put_body(), watch_id=WATCH).status == 200
-    assert _put(household, _put_body(), watch_id=PHONE).status == 200
+    assert _put(household, _put_body(phone_doc), watch_id=PHONE).status == 200
     for owner in (WATCH, PHONE):
         record = household.store.get(owner, "pages")
         record.delivered_revision, record.delivered_at = 0, None
 
     reply = _get(household, {"kind": "pages"}, watch_id=PHONE)
-    assert reply.body["document"] == _doc()
+    assert reply.body["document"] == phone_doc
     assert household.store.get(PHONE, "pages").delivered_revision == 1
     assert household.store.get(WATCH, "pages").delivered_revision == 0
 

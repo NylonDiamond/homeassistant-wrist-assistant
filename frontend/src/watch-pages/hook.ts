@@ -13,6 +13,7 @@
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import type { HassLike, OwnerSummary } from "../ha-api.js";
+import type { LibraryItemRef } from "../library/item-mode.js";
 import type { IconProvider } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { WATCH_MENUS_PATH } from "../watch-menus/hook.js";
@@ -166,6 +167,9 @@ export interface WatchPagesViewInput {
   /** The box in the panel's Watch app header the editor draws its bar
    * in (`head-bar.ts`). Left out, the bar is drawn on top of the editor. */
   barHost?: HTMLElement;
+  /** Library mode: one item edited in the library, with no device
+   * (`library/item-mode.ts`). `ownerId` is then ignored. */
+  libraryItem?: LibraryItemRef;
   onLoaded: () => void;
 }
 
@@ -183,9 +187,11 @@ export function renderWatchPagesView(input: WatchPagesViewInput): TemplateResult
           .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}
           .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack} .onMenus=${input.onMenus}
           .barActions=${input.actions} .shellOwnsWatch=${input.shell === true} .barHost=${input.barHost}
-          .phones=${input.phones === true}></wa-page-editor>`
+          .phones=${input.phones === true} .libraryItem=${input.libraryItem}></wa-page-editor>`
       : html`<div class="wp-loading">
-          ${input.shell === true ? nothing : html`<button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>`}
+          ${input.shell === true ? nothing : (input.libraryItem === undefined
+            ? html`<button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>`
+            : html`<button class="tb-btn tb-back" title="Back to the Pages tab" @click=${input.onBack}>${uiIcon("left")}<span>Pages</span></button>`)}
           ${loadFailed ? html`<span>The page editor did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
         </div>`}`;
 }

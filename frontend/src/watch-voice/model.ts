@@ -7,7 +7,9 @@
 // The document is the app's `TTSConfiguration` as stored, kept raw as the
 // menu editor keeps menus. Every setter takes the document and returns a new
 // one in which only the objects on the path of the change are new; every key
-// it does not model goes back as it came. A key the document did not have
+// it does not model goes back as it came, the top-level `linkIds` Home
+// Assistant keeps for phrases linked across watches included (`linkKeys` in
+// the table, `links.ts`). A key the document did not have
 // goes in at its sorted place, as the phone's sorted-key encoder writes it. A
 // setter refuses by returning the document it was given, and so does an edit
 // that changes nothing, a value set to what the watch already reads included.
@@ -64,6 +66,10 @@ export interface VoiceKeysTable {
   volume: VoiceVolumeSpec;
   newPhrase: { icon: string; color: string; displayMode: string; targetSpeakers: string[]; required: string[] };
   routing: unknown;
+  /** Keys Home Assistant writes that the watch never reads (the phrases'
+   * `linkIds`, `links.ts`), by the type that holds them; every one is
+   * `keep`. */
+  linkKeys: Record<string, Record<string, { type: string; items?: { type: string }; keep: true }>>;
 }
 
 export const VOICE_KEYS = voiceKeys as unknown as VoiceKeysTable;

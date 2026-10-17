@@ -365,4 +365,22 @@ export function anyWatchMenusDirty(): boolean {
 
 export function dropAllWatchMenus(): void {
   drafts.clear();
+  menuAsks.clear();
+}
+
+/** The menu each device's editor should show as it opens: a card on the
+ * Menus tab asked for it. */
+const menuAsks = new Map<string, "anywhere" | "entity">();
+
+/** Ask the editor to show `menu`, on its own settings, the next time it
+ * opens `watchId`. */
+export function askWatchMenu(watchId: string, menu: "anywhere" | "entity"): void {
+  menuAsks.set(watchId, menu);
+}
+
+/** The menu asked for on `watchId`, forgetting the ask. */
+export function takeWatchMenuAsk(watchId: string): "anywhere" | "entity" | undefined {
+  const menu = menuAsks.get(watchId);
+  menuAsks.delete(watchId);
+  return menu;
 }

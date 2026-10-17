@@ -1,7 +1,7 @@
-// The panel's shell: the three tabs across the top (Home, Pages,
-// Complications), which address each screen lives at, and the bar that moves
-// between them. A watch's or an iPhone's own screens have no tab: Home's
-// doors open them, and they count as Home in the bar.
+// The panel's shell: the tabs across the top (Home, Pages, Status pages,
+// Menus, Complications; `BAR_TABS`), which address each screen lives at, and
+// the bar that moves between them. A watch's or an iPhone's own screens have no
+// tab: Home's doors open them, and they count as Home in the bar.
 //
 // The tab is never stored. It is read from the route Home Assistant hands the
 // panel, so a reload, a bookmark and the browser's Back button all agree with
@@ -31,6 +31,17 @@
 //   /all-pages          the Pages tab: every page on every watch and
 //                       iPhone (`watch-pages/all-pages.ts`). Not `/pages`,
 //                       which is the Watch app's page editor
+//   /all-status-pages   the Status pages tab: every status page, the same
+//                       element. Not `/status-pages`, which is the Watch
+//                       app's status pages editor and marks Home
+//   /all-menus          the Menus tab: every Anywhere menu and Entity
+//                       quick menu on every device
+//                       (`watch-menus/all-menus.ts`). Not `/menus`, the
+//                       Watch app's menu editor, which marks Home
+//   /library/pages/<id>, /library/status-pages/<id>, /library/menus/<id>
+//                       one item edited in the library itself, in its
+//                       kind's editor with no device (`library/item-mode.ts`).
+//                       It marks its kind's tab, and Back goes there
 //
 // Every watch address is the one the iPhone app builds for "Open in Home
 // Assistant", unchanged; this file only reads them. An older iPhone app
@@ -41,20 +52,23 @@
 // `location-changed`, which makes Home Assistant hand the panel the new route.
 
 import { css, html, nothing, type TemplateResult } from "lit";
+import type { LibraryKind } from "./library/client.js";
+import type { LibraryItemRef } from "./library/item-mode.js";
 import { uiIcon } from "./ui-icons.js";
+
+export type { LibraryItemRef };
 import { WATCH_CAMERAS_PATH, isWatchCamerasRoute } from "./watch-cameras/hook.js";
 import { WATCH_COMPLICATIONS_PATH, isWatchComplicationsRoute } from "./watch-complications.js";
 import { WATCH_CONTROL_CENTER_PATH, isWatchControlCenterRoute } from "./watch-control-center/hook.js";
 import { WATCH_HTTP_ACTIONS_PATH, isWatchHttpActionsRoute } from "./watch-http-actions/hook.js";
+import { ALL_MENUS_PATH } from "./watch-menus/all-menus-hook.js";
 import { WATCH_MENUS_PATH, isWatchMenusRoute } from "./watch-menus/hook.js";
-import { ALL_PAGES_PATH, isAllPagesRoute } from "./watch-pages/all-pages-hook.js";
+import { ALL_PAGES_PATH, ALL_STATUS_PAGES_PATH } from "./watch-pages/all-pages-hook.js";
 import { type PanelRoute, WATCH_PAGES_PATH, isWatchPagesRoute } from "./watch-pages/hook.js";
 import { WATCH_ROOMS_PATH, isWatchRoomsRoute } from "./watch-rooms/hook.js";
 import { WATCH_SETTINGS_PATH, isWatchSettingsRoute } from "./watch-settings-page.js";
 import { WATCH_STATUS_PAGES_PATH, isWatchStatusPagesRoute } from "./watch-status-pages/hook.js";
 import { WATCH_VOICE_PATH, isWatchVoiceRoute } from "./watch-voice/hook.js";
-
-export type PanelTab = "home" | "watch" | "iphone" | "pages" | "complications";
 
 /** Home is the panel's own address, with nothing after it. */
 export const HOME_PATH = "";
@@ -62,12 +76,31 @@ export const COMPLICATIONS_PATH = "/complications";
 /** The iPhone app's addresses all start with this. */
 export const IPHONE_PATH = "/iphone";
 
+/**
+ * The tabs across the top, in the bar's order: each one's id, its name, and
+ * the address it opens on. A route at that address or under it is that tab
+ * (`tabOfRoute`), Home's empty address aside. A new tab is one line here,
+ * then its screen in the panel's `renderTab`.
+ */
+export const BAR_TABS = [
+  { id: "home", label: "Home", path: HOME_PATH },
+  { id: "pages", label: "Pages", path: ALL_PAGES_PATH },
+  { id: "status-pages", label: "Status pages", path: ALL_STATUS_PAGES_PATH },
+  { id: "menus", label: "Menus", path: ALL_MENUS_PATH },
+  { id: "complications", label: "Complications", path: COMPLICATIONS_PATH },
+] as const satisfies readonly { id: string; label: string; path: string }[];
+
+/** A tab of the bar. */
+export type BarTab = (typeof BAR_TABS)[number]["id"];
+
+/** Which part of the panel a route shows: a tab of the bar, or a watch's or
+ * an iPhone's own screens, which have no tab. */
+export type PanelTab = BarTab | "watch" | "iphone";
+
 export const TAB_LABEL: Record<PanelTab, string> = {
-  home: "Home",
+  ...(Object.fromEntries(BAR_TABS.map((t) => [t.id, t.label])) as Record<BarTab, string>),
   watch: "Watch app",
   iphone: "iPhone app",
-  pages: "Pages",
-  complications: "Complications",
 };
 
 /** One of the watch app's screens, as Home lists them and the watch row
@@ -82,7 +115,7 @@ export interface WatchScreen {
   blurb: string;
   path: string;
   /** Shared by every watch: the address never names one, and the screen
-   * follows none. */
+   * follows none. These are Home's Library. */
   shared?: true;
   /** No longer linked from the watch row or Home: its address still works,
    * so an old link lands on the screen. Control Center is one: its tiles
@@ -106,7 +139,7 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
 /** The Settings page: a screen of the Watch app with an address like the
  * others, kept out of `WATCH_SCREENS` because Home lists it on its own (its
  * Devices card, and the pairing card in a home with no watch) and the row
- * draws it last, apart from the eight. */
+ * draws it last, apart from the others. */
 export const WATCH_SETTINGS_SCREEN: WatchScreen = {
   id: "settings", label: "Settings", blurb: "sets how the watch behaves: gestures, wrist twists, pages, cameras and how it connects.", path: WATCH_SETTINGS_PATH,
 };
@@ -185,61 +218,116 @@ export function isComplicationsRoute(route: PanelRoute | undefined): boolean {
   return path === COMPLICATIONS_PATH || path.startsWith(`${COMPLICATIONS_PATH}/`);
 }
 
+/** Every library item's own address starts with this: one page, status page
+ * or menu edited in the library, with no device (`libraryItemPath`). */
+export const LIBRARY_PATH = "/library";
+
+/** The address part of each kind under `LIBRARY_PATH`, and the tab its
+ * address marks. */
+const LIBRARY_SEGMENTS: readonly { kind: LibraryKind; segment: string; tab: BarTab; screen: WatchScreen["id"] }[] = [
+  { kind: "pages", segment: "pages", tab: "pages", screen: "pages" },
+  { kind: "status_pages", segment: "status-pages", tab: "status-pages", screen: "status-pages" },
+  { kind: "menus", segment: "menus", tab: "menus", screen: "menus" },
+];
+
+/** One item's address in the library: `/library/pages/<id>`,
+ * `/library/status-pages/<id>` or `/library/menus/<id>`. */
+export function libraryItemPath(kind: LibraryKind, id: string): string {
+  const segment = LIBRARY_SEGMENTS.find((s) => s.kind === kind)!.segment;
+  return `${LIBRARY_PATH}/${segment}/${encodeURIComponent(id)}`;
+}
+
+/** The item a library address names, or undefined for any other route. */
+export function libraryRouteOf(route: PanelRoute | undefined): LibraryItemRef | undefined {
+  const path = route?.path ?? "";
+  if (!path.startsWith(`${LIBRARY_PATH}/`)) return undefined;
+  const [segment, raw, ...rest] = path.slice(LIBRARY_PATH.length + 1).split("/");
+  const known = LIBRARY_SEGMENTS.find((s) => s.segment === segment);
+  if (known === undefined || raw === undefined || raw === "" || rest.some((p) => p !== "")) return undefined;
+  let id: string;
+  try {
+    id = decodeURIComponent(raw);
+  } catch {
+    return undefined;
+  }
+  return { kind: known.kind, id };
+}
+
+/** The tab a library address marks: the item's kind's. */
+function libraryTabOf(ref: LibraryItemRef): BarTab {
+  return LIBRARY_SEGMENTS.find((s) => s.kind === ref.kind)!.tab;
+}
+
 /** Which tab a route shows. Anything the panel does not know, an empty path
- * and a missing route included, is Home. */
+ * and a missing route included, is Home. A library item's address is its
+ * kind's tab. */
 export function tabOfRoute(route: PanelRoute | undefined): PanelTab {
   if (watchScreenOf(route) !== undefined) return "watch";
   if (iphoneScreenOf(route) !== undefined) return "iphone";
-  if (isComplicationsRoute(route)) return "complications";
-  if (isAllPagesRoute(route)) return "pages";
-  return "home";
+  const item = libraryRouteOf(route);
+  if (item !== undefined) return libraryTabOf(item);
+  const path = route?.path ?? "";
+  const tab = BAR_TABS.find((t) => t.path !== HOME_PATH && (path === t.path || path.startsWith(`${t.path}/`)));
+  return tab?.id ?? "home";
 }
 
+/** The leave question's name for a tab that lists things across devices,
+ * kept apart from the device screen of the same name: the Pages tab is
+ * "all-pages", never the page editor's "pages", the Status pages tab
+ * "all-status-pages" and the Menus tab "all-menus". */
+type ListScreenId = `all-${Exclude<BarTab, "home" | "complications">}`;
+
 /** The screen a route shows, as the leave question counts screens: one of
- * the Watch app's nine, or the Home, Pages or Complications tab. The Pages
- * tab is "all-pages", never the page editor's "pages". An iPhone app
- * screen counts as the watch screen of the same name: it is the same editor,
- * with the same drafts kept per device, so moving between the two is a move
- * to another device. The device an address names, and anything after it, is
- * not part of it. */
-export function screenIdOf(route: PanelRoute | undefined): WatchScreen["id"] | "home" | "all-pages" | "complications" {
+ * the Watch app's screens, Home, Complications, or a tab that lists things
+ * (`ListScreenId`). An iPhone app screen counts as the watch screen of the
+ * same name: it is the same editor, with the same drafts kept per device, so
+ * moving between the two is a move to another device. The device an address
+ * names, and anything after it, is not part of it. A library item's address
+ * counts as its kind's editor too, whose drafts it keeps beside the
+ * devices'. */
+export function screenIdOf(route: PanelRoute | undefined): WatchScreen["id"] | "home" | "complications" | ListScreenId {
+  const item = libraryRouteOf(route);
+  if (item !== undefined) return LIBRARY_SEGMENTS.find((s) => s.kind === item.kind)!.screen;
   const id = watchScreenOf(route)?.id ?? iphoneScreenOf(route)?.id;
   if (id !== undefined) return id;
-  const tab = tabOfRoute(route);
-  return tab === "pages" ? "all-pages" : (tab as "home" | "complications");
+  const tab = barTabOf(route);
+  return tab === "home" || tab === "complications" ? tab : `all-${tab}`;
 }
 
 /** Where a click on a tab goes. The Watch app opens on Pages, on the shared
  * watch when there is one, and the iPhone app on Pages of its shared iPhone
  * (`watch-pick.ts`). */
 export function tabPath(tab: PanelTab, watch?: string, iphone?: string): string {
-  if (tab === "complications") return COMPLICATIONS_PATH;
-  if (tab === "pages") return ALL_PAGES_PATH;
   if (tab === "watch") return watchScreenPath(WATCH_SCREENS[0]!, watch);
   if (tab === "iphone") return iphoneScreenPath(IPHONE_SCREENS[0]!, iphone);
-  return HOME_PATH;
+  return BAR_TABS.find((t) => t.id === tab)?.path ?? HOME_PATH;
 }
 
-/** The tabs across the top, in order. Every signed in person gets them all:
- * the server lists each person only the devices they may manage. The Watch
- * app and the iPhone app have no tab of their own: a device's screens open
- * from its doors on Home, and the bar marks Home while one is on show
- * (`barTabOf`). */
-export const PANEL_TABS: readonly PanelTab[] = ["home", "pages", "complications"];
+/** The tabs across the top, in order (`BAR_TABS`). Every signed in person
+ * gets them all: the server lists each person only the devices they may
+ * manage. The Watch app and the iPhone app have no tab of their own: a
+ * device's screens open from its doors on Home, and the bar marks Home while
+ * one is on show (`barTabOf`). */
+export const PANEL_TABS: readonly BarTab[] = BAR_TABS.map((t) => t.id);
 
 /** The tab the bar marks for a route: a watch's or an iPhone's screens,
- * reached from Home, mark Home. */
-export function barTabOf(route: PanelRoute | undefined): PanelTab {
+ * reached from Home, mark Home. A device's own Status pages
+ * (`/status-pages/<id>`) or Menus (`/menus/<id>`) is one of those, never the
+ * Status pages tab or the Menus tab. */
+export function barTabOf(route: PanelRoute | undefined): BarTab {
   const tab = tabOfRoute(route);
   return tab === "watch" || tab === "iphone" ? "home" : tab;
 }
 
 /** Every tab's sub-path, as one pattern anchored at the end of an address:
- * the first one in it and everything after. */
+ * the first one in it and everything after. Each bar tab's address is in
+ * it, so `/all-status-pages` is never read as `/all` and then
+ * `/status-pages`. */
 const SUB_PATH = new RegExp(`(${[
-  IPHONE_PATH, COMPLICATIONS_PATH, WATCH_PAGES_PATH, WATCH_MENUS_PATH, WATCH_VOICE_PATH,
+  ...BAR_TABS.map((t) => t.path).filter((p) => p !== HOME_PATH),
+  LIBRARY_PATH, IPHONE_PATH, WATCH_PAGES_PATH, WATCH_MENUS_PATH, WATCH_VOICE_PATH,
   WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH, WATCH_HTTP_ACTIONS_PATH, WATCH_CAMERAS_PATH, WATCH_SETTINGS_PATH,
-  WATCH_COMPLICATIONS_PATH, ALL_PAGES_PATH,
+  WATCH_COMPLICATIONS_PATH,
 ].join("|")})(/.*)?$`);
 
 /** The panel's own address without any tab's sub-path. Without a route (a
@@ -316,7 +404,7 @@ export function isSaveKey(e: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey">)
  * the panel's own, and the panel saves it (`settingsPageSavesOnKey`). */
 export function swallowsSaveKey(route: PanelRoute | undefined, hasDraft: boolean): boolean {
   const tab = tabOfRoute(route);
-  return !editorKeysLive(route, hasDraft) && tab !== "watch" && tab !== "iphone";
+  return !editorKeysLive(route, hasDraft) && tab !== "watch" && tab !== "iphone" && libraryRouteOf(route) === undefined;
 }
 
 /**
@@ -354,7 +442,9 @@ export interface TabBarInput {
   onHelp?: () => void;
   /** Whether any watch or iPhone screen holds unsaved work: the Home tab,
    * where those screens open from, then carries an orange dot, seen from
-   * Pages and Complications too. */
+   * every other tab too. The Pages, Status pages and Menus tabs carry none
+   * of their own: the edits they guard are in a device's page editor,
+   * status pages editor or menu editor, which is Home's. */
   watchUnsaved?: boolean;
 }
 
@@ -435,7 +525,7 @@ export const shellStyles = css`
      The empty ::after is the line break, a full width item of no height, so
      the rows carry their own margins instead of a row gap counted twice.
      Help keeps only its sign, and the tabs slide sideways rather than wrap
-     if a very narrow screen cannot hold all three. */
+     if a very narrow screen cannot hold them all. */
   @media (max-width: 480px) {
     nav.wa-tabs { row-gap: 0; padding-block: 3px; }
     nav.wa-tabs > * { margin-block: 3px; }

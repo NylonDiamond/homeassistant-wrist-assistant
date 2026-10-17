@@ -5,7 +5,10 @@
 // value, except `phrases`, which is matched by phrase id: menus point at a
 // phrase by its id, so a phrase one side added and another the other side
 // changed must both survive. A key or a phrase the local side changed since
-// the base keeps the local value; everything else takes the server's. The
+// the base keeps the local value; everything else takes the server's.
+// `linkIds` (the phrases linked across watches, `links.ts`) is one such key.
+// Only Start fresh here changes it in the editor, so a link Home Assistant
+// made or dropped meanwhile comes through. The
 // iPhone used to run the same rule (`WatchConfigMirror`, `.mergeByKey` with
 // the phrases by id) with itself as the local side; in the panel the local side
 // is the draft.

@@ -114,6 +114,8 @@ describe("the cards", () => {
     expect(pages).toContain("House");
     expect(pages).toContain("Lights");
     expect(pages).toContain("starter");
+    expect(pages).toContain("One of the app's starter pages. It is edited and put on devices like any other.");
+    expect(pages).not.toContain("Every device has its own");
     const rows = flat(renderRowsCard(h));
     expect(rows).toContain("Security");
     expect(rows).toContain("section header");
@@ -122,7 +124,7 @@ describe("the cards", () => {
     expect(rows).toContain("hidden");
   });
 
-  it("mark a linked status page with the device it is also on, and say an edit shows there too", () => {
+  it("mark a status page other devices have too with the device it is also on, and say an edit shows there too", () => {
     const h = host(CONFIGURED);
     expect(flat(renderPagesCard(h))).not.toContain("sp-linked");
     const linked: StatusPagesViewHost = {

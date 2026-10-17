@@ -250,10 +250,13 @@ def test_link_watch_links_every_page_and_status_page(env) -> None:
     assert [p["id"] for p in phone.document["pages"]] == [HOME, LIGHTS]
     assert phone.document["pages"][1]["isHidden"] is True
     assert phone.updated_by == PHONE
-    watch = env.store.get(WATCH, "pages").document["pages"]
-    assert phone.document["pages"][0]["linkId"] == watch[1]["linkId"]
+    assert all("linkId" not in p for p in phone.document["pages"])
+    picks = env.store.library_summary()["picks"]
+    assert [p["id"] for p in picks[PHONE]["pages"]] == [HOME, LIGHTS], "the same library pages"
     assert env.store.get(PHONE, "status_pages").document["statusPages"][0]["id"] == DOORS
+    # The phone uses the watch's menus: the same library menus, no marks.
     assert env.store.get(PHONE, "menus").document == menus
+    assert picks[PHONE]["menus"] == picks[WATCH]["menus"]
     assert env.store.get(PHONE, "rooms") is None, "the watch has no rooms to copy"
 
 
@@ -265,16 +268,20 @@ def test_link_watch_refuses_a_watch_that_is_not_the_phone_s(env, watch_id) -> No
     assert env.store.get(PHONE, "pages") is None
 
 
-def test_link_watch_answers_id_taken_with_409_and_writes_nothing(env) -> None:
+def test_link_watch_beside_a_phone_page_under_the_same_id(env) -> None:
+    """The phone's own page under one of the watch's ids, with other
+    content, got an id of its own when it arrived: the link no longer
+    answers id_taken, it puts the watch's pages beside it."""
     env.store.panel_save(
         PHONE, "pages", {"schemaVersion": 1, "pages": [{"id": LIGHTS, "name": "Mine", "items": []}]},
         base_revision=0,
     )
     reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
-    assert reply.status == 409
-    assert reply.body["error"] == "id_taken"
-    assert env.store.get(PHONE, "status_pages") is None
-    assert "linkId" not in env.store.get(WATCH, "pages").document["pages"][1]
+    assert (reply.status, reply.body) == (200, {"ok": True, "pages": 2})
+    names = [p["name"] for p in env.store.get(PHONE, "pages").document["pages"]]
+    assert names == ["Mine", "Home", "Lights"]
+    owners = env.store.library_summary()["pages"][LIGHTS]["owners"]
+    assert owners == sorted([PHONE, WATCH])
 
 
 # ── static: dispatch table, capability ───────────────────────────────────

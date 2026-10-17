@@ -17,7 +17,7 @@ import { join } from "node:path";
 
 import type { JsonObject } from "../src/watch-pages/model.js";
 import { WatchMenusDraft } from "../src/watch-menus/draft.js";
-import { mergeWatchMenus } from "../src/watch-menus/merge.js";
+import { mergeWatchMenus, watchMenusClashes } from "../src/watch-menus/merge.js";
 import {
   MENU_KEYS,
   type MenuTargets,
@@ -231,8 +231,8 @@ const PANEL_CASES: { file: string; build: (d: MenusDocument) => MenusDocument }[
 ];
 
 /** Every key the panel wrote, checked against `menu-keys.json`: a key of the
- * type, an enum value the tables name. `keep` and opaque keys are the
- * phone's and are not looked into. */
+ * type, an enum value the tables name. `keep` and opaque keys are the phone's and are not looked
+ * into. */
 function unknownKeys(value: unknown, type: string, path: string): string[] {
   const spec = MENU_KEYS.types[type];
   if (spec === undefined || typeof value !== "object" || value === null) return [];
@@ -308,3 +308,46 @@ describe("panel-written menus", () => {
     expect(added).toMatchObject({ id: "3E4D2000-0000-4000-8000-000000000001", position: "bottomRight", action: { pageId: PAGE_ID, type: "navigateToPage" } });
   });
 });
+
+describe("an old link mark on a menus record", () => {
+  // Records saved before the library may still carry a top-level `linkIds`
+  // until Home Assistant writes them again. The panel never reads it and the
+  // keys table no longer lists it: it rides through an edit as any key the
+  // panel does not know, and Home Assistant ignores it on a save.
+  const MARKS = { anywhere: "a".repeat(32), entity: "b".repeat(32) };
+  const marked = (): MenusDocument => {
+    const defaults = read("01-defaults.json").doc;
+    const out: MenusDocument = {};
+    for (const [k, v] of Object.entries(defaults)) {
+      if (k === "pageSwitcher") out.linkIds = { ...MARKS };
+      out[k] = v;
+    }
+    return deepFreeze(out);
+  };
+
+  it("is in no keys table", () => {
+    expect((MENU_KEYS as unknown as Record<string, unknown>).linkKeys).toBeUndefined();
+    expect(MENU_KEYS.types.document?.keys.linkIds).toBeUndefined();
+    expect(unknownKeys(marked(), "document", "$")).toEqual(["$.linkIds"]);
+  });
+
+  it("goes back as it came through every edit", () => {
+    const doc = marked();
+    for (const c of PANEL_CASES) {
+      const built = c.build(doc);
+      expect(built.linkIds, c.file).toBe(doc.linkIds);
+      expect(Object.keys(built), c.file).toEqual(Object.keys(doc));
+    }
+  });
+
+  it("is dropped by a merge once Home Assistant dropped it, keeping the local edits", () => {
+    const base = marked();
+    const local = setWatchMenuStyle(base, "quickAction", "beamIntensity", 0.9);
+    const { linkIds: _, ...rewritten } = base;
+    const merged = mergeWatchMenus(base, local, rewritten);
+    expect(merged.linkIds).toBeUndefined();
+    expect((merged.quickAction as JsonObject).beamIntensity).toBe(0.9);
+    expect(watchMenusClashes(base, local, rewritten)).toEqual([]);
+  });
+});
+

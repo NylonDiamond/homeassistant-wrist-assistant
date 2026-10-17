@@ -13,8 +13,7 @@ import { NEW_WATCH_TEXT } from "../src/watch-settings.js";
 import { type WatchCatalog, readWatchCatalog } from "../src/watch-pages/catalog.js";
 import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
 import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
-import { type WatchPagesDocument, watchPagesOf } from "../src/watch-pages/model.js";
-import { DEVICES_WAIT_TAG } from "../src/watch-pages/links.js";
+import type { WatchPagesDocument } from "../src/watch-pages/model.js";
 import { PAGE_LIST_HEIGHT, WATCH_PAGES_PLAN_TEXT, clampPageListHeight, loadPageListHeight, watchPagesPlanText } from "../src/watch-pages/page-editor.js";
 import {
   STAGE_ZOOM_KEY,
@@ -377,22 +376,6 @@ describe("the Tiles card", () => {
     expect(card).toContain(WATCH_PAGES_PLAN_TEXT.title);
     expect(card).toContain(WATCH_PAGES_PLAN_TEXT.body);
     expect(`${WATCH_PAGES_PLAN_TEXT.title} ${WATCH_PAGES_PLAN_TEXT.body}`).not.toMatch(/[–—]| - /);
-  });
-
-  it("greys out a watch in the Devices menu while it waits for its iPhone", () => {
-    const e = editor();
-    const owners = [e.owners[0]!, { ...e.owners[1]!, has_iphone: true }] as OwnerSummary[];
-    e.el.owners = owners;
-    e.el.places = { pages: {}, status_pages: {} };
-    const menu = () => flat((e.el.renderDevicesMenu as (p: unknown, w: string) => unknown).call(e.el, watchPagesOf(HALL)[0], "row"));
-    // Not read yet: offered, Home Assistant still refuses it if it should.
-    expect(menu()).not.toContain(DEVICES_WAIT_TAG);
-    e.el.elsewhereFacts = new Map([["chrome-w2", { held: false, free: false }]]);
-    expect(menu()).toContain(`<span class="pk-dup-full">${DEVICES_WAIT_TAG}</span>`);
-    expect(menu()).toMatch(/class="pk-dup-row check off/);
-    // Once its pages are there it takes a page like any other watch.
-    e.el.elsewhereFacts = new Map([["chrome-w2", { held: true, free: true }]]);
-    expect(menu()).not.toContain(DEVICES_WAIT_TAG);
   });
 
   it("names the device on screen in the free plan line", () => {

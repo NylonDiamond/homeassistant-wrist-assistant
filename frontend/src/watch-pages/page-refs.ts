@@ -4,13 +4,21 @@
 // a page the watch no longer has. The page editor's delete question lists
 // them, and once the delete is saved the editor clears them in the menus
 // record and in each complication (`clearPageFromMenus`,
-// `clearPageFromComplication`).
+// `clearPageFromComplication`). A status page is opened by the menus' Status
+// page slots only (`clearStatusPageFromMenus`).
+//
+// A menu other devices use too is one library menu on all of them, so a slot
+// taken out of it here goes everywhere. Its slots that open a page another
+// device using that menu still has stay (`KeepSlot`, worked out from the
+// library summary by `keepSlotsOf`); the slot shows its fallback here.
 //
 // Pure functions over the raw documents, so a test reaches them without the
 // panel, and nothing is parsed and re-encoded: what is not about the page is
 // written back exactly as it was read.
 
 import type { ComplicationRecord } from "../ha-api.js";
+import type { LibraryListKind, MenuUnit } from "../library/client.js";
+import { type Library, hasItem, menuFor, sameId } from "../library/model.js";
 import {
   ANYWHERE,
   type MenuListRef,
@@ -27,9 +35,12 @@ import {
 import { sameWatchId } from "./edit.js";
 import { isJsonObject, type JsonObject } from "./model.js";
 
-/** The menu action that goes to a page, and the payload key naming it. */
+/** The menu actions that open a page and a status page, and the payload
+ * key naming it (`menu-actions.json`). */
 const GO_TO_PAGE = "navigateToPage";
-const GO_TO_PAGE_KEY = "pageId";
+const SHOW_STATUS_PAGE = "showStatusPage";
+type PageAction = typeof GO_TO_PAGE | typeof SHOW_STATUS_PAGE;
+const PAGE_KEY = "pageId";
 
 /** One menu slot that goes to the page. `where` is the menu in the panel's
  * words; `position` the slot's place on the ring. */
@@ -40,40 +51,66 @@ export interface MenuPageRef {
   position: string;
 }
 
+/** Whether a slot of the device's menu for `unit` that opens `pageId` stays
+ * when the page leaves the device: true when that menu is shared and a
+ * device still using it needs the slot. */
+export type KeepSlot = (unit: MenuUnit, pageId: string) => boolean;
+
+/** Every slot goes: the menus are this device's alone, or the page is gone
+ * from every device. */
+export const KEEP_NO_SLOT: KeepSlot = () => false;
+
+/**
+ * Which slots stay when pages (or status pages, `kind`) leave `ownerId`: a
+ * slot of a menu that other devices use too stays while one of them still
+ * has the page, since taking it out of that one library menu would take it
+ * off them too. The library is the summary as read; without one nothing is
+ * known about who shares what, so every slot stays (a slot left behind only
+ * shows its fallback here, while one taken out of a shared menu is gone
+ * everywhere).
+ */
+export function keepSlotsOf(lib: Library | undefined, ownerId: string, kind: LibraryListKind): KeepSlot {
+  if (lib === undefined) return () => true;
+  return (unit, pageId) => {
+    const menu = menuFor(lib, ownerId, unit);
+    if (menu === undefined) return false;
+    return menu.owners.some((o) => !sameId(o, ownerId) && hasItem(lib, o, kind, pageId));
+  };
+}
+
 /** Every slot list of the menus document: the Anywhere menu, each slot list
  * of the Entity quick menu (domains that share one list counted once), and
- * each entity's own list. */
-function menuLists(menus: MenusDocument): { ref: MenuListRef; where: string }[] {
-  const lists: { ref: MenuListRef; where: string }[] = [{ ref: ANYWHERE, where: "Anywhere menu" }];
+ * each entity's own list, with the menu unit each belongs to. */
+function menuLists(menus: MenusDocument): { ref: MenuListRef; where: string; unit: MenuUnit }[] {
+  const lists: { ref: MenuListRef; where: string; unit: MenuUnit }[] = [{ ref: ANYWHERE, where: "Anywhere menu", unit: "anywhere" }];
   const seen = new Set<string>();
   for (const domain of watchMenuDomains()) {
     if (seen.has(domain.slotKey)) continue;
     seen.add(domain.slotKey);
-    lists.push({ ref: { list: "domain", domain: domain.domain }, where: `Entity quick menu, ${domain.label}` });
+    lists.push({ ref: { list: "domain", domain: domain.domain }, where: `Entity quick menu, ${domain.label}`, unit: "entity" });
   }
   const overrides = watchMenusSection(menus, "entityRadial").entityOverrides;
   if (isJsonObject(overrides)) {
     for (const entityId of Object.keys(overrides)) {
-      lists.push({ ref: { list: "entity", entityId }, where: `Entity quick menu for ${entityId}` });
+      lists.push({ ref: { list: "entity", entityId }, where: `Entity quick menu for ${entityId}`, unit: "entity" });
     }
   }
   return lists;
 }
 
-/** Whether a slot goes to one of `pageIds`. */
-function slotOpens(slot: JsonObject, pageIds: readonly string[]): boolean {
-  if (slotActionType(slot) !== GO_TO_PAGE) return false;
-  const target = slotAction(slot)[GO_TO_PAGE_KEY];
+/** Whether a slot runs `action` on one of `pageIds`. */
+function slotOpens(slot: JsonObject, pageIds: readonly string[], action: PageAction): boolean {
+  if (slotActionType(slot) !== action) return false;
+  const target = slotAction(slot)[PAGE_KEY];
   return pageIds.some((id) => sameWatchId(target, id));
 }
 
-/** The menu slots that go to `pageId`, in list order. */
-export function menuSlotsOpeningPage(menus: MenusDocument | undefined, pageId: string): MenuPageRef[] {
+function slotsOpening(menus: MenusDocument | undefined, pageId: string, action: PageAction): MenuPageRef[] {
   if (menus === undefined) return [];
   const found: MenuPageRef[] = [];
   for (const { ref, where } of menuLists(menus)) {
     for (const slot of watchMenuSlots(menus, ref)) {
-      if (!slotOpens(slot, [pageId])) continue;
+      if (!slotOpens(slot, [pageId], action)) continue;
       const position = typeof slot.position === "string" ? watchMenuPositionLabel(slot.position) : "";
       found.push({ ref, slotId: watchMenuSlotId(slot), where, position });
     }
@@ -81,17 +118,46 @@ export function menuSlotsOpeningPage(menus: MenusDocument | undefined, pageId: s
   return found;
 }
 
-/** The menus with every slot that goes to one of `pageIds` taken out: a Go
- * to Page slot with no page is one the watch cannot run. The same document
- * (by identity) when nothing goes to them, so a caller can skip the save. */
-export function clearPageFromMenus(menus: MenusDocument, pageIds: readonly string[]): MenusDocument {
+/** The menu slots that go to `pageId`, in list order. */
+export function menuSlotsOpeningPage(menus: MenusDocument | undefined, pageId: string): MenuPageRef[] {
+  return slotsOpening(menus, pageId, GO_TO_PAGE);
+}
+
+/** The menu slots that show the status page `pageId`, in list order. */
+export function menuSlotsOpeningStatusPage(menus: MenusDocument | undefined, pageId: string): MenuPageRef[] {
+  return slotsOpening(menus, pageId, SHOW_STATUS_PAGE);
+}
+
+function clearFromMenus(menus: MenusDocument, pageIds: readonly string[], keep: KeepSlot, action: PageAction): MenusDocument {
   let next = menus;
-  for (const { ref } of menuLists(menus)) {
+  for (const { ref, unit } of menuLists(menus)) {
+    const ids = pageIds.filter((id) => !keep(unit, id));
+    if (ids.length === 0) continue;
     for (const slot of watchMenuSlots(next, ref)) {
-      if (slotOpens(slot, pageIds)) next = removeWatchMenuSlot(next, ref, watchMenuSlotId(slot));
+      if (slotOpens(slot, ids, action)) next = removeWatchMenuSlot(next, ref, watchMenuSlotId(slot));
     }
   }
   return next;
+}
+
+/** The menus with every slot that goes to one of `pageIds` taken out: a Go
+ * to Page slot with no page is one the watch cannot run. A slot `keep` says
+ * a shared menu still needs stays. The same document (by identity) when
+ * nothing goes, so a caller can skip the save. */
+export function clearPageFromMenus(menus: MenusDocument, pageIds: readonly string[], keep: KeepSlot = KEEP_NO_SLOT): MenusDocument {
+  return clearFromMenus(menus, pageIds, keep, GO_TO_PAGE);
+}
+
+/** `clearPageFromMenus` for status pages: the Status page slots that show
+ * one of `pageIds`. */
+export function clearStatusPageFromMenus(menus: MenusDocument, pageIds: readonly string[], keep: KeepSlot = KEEP_NO_SLOT): MenusDocument {
+  return clearFromMenus(menus, pageIds, keep, SHOW_STATUS_PAGE);
+}
+
+/** How many slots of `menus` open one of `pageIds`: Go to page slots, or
+ * with `status` Status page slots. */
+export function countMenuRefs(menus: MenusDocument, pageIds: readonly string[], status = false): number {
+  return pageIds.reduce((n, id) => n + slotsOpening(menus, id, status ? SHOW_STATUS_PAGE : GO_TO_PAGE).length, 0);
 }
 
 /** How a complication opens the page: its own tap, and how many of its tap

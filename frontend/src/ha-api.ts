@@ -757,17 +757,18 @@ export async function fetchWatchConfigSummary(hass: HassLike) {
   return hass.connection.sendMessagePromise<WatchConfigSummary>({ type: `${WC}/summary` });
 }
 
-/** A linked copy a save could not bring up to date: that device kept the
- * old version of its linked pages or status pages. */
+/** A device a save could not bring up to date: it kept the old version of
+ * the pages, status pages or menus it shares with the saved one, or of its
+ * linked phrases. */
 export interface WatchConfigLinkFailure {
   owner: string;
   name: string;
 }
 
-/** What a save answers. `link_failures` lists, on a `pages` or
- * `status_pages` save, the devices whose linked copies Home Assistant could
- * not update; absent from integrations older than the field, and when every
- * copy was updated. */
+/** What a save answers. `link_failures` lists, on a save of a linked kind
+ * (`pages`, `status_pages`, `menus`, `voice`), the devices whose linked
+ * copies Home Assistant could not update; absent from integrations older
+ * than the field, and when every copy was updated. */
 export interface WatchConfigSaveReply {
   revision: number;
   link_failures?: WatchConfigLinkFailure[];
@@ -799,66 +800,70 @@ export async function saveWatchConfig(
   });
 }
 
-// ── linked pages ─────────────────────────────────────────────────────────
+// ── linked voice ─────────────────────────────────────────────────────────
 //
-// A page on several devices is the same page id in each device's `pages`
-// record, with a `linkId` key on the page. Home Assistant writes every save
-// of a linked page to the other devices' copies itself, so the panel saves
-// one device as always. Plan: app repo docs/linked_pages_plan_2026-10.md.
+// A watch's phrases and their defaults can be on several watches as one
+// unit: the same values in each watch's `voice` record, under a top-level
+// `linkIds` that maps the unit to its link id. Home Assistant writes every
+// save of one copy to the others itself, so the voice editor saves one
+// watch as always (`watch-voice/links.ts`). Pages, status pages and menus
+// never link: they live once in the home's library, and a device picks them
+// (`library/client.ts`).
 
 const WP = "wrist_assistant/watch_pages";
 
-/** What `watch_pages/link` put on each target: the page ids and status page
- * ids it added there (the ones asked for, and what their tiles open), and
- * the link id each asked page now carries. */
-export interface WatchPagesLinkReply {
-  targets: Record<string, { pages: string[]; status_pages: string[] }>;
+/** The one kind that links by unit: a watch's phrases and their defaults. */
+export type WatchLinkUnitKind = "voice";
+
+/** What `watch_pages/link` did for voice: on each target the units written
+ * there, and the link id of each unit. */
+export interface WatchUnitsLinkReply {
+  targets: Record<string, { units: string[] }>;
   link_ids: Record<string, string>;
 }
 
-/** Put pages of `sourceId` on the `targets` devices as linked copies, with
- * the pages and status pages their tiles open. Checked first, then written.
- * Refusals: `unknown_device`, `not_found`, `system_page`, `id_taken` (a
- * target holds that id for a page that is not linked), and the generic ones.
- * An integration older than linked pages answers `unknown_command`. */
-export async function linkWatchPages(hass: HassLike, sourceId: string, pageIds: readonly string[], targets: readonly string[]) {
-  return hass.connection.sendMessagePromise<WatchPagesLinkReply>({
+/** Put the `units` of `sourceId`'s `kind` on the `targets` watches as
+ * linked copies (`watch_pages/link` with kind `voice`). A target that holds
+ * the unit with other values is refused `unit_taken` unless `replace`, which
+ * writes over it. Refusals besides the generic ones: `not_found` (the source
+ * holds no record of the kind), `awaiting_move`, `not_for_iphone` (voice is
+ * a watch's alone), `unknown_device`. An integration that does not link the
+ * kind answers `invalid`, one older than linked pages `unknown_command`. */
+export async function linkWatchUnits(
+  hass: HassLike,
+  kind: WatchLinkUnitKind,
+  sourceId: string,
+  units: readonly string[],
+  targets: readonly string[],
+  replace = false,
+) {
+  return hass.connection.sendMessagePromise<WatchUnitsLinkReply>({
     type: `${WP}/link`,
     source_id: sourceId,
-    page_ids: [...pageIds],
     targets: [...targets],
+    kind,
+    units: [...units],
+    replace,
   });
 }
 
-/** What `watch_pages/link_all` did: the page ids and status page ids it put
- * on the target, and the kinds it copied there because the target had none
- * (`menus`, `rooms`). */
-export interface WatchPagesLinkAllReply {
-  pages: string[];
-  status_pages: string[];
-  copied: string[];
+/** One linked unit as `watch_pages/places` lists it: which unit, and the
+ * watches that hold a copy. */
+export interface WatchUnitPlace {
+  unit: string;
+  owners: string[];
 }
 
-/** Link every page (never a system page) and every status page of
- * `sourceId` onto `targetId`, then copy its menus and rooms there, each only
- * when the target has none. All in Home Assistant, in one step. Refusals as
- * `linkWatchPages`; an integration older than it answers `unknown_command`. */
-export async function linkAllWatchPages(hass: HassLike, sourceId: string, targetId: string) {
-  return hass.connection.sendMessagePromise<WatchPagesLinkAllReply>({
-    type: `${WP}/link_all`,
-    source_id: sourceId,
-    target_id: targetId,
-  });
-}
-
-/** For every link id, the devices that hold a copy of it. */
+/** For every voice link id, the watches that hold a copy of it. Older
+ * integrations also answered with page, status page and menu links, which
+ * nothing reads; `voice` is absent from integrations older than voice
+ * links. */
 export interface WatchPagesPlaces {
-  pages: Record<string, string[]>;
-  status_pages: Record<string, string[]>;
+  voice?: Record<string, WatchUnitPlace>;
 }
 
-/** Where each linked page and status page is. An integration older than
- * linked pages answers `unknown_command`. */
+/** Where each linked voice unit is. An integration older than linked pages
+ * answers `unknown_command`. */
 export async function fetchWatchPagesPlaces(hass: HassLike) {
   return hass.connection.sendMessagePromise<WatchPagesPlaces>({ type: `${WP}/places` });
 }

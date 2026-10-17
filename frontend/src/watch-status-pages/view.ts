@@ -1,6 +1,7 @@
 // The status page editor's views, drawn from a host, in the complication
 // editor's chrome (`editor-chrome.ts`) as the page and menu editors wear it:
-// the Status pages card (the list: add, pick, move, delete), the Rows card
+// the Status pages card (the list: add, pick, move, delete, and the
+// library's rest, "Not on this watch", under it), the Rows card
 // (the picked page's rows: pick, move, hide, remove, add), the watch preview
 // the canvas draws from Home Assistant's states with the watch's own rules
 // (`rules.ts`), and the inspector: a picked row's Row card, the Add a row
@@ -100,12 +101,29 @@ export interface StatusPagesViewHost {
    * the phone draws a status page over the pages, and the page is drawn in
    * the iPhone (`phone-frame.ts`). */
   readonly phone?: PhonePagesLayout;
-  /** A linked status page's badge, "Also on Jesse's iPhone", or undefined
-   * for one on this device alone (`linkBadgeText`). */
+  /** The badge of a status page other devices have too, "Also on Jesse's
+   * iPhone", or undefined for one on this device alone
+   * (`libraryBadgeText`). */
   linkBadge?(page: JsonObject): string | undefined;
   /** The line under the page list when some pages are on other devices too
-   * (`statusPagesSharedText`). */
+   * (`statusSharedText`). */
   readonly sharedLine?: string;
+  /** A page's tick row in its Page card: a chip per device, ticked where
+   * the page is (`library/ticks.ts`). Absent with one device, before the
+   * library is read, and on an integration older than it. */
+  ticks?(page: JsonObject): TemplateResult;
+  /** Delete a page. One other devices have too asks first: off this device
+   * only, or out of the library. Without it, Delete is an edit at once, as
+   * it always was. */
+  deletePage?(pageId: string): void;
+  /** Drawn under the page list: "Not on this watch", the library's status
+   * pages this device does not have, each with a way to add it here
+   * (`watch-pages/library-rest.ts`). */
+  readonly elsewhere?: TemplateResult;
+  /** One status page edited in the library on its own: no Add, and its row
+   * has no drag and no Move up or down. Delete stays, through
+   * `deletePage`. */
+  readonly single?: boolean;
   /** Apply `change` to the document as it is now: one undo step, or with
    * `coalesce` a step the next edits with the same key replace. */
   edit(change: (document: StatusPagesDocument) => StatusPagesDocument, coalesce?: string): boolean;
@@ -114,6 +132,13 @@ export interface StatusPagesViewHost {
 }
 
 type ViewState = Pick<StatusPagesViewHost, "uiState" | "document">;
+
+/** Delete a page: the host's way, which asks for one other devices have
+ * too, else at once. */
+function deletePage(host: StatusPagesViewHost, pageId: string): void {
+  if (host.deletePage !== undefined) host.deletePage(pageId);
+  else host.edit((d) => removeStatusPage(d, pageId));
+}
 
 const FOLD_MODULE = "status-pages";
 const PAGE_KEY = "sp:page";
@@ -371,8 +396,9 @@ function pageRow(host: StatusPagesViewHost, page: JsonObject, index: number, cou
   const drag = dragHandlers(host, "page", id, index, move);
   const pick = () => { if (!on) selectStatusPage(host, id); };
   const shared = host.linkBadge?.(page);
+  const single = host.single === true;
   return html`<div class="layer sp-page-row ${on ? "hl" : ""}" data-page=${id} role="listitem" tabindex="0"
-    draggable=${host.busy ? "false" : "true"} aria-current=${on ? "true" : "false"} aria-label=${name || "Untitled page"}
+    draggable=${host.busy || single ? "false" : "true"} aria-current=${on ? "true" : "false"} aria-label=${name || "Untitled page"}
     @dragstart=${drag.start} @dragover=${drag.over} @drop=${drag.drop} @dragend=${drag.end}
     @click=${(e: Event) => { if (!(e.target instanceof Element && e.target.closest("button"))) pick(); }}
     @keydown=${(e: KeyboardEvent) => {
@@ -384,14 +410,14 @@ function pageRow(host: StatusPagesViewHost, page: JsonObject, index: number, cou
     ${thumb(host, "doc.text.fill", "#5B8FD4")}
     <span class="name"><b><span class="nm-t">${name || "Untitled page"}</span></b><small>${plural(rows, "row", "rows")}</small></span>
     <span class="right">
-      <span class="badges">${shared === undefined ? nothing : html`<span class="badge sp-linked" title=${`${shared}. An edit here shows there too.`}>${shared}</span>`}${isSystemStatusPage(page) ? html`<span class="badge" title="One of the app's starter pages. The watch treats it as any other page.">starter</span>` : nothing}</span>
+      <span class="badges">${shared === undefined ? nothing : html`<span class="badge sp-linked" title=${`${shared}. An edit here shows there too.`}>${shared}</span>`}${isSystemStatusPage(page) ? html`<span class="badge" title="One of the app's starter pages. It is edited and put on devices like any other.">starter</span>` : nothing}</span>
       <span class="acts">
-        <button type="button" class="icon" ?disabled=${host.busy || index === 0} title="Move up" aria-label=${`Move ${name} up`}
+        ${single ? nothing : html`<button type="button" class="icon" ?disabled=${host.busy || index === 0} title="Move up" aria-label=${`Move ${name} up`}
           @click=${() => move(id, index - 1)}>${uiIcon("up")}</button>
         <button type="button" class="icon" ?disabled=${host.busy || index === count - 1} title="Move down" aria-label=${`Move ${name} down`}
-          @click=${() => move(id, index + 1)}>${uiIcon("down")}</button>
+          @click=${() => move(id, index + 1)}>${uiIcon("down")}</button>`}
         <button type="button" class="icon danger" ?disabled=${host.busy} title="Delete" aria-label=${`Delete ${name}`}
-          @click=${() => host.edit((d) => removeStatusPage(d, id))}>${uiIcon("delete")}</button>
+          @click=${() => deletePage(host, id)}>${uiIcon("delete")}</button>
       </span>
     </span>
   </div>`;
@@ -407,13 +433,14 @@ export function renderPagesCard(host: StatusPagesViewHost): TemplateResult {
       <span class="swatch">${uiIcon("list")}</span><span class="lc-title">Status pages</span>
       <span class="lc-sub" title=${STATUS_PAGES_CARD_LINE}>${plural(pages.length, "page", "pages")}</span>
       <span class="spacer"></span>
-      <button type="button" class="lc-btn pri sp-add-page" aria-label="Add status page" ?disabled=${host.busy}
-        title="Add a status page" @click=${() => addPage(host)}>${uiIcon("plus")}<span>Add</span></button>
+      ${host.single === true ? nothing : html`<button type="button" class="lc-btn pri sp-add-page" aria-label="Add status page" ?disabled=${host.busy}
+        title="Add a status page" @click=${() => addPage(host)}>${uiIcon("plus")}<span>Add</span></button>`}
     </div>
     ${pages.length === 0
       ? html`<div class="lc-note">No status pages. Add one to show the live state of entities you pick.</div>`
       : html`<div class="layers sp-page-list" role="list">${pages.map((p, i) => pageRow(host, p, i, pages.length, shown))}</div>`}
     ${host.sharedLine === undefined || pages.length === 0 ? nothing : html`<div class="lc-note sp-shared-note" role="note">${host.sharedLine}</div>`}
+    ${host.elsewhere ?? nothing}
   </section>`;
 }
 
@@ -545,13 +572,17 @@ function pill(style: PreviewStyle, color: string): string {
   return "";
 }
 
-function previewIcon(host: StatusPagesViewHost, style: PreviewStyle, row: StatusPreviewRow, size: number, scale: number): TemplateResult {
+/** What drawing the watch screen needs of the host: the Status pages tab's cards
+ * hand in only this (`renderStatusPagePicture`). */
+type ScreenHost = Pick<StatusPagesViewHost, "hass" | "icons" | "scale" | "screen" | "phone" | "uiState" | "document" | "requestUpdate">;
+
+function previewIcon(host: ScreenHost, style: PreviewStyle, row: StatusPreviewRow, size: number, scale: number): TemplateResult {
   const color = hexColor(row.color);
   return html`<span class="sp-w-icon" style=${`width:${size * scale}px`}>${glyph(host, row.icon, Math.round(size * 0.8 * scale), color)}</span>`;
 }
 
 /** One row of a single column page (`statusRow`), or a header. */
-function previewRow(host: StatusPagesViewHost, style: PreviewStyle, row: StatusPreviewRow, selectedId: string | undefined): TemplateResult {
+function previewRow(host: ScreenHost, style: PreviewStyle, row: StatusPreviewRow, selectedId: string | undefined): TemplateResult {
   const s = host.scale;
   const sizes = TEXT_SIZES[style.textSize] ?? TEXT_SIZES.medium!;
   const on = selectedId !== undefined && sameStatusId(selectedId, row.rowId);
@@ -573,7 +604,7 @@ function previewRow(host: StatusPagesViewHost, style: PreviewStyle, row: StatusP
 }
 
 /** One cell of a two column page (`twoColCell`): the icon and the value. */
-function previewCell(host: StatusPagesViewHost, style: PreviewStyle, row: StatusPreviewRow, selectedId: string | undefined): TemplateResult {
+function previewCell(host: ScreenHost, style: PreviewStyle, row: StatusPreviewRow, selectedId: string | undefined): TemplateResult {
   const s = host.scale;
   const sizes = TEXT_SIZES[style.textSize] ?? TEXT_SIZES.medium!;
   const on = selectedId !== undefined && sameStatusId(selectedId, row.rowId);
@@ -598,6 +629,37 @@ function divider(scale: number): TemplateResult {
  * now, then Done. Hidden rows are not drawn. A row tapped here is picked.
  */
 export function renderStatusPageScreen(host: StatusPagesViewHost): TemplateResult {
+  const label = host.phone === undefined ? "Status page on the watch" : "Status page on the iPhone";
+  return renderDeviceFrame(host.phone, host.screen, host.scale, statusScreenBox(host, label), label, host.icons);
+}
+
+/**
+ * One status page alone, as the watch draws it, with no watch or iPhone
+ * around it and nothing to pick: the picture on a card of the Status
+ * pages tab. `scale` is points to pixels on `screen`.
+ */
+export function renderStatusPagePicture(input: {
+  page: JsonObject;
+  hass: HassLike;
+  icons: IconProvider;
+  screen: { width: number; height: number };
+  scale: number;
+}): TemplateResult {
+  const host: ScreenHost = {
+    hass: input.hass,
+    icons: input.icons,
+    screen: input.screen,
+    scale: input.scale,
+    uiState: new Map<string, unknown>([[PAGE_KEY, statusPageId(input.page)]]),
+    document: { statusPages: [input.page] },
+    requestUpdate: () => undefined,
+  };
+  return statusScreenBox(host, `${statusPageName(input.page) || "Untitled page"} on the watch`);
+}
+
+/** The watch screen with the shown page on it: the card of its rows, then
+ * Done. */
+function statusScreenBox(host: ScreenHost, label: string): TemplateResult {
   const { width, height } = host.screen;
   const s = host.scale;
   const page = shownStatusPage(host);
@@ -626,10 +688,8 @@ export function renderStatusPageScreen(host: StatusPagesViewHost): TemplateResul
       <div class="sp-w-done" style=${`font-size:${15 * s}px;padding:${12 * s}px 0;border-radius:${20 * s}px`}>Done</div>
     </div>`;
   }
-  const label = host.phone === undefined ? "Status page on the watch" : "Status page on the iPhone";
-  const box = html`<div class="sp-screen" role="group" aria-label=${label}
+  return html`<div class="sp-screen" role="group" aria-label=${label}
     style=${`width:${Math.round(width * s)}px;min-height:${Math.round(height * s)}px`}>${content}</div>`;
-  return renderDeviceFrame(host.phone, { width, height }, s, box, label, host.icons);
 }
 
 /** The canvas head's facts: the page's rows and what the watch draws. */
@@ -968,16 +1028,18 @@ function renderLookCards(host: StatusPagesViewHost, page: JsonObject): TemplateR
     </div>`;
 }
 
-/** The Page card: the name, and Delete. */
+/** The Page card: the name, the tick row when the page can be on other
+ * devices, and Delete. */
 function renderPageCard(host: StatusPagesViewHost, page: JsonObject): TemplateResult {
   const pageId = statusPageId(page);
   const name = statusPageName(page);
   return card(host, "page", "page", "Page", html`<fieldset class="sp-body" ?disabled=${host.busy} aria-label="Page">
     ${textField("Name", name, (v) => host.edit((d) => renameStatusPage(d, pageId, v), `page:${pageId}:name`), { placeholder: "Page Name" })}
-    ${isSystemStatusPage(page) ? html`<div class="hint ts-under">One of the app's starter pages. It is edited and deleted like any other.</div>` : nothing}
+    ${isSystemStatusPage(page) ? html`<div class="hint ts-under">One of the app's starter pages. It is edited, put on devices and deleted like any other.</div>` : nothing}
+    ${host.ticks?.(page) ?? nothing}
     <div class="sp-acts">
       <button type="button" class="pe-btn pe-danger" ?disabled=${host.busy} title="Delete this status page"
-        @click=${() => host.edit((d) => removeStatusPage(d, pageId))}>${uiIcon("delete")}<span>Delete page</span></button>
+        @click=${() => deletePage(host, pageId)}>${uiIcon("delete")}<span>Delete page</span></button>
     </div>
   </fieldset>`, { summary: name });
 }
@@ -1123,13 +1185,18 @@ export const statusPagesViewStyles = css`
   .sp-pages-card > .lc-note, .sp-rows-card > .lc-note { margin: 8px 12px; color: var(--wa-muted); }
   .sp-rows-card > .lc-note.sp-drag-note { margin-top: 0; font-size: 11.5px; }
   .sp-pages-card > .lc-note.sp-shared-note { margin-top: 0; font-size: 11.5px; }
-  /* A linked status page's badge, the page editor's (\`.badge.pe-linked\`):
+  /* The badge of a status page other devices have too, the page editor's
+     (\`.badge.pe-linked\`):
      cut short in a narrow list, its title holds the whole name. */
   .badge.sp-linked {
     max-width: 140px; overflow: hidden; text-overflow: ellipsis; display: inline-block; line-height: 20px; white-space: nowrap;
     color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 12%, transparent);
   }
   .lc-btn.on { box-shadow: var(--wa-ring); }
+  /* A status page's tick row in its Page card (libraryTicksStyles). */
+  .sp-lib { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .sp-lib-h { font-size: 11.5px; font-weight: 600; color: var(--wa-muted); }
+  .sp-lib-hint { margin: 0; font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
   .layer .acts button.icon { display: inline-grid; place-items: center; padding: 0; }
   .layer .acts button.icon:disabled { opacity: .35; cursor: default; }
   .layer .thumb.sp-thumb { display: grid; place-items: center; background: color-mix(in srgb, var(--c, #888) 22%, #000); }

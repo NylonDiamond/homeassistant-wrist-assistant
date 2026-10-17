@@ -1,14 +1,13 @@
-// The writes a page's Devices menu and a delete make beyond the page
-// editor's own draft, shared by the page editor and the Pages tab
-// (`all-pages.ts`): taking a page off one device, and clearing the menu
-// slots and complication taps that opened a page once it is gone there.
+// The writes a page leaving a device makes beyond the page editor's own
+// draft: clearing the menu slots and complication taps there that opened it.
+// The page editor runs it after a save that took pages off, and an untick of
+// a device runs it after `library/pick` took the page off
+// (`library-editing-io.ts`). The Pages tab's multi-select calls are
+// `all-pages-io.ts`.
 
-import { type HassLike, fetchList, fetchWatchConfig, linkWatchPages, saveRecord, saveWatchConfig } from "../ha-api.js";
-import type { BulkIO } from "./all-pages-bulk.js";
-import { keptWatchPagesDraft } from "./kept.js";
-import { removePageFrom, removePagesFrom } from "./links.js";
+import { type HassLike, fetchList, fetchWatchConfig, saveRecord, saveWatchConfig } from "../ha-api.js";
 import { isJsonObject } from "./model.js";
-import { clearPageFromComplication, clearPageFromMenus, menuSlotsOpeningPage } from "./page-refs.js";
+import { KEEP_NO_SLOT, type KeepSlot, clearPageFromComplication, clearPageFromMenus, clearStatusPageFromMenus, countMenuRefs } from "./page-refs.js";
 import type { WatchPagesNote } from "./save-note.js";
 
 function plural(n: number, one: string, many: string): string {
@@ -16,25 +15,35 @@ function plural(n: number, one: string, many: string): string {
 }
 
 /**
+ * Take the slots of a device's menus that open one of `pageIds` (Status page
+ * slots with `status`) out of its menus record, in one save on the revision
+ * just read. A slot `keep` says a shared menu still needs stays
+ * (`clearPageFromMenus`). How many went; a failure rejects.
+ */
+export async function clearMenuRefs(hass: HassLike, ownerId: string, pageIds: readonly string[], keep: KeepSlot = KEEP_NO_SLOT, status = false): Promise<number> {
+  const record = await fetchWatchConfig(hass, ownerId, "menus");
+  if (record.revision <= 0 || !isJsonObject(record.document)) return 0;
+  const before = record.document;
+  const next = status ? clearStatusPageFromMenus(before, pageIds, keep) : clearPageFromMenus(before, pageIds, keep);
+  if (next === before) return 0;
+  await saveWatchConfig(hass, ownerId, "menus", record.revision, next);
+  return countMenuRefs(before, pageIds, status) - countMenuRefs(next, pageIds, status);
+}
+
+/**
  * After pages went from a device: take every menu slot there that went to
  * one of them out of its menus record, and make every complication tap that
  * opened one do nothing, each in its own save on the revision just read. A
- * note says what was cleared, or what could not be (the page is gone either
- * way; a slot left behind only fails on the device, as before).
+ * shared menu keeps the slots `keep` names (`keepSlotsOf`). A note says what
+ * was cleared, or what could not be (the page is gone either way; a slot
+ * left behind only fails on the device, as before).
  */
-export async function clearPageRefs(hass: HassLike, ownerId: string, pageIds: string[]): Promise<WatchPagesNote | undefined> {
+export async function clearPageRefs(hass: HassLike, ownerId: string, pageIds: string[], keep: KeepSlot = KEEP_NO_SLOT): Promise<WatchPagesNote | undefined> {
   let slots = 0;
   let taps = 0;
   const failed: string[] = [];
   try {
-    const record = await fetchWatchConfig(hass, ownerId, "menus");
-    if (record.revision > 0 && isJsonObject(record.document)) {
-      const next = clearPageFromMenus(record.document, pageIds);
-      if (next !== record.document) {
-        slots = pageIds.reduce((n, id) => n + menuSlotsOpeningPage(record.document as Record<string, unknown>, id).length, 0);
-        await saveWatchConfig(hass, ownerId, "menus", record.revision, next);
-      }
-    }
+    slots = await clearMenuRefs(hass, ownerId, pageIds, keep);
   } catch {
     failed.push("the menus");
     slots = 0;
@@ -64,40 +73,4 @@ export async function clearPageRefs(hass: HassLike, ownerId: string, pageIds: st
   }
   if (done.length === 0) return undefined;
   return { kind: "ok", text: `Saved. Cleared the deleted page from ${done.join(" and ")}.` };
-}
-
-/** The calls the Pages tab's multi-select makes (`all-pages-bulk.ts`):
- * linking, taking pages off a device in one save, and clearing what opened
- * them there. */
-export function pagesBulkIO(hass: HassLike): BulkIO {
-  return {
-    link: (source, pageIds, target) => linkWatchPages(hass, source, pageIds, [target]),
-    remove: (ownerId, pageIds) => removePagesFrom({
-      read: (o) => fetchWatchConfig(hass, o, "pages"),
-      save: (o, base, document) => saveWatchConfig(hass, o, "pages", base, document),
-    }, ownerId, pageIds),
-    clearRefs: (ownerId, pageIds) => clearPageRefs(hass, ownerId, pageIds),
-  };
-}
-
-/**
- * Take one page off a device at once (`removePageFrom`): its pages saved
- * without it, over the revision read. The tiles there that open it stay,
- * since a linked page's tiles are shared. Then that device's menu slots and
- * complication taps that opened it are cleared, as after a delete. A device
- * whose page editor holds unsaved edits in this tab is left alone.
- * Undefined when done, else what to say. `name` is the device's.
- */
-export async function takePageOff(hass: HassLike | undefined, ownerId: string, pageId: string, name: string): Promise<string | undefined> {
-  if (!hass) return `Not taken off ${name}.`;
-  if (keptWatchPagesDraft(ownerId)?.dirty ?? false) {
-    return `Not taken off ${name}: its pages have unsaved edits. Save or discard them first.`;
-  }
-  const result = await removePageFrom({
-    read: (o) => fetchWatchConfig(hass, o, "pages"),
-    save: (o, base, document) => saveWatchConfig(hass, o, "pages", base, document),
-  }, ownerId, pageId);
-  if (!result.ok) return `Not taken off ${name}: ${result.message}`;
-  if (result.removed) await clearPageRefs(hass, ownerId, [pageId]);
-  return undefined;
 }

@@ -1,4 +1,5 @@
-"""Pure tests for ``page_links.py``: one page on several devices.
+"""Pure tests for ``page_links.py``: the page walk, the rooms copy, and a
+watch's linked voice settings.
 
 The module imports nothing from Home Assistant or the package, so it is
 loaded straight from its file.
@@ -6,8 +7,8 @@ loaded straight from its file.
 
 from __future__ import annotations
 
-import copy
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -89,149 +90,7 @@ def test_reach_does_not_walk_a_smart_page_or_follow_missing_status_pages() -> No
     assert links.link_reach(pages, None, [HOME]) == ([HOME], [])
 
 
-def test_check_link_refuses_missing_and_system_pages() -> None:
-    links.check_link(_pages(), [HOME])
-    with pytest.raises(links.PageLinkError) as err:
-        links.check_link(_pages(), ["missing"])
-    assert err.value.code == "not_found"
-    with pytest.raises(links.PageLinkError) as err:
-        links.check_link(_pages(), [SYSTEM])
-    assert err.value.code == "system_page"
-
-
-# ── apply_link ───────────────────────────────────────────────────────────
-
-
-def test_apply_link_assigns_link_ids_and_appends_to_the_target() -> None:
-    source = _pages()
-    before = copy.deepcopy(source)
-    target = {"schemaVersion": 1, "pages": [{"id": "OWN", "name": "Mine"}]}
-    new_source, new_target, added, ids = links.apply_link(source, target, "pages", [HOME, DEEP])
-    assert source == before, "the input is never changed"
-    assert added == [HOME, DEEP]
-    assert set(ids) == {HOME, DEEP}
-    assert all(len(link) == 32 for link in ids.values())
-    assert [p["id"] for p in new_target["pages"]] == ["OWN", HOME, DEEP]
-    by_id = {p["id"]: p for p in new_source["pages"]}
-    assert by_id[HOME]["linkId"] == ids[HOME]
-    assert new_target["pages"][1]["linkId"] == ids[HOME]
-    assert new_target["pages"][2]["isHidden"] is True, "the source's isHidden is copied"
-    assert "linkId" not in by_id[ALONE]
-
-
-def test_apply_link_keeps_an_existing_link_id_and_a_target_copy() -> None:
-    source = _pages()
-    source["pages"][1]["linkId"] = "L-HOME"
-    target = {"pages": [{"id": HOME.lower(), "name": "Old", "linkId": "L-HOME"}]}
-    new_source, new_target, added, ids = links.apply_link(source, target, "pages", [HOME])
-    assert ids == {HOME: "L-HOME"}
-    assert added == []
-    assert new_target == target
-    assert new_source == source
-
-
-def test_apply_link_refuses_an_id_the_target_holds_unlinked() -> None:
-    target = {"pages": [{"id": HOME, "name": "Other"}]}
-    with pytest.raises(links.PageLinkError) as err:
-        links.apply_link(_pages(), target, "pages", [HOME])
-    assert err.value.code == "id_taken"
-    target["pages"][0]["linkId"] = "someone-else"
-    with pytest.raises(links.PageLinkError):
-        links.apply_link(_pages(), target, "pages", [HOME])
-
-
-def test_apply_link_onto_no_record_starts_an_empty_document() -> None:
-    _source, target, added, _ids = links.apply_link(_pages(), None, "pages", [ALONE])
-    assert target["schemaVersion"] == 1
-    assert [p["id"] for p in target["pages"]] == [ALONE]
-    assert added == [ALONE]
-
-
-def test_apply_link_refuses_system_and_missing_pages() -> None:
-    with pytest.raises(links.PageLinkError) as err:
-        links.apply_link(_pages(), None, "pages", [SYSTEM])
-    assert err.value.code == "system_page"
-    with pytest.raises(links.PageLinkError) as err:
-        links.apply_link(_pages(), None, "pages", ["x"])
-    assert err.value.code == "not_found"
-
-
-def test_a_system_status_page_is_copied_unlinked_or_left_alone() -> None:
-    source, target, added, ids = links.apply_link(
-        _status(), None, "statusPages", [SYSTEM_STATUS, STATUS]
-    )
-    assert added == [SYSTEM_STATUS, STATUS]
-    assert set(ids) == {STATUS}
-    assert "linkId" not in target["statusPages"][0]
-    assert "linkId" not in source["statusPages"][0]
-    held = {"statusPages": [{"id": SYSTEM_STATUS, "name": "Mine", "rows": []}]}
-    _s, again, added, _i = links.apply_link(_status(), held, "statusPages", [SYSTEM_STATUS])
-    assert added == [] and again == held
-
-
-# ── fan_out ──────────────────────────────────────────────────────────────
-
-
-def _linked_pair() -> tuple[dict, dict]:
-    source, target, _added, _ids = links.apply_link(_pages(), None, "pages", [HOME, DEEP])
-    return source, target
-
-
-def test_fan_out_replaces_linked_pages_keeping_place_and_hidden() -> None:
-    source, target = _linked_pair()
-    target["pages"].insert(0, {"id": "PHONE-ONLY", "name": "Phone"})
-    target["pages"].reverse()  # DEEP, HOME, PHONE-ONLY
-    target["pages"][1]["isHidden"] = True
-    source["pages"][1]["name"] = "Home renamed"
-    source["pages"][1]["isHidden"] = False
-    source["pages"][3]["name"] = "Deep renamed"
-    out = links.fan_out(source, target, "pages")
-    assert [p["id"] for p in out["pages"]] == [DEEP, HOME, "PHONE-ONLY"]
-    assert out["pages"][1]["name"] == "Home renamed"
-    assert out["pages"][1]["isHidden"] is True, "the other device's isHidden stays"
-    assert out["pages"][0]["name"] == "Deep renamed"
-    assert out["pages"][0]["isHidden"] is True
-    assert out["pages"][2] == {"id": "PHONE-ONLY", "name": "Phone"}
-
-
-def test_fan_out_drops_hidden_the_other_never_had() -> None:
-    source, target = _linked_pair()
-    del target["pages"][1]["isHidden"]
-    source["pages"][3]["name"] = "Changed"
-    out = links.fan_out(source, target, "pages")
-    assert "isHidden" not in out["pages"][1]
-
-
-def test_fan_out_is_none_when_nothing_changes() -> None:
-    source, target = _linked_pair()
-    assert links.fan_out(source, target, "pages") is None
-    target["pages"][0]["isHidden"] = True
-    assert links.fan_out(source, target, "pages") is None, "only isHidden differs"
-    assert links.fan_out(_pages(), target, "pages") is None, "no links in the save"
-
-
-def test_fan_out_never_removes_a_page_or_moves_a_duplicate() -> None:
-    source, target = _linked_pair()
-    dup = copy.deepcopy(source["pages"][1])
-    dup["id"] = "DUPLICATE"
-    dup["name"] = "Copy"
-    source["pages"] = [p for p in source["pages"] if p["id"] != HOME] + [dup]
-    assert links.fan_out(source, target, "pages") is None
-
-
 # ── helpers ──────────────────────────────────────────────────────────────
-
-
-def test_link_ids_drop_link_and_places() -> None:
-    source, target = _linked_pair()
-    ids = links.link_ids(source, "pages")
-    assert ids == links.link_ids(target, "pages") and len(ids) == 2
-    one = min(ids)
-    dropped = links.drop_link(target, "pages", one)
-    assert links.link_ids(dropped, "pages") == ids - {one}
-    assert links.drop_link(dropped, "pages", one) is None
-    places = links.link_places({"w": source, "p": target, "x": None}, "pages")
-    assert places == {link: ["p", "w"] for link in sorted(ids)}
 
 
 def test_listed_page_ids_and_rooms_from_behavior() -> None:
@@ -241,3 +100,154 @@ def test_listed_page_ids_and_rooms_from_behavior() -> None:
     assert links.rooms_from_behavior(
         {"roomAutoSwitchEnabled": True, "roomQuickJumpMappings": [], "other": 1}
     ) == {"schemaVersion": 1, "roomAutoSwitchEnabled": True, "roomQuickJumpMappings": []}
+    assert links.ids_in(_status(), "statusPages") == [SYSTEM_STATUS, STATUS]
+
+
+def test_only_voice_links() -> None:
+    """Pages, status pages and menus live in the library now: no link code
+    is left for them here."""
+    assert list(links.LINK_UNITS) == ["voice"]
+    for kind in ("pages", "status_pages", "menus", "rooms"):
+        assert links.link_ops(kind) is None
+    for gone in ("LINKED_KINDS", "LINK_KEY", "apply_link", "fan_out", "drop_link", "menu_targets"):
+        assert not hasattr(links, gone), gone
+
+
+# ── linked units (the voice settings) ────────────────────────────────────
+
+_FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
+_PHRASE_KEYS = ("defaultAssistAgentId", "defaultSpeakers", "defaultTTSEngine", "phrases")
+_WATCH_KEYS = ("watchSpeakReplyInSilentMode", "watchSpeechVoiceIdentifier")
+
+
+def _voice() -> dict:
+    """The panel's configured voice fixture: three phrases, the defaults,
+    and both of the watch's own speech settings."""
+    return json.loads((_FRONTEND / "test" / "fixtures-voice" / "02-configured.json").read_text())
+
+
+def _other_voice() -> dict:
+    return {
+        "defaultSpeakers": ["media_player.bedroom"],
+        "defaultTTSEngine": "tts.piper",
+        "phrases": [],
+        "schemaVersion": 1,
+        "watchSpeakReplyInSilentMode": True,
+        "watchSpeechVoiceIdentifier": "com.apple.voice.compact.en-GB.Daniel",
+    }
+
+
+def test_the_voice_unit_and_the_watchs_own_keys_split_the_voice_table() -> None:
+    """Every top-level key of the panel's voice table is in the phrase unit,
+    is one of the watch's own, or is ``schemaVersion``; none is in two."""
+    table = json.loads((_FRONTEND / "src" / "watch-voice" / "voice-keys.json").read_text())
+    document_keys = set(table["types"]["document"]["keys"])
+    unit = links.unit_keys("voice", "phrases")
+    own = links.UNIT_DEVICE_KEYS["voice"]
+    assert unit == _PHRASE_KEYS and own == _WATCH_KEYS
+    assert set(unit).isdisjoint(own)
+    assert set(unit) | set(own) | {"schemaVersion"} == document_keys
+    assert list(links.LINK_UNITS["voice"]) == ["phrases"]
+
+
+def test_a_voice_link_onto_no_document_leaves_the_watchs_own_keys_behind() -> None:
+    source = _voice()
+    new_source, target, link = links.apply_unit_link(source, None, "voice", "phrases")
+    assert new_source["linkIds"] == {"phrases": link} == target["linkIds"]
+    for key in _PHRASE_KEYS:
+        assert target[key] == source[key]
+    for key in _WATCH_KEYS:
+        assert key not in target, "the target reads its own default"
+    assert target["schemaVersion"] == 1
+    assert list(target) == sorted(target)
+
+
+def test_a_voice_link_onto_a_watchs_own_settings_keeps_its_speech_settings() -> None:
+    with pytest.raises(links.PageLinkError) as err:
+        links.apply_unit_link(_voice(), _other_voice(), "voice", "phrases")
+    assert err.value.code == "unit_taken"
+    _s, target, link = links.apply_unit_link(_voice(), _other_voice(), "voice", "phrases", True)
+    assert target["phrases"] == _voice()["phrases"]
+    assert target["defaultAssistAgentId"] == "conversation.home_assistant"
+    for key in _WATCH_KEYS:
+        assert target[key] == _other_voice()[key]
+    assert target["linkIds"] == {"phrases": link}
+    # A watch whose phrase unit already matches is no clash.
+    same = {**_voice(), "watchSpeakReplyInSilentMode": True}
+    _s, kept, _l = links.apply_unit_link(_voice(), same, "voice", "phrases")
+    assert kept["watchSpeakReplyInSilentMode"] is True
+
+
+def test_a_blank_unit_is_never_taken() -> None:
+    """A new watch's voice settings (the panel's defaults fixture) hold
+    nothing of the unit, so a link onto them needs no ``replace``; one phrase,
+    an engine or a speaker of its own is enough to ask."""
+    defaults = json.loads((_FRONTEND / "test" / "fixtures-voice" / "01-defaults.json").read_text())
+    assert links.unit_is_blank(defaults, _PHRASE_KEYS)
+    assert links.unit_is_blank({}, _PHRASE_KEYS) and links.unit_is_blank(None, _PHRASE_KEYS)
+    _s, target, link = links.apply_unit_link(_voice(), defaults, "voice", "phrases")
+    assert target["phrases"] == _voice()["phrases"] and target["linkIds"] == {"phrases": link}
+    for own in ({"defaultTTSEngine": "tts.piper"}, {"defaultSpeakers": ["media_player.den"]}):
+        assert not links.unit_is_blank({**defaults, **own}, _PHRASE_KEYS)
+        with pytest.raises(links.PageLinkError) as err:
+            links.apply_unit_link(_voice(), {**defaults, **own}, "voice", "phrases")
+        assert err.value.code == "unit_taken"
+
+
+def test_apply_unit_link_refuses_a_source_that_is_not_a_document() -> None:
+    with pytest.raises(links.PageLinkError) as err:
+        links.apply_unit_link(None, _other_voice(), "voice", "phrases")
+    assert err.value.code == "not_found"
+
+
+def test_fan_out_of_voice_carries_the_library_and_never_the_watch_settings() -> None:
+    source, target, link = links.apply_unit_link(_voice(), _other_voice(), "voice", "phrases", True)
+    source["phrases"] = source["phrases"][:1]
+    source["watchSpeechVoiceIdentifier"] = "com.apple.voice.premium.en-US.Ava"
+    del source["defaultAssistAgentId"]
+    out = links.fan_out_units(source, target, "voice")
+    assert [p["label"] for p in out["phrases"]] == ["Dinner"]
+    assert "defaultAssistAgentId" not in out, "a default the save lacks is removed"
+    assert out["watchSpeechVoiceIdentifier"] == _other_voice()["watchSpeechVoiceIdentifier"]
+    assert out["watchSpeakReplyInSilentMode"] is True
+    only_watch = {**out, "watchSpeakReplyInSilentMode": False}
+    assert links.fan_out_units(only_watch, out, "voice") is None, "a watch setting is not linked"
+    ops = links.link_ops("voice")
+    assert ops.ids(out) == {link}
+    assert "linkIds" not in ops.drop(out, link)
+    assert links.unit_link_places({"w": source, "x": out}, "voice") == {
+        link: {"unit": "phrases", "owners": ["w", "x"]}
+    }
+
+
+def test_apply_unit_link_keeps_an_existing_link_and_relinks_its_copy() -> None:
+    source = {**_voice(), "linkIds": {"phrases": "L-P"}}
+    target = {**_other_voice(), "linkIds": {"phrases": "L-P"}}
+    new_source, new_target, link = links.apply_unit_link(source, target, "voice", "phrases")
+    assert link == "L-P"
+    assert new_source == source
+    assert new_target["phrases"] == source["phrases"]
+    assert new_target["watchSpeechVoiceIdentifier"] == _other_voice()["watchSpeechVoiceIdentifier"]
+    # A target linked elsewhere is taken even with equal keys.
+    elsewhere = {**_voice(), "linkIds": {"phrases": "L-OTHER"}}
+    with pytest.raises(links.PageLinkError):
+        links.apply_unit_link(_voice(), elsewhere, "voice", "phrases")
+    _s, replaced, link = links.apply_unit_link(_voice(), elsewhere, "voice", "phrases", True)
+    assert replaced["linkIds"] == {"phrases": link} and link != "L-OTHER"
+
+
+def test_unit_link_ids_drop_and_places() -> None:
+    document = {**_voice(), "linkIds": {"phrases": "L-P", "anywhere": "L-OLD"}}
+    assert links.unit_links(document, "voice") == {"phrases": "L-P"}, "only the kind's units"
+    assert links.unit_link_ids(document, "voice") == {"L-P"}
+    assert links.unit_link_ids({"linkIds": {"phrases": ""}}, "voice") == set()
+    dropped = links.drop_unit_link(document, "voice", "L-P")
+    assert dropped["linkIds"] == {"anywhere": "L-OLD"}
+    assert links.drop_unit_link(dropped, "voice", "L-P") is None
+    gone = links.drop_unit_link({**_voice(), "linkIds": {"phrases": "L-P"}}, "voice", "L-P")
+    assert "linkIds" not in gone
+    places = links.unit_link_places(
+        {"w": document, "p": {"linkIds": {"phrases": "L-P"}}, "x": None}, "voice"
+    )
+    assert places == {"L-P": {"unit": "phrases", "owners": ["p", "w"]}}
+    assert "linkIds" not in links.without_unit_links(document)

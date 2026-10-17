@@ -43,7 +43,7 @@ from .client_certificate_store import ClientCertificateStore
 from .client_certificate_ws import async_register_client_certificate_commands
 from .complication_panel import async_register_panel, async_remove_panel
 from .complication_push import ComplicationPhonePush
-from .complication_store import ComplicationStore
+from .complication_store import ComplicationStore, ComplicationStoreError
 from .complication_ws import async_register_websocket_commands
 from .const import (
     CLIENT_CERTIFICATE_CAPABILITY,
@@ -81,6 +81,7 @@ from .device_lookup import paired_device_name
 from .http_actions_runner import HTTPActionRunner
 from .http_actions_store import HTTPActionsStore
 from .http_actions_ws import async_register_http_actions_commands
+from .library import rename_complication
 from .listener_relay import (
     COMPLICATIONS,
     HTTP_ACTIONS_DELIVERY,
@@ -300,6 +301,31 @@ async def _get_ha_instance_uuid(hass: HomeAssistant) -> str | None:
             _LOGGER.debug("wa: instance UUID unavailable; skipping instanceId stamp")
             return None
     return _HA_INSTANCE_UUID
+
+
+def _rename_complication_pages(
+    complication_store: ComplicationStore, owner: str, renames: dict[str, str]
+) -> None:
+    """Point one owner's complication taps at pages the library gave new
+    ids (``{old: new}``): the tap of a design and of each of its tap layers
+    (``library.rename_complication``), each design saved as its next
+    revision. A design the store refuses is logged and left as it was; its
+    tap then opens the page it named, which the device no longer lists."""
+    for record in complication_store.list(owner):
+        document = rename_complication(record.document, renames)
+        if document is None:
+            continue
+        try:
+            complication_store.save(
+                owner, document, base_revision=record.revision, updated_by="library"
+            )
+        except ComplicationStoreError as err:
+            _LOGGER.warning(
+                "Could not point complication %s of %s at its renamed page: %s",
+                record.id,
+                owner,
+                err,
+            )
 
 
 def _device_label(
@@ -818,11 +844,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # phone's first record of one of them. The third keeps a page link from
     # making the first record of a watch whose iPhone may still move its own
     # setup here (the panel's `has_iphone`).
+    #
+    # The store also keeps the home's one library of pages, status pages and
+    # menus, which every device's records are built from (library.py). The
+    # first start with it builds the library from the records; a page it
+    # gives a new id there (another device's different page held the id) is
+    # followed into that device's complication taps, which live in the
+    # complication store loaded above. A menu the library makes is named
+    # after its device.
+    def _device_name(owner: str) -> str | None:
+        secret_entry = widget_secret_store.get(owner)
+        if secret_entry is None:
+            return None
+        return paired_device_name(dr.async_get(hass), secret_entry, owner)
+
+    def _rename_pages(owner: str, renames: dict[str, str]) -> None:
+        _rename_complication_pages(complication_store, owner, renames)
+
     watch_config_store = WatchConfigStore(
         hass,
         is_paired=widget_secret_store.is_paired_watch,
         is_iphone=widget_secret_store.is_paired_iphone,
         may_await_move=widget_secret_store.may_await_move,
+        device_name=_device_name,
+        rename_pages=_rename_pages,
     )
     await watch_config_store.async_load()
     # Custom complications ride the watch's long-poll: the owner's store
@@ -863,10 +908,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # here once and then after every write of any watch's pages, whoever
     # made it: every such write reaches the watch config store's listeners.
     # Housekeeping only: a failed sweep must not fail setup.
+    # A library page no device picks counts as a history document, so its
+    # photo stays until the page is deleted from the library.
     page_images_store = PageImagesStore(
         hass,
         pages=lambda: watch_config_store.documents("pages"),
-        history=lambda: watch_config_store.history_documents("pages"),
+        history=watch_config_store.page_photo_history,
     )
     await page_images_store.async_load()
     try:
@@ -1015,10 +1062,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # that poll, and the panel lists phones in the Pages editor, only when
     # they see this.
     coordinator.register_capability(PHONE_PAGES_CAPABILITY)
-    # Linked pages (page_links.py): a page on several devices kept in step
-    # by the store, and the signed phone_pages_offer and
-    # phone_pages_link_watch ops. The phone offers a watch's pages only when
-    # it sees this.
+    # Pages on several devices (library.py): one library page each device
+    # picks, and the signed phone_pages_offer and phone_pages_link_watch
+    # ops. The phone offers a watch's pages only when it sees this.
     coordinator.register_capability(PHONE_PAGES_LINK_CAPABILITY)
     # The home's HTTP action library (http_actions_store.py): the signed
     # http_actions_hand_over, http_actions_get and http_action_run ops and

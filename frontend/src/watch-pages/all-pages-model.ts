@@ -1,95 +1,79 @@
-// The Pages tab: every page on every watch and iPhone, one card per page.
+// The Pages tab and the Status pages tab: every page, or every status page,
+// of the library, one card each, with a tick per device on the card.
 //
-// A linked page (the same `linkId` on several devices, `links.ts`) is one
-// card with a chip per device it is on; any other page is a card of its own.
-// This module is the pure part the tab draws from: the cards, the device
-// tabs over them, the Device menu (watches or iPhones), which device a card
-// opens on, and the switches of a card's Devices menu. The element is
-// `all-pages.ts`.
+// The library holds each page and status page once, and each device picks
+// from it (`library/model.ts`, read from one `library/summary`). So a card
+// is a library item, and its ticks are the devices that pick it: nothing is
+// folded from the devices' records.
+// On a device's tab the list is that device's picks in its own order, each
+// with Hide here, then "Not on this watch": the rest of the library, dimmed,
+// each with an Add chip.
+//
+// This module is the pure part both tabs draw from: the words, the device
+// tabs over the cards, the Device menu (watches or iPhones), the search,
+// which device a card opens on, and a device tab's two lists. The element is
+// `all-pages.ts`, told by its `kind` which of the two it lists.
+// Plan: app repo docs/one_library_plan_2026-10.md, step 2.
 
-import { listedWatchPages } from "./edit.js";
-import { type LinkDevice, type PageDevicePlace, DEVICES_SYSTEM_TEXT, DEVICES_WAIT_TAG, DEVICES_WAIT_TEXT, pageLinkId } from "./links.js";
-import { type WatchPage, type WatchPagesDocument, isHiddenWatchPage, isSmartWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPageTiles } from "./model.js";
+import type { LibraryListKind } from "../library/client.js";
+import { type Library, type LibraryItem, type LibraryPick, countFor, itemsFor, libraryItems, restFor, sameId } from "../library/model.js";
+import { type LinkDevice, deviceWord } from "./devices.js";
 
-/** The second half of the line under the tab's title. */
-export const ALL_PAGES_LEAD = "A page on more than one device is the same page: an edit shows on all of them.";
+/** What a card is: a page, or a status page. */
+export type CardKind = LibraryListKind;
 
-/** The line under the tab's title: how many pages, then the one fact about
- * them a newcomer gets wrong, as the Complications tab's line does. */
-export function allPagesLead(total: number): string {
-  return `${total} ${total === 1 ? "page" : "pages"} on your watches and iPhones. ${ALL_PAGES_LEAD}`;
+/** The second half of the Pages tab's line under its title. */
+export const ALL_PAGES_LEAD = "Tick a device and the page is on it.";
+
+/** The same on the Status pages tab: what a status page is. */
+export const STATUS_PAGES_LEAD = "A status page is a read-only screen of rows that a tile or a menu slot opens.";
+
+/** "page" or "status page", as the tab's lines name a card of `kind`. */
+export function cardNoun(kind: CardKind, n = 1): string {
+  const one = kind === "status_pages" ? "status page" : "page";
+  return n === 1 ? one : `${one}s`;
 }
 
-/** A page's only device cannot be switched off: that is a delete. */
-export const DEVICES_LAST_TEXT = "This is its only device. Delete it in the page editor instead.";
-
-/** A link copies the page as saved, so not while its editor holds edits. */
-export const DEVICES_DIRTY_TEXT = "Save or discard the edits to these pages first. A page goes on another device as it is saved.";
-
-/** One device's copy of a page. */
-export interface PageCopy {
-  device: LinkDevice;
-  page: WatchPage;
-  /** Hidden on this device (`isHidden` is each device's own). */
-  hidden: boolean;
-  /** Its place in that device's list of pages. */
-  index: number;
+/** "a page" or "a status page". */
+export function aCard(kind: CardKind): string {
+  return kind === "status_pages" ? "a status page" : "a page";
 }
 
-/** One card: a page, on every device that holds it. */
-export interface PageCard {
-  /** Stable across reads: the link, or the device and the page id. */
-  key: string;
-  linkId?: string;
-  pageId: string;
-  name: string;
-  tiles: number;
-  smart: boolean;
-  /** In device order, never empty. */
-  copies: PageCopy[];
+/** Why New page is greyed for anyone who is not an administrator: a page no
+ * device has is an administrator's. */
+export function newCardAdminText(kind: CardKind): string {
+  return `Only a Home Assistant administrator can make a new ${cardNoun(kind)}.`;
 }
 
-const upper = (id: string): string => id.toUpperCase();
+/** The tab's title: Pages, or Status pages. */
+export function cardsTitle(kind: CardKind): string {
+  return kind === "status_pages" ? "Status pages" : "Pages";
+}
 
-/**
- * Every page of every device as cards, in device order and then each
- * device's own page order: a linked page where it first shows, once, with
- * every device that holds its link. System pages are left out, as the page
- * editor lists none. A device not in `docs` (not read, or no record) brings
- * nothing.
- */
-export function pageCards(devices: readonly LinkDevice[], docs: ReadonlyMap<string, WatchPagesDocument>): PageCard[] {
-  const cards: PageCard[] = [];
-  const byKey = new Map<string, PageCard>();
-  for (const device of devices) {
-    const doc = docs.get(device.ownerId);
-    if (doc === undefined) continue;
-    listedWatchPages(doc).forEach((page, index) => {
-      const pageId = watchPageId(page);
-      if (pageId === "") return;
-      const linkId = pageLinkId(page);
-      const key = linkId === undefined ? `page:${device.ownerId}:${upper(pageId)}` : `link:${linkId}`;
-      const copy: PageCopy = { device, page, hidden: isHiddenWatchPage(page), index };
-      const held = byKey.get(key);
-      if (held !== undefined) {
-        if (!held.copies.some((c) => c.device.ownerId === device.ownerId)) held.copies.push(copy);
-        return;
-      }
-      const smart = isSmartWatchPage(page);
-      const card: PageCard = {
-        key,
-        pageId,
-        name: watchPageName(page),
-        tiles: smart ? 0 : watchPageTiles(page).length,
-        smart,
-        copies: [copy],
-        ...(linkId === undefined ? {} : { linkId }),
-      };
-      byKey.set(key, card);
-      cards.push(card);
-    });
+/** The line under the tab's title: how many there are in the home, then
+ * the one fact a newcomer needs (mock frames 1a and 1d). */
+export function allPagesLead(total: number, kind: CardKind = "pages"): string {
+  return `${total} ${cardNoun(kind, total)} in your home. ${kind === "status_pages" ? STATUS_PAGES_LEAD : ALL_PAGES_LEAD}`;
+}
+
+/** The line in the surface's foot. */
+export function footText(kind: CardKind, device: LinkDevice | undefined, selecting = false): string {
+  const one = cardNoun(kind);
+  if (selecting) return `Click ${cardNoun(kind, 2)} to pick them. Shift+click picks every ${one} between two.`;
+  if (device !== undefined) {
+    const word = deviceWord(device.kind);
+    return kind === "status_pages"
+      ? `Click a status page to edit it. Drag to order. The order is this ${word}'s own.`
+      : `Click a page to edit it. Drag to order, and Hide here keeps a page on this ${word} without showing it.`;
   }
-  return cards;
+  return kind === "status_pages"
+    ? "Click a status page to edit it. Tick a device to put it there."
+    : "Click a page to edit it. Tick a device to show the page there. One page, the same everywhere.";
+}
+
+/** The line under a card's name: "11 tiles", "Smart page", "1 row · starter". */
+export function cardDetail(entry: LibraryItem): string {
+  return entry.starter ? `${entry.detail} · starter` : entry.detail;
 }
 
 /** "all", or one device's owner id. */
@@ -97,7 +81,7 @@ export type PagesFilter = string;
 export const ALL_FILTER: PagesFilter = "all";
 
 /** One device tab over the cards: All, then one per device, each with how
- * many pages it shows. */
+ * many it shows. */
 export interface FilterChip {
   id: PagesFilter;
   label: string;
@@ -107,18 +91,21 @@ export interface FilterChip {
   count: number;
 }
 
+/** All with every item of the library, then each device with how many of
+ * the kind it picks. */
 export function filterChips(
   devices: readonly LinkDevice[],
-  cards: readonly PageCard[],
+  library: Library | undefined,
+  kind: CardKind,
   colorOf: (ownerId: string) => string | undefined = () => undefined,
 ): FilterChip[] {
   return [
-    { id: ALL_FILTER, label: "All", count: cards.length },
+    { id: ALL_FILTER, label: "All", count: library === undefined ? 0 : libraryItems(library, kind).length },
     ...devices.map((d) => {
       const color = colorOf(d.ownerId);
       return {
         id: d.ownerId, label: d.name, kind: d.kind, ...(color === undefined ? {} : { color }),
-        count: cards.filter((c) => copyOn(c, d.ownerId) !== undefined).length,
+        count: library === undefined ? 0 : countFor(library, d.ownerId, kind),
       };
     }),
   ];
@@ -129,19 +116,9 @@ export function resolveFilter(filter: PagesFilter | undefined, devices: readonly
   return filter !== undefined && devices.some((d) => d.ownerId === filter) ? filter : ALL_FILTER;
 }
 
-/** A card's copy on one device, if it is there. */
-export function copyOn(card: PageCard, ownerId: string): PageCopy | undefined {
-  return card.copies.find((c) => c.device.ownerId === ownerId);
-}
-
-/** The head's Device menu: every page, or only those on a watch, or only
+/** The head's Device menu: every item, or only those on a watch, or only
  * those on an iPhone. */
 export type PagesKind = "all" | "watch" | "iphone";
-
-/** Whether a card is on a device of this kind. */
-export function onKind(card: PageCard, kind: PagesKind): boolean {
-  return kind === "all" || card.copies.some((c) => c.device.kind === kind);
-}
 
 /** Whether the home has both watches and iPhones: only then is there a
  * Device menu to pick from. */
@@ -154,82 +131,139 @@ export function resolveKind(kind: PagesKind | undefined, devices: readonly LinkD
   return kind !== undefined && kind !== "all" && hasBothKinds(devices) ? kind : "all";
 }
 
-/** One option of the Device menu, with how many of the cards it is given
- * (those the tab and the search left) it would show. */
+/** Whether one of an item's devices is of this kind. */
+export function ownersOnKind(owners: readonly string[], kind: PagesKind, devices: readonly LinkDevice[]): boolean {
+  return kind === "all" || devices.some((d) => d.kind === kind && owners.some((o) => sameId(o, d.ownerId)));
+}
+
+/** One option of the Device menu, with how many of the items it is given
+ * it would show. */
 export interface KindOption {
   key: PagesKind;
   label: string;
   count: number;
 }
 
-export function kindOptions(cards: readonly PageCard[]): KindOption[] {
+export function kindOptions(entries: readonly { owners: readonly string[] }[], devices: readonly LinkDevice[]): KindOption[] {
   return [
-    { key: "all", label: "All", count: cards.length },
-    { key: "watch", label: "Watches", count: cards.filter((c) => onKind(c, "watch")).length },
-    { key: "iphone", label: "iPhones", count: cards.filter((c) => onKind(c, "iphone")).length },
+    { key: "all", label: "All", count: entries.length },
+    { key: "watch", label: "Watches", count: entries.filter((e) => ownersOnKind(e.owners, "watch", devices)).length },
+    { key: "iphone", label: "iPhones", count: entries.filter((e) => ownersOnKind(e.owners, "iphone", devices)).length },
   ];
 }
 
-/**
- * The cards a device tab, a search and the Device menu show. On one device,
- * only its pages, in its own order. The search matches the name, in any
- * case. The Device menu keeps the pages on that kind of device.
- */
-export function shownCards(cards: readonly PageCard[], filter: PagesFilter, search = "", kind: PagesKind = "all"): PageCard[] {
+/** Whether a name matches the search, in any case. An empty search
+ * matches everything. */
+export function matchesSearch(name: string, search: string): boolean {
   const words = search.trim().toLowerCase();
-  const matched = (words === "" ? [...cards] : cards.filter((c) => c.name.toLowerCase().includes(words)))
-    .filter((c) => onKind(c, kind));
-  if (filter === ALL_FILTER) return matched;
-  return matched
-    .filter((c) => copyOn(c, filter) !== undefined)
-    .sort((a, b) => copyOn(a, filter)!.index - copyOn(b, filter)!.index);
+  return words === "" || name.toLowerCase().includes(words);
 }
 
-/** The copy a card opens in the page editor and draws: the device tab's,
- * else the first of the Device menu's kind, else the first watch's, else
- * the first device's. */
-export function openCopy(card: PageCard, filter: PagesFilter, kind: PagesKind = "all"): PageCopy {
-  return (filter === ALL_FILTER ? undefined : copyOn(card, filter))
-    ?? (kind === "all" ? undefined : card.copies.find((c) => c.device.kind === kind))
-    ?? card.copies.find((c) => c.device.kind === "watch")
-    ?? card.copies[0]!;
+/** The cards the All tab shows: the library's items of the kind, in its
+ * order, under the search and the Device menu. */
+export function shownItems(library: Library, kind: CardKind, search = "", deviceKind: PagesKind = "all", devices: readonly LinkDevice[] = []): LibraryItem[] {
+  return libraryItems(library, kind).filter((e) => matchesSearch(e.name, search) && ownersOnKind(e.owners, deviceKind, devices));
 }
 
-/**
- * A card's Devices menu: a switch per device, on where the page is. The
- * page's only device cannot be switched off (a delete does that), and a
- * system page never moves. Unlike the editor's, no device is "this one". A
- * watch in `waiting` (`awaitingMove`) cannot take the page yet.
- */
-export function cardDevicePlaces(devices: readonly LinkDevice[], card: PageCard, waiting: ReadonlySet<string> = new Set()): PageDevicePlace[] {
-  const system = card.copies.some((c) => isSystemWatchPage(c.page));
-  const last = card.copies.length <= 1;
-  return devices.map((device) => {
-    const on = copyOn(card, device.ownerId) !== undefined;
-    if (!system && !on && waiting.has(device.ownerId)) return { device, on, here: false, stuck: DEVICES_WAIT_TEXT, tag: DEVICES_WAIT_TAG };
-    const stuck = system ? DEVICES_SYSTEM_TEXT : on && last ? DEVICES_LAST_TEXT : undefined;
-    return { device, on, here: false, ...(stuck === undefined ? {} : { stuck }) };
-  });
+/** A device's tab: its picks in its own order, then the rest of the
+ * library, each under the search. */
+export interface DeviceView {
+  device: LinkDevice;
+  picks: LibraryPick[];
+  rest: LibraryItem[];
 }
 
-/** The device a link copies the page from: the first that holds it with no
- * unsaved edits in its editor, else undefined (`DEVICES_DIRTY_TEXT`). */
-export function linkSource(card: PageCard, dirty: (ownerId: string) => boolean): string | undefined {
-  return card.copies.find((c) => !dirty(c.device.ownerId))?.device.ownerId;
+export function deviceView(library: Library, device: LinkDevice, kind: CardKind, search = ""): DeviceView {
+  return {
+    device,
+    picks: itemsFor(library, device.ownerId, kind).filter((p) => matchesSearch(p.entry.name, search)),
+    rest: restFor(library, device.ownerId, kind).filter((e) => matchesSearch(e.name, search)),
+  };
 }
 
-/** The line under a card's name: its tile count, or "Smart page". */
-export function cardDetail(card: PageCard): string {
-  if (card.smart) return "Smart page";
-  return `${card.tiles} ${card.tiles === 1 ? "tile" : "tiles"}`;
+/** A device's picks in the order a drag asked for while its save is out:
+ * `order` first (those still picked), then any pick it does not name. */
+export function inOrder(picks: readonly LibraryPick[], order: readonly string[] | undefined): LibraryPick[] {
+  if (order === undefined) return [...picks];
+  const placed = order.flatMap((id) => picks.filter((p) => sameId(p.id, id)));
+  return [...placed, ...picks.filter((p) => !placed.includes(p))];
 }
 
-/** What the tab says with no card to show. */
-export function emptyText(filter: PagesFilter, devices: readonly LinkDevice[], search: string, kind: PagesKind = "all"): string {
+/** Where a pick lands when it is dropped on `target`: before it when
+ * dragged up, after it when dragged down, as a list does. Undefined for a
+ * drop that changes nothing. The result is the id to put it before, or
+ * null for the end. */
+export function dropBefore(order: readonly string[], dragged: string, target: string): string | null | undefined {
+  const from = order.findIndex((id) => sameId(id, dragged));
+  const to = order.findIndex((id) => sameId(id, target));
+  if (from < 0 || to < 0 || from === to) return undefined;
+  if (to < from) return order[to]!;
+  return to + 1 < order.length ? order[to + 1]! : null;
+}
+
+/** The change a drop makes: the dragged pick, and what it lands before.
+ * Undefined for a drop that changes nothing. */
+export function dropChange(order: readonly string[], dragged: string, target: string): { id: string; before: string | null } | undefined {
+  const before = dropBefore(order, dragged, target);
+  return before === undefined ? undefined : { id: dragged, before };
+}
+
+/** `order` with `id` moved before `before` (null: to the end). */
+export function movedOrder(order: readonly string[], id: string, before: string | null): string[] {
+  const rest = order.filter((o) => !sameId(o, id));
+  const at = before === null ? -1 : rest.findIndex((o) => sameId(o, before));
+  const held = order.find((o) => sameId(o, id)) ?? id;
+  if (at < 0) return [...rest, held];
+  return [...rest.slice(0, at), held, ...rest.slice(at)];
+}
+
+/** The device a card opens on: the device tab's when it has the item, else
+ * the first of the Device menu's kind, else the first watch, else the first
+ * device that has it. Undefined for an item no listed device has. */
+export function openDevice(entry: { owners: readonly string[] }, filter: PagesFilter, deviceKind: PagesKind, devices: readonly LinkDevice[]): LinkDevice | undefined {
+  const holders = devices.filter((d) => entry.owners.some((o) => sameId(o, d.ownerId)));
+  return (filter === ALL_FILTER ? undefined : holders.find((d) => d.ownerId === filter))
+    ?? (deviceKind === "all" ? undefined : holders.find((d) => d.kind === deviceKind))
+    ?? holders.find((d) => d.kind === "watch")
+    ?? holders[0];
+}
+
+/** The title of a card no device has: a click opens it in the library
+ * itself (`library/item-mode.ts`). */
+export function libraryEditTitle(name: string): string {
+  return `Edit ${name} in the library`;
+}
+
+/** A device tab's first heading. */
+export function onDeviceTitle(device: LinkDevice): string {
+  return `On ${device.name}`;
+}
+
+/** Its line at the right: the order is the device's own. */
+export function orderHint(device: LinkDevice): string {
+  return `Drag to order. The order is this ${deviceWord(device.kind)}'s own.`;
+}
+
+/** The second heading: the rest of the library. */
+export function restTitle(device: LinkDevice): string {
+  return `Not on this ${deviceWord(device.kind)}`;
+}
+
+export const REST_HINT = "The rest of your home. Add one here with a tick.";
+
+/** What a device tab says with nothing on the device. */
+export function noPicksText(device: LinkDevice, kind: CardKind, search: string): string {
+  if (search.trim() !== "") return `No ${cardNoun(kind)} on ${device.name} has that name.`;
+  return `No ${cardNoun(kind, 2)} on ${device.name} yet. Tick one below, or make a new one.`;
+}
+
+/** What the All tab says with no card to show. */
+export function emptyText(devices: readonly LinkDevice[], search: string, kind: PagesKind = "all", cardKind: CardKind = "pages"): string {
   if (devices.length === 0) return "No watch or iPhone has connected yet. Pair one on the Home tab.";
-  if (search.trim() !== "") return "No page has that name.";
-  if (kind !== "all") return `No page here is on ${kind === "watch" ? "a watch" : "an iPhone"}.`;
-  const device = devices.find((d) => d.ownerId === filter);
-  if (device !== undefined) return `No pages on ${device.name} yet.`;
-  return "No device has pages yet. Open a device's Pages to make one.";
+  const one = cardNoun(cardKind);
+  if (search.trim() !== "") return `No ${one} has that name.`;
+  if (kind !== "all") return `No ${one} here is on ${kind === "watch" ? "a watch" : "an iPhone"}.`;
+  return cardKind === "status_pages"
+    ? "Your home has no status pages yet. Use New status page to make one."
+    : "Your home has no pages yet. Use New page to make one.";
 }

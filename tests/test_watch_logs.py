@@ -264,7 +264,7 @@ def diag(pkg, tmp_path):
             all_tokens={}, all_entries={}, ios_tokens_moved=True
         ),
         apns_client=None,
-        watch_config_store=types.SimpleNamespace(diagnostics=dict),
+        watch_config_store=types.SimpleNamespace(diagnostics=dict, library_diagnostics=dict),
         watch_logs_store=logs,
         client_certificate_store=certs,
         widget_secret_store=types.SimpleNamespace(get=secrets.get),

@@ -155,6 +155,11 @@ CARD_PREVIEW_STORAGE_VERSION = 1
 # owner id, so one watch's save never rewrites another watch's document.
 WATCH_CONFIG_STORAGE_KEY = "wrist_assistant.watch_config"
 WATCH_CONFIG_STORAGE_VERSION = 1
+# The home's one library of pages, status pages and menus, and each device's
+# picks from it (library.py). The watch config store keeps it beside the
+# per-device records, which are built from it.
+WATCH_LIBRARY_STORAGE_KEY = "wrist_assistant.library"
+WATCH_LIBRARY_STORAGE_VERSION = 1
 # The kinds a client may read and write: the page config (`GridConfiguration`
 # in the app), the watch behavior settings (`BehaviorPreferences`), the
 # library catalog (`WatchLibraryCatalog`: the phone's HTTP actions and status
@@ -464,11 +469,12 @@ PHONE_PAIRING_CAPABILITY = "phone_pairing"
 # delivery mode or main house filed under it. The phone polls for its pages,
 # and the panel offers them, only when it sees this.
 PHONE_PAGES_CAPABILITY = "phone_pages"
-# What the integration advertises once a page can sit on several devices as a
-# linked page (page_links.py): the same id and a `linkId` on each device, kept
-# in step by the store on every save, and the signed phone_pages_offer and
-# phone_pages_link_watch ops. The iPhone offers to take a watch's pages only
-# when it sees this.
+# What the integration advertises once a page can sit on several devices: one
+# page in the home's library (library.py), picked by each device, so a save on
+# any of them reaches all, and the signed phone_pages_offer and
+# phone_pages_link_watch ops. The name is from when such pages were linked
+# copies; the shipped iPhone looks for it, so it stays. The iPhone offers to
+# take a watch's pages only when it sees this.
 PHONE_PAGES_LINK_CAPABILITY = "phone_pages_link"
 # What the integration advertises once an iPhone's push token lives under the
 # phone's own id and is paired with the watches of the same Home Assistant

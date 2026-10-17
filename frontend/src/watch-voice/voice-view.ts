@@ -324,10 +324,27 @@ function phraseRow(host: VoiceViewHost, phrase: JsonObject, index: number, count
   </div>`;
 }
 
+/** What the Phrases card shows of the phrases' other watches (`links.ts`),
+ * handed in by the editor while the integration links voice and there is
+ * another watch. */
+export interface PhrasesCardLinks {
+  /** "Also on Jesse's Watch", or undefined for phrases on this watch
+   * alone. */
+  badge?: string;
+  badgeTitle?: string;
+  /** The Devices menu is open, under the card's head. */
+  open: boolean;
+  onDevices(): void;
+  /** The Devices menu itself, drawn while `open`. */
+  menu: TemplateResult | typeof nothing;
+}
+
 /** The Phrases card: the library in its order, each phrase's icon in its
  * color, its name over its message, and move up, move down and remove; Add
- * puts a new phrase at the end, up to eight. */
-export function renderPhrasesCard(host: VoiceViewHost): TemplateResult {
+ * puts a new phrase at the end, up to eight. With `links`, a badge naming the
+ * other watches the phrases are on, and Devices, which opens the menu that
+ * picks them. */
+export function renderPhrasesCard(host: VoiceViewHost, links?: PhrasesCardLinks): TemplateResult {
   const phrases = watchVoicePhrases(host.document);
   const pick = voicePick(host);
   const picked = "phrase" in pick ? pick.phrase : undefined;
@@ -337,11 +354,15 @@ export function renderPhrasesCard(host: VoiceViewHost): TemplateResult {
     <div class="lc-head">
       <span class="swatch">${uiIcon("list")}</span><span class="lc-title">Phrases</span>
       <span class="lc-sub">${phrases.length} of ${WATCH_VOICE_MAX_PHRASES}</span>
+      ${links?.badge === undefined ? nothing : html`<span class="badge vo-linked" title=${links.badgeTitle ?? links.badge}>${links.badge}</span>`}
       <span class="spacer"></span>
+      ${links === undefined ? nothing : html`<button type="button" class="lc-btn vo-dev-open ${links.open ? "on" : ""}" aria-expanded=${links.open ? "true" : "false"}
+        title="Pick the watches these phrases and defaults are on" @click=${() => links.onDevices()}>${uiIcon("watch")}<span>Devices</span></button>`}
       <button type="button" class="lc-btn pri vo-add-phrase" aria-label="Add phrase" ?disabled=${host.busy || full}
         title=${full ? `The watch takes ${WATCH_VOICE_MAX_PHRASES} phrases at most.` : "Add a phrase at the end"}
         @click=${() => addPhrase(host)}>${uiIcon("plus")}<span>Add</span></button>
     </div>
+    ${links?.open === true ? links.menu : nothing}
     ${phrases.length === 0
       ? html`<div class="lc-note">No phrases yet. A phrase is a message Pick from List and Speak Phrase can say on your speakers.</div>`
       : html`<div class="layers vo-phrase-list" role="list">${phrases.map((p, i) => phraseRow(host, p, i, phrases.length, picked))}</div>`}
@@ -598,6 +619,14 @@ export const voiceViewStyles = css`
   .layer .thumb .vo-thumb-glyph svg { width: 14px; height: 14px; display: block; }
   .layer .name small.vo-needs { color: var(--wa-amber); }
   .vo-glyph-dot { width: 10px; height: 10px; border-radius: 50%; }
+  /* The phrases' other watches: a badge in the card's head, as a linked
+     page's row has, and the Devices menu under the head, in the flow. */
+  .lc-head .badge.vo-linked {
+    min-width: 0; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 20px;
+    color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 12%, transparent);
+  }
+  button.lc-btn.vo-dev-open.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent); }
+  .vo-phrases-card > .pe-dev-menu { margin: 4px 8px 8px; box-shadow: none; }
 
   /* The watch screen on the stage: Pick from List's phrases. */
   .vo-screen {

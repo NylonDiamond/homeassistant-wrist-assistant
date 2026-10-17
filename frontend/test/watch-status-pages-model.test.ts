@@ -129,6 +129,13 @@ describe("the defaults and the starts", () => {
     expect(statusPagesDefaults()).not.toBe(statusPagesDefaults());
   });
 
+  it("counts a page flagged isSystemDefault as a starter page too, whatever its id, as Home Assistant does", () => {
+    expect(isSystemStatusPage({ id: "F269C7E0-457B-4592-AC58-FAC05CAD2E87", name: "Who's Home", isSystemDefault: true })).toBe(true);
+    expect(isSystemStatusPage({ id: "F269C7E0-457B-4592-AC58-FAC05CAD2E87", name: "Who's Home", isSystemDefault: false })).toBe(false);
+    expect(isSystemStatusPage({ id: "F269C7E0-457B-4592-AC58-FAC05CAD2E87", name: "Who's Home" })).toBe(false);
+    expect(isSystemStatusPage({ id: "00000000-0000-0000-0000-000000000002", isSystemDefault: false })).toBe(true);
+  });
+
   it("an empty list is the empty fixture", () => {
     expect(JSON.stringify(statusPagesEmpty())).toBe(read("03-empty.json").text.trimEnd());
   });
@@ -505,7 +512,7 @@ describe("the draft and its save", () => {
     expect(result).toMatchObject({ ok: true, revision: 4, linkFailures: [{ owner: "w2", name: "Chen's Watch" }] });
     expect(statusPagesSaveNote(result)).toEqual({
       kind: "warn",
-      text: "Saved. Chen's Watch kept the old version: Home Assistant could not update the linked status pages there.",
+      text: "Saved. Chen's Watch kept the old version: Home Assistant could not update the shared status pages there.",
     });
     // No list at all is a plain save.
     draft.apply(renameStatusPage(draft.document, "A", "again"));

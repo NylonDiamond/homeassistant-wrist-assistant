@@ -119,6 +119,11 @@ export function statusPageName(page: JsonObject): string {
   return typeof page.name === "string" ? page.name : "";
 }
 
+/** A status page's name as the lists show it. */
+export function statusPageTitle(page: JsonObject): string {
+  return statusPageName(page) || "Untitled page";
+}
+
 /** The rows of a page: every entry that is an object. */
 export function statusPageRows(page: JsonObject): JsonObject[] {
   return Array.isArray(page.rows) ? page.rows.filter(isJsonObject) : [];
@@ -141,10 +146,13 @@ export function findStatusRow(page: JsonObject | undefined, rowId: string): Json
   return page === undefined ? undefined : statusPageRows(page).find((r) => sameStatusId(statusRowId(r), rowId));
 }
 
-/** Whether a page is one of the app's five system pages: their fixed ids.
+/** Whether a page is one of the app's five starter pages: their fixed ids,
+ * or `isSystemDefault: true` (a starter page an older app or a copy gave
+ * its own id), the same rule as Home Assistant's `is_system_status_page`.
  * The watch treats them as any other page. */
 export function isSystemStatusPage(page: JsonObject): boolean {
-  return STATUS_PAGE_KEYS.systemDefaultIds.some((id) => sameStatusId(id, statusPageId(page)));
+  return page["isSystemDefault"] === true
+    || STATUS_PAGE_KEYS.systemDefaultIds.some((id) => sameStatusId(id, statusPageId(page)));
 }
 
 // ── writing keys ─────────────────────────────────────────────────────────

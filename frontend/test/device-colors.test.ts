@@ -9,7 +9,7 @@ import type { OwnerSummary } from "../src/ha-api.js";
 import { ownerShortLabel, ownersByKind } from "../src/panel.js";
 import { pickerTabs } from "../src/pickerRows.js";
 import { deviceKindOf } from "../src/version.js";
-import { linkDevicesOf } from "../src/watch-pages/links.js";
+import { linkDevicesOf } from "../src/watch-pages/devices.js";
 import { watchRowChoices } from "../src/watch-row.js";
 
 const owner = (id: string, kind: "watch" | "iphone" | "library", over: Partial<OwnerSummary> = {}): OwnerSummary => ({

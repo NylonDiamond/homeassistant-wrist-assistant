@@ -55,6 +55,7 @@ _STORE_PATH = (
 _PKG = "wa_watch_config_test_pkg"
 
 INDEX_KEY = "wrist_assistant.watch_config"
+LIBRARY_KEY = "wrist_assistant.library"
 # The real caps, not smaller test values: a 700 KiB string is cheap to build, and
 # testing the numbers that ship is the point. Kept equal to const.py by
 # test_the_size_caps_match_const below.
@@ -204,16 +205,19 @@ def _loaded_module():
                 "rooms": MAX_ROOMS_BYTES,
             },
             WATCH_CONFIG_HISTORY_LIMIT=HISTORY_LIMIT,
+            WATCH_LIBRARY_STORAGE_KEY=LIBRARY_KEY,
+            WATCH_LIBRARY_STORAGE_VERSION=1,
         )
 
-        # The store's pure helper for linked pages, loaded first so its
-        # relative import finds it.
-        links_spec = importlib.util.spec_from_file_location(
-            f"{_PKG}.page_links", _STORE_PATH.parent / "page_links.py"
-        )
-        links = importlib.util.module_from_spec(links_spec)
-        sys.modules[f"{_PKG}.page_links"] = links
-        links_spec.loader.exec_module(links)
+        # The store's pure helpers, linked pages and then the library (which
+        # imports it), loaded first so their relative imports find them.
+        for helper in ("page_links", "library"):
+            helper_spec = importlib.util.spec_from_file_location(
+                f"{_PKG}.{helper}", _STORE_PATH.parent / f"{helper}.py"
+            )
+            helper_mod = importlib.util.module_from_spec(helper_spec)
+            sys.modules[f"{_PKG}.{helper}"] = helper_mod
+            helper_spec.loader.exec_module(helper_mod)
 
         spec = importlib.util.spec_from_file_location(
             f"{_PKG}.watch_config_store", _STORE_PATH
@@ -246,12 +250,18 @@ def _new(mod, *, paired: set[str] | None = None):
     return store
 
 
-def _doc(name: str = "Home", **extra: Any) -> dict:
+PAGE = "6F1C2D0E-0000-4000-8000-000000000001"
+# The other watch's page has an id of its own: two devices holding one page
+# id are one library page (library.py), which would link their records.
+OTHER_PAGE = "6F1C2D0E-0000-4000-8000-000000000002"
+
+
+def _doc(name: str = "Home", *, page_id: str = PAGE, **extra: Any) -> dict:
     """A small stand-in for a GridConfiguration. The store reads only `pages`,
     and in it only the page ids and, for a panel write, each page's `items`."""
     doc = {
         "schemaVersion": 1,
-        "pages": [{"id": "6F1C2D0E-0000-4000-8000-000000000001", "name": name, "items": []}],
+        "pages": [{"id": page_id, "name": name, "items": []}],
     }
     doc.update(extra)
     return doc
@@ -262,7 +272,7 @@ def _put(store, owner: str = OWNER, doc: dict | None = None, *, base: Any = 0,
     return store.put(
         owner,
         kind,
-        doc if doc is not None else _doc(),
+        doc if doc is not None else _doc(page_id=OTHER_PAGE if owner == OTHER else PAGE),
         document_hash=digest,
         base_revision=base,
         force=force,
@@ -448,7 +458,7 @@ def test_a_malformed_save_is_refused_as_malformed_even_when_stale(mod):
 def test_two_owners_are_isolated_in_records_and_in_files(mod):
     store = _new(mod)
     _put(store, OWNER, _doc("A"), digest=HASH_1)
-    _put(store, OTHER, _doc("B"), digest=HASH_2)
+    _put(store, OTHER, _doc("B", page_id=OTHER_PAGE), digest=HASH_2)
     key_a = mod._owner_key(OWNER)
     key_b = mod._owner_key(OTHER)
     assert key_a != key_b
@@ -456,7 +466,9 @@ def test_two_owners_are_isolated_in_records_and_in_files(mod):
 
     _FakeStore.writes.clear()
     _put(store, OWNER, _doc("A2"), base=1, digest=HASH_3)
-    assert _FakeStore.writes == [key_a]
+    # The page's library item changed too, in the library's own file.
+    assert [key for key in _FakeStore.writes if key != LIBRARY_KEY] == [key_a]
+    assert LIBRARY_KEY in _FakeStore.writes
     assert store.get(OTHER, "pages").document["pages"][0]["name"] == "B"
     assert store.get(OTHER, "pages").revision == 1
     assert _FakeStore.files[key_b]["records"]["pages"]["hash"] == HASH_2
@@ -517,8 +529,8 @@ def test_move_onto_a_target_that_has_a_record_keeps_the_target_s(mod):
     store = _new(mod)
     old = _doc("old watch")
     _put(store, OWNER, old, digest=HASH_1)
-    _put(store, OTHER, _doc("new watch"), digest=HASH_2)
-    _put(store, OTHER, _doc("new watch 2"), base=1, digest=HASH_3)
+    _put(store, OTHER, _doc("new watch", page_id=OTHER_PAGE), digest=HASH_2)
+    _put(store, OTHER, _doc("new watch 2", page_id=OTHER_PAGE), base=1, digest=HASH_3)
 
     assert store.move_owner(OWNER, OTHER, updated_by="t") == ["pages"]
 
@@ -555,7 +567,7 @@ def test_a_restart_reads_back_every_record_and_its_history(mod):
     doc = _doc("v2", nested={"a": [1, {"b": 2.25}]})
     _put(store, OWNER, _doc("v1"), digest=HASH_1)
     _put(store, OWNER, doc, base=1, digest=HASH_2)
-    _put(store, OTHER, _doc("B"), digest=HASH_3)
+    _put(store, OTHER, _doc("B", page_id=OTHER_PAGE), digest=HASH_3)
     before = store.get(OWNER, "pages")
 
     again = _new(mod)
@@ -1012,7 +1024,7 @@ def test_a_whole_move_resets_delivery_and_a_kept_target_keeps_its_own(mod):
     store = _new(mod)
     _put(store, OWNER, kind="behavior", doc=_behavior())
     _put(store, OWNER, _doc("old"))
-    _put(store, OTHER, _doc("new"), digest=HASH_2)
+    _put(store, OTHER, _doc("new", page_id=OTHER_PAGE), digest=HASH_2)
     assert store.get(OWNER, "behavior").delivered_revision == 1
 
     store.move_owner(OWNER, OTHER, updated_by="t")
@@ -2150,8 +2162,8 @@ def test_restore_and_entry_take_the_newest_of_two_entries_sharing_a_revision(mod
     with its own numbering, so two entries can share a revision."""
     store = _new(mod)
     _put(store, OWNER, _doc("old watch"))
-    _put(store, OTHER, _doc("new watch"), digest=HASH_2)
-    _put(store, OTHER, _doc("new watch 2"), base=1, digest=HASH_3)
+    _put(store, OTHER, _doc("new watch", page_id=OTHER_PAGE), digest=HASH_2)
+    _put(store, OTHER, _doc("new watch 2", page_id=OTHER_PAGE), base=1, digest=HASH_3)
     store.move_owner(OWNER, OTHER, updated_by="t")
     assert [e.revision for e in store.history(OTHER, "pages")] == [1, 1]
     assert store.history_entry(OTHER, "pages", 1).document == _doc("old watch")
