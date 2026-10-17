@@ -37,7 +37,6 @@ import {
 } from "../src/shell.js";
 import { watchControlCenterRouteOwner } from "../src/watch-control-center/hook.js";
 import { WATCH_CAMERAS_PATH } from "../src/watch-cameras/hook.js";
-import { LIBRARY_PARTS_PATH, LIBRARY_PHOTOS_PATH } from "../src/library/hook.js";
 import { WATCH_HTTP_ACTIONS_PATH } from "../src/watch-http-actions/hook.js";
 import { watchMenusRouteOwner } from "../src/watch-menus/hook.js";
 import { watchPagesRouteOwner } from "../src/watch-pages/hook.js";
@@ -129,8 +128,8 @@ describe("iPhone app screens", () => {
 });
 
 describe("watch screens", () => {
-  it("lists the eleven screens in Home's order", () => {
-    expect(WATCH_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Complications", "HTTP actions", "Cameras", "Photos", "Parts"]);
+  it("lists the nine screens in Home's order", () => {
+    expect(WATCH_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Complications", "HTTP actions", "Cameras"]);
   });
 
   it("finds the screen a route is on", () => {
@@ -156,7 +155,7 @@ describe("watch screens", () => {
 
   it("never names a watch in the address of a Library screen, which every watch shares", () => {
     const shared = WATCH_SCREENS.filter((screen) => screen.shared === true);
-    expect(shared.map((screen) => screen.id)).toEqual(["http-actions", "cameras", "photos", "parts"]);
+    expect(shared.map((screen) => screen.id)).toEqual(["http-actions", "cameras"]);
     expect(watchScreenPath(shared[0]!, "w1")).toBe(WATCH_HTTP_ACTIONS_PATH);
     expect(watchScreenPath(shared[1]!, "w1")).toBe(WATCH_CAMERAS_PATH);
     for (const screen of shared) expect(watchRouteOwner(at(watchScreenPath(screen, "w1")))).toBeUndefined();
@@ -164,20 +163,17 @@ describe("watch screens", () => {
     expect(watchRouteOwner(at("/cameras/w1"))).toBeUndefined();
     expect(tabOfRoute(at("/http-actions/w1"))).toBe("watch");
     expect(tabOfRoute(at("/cameras/camera.door"))).toBe("watch");
-    expect(watchScreenPath(shared[2]!, "w1")).toBe(LIBRARY_PHOTOS_PATH);
-    expect(watchScreenPath(shared[3]!, "w1")).toBe(LIBRARY_PARTS_PATH);
-    expect(tabOfRoute(at("/photos"))).toBe("watch");
-    expect(tabOfRoute(at("/parts/x"))).toBe("watch");
-    expect(panelPrefix(undefined, "/wrist-assistant/photos")).toBe("/wrist-assistant");
-    expect(panelPrefix(undefined, "/wrist-assistant/parts")).toBe("/wrist-assistant");
+    // Photos and Parts were Library screens for a while; their addresses are
+    // no screen now, so an old link opens Home.
+    expect(tabOfRoute(at("/photos"))).toBe("home");
+    expect(tabOfRoute(at("/parts/x"))).toBe("home");
   });
 
-  it("lists Cameras after HTTP actions, then Photos and Parts, as shared screens with their own blurbs", () => {
-    expect(WATCH_SCREENS.at(-3)).toEqual({
+  it("lists Cameras last, as a shared screen with its own blurb", () => {
+    expect(WATCH_SCREENS.at(-1)).toEqual({
       id: "cameras", label: "Cameras", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.",
       path: WATCH_CAMERAS_PATH, shared: true,
     });
-    expect(WATCH_SCREENS.slice(-2).map((s) => [s.id, s.path, s.shared])).toEqual([["photos", LIBRARY_PHOTOS_PATH, true], ["parts", LIBRARY_PARTS_PATH, true]]);
     expect(watchScreenOf(at("/cameras"))).toBe(WATCH_SCREENS[8]);
   });
 

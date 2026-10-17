@@ -156,10 +156,10 @@ describe("the row's screen links", () => {
 
   it("never puts a Library screen in a device's row: they have a row of their own, with no watch in their addresses", () => {
     const own = watchRowLinks(route("/pages/w1"), "w1").map((l) => l.screen.id);
-    for (const id of ["http-actions", "cameras", "photos", "parts"]) expect(own).not.toContain(id);
+    for (const id of ["http-actions", "cameras"]) expect(own).not.toContain(id);
     const links = sharedRowLinks(route("/cameras"));
-    expect(links.map((l) => l.path)).toEqual(["/http-actions", "/cameras", "/photos", "/parts"]);
-    expect(sharedRowLinks(route("/parts")).filter((l) => l.on).map((l) => l.screen.id)).toEqual(["parts"]);
+    expect(links.map((l) => l.path)).toEqual(["/http-actions", "/cameras"]);
+    expect(sharedRowLinks(route("/http-actions")).filter((l) => l.on).map((l) => l.screen.id)).toEqual(["http-actions"]);
     expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["cameras"]);
   });
 

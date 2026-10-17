@@ -444,7 +444,6 @@ import { dropWatchControlCenterDrafts, isWatchControlCenterRoute, renderWatchCon
 import { dropWatchRoomsDrafts, isWatchRoomsRoute, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles } from "./watch-rooms/hook.js";
 import { dropWatchHttpActionsDrafts, isWatchHttpActionsRoute, renderWatchHttpActionsView, watchHttpActionsDirty } from "./watch-http-actions/hook.js";
 import { dropWatchCamerasDrafts, isWatchCamerasRoute, renderWatchCamerasView, watchCamerasDirty } from "./watch-cameras/hook.js";
-import { renderLibraryPartsView, renderLibraryPhotosView } from "./library/hook.js";
 import { NOT_ON_WATCH_NOTE, isWatchComplicationsRoute, splitForWatch, watchComplicationsLead, watchComplicationsStyles } from "./watch-complications.js";
 import {
   COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, deviceScreenPath, editorKeysLive, iphoneInnerRoute, iphoneScreenOf,
@@ -11498,23 +11497,6 @@ export class WristAssistantPanel extends LitElement {
         barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
       });
-      // The rest of Home's Library, on `/photos` and `/parts`: the home's
-      // page photos and its parts, each a list with Delete. Neither keeps a
-      // draft, so neither has a bar of its own.
-      case "photos": return renderLibraryPhotosView({
-        hass: this.hass, owners: this.owners, narrow: this.narrow,
-        onLoaded: () => this.requestUpdate(),
-      });
-      case "parts": return renderLibraryPartsView({
-        hass: this.hass, narrow: this.narrow,
-        // The complication editor's + Add keeps the library once read.
-        onDeleted: (id) => {
-          if (this.parts !== undefined) this.parts = this.parts.filter((p) => p.id !== id);
-          this.partConfigCache.delete(id);
-          if (this.partPick?.id === id) this.partPick = undefined;
-        },
-        onLoaded: () => this.requestUpdate(),
-      });
     }
   }
 
@@ -19863,7 +19845,7 @@ export class WristAssistantPanel extends LitElement {
 
   /** The Library: the screens that belong to the whole home, not one
    * device, under the people in Home's side bar (`homeLibraryScreens`: HTTP
-   * actions, Cameras, Photos, Parts). With no Watch app tab, this is their
+   * actions and Cameras). With no Watch app tab, this is their
    * way in. Each is a real link, so a middle click opens it in a new browser
    * tab. */
   private renderHomeShared() {

@@ -6,8 +6,8 @@
 // the Complications tab on the device, as on Home. The panel draws it
 // (`renderWatchRow`) and owns its state: the shared watch (`watch-pick.ts`),
 // whether the watch menu is open, and what a pick or a screen does.
-// Settings is a screen with an address like the others. HTTP actions,
-// Cameras, Photos and Parts are the whole home's, Home's Library: their row
+// Settings is a screen with an address like the others. HTTP actions and
+// Cameras are the whole home's, Home's Library: their row
 // says Library in place of a device and links only them, with the same Home
 // button. What can be worked out without the panel lives here,
 // where a test can reach it.
@@ -263,8 +263,6 @@ export const WATCH_SCREEN_LOOK: Record<WatchScreenId, { icon: UiIconName; hue: s
   "watch-complications": { icon: "gauge", hue: "var(--wa-hue-blue)" },
   "http-actions": { icon: "globe", hue: "var(--wa-hue-blue)" },
   "cameras": { icon: "image", hue: "var(--wa-hue-grey)" },
-  "photos": { icon: "image", hue: "var(--wa-hue-pink)" },
-  "parts": { icon: "layers", hue: "var(--wa-hue-yellow)" },
   "settings": { icon: "sliders", hue: "var(--wa-hue-grey)" },
 };
 
