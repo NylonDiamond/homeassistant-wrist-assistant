@@ -5,9 +5,9 @@
 // menu"), and each device uses one Anywhere menu and one Entity quick menu
 // (`library/model.ts`). So a card is a library menu, and its round ticks are
 // the devices that use it: tick another device and it uses this menu from
-// now on. Nothing is folded from the devices' records, and their `linkIds`
-// are never read. The page switcher has no card: it is only the Anywhere
-// menu's look, and goes with it.
+// now on. Nothing is folded from the devices' records. The page switcher has
+// no card: it is only the Anywhere menu's look, and goes with it. New menu
+// makes a menu no device uses yet; a tick then puts it on one.
 //
 // On a device's tab the list is that device's two menus, each with a menu
 // to pick another (mock frame 2b), then "Not on this watch": the rest of the
@@ -16,7 +16,7 @@
 // tab's (`watch-pages/all-pages-model.ts`).
 // Plan: app repo docs/one_library_plan_2026-10.md, step 2.
 
-import { MENU_UNITS, type MenuUnit } from "../library/client.js";
+import { MENU_UNITS, MENU_UNIT_SECTIONS, type MenuUnit } from "../library/client.js";
 import { type Library, type LibraryMenu, MENU_UNIT_TITLES, alsoOnText, libraryMenus, menuDocument, menuFor, otherMenus, sameId } from "../library/model.js";
 import {
   ALL_FILTER,
@@ -27,9 +27,10 @@ import {
   matchesSearch,
   ownersOnKind,
 } from "../watch-pages/all-pages-model.js";
-import { type LinkDevice, deviceWord } from "../watch-pages/links.js";
+import { type LinkDevice, deviceWord } from "../watch-pages/devices.js";
 import { WAIT_FOR_IPHONE_TEXT } from "../watch-settings.js";
 import { menuRowCount } from "./menu-view.js";
+import { type MenusDocument, watchMenusDefaults } from "./model.js";
 
 /** The second half of the line under the tab's title. */
 export const ALL_MENUS_LEAD = "Each device uses one Anywhere menu and one Entity quick menu.";
@@ -40,7 +41,7 @@ export function allMenusLead(total: number): string {
 }
 
 /** The surface's foot on All. */
-export const MENUS_FOOT = "Click a menu to edit it. Pick a device on a card and that device uses this menu from now on. Give a menu a name so you can tell them apart.";
+export const MENUS_FOOT = "Click a menu to edit it. Pick a device on a card and that device uses this menu from now on. New menu makes one no device uses yet.";
 
 /** The foot on a device's tab. */
 export function menusDeviceFoot(device: LinkDevice): string {
@@ -111,7 +112,7 @@ export function shownMenus(library: Library, search = "", kind: PagesKind = "all
 }
 
 /** The shown menus split into the two sections, Anywhere menus first. Both
- * sections are always there: each holds its New menu. */
+ * sections are always there, an empty one with its line. */
 export function menuSections(shown: readonly LibraryMenu[]): { unit: MenuUnit; menus: LibraryMenu[] }[] {
   return MENU_UNITS.map((unit) => ({ unit, menus: shown.filter((m) => m.unit === unit) }));
 }
@@ -171,21 +172,25 @@ export function newMenuName(library: Library | undefined, unit: MenuUnit): strin
   for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`.toLowerCase())) return `${base} ${n}`;
 }
 
-/** The devices a new menu can start on: those that use a menu of the unit
- * (Home Assistant makes a new menu as a copy of one), in device order. */
-export function newMenuDevices(library: Library | undefined, unit: MenuUnit, devices: readonly LinkDevice[]): LinkDevice[] {
-  if (library === undefined) return [];
-  return devices.filter((d) => menuFor(library, d.ownerId, unit) !== undefined);
+/** The line in New menu's form: what it starts as, and that no device uses
+ * it until one is ticked. */
+export function newMenuText(unit: MenuUnit): string {
+  return `It starts as the app's own ${MENU_UNIT_TITLES[unit]}. No device uses it until you tick one on its card.`;
 }
 
-/** The line in New menu's form: what it starts as and who uses it. */
-export function newMenuText(unit: MenuUnit, device: LinkDevice | undefined): string {
-  const start = `It starts as the app's own ${MENU_UNIT_TITLES[unit]}`;
-  return device === undefined ? `${start}.` : `${start}, and ${device.name} uses it from now on.`;
+/** What New menu says once the menu is made. */
+export function newMenuMadeText(name: string): string {
+  return `Made ${name}. Tick a device on its card to use it there.`;
 }
 
-/** What New menu says with no device to start on. */
-export const NEW_MENU_NONE_TEXT = "No device has its menus in Home Assistant yet. Open a device's Menus first.";
+/** Why New menu is not offered to someone who is not an administrator. */
+export const NEW_MENU_ADMIN_TEXT = "Only a Home Assistant administrator can make a new menu.";
+
+/** A new menu's sections: the app's own menu for the unit
+ * (`menu-defaults.json`), exactly the keys a menus document holds for it. */
+export function newMenuSections(unit: MenuUnit, defaults: MenusDocument = watchMenusDefaults()): Record<string, unknown> {
+  return Object.fromEntries(MENU_UNIT_SECTIONS[unit].flatMap((k) => (Object.hasOwn(defaults, k) ? [[k, structuredClone(defaults[k])]] : [])));
+}
 
 /** What the tab says with no menu to show. */
 export function menusEmptyText(devices: readonly LinkDevice[], search: string, kind: PagesKind = "all"): string {

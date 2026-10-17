@@ -3,12 +3,11 @@
 // Assistant has no library op for them: they are that device's record. So
 // each is a save of the device's `pages` (or `status_pages`) record as just
 // read, with only `isHidden` or the order changed, over the revision read,
-// and read again on a conflict, as taking a page off a device always did
-// (`removeListedFrom`). Home Assistant maps the save back onto the picks.
+// and read again on a conflict. Home Assistant maps the save back onto the
+// picks.
 //
-// Everything else in the record stays as loaded, the `linkId` keys
-// included: a page's own content is never touched here, and a system page
-// keeps its place in the list.
+// Everything else in the record stays as loaded: a page's own content is
+// never touched here, and a system page keeps its place in the list.
 
 import type { WatchConfigRecord } from "../ha-api.js";
 import { sameId } from "../library/model.js";

@@ -69,7 +69,7 @@ import {
   subscribeWatchConfig,
 } from "../ha-api.js";
 import { devicesMenuStyles, renderPageDevicesMenu } from "../watch-pages/devices-menu.js";
-import { type LinkDevice, type PagesRecordFacts, awaitingMove, linkDevicesOf, pagesRecordFacts, restoreLinkLines } from "../watch-pages/links.js";
+import { type LinkDevice, type PagesRecordFacts, awaitingMove, linkDevicesOf, pagesRecordFacts } from "../watch-pages/devices.js";
 import { deviceColor, deviceColors } from "../device-colors.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { agoWords } from "../send-state.js";
@@ -120,6 +120,7 @@ import {
   VOICE_PHRASES_UNIT,
   VOICE_PHRASES_UNIT_NAME,
   VOICE_REPLACE_KEEPS_TEXT,
+  restoreLinkLines,
   startFreshChoices,
   startFreshVoicePhrases,
   unlinkVoiceFrom,

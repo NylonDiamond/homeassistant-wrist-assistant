@@ -212,10 +212,11 @@ describe("a device's tab", () => {
     expect(text).toContain("1 tile · also on Jesse Apple Watch");
   });
 
-  it("saves Hide here on the device's own record, keeping its system page and the linkId marks as loaded", async () => {
+  it("saves Hide here on the device's own record, keeping its system page and every other page as loaded", async () => {
     const t = tab();
     showTab(t, JESSE);
     await t.ready();
+    const loaded = ((t.home.held.get(`${JESSE}/pages`)!.document.pages) as JsonObject[]).map((p) => structuredClone(p));
     const device = { ownerId: JESSE, name: "Jesse Apple Watch", kind: "watch" };
     await t.call("changePicks", device, { id: SMART, hidden: true });
     const save = t.sentOf("watch_config/save").at(-1)!;
@@ -223,8 +224,11 @@ describe("a device's tab", () => {
     const pages = (save.document as JsonObject).pages as JsonObject[];
     expect(pages.map((p) => p.id)).toEqual([SYSTEM, SMART, PAGE1.toUpperCase()]);
     expect(pages[1]!.isHidden).toBe(true);
-    expect(pages[2]!.linkId).toBe(PAGE1);
+    expect(pages[0]).toEqual(loaded[0]);
+    expect(pages[2]).toEqual(loaded[2]);
     expect(pages[2]!.isHidden).toBe(true);
+    // Home Assistant writes no link marks, and the panel adds none.
+    for (const page of pages) expect(page).not.toHaveProperty("linkId");
     // The library is read again after it.
     expect(t.sentOf("library/summary").length).toBeGreaterThan(1);
   });

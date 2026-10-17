@@ -4,7 +4,7 @@
 // The library holds each page and status page once, and each device picks
 // from it (`library/model.ts`, read from one `library/summary`). So a card
 // is a library item, and its ticks are the devices that pick it: nothing is
-// folded from the devices' records, and their `linkId` keys are never read.
+// folded from the devices' records.
 // On a device's tab the list is that device's picks in its own order, each
 // with Hide here, then "Not on this watch": the rest of the library, dimmed,
 // each with an Add chip.
@@ -17,7 +17,7 @@
 
 import type { LibraryListKind } from "../library/client.js";
 import { type Library, type LibraryItem, type LibraryPick, countFor, itemsFor, libraryItems, restFor, sameId } from "../library/model.js";
-import { type LinkDevice, deviceWord } from "./links.js";
+import { type LinkDevice, deviceWord } from "./devices.js";
 
 /** What a card is: a page, or a status page. */
 export type CardKind = LibraryListKind;

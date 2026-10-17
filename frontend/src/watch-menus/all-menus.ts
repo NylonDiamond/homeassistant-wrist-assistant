@@ -8,9 +8,10 @@
 // a device uses one menu of each kind, so ticking another device has it use
 // this menu from now on, and the ticked one cannot be unticked. A card opens
 // its menu in the menu editor of a device that uses it. A menu no device uses
-// can be deleted from its card. Each section has New menu (`new-menu.ts`).
-// Nothing here reads a record's `linkIds`, and nothing saves a menus record
-// but New menu's one reset of the menu it just made.
+// can be deleted from its card. "+ New menu" in the tab's head makes a menu
+// no device uses yet, the app's own Anywhere menu or Entity quick menu
+// (`library/menus/create`); its card shows with no device ticked, and a tick
+// puts it on a device. Nothing here saves a device's menus record.
 //
 // The head is the Pages tab's without Multi select: the Device menu
 // (watches or iPhones) and the search, over a row of device tabs. On a
@@ -22,10 +23,10 @@
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
-import { type HassLike, type OwnerSummary, fetchWatchConfig, saveWatchConfig } from "../ha-api.js";
+import type { HassLike, OwnerSummary } from "../ha-api.js";
 import { deviceColor, deviceColorsCache } from "../device-colors.js";
-import { LIBRARY_UNSUPPORTED_TEXT, type MenuUnit } from "../library/client.js";
-import { type Library, type LibraryMenu, hasItem, holdsRecord, libraryMenus, menuDocument, pagesDocumentFor, sameId } from "../library/model.js";
+import { LIBRARY_UNSUPPORTED_TEXT, MENU_UNITS, type MenuUnit } from "../library/client.js";
+import { type Library, type LibraryMenu, MENU_UNIT_TITLES, hasItem, holdsRecord, libraryMenus, menuDocument, pagesDocumentFor } from "../library/model.js";
 import { ROW_MENU_PICTURE_H, renderMenuRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
 import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
@@ -34,14 +35,14 @@ import { uiIcon } from "../ui-icons.js";
 import { ALL_FILTER, type PagesFilter, type PagesKind, REST_HINT, hasBothKinds, onDeviceTitle, resolveFilter, resolveKind, restTitle } from "../watch-pages/all-pages-model.js";
 import { libraryListStyles } from "../watch-pages/library-list-styles.js";
 import { listTabStyles } from "../watch-pages/list-tab-styles.js";
-import { type LinkDevice, type PagesRecordFacts, awaitingMove, linkDevicesOf } from "../watch-pages/links.js";
+import { type LinkDevice, type PagesRecordFacts, awaitingMove, linkDevicesOf } from "../watch-pages/devices.js";
 import type { WatchPagesNote } from "../watch-pages/save-note.js";
 import {
   MENU_NO_USER_TEXT,
   MENU_SECTION_TITLES,
   MENUS_FOOT,
   MENUS_WAIT_TEXT,
-  NEW_MENU_NONE_TEXT,
+  NEW_MENU_ADMIN_TEXT,
   allMenusLead,
   deviceMenuMeta,
   deviceMenuRows,
@@ -52,8 +53,9 @@ import {
   menusDeviceFoot,
   menusDirtyText,
   menusEmptyText,
-  newMenuDevices,
+  newMenuMadeText,
   newMenuName,
+  newMenuSections,
   newMenuText,
   openMenuDevice,
   restMenus,
@@ -62,7 +64,6 @@ import {
 import { askWatchMenu, keptWatchMenusDraft } from "./draft.js";
 import "./menu-thumbs.js";
 import type { MenusDocument } from "./model.js";
-import { resetMenuUnit } from "./new-menu.js";
 
 /** How tall a card's picture of its menu is, in CSS pixels. */
 const PIC_H = 180;
@@ -113,11 +114,10 @@ function keepView(change: Partial<KeptView>): void {
 /** Whether a device's menu editor holds unsaved edits in this tab. */
 const dirtyHere = (ownerId: string): boolean => keptWatchMenusDraft(ownerId)?.dirty ?? false;
 
-/** New menu's form, open in one section. */
+/** New menu's form, under the tab's head. */
 interface NewForm {
   unit: MenuUnit;
   name: string;
-  ownerId?: string;
   busy: boolean;
   note?: WatchPagesNote;
 }
@@ -138,10 +138,10 @@ export class WaAllMenus extends LitElement {
   @state() private search = "";
   /** The card a click found no device to open on, by menu id. */
   @state() private openNote?: string;
-  /** New menu's form, in the section it was opened from. */
+  /** New menu's form, open under the tab's head. */
   @state() private newForm?: NewForm;
-  /** What the last New menu said, under its section, once its form closed. */
-  @state() private sectionNote?: { unit: MenuUnit; note: WatchPagesNote };
+  /** What the last New menu said, under the head, once its form closed. */
+  @state() private newNote?: WatchPagesNote;
   /** The menu whose delete is being asked about. */
   @state() private deleteAsk?: string;
   @state() private deleting = false;
@@ -252,69 +252,58 @@ export class WaAllMenus extends LitElement {
     void store.pickMenu(ownerId, menu.unit, menu.id);
   }
 
-  /** Open New menu's form in a section, or close it. */
-  private toggleNew(unit: MenuUnit): void {
+  /** Whether this Home Assistant user may make a menu: an administrator.
+   * Unknown (no user read yet) offers it, and Home Assistant still refuses
+   * anyone else. */
+  private get mayMake(): boolean {
+    return this.hassNow?.user?.is_admin !== false;
+  }
+
+  /** Open New menu's form, or close it. */
+  private toggleNew(): void {
     if (this.newForm?.busy) return;
-    if (this.newForm?.unit === unit) {
+    if (this.newForm !== undefined) {
       this.newForm = undefined;
       return;
     }
-    const library = this.lib.library;
-    const tab = this.filterDevice();
-    const offered = newMenuDevices(library, unit, this.devices);
-    const ownerId = (tab !== undefined && offered.some((d) => d.ownerId === tab.ownerId) ? tab.ownerId : undefined) ?? offered[0]?.ownerId;
-    this.sectionNote = undefined;
-    this.newForm = { unit, name: newMenuName(library, unit), busy: false, ...(ownerId === undefined ? {} : { ownerId }) };
+    const unit: MenuUnit = "anywhere";
+    this.newNote = undefined;
+    this.newForm = { unit, name: newMenuName(this.lib.library, unit), busy: false };
     void this.updateComplete.then(() => this.renderRoot.querySelector?.<HTMLInputElement>(".am-new input")?.select());
   }
 
+  /** The form's For: another unit, and its offered name when the name was
+   * still the one offered for the old unit. */
+  private setNewUnit(form: NewForm, unit: MenuUnit): void {
+    const library = this.lib.library;
+    const name = form.name === newMenuName(library, form.unit) ? newMenuName(library, unit) : form.name;
+    this.newForm = { ...form, unit, name };
+  }
+
   /**
-   * New menu: a copy of the device's menu for the unit under the name given,
-   * which the device uses from now on (`library/menus/copy`, the one way Home
-   * Assistant makes a menu), then that menu set back to the app's own by one
-   * save of the device's menus record (`resetMenuUnit`). Not while the
-   * device's menu editor holds unsaved edits.
+   * New menu: a library menu under the name given, the app's own menu for
+   * the unit (`library/menus/create`), that no device uses yet. The library
+   * is read again after it, so its card shows with no device ticked. No
+   * device moves off its menu.
    */
   private async makeMenu(): Promise<void> {
     const form = this.newForm;
     const store = this.lib.store;
-    const hass = this.hassNow;
-    if (form === undefined || form.busy || store === undefined || hass === undefined) return;
+    if (form === undefined || form.busy || store === undefined) return;
     const name = form.name.trim();
-    const device = this.devices.find((d) => d.ownerId === form.ownerId);
     if (name === "") {
       this.newForm = { ...form, note: { kind: "warn", text: "Give the menu a name." } };
       return;
     }
-    if (device === undefined) {
-      this.newForm = { ...form, note: { kind: "warn", text: NEW_MENU_NONE_TEXT } };
-      return;
-    }
-    if (dirtyHere(device.ownerId)) {
-      this.newForm = { ...form, note: { kind: "warn", text: menusDirtyText(device.name) } };
-      return;
-    }
     const { note: _dropped, ...asked } = form;
     this.newForm = { ...asked, busy: true };
-    const made = await store.copyMenu(device.ownerId, form.unit, name);
+    const made = await store.createMenu(form.unit, name, newMenuSections(form.unit));
     if (!made.ok) {
       this.newForm = { ...form, busy: false, note: { kind: "err", text: `Not made. ${made.text}` } };
       return;
     }
-    const revisions = made.reply.revisions ?? {};
-    const own = Object.entries(revisions).find(([owner]) => sameId(owner, device.ownerId))?.[1];
-    const reset = await resetMenuUnit({
-      read: (o) => fetchWatchConfig(hass, o, "menus"),
-      save: (o, base, document) => saveWatchConfig(hass, o, "menus", base, document),
-    }, device.ownerId, form.unit, made.reply.id, own?.menus ?? 0);
-    await store.refresh();
     this.newForm = undefined;
-    this.sectionNote = {
-      unit: form.unit,
-      note: reset.ok
-        ? { kind: "ok", text: `Made ${name}. ${device.name} uses it from now on.` }
-        : { kind: "warn", text: `Made ${name} as a copy of the menu ${device.name} used, and ${device.name} uses it from now on. It could not be set back to the app's own (${reset.message.replace(/\.$/, "")}), so change it in the menu editor.` },
-    };
+    this.newNote = { kind: "ok", text: newMenuMadeText(name) };
   }
 
   /** Delete a menu no device uses, after its question. */
@@ -359,7 +348,10 @@ export class WaAllMenus extends LitElement {
           <h1>Menus</h1>
           <p class="ap-lead">${lead}</p>
         </div>
+        ${library === undefined ? nothing : this.renderNewButton()}
       </div>
+      ${this.newForm === undefined ? nothing : this.renderNewForm(this.newForm)}
+      ${this.newNote === undefined ? nothing : html`<p class="lt-line ${this.newNote.kind}" role="status">${this.newNote.text}</p>`}
       ${stale ? html`<p class="ap-warn" role="status">Could not read the library again: ${this.lib.store?.readError ?? ""} It shows as last read.</p>` : nothing}
       <div class="pk-surface pk-page" role="region" aria-label="Your menus">
         <div class="pk-pin">
@@ -378,41 +370,44 @@ export class WaAllMenus extends LitElement {
   }
 
   /** All: the menus in two sections, Anywhere menus first, each under its
-   * heading with its count and New menu. */
+   * heading with its count. */
   private renderSections(library: Library, devices: readonly LinkDevice[]): TemplateResult {
     const shown = shownMenus(library, this.search, this.deviceKind, devices);
     const waiting = this.waiting(library);
     return html`${menuSections(shown).map(({ unit, menus }) => html`<section class="am-section" aria-labelledby=${`am-section-${unit}`}>
       <div class="am-section-head">
         <h2 class="am-section-title" id=${`am-section-${unit}`}>${MENU_SECTION_TITLES[unit]} <span class="am-section-n">${menus.length}</span></h2>
-        <button type="button" class="am-new-btn ${this.newForm?.unit === unit ? "on" : ""}" aria-expanded=${this.newForm?.unit === unit ? "true" : "false"}
-          ?disabled=${this.newForm?.busy === true} title=${`Make a new ${unit === "entity" ? "Entity quick menu" : "Anywhere menu"}`}
-          @click=${() => this.toggleNew(unit)}>${uiIcon("plus")}<span>New menu</span></button>
       </div>
-      ${this.newForm?.unit === unit ? this.renderNewForm(library, this.newForm, devices) : nothing}
-      ${this.sectionNote?.unit === unit ? html`<p class="lt-line ${this.sectionNote.note.kind}" role="status">${this.sectionNote.note.text}</p>` : nothing}
       ${menus.length === 0 ? html`<p class="ap-empty">${menusEmptyText(devices, this.search, this.deviceKind)}</p>`
         : html`<div class="ap-grid" role="list">${menus.map((menu) => this.renderCard(library, menu, devices, waiting))}</div>`}
     </section>`)}`;
   }
 
-  /** New menu's form: a name, the device it starts on (the one that uses it
-   * from now on), and what it starts as. */
-  private renderNewForm(library: Library, form: NewForm, devices: readonly LinkDevice[]): TemplateResult {
-    const offered = newMenuDevices(library, form.unit, devices);
-    const device = offered.find((d) => d.ownerId === form.ownerId);
+  /** "+ New menu", beside the lead (mock frame 1c). Greyed for anyone who
+   * is not an administrator. */
+  private renderNewButton(): TemplateResult {
+    const may = this.mayMake;
+    const open = this.newForm !== undefined;
+    return html`<button type="button" class="am-new-btn ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
+      ?disabled=${!may || this.newForm?.busy === true} title=${may ? "Make a new menu no device uses yet" : NEW_MENU_ADMIN_TEXT}
+      @click=${() => this.toggleNew()}>${uiIcon("plus")}<span>New menu</span></button>`;
+  }
+
+  /** New menu's form: a name, which kind of menu it is, and what it starts
+   * as. No device: a tick on its card puts it on one. */
+  private renderNewForm(form: NewForm): TemplateResult {
     return html`<form class="am-new" aria-label="New menu" @submit=${(e: Event) => { e.preventDefault(); void this.makeMenu(); }}>
       <label class="am-new-field"><span>Name</span>
         <input type="text" .value=${form.name} ?disabled=${form.busy} maxlength="80"
           @input=${(e: InputEvent) => { this.newForm = { ...form, name: (e.target as HTMLInputElement).value }; }} /></label>
-      ${offered.length === 0 ? nothing : html`<label class="am-new-field"><span>For</span>
-        <select class="lt-pick-sel" ?disabled=${form.busy || offered.length < 2}
-          @change=${(e: Event) => { this.newForm = { ...form, ownerId: (e.target as HTMLSelectElement).value }; }}>
-          ${offered.map((d) => html`<option value=${d.ownerId} ?selected=${d.ownerId === form.ownerId}>${d.name}</option>`)}
-        </select></label>`}
-      <p class="am-new-text">${offered.length === 0 ? NEW_MENU_NONE_TEXT : newMenuText(form.unit, device)}</p>
+      <label class="am-new-field"><span>For</span>
+        <select class="lt-pick-sel" ?disabled=${form.busy}
+          @change=${(e: Event) => this.setNewUnit(form, (e.target as HTMLSelectElement).value as MenuUnit)}>
+          ${MENU_UNITS.map((u) => html`<option value=${u} ?selected=${u === form.unit}>${MENU_UNIT_TITLES[u]}</option>`)}
+        </select></label>
+      <p class="am-new-text">${newMenuText(form.unit)}</p>
       <span class="am-new-acts">
-        <button type="submit" class="am-btn primary" ?disabled=${form.busy || device === undefined}>${form.busy ? "Making…" : "Make menu"}</button>
+        <button type="submit" class="am-btn primary" ?disabled=${form.busy}>${form.busy ? "Making…" : "Make menu"}</button>
         <button type="button" class="am-btn" ?disabled=${form.busy} @click=${() => { this.newForm = undefined; }}>Cancel</button>
       </span>
       ${form.note === undefined ? nothing : html`<p class="lt-line ${form.note.kind}" role="status">${form.note.text}</p>`}
@@ -574,22 +569,23 @@ export class WaAllMenus extends LitElement {
        draw a page. */
     .ap-thumb wa-menu-thumbs { flex: none; width: 100%; }
     /* The two sections, Anywhere menus and Entity quick menus, each under
-       a small heading with its count and New menu. */
+       a small heading with its count. */
     .am-section { display: flex; flex-direction: column; gap: 10px; }
     .am-section + .am-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--wa-line); }
     .am-section-head { display: flex; align-items: center; gap: 10px; padding: 0 2px; }
     .am-section-title { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .01em; color: var(--wa-text); }
     .am-section-n { margin-left: 4px; font-weight: 500; color: var(--wa-muted); }
+    /* "+ New menu", at the right of the tab's head, beside the lead. */
     .am-new-btn {
-      display: inline-flex; align-items: center; gap: 5px; margin-left: auto; height: 26px; padding: 0 9px; border-radius: 7px;
+      display: inline-flex; align-items: center; gap: 5px; margin-left: auto; height: 30px; padding: 0 11px; border-radius: 8px;
       border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink);
-      font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+      font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; flex: none;
     }
     .am-new-btn svg { width: 13px; height: 13px; }
     .am-new-btn:hover:not(:disabled), .am-new-btn.on { background: var(--wa-hover); }
     .am-new-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .am-new-btn:disabled { opacity: .45; cursor: default; }
-    /* New menu's form, under its section's heading. */
+    /* New menu's form, under the tab's head. */
     .am-new {
       display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; padding: 12px 14px;
       border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-card);

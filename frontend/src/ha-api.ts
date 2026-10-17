@@ -757,8 +757,9 @@ export async function fetchWatchConfigSummary(hass: HassLike) {
   return hass.connection.sendMessagePromise<WatchConfigSummary>({ type: `${WC}/summary` });
 }
 
-/** A linked copy a save could not bring up to date: that device kept the
- * old version of its linked pages, status pages, menus or phrases. */
+/** A device a save could not bring up to date: it kept the old version of
+ * the pages, status pages or menus it shares with the saved one, or of its
+ * linked phrases. */
 export interface WatchConfigLinkFailure {
   owner: string;
   name: string;
@@ -799,94 +800,30 @@ export async function saveWatchConfig(
   });
 }
 
-// ── linked pages ─────────────────────────────────────────────────────────
+// ── linked voice ─────────────────────────────────────────────────────────
 //
-// A page on several devices is the same page id in each device's `pages`
-// record, with a `linkId` key on the page. Home Assistant writes every save
-// of a linked page to the other devices' copies itself, so the panel saves
-// one device as always. Plan: app repo docs/linked_pages_plan_2026-10.md.
+// A watch's phrases and their defaults can be on several watches as one
+// unit: the same values in each watch's `voice` record, under a top-level
+// `linkIds` that maps the unit to its link id. Home Assistant writes every
+// save of one copy to the others itself, so the voice editor saves one
+// watch as always (`watch-voice/links.ts`). Pages, status pages and menus
+// never link: they live once in the home's library, and a device picks them
+// (`library/client.ts`).
 
 const WP = "wrist_assistant/watch_pages";
 
-/** What `watch_pages/link` put on each target: the page ids and status page
- * ids it added there (the ones asked for, and what their tiles open), and
- * the link id each asked page now carries. `adopted_status_pages` names the
- * target's own copies of starter status pages that the link took over in
- * place, made the source's; absent from integrations older than it. */
-export interface WatchPagesLinkReply {
-  targets: Record<string, { pages: string[]; status_pages: string[]; adopted_status_pages?: string[] }>;
-  link_ids: Record<string, string>;
-}
+/** The one kind that links by unit: a watch's phrases and their defaults. */
+export type WatchLinkUnitKind = "voice";
 
-/** What `linkWatchPages` links: pages, or status pages on their own. */
-export type WatchPagesLinkKind = "pages" | "status_pages";
-
-/** Put pages of `sourceId` on the `targets` devices as linked copies, with
- * the pages and status pages their tiles open. Checked first, then written.
- * With `kind` `status_pages` the ids are status pages, linked alone, and
- * `link_ids` names theirs. A starter status page links like any other: a
- * target holding its own copy (the same id, no link) has that copy taken
- * over, linked and made the source's.
- * Refusals: `unknown_device`, `not_found`, `system_page`, `id_taken` (a
- * target holds that id for a page that is not linked, or under another
- * link), `awaiting_move`, and
- * the generic ones. An integration older than linked pages answers
- * `unknown_command`. `kind` is only sent for status pages, so a pages link
- * reads as it always did. */
-export async function linkWatchPages(
-  hass: HassLike,
-  sourceId: string,
-  pageIds: readonly string[],
-  targets: readonly string[],
-  kind: WatchPagesLinkKind = "pages",
-) {
-  return hass.connection.sendMessagePromise<WatchPagesLinkReply>({
-    type: `${WP}/link`,
-    source_id: sourceId,
-    page_ids: [...pageIds],
-    targets: [...targets],
-    ...(kind === "pages" ? {} : { kind }),
-  });
-}
-
-/** What `watch_pages/link_all` did: the page ids and status page ids it put
- * on the target, the target's own starter status pages it took over in
- * place (`adopted_status_pages`, absent from older integrations), and the
- * kinds it copied there because the target had none (`menus`, `rooms`). */
-export interface WatchPagesLinkAllReply {
-  pages: string[];
-  status_pages: string[];
-  adopted_status_pages?: string[];
-  copied: string[];
-}
-
-/** Link every page (never a system page) and every status page of
- * `sourceId` onto `targetId`, then copy its menus and rooms there, each only
- * when the target has none. All in Home Assistant, in one step. Refusals as
- * `linkWatchPages`; an integration older than it answers `unknown_command`. */
-export async function linkAllWatchPages(hass: HassLike, sourceId: string, targetId: string) {
-  return hass.connection.sendMessagePromise<WatchPagesLinkAllReply>({
-    type: `${WP}/link_all`,
-    source_id: sourceId,
-    target_id: targetId,
-  });
-}
-
-/** The kinds that link by unit: a whole part of the document (the menus'
- * Anywhere menu, a watch's phrases and their defaults) under a top-level
- * `linkIds` that maps each unit to its link id. */
-export type WatchLinkUnitKind = "menus" | "voice";
-
-/** What `watch_pages/link` did for a unit kind: on each target the units
- * written there, and the pages and status pages a menus link brought along;
- * the link id of each unit. */
+/** What `watch_pages/link` did for voice: on each target the units written
+ * there, and the link id of each unit. */
 export interface WatchUnitsLinkReply {
-  targets: Record<string, { pages: string[]; status_pages: string[]; adopted_status_pages?: string[]; units: string[] }>;
+  targets: Record<string, { units: string[] }>;
   link_ids: Record<string, string>;
 }
 
-/** Put the `units` of `sourceId`'s `kind` on the `targets` devices as
- * linked copies (`watch_pages/link` with a unit kind). A target that holds
+/** Put the `units` of `sourceId`'s `kind` on the `targets` watches as
+ * linked copies (`watch_pages/link` with kind `voice`). A target that holds
  * the unit with other values is refused `unit_taken` unless `replace`, which
  * writes over it. Refusals besides the generic ones: `not_found` (the source
  * holds no record of the kind), `awaiting_move`, `not_for_iphone` (voice is
@@ -910,54 +847,23 @@ export async function linkWatchUnits(
   });
 }
 
-/** A part of the menus that links on its own: the Anywhere menu (with the
- * page switcher's look) or the Entity quick menu. */
-export type WatchMenusLinkUnit = "anywhere" | "entity";
-
-/** What `watch_pages/link` did for menus: per target the pages and status
- * pages the slots brought along and the units written there, and the link
- * id of each unit. */
-export interface WatchMenusLinkReply extends WatchPagesLinkReply {
-  targets: Record<string, { pages: string[]; status_pages: string[]; adopted_status_pages?: string[]; units: WatchMenusLinkUnit[] }>;
-  link_ids: Partial<Record<WatchMenusLinkUnit, string>>;
-}
-
-/** Put menu `units` of `sourceId` on the `targets` devices, linked, with the
- * pages and status pages their slots open. A target that has its own menu
- * for a unit is refused `unit_taken` unless `replace`, which drops its own.
- * Refusals besides the page link's: `unit_taken`, `not_for_iphone`,
- * `not_found` (no menus saved on the source), `awaiting_move`. An
- * integration older than linked menus refuses the message's new keys
- * (`invalid_format`), one older than linked pages answers
- * `unknown_command`; the panel tells both apart first by `places` having no
- * `menus`. */
-export async function linkWatchMenus(hass: HassLike, sourceId: string, units: readonly WatchMenusLinkUnit[], targets: readonly string[], replace = false) {
-  return (await linkWatchUnits(hass, "menus", sourceId, units, targets, replace)) as WatchMenusLinkReply;
-}
-
 /** One linked unit as `watch_pages/places` lists it: which unit, and the
- * devices that hold a copy. */
+ * watches that hold a copy. */
 export interface WatchUnitPlace {
   unit: string;
   owners: string[];
 }
 
-/** One menus link: the unit it links and the devices that hold it. */
-export interface WatchMenusLinkPlace extends WatchUnitPlace {
-  unit: WatchMenusLinkUnit;
-}
-
-/** For every link id, the devices that hold a copy of it. `menus` and
- * `voice` are absent from integrations older than those links. */
+/** For every voice link id, the watches that hold a copy of it. Older
+ * integrations also answered with page, status page and menu links, which
+ * nothing reads; `voice` is absent from integrations older than voice
+ * links. */
 export interface WatchPagesPlaces {
-  pages: Record<string, string[]>;
-  status_pages: Record<string, string[]>;
-  menus?: Record<string, WatchMenusLinkPlace>;
   voice?: Record<string, WatchUnitPlace>;
 }
 
-/** Where each linked page and status page is, and each linked unit. An
- * integration older than linked pages answers `unknown_command`. */
+/** Where each linked voice unit is. An integration older than linked pages
+ * answers `unknown_command`. */
 export async function fetchWatchPagesPlaces(hass: HassLike) {
   return hass.connection.sendMessagePromise<WatchPagesPlaces>({ type: `${WP}/places` });
 }

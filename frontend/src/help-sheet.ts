@@ -72,7 +72,7 @@ const STATUS_PAGES_TEXT = [
 
 const MENUS_TEXT = [
   "Menus lists every menu in your home. Each device uses one Anywhere menu and one Entity quick menu, and a menu used by more than one device is the same menu: an edit shows on all of them.",
-  "The page switcher goes with the Anywhere menu. Pick a menu to edit it, or pick a device on its card to have that device use it. For a menu of one device's own, open it there and use Make a copy for this watch.",
+  "The page switcher goes with the Anywhere menu. Pick a menu to edit it, or pick a device on its card to have that device use it. For a menu of one device's own, open it there and use Make a copy for this watch. New menu makes a menu no device uses yet: tick a device on its card to use it there.",
 ];
 
 /** Each screen's guide in the docs: what the ? in the screen's own bar

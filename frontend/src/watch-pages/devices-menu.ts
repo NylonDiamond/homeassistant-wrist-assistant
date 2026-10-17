@@ -1,16 +1,15 @@
-// A page's Devices menu, drawn the same in the page editor (on a page row
-// and the inspector's page card) and on the Pages tab's cards: a switch per
-// device, on where the page is, with a line for what the last switch did
-// and Done. The rules behind the switches are `links.ts` and
-// `all-pages-model.ts`; this is only the drawing and its look. The voice
-// editor draws the same menu for a watch's phrases (`watch-voice/links.ts`),
-// with its own head, foot and switch titles, and the menu editor draws its
-// own from the same switch rows (`watch-menus/menu-devices.ts`).
+// The voice editor's Devices menu for a watch's phrases: a switch per
+// watch, on where the phrases are, with a line for what the last switch did
+// and Done. The rules behind the switches are `watch-voice/links.ts`; this
+// is only the drawing and its look. Pages, status pages and menus have no
+// Devices menu: they live in the home's library, and a tick on a card puts
+// one on a device (`library/ticks.ts`). The default head, foot and titles
+// are the old page wording, kept for a caller that leaves them out.
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import { uiIcon } from "../ui-icons.js";
-import { type PageDevicePlace, deviceWord } from "./links.js";
+import { type PageDevicePlace, deviceWord } from "./devices.js";
 import type { WatchPagesNote } from "./save-note.js";
 
 export interface DevicesMenuInput {
@@ -83,9 +82,8 @@ export interface DeviceSwitchInput {
 }
 
 /** One device's row: its switch, glyph, name, and "this watch" or its tag.
- * The switch follows the place, not the click. Shared by the page's Devices
- * menu and the menu editor's (`watch-menus/menu-devices.ts`). */
-export function renderDeviceSwitch(input: DeviceSwitchInput): TemplateResult {
+ * The switch follows the place, not the click. */
+function renderDeviceSwitch(input: DeviceSwitchInput): TemplateResult {
   const { place, off } = input;
   const label = place.device.name;
   const color = input.colorOf?.(place.device.ownerId);

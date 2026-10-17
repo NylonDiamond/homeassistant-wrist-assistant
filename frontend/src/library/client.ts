@@ -8,8 +8,8 @@
 // device from the library and that device's picks, so the editors keep
 // saving a device's record as before, and those saves are mapped back to the
 // library. These commands are the rest: the summary the Pages, Status pages
-// and Menus tabs draw from, a tick on a device, a menu's copy, name and
-// delete, and a delete from the library.
+// and Menus tabs draw from, a tick on a device, a new menu, a menu's copy,
+// name and delete, and a delete from the library.
 //
 // The keys are the server's exactly (`watch_config_ws.py`): an item is named
 // by `item_id`, never `id`, which is the message number. Home Assistant
@@ -35,11 +35,18 @@ export type MenuUnit = "anywhere" | "entity";
 
 export const MENU_UNITS: readonly MenuUnit[] = ["anywhere", "entity"];
 
+/** The keys of a menus document each unit's menu is made of, as the
+ * server's `MENU_UNITS` names them: a menu's `sections` hold exactly these. */
+export const MENU_UNIT_SECTIONS: Readonly<Record<MenuUnit, readonly string[]>> = {
+  anywhere: ["quickAction", "pageSwitcher"],
+  entity: ["entityRadial"],
+};
+
 /** A stored object, parsed JSON nothing has checked. */
 export type LibraryObject = Record<string, unknown>;
 
 /** One page or status page in the summary: the item as the library holds
- * it (a page never carries `isHidden` or `linkId` here), and the devices
+ * it (a page never carries `isHidden` here), and the devices
  * that pick it, sorted. An item no device picks has no owners, and only an
  * administrator hears of it. */
 export interface LibraryItemEntry {
@@ -102,6 +109,10 @@ export interface LibraryMenuCopyReply {
   revisions: LibraryRevisions;
 }
 
+/** What `library/menus/create` answers: the new menu's id, and no record
+ * changed (no device uses it yet), so `revisions` is empty. */
+export type LibraryMenuCreateReply = LibraryMenuCopyReply;
+
 export interface LibraryDeleteReply {
   revisions: LibraryRevisions;
   /** The devices whose record could not take the delete. */
@@ -138,11 +149,21 @@ export async function pickLibraryMenu(hass: HassLike, ownerId: string, unit: Men
 
 /** "Make a copy for this watch": a new library menu named `name` with the
  * slots of the menu the device uses for `unit`, which the device then uses
- * in its place. It is also the only way a new menu is made. Refusals:
- * `invalid` (an empty name, an unknown unit), `unknown_device`, `not_found`
- * (the device uses no menu for the unit), `unauthorized`. */
+ * in its place. Refusals: `invalid` (an empty name, an unknown unit),
+ * `unknown_device`, `not_found` (the device uses no menu for the unit),
+ * `unauthorized`. */
 export async function copyLibraryMenu(hass: HassLike, ownerId: string, unit: MenuUnit, name: string) {
   return hass.connection.sendMessagePromise<LibraryMenuCopyReply>({ type: `${LIB}/menus/copy`, owner_id: ownerId, unit, name });
+}
+
+/** New menu: a library menu named `name` that no device uses yet, made of
+ * `sections`, which hold exactly the unit's keys (`MENU_UNIT_SECTIONS`) as a
+ * menus document holds them. A tick then puts it on a device. Administrators
+ * only. Refusals: `invalid` (an empty name, an unknown unit, sections of the
+ * wrong shape), `unauthorized`, and `unknown_command` from an integration
+ * older than it. */
+export async function createLibraryMenu(hass: HassLike, unit: MenuUnit, name: string, sections: LibraryObject) {
+  return hass.connection.sendMessagePromise<LibraryMenuCreateReply>({ type: `${LIB}/menus/create`, unit, name, sections });
 }
 
 /** Rename a library menu. No device's record holds a menu's name, so no

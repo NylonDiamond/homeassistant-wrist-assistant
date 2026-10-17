@@ -112,7 +112,6 @@ export const listTabStyles = css`
   }
   .ap-open .ap-detail { margin-left: auto; flex: none; }
   .ap-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
-  .ap-foot > .ap-dev-open { margin-left: auto; }
   .ap-open:focus-visible, .ap-thumb:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
   .ap-name { min-width: 0; font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ap-card:not(.picking) .ap-open:hover .ap-name { text-decoration: underline; text-underline-offset: 2px; }
@@ -127,33 +126,6 @@ export const listTabStyles = css`
   .ap-dev-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ap-dev.dim { opacity: .55; }
   .ap-dev em { font-style: normal; font-size: 10px; color: var(--wa-muted); }
-  .ap-dev-open {
-    display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px 3px 7px; border-radius: 6px; cursor: pointer;
-    font-size: 11.5px; font-weight: 600; color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line-strong);
-  }
-  .ap-dev-open svg { width: 13px; height: 13px; }
-  .ap-dev-open:hover { background: var(--wa-hover); }
-  .ap-dev-open:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .ap-dev-open.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent); }
-  /* Over the chips, when copies on several devices could be one linked
-     thing: a starter status page not linked yet, or menus with the same
-     slots. A short line, Link, then what the last Link did. */
-  .ap-same { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .ap-same-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .ap-same-t { flex: 1; min-width: 0; font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
-  .ap-same-btn {
-    display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 3px 7px; border-radius: 6px; cursor: pointer;
-    font-size: 11.5px; font-weight: 600; color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line-strong);
-  }
-  .ap-same-btn svg { width: 13px; height: 13px; }
-  .ap-same-btn:hover:not(:disabled) { background: var(--wa-hover); }
-  .ap-same-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .ap-same-btn:disabled { opacity: .45; cursor: default; }
-  .ap-same-note { font-size: 11.5px; line-height: 1.35; color: var(--wa-ink); }
-  .ap-same-note.ok { color: var(--wa-ok, var(--wa-ink)); }
-  .ap-same-note.warn, .ap-same-note.err { color: var(--wa-need); }
-  /* The Devices menu hangs under its card, over the cards below. */
-  .ap-card > .pe-dev-menu { position: absolute; top: calc(100% - 4px); left: 8px; width: 250px; max-width: calc(100vw - 32px); z-index: 6; }
   /* A phone, as the Complications surface folds there: the head's
      controls wrap, the search and the Device menu share a line, the tabs
      wrap and the head stops being pinned. */

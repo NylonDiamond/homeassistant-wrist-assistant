@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 import type { WatchUnitPlace } from "../src/ha-api.js";
 import { DEVICES_MENU_NOTE, type DevicesMenuInput, renderPageDevicesMenu } from "../src/watch-pages/devices-menu.js";
-import type { LinkDevice } from "../src/watch-pages/links.js";
+import type { LinkDevice } from "../src/watch-pages/devices.js";
 import type { JsonObject } from "../src/watch-pages/model.js";
 import {
   VOICE_DEVICES_HEAD,
@@ -21,6 +21,7 @@ import {
   VOICE_PHRASES_UNIT_KEYS,
   VOICE_WATCH_OWN_KEYS,
   type VoiceUnlinkIO,
+  restoreLinkLines,
   startFreshChoices,
   startFreshVoicePhrases,
   unlinkVoiceFrom,
@@ -281,5 +282,29 @@ describe("unlinking another watch", () => {
     expect(await unlinkVoiceFrom(plain, "w2")).toEqual({ ok: true, unlinked: false });
     const none: VoiceUnlinkIO = { read: async () => ({ revision: 0, document: {} }), save: async () => { throw new Error("no save"); } };
     expect(await unlinkVoiceFrom(none, "w2")).toEqual({ ok: true, unlinked: false });
+  });
+});
+
+describe("what a restore does to the phrase links", () => {
+  const held: Record<string, string[]> = { A: ["Chen's Watch"], B: ["Jesse's Watch", "Chen's Watch"], C: [] };
+  const holders = (link: string) => held[link] ?? [];
+  const unit = (now?: string, restored?: string) => ({
+    name: "phrases and defaults", holders, ...(now === undefined ? {} : { now }), ...(restored === undefined ? {} : { restored }),
+  });
+
+  it("says the copies change when the save keeps the link", () => {
+    expect(restoreLinkLines([unit("A", "A")], "watch")).toEqual(["Also changes the phrases and defaults on Chen's Watch."]);
+    // A link on this watch alone moves nothing.
+    expect(restoreLinkLines([unit("C", "C")], "watch")).toEqual([]);
+    expect(restoreLinkLines([unit()], "watch")).toEqual([]);
+  });
+
+  it("says this watch is unlinked when the save has no link or another one", () => {
+    expect(restoreLinkLines([unit("A")], "watch")).toEqual(["Unlinks the phrases and defaults on this watch from Chen's Watch, which keeps its copy as it is."]);
+    expect(restoreLinkLines([unit("B", "A")], "watch")).toEqual([
+      "Unlinks the phrases and defaults on this watch from Jesse's Watch and Chen's Watch, which keep their copies as they are.",
+      "Also changes the phrases and defaults on Chen's Watch, which it was shared with in that save.",
+    ]);
+    expect(restoreLinkLines([unit(undefined, "A")], "watch")).toEqual(["Also changes the phrases and defaults on Chen's Watch, which it was shared with in that save."]);
   });
 });

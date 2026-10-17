@@ -14,7 +14,7 @@
 // store's `pick` and `pickMenu` (`store.ts`).
 
 import { css, html, nothing, type TemplateResult } from "lit";
-import { type LinkDevice, deviceWord } from "../watch-pages/links.js";
+import { type LinkDevice, deviceWord } from "../watch-pages/devices.js";
 import type { LibraryKind } from "./client.js";
 import { type Library, libraryItem, libraryMenu, sameId } from "./model.js";
 import { type PendingPick, pendingKey } from "./store.js";

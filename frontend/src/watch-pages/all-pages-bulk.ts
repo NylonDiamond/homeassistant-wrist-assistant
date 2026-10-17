@@ -17,7 +17,7 @@ import type { LibraryItem } from "../library/model.js";
 import { sameId } from "../library/model.js";
 import type { LibraryWrite } from "../library/store.js";
 import { type CardKind, cardNoun } from "./all-pages-model.js";
-import { type LinkDevice, joinWords } from "./links.js";
+import { type LinkDevice, joinWords } from "./devices.js";
 import type { WatchPagesNote } from "./save-note.js";
 
 function plural(n: number, one: string, many: string): string {

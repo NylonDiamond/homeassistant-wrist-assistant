@@ -10,7 +10,7 @@ import type { Library, LibraryItem } from "../library/model.js";
 import type { PendingPick } from "../library/store.js";
 import { renderTicks } from "../library/ticks.js";
 import { REST_HINT, type RestRow, restTitle } from "./library-editing.js";
-import type { LinkDevice } from "./links.js";
+import type { LinkDevice } from "./devices.js";
 
 export interface LibraryRestInput {
   library: Library;

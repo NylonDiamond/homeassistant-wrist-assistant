@@ -512,7 +512,7 @@ describe("the draft and its save", () => {
     expect(result).toMatchObject({ ok: true, revision: 4, linkFailures: [{ owner: "w2", name: "Chen's Watch" }] });
     expect(statusPagesSaveNote(result)).toEqual({
       kind: "warn",
-      text: "Saved. Chen's Watch kept the old version: Home Assistant could not update the linked status pages there.",
+      text: "Saved. Chen's Watch kept the old version: Home Assistant could not update the shared status pages there.",
     });
     // No list at all is a plain save.
     draft.apply(renameStatusPage(draft.document, "A", "again"));

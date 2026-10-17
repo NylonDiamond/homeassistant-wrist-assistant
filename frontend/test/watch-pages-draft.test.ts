@@ -423,7 +423,7 @@ describe("saveWatchPagesDraft", () => {
     expect(result).toEqual({ ok: true, revision: 4, merged: false, linkFailures: failures });
     expect(watchPagesSaveNote(result)).toEqual({
       kind: "warn",
-      text: "Saved. Jesse's iPhone kept the old version: Home Assistant could not update the linked pages there.",
+      text: "Saved. Jesse's iPhone kept the old version: Home Assistant could not update the shared pages there.",
     });
     // An empty list, or none, is a plain save.
     draft.apply(withName(draft.document, "Again"));
@@ -811,10 +811,10 @@ describe("the devices a save left behind", () => {
   it("are named after the save's own note, as a warning", () => {
     const two = [{ owner: "w2", name: "Chen's Watch" }, { owner: "p1", name: "Jesse's iPhone" }];
     expect(linkFailuresText(two, "status pages"))
-      .toBe("Chen's Watch and Jesse's iPhone kept the old version: Home Assistant could not update the linked status pages there.");
+      .toBe("Chen's Watch and Jesse's iPhone kept the old version: Home Assistant could not update the shared status pages there.");
     expect(withLinkFailures({ kind: "ok", text: "Saved. Changes made somewhere else were merged in." }, two.slice(0, 1), "pages")).toEqual({
       kind: "warn",
-      text: "Saved. Changes made somewhere else were merged in. Chen's Watch kept the old version: Home Assistant could not update the linked pages there.",
+      text: "Saved. Changes made somewhere else were merged in. Chen's Watch kept the old version: Home Assistant could not update the shared pages there.",
     });
     expect(withLinkFailures(undefined, [], "pages")).toBeUndefined();
     expect(withLinkFailures(undefined, undefined, "pages")).toBeUndefined();
