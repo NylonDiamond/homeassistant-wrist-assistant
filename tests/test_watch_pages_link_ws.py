@@ -116,6 +116,21 @@ def test_link_refusals_carry_the_store_s_code(links, msg, code) -> None:
     assert [error[1] for error in connection.errors] == [code]
 
 
+def test_link_of_status_pages_links_them_alone(links) -> None:
+    connection = _link(
+        links, source_id=WATCH, page_ids=[DOORS], targets=[PHONE], kind="status_pages"
+    )
+    assert connection.errors == []
+    doors = links.store.get(WATCH, "status_pages").document["statusPages"][0]["linkId"]
+    assert connection.results[1] == {
+        "targets": {PHONE: {"pages": [], "status_pages": [DOORS]}},
+        "link_ids": {DOORS: doors},
+    }
+    assert links.store.get(PHONE, "pages") is None
+    missing = _link(links, source_id=WATCH, page_ids=[HOME], targets=[PHONE], kind="status_pages")
+    assert [error[1] for error in missing.errors] == ["not_found"]
+
+
 def test_link_refuses_an_id_the_target_holds(links) -> None:
     links.store.panel_save(
         PHONE, "pages", {"schemaVersion": 1, "pages": [{"id": LIGHTS, "name": "Mine", "items": []}]},

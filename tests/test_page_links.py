@@ -99,6 +99,14 @@ def test_check_link_refuses_missing_and_system_pages() -> None:
     assert err.value.code == "system_page"
 
 
+def test_check_link_of_status_pages_refuses_only_a_missing_one() -> None:
+    links.check_link(_status(), [STATUS.lower(), SYSTEM_STATUS], "statusPages")
+    with pytest.raises(links.PageLinkError) as err:
+        links.check_link(_status(), [HOME], "statusPages")
+    assert err.value.code == "not_found"
+    assert "status page" in err.value.message
+
+
 # ── apply_link ───────────────────────────────────────────────────────────
 
 

@@ -33,7 +33,7 @@ Commands:
                                                  base_revision}
     wrist_assistant/watch_config/subscribe      {owner_watch_id}
     wrist_assistant/watch_voices/get            {watch_id}
-    wrist_assistant/watch_pages/link            {source_id, page_ids, targets}
+    wrist_assistant/watch_pages/link            {source_id, page_ids, targets, kind?}
     wrist_assistant/watch_pages/link_all        {source_id, target_id}
     wrist_assistant/watch_pages/places          {}
 
@@ -688,6 +688,7 @@ def ws_watch_config_subscribe(
         vol.Required("source_id"): str,
         vol.Required("page_ids"): [str],
         vol.Required("targets"): [str],
+        vol.Optional("kind"): str,
     }
 )
 @callback
@@ -703,7 +704,10 @@ def ws_watch_pages_link(
     Each page and every page and status page it reaches through its tiles
     goes onto each target with the same id and one ``linkId``
     (``WatchConfigStore.link_pages``); from then on a save of any copy
-    reaches every copy. Checked whole before anything is written. Refused
+    reaches every copy. With ``kind`` ``status_pages`` the ``page_ids`` are
+    status pages, linked as they are (a system status page is copied, never
+    linked), and ``link_ids`` names theirs. Checked whole before anything is
+    written. Refused
     ``unknown_device`` (a source or target that is not a paired device),
     ``not_found`` (a page the source does not list), ``system_page``,
     ``id_taken`` (a target holds another page under that id),
@@ -719,7 +723,9 @@ def ws_watch_pages_link(
     if not require_owner(hass, connection, msg, msg["source_id"], *msg["targets"]):
         return
     try:
-        result = store.link_pages(msg["source_id"], msg["page_ids"], msg["targets"])
+        result = store.link_pages(
+            msg["source_id"], msg["page_ids"], msg["targets"], kind=msg.get("kind", "pages")
+        )
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
         return

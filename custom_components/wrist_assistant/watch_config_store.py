@@ -2149,12 +2149,18 @@ class WatchConfigStore:
         page_ids: list[str],
         status_ids: list[str] | None,
         targets: Any,
+        *,
+        kind: str = "pages",
     ) -> tuple[list[tuple[str, str, dict[str, Any]]], dict[str, Any]]:
         """What a link writes, checked whole before anything is written.
 
         ``page_ids`` are the source's pages to link; ``status_ids`` its status
         pages, or None for the ones those pages reach
-        (:func:`page_links.link_reach`). Returns the writes in the order they
+        (:func:`page_links.link_reach`). With ``kind`` ``status_pages`` the
+        link is of the status pages ``status_ids`` alone: each must be one
+        the source holds (``not_found``), ``page_ids`` is empty and nothing is
+        walked. The reply's ``link_ids`` are those of ``kind``. Returns the
+        writes in the order they
         go (the source's when it gained links, then each target's status
         pages before its pages, so a tile is never saved before what it
         opens) and the reply. Every refusal is a
@@ -2176,22 +2182,31 @@ class WatchConfigStore:
         pages_doc = self._document(source_owner, "pages")
         status_doc = self._document(source_owner, "status_pages")
         try:
-            check_link(pages_doc, page_ids)
-            reach_pages, reach_status = link_reach(pages_doc, status_doc, page_ids)
-            if status_ids is not None:
-                reach_status = status_ids
+            if kind == "status_pages":
+                status_key = LINKED_KINDS["status_pages"]
+                check_link(status_doc, status_ids or [], status_key)
+                wanted = {page_id.upper() for page_id in status_ids or []}
+                reach_pages: list[str] = []
+                reach_status = [i for i in ids_in(status_doc, status_key) if i.upper() in wanted]
+            else:
+                check_link(pages_doc, page_ids)
+                reach_pages, reach_status = link_reach(pages_doc, status_doc, page_ids)
+                if status_ids is not None:
+                    reach_status = status_ids
             source_pages, source_status = pages_doc, status_doc
             plans: list[tuple[str, dict[str, Any] | None, dict[str, Any] | None]] = []
             reply_targets: dict[str, dict[str, list[str]]] = {}
             page_links: dict[str, str] = {}
+            status_links: dict[str, str] = {}
             for target in dict.fromkeys(targets):
                 target_status = self._document(target, "status_pages")
                 new_status = None
                 added_status: list[str] = []
                 if reach_status:
-                    source_status, new_status, added_status, _links = apply_link(
+                    source_status, new_status, added_status, links = apply_link(
                         source_status, target_status, LINKED_KINDS["status_pages"], reach_status
                     )
+                    status_links.update(links)
                 target_pages = self._document(target, "pages")
                 new_pages = None
                 added_pages: list[str] = []
@@ -2225,7 +2240,10 @@ class WatchConfigStore:
                 writes.append((target, "status_pages", new_status))
             if new_pages is not None:
                 writes.append((target, "pages", new_pages))
-        return writes, {"targets": reply_targets, "link_ids": page_links}
+        return writes, {
+            "targets": reply_targets,
+            "link_ids": status_links if kind == "status_pages" else page_links,
+        }
 
     def _commit_writes(
         self, writes: list[tuple[str, str, dict[str, Any]]], updated_by: str
@@ -2244,10 +2262,15 @@ class WatchConfigStore:
         page_ids: Any,
         targets: Any,
         *,
+        kind: str = "pages",
         updated_by: str = WATCH_CONFIG_PANEL_WRITER,
     ) -> dict[str, Any]:
         """Put pages of one device on other devices, linked
         (``watch_pages/link``).
+
+        ``kind`` ``status_pages`` links status pages instead: ``page_ids`` are
+        status page ids, each linked as it is (a system status page copied,
+        never linked), nothing walked, and ``link_ids`` names their links.
 
         Each page in ``page_ids`` and every page and status page it reaches
         through its tiles (:func:`page_links.link_reach`) is added to each
@@ -2271,12 +2294,22 @@ class WatchConfigStore:
             or not all(isinstance(page_id, str) and page_id for page_id in page_ids)
         ):
             raise WatchConfigValidationError("page_ids must be a non-empty list of page ids")
-        writes, reply = self._plan_link(source_owner, page_ids, None, targets)
+        if kind not in LINKED_KINDS:
+            raise WatchConfigValidationError(
+                f"kind must be one of {', '.join(sorted(LINKED_KINDS))}"
+            )
+        if kind == "status_pages":
+            writes, reply = self._plan_link(
+                source_owner, [], page_ids, targets, kind="status_pages"
+            )
+        else:
+            writes, reply = self._plan_link(source_owner, page_ids, None, targets)
         self._commit_writes(writes, updated_by)
         if writes:
             _LOGGER.info(
-                "Linked %d page(s) of %s to %s",
+                "Linked %d %s of %s to %s",
                 len(page_ids),
+                kind.replace("_", " "),
                 source_owner,
                 ", ".join(reply["targets"]),
             )

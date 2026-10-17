@@ -192,15 +192,20 @@ def link_reach(
     return pages_out, status_out
 
 
-def check_link(pages_doc: Any, page_ids: Iterable[str]) -> None:
+def check_link(pages_doc: Any, page_ids: Iterable[str], key: str = "pages") -> None:
     """Refuse a link of pages the document does not list (``not_found``) or
-    of a system page (``system_page``)."""
-    by_key = {_key(page.get("id")): page for page in items(pages_doc, "pages")}
+    of a system page (``system_page``).
+
+    With ``key`` ``statusPages`` the ids are status pages, and only a missing
+    one is refused: a system status page is copied, never linked
+    (:func:`apply_link`)."""
+    noun = "page" if key == "pages" else "status page"
+    by_key = {_key(page.get("id")): page for page in items(pages_doc, key)}
     for page_id in page_ids:
         page = by_key.get(_key(page_id))
         if page is None:
-            raise PageLinkError("not_found", f"there is no page {page_id}")
-        if is_system_page(page):
+            raise PageLinkError("not_found", f"there is no {noun} {page_id}")
+        if key == "pages" and is_system_page(page):
             raise PageLinkError("system_page", f"page {page_id} is a system page")
 
 

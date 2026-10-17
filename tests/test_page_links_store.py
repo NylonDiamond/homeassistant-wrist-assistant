@@ -146,6 +146,45 @@ def test_link_refusals_write_nothing(env, source, pages, targets, code) -> None:
     assert env.changes == []
 
 
+def test_a_status_page_link_links_the_status_pages_alone(env) -> None:
+    system = "00000000-0000-0000-0000-000000000001"
+    status = _watch_status()
+    status["statusPages"].append({"id": system, "name": "Batteries", "rows": []})
+    _save(env, WATCH, status, "status_pages")
+    env.changes.clear()
+    result = env.store.link_pages(WATCH, [system, DOORS.lower()], [PHONE], kind="status_pages")
+    assert result["targets"] == {PHONE: {"pages": [], "status_pages": [DOORS, system]}}
+    held = _doc(env, WATCH, "status_pages")["statusPages"]
+    assert result["link_ids"] == {DOORS: held[0]["linkId"]}
+    assert "linkId" not in held[1], "a system status page is copied, never linked"
+    phone = _doc(env, PHONE, "status_pages")["statusPages"]
+    assert [p["id"] for p in phone] == [DOORS, system]
+    assert phone[0]["linkId"] == held[0]["linkId"] and "linkId" not in phone[1]
+    assert env.store.get(PHONE, "pages") is None, "nothing is walked"
+    assert env.changes == [(WATCH, "status_pages"), (PHONE, "status_pages")]
+
+    # The copies are kept in step from then on.
+    status = _doc(env, PHONE, "status_pages")
+    status["statusPages"][0]["name"] = "Front doors"
+    _save(env, PHONE, status, "status_pages")
+    assert _doc(env, WATCH, "status_pages")["statusPages"][0]["name"] == "Front doors"
+
+
+@pytest.mark.parametrize(
+    ("ids", "kind", "code"),
+    [
+        ([HOME], "status_pages", "not_found"),
+        ([DOORS], "menus", "invalid"),
+        ([DOORS], "rooms", "invalid"),
+    ],
+)
+def test_a_status_page_link_refuses_what_is_not_a_status_page(env, ids, kind, code) -> None:
+    with pytest.raises(env.mod.WatchConfigStoreError) as err:
+        env.store.link_pages(WATCH, ids, [PHONE], kind=kind)
+    assert err.value.code == code
+    assert env.changes == []
+
+
 def test_an_id_taken_on_one_target_refuses_every_target(env) -> None:
     _save(env, WATCH_2, {"schemaVersion": 1, "pages": [{"id": LIGHTS, "name": "Other", "items": []}]})
     env.changes.clear()
