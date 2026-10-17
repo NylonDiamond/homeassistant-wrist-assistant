@@ -228,10 +228,12 @@ describe("links into the Watch app carry the shared watch", () => {
     expect(method("  private openTab(")).toContain("this.goTo(tabPath(tab));");
   });
 
-  it("Home's side bar links the whole home's screens, HTTP actions and Cameras, now that no tab does", () => {
+  it("Home's side bar links the whole home's screens under Library, now that no tab does", () => {
     expect(method("  private renderHome() {")).toContain("${this.renderHomeShared()}");
     const shared = method("  private renderHomeShared() {");
-    expect(shared).toContain("WATCH_SCREENS.filter((s) => s.shared === true && s.retired !== true)");
+    expect(shared).toContain("const screens = homeLibraryScreens();");
+    expect(shared).toContain(`<h2 class="hb-person-name">\${HOME_LIBRARY_TITLE}</h2>`);
+    expect(shared).toContain(`<p class="hb-lead">\${HOME_LIBRARY_LEAD}</p>`);
     expect(shared).toContain("this.goTo(path);");
   });
 

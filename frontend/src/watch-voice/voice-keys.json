@@ -540,5 +540,17 @@
         "note": "Speak Phrase reads no routing key: the phrase's own speakers, engine, language and volume, with the voice document's defaults behind them."
       }
     ]
+  },
+  "linkKeys": {
+    "note": "Keys Home Assistant writes into the document and the watch never reads, by the type that holds them. The panel writes each back as it came and changes one only to unlink a watch's copy (watch-voice/links.ts). Kept out of types: WatchVoiceDocumentTests checks the keys there against the watch's Swift types, and Home Assistant's test_page_links checks that they split into the linked phrases and the watch's own, so neither holds these.",
+    "document": {
+      "linkIds": {
+        "type": "map",
+        "items": {
+          "type": "string"
+        },
+        "keep": true
+      }
+    }
   }
 }

@@ -865,6 +865,44 @@ export async function linkAllWatchPages(hass: HassLike, sourceId: string, target
   });
 }
 
+/** The kinds that link by unit: a whole part of the document (the menus'
+ * Anywhere menu, a watch's phrases and their defaults) under a top-level
+ * `linkIds` that maps each unit to its link id. */
+export type WatchLinkUnitKind = "menus" | "voice";
+
+/** What `watch_pages/link` did for a unit kind: on each target the units
+ * written there, and the pages and status pages a menus link brought along;
+ * the link id of each unit. */
+export interface WatchUnitsLinkReply {
+  targets: Record<string, { pages: string[]; status_pages: string[]; units: string[] }>;
+  link_ids: Record<string, string>;
+}
+
+/** Put the `units` of `sourceId`'s `kind` on the `targets` devices as
+ * linked copies (`watch_pages/link` with a unit kind). A target that holds
+ * the unit with other values is refused `unit_taken` unless `replace`, which
+ * writes over it. Refusals besides the generic ones: `not_found` (the source
+ * holds no record of the kind), `awaiting_move`, `not_for_iphone` (voice is
+ * a watch's alone), `unknown_device`. An integration that does not link the
+ * kind answers `invalid`, one older than linked pages `unknown_command`. */
+export async function linkWatchUnits(
+  hass: HassLike,
+  kind: WatchLinkUnitKind,
+  sourceId: string,
+  units: readonly string[],
+  targets: readonly string[],
+  replace = false,
+) {
+  return hass.connection.sendMessagePromise<WatchUnitsLinkReply>({
+    type: `${WP}/link`,
+    source_id: sourceId,
+    targets: [...targets],
+    kind,
+    units: [...units],
+    replace,
+  });
+}
+
 /** A part of the menus that links on its own: the Anywhere menu (with the
  * page switcher's look) or the Entity quick menu. */
 export type WatchMenusLinkUnit = "anywhere" | "entity";
@@ -887,32 +925,32 @@ export interface WatchMenusLinkReply extends WatchPagesLinkReply {
  * `unknown_command`; the panel tells both apart first by `places` having no
  * `menus`. */
 export async function linkWatchMenus(hass: HassLike, sourceId: string, units: readonly WatchMenusLinkUnit[], targets: readonly string[], replace = false) {
-  return hass.connection.sendMessagePromise<WatchMenusLinkReply>({
-    type: `${WP}/link`,
-    source_id: sourceId,
-    kind: "menus",
-    units: [...units],
-    targets: [...targets],
-    replace,
-  });
+  return (await linkWatchUnits(hass, "menus", sourceId, units, targets, replace)) as WatchMenusLinkReply;
 }
 
-/** One menus link: the unit it links and the devices that hold it. */
-export interface WatchMenusLinkPlace {
-  unit: WatchMenusLinkUnit;
+/** One linked unit as `watch_pages/places` lists it: which unit, and the
+ * devices that hold a copy. */
+export interface WatchUnitPlace {
+  unit: string;
   owners: string[];
 }
 
-/** For every link id, the devices that hold a copy of it. `menus` is
- * absent from an integration older than linked menus. */
+/** One menus link: the unit it links and the devices that hold it. */
+export interface WatchMenusLinkPlace extends WatchUnitPlace {
+  unit: WatchMenusLinkUnit;
+}
+
+/** For every link id, the devices that hold a copy of it. `menus` and
+ * `voice` are absent from integrations older than those links. */
 export interface WatchPagesPlaces {
   pages: Record<string, string[]>;
   status_pages: Record<string, string[]>;
   menus?: Record<string, WatchMenusLinkPlace>;
+  voice?: Record<string, WatchUnitPlace>;
 }
 
-/** Where each linked page, status page and menu is. An integration older
- * than linked pages answers `unknown_command`. */
+/** Where each linked page and status page is, and each linked unit. An
+ * integration older than linked pages answers `unknown_command`. */
 export async function fetchWatchPagesPlaces(hass: HassLike) {
   return hass.connection.sendMessagePromise<WatchPagesPlaces>({ type: `${WP}/places` });
 }

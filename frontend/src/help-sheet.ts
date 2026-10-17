@@ -52,6 +52,7 @@ export interface HelpScreen {
 const HOME_TEXT = [
   "Home lists every watch and iPhone, who it belongs to, and whether it has your latest changes.",
   "Waiting means the device gets them the next time Wrist Assistant opens on it.",
+  "Its Library holds what every device shares: HTTP actions, camera framing, page photos and parts.",
 ];
 
 const COMPLICATIONS_TEXT = [
@@ -78,6 +79,9 @@ const SCREEN_GUIDES: Partial<Record<WatchScreen["id"], string>> = {
   "cameras": WATCH_CAMERAS_HELP_URL,
 };
 
+/** What the sheet says of whose a Library screen is. */
+export const HELP_LIBRARY_TEXT = "It is in Home's Library, shared by every device in this home.";
+
 /** A watch screen's blurb as a sentence (its name, then the blurb, which
  * reads on from the name), then whose it is. The blurbs are
  * shell.ts's, which Home and the watch row show too, so the three never say
@@ -85,7 +89,7 @@ const SCREEN_GUIDES: Partial<Record<WatchScreen["id"], string>> = {
 function watchScreenText(screen: WatchScreen, device: "watch" | "iPhone"): string[] {
   const blurb = watchScreenSentence(screen).trim();
   const sentence = /[.!?]$/.test(blurb) ? blurb : `${blurb}.`;
-  return [sentence, screen.shared === true ? "Every watch in this home shares it." : `It is for the ${device} picked at the top.`];
+  return [sentence, screen.shared === true ? HELP_LIBRARY_TEXT : `It is for the ${device} picked at the top.`];
 }
 
 /** A device screen as the sheet shows it, with its guide when it has one. */

@@ -58,7 +58,7 @@ export function linkFailuresOf(reply: unknown): WatchConfigLinkFailure[] {
 /** What a save that left linked copies behind says after "Saved.": "Jesse's
  * iPhone kept the old version: Home Assistant could not update the linked
  * pages there." Undefined for none. `noun` is what was saved. */
-export function linkFailuresText(failures: readonly WatchConfigLinkFailure[], noun: "pages" | "status pages"): string | undefined {
+export function linkFailuresText(failures: readonly WatchConfigLinkFailure[], noun: "pages" | "status pages" | "phrases"): string | undefined {
   const names = failures.map((f) => f.name);
   if (names.length === 0) return undefined;
   const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]!}`;
@@ -70,7 +70,7 @@ export function linkFailuresText(failures: readonly WatchConfigLinkFailure[], no
 export function withLinkFailures(
   note: WatchPagesNote | undefined,
   failures: readonly WatchConfigLinkFailure[] | undefined,
-  noun: "pages" | "status pages",
+  noun: "pages" | "status pages" | "phrases",
 ): WatchPagesNote | undefined {
   const text = linkFailuresText(failures ?? [], noun);
   if (text === undefined) return note;

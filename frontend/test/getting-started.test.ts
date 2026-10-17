@@ -15,7 +15,7 @@ import {
   watchesWithPages,
 } from "../src/getting-started.js";
 import type { OwnerSummary, WatchConfigSummary } from "../src/ha-api.js";
-import { helpScreen, renderHelpSheet } from "../src/help-sheet.js";
+import { HELP_LIBRARY_TEXT, helpScreen, renderHelpSheet } from "../src/help-sheet.js";
 import { IPHONE_SCREENS, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, iphoneScreenPath, renderTabBar } from "../src/shell.js";
 import { WATCH_CAMERAS_HELP_URL } from "../src/watch-cameras/hook.js";
 import { WATCH_CONTROL_CENTER_HELP_URL } from "../src/watch-control-center/hook.js";
@@ -168,7 +168,12 @@ describe("the Help sheet", () => {
       expect(h.name).toBe(screen.label);
       expect(h.text[0]).toContain(screen.blurb.trim().replace(/[.!?]$/, ""));
     }
-    expect(helpScreen(at("/http-actions")).text[1]).toBe("Every watch in this home shares it.");
+    expect(helpScreen(at("/http-actions")).text[1]).toBe(HELP_LIBRARY_TEXT);
+    expect(helpScreen(at("/photos")).text).toEqual([
+      "Photos are the pictures behind your pages, kept once for the whole home, with the devices whose pages show each one.",
+      "It is in Home's Library, shared by every device in this home.",
+    ]);
+    expect(helpScreen(at("/parts")).text[0]).toBe("Parts are layers saved from one complication with Save to parts, to drop into another.");
     expect(helpScreen(at("/pages/w1")).text[1]).toBe("It is for the watch picked at the top.");
   });
 
@@ -190,6 +195,8 @@ describe("the Help sheet", () => {
       "voice": WATCH_VOICE_HELP_URL,
       "http-actions": WATCH_HTTP_ACTIONS_HELP_URL,
       "cameras": WATCH_CAMERAS_HELP_URL,
+      "photos": undefined,
+      "parts": undefined,
       "watch-complications": undefined,
       "settings": undefined,
     };
