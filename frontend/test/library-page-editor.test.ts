@@ -90,7 +90,7 @@ describe("the page editor's devices, from the library", () => {
   it("draws a tick per device in the page's settings, this one locked on", async () => {
     const { ticks, phone } = await editor();
     const hall = ticks(HALL);
-    expect(hall).toContain("Devices");
+    expect(hall).toMatch(/lib-on card[\s\S]*Which devices do you want this on\?/);
     expect(hall).toContain("Jesse's Watch");
     expect(hall).toContain("Jesse's iPhone");
     expect(hall).toContain("On this watch. Delete takes the page off it.");

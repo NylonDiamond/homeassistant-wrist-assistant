@@ -123,7 +123,6 @@ import { restoredText } from "../revision-words.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import {
-  PHONE_SIZE_TEXT,
   PHONE_STAGE_ZOOM,
   type PhonePagesLayout,
   phoneFrameStyles,
@@ -959,7 +958,9 @@ export class WaStatusPagesEditor extends LitElement {
    * says to save first.
    */
   private renderStatusTicks(page: JsonObject): TemplateResult {
-    return html`<div class="sp-lib" role="group" aria-label="Devices"><span class="sp-lib-h">Devices</span>${this.statusTicksBody(page)}</div>`;
+    const lib = this.lib.library;
+    const count = lib === undefined ? 0 : (libraryItem(lib, "status_pages", statusPageId(page))?.owners.length ?? 0);
+    return html`<div class="sp-lib">${renderBarDevices("status_pages", count, this.statusTicksBody(page), "card")}</div>`;
   }
 
   /** The ticks themselves, or the save-first line. */
@@ -1552,9 +1553,6 @@ export class WaStatusPagesEditor extends LitElement {
       <div class="stage-area sp-stage-area">
         <div class="stage-tools" role="toolbar" aria-label="Stage tools">
           ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.previewKind, (kind) => { this.previewKind = kind; this.watchId = previewOwner(watches, kind); })}<span class="tb-sep" aria-hidden="true"></span>`}
-          <button class="tb sp-case" aria-disabled="true" tabindex="-1" title=${phone ? PHONE_SIZE_TEXT : `This watch's screen, ${watchCase.label}.`}>
-            ${uiIcon(phone ? "phone" : "watch")}<span class="word keep">${caseLabel}</span></button>
-          <span class="tb-sep" aria-hidden="true"></span>
           <span class="tb-zoom" role="group" aria-label="Zoom">
             <button class="tb icon" ?disabled=${scale <= stageZoomOut(scale)} aria-label="Zoom out" title="Zoom out"
               @click=${() => this.setZoom(stageZoomOut(scale))}>−</button>
@@ -1778,9 +1776,6 @@ export class WaStatusPagesEditor extends LitElement {
       display: flex; flex-direction: column; gap: 4px; align-self: center; max-width: 460px; text-align: center;
       font-size: 11.5px; font-weight: 400; line-height: 15px; color: var(--wa-hint, var(--wa-muted));
     }
-    .stage-tools button.tb.sp-case { cursor: default; }
-    .stage-tools button.tb.sp-case:hover { background: transparent; }
-    .stage-tools button.tb.sp-case > svg.ui-icon { width: 14px; height: 14px; }
     .pe-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
     .pe-history > li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--wa-line); }
     .pe-history > li:first-child { border-top: 0; }

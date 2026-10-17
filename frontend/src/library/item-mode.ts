@@ -187,8 +187,8 @@ export function onDevicesText(kind: LibraryKind, count: number): string {
  * Used by were too easy to miss, and the plain count was still too quiet).
  * With no device yet the count is in the warning ink.
  */
-export function renderBarDevices(kind: LibraryKind, count: number, ticks: TemplateResult): TemplateResult {
-  return html`<div class="lib-on ${count === 0 ? "none" : ""}" role="group" aria-label=${onDevicesQuestion(kind)}>
+export function renderBarDevices(kind: LibraryKind, count: number, ticks: TemplateResult, where: "bar" | "card" = "bar"): TemplateResult {
+  return html`<div class="lib-on ${where} ${count === 0 ? "none" : ""}" role="group" aria-label=${onDevicesQuestion(kind)}>
     <span class="lib-on-l">${onDevicesQuestion(kind)}</span>${ticks}<span class="lib-on-n">${onDevicesText(kind, count)}</span>
   </div>`;
 }
@@ -232,4 +232,11 @@ export const libraryModeStyles = css`
   .lib-on .lt-chip.off { color: var(--wa-ink); }
   .lib-on .lt-box { width: 13px; height: 13px; }
   .wa-bar.stacked .lib-on { order: 3; flex: 1 1 100%; margin-left: 0; }
+  /* The same block on a device's editor, where the bar is the panel's
+     header: at the top of the page's settings, in the status page's card,
+     at the foot of the menu's row. The whole width, the question on its own
+     line. */
+  .lib-on.card { flex: none; width: 100%; box-sizing: border-box; margin: 0 0 10px; padding: 8px 10px 9px; gap: 6px 10px; }
+  .lib-on.card .lib-on-l { flex: 1 1 100%; white-space: normal; }
+  .lib-on.card .lt-ticks { flex: 1 1 auto; }
 `;

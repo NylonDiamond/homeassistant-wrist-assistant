@@ -86,7 +86,9 @@ describe("the menu editor's library menu", () => {
     expect(rows).toHaveLength(4);
     expect(rows[1]).toContain(`class="me-lib" role="group" aria-label=Anywhere menu`);
     expect(rows[1]).toMatch(/me-lib-input[\s\S]*Home menu/);
-    expect(rows[1]).toContain(`<span class="lt-hint">Used by</span>`);
+    // The ticks stand in the framed block that asks which devices use it.
+    expect(rows[1]).toMatch(/lib-on card[\s\S]*Which devices should use this menu\?[\s\S]*lt-chip/);
+    expect(rows[1]).not.toContain("lt-hint");
     expect(rows[2]).toContain(`aria-label=Entity quick menu`);
     // The page switcher has no menu of its own.
     expect(rows[3]).not.toContain("me-lib");

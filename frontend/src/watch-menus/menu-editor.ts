@@ -1706,7 +1706,7 @@ export class WaMenuEditor extends LitElement {
           }}
           @blur=${() => this.flushRename()} />
       </label>
-      ${!inLibrary && devices.length > 1 ? this.menuTicks(used) : nothing}
+      ${!inLibrary && devices.length > 1 ? renderBarDevices("menus", used.owners.length, this.menuTicks(used, true), "card") : nothing}
       ${inLibrary ? this.renderLibraryDelete(used) : others.length === 0 ? nothing : html`<div class="me-lib-copy">
         <span class="me-lib-hint">An edit here changes it on ${joinWords(ownerWords(others, devices))} too.</span>
         <button type="button" class="pe-btn me-copy" ?disabled=${copyBlocked !== undefined || this.copying}
@@ -2149,7 +2149,7 @@ export class WaMenuEditor extends LitElement {
         </span>
       </div>
       <div class="stage-area me-stage-area" @click=${this.onStageClick}>
-        ${this.renderStageTools(caseLabel, host)}
+        ${this.renderStageTools(host)}
         ${renderMenuHowTo(host)}
         ${renderMenuStage(host)}
         <div class="under"><span class="tail">${menuStageHint(host)}</span>${renderMenuStageFoot(host)}</div>
@@ -2158,9 +2158,9 @@ export class WaMenuEditor extends LitElement {
   }
 
   /** The floating tool strip over the stage, the page editor's: the shown
-   * menu's Add and Play opening (`menu-stage.ts`), the watch's size (read
-   * only) and the zoom. */
-  private renderStageTools(caseLabel: string, host: MenusViewHost): TemplateResult {
+   * menu's Add and Play opening (`menu-stage.ts`), Preview on in library
+   * mode, and the zoom. The device's size is in the head over the stage. */
+  private renderStageTools(host: MenusViewHost): TemplateResult {
     const phone = host.phone !== undefined;
     const scale = this.stageScale;
     const fit = stageFitZoom(this.narrow || this.stacked);
@@ -2169,9 +2169,6 @@ export class WaMenuEditor extends LitElement {
     return html`<div class="stage-tools" role="toolbar" aria-label="Stage tools">
       ${renderMenuStageTools(host)}
       ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.previewKind, (kind) => this.pickPreview(kind))}<span class="tb-sep" aria-hidden="true"></span>`}
-      <button class="tb me-case" aria-disabled="true" tabindex="-1" title=${phone ? PHONE_SIZE_TEXT : `This watch's screen, ${caseLabel}.`}>
-        ${uiIcon(phone ? "phone" : "watch")}<span class="word keep">${caseLabel}</span></button>
-      <span class="tb-sep" aria-hidden="true"></span>
       <span class="tb-zoom" role="group" aria-label="Zoom">
         <button class="tb icon me-zoom-out" ?disabled=${scale <= stageZoomOut(scale)} aria-label="Zoom out" title="Zoom out"
           @click=${() => this.setZoom(stageZoomOut(scale))}>−</button>
@@ -2452,9 +2449,6 @@ export class WaMenuEditor extends LitElement {
       font-size: 11.5px; font-weight: 400; line-height: 15px; color: var(--wa-hint, var(--wa-muted));
     }
     /* The watch's size is a fact, not a menu. */
-    .stage-tools button.tb.me-case { cursor: default; }
-    .stage-tools button.tb.me-case:hover { background: transparent; }
-    .stage-tools button.tb.me-case > svg.ui-icon { width: 14px; height: 14px; }
 
     .pe-badge {
       display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600;

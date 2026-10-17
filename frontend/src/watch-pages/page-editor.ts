@@ -3504,9 +3504,9 @@ export class WaPageEditor extends LitElement {
     if (this.libraryItem !== undefined) return nothing;
     const body = this.pageTicksBody(page);
     if (body === undefined) return nothing;
-    return html`<div class="pe-lib" role="group" aria-label="Devices">
-      <span class="pe-lib-h">Devices</span>${body}
-    </div>`;
+    const lib = this.lib.library;
+    const count = lib === undefined ? 0 : (libraryItem(lib, "pages", watchPageId(page))?.owners.length ?? 0);
+    return renderBarDevices("pages", count, body, "card");
   }
 
   /** The ticks themselves, or the save-first line; undefined when there is
@@ -4522,7 +4522,7 @@ export class WaPageEditor extends LitElement {
     return html`<div class="card canvas-card lit pe-canvas" aria-label="Page">
       ${this.renderCanvasHead(page, watches, facts, phone ? PHONE_FRAME_TEXT : found === undefined ? `${watchCase.label}, this watch's size is not known` : undefined, tile)}
       <div class="stage-area pe-stage-area">
-        ${this.renderStageTools(page, frame, headers, smart, phone)}
+        ${this.renderStageTools(page, headers, smart, phone)}
         <div class="pe-stage-body">
           ${smart || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input)}
         </div>
@@ -4600,7 +4600,7 @@ export class WaPageEditor extends LitElement {
    * the Live preview switch (with an instant hint saying what off and on
    * draw), the watch's size and its screen color (read only), Watch view on a
    * page with headers, and the zoom. */
-  private renderStageTools(page: WatchPage, caseLabel: string, headers: boolean, smart: boolean, phone = false): TemplateResult {
+  private renderStageTools(page: WatchPage, headers: boolean, smart: boolean, phone = false): TemplateResult {
     const sep = html`<span class="tb-sep" aria-hidden="true"></span>`;
     const scale = this.stageScale;
     const fit = stageFitZoom(this.narrow || this.stacked);
@@ -4618,9 +4618,9 @@ export class WaPageEditor extends LitElement {
         </label>
         ${sep}`}
       ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.previewKind, (kind) => this.pickPreview(kind))}${sep}`}
-      <button class="tb pe-case" aria-disabled="true" tabindex="-1"
-        title=${phone ? `${PHONE_FRAME_TEXT} The page's background color beside it.` : `This watch's screen, ${caseLabel}. The page's background color beside it.`}>
-        ${uiIcon(phone ? "phone" : "watch")}<span class="word keep">${caseLabel}</span><i class="tint-dot" style=${`--sw:${watchScreenColor(page)}`}></i></button>
+      <button class="tb pe-case" aria-disabled="true" tabindex="-1" aria-label="Page background"
+        title=${`The page's background color, which the ${phone ? "iPhone" : "watch"} paints behind the tiles.`}>
+        <i class="tint-dot" style=${`--sw:${watchScreenColor(page)}`}></i></button>
       ${headers ? html`${sep}<button class="tb pe-watch-view ${this.asOnWatch ? "lit" : ""}" aria-pressed=${this.asOnWatch ? "true" : "false"}
           title=${`Headers pull the rows below them up on the ${deviceWord(this.linkKind)}. Editing is off while this is on.`}
           @click=${() => { this.asOnWatch = !this.asOnWatch; this.cancelGestures(); }}><span class="word">${this.onPhone ? "iPhone view" : "Watch view"}</span></button>` : nothing}
@@ -5879,8 +5879,6 @@ export class WaPageEditor extends LitElement {
 
     /* The page's tick row, at the top of its settings (renderPageTicks):
        a chip per device, the library's ticks (libraryTicksStyles). */
-    .pe-lib { display: flex; flex-direction: column; gap: 6px; padding: 2px 0 12px; margin-bottom: 4px; border-bottom: 1px solid var(--wa-line); }
-    .pe-lib-h { font-size: 11.5px; font-weight: 600; color: var(--wa-muted); }
     .pe-lib-hint { margin: 0; font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
     /* The delete question's two long answers wrap under each other. */
     .pe-ask-foot:has(.pe-del-all) { flex-wrap: wrap; }

@@ -153,7 +153,7 @@ describe("the status pages editor in library mode", () => {
     for (const gone of ["tb-sync", "Complications", "sp-watch-picker", "tb-saved", "Preview as"]) expect(bar).not.toContain(gone);
     // The devices stand in the bar, right after the way back: the question,
     // a tick per device, then the count. Not in the Page card.
-    expect(bar).toMatch(/tb-back[\s\S]*lib-on none[\s\S]*Which devices do you want this on\?[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone[\s\S]*On no device yet[\s\S]*class="spacer"/);
+    expect(bar).toMatch(/tb-back[\s\S]*lib-on bar none[\s\S]*Which devices do you want this on\?[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone[\s\S]*On no device yet[\s\S]*class="spacer"/);
     expect(bar).not.toContain("On this watch.");
     expect(e.host().ticks).toBeUndefined();
     // Preview on sits in the strip over the stage, beside the size and the
@@ -216,14 +216,16 @@ describe("the page editor in library mode", () => {
     // The devices stand in the bar, right after the way back: the question,
     // a tick per device, then the count. The inspector's Devices row is not
     // drawn.
-    expect(bar).toMatch(/tb-back[\s\S]*lib-on none[\s\S]*Which devices do you want this on\?[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone[\s\S]*On no device yet[\s\S]*class="spacer"/);
+    expect(bar).toMatch(/tb-back[\s\S]*lib-on bar none[\s\S]*Which devices do you want this on\?[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone[\s\S]*On no device yet[\s\S]*class="spacer"/);
     expect(bar).not.toContain("On this watch.");
     expect(e.call("renderPageTicks", e.page())).toBe(nothing);
     const body = e.body();
     // Preview on sits in the strip over the stage, beside the size and the
     // zoom: the watch and iPhone thumbnails.
-    const tools = flat(e.call("renderStageTools", e.page(), "46 mm", false, false));
-    expect(tools).toMatch(/class="stage-tools"[\s\S]*Preview on[\s\S]*lib-preview-thumb watch on[\s\S]*lib-preview-thumb iphone [\s\S]*46 mm[\s\S]*Zoom/);
+    const tools = flat(e.call("renderStageTools", e.page(), false, false));
+    expect(tools).toMatch(/class="stage-tools"[\s\S]*Preview on[\s\S]*lib-preview-thumb watch on[\s\S]*lib-preview-thumb iphone [\s\S]*tint-dot[\s\S]*Zoom/);
+    // The size label is gone from the strip: the head over the stage says it.
+    expect(tools).not.toContain("46 mm");
     // The iPhone thumbnail draws the page on the home's iPhone; with the
     // watch thumbnail it is the watch again.
     e.call("pickPreview", "iphone");
@@ -297,7 +299,7 @@ describe("the menu editor in library mode", () => {
     const bar = flat(e.call("renderTopBar", e.draft(), e.owners));
     expect(bar).toContain("Back to the Menus tab");
     for (const gone of ["tb-pages", "tb-sync", "me-watch-picker", "Preview as", "lt-hint"]) expect(bar).not.toContain(gone);
-    expect(bar).toMatch(/tb-back[\s\S]*lib-on none[\s\S]*Which devices should use this menu\?[\s\S]*lt-chip off rd[\s\S]*Jesse's Watch[\s\S]*No device uses it yet[\s\S]*class="spacer"/);
+    expect(bar).toMatch(/tb-back[\s\S]*lib-on bar none[\s\S]*Which devices should use this menu\?[\s\S]*lt-chip off rd[\s\S]*Jesse's Watch[\s\S]*No device uses it yet[\s\S]*class="spacer"/);
     const body = flat(e.call("renderBody", e.owners));
     expect(body).not.toContain("cf-bar");
     // Preview on sits in the strip over the stage, beside the size and the zoom.

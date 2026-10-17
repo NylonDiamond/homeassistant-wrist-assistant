@@ -654,7 +654,9 @@ describe("the canvas", () => {
     let text = body();
     expect(text).toContain(`aria-label=Zoom 150%. Back to fit`);
     expect(text).toContain(">150%</button>");
-    expect(text).toContain(`<span class="word keep">${REFERENCE_CASE.label}</span>`);
+    // The size is said in the head over the stage, not in the strip.
+    expect(text).toContain(`8 slots · ${REFERENCE_CASE.label}`);
+    expect(text).not.toContain(`<span class="word keep">${REFERENCE_CASE.label}</span>`);
     expect(text).toContain(width(1.5));
     setZoom.call(el, 2);
     expect(el.zoom).toBe(2);
