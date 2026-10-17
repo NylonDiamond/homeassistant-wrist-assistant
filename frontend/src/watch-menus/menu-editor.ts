@@ -79,10 +79,12 @@ import {
   type LinkDevice,
   type PageDevicePlace,
   type PagesRecordFacts,
+  type RestoreLinkUnit,
   awaitingMove,
   linkAlsoAddedText,
   linkDevicesOf,
   pagesRecordFacts,
+  restoreLinkLines,
 } from "../watch-pages/links.js";
 import { menuDevicesStyles, renderMenuDevicesMenu } from "./menu-devices.js";
 import {
@@ -285,6 +287,8 @@ interface RestoreAsk {
   entry: WatchConfigHistoryEntry;
   baseRevision: number;
   summary?: string;
+  /** What the restore does to the linked menus (`restoreLinkLines`). */
+  links?: string[];
 }
 
 /** The open Devices menu (`menu-devices.ts`): under the top bar's ··· with
@@ -1664,10 +1668,27 @@ export class WaMenuEditor extends LitElement {
     this.restoreAsk = ask;
     fetchWatchConfigHistoryEntry(hass, watchId, "menus", entry.revision).then(
       (reply) => {
-        if (this.restoreAsk === ask) this.restoreAsk = { ...ask, summary: watchMenusSummary(reply.document) };
+        if (this.restoreAsk !== ask) return;
+        this.restoreAsk = { ...ask, summary: watchMenusSummary(reply.document), links: this.restoreLinks(record.document, reply.document) };
       },
       () => undefined,
     );
+  }
+
+  /** What restoring `restored` over `now` does to each linked menu. */
+  private restoreLinks(now: unknown, restored: unknown): string[] {
+    const watchId = this.watchId;
+    if (watchId === undefined) return [];
+    const holders = (link: string): string[] => {
+      const place = this.places?.menus?.[link];
+      return (place?.owners ?? []).filter((o) => o !== watchId).map((o) => this.deviceName(o));
+    };
+    const units = MENU_LINK_UNITS.map((unit): RestoreLinkUnit => {
+      const current = menuUnitLinkId(asWatchMenusDocument(now), unit);
+      const back = menuUnitLinkId(asWatchMenusDocument(restored), unit);
+      return { name: MENU_UNIT_NAMES[unit], holders, ...(current === undefined ? {} : { now: current }), ...(back === undefined ? {} : { restored: back }) };
+    });
+    return restoreLinkLines(units, deviceNoun(this.device));
   }
 
   private async restore(): Promise<void> {
@@ -2148,6 +2169,7 @@ export class WaMenuEditor extends LitElement {
       <p>${savedByLine(ask.entry.updated_by, this.device)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
       ${ask.summary ? html`<p class="pe-muted">${ask.summary}</p>` : nothing}
       <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves.</p>
+      ${(ask.links ?? []).map((line) => html`<p>${line}</p>`)}
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${this.restoring} @click=${() => this.closeAsk()}>Cancel</button>
         <button class="pe-btn pe-primary" ?disabled=${this.restoring} @click=${() => void this.restore()}>${this.restoring ? "Restoring…" : "Restore"}</button>

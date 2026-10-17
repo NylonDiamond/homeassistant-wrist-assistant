@@ -27,6 +27,7 @@ import {
   pageLinkId,
   pagesRecordFacts,
   removePageFrom,
+  restoreLinkLines,
   statusPageHolders,
   statusPagesSharedText,
 } from "../src/watch-pages/links.js";
@@ -288,5 +289,29 @@ describe("taking a page off another device", () => {
   it("says why a read failed", async () => {
     const io: PageRemoveIO = { read: async () => { throw { code: "unavailable", message: "Not ready." }; }, save: async () => ({ revision: 1 }) };
     expect(await removePageFrom(io, "w2", YARD)).toEqual({ ok: false, code: "unavailable", message: "Not ready." });
+  });
+});
+
+describe("what a restore does to the links", () => {
+  const held: Record<string, string[]> = { A: ["Chen's Watch"], B: ["Jesse's Watch", "Chen's Watch"], C: [] };
+  const holders = (link: string) => held[link] ?? [];
+  const unit = (now?: string, restored?: string) => ({
+    name: "Anywhere menu", holders, ...(now === undefined ? {} : { now }), ...(restored === undefined ? {} : { restored }),
+  });
+
+  it("says the copies change when the save keeps the link", () => {
+    expect(restoreLinkLines([unit("A", "A")], "watch")).toEqual(["Also changes the Anywhere menu on Chen's Watch."]);
+    // A link on this device alone moves nothing.
+    expect(restoreLinkLines([unit("C", "C")], "watch")).toEqual([]);
+    expect(restoreLinkLines([unit()], "watch")).toEqual([]);
+  });
+
+  it("says this device is unlinked when the save has no link or another one", () => {
+    expect(restoreLinkLines([unit("A")], "watch")).toEqual(["Unlinks the Anywhere menu on this watch from Chen's Watch, which keeps its copy as it is."]);
+    expect(restoreLinkLines([unit("B", "A")], "iPhone")).toEqual([
+      "Unlinks the Anywhere menu on this iPhone from Jesse's Watch and Chen's Watch, which keep their copies as they are.",
+      "Also changes the Anywhere menu on Chen's Watch, which it was shared with in that save.",
+    ]);
+    expect(restoreLinkLines([unit(undefined, "A")], "watch")).toEqual(["Also changes the Anywhere menu on Chen's Watch, which it was shared with in that save."]);
   });
 });

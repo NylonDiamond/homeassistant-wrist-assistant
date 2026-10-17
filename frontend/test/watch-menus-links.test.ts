@@ -439,6 +439,19 @@ describe("the editor's Devices", () => {
     expect((e.el.note as { text: string }).text).toContain("Chen's Watch kept the old version: Home Assistant could not update the linked menus there.");
   });
 
+  it("says in the restore question what it does to the linked menus", () => {
+    const e = editor(linked({ anywhere: ANY_LINK, entity: ENTITY_LINK }), undefined);
+    e.el.places = { pages: {}, status_pages: {}, menus: {
+      [ANY_LINK]: { unit: "anywhere", owners: [e.watchId, "links-w2"] },
+      [ENTITY_LINK]: { unit: "entity", owners: [e.watchId, "links-w2"] },
+    } };
+    const lines = (e.el.restoreLinks as (n: unknown, r: unknown) => string[]).call(e.el, linked({ anywhere: ANY_LINK, entity: ENTITY_LINK }), linked({ anywhere: ANY_LINK }));
+    expect(lines).toEqual([
+      "Also changes the Anywhere menu on Chen's Watch.",
+      "Unlinks the Entity quick menu on this watch from Chen's Watch, which keeps its copy as it is.",
+    ]);
+  });
+
   it("will not link over unsaved edits", () => {
     const e = editor(DEFAULTS, { pages: {}, status_pages: {}, menus: {} });
     const draft = e.el.draft as { apply(d: MenusDocument): boolean };

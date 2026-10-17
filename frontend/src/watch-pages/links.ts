@@ -314,6 +314,45 @@ export function linkAlsoAddedText(
   return words.length === 0 ? undefined : `Also added: ${joinWords(words)}.`;
 }
 
+/** One linked unit of a whole document (a menu, the phrases) as a restore
+ * sees it: its name in a sentence, its link id now and in the save that
+ * would come back, and the other devices that hold each link. */
+export interface RestoreLinkUnit {
+  name: string;
+  now?: string;
+  restored?: string;
+  /** The other devices holding a link, by name. */
+  holders(link: string): string[];
+}
+
+/**
+ * What restoring a whole document does to its links, one line per change:
+ * a save that keeps a unit's link changes the copies too ("Also changes the
+ * Anywhere menu on Chen's Watch."), one without it unlinks this device
+ * ("Unlinks the Anywhere menu on this watch from Chen's Watch, which keeps
+ * its copy as it is."), and one with another link joins the devices that
+ * hold it. Home
+ * Assistant does each of these on the restore. `here` is "watch" or
+ * "iPhone". Empty when no link moves anything.
+ */
+export function restoreLinkLines(units: readonly RestoreLinkUnit[], here: string): string[] {
+  const lines: string[] = [];
+  for (const unit of units) {
+    const now = unit.now === undefined ? [] : unit.holders(unit.now);
+    const restored = unit.restored === undefined ? [] : unit.holders(unit.restored);
+    if (unit.now !== undefined && unit.restored === unit.now) {
+      if (now.length > 0) lines.push(`Also changes the ${unit.name} on ${joinWords(now)}.`);
+      continue;
+    }
+    if (now.length > 0) {
+      const keeps = now.length === 1 ? "which keeps its copy as it is" : "which keep their copies as they are";
+      lines.push(`Unlinks the ${unit.name} on this ${here} from ${joinWords(now)}, ${keeps}.`);
+    }
+    if (restored.length > 0) lines.push(`Also changes the ${unit.name} on ${joinWords(restored)}, which it was shared with in that save.`);
+  }
+  return lines;
+}
+
 /** A link refusal in the editor's words. */
 export function linkErrorText(err: unknown): string {
   const { code, message } = watchCommandError(err);

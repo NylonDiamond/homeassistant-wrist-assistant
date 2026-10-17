@@ -69,7 +69,7 @@ import {
   subscribeWatchConfig,
 } from "../ha-api.js";
 import { devicesMenuStyles, renderPageDevicesMenu } from "../watch-pages/devices-menu.js";
-import { type LinkDevice, type PagesRecordFacts, awaitingMove, linkDevicesOf, pagesRecordFacts } from "../watch-pages/links.js";
+import { type LinkDevice, type PagesRecordFacts, awaitingMove, linkDevicesOf, pagesRecordFacts, restoreLinkLines } from "../watch-pages/links.js";
 import { deviceColor, deviceColors } from "../device-colors.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { agoWords } from "../send-state.js";
@@ -191,6 +191,8 @@ interface RestoreAsk {
   entry: WatchConfigHistoryEntry;
   baseRevision: number;
   summary?: string;
+  /** What the restore does to the linked phrases (`restoreLinkLines`). */
+  links?: string[];
 }
 
 /** A tick onto a watch with phrases of its own, waiting for its yes. */
@@ -1151,10 +1153,25 @@ export class WaVoiceEditor extends LitElement {
     this.restoreAsk = ask;
     fetchWatchConfigHistoryEntry(hass, watchId, "voice", entry.revision).then(
       (reply) => {
-        if (this.restoreAsk === ask) this.restoreAsk = { ...ask, summary: watchVoiceSummary(reply.document) };
+        if (this.restoreAsk !== ask) return;
+        this.restoreAsk = { ...ask, summary: watchVoiceSummary(reply.document), links: this.restoreLinks(record.document, reply.document) };
       },
       () => undefined,
     );
+  }
+
+  /** What restoring `restored` over `now` does to the linked phrases. */
+  private restoreLinks(now: unknown, restored: unknown): string[] {
+    const watchId = this.watchId;
+    if (watchId === undefined) return [];
+    const current = voicePhrasesLinkId(asWatchVoiceDocument(now));
+    const back = voicePhrasesLinkId(asWatchVoiceDocument(restored));
+    return restoreLinkLines([{
+      name: "phrases and defaults",
+      holders: (link) => (this.voicePlaces?.[link]?.owners ?? []).filter((o) => o !== watchId).map((o) => this.deviceName(o)),
+      ...(current === undefined ? {} : { now: current }),
+      ...(back === undefined ? {} : { restored: back }),
+    }], "watch");
   }
 
   private async restore(): Promise<void> {
@@ -1574,6 +1591,7 @@ export class WaVoiceEditor extends LitElement {
       <p>${savedBy(ask.entry.updated_by)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
       ${ask.summary ? html`<p class="pe-muted">${ask.summary}</p>` : nothing}
       <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves.</p>
+      ${(ask.links ?? []).map((line) => html`<p>${line}</p>`)}
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${this.restoring} @click=${() => this.closeAsk()}>Cancel</button>
         <button class="pe-btn pe-primary" ?disabled=${this.restoring} @click=${() => void this.restore()}>${this.restoring ? "Restoring…" : "Restore"}</button>
