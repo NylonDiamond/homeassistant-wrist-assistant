@@ -60,6 +60,7 @@ import {
   type HassLike,
   type OwnerSummary,
   type WatchConfigHistoryEntry,
+  type WatchConfigLinkFailure,
   type WatchConfigRecord,
   type WatchPagesPlaces,
   fetchOwners,
@@ -152,7 +153,7 @@ import {
   watchPageTiles,
   watchPagesOf,
 } from "../watch-pages/model.js";
-import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "../watch-pages/save-note.js";
+import { type WatchPagesNote, linkFailuresOf, watchCommandError, watchPagesSaveNote, withLinkFailures } from "../watch-pages/save-note.js";
 import { resolveSmartPagesBeforeSave } from "../watch-pages/smart-model.js";
 import { friendlyError } from "../friendly-error.js";
 import { restoredText } from "../revision-words.js";
@@ -1329,9 +1330,14 @@ export class WaMenuEditor extends LitElement {
 
   /** Save the menus draft; the note for how it ended, or none. */
   private async saveMenus(hass: HassLike, watchId: string, draft: WatchMenusDraft, first = false): Promise<Note | undefined> {
+    // The linked devices Home Assistant could not bring up to date.
+    let failures: WatchConfigLinkFailure[] = [];
     const running = saveWatchMenusDraft(draft, {
       prepare: scrubWatchMenuOrphanTriggers,
-      save: (base, document) => saveWatchConfig(hass, watchId, "menus", base, document).catch((err: unknown) => {
+      save: (base, document) => saveWatchConfig(hass, watchId, "menus", base, document).then((reply) => {
+        failures = linkFailuresOf(reply);
+        return reply;
+      }, (err: unknown) => {
         throw flatError(err);
       }),
       fetch: async () => {
@@ -1351,7 +1357,8 @@ export class WaMenuEditor extends LitElement {
       message: errText(err),
     }));
     this.saveEnded(watchId);
-    return firstSaveNote(first, result.code, watchMenusSaveNote(result));
+    const note = firstSaveNote(first, result.code, watchMenusSaveNote(result));
+    return result.ok ? withLinkFailures(note, failures, "menus") : note;
   }
 
   /** Save the page draft as the page editor does (`page-editor.ts`
@@ -1672,7 +1679,7 @@ export class WaMenuEditor extends LitElement {
     let note: Note;
     try {
       const reply = await restoreWatchConfig(hass, watchId, "menus", ask.entry.revision, ask.baseRevision);
-      note = { kind: "ok", text: restoredText(ask.entry.updated_at) };
+      note = withLinkFailures({ kind: "ok", text: restoredText(ask.entry.updated_at) }, linkFailuresOf(reply), "menus")!;
       if (watchId === this.watchId) this.restartDraft = { watchId, revision: reply.revision };
       else if (!(keptWatchMenusDraft(watchId)?.dirty ?? false)) forgetWatchMenusDraft(watchId);
     } catch (err) {

@@ -419,6 +419,26 @@ describe("the editor's Devices", () => {
     expect((e.el.devicesNote as { text: string }).text).toBe("The Anywhere menu is on Chen's Watch now.");
   });
 
+  it("names a linked device that kept the old menus after a save or a restore", async () => {
+    const failures = [{ owner: "links-w2", name: "Chen's Watch" }];
+    const e = editor(DEFAULTS, { pages: {}, status_pages: {}, menus: {} }, async (m) => {
+      if (m.type === "wrist_assistant/watch_config/save") return { revision: 5, link_failures: failures };
+      if (m.type === "wrist_assistant/watch_config/restore") return { revision: 6, link_failures: failures };
+      if (m.type === "wrist_assistant/watch_pages/places") return { pages: {}, status_pages: {}, menus: {} };
+      return { revision: 4, document: DEFAULTS };
+    });
+    const draft = e.el.draft as { apply(d: MenusDocument): boolean };
+    draft.apply(setWatchMenuStyle(DEFAULTS, "quickAction", "beamIntensity", 0.9));
+    const saveMenus = e.el.saveMenus as (h: unknown, w: string, d: unknown) => Promise<unknown>;
+    expect(await saveMenus.call(e.el, e.el.hass, e.watchId, draft)).toEqual({
+      kind: "warn",
+      text: "Saved. Chen's Watch kept the old version: Home Assistant could not update the linked menus there.",
+    });
+    e.el.restoreAsk = { entry: { revision: 2, updated_at: null, updated_by: "panel", size: 10 }, baseRevision: 4 };
+    await (e.el.restore as () => Promise<void>).call(e.el);
+    expect((e.el.note as { text: string }).text).toContain("Chen's Watch kept the old version: Home Assistant could not update the linked menus there.");
+  });
+
   it("will not link over unsaved edits", () => {
     const e = editor(DEFAULTS, { pages: {}, status_pages: {}, menus: {} });
     const draft = e.el.draft as { apply(d: MenusDocument): boolean };

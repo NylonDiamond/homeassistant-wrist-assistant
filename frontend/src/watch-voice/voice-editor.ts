@@ -1166,7 +1166,7 @@ export class WaVoiceEditor extends LitElement {
     let note: Note;
     try {
       const reply = await restoreWatchConfig(hass, watchId, "voice", ask.entry.revision, ask.baseRevision);
-      note = { kind: "ok", text: restoredText(ask.entry.updated_at) };
+      note = withLinkFailures({ kind: "ok", text: restoredText(ask.entry.updated_at) }, linkFailuresOf(reply), "phrases")!;
       if (watchId === this.watchId) this.restartDraft = { watchId, revision: reply.revision };
       else if (!(keptWatchVoiceDraft(watchId)?.dirty ?? false)) forgetWatchVoiceDraft(watchId);
     } catch (err) {

@@ -758,16 +758,16 @@ export async function fetchWatchConfigSummary(hass: HassLike) {
 }
 
 /** A linked copy a save could not bring up to date: that device kept the
- * old version of its linked pages or status pages. */
+ * old version of its linked pages, status pages, menus or phrases. */
 export interface WatchConfigLinkFailure {
   owner: string;
   name: string;
 }
 
-/** What a save answers. `link_failures` lists, on a `pages` or
- * `status_pages` save, the devices whose linked copies Home Assistant could
- * not update; absent from integrations older than the field, and when every
- * copy was updated. */
+/** What a save answers. `link_failures` lists, on a save of a linked kind
+ * (`pages`, `status_pages`, `menus`, `voice`), the devices whose linked
+ * copies Home Assistant could not update; absent from integrations older
+ * than the field, and when every copy was updated. */
 export interface WatchConfigSaveReply {
   revision: number;
   link_failures?: WatchConfigLinkFailure[];
