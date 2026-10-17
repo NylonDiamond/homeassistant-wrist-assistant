@@ -2332,8 +2332,16 @@ class WatchConfigStore:
         (``watch_pages/link``).
 
         ``kind`` ``status_pages`` links status pages instead: ``page_ids`` are
-        status page ids, each linked as it is (a system status page copied,
-        never linked), nothing walked, and ``link_ids`` names their links.
+        status page ids, each linked as it is, nothing walked, and
+        ``link_ids`` names their links.
+
+        A starter status page links like any other. A target that holds its
+        own unlinked copy of one (same id) is not refused: that copy takes
+        the link and the source's contents in its own place, keeping its
+        ``isHidden``, and is not among the ids added
+        (:func:`page_links.apply_link`). This holds wherever a status page
+        is linked: here, in :meth:`link_device`, and for the status pages a
+        menu's slots open.
 
         Each page in ``page_ids`` and every page and status page it reaches
         through its tiles (:func:`page_links.link_reach`) is added to each
@@ -2343,7 +2351,8 @@ class WatchConfigStore:
         is. Every source and target must be a paired device
         (``unknown_device``), every page one the source lists (``not_found``)
         and not a system page (``system_page``), no target may hold
-        another page under one of the ids (``id_taken``), and no target may
+        another page under one of the ids (``id_taken``; a starter status
+        page linked to something else counts), and no target may
         be a watch still waiting for its iPhone to move a kind the link would
         write (``awaiting_move``); everything is checked before anything is
         written.
@@ -2383,7 +2392,8 @@ class WatchConfigStore:
     ) -> dict[str, Any]:
         """Link every page of one device to another (``phone_pages_link_watch``).
 
-        Every page but the system pages, and every status page, linked as
+        Every page but the system pages, and every status page (the starters
+        too, each adopting the target's own unlinked copy), linked as
         :meth:`link_pages` links them, with the same refusals. Then the
         source's menus and rooms are copied once, unlinked, for a kind the
         target holds no record of: the ids match, so the menu slots and the

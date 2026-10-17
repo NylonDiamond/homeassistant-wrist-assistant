@@ -29,6 +29,8 @@ SOLO = "AAAAAAAA-0000-4000-8000-000000000003"
 SYSTEM = "AAAAAAAA-0000-4000-8000-0000000000FF"
 DOORS = "BBBBBBBB-0000-4000-8000-000000000001"
 PHONE_PAGE = "CCCCCCCC-0000-4000-8000-000000000001"
+# One of the app's five starter status pages, the same id on every device.
+STARTER = "00000000-0000-0000-0000-000000000001"
 
 
 def _tile(n: int, entity_id: str) -> dict:
@@ -147,19 +149,17 @@ def test_link_refusals_write_nothing(env, source, pages, targets, code) -> None:
 
 
 def test_a_status_page_link_links_the_status_pages_alone(env) -> None:
-    system = "00000000-0000-0000-0000-000000000001"
     status = _watch_status()
-    status["statusPages"].append({"id": system, "name": "Batteries", "rows": []})
+    status["statusPages"].append({"id": STARTER, "name": "Batteries", "rows": []})
     _save(env, WATCH, status, "status_pages")
     env.changes.clear()
-    result = env.store.link_pages(WATCH, [system, DOORS.lower()], [PHONE], kind="status_pages")
-    assert result["targets"] == {PHONE: {"pages": [], "status_pages": [DOORS, system]}}
+    result = env.store.link_pages(WATCH, [STARTER, DOORS.lower()], [PHONE], kind="status_pages")
+    assert result["targets"] == {PHONE: {"pages": [], "status_pages": [DOORS, STARTER]}}
     held = _doc(env, WATCH, "status_pages")["statusPages"]
-    assert result["link_ids"] == {DOORS: held[0]["linkId"]}
-    assert "linkId" not in held[1], "a system status page is copied, never linked"
+    assert result["link_ids"] == {DOORS: held[0]["linkId"], STARTER: held[1]["linkId"]}
     phone = _doc(env, PHONE, "status_pages")["statusPages"]
-    assert [p["id"] for p in phone] == [DOORS, system]
-    assert phone[0]["linkId"] == held[0]["linkId"] and "linkId" not in phone[1]
+    assert [p["id"] for p in phone] == [DOORS, STARTER]
+    assert [p["linkId"] for p in phone] == [p["linkId"] for p in held], "a starter links too"
     assert env.store.get(PHONE, "pages") is None, "nothing is walked"
     assert env.changes == [(WATCH, "status_pages"), (PHONE, "status_pages")]
 
@@ -168,6 +168,72 @@ def test_a_status_page_link_links_the_status_pages_alone(env) -> None:
     status["statusPages"][0]["name"] = "Front doors"
     _save(env, PHONE, status, "status_pages")
     assert _doc(env, WATCH, "status_pages")["statusPages"][0]["name"] == "Front doors"
+
+
+def _with_starter(name: str, **extra) -> dict:
+    status = _watch_status()
+    status["statusPages"].append({"id": STARTER, "name": name, "rows": [], **extra})
+    return status
+
+
+def test_a_starter_link_adopts_the_targets_own_copy(env) -> None:
+    _save(env, WATCH, _with_starter("Batteries", isSystemDefault=True), "status_pages")
+    _save(
+        env,
+        PHONE,
+        {
+            "schemaVersion": 1,
+            "statusPages": [
+                {"id": STARTER, "name": "Mine", "rows": [], "isHidden": True},
+                {"id": PHONE_PAGE, "name": "Phone", "rows": []},
+            ],
+        },
+        "status_pages",
+    )
+    env.changes.clear()
+    result = env.store.link_pages(WATCH, [STARTER], [PHONE], kind="status_pages")
+    assert result["targets"] == {PHONE: {"pages": [], "status_pages": []}}
+    link = result["link_ids"][STARTER]
+    phone = _doc(env, PHONE, "status_pages")["statusPages"]
+    assert [p["id"] for p in phone] == [STARTER, PHONE_PAGE], "it keeps its place"
+    assert phone[0] == {
+        "id": STARTER,
+        "name": "Batteries",
+        "rows": [],
+        "isSystemDefault": True,
+        "linkId": link,
+        "isHidden": True,
+    }
+    assert env.changes == [(WATCH, "status_pages"), (PHONE, "status_pages")]
+    assert env.store.link_places()["status_pages"] == {link: [PHONE, WATCH]}
+
+    # Kept in step from then on, each device keeping its own isHidden.
+    watch = _doc(env, WATCH, "status_pages")
+    watch["statusPages"][1]["name"] = "Power"
+    _save(env, WATCH, watch, "status_pages")
+    phone = _doc(env, PHONE, "status_pages")["statusPages"]
+    assert phone[0]["name"] == "Power" and phone[0]["isHidden"] is True
+
+
+def test_a_starter_linked_elsewhere_is_id_taken(env) -> None:
+    _save(env, WATCH, _with_starter("Batteries"), "status_pages")
+    _save(env, PHONE, _with_starter("Mine", linkId="L-ELSE"), "status_pages")
+    env.changes.clear()
+    with pytest.raises(env.mod.WatchConfigLinkError) as err:
+        env.store.link_pages(WATCH, [STARTER], [PHONE], kind="status_pages")
+    assert err.value.code == "id_taken"
+    assert env.changes == []
+    assert "linkId" not in _doc(env, WATCH, "status_pages")["statusPages"][1]
+
+
+def test_forgetting_the_other_holder_drops_a_starters_link(env) -> None:
+    _save(env, WATCH, _with_starter("Batteries"), "status_pages")
+    _save(env, PHONE, _with_starter("Mine"), "status_pages")
+    env.store.link_pages(WATCH, [STARTER], [PHONE], kind="status_pages")
+    env.store.forget_owner(PHONE)
+    held = _doc(env, WATCH, "status_pages")["statusPages"]
+    assert held[1]["id"] == STARTER and "linkId" not in held[1]
+    assert env.store.link_places()["status_pages"] == {}
 
 
 @pytest.mark.parametrize(
@@ -492,6 +558,35 @@ def test_link_device_links_everything_and_copies_menus_and_rooms_once(env) -> No
     again = env.store.link_device(WATCH, PHONE, updated_by=PHONE)
     assert again["copied"] == []
     assert _doc(env, PHONE, "menus") == mine
+
+
+def test_link_device_links_the_starters_on_both_sides(env) -> None:
+    """Add all on a target that has the starters of its own: each one is
+    adopted into the link, no clash, and the target's other status pages
+    stay its own."""
+    _save(env, WATCH, _with_starter("Batteries", isSystemDefault=True), "status_pages")
+    _save(
+        env,
+        PHONE,
+        {
+            "schemaVersion": 1,
+            "statusPages": [
+                {"id": PHONE_PAGE, "name": "Phone", "rows": []},
+                {"id": STARTER, "name": "Mine", "rows": [], "isSystemDefault": True},
+            ],
+        },
+        "status_pages",
+    )
+    env.store.link_device(WATCH, PHONE, updated_by=PHONE)
+    watch = _doc(env, WATCH, "status_pages")["statusPages"]
+    phone = _doc(env, PHONE, "status_pages")["statusPages"]
+    assert [p["id"] for p in phone] == [PHONE_PAGE, STARTER, DOORS]
+    assert "linkId" not in phone[0]
+    assert phone[1]["name"] == "Batteries"
+    assert phone[1]["linkId"] == watch[1]["linkId"]
+    assert phone[2]["linkId"] == watch[0]["linkId"]
+    again = env.store.link_device(WATCH, PHONE, updated_by=PHONE)
+    assert again["targets"][PHONE]["status_pages"] == []
 
 
 def test_link_places_names_every_holder(env) -> None:

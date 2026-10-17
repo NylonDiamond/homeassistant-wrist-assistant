@@ -712,8 +712,11 @@ def ws_watch_pages_link(
     goes onto each target with the same id and one ``linkId``
     (``WatchConfigStore.link_pages``); from then on a save of any copy
     reaches every copy. With ``kind`` ``status_pages`` the ``page_ids`` are
-    status pages, linked as they are (a system status page is copied, never
-    linked), and ``link_ids`` names theirs.
+    status pages, linked as they are, and ``link_ids`` names theirs. A
+    starter status page links like any other; a target that holds its own
+    unlinked copy of one takes the link and the source's contents in place
+    (keeping its ``isHidden``), and that id is not in its ``status_pages``
+    list, which names only the pages appended.
 
     With ``kind`` ``menus`` the op takes ``units`` (``anywhere``,
     ``entity``) instead of ``page_ids``, and ``replace`` (default false):
