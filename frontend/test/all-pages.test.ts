@@ -9,9 +9,14 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_FILTER,
   DEVICES_LAST_TEXT,
+  INFO_DEVICES_DIRTY_TEXT,
+  INFO_DEVICES_LAST_TEXT,
   allPagesLead,
   cardDetail,
   cardDevicePlaces,
+  cardKindChips,
+  cardsOfKind,
+  devicesDirtyText,
   emptyText,
   filterChips,
   hasBothKinds,
@@ -19,10 +24,12 @@ import {
   linkSource,
   openCopy,
   pageCards,
+  resolveCardKind,
   resolveFilter,
   resolveKind,
   shownCards,
 } from "../src/watch-pages/all-pages-model.js";
+import type { StatusPagesDocument } from "../src/watch-status-pages/model.js";
 import { DEVICES_SYSTEM_TEXT, DEVICES_WAIT_TAG, DEVICES_WAIT_TEXT, type LinkDevice, elsewhereLine, elsewherePages, linkDevicesOf } from "../src/watch-pages/links.js";
 import type { WatchPage, WatchPagesDocument } from "../src/watch-pages/model.js";
 import type { OwnerSummary } from "../src/ha-api.js";
@@ -261,5 +268,83 @@ describe("the devices a page can be on", () => {
   it("leave out an iPhone whose app is too old to show pages", () => {
     const owners = [owner("p1", "iphone", "Old iPhone", { phone_pages: false }), owner("w1", "watch", "Apple Watch")];
     expect(linkDevicesOf(owners, true).map((d) => d.ownerId)).toEqual(["w1"]);
+  });
+});
+
+describe("info pages", () => {
+  const SP = (n: number) => `5A7E0000-0000-4000-8000-${n.toString(16).toUpperCase().padStart(12, "0")}`;
+  const HOUSE = SP(1), DOORS = SP(2), PHONE = SP(3);
+  const STARTER = "00000000-0000-0000-0000-000000000001";
+  const sp = (id: string, name: string, extra: Record<string, unknown> = {}) => ({ id, name, rows: [], ...extra });
+  const sdoc = (...pages: Record<string, unknown>[]): StatusPagesDocument => ({ schemaVersion: 1, statusPages: pages });
+  /** House linked on the first watch and the phone, with two rows; Doors on
+   * the first watch alone; the phone's own one; a starter page on two. */
+  const STATUS = new Map<string, StatusPagesDocument>([
+    ["w1", sdoc(sp(STARTER, "Lights On"), sp(HOUSE, "House", { linkId: "S1", rows: [{ id: "r1" }, { id: "r2" }] }), sp(DOORS, "Doors"))],
+    ["w2", sdoc(sp(STARTER, "Lights On"))],
+    ["p1", sdoc(sp(PHONE, ""), sp(HOUSE, "House", { linkId: "S1", rows: [{ id: "r1" }, { id: "r2" }] }))],
+  ]);
+  const cards = pageCards(DEVICES, DOCS, STATUS);
+  const infos = cardsOfKind(cards, "status_pages");
+
+  it("are cards of their own kind after the pages, a linked one once, the starter pages left out", () => {
+    expect(cardsOfKind(cards, "pages").map((c) => c.name)).toEqual(["Hall", "Yard", "Den", "Lights on", "Mine"]);
+    expect(infos.map((c) => [c.name, c.copies.map((p) => p.device.ownerId)])).toEqual([
+      ["House", ["w1", "p1"]],
+      ["Doors", ["w1"]],
+      ["Untitled page", ["p1"]],
+    ]);
+    expect(infos.every((c) => c.kind === "status_pages")).toBe(true);
+    expect(infos[0]!.key).toBe("status-link:S1");
+    expect(cards.some((c) => c.pageId === STARTER)).toBe(false);
+  });
+
+  it("count their rows, and have no Hidden", () => {
+    expect(cardDetail(infos[0]!)).toBe("2 rows");
+    expect(cardDetail(infos[1]!)).toBe("0 rows");
+    expect(infos[0]!.copies.every((c) => !c.hidden)).toBe(true);
+  });
+
+  it("have the kind chips, each with its count", () => {
+    expect(cardKindChips(cards)).toEqual([
+      { key: "pages", label: "Pages", count: 5 },
+      { key: "status_pages", label: "Info pages", count: 3 },
+    ]);
+    expect(resolveCardKind("status_pages")).toBe("status_pages");
+    expect(resolveCardKind("rooms")).toBe("pages");
+    expect(resolveCardKind(undefined)).toBe("pages");
+  });
+
+  it("go through the device tabs, the search and the Device menu as pages do", () => {
+    expect(filterChips(DEVICES, infos).map((c) => [c.id, c.count])).toEqual([["all", 3], ["w1", 2], ["w2", 0], ["p1", 2]]);
+    expect(shownCards(infos, "p1").map((c) => c.name)).toEqual(["Untitled page", "House"]);
+    expect(shownCards(infos, ALL_FILTER, "door").map((c) => c.name)).toEqual(["Doors"]);
+    expect(shownCards(infos, ALL_FILTER, "", "iphone").map((c) => c.name)).toEqual(["House", "Untitled page"]);
+  });
+
+  it("have a Devices menu whose last switch says to delete in the status pages editor", () => {
+    const doors = infos[1]!;
+    const rows = cardDevicePlaces(DEVICES, doors, new Set(["w2"]));
+    expect(rows.map((r) => [r.device.ownerId, r.on, r.stuck])).toEqual([
+      ["w1", true, INFO_DEVICES_LAST_TEXT],
+      ["w2", false, DEVICES_WAIT_TEXT],
+      ["p1", false, undefined],
+    ]);
+  });
+
+  it("ask the status pages editors about unsaved edits for the link's source", () => {
+    const house = infos[0]!;
+    expect(linkSource(house, (id, kind) => kind === "status_pages" && id === "w1")).toBe("p1");
+    expect(devicesDirtyText("status_pages")).toBe(INFO_DEVICES_DIRTY_TEXT);
+  });
+
+  it("have their own words", () => {
+    expect(allPagesLead(1, "status_pages")).toBe("1 info page on your watches and iPhones. An info page is a status page: a list of live states that a tile, a menu slot or Siri opens.");
+    expect(emptyText(ALL_FILTER, DEVICES, "zz", "all", "status_pages")).toBe("No info page has that name.");
+    expect(emptyText("w2", DEVICES, "", "all", "status_pages")).toMatch(/^No info pages on Chen's Watch yet\./);
+    expect(emptyText("w2", DEVICES, "", "iphone", "status_pages")).toBe("No info page here is on an iPhone.");
+    for (const text of [allPagesLead(2, "status_pages"), INFO_DEVICES_LAST_TEXT, INFO_DEVICES_DIRTY_TEXT, emptyText(ALL_FILTER, DEVICES, "", "all", "status_pages")]) {
+      expect(text).not.toMatch(/[–—]| - /);
+    }
   });
 });

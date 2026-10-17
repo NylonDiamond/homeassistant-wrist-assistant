@@ -28,6 +28,7 @@ import {
 import { type PageCard, pageCards } from "../src/watch-pages/all-pages-model.js";
 import { type LinkDevice, type PageRemoveIO, removePageFrom, removePagesFrom } from "../src/watch-pages/links.js";
 import type { WatchPage, WatchPagesDocument } from "../src/watch-pages/model.js";
+import type { StatusPagesDocument } from "../src/watch-status-pages/model.js";
 
 const U = (n: number) => `5A17E000-0000-4000-8000-${n.toString(16).toUpperCase().padStart(12, "0")}`;
 const HALL = U(1), YARD = U(2), DEN = U(3), MINE = U(4), LAMP = U(5), SYS = U(6);
@@ -98,7 +99,7 @@ describe("the Add to plan", () => {
   it("groups the pages per source and target, from one device that holds each", () => {
     const plan = addPlan([card("Hall"), card("Yard"), card("Lamp")], ["w2"], DOCS, clean);
     expect(plan.calls).toEqual([
-      { source: "w1", target: "w2", pageIds: [HALL, YARD], names: ["Hall", "Yard"] },
+      { source: "w1", target: "w2", kind: "pages", pageIds: [HALL, YARD], names: ["Hall", "Yard"] },
     ]);
     expect(plan.already).toBe(1);
   });
@@ -106,7 +107,7 @@ describe("the Add to plan", () => {
   it("leaves out a device that holds another page under the id", () => {
     const plan = addPlan([card("Den", "w1"), card("Yard")], ["p1"], DOCS, clean);
     expect(plan.taken).toEqual([{ ownerId: "p1", names: ["Den"] }]);
-    expect(plan.calls).toEqual([{ source: "w1", target: "p1", pageIds: [YARD], names: ["Yard"] }]);
+    expect(plan.calls).toEqual([{ source: "w1", target: "p1", kind: "pages", pageIds: [YARD], names: ["Yard"] }]);
   });
 
   it("does not send two pages with one id to one device", () => {
@@ -120,7 +121,7 @@ describe("the Add to plan", () => {
 
   it("takes a linked page from a device without unsaved edits, and leaves out a device with them", () => {
     const plan = addPlan([card("Hall")], ["w2"], DOCS, (id) => id === "w1");
-    expect(plan.calls).toEqual([{ source: "p1", target: "w2", pageIds: [HALL], names: ["Hall"] }]);
+    expect(plan.calls).toEqual([{ source: "p1", target: "w2", kind: "pages", pageIds: [HALL], names: ["Hall"] }]);
     const dirtyTarget = addPlan([card("Yard")], ["w2", "p1"], DOCS, (id) => id === "w2");
     expect(dirtyTarget.dirty).toEqual(["w2"]);
     expect(dirtyTarget.calls.map((c) => c.target)).toEqual(["p1"]);
@@ -133,7 +134,7 @@ describe("the Add to plan", () => {
 describe("the Remove from plan", () => {
   it("takes pages off the ticked devices, one save per device, and keeps a page that would be left nowhere", () => {
     const plan = removePlan([card("Hall"), card("Den", "p1"), card("Mine"), card("Yard")], ["p1"], clean);
-    expect(plan.work).toEqual([{ ownerId: "p1", pageIds: [HALL] }]);
+    expect(plan.work).toEqual([{ ownerId: "p1", kind: "pages", pageIds: [HALL] }]);
     expect(plan.lastOnly).toEqual(["Den", "Mine"]);
     expect(plan.notThere).toBe(1);
   });
@@ -148,7 +149,7 @@ describe("the Remove from plan", () => {
 describe("the Delete plan", () => {
   it("takes every picked page off every device that holds it", () => {
     const plan = deletePlan([card("Hall"), card("Den", "p1"), card("Mine")], DEVICES, clean);
-    expect(plan.work).toEqual([{ ownerId: "w1", pageIds: [HALL] }, { ownerId: "p1", pageIds: [HALL, DEN, MINE] }]);
+    expect(plan.work).toEqual([{ ownerId: "w1", kind: "pages", pageIds: [HALL] }, { ownerId: "p1", kind: "pages", pageIds: [HALL, DEN, MINE] }]);
     expect(plan.devices).toEqual(["w1", "p1"]);
     expect(deleteAskText(plan, DEVICES)).toEqual({
       title: "Delete 3 pages from 2 devices?",
@@ -273,8 +274,8 @@ describe("running", () => {
 });
 
 describe("the result line", () => {
-  const base = (action: BulkResult["action"]): BulkResult =>
-    ({ action, done: [], gone: 0, also: 0, taken: [], dirty: [], blocked: [], lastOnly: [], failed: [], refs: [] });
+  const base = (action: BulkResult["action"], kind: BulkResult["kind"] = "pages"): BulkResult =>
+    ({ action, kind, done: [], gone: 0, also: 0, taken: [], dirty: [], blocked: [], lastOnly: [], failed: [], refs: [] });
 
   it("names the devices left alone for unsaved edits and the failures, and is an error when nothing was done", () => {
     expect(bulkResultText({ ...base("remove"), dirty: ["p1"], failed: [{ ownerId: "w1", message: "No connection to Home Assistant." }] }, DEVICES)).toEqual({
@@ -293,5 +294,79 @@ describe("the result line", () => {
       .toBe("Added 3 pages to Chen's Watch and 1 page to Jesse's iPhone.");
     expect(nameList(["A", "B", "C", "D", "E"])).toBe("A, B, C and 2 more");
     expect(bulkResultText({ ...base("add"), blocked: ["Hall"] }, DEVICES).text).toBe("Not added: Hall. Every device it is on has unsaved edits.");
+  });
+});
+
+describe("info pages", () => {
+  const sp = (id: string, name: string, extra: Record<string, unknown> = {}) => ({ id, name, rows: [], ...extra });
+  const sdoc = (...pages: Record<string, unknown>[]): StatusPagesDocument => ({ schemaVersion: 1, statusPages: pages });
+  const HOUSE = U(11), DOORS = U(12), OWN = U(13);
+  /** House linked on the first watch and the phone, Doors on the first
+   * watch alone, and the second watch holds its own status page under
+   * Doors' id. */
+  const STATUS = new Map<string, StatusPagesDocument>([
+    ["w1", sdoc(sp(HOUSE, "House", { linkId: "S1" }), sp(DOORS, "Doors"))],
+    ["w2", sdoc(sp(DOORS, "Doors here"), sp(OWN, "Own"))],
+    ["p1", sdoc(sp(HOUSE, "House", { linkId: "S1" }))],
+  ]);
+  const all = pageCards(DEVICES, DOCS, STATUS);
+  const info = (name: string) => all.find((c) => c.kind === "status_pages" && c.name === name)!;
+
+  it("plan their links with the status_pages kind, against the target's status pages", () => {
+    const plan = addPlan([info("House"), info("Doors")], ["w2"], DOCS, clean, STATUS);
+    expect(plan.kind).toBe("status_pages");
+    expect(plan.calls).toEqual([{ source: "w1", target: "w2", kind: "status_pages", pageIds: [HOUSE], names: ["House"] }]);
+    expect(plan.taken).toEqual([{ ownerId: "w2", names: ["Doors"] }]);
+  });
+
+  it("ask the status pages editors, not the page editors, about unsaved edits", () => {
+    const asked: string[] = [];
+    const plan = removePlan([info("House")], ["p1"], (id, kind) => {
+      asked.push(`${id}:${kind}`);
+      return false;
+    });
+    expect(asked).toEqual(["p1:status_pages"]);
+    expect(plan.work).toEqual([{ ownerId: "p1", kind: "status_pages", pageIds: [HOUSE] }]);
+  });
+
+  it("run against the status pages records, and clear nothing that opened them", async () => {
+    const calls: string[] = [];
+    const io: BulkIO = {
+      link: (source, pageIds, target, kind) => {
+        calls.push(`link ${kind} ${source}>${target} ${pageIds.length}`);
+        return Promise.resolve({ targets: { [target]: { pages: [], status_pages: [...pageIds] } }, link_ids: {} });
+      },
+      remove: (ownerId, pageIds, kind) => {
+        calls.push(`remove ${kind} ${ownerId} ${pageIds.length}`);
+        return Promise.resolve({ ok: true, removed: [...pageIds] });
+      },
+      clearRefs: (ownerId, pageIds, kind) => {
+        calls.push(`refs ${kind} ${ownerId} ${pageIds.length}`);
+        return Promise.resolve(undefined);
+      },
+    };
+    const added = await runAdd(io, addPlan([info("House")], ["w2"], DOCS, clean, STATUS), DEVICES);
+    // The status pages a link adds are the ones asked for, never "more".
+    expect(bulkResultText(added, DEVICES, new Set(["w2"]))).toEqual({ kind: "ok", text: "Added 1 info page to Chen's Watch." });
+    const gone = await runDelete(io, deletePlan([info("House")], DEVICES, clean), DEVICES);
+    expect(gone.gone).toBe(1);
+    expect(bulkResultText(gone, DEVICES).text).toBe("Deleted 1 info page.");
+    expect(calls).toEqual([
+      "link status_pages w1>w2 1",
+      "remove status_pages w1 1", "refs status_pages w1 1",
+      "remove status_pages p1 1", "refs status_pages p1 1",
+    ]);
+  });
+
+  it("word the delete question and the result line for info pages", () => {
+    expect(deleteAskText(deletePlan([info("House")], DEVICES, clean), DEVICES)).toEqual({
+      title: "Delete 1 info page from 2 devices?",
+      body: "It comes off Jesse's Watch and Jesse's iPhone. This cannot be undone.",
+    });
+    const base: BulkResult = { action: "remove", kind: "status_pages", done: [], gone: 0, also: 0, taken: [], dirty: ["p1"], blocked: [], lastOnly: [], failed: [], refs: [] };
+    expect(bulkResultText(base, DEVICES).text).toBe("Left Jesse's iPhone alone: its status pages have unsaved edits. Save or discard the edits in its status pages editor first.");
+    expect(bulkResultText({ ...base, dirty: [] }, DEVICES).text).toBe("None of those info pages are on those devices.");
+    expect(bulkResultText({ ...base, action: "add", dirty: [], taken: [{ ownerId: "w2", names: ["Doors"] }] }, DEVICES).text)
+      .toBe("Not added to Chen's Watch: Doors. It already has an info page of its own with the same id.");
   });
 });

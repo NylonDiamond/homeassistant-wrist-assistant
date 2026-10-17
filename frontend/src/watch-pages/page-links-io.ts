@@ -2,11 +2,11 @@
 // editor's own draft, shared by the page editor and the Pages tab
 // (`all-pages.ts`): taking a page off one device, and clearing the menu
 // slots and complication taps that opened a page once it is gone there.
+// The Pages tab's multi-select calls are `all-pages-io.ts`.
 
-import { type HassLike, fetchList, fetchWatchConfig, linkWatchPages, saveRecord, saveWatchConfig } from "../ha-api.js";
-import type { BulkIO } from "./all-pages-bulk.js";
+import { type HassLike, fetchList, fetchWatchConfig, saveRecord, saveWatchConfig } from "../ha-api.js";
 import { keptWatchPagesDraft } from "./kept.js";
-import { removePageFrom, removePagesFrom } from "./links.js";
+import { type PageRemoveIO, removePageFrom } from "./links.js";
 import { isJsonObject } from "./model.js";
 import { clearPageFromComplication, clearPageFromMenus, menuSlotsOpeningPage } from "./page-refs.js";
 import type { WatchPagesNote } from "./save-note.js";
@@ -66,17 +66,11 @@ export async function clearPageRefs(hass: HassLike, ownerId: string, pageIds: st
   return { kind: "ok", text: `Saved. Cleared the deleted page from ${done.join(" and ")}.` };
 }
 
-/** The calls the Pages tab's multi-select makes (`all-pages-bulk.ts`):
- * linking, taking pages off a device in one save, and clearing what opened
- * them there. */
-export function pagesBulkIO(hass: HassLike): BulkIO {
+/** Reading and saving a device's pages record. */
+export function pagesRemoveIO(hass: HassLike): PageRemoveIO {
   return {
-    link: (source, pageIds, target) => linkWatchPages(hass, source, pageIds, [target]),
-    remove: (ownerId, pageIds) => removePagesFrom({
-      read: (o) => fetchWatchConfig(hass, o, "pages"),
-      save: (o, base, document) => saveWatchConfig(hass, o, "pages", base, document),
-    }, ownerId, pageIds),
-    clearRefs: (ownerId, pageIds) => clearPageRefs(hass, ownerId, pageIds),
+    read: (o) => fetchWatchConfig(hass, o, "pages"),
+    save: (o, base, document) => saveWatchConfig(hass, o, "pages", base, document),
   };
 }
 
@@ -93,10 +87,7 @@ export async function takePageOff(hass: HassLike | undefined, ownerId: string, p
   if (keptWatchPagesDraft(ownerId)?.dirty ?? false) {
     return `Not taken off ${name}: its pages have unsaved edits. Save or discard them first.`;
   }
-  const result = await removePageFrom({
-    read: (o) => fetchWatchConfig(hass, o, "pages"),
-    save: (o, base, document) => saveWatchConfig(hass, o, "pages", base, document),
-  }, ownerId, pageId);
+  const result = await removePageFrom(pagesRemoveIO(hass), ownerId, pageId);
   if (!result.ok) return `Not taken off ${name}: ${result.message}`;
   if (result.removed) await clearPageRefs(hass, ownerId, [pageId]);
   return undefined;

@@ -363,4 +363,21 @@ export function anyStatusPagesDirty(): boolean {
 
 export function dropAllStatusPages(): void {
   drafts.clear();
+  pageAsks.clear();
+}
+
+/** The status page each device's editor should show as it opens: the
+ * Pages tab's Info page card asked for it. */
+const pageAsks = new Map<string, string>();
+
+/** Ask the editor to show `pageId` the next time it opens `watchId`. */
+export function askStatusPage(watchId: string, pageId: string): void {
+  pageAsks.set(watchId, pageId);
+}
+
+/** The status page asked for on `watchId`, forgetting the ask. */
+export function takeStatusPageAsk(watchId: string): string | undefined {
+  const pageId = pageAsks.get(watchId);
+  pageAsks.delete(watchId);
+  return pageId;
 }

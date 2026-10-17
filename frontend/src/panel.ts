@@ -11511,9 +11511,10 @@ export class WristAssistantPanel extends LitElement {
       return renderAllPagesView({
         hass: this.hass, owners: this.owners, ownersReady: this.linkReady, phones: this.phonePages,
         icons: this.icons, iconsTick: this.iconsTick,
-        onOpen: (ownerId, kind) => {
+        onOpen: (ownerId, kind, what) => {
           this.pickWatch(ownerId);
-          this.goTo(deviceScreenPath(kind, WATCH_SCREENS[0]!, ownerId));
+          const screen = what === "status_pages" ? WATCH_SCREENS.find((s) => s.id === "status-pages") : undefined;
+          this.goTo(deviceScreenPath(kind, screen ?? WATCH_SCREENS[0]!, ownerId));
         },
         onLoaded: () => this.requestUpdate(),
       });

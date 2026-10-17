@@ -172,6 +172,14 @@ describe("the Help sheet", () => {
     expect(helpScreen(at("/pages/w1")).text[1]).toBe("It is for the watch picked at the top.");
   });
 
+  it("names the Pages tab, and says an info page is a status page", () => {
+    const h = helpScreen(at("/all-pages"));
+    expect(h.name).toBe("Pages");
+    expect(h.more).toBe(WATCH_PAGES_HELP_URL);
+    expect(h.text.join(" ")).toContain("An info page is a status page");
+    for (const line of h.text) expect(line).not.toMatch(/[–—]| - /);
+  });
+
   it("links each screen's guide, the page its bar's old ? opened", () => {
     const guides: Record<string, string | undefined> = {
       "pages": WATCH_PAGES_HELP_URL,

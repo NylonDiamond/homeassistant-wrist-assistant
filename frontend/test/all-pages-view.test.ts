@@ -9,6 +9,7 @@ import type { HassLike, OwnerSummary } from "../src/ha-api.js";
 import { pageCrop } from "../src/watch-pages/all-pages.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
 import { keptWatchPagesSelection, takeNewWatchPageAsk } from "../src/watch-pages/kept.js";
+import { takeStatusPageAsk } from "../src/watch-status-pages/draft.js";
 import type { JsonObject, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { type PageCard, cardDevicePlaces } from "../src/watch-pages/all-pages-model.js";
 import { DEVICES_WAIT_TAG, type LinkDevice } from "../src/watch-pages/links.js";
@@ -28,7 +29,13 @@ const HALL = U(1), DEN = U(2), MINE = U(3);
 
 let made = 0;
 
-function tab() {
+const HOUSE = "5A7E0000-0000-4000-8000-000000000001", DOORS = "5A7E0000-0000-4000-8000-000000000002";
+const STARTER = "00000000-0000-0000-0000-000000000001";
+
+/** The tab over a watch and an iPhone. With `status`, the watch also holds
+ * the status pages House (linked to the iPhone) and Doors, and both hold a
+ * starter page. */
+function tab(status = false) {
   const n = ++made;
   const watch = `ap-w1-${n}`;
   const phone = `ap-p1-${n}`;
@@ -40,11 +47,17 @@ function tab() {
     [`${watch}/pages`, { revision: 3, document: { schemaVersion: 1, pages: [{ id: HALL, name: "Hall", linkId: "L1", items: [] }, { id: DEN, name: "Den", items: [] }] } }],
     [`${phone}/pages`, { revision: 2, document: { schemaVersion: 1, pages: [{ id: MINE, name: "Mine", items: [] }, { id: HALL, name: "Hall", linkId: "L1", isHidden: true, items: [] }] } }],
   ]);
+  if (status) {
+    const starter = { id: STARTER, name: "Lights On", rows: [] };
+    held.set(`${watch}/status_pages`, { revision: 5, document: { schemaVersion: 1, statusPages: [starter, { id: HOUSE, name: "House", linkId: "S1", rows: [] }, { id: DOORS, name: "Doors", rows: [] }] } });
+    held.set(`${phone}/status_pages`, { revision: 4, document: { schemaVersion: 1, statusPages: [starter, { id: HOUSE, name: "House", linkId: "S1", rows: [] }] } });
+  }
   const sent: JsonObject[] = [];
-  const pagesOf = (owner: string) => ((held.get(`${owner}/pages`)?.document.pages ?? []) as JsonObject[]);
-  const put = (owner: string, pages: JsonObject[]) => {
-    const now = held.get(`${owner}/pages`);
-    held.set(`${owner}/pages`, { ...now, revision: (now?.revision ?? 0) + 1, document: { schemaVersion: 1, pages } });
+  const listKey = (kind: string) => (kind === "status_pages" ? "statusPages" : "pages");
+  const pagesOf = (owner: string, kind = "pages") => ((held.get(`${owner}/${kind}`)?.document[listKey(kind)] ?? []) as JsonObject[]);
+  const put = (owner: string, pages: JsonObject[], kind = "pages") => {
+    const now = held.get(`${owner}/${kind}`);
+    held.set(`${owner}/${kind}`, { ...now, revision: (now?.revision ?? 0) + 1, document: { schemaVersion: 1, [listKey(kind)]: pages } });
   };
   const hass = {
     states: {},
@@ -65,12 +78,14 @@ function tab() {
         }
         if (type.endsWith("watch_pages/places")) return Promise.resolve({ pages: {}, status_pages: {} });
         if (type.endsWith("watch_pages/link")) {
+          const kind = (msg.kind as string | undefined) ?? "pages";
           const source = msg.source_id as string;
           const ids = msg.page_ids as string[];
-          const from = pagesOf(source).map((p) => (ids.includes(p.id as string) ? { ...p, linkId: p.linkId ?? `L-${p.id as string}` } : p));
-          put(source, from);
-          for (const target of msg.targets as string[]) put(target, [...pagesOf(target), ...from.filter((p) => ids.includes(p.id as string))]);
-          return Promise.resolve({ targets: Object.fromEntries((msg.targets as string[]).map((t) => [t, { pages: ids, status_pages: [] }])) });
+          const from = pagesOf(source, kind).map((p) => (ids.includes(p.id as string) ? { ...p, linkId: p.linkId ?? `L-${p.id as string}` } : p));
+          put(source, from, kind);
+          for (const target of msg.targets as string[]) put(target, [...pagesOf(target, kind), ...from.filter((p) => ids.includes(p.id as string))], kind);
+          const added = (t: string) => (kind === "status_pages" ? { pages: [], status_pages: ids } : { pages: ids, status_pages: [] });
+          return Promise.resolve({ targets: Object.fromEntries((msg.targets as string[]).map((t) => [t, added(t)])) });
         }
         if (type.endsWith("/list")) return Promise.resolve({ records: [] });
         return Promise.reject({ code: "unknown_command", message: type });
@@ -351,5 +366,95 @@ describe("the Pages tab", () => {
       expect(sent.some((m) => (m.type as string).endsWith("watch_config/save"))).toBe(false);
       expect((el.bulkNote as { text: string }).text).toBe("Kept Mine: it would be left on no device. Use Delete for those.");
     });
+  });
+});
+
+describe("the Pages tab's info pages", () => {
+  /** A tab with status pages, read, shown on the Info pages chip. Set back
+   * to Pages after, since the chip is remembered for the next tab. */
+  async function infoTab() {
+    const t = tab(true);
+    await t.call<Promise<void>>("loadAll");
+    t.call("setCardKind", "status_pages");
+    return t;
+  }
+
+  it("has the kind chips with their counts, and Pages first", async () => {
+    const { call, whole } = tab(true);
+    await call<Promise<void>>("loadAll");
+    const text = whole();
+    expect(text).toMatch(/pk-seg-btn on"[^>]*>Pages<span class="ap-kind-n">3</);
+    expect(text).toMatch(/>Info pages<span class="ap-kind-n">2</);
+    expect(text).toMatch(/ap-name">Hall</);
+    expect(text).not.toMatch(/ap-name">House</);
+  });
+
+  it("shows the info pages, a linked one once, the starter pages left out", async () => {
+    const t = await infoTab();
+    const text = t.whole();
+    expect(text).toContain("2 info pages on your watches and iPhones. An info page is a status page");
+    expect(text).toMatch(/ap-name">House</);
+    expect(text).toMatch(/ap-name">Doors</);
+    expect(text).not.toMatch(/ap-name">Lights On</);
+    expect(text).not.toMatch(/ap-name">Hall</);
+    expect(text).toContain("0 rows");
+    expect(text).toContain("sp-screen");
+    // No New page under Info pages: the status pages editor makes them.
+    expect(text).not.toContain("<span>New page</span>");
+    expect(t.card("House").copies.map((c) => c.device.ownerId)).toEqual([t.watch, t.phone]);
+    t.call("setCardKind", "pages");
+  });
+
+  it("opens an info page in its device's status pages editor, on that page", async () => {
+    const t = await infoTab();
+    const opened: string[] = [];
+    t.el.onOpen = (owner: string, kind: string, what?: string) => opened.push(`${owner}/${kind}/${what ?? "pages"}`);
+    t.call("open", t.card("Doors"), "all");
+    expect(opened).toEqual([`${t.watch}/watch/status_pages`]);
+    expect(takeStatusPageAsk(t.watch)).toBe(DOORS);
+    t.call("setCardKind", "pages");
+  });
+
+  it("links an info page from its Devices menu with the status_pages kind, then takes it off again", async () => {
+    const t = await infoTab();
+    t.call("openDevices", t.card("Doors"));
+    await t.call<Promise<void>>("toggle", t.card("Doors"), t.place(t.card("Doors"), t.phone));
+    expect(t.sent.filter((m) => (m.type as string).endsWith("watch_pages/link")).map((m) => [m.source_id, m.page_ids, m.targets, m.kind]))
+      .toEqual([[t.watch, [DOORS], [t.phone], "status_pages"]]);
+    expect((t.el.devicesNote as { text: string }).text).toBe("Added to Jesse's iPhone.");
+    expect(t.card("Doors").copies.map((c) => c.device.ownerId)).toEqual([t.watch, t.phone]);
+    await t.call<Promise<void>>("toggle", t.card("Doors"), t.place(t.card("Doors"), t.phone));
+    const phoneStatus = t.held.get(`${t.phone}/status_pages`)!.document.statusPages as JsonObject[];
+    expect(phoneStatus.map((p) => p.name)).toEqual(["Lights On", "House"]);
+    expect((t.el.devicesNote as { text: string }).text).toBe("Taken off Jesse's iPhone.");
+    t.call("setCardKind", "pages");
+  });
+
+  it("picks info pages only, and deletes them from every device without touching pages", async () => {
+    const t = await infoTab();
+    t.call("startSelect");
+    expect(t.whole()).toContain("Pick an info page to start.");
+    t.call("selectShown", true);
+    expect((t.el.selected as Set<string>).size).toBe(2);
+    t.call("openBulkMenu", "delete");
+    expect(t.whole()).toContain("Delete 2 info pages from 2 devices?");
+    await t.call<Promise<void>>("runBulk", "delete");
+    const saves = t.sent.filter((m) => (m.type as string).endsWith("watch_config/save")).map((m) => `${m.owner_watch_id as string}/${m.kind as string}`);
+    expect(saves).toEqual([`${t.watch}/status_pages`, `${t.phone}/status_pages`]);
+    expect((t.el.bulkNote as { text: string }).text).toBe("Deleted 2 info pages.");
+    expect((t.held.get(`${t.watch}/status_pages`)!.document.statusPages as JsonObject[]).map((p) => p.name)).toEqual(["Lights On"]);
+    // Nothing went to the menus or the complications for info pages.
+    expect(t.sent.some((m) => (m.type as string).endsWith("watch_config/get") && m.kind === "menus")).toBe(false);
+    t.call("endSelect");
+    t.call("setCardKind", "pages");
+  });
+
+  it("drops the picks when the kind chip changes", async () => {
+    const t = await infoTab();
+    t.call("startSelect");
+    t.call("selectShown", true);
+    t.call("setCardKind", "pages");
+    expect((t.el.selected as Set<string>).size).toBe(0);
+    expect(t.el.cardKind).toBe("pages");
   });
 });
