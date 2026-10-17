@@ -6,9 +6,10 @@
 // the Complications tab on the device, as on Home. The panel draws it
 // (`renderWatchRow`) and owns its state: the shared watch (`watch-pick.ts`),
 // whether the watch menu is open, and what a pick or a screen does.
-// Settings is a screen with an address like the others. HTTP actions and
-// Cameras are the whole home's: their row names no device and links only
-// the two of them. What can be worked out without the panel lives here,
+// Settings is a screen with an address like the others. HTTP actions,
+// Cameras, Photos and Parts are the whole home's, Home's Library: their row
+// says Library in place of a device and links only them, with the same Home
+// button. What can be worked out without the panel lives here,
 // where a test can reach it.
 //
 // An iPhone's screens draw the same row for the iPhones (`iphone`): the
@@ -34,7 +35,7 @@ import { css, html, nothing, type TemplateResult } from "lit";
 import { deviceColor, deviceColors } from "./device-colors.js";
 import type { OwnerSummary } from "./ha-api.js";
 import { homeMiniArt } from "./home-art.js";
-import { deviceSheetTabs } from "./home.js";
+import { HOME_LIBRARY_TITLE, deviceSheetTabs, homeLibraryScreens } from "./home.js";
 import type { Person } from "./people.js";
 import { hasPhoneAwaitingUpdate, iphoneDevices } from "./phone-pages.js";
 import { howToStyles, renderHowTo, screenHowTo } from "./screen-howto.js";
@@ -112,7 +113,7 @@ const screenById = (id: WatchScreenId): WatchScreen => WATCH_SCREENS.find((scree
  * complications are its own screen; an iPhone's widgets and any device's
  * Control Center controls open the Complications tab on that device, as
  * Home's doors do. In the iPhone app's row, each screen is at its
- * `/iphone` address. HTTP actions and Cameras are the home's, never in a
+ * `/iphone` address. The Library's screens are the home's, never in a
  * device's row (`sharedRowLinks`). */
 export function watchRowLinks(route: PanelRoute | undefined, watch: string | undefined, kind: RowKind = "watch"): WatchRowLink[] {
   const shown = kind === "iphone" ? iphoneScreenOf(route)?.id : watchScreenOf(route)?.id;
@@ -128,16 +129,17 @@ export function watchRowLinks(route: PanelRoute | undefined, watch: string | und
   });
 }
 
-/** The row's links on a screen of the whole home (HTTP actions, Cameras):
- * the home's screens, which name no device. */
+/** The row's links on a screen of the whole home: the Library's screens
+ * (`homeLibraryScreens`), as Home's side bar lists them, which name no
+ * device. */
 export function sharedRowLinks(route: PanelRoute | undefined): WatchRowLink[] {
   const shown = watchScreenOf(route)?.id;
-  return WATCH_SCREENS.filter((screen) => screen.shared === true && screen.retired !== true)
-    .map((screen) => ({ screen, path: watchScreenPath(screen), on: screen.id === shown }));
+  return homeLibraryScreens().map((screen) => ({ screen, path: watchScreenPath(screen), on: screen.id === shown }));
 }
 
-/** Over the shared screens' links, in place of a device. */
-export const SHARED_ROW_LABEL = "For the whole home";
+/** Over the shared screens' links, in place of a device: the name of the
+ * side bar section they are listed under on Home. */
+export const SHARED_ROW_LABEL = HOME_LIBRARY_TITLE;
 
 /** The row's last link, Settings, on the shared device. In a home with no
  * watch the Watch app's is also where the first one pairs. */
@@ -261,6 +263,8 @@ export const WATCH_SCREEN_LOOK: Record<WatchScreenId, { icon: UiIconName; hue: s
   "watch-complications": { icon: "gauge", hue: "var(--wa-hue-blue)" },
   "http-actions": { icon: "globe", hue: "var(--wa-hue-blue)" },
   "cameras": { icon: "image", hue: "var(--wa-hue-grey)" },
+  "photos": { icon: "image", hue: "var(--wa-hue-pink)" },
+  "parts": { icon: "layers", hue: "var(--wa-hue-yellow)" },
   "settings": { icon: "sliders", hue: "var(--wa-hue-grey)" },
 };
 
@@ -289,8 +293,8 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
   const slot = watchRowSlot(input.loaded, choices.length);
   const href = (path: string) => panelUrl(input.route, path, globalThis.location?.pathname ?? "");
   const unsaved = new Set((input.unsaved ?? []).map((screen) => screen.id));
-  // HTTP actions and Cameras belong to the whole home: their row names no
-  // device and links only the two of them.
+  // The Library's screens belong to the whole home: their row names no
+  // device and links only them.
   const shared = kind === "watch" && watchScreenOf(input.route)?.shared === true;
   // An iPhone app with no iPhone has nothing to link to, Settings included:
   // the way to pair one is all it offers.

@@ -148,8 +148,8 @@ export type DeviceSheetTab =
  * one order Home's doors and the device's header row (`watchRowLinks`) both
  * use: Pages, then its complications (Widgets on an iPhone), Menus, Status
  * pages, its Control Center controls, the rest, and Settings last. A watch
- * has every screen that belongs to one watch; HTTP actions and Cameras are
- * the home's, not a watch's. A watch's old Control Center screen is
+ * has every screen that belongs to one watch; the Library's (HTTP actions,
+ * Cameras, Photos, Parts) are the home's, not a watch's. A watch's old Control Center screen is
  * retired: its tiles are complication controls now, so the door opens the
  * watch's designs that have a control, the way an iPhone's does. An iPhone
  * has its widgets and its Control Center controls, and on a home with phone
@@ -235,11 +235,26 @@ export function seenWords(owner: Pick<OwnerSummary, "polling" | "last_seen_secon
 /** Home's small print under the devices: what Synced and Waiting are about.
  * The totals already say what each word means, so this only says what it
  * covers, which on a watch is more than its complications. */
-/** The line under each of the whole home's screens in Home's side bar
+/** The name of Home's side bar section for the whole home's screens, which
+ * the row over those screens says too (`SHARED_ROW_LABEL`). */
+export const HOME_LIBRARY_TITLE = "Library";
+
+/** The section's one line under its name. */
+export const HOME_LIBRARY_LEAD = "Building blocks your devices' pages and menus point at.";
+
+/** The screens Home's Library lists, in order: every screen of the whole
+ * home (`shared`) that is not retired. */
+export function homeLibraryScreens(): WatchScreen[] {
+  return WATCH_SCREENS.filter((s) => s.shared === true && s.retired !== true);
+}
+
+/** The line under each of the Library's screens in Home's side bar
  * (`renderHomeShared`): what it holds, short enough for one line. */
 export const HOME_SHARED_SUB: Partial<Record<WatchScreen["id"], string>> = {
   "http-actions": "Web requests every device can run",
   "cameras": "How each camera is framed in alerts",
+  "photos": "The pictures behind your pages",
+  "parts": "Layers saved to reuse in complications",
 };
 
 export const HOME_SYNC_NOTE = "On a watch, Synced and Waiting cover its complications and the whole watch app: pages, menus and settings.";
@@ -619,9 +634,11 @@ export const homeStyles = css`
   .hb-row-sub { font-size: 11px; line-height: 1.3; color: var(--wa-muted); overflow-wrap: anywhere; }
   .hb-row-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--s); }
   button.hb-row.on .hb-row-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--s) 22%, transparent); }
-  /* The whole home's screens: rows like a device's, as links, each glyph
-     in its screen's hue as the watch row draws it. */
+  /* The Library, the whole home's screens: rows like a device's, as links,
+     each glyph in its screen's hue as the watch row draws it, under a line
+     that says what they are. */
   .hb-shared { margin-top: 6px; }
+  .hb-shared .hb-lead { margin: -2px 0 4px; padding: 0 8px; font-size: 11px; line-height: 1.35; color: var(--wa-muted); }
   a.hb-link {
     display: flex; align-items: center; gap: 11px; width: 100%; box-sizing: border-box; padding: 6px 10px 6px 6px;
     border-radius: 11px; text-decoration: none; color: var(--wa-ink); border: 1px solid transparent;

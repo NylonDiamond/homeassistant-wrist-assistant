@@ -143,7 +143,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type DeviceSync, type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, homePill, homeSync, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDoorLook, homeGroups, homePageThumbs, HOME_PAGE_THUMB_WIDTH, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_RING_LENGTH, HOME_SHARED_SUB, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDoorLook, homeGroups, homePageThumbs, HOME_PAGE_THUMB_WIDTH, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_LIBRARY_LEAD, HOME_LIBRARY_TITLE, HOME_RING_LENGTH, HOME_SHARED_SUB, HOME_SYNC_NOTE, homeLibraryScreens, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
 import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
 import { APP_STORE_URL, type GettingStarted, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
 import { type QrPicture, qrPicture } from "./qr-code.js";
@@ -444,6 +444,7 @@ import { dropWatchControlCenterDrafts, isWatchControlCenterRoute, renderWatchCon
 import { dropWatchRoomsDrafts, isWatchRoomsRoute, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles } from "./watch-rooms/hook.js";
 import { dropWatchHttpActionsDrafts, isWatchHttpActionsRoute, renderWatchHttpActionsView, watchHttpActionsDirty } from "./watch-http-actions/hook.js";
 import { dropWatchCamerasDrafts, isWatchCamerasRoute, renderWatchCamerasView, watchCamerasDirty } from "./watch-cameras/hook.js";
+import { renderLibraryPartsView, renderLibraryPhotosView } from "./library/hook.js";
 import { NOT_ON_WATCH_NOTE, isWatchComplicationsRoute, splitForWatch, watchComplicationsLead, watchComplicationsStyles } from "./watch-complications.js";
 import {
   COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, deviceScreenPath, editorKeysLive, iphoneInnerRoute, iphoneScreenOf,
@@ -11497,6 +11498,23 @@ export class WristAssistantPanel extends LitElement {
         barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
       });
+      // The rest of Home's Library, on `/photos` and `/parts`: the home's
+      // page photos and its parts, each a list with Delete. Neither keeps a
+      // draft, so neither has a bar of its own.
+      case "photos": return renderLibraryPhotosView({
+        hass: this.hass, owners: this.owners, narrow: this.narrow,
+        onLoaded: () => this.requestUpdate(),
+      });
+      case "parts": return renderLibraryPartsView({
+        hass: this.hass, narrow: this.narrow,
+        // The complication editor's + Add keeps the library once read.
+        onDeleted: (id) => {
+          if (this.parts !== undefined) this.parts = this.parts.filter((p) => p.id !== id);
+          this.partConfigCache.delete(id);
+          if (this.partPick?.id === id) this.partPick = undefined;
+        },
+        onLoaded: () => this.requestUpdate(),
+      });
     }
   }
 
@@ -19842,14 +19860,16 @@ export class WristAssistantPanel extends LitElement {
     </section>`;
   }
 
-  /** The screens that belong to the whole home, not one device, under the
-   * people in Home's side bar: HTTP actions and Cameras. With no Watch app
-   * tab, this is their way in. Each is a real link, so a middle click opens
-   * it in a new browser tab. */
+  /** The Library: the screens that belong to the whole home, not one
+   * device, under the people in Home's side bar (`homeLibraryScreens`: HTTP
+   * actions, Cameras, Photos, Parts). With no Watch app tab, this is their
+   * way in. Each is a real link, so a middle click opens it in a new browser
+   * tab. */
   private renderHomeShared() {
-    const screens = WATCH_SCREENS.filter((s) => s.shared === true && s.retired !== true);
-    return html`<section class="hb-group hb-shared" aria-label="For the whole home">
-      <div class="hb-person"><h2 class="hb-person-name">For the whole home</h2></div>
+    const screens = homeLibraryScreens();
+    return html`<section class="hb-group hb-shared" aria-label=${HOME_LIBRARY_TITLE}>
+      <div class="hb-person"><h2 class="hb-person-name">${HOME_LIBRARY_TITLE}</h2></div>
+      <p class="hb-lead">${HOME_LIBRARY_LEAD}</p>
       ${screens.map((screen) => {
         const look = WATCH_SCREEN_LOOK[screen.id];
         const path = watchScreenPath(screen);
