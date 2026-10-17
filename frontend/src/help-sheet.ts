@@ -70,6 +70,11 @@ const STATUS_PAGES_TEXT = [
   "A status page on more than one device is the same page: an edit shows on all of them. Pick one to edit it, or make a new one.",
 ];
 
+const MENUS_TEXT = [
+  "Menus lists the Anywhere menu and the Entity quick menu of every watch and iPhone. A menu on more than one device is the same menu: an edit shows on all of them.",
+  "The page switcher goes with the Anywhere menu. Pick a menu to edit it, or use Devices on its card to share it with another device.",
+];
+
 /** Each screen's guide in the docs: what the ? in the screen's own bar
  * opened, before the header kept one Help button. Settings and a watch's
  * Complications have no page of their own. */
@@ -105,7 +110,7 @@ function deviceScreen(screen: WatchScreen, device: "watch" | "iPhone"): HelpScre
 
 /** The screen a route shows, as the sheet names and explains it: a watch's
  * screen, an iPhone's (`/iphone/pages/p1`), Complications, the Pages tab,
- * the Status pages tab, else Home. */
+ * the Status pages tab, the Menus tab, else Home. */
 export function helpScreen(route: PanelRoute | undefined): HelpScreen {
   const phone = iphoneScreenOf(route);
   if (phone !== undefined) return deviceScreen(phone, "iPhone");
@@ -115,6 +120,7 @@ export function helpScreen(route: PanelRoute | undefined): HelpScreen {
   if (tab === "complications") return { name: "Complications", text: COMPLICATIONS_TEXT };
   if (tab === "pages") return { name: "Pages", text: PAGES_TEXT, more: WATCH_PAGES_HELP_URL };
   if (tab === "status-pages") return { name: "Status pages", text: STATUS_PAGES_TEXT, more: WATCH_STATUS_PAGES_HELP_URL };
+  if (tab === "menus") return { name: "Menus", text: MENUS_TEXT, more: WATCH_MENUS_HELP_URL };
   return { name: "Home", text: HOME_TEXT, more: DOCS_URL };
 }
 

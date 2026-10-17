@@ -185,6 +185,7 @@ import {
   keptWatchMenusDraft,
   newWatchMenusDraft,
   saveWatchMenusDraft,
+  takeWatchMenuAsk,
   takeWatchMenusRecord,
 } from "./draft.js";
 import { navigatePagesFromMenus, navigateWatchMenus, registerWatchMenusDrafts } from "./hook.js";
@@ -205,6 +206,7 @@ import {
   renderSlotsCard,
   saveMenusZoom,
   selectedSwitcherPage,
+  showMenuSettings,
   shownMenu,
 } from "./menu-view.js";
 import {
@@ -848,6 +850,9 @@ export class WaMenuEditor extends LitElement {
       this.uiState.clear();
       quiet = false;
     }
+    // A card on the Menus tab opened this device on one menu.
+    const asked = takeWatchMenuAsk(watchId);
+    if (asked !== undefined) showMenuSettings({ uiState: this.uiState, requestUpdate: () => this.requestUpdate() }, asked);
     this.startSubscription(watchId);
     void this.loadMenuLinks(watchId);
     void this.load(watchId, quiet);
@@ -1615,10 +1620,11 @@ export class WaMenuEditor extends LitElement {
   }
 
   /**
-   * A menu's Devices line, last on its own card in the inspector: the title,
-   * then a button saying where the menu is ("This watch only", "Also on
-   * Jesse's iPhone"), which opens the Devices menu for its unit under it. The
-   * page switcher's line is the Anywhere menu's.
+   * A menu's Devices line, at the top of the inspector under the menu's
+   * name: where the menu is ("This watch only", or a chip per device that
+   * shares it, this one first), then Devices, which opens the Devices menu
+   * for its unit under the line. The page switcher's line is the Anywhere
+   * menu's.
    */
   private devicesLine(menu: MenusSection): TemplateResult | typeof nothing {
     const watchId = this.watchId;
@@ -1626,11 +1632,18 @@ export class WaMenuEditor extends LitElement {
     const unit = menuLinkUnitOf(menu);
     const open = this.devicesMenu?.where === "card" && this.devicesMenu.unit === unit;
     const holders = menuUnitHolders(this.draft?.document, unit, watchId, this.places);
-    const where = this.linkBadge(menu) ?? `This ${deviceNoun(this.device)} only`;
-    return html`<div class="field me-dev-field"><span>Devices</span>
+    const devices = this.linkDevices;
+    const chips = holders.length > 1 ? holders.flatMap((id) => devices.find((d) => d.ownerId === id) ?? []) : [];
+    return html`<div class="me-devices" aria-label=${`Where the ${MENU_UNIT_NAMES[unit]} is`}>
+      <span class="me-devices-h">Devices</span>
+      <span class="me-devices-on">${chips.length === 0
+        ? html`<span class="me-devices-only">This ${deviceNoun(this.device)} only</span>`
+        : chips.map((d) => html`<span class="me-dev-chip" style=${`--dc:${this.colorOf(d.ownerId) ?? "var(--wa-line-strong)"}`}
+            title=${d.ownerId === watchId ? `On ${d.name}, the one shown` : `Also on ${d.name}`}>
+            ${uiIcon(d.kind === "iphone" ? "phone" : "watch")}<span class="me-dev-chip-n">${d.name}</span></span>`)}</span>
       <button type="button" class="pe-btn pe-dev-open ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
         title=${holders.length > 1 ? `Pick the devices that share the ${MENU_UNIT_NAMES[unit]}` : `Put the ${MENU_UNIT_NAMES[unit]} on other devices too`}
-        @click=${() => (open ? this.closeDevices() : this.openDevices({ where: "card", unit }))}>${uiIcon("phone")}<span>${where}</span></button>
+        @click=${() => (open ? this.closeDevices() : this.openDevices({ where: "card", unit }))}>${uiIcon("phone")}<span>Devices</span>${uiIcon("chevron")}</button>
     </div>
     ${open ? this.renderDevicesMenu({ where: "card", unit }) : nothing}`;
   }

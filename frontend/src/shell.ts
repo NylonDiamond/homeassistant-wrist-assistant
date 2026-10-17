@@ -1,6 +1,6 @@
 // The panel's shell: the tabs across the top (Home, Pages, Status pages,
-// Complications; `BAR_TABS`), which address each screen lives at, and the
-// bar that moves between them. A watch's or an iPhone's own screens have no
+// Menus, Complications; `BAR_TABS`), which address each screen lives at, and
+// the bar that moves between them. A watch's or an iPhone's own screens have no
 // tab: Home's doors open them, and they count as Home in the bar.
 //
 // The tab is never stored. It is read from the route Home Assistant hands the
@@ -34,6 +34,10 @@
 //   /all-status-pages   the Status pages tab: every status page, the same
 //                       element. Not `/status-pages`, which is the Watch
 //                       app's status pages editor and marks Home
+//   /all-menus          the Menus tab: every Anywhere menu and Entity
+//                       quick menu on every device
+//                       (`watch-menus/all-menus.ts`). Not `/menus`, the
+//                       Watch app's menu editor, which marks Home
 //
 // Every watch address is the one the iPhone app builds for "Open in Home
 // Assistant", unchanged; this file only reads them. An older iPhone app
@@ -49,6 +53,7 @@ import { WATCH_CAMERAS_PATH, isWatchCamerasRoute } from "./watch-cameras/hook.js
 import { WATCH_COMPLICATIONS_PATH, isWatchComplicationsRoute } from "./watch-complications.js";
 import { WATCH_CONTROL_CENTER_PATH, isWatchControlCenterRoute } from "./watch-control-center/hook.js";
 import { WATCH_HTTP_ACTIONS_PATH, isWatchHttpActionsRoute } from "./watch-http-actions/hook.js";
+import { ALL_MENUS_PATH } from "./watch-menus/all-menus-hook.js";
 import { WATCH_MENUS_PATH, isWatchMenusRoute } from "./watch-menus/hook.js";
 import { ALL_PAGES_PATH, ALL_STATUS_PAGES_PATH } from "./watch-pages/all-pages-hook.js";
 import { type PanelRoute, WATCH_PAGES_PATH, isWatchPagesRoute } from "./watch-pages/hook.js";
@@ -66,14 +71,14 @@ export const IPHONE_PATH = "/iphone";
 /**
  * The tabs across the top, in the bar's order: each one's id, its name, and
  * the address it opens on. A route at that address or under it is that tab
- * (`tabOfRoute`), Home's empty address aside. A new tab is one line here
- * (Menus goes between Status pages and Complications), then its screen in
- * the panel's `renderTab`.
+ * (`tabOfRoute`), Home's empty address aside. A new tab is one line here,
+ * then its screen in the panel's `renderTab`.
  */
 export const BAR_TABS = [
   { id: "home", label: "Home", path: HOME_PATH },
   { id: "pages", label: "Pages", path: ALL_PAGES_PATH },
   { id: "status-pages", label: "Status pages", path: ALL_STATUS_PAGES_PATH },
+  { id: "menus", label: "Menus", path: ALL_MENUS_PATH },
   { id: "complications", label: "Complications", path: COMPLICATIONS_PATH },
 ] as const satisfies readonly { id: string; label: string; path: string }[];
 
@@ -217,8 +222,8 @@ export function tabOfRoute(route: PanelRoute | undefined): PanelTab {
 
 /** The leave question's name for a tab that lists things across devices,
  * kept apart from the device screen of the same name: the Pages tab is
- * "all-pages", never the page editor's "pages", and the Status pages tab
- * "all-status-pages". */
+ * "all-pages", never the page editor's "pages", the Status pages tab
+ * "all-status-pages" and the Menus tab "all-menus". */
 type ListScreenId = `all-${Exclude<BarTab, "home" | "complications">}`;
 
 /** The screen a route shows, as the leave question counts screens: one of
@@ -252,7 +257,8 @@ export const PANEL_TABS: readonly BarTab[] = BAR_TABS.map((t) => t.id);
 
 /** The tab the bar marks for a route: a watch's or an iPhone's screens,
  * reached from Home, mark Home. A device's own Status pages
- * (`/status-pages/<id>`) is one of those, never the Status pages tab. */
+ * (`/status-pages/<id>`) or Menus (`/menus/<id>`) is one of those, never the
+ * Status pages tab or the Menus tab. */
 export function barTabOf(route: PanelRoute | undefined): BarTab {
   const tab = tabOfRoute(route);
   return tab === "watch" || tab === "iphone" ? "home" : tab;
@@ -381,9 +387,9 @@ export interface TabBarInput {
   onHelp?: () => void;
   /** Whether any watch or iPhone screen holds unsaved work: the Home tab,
    * where those screens open from, then carries an orange dot, seen from
-   * every other tab too. The Pages and Status pages tabs carry none of
-   * their own: the edits they guard are in a device's page editor or
-   * status pages editor, which is Home's. */
+   * every other tab too. The Pages, Status pages and Menus tabs carry none
+   * of their own: the edits they guard are in a device's page editor,
+   * status pages editor or menu editor, which is Home's. */
   watchUnsaved?: boolean;
 }
 

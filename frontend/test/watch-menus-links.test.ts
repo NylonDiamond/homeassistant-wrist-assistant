@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { type HassLike, type OwnerSummary, type WatchConfigRecord, type WatchPagesPlaces, linkWatchMenus } from "../src/ha-api.js";
-import { takeWatchMenusRecord } from "../src/watch-menus/draft.js";
+import { askWatchMenu, takeWatchMenuAsk, takeWatchMenusRecord } from "../src/watch-menus/draft.js";
 import { renderMenuDevicesMenu } from "../src/watch-menus/menu-devices.js";
 import "../src/watch-menus/menu-editor.js";
 import {
@@ -36,7 +36,7 @@ import {
   unlinkMenuUnit,
   withoutMenuUnitLink,
 } from "../src/watch-menus/menu-links.js";
-import { type MenusViewHost, renderMenuInspector, renderMenusCard } from "../src/watch-menus/menu-view.js";
+import { type MenusViewHost, renderMenuInspector, renderMenusCard, shownMenu } from "../src/watch-menus/menu-view.js";
 import { type MenusDocument, setWatchMenuStyle } from "../src/watch-menus/model.js";
 import { type LinkDevice, linkDevicesOf } from "../src/watch-pages/links.js";
 
@@ -357,16 +357,58 @@ describe("the editor's Devices", () => {
     expect(entityRow).not.toContain("pe-linked");
   });
 
-  it("draws a Devices line on the menu's own card that opens its menu", () => {
+  it("draws a Devices line at the top of the menu's settings that opens its menu", () => {
     const e = editor(linked({ anywhere: ANY_LINK }), undefined);
     e.el.places = placesFor(e.watchId);
     let text = flat(renderMenuInspector(e.host()));
-    expect(text).toContain(`<div class="field me-dev-field"><span>Devices</span>`);
-    expect(text).toContain("Also on Chen's Watch");
+    expect(text).toContain(`<span class="me-devices-h">Devices</span>`);
+    // A chip per device that shares it, this one first, and no field under
+    // Glow in the Look card any more.
+    const line = text.slice(text.indexOf(`class="me-devices"`), text.indexOf("me-menu-note"));
+    expect(line.indexOf("Jesse's Watch")).toBeGreaterThan(-1);
+    expect(line.indexOf("Jesse's Watch")).toBeLessThan(line.indexOf("Chen's Watch"));
+    expect(line).toContain("Also on Chen's Watch");
+    expect(text).not.toContain("me-dev-field");
+    // Under the menu's name, before what it is and before the Look card.
+    expect(text.indexOf(`class="me-devices"`)).toBeGreaterThan(text.indexOf(">Anywhere menu</span>"));
+    expect(text.indexOf(`class="me-devices"`)).toBeLessThan(text.indexOf("me-menu-note"));
+    expect(text.indexOf(`class="me-devices"`)).toBeLessThan(text.indexOf(">Look<"));
     (e.el.openDevices as (m: unknown) => void).call(e.el, { where: "card", unit: "anywhere" });
     text = flat(renderMenuInspector(e.host()));
     expect(text).toContain("The Anywhere menu is on");
     expect(text).not.toContain("The Entity quick menu is on");
+    // The menu opens under the line, still above the Look card.
+    expect(text.indexOf("The Anywhere menu is on")).toBeLessThan(text.indexOf(">Look<"));
+  });
+
+  it("opens on the menu a Menus tab card asked for, on its own settings", () => {
+    const e = editor(DEFAULTS, { pages: {}, status_pages: {}, menus: {} });
+    e.el.hass = {
+      user: { is_admin: true }, states: {},
+      connection: { sendMessagePromise: async () => ({ revision: 4, document: DEFAULTS }), subscribeMessage: async () => async () => undefined },
+    } as unknown as HassLike;
+    expect(shownMenu(e.host())).toBe("anywhere");
+    askWatchMenu(e.watchId, "entity");
+    (e.el.openWatch as (w: string, q: boolean) => void).call(e.el, e.watchId, true);
+    expect(shownMenu(e.host())).toBe("entity");
+    expect(takeWatchMenuAsk(e.watchId)).toBeUndefined();
+  });
+
+  it("says a menu on this device alone is here only, with Devices beside it", () => {
+    const e = editor(DEFAULTS, { pages: {}, status_pages: {}, menus: {} });
+    const text = flat(renderMenuInspector(e.host()));
+    expect(text).toContain(`<span class="me-devices-only">This watch only</span>`);
+    expect(text).toContain("<span>Devices</span>");
+    expect(text).not.toContain("me-dev-chip");
+  });
+
+  it("puts a linked menu's badge on its row after the count", () => {
+    const e = editor(linked({ anywhere: ANY_LINK }), undefined);
+    e.el.places = placesFor(e.watchId);
+    const card = flat(renderMenusCard(e.host()));
+    const row = card.slice(card.indexOf("data-menu=anywhere"), card.indexOf("data-menu=entity"));
+    expect(row.indexOf("me-menu-count")).toBeLessThan(row.indexOf("pe-linked"));
+    expect(row.indexOf("pe-linked")).toBeLessThan(row.indexOf("<small>"));
   });
 
   /** An editor whose link is refused `unit_taken` until sent with replace,
