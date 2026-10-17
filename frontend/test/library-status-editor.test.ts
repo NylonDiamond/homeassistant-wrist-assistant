@@ -2,13 +2,15 @@
 // Assistant that works the library as the server does
 // (`library-editor-home.ts`): the badges and the shared line, the tick row in
 // the Page card, "Not on this watch" with its Add, the delete question, a
-// status page deleted on its only device leaving the library too, the
-// restore question naming the other devices, and the Status pages tab's New
-// status page as the editor takes it.
+// status page deleted on its only device staying in the library, an untick
+// clearing that device's Status page slots, the restore question naming the
+// other devices, and the Status pages tab's New status page as the editor
+// takes it.
 
 import { describe, expect, it } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
+import { tickItem } from "../src/watch-pages/library-editing-io.js";
 import type { JsonObject } from "../src/watch-pages/model.js";
 import { askNewStatusPage, forgetStatusPagesDraft } from "../src/watch-status-pages/draft.js";
 import { type StatusPagesDocument, statusPagesOf } from "../src/watch-status-pages/model.js";
@@ -135,11 +137,28 @@ describe("the status pages editor's devices, from the library", () => {
     expect((el.note as { text: string }).text).toBe("Deleted from the library and from every device.");
   });
 
-  it("deletes a status page from the library once the save that took it off its only device lands", async () => {
+  it("leaves a status page in the library when the save takes it off its only device", async () => {
     const { call, ha } = await editor();
     call("askDelete", DOORS);
     await call<Promise<void>>("save");
-    expect(ha.of("library/delete").map((m) => [m.kind, m.item_id])).toEqual([["status_pages", DOORS]]);
+    // The save removes the pick, never the item; a library/delete would
+    // also clear every tile that opens it, on every page.
+    expect(ha.of("library/delete")).toEqual([]);
+  });
+
+  it("clears this device's Status page slots once an untick took a status page off it", async () => {
+    const n = made + 1;
+    const watch = `ls-w1-${n}`;
+    const show = (id: string, pageId: string) => ({ id, position: "topLeft", isVisible: true, action: { type: "showStatusPage", pageId } });
+    const { el, ha } = await editor();
+    ha.held.set(`${watch}/menus`, { revision: 2, document: { schemaVersion: 1, quickAction: { slots: [show("S1", DOORS), show("S2", HOUSE)] } } });
+    ha.menus.OWN = { name: "Anywhere menu", kind: "anywhere", owners: [watch] };
+    const store = (el.lib as { store: Parameters<typeof tickItem>[1] }).store;
+    await store.refresh();
+    expect((await tickItem(ha.hass, store, watch, "status_pages", DOORS, false)).ok).toBe(true);
+    const saved = ha.of("watch_config/save").filter((m) => m.owner_watch_id === watch && m.kind === "menus");
+    expect(saved).toHaveLength(1);
+    expect(((saved[0]!.document as JsonObject).quickAction as { slots: JsonObject[] }).slots.map((s) => s.id)).toEqual(["S2"]);
   });
 
   it("names the other devices a restore changes", async () => {

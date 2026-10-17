@@ -12,7 +12,7 @@ import { pageCrop } from "../src/watch-pages/all-pages.js";
 import { forgetWatchPagesDraft, keptWatchPagesSelection, takeNewWatchPageAsk, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { JsonObject } from "../src/watch-pages/model.js";
 import { takeStatusPageAsk } from "../src/watch-status-pages/draft.js";
-import { CAMERA, CHEN, DOORS, JESSE, LIGHTS, LONELY, PAGE1, PHONE, SMART, STARTER, SYSTEM } from "./library-fixture.js";
+import { CAMERA, CHEN, CHEN_MENU, DOORS, JESSE, LIGHTS, LONELY, PAGE1, PHONE, SMART, STARTER, SYSTEM } from "./library-fixture.js";
 import { type Msg, fakeHome, settle, standUp } from "./library-tab-fake.js";
 
 function tab(kind: "pages" | "status_pages" = "pages", admin = true) {
@@ -88,6 +88,27 @@ describe("the Pages tab", () => {
     await t.call("tick", entry, CHEN, false);
     expect(t.sentOf("library/pick").at(-1)).toMatchObject({ owner_id: CHEN, on: false, item_id: LIGHTS });
     expect(t.home.lib.pages[LIGHTS]!.owners).toEqual([JESSE]);
+  });
+
+  it("clears the menu slots and complication taps that opened a page on the device an untick took it off", async () => {
+    const t = tab();
+    showTab(t, "all");
+    await t.ready();
+    // Chen's menu is Chen Watch's alone, with a Go to page slot to Lights,
+    // and a complication there opens Lights.
+    const go = (id: string, pageId: string) => ({ id, position: "topLeft", isVisible: true, action: { type: "navigateToPage", pageId } });
+    t.home.lib.menus[CHEN_MENU]!.sections = { quickAction: { slots: [go("S1", LIGHTS), go("S2", CAMERA)] } };
+    t.home.materialise(CHEN);
+    t.home.complications.set(CHEN, [{ id: "c1", revision: 1, document: { id: "c1", name: "Lights tap", openPageId: LIGHTS, tapAction: { type: "openPage" } } }]);
+    const entry = (t.el.lib as { library: { pages: { id: string }[] } }).library.pages.find((e) => e.id === LIGHTS)!;
+    await t.call("tick", entry, CHEN, false);
+    const saved = t.sentOf("watch_config/save").filter((m) => m.owner_watch_id === CHEN && m.kind === "menus");
+    expect(saved).toHaveLength(1);
+    expect(((saved[0]!.document as { quickAction: { slots: { id: string }[] } }).quickAction.slots).map((s) => s.id)).toEqual(["S2"]);
+    expect(t.sentOf("complications/save").map((m) => m.owner_watch_id)).toEqual([CHEN]);
+    // Ticking on writes nothing beside the pick.
+    await t.call("tick", entry, CHEN, true);
+    expect(t.sentOf("watch_config/save")).toHaveLength(1);
   });
 
   it("says a page ticked onto a device on the free plan shows only if it is first", async () => {

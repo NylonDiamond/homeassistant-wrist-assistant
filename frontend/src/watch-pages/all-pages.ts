@@ -99,6 +99,7 @@ import { pagesBulkIO, picksIO } from "./all-pages-io.js";
 import { NO_ICONS as NO_PICTURE_ICONS } from "./editor-host.js";
 import { askNewWatchPage, keepWatchPagesSelection, keptWatchPagesDraft } from "./kept.js";
 import { DEVICES_WAIT_TEXT, type LinkDevice, type PagesRecordFacts, awaitingMove, freePlanText, linkDevicesOf } from "./links.js";
+import { tickItem } from "./library-editing-io.js";
 import { libraryListStyles } from "./library-list-styles.js";
 import { listTabStyles } from "./list-tab-styles.js";
 import { type WatchPage, isSmartWatchPage, watchPagesOf } from "./model.js";
@@ -377,8 +378,9 @@ export class WaAllPages extends LitElement {
     this.onOpen?.(on.ownerId, on.kind);
   }
 
-  /** A tick: put the item on the device, or take it off. A page put on a
-   * device on the free plan says that it shows only its first page. */
+  /** A tick: put the item on the device, or take it off, with that device's
+   * menu slots and complication taps that opened it (`tickItem`). A page put
+   * on a device on the free plan says that it shows only its first page. */
   private async tick(entry: LibraryItem, ownerId: string, on: boolean): Promise<void> {
     const store = this.lib.store;
     if (store === undefined) return;
@@ -389,7 +391,7 @@ export class WaAllPages extends LitElement {
       this.tickNotes = notes;
     }
     if (this.openNote === key) this.openNote = undefined;
-    const result = await store.pick(ownerId, entry.kind, entry.id, on);
+    const result = await tickItem(this.hassNow, store, ownerId, entry.kind, entry.id, on);
     if (!result.ok || !on || entry.kind !== "pages") return;
     const free = await this.readFree(ownerId);
     const library = this.lib.library;

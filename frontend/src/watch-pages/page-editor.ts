@@ -70,8 +70,10 @@ import {
   subscribeWatchConfig,
 } from "../ha-api.js";
 import {
+  type KeepSlot,
   complicationsOpeningPage,
   deletedPageIds,
+  keepSlotsOf,
   menuSlotsOpeningPage,
 } from "./page-refs.js";
 import { clearPageRefs as clearPageRefsOn } from "./page-links-io.js";
@@ -89,7 +91,7 @@ import {
   restoreOthersText,
   unsavedTicksText,
 } from "./library-editing.js";
-import { clearComplicationTaps, deleteOrphans, orphanedBy } from "./library-editing-io.js";
+import { clearComplicationTaps, tickItem } from "./library-editing-io.js";
 import { libraryRestStyles, renderLibraryRest } from "./library-rest.js";
 import { allPagesHref, goToAllPages, isPlainClick } from "../shell.js";
 import {
@@ -682,7 +684,7 @@ export const PHONE_FRAME_TEXT = `The iPhone's Pages tab. ${PHONE_SIZE_TEXT}`;
 
 
 /** What an iPhone with no pages says under its title (`phone-pages.ts`). */
-export const PHONE_PAGES_EMPTY_TEXT = "Add a page and build it here, or add one your watches have from the list below. A page is one page on every device that has it: an edit on one shows on all of them.";
+export const PHONE_PAGES_EMPTY_TEXT = "Add a page and build it here, or add one your watches have from the list below. A page is one page on every device that has it: an edit on one shows on all of them. Adding pages brings no menus: pick the menus this iPhone uses on the Menus tab.";
 
 /** The plan line under the Pages card, naming the device on screen. A free
  * watch shows only the first
@@ -2082,13 +2084,13 @@ export class WaPageEditor extends LitElement {
     this.note = undefined;
     // The pages this save takes off this device: once it lands, the menu
     // slots and complication taps here that open them are cleared
-    // (`clearPageRefs`), but for a shared menu's slots to a page still on
-    // another device. One no other device has is deleted from the library
-    // then, so it is gone rather than left there with no device ticked.
+    // (`clearPageRefs`), but for a shared menu's slots to a page another
+    // device using that menu still has. One no other device has stays in
+    // the library, unticked, as the plan's map back says: the save removes
+    // the pick, never the item, and nothing here overrides the tiles the
+    // delete question kept.
     const deleted = deletedPageIds(watchPagesOf(draft.base), watchPagesOf(draft.document));
-    const lib = this.lib.library;
-    const elsewhere = lib === undefined ? [] : deleted.filter((id) => devicesFor(lib, "pages", id).some((o) => !sameId(o, watchId)));
-    const orphans = orphanedBy(this.lib.store, "pages", watchId, deleted);
+    const keep = keepSlotsOf(this.lib.library, watchId, "pages");
     // The ready page's first save, over revision 0: it creates the record.
     const first = draft.revision <= 0;
     const running = saveWatchPagesDraft(draft, {
@@ -2124,9 +2126,8 @@ export class WaPageEditor extends LitElement {
     // Which photos a page uses has moved: the delete buttons follow.
     if (result.ok && this.photos.listState !== "idle") void this.photos.refreshList();
     if (result.ok && deleted.length > 0) {
-      const cleared = await this.clearPageRefs(hass, watchId, deleted, elsewhere);
+      const cleared = await this.clearPageRefs(hass, watchId, deleted, keep);
       if (cleared !== undefined && watchId === this.watchId && this.note === undefined) this.note = cleared;
-      await deleteOrphans(this.lib.store, "pages", orphans);
     }
     return result;
   }
@@ -2134,11 +2135,11 @@ export class WaPageEditor extends LitElement {
   /**
    * After a save that deleted pages: clear the menu slots and complication
    * taps that opened them (`clearPageRefs`), with a note on what was
-   * cleared or could not be. A shared menu keeps its slots to `kept`, the
-   * pages other devices still have.
+   * cleared or could not be. A shared menu keeps the slots `keep` names,
+   * to pages other devices using it still have.
    */
-  private clearPageRefs(hass: HassLike, watchId: string, pageIds: string[], kept: readonly string[] = []): Promise<Note | undefined> {
-    return clearPageRefsOn(hass, watchId, pageIds, kept);
+  private clearPageRefs(hass: HassLike, watchId: string, pageIds: string[], keep?: KeepSlot): Promise<Note | undefined> {
+    return clearPageRefsOn(hass, watchId, pageIds, keep);
   }
 
   // ── pages ──────────────────────────────────────────────────────────────
@@ -3293,7 +3294,7 @@ export class WaPageEditor extends LitElement {
         ...(note === undefined ? {} : { note }),
         ...(admin === undefined ? {} : { admin }),
         locked: (ownerId) => this.pageTickLocked(entry.id, ownerId),
-      }, (ownerId, on) => { void store.pick(ownerId, "pages", entry.id, on); });
+      }, (ownerId, on) => { void tickItem(this.hass, store, ownerId, "pages", entry.id, on); });
     }
     return html`<div class="pe-lib" role="group" aria-label="Devices">
       <span class="pe-lib-h">Devices</span>${body}

@@ -2,14 +2,16 @@
 // works the library as the server does (`library-editor-home.ts`): the tick
 // row in a page's settings, the badge on a row, "Not on this watch" with its
 // Add, the delete question ("Remove from this watch only" or "Delete from the
-// library"), a page deleted on its only device leaving the library too, the
-// restore question naming the other devices, and every save keeping the
-// records' `linkId` as loaded.
+// library"), a page deleted on its only device staying in the library, an
+// untick clearing that device's menu slots and taps, the restore question
+// naming the other devices, and every save keeping the records' `linkId` as
+// loaded.
 
 import { describe, expect, it } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
 import { forgetWatchPagesDraft, keptWatchPagesDraft } from "../src/watch-pages/kept.js";
+import { tickItem } from "../src/watch-pages/library-editing-io.js";
 import type { JsonObject, WatchPagesDocument } from "../src/watch-pages/model.js";
 import "../src/watch-pages/page-editor.js";
 import { connectLibrary, flat, libraryHome, settle } from "./library-editor-home.js";
@@ -200,13 +202,56 @@ describe("deleting a page under the library", () => {
     expect(el.watchId).toBe(watch);
   });
 
-  it("deletes a page from the library once the save that took it off its only device lands", async () => {
-    const { ha, call } = await editor();
+  it("leaves a page in the library when the save takes it off its only device, and keeps the tiles the question kept", async () => {
+    const { el, ha, call, watch } = await editor();
+    // Hall has a tile that opens Yard; Yard goes, but its tiles are kept.
+    call("askDelete", YARD);
+    await settle();
+    el.deleteAsk = { ...(el.deleteAsk as object), removeLinks: false };
+    call("deletePage");
+    await call<Promise<unknown>>("save", true);
+    // The save removes the pick, never the item: no library/delete, which
+    // would clear every tile that opened it on every page.
+    expect(ha.of("library/delete")).toEqual([]);
+    const saved = ha.of("watch_config/save").find((m) => m.owner_watch_id === watch)!.document as WatchPagesDocument;
+    const hall = (saved.pages as JsonObject[]).find((p) => p.id === HALL)!;
+    expect((hall.items as JsonObject[]).map((t) => t.entityId)).toContain(`page.${YARD}`);
+    // Mine, on this watch alone, the same.
     call("askDelete", MINE);
     await settle();
     call("deletePage");
     await call<Promise<unknown>>("save", true);
-    expect(ha.of("library/delete").map((m) => [m.kind, m.item_id])).toEqual([["pages", MINE]]);
+    expect(ha.of("library/delete")).toEqual([]);
+  });
+
+  it("clears this device's menu slots to a page an untick took off it, and keeps a shared menu's slot another device needs", async () => {
+    const n = made + 1;
+    const watch = `lp-w1-${n}`;
+    const phone = `lp-p1-${n}`;
+    const go = (id: string, pageId: string) => ({ id, position: "topLeft", isVisible: true, action: { type: "navigateToPage", pageId } });
+    const tap = { name: "Mine tap", openPageId: MINE, tapAction: { type: "openPage" } };
+    const { el, ha } = await editor({ complications: { [watch]: [tap] } });
+    // The watch's own Anywhere menu opens Mine and Hall.
+    ha.held.set(`${watch}/menus`, { revision: 2, document: { schemaVersion: 1, quickAction: { slots: [go("S1", MINE), go("S2", HALL)] } } });
+    ha.menus.OWN = { name: "Anywhere menu", kind: "anywhere", owners: [watch] };
+    const store = (el.lib as { store: Parameters<typeof tickItem>[1] }).store;
+    await store.refresh();
+    const result = await tickItem(ha.hass, store, watch, "pages", MINE, false);
+    expect(result.ok).toBe(true);
+    const menusSaved = ha.of("watch_config/save").filter((m) => m.owner_watch_id === watch && m.kind === "menus");
+    expect(menusSaved).toHaveLength(1);
+    const slots = ((menusSaved[0]!.document as JsonObject).quickAction as { slots: JsonObject[] }).slots;
+    expect(slots.map((s) => s.id)).toEqual(["S2"]);
+    expect(ha.of("/save").filter((m) => !(m.type as string).endsWith("watch_config/save")).map((m) => m.owner_watch_id)).toEqual([watch]);
+    // A menu the iPhone uses too keeps its slot to Hall, which the iPhone has.
+    ha.held.set(`${watch}/menus`, { revision: 5, document: { schemaVersion: 1, quickAction: { slots: [go("S2", HALL)] } } });
+    ha.menus.OWN!.owners.push(phone);
+    await store.refresh();
+    await tickItem(ha.hass, store, watch, "pages", HALL, false);
+    expect(ha.of("watch_config/save").filter((m) => m.owner_watch_id === watch && m.kind === "menus")).toHaveLength(1);
+    // Ticking on clears nothing.
+    expect((await tickItem(ha.hass, store, watch, "pages", DEN, true)).ok).toBe(true);
+    expect(ha.of("watch_config/save").filter((m) => m.owner_watch_id === watch && m.kind === "menus")).toHaveLength(1);
   });
 
   it("deletes from the library at once, clears the complication taps on every device that had it, and shows it gone", async () => {

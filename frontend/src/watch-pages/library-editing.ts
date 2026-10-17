@@ -1,8 +1,9 @@
 // The editors' side of the library: what the page, status page and menu
 // editors say about the devices an item is on, worked out from the library
 // summary (`library/model.ts`) and nothing else. The records' `linkId` and
-// `linkIds` keys are never read here; every save still carries them as
-// loaded.
+// `linkIds` keys are never written here, and every save still carries them
+// as loaded. The one read is the menus restore question's (`restoreMark`):
+// Home Assistant still decides a menus restore by `linkIds` until step 4.
 //
 // The words: the tick row's locks, the badge on a row, the delete question
 // ("Delete from the library (it is on 3 devices)" or "Remove from this watch
@@ -18,6 +19,7 @@ import {
   MENU_UNIT_TITLES,
   devicesFor,
   libraryItem,
+  libraryMenu,
   menuFor,
   restFor,
   sameId,
@@ -208,23 +210,77 @@ export function menuLabel(menu: LibraryMenu): string {
 }
 
 /**
- * The lines a menus restore question adds: a restore is a save of this
- * device's menus, so a menu it changes reaches every device that uses that
- * menu too. One line per such menu: "It also changes the Anywhere menu
- * "Home menu" on iPhone 15 Pro, which uses it too." Empty when it changes
- * only this device.
+ * The menu a menus document's old link mark names for a unit
+ * (`linkIds[unit]`), or undefined for none. Read for the restore question
+ * only, and only because Home Assistant still decides a menus restore by
+ * these marks until the marks go (plan step 4): a restored save whose mark
+ * names another menu moves this device back onto it, and one that lacks a
+ * mark the record holds gives this device its own copy. Never written: every
+ * save sends the marks as loaded.
  */
-export function menuRestoreLines(lib: Library | undefined, here: string, now: unknown, restored: unknown, devices: readonly LinkDevice[]): string[] {
+function restoreMark(document: unknown, unit: MenuUnit): string | undefined {
+  const doc = document !== null && typeof document === "object" ? (document as Record<string, unknown>) : {};
+  const marks = doc.linkIds;
+  if (marks === null || typeof marks !== "object") return undefined;
+  const mark = (marks as Record<string, unknown>)[unit];
+  return typeof mark === "string" && mark !== "" ? mark : undefined;
+}
+
+function alsoChanges(menu: LibraryMenu, others: readonly string[], devices: readonly LinkDevice[]): string {
+  return `It also changes ${menuLabel(menu)} on ${joinWords(ownerWords(others, devices))}, which ${others.length === 1 ? "uses" : "use"} it too.`;
+}
+
+/**
+ * The lines a menus restore question adds, one per unit the restore does
+ * more than change here. A restore is a save of this device's menus, so it
+ * goes the way Home Assistant takes such a save:
+ *
+ * - The restored save names another menu of the unit (it was saved while
+ *   this device used that one): this device moves back onto it, and the
+ *   restored slots change it on the devices that use it. "This watch goes
+ *   back to using the Anywhere menu "Chen's menu"."
+ * - The record holds a mark for a menu other devices use and the restored
+ *   save has none (saved before the menu was shared): this device gets its
+ *   own copy, and the others keep the menu as it is. "This watch gets its
+ *   own copy of the Anywhere menu "Home menu". iPhone 15 Pro keeps it as it
+ *   is."
+ * - Otherwise a unit whose slots differ changes the menu this device uses,
+ *   on every device that uses it: "It also changes the Anywhere menu "Home
+ *   menu" on iPhone 15 Pro, which uses it too."
+ *
+ * Empty when it changes only this device.
+ */
+export function menuRestoreLines(
+  lib: Library | undefined,
+  here: string,
+  now: unknown,
+  restored: unknown,
+  devices: readonly LinkDevice[],
+  device: LinkDevice["kind"] = "watch",
+): string[] {
   if (lib === undefined) return [];
+  const word = deviceWord(device);
   const lines: string[] = [];
   for (const unit of ["anywhere", "entity"] as const) {
-    if (canonical(unitPart(now, unit)) === canonical(unitPart(restored, unit))) continue;
     const menu = menuFor(lib, here, unit);
+    const differs = canonical(unitPart(now, unit)) !== canonical(unitPart(restored, unit));
+    const sent = restoreMark(restored, unit);
+    const target = sent === undefined ? undefined : libraryMenu(lib, sent);
+    if (target !== undefined && target.unit === unit && !sameId(target.id, menu?.id)) {
+      lines.push(`This ${word} goes back to using ${menuLabel(target)}.`);
+      const others = target.owners.filter((o) => !sameId(o, here));
+      if (others.length > 0 && canonical(unitPart(restored, unit)) !== canonical(target.sections)) lines.push(alsoChanges(target, others, devices));
+      continue;
+    }
     if (menu === undefined) continue;
     const others = menu.owners.filter((o) => !sameId(o, here));
     if (others.length === 0) continue;
-    const names = ownerWords(others, devices);
-    lines.push(`It also changes ${menuLabel(menu)} on ${joinWords(names)}, which ${others.length === 1 ? "uses" : "use"} it too.`);
+    if (sent === undefined && restoreMark(now, unit) !== undefined) {
+      const names = ownerWords(others, devices);
+      lines.push(`This ${word} gets its own copy of ${menuLabel(menu)}. ${joinWords(names)} ${others.length === 1 ? "keeps" : "keep"} it as it is.`);
+      continue;
+    }
+    if (differs) lines.push(alsoChanges(menu, others, devices));
   }
   return lines;
 }

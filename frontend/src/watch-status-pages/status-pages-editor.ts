@@ -77,7 +77,7 @@ import {
   statusSharedText,
   unsavedTicksText,
 } from "../watch-pages/library-editing.js";
-import { deleteOrphans, orphanedBy } from "../watch-pages/library-editing-io.js";
+import { tickItem } from "../watch-pages/library-editing-io.js";
 import { libraryRestStyles, renderLibraryRest } from "../watch-pages/library-rest.js";
 import { isPhoneId } from "../phone-pages.js";
 import { deviceColor, deviceColors } from "../device-colors.js";
@@ -100,7 +100,7 @@ import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/edito
 import { type LinkDevice, deviceWord, linkDevicesOf } from "../watch-pages/links.js";
 import { statusPageTitle } from "./links.js";
 import { clearStatusPageRefs } from "./links-io.js";
-import { deletedPageIds } from "../watch-pages/page-refs.js";
+import { deletedPageIds, keepSlotsOf } from "../watch-pages/page-refs.js";
 import { type JsonObject, isJsonObject } from "../watch-pages/model.js";
 import { type WatchPagesNote, linkFailuresOf, watchCommandError, withLinkFailures } from "../watch-pages/save-note.js";
 import { friendlyError } from "../friendly-error.js";
@@ -874,7 +874,7 @@ export class WaStatusPagesEditor extends LitElement {
         ...(note === undefined ? {} : { note }),
         ...(admin === undefined ? {} : { admin }),
         locked: (ownerId) => this.statusTickLocked(entry.id, ownerId),
-      }, (ownerId, on) => { void store.pick(ownerId, "status_pages", entry.id, on); });
+      }, (ownerId, on) => { void tickItem(this.hass, store, ownerId, "status_pages", entry.id, on); });
     }
     return html`<div class="sp-lib" role="group" aria-label="Devices"><span class="sp-lib-h">Devices</span>${body}</div>`;
   }
@@ -1031,13 +1031,11 @@ export class WaStatusPagesEditor extends LitElement {
     const first = draft.revision <= 0;
     // The status pages this save takes off this device: once it lands, the
     // menu slots here that show them are cleared (`clearStatusPageRefs`),
-    // but for a shared menu's slots to one still on another device. One no
-    // other device has is deleted from the library then, so it is gone
-    // rather than left there with no device ticked.
+    // but for a shared menu's slots to one another device using that menu
+    // still has. One no other device has stays in the library, unticked, as
+    // the plan's map back says, and the tiles that open it stay with it.
     const deleted = deletedPageIds(statusPagesOf(draft.base), statusPagesOf(draft.document));
-    const lib = this.lib.library;
-    const elsewhere = lib === undefined ? [] : deleted.filter((id) => devicesFor(lib, "status_pages", id).some((o) => !sameId(o, watchId)));
-    const orphans = orphanedBy(this.lib.store, "status_pages", watchId, deleted);
+    const keep = keepSlotsOf(this.lib.library, watchId, "status_pages");
     const running = saveStatusPagesDraft(draft, {
       save: (base, document) => saveWatchConfig(hass, watchId, "status_pages", base, document).catch((err: unknown) => {
         throw flatError(err);
@@ -1061,9 +1059,8 @@ export class WaStatusPagesEditor extends LitElement {
     this.saveEnded(watchId);
     if (watchId === this.watchId) this.note = firstSaveNote(first, result.code, statusPagesSaveNote(result));
     if (result.ok && deleted.length > 0) {
-      const cleared = await clearStatusPageRefs(hass, watchId, deleted, elsewhere);
+      const cleared = await clearStatusPageRefs(hass, watchId, deleted, keep);
       if (cleared !== undefined && watchId === this.watchId && this.note === undefined) this.note = cleared;
-      await deleteOrphans(this.lib.store, "status_pages", orphans);
     }
   }
 

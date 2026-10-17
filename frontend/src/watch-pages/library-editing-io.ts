@@ -1,14 +1,17 @@
-// The writes the editors make on the library beside their own saves:
-// "Delete from the library", which Home Assistant does in one command and
-// which leaves the complications' taps to the panel, and the delete of an
-// item no device has any more once this device's save took it off.
+// The writes the editors and the tabs make on the library beside their own
+// saves: "Delete from the library", which Home Assistant does in one command
+// and which leaves the complications' taps to the panel, and a tick, whose
+// untick leaves that device's menu slots and taps to the panel too. An item
+// nobody picks any more stays in the library (plan: map back), where the
+// tab's Delete removes it.
 
 import { type HassLike, fetchList, saveRecord } from "../ha-api.js";
-import type { LibraryListKind } from "../library/client.js";
-import { devicesFor } from "../library/model.js";
-import type { LibraryStore } from "../library/store.js";
+import type { LibraryListKind, LibraryPickReply } from "../library/client.js";
+import type { LibraryStore, LibraryWrite } from "../library/store.js";
+import { clearStatusPageRefs } from "../watch-status-pages/links-io.js";
 import { isJsonObject } from "./model.js";
-import { clearPageFromComplication } from "./page-refs.js";
+import { clearPageRefs } from "./page-links-io.js";
+import { clearPageFromComplication, keepSlotsOf } from "./page-refs.js";
 import type { WatchPagesNote } from "./save-note.js";
 
 function plural(n: number, one: string, many: string): string {
@@ -48,25 +51,30 @@ export async function clearComplicationTaps(hass: HassLike, owners: readonly str
   return { kind: "ok", text: `Cleared the deleted page from the tap of ${plural(taps, "complication", "complications")}.` };
 }
 
-/** The ids among `deleted` that the library holds and that no device but
- * `here` has: once this device's save took them off, nothing has them. */
-export function orphanedBy(store: LibraryStore | undefined, kind: LibraryListKind, here: string, deleted: readonly string[]): string[] {
-  const lib = store?.library;
-  if (lib === undefined) return [];
-  return deleted.filter((id) => {
-    const owners = devicesFor(lib, kind, id);
-    return owners.length > 0 && owners.every((o) => o.toUpperCase() === here.toUpperCase());
-  });
-}
-
 /**
- * After a save that took pages off this device: delete from the library the
- * ones no other device has, so a page deleted on its only device is gone
- * rather than left in the library with no device ticked. `orphans` is
- * `orphanedBy` as worked out before the save. A refusal is let go: the item
- * stays in the library, where the tab can delete it.
+ * A tick on a page's or status page's device row: put it on the device
+ * (`library/pick` on), or take it off. Taking it off is the pick alone on
+ * the server, which leaves the device's menu slots and complication taps
+ * that opened it; so once the untick lands, those are cleared there, as
+ * after a delete on that device (`clearPageRefs`, `clearStatusPageRefs`). A
+ * shared menu keeps a slot another device using it still needs
+ * (`keepSlotsOf`). The pick's own answer comes back; a slot or tap that
+ * could not be cleared only fails on the device, so it is let go.
  */
-export async function deleteOrphans(store: LibraryStore | undefined, kind: LibraryListKind, orphans: readonly string[]): Promise<void> {
-  if (store === undefined) return;
-  for (const id of orphans) await store.deleteItem(kind, id);
+export async function tickItem(
+  hass: HassLike | undefined,
+  store: LibraryStore,
+  ownerId: string,
+  kind: LibraryListKind,
+  itemId: string,
+  on: boolean,
+): Promise<LibraryWrite<LibraryPickReply>> {
+  const result = await store.pick(ownerId, kind, itemId, on);
+  if (on || !result.ok || hass === undefined) return result;
+  // The store read the library again before the pick settled: this device
+  // is off the item now, and the other devices are as they are.
+  const keep = keepSlotsOf(store.library, ownerId, kind);
+  if (kind === "pages") await clearPageRefs(hass, ownerId, [itemId], keep);
+  else await clearStatusPageRefs(hass, ownerId, [itemId], keep);
+  return result;
 }

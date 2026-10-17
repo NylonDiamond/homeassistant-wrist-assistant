@@ -1572,8 +1572,9 @@ export class WaMenuEditor extends LitElement {
       (reply) => {
         if (this.restoreAsk !== ask) return;
         // A restore is a save of this device's menus: a menu it changes
-        // changes on every device that uses that menu too.
-        const links = menuRestoreLines(this.lib.library, watchId, record.document, reply.document, this.linkDevices);
+        // changes on every device that uses that menu too, and an old save
+        // can move this device onto another menu or a copy of its own.
+        const links = menuRestoreLines(this.lib.library, watchId, record.document, reply.document, this.linkDevices, this.linkKind);
         this.restoreAsk = { ...ask, summary: watchMenusSummary(reply.document), links };
       },
       () => undefined,

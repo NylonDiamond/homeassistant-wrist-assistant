@@ -22,7 +22,7 @@ import {
   statusSharedText,
   unsavedTicksText,
 } from "../src/watch-pages/library-editing.js";
-import { CAMERA, CHEN, DEVICES, DOORS, HOME_MENU, JESSE, LIGHTS, LONELY, PAGE1, PHONE, SMART, STARTER, summary } from "./library-fixture.js";
+import { CAMERA, CHEN, CHEN_MENU, DEVICES, DOORS, HOME_MENU, JESSE, LIGHTS, LONELY, PAGE1, PHONE, QUICK, SMART, STARTER, summary } from "./library-fixture.js";
 
 const lib = libraryOf(summary());
 
@@ -102,6 +102,40 @@ describe("the restore question", () => {
     expect(menuRestoreLines(lib, JESSE, now, { ...now, linkIds: { anywhere: HOME_MENU } }, DEVICES)).toEqual([]);
     // A menu only this device uses.
     expect(menuRestoreLines(lib, CHEN, now, restored, DEVICES)).toEqual([]);
+  });
+
+  it("says a restore of a save from before the menu was shared gives this device its own copy", () => {
+    // Jesse's watch shares Home menu with the iPhone, and its record holds
+    // the server's mark; the restored save has none.
+    const now = { schemaVersion: 1, quickAction: { slots: [] }, pageSwitcher: {}, entityRadial: {}, linkIds: { anywhere: HOME_MENU, entity: QUICK } };
+    const restored = { schemaVersion: 1, quickAction: { slots: [], beamIntensity: 0.2 }, pageSwitcher: {}, entityRadial: {}, linkIds: { entity: QUICK } };
+    expect(menuRestoreLines(lib, JESSE, now, restored, DEVICES, "watch")).toEqual([
+      `This watch gets its own copy of the Anywhere menu "Home menu". iPhone 15 Pro keeps it as it is.`,
+    ]);
+    // Even with the same slots: the copy is made all the same.
+    expect(menuRestoreLines(lib, PHONE, { ...now }, { ...now, linkIds: {} }, DEVICES, "iphone")).toEqual([
+      `This iPhone gets its own copy of the Anywhere menu "Home menu". Jesse Apple Watch keeps it as it is.`,
+      "This iPhone gets its own copy of the Entity quick menu. Chen Watch and Jesse Apple Watch keep it as it is.",
+    ]);
+    // A menu this device alone uses: nothing to copy.
+    expect(menuRestoreLines(lib, CHEN, { ...now, linkIds: { anywhere: CHEN_MENU } }, { ...now, linkIds: {} }, DEVICES)).toEqual([]);
+  });
+
+  it("says a restore of a save made on another menu moves this device back onto it", () => {
+    const now = { schemaVersion: 1, quickAction: { slots: [] }, pageSwitcher: {}, entityRadial: {} };
+    // Saved while Jesse's watch used Chen's menu, whose slots differ: Chen
+    // Watch sees the change too.
+    const restored = { ...now, quickAction: { slots: [], beamIntensity: 0.4 }, linkIds: { anywhere: CHEN_MENU } };
+    expect(menuRestoreLines(lib, JESSE, now, restored, DEVICES)).toEqual([
+      `This watch goes back to using the Anywhere menu "Chen's menu".`,
+      `It also changes the Anywhere menu "Chen's menu" on Chen Watch, which uses it too.`,
+    ]);
+    // The same slots as Chen's menu holds: only the move.
+    const same = { schemaVersion: 1, quickAction: { slots: [] }, entityRadial: {}, linkIds: { anywhere: CHEN_MENU } };
+    expect(menuRestoreLines(lib, JESSE, now, same, DEVICES)).toEqual([`This watch goes back to using the Anywhere menu "Chen's menu".`]);
+    // A mark naming a menu of the other kind, or one the library does not
+    // hold, changes nothing but the slots.
+    expect(menuRestoreLines(lib, CHEN, now, { ...now, linkIds: { anywhere: QUICK, entity: "gone" } }, DEVICES)).toEqual([]);
   });
 
   it("calls a menu by its own name only when it has one", () => {
