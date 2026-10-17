@@ -14,9 +14,15 @@
 // conflict, `removePagesFrom`), then one clearing of the menu slots and
 // complication taps there that opened them (`clearPageRefs`). The element
 // is `all-pages.ts`; this is the part a test reaches without it.
+//
+// Info pages (status pages) go the same way: each call and each device's
+// work names its kind, the link with `kind` `status_pages` and the removal
+// out of the status pages record. The tab picks cards of one kind at a
+// time, and the result line names that kind.
 
 import type { WatchPagesLinkReply } from "../ha-api.js";
-import { type PageCard, copyOn, linkSource } from "./all-pages-model.js";
+import { type StatusPagesDocument, statusPageId, statusPagesOf } from "../watch-status-pages/model.js";
+import { type CardKind, type PageCard, aCard, cardNoun, copyOn, linkSource } from "./all-pages-model.js";
 import { type LinkDevice, type PagesRemoveResult, freePlanText, joinWords, linkErrorText } from "./links.js";
 import { type WatchPagesDocument, watchPageId, watchPagesOf } from "./model.js";
 import { type WatchPagesNote, watchCommandError } from "./save-note.js";
@@ -93,13 +99,21 @@ export function remapSelection(picked: readonly PageCard[], cards: readonly Page
 
 // ── plans ────────────────────────────────────────────────────────────────
 
-/** Whether a device's page editor holds unsaved edits in this browser tab. */
-export type DirtyCheck = (ownerId: string) => boolean;
+/** Whether a device's page editor (or for info pages its status pages
+ * editor) holds unsaved edits in this browser tab. */
+export type DirtyCheck = (ownerId: string, kind: CardKind) => boolean;
+
+/** The kind of the picked cards: the tab picks one kind at a time. */
+function kindOf(cards: readonly PageCard[]): CardKind {
+  return cards[0]?.kind ?? "pages";
+}
 
 /** One link call: pages of `source` put on `target`, linked. */
 export interface LinkCall {
   source: string;
   target: string;
+  /** Pages, or info pages (`kind` `status_pages` on the link). */
+  kind: CardKind;
   pageIds: string[];
   /** The pages' names, in `pageIds` order, for the result line. */
   names: string[];
@@ -112,6 +126,8 @@ export interface DeviceNames {
 }
 
 export interface AddPlan {
+  /** The picked cards' kind, for the result line. */
+  kind: CardKind;
   calls: LinkCall[];
   /** How many picked pages a ticked device holds already. */
   already: number;
@@ -135,22 +151,37 @@ function pushName(list: DeviceNames[], ownerId: string, name: string): void {
  * and the calls are grouped per source and target. Left out: a device that
  * has the page already, one whose page editor holds unsaved edits, and one
  * that holds another page under the same id (Home Assistant would refuse
- * the whole call, `id_taken`).
+ * the whole call, `id_taken`). For info pages the ids a target holds are its
+ * status pages in `statusDocs`.
  */
 export function addPlan(
   cards: readonly PageCard[],
   targets: readonly string[],
   docs: ReadonlyMap<string, WatchPagesDocument>,
   dirty: DirtyCheck,
+  statusDocs: ReadonlyMap<string, StatusPagesDocument> = new Map(),
 ): AddPlan {
-  const plan: AddPlan = { calls: [], already: 0, taken: [], dirty: [], blocked: [] };
+  const kind = kindOf(cards);
+  const plan: AddPlan = { kind, calls: [], already: 0, taken: [], dirty: [], blocked: [] };
   const open = targets.filter((t) => {
-    if (!dirty(t)) return true;
+    if (!dirty(t, kind)) return true;
     plan.dirty.push(t);
     return false;
   });
-  // The ids each target holds, and those the calls so far put there.
-  const claimed = new Map(open.map((t) => [t, new Set((docs.get(t) === undefined ? [] : watchPagesOf(docs.get(t)!)).map((p) => upper(watchPageId(p))))]));
+  // The ids each target holds of each kind, and those the calls so far put
+  // there.
+  const claimed = new Map<string, Set<string>>();
+  const idsOn = (target: string, of: CardKind): Set<string> => {
+    const at = `${of}|${target}`;
+    let ids = claimed.get(at);
+    if (ids === undefined) {
+      const held = of === "status_pages" ? statusPagesOf(statusDocs.get(target)).map(statusPageId)
+        : (docs.get(target) === undefined ? [] : watchPagesOf(docs.get(target)!)).map(watchPageId);
+      ids = new Set(held.map(upper));
+      claimed.set(at, ids);
+    }
+    return ids;
+  };
   for (const card of cards) {
     const wanted = open.filter((t) => copyOn(card, t) === undefined);
     plan.already += open.length - wanted.length;
@@ -162,35 +193,39 @@ export function addPlan(
     }
     const pageId = watchPageId(copyOn(card, source)!.page);
     for (const target of wanted) {
-      const ids = claimed.get(target)!;
+      const ids = idsOn(target, card.kind);
       if (ids.has(upper(pageId))) {
         pushName(plan.taken, target, card.name);
         continue;
       }
       ids.add(upper(pageId));
-      const call = plan.calls.find((c) => c.source === source && c.target === target);
+      const call = plan.calls.find((c) => c.source === source && c.target === target && c.kind === card.kind);
       if (call !== undefined) {
         call.pageIds.push(pageId);
         call.names.push(card.name);
-      } else plan.calls.push({ source, target, pageIds: [pageId], names: [card.name] });
+      } else plan.calls.push({ source, target, kind: card.kind, pageIds: [pageId], names: [card.name] });
     }
   }
   return plan;
 }
 
-/** One device's share of a remove or a delete: the page ids to take off. */
+/** One device's share of a remove or a delete: the page ids to take off,
+ * out of its pages or its status pages. */
 export interface DeviceWork {
   ownerId: string;
+  kind: CardKind;
   pageIds: string[];
 }
 
 /** A picked page as a delete or a remove sees it: where it is. */
 export interface PlannedPage {
   name: string;
+  kind: CardKind;
   copies: { ownerId: string; pageId: string }[];
 }
 
 export interface RemovePlan {
+  kind: CardKind;
   work: DeviceWork[];
   /** Pages that would be left on no device: kept, for Delete. */
   lastOnly: string[];
@@ -200,10 +235,10 @@ export interface RemovePlan {
   notThere: number;
 }
 
-function addWork(work: DeviceWork[], ownerId: string, pageId: string): void {
-  const held = work.find((w) => w.ownerId === ownerId);
+function addWork(work: DeviceWork[], ownerId: string, kind: CardKind, pageId: string): void {
+  const held = work.find((w) => w.ownerId === ownerId && w.kind === kind);
   if (held !== undefined) held.pageIds.push(pageId);
-  else work.push({ ownerId, pageIds: [pageId] });
+  else work.push({ ownerId, kind, pageIds: [pageId] });
 }
 
 function addOnce(list: string[], id: string): void {
@@ -217,7 +252,7 @@ function addOnce(list: string[], id: string): void {
  * alone.
  */
 export function removePlan(cards: readonly PageCard[], targets: readonly string[], dirty: DirtyCheck): RemovePlan {
-  const plan: RemovePlan = { work: [], lastOnly: [], dirty: [], notThere: 0 };
+  const plan: RemovePlan = { kind: kindOf(cards), work: [], lastOnly: [], dirty: [], notThere: 0 };
   const ticked = new Set(targets);
   for (const card of cards) {
     const on = card.copies.filter((c) => ticked.has(c.device.ownerId));
@@ -231,14 +266,15 @@ export function removePlan(cards: readonly PageCard[], targets: readonly string[
     }
     for (const copy of on) {
       const owner = copy.device.ownerId;
-      if (dirty(owner)) addOnce(plan.dirty, owner);
-      else addWork(plan.work, owner, watchPageId(copy.page));
+      if (dirty(owner, card.kind)) addOnce(plan.dirty, owner);
+      else addWork(plan.work, owner, card.kind, watchPageId(copy.page));
     }
   }
   return plan;
 }
 
 export interface DeletePlan {
+  kind: CardKind;
   work: DeviceWork[];
   /** Every picked page with where it is, to count those gone everywhere. */
   pages: PlannedPage[];
@@ -251,15 +287,15 @@ export interface DeletePlan {
 /** Delete: every picked page off every device that holds it. A device with
  * unsaved edits in its page editor is left alone, its copies stay. */
 export function deletePlan(cards: readonly PageCard[], devices: readonly LinkDevice[], dirty: DirtyCheck): DeletePlan {
-  const plan: DeletePlan = { work: [], pages: [], devices: [], dirty: [] };
+  const plan: DeletePlan = { kind: kindOf(cards), work: [], pages: [], devices: [], dirty: [] };
   const holders = new Set<string>();
   for (const card of cards) {
-    plan.pages.push({ name: card.name, copies: card.copies.map((c) => ({ ownerId: c.device.ownerId, pageId: watchPageId(c.page) })) });
+    plan.pages.push({ name: card.name, kind: card.kind, copies: card.copies.map((c) => ({ ownerId: c.device.ownerId, pageId: watchPageId(c.page) })) });
     for (const copy of card.copies) {
       const owner = copy.device.ownerId;
       holders.add(owner);
-      if (dirty(owner)) addOnce(plan.dirty, owner);
-      else addWork(plan.work, owner, watchPageId(copy.page));
+      if (dirty(owner, card.kind)) addOnce(plan.dirty, owner);
+      else addWork(plan.work, owner, card.kind, watchPageId(copy.page));
     }
   }
   plan.devices = devices.map((d) => d.ownerId).filter((id) => holders.has(id));
@@ -270,13 +306,16 @@ export function deletePlan(cards: readonly PageCard[], devices: readonly LinkDev
 const nameOf = (devices: readonly LinkDevice[], ownerId: string): string => devices.find((d) => d.ownerId === ownerId)?.name ?? "a device";
 
 /** The delete question: "Delete 12 pages from 2 devices?", and a line on
- * where they go from and what else changes. */
+ * where they go from and what else changes. Info pages leave the tiles and
+ * menu slots that open them alone, as the status pages editor's own delete
+ * does, so their line says nothing of those. */
 export function deleteAskText(plan: DeletePlan, devices: readonly LinkDevice[]): { title: string; body: string } {
   const n = plan.pages.length;
   const where = plan.devices.map((id) => nameOf(devices, id));
-  const title = `Delete ${pages(n)} from ${plural(where.length, "device", "devices")}?`;
+  const title = `Delete ${n} ${cardNoun(plan.kind, n)} from ${plural(where.length, "device", "devices")}?`;
+  const what = plan.kind === "status_pages" ? "" : `, with the menu slots and complication taps there that open ${n === 1 ? "it" : "them"}`;
   const parts = [
-    `${n === 1 ? "It comes" : "They come"} off ${joinWords(where)}, with the menu slots and complication taps there that open ${n === 1 ? "it" : "them"}. This cannot be undone.`,
+    `${n === 1 ? "It comes" : "They come"} off ${joinWords(where)}${what}. This cannot be undone.`,
   ];
   if (plan.dirty.length > 0) {
     const names = plan.dirty.map((id) => nameOf(devices, id));
@@ -287,18 +326,22 @@ export function deleteAskText(plan: DeletePlan, devices: readonly LinkDevice[]):
 
 // ── running ──────────────────────────────────────────────────────────────
 
-/** The calls an action makes, so a test can stand in for Home Assistant. */
+/** The calls an action makes, so a test can stand in for Home Assistant.
+ * Each names the kind it works on: pages, or info pages (status pages). */
 export interface BulkIO {
-  link(source: string, pageIds: readonly string[], target: string): Promise<WatchPagesLinkReply>;
-  remove(ownerId: string, pageIds: readonly string[]): Promise<PagesRemoveResult>;
+  link(source: string, pageIds: readonly string[], target: string, kind: CardKind): Promise<WatchPagesLinkReply>;
+  remove(ownerId: string, pageIds: readonly string[], kind: CardKind): Promise<PagesRemoveResult>;
   /** Clear the menu slots and complication taps that opened the pages:
-   * `clearPageRefs`, whose "warn" note means some could not be. */
-  clearRefs(ownerId: string, pageIds: string[]): Promise<WatchPagesNote | undefined>;
+   * `clearPageRefs`, whose "warn" note means some could not be. Info pages
+   * clear nothing, as the status pages editor's delete clears nothing. */
+  clearRefs(ownerId: string, pageIds: string[], kind: CardKind): Promise<WatchPagesNote | undefined>;
 }
 
 /** What an action did, for its one result line. */
 export interface BulkResult {
   action: "add" | "remove" | "delete";
+  /** What was acted on, for the line's words. */
+  kind: CardKind;
   /** Per device, how many pages the action changed there. */
   done: { ownerId: string; count: number }[];
   /** Delete: how many pages are gone from every device. */
@@ -314,8 +357,8 @@ export interface BulkResult {
   refs: string[];
 }
 
-function emptyResult(action: BulkResult["action"]): BulkResult {
-  return { action, done: [], gone: 0, also: 0, taken: [], dirty: [], blocked: [], lastOnly: [], failed: [], refs: [] };
+function emptyResult(action: BulkResult["action"], kind: CardKind): BulkResult {
+  return { action, kind, done: [], gone: 0, also: 0, taken: [], dirty: [], blocked: [], lastOnly: [], failed: [], refs: [] };
 }
 
 function addDone(result: BulkResult, ownerId: string, count: number): void {
@@ -328,11 +371,14 @@ function addDone(result: BulkResult, ownerId: string, count: number): void {
 /** Progress: a line to show while an action runs. */
 export type BulkStep = (text: string) => void;
 
-function alsoCount(reply: WatchPagesLinkReply, target: string, asked: readonly string[]): number {
+/** What a link put on `target` beside the pages (or status pages, by
+ * `kind`) it was asked for. */
+function alsoCount(reply: WatchPagesLinkReply, target: string, asked: readonly string[], kind: CardKind): number {
   const added = reply.targets?.[target];
   if (added === undefined) return 0;
   const askedKeys = new Set(asked.map(upper));
-  return (added.pages ?? []).filter((id) => !askedKeys.has(upper(id))).length + (added.status_pages ?? []).length;
+  const beside = (ids: readonly string[] | undefined, of: CardKind) => (ids ?? []).filter((id) => of !== kind || !askedKeys.has(upper(id))).length;
+  return beside(added.pages, "pages") + beside(added.status_pages, "status_pages");
 }
 
 /** A refusal that names one page: worth asking again one page at a time. */
@@ -345,7 +391,7 @@ const PAGE_REFUSALS = new Set(["id_taken", "not_found", "system_page"]);
  * time, and only the refused ones are left out.
  */
 export async function runAdd(io: BulkIO, plan: AddPlan, devices: readonly LinkDevice[], step?: BulkStep): Promise<BulkResult> {
-  const result = emptyResult("add");
+  const result = emptyResult("add", plan.kind);
   result.taken = plan.taken.map((t) => ({ ownerId: t.ownerId, names: [...t.names] }));
   result.dirty = [...plan.dirty];
   result.blocked = [...plan.blocked];
@@ -356,9 +402,9 @@ export async function runAdd(io: BulkIO, plan: AddPlan, devices: readonly LinkDe
   for (const [i, call] of plan.calls.entries()) {
     step?.(`Adding to ${nameOf(devices, call.target)} (${i + 1} of ${plan.calls.length})…`);
     try {
-      const reply = await io.link(call.source, call.pageIds, call.target);
+      const reply = await io.link(call.source, call.pageIds, call.target, call.kind);
       addDone(result, call.target, call.pageIds.length);
-      result.also += alsoCount(reply, call.target, call.pageIds);
+      result.also += alsoCount(reply, call.target, call.pageIds, call.kind);
     } catch (err) {
       const code = watchCommandError(err).code;
       if (call.pageIds.length === 1) {
@@ -371,9 +417,9 @@ export async function runAdd(io: BulkIO, plan: AddPlan, devices: readonly LinkDe
       }
       for (const [j, pageId] of call.pageIds.entries()) {
         try {
-          const reply = await io.link(call.source, [pageId], call.target);
+          const reply = await io.link(call.source, [pageId], call.target, call.kind);
           addDone(result, call.target, 1);
-          result.also += alsoCount(reply, call.target, [pageId]);
+          result.also += alsoCount(reply, call.target, [pageId], call.kind);
         } catch (one) {
           fail(call.target, one, call.names[j]);
         }
@@ -383,6 +429,9 @@ export async function runAdd(io: BulkIO, plan: AddPlan, devices: readonly LinkDe
   return result;
 }
 
+/** Where `runWork` keeps what one device lost of one kind. */
+const workKey = (kind: CardKind, ownerId: string): string => `${kind}|${ownerId}`;
+
 /** Take each device's pages off it, then clear what opened them there. */
 async function runWork(io: BulkIO, work: readonly DeviceWork[], result: BulkResult, devices: readonly LinkDevice[], verb: string, step?: BulkStep): Promise<Map<string, Set<string>>> {
   const removed = new Map<string, Set<string>>();
@@ -390,7 +439,7 @@ async function runWork(io: BulkIO, work: readonly DeviceWork[], result: BulkResu
     step?.(`${verb} ${nameOf(devices, w.ownerId)} (${i + 1} of ${work.length})…`);
     let res: PagesRemoveResult;
     try {
-      res = await io.remove(w.ownerId, w.pageIds);
+      res = await io.remove(w.ownerId, w.pageIds, w.kind);
     } catch (err) {
       res = { ok: false, code: "unknown", message: watchCommandError(err).message };
     }
@@ -398,11 +447,11 @@ async function runWork(io: BulkIO, work: readonly DeviceWork[], result: BulkResu
       result.failed.push({ ownerId: w.ownerId, message: res.message });
       continue;
     }
-    removed.set(w.ownerId, new Set(res.removed.map(upper)));
+    removed.set(workKey(w.kind, w.ownerId), new Set(res.removed.map(upper)));
     addDone(result, w.ownerId, res.removed.length);
     if (res.removed.length === 0) continue;
     try {
-      const note = await io.clearRefs(w.ownerId, res.removed);
+      const note = await io.clearRefs(w.ownerId, res.removed, w.kind);
       if (note?.kind === "warn" || note?.kind === "err") result.refs.push(w.ownerId);
     } catch {
       result.refs.push(w.ownerId);
@@ -413,25 +462,26 @@ async function runWork(io: BulkIO, work: readonly DeviceWork[], result: BulkResu
 
 /** Run a Remove from plan. */
 export async function runRemove(io: BulkIO, plan: RemovePlan, devices: readonly LinkDevice[], step?: BulkStep): Promise<BulkResult> {
-  const result = emptyResult("remove");
+  const result = emptyResult("remove", plan.kind);
   result.dirty = [...plan.dirty];
   result.lastOnly = [...plan.lastOnly];
-  await runWork(io, plan.work, result, devices, "Taking pages off", step);
+  await runWork(io, plan.work, result, devices, `Taking ${cardNoun(plan.kind, 2)} off`, step);
   return result;
 }
 
 /** Run a Delete plan, then count the pages now gone from every device. */
 export async function runDelete(io: BulkIO, plan: DeletePlan, devices: readonly LinkDevice[], step?: BulkStep): Promise<BulkResult> {
-  const result = emptyResult("delete");
+  const result = emptyResult("delete", plan.kind);
   result.dirty = [...plan.dirty];
   const removed = await runWork(io, plan.work, result, devices, "Deleting on", step);
-  result.gone = plan.pages.filter((p) => p.copies.every((c) => removed.get(c.ownerId)?.has(upper(c.pageId)) ?? false)).length;
+  result.gone = plan.pages.filter((p) => p.copies.every((c) => removed.get(workKey(p.kind, c.ownerId))?.has(upper(c.pageId)) ?? false)).length;
   return result;
 }
 
 // ── the result line ──────────────────────────────────────────────────────
 
 const UNSAVED = "Save or discard the edits in its page editor first.";
+const UNSAVED_INFO = "Save or discard the edits in its status pages editor first.";
 
 /**
  * One line on what an action did, then what it left out and why. "ok" when
@@ -441,23 +491,27 @@ const UNSAVED = "Save or discard the edits in its page editor first.";
  */
 export function bulkResultText(result: BulkResult, devices: readonly LinkDevice[], free: ReadonlySet<string> = new Set()): WatchPagesNote {
   const name = (id: string) => nameOf(devices, id);
+  const info = result.kind === "status_pages";
+  const count = (n: number) => `${n} ${cardNoun(result.kind, n)}`;
   const parts: string[] = [];
-  const per = result.done.map((d) => `${pages(d.count)} ${result.action === "add" ? "to" : result.action === "remove" ? "off" : "on"} ${name(d.ownerId)}`);
+  const per = result.done.map((d) => `${count(d.count)} ${result.action === "add" ? "to" : result.action === "remove" ? "off" : "on"} ${name(d.ownerId)}`);
   if (result.action === "add" && per.length > 0) {
     parts.push(`Added ${joinWords(per)}.`);
     if (result.also > 0) parts.push(`Their tiles brought ${pages(result.also)} more.`);
-    const plan = freePlanText(result.done.filter((d) => free.has(d.ownerId)).map((d) => name(d.ownerId)));
+    // The free plan limits pages; info pages are all shown.
+    const plan = info ? undefined : freePlanText(result.done.filter((d) => free.has(d.ownerId)).map((d) => name(d.ownerId)));
     if (plan !== undefined) parts.push(plan);
   } else if (result.action === "remove" && per.length > 0) {
     parts.push(`Took ${joinWords(per)}.`);
   } else if (result.action === "delete" && (result.gone > 0 || per.length > 0)) {
-    parts.push(result.gone > 0 ? `Deleted ${pages(result.gone)}.` : `Deleted ${joinWords(per)}.`);
+    parts.push(result.gone > 0 ? `Deleted ${count(result.gone)}.` : `Deleted ${joinWords(per)}.`);
   }
   const done = parts.length > 0;
   let left = false;
   for (const t of result.taken) {
     left = true;
-    parts.push(`Not added to ${name(t.ownerId)}: ${nameList(t.names)}. It already has ${t.names.length === 1 ? "a page" : "pages"} of its own with the same id.`);
+    const held = t.names.length === 1 ? aCard(result.kind) : cardNoun(result.kind, 2);
+    parts.push(`Not added to ${name(t.ownerId)}: ${nameList(t.names)}. It already has ${held} of its own with the same id.`);
   }
   if (result.blocked.length > 0) {
     left = true;
@@ -469,7 +523,9 @@ export function bulkResultText(result: BulkResult, devices: readonly LinkDevice[
   }
   for (const id of result.dirty) {
     left = true;
-    parts.push(`Left ${name(id)} alone: its pages have unsaved edits. ${UNSAVED}`);
+    parts.push(info
+      ? `Left ${name(id)} alone: its status pages have unsaved edits. ${UNSAVED_INFO}`
+      : `Left ${name(id)} alone: its pages have unsaved edits. ${UNSAVED}`);
   }
   for (const f of result.failed) {
     left = true;
@@ -481,7 +537,8 @@ export function bulkResultText(result: BulkResult, devices: readonly LinkDevice[
     parts.push(`Could not clear the menu slots or complication taps that opened them on ${joinWords(result.refs.map(name))}. Change those by hand.`);
   }
   if (!done && !left) {
-    const nothing = result.action === "add" ? "Those pages are on those devices already." : result.action === "remove" ? "None of those pages are on those devices." : "Nothing was deleted.";
+    const these = cardNoun(result.kind, 2);
+    const nothing = result.action === "add" ? `Those ${these} are on those devices already.` : result.action === "remove" ? `None of those ${these} are on those devices.` : "Nothing was deleted.";
     return { kind: "ok", text: nothing };
   }
   return { kind: left ? (done ? "warn" : "err") : "ok", text: parts.join(" ") };

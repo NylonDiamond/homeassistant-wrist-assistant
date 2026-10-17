@@ -1,38 +1,73 @@
-// The Pages tab: every page on every watch and iPhone, one card per page.
+// The Pages tab: every page and every info page (a status page) on every
+// watch and iPhone, one card per page.
 //
 // A linked page (the same `linkId` on several devices, `links.ts`) is one
 // card with a chip per device it is on; any other page is a card of its own.
-// This module is the pure part the tab draws from: the cards, the device
-// tabs over them, the Device menu (watches or iPhones), which device a card
-// opens on, and the switches of a card's Devices menu. The element is
-// `all-pages.ts`.
+// Linked status pages are cards the same way, under the Info pages chip.
+// This module is the pure part the tab draws from: the cards, the kind
+// chips and the device tabs over them, the Device menu (watches or
+// iPhones), which device a card opens on, and the switches of a card's
+// Devices menu. The element is `all-pages.ts`.
 
+import type { WatchPagesLinkKind } from "../ha-api.js";
+import { type StatusPagesDocument, isSystemStatusPage, statusPageId, statusPageRows, statusPagesOf } from "../watch-status-pages/model.js";
+import { statusPageLinkId, statusPageTitle } from "../watch-status-pages/links.js";
 import { listedWatchPages } from "./edit.js";
 import { type LinkDevice, type PageDevicePlace, DEVICES_SYSTEM_TEXT, DEVICES_WAIT_TAG, DEVICES_WAIT_TEXT, pageLinkId } from "./links.js";
 import { type WatchPage, type WatchPagesDocument, isHiddenWatchPage, isSmartWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPageTiles } from "./model.js";
 
+/** What a card is: a page, or an info page (a status page). */
+export type CardKind = WatchPagesLinkKind;
+
 /** The second half of the line under the tab's title. */
 export const ALL_PAGES_LEAD = "A page on more than one device is the same page: an edit shows on all of them.";
 
+/** The same, under the Info pages chip: what an info page is. */
+export const INFO_PAGES_LEAD = "An info page is a status page: a list of live states that a tile, a menu slot or Siri opens.";
+
+/** "page" or "info page", as the tab's lines name a card of `kind`. */
+export function cardNoun(kind: CardKind, n = 1): string {
+  const one = kind === "status_pages" ? "info page" : "page";
+  return n === 1 ? one : `${one}s`;
+}
+
+/** "a page" or "an info page". */
+export function aCard(kind: CardKind): string {
+  return kind === "status_pages" ? "an info page" : "a page";
+}
+
 /** The line under the tab's title: how many pages, then the one fact about
  * them a newcomer gets wrong, as the Complications tab's line does. */
-export function allPagesLead(total: number): string {
-  return `${total} ${total === 1 ? "page" : "pages"} on your watches and iPhones. ${ALL_PAGES_LEAD}`;
+export function allPagesLead(total: number, kind: CardKind = "pages"): string {
+  return `${total} ${cardNoun(kind, total)} on your watches and iPhones. ${kind === "status_pages" ? INFO_PAGES_LEAD : ALL_PAGES_LEAD}`;
 }
 
 /** A page's only device cannot be switched off: that is a delete. */
 export const DEVICES_LAST_TEXT = "This is its only device. Delete it in the page editor instead.";
 
+/** The same for an info page, whose editor is the status pages editor. */
+export const INFO_DEVICES_LAST_TEXT = "This is its only device. Delete it in the status pages editor instead.";
+
 /** A link copies the page as saved, so not while its editor holds edits. */
 export const DEVICES_DIRTY_TEXT = "Save or discard the edits to these pages first. A page goes on another device as it is saved.";
+
+/** The same for an info page. */
+export const INFO_DEVICES_DIRTY_TEXT = "Save or discard the edits to these info pages first. An info page goes on another device as it is saved.";
+
+/** `DEVICES_DIRTY_TEXT` for a card of `kind`. */
+export function devicesDirtyText(kind: CardKind): string {
+  return kind === "status_pages" ? INFO_DEVICES_DIRTY_TEXT : DEVICES_DIRTY_TEXT;
+}
 
 /** One device's copy of a page. */
 export interface PageCopy {
   device: LinkDevice;
+  /** The page, or for an info page card the status page, as stored. */
   page: WatchPage;
-  /** Hidden on this device (`isHidden` is each device's own). */
+  /** Hidden on this device (`isHidden` is each device's own). Never for a
+   * status page, which has no Hidden. */
   hidden: boolean;
-  /** Its place in that device's list of pages. */
+  /** Its place in that device's list of pages, or of status pages. */
   index: number;
 }
 
@@ -40,10 +75,14 @@ export interface PageCopy {
 export interface PageCard {
   /** Stable across reads: the link, or the device and the page id. */
   key: string;
+  /** A page, or an info page (a status page). */
+  kind: CardKind;
   linkId?: string;
   pageId: string;
   name: string;
   tiles: number;
+  /** An info page's rows; 0 for a page. */
+  rows: number;
   smart: boolean;
   /** In device order, never empty. */
   copies: PageCopy[];
@@ -54,13 +93,30 @@ const upper = (id: string): string => id.toUpperCase();
 /**
  * Every page of every device as cards, in device order and then each
  * device's own page order: a linked page where it first shows, once, with
- * every device that holds its link. System pages are left out, as the page
- * editor lists none. A device not in `docs` (not read, or no record) brings
- * nothing.
+ * every device that holds its link. Then every status page the same way, as
+ * info page cards from `statusDocs`. System pages are left out, as the page
+ * editor lists none, and so are the five system status pages, which are
+ * copied and never linked. A device not in `docs` or `statusDocs` (not read,
+ * or no record) brings nothing of that kind.
  */
-export function pageCards(devices: readonly LinkDevice[], docs: ReadonlyMap<string, WatchPagesDocument>): PageCard[] {
+export function pageCards(
+  devices: readonly LinkDevice[],
+  docs: ReadonlyMap<string, WatchPagesDocument>,
+  statusDocs: ReadonlyMap<string, StatusPagesDocument> = new Map(),
+): PageCard[] {
   const cards: PageCard[] = [];
   const byKey = new Map<string, PageCard>();
+  /** One copy onto its card, or a new card for it. */
+  const place = (key: string, copy: PageCopy, card: () => Omit<PageCard, "key" | "copies">) => {
+    const held = byKey.get(key);
+    if (held !== undefined) {
+      if (!held.copies.some((c) => c.device.ownerId === copy.device.ownerId)) held.copies.push(copy);
+      return;
+    }
+    const made: PageCard = { key, ...card(), copies: [copy] };
+    byKey.set(key, made);
+    cards.push(made);
+  };
   for (const device of devices) {
     const doc = docs.get(device.ownerId);
     if (doc === undefined) continue;
@@ -69,27 +125,65 @@ export function pageCards(devices: readonly LinkDevice[], docs: ReadonlyMap<stri
       if (pageId === "") return;
       const linkId = pageLinkId(page);
       const key = linkId === undefined ? `page:${device.ownerId}:${upper(pageId)}` : `link:${linkId}`;
-      const copy: PageCopy = { device, page, hidden: isHiddenWatchPage(page), index };
-      const held = byKey.get(key);
-      if (held !== undefined) {
-        if (!held.copies.some((c) => c.device.ownerId === device.ownerId)) held.copies.push(copy);
-        return;
-      }
-      const smart = isSmartWatchPage(page);
-      const card: PageCard = {
-        key,
+      place(key, { device, page, hidden: isHiddenWatchPage(page), index }, () => {
+        const smart = isSmartWatchPage(page);
+        return {
+          kind: "pages",
+          pageId,
+          name: watchPageName(page),
+          tiles: smart ? 0 : watchPageTiles(page).length,
+          rows: 0,
+          smart,
+          ...(linkId === undefined ? {} : { linkId }),
+        };
+      });
+    });
+  }
+  for (const device of devices) {
+    const doc = statusDocs.get(device.ownerId);
+    if (doc === undefined) continue;
+    statusPagesOf(doc).forEach((page, index) => {
+      const pageId = statusPageId(page);
+      if (pageId === "" || isSystemStatusPage(page)) return;
+      const linkId = statusPageLinkId(page);
+      const key = linkId === undefined ? `status:${device.ownerId}:${upper(pageId)}` : `status-link:${linkId}`;
+      place(key, { device, page, hidden: false, index }, () => ({
+        kind: "status_pages",
         pageId,
-        name: watchPageName(page),
-        tiles: smart ? 0 : watchPageTiles(page).length,
-        smart,
-        copies: [copy],
+        name: statusPageTitle(page),
+        tiles: 0,
+        rows: statusPageRows(page).length,
+        smart: false,
         ...(linkId === undefined ? {} : { linkId }),
-      };
-      byKey.set(key, card);
-      cards.push(card);
+      }));
     });
   }
   return cards;
+}
+
+/** The cards of one kind, in the order given. */
+export function cardsOfKind(cards: readonly PageCard[], kind: CardKind): PageCard[] {
+  return cards.filter((c) => c.kind === kind);
+}
+
+/** One chip of the kind row over the device tabs: Pages, or Info pages,
+ * each with how many cards it holds. */
+export interface KindChip {
+  key: CardKind;
+  label: string;
+  count: number;
+}
+
+export function cardKindChips(cards: readonly PageCard[]): KindChip[] {
+  return [
+    { key: "pages", label: "Pages", count: cardsOfKind(cards, "pages").length },
+    { key: "status_pages", label: "Info pages", count: cardsOfKind(cards, "status_pages").length },
+  ];
+}
+
+/** A kind kept from before, or Pages. */
+export function resolveCardKind(kind: unknown): CardKind {
+  return kind === "status_pages" ? "status_pages" : "pages";
 }
 
 /** "all", or one device's owner id. */
@@ -202,34 +296,44 @@ export function openCopy(card: PageCard, filter: PagesFilter, kind: PagesKind = 
  * watch in `waiting` (`awaitingMove`) cannot take the page yet.
  */
 export function cardDevicePlaces(devices: readonly LinkDevice[], card: PageCard, waiting: ReadonlySet<string> = new Set()): PageDevicePlace[] {
-  const system = card.copies.some((c) => isSystemWatchPage(c.page));
+  const info = card.kind === "status_pages";
+  const system = !info && card.copies.some((c) => isSystemWatchPage(c.page));
   const last = card.copies.length <= 1;
   return devices.map((device) => {
     const on = copyOn(card, device.ownerId) !== undefined;
     if (!system && !on && waiting.has(device.ownerId)) return { device, on, here: false, stuck: DEVICES_WAIT_TEXT, tag: DEVICES_WAIT_TAG };
-    const stuck = system ? DEVICES_SYSTEM_TEXT : on && last ? DEVICES_LAST_TEXT : undefined;
+    const stuck = system ? DEVICES_SYSTEM_TEXT : on && last ? (info ? INFO_DEVICES_LAST_TEXT : DEVICES_LAST_TEXT) : undefined;
     return { device, on, here: false, ...(stuck === undefined ? {} : { stuck }) };
   });
 }
 
 /** The device a link copies the page from: the first that holds it with no
- * unsaved edits in its editor, else undefined (`DEVICES_DIRTY_TEXT`). */
-export function linkSource(card: PageCard, dirty: (ownerId: string) => boolean): string | undefined {
-  return card.copies.find((c) => !dirty(c.device.ownerId))?.device.ownerId;
+ * unsaved edits in its editor (the page editor, or for an info page the
+ * status pages editor: `dirty` is asked with the card's kind), else
+ * undefined (`devicesDirtyText`). */
+export function linkSource(card: PageCard, dirty: (ownerId: string, kind: CardKind) => boolean): string | undefined {
+  return card.copies.find((c) => !dirty(c.device.ownerId, card.kind))?.device.ownerId;
 }
 
-/** The line under a card's name: its tile count, or "Smart page". */
+/** The line under a card's name: its tile count, or "Smart page", or an
+ * info page's row count. */
 export function cardDetail(card: PageCard): string {
+  if (card.kind === "status_pages") return `${card.rows} ${card.rows === 1 ? "row" : "rows"}`;
   if (card.smart) return "Smart page";
   return `${card.tiles} ${card.tiles === 1 ? "tile" : "tiles"}`;
 }
 
 /** What the tab says with no card to show. */
-export function emptyText(filter: PagesFilter, devices: readonly LinkDevice[], search: string, kind: PagesKind = "all"): string {
+export function emptyText(filter: PagesFilter, devices: readonly LinkDevice[], search: string, kind: PagesKind = "all", cardKind: CardKind = "pages"): string {
   if (devices.length === 0) return "No watch or iPhone has connected yet. Pair one on the Home tab.";
-  if (search.trim() !== "") return "No page has that name.";
-  if (kind !== "all") return `No page here is on ${kind === "watch" ? "a watch" : "an iPhone"}.`;
+  const one = cardNoun(cardKind);
+  if (search.trim() !== "") return `No ${one} has that name.`;
+  if (kind !== "all") return `No ${one} here is on ${kind === "watch" ? "a watch" : "an iPhone"}.`;
   const device = devices.find((d) => d.ownerId === filter);
+  if (cardKind === "status_pages") {
+    if (device !== undefined) return `No info pages on ${device.name} yet. The five starter pages every device has are not listed here.`;
+    return "No device has info pages of its own yet. Open a device's Status pages to make one.";
+  }
   if (device !== undefined) return `No pages on ${device.name} yet.`;
   return "No device has pages yet. Open a device's Pages to make one.";
 }
