@@ -239,6 +239,11 @@ describe("the row as drawn", () => {
     expect(calls).toEqual(["home", "list:control"]);
   });
 
+  it("gives the chip Home's verdict when the panel has one, so it never says Synced over a waiting screen", () => {
+    const { text } = row({ syncs: new Map([["w1", "waiting"]]) });
+    expect(text).toMatch(/<i class="wa-wr-dot waiting" aria-hidden="true"><\/i>[^<]*Waiting/);
+  });
+
   it("names no device on a screen of the whole home, and links only its two screens", () => {
     const { text } = row({ route: route("/http-actions"), onHome: () => undefined });
     expect(text).toContain(SHARED_ROW_LABEL);

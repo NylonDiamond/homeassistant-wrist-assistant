@@ -56,7 +56,8 @@ export interface WatchRowChoice {
   name: string;
   /** A watch in the Watch app's row, an iPhone in the iPhone app's. */
   kind: RowKind;
-  /** Its complications and widgets, by the rule Home's Devices card uses. */
+  /** How it stands, by Home's verdict where the panel has one (`syncs`),
+   * else by its complications and widgets alone. */
   sync: DeviceSync | undefined;
   /** The device on show. */
   on: boolean;
@@ -65,13 +66,18 @@ export interface WatchRowChoice {
 /** The home's devices as the row's menu lists them: the watches, or in the
  * iPhone app's row the iPhones; never the Library or an orphan. Named as
  * every watch screen names them. */
-export function watchRowChoices(owners: readonly OwnerSummary[], current: string | undefined, kind: RowKind = "watch"): WatchRowChoice[] {
+export function watchRowChoices(
+  owners: readonly OwnerSummary[],
+  current: string | undefined,
+  kind: RowKind = "watch",
+  syncs: ReadonlyMap<string, DeviceSync> = new Map(),
+): WatchRowChoice[] {
   const watches = kind === "iphone" ? iphoneDevices(owners) : settingsWatches(owners);
   return watches.map((w) => ({
     id: w.owner_watch_id,
     name: watchName(w, watches),
     kind,
-    sync: deviceSync({
+    sync: syncs.get(w.owner_watch_id) ?? deviceSync({
       name: w.device_name ?? w.owner_watch_id,
       kind: w.device_kind,
       token: w.token,
@@ -224,6 +230,10 @@ export interface WatchRowInput {
   end?: unknown;
   /** Pair an iPhone pressed, in the iPhone app's row of a home with none. */
   onPair?: () => void;
+  /** Each device's verdict as Home gives it (complications, pages and
+   * settings together), so the chip never says Synced while the screen's
+   * own bar says Waiting. */
+  syncs?: ReadonlyMap<string, DeviceSync>;
   /** Home pressed: back to Home, with this device picked. */
   onHome?: () => void;
   /** A list link pressed (`WatchRowLink.list`): the device's complications
@@ -275,7 +285,7 @@ export function watchChipSub(person: string | undefined, sync: DeviceSync | unde
  */
 export function renderWatchRow(input: WatchRowInput): TemplateResult {
   const kind: RowKind = input.iphone === true ? "iphone" : "watch";
-  const choices = watchRowChoices(input.owners, input.watch, kind);
+  const choices = watchRowChoices(input.owners, input.watch, kind, input.syncs);
   const slot = watchRowSlot(input.loaded, choices.length);
   const href = (path: string) => panelUrl(input.route, path, globalThis.location?.pathname ?? "");
   const unsaved = new Set((input.unsaved ?? []).map((screen) => screen.id));
@@ -503,7 +513,7 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
       ${choices.map((c) => [c, deviceColor(colors, c.id)] as const).map(([c, color]) => html`<button type="button" class="wa-wr-row ${c.on ? "on" : ""} ${color === undefined ? "" : "tinted"}" role="menuitemradio"
         style=${color === undefined ? nothing : `--dc:${color}`}
         aria-checked=${c.on ? "true" : "false"} data-watch=${c.id} data-kind=${c.kind}
-        title=${c.sync ? `Complications and widgets: ${deviceSyncLabel(c.sync)}` : nothing}
+        title=${c.sync ? deviceSyncLabel(c.sync) : nothing}
         @click=${() => { input.onMenu(false); if (!c.on) input.onPick(c.id); }}>
         <i class="wa-wr-dot ${c.sync ?? ""}" aria-hidden="true"></i><span class="wa-wr-row-name">${c.name}</span>
         ${c.on ? html`<span class="wa-wr-check" aria-hidden="true">${uiIcon("check")}</span>`

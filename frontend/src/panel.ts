@@ -142,7 +142,7 @@ import {
 import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
-import { type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, homePill, homeSync, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
+import { type DeviceSync, type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, homePill, homeSync, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
 import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDoorLook, homeGroups, homePageThumbs, HOME_PAGE_THUMB_WIDTH, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_RING_LENGTH, HOME_SHARED_SUB, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
 import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
 import { APP_STORE_URL, type GettingStarted, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
@@ -448,7 +448,7 @@ import { NOT_ON_WATCH_NOTE, isWatchComplicationsRoute, splitForWatch, watchCompl
 import {
   COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, deviceScreenPath, editorKeysLive, iphoneInnerRoute, iphoneScreenOf,
   iphoneScreenPath, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
-  panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath, watchScreenSentence,
+  barTabOf, panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath, watchScreenSentence,
 } from "./shell.js";
 import { adoptRouteWatch, iphoneRouteOwner, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
 import { WATCH_SCREEN_LOOK, type WatchScreenId, markRowMore, renderWatchRow, showRowLink, unsavedScreens, watchRowStyles } from "./watch-row.js";
@@ -6636,8 +6636,9 @@ export class WristAssistantPanel extends LitElement {
     }
     // Home's Devices card also says whether each watch has watch app records
     // still to collect: read once the devices are known, and again whenever
-    // the watches themselves change.
-    if (changed.has("owners") && tabOfRoute(this.route) === "home") void this.loadWatchAppSync(false);
+    // the watches themselves change. A device's screens sit under Home and
+    // their row's chip gives the same verdict, so they read it too.
+    if (changed.has("owners") && barTabOf(this.route) === "home") void this.loadWatchAppSync(false);
     if (changed.has("faceHover")) {
       if (this.faceHover) {
         window.clearTimeout(this.listFaceTimer);
@@ -11203,6 +11204,7 @@ export class WristAssistantPanel extends LitElement {
       onMenu: (open) => this.toggleWatchRowMenu(open),
       onPick: (watchId) => this.pickWatch(watchId),
       onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
+      syncs: this.rowSyncs(),
       onHome: () => this.backToHome(watchScreenOf(this.route)?.shared === true ? undefined : this.sharedWatch),
       onList: (filter) => { if (this.sharedWatch !== undefined) this.openDeviceList(this.sharedWatch, filter); },
       unsaved: this.unsavedNow,
@@ -11229,6 +11231,7 @@ export class WristAssistantPanel extends LitElement {
       onPick: (phoneId) => this.pickPhone(phoneId),
       onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
       onPair: () => this.openPairDialog(),
+      syncs: this.rowSyncs(),
       onHome: () => this.backToHome(this.sharedPhone),
       onList: (filter) => { if (this.sharedPhone !== undefined) this.openDeviceList(this.sharedPhone, filter); },
       people: this.people(),
@@ -11814,7 +11817,7 @@ export class WristAssistantPanel extends LitElement {
    * on the status clock and when the tab comes back into view. */
   private async refreshHomeSync() {
     await this.refreshOwnerTokens();
-    if (tabOfRoute(this.route) === "home") await this.loadWatchAppSync(true);
+    if (barTabOf(this.route) === "home") await this.loadWatchAppSync(true);
   }
 
   private homeVisible = () => {
@@ -19973,6 +19976,12 @@ export class WristAssistantPanel extends LitElement {
     this.goTo(COMPLICATIONS_PATH);
     // With a design open the tab is the editor, so the list opens over it.
     if (this.draft) this.openPicker();
+  }
+
+  /** Each device's verdict as Home gives it, for the device chip in the
+   * row over its screens. */
+  private rowSyncs(): Map<string, DeviceSync> {
+    return new Map(homeDeviceRows(this.homeDevices(), this.watchAppSyncs).map((row) => [row.id, row.sync]));
   }
 
   /** Back to Home from a device's screen, with that device picked. */

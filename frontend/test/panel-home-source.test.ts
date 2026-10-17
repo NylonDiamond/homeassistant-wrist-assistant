@@ -270,7 +270,7 @@ describe("coming back to Home", () => {
     const will = method("  protected override willUpdate(changed");
     const back = between(will, `if (changed.has("route") && tabOfRoute(this.route) === "home"`, "}");
     expect(back).toContain("void this.loadWatchAppSync(true);");
-    expect(will).toContain(`if (changed.has("owners") && tabOfRoute(this.route) === "home") void this.loadWatchAppSync(false);`);
+    expect(will).toContain(`if (changed.has("owners") && barTabOf(this.route) === "home") void this.loadWatchAppSync(false);`);
     const load = method("  private async loadWatchAppSync(again: boolean) {");
     expect(load).not.toContain("is_admin");
     expect(load).toContain("const summary = await fetchWatchConfigSummary(hass);");
