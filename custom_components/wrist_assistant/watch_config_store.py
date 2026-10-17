@@ -131,7 +131,10 @@ a page on several devices is the same page id in each owner's ``pages`` (or
 those kinds is handed on to each other owner holding one of its links, as a
 new revision there (``_spread_links``), so a change made on one device's
 copy reaches every copy in the same call. A link left on one owner only is
-dropped there. ``link_pages`` and ``link_device`` make links.
+dropped there. ``link_pages`` and ``link_device`` make links. The menus
+link by unit (the Anywhere menu, the Entity quick menu) under a top-level
+``linkIds``, made by ``link_units`` and kept in step the same way
+(``page_links.link_ops`` gives the store each kind's functions).
 
 Deliveries and reports have listeners of their own
 (:meth:`WatchConfigStore.async_add_delivery_listener`), heard only by the panel's Home
@@ -168,18 +171,24 @@ from .const import (
     WATCH_CONFIG_STORAGE_VERSION,
 )
 from .page_links import (
+    LINK_UNITS,
+    LINKABLE_KINDS,
     LINKED_KINDS,
+    LinkOps,
     PageLinkError,
     apply_link,
+    apply_unit_link,
     check_link,
-    drop_link,
-    fan_out,
     ids_in,
-    link_ids,
+    link_ops,
     link_places,
     link_reach,
     listed_page_ids,
+    menu_targets,
     rooms_from_behavior,
+    unit_link_places,
+    unit_links,
+    without_unit_links,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -335,7 +344,9 @@ class WatchConfigLinkError(WatchConfigStoreError):
     ``code`` is the reason: ``unknown_device`` for a source or target that is
     not a paired device, ``not_found`` for a page the source does not hold,
     ``system_page`` for a system page, ``id_taken`` for a target that holds
-    another page under the same id, ``awaiting_move`` for a target watch
+    another page under the same id, ``unit_taken`` for a target with its own
+    menu for a unit (:meth:`WatchConfigStore.link_units`), ``awaiting_move``
+    for a target watch
     whose iPhone may still move its own pages here (the link would make the
     first record that move skips).
     """
@@ -2007,7 +2018,9 @@ class WatchConfigStore:
 
         Each other owner whose document of the kind holds one of the saved
         document's links gets its linked pages replaced by the saved ones,
-        keeping its own order and ``isHidden`` (:func:`page_links.fan_out`).
+        keeping its own order and ``isHidden`` (:func:`page_links.fan_out`),
+        or, for a unit kind (the menus), its linked units replaced by the
+        saved ones (:func:`page_links.fan_out_units`).
         And a link the write took away (``before`` held it, the saved
         document does not) that is now left on exactly one other owner is
         dropped there: a page on one device is not linked to anything. Each
@@ -2016,25 +2029,25 @@ class WatchConfigStore:
         is logged and left as it was; the save itself stands. Returns those
         owners, sorted, for the panel to name (empty when every copy took it).
         """
-        key = LINKED_KINDS.get(record.kind)
-        if key is None:
+        ops = link_ops(record.kind)
+        if ops is None:
             return []
         owner = record.owner_watch_id
-        saved = link_ids(record.document, key)
-        lost = link_ids(before, key) - saved
+        saved = ops.ids(record.document)
+        lost = ops.ids(before) - saved
         if not saved and not lost:
             return []
         failed: list[str] = []
-        others, held, last_copies = self._link_holders(record.kind, key, owner, lost)
+        others, held, last_copies = self._link_holders(record.kind, ops, owner, lost)
         for other, other_record in sorted(others.items()):
             document = (
-                fan_out(record.document, other_record.document, key)
+                ops.fan_out(record.document, other_record.document)
                 if held[other] & saved
                 else None
             )
             for link in sorted(held[other] & last_copies):
-                dropped = drop_link(
-                    document if document is not None else other_record.document, key, link
+                dropped = ops.drop(
+                    document if document is not None else other_record.document, link
                 )
                 if dropped is not None:
                     document = dropped
@@ -2054,17 +2067,18 @@ class WatchConfigStore:
         return failed
 
     def _link_holders(
-        self, kind: str, key: str, owner: str, lost: set[str]
+        self, kind: str, ops: LinkOps, owner: str | None, lost: set[str]
     ) -> tuple[dict[str, WatchConfigRecord], dict[str, set[str]], set[str]]:
         """Every owner but ``owner`` (and any unreadable one) holding a record
         of ``kind``, the links each holds, and which of the ``lost`` links are
-        now left on exactly one of them: its last copy, no longer linked."""
+        now left on exactly one of them: its last copy, no longer linked.
+        ``owner`` None counts every owner."""
         others = {
             other: by_kind[kind]
             for other, by_kind in self._records.items()
             if other != owner and other not in self._failed_owners and kind in by_kind
         }
-        held = {other: link_ids(other_record.document, key) for other, other_record in others.items()}
+        held = {other: ops.ids(other_record.document) for other, other_record in others.items()}
         last_copies = {
             link
             for link in lost
@@ -2073,22 +2087,23 @@ class WatchConfigStore:
         return others, held, last_copies
 
     def _drop_last_copies(
-        self, owner: str, lost_by_kind: dict[str, set[str]], updated_by: str
+        self, owner: str | None, lost_by_kind: dict[str, set[str]], updated_by: str
     ) -> None:
-        """After ``owner``'s records went, drop each link it held that is now
-        left on exactly one other owner, as one new revision there (the same
+        """After ``owner``'s records went (or, for ``owner`` None, after a
+        link replaced some of a kind's links), drop each lost link that is now
+        left on exactly one owner, as one new revision there (the same
         last-copy rule as :meth:`_spread_links`, with nothing to fan out). An
         owner whose copy cannot take the change is logged and left."""
         for kind, lost in lost_by_kind.items():
-            if not lost:
+            ops = link_ops(kind)
+            if not lost or ops is None:
                 continue
-            key = LINKED_KINDS[kind]
-            others, held, last_copies = self._link_holders(kind, key, owner, lost)
+            others, held, last_copies = self._link_holders(kind, ops, owner, lost)
             for other, other_record in sorted(others.items()):
                 document = None
                 for link in sorted(held[other] & last_copies):
-                    dropped = drop_link(
-                        document if document is not None else other_record.document, key, link
+                    dropped = ops.drop(
+                        document if document is not None else other_record.document, link
                     )
                     if dropped is not None:
                         document = dropped
@@ -2098,10 +2113,10 @@ class WatchConfigStore:
                     self._write(other, kind, document, updated_by)
                 except WatchConfigStoreError as err:
                     _LOGGER.warning(
-                        "Could not drop the last link of %s on %s after %s went: %s",
+                        "Could not drop the last link of %s on %s after %s: %s",
                         kind,
                         other,
-                        owner,
+                        f"{owner} went" if owner is not None else "a link replaced it",
                         err.message,
                     )
 
@@ -2149,12 +2164,18 @@ class WatchConfigStore:
         page_ids: list[str],
         status_ids: list[str] | None,
         targets: Any,
+        *,
+        kind: str = "pages",
     ) -> tuple[list[tuple[str, str, dict[str, Any]]], dict[str, Any]]:
         """What a link writes, checked whole before anything is written.
 
         ``page_ids`` are the source's pages to link; ``status_ids`` its status
         pages, or None for the ones those pages reach
-        (:func:`page_links.link_reach`). Returns the writes in the order they
+        (:func:`page_links.link_reach`). With ``kind`` ``status_pages`` the
+        link is of the status pages ``status_ids`` alone: each must be one
+        the source holds (``not_found``), ``page_ids`` is empty and nothing is
+        walked. The reply's ``link_ids`` are those of ``kind``. Returns the
+        writes in the order they
         go (the source's when it gained links, then each target's status
         pages before its pages, so a tile is never saved before what it
         opens) and the reply. Every refusal is a
@@ -2176,22 +2197,31 @@ class WatchConfigStore:
         pages_doc = self._document(source_owner, "pages")
         status_doc = self._document(source_owner, "status_pages")
         try:
-            check_link(pages_doc, page_ids)
-            reach_pages, reach_status = link_reach(pages_doc, status_doc, page_ids)
-            if status_ids is not None:
-                reach_status = status_ids
+            if kind == "status_pages":
+                status_key = LINKED_KINDS["status_pages"]
+                check_link(status_doc, status_ids or [], status_key)
+                wanted = {page_id.upper() for page_id in status_ids or []}
+                reach_pages: list[str] = []
+                reach_status = [i for i in ids_in(status_doc, status_key) if i.upper() in wanted]
+            else:
+                check_link(pages_doc, page_ids)
+                reach_pages, reach_status = link_reach(pages_doc, status_doc, page_ids)
+                if status_ids is not None:
+                    reach_status = status_ids
             source_pages, source_status = pages_doc, status_doc
             plans: list[tuple[str, dict[str, Any] | None, dict[str, Any] | None]] = []
             reply_targets: dict[str, dict[str, list[str]]] = {}
             page_links: dict[str, str] = {}
+            status_links: dict[str, str] = {}
             for target in dict.fromkeys(targets):
                 target_status = self._document(target, "status_pages")
                 new_status = None
                 added_status: list[str] = []
                 if reach_status:
-                    source_status, new_status, added_status, _links = apply_link(
+                    source_status, new_status, added_status, links = apply_link(
                         source_status, target_status, LINKED_KINDS["status_pages"], reach_status
                     )
+                    status_links.update(links)
                 target_pages = self._document(target, "pages")
                 new_pages = None
                 added_pages: list[str] = []
@@ -2225,7 +2255,10 @@ class WatchConfigStore:
                 writes.append((target, "status_pages", new_status))
             if new_pages is not None:
                 writes.append((target, "pages", new_pages))
-        return writes, {"targets": reply_targets, "link_ids": page_links}
+        return writes, {
+            "targets": reply_targets,
+            "link_ids": status_links if kind == "status_pages" else page_links,
+        }
 
     def _commit_writes(
         self, writes: list[tuple[str, str, dict[str, Any]]], updated_by: str
@@ -2244,10 +2277,15 @@ class WatchConfigStore:
         page_ids: Any,
         targets: Any,
         *,
+        kind: str = "pages",
         updated_by: str = WATCH_CONFIG_PANEL_WRITER,
     ) -> dict[str, Any]:
         """Put pages of one device on other devices, linked
         (``watch_pages/link``).
+
+        ``kind`` ``status_pages`` links status pages instead: ``page_ids`` are
+        status page ids, each linked as it is (a system status page copied,
+        never linked), nothing walked, and ``link_ids`` names their links.
 
         Each page in ``page_ids`` and every page and status page it reaches
         through its tiles (:func:`page_links.link_reach`) is added to each
@@ -2271,12 +2309,22 @@ class WatchConfigStore:
             or not all(isinstance(page_id, str) and page_id for page_id in page_ids)
         ):
             raise WatchConfigValidationError("page_ids must be a non-empty list of page ids")
-        writes, reply = self._plan_link(source_owner, page_ids, None, targets)
+        if kind not in LINKED_KINDS:
+            raise WatchConfigValidationError(
+                f"kind must be one of {', '.join(sorted(LINKED_KINDS))}"
+            )
+        if kind == "status_pages":
+            writes, reply = self._plan_link(
+                source_owner, [], page_ids, targets, kind="status_pages"
+            )
+        else:
+            writes, reply = self._plan_link(source_owner, page_ids, None, targets)
         self._commit_writes(writes, updated_by)
         if writes:
             _LOGGER.info(
-                "Linked %d page(s) of %s to %s",
+                "Linked %d %s of %s to %s",
                 len(page_ids),
+                kind.replace("_", " "),
                 source_owner,
                 ", ".join(reply["targets"]),
             )
@@ -2291,7 +2339,9 @@ class WatchConfigStore:
         :meth:`link_pages` links them, with the same refusals. Then the
         source's menus and rooms are copied once, unlinked, for a kind the
         target holds no record of: the ids match, so the menu slots and the
-        rooms open the same pages. A source whose rooms live in its
+        rooms open the same pages. A copied menus document leaves the
+        source's ``linkIds`` behind, so the copy is linked to nothing. A
+        source whose rooms live in its
         ``behavior`` (a watch's main house) gives the room keys from there.
         Nothing is copied onto a watch whose iPhone may still move that kind
         here (:meth:`_awaits_move`): the move brings the watch's own.
@@ -2314,7 +2364,7 @@ class WatchConfigStore:
                 document = rooms_from_behavior(self._document(source_owner, "behavior"))
             if document is None:
                 continue
-            writes.append((target_owner, kind, copy.deepcopy(document)))
+            writes.append((target_owner, kind, without_unit_links(document)))
             copied.append(kind)
         self._commit_writes(writes, updated_by)
         _LOGGER.info(
@@ -2327,21 +2377,165 @@ class WatchConfigStore:
         )
         return {**reply, "copied": copied}
 
-    def link_places(self) -> dict[str, dict[str, list[str]]]:
-        """For each ``linkId``, the owners that hold it, per linked kind:
-        ``{"pages": {linkId: [owner, ...]}, "status_pages": {...}}``. An
-        owner whose file could not be read is left out."""
-        return {
-            kind: link_places(
-                {
-                    owner: by_kind[kind].document
-                    for owner, by_kind in self._records.items()
-                    if kind in by_kind and owner not in self._failed_owners
-                },
-                key,
-            )
-            for kind, key in LINKED_KINDS.items()
+    def link_places(self) -> dict[str, dict[str, Any]]:
+        """For each link id, the owners that hold it, per linked kind:
+        ``{"pages": {linkId: [owner, ...]}, "status_pages": {...}, "menus":
+        {linkId: {"unit": unit, "owners": [owner, ...]}}}``. A unit kind
+        names each link's unit too. An owner whose file could not be read is
+        left out."""
+
+        def documents(kind: str) -> dict[str, Any]:
+            return {
+                owner: by_kind[kind].document
+                for owner, by_kind in self._records.items()
+                if kind in by_kind and owner not in self._failed_owners
+            }
+
+        places: dict[str, dict[str, Any]] = {
+            kind: link_places(documents(kind), key) for kind, key in LINKED_KINDS.items()
         }
+        for kind in LINK_UNITS:
+            places[kind] = unit_link_places(documents(kind), kind)
+        return places
+
+    def link_units(
+        self,
+        kind: Any,
+        source_owner: Any,
+        units: Any,
+        targets: Any,
+        *,
+        replace: Any = False,
+        updated_by: str = WATCH_CONFIG_PANEL_WRITER,
+    ) -> dict[str, Any]:
+        """Put units of one device's ``kind`` document on other devices,
+        linked (``watch_pages/link`` with a unit kind, :data:`LINK_UNITS`).
+
+        Each unit of ``units`` is copied onto each target with the source's
+        link id for it (a new one when it has none, written to the source
+        too), from then on kept in step on every save of any copy
+        (:meth:`_spread_links`). A target holding no record of the kind is
+        given the source's whole document, only ``units`` linked
+        (:func:`page_links.apply_unit_link`). For the menus, the pages and
+        status pages the units' slots open (:func:`page_links.menu_targets`)
+        are linked onto each target as :meth:`link_pages` links them, with
+        what those pages reach; a slot pointing at a page the source does not
+        list, or a system page, brings nothing.
+
+        Refused, before anything is written: ``invalid`` for a kind that does
+        not link by unit or a unit it does not name, ``unknown_device``,
+        ``not_for_iphone`` for a target that may not own the kind
+        (``WATCH_CONFIG_PHONE_KINDS``), ``not_found`` for a source with no
+        record of the kind, ``unit_taken`` for a target that holds its own
+        unit (another link, or other contents) unless ``replace`` is true,
+        ``awaiting_move``, and the page link's own refusals (``id_taken``).
+        A link that ``replace`` took off a target and is then left on one
+        owner only is dropped there.
+
+        Returns ``{"targets": {target: {"pages": [ids added], "status_pages":
+        [ids added], "units": [units written]}}, "link_ids": {unit: linkId}}``.
+        """
+        if kind not in LINK_UNITS:
+            raise WatchConfigValidationError(
+                f"kind must be one of {', '.join(sorted((*LINKED_KINDS, *LINK_UNITS)))}"
+            )
+        if (
+            not isinstance(units, list)
+            or not units
+            or not all(isinstance(unit, str) and unit in LINK_UNITS[kind] for unit in units)
+        ):
+            raise WatchConfigValidationError(
+                f"units must be a non-empty list of {', '.join(LINK_UNITS[kind])}"
+            )
+        if not isinstance(replace, bool):
+            raise WatchConfigValidationError("replace must be true or false")
+        units = list(dict.fromkeys(units))
+        source_owner = self._check_link_owner(source_owner)
+        if not isinstance(targets, list) or not all(isinstance(t, str) for t in targets):
+            raise WatchConfigValidationError("targets must be a list of device ids")
+        for target in targets:
+            if target == source_owner:
+                raise WatchConfigValidationError(f"{kind} cannot be linked to their own device")
+            self._check_link_owner(target)
+            self._check_owner_kind(target, kind)
+        source_doc = self._document(source_owner, kind)
+        if source_doc is None:
+            raise WatchConfigLinkError("not_found", f"{source_owner} has no {kind}")
+
+        page_writes: list[tuple[str, str, dict[str, Any]]] = []
+        reply_targets: dict[str, dict[str, list[str]]] = {
+            target: {"pages": [], "status_pages": []} for target in dict.fromkeys(targets)
+        }
+        if kind == "menus":
+            page_writes, page_reply = self._plan_menu_pages(source_owner, source_doc, units, targets)
+            reply_targets.update(page_reply)
+
+        source = source_doc
+        plans: list[tuple[str, dict[str, Any] | None, dict[str, Any], list[str]]] = []
+        replaced: set[str] = set()
+        link_ids_out: dict[str, str] = {}
+        try:
+            for target in dict.fromkeys(targets):
+                before = self._document(target, kind)
+                document = before
+                written: list[str] = []
+                held = unit_links(before, kind)
+                for unit in units:
+                    source, new, link = apply_unit_link(source, document, kind, unit, replace)
+                    link_ids_out[unit] = link
+                    if held.get(unit) not in (None, link):
+                        replaced.add(held[unit])
+                    if new != document:
+                        written.append(unit)
+                    document = new
+                plans.append((target, before, document, written))
+        except PageLinkError as err:
+            raise WatchConfigLinkError(err.code, err.message) from err
+        writes = list(page_writes)
+        if source != source_doc:
+            writes.append((source_owner, kind, source))
+        for target, before, document, written in plans:
+            reply_targets[target]["units"] = written
+            if document != before:
+                if before is None:
+                    self._check_not_awaiting_move(target, kind)
+                writes.append((target, kind, document))
+        self._commit_writes(writes, updated_by)
+        self._drop_last_copies(None, {kind: replaced}, updated_by)
+        if writes:
+            _LOGGER.info(
+                "Linked %s (%s) of %s to %s",
+                kind,
+                ", ".join(units),
+                source_owner,
+                ", ".join(reply_targets),
+            )
+        return {"targets": reply_targets, "link_ids": link_ids_out}
+
+    def _plan_menu_pages(
+        self, source_owner: str, menus_doc: dict[str, Any], units: list[str], targets: list[str]
+    ) -> tuple[list[tuple[str, str, dict[str, Any]]], dict[str, dict[str, list[str]]]]:
+        """The page link a menu link brings: the pages and status pages the
+        units' slots open, with what those pages reach, planned as
+        :meth:`_plan_link` plans a page link. A slot's page the source does
+        not list (or a system page), or a status page it does not hold, is
+        left out rather than refused: the slot already shows its fallback
+        there."""
+        slot_pages, slot_status = menu_targets(menus_doc, units)
+        pages_doc = self._document(source_owner, "pages")
+        status_doc = self._document(source_owner, "status_pages")
+        listed = {page_id.upper() for page_id in listed_page_ids(pages_doc)}
+        page_ids = [page_id for page_id in slot_pages if page_id.upper() in listed]
+        reach_pages, reach_status = link_reach(pages_doc, status_doc, page_ids)
+        held_status = {i.upper(): i for i in ids_in(status_doc, LINKED_KINDS["status_pages"])}
+        wanted = {i.upper() for i in reach_status} | {
+            i.upper() for i in slot_status if i.upper() in held_status
+        }
+        status_ids = [i for i in held_status.values() if i.upper() in wanted]
+        if not reach_pages and not status_ids:
+            return [], {}
+        writes, reply = self._plan_link(source_owner, page_ids, status_ids, targets)
+        return writes, reply["targets"]
 
     def mark_delivered(
         self, owner_watch_id: str, kind: str, revision: int, *, confirmed: bool = False
@@ -2431,9 +2625,9 @@ class WatchConfigStore:
         while open stops treating its stored revision as current. An
         unreadable file had no kinds anyone could see, so it announces none.
 
-        A linked page (page_links.py) the owner held that is now left on
-        exactly one other owner is no longer linked to anything, so its
-        ``linkId`` is dropped there, as that owner's next revision written by
+        A linked page or menu (page_links.py) the owner held that is now left
+        on exactly one other owner is no longer linked to anything, so its
+        link id is dropped there, as that owner's next revision written by
         ``updated_by`` (``forget:<owner>`` when not given), after the forget's
         own announcements.
         """
@@ -2441,9 +2635,9 @@ class WatchConfigStore:
         records = self._records.pop(owner_watch_id, {})
         removed = sorted(records)
         lost = {
-            kind: link_ids(records[kind].document, key)
-            for kind, key in LINKED_KINDS.items()
-            if kind in records
+            kind: ops.ids(records[kind].document)
+            for kind in LINKABLE_KINDS
+            if kind in records and (ops := link_ops(kind)) is not None
         }
         self._failed_owners.discard(owner_watch_id)
         if had:

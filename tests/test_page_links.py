@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -97,6 +98,14 @@ def test_check_link_refuses_missing_and_system_pages() -> None:
     with pytest.raises(links.PageLinkError) as err:
         links.check_link(_pages(), [SYSTEM])
     assert err.value.code == "system_page"
+
+
+def test_check_link_of_status_pages_refuses_only_a_missing_one() -> None:
+    links.check_link(_status(), [STATUS.lower(), SYSTEM_STATUS], "statusPages")
+    with pytest.raises(links.PageLinkError) as err:
+        links.check_link(_status(), [HOME], "statusPages")
+    assert err.value.code == "not_found"
+    assert "status page" in err.value.message
 
 
 # ── apply_link ───────────────────────────────────────────────────────────
@@ -241,3 +250,155 @@ def test_listed_page_ids_and_rooms_from_behavior() -> None:
     assert links.rooms_from_behavior(
         {"roomAutoSwitchEnabled": True, "roomQuickJumpMappings": [], "other": 1}
     ) == {"schemaVersion": 1, "roomAutoSwitchEnabled": True, "roomQuickJumpMappings": []}
+
+
+# ── linked units (the menus) ─────────────────────────────────────────────
+
+_FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
+_PAGE = "3E4D1000-0000-4000-8000-000000000385"
+_STATUS_PAGE = "3E4D1000-0000-4000-8000-000000000386"
+
+
+def _menus() -> dict:
+    """The panel's configured menus fixture: an Anywhere menu with a Go to
+    page and a Status page slot, an Entity quick menu with neither."""
+    return json.loads((_FRONTEND / "test" / "fixtures-menus" / "02-configured.json").read_text())
+
+
+def _other_menus() -> dict:
+    other = _menus()
+    other["quickAction"]["beamStyle"] = "none"
+    other["entityRadial"]["lightInheritsAll"] = False
+    other["pageSwitcher"]["displayMode"] = "name"
+    return other
+
+
+def test_the_menu_page_actions_are_the_tables_page_payloads() -> None:
+    table = json.loads((_FRONTEND / "src" / "watch-menus" / "menu-actions.json").read_text())
+    wanted = {
+        action["raw"]: (spec["key"], spec["target"])
+        for action in table["actions"]
+        for spec in action.get("payload", [])
+        if spec.get("type") == "uuid" and spec.get("target") in ("page", "statusPage")
+    }
+    assert links._MENU_PAGE_ACTIONS == wanted
+
+
+def test_menu_targets_walks_every_slot_list_of_the_units_asked() -> None:
+    menus = _menus()
+    assert links.menu_targets(menus) == ([_PAGE], [_STATUS_PAGE])
+    assert links.menu_targets(menus, ["entity"]) == ([], [])
+    radial = menus["entityRadial"]
+    radial["lightSlots"].append(
+        {"id": "S1", "action": {"type": "navigateToPage", "pageId": HOME}}
+    )
+    radial["entityOverrides"]["climate.hallway"].append(
+        {"id": "S2", "action": {"type": "showStatusPage", "pageId": STATUS}}
+    )
+    radial["allSlots"].append({"id": "S3", "action": {"type": "navigateToPage", "pageId": _PAGE.lower()}})
+    radial["allSlots"].append({"id": "S4", "action": {"type": "showStatusPage"}})
+    assert links.menu_targets(menus, ["entity"]) == ([_PAGE.lower(), HOME], [STATUS])
+    assert links.menu_targets(menus) == ([_PAGE, HOME], [_STATUS_PAGE, STATUS]), "each id once"
+    assert links.menu_targets(None) == ([], [])
+
+
+def test_apply_unit_link_marks_both_and_copies_the_units_keys() -> None:
+    source, target = _menus(), _other_menus()
+    before = copy.deepcopy(source)
+    new_source, new_target, link = links.apply_unit_link(
+        source, target, "menus", "anywhere", replace=True
+    )
+    assert source == before, "the input is never changed"
+    assert len(link) == 32
+    assert new_source["linkIds"] == {"anywhere": link} == new_target["linkIds"]
+    assert new_target["quickAction"] == source["quickAction"]
+    assert new_target["pageSwitcher"] == source["pageSwitcher"]
+    assert new_target["entityRadial"] == target["entityRadial"], "the other unit stays"
+    assert list(new_target) == sorted(new_target), "linkIds goes in at its sorted place"
+    for key in ("quickAction", "entityRadial", "pageSwitcher"):
+        assert "linkId" not in new_target[key] and "linkIds" not in new_target[key]
+
+
+def test_apply_unit_link_refuses_a_taken_unit_unless_replaced() -> None:
+    with pytest.raises(links.PageLinkError) as err:
+        links.apply_unit_link(_menus(), _other_menus(), "menus", "anywhere")
+    assert err.value.code == "unit_taken"
+    # The same keys are no clash, and nor is a unit the target lacks.
+    _s, same, _l = links.apply_unit_link(_menus(), _menus(), "menus", "anywhere")
+    assert same["linkIds"]["anywhere"]
+    bare = {"schemaVersion": 1, "entityRadial": {}}
+    _s, filled, _l = links.apply_unit_link(_menus(), bare, "menus", "anywhere")
+    assert filled["quickAction"] == _menus()["quickAction"]
+    # A target linked elsewhere for the unit is taken even with equal keys.
+    elsewhere = {**_menus(), "linkIds": {"anywhere": "L-OTHER"}}
+    with pytest.raises(links.PageLinkError):
+        links.apply_unit_link(_menus(), elsewhere, "menus", "anywhere")
+    _s, replaced, link = links.apply_unit_link(_menus(), elsewhere, "menus", "anywhere", True)
+    assert replaced["linkIds"] == {"anywhere": link} and link != "L-OTHER"
+
+
+def test_apply_unit_link_keeps_an_existing_link_and_relinks_its_copy() -> None:
+    source = {**_menus(), "linkIds": {"entity": "L-E"}}
+    target = {**_other_menus(), "linkIds": {"entity": "L-E"}}
+    new_source, new_target, link = links.apply_unit_link(source, target, "menus", "entity")
+    assert link == "L-E"
+    assert new_source == source
+    assert new_target["entityRadial"] == source["entityRadial"]
+    assert new_target["quickAction"] == target["quickAction"]
+
+
+def test_apply_unit_link_onto_no_document_copies_the_source_unlinked_but_the_unit() -> None:
+    source = {**_menus(), "linkIds": {"entity": "L-E"}}
+    _s, target, link = links.apply_unit_link(source, None, "menus", "anywhere")
+    assert target["linkIds"] == {"anywhere": link}, "the entity link is not brought along"
+    assert {k: v for k, v in target.items() if k != "linkIds"} == _menus()
+
+
+def test_fan_out_units_replaces_only_the_linked_units() -> None:
+    source, target, link = links.apply_unit_link(_menus(), _other_menus(), "menus", "anywhere", True)
+    source["quickAction"]["beamStyle"] = "ripplePulse"
+    source["entityRadial"]["lightInheritsAll"] = True
+    del source["pageSwitcher"]
+    out = links.fan_out_units(source, target, "menus")
+    assert out["quickAction"]["beamStyle"] == "ripplePulse"
+    assert "pageSwitcher" not in out, "a key the save lacks is removed"
+    assert out["entityRadial"]["lightInheritsAll"] is False, "the entity menu is not linked"
+    assert out["linkIds"] == {"anywhere": link}
+    assert links.fan_out_units(source, out, "menus") is None, "nothing left to change"
+    assert links.fan_out_units(_menus(), target, "menus") is None, "no links in the save"
+    other_link = {**source, "linkIds": {"anywhere": "L-OTHER"}}
+    assert links.fan_out_units(other_link, target, "menus") is None
+    assert links.fan_out_units(source, None, "menus") is None
+
+
+def test_unit_link_ids_drop_and_places() -> None:
+    document = {**_menus(), "linkIds": {"anywhere": "L-A", "entity": "L-E", "x": "L-X"}}
+    assert links.unit_links(document, "menus") == {"anywhere": "L-A", "entity": "L-E"}
+    assert links.unit_link_ids(document, "menus") == {"L-A", "L-E"}
+    assert links.unit_link_ids({"linkIds": {"anywhere": ""}}, "menus") == set()
+    dropped = links.drop_unit_link(document, "menus", "L-A")
+    assert dropped["linkIds"] == {"entity": "L-E", "x": "L-X"}
+    assert links.drop_unit_link(dropped, "menus", "L-A") is None
+    gone = links.drop_unit_link({**_menus(), "linkIds": {"entity": "L-E"}}, "menus", "L-E")
+    assert "linkIds" not in gone
+    places = links.unit_link_places(
+        {"w": document, "p": {"linkIds": {"anywhere": "L-A"}}, "x": None}, "menus"
+    )
+    assert places == {
+        "L-A": {"unit": "anywhere", "owners": ["p", "w"]},
+        "L-E": {"unit": "entity", "owners": ["w"]},
+    }
+    assert "linkIds" not in links.without_unit_links(document)
+
+
+def test_link_ops_reach_both_grains() -> None:
+    assert links.LINKABLE_KINDS == ("pages", "status_pages", "menus")
+    assert links.link_ops("rooms") is None
+    pages = links.link_ops("pages")
+    source, _target = _linked_pair()
+    assert pages.ids(source) == links.link_ids(source, "pages")
+    menus = links.link_ops("menus")
+    linked = {**_menus(), "linkIds": {"anywhere": "L-A"}}
+    assert menus.ids(linked) == {"L-A"}
+    assert "linkIds" not in menus.drop(linked, "L-A")
+    assert menus.fan_out(linked, {**_other_menus(), "linkIds": {"anywhere": "L-A"}})

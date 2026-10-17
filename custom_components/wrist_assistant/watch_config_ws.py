@@ -33,13 +33,16 @@ Commands:
                                                  base_revision}
     wrist_assistant/watch_config/subscribe      {owner_watch_id}
     wrist_assistant/watch_voices/get            {watch_id}
-    wrist_assistant/watch_pages/link            {source_id, page_ids, targets}
+    wrist_assistant/watch_pages/link            {source_id, page_ids | units, targets,
+                                                 kind?, replace?}
     wrist_assistant/watch_pages/link_all        {source_id, target_id}
     wrist_assistant/watch_pages/places          {}
 
 ``watch_pages/link``, ``watch_pages/link_all`` and ``watch_pages/places`` make linked pages (one page
-on several devices, ``page_links.py``) and say where each one is. A link's
-refusals add ``unknown_device``, ``system_page``, ``id_taken`` and
+on several devices, ``page_links.py``) and say where each one is. The same
+``link`` and ``places`` link status pages and menus too (``kind``). A link's
+refusals add ``unknown_device``, ``system_page``, ``id_taken``,
+``unit_taken`` (a target with its own menu, unless ``replace``) and
 ``awaiting_move`` (a target watch whose iPhone may still move its own pages
 here, which a link made first would leave behind).
 
@@ -77,6 +80,7 @@ from .listener_relay import (
     WATCH_CONFIG_DELIVERY,
     listener_relay,
 )
+from .page_links import LINK_UNITS
 from .panel_access import is_admin, may_manage_owner, require_owner
 from .watch_config_store import (
     WatchConfigChange,
@@ -686,15 +690,19 @@ def ws_watch_config_subscribe(
     {
         vol.Required("type"): _CMD_PAGES_LINK,
         vol.Required("source_id"): str,
-        vol.Required("page_ids"): [str],
+        vol.Optional("page_ids"): [str],
         vol.Required("targets"): [str],
+        vol.Optional("kind"): str,
+        vol.Optional("units"): [str],
+        vol.Optional("replace"): bool,
     }
 )
 @callback
 def ws_watch_pages_link(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Put pages of one device on other devices, as linked pages.
+    """Put pages, status pages or menus of one device on other devices,
+    linked.
 
     Result: {"targets": {<target id>: {"pages": [ids added],
                                        "status_pages": [ids added]}},
@@ -703,10 +711,23 @@ def ws_watch_pages_link(
     Each page and every page and status page it reaches through its tiles
     goes onto each target with the same id and one ``linkId``
     (``WatchConfigStore.link_pages``); from then on a save of any copy
-    reaches every copy. Checked whole before anything is written. Refused
+    reaches every copy. With ``kind`` ``status_pages`` the ``page_ids`` are
+    status pages, linked as they are (a system status page is copied, never
+    linked), and ``link_ids`` names theirs.
+
+    With ``kind`` ``menus`` the op takes ``units`` (``anywhere``,
+    ``entity``) instead of ``page_ids``, and ``replace`` (default false):
+    each unit goes onto each target under one link id, with the pages and
+    status pages its slots open (``WatchConfigStore.link_units``). Each
+    target's entry gains ``units``, the units written there, and
+    ``link_ids`` is ``{<unit>: <linkId>}``.
+
+    Checked whole before anything is written. Refused
     ``unknown_device`` (a source or target that is not a paired device),
-    ``not_found`` (a page the source does not list), ``system_page``,
-    ``id_taken`` (a target holds another page under that id),
+    ``not_found`` (a page the source does not list, or no menus there),
+    ``system_page``, ``id_taken`` (a target holds another page under that
+    id), ``unit_taken`` (a target has its own menu for a unit, unless
+    ``replace``), ``not_for_iphone`` (a kind an iPhone may not own),
     ``awaiting_move`` (a target watch holds no record of a kind the link
     writes while its iPhone may still move its own here), ``invalid``,
     and ``unauthorized`` for a device the caller may not manage: the source
@@ -718,8 +739,20 @@ def ws_watch_pages_link(
         return
     if not require_owner(hass, connection, msg, msg["source_id"], *msg["targets"]):
         return
+    kind = msg.get("kind", "pages")
     try:
-        result = store.link_pages(msg["source_id"], msg["page_ids"], msg["targets"])
+        if kind in LINK_UNITS:
+            result = store.link_units(
+                kind,
+                msg["source_id"],
+                msg.get("units"),
+                msg["targets"],
+                replace=msg.get("replace", False),
+            )
+        else:
+            result = store.link_pages(
+                msg["source_id"], msg.get("page_ids"), msg["targets"], kind=kind
+            )
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
         return
@@ -781,7 +814,9 @@ def ws_watch_pages_places(
     """Which devices hold each linked page, for the Devices menu and badges.
 
     Result: {"pages": {<linkId>: [owner id, ...]},
-             "status_pages": {<linkId>: [owner id, ...]}}
+             "status_pages": {<linkId>: [owner id, ...]},
+             "menus": {<linkId>: {"unit": "anywhere" | "entity",
+                                  "owners": [owner id, ...]}}}
 
     Only the devices the caller may manage are named (all of them for an
     administrator), and a link none of them holds is left out.
@@ -791,13 +826,14 @@ def ws_watch_pages_places(
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     admin = is_admin(connection)
-    result: dict[str, dict[str, list[str]]] = {}
+    result: dict[str, dict[str, Any]] = {}
     for kind, places in store.link_places().items():
-        shown: dict[str, list[str]] = {}
-        for link, owners in places.items():
+        shown: dict[str, Any] = {}
+        for link, place in places.items():
+            owners = place["owners"] if isinstance(place, dict) else place
             kept = [o for o in owners if admin or may_manage_owner(hass, connection, o)]
             if kept:
-                shown[link] = kept
+                shown[link] = {**place, "owners": kept} if isinstance(place, dict) else kept
         result[kind] = shown
     connection.send_result(msg["id"], result)
 
