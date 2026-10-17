@@ -185,6 +185,7 @@ import {
   keptWatchMenusDraft,
   newWatchMenusDraft,
   saveWatchMenusDraft,
+  takeWatchMenuAsk,
   takeWatchMenusRecord,
 } from "./draft.js";
 import { navigatePagesFromMenus, navigateWatchMenus, registerWatchMenusDrafts } from "./hook.js";
@@ -205,6 +206,7 @@ import {
   renderSlotsCard,
   saveMenusZoom,
   selectedSwitcherPage,
+  showMenuSettings,
   shownMenu,
 } from "./menu-view.js";
 import {
@@ -848,6 +850,9 @@ export class WaMenuEditor extends LitElement {
       this.uiState.clear();
       quiet = false;
     }
+    // A card on the Menus tab opened this device on one menu.
+    const asked = takeWatchMenuAsk(watchId);
+    if (asked !== undefined) showMenuSettings({ uiState: this.uiState, requestUpdate: () => this.requestUpdate() }, asked);
     this.startSubscription(watchId);
     void this.loadMenuLinks(watchId);
     void this.load(watchId, quiet);

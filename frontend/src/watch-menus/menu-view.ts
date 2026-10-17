@@ -463,6 +463,15 @@ export function selectMenu(host: Pick<MenusViewHost, "uiState" | "requestUpdate"
   host.requestUpdate();
 }
 
+/** Show `menu` on its own settings, where its Devices line is: no slot of
+ * any list picked, and no switcher page. A card on the Menus tab opens the
+ * editor this way. */
+export function showMenuSettings(host: Pick<MenusViewHost, "uiState" | "requestUpdate">, menu: MenusSection): void {
+  for (const key of [...host.uiState.keys()]) if (key.startsWith(SELECTION_PREFIX)) host.uiState.delete(key);
+  host.uiState.delete(SWITCHER_PAGE_KEY);
+  selectMenu(host, menu);
+}
+
 const SWITCHER_PAGE_KEY = "me:sw:page";
 
 type SwitcherState = Pick<MenusViewHost, "uiState" | "switcherPages" | "switcherRows">;
@@ -544,8 +553,10 @@ function listLabel(host: Pick<MenusViewHost, "hass">, ref: MenuListRef): string 
   return `${nameOf(host.hass, ref.entityId)} menu`;
 }
 
+const SELECTION_PREFIX = "me:sel:";
+
 function selectionKey(ref: MenuListRef): string {
-  return `me:sel:${menuListKey(ref)}`;
+  return `${SELECTION_PREFIX}${menuListKey(ref)}`;
 }
 
 /** The selected slot of a list: the one picked last while it is still

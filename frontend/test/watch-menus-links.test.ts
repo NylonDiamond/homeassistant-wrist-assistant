@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { type HassLike, type OwnerSummary, type WatchConfigRecord, type WatchPagesPlaces, linkWatchMenus } from "../src/ha-api.js";
-import { takeWatchMenusRecord } from "../src/watch-menus/draft.js";
+import { askWatchMenu, takeWatchMenuAsk, takeWatchMenusRecord } from "../src/watch-menus/draft.js";
 import { renderMenuDevicesMenu } from "../src/watch-menus/menu-devices.js";
 import "../src/watch-menus/menu-editor.js";
 import {
@@ -36,7 +36,7 @@ import {
   unlinkMenuUnit,
   withoutMenuUnitLink,
 } from "../src/watch-menus/menu-links.js";
-import { type MenusViewHost, renderMenuInspector, renderMenusCard } from "../src/watch-menus/menu-view.js";
+import { type MenusViewHost, renderMenuInspector, renderMenusCard, shownMenu } from "../src/watch-menus/menu-view.js";
 import { type MenusDocument, setWatchMenuStyle } from "../src/watch-menus/model.js";
 import { type LinkDevice, linkDevicesOf } from "../src/watch-pages/links.js";
 
@@ -379,6 +379,19 @@ describe("the editor's Devices", () => {
     expect(text).not.toContain("The Entity quick menu is on");
     // The menu opens under the line, still above the Look card.
     expect(text.indexOf("The Anywhere menu is on")).toBeLessThan(text.indexOf(">Look<"));
+  });
+
+  it("opens on the menu a Menus tab card asked for, on its own settings", () => {
+    const e = editor(DEFAULTS, { pages: {}, status_pages: {}, menus: {} });
+    e.el.hass = {
+      user: { is_admin: true }, states: {},
+      connection: { sendMessagePromise: async () => ({ revision: 4, document: DEFAULTS }), subscribeMessage: async () => async () => undefined },
+    } as unknown as HassLike;
+    expect(shownMenu(e.host())).toBe("anywhere");
+    askWatchMenu(e.watchId, "entity");
+    (e.el.openWatch as (w: string, q: boolean) => void).call(e.el, e.watchId, true);
+    expect(shownMenu(e.host())).toBe("entity");
+    expect(takeWatchMenuAsk(e.watchId)).toBeUndefined();
   });
 
   it("says a menu on this device alone is here only, with Devices beside it", () => {
