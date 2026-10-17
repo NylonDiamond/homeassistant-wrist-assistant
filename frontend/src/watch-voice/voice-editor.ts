@@ -22,6 +22,12 @@
 // watch. While its iPhone may still move the voice settings here it waits,
 // and "Start fresh instead" opens the same ready screen.
 //
+// The phrases and their defaults can be on several watches (`links.ts`): a
+// Devices menu on the Phrases card, also reached from the ··· menu, ticks
+// another watch to link it and unticks one to unlink it, and the card's
+// badge names the others. Start fresh on linked phrases asks whether it is
+// for this watch only or for all of them.
+//
 // The panel loads this module on its own, with one `import()`, when its route
 // is `/voice` (`hook.ts`). Nothing it imports may import `icons.ts`.
 //
@@ -47,17 +53,23 @@ import {
   type HassLike,
   type OwnerSummary,
   type WatchConfigHistoryEntry,
+  type WatchConfigLinkFailure,
   type WatchConfigRecord,
+  type WatchUnitPlace,
   fetchCloudStatus,
   fetchOwners,
   fetchWatchConfig,
   fetchWatchConfigHistory,
   fetchWatchConfigHistoryEntry,
+  fetchWatchPagesPlaces,
   fetchWatchVoices,
+  linkWatchUnits,
   restoreWatchConfig,
   saveWatchConfig,
   subscribeWatchConfig,
 } from "../ha-api.js";
+import { devicesMenuStyles, renderPageDevicesMenu } from "../watch-pages/devices-menu.js";
+import { type LinkDevice, type PagesRecordFacts, awaitingMove, linkDevicesOf, pagesRecordFacts } from "../watch-pages/links.js";
 import { deviceColor, deviceColors } from "../device-colors.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { agoWords } from "../send-state.js";
@@ -77,7 +89,7 @@ import {
   renderConfigSaved,
 } from "../watch-pages/config-foot.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
-import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
+import { type WatchPagesNote, linkFailuresOf, watchCommandError, withLinkFailures } from "../watch-pages/save-note.js";
 import { friendlyError } from "../friendly-error.js";
 import { restoredText } from "../revision-words.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
@@ -103,6 +115,27 @@ import {
 } from "./draft.js";
 import { navigateWatchVoice, registerWatchVoiceDrafts } from "./hook.js";
 import {
+  VOICE_DEVICES_HEAD,
+  VOICE_DEVICES_NOTE,
+  VOICE_PHRASES_UNIT,
+  VOICE_PHRASES_UNIT_NAME,
+  VOICE_REPLACE_KEEPS_TEXT,
+  startFreshChoices,
+  startFreshVoicePhrases,
+  unlinkVoiceFrom,
+  voiceDevicePlaces,
+  voiceDeviceTitle,
+  voiceLinkBadgeText,
+  voiceLinkBadgeTitle,
+  voiceLinkErrorText,
+  voiceLinkNeedsReplace,
+  voiceLinkPlaces,
+  voicePhrasesAreFresh,
+  voicePhrasesHolders,
+  voicePhrasesLinkId,
+  voiceReplaceQuestion,
+} from "./links.js";
+import {
   type VoiceDocument,
   WATCH_VOICE_NO_RECORD_TITLE,
   WATCH_VOICE_UPDATE_TEXT,
@@ -116,6 +149,7 @@ import {
 } from "./model.js";
 import { watchVoiceReplacedText, watchVoiceSaveNote } from "./save-note.js";
 import {
+  type PhrasesCardLinks,
   VOICE_STAGE_HINT,
   type VoiceViewHost,
   type WatchVoicesState,
@@ -158,6 +192,32 @@ interface RestoreAsk {
   baseRevision: number;
   summary?: string;
 }
+
+/** A tick onto a watch with phrases of its own, waiting for its yes. */
+interface ReplaceAsk {
+  watchId: string;
+  target: string;
+  name: string;
+}
+
+/** Start fresh on phrases several watches hold, waiting for which. */
+interface FreshAsk {
+  watchId: string;
+  question: string;
+  here: string;
+  all: string;
+}
+
+/** Another watch's voice record as the Devices menu reads it. */
+interface OtherVoice {
+  facts: PagesRecordFacts;
+  document?: VoiceDocument;
+}
+
+/** Why the Devices menu's switches cannot be flipped while a save is out. */
+const DEVICES_SAVING_TEXT = "Saving. The phrases can go on another watch once the save is done.";
+/** Nor over unsaved edits: the phrases go on another watch as saved. */
+const DEVICES_DIRTY_TEXT = "Save or discard your edits first. The phrases go on another watch as they are saved here.";
 
 interface HassConnectionEvents {
   addEventListener?(type: "ready", listener: () => void): void;
@@ -252,6 +312,20 @@ export class WaVoiceEditor extends LitElement {
   @state() private ownList?: readonly OwnerSummary[];
   @state() private topMenuOpen = false;
   @state() private watchMenuOpen = false;
+  /** Where each linked unit of voice is (`watch_pages/places`), undefined
+   * before the first read and on an integration that does not link voice,
+   * which leaves the Devices menu and the badge off. */
+  @state() private voicePlaces?: Record<string, WatchUnitPlace>;
+  /** The other watches' voice records, read for the Devices menu. */
+  @state() private otherVoice: ReadonlyMap<string, OtherVoice> = new Map();
+  @state() private devicesOpen = false;
+  @state() private linking = false;
+  @state() private devicesNote?: Note;
+  @state() private replaceAsk?: ReplaceAsk;
+  @state() private freshAsk?: FreshAsk;
+  private linksSeq = 0;
+  /** The phrase link id the places were last read for. */
+  private linksFor?: string;
   /** The stage's scale as stepped with the zoom buttons, undefined while it
    * fits. */
   @state() private zoom?: number;
@@ -357,6 +431,7 @@ export class WaVoiceEditor extends LitElement {
     this.voicesSeq++;
     this.historySeq++;
     this.cloudSeq++;
+    this.linksSeq++;
   }
 
   protected override willUpdate(changed: PropertyValues): void {
@@ -489,11 +564,18 @@ export class WaVoiceEditor extends LitElement {
       this.closeAsk();
       this.endScrub();
       this.uiState.clear();
+      this.devicesOpen = false;
+      this.devicesNote = undefined;
+      this.replaceAsk = undefined;
+      this.freshAsk = undefined;
+      this.otherVoice = new Map();
+      this.linksFor = undefined;
       quiet = false;
     }
     this.startSubscription(watchId);
     void this.load(watchId, quiet);
     void this.loadVoices(watchId);
+    void this.loadLinks(watchId);
   }
 
   /** Home Assistant Cloud's state, for `tts.cloud` in the engine lists. */
@@ -587,6 +669,9 @@ export class WaVoiceEditor extends LitElement {
     const taken = takeWatchVoiceRecord(watchId, document, record.revision);
     if (taken.replaced.length > 0) this.note = { kind: "warn", text: watchVoiceReplacedText(taken.replaced) };
     else if (taken.mergedIntoEdits) this.note = { kind: "warn", text: "The voice settings changed somewhere else. Your edits are kept." };
+    // Another watch linked these phrases, or dropped the link: read where
+    // they are again for the badge.
+    if (voicePhrasesLinkId(document) !== this.linksFor) void this.loadLinks(watchId);
     this.requestUpdate();
   }
 
@@ -776,8 +861,13 @@ export class WaVoiceEditor extends LitElement {
     // A first save over revision 0 that Home Assistant refuses as
     // `no_record` means the watch is not paired (`firstSaveNote`).
     const first = draft.revision <= 0;
+    // The linked watches Home Assistant could not bring up to date.
+    let failures: WatchConfigLinkFailure[] = [];
     const running = saveWatchVoiceDraft(draft, {
-      save: (base, document) => saveWatchConfig(hass, watchId, "voice", base, document).catch((err: unknown) => {
+      save: (base, document) => saveWatchConfig(hass, watchId, "voice", base, document).then((reply) => {
+        failures = linkFailuresOf(reply);
+        return reply;
+      }, (err: unknown) => {
         throw flatError(err);
       }),
       fetch: async () => {
@@ -797,7 +887,11 @@ export class WaVoiceEditor extends LitElement {
       message: errText(err),
     }));
     this.saveEnded(watchId);
-    if (watchId === this.watchId) this.note = firstSaveNote(first, result.code, watchVoiceSaveNote(result));
+    if (watchId === this.watchId) {
+      const note = firstSaveNote(first, result.code, watchVoiceSaveNote(result));
+      this.note = result.ok ? withLinkFailures(note, failures, "phrases") : note;
+      if (result.ok) void this.loadLinks(watchId);
+    }
   }
 
   /** "Start fresh instead", asked first: while an iPhone may still move the
@@ -809,6 +903,236 @@ export class WaVoiceEditor extends LitElement {
     chooseStartFresh("voice", watchId);
     this.note = undefined;
     this.requestUpdate();
+  }
+
+  // ── linked phrases ─────────────────────────────────────────────────────
+
+  /** The watches the phrases can be on (`links.ts`): watches only, named as
+   * the editor names them. */
+  private get linkDevices(): LinkDevice[] {
+    return linkDevicesOf(this.owners.length > 0 ? this.owners : (this.ownList ?? []), false);
+  }
+
+  private deviceName(ownerId: string): string {
+    return this.linkDevices.find((d) => d.ownerId === ownerId)?.name ?? "the other watch";
+  }
+
+  /** The watches that hold the phrases, this one first. */
+  private phraseHolders(): string[] {
+    const watchId = this.watchId;
+    return watchId === undefined ? [] : voicePhrasesHolders(this.draft?.document, watchId, this.voicePlaces);
+  }
+
+  /** The phrases can go on another watch: the integration links voice, the
+   * watch has saved voice settings, and there is another watch. */
+  private get linksOn(): boolean {
+    return this.voicePlaces !== undefined && (this.record?.revision ?? 0) > 0 && this.linkDevices.length > 1;
+  }
+
+  /**
+   * Read where the linked voice settings are (`watch_pages/places`), then
+   * the other watches' voice records, for the replace question and the
+   * watches that wait for their iPhone. Only the newest read lands. An
+   * integration without voice links leaves the Devices menu off; a failed
+   * read keeps what was known.
+   */
+  private async loadLinks(watchId: string): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.linksSeq;
+    const shown = this.record !== undefined && this.record.revision > 0 ? asWatchVoiceDocument(this.record.document) : undefined;
+    this.linksFor = voicePhrasesLinkId(shown);
+    let reply: unknown;
+    try {
+      reply = await fetchWatchPagesPlaces(hass);
+    } catch (err) {
+      if (seq === this.linksSeq && errCode(err) === "unknown_command") this.voicePlaces = undefined;
+      return;
+    }
+    if (seq !== this.linksSeq || watchId !== this.watchId) return;
+    this.voicePlaces = voiceLinkPlaces(reply);
+    if (this.voicePlaces === undefined) return;
+    const others = this.linkDevices.filter((d) => d.ownerId !== watchId);
+    const read = await Promise.all(others.map(async (d): Promise<[string, OtherVoice] | undefined> => {
+      try {
+        const record = await fetchWatchConfig(hass, d.ownerId, "voice");
+        const document = record.revision > 0 ? asWatchVoiceDocument(record.document) : undefined;
+        return [d.ownerId, { facts: pagesRecordFacts(record), ...(document === undefined ? {} : { document }) }];
+      } catch {
+        // A watch whose voice settings could not be read asks nothing first;
+        // Home Assistant still refuses a link that would replace its own.
+        return undefined;
+      }
+    }));
+    if (seq !== this.linksSeq || watchId !== this.watchId) return;
+    this.otherVoice = new Map(read.filter((r): r is [string, OtherVoice] => r !== undefined));
+  }
+
+  /** The watches that wait for their iPhone to move their voice settings
+   * here, which cannot take the phrases yet. */
+  private waitingWatches(): Set<string> {
+    const facts = new Map([...this.otherVoice].map(([id, v]) => [id, v.facts] as const));
+    return awaitingMove(this.owners.length > 0 ? this.owners : (this.ownList ?? []), facts);
+  }
+
+  /** Open the Devices menu on the Phrases card, and read the places again
+   * for it. */
+  private openDevices(): void {
+    this.topMenuOpen = false;
+    this.devicesNote = undefined;
+    this.devicesOpen = true;
+    if (this.watchId !== undefined) void this.loadLinks(this.watchId);
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector?.<HTMLElement>(".vo-phrases-card .pe-dev-menu")?.scrollIntoView({ block: "nearest" });
+    });
+  }
+
+  private closeDevices(): void {
+    this.devicesOpen = false;
+    this.devicesNote = undefined;
+  }
+
+  /** Why the Devices menu's switches cannot be flipped now, or undefined.
+   * The phrases go on another watch as saved, so not over edits. */
+  private devicesBlocked(): string | undefined {
+    if (this.saving) return DEVICES_SAVING_TEXT;
+    if (this.draft?.dirty ?? false) return DEVICES_DIRTY_TEXT;
+    return undefined;
+  }
+
+  /**
+   * Tick a watch: the phrases and their defaults, as saved, go on it,
+   * linked (`watch_pages/link`, kind `voice`). A watch with phrases of its
+   * own asks first (`voiceLinkNeedsReplace`), and so does one Home Assistant
+   * refuses as `unit_taken`; its yes sends `replace`. This watch's copy gets
+   * the link too, and arrives as a change.
+   */
+  private async linkTo(target: string, replace = false): Promise<void> {
+    const hass = this.hass;
+    const watchId = this.watchId;
+    if (!hass || watchId === undefined || target === watchId || this.linking || this.devicesBlocked() !== undefined) return;
+    const name = this.deviceName(target);
+    if (!replace && voiceLinkNeedsReplace(this.otherVoice.get(target)?.document, voicePhrasesLinkId(this.draft?.document))) {
+      this.replaceAsk = { watchId, target, name };
+      return;
+    }
+    this.linking = true;
+    this.devicesNote = undefined;
+    try {
+      await linkWatchUnits(hass, "voice", watchId, [VOICE_PHRASES_UNIT], [target], replace);
+      if (watchId !== this.watchId) return;
+      this.devicesNote = { kind: "ok", text: [`Now on ${name} too.`, replace ? VOICE_REPLACE_KEEPS_TEXT : undefined].filter((t) => t !== undefined).join(" ") };
+      void this.load(watchId, true);
+      void this.loadLinks(watchId);
+    } catch (err) {
+      if (watchId !== this.watchId) return;
+      if (!replace && errCode(err) === "unit_taken") this.replaceAsk = { watchId, target, name };
+      else this.devicesNote = { kind: "err", text: `Not added. ${voiceLinkErrorText(err)}` };
+    } finally {
+      this.linking = false;
+    }
+  }
+
+  /** Untick a watch: its copy is saved without the link and keeps its
+   * phrases (`unlinkVoiceFrom`). */
+  private async unlinkFrom(target: string): Promise<void> {
+    const hass = this.hass;
+    const watchId = this.watchId;
+    if (!hass || watchId === undefined || target === watchId || this.linking || this.devicesBlocked() !== undefined) return;
+    this.linking = true;
+    this.devicesNote = undefined;
+    const result = await unlinkVoiceFrom({
+      read: (o) => fetchWatchConfig(hass, o, "voice"),
+      save: (o, base, document) => saveWatchConfig(hass, o, "voice", base, document),
+    }, target);
+    this.linking = false;
+    if (watchId !== this.watchId) return;
+    const name = this.deviceName(target);
+    this.devicesNote = result.ok
+      ? { kind: "ok", text: `Unlinked ${name}. It keeps its copy of the phrases.` }
+      : { kind: "err", text: `Not unlinked from ${name}: ${result.message}` };
+    void this.load(watchId, true);
+    void this.loadLinks(watchId);
+  }
+
+  private closeReplaceAsk(): void {
+    this.renderRoot?.querySelector<HTMLDialogElement>("dialog.ve-replace-ask")?.close();
+    this.replaceAsk = undefined;
+  }
+
+  private confirmReplace(): void {
+    const ask = this.replaceAsk;
+    this.closeReplaceAsk();
+    if (ask !== undefined && ask.watchId === this.watchId) void this.linkTo(ask.target, true);
+  }
+
+  /**
+   * Start fresh: no phrases and the app's defaults, as one edit Undo takes
+   * back; the watch's own speech settings stay. Phrases on several watches
+   * ask first, here only (this watch is unlinked as it saves) or on all of
+   * them (the save hands the fresh start on).
+   */
+  private startFreshPhrases(): void {
+    const watchId = this.watchId;
+    const draft = this.draft;
+    if (watchId === undefined || draft === undefined || this.saving) return;
+    const choices = startFreshChoices(this.phraseHolders());
+    if (choices === undefined) {
+      this.applyFresh(false);
+      return;
+    }
+    this.freshAsk = { watchId, question: choices.question, here: choices.here, all: choices.all };
+  }
+
+  private applyFresh(unlink: boolean): void {
+    if (this.edit((d) => startFreshVoicePhrases(d, unlink))) {
+      this.note = { kind: "ok", text: unlink
+        ? "Started fresh on this watch. Save to unlink it from the others. Undo brings the phrases back."
+        : "Started fresh. Save to clear the phrases everywhere they are. Undo brings them back." };
+    }
+  }
+
+  private closeFreshAsk(): void {
+    this.renderRoot?.querySelector<HTMLDialogElement>("dialog.ve-fresh-ask")?.close();
+    this.freshAsk = undefined;
+  }
+
+  private answerFresh(unlink: boolean): void {
+    const ask = this.freshAsk;
+    this.closeFreshAsk();
+    if (ask !== undefined && ask.watchId === this.watchId) this.applyFresh(unlink);
+  }
+
+  /** The Phrases card's badge and Devices menu, while the phrases can go on
+   * another watch. */
+  private phrasesLinks(): PhrasesCardLinks | undefined {
+    const watchId = this.watchId;
+    if (watchId === undefined || !this.linksOn) return undefined;
+    const holders = this.phraseHolders();
+    const devices = this.linkDevices;
+    const badge = voiceLinkBadgeText(holders, watchId, devices);
+    const badgeTitle = voiceLinkBadgeTitle(holders, watchId, devices);
+    const blocked = this.devicesBlocked();
+    return {
+      ...(badge === undefined ? {} : { badge }),
+      ...(badgeTitle === undefined ? {} : { badgeTitle }),
+      open: this.devicesOpen,
+      onDevices: () => (this.devicesOpen ? this.closeDevices() : this.openDevices()),
+      menu: this.devicesOpen ? renderPageDevicesMenu({
+        name: VOICE_PHRASES_UNIT_NAME,
+        head: VOICE_DEVICES_HEAD,
+        foot: VOICE_DEVICES_NOTE,
+        places: voiceDevicePlaces(devices, this.draft?.document, watchId, this.voicePlaces, this.waitingWatches()),
+        ...(blocked === undefined ? {} : { blocked }),
+        busy: this.linking,
+        ...(this.devicesNote === undefined ? {} : { note: this.devicesNote }),
+        className: "at-card",
+        colorOf: (ownerId) => this.colorOf(ownerId),
+        titleOf: voiceDeviceTitle,
+        onToggle: (place) => void (place.on ? this.unlinkFrom(place.device.ownerId) : this.linkTo(place.device.ownerId)),
+        onDone: () => this.closeDevices(),
+      }) : nothing,
+    };
   }
 
   // ── restore ────────────────────────────────────────────────────────────
@@ -887,6 +1211,11 @@ export class WaVoiceEditor extends LitElement {
       this.watchMenuOpen = false;
       return;
     }
+    if (e.key === "Escape" && this.devicesOpen) {
+      e.preventDefault();
+      this.closeDevices();
+      return;
+    }
     if (isTextField(path[0])) return;
     if (mod && !e.altKey && key === "z") {
       e.preventDefault();
@@ -906,11 +1235,12 @@ export class WaVoiceEditor extends LitElement {
   };
 
   private onWindowPointerDown = (e: PointerEvent): void => {
-    if (!this.topMenuOpen && !this.watchMenuOpen) return;
+    if (!this.topMenuOpen && !this.watchMenuOpen && !this.devicesOpen) return;
     const path = e.composedPath();
     const within = (name: string) => path.some((n) => n instanceof HTMLElement && n.classList.contains(name));
     if (this.topMenuOpen && !within("pe-top-menu")) this.topMenuOpen = false;
     if (this.watchMenuOpen && !within("ve-watch-picker")) this.watchMenuOpen = false;
+    if (this.devicesOpen && !within("pe-dev-menu") && !within("vo-dev-open") && !within("pe-top-menu") && !within("pe-ask")) this.closeDevices();
   };
 
   // ── drawing ────────────────────────────────────────────────────────────
@@ -925,8 +1255,37 @@ export class WaVoiceEditor extends LitElement {
           <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
       ${this.renderBody(watches)}
-      ${this.restoreAsk ? this.renderRestoreAsk(this.restoreAsk) : nothing}
+      ${this.restoreAsk ? this.renderRestoreAsk(this.restoreAsk)
+        : this.replaceAsk ? this.renderReplaceAsk(this.replaceAsk)
+        : this.freshAsk ? this.renderFreshAsk(this.freshAsk) : nothing}
     `;
+  }
+
+  /** The question before a tick writes over a watch's own phrases. */
+  private renderReplaceAsk(ask: ReplaceAsk): TemplateResult {
+    return html`<dialog class="pe-ask ve-replace-ask" aria-labelledby="ve-replace-title"
+      @close=${() => { this.replaceAsk = undefined; }}>
+      <h3 id="ve-replace-title">${voiceReplaceQuestion(ask.name)}</h3>
+      <p class="pe-muted">Its phrases and defaults become these, linked: an edit on one watch then shows on both. ${VOICE_REPLACE_KEEPS_TEXT}</p>
+      <div class="pe-ask-foot">
+        <button class="pe-btn" @click=${() => this.closeReplaceAsk()}>Cancel</button>
+        <button class="pe-btn pe-primary" @click=${() => this.confirmReplace()}>Replace</button>
+      </div>
+    </dialog>`;
+  }
+
+  /** Start fresh's question for phrases on several watches. */
+  private renderFreshAsk(ask: FreshAsk): TemplateResult {
+    return html`<dialog class="pe-ask ve-fresh-ask" aria-labelledby="ve-fresh-title"
+      @close=${() => { this.freshAsk = undefined; }}>
+      <h3 id="ve-fresh-title">Start fresh?</h3>
+      <p>${ask.question} Here only unlinks this watch and leaves the others as they are.</p>
+      <div class="pe-ask-foot">
+        <button class="pe-btn" @click=${() => this.closeFreshAsk()}>Cancel</button>
+        <button class="pe-btn" @click=${() => this.answerFresh(true)}>${ask.here}</button>
+        <button class="pe-btn pe-primary" @click=${() => this.answerFresh(false)}>${ask.all}</button>
+      </div>
+    </dialog>`;
   }
 
   private get stacked(): boolean {
@@ -984,13 +1343,15 @@ export class WaVoiceEditor extends LitElement {
     return this.watchId !== undefined && this.newWatch && !this.opensReady();
   }
 
-  /** The ··· menu: Discard edits, and Start fresh instead while the screen
-   * waits for the iPhone. */
+  /** The ··· menu: Discard edits; on a watch with saved voice settings,
+   * Devices (the Phrases card's menu) and Start fresh; and Start fresh
+   * instead while the screen waits for the iPhone. */
   private renderTopMenu(draft: WatchVoiceDraft | undefined): TemplateResult | typeof nothing {
     const start = this.canStartFresh();
     if (draft === undefined && !start) return nothing;
     const open = this.topMenuOpen;
     const run = (fn: () => void) => () => { this.topMenuOpen = false; fn(); };
+    const saved = draft !== undefined && !this.newWatch;
     return html`<span class="side-menu pe-top-menu">
       <button class="tb-btn tb-more" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} aria-label="More actions" title="More"
         @click=${() => { this.topMenuOpen = !open; }}>···</button>
@@ -998,6 +1359,12 @@ export class WaVoiceEditor extends LitElement {
         ${draft ? html`<button class="row" role="menuitem" ?disabled=${!draft.dirty || this.saving}
           title=${this.newWatch ? "Go back to the defaults. Undo brings the edits back." : "Go back to the copy Home Assistant holds. Undo brings the edits back."}
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
+        ${saved && this.linksOn ? html`<button class="row ve-dev-item" role="menuitem"
+          title="Pick the watches these phrases and defaults are on"
+          @click=${run(() => this.openDevices())}>Devices…</button>` : nothing}
+        ${saved ? html`<button class="row" role="menuitem" ?disabled=${this.saving || voicePhrasesAreFresh(draft.document)}
+          title="No phrases and the app's defaults again. The watch voice and Silent Mode setting stay. Undo brings the phrases back."
+          @click=${run(() => this.startFreshPhrases())}>Start fresh</button>` : nothing}
         ${start ? html`<button class="row" role="menuitem"
           @click=${run(() => this.startFresh())}>${START_FRESH_BUTTON}</button>` : nothing}
       </div>` : nothing}
@@ -1145,7 +1512,7 @@ export class WaVoiceEditor extends LitElement {
     <div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
       <div class="column left">
         ${renderVoiceCard(host)}
-        ${renderPhrasesCard(host)}
+        ${renderPhrasesCard(host, this.phrasesLinks())}
       </div>
       ${this.renderGutter("left")}
       <div class="column canvas">
@@ -1334,7 +1701,7 @@ export class WaVoiceEditor extends LitElement {
     dialog.pe-ask p.pe-muted { font-size: 13px; }
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
     :host([narrow]) { --cf-pad: 12px; }
-  `, voiceViewStyles, configFootStyles, headBarStyles];
+  `, voiceViewStyles, devicesMenuStyles, configFootStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-voice-editor")) {
