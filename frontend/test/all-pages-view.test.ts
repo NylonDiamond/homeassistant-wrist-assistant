@@ -502,6 +502,25 @@ describe("the Status pages tab", () => {
     t.call("setFilter", "all");
   });
 
+  it("links a starter held linked on one device and loose on another from the linked copy, onto the loose one only", async () => {
+    const t = tab(true, "status_pages");
+    const watchStatus = t.held.get(`${t.watch}/status_pages`)!;
+    const [starter, ...rest] = watchStatus.document.statusPages as JsonObject[];
+    t.held.set(`${t.watch}/status_pages`, { ...watchStatus, document: { schemaVersion: 1, statusPages: [{ ...starter, linkId: "K1" }, ...rest] } });
+    await t.call<Promise<void>>("loadAll");
+    const card = t.card("Lights On");
+    expect(card.copies.map((c) => c.device.ownerId)).toEqual([t.watch, t.phone]);
+    expect(t.whole()).toContain("Not linked on Jesse's iPhone: it has its own copy.");
+    // Even on the loose copy's own device tab, the link goes from the linked one.
+    t.call("setFilter", t.phone);
+    await t.call<Promise<void>>("linkStarter", card);
+    expect(t.sent.filter((m) => (m.type as string).endsWith("watch_pages/link")).map((m) => [m.source_id, m.page_ids, m.targets, m.kind]))
+      .toEqual([[t.watch, [STARTER], [t.phone], "status_pages"]]);
+    const phoneStarter = (t.held.get(`${t.phone}/status_pages`)!.document.statusPages as JsonObject[])[0]!;
+    expect(phoneStarter.linkId).toBe("K1");
+    t.call("setFilter", "all");
+  });
+
   it("picks status pages, and deletes them from every device without touching pages", async () => {
     const t = await statusTab();
     t.call("startSelect");
