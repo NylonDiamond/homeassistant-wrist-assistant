@@ -115,7 +115,9 @@ def test_apply_link_assigns_link_ids_and_appends_to_the_target() -> None:
     source = _pages()
     before = copy.deepcopy(source)
     target = {"schemaVersion": 1, "pages": [{"id": "OWN", "name": "Mine"}]}
-    new_source, new_target, added, ids = links.apply_link(source, target, "pages", [HOME, DEEP])
+    new_source, new_target, added, ids, _adopted = links.apply_link(
+        source, target, "pages", [HOME, DEEP]
+    )
     assert source == before, "the input is never changed"
     assert added == [HOME, DEEP]
     assert set(ids) == {HOME, DEEP}
@@ -132,7 +134,7 @@ def test_apply_link_keeps_an_existing_link_id_and_a_target_copy() -> None:
     source = _pages()
     source["pages"][1]["linkId"] = "L-HOME"
     target = {"pages": [{"id": HOME.lower(), "name": "Old", "linkId": "L-HOME"}]}
-    new_source, new_target, added, ids = links.apply_link(source, target, "pages", [HOME])
+    new_source, new_target, added, ids, _adopted = links.apply_link(source, target, "pages", [HOME])
     assert ids == {HOME: "L-HOME"}
     assert added == []
     assert new_target == target
@@ -150,7 +152,7 @@ def test_apply_link_refuses_an_id_the_target_holds_unlinked() -> None:
 
 
 def test_apply_link_onto_no_record_starts_an_empty_document() -> None:
-    _source, target, added, _ids = links.apply_link(_pages(), None, "pages", [ALONE])
+    _source, target, added, _ids, _adopted = links.apply_link(_pages(), None, "pages", [ALONE])
     assert target["schemaVersion"] == 1
     assert [p["id"] for p in target["pages"]] == [ALONE]
     assert added == [ALONE]
@@ -166,10 +168,11 @@ def test_apply_link_refuses_system_and_missing_pages() -> None:
 
 
 def test_a_starter_status_page_links_like_any_other() -> None:
-    source, target, added, ids = links.apply_link(
+    source, target, added, ids, adopted = links.apply_link(
         _status(), None, "statusPages", [SYSTEM_STATUS, STATUS]
     )
     assert added == [SYSTEM_STATUS, STATUS]
+    assert adopted == []
     assert set(ids) == {SYSTEM_STATUS, STATUS}
     assert source["statusPages"][0]["linkId"] == ids[SYSTEM_STATUS]
     assert target["statusPages"][0]["linkId"] == ids[SYSTEM_STATUS]
@@ -191,9 +194,12 @@ def test_a_starter_the_target_holds_unlinked_is_adopted_in_its_place() -> None:
         ],
     }
     before = copy.deepcopy(held)
-    source, target, added, ids = links.apply_link(_status(), held, "statusPages", [SYSTEM_STATUS])
+    source, target, added, ids, adopted = links.apply_link(
+        _status(), held, "statusPages", [SYSTEM_STATUS]
+    )
     assert held == before, "the input is never changed"
     assert added == [], "an adopted page is not added"
+    assert adopted == [SYSTEM_STATUS], "it is named as adopted"
     link = ids[SYSTEM_STATUS]
     assert source["statusPages"][0]["linkId"] == link
     assert [p["id"] for p in target["statusPages"]] == ["PHONE-ONLY", SYSTEM_STATUS.lower()]
@@ -206,8 +212,10 @@ def test_a_starter_the_target_holds_unlinked_is_adopted_in_its_place() -> None:
         "isHidden": True,
     }, "the source's contents, the target's place, id spelling and isHidden"
     # Linked from then on: a second link onto it writes nothing.
-    _s, again, added, _i = links.apply_link(source, target, "statusPages", [SYSTEM_STATUS])
-    assert again == target and added == []
+    _s, again, added, _i, adopted = links.apply_link(
+        source, target, "statusPages", [SYSTEM_STATUS]
+    )
+    assert again == target and added == [] and adopted == []
 
 
 def test_a_starter_is_adopted_when_either_side_says_so() -> None:
@@ -215,14 +223,14 @@ def test_a_starter_is_adopted_when_either_side_says_so() -> None:
     # not one of the five fixed ones.
     source = {"statusPages": [{"id": STATUS, "name": "Doors", "rows": []}]}
     held = {"statusPages": [{"id": STATUS, "name": "Old", "isSystemDefault": True}]}
-    _s, target, _a, ids = links.apply_link(source, held, "statusPages", [STATUS])
+    _s, target, _a, ids, _ad = links.apply_link(source, held, "statusPages", [STATUS])
     assert target["statusPages"] == [
         {"id": STATUS, "name": "Doors", "rows": [], "linkId": ids[STATUS]}
     ]
     # And with the mark on the source alone.
     source["statusPages"][0]["isSystemDefault"] = True
     held = {"statusPages": [{"id": STATUS, "name": "Old"}]}
-    _s, target, _a, ids = links.apply_link(source, held, "statusPages", [STATUS])
+    _s, target, _a, ids, _ad = links.apply_link(source, held, "statusPages", [STATUS])
     assert target["statusPages"][0]["linkId"] == ids[STATUS]
 
 
@@ -247,7 +255,9 @@ def test_a_status_page_clash_is_still_id_taken() -> None:
 
 def test_a_linked_starter_fans_out_and_drops_its_last_link() -> None:
     held = {"statusPages": [{"id": SYSTEM_STATUS, "name": "Mine", "rows": [], "isHidden": True}]}
-    source, target, _a, ids = links.apply_link(_status(), held, "statusPages", [SYSTEM_STATUS])
+    source, target, _a, ids, _ad = links.apply_link(
+        _status(), held, "statusPages", [SYSTEM_STATUS]
+    )
     source["statusPages"][0]["name"] = "Power"
     out = links.fan_out(source, target, "statusPages")
     assert out["statusPages"][0]["name"] == "Power"
@@ -263,7 +273,9 @@ def test_a_linked_starter_fans_out_and_drops_its_last_link() -> None:
 
 
 def _linked_pair() -> tuple[dict, dict]:
-    source, target, _added, _ids = links.apply_link(_pages(), None, "pages", [HOME, DEEP])
+    source, target, _added, _ids, _adopted = links.apply_link(
+        _pages(), None, "pages", [HOME, DEEP]
+    )
     return source, target
 
 

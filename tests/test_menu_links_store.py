@@ -85,7 +85,12 @@ def test_a_menu_link_onto_a_device_with_none_copies_the_menus_and_its_pages(ctx)
     link = result["link_ids"]["anywhere"]
     assert result == {
         "targets": {
-            PHONE: {"pages": [HOME, LIGHTS], "status_pages": [DOORS], "units": ["anywhere"]}
+            PHONE: {
+                "pages": [HOME, LIGHTS],
+                "status_pages": [DOORS],
+                "adopted_status_pages": [],
+                "units": ["anywhere"],
+            }
         },
         "link_ids": {"anywhere": link},
     }
@@ -113,7 +118,12 @@ def test_a_menu_link_onto_a_device_with_none_copies_the_menus_and_its_pages(ctx)
 def test_the_entity_menu_brings_only_its_own_slots_pages(ctx) -> None:
     _menus_record(ctx)
     result = _link(ctx, ["entity"], [PHONE])
-    assert result["targets"][PHONE] == {"pages": [SOLO], "status_pages": [], "units": ["entity"]}
+    assert result["targets"][PHONE] == {
+        "pages": [SOLO],
+        "status_pages": [],
+        "adopted_status_pages": [],
+        "units": ["entity"],
+    }
     assert _doc(ctx, PHONE, "menus")["linkIds"] == {"entity": result["link_ids"]["entity"]}
 
 
@@ -138,6 +148,7 @@ def test_a_menu_slot_that_opens_a_starter_links_the_targets_own_copy(ctx) -> Non
     ctx.changes.clear()
     result = _link(ctx, ["entity"], [PHONE])
     assert result["targets"][PHONE]["status_pages"] == [], "adopted, not added"
+    assert result["targets"][PHONE]["adopted_status_pages"] == [STARTER]
     watch = _doc(ctx, WATCH, "status_pages")["statusPages"]
     phone = _doc(ctx, PHONE, "status_pages")["statusPages"]
     assert [p["id"] for p in phone] == [STARTER]
@@ -169,7 +180,12 @@ def test_relinking_writes_nothing(ctx) -> None:
     ctx.changes.clear()
     again = _link(ctx, ["entity", "anywhere"], [PHONE])
     assert again["link_ids"] == first["link_ids"]
-    assert again["targets"][PHONE] == {"pages": [], "status_pages": [], "units": []}
+    assert again["targets"][PHONE] == {
+        "pages": [],
+        "status_pages": [],
+        "adopted_status_pages": [],
+        "units": [],
+    }
     assert ctx.changes == []
 
 

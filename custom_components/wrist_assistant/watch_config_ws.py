@@ -705,7 +705,8 @@ def ws_watch_pages_link(
     other devices, linked.
 
     Result: {"targets": {<target id>: {"pages": [ids added],
-                                       "status_pages": [ids added]}},
+                                       "status_pages": [ids added],
+                                       "adopted_status_pages": [ids]}},
              "link_ids": {<page id>: <linkId>}}
 
     Each page and every page and status page it reaches through its tiles
@@ -715,8 +716,9 @@ def ws_watch_pages_link(
     status pages, linked as they are, and ``link_ids`` names theirs. A
     starter status page links like any other; a target that holds its own
     unlinked copy of one takes the link and the source's contents in place
-    (keeping its ``isHidden``), and that id is not in its ``status_pages``
-    list, which names only the pages appended.
+    (keeping its ``isHidden``), and that id is in its
+    ``adopted_status_pages``, not its ``status_pages`` list, which names only
+    the pages appended.
 
     With ``kind`` ``menus`` the op takes ``units`` (``anywhere``,
     ``entity``) instead of ``page_ids``, and ``replace`` (default false):
@@ -781,7 +783,10 @@ def ws_watch_pages_link_all(
     panel's Add all watch pages).
 
     Result: {"pages": [ids added], "status_pages": [ids added],
-             "copied": ["menus"?, "rooms"?]}
+             "adopted_status_pages": [ids], "copied": ["menus"?, "rooms"?]}
+
+    ``adopted_status_pages`` names the target's own copies of starter status
+    pages that took the link in place (``link``'s reply says the same).
 
     Every page but the system pages and every status page, linked as
     ``link`` links them, then the source's menus and rooms copied once for a
@@ -808,6 +813,7 @@ def ws_watch_pages_link_all(
         {
             "pages": added["pages"],
             "status_pages": added["status_pages"],
+            "adopted_status_pages": added["adopted_status_pages"],
             "copied": result["copied"],
         },
     )

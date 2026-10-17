@@ -222,15 +222,16 @@ def new_link_id() -> str:
 
 def apply_link(
     source_doc: Any, target_doc: Any, key: str, ids: Iterable[str]
-) -> tuple[dict[str, Any], dict[str, Any], list[str], dict[str, str]]:
+) -> tuple[dict[str, Any], dict[str, Any], list[str], dict[str, str], list[str]]:
     """Put the pages ``ids`` of ``source_doc`` on a target device.
 
-    Returns ``(source, target, added, links)``: the source document with a
-    ``linkId`` on each linked page that had none (a fresh uuid4 hex), the
-    target document with the pages it lacked appended at the end (same id,
-    the source's ``linkId``, the source's ``isHidden``), the ids added, and
-    each linked page's ``linkId`` by its id. ``target_doc`` None is a device
-    with no record of the kind yet (:func:`empty_document`).
+    Returns ``(source, target, added, links, adopted)``: the source document
+    with a ``linkId`` on each linked page that had none (a fresh uuid4 hex),
+    the target document with the pages it lacked appended at the end (same
+    id, the source's ``linkId``, the source's ``isHidden``), the ids added,
+    each linked page's ``linkId`` by its id, and the ids of the target's own
+    copies adopted (below). ``target_doc`` None is a device with no record of
+    the kind yet (:func:`empty_document`).
 
     A page the target already holds with the same ``linkId`` is left as it
     is. A target page with the same id and no or another ``linkId`` refuses
@@ -239,8 +240,8 @@ def apply_link(
     starter status page (:func:`is_system_status_page`, on either side) the
     target holds with no ``linkId`` is adopted where it stands. It takes the
     link and the source's contents, keeping its place and its ``isHidden``
-    as :func:`fan_out` does, and is not counted in ``added``. A starter copy
-    with another ``linkId`` is still ``id_taken``.
+    as :func:`fan_out` does, and is counted in ``adopted``, not ``added``. A
+    starter copy with another ``linkId`` is still ``id_taken``.
     """
     source = copy.deepcopy(source_doc) if isinstance(source_doc, dict) else empty_document(key)
     target = copy.deepcopy(target_doc) if isinstance(target_doc, dict) else empty_document(key)
@@ -251,6 +252,7 @@ def apply_link(
     source_by_key = {_key(page.get("id")): page for page in items(source, key)}
     target_by_key = {_key(page.get("id")): page for page in items(target, key)}
     added: list[str] = []
+    adopted: list[str] = []
     links: dict[str, str] = {}
     for page_id in ids:
         page = source_by_key.get(_key(page_id))
@@ -270,15 +272,16 @@ def apply_link(
                 raise PageLinkError(
                     "id_taken", f"the device already has another page with the id {page_id}"
                 )
-            adopted = _linked_copy(page, held)
+            joined = _linked_copy(page, held)
             place = next(i for i, other in enumerate(target[key]) if other is held)
-            target[key][place] = adopted
-            target_by_key[_key(page_id)] = adopted
+            target[key][place] = joined
+            target_by_key[_key(page_id)] = joined
+            adopted.append(page["id"])
             continue
         target[key].append(copy.deepcopy(page))
         target_by_key[_key(page_id)] = target[key][-1]
         added.append(page["id"])
-    return source, target, added, links
+    return source, target, added, links, adopted
 
 
 def _adoptable(page: Mapping[str, Any], held: Mapping[str, Any], key: str) -> bool:

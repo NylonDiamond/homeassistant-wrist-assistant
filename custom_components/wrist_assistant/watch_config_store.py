@@ -2265,8 +2265,9 @@ class WatchConfigStore:
                 target_status = self._document(target, "status_pages")
                 new_status = None
                 added_status: list[str] = []
+                adopted_status: list[str] = []
                 if reach_status:
-                    source_status, new_status, added_status, links = apply_link(
+                    source_status, new_status, added_status, links, adopted_status = apply_link(
                         source_status, target_status, LINKED_KINDS["status_pages"], reach_status
                     )
                     status_links.update(links)
@@ -2274,7 +2275,7 @@ class WatchConfigStore:
                 new_pages = None
                 added_pages: list[str] = []
                 if reach_pages:
-                    source_pages, new_pages, added_pages, links = apply_link(
+                    source_pages, new_pages, added_pages, links, _adopted = apply_link(
                         source_pages, target_pages, LINKED_KINDS["pages"], reach_pages
                     )
                     page_links.update(links)
@@ -2285,7 +2286,11 @@ class WatchConfigStore:
                         new_pages if new_pages != target_pages else None,
                     )
                 )
-                reply_targets[target] = {"pages": added_pages, "status_pages": added_status}
+                reply_targets[target] = {
+                    "pages": added_pages,
+                    "status_pages": added_status,
+                    "adopted_status_pages": adopted_status,
+                }
         except PageLinkError as err:
             raise WatchConfigLinkError(err.code, err.message) from err
         for target, new_status, new_pages in plans:
@@ -2338,8 +2343,8 @@ class WatchConfigStore:
         A starter status page links like any other. A target that holds its
         own unlinked copy of one (same id) is not refused: that copy takes
         the link and the source's contents in its own place, keeping its
-        ``isHidden``, and is not among the ids added
-        (:func:`page_links.apply_link`). This holds wherever a status page
+        ``isHidden``; it is named in ``adopted_status_pages``, not among the
+        ids added (:func:`page_links.apply_link`). This holds wherever a status page
         is linked: here, in :meth:`link_device`, and for the status pages a
         menu's slots open.
 
@@ -2358,7 +2363,9 @@ class WatchConfigStore:
         written.
 
         Returns ``{"targets": {target: {"pages": [ids added],
-        "status_pages": [ids added]}}, "link_ids": {page id: linkId}}``.
+        "status_pages": [ids added], "adopted_status_pages": [ids of the
+        target's own copies linked in place]}}, "link_ids": {page id:
+        linkId}}``.
         """
         if (
             not isinstance(page_ids, list)
@@ -2494,7 +2501,8 @@ class WatchConfigStore:
         owner only is dropped there.
 
         Returns ``{"targets": {target: {"pages": [ids added], "status_pages":
-        [ids added], "units": [units written]}}, "link_ids": {unit: linkId}}``.
+        [ids added], "adopted_status_pages": [ids], "units": [units
+        written]}}, "link_ids": {unit: linkId}}``.
         """
         if kind not in LINK_UNITS:
             raise WatchConfigValidationError(
@@ -2525,7 +2533,8 @@ class WatchConfigStore:
 
         page_writes: list[tuple[str, str, dict[str, Any]]] = []
         reply_targets: dict[str, dict[str, list[str]]] = {
-            target: {"pages": [], "status_pages": []} for target in dict.fromkeys(targets)
+            target: {"pages": [], "status_pages": [], "adopted_status_pages": []}
+            for target in dict.fromkeys(targets)
         }
         if kind == "menus":
             page_writes, page_reply = self._plan_menu_pages(

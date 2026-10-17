@@ -96,7 +96,14 @@ def test_a_voice_link_onto_a_watch_with_none_copies_the_library_not_its_settings
     result = _link(ctx, [WATCH_2])
     link = result["link_ids"]["phrases"]
     assert result == {
-        "targets": {WATCH_2: {"pages": [], "status_pages": [], "units": ["phrases"]}},
+        "targets": {
+            WATCH_2: {
+                "pages": [],
+                "status_pages": [],
+                "adopted_status_pages": [],
+                "units": ["phrases"],
+            }
+        },
         "link_ids": {"phrases": link},
     }
     watch = _doc(ctx, WATCH, "voice")

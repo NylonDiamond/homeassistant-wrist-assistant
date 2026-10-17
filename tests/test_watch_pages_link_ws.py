@@ -96,7 +96,9 @@ def test_link_answers_what_each_target_gained_and_the_link_ids(links) -> None:
     result = connection.results[1]
     watch = links.store.get(WATCH, "pages").document["pages"]
     assert result == {
-        "targets": {PHONE: {"pages": [HOME, LIGHTS], "status_pages": [DOORS]}},
+        "targets": {
+            PHONE: {"pages": [HOME, LIGHTS], "status_pages": [DOORS], "adopted_status_pages": []}
+        },
         "link_ids": {HOME: watch[0]["linkId"], LIGHTS: watch[1]["linkId"]},
     }
     assert [p["id"] for p in links.store.get(PHONE, "pages").document["pages"]] == [HOME, LIGHTS]
@@ -123,7 +125,7 @@ def test_link_of_status_pages_links_them_alone(links) -> None:
     assert connection.errors == []
     doors = links.store.get(WATCH, "status_pages").document["statusPages"][0]["linkId"]
     assert connection.results[1] == {
-        "targets": {PHONE: {"pages": [], "status_pages": [DOORS]}},
+        "targets": {PHONE: {"pages": [], "status_pages": [DOORS], "adopted_status_pages": []}},
         "link_ids": {DOORS: doors},
     }
     assert links.store.get(PHONE, "pages") is None
@@ -150,7 +152,14 @@ def test_link_of_menus_answers_the_units_and_what_came_along(links) -> None:
     assert connection.errors == []
     link = links.store.get(WATCH, "menus").document["linkIds"]["anywhere"]
     assert connection.results[1] == {
-        "targets": {PHONE: {"pages": [LIGHTS], "status_pages": [], "units": ["anywhere"]}},
+        "targets": {
+            PHONE: {
+                "pages": [LIGHTS],
+                "status_pages": [],
+                "adopted_status_pages": [],
+                "units": ["anywhere"],
+            }
+        },
         "link_ids": {"anywhere": link},
     }
     assert links.store.get(PHONE, "menus").document["linkIds"] == {"anywhere": link}
@@ -211,7 +220,14 @@ def test_link_of_voice_answers_the_unit_and_places_names_it(links) -> None:
     assert connection.errors == []
     link = links.store.get(WATCH, "voice").document["linkIds"]["phrases"]
     assert connection.results[1] == {
-        "targets": {WATCH_2: {"pages": [], "status_pages": [], "units": ["phrases"]}},
+        "targets": {
+            WATCH_2: {
+                "pages": [],
+                "status_pages": [],
+                "adopted_status_pages": [],
+                "units": ["phrases"],
+            }
+        },
         "link_ids": {"phrases": link},
     }
     watch_2 = links.store.get(WATCH_2, "voice").document
@@ -318,12 +334,13 @@ def test_link_all_links_every_page_and_status_page_and_copies_menus(links) -> No
     assert connection.results[1] == {
         "pages": [HOME, LIGHTS],
         "status_pages": [DOORS, "BBBBBBBB-0000-4000-8000-000000000002"],
+        "adopted_status_pages": [],
         "copied": ["menus"],
     }
     assert links.store.get(PHONE, "menus").document == menus
     assert links.store.get(PHONE, "menus").updated_by == "panel"
     again = _link_all(links, source_id=WATCH, target_id=PHONE).results[1]
-    assert again == {"pages": [], "status_pages": [], "copied": []}
+    assert again == {"pages": [], "status_pages": [], "adopted_status_pages": [], "copied": []}
 
 
 @pytest.mark.parametrize(
