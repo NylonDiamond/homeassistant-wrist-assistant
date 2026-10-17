@@ -172,11 +172,12 @@ export interface MenusViewHost {
   /** The host of a page's switcher settings, editing the pages draft;
    * undefined while there is no pages draft or no such page. */
   switcherSettings?(pageId: string): SwitcherSettingsHost | undefined;
-  /** The Devices line on a menu's own card (`menu-devices.ts`), and the menu
-   * it opens under it. Absent, or nothing, where menus are not shared (an
-   * older integration, one device, a test). */
+  /** The Devices line at the top of a menu's own settings, under its name
+   * (`menu-devices.ts`), and the menu it opens under it. Absent, or nothing,
+   * where menus are not shared (an older integration, one device, a test). */
   devicesLine?(menu: MenusSection): TemplateResult | typeof nothing;
-  /** The badge on a linked menu's row: "Also on Jesse's iPhone". */
+  /** The badge on a linked menu's row, after its count: "Also on Jesse's
+   * iPhone". */
   linkBadge?(menu: MenusSection): string | undefined;
   /** Apply `change` to the document as it is now: one undo step, or with
    * `coalesce` a step the next edits with the same key replace. */
@@ -666,8 +667,8 @@ export function renderMenusCard(host: MenusViewHost): TemplateResult {
           }}>
           <span class="grip" aria-hidden="true"></span>
           ${menuThumb(host, id)}
-          <span class="name"><b><span class="nm-t">${label}</span><span class="me-menu-count">${menuRowCount(host, id)}</span></b><small>${MENU_ROW_LINES[id]}</small></span>
-          <span class="right">${shared === undefined ? nothing : html`<span class="badges"><span class="badge pe-linked" title=${shared}>${shared}</span></span>`}</span>
+          <span class="name"><b><span class="nm-t">${label}</span><span class="me-menu-count">${menuRowCount(host, id)}</span>${shared === undefined
+            ? nothing : html`<span class="badge pe-linked" title=${shared}>${shared}</span>`}</b><small>${MENU_ROW_LINES[id]}</small></span>
         </div>`;
       })}
     </div>
@@ -1205,7 +1206,6 @@ function renderAnywhereStyleCards(host: MenusViewHost): TemplateResult {
   const motionChanged = menuStyleKeysChanged(host.document, "quickAction", ANYWHERE_MOTION_KEYS);
   return html`${card(host, "style", "style-anywhere", "Look", html`<fieldset class="me-body me-style" ?disabled=${host.busy} aria-label="Look">
       ${renderAnywhereLookBody(host)}
-      ${host.devicesLine?.("anywhere") ?? nothing}
     </fieldset>`, { summary: anywhereLookSummary(host.document), dot: lookChanged })}
     ${card(host, "motion", "motion-anywhere", "Motion", html`<fieldset class="me-body me-style" ?disabled=${host.busy} aria-label="Motion">
       ${renderAnywhereMotionBody(host)}
@@ -1217,7 +1217,6 @@ function renderSwitcherStyleCard(host: MenusViewHost): TemplateResult {
   const changed = menuStyleKeysChanged(host.document, "pageSwitcher", SWITCHER_LOOK_KEYS);
   return card(host, "style", "style-switcher", "Look", html`<fieldset class="me-body me-style" ?disabled=${host.busy} aria-label="Look">
     ${renderSwitcherLookBody(host)}
-    ${host.devicesLine?.("switcher") ?? nothing}
   </fieldset>`, { summary: switcherLookSummary(host.document), dot: changed });
 }
 
@@ -1286,19 +1285,20 @@ function renderEntityMenuCard(host: MenusViewHost): TemplateResult {
   }
   return card(host, "menu", "menu", "Which menu", html`<fieldset class="me-body me-pick" ?disabled=${host.busy} aria-label="Which menu">
     ${modeRow}${body}
-    ${host.devicesLine?.("entity") ?? nothing}
   </fieldset>`, { summary, dot });
 }
 
 /** The line under a menu's own cards that has slots. */
 export const MENU_PICK_NOTE = "Click a slot on the watch to change what it does.";
 
-/** The shown menu's own settings, with no slot selected. */
+/** The shown menu's own settings, with no slot selected: first where the
+ * menu is (its Devices line, right under its name, where the eye lands),
+ * then what it is and its cards. */
 function renderMenuSettings(host: MenusViewHost, menu: MenusSection): TemplateResult {
   const cards = menu === "anywhere" ? renderAnywhereStyleCards(host)
     : menu === "switcher" ? renderSwitcherStyleCard(host)
     : renderEntityMenuCard(host);
-  return html`<p class="me-menu-note">${MENU_LINES[menu]}</p>${cards}
+  return html`${host.devicesLine?.(menu) ?? nothing}<p class="me-menu-note">${MENU_LINES[menu]}</p>${cards}
     <p class="me-menu-note me-pick-note">${menu === "switcher" ? SWITCHER_PICK_NOTE : MENU_PICK_NOTE}</p>`;
 }
 
