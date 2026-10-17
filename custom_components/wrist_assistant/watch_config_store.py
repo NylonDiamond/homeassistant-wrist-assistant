@@ -2032,6 +2032,11 @@ class WatchConfigStore:
         save. An owner whose copy cannot take the change (over its size cap)
         is logged and left as it was; the save itself stands. Returns those
         owners, sorted, for the panel to name (empty when every copy took it).
+
+        For the menus, a page or status page that a linked unit's slots open
+        for the first time in this write is linked onto each other owner the
+        unit reaches before its menus are written there, as a menu link
+        brings them (:meth:`_spread_slot_pages`).
         """
         ops = link_ops(record.kind)
         if ops is None:
@@ -2057,6 +2062,8 @@ class WatchConfigStore:
                     document = dropped
             if document is None:
                 continue
+            if record.kind == "menus":
+                self._spread_slot_pages(record, before, other, other_record.document)
             try:
                 self._write(other, record.kind, document, record.updated_by)
             except WatchConfigStoreError as err:
@@ -2069,6 +2076,43 @@ class WatchConfigStore:
                     err.message,
                 )
         return failed
+
+    def _spread_slot_pages(
+        self, record: WatchConfigRecord, before: Any, other: str, other_doc: Any
+    ) -> None:
+        """Link onto ``other`` the pages and status pages that the units
+        ``record`` shares with it open for the first time in this write: a
+        slot ``before`` did not have, so ``other`` may well lack its page.
+        Each one goes on its own, as :meth:`_plan_menu_pages` plans it, so a
+        page ``other`` cannot take (another page under its id, a cap, a watch
+        awaiting its move) only leaves that slot on its fallback there; it is
+        logged and the menus are written all the same. A page already linked
+        there writes nothing."""
+        saved_links = unit_links(record.document, "menus")
+        other_links = unit_links(other_doc, "menus")
+        units = [unit for unit, link in saved_links.items() if other_links.get(unit) == link]
+        if not units:
+            return
+        old_pages, old_status = menu_targets(before, units)
+        pages, status = menu_targets(record.document, units)
+        had_pages = {page_id.upper() for page_id in old_pages}
+        had_status = {page_id.upper() for page_id in old_status}
+        asks = [([page_id], []) for page_id in pages if page_id.upper() not in had_pages]
+        asks += [([], [page_id]) for page_id in status if page_id.upper() not in had_status]
+        for page_ids, status_ids in asks:
+            try:
+                writes, _added = self._plan_menu_pages(
+                    record.owner_watch_id, page_ids, status_ids, [other]
+                )
+                self._commit_writes(writes, record.updated_by)
+            except WatchConfigStoreError as err:
+                _LOGGER.warning(
+                    "Could not bring %s, opened by a linked menu of %s, to %s: %s",
+                    (page_ids or status_ids)[0],
+                    record.owner_watch_id,
+                    other,
+                    err.message,
+                )
 
     def _link_holders(
         self, kind: str, ops: LinkOps, owner: str | None, lost: set[str]
@@ -2474,7 +2518,9 @@ class WatchConfigStore:
             target: {"pages": [], "status_pages": []} for target in dict.fromkeys(targets)
         }
         if kind == "menus":
-            page_writes, page_reply = self._plan_menu_pages(source_owner, source_doc, units, targets)
+            page_writes, page_reply = self._plan_menu_pages(
+                source_owner, *menu_targets(source_doc, units), targets
+            )
             reply_targets.update(page_reply)
 
         source = source_doc
@@ -2520,15 +2566,19 @@ class WatchConfigStore:
         return {"targets": reply_targets, "link_ids": link_ids_out}
 
     def _plan_menu_pages(
-        self, source_owner: str, menus_doc: dict[str, Any], units: list[str], targets: list[str]
+        self,
+        source_owner: str,
+        slot_pages: list[str],
+        slot_status: list[str],
+        targets: list[str],
     ) -> tuple[list[tuple[str, str, dict[str, Any]]], dict[str, dict[str, list[str]]]]:
-        """The page link a menu link brings: the pages and status pages the
-        units' slots open, with what those pages reach, planned as
-        :meth:`_plan_link` plans a page link. A slot's page the source does
-        not list (or a system page), or a status page it does not hold, is
-        left out rather than refused: the slot already shows its fallback
-        there."""
-        slot_pages, slot_status = menu_targets(menus_doc, units)
+        """The page link a menu link brings: the pages and status pages menu
+        slots open (``slot_pages``, ``slot_status``, from
+        :func:`page_links.menu_targets`), with what those pages reach,
+        planned as :meth:`_plan_link` plans a page link. A slot's page the
+        source does not list (or a system page), or a status page it does not
+        hold, is left out rather than refused: the slot already shows its
+        fallback there."""
         pages_doc = self._document(source_owner, "pages")
         status_doc = self._document(source_owner, "status_pages")
         listed = {page_id.upper() for page_id in listed_page_ids(pages_doc)}

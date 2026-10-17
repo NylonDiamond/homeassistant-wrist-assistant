@@ -218,6 +218,47 @@ def test_a_linked_unit_edit_reaches_the_copy_and_an_unlinked_one_does_not(ctx) -
     assert _doc(ctx, PHONE, "menus")["entityRadial"]["lightInheritsAll"] is True
 
 
+def test_a_slot_added_to_a_linked_menu_brings_its_page_along(ctx) -> None:
+    """A Go to page slot added after the link opens a page the other device
+    lacks: the page comes along, linked, before the menu that opens it."""
+    _linked(ctx)
+    assert SOLO not in [p["id"] for p in _doc(ctx, PHONE)["pages"]]
+    watch = _doc(ctx, WATCH, "menus")
+    watch["quickAction"]["slots"].append(_slot(6, {"type": "navigateToPage", "pageId": SOLO}))
+    _save(ctx, WATCH, watch, "menus")
+    phone_pages = _doc(ctx, PHONE)["pages"]
+    assert [p["id"] for p in phone_pages] == [HOME, LIGHTS, SOLO]
+    solo = next(p for p in _doc(ctx, WATCH)["pages"] if p["id"] == SOLO)
+    assert phone_pages[-1]["linkId"] == solo["linkId"]
+    assert ctx.changes == [(WATCH, "menus"), (WATCH, "pages"), (PHONE, "pages"), (PHONE, "menus")]
+    assert _doc(ctx, PHONE, "menus")["quickAction"]["slots"][-1]["action"]["pageId"] == SOLO
+
+    # A slot the menu already had brings nothing again, even once the page
+    # was taken off the other device: it was its own choice there.
+    phone = _doc(ctx, PHONE)
+    phone["pages"] = [p for p in phone["pages"] if p["id"] != SOLO]
+    _save(ctx, PHONE, phone)
+    watch = _doc(ctx, WATCH, "menus")
+    watch["quickAction"]["beamStyle"] = "ripplePulse"
+    ctx.changes.clear()
+    _save(ctx, WATCH, watch, "menus")
+    assert ctx.changes == [(WATCH, "menus"), (PHONE, "menus")]
+
+
+def test_a_slot_whose_page_the_other_device_cannot_take_still_fans_out(ctx) -> None:
+    _linked(ctx)
+    phone = _doc(ctx, PHONE)
+    phone["pages"].append({"id": SOLO, "name": "Phone's own", "items": []})
+    _save(ctx, PHONE, phone)
+    ctx.changes.clear()
+    watch = _doc(ctx, WATCH, "menus")
+    watch["quickAction"]["slots"].append(_slot(6, {"type": "navigateToPage", "pageId": SOLO}))
+    _save(ctx, WATCH, watch, "menus")
+    assert ctx.changes == [(WATCH, "menus"), (PHONE, "menus")], "id_taken: the page stays"
+    assert next(p for p in _doc(ctx, PHONE)["pages"] if p["id"] == SOLO)["name"] == "Phone's own"
+    assert _doc(ctx, PHONE, "menus")["quickAction"]["slots"][-1]["action"]["pageId"] == SOLO
+
+
 def test_a_device_put_and_a_restore_fan_out(ctx) -> None:
     _linked(ctx)
     record = ctx.store.get(PHONE, "menus")
