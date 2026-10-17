@@ -1324,7 +1324,8 @@ export class WaMenuEditor extends LitElement {
 
   /** Save the menus draft; the note for how it ended, or none. */
   private async saveMenus(hass: HassLike, watchId: string, draft: WatchMenusDraft, first = false): Promise<Note | undefined> {
-    // The linked devices Home Assistant could not bring up to date.
+    // The other devices on this menu Home Assistant could not bring up to
+    // date.
     let failures: WatchConfigLinkFailure[] = [];
     const running = saveWatchMenusDraft(draft, {
       prepare: scrubWatchMenuOrphanTriggers,

@@ -1,7 +1,7 @@
 // The status page editor's views, drawn from a host, in the complication
 // editor's chrome (`editor-chrome.ts`) as the page and menu editors wear it:
-// the Status pages card (the list: add, pick, move, Devices, delete, and the
-// Not on this list under it), the Rows card
+// the Status pages card (the list: add, pick, move, delete, and the
+// library's rest, "Not on this watch", under it), the Rows card
 // (the picked page's rows: pick, move, hide, remove, add), the watch preview
 // the canvas draws from Home Assistant's states with the watch's own rules
 // (`rules.ts`), and the inspector: a picked row's Row card, the Add a row
@@ -129,7 +129,8 @@ export interface StatusPagesViewHost {
 
 type ViewState = Pick<StatusPagesViewHost, "uiState" | "document">;
 
-/** Delete a page: the host's way, which asks for a linked one, else at once. */
+/** Delete a page: the host's way, which asks for one other devices have
+ * too, else at once. */
 function deletePage(host: StatusPagesViewHost, pageId: string): void {
   if (host.deletePage !== undefined) host.deletePage(pageId);
   else host.edit((d) => removeStatusPage(d, pageId));
@@ -1179,7 +1180,8 @@ export const statusPagesViewStyles = css`
   .sp-pages-card > .lc-note, .sp-rows-card > .lc-note { margin: 8px 12px; color: var(--wa-muted); }
   .sp-rows-card > .lc-note.sp-drag-note { margin-top: 0; font-size: 11.5px; }
   .sp-pages-card > .lc-note.sp-shared-note { margin-top: 0; font-size: 11.5px; }
-  /* A linked status page's badge, the page editor's (\`.badge.pe-linked\`):
+  /* The badge of a status page other devices have too, the page editor's
+     (\`.badge.pe-linked\`):
      cut short in a narrow list, its title holds the whole name. */
   .badge.sp-linked {
     max-width: 140px; overflow: hidden; text-overflow: ellipsis; display: inline-block; line-height: 20px; white-space: nowrap;

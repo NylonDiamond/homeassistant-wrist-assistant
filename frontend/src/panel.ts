@@ -3283,7 +3283,7 @@ export class WristAssistantPanel extends LitElement {
     .pk-dup-row.check.off .pk-dup-pick { opacity: .5; cursor: default; }
     .pk-dup-row.check:hover:not(.off) { border-color: var(--wa-line-strong); }
     /* Each device's color, on its glyph and the row's left edge, as in the
-       Pages tab's Devices menu (\`devices-menu.ts\`). */
+       Phrases card's Devices menu (\`devices-menu.ts\`). */
     .pk-dup-row.tinted { box-shadow: inset 3px 0 0 var(--dc); }
     .pk-dup-row.tinted .pk-dup-pick svg { color: var(--dc); }
     .pk-dup-eye {
@@ -12869,7 +12869,7 @@ export class WristAssistantPanel extends LitElement {
   /**
    * The All tab: one card per design, however many devices it is on, in a
    * box per shape. Each card names the devices it is on under its picture,
-   * as the Pages tab does, and its Devices menu changes them. A device tab
+   * a chip each as on the Pages tab, and its Devices menu changes them. A device tab
    * is where one device's own cards are.
    */
   private renderPickerAll(
