@@ -42,33 +42,58 @@ export function renderPageDevicesMenu(input: DevicesMenuInput): TemplateResult {
   return html`<div class="pk-dup-menu pe-dev-menu ${input.className ?? ""}" role="group" aria-label=${`Devices for ${name}`}>
     <div class="pk-dup-head">This page is on</div>
     ${blocked === undefined ? nothing : html`<div class="pe-dev-note warn">${blocked}</div>`}
-    ${places.map((place) => {
-      const label = place.device.name;
-      const off = place.stuck !== undefined || blocked !== undefined || busy;
-      const title = place.stuck ?? blocked ?? (place.on
-        ? `Take it off ${label}. Its own order and Hidden go with it.`
-        : `Put it on ${label}. An edit on one device then shows on both.`);
-      const color = input.colorOf?.(place.device.ownerId);
-      return html`<div class="pk-dup-row check ${off ? "off" : ""} ${color === undefined ? "" : "tinted"}"
-        style=${color === undefined ? nothing : `--dc:${color}`}>
-        <label class="pk-dup-pick" title=${title}>
-          <input type="checkbox" role="switch" .checked=${live(place.on)} ?disabled=${off}
-            aria-label=${`${name} on ${label}`}
-            @change=${(e: Event) => {
-              (e.currentTarget as HTMLInputElement).checked = place.on;
-              input.onToggle(place);
-            }}>
-          ${uiIcon(place.device.kind === "iphone" ? "phone" : "watch")}
-          <span class="pk-dup-name">${label}</span>
-          ${place.here ? html`<span class="pk-dup-full">this ${deviceWord(place.device.kind)}</span>`
-            : place.tag === undefined ? nothing : html`<span class="pk-dup-full">${place.tag}</span>`}
-        </label>
-      </div>`;
-    })}
+    ${places.map((place) => renderDeviceSwitch({
+      place,
+      name,
+      title: place.stuck ?? blocked ?? (place.on
+        ? `Take it off ${place.device.name}. Its own order and Hidden go with it.`
+        : `Put it on ${place.device.name}. An edit on one device then shows on both.`),
+      off: place.stuck !== undefined || blocked !== undefined || busy,
+      ...(input.colorOf === undefined ? {} : { colorOf: input.colorOf }),
+      onToggle: input.onToggle,
+    }))}
     ${busy ? html`<div class="pe-dev-note">Saving…</div>` : nothing}
     ${note === undefined ? nothing : html`<div class="pe-dev-note ${note.kind}" role="status">${note.text}</div>`}
     <div class="pk-dup-note">${DEVICES_MENU_NOTE}</div>
     <button type="button" class="pk-dup-done" @click=${() => input.onDone()}>Done</button>
+  </div>`;
+}
+
+/** One switch of a Devices menu, as `renderDeviceSwitch` draws it. */
+export interface DeviceSwitchInput {
+  place: PageDevicePlace;
+  /** What is on the device, for the switch's label: "Lights on Jesse's
+   * iPhone". */
+  name: string;
+  /** What flipping it does, or why it cannot be flipped. */
+  title: string;
+  /** It cannot be flipped now. */
+  off: boolean;
+  colorOf?(ownerId: string): string | undefined;
+  onToggle(place: PageDevicePlace): void;
+}
+
+/** One device's row: its switch, glyph, name, and "this watch" or its tag.
+ * The switch follows the place, not the click. Shared by the page's Devices
+ * menu and the menu editor's (`watch-menus/menu-devices.ts`). */
+export function renderDeviceSwitch(input: DeviceSwitchInput): TemplateResult {
+  const { place, off } = input;
+  const label = place.device.name;
+  const color = input.colorOf?.(place.device.ownerId);
+  return html`<div class="pk-dup-row check ${off ? "off" : ""} ${color === undefined ? "" : "tinted"}"
+    style=${color === undefined ? nothing : `--dc:${color}`}>
+    <label class="pk-dup-pick" title=${input.title}>
+      <input type="checkbox" role="switch" .checked=${live(place.on)} ?disabled=${off}
+        aria-label=${`${input.name} on ${label}`}
+        @change=${(e: Event) => {
+          (e.currentTarget as HTMLInputElement).checked = place.on;
+          input.onToggle(place);
+        }}>
+      ${uiIcon(place.device.kind === "iphone" ? "phone" : "watch")}
+      <span class="pk-dup-name">${label}</span>
+      ${place.here ? html`<span class="pk-dup-full">this ${deviceWord(place.device.kind)}</span>`
+        : place.tag === undefined ? nothing : html`<span class="pk-dup-full">${place.tag}</span>`}
+    </label>
   </div>`;
 }
 
