@@ -177,12 +177,25 @@ describe("the Help sheet", () => {
     expect(helpScreen(at("/pages/w1")).text[1]).toBe("It is for the watch picked at the top.");
   });
 
-  it("names the Pages tab, and says an info page is a status page", () => {
+  it("names the Pages tab, about pages alone", () => {
     const h = helpScreen(at("/all-pages"));
     expect(h.name).toBe("Pages");
     expect(h.more).toBe(WATCH_PAGES_HELP_URL);
-    expect(h.text.join(" ")).toContain("An info page is a status page");
+    expect(h.text[0]).toBe("Pages lists every page on your watches and iPhones. A page on more than one device is the same page: an edit shows on all of them.");
+    expect(h.text.join(" ")).not.toMatch(/status page|info page/i);
     for (const line of h.text) expect(line).not.toMatch(/[–—]| - /);
+  });
+
+  it("names the Status pages tab the way it names the Pages tab, apart from a device's Status pages", () => {
+    const h = helpScreen(at("/all-status-pages"));
+    expect(h.name).toBe("Status pages");
+    expect(h.more).toBe(WATCH_STATUS_PAGES_HELP_URL);
+    expect(h.text[0]).toBe("Status pages lists every status page on your watches and iPhones. A status page is a read-only screen of rows that a tile or a menu slot opens.");
+    expect(h.text.join(" ")).toContain("the same page: an edit shows on all of them");
+    expect(h.text.join(" ")).not.toMatch(/info page/i);
+    for (const line of h.text) expect(line).not.toMatch(/[–—]| - /);
+    // A device's own Status pages screen is still that screen.
+    expect(helpScreen(at("/status-pages/w1")).text[1]).toBe("It is for the watch picked at the top.");
   });
 
   it("links each screen's guide, the page its bar's old ? opened", () => {

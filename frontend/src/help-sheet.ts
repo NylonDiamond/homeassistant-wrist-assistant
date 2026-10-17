@@ -62,7 +62,12 @@ const COMPLICATIONS_TEXT = [
 
 const PAGES_TEXT = [
   "Pages lists every page on your watches and iPhones. A page on more than one device is the same page: an edit shows on all of them.",
-  "An info page is a status page, a list of live states that a tile, a menu slot or Siri opens. They are under Info pages.",
+  "Pick a page to edit it, or make a new one.",
+];
+
+const STATUS_PAGES_TEXT = [
+  "Status pages lists every status page on your watches and iPhones. A status page is a read-only screen of rows that a tile or a menu slot opens.",
+  "A status page on more than one device is the same page: an edit shows on all of them. Pick one to edit it, or make a new one.",
 ];
 
 /** Each screen's guide in the docs: what the ? in the screen's own bar
@@ -100,14 +105,16 @@ function deviceScreen(screen: WatchScreen, device: "watch" | "iPhone"): HelpScre
 
 /** The screen a route shows, as the sheet names and explains it: a watch's
  * screen, an iPhone's (`/iphone/pages/p1`), Complications, the Pages tab,
- * else Home. */
+ * the Status pages tab, else Home. */
 export function helpScreen(route: PanelRoute | undefined): HelpScreen {
   const phone = iphoneScreenOf(route);
   if (phone !== undefined) return deviceScreen(phone, "iPhone");
   const screen = watchScreenOf(route);
   if (screen !== undefined) return deviceScreen(screen, "watch");
-  if (tabOfRoute(route) === "complications") return { name: "Complications", text: COMPLICATIONS_TEXT };
-  if (tabOfRoute(route) === "pages") return { name: "Pages", text: PAGES_TEXT, more: WATCH_PAGES_HELP_URL };
+  const tab = tabOfRoute(route);
+  if (tab === "complications") return { name: "Complications", text: COMPLICATIONS_TEXT };
+  if (tab === "pages") return { name: "Pages", text: PAGES_TEXT, more: WATCH_PAGES_HELP_URL };
+  if (tab === "status-pages") return { name: "Status pages", text: STATUS_PAGES_TEXT, more: WATCH_STATUS_PAGES_HELP_URL };
   return { name: "Home", text: HOME_TEXT, more: DOCS_URL };
 }
 
