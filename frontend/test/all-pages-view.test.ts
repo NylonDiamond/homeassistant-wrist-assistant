@@ -165,15 +165,67 @@ describe("the Pages tab", () => {
     expect(t.whole()).toContain(" in the library");
   });
 
-  it("has New page: on All it asks which device, on a device's tab it adds the page there", async () => {
+  it("has New page: on All it asks for a name and makes the page in the library, on a device's tab it adds the page there", async () => {
     const t = tab();
     showTab(t, "all");
     await t.ready();
     expect(t.whole()).toContain("New page");
+    expect(t.whole()).not.toContain("Add a page on");
+    t.call("toggleNew");
+    const form = t.el.newForm as { name: string; busy: boolean };
+    expect(form.name).toBe("New Page 2"); // the library's pages are counted as a device's are
+    expect(t.whole()).toContain("Make page");
+    expect(t.whole()).toContain("It starts empty and no device has it.");
+    t.el.newForm = { ...form, name: " Garage " };
+    await t.call("makeCard");
+    const sent = t.sentOf("library/item/create");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.kind).toBe("pages");
+    const page = (sent[0]!.document as { pages: JsonObject[] }).pages[0]!;
+    expect(page.name).toBe("Garage");
+    expect(page.id).toMatch(/^[0-9A-F-]{36}$/);
+    expect(page.items).toEqual([]);
+    expect(t.el.newForm).toBeUndefined();
+    expect(t.library).toEqual([["pages", page.id]]);
+    expect(t.opened).toHaveLength(0);
     showTab(t, CHEN);
     t.call("newPage", { ownerId: CHEN, name: "Chen Watch", kind: "watch" });
     expect(takeNewWatchPageAsk(CHEN)).toBe(true);
     expect(t.opened.at(-1)).toEqual([CHEN, "watch", undefined]);
+  });
+
+  it("refuses an empty name and says why New page is greyed for anyone but an administrator", async () => {
+    const t = tab();
+    showTab(t, "all");
+    await t.ready();
+    t.call("toggleNew");
+    t.el.newForm = { name: "  ", busy: false };
+    await t.call("makeCard");
+    expect(t.sentOf("library/item/create")).toHaveLength(0);
+    expect(t.whole()).toContain("Give the page a name.");
+    const other = tab("pages", false);
+    showTab(other, "all");
+    await other.ready();
+    expect(other.whole()).toContain("Only a Home Assistant administrator can make a new page.");
+  });
+
+  it("New status page makes a status page in the library the same way", async () => {
+    const t = tab("status_pages");
+    showTab(t, "all");
+    await t.ready();
+    t.call("toggleNew");
+    const form = t.el.newForm as { name: string; busy: boolean };
+    expect(form.name).toMatch(/^New Page \d+$/);
+    expect(t.whole()).toContain("Make status page");
+    t.el.newForm = { ...form, name: "Gates" };
+    await t.call("makeCard");
+    const sent = t.sentOf("library/item/create");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.kind).toBe("status_pages");
+    const page = (sent[0]!.document as { statusPages: JsonObject[] }).statusPages[0]!;
+    expect(page.name).toBe("Gates");
+    expect(page.rows).toEqual([]);
+    expect(t.library).toEqual([["status_pages", page.id]]);
   });
 
   it("locks every tick of a page no device has for anyone but an administrator", async () => {

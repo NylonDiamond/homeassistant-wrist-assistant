@@ -71,6 +71,8 @@ import {
   inOrder,
   kindOptions,
   movedOrder,
+  newCardAdminText,
+  newCardText,
   noPicksText,
   onDeviceTitle,
   libraryEditTitle,
@@ -102,6 +104,9 @@ import { tickItem } from "./library-editing-io.js";
 import { libraryListStyles } from "./library-list-styles.js";
 import { listTabStyles } from "./list-tab-styles.js";
 import { type WatchPage, isSmartWatchPage, watchPagesOf } from "./model.js";
+import { newWatchPage, newWatchPageName } from "./edit.js";
+import { newId } from "../model.js";
+import { newStatusPage, nextStatusPageName } from "../watch-status-pages/model.js";
 import { renderWatchPagePreview, renderWatchPageTitle, watchPagePreviewStyles, watchPreviewLayout, watchReflowPage } from "./preview.js";
 import { type WatchPagesNote, watchCommandError } from "./save-note.js";
 
@@ -143,6 +148,13 @@ const VIEW_STORE_KEYS: Record<CardKind, string> = {
 };
 
 /** The device tab and the Device menu last used on one tab. */
+/** New page's form, under the tab's head. */
+interface NewCardForm {
+  name: string;
+  busy: boolean;
+  note?: WatchPagesNote;
+}
+
 interface KeptView {
   filter?: PagesFilter;
   kind: PagesKind;
@@ -202,8 +214,9 @@ export class WaAllPages extends LitElement {
   @property({ attribute: false }) onOpenLibrary?: (kind: CardKind, id: string) => void;
 
   @state() private search = "";
-  /** New page's menu of devices is open. */
-  @state() private newOpen = false;
+  /** New page's form, open under the tab's head: a name for a page the
+   * library gets and no device has yet. */
+  @state() private newForm?: NewCardForm;
   /** Select mode: a click picks a card instead of opening it. */
   @state() private selecting = false;
   /** The picked cards, by `itemKey`. Only those shown count. */
@@ -282,7 +295,7 @@ export class WaAllPages extends LitElement {
     this.kindSeq++;
     this.search = "";
     this.endSelect(true);
-    this.newOpen = false;
+    this.newForm = undefined;
     this.picksNote = undefined;
     this.tickNotes = new Map();
   }
@@ -344,10 +357,11 @@ export class WaAllPages extends LitElement {
     this.pruneSelected();
   }
 
-  /** New page on a device: its page editor opens and adds one. On the
-   * Status pages tab, New status page: its status pages editor does. */
+  /** New page on a device's tab: its page editor opens and adds one there.
+   * On the Status pages tab, New status page: its status pages editor
+   * does. */
   private newPage(device: LinkDevice): void {
-    this.newOpen = false;
+    this.newForm = undefined;
     if (this.kind === "status_pages") {
       askNewStatusPage(device.ownerId);
       this.onOpen?.(device.ownerId, device.kind, "status_pages");
@@ -355,6 +369,64 @@ export class WaAllPages extends LitElement {
     }
     askNewWatchPage(device.ownerId);
     this.onOpen?.(device.ownerId, device.kind);
+  }
+
+  /** Whether New page may make a page in the library: administrators only,
+   * as a page no device has is an administrator's. */
+  private get mayMake(): boolean {
+    return this.hassNow?.user?.is_admin === true;
+  }
+
+  /** Open New page's form under the head, named as the app names the next
+   * page, or close it. */
+  private toggleNew(): void {
+    if (this.newForm?.busy) return;
+    if (this.newForm !== undefined) {
+      this.newForm = undefined;
+      return;
+    }
+    this.newForm = { name: this.nextCardName(), busy: false };
+  }
+
+  /** "New Page N", counting the library's pages as the app counts a
+   * device's, so a page made here is named as one made on a watch. */
+  private nextCardName(): string {
+    const library = this.lib.library;
+    const items = library === undefined ? [] : libraryItems(library, this.kind).map((e) => e.item);
+    return this.kind === "status_pages"
+      ? nextStatusPageName({ schemaVersion: 1, statusPages: items })
+      : newWatchPageName({ schemaVersion: 1, pages: items });
+  }
+
+  /**
+   * New page: a page in the library under the name given, empty, that no
+   * device has (`library/item/create`), then its editor in library mode,
+   * where a tick puts it on a device. The library is read again after it,
+   * so its card shows with no device ticked.
+   */
+  private async makeCard(): Promise<void> {
+    const form = this.newForm;
+    const store = this.lib.store;
+    if (form === undefined || form.busy || store === undefined) return;
+    const name = form.name.trim();
+    if (name === "") {
+      this.newForm = { ...form, note: { kind: "warn", text: `Give the ${cardNoun(this.kind)} a name.` } };
+      return;
+    }
+    const { note: _dropped, ...asked } = form;
+    this.newForm = { ...asked, busy: true };
+    const id = newId();
+    const document = this.kind === "status_pages"
+      ? { schemaVersion: 1, statusPages: [newStatusPage(name, id)] }
+      : { schemaVersion: 1, pages: [newWatchPage(id, name)] };
+    const made = await store.createItem(this.kind, document);
+    if (!made.ok) {
+      this.newForm = { ...form, busy: false, note: { kind: "err", text: `Not made. ${made.text}` } };
+      return;
+    }
+    this.newForm = undefined;
+    // Straight into the new page, in the library: no device has it yet.
+    this.onOpenLibrary?.(this.kind, made.reply.id);
   }
 
   /** Open an item in a device's editor, on that item: the device tab's, or
@@ -602,6 +674,7 @@ export class WaAllPages extends LitElement {
         </div>
         ${devices.length === 0 ? nothing : this.renderNew(device, devices)}
       </div>
+      ${this.newForm === undefined ? nothing : this.renderNewForm(this.newForm)}
       ${stale ? html`<p class="ap-warn" role="status">Could not read the library again: ${this.lib.store?.readError ?? ""} It shows as last read.</p>` : nothing}
       <div class="pk-surface pk-page" role="region" aria-label=${`Your ${many}`}>
         <div class="pk-pin">
@@ -652,32 +725,45 @@ export class WaAllPages extends LitElement {
 
   /**
    * New page, at the head's right as New complication is on its tab, or
-   * New status page on the Status pages tab. On a device's tab, or in a
-   * home with one device, it adds the page there; otherwise it asks which
-   * device first.
+   * New status page on the Status pages tab. On a device's tab it adds the
+   * page there. On All it asks for a name and makes the page in the
+   * library, where no device has it until one is ticked, as New menu does.
    */
-  private renderNew(device: LinkDevice | undefined, devices: readonly LinkDevice[]): TemplateResult {
-    const target = device ?? (devices.length === 1 ? devices[0] : undefined);
-    const open = this.newOpen && target === undefined;
+  private renderNew(device: LinkDevice | undefined, _devices: readonly LinkDevice[]): TemplateResult {
     const label = `New ${cardNoun(this.kind)}`;
-    const head = `Add ${aCard(this.kind)} on`;
-    return html`<div class="ap-new" @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape" && open) { e.stopPropagation(); this.newOpen = false; } }}
-      @focusout=${(e: FocusEvent) => {
-        const to = e.relatedTarget;
-        if (open && !(to instanceof Node && (e.currentTarget as HTMLElement).contains(to))) this.newOpen = false;
-      }}>
-      <button type="button" class="ap-new-btn" aria-haspopup=${target === undefined ? "menu" : nothing}
-        aria-expanded=${target === undefined ? (open ? "true" : "false") : nothing}
-        title=${target === undefined ? `Pick the device to add ${aCard(this.kind)} on` : `${head} ${target.name}`}
-        @click=${() => (target === undefined ? (this.newOpen = !this.newOpen) : this.newPage(target))}>
+    if (device !== undefined) {
+      return html`<div class="ap-new">
+        <button type="button" class="ap-new-btn" title=${`Add ${aCard(this.kind)} on ${device.name}`}
+          @click=${() => this.newPage(device)}>
+          ${uiIcon("plus")}<span>${label}</span></button>
+      </div>`;
+    }
+    const may = this.mayMake;
+    const open = this.newForm !== undefined;
+    return html`<div class="ap-new">
+      <button type="button" class="ap-new-btn ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
+        ?disabled=${!may || this.newForm?.busy === true}
+        title=${may ? `Make ${aCard(this.kind)} no device has yet` : newCardAdminText(this.kind)}
+        @click=${() => this.toggleNew()}>
         ${uiIcon("plus")}<span>${label}</span></button>
-      ${open ? html`<div class="ap-new-menu" role="menu" aria-label=${head}>
-        <div class="ap-new-h">${head}</div>
-        ${devices.map((d) => html`<button type="button" class="ap-new-row" role="menuitem"
-          style=${`--dc:${this.colorOf(d.ownerId) ?? "var(--wa-line-strong)"}`} @click=${() => this.newPage(d)}>
-          ${uiIcon(d.kind === "iphone" ? "phone" : "watch")}<span>${d.name}</span></button>`)}
-      </div>` : nothing}
     </div>`;
+  }
+
+  /** New page's form: a name. No device: a tick in the editor puts the page
+   * on one. */
+  private renderNewForm(form: NewCardForm): TemplateResult {
+    const noun = cardNoun(this.kind);
+    return html`<form class="ap-new-form" aria-label=${`New ${noun}`} @submit=${(e: Event) => { e.preventDefault(); void this.makeCard(); }}>
+      <label class="ap-new-field"><span>Name</span>
+        <input type="text" .value=${form.name} ?disabled=${form.busy} maxlength="80"
+          @input=${(e: InputEvent) => { this.newForm = { ...form, name: (e.target as HTMLInputElement).value }; }} /></label>
+      <p class="ap-new-text">${newCardText(this.kind)}</p>
+      <span class="ap-new-acts">
+        <button type="submit" class="ap-btn primary" ?disabled=${form.busy}>${form.busy ? "Making…" : `Make ${noun}`}</button>
+        <button type="button" class="ap-btn" ?disabled=${form.busy} @click=${() => { this.newForm = undefined; }}>Cancel</button>
+      </span>
+      ${form.note === undefined ? nothing : html`<p class="lt-line ${form.note.kind}" role="status">${form.note.text}</p>`}
+    </form>`;
   }
 
   /** The Device menu, the Shape menu's look: All, Watches, iPhones, each
@@ -972,30 +1058,39 @@ export class WaAllPages extends LitElement {
   static override styles = [watchPagePreviewStyles, watchFrameStyles, statusPagesViewStyles, listTabStyles, libraryListStyles,
     libraryTicksStyles, rowPictureStyles, css`
     /* New page: filled, as New complication is, the one way to start a page
-       from this tab. Its menu of devices opens under it, at its right edge. */
+       from this tab. On All its form opens under the head, as New menu's. */
     .ap-new { position: relative; flex: none; }
     .ap-new-btn {
       display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px; font-weight: 600;
       height: 30px; padding: 0 11px; border-radius: 8px; cursor: pointer;
       border: 1px solid transparent; background: var(--wa-primary-bg); color: var(--wa-primary-ink);
     }
-    .ap-new-btn:hover { filter: brightness(1.1); }
+    .ap-new-btn:hover:not(:disabled) { filter: brightness(1.1); }
     .ap-new-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .ap-new-btn:disabled { opacity: .45; cursor: default; }
     .ap-new-btn svg { width: 16px; height: 16px; }
-    .ap-new-menu {
-      position: absolute; right: 0; top: calc(100% + 6px); z-index: 9; width: min(260px, calc(100vw - 24px));
-      display: flex; flex-direction: column; gap: 2px; padding: 6px;
-      background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 10px; box-shadow: var(--wa-shadow-pop);
+    .ap-new-form {
+      display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; padding: 12px 14px; margin-bottom: 12px;
+      border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-card);
     }
-    .ap-new-h { padding: 6px 8px 4px; font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); }
-    .ap-new-row {
-      display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 10px; border-radius: 6px; cursor: pointer;
-      font-size: 13px; text-align: left; color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line);
-      box-shadow: inset 3px 0 0 var(--dc);
+    .ap-new-field { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--wa-muted); }
+    .ap-new-field input {
+      width: 220px; max-width: 70vw; height: 28px; padding: 0 9px; border-radius: 6px; border: 1px solid var(--wa-line-strong);
+      font: inherit; font-size: 13px; color: var(--wa-ink); background: var(--wa-input, var(--wa-field));
     }
-    .ap-new-row:hover { background: var(--wa-hover); border-color: var(--wa-line-strong); }
-    .ap-new-row:focus-visible { outline: none; box-shadow: inset 3px 0 0 var(--dc), var(--wa-ring); }
-    .ap-new-row svg { width: 14px; height: 14px; flex: none; color: var(--wa-muted); }
+    .ap-new-field input:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
+    .ap-new-text { flex: 1 1 220px; margin: 0; font-size: 12px; line-height: 1.45; color: var(--wa-muted); }
+    .ap-new-acts { display: inline-flex; gap: 6px; flex: none; }
+    .ap-new-form .lt-line { flex-basis: 100%; }
+    .ap-btn {
+      display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 7px;
+      border: 1px solid var(--wa-line-strong); background: var(--wa-panel, var(--wa-card)); color: var(--wa-ink);
+      font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+    }
+    .ap-btn:hover:not(:disabled) { background: var(--wa-hover); }
+    .ap-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .ap-btn:disabled { opacity: .45; cursor: default; }
+    .ap-btn.primary { background: var(--wa-primary-bg); color: var(--wa-primary-ink); border-color: transparent; }
 
     /* A status page's picture: the watch's black screen, one screen tall. */
     .ap-pic-status .sp-screen { pointer-events: none; }

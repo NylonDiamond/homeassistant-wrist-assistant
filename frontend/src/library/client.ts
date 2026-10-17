@@ -236,6 +236,24 @@ export async function saveLibraryItem(hass: HassLike, kind: LibraryKind, itemId:
   });
 }
 
+/** What `library/item/create` answers: the new page's id and its revision,
+ * which is 1. */
+export interface LibraryItemCreateReply {
+  id: string;
+  revision: number;
+}
+
+/** New page, or New status page: a page in the library that no device has
+ * yet. `document` is a whole document of the kind holding the one new page,
+ * as `library/item` would give it back. No record is written, so no
+ * `watch_config/subscribe` event follows: read the summary again after it.
+ * Administrators only. Refusals: `invalid` (a menu, another shape, other
+ * than one page, an id the library holds), `unauthorized`, and
+ * `unknown_command` from an integration older than it. */
+export async function createLibraryItem(hass: HassLike, kind: LibraryListKind, document: LibraryObject) {
+  return hass.connection.sendMessagePromise<LibraryItemCreateReply>({ type: `${LIB}/item/create`, kind, document });
+}
+
 /** What the tabs say on an integration older than the library. */
 export const LIBRARY_UNSUPPORTED_TEXT = "This version of the integration has no library yet. Update it first.";
 

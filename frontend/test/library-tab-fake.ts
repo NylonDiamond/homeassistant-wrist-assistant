@@ -193,6 +193,19 @@ export function fakeHome(admin = true) {
       for (const o of Object.keys(lib.picks)) materialise(o);
       return { id, revisions: { [owner]: { menus: held.get(`${owner}/menus`)!.revision } } };
     }
+    if (type === "wrist_assistant/library/item/create") {
+      // Administrators only, as Home Assistant's `require_admin`.
+      if (!admin) throw { code: "unauthorized", message: "Unauthorized" };
+      const kind = msg.kind as "pages" | "status_pages";
+      if (kind !== "pages" && kind !== "status_pages") throw { code: "invalid", message: "kind must be pages or status_pages" };
+      const document = msg.document as JsonObject;
+      const pages = document[kind === "pages" ? "pages" : "statusPages"];
+      const page = Array.isArray(pages) && pages.length === 1 ? (pages[0] as JsonObject) : undefined;
+      const id = typeof page?.id === "string" ? page.id : "";
+      if (page === undefined || id === "" || itemKeyOf(kind, id) !== undefined) throw { code: "invalid", message: "the document must hold one new page" };
+      lib[kind][id] = { item: structuredClone(page), owners: [] };
+      return { id, revision: 1 };
+    }
     if (type === "wrist_assistant/library/menus/create") {
       // Administrators only, as Home Assistant's `require_admin`.
       if (!admin) throw { code: "unauthorized", message: "Unauthorized" };

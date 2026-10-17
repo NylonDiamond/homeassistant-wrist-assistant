@@ -39,6 +39,17 @@ export function aCard(kind: CardKind): string {
   return kind === "status_pages" ? "a status page" : "a page";
 }
 
+/** New page's form: what the page starts as and where it goes. */
+export function newCardText(kind: CardKind): string {
+  return `It starts empty and no device has it. Tick a device in the editor to put ${kind === "status_pages" ? "the status page" : "the page"} on it.`;
+}
+
+/** Why New page is greyed for anyone who is not an administrator: a page no
+ * device has is an administrator's. */
+export function newCardAdminText(kind: CardKind): string {
+  return `Only a Home Assistant administrator can make a new ${cardNoun(kind)}.`;
+}
+
 /** The tab's title: Pages, or Status pages. */
 export function cardsTitle(kind: CardKind): string {
   return kind === "status_pages" ? "Status pages" : "Pages";

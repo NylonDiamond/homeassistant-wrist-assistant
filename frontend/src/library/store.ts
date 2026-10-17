@@ -30,6 +30,7 @@
 import { type HassLike, subscribeWatchConfig } from "../ha-api.js";
 import {
   type LibraryDeleteReply,
+  type LibraryItemCreateReply,
   type LibraryKind,
   type LibraryListKind,
   type LibraryMenuCopyReply,
@@ -39,6 +40,7 @@ import {
   type LibraryPickReply,
   type MenuUnit,
   copyLibraryMenu,
+  createLibraryItem,
   createLibraryMenu,
   deleteLibraryItem,
   fetchLibrarySummary,
@@ -206,6 +208,13 @@ export class LibraryStore {
    * that no device uses until one is ticked. */
   createMenu(unit: MenuUnit, name: string, sections: LibraryObject): Promise<LibraryWrite<LibraryMenuCreateReply>> {
     return this.write(undefined, undefined, undefined, () => createLibraryMenu(this.hass, unit, name, sections));
+  }
+
+  /** New page, or New status page: a page in the library, from `document`
+   * (a whole document of the kind holding the one new page), that no
+   * device has until one is ticked. */
+  createItem(kind: LibraryListKind, document: LibraryObject): Promise<LibraryWrite<LibraryItemCreateReply>> {
+    return this.write(undefined, undefined, undefined, () => createLibraryItem(this.hass, kind, document));
   }
 
   /** "Make a copy for this watch": a new menu from the one the device uses
