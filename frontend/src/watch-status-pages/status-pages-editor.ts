@@ -20,11 +20,13 @@
 // still move the status pages here it waits, and "Start fresh instead" opens
 // the same ready screen.
 //
-// A status page can be on several devices, linked, as a page can: each page
-// but the starter ones has the page editor's Devices menu (`devices-menu.ts`)
+// A status page can be on several devices, linked, as a page can: each page,
+// the starter ones too, has the page editor's Devices menu (`devices-menu.ts`)
 // on its row and in the Page card, a delete of a linked page asks here or on
 // every device, and a Not on this list under the pages adds what the other
-// devices hold. The rules are `links.ts`, the writes `links-io.ts`.
+// devices hold. A device with its own copy of a starter page shows "own
+// copy" in that page's Devices menu; ticking it links the two. The rules are
+// `links.ts`, the writes `links-io.ts`.
 //
 // The panel loads this module on its own, with one `import()`, when its route
 // is `/status-pages` (`hook.ts`). Nothing it imports may import `icons.ts`.
@@ -98,7 +100,7 @@ import {
   statusPageHolders,
   statusPagesSharedText,
 } from "../watch-pages/links.js";
-import { type ElsewhereStatusPage, elsewhereStatusPages, statusPageDevicePlaces, statusPageMayLink, statusPageTitle } from "./links.js";
+import { type ElsewhereStatusPage, STATUS_OWN_COPY_TAG, elsewhereStatusPages, starterCopiesElsewhere, statusPageDevicePlaces, statusPageTitle } from "./links.js";
 import { clearStatusPageRefs, takeStatusPageOff } from "./links-io.js";
 import { deletedPageIds } from "../watch-pages/page-refs.js";
 import { type JsonObject, isJsonObject } from "../watch-pages/model.js";
@@ -866,7 +868,7 @@ export class WaStatusPagesEditor extends LitElement {
       linkBadge: (page) => linkBadgeText(statusPageHolders(page, watchId, places), watchId, devices),
       ...(line === undefined ? {} : { sharedLine: line }),
       devices: (page) => {
-        if (!menus || !statusPageMayLink(page)) return undefined;
+        if (!menus) return undefined;
         const pageId = statusPageId(page);
         const at = this.devicesMenu;
         const open = at !== undefined && sameStatusId(at.pageId, pageId) ? at.where : undefined;
@@ -917,14 +919,17 @@ export class WaStatusPagesEditor extends LitElement {
   }
 
   /** The menu for one page (`devices-menu.ts`), the page editor's rules:
-   * this device stays on, Delete takes it off here. */
+   * this device stays on, Delete takes it off here. A device with its own
+   * copy of a starter page says so, from the other devices' status pages as
+   * last read. */
   private renderDevicesMenu(page: JsonObject, where: StatusDevicesWhere): TemplateResult {
     const watchId = this.watchId ?? "";
     const pageId = statusPageId(page);
     const blocked = this.linkBlocked();
+    const own = starterCopiesElsewhere(page, watchId, this.elsewhere);
     return renderPageDevicesMenu({
       name: statusPageTitle(page),
-      places: statusPageDevicePlaces(this.linkDevices, page, watchId, this.places, this.waitingDevices()),
+      places: statusPageDevicePlaces(this.linkDevices, page, watchId, this.places, this.waitingDevices(), own),
       ...(blocked === undefined ? {} : { blocked }),
       busy: this.linking,
       ...(this.devicesNote === undefined ? {} : { note: this.devicesNote }),
@@ -938,8 +943,10 @@ export class WaStatusPagesEditor extends LitElement {
   /**
    * A switch flipped. On: the page, as saved, goes on that device as a
    * linked status page (`watch_pages/link` with `kind` `status_pages`), and
-   * this device's copy gets its link too, which arrives as a change. Off:
-   * the page comes off that device (`takeStatusPageOff`).
+   * this device's copy gets its link too, which arrives as a change. On a
+   * device with its own copy of a starter page, Home Assistant replaces that
+   * copy with this one. Off: the page comes off that device
+   * (`takeStatusPageOff`).
    */
   private async toggleDevice(pageId: string, place: PageDevicePlace): Promise<void> {
     const hass = this.hass;
@@ -956,7 +963,7 @@ export class WaStatusPagesEditor extends LitElement {
         note = refusal === undefined ? { kind: "ok", text: `Taken off ${name}.` } : { kind: "err", text: refusal };
       } else {
         await linkWatchPages(hass, watchId, [pageId], [target], "status_pages");
-        note = { kind: "ok", text: `Added to ${name}.` };
+        note = { kind: "ok", text: place.tag === STATUS_OWN_COPY_TAG ? `Linked with ${name}. Its own copy is now this one.` : `Added to ${name}.` };
       }
     } catch (err) {
       note = { kind: "err", text: `Not added. ${linkErrorText(err)}` };

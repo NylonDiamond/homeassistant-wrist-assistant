@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_FILTER,
   DEVICES_LAST_TEXT,
+  STARTER_UNLINKED_TEXT,
   STATUS_DEVICES_DIRTY_TEXT,
   STATUS_DEVICES_LAST_TEXT,
   aCard,
@@ -29,6 +30,10 @@ import {
   resolveFilter,
   resolveKind,
   shownCards,
+  starterLink,
+  starterLinkedText,
+  starterUnlinkedText,
+  unlinkedCopies,
 } from "../src/watch-pages/all-pages-model.js";
 import type { StatusPagesDocument } from "../src/watch-status-pages/model.js";
 import { DEVICES_SYSTEM_TEXT, DEVICES_WAIT_TAG, DEVICES_WAIT_TEXT, type LinkDevice, elsewhereLine, elsewherePages, linkDevicesOf } from "../src/watch-pages/links.js";
@@ -287,23 +292,27 @@ describe("status pages", () => {
   ]);
   const cards = pageCards(DEVICES, DOCS, STATUS);
   const statuses = cardsOfKind(cards, "status_pages");
+  const named = (name: string) => statuses.find((c) => c.name === name)!;
 
-  it("are cards of their own kind after the pages, a linked one once, the starter pages left out", () => {
+  it("are cards of their own kind after the pages, a linked one once, a starter page once for every device", () => {
     expect(cardsOfKind(cards, "pages").map((c) => c.name)).toEqual(["Hall", "Yard", "Den", "Lights on", "Mine"]);
     expect(statuses.map((c) => [c.name, c.copies.map((p) => p.device.ownerId)])).toEqual([
+      ["Lights On", ["w1", "w2"]],
       ["House", ["w1", "p1"]],
       ["Doors", ["w1"]],
       ["Untitled page", ["p1"]],
     ]);
     expect(statuses.every((c) => c.kind === "status_pages")).toBe(true);
-    expect(statuses[0]!.key).toBe("status-link:S1");
-    expect(cards.some((c) => c.pageId === STARTER)).toBe(false);
+    expect(named("House").key).toBe("status-link:S1");
+    expect(named("Lights On").key).toBe(`status-starter:${STARTER}`);
+    expect(named("Lights On").starter).toBe(true);
+    expect(named("House").starter).toBeUndefined();
   });
 
   it("count their rows, and have no Hidden", () => {
-    expect(cardDetail(statuses[0]!)).toBe("2 rows");
-    expect(cardDetail(statuses[1]!)).toBe("0 rows");
-    expect(statuses[0]!.copies.every((c) => !c.hidden)).toBe(true);
+    expect(cardDetail(named("House"))).toBe("2 rows");
+    expect(cardDetail(named("Doors"))).toBe("0 rows");
+    expect(named("House").copies.every((c) => !c.hidden)).toBe(true);
   });
 
   it("name the tab and a card by their kind", () => {
@@ -314,14 +323,14 @@ describe("status pages", () => {
   });
 
   it("go through the device tabs, the search and the Device menu as pages do", () => {
-    expect(filterChips(DEVICES, statuses).map((c) => [c.id, c.count])).toEqual([["all", 3], ["w1", 2], ["w2", 0], ["p1", 2]]);
+    expect(filterChips(DEVICES, statuses).map((c) => [c.id, c.count])).toEqual([["all", 4], ["w1", 3], ["w2", 1], ["p1", 2]]);
     expect(shownCards(statuses, "p1").map((c) => c.name)).toEqual(["Untitled page", "House"]);
     expect(shownCards(statuses, ALL_FILTER, "door").map((c) => c.name)).toEqual(["Doors"]);
     expect(shownCards(statuses, ALL_FILTER, "", "iphone").map((c) => c.name)).toEqual(["House", "Untitled page"]);
   });
 
   it("have a Devices menu whose last switch says to delete in the status pages editor", () => {
-    const doors = statuses[1]!;
+    const doors = named("Doors");
     const rows = cardDevicePlaces(DEVICES, doors, new Set(["w2"]));
     expect(rows.map((r) => [r.device.ownerId, r.on, r.stuck])).toEqual([
       ["w1", true, STATUS_DEVICES_LAST_TEXT],
@@ -331,7 +340,7 @@ describe("status pages", () => {
   });
 
   it("ask the status pages editors about unsaved edits for the link's source", () => {
-    const house = statuses[0]!;
+    const house = named("House");
     expect(linkSource(house, (id, kind) => kind === "status_pages" && id === "w1")).toBe("p1");
     expect(devicesDirtyText("status_pages")).toBe(STATUS_DEVICES_DIRTY_TEXT);
   });
@@ -341,10 +350,90 @@ describe("status pages", () => {
     expect(emptyText(ALL_FILTER, DEVICES, "zz", "all", "status_pages")).toBe("No status page has that name.");
     expect(emptyText("w2", DEVICES, "", "all", "status_pages")).toMatch(/^No status pages on Chen's Watch yet\./);
     expect(emptyText("w2", DEVICES, "", "iphone", "status_pages")).toBe("No status page here is on an iPhone.");
-    expect(emptyText(ALL_FILTER, DEVICES, "", "all", "status_pages")).toBe("No device has status pages of its own yet. Use New status page to make one.");
+    expect(emptyText("w2", DEVICES, "", "all", "status_pages")).toBe("No status pages on Chen's Watch yet.");
+    expect(emptyText(ALL_FILTER, DEVICES, "", "all", "status_pages")).toBe("No device has status pages yet. Use New status page to make one.");
     for (const text of [allPagesLead(2, "status_pages"), STATUS_DEVICES_LAST_TEXT, STATUS_DEVICES_DIRTY_TEXT, emptyText(ALL_FILTER, DEVICES, "", "all", "status_pages")]) {
       expect(text).not.toMatch(/[–—]| - /);
       expect(text).not.toMatch(/info page/i);
     }
+  });
+
+  describe("a starter page", () => {
+    const clean = () => false;
+    const lights = named("Lights On");
+
+    it("held unlinked on two devices is one card that says so", () => {
+      expect(unlinkedCopies(lights).map((c) => c.device.ownerId)).toEqual(["w1", "w2"]);
+      expect(starterUnlinkedText(lights)).toBe(STARTER_UNLINKED_TEXT);
+      expect(STARTER_UNLINKED_TEXT).toBe("Not linked: each device has its own copy.");
+      // A linked card and a card on one device have nothing to link.
+      expect(starterUnlinkedText(named("House"))).toBeUndefined();
+      expect(starterUnlinkedText(named("Doors"))).toBeUndefined();
+      const alone = cardsOfKind(pageCards(DEVICES, new Map(), new Map([["w1", sdoc(sp(STARTER, "Lights On"))]])), "status_pages")[0]!;
+      expect(alone.starter).toBe(true);
+      expect(starterUnlinkedText(alone)).toBeUndefined();
+      expect(starterLink(alone, ALL_FILTER, clean)).toBeUndefined();
+    });
+
+    it("links from the first device, or from the device tab's copy, onto the others", () => {
+      expect(starterLink(lights, ALL_FILTER, clean)).toEqual({ source: "w1", pageId: STARTER, targets: ["w2"] });
+      expect(starterLink(lights, "w2", clean)).toEqual({ source: "w2", pageId: STARTER, targets: ["w1"] });
+      // A tab the starter is not on links from the first device.
+      expect(starterLink(lights, "p1", clean)).toEqual({ source: "w1", pageId: STARTER, targets: ["w2"] });
+    });
+
+    it("waits for unsaved edits on the source or a target", () => {
+      expect(starterLink(lights, ALL_FILTER, (id, kind) => kind === "status_pages" && id === "w2")).toBe("dirty");
+      expect(starterLink(lights, ALL_FILTER, (id, kind) => kind === "pages" && id === "w2")).toEqual({ source: "w1", pageId: STARTER, targets: ["w2"] });
+    });
+
+    /** Linked on the first watch and the phone, the second watch's own
+     * copy not linked yet, and a second starter linked twice over. */
+    const MIXED = new Map<string, StatusPagesDocument>([
+      ["w1", sdoc(sp(STARTER, "Lights On", { linkId: "K1" }))],
+      ["w2", sdoc(sp(STARTER, "Lights On"))],
+      ["p1", sdoc(sp(STARTER, "Lights On", { linkId: "K1" }))],
+    ]);
+
+    it("held linked on some devices is one card with the unlinked copies on it", () => {
+      const mixed = cardsOfKind(pageCards(DEVICES, new Map(), MIXED), "status_pages");
+      expect(mixed.map((c) => [c.key, c.copies.map((p) => p.device.ownerId)])).toEqual([["status-link:K1", ["w1", "w2", "p1"]]]);
+      const card = mixed[0]!;
+      expect(unlinkedCopies(card).map((c) => c.device.ownerId)).toEqual(["w2"]);
+      expect(starterUnlinkedText(card)).toBe("Not linked on Chen's Watch: it has its own copy.");
+      // The source is a linked copy, the device tab's when it is one.
+      expect(starterLink(card, ALL_FILTER, clean)).toEqual({ source: "w1", pageId: STARTER, targets: ["w2"] });
+      expect(starterLink(card, "p1", clean)).toEqual({ source: "p1", pageId: STARTER, targets: ["w2"] });
+      expect(starterLink(card, "w2", clean)).toEqual({ source: "w1", pageId: STARTER, targets: ["w2"] });
+      // The Devices menu's source never is the unlinked copy.
+      expect(linkSource(card, (id) => id === "w1")).toBe("p1");
+    });
+
+    it("joins the first of two links on one id, and the second stays its own card", () => {
+      const docs = new Map(MIXED).set("w2", sdoc(sp(STARTER, "Lights On", { linkId: "K2" })));
+      docs.set("p1", sdoc(sp(STARTER, "Lights On")));
+      const twice = cardsOfKind(pageCards([W1, P1, W2], new Map(), docs), "status_pages");
+      expect(twice.map((c) => [c.key, c.copies.map((p) => p.device.ownerId)])).toEqual([
+        ["status-link:K1", ["w1", "p1"]],
+        ["status-link:K2", ["w2"]],
+      ]);
+    });
+
+    it("never pulls two devices' own pages of one id onto one card unless they are starters", () => {
+      const same = new Map<string, StatusPagesDocument>([
+        ["w1", sdoc(sp(DOORS, "Doors"))],
+        ["w2", sdoc(sp(DOORS, "Other doors"))],
+      ]);
+      const own = cardsOfKind(pageCards(DEVICES, new Map(), same), "status_pages");
+      expect(own.map((c) => [c.name, c.copies.length, c.starter])).toEqual([["Doors", 1, undefined], ["Other doors", 1, undefined]]);
+      expect(own.every((c) => starterUnlinkedText(c) === undefined)).toBe(true);
+    });
+
+    it("says what its Link did", () => {
+      expect(starterLinkedText(["Jesse's Watch", "Chen's Watch"])).toBe("Linked on Jesse's Watch and Chen's Watch. An edit on one now shows on all of them.");
+      for (const text of [STARTER_UNLINKED_TEXT, starterLinkedText(["A", "B"]), "Not linked on Chen's Watch: it has its own copy."]) {
+        expect(text).not.toMatch(/[–—]| - /);
+      }
+    });
   });
 });
