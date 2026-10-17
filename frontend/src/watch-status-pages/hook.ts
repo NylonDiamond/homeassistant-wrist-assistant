@@ -11,6 +11,7 @@
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import type { HassLike, OwnerSummary } from "../ha-api.js";
+import type { LibraryItemRef } from "../library/item-mode.js";
 import type { IconProvider } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import type { PanelRoute } from "../watch-pages/hook.js";
@@ -131,6 +132,9 @@ export interface WatchStatusPagesViewInput {
   /** The box in the panel's Watch app header the editor draws its bar
    * in (`head-bar.ts`). Left out, the bar is drawn on top of the editor. */
   barHost?: HTMLElement;
+  /** Library mode: one status page edited in the library, with no device
+   * (`library/item-mode.ts`). `ownerId` is then ignored. */
+  libraryItem?: LibraryItemRef;
   onLoaded: () => void;
 }
 
@@ -147,9 +151,11 @@ export function renderWatchStatusPagesView(input: WatchStatusPagesViewInput): Te
           .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}
           .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack}
           .barActions=${input.actions} .shellOwnsWatch=${input.shell === true} .barHost=${input.barHost}
-          .phones=${input.phones === true}></wa-status-pages-editor>`
+          .phones=${input.phones === true} .libraryItem=${input.libraryItem}></wa-status-pages-editor>`
       : html`<div class="wp-loading">
-          ${input.shell === true ? nothing : html`<button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>`}
+          ${input.shell === true ? nothing : (input.libraryItem === undefined
+            ? html`<button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>`
+            : html`<button class="tb-btn tb-back" title="Back to the Status pages tab" @click=${input.onBack}>${uiIcon("left")}<span>Status pages</span></button>`)}
           ${loadFailed ? html`<span>The status page editor did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
         </div>`}`;
 }

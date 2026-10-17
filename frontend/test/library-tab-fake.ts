@@ -82,11 +82,62 @@ export function fakeHome(admin = true) {
 
   const sortOwners = (owners: string[]) => [...new Set(owners)].sort();
 
+  /** Each item's own revision, by kind then upper-cased id: 1 until a
+   * library item save changes it. */
+  const itemRevisions = new Map<string, number>();
+  const revisionOf = (kind: string, id: string) => itemRevisions.get(`${kind}/${up(id)}`) ?? 1;
+  const itemKeyOf = (kind: "pages" | "status_pages" | "menus", id: string) =>
+    Object.keys(lib[kind]).find((k) => (kind === "menus" ? k === id : up(k) === up(id)));
+
   const reply = (msg: Msg): unknown => {
     const type = msg.type as string;
     const why = refuse.get(type);
     if (why !== undefined) throw why;
-    if (type === "wrist_assistant/library/summary") return structuredClone(lib);
+    if (type === "wrist_assistant/library/summary") {
+      const read = structuredClone(lib);
+      for (const kind of ["pages", "status_pages", "menus"] as const) {
+        for (const [id, entry] of Object.entries(read[kind])) entry.revision = revisionOf(kind, id);
+      }
+      return read;
+    }
+    if (type === "wrist_assistant/library/item" || type === "wrist_assistant/library/item/save") {
+      const kind = msg.kind as "pages" | "status_pages" | "menus";
+      if (kind !== "pages" && kind !== "status_pages" && kind !== "menus") throw { code: "invalid", message: "unknown kind" };
+      const key = itemKeyOf(kind, msg.item_id as string);
+      if (key === undefined) throw { code: "not_found", message: "no such item" };
+      const revision = revisionOf(kind, key);
+      if (type === "wrist_assistant/library/item") {
+        if (kind === "menus") {
+          const menu = lib.menus[key]!;
+          return { document: { schemaVersion: 1, quickAction: {}, entityRadial: {}, pageSwitcher: {}, ...structuredClone(menu.sections) }, revision, name: menu.name };
+        }
+        const list = kind === "pages" ? "pages" : "statusPages";
+        return { document: { schemaVersion: 1, [list]: [structuredClone(lib[kind][key]!.item)] }, revision };
+      }
+      const document = msg.document as JsonObject;
+      if (msg.base_revision !== revision) {
+        throw { code: "conflict", message: `stored revision is ${revision}, save was based on ${msg.base_revision as number}` };
+      }
+      if (kind === "menus") {
+        const menu = lib.menus[key]!;
+        const keys = menu.kind === "entity" ? ["entityRadial"] : ["quickAction", "pageSwitcher"];
+        const sections = Object.fromEntries(keys.map((k) => [k, structuredClone(document[k])]));
+        if (JSON.stringify(sections) === JSON.stringify(menu.sections)) return { revision };
+        menu.sections = sections as JsonObject;
+      } else {
+        const pages = document[kind === "pages" ? "pages" : "statusPages"];
+        if (!Array.isArray(pages) || pages.length !== 1 || up(String((pages[0] as JsonObject).id)) !== up(key)) {
+          throw { code: "invalid", message: "the document must hold this item alone" };
+        }
+        const { isHidden: _hidden, ...item } = structuredClone(pages[0] as JsonObject);
+        if (JSON.stringify({ ...item, id: key }) === JSON.stringify(lib[kind][key]!.item)) return { revision };
+        lib[kind][key]!.item = { ...item, id: key };
+      }
+      itemRevisions.set(`${kind}/${up(key)}`, revision + 1);
+      // Every device that picks it is written again, as Home Assistant does.
+      for (const o of Object.keys(lib.picks)) materialise(o);
+      return { revision: revision + 1 };
+    }
     if (type === "wrist_assistant/library/pick") {
       const owner = msg.owner_id as string;
       const kind = msg.kind as "pages" | "status_pages" | "menus";

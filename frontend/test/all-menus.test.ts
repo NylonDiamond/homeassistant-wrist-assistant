@@ -13,7 +13,6 @@ import { libraryOf, type LibraryMenu } from "../src/library/model.js";
 import "../src/watch-menus/all-menus.js";
 import {
   ALL_MENUS_LEAD,
-  MENU_NO_USER_TEXT,
   MENU_SECTION_TITLES,
   MENUS_FOOT,
   allMenusLead,
@@ -37,7 +36,7 @@ import {
 import { askWatchMenu, dropAllWatchMenus, takeWatchMenuAsk } from "../src/watch-menus/draft.js";
 import { shownMenu, showMenuSettings, selectedMenuSlot } from "../src/watch-menus/menu-view.js";
 import { type MenusDocument, watchMenusDefaults } from "../src/watch-menus/model.js";
-import { ALL_FILTER } from "../src/watch-pages/all-pages-model.js";
+import { ALL_FILTER, libraryEditTitle } from "../src/watch-pages/all-pages-model.js";
 import { CHEN, CHEN_MENU, DEVICES, HOME_MENU, JESSE, PHONE, QUICK, SPARE, summary } from "./library-fixture.js";
 import { fakeHome, standUp } from "./library-tab-fake.js";
 
@@ -140,7 +139,7 @@ describe("the tab's words", () => {
     expect(menusDeviceFoot(PHONE_D)).toBe("Pick which menu this iPhone uses. Click a menu to edit it.");
     expect(menusEmptyText([], "")).toBe("No watch or iPhone has connected yet. Pair one on the Home tab.");
     expect(menusEmptyText(DEVICES, "zz")).toBe("No menu or device has that name.");
-    for (const text of [allMenusLead(2), MENUS_FOOT, menusDeviceFoot(JESSE_D), MENU_NO_USER_TEXT, newMenuText("anywhere"), newMenuMadeText("A"), NEW_MENU_ADMIN_TEXT]) {
+    for (const text of [allMenusLead(2), MENUS_FOOT, menusDeviceFoot(JESSE_D), libraryEditTitle("A"), newMenuText("anywhere"), newMenuMadeText("A"), NEW_MENU_ADMIN_TEXT]) {
       expect(text).not.toMatch(/[–—]| - /);
       expect(text).not.toMatch(/[Ll]ink|Same as/);
     }
@@ -151,10 +150,14 @@ describe("the Menus tab", () => {
   function tab(admin = true) {
     const home = fakeHome(admin);
     const opened: [string, string][] = [];
-    const t = standUp("wa-all-menus", home, { onOpen: (o: string, k: string) => opened.push([o, k]) });
+    const library: string[] = [];
+    const t = standUp("wa-all-menus", home, {
+      onOpen: (o: string, k: string) => opened.push([o, k]),
+      onOpenLibrary: (id: string) => library.push(id),
+    });
     const sentOf = (type: string) => home.sent.filter((m) => m.type === `wrist_assistant/${type}`);
     const libNow = () => (t.el.lib as { library: { menus: LibraryMenu[] } }).library;
-    return { ...t, home, opened, sentOf, libNow };
+    return { ...t, home, opened, library, sentOf, libNow };
   }
 
   it("draws a card per menu with its name and round ticks under Used by, and no Devices, Link or Same as", async () => {
@@ -189,7 +192,7 @@ describe("the Menus tab", () => {
     expect(t.sentOf("watch_config/save")).toEqual([]);
   });
 
-  it("opens a card's menu in a device's editor, on that menu; a menu no device uses says so", async () => {
+  it("opens a card's menu in a device's editor, on that menu; a menu no device uses in the library", async () => {
     const t = tab();
     t.call("setFilter", ALL_FILTER);
     await t.ready();
@@ -198,7 +201,9 @@ describe("the Menus tab", () => {
     expect(takeWatchMenuAsk(CHEN)).toBe("entity");
     t.call("open", t.libNow().menus.find((m) => m.id === SPARE));
     expect(t.opened).toHaveLength(1);
-    expect(t.whole()).toContain(MENU_NO_USER_TEXT);
+    expect(t.library).toEqual([SPARE]);
+    expect(t.whole()).not.toContain("Pick one to edit it there.");
+    expect(t.whole()).toContain(" in the library");
   });
 
   it("has one New menu, in the tab's head, and none in the sections", async () => {
@@ -235,8 +240,10 @@ describe("the Menus tab", () => {
     const made = Object.entries(t.home.lib.menus).find(([, m]) => m.name === "Kitchen menu")!;
     expect(made[1].owners).toEqual([]);
     expect(t.el.newForm).toBeUndefined();
+    // Straight into the new menu, in the library, with no note left behind.
+    expect(t.library).toEqual([made[0]]);
     const text = t.whole();
-    expect(text).toContain("Made Kitchen menu. Tick a device on its card to use it there.");
+    expect(text).not.toContain("Made Kitchen menu.");
     // The library was read again: the new card is there, with no device ticked.
     const card = text.slice(text.indexOf(`data-card=${made[0]}`));
     expect(card).toContain(`<b class="ap-name">Kitchen menu</b>`);

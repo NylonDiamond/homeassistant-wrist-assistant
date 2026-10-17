@@ -80,8 +80,20 @@ import {
 } from "../ha-api.js";
 import { live } from "lit/directives/live.js";
 import { type LinkDevice, joinWords, linkDevicesOf } from "../watch-pages/devices.js";
-import type { MenuUnit } from "../library/client.js";
-import { type LibraryMenu, MENU_UNIT_TITLES, menuFor, sameId } from "../library/model.js";
+import { type MenuUnit, libraryErrorText } from "../library/client.js";
+import {
+  type LibraryItemRef,
+  fetchLibraryRecord,
+  libraryDraftKey,
+  libraryItemIO,
+  libraryModeStyles,
+  previewOwner,
+  renderLibraryTag,
+  renderPreviewPicker,
+  sameLibraryItem,
+  summaryRevision,
+} from "../library/item-mode.js";
+import { type LibraryMenu, MENU_UNIT_TITLES, libraryMenu, menuFor, sameId } from "../library/model.js";
 import { LibraryController } from "../library/store.js";
 import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
 import { copiedMenuText, copyBlockedText, copyMenuName, dirtyElsewhereText, menuRestoreLines, ownerWords } from "../watch-pages/library-editing.js";
@@ -181,6 +193,7 @@ import {
   menuSectionLabel,
   menuStageFacts,
   menuStageHint,
+  librarySections,
   menuViewStyles,
   renderMenuInspector,
   renderMenusCard,
@@ -430,9 +443,23 @@ export class WaMenuEditor extends LitElement {
   /** The box in the panel's Watch app header the bar is drawn in
    * (`head-bar.ts`). Without one the bar is drawn on top, as it always was. */
   @property({ attribute: false }) barHost: HTMLElement | undefined = undefined;
+  /** Library mode (`library/item-mode.ts`): this one menu, edited in the
+   * library with no device. `watchId` is then only the device it is drawn
+   * on ("Preview as"), which also lends its catalog, behavior, voice,
+   * status pages and pages; the draft is kept under `libraryDraftKey`, and
+   * only the menu's own unit is shown and saved. */
+  @property({ attribute: false }) libraryItem: LibraryItemRef | undefined = undefined;
   private readonly headBar = new HeadBar(this);
 
   @state() private watchId?: string;
+  /** The library menu open now, in library mode. */
+  private openedItem?: LibraryItemRef;
+  /** The summary revision a quiet read was last asked for. */
+  private followedRevision?: number;
+  /** The library menu whose unit the Menus card was turned to. */
+  private shownUnitFor?: string;
+  /** Library mode's Delete asks first, in the menu's row. */
+  @state() private menuDeleteAsk = false;
   @state() private record?: WatchConfigRecord;
   /** The integration does not keep menus (too old for the kind). */
   @state() private unsupported = false;
@@ -548,7 +575,7 @@ export class WaMenuEditor extends LitElement {
    * revision 0 and unsaved, once the screen opens ready; none while it waits
    * for the iPhone. */
   private get draft(): WatchMenusDraft | undefined {
-    const watchId = this.watchId;
+    const watchId = this.recordKey;
     const record = this.record;
     if (watchId === undefined || record === undefined) return undefined;
     if (record.revision > 0) {
@@ -559,8 +586,22 @@ export class WaMenuEditor extends LitElement {
       const document = asWatchMenusDocument(record.document);
       return document === undefined ? undefined : takeWatchMenusRecord(watchId, document, record.revision).draft;
     }
-    if (this.unsupported || !this.opensReady()) return undefined;
+    if (this.libraryItem !== undefined || this.unsupported || !this.opensReady()) return undefined;
     return keptWatchMenusDraft(watchId) ?? newWatchMenusDraft(watchId);
+  }
+
+  /** What the menus record and its kept draft are keyed by: the device's
+   * id, or in library mode the menu's `libraryDraftKey`. */
+  private get recordKey(): string | undefined {
+    return this.libraryItem === undefined ? this.watchId : libraryDraftKey(this.libraryItem);
+  }
+
+  /** In library mode, the menu's unit, from the summary: undefined before
+   * it is read. */
+  private get libraryUnit(): MenuUnit | undefined {
+    const item = this.libraryItem;
+    const lib = this.lib.library;
+    return item === undefined || lib === undefined ? undefined : libraryMenu(lib, item.id)?.unit;
   }
 
   /** Home Assistant holds no menus for the watch: the ready screen's banner,
@@ -577,6 +618,8 @@ export class WaMenuEditor extends LitElement {
    * says Home Assistant holds no pages for the watch.
    */
   private get pagesDraft(): WatchPagesDraft | undefined {
+    // In library mode the pages are the preview device's, read only.
+    if (this.libraryItem !== undefined) return undefined;
     if (this.watchId === undefined || (this.pagesRecord !== undefined && this.pagesRecord.revision <= 0)) return undefined;
     return keptWatchPagesDraft(this.watchId);
   }
@@ -595,8 +638,9 @@ export class WaMenuEditor extends LitElement {
 
   /** Either draft is being saved: every field is drawn off then. */
   private get saving(): boolean {
-    if (this.watchId === undefined) return false;
-    return (keptWatchMenusDraft(this.watchId)?.saving ?? false) || (this.pagesDraft?.saving ?? false);
+    const key = this.recordKey;
+    if (key === undefined) return false;
+    return (keptWatchMenusDraft(key)?.saving ?? false) || (this.pagesDraft?.saving ?? false);
   }
 
   /** Unsaved edits to the menus or to the pages: the Save button, its
@@ -642,7 +686,10 @@ export class WaMenuEditor extends LitElement {
     this.columns = loadColumnWidths(ME_COLUMNS_KEY, ME_COLUMNS_DEFAULT, ME_COLUMNS);
     this.watchSize();
     this.listenForReconnect();
-    if (this.watchId !== undefined) this.openWatch(this.watchId, true);
+    if (this.openedItem !== undefined) {
+      this.openPreview(this.watchId);
+      this.openItem(true);
+    } else if (this.watchId !== undefined) this.openWatch(this.watchId, true);
   }
 
   override disconnectedCallback(): void {
@@ -678,10 +725,17 @@ export class WaMenuEditor extends LitElement {
           () => { this.ownList = []; },
         );
       }
-      // A move takes the watch's kept menu draft and its kept page draft
-      // together (`openWatch`), so both stay as they were on the watch left.
-      const id = followWatch(this.watches, this.watchId, this.ownerId, this.shellOwnsWatch || changed.has("ownerId"));
-      if (id !== undefined) this.openWatch(id);
+      if (this.libraryItem !== undefined) this.followLibraryItem(this.libraryItem);
+      else {
+        if (this.openedItem !== undefined) {
+          this.openedItem = undefined;
+          this.watchId = undefined;
+        }
+        // A move takes the watch's kept menu draft and its kept page draft
+        // together (`openWatch`), so both stay as they were on the watch left.
+        const id = followWatch(this.watches, this.watchId, this.ownerId, this.shellOwnsWatch || changed.has("ownerId"));
+        if (id !== undefined) this.openWatch(id);
+      }
     }
     this.followSave();
     const ask = this.restoreAsk;
@@ -759,9 +813,11 @@ export class WaMenuEditor extends LitElement {
   }
 
   private onReconnect = (): void => {
+    const key = this.recordKey;
+    if (this.isConnected && key !== undefined && this.libraryItem !== undefined) void this.load(key, true);
     const watchId = this.watchId;
     if (!this.isConnected || watchId === undefined) return;
-    void this.load(watchId, true);
+    if (this.libraryItem === undefined) void this.load(watchId, true);
     void this.loadCatalog(watchId);
     void this.loadHttpLibrary();
     void this.loadStatusPages(watchId);
@@ -773,17 +829,18 @@ export class WaMenuEditor extends LitElement {
 
   private followSave(): void {
     const watchId = this.watchId;
-    if (watchId === undefined) return;
     const pagesDone = this.pagesDraft?.saveDone;
-    if (pagesDone !== undefined && pagesDone !== this.followedPagesSave) {
+    if (watchId !== undefined && pagesDone !== undefined && pagesDone !== this.followedPagesSave) {
       this.followedPagesSave = pagesDone;
       const ended = (): void => this.pagesSaveEnded(watchId);
       void pagesDone.then(ended, ended);
     }
-    const done = keptWatchMenusDraft(watchId)?.saveDone;
+    const key = this.recordKey;
+    if (key === undefined) return;
+    const done = keptWatchMenusDraft(key)?.saveDone;
     if (done === undefined || done === this.followedSave) return;
     this.followedSave = done;
-    const ended = (): void => this.saveEnded(watchId);
+    const ended = (): void => this.saveEnded(key);
     void done.then(ended, ended);
   }
 
@@ -799,12 +856,84 @@ export class WaMenuEditor extends LitElement {
   private saveEnded(watchId: string): void {
     this.requestUpdate();
     if (!this.isConnected) return;
-    if (watchId === this.watchId) {
+    if (watchId === this.recordKey) {
       this.reloadPending = false;
       void this.load(watchId, true);
     } else {
       this.flushPending();
     }
+  }
+
+  // ── library mode ───────────────────────────────────────────────────────
+
+  /** Library mode: the preview device (the shown one while it is in the
+   * home, else the remembered one, else the first watch), the menu read
+   * when it changes, the Menus card turned to its unit once the summary
+   * names it, and the menu read again quietly once the summary says it
+   * moved on elsewhere. */
+  private followLibraryItem(ref: LibraryItemRef): void {
+    const preview = previewOwner(this.watches, this.watchId);
+    if (preview !== this.watchId || (preview === undefined && this.openedItem === undefined)) this.openPreview(preview);
+    if (!sameLibraryItem(ref, this.openedItem)) {
+      this.openedItem = ref;
+      this.openItem();
+    }
+    const key = libraryDraftKey(ref);
+    const unit = this.libraryUnit;
+    if (unit !== undefined && this.shownUnitFor !== key) {
+      this.shownUnitFor = key;
+      showMenuSettings({ uiState: this.uiState, requestUpdate: () => this.requestUpdate() }, unit);
+    }
+    const moved = summaryRevision(this.lib.library, ref);
+    const shown = this.record?.revision;
+    if (moved !== undefined && shown !== undefined && moved > shown && moved !== this.followedRevision) {
+      this.followedRevision = moved;
+      void this.load(key, true);
+    }
+  }
+
+  /** Library mode's device to draw on: its catalog, HTTP actions, status
+   * pages, pages, behavior and voice are read and followed, for the slot
+   * pickers and the page switcher. Its menus are never read. */
+  private openPreview(watchId: string | undefined): void {
+    this.watchId = watchId;
+    this.catalog = undefined;
+    this.catalogSeq++;
+    this.statusPages = undefined;
+    this.statusPagesSeq++;
+    this.pagesRecord = undefined;
+    this.pagesSeq++;
+    this.behavior = undefined;
+    this.behaviorSeq++;
+    this.voiceDocument = undefined;
+    this.voiceSeq++;
+    if (watchId === undefined) this.endSubscription();
+    else this.startSubscription(watchId);
+    this.loadContext(watchId);
+  }
+
+  /** Open the library menu: as `openWatch` does for a device, but with no
+   * history and no delivery. */
+  private openItem(quiet = false): void {
+    const key = this.recordKey;
+    if (key === undefined) return;
+    if (!quiet) {
+      this.reloadPending = false;
+      this.restartDraft = undefined;
+      this.note = undefined;
+      this.unsupported = false;
+      this.history = [];
+      this.closeAsk();
+      this.flushRename();
+      this.libNote = undefined;
+      this.menuDeleteAsk = false;
+      this.endScrub();
+      this.uiState.clear();
+      this.shownUnitFor = undefined;
+      this.followedRevision = undefined;
+    }
+    this.stopPolling();
+    void this.load(key, quiet);
   }
 
   // ── loading ────────────────────────────────────────────────────────────
@@ -843,8 +972,16 @@ export class WaMenuEditor extends LitElement {
     if (asked !== undefined) showMenuSettings({ uiState: this.uiState, requestUpdate: () => this.requestUpdate() }, asked);
     this.startSubscription(watchId);
     void this.load(watchId, quiet);
-    void this.loadCatalog(watchId);
+    this.loadContext(watchId);
+  }
+
+  /** What the slot pickers and the page switcher read beside the menus: the
+   * home's HTTP actions, and the device's catalog, status pages, pages,
+   * behavior and voice (none of those with no device, in library mode). */
+  private loadContext(watchId: string | undefined): void {
     void this.loadHttpLibrary();
+    if (watchId === undefined) return;
+    void this.loadCatalog(watchId);
     void this.loadStatusPages(watchId);
     void this.loadPages(watchId);
     void this.loadBehavior(watchId);
@@ -934,7 +1071,9 @@ export class WaMenuEditor extends LitElement {
       // Into the page draft the page editor keeps too, rebasing any edits
       // onto it. Not while that draft is being saved: the record may be the
       // save's own, and the save reads the pages again when it ends.
-      if (record.revision > 0 && isJsonObject(record.document) && !(keptWatchPagesDraft(watchId)?.saving ?? false)) {
+      // Library mode only reads the preview device's pages, never touching
+      // its kept page draft.
+      if (this.libraryItem === undefined && record.revision > 0 && isJsonObject(record.document) && !(keptWatchPagesDraft(watchId)?.saving ?? false)) {
         const taken = takeWatchPagesRecord(watchId, record.document as WatchPagesDocument, record.revision);
         if (taken.mergedIntoEdits) this.note = { kind: "warn", text: "The pages changed elsewhere. Your edits are kept." };
       }
@@ -971,8 +1110,9 @@ export class WaMenuEditor extends LitElement {
       this.loading = true;
       this.loadError = undefined;
     }
+    const item = this.libraryItem;
     try {
-      const record = await fetchWatchConfig(hass, watchId, "menus");
+      const record = item !== undefined ? await fetchLibraryRecord(hass, item) : await fetchWatchConfig(hass, watchId, "menus");
       if (seq !== this.loadSeq) return;
       if (quiet && this.holdReload) {
         this.reloadPending = true;
@@ -983,7 +1123,9 @@ export class WaMenuEditor extends LitElement {
       this.loadError = undefined;
     } catch (err) {
       if (seq !== this.loadSeq) return;
-      if (watchMenusReadMeansUnsupported(err)) {
+      if (item !== undefined) {
+        if (!quiet) this.loadError = libraryErrorText(err);
+      } else if (watchMenusReadMeansUnsupported(err)) {
         this.unsupported = true;
         this.loadError = undefined;
       } else if (!quiet) {
@@ -992,19 +1134,21 @@ export class WaMenuEditor extends LitElement {
       if (this.restartDraft?.watchId === watchId) this.restartDraft = undefined;
     }
     this.loading = false;
-    if (this.unsupported) return;
+    // A library menu has no delivery and no earlier saves of its own.
+    if (this.unsupported || item !== undefined) return;
     this.pollIfWaiting();
     void this.loadHistory(watchId);
   }
 
   private flushPending(): void {
-    if (!this.reloadPending || this.holdReload || this.watchId === undefined) return;
+    const key = this.recordKey;
+    if (!this.reloadPending || this.holdReload || key === undefined) return;
     this.reloadPending = false;
-    void this.load(this.watchId, true);
+    void this.load(key, true);
   }
 
   private show(record: WatchConfigRecord): void {
-    const watchId = this.watchId;
+    const watchId = this.recordKey;
     this.record = record;
     // No menus here: a kept draft from an earlier record moves onto the
     // defaults at revision 0, its edits kept, so its first save makes the
@@ -1059,7 +1203,8 @@ export class WaMenuEditor extends LitElement {
       } else if (event.kind === "voice") {
         void this.loadVoice(watchId);
       } else if (event.kind === "menus") {
-        if (event.revision !== (this.record?.revision ?? 0)) void this.load(watchId, true);
+        // In library mode the device's menus are not what is open.
+        if (this.libraryItem === undefined && event.revision !== (this.record?.revision ?? 0)) void this.load(watchId, true);
       }
     }).then(
       (unsubscribe) => {
@@ -1234,6 +1379,7 @@ export class WaMenuEditor extends LitElement {
       switcherSettings: (pageId) => this.switcherSettingsHost(pageId),
       menuFoot: (menu) => (menu === "switcher" ? nothing : this.libraryHead(menu)),
       menuBadge: (menu) => this.menuBadge(menu),
+      ...(this.libraryUnit === undefined ? {} : { sections: librarySections(this.libraryUnit) }),
       get document() { return draft.document; },
       get targets() { return self.targets(); },
       get catalogKnown() { return self.catalog !== undefined; },
@@ -1304,7 +1450,8 @@ export class WaMenuEditor extends LitElement {
    */
   private async save(): Promise<void> {
     const hass = this.hass;
-    const watchId = this.watchId;
+    // In library mode the menu alone: there is no page draft.
+    const watchId = this.recordKey;
     this.endScrub();
     const draft = this.draft;
     const pages = this.pagesDraft;
@@ -1317,7 +1464,7 @@ export class WaMenuEditor extends LitElement {
     // `no_record` means the watch is not paired (`firstSaveNote`).
     const menusNote = menusDirty ? await this.saveMenus(hass, watchId, draft, draft.revision <= 0) : undefined;
     const pagesNote = pagesDirty && pages !== undefined && this.pagesDraft === pages ? await this.savePages(hass, watchId, pages) : undefined;
-    if (watchId === this.watchId) this.note = joinSaveNotes(menusNote, pagesNote);
+    if (watchId === this.recordKey) this.note = joinSaveNotes(menusNote, pagesNote);
   }
 
   /** Save the menus draft; the note for how it ended, or none. */
@@ -1325,7 +1472,8 @@ export class WaMenuEditor extends LitElement {
     // The other devices on this menu Home Assistant could not bring up to
     // date.
     let failures: WatchConfigLinkFailure[] = [];
-    const running = saveWatchMenusDraft(draft, {
+    const item = this.libraryItem;
+    const running = saveWatchMenusDraft(draft, item !== undefined ? { prepare: scrubWatchMenuOrphanTriggers, ...libraryItemIO(hass, this.lib.store, item) } : {
       prepare: scrubWatchMenuOrphanTriggers,
       save: (base, document) => saveWatchConfig(hass, watchId, "menus", base, document).then((reply) => {
         failures = linkFailuresOf(reply);
@@ -1416,6 +1564,12 @@ export class WaMenuEditor extends LitElement {
    * Assistant holds no menus for the device. */
   private libraryMenuOf(menu: MenusSection): LibraryMenu | undefined {
     const lib = this.lib.library;
+    // In library mode: the menu open, for its own unit's rows.
+    const item = this.libraryItem;
+    if (item !== undefined) {
+      const open = lib === undefined ? undefined : libraryMenu(lib, item.id);
+      return open?.unit === menuUnitOf(menu) ? open : undefined;
+    }
     const watchId = this.watchId;
     if (lib === undefined || watchId === undefined || this.unsupported || (this.record?.revision ?? 0) <= 0) return undefined;
     return menuFor(lib, watchId, menuUnitOf(menu));
@@ -1495,7 +1649,9 @@ export class WaMenuEditor extends LitElement {
    * this tab holds unsaved edits, which would land on this menu. */
   private menuTickLocked(ownerId: string): string | undefined {
     const watchId = this.watchId;
-    if (watchId === undefined || sameId(ownerId, watchId) || !(keptWatchMenusDraft(ownerId)?.dirty ?? false)) return undefined;
+    // In library mode no device is "here": the preview device ticks as any.
+    const here = this.libraryItem === undefined && (watchId === undefined || sameId(ownerId, watchId));
+    if (here || !(keptWatchMenusDraft(ownerId)?.dirty ?? false)) return undefined;
     return dirtyElsewhereText(this.linkDevices.find((d) => sameId(d.ownerId, ownerId))?.name ?? "that device");
   }
 
@@ -1512,8 +1668,9 @@ export class WaMenuEditor extends LitElement {
   private libraryHead(menu: MenusSection): TemplateResult | typeof nothing {
     const used = this.libraryMenuOf(menu);
     const store = this.lib.store;
-    const watchId = this.watchId;
+    const watchId = this.libraryItem === undefined ? this.watchId : this.recordKey;
     if (used === undefined || store === undefined || watchId === undefined) return nothing;
+    const inLibrary = this.libraryItem !== undefined;
     const title = MENU_UNIT_TITLES[used.unit];
     const naming = this.naming !== undefined && sameId(this.naming.menuId, used.id) ? this.naming : undefined;
     const devices = this.linkDevices;
@@ -1533,7 +1690,7 @@ export class WaMenuEditor extends LitElement {
           }}
           @blur=${() => this.flushRename()} />
       </label>
-      ${devices.length > 1 ? renderTicks({
+      ${devices.length > (inLibrary ? 0 : 1) ? renderTicks({
         library: this.lib.library!,
         kind: "menus",
         itemId: used.id,
@@ -1543,7 +1700,7 @@ export class WaMenuEditor extends LitElement {
         ...(admin === undefined ? {} : { admin }),
         locked: (ownerId) => this.menuTickLocked(ownerId),
       }, (ownerId) => { void store.pickMenu(ownerId, used.unit, used.id); }) : nothing}
-      ${others.length === 0 ? nothing : html`<div class="me-lib-copy">
+      ${inLibrary ? this.renderLibraryDelete(used) : others.length === 0 ? nothing : html`<div class="me-lib-copy">
         <span class="me-lib-hint">An edit here changes it on ${joinWords(ownerWords(others, devices))} too.</span>
         <button type="button" class="pe-btn me-copy" ?disabled=${copyBlocked !== undefined || this.copying}
           title=${copyBlocked ?? `A copy of this menu that only this ${word} uses. The other devices keep this one.`}
@@ -1552,6 +1709,39 @@ export class WaMenuEditor extends LitElement {
       ${note === undefined ? nothing : html`<p class="me-lib-note err" role="alert">${note}</p>`}
       ${this.libNote === undefined ? nothing : html`<p class="me-lib-note ${this.libNote.kind}" role="status">${this.libNote.text}</p>`}
     </div>`;
+  }
+
+  /** Library mode's Delete from the library, for a menu no device uses (a
+   * menu in use is refused `in_use`, so it is not offered): asked first,
+   * then the way is back to the Menus tab. */
+  private renderLibraryDelete(menu: LibraryMenu): TemplateResult | typeof nothing {
+    if (menu.owners.length > 0) {
+      return html`<p class="me-lib-hint">A save changes it on every device that uses it. To delete it, pick another menu for each of them first.</p>`;
+    }
+    if (!this.menuDeleteAsk) {
+      return html`<button type="button" class="pe-btn pe-danger me-lib-del" ?disabled=${this.saving}
+        title=${`Delete ${menu.name} from the library`} @click=${() => { this.menuDeleteAsk = true; }}>Delete from the library</button>`;
+    }
+    return html`<div class="me-lib-copy me-lib-del-ask" role="alertdialog" aria-label=${`Delete ${menu.name}?`}>
+      <span class="me-lib-hint"><b>Delete ${menu.name}?</b> No device uses it. This cannot be undone.</span>
+      <button type="button" class="pe-btn pe-danger" @click=${() => void this.deleteLibraryMenu(menu)}>Really delete</button>
+      <button type="button" class="pe-btn" @click=${() => { this.menuDeleteAsk = false; }}>Cancel</button>
+    </div>`;
+  }
+
+  private async deleteLibraryMenu(menu: LibraryMenu): Promise<void> {
+    const store = this.lib.store;
+    const key = this.recordKey;
+    if (store === undefined || key === undefined || this.libraryItem === undefined) return;
+    this.menuDeleteAsk = false;
+    const result = await store.deleteItem("menus", menu.id);
+    if (key !== this.recordKey) return;
+    if (!result.ok) {
+      this.libNote = { kind: "err", text: `Not deleted. ${result.text}` };
+      return;
+    }
+    forgetWatchMenusDraft(key);
+    this.onBack?.();
   }
 
   // ── restore ────────────────────────────────────────────────────────────
@@ -1710,6 +1900,7 @@ export class WaMenuEditor extends LitElement {
    * Redo are in the canvas head. Two rows when stacked.
    */
   private renderTopBar(draft: WatchMenusDraft | undefined, watches: readonly OwnerSummary[]): TemplateResult {
+    if (this.libraryItem !== undefined) return this.renderLibraryBar(draft, watches);
     const editing = draft !== undefined && !this.unsupported;
     // The pages count too: a page's switcher settings are edited here.
     const dirty = editing && this.dirty;
@@ -1731,6 +1922,28 @@ export class WaMenuEditor extends LitElement {
         ${renderSaveReason(saveBlockedText({ newWatch: this.newWatch, dirty, saving: this.saving }))}`}` : nothing}
       ${shell ? nothing : html`<button class="tb-btn tb-pages" title="The watch's pages, as Home Assistant keeps them"
         @click=${() => (this.onPages ? this.onPages() : navigatePagesFromMenus(undefined))}>${uiIcon("pages")}<span>Pages</span></button>`}
+      ${this.barActions}
+    </div>`;
+  }
+
+  /** Library mode's bar: back to the Menus tab, "Preview as" in place of
+   * the device picker, then the ··· menu and Save. No delivery and no way
+   * to Pages: a save reaches every device that uses the menu, each on its
+   * own. */
+  private renderLibraryBar(draft: WatchMenusDraft | undefined, watches: readonly OwnerSummary[]): TemplateResult {
+    const editing = draft !== undefined;
+    const dirty = editing && this.dirty;
+    return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Menu in the library">
+      ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
+        @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
+      <button class="tb-btn tb-back" title="Back to the Menus tab" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>Menus</span></button>
+      ${renderLibraryTag()}
+      <span class="spacer"></span>
+      ${renderPreviewPicker(watches, this.watchId, (id) => this.openPreview(id))}
+      ${this.renderTopMenu(editing ? draft : undefined)}
+      ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
+          title=${dirty ? `Save (${MOD}S). A save reaches every device that uses this menu.` : `Nothing to save (${MOD}S)`}
+          @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>` : nothing}
       ${this.barActions}
     </div>`;
   }
@@ -1933,16 +2146,22 @@ export class WaMenuEditor extends LitElement {
   }
 
   private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
-    if (watches.length === 0) {
+    const inLibrary = this.libraryItem !== undefined;
+    if (watches.length === 0 && !inLibrary) {
       const waiting = this.owners.length === 0 && this.ownList === undefined;
       return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet. Pair one on the Home tab."}</div>`;
     }
     if (this.unsupported) return html`<div class="pe-empty"><b>${WATCH_MENUS_UPDATE_TEXT}</b></div>`;
     if (this.loading) return html`<div class="pe-empty">Loading…</div>`;
+    // Library mode draws only the menu's own unit, which the summary names.
+    if (inLibrary && this.loadError === undefined && this.libraryUnit === undefined) {
+      const failed = this.lib.readState === "failed" ? this.lib.store?.readError : undefined;
+      return html`<div class="pe-empty">${failed ?? "Loading…"}</div>`;
+    }
     if (this.loadError !== undefined) {
-      const id = this.watchId;
+      const id = this.recordKey;
       return html`<div class="pe-empty">
-        <span>Could not read this ${deviceNoun(this.device)}'s menus: ${this.loadError}</span>
+        <span>${inLibrary ? "Could not read this menu" : `Could not read this ${deviceNoun(this.device)}'s menus`}: ${this.loadError}</span>
         ${id === undefined ? nothing : html`<button class="pe-btn" @click=${() => void this.load(id)}>Try again</button>`}
       </div>`;
     }
@@ -1987,7 +2206,7 @@ export class WaMenuEditor extends LitElement {
         ${renderMenuInspector(host)}
       </div>
     </div>
-    ${fresh ? nothing : this.renderFoot(record, draft.document, draft.dirty)}`;
+    ${fresh || inLibrary ? nothing : this.renderFoot(record, draft.document, draft.dirty)}`;
   }
 
   /** The stored copy's line, History and Raw configuration, pinned to the
@@ -2255,7 +2474,7 @@ export class WaMenuEditor extends LitElement {
     .me-lib-note { margin: 0; font-size: 12px; line-height: 1.35; color: var(--wa-muted); }
     .me-lib-note.err { color: var(--wa-need); }
     .me-lib-note.ok { color: var(--wa-ink); }
-  `, menuViewStyles, menuStageStyles, menuInspectorLookStyles, configFootStyles, howToStyles, libraryTicksStyles, headBarStyles];
+  `, menuViewStyles, menuStageStyles, menuInspectorLookStyles, configFootStyles, howToStyles, libraryTicksStyles, libraryModeStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-menu-editor")) {

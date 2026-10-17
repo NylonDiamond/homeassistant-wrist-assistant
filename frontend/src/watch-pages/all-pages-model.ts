@@ -222,10 +222,10 @@ export function openDevice(entry: { owners: readonly string[] }, filter: PagesFi
     ?? holders[0];
 }
 
-/** What a click on a card no device has says: it has no editor to open in
- * until a device has it. */
-export function noOwnerText(kind: CardKind): string {
-  return `No device has this ${cardNoun(kind)}. Tick one to edit it there.`;
+/** The title of a card no device has: a click opens it in the library
+ * itself (`library/item-mode.ts`). */
+export function libraryEditTitle(name: string): string {
+  return `Edit ${name} in the library`;
 }
 
 /** A device tab's first heading. */

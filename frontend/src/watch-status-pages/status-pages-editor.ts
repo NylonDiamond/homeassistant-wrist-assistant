@@ -66,6 +66,20 @@ import { type LibraryItem, devicesFor, libraryItem, sameId } from "../library/mo
 import { renderStatusRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
 import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
+import { libraryErrorText } from "../library/client.js";
+import {
+  type LibraryItemRef,
+  fetchLibraryRecord,
+  libraryDeleteText,
+  libraryDraftKey,
+  libraryItemIO,
+  libraryModeStyles,
+  previewOwner,
+  renderLibraryTag,
+  renderPreviewPicker,
+  sameLibraryItem,
+  summaryRevision,
+} from "../library/item-mode.js";
 import {
   dirtyElsewhereText,
   hereTickText,
@@ -270,9 +284,17 @@ export class WaStatusPagesEditor extends LitElement {
   /** The box in the panel's Watch app header the bar is drawn in
    * (`head-bar.ts`). Without one the bar is drawn on top, as it always was. */
   @property({ attribute: false }) barHost: HTMLElement | undefined = undefined;
+  /** Library mode (`library/item-mode.ts`): this one status page, edited in
+   * the library with no device. `watchId` is then only the device it is
+   * drawn on ("Preview as"); the draft is kept under `libraryDraftKey`. */
+  @property({ attribute: false }) libraryItem: LibraryItemRef | undefined = undefined;
   private readonly headBar = new HeadBar(this);
 
   @state() private watchId?: string;
+  /** The library item open now, in library mode. */
+  private openedItem?: LibraryItemRef;
+  /** The summary revision a quiet read was last asked for. */
+  private followedRevision?: number;
   @state() private record?: WatchConfigRecord;
   /** The integration does not keep status pages (too old for the kind). */
   @state() private unsupported = false;
@@ -341,7 +363,7 @@ export class WaStatusPagesEditor extends LitElement {
    * defaults at revision 0 and unsaved, once the screen opens ready; none
    * while it waits for the iPhone. */
   private get draft(): StatusPagesDraft | undefined {
-    const watchId = this.watchId;
+    const watchId = this.recordKey;
     const record = this.record;
     if (watchId === undefined || record === undefined) return undefined;
     if (record.revision > 0) {
@@ -352,8 +374,14 @@ export class WaStatusPagesEditor extends LitElement {
       const document = asStatusPagesDocument(record.document);
       return document === undefined ? undefined : takeStatusPagesRecord(watchId, document, record.revision).draft;
     }
-    if (this.unsupported || !this.opensReady()) return undefined;
+    if (this.libraryItem !== undefined || this.unsupported || !this.opensReady()) return undefined;
     return keptStatusPagesDraft(watchId) ?? newWatchStatusPagesDraft(watchId);
+  }
+
+  /** What the record and its kept draft are keyed by: the device's id, or
+   * in library mode the item's `libraryDraftKey`. */
+  private get recordKey(): string | undefined {
+    return this.libraryItem === undefined ? this.watchId : libraryDraftKey(this.libraryItem);
   }
 
   /** Home Assistant holds no status pages for the watch: the ready screen's
@@ -391,7 +419,8 @@ export class WaStatusPagesEditor extends LitElement {
     this.columns = loadColumnWidths(SP_COLUMNS_KEY, SP_COLUMNS_DEFAULT, SP_COLUMNS);
     this.watchSize();
     this.listenForReconnect();
-    if (this.watchId !== undefined) this.openWatch(this.watchId, true);
+    if (this.openedItem !== undefined) this.openItem(true);
+    else if (this.watchId !== undefined) this.openWatch(this.watchId, true);
   }
 
   override disconnectedCallback(): void {
@@ -420,8 +449,15 @@ export class WaStatusPagesEditor extends LitElement {
           () => { this.ownList = []; },
         );
       }
-      const id = followWatch(this.watches, this.watchId, this.ownerId, this.shellOwnsWatch || changed.has("ownerId"));
-      if (id !== undefined) this.openWatch(id);
+      if (this.libraryItem !== undefined) this.followLibraryItem(this.libraryItem);
+      else {
+        if (this.openedItem !== undefined) {
+          this.openedItem = undefined;
+          this.watchId = undefined;
+        }
+        const id = followWatch(this.watches, this.watchId, this.ownerId, this.shellOwnsWatch || changed.has("ownerId"));
+        if (id !== undefined) this.openWatch(id);
+      }
     }
     this.followSave();
     const ask = this.restoreAsk;
@@ -492,13 +528,55 @@ export class WaStatusPagesEditor extends LitElement {
   }
 
   private onReconnect = (): void => {
-    const watchId = this.watchId;
+    const watchId = this.recordKey;
     if (!this.isConnected || watchId === undefined) return;
     void this.load(watchId, true);
   };
 
+  /** Library mode: the preview device (the shown one while it is in the
+   * home, else the remembered one, else the first watch), the item read
+   * when it changes, and read again quietly once the summary says it moved
+   * on elsewhere. */
+  private followLibraryItem(ref: LibraryItemRef): void {
+    const preview = previewOwner(this.watches, this.watchId);
+    if (preview !== this.watchId) this.watchId = preview;
+    if (!sameLibraryItem(ref, this.openedItem)) {
+      this.openedItem = ref;
+      this.openItem();
+      return;
+    }
+    const moved = summaryRevision(this.lib.library, ref);
+    const shown = this.record?.revision;
+    if (moved !== undefined && shown !== undefined && moved > shown && moved !== this.followedRevision) {
+      this.followedRevision = moved;
+      void this.load(libraryDraftKey(ref), true);
+    }
+  }
+
+  /** Open the library item: as `openWatch` does for a device, but with no
+   * live line, no history and no delivery. */
+  private openItem(quiet = false): void {
+    const key = this.recordKey;
+    if (key === undefined) return;
+    if (!quiet) {
+      this.reloadPending = false;
+      this.restartDraft = undefined;
+      this.note = undefined;
+      this.unsupported = false;
+      this.history = [];
+      this.closeAsk();
+      this.endScrub();
+      this.uiState.clear();
+      this.deleteAsk = undefined;
+      this.followedRevision = undefined;
+    }
+    this.endSubscription();
+    this.stopPolling();
+    void this.load(key, quiet);
+  }
+
   private followSave(): void {
-    const watchId = this.watchId;
+    const watchId = this.recordKey;
     if (watchId === undefined) return;
     const done = keptStatusPagesDraft(watchId)?.saveDone;
     if (done === undefined || done === this.followedSave) return;
@@ -510,7 +588,7 @@ export class WaStatusPagesEditor extends LitElement {
   private saveEnded(watchId: string): void {
     this.requestUpdate();
     if (!this.isConnected) return;
-    if (watchId === this.watchId) {
+    if (watchId === this.recordKey) {
       this.reloadPending = false;
       void this.load(watchId, true);
     } else {
@@ -556,8 +634,9 @@ export class WaStatusPagesEditor extends LitElement {
       this.loading = true;
       this.loadError = undefined;
     }
+    const item = this.libraryItem;
     try {
-      const record = await fetchWatchConfig(hass, watchId, "status_pages");
+      const record = item !== undefined ? await fetchLibraryRecord(hass, item) : await fetchWatchConfig(hass, watchId, "status_pages");
       if (seq !== this.loadSeq) return;
       if (quiet && this.holdReload) {
         this.reloadPending = true;
@@ -570,7 +649,7 @@ export class WaStatusPagesEditor extends LitElement {
       // pages are on screen. A device with none yet opens on the starter
       // pages, so it gets one too; one that waits for its iPhone has no
       // draft to add to, and the ask goes.
-      if (!quiet && takeNewStatusPageAsk(watchId)) {
+      if (!quiet && item === undefined && takeNewStatusPageAsk(watchId)) {
         void this.updateComplete.then(() => {
           if (this.watchId !== watchId) return;
           const host = this.viewHost();
@@ -579,7 +658,9 @@ export class WaStatusPagesEditor extends LitElement {
       }
     } catch (err) {
       if (seq !== this.loadSeq) return;
-      if (statusPagesReadMeansUnsupported(err)) {
+      if (item !== undefined) {
+        if (!quiet) this.loadError = libraryErrorText(err);
+      } else if (statusPagesReadMeansUnsupported(err)) {
         this.unsupported = true;
         this.loadError = undefined;
       } else if (!quiet) {
@@ -588,7 +669,8 @@ export class WaStatusPagesEditor extends LitElement {
       if (this.restartDraft?.watchId === watchId) this.restartDraft = undefined;
     }
     this.loading = false;
-    if (this.unsupported) return;
+    // A library item has no delivery and no earlier saves of its own.
+    if (this.unsupported || item !== undefined) return;
     this.pollIfWaiting();
     void this.loadHistory(watchId);
   }
@@ -600,13 +682,14 @@ export class WaStatusPagesEditor extends LitElement {
   }
 
   private flushPending(): void {
-    if (!this.reloadPending || this.holdReload || this.watchId === undefined) return;
+    const key = this.recordKey;
+    if (!this.reloadPending || this.holdReload || key === undefined) return;
     this.reloadPending = false;
-    void this.load(this.watchId, true);
+    void this.load(key, true);
   }
 
   private show(record: WatchConfigRecord): void {
-    const watchId = this.watchId;
+    const watchId = this.recordKey;
     this.record = record;
     // No status pages here: a kept draft from an earlier record moves onto
     // the defaults at revision 0, its edits kept, so its first save makes
@@ -803,8 +886,17 @@ export class WaStatusPagesEditor extends LitElement {
    * delete that asks for a page other devices have too, and Not on this
    * watch, from the library as last read. None before it is read, and on an
    * integration older than the library. */
-  private libraryHost(draft: StatusPagesDraft): Pick<StatusPagesViewHost, "linkBadge" | "sharedLine" | "ticks" | "deletePage" | "elsewhere"> {
+  private libraryHost(draft: StatusPagesDraft): Pick<StatusPagesViewHost, "linkBadge" | "sharedLine" | "ticks" | "deletePage" | "elsewhere" | "single"> {
     const lib = this.lib.library;
+    // Library mode: the one page, its ticks for every device, and Delete,
+    // which asks to delete it from the library. Nothing of the device's.
+    if (this.libraryItem !== undefined) {
+      return {
+        single: true,
+        deletePage: (pageId) => this.askDelete(pageId),
+        ...(lib === undefined ? {} : { ticks: (page: JsonObject) => this.renderStatusTicks(page) }),
+      };
+    }
     const watchId = this.watchId;
     if (lib === undefined || watchId === undefined) return {};
     const devices = this.linkDevices;
@@ -836,9 +928,12 @@ export class WaStatusPagesEditor extends LitElement {
    * takes the page off it; and the untick of a device whose status pages
    * editor in this tab holds unsaved edits, which would put it back. */
   private statusTickLocked(pageId: string, ownerId: string): string | undefined {
-    const watchId = this.watchId;
-    if (watchId === undefined) return undefined;
-    if (sameId(ownerId, watchId)) return hereTickText("status_pages", this.device);
+    // In library mode no device is "here": the preview device ticks as any.
+    if (this.libraryItem === undefined) {
+      const watchId = this.watchId;
+      if (watchId === undefined) return undefined;
+      if (sameId(ownerId, watchId)) return hereTickText("status_pages", this.device);
+    }
     const lib = this.lib.library;
     const on = lib !== undefined && devicesFor(lib, "status_pages", pageId).some((o) => sameId(o, ownerId));
     if (on && (keptStatusPagesDraft(ownerId)?.dirty ?? false)) return dirtyElsewhereText(this.deviceName(ownerId));
@@ -858,7 +953,8 @@ export class WaStatusPagesEditor extends LitElement {
     const here = this.watchId;
     const entry = lib === undefined ? undefined : libraryItem(lib, "status_pages", statusPageId(page));
     let body: TemplateResult;
-    if (lib === undefined || store === undefined || here === undefined || entry === undefined || !entry.owners.some((o) => sameId(o, here))) {
+    const onHere = this.libraryItem !== undefined || (here !== undefined && entry?.owners.some((o) => sameId(o, here)) === true);
+    if (lib === undefined || store === undefined || entry === undefined || !onHere) {
       body = html`<p class="sp-lib-hint">${unsavedTicksText("status_pages")}</p>`;
     } else {
       const note = store.noteFor("status_pages", entry.id);
@@ -931,7 +1027,14 @@ export class WaStatusPagesEditor extends LitElement {
    * sends, as it always did. */
   private askDelete(pageId: string): void {
     const page = findStatusPage(this.draft?.document, pageId);
-    if (this.watchId === undefined || page === undefined || this.saving) return;
+    if (page === undefined || this.saving) return;
+    // In library mode Delete is always out of the library: there is no
+    // device to remove it from.
+    if (this.libraryItem !== undefined) {
+      this.deleteAsk = { pageId };
+      return;
+    }
+    if (this.watchId === undefined) return;
     if (this.deleteChoices(pageId) === undefined) {
       this.edit((d) => removeStatusPage(d, pageId));
       return;
@@ -960,12 +1063,23 @@ export class WaStatusPagesEditor extends LitElement {
   private async deleteFromLibrary(): Promise<void> {
     const ask = this.deleteAsk;
     const store = this.lib.store;
-    const watchId = this.watchId;
+    const watchId = this.recordKey;
     if (!ask || store === undefined || watchId === undefined || this.deletingAll) return;
     this.deletingAll = true;
     const result = await store.deleteItem("status_pages", ask.pageId);
     this.deletingAll = false;
-    if (watchId !== this.watchId) return;
+    if (watchId !== this.recordKey) return;
+    if (this.libraryItem !== undefined) {
+      this.closeDelete();
+      if (!result.ok) {
+        this.note = { kind: "err", text: `Not deleted. ${result.text}` };
+        return;
+      }
+      // The page is gone: so is its kept draft, and the way is back to the tab.
+      forgetStatusPagesDraft(watchId);
+      this.onBack?.();
+      return;
+    }
     if (!result.ok) {
       this.closeDelete();
       this.note = { kind: "err", text: `Not deleted. ${result.text}` };
@@ -985,9 +1099,23 @@ export class WaStatusPagesEditor extends LitElement {
   /** The delete question for a status page other devices have too. */
   private renderDeleteAsk(ask: { pageId: string }): TemplateResult | typeof nothing {
     const page = findStatusPage(this.draft?.document, ask.pageId);
+    const busy = this.deletingAll;
+    if (page !== undefined && this.libraryItem !== undefined) {
+      const owners = this.lib.library === undefined ? [] : devicesFor(this.lib.library, "status_pages", ask.pageId);
+      return html`<dialog class="pe-ask sp-del-ask" aria-labelledby="sp-del-title"
+        @cancel=${(e: Event) => { if (busy) e.preventDefault(); }}
+        @close=${() => { if (!this.deletingAll) this.deleteAsk = undefined; }}>
+        <h3 id="sp-del-title">Delete "${statusPageTitle(page)}" from the library?</h3>
+        <p>${libraryDeleteText(owners.length)}</p>
+        <div class="pe-ask-foot sp-del-foot">
+          <button class="pe-btn" ?disabled=${busy} @click=${() => this.closeDelete()}>Cancel</button>
+          <button class="pe-btn pe-primary pe-danger sp-del-all" ?disabled=${busy || this.saving}
+            @click=${() => void this.deleteFromLibrary()}>${busy ? "Deleting…" : "Delete from the library"}</button>
+        </div>
+      </dialog>`;
+    }
     const choices = this.deleteChoices(ask.pageId);
     if (page === undefined || choices === undefined) return nothing;
-    const busy = this.deletingAll;
     return html`<dialog class="pe-ask sp-del-ask" aria-labelledby="sp-del-title"
       @cancel=${(e: Event) => { if (busy) e.preventDefault(); }}
       @close=${() => { if (!this.deletingAll) this.deleteAsk = undefined; }}>
@@ -1020,7 +1148,8 @@ export class WaStatusPagesEditor extends LitElement {
 
   private async save(): Promise<void> {
     const hass = this.hass;
-    const watchId = this.watchId;
+    const watchId = this.recordKey;
+    const item = this.libraryItem;
     this.endScrub();
     const draft = this.draft;
     if (!hass || watchId === undefined || !draft || this.saving || !draft.dirty) return;
@@ -1033,9 +1162,11 @@ export class WaStatusPagesEditor extends LitElement {
     // but for a shared menu's slots to one another device using that menu
     // still has. One no other device has stays in the library, unticked, as
     // the plan's map back says, and the tiles that open it stay with it.
+    // A library item's save never takes it off a device: its Delete is the
+    // library's own, never an edit.
     const deleted = deletedPageIds(statusPagesOf(draft.base), statusPagesOf(draft.document));
     const keep = keepSlotsOf(this.lib.library, watchId, "status_pages");
-    const running = saveStatusPagesDraft(draft, {
+    const running = saveStatusPagesDraft(draft, item !== undefined ? libraryItemIO(hass, this.lib.store, item) : {
       save: (base, document) => saveWatchConfig(hass, watchId, "status_pages", base, document).catch((err: unknown) => {
         throw flatError(err);
       }),
@@ -1056,10 +1187,10 @@ export class WaStatusPagesEditor extends LitElement {
       message: errText(err),
     }));
     this.saveEnded(watchId);
-    if (watchId === this.watchId) this.note = firstSaveNote(first, result.code, statusPagesSaveNote(result));
+    if (watchId === this.recordKey) this.note = firstSaveNote(first, result.code, statusPagesSaveNote(result));
     if (result.ok && deleted.length > 0) {
       const cleared = await clearStatusPageRefs(hass, watchId, deleted, keep);
-      if (cleared !== undefined && watchId === this.watchId && this.note === undefined) this.note = cleared;
+      if (cleared !== undefined && watchId === this.recordKey && this.note === undefined) this.note = cleared;
     }
   }
 
@@ -1203,6 +1334,7 @@ export class WaStatusPagesEditor extends LitElement {
   }
 
   private renderTopBar(draft: StatusPagesDraft | undefined, watches: readonly OwnerSummary[]): TemplateResult {
+    if (this.libraryItem !== undefined) return this.renderLibraryBar(draft, watches);
     const editing = draft !== undefined && !this.unsupported;
     const dirty = editing && this.dirty;
     return html`<div class="wa-bar ${this.barHost !== undefined ? "in-head" : this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch status pages">
@@ -1220,6 +1352,27 @@ export class WaStatusPagesEditor extends LitElement {
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
         ${this.barHost !== undefined ? nothing : html`<span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record, undefined, this.device)}</span>
         ${renderSaveReason(saveBlockedText({ newWatch: this.newWatch, dirty, saving: this.saving }))}`}` : nothing}
+      ${this.barActions}
+    </div>`;
+  }
+
+  /** Library mode's bar: back to the Status pages tab, "Preview as" in
+   * place of the device picker, then the ··· menu and Save. No delivery: a
+   * save reaches every device that has the page, each on its own. */
+  private renderLibraryBar(draft: StatusPagesDraft | undefined, watches: readonly OwnerSummary[]): TemplateResult {
+    const editing = draft !== undefined;
+    const dirty = editing && this.dirty;
+    return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Status page in the library">
+      ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
+        @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
+      <button class="tb-btn tb-back" title="Back to the Status pages tab" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>Status pages</span></button>
+      ${renderLibraryTag()}
+      <span class="spacer"></span>
+      ${renderPreviewPicker(watches, this.watchId, (id) => { this.watchId = id; })}
+      ${this.renderTopMenu(editing ? draft : undefined)}
+      ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
+          title=${dirty ? `Save (${MOD}S). A save reaches every device that has this status page.` : `Nothing to save (${MOD}S)`}
+          @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>` : nothing}
       ${this.barActions}
     </div>`;
   }
@@ -1393,16 +1546,16 @@ export class WaStatusPagesEditor extends LitElement {
   }
 
   private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
-    if (watches.length === 0) {
+    if (watches.length === 0 && this.libraryItem === undefined) {
       const waiting = this.owners.length === 0 && this.ownList === undefined;
       return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet. Pair one on the Home tab."}</div>`;
     }
     if (this.unsupported) return html`<div class="pe-empty"><b>${STATUS_PAGES_UPDATE_TEXT}</b></div>`;
     if (this.loading) return html`<div class="pe-empty">Loading…</div>`;
     if (this.loadError !== undefined) {
-      const id = this.watchId;
+      const id = this.recordKey;
       return html`<div class="pe-empty">
-        <span>Could not read this ${deviceNoun(this.device)}'s status pages: ${this.loadError}</span>
+        <span>${this.libraryItem !== undefined ? "Could not read this status page" : `Could not read this ${deviceNoun(this.device)}'s status pages`}: ${this.loadError}</span>
         ${id === undefined ? nothing : html`<button class="pe-btn" @click=${() => void this.load(id)}>Try again</button>`}
       </div>`;
     }
@@ -1443,7 +1596,7 @@ export class WaStatusPagesEditor extends LitElement {
         ${renderStatusInspector(host)}
       </div>
     </div>
-    ${fresh ? nothing : this.renderFoot(record, draft.document, draft.dirty)}`;
+    ${fresh || this.libraryItem !== undefined ? nothing : this.renderFoot(record, draft.document, draft.dirty)}`;
   }
 
   private renderFoot(record: WatchConfigRecord, document: StatusPagesDocument, dirty: boolean): TemplateResult {
@@ -1632,7 +1785,7 @@ export class WaStatusPagesEditor extends LitElement {
     .pe-ask-foot.sp-del-foot { flex-wrap: wrap; }
     .sp-restore-others { color: var(--wa-amber); }
     :host([narrow]) { --cf-pad: 12px; }
-  `, statusPagesViewStyles, libraryTicksStyles, rowPictureStyles, libraryRestStyles, configFootStyles, headBarStyles];
+  `, statusPagesViewStyles, libraryTicksStyles, rowPictureStyles, libraryRestStyles, configFootStyles, libraryModeStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-status-pages-editor")) {

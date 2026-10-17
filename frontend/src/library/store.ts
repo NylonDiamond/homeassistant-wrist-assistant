@@ -33,6 +33,7 @@ import {
   type LibraryKind,
   type LibraryListKind,
   type LibraryMenuCopyReply,
+  type LibraryItemSaveReply,
   type LibraryMenuCreateReply,
   type LibraryObject,
   type LibraryPickReply,
@@ -46,6 +47,7 @@ import {
   pickLibraryItem,
   pickLibraryMenu,
   renameLibraryMenu,
+  saveLibraryItem,
 } from "./client.js";
 import { type Library, holdsRecord, libraryOf } from "./model.js";
 import { watchMenusDefaults } from "../watch-menus/model.js";
@@ -222,6 +224,18 @@ export class LibraryStore {
    * page are the caller's to clear. */
   deleteItem(kind: LibraryKind, itemId: string): Promise<LibraryWrite<LibraryDeleteReply>> {
     return this.write(noteKey(kind, itemId), undefined, undefined, () => deleteLibraryItem(this.hass, kind, itemId));
+  }
+
+  /** Save one item edited in the library (`library/item/save`). Unlike the
+   * other writes this throws a refusal as it came, so an editor's save loop
+   * can read a `conflict`. The summary is read again either way: an item no
+   * device picks writes no record, so no change event would tell the tabs. */
+  async saveItem(kind: LibraryKind, itemId: string, baseRevision: number, document: LibraryObject): Promise<LibraryItemSaveReply> {
+    try {
+      return await saveLibraryItem(this.hass, kind, itemId, baseRevision, document);
+    } finally {
+      void this.refresh();
+    }
   }
 
   // ── inside ─────────────────────────────────────────────────────────────

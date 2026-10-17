@@ -120,6 +120,10 @@ export interface StatusPagesViewHost {
    * pages this device does not have, each with a way to add it here
    * (`watch-pages/library-rest.ts`). */
   readonly elsewhere?: TemplateResult;
+  /** One status page edited in the library on its own: no Add, and its row
+   * has no drag and no Move up or down. Delete stays, through
+   * `deletePage`. */
+  readonly single?: boolean;
   /** Apply `change` to the document as it is now: one undo step, or with
    * `coalesce` a step the next edits with the same key replace. */
   edit(change: (document: StatusPagesDocument) => StatusPagesDocument, coalesce?: string): boolean;
@@ -392,8 +396,9 @@ function pageRow(host: StatusPagesViewHost, page: JsonObject, index: number, cou
   const drag = dragHandlers(host, "page", id, index, move);
   const pick = () => { if (!on) selectStatusPage(host, id); };
   const shared = host.linkBadge?.(page);
+  const single = host.single === true;
   return html`<div class="layer sp-page-row ${on ? "hl" : ""}" data-page=${id} role="listitem" tabindex="0"
-    draggable=${host.busy ? "false" : "true"} aria-current=${on ? "true" : "false"} aria-label=${name || "Untitled page"}
+    draggable=${host.busy || single ? "false" : "true"} aria-current=${on ? "true" : "false"} aria-label=${name || "Untitled page"}
     @dragstart=${drag.start} @dragover=${drag.over} @drop=${drag.drop} @dragend=${drag.end}
     @click=${(e: Event) => { if (!(e.target instanceof Element && e.target.closest("button"))) pick(); }}
     @keydown=${(e: KeyboardEvent) => {
@@ -401,16 +406,16 @@ function pageRow(host: StatusPagesViewHost, page: JsonObject, index: number, cou
       e.preventDefault();
       pick();
     }}>
-    <span class="grip" aria-hidden="true"></span>
+    ${single ? nothing : html`<span class="grip" aria-hidden="true"></span>`}
     ${thumb(host, "doc.text.fill", "#5B8FD4")}
     <span class="name"><b><span class="nm-t">${name || "Untitled page"}</span></b><small>${plural(rows, "row", "rows")}</small></span>
     <span class="right">
       <span class="badges">${shared === undefined ? nothing : html`<span class="badge sp-linked" title=${`${shared}. An edit here shows there too.`}>${shared}</span>`}${isSystemStatusPage(page) ? html`<span class="badge" title="One of the app's starter pages. It is edited and put on devices like any other.">starter</span>` : nothing}</span>
       <span class="acts">
-        <button type="button" class="icon" ?disabled=${host.busy || index === 0} title="Move up" aria-label=${`Move ${name} up`}
+        ${single ? nothing : html`<button type="button" class="icon" ?disabled=${host.busy || index === 0} title="Move up" aria-label=${`Move ${name} up`}
           @click=${() => move(id, index - 1)}>${uiIcon("up")}</button>
         <button type="button" class="icon" ?disabled=${host.busy || index === count - 1} title="Move down" aria-label=${`Move ${name} down`}
-          @click=${() => move(id, index + 1)}>${uiIcon("down")}</button>
+          @click=${() => move(id, index + 1)}>${uiIcon("down")}</button>`}
         <button type="button" class="icon danger" ?disabled=${host.busy} title="Delete" aria-label=${`Delete ${name}`}
           @click=${() => deletePage(host, id)}>${uiIcon("delete")}</button>
       </span>
@@ -428,8 +433,8 @@ export function renderPagesCard(host: StatusPagesViewHost): TemplateResult {
       <span class="swatch">${uiIcon("list")}</span><span class="lc-title">Status pages</span>
       <span class="lc-sub" title=${STATUS_PAGES_CARD_LINE}>${plural(pages.length, "page", "pages")}</span>
       <span class="spacer"></span>
-      <button type="button" class="lc-btn pri sp-add-page" aria-label="Add status page" ?disabled=${host.busy}
-        title="Add a status page" @click=${() => addPage(host)}>${uiIcon("plus")}<span>Add</span></button>
+      ${host.single === true ? nothing : html`<button type="button" class="lc-btn pri sp-add-page" aria-label="Add status page" ?disabled=${host.busy}
+        title="Add a status page" @click=${() => addPage(host)}>${uiIcon("plus")}<span>Add</span></button>`}
     </div>
     ${pages.length === 0
       ? html`<div class="lc-note">No status pages. Add one to show the live state of entities you pick.</div>`

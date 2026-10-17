@@ -25,7 +25,7 @@ import {
   inOrder,
   kindOptions,
   movedOrder,
-  noOwnerText,
+  libraryEditTitle,
   noPicksText,
   onDeviceTitle,
   openDevice,
@@ -156,9 +156,9 @@ describe("which device a card opens on", () => {
     expect(openDevice(entry(LIGHTS), ALL_FILTER, "iphone", DEVICES)?.ownerId).toBe(CHEN);
   });
 
-  it("is none for an item no device has, and the card says so", () => {
+  it("is none for an item no device has, whose card opens it in the library", () => {
     expect(openDevice(entry(LONELY), ALL_FILTER, "all", DEVICES)).toBeUndefined();
-    expect(noOwnerText("pages")).toBe("No device has this page. Tick one to edit it there.");
+    expect(libraryEditTitle("Shed")).toBe("Edit Shed in the library");
   });
 });
 
@@ -195,7 +195,7 @@ describe("the tab's words", () => {
   it("never break a sentence with a dash, and never speak of links", () => {
     const texts = [
       allPagesLead(2), allPagesLead(2, "status_pages"), footText("pages", JESSE_D), footText("pages", undefined), REST_HINT,
-      orderHint(CHEN_D), noOwnerText("status_pages"), noPicksText(PHONE_D, "pages", ""), emptyText(DEVICES, ""),
+      orderHint(CHEN_D), libraryEditTitle("Shed"), noPicksText(PHONE_D, "pages", ""), emptyText(DEVICES, ""),
     ];
     for (const text of texts) {
       expect(text).not.toMatch(/[–—]| - /);

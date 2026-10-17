@@ -34,6 +34,8 @@ export interface LibraryItem {
   smart: boolean;
   /** One of the app's starter status pages. */
   starter: boolean;
+  /** The item's own revision, when the integration reports one. */
+  revision?: number;
 }
 
 /** One menu of the library. */
@@ -45,6 +47,8 @@ export interface LibraryMenu {
   /** `quickAction` and `pageSwitcher`, or `entityRadial`. */
   sections: LibraryObject;
   owners: readonly string[];
+  /** As `LibraryItem.revision`. */
+  revision?: number;
 }
 
 /** One of a device's picks of a page or status page, in its order. */
@@ -98,6 +102,10 @@ export function itemDetail(kind: LibraryListKind, item: LibraryObject): string {
   return plural(watchPageTiles(item as WatchPage).length, "tile", "tiles");
 }
 
+function revisionOf(entry: LibraryObject): { revision?: number } {
+  return typeof entry.revision === "number" && Number.isInteger(entry.revision) ? { revision: entry.revision } : {};
+}
+
 function entries(kind: LibraryListKind, raw: unknown): LibraryItem[] {
   if (!isObject(raw)) return [];
   return Object.entries(raw).flatMap(([id, entry]): LibraryItem[] => {
@@ -113,6 +121,7 @@ function entries(kind: LibraryListKind, raw: unknown): LibraryItem[] {
       detail: itemDetail(kind, item),
       smart: kind === "pages" && isSmartWatchPage(item as WatchPage),
       starter: kind === "status_pages" && isSystemStatusPage(item),
+      ...revisionOf(entry),
     }];
   });
 }
@@ -124,7 +133,7 @@ function menuEntries(raw: unknown): LibraryMenu[] {
     const unit = entry.kind === "entity" ? "entity" : entry.kind === "anywhere" ? "anywhere" : undefined;
     if (unit === undefined) return [];
     const name = typeof entry.name === "string" && entry.name.trim() !== "" ? entry.name.trim() : MENU_UNIT_TITLES[unit];
-    return [{ id, name, unit, sections: isObject(entry.sections) ? entry.sections : {}, owners: strings(entry.owners) }];
+    return [{ id, name, unit, sections: isObject(entry.sections) ? entry.sections : {}, owners: strings(entry.owners), ...revisionOf(entry) }];
   });
 }
 

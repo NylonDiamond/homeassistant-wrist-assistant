@@ -32,13 +32,12 @@ import { LibraryController } from "../library/store.js";
 import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
-import { ALL_FILTER, type PagesFilter, type PagesKind, REST_HINT, hasBothKinds, onDeviceTitle, resolveFilter, resolveKind, restTitle } from "../watch-pages/all-pages-model.js";
+import { ALL_FILTER, type PagesFilter, type PagesKind, REST_HINT, hasBothKinds, libraryEditTitle, onDeviceTitle, resolveFilter, resolveKind, restTitle } from "../watch-pages/all-pages-model.js";
 import { libraryListStyles } from "../watch-pages/library-list-styles.js";
 import { listTabStyles } from "../watch-pages/list-tab-styles.js";
 import { type LinkDevice, type PagesRecordFacts, awaitingMove, linkDevicesOf } from "../watch-pages/devices.js";
 import type { WatchPagesNote } from "../watch-pages/save-note.js";
 import {
-  MENU_NO_USER_TEXT,
   MENU_SECTION_TITLES,
   MENUS_FOOT,
   MENUS_WAIT_TEXT,
@@ -134,10 +133,11 @@ export class WaAllMenus extends LitElement {
   /** Open a device's menu editor. The element has already asked it for the
    * card's menu (`askWatchMenu`). */
   @property({ attribute: false }) onOpen?: (ownerId: string, kind: "watch" | "iphone") => void;
+  /** Open a menu no device uses in the menu editor's library mode. A menu
+   * New menu has just made opens there too. */
+  @property({ attribute: false }) onOpenLibrary?: (menuId: string) => void;
 
   @state() private search = "";
-  /** The card a click found no device to open on, by menu id. */
-  @state() private openNote?: string;
   /** New menu's form, open under the tab's head. */
   @state() private newForm?: NewForm;
   /** What the last New menu said, under the head, once its form closed. */
@@ -213,7 +213,6 @@ export class WaAllMenus extends LitElement {
 
   private setFilter(filter: PagesFilter): void {
     keepView({ filter });
-    this.openNote = undefined;
     this.newForm = undefined;
     this.deleteAsk = undefined;
     this.requestUpdate();
@@ -225,14 +224,13 @@ export class WaAllMenus extends LitElement {
   }
 
   /** Open a menu in a device's menu editor: the device tab's, or one that
-   * uses it. A menu no device uses says so. */
+   * uses it. A menu no device uses opens in the library itself. */
   private open(menu: LibraryMenu, device?: LinkDevice): void {
     const on = device ?? openMenuDevice(menu, this.filter, this.deviceKind, this.devices);
     if (on === undefined) {
-      this.openNote = menu.id;
+      this.onOpenLibrary?.(menu.id);
       return;
     }
-    this.openNote = undefined;
     askWatchMenu(on.ownerId, menu.unit);
     this.onOpen?.(on.ownerId, on.kind);
   }
@@ -248,7 +246,6 @@ export class WaAllMenus extends LitElement {
   private use(menu: LibraryMenu, ownerId: string): void {
     const store = this.lib.store;
     if (store === undefined) return;
-    if (this.openNote === menu.id) this.openNote = undefined;
     void store.pickMenu(ownerId, menu.unit, menu.id);
   }
 
@@ -303,7 +300,9 @@ export class WaAllMenus extends LitElement {
       return;
     }
     this.newForm = undefined;
-    this.newNote = { kind: "ok", text: newMenuMadeText(name) };
+    // Straight into the new menu, in the library: no device uses it yet.
+    if (this.onOpenLibrary !== undefined) this.onOpenLibrary(made.reply.id);
+    else this.newNote = { kind: "ok", text: newMenuMadeText(name) };
   }
 
   /** Delete a menu no device uses, after its question. */
@@ -460,7 +459,7 @@ export class WaAllMenus extends LitElement {
    * menu's devices and "Add to this watch". */
   private renderCardTicks(library: Library, menu: LibraryMenu, devices: readonly LinkDevice[], waiting: ReadonlySet<string>, addFor?: string): TemplateResult {
     const store = this.lib.store;
-    const note = store?.noteFor("menus", menu.id) ?? (this.openNote === menu.id ? MENU_NO_USER_TEXT : undefined);
+    const note = store?.noteFor("menus", menu.id);
     const admin = this.hassNow?.user?.is_admin;
     return renderTicks({
       library, kind: "menus", itemId: menu.id, devices, colorOf: this.colorOf,
@@ -479,7 +478,7 @@ export class WaAllMenus extends LitElement {
 
   private renderCard(library: Library, menu: LibraryMenu, devices: readonly LinkDevice[], waiting: ReadonlySet<string>, addFor?: string): TemplateResult {
     const opensOn = openMenuDevice(menu, addFor === undefined ? this.filter : ALL_FILTER, this.deviceKind, devices);
-    const title = opensOn === undefined ? `No device uses ${menu.name} yet` : `Edit ${menu.name} on ${opensOn.name}`;
+    const title = opensOn === undefined ? libraryEditTitle(menu.name) : `Edit ${menu.name} on ${opensOn.name}`;
     const unused = menu.owners.length === 0;
     const asking = this.deleteAsk === menu.id;
     return html`<div class="ap-card ${addFor === undefined ? "" : "lt-dim"}" role="listitem" data-card=${menu.id}>

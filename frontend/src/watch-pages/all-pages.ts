@@ -71,9 +71,9 @@ import {
   inOrder,
   kindOptions,
   movedOrder,
-  noOwnerText,
   noPicksText,
   onDeviceTitle,
+  libraryEditTitle,
   openDevice,
   orderHint,
   resolveFilter,
@@ -198,6 +198,8 @@ export class WaAllPages extends LitElement {
   /** Open a device's page editor, or with `what` `status_pages` its status
    * pages editor. */
   @property({ attribute: false }) onOpen?: (ownerId: string, kind: "watch" | "iphone", what?: CardKind) => void;
+  /** Open an item no device has in its editor's library mode. */
+  @property({ attribute: false }) onOpenLibrary?: (kind: CardKind, id: string) => void;
 
   @state() private search = "";
   /** New page's menu of devices is open. */
@@ -211,8 +213,6 @@ export class WaAllPages extends LitElement {
   /** The line while a delete runs, and what the last one did. */
   @state() private bulkBusy?: string;
   @state() private bulkNote?: WatchPagesNote;
-  /** The card a click found no device to open on, by `itemKey`. */
-  @state() private openNote?: string;
   /** What a tick said beyond the store's refusals (the free plan), by
    * `itemKey`. */
   @state() private tickNotes: ReadonlyMap<string, string> = new Map();
@@ -283,7 +283,6 @@ export class WaAllPages extends LitElement {
     this.search = "";
     this.endSelect(true);
     this.newOpen = false;
-    this.openNote = undefined;
     this.picksNote = undefined;
     this.tickNotes = new Map();
   }
@@ -330,7 +329,6 @@ export class WaAllPages extends LitElement {
     keepView(this.kind, { filter });
     if (filter !== ALL_FILTER) this.endSelect(true);
     this.picksNote = undefined;
-    this.openNote = undefined;
     this.requestUpdate();
   }
 
@@ -360,14 +358,14 @@ export class WaAllPages extends LitElement {
   }
 
   /** Open an item in a device's editor, on that item: the device tab's, or
-   * one that has it (`openDevice`). An item no device has says so. */
+   * one that has it (`openDevice`). An item no device has opens in the
+   * library itself. */
   private open(entry: LibraryItem, device?: LinkDevice): void {
     const on = device ?? openDevice(entry, this.filter, this.deviceKind, this.devices);
     if (on === undefined) {
-      this.openNote = itemKey(entry);
+      this.onOpenLibrary?.(entry.kind, entry.id);
       return;
     }
-    this.openNote = undefined;
     if (entry.kind === "status_pages") {
       askStatusPage(on.ownerId, entry.id);
       this.onOpen?.(on.ownerId, on.kind, "status_pages");
@@ -389,7 +387,6 @@ export class WaAllPages extends LitElement {
       notes.delete(key);
       this.tickNotes = notes;
     }
-    if (this.openNote === key) this.openNote = undefined;
     const result = await tickItem(this.hassNow, store, ownerId, entry.kind, entry.id, on);
     if (!result.ok || !on || entry.kind !== "pages") return;
     const free = await this.readFree(ownerId);
@@ -487,7 +484,6 @@ export class WaAllPages extends LitElement {
   private startSelect(): void {
     this.selecting = true;
     this.bulkNote = undefined;
-    this.openNote = undefined;
   }
 
   private endSelect(force = false): void {
@@ -718,7 +714,7 @@ export class WaAllPages extends LitElement {
   private renderCardTicks(library: Library, entry: LibraryItem, devices: readonly LinkDevice[], waiting: ReadonlySet<string>, addFor?: string): TemplateResult {
     const store = this.lib.store;
     const key = itemKey(entry);
-    const note = store?.noteFor(entry.kind, entry.id) ?? this.tickNotes.get(key) ?? (this.openNote === key ? noOwnerText(entry.kind) : undefined);
+    const note = store?.noteFor(entry.kind, entry.id) ?? this.tickNotes.get(key);
     const admin = this.hassNow?.user?.is_admin;
     return renderTicks({
       library, kind: entry.kind, itemId: entry.id, devices, colorOf: this.colorOf,
@@ -741,7 +737,7 @@ export class WaAllPages extends LitElement {
     const picked = selecting && this.selected.has(key);
     const opensOn = openDevice(entry, ALL_FILTER, this.deviceKind, devices);
     const title = selecting ? `${picked ? "Let" : "Pick"} ${entry.name}${picked ? " go" : ""}`
-      : opensOn === undefined ? `${entry.name} is on no device yet` : `Edit ${entry.name} on ${opensOn.name}`;
+      : opensOn === undefined ? libraryEditTitle(entry.name) : `Edit ${entry.name} on ${opensOn.name}`;
     const click = (e: MouseEvent) => this.cardClick(e, entry);
     return html`<div class="ap-card ${selecting ? "picking" : ""} ${picked ? "picked" : ""}" role="listitem" data-card=${key}
       @click=${(e: MouseEvent) => { if (selecting) click(e); }}>
@@ -859,7 +855,7 @@ export class WaAllPages extends LitElement {
    * picture, its devices and "Add to this watch". */
   private renderRest(library: Library, entry: LibraryItem, device: LinkDevice, devices: readonly LinkDevice[], waiting: ReadonlySet<string>): TemplateResult {
     const opensOn = openDevice(entry, ALL_FILTER, "all", devices);
-    const title = opensOn === undefined ? `${entry.name} is on no device yet` : `Edit ${entry.name} on ${opensOn.name}`;
+    const title = opensOn === undefined ? libraryEditTitle(entry.name) : `Edit ${entry.name} on ${opensOn.name}`;
     const picture = entry.kind === "status_pages"
       ? renderStatusRowPicture({ page: entry.item, hass: this.hassNow, width: SMALL_CARD_PICTURE_W, tick: this.iconsTick, ...(this.icons === undefined ? {} : { icons: this.icons }) })
       : renderPageRowPicture({
