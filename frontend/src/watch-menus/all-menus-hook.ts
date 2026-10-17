@@ -1,6 +1,7 @@
 // The panel's way into the Menus tab (drawn by `all-menus.ts`), kept out of
-// `panel.ts`: the address it answers to and the one `import()` that loads its
-// element. Only this file is in the panel's first download.
+// `panel.ts`: the address it answers to (the bar matches it through
+// `BAR_TABS` in `shell.ts`) and the one `import()` that loads its element.
+// Only this file is in the panel's first download.
 //
 // The address is `/all-menus`, not `/menus`: that, with a device after it,
 // is the Watch app's menu editor (`hook.ts`), and marks Home.
@@ -8,14 +9,8 @@
 import { html, type TemplateResult } from "lit";
 import type { HassLike, OwnerSummary } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
-import type { PanelRoute } from "../watch-pages/hook.js";
 
 export const ALL_MENUS_PATH = "/all-menus";
-
-export function isAllMenusRoute(route: PanelRoute | undefined): boolean {
-  const at = route?.path ?? "";
-  return at === ALL_MENUS_PATH || at.startsWith(`${ALL_MENUS_PATH}/`);
-}
 
 let loading: Promise<void> | undefined;
 let loadFailed = false;

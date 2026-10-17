@@ -1,7 +1,7 @@
 // The panel's way into the Pages tab and the Status pages tab (both drawn by
-// `all-pages.ts`), kept out of `panel.ts`: the addresses they answer to and
-// the one `import()` that loads their element. Only this file is in the
-// panel's first download.
+// `all-pages.ts`), kept out of `panel.ts`: the addresses they answer to (the
+// bar matches them through `BAR_TABS` in `shell.ts`) and the one `import()`
+// that loads their element. Only this file is in the panel's first download.
 //
 // The addresses are `/all-pages` and `/all-status-pages`, not `/pages` and
 // `/status-pages`: those, with a device after them, are the Watch app's page
@@ -10,24 +10,9 @@
 import { css, html, type TemplateResult } from "lit";
 import type { HassLike, OwnerSummary } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
-import type { PanelRoute } from "./hook.js";
 
 export const ALL_PAGES_PATH = "/all-pages";
 export const ALL_STATUS_PAGES_PATH = "/all-status-pages";
-
-/** Whether a route is at `path` or under it. */
-function isAt(route: PanelRoute | undefined, path: string): boolean {
-  const at = route?.path ?? "";
-  return at === path || at.startsWith(`${path}/`);
-}
-
-export function isAllPagesRoute(route: PanelRoute | undefined): boolean {
-  return isAt(route, ALL_PAGES_PATH);
-}
-
-export function isAllStatusPagesRoute(route: PanelRoute | undefined): boolean {
-  return isAt(route, ALL_STATUS_PAGES_PATH);
-}
 
 let loading: Promise<void> | undefined;
 let loadFailed = false;
