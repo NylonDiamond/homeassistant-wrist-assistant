@@ -125,6 +125,7 @@ import {
   keptStatusPagesDraft,
   newWatchStatusPagesDraft,
   saveStatusPagesDraft,
+  takeNewStatusPageAsk,
   takeStatusPageAsk,
   takeStatusPagesRecord,
 } from "./draft.js";
@@ -157,6 +158,7 @@ import {
   STATUS_PAGES_STAGE_HINT,
   type StatusDevicesWhere,
   type StatusPagesViewHost,
+  addPage,
   deselectStatusRow,
   loadStatusPagesZoom,
   renderPagesCard,
@@ -548,7 +550,7 @@ export class WaStatusPagesEditor extends LitElement {
       this.elsewhereNote = undefined;
       quiet = false;
     }
-    // The Pages tab's Info page card opened this device on one page.
+    // A card on the Status pages tab opened this device on one page.
     const asked = takeStatusPageAsk(watchId);
     if (asked !== undefined) selectStatusPage({ uiState: this.uiState, requestUpdate: () => this.requestUpdate() }, asked);
     this.startSubscription(watchId);
@@ -579,6 +581,17 @@ export class WaStatusPagesEditor extends LitElement {
       this.unsupported = false;
       this.show(record);
       this.loadError = undefined;
+      // The Status pages tab's New status page: add one once the status
+      // pages are on screen. A device with none yet opens on the starter
+      // pages, so it gets one too; one that waits for its iPhone has no
+      // draft to add to, and the ask goes.
+      if (!quiet && takeNewStatusPageAsk(watchId)) {
+        void this.updateComplete.then(() => {
+          if (this.watchId !== watchId) return;
+          const host = this.viewHost();
+          if (host !== undefined) addPage(host);
+        });
+      }
     } catch (err) {
       if (seq !== this.loadSeq) return;
       if (statusPagesReadMeansUnsupported(err)) {
