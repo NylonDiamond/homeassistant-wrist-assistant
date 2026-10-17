@@ -392,7 +392,7 @@ def test_unit_link_ids_drop_and_places() -> None:
 
 
 def test_link_ops_reach_both_grains() -> None:
-    assert links.LINKABLE_KINDS == ("pages", "status_pages", "menus")
+    assert links.LINKABLE_KINDS == ("pages", "status_pages", "menus", "voice")
     assert links.link_ops("rooms") is None
     pages = links.link_ops("pages")
     source, _target = _linked_pair()
@@ -402,3 +402,87 @@ def test_link_ops_reach_both_grains() -> None:
     assert menus.ids(linked) == {"L-A"}
     assert "linkIds" not in menus.drop(linked, "L-A")
     assert menus.fan_out(linked, {**_other_menus(), "linkIds": {"anywhere": "L-A"}})
+
+
+# ── linked units (the voice settings) ────────────────────────────────────
+
+_PHRASE_KEYS = ("defaultAssistAgentId", "defaultSpeakers", "defaultTTSEngine", "phrases")
+_WATCH_KEYS = ("watchSpeakReplyInSilentMode", "watchSpeechVoiceIdentifier")
+
+
+def _voice() -> dict:
+    """The panel's configured voice fixture: three phrases, the defaults,
+    and both of the watch's own speech settings."""
+    return json.loads((_FRONTEND / "test" / "fixtures-voice" / "02-configured.json").read_text())
+
+
+def _other_voice() -> dict:
+    return {
+        "defaultSpeakers": ["media_player.bedroom"],
+        "defaultTTSEngine": "tts.piper",
+        "phrases": [],
+        "schemaVersion": 1,
+        "watchSpeakReplyInSilentMode": True,
+        "watchSpeechVoiceIdentifier": "com.apple.voice.compact.en-GB.Daniel",
+    }
+
+
+def test_the_voice_unit_and_the_watchs_own_keys_split_the_voice_table() -> None:
+    """Every top-level key of the panel's voice table is in the phrase unit,
+    is one of the watch's own, or is ``schemaVersion``; none is in two."""
+    table = json.loads((_FRONTEND / "src" / "watch-voice" / "voice-keys.json").read_text())
+    document_keys = set(table["types"]["document"]["keys"])
+    unit = links.unit_keys("voice", "phrases")
+    own = links.UNIT_DEVICE_KEYS["voice"]
+    assert unit == _PHRASE_KEYS and own == _WATCH_KEYS
+    assert set(unit).isdisjoint(own)
+    assert set(unit) | set(own) | {"schemaVersion"} == document_keys
+    assert list(links.LINK_UNITS["voice"]) == ["phrases"]
+
+
+def test_a_voice_link_onto_no_document_leaves_the_watchs_own_keys_behind() -> None:
+    source = _voice()
+    new_source, target, link = links.apply_unit_link(source, None, "voice", "phrases")
+    assert new_source["linkIds"] == {"phrases": link} == target["linkIds"]
+    for key in _PHRASE_KEYS:
+        assert target[key] == source[key]
+    for key in _WATCH_KEYS:
+        assert key not in target, "the target reads its own default"
+    assert target["schemaVersion"] == 1
+    assert list(target) == sorted(target)
+
+
+def test_a_voice_link_onto_a_watchs_own_settings_keeps_its_speech_settings() -> None:
+    with pytest.raises(links.PageLinkError) as err:
+        links.apply_unit_link(_voice(), _other_voice(), "voice", "phrases")
+    assert err.value.code == "unit_taken"
+    _s, target, link = links.apply_unit_link(_voice(), _other_voice(), "voice", "phrases", True)
+    assert target["phrases"] == _voice()["phrases"]
+    assert target["defaultAssistAgentId"] == "conversation.home_assistant"
+    for key in _WATCH_KEYS:
+        assert target[key] == _other_voice()[key]
+    assert target["linkIds"] == {"phrases": link}
+    # A watch whose phrase unit already matches is no clash.
+    same = {**_voice(), "watchSpeakReplyInSilentMode": True}
+    _s, kept, _l = links.apply_unit_link(_voice(), same, "voice", "phrases")
+    assert kept["watchSpeakReplyInSilentMode"] is True
+
+
+def test_fan_out_of_voice_carries_the_library_and_never_the_watch_settings() -> None:
+    source, target, link = links.apply_unit_link(_voice(), _other_voice(), "voice", "phrases", True)
+    source["phrases"] = source["phrases"][:1]
+    source["watchSpeechVoiceIdentifier"] = "com.apple.voice.premium.en-US.Ava"
+    del source["defaultAssistAgentId"]
+    out = links.fan_out_units(source, target, "voice")
+    assert [p["label"] for p in out["phrases"]] == ["Dinner"]
+    assert "defaultAssistAgentId" not in out, "a default the save lacks is removed"
+    assert out["watchSpeechVoiceIdentifier"] == _other_voice()["watchSpeechVoiceIdentifier"]
+    assert out["watchSpeakReplyInSilentMode"] is True
+    only_watch = {**out, "watchSpeakReplyInSilentMode": False}
+    assert links.fan_out_units(only_watch, out, "voice") is None, "a watch setting is not linked"
+    ops = links.link_ops("voice")
+    assert ops.ids(out) == {link}
+    assert "linkIds" not in ops.drop(out, link)
+    assert links.unit_link_places({"w": source, "x": out}, "voice") == {
+        link: {"unit": "phrases", "owners": ["w", "x"]}
+    }

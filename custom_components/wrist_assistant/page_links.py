@@ -20,7 +20,10 @@ The menus link too, not by item but by unit (:data:`LINK_UNITS`): the
 Anywhere menu with the page switcher, and the Entity quick menu, each marked
 in a top-level ``linkIds`` object. A menu link brings the pages and status
 pages its slots open (:func:`menu_targets`). Plan: app repo
-``docs/shared_things_plan_2026-10.md``, step 2.
+``docs/shared_things_plan_2026-10.md``, step 2. A watch's voice settings
+link the same way, as one unit: the phrase library with the defaults behind
+it. The watch's own speech settings stay on each watch
+(:data:`UNIT_DEVICE_KEYS`). Step 3 of the same plan.
 
 A system status page a link brings along is copied to a device that lacks
 it, without a ``linkId``, so a tile that opens it still finds it there; a
@@ -346,9 +349,25 @@ def drop_link(document: Any, key: str, link_id: str) -> dict[str, Any] | None:
 # through `link_ops`.
 
 # Each unit kind's units, and the top-level keys each one links as one. The
-# page switcher is style only, so it goes with the Anywhere menu.
+# page switcher is style only, so it goes with the Anywhere menu. The voice
+# settings' phrase library goes with the defaults (agent, engine, speakers):
+# a phrase with no speakers or engine of its own, and an Assist or Speak
+# slot, falls back to them, so a phrase only plays the same on every watch
+# with the same defaults behind it.
 LINK_UNITS: dict[str, dict[str, tuple[str, ...]]] = {
     "menus": {"anywhere": ("quickAction", "pageSwitcher"), "entity": ("entityRadial",)},
+    "voice": {
+        "phrases": ("defaultAssistAgentId", "defaultSpeakers", "defaultTTSEngine", "phrases"),
+    },
+}
+
+# The top-level keys of a unit kind's document that belong to the device and
+# never go to another, not even in a first copy: the watch's own speech
+# settings (Speak even in Silent Mode, and the watch voice, which names a
+# voice installed on that watch). Every other key of the kind is in a unit
+# or is `schemaVersion`.
+UNIT_DEVICE_KEYS: dict[str, tuple[str, ...]] = {
+    "voice": ("watchSpeakReplyInSilentMode", "watchSpeechVoiceIdentifier"),
 }
 
 # The top-level key of a unit kind's document holding its link ids.
@@ -453,15 +472,18 @@ def apply_unit_link(
     ``target_doc`` None is a device with no document of the kind yet: it
     starts from the source's whole document, not linked (the other units are
     copied once, as a device's first copy of the kind), because a document
-    must carry every unit for the apps to read it. An unknown unit is a
-    ``KeyError``: the caller checks units against :data:`LINK_UNITS`.
+    must carry every unit for the apps to read it. The source device's own
+    keys (:data:`UNIT_DEVICE_KEYS`) are left behind, so the target reads
+    their defaults. An unknown unit is a ``KeyError``: the caller checks
+    units against :data:`LINK_UNITS`.
     """
     keys = unit_keys(kind, unit)
     source = copy.deepcopy(source_doc) if isinstance(source_doc, dict) else empty_unit_document(kind)
     if isinstance(target_doc, dict):
         target = copy.deepcopy(target_doc)
     else:
-        target = without_unit_links(source)
+        own_keys = UNIT_DEVICE_KEYS.get(kind, ())
+        target = {k: v for k, v in without_unit_links(source).items() if k not in own_keys}
     link = unit_links(source, kind).get(unit)
     held = unit_links(target, kind).get(unit)
     already_linked = link is not None and held == link
