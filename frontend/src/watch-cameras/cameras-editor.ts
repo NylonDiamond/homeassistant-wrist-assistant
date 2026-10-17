@@ -40,7 +40,7 @@ import {
   rebaseCameraDraft,
   startCameraDraft,
 } from "./draft.js";
-import { WATCH_CAMERAS_HELP_URL, registerWatchCamerasDrafts } from "./hook.js";
+import { registerWatchCamerasDrafts } from "./hook.js";
 import {
   CROP_CORNERS,
   type CameraEdit,
@@ -452,8 +452,6 @@ export class WaCamerasEditor extends LitElement {
         ${inHead ? nothing : html`<span class="tb-saved">${dirty ? "Unsaved changes" : ""}</span>`}`
         : this.cameras !== undefined && this.cameras.length > 0 ? html`<button class="cm-btn" title="Take a new frame from every camera"
           @click=${() => this.refreshPictures()}>${uiIcon("reset")}<span>Refresh pictures</span></button>` : nothing}
-      <button class="help" title="Help with Cameras" aria-label="Help with Cameras"
-        @click=${() => window.open(WATCH_CAMERAS_HELP_URL, "_blank", "noopener")}>?</button>
     </div>`;
   }
 

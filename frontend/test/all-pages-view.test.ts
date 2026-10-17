@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { HassLike, OwnerSummary } from "../src/ha-api.js";
 import { pageCrop } from "../src/watch-pages/all-pages.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
-import { keptWatchPagesSelection } from "../src/watch-pages/kept.js";
+import { keptWatchPagesSelection, takeNewWatchPageAsk } from "../src/watch-pages/kept.js";
 import type { JsonObject, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { type PageCard, cardDevicePlaces } from "../src/watch-pages/all-pages-model.js";
 import { DEVICES_WAIT_TAG, type LinkDevice } from "../src/watch-pages/links.js";
@@ -160,6 +160,27 @@ describe("the Pages tab", () => {
     expect(opened).toEqual([`${watch}/watch`, `${phone}/iphone`, `${phone}/iphone`]);
     expect(keptWatchPagesSelection(watch).pageId).toBe(HALL);
     expect(keptWatchPagesSelection(phone).pageId).toBe(HALL);
+  });
+
+  it("has New page: on All it asks which device, on a device's tab it adds the page there, and either opens that device's editor", async () => {
+    const { el, watch, phone, call, whole } = tab();
+    await call<Promise<void>>("loadAll");
+    const opened: string[] = [];
+    el.onOpen = (owner: string, kind: string) => opened.push(`${owner}/${kind}`);
+    expect(whole()).toContain("<span>New page</span>");
+    expect(whole()).toContain("Pick the device to add a page on");
+    el.newOpen = true;
+    expect(whole()).toContain("ap-new-menu");
+    expect(whole()).toContain("<span>Jesse's iPhone</span></button>");
+    call("newPage", (el.devices as LinkDevice[]).find((d) => d.ownerId === phone));
+    expect(el.newOpen).toBe(false);
+    expect(opened).toEqual([`${phone}/iphone`]);
+    expect(takeNewWatchPageAsk(phone)).toBe(true);
+    expect(takeNewWatchPageAsk(phone)).toBe(false);
+    call("setFilter", watch);
+    expect(whole()).toContain("Add a page on Jesse's Watch");
+    expect(whole()).not.toContain("ap-new-menu");
+    call("setFilter", "all");
   });
 
   it("puts a page on another device from its Devices menu, then takes it off again", async () => {

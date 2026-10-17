@@ -153,7 +153,7 @@ import {
   saveWatchMenusDraft,
   takeWatchMenusRecord,
 } from "./draft.js";
-import { WATCH_MENUS_HELP_URL, navigatePagesFromMenus, navigateWatchMenus, registerWatchMenusDrafts } from "./hook.js";
+import { navigatePagesFromMenus, navigateWatchMenus, registerWatchMenusDrafts } from "./hook.js";
 import {
   type MenuSwitcherPage,
   type MenuSwitcherRow,
@@ -1504,8 +1504,6 @@ export class WaMenuEditor extends LitElement {
       ${shell ? nothing : html`<button class="tb-btn tb-pages" title="The watch's pages, as Home Assistant keeps them"
         @click=${() => (this.onPages ? this.onPages() : navigatePagesFromMenus(undefined))}>${uiIcon("pages")}<span>Pages</span></button>`}
       ${this.barActions}
-      <button class="help" title="Help with Menus" aria-label="Help with Menus"
-        @click=${() => window.open(WATCH_MENUS_HELP_URL, "_blank", "noopener")}>?</button>
     </div>`;
   }
 

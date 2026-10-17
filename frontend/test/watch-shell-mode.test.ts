@@ -27,6 +27,19 @@ const flat = (v: unknown): string => {
   return typeof v === "string" || typeof v === "number" || typeof v === "boolean" ? String(v) : "";
 };
 
+/** The screen's bar, from its opening tag to its own closing one. */
+function barOf(text: string): string {
+  const at = text.indexOf(`<div class="wa-bar`);
+  const tags = /<div\b|<\/div>/g;
+  tags.lastIndex = at;
+  let depth = 0;
+  for (let m = tags.exec(text); m !== null; m = tags.exec(text)) {
+    depth += m[0] === "</div>" ? -1 : 1;
+    if (depth === 0) return text.slice(at, m.index + m[0].length);
+  }
+  return text.slice(at);
+}
+
 const TAGS = [
   "wa-page-editor",
   "wa-menu-editor",
@@ -58,11 +71,7 @@ function editor(tag: (typeof TAGS)[number], shell: boolean) {
   el.shellOwnsWatch = shell;
   const opened: string[] = [];
   el.openWatch = (id: string) => { opened.push(id); el.watchId = id; };
-  const bar = () => {
-    const text = flat((el.render as () => unknown).call(el));
-    const at = text.indexOf(`<div class="wa-bar`);
-    return text.slice(at, text.indexOf(`class="help"`, at));
-  };
+  const bar = () => barOf(flat((el.render as () => unknown).call(el)));
   /** One update as Lit runs it, with the properties named as changed. */
   const update = (changed: Record<string, unknown> = {}) =>
     (el.willUpdate as (c: Map<string, unknown>) => void).call(el, new Map(Object.entries(changed)));
@@ -91,6 +100,17 @@ describe("a watch screen's bar", () => {
     expect(editor("wa-menu-editor", false).bar()).toContain(`class="tb-btn tb-pages"`);
     expect(editor("wa-menu-editor", true).bar()).not.toContain("tb-pages");
   });
+
+  for (const tag of TAGS) {
+    it(`${tag}: has no ? of its own, in or out of the shell: the panel's Help is the one help`, () => {
+      for (const shell of [false, true]) {
+        const bar = editor(tag, shell).bar();
+        expect(bar).toContain(`class="wa-bar`);
+        expect(bar).not.toContain(`class="help"`);
+        expect(bar).not.toContain(">?</button>");
+      }
+    });
+  }
 });
 
 describe("a watch screen following the panel's watch", () => {
@@ -128,9 +148,7 @@ describe("the HTTP actions screen, shared by every watch", () => {
       { owner_watch_id: "shared-w1", device_name: "Jesse's Watch", device_kind: "watch", paired_iphone_name: null, is_orphan: false },
       { owner_watch_id: "shared-w2", device_name: "Chen's Watch", device_kind: "watch", paired_iphone_name: null, is_orphan: false },
     ] as unknown as OwnerSummary[];
-    const text = flat((el.render as () => unknown).call(el));
-    const at = text.indexOf(`<div class="wa-bar`);
-    return { el, bar: text.slice(at, text.indexOf(`class="help"`, at)) };
+    return { el, bar: barOf(flat((el.render as () => unknown).call(el))) };
   }
 
   it("has no watch picker and no way back, and says it is shared", () => {
@@ -140,6 +158,18 @@ describe("the HTTP actions screen, shared by every watch", () => {
     expect(bar).not.toContain("tb-back");
     expect(bar).not.toContain(">Complications</span>");
     expect(bar).not.toMatch(/watch-picker/);
+    expect(bar).not.toContain(`class="help"`);
+  });
+
+  it("says in its foot only what a first save does and the size: when it was saved and who has it are the header's", () => {
+    const { el } = shared();
+    const foot = (record: Record<string, unknown>) => flat((el.renderFoot as (r: unknown, d: unknown) => unknown).call(el, record, { document: { actions: [] } }));
+    const saved = { revision: 3, hash: null, updated_at: new Date(Date.now() - 5 * 60_000).toISOString(), updated_by: "panel", handed_over: [], delivered: { "shared-w1": 3 } };
+    const text = foot(saved);
+    expect(text).toContain(`class="ha-foot"`);
+    expect(text).toMatch(/of \d/);
+    for (const said of ["Saved here", "5 min ago", "Waiting for", "ha-foot-dot"]) expect(text).not.toContain(said);
+    expect(foot({ ...saved, revision: 0 })).toContain("Not saved yet. The first save makes the library.");
   });
 
   it("takes no watch from the panel", () => {

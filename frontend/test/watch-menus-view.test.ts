@@ -530,12 +530,12 @@ function editor(revision = 4) {
 }
 
 describe("the top bar", () => {
-  it("has the way back, the sync pill, ···, Save, when it was saved, Pages, Watch settings and the help", () => {
+  it("has the way back, the sync pill, ···, Save, when it was saved, Pages and Watch settings, and no ?", () => {
     const text = editor().whole();
     const bar = text.slice(text.indexOf(`<div class="wa-bar`), text.indexOf(`<div class="layout`));
     const order = [
       `class="tb-btn tb-back"`, `class="picker me-watch-picker"`, `class="tb-sync ok"`, `class="tb-btn tb-more"`,
-      `class="primary save `, `<span class="tb-saved"`, `class="tb-btn tb-pages"`, `class="tb-btn tb-watch"`, `class="help"`,
+      `class="primary save `, `<span class="tb-saved"`, `class="tb-btn tb-pages"`, `class="tb-btn tb-watch"`,
     ];
     for (const part of order) expect(bar, part).toContain(part);
     const places = order.map((part) => bar.indexOf(part));
@@ -545,6 +545,8 @@ describe("the top bar", () => {
     expect(bar).toContain(">Saved 2 min ago</span>");
     expect(bar).toContain(">Pages</span>");
     expect(bar).toContain(`aria-label="Watch menus"`);
+    // The panel's Help sheet links the screen's guide; the bar has no ?.
+    expect(bar).not.toContain(`class="help"`);
     // Undo and Redo are in the canvas head; the old title and toolbar are gone.
     expect(bar).not.toContain(`aria-label="Undo"`);
     expect(text).not.toContain(`class="pe-tools"`);
@@ -580,7 +582,7 @@ describe("the top bar", () => {
   });
 
   it("shows the picker in every state of the body, and not for a single watch", () => {
-    const bar = (t: string) => t.slice(t.indexOf(`<div class="wa-bar`), t.indexOf(`</div>`, t.indexOf(`class="help"`)));
+    const bar = (t: string) => t.slice(t.indexOf(`<div class="wa-bar`), t.indexOf(`</div>`, t.indexOf(`class="tb-btn tb-watch"`)));
     // No menus yet: only the empty card, and the picker is the way out.
     expect(bar(editor(0).whole())).toContain(`class="picker me-watch-picker"`);
     const loading = editor();

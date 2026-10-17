@@ -152,7 +152,7 @@ describe("Home's picked device", () => {
   });
 
   it("makes the two counts beside the device doors to their pages, Control Center by its own name", () => {
-    expect(detail).toContain("const [callL, callR] = deviceCardTiles(row.kind);");
+    expect(detail).toContain("const [callL, callR] = deviceCardTiles(row.kind, this.phonePages);");
     expect(detail).toContain(`<button type="button" class="hb-call \${side}" title=\${\`\${t.label} on \${row.name}\`} @click=\${() => go(t)}>`);
     expect(detail).toContain(`const word = t.kind === "list" && t.filter === "control" ? "Control Center" : countWord(t.label, n);`);
     expect(detail).toContain("if (t.kind === \"list\") openList(t.filter); return;");
@@ -168,7 +168,7 @@ describe("Home's picked device", () => {
 
   it("reads an iPhone's pages count on a home with phone pages", () => {
     const load = method("  private async loadDeviceCounts(ownerId: string) {");
-    expect(load).toContain(`: device === "iphone" && this.phonePages ? ["pages"] : [];`);
+    expect(load).toContain(`: device === "iphone" && this.phonePages ? ["pages", "status_pages"] : [];`);
   });
 
   it("steps to the device before and after it", () => {
@@ -190,9 +190,11 @@ describe("Home's picked device", () => {
     // An iPhone's pages open in the iPhone app, a watch's in the Watch app.
     expect(detail).toContain("const path = deviceScreenPath(row.kind, screen, ownerId);");
     expect(detail.indexOf("this.pickWatch(ownerId);")).toBeLessThan(detail.indexOf("this.goTo(path);"));
-    expect(detail).toContain("this.pickerFilter = filter;");
-    expect(detail).toContain("this.pickPickerTab(ownerId);");
-    expect(detail).toContain("if (this.draft) this.openPicker();");
+    expect(detail).toContain("this.openDeviceList(ownerId, filter);");
+    const list = method("  private openDeviceList(");
+    expect(list).toContain("this.pickerFilter = filter;");
+    expect(list).toContain("this.pickPickerTab(ownerId);");
+    expect(list).toContain("if (this.draft) this.openPicker();");
     const count = method("  private homeTileCount(");
     expect(count).toContain("this.watchCounts.get(d.id)?.[t.count]");
   });
@@ -272,7 +274,7 @@ describe("coming back to Home", () => {
     const load = method("  private async loadWatchAppSync(again: boolean) {");
     expect(load).not.toContain("is_admin");
     expect(load).toContain("const summary = await fetchWatchConfigSummary(hass);");
-    expect(load).toContain("next = summaryWatchAppSyncs(summary, watches);");
+    expect(load).toContain("next = summaryWatchAppSyncs(summary, watches, phones);");
     expect(load).toContain("if (!summaryUnknown(err)) {");
     expect(load.indexOf("fetchWatchConfigSummary")).toBeLessThan(load.indexOf("readWatchAppSync((kind) => fetchWatchConfig(hass, id, kind))"));
     expect(load).toContain("if (run !== this.watchAppSyncRun) return;");

@@ -52,7 +52,7 @@ import {
   startHttpActionsDraft,
   takeHttpActionsRecord,
 } from "./draft.js";
-import { WATCH_HTTP_ACTIONS_HELP_URL, registerWatchHttpActionsDrafts } from "./hook.js";
+import { registerWatchHttpActionsDrafts } from "./hook.js";
 import {
   HTTP_ACTIONS_ADD_BUTTON,
   HTTP_ACTIONS_CLIENT_CERT_TEXT,
@@ -151,7 +151,7 @@ export function httpActionsDelivery(record: Pick<HttpActionsRecord, "revision" |
   return { collected, waiting };
 }
 
-/** Who made the copy Home Assistant holds, for the foot line. */
+/** Who made the copy Home Assistant holds, for the saved line's tooltip. */
 export function httpActionsSavedBy(record: Pick<HttpActionsRecord, "updated_by">, owners: readonly OwnerSummary[]): string {
   if (record.updated_by === "panel") return "saved here";
   const owner = owners.find((o) => o.owner_watch_id === record.updated_by);
@@ -581,7 +581,7 @@ export class WaHttpActionsEditor extends LitElement {
         ? html`<span class="tb-note">${HTTP_ACTIONS_SHARED_TEXT}</span>`
         : html`<span class="ha-title"><b>HTTP actions</b><span class="ha-shared">${HTTP_ACTIONS_SHARED_TEXT}</span></span>`}
       <span class="spacer"></span>
-      ${inHead && editing ? renderHeadStatus({ newWatch: false, dirty, saved: this.savedText() }) : nothing}
+      ${inHead && editing ? renderHeadStatus({ newWatch: false, dirty, saved: this.renderSaved() }) : nothing}
       ${this.renderSyncPill()}
       ${editing ? html`<span class="side-menu pe-top-menu">
           <button class="tb-btn tb-more" aria-haspopup="menu" aria-expanded=${this.topMenuOpen ? "true" : "false"} aria-label="More actions" title="More"
@@ -597,10 +597,18 @@ export class WaHttpActionsEditor extends LitElement {
         <button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S). A save reaches every watch the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
-        ${inHead ? nothing : html`<span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${this.savedText()}</span>`}` : nothing}
-      <button class="help" title="Help with HTTP actions" aria-label="Help with HTTP actions"
-        @click=${() => window.open(WATCH_HTTP_ACTIONS_HELP_URL, "_blank", "noopener")}>?</button>
+        ${inHead ? nothing : html`<span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${this.renderSaved()}</span>`}` : nothing}
     </div>`;
+  }
+
+  /** "Saved 3 min ago", with who saved it and the revision in its tooltip:
+   * the one place the screen says when the library was saved. */
+  private renderSaved(): TemplateResult | typeof nothing {
+    const record = this.record;
+    const text = this.savedText();
+    if (record === undefined || text === "") return nothing;
+    const by = httpActionsSavedBy(record, this.allOwners);
+    return html`<span title=${`Revision ${record.revision}, ${by}`}>${text}</span>`;
   }
 
   private savedText(): string {
@@ -681,18 +689,11 @@ export class WaHttpActionsEditor extends LitElement {
 
   private renderFoot(record: HttpActionsRecord, draft: HttpActionsDraft): TemplateResult {
     const budget = httpActionsBudget(draft.document);
-    const when = ago(record.updated_at);
-    // Who saved and when, in plain words; the revision number is only in
-    // the tooltip.
-    const by = httpActionsSavedBy(record, this.allOwners);
-    const stored = record.revision <= 0
-      ? "Not saved yet. The first save makes the library."
-      : by === "saved here" ? `Saved here${when ? ` ${when}` : ""}` : `${by.charAt(0).toUpperCase()}${by.slice(1)}${when ? ` ${when}` : ""}`;
-    const { waiting } = httpActionsDelivery(record, this.watches);
+    // When it was saved, by whom, and which watches have it are the
+    // header's to say (`renderSaved`, the sync pill); the foot only says
+    // what a first save does, then the size.
     return html`<div class="ha-foot" role="status">
-      <i class="ha-foot-dot ${record.revision <= 0 ? "" : waiting.length === 0 ? "ok" : "warn"}" aria-hidden="true"></i>
-      <span title=${record.revision <= 0 ? nothing : `Revision ${record.revision}`}>${stored}</span>
-      ${waiting.length === 0 ? nothing : html`<span class="pe-muted">Waiting for ${waiting.join(", ")}. ${WAITING_HELP_TEXT}</span>`}
+      ${record.revision <= 0 ? html`<span>Not saved yet. The first save makes the library.</span>` : nothing}
       <span class="spacer"></span>
       <span class="pe-muted ${budget.near ? "ha-near" : ""}">${kb(budget.size)} of ${kb(budget.limit)}</span>
     </div>`;
@@ -804,9 +805,6 @@ export class WaHttpActionsEditor extends LitElement {
       border: 1px solid var(--wa-line); border-radius: var(--wa-r-md, 12px); background: var(--wa-card);
     }
     .ha-foot .spacer { flex: 1; }
-    .ha-foot-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--wa-muted); flex: none; }
-    .ha-foot-dot.ok { background: var(--wa-green); }
-    .ha-foot-dot.warn { background: var(--wa-amber); }
     .ha-near { color: var(--wa-amber); }
     :host([narrow]) { --cf-pad: 12px; }
   `, httpActionsViewStyles, headBarStyles];

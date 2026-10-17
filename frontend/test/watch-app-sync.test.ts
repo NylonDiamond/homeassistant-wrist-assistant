@@ -8,11 +8,14 @@ import type { OwnerSummary } from "../src/ha-api.js";
 import { deviceSyncLabel, homeSync } from "../src/send-state.js";
 import {
   HTTP_ACTIONS_PART_LABEL,
+  PHONE_APP_PARTS,
+  PHONE_REJECTED_SAVE_TEXT,
   REJECTED_SAVE_TEXT,
   WATCH_APP_PARTS,
   type WatchAppSync,
   deviceVerdict,
   httpActionsDeliveryFor,
+  phoneAppSync,
   readWatchAppSync,
   rejectedSaveText,
   summaryUnknown,
@@ -166,26 +169,57 @@ describe("Home's rows with the watch app", () => {
   } as OwnerSummary);
   const devices = (owners: OwnerSummary[]) => homeDevices(owners, (o) => o.device_name ?? o.owner_watch_id, (o) => o.owner_watch_id);
 
-  it("takes the worse of the two on a watch, and leaves a phone on its complications", () => {
+  it("takes the worse of the two on every device with a reading, an iPhone's own records included", () => {
     const owners = [
       owner({ owner_watch_id: "w1", device_name: "Synced watch" }),
       owner({ owner_watch_id: "w2", device_name: "Settings waiting" }),
       owner({ owner_watch_id: "p1", device_name: "Phone", device_kind: "iphone" }),
+      owner({ owner_watch_id: "p2", device_name: "Other phone", device_kind: "iphone" }),
     ];
     const watchApp = new Map<string, WatchAppSync>([
       ["w1", { waiting: [], delivered: true }],
       ["w2", { waiting: ["settings"], delivered: true }],
-      // A phone has no watch app; a reading for one is ignored.
+      // An iPhone's own pages, on a home with phone pages.
       ["p1", { waiting: ["pages"], delivered: true }],
     ]);
     const rows = homeDeviceRows(devices(owners), watchApp);
     expect(rows.map((r) => [r.id, r.sync, r.waitingFor])).toEqual([
       ["w1", "synced", []],
       ["w2", "waiting", ["settings"]],
-      ["p1", "synced", []],
+      ["p1", "waiting", ["pages"]],
+      // No reading (a home with no phone pages): its complications alone.
+      ["p2", "synced", []],
     ]);
+    expect(homeDeviceWhy(rows[2]!, undefined)).toBe("For pages");
+    expect(attentionText(rows[2]!, undefined)).toBe("Waiting for pages");
     // The header pill stays about complications only.
-    expect(homeSync(devices(owners))).toEqual({ kind: "synced", devices: ["Synced watch", "Settings waiting", "Phone"] });
+    expect(homeSync(devices(owners))).toEqual({ kind: "synced", devices: ["Synced watch", "Settings waiting", "Phone", "Other phone"] });
+  });
+
+  it("says Waiting on Home for an iPhone whose pages the iPhone has not collected, as its Pages screen does", () => {
+    const full = (revision: number, delivered: number) => ({ revision, delivered_revision: delivered, rejected_revision: 0 });
+    const owners = [
+      owner({ owner_watch_id: "w1", device_name: "Watch" }),
+      owner({ owner_watch_id: "p1", device_name: "iPhone 15 Pro", device_kind: "iphone" }),
+    ];
+    const summary = {
+      owners: { w1: { pages: full(4, 4) }, p1: { pages: full(3, 2), behavior: full(1, 1) } },
+      // The phone may pull the library signed as its watch, so its own mark
+      // never moves: the library is not counted for a phone.
+      http_actions: { revision: 2, delivered: { w1: 2 } },
+    };
+    const syncs = summaryWatchAppSyncs(summary, ["w1"], ["p1"]);
+    expect(syncs.get("p1")).toEqual({ waiting: ["pages"], delivered: true });
+    const rows = homeDeviceRows(devices(owners), syncs);
+    expect(rows.map((r) => [r.id, r.sync, r.waitingFor])).toEqual([["w1", "synced", []], ["p1", "waiting", ["pages"]]]);
+    // Without the phones asked about, the phone is judged on complications alone.
+    const before = homeDeviceRows(devices(owners), summaryWatchAppSyncs(summary, ["w1"]));
+    expect(before.find((r) => r.id === "p1")?.sync).toBe("synced");
+  });
+
+  it("reads only the kinds an iPhone may own on a phone", () => {
+    expect(PHONE_APP_PARTS.map((p) => p.kind)).toEqual(["pages", "menus", "status_pages", "behavior", "rooms"]);
+    expect(phoneAppSync(new Map([["voice", rec(3, 1)], ["status_pages", rec(2, 1)]]))).toEqual({ waiting: ["status pages"], delivered: false });
   });
 
   it("judges on complications alone without a reading, as before", () => {
@@ -235,6 +269,8 @@ describe("a save the watch could not use", () => {
     expect(rejectedSaveText(["pages"])).toBe("Watch could not use the last save of its pages");
     expect(rejectedSaveText(["pages", "menus"])).toBe("Watch could not use the last save of its pages and menus");
     expect(rejectedSaveText(["pages", "menus", "voice"])).toBe("Watch could not use the last save of its pages, menus and voice");
+    expect(rejectedSaveText(["pages"], "iphone")).toBe("iPhone could not use the last save of its pages");
+    expect(rejectedSaveText([], "iphone")).toBe(PHONE_REJECTED_SAVE_TEXT);
   });
 
   it("turns the watch's Home card from Synced to Not synced, says why, and lists it under Waiting to sync", () => {
@@ -258,6 +294,15 @@ describe("a save the watch could not use", () => {
     expect(needsAttention(other!)).toBe(false);
     expect(homeDeviceWhy(other!, undefined)).toBe("");
     expect(phone!.rejected).toBeUndefined();
+  });
+
+  it("names the iPhone on a phone that could not use its pages", () => {
+    const owners = [owner({ owner_watch_id: "p1", device_name: "Phone", device_kind: "iphone" })];
+    const rows = homeDeviceRows(devices(owners), summaryWatchAppSyncs({ owners: { p1: { pages: full(6, 6, 6) } } }, [], ["p1"]));
+    expect(rows[0]).toMatchObject({ id: "p1", sync: "synced", rejected: ["pages"] });
+    expect(homeDeviceLabel(rows[0]!)).toBe(NOT_SYNCED_TEXT);
+    expect(homeDeviceWhy(rows[0]!, undefined)).toBe("iPhone could not use the last save of its pages");
+    expect(attentionText(rows[0]!, undefined)).toBe("iPhone could not use the last save of its pages");
   });
 
   it("says both when the watch also waits for something", () => {

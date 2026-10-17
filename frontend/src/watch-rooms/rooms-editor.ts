@@ -104,7 +104,7 @@ import {
   saveBlockedText,
 } from "../watch-menus/new-watch.js";
 import { type RoomsDraft, anyRoomsDirty, dropAllRooms, forgetRoomsDraft, keptRoomsDraft, newRoomsDraft, saveRoomsDraft, takeRoomsRecord } from "./draft.js";
-import { WATCH_ROOMS_HELP_URL, navigateWatchRooms, registerWatchRoomsDrafts } from "./hook.js";
+import { navigateWatchRooms, registerWatchRoomsDrafts } from "./hook.js";
 import {
   type AreaEntry,
   type BehaviorDocument,
@@ -947,8 +947,6 @@ export class WaRoomsEditor extends LitElement {
         ${this.barHost !== undefined ? nothing : html`<span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record, undefined, this.device)}</span>
         ${renderSaveReason(saveBlockedText({ newWatch: this.newWatch, dirty, saving: this.saving }))}`}` : nothing}
       ${this.barActions}
-      <button class="help" title="Help with Rooms" aria-label="Help with Rooms"
-        @click=${() => window.open(WATCH_ROOMS_HELP_URL, "_blank", "noopener")}>?</button>
     </div>`;
   }
 

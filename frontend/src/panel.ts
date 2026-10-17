@@ -11203,6 +11203,8 @@ export class WristAssistantPanel extends LitElement {
       onMenu: (open) => this.toggleWatchRowMenu(open),
       onPick: (watchId) => this.pickWatch(watchId),
       onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
+      onHome: () => this.backToHome(watchScreenOf(this.route)?.shared === true ? undefined : this.sharedWatch),
+      onList: (filter) => { if (this.sharedWatch !== undefined) this.openDeviceList(this.sharedWatch, filter); },
       unsaved: this.unsavedNow,
       people: this.people(),
       end: html`${settings}${this.watchBarHost}`,
@@ -11227,6 +11229,8 @@ export class WristAssistantPanel extends LitElement {
       onPick: (phoneId) => this.pickPhone(phoneId),
       onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
       onPair: () => this.openPairDialog(),
+      onHome: () => this.backToHome(this.sharedPhone),
+      onList: (filter) => { if (this.sharedPhone !== undefined) this.openDeviceList(this.sharedPhone, filter); },
       people: this.people(),
       end: html`${settings}${this.watchBarHost}`,
     })}${view}${this.pairOpen ? this.renderPairDialog() : nothing}`;
@@ -11730,8 +11734,8 @@ export class WristAssistantPanel extends LitElement {
    * kind per watch. Any other failure leaves the card as it was: on
    * complications alone the first time, on the last reading after that.
    * Without `again`, nothing is read when the same watches were read
-   * already. The same answer counts each iPhone's pages, on a home with
-   * phone pages.
+   * already. On a home with phone pages the same answer counts each
+   * iPhone's pages and says whether its own records wait, as its screens do.
    */
   private async loadWatchAppSync(again: boolean) {
     const watches = settingsWatches(this.owners).map((w) => w.owner_watch_id);
@@ -11746,7 +11750,7 @@ export class WristAssistantPanel extends LitElement {
     let pages: ReadonlySet<string> | undefined;
     try {
       const summary = await fetchWatchConfigSummary(hass);
-      next = summaryWatchAppSyncs(summary, watches);
+      next = summaryWatchAppSyncs(summary, watches, phones);
       counts = summaryCounts(summary, [...watches, ...phones]);
       pages = watchesWithPages(summary, watches);
     } catch (err) {
@@ -19960,6 +19964,24 @@ export class WristAssistantPanel extends LitElement {
       .map(({ picture, round, name }) => ({ picture, round, name }));
   }
 
+  /** Open a device's complications on the Complications tab: all of them
+   * (an iPhone's widgets), or only those with a Control Center control. */
+  private openDeviceList(ownerId: string, filter: "all" | "control") {
+    this.toggleWatchRowMenu(false);
+    this.pickerFilter = filter;
+    this.pickPickerTab(ownerId);
+    this.goTo(COMPLICATIONS_PATH);
+    // With a design open the tab is the editor, so the list opens over it.
+    if (this.draft) this.openPicker();
+  }
+
+  /** Back to Home from a device's screen, with that device picked. */
+  private backToHome(ownerId: string | undefined) {
+    this.toggleWatchRowMenu(false);
+    if (ownerId !== undefined && this.ownerOf(ownerId) !== undefined) this.openHomeDevice(ownerId);
+    this.goTo(tabPath("home"));
+  }
+
   /** Pick a device on Home, starting on its overview, or on its Remove step
    * for a waiting line or row whose user was deleted. */
   private openHomeDevice(ownerId: string, forget = false) {
@@ -20011,7 +20033,7 @@ export class WristAssistantPanel extends LitElement {
     this.deviceCounts = undefined;
     const device = deviceKindOf(this.ownerOf(ownerId));
     const kinds: DeviceCountKind[] = device === "watch" ? ["pages", "status_pages", "control_center"]
-      : device === "iphone" && this.phonePages ? ["pages"] : [];
+      : device === "iphone" && this.phonePages ? ["pages", "status_pages"] : [];
     if (kinds.length === 0 || this.watchCounts.has(ownerId)) return;
     const read = await Promise.all(kinds.map(async (kind) => {
       try {
@@ -20100,13 +20122,7 @@ export class WristAssistantPanel extends LitElement {
       if (next !== undefined) this.openHomeDevice(next);
     };
     const count = (t: DeviceSheetTab) => this.homeTileCount(t, row, owner);
-    const openList = (filter: "all" | "control") => {
-      this.pickerFilter = filter;
-      this.pickPickerTab(ownerId);
-      this.goTo(COMPLICATIONS_PATH);
-      // With a design open the tab is the editor, so the list opens over it.
-      if (this.draft) this.openPicker();
-    };
+    const openList = (filter: "all" | "control") => this.openDeviceList(ownerId, filter);
     // Open one of the device's pages: its complications on the
     // Complications tab, or a watch screen on this watch.
     // A watch's complications open the Watch app's Complications screen on
@@ -20133,7 +20149,7 @@ export class WristAssistantPanel extends LitElement {
           : html`<i aria-hidden="true"></i><span class="hb-call-line" aria-hidden="true"></span>${body}`}
       </button>`;
     };
-    const [callL, callR] = deviceCardTiles(row.kind);
+    const [callL, callR] = deviceCardTiles(row.kind, this.phonePages);
     const face = gone ? undefined : this.homeFace(ownerId, row.kind);
     const art = row.kind === "watch"
       ? homeWatchArt(`pick-${row.id}`, held, row.sync, face)

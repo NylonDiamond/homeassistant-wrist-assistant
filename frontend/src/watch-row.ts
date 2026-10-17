@@ -1,18 +1,19 @@
-// The Watch app tab's header row, under the tabs on every watch screen: the
-// shared watch at the left, then the screens and Settings as one segmented
-// track, the screen on show marked, then the screen's own save controls at
-// the right. Control Center is retired and left out (`retired` in
-// `shell.ts`). The panel draws it (`renderWatchRow`) and owns its state: the
-// shared watch (`watch-pick.ts`), whether the watch menu is open, and what a
-// pick or a screen does. Settings is a screen with an address like the
-// others. HTTP actions and Cameras are shared by every watch, so their links
-// never name one and a pick on them changes nothing they show. What can be
-// worked out without the panel lives here, where a test can reach it.
+// The header row over every device screen: Home at the left, to go back,
+// then the shared watch, then the same doors Home shows for that watch
+// (`deviceSheetTabs`) as one segmented track with Settings last, the screen
+// on show marked, then the screen's own save controls at the right. A
+// door that is a list (Control Center controls, an iPhone's widgets) opens
+// the Complications tab on the device, as on Home. The panel draws it
+// (`renderWatchRow`) and owns its state: the shared watch (`watch-pick.ts`),
+// whether the watch menu is open, and what a pick or a screen does.
+// Settings is a screen with an address like the others. HTTP actions and
+// Cameras are the whole home's: their row names no device and links only
+// the two of them. What can be worked out without the panel lives here,
+// where a test can reach it.
 //
-// The iPhone app tab draws the same row for its iPhones (`iphone`): the
-// shared iPhone at the left, then the screens an iPhone has (Pages, Menus,
-// Status pages, Rooms) and Settings, each at its `/iphone` address. A home
-// with no iPhone gets the way to pair one instead.
+// An iPhone's screens draw the same row for the iPhones (`iphone`): the
+// shared iPhone at the left, then an iPhone's doors, each screen at its
+// `/iphone` address. A home with no iPhone gets the way to pair one instead.
 //
 // The row is neutral: the watch's chip and every button are grey boxes with a
 // one pixel outline. The tab on show is raised in grey, and only its glyph
@@ -33,12 +34,13 @@ import { css, html, nothing, type TemplateResult } from "lit";
 import { deviceColor, deviceColors } from "./device-colors.js";
 import type { OwnerSummary } from "./ha-api.js";
 import { homeMiniArt } from "./home-art.js";
+import { deviceSheetTabs } from "./home.js";
 import type { Person } from "./people.js";
 import { hasPhoneAwaitingUpdate, iphoneDevices } from "./phone-pages.js";
 import { howToStyles, renderHowTo, screenHowTo } from "./screen-howto.js";
 import { type DeviceSync, deviceSync, deviceSyncLabel } from "./send-state.js";
 import {
-  IPHONE_SCREENS, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen,
+  COMPLICATIONS_PATH, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen,
   iphoneScreenOf, iphoneScreenPath, isPlainClick, panelUrl, unsavedDot, watchScreenOf, watchScreenPath, watchScreenSentence,
 } from "./shell.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
@@ -81,28 +83,55 @@ export function watchRowChoices(owners: readonly OwnerSummary[], current: string
   }));
 }
 
-/** One of the row's screen links. */
+/** One of the row's links: a screen on the device, or one of its lists on
+ * the Complications tab (`list`). */
 export interface WatchRowLink {
   screen: WatchScreen;
+  /** The link's word where it is not the screen's own: "Widgets", "Control
+   * Center". */
+  label?: string;
   /** The screen's address on the shared watch, so moving keeps the watch. */
   path: string;
   /** The screen on show. */
   on: boolean;
+  /** Opens the device's complications on the Complications tab: all of them
+   * (an iPhone's widgets), or only those with a Control Center control. */
+  list?: "all" | "control";
 }
 
-/** The row's screen links. A retired screen (Control Center) is left out,
- * unless an old link has it on show, so the row still marks where you are.
- * In the iPhone app's row, the four an iPhone has, each at its `/iphone`
- * address. */
+const screenById = (id: WatchScreenId): WatchScreen => WATCH_SCREENS.find((screen) => screen.id === id)!;
+
+/** The row's links, in the order of Home's doors on the same device
+ * (`deviceSheetTabs`), Settings apart (`watchRowSettingsLink`). A watch's
+ * complications are its own screen; an iPhone's widgets and any device's
+ * Control Center controls open the Complications tab on that device, as
+ * Home's doors do. In the iPhone app's row, each screen is at its
+ * `/iphone` address. HTTP actions and Cameras are the home's, never in a
+ * device's row (`sharedRowLinks`). */
 export function watchRowLinks(route: PanelRoute | undefined, watch: string | undefined, kind: RowKind = "watch"): WatchRowLink[] {
-  if (kind === "iphone") {
-    const shown = iphoneScreenOf(route)?.id;
-    return IPHONE_SCREENS.map((screen) => ({ screen, path: iphoneScreenPath(screen, watch), on: screen.id === shown }));
-  }
-  const shown = watchScreenOf(route)?.id;
-  return WATCH_SCREENS.filter((screen) => screen.retired !== true || screen.id === shown)
-    .map((screen) => ({ screen, path: watchScreenPath(screen, watch), on: screen.id === shown }));
+  const shown = kind === "iphone" ? iphoneScreenOf(route)?.id : watchScreenOf(route)?.id;
+  const linkOf = (screen: WatchScreen): WatchRowLink => ({
+    screen, path: kind === "iphone" ? iphoneScreenPath(screen, watch) : watchScreenPath(screen, watch), on: screen.id === shown,
+  });
+  return deviceSheetTabs(kind, true).flatMap((tab): WatchRowLink[] => {
+    if (tab.kind === "screen") return tab.screen.id === WATCH_SETTINGS_SCREEN.id ? [] : [linkOf(tab.screen)];
+    if (kind === "watch" && tab.filter === "all") return [linkOf(screenById("watch-complications"))];
+    // An old link to the retired Control Center screen marks its door.
+    const screen = screenById(tab.filter === "all" ? "watch-complications" : "control-center");
+    return [{ screen, label: tab.label, path: COMPLICATIONS_PATH, on: tab.filter === "control" && shown === "control-center", list: tab.filter }];
+  });
 }
+
+/** The row's links on a screen of the whole home (HTTP actions, Cameras):
+ * the home's screens, which name no device. */
+export function sharedRowLinks(route: PanelRoute | undefined): WatchRowLink[] {
+  const shown = watchScreenOf(route)?.id;
+  return WATCH_SCREENS.filter((screen) => screen.shared === true && screen.retired !== true)
+    .map((screen) => ({ screen, path: watchScreenPath(screen), on: screen.id === shown }));
+}
+
+/** Over the shared screens' links, in place of a device. */
+export const SHARED_ROW_LABEL = "For the whole home";
 
 /** The row's last link, Settings, on the shared device. In a home with no
  * watch the Watch app's is also where the first one pairs. */
@@ -195,6 +224,11 @@ export interface WatchRowInput {
   end?: unknown;
   /** Pair an iPhone pressed, in the iPhone app's row of a home with none. */
   onPair?: () => void;
+  /** Home pressed: back to Home, with this device picked. */
+  onHome?: () => void;
+  /** A list link pressed (`WatchRowLink.list`): the device's complications
+   * on the Complications tab. */
+  onList?: (filter: "all" | "control") => void;
 }
 
 /** The Settings link's hover text, for the device on show. */
@@ -245,15 +279,20 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
   const slot = watchRowSlot(input.loaded, choices.length);
   const href = (path: string) => panelUrl(input.route, path, globalThis.location?.pathname ?? "");
   const unsaved = new Set((input.unsaved ?? []).map((screen) => screen.id));
+  // HTTP actions and Cameras belong to the whole home: their row names no
+  // device and links only the two of them.
+  const shared = kind === "watch" && watchScreenOf(input.route)?.shared === true;
   // An iPhone app with no iPhone has nothing to link to, Settings included:
   // the way to pair one is all it offers.
-  const links = slot === "none" && kind === "iphone" ? [] : [
-    ...(slot === "none" ? [] : watchRowLinks(input.route, input.watch, kind).map((l) => ({ l, cls: "" }))),
-    { l: watchRowSettingsLink(input.route, input.watch, kind), cls: "wa-wr-settings " },
-  ];
+  const links = shared ? sharedRowLinks(input.route).map((l) => ({ l, cls: "" }))
+    : slot === "none" && kind === "iphone" ? [] : [
+      ...(slot === "none" ? [] : watchRowLinks(input.route, input.watch, kind).map((l) => ({ l, cls: "" }))),
+      { l: watchRowSettingsLink(input.route, input.watch, kind), cls: "wa-wr-settings " },
+    ];
   const link = (l: WatchRowLink, cls = "") => {
     const look = WATCH_SCREEN_LOOK[l.screen.id];
-    const tip = watchRowLinkTitle(l.screen) === undefined ? undefined : `wa-wr-tip-${l.screen.id}`;
+    const tip = l.list !== undefined || watchRowLinkTitle(l.screen) === undefined ? undefined : `wa-wr-tip-${l.screen.id}`;
+    const label = l.label ?? l.screen.label;
     return html`<a class="wa-wr-link ${cls}${l.on ? "on" : ""}"
     href=${href(l.path)} aria-current=${l.on ? "page" : "false"} aria-describedby=${tip ?? nothing} style=${`--h: ${look.hue}`}
     @pointerenter=${(e: PointerEvent) => { if (e.pointerType === "mouse") hoverRowTip(e.currentTarget as HTMLElement, true); }}
@@ -265,16 +304,20 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
       closeRowTip();
       if (!isPlainClick(e)) return;
       e.preventDefault();
-      if (!l.on) input.onGo(l.path);
-    }}><span class="wa-wr-ic" aria-hidden="true">${uiIcon(look.icon)}</span>${l.screen.label}${unsaved.has(l.screen.id) ? unsavedDot() : nothing}</a>`;
+      if (l.list !== undefined) input.onList?.(l.list);
+      else if (!l.on) input.onGo(l.path);
+    }}><span class="wa-wr-ic" aria-hidden="true">${uiIcon(look.icon)}</span>${label}${l.list === undefined && unsaved.has(l.screen.id) ? unsavedDot() : nothing}</a>`;
   };
-  return html`<div class="wa-watchrow ${slot === "none" ? "no-watch" : ""}">
-    ${renderWatchSlot(input, slot, choices, kind)}
-    ${slot === "none" ? html`<span class="wa-wr-note">${kind === "iphone" ? (hasPhoneAwaitingUpdate(input.owners) ? IPHONE_ROW_UPDATE_NOTE : IPHONE_ROW_NONE_NOTE) : WATCH_ROW_NONE_NOTE}</span>` : nothing}
+  return html`<div class="wa-watchrow ${slot === "none" && !shared ? "no-watch" : ""}">
+    ${input.onHome === undefined ? nothing : html`<button type="button" class="wa-wr-home"
+      title=${shared ? "Back to Home" : `Back to Home, with this ${kind === "iphone" ? "iPhone" : "watch"} picked`}
+      @click=${() => { closeRowTip(); input.onHome?.(); }}>${uiIcon("left")}<span>Home</span></button>`}
+    ${shared ? html`<span class="wa-wr-shared">${SHARED_ROW_LABEL}</span>` : renderWatchSlot(input, slot, choices, kind)}
+    ${slot === "none" && !shared ? html`<span class="wa-wr-note">${kind === "iphone" ? (hasPhoneAwaitingUpdate(input.owners) ? IPHONE_ROW_UPDATE_NOTE : IPHONE_ROW_NONE_NOTE) : WATCH_ROW_NONE_NOTE}</span>` : nothing}
     ${links.length === 0 ? nothing : html`<nav class="wa-wr-links" aria-label=${kind === "iphone" ? "iPhone app" : "Watch app"} @scroll=${(e: Event) => { markRowMore(e.currentTarget as HTMLElement); closeRowTip(); }}>
       ${links.map(({ l, cls }) => link(l, cls))}
     </nav>`}
-    ${links.map(({ l }) => renderRowTip(l.screen, kind))}
+    ${links.filter(({ l }) => l.list === undefined).map(({ l }) => renderRowTip(l.screen, kind))}
     <div class="wa-wr-end">${input.end ?? nothing}</div>
   </div>${renderUnsavedBar(input, href, kind)}`;
 }
@@ -524,6 +567,16 @@ export const watchRowStyles = css`
     background: var(--wa-card); border: 1px solid var(--wa-line-strong);
   }
   button.wa-wr-pair:hover { background: var(--wa-hover); }
+  /* Back to Home, at the row's left: a quiet link with a chevron. */
+  button.wa-wr-home {
+    flex: none; display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 10px 0 6px;
+    border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer; color: var(--wa-muted);
+    background: transparent; border: 0;
+  }
+  button.wa-wr-home:hover { color: var(--wa-ink); background: var(--wa-hover); }
+  button.wa-wr-home:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.wa-wr-home svg.ui-icon { width: 14px; height: 14px; }
+  .wa-wr-shared { flex: none; font-size: 13px; font-weight: 500; color: var(--wa-ink); }
   button.wa-wr-pair svg.ui-icon { width: 14px; height: 14px; }
   button.wa-wr-open:focus-visible, button.wa-wr-pair:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .wa-wr-menu {

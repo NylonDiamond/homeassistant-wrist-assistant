@@ -203,7 +203,7 @@ import {
   watchTileAtCell,
   watchTileRect,
 } from "./edit.js";
-import { WATCH_PAGES_HELP_URL, navigateMenusFromPages, navigateWatchPages, registerWatchPagesDrafts } from "./hook.js";
+import { navigateMenusFromPages, navigateWatchPages, registerWatchPagesDrafts } from "./hook.js";
 import {
   anyWatchPagesDirty,
   dropAllWatchPages,
@@ -211,6 +211,7 @@ import {
   keepWatchPagesSelection,
   keptWatchPagesDraft,
   keptWatchPagesSelection,
+  takeNewWatchPageAsk,
   readyWatchPagesDraft,
   takeWatchPagesRecord,
   watchPagesDraftIsNew,
@@ -1788,6 +1789,11 @@ export class WaPageEditor extends LitElement {
       }
       this.show(record);
       this.loadError = undefined;
+      // The Pages tab's New page: add one once the pages are on screen. A
+      // device with no pages yet already opens on a ready empty page.
+      if (!quiet && takeNewWatchPageAsk(watchId) && record.revision > 0) {
+        void this.updateComplete.then(() => { if (this.watchId === watchId) this.addPage(); });
+      }
       // Where the linked pages are moves with every save of any device's
       // pages, and a link made here arrives as one.
       void this.loadLinks(watchId);
@@ -3503,8 +3509,6 @@ export class WaPageEditor extends LitElement {
       ${shell ? nothing : html`<button class="tb-btn tb-menus" title="The watch's Anywhere menu, Entity quick menu and page switcher"
         @click=${() => (this.onMenus ? this.onMenus() : navigateMenusFromPages(undefined))}>${uiIcon("radial")}<span>Menus</span></button>`}
       ${this.barActions}
-      <button class="help" title="Help with Pages" aria-label="Help with Pages"
-        @click=${() => window.open(WATCH_PAGES_HELP_URL, "_blank", "noopener")}>?</button>
     </div>`;
   }
 

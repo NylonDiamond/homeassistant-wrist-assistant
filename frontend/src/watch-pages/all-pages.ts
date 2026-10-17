@@ -67,7 +67,7 @@ import {
   withNone,
 } from "./all-pages-bulk.js";
 import { devicesMenuStyles, renderPageDevicesMenu } from "./devices-menu.js";
-import { keepWatchPagesSelection, keptWatchPagesDraft } from "./kept.js";
+import { askNewWatchPage, keepWatchPagesSelection, keptWatchPagesDraft } from "./kept.js";
 import {
   DEVICES_WAIT_TAG,
   DEVICES_WAIT_TEXT,
@@ -198,6 +198,8 @@ export class WaAllPages extends LitElement {
   @state() private menuAt?: MenuAt;
   @state() private linking = false;
   @state() private devicesNote?: WatchPagesNote;
+  /** New page's menu of devices is open. */
+  @state() private newOpen = false;
   /** Select mode: a click picks a card instead of opening it. */
   @state() private selecting = false;
   /** The picked cards, by key. Only those shown count. */
@@ -416,6 +418,13 @@ export class WaAllPages extends LitElement {
     keepView({ kind });
     this.closeDevices();
     this.pruneSelected();
+  }
+
+  /** New page on a device: its page editor opens and adds one. */
+  private newPage(device: LinkDevice): void {
+    this.newOpen = false;
+    askNewWatchPage(device.ownerId);
+    this.onOpen?.(device.ownerId, device.kind);
   }
 
   /** Open the page in its device's page editor, on that page. */
@@ -672,6 +681,7 @@ export class WaAllPages extends LitElement {
           <h1>Pages</h1>
           <p class="ap-lead">${loading ? "Reading every device's pages…" : allPagesLead(cards.length)}</p>
         </div>
+        ${devices.length === 0 ? nothing : this.renderNew(filter, devices)}
       </div>
       ${failed.length === 0 ? nothing : html`<p class="ap-warn" role="status">Could not read the pages of ${failed.join(", ")}. They show as last read.</p>`}
       <div class="pk-surface pk-page" role="region" aria-label="Your pages">
@@ -709,6 +719,33 @@ export class WaAllPages extends LitElement {
         <input type="search" class="pk-search-input" .value=${this.search} placeholder="Search by name" aria-label="Search pages"
           @input=${(e: InputEvent) => this.setSearch((e.target as HTMLInputElement).value)} />
       </label>
+    </div>`;
+  }
+
+  /**
+   * New page, at the head's right as New complication is on its tab. On a
+   * device's tab, or in a home with one device, it adds the page there;
+   * otherwise it asks which device first.
+   */
+  private renderNew(filter: PagesFilter, devices: readonly LinkDevice[]): TemplateResult {
+    const target = devices.find((d) => d.ownerId === filter) ?? (devices.length === 1 ? devices[0] : undefined);
+    const open = this.newOpen && target === undefined;
+    return html`<div class="ap-new" @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape" && open) { e.stopPropagation(); this.newOpen = false; } }}
+      @focusout=${(e: FocusEvent) => {
+        const to = e.relatedTarget;
+        if (open && !(to instanceof Node && (e.currentTarget as HTMLElement).contains(to))) this.newOpen = false;
+      }}>
+      <button type="button" class="ap-new-btn" aria-haspopup=${target === undefined ? "menu" : nothing}
+        aria-expanded=${target === undefined ? (open ? "true" : "false") : nothing}
+        title=${target === undefined ? "Pick the device to add a page on" : `Add a page on ${target.name}`}
+        @click=${() => (target === undefined ? (this.newOpen = !this.newOpen) : this.newPage(target))}>
+        ${uiIcon("plus")}<span>New page</span></button>
+      ${open ? html`<div class="ap-new-menu" role="menu" aria-label="Add a page on">
+        <div class="ap-new-h">Add a page on</div>
+        ${devices.map((d) => html`<button type="button" class="ap-new-row" role="menuitem"
+          style=${`--dc:${this.colorOf(d.ownerId) ?? "var(--wa-line-strong)"}`} @click=${() => this.newPage(d)}>
+          ${uiIcon(d.kind === "iphone" ? "phone" : "watch")}<span>${d.name}</span></button>`)}
+      </div>` : nothing}
     </div>`;
   }
 
@@ -919,6 +956,31 @@ export class WaAllPages extends LitElement {
     .ap-head-text { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
     .ap-head h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
     .ap-lead { margin: 0; font-size: 14px; color: var(--wa-muted); }
+    /* New page: filled, as New complication is, the one way to start a page
+       from this tab. Its menu of devices opens under it, at its right edge. */
+    .ap-new { position: relative; flex: none; }
+    .ap-new-btn {
+      display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px; font-weight: 600;
+      height: 30px; padding: 0 11px; border-radius: 8px; cursor: pointer;
+      border: 1px solid transparent; background: var(--wa-primary-bg); color: var(--wa-primary-ink);
+    }
+    .ap-new-btn:hover { filter: brightness(1.1); }
+    .ap-new-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .ap-new-btn svg { width: 16px; height: 16px; }
+    .ap-new-menu {
+      position: absolute; right: 0; top: calc(100% + 6px); z-index: 9; width: min(260px, calc(100vw - 24px));
+      display: flex; flex-direction: column; gap: 2px; padding: 6px;
+      background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 10px; box-shadow: var(--wa-shadow-pop);
+    }
+    .ap-new-h { padding: 6px 8px 4px; font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); }
+    .ap-new-row {
+      display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 10px; border-radius: 6px; cursor: pointer;
+      font-size: 13px; text-align: left; color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line);
+      box-shadow: inset 3px 0 0 var(--dc);
+    }
+    .ap-new-row:hover { background: var(--wa-hover); border-color: var(--wa-line-strong); }
+    .ap-new-row:focus-visible { outline: none; box-shadow: inset 3px 0 0 var(--dc), var(--wa-ring); }
+    .ap-new-row svg { width: 14px; height: 14px; flex: none; color: var(--wa-muted); }
     .ap-warn { margin: 0; font-size: 12.5px; color: var(--wa-need); }
     .ap-empty { margin: 0; padding: 18px 4px; font-size: 13px; color: var(--wa-muted); }
 

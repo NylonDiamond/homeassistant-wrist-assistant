@@ -7,7 +7,7 @@ import { litOutline } from "./editor-chrome.js";
 import type { OwnerSummary, WatchConfigSummary } from "./ha-api.js";
 import type { Person } from "./people.js";
 import { type DeviceSync, type HomeDevice, agoWords, deviceSync, deviceSyncLabel } from "./send-state.js";
-import { type WatchScreen, WATCH_SCREENS, WATCH_SETTINGS_SCREEN } from "./shell.js";
+import { IPHONE_SCREENS, type WatchScreen, WATCH_SCREENS, WATCH_SETTINGS_SCREEN } from "./shell.js";
 import type { UiIconName } from "./ui-icons.js";
 import { type WatchPage, isHiddenWatchPage, isSystemWatchPage } from "./watch-pages/model.js";
 import { type DeviceKind, deviceKindOf } from "./version.js";
@@ -46,12 +46,13 @@ export interface HomeDeviceRow {
   id: string;
   name: string;
   kind: Exclude<DeviceKind, "library">;
-  /** The worse of its complications and, on a watch, its watch app. */
+  /** The worse of its complications and its watch app records (an iPhone's
+   * own, on a home with phone pages). */
   sync: DeviceSync;
   /** What it is waiting for, empty unless `sync` is waiting. */
   waitingFor: string[];
-  /** The watch app's parts whose last save the watch reported it could not
-   * use. Absent when there are none, and always on a phone. */
+  /** The watch app's parts whose last save the device reported it could not
+   * use. Absent when there are none. */
   rejected?: string[];
 }
 
@@ -72,9 +73,9 @@ export function needsAttention(row: Pick<HomeDeviceRow, "sync" | "rejected">): b
 
 /** A device's line under Waiting to sync: what the watch could not use, then
  * "Waiting for pages", then what its next pull brings. */
-export function attentionText(row: Pick<HomeDeviceRow, "sync" | "waitingFor" | "rejected">, pending: string | undefined): string {
+export function attentionText(row: Pick<HomeDeviceRow, "sync" | "waitingFor" | "rejected"> & { kind?: HomeDeviceRow["kind"] }, pending: string | undefined): string {
   return [
-    (row.rejected?.length ?? 0) > 0 ? rejectedSaveText(row.rejected!) : undefined,
+    (row.rejected?.length ?? 0) > 0 ? rejectedSaveText(row.rejected!, row.kind) : undefined,
     row.sync === "waiting" ? `Waiting for ${waitingForText(row.waitingFor)}` : undefined,
     pending,
   ].filter((w): w is string => w !== undefined).join(" · ");
@@ -83,9 +84,9 @@ export function attentionText(row: Pick<HomeDeviceRow, "sync" | "waitingFor" | "
 /** The line under a device's name on Home: what the watch could not use,
  * then what it waits for, then what its next pull brings. Empty when there
  * is nothing to say. */
-export function homeDeviceWhy(row: Pick<HomeDeviceRow, "waitingFor" | "rejected">, pending: string | undefined): string {
+export function homeDeviceWhy(row: Pick<HomeDeviceRow, "waitingFor" | "rejected"> & { kind?: HomeDeviceRow["kind"] }, pending: string | undefined): string {
   return [
-    (row.rejected?.length ?? 0) > 0 ? rejectedSaveText(row.rejected!) : undefined,
+    (row.rejected?.length ?? 0) > 0 ? rejectedSaveText(row.rejected!, row.kind) : undefined,
     row.waitingFor.length === 0 ? undefined : `For ${waitingForText(row.waitingFor)}`,
     pending,
   ].filter((w): w is string => w !== undefined).join(" · ");
@@ -93,9 +94,10 @@ export function homeDeviceWhy(row: Pick<HomeDeviceRow, "waitingFor" | "rejected"
 
 /** The Devices card's rows: every device the sync rule asks (the Library and
  * orphans left out), watches first and then phones, each group in the
- * order given. A watch with a watch app reading in `watchApp` takes the
- * worse of that and its complications (`deviceVerdict`); every other device
- * is judged on its complications alone. */
+ * order given. A device with a watch app reading in `watchApp` (a watch,
+ * or an iPhone on a home with phone pages) takes the worse of that and its
+ * complications (`deviceVerdict`); every other device is judged on its
+ * complications alone. */
 export function homeDeviceRows(devices: readonly IdHomeDevice[], watchApp: ReadonlyMap<string, WatchAppSync> = new Map()): HomeDeviceRow[] {
   const rows: HomeDeviceRow[] = [];
   for (const d of devices) {
@@ -103,7 +105,7 @@ export function homeDeviceRows(devices: readonly IdHomeDevice[], watchApp: Reado
     if (complications === undefined) continue;
     const kind = deviceKindOf({ owner_watch_id: d.id, device_kind: d.kind });
     if (kind === "library") continue;
-    const { sync, waitingFor, rejected } = deviceVerdict(complications, kind === "watch" ? watchApp.get(d.id) : undefined);
+    const { sync, waitingFor, rejected } = deviceVerdict(complications, watchApp.get(d.id));
     rows.push(rejected === undefined ? { id: d.id, name: d.name, kind, sync, waitingFor } : { id: d.id, name: d.name, kind, sync, waitingFor, rejected });
   }
   return [...rows.filter((r) => r.kind === "watch"), ...rows.filter((r) => r.kind === "iphone")];
@@ -142,45 +144,43 @@ export type DeviceSheetTab =
   | { kind: "screen"; label: string; screen: WatchScreen; count?: DeviceCountKind };
 
 /**
- * The picked device's doors, each opening its page on this device. A watch
- * has its Pages, then Settings, then its complications, then every other
- * watch screen that belongs to one watch, with its Control Center controls
- * after Status pages; HTTP actions and Cameras are the home's, not a
- * watch's. A watch's old Control Center screen is retired: its tiles are
- * complication controls now, so the door opens the watch's designs that
- * have a control, the way an iPhone's does. An iPhone has its widgets and
- * its Control Center controls, and on a home with phone pages (`phones`)
- * its own Settings and Pages first, both in the iPhone app.
+ * The picked device's doors, each opening its page on this device, in the
+ * one order Home's doors and the device's header row (`watchRowLinks`) both
+ * use: Pages, then its complications (Widgets on an iPhone), Menus, Status
+ * pages, its Control Center controls, the rest, and Settings last. A watch
+ * has every screen that belongs to one watch; HTTP actions and Cameras are
+ * the home's, not a watch's. A watch's old Control Center screen is
+ * retired: its tiles are complication controls now, so the door opens the
+ * watch's designs that have a control, the way an iPhone's does. An iPhone
+ * has its widgets and its Control Center controls, and on a home with phone
+ * pages (`phones`) the iPhone app's screens around them.
  */
 export function deviceSheetTabs(kind: "watch" | "iphone", phones = false): DeviceSheetTab[] {
   const controls: DeviceSheetTab = { kind: "list", label: "Control Center", filter: "control" };
+  const comps: DeviceSheetTab = { kind: "list", label: kind === "watch" ? "Complications" : "Widgets", filter: "all" };
   const screenTab = (screen: WatchScreen): DeviceSheetTab => {
     const count = SCREEN_COUNTS[screen.id];
     return count === undefined ? { kind: "screen", label: screen.label, screen } : { kind: "screen", label: screen.label, screen, count };
   };
-  if (kind === "iphone") {
-    const lists: DeviceSheetTab[] = [{ kind: "list", label: "Widgets", filter: "all" }, controls];
-    if (!phones) return lists;
-    const pages = WATCH_SCREENS.find((s) => s.id === "pages")!;
-    return [screenTab(WATCH_SETTINGS_SCREEN), screenTab(pages), ...lists];
-  }
+  if (kind === "iphone" && !phones) return [comps, controls];
   // The watch's complications are the sheet's own list tab, not a screen.
-  const own = WATCH_SCREENS.filter((s) => s.shared !== true && s.retired !== true && s.id !== "watch-complications");
-  const pages = own.filter((s) => s.id === "pages");
-  const tabs: DeviceSheetTab[] = [WATCH_SETTINGS_SCREEN, ...pages].map(screenTab);
-  tabs.push({ kind: "list", label: "Complications", filter: "all" });
-  for (const screen of own.filter((s) => s.id !== "pages")) {
+  const screens = kind === "iphone" ? IPHONE_SCREENS
+    : WATCH_SCREENS.filter((s) => s.shared !== true && s.retired !== true && s.id !== "watch-complications");
+  const tabs: DeviceSheetTab[] = [];
+  for (const screen of screens) {
     tabs.push(screenTab(screen));
+    if (screen.id === "pages") tabs.push(comps);
     if (screen.id === "status-pages") tabs.push(controls);
   }
+  tabs.push(screenTab(WATCH_SETTINGS_SCREEN));
   return tabs;
 }
 
 /** The count tiles on a device's card on Home, each a door to that page on
  * this device: the sheet's tabs that carry a count. A watch has its
  * complications, then its pages and status pages; an iPhone has its
- * widgets, then its pages on a home with phone pages, then its Control
- * Center controls. Settings, which counts nothing, is the card's own door. */
+ * widgets, then on a home with phone pages its pages and status pages, then
+ * its Control Center controls. Settings, which counts nothing, is the card's own door. */
 export function deviceCardTiles(kind: "watch" | "iphone", phones = false): DeviceSheetTab[] {
   const tiles = deviceSheetTabs(kind, phones).filter((t) => t.kind === "list" || t.count !== undefined);
   const all = tiles.filter((t) => t.kind === "list" && t.filter === "all");

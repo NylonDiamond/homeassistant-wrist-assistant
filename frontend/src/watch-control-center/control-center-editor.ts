@@ -88,7 +88,7 @@ import {
   startControlCenter,
   takeControlCenterRecord,
 } from "./draft.js";
-import { WATCH_CONTROL_CENTER_HELP_URL, navigateWatchControlCenter, registerWatchControlCenterDrafts } from "./hook.js";
+import { navigateWatchControlCenter, registerWatchControlCenterDrafts } from "./hook.js";
 import {
   type ControlCenterDocument,
   CONTROL_CENTER_START_EMPTY_BUTTON,
@@ -924,8 +924,6 @@ export class WaControlCenterEditor extends LitElement {
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
         ${this.barHost !== undefined ? nothing : html`<span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>`}` : nothing}
       ${this.barActions}
-      <button class="help" title="Help with Control Center" aria-label="Help with Control Center"
-        @click=${() => window.open(WATCH_CONTROL_CENTER_HELP_URL, "_blank", "noopener")}>?</button>
     </div>`;
   }
 

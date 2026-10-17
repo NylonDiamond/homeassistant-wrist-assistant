@@ -22,13 +22,21 @@
 // for it. An integration older than the library leaves the key out, and the
 // old per-kind reads never see it, so then it counts for neither side.
 //
+// On a home with phone pages an iPhone owns records too, under its own id:
+// its pages, status pages, menus, rooms and settings (the integration's
+// `WATCH_CONFIG_PHONE_KINDS`). The summary lists it like a watch, and the
+// iPhone's screens read the same two numbers for "Waiting for the iPhone",
+// so Home reads them too (`phoneAppSync`). The HTTP action library is left
+// out for a phone: while it still holds its watch's pair it pulls the
+// library signed as the watch, so its own mark may never move.
+//
 // The complication part of a device's verdict stays `deviceSync`
 // (send-state.ts), and the header pill (`homeSync`) stays about
 // complications only. Home's row takes the worse of the two.
 
 import type { HttpActionsDelivery, WatchConfigPanelKind, WatchConfigRecord, WatchConfigSummary } from "./ha-api.js";
 import type { DeviceSync } from "./send-state.js";
-import { deliveryState, rejectedNow } from "./watch-settings.js";
+import { type SettingDevice, deliveryState, rejectedNow } from "./watch-settings.js";
 
 /** One watch app record, named the way Home's note names it. */
 export interface WatchAppPart {
@@ -51,6 +59,11 @@ export const WATCH_APP_PARTS: readonly WatchAppPart[] = [
   { kind: "rooms", label: "rooms" },
   { kind: "notification_style", label: "notification style" },
 ];
+
+/** The kinds an iPhone may own, as the integration's
+ * `WATCH_CONFIG_PHONE_KINDS` lists them, in the same order. */
+export const PHONE_APP_PARTS: readonly WatchAppPart[] = WATCH_APP_PARTS.filter((part) =>
+  part.kind === "pages" || part.kind === "menus" || part.kind === "status_pages" || part.kind === "behavior" || part.kind === "rooms");
 
 /** How Home's note names the HTTP action library. */
 export const HTTP_ACTIONS_PART_LABEL = "HTTP actions";
@@ -79,6 +92,16 @@ type Delivery = Pick<WatchConfigRecord, "revision" | "delivered_revision" | "rej
  * could not use is listed in `rejected` as well; it still counts as
  * collected, since the watch did fetch it. */
 export function watchAppSync(records: ReadonlyMap<string, Delivery | undefined>, httpActions?: Delivery): WatchAppSync {
+  return partsSync(WATCH_APP_PARTS, records, httpActions);
+}
+
+/** The same verdict for an iPhone's own records (`PHONE_APP_PARTS`), with
+ * no HTTP action library. */
+export function phoneAppSync(records: ReadonlyMap<string, Delivery | undefined>): WatchAppSync {
+  return partsSync(PHONE_APP_PARTS, records, undefined);
+}
+
+function partsSync(parts: readonly WatchAppPart[], records: ReadonlyMap<string, Delivery | undefined>, httpActions: Delivery | undefined): WatchAppSync {
   const waiting: string[] = [];
   const rejected: string[] = [];
   let delivered = false;
@@ -88,7 +111,7 @@ export function watchAppSync(records: ReadonlyMap<string, Delivery | undefined>,
     else if (state === "delivered") delivered = true;
     if (rejectedNow(record)) rejected.push(label);
   };
-  for (const part of WATCH_APP_PARTS) {
+  for (const part of parts) {
     count(records.get(part.kind), part.label);
     if (part.kind === HTTP_ACTIONS_AFTER) count(httpActions, HTTP_ACTIONS_PART_LABEL);
   }
@@ -110,14 +133,16 @@ export function httpActionsDeliveryFor(httpActions: HttpActionsDelivery | undefi
  * records at all (never paired here, or nothing written yet): nothing
  * waiting, nothing collected. The summary also leaves out a watch whose file
  * could not be read, and that reads the same way: a rare fault the editors
- * themselves report when opened.
+ * themselves report when opened. The iPhones asked about (`phoneIds`, on a
+ * home with phone pages) are read the same way by `phoneAppSync`.
  */
-export function summaryWatchAppSyncs(summary: WatchConfigSummary, watchIds: readonly string[]): Map<string, WatchAppSync> {
+export function summaryWatchAppSyncs(summary: WatchConfigSummary, watchIds: readonly string[], phoneIds: readonly string[] = []): Map<string, WatchAppSync> {
   const out = new Map<string, WatchAppSync>();
   for (const id of watchIds) {
     const kinds = summary.owners[id] ?? {};
     out.set(id, watchAppSync(new Map(Object.entries(kinds)), httpActionsDeliveryFor(summary.http_actions, id)));
   }
+  for (const id of phoneIds) out.set(id, phoneAppSync(new Map(Object.entries(summary.owners[id] ?? {}))));
   return out;
 }
 
@@ -146,8 +171,9 @@ export async function readWatchAppSync(read: (kind: WatchConfigPanelKind) => Pro
   return watchAppSync(records);
 }
 
-/** One device's verdict on Home: the worse of its complications and, on a
- * watch, its watch app, with what it is waiting for. */
+/** One device's verdict on Home: the worse of its complications and its
+ * watch app records (an iPhone's own, on a home with phone pages), with
+ * what it is waiting for. */
 export interface DeviceVerdict {
   sync: DeviceSync;
   /** "complications" first when they wait, then the watch app's parts. */
@@ -160,8 +186,9 @@ export interface DeviceVerdict {
 /**
  * Waiting when either side waits. Synced when nothing waits and the device
  * has collected something on either side. Otherwise idle: nothing waiting,
- * and nothing ever collected. Without a watch app reading (a phone, or a
- * watch whose records could not be read) the complications decide alone.
+ * and nothing ever collected. Without a watch app reading (a phone on a
+ * home with no phone pages, or a watch whose records could not be read)
+ * the complications decide alone.
  * A save the watch could not use rides along as `rejected`; Home then says
  * so in place of "Synced" (`homeDeviceLabel`).
  */
@@ -176,14 +203,18 @@ export function deviceVerdict(complications: DeviceSync, watchApp: WatchAppSync 
 /** What Home says about a watch that reported it could not use the last
  * save of some part, for its card and its line under Waiting to sync. */
 export const REJECTED_SAVE_TEXT = "Watch could not use the last save";
+/** The same about an iPhone's own records. */
+export const PHONE_REJECTED_SAVE_TEXT = "iPhone could not use the last save";
 
 /** `REJECTED_SAVE_TEXT` naming the parts: "Watch could not use the last
  * save of its pages", "… of its pages and menus", "… of its pages, menus
- * and voice". The bare sentence for no parts. */
-export function rejectedSaveText(parts: readonly string[]): string {
-  if (parts.length === 0) return REJECTED_SAVE_TEXT;
+ * and voice". The bare sentence for no parts. An iPhone's starts
+ * `PHONE_REJECTED_SAVE_TEXT`. */
+export function rejectedSaveText(parts: readonly string[], device: SettingDevice = "watch"): string {
+  const head = device === "iphone" ? PHONE_REJECTED_SAVE_TEXT : REJECTED_SAVE_TEXT;
+  if (parts.length === 0) return head;
   const list = parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]!}`;
-  return `${REJECTED_SAVE_TEXT} of its ${list}`;
+  return `${head} of its ${list}`;
 }
 
 /** The muted note after "Waiting" on Home's row: what it waits for. */

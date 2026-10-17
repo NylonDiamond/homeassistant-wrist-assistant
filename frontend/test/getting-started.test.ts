@@ -16,7 +16,15 @@ import {
 } from "../src/getting-started.js";
 import type { OwnerSummary, WatchConfigSummary } from "../src/ha-api.js";
 import { helpScreen, renderHelpSheet } from "../src/help-sheet.js";
-import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN, renderTabBar } from "../src/shell.js";
+import { IPHONE_SCREENS, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, iphoneScreenPath, renderTabBar } from "../src/shell.js";
+import { WATCH_CAMERAS_HELP_URL } from "../src/watch-cameras/hook.js";
+import { WATCH_CONTROL_CENTER_HELP_URL } from "../src/watch-control-center/hook.js";
+import { WATCH_HTTP_ACTIONS_HELP_URL } from "../src/watch-http-actions/hook.js";
+import { WATCH_MENUS_HELP_URL } from "../src/watch-menus/hook.js";
+import { WATCH_PAGES_HELP_URL } from "../src/watch-pages/hook.js";
+import { WATCH_ROOMS_HELP_URL } from "../src/watch-rooms/hook.js";
+import { WATCH_STATUS_PAGES_HELP_URL } from "../src/watch-status-pages/hook.js";
+import { WATCH_VOICE_HELP_URL } from "../src/watch-voice/hook.js";
 
 const owner = (over: Partial<OwnerSummary> = {}): OwnerSummary => ({
   owner_watch_id: "w1",
@@ -162,6 +170,43 @@ describe("the Help sheet", () => {
     }
     expect(helpScreen(at("/http-actions")).text[1]).toBe("Every watch in this home shares it.");
     expect(helpScreen(at("/pages/w1")).text[1]).toBe("It is for the watch picked at the top.");
+  });
+
+  it("links each screen's guide, the page its bar's old ? opened", () => {
+    const guides: Record<string, string | undefined> = {
+      "pages": WATCH_PAGES_HELP_URL,
+      "menus": WATCH_MENUS_HELP_URL,
+      "status-pages": WATCH_STATUS_PAGES_HELP_URL,
+      "control-center": WATCH_CONTROL_CENTER_HELP_URL,
+      "rooms": WATCH_ROOMS_HELP_URL,
+      "voice": WATCH_VOICE_HELP_URL,
+      "http-actions": WATCH_HTTP_ACTIONS_HELP_URL,
+      "cameras": WATCH_CAMERAS_HELP_URL,
+      "watch-complications": undefined,
+      "settings": undefined,
+    };
+    for (const screen of [...WATCH_SCREENS, WATCH_SETTINGS_SCREEN]) {
+      expect(screen.id in guides, screen.id).toBe(true);
+      expect(helpScreen(at(screen.path)).more, screen.id).toBe(guides[screen.id]);
+    }
+    expect(helpScreen(at("/pages/w1")).more).toBe(WATCH_PAGES_HELP_URL);
+    const text = sheet("/pages/w1");
+    expect(text).toContain("On this screen: Pages");
+    expect(text).toContain(`href=${WATCH_PAGES_HELP_URL}`);
+    expect(text).toContain(">More about Pages</a>");
+  });
+
+  it("names an iPhone's screen on the iPhone app, with the same guide, not Home", () => {
+    for (const screen of [...IPHONE_SCREENS, WATCH_SETTINGS_SCREEN]) {
+      const h = helpScreen(at(iphoneScreenPath(screen, "p1")));
+      expect(h.name).toBe(screen.label);
+      expect(h.text[1]).toBe("It is for the iPhone picked at the top.");
+      expect(h.more).toBe(helpScreen(at(screen.path)).more);
+    }
+    expect(helpScreen(at("/iphone")).name).toBe("Pages");
+    expect(sheet("/iphone/pages/p1")).toContain(`href=${WATCH_PAGES_HELP_URL}`);
+    // A watch only screen behind /iphone is no iPhone screen.
+    expect(helpScreen(at("/iphone/voice/p1")).name).toBe("Home");
   });
 
   it("shows the steps with a green bar, and the open step's action only", () => {

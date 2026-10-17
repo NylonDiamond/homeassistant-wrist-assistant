@@ -1,5 +1,5 @@
 // The foot bar of the page and menu editors (`config-foot.ts`): the stored
-// copy's line on the left, History and Raw configuration on the right, and
+// copy's size on the left, History and Raw configuration on the right, and
 // the two dialogs they open. Then the page editor drawn with a record, to
 // check the bar is there and the Page card sits under the watch, in the
 // stage card, with the settings column holding only the Tile card.
@@ -59,14 +59,13 @@ function foot(r: WatchConfigRecord, historyState: "ready" | "unsupported" = "rea
 }
 
 describe("the foot bar", () => {
-  it("says who saved it and when, the revision only in the tooltip, then History and Raw configuration", () => {
+  it("says only the size, then History and Raw configuration: when it was saved and whether it synced are the header's", () => {
     const text = foot(record());
-    expect(text).toContain(">Saved here 5 min ago</span>");
-    expect(text).toContain("Saved here 5 min ago (Revision 7).");
-    expect(text).not.toContain(">Revision 7");
-    expect(foot(record({ updated_by: "W1" }))).toContain(">Saved from the watch 5 min ago</span>");
-    expect(text).toContain(COLLECTED_PILL_TEXT);
-    expect(text).toContain("cf-dot ok");
+    // The header says "Saved 5 min ago" and the sync pill "Synced"; the
+    // foot does not say them again.
+    for (const said of ["Saved here", "5 min ago", "Revision 7", COLLECTED_PILL_TEXT, "cf-dot", "cf-rev", "cf-state"]) expect(text).not.toContain(said);
+    expect(foot(record({ updated_by: "W1" }))).not.toContain("Saved from the watch");
+    expect(foot(record({ delivered_revision: 6 }))).not.toContain("Waiting");
     expect(text).toContain(">History</button>");
     expect(text).toContain(">Raw configuration</button>");
     expect(text.indexOf(">History<")).toBeLessThan(text.indexOf(">Raw configuration<"));
@@ -77,12 +76,11 @@ describe("the foot bar", () => {
     const waiting = configFootStatus({ record: record({ delivered_revision: 6 }), size: 9_000, limit: 10_000, noun: "pages", historyState: "ready", now: NOW });
     expect(waiting).toMatchObject({ tone: "warn", state: WAITING_PILL_TEXT, help: WAITING_HELP_TEXT, near: true });
     expect(waiting.size).toContain("Close to the limit.");
-    // The bar has room to say what to do; the toolbar pill keeps it short.
-    expect(foot(record({ delivered_revision: 6 }))).toContain(">Waiting. Open Wrist Assistant on the watch to get it.</span>");
+    // A save the watch could not read: the header's pill says so, and the
+    // foot says what to do beside History, which it lights.
     const rejected = foot(record({ rejected_revision: 7 }));
-    expect(rejected).toContain("cf-dot err");
-    expect(rejected).toContain(REJECTED_TEXT);
-    expect(rejected).toContain("Restore an earlier save from History.");
+    expect(rejected).not.toContain(REJECTED_TEXT);
+    expect(rejected).toContain(`<span class="cf-help">Restore an earlier save from History.</span>`);
     expect(rejected).toContain("cf-history-btn lit");
     const old = configFootStatus({ record: record({ rejected_revision: 7, kind: "menus" }), size: 1, limit: 10, noun: "menus", historyState: "unsupported" });
     expect(old.help).toBe("Change the menus and save them again.");
@@ -107,7 +105,7 @@ describe("the foot bar", () => {
   it("says the watch's reason when it gave one, and the plain words when it did not", () => {
     const why = configFootStatus({ record: record({ rejected_revision: 7, rejected_reason: "too large for the watch" }), size: 1, limit: 10, noun: "pages", historyState: "ready", now: NOW });
     expect(why).toMatchObject({ tone: "err", state: "The watch could not use this save: too large for the watch" });
-    expect(foot(record({ rejected_revision: 7, rejected_reason: "too large for the watch" }))).toContain("The watch could not use this save: too large for the watch");
+    expect(foot(record({ rejected_revision: 7, rejected_reason: "too large for the watch" }))).not.toContain("too large for the watch");
     // An older watch app sends none; an integration older than the field sends nothing at all.
     for (const rejected_reason of [null, undefined, "", "   "]) {
       expect(rejectedText({ rejected_reason })).toBe(REJECTED_TEXT);
@@ -237,7 +235,8 @@ describe("the page editor", () => {
   it("pins the foot bar under the columns, with no Stored copy or Earlier saves card", () => {
     const text = body();
     expect(text).toContain(`<footer class="cf-bar"`);
-    expect(text).toContain(">Saved here");
+    expect(text).not.toContain(">Saved here");
+    expect(text).toContain("used of 700 KB");
     expect(text).toContain(">History</button>");
     expect(text).toContain(">Raw configuration</button>");
     expect(text).not.toContain("Stored copy</h3>");
@@ -299,14 +298,12 @@ describe("the page editor", () => {
 describe("the toolbar's saved fact", () => {
   afterEach(() => { vi.useRealTimers(); });
 
-  it("reads the stored copy's time, the same the foot bar reads", () => {
+  it("reads the stored copy's time", () => {
     expect(configSavedText(record(), NOW)).toBe("Saved 5 min ago");
     expect(configSavedText(record({ updated_at: "2026-10-03T11:59:30Z" }), NOW)).toBe("Saved just now");
     expect(configSavedText(record({ updated_at: null }), NOW)).toBe("Saved");
     expect(configSavedText(record({ revision: 0 }), NOW)).toBe("");
     expect(configSavedText(undefined, NOW)).toBe("");
-    // The foot bar's line for the same record says the same time.
-    expect(foot(record())).toContain("5 min ago");
     const span = flat(renderConfigSaved(record(), NOW));
     expect(span).toContain(`<span class="cf-saved"`);
     expect(span).toContain(">Saved 5 min ago</span>");

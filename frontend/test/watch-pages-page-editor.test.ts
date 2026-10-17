@@ -152,12 +152,12 @@ function rowPlaces(text: string, ids: readonly string[]): number[] {
 }
 
 describe("the top bar", () => {
-  it("has the way back, Add page, the watch picker, the sync pill, ···, Save, when it was saved, Menus, Watch settings and the help", () => {
+  it("has the way back, Add page, the watch picker, the sync pill, ···, Save, when it was saved, Menus and Watch settings, and no ?", () => {
     const text = editor().whole();
     const bar = text.slice(text.indexOf(`<div class="wa-bar`), text.indexOf(`<div class="layout`));
     const order = [
       `class="tb-btn tb-back"`, `class="tb-btn tb-new"`, `<div class="picker pe-watch-picker">`, `class="tb-sync ok"`, `class="tb-btn tb-more"`,
-      `class="primary save `, `<span class="tb-saved"`, `class="tb-btn tb-menus"`, `class="tb-btn tb-watch"`, `class="help"`,
+      `class="primary save `, `<span class="tb-saved"`, `class="tb-btn tb-menus"`, `class="tb-btn tb-watch"`,
     ];
     for (const part of order) expect(bar, part).toContain(part);
     const places = order.map((part) => bar.indexOf(part));
@@ -167,6 +167,8 @@ describe("the top bar", () => {
     expect(bar).toContain(">Synced</span>");
     expect(bar).toContain(">Saved 2 min ago</span>");
     expect(bar).toContain(">Menus</span>");
+    // The panel's Help sheet links the screen's guide; the bar has no ?.
+    expect(bar).not.toContain(`class="help"`);
     // Undo and Redo moved to the canvas head; the old toolbar is gone.
     expect(bar).not.toContain(`aria-label="Undo"`);
     expect(text).not.toContain(`class="pe-tools"`);

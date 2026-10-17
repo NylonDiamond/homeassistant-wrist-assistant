@@ -205,13 +205,13 @@ describe("the iPhone app's row", () => {
     expect(menu).not.toContain("wa-wr-menu-note");
   });
 
-  it("walks Pages, Menus, Status pages and Rooms, then Settings, each at its iPhone app address", () => {
+  it("walks Home's iPhone doors, then Settings, each screen at its iPhone app address", () => {
     const links = watchRowLinks(route, "p1", "iphone");
-    expect(links.map((l) => l.path)).toEqual(["/iphone/pages/p1", "/iphone/menus/p1", "/iphone/status-pages/p1", "/iphone/rooms/p1"]);
+    expect(links.map((l) => l.path)).toEqual(["/iphone/pages/p1", "/complications", "/iphone/menus/p1", "/iphone/status-pages/p1", "/complications", "/iphone/rooms/p1"]);
     expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["menus"]);
     const text = row();
-    for (const gone of [">Control Center</a>", ">Voice</a>", ">HTTP actions</a>", ">Cameras</a>"]) expect(text, gone).not.toContain(gone);
-    const order = [">Pages</a>", ">Menus</a>", ">Status pages</a>", ">Rooms</a>", ">Settings</a>"].map((part) => text.indexOf(part));
+    for (const gone of [">Voice</a>", ">HTTP actions</a>", ">Cameras</a>"]) expect(text, gone).not.toContain(gone);
+    const order = [">Pages</a>", ">Widgets</a>", ">Menus</a>", ">Status pages</a>", ">Control Center</a>", ">Rooms</a>", ">Settings</a>"].map((part) => text.indexOf(part));
     expect(order.every((at) => at > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(text).toContain("href=/wrist-assistant/iphone/settings/p1");
@@ -265,9 +265,9 @@ describe("the Watch app's row on a home with phone pages", () => {
     expect(text).toContain("title=Pick the watch to set up");
   });
 
-  it("keeps all eight screens and Settings on the watch", () => {
+  it("keeps every watch door on the watch", () => {
     expect(watchRowLinks({ prefix: "/wrist-assistant", path: "/control-center/w1" }, "w1").map((l) => l.path))
-      .toEqual(["/pages/w1", "/menus/w1", "/status-pages/w1", "/control-center/w1", "/rooms/w1", "/voice/w1", "/watch-complications/w1", "/http-actions", "/cameras"]);
+      .toEqual(["/pages/w1", "/watch-complications/w1", "/menus/w1", "/status-pages/w1", "/complications", "/rooms/w1", "/voice/w1"]);
   });
 
   it("offers Pair a watch in a home with an iPhone and no watch, with no iPhone in the slot", () => {

@@ -1,7 +1,9 @@
 // The Help sheet: what the Help button at the right of the tab bar opens, on
 // every tab. A side sheet from the right with the getting started steps
-// (`getting-started.ts`), a word about the screen in view, and the guides.
-// Its foot names the integration's version.
+// (`getting-started.ts`), a word about the screen in view with a link to its
+// guide, and the guides. Its foot names the integration's version. It is the
+// one help on a watch's or an iPhone's screen: their bars have no ? of their
+// own.
 //
 // The complication editor keeps its own, longer Help dialog (Basics, Pages,
 // Keys and mouse, Syncing and sharing) behind the ? in its bar. This sheet
@@ -27,9 +29,16 @@ import {
   doneWords,
   helpStepWords,
 } from "./getting-started.js";
-import { type WatchScreen, tabOfRoute, watchScreenOf, watchScreenSentence } from "./shell.js";
+import { type WatchScreen, iphoneScreenOf, tabOfRoute, watchScreenOf, watchScreenSentence } from "./shell.js";
 import { uiIcon } from "./ui-icons.js";
-import type { PanelRoute } from "./watch-pages/hook.js";
+import { WATCH_CAMERAS_HELP_URL } from "./watch-cameras/hook.js";
+import { WATCH_CONTROL_CENTER_HELP_URL } from "./watch-control-center/hook.js";
+import { WATCH_HTTP_ACTIONS_HELP_URL } from "./watch-http-actions/hook.js";
+import { WATCH_MENUS_HELP_URL } from "./watch-menus/hook.js";
+import { type PanelRoute, WATCH_PAGES_HELP_URL } from "./watch-pages/hook.js";
+import { WATCH_ROOMS_HELP_URL } from "./watch-rooms/hook.js";
+import { WATCH_STATUS_PAGES_HELP_URL } from "./watch-status-pages/hook.js";
+import { WATCH_VOICE_HELP_URL } from "./watch-voice/hook.js";
 
 /** What the sheet says about the screen in view. */
 export interface HelpScreen {
@@ -50,20 +59,43 @@ const COMPLICATIONS_TEXT = [
   "Pick one in the list to change it, or make a new one.",
 ];
 
+/** Each screen's guide in the docs: what the ? in the screen's own bar
+ * opened, before the header kept one Help button. Settings and a watch's
+ * Complications have no page of their own. */
+const SCREEN_GUIDES: Partial<Record<WatchScreen["id"], string>> = {
+  "pages": WATCH_PAGES_HELP_URL,
+  "menus": WATCH_MENUS_HELP_URL,
+  "status-pages": WATCH_STATUS_PAGES_HELP_URL,
+  "control-center": WATCH_CONTROL_CENTER_HELP_URL,
+  "rooms": WATCH_ROOMS_HELP_URL,
+  "voice": WATCH_VOICE_HELP_URL,
+  "http-actions": WATCH_HTTP_ACTIONS_HELP_URL,
+  "cameras": WATCH_CAMERAS_HELP_URL,
+};
+
 /** A watch screen's blurb as a sentence (its name, then the blurb, which
  * reads on from the name), then whose it is. The blurbs are
  * shell.ts's, which Home and the watch row show too, so the three never say
  * different things about one screen. */
-function watchScreenText(screen: WatchScreen): string[] {
+function watchScreenText(screen: WatchScreen, device: "watch" | "iPhone"): string[] {
   const blurb = watchScreenSentence(screen).trim();
   const sentence = /[.!?]$/.test(blurb) ? blurb : `${blurb}.`;
-  return [sentence, screen.shared === true ? "Every watch in this home shares it." : "It is for the watch picked at the top."];
+  return [sentence, screen.shared === true ? "Every watch in this home shares it." : `It is for the ${device} picked at the top.`];
 }
 
-/** The screen a route shows, as the sheet names and explains it. */
+/** A device screen as the sheet shows it, with its guide when it has one. */
+function deviceScreen(screen: WatchScreen, device: "watch" | "iPhone"): HelpScreen {
+  const more = SCREEN_GUIDES[screen.id];
+  return { name: screen.label, text: watchScreenText(screen, device), ...(more === undefined ? {} : { more }) };
+}
+
+/** The screen a route shows, as the sheet names and explains it: a watch's
+ * screen, an iPhone's (`/iphone/pages/p1`), Complications, else Home. */
 export function helpScreen(route: PanelRoute | undefined): HelpScreen {
+  const phone = iphoneScreenOf(route);
+  if (phone !== undefined) return deviceScreen(phone, "iPhone");
   const screen = watchScreenOf(route);
-  if (screen !== undefined) return { name: screen.label, text: watchScreenText(screen) };
+  if (screen !== undefined) return deviceScreen(screen, "watch");
   if (tabOfRoute(route) === "complications") return { name: "Complications", text: COMPLICATIONS_TEXT };
   return { name: "Home", text: HOME_TEXT, more: DOCS_URL };
 }

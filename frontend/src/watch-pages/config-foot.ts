@@ -1,9 +1,9 @@
 // The bar pinned to the foot of the page and menu editors, after the
-// complication editor's footer (`panel.ts`, `renderFooter`): on the left a dot
-// and one line about the copy Home Assistant holds (who saved it and when,
-// whether a device has collected it, its size against what Home Assistant
-// keeps; the revision number only in the tooltip), on the right "History"
-// and "Raw configuration".
+// complication editor's footer (`panel.ts`, `renderFooter`): on the left the
+// copy's size against what Home Assistant keeps, on the right "History" and
+// "Raw configuration". Who saved it, when, and whether a device has
+// collected it are said once, in the header (`configFootStatus` feeds the
+// sync pill there), not again down here.
 //
 // History is the earlier saves list that used to be a card of its own, in a
 // dialog, with the same Restore: a row's Restore hands the entry back to the
@@ -12,7 +12,8 @@
 // editor's raw view is read only.
 //
 // The toolbar's "Saved 3 min ago" is here too, read from the same stored
-// copy, with the small timer that keeps it true (`SavedAgoTicker`).
+// copy, with the small timer that keeps it true (`SavedAgoTicker`). It is
+// the one place a screen says when its copy was saved.
 //
 // Pure functions of their input, so a test can flatten what they draw. Both
 // editors put `configFootStyles` in their sheets and open the dialogs with
@@ -72,8 +73,8 @@ function ago(iso: string | null | undefined, now: number): string {
 }
 
 export interface ConfigFootStatus {
-  /** The dot: green once collected, amber while it waits, red when a
-   * device could not read it. */
+  /** The sync pill's color: green once collected, amber while it waits,
+   * red when a device could not read it. */
   tone: "ok" | "warn" | "err";
   /** "Saved here 3 min ago": who saved it and when, in plain words. */
   revision: string;
@@ -92,9 +93,9 @@ export interface ConfigFootStatus {
   over: boolean;
 }
 
-/** What the bar says about the stored copy. Every fact the old "Stored copy"
- * card showed is here: the revision, who saved it and when, the delivery
- * state with its help line, and the size. */
+/** The facts about the stored copy: the revision, who saved it and when,
+ * the delivery state with its help line, and the size. The header's sync
+ * pill shows the state, the foot bar the size. */
 export function configFootStatus(i: {
   record: WatchConfigRecord;
   size: number;
@@ -127,8 +128,7 @@ export function configFootStatus(i: {
 }
 
 /** The toolbar's quiet fact about the stored copy, left of Discard: "Saved
- * 3 min ago", "Saved just now". It reads the same `updated_at` as the foot
- * bar's line, so the two always agree. Empty when there is no stored copy;
+ * 3 min ago", "Saved just now". Empty when there is no stored copy;
  * plain "Saved" for a time that will not parse. A plain save that went
  * through says nothing else: this is how it shows. */
 export function configSavedText(record: WatchConfigRecord | undefined, now: number = Date.now()): string {
@@ -206,25 +206,18 @@ export interface ConfigFootInput {
   device?: SettingDevice;
 }
 
-/** The bar itself: the dot and the stored copy's line on the left, History
- * and Raw configuration on the right. A device that could not read the save
- * lights History, where the earlier save to go back to is offered. */
+/** The bar itself: the size on the left, History and Raw configuration on
+ * the right. When the copy was saved and whether the device has it are the
+ * header's to say (`renderHeadStatus` and the sync pill), so the bar does
+ * not say them again. A device that could not read the save lights History,
+ * where the earlier save to go back to is offered, and the bar says so. */
 export function renderConfigFoot(i: ConfigFootInput): TemplateResult {
   const s = i.status;
-  const whole = `${s.revision} (${s.stamp}). ${s.state}. ${s.help} ${s.size}`;
-  // The bar has room to say what to do while a save waits, not just the
-  // toolbar pill's short "Waiting for the watch". The help line names the
-  // device (`waitingText`).
-  const state = s.tone === "warn" ? `Waiting. ${s.help}` : s.state;
   return html`<footer class="cf-bar" aria-label="Stored copy">
-    <span class="cf-dot ${s.tone}" aria-hidden="true"></span>
-    <span class="cf-text" title=${whole}>
-      <span class="cf-rev">${s.revision}</span>
-      <span class="cf-sep" aria-hidden="true">·</span>
-      <span class="cf-state ${s.tone}">${state}</span>
+    <span class="cf-text">
       ${s.tone === "err" ? html`<span class="cf-help">${s.help}</span>` : nothing}
+      <span class="cf-size ${s.over ? "over" : s.near ? "near" : ""}" title=${`${s.size}${s.size.endsWith(".") ? "" : "."} The second number is the most Home Assistant keeps for one ${deviceNoun(i.device ?? "watch")}.`}>${s.size}</span>
     </span>
-    <span class="cf-size ${s.over ? "over" : s.near ? "near" : ""}" title=${`${s.size}${s.size.endsWith(".") ? "" : "."} The second number is the most Home Assistant keeps for one ${deviceNoun(i.device ?? "watch")}.`}>${s.size}</span>
     ${i.historyState === "unsupported" ? nothing : html`<button type="button" class="cf-btn cf-history-btn ${s.tone === "err" ? "lit" : ""}"
       aria-haspopup="dialog" aria-expanded=${i.historyOpen ? "true" : "false"}
       title="Earlier saves, with Restore" @click=${i.onHistory}>History</button>`}
@@ -376,16 +369,8 @@ export const configFootStyles = css`
     background: var(--wa-top, var(--wa-card)); border-top: 1px solid var(--wa-line);
     font-size: 12px; color: var(--wa-muted);
   }
-  .cf-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--wa-muted); }
-  .cf-dot.ok { background: var(--success-color, var(--wa-green, #3dd68c)); }
-  .cf-dot.warn { background: var(--warning-color, var(--wa-amber, #ffa600)); }
-  .cf-dot.err { background: var(--error-color, var(--wa-need, #db4437)); }
   .cf-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cf-sep { margin: 0 4px; }
-  .cf-state.warn { color: var(--warning-color, var(--wa-amber, #ffa600)); }
-  .cf-state.err { color: var(--error-color, var(--wa-need, #db4437)); font-weight: 600; }
-  .cf-help { margin-left: 6px; }
-  .cf-size { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cf-help { margin-right: 10px; color: var(--error-color, var(--wa-need, #db4437)); }
   .cf-size.near { color: var(--warning-color, var(--wa-amber, #ffa600)); font-weight: 600; }
   .cf-size.over { color: var(--error-color, #db4437); font-weight: 600; }
   .cf-btn {

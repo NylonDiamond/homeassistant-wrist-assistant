@@ -36,6 +36,20 @@ export function keepWatchPagesSelection(watchId: string, selection: WatchPagesSe
   selections.set(watchId, { ...selection });
 }
 
+/** The devices whose page editor should add a page as it opens: the Pages
+ * tab's New page asked for one there. */
+const newPageAsks = new Set<string>();
+
+/** Ask the editor to add a page on `watchId` the next time it reads them. */
+export function askNewWatchPage(watchId: string): void {
+  newPageAsks.add(watchId);
+}
+
+/** Whether a page was asked for on `watchId`, forgetting the ask. */
+export function takeNewWatchPageAsk(watchId: string): boolean {
+  return newPageAsks.delete(watchId);
+}
+
 export interface TakenWatchPagesRecord {
   draft: WatchPagesDraft;
   /** The draft held edits and the record changed the document on screen:

@@ -1,6 +1,8 @@
 // The Watch app's one header row (`watch-row.ts`) holds, at its right, the
 // save controls of the screen on show: where its copy has got to, its ···
-// menu, Save and its help. Each screen is an editor element of its own that
+// menu and Save. A screen's help is the panel's Help sheet, which names the
+// screen and links its guide (`help-sheet.ts`), so the bar has no ? of its
+// own. Each screen is an editor element of its own that
 // keeps its drafts and saves them itself, so the controls stay the editor's:
 // the panel only hands it an empty box in the header (`barHost`), and the
 // editor draws its bar there instead of on top of itself.
