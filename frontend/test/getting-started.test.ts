@@ -199,6 +199,17 @@ describe("the Help sheet", () => {
     expect(helpScreen(at("/status-pages/w1")).text[1]).toBe("It is for the watch picked at the top.");
   });
 
+  it("names the Menus tab the way it names the Pages tab, apart from a device's Menus", () => {
+    const h = helpScreen(at("/all-menus"));
+    expect(h.name).toBe("Menus");
+    expect(h.more).toBe(WATCH_MENUS_HELP_URL);
+    expect(h.text[0]).toBe("Menus lists the Anywhere menu and the Entity quick menu of every watch and iPhone. A menu on more than one device is the same menu: an edit shows on all of them.");
+    expect(h.text.join(" ")).toContain("The page switcher goes with the Anywhere menu.");
+    for (const line of h.text) expect(line).not.toMatch(/[–—]| - /);
+    // A device's own Menus screen is still that screen.
+    expect(helpScreen(at("/menus/w1")).text[1]).toBe("It is for the watch picked at the top.");
+  });
+
   it("links each screen's guide, the page its bar's old ? opened", () => {
     const guides: Record<string, string | undefined> = {
       "pages": WATCH_PAGES_HELP_URL,

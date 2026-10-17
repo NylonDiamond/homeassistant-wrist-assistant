@@ -200,6 +200,21 @@ describe("addresses", () => {
     expect(tabPath("pages", "w2", "p1")).toBe("/all-pages");
     expect(tabPath("status-pages")).toBe("/all-status-pages");
     expect(tabPath("status-pages", "w2", "p1")).toBe("/all-status-pages");
+    expect(tabPath("menus")).toBe("/all-menus");
+    expect(tabPath("menus", "w2", "p1")).toBe("/all-menus");
+  });
+
+  it("puts the Menus tab at /all-menus, apart from a device's /menus", () => {
+    expect(tabOfRoute(at("/all-menus"))).toBe("menus");
+    expect(tabOfRoute(at("/all-menus/x"))).toBe("menus");
+    expect(tabOfRoute(at("/all-menusx"))).toBe("home");
+    expect(tabOfRoute(at("/menus"))).toBe("watch");
+    expect(tabOfRoute(at("/menus/w1"))).toBe("watch");
+    expect(tabOfRoute(at("/iphone/menus/p1"))).toBe("iphone");
+    expect(watchScreenOf(at("/all-menus"))).toBeUndefined();
+    expect(panelPrefix(undefined, "/wrist-assistant/all-menus")).toBe("/wrist-assistant");
+    expect(panelPrefix(undefined, "/wrist-assistant/all-menus/x")).toBe("/wrist-assistant");
+    expect(panelPrefix(undefined, "/wrist-assistant/menus/w1")).toBe("/wrist-assistant");
   });
 
   it("puts the Pages tab at /all-pages, apart from the page editor's /pages", () => {
@@ -230,6 +245,9 @@ describe("addresses", () => {
     expect(screenIdOf(at("/all-status-pages"))).toBe("all-status-pages");
     expect(screenIdOf(at("/status-pages/w1"))).toBe("status-pages");
     expect(screenIdOf(at("/iphone/status-pages/p1"))).toBe("status-pages");
+    expect(screenIdOf(at("/all-menus"))).toBe("all-menus");
+    expect(screenIdOf(at("/menus/w1"))).toBe("menus");
+    expect(screenIdOf(at("/iphone/menus/p1"))).toBe("menus");
     expect(screenIdOf(at("/pages/w1"))).toBe("pages");
     expect(screenIdOf(at("/complications/x"))).toBe("complications");
     expect(screenIdOf(at(""))).toBe("home");
@@ -249,8 +267,8 @@ describe("addresses", () => {
     expect(tabPath("watch", "w2", "p1")).toBe("/pages/w2");
   });
 
-  it("offers four tabs to everybody: no Watch app or iPhone app tab", () => {
-    expect(PANEL_TABS).toEqual(["home", "pages", "status-pages", "complications"]);
+  it("offers five tabs to everybody: no Watch app or iPhone app tab", () => {
+    expect(PANEL_TABS).toEqual(["home", "pages", "status-pages", "menus", "complications"]);
   });
 
   it("keeps the tabs in one table, each with its name and address", () => {
@@ -258,6 +276,7 @@ describe("addresses", () => {
       ["home", "Home", HOME_PATH],
       ["pages", "Pages", "/all-pages"],
       ["status-pages", "Status pages", "/all-status-pages"],
+      ["menus", "Menus", "/all-menus"],
       ["complications", "Complications", COMPLICATIONS_PATH],
     ]);
     for (const t of BAR_TABS) {
@@ -276,6 +295,9 @@ describe("addresses", () => {
     expect(barTabOf(at("/status-pages"))).toBe("home");
     expect(barTabOf(at("/iphone/status-pages/p1"))).toBe("home");
     expect(barTabOf(at("/all-status-pages"))).toBe("status-pages");
+    expect(barTabOf(at("/menus"))).toBe("home");
+    expect(barTabOf(at("/iphone/menus/p1"))).toBe("home");
+    expect(barTabOf(at("/all-menus"))).toBe("menus");
     expect(barTabOf(at("/complications"))).toBe("complications");
     expect(barTabOf(at(""))).toBe("home");
   });
@@ -442,16 +464,19 @@ describe("renderTabBar", () => {
     route: at(path), menu, onMenu: () => undefined, onTab: () => undefined,
   }));
 
-  it("draws Home, Pages, Status pages and Complications, as links to their addresses", () => {
+  it("draws Home, Pages, Status pages, Menus and Complications, as links to their addresses", () => {
     const text = bar("");
     expect(text).toContain(">Home</a>");
     expect(text).toContain(">Pages</a>");
     expect(text).toContain(">Status pages</a>");
+    expect(text).toContain(">Menus</a>");
     expect(text).toContain(">Complications</a>");
     expect(text.indexOf("Home</a>")).toBeLessThan(text.indexOf(">Pages</a>"));
     expect(text.indexOf(">Pages</a>")).toBeLessThan(text.indexOf(">Status pages</a>"));
-    expect(text.indexOf(">Status pages</a>")).toBeLessThan(text.indexOf("Complications</a>"));
+    expect(text.indexOf(">Status pages</a>")).toBeLessThan(text.indexOf(">Menus</a>"));
+    expect(text.indexOf(">Menus</a>")).toBeLessThan(text.indexOf("Complications</a>"));
     expect(text).toMatch(/href=\/wrist-assistant\/all-status-pages [^>]*>Status pages<\/a>/);
+    expect(text).toMatch(/href=\/wrist-assistant\/all-menus [^>]*>Menus<\/a>/);
     expect(text).not.toContain("Watch app</a>");
     expect(text).not.toContain("iPhone app</a>");
     expect(text).toMatch(/href=\/wrist-assistant [^>]*>Home<\/a>/);
@@ -460,7 +485,8 @@ describe("renderTabBar", () => {
   it("marks the tab on screen and no other, Home on a device's screens", () => {
     const marks = (text: string) => text.match(/wa-tab on/g)?.length ?? 0;
     for (const [path, label] of [["", "Home"], ["/menus/w1", "Home"], ["/iphone/menus/p1", "Home"], ["/all-pages", "Pages"],
-      ["/all-status-pages", "Status pages"], ["/status-pages/w1", "Home"], ["/complications", "Complications"]] as const) {
+      ["/all-status-pages", "Status pages"], ["/status-pages/w1", "Home"], ["/all-menus", "Menus"], ["/menus", "Home"],
+      ["/complications", "Complications"]] as const) {
       const text = bar(path);
       expect(marks(text), path).toBe(1);
       expect(text).toMatch(new RegExp(`wa-tab on[^>]*>${label}</a>`));

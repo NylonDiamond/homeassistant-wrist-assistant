@@ -437,6 +437,7 @@ import { type WatchPage, asWatchPagesDocument, watchPageName, watchPagesOf } fro
 import { watchFrameStyles } from "./watch-frame.js";
 import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles } from "./watch-pages/hook.js";
 import { allPagesHookStyles, renderAllPagesView } from "./watch-pages/all-pages-hook.js";
+import { renderAllMenusView } from "./watch-menus/all-menus-hook.js";
 import { dropWatchMenusDrafts, isWatchMenusRoute, renderWatchMenusView, watchMenusDirty, watchMenusHookStyles } from "./watch-menus/hook.js";
 import { dropWatchVoiceDrafts, isWatchVoiceRoute, renderWatchVoiceView, watchVoiceDirty, watchVoiceHookStyles } from "./watch-voice/hook.js";
 import { dropWatchStatusPagesDrafts, isWatchStatusPagesRoute, renderWatchStatusPagesView, watchStatusPagesDirty, watchStatusPagesHookStyles } from "./watch-status-pages/hook.js";
@@ -11518,6 +11519,20 @@ export class WristAssistantPanel extends LitElement {
           this.pickWatch(ownerId);
           const screen = what === "status_pages" ? WATCH_SCREENS.find((s) => s.id === "status-pages") : undefined;
           this.goTo(deviceScreenPath(kind, screen ?? WATCH_SCREENS[0]!, ownerId));
+        },
+        onLoaded: () => this.requestUpdate(),
+      });
+    }
+    // The Menus tab, on `/all-menus`: every Anywhere menu and Entity quick
+    // menu on every watch and iPhone. A card opens that device's menu
+    // editor, which it has already asked for the card's menu.
+    if (tab === "menus") {
+      return renderAllMenusView({
+        hass: this.hass, owners: this.owners, ownersReady: this.linkReady, phones: this.phonePages,
+        icons: this.icons, iconsTick: this.iconsTick,
+        onOpen: (ownerId, kind) => {
+          this.pickWatch(ownerId);
+          this.goTo(deviceScreenPath(kind, WATCH_SCREENS.find((s) => s.id === "menus")!, ownerId));
         },
         onLoaded: () => this.requestUpdate(),
       });
