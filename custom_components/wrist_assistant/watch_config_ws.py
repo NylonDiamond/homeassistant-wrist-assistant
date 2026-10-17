@@ -37,14 +37,29 @@ Commands:
                                                  kind?, replace?}
     wrist_assistant/watch_pages/link_all        {source_id, target_id}
     wrist_assistant/watch_pages/places          {}
+    wrist_assistant/library/pick                {owner_id, kind, item_id, on? | unit?}
+    wrist_assistant/library/menus/copy          {owner_id, unit, name}
+    wrist_assistant/library/menus/rename        {item_id, name}
+    wrist_assistant/library/menus/delete        {item_id}
+    wrist_assistant/library/delete              {kind, item_id}
+    wrist_assistant/library/summary             {}
 
-``watch_pages/link``, ``watch_pages/link_all`` and ``watch_pages/places`` make linked pages (one page
-on several devices, ``page_links.py``) and say where each one is. The same
-``link`` and ``places`` link status pages and menus too (``kind``). A link's
-refusals add ``unknown_device``, ``system_page``, ``id_taken``,
-``unit_taken`` (a target with its own menu, unless ``replace``) and
-``awaiting_move`` (a target watch whose iPhone may still move its own pages
-here, which a link made first would leave behind).
+(The item is ``item_id``, where the plan says ``id``: a WebSocket message's
+own ``id`` is its message number.)
+
+Pages, status pages and menus live once, in the home's library
+(``library.py``), and each device picks from it; its records are built from
+the library and its picks. The ``library/*`` commands tick and untick items
+on devices, copy, rename and delete them, and list the whole library with
+who picks what. ``watch_pages/link``, ``watch_pages/link_all`` and
+``watch_pages/places`` are the current panel's way of saying the same thing
+(a link is a pick of the same item; places are the items two or more
+devices pick, keyed by the ``linkId`` their records carry), kept so the
+panel works unchanged; the voice settings still link copy by copy
+(``page_links.py``). A link's refusals add ``unknown_device``,
+``system_page``, ``unit_taken`` (a target with its own menu, unless
+``replace``) and ``awaiting_move`` (a target watch whose iPhone may still
+move its own pages here, which a link made first would leave behind).
 
 ``watch_voices/get`` is the voice list a watch reported over the signed
 ``watch_voices_put`` (see ``watch_voices_store.py``), for the panel's Watch
@@ -107,6 +122,12 @@ _CMD_VOICES_GET = f"{DOMAIN}/watch_voices/get"
 _CMD_PAGES_LINK = f"{DOMAIN}/watch_pages/link"
 _CMD_PAGES_PLACES = f"{DOMAIN}/watch_pages/places"
 _CMD_PAGES_LINK_ALL = f"{DOMAIN}/watch_pages/link_all"
+_CMD_LIBRARY_PICK = f"{DOMAIN}/library/pick"
+_CMD_LIBRARY_MENUS_COPY = f"{DOMAIN}/library/menus/copy"
+_CMD_LIBRARY_MENUS_RENAME = f"{DOMAIN}/library/menus/rename"
+_CMD_LIBRARY_MENUS_DELETE = f"{DOMAIN}/library/menus/delete"
+_CMD_LIBRARY_DELETE = f"{DOMAIN}/library/delete"
+_CMD_LIBRARY_SUMMARY = f"{DOMAIN}/library/summary"
 
 
 # The kinds whose documents are a list of items, and the key holding it.
@@ -189,6 +210,12 @@ def async_register_watch_config_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_watch_pages_link)
     websocket_api.async_register_command(hass, ws_watch_pages_places)
     websocket_api.async_register_command(hass, ws_watch_pages_link_all)
+    websocket_api.async_register_command(hass, ws_library_pick)
+    websocket_api.async_register_command(hass, ws_library_menus_copy)
+    websocket_api.async_register_command(hass, ws_library_menus_rename)
+    websocket_api.async_register_command(hass, ws_library_menus_delete)
+    websocket_api.async_register_command(hass, ws_library_delete)
+    websocket_api.async_register_command(hass, ws_library_summary)
 
 
 @websocket_api.websocket_command(
@@ -852,6 +879,276 @@ def ws_watch_pages_places(
             if kept:
                 shown[link] = {**place, "owners": kept} if isinstance(place, dict) else kept
         result[kind] = shown
+    connection.send_result(msg["id"], result)
+
+
+# ── the library: one of every page, status page and menu, devices pick ──
+
+
+def _may_change_item(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+    store: WatchConfigStore,
+    kind: str,
+    item_id: str,
+) -> bool:
+    """Whether the caller may rename or delete one library item: they must
+    manage every device that picks it (``require_owner``), and an item no
+    device picks is an administrator's. An id the library does not hold is
+    let through, so the store answers ``not_found`` (or ``invalid`` for a
+    kind it does not hold)."""
+    owners = store.library_item_owners(kind, item_id)
+    if owners is None:
+        return True
+    if not owners and not is_admin(connection):
+        connection.send_error(msg["id"], "unauthorized", "only an administrator may change this")
+        return False
+    return require_owner(hass, connection, msg, *owners)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_LIBRARY_PICK,
+        vol.Required("owner_id"): str,
+        vol.Required("kind"): str,
+        vol.Required("item_id"): str,
+        vol.Optional("on"): bool,
+        vol.Optional("unit"): str,
+    }
+)
+@callback
+def ws_library_pick(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Tick or untick a library item on one device.
+
+    Request: {owner_id, kind: "pages" | "status_pages", item_id, on} or
+             {owner_id, kind: "menus", unit: "anywhere" | "entity", item_id}
+    Result:  {"revisions": {<owner id>: {<kind>: <revision>}}}
+
+    A page or status page ticked on goes at the end of the device's order,
+    visible; a page brings the status pages its tiles open. Ticked off, the
+    device no longer has it; the item stays in the library. A menu is the
+    one the device uses for that unit from then on
+    (``WatchConfigStore.library_pick``). ``revisions`` names every record
+    written, other devices' too where an item's link mark came or went.
+    Refused ``invalid``, ``unknown_device``, ``not_for_iphone``,
+    ``not_found``, ``awaiting_move``, and ``unauthorized`` for a device the
+    caller may not manage.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    if not require_owner(hass, connection, msg, msg["owner_id"]):
+        return
+    try:
+        result = store.library_pick(
+            msg["owner_id"],
+            msg["kind"],
+            msg["item_id"],
+            on=msg.get("on"),
+            unit=msg.get("unit"),
+        )
+    except WatchConfigStoreError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_LIBRARY_MENUS_COPY,
+        vol.Required("owner_id"): str,
+        vol.Required("unit"): str,
+        vol.Required("name"): str,
+    }
+)
+@callback
+def ws_library_menus_copy(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Make a copy of the menu a device uses for a unit, as a new library
+    menu named ``name``, and use it there in its place ("Make a copy for
+    this watch").
+
+    Result: {"id": <new menu id>, "revisions": {<owner id>: {<kind>: <revision>}}}
+
+    Refused ``invalid`` (an empty name, an unknown unit), ``unknown_device``,
+    ``not_found`` (the device uses no menu for the unit) and
+    ``unauthorized``.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    if not require_owner(hass, connection, msg, msg["owner_id"]):
+        return
+    try:
+        result = store.library_copy_menu(msg["owner_id"], msg["unit"], msg["name"])
+    except WatchConfigStoreError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_LIBRARY_MENUS_RENAME,
+        vol.Required("item_id"): str,
+        vol.Required("name"): str,
+    }
+)
+@callback
+def ws_library_menus_rename(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Rename a library menu. No device's record holds a menu's name, so
+    nothing is written but the library.
+
+    Result: {}
+
+    Refused ``not_found``, ``invalid`` (an empty name) and ``unauthorized``
+    for a menu used by a device the caller may not manage (or, used by none,
+    for anyone but an administrator).
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    if not _may_change_item(hass, connection, msg, store, "menus", msg["item_id"]):
+        return
+    try:
+        store.library_rename_menu(msg["item_id"], msg["name"])
+    except WatchConfigStoreError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    connection.send_result(msg["id"], {})
+
+
+def _send_delete(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+    store: WatchConfigStore,
+    kind: str,
+) -> None:
+    try:
+        result = store.library_delete(kind, msg["item_id"])
+    except WatchConfigStoreError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    connection.send_result(
+        msg["id"],
+        {
+            "revisions": result["revisions"],
+            "link_failures": _link_failures(hass, result["link_failures"]),
+        },
+    )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_LIBRARY_MENUS_DELETE,
+        vol.Required("item_id"): str,
+    }
+)
+@callback
+def ws_library_menus_delete(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Delete a library menu that no device uses.
+
+    Result: {"revisions": {}, "link_failures": []}
+
+    Refused ``in_use`` while any device uses it, ``not_found`` and
+    ``unauthorized`` (a menu no device uses is an administrator's).
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    if not _may_change_item(hass, connection, msg, store, "menus", msg["item_id"]):
+        return
+    _send_delete(hass, connection, msg, store, "menus")
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_LIBRARY_DELETE,
+        vol.Required("kind"): str,
+        vol.Required("item_id"): str,
+    }
+)
+@callback
+def ws_library_delete(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Delete a page, status page or menu from the library.
+
+    Result: {"revisions": {<owner id>: {<kind>: <revision>}},
+             "link_failures": [{"owner", "name"}]}
+
+    A page or status page goes from every device that has it, and the menu
+    slots and tiles that opened it go with it, everywhere
+    (``WatchConfigStore.library_delete``); ``revisions`` names every record
+    written, and ``link_failures`` the devices whose record could not take
+    it. A menu is refused ``in_use`` while any device uses it. Refused
+    ``invalid`` for another kind, ``not_found``, and ``unauthorized`` for an
+    item a device the caller may not manage has (or that no device has, for
+    anyone but an administrator).
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    if not _may_change_item(hass, connection, msg, store, msg["kind"], msg["item_id"]):
+        return
+    _send_delete(hass, connection, msg, store, msg["kind"])
+
+
+@websocket_api.websocket_command({vol.Required("type"): _CMD_LIBRARY_SUMMARY})
+@callback
+def ws_library_summary(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Every library item and the devices that pick it, for the Pages,
+    Status pages and Menus tabs, in one read.
+
+    Result: {"pages": {<id>: {"item": <page>, "owners": [owner id, ...]}},
+             "status_pages": {<id>: {"item": <status page>, "owners": [...]}},
+             "menus": {<id>: {"name", "kind": "anywhere" | "entity",
+                              "sections": {...}, "owners": [...]}},
+             "picks": {<owner id>: {"pages": [{"id", "isHidden"?} | {"id", "page"}],
+                                    "status_pages": [{"id", "isHidden"?}],
+                                    "menus": {"anywhere"?: <id>, "entity"?: <id>}}}}
+
+    An administrator hears about everything. Anyone else hears only about
+    the devices they may manage (``may_manage_owner``): ``owners`` and
+    ``picks`` name only those, and an item none of them picks is left out.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    summary = store.library_summary()
+    if is_admin(connection):
+        connection.send_result(msg["id"], summary)
+        return
+
+    def listed(owner: str) -> bool:
+        return may_manage_owner(hass, connection, owner)
+
+    result: dict[str, Any] = {}
+    for kind in ("pages", "status_pages", "menus"):
+        shown: dict[str, Any] = {}
+        for item_id, entry in summary[kind].items():
+            kept = [owner for owner in entry["owners"] if listed(owner)]
+            if kept:
+                shown[item_id] = {**entry, "owners": kept}
+        result[kind] = shown
+    result["picks"] = {owner: held for owner, held in summary["picks"].items() if listed(owner)}
     connection.send_result(msg["id"], result)
 
 

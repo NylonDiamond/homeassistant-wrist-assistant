@@ -105,6 +105,14 @@ _OWNER = {
         # must manage each one (pinned below).
         "ws_watch_pages_link": "require_owner",
         "ws_watch_pages_link_all": "require_owner",
+        # The library: a pick or a menu copy names its device; a rename or
+        # delete names an item, and the caller must manage every device
+        # that has it (an item no device has is an administrator's).
+        "ws_library_pick": "require_owner",
+        "ws_library_menus_copy": "require_owner",
+        "ws_library_menus_rename": "_may_change_item",
+        "ws_library_menus_delete": "_may_change_item",
+        "ws_library_delete": "_may_change_item",
         # The iPhone app's live line: hands out nothing but revision numbers.
         "ws_watch_config_subscribe": "_may_follow_owner",
     },
@@ -117,6 +125,7 @@ _FILTERED = {
         "ws_watch_config_summary",
         "ws_watch_config_subscribe_delivery",
         "ws_watch_pages_places",
+        "ws_library_summary",
     },
 }
 
