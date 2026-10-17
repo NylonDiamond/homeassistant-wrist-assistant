@@ -17,8 +17,6 @@
 //                       the address never names one
 //   /cameras            how each camera is framed in alerts, the camera's
 //                       own and shared likewise
-//   /photos, /parts     the home's page photos and its parts, the rest of
-//                       Home's Library, shared likewise
 //   /settings, with an optional /<owner_watch_id>
 //                       the Watch app's Settings page
 //   /iphone/pages, /iphone/menus, /iphone/status-pages, /iphone/rooms,
@@ -51,7 +49,6 @@ import { WATCH_CAMERAS_PATH, isWatchCamerasRoute } from "./watch-cameras/hook.js
 import { WATCH_COMPLICATIONS_PATH, isWatchComplicationsRoute } from "./watch-complications.js";
 import { WATCH_CONTROL_CENTER_PATH, isWatchControlCenterRoute } from "./watch-control-center/hook.js";
 import { WATCH_HTTP_ACTIONS_PATH, isWatchHttpActionsRoute } from "./watch-http-actions/hook.js";
-import { LIBRARY_PARTS_PATH, LIBRARY_PHOTOS_PATH, isLibraryPartsRoute, isLibraryPhotosRoute } from "./library/hook.js";
 import { WATCH_MENUS_PATH, isWatchMenusRoute } from "./watch-menus/hook.js";
 import { ALL_PAGES_PATH, ALL_STATUS_PAGES_PATH } from "./watch-pages/all-pages-hook.js";
 import { type PanelRoute, WATCH_PAGES_PATH, isWatchPagesRoute } from "./watch-pages/hook.js";
@@ -96,7 +93,7 @@ export const TAB_LABEL: Record<PanelTab, string> = {
 /** One of the watch app's screens, as Home lists them and the watch row
  * walks them. */
 export interface WatchScreen {
-  id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "voice" | "watch-complications" | "http-actions" | "cameras" | "photos" | "parts" | "settings";
+  id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "voice" | "watch-complications" | "http-actions" | "cameras" | "settings";
   label: string;
   /** What the screen is, written to follow its name as one sentence: the
    * Watch app row's line under it reads "**Pages** are the screens you swipe
@@ -124,8 +121,6 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
   { id: "watch-complications", label: "Complications", blurb: "are what this watch's faces show, with every other design you could add under them, made in the Complications tab.", path: WATCH_COMPLICATIONS_PATH },
   { id: "http-actions", label: "HTTP actions", blurb: "are web requests Home Assistant sends when a watch runs one from a tile, a menu or a complication, shared by every watch.", path: WATCH_HTTP_ACTIONS_PATH, shared: true },
   { id: "cameras", label: "Cameras", blurb: "sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.", path: WATCH_CAMERAS_PATH, shared: true },
-  { id: "photos", label: "Photos", blurb: "are the pictures behind your pages, kept once for the whole home, with the devices whose pages show each one.", path: LIBRARY_PHOTOS_PATH, shared: true },
-  { id: "parts", label: "Parts", blurb: "are layers saved from one complication with Save to parts, to drop into another.", path: LIBRARY_PARTS_PATH, shared: true },
 ];
 
 /** The Settings page: a screen of the Watch app with an address like the
@@ -160,8 +155,6 @@ export function watchScreenOf(route: PanelRoute | undefined): WatchScreen | unde
   if (isWatchComplicationsRoute(route)) return of("watch-complications");
   if (isWatchHttpActionsRoute(route)) return of("http-actions");
   if (isWatchCamerasRoute(route)) return of("cameras");
-  if (isLibraryPhotosRoute(route)) return of("photos");
-  if (isLibraryPartsRoute(route)) return of("parts");
   if (isWatchSettingsRoute(route)) return WATCH_SETTINGS_SCREEN;
   return undefined;
 }
@@ -273,7 +266,7 @@ const SUB_PATH = new RegExp(`(${[
   ...BAR_TABS.map((t) => t.path).filter((p) => p !== HOME_PATH),
   IPHONE_PATH, WATCH_PAGES_PATH, WATCH_MENUS_PATH, WATCH_VOICE_PATH,
   WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH, WATCH_HTTP_ACTIONS_PATH, WATCH_CAMERAS_PATH, WATCH_SETTINGS_PATH,
-  WATCH_COMPLICATIONS_PATH, LIBRARY_PHOTOS_PATH, LIBRARY_PARTS_PATH,
+  WATCH_COMPLICATIONS_PATH,
 ].join("|")})(/.*)?$`);
 
 /** The panel's own address without any tab's sub-path. Without a route (a

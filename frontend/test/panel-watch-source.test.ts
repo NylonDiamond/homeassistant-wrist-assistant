@@ -235,6 +235,10 @@ describe("links into the Watch app carry the shared watch", () => {
     expect(shared).toContain(`<h2 class="hb-person-name">\${HOME_LIBRARY_TITLE}</h2>`);
     expect(shared).toContain(`<p class="hb-lead">\${HOME_LIBRARY_LEAD}</p>`);
     expect(shared).toContain("this.goTo(path);");
+    // The Library is HTTP actions and Cameras only: no Photos or Parts screen.
+    expect(SOURCE).not.toContain("./library/");
+    expect(SOURCE).not.toContain(`case "photos":`);
+    expect(SOURCE).not.toContain(`case "parts":`);
   });
 
   it("on Home's picked device, whose doors open a screen on that device's own watch or iPhone", () => {

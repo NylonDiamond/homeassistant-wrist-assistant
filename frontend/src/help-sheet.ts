@@ -52,7 +52,7 @@ export interface HelpScreen {
 const HOME_TEXT = [
   "Home lists every watch and iPhone, who it belongs to, and whether it has your latest changes.",
   "Waiting means the device gets them the next time Wrist Assistant opens on it.",
-  "Its Library holds what every device shares: HTTP actions, camera framing, page photos and parts.",
+  "Its Library holds what every device shares: HTTP actions and camera framing.",
 ];
 
 const COMPLICATIONS_TEXT = [

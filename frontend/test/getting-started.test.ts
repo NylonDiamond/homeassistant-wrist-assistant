@@ -161,6 +161,7 @@ describe("the Help sheet", () => {
 
   it("names the screen in view: Home, Complications, and each watch screen by its own blurb", () => {
     expect(helpScreen(at(""))).toMatchObject({ name: "Home" });
+    expect(helpScreen(at("")).text).toContain("Its Library holds what every device shares: HTTP actions and camera framing.");
     expect(helpScreen(undefined).name).toBe("Home");
     expect(helpScreen(at("/complications")).name).toBe("Complications");
     for (const screen of [...WATCH_SCREENS, WATCH_SETTINGS_SCREEN]) {
@@ -169,11 +170,11 @@ describe("the Help sheet", () => {
       expect(h.text[0]).toContain(screen.blurb.trim().replace(/[.!?]$/, ""));
     }
     expect(helpScreen(at("/http-actions")).text[1]).toBe(HELP_LIBRARY_TEXT);
-    expect(helpScreen(at("/photos")).text).toEqual([
-      "Photos are the pictures behind your pages, kept once for the whole home, with the devices whose pages show each one.",
+    expect(helpScreen(at("/cameras")).text).toEqual([
+      "Cameras sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.",
       "It is in Home's Library, shared by every device in this home.",
     ]);
-    expect(helpScreen(at("/parts")).text[0]).toBe("Parts are layers saved from one complication with Save to parts, to drop into another.");
+    expect(helpScreen(at("/photos")).name).toBe("Home");
     expect(helpScreen(at("/pages/w1")).text[1]).toBe("It is for the watch picked at the top.");
   });
 
@@ -208,8 +209,6 @@ describe("the Help sheet", () => {
       "voice": WATCH_VOICE_HELP_URL,
       "http-actions": WATCH_HTTP_ACTIONS_HELP_URL,
       "cameras": WATCH_CAMERAS_HELP_URL,
-      "photos": undefined,
-      "parts": undefined,
       "watch-complications": undefined,
       "settings": undefined,
     };

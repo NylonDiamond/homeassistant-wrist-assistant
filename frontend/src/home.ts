@@ -148,8 +148,8 @@ export type DeviceSheetTab =
  * one order Home's doors and the device's header row (`watchRowLinks`) both
  * use: Pages, then its complications (Widgets on an iPhone), Menus, Status
  * pages, its Control Center controls, the rest, and Settings last. A watch
- * has every screen that belongs to one watch; the Library's (HTTP actions,
- * Cameras, Photos, Parts) are the home's, not a watch's. A watch's old Control Center screen is
+ * has every screen that belongs to one watch; the Library's (HTTP actions
+ * and Cameras) are the home's, not a watch's. A watch's old Control Center screen is
  * retired: its tiles are complication controls now, so the door opens the
  * watch's designs that have a control, the way an iPhone's does. An iPhone
  * has its widgets and its Control Center controls, and on a home with phone
@@ -253,8 +253,6 @@ export function homeLibraryScreens(): WatchScreen[] {
 export const HOME_SHARED_SUB: Partial<Record<WatchScreen["id"], string>> = {
   "http-actions": "Web requests every device can run",
   "cameras": "How each camera is framed in alerts",
-  "photos": "The pictures behind your pages",
-  "parts": "Layers saved to reuse in complications",
 };
 
 export const HOME_SYNC_NOTE = "On a watch, Synced and Waiting cover its complications and the whole watch app: pages, menus and settings.";
