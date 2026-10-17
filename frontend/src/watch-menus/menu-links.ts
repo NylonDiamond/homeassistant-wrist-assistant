@@ -140,6 +140,22 @@ export function menuUnitIsDefault(document: MenusDocument | undefined, unit: Men
   return MENU_UNIT_SECTIONS[unit].every((s) => sameWatchPagesJson(document[s], defaults[s]));
 }
 
+/**
+ * Whether `owner`'s menu for `unit` is the app's own, never edited and
+ * linked to nothing, read fresh through `read`: a copy read earlier could
+ * miss an edit saved since, and replacing on it would lose that edit. A
+ * record that cannot be read is not.
+ */
+export async function menuIsUntouched(read: MenuUnlinkIO["read"], owner: string, unit: MenuLinkUnit): Promise<boolean> {
+  try {
+    const record = await read(owner);
+    const document = record.revision > 0 ? asWatchMenusDocument(record.document) : undefined;
+    return menuUnitLinkId(document, unit) === undefined && menuUnitIsDefault(document, unit);
+  } catch {
+    return false;
+  }
+}
+
 /** The question before a tick replaces a device's own menu. */
 export function menuReplaceAsk(unit: MenuLinkUnit, deviceName: string): { title: string; body: string } {
   return { title: `Replace the ${MENU_UNIT_NAMES[unit]} on ${deviceName}?`, body: "Its own is lost." };

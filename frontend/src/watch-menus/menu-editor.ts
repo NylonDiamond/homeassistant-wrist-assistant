@@ -99,8 +99,8 @@ import {
   menuLinkUnitOf,
   menuLinksKnown,
   menuReplaceAsk,
+  menuIsUntouched,
   menuUnitHolders,
-  menuUnitIsDefault,
   menuUnitLinkId,
   unlinkMenuUnit,
 } from "./menu-links.js";
@@ -1548,17 +1548,11 @@ export class WaMenuEditor extends LitElement {
   }
 
   /** Whether `owner`'s menu for `unit` is the app's own, never edited and
-   * linked to nothing. A record that cannot be read is not. */
+   * linked to nothing, read fresh. A record that cannot be read is not. */
   private async menuIsUntouched(owner: string, unit: MenuLinkUnit): Promise<boolean> {
     const hass = this.hass;
     if (!hass) return false;
-    try {
-      const record = await fetchWatchConfig(hass, owner, "menus");
-      const document = record.revision > 0 ? asWatchMenusDocument(record.document) : undefined;
-      return menuUnitLinkId(document, unit) === undefined && menuUnitIsDefault(document, unit);
-    } catch {
-      return false;
-    }
+    return menuIsUntouched((o) => fetchWatchConfig(hass, o, "menus"), owner, unit);
   }
 
   /** Unlink one device's copy of a unit (this one's too): its menu stays as

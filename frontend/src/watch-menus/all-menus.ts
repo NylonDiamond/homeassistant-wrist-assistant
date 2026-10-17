@@ -69,9 +69,8 @@ import {
   MENU_UNIT_NAMES,
   type MenuLinkUnit,
   menuLinkErrorText,
+  menuIsUntouched,
   menuReplaceAsk,
-  menuUnitIsDefault,
-  menuUnitLinkId,
   unlinkMenuUnit,
 } from "./menu-links.js";
 import "./menu-thumbs.js";
@@ -464,7 +463,8 @@ export class WaAllMenus extends LitElement {
    * refused `unit_taken`: the question comes up in the menu, and Replace
    * sends the link again with `replace`. A device whose menu there is still
    * the app's own, linked to nothing, loses nothing, so it is replaced at
-   * once with no question, as the editor does.
+   * once with no question, as the editor does. That is judged on a fresh
+   * read of its menus, never the tab's copy.
    */
   private async link(source: string, unit: MenuLinkUnit, target: string, replace = false): Promise<void> {
     const hass = this.hassNow;
@@ -480,8 +480,8 @@ export class WaAllMenus extends LitElement {
       this.menuAt = { ownerId: source, unit };
     } catch (err) {
       if (watchCommandError(err).code === "unit_taken" && !replace) {
-        const theirs = this.docs.get(target);
-        again = theirs !== undefined && menuUnitLinkId(theirs, unit) === undefined && menuUnitIsDefault(theirs, unit);
+        // Read fresh: the tab's copy can miss an edit saved since.
+        again = await menuIsUntouched((o) => fetchWatchConfig(hass, o, "menus"), target, unit);
         if (!again) this.replaceAsk = { source, unit, target };
       } else this.devicesNote = { kind: "err", text: `Not added. ${menuLinkErrorText(err)}` };
     } finally {

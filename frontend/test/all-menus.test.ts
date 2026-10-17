@@ -279,15 +279,16 @@ describe("the Menus tab", () => {
     expect(text).not.toContain("The Entity quick menu is on");
   });
 
-  /** A tab whose link is refused `unit_taken` until sent with replace. */
-  function takenTab(theirs: MenusDocument) {
+  /** A tab whose link is refused `unit_taken` until sent with replace. The
+   * tab holds `theirs` for the other device; Home Assistant holds `fresh`. */
+  function takenTab(theirs: MenusDocument, fresh: MenusDocument = theirs) {
     const sent: Record<string, unknown>[] = [];
     const t = tab(new Map([[WATCH, DEFAULTS], [OTHER, theirs]]), async (m) => {
       sent.push(m);
       if (m.type === "wrist_assistant/watch_pages/link" && m.replace !== true) throw Object.assign(new Error("taken"), { code: "unit_taken" });
       if (m.type === "wrist_assistant/watch_pages/link") return { targets: { [OTHER]: { pages: [], status_pages: [], units: ["anywhere"] } }, link_ids: { anywhere: ANY_LINK } };
       if (m.type === "wrist_assistant/watch_pages/places") return { pages: {}, status_pages: {}, menus: {} };
-      return { revision: 4, document: DEFAULTS };
+      return { revision: 4, document: m.owner_watch_id === OTHER && m.kind === "menus" ? fresh : DEFAULTS };
     });
     const links = () => sent.filter((m) => m.type === "wrist_assistant/watch_pages/link").map((m) => m.replace);
     return { t, links };
@@ -312,6 +313,19 @@ describe("the Menus tab", () => {
     expect(text).toContain("Its own is lost.");
     await (t.el.link as (s: string, u: string, g: string, r: boolean) => Promise<void>).call(t.el, WATCH, "anywhere", OTHER, true);
     expect(links()).toEqual([false, true]);
+  });
+
+  it("judges the other device's menu on a fresh read, not the tab's copy", async () => {
+    // The tab still holds the defaults, but that menu was edited since.
+    const edited = takenTab(DEFAULTS, anywhereWith(2));
+    await (edited.t.el.link as (s: string, u: string, g: string) => Promise<void>).call(edited.t.el, WATCH, "anywhere", OTHER);
+    expect(edited.links()).toEqual([false]);
+    expect(edited.t.el.replaceAsk).toEqual({ source: WATCH, unit: "anywhere", target: OTHER });
+    // And the other way: an edit the tab holds was undone since.
+    const undone = takenTab(anywhereWith(2), DEFAULTS);
+    await (undone.t.el.link as (s: string, u: string, g: string) => Promise<void>).call(undone.t.el, WATCH, "anywhere", OTHER);
+    expect(undone.links()).toEqual([false, true]);
+    expect(undone.t.el.replaceAsk).toBeUndefined();
   });
 
   it("will not share a menu whose every copy has unsaved edits", () => {

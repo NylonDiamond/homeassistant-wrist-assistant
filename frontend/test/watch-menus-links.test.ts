@@ -24,6 +24,7 @@ import {
   menuDevicePlaces,
   menuDevicesGroups,
   menuHasSpeakPhrase,
+  menuIsUntouched,
   menuLinkBadgeText,
   menuLinkErrorText,
   menuLinkUnitOf,
@@ -185,6 +186,25 @@ describe("the replace question", () => {
   it("names the menu and the device", () => {
     expect(menuReplaceAskText("anywhere", "Jesse's iPhone")).toBe("Replace the Anywhere menu on Jesse's iPhone? Its own is lost.");
     expect(menuReplaceAskText("entity", "Chen's Watch")).toBe("Replace the Entity quick menu on Chen's Watch? Its own is lost.");
+  });
+
+  it("skips it only for a menu read fresh as the app's own and linked to nothing", async () => {
+    const reads: string[] = [];
+    const reading = (document: MenusDocument, revision = 3) => async (owner: string) => {
+      reads.push(owner);
+      return { revision, document };
+    };
+    expect(await menuIsUntouched(reading(DEFAULTS), PHONE, "anywhere")).toBe(true);
+    expect(reads).toEqual([PHONE]);
+    const edited = structuredClone(DEFAULTS);
+    (edited.quickAction as Record<string, unknown>).slots = [];
+    expect(await menuIsUntouched(reading(edited), PHONE, "anywhere")).toBe(false);
+    // The Entity quick menu is still the app's own there.
+    expect(await menuIsUntouched(reading(edited), PHONE, "entity")).toBe(true);
+    expect(await menuIsUntouched(reading(linked({ anywhere: ANY_LINK })), PHONE, "anywhere")).toBe(false);
+    // A record never saved, or one that cannot be read, is not.
+    expect(await menuIsUntouched(reading(DEFAULTS, 0), PHONE, "anywhere")).toBe(false);
+    expect(await menuIsUntouched(async () => { throw new Error("gone"); }, PHONE, "anywhere")).toBe(false);
   });
 });
 
