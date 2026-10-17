@@ -13,8 +13,14 @@ What is shared and what is not:
 * Shared: every key of the page object but ``isHidden``.
 * Per device: the page's place in the list, and ``isHidden``.
 * Never linked: a page with ``isSystemPage: true``, a system status page
-  (one of the app's five fixed ids, or ``isSystemDefault: true``), the menus
-  and the rooms.
+  (one of the app's five fixed ids, or ``isSystemDefault: true``), and the
+  rooms.
+
+The menus link too, not by item but by unit (:data:`LINK_UNITS`): the
+Anywhere menu with the page switcher, and the Entity quick menu, each marked
+in a top-level ``linkIds`` object. A menu link brings the pages and status
+pages its slots open (:func:`menu_targets`). Plan: app repo
+``docs/shared_things_plan_2026-10.md``, step 2.
 
 A system status page a link brings along is copied to a device that lacks
 it, without a ``linkId``, so a tile that opens it still finds it there; a
@@ -35,8 +41,8 @@ from __future__ import annotations
 
 import copy
 import uuid
-from collections.abc import Iterable, Mapping
-from typing import Any
+from collections.abc import Callable, Iterable, Mapping
+from typing import Any, NamedTuple
 
 # The kinds a page can be linked in, and the key of each one's list.
 LINKED_KINDS: dict[str, str] = {"pages": "pages", "status_pages": "statusPages"}
@@ -59,7 +65,7 @@ _STATUS_TILE_KIND = "status_page"
 
 class PageLinkError(Exception):
     """A link that cannot be made. ``code`` is the stable reason:
-    ``not_found``, ``system_page`` or ``id_taken``."""
+    ``not_found``, ``system_page``, ``id_taken`` or ``unit_taken``."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -325,6 +331,278 @@ def drop_link(document: Any, key: str, link_id: str) -> dict[str, Any] | None:
             changed = True
         out.append(page)
     return {**document, key: out} if changed else None
+
+
+# ── linked units ─────────────────────────────────────────────────────────
+#
+# A kind that is one document per device rather than a list (the menus)
+# links by unit: a set of the document's top-level keys that is the same on
+# every device holding the link. The mark is a top-level `linkIds` object,
+# one id per linked unit (`{"linkIds": {"anywhere": "<hex>"}}`), never a key
+# inside a section, so a section stays exactly what the apps decode. The
+# watch reads only the sections it names, so `linkIds` costs it nothing.
+#
+# Adding a kind is a row here; the store reaches every function below
+# through `link_ops`.
+
+# Each unit kind's units, and the top-level keys each one links as one. The
+# page switcher is style only, so it goes with the Anywhere menu.
+LINK_UNITS: dict[str, dict[str, tuple[str, ...]]] = {
+    "menus": {"anywhere": ("quickAction", "pageSwitcher"), "entity": ("entityRadial",)},
+}
+
+# The top-level key of a unit kind's document holding its link ids.
+LINK_IDS_KEY = "linkIds"
+
+
+def unit_keys(kind: str, unit: str) -> tuple[str, ...]:
+    """The top-level keys a unit links."""
+    return LINK_UNITS[kind][unit]
+
+
+def empty_unit_document(kind: str) -> dict[str, Any]:
+    """The document a unit kind starts from when there is none at all."""
+    return {"schemaVersion": 1}
+
+
+def unit_links(document: Any, kind: str) -> dict[str, str]:
+    """The link id of each linked unit of a document, by unit. A unit the
+    kind does not name, or an id that is not a non-empty string, is left
+    out."""
+    raw = document.get(LINK_IDS_KEY) if isinstance(document, dict) else None
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        unit: raw[unit]
+        for unit in LINK_UNITS[kind]
+        if isinstance(raw.get(unit), str) and raw[unit]
+    }
+
+
+def unit_link_ids(document: Any, kind: str) -> set[str]:
+    """Every link id a unit kind's document holds."""
+    return set(unit_links(document, kind).values())
+
+
+def _with_key(document: Mapping[str, Any], key: str, value: Any) -> dict[str, Any]:
+    """``document`` with ``key`` set: in its place when present, else at its
+    sorted place among the keys, as the phone's sorted-key encoder writes."""
+    if key in document:
+        return {k: (value if k == key else v) for k, v in document.items()}
+    out: dict[str, Any] = {}
+    for k, v in document.items():
+        if key not in out and k > key:
+            out[key] = value
+        out[k] = v
+    out.setdefault(key, value)
+    return out
+
+
+def _with_link(document: Mapping[str, Any], kind: str, unit: str, link: str | None) -> dict[str, Any]:
+    """``document`` with ``linkIds[unit]`` set to ``link``, or taken off for
+    None (and ``linkIds`` itself gone once it is empty)."""
+    raw = document.get(LINK_IDS_KEY)
+    held = dict(raw) if isinstance(raw, dict) else {}
+    if link is None:
+        held.pop(unit, None)
+    else:
+        held[unit] = link
+    if not held:
+        return {k: v for k, v in document.items() if k != LINK_IDS_KEY}
+    return _with_key(document, LINK_IDS_KEY, dict(sorted(held.items())))
+
+
+def without_unit_links(document: Any) -> Any:
+    """A copy of a document with no ``linkIds``: a copy that is not linked."""
+    if not isinstance(document, dict):
+        return copy.deepcopy(document)
+    return {k: copy.deepcopy(v) for k, v in document.items() if k != LINK_IDS_KEY}
+
+
+def _unit_value(document: Mapping[str, Any], keys: Iterable[str]) -> dict[str, Any]:
+    return {key: document[key] for key in keys if key in document}
+
+
+def _copy_unit(
+    source: Mapping[str, Any], target: Mapping[str, Any], keys: Iterable[str]
+) -> dict[str, Any]:
+    """``target`` with each of ``keys`` as ``source`` holds it, and removed
+    where ``source`` lacks it."""
+    out = dict(target)
+    for key in keys:
+        if key in source:
+            out = _with_key(out, key, copy.deepcopy(source[key]))
+        else:
+            out.pop(key, None)
+    return out
+
+
+def apply_unit_link(
+    source_doc: Any, target_doc: Any, kind: str, unit: str, replace: bool = False
+) -> tuple[dict[str, Any], dict[str, Any], str]:
+    """Link one unit of ``source_doc`` onto a target device.
+
+    Returns ``(source, target, link_id)``: the source with ``linkIds[unit]``
+    set (a fresh uuid4 hex when it had none), the target holding the
+    source's keys of the unit and the same link id, and that id.
+
+    A target that already holds another link for the unit, or holds any of
+    the unit's keys with another value, refuses with ``unit_taken`` unless
+    ``replace`` is true; then the target's unit is the source's. A target
+    already linked to the source's unit takes the source's keys again.
+    ``target_doc`` None is a device with no document of the kind yet: it
+    starts from the source's whole document, not linked (the other units are
+    copied once, as a device's first copy of the kind), because a document
+    must carry every unit for the apps to read it. An unknown unit is a
+    ``KeyError``: the caller checks units against :data:`LINK_UNITS`.
+    """
+    keys = unit_keys(kind, unit)
+    source = copy.deepcopy(source_doc) if isinstance(source_doc, dict) else empty_unit_document(kind)
+    if isinstance(target_doc, dict):
+        target = copy.deepcopy(target_doc)
+    else:
+        target = without_unit_links(source)
+    link = unit_links(source, kind).get(unit)
+    held = unit_links(target, kind).get(unit)
+    already_linked = link is not None and held == link
+    own = held is not None or _unit_value(target, keys) not in ({}, _unit_value(source, keys))
+    if own and not (replace or already_linked):
+        raise PageLinkError("unit_taken", f"the device already holds its own {kind} for {unit}")
+    if link is None:
+        link = new_link_id()
+        source = _with_link(source, kind, unit, link)
+    target = _with_link(_copy_unit(source, target, keys), kind, unit, link)
+    return source, target, link
+
+
+def fan_out_units(saved_doc: Any, other_doc: Any, kind: str) -> dict[str, Any] | None:
+    """``other_doc`` with every unit linked to the same unit of ``saved_doc``
+    (the same unit holding the same link id) given the saved keys: each key
+    of the unit as saved, a key the save lacks removed. None when nothing
+    changes."""
+    if not isinstance(other_doc, dict):
+        return None
+    saved = unit_links(saved_doc, kind)
+    other = unit_links(other_doc, kind)
+    out = other_doc
+    for unit, link in saved.items():
+        if other.get(unit) == link:
+            out = _copy_unit(saved_doc, out, unit_keys(kind, unit))
+    return out if out != other_doc else None
+
+
+def drop_unit_link(document: Any, kind: str, link_id: str) -> dict[str, Any] | None:
+    """The document with ``link_id`` taken off every unit holding it (the
+    last copy of a link). None when no unit holds it."""
+    if not isinstance(document, dict):
+        return None
+    out = document
+    for unit, link in unit_links(document, kind).items():
+        if link == link_id:
+            out = _with_link(out, kind, unit, None)
+    return out if out is not document else None
+
+
+def unit_link_places(documents: Mapping[str, Any], kind: str) -> dict[str, dict[str, Any]]:
+    """For each link id in ``documents`` (owner id to document), its unit and
+    the owners that hold it, sorted: ``{linkId: {"unit": unit, "owners":
+    [...]}}``. A link id is made for one unit, so the first unit seen names
+    it."""
+    places: dict[str, tuple[str, set[str]]] = {}
+    for owner, document in sorted(documents.items()):
+        for unit, link in unit_links(document, kind).items():
+            places.setdefault(link, (unit, set()))[1].add(owner)
+    return {
+        link: {"unit": unit, "owners": sorted(owners)}
+        for link, (unit, owners) in sorted(places.items())
+    }
+
+
+# The menu actions whose payload opens a page or a status page, and the
+# payload key holding its id (`menu-actions.json`, the `uuid` payloads whose
+# `target` is `page` or `statusPage`).
+_MENU_PAGE_ACTIONS: dict[str, tuple[str, str]] = {
+    "navigateToPage": ("pageId", "page"),
+    "showStatusPage": ("pageId", "statusPage"),
+}
+
+
+def _menu_slot_lists(section: Any) -> list[list[Any]]:
+    """Every slot list of a menus section: the Anywhere menu's ``slots``, and
+    the Entity quick menu's ``*Slots`` lists and each ``entityOverrides``
+    list (the lists ``_check_menus`` checks)."""
+    if not isinstance(section, dict):
+        return []
+    lists = [section["slots"]] if isinstance(section.get("slots"), list) else []
+    lists += [v for k, v in section.items() if k.endswith("Slots") and isinstance(v, list)]
+    overrides = section.get("entityOverrides")
+    if isinstance(overrides, dict):
+        lists += [v for v in overrides.values() if isinstance(v, list)]
+    return lists
+
+
+def menu_targets(
+    menus_doc: Any, units: Iterable[str] | None = None
+) -> tuple[list[str], list[str]]:
+    """The page ids and status page ids the menu slots open, each once in the
+    order first met, as stored. ``units`` limits the walk to those units'
+    sections (every section when None). Only Go to page and Status page
+    slots count; a speak phrase or HTTP action slot points at something
+    else."""
+    if not isinstance(menus_doc, dict):
+        return [], []
+    names = LINK_UNITS["menus"] if units is None else units
+    pages: dict[str, str] = {}
+    status: dict[str, str] = {}
+    for unit in names:
+        for key in unit_keys("menus", unit):
+            for slots in _menu_slot_lists(menus_doc.get(key)):
+                for slot in slots:
+                    action = slot.get("action") if isinstance(slot, dict) else None
+                    spec = (
+                        _MENU_PAGE_ACTIONS.get(action.get("type"))
+                        if isinstance(action, dict)
+                        else None
+                    )
+                    page_id = action.get(spec[0]) if spec else None
+                    page_key = _key(page_id)
+                    if page_key is None:
+                        continue
+                    into = pages if spec[1] == "page" else status
+                    into.setdefault(page_key, page_id)
+    return list(pages.values()), list(status.values())
+
+
+class LinkOps(NamedTuple):
+    """How the store reads and keeps one linked kind's links, the same for a
+    list kind (pages) and a unit kind (menus)."""
+
+    ids: Callable[[Any], set[str]]
+    fan_out: Callable[[Any, Any], dict[str, Any] | None]
+    drop: Callable[[Any, str], dict[str, Any] | None]
+
+
+def link_ops(kind: str) -> LinkOps | None:
+    """The link functions of a linked kind, None for a kind that is never
+    linked."""
+    if kind in LINKED_KINDS:
+        key = LINKED_KINDS[kind]
+        return LinkOps(
+            lambda d: link_ids(d, key),
+            lambda saved, other: fan_out(saved, other, key),
+            lambda d, link: drop_link(d, key, link),
+        )
+    if kind in LINK_UNITS:
+        return LinkOps(
+            lambda d: unit_link_ids(d, kind),
+            lambda saved, other: fan_out_units(saved, other, kind),
+            lambda d, link: drop_unit_link(d, kind, link),
+        )
+    return None
+
+
+# Every kind that links, list kinds first.
+LINKABLE_KINDS: tuple[str, ...] = (*LINKED_KINDS, *LINK_UNITS)
 
 
 # The six keys a `rooms` record holds, under their `behavior` names (the
