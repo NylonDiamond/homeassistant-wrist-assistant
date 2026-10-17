@@ -6,10 +6,13 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { WatchPagesPlaces } from "../src/ha-api.js";
+import type { HassLike, OwnerSummary, WatchPagesPlaces } from "../src/ha-api.js";
+import "../src/watch-menus/all-menus.js";
 import {
   ALL_MENUS_LEAD,
+  MENU_CARD_DIRTY_TEXT,
   MENU_CARD_ONLY_TEXT,
+  type MenuCard,
   allMenusLead,
   menuCardDetail,
   menuCardGroup,
@@ -22,7 +25,7 @@ import {
   openMenuCopy,
   shownMenuCards,
 } from "../src/watch-menus/all-menus-model.js";
-import { askWatchMenu, dropAllWatchMenus, takeWatchMenuAsk } from "../src/watch-menus/draft.js";
+import { askWatchMenu, dropAllWatchMenus, takeWatchMenuAsk, takeWatchMenusRecord } from "../src/watch-menus/draft.js";
 import {
   MENU_DEVICES_SWITCHER_TEXT,
   MENU_DEVICES_WAIT_TEXT,
@@ -32,6 +35,7 @@ import {
 import { shownMenu, showMenuSettings, selectedMenuSlot } from "../src/watch-menus/menu-view.js";
 import type { MenusDocument } from "../src/watch-menus/model.js";
 import { ALL_FILTER } from "../src/watch-pages/all-pages-model.js";
+import { NO_ICONS } from "../src/watch-pages/editor-host.js";
 import type { LinkDevice } from "../src/watch-pages/links.js";
 
 const DEFAULTS = JSON.parse(readFileSync(join(__dirname, "fixtures-menus", "01-defaults.json"), "utf8")) as MenusDocument;
@@ -203,6 +207,120 @@ describe("a Menus tab card's Devices menu", () => {
     expect(menuCardSource(card, () => false)).toBe(WATCH);
     expect(menuCardSource(card, (id) => id === WATCH)).toBe(OTHER);
     expect(menuCardSource(card, () => true)).toBeUndefined();
+  });
+});
+
+// ── the element ─────────────────────────────────────────────────────────
+
+const flat = (v: unknown): string => {
+  if (Array.isArray(v)) return v.map(flat).join("");
+  if (v !== null && typeof v === "object" && "strings" in v && "values" in v) {
+    const r = v as { strings: readonly string[]; values: unknown[] };
+    return r.strings.map((s, i) => s + (i < r.values.length ? flat(r.values[i]) : "")).join("");
+  }
+  return typeof v === "string" || typeof v === "number" || typeof v === "boolean" ? String(v) : "";
+};
+
+const OWNERS = [
+  { owner_watch_id: WATCH, device_name: "Jesse's Watch", device_kind: "watch", paired_iphone_name: null },
+  { owner_watch_id: OTHER, device_name: "Chen's Watch", device_kind: "watch", paired_iphone_name: null },
+] as unknown as OwnerSummary[];
+
+/** The tab's element with `docs` read and `send` as Home Assistant. */
+function tab(docs: Map<string, MenusDocument>, send: (m: Record<string, unknown>) => Promise<unknown> = async () => ({})) {
+  const Ctor = customElements.get("wa-all-menus") as unknown as new () => Record<string, unknown>;
+  const el = new Ctor();
+  el.hass = { user: { is_admin: true }, states: {}, connection: { sendMessagePromise: send, subscribeMessage: async () => async () => undefined } } as unknown as HassLike;
+  el.owners = OWNERS;
+  el.icons = NO_ICONS;
+  el.ownersReady = true;
+  el.docs = docs;
+  el.places = { pages: {}, status_pages: {}, menus: {} } satisfies WatchPagesPlaces;
+  el.readState = "ready";
+  const opened: [string, string][] = [];
+  el.onOpen = (ownerId: string, kind: string) => opened.push([ownerId, kind]);
+  const cards = () => (Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "cards")!.get as () => MenuCard[]).call(el);
+  return { el, opened, cards, whole: () => flat((el.render as () => unknown).call(el)) };
+}
+
+describe("the Menus tab", () => {
+  it("draws a card per menu with its count, its chips and Devices, and no Multi select or New", () => {
+    const t = tab(new Map([[WATCH, linked({ anywhere: ANY_LINK })], [OTHER, linked({ anywhere: ANY_LINK })]]));
+    const text = t.whole();
+    expect(text).toContain("<h1>Menus</h1>");
+    expect(text).toContain("3 menus on your watches and iPhones.");
+    expect(text.split(`<b class="ap-name">Anywhere menu</b>`).length - 1).toBe(1);
+    expect(text.split(`<b class="ap-name">Entity quick menu</b>`).length - 1).toBe(2);
+    expect(text).toContain("8 slots");
+    expect(text).toContain("menu=anywhere");
+    expect(text).toContain("<span>Devices</span>");
+    expect(text).not.toContain("Multi select");
+    expect(text).not.toContain("New ");
+    // The device tabs: All, then each device.
+    expect(text).toContain(`<span class="pk-tab-name">All</span>`);
+    expect(text).toContain(`<span class="pk-tab-name">Chen's Watch</span>`);
+  });
+
+  it("opens a card's menu in its device's editor, on that menu", () => {
+    const t = tab(new Map([[WATCH, DEFAULTS], [OTHER, DEFAULTS]]));
+    const entity = t.cards().find((c) => c.unit === "entity" && c.copies[0]!.device.ownerId === OTHER)!;
+    (t.el.open as (c: MenuCard) => void).call(t.el, entity);
+    expect(t.opened).toEqual([[OTHER, "watch"]]);
+    expect(takeWatchMenuAsk(OTHER)).toBe("entity");
+  });
+
+  it("opens a card's Devices menu with the editor's lines and no Unlink this watch", () => {
+    const t = tab(new Map([[WATCH, DEFAULTS], [OTHER, DEFAULTS]]));
+    (t.el.openDevices as (c: MenuCard) => void).call(t.el, t.cards()[0]!);
+    const text = t.whole();
+    expect(text).toContain("The Anywhere menu is on");
+    expect(text).toContain(MENU_DEVICES_SWITCHER_TEXT);
+    expect(text).not.toContain("Unlink this");
+    expect(text).not.toContain("The Entity quick menu is on");
+  });
+
+  /** A tab whose link is refused `unit_taken` until sent with replace. */
+  function takenTab(theirs: MenusDocument) {
+    const sent: Record<string, unknown>[] = [];
+    const t = tab(new Map([[WATCH, DEFAULTS], [OTHER, theirs]]), async (m) => {
+      sent.push(m);
+      if (m.type === "wrist_assistant/watch_pages/link" && m.replace !== true) throw Object.assign(new Error("taken"), { code: "unit_taken" });
+      if (m.type === "wrist_assistant/watch_pages/link") return { targets: { [OTHER]: { pages: [], status_pages: [], units: ["anywhere"] } }, link_ids: { anywhere: ANY_LINK } };
+      if (m.type === "wrist_assistant/watch_pages/places") return { pages: {}, status_pages: {}, menus: {} };
+      return { revision: 4, document: DEFAULTS };
+    });
+    const links = () => sent.filter((m) => m.type === "wrist_assistant/watch_pages/link").map((m) => m.replace);
+    return { t, links };
+  }
+
+  it("replaces a menu the other device never edited without asking", async () => {
+    const { t, links } = takenTab(DEFAULTS);
+    await (t.el.link as (s: string, u: string, g: string) => Promise<void>).call(t.el, WATCH, "anywhere", OTHER);
+    expect(links()).toEqual([false, true]);
+    expect(t.el.replaceAsk).toBeUndefined();
+    expect((t.el.devicesNote as { text: string }).text).toBe("The Anywhere menu is on Chen's Watch now.");
+  });
+
+  it("asks in the menu before replacing a device's own menu", async () => {
+    const { t, links } = takenTab(anywhereWith(2));
+    (t.el.openDevices as (c: MenuCard) => void).call(t.el, t.cards()[0]!);
+    await (t.el.link as (s: string, u: string, g: string) => Promise<void>).call(t.el, WATCH, "anywhere", OTHER);
+    expect(links()).toEqual([false]);
+    expect(t.el.replaceAsk).toEqual({ source: WATCH, unit: "anywhere", target: OTHER });
+    const text = t.whole();
+    expect(text).toContain("Replace the Anywhere menu on Chen's Watch?");
+    expect(text).toContain("Its own is lost.");
+    await (t.el.link as (s: string, u: string, g: string, r: boolean) => Promise<void>).call(t.el, WATCH, "anywhere", OTHER, true);
+    expect(links()).toEqual([false, true]);
+  });
+
+  it("will not share a menu whose every copy has unsaved edits", () => {
+    const t = tab(new Map([[WATCH, DEFAULTS], [OTHER, DEFAULTS]]));
+    takeWatchMenusRecord(WATCH, DEFAULTS, 4).draft.apply(anywhereWith(1));
+    const card = t.cards()[0]!;
+    (t.el.openDevices as (c: MenuCard) => void).call(t.el, card);
+    expect(t.whole()).toContain(MENU_CARD_DIRTY_TEXT);
+    dropAllWatchMenus();
   });
 });
 

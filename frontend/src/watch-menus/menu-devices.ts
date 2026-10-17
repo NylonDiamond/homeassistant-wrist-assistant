@@ -23,6 +23,10 @@ export interface MenuDevicesInput {
   note?: WatchPagesNote;
   /** Extra classes on the menu, for where it hangs. */
   className?: string;
+  /** A question asked in the menu itself, under the switches: the Menus
+   * tab's "Replace the Anywhere menu on X?", where the editor asks in a
+   * dialog instead. */
+  ask?: TemplateResult;
   colorOf?(ownerId: string): string | undefined;
   onToggle(unit: MenuLinkUnit, place: PageDevicePlace): void;
   onUnlinkHere(unit: MenuLinkUnit): void;
@@ -53,6 +57,7 @@ export function renderMenuDevicesMenu(input: MenuDevicesInput): TemplateResult {
         title=${`Keep the ${MENU_UNIT_NAMES[group.unit]} here as it is, and stop sharing it. The other devices keep theirs.`}
         @click=${() => input.onUnlinkHere(group.unit)}>${menuUnlinkHereLabel(input.hereKind)}</button>` : nothing}
     </div>`)}
+    ${input.ask ?? nothing}
     ${busy ? html`<div class="pe-dev-note">Saving…</div>` : nothing}
     ${note === undefined ? nothing : html`<div class="pe-dev-note ${note.kind}" role="status">${note.text}</div>`}
     <div class="pk-dup-note">${MENU_DEVICES_NOTE}</div>
@@ -73,6 +78,17 @@ export const menuDevicesStyles = css`
   }
   .me-dev-unlink:disabled { opacity: .5; cursor: default; }
   .me-dev-unlink:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 4px; }
+  /* The question asked in the menu: its words, then Replace and Cancel. */
+  .me-dev-ask { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 8px; background: var(--wa-hover); font-size: 12px; line-height: 1.4; }
+  .me-dev-ask b { font-weight: 600; }
+  .me-dev-ask-acts { display: flex; gap: 6px; }
+  .me-dev-ask-acts button {
+    font: inherit; font-size: 12px; font-weight: 600; min-height: 26px; padding: 0 10px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink);
+  }
+  .me-dev-ask-acts button.danger { color: var(--error-color, #b42318); border-color: color-mix(in srgb, var(--error-color, #b42318) 45%, var(--wa-line)); }
+  .me-dev-ask-acts button:disabled { opacity: .5; cursor: default; }
+  .me-dev-ask-acts button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .wa-bar .pe-top-menu { position: relative; }
   .pe-top-menu > .pe-dev-menu.at-bar { position: absolute; top: calc(100% + 6px); right: 0; z-index: 60; width: min(320px, calc(100vw - 32px)); }
   .pe-dev-menu.at-card { margin: 0 0 8px; box-shadow: none; }
