@@ -4,3 +4,5 @@ websockets>=13.0
 # The client certificate tests make a real .p12 and check the sealed box.
 # Home Assistant itself ships it, so the integration needs no requirement.
 cryptography>=42.0
+# The in-process view tests build real aiohttp requests (multidict comes with it).
+aiohttp>=3.9

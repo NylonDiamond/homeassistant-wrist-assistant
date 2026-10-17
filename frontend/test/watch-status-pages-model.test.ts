@@ -495,7 +495,26 @@ describe("the draft and its save", () => {
     expect(statusPagesSaveNote(result)).toEqual({ kind: "warn", text: 'Saved. Another save also changed "theirs". That save\'s version was kept.' });
   });
 
-  it("does not send what Home Assistant would refuse, and one save runs at a time", async () => {
+  it("names the devices whose linked copies the save could not update", async () => {
+    const draft = new StatusPagesDraft(base(), 3);
+    draft.apply(renameStatusPage(draft.document, "A", "mine"));
+    const result = await saveStatusPagesDraft(draft, {
+      save: async (rev) => ({ revision: rev + 1, link_failures: [{ owner: "w2", name: "Chen's Watch" }] }),
+      fetch: async () => { throw new Error("not read"); },
+    });
+    expect(result).toMatchObject({ ok: true, revision: 4, linkFailures: [{ owner: "w2", name: "Chen's Watch" }] });
+    expect(statusPagesSaveNote(result)).toEqual({
+      kind: "warn",
+      text: "Saved. Chen's Watch kept the old version: Home Assistant could not update the linked status pages there.",
+    });
+    // No list at all is a plain save.
+    draft.apply(renameStatusPage(draft.document, "A", "again"));
+    const plain = await saveStatusPagesDraft(draft, { save: async (rev) => ({ revision: rev + 1 }), fetch: async () => { throw new Error("not read"); } });
+    expect(plain).not.toHaveProperty("linkFailures");
+    expect(statusPagesSaveNote(plain)).toBeUndefined();
+  });
+
+    it("does not send what Home Assistant would refuse, and one save runs at a time", async () => {
     const draft = new StatusPagesDraft(base(), 1);
     draft.apply({ schemaVersion: 1, statusPages: [page("A", "a"), page("a", "dup")] });
     const result = await saveStatusPagesDraft(draft, { save: async () => ({ revision: 2 }), fetch: async () => ({ revision: 1, document: base() }) });

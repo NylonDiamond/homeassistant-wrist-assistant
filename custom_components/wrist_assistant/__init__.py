@@ -77,7 +77,7 @@ from .const import (
     WristAssistantData,
 )
 from .control_center_move import ControlCenterMover
-from .device_lookup import find_paired_device
+from .device_lookup import paired_device_name
 from .http_actions_runner import HTTPActionRunner
 from .http_actions_store import HTTPActionsStore
 from .http_actions_ws import async_register_http_actions_commands
@@ -92,7 +92,6 @@ from .notification_snapshot import NotificationSnapshotStore
 from .notifications import (
     NotificationTokenStore,
     TokenEntry,
-    is_iphone_entry,
     purge_dead_token,
     resolve_push_routes,
 )
@@ -309,17 +308,13 @@ def _device_label(
     """What a person calls a paired watch or iPhone, for an error they read.
 
     The name on its device page (a rename there wins), then the name the app
-    reported, then the short form the device page falls back to. Never the
-    bare id: nobody knows their watch by it.
+    reported, then the short form the device page falls back to
+    (``device_lookup.paired_device_name``). Never the bare id: nobody knows
+    their watch by it.
     """
-    device = find_paired_device(dr.async_get(hass), device_id)
-    if device is not None and (device.name_by_user or device.name):
-        return device.name_by_user or device.name
-    entry = data.widget_secret_store.get(device_id)
-    if entry is not None and getattr(entry, "device_name", None):
-        return entry.device_name
-    kind = "iPhone" if is_iphone_entry(entry) else "Watch"
-    return f"{kind} {device_id[:8]}"
+    return paired_device_name(
+        dr.async_get(hass), data.widget_secret_store.get(device_id), device_id
+    )
 
 
 async def _deliver_push(
@@ -820,11 +815,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # An iPhone never has a watch's config, but it owns its own pages and
     # settings (phone pages): the second question keeps every write for an
     # iPhone to the phone's kinds and settings, and lets the panel start a
-    # phone's first record of one of them.
+    # phone's first record of one of them. The third keeps a page link from
+    # making the first record of a watch whose iPhone may still move its own
+    # setup here (the panel's `has_iphone`).
     watch_config_store = WatchConfigStore(
         hass,
         is_paired=widget_secret_store.is_paired_watch,
         is_iphone=widget_secret_store.is_paired_iphone,
+        may_await_move=widget_secret_store.may_await_move,
     )
     await watch_config_store.async_load()
     # Custom complications ride the watch's long-poll: the owner's store

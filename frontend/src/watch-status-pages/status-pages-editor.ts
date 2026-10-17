@@ -46,10 +46,12 @@ import {
   type OwnerSummary,
   type WatchConfigHistoryEntry,
   type WatchConfigRecord,
+  type WatchPagesPlaces,
   fetchOwners,
   fetchWatchConfig,
   fetchWatchConfigHistory,
   fetchWatchConfigHistoryEntry,
+  fetchWatchPagesPlaces,
   restoreWatchConfig,
   saveWatchConfig,
   subscribeWatchConfig,
@@ -72,7 +74,9 @@ import {
   renderConfigSaved,
 } from "../watch-pages/config-foot.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
-import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
+import { type LinkDevice, linkBadgeText, linkDevicesOf, statusPageHolders, statusPagesSharedText } from "../watch-pages/links.js";
+import { isJsonObject } from "../watch-pages/model.js";
+import { type WatchPagesNote, linkFailuresOf, watchCommandError, withLinkFailures } from "../watch-pages/save-note.js";
 import { friendlyError } from "../friendly-error.js";
 import { restoredText } from "../revision-words.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
@@ -113,6 +117,7 @@ import {
   asStatusPagesDocument,
   statusPageName,
   statusPagesBudget,
+  statusPagesOf,
   statusPagesReadMeansUnsupported,
   statusPagesSummary,
 } from "./model.js";
@@ -248,6 +253,10 @@ export class WaStatusPagesEditor extends LitElement {
   @state() private rawCopied = false;
   private readonly shownFootDialogs = new WeakSet<HTMLDialogElement>();
   @state() private ownList?: readonly OwnerSummary[];
+  /** Where each linked page and status page is (`watch_pages/places`), for
+   * the badges on linked status pages. Undefined until read, and on an
+   * integration without linked pages. */
+  @state() private places?: WatchPagesPlaces;
   @state() private topMenuOpen = false;
   @state() private watchMenuOpen = false;
   @state() private zoom = loadStatusPagesZoom();
@@ -270,6 +279,7 @@ export class WaStatusPagesEditor extends LitElement {
   private followedSave?: Promise<unknown>;
   private shownDialog?: HTMLDialogElement;
   private loadSeq = 0;
+  private placesSeq = 0;
   private historySeq = 0;
   private subscribeSeq = 0;
   private unsubscribe?: () => Promise<void>;
@@ -481,6 +491,7 @@ export class WaStatusPagesEditor extends LitElement {
       this.closeAsk();
       this.endScrub();
       this.uiState.clear();
+      this.places = undefined;
       quiet = false;
     }
     this.startSubscription(watchId);
@@ -525,6 +536,32 @@ export class WaStatusPagesEditor extends LitElement {
     if (this.unsupported) return;
     this.pollIfWaiting();
     void this.loadHistory(watchId);
+    void this.loadPlaces(watchId);
+  }
+
+  /** Read where the linked status pages are, for their badges. An
+   * integration without linked pages (`unknown_command`) shows none; any
+   * other failure keeps what was known. */
+  private async loadPlaces(watchId: string): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.placesSeq;
+    try {
+      const reply = await fetchWatchPagesPlaces(hass);
+      if (seq !== this.placesSeq || watchId !== this.watchId) return;
+      this.places = {
+        pages: isJsonObject(reply?.pages) ? (reply.pages as WatchPagesPlaces["pages"]) : {},
+        status_pages: isJsonObject(reply?.status_pages) ? (reply.status_pages as WatchPagesPlaces["status_pages"]) : {},
+      };
+    } catch (err) {
+      if (seq === this.placesSeq && errCode(err) === "unknown_command") this.places = undefined;
+    }
+  }
+
+  /** Every device a status page can be on, named as the page editor names
+   * them. */
+  private get linkDevices(): LinkDevice[] {
+    return linkDevicesOf(this.owners.length > 0 ? this.owners : (this.ownList ?? []), this.phones);
   }
 
   private flushPending(): void {
@@ -720,9 +757,25 @@ export class WaStatusPagesEditor extends LitElement {
       ...(this.phoneLayout() === undefined ? {} : { phone: this.phoneLayout() }),
       get document() { return draft.document; },
       get busy() { return self.saving; },
+      ...this.linkHost(draft),
       edit: (change, coalesce) => this.draft === draft && this.edit(change, coalesce),
       endCoalesce: () => draft.endCoalesce(),
       requestUpdate: () => this.requestUpdate(),
+    };
+  }
+
+  /** The view's link badges and its shared line, from the places as last
+   * read. None before they are read, and on an integration without linked
+   * pages. */
+  private linkHost(draft: StatusPagesDraft): Pick<StatusPagesViewHost, "linkBadge" | "sharedLine"> {
+    const places = this.places;
+    const watchId = this.watchId;
+    if (places === undefined || watchId === undefined) return {};
+    const devices = this.linkDevices;
+    const line = statusPagesSharedText(statusPagesOf(draft.document), watchId, places, devices);
+    return {
+      linkBadge: (page) => linkBadgeText(statusPageHolders(page, watchId, places), watchId, devices),
+      ...(line === undefined ? {} : { sharedLine: line }),
     };
   }
 
@@ -818,7 +871,7 @@ export class WaStatusPagesEditor extends LitElement {
     let note: Note;
     try {
       const reply = await restoreWatchConfig(hass, watchId, "status_pages", ask.entry.revision, ask.baseRevision);
-      note = { kind: "ok", text: restoredText(ask.entry.updated_at) };
+      note = withLinkFailures({ kind: "ok", text: restoredText(ask.entry.updated_at) }, linkFailuresOf(reply), "status pages")!;
       if (watchId === this.watchId) this.restartDraft = { watchId, revision: reply.revision };
       else if (!(keptStatusPagesDraft(watchId)?.dirty ?? false)) forgetStatusPagesDraft(watchId);
     } catch (err) {

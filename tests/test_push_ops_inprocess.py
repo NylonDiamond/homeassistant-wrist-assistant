@@ -30,7 +30,7 @@ from typing import Any
 
 import pytest
 
-from device_lookup_loader import find_paired_device
+from device_lookup_loader import paired_device_name
 from test_notification_tokens import _loaded_notifications
 
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
@@ -465,8 +465,7 @@ def _deliver_push_fn(notif: Any):
         "HomeAssistantError": _HomeAssistantError,
         "DOMAIN": "wrist_assistant",
         "dr": types.SimpleNamespace(async_get=lambda _hass: _DeviceRegistry()),
-        "find_paired_device": find_paired_device,
-        "is_iphone_entry": notif.is_iphone_entry,
+        "paired_device_name": paired_device_name,
         "_get_ha_instance_uuid": _no_uuid,
         "resolve_push_routes": notif.resolve_push_routes,
         "purge_dead_token": notif.purge_dead_token,

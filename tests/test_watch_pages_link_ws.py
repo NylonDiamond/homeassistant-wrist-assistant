@@ -10,6 +10,7 @@ result shapes, the error codes and the owner gate.
 from __future__ import annotations
 
 import asyncio
+import copy
 import types
 
 import pytest
@@ -33,10 +34,13 @@ DOORS = "BBBBBBBB-0000-4000-8000-000000000001"
 
 @pytest.fixture
 def links(env):  # noqa: F811 (the imported fixture)
+    # The watches whose iPhone may still move their own setup here.
+    awaiting: set[str] = set()
     store = env.mod.WatchConfigStore(
         env.hass,
         is_paired=lambda owner: owner in {WATCH, WATCH_2},
         is_iphone=lambda owner: owner == PHONE,
+        may_await_move=lambda owner: owner in awaiting,
     )
     asyncio.run(store.async_load())
     env.hass.data = {
@@ -71,6 +75,7 @@ def links(env):  # noqa: F811 (the imported fixture)
         base_revision=0,
     )
     env.store = store
+    env.awaiting = awaiting
     return env
 
 
@@ -210,3 +215,104 @@ def test_link_all_refuses_an_id_the_target_holds(links) -> None:
     connection = _link_all(links, source_id=WATCH, target_id=PHONE)
     assert [error[1] for error in connection.errors] == ["id_taken"]
     assert links.store.get(PHONE, "status_pages") is None
+
+
+# ── a watch still waiting for its iPhone's move ──────────────────────────
+
+
+def test_link_onto_a_watch_awaiting_its_move_answers_awaiting_move(links) -> None:
+    links.awaiting.add(WATCH_2)
+    connection = _link(links, source_id=WATCH, page_ids=[LIGHTS], targets=[WATCH_2])
+    assert connection.results == {}
+    assert [error[1] for error in connection.errors] == ["awaiting_move"]
+    assert links.store.get(WATCH_2, "pages") is None
+
+
+def test_link_all_onto_a_watch_awaiting_its_move_answers_awaiting_move(links) -> None:
+    links.awaiting.add(WATCH_2)
+    connection = _link_all(links, source_id=WATCH, target_id=WATCH_2)
+    assert [error[1] for error in connection.errors] == ["awaiting_move"]
+    assert links.store.get(WATCH_2, "pages") is None
+    assert links.store.get(WATCH_2, "status_pages") is None
+
+
+# ── save and restore name the copies left out of step ────────────────────
+
+
+class _Registry:
+    """A device registry before 2026.8, with the iPhone renamed."""
+
+    def async_get_device(self, *, identifiers):
+        if (DOMAIN, f"watch_{PHONE}") in identifiers:
+            return types.SimpleNamespace(name_by_user="Jesse's iPhone", name="iPhone")
+        return None
+
+
+def test_save_and_restore_name_the_linked_copies_that_could_not_take_it(
+    links, monkeypatch
+) -> None:
+    _link(links, source_id=WATCH, page_ids=[LIGHTS], targets=[PHONE, WATCH_2])
+    links.hass.devices = _Registry()
+    # WATCH_2 is not in the secret store: its name is null.
+    links.hass.data[DOMAIN].widget_secret_store = _Secrets({WATCH: "alice", PHONE: "alice"})
+    real = links.mod.validate_document
+
+    def capped(kind, document, **kwargs):
+        # A copy (written without the tile level) is over its cap once it
+        # holds the new name; the saved document itself is not.
+        names = [p.get("name") for p in document.get("pages", [])]
+        if not kwargs.get("check_items") and "Bigger" in names:
+            raise links.mod.WatchConfigValidationError("too big")
+        return real(kind, document, **kwargs)
+
+    monkeypatch.setattr(links.mod, "validate_document", capped)
+    record = links.store.get(WATCH, "pages")
+    first = record.revision
+    document = copy.deepcopy(record.document)
+    document["pages"][1]["name"] = "Bigger"
+    saved = _run(
+        links,
+        links.ws.ws_watch_config_save,
+        owner_watch_id=WATCH,
+        kind="pages",
+        base_revision=first,
+        document=document,
+    )
+    assert saved.errors == []
+    failures = [
+        {"owner": PHONE, "name": "Jesse's iPhone"},
+        {"owner": WATCH_2, "name": None},
+    ]
+    assert saved.results[1] == {
+        "revision": links.store.get(WATCH, "pages").revision,
+        "link_failures": failures,
+    }
+    assert links.store.get(PHONE, "pages").document["pages"][-1]["name"] == "Lights"
+
+    restored = _run(
+        links,
+        links.ws.ws_watch_config_restore,
+        owner_watch_id=WATCH,
+        kind="pages",
+        revision=first,
+        base_revision=links.store.get(WATCH, "pages").revision,
+    )
+    assert restored.errors == []
+    assert restored.results[1]["link_failures"] == []
+
+
+def test_a_save_whose_copies_all_took_it_has_no_link_failures(links) -> None:
+    _link(links, source_id=WATCH, page_ids=[LIGHTS], targets=[PHONE])
+    record = links.store.get(WATCH, "pages")
+    document = copy.deepcopy(record.document)
+    document["pages"][1]["name"] = "Lamps"
+    saved = _run(
+        links,
+        links.ws.ws_watch_config_save,
+        owner_watch_id=WATCH,
+        kind="pages",
+        base_revision=record.revision,
+        document=document,
+    )
+    assert saved.results[1]["link_failures"] == []
+    assert links.store.get(PHONE, "pages").document["pages"][-1]["name"] == "Lamps"

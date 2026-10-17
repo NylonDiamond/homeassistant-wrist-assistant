@@ -20,6 +20,7 @@ from typing import Any
 
 import pytest
 
+from device_lookup_loader import paired_device_name
 from test_notification_tokens import _loaded_notifications
 from test_watch_config_store import _Hass, _loaded_module
 
@@ -30,7 +31,6 @@ _NAMES = (
     "_watch_config_refusal",
     "_caller_is_iphone",
     "_not_an_iphone",
-    "_watch_name",
     "_owner_has_pages",
     "_op_phone_pages_offer",
     "_op_phone_pages_link_watch",
@@ -52,14 +52,31 @@ class _Response:
         self.body = body
 
 
-def _device(kind: str, user_id: str | None, device_name: str | None = None) -> Any:
+def _device(
+    kind: str, user_id: str | None, device_name: str | None = None, label: str | None = None
+) -> Any:
     return types.SimpleNamespace(
         device_kind=kind,
         user_id=user_id,
         owner_iphone_id=None,
         device_name=device_name,
-        label=None,
+        label=label,
     )
+
+
+class _DeviceRegistry:
+    """Device pages by watch id; a test renames one by adding it here."""
+
+    def __init__(self) -> None:
+        self.names: dict[str, tuple[str | None, str | None]] = {}
+
+    def async_get_device(self, identifiers):
+        for domain, identifier in identifiers:
+            if domain == "wrist_assistant" and identifier.startswith("watch_"):
+                names = self.names.get(identifier.removeprefix("watch_"))
+                if names is not None:
+                    return types.SimpleNamespace(name_by_user=names[0], name=names[1])
+        return None
 
 
 class _Secrets:
@@ -76,6 +93,7 @@ class _Secrets:
 
 class _Ctx:
     def __init__(self, store: Any, secrets: Any, watch_id: str, payload: dict) -> None:
+        self.hass = None
         self.watch_id = watch_id
         self.payload = payload
         self.domain_data = types.SimpleNamespace(
@@ -86,7 +104,7 @@ class _Ctx:
         return _Response(status=status, body=payload)
 
 
-def _handlers(store_mod: Any, notif_mod: Any) -> dict[str, Any]:
+def _handlers(store_mod: Any, notif_mod: Any, registry: _DeviceRegistry) -> dict[str, Any]:
     source = _MODULE.read_text()
     tree = ast.parse(source, filename=str(_MODULE))
     wanted = [
@@ -112,6 +130,8 @@ def _handlers(store_mod: Any, notif_mod: Any) -> dict[str, Any]:
         "listed_page_ids": store_mod.listed_page_ids,
         "is_iphone_entry": notif_mod.is_iphone_entry,
         "phone_watch_ids": notif_mod.phone_watch_ids,
+        "dr": types.SimpleNamespace(async_get=lambda _hass: registry),
+        "paired_device_name": paired_device_name,
     }
     exec(code, namespace)  # noqa: S102
     return namespace
@@ -124,7 +144,7 @@ def env():
             {
                 PHONE: _device("iphone", "user-1"),
                 WATCH: _device("watch", "user-1", device_name="Jesse's Apple Watch"),
-                OTHER: _device("watch", "user-1"),
+                OTHER: _device("watch", "user-1", label="watch-code-pair"),
                 STRANGER: _device("watch", "user-2"),
             }
         )
@@ -159,8 +179,12 @@ def env():
             {"schemaVersion": 1, "pages": [{"id": SYSTEM, "name": "S", "isSystemPage": True}]},
             base_revision=0,
         )
+        registry = _DeviceRegistry()
         yield types.SimpleNamespace(
-            store=store, secrets=secrets, views=_handlers(store_mod, notif_mod)
+            store=store,
+            secrets=secrets,
+            registry=registry,
+            views=_handlers(store_mod, notif_mod, registry),
         )
 
 
@@ -182,6 +206,20 @@ def test_offer_lists_the_user_s_watches_with_names_and_pages(env) -> None:
             {"id": OTHER, "name": f"Watch {OTHER[:8]}", "has_pages": False},
         ],
     }
+
+
+def test_offer_never_names_a_watch_by_how_it_paired(env) -> None:
+    """OTHER paired by code: its label is ``watch-code-pair``, not a name."""
+    names = [w["name"] for w in _op(env, "_op_phone_pages_offer", {}).body["watches"]]
+    assert "watch-code-pair" not in names
+    assert names[1] == f"Watch {OTHER[:8]}"
+
+
+def test_offer_names_a_watch_as_renamed_on_its_device_page(env) -> None:
+    env.registry.names[WATCH] = ("Kitchen watch", "Jesse's Apple Watch")
+    env.registry.names[OTHER] = (None, "Apple Watch Ultra")
+    names = [w["name"] for w in _op(env, "_op_phone_pages_offer", {}).body["watches"]]
+    assert names == ["Kitchen watch", "Apple Watch Ultra"]
 
 
 def test_offer_says_when_the_phone_has_pages_of_its_own(env) -> None:

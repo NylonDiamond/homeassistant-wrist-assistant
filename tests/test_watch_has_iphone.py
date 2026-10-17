@@ -136,3 +136,21 @@ def test_real_entries_classify_by_label(mod) -> None:
     assert mod.watch_has_iphone(entries, "w-unnamed") is False
     assert mod.watch_has_iphone(entries, "w-code") is False
     assert mod.watch_has_iphone(entries, "p1") is False
+
+
+def test_the_store_asks_the_same_question_for_the_watch_config_store(mod) -> None:
+    """``WidgetSecretStore.may_await_move`` is what setup hands the watch
+    config store, so a page link waits on exactly the watches the panel's
+    editors wait on."""
+    from test_widget_secret_user_binding import SECRET_A, SECRET_B
+
+    secrets = mod.WidgetSecretStore(object())
+    secrets.register("p1", SECRET_A, mod.LABEL_IPHONE_SELF_PROVISION, user_id="u1")
+    secrets.register(
+        "w-old", SECRET_B, mod.LABEL_WATCH_SELF_PROVISION, owner_iphone_id="p1", user_id="u1"
+    )
+    secrets.register("w-code", SECRET_B, mod.LABEL_WATCH_CODE_PAIR, user_id="u1")
+    assert secrets.may_await_move("w-old") is True
+    assert secrets.may_await_move("w-code") is False
+    assert secrets.may_await_move("p1") is False
+    assert secrets.may_await_move("missing") is False

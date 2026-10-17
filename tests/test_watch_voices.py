@@ -36,6 +36,7 @@ from test_watch_config_ws import (
     _load_relay,
     _Marker,
     _stub,
+    _stub_device_names,
 )
 
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
@@ -394,6 +395,7 @@ def ws_env():
         _stub("voluptuous", Required=_Marker, Optional=_Marker)
         _load_relay()
         _load_panel_access()
+        _stub_device_names()
         spec = importlib.util.spec_from_file_location(f"{_PKG}.watch_config_ws", _WS_PATH)
         ws = importlib.util.module_from_spec(spec)
         sys.modules[f"{_PKG}.watch_config_ws"] = ws

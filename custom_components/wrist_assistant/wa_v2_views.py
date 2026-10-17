@@ -143,7 +143,7 @@ from .const import (
     WATCH_LOGS_MAX_BODY_BYTES,
     WristAssistantData,
 )
-from .device_lookup import find_paired_device
+from .device_lookup import find_paired_device, paired_device_name
 from .http_actions_runner import HTTPActionRefusal, run_input_problem
 from .http_actions_store import HTTPActionsStoreError, HTTPActionsUnavailableError
 from .logbook_events import (
@@ -4243,14 +4243,6 @@ def _not_an_iphone(ctx: _OpContext) -> Response:
     )
 
 
-def _watch_name(entry: Any, watch_id: str) -> str:
-    """A watch's name as its user sees it, for the phone's ask-once screen."""
-    name = getattr(entry, "device_name", None) or getattr(entry, "label", None)
-    if isinstance(name, str) and name.strip():
-        return name.strip()
-    return f"Watch {watch_id[:8]}"
-
-
 def _owner_has_pages(store: Any, owner_id: str) -> bool:
     """Whether an owner's pages record lists a page of its own (a system
     page does not count). An unreadable record counts as none."""
@@ -4271,14 +4263,16 @@ async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
 
     ``has_pages`` is whether the phone's own pages record lists a page;
     ``watches`` are its user's watches (`phone_watch_ids`), each with its
-    name and whether it lists a page. Refused ``not_an_iphone`` (403) for a
-    watch.
+    name as its user sees it (``paired_device_name``: a rename on its
+    device page wins, never how it paired) and whether it lists a page.
+    Refused ``not_an_iphone`` (403) for a watch.
     """
     secrets = ctx.domain_data.widget_secret_store
     store = ctx.domain_data.watch_config_store
     if secrets is None or store is None or not _caller_is_iphone(ctx):
         return _not_an_iphone(ctx)
     entries = secrets.all_entries
+    device_registry = dr.async_get(ctx.hass)
     return ctx.signed_json(
         {
             "ok": True,
@@ -4286,7 +4280,9 @@ async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
             "watches": [
                 {
                     "id": watch_id,
-                    "name": _watch_name(entries.get(watch_id), watch_id),
+                    "name": paired_device_name(
+                        device_registry, entries.get(watch_id), watch_id
+                    ),
                     "has_pages": _owner_has_pages(store, watch_id),
                 }
                 for watch_id in phone_watch_ids(entries, ctx.watch_id)

@@ -18,6 +18,7 @@ import {
 import { newWatchPage } from "../src/watch-pages/edit.js";
 import { dropAllWatchPages, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import { checkWatchPages, checkWatchPagesValues } from "../src/watch-pages/merge.js";
+import { linkFailuresOf, linkFailuresText, watchPagesSaveNote, withLinkFailures } from "../src/watch-pages/save-note.js";
 import pageKeys from "../src/watch-pages/page-keys.json";
 
 // ── documents ────────────────────────────────────────────────────────────
@@ -413,6 +414,24 @@ describe("saveWatchPagesDraft", () => {
     expect(draft.revision).toBe(4);
   });
 
+  it("carries the devices whose linked copies the save could not update", async () => {
+    const doc = document();
+    const draft = new WatchPagesDraft(doc, 3);
+    draft.apply(withName(doc, "Mine"));
+    const failures = [{ owner: "p1", name: "Jesse's iPhone" }];
+    const result = await saveWatchPagesDraft(draft, { save: vi.fn(async () => ({ revision: 4, link_failures: failures })), fetch: vi.fn() });
+    expect(result).toEqual({ ok: true, revision: 4, merged: false, linkFailures: failures });
+    expect(watchPagesSaveNote(result)).toEqual({
+      kind: "warn",
+      text: "Saved. Jesse's iPhone kept the old version: Home Assistant could not update the linked pages there.",
+    });
+    // An empty list, or none, is a plain save.
+    draft.apply(withName(draft.document, "Again"));
+    const plain = await saveWatchPagesDraft(draft, { save: vi.fn(async () => ({ revision: 5, link_failures: [] })), fetch: vi.fn() });
+    expect(plain).toEqual({ ok: true, revision: 5, merged: false });
+    expect(watchPagesSaveNote(plain)).toBeUndefined();
+  });
+
   it("merges and saves again after one conflict", async () => {
     const doc = document();
     const draft = new WatchPagesDraft(doc, 3);
@@ -777,5 +796,28 @@ describe("the ready page of a watch with no pages", () => {
     expect(taken.draft.revision).toBe(1);
     expect(taken.draft.base).toBe(created);
     dropAllWatchPages();
+  });
+});
+
+describe("the devices a save left behind", () => {
+  it("are read leniently from the reply: a missing or odd list is none, a nameless entry its id", () => {
+    expect(linkFailuresOf({ revision: 3 })).toEqual([]);
+    expect(linkFailuresOf({ revision: 3, link_failures: "x" })).toEqual([]);
+    expect(linkFailuresOf(undefined)).toEqual([]);
+    expect(linkFailuresOf({ link_failures: [{ owner: "w2", name: "Chen's Watch" }, { owner: "p1" }, { name: "no id" }, 4] }))
+      .toEqual([{ owner: "w2", name: "Chen's Watch" }, { owner: "p1", name: "p1" }]);
+  });
+
+  it("are named after the save's own note, as a warning", () => {
+    const two = [{ owner: "w2", name: "Chen's Watch" }, { owner: "p1", name: "Jesse's iPhone" }];
+    expect(linkFailuresText(two, "status pages"))
+      .toBe("Chen's Watch and Jesse's iPhone kept the old version: Home Assistant could not update the linked status pages there.");
+    expect(withLinkFailures({ kind: "ok", text: "Saved. Changes made somewhere else were merged in." }, two.slice(0, 1), "pages")).toEqual({
+      kind: "warn",
+      text: "Saved. Changes made somewhere else were merged in. Chen's Watch kept the old version: Home Assistant could not update the linked pages there.",
+    });
+    expect(withLinkFailures(undefined, [], "pages")).toBeUndefined();
+    expect(withLinkFailures(undefined, undefined, "pages")).toBeUndefined();
+    expect(linkFailuresText(two, "pages")).not.toMatch(/ - |–|—/);
   });
 });

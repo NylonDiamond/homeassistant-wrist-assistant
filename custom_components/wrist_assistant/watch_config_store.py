@@ -335,7 +335,9 @@ class WatchConfigLinkError(WatchConfigStoreError):
     ``code`` is the reason: ``unknown_device`` for a source or target that is
     not a paired device, ``not_found`` for a page the source does not hold,
     ``system_page`` for a system page, ``id_taken`` for a target that holds
-    another page under the same id.
+    another page under the same id, ``awaiting_move`` for a target watch
+    whose iPhone may still move its own pages here (the link would make the
+    first record that move skips).
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -352,6 +354,13 @@ class WatchConfigUnavailableError(WatchConfigStoreError):
     """
 
     code = "unavailable"
+
+
+def _note_failures(into: list[str] | None, failed: list[str]) -> None:
+    """Hand the owners a fan out left behind to a caller that asked for
+    them (``link_failures`` on a panel save or restore)."""
+    if into is not None:
+        into.extend(failed)
 
 
 def _now_iso() -> str:
@@ -1162,6 +1171,7 @@ class WatchConfigStore:
         *,
         is_paired: PairedCheck | None = None,
         is_iphone: PairedCheck | None = None,
+        may_await_move: PairedCheck | None = None,
     ) -> None:
         """``is_paired`` answers whether an owner id is a paired watch in the
         secret store (an iPhone entry does not count). Setup passes
@@ -1173,10 +1183,17 @@ class WatchConfigStore:
         passes ``WidgetSecretStore.is_paired_iphone``. Every write for such an
         owner keeps to the phone's kinds and settings (:meth:`_for_owner`),
         and the panel may create its first record of one of those kinds.
-        Without it no owner is an iPhone, as before phone pages."""
+        Without it no owner is an iPhone, as before phone pages.
+
+        ``may_await_move`` answers whether an iPhone may still move a watch's
+        own setup here (the owner list's ``has_iphone``). Setup passes
+        ``WidgetSecretStore.may_await_move``. A link never makes such a
+        watch's first record of a kind (``awaiting_move``, see
+        :meth:`_check_not_awaiting_move`). Without it no watch waits."""
         self._hass = hass
         self._is_paired = is_paired
         self._is_iphone = is_iphone
+        self._may_await_move = may_await_move
         self._listeners: list[ChangeListener] = []
         # Deliveries and unreadable reports, apart from the change listeners
         # (see the module docstring).
@@ -1695,6 +1712,7 @@ class WatchConfigStore:
         document: Any,
         *,
         base_revision: Any,
+        link_failures: list[str] | None = None,
     ) -> WatchConfigRecord:
         """Save a document edited in the panel, compare-and-swap on the revision.
 
@@ -1722,6 +1740,11 @@ class WatchConfigStore:
         ``updated_by`` as ``panel``. Delivery is left where it was (0 for a
         record the panel created), which is what makes the panel show the
         save as waiting until a device's next get collects it.
+
+        A linked kind is then handed on to the other copies
+        (:meth:`_spread_links`). The save stands even when a copy cannot take
+        it; each owner left out of step is appended to ``link_failures`` when
+        the caller passes a list, so the panel can say which device missed it.
         """
         if not isinstance(owner_watch_id, str) or not owner_watch_id:
             raise WatchConfigValidationError("owner_watch_id is required")
@@ -1744,12 +1767,12 @@ class WatchConfigStore:
                     "paired; pair it before starting its config here"
                 )
             record = self._panel_create(owner_watch_id, kind, document, size)
-            self._spread_links(record, None)
+            _note_failures(link_failures, self._spread_links(record, None))
             return record
         self._check_panel_base(existing, base_revision, "save")
         before = existing.document
         record = self._panel_commit(existing, document, size)
-        self._spread_links(record, before)
+        _note_failures(link_failures, self._spread_links(record, before))
         return record
 
     def restore(
@@ -1759,6 +1782,7 @@ class WatchConfigStore:
         revision: Any,
         *,
         base_revision: Any,
+        link_failures: list[str] | None = None,
     ) -> WatchConfigRecord:
         """Make a history entry's document the record's next revision.
 
@@ -1766,8 +1790,9 @@ class WatchConfigStore:
         same kinds, the same ``no_record`` and ``conflict`` refusals on
         ``base_revision``, the same shape guard with the tile level, the
         server's hash, ``updated_by`` ``panel``, the current document filed
-        into the history, and listeners told. The entry stays in the history
-        too, until five later saves push it out.
+        into the history, listeners told, and the linked copies that could
+        not take it appended to ``link_failures``. The entry stays in the
+        history too, until five later saves push it out.
 
         Refused with :class:`WatchConfigNotFoundError` when the record holds
         no entry at ``revision``. The stale base is checked first, so a panel
@@ -1801,7 +1826,7 @@ class WatchConfigStore:
         size = validate_document(kind, document, check_items=True)
         before = existing.document
         record = self._panel_commit(existing, document, size)
-        self._spread_links(record, before)
+        _note_failures(link_failures, self._spread_links(record, before))
         return record
 
     @staticmethod
@@ -1977,7 +2002,7 @@ class WatchConfigStore:
         self._notify(owner_watch_id, kind, record.revision)
         return record
 
-    def _spread_links(self, record: WatchConfigRecord, before: Any) -> None:
+    def _spread_links(self, record: WatchConfigRecord, before: Any) -> list[str]:
         """Hand a write of a linked kind on to the other owners.
 
         Each other owner whose document of the kind holds one of the saved
@@ -1988,16 +2013,18 @@ class WatchConfigStore:
         dropped there: a page on one device is not linked to anything. Each
         owner that changes gets one new revision, written by whoever made the
         save. An owner whose copy cannot take the change (over its size cap)
-        is logged and left as it was; the save itself stands.
+        is logged and left as it was; the save itself stands. Returns those
+        owners, sorted, for the panel to name (empty when every copy took it).
         """
         key = LINKED_KINDS.get(record.kind)
         if key is None:
-            return
+            return []
         owner = record.owner_watch_id
         saved = link_ids(record.document, key)
         lost = link_ids(before, key) - saved
         if not saved and not lost:
-            return
+            return []
+        failed: list[str] = []
         others, held, last_copies = self._link_holders(record.kind, key, owner, lost)
         for other, other_record in sorted(others.items()):
             document = (
@@ -2016,6 +2043,7 @@ class WatchConfigStore:
             try:
                 self._write(other, record.kind, document, record.updated_by)
             except WatchConfigStoreError as err:
+                failed.append(other)
                 _LOGGER.warning(
                     "Could not keep the linked %s of %s in step with %s: %s",
                     record.kind,
@@ -2023,6 +2051,7 @@ class WatchConfigStore:
                     owner,
                     err.message,
                 )
+        return failed
 
     def _link_holders(
         self, kind: str, key: str, owner: str, lost: set[str]
@@ -2087,6 +2116,29 @@ class WatchConfigStore:
         self._check_available(owner_watch_id)
         return owner_watch_id
 
+    def _awaits_move(self, owner_watch_id: str, kind: str) -> bool:
+        """Whether ``owner_watch_id`` holds no record of ``kind`` while its
+        iPhone may still move its own one here. The panel's rule
+        (``noRecordStart`` is ``wait``): the move sends a kind only while Home
+        Assistant holds none, so a record made first leaves the watch's own
+        setup behind for good."""
+        return (
+            self._may_await_move is not None
+            and self._document(owner_watch_id, kind) is None
+            and bool(self._may_await_move(owner_watch_id))
+        )
+
+    def _check_not_awaiting_move(self, owner_watch_id: str, kind: str) -> None:
+        """Refuse a link that would make a watch's first record of ``kind``
+        while its iPhone may still move that kind here (:meth:`_awaits_move`)."""
+        if self._awaits_move(owner_watch_id, kind):
+            raise WatchConfigLinkError(
+                "awaiting_move",
+                "This watch is waiting for its iPhone to move its "
+                f"{kind.replace('_', ' ')} here. Open Wrist Assistant on that "
+                "iPhone first.",
+            )
+
     def _document(self, owner_watch_id: str, kind: str) -> dict[str, Any] | None:
         record = self._records.get(owner_watch_id, {}).get(kind)
         return record.document if record is not None else None
@@ -2107,7 +2159,12 @@ class WatchConfigStore:
         pages before its pages, so a tile is never saved before what it
         opens) and the reply. Every refusal is a
         :class:`WatchConfigLinkError` (or ``invalid`` for a document a link
-        would take past its size cap), raised before any write.
+        would take past its size cap), raised before any write. That includes
+        ``awaiting_move``: a target watch that holds no record of a kind the
+        link writes while its iPhone may still move that kind here
+        (:meth:`_awaits_move`). The iPhone's move sends nothing over a record
+        Home Assistant holds, so a record holding only the linked pages
+        would cost the watch its own.
         """
         source_owner = self._check_link_owner(source_owner)
         if not isinstance(targets, list) or not all(isinstance(t, str) for t in targets):
@@ -2153,6 +2210,11 @@ class WatchConfigStore:
                 reply_targets[target] = {"pages": added_pages, "status_pages": added_status}
         except PageLinkError as err:
             raise WatchConfigLinkError(err.code, err.message) from err
+        for target, new_status, new_pages in plans:
+            if new_status is not None:
+                self._check_not_awaiting_move(target, "status_pages")
+            if new_pages is not None:
+                self._check_not_awaiting_move(target, "pages")
         writes: list[tuple[str, str, dict[str, Any]]] = []
         if source_status is not None and source_status != status_doc:
             writes.append((source_owner, "status_pages", source_status))
@@ -2194,9 +2256,11 @@ class WatchConfigStore:
         list. A page a target already holds under the same link stays as it
         is. Every source and target must be a paired device
         (``unknown_device``), every page one the source lists (``not_found``)
-        and not a system page (``system_page``), and no target may hold
-        another page under one of the ids (``id_taken``); everything is
-        checked before anything is written.
+        and not a system page (``system_page``), no target may hold
+        another page under one of the ids (``id_taken``), and no target may
+        be a watch still waiting for its iPhone to move a kind the link would
+        write (``awaiting_move``); everything is checked before anything is
+        written.
 
         Returns ``{"targets": {target: {"pages": [ids added],
         "status_pages": [ids added]}}, "link_ids": {page id: linkId}}``.
@@ -2229,6 +2293,8 @@ class WatchConfigStore:
         target holds no record of: the ids match, so the menu slots and the
         rooms open the same pages. A source whose rooms live in its
         ``behavior`` (a watch's main house) gives the room keys from there.
+        Nothing is copied onto a watch whose iPhone may still move that kind
+        here (:meth:`_awaits_move`): the move brings the watch's own.
 
         Returns :meth:`link_pages`'s reply, plus ``copied``: the kinds copied.
         """
@@ -2239,7 +2305,9 @@ class WatchConfigStore:
         writes, reply = self._plan_link(source_owner, page_ids, status_ids, [target_owner])
         copied: list[str] = []
         for kind in ("menus", "rooms"):
-            if self._document(target_owner, kind) is not None:
+            if self._document(target_owner, kind) is not None or self._awaits_move(
+                target_owner, kind
+            ):
                 continue
             document = self._document(source_owner, kind)
             if document is None and kind == "rooms":

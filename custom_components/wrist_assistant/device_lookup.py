@@ -45,6 +45,30 @@ def find_paired_device(
     return find_device(dev_reg, paired_identifier(device_id), config_entry_id)
 
 
+# `widget_secret_store.DEVICE_KIND_IPHONE`, repeated so this module keeps
+# importing nothing but the constants.
+_DEVICE_KIND_IPHONE = "iphone"
+
+
+def paired_device_name(dev_reg: Any | None, entry: Any | None, device_id: str) -> str:
+    """What a person calls a paired watch or iPhone.
+
+    The name on its device page (a rename there wins), then the name the app
+    reported (``entry.device_name``, ``entry`` being its secret store entry),
+    then the short form the device page falls back to. Never the bare id,
+    and never the entry's ``label``: that says how the device paired
+    (``watch-code-pair``), not what it is called.
+    """
+    device = find_paired_device(dev_reg, device_id) if dev_reg is not None else None
+    if device is not None and (device.name_by_user or device.name):
+        return device.name_by_user or device.name
+    name = getattr(entry, "device_name", None)
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    kind = "iPhone" if getattr(entry, "device_kind", None) == _DEVICE_KIND_IPHONE else "Watch"
+    return f"{kind} {device_id[:8]}"
+
+
 def parent_device_fields(dev_reg: Any | None, via_device: tuple[str, str]) -> dict[str, str]:
     """The DeviceInfo fields that put a device under ``via_device``.
 

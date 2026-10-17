@@ -17,7 +17,7 @@
 
 import type { WatchPagesLinkReply } from "../ha-api.js";
 import { type PageCard, copyOn, linkSource } from "./all-pages-model.js";
-import { type LinkDevice, type PagesRemoveResult, joinWords, linkErrorText } from "./links.js";
+import { type LinkDevice, type PagesRemoveResult, freePlanText, joinWords, linkErrorText } from "./links.js";
 import { type WatchPagesDocument, watchPageId, watchPagesOf } from "./model.js";
 import { type WatchPagesNote, watchCommandError } from "./save-note.js";
 
@@ -436,14 +436,18 @@ const UNSAVED = "Save or discard the edits in its page editor first.";
 /**
  * One line on what an action did, then what it left out and why. "ok" when
  * nothing was left out, "warn" when some was, "err" when nothing was done.
+ * `free` names the devices on the free plan: an Add to that put pages on one
+ * says it shows only its first page.
  */
-export function bulkResultText(result: BulkResult, devices: readonly LinkDevice[]): WatchPagesNote {
+export function bulkResultText(result: BulkResult, devices: readonly LinkDevice[], free: ReadonlySet<string> = new Set()): WatchPagesNote {
   const name = (id: string) => nameOf(devices, id);
   const parts: string[] = [];
   const per = result.done.map((d) => `${pages(d.count)} ${result.action === "add" ? "to" : result.action === "remove" ? "off" : "on"} ${name(d.ownerId)}`);
   if (result.action === "add" && per.length > 0) {
     parts.push(`Added ${joinWords(per)}.`);
     if (result.also > 0) parts.push(`Their tiles brought ${pages(result.also)} more.`);
+    const plan = freePlanText(result.done.filter((d) => free.has(d.ownerId)).map((d) => name(d.ownerId)));
+    if (plan !== undefined) parts.push(plan);
   } else if (result.action === "remove" && per.length > 0) {
     parts.push(`Took ${joinWords(per)}.`);
   } else if (result.action === "delete" && (result.gone > 0 || per.length > 0)) {

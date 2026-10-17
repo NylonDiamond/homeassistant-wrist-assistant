@@ -122,7 +122,22 @@ describe("the cards", () => {
     expect(rows).toContain("hidden");
   });
 
-  it("subtitles follow the phone's words", () => {
+  it("mark a linked status page with the device it is also on, and say an edit shows there too", () => {
+    const h = host(CONFIGURED);
+    expect(flat(renderPagesCard(h))).not.toContain("sp-linked");
+    const linked: StatusPagesViewHost = {
+      ...h,
+      document: h.document,
+      linkBadge: (page) => (page.id === HOUSE ? "Also on Jesse's iPhone" : undefined),
+      sharedLine: "1 of these status pages is also on Jesse's iPhone. An edit here shows there too.",
+    };
+    const pages = flat(renderPagesCard(linked));
+    expect(pages.match(/class="badge sp-linked"/g)).toHaveLength(1);
+    expect(pages).toContain(">Also on Jesse's iPhone</span>");
+    expect(pages).toContain(`<div class="lc-note sp-shared-note" role="note">1 of these status pages is also on Jesse's iPhone. An edit here shows there too.</div>`);
+  });
+
+    it("subtitles follow the phone's words", () => {
     expect(statusRowSubtitle({ rowType: "entity", entityId: "light.x" })).toBe("light.x");
     expect(statusRowSubtitle({ rowType: "dynamicList", dynamicMode: "all", domain: "person" })).toBe("all people · dynamic list");
     expect(statusRowSubtitle({ rowType: "dynamicList", dynamicMode: "all", domain: "cover", deviceClassFilter: ["garage"] })).toBe("all garage doors · dynamic list");

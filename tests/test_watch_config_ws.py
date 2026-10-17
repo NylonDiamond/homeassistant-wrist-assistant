@@ -27,6 +27,7 @@ from typing import Any
 
 import pytest
 
+from device_lookup_loader import load_into
 from test_watch_config_store import _PKG, _FakeStore, _Hass, _loaded_module
 
 _WS_PATH = (
@@ -124,6 +125,17 @@ def _load_panel_access() -> types.ModuleType:
     return access
 
 
+def _stub_device_names() -> None:
+    """The device registry ``watch_config_ws.py`` names devices from (a
+    test hangs one on ``hass.devices``), and the real ``device_lookup.py``.
+    The package's ``const`` stub must already carry ``DOMAIN``."""
+    _stub(
+        "homeassistant.helpers.device_registry",
+        async_get=lambda hass: getattr(hass, "devices", None),
+    )
+    load_into(_PKG)
+
+
 @pytest.fixture
 def env():
     with _loaded_module() as store_mod:
@@ -138,6 +150,7 @@ def env():
         )
         _stub("voluptuous", Required=_Marker, Optional=_Marker)
         _stub(f"{_PKG}.const", DOMAIN=DOMAIN)
+        _stub_device_names()
         relay_mod = _load_relay()
         _load_panel_access()
         spec = importlib.util.spec_from_file_location(f"{_PKG}.watch_config_ws", _WS_PATH)
@@ -356,7 +369,7 @@ def test_save_on_the_stored_revision(env) -> None:
 
     connection = _save(env, edited, 1)
     assert connection.errors == []
-    assert connection.results[1] == {"revision": 2}
+    assert connection.results[1] == {"revision": 2, "link_failures": []}
 
     result = _get(env)
     assert result["revision"] == 2
@@ -443,7 +456,7 @@ def test_save_may_save_pages(env) -> None:
     edited = _pages_doc("Renamed")
     connection = _save(env, edited, 1, kind="pages")
     assert connection.errors == []
-    assert connection.results[1] == {"revision": 2}
+    assert connection.results[1] == {"revision": 2, "link_failures": []}
     result = _get(env, "pages")
     assert (result["updated_by"], result["document"]) == ("panel", edited)
     assert result["hash"] == env.mod.canonical_hash(edited)
@@ -659,7 +672,7 @@ def test_restore_saves_the_entry_as_a_new_panel_revision(env) -> None:
     events = _subscribe(env)
     connection = _restore(env, 1, 3)
     assert connection.errors == []
-    assert connection.results[1] == {"revision": 4}
+    assert connection.results[1] == {"revision": 4, "link_failures": []}
     result = _get(env)
     assert (result["revision"], result["updated_by"], result["document"]) == (4, "panel", docs[0])
     assert result["hash"] == env.mod.canonical_hash(docs[0])
@@ -673,7 +686,7 @@ def test_restore_of_pages(env) -> None:
     _phone_upload(env, "pages", original)
     assert _save(env, _pages_doc("Renamed"), 1, kind="pages").errors == []
     connection = _restore(env, 1, 2, kind="pages")
-    assert connection.results[1] == {"revision": 3}
+    assert connection.results[1] == {"revision": 3, "link_failures": []}
     assert _get(env, "pages")["document"] == original
 
 
@@ -1113,7 +1126,7 @@ def test_save_creates_the_first_menus_for_a_paired_watch(env) -> None:
     subscriber = _subscribe(env)
     connection = _save(env, _menus(), 0, kind="menus")
     assert connection.errors == []
-    assert connection.results[1] == {"revision": 1}
+    assert connection.results[1] == {"revision": 1, "link_failures": []}
     result = _get(env, "menus")
     assert result == {
         "kind": "menus",
@@ -1133,9 +1146,9 @@ def test_save_creates_the_first_menus_for_a_paired_watch(env) -> None:
     assert _history(env, "menus")["entries"] == []
     assert subscriber.events() == [{"kind": "menus", "revision": 1}]
     # The panel's next save builds on it, and the created copy is history.
-    assert _save(env, _menus("text"), 1, kind="menus").results[1] == {"revision": 2}
+    assert _save(env, _menus("text"), 1, kind="menus").results[1] == {"revision": 2, "link_failures": []}
     assert [e["revision"] for e in _history(env, "menus")["entries"]] == [1]
-    assert _restore(env, 1, 2, "menus").results[1] == {"revision": 3}
+    assert _restore(env, 1, 2, "menus").results[1] == {"revision": 3, "link_failures": []}
     assert _get(env, "menus")["document"] == _menus()
 
 
@@ -1229,7 +1242,7 @@ def test_save_creates_the_first_batch_2_record_for_a_paired_watch(env, kind) -> 
     document = _batch_2_doc(kind)
     connection = _save(env, document, 0, kind=kind)
     assert connection.errors == []
-    assert connection.results[1] == {"revision": 1}
+    assert connection.results[1] == {"revision": 1, "link_failures": []}
     result = _get(env, kind)
     assert result == {
         "kind": kind,
@@ -1247,8 +1260,8 @@ def test_save_creates_the_first_batch_2_record_for_a_paired_watch(env, kind) -> 
     }
     assert subscriber.events() == [{"kind": kind, "revision": 1}]
     edited = _batch_2_doc(kind, "Supper")
-    assert _save(env, edited, 1, kind=kind).results[1] == {"revision": 2}
-    assert _restore(env, 1, 2, kind).results[1] == {"revision": 3}
+    assert _save(env, edited, 1, kind=kind).results[1] == {"revision": 2, "link_failures": []}
+    assert _restore(env, 1, 2, kind).results[1] == {"revision": 3, "link_failures": []}
     assert _get(env, kind)["document"] == document
 
 
@@ -1345,9 +1358,9 @@ def _phone_pages_store(env) -> None:
 def test_the_panel_starts_a_phone_s_pages_and_settings(env) -> None:
     _phone_pages_store(env)
     subscriber = _subscribe(env, owner=PHONE)
-    assert _save(env, _pages_doc(), 0, kind="pages", owner=PHONE).results[1] == {"revision": 1}
+    assert _save(env, _pages_doc(), 0, kind="pages", owner=PHONE).results[1] == {"revision": 1, "link_failures": []}
     sent = {"schemaVersion": 1, "wrapPages": True, "serverMode": "Local", "roomQuickJumpEnabled": True}
-    assert _save(env, sent, 0, kind="behavior", owner=PHONE).results[1] == {"revision": 1}
+    assert _save(env, sent, 0, kind="behavior", owner=PHONE).results[1] == {"revision": 1, "link_failures": []}
     # The watch only setting and the room key are gone, silently, and the
     # record the panel reads back says so.
     result = _get(env, "behavior", owner=PHONE)

@@ -17,7 +17,8 @@
 
 import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import { isJsonObject } from "../watch-pages/model.js";
-import { watchCommandError } from "../watch-pages/save-note.js";
+import type { WatchConfigLinkFailure } from "../ha-api.js";
+import { linkFailuresOf, watchCommandError } from "../watch-pages/save-note.js";
 import { mergeStatusPages, statusPagesClashes } from "./merge.js";
 import { type StatusPagesDocument, checkStatusPages, statusPagesDefaults } from "./model.js";
 
@@ -214,7 +215,7 @@ export class StatusPagesDraft {
 // ── saving ───────────────────────────────────────────────────────────────
 
 export interface StatusPagesSaveIO {
-  save(baseRevision: number, document: StatusPagesDocument): Promise<{ revision: number }>;
+  save(baseRevision: number, document: StatusPagesDocument): Promise<{ revision: number; link_failures?: unknown }>;
   fetch(): Promise<{ revision: number; document: unknown }>;
 }
 
@@ -226,6 +227,9 @@ export interface StatusPagesSaveResult {
   /** The pages another save also changed while this one ran, whose other
    * version stayed (the merge's grain is the page). Only when there is one. */
   kept?: StatusPageClash[];
+  /** The devices whose linked copies the save could not update, as its
+   * reply named them (`link_failures`). Only when there is one. */
+  linkFailures?: WatchConfigLinkFailure[];
   code?: string;
   message?: string;
   problems?: string[];
@@ -266,8 +270,11 @@ async function runSave(draft: StatusPagesDraft, io: StatusPagesSaveIO): Promise<
     const problems = checkStatusPages(sent);
     if (problems.length > 0) return failed("invalid", problems.join(" "), problems);
     let revision: number;
+    let linkFailures: WatchConfigLinkFailure[];
     try {
-      ({ revision } = await io.save(draft.revision, sent));
+      const reply = await io.save(draft.revision, sent);
+      revision = reply.revision;
+      linkFailures = linkFailuresOf(reply);
     } catch (error) {
       const { code = "unknown", message } = watchCommandError(error);
       if (code !== "conflict" || attempt >= STATUS_PAGES_SAVE_ATTEMPTS) return failed(code, message);
@@ -289,7 +296,7 @@ async function runSave(draft: StatusPagesDraft, io: StatusPagesSaveIO): Promise<
       continue;
     }
     draft.saved(sent, revision);
-    return { ok: true, revision: draft.revision, merged, ...keptList() };
+    return { ok: true, revision: draft.revision, merged, ...keptList(), ...(linkFailures.length === 0 ? {} : { linkFailures }) };
   }
 }
 

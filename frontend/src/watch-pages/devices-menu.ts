@@ -60,7 +60,8 @@ export function renderPageDevicesMenu(input: DevicesMenuInput): TemplateResult {
             }}>
           ${uiIcon(place.device.kind === "iphone" ? "phone" : "watch")}
           <span class="pk-dup-name">${label}</span>
-          ${place.here ? html`<span class="pk-dup-full">this ${deviceWord(place.device.kind)}</span>` : nothing}
+          ${place.here ? html`<span class="pk-dup-full">this ${deviceWord(place.device.kind)}</span>`
+            : place.tag === undefined ? nothing : html`<span class="pk-dup-full">${place.tag}</span>`}
         </label>
       </div>`;
     })}

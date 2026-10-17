@@ -135,6 +135,18 @@ describe("the iPhone app's pick", () => {
     expect(hasPhoneAwaitingUpdate(OWNERS)).toBe(false);
   });
 
+  // No App Store build has phone pages yet, so the update screen names no
+  // store: the beta testers who see it get the app from TestFlight.
+  it("asks for an update of the iPhone app without sending anyone to the App Store", () => {
+    const source = readFileSync(join(__dirname, "..", "src", "panel.ts"), "utf8");
+    const at = source.indexOf("  private renderIphoneScreen()");
+    const screen = source.slice(at, source.indexOf("\n  }\n", at));
+    const update = screen.slice(screen.indexOf("<h2>Update the iPhone app</h2>"));
+    const words = update.slice(0, update.indexOf("</p>"));
+    expect(words).toContain("Update Wrist Assistant on the iPhone to the latest version (the TestFlight beta for now)");
+    expect(words).not.toContain("App Store");
+  });
+
   it("takes the iPhone the address names, else the one remembered, else the first", () => {
     expect(resolveWatchPick(phones, { route: "p2", saved: "p1", fallback: undefined })).toBe("p2");
     expect(resolveWatchPick(phones, { route: undefined, saved: "p2", fallback: undefined })).toBe("p2");

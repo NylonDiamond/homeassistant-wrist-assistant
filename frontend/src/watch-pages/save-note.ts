@@ -2,6 +2,7 @@
 // save can end. Kept apart from the element so the words can be tested
 // without a browser.
 
+import type { WatchConfigLinkFailure } from "../ha-api.js";
 import { type SettingDevice, deviceNoun } from "../watch-settings.js";
 import type { WatchPagesSaveResult } from "./draft.js";
 
@@ -41,6 +42,41 @@ export function watchCommandError(err: unknown): { code?: string; message: strin
   return code === undefined ? { message } : { code, message };
 }
 
+/** The devices a save's reply says kept the old version of their linked
+ * copies (`link_failures`). A missing or malformed list is none, and an
+ * entry with no name is named by its device id. */
+export function linkFailuresOf(reply: unknown): WatchConfigLinkFailure[] {
+  const list = typeof reply === "object" && reply !== null ? (reply as { link_failures?: unknown }).link_failures : undefined;
+  if (!Array.isArray(list)) return [];
+  return list.flatMap((item): WatchConfigLinkFailure[] => {
+    const owner = stringField(item, "owner");
+    if (owner === undefined) return [];
+    return [{ owner, name: stringField(item, "name") ?? owner }];
+  });
+}
+
+/** What a save that left linked copies behind says after "Saved.": "Jesse's
+ * iPhone kept the old version: Home Assistant could not update the linked
+ * pages there." Undefined for none. `noun` is what was saved. */
+export function linkFailuresText(failures: readonly WatchConfigLinkFailure[], noun: "pages" | "status pages"): string | undefined {
+  const names = failures.map((f) => f.name);
+  if (names.length === 0) return undefined;
+  const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]!}`;
+  return `${list} kept the old version: Home Assistant could not update the linked ${noun} there.`;
+}
+
+/** A save's note with the devices that kept the old version added: a
+ * warning, after the note's own words or after "Saved.". */
+export function withLinkFailures(
+  note: WatchPagesNote | undefined,
+  failures: readonly WatchConfigLinkFailure[] | undefined,
+  noun: "pages" | "status pages",
+): WatchPagesNote | undefined {
+  const text = linkFailuresText(failures ?? [], noun);
+  if (text === undefined) return note;
+  return { kind: note?.kind === "err" ? "err" : "warn", text: `${note === undefined ? "Saved." : note.text} ${text}` };
+}
+
 /** The note after a save, or none: a plain save that went through says
  * nothing, since the toolbar's "Saved just now" already does. A note is
  * there only when it tells something more. `device` is the device whose
@@ -50,7 +86,8 @@ export function watchPagesSaveNote(result: WatchPagesSaveResult, device: Setting
     if (result.alreadySaved === true) {
       return { kind: "ok", text: `Nothing left to save. The same changes were saved somewhere else, as revision ${result.revision}.` };
     }
-    return result.merged ? { kind: "ok", text: "Saved. Changes made somewhere else were merged in." } : undefined;
+    const note: WatchPagesNote | undefined = result.merged ? { kind: "ok", text: "Saved. Changes made somewhere else were merged in." } : undefined;
+    return withLinkFailures(note, result.linkFailures, "pages");
   }
   const message = (result.message ?? "").trim();
   switch (result.code) {

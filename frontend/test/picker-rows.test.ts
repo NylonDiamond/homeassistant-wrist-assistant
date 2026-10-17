@@ -11,7 +11,10 @@ import {
   type PickerCopy,
   type PickerDevice,
   type PickerPerson,
+  UNASSIGNED_LABEL,
   isShelvedRow,
+  pickBarWords,
+  pickedDesigns,
   personColorVar,
   personIndex,
   placeColorVar,
@@ -175,6 +178,63 @@ describe("rowsOnDevice", () => {
     expect(rowsOnDevice(rows, "w1").map((r) => r.name)).toEqual(["Porch"]);
     expect(rowsOnDevice(rows, "p1").map((r) => r.name).sort()).toEqual(["Kitchen", "Porch"]);
     expect(rowsOnDevice(rows, "w2")).toEqual([]);
+  });
+});
+
+// On the All tab one card is one design, whatever devices it is on, so the
+// picking bar counts and acts by design. The panel's pick keys are
+// "device|record"; these tests use the same shape.
+describe("pickedDesigns", () => {
+  const rows = pickerListRows([
+    copy({ ownerId: "w1", id: "a", name: "Porch", linkId: "L1" }),
+    copy({ ownerId: "w2", id: "b", name: "Porch", linkId: "L1" }),
+    copy({ ownerId: "p1", id: "c", name: "Porch", linkId: "L1" }),
+    copy({ ownerId: "w1", id: "d", name: "Kitchen" }),
+  ], devices);
+  const keysOf = (row: (typeof rows)[number]) => row.copies.map((c) => `${c.ownerId}|${c.id}`);
+
+  it("counts a design on three devices as one pick", () => {
+    expect(pickedDesigns(rows, ["w1|a", "w2|b", "p1|c"], keysOf)).toEqual([["w1|a", "w2|b", "p1|c"]]);
+    expect(pickedDesigns(rows, ["w1|a", "w2|b", "p1|c", "w1|d"], keysOf)).toHaveLength(2);
+  });
+
+  it("never grows a copy picked on one device's tab into its whole design", () => {
+    expect(pickedDesigns(rows, ["w2|b"], keysOf)).toBeUndefined();
+    expect(pickedDesigns(rows, ["w1|a", "w2|b", "w1|d"], keysOf)).toBeUndefined();
+  });
+
+  it("keeps a pick no row holds any more as its own", () => {
+    expect(pickedDesigns(rows, ["w1|gone", "w1|d"], keysOf)).toEqual([["w1|gone"], ["w1|d"]]);
+  });
+
+  it("picks nothing from nothing", () => {
+    expect(pickedDesigns(rows, [], keysOf)).toEqual([]);
+  });
+});
+
+describe("pickBarWords", () => {
+  it("keeps a device tab's words as they were", () => {
+    const words = pickBarWords(3, false);
+    expect(words.deleteAsk).toBe("Delete 3? Faces and widgets using them lose them.");
+    expect(words.takeOff).toBe("Take off");
+    expect(words.takeOffTitle).toBe(`Take each of these off the device its card is under. The last copy of a design is kept, under ${UNASSIGNED_LABEL}.`);
+    expect(words.deleteTitle).toBe("Delete these complications");
+  });
+
+  it("says on the All tab that a delete and a take off reach every device", () => {
+    expect(pickBarWords(1, true).deleteAsk).toBe("Delete 1 design from every device it is on? Faces and widgets using it lose it.");
+    expect(pickBarWords(2, true).deleteAsk).toBe("Delete 2 designs from every device they are on? Faces and widgets using them lose them.");
+    const words = pickBarWords(2, true);
+    expect(words.takeOff).toBe("Take off everywhere");
+    expect(words.takeOffTitle).toContain("off every device they are on");
+    expect(words.takeOffTitle).toContain(UNASSIGNED_LABEL);
+    expect(words.deleteTitle).toContain("every device");
+  });
+
+  it("never breaks a sentence with a dash", () => {
+    for (const all of [false, true]) {
+      for (const text of Object.values(pickBarWords(2, all))) expect(text).not.toMatch(/[–—]| - /);
+    }
   });
 });
 

@@ -4,22 +4,31 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { WatchConfigRecord, WatchPagesPlaces } from "../src/ha-api.js";
+import type { OwnerSummary, WatchConfigRecord, WatchPagesPlaces } from "../src/ha-api.js";
+import { WAIT_FOR_IPHONE_TEXT } from "../src/watch-settings.js";
 import {
   DEVICES_HERE_TEXT,
   DEVICES_SYSTEM_TEXT,
+  DEVICES_WAIT_TAG,
+  DEVICES_WAIT_TEXT,
   type LinkDevice,
   type PageRemoveIO,
+  type PagesRecordFacts,
+  awaitingMove,
   deleteChoices,
   elsewherePages,
   elsewhereTitle,
+  freePlanText,
   linkAlsoAddedText,
   linkBadgeText,
   linkErrorText,
   pageDevicePlaces,
   pageHolders,
   pageLinkId,
+  pagesRecordFacts,
   removePageFrom,
+  statusPageHolders,
+  statusPagesSharedText,
 } from "../src/watch-pages/links.js";
 import type { WatchPage, WatchPagesDocument } from "../src/watch-pages/model.js";
 
@@ -68,6 +77,70 @@ describe("the Devices menu", () => {
   it("moves nothing for a system page", () => {
     const places = pageDevicePlaces(DEVICES, page(SYS, "System", { isSystemPage: true }), "w1", PLACES);
     expect(places.every((p) => p.stuck === DEVICES_SYSTEM_TEXT)).toBe(true);
+  });
+
+  it("greys out a watch that waits for its iPhone, with the reason on its row", () => {
+    const places = pageDevicePlaces(DEVICES, page(HALL, "Hall", { linkId: "L1" }), "p1", PLACES, new Set(["w2"]));
+    expect(places.map((p) => [p.device.ownerId, p.stuck, p.tag])).toEqual([
+      ["w1", undefined, undefined],
+      ["w2", DEVICES_WAIT_TEXT, DEVICES_WAIT_TAG],
+      ["p1", DEVICES_HERE_TEXT, undefined],
+    ]);
+    expect(DEVICES_WAIT_TEXT.startsWith(WAIT_FOR_IPHONE_TEXT)).toBe(true);
+    expect(`${DEVICES_WAIT_TEXT} ${DEVICES_WAIT_TAG}`).not.toMatch(/ - |–|—/);
+  });
+});
+
+describe("a watch that waits for its iPhone", () => {
+  const owner = (id: string, has_iphone?: boolean): OwnerSummary => ({ owner_watch_id: id, has_iphone } as OwnerSummary);
+  const OWNERS = [owner("w1", true), owner("w2", true), owner("w3", false), owner("w4", true)];
+  const facts = new Map<string, PagesRecordFacts>([
+    ["w1", { held: false, free: false }],
+    ["w2", { held: true, free: false }],
+    ["w3", { held: false, free: false }],
+  ]);
+
+  it("is one whose iPhone may still move its pages, while Home Assistant holds none", () => {
+    // w2 holds pages already, w3 has no iPhone to wait for, w4 was not read.
+    expect([...awaitingMove(OWNERS, facts)]).toEqual(["w1"]);
+  });
+
+  it("reads a record's facts: held from its revision, free only from an explicit false", () => {
+    expect(pagesRecordFacts({ revision: 0 })).toEqual({ held: false, free: false });
+    expect(pagesRecordFacts({ revision: 3, multiple_pages: null })).toEqual({ held: true, free: false });
+    expect(pagesRecordFacts({ revision: 3, multiple_pages: true })).toEqual({ held: true, free: false });
+    expect(pagesRecordFacts({ revision: 3, multiple_pages: false })).toEqual({ held: true, free: true });
+  });
+});
+
+describe("the free plan line", () => {
+  it("names the devices that show only their first page", () => {
+    expect(freePlanText([])).toBeUndefined();
+    expect(freePlanText(["Chen's Watch"])).toBe("On the free plan, Chen's Watch shows only its first page.");
+    expect(freePlanText(["Chen's Watch", "Jesse's Watch"])).toBe("On the free plan, Chen's Watch and Jesse's Watch show only their first page.");
+  });
+});
+
+describe("linked status pages", () => {
+  const SP: WatchPagesPlaces = { pages: {}, status_pages: { S1: ["w1", "p1"], S2: ["w1", "w2", "gone"] } };
+  const sp = (id: string, linkId?: string) => ({ id, name: id, rows: [], ...(linkId === undefined ? {} : { linkId }) });
+
+  it("are held where their link's places say, this device first", () => {
+    expect(statusPageHolders(sp("a", "S1"), "p1", SP)).toEqual(["p1", "w1"]);
+    expect(statusPageHolders(sp("a"), "p1", SP)).toEqual(["p1"]);
+    expect(statusPageHolders(sp("a", "S1"), "p1", undefined)).toEqual(["p1"]);
+    // The link is a status page link: a page link of the same id counts for nothing.
+    expect(statusPageHolders(sp("a", "S1"), "p1", { pages: { S1: ["w2"] }, status_pages: {} })).toEqual(["p1"]);
+  });
+
+  it("say on one line which other devices an edit here also changes", () => {
+    expect(statusPagesSharedText([sp("a", "S1")], "p1", SP, DEVICES)).toBe("This status page is also on Jesse's Watch. An edit here shows there too.");
+    expect(statusPagesSharedText([sp("a", "S1"), sp("b", "S1")], "p1", SP, DEVICES))
+      .toBe("These status pages are also on Jesse's Watch. An edit here shows there too.");
+    expect(statusPagesSharedText([sp("a", "S1"), sp("b"), sp("c", "S2")], "w1", SP, DEVICES))
+      .toBe("2 of these status pages are also on Chen's Watch, Jesse's iPhone and another device. An edit here shows there too.");
+    expect(statusPagesSharedText([sp("a"), sp("b", "S9")], "w1", SP, DEVICES)).toBeUndefined();
+    expect(statusPagesSharedText([sp("a", "S1")], "w1", undefined, DEVICES)).toBeUndefined();
   });
 });
 
@@ -153,8 +226,12 @@ describe("a refused link", () => {
     expect(linkErrorText({ code: "unavailable", message: "Not ready." })).toBe("Not ready.");
   });
 
+  it("says a watch still waits for its iPhone in the page editor's wait words", () => {
+    expect(linkErrorText({ code: "awaiting_move", message: "awaiting move" })).toBe(`${WAIT_FOR_IPHONE_TEXT} Try again after that.`);
+  });
+
   it("never uses a dash to break a sentence", () => {
-    for (const code of ["unknown_device", "not_found", "system_page", "id_taken", "unknown_command"]) {
+    for (const code of ["unknown_device", "not_found", "system_page", "id_taken", "unknown_command", "awaiting_move"]) {
       expect(linkErrorText({ code, message: "" })).not.toMatch(/ - |–|—/);
     }
   });

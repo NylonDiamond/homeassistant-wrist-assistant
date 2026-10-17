@@ -196,3 +196,40 @@ describe("the list page", () => {
     expect(foot).toContain("const said = page ? undefined");
   });
 });
+
+// On the All tab a card is the design on every device it is on, so picking
+// one card is one pick: the bar counts it once, asks before deleting it from
+// every device, and runs a batch one design at a time. A device tab keeps
+// counting and acting by card.
+describe("the picking bar on the All tab", () => {
+  it("counts and words the bar by the groups a batch runs", () => {
+    const bar = method("  private renderPickerBar() {");
+    expect(bar).toContain("const designs = this.pickedByDesign();");
+    expect(bar).toContain("const n = (designs ?? this.pickerPicked).length;");
+    expect(bar).toContain("pickBarWords(n, designs !== undefined)");
+    expect(bar).toContain("${words.deleteAsk}");
+    expect(bar).toContain("<span>${words.takeOff}</span>");
+    expect(bar).toContain("title=${words.takeOffTitle}");
+    expect(bar).not.toContain("this.pickerPicked.length");
+  });
+
+  it("groups picks by design on the All tab only, and by card otherwise", () => {
+    const groups = method("  private pickedGroups(): string[][] {");
+    expect(groups).toContain("return this.pickedByDesign() ?? this.pickerPicked.map((k) => [k]);");
+    const designs = method("  private pickedByDesign(): string[][] | undefined {");
+    expect(designs).toContain("if (this.pickerShownAt !== ALL_DEVICES) return undefined;");
+    expect(designs).toContain("pickedDesigns(this.pickerRows(), this.pickerPicked,");
+  });
+
+  it("notes the tab the grid was drawn on beside the cards it drew", () => {
+    const surface = method("  private renderPickerSurface(form: PickerForm) {");
+    expect(surface).toContain("this.pickerShownAt = tab;");
+  });
+
+  it("runs a batch one group at a time and counts groups", () => {
+    const run = method("  private async runBatch(");
+    expect(run).toContain("const groups = this.pickedGroups();");
+    expect(run).toContain("`${doing} ${done + 1} of ${groups.length}…`");
+    expect(run).toContain("`${doing} done: ${done} of ${groups.length}.`");
+  });
+});

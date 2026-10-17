@@ -43,3 +43,7 @@ def real_module() -> types.ModuleType:
 
 def find_paired_device(dev_reg: Any, device_id: str, config_entry_id: str | None = None) -> Any:
     return real_module().find_paired_device(dev_reg, device_id, config_entry_id)
+
+
+def paired_device_name(dev_reg: Any, entry: Any, device_id: str) -> str:
+    return real_module().paired_device_name(dev_reg, entry, device_id)

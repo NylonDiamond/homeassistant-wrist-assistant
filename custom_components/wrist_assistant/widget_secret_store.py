@@ -478,6 +478,13 @@ class WidgetSecretStore:
         entry = self._secrets.get(watch_id)
         return entry is not None and entry.device_kind == DEVICE_KIND_IPHONE
 
+    def may_await_move(self, watch_id: str) -> bool:
+        """Whether an iPhone may still move this watch's setup here
+        (:func:`watch_has_iphone`, the owner list's ``has_iphone``). The
+        watch config store asks this before a link makes a watch's first
+        record of a kind, which would leave that move nothing to send."""
+        return watch_has_iphone(self._secrets, watch_id)
+
     def note_main_house(self, watch_id: str, main_house: bool) -> bool:
         """Record whether this Home Assistant is `watch_id`'s main house.
 

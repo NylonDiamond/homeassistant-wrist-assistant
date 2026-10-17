@@ -757,6 +757,22 @@ export async function fetchWatchConfigSummary(hass: HassLike) {
   return hass.connection.sendMessagePromise<WatchConfigSummary>({ type: `${WC}/summary` });
 }
 
+/** A linked copy a save could not bring up to date: that device kept the
+ * old version of its linked pages or status pages. */
+export interface WatchConfigLinkFailure {
+  owner: string;
+  name: string;
+}
+
+/** What a save answers. `link_failures` lists, on a `pages` or
+ * `status_pages` save, the devices whose linked copies Home Assistant could
+ * not update; absent from integrations older than the field, and when every
+ * copy was updated. */
+export interface WatchConfigSaveReply {
+  revision: number;
+  link_failures?: WatchConfigLinkFailure[];
+}
+
 /** Save one watch's config of one kind, compare-and-swap on `baseRevision`.
  * For a watch the signed in person may manage. A record has three parties: the iPhone mirror writes it, the
  * panel writes it here, and the watch reads it with its own signed pull. A
@@ -774,7 +790,7 @@ export async function saveWatchConfig(
   baseRevision: number,
   document: Record<string, unknown>,
 ) {
-  return hass.connection.sendMessagePromise<{ revision: number }>({
+  return hass.connection.sendMessagePromise<WatchConfigSaveReply>({
     type: `${WC}/save`,
     owner_watch_id: owner,
     kind,

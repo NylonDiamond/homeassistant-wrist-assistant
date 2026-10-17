@@ -241,6 +241,8 @@ import {
   UNASSIGNED_LABEL,
   UNASSIGNED_LIST,
   isShelvedRow,
+  pickBarWords,
+  pickedDesigns,
   pickerListRows,
   rowKeyFor,
   pickerShapeGroups,
@@ -1771,6 +1773,9 @@ export class WristAssistantPanel extends LitElement {
    * reactive: it is a note of what was just rendered, never a cause to
    * render again. */
   private pickerShown: readonly string[] = [];
+  /** The tab those cards were drawn on, noted the same way: on the All tab
+   * the bar counts and acts by design, on a device tab by card. */
+  private pickerShownAt: string = ALL_DEVICES;
   /** The key of the locked picker card whose explanation is unfolded. A tap
    * shows it inline because a hover title never appears on a touch screen. */
   @state() private pickerNote?: string;
@@ -11367,7 +11372,7 @@ export class WristAssistantPanel extends LitElement {
       return html`<div class="wa-ip-empty">
         <span class="wa-ip-empty-chip" aria-hidden="true">${uiIcon("phone")}</span>
         <h2>Update the iPhone app</h2>
-        <p>Your iPhone is paired, but its Wrist Assistant app is too old to show pages of its own. Update the app from the App Store, then open its Pages tab. The iPhone shows up here once it does.</p>
+        <p>Your iPhone is paired, but its Wrist Assistant app is too old to show pages of its own. Update Wrist Assistant on the iPhone to the latest version (the TestFlight beta for now), then open its Pages tab. The iPhone shows up here once it does.</p>
       </div>`;
     }
     if (phone === undefined || screen === undefined) {
@@ -12780,6 +12785,7 @@ export class WristAssistantPanel extends LitElement {
     // device tab a card is that device's record; on the All tab a card is
     // the design, so it picks the design's record on every device.
     this.pickerShown = rows.flatMap((row) => this.pickKeysOf(row, tab));
+    this.pickerShownAt = tab;
     // What an empty grid is empty of. The search wins when something has been
     // typed, because that is the last thing the author did; then the shape;
     // then the tab says what it is a tab of.
@@ -13181,6 +13187,27 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
+   * What a batch acts on, one group per thing the bar counts.
+   *
+   * On a device tab that is each picked card on its own. On the All tab a
+   * card is the design, so a group is the design's record on every device
+   * (`pickedDesigns`): one pick there is one design, counted once and taken
+   * off or deleted everywhere it is, which is what the bar says it does. A
+   * copy picked on a device tab and carried over to All is not grown into
+   * its design (its card there is not ticked), so then it counts by card.
+   */
+  private pickedGroups(): string[][] {
+    return this.pickedByDesign() ?? this.pickerPicked.map((k) => [k]);
+  }
+
+  /** The All tab's picks as whole designs, or undefined on a device tab or
+   * while some design is only partly picked. */
+  private pickedByDesign(): string[][] | undefined {
+    if (this.pickerShownAt !== ALL_DEVICES) return undefined;
+    return pickedDesigns(this.pickerRows(), this.pickerPicked, (row) => this.pickKeysOf(row, ALL_DEVICES));
+  }
+
+  /**
    * The bar under the grid while cards are being picked: what is picked, and
    * the four things that can be done to them.
    *
@@ -13188,7 +13215,9 @@ export class WristAssistantPanel extends LitElement {
    * where they were and nothing moves when picking is turned on.
    */
   private renderPickerBar() {
-    const n = this.pickerPicked.length;
+    const designs = this.pickedByDesign();
+    const n = (designs ?? this.pickerPicked).length;
+    const words = pickBarWords(n, designs !== undefined);
     const shown = this.pickerShown;
     const allShown = shown.length > 0 && shown.every((k) => this.pickerPicked.includes(k));
     const busy = this.saving || this.pickerBatchNote !== undefined;
@@ -13200,7 +13229,7 @@ export class WristAssistantPanel extends LitElement {
         @click=${() => this.pickMany(shown, !allShown)}>${allShown ? "None" : "All shown"}</button>
       <span class="pk-bar-gap" aria-hidden="true"></span>
       ${this.pickerBatchAsk === "delete"
-        ? html`<span class="pk-bar-ask">Delete ${n}? Faces and widgets using them lose them.</span>
+        ? html`<span class="pk-bar-ask">${words.deleteAsk}</span>
           <button type="button" class="ghost danger small" ?disabled=${busy}
             @click=${() => void this.batchDelete()}>Really delete</button>
           <button type="button" class="ghost small" @click=${() => { this.pickerBatchAsk = undefined; }}>Cancel</button>`
@@ -13212,10 +13241,10 @@ export class WristAssistantPanel extends LitElement {
             @click=${() => void this.batchHidden(true)}>${uiIcon("hide")}<span>Hide</span></button>
           ${this.renderBatchAdd(busy || none)}
           <button type="button" class="ghost small" ?disabled=${busy || none}
-            title=${`Take each of these off the device its card is under. The last copy of a design is kept, under ${UNASSIGNED_LABEL}.`}
-            @click=${() => void this.batchTakeOff()}>${uiIcon("layers")}<span>Take off</span></button>
+            title=${words.takeOffTitle}
+            @click=${() => void this.batchTakeOff()}>${uiIcon("layers")}<span>${words.takeOff}</span></button>
           <button type="button" class="ghost danger small" ?disabled=${busy || none}
-            title="Delete these complications"
+            title=${words.deleteTitle}
             @click=${() => { this.pickerBatchAsk = "delete"; }}>${uiIcon("delete")}<span>Delete</span></button>`}
       <button type="button" class="primary small pk-bar-done" ?disabled=${this.pickerBatchNote !== undefined}
         title="Stop picking and go back to opening one card at a time"
@@ -13260,31 +13289,37 @@ export class WristAssistantPanel extends LitElement {
    * two of them in flight would each be looking at seats the other is taking.
    * The first failure stops the rest, since twenty reports of one cause is
    * not twenty pieces of news.
+   *
+   * It counts what the bar counted (`pickedGroups`): cards on a device tab,
+   * designs on the All tab, where one design is a write per device it is on.
    */
   private async runBatch(doing: string, act: (at: { ownerId: string; id: string }) => Promise<void>) {
     if (this.saving || this.pickerBatchNote !== undefined) return;
-    const keys = [...this.pickerPicked];
-    if (keys.length === 0) return;
+    const groups = this.pickedGroups();
+    if (groups.length === 0) return;
     this.pickerBatchAsk = undefined;
     this.pickerBatchAdd = false;
     this.saveError = undefined;
     this.copyStatus = undefined;
     let done = 0;
-    for (const key of keys) {
-      this.pickerBatchNote = `${doing} ${done + 1} of ${keys.length}…`;
-      const at = this.cardAt(key);
-      if (!at) continue;
-      try {
-        await act(at);
-      } catch (err) {
-        this.saveError = errText(err);
+    for (const group of groups) {
+      this.pickerBatchNote = `${doing} ${done + 1} of ${groups.length}…`;
+      for (const key of group) {
+        const at = this.cardAt(key);
+        if (!at) continue;
+        try {
+          await act(at);
+        } catch (err) {
+          this.saveError = errText(err);
+        }
+        if (this.saveError !== undefined) break;
       }
       if (this.saveError !== undefined) break;
       done += 1;
     }
     this.pickerBatchNote = undefined;
-    if (this.saveError === undefined) this.copyStatus = `${doing} done: ${done} of ${keys.length}.`;
-    else if (done > 0) this.saveError = `${this.saveError} ${done} of ${keys.length} were done first.`;
+    if (this.saveError === undefined) this.copyStatus = `${doing} done: ${done} of ${groups.length}.`;
+    else if (done > 0) this.saveError = `${this.saveError} ${done} of ${groups.length} were done first.`;
   }
 
   /** Hide every picked card from its own device's list, or show them again.
@@ -13301,10 +13336,12 @@ export class WristAssistantPanel extends LitElement {
   /**
    * Delete every picked card.
    *
-   * The card, not the design: a pick is a card, so a design on two devices
-   * with one card picked loses that copy and keeps the other. Picking both
-   * cards is how the whole design goes, which is the same thing said in the
-   * same place.
+   * On a device tab the card, not the design: a pick is a card, so a design
+   * on two devices with one card picked loses that copy and keeps the other.
+   * Picking both cards is how the whole design goes, which is the same thing
+   * said in the same place. On the All tab the card is the design, so the
+   * design goes from every device it is on, and the question asked first
+   * says so.
    */
   private async batchDelete() {
     await this.runBatch("Deleting", async (at) => {
@@ -13327,7 +13364,9 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Take every picked card off the device its card is under.
+   * Take every picked card off the device its card is under. On the All tab
+   * the card is the design, so that is every device it is on, and the bar's
+   * button says "Take off everywhere".
    *
    * The last copy of a design is moved to Unassigned rather than deleted,
    * which is what one card's own Devices box does. The copy the editor has

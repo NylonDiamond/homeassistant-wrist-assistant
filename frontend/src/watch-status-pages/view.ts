@@ -100,6 +100,12 @@ export interface StatusPagesViewHost {
    * the phone draws a status page over the pages, and the page is drawn in
    * the iPhone (`phone-frame.ts`). */
   readonly phone?: PhonePagesLayout;
+  /** A linked status page's badge, "Also on Jesse's iPhone", or undefined
+   * for one on this device alone (`linkBadgeText`). */
+  linkBadge?(page: JsonObject): string | undefined;
+  /** The line under the page list when some pages are on other devices too
+   * (`statusPagesSharedText`). */
+  readonly sharedLine?: string;
   /** Apply `change` to the document as it is now: one undo step, or with
    * `coalesce` a step the next edits with the same key replace. */
   edit(change: (document: StatusPagesDocument) => StatusPagesDocument, coalesce?: string): boolean;
@@ -364,6 +370,7 @@ function pageRow(host: StatusPagesViewHost, page: JsonObject, index: number, cou
   const move = (from: string, to: number) => host.edit((d) => moveStatusPage(d, from, to));
   const drag = dragHandlers(host, "page", id, index, move);
   const pick = () => { if (!on) selectStatusPage(host, id); };
+  const shared = host.linkBadge?.(page);
   return html`<div class="layer sp-page-row ${on ? "hl" : ""}" data-page=${id} role="listitem" tabindex="0"
     draggable=${host.busy ? "false" : "true"} aria-current=${on ? "true" : "false"} aria-label=${name || "Untitled page"}
     @dragstart=${drag.start} @dragover=${drag.over} @drop=${drag.drop} @dragend=${drag.end}
@@ -377,7 +384,7 @@ function pageRow(host: StatusPagesViewHost, page: JsonObject, index: number, cou
     ${thumb(host, "doc.text.fill", "#5B8FD4")}
     <span class="name"><b><span class="nm-t">${name || "Untitled page"}</span></b><small>${plural(rows, "row", "rows")}</small></span>
     <span class="right">
-      <span class="badges">${isSystemStatusPage(page) ? html`<span class="badge" title="One of the app's starter pages. The watch treats it as any other page.">starter</span>` : nothing}</span>
+      <span class="badges">${shared === undefined ? nothing : html`<span class="badge sp-linked" title=${`${shared}. An edit here shows there too.`}>${shared}</span>`}${isSystemStatusPage(page) ? html`<span class="badge" title="One of the app's starter pages. The watch treats it as any other page.">starter</span>` : nothing}</span>
       <span class="acts">
         <button type="button" class="icon" ?disabled=${host.busy || index === 0} title="Move up" aria-label=${`Move ${name} up`}
           @click=${() => move(id, index - 1)}>${uiIcon("up")}</button>
@@ -406,6 +413,7 @@ export function renderPagesCard(host: StatusPagesViewHost): TemplateResult {
     ${pages.length === 0
       ? html`<div class="lc-note">No status pages. Add one to show the live state of entities you pick.</div>`
       : html`<div class="layers sp-page-list" role="list">${pages.map((p, i) => pageRow(host, p, i, pages.length, shown))}</div>`}
+    ${host.sharedLine === undefined || pages.length === 0 ? nothing : html`<div class="lc-note sp-shared-note" role="note">${host.sharedLine}</div>`}
   </section>`;
 }
 
@@ -1114,6 +1122,13 @@ export const statusPagesViewStyles = css`
   .sp-pages-card > .layers, .sp-rows-card > .layers { padding: 6px 8px 8px; overflow: visible; }
   .sp-pages-card > .lc-note, .sp-rows-card > .lc-note { margin: 8px 12px; color: var(--wa-muted); }
   .sp-rows-card > .lc-note.sp-drag-note { margin-top: 0; font-size: 11.5px; }
+  .sp-pages-card > .lc-note.sp-shared-note { margin-top: 0; font-size: 11.5px; }
+  /* A linked status page's badge, the page editor's (\`.badge.pe-linked\`):
+     cut short in a narrow list, its title holds the whole name. */
+  .badge.sp-linked {
+    max-width: 140px; overflow: hidden; text-overflow: ellipsis; display: inline-block; line-height: 20px; white-space: nowrap;
+    color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 12%, transparent);
+  }
   .lc-btn.on { box-shadow: var(--wa-ring); }
   .layer .acts button.icon { display: inline-grid; place-items: center; padding: 0; }
   .layer .acts button.icon:disabled { opacity: .35; cursor: default; }

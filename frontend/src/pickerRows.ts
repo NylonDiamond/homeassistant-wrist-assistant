@@ -124,6 +124,67 @@ export function rowsOnDevice<T>(rows: readonly PickerListRow<T>[], ownerId: stri
 }
 
 /**
+ * The picks on the All tab, one group per design.
+ *
+ * A card there is the design, so one tick stands for its copy on every
+ * device, and a batch counts and acts on designs: one pick is "1 picked",
+ * and its delete takes the design off every device it is on. `keysOf` is a
+ * row's pick keys, one per copy; a group is all of them. A pick no row holds
+ * any more (a write a moment ago moved it) is a group of its own.
+ *
+ * Undefined when a design is only partly picked, which is a copy picked on
+ * one device's tab and carried over. Its All tab card is not ticked, so the
+ * pick is never grown into the whole design: the bar then counts and acts by
+ * copy, as a device tab does.
+ */
+export function pickedDesigns<T>(
+  rows: readonly PickerListRow<T>[],
+  picked: readonly string[],
+  keysOf: (row: PickerListRow<T>) => readonly string[],
+): string[][] | undefined {
+  const groups: string[][] = [];
+  const all = new Set(picked);
+  const seen = new Set<string>();
+  for (const key of picked) {
+    if (seen.has(key)) continue;
+    const row = rows.find((r) => keysOf(r).includes(key));
+    const group = row ? [...keysOf(row)] : [key];
+    if (group.some((k) => !all.has(k))) return undefined;
+    for (const k of group) seen.add(k);
+    groups.push(group);
+  }
+  return groups;
+}
+
+/** The words of the picking bar's two acts that say how far they reach. A
+ * device tab's pick is that device's copy; the All tab's is the design on
+ * every device it is on, and says so. */
+export function pickBarWords(count: number, allTab: boolean): {
+  deleteAsk: string;
+  deleteTitle: string;
+  takeOff: string;
+  takeOffTitle: string;
+} {
+  if (!allTab) {
+    return {
+      deleteAsk: `Delete ${count}? Faces and widgets using them lose them.`,
+      deleteTitle: "Delete these complications",
+      takeOff: "Take off",
+      takeOffTitle: `Take each of these off the device its card is under. The last copy of a design is kept, under ${UNASSIGNED_LABEL}.`,
+    };
+  }
+  const one = count === 1;
+  return {
+    deleteAsk: one
+      ? "Delete 1 design from every device it is on? Faces and widgets using it lose it."
+      : `Delete ${count} designs from every device they are on? Faces and widgets using them lose them.`,
+    deleteTitle: "Delete these designs from every device they are on",
+    takeOff: "Take off everywhere",
+    takeOffTitle: `Take these designs off every device they are on. Each one is kept, under ${UNASSIGNED_LABEL}.`,
+  };
+}
+
+/**
  * Whether every copy of this row sits in the home's library.
  *
  * That is a design on no device at all: the library is the home's shelf, not

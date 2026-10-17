@@ -129,10 +129,13 @@ import { isPhoneId } from "../phone-pages.js";
 import { addWatchPagesToPhone, phoneAddNote, watchPagesToAdd } from "../phone-copy.js";
 import {
   type LinkDevice,
+  type PagesRecordFacts,
+  awaitingMove,
   deleteChoices,
   deviceWord,
   elsewhereLine,
   elsewherePages,
+  freePlanText,
   joinWords,
   linkAlsoAddedText,
   linkBadgeText,
@@ -141,6 +144,7 @@ import {
   pageDevicePlaces,
   pageHolders,
   pageLinkId,
+  pagesRecordFacts,
 } from "./links.js";
 import { type RoomsKind, roomsKindFor } from "../watch-rooms/model.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
@@ -266,7 +270,7 @@ import {
   phonePagesLayout,
   phonePagesScreen,
 } from "../phone-frame.js";
-import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
+import { type WatchPagesNote, linkFailuresOf, watchCommandError, watchPagesSaveNote, withLinkFailures } from "./save-note.js";
 import { friendlyError } from "../friendly-error.js";
 import { restoredText } from "../revision-words.js";
 import {
@@ -692,17 +696,23 @@ export const PHONE_FRAME_TEXT = `The iPhone's Pages tab. ${PHONE_SIZE_TEXT}`;
 /** What an iPhone with no pages says under its title (`phone-pages.ts`). */
 export const PHONE_PAGES_EMPTY_TEXT = "Add a page and build it here, or add pages from one of your watches. A page added from a watch stays linked: an edit on one device shows on both.";
 
-/** The plan line under the Pages card. A free watch shows only the first
+/** The plan line under the Pages card, naming the device on screen. A free
+ * watch shows only the first
  * page that is not hidden (the app's `WatchPagesSyncRules.limitToFirstUserPage`).
  * Shown only to a watch that said it is on the free plan (`multiple_pages`
  * false on its pages record): never to Pro, a trial or TestFlight, and not to
  * a watch app too old to say. */
-export const WATCH_PAGES_PLAN_TEXT = {
-  title: "One page is always free.",
-  body: "On the free plan, the watch shows your first page that is not hidden. Pro shows every page, with no limit. "
-    + "Pro is one purchase for life, with no subscription. "
-    + "It also pays for development: Wrist Assistant is my full-time job, so it keeps getting better.",
-} as const;
+export function watchPagesPlanText(kind: LinkDevice["kind"]): { title: string; body: string } {
+  return {
+    title: "One page is always free.",
+    body: `On the free plan, the ${deviceWord(kind)} shows your first page that is not hidden. Pro shows every page, with no limit. `
+      + "Pro is one purchase for life, with no subscription. "
+      + "It also pays for development: Wrist Assistant is my full-time job, so it keeps getting better.",
+  };
+}
+
+/** The plan line on a watch. */
+export const WATCH_PAGES_PLAN_TEXT = watchPagesPlanText("watch");
 /** An empty page's line, beside its Add a tile button. */
 const NO_TILES_TEXT = "No tiles yet.";
 
@@ -842,6 +852,10 @@ export class WaPageEditor extends LitElement {
   @state() private places?: WatchPagesPlaces;
   /** The other devices' pages, as last read, for the other devices line. */
   @state() private elsewhere: ReadonlyMap<string, WatchPagesDocument> = new Map();
+  /** What the other devices' pages records said as last read: whether Home
+   * Assistant holds one, and whether the device is on the free plan. A
+   * device not read is missing. */
+  @state() private elsewhereFacts: ReadonlyMap<string, PagesRecordFacts> = new Map();
   private linksSeq = 0;
   /** The open Devices menu. */
   @state() private devicesMenu?: DevicesMenu;
@@ -1524,6 +1538,7 @@ export class WaPageEditor extends LitElement {
       this.devicesNote = undefined;
       // The other devices are not this one's others.
       this.elsewhere = new Map();
+      this.elsewhereFacts = new Map();
       this.linksSeq++;
       this.closeAsk();
       this.fieldNote = undefined;
@@ -3120,10 +3135,10 @@ export class WaPageEditor extends LitElement {
       // The base is the revision shown when the question opened, not the
       // one shown now: a save that arrived meanwhile makes this a conflict.
       const reply = await restoreWatchConfig(hass, watchId, "pages", ask.entry.revision, ask.baseRevision);
-      note = {
+      note = withLinkFailures({
         kind: "ok",
         text: `${restoredText(ask.entry.updated_at)} The ${deviceWord(this.linkKind)} picks it up the next time it checks.`,
-      };
+      }, linkFailuresOf(reply), "pages")!;
       if (watchId === this.watchId) {
         this.restartDraft = { watchId, revision: reply.revision };
       } else {
@@ -3243,18 +3258,19 @@ export class WaPageEditor extends LitElement {
       status_pages: isJsonObject(reply?.status_pages) ? (reply.status_pages as WatchPagesPlaces["status_pages"]) : {},
     };
     const others = this.watches.filter((o) => o.owner_watch_id !== watchId);
-    const read = await Promise.all(others.map(async (o): Promise<[string, WatchPagesDocument][]> => {
+    const read = await Promise.all(others.map(async (o): Promise<{ id: string; doc?: WatchPagesDocument; facts?: PagesRecordFacts }> => {
       try {
         const record = await fetchWatchConfig(hass, o.owner_watch_id, "pages");
         const doc = record.revision > 0 ? asWatchPagesDocument(record.document) : undefined;
-        return doc === undefined ? [] : [[o.owner_watch_id, doc]];
+        return { id: o.owner_watch_id, facts: pagesRecordFacts(record), ...(doc === undefined ? {} : { doc }) };
       } catch {
         // A device whose pages could not be read lists nothing this time.
-        return [];
+        return { id: o.owner_watch_id };
       }
     }));
     if (seq !== this.linksSeq || watchId !== this.watchId) return;
-    this.elsewhere = new Map(read.flat());
+    this.elsewhere = new Map(read.flatMap((r): [string, WatchPagesDocument][] => (r.doc === undefined ? [] : [[r.id, r.doc]])));
+    this.elsewhereFacts = new Map(read.flatMap((r): [string, PagesRecordFacts][] => (r.facts === undefined ? [] : [[r.id, r.facts]])));
   }
 
   /** Open a page's Devices menu, and read the places again for it. */
@@ -3296,7 +3312,9 @@ export class WaPageEditor extends LitElement {
       const reply = await linkWatchPages(hass, watchId, [pageId], [target]);
       if (watchId !== this.watchId) return;
       const also = linkAlsoAddedText(reply, target, [pageId], this.draft?.document);
-      this.devicesNote = { kind: "ok", text: `Added to ${this.deviceName(target)}.${also === undefined ? "" : ` ${also}`}` };
+      const name = this.deviceName(target);
+      const free = this.elsewhereFacts.get(target)?.free === true ? freePlanText([name]) : undefined;
+      this.devicesNote = { kind: "ok", text: [`Added to ${name}.`, also, free].filter((t) => t !== undefined).join(" ") };
       void this.load(watchId, true);
     } catch (err) {
       if (watchId === this.watchId) this.devicesNote = { kind: "err", text: `Not added. ${linkErrorText(err)}` };
@@ -3893,7 +3911,7 @@ export class WaPageEditor extends LitElement {
     const blocked = this.devicesBlocked();
     return renderPageDevicesMenu({
       name: watchPageName(page),
-      places: pageDevicePlaces(this.linkDevices, page, watchId, this.places),
+      places: pageDevicePlaces(this.linkDevices, page, watchId, this.places, awaitingMove(this.ownerList, this.elsewhereFacts)),
       ...(blocked === undefined ? {} : { blocked }),
       busy: this.linking,
       ...(this.devicesNote === undefined ? {} : { note: this.devicesNote }),
@@ -4028,11 +4046,15 @@ export class WaPageEditor extends LitElement {
         ${repeat(listed, (p) => watchPageId(p), (p, i) => this.renderPageRow(p, i, listed.length, pages, screen))}
         ${drag ? html`<div class="pe-drop-line" style=${`top:${drag.lineY}px`} aria-hidden="true"></div>` : nothing}
       </div>
-      ${this.record?.multiple_pages === false
-        ? html`<div class="lc-note pe-plan-note" role="note"><span><b>${WATCH_PAGES_PLAN_TEXT.title}</b> ${WATCH_PAGES_PLAN_TEXT.body}</span></div>`
-        : nothing}
+      ${this.record?.multiple_pages === false ? this.renderPlanNote() : nothing}
       ${this.renderElsewhere(this.draft?.document)}
     </section>`;
+  }
+
+  /** The free plan's line under the page list, for the device on screen. */
+  private renderPlanNote(): TemplateResult {
+    const plan = watchPagesPlanText(this.linkKind);
+    return html`<div class="lc-note pe-plan-note" role="note"><span><b>${plan.title}</b> ${plan.body}</span></div>`;
   }
 
   /** A page as one watch screen, small: its background and the tiles that

@@ -11,7 +11,7 @@ import { REFERENCE_CASE } from "../src/renderer.js";
 import { keptWatchPagesSelection } from "../src/watch-pages/kept.js";
 import type { JsonObject, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { type PageCard, cardDevicePlaces } from "../src/watch-pages/all-pages-model.js";
-import type { LinkDevice } from "../src/watch-pages/links.js";
+import { DEVICES_WAIT_TAG, type LinkDevice } from "../src/watch-pages/links.js";
 
 const flat = (v: unknown): string => {
   if (Array.isArray(v)) return v.map(flat).join("");
@@ -36,7 +36,7 @@ function tab() {
     { owner_watch_id: watch, device_name: "Jesse's Watch", device_kind: "watch" },
     { owner_watch_id: phone, device_name: "Jesse's iPhone", device_kind: "iphone", phone_pages: true },
   ] as unknown as OwnerSummary[];
-  const held = new Map<string, { revision: number; document: JsonObject }>([
+  const held = new Map<string, { revision: number; document: JsonObject; multiple_pages?: boolean }>([
     [`${watch}/pages`, { revision: 3, document: { schemaVersion: 1, pages: [{ id: HALL, name: "Hall", linkId: "L1", items: [] }, { id: DEN, name: "Den", items: [] }] } }],
     [`${phone}/pages`, { revision: 2, document: { schemaVersion: 1, pages: [{ id: MINE, name: "Mine", items: [] }, { id: HALL, name: "Hall", linkId: "L1", isHidden: true, items: [] }] } }],
   ]);
@@ -44,7 +44,7 @@ function tab() {
   const pagesOf = (owner: string) => ((held.get(`${owner}/pages`)?.document.pages ?? []) as JsonObject[]);
   const put = (owner: string, pages: JsonObject[]) => {
     const now = held.get(`${owner}/pages`);
-    held.set(`${owner}/pages`, { revision: (now?.revision ?? 0) + 1, document: { schemaVersion: 1, pages } });
+    held.set(`${owner}/pages`, { ...now, revision: (now?.revision ?? 0) + 1, document: { schemaVersion: 1, pages } });
   };
   const hass = {
     states: {},
@@ -55,7 +55,7 @@ function tab() {
         const at = `${msg.owner_watch_id as string}/${msg.kind as string}`;
         if (type.endsWith("watch_config/get")) {
           const r = held.get(at) ?? { revision: 0, document: null };
-          return Promise.resolve({ kind: msg.kind, revision: r.revision, document: r.document });
+          return Promise.resolve({ kind: msg.kind, revision: r.revision, document: r.document, multiple_pages: "multiple_pages" in r ? r.multiple_pages : null });
         }
         if (type.endsWith("watch_config/save")) {
           const now = held.get(at)?.revision ?? 0;
@@ -89,7 +89,7 @@ function tab() {
   const cards = () => el.cards as PageCard[];
   const card = (name: string) => cards().find((c) => c.name === name)!;
   const place = (c: PageCard, owner: string) => cardDevicePlaces(el.devices as LinkDevice[], c).find((p) => p.device.ownerId === owner)!;
-  return { el, watch, phone, held, sent, call, cards, card, place, whole: () => flat(call("render")) };
+  return { el, owners, watch, phone, held, sent, call, cards, card, place, whole: () => flat(call("render")) };
 }
 
 describe("the Pages tab", () => {
@@ -177,6 +177,33 @@ describe("the Pages tab", () => {
     expect((held.get(`${phone}/pages`)!.document.pages as JsonObject[]).map((p) => p.name)).toEqual(["Mine", "Hall"]);
     expect((el.devicesNote as { text: string }).text).toBe("Taken off Jesse's iPhone.");
     expect(card("Den").copies.map((c) => c.device.ownerId)).toEqual([watch]);
+  });
+
+  it("says a page added to a device on the free plan shows only if it is first", async () => {
+    const { el, phone, held, call, card, place } = tab();
+    held.set(`${phone}/pages`, { ...held.get(`${phone}/pages`)!, multiple_pages: false });
+    await call<Promise<void>>("loadAll");
+    call("openDevices", card("Den"));
+    await call<Promise<void>>("toggle", card("Den"), place(card("Den"), phone));
+    expect((el.devicesNote as { text: string }).text).toBe("Added to Jesse's iPhone. On the free plan, Jesse's iPhone shows only its first page.");
+  });
+
+  it("greys out a watch that waits for its iPhone, in a card's Devices menu and in Add to", async () => {
+    const { el, owners, call, card } = tab();
+    const waiting = `${owners[0]!.owner_watch_id}-new`;
+    el.owners = [...owners, { owner_watch_id: waiting, device_name: "Chen's Watch", device_kind: "watch", has_iphone: true } as unknown as OwnerSummary];
+    await call<Promise<void>>("loadAll");
+    call("openDevices", card("Den"));
+    const menu = flat(call("renderMenu", card("Den"), el.devices));
+    expect(menu).toContain(`<span class="pk-dup-full">${DEVICES_WAIT_TAG}</span>`);
+    call("startSelect");
+    el.selected = new Set([card("Den").key]);
+    el.bulkMenu = "add";
+    const bar = flat(call("renderBarMenu", "add", [card("Den")], el.devices, false));
+    const at = bar.indexOf("Chen's Watch");
+    const row = bar.slice(bar.lastIndexOf("<button", at), bar.indexOf("</button>", at));
+    expect(row).toContain(`class="pk-bar-row" ?disabled=true`);
+    expect(row).toContain(`<span class="pk-bar-row-n">${DEVICES_WAIT_TAG}</span>`);
   });
 
   it("will not switch off a page's only device", async () => {

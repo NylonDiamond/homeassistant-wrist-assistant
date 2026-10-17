@@ -13,10 +13,12 @@
 //
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("3b build contract").
 
+import type { WatchConfigLinkFailure } from "../ha-api.js";
 import { type WatchEditOptions, addWatchPage } from "./edit.js";
 import { type WatchPagesDocument, isJsonObject } from "./model.js";
 import { checkWatchPages, checkWatchPagesValues, mergeWatchPages, sameWatchPagesJson } from "./merge.js";
 import { settleMergedWatchPages } from "./page-settings-model.js";
+import { linkFailuresOf } from "./save-note.js";
 
 /** The most undo steps a draft keeps. The oldest goes first. */
 export const WATCH_PAGES_UNDO_LIMIT = 100;
@@ -305,7 +307,7 @@ export class WatchPagesDraft {
 export interface WatchPagesSaveIO {
   /** Saves `document` over `baseRevision`. Rejects with an error whose `code`
    * is `conflict` when Home Assistant holds a newer revision. */
-  save(baseRevision: number, document: WatchPagesDocument): Promise<{ revision: number }>;
+  save(baseRevision: number, document: WatchPagesDocument): Promise<{ revision: number; link_failures?: unknown }>;
   /** Reads the record Home Assistant holds now. */
   fetch(): Promise<{ revision: number; document: unknown }>;
   /** What the document is turned into before each send, as the phone's own
@@ -333,6 +335,9 @@ export interface WatchPagesSaveResult {
   /** After the merge the draft was the very copy Home Assistant holds, so
    * nothing more was sent: the edits were already there. */
   alreadySaved?: boolean;
+  /** The devices whose linked copies the save could not update, as its
+   * reply named them (`link_failures`). Only when there is one. */
+  linkFailures?: WatchConfigLinkFailure[];
   code?: string;
   message?: string;
   problems?: string[];
@@ -404,8 +409,11 @@ async function runSave(draft: WatchPagesDraft, io: WatchPagesSaveIO): Promise<Wa
     const problems = shape.length > 0 ? shape : checkWatchPagesValues(sent);
     if (problems.length > 0) return failed("invalid", problems.join(" "), problems);
     let revision: number;
+    let linkFailures: WatchConfigLinkFailure[];
     try {
-      ({ revision } = await io.save(draft.revision, sent));
+      const reply = await io.save(draft.revision, sent);
+      revision = reply.revision;
+      linkFailures = linkFailuresOf(reply);
     } catch (error) {
       const code = errorCode(error);
       if (code !== "conflict" || attempt >= WATCH_PAGES_SAVE_ATTEMPTS) return failed(code, errorMessage(error));
@@ -429,7 +437,7 @@ async function runSave(draft: WatchPagesDraft, io: WatchPagesSaveIO): Promise<Wa
       continue;
     }
     draft.saved(sent, revision);
-    return { ok: true, revision: draft.revision, merged };
+    return { ok: true, revision: draft.revision, merged, ...(linkFailures.length === 0 ? {} : { linkFailures }) };
   }
 }
 

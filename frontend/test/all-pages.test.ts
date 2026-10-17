@@ -23,7 +23,7 @@ import {
   resolveKind,
   shownCards,
 } from "../src/watch-pages/all-pages-model.js";
-import { DEVICES_SYSTEM_TEXT, type LinkDevice, elsewhereLine, elsewherePages, linkDevicesOf } from "../src/watch-pages/links.js";
+import { DEVICES_SYSTEM_TEXT, DEVICES_WAIT_TAG, DEVICES_WAIT_TEXT, type LinkDevice, elsewhereLine, elsewherePages, linkDevicesOf } from "../src/watch-pages/links.js";
 import type { WatchPage, WatchPagesDocument } from "../src/watch-pages/model.js";
 import type { OwnerSummary } from "../src/ha-api.js";
 import { deviceColor, deviceColors } from "../src/device-colors.js";
@@ -183,6 +183,13 @@ describe("a card's Devices menu", () => {
     const places = cardDevicePlaces(DEVICES, cards[1]!);
     expect(places.map((p) => [p.device.ownerId, p.on, p.here, p.stuck])).toEqual([
       ["w1", true, false, undefined], ["w2", false, false, undefined], ["p1", true, false, undefined],
+    ]);
+  });
+
+  it("greys out a watch that waits for its iPhone, unless the page is on it", () => {
+    const places = cardDevicePlaces(DEVICES, cards[1]!, new Set(["w2", "p1"]));
+    expect(places.map((p) => [p.device.ownerId, p.stuck, p.tag])).toEqual([
+      ["w1", undefined, undefined], ["w2", DEVICES_WAIT_TEXT, DEVICES_WAIT_TAG], ["p1", undefined, undefined],
     ]);
   });
 

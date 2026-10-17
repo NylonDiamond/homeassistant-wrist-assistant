@@ -1263,6 +1263,9 @@ def test_setup_hands_the_store_its_pairing_check() -> None:
     init = (_PKG_DIR / "__init__.py").read_text()
     assert "is_paired=widget_secret_store.is_paired_watch," in init
     assert "is_iphone=widget_secret_store.is_paired_iphone," in init
+    # A page link never makes the first record of a watch whose iPhone may
+    # still move its own setup here (``awaiting_move``).
+    assert "may_await_move=widget_secret_store.may_await_move," in init
 
 
 def test_the_phone_pages_capability_is_advertised() -> None:

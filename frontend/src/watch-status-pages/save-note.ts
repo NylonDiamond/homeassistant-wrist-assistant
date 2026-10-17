@@ -2,7 +2,7 @@
 // end. Kept apart from the element so the words can be tested without a
 // browser.
 
-import { NOT_FOR_IPHONE_TEXT, type WatchPagesNote } from "../watch-pages/save-note.js";
+import { NOT_FOR_IPHONE_TEXT, type WatchPagesNote, withLinkFailures } from "../watch-pages/save-note.js";
 import type { StatusPageClash, StatusPagesSaveResult } from "./draft.js";
 
 /** A page's name in a sentence, quoted; "a status page" with none. */
@@ -25,15 +25,24 @@ export function statusPagesKeptText(pages: readonly StatusPageClash[]): string {
 /** The note after a save, or none: a plain save that went through says
  * nothing, since the toolbar's "Saved just now" already does. */
 export function statusPagesSaveNote(result: StatusPagesSaveResult): WatchPagesNote | undefined {
-  if (result.ok) {
-    const kept = result.kept ?? [];
-    if (result.alreadySaved === true) {
-      const tail = kept.length > 0 ? ` ${statusPagesKeptText(kept)}` : "";
-      return { kind: kept.length > 0 ? "warn" : "ok", text: `Nothing left to save. The same changes were saved somewhere else, as revision ${result.revision}.${tail}` };
-    }
-    if (kept.length > 0) return { kind: "warn", text: `Saved. ${statusPagesKeptText(kept)}` };
-    return result.merged ? { kind: "ok", text: "Saved. Changes made somewhere else were merged in." } : undefined;
+  if (result.ok) return withLinkFailures(savedNote(result), result.linkFailures, "status pages");
+  return notSavedNote(result);
+}
+
+/** The note after a save that went through, before any device that kept
+ * the old version is named. */
+function savedNote(result: StatusPagesSaveResult): WatchPagesNote | undefined {
+  const kept = result.kept ?? [];
+  if (result.alreadySaved === true) {
+    const tail = kept.length > 0 ? ` ${statusPagesKeptText(kept)}` : "";
+    return { kind: kept.length > 0 ? "warn" : "ok", text: `Nothing left to save. The same changes were saved somewhere else, as revision ${result.revision}.${tail}` };
   }
+  if (kept.length > 0) return { kind: "warn", text: `Saved. ${statusPagesKeptText(kept)}` };
+  return result.merged ? { kind: "ok", text: "Saved. Changes made somewhere else were merged in." } : undefined;
+}
+
+/** The note after a save that did not go through. */
+function notSavedNote(result: StatusPagesSaveResult): WatchPagesNote | undefined {
   const message = (result.message ?? "").trim();
   switch (result.code) {
     case "conflict":

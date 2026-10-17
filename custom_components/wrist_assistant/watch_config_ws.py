@@ -39,7 +39,9 @@ Commands:
 
 ``watch_pages/link``, ``watch_pages/link_all`` and ``watch_pages/places`` make linked pages (one page
 on several devices, ``page_links.py``) and say where each one is. A link's
-refusals add ``unknown_device``, ``system_page`` and ``id_taken``.
+refusals add ``unknown_device``, ``system_page``, ``id_taken`` and
+``awaiting_move`` (a target watch whose iPhone may still move its own pages
+here, which a link made first would leave behind).
 
 ``watch_voices/get`` is the voice list a watch reported over the signed
 ``watch_voices_put`` (see ``watch_voices_store.py``), for the panel's Watch
@@ -65,8 +67,10 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, WATCH_CONFIG_PANEL_KINDS, WATCH_CONFIG_PANEL_WRITER
+from .device_lookup import paired_device_name
 from .listener_relay import (
     HTTP_ACTIONS_DELIVERY,
     WATCH_CONFIG,
@@ -121,6 +125,23 @@ def _item_count(kind: str, document: Any) -> int | None:
         for item in items
         if isinstance(item, dict) and not (kind == "pages" and item.get("isSystemPage") is True)
     )
+
+
+def _link_failures(hass: HomeAssistant, owners: list[str]) -> list[dict[str, Any]]:
+    """The linked copies a save or restore could not keep in step, as the
+    panel names them: ``[{"owner": <id>, "name": <name or null>}]``. The name
+    is what its user calls the device (``paired_device_name``), null for an
+    owner the secret store does not know."""
+    if not owners:
+        return []
+    secrets = getattr(hass.data.get(DOMAIN), "widget_secret_store", None)
+    device_registry = dr.async_get(hass)
+    failures: list[dict[str, Any]] = []
+    for owner in owners:
+        entry = secrets.get(owner) if secrets is not None else None
+        name = paired_device_name(device_registry, entry, owner) if entry is not None else None
+        failures.append({"owner": owner, "name": name})
+    return failures
 
 
 def _store(hass: HomeAssistant) -> WatchConfigStore | None:
@@ -344,7 +365,7 @@ def ws_watch_config_save(
     settings, notification style, status pages or Control Center list as
     edited in the panel.
 
-    Result: {"revision": <new revision>}
+    Result: {"revision": <new revision>, "link_failures": [{"owner", "name"}]}
 
     The panel sends the whole document, keys it does not show included, and
     the store keeps it as sent. ``base_revision`` 0 with nothing stored
@@ -365,6 +386,12 @@ def ws_watch_config_save(
     refused ``not_for_iphone``. A phone's ``behavior`` keeps only the phone's
     settings, the rest dropped without a word: ``get`` then shows what was
     kept.
+
+    ``link_failures`` lists the other devices holding a linked copy of a
+    saved page that could not take the change (over their size cap): the
+    save stands, those copies stay as they were. ``name`` is the device's
+    name, null for one the secret store does not know. Empty when every copy
+    took it, and for a kind that is never linked.
     """
     store = _store(hass)
     if store is None:
@@ -372,12 +399,14 @@ def ws_watch_config_save(
         return
     if not require_owner(hass, connection, msg, msg["owner_watch_id"]):
         return
+    failed: list[str] = []
     try:
         record = store.panel_save(
             msg["owner_watch_id"],
             msg["kind"],
             msg["document"],
             base_revision=msg["base_revision"],
+            link_failures=failed,
         )
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
@@ -388,7 +417,10 @@ def ws_watch_config_save(
         record.owner_watch_id,
         record.revision,
     )
-    connection.send_result(msg["id"], {"revision": record.revision})
+    connection.send_result(
+        msg["id"],
+        {"revision": record.revision, "link_failures": _link_failures(hass, failed)},
+    )
 
 
 @websocket_api.websocket_command(
@@ -480,7 +512,7 @@ def ws_watch_config_restore(
 ) -> None:
     """Save a history entry's document as the record's next revision.
 
-    Result: {"revision": <new revision>}
+    Result: {"revision": <new revision>, "link_failures": [{"owner", "name"}]}
 
     A panel save of the old document: ``updated_by`` is ``panel``, the hash
     is computed here, the replaced document goes into the history, delivery
@@ -489,7 +521,7 @@ def ws_watch_config_restore(
     is <N>, restore was based on <M>``, ``invalid`` when the old document
     fails the shape guard), plus ``not_found`` when the record holds no entry
     at ``revision``. A stale ``base_revision`` is a conflict even when the
-    entry is also gone.
+    entry is also gone. ``link_failures`` is ``save``'s.
     """
     store = _store(hass)
     if store is None:
@@ -497,12 +529,14 @@ def ws_watch_config_restore(
         return
     if not require_owner(hass, connection, msg, msg["owner_watch_id"]):
         return
+    failed: list[str] = []
     try:
         record = store.restore(
             msg["owner_watch_id"],
             msg["kind"],
             msg["revision"],
             base_revision=msg["base_revision"],
+            link_failures=failed,
         )
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
@@ -514,7 +548,10 @@ def ws_watch_config_restore(
         record.owner_watch_id,
         record.revision,
     )
-    connection.send_result(msg["id"], {"revision": record.revision})
+    connection.send_result(
+        msg["id"],
+        {"revision": record.revision, "link_failures": _link_failures(hass, failed)},
+    )
 
 
 @websocket_api.websocket_command({vol.Required("type"): _CMD_SUBSCRIBE_DELIVERY})
@@ -669,7 +706,9 @@ def ws_watch_pages_link(
     reaches every copy. Checked whole before anything is written. Refused
     ``unknown_device`` (a source or target that is not a paired device),
     ``not_found`` (a page the source does not list), ``system_page``,
-    ``id_taken`` (a target holds another page under that id), ``invalid``,
+    ``id_taken`` (a target holds another page under that id),
+    ``awaiting_move`` (a target watch holds no record of a kind the link
+    writes while its iPhone may still move its own here), ``invalid``,
     and ``unauthorized`` for a device the caller may not manage: the source
     and every target follow the ``save`` rule.
     """

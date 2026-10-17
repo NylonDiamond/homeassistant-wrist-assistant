@@ -8,7 +8,7 @@
 // `all-pages.ts`.
 
 import { listedWatchPages } from "./edit.js";
-import { type LinkDevice, type PageDevicePlace, DEVICES_SYSTEM_TEXT, pageLinkId } from "./links.js";
+import { type LinkDevice, type PageDevicePlace, DEVICES_SYSTEM_TEXT, DEVICES_WAIT_TAG, DEVICES_WAIT_TEXT, pageLinkId } from "./links.js";
 import { type WatchPage, type WatchPagesDocument, isHiddenWatchPage, isSmartWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPageTiles } from "./model.js";
 
 /** The second half of the line under the tab's title. */
@@ -198,13 +198,15 @@ export function openCopy(card: PageCard, filter: PagesFilter, kind: PagesKind = 
 /**
  * A card's Devices menu: a switch per device, on where the page is. The
  * page's only device cannot be switched off (a delete does that), and a
- * system page never moves. Unlike the editor's, no device is "this one".
+ * system page never moves. Unlike the editor's, no device is "this one". A
+ * watch in `waiting` (`awaitingMove`) cannot take the page yet.
  */
-export function cardDevicePlaces(devices: readonly LinkDevice[], card: PageCard): PageDevicePlace[] {
+export function cardDevicePlaces(devices: readonly LinkDevice[], card: PageCard, waiting: ReadonlySet<string> = new Set()): PageDevicePlace[] {
   const system = card.copies.some((c) => isSystemWatchPage(c.page));
   const last = card.copies.length <= 1;
   return devices.map((device) => {
     const on = copyOn(card, device.ownerId) !== undefined;
+    if (!system && !on && waiting.has(device.ownerId)) return { device, on, here: false, stuck: DEVICES_WAIT_TEXT, tag: DEVICES_WAIT_TAG };
     const stuck = system ? DEVICES_SYSTEM_TEXT : on && last ? DEVICES_LAST_TEXT : undefined;
     return { device, on, here: false, ...(stuck === undefined ? {} : { stuck }) };
   });

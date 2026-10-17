@@ -68,7 +68,19 @@ import {
 } from "./all-pages-bulk.js";
 import { devicesMenuStyles, renderPageDevicesMenu } from "./devices-menu.js";
 import { keepWatchPagesSelection, keptWatchPagesDraft } from "./kept.js";
-import { type LinkDevice, type PageDevicePlace, linkAlsoAddedText, linkDevicesOf, linkErrorText } from "./links.js";
+import {
+  DEVICES_WAIT_TAG,
+  DEVICES_WAIT_TEXT,
+  type LinkDevice,
+  type PageDevicePlace,
+  type PagesRecordFacts,
+  awaitingMove,
+  freePlanText,
+  linkAlsoAddedText,
+  linkDevicesOf,
+  linkErrorText,
+  pagesRecordFacts,
+} from "./links.js";
 import { type WatchPage, type WatchPagesDocument, asWatchPagesDocument, isSmartWatchPage, watchPageId, watchPagesOf } from "./model.js";
 import { pagesBulkIO, takePageOff } from "./page-links-io.js";
 import { renderWatchPagePreview, renderWatchPageTitle, watchPagePreviewStyles, watchPreviewLayout, watchReflowPage } from "./preview.js";
@@ -170,6 +182,10 @@ export class WaAllPages extends LitElement {
 
   /** Each device's pages as last read; a device with none is missing. */
   @state() private docs: ReadonlyMap<string, WatchPagesDocument> = new Map();
+  /** What each device's pages record said as last read: whether Home
+   * Assistant holds one, and whether the device is on the free plan. A
+   * device not read is missing. */
+  @state() private facts: ReadonlyMap<string, PagesRecordFacts> = new Map();
   /** The devices whose pages could not be read last time. */
   @state() private failed: readonly string[] = [];
   @state() private readState: "idle" | "loading" | "ready" = "idle";
@@ -256,6 +272,17 @@ export class WaAllPages extends LitElement {
   /** A device's color (`device-colors.ts`), the one it wears on every tab. */
   private colorOf = (ownerId: string): string | undefined => deviceColor(this.colorsFor(this.owners), ownerId);
 
+  /** The watches that wait for their iPhone to move their pages here, so no
+   * page can go on them yet (`awaitingMove`). */
+  private waitingDevices(): Set<string> {
+    return awaitingMove(this.owners, this.facts);
+  }
+
+  /** The devices that said they are on the free plan. */
+  private freeDevices(): Set<string> {
+    return new Set([...this.facts].filter(([, f]) => f.free).map(([id]) => id));
+  }
+
   /** Every device a page can be on, the editor's list. */
   private get devices(): LinkDevice[] {
     return linkDevicesOf(this.owners, this.phones);
@@ -289,24 +316,29 @@ export class WaAllPages extends LitElement {
     const linksOn = await links;
     if (seq !== this.loadSeq) return;
     const docs = new Map<string, WatchPagesDocument>();
+    const facts = new Map<string, PagesRecordFacts>();
     const failed: string[] = [];
-    for (const [ownerId, read] of reads) {
+    for (const [ownerId, read, fact] of reads) {
       if (read === "failed") {
         failed.push(ownerId);
         const held = this.docs.get(ownerId);
         if (held !== undefined) docs.set(ownerId, held);
+        const known = this.facts.get(ownerId);
+        if (known !== undefined) facts.set(ownerId, known);
       } else if (read !== undefined) docs.set(ownerId, read);
+      if (fact !== undefined) facts.set(ownerId, fact);
     }
     this.docs = docs;
+    this.facts = facts;
     this.failed = failed;
     this.linksOn = linksOn;
     this.readState = "ready";
   }
 
-  private async readOne(hass: HassLike, ownerId: string): Promise<[string, WatchPagesDocument | undefined | "failed"]> {
+  private async readOne(hass: HassLike, ownerId: string): Promise<[string, WatchPagesDocument | undefined | "failed", PagesRecordFacts?]> {
     try {
       const record = await fetchWatchConfig(hass, ownerId, "pages");
-      return [ownerId, record.revision > 0 ? asWatchPagesDocument(record.document) : undefined];
+      return [ownerId, record.revision > 0 ? asWatchPagesDocument(record.document) : undefined, pagesRecordFacts(record)];
     } catch {
       return [ownerId, "failed"];
     }
@@ -323,12 +355,13 @@ export class WaAllPages extends LitElement {
       const seq = (this.readSeq.get(ownerId) ?? 0) + 1;
       this.readSeq.set(ownerId, seq);
       const all = this.loadSeq;
-      void this.readOne(hass, ownerId).then(([, read]) => {
+      void this.readOne(hass, ownerId).then(([, read, fact]) => {
         if (seq !== this.readSeq.get(ownerId) || all !== this.loadSeq || read === "failed") return;
         const docs = new Map(this.docs);
         if (read === undefined) docs.delete(ownerId);
         else docs.set(ownerId, read);
         this.docs = docs;
+        if (fact !== undefined) this.facts = new Map(this.facts).set(ownerId, fact);
       });
     }, RELOAD_DELAY_MS));
   }
@@ -439,7 +472,8 @@ export class WaAllPages extends LitElement {
           const sourcePage = watchPageId(copyOn(card, source)!.page);
           const reply = await linkWatchPages(hass, source, [sourcePage], [target]);
           const also = linkAlsoAddedText(reply, target, [sourcePage], this.docs.get(source));
-          note = { kind: "ok", text: `Added to ${name}.${also === undefined ? "" : ` ${also}`}` };
+          const free = this.facts.get(target)?.free === true ? freePlanText([name]) : undefined;
+          note = { kind: "ok", text: [`Added to ${name}.`, also, free].filter((t) => t !== undefined).join(" ") };
         }
       }
     } catch (err) {
@@ -602,7 +636,7 @@ export class WaAllPages extends LitElement {
       if (kind === "add") result = await runAdd(io, addPlan(picked, on, this.docs, dirtyHere), devices, step);
       else if (kind === "remove") result = await runRemove(io, removePlan(picked, on, dirtyHere), devices, step);
       else result = await runDelete(io, deletePlan(picked, devices, dirtyHere), devices, step);
-      note = bulkResultText(result, devices);
+      note = bulkResultText(result, devices, this.freeDevices());
     } catch (err) {
       note = { kind: "err", text: watchCommandError(err).message };
     }
@@ -750,7 +784,7 @@ export class WaAllPages extends LitElement {
     const dirty = linkSource(card, (id) => keptWatchPagesDraft(id)?.dirty ?? false) === undefined;
     return renderPageDevicesMenu({
       name: card.name,
-      places: cardDevicePlaces(devices, card),
+      places: cardDevicePlaces(devices, card, this.waitingDevices()),
       ...(dirty ? { blocked: DEVICES_DIRTY_TEXT } : {}),
       busy: this.linking,
       ...(this.devicesNote === undefined ? {} : { note: this.devicesNote }),
@@ -804,6 +838,7 @@ export class WaAllPages extends LitElement {
     const n = picked.length;
     const count = `${n} ${n === 1 ? "page" : "pages"}`;
     const head = add ? `Add ${count} to` : `Remove ${count} from`;
+    const waiting = add ? this.waitingDevices() : new Set<string>();
     return html`<span class="pk-bar-menu">
       <button type="button" class="ghost small ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"} ?disabled=${off}
         title=${add ? "Put these pages on another device, linked" : "Take these pages off a device"}
@@ -813,10 +848,11 @@ export class WaAllPages extends LitElement {
         ${devices.map((device) => {
           const holds = picked.filter((c) => copyOn(c, device.ownerId) !== undefined).length;
           const dirty = dirtyHere(device.ownerId);
-          const why = dirty ? "unsaved edits" : add ? (holds === n ? "has them all" : undefined) : (holds === 0 ? "has none" : undefined);
+          const wait = waiting.has(device.ownerId);
+          const why = dirty ? "unsaved edits" : wait ? DEVICES_WAIT_TAG : add ? (holds === n ? "has them all" : undefined) : (holds === 0 ? "has none" : undefined);
           return html`<button type="button" class="pk-bar-row" ?disabled=${why !== undefined}
             style=${`--dc:${this.colorOf(device.ownerId) ?? "var(--wa-muted)"}`}
-            title=${dirty ? "Its pages have unsaved edits. Save or discard them first." : `${add ? "Add to" : "Remove from"} ${device.name}`}
+            title=${dirty ? "Its pages have unsaved edits. Save or discard them first." : wait ? DEVICES_WAIT_TEXT : `${add ? "Add to" : "Remove from"} ${device.name}`}
             @click=${() => void this.runBulk(kind, [device.ownerId])}>
             ${uiIcon(device.kind === "iphone" ? "phone" : "watch")}
             <span class="pk-dup-name">${device.name}</span>

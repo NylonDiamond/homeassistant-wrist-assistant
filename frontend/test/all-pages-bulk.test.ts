@@ -212,6 +212,17 @@ describe("running", () => {
     expect(bulkResultText(result, DEVICES)).toEqual({ kind: "ok", text: "Added 2 pages to Chen's Watch. Their tiles brought 1 page more." });
   });
 
+  it("says when pages went on a device on the free plan", async () => {
+    const { io } = fake();
+    const result = await runAdd(io, addPlan([card("Hall"), card("Yard")], ["w2"], DOCS, clean), DEVICES);
+    expect(bulkResultText(result, DEVICES, new Set(["w2"]))).toEqual({
+      kind: "ok",
+      text: "Added 2 pages to Chen's Watch. Their tiles brought 1 page more. On the free plan, Chen's Watch shows only its first page.",
+    });
+    // A free device nothing went on says nothing.
+    expect(bulkResultText(result, DEVICES, new Set(["p1"])).text).not.toContain("free plan");
+  });
+
   it("sends a refused call again one page at a time and leaves out only the refused page", async () => {
     const { io, calls } = fake({ [`w2:${YARD}`]: "id_taken" });
     const result = await runAdd(io, addPlan([card("Den", "w1"), card("Yard")], ["w2"], DOCS, clean), DEVICES);

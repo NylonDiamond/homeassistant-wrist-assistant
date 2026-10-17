@@ -58,10 +58,14 @@ def _watch_status() -> dict:
 @pytest.fixture
 def env():
     with _loaded_module() as mod:
+        # The watches whose iPhone may still move their own setup here; a
+        # test adds one to wait.
+        awaiting: set[str] = set()
         store = mod.WatchConfigStore(
             _Hass(),
             is_paired=lambda owner: owner in {WATCH, WATCH_2},
             is_iphone=lambda owner: owner == PHONE,
+            may_await_move=lambda owner: owner in awaiting,
         )
         asyncio.run(store.async_load())
         changes: list[tuple[str, str]] = []
@@ -69,7 +73,7 @@ def env():
         store.panel_save(WATCH, "pages", _watch_pages(), base_revision=0)
         store.panel_save(WATCH, "status_pages", _watch_status(), base_revision=0)
         changes.clear()
-        yield types.SimpleNamespace(store=store, mod=mod, changes=changes)
+        yield types.SimpleNamespace(store=store, mod=mod, changes=changes, awaiting=awaiting)
 
 
 def _doc(env, owner: str, kind: str = "pages") -> dict:
@@ -151,6 +155,78 @@ def test_an_id_taken_on_one_target_refuses_every_target(env) -> None:
     assert env.changes == []
     assert env.store.get(PHONE, "pages") is None
     assert "linkId" not in _page(_doc(env, WATCH), HOME)
+
+
+# ── a watch still waiting for its iPhone's move ──────────────────────────
+
+
+def test_a_link_never_starts_the_pages_of_a_watch_awaiting_its_move(env) -> None:
+    """The iPhone's move sends nothing over a record Home Assistant holds, so
+    a pages record made by the link would cost the watch its own pages."""
+    env.awaiting.add(WATCH_2)
+    with pytest.raises(env.mod.WatchConfigLinkError) as err:
+        env.store.link_pages(WATCH, [SOLO], [PHONE, WATCH_2])
+    assert err.value.code == "awaiting_move"
+    assert env.changes == []
+    assert env.store.get(WATCH_2, "pages") is None
+    assert env.store.get(PHONE, "pages") is None
+    assert "linkId" not in _page(_doc(env, WATCH), SOLO)
+
+
+def test_a_link_never_starts_the_status_pages_of_a_watch_awaiting_its_move(env) -> None:
+    """The move came for the pages but not yet the status pages: a link that
+    reaches a status page still waits."""
+    env.awaiting.add(WATCH_2)
+    _save(env, WATCH_2, {"schemaVersion": 1, "pages": [{"id": PHONE_PAGE, "name": "Own", "items": []}]})
+    env.changes.clear()
+    with pytest.raises(env.mod.WatchConfigLinkError) as err:
+        env.store.link_pages(WATCH, [HOME], [WATCH_2])
+    assert err.value.code == "awaiting_move"
+    assert env.changes == []
+    assert env.store.get(WATCH_2, "status_pages") is None
+
+
+def test_once_the_move_came_a_link_onto_that_watch_goes_ahead(env) -> None:
+    env.awaiting.add(WATCH_2)
+    _save(env, WATCH_2, {"schemaVersion": 1, "pages": [{"id": PHONE_PAGE, "name": "Own", "items": []}]})
+    result = env.store.link_pages(WATCH, [SOLO], [WATCH_2])
+    assert result["targets"][WATCH_2]["pages"] == [SOLO]
+    assert [p["id"] for p in _doc(env, WATCH_2)["pages"]] == [PHONE_PAGE, SOLO]
+
+
+def test_a_link_with_nothing_to_write_onto_a_waiting_watch_is_no_refusal(env) -> None:
+    """Only a write that would make the first record waits: a link the target
+    already holds writes nothing there."""
+    _save(env, WATCH_2, {"schemaVersion": 1, "pages": [{"id": PHONE_PAGE, "name": "Own", "items": []}]})
+    env.store.link_pages(WATCH, [SOLO], [WATCH_2])
+    env.awaiting.add(WATCH_2)
+    again = env.store.link_pages(WATCH, [SOLO], [WATCH_2])
+    assert again["targets"][WATCH_2] == {"pages": [], "status_pages": []}
+
+
+def test_link_device_onto_a_watch_awaiting_its_move_is_refused(env) -> None:
+    env.awaiting.add(WATCH_2)
+    _save(env, PHONE, {"schemaVersion": 1, "pages": [{"id": PHONE_PAGE, "name": "Mine", "items": []}]})
+    env.changes.clear()
+    with pytest.raises(env.mod.WatchConfigLinkError) as err:
+        env.store.link_device(PHONE, WATCH_2, updated_by="panel")
+    assert err.value.code == "awaiting_move"
+    assert env.changes == []
+    assert env.store.get(WATCH_2, "pages") is None
+
+
+def test_link_device_copies_no_menus_onto_a_watch_awaiting_its_move(env) -> None:
+    """The pages came over, the menus not yet: the move brings the watch's
+    own menus, so the source's are not copied in their place."""
+    menus = {"quickAction": {"slots": []}, "entityRadial": {}, "pageSwitcher": {}}
+    _save(env, WATCH, menus, "menus")
+    _save(env, WATCH_2, {"schemaVersion": 1, "pages": [{"id": PHONE_PAGE, "name": "Own", "items": []}]})
+    _save(env, WATCH_2, {"schemaVersion": 1, "statusPages": []}, "status_pages")
+    env.awaiting.add(WATCH_2)
+    result = env.store.link_device(WATCH, WATCH_2, updated_by="panel")
+    assert result["copied"] == []
+    assert env.store.get(WATCH_2, "menus") is None
+    assert set(result["link_ids"]) == {HOME, LIGHTS, SOLO}
 
 
 # ── fan-out ──────────────────────────────────────────────────────────────
@@ -302,6 +378,53 @@ def test_a_copy_over_its_cap_is_left_and_the_save_stands(env, monkeypatch) -> No
     _save(env, WATCH, watch)
     assert env.changes == [(WATCH, "pages")]
     assert _page(_doc(env, PHONE), SOLO)["name"] == "Solo"
+
+
+def test_a_save_or_restore_names_the_copies_it_could_not_keep_in_step(env, monkeypatch) -> None:
+    env.store.link_pages(WATCH, [SOLO], [PHONE, WATCH_2])
+    real = env.mod.validate_document
+
+    def capped(kind, document, **kwargs):
+        # Only the phone's copy is over its cap once it takes the new name.
+        if (
+            document is not None
+            and not kwargs.get("check_items")
+            and any(p.get("id") == PHONE_PAGE for p in document.get("pages", []))
+            and any(p.get("name") == "Bigger" for p in document.get("pages", []))
+        ):
+            raise env.mod.WatchConfigValidationError("too big")
+        return real(kind, document, **kwargs)
+
+    phone = _doc(env, PHONE)
+    phone["pages"].insert(0, {"id": PHONE_PAGE, "name": "Mine", "items": []})
+    _save(env, PHONE, phone)
+    monkeypatch.setattr(env.mod, "validate_document", capped)
+    watch = _doc(env, WATCH)
+    _page(watch, SOLO)["name"] = "Bigger"
+    failed: list[str] = []
+    bigger = env.store.panel_save(
+        WATCH, "pages", watch, base_revision=env.store.get(WATCH, "pages").revision,
+        link_failures=failed,
+    ).revision
+    assert failed == [PHONE]
+    assert _page(_doc(env, WATCH_2), SOLO)["name"] == "Bigger"
+    assert _page(_doc(env, PHONE), SOLO)["name"] == "Solo"
+
+    # A copy that takes the change is no failure.
+    watch = copy.deepcopy(watch)
+    _page(watch, SOLO)["name"] = "Back"
+    failed = []
+    back = env.store.panel_save(WATCH, "pages", watch, base_revision=bigger, link_failures=failed)
+    assert failed == []
+    assert _page(_doc(env, PHONE), SOLO)["name"] == "Back"
+
+    failed_restore: list[str] = []
+    env.store.restore(
+        WATCH, "pages", bigger, base_revision=back.revision, link_failures=failed_restore
+    )
+    assert failed_restore == [PHONE]
+    assert _page(_doc(env, WATCH), SOLO)["name"] == "Bigger"
+    assert _page(_doc(env, PHONE), SOLO)["name"] == "Back"
 
 
 # ── link_device and places ───────────────────────────────────────────────

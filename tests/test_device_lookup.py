@@ -96,3 +96,42 @@ def test_a_new_registry_names_the_parent_by_its_id() -> None:
 
 def test_a_new_registry_without_the_parent_links_nothing() -> None:
     assert real_module().parent_device_fields(NewRegistry({}), HUB) == {}
+
+
+# ── paired_device_name ───────────────────────────────────────────────────
+
+
+def _named(name_by_user: str | None, name: str | None) -> object:
+    return types.SimpleNamespace(id="dev-watch", name_by_user=name_by_user, name=name)
+
+
+def _entry(kind: str = "watch", device_name: str | None = None, label: str | None = None):
+    return types.SimpleNamespace(device_kind=kind, device_name=device_name, label=label)
+
+
+def test_a_rename_on_the_device_page_wins() -> None:
+    registry = NewRegistry({(DOMAIN, f"watch_{WATCH}"): _named("Kitchen watch", "Watch")})
+    name = real_module().paired_device_name(registry, _entry(device_name="Apple Watch"), WATCH)
+    assert name == "Kitchen watch"
+
+
+def test_the_device_page_name_comes_before_the_app_s() -> None:
+    registry = OldRegistry({(DOMAIN, f"watch_{WATCH}"): _named(None, "Jesse's Watch")})
+    name = real_module().paired_device_name(registry, _entry(device_name="Apple Watch"), WATCH)
+    assert name == "Jesse's Watch"
+
+
+def test_with_no_device_page_the_app_s_name_is_used() -> None:
+    name = real_module().paired_device_name(NewRegistry({}), _entry(device_name=" Apple Watch "), WATCH)
+    assert name == "Apple Watch"
+
+
+def test_the_pairing_label_is_never_a_name() -> None:
+    """A watch paired by code carries ``watch-code-pair`` as its label."""
+    entry = _entry(label="watch-code-pair")
+    assert real_module().paired_device_name(None, entry, WATCH) == f"Watch {WATCH[:8]}"
+
+
+def test_the_fallback_says_iphone_for_an_iphone() -> None:
+    assert real_module().paired_device_name(None, _entry("iphone"), WATCH) == f"iPhone {WATCH[:8]}"
+    assert real_module().paired_device_name(None, None, WATCH) == f"Watch {WATCH[:8]}"

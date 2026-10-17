@@ -15,7 +15,7 @@
 
 import type { OwnerSummary, WatchConfigRecord, WatchPagesLinkReply, WatchPagesPlaces } from "../ha-api.js";
 import { deviceKindOf } from "../version.js";
-import { watchAppDevices, watchName } from "../watch-settings.js";
+import { WAIT_FOR_IPHONE_TEXT, noRecordStart, watchAppDevices, watchName } from "../watch-settings.js";
 import { deleteWatchPage, findWatchPage, listedWatchPages } from "./edit.js";
 import { type WatchPage, type WatchPagesDocument, asWatchPagesDocument, isSystemWatchPage, watchPageId, watchPageName, watchPagesOf } from "./model.js";
 import { watchCommandError } from "./save-note.js";
@@ -73,6 +73,9 @@ export interface PageDevicePlace {
   here: boolean;
   /** Why the switch cannot be flipped, or undefined when it can. */
   stuck?: string;
+  /** A few words drawn on the switch's row for why, when its title alone
+   * would hide them: "waiting for iPhone". */
+  tag?: string;
 }
 
 /** The text for the device the editor is on, whose switch never goes off. */
@@ -83,21 +86,114 @@ export const DEVICES_SYSTEM_TEXT = "A system page stays on its own device.";
 /**
  * The Devices menu for one page: a switch per device, on where the page is.
  * The device the editor is on cannot be switched off (Delete does that), and
- * nothing moves for a system page.
+ * nothing moves for a system page. A watch in `waiting` (`awaitingMove`)
+ * cannot take the page yet.
  */
 export function pageDevicePlaces(
   devices: readonly LinkDevice[],
   page: WatchPage,
   here: string,
   places: WatchPagesPlaces | undefined,
+  waiting: ReadonlySet<string> = new Set(),
 ): PageDevicePlace[] {
   const holders = new Set(pageHolders(page, here, places));
   const system = isSystemWatchPage(page);
   return devices.map((device) => {
     const isHere = device.ownerId === here;
+    const on = holders.has(device.ownerId);
+    if (!system && !isHere && !on && waiting.has(device.ownerId)) {
+      return { device, on, here: false, stuck: DEVICES_WAIT_TEXT, tag: DEVICES_WAIT_TAG };
+    }
     const stuck = system ? DEVICES_SYSTEM_TEXT : isHere ? DEVICES_HERE_TEXT : undefined;
-    return { device, on: holders.has(device.ownerId), here: isHere, ...(stuck === undefined ? {} : { stuck }) };
+    return { device, on, here: isHere, ...(stuck === undefined ? {} : { stuck }) };
   });
+}
+
+// ── what a device's own pages record says ─────────────────────────────────
+//
+// A watch whose iPhone may still move its pages here (`noRecordStart` is
+// `wait`) while Home Assistant holds no pages for it cannot take a page from
+// another device yet: its page editor waits for that move, and a page put
+// there first would make the move skip its pages for good. Home Assistant
+// refuses such a link too (`awaiting_move`). A watch that told Home
+// Assistant it is on the free plan (`multiple_pages` false) shows only its
+// first page, so a page added there says so.
+
+/** What the panel read of one device's pages record. */
+export interface PagesRecordFacts {
+  /** Home Assistant holds a pages record for it (revision above 0). */
+  held: boolean;
+  /** The device said it is on the free plan. */
+  free: boolean;
+}
+
+/** The facts of one pages record as read. */
+export function pagesRecordFacts(record: Pick<WatchConfigRecord, "revision" | "multiple_pages">): PagesRecordFacts {
+  return { held: record.revision > 0, free: record.multiple_pages === false };
+}
+
+/** The row's few words for a watch that waits for its iPhone. */
+export const DEVICES_WAIT_TAG = "waiting for iPhone";
+/** Its title, in the page editor's own wait words. */
+export const DEVICES_WAIT_TEXT = `${WAIT_FOR_IPHONE_TEXT} Pages can go on this watch after that.`;
+
+/**
+ * The watches that wait for their iPhone to move their pages here: the page
+ * editor's rule (`noRecordStart` is `wait`) while Home Assistant holds no
+ * pages record for them. A device whose record was not read does not wait
+ * here; Home Assistant still refuses it if it should.
+ */
+export function awaitingMove(owners: readonly OwnerSummary[], facts: ReadonlyMap<string, PagesRecordFacts>): Set<string> {
+  return new Set(owners
+    .filter((o) => facts.get(o.owner_watch_id)?.held === false && noRecordStart(o) === "wait")
+    .map((o) => o.owner_watch_id));
+}
+
+/** The line after pages went on devices on the free plan: "On the free
+ * plan, Jesse's Watch shows only its first page." Undefined for none. */
+export function freePlanText(names: readonly string[]): string | undefined {
+  if (names.length === 0) return undefined;
+  return `On the free plan, ${joinWords(names)} ${names.length === 1 ? "shows only its" : "show only their"} first page.`;
+}
+
+// ── linked status pages ──────────────────────────────────────────────────
+//
+// Status pages link the same way: the same id in each device's
+// `status_pages` record, with a `linkId`, and Home Assistant writes a save of
+// one to its other copies. A link brings them along with the pages whose
+// tiles open them. The status page editor has no Devices menu; it only says
+// which pages an edit changes elsewhere.
+
+/** The devices that hold a status page, `here` first: for a linked one
+ * every device `places` lists for its link, for any other only `here`. */
+export function statusPageHolders(page: Readonly<Record<string, unknown>> | undefined, here: string, places: WatchPagesPlaces | undefined): string[] {
+  const link = page?.[PAGE_LINK_KEY];
+  const listed = typeof link === "string" && link !== "" ? (places?.status_pages[link] ?? []) : [];
+  return [here, ...listed.filter((id) => id !== here)];
+}
+
+/**
+ * The line over a device's status pages when some are on other devices too:
+ * "These status pages are also on Jesse's iPhone. An edit here shows there
+ * too." Undefined when none is.
+ */
+export function statusPagesSharedText(
+  pages: readonly Readonly<Record<string, unknown>>[],
+  here: string,
+  places: WatchPagesPlaces | undefined,
+  devices: readonly LinkDevice[],
+): string | undefined {
+  const holders = pages.map((p) => statusPageHolders(p, here, places).filter((id) => id !== here));
+  const linked = holders.filter((h) => h.length > 0).length;
+  if (linked === 0) return undefined;
+  const others = new Set(holders.flat());
+  const known = devices.filter((d) => others.has(d.ownerId)).map((d) => d.name);
+  const unknown = [...others].filter((id) => !devices.some((d) => d.ownerId === id)).length;
+  const names = unknown === 0 ? known : [...known, unknown === 1 ? "another device" : `${unknown} other devices`];
+  const which = linked === pages.length
+    ? (linked === 1 ? "This status page is" : "These status pages are")
+    : `${linked} of these status pages ${linked === 1 ? "is" : "are"}`;
+  return `${which} also on ${joinWords(names)}. An edit here shows there too.`;
 }
 
 /** The small badge on a linked page's row: "Also on Jesse's iPhone", or
@@ -226,6 +322,7 @@ export function linkErrorText(err: unknown): string {
     case "system_page": return DEVICES_SYSTEM_TEXT;
     case "id_taken": return "That device already has a page of its own with the same id, so it was not added.";
     case "unknown_command": return "This version of the integration cannot share pages between devices. Update it first.";
+    case "awaiting_move": return `${WAIT_FOR_IPHONE_TEXT} Try again after that.`;
     default: return message;
   }
 }
