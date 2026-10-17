@@ -344,7 +344,9 @@ class WatchConfigLinkError(WatchConfigStoreError):
     ``code`` is the reason: ``unknown_device`` for a source or target that is
     not a paired device, ``not_found`` for a page the source does not hold,
     ``system_page`` for a system page, ``id_taken`` for a target that holds
-    another page under the same id, ``awaiting_move`` for a target watch
+    another page under the same id, ``unit_taken`` for a target with its own
+    menu for a unit (:meth:`WatchConfigStore.link_units`), ``awaiting_move``
+    for a target watch
     whose iPhone may still move its own pages here (the link would make the
     first record that move skips).
     """
