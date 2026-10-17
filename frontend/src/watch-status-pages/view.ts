@@ -406,7 +406,7 @@ function pageRow(host: StatusPagesViewHost, page: JsonObject, index: number, cou
       e.preventDefault();
       pick();
     }}>
-    ${single ? nothing : html`<span class="grip" aria-hidden="true"></span>`}
+    <span class="grip" aria-hidden="true"></span>
     ${thumb(host, "doc.text.fill", "#5B8FD4")}
     <span class="name"><b><span class="nm-t">${name || "Untitled page"}</span></b><small>${plural(rows, "row", "rows")}</small></span>
     <span class="right">

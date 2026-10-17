@@ -154,7 +154,9 @@ describe("the status pages editor in library mode", () => {
     for (const gone of ["tb-sync", "Complications", "sp-watch-picker", "tb-saved"]) expect(bar).not.toContain(gone);
     const card = flat(renderPagesCard(e.host()));
     expect(e.host().single).toBe(true);
-    for (const gone of ["sp-add-page", "Move up", "Move down", `class="grip"`]) expect(card).not.toContain(gone);
+    for (const gone of ["sp-add-page", "Move up", "Move down"]) expect(card).not.toContain(gone);
+    // The grip stays as an empty span: it holds the row's first grid column.
+    expect(card).toContain(`<span class="grip" aria-hidden="true"></span>`);
     expect(card).toContain("Delete Lone");
     const ticks = flat(e.host().ticks?.(statusPagesOf(e.draft().document)[0]!));
     expect(ticks).toContain("Jesse's Watch");

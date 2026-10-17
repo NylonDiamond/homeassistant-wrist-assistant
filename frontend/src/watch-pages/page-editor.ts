@@ -4170,7 +4170,9 @@ export class WaPageEditor extends LitElement {
       @dblclick=${(e: Event) => { if (!own(e)) this.startRename(id); }}
       @keydown=${(e: KeyboardEvent) => this.onRowKeyDown(e, id, index, count)}
       @pointerdown=${(e: PointerEvent) => { if (!inLibrary) this.onRowPointerDown(e, id, index); }}>
-      ${inLibrary ? nothing : html`<span class="grip" title=${this.saving ? SAVING_TEXT : "Drag to move"} aria-hidden="true">${uiIcon("grip")}</span>`}
+      ${inLibrary
+        ? html`<span class="grip" aria-hidden="true"></span>`
+        : html`<span class="grip" title=${this.saving ? SAVING_TEXT : "Drag to move"} aria-hidden="true">${uiIcon("grip")}</span>`}
       ${this.renderPageThumb(page, pages, screen)}
       <span class="name">
         ${renaming
@@ -5471,6 +5473,8 @@ export class WaPageEditor extends LitElement {
       color: var(--wa-muted); cursor: grab; touch-action: none; opacity: .5;
     }
     .pe-page-row:hover .grip, .pe-page-row.hl .grip { opacity: 1; }
+    /* Library mode draws no grip, but keeps its column so the row's grid stays. */
+    .pe-page-row .grip:empty { cursor: default; }
     .pe-page-row .grip svg.ui-icon { width: 12px; height: 12px; }
     .pe-page-row.pe-dragging { opacity: .5; }
     .pe-pages-card.saving .pe-page-row, .pe-pages-card.saving .pe-page-row .grip { cursor: progress; }
