@@ -851,14 +851,54 @@ export async function linkAllWatchPages(hass: HassLike, sourceId: string, target
   });
 }
 
-/** For every link id, the devices that hold a copy of it. */
+/** A part of the menus that links on its own: the Anywhere menu (with the
+ * page switcher's look) or the Entity quick menu. */
+export type WatchMenusLinkUnit = "anywhere" | "entity";
+
+/** What `watch_pages/link` did for menus: per target the pages and status
+ * pages the slots brought along and the units written there, and the link
+ * id of each unit. */
+export interface WatchMenusLinkReply extends WatchPagesLinkReply {
+  targets: Record<string, { pages: string[]; status_pages: string[]; units: WatchMenusLinkUnit[] }>;
+  link_ids: Partial<Record<WatchMenusLinkUnit, string>>;
+}
+
+/** Put menu `units` of `sourceId` on the `targets` devices, linked, with the
+ * pages and status pages their slots open. A target that has its own menu
+ * for a unit is refused `unit_taken` unless `replace`, which drops its own.
+ * Refusals besides the page link's: `unit_taken`, `not_for_iphone`,
+ * `not_found` (no menus saved on the source), `awaiting_move`. An
+ * integration older than linked menus refuses the message's new keys
+ * (`invalid_format`), one older than linked pages answers
+ * `unknown_command`; the panel tells both apart first by `places` having no
+ * `menus`. */
+export async function linkWatchMenus(hass: HassLike, sourceId: string, units: readonly WatchMenusLinkUnit[], targets: readonly string[], replace = false) {
+  return hass.connection.sendMessagePromise<WatchMenusLinkReply>({
+    type: `${WP}/link`,
+    source_id: sourceId,
+    kind: "menus",
+    units: [...units],
+    targets: [...targets],
+    replace,
+  });
+}
+
+/** One menus link: the unit it links and the devices that hold it. */
+export interface WatchMenusLinkPlace {
+  unit: WatchMenusLinkUnit;
+  owners: string[];
+}
+
+/** For every link id, the devices that hold a copy of it. `menus` is
+ * absent from an integration older than linked menus. */
 export interface WatchPagesPlaces {
   pages: Record<string, string[]>;
   status_pages: Record<string, string[]>;
+  menus?: Record<string, WatchMenusLinkPlace>;
 }
 
-/** Where each linked page and status page is. An integration older than
- * linked pages answers `unknown_command`. */
+/** Where each linked page, status page and menu is. An integration older
+ * than linked pages answers `unknown_command`. */
 export async function fetchWatchPagesPlaces(hass: HassLike) {
   return hass.connection.sendMessagePromise<WatchPagesPlaces>({ type: `${WP}/places` });
 }
