@@ -870,6 +870,7 @@ def _may_take_item(
         vol.Required("item_id"): str,
         vol.Optional("on"): bool,
         vol.Optional("unit"): str,
+        vol.Optional("start"): dict,
     }
 )
 @callback
@@ -879,15 +880,19 @@ def ws_library_pick(
     """Tick or untick a library item on one device.
 
     Request: {owner_id, kind: "pages" | "status_pages", item_id, on} or
-             {owner_id, kind: "menus", unit: "anywhere" | "entity", item_id}
+             {owner_id, kind: "menus", unit: "anywhere" | "entity", item_id,
+              start?}
     Result:  {"revisions": {<owner id>: {<kind>: <revision>}}}
 
     A page or status page ticked on goes at the end of the device's order,
     visible; a page brings the status pages its tiles open. Ticked off, the
     device no longer has it; the item stays in the library. A menu is the
     one the device uses for that unit from then on
-    (``WatchConfigStore.library_pick``). ``revisions`` names every record
-    written, which are only that device's own.
+    (``WatchConfigStore.library_pick``). ``start`` is a whole menus document
+    (the panel sends the app's defaults) that a device with no menus record
+    starts from when no device with menus uses the menu yet, as after New
+    menu; it is read only then. ``revisions`` names every record written,
+    which are only that device's own.
     Refused ``invalid``, ``unknown_device``, ``not_for_iphone``,
     ``not_found``, ``no_record``, ``awaiting_move``, and ``unauthorized``
     for a device the caller may not manage, or for an item put on that no
@@ -910,6 +915,7 @@ def ws_library_pick(
             msg["item_id"],
             on=msg.get("on"),
             unit=msg.get("unit"),
+            start=msg.get("start"),
             may_read=None
             if is_admin(connection)
             else lambda owner: may_manage_owner(hass, connection, owner),

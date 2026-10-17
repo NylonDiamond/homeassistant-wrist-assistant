@@ -140,11 +140,16 @@ export async function pickLibraryItem(hass: HassLike, ownerId: string, kind: Lib
 
 /** Make `menuId` the menu a device uses for `unit` from now on. A device
  * with no menus record starts from a device that uses the menu, keeping a
- * copy of that device's other menu as its own; with none it is refused
- * `no_record`. Other refusals as `pickLibraryItem`, and `invalid` for a
- * menu of the other kind. */
-export async function pickLibraryMenu(hass: HassLike, ownerId: string, unit: MenuUnit, menuId: string) {
-  return hass.connection.sendMessagePromise<LibraryPickReply>({ type: `${LIB}/pick`, owner_id: ownerId, kind: "menus", unit, item_id: menuId });
+ * copy of that device's other menu as its own. When no device with menus
+ * uses it (a menu just made with New menu), it starts from `start`, a whole
+ * menus document (the app's defaults), whose other menu becomes a new menu
+ * of the device's own; with no `start` that is refused `no_record`. Home
+ * Assistant reads `start` only then. Other refusals as `pickLibraryItem`,
+ * and `invalid` for a menu of the other kind or a bad `start`. */
+export async function pickLibraryMenu(hass: HassLike, ownerId: string, unit: MenuUnit, menuId: string, start?: LibraryObject) {
+  return hass.connection.sendMessagePromise<LibraryPickReply>({
+    type: `${LIB}/pick`, owner_id: ownerId, kind: "menus", unit, item_id: menuId, ...(start === undefined ? {} : { start }),
+  });
 }
 
 /** "Make a copy for this watch": a new library menu named `name` with the

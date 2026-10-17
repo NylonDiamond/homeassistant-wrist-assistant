@@ -210,6 +210,24 @@ def test_create_makes_a_menu_no_device_uses_and_summary_lists_it(ctx) -> None:
     assert ctx.store.get(WATCH, "menus").document["quickAction"] == {"slots": []}
 
 
+def test_a_new_menu_ticked_onto_a_device_with_no_menus_takes_the_start_it_is_sent(ctx) -> None:
+    """Bob's watch never saved menus and nobody uses the new menu: without
+    ``start`` the tick is refused ``no_record``, with it the watch starts
+    from that document."""
+    radial = {"entityRadial": {"allSlots": [], "schemaVersion": 1}}
+    made = _ok(ctx, ctx.ws.ws_library_menus_create, unit="entity", name="Guest menu", sections=radial)
+    tick = {"owner_id": WATCH_2, "kind": "menus", "unit": "entity", "item_id": made["id"]}
+    assert _codes(ctx, ctx.ws.ws_library_pick, **tick) == ["no_record"]
+    result = _ok(ctx, ctx.ws.ws_library_pick, **tick, start=_menus("none"))
+    assert set(result["revisions"]) == {WATCH_2}
+    doc = ctx.store.get(WATCH_2, "menus").document
+    assert doc["quickAction"]["beamStyle"] == "none"
+    assert doc["entityRadial"] == radial["entityRadial"]
+    assert _menu_of(ctx, WATCH_2, "entity") == made["id"]
+    # Read only for a first menus record: a bad one is not looked at now.
+    _ok(ctx, ctx.ws.ws_library_pick, **tick, start={"quickAction": {}})
+
+
 @pytest.mark.parametrize(
     "msg",
     [

@@ -938,7 +938,7 @@ def _commit_menus(
             if match is None:
                 match = new_item_id()
                 lib["menus"][match] = {
-                    "name": _new_menu_name(lib, unit, owner_name),
+                    "name": new_menu_name(lib, unit, owner_name),
                     "kind": unit,
                     "sections": sections,
                 }
@@ -972,7 +972,7 @@ def _menu_match(
     )
 
 
-def _new_menu_name(lib: Mapping[str, Any], unit: str, owner_name: str | None) -> str:
+def new_menu_name(lib: Mapping[str, Any], unit: str, owner_name: str | None) -> str:
     """A name for a new menu of ``unit``: the plain name when it is the only
     one, else "<device>'s menu", else the plain name with a number."""
     taken = {menu["name"] for menu in lib["menus"].values() if menu["kind"] == unit}

@@ -92,6 +92,21 @@ export function fakeHome(admin = true) {
       const kind = msg.kind as "pages" | "status_pages" | "menus";
       const id = msg.item_id as string;
       if ("id" in msg) throw { code: "invalid_format", message: "extra keys not allowed @ data['id']" };
+      if (kind === "menus" && lib.picks[owner]?.menus === undefined) {
+        // A first menus record: with nobody with menus on the menu, Home
+        // Assistant starts the device from `start`, and its other menu
+        // becomes a new one of its own; with no `start` it refuses.
+        const used = (lib.menus[id]?.owners ?? []).some((o) => lib.picks[o]?.menus !== undefined && o !== owner);
+        if (!used) {
+          const start = msg.start as JsonObject | undefined;
+          if (start === undefined) throw { code: "no_record", message: "no device uses this menu" };
+          const other: MenuUnit = msg.unit === "entity" ? "anywhere" : "entity";
+          const keys = other === "entity" ? ["entityRadial"] : ["quickAction", "pageSwitcher"];
+          const fresh = `FFFF0000-0000-4000-8000-${String(n).padStart(6, "0")}${String(Object.keys(lib.menus).length).padStart(6, "0")}`;
+          lib.menus[fresh] = { name: `${owner}'s menu`, kind: other, sections: Object.fromEntries(keys.map((k) => [k, structuredClone(start[k])])), owners: [owner] };
+          (lib.picks[owner] ??= {}).menus = { [other]: fresh };
+        }
+      }
       const picks = (lib.picks[owner] ??= {});
       if (kind === "menus") {
         const unit = msg.unit as MenuUnit;

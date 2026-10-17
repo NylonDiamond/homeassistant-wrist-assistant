@@ -279,6 +279,32 @@ describe("the Menus tab", () => {
     expect(t.home.lib.menus[id]!.owners).toEqual([CHEN]);
   });
 
+  it("starts a device with no menus from the app's defaults when it ticks a new menu", async () => {
+    const t = tab();
+    // The iPhone never saved menus: the summary lists no menus for it.
+    delete t.home.lib.picks[PHONE]!.menus;
+    for (const m of Object.values(t.home.lib.menus)) m.owners = m.owners.filter((o) => o !== PHONE);
+    t.call("setFilter", ALL_FILTER);
+    await t.ready();
+    t.call("toggleNew");
+    t.call("setNewUnit", t.el.newForm, "entity");
+    await t.call("makeMenu");
+    const id = Object.entries(t.home.lib.menus).find(([, m]) => m.name === "New quick menu")![0];
+    t.call("use", t.libNow().menus.find((m) => m.id === id), PHONE);
+    await t.lib.store?.refresh();
+    expect(t.sentOf("library/pick").at(-1)).toEqual({
+      type: "wrist_assistant/library/pick", owner_id: PHONE, kind: "menus", unit: "entity", item_id: id, start: watchMenusDefaults(),
+    });
+    expect(t.home.lib.menus[id]!.owners).toEqual([PHONE]);
+    const anywhere = t.home.lib.picks[PHONE]!.menus!.anywhere!;
+    expect(t.home.lib.menus[anywhere]!.owners).toEqual([PHONE]);
+    expect(t.whole()).not.toContain("cannot start this device's menus");
+    // A device that holds menus is sent no start.
+    t.call("use", t.libNow().menus.find((m) => m.id === id), CHEN);
+    await t.lib.store?.refresh();
+    expect(t.sentOf("library/pick").at(-1)).not.toHaveProperty("start");
+  });
+
   it("deletes a menu no device uses after asking", async () => {
     const t = tab();
     t.call("setFilter", ALL_FILTER);

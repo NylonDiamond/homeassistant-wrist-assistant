@@ -197,6 +197,7 @@ from .library import (
     menu_targets,
     migrate,
     move_picks,
+    new_menu_name,
     pick_menu,
     pick_page,
     pickers,
@@ -3151,6 +3152,7 @@ class WatchConfigStore:
         *,
         on: Any = None,
         unit: Any = None,
+        start: Any = None,
         updated_by: str = WATCH_CONFIG_PANEL_WRITER,
         may_read: Callable[[str], bool] | None = None,
     ) -> dict[str, Any]:
@@ -3166,15 +3168,20 @@ class WatchConfigStore:
         ``entity``) and the menu ``item_id`` the device uses for it from
         now on; a device with no menus record yet starts from a device that
         uses that menu, keeping a copy of that device's other menu as its
-        own (:meth:`_first_menus`). Only the device's own records are
-        written (its pages and the status pages they bring along, or its
-        menus); no other device's record changes.
+        own, or, when no device with menus uses it (a menu just made with
+        New menu), from ``start``, a whole menus document (the panel sends
+        the app's defaults), whose other menu becomes a new library menu of
+        the device's own (:meth:`_first_menus`). ``start`` is read only
+        then. Only the device's own records are written (its pages and the
+        status pages they bring along, or its menus); no other device's
+        record changes.
 
-        Refused, before anything is written: ``invalid``, ``unknown_device``,
+        Refused, before anything is written: ``invalid`` (``start`` too, when
+        it is read and is not a valid menus document), ``unknown_device``,
         ``not_for_iphone``, ``not_found`` for an item the library does not
         hold, ``no_record`` for a menu no device with menus uses picked onto
-        a device with none, and ``awaiting_move`` for a watch whose iPhone
-        may still move its own setup here.
+        a device with none and no ``start``, and ``awaiting_move`` for a
+        watch whose iPhone may still move its own setup here.
 
         Returns ``{"revisions": {owner: {kind: revision}}}`` for the records
         written."""
@@ -3197,7 +3204,7 @@ class WatchConfigStore:
                 change = pick_menu(self._library, owner_watch_id, unit, item_id)
                 if self._document(owner_watch_id, "menus") is None:
                     lib, seed = self._first_menus(
-                        change.library, owner_watch_id, unit, item_id, may_read
+                        change.library, owner_watch_id, unit, item_id, may_read, start
                     )
                     change = change._replace(library=lib)
                     seeds[(owner_watch_id, "menus")] = seed
@@ -3225,14 +3232,20 @@ class WatchConfigStore:
         unit: str,
         menu_id: str,
         may_read: Callable[[str], bool] | None = None,
+        start: Any = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """For a menu picked onto a device with no menus record yet: the
         device starts from the record of a readable device that uses that menu
         (the first by id that ``may_read`` allows), with that device's menu
         of the other unit as the device's own copy, so only the picked menu
-        is shared. ``(library, seed document)``. Refused ``no_record`` when
-        no such device has a menus record, since a menus record needs both
-        units."""
+        is shared. ``(library, seed document)``.
+
+        With no such device (nobody with menus uses the menu yet), the device
+        starts from ``start``, a whole menus document checked by the same
+        guard every menus document meets: its other unit becomes a new
+        library menu the device uses, named as a first save names one.
+        Refused ``no_record`` when there is no ``start`` either, since a
+        menus record needs both units."""
         source = next(
             (
                 other
@@ -3245,16 +3258,36 @@ class WatchConfigStore:
             None,
         )
         if source is None:
-            raise WatchConfigNoRecordError(
-                "the device has no menus yet and no device uses this menu to "
-                "start them from; give it menus first"
-            )
+            if start is None:
+                raise WatchConfigNoRecordError(
+                    "the device has no menus yet and no device uses this menu to "
+                    "start them from; give it menus first"
+                )
+            return self._menus_from_start(lib, owner_watch_id, unit, start)
         for other, other_id in lib["picks"].get(source, {}).get("menus", {}).items():
             if other == unit:
                 continue
             lib = pick_menu(lib, owner_watch_id, other, other_id).library
             lib = copy_menu(lib, owner_watch_id, other, self._copy_name(owner_watch_id)).library
         return lib, without_unit_links(self._document(source, "menus"))
+
+    def _menus_from_start(
+        self, lib: dict[str, Any], owner_watch_id: str, unit: str, start: Any
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """:meth:`_first_menus` with no device to start from: the menus
+        document ``start`` is the seed, and each unit but ``unit`` (picked
+        already) becomes a new library menu the device uses."""
+        if not isinstance(start, dict):
+            raise WatchConfigValidationError("start must be a menus document")
+        seed = copy.deepcopy(start)
+        validate_document("menus", seed)
+        for other, keys in MENU_UNITS.items():
+            if other == unit:
+                continue
+            name = new_menu_name(lib, other, self._owner_name(owner_watch_id))
+            made = create_menu(lib, other, name, {key: seed[key] for key in keys})
+            lib = pick_menu(made.library, owner_watch_id, other, made.id).library
+        return lib, seed
 
     def library_copy_menu(
         self,

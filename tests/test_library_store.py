@@ -1016,6 +1016,83 @@ def test_create_menu_takes_the_sections_the_panel_sends(env, unit) -> None:
     assert menu["owners"] == []
 
 
+def _panel_defaults() -> dict:
+    return json.loads((_FRONTEND / "src" / "watch-menus" / "menu-defaults.json").read_text())[
+        "document"
+    ]
+
+
+@pytest.mark.parametrize(("unit", "other"), [("anywhere", "entity"), ("entity", "anywhere")])
+def test_a_new_menu_ticked_onto_a_device_with_no_menus_starts_from_start(env, unit, other) -> None:
+    """New menu, then a tick onto a watch that never saved menus: nobody
+    with menus uses the new menu, so the watch starts from the ``start``
+    document the panel sends (the app's defaults). It uses the new menu,
+    and its other menu becomes a new library menu of its own."""
+    store = env.store_now()
+    _save(env, WATCH, _menus(), "menus")
+    theirs = store.library_summary()["picks"][WATCH]["menus"]
+    defaults = _panel_defaults()
+    made = store.library_create_menu(
+        unit, "Guest menu", {key: copy.deepcopy(defaults[key]) for key in env.mod.MENU_UNITS[unit]}
+    )
+    menu_count = len(store.library_summary()["menus"])
+    env.changes.clear()
+
+    result = store.library_pick(WATCH_2, "menus", made["id"], unit=unit, start=defaults)
+
+    assert set(result["revisions"]) == {WATCH_2} and env.changes == [(WATCH_2, "menus")]
+    doc = _doc(env, WATCH_2, "menus")
+    assert doc == defaults, "the app's defaults, with the new menu's sections"
+    summary = store.library_summary()
+    mine = summary["picks"][WATCH_2]["menus"]
+    assert mine[unit] == made["id"]
+    assert mine[other] not in (theirs[other],), "a menu of its own, not the first watch's"
+    assert summary["menus"][mine[other]]["owners"] == [WATCH_2]
+    assert summary["menus"][mine[other]]["name"] == "Chen's Apple Watch's menu"
+    assert len(summary["menus"]) == menu_count + 1
+    assert summary["picks"][WATCH]["menus"] == theirs, "the first watch keeps its menus"
+
+
+def test_a_first_menus_pick_names_the_other_menu_plainly_when_it_is_the_only_one(env) -> None:
+    store = env.store_now()
+    defaults = _panel_defaults()
+    made = store.library_create_menu("entity", "Guest menu", {"entityRadial": defaults["entityRadial"]})
+    store.library_pick(WATCH, "menus", made["id"], unit="entity", start=defaults)
+    summary = store.library_summary()
+    anywhere = summary["picks"][WATCH]["menus"]["anywhere"]
+    assert summary["menus"][anywhere]["name"] == "Anywhere menu"
+
+
+def test_start_is_read_only_when_no_device_with_menus_uses_the_menu(env) -> None:
+    """A device that uses the menu is still the one a first menus record
+    starts from, and ``start`` is not looked at (even a bad one)."""
+    store = env.store_now()
+    _save(env, WATCH, _menus(), "menus")
+    shared = store.library_summary()["picks"][WATCH]["menus"]["anywhere"]
+    store.library_pick(WATCH_2, "menus", shared, unit="anywhere", start={"not": "menus"})
+    assert _doc(env, WATCH_2, "menus") == _menus()
+
+
+@pytest.mark.parametrize(
+    "start",
+    [
+        "not an object",
+        {"quickAction": {}, "pageSwitcher": {}},
+        {"quickAction": {"slots": {}}, "pageSwitcher": {}, "entityRadial": {}},
+    ],
+)
+def test_a_bad_start_is_refused_and_writes_nothing(env, start) -> None:
+    store = env.store_now()
+    made = store.library_create_menu("entity", "Guest menu", {"entityRadial": {}})
+    before = copy.deepcopy(store.library_summary())
+    env.changes.clear()
+    with pytest.raises(env.mod.WatchConfigStoreError) as err:
+        store.library_pick(WATCH, "menus", made["id"], unit="entity", start=start)
+    assert err.value.code == "invalid"
+    assert env.changes == [] and store.get(WATCH, "menus") is None
+    assert store.library_summary() == before
+
+
 @pytest.mark.parametrize(
     ("unit", "name", "sections"),
     [

@@ -47,7 +47,8 @@ import {
   pickLibraryMenu,
   renameLibraryMenu,
 } from "./client.js";
-import { type Library, libraryOf } from "./model.js";
+import { type Library, holdsRecord, libraryOf } from "./model.js";
+import { watchMenusDefaults } from "../watch-menus/model.js";
 
 /** Where the read stands. `unsupported` is an integration older than the
  * library (`unknown_command`). */
@@ -189,10 +190,14 @@ export class LibraryStore {
       () => pickLibraryItem(this.hass, ownerId, kind, itemId, on));
   }
 
-  /** Have a device use `menuId` for `unit`. */
+  /** Have a device use `menuId` for `unit`. A device that holds no menus
+   * record yet is sent the app's defaults to start from, which Home
+   * Assistant reads only when no device with menus uses the menu (a menu
+   * just made with New menu). */
   pickMenu(ownerId: string, unit: MenuUnit, menuId: string): Promise<LibraryWrite<LibraryPickReply>> {
+    const start = this.library !== undefined && !holdsRecord(this.library, ownerId, "menus") ? watchMenusDefaults() : undefined;
     return this.write(noteKey("menus", menuId), pendingKey("menus", ownerId, unit), { menuId },
-      () => pickLibraryMenu(this.hass, ownerId, unit, menuId));
+      () => pickLibraryMenu(this.hass, ownerId, unit, menuId, start));
   }
 
   /** New menu: a library menu of `unit` named `name`, made of `sections`,

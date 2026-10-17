@@ -42,6 +42,7 @@ describe("library commands", () => {
     await pickLibraryItem(hass, "w1", "pages", "P1", true);
     await pickLibraryItem(hass, "w1", "status_pages", "S1", false);
     await pickLibraryMenu(hass, "w1", "entity", "M1");
+    await pickLibraryMenu(hass, "w2", "anywhere", "M2", { schemaVersion: 1 });
     await copyLibraryMenu(hass, "w1", "anywhere", "Chen's menu");
     await createLibraryMenu(hass, "entity", "Kitchen menu", { entityRadial: { slots: [] } });
     await renameLibraryMenu(hass, "M1", "Home menu");
@@ -52,6 +53,8 @@ describe("library commands", () => {
       { type: "wrist_assistant/library/pick", owner_id: "w1", kind: "pages", item_id: "P1", on: true },
       { type: "wrist_assistant/library/pick", owner_id: "w1", kind: "status_pages", item_id: "S1", on: false },
       { type: "wrist_assistant/library/pick", owner_id: "w1", kind: "menus", unit: "entity", item_id: "M1" },
+      // A device with no menus record is sent the document it starts from.
+      { type: "wrist_assistant/library/pick", owner_id: "w2", kind: "menus", unit: "anywhere", item_id: "M2", start: { schemaVersion: 1 } },
       { type: "wrist_assistant/library/menus/copy", owner_id: "w1", unit: "anywhere", name: "Chen's menu" },
       // A new menu names no device: no device uses it until one is ticked.
       { type: "wrist_assistant/library/menus/create", unit: "entity", name: "Kitchen menu", sections: { entityRadial: { slots: [] } } },
