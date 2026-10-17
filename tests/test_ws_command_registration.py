@@ -117,6 +117,10 @@ _OWNER = {
         "ws_library_menus_rename": "_may_change_item",
         "ws_library_menus_delete": "_may_change_item",
         "ws_library_delete": "_may_change_item",
+        # One item edited in the library itself: a read needs a device of
+        # the caller's that has it, a save writes every device that has it.
+        "ws_library_item": "_may_take_item",
+        "ws_library_item_save": "_may_change_item",
         # The iPhone app's live line: hands out nothing but revision numbers.
         "ws_watch_config_subscribe": "_may_follow_owner",
     },

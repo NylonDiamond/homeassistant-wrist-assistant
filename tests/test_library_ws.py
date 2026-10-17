@@ -1,7 +1,8 @@
 """In-process tests for the library's WebSocket commands:
 ``wrist_assistant/library/pick``, ``library/menus/create``,
 ``library/menus/copy``, ``library/menus/rename``, ``library/menus/delete``,
-``library/delete`` and ``library/summary``.
+``library/delete``, ``library/summary``, ``library/item`` and
+``library/item/save``.
 
 Run as ``test_watch_pages_link_ws.py`` runs the link commands, over a real
 ``WatchConfigStore`` whose pairing checks know two watches and an iPhone
@@ -203,7 +204,13 @@ def test_create_makes_a_menu_no_device_uses_and_summary_lists_it(ctx) -> None:
     assert made == {"id": made["id"], "revisions": {}}
     assert ctx.store.get(WATCH, "menus").revision == before, "no device moves off its menu"
     menu = _ok(ctx, ctx.ws.ws_library_summary)["menus"][made["id"]]
-    assert menu == {"name": "Guest menu", "kind": "anywhere", "sections": sections, "owners": []}
+    assert menu == {
+        "name": "Guest menu",
+        "kind": "anywhere",
+        "sections": sections,
+        "owners": [],
+        "revision": 1,
+    }
     # A tick puts it on a device.
     _ok(ctx, ctx.ws.ws_library_pick, owner_id=WATCH, kind="menus", unit="anywhere",
         item_id=made["id"])
@@ -356,4 +363,115 @@ def test_the_library_commands_answer_unavailable_before_the_integration_is_ready
     assert _codes(ctx, ctx.ws.ws_library_summary) == ["unavailable"]
     assert _codes(
         ctx, ctx.ws.ws_library_pick, owner_id=PHONE, kind="pages", item_id=HOME, on=True
+    ) == ["unavailable"]
+
+
+# ── library/item and library/item/save ───────────────────────────────────
+
+
+def test_item_answers_a_document_of_its_kind_and_its_revision(ctx) -> None:
+    page = _ok(ctx, ctx.ws.ws_library_item, kind="pages", item_id=LIGHTS)
+    assert page == {
+        "document": {"schemaVersion": 1, "pages": [{"id": LIGHTS, "name": "Lights", "items": []}]},
+        "revision": 1,
+    }
+    status = _ok(ctx, ctx.ws.ws_library_item, kind="status_pages", item_id=DOORS)
+    assert status["document"]["statusPages"] == [{"id": DOORS, "name": "Doors", "rows": []}]
+    ctx.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
+    menu = _ok(ctx, ctx.ws.ws_library_item, kind="menus", item_id=_menu_of(ctx, WATCH))
+    assert set(menu) == {"document", "revision", "name"}
+    assert menu["document"]["quickAction"] == _menus()["quickAction"]
+    assert menu["document"]["entityRadial"] == {}
+    assert _codes(ctx, ctx.ws.ws_library_item, kind="pages", item_id="missing") == ["not_found"]
+    assert _codes(ctx, ctx.ws.ws_library_item, kind="voice", item_id=LIGHTS) == ["invalid"]
+
+
+def test_item_save_answers_the_new_revision_and_writes_the_pickers(ctx) -> None:
+    ctx.store.library_pick(WATCH_2, "pages", LIGHTS, on=True)
+    before = {o: ctx.store.get(o, "pages").revision for o in (WATCH, WATCH_2)}
+    item = _ok(ctx, ctx.ws.ws_library_item, kind="pages", item_id=LIGHTS)
+    item["document"]["pages"][0]["name"] = "Lamps"
+    result = _ok(
+        ctx,
+        ctx.ws.ws_library_item_save,
+        kind="pages",
+        item_id=LIGHTS,
+        base_revision=item["revision"],
+        document=item["document"],
+    )
+    assert result == {"revision": 2}
+    for owner in (WATCH, WATCH_2):
+        record = ctx.store.get(owner, "pages")
+        assert record.revision > before[owner]
+        assert next(p for p in record.document["pages"] if p["id"] == LIGHTS)["name"] == "Lamps"
+    summary = _ok(ctx, ctx.ws.ws_library_summary)
+    assert summary["pages"][LIGHTS]["revision"] == 2
+    assert summary["pages"][HOME]["revision"] == 1
+    conflict = _run(
+        ctx,
+        ctx.ws.ws_library_item_save,
+        kind="pages",
+        item_id=LIGHTS,
+        base_revision=1,
+        document=item["document"],
+    )
+    [(_, code, message)] = conflict.errors
+    assert code == "conflict" and message.startswith("stored revision is 2,")
+    assert _codes(
+        ctx,
+        ctx.ws.ws_library_item_save,
+        kind="pages",
+        item_id=LIGHTS,
+        base_revision=2,
+        document={"schemaVersion": 1, "pages": [{"id": HOME, "name": "Home", "items": []}]},
+    ) == ["invalid"]
+    assert _codes(
+        ctx,
+        ctx.ws.ws_library_item_save,
+        kind="pages",
+        item_id="missing",
+        base_revision=1,
+        document=item["document"],
+    ) == ["not_found"]
+
+
+def test_an_item_no_device_has_is_an_administrator_s_to_read_and_save(ctx) -> None:
+    ctx.store.library_pick(WATCH, "pages", LIGHTS, on=False)
+    item = _ok(ctx, ctx.ws.ws_library_item, kind="pages", item_id=LIGHTS)
+    assert _codes(ctx, ctx.ws.ws_library_item, ALICE, kind="pages", item_id=LIGHTS) == [
+        "unauthorized"
+    ]
+    save = {"kind": "pages", "item_id": LIGHTS, "base_revision": 1, "document": item["document"]}
+    assert _codes(ctx, ctx.ws.ws_library_item_save, ALICE, **save) == ["unauthorized"]
+    item["document"]["pages"][0]["name"] = "Spare lights"
+    revision = ctx.store.get(WATCH, "pages").revision
+    assert _ok(ctx, ctx.ws.ws_library_item_save, **save) == {"revision": 2}
+    assert ctx.store.get(WATCH, "pages").revision == revision, "no record is written"
+
+
+def test_a_non_admin_reads_and_saves_only_what_their_devices_have(ctx) -> None:
+    assert _ok(ctx, ctx.ws.ws_library_item, ALICE, kind="pages", item_id=HOME)["revision"] == 1
+    assert _codes(ctx, ctx.ws.ws_library_item, BOB, kind="pages", item_id=HOME) == ["unauthorized"]
+    ctx.store.library_pick(WATCH_2, "pages", LIGHTS, on=True)
+    item = ctx.store.library_item("pages", LIGHTS)
+    save = {"kind": "pages", "item_id": LIGHTS, "base_revision": 1, "document": item["document"]}
+    # Bob's watch has Lights now, so Bob may read it, but a save writes
+    # Alice's watch too.
+    assert _ok(ctx, ctx.ws.ws_library_item, BOB, kind="pages", item_id=LIGHTS)["revision"] == 1
+    assert _codes(ctx, ctx.ws.ws_library_item_save, BOB, **save) == ["unauthorized"]
+    assert _codes(ctx, ctx.ws.ws_library_item_save, ALICE, **save) == ["unauthorized"]
+    ctx.store.library_pick(WATCH_2, "pages", LIGHTS, on=False)
+    assert _ok(ctx, ctx.ws.ws_library_item_save, ALICE, **save) == {"revision": 1}
+
+
+def test_the_item_commands_answer_unavailable_before_the_integration_is_ready(ctx) -> None:
+    ctx.hass.data = {}
+    assert _codes(ctx, ctx.ws.ws_library_item, kind="pages", item_id=HOME) == ["unavailable"]
+    assert _codes(
+        ctx,
+        ctx.ws.ws_library_item_save,
+        kind="pages",
+        item_id=HOME,
+        base_revision=1,
+        document={"schemaVersion": 1, "pages": []},
     ) == ["unavailable"]

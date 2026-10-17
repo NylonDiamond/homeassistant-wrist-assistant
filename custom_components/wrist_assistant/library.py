@@ -36,7 +36,10 @@ The shape, as stored in ``wrist_assistant.library`` (:func:`validate_library`)::
       "hashes":    {"<owner id>": {"<kind>": "<hash>"}},
       "revisions": {"<owner id>": {"<kind>": <revision>}},
       "renames":   {"<owner id>": {"pages": {"<old id>": "<new id>"},
-                                   "status_pages": {"<old id>": "<new id>"}}}
+                                   "status_pages": {"<old id>": "<new id>"}}},
+      "item_revisions": {"pages":        {"<id>": <revision>},
+                         "status_pages": {"<id>": <revision>},
+                         "menus":        {"<menu id>": <revision>}}
     }
 
 Where this differs from the plan's sketch, it is to keep each device's
@@ -55,6 +58,14 @@ records exactly as they were:
   pages new ids for (a migration, or a first upload under an id another
   page holds), so the store can point the owner's later first records of
   the other kinds at them. Nothing here reads it either.
+* ``item_revisions`` is each item's own revision, so the panel can edit an
+  item in the library itself (one no device picks) with the same compare
+  and swap a record save has. Every item has one: it starts at 1 when the
+  item is made and goes up by 1 whenever its content changes, by any path
+  (a record save mapped back, a library save of the item, a menu's rename,
+  a delete that drops a slot or tile from it). A menu's name is content.
+  Every function here that returns a library keeps them up to date
+  (:func:`stamp_item_revisions`).
 
 A materialised record carries no link keys: no ``linkId`` on a page or
 status page, no ``linkIds`` on a menus document. Records written before step
@@ -83,6 +94,9 @@ from .page_links import link_reach
 # The kinds the library holds, in the order they are built: status pages
 # before pages (a page's tiles open status pages) and pages before menus.
 LIBRARY_KINDS: tuple[str, ...] = ("status_pages", "pages", "menus")
+
+# The kinds as ``item_revisions`` lists them.
+_ITEM_KINDS: tuple[str, ...] = ("pages", "status_pages", "menus")
 
 # The two list kinds, and the key of each one's list in a device's document.
 LIST_KEYS: dict[str, str] = {"pages": "pages", "status_pages": "statusPages"}
@@ -300,6 +314,7 @@ def empty_library() -> dict[str, Any]:
         "hashes": {},
         "revisions": {},
         "renames": {},
+        "item_revisions": {kind: {} for kind in _ITEM_KINDS},
     }
 
 
@@ -382,7 +397,91 @@ def validate_library(raw: Any) -> dict[str, Any]:
         }
         if any(maps.values()):
             lib["renames"][owner] = {kind: maps.get(kind, {}) for kind in LIST_KEYS}
+    lib["item_revisions"] = _valid_item_revisions(lib, raw.get("item_revisions"))
     return lib
+
+
+def _is_revision(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def _valid_item_revisions(lib: Mapping[str, Any], raw: Any) -> dict[str, dict[str, int]]:
+    """Each item's revision from ``raw``, for the items ``lib`` holds (pages
+    and status pages matched ignoring case, menus by exact id); an item with
+    no usable entry (a library written before items had revisions) starts
+    at 1."""
+    held = raw if isinstance(raw, dict) else {}
+    out: dict[str, dict[str, int]] = {}
+    for kind in _ITEM_KINDS:
+        given = held.get(kind) if isinstance(held.get(kind), dict) else {}
+        if kind == "menus":
+            found = {k: v for k, v in given.items() if isinstance(k, str)}
+            out[kind] = {
+                item_id: found[item_id] if _is_revision(found.get(item_id)) else 1
+                for item_id in lib[kind]
+            }
+            continue
+        folded = {
+            key: v for k, v in given.items() if (key := _key(k)) is not None and _is_revision(v)
+        }
+        out[kind] = {item_id: folded.get(_key(item_id), 1) for item_id in lib[kind]}
+    return out
+
+
+def _item_content(kind: str, item: Mapping[str, Any]) -> Any:
+    """What counts as an item's content for its revision: a page or status
+    page whole, a menu's name and sections."""
+    if kind == "menus":
+        return (item.get("name"), item.get("sections"))
+    return item
+
+
+def stamp_item_revisions(before: Mapping[str, Any], after: Mapping[str, Any]) -> dict[str, Any]:
+    """``after`` with its ``item_revisions`` brought up to date against
+    ``before``: an item ``before`` did not hold starts at 1, one whose
+    content differs goes up by 1 from ``before``'s revision (an item with no
+    entry there counts as 1), an unchanged one keeps it, and a gone one
+    loses its entry. A new object; neither argument changes. Every function
+    here that returns a changed library calls it, so a caller that changes
+    a library some other way calls it too."""
+    was = before.get("item_revisions") if isinstance(before.get("item_revisions"), dict) else {}
+    out: dict[str, dict[str, int]] = {}
+    for kind in _ITEM_KINDS:
+        old_items = before.get(kind, {})
+        old_revs = was.get(kind) if isinstance(was.get(kind), dict) else {}
+        revs: dict[str, int] = {}
+        for item_id, item in after[kind].items():
+            if item_id not in old_items:
+                revs[item_id] = 1
+                continue
+            rev = old_revs.get(item_id)
+            rev = rev if _is_revision(rev) else 1
+            if _item_content(kind, old_items[item_id]) != _item_content(kind, item):
+                rev += 1
+            revs[item_id] = rev
+        out[kind] = revs
+    return {**after, "item_revisions": out}
+
+
+def item_revision(library: Mapping[str, Any], kind: str, item_id: str) -> int:
+    """The revision of an item the library holds, by its stored id (1 when
+    it has no entry)."""
+    rev = library.get("item_revisions", {}).get(kind, {}).get(item_id)
+    return rev if _is_revision(rev) else 1
+
+
+def stored_item_id(library: Mapping[str, Any], kind: str, item_id: Any) -> str:
+    """The library's own spelling of an item id: pages and status pages
+    compared ignoring case, a menu by its exact id first and then ignoring
+    case. ``not_found`` when the library holds no such item, ``invalid``
+    for another kind."""
+    _check_kind(kind)
+    if kind == "menus" and isinstance(item_id, str) and item_id in library["menus"]:
+        return item_id
+    stored = _index(library[kind]).get(_key(item_id))
+    if stored is None:
+        raise LibraryError("not_found", f"the library holds no {kind} item {item_id}")
+    return stored
 
 
 def held_renames(library: Mapping[str, Any], owner_id: str) -> dict[str, dict[str, str]]:
@@ -1064,6 +1163,7 @@ def migrate(
                 differs = kind in rewritten.get(owner, {})
             if differs:
                 changed.setdefault(owner, []).append(kind)
+    lib = stamp_item_revisions(empty_library(), lib)
     return MigrationResult(lib, changed, renamed, rewritten)
 
 
@@ -1117,6 +1217,7 @@ def map_back(
             _own_items(library, owner_id, kind),
             owner_name=owner_name,
         )
+    lib = stamp_item_revisions(library, lib)
     touched = changed_owners(library, lib, (owner_id, kind, document))
     return MapBack(lib, touched, merged.renamed)
 
@@ -1162,6 +1263,7 @@ def _own_items(library: Mapping[str, Any], owner: str, kind: str) -> dict[str, C
 
 
 def _change(before: Mapping[str, Any], after: dict[str, Any]) -> Change:
+    after = stamp_item_revisions(before, after)
     return Change(after, changed_owners(before, after))
 
 
@@ -1277,13 +1379,56 @@ def create_menu(
 
 def rename_menu(library: Mapping[str, Any], menu_id: str, name: str) -> dict[str, Any]:
     """The library with a menu renamed. A name is not in any record, so no
-    device changes. ``not_found`` or ``invalid`` (an empty name)."""
+    device changes, but it is the menu's content: a new name moves the
+    menu's revision on. ``not_found`` or ``invalid`` (an empty name)."""
     name = _check_name(name)
     if menu_id not in library["menus"]:
         raise LibraryError("not_found", f"the library holds no menu {menu_id}")
     lib = copy.deepcopy(dict(library))
     lib["menus"][menu_id]["name"] = name
-    return lib
+    return stamp_item_revisions(library, lib)
+
+
+def replace_item(
+    library: Mapping[str, Any], kind: str, item_id: str, content: Mapping[str, Any]
+) -> Change:
+    """The library with one item's content replaced, as an edit of the item
+    in the library itself (the panel's library mode), and what that changes
+    on every device that picks it.
+
+    * Pages and status pages: ``content`` is the page object. Its id must be
+      the item's (ignoring case); the item keeps the library's spelling of
+      it, and ``isHidden`` and ``linkId`` are dropped, as a record save
+      drops them. A system page is never an item.
+    * Menus: ``content`` is the menu's sections, exactly the keys of its
+      unit (:data:`MENU_UNITS`), each an object. The name stays.
+
+    The store checks the shape inside first, with the guard a record save
+    of the kind meets. ``not_found`` for an item the library does not hold,
+    ``invalid`` for content of another shape."""
+    _check_kind(kind)
+    stored = stored_item_id(library, kind, item_id)
+    if not isinstance(content, Mapping):
+        raise LibraryError("invalid", "content must be an object")
+    lib = copy.deepcopy(dict(library))
+    if kind == "menus":
+        unit = lib["menus"][stored]["kind"]
+        if set(content) != set(MENU_UNITS[unit]) or not all(
+            isinstance(content[key], dict) for key in MENU_UNITS[unit]
+        ):
+            raise LibraryError(
+                "invalid", f"sections must hold exactly {', '.join(MENU_UNITS[unit])}"
+            )
+        lib["menus"][stored]["sections"] = {
+            key: copy.deepcopy(content[key]) for key in MENU_UNITS[unit]
+        }
+        return _change(library, lib)
+    if _key(content.get("id")) != _key(stored):
+        raise LibraryError("invalid", f"the page is not {kind} item {stored}")
+    if kind == "pages" and _is_system_page(content):
+        raise LibraryError("invalid", "a system page is never a library item")
+    lib[kind][stored] = {k: (stored if k == "id" else v) for k, v in _content(content).items()}
+    return _change(library, lib)
 
 
 def delete_item(

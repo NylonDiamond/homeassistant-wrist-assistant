@@ -981,6 +981,7 @@ def test_create_menu_makes_a_menu_no_device_uses_until_one_is_ticked(env) -> Non
         "kind": "entity",
         "sections": {"entityRadial": radial},
         "owners": [],
+        "revision": 1,
     }
     assert env.store_now().library_summary()["menus"][result["id"]]["owners"] == [], "kept"
 
@@ -1116,3 +1117,185 @@ def test_create_menu_refuses_another_shape(env, unit, name, sections) -> None:
         store.library_create_menu(unit, name, sections)
     assert err.value.code == "invalid"
     assert store.library_summary()["menus"] == {}
+
+
+# ── one item edited in the library itself ────────────────────────────────
+
+
+def _two_watches(env):
+    """Watches A and B with the same pages, status pages and menus."""
+    store = env.store_now()
+    _save(env, WATCH, _pages())
+    _save(env, WATCH, _status(), "status_pages")
+    _save(env, WATCH, _menus(), "menus")
+    _share(env, [DOORS], [WATCH_2], "status_pages")
+    _share(env, [HOME, LIGHTS], [WATCH_2])
+    menus = _share_menus(env, WATCH, [WATCH_2])
+    env.changes.clear()
+    return store, menus
+
+
+def _item_revision(store, kind: str, item_id: str) -> int:
+    return store.library_summary()[kind][item_id]["revision"]
+
+
+def test_an_item_reads_as_a_document_of_its_kind(env) -> None:
+    store, menus = _two_watches(env)
+    pages = store.library_item("pages", LIGHTS.lower())
+    assert pages == {
+        "document": {"schemaVersion": 1, "pages": [_page(_pages(), LIGHTS)]},
+        "revision": 1,
+    }
+    env.mod.validate_document("pages", pages["document"], check_items=True)
+    status = store.library_item("status_pages", DOORS)
+    assert status["document"] == {"schemaVersion": 1, "statusPages": [_page(_status(), DOORS, "statusPages")]}
+    env.mod.validate_document("status_pages", status["document"], check_items=True)
+    defaults = _panel_defaults()
+    for unit, keys in env.mod.MENU_UNITS.items():
+        menu = store.library_item("menus", menus[unit])
+        assert menu["revision"] == 1
+        assert menu["name"] == store.library_summary()["menus"][menus[unit]]["name"]
+        doc = menu["document"]
+        env.mod.validate_document("menus", doc)
+        assert set(doc) == set(defaults), "the keys the panel's menus reader expects"
+        assert list(doc) == sorted(doc)
+        for key in env.mod._MENUS_SECTION_KEYS:
+            assert doc[key] == (_menus()[key] if key in keys else {}), (unit, key)
+    for kind, item_id, code in (
+        ("pages", "missing", "not_found"),
+        ("menus", "missing", "not_found"),
+        ("voice", LIGHTS, "invalid"),
+        ("pages", "", "invalid"),
+    ):
+        with pytest.raises(env.mod.WatchConfigStoreError) as err:
+            store.library_item(kind, item_id)
+        assert err.value.code == code, (kind, item_id)
+
+
+def test_an_item_save_reaches_every_device_that_picks_it(env) -> None:
+    store, _menus_by_unit = _two_watches(env)
+    before = {owner: store.get(owner, "pages").revision for owner in (WATCH, WATCH_2)}
+    history = {owner: len(store.history(owner, "pages")) for owner in (WATCH, WATCH_2)}
+    item = store.library_item("pages", LIGHTS)
+    item["document"]["pages"][0]["name"] = "Lamps"
+    result = store.library_save_item("pages", LIGHTS, item["revision"], item["document"])
+    assert result == {"revision": 2}
+    assert _item_revision(store, "pages", LIGHTS) == 2
+    assert sorted(env.changes) == [(WATCH, "pages"), (WATCH_2, "pages")]
+    for owner in (WATCH, WATCH_2):
+        record = store.get(owner, "pages")
+        assert record.revision > before[owner]
+        assert record.updated_by == "panel"
+        assert _page(record.document, LIGHTS)["name"] == "Lamps"
+        assert len(store.history(owner, "pages")) == history[owner] + 1
+    assert _item_revision(env.store_now(), "pages", LIGHTS) == 2, "kept across a restart"
+
+
+def test_an_unchanged_item_save_writes_nothing(env) -> None:
+    store, _ = _two_watches(env)
+    item = store.library_item("status_pages", DOORS)
+    revisions = {owner: store.revisions(owner) for owner in (WATCH, WATCH_2)}
+    assert store.library_save_item("status_pages", DOORS, 1, item["document"]) == {"revision": 1}
+    assert env.changes == []
+    assert {owner: store.revisions(owner) for owner in (WATCH, WATCH_2)} == revisions
+
+
+def test_an_item_no_device_picks_saves_with_no_record_written(env) -> None:
+    store = env.store_now()
+    _save(env, WATCH, _menus(), "menus")
+    made = store.library_create_menu("entity", "Guest menu", {"entityRadial": {"allSlots": []}})
+    revisions = store.revisions(WATCH)
+    env.changes.clear()
+    item = store.library_item("menus", made["id"])
+    assert item["document"]["quickAction"] == {} and item["document"]["pageSwitcher"] == {}
+    document = copy.deepcopy(item["document"])
+    document["entityRadial"] = {"allSlots": [_slot(1, {"type": "assist"})]}
+    document["quickAction"] = {"slots": [_slot(9, {"type": "assist"})]}
+    assert store.library_save_item("menus", made["id"], 1, document) == {"revision": 2}
+    assert env.changes == [] and store.revisions(WATCH) == revisions
+    restarted = env.store_now()
+    menu = restarted.library_summary()["menus"][made["id"]]
+    assert menu["sections"] == {"entityRadial": document["entityRadial"]}, "the other unit is ignored"
+    assert menu["revision"] == 2 and menu["name"] == "Guest menu"
+
+
+def test_an_item_save_on_a_stale_base_is_a_conflict(env) -> None:
+    store, _ = _two_watches(env)
+    item = store.library_item("pages", LIGHTS)
+    item["document"]["pages"][0]["name"] = "Lamps"
+    store.library_save_item("pages", LIGHTS, 1, item["document"])
+    item["document"]["pages"][0]["name"] = "Bulbs"
+    with pytest.raises(env.mod.WatchConfigStoreError) as err:
+        store.library_save_item("pages", LIGHTS, 1, item["document"])
+    assert err.value.code == "conflict"
+    assert err.value.message.startswith("stored revision is 2,")
+    assert err.value.revision == 2
+    assert store.library_item("pages", LIGHTS)["document"]["pages"][0]["name"] == "Lamps"
+
+
+def test_an_item_save_refuses_another_item_or_shape(env) -> None:
+    store, menus = _two_watches(env)
+    page = _page(_pages(), LIGHTS)
+    home = _page(_pages(), HOME)
+    system = _page(_pages(), SYSTEM)
+    cases = [
+        ("pages", LIGHTS, 1, {"schemaVersion": 1, "pages": [home]}, "invalid"),
+        ("pages", LIGHTS, 1, {"schemaVersion": 1, "pages": [page, home]}, "invalid"),
+        ("pages", LIGHTS, 1, {"schemaVersion": 1, "pages": []}, "invalid"),
+        ("pages", SYSTEM, 1, {"schemaVersion": 1, "pages": [system]}, "not_found"),
+        ("pages", LIGHTS, 1, {"schemaVersion": 1}, "invalid"),
+        ("pages", LIGHTS, -1, {"schemaVersion": 1, "pages": [page]}, "invalid"),
+        ("pages", "missing", 1, {"schemaVersion": 1, "pages": [page]}, "not_found"),
+        ("menus", menus["anywhere"], 1, {"quickAction": {}}, "invalid"),
+        ("menus", "missing", 1, _menus(), "not_found"),
+        ("voice", "x", 1, {"phrases": []}, "invalid"),
+    ]
+    for kind, item_id, base, document, code in cases:
+        with pytest.raises(env.mod.WatchConfigStoreError) as err:
+            store.library_save_item(kind, item_id, base, document)
+        assert err.value.code == code, (kind, item_id, document)
+    assert env.changes == []
+
+
+def test_a_record_save_that_changes_a_shared_item_moves_it_on_once(env) -> None:
+    store, menus = _two_watches(env)
+    doc = _doc(env, WATCH)
+    _page(doc, LIGHTS)["name"] = "Lamps"
+    _save(env, WATCH, doc)
+    assert _item_revision(store, "pages", LIGHTS) == 2
+    assert _item_revision(store, "pages", HOME) == 1
+    _save(env, WATCH_2, _doc(env, WATCH_2))
+    assert _item_revision(store, "pages", LIGHTS) == 2, "an unchanged save moves nothing on"
+    _save(env, WATCH, _menus(beam="flare"), "menus")
+    assert _item_revision(store, "menus", menus["anywhere"]) == 2
+    assert _item_revision(store, "menus", menus["entity"]) == 1
+    store.library_rename_menu(menus["entity"], "Lights menu")
+    assert _item_revision(store, "menus", menus["entity"]) == 2
+
+
+def test_a_menu_item_save_brings_a_new_slot_page_to_every_user(env) -> None:
+    store = env.store_now()
+    _save(env, WATCH, _pages())
+    _save(env, WATCH, _status(), "status_pages")
+    _save(env, WATCH, _menus(), "menus")
+    _save(env, WATCH_2, {"schemaVersion": 1, "pages": [{"id": SOLO, "name": "Solo", "items": []}]})
+    _save(env, WATCH_2, _status(), "status_pages")
+    menus = _share_menus(env, WATCH, [WATCH_2], units=("anywhere",))
+    item = store.library_item("menus", menus["anywhere"])
+    item["document"]["quickAction"]["slots"].append(_slot(7, {"type": "navigateToPage", "pageId": HOME}))
+    store.library_save_item("menus", menus["anywhere"], item["revision"], item["document"])
+    picked = _ids(_doc(env, WATCH_2))
+    assert HOME in picked and LIGHTS in picked, "Home and the page its tile opens"
+    assert _doc(env, WATCH_2, "menus")["quickAction"] == item["document"]["quickAction"]
+
+
+def test_a_library_file_from_before_item_revisions_loads_with_ones(env) -> None:
+    _two_watches(env)
+    raw = copy.deepcopy(_FakeStore.files[LIBRARY_KEY])
+    raw.pop("item_revisions", None)
+    _FakeStore.files[LIBRARY_KEY] = raw
+    store = env.store_now()
+    summary = store.library_summary()
+    for kind in ("pages", "status_pages", "menus"):
+        assert {entry["revision"] for entry in summary[kind].values()} == {1}, kind
+    assert "item_revisions" in _FakeStore.files[LIBRARY_KEY], "written back once"

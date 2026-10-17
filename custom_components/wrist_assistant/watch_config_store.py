@@ -192,6 +192,7 @@ from .library import (
     empty_library,
     held_renames,
     hold_renames,
+    item_revision,
     map_back,
     materialise,
     menu_targets,
@@ -203,6 +204,8 @@ from .library import (
     pickers,
     rename_menu,
     rename_refs,
+    replace_item,
+    stored_item_id,
     validate_library,
 )
 from .library import forget as library_forget
@@ -682,6 +685,16 @@ def _check_control_center(entities: list[Any]) -> None:
 # section as "refuse the document", never as "reset that menu", so a writer
 # that drops one cannot wipe a menu by accident.
 _MENUS_SECTION_KEYS = ("quickAction", "entityRadial", "pageSwitcher")
+
+
+def _menus_probe(sections: dict[str, Any]) -> dict[str, Any]:
+    """A whole menus document holding one menu's ``sections``, every other
+    section a blank object, keys sorted as the phone writes them: what the
+    menus guard (:func:`_check_menus`) needs to look at one menu, and the
+    document a library read of a menu returns. The blanks are never saved:
+    a library save of a menu reads only its own unit's sections."""
+    whole = {"schemaVersion": 1, **{key: {} for key in _MENUS_SECTION_KEYS}, **sections}
+    return {key: whole[key] for key in sorted(whole)}
 
 
 def _check_menus(document: dict[str, Any]) -> None:
@@ -2400,26 +2413,40 @@ class WatchConfigStore:
                 and other not in self._failed_owners
                 and held.get("menus", {}).get(unit) == menu_id
             ]
-            if not others:
-                continue
-            old_pages, old_status = menu_targets(before_doc, [unit])
-            new_pages, new_status = menu_targets(saved_doc, [unit])
-            had_pages = {i.upper() for i in old_pages}
-            had_status = {i.upper() for i in old_status}
-            page_index = {k.upper(): k for k in lib["pages"]}
-            status_index = {k.upper(): k for k in lib["status_pages"]}
-            pages = [page_index[i.upper()] for i in new_pages if i.upper() not in had_pages and i.upper() in page_index]
-            status = [
-                status_index[i.upper()]
-                for i in new_status
-                if i.upper() not in had_status and i.upper() in status_index
-            ]
-            if not pages and not status:
-                continue
-            reach_pages, reach_status = library_reach(lib, pages)
-            status_ids = list(dict.fromkeys([*reach_status, *status]))
-            for other in others:
-                lib = self._pick_all(lib, other, reach_pages, status_ids, quiet=True)
+            lib = self._bring_slot_pages(lib, unit, before_doc, saved_doc, others)
+        return lib
+
+    def _bring_slot_pages(
+        self,
+        lib: dict[str, Any],
+        unit: str,
+        before_doc: dict[str, Any] | None,
+        saved_doc: dict[str, Any],
+        owners: list[str],
+    ) -> dict[str, Any]:
+        """``lib`` with the pages the ``unit`` sections of ``saved_doc`` newly
+        open (beside ``before_doc``'s) put on each of ``owners`` that lacks
+        them, with what they reach (:meth:`_with_slot_pages`)."""
+        if not owners:
+            return lib
+        old_pages, old_status = menu_targets(before_doc, [unit])
+        new_pages, new_status = menu_targets(saved_doc, [unit])
+        had_pages = {i.upper() for i in old_pages}
+        had_status = {i.upper() for i in old_status}
+        page_index = {k.upper(): k for k in lib["pages"]}
+        status_index = {k.upper(): k for k in lib["status_pages"]}
+        pages = [page_index[i.upper()] for i in new_pages if i.upper() not in had_pages and i.upper() in page_index]
+        status = [
+            status_index[i.upper()]
+            for i in new_status
+            if i.upper() not in had_status and i.upper() in status_index
+        ]
+        if not pages and not status:
+            return lib
+        reach_pages, reach_status = library_reach(lib, pages)
+        status_ids = list(dict.fromkeys([*reach_status, *status]))
+        for other in owners:
+            lib = self._pick_all(lib, other, reach_pages, status_ids, quiet=True)
         return lib
 
     def _pick_all(
@@ -3100,12 +3127,12 @@ class WatchConfigStore:
     # ── the library's own ops (library/* in watch_config_ws.py) ────────
 
     def library_summary(self) -> dict[str, Any]:
-        """Every library item with the owners that pick it, and each owner's
-        picks: ``{"pages": {id: {"item": page, "owners": [...]}},
-        "status_pages": {...}, "menus": {id: {"name", "kind", "sections",
-        "owners"}}, "picks": {owner: picks}}``. An item no one picks lists
-        no owners. An owner whose file could not be read is left out. The
-        objects are copies."""
+        """Every library item with the owners that pick it and its revision,
+        and each owner's picks: ``{"pages": {id: {"item": page, "owners":
+        [...], "revision": n}}, "status_pages": {...}, "menus": {id: {"name",
+        "kind", "sections", "owners", "revision"}}, "picks": {owner:
+        picks}}``. An item no one picks lists no owners. An owner whose file
+        could not be read is left out. The objects are copies."""
 
         def readable(owners: list[str]) -> list[str]:
             return [owner for owner in owners if owner not in self._failed_owners]
@@ -3114,7 +3141,11 @@ class WatchConfigStore:
         out: dict[str, Any] = {}
         for kind in ("pages", "status_pages"):
             out[kind] = {
-                item_id: {"item": copy.deepcopy(lib[kind][item_id]), "owners": readable(owners)}
+                item_id: {
+                    "item": copy.deepcopy(lib[kind][item_id]),
+                    "owners": readable(owners),
+                    "revision": item_revision(lib, kind, item_id),
+                }
                 for item_id, owners in pickers(lib, kind).items()
             }
         out["menus"] = {
@@ -3123,6 +3154,7 @@ class WatchConfigStore:
                 "kind": lib["menus"][menu_id]["kind"],
                 "sections": copy.deepcopy(lib["menus"][menu_id]["sections"]),
                 "owners": readable(owners),
+                "revision": item_revision(lib, "menus", menu_id),
             }
             for menu_id, owners in pickers(lib, "menus").items()
         }
@@ -3143,6 +3175,129 @@ class WatchConfigStore:
         if stored is None:
             return None
         return pickers(self._library, kind)[stored]
+
+    def _library_item_id(self, kind: Any, item_id: Any) -> tuple[str, str]:
+        """``(kind, stored id)`` of one library item, for the item ops.
+        Refused ``invalid`` for another kind or no id, ``not_found`` for an
+        item the library does not hold."""
+        if kind not in LIBRARY_KINDS:
+            raise WatchConfigValidationError(
+                f"kind must be one of {', '.join(sorted(LIBRARY_KINDS))}"
+            )
+        if not isinstance(item_id, str) or not item_id:
+            raise WatchConfigValidationError("item_id is required")
+        try:
+            return kind, stored_item_id(self._library, kind, item_id)
+        except LibraryError as err:
+            raise WatchConfigLinkError(err.code, err.message) from err
+
+    def library_item(self, kind: Any, item_id: Any) -> dict[str, Any]:
+        """One library item as a whole document of its kind
+        (``library/item``), for the panel's editors to edit it in the
+        library itself: ``{"document", "revision"}``, plus ``"name"`` for a
+        menu.
+
+        The document has the shape a device's record of the kind has, so the
+        editors read it as they read a record: pages ``{"schemaVersion": 1,
+        "pages": [the page]}``, status pages ``{"schemaVersion": 1,
+        "statusPages": [the page]}`` (no ``isHidden``: that is a device's
+        pick), and a menu a menus document whose own unit's sections are the
+        menu's and whose other unit's are blank objects
+        (:func:`_menus_probe`). ``revision`` is the item's own
+        (``item_revisions``), never a record's.
+
+        Refused ``invalid`` for another kind and ``not_found`` for an item
+        the library does not hold."""
+        self._check_library()
+        kind, stored = self._library_item_id(kind, item_id)
+        revision = item_revision(self._library, kind, stored)
+        if kind == "menus":
+            menu = self._library["menus"][stored]
+            return {
+                "document": _menus_probe(copy.deepcopy(menu["sections"])),
+                "revision": revision,
+                "name": menu["name"],
+            }
+        page = copy.deepcopy(self._library[kind][stored])
+        return {
+            "document": {"schemaVersion": 1, _KIND_LIST_KEYS[kind]: [page]},
+            "revision": revision,
+        }
+
+    def library_save_item(
+        self,
+        kind: Any,
+        item_id: Any,
+        base_revision: Any,
+        document: Any,
+        *,
+        updated_by: str = WATCH_CONFIG_PANEL_WRITER,
+    ) -> dict[str, Any]:
+        """Save one library item edited in the library itself
+        (``library/item/save``), compare and swap on the item's revision.
+
+        ``document`` is a whole document of the kind, as :meth:`library_item`
+        gives it. It meets the guard a panel save of the kind meets
+        (:func:`validate_document` with ``check_items``). Then the item is
+        taken out of it: for pages and status pages the one page, whose id
+        must be ``item_id`` (refused ``invalid`` for no page, another id
+        beside it or a system page); for a menu its own unit's sections, the
+        other unit's being ignored. ``base_revision`` other than the item's
+        revision is a ``conflict``, its message beginning ``stored revision
+        is <N>`` as a record save's does; the panel reads the item again.
+
+        Content equal to the item's writes nothing and answers the current
+        revision. Otherwise the item takes it, its revision goes up by 1 and
+        every device that picks it gets its record built again by the path a
+        record save's map-back takes (:meth:`_apply_library`): each record
+        that changes gets a new revision, a history entry and a wake-up for
+        its listeners, and every one is checked first, so a cap refuses the
+        save before anything is written. A menu save that adds a Go to page
+        or Status page slot brings that page, with what it reaches, to every
+        device using the menu that lacks it, as a record save brings it to
+        the other devices. An item no device picks writes no record.
+
+        Refused ``invalid``, ``not_found`` or ``conflict``. Returns
+        ``{"revision": <the item's revision>}``."""
+        self._check_library()
+        kind, stored = self._library_item_id(kind, item_id)
+        base_revision = _validate_base_revision(base_revision)
+        validate_document(kind, document, check_items=True)
+        current = item_revision(self._library, kind, stored)
+        if base_revision != current:
+            raise WatchConfigConflictError(
+                f"stored revision is {current}, save was based on {base_revision}",
+                current,
+                None,
+            )
+        if kind == "menus":
+            unit = self._library["menus"][stored]["kind"]
+            before = self._library["menus"][stored]["sections"]
+            content: dict[str, Any] = {key: document[key] for key in MENU_UNITS[unit]}
+        else:
+            pages = document[_KIND_LIST_KEYS[kind]]
+            if len(pages) != 1:
+                raise WatchConfigValidationError(
+                    f"the document must hold exactly one page, {stored}"
+                )
+            content = pages[0]
+        try:
+            change = replace_item(self._library, kind, stored, content)
+        except LibraryError as err:
+            raise WatchConfigValidationError(err.message) from err
+        if item_revision(change.library, kind, stored) == current:
+            return {"revision": current}
+        lib = change.library
+        if kind == "menus":
+            users = [
+                owner
+                for owner in pickers(lib, "menus")[stored]
+                if owner not in self._failed_owners
+            ]
+            lib = self._bring_slot_pages(lib, unit, before, content, users)
+        self._apply_library(lib, updated_by, strict=True)
+        _LOGGER.info("Saved %s %s in the library", kind, stored)
+        return {"revision": item_revision(self._library, kind, stored)}
 
     def library_pick(
         self,
@@ -3338,7 +3493,7 @@ class WatchConfigStore:
             raise WatchConfigValidationError(err.message) from err
         # The menus guard needs every section; the other unit's are blanks
         # it does not look inside.
-        validate_document("menus", {**{key: {} for key in _MENUS_SECTION_KEYS}, **sections})
+        validate_document("menus", _menus_probe(sections))
         self._set_library(created.library)
         _LOGGER.info("Made the %s menu %s in the library", unit, created.id)
         return {"id": created.id, "revisions": {}}

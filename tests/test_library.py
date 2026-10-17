@@ -871,3 +871,137 @@ def test_rename_refs_leaves_other_kinds_and_tiles_alone() -> None:
     assert out["pages"][1]["items"][1]["entityId"] == f"status_page.{DOORS}"
     assert out["pages"][2]["id"] == "NEW"
     assert lib.rename_refs("voice", {"phrases": []}, {LIGHTS: "NEW"}) == {"phrases": []}
+
+
+# ── each item's own revision ─────────────────────────────────────────────
+
+
+def _revs(library: dict, kind: str) -> dict:
+    return library["item_revisions"][kind]
+
+
+def test_every_item_starts_at_revision_one() -> None:
+    library = _shared()
+    for kind in ("pages", "status_pages", "menus"):
+        assert set(_revs(library, kind)) == set(library[kind])
+        assert set(_revs(library, kind).values()) == {1}
+
+
+def test_a_content_change_moves_only_that_item_on() -> None:
+    library = _shared()
+    saved = _strip(lib.materialise(library, WATCH, "pages"))
+    saved["pages"][2]["name"] = "Lamps"
+    once = lib.map_back(library, WATCH, "pages", saved).library
+    assert _revs(once, "pages")[LIGHTS] == 2
+    assert _revs(once, "pages")[HOME] == 1
+    assert _revs(once, "status_pages") == _revs(library, "status_pages")
+    again = lib.map_back(once, WATCH_2, "pages", lib.materialise(once, WATCH_2, "pages")).library
+    assert _revs(again, "pages") == _revs(once, "pages"), "an unchanged save moves nothing on"
+    hidden = _strip(lib.materialise(once, WATCH, "pages"))
+    hidden["pages"][2]["isHidden"] = False
+    assert _revs(lib.map_back(once, WATCH, "pages", hidden).library, "pages")[LIGHTS] == 2, (
+        "isHidden is a pick, not content"
+    )
+
+
+def test_a_menu_save_and_a_rename_move_the_menu_on() -> None:
+    library = _shared()
+    anywhere = library["picks"][WATCH]["menus"]["anywhere"]
+    entity = library["picks"][WATCH]["menus"]["entity"]
+    saved = lib.map_back(library, WATCH, "menus", _menus(beam="flare")).library
+    assert _revs(saved, "menus") == {anywhere: 2, entity: 1}
+    renamed = lib.rename_menu(saved, anywhere, "Front door")
+    assert _revs(renamed, "menus")[anywhere] == 3
+    assert _revs(lib.rename_menu(renamed, anywhere, "Front door"), "menus")[anywhere] == 3
+
+
+def test_new_items_start_at_one_and_picks_move_nothing_on() -> None:
+    library = _shared()
+    made = lib.create_menu(library, "entity", "Guest", {"entityRadial": {}})
+    assert _revs(made.library, "menus")[made.id] == 1
+    copied = lib.copy_menu(library, WATCH, "anywhere", "Mine")
+    assert _revs(copied.library, "menus")[copied.id] == 1
+    picked = lib.pick_page(library, PHONE, "pages", HOME, True, [DOORS]).library
+    assert picked["item_revisions"] == library["item_revisions"]
+    first = lib.map_back(library, PHONE, "status_pages", _status(starter_name="Power"), fork_conflicts=True)
+    fresh = set(first.library["status_pages"]) - set(library["status_pages"])
+    assert fresh and all(_revs(first.library, "status_pages")[i] == 1 for i in fresh)
+
+
+def test_a_delete_drops_the_entry_and_moves_on_what_it_cleared() -> None:
+    library = _shared()
+    anywhere = library["picks"][WATCH]["menus"]["anywhere"]
+    entity = library["picks"][WATCH]["menus"]["entity"]
+    gone = lib.delete_item(library, "status_pages", DOORS, clear_tiles=True).library
+    assert DOORS not in _revs(gone, "status_pages")
+    # The Anywhere menu lost its Status page slot, Home its status tile.
+    assert _revs(gone, "menus") == {anywhere: 2, entity: 1}
+    assert _revs(gone, "pages")[HOME] == 2
+    assert _revs(gone, "pages")[LIGHTS] == 1
+    spare = lib.create_menu(library, "entity", "Spare", {"entityRadial": {}})
+    assert spare.id not in _revs(lib.delete_item(spare.library, "menus", spare.id).library, "menus")
+
+
+def test_an_older_library_file_loads_with_every_item_at_one() -> None:
+    library = _shared()
+    raw = json.loads(json.dumps(library))
+    del raw["item_revisions"]
+    assert lib.validate_library(raw)["item_revisions"] == library["item_revisions"]
+    raw["item_revisions"] = {
+        "pages": {HOME.lower(): 4, LIGHTS: 0, "gone": 9},
+        "status_pages": {DOORS: True},
+        "menus": {k: 3 for k in library["menus"]} | {"gone": 2},
+    }
+    clean = lib.validate_library(raw)
+    assert _revs(clean, "pages") == {HOME: 4, LIGHTS: 1, SOLO: 1}
+    assert _revs(clean, "status_pages")[DOORS] == 1
+    assert _revs(clean, "menus") == {k: 3 for k in library["menus"]}
+
+
+def test_replace_item_edits_one_item_for_every_device_that_picks_it() -> None:
+    library = _shared()
+    before = copy.deepcopy(library)
+    page = {**library["pages"][LIGHTS], "id": LIGHTS.lower(), "name": "Lamps", "isHidden": True, "linkId": LINK}
+    change = lib.replace_item(library, "pages", LIGHTS.lower(), page)
+    assert library == before
+    assert change.library["pages"][LIGHTS] == {**library["pages"][LIGHTS], "name": "Lamps"}
+    assert _revs(change.library, "pages")[LIGHTS] == 2
+    assert change.touched == {WATCH: ["pages"], WATCH_2: ["pages"]}
+    built = lib.materialise(change.library, WATCH, "pages")
+    assert _page(built, LIGHTS)["isHidden"] is True, "each device keeps its own pick"
+    same = lib.replace_item(library, "pages", LIGHTS, library["pages"][LIGHTS])
+    assert same.touched == {} and same.library["item_revisions"] == library["item_revisions"]
+    anywhere = library["picks"][WATCH]["menus"]["anywhere"]
+    sections = {"quickAction": {"slots": []}, "pageSwitcher": {"displayMode": "dots"}}
+    menu = lib.replace_item(library, "menus", anywhere, sections)
+    assert menu.library["menus"][anywhere]["sections"] == sections
+    assert menu.library["menus"][anywhere]["name"] == library["menus"][anywhere]["name"]
+    assert _revs(menu.library, "menus")[anywhere] == 2
+    assert menu.touched == {WATCH: ["menus"], WATCH_2: ["menus"]}
+
+
+def test_replace_item_refuses_another_item_or_shape() -> None:
+    library = _shared()
+    anywhere = library["picks"][WATCH]["menus"]["anywhere"]
+    cases = [
+        ("pages", LIGHTS, {**library["pages"][HOME]}, "invalid"),
+        ("pages", LIGHTS, {**library["pages"][LIGHTS], "isSystemPage": True}, "invalid"),
+        ("pages", "missing", {"id": "missing", "name": "x", "items": []}, "not_found"),
+        ("menus", anywhere, {"entityRadial": {}}, "invalid"),
+        ("menus", anywhere, {"quickAction": {}, "pageSwitcher": []}, "invalid"),
+        ("menus", "missing", {"entityRadial": {}}, "not_found"),
+        ("voice", "x", {}, "invalid"),
+    ]
+    for kind, item_id, content, code in cases:
+        with pytest.raises(lib.LibraryError) as err:
+            lib.replace_item(library, kind, item_id, content)
+        assert err.value.code == code, (kind, item_id)
+
+
+def test_replace_item_changes_nothing_it_is_given() -> None:
+    library = _shared()
+    before = copy.deepcopy(library)
+    content = copy.deepcopy(library["status_pages"][DOORS])
+    lib.replace_item(library, "status_pages", DOORS, {**content, "name": "Gates"})
+    lib.stamp_item_revisions(library, lib.rename_menu(library, next(iter(library["menus"])), "X"))
+    assert library == before
