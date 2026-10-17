@@ -182,7 +182,8 @@ describe("the Help sheet", () => {
     const h = helpScreen(at("/all-pages"));
     expect(h.name).toBe("Pages");
     expect(h.more).toBe(WATCH_PAGES_HELP_URL);
-    expect(h.text[0]).toBe("Pages lists every page on your watches and iPhones. A page on more than one device is the same page: an edit shows on all of them.");
+    expect(h.text[0]).toBe("Pages lists every page in your home, one card each. Tick a device on a card and the page is on it: one page, the same everywhere, so an edit shows on every device that has it.");
+    expect(h.text.join(" ")).not.toMatch(/Devices|[Ll]ink/);
     expect(h.text.join(" ")).not.toMatch(/status page|info page/i);
     for (const line of h.text) expect(line).not.toMatch(/[–—]| - /);
   });
@@ -191,8 +192,8 @@ describe("the Help sheet", () => {
     const h = helpScreen(at("/all-status-pages"));
     expect(h.name).toBe("Status pages");
     expect(h.more).toBe(WATCH_STATUS_PAGES_HELP_URL);
-    expect(h.text[0]).toBe("Status pages lists every status page on your watches and iPhones. A status page is a read-only screen of rows that a tile or a menu slot opens.");
-    expect(h.text.join(" ")).toContain("the same page: an edit shows on all of them");
+    expect(h.text[0]).toBe("Status pages lists every status page in your home. A status page is a read-only screen of rows that a tile or a menu slot opens.");
+    expect(h.text.join(" ")).toContain("the same page on every device that has it: an edit shows on all of them");
     expect(h.text.join(" ")).not.toMatch(/info page/i);
     for (const line of h.text) expect(line).not.toMatch(/[–—]| - /);
     // A device's own Status pages screen is still that screen.
@@ -203,8 +204,9 @@ describe("the Help sheet", () => {
     const h = helpScreen(at("/all-menus"));
     expect(h.name).toBe("Menus");
     expect(h.more).toBe(WATCH_MENUS_HELP_URL);
-    expect(h.text[0]).toBe("Menus lists the Anywhere menu and the Entity quick menu of every watch and iPhone. A menu on more than one device is the same menu: an edit shows on all of them.");
+    expect(h.text[0]).toBe("Menus lists every menu in your home. Each device uses one Anywhere menu and one Entity quick menu, and a menu used by more than one device is the same menu: an edit shows on all of them.");
     expect(h.text.join(" ")).toContain("The page switcher goes with the Anywhere menu.");
+    expect(h.text.join(" ")).not.toMatch(/Devices on its card/);
     for (const line of h.text) expect(line).not.toMatch(/[–—]| - /);
     // A device's own Menus screen is still that screen.
     expect(helpScreen(at("/menus/w1")).text[1]).toBe("It is for the watch picked at the top.");
