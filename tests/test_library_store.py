@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import os
 import types
 from pathlib import Path
 
@@ -1170,6 +1171,54 @@ def test_an_item_reads_as_a_document_of_its_kind(env) -> None:
         with pytest.raises(env.mod.WatchConfigStoreError) as err:
             store.library_item(kind, item_id)
         assert err.value.code == code, (kind, item_id)
+
+
+# What ``library/item`` answers for the app's own documents, as the panel's
+# library mode test reads it (frontend/test/library-item-replies.test.ts):
+# the panel's readers are checked against exactly these bytes. Write it again
+# after a deliberate change to the reply with WA_WRITE_LIBRARY_FIXTURE=1.
+_ITEM_REPLIES = _FRONTEND / "test" / "fixtures-library" / "item-replies.json"
+
+
+def _app_fixture(folder: str, name: str) -> dict:
+    return json.loads((_FRONTEND / "test" / folder / name).read_text())
+
+
+def test_library_item_replies_are_the_ones_the_panel_reads(env) -> None:
+    """A watch saved with the app's own pages, status pages and menus
+    documents, each kind read back one item at a time. The reply must be
+    the fixture the panel's test feeds its three editors, byte for byte
+    once parsed, so a change on either side breaks a test on that side."""
+    store = env.store_now()
+    pages = _app_fixture("fixtures-pages", "01-entity-tiles.json")
+    status = _app_fixture("fixtures-status-pages", "02-configured.json")
+    _save(env, WATCH, pages)
+    _save(env, WATCH, status, "status_pages")
+    _save(env, WATCH, _app_fixture("fixtures-menus", "02-configured.json"), "menus")
+    menus = store.library_summary()["picks"][WATCH]["menus"]
+    replies = {
+        "pages": store.library_item("pages", pages["pages"][0]["id"]),
+        "status_pages": store.library_item("status_pages", status["statusPages"][0]["id"]),
+        "menus_anywhere": store.library_item("menus", menus["anywhere"]),
+        "menus_entity": store.library_item("menus", menus["entity"]),
+    }
+    if os.environ.get("WA_WRITE_LIBRARY_FIXTURE") == "1":
+        _ITEM_REPLIES.parent.mkdir(exist_ok=True)
+        _ITEM_REPLIES.write_text(json.dumps(replies, indent=2) + "\n")
+    assert json.loads(_ITEM_REPLIES.read_text()) == replies
+    # And each one saved back as it came is taken, with nothing written.
+    revisions = store.revisions(WATCH)
+    for key, reply in replies.items():
+        kind = "menus" if key.startswith("menus") else key
+        item_id = (
+            menus[key.split("_")[1]]
+            if kind == "menus"
+            else reply["document"][{"pages": "pages", "status_pages": "statusPages"}[kind]][0]["id"]
+        )
+        assert store.library_save_item(kind, item_id, reply["revision"], reply["document"]) == {
+            "revision": reply["revision"]
+        }, key
+    assert store.revisions(WATCH) == revisions
 
 
 def test_an_item_save_reaches_every_device_that_picks_it(env) -> None:
