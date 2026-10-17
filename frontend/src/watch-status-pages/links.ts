@@ -119,10 +119,13 @@ const key = (id: string): string => id.toUpperCase();
  * The status page editor's Not on this list: every status page the other
  * devices hold that this one does not, grouped by the device it comes from,
  * in device order. A linked one is listed once, under the first device that
- * holds it, and so is a starter page, which has the same id on every device.
- * One whose id this device holds already is left out (adding it could only
- * be refused, or for a starter it is here). `docs` is each other device's
- * status pages, as read; a device not in it lists nothing.
+ * holds it, and so is a starter page, which has the same id on every device:
+ * under the first device that holds it linked, when any does, so Add here
+ * joins that link rather than starting a second one beside it (Home
+ * Assistant never brings two links of one id together). One whose id this
+ * device holds already is left out (adding it could only be refused, or for
+ * a starter it is here). `docs` is each other device's status pages, as
+ * read; a device not in it lists nothing.
  */
 export function elsewhereStatusPages(
   here: string,
@@ -133,7 +136,19 @@ export function elsewhereStatusPages(
   const herePages = statusPagesOf(hereDoc);
   const hereIds = new Set(herePages.map((p) => key(statusPageId(p))));
   const seenLinks = new Set(herePages.flatMap((p) => statusPageLinkId(p) ?? []));
-  const seenStarters = new Set<string>();
+  // Each starter's one listing: the first device holding it linked, else
+  // the first holding it at all.
+  const starterFrom = new Map<string, { ownerId: string; linked: boolean }>();
+  for (const device of devices) {
+    if (device.ownerId === here) continue;
+    for (const page of statusPagesOf(docs.get(device.ownerId))) {
+      const pageId = statusPageId(page);
+      if (pageId === "" || hereIds.has(key(pageId)) || !isSystemStatusPage(page)) continue;
+      const linked = statusPageLinkId(page) !== undefined;
+      const from = starterFrom.get(key(pageId));
+      if (from === undefined || (linked && !from.linked)) starterFrom.set(key(pageId), { ownerId: device.ownerId, linked });
+    }
+  }
   const groups: ElsewhereStatusGroup[] = [];
   for (const device of devices) {
     if (device.ownerId === here) continue;
@@ -143,10 +158,7 @@ export function elsewhereStatusPages(
     for (const page of statusPagesOf(doc)) {
       const pageId = statusPageId(page);
       if (pageId === "" || hereIds.has(key(pageId))) continue;
-      if (isSystemStatusPage(page)) {
-        if (seenStarters.has(key(pageId))) continue;
-        seenStarters.add(key(pageId));
-      }
+      if (isSystemStatusPage(page) && starterFrom.get(key(pageId))?.ownerId !== device.ownerId) continue;
       const linkId = statusPageLinkId(page);
       if (linkId !== undefined) {
         if (seenLinks.has(linkId)) continue;

@@ -144,6 +144,20 @@ describe("the Not on this list", () => {
     ]);
   });
 
+  it("lists a starter under the first device that holds it linked, when one does", () => {
+    // w1 holds its own copy; w2 and p1 share theirs. Adding from w1 would
+    // start a second link that could never join the first.
+    const groups = elsewhereStatusPages("w9", undefined, DEVICES, new Map([
+      ["w1", sdoc(sp(SYSTEM, "Lights On"), sp(DOORS, "Doors"))],
+      ["w2", sdoc(sp(SYSTEM, "Lights On", { linkId: "S5" }))],
+      ["p1", sdoc(sp(SYSTEM, "Lights On", { linkId: "S5" }))],
+    ]));
+    expect(groups.map((g) => [g.device.ownerId, g.pages.map((p) => [p.name, p.linkId])])).toEqual([
+      ["w1", [["Doors", undefined]]],
+      ["w2", [["Lights On", "S5"]]],
+    ]);
+  });
+
   it("lists nothing for a device not read", () => {
     expect(elsewhereStatusPages("w1", here, DEVICES, new Map())).toEqual([]);
   });
