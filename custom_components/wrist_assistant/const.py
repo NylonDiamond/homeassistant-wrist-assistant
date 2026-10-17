@@ -469,11 +469,12 @@ PHONE_PAIRING_CAPABILITY = "phone_pairing"
 # delivery mode or main house filed under it. The phone polls for its pages,
 # and the panel offers them, only when it sees this.
 PHONE_PAGES_CAPABILITY = "phone_pages"
-# What the integration advertises once a page can sit on several devices as a
-# linked page (page_links.py): the same id and a `linkId` on each device, kept
-# in step by the store on every save, and the signed phone_pages_offer and
-# phone_pages_link_watch ops. The iPhone offers to take a watch's pages only
-# when it sees this.
+# What the integration advertises once a page can sit on several devices: one
+# page in the home's library (library.py), picked by each device, so a save on
+# any of them reaches all, and the signed phone_pages_offer and
+# phone_pages_link_watch ops. The name is from when such pages were linked
+# copies; the shipped iPhone looks for it, so it stays. The iPhone offers to
+# take a watch's pages only when it sees this.
 PHONE_PAGES_LINK_CAPABILITY = "phone_pages_link"
 # What the integration advertises once an iPhone's push token lives under the
 # phone's own id and is paired with the watches of the same Home Assistant

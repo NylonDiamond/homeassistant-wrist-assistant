@@ -1062,10 +1062,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # that poll, and the panel lists phones in the Pages editor, only when
     # they see this.
     coordinator.register_capability(PHONE_PAGES_CAPABILITY)
-    # Linked pages (page_links.py): a page on several devices kept in step
-    # by the store, and the signed phone_pages_offer and
-    # phone_pages_link_watch ops. The phone offers a watch's pages only when
-    # it sees this.
+    # Pages on several devices (library.py): one library page each device
+    # picks, and the signed phone_pages_offer and phone_pages_link_watch
+    # ops. The phone offers a watch's pages only when it sees this.
     coordinator.register_capability(PHONE_PAGES_LINK_CAPABILITY)
     # The home's HTTP action library (http_actions_store.py): the signed
     # http_actions_hand_over, http_actions_get and http_action_run ops and

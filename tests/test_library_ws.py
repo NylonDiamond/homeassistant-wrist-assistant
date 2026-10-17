@@ -1,7 +1,7 @@
 """In-process tests for the library's WebSocket commands:
-``wrist_assistant/library/pick``, ``library/menus/copy``,
-``library/menus/rename``, ``library/menus/delete``, ``library/delete`` and
-``library/summary``.
+``wrist_assistant/library/pick``, ``library/menus/create``,
+``library/menus/copy``, ``library/menus/rename``, ``library/menus/delete``,
+``library/delete`` and ``library/summary``.
 
 Run as ``test_watch_pages_link_ws.py`` runs the link commands, over a real
 ``WatchConfigStore`` whose pairing checks know two watches and an iPhone
@@ -77,14 +77,10 @@ def test_pick_answers_the_revisions_it_wrote(ctx) -> None:
     )
     phone = ctx.store.get(PHONE, "pages")
     assert [p["id"] for p in phone.document["pages"]] == [HOME]
-    # The watch's records gain the link marks of Home and of Doors, which
-    # Home's tile brought along.
+    # Only the phone's records: Home and Doors, which Home's tile brought
+    # along. The watch, which has both, is not written.
     assert result == {
         "revisions": {
-            WATCH: {
-                "status_pages": ctx.store.get(WATCH, "status_pages").revision,
-                "pages": ctx.store.get(WATCH, "pages").revision,
-            },
             PHONE: {
                 "status_pages": ctx.store.get(PHONE, "status_pages").revision,
                 "pages": phone.revision,
@@ -93,7 +89,7 @@ def test_pick_answers_the_revisions_it_wrote(ctx) -> None:
     }
     off = _ok(ctx, ctx.ws.ws_library_pick, owner_id=PHONE, kind="pages", item_id=HOME, on=False)
     assert ctx.store.get(PHONE, "pages").document["pages"] == []
-    assert set(off["revisions"]) == {WATCH, PHONE}
+    assert set(off["revisions"]) == {PHONE}
 
 
 def test_pick_of_a_menu_takes_a_unit(ctx) -> None:
@@ -103,7 +99,8 @@ def test_pick_of_a_menu_takes_a_unit(ctx) -> None:
     _ok(ctx, ctx.ws.ws_library_pick, owner_id=PHONE, kind="menus", unit="anywhere", item_id=menu_id)
     phone = ctx.store.get(PHONE, "menus").document
     assert phone["quickAction"]["beamStyle"] == "auroraWash"
-    assert phone["linkIds"] == {"anywhere": menu_id}
+    assert "linkIds" not in phone
+    assert _menu_of(ctx, PHONE) == menu_id
 
 
 @pytest.mark.parametrize(
@@ -139,9 +136,9 @@ def test_a_non_admin_may_pick_only_on_their_own_devices(ctx) -> None:
 
 
 def test_a_non_admin_may_not_pick_an_item_only_another_user_s_device_has(ctx) -> None:
-    """Bob's summary never shows Alice's Lights, and a link from her watch
-    is refused; a pick by id must be too, or he could put her page on his
-    watch and edit it on hers from there."""
+    """Bob's summary never shows Alice's Lights, so a pick by id must be
+    refused too, or he could put her page on his watch and edit it on hers
+    from there."""
     before = ctx.store.get(WATCH, "pages").revision
     codes = _codes(
         ctx, ctx.ws.ws_library_pick, BOB, owner_id=WATCH_2, kind="pages", item_id=LIGHTS, on=True
@@ -193,19 +190,69 @@ def test_a_non_admin_may_start_a_device_s_menus_from_a_menu_their_watch_uses(ctx
     assert _menu_of(ctx, PHONE, "entity") not in (_menu_of(ctx, WATCH, "entity"), _menu_of(ctx, WATCH_2, "entity"))
 
 
+# ── library/menus/create ─────────────────────────────────────────────────
+
+
+def test_create_makes_a_menu_no_device_uses_and_summary_lists_it(ctx) -> None:
+    ctx.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
+    before = ctx.store.get(WATCH, "menus").revision
+    sections = {"quickAction": {"slots": []}, "pageSwitcher": {"displayMode": "icon"}}
+    made = _ok(
+        ctx, ctx.ws.ws_library_menus_create, unit="anywhere", name="Guest menu", sections=sections
+    )
+    assert made == {"id": made["id"], "revisions": {}}
+    assert ctx.store.get(WATCH, "menus").revision == before, "no device moves off its menu"
+    menu = _ok(ctx, ctx.ws.ws_library_summary)["menus"][made["id"]]
+    assert menu == {"name": "Guest menu", "kind": "anywhere", "sections": sections, "owners": []}
+    # A tick puts it on a device.
+    _ok(ctx, ctx.ws.ws_library_pick, owner_id=WATCH, kind="menus", unit="anywhere",
+        item_id=made["id"])
+    assert ctx.store.get(WATCH, "menus").document["quickAction"] == {"slots": []}
+
+
+@pytest.mark.parametrize(
+    "msg",
+    [
+        {"unit": "both", "name": "Menu", "sections": {"entityRadial": {}}},
+        {"unit": "entity", "name": "", "sections": {"entityRadial": {}}},
+        {"unit": "entity", "name": "Menu", "sections": {}},
+        {"unit": "entity", "name": "Menu", "sections": {"entityRadial": {}, "pageSwitcher": {}}},
+        {"unit": "anywhere", "name": "Menu", "sections": {"quickAction": {}}},
+        {
+            "unit": "anywhere",
+            "name": "Menu",
+            "sections": {"quickAction": {"slots": [{"id": "S1"}, {"id": "s1"}]}, "pageSwitcher": {}},
+        },
+    ],
+)
+def test_create_refuses_a_bad_shape_as_invalid(ctx, msg) -> None:
+    assert _codes(ctx, ctx.ws.ws_library_menus_create, **msg) == ["invalid"]
+    assert ctx.store.library_summary()["menus"] == {}
+
+
+def test_create_answers_unavailable_before_the_integration_is_ready(ctx) -> None:
+    ctx.hass.data = {}
+    msg = {"unit": "entity", "name": "Menu", "sections": {"entityRadial": {}}}
+    assert _codes(ctx, ctx.ws.ws_library_menus_create, **msg) == ["unavailable"]
+
+
+# Administrators only: ``@websocket_api.require_admin``, which Home Assistant
+# runs before the handler (a no-op stand-in here), is pinned by
+# test_ws_command_registration.py.
+
+
 # ── library/menus/copy, rename, delete ───────────────────────────────────
 
 
 def test_copy_rename_and_delete_a_menu(ctx) -> None:
     ctx.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
-    ctx.store.link_units("menus", WATCH, ["anywhere"], [PHONE])
     shared = _menu_of(ctx, WATCH)
+    ctx.store.library_pick(PHONE, "menus", shared, unit="anywhere")
     copied = _ok(
         ctx, ctx.ws.ws_library_menus_copy, owner_id=PHONE, unit="anywhere", name="Phone menu"
     )
-    assert set(copied) == {"id", "revisions"}
+    assert copied == {"id": copied["id"], "revisions": {}}, "the same sections: no record changes"
     assert _menu_of(ctx, PHONE) == copied["id"] != shared
-    assert "linkIds" not in ctx.store.get(WATCH, "menus").document
     assert _ok(ctx, ctx.ws.ws_library_menus_rename, item_id=copied["id"], name="Travel") == {}
     assert ctx.store.library_summary()["menus"][copied["id"]]["name"] == "Travel"
     assert _codes(ctx, ctx.ws.ws_library_menus_delete, item_id=shared) == ["in_use"]
@@ -262,7 +309,7 @@ def test_delete_of_a_page_answers_the_revisions_and_clears_its_tiles(ctx) -> Non
 
 
 def test_summary_lists_every_item_with_who_picks_it(ctx) -> None:
-    ctx.store.link_pages(WATCH, [LIGHTS], [WATCH_2])
+    ctx.store.library_pick(WATCH_2, "pages", LIGHTS, on=True)
     summary = _ok(ctx, ctx.ws.ws_library_summary)
     assert set(summary) == {"pages", "status_pages", "menus", "picks"}
     assert summary["pages"][LIGHTS]["owners"] == [WATCH, WATCH_2]
@@ -273,7 +320,7 @@ def test_summary_lists_every_item_with_who_picks_it(ctx) -> None:
 
 
 def test_summary_for_a_non_admin_names_only_their_devices(ctx) -> None:
-    ctx.store.link_pages(WATCH, [LIGHTS], [WATCH_2])
+    ctx.store.library_pick(WATCH_2, "pages", LIGHTS, on=True)
     ctx.store.panel_save(
         WATCH_2,
         "status_pages",

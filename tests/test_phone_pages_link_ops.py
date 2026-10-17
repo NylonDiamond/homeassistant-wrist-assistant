@@ -250,13 +250,13 @@ def test_link_watch_links_every_page_and_status_page(env) -> None:
     assert [p["id"] for p in phone.document["pages"]] == [HOME, LIGHTS]
     assert phone.document["pages"][1]["isHidden"] is True
     assert phone.updated_by == PHONE
-    watch = env.store.get(WATCH, "pages").document["pages"]
-    assert phone.document["pages"][0]["linkId"] == watch[1]["linkId"]
+    assert all("linkId" not in p for p in phone.document["pages"])
+    picks = env.store.library_summary()["picks"]
+    assert [p["id"] for p in picks[PHONE]["pages"]] == [HOME, LIGHTS], "the same library pages"
     assert env.store.get(PHONE, "status_pages").document["statusPages"][0]["id"] == DOORS
-    # The phone uses the watch's menus, marked as shared while it does.
-    phone_menus = env.store.get(PHONE, "menus").document
-    assert {k: v for k, v in phone_menus.items() if k != "linkIds"} == menus
-    assert phone_menus["linkIds"] == env.store.get(WATCH, "menus").document["linkIds"]
+    # The phone uses the watch's menus: the same library menus, no marks.
+    assert env.store.get(PHONE, "menus").document == menus
+    assert picks[PHONE]["menus"] == picks[WATCH]["menus"]
     assert env.store.get(PHONE, "rooms") is None, "the watch has no rooms to copy"
 
 
@@ -280,8 +280,8 @@ def test_link_watch_beside_a_phone_page_under_the_same_id(env) -> None:
     assert (reply.status, reply.body) == (200, {"ok": True, "pages": 2})
     names = [p["name"] for p in env.store.get(PHONE, "pages").document["pages"]]
     assert names == ["Mine", "Home", "Lights"]
-    lights = next(p for p in env.store.get(WATCH, "pages").document["pages"] if p["id"] == LIGHTS)
-    assert lights["linkId"] == LIGHTS
+    owners = env.store.library_summary()["pages"][LIGHTS]["owners"]
+    assert owners == sorted([PHONE, WATCH])
 
 
 # ── static: dispatch table, capability ───────────────────────────────────

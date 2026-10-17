@@ -1,45 +1,28 @@
-"""Linked pages: one page on more than one device.
+"""Linked voice settings, and the page walks the library and the iPhone copy
+share.
 
-A page on several devices (watches and iPhones) is the same page ``id`` in
-each device's own ``pages`` document, plus a ``linkId`` string on the page
-object. The same id keeps every tile ``page.<id>`` / ``show_page.<id>``, menu
-slot and complication pointing at it right on every device, so nothing is
-rewritten; the ``linkId`` marks the link on purpose, so two pages never count
-as linked only because their ids match. Status pages link the same way, in
-``status_pages`` (``{"statusPages": [...]}``).
+Pages, status pages and menus no longer link: each lives once in the home's
+library and devices pick it (``library.py``, app repo
+``docs/one_library_plan_2026-10.md``). What is left here:
 
-What is shared and what is not:
-
-* Shared: every key of the page object but ``isHidden``.
-* Per device: the page's place in the list, and ``isHidden``.
-* Never linked: a page with ``isSystemPage: true``, and the rooms.
-
-The menus link too, not by item but by unit (:data:`LINK_UNITS`): the
-Anywhere menu with the page switcher, and the Entity quick menu, each marked
-in a top-level ``linkIds`` object. A menu link brings the pages and status
-pages its slots open (:func:`menu_targets`). Plan: app repo
-``docs/shared_things_plan_2026-10.md``, step 2. A watch's voice settings
-link the same way, as one unit: the phrase library with the defaults behind
-it. The watch's own speech settings stay on each watch
-(:data:`UNIT_DEVICE_KEYS`). Step 3 of the same plan.
-
-A starter status page (one of the app's five fixed ids, or
-``isSystemDefault: true``) links like any other status page. It has the
-same id on every device already, so a device that holds its own copy with
-no ``linkId`` is not refused: that copy is adopted, taking the link and the
-source's contents (:func:`apply_link`). One it holds under another link
-refuses a link of that starter by name, and is left out of any other link
-that reaches it (:func:`starters_linked_elsewhere`).
-
-The store (``watch_config_store.py``) keeps the copies in step: after every
-accepted write of a linked kind it hands each other device holding one of
-the saved document's ``linkId`` values :func:`fan_out`'s result. Plan: app
-repo ``docs/linked_pages_plan_2026-10.md``.
+* A watch's voice settings still link watch to watch, by unit
+  (:data:`LINK_UNITS`): the phrase library with the defaults behind it is one
+  unit, marked in a top-level ``linkIds`` object (``{"linkIds": {"phrases":
+  "<hex>"}}``) and kept in step by the store on every write of any copy
+  (``watch_config_store.py``, ``_spread_links``). The watch's own speech
+  settings stay on each watch (:data:`UNIT_DEVICE_KEYS`). Plan: app repo
+  ``docs/shared_things_plan_2026-10.md``, step 3.
+* :func:`link_reach`, the walk from a page through the Go to page and Peek
+  page tiles to every page and status page it opens, which the library's
+  :func:`library.reach` runs over its items.
+* The page ids of a device's ``pages`` document (:func:`listed_page_ids`,
+  :func:`ids_in`) and its rooms (:func:`rooms_from_behavior`), for the
+  iPhone's copy of a watch's setup (``phone_pages_link_watch``).
 
 Pure, with no Home Assistant import, so it is tested on its own. Every
 function returns new objects and never changes the documents it is given.
-Ids are compared ignoring case (the app reads them as UUIDs); ``linkId``
-values are compared as written.
+Ids are compared ignoring case (the app reads them as UUIDs); link ids are
+compared as written.
 """
 
 from __future__ import annotations
@@ -49,20 +32,6 @@ import uuid
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, NamedTuple
 
-# The kinds a page can be linked in, and the key of each one's list.
-LINKED_KINDS: dict[str, str] = {"pages": "pages", "status_pages": "statusPages"}
-
-# The key on a page object that marks it linked.
-LINK_KEY = "linkId"
-
-# The per-device key on a linked page; every other key is shared.
-HIDDEN_KEY = "isHidden"
-
-# The app's five starter status pages, by their fixed ids (upper case).
-SYSTEM_STATUS_PAGE_IDS = frozenset(
-    f"00000000-0000-0000-0000-00000000000{n}" for n in range(1, 6)
-)
-
 # The tile kinds that open a page, and the one that opens a status page.
 _PAGE_TILE_KINDS = ("page", "show_page")
 _STATUS_TILE_KIND = "status_page"
@@ -70,7 +39,7 @@ _STATUS_TILE_KIND = "status_page"
 
 class PageLinkError(Exception):
     """A link that cannot be made. ``code`` is the stable reason:
-    ``not_found``, ``system_page``, ``id_taken`` or ``unit_taken``."""
+    ``not_found`` or ``unit_taken``."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -83,11 +52,6 @@ def _key(value: Any) -> str | None:
     return value.upper() if isinstance(value, str) and value else None
 
 
-def list_key(kind: str) -> str:
-    """The key of a linked kind's list (``pages`` or ``statusPages``)."""
-    return LINKED_KINDS[kind]
-
-
 def items(document: Any, key: str) -> list[dict[str, Any]]:
     """The page objects of a document's list, in order. Anything that is not
     an object is skipped here (and left where it is in the document)."""
@@ -95,19 +59,8 @@ def items(document: Any, key: str) -> list[dict[str, Any]]:
     return [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
 
 
-def empty_document(key: str) -> dict[str, Any]:
-    """The document a device with no record of a kind starts from."""
-    return {"schemaVersion": 1, key: []}
-
-
 def is_system_page(page: Mapping[str, Any]) -> bool:
     return page.get("isSystemPage") is True
-
-
-def is_system_status_page(page: Mapping[str, Any]) -> bool:
-    """Whether a status page is one of the app's starter pages, which every
-    device has under the same id."""
-    return _key(page.get("id")) in SYSTEM_STATUS_PAGE_IDS or page.get("isSystemDefault") is True
 
 
 def listed_page_ids(pages_doc: Any) -> list[str]:
@@ -122,15 +75,6 @@ def listed_page_ids(pages_doc: Any) -> list[str]:
 def ids_in(document: Any, key: str) -> list[str]:
     """The id of every page in a document's list, system pages included."""
     return [page["id"] for page in items(document, key) if _key(page.get("id")) is not None]
-
-
-def link_ids(document: Any, key: str) -> set[str]:
-    """Every ``linkId`` a document's list holds."""
-    return {
-        page[LINK_KEY]
-        for page in items(document, key)
-        if isinstance(page.get(LINK_KEY), str) and page[LINK_KEY]
-    }
 
 
 def _tile_link(tile: Mapping[str, Any]) -> tuple[str, str] | None:
@@ -153,7 +97,7 @@ def _tile_link(tile: Mapping[str, Any]) -> tuple[str, str] | None:
 def link_reach(
     pages_doc: Any, status_doc: Any, page_ids: Iterable[str]
 ) -> tuple[list[str], list[str]]:
-    """The pages and status pages a link of ``page_ids`` brings: those pages,
+    """The pages and status pages ``page_ids`` bring along: those pages,
     every page their Go to page and Peek page tiles open in turn, and every
     status page any of them opens.
 
@@ -161,8 +105,8 @@ def link_reach(
     to a page the document lists (never a system page) or a status page the
     status document holds; a smart page's tiles are its own (filled on the
     device), so they are not walked. A start id the document does not list is
-    left out (:func:`check_link` refuses it first). Both lists come back in
-    the documents' own order, with the ids as stored there.
+    left out. Both lists come back in the documents' own order, with the ids
+    as stored there.
     """
     listed = {
         _key(page.get("id")): page
@@ -201,212 +145,28 @@ def link_reach(
     return pages_out, status_out
 
 
-def check_link(pages_doc: Any, page_ids: Iterable[str], key: str = "pages") -> None:
-    """Refuse a link of pages the document does not list (``not_found``) or
-    of a system page (``system_page``).
-
-    With ``key`` ``statusPages`` the ids are status pages, and only a missing
-    one is refused: a starter status page links like any other
-    (:func:`apply_link`)."""
-    noun = "page" if key == "pages" else "status page"
-    by_key = {_key(page.get("id")): page for page in items(pages_doc, key)}
-    for page_id in page_ids:
-        page = by_key.get(_key(page_id))
-        if page is None:
-            raise PageLinkError("not_found", f"there is no {noun} {page_id}")
-        if key == "pages" and is_system_page(page):
-            raise PageLinkError("system_page", f"page {page_id} is a system page")
-
-
 def new_link_id() -> str:
     return uuid.uuid4().hex
 
 
-def starters_linked_elsewhere(source_doc: Any, target_doc: Any, ids: Iterable[str]) -> list[str]:
-    """The starter status pages among ``ids`` that the target holds under a
-    ``linkId`` the source's copy does not carry (the source's with none, or
-    another). :func:`apply_link` refuses those (``id_taken``), so a link the
-    user did not ask of the starters by name (a page or menu that opens one,
-    a whole device) leaves them out: the target's copy already opens under
-    the same id, linked with some other device. Ids as ``ids`` gives them."""
-    key = LINKED_KINDS["status_pages"]
-    source_by_key = {_key(page.get("id")): page for page in items(source_doc, key)}
-    target_by_key = {_key(page.get("id")): page for page in items(target_doc, key)}
-    out: list[str] = []
-    for page_id in ids:
-        page = source_by_key.get(_key(page_id))
-        held = target_by_key.get(_key(page_id))
-        if page is None or held is None:
-            continue
-        if not (is_system_status_page(page) or is_system_status_page(held)):
-            continue
-        held_link = held.get(LINK_KEY)
-        if isinstance(held_link, str) and held_link and held_link != page.get(LINK_KEY):
-            out.append(page_id)
-    return out
-
-
-def apply_link(
-    source_doc: Any, target_doc: Any, key: str, ids: Iterable[str]
-) -> tuple[dict[str, Any], dict[str, Any], list[str], dict[str, str], list[str]]:
-    """Put the pages ``ids`` of ``source_doc`` on a target device.
-
-    Returns ``(source, target, added, links, adopted)``: the source document
-    with a ``linkId`` on each linked page that had none (a fresh uuid4 hex),
-    the target document with the pages it lacked appended at the end (same
-    id, the source's ``linkId``, the source's ``isHidden``), the ids added,
-    each linked page's ``linkId`` by its id, and the ids of the target's own
-    copies adopted (below). ``target_doc`` None is a device with no record of
-    the kind yet (:func:`empty_document`).
-
-    A page the target already holds with the same ``linkId`` is left as it
-    is. A target page with the same id and no or another ``linkId`` refuses
-    the whole link (``id_taken``), as does an id the source does not hold
-    (``not_found``) or a system page (``system_page``). One exception: a
-    starter status page (:func:`is_system_status_page`, on either side) the
-    target holds with no ``linkId`` is adopted where it stands. It takes the
-    link and the source's contents, keeping its place and its ``isHidden``
-    as :func:`fan_out` does, and is counted in ``adopted``, not ``added``. A
-    starter copy with another ``linkId`` is still ``id_taken``
-    (:func:`starters_linked_elsewhere` names those first).
-    """
-    source = copy.deepcopy(source_doc) if isinstance(source_doc, dict) else empty_document(key)
-    target = copy.deepcopy(target_doc) if isinstance(target_doc, dict) else empty_document(key)
-    if not isinstance(source.get(key), list):
-        source[key] = []
-    if not isinstance(target.get(key), list):
-        target[key] = []
-    source_by_key = {_key(page.get("id")): page for page in items(source, key)}
-    target_by_key = {_key(page.get("id")): page for page in items(target, key)}
-    added: list[str] = []
-    adopted: list[str] = []
-    links: dict[str, str] = {}
-    for page_id in ids:
-        page = source_by_key.get(_key(page_id))
-        if page is None:
-            raise PageLinkError("not_found", f"there is no page {page_id}")
-        if key == "pages" and is_system_page(page):
-            raise PageLinkError("system_page", f"page {page_id} is a system page")
-        held = target_by_key.get(_key(page_id))
-        link = page.get(LINK_KEY)
-        if not isinstance(link, str) or not link:
-            link = page[LINK_KEY] = new_link_id()
-        links[page["id"]] = link
-        if held is not None:
-            if held.get(LINK_KEY) == link:
-                continue
-            if not _adoptable(page, held, key):
-                raise PageLinkError(
-                    "id_taken", f"the device already has another page with the id {page_id}"
-                )
-            joined = _linked_copy(page, held)
-            place = next(i for i, other in enumerate(target[key]) if other is held)
-            target[key][place] = joined
-            target_by_key[_key(page_id)] = joined
-            adopted.append(page["id"])
-            continue
-        target[key].append(copy.deepcopy(page))
-        target_by_key[_key(page_id)] = target[key][-1]
-        added.append(page["id"])
-    return source, target, added, links, adopted
-
-
-def _adoptable(page: Mapping[str, Any], held: Mapping[str, Any], key: str) -> bool:
-    """Whether a target's ``held`` page under ``page``'s id can join its link
-    instead of refusing it: a starter status page the target holds with no
-    ``linkId``. Every device has the starters under the same ids, so the
-    target's copy is the same page, not another one."""
-    if key != LINKED_KINDS["status_pages"]:
-        return False
-    if isinstance(held.get(LINK_KEY), str) and held[LINK_KEY]:
-        return False
-    return is_system_status_page(page) or is_system_status_page(held)
-
-
-def _linked_copy(source: Mapping[str, Any], held: Mapping[str, Any]) -> dict[str, Any]:
-    """``source`` as ``held``'s device keeps it: every key but ``isHidden``
-    from ``source``, the id as ``held`` writes it, and ``held``'s own
-    ``isHidden`` (none when it had none)."""
-    out = {k: copy.deepcopy(v) for k, v in source.items() if k != HIDDEN_KEY}
-    out["id"] = held["id"]
-    if HIDDEN_KEY in held:
-        out[HIDDEN_KEY] = held[HIDDEN_KEY]
-    return out
-
-
-def fan_out(saved_doc: Any, other_doc: Any, key: str) -> dict[str, Any] | None:
-    """``other_doc`` with each page linked to one in ``saved_doc`` replaced by
-    the saved one, keeping the other's place and its ``isHidden``. None when
-    nothing changes.
-
-    A page counts as the same only with the same ``linkId`` and the same id;
-    a page that kept the ``linkId`` under another id (a duplicate) is left
-    alone. A page the save removed stays on the other device: removing a
-    linked page everywhere is the panel's own action, never a fan-out.
-    """
-    saved: dict[tuple[str, str], dict[str, Any]] = {}
-    for page in items(saved_doc, key):
-        link, page_key = page.get(LINK_KEY), _key(page.get("id"))
-        if isinstance(link, str) and link and page_key is not None:
-            saved.setdefault((link, page_key), page)
-    if not saved or not isinstance(other_doc, dict) or not isinstance(other_doc.get(key), list):
-        return None
-    changed = False
-    out: list[Any] = []
-    for page in other_doc[key]:
-        source = (
-            saved.get((page.get(LINK_KEY), _key(page.get("id"))))
-            if isinstance(page, dict)
-            else None
-        )
-        if source is None:
-            out.append(page)
-            continue
-        replaced = _linked_copy(source, page)
-        if replaced != page:
-            changed = True
-        out.append(replaced)
-    if not changed:
-        return None
-    return {**other_doc, key: out}
-
-
-def drop_link(document: Any, key: str, link_id: str) -> dict[str, Any] | None:
-    """The document with ``link_id`` taken off every page that holds it (the
-    last copy of a link, which is no longer linked to anything). None when
-    no page holds it."""
-    if not isinstance(document, dict) or not isinstance(document.get(key), list):
-        return None
-    changed = False
-    out: list[Any] = []
-    for page in document[key]:
-        if isinstance(page, dict) and page.get(LINK_KEY) == link_id:
-            page = {k: v for k, v in page.items() if k != LINK_KEY}
-            changed = True
-        out.append(page)
-    return {**document, key: out} if changed else None
-
-
 # ── linked units ─────────────────────────────────────────────────────────
 #
-# A kind that is one document per device rather than a list (the menus)
-# links by unit: a set of the document's top-level keys that is the same on
-# every device holding the link. The mark is a top-level `linkIds` object,
-# one id per linked unit (`{"linkIds": {"anywhere": "<hex>"}}`), never a key
-# inside a section, so a section stays exactly what the apps decode. The
-# watch reads only the sections it names, so `linkIds` costs it nothing.
+# A kind that is one document per device rather than a list links by unit: a
+# set of the document's top-level keys that is the same on every device
+# holding the link. The mark is a top-level `linkIds` object, one id per
+# linked unit, never a key inside a section, so a section stays exactly what
+# the watch decodes. The watch reads only the keys it names, so `linkIds`
+# costs it nothing.
 #
-# Adding a kind is a row here; the store reaches every function below
-# through `link_ops`.
+# Only the voice settings link this way now; the store reaches every function
+# below through `link_ops`.
 
 # Each unit kind's units, and the top-level keys each one links as one. The
-# page switcher is style only, so it goes with the Anywhere menu. The voice
-# settings' phrase library goes with the defaults (agent, engine, speakers):
-# a phrase with no speakers or engine of its own, and an Assist or Speak
-# slot, falls back to them, so a phrase only plays the same on every watch
-# with the same defaults behind it.
+# voice settings' phrase library goes with the defaults (agent, engine,
+# speakers): a phrase with no speakers or engine of its own, and an Assist or
+# Speak slot, falls back to them, so a phrase only plays the same on every
+# watch with the same defaults behind it.
 LINK_UNITS: dict[str, dict[str, tuple[str, ...]]] = {
-    "menus": {"anywhere": ("quickAction", "pageSwitcher"), "entity": ("entityRadial",)},
     "voice": {
         "phrases": ("defaultAssistAgentId", "defaultSpeakers", "defaultTTSEngine", "phrases"),
     },
@@ -603,64 +363,8 @@ def unit_link_places(documents: Mapping[str, Any], kind: str) -> dict[str, dict[
     }
 
 
-# The menu actions whose payload opens a page or a status page, and the
-# payload key holding its id (`menu-actions.json`, the `uuid` payloads whose
-# `target` is `page` or `statusPage`).
-_MENU_PAGE_ACTIONS: dict[str, tuple[str, str]] = {
-    "navigateToPage": ("pageId", "page"),
-    "showStatusPage": ("pageId", "statusPage"),
-}
-
-
-def _menu_slot_lists(section: Any) -> list[list[Any]]:
-    """Every slot list of a menus section: the Anywhere menu's ``slots``, and
-    the Entity quick menu's ``*Slots`` lists and each ``entityOverrides``
-    list (the lists ``_check_menus`` checks)."""
-    if not isinstance(section, dict):
-        return []
-    lists = [section["slots"]] if isinstance(section.get("slots"), list) else []
-    lists += [v for k, v in section.items() if k.endswith("Slots") and isinstance(v, list)]
-    overrides = section.get("entityOverrides")
-    if isinstance(overrides, dict):
-        lists += [v for v in overrides.values() if isinstance(v, list)]
-    return lists
-
-
-def menu_targets(
-    menus_doc: Any, units: Iterable[str] | None = None
-) -> tuple[list[str], list[str]]:
-    """The page ids and status page ids the menu slots open, each once in the
-    order first met, as stored. ``units`` limits the walk to those units'
-    sections (every section when None). Only Go to page and Status page
-    slots count; a speak phrase or HTTP action slot points at something
-    else."""
-    if not isinstance(menus_doc, dict):
-        return [], []
-    names = LINK_UNITS["menus"] if units is None else units
-    pages: dict[str, str] = {}
-    status: dict[str, str] = {}
-    for unit in names:
-        for key in unit_keys("menus", unit):
-            for slots in _menu_slot_lists(menus_doc.get(key)):
-                for slot in slots:
-                    action = slot.get("action") if isinstance(slot, dict) else None
-                    spec = (
-                        _MENU_PAGE_ACTIONS.get(action.get("type"))
-                        if isinstance(action, dict)
-                        else None
-                    )
-                    page_id = action.get(spec[0]) if spec else None
-                    page_key = _key(page_id)
-                    if page_key is None:
-                        continue
-                    into = pages if spec[1] == "page" else status
-                    into.setdefault(page_key, page_id)
-    return list(pages.values()), list(status.values())
-
-
 class LinkOps(NamedTuple):
-    """How the store reads and keeps one linked kind's links, the same for a
-    list kind (pages) and a unit kind (menus)."""
+    """How the store reads and keeps one linked kind's links."""
 
     ids: Callable[[Any], set[str]]
     fan_out: Callable[[Any, Any], dict[str, Any] | None]
@@ -669,14 +373,8 @@ class LinkOps(NamedTuple):
 
 def link_ops(kind: str) -> LinkOps | None:
     """The link functions of a linked kind, None for a kind that is never
-    linked."""
-    if kind in LINKED_KINDS:
-        key = LINKED_KINDS[kind]
-        return LinkOps(
-            lambda d: link_ids(d, key),
-            lambda saved, other: fan_out(saved, other, key),
-            lambda d, link: drop_link(d, key, link),
-        )
+    linked (pages, status pages and menus among them: the library holds
+    those)."""
     if kind in LINK_UNITS:
         return LinkOps(
             lambda d: unit_link_ids(d, kind),
@@ -684,10 +382,6 @@ def link_ops(kind: str) -> LinkOps | None:
             lambda d, link: drop_unit_link(d, kind, link),
         )
     return None
-
-
-# Every kind that links, list kinds first.
-LINKABLE_KINDS: tuple[str, ...] = (*LINKED_KINDS, *LINK_UNITS)
 
 
 # The six keys a `rooms` record holds, under their `behavior` names (the
@@ -710,13 +404,3 @@ def rooms_from_behavior(behavior_doc: Any) -> dict[str, Any] | None:
         return None
     kept = {key: copy.deepcopy(behavior_doc[key]) for key in ROOM_KEYS if key in behavior_doc}
     return {"schemaVersion": 1, **kept} if kept else None
-
-
-def link_places(documents: Mapping[str, Any], key: str) -> dict[str, list[str]]:
-    """For each ``linkId`` in ``documents`` (owner id to document), the
-    owners that hold it, sorted."""
-    places: dict[str, set[str]] = {}
-    for owner, document in documents.items():
-        for link in link_ids(document, key):
-            places.setdefault(link, set()).add(owner)
-    return {link: sorted(owners) for link, owners in sorted(places.items())}

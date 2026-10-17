@@ -33,11 +33,11 @@ Commands:
                                                  base_revision}
     wrist_assistant/watch_config/subscribe      {owner_watch_id}
     wrist_assistant/watch_voices/get            {watch_id}
-    wrist_assistant/watch_pages/link            {source_id, page_ids | units, targets,
-                                                 kind?, replace?}
-    wrist_assistant/watch_pages/link_all        {source_id, target_id}
-    wrist_assistant/watch_pages/places          {}
+    wrist_assistant/watch_pages/link            {source_id, units, targets,
+                                                 kind: "voice", replace?}
+    wrist_assistant/watch_pages/places          {kind?: "voice"}
     wrist_assistant/library/pick                {owner_id, kind, item_id, on? | unit?}
+    wrist_assistant/library/menus/create        {unit, name, sections}
     wrist_assistant/library/menus/copy          {owner_id, unit, name}
     wrist_assistant/library/menus/rename        {item_id, name}
     wrist_assistant/library/menus/delete        {item_id}
@@ -50,16 +50,14 @@ own ``id`` is its message number.)
 Pages, status pages and menus live once, in the home's library
 (``library.py``), and each device picks from it; its records are built from
 the library and its picks. The ``library/*`` commands tick and untick items
-on devices, copy, rename and delete them, and list the whole library with
-who picks what. ``watch_pages/link``, ``watch_pages/link_all`` and
-``watch_pages/places`` are the current panel's way of saying the same thing
-(a link is a pick of the same item; places are the items two or more
-devices pick, keyed by the ``linkId`` their records carry), kept so the
-panel works unchanged; the voice settings still link copy by copy
-(``page_links.py``). A link's refusals add ``unknown_device``,
-``system_page``, ``unit_taken`` (a target with its own menu, unless
-``replace``) and ``awaiting_move`` (a target watch whose iPhone may still
-move its own pages here, which a link made first would leave behind).
+on devices, make, copy, rename and delete menus, delete items, and list the
+whole library with who picks what. Only a watch's voice settings still link
+watch to watch, copy by copy (``page_links.py``): ``watch_pages/link`` and
+``watch_pages/places`` serve kind ``voice`` alone and refuse pages, status
+pages and menus ``invalid``. A link's refusals add ``unknown_device``,
+``unit_taken`` (a target with its own phrase library, unless ``replace``)
+and ``awaiting_move`` (a target watch whose iPhone may still move its own
+setup here, which a link made first would leave behind).
 
 ``watch_voices/get`` is the voice list a watch reported over the signed
 ``watch_voices_put`` (see ``watch_voices_store.py``), for the panel's Watch
@@ -87,7 +85,7 @@ from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 
-from .const import DOMAIN, WATCH_CONFIG_PANEL_KINDS, WATCH_CONFIG_PANEL_WRITER
+from .const import DOMAIN, WATCH_CONFIG_PANEL_KINDS
 from .device_lookup import paired_device_name
 from .listener_relay import (
     HTTP_ACTIONS_DELIVERY,
@@ -121,8 +119,8 @@ _CMD_SUBSCRIBE_DELIVERY = f"{DOMAIN}/watch_config/subscribe_delivery"
 _CMD_VOICES_GET = f"{DOMAIN}/watch_voices/get"
 _CMD_PAGES_LINK = f"{DOMAIN}/watch_pages/link"
 _CMD_PAGES_PLACES = f"{DOMAIN}/watch_pages/places"
-_CMD_PAGES_LINK_ALL = f"{DOMAIN}/watch_pages/link_all"
 _CMD_LIBRARY_PICK = f"{DOMAIN}/library/pick"
+_CMD_LIBRARY_MENUS_CREATE = f"{DOMAIN}/library/menus/create"
 _CMD_LIBRARY_MENUS_COPY = f"{DOMAIN}/library/menus/copy"
 _CMD_LIBRARY_MENUS_RENAME = f"{DOMAIN}/library/menus/rename"
 _CMD_LIBRARY_MENUS_DELETE = f"{DOMAIN}/library/menus/delete"
@@ -209,8 +207,8 @@ def async_register_watch_config_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_watch_voices_get)
     websocket_api.async_register_command(hass, ws_watch_pages_link)
     websocket_api.async_register_command(hass, ws_watch_pages_places)
-    websocket_api.async_register_command(hass, ws_watch_pages_link_all)
     websocket_api.async_register_command(hass, ws_library_pick)
+    websocket_api.async_register_command(hass, ws_library_menus_create)
     websocket_api.async_register_command(hass, ws_library_menus_copy)
     websocket_api.async_register_command(hass, ws_library_menus_rename)
     websocket_api.async_register_command(hass, ws_library_menus_delete)
@@ -728,48 +726,31 @@ def ws_watch_config_subscribe(
 def ws_watch_pages_link(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Put pages, status pages, menus or voice settings of one device on
-    other devices, linked.
+    """Put a watch's voice settings on other watches, linked.
 
-    Result: {"targets": {<target id>: {"pages": [ids added],
-                                       "status_pages": [ids added],
-                                       "adopted_status_pages": [ids]}},
-             "link_ids": {<page id>: <linkId>}}
+    Request: {source_id, targets, kind: "voice", units: ["phrases"], replace?}
+    Result:  {"targets": {<target id>: {"pages": [], "status_pages": [],
+                                        "adopted_status_pages": [],
+                                        "units": [units written]}},
+              "link_ids": {"phrases": <linkId>}}
 
-    Each page and every page and status page it reaches through its tiles
-    goes onto each target with the same id and one ``linkId``
-    (``WatchConfigStore.link_pages``); from then on a save of any copy
-    reaches every copy. With ``kind`` ``status_pages`` the ``page_ids`` are
-    status pages, linked as they are, and ``link_ids`` names theirs. A
-    starter status page links like any other; a target that holds its own
-    unlinked copy of one takes the link and the source's contents in place
-    (keeping its ``isHidden``), and that id is in its
-    ``adopted_status_pages``, not its ``status_pages`` list, which names only
-    the pages appended. A starter a target holds linked with another device
-    is refused ``id_taken`` when linked by name, and left out of a link of
-    pages or menus that reaches it.
+    The phrase library and its defaults go onto each target under one link
+    id, never the watch's own speech settings, and from then on a save of
+    any copy reaches every copy (``WatchConfigStore.link_units``). Only
+    watches hold voice.
 
-    With ``kind`` ``menus`` the op takes ``units`` (``anywhere``,
-    ``entity``) instead of ``page_ids``, and ``replace`` (default false):
-    each unit goes onto each target under one link id, with the pages and
-    status pages its slots open (``WatchConfigStore.link_units``). Each
-    target's entry gains ``units``, the units written there, and
-    ``link_ids`` is ``{<unit>: <linkId>}``. ``kind`` ``voice`` is the same
-    with the one unit ``phrases``: a watch's phrase library and its
-    defaults, never the watch's own speech settings, and nothing brought
-    along. Only watches hold voice.
+    Pages, status pages and menus no longer link: each lives once in the
+    library and a device picks it (``library/pick``). A ``kind`` of
+    ``pages``, ``status_pages`` or ``menus``, or none (the old default was
+    pages), is refused ``invalid`` with a message saying so.
 
-    Checked whole before anything is written. Refused
-    ``unknown_device`` (a source or target that is not a paired device),
-    ``not_found`` (a page the source does not list, or no menus or voice
-    there), ``system_page``, ``id_taken`` (a target holds another page under
-    that id), ``unit_taken`` (a target has its own menu or phrase library for
-    a unit, unless ``replace``), ``not_for_iphone`` (a kind an iPhone may not
-    own, voice among them),
-    ``awaiting_move`` (a target watch holds no record of a kind the link
-    writes while its iPhone may still move its own here), ``invalid``,
-    and ``unauthorized`` for a device the caller may not manage: the source
-    and every target follow the ``save`` rule.
+    Checked whole before anything is written. Refused ``unknown_device`` (a
+    source or target that is not a paired device), ``not_found`` (no voice
+    settings on the source), ``unit_taken`` (a target with its own phrase
+    library, unless ``replace``), ``not_for_iphone`` (voice is a watch's
+    alone), ``awaiting_move``, ``invalid``, and ``unauthorized`` for a
+    device the caller may not manage: the source and every target follow
+    the ``save`` rule.
     """
     store = _store(hass)
     if store is None:
@@ -777,20 +758,14 @@ def ws_watch_pages_link(
         return
     if not require_owner(hass, connection, msg, msg["source_id"], *msg["targets"]):
         return
-    kind = msg.get("kind", "pages")
     try:
-        if kind in LINK_UNITS:
-            result = store.link_units(
-                kind,
-                msg["source_id"],
-                msg.get("units"),
-                msg["targets"],
-                replace=msg.get("replace", False),
-            )
-        else:
-            result = store.link_pages(
-                msg["source_id"], msg.get("page_ids"), msg["targets"], kind=kind
-            )
+        result = store.link_units(
+            msg.get("kind", "pages"),
+            msg["source_id"],
+            msg.get("units"),
+            msg["targets"],
+            replace=msg.get("replace", False),
+        )
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
         return
@@ -798,87 +773,43 @@ def ws_watch_pages_link(
 
 
 @websocket_api.websocket_command(
-    {
-        vol.Required("type"): _CMD_PAGES_LINK_ALL,
-        vol.Required("source_id"): str,
-        vol.Required("target_id"): str,
-    }
+    {vol.Required("type"): _CMD_PAGES_PLACES, vol.Optional("kind"): str}
 )
-@callback
-def ws_watch_pages_link_all(
-    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
-) -> None:
-    """Put every page of one device on another, as linked pages (the
-    panel's Add all watch pages).
-
-    Result: {"pages": [ids added], "status_pages": [ids added],
-             "adopted_status_pages": [ids], "copied": ["menus"?, "rooms"?]}
-
-    ``adopted_status_pages`` names the target's own copies of starter status
-    pages that took the link in place (``link``'s reply says the same).
-
-    Every page but the system pages and every status page, linked as
-    ``link`` links them, then the source's menus and rooms copied once for a
-    kind the target holds no record of (``WatchConfigStore.link_device``,
-    the code the iPhone's signed ``phone_pages_link_watch`` runs). The same
-    refusals as ``link``; both devices follow the ``save`` rule.
-    """
-    store = _store(hass)
-    if store is None:
-        connection.send_error(msg["id"], "unavailable", "integration not ready")
-        return
-    if not require_owner(hass, connection, msg, msg["source_id"], msg["target_id"]):
-        return
-    try:
-        result = store.link_device(
-            msg["source_id"], msg["target_id"], updated_by=WATCH_CONFIG_PANEL_WRITER
-        )
-    except WatchConfigStoreError as err:
-        connection.send_error(msg["id"], err.code, err.message)
-        return
-    added = result["targets"][msg["target_id"]]
-    connection.send_result(
-        msg["id"],
-        {
-            "pages": added["pages"],
-            "status_pages": added["status_pages"],
-            "adopted_status_pages": added["adopted_status_pages"],
-            "copied": result["copied"],
-        },
-    )
-
-
-@websocket_api.websocket_command({vol.Required("type"): _CMD_PAGES_PLACES})
 @callback
 def ws_watch_pages_places(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Which devices hold each linked page, for the Devices menu and badges.
+    """Which watches hold each linked voice library, for the voice editor's
+    Devices menu.
 
-    Result: {"pages": {<linkId>: [owner id, ...]},
-             "status_pages": {<linkId>: [owner id, ...]},
-             "menus": {<linkId>: {"unit": "anywhere" | "entity",
-                                  "owners": [owner id, ...]}},
-             "voice": {<linkId>: {"unit": "phrases",
-                                  "owners": [owner id, ...]}}}
+    Result: {"voice": {<linkId>: {"unit": "phrases", "owners": [owner id, ...]}}}
 
     Only the devices the caller may manage are named (all of them for an
-    administrator), and a link none of them holds is left out.
+    administrator), and a link none of them holds is left out. Who has a
+    page, status page or menu is ``library/summary``: a ``kind`` of
+    ``pages``, ``status_pages`` or ``menus`` is refused ``invalid``.
     """
     store = _store(hass)
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
+    kind = msg.get("kind", "voice")
+    if kind not in LINK_UNITS:
+        connection.send_error(
+            msg["id"],
+            "invalid",
+            f"only voice links; who has {kind.replace('_', ' ')} is library/summary",
+        )
+        return
     admin = is_admin(connection)
     result: dict[str, dict[str, Any]] = {}
-    for kind, places in store.link_places().items():
+    for linked, places in store.link_places().items():
         shown: dict[str, Any] = {}
         for link, place in places.items():
-            owners = place["owners"] if isinstance(place, dict) else place
-            kept = [o for o in owners if admin or may_manage_owner(hass, connection, o)]
+            kept = [o for o in place["owners"] if admin or may_manage_owner(hass, connection, o)]
             if kept:
-                shown[link] = {**place, "owners": kept} if isinstance(place, dict) else kept
-        result[kind] = shown
+                shown[link] = {**place, "owners": kept}
+        result[linked] = shown
     connection.send_result(msg["id"], result)
 
 
@@ -956,7 +887,7 @@ def ws_library_pick(
     device no longer has it; the item stays in the library. A menu is the
     one the device uses for that unit from then on
     (``WatchConfigStore.library_pick``). ``revisions`` names every record
-    written, other devices' too where an item's link mark came or went.
+    written, which are only that device's own.
     Refused ``invalid``, ``unknown_device``, ``not_for_iphone``,
     ``not_found``, ``no_record``, ``awaiting_move``, and ``unauthorized``
     for a device the caller may not manage, or for an item put on that no
@@ -1019,6 +950,46 @@ def ws_library_menus_copy(
         return
     try:
         result = store.library_copy_menu(msg["owner_id"], msg["unit"], msg["name"])
+    except WatchConfigStoreError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_LIBRARY_MENUS_CREATE,
+        vol.Required("unit"): str,
+        vol.Required("name"): str,
+        vol.Required("sections"): dict,
+    }
+)
+@callback
+def ws_library_menus_create(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Make a new library menu that no device uses yet (the Menus tab's New
+    menu). A tick (``library/pick``) then puts it on a device; no device
+    moves off its menu here.
+
+    Request: {unit: "anywhere" | "entity", name, sections}
+    Result:  {"id": <new menu id>, "revisions": {}}
+
+    ``sections`` is the menu's sections exactly as a menus document holds
+    them for the unit: ``quickAction`` and ``pageSwitcher`` for
+    ``anywhere``, ``entityRadial`` for ``entity`` (the panel sends the app's
+    defaults), checked as every menus document is
+    (``WatchConfigStore.library_create_menu``). Administrators only (a menu
+    no device uses is an administrator's). Refused ``invalid`` (an unknown
+    unit, an empty name, sections of another shape) and ``unauthorized``.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    try:
+        result = store.library_create_menu(msg["unit"], msg["name"], msg["sections"])
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
         return
