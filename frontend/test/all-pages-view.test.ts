@@ -2,6 +2,7 @@
 // device's pages, draws a card per page with a chip per device under the
 // Complications list's head and device tabs, opens a page on its device,
 // and its Devices menu links a page to another device or takes it off one.
+// Told the other kind, the same element is the Status pages tab.
 
 import { describe, expect, it } from "vitest";
 
@@ -9,7 +10,7 @@ import type { HassLike, OwnerSummary } from "../src/ha-api.js";
 import { pageCrop } from "../src/watch-pages/all-pages.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
 import { keptWatchPagesSelection, takeNewWatchPageAsk } from "../src/watch-pages/kept.js";
-import { takeStatusPageAsk } from "../src/watch-status-pages/draft.js";
+import { takeNewStatusPageAsk, takeStatusPageAsk } from "../src/watch-status-pages/draft.js";
 import type { JsonObject, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { type PageCard, cardDevicePlaces } from "../src/watch-pages/all-pages-model.js";
 import { DEVICES_WAIT_TAG, type LinkDevice } from "../src/watch-pages/links.js";
@@ -34,8 +35,8 @@ const STARTER = "00000000-0000-0000-0000-000000000001";
 
 /** The tab over a watch and an iPhone. With `status`, the watch also holds
  * the status pages House (linked to the iPhone) and Doors, and both hold a
- * starter page. */
-function tab(status = false) {
+ * starter page. `kind` is what the element lists. */
+function tab(status = false, kind: "pages" | "status_pages" = "pages") {
   const n = ++made;
   const watch = `ap-w1-${n}`;
   const phone = `ap-p1-${n}`;
@@ -95,6 +96,7 @@ function tab(status = false) {
   } as unknown as HassLike;
   const Ctor = customElements.get("wa-all-pages") as unknown as new () => Record<string, unknown>;
   const el = new Ctor();
+  el.kind = kind;
   el.hass = hass;
   el.owners = owners;
   el.phones = true;
@@ -156,12 +158,12 @@ describe("the Pages tab", () => {
   it("narrows the cards to one kind of device with the Device menu", async () => {
     const { call, whole } = tab();
     await call<Promise<void>>("loadAll");
-    call("setKind", "iphone");
+    call("setDeviceKind", "iphone");
     const text = whole();
     expect(text).toMatch(/ap-name">Hall</);
     expect(text).toMatch(/ap-name">Mine</);
     expect(text).not.toMatch(/ap-name">Den</);
-    call("setKind", "all");
+    call("setDeviceKind", "all");
   });
 
   it("opens a page on its device, picked in the page editor", async () => {
@@ -369,54 +371,87 @@ describe("the Pages tab", () => {
   });
 });
 
-describe("the Pages tab's info pages", () => {
-  /** A tab with status pages, read, shown on the Info pages chip. Set back
-   * to Pages after, since the chip is remembered for the next tab. */
-  async function infoTab() {
-    const t = tab(true);
+describe("the Status pages tab", () => {
+  /** The element told to list status pages, read. */
+  async function statusTab() {
+    const t = tab(true, "status_pages");
     await t.call<Promise<void>>("loadAll");
-    t.call("setCardKind", "status_pages");
     return t;
   }
 
-  it("has the kind chips with their counts, and Pages first", async () => {
-    const { call, whole } = tab(true);
-    await call<Promise<void>>("loadAll");
-    const text = whole();
-    expect(text).toMatch(/pk-seg-btn on"[^>]*>Pages<span class="ap-kind-n">3</);
-    expect(text).toMatch(/>Info pages<span class="ap-kind-n">2</);
+  it("lists pages only on the Pages tab, with no kind chips", async () => {
+    const t = tab(true);
+    await t.call<Promise<void>>("loadAll");
+    const text = t.whole();
+    expect(text).toMatch(/<h1>Pages<\/h1>/);
     expect(text).toMatch(/ap-name">Hall</);
     expect(text).not.toMatch(/ap-name">House</);
+    expect(text).not.toContain("ap-kind-n");
+    expect(text).not.toMatch(/info page/i);
+    // Only the pages were read.
+    expect(t.sent.some((m) => (m.type as string).endsWith("watch_config/get") && m.kind === "status_pages")).toBe(false);
   });
 
-  it("shows the info pages, a linked one once, the starter pages left out", async () => {
-    const t = await infoTab();
+  it("shows the status pages, a linked one once, the starter pages left out", async () => {
+    const t = await statusTab();
     const text = t.whole();
-    expect(text).toContain("2 info pages on your watches and iPhones. An info page is a status page");
+    expect(text).toMatch(/<h1>Status pages<\/h1>/);
+    expect(text).toContain("2 status pages on your watches and iPhones. A status page is a read-only screen of rows that a tile or a menu slot opens.");
     expect(text).toMatch(/ap-name">House</);
     expect(text).toMatch(/ap-name">Doors</);
     expect(text).not.toMatch(/ap-name">Lights On</);
     expect(text).not.toMatch(/ap-name">Hall</);
     expect(text).toContain("0 rows");
     expect(text).toContain("sp-screen");
-    // No New page under Info pages: the status pages editor makes them.
-    expect(text).not.toContain("<span>New page</span>");
+    expect(text).toContain("Multi select");
+    expect(text).toMatch(/pk-shape-lead">Device</);
+    expect(text).toContain("Search status pages");
+    expect(text).not.toMatch(/info page/i);
     expect(t.card("House").copies.map((c) => c.device.ownerId)).toEqual([t.watch, t.phone]);
-    t.call("setCardKind", "pages");
+    // Only the status pages were read.
+    expect(t.sent.some((m) => (m.type as string).endsWith("watch_config/get") && m.kind === "pages")).toBe(false);
   });
 
-  it("opens an info page in its device's status pages editor, on that page", async () => {
-    const t = await infoTab();
+  it("has New status page, which opens the device's status pages editor and asks it for a new page", async () => {
+    const t = await statusTab();
+    const opened: string[] = [];
+    t.el.onOpen = (owner: string, kind: string, what?: string) => opened.push(`${owner}/${kind}/${what ?? "pages"}`);
+    expect(t.whole()).toContain("<span>New status page</span>");
+    expect(t.whole()).toContain("Pick the device to add a status page on");
+    expect(t.whole()).not.toContain("<span>New page</span>");
+    t.el.newOpen = true;
+    expect(t.whole()).toContain("Add a status page on</div>");
+    t.call("newPage", (t.el.devices as LinkDevice[]).find((d) => d.ownerId === t.phone));
+    expect(opened).toEqual([`${t.phone}/iphone/status_pages`]);
+    expect(takeNewStatusPageAsk(t.phone)).toBe(true);
+    expect(takeNewStatusPageAsk(t.phone)).toBe(false);
+    expect(takeNewWatchPageAsk(t.phone)).toBe(false);
+    t.call("setFilter", t.watch);
+    expect(t.whole()).toContain("Add a status page on Jesse's Watch");
+    t.call("setFilter", "all");
+  });
+
+  it("keeps its own device tab apart from the Pages tab's", async () => {
+    const t = await statusTab();
+    t.call("setFilter", t.phone);
+    const pages = tab(true);
+    await pages.call<Promise<void>>("loadAll");
+    expect(pages.whole()).toMatch(/pk-tab on"[^>]*id=ap-tab-all\s/);
+    expect(t.whole()).toMatch(new RegExp(`pk-tab on"[^>]*id=ap-tab-${t.phone}\\s`));
+    t.call("setFilter", "all");
+  });
+
+  it("opens a status page in its device's status pages editor, on that page", async () => {
+    const t = await statusTab();
     const opened: string[] = [];
     t.el.onOpen = (owner: string, kind: string, what?: string) => opened.push(`${owner}/${kind}/${what ?? "pages"}`);
     t.call("open", t.card("Doors"), "all");
     expect(opened).toEqual([`${t.watch}/watch/status_pages`]);
     expect(takeStatusPageAsk(t.watch)).toBe(DOORS);
-    t.call("setCardKind", "pages");
   });
 
-  it("links an info page from its Devices menu with the status_pages kind, then takes it off again", async () => {
-    const t = await infoTab();
+  it("links a status page from its Devices menu with the status_pages kind, then takes it off again", async () => {
+    const t = await statusTab();
     t.call("openDevices", t.card("Doors"));
     await t.call<Promise<void>>("toggle", t.card("Doors"), t.place(t.card("Doors"), t.phone));
     expect(t.sent.filter((m) => (m.type as string).endsWith("watch_pages/link")).map((m) => [m.source_id, m.page_ids, m.targets, m.kind]))
@@ -427,37 +462,42 @@ describe("the Pages tab's info pages", () => {
     const phoneStatus = t.held.get(`${t.phone}/status_pages`)!.document.statusPages as JsonObject[];
     expect(phoneStatus.map((p) => p.name)).toEqual(["Lights On", "House"]);
     expect((t.el.devicesNote as { text: string }).text).toBe("Taken off Jesse's iPhone.");
-    t.call("setCardKind", "pages");
   });
 
-  it("picks info pages only, and deletes them from every device without touching pages", async () => {
-    const t = await infoTab();
+  it("picks status pages, and deletes them from every device without touching pages", async () => {
+    const t = await statusTab();
     t.call("startSelect");
-    expect(t.whole()).toContain("Pick an info page to start.");
+    expect(t.whole()).toContain("Pick a status page to start.");
     t.call("selectShown", true);
     expect((t.el.selected as Set<string>).size).toBe(2);
     t.call("openBulkMenu", "delete");
-    expect(t.whole()).toContain("Delete 2 info pages from 2 devices?");
+    expect(t.whole()).toContain("Delete 2 status pages from 2 devices?");
     await t.call<Promise<void>>("runBulk", "delete");
     const saves = t.sent.filter((m) => (m.type as string).endsWith("watch_config/save")).map((m) => `${m.owner_watch_id as string}/${m.kind as string}`);
     expect(saves).toEqual([`${t.watch}/status_pages`, `${t.phone}/status_pages`]);
-    expect((t.el.bulkNote as { text: string }).text).toBe("Deleted 2 info pages.");
+    expect((t.el.bulkNote as { text: string }).text).toBe("Deleted 2 status pages.");
     expect((t.held.get(`${t.watch}/status_pages`)!.document.statusPages as JsonObject[]).map((p) => p.name)).toEqual(["Lights On"]);
     // Each device's menus were read for the Status page slots that showed
-    // them; the complications, which never open an info page, were not.
+    // them; the complications, which never open a status page, were not.
     const menuReads = t.sent.filter((m) => (m.type as string).endsWith("watch_config/get") && m.kind === "menus").map((m) => m.owner_watch_id);
     expect(menuReads).toEqual([t.watch, t.phone]);
     expect(t.sent.some((m) => (m.type as string).endsWith("/list"))).toBe(false);
     t.call("endSelect");
-    t.call("setCardKind", "pages");
   });
 
-  it("drops the picks when the kind chip changes", async () => {
-    const t = await infoTab();
+  it("drops what was picked, typed and open when told to list the other kind", async () => {
+    const t = await statusTab();
     t.call("startSelect");
     t.call("selectShown", true);
-    t.call("setCardKind", "pages");
+    t.call("setSearch", "do");
+    t.el.newOpen = true;
+    t.el.kind = "pages";
+    t.call("willUpdate", new Map([["kind", "status_pages"]]));
     expect((t.el.selected as Set<string>).size).toBe(0);
-    expect(t.el.cardKind).toBe("pages");
+    expect(t.el.selecting).toBe(false);
+    expect(t.el.search).toBe("");
+    expect(t.el.newOpen).toBe(false);
+    await t.call<Promise<void>>("loadAll");
+    expect(t.cards().filter((c) => c.kind === "pages").map((c) => c.name)).toEqual(["Hall", "Den", "Mine"]);
   });
 });

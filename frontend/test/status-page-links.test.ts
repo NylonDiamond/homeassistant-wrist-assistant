@@ -1,6 +1,7 @@
-// Linked status pages, the Info pages of the Pages tab: the link call's
-// kind, the status page editor's Devices menu, its Not on this list, and
-// taking a status page off another device.
+// Linked status pages, the cards of the Status pages tab: the link call's
+// kind, the status page editor's Devices menu, its Not on this list, taking
+// a status page off another device, and the tab's New status page as the
+// editor takes it.
 
 import { describe, expect, it } from "vitest";
 
@@ -14,6 +15,7 @@ import {
   statusPageLinkId,
   statusPageMayLink,
 } from "../src/watch-status-pages/links.js";
+import { askNewStatusPage } from "../src/watch-status-pages/draft.js";
 import { type StatusPagesDocument, removeStatusPage, statusPagesOf } from "../src/watch-status-pages/model.js";
 import "../src/watch-status-pages/status-pages-editor.js";
 import { type StatusPagesViewHost, renderPagesCard } from "../src/watch-status-pages/view.js";
@@ -175,8 +177,9 @@ describe("the status pages editor's linked pages", () => {
   let made = 0;
 
   /** The editor on a watch with House (linked to the iPhone), Doors and a
-   * starter page; the iPhone holds House and its own Phone page. */
-  async function editor() {
+   * starter page; the iPhone holds House and its own Phone page. With
+   * `newPage`, the Status pages tab asked for a new page there first. */
+  async function editor(newPage = false) {
     const n = ++made;
     const watch = `sl-w1-${n}`;
     const phone = `sl-p1-${n}`;
@@ -221,7 +224,10 @@ describe("the status pages editor's linked pages", () => {
     el.phones = true;
     el.watchId = watch;
     el.renderRoot = { querySelector: () => null };
+    // Never connected, so it never draws: its next draw is now.
+    Object.defineProperty(el, "updateComplete", { value: Promise.resolve(true) });
     const call = <T>(name: string, ...args: unknown[]): T => (el[name] as (...a: unknown[]) => T).apply(el, args);
+    if (newPage) askNewStatusPage(watch);
     await call<Promise<void>>("load", watch);
     await call<Promise<void>>("loadPlaces", watch);
     const host = () => call<StatusPagesViewHost>("viewHost");
@@ -296,5 +302,21 @@ describe("the status pages editor's linked pages", () => {
     expect(blocked).toContain("Save or discard your edits first.");
     await call<Promise<void>>("toggleDevice", HOUSE, { device: { ownerId: phone, name: "Jesse's iPhone", kind: "iphone" }, on: true, here: false });
     expect(sent.some((m) => (m.type as string).endsWith("watch_config/save"))).toBe(false);
+  });
+
+  it("adds a page as it opens when the Status pages tab asked for one, and only once", async () => {
+    const { call, host, watch, el } = await editor(true);
+    const pages = statusPagesOf(host().document);
+    expect(pages.map((p) => p.name).slice(0, 3)).toEqual(["Lights On", "House", "Doors"]);
+    expect(pages).toHaveLength(4);
+    expect((el.draft as { dirty: boolean }).dirty).toBe(true);
+    await call<Promise<void>>("load", watch);
+    await Promise.resolve();
+    expect(statusPagesOf(host().document)).toHaveLength(4);
+  });
+
+  it("adds nothing when no page was asked for", async () => {
+    const { host } = await editor();
+    expect(statusPagesOf(host().document)).toHaveLength(3);
   });
 });

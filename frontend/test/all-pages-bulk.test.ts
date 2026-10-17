@@ -313,7 +313,7 @@ describe("the result line", () => {
   });
 });
 
-describe("info pages", () => {
+describe("status pages", () => {
   const sp = (id: string, name: string, extra: Record<string, unknown> = {}) => ({ id, name, rows: [], ...extra });
   const sdoc = (...pages: Record<string, unknown>[]): StatusPagesDocument => ({ schemaVersion: 1, statusPages: pages });
   const HOUSE = U(11), DOORS = U(12), OWN = U(13);
@@ -326,10 +326,10 @@ describe("info pages", () => {
     ["p1", sdoc(sp(HOUSE, "House", { linkId: "S1" }))],
   ]);
   const all = pageCards(DEVICES, DOCS, STATUS);
-  const info = (name: string) => all.find((c) => c.kind === "status_pages" && c.name === name)!;
+  const status = (name: string) => all.find((c) => c.kind === "status_pages" && c.name === name)!;
 
   it("plan their links with the status_pages kind, against the target's status pages", () => {
-    const plan = addPlan([info("House"), info("Doors")], ["w2"], DOCS, clean, STATUS);
+    const plan = addPlan([status("House"), status("Doors")], ["w2"], DOCS, clean, STATUS);
     expect(plan.kind).toBe("status_pages");
     expect(plan.calls).toEqual([{ source: "w1", target: "w2", kind: "status_pages", pageIds: [HOUSE], names: ["House"] }]);
     expect(plan.taken).toEqual([{ ownerId: "w2", names: ["Doors"] }]);
@@ -337,7 +337,7 @@ describe("info pages", () => {
 
   it("ask the status pages editors, not the page editors, about unsaved edits", () => {
     const asked: string[] = [];
-    const plan = removePlan([info("House")], ["p1"], (id, kind) => {
+    const plan = removePlan([status("House")], ["p1"], (id, kind) => {
       asked.push(`${id}:${kind}`);
       return false;
     });
@@ -361,12 +361,12 @@ describe("info pages", () => {
         return Promise.resolve(undefined);
       },
     };
-    const added = await runAdd(io, addPlan([info("House")], ["w2"], DOCS, clean, STATUS), DEVICES);
+    const added = await runAdd(io, addPlan([status("House")], ["w2"], DOCS, clean, STATUS), DEVICES);
     // The status pages a link adds are the ones asked for, never "more".
-    expect(bulkResultText(added, DEVICES, new Set(["w2"]))).toEqual({ kind: "ok", text: "Added 1 info page to Chen's Watch." });
-    const gone = await runDelete(io, deletePlan([info("House")], DEVICES, clean), DEVICES);
+    expect(bulkResultText(added, DEVICES, new Set(["w2"]))).toEqual({ kind: "ok", text: "Added 1 status page to Chen's Watch." });
+    const gone = await runDelete(io, deletePlan([status("House")], DEVICES, clean), DEVICES);
     expect(gone.gone).toBe(1);
-    expect(bulkResultText(gone, DEVICES).text).toBe("Deleted 1 info page.");
+    expect(bulkResultText(gone, DEVICES).text).toBe("Deleted 1 status page.");
     expect(calls).toEqual([
       "link status_pages w1>w2 1",
       "remove status_pages w1 1", "refs status_pages w1 1",
@@ -374,15 +374,15 @@ describe("info pages", () => {
     ]);
   });
 
-  it("word the delete question and the result line for info pages", () => {
-    expect(deleteAskText(deletePlan([info("House")], DEVICES, clean), DEVICES)).toEqual({
-      title: "Delete 1 info page from 2 devices?",
+  it("word the delete question and the result line for status pages", () => {
+    expect(deleteAskText(deletePlan([status("House")], DEVICES, clean), DEVICES)).toEqual({
+      title: "Delete 1 status page from 2 devices?",
       body: "It comes off Jesse's Watch and Jesse's iPhone, with the menu slots there that show it. This cannot be undone.",
     });
     const base: BulkResult = { action: "remove", kind: "status_pages", done: [], gone: 0, also: 0, taken: [], dirty: ["p1"], blocked: [], lastOnly: [], failed: [], refs: [] };
     expect(bulkResultText(base, DEVICES).text).toBe("Left Jesse's iPhone alone: its status pages have unsaved edits. Save or discard the edits in its status pages editor first.");
-    expect(bulkResultText({ ...base, dirty: [] }, DEVICES).text).toBe("None of those info pages are on those devices.");
+    expect(bulkResultText({ ...base, dirty: [] }, DEVICES).text).toBe("None of those status pages are on those devices.");
     expect(bulkResultText({ ...base, action: "add", dirty: [], taken: [{ ownerId: "w2", names: ["Doors"] }] }, DEVICES).text)
-      .toBe("Not added to Chen's Watch: Doors. It already has an info page of its own with the same id.");
+      .toBe("Not added to Chen's Watch: Doors. It already has a status page of its own with the same id.");
   });
 });

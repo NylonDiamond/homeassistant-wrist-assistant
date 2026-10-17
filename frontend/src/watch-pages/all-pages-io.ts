@@ -1,5 +1,5 @@
-// The calls the Pages tab's multi-select makes (`all-pages-bulk.ts`), for
-// pages and for info pages (status pages): linking, taking them off a
+// The calls the multi-select of the Pages and Status pages tabs makes
+// (`all-pages-bulk.ts`), for pages and for status pages: linking, taking them off a
 // device in one save, and clearing what opened them there. Kept
 // apart from `page-links-io.ts` so the page editor does not load the
 // status pages' half.

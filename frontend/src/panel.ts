@@ -11523,10 +11523,13 @@ export class WristAssistantPanel extends LitElement {
     if (tab === "home") return this.renderHome();
     // The iPhone app: its row, then the screen on the shared iPhone.
     if (tab === "iphone") return this.withIphoneRow(this.renderIphoneScreen());
-    // The Pages tab, on `/all-pages`: every page on every watch and iPhone.
-    // A card opens its page in that device's page editor.
-    if (tab === "pages") {
+    // The Pages tab, on `/all-pages`, and the Status pages tab, on
+    // `/all-status-pages`: every page, or every status page, on every watch
+    // and iPhone, one element told which. A card opens its page in that
+    // device's page editor or status pages editor.
+    if (tab === "pages" || tab === "status-pages") {
       return renderAllPagesView({
+        kind: tab === "status-pages" ? "status_pages" : "pages",
         hass: this.hass, owners: this.owners, ownersReady: this.linkReady, phones: this.phonePages,
         icons: this.icons, iconsTick: this.iconsTick,
         onOpen: (ownerId, kind, what) => {

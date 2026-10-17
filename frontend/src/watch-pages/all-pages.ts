@@ -1,29 +1,26 @@
-// The Pages tab: every page on every watch and iPhone, one card each.
+// The Pages tab and the Status pages tab: every page, or every status page,
+// on every watch and iPhone, one card each. One element draws both, told by
+// its `kind` which records it lists.
 //
 // A linked page is one card with a chip per device it is on (dimmed where
-// that device hides it). The head is the Complications list page's: the
-// On device | Page only toggle, Multi select, the Device menu (watches or
-// iPhones) and the search, over a row of device tabs. A card opens its page in that device's page editor, and its
-// Devices menu puts the page on another device or takes it off one, the
-// page editor's own menu (`devices-menu.ts`) with the same writes
-// (`page-links-io.ts`). What can be worked out without the element is in
+// that device hides it). The head is the Complications list page's:
+// Multi select, the Device menu (watches or iPhones) and the search, over a
+// row of device tabs. A card opens its page in that device's page editor, or
+// a status page in its status pages editor, and its Devices menu puts the
+// page on another device or takes it off one, the editor's own menu
+// (`devices-menu.ts`) with the same writes (`page-links-io.ts`,
+// `links-io.ts`). What can be worked out without the element is in
 // `all-pages-model.ts`.
 //
-// Every device's pages are read when the tab opens, and a device's again
-// whenever Home Assistant says its pages changed (`subscribeWatchConfig`).
-// The panel loads this file the first time the tab opens
-// (`all-pages-hook.ts`).
+// Every device's record of the tab's kind is read when the tab opens, and a
+// device's again whenever Home Assistant says it changed
+// (`subscribeWatchConfig`). The panel loads this file the first time either
+// tab opens (`all-pages-hook.ts`).
 //
 // Multi select (or Cmd/Ctrl+click on a card) turns the cards into tick
 // boxes, and a bar under the tabs, as on the Complications list, adds the
 // picked pages to a device, takes them off one or deletes them everywhere.
 // Its rules and writes are `all-pages-bulk.ts`.
-//
-// A row of kind chips over the device tabs, Pages | Info pages, switches
-// the whole tab to the status pages, which the tab calls info pages: every
-// device's `status_pages` record is read too, a linked status page is one
-// card, and its Devices menu and Multi select work as a page's do. An info
-// page card opens that device's status pages editor on the page.
 
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
@@ -33,7 +30,7 @@ import { deviceColor, deviceColorsCache } from "../device-colors.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { watchFrameStyles } from "../watch-frame.js";
-import { askStatusPage, keptStatusPagesDraft } from "../watch-status-pages/draft.js";
+import { askNewStatusPage, askStatusPage, keptStatusPagesDraft } from "../watch-status-pages/draft.js";
 import { takeStatusPageOff } from "../watch-status-pages/links-io.js";
 import { type StatusPagesDocument, asStatusPagesDocument } from "../watch-status-pages/model.js";
 import { renderStatusPagePicture, statusPagesViewStyles } from "../watch-status-pages/view.js";
@@ -48,9 +45,9 @@ import {
   allPagesLead,
   cardDetail,
   cardDevicePlaces,
-  cardKindChips,
   cardNoun,
   cardsOfKind,
+  cardsTitle,
   copyOn,
   devicesDirtyText,
   emptyText,
@@ -60,7 +57,6 @@ import {
   linkSource,
   openCopy,
   pageCards,
-  resolveCardKind,
   resolveFilter,
   resolveKind,
   shownCards,
@@ -136,41 +132,45 @@ const STATES_EVERY_MS = 2000;
  * burst of saves reads once. */
 const RELOAD_DELAY_MS = 250;
 
-/** Where the tab's view is remembered in this browser, as the Complications
- * list remembers its tab and its On device | Shape only toggle. */
-const VIEW_STORE_KEY = "wrist-assistant-panel.all-pages.v1";
+/** Where each tab's view is remembered in this browser, as the Complications
+ * list remembers its tab and its On device | Shape only toggle. The Pages
+ * tab keeps the key it always had. */
+const VIEW_STORE_KEYS: Record<CardKind, string> = {
+  pages: "wrist-assistant-panel.all-pages.v1",
+  status_pages: "wrist-assistant-panel.all-status-pages.v1",
+};
 
-/** The kind chip, the device tab and the Device menu last used. */
+/** The device tab and the Device menu last used on one tab. */
 interface KeptView {
   filter?: PagesFilter;
   kind: PagesKind;
-  cards: CardKind;
 }
 
-let kept: KeptView | undefined;
+const kept = new Map<CardKind, KeptView>();
 
-/** The view as last left, read once from storage. A browser with storage
- * off keeps it while the panel is open. */
-function keptView(): KeptView {
-  if (kept !== undefined) return kept;
-  const view: KeptView = { kind: "all", cards: "pages" };
+/** A tab's view as last left, read once from storage. A browser with
+ * storage off keeps it while the panel is open. */
+function keptView(cards: CardKind): KeptView {
+  const held = kept.get(cards);
+  if (held !== undefined) return held;
+  const view: KeptView = { kind: "all" };
   try {
-    const raw = window.localStorage.getItem(VIEW_STORE_KEY);
-    const saved = raw ? (JSON.parse(raw) as { filter?: unknown; kind?: unknown; cards?: unknown }) : {};
+    const raw = window.localStorage.getItem(VIEW_STORE_KEYS[cards]);
+    const saved = raw ? (JSON.parse(raw) as { filter?: unknown; kind?: unknown }) : {};
     if (typeof saved.filter === "string") view.filter = saved.filter;
     if (saved.kind === "watch" || saved.kind === "iphone") view.kind = saved.kind;
-    view.cards = resolveCardKind(saved.cards);
   } catch {
     /* Storage off: the defaults. */
   }
-  kept = view;
+  kept.set(cards, view);
   return view;
 }
 
-function keepView(change: Partial<KeptView>): void {
-  kept = { ...keptView(), ...change };
+function keepView(cards: CardKind, change: Partial<KeptView>): void {
+  const view = { ...keptView(cards), ...change };
+  kept.set(cards, view);
   try {
-    window.localStorage.setItem(VIEW_STORE_KEY, JSON.stringify(kept));
+    window.localStorage.setItem(VIEW_STORE_KEYS[cards], JSON.stringify(view));
   } catch {
     /* Storage off: the choice still holds while the panel is open. */
   }
@@ -189,18 +189,18 @@ const sameId = (a: string, b: string): boolean => a.toUpperCase() === b.toUpperC
  * the delete question in the bar itself. */
 type BulkKind = "add" | "remove" | "delete";
 
-/** Whether a device's page editor, or for info pages its status pages
+/** Whether a device's page editor, or for status pages its status pages
  * editor, holds unsaved edits in this tab. */
 const dirtyHere = (ownerId: string, kind: CardKind = "pages"): boolean =>
   (kind === "status_pages" ? keptStatusPagesDraft(ownerId)?.dirty : keptWatchPagesDraft(ownerId)?.dirty) ?? false;
-
-/** The records the tab reads of each device, and the kinds it listens to. */
-const READ_KINDS: readonly CardKind[] = ["pages", "status_pages"];
 
 /** One device's record of one kind as read (`readOne`). */
 type ReadResult<D> = [string, D | undefined | "failed", PagesRecordFacts?];
 
 export class WaAllPages extends LitElement {
+  /** What the tab lists: pages (the Pages tab), or status pages (the
+   * Status pages tab). Only that kind's records are read. */
+  @property({ attribute: false }) kind: CardKind = "pages";
   @property({ attribute: false }) owners: readonly OwnerSummary[] = [];
   @property({ attribute: false }) ownersReady = false;
   @property({ attribute: false }) phones = false;
@@ -220,17 +220,12 @@ export class WaAllPages extends LitElement {
   @state() private facts: ReadonlyMap<string, PagesRecordFacts> = new Map();
   /** The same of each device's status pages record. */
   @state() private statusFacts: ReadonlyMap<string, PagesRecordFacts> = new Map();
-  /** The kind chip: pages, or info pages. */
-  @state() private cardKind: CardKind = keptView().cards;
   /** The devices whose pages could not be read last time. */
   @state() private failed: readonly string[] = [];
   @state() private readState: "idle" | "loading" | "ready" = "idle";
   /** False on an integration without linked pages: no Devices menus. */
   @state() private linksOn = true;
-  @state() private filter: PagesFilter | undefined = keptView().filter;
   @state() private search = "";
-  /** The head's Device menu. */
-  @state() private kind: PagesKind = keptView().kind;
   @state() private menuAt?: MenuAt;
   @state() private linking = false;
   @state() private devicesNote?: WatchPagesNote;
@@ -300,7 +295,10 @@ export class WaAllPages extends LitElement {
     this.deviceSig = undefined;
   }
 
-  protected override willUpdate(_changed: PropertyValues): void {
+  protected override willUpdate(changed: PropertyValues): void {
+    // Told to list the other kind: what was open, picked or typed was of the
+    // old one, and the new one's records are read.
+    if (changed.has("kind") && changed.get("kind") !== undefined) this.kindChanged();
     const devices = this.devices;
     const sig = devices.map((d) => d.ownerId).join(",");
     if (this.hassNow !== undefined && this.isConnected && sig !== this.deviceSig) {
@@ -310,6 +308,32 @@ export class WaAllPages extends LitElement {
     }
   }
 
+  private kindChanged(): void {
+    this.endSubscriptions();
+    this.loadSeq++;
+    this.deviceSig = undefined;
+    this.readState = "idle";
+    this.failed = [];
+    this.search = "";
+    this.selecting = false;
+    this.selected = new Set();
+    this.anchor = undefined;
+    this.bulkMenu = undefined;
+    this.bulkNote = undefined;
+    this.newOpen = false;
+    this.closeDevices();
+  }
+
+  /** The device tab picked, kept for each tab apart (`keptView`). */
+  private get filter(): PagesFilter | undefined {
+    return keptView(this.kind).filter;
+  }
+
+  /** The head's Device menu, kept the same way. */
+  private get deviceKind(): PagesKind {
+    return keptView(this.kind).kind;
+  }
+
   private colorsFor = deviceColorsCache();
 
   /** A device's color (`device-colors.ts`), the one it wears on every tab. */
@@ -317,7 +341,7 @@ export class WaAllPages extends LitElement {
 
   /** The watches that wait for their iPhone to move their pages (or their
    * status pages) here, so none can go on them yet (`awaitingMove`). */
-  private waitingDevices(kind: CardKind = this.cardKind): Set<string> {
+  private waitingDevices(kind: CardKind = this.kind): Set<string> {
     return awaitingMove(this.owners, kind === "status_pages" ? this.statusFacts : this.facts);
   }
 
@@ -331,7 +355,7 @@ export class WaAllPages extends LitElement {
     return linkDevicesOf(this.owners, this.phones);
   }
 
-  /** Every card of both kinds. */
+  /** Every card of the kinds read. */
   private get cards(): PageCard[] {
     const devices = this.devices;
     const memo = this.cardsMemo;
@@ -342,29 +366,29 @@ export class WaAllPages extends LitElement {
     return cards;
   }
 
-  /** The cards of the kind chip picked: all the rest of the tab works on
-   * these. */
+  /** The cards of the tab's kind: all the rest of the tab works on these. */
   private get kindCards(): PageCard[] {
-    return cardsOfKind(this.cards, this.cardKind);
+    return cardsOfKind(this.cards, this.kind);
   }
 
   // ── reading ────────────────────────────────────────────────────────────
 
-  /** Read every device's pages and status pages, and whether pages can be
+  /** Read every device's record of the tab's kind, and whether pages can be
    * linked here. Only the newest read lands. */
   private async loadAll(): Promise<void> {
     const hass = this.hassNow;
     if (!hass) return;
     const seq = ++this.loadSeq;
     const devices = this.devices;
+    const kind = this.kind;
     if (this.readState === "idle") this.readState = "loading";
     const links = fetchWatchPagesPlaces(hass).then(
       () => true,
       (err: unknown) => watchCommandError(err).code !== "unknown_command",
     );
-    const [pageReads, statusReads] = await Promise.all(READ_KINDS.map((kind) => Promise.all(devices.map((d) => this.readOne(hass, d.ownerId, kind)))));
+    const reads = await Promise.all(devices.map((d) => this.readOne(hass, d.ownerId, kind)));
     const linksOn = await links;
-    if (seq !== this.loadSeq) return;
+    if (seq !== this.loadSeq || kind !== this.kind) return;
     const failed = new Set<string>();
     const land = <D>(reads: readonly ReadResult<D>[], heldDocs: ReadonlyMap<string, D>, heldFacts: ReadonlyMap<string, PagesRecordFacts>) => {
       const docs = new Map<string, D>();
@@ -381,12 +405,15 @@ export class WaAllPages extends LitElement {
       }
       return { docs, facts };
     };
-    const pages = land(pageReads as ReadResult<WatchPagesDocument>[], this.docs, this.facts);
-    const status = land(statusReads as ReadResult<StatusPagesDocument>[], this.statusDocs, this.statusFacts);
-    this.docs = pages.docs;
-    this.facts = pages.facts;
-    this.statusDocs = status.docs;
-    this.statusFacts = status.facts;
+    if (kind === "status_pages") {
+      const status = land(reads as ReadResult<StatusPagesDocument>[], this.statusDocs, this.statusFacts);
+      this.statusDocs = status.docs;
+      this.statusFacts = status.facts;
+    } else {
+      const pages = land(reads as ReadResult<WatchPagesDocument>[], this.docs, this.facts);
+      this.docs = pages.docs;
+      this.facts = pages.facts;
+    }
     this.failed = devices.map((d) => d.ownerId).filter((id) => failed.has(id));
     this.linksOn = linksOn;
     this.readState = "ready";
@@ -437,18 +464,19 @@ export class WaAllPages extends LitElement {
     }, RELOAD_DELAY_MS));
   }
 
-  /** Hear every save of each device's pages and status pages, whoever made
-   * it. */
+  /** Hear every save of each device's record of the tab's kind, whoever
+   * made it. */
   private startSubscriptions(devices: readonly LinkDevice[]): void {
     this.endSubscriptions();
     const hass = this.hassNow;
     if (!hass) return;
     const seq = this.subscribeSeq;
+    const kind = this.kind;
     for (const device of devices) {
       const ownerId = device.ownerId;
       subscribeWatchConfig(hass, ownerId, (event) => {
         if (seq !== this.subscribeSeq) return;
-        if (event.kind === "pages" || event.kind === "status_pages") this.reloadOne(ownerId, event.kind);
+        if (event.kind === kind) this.reloadOne(ownerId, kind);
       }).then(
         (unsubscribe) => {
           if (seq === this.subscribeSeq) this.unsubscribers.push(unsubscribe);
@@ -472,8 +500,8 @@ export class WaAllPages extends LitElement {
 
   /** A device tab picked: shown, and remembered. */
   private setFilter(filter: PagesFilter): void {
-    this.filter = filter;
-    keepView({ filter });
+    keepView(this.kind, { filter });
+    this.requestUpdate();
     this.closeDevices();
     this.pruneSelected();
   }
@@ -484,38 +512,30 @@ export class WaAllPages extends LitElement {
   }
 
   /** The Device menu: all pages, or those on a watch, or on an iPhone. */
-  private setKind(kind: PagesKind): void {
-    this.kind = kind;
-    keepView({ kind });
+  private setDeviceKind(kind: PagesKind): void {
+    keepView(this.kind, { kind });
+    this.requestUpdate();
     this.closeDevices();
     this.pruneSelected();
   }
 
-  /** A kind chip picked: pages, or info pages. The picks are of one kind
-   * at a time, so they go. */
-  private setCardKind(kind: CardKind): void {
-    if (kind === this.cardKind || this.bulkBusy !== undefined) return;
-    this.cardKind = kind;
-    keepView({ cards: kind });
-    this.closeDevices();
-    this.selected = new Set();
-    this.anchor = undefined;
-    this.bulkMenu = undefined;
-    this.bulkNote = undefined;
-    this.newOpen = false;
-  }
-
-  /** New page on a device: its page editor opens and adds one. */
+  /** New page on a device: its page editor opens and adds one. On the
+   * Status pages tab, New status page: its status pages editor does. */
   private newPage(device: LinkDevice): void {
     this.newOpen = false;
+    if (this.kind === "status_pages") {
+      askNewStatusPage(device.ownerId);
+      this.onOpen?.(device.ownerId, device.kind, "status_pages");
+      return;
+    }
     askNewWatchPage(device.ownerId);
     this.onOpen?.(device.ownerId, device.kind);
   }
 
-  /** Open the page in its device's page editor, on that page, or an info
+  /** Open the page in its device's page editor, on that page, or a status
    * page in that device's status pages editor. */
   private open(card: PageCard, filter: PagesFilter): void {
-    const copy = openCopy(card, filter, this.kindNow());
+    const copy = openCopy(card, filter, this.deviceKindNow());
     const pageId = watchPageId(copy.page);
     if (card.kind === "status_pages") {
       askStatusPage(copy.device.ownerId, pageId);
@@ -558,14 +578,14 @@ export class WaAllPages extends LitElement {
     const target = place.device.ownerId;
     const name = place.device.name;
     const pageId = card.pageId;
-    const info = card.kind === "status_pages";
+    const status = card.kind === "status_pages";
     let note: WatchPagesNote;
     this.linking = true;
     this.devicesNote = undefined;
     try {
       if (place.on) {
         const there = watchPageId(copyOn(card, target)!.page);
-        const refusal = info ? await takeStatusPageOff(hass, target, there, name) : await takePageOff(hass, target, there, name);
+        const refusal = status ? await takeStatusPageOff(hass, target, there, name) : await takePageOff(hass, target, there, name);
         note = refusal === undefined ? { kind: "ok", text: `Taken off ${name}.` } : { kind: "err", text: refusal };
       } else {
         const source = linkSource(card, dirtyHere);
@@ -574,8 +594,8 @@ export class WaAllPages extends LitElement {
         } else {
           const sourcePage = watchPageId(copyOn(card, source)!.page);
           const reply = await linkWatchPages(hass, source, [sourcePage], [target], card.kind);
-          const also = info ? undefined : linkAlsoAddedText(reply, target, [sourcePage], this.docs.get(source));
-          const free = !info && this.facts.get(target)?.free === true ? freePlanText([name]) : undefined;
+          const also = status ? undefined : linkAlsoAddedText(reply, target, [sourcePage], this.docs.get(source));
+          const free = !status && this.facts.get(target)?.free === true ? freePlanText([name]) : undefined;
           note = { kind: "ok", text: [`Added to ${name}.`, also, free].filter((t) => t !== undefined).join(" ") };
         }
       }
@@ -620,14 +640,14 @@ export class WaAllPages extends LitElement {
   // ── picking ────────────────────────────────────────────────────────────
 
   /** The Device menu's kind, All when the home has no menu for it. */
-  private kindNow(): PagesKind {
-    return resolveKind(this.kind, this.devices);
+  private deviceKindNow(): PagesKind {
+    return resolveKind(this.deviceKind, this.devices);
   }
 
   /** The cards shown now, under the kind chip, the tab, the search and the
    * Device menu. */
   private shownNow(): PageCard[] {
-    return shownCards(this.kindCards, resolveFilter(this.filter, this.devices), this.search, this.kindNow());
+    return shownCards(this.kindCards, resolveFilter(this.filter, this.devices), this.search, this.deviceKindNow());
   }
 
   /** The picked cards among those shown, in the order shown. */
@@ -744,7 +764,7 @@ export class WaAllPages extends LitElement {
     } catch (err) {
       note = { kind: "err", text: watchCommandError(err).message };
     }
-    this.bulkBusy = `Reading the ${cardNoun(this.cardKind, 2)} again…`;
+    this.bulkBusy = `Reading the ${cardNoun(this.kind, 2)} again…`;
     try {
       await this.loadAll();
     } finally {
@@ -760,13 +780,14 @@ export class WaAllPages extends LitElement {
   protected override render(): TemplateResult {
     const devices = this.devices;
     if (devices.length === 0 && !this.ownersReady) return html`<div class="ap-page"><div class="ap-wrap"><p class="ap-empty">Loading…</p></div></div>`;
-    const all = this.cards;
-    const what = this.cardKind;
+    const what = this.kind;
     const cards = this.kindCards;
     const filter = resolveFilter(this.filter, devices);
-    const kind = this.kindNow();
+    const kind = this.deviceKindNow();
     const shown = shownCards(cards, filter, this.search, kind);
-    const loading = this.readState !== "ready" && all.length === 0;
+    // Counted in the tab's kind only, so cards of the other kind, read
+    // before the element was told to switch, never hide the loading line.
+    const loading = this.readState !== "ready" && cards.length === 0;
     const failed = this.failed.map((id) => devices.find((d) => d.ownerId === id)?.name).filter((n): n is string => n !== undefined);
     const tabbed = devices.length > 1;
     const one = cardNoun(what);
@@ -774,23 +795,24 @@ export class WaAllPages extends LitElement {
     const hint = this.selecting
       ? `Click ${many} to pick them. Shift+click picks every ${one} between two.`
       : `Click ${aCard(what)} to edit it.${this.linksOn && devices.length > 1 ? " Devices on a card puts it on another watch or iPhone." : ""}`;
+    const reading = `Reading every device's ${many}…`;
     return html`<div class="ap-page"><div class="ap-wrap">
       <div class="ap-head">
         <div class="ap-head-text">
-          <h1>Pages</h1>
-          <p class="ap-lead">${loading ? "Reading every device's pages…" : allPagesLead(cards.length, what)}</p>
+          <h1>${cardsTitle(what)}</h1>
+          <p class="ap-lead">${loading ? reading : allPagesLead(cards.length, what)}</p>
         </div>
-        ${devices.length === 0 || what === "status_pages" ? nothing : this.renderNew(filter, devices)}
+        ${devices.length === 0 ? nothing : this.renderNew(filter, devices)}
       </div>
-      ${failed.length === 0 ? nothing : html`<p class="ap-warn" role="status">Could not read the pages of ${failed.join(", ")}. They show as last read.</p>`}
-      <div class="pk-surface pk-page" role="region" aria-label="Your pages">
+      ${failed.length === 0 ? nothing : html`<p class="ap-warn" role="status">Could not read the ${many} of ${failed.join(", ")}. They show as last read.</p>`}
+      <div class="pk-surface pk-page" role="region" aria-label=${`Your ${many}`}>
         <div class="pk-pin">
-          ${this.renderHead(all, cards, filter, devices)}
+          ${this.renderHead(cards, filter, devices)}
           ${tabbed ? this.renderTabs(devices, cards, filter) : nothing}
           ${this.selecting ? this.renderBar(shown, devices) : nothing}
         </div>
         <div class="pk-body" role=${tabbed ? "tabpanel" : nothing} aria-labelledby=${tabbed ? `ap-tab-${filter}` : nothing}>
-          ${loading ? html`<p class="ap-empty">Reading every device's pages…</p>`
+          ${loading ? html`<p class="ap-empty">${reading}</p>`
             : shown.length === 0 ? html`<p class="ap-empty">${emptyText(filter, devices, this.search, kind, what)}</p>`
             : html`<div class="ap-grid" role="list">${shown.map((card) => this.renderCard(card, filter, devices, cards))}</div>`}
         </div>
@@ -800,20 +822,17 @@ export class WaAllPages extends LitElement {
   }
 
   /**
-   * The head, the Complications list's: the kind chips (Pages | Info pages)
-   * where its On device | Shape only toggle is, Multi select, the Device
-   * menu, and the search at the right. A page is the same page on a watch
-   * and on an iPhone, so there is no On device toggle: a card draws the
-   * page alone.
+   * The head, the Complications list's: Multi select, the Device menu, and
+   * the search at the right. A page is the same page on a watch and on an
+   * iPhone, so there is no On device toggle: a card draws the page alone.
    */
-  private renderHead(all: readonly PageCard[], cards: readonly PageCard[], filter: PagesFilter, devices: readonly LinkDevice[]): TemplateResult {
+  private renderHead(cards: readonly PageCard[], filter: PagesFilter, devices: readonly LinkDevice[]): TemplateResult {
     const on = this.selecting;
     const busy = this.bulkBusy !== undefined;
-    const many = cardNoun(this.cardKind, 2);
+    const many = cardNoun(this.kind, 2);
     return html`<div class="pk-head">
-      ${this.renderCardKinds(all)}
       <button type="button" class="pk-pick-btn ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
-        title=${on ? `Back to opening one ${cardNoun(this.cardKind)} at a time` : `Pick several ${many} to add, remove or delete together`}
+        title=${on ? `Back to opening one ${cardNoun(this.kind)} at a time` : `Pick several ${many} to add, remove or delete together`}
         ?disabled=${busy} @click=${() => (on ? this.endSelect() : this.startSelect())}>
         ${uiIcon("checklist")}<span>Multi select</span></button>
       ${hasBothKinds(devices) ? this.renderKinds(cards, filter) : nothing}
@@ -825,26 +844,18 @@ export class WaAllPages extends LitElement {
     </div>`;
   }
 
-  /** The kind chips: Pages, or Info pages (the status pages), each with
-   * how many cards it holds. */
-  private renderCardKinds(all: readonly PageCard[]): TemplateResult {
-    const busy = this.bulkBusy !== undefined;
-    return html`<span class="pk-seg ap-kinds" role="group" aria-label="Show pages or info pages">
-      ${cardKindChips(all).map((chip) => html`<button type="button" class="pk-seg-btn ${chip.key === this.cardKind ? "on" : ""}"
-        aria-pressed=${chip.key === this.cardKind ? "true" : "false"} ?disabled=${busy}
-        title=${chip.key === "status_pages" ? "Info pages are the status pages: lists of live states a tile, a menu slot or Siri opens" : "The pages you swipe between"}
-        @click=${() => this.setCardKind(chip.key)}>${chip.label}<span class="ap-kind-n">${chip.count}</span></button>`)}
-    </span>`;
-  }
-
   /**
-   * New page, at the head's right as New complication is on its tab. On a
-   * device's tab, or in a home with one device, it adds the page there;
-   * otherwise it asks which device first.
+   * New page, at the head's right as New complication is on its tab, or
+   * New status page on the Status pages tab. On a device's tab, or in a
+   * home with one device, it adds the page there; otherwise it asks which
+   * device first.
    */
   private renderNew(filter: PagesFilter, devices: readonly LinkDevice[]): TemplateResult {
     const target = devices.find((d) => d.ownerId === filter) ?? (devices.length === 1 ? devices[0] : undefined);
     const open = this.newOpen && target === undefined;
+    const one = cardNoun(this.kind);
+    const label = `New ${one}`;
+    const head = `Add ${aCard(this.kind)} on`;
     return html`<div class="ap-new" @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape" && open) { e.stopPropagation(); this.newOpen = false; } }}
       @focusout=${(e: FocusEvent) => {
         const to = e.relatedTarget;
@@ -852,11 +863,11 @@ export class WaAllPages extends LitElement {
       }}>
       <button type="button" class="ap-new-btn" aria-haspopup=${target === undefined ? "menu" : nothing}
         aria-expanded=${target === undefined ? (open ? "true" : "false") : nothing}
-        title=${target === undefined ? "Pick the device to add a page on" : `Add a page on ${target.name}`}
+        title=${target === undefined ? `Pick the device to add ${aCard(this.kind)} on` : `${head} ${target.name}`}
         @click=${() => (target === undefined ? (this.newOpen = !this.newOpen) : this.newPage(target))}>
-        ${uiIcon("plus")}<span>New page</span></button>
-      ${open ? html`<div class="ap-new-menu" role="menu" aria-label="Add a page on">
-        <div class="ap-new-h">Add a page on</div>
+        ${uiIcon("plus")}<span>${label}</span></button>
+      ${open ? html`<div class="ap-new-menu" role="menu" aria-label=${head}>
+        <div class="ap-new-h">${head}</div>
         ${devices.map((d) => html`<button type="button" class="ap-new-row" role="menuitem"
           style=${`--dc:${this.colorOf(d.ownerId) ?? "var(--wa-line-strong)"}`} @click=${() => this.newPage(d)}>
           ${uiIcon(d.kind === "iphone" ? "phone" : "watch")}<span>${d.name}</span></button>`)}
@@ -867,12 +878,12 @@ export class WaAllPages extends LitElement {
   /** The Device menu, the Shape menu's look: All, Watches, iPhones, each
    * with how many pages the tab and the search have left. */
   private renderKinds(cards: readonly PageCard[], filter: PagesFilter): TemplateResult {
-    const kind = this.kindNow();
+    const kind = this.deviceKindNow();
     const options = kindOptions(shownCards(cards, filter, this.search));
     return html`<label class="pk-shape">
       <span class="pk-shape-lead">Device</span>
-      <select aria-label="Show the pages on one kind of device" .value=${kind}
-        @change=${(e: Event) => this.setKind((e.target as HTMLSelectElement).value as PagesKind)}>
+      <select aria-label=${`Show the ${cardNoun(this.kind, 2)} on one kind of device`} .value=${kind}
+        @change=${(e: Event) => this.setDeviceKind((e.target as HTMLSelectElement).value as PagesKind)}>
         ${options.map((o) => html`<option value=${o.key} ?selected=${o.key === kind}>${o.label} (${o.count})</option>`)}
       </select>
     </label>`;
@@ -884,7 +895,7 @@ export class WaAllPages extends LitElement {
     return html`<div class="pk-tabs" role="tablist" aria-label="Devices">
       ${filterChips(devices, cards, this.colorOf).map((chip) => html`<button type="button" role="tab" class="pk-tab ${chip.id === filter ? "on" : ""}"
         style=${chip.color === undefined ? nothing : `--dc:${chip.color}`} id=${`ap-tab-${chip.id}`} aria-selected=${chip.id === filter ? "true" : "false"}
-        title=${chip.id === ALL_FILTER ? `Every ${cardNoun(this.cardKind)} on every device` : `The ${cardNoun(this.cardKind, 2)} on ${chip.label}`}
+        title=${chip.id === ALL_FILTER ? `Every ${cardNoun(this.kind)} on every device` : `The ${cardNoun(this.kind, 2)} on ${chip.label}`}
         @click=${() => this.setFilter(chip.id)}>
         <span class="pk-tab-glyph" aria-hidden="true">${uiIcon(chip.kind === undefined ? "grid" : chip.kind === "iphone" ? "phone" : "watch")}</span>
         <span class="pk-tab-name">${chip.label}</span>
@@ -894,7 +905,7 @@ export class WaAllPages extends LitElement {
   }
 
   private renderCard(card: PageCard, filter: PagesFilter, devices: readonly LinkDevice[], cards: readonly PageCard[]): TemplateResult {
-    const copy = openCopy(card, filter, this.kindNow());
+    const copy = openCopy(card, filter, this.deviceKindNow());
     const selecting = this.selecting;
     const menuOpen = !selecting && this.cardOfMenu(cards)?.key === card.key;
     const devicesOn = !selecting && this.linksOn && devices.length > 1;
@@ -962,10 +973,10 @@ export class WaAllPages extends LitElement {
     const allShown = shown.length > 0 && shown.every((c) => this.selected.has(c.key));
     const multi = devices.length > 1;
     const note = busy ? undefined : this.bulkNote;
-    const one = cardNoun(this.cardKind);
-    const many = cardNoun(this.cardKind, 2);
+    const one = cardNoun(this.kind);
+    const many = cardNoun(this.kind, 2);
     return html`<div class="pk-bar" role="group" aria-label=${`Act on the picked ${many}`}>
-      <span class="pk-bar-count" role="status">${this.bulkBusy ?? (none ? `Pick ${aCard(this.cardKind)} to start.` : `${n} picked`)}</span>
+      <span class="pk-bar-count" role="status">${this.bulkBusy ?? (none ? `Pick ${aCard(this.kind)} to start.` : `${n} picked`)}</span>
       <button type="button" class="ghost small" ?disabled=${busy || shown.length === 0}
         title=${allShown ? `Let the ${many} on screen go` : `Pick every ${one} the tab, the search and the Device menu have left`}
         @click=${() => this.selectShown(!allShown)}>${allShown ? "None" : "All shown"}</button>
@@ -990,7 +1001,7 @@ export class WaAllPages extends LitElement {
     const add = kind === "add";
     const open = this.bulkMenu === kind && !off;
     const n = picked.length;
-    const what = this.cardKind;
+    const what = this.kind;
     const many = cardNoun(what, 2);
     const count = `${n} ${cardNoun(what, n)}`;
     const head = add ? `Add ${count} to` : `Remove ${count} from`;
@@ -1017,7 +1028,7 @@ export class WaAllPages extends LitElement {
         })}
         <div class="pk-bar-note">${add
           ? "They go on linked: an edit on one device shows on all of them."
-          : `${what === "status_pages" ? "An info page" : "A page"} this would leave on no device stays. Use Delete for those.`}</div>
+          : `${what === "status_pages" ? "A status page" : "A page"} this would leave on no device stays. Use Delete for those.`}</div>
       </div>` : nothing}
     </span>`;
   }
@@ -1057,7 +1068,7 @@ export class WaAllPages extends LitElement {
   }
 
   /**
-   * An info page alone, as the watch draws it from the states now
+   * A status page alone, as the watch draws it from the states now
    * (`renderStatusPagePicture`), with the same plain outline as a page: one
    * screen tall, cut with a fade when its rows go on past it.
    */
@@ -1150,9 +1161,7 @@ export class WaAllPages extends LitElement {
     .pk-seg-btn.on { background: var(--wa-seg-on); color: var(--wa-ink); }
     .pk-seg-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pk-seg-btn:disabled { opacity: .45; cursor: default; }
-    /* The kind chips' counts, as quiet as the device tabs'. */
-    .ap-kind-n { font-size: 11.5px; font-weight: 400; color: var(--wa-muted); }
-    /* An info page's picture: the watch's black screen, one screen tall. */
+    /* A status page's picture: the watch's black screen, one screen tall. */
     .ap-pic-status .sp-screen { pointer-events: none; }
     .pk-pick-btn {
       display: inline-flex; align-items: center; gap: 6px; flex: none; font: inherit; font-size: 12.5px;

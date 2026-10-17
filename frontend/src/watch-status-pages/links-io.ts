@@ -1,6 +1,6 @@
 // The writes a status page's Devices menu and a delete on every device make
 // beyond the status page editor's own draft, shared by that editor and the
-// Pages tab: taking a status page off another device, and clearing the menu
+// Status pages tab: taking a status page off another device, and clearing the menu
 // slots that showed one once it is gone there.
 
 import { type HassLike, fetchWatchConfig, saveWatchConfig } from "../ha-api.js";
