@@ -61,18 +61,18 @@ const COMPLICATIONS_TEXT = [
 ];
 
 const PAGES_TEXT = [
-  "Pages lists every page on your watches and iPhones. A page on more than one device is the same page: an edit shows on all of them.",
-  "Pick a page to edit it, or make a new one.",
+  "Pages lists every page in your home, one card each. Tick a device on a card and the page is on it: one page, the same everywhere, so an edit shows on every device that has it.",
+  "Pick a page to edit it, or make a new one. A device's tab sets its order and what it hides.",
 ];
 
 const STATUS_PAGES_TEXT = [
-  "Status pages lists every status page on your watches and iPhones. A status page is a read-only screen of rows that a tile or a menu slot opens.",
-  "A status page on more than one device is the same page: an edit shows on all of them. Pick one to edit it, or make a new one.",
+  "Status pages lists every status page in your home. A status page is a read-only screen of rows that a tile or a menu slot opens.",
+  "Tick a device on a card to put it there. It is the same page on every device that has it: an edit shows on all of them. Pick one to edit it, or make a new one.",
 ];
 
 const MENUS_TEXT = [
-  "Menus lists the Anywhere menu and the Entity quick menu of every watch and iPhone. A menu on more than one device is the same menu: an edit shows on all of them.",
-  "The page switcher goes with the Anywhere menu. Pick a menu to edit it, or use Devices on its card to share it with another device.",
+  "Menus lists every menu in your home. Each device uses one Anywhere menu and one Entity quick menu, and a menu used by more than one device is the same menu: an edit shows on all of them.",
+  "The page switcher goes with the Anywhere menu. Pick a menu to edit it, or pick a device on its card to have that device use it.",
 ];
 
 /** Each screen's guide in the docs: what the ? in the screen's own bar
