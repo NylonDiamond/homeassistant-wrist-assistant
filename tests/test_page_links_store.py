@@ -386,7 +386,12 @@ def test_forgetting_one_of_two_holders_drops_the_link_on_the_other(env) -> None:
         (WATCH, "pages"),
         (WATCH, "status_pages"),
     ]
-    assert env.store.link_places() == {"pages": {}, "status_pages": {}, "menus": {}}
+    assert env.store.link_places() == {
+        "pages": {},
+        "status_pages": {},
+        "menus": {},
+        "voice": {},
+    }
 
 
 def test_forgetting_one_of_three_holders_keeps_the_link(env) -> None:
