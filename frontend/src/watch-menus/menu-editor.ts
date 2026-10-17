@@ -88,6 +88,7 @@ import {
   libraryItemIO,
   libraryModeStyles,
   previewOwner,
+  renderBarDevices,
   renderLibraryTag,
   renderPreviewPicker,
   sameLibraryItem,
@@ -1678,7 +1679,6 @@ export class WaMenuEditor extends LitElement {
     const word = deviceNoun(this.device);
     const copyBlocked = this.saving ? "Saving…" : (this.draft?.dirty ?? false) ? copyBlockedText(this.linkKind) : undefined;
     const note = store.noteFor("menus", used.id);
-    const admin = this.hass?.user?.is_admin;
     return html`<div class="me-lib" role="group" aria-label=${title} @click=${(e: Event) => e.stopPropagation()}>
       <label class="me-lib-name"><span class="me-lib-h">Name</span>
         <input type="text" class="me-lib-input" aria-label=${`${title} name`} placeholder=${title} maxlength="80"
@@ -1690,16 +1690,7 @@ export class WaMenuEditor extends LitElement {
           }}
           @blur=${() => this.flushRename()} />
       </label>
-      ${devices.length > (inLibrary ? 0 : 1) ? renderTicks({
-        library: this.lib.library!,
-        kind: "menus",
-        itemId: used.id,
-        devices,
-        colorOf: (ownerId) => this.colorOf(ownerId),
-        pending: store.pending,
-        ...(admin === undefined ? {} : { admin }),
-        locked: (ownerId) => this.menuTickLocked(ownerId),
-      }, (ownerId) => { void store.pickMenu(ownerId, used.unit, used.id); }) : nothing}
+      ${!inLibrary && devices.length > 1 ? this.menuTicks(used) : nothing}
       ${inLibrary ? this.renderLibraryDelete(used) : others.length === 0 ? nothing : html`<div class="me-lib-copy">
         <span class="me-lib-hint">An edit here changes it on ${joinWords(ownerWords(others, devices))} too.</span>
         <button type="button" class="pe-btn me-copy" ?disabled=${copyBlocked !== undefined || this.copying}
@@ -1709,6 +1700,36 @@ export class WaMenuEditor extends LitElement {
       ${note === undefined ? nothing : html`<p class="me-lib-note err" role="alert">${note}</p>`}
       ${this.libNote === undefined ? nothing : html`<p class="me-lib-note ${this.libNote.kind}" role="status">${this.libNote.text}</p>`}
     </div>`;
+  }
+
+  /** The menu's tick row: Used by with a round tick per device (a device
+   * uses one menu of each kind, so a tick moves that device to this menu;
+   * the ticked ones cannot be unticked). In the bar the count says "Used
+   * by", so the row's own words are left off there. */
+  private menuTicks(used: LibraryMenu, inBar = false): TemplateResult {
+    const store = this.lib.store!;
+    const admin = this.hass?.user?.is_admin;
+    return renderTicks({
+      library: this.lib.library!,
+      kind: "menus",
+      itemId: used.id,
+      devices: this.linkDevices,
+      colorOf: (ownerId) => this.colorOf(ownerId),
+      pending: store.pending,
+      ...(admin === undefined ? {} : { admin }),
+      ...(inBar ? { hint: false as const } : {}),
+      locked: (ownerId) => this.menuTickLocked(ownerId),
+    }, (ownerId) => { void store.pickMenu(ownerId, used.unit, used.id); });
+  }
+
+  /** Library mode's device block in the bar: how many devices use the
+   * menu, then its ticks. Nothing before the library is read. */
+  private renderBarDevices(): TemplateResult | typeof nothing {
+    const lib = this.lib.library;
+    const item = this.libraryItem;
+    const used = lib === undefined || item === undefined ? undefined : libraryMenu(lib, item.id);
+    if (used === undefined || this.lib.store === undefined || this.draft === undefined) return nothing;
+    return renderBarDevices("menus", used.owners.length, this.menuTicks(used, true));
   }
 
   /** Library mode's Delete from the library, for a menu no device uses (a
@@ -1926,10 +1947,11 @@ export class WaMenuEditor extends LitElement {
     </div>`;
   }
 
-  /** Library mode's bar: back to the Menus tab, "Preview as" in place of
-   * the device picker, then the ··· menu and Save. No delivery and no way
-   * to Pages: a save reaches every device that uses the menu, each on its
-   * own. */
+  /** Library mode's bar: back to the Menus tab, the Library tag, the
+   * devices that use the menu with a round tick each, then the ··· menu
+   * and Save. No delivery and no way to Pages: a save reaches every device
+   * that uses the menu, each on its own. Preview as is in the strip over
+   * the stage. */
   private renderLibraryBar(draft: WatchMenusDraft | undefined, watches: readonly OwnerSummary[]): TemplateResult {
     const editing = draft !== undefined;
     const dirty = editing && this.dirty;
@@ -1938,6 +1960,7 @@ export class WaMenuEditor extends LitElement {
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
       <button class="tb-btn tb-back" title="Back to the Menus tab" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>Menus</span></button>
       ${renderLibraryTag()}
+      ${this.renderBarDevices()}
       <span class="spacer"></span>
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}

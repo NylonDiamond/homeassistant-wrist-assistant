@@ -160,6 +160,29 @@ export function renderLibraryTag(): TemplateResult {
   return html`<span class="lib-mode-tag" title="Edited in the library. A save reaches every device that has it.">Library</span>`;
 }
 
+// ── the devices, in the bar ──────────────────────────────────────────────
+
+/** The words before the ticks: how many devices have the item. */
+export function onDevicesText(kind: LibraryKind, count: number): string {
+  if (count === 0) return kind === "menus" ? "No device uses it yet" : "On no device yet";
+  const noun = count === 1 ? "device" : "devices";
+  return kind === "menus" ? `Used by ${count} ${noun}` : `On ${count} ${noun}`;
+}
+
+/**
+ * The bar's device block in library mode: the count, then a tick per device
+ * (`renderTicks`). It stands in the bar under the top bar, right after the
+ * way back, so where the item is, and the way to put it somewhere, is the
+ * first thing seen (Jesse, 2026-10-17: the inspector's Devices row and the
+ * menu row's Used by were too easy to miss). With no device yet the count
+ * is in the warning ink.
+ */
+export function renderBarDevices(kind: LibraryKind, count: number, ticks: TemplateResult): TemplateResult {
+  return html`<div class="lib-on ${count === 0 ? "none" : ""}" role="group" aria-label="Devices">
+    <span class="lib-on-l">${onDevicesText(kind, count)}</span>${ticks}
+  </div>`;
+}
+
 export const libraryModeStyles = css`
   .lib-preview { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--wa-muted); }
   /* In the strip over the stage, beside the watch's size and the zoom: the
@@ -175,4 +198,18 @@ export const libraryModeStyles = css`
     display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 999px;
     border: 1px solid var(--wa-line); color: var(--wa-muted); font-size: 11.5px; font-weight: 600;
   }
+  /* The device block in the bar: a hairline off the way back, the count in
+     bold, then the chips a size up from the cards', wrapping when the bar
+     is narrow. */
+  .lib-on {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; flex: 0 1 auto;
+    margin-left: 4px; padding: 6px 0 6px 14px; border-left: 1px solid var(--wa-line-strong);
+  }
+  .lib-on-l { font-size: 12.5px; font-weight: 600; color: var(--wa-ink); white-space: nowrap; }
+  .lib-on.none .lib-on-l { color: var(--wa-amber); }
+  .lib-on .lt-ticks { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+  .lib-on .lt-chips { gap: 6px; }
+  .lib-on .lt-chip { height: 26px; padding: 0 10px 0 8px; font-size: 12px; }
+  .lib-on .lt-box { width: 12px; height: 12px; }
+  .wa-bar.stacked .lib-on { order: 3; flex: 1 1 100%; margin-left: 0; padding-left: 0; border-left: 0; }
 `;

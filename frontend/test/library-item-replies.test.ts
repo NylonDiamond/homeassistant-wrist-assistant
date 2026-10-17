@@ -139,7 +139,8 @@ describe("the server's library/item replies in the editors", () => {
     expect(draft.revision).toBe(reply.revision);
     expect(draft.document).toEqual(reply.document);
     const page = (reply.document.pages as JsonObject[])[0]!;
-    expect(flat(e.call("renderPageTicks", page))).toContain("Jesse's Watch");
+    // The ticks stand in the bar in library mode.
+    expect(flat(e.call("renderTopBar", draft))).toContain("Jesse's Watch");
     draft.apply({ ...draft.document, pages: [{ ...page, name: "Renamed" }] } as WatchPagesDocument);
     await e.call<Promise<unknown>>("save");
     await settle();

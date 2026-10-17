@@ -90,6 +90,7 @@ import {
   libraryItemIO,
   libraryModeStyles,
   previewOwner,
+  renderBarDevices,
   renderLibraryTag,
   renderPreviewPicker,
   sameLibraryItem,
@@ -3484,35 +3485,55 @@ export class WaPageEditor extends LitElement {
    * read; a page not saved yet says to save first.
    */
   private renderPageTicks(page: WatchPage): TemplateResult | typeof nothing {
+    // In library mode the ticks stand in the bar (`renderBarDevices`).
+    if (this.libraryItem !== undefined) return nothing;
+    const body = this.pageTicksBody(page);
+    if (body === undefined) return nothing;
+    return html`<div class="pe-lib" role="group" aria-label="Devices">
+      <span class="pe-lib-h">Devices</span>${body}
+    </div>`;
+  }
+
+  /** The ticks themselves, or the save-first line; undefined when there is
+   * nothing to draw (a system page, one device, the library not read). */
+  private pageTicksBody(page: WatchPage): TemplateResult | undefined {
     const lib = this.lib.library;
     const store = this.lib.store;
     const here = this.watchId;
     const devices = this.linkDevices;
     // In library mode every device ticks, one alone too, and none is "here".
     const inLibrary = this.libraryItem !== undefined;
-    if (lib === undefined || store === undefined || (here === undefined && !inLibrary) || devices.length < (inLibrary ? 1 : 2) || isSystemWatchPage(page)) return nothing;
+    if (lib === undefined || store === undefined || (here === undefined && !inLibrary) || devices.length < (inLibrary ? 1 : 2) || isSystemWatchPage(page)) return undefined;
     const entry = libraryItem(lib, "pages", watchPageId(page));
     const admin = this.hass?.user?.is_admin;
-    let body: TemplateResult;
     if (entry === undefined || (!inLibrary && !entry.owners.some((o) => sameId(o, here)))) {
-      body = html`<p class="pe-lib-hint">${unsavedTicksText("pages")}</p>`;
-    } else {
-      const note = store.noteFor("pages", entry.id);
-      body = renderTicks({
-        library: lib,
-        kind: "pages",
-        itemId: entry.id,
-        devices,
-        colorOf: (ownerId) => this.colorOf(ownerId),
-        pending: store.pending,
-        ...(note === undefined ? {} : { note }),
-        ...(admin === undefined ? {} : { admin }),
-        locked: (ownerId) => this.pageTickLocked(entry.id, ownerId),
-      }, (ownerId, on) => { void tickItem(this.hass, store, ownerId, "pages", entry.id, on); });
+      return html`<p class="pe-lib-hint">${unsavedTicksText("pages")}</p>`;
     }
-    return html`<div class="pe-lib" role="group" aria-label="Devices">
-      <span class="pe-lib-h">Devices</span>${body}
-    </div>`;
+    const note = store.noteFor("pages", entry.id);
+    return renderTicks({
+      library: lib,
+      kind: "pages",
+      itemId: entry.id,
+      devices,
+      colorOf: (ownerId) => this.colorOf(ownerId),
+      pending: store.pending,
+      ...(note === undefined ? {} : { note }),
+      ...(admin === undefined ? {} : { admin }),
+      locked: (ownerId) => this.pageTickLocked(entry.id, ownerId),
+    }, (ownerId, on) => { void tickItem(this.hass, store, ownerId, "pages", entry.id, on); });
+  }
+
+  /** Library mode's device block in the bar: how many devices have the
+   * page, then its ticks. Nothing before the page or the library is read. */
+  private renderBarDevices(draft: WatchPagesDraft | undefined): TemplateResult | typeof nothing {
+    const lib = this.lib.library;
+    const item = this.libraryItem;
+    // The one page of the item, whether or not a row is picked yet.
+    const page = draft === undefined ? undefined : watchPagesOf(draft.document)[0];
+    if (lib === undefined || item === undefined || page === undefined) return nothing;
+    const body = this.pageTicksBody(page);
+    if (body === undefined) return nothing;
+    return renderBarDevices("pages", libraryItem(lib, "pages", item.id)?.owners.length ?? 0, body);
   }
 
   /**
@@ -3649,10 +3670,11 @@ export class WaPageEditor extends LitElement {
     </div>`;
   }
 
-  /** Library mode's bar: back to the Pages tab, "Preview as" in place of
-   * the device picker, then the ··· menu and Save. No Add page, no delivery
-   * and no way to Menus: a save reaches every device that has the page,
-   * each on its own. */
+  /** Library mode's bar: back to the Pages tab, the Library tag, the
+   * devices that have the page with a tick each, then the ··· menu and
+   * Save. No Add page, no delivery and no way to Menus: a save reaches every
+   * device that has the page, each on its own. Preview as is in the strip
+   * over the stage. */
   private renderLibraryBar(draft: WatchPagesDraft | undefined): TemplateResult {
     const dirty = draft?.dirty ?? false;
     return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Page in the library">
@@ -3660,6 +3682,7 @@ export class WaPageEditor extends LitElement {
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
       <button class="tb-btn tb-back" title="Back to the Pages tab" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>Pages</span></button>
       ${renderLibraryTag()}
+      ${this.renderBarDevices(draft)}
       <span class="spacer"></span>
       ${this.renderTopMenu(draft)}
       ${draft ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}

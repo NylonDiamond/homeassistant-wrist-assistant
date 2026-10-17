@@ -15,7 +15,8 @@ import { describe, expect, it } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
 import { fetchLibraryItem, saveLibraryItem } from "../src/library/client.js";
-import { PREVIEW_NONE_TEXT, libraryDeleteText, libraryDraftKey, libraryRecord, previewOwner, renderPreviewPicker, sameLibraryItem } from "../src/library/item-mode.js";
+import { nothing } from "lit";
+import { PREVIEW_NONE_TEXT, libraryDeleteText, libraryDraftKey, libraryRecord, onDevicesText, previewOwner, renderPreviewPicker, sameLibraryItem } from "../src/library/item-mode.js";
 import { barTabOf, libraryItemPath, libraryRouteOf, panelPrefix, screenIdOf, swallowsSaveKey, tabOfRoute } from "../src/shell.js";
 import { ALL_MENUS_PATH } from "../src/watch-menus/all-menus-hook.js";
 import { forgetWatchMenusDraft, keptWatchMenusDraft } from "../src/watch-menus/draft.js";
@@ -149,6 +150,11 @@ describe("the status pages editor in library mode", () => {
     const bar = flat(e.call("renderTopBar", e.draft(), e.owners));
     expect(bar).toContain("Back to the Status pages tab");
     for (const gone of ["tb-sync", "Complications", "sp-watch-picker", "tb-saved", "Preview as"]) expect(bar).not.toContain(gone);
+    // The devices stand in the bar, right after the way back: the count,
+    // then a tick per device. Not in the Page card.
+    expect(bar).toMatch(/tb-back[\s\S]*lib-on none[\s\S]*On no device yet[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone[\s\S]*class="spacer"/);
+    expect(bar).not.toContain("On this watch.");
+    expect(e.host().ticks).toBeUndefined();
     // Preview as sits in the strip over the stage, beside the size and the zoom.
     const stage = flat(e.call("renderStage", e.host(), e.owners));
     expect(stage).toMatch(/class="stage-tools"[\s\S]*Preview as[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone/);
@@ -158,10 +164,6 @@ describe("the status pages editor in library mode", () => {
     // The grip stays as an empty span: it holds the row's first grid column.
     expect(card).toContain(`<span class="grip" aria-hidden="true"></span>`);
     expect(card).toContain("Delete Lone");
-    const ticks = flat(e.host().ticks?.(statusPagesOf(e.draft().document)[0]!));
-    expect(ticks).toContain("Jesse's Watch");
-    expect(ticks).toContain("Jesse's iPhone");
-    expect(ticks).not.toContain("On this watch.");
     const body = flat(e.call("renderBody", e.owners));
     expect(body).not.toContain("cf-bar");
     expect(body).not.toContain("Not on this watch");
@@ -208,6 +210,11 @@ describe("the page editor in library mode", () => {
     const bar = flat(e.call("renderTopBar", e.draft()));
     expect(bar).toContain("Back to the Pages tab");
     for (const gone of ["Add page", "tb-menus", "tb-sync", "pe-watch-picker", "Preview as"]) expect(bar).not.toContain(gone);
+    // The devices stand in the bar, right after the way back: the count,
+    // then a tick per device. The inspector's Devices row is not drawn.
+    expect(bar).toMatch(/tb-back[\s\S]*lib-on none[\s\S]*On no device yet[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone[\s\S]*class="spacer"/);
+    expect(bar).not.toContain("On this watch.");
+    expect(e.call("renderPageTicks", e.page())).toBe(nothing);
     const body = e.body();
     // Preview as sits in the strip over the stage, beside the size and the zoom.
     const tools = flat(e.call("renderStageTools", e.page(), "46 mm", false, false));
@@ -215,10 +222,6 @@ describe("the page editor in library mode", () => {
     for (const gone of ["Drag to move", "Add an empty page after the last one", "Hide Shed on the", "pe-linked", "cf-bar", "See all pages"]) {
       expect(body, gone).not.toContain(gone);
     }
-    const ticks = flat(e.call("renderPageTicks", e.page()));
-    expect(ticks).toContain("Jesse's Watch");
-    expect(ticks).toContain("Jesse's iPhone");
-    expect(ticks).not.toContain("On this watch.");
     // Order and Hide here are a device's: neither moves the document.
     const before = e.draft().document;
     e.call("movePage", SHED, 0);
@@ -274,12 +277,15 @@ describe("the menu editor in library mode", () => {
     expect(shownMenu(e.host())).toBe("anywhere");
     const head = flat(e.call("libraryHead", "anywhere"));
     expect(head).toMatch(/me-lib-input[\s\S]*Spare/);
-    expect(head).toContain("Used by");
     expect(head).toContain("Delete from the library");
     expect(head).not.toContain("Make a copy");
+    // The row's foot keeps the name and Delete; Used by stands in the bar,
+    // right after the way back, with a round tick per device.
+    expect(head).not.toContain("lt-ticks");
     const bar = flat(e.call("renderTopBar", e.draft(), e.owners));
     expect(bar).toContain("Back to the Menus tab");
-    for (const gone of ["tb-pages", "tb-sync", "me-watch-picker", "Preview as"]) expect(bar).not.toContain(gone);
+    for (const gone of ["tb-pages", "tb-sync", "me-watch-picker", "Preview as", "lt-hint"]) expect(bar).not.toContain(gone);
+    expect(bar).toMatch(/tb-back[\s\S]*lib-on none[\s\S]*No device uses it yet[\s\S]*lt-chip off rd[\s\S]*Jesse's Watch[\s\S]*class="spacer"/);
     const body = flat(e.call("renderBody", e.owners));
     expect(body).not.toContain("cf-bar");
     // Preview as sits in the strip over the stage, beside the size and the zoom.
@@ -349,6 +355,14 @@ describe("library mode's pieces", () => {
     }
     expect(flat(renderPreviewPicker([], undefined, () => undefined))).toContain(PREVIEW_NONE_TEXT);
     expect(flat(renderPreviewPicker([watch, phone], "w", () => undefined))).toContain("Preview as");
+  });
+
+  it("says in the bar how many devices have the item", () => {
+    expect(onDevicesText("pages", 0)).toBe("On no device yet");
+    expect(onDevicesText("status_pages", 1)).toBe("On 1 device");
+    expect(onDevicesText("pages", 3)).toBe("On 3 devices");
+    expect(onDevicesText("menus", 0)).toBe("No device uses it yet");
+    expect(onDevicesText("menus", 2)).toBe("Used by 2 devices");
   });
 
   it("keeps the Preview as choice in step with the device drawn, through the live selected property", () => {
