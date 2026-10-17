@@ -172,6 +172,12 @@ export interface MenusViewHost {
   /** The host of a page's switcher settings, editing the pages draft;
    * undefined while there is no pages draft or no such page. */
   switcherSettings?(pageId: string): SwitcherSettingsHost | undefined;
+  /** The Devices line on a menu's own card (`menu-devices.ts`), and the menu
+   * it opens under it. Absent, or nothing, where menus are not shared (an
+   * older integration, one device, a test). */
+  devicesLine?(menu: MenusSection): TemplateResult | typeof nothing;
+  /** The badge on a linked menu's row: "Also on Jesse's iPhone". */
+  linkBadge?(menu: MenusSection): string | undefined;
   /** Apply `change` to the document as it is now: one undo step, or with
    * `coalesce` a step the next edits with the same key replace. */
   edit(change: (document: MenusDocument) => MenusDocument, coalesce?: string): boolean;
@@ -649,6 +655,7 @@ export function renderMenusCard(host: MenusViewHost): TemplateResult {
       ${MENUS_SECTIONS.map(([id, label]) => {
         const on = id === shown;
         const pick = () => { if (!on) selectMenu(host, id); };
+        const shared = host.linkBadge?.(id);
         return html`<div class="layer me-menu-row ${on ? "hl" : ""}" data-menu=${id} role="listitem" tabindex="0"
           aria-current=${on ? "true" : "false"} aria-label=${label} title=${MENU_LINES[id]}
           @click=${pick}
@@ -660,7 +667,7 @@ export function renderMenusCard(host: MenusViewHost): TemplateResult {
           <span class="grip" aria-hidden="true"></span>
           ${menuThumb(host, id)}
           <span class="name"><b><span class="nm-t">${label}</span><span class="me-menu-count">${menuRowCount(host, id)}</span></b><small>${MENU_ROW_LINES[id]}</small></span>
-          <span class="right"></span>
+          <span class="right">${shared === undefined ? nothing : html`<span class="badges"><span class="badge pe-linked" title=${shared}>${shared}</span></span>`}</span>
         </div>`;
       })}
     </div>
@@ -1198,6 +1205,7 @@ function renderAnywhereStyleCards(host: MenusViewHost): TemplateResult {
   const motionChanged = menuStyleKeysChanged(host.document, "quickAction", ANYWHERE_MOTION_KEYS);
   return html`${card(host, "style", "style-anywhere", "Look", html`<fieldset class="me-body me-style" ?disabled=${host.busy} aria-label="Look">
       ${renderAnywhereLookBody(host)}
+      ${host.devicesLine?.("anywhere") ?? nothing}
     </fieldset>`, { summary: anywhereLookSummary(host.document), dot: lookChanged })}
     ${card(host, "motion", "motion-anywhere", "Motion", html`<fieldset class="me-body me-style" ?disabled=${host.busy} aria-label="Motion">
       ${renderAnywhereMotionBody(host)}
@@ -1209,6 +1217,7 @@ function renderSwitcherStyleCard(host: MenusViewHost): TemplateResult {
   const changed = menuStyleKeysChanged(host.document, "pageSwitcher", SWITCHER_LOOK_KEYS);
   return card(host, "style", "style-switcher", "Look", html`<fieldset class="me-body me-style" ?disabled=${host.busy} aria-label="Look">
     ${renderSwitcherLookBody(host)}
+    ${host.devicesLine?.("switcher") ?? nothing}
   </fieldset>`, { summary: switcherLookSummary(host.document), dot: changed });
 }
 
@@ -1277,6 +1286,7 @@ function renderEntityMenuCard(host: MenusViewHost): TemplateResult {
   }
   return card(host, "menu", "menu", "Which menu", html`<fieldset class="me-body me-pick" ?disabled=${host.busy} aria-label="Which menu">
     ${modeRow}${body}
+    ${host.devicesLine?.("entity") ?? nothing}
   </fieldset>`, { summary, dot });
 }
 
