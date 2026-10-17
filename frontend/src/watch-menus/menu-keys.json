@@ -1540,5 +1540,17 @@
         "phone": false
       }
     ]
+  },
+  "linkKeys": {
+    "note": "Keys Home Assistant writes into the document and the watch never reads, by the type that holds them. The panel writes each back as it came and changes one only to unlink a device's copy (watch-menus/menu-links.ts). Kept out of types: WatchMenusKeysTests checks every key there against the watch's Swift types, which hold none of these.",
+    "document": {
+      "linkIds": {
+        "type": "map",
+        "items": {
+          "type": "string"
+        },
+        "keep": true
+      }
+    }
   }
 }

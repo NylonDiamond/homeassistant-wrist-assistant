@@ -61,15 +61,44 @@ import {
   type OwnerSummary,
   type WatchConfigHistoryEntry,
   type WatchConfigRecord,
+  type WatchPagesPlaces,
   fetchOwners,
   fetchHttpActions,
   fetchWatchConfig,
   fetchWatchConfigHistory,
   fetchWatchConfigHistoryEntry,
+  fetchWatchPagesPlaces,
+  linkWatchMenus,
   restoreWatchConfig,
   saveWatchConfig,
   subscribeWatchConfig,
 } from "../ha-api.js";
+import { devicesMenuStyles } from "../watch-pages/devices-menu.js";
+import {
+  type LinkDevice,
+  type PageDevicePlace,
+  type PagesRecordFacts,
+  awaitingMove,
+  linkAlsoAddedText,
+  linkDevicesOf,
+  pagesRecordFacts,
+} from "../watch-pages/links.js";
+import { menuDevicesStyles, renderMenuDevicesMenu } from "./menu-devices.js";
+import {
+  MENU_LINK_KEY,
+  MENU_LINK_UNITS,
+  MENU_LINKS_UPDATE_TEXT,
+  MENU_UNIT_NAMES,
+  type MenuLinkUnit,
+  menuDevicesGroups,
+  menuLinkBadgeText,
+  menuLinkErrorText,
+  menuLinkUnitOf,
+  menuLinksKnown,
+  menuReplaceAsk,
+  menuUnitHolders,
+  unlinkMenuUnit,
+} from "./menu-links.js";
 import { isPhoneId } from "../phone-pages.js";
 import { deviceColor, deviceColors } from "../device-colors.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
@@ -158,6 +187,7 @@ import {
   type MenuSwitcherPage,
   type MenuSwitcherRow,
   type MenusScreen,
+  type MenusSection,
   type MenusViewHost,
   deselectMenuSlot,
   loadMenusZoom,
@@ -252,6 +282,16 @@ interface RestoreAsk {
   entry: WatchConfigHistoryEntry;
   baseRevision: number;
   summary?: string;
+}
+
+/** The open Devices menu (`menu-devices.ts`): under the top bar's ··· with
+ * both menus, or on a menu's card in the inspector with that menu alone. */
+type DevicesMenu = { where: "bar" } | { where: "card"; unit: MenuLinkUnit };
+
+/** A tick that met a device with its own menu there, asked about first. */
+interface ReplaceAsk {
+  unit: MenuLinkUnit;
+  target: string;
 }
 
 interface HassConnectionEvents {
@@ -439,6 +479,21 @@ export class WaMenuEditor extends LitElement {
   @state() private topMenuOpen = false;
   /** The top bar's watch picker is open. */
   @state() private watchMenuOpen = false;
+  /** Where every linked page and menu is (`watch_pages/places`). Undefined
+   * before the first read and with an integration older than linked pages,
+   * which leaves the Devices menu and the badges off; read with no `menus`
+   * part, the menu shows greyed with the update text. */
+  @state() private places?: WatchPagesPlaces;
+  private placesSeq = 0;
+  /** Each other device's menus record as read for the Devices menu: whether
+   * Home Assistant holds one, for the watches that wait for their iPhone. */
+  @state() private menusFacts: ReadonlyMap<string, PagesRecordFacts> = new Map();
+  @state() private devicesMenu?: DevicesMenu;
+  /** What the open Devices menu says after its last switch. */
+  @state() private devicesNote?: Note;
+  /** A link or an unlink is out. */
+  @state() private linking = false;
+  @state() private replaceAsk?: ReplaceAsk;
   /** The stage's scale as stepped with the zoom buttons, undefined while it
    * fits (`stageFitZoom`). Remembered between visits (`MENUS_ZOOM_KEY`). */
   @state() private zoom = loadMenusZoom();
@@ -613,6 +668,7 @@ export class WaMenuEditor extends LitElement {
     this.behaviorSeq++;
     this.voiceSeq++;
     this.historySeq++;
+    this.placesSeq++;
   }
 
   protected override willUpdate(changed: PropertyValues): void {
@@ -715,6 +771,7 @@ export class WaMenuEditor extends LitElement {
     void this.loadPages(watchId);
     void this.loadBehavior(watchId);
     void this.loadVoice(watchId);
+    void this.loadMenuLinks(watchId);
   };
 
   private followSave(): void {
@@ -778,11 +835,14 @@ export class WaMenuEditor extends LitElement {
       this.history = [];
       if (this.historyState !== "unsupported") this.historyState = "loading";
       this.closeAsk();
+      this.closeDevices();
+      this.menusFacts = new Map();
       this.endScrub();
       this.uiState.clear();
       quiet = false;
     }
     this.startSubscription(watchId);
+    void this.loadMenuLinks(watchId);
     void this.load(watchId, quiet);
     void this.loadCatalog(watchId);
     void this.loadHttpLibrary();
@@ -946,6 +1006,10 @@ export class WaMenuEditor extends LitElement {
 
   private show(record: WatchConfigRecord): void {
     const watchId = this.watchId;
+    // A link made or dropped (here, or by a save on another copy) moves the
+    // badges and the Devices menu: read where the links are again.
+    const links = (r: WatchConfigRecord | undefined) => JSON.stringify(isJsonObject(r?.document) ? r.document[MENU_LINK_KEY] ?? null : null);
+    if (watchId !== undefined && this.record !== undefined && links(this.record) !== links(record)) void this.loadMenuLinks(watchId);
     this.record = record;
     // No menus here: a kept draft from an earlier record moves onto the
     // defaults at revision 0, its edits kept, so its first save makes the
@@ -1173,6 +1237,8 @@ export class WaMenuEditor extends LitElement {
       switcherPages: rows.filter((p) => !p.hidden).map(({ hidden: _, ...page }) => page),
       switcherRows: rows,
       switcherSettings: (pageId) => this.switcherSettingsHost(pageId),
+      devicesLine: (menu) => this.devicesLine(menu),
+      linkBadge: (menu) => this.linkBadge(menu),
       get document() { return draft.document; },
       get targets() { return self.targets(); },
       get catalogKnown() { return self.catalog !== undefined; },
@@ -1330,6 +1396,229 @@ export class WaMenuEditor extends LitElement {
     this.requestUpdate();
   }
 
+  // ── linked menus ───────────────────────────────────────────────────────
+
+  /** Every device a menu can be on (`links.ts`): the Watch app's devices,
+   * the watches and, on a home that keeps phone pages, the iPhones, which
+   * own menus too. */
+  private get linkDevices(): LinkDevice[] {
+    return linkDevicesOf(this.owners.length > 0 ? this.owners : (this.ownList ?? []), this.phones);
+  }
+
+  private get linkKind(): LinkDevice["kind"] {
+    return this.device === "iphone" ? "iphone" : "watch";
+  }
+
+  private deviceName(ownerId: string): string {
+    return this.linkDevices.find((d) => d.ownerId === ownerId)?.name ?? "the other device";
+  }
+
+  /** Whether the Devices menu is offered: the integration links pages (it
+   * answered `places`), there is another device, and Home Assistant holds
+   * this device's menus (a link copies the saved menus). */
+  private get devicesOffered(): boolean {
+    return this.places !== undefined && this.linkDevices.length > 1 && (this.record?.revision ?? 0) > 0 && !this.unsupported;
+  }
+
+  /**
+   * Read where the links are (`watch_pages/places`), then whether each other
+   * device's menus record is held, for the watches that wait for their
+   * iPhone. Only the newest read lands. An integration without linked pages
+   * answers `unknown_command`, which leaves the Devices menu and the badges
+   * off; any other failure keeps what was known.
+   */
+  private async loadMenuLinks(watchId: string): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.placesSeq;
+    let reply: WatchPagesPlaces;
+    try {
+      reply = await fetchWatchPagesPlaces(hass);
+    } catch (err) {
+      if (seq === this.placesSeq && errCode(err) === "unknown_command") this.places = undefined;
+      return;
+    }
+    if (seq !== this.placesSeq || watchId !== this.watchId) return;
+    this.places = {
+      pages: isJsonObject(reply?.pages) ? (reply.pages as WatchPagesPlaces["pages"]) : {},
+      status_pages: isJsonObject(reply?.status_pages) ? (reply.status_pages as WatchPagesPlaces["status_pages"]) : {},
+      ...(isJsonObject(reply?.menus) ? { menus: reply.menus as NonNullable<WatchPagesPlaces["menus"]> } : {}),
+    };
+    if (this.devicesMenu === undefined) return;
+    const others = this.linkDevices.filter((d) => d.ownerId !== watchId);
+    const read = await Promise.all(others.map(async (d): Promise<[string, PagesRecordFacts] | undefined> => {
+      try {
+        return [d.ownerId, pagesRecordFacts(await fetchWatchConfig(hass, d.ownerId, "menus"))];
+      } catch {
+        // A device whose menus could not be read does not wait here; Home
+        // Assistant still refuses it if it should.
+        return undefined;
+      }
+    }));
+    if (seq !== this.placesSeq || watchId !== this.watchId) return;
+    this.menusFacts = new Map(read.filter((r): r is [string, PagesRecordFacts] => r !== undefined));
+  }
+
+  /** Open the Devices menu, and read the places again for it. */
+  private openDevices(menu: DevicesMenu): void {
+    this.topMenuOpen = false;
+    this.devicesNote = undefined;
+    this.devicesMenu = menu;
+    if (this.watchId !== undefined) void this.loadMenuLinks(this.watchId);
+    void this.updateComplete.then(() => {
+      const root = menu.where === "bar" ? (this.headBar.root ?? this.renderRoot) : this.renderRoot;
+      root.querySelector?.<HTMLElement>(".me-dev-menu")?.scrollIntoView({ block: "nearest" });
+    });
+  }
+
+  private closeDevices(): void {
+    this.devicesMenu = undefined;
+    this.devicesNote = undefined;
+    this.replaceAsk = undefined;
+  }
+
+  /** Why the Devices menu's switches cannot be flipped now, or undefined. A
+   * menu goes on another device as it is saved, so not over edits. */
+  private devicesBlocked(): string | undefined {
+    if (this.places !== undefined && !menuLinksKnown(this.places)) return MENU_LINKS_UPDATE_TEXT;
+    if (this.saving) return "Saving…";
+    if (this.draft?.dirty ?? false) return "Save or discard your edits first. A menu goes on another device as it is saved here.";
+    return undefined;
+  }
+
+  /** A switch flipped: tick links the unit onto the device, untick unlinks
+   * that device's copy and leaves its menu as it is. */
+  private toggleDevice(unit: MenuLinkUnit, place: PageDevicePlace): void {
+    if (place.here || place.stuck !== undefined) return;
+    void (place.on ? this.unlinkMenu(unit, place.device.ownerId) : this.linkMenuTo(unit, place.device.ownerId));
+  }
+
+  /**
+   * Put a unit, as saved, on another device, linked, with the pages and
+   * status pages its slots open (`watch_pages/link` with `kind: "menus"`).
+   * A device with its own menu there is refused `unit_taken`: the question
+   * comes up, and Replace sends the link again with `replace`. This
+   * device's copy gets its link too, and arrives as a change.
+   */
+  private async linkMenuTo(unit: MenuLinkUnit, target: string, replace = false): Promise<void> {
+    const hass = this.hass;
+    const watchId = this.watchId;
+    if (!hass || watchId === undefined || target === watchId || this.linking || this.devicesBlocked() !== undefined) return;
+    this.linking = true;
+    this.devicesNote = undefined;
+    try {
+      const reply = await linkWatchMenus(hass, watchId, [unit], [target], replace);
+      if (watchId !== this.watchId) return;
+      const pages = this.pagesDocument as WatchPagesDocument | undefined;
+      const also = linkAlsoAddedText(reply, target, [], pages);
+      this.devicesNote = { kind: "ok", text: [`The ${MENU_UNIT_NAMES[unit]} is on ${this.deviceName(target)} now.`, also].filter((t) => t !== undefined).join(" ") };
+      void this.loadMenuLinks(watchId);
+      void this.load(watchId, true);
+    } catch (err) {
+      if (watchId !== this.watchId) return;
+      if (errCode(err) === "unit_taken" && !replace) this.replaceAsk = { unit, target };
+      else this.devicesNote = { kind: "err", text: `Not added. ${menuLinkErrorText(err)}` };
+    } finally {
+      this.linking = false;
+    }
+  }
+
+  /** Unlink one device's copy of a unit (this one's too): its menu stays as
+   * it is, linked to nothing. */
+  private async unlinkMenu(unit: MenuLinkUnit, owner: string): Promise<void> {
+    const hass = this.hass;
+    const watchId = this.watchId;
+    if (!hass || watchId === undefined || this.linking || this.devicesBlocked() !== undefined) return;
+    this.linking = true;
+    this.devicesNote = undefined;
+    const result = await unlinkMenuUnit({
+      read: (o) => fetchWatchConfig(hass, o, "menus"),
+      save: (o, base, document) => saveWatchConfig(hass, o, "menus", base, document),
+    }, owner, unit);
+    this.linking = false;
+    if (watchId !== this.watchId) return;
+    const name = owner === watchId ? `this ${deviceNoun(this.device)}` : this.deviceName(owner);
+    this.devicesNote = result.ok
+      ? { kind: "ok", text: `Unlinked ${name}. Its ${MENU_UNIT_NAMES[unit]} stays as it is.` }
+      : { kind: "err", text: `Not unlinked. ${menuLinkErrorText(Object.assign(new Error(result.message), { code: result.code }))}` };
+    void this.loadMenuLinks(watchId);
+    if (owner === watchId) void this.load(watchId, true);
+  }
+
+  /** The Devices menu, for both menus under the bar or one on its card. */
+  private renderDevicesMenu(menu: DevicesMenu): TemplateResult | typeof nothing {
+    const watchId = this.watchId;
+    const draft = this.draft;
+    if (watchId === undefined || draft === undefined) return nothing;
+    const blocked = this.devicesBlocked();
+    const groups = menuDevicesGroups({
+      devices: this.linkDevices,
+      document: draft.document,
+      here: watchId,
+      places: this.places,
+      waiting: awaitingMove(this.watches, this.menusFacts),
+      pages: this.pages,
+      ...(this.statusPages === undefined ? {} : { statusPages: this.statusPages }),
+    }, menu.where === "card" ? [menu.unit] : MENU_LINK_UNITS);
+    return renderMenuDevicesMenu({
+      groups,
+      hereKind: this.linkKind,
+      ...(blocked === undefined ? {} : { blocked }),
+      busy: this.linking,
+      ...(this.devicesNote === undefined ? {} : { note: this.devicesNote }),
+      className: `at-${menu.where}`,
+      colorOf: (ownerId) => this.colorOf(ownerId),
+      onToggle: (unit, place) => this.toggleDevice(unit, place),
+      onUnlinkHere: (unit) => void this.unlinkMenu(unit, watchId),
+      onDone: () => this.closeDevices(),
+    });
+  }
+
+  /** The badge on a linked menu's row in the Menus card. */
+  private linkBadge(menu: MenusSection): string | undefined {
+    const watchId = this.watchId;
+    if (!this.devicesOffered || watchId === undefined) return undefined;
+    return menuLinkBadgeText(this.draft?.document, menuLinkUnitOf(menu), watchId, this.places, this.linkDevices);
+  }
+
+  /**
+   * A menu's Devices line, last on its own card in the inspector: the title,
+   * then a button saying where the menu is ("This watch only", "Also on
+   * Jesse's iPhone"), which opens the Devices menu for its unit under it. The
+   * page switcher's line is the Anywhere menu's.
+   */
+  private devicesLine(menu: MenusSection): TemplateResult | typeof nothing {
+    const watchId = this.watchId;
+    if (!this.devicesOffered || watchId === undefined) return nothing;
+    const unit = menuLinkUnitOf(menu);
+    const open = this.devicesMenu?.where === "card" && this.devicesMenu.unit === unit;
+    const holders = menuUnitHolders(this.draft?.document, unit, watchId, this.places);
+    const where = this.linkBadge(menu) ?? `This ${deviceNoun(this.device)} only`;
+    return html`<div class="field me-dev-field"><span>Devices</span>
+      <button type="button" class="pe-btn pe-dev-open ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
+        title=${holders.length > 1 ? `Pick the devices that share the ${MENU_UNIT_NAMES[unit]}` : `Put the ${MENU_UNIT_NAMES[unit]} on other devices too`}
+        @click=${() => (open ? this.closeDevices() : this.openDevices({ where: "card", unit }))}>${uiIcon("phone")}<span>${where}</span></button>
+    </div>
+    ${open ? this.renderDevicesMenu({ where: "card", unit }) : nothing}`;
+  }
+
+  /** The question before a tick replaces a device's own menu. */
+  private renderReplaceAsk(ask: ReplaceAsk): TemplateResult {
+    const { title, body } = menuReplaceAsk(ask.unit, this.deviceName(ask.target));
+    return html`<dialog class="pe-ask me-replace-ask" aria-labelledby="me-replace-title"
+      @close=${() => { if (this.replaceAsk === ask) this.replaceAsk = undefined; }}>
+      <h3 id="me-replace-title">${title}</h3>
+      <p>${body}</p>
+      <div class="pe-ask-foot">
+        <button class="pe-btn" @click=${() => { this.replaceAsk = undefined; }}>Cancel</button>
+        <button class="pe-btn pe-primary" ?disabled=${this.linking} @click=${() => {
+          this.replaceAsk = undefined;
+          void this.linkMenuTo(ask.unit, ask.target, true);
+        }}>Replace</button>
+      </div>
+    </dialog>`;
+  }
+
   // ── restore ────────────────────────────────────────────────────────────
 
   private closeAsk(): void {
@@ -1396,6 +1685,13 @@ export class WaMenuEditor extends LitElement {
       void this.save();
       return;
     }
+    if (e.key === "Escape" && this.devicesMenu !== undefined) {
+      e.preventDefault();
+      const bar = this.devicesMenu.where === "bar";
+      this.closeDevices();
+      if (bar) void this.updateComplete.then(() => this.headBar.query(this.renderRoot, ".wa-bar .tb-more")?.focus());
+      return;
+    }
     if (e.key === "Escape" && this.topMenuOpen) {
       e.preventDefault();
       this.topMenuOpen = false;
@@ -1443,13 +1739,15 @@ export class WaMenuEditor extends LitElement {
   };
 
   /** A press anywhere outside an open menu of the top bar (the ··· menu, the
-   * watch picker) closes it. */
+   * watch picker) or the Devices menu closes it. The replace question over
+   * the Devices menu keeps it open. */
   private onWindowPointerDown = (e: PointerEvent): void => {
-    if (!this.topMenuOpen && !this.watchMenuOpen) return;
+    if (!this.topMenuOpen && !this.watchMenuOpen && this.devicesMenu === undefined) return;
     const path = e.composedPath();
-    const within = (name: string) => path.some((n) => n instanceof HTMLElement && n.classList.contains(name));
+    const within = (...names: string[]) => path.some((n) => n instanceof HTMLElement && names.some((c) => n.classList.contains(c)));
     if (this.topMenuOpen && !within("pe-top-menu")) this.topMenuOpen = false;
     if (this.watchMenuOpen && !within("me-watch-picker")) this.watchMenuOpen = false;
+    if (this.devicesMenu !== undefined && this.replaceAsk === undefined && !within("me-dev-menu", "pe-dev-open", "tb-more")) this.closeDevices();
   };
 
   // ── drawing ────────────────────────────────────────────────────────────
@@ -1465,6 +1763,7 @@ export class WaMenuEditor extends LitElement {
       </div>
       ${this.renderBody(watches)}
       ${this.restoreAsk ? this.renderRestoreAsk(this.restoreAsk) : nothing}
+      ${this.replaceAsk ? this.renderReplaceAsk(this.replaceAsk) : nothing}
     `;
   }
 
@@ -1538,23 +1837,29 @@ export class WaMenuEditor extends LitElement {
     return this.watchId !== undefined && this.newWatch && !this.opensReady();
   }
 
-  /** The ··· menu: Discard edits, and Start fresh instead while the screen
-   * waits for the iPhone. */
+  /** The ··· menu: Devices (the Devices menu for both menus, which hangs
+   * where the ··· menu does), Discard edits, and Start fresh instead while
+   * the screen waits for the iPhone. */
   private renderTopMenu(draft: WatchMenusDraft | undefined): TemplateResult | typeof nothing {
     const start = this.canStartFresh();
     if (draft === undefined && !start) return nothing;
     const open = this.topMenuOpen;
+    const devices = draft !== undefined && this.devicesOffered;
+    const devicesOpen = devices && this.devicesMenu?.where === "bar";
     const run = (fn: () => void) => () => { this.topMenuOpen = false; fn(); };
     return html`<span class="side-menu pe-top-menu">
       <button class="tb-btn tb-more" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} aria-label="More actions" title="More"
-        @click=${() => { this.topMenuOpen = !open; }}>···</button>
+        @click=${() => { if (devicesOpen) this.closeDevices(); this.topMenuOpen = !open; }}>···</button>
       ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="More actions">
+        ${devices ? html`<button class="row" role="menuitem" title="Pick the devices that share the Anywhere menu and the Entity quick menu"
+          @click=${() => this.openDevices({ where: "bar" })}>Devices…</button>` : nothing}
         ${draft ? html`<button class="row" role="menuitem" ?disabled=${!this.dirty || this.saving}
           title=${this.newWatch ? "Go back to the defaults. Undo brings the edits back." : "Go back to the copy Home Assistant holds. Undo brings the edits back."}
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
         ${start ? html`<button class="row" role="menuitem"
           @click=${run(() => this.startFresh())}>${START_FRESH_BUTTON}</button>` : nothing}
       </div>` : nothing}
+      ${devicesOpen ? this.renderDevicesMenu({ where: "bar" }) : nothing}
     </span>`;
   }
 
@@ -2008,7 +2313,7 @@ export class WaMenuEditor extends LitElement {
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
 
     :host([narrow]) { --cf-pad: 12px; }
-  `, menuViewStyles, menuStageStyles, menuInspectorLookStyles, configFootStyles, howToStyles, headBarStyles];
+  `, menuViewStyles, menuStageStyles, menuInspectorLookStyles, configFootStyles, howToStyles, devicesMenuStyles, menuDevicesStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-menu-editor")) {
