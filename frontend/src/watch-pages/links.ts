@@ -5,7 +5,7 @@
 // shared but its place in the list and `isHidden`, which stay each device's.
 // Home Assistant writes every save of a linked page to the other copies
 // itself, so the editor saves its own device as always. System pages are
-// never linked, nor are menus and rooms.
+// never linked, nor are rooms.
 //
 // This module is the pure part the page editor draws from: which devices
 // hold a page, the switches of its Devices menu, the badge on its row, the
@@ -161,8 +161,9 @@ export function freePlanText(names: readonly string[]): string | undefined {
 // Status pages link the same way: the same id in each device's
 // `status_pages` record, with a `linkId`, and Home Assistant writes a save of
 // one to its other copies. A link brings them along with the pages whose
-// tiles open them. The status page editor has no Devices menu; it only says
-// which pages an edit changes elsewhere.
+// tiles open them, and one can be linked on its own (`kind` `status_pages`).
+// The status page editor's Devices menu and its Not on this list are
+// `watch-status-pages/links.ts`.
 
 /** The devices that hold a status page, `here` first: for a linked one
  * every device `places` lists for its link, for any other only `here`. */
@@ -329,11 +330,36 @@ export function linkErrorText(err: unknown): string {
 
 // ── taking a page off another device ──────────────────────────────────────
 
-/** The calls `removePageFrom` needs. */
-export interface PageRemoveIO {
+/** The calls `removePageFrom` needs, and `removeListedFrom` for a document
+ * of another kind. */
+export interface ListRemoveIO<D> {
   read(owner: string): Promise<Pick<WatchConfigRecord, "revision" | "document">>;
-  save(owner: string, baseRevision: number, document: WatchPagesDocument): Promise<{ revision: number }>;
+  save(owner: string, baseRevision: number, document: D): Promise<{ revision: number }>;
 }
+
+export type PageRemoveIO = ListRemoveIO<WatchPagesDocument>;
+
+/** How `removeListedFrom` reads one kind of document and takes an entry
+ * out of its list. */
+export interface ListedRemoval<D> {
+  /** The record's document, or undefined for one there is nothing to take
+   * out of. */
+  document(value: unknown): D | undefined;
+  /** The id of the listed entry `id` names, as the document spells it, or
+   * undefined when it lists none. */
+  find(document: D, id: string): string | undefined;
+  remove(document: D, id: string): D;
+}
+
+/** A watch's pages, for `removeListedFrom`. */
+const PAGES_LIST: ListedRemoval<WatchPagesDocument> = {
+  document: asWatchPagesDocument,
+  find: (document, id) => {
+    const page = findWatchPage(document, id);
+    return page === undefined ? undefined : watchPageId(page);
+  },
+  remove: (document, id) => deleteWatchPage(document, id),
+};
 
 /** The most times one removal is sent before conflicts end it. */
 export const PAGE_REMOVE_ATTEMPTS = 3;
@@ -362,6 +388,12 @@ export type PagesRemoveResult = { ok: true; removed: string[] } | { ok: false; c
  * and then nothing is saved.
  */
 export async function removePagesFrom(io: PageRemoveIO, owner: string, pageIds: readonly string[]): Promise<PagesRemoveResult> {
+  return removeListedFrom(io, owner, pageIds, PAGES_LIST);
+}
+
+/** `removePagesFrom` for any kind whose document lists entries by id: the
+ * status pages too (`watch-status-pages/links.ts`). */
+export async function removeListedFrom<D extends object>(io: ListRemoveIO<D>, owner: string, pageIds: readonly string[], list: ListedRemoval<D>): Promise<PagesRemoveResult> {
   for (let attempt = 1; ; attempt++) {
     let record: Pick<WatchConfigRecord, "revision" | "document">;
     try {
@@ -370,15 +402,15 @@ export async function removePagesFrom(io: PageRemoveIO, owner: string, pageIds: 
       const { code = "unknown", message } = watchCommandError(err);
       return { ok: false, code, message };
     }
-    const doc = record.revision > 0 ? asWatchPagesDocument(record.document) : undefined;
+    const doc = record.revision > 0 ? list.document(record.document) : undefined;
     if (doc === undefined) return { ok: true, removed: [] };
-    let next = doc;
+    let next: D = doc;
     const removed: string[] = [];
     for (const pageId of pageIds) {
-      const page = findWatchPage(next, pageId);
-      if (page === undefined) continue;
-      removed.push(watchPageId(page));
-      next = deleteWatchPage(next, pageId);
+      const held = list.find(next, pageId);
+      if (held === undefined) continue;
+      removed.push(held);
+      next = list.remove(next, pageId);
     }
     if (removed.length === 0) return { ok: true, removed };
     try {
