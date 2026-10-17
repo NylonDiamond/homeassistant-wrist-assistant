@@ -16,6 +16,7 @@
 // Plan: app repo docs/one_library_plan_2026-10.md.
 
 import { css, html, type TemplateResult } from "lit";
+import { live } from "lit/directives/live.js";
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../ha-api.js";
 import { isPhoneId } from "../phone-pages.js";
 import { watchName } from "../watch-settings.js";
@@ -136,7 +137,10 @@ export function previewOwner(devices: readonly OwnerSummary[], shown: string | u
 export const PREVIEW_NONE_TEXT = "Preview on a 46 mm watch";
 
 /** The bar's "Preview as" picker: every device in the home. It changes what
- * the editor draws on and nothing else. */
+ * the editor draws on and nothing else. Each option binds the selected
+ * property, checked against the live control: once the select has been
+ * changed the browser stops following the selected attribute, so a fallback
+ * to another device would leave the picker naming the old one. */
 export function renderPreviewPicker(devices: readonly OwnerSummary[], shown: string | undefined, onPick: (ownerId: string) => void): TemplateResult {
   if (devices.length === 0) return html`<span class="lib-preview lib-preview-none">${PREVIEW_NONE_TEXT}</span>`;
   return html`<label class="lib-preview" title="The device this is drawn on. Nothing is changed on it.">
@@ -146,7 +150,7 @@ export function renderPreviewPicker(devices: readonly OwnerSummary[], shown: str
       rememberPreview(id);
       onPick(id);
     }}>
-      ${devices.map((d) => html`<option value=${d.owner_watch_id} ?selected=${d.owner_watch_id === shown}>${watchName(d, devices)}</option>`)}
+      ${devices.map((d) => html`<option value=${d.owner_watch_id} .selected=${live(d.owner_watch_id === shown)}>${watchName(d, devices)}</option>`)}
     </select>
   </label>`;
 }

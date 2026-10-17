@@ -345,6 +345,20 @@ describe("library mode's pieces", () => {
     expect(flat(renderPreviewPicker([watch, phone], "w", () => undefined))).toContain("Preview as");
   });
 
+  it("keeps the Preview as choice in step with the device drawn, through the live selected property", () => {
+    const watch = owner({ owner_watch_id: "w" });
+    const phone = owner({ owner_watch_id: "p", device_kind: "iphone", phone_pages: true });
+    const picker = renderPreviewPicker([watch, phone], "p", () => undefined);
+    const options = picker.values.find(Array.isArray) as { strings: readonly string[]; values: unknown[] }[];
+    expect(options).toHaveLength(2);
+    for (const option of options) {
+      expect(option.strings.join("")).toContain(".selected=");
+      expect(option.strings.join("")).not.toContain("?selected=");
+    }
+    const chosen = options.map((o) => (o.values[1] as { values: unknown[] }).values[0]);
+    expect(chosen).toEqual([false, true]);
+  });
+
   it("reads an item as a record, and compares items ignoring case", () => {
     const record = libraryRecord("menus", { document: { schemaVersion: 1 }, revision: 3 });
     expect(record).toMatchObject({ kind: "menus", revision: 3, delivered_revision: 0, delivered_at: null });
