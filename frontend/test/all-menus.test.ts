@@ -222,11 +222,19 @@ describe("the Menus tab", () => {
     await t.ready();
     const before = structuredClone(t.home.lib.picks);
     t.call("toggleNew");
-    expect(t.whole()).toContain("It starts as the app's own Anywhere menu. No device uses it until you tick one on its card.");
-    // For picks the kind of menu, never a device.
-    expect(t.whole()).toContain(`<option value=entity ?selected=false>Entity quick menu</option>`);
+    // The New complication dialog's shape: a name, then which kind of menu.
+    // The cards pick the kind of menu, never a device.
+    const whole = t.whole();
+    const dialog = whole.slice(whole.indexOf(`<dialog class="new-dialog lib-new"`), whole.indexOf("</dialog>"));
+    expect(dialog).toContain("<h2>New menu</h2>");
+    expect(dialog).toContain("Which kind");
+    expect(dialog).toMatch(/shape-card lib-new-card on"[\s\S]*Anywhere menu/);
+    expect(dialog).toMatch(/shape-card lib-new-card "[\s\S]*Entity quick menu/);
+    expect(dialog).toContain("New menu, an Anywhere menu no device uses yet. Tick a device any time.");
+    expect(dialog).not.toContain("Chen Watch");
     t.call("setNewUnit", t.el.newForm, "entity");
     expect((t.el.newForm as { name: string }).name).toBe("New quick menu");
+    expect(t.whole()).toContain("New quick menu, an Entity quick menu no device uses yet.");
     t.el.newForm = { ...(t.el.newForm as object), name: "  Kitchen menu " };
     await t.call("makeMenu");
     expect(t.sentOf("library/menus/create")).toEqual([{

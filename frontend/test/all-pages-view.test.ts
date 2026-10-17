@@ -12,6 +12,7 @@ import { pageCrop } from "../src/watch-pages/all-pages.js";
 import { forgetWatchPagesDraft, keptWatchPagesSelection, takeNewWatchPageAsk, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { JsonObject } from "../src/watch-pages/model.js";
 import { takeStatusPageAsk } from "../src/watch-status-pages/draft.js";
+import { LIBRARY_PREVIEW_KEY } from "../src/library/item-mode.js";
 import { CAMERA, CHEN, CHEN_MENU, DOORS, JESSE, LIGHTS, LONELY, PAGE1, PHONE, SMART, STARTER, SYSTEM } from "./library-fixture.js";
 import { type Msg, fakeHome, settle, standUp } from "./library-tab-fake.js";
 
@@ -171,12 +172,26 @@ describe("the Pages tab", () => {
     await t.ready();
     expect(t.whole()).toContain("New page");
     expect(t.whole()).not.toContain("Add a page on");
+    // Node has no sessionStorage; the editor's Preview as is remembered there.
+    const held = new Map<string, string>();
+    const was = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+    Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: { getItem: (k: string) => held.get(k) ?? null, setItem: (k: string, v: string) => held.set(k, v) } });
     t.call("toggleNew");
-    const form = t.el.newForm as { name: string; busy: boolean };
+    const form = t.el.newForm as { name: string; busy: boolean; preview?: string };
     expect(form.name).toBe("New Page 2"); // the library's pages are counted as a device's are
-    expect(t.whole()).toContain("Make page");
-    expect(t.whole()).toContain("It starts empty and no device has it.");
-    t.el.newForm = { ...form, name: " Garage " };
+    expect(form.preview).toBe("watch");
+    // The New complication dialog's shape: a name, then where to preview it,
+    // since the home has a watch and an iPhone. No device is asked for.
+    const whole = t.whole();
+    const dialog = whole.slice(whole.indexOf(`<dialog class="new-dialog lib-new"`), whole.indexOf("</dialog>"));
+    expect(dialog).toContain("<h2>New page</h2>");
+    expect(dialog).toContain("Name it");
+    expect(dialog).toContain("Preview on");
+    expect(dialog).toContain("Nothing is put on a device; the ticks do that.");
+    expect(dialog).toContain("New Page 2, a page no device has yet. Tick a device any time.");
+    expect(dialog).not.toContain("Apple Watch");
+    t.el.newForm = { ...form, name: " Garage ", preview: "iphone" };
+    expect(t.whole()).toContain("Garage, a page no device has yet.");
     await t.call("makeCard");
     const sent = t.sentOf("library/item/create");
     expect(sent).toHaveLength(1);
@@ -188,6 +203,10 @@ describe("the Pages tab", () => {
     expect(t.el.newForm).toBeUndefined();
     expect(t.library).toEqual([["pages", page.id]]);
     expect(t.opened).toHaveLength(0);
+    // Preview on iPhone: the editor opens drawing on the home's iPhone.
+    expect(held.get(LIBRARY_PREVIEW_KEY)).toBe(PHONE);
+    if (was) Object.defineProperty(globalThis, "sessionStorage", was);
+    else delete (globalThis as { sessionStorage?: unknown }).sessionStorage;
     showTab(t, CHEN);
     t.call("newPage", { ownerId: CHEN, name: "Chen Watch", kind: "watch" });
     expect(takeNewWatchPageAsk(CHEN)).toBe(true);
@@ -200,6 +219,7 @@ describe("the Pages tab", () => {
     await t.ready();
     t.call("toggleNew");
     t.el.newForm = { name: "  ", busy: false };
+    expect(t.whole()).toContain("Type a name to start.");
     await t.call("makeCard");
     expect(t.sentOf("library/item/create")).toHaveLength(0);
     expect(t.whole()).toContain("Give the page a name.");
@@ -216,8 +236,9 @@ describe("the Pages tab", () => {
     t.call("toggleNew");
     const form = t.el.newForm as { name: string; busy: boolean };
     expect(form.name).toMatch(/^New Page \d+$/);
-    expect(t.whole()).toContain("Make status page");
+    expect(t.whole()).toContain("<h2>New status page</h2>");
     t.el.newForm = { ...form, name: "Gates" };
+    expect(t.whole()).toContain("Gates, a status page no device has yet. Tick a device any time.");
     await t.call("makeCard");
     const sent = t.sentOf("library/item/create");
     expect(sent).toHaveLength(1);

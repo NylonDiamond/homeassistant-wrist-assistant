@@ -25,10 +25,11 @@ import { property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 import type { HassLike, OwnerSummary } from "../ha-api.js";
 import { deviceColor, deviceColorsCache } from "../device-colors.js";
-import { LIBRARY_UNSUPPORTED_TEXT, MENU_UNITS, type MenuUnit } from "../library/client.js";
-import { type Library, type LibraryMenu, MENU_UNIT_TITLES, hasItem, holdsRecord, libraryMenus, menuDocument, pagesDocumentFor } from "../library/model.js";
+import { LIBRARY_UNSUPPORTED_TEXT, type MenuUnit } from "../library/client.js";
+import { type Library, type LibraryMenu, hasItem, holdsRecord, libraryMenus, menuDocument, pagesDocumentFor } from "../library/model.js";
 import { ROW_MENU_PICTURE_H, renderMenuRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
+import { newItemDialogStyles, openNewItemDialog, renderNewItemDialog } from "../library/new-dialog.js";
 import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
@@ -55,7 +56,6 @@ import {
   newMenuMadeText,
   newMenuName,
   newMenuSections,
-  newMenuText,
   openMenuDevice,
   restMenus,
   shownMenus,
@@ -266,7 +266,7 @@ export class WaAllMenus extends LitElement {
     const unit: MenuUnit = "anywhere";
     this.newNote = undefined;
     this.newForm = { unit, name: newMenuName(this.lib.library, unit), busy: false };
-    void this.updateComplete.then(() => this.renderRoot.querySelector?.<HTMLInputElement>(".am-new input")?.select());
+    void this.updateComplete.then(() => openNewItemDialog(this.renderRoot));
   }
 
   /** The form's For: another unit, and its offered name when the name was
@@ -349,7 +349,7 @@ export class WaAllMenus extends LitElement {
         </div>
         ${library === undefined ? nothing : this.renderNewButton()}
       </div>
-      ${this.newForm === undefined ? nothing : this.renderNewForm(this.newForm)}
+      ${this.newForm === undefined ? nothing : this.renderNewDialog(this.newForm)}
       ${this.newNote === undefined ? nothing : html`<p class="lt-line ${this.newNote.kind}" role="status">${this.newNote.text}</p>`}
       ${stale ? html`<p class="ap-warn" role="status">Could not read the library again: ${this.lib.store?.readError ?? ""} It shows as last read.</p>` : nothing}
       <div class="pk-surface pk-page" role="region" aria-label="Your menus">
@@ -392,25 +392,15 @@ export class WaAllMenus extends LitElement {
       @click=${() => this.toggleNew()}>${uiIcon("plus")}<span>New menu</span></button>`;
   }
 
-  /** New menu's form: a name, which kind of menu it is, and what it starts
-   * as. No device: a tick on its card puts it on one. */
-  private renderNewForm(form: NewForm): TemplateResult {
-    return html`<form class="am-new" aria-label="New menu" @submit=${(e: Event) => { e.preventDefault(); void this.makeMenu(); }}>
-      <label class="am-new-field"><span>Name</span>
-        <input type="text" .value=${form.name} ?disabled=${form.busy} maxlength="80"
-          @input=${(e: InputEvent) => { this.newForm = { ...form, name: (e.target as HTMLInputElement).value }; }} /></label>
-      <label class="am-new-field"><span>For</span>
-        <select class="lt-pick-sel" ?disabled=${form.busy}
-          @change=${(e: Event) => this.setNewUnit(form, (e.target as HTMLSelectElement).value as MenuUnit)}>
-          ${MENU_UNITS.map((u) => html`<option value=${u} ?selected=${u === form.unit}>${MENU_UNIT_TITLES[u]}</option>`)}
-        </select></label>
-      <p class="am-new-text">${newMenuText(form.unit)}</p>
-      <span class="am-new-acts">
-        <button type="submit" class="am-btn primary" ?disabled=${form.busy}>${form.busy ? "Making…" : "Make menu"}</button>
-        <button type="button" class="am-btn" ?disabled=${form.busy} @click=${() => { this.newForm = undefined; }}>Cancel</button>
-      </span>
-      ${form.note === undefined ? nothing : html`<p class="lt-line ${form.note.kind}" role="status">${form.note.text}</p>`}
-    </form>`;
+  /** New menu's dialog: a name and which kind of menu it is. No device: a
+   * tick on its card puts it on one. */
+  private renderNewDialog(form: NewForm): TemplateResult {
+    return renderNewItemDialog("menus", form, [], {
+      onName: (name) => { this.newForm = { ...form, name }; },
+      onUnit: (unit) => this.setNewUnit(form, unit),
+      onMake: () => void this.makeMenu(),
+      onClose: () => { if (!form.busy) this.newForm = undefined; },
+    });
   }
 
   /** The head, the Pages tab's without Multi select: the Device menu on All
@@ -563,7 +553,7 @@ export class WaAllMenus extends LitElement {
     </div>`;
   }
 
-  static override styles = [listTabStyles, libraryListStyles, libraryTicksStyles, rowPictureStyles, css`
+  static override styles = [listTabStyles, libraryListStyles, libraryTicksStyles, rowPictureStyles, newItemDialogStyles, css`
     /* The menu's picture: the watch screen alone, as the Pages tab's cards
        draw a page. */
     .ap-thumb wa-menu-thumbs { flex: none; width: 100%; }
@@ -584,20 +574,7 @@ export class WaAllMenus extends LitElement {
     .am-new-btn:hover:not(:disabled), .am-new-btn.on { background: var(--wa-hover); }
     .am-new-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .am-new-btn:disabled { opacity: .45; cursor: default; }
-    /* New menu's form, under the tab's head. */
-    .am-new {
-      display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; padding: 12px 14px;
-      border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-card);
-    }
-    .am-new-field { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--wa-muted); }
-    .am-new-field input {
-      width: 220px; max-width: 70vw; height: 28px; padding: 0 9px; border-radius: 6px; border: 1px solid var(--wa-line-strong);
-      font: inherit; font-size: 13px; color: var(--wa-ink); background: var(--wa-input, var(--wa-field));
-    }
-    .am-new-field input:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
-    .am-new-text { flex: 1 1 220px; margin: 0; font-size: 12px; line-height: 1.45; color: var(--wa-muted); }
     .am-new-acts { display: inline-flex; gap: 6px; flex: none; }
-    .am-new .lt-line { flex-basis: 100%; }
     .am-btn {
       display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 7px;
       border: 1px solid var(--wa-line-strong); background: var(--wa-panel, var(--wa-card)); color: var(--wa-ink);

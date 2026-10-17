@@ -72,7 +72,6 @@ import {
   kindOptions,
   movedOrder,
   newCardAdminText,
-  newCardText,
   noPicksText,
   onDeviceTitle,
   libraryEditTitle,
@@ -106,6 +105,8 @@ import { listTabStyles } from "./list-tab-styles.js";
 import { type WatchPage, isSmartWatchPage, watchPagesOf } from "./model.js";
 import { newWatchPage, newWatchPageName } from "./edit.js";
 import { newId } from "../model.js";
+import { rememberPreview } from "../library/item-mode.js";
+import { type NewItemForm, type NewPreview, newItemDialogStyles, openNewItemDialog, renderNewItemDialog } from "../library/new-dialog.js";
 import { newStatusPage, nextStatusPageName } from "../watch-status-pages/model.js";
 import { renderWatchPagePreview, renderWatchPageTitle, watchPagePreviewStyles, watchPreviewLayout, watchReflowPage } from "./preview.js";
 import { type WatchPagesNote, watchCommandError } from "./save-note.js";
@@ -148,11 +149,10 @@ const VIEW_STORE_KEYS: Record<CardKind, string> = {
 };
 
 /** The device tab and the Device menu last used on one tab. */
-/** New page's form, under the tab's head. */
-interface NewCardForm {
-  name: string;
-  busy: boolean;
-  note?: WatchPagesNote;
+/** The device kinds a new page's dialog offers to preview on: the ones the
+ * home has, the watch first. */
+function previewKinds(devices: readonly LinkDevice[]): NewPreview[] {
+  return (["watch", "iphone"] as const).filter((kind) => devices.some((d) => d.kind === kind));
 }
 
 interface KeptView {
@@ -214,9 +214,9 @@ export class WaAllPages extends LitElement {
   @property({ attribute: false }) onOpenLibrary?: (kind: CardKind, id: string) => void;
 
   @state() private search = "";
-  /** New page's form, open under the tab's head: a name for a page the
-   * library gets and no device has yet. */
-  @state() private newForm?: NewCardForm;
+  /** New page's dialog, open: a name for a page the library gets and no
+   * device has yet, and the device kind its editor opens on. */
+  @state() private newForm?: NewItemForm;
   /** Select mode: a click picks a card instead of opening it. */
   @state() private selecting = false;
   /** The picked cards, by `itemKey`. Only those shown count. */
@@ -377,15 +377,16 @@ export class WaAllPages extends LitElement {
     return this.hassNow?.user?.is_admin === true;
   }
 
-  /** Open New page's form under the head, named as the app names the next
-   * page, or close it. */
+  /** Open New page's dialog, named as the app names the next page and set
+   * to preview on a watch, or close it. */
   private toggleNew(): void {
     if (this.newForm?.busy) return;
     if (this.newForm !== undefined) {
       this.newForm = undefined;
       return;
     }
-    this.newForm = { name: this.nextCardName(), busy: false };
+    this.newForm = { name: this.nextCardName(), busy: false, preview: previewKinds(this.devices)[0] };
+    void this.updateComplete.then(() => openNewItemDialog(this.renderRoot));
   }
 
   /** "New Page N", counting the library's pages as the app counts a
@@ -402,7 +403,9 @@ export class WaAllPages extends LitElement {
    * New page: a page in the library under the name given, empty, that no
    * device has (`library/item/create`), then its editor in library mode,
    * where a tick puts it on a device. The library is read again after it,
-   * so its card shows with no device ticked.
+   * so its card shows with no device ticked. The dialog's Preview on names
+   * the kind of device the editor first draws it on: the first device of
+   * that kind is remembered as the editor's Preview as.
    */
   private async makeCard(): Promise<void> {
     const form = this.newForm;
@@ -425,6 +428,8 @@ export class WaAllPages extends LitElement {
       return;
     }
     this.newForm = undefined;
+    const preview = this.devices.find((d) => d.kind === (form.preview ?? previewKinds(this.devices)[0]));
+    if (preview !== undefined) rememberPreview(preview.ownerId);
     // Straight into the new page, in the library: no device has it yet.
     this.onOpenLibrary?.(this.kind, made.reply.id);
   }
@@ -674,7 +679,7 @@ export class WaAllPages extends LitElement {
         </div>
         ${devices.length === 0 ? nothing : this.renderNew(device, devices)}
       </div>
-      ${this.newForm === undefined ? nothing : this.renderNewForm(this.newForm)}
+      ${this.newForm === undefined ? nothing : this.renderNewDialog(this.newForm, devices)}
       ${stale ? html`<p class="ap-warn" role="status">Could not read the library again: ${this.lib.store?.readError ?? ""} It shows as last read.</p>` : nothing}
       <div class="pk-surface pk-page" role="region" aria-label=${`Your ${many}`}>
         <div class="pk-pin">
@@ -749,21 +754,16 @@ export class WaAllPages extends LitElement {
     </div>`;
   }
 
-  /** New page's form: a name. No device: a tick in the editor puts the page
-   * on one. */
-  private renderNewForm(form: NewCardForm): TemplateResult {
-    const noun = cardNoun(this.kind);
-    return html`<form class="ap-new-form" aria-label=${`New ${noun}`} @submit=${(e: Event) => { e.preventDefault(); void this.makeCard(); }}>
-      <label class="ap-new-field"><span>Name</span>
-        <input type="text" .value=${form.name} ?disabled=${form.busy} maxlength="80"
-          @input=${(e: InputEvent) => { this.newForm = { ...form, name: (e.target as HTMLInputElement).value }; }} /></label>
-      <p class="ap-new-text">${newCardText(this.kind)}</p>
-      <span class="ap-new-acts">
-        <button type="submit" class="ap-btn primary" ?disabled=${form.busy}>${form.busy ? "Making…" : `Make ${noun}`}</button>
-        <button type="button" class="ap-btn" ?disabled=${form.busy} @click=${() => { this.newForm = undefined; }}>Cancel</button>
-      </span>
-      ${form.note === undefined ? nothing : html`<p class="lt-line ${form.note.kind}" role="status">${form.note.text}</p>`}
-    </form>`;
+  /** New page's dialog: a name, and on a home with watches and iPhones the
+   * kind of device to preview on. No device: a tick in the editor puts the
+   * page on one. */
+  private renderNewDialog(form: NewItemForm, devices: readonly LinkDevice[]): TemplateResult {
+    return renderNewItemDialog(this.kind, form, previewKinds(devices), {
+      onName: (name) => { this.newForm = { ...form, name }; },
+      onPreview: (preview) => { this.newForm = { ...form, preview }; },
+      onMake: () => void this.makeCard(),
+      onClose: () => { if (!form.busy) this.newForm = undefined; },
+    });
   }
 
   /** The Device menu, the Shape menu's look: All, Watches, iPhones, each
@@ -1056,9 +1056,9 @@ export class WaAllPages extends LitElement {
    * this tab's own: New page, Multi select and its bar, and a page's
    * picture. */
   static override styles = [watchPagePreviewStyles, watchFrameStyles, statusPagesViewStyles, listTabStyles, libraryListStyles,
-    libraryTicksStyles, rowPictureStyles, css`
+    libraryTicksStyles, rowPictureStyles, newItemDialogStyles, css`
     /* New page: filled, as New complication is, the one way to start a page
-       from this tab. On All its form opens under the head, as New menu's. */
+       from this tab. On All it opens the New dialog (new-dialog.ts). */
     .ap-new { position: relative; flex: none; }
     .ap-new-btn {
       display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px; font-weight: 600;
@@ -1069,28 +1069,6 @@ export class WaAllPages extends LitElement {
     .ap-new-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .ap-new-btn:disabled { opacity: .45; cursor: default; }
     .ap-new-btn svg { width: 16px; height: 16px; }
-    .ap-new-form {
-      display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; padding: 12px 14px; margin-bottom: 12px;
-      border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-card);
-    }
-    .ap-new-field { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--wa-muted); }
-    .ap-new-field input {
-      width: 220px; max-width: 70vw; height: 28px; padding: 0 9px; border-radius: 6px; border: 1px solid var(--wa-line-strong);
-      font: inherit; font-size: 13px; color: var(--wa-ink); background: var(--wa-input, var(--wa-field));
-    }
-    .ap-new-field input:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
-    .ap-new-text { flex: 1 1 220px; margin: 0; font-size: 12px; line-height: 1.45; color: var(--wa-muted); }
-    .ap-new-acts { display: inline-flex; gap: 6px; flex: none; }
-    .ap-new-form .lt-line { flex-basis: 100%; }
-    .ap-btn {
-      display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 7px;
-      border: 1px solid var(--wa-line-strong); background: var(--wa-panel, var(--wa-card)); color: var(--wa-ink);
-      font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
-    }
-    .ap-btn:hover:not(:disabled) { background: var(--wa-hover); }
-    .ap-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .ap-btn:disabled { opacity: .45; cursor: default; }
-    .ap-btn.primary { background: var(--wa-primary-bg); color: var(--wa-primary-ink); border-color: transparent; }
 
     /* A status page's picture: the watch's black screen, one screen tall. */
     .ap-pic-status .sp-screen { pointer-events: none; }
