@@ -1,4 +1,4 @@
-// Linked status pages, the Pages tab's Info pages: one status page on
+// Linked status pages, the Status pages tab's cards: one status page on
 // several devices, the same id in each device's `status_pages` record with a
 // `linkId`, as a linked page is (`watch-pages/links.ts`). Home Assistant
 // writes a save of one copy to the others itself.

@@ -630,7 +630,7 @@ function pill(style: PreviewStyle, color: string): string {
   return "";
 }
 
-/** What drawing the watch screen needs of the host: the Pages tab's cards
+/** What drawing the watch screen needs of the host: the Status pages tab's cards
  * hand in only this (`renderStatusPagePicture`). */
 type ScreenHost = Pick<StatusPagesViewHost, "hass" | "icons" | "scale" | "screen" | "phone" | "uiState" | "document" | "requestUpdate">;
 
@@ -693,8 +693,8 @@ export function renderStatusPageScreen(host: StatusPagesViewHost): TemplateResul
 
 /**
  * One status page alone, as the watch draws it, with no watch or iPhone
- * around it and nothing to pick: the picture on an info page card of the
- * Pages tab. `scale` is points to pixels on `screen`.
+ * around it and nothing to pick: the picture on a card of the Status
+ * pages tab. `scale` is points to pixels on `screen`.
  */
 export function renderStatusPagePicture(input: {
   page: JsonObject;

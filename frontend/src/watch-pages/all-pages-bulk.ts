@@ -1,5 +1,5 @@
-// The Pages tab's multi-select: which cards are picked, and what Add to,
-// Remove from and Delete do with them.
+// The multi-select of the Pages and Status pages tabs: which cards are
+// picked, and what Add to, Remove from and Delete do with them.
 //
 // Picking is a set of card keys (`PageCard.key`): a click toggles one, a
 // Shift+click adds the run between the last click and this one in the order
@@ -15,10 +15,10 @@
 // complication taps there that opened them (`clearPageRefs`). The element
 // is `all-pages.ts`; this is the part a test reaches without it.
 //
-// Info pages (status pages) go the same way: each call and each device's
-// work names its kind, the link with `kind` `status_pages` and the removal
-// out of the status pages record. The tab picks cards of one kind at a
-// time, and the result line names that kind.
+// Status pages go the same way: each call and each device's work names its
+// kind, the link with `kind` `status_pages` and the removal out of the
+// status pages record. Each tab lists one kind, and the result line names
+// that kind.
 
 import type { WatchPagesLinkReply } from "../ha-api.js";
 import { type StatusPagesDocument, statusPageId, statusPagesOf } from "../watch-status-pages/model.js";
@@ -99,11 +99,11 @@ export function remapSelection(picked: readonly PageCard[], cards: readonly Page
 
 // ── plans ────────────────────────────────────────────────────────────────
 
-/** Whether a device's page editor (or for info pages its status pages
+/** Whether a device's page editor (or for status pages its status pages
  * editor) holds unsaved edits in this browser tab. */
 export type DirtyCheck = (ownerId: string, kind: CardKind) => boolean;
 
-/** The kind of the picked cards: the tab picks one kind at a time. */
+/** The kind of the picked cards: each tab lists one kind. */
 function kindOf(cards: readonly PageCard[]): CardKind {
   return cards[0]?.kind ?? "pages";
 }
@@ -112,7 +112,7 @@ function kindOf(cards: readonly PageCard[]): CardKind {
 export interface LinkCall {
   source: string;
   target: string;
-  /** Pages, or info pages (`kind` `status_pages` on the link). */
+  /** Pages, or status pages (`kind` `status_pages` on the link). */
   kind: CardKind;
   pageIds: string[];
   /** The pages' names, in `pageIds` order, for the result line. */
@@ -151,7 +151,7 @@ function pushName(list: DeviceNames[], ownerId: string, name: string): void {
  * and the calls are grouped per source and target. Left out: a device that
  * has the page already, one whose page editor holds unsaved edits, and one
  * that holds another page under the same id (Home Assistant would refuse
- * the whole call, `id_taken`). For info pages the ids a target holds are its
+ * the whole call, `id_taken`). For status pages the ids a target holds are its
  * status pages in `statusDocs`.
  */
 export function addPlan(
@@ -306,7 +306,7 @@ export function deletePlan(cards: readonly PageCard[], devices: readonly LinkDev
 const nameOf = (devices: readonly LinkDevice[], ownerId: string): string => devices.find((d) => d.ownerId === ownerId)?.name ?? "a device";
 
 /** The delete question: "Delete 12 pages from 2 devices?", and a line on
- * where they go from and what else changes. For info pages that is the
+ * where they go from and what else changes. For status pages that is the
  * menu slots that show them; the tiles that open them stay, as a page's
  * tiles do. */
 export function deleteAskText(plan: DeletePlan, devices: readonly LinkDevice[]): { title: string; body: string } {
@@ -329,7 +329,7 @@ export function deleteAskText(plan: DeletePlan, devices: readonly LinkDevice[]):
 // ── running ──────────────────────────────────────────────────────────────
 
 /** The calls an action makes, so a test can stand in for Home Assistant.
- * Each names the kind it works on: pages, or info pages (status pages). */
+ * Each names the kind it works on: pages, or status pages. */
 export interface BulkIO {
   link(source: string, pageIds: readonly string[], target: string, kind: CardKind): Promise<WatchPagesLinkReply>;
   remove(ownerId: string, pageIds: readonly string[], kind: CardKind): Promise<PagesRemoveResult>;
@@ -515,7 +515,7 @@ export function bulkResultText(result: BulkResult, devices: readonly LinkDevice[
   if (result.action === "add" && per.length > 0) {
     parts.push(`Added ${joinWords(per)}.`);
     if (result.also > 0) parts.push(`Their tiles brought ${pages(result.also)} more.`);
-    // The free plan limits pages; info pages are all shown.
+    // The free plan limits pages; status pages are all shown.
     const plan = info ? undefined : freePlanText(result.done.filter((d) => free.has(d.ownerId)).map((d) => name(d.ownerId)));
     if (plan !== undefined) parts.push(plan);
   } else if (result.action === "remove" && per.length > 0) {
