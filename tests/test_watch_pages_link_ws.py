@@ -131,6 +131,70 @@ def test_link_of_status_pages_links_them_alone(links) -> None:
     assert [error[1] for error in missing.errors] == ["not_found"]
 
 
+def _menus(beam: str = "auroraWash") -> dict:
+    return {
+        "entityRadial": {"allSlots": [], "schemaVersion": 1},
+        "pageSwitcher": {"schemaVersion": 1},
+        "quickAction": {
+            "beamStyle": beam,
+            "schemaVersion": 1,
+            "slots": [{"id": "S1", "action": {"type": "navigateToPage", "pageId": LIGHTS}}],
+        },
+        "schemaVersion": 1,
+    }
+
+
+def test_link_of_menus_answers_the_units_and_what_came_along(links) -> None:
+    links.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
+    connection = _link(links, source_id=WATCH, targets=[PHONE], kind="menus", units=["anywhere"])
+    assert connection.errors == []
+    link = links.store.get(WATCH, "menus").document["linkIds"]["anywhere"]
+    assert connection.results[1] == {
+        "targets": {PHONE: {"pages": [LIGHTS], "status_pages": [], "units": ["anywhere"]}},
+        "link_ids": {"anywhere": link},
+    }
+    assert links.store.get(PHONE, "menus").document["linkIds"] == {"anywhere": link}
+    places = _run(links, links.ws.ws_watch_pages_places, ALICE).results[1]
+    assert places["menus"] == {link: {"unit": "anywhere", "owners": [PHONE, WATCH]}}
+
+
+def test_link_of_menus_asks_before_replacing_a_targets_own(links) -> None:
+    links.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
+    links.store.panel_save(PHONE, "menus", _menus(beam="none"), base_revision=0)
+    taken = _link(links, source_id=WATCH, targets=[PHONE], kind="menus", units=["anywhere"])
+    assert [error[1] for error in taken.errors] == ["unit_taken"]
+    replaced = _link(
+        links, source_id=WATCH, targets=[PHONE], kind="menus", units=["anywhere"], replace=True
+    )
+    assert replaced.errors == []
+    assert links.store.get(PHONE, "menus").document["quickAction"]["beamStyle"] == "auroraWash"
+
+
+@pytest.mark.parametrize(
+    ("msg", "code"),
+    [
+        ({"kind": "menus", "units": ["everything"]}, "invalid"),
+        ({"kind": "menus"}, "invalid"),
+        ({"kind": "rooms", "page_ids": [HOME]}, "invalid"),
+        ({"kind": "pages"}, "invalid"),
+    ],
+)
+def test_link_of_menus_refusals(links, msg, code) -> None:
+    links.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
+    connection = _link(links, source_id=WATCH, targets=[PHONE], **msg)
+    assert [error[1] for error in connection.errors] == [code]
+    assert links.store.get(PHONE, "menus") is None
+
+
+def test_link_of_menus_follows_the_owner_gate(links) -> None:
+    links.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
+    theirs = _link(
+        links, ALICE, source_id=WATCH, targets=[WATCH_2], kind="menus", units=["entity"]
+    )
+    assert [error[1] for error in theirs.errors] == ["unauthorized"]
+    assert links.store.get(WATCH_2, "menus") is None
+
+
 def test_link_refuses_an_id_the_target_holds(links) -> None:
     links.store.panel_save(
         PHONE, "pages", {"schemaVersion": 1, "pages": [{"id": LIGHTS, "name": "Mine", "items": []}]},
@@ -157,6 +221,7 @@ def test_places_names_the_holders_the_caller_may_see(links) -> None:
     assert admin == {
         "pages": {home: everyone, lights: everyone},
         "status_pages": {doors: everyone},
+        "menus": {},
     }
     alice = _run(links, links.ws.ws_watch_pages_places, ALICE).results[1]
     assert alice["pages"] == {home: [PHONE, WATCH], lights: [PHONE, WATCH]}
