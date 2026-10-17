@@ -165,17 +165,98 @@ def test_apply_link_refuses_system_and_missing_pages() -> None:
     assert err.value.code == "not_found"
 
 
-def test_a_system_status_page_is_copied_unlinked_or_left_alone() -> None:
+def test_a_starter_status_page_links_like_any_other() -> None:
     source, target, added, ids = links.apply_link(
         _status(), None, "statusPages", [SYSTEM_STATUS, STATUS]
     )
     assert added == [SYSTEM_STATUS, STATUS]
-    assert set(ids) == {STATUS}
-    assert "linkId" not in target["statusPages"][0]
-    assert "linkId" not in source["statusPages"][0]
-    held = {"statusPages": [{"id": SYSTEM_STATUS, "name": "Mine", "rows": []}]}
-    _s, again, added, _i = links.apply_link(_status(), held, "statusPages", [SYSTEM_STATUS])
-    assert added == [] and again == held
+    assert set(ids) == {SYSTEM_STATUS, STATUS}
+    assert source["statusPages"][0]["linkId"] == ids[SYSTEM_STATUS]
+    assert target["statusPages"][0]["linkId"] == ids[SYSTEM_STATUS]
+    assert target["statusPages"][0]["isSystemDefault"] is True
+
+
+def test_a_starter_the_target_holds_unlinked_is_adopted_in_its_place() -> None:
+    held = {
+        "schemaVersion": 1,
+        "statusPages": [
+            {"id": "PHONE-ONLY", "name": "Phone", "rows": []},
+            {
+                "id": SYSTEM_STATUS.lower(),
+                "name": "Mine",
+                "rows": [{"id": "R1"}],
+                "isHidden": True,
+                "extra": 1,
+            },
+        ],
+    }
+    before = copy.deepcopy(held)
+    source, target, added, ids = links.apply_link(_status(), held, "statusPages", [SYSTEM_STATUS])
+    assert held == before, "the input is never changed"
+    assert added == [], "an adopted page is not added"
+    link = ids[SYSTEM_STATUS]
+    assert source["statusPages"][0]["linkId"] == link
+    assert [p["id"] for p in target["statusPages"]] == ["PHONE-ONLY", SYSTEM_STATUS.lower()]
+    assert target["statusPages"][1] == {
+        "id": SYSTEM_STATUS.lower(),
+        "name": "Batteries",
+        "rows": [],
+        "isSystemDefault": True,
+        "linkId": link,
+        "isHidden": True,
+    }, "the source's contents, the target's place, id spelling and isHidden"
+    # Linked from then on: a second link onto it writes nothing.
+    _s, again, added, _i = links.apply_link(source, target, "statusPages", [SYSTEM_STATUS])
+    assert again == target and added == []
+
+
+def test_a_starter_is_adopted_when_either_side_says_so() -> None:
+    # Only the target's copy carries isSystemDefault, under an id that is
+    # not one of the five fixed ones.
+    source = {"statusPages": [{"id": STATUS, "name": "Doors", "rows": []}]}
+    held = {"statusPages": [{"id": STATUS, "name": "Old", "isSystemDefault": True}]}
+    _s, target, _a, ids = links.apply_link(source, held, "statusPages", [STATUS])
+    assert target["statusPages"] == [
+        {"id": STATUS, "name": "Doors", "rows": [], "linkId": ids[STATUS]}
+    ]
+    # And with the mark on the source alone.
+    source["statusPages"][0]["isSystemDefault"] = True
+    held = {"statusPages": [{"id": STATUS, "name": "Old"}]}
+    _s, target, _a, ids = links.apply_link(source, held, "statusPages", [STATUS])
+    assert target["statusPages"][0]["linkId"] == ids[STATUS]
+
+
+def test_a_status_page_clash_is_still_id_taken() -> None:
+    # Another status page under a non-starter id, unlinked.
+    held = {"statusPages": [{"id": STATUS, "name": "Other", "rows": []}]}
+    with pytest.raises(links.PageLinkError) as err:
+        links.apply_link(_status(), held, "statusPages", [STATUS])
+    assert err.value.code == "id_taken"
+    # A starter copy linked to something else.
+    held = {"statusPages": [{"id": SYSTEM_STATUS, "name": "Mine", "linkId": "L-ELSE"}]}
+    with pytest.raises(links.PageLinkError) as err:
+        links.apply_link(_status(), held, "statusPages", [SYSTEM_STATUS])
+    assert err.value.code == "id_taken"
+    # Pages never adopt, whatever their id.
+    held = {"pages": [{"id": SYSTEM_STATUS, "name": "Other"}]}
+    source = {"pages": [{"id": SYSTEM_STATUS, "name": "Mine"}]}
+    with pytest.raises(links.PageLinkError) as err:
+        links.apply_link(source, held, "pages", [SYSTEM_STATUS])
+    assert err.value.code == "id_taken"
+
+
+def test_a_linked_starter_fans_out_and_drops_its_last_link() -> None:
+    held = {"statusPages": [{"id": SYSTEM_STATUS, "name": "Mine", "rows": [], "isHidden": True}]}
+    source, target, _a, ids = links.apply_link(_status(), held, "statusPages", [SYSTEM_STATUS])
+    source["statusPages"][0]["name"] = "Power"
+    out = links.fan_out(source, target, "statusPages")
+    assert out["statusPages"][0]["name"] == "Power"
+    assert out["statusPages"][0]["isHidden"] is True
+    dropped = links.drop_link(out, "statusPages", ids[SYSTEM_STATUS])
+    assert "linkId" not in dropped["statusPages"][0]
+    assert links.link_places({"w": source, "p": out}, "statusPages") == {
+        ids[SYSTEM_STATUS]: ["p", "w"]
+    }
 
 
 # ── fan_out ──────────────────────────────────────────────────────────────

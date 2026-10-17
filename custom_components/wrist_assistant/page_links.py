@@ -12,9 +12,7 @@ What is shared and what is not:
 
 * Shared: every key of the page object but ``isHidden``.
 * Per device: the page's place in the list, and ``isHidden``.
-* Never linked: a page with ``isSystemPage: true``, a system status page
-  (one of the app's five fixed ids, or ``isSystemDefault: true``), and the
-  rooms.
+* Never linked: a page with ``isSystemPage: true``, and the rooms.
 
 The menus link too, not by item but by unit (:data:`LINK_UNITS`): the
 Anywhere menu with the page switcher, and the Entity quick menu, each marked
@@ -25,9 +23,11 @@ link the same way, as one unit: the phrase library with the defaults behind
 it. The watch's own speech settings stay on each watch
 (:data:`UNIT_DEVICE_KEYS`). Step 3 of the same plan.
 
-A system status page a link brings along is copied to a device that lacks
-it, without a ``linkId``, so a tile that opens it still finds it there; a
-device that already has it keeps its own.
+A starter status page (one of the app's five fixed ids, or
+``isSystemDefault: true``) links like any other status page. It has the
+same id on every device already, so a device that holds its own copy with
+no ``linkId`` is not refused: that copy is adopted, taking the link and the
+source's contents (:func:`apply_link`).
 
 The store (``watch_config_store.py``) keeps the copies in step: after every
 accepted write of a linked kind it hands each other device holding one of
@@ -56,7 +56,7 @@ LINK_KEY = "linkId"
 # The per-device key on a linked page; every other key is shared.
 HIDDEN_KEY = "isHidden"
 
-# The app's five system status pages, by their fixed ids (upper case).
+# The app's five starter status pages, by their fixed ids (upper case).
 SYSTEM_STATUS_PAGE_IDS = frozenset(
     f"00000000-0000-0000-0000-00000000000{n}" for n in range(1, 6)
 )
@@ -103,11 +103,9 @@ def is_system_page(page: Mapping[str, Any]) -> bool:
 
 
 def is_system_status_page(page: Mapping[str, Any]) -> bool:
+    """Whether a status page is one of the app's starter pages, which every
+    device has under the same id."""
     return _key(page.get("id")) in SYSTEM_STATUS_PAGE_IDS or page.get("isSystemDefault") is True
-
-
-def _never_linked(page: Mapping[str, Any], key: str) -> bool:
-    return is_system_page(page) if key == "pages" else is_system_status_page(page)
 
 
 def listed_page_ids(pages_doc: Any) -> list[str]:
@@ -206,7 +204,7 @@ def check_link(pages_doc: Any, page_ids: Iterable[str], key: str = "pages") -> N
     of a system page (``system_page``).
 
     With ``key`` ``statusPages`` the ids are status pages, and only a missing
-    one is refused: a system status page is copied, never linked
+    one is refused: a starter status page links like any other
     (:func:`apply_link`)."""
     noun = "page" if key == "pages" else "status page"
     by_key = {_key(page.get("id")): page for page in items(pages_doc, key)}
@@ -237,9 +235,12 @@ def apply_link(
     A page the target already holds with the same ``linkId`` is left as it
     is. A target page with the same id and no or another ``linkId`` refuses
     the whole link (``id_taken``), as does an id the source does not hold
-    (``not_found``) or a system page (``system_page``). A system status page
-    is never linked: it is copied as it is to a target that lacks it, and
-    left alone on one that has it.
+    (``not_found``) or a system page (``system_page``). One exception: a
+    starter status page (:func:`is_system_status_page`, on either side) the
+    target holds with no ``linkId`` is adopted where it stands. It takes the
+    link and the source's contents, keeping its place and its ``isHidden``
+    as :func:`fan_out` does, and is not counted in ``added``. A starter copy
+    with another ``linkId`` is still ``id_taken``.
     """
     source = copy.deepcopy(source_doc) if isinstance(source_doc, dict) else empty_document(key)
     target = copy.deepcopy(target_doc) if isinstance(target_doc, dict) else empty_document(key)
@@ -258,26 +259,49 @@ def apply_link(
         if key == "pages" and is_system_page(page):
             raise PageLinkError("system_page", f"page {page_id} is a system page")
         held = target_by_key.get(_key(page_id))
-        if _never_linked(page, key):
-            if held is None:
-                target[key].append(copy.deepcopy(page))
-                target_by_key[_key(page_id)] = target[key][-1]
-                added.append(page["id"])
-            continue
         link = page.get(LINK_KEY)
         if not isinstance(link, str) or not link:
             link = page[LINK_KEY] = new_link_id()
         links[page["id"]] = link
         if held is not None:
-            if held.get(LINK_KEY) != link:
+            if held.get(LINK_KEY) == link:
+                continue
+            if not _adoptable(page, held, key):
                 raise PageLinkError(
                     "id_taken", f"the device already has another page with the id {page_id}"
                 )
+            adopted = _linked_copy(page, held)
+            place = next(i for i, other in enumerate(target[key]) if other is held)
+            target[key][place] = adopted
+            target_by_key[_key(page_id)] = adopted
             continue
         target[key].append(copy.deepcopy(page))
         target_by_key[_key(page_id)] = target[key][-1]
         added.append(page["id"])
     return source, target, added, links
+
+
+def _adoptable(page: Mapping[str, Any], held: Mapping[str, Any], key: str) -> bool:
+    """Whether a target's ``held`` page under ``page``'s id can join its link
+    instead of refusing it: a starter status page the target holds with no
+    ``linkId``. Every device has the starters under the same ids, so the
+    target's copy is the same page, not another one."""
+    if key != LINKED_KINDS["status_pages"]:
+        return False
+    if isinstance(held.get(LINK_KEY), str) and held[LINK_KEY]:
+        return False
+    return is_system_status_page(page) or is_system_status_page(held)
+
+
+def _linked_copy(source: Mapping[str, Any], held: Mapping[str, Any]) -> dict[str, Any]:
+    """``source`` as ``held``'s device keeps it: every key but ``isHidden``
+    from ``source``, the id as ``held`` writes it, and ``held``'s own
+    ``isHidden`` (none when it had none)."""
+    out = {k: copy.deepcopy(v) for k, v in source.items() if k != HIDDEN_KEY}
+    out["id"] = held["id"]
+    if HIDDEN_KEY in held:
+        out[HIDDEN_KEY] = held[HIDDEN_KEY]
+    return out
 
 
 def fan_out(saved_doc: Any, other_doc: Any, key: str) -> dict[str, Any] | None:
@@ -308,10 +332,7 @@ def fan_out(saved_doc: Any, other_doc: Any, key: str) -> dict[str, Any] | None:
         if source is None:
             out.append(page)
             continue
-        replaced = {k: copy.deepcopy(v) for k, v in source.items() if k != HIDDEN_KEY}
-        replaced["id"] = page["id"]
-        if HIDDEN_KEY in page:
-            replaced[HIDDEN_KEY] = page[HIDDEN_KEY]
+        replaced = _linked_copy(source, page)
         if replaced != page:
             changed = True
         out.append(replaced)
