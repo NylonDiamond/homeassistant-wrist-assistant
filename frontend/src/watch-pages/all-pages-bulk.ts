@@ -306,14 +306,16 @@ export function deletePlan(cards: readonly PageCard[], devices: readonly LinkDev
 const nameOf = (devices: readonly LinkDevice[], ownerId: string): string => devices.find((d) => d.ownerId === ownerId)?.name ?? "a device";
 
 /** The delete question: "Delete 12 pages from 2 devices?", and a line on
- * where they go from and what else changes. Info pages leave the tiles and
- * menu slots that open them alone, as the status pages editor's own delete
- * does, so their line says nothing of those. */
+ * where they go from and what else changes. For info pages that is the
+ * menu slots that show them; the tiles that open them stay, as a page's
+ * tiles do. */
 export function deleteAskText(plan: DeletePlan, devices: readonly LinkDevice[]): { title: string; body: string } {
   const n = plan.pages.length;
   const where = plan.devices.map((id) => nameOf(devices, id));
   const title = `Delete ${n} ${cardNoun(plan.kind, n)} from ${plural(where.length, "device", "devices")}?`;
-  const what = plan.kind === "status_pages" ? "" : `, with the menu slots and complication taps there that open ${n === 1 ? "it" : "them"}`;
+  const what = plan.kind === "status_pages"
+    ? `, with the menu slots there that show ${n === 1 ? "it" : "them"}`
+    : `, with the menu slots and complication taps there that open ${n === 1 ? "it" : "them"}`;
   const parts = [
     `${n === 1 ? "It comes" : "They come"} off ${joinWords(where)}${what}. This cannot be undone.`,
   ];
@@ -332,9 +334,11 @@ export interface BulkIO {
   link(source: string, pageIds: readonly string[], target: string, kind: CardKind): Promise<WatchPagesLinkReply>;
   remove(ownerId: string, pageIds: readonly string[], kind: CardKind): Promise<PagesRemoveResult>;
   /** Clear the menu slots and complication taps that opened the pages:
-   * `clearPageRefs`, whose "warn" note means some could not be. Info pages
-   * clear nothing, as the status pages editor's delete clears nothing. */
-  clearRefs(ownerId: string, pageIds: string[], kind: CardKind): Promise<WatchPagesNote | undefined>;
+   * `clearPageRefs`, whose "warn" note means some could not be; for info
+   * pages the Status page slots that showed them (`clearStatusPageRefs`). A
+   * linked menu keeps its slots to `kept`, the pages still on another
+   * device. */
+  clearRefs(ownerId: string, pageIds: string[], kind: CardKind, kept: readonly string[]): Promise<WatchPagesNote | undefined>;
 }
 
 /** What an action did, for its one result line. */
@@ -432,8 +436,18 @@ export async function runAdd(io: BulkIO, plan: AddPlan, devices: readonly LinkDe
 /** Where `runWork` keeps what one device lost of one kind. */
 const workKey = (kind: CardKind, ownerId: string): string => `${kind}|${ownerId}`;
 
-/** Take each device's pages off it, then clear what opened them there. */
-async function runWork(io: BulkIO, work: readonly DeviceWork[], result: BulkResult, devices: readonly LinkDevice[], verb: string, step?: BulkStep): Promise<Map<string, Set<string>>> {
+/** Take each device's pages off it, then clear what opened them there.
+ * `kept` names, of the pages taken off one device, those still on another
+ * once the action is done. */
+async function runWork(
+  io: BulkIO,
+  work: readonly DeviceWork[],
+  result: BulkResult,
+  devices: readonly LinkDevice[],
+  verb: string,
+  kept: (removed: readonly string[]) => string[],
+  step?: BulkStep,
+): Promise<Map<string, Set<string>>> {
   const removed = new Map<string, Set<string>>();
   for (const [i, w] of work.entries()) {
     step?.(`${verb} ${nameOf(devices, w.ownerId)} (${i + 1} of ${work.length})…`);
@@ -451,7 +465,7 @@ async function runWork(io: BulkIO, work: readonly DeviceWork[], result: BulkResu
     addDone(result, w.ownerId, res.removed.length);
     if (res.removed.length === 0) continue;
     try {
-      const note = await io.clearRefs(w.ownerId, res.removed, w.kind);
+      const note = await io.clearRefs(w.ownerId, res.removed, w.kind, kept(res.removed));
       if (note?.kind === "warn" || note?.kind === "err") result.refs.push(w.ownerId);
     } catch {
       result.refs.push(w.ownerId);
@@ -465,7 +479,8 @@ export async function runRemove(io: BulkIO, plan: RemovePlan, devices: readonly 
   const result = emptyResult("remove", plan.kind);
   result.dirty = [...plan.dirty];
   result.lastOnly = [...plan.lastOnly];
-  await runWork(io, plan.work, result, devices, `Taking ${cardNoun(plan.kind, 2)} off`, step);
+  // A page taken off some devices stays on others (`lastOnly` keeps the rest).
+  await runWork(io, plan.work, result, devices, `Taking ${cardNoun(plan.kind, 2)} off`, (removed) => [...removed], step);
   return result;
 }
 
@@ -473,7 +488,9 @@ export async function runRemove(io: BulkIO, plan: RemovePlan, devices: readonly 
 export async function runDelete(io: BulkIO, plan: DeletePlan, devices: readonly LinkDevice[], step?: BulkStep): Promise<BulkResult> {
   const result = emptyResult("delete", plan.kind);
   result.dirty = [...plan.dirty];
-  const removed = await runWork(io, plan.work, result, devices, "Deleting on", step);
+  // A page stays only on a device left alone for its unsaved edits.
+  const staying = new Set(plan.pages.flatMap((p) => p.copies.filter((c) => plan.dirty.includes(c.ownerId)).map((c) => upper(c.pageId))));
+  const removed = await runWork(io, plan.work, result, devices, "Deleting on", (ids) => ids.filter((id) => staying.has(upper(id))), step);
   result.gone = plan.pages.filter((p) => p.copies.every((c) => removed.get(workKey(p.kind, c.ownerId))?.has(upper(c.pageId)) ?? false)).length;
   return result;
 }
@@ -534,7 +551,8 @@ export function bulkResultText(result: BulkResult, devices: readonly LinkDevice[
   }
   if (result.refs.length > 0) {
     left = true;
-    parts.push(`Could not clear the menu slots or complication taps that opened them on ${joinWords(result.refs.map(name))}. Change those by hand.`);
+    const what = info ? "the menu slots that showed them" : "the menu slots or complication taps that opened them";
+    parts.push(`Could not clear ${what} on ${joinWords(result.refs.map(name))}. Change those by hand.`);
   }
   if (!done && !left) {
     const these = cardNoun(result.kind, 2);

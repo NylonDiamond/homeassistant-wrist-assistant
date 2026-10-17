@@ -99,7 +99,8 @@ import {
   statusPagesSharedText,
 } from "../watch-pages/links.js";
 import { type ElsewhereStatusPage, elsewhereStatusPages, statusPageDevicePlaces, statusPageMayLink, statusPageTitle } from "./links.js";
-import { takeStatusPageOff } from "./links-io.js";
+import { clearStatusPageRefs, takeStatusPageOff } from "./links-io.js";
+import { deletedPageIds } from "../watch-pages/page-refs.js";
 import { type JsonObject, isJsonObject } from "../watch-pages/model.js";
 import { type WatchPagesNote, linkFailuresOf, watchCommandError, withLinkFailures } from "../watch-pages/save-note.js";
 import { friendlyError } from "../friendly-error.js";
@@ -1106,6 +1107,11 @@ export class WaStatusPagesEditor extends LitElement {
     // A first save over revision 0 that Home Assistant refuses as
     // `no_record` means the watch is not paired (`firstSaveNote`).
     const first = draft.revision <= 0;
+    // The status pages this save deletes: once it lands, the menu slots that
+    // show them are cleared (`clearStatusPageRefs`), but for a linked menu's
+    // slots to one still on another device.
+    const deleted = deletedPageIds(statusPagesOf(draft.base), statusPagesOf(draft.document));
+    const elsewhere = deleted.filter((id) => statusPageHolders(findStatusPage(draft.base, id), watchId, this.places).length > 1);
     const running = saveStatusPagesDraft(draft, {
       save: (base, document) => saveWatchConfig(hass, watchId, "status_pages", base, document).catch((err: unknown) => {
         throw flatError(err);
@@ -1128,6 +1134,10 @@ export class WaStatusPagesEditor extends LitElement {
     }));
     this.saveEnded(watchId);
     if (watchId === this.watchId) this.note = firstSaveNote(first, result.code, statusPagesSaveNote(result));
+    if (result.ok && deleted.length > 0) {
+      const cleared = await clearStatusPageRefs(hass, watchId, deleted, elsewhere);
+      if (cleared !== undefined && watchId === this.watchId && this.note === undefined) this.note = cleared;
+    }
   }
 
   /** "Start fresh instead", asked first: while an iPhone may still move the

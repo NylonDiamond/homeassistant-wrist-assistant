@@ -172,6 +172,8 @@ function fake(refusals: Record<string, string> = {}) {
   const docs = new Map([...DOCS].map(([k, v]) => [k, structuredClone(v)]));
   const revisions = new Map([...docs.keys()].map((k) => [k, 1]));
   const calls: string[] = [];
+  /** The pages each clearing was told are still on another device. */
+  const kept = new Map<string, readonly string[]>();
   const io: BulkIO = {
     link: (source, pageIds, target) => {
       calls.push(`link ${source}>${target} ${pageIds.length}`);
@@ -193,12 +195,13 @@ function fake(refusals: Record<string, string> = {}) {
       };
       return removePagesFrom(pio, ownerId, pageIds);
     },
-    clearRefs: (ownerId, pageIds) => {
+    clearRefs: (ownerId, pageIds, _kind, still) => {
       calls.push(`refs ${ownerId} ${pageIds.length}`);
+      kept.set(ownerId, still);
       return Promise.resolve(ownerId === "w1" ? { kind: "warn", text: "could not" } : undefined);
     },
   };
-  return { io, docs, calls };
+  return { io, docs, calls, kept };
 }
 
 describe("running", () => {
@@ -255,6 +258,19 @@ describe("running", () => {
       kind: "warn",
       text: "Deleted 2 pages. Could not clear the menu slots or complication taps that opened them on Jesse's Watch. Change those by hand.",
     });
+  });
+
+  it("tells each clearing which pages stay on another device, for a linked menu's slots", async () => {
+    const removed = fake();
+    await runRemove(removed.io, removePlan([card("Hall")], ["p1"], clean), DEVICES);
+    expect(removed.kept.get("p1")).toEqual([HALL]);
+    // A delete takes them off every device, but one left alone for its edits.
+    const deleted = fake();
+    await runDelete(deleted.io, deletePlan([card("Hall"), card("Yard")], DEVICES, clean), DEVICES);
+    expect(deleted.kept.get("w1")).toEqual([]);
+    const dirty = fake();
+    await runDelete(dirty.io, deletePlan([card("Hall"), card("Yard")], DEVICES, (id) => id === "p1"), DEVICES);
+    expect(dirty.kept.get("w1")).toEqual([HALL]);
   });
 
   it("keeps the single remove working as before", async () => {
@@ -361,7 +377,7 @@ describe("info pages", () => {
   it("word the delete question and the result line for info pages", () => {
     expect(deleteAskText(deletePlan([info("House")], DEVICES, clean), DEVICES)).toEqual({
       title: "Delete 1 info page from 2 devices?",
-      body: "It comes off Jesse's Watch and Jesse's iPhone. This cannot be undone.",
+      body: "It comes off Jesse's Watch and Jesse's iPhone, with the menu slots there that show it. This cannot be undone.",
     });
     const base: BulkResult = { action: "remove", kind: "status_pages", done: [], gone: 0, also: 0, taken: [], dirty: ["p1"], blocked: [], lastOnly: [], failed: [], refs: [] };
     expect(bulkResultText(base, DEVICES).text).toBe("Left Jesse's iPhone alone: its status pages have unsaved edits. Save or discard the edits in its status pages editor first.");

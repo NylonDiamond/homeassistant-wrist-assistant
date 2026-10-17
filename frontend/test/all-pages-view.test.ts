@@ -443,8 +443,11 @@ describe("the Pages tab's info pages", () => {
     expect(saves).toEqual([`${t.watch}/status_pages`, `${t.phone}/status_pages`]);
     expect((t.el.bulkNote as { text: string }).text).toBe("Deleted 2 info pages.");
     expect((t.held.get(`${t.watch}/status_pages`)!.document.statusPages as JsonObject[]).map((p) => p.name)).toEqual(["Lights On"]);
-    // Nothing went to the menus or the complications for info pages.
-    expect(t.sent.some((m) => (m.type as string).endsWith("watch_config/get") && m.kind === "menus")).toBe(false);
+    // Each device's menus were read for the Status page slots that showed
+    // them; the complications, which never open an info page, were not.
+    const menuReads = t.sent.filter((m) => (m.type as string).endsWith("watch_config/get") && m.kind === "menus").map((m) => m.owner_watch_id);
+    expect(menuReads).toEqual([t.watch, t.phone]);
+    expect(t.sent.some((m) => (m.type as string).endsWith("/list"))).toBe(false);
     t.call("endSelect");
     t.call("setCardKind", "pages");
   });

@@ -8,7 +8,7 @@ import { type HassLike, fetchList, fetchWatchConfig, saveRecord, saveWatchConfig
 import { keptWatchPagesDraft } from "./kept.js";
 import { type PageRemoveIO, removePageFrom } from "./links.js";
 import { isJsonObject } from "./model.js";
-import { clearPageFromComplication, clearPageFromMenus, menuSlotsOpeningPage } from "./page-refs.js";
+import { clearPageFromComplication, clearPageFromMenus, clearStatusPageFromMenus, countMenuRefs } from "./page-refs.js";
 import type { WatchPagesNote } from "./save-note.js";
 
 function plural(n: number, one: string, many: string): string {
@@ -16,25 +16,35 @@ function plural(n: number, one: string, many: string): string {
 }
 
 /**
+ * Take the slots of a device's menus that open one of `pageIds` (Status page
+ * slots with `status`) out of its menus record, in one save on the revision
+ * just read. A linked menu keeps its slots to `kept` (`clearPageFromMenus`).
+ * How many went; a failure rejects.
+ */
+export async function clearMenuRefs(hass: HassLike, ownerId: string, pageIds: readonly string[], kept: readonly string[] = [], status = false): Promise<number> {
+  const record = await fetchWatchConfig(hass, ownerId, "menus");
+  if (record.revision <= 0 || !isJsonObject(record.document)) return 0;
+  const before = record.document;
+  const next = status ? clearStatusPageFromMenus(before, pageIds, kept) : clearPageFromMenus(before, pageIds, kept);
+  if (next === before) return 0;
+  await saveWatchConfig(hass, ownerId, "menus", record.revision, next);
+  return countMenuRefs(before, pageIds, status) - countMenuRefs(next, pageIds, status);
+}
+
+/**
  * After pages went from a device: take every menu slot there that went to
  * one of them out of its menus record, and make every complication tap that
  * opened one do nothing, each in its own save on the revision just read. A
- * note says what was cleared, or what could not be (the page is gone either
- * way; a slot left behind only fails on the device, as before).
+ * linked menu keeps its slots to `kept`, the pages still on another device.
+ * A note says what was cleared, or what could not be (the page is gone
+ * either way; a slot left behind only fails on the device, as before).
  */
-export async function clearPageRefs(hass: HassLike, ownerId: string, pageIds: string[]): Promise<WatchPagesNote | undefined> {
+export async function clearPageRefs(hass: HassLike, ownerId: string, pageIds: string[], kept: readonly string[] = []): Promise<WatchPagesNote | undefined> {
   let slots = 0;
   let taps = 0;
   const failed: string[] = [];
   try {
-    const record = await fetchWatchConfig(hass, ownerId, "menus");
-    if (record.revision > 0 && isJsonObject(record.document)) {
-      const next = clearPageFromMenus(record.document, pageIds);
-      if (next !== record.document) {
-        slots = pageIds.reduce((n, id) => n + menuSlotsOpeningPage(record.document as Record<string, unknown>, id).length, 0);
-        await saveWatchConfig(hass, ownerId, "menus", record.revision, next);
-      }
-    }
+    slots = await clearMenuRefs(hass, ownerId, pageIds, kept);
   } catch {
     failed.push("the menus");
     slots = 0;
@@ -81,14 +91,16 @@ export function pagesRemoveIO(hass: HassLike): PageRemoveIO {
  * complication taps that opened it are cleared, as after a delete. A device
  * whose page editor holds unsaved edits in this tab is left alone.
  * Undefined when done, else what to say. `name` is the device's.
+ * `elsewhere` false: the page is gone from every device now (a delete on
+ * all of them), so a linked menu's slots to it go too.
  */
-export async function takePageOff(hass: HassLike | undefined, ownerId: string, pageId: string, name: string): Promise<string | undefined> {
+export async function takePageOff(hass: HassLike | undefined, ownerId: string, pageId: string, name: string, elsewhere = true): Promise<string | undefined> {
   if (!hass) return `Not taken off ${name}.`;
   if (keptWatchPagesDraft(ownerId)?.dirty ?? false) {
     return `Not taken off ${name}: its pages have unsaved edits. Save or discard them first.`;
   }
   const result = await removePageFrom(pagesRemoveIO(hass), ownerId, pageId);
   if (!result.ok) return `Not taken off ${name}: ${result.message}`;
-  if (result.removed) await clearPageRefs(hass, ownerId, [pageId]);
+  if (result.removed) await clearPageRefs(hass, ownerId, [pageId], elsewhere ? [pageId] : []);
   return undefined;
 }

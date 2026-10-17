@@ -9,9 +9,12 @@ import type { ComplicationRecord } from "../src/ha-api.js";
 import {
   clearPageFromComplication,
   clearPageFromMenus,
+  clearStatusPageFromMenus,
   complicationsOpeningPage,
+  countMenuRefs,
   deletedPageIds,
   menuSlotsOpeningPage,
+  menuSlotsOpeningStatusPage,
 } from "../src/watch-pages/page-refs.js";
 
 const LIVING = "C30E7CBF-E53A-4A00-90EF-07A0CC51B374";
@@ -88,6 +91,37 @@ describe("menu slots that go to a page", () => {
     const doc = menus();
     expect(clearPageFromMenus(doc, ["0000-NOT-A-PAGE"])).toBe(doc);
   });
+
+  it("keeps a linked menu's slots to a page still on another device", () => {
+    // The Anywhere menu is shared with another device, the Entity quick menu
+    // is not: a slot taken out of the shared one would go there too.
+    const doc = { ...menus(), linkIds: { anywhere: "a".repeat(32) } };
+    const after = clearPageFromMenus(doc, [LIVING], [LIVING.toLowerCase()]);
+    expect(menuSlotsOpeningPage(after, LIVING).map((f) => f.slotId)).toEqual(["S1", "S3"]);
+    expect(countMenuRefs(doc, [LIVING]) - countMenuRefs(after, [LIVING])).toBe(2);
+    // Gone from every device: the shared menu's slots go too.
+    expect(menuSlotsOpeningPage(clearPageFromMenus(doc, [LIVING]), LIVING)).toEqual([]);
+    // An unlinked menu clears them whatever is kept.
+    expect(menuSlotsOpeningPage(clearPageFromMenus(menus(), [LIVING], [LIVING]), LIVING)).toEqual([]);
+  });
+});
+
+describe("menu slots that show a status page", () => {
+  const show = (id: string, pageId: string) => ({ id, position: "topLeft", isVisible: true, action: { type: "showStatusPage", pageId } });
+
+  it("finds and clears only Status page slots, never a Go to page slot to the same id", () => {
+    const doc = menus();
+    (doc.quickAction as { slots: unknown[] }).slots.push(show("P1", BEDROOM));
+    (doc.entityRadial as Record<string, unknown>).lightSlots = [show("P2", BEDROOM.toLowerCase())];
+    expect(menuSlotsOpeningStatusPage(doc, BEDROOM).map((f) => f.slotId)).toEqual(["P1", "P2"]);
+    const after = clearStatusPageFromMenus(doc, [BEDROOM]);
+    expect(menuSlotsOpeningStatusPage(after, BEDROOM)).toEqual([]);
+    expect(menuSlotsOpeningPage(after, BEDROOM).map((f) => f.slotId)).toEqual(["S4"]);
+    expect(countMenuRefs(doc, [BEDROOM], true)).toBe(2);
+    expect(clearStatusPageFromMenus(after, [BEDROOM])).toBe(after);
+    const shared = { ...doc, linkIds: { entity: "b".repeat(32) } };
+    expect(menuSlotsOpeningStatusPage(clearStatusPageFromMenus(shared, [BEDROOM], [BEDROOM]), BEDROOM).map((f) => f.slotId)).toEqual(["P2"]);
+  });
 });
 
 describe("complications that open a page", () => {
@@ -152,7 +186,8 @@ describe("the page editor's delete", () => {
   it("clears them once the save that deletes the page has landed", () => {
     expect(source).toContain("const deleted = deletedPageIds(watchPagesOf(draft.base), watchPagesOf(draft.document));");
     expect(source).toContain("if (result.ok && deleted.length > 0) {");
-    expect(source).toContain("const cleared = await this.clearPageRefs(hass, watchId, deleted);");
+    expect(source).toContain("const cleared = await this.clearPageRefs(hass, watchId, deleted, elsewhere);");
+    expect(source).toContain("pageHolders(findWatchPage(draft.base, id), watchId, this.places).length > 1");
     // The clearing itself is shared with the Pages tab (page-links-io.ts).
     const io = readFileSync(join(__dirname, "..", "src", "watch-pages", "page-links-io.ts"), "utf8");
     expect(io).toContain(`await saveWatchConfig(hass, ownerId, "menus", record.revision, next);`);

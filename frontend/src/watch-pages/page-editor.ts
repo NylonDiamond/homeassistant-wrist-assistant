@@ -2120,8 +2120,10 @@ export class WaPageEditor extends LitElement {
     }
     this.note = undefined;
     // The pages this save deletes: once it lands, the menu slots and
-    // complication taps that open them are cleared (`clearPageRefs`).
+    // complication taps that open them are cleared (`clearPageRefs`), but
+    // for a linked menu's slots to a page still on another device.
     const deleted = deletedPageIds(watchPagesOf(draft.base), watchPagesOf(draft.document));
+    const elsewhere = deleted.filter((id) => pageHolders(findWatchPage(draft.base, id), watchId, this.places).length > 1);
     // The ready page's first save, over revision 0: it creates the record.
     const first = draft.revision <= 0;
     const running = saveWatchPagesDraft(draft, {
@@ -2157,7 +2159,7 @@ export class WaPageEditor extends LitElement {
     // Which photos a page uses has moved: the delete buttons follow.
     if (result.ok && this.photos.listState !== "idle") void this.photos.refreshList();
     if (result.ok && deleted.length > 0) {
-      const cleared = await this.clearPageRefs(hass, watchId, deleted);
+      const cleared = await this.clearPageRefs(hass, watchId, deleted, elsewhere);
       if (cleared !== undefined && watchId === this.watchId && this.note === undefined) this.note = cleared;
     }
     return result;
@@ -2166,10 +2168,10 @@ export class WaPageEditor extends LitElement {
   /**
    * After a save that deleted pages: clear the menu slots and complication
    * taps that opened them (`clearPageRefs`), with a note on what was
-   * cleared or could not be.
+   * cleared or could not be. A linked menu keeps its slots to `kept`.
    */
-  private clearPageRefs(hass: HassLike, watchId: string, pageIds: string[]): Promise<Note | undefined> {
-    return clearPageRefsOn(hass, watchId, pageIds);
+  private clearPageRefs(hass: HassLike, watchId: string, pageIds: string[], kept: readonly string[] = []): Promise<Note | undefined> {
+    return clearPageRefsOn(hass, watchId, pageIds, kept);
   }
 
   // ── pages ──────────────────────────────────────────────────────────────
