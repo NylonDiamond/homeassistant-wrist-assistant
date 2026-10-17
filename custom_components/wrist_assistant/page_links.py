@@ -379,11 +379,6 @@ def unit_keys(kind: str, unit: str) -> tuple[str, ...]:
     return LINK_UNITS[kind][unit]
 
 
-def empty_unit_document(kind: str) -> dict[str, Any]:
-    """The document a unit kind starts from when there is none at all."""
-    return {"schemaVersion": 1}
-
-
 def unit_links(document: Any, kind: str) -> dict[str, str]:
     """The link id of each linked unit of a document, by unit. A unit the
     kind does not name, or an id that is not a non-empty string, is left
@@ -442,6 +437,16 @@ def _unit_value(document: Mapping[str, Any], keys: Iterable[str]) -> dict[str, A
     return {key: document[key] for key in keys if key in document}
 
 
+def unit_is_blank(document: Any, keys: Iterable[str]) -> bool:
+    """Whether a document holds nothing of a unit: each key absent, null, an
+    empty string, an empty list or an empty object. A new watch's voice
+    settings are such a unit (no phrases, no engine, no speakers), so a link
+    onto them takes nothing away."""
+    if not isinstance(document, Mapping):
+        return True
+    return all(document.get(key) in (None, "", [], {}) for key in keys)
+
+
 def _copy_unit(
     source: Mapping[str, Any], target: Mapping[str, Any], keys: Iterable[str]
 ) -> dict[str, Any]:
@@ -468,17 +473,22 @@ def apply_unit_link(
     A target that already holds another link for the unit, or holds any of
     the unit's keys with another value, refuses with ``unit_taken`` unless
     ``replace`` is true; then the target's unit is the source's. A target
-    already linked to the source's unit takes the source's keys again.
+    whose unit is blank (:func:`unit_is_blank`) has nothing to lose and is
+    never refused. A target already linked to the source's unit takes the
+    source's keys again.
     ``target_doc`` None is a device with no document of the kind yet: it
     starts from the source's whole document, not linked (the other units are
     copied once, as a device's first copy of the kind), because a document
     must carry every unit for the apps to read it. The source device's own
     keys (:data:`UNIT_DEVICE_KEYS`) are left behind, so the target reads
-    their defaults. An unknown unit is a ``KeyError``: the caller checks
-    units against :data:`LINK_UNITS`.
+    their defaults. A source that is not a document is ``not_found``; the
+    store refuses it first. An unknown unit is a ``KeyError``: the caller
+    checks units against :data:`LINK_UNITS`.
     """
     keys = unit_keys(kind, unit)
-    source = copy.deepcopy(source_doc) if isinstance(source_doc, dict) else empty_unit_document(kind)
+    if not isinstance(source_doc, dict):
+        raise PageLinkError("not_found", f"there is no {kind} to link")
+    source = copy.deepcopy(source_doc)
     if isinstance(target_doc, dict):
         target = copy.deepcopy(target_doc)
     else:
@@ -487,7 +497,9 @@ def apply_unit_link(
     link = unit_links(source, kind).get(unit)
     held = unit_links(target, kind).get(unit)
     already_linked = link is not None and held == link
-    own = held is not None or _unit_value(target, keys) not in ({}, _unit_value(source, keys))
+    own = held is not None or not (
+        unit_is_blank(target, keys) or _unit_value(target, keys) == _unit_value(source, keys)
+    )
     if own and not (replace or already_linked):
         raise PageLinkError("unit_taken", f"the device already holds its own {kind} for {unit}")
     if link is None:

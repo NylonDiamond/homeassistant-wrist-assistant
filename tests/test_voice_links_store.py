@@ -127,6 +127,26 @@ def test_a_watch_with_its_own_voice_is_refused_unless_replaced(ctx) -> None:
         assert watch_2[key] == _own_voice()[key], "the watch keeps its own speech settings"
 
 
+def test_a_watch_with_a_new_watchs_voice_takes_the_link_without_replace(ctx) -> None:
+    """The panel's new watch voice settings (no phrases, no engine, no
+    speakers) hold nothing a link takes away, so they are never ``unit_taken``,
+    and the watch keeps its own speech settings."""
+    _voice_record(ctx)
+    fresh = {
+        "defaultSpeakers": [],
+        "defaultTTSEngine": "",
+        "phrases": [],
+        "schemaVersion": 1,
+        "watchSpeakReplyInSilentMode": True,
+    }
+    _save(ctx, WATCH_2, fresh, "voice")
+    result = _link(ctx, [WATCH_2])
+    assert result["targets"][WATCH_2]["units"] == ["phrases"]
+    watch_2 = _doc(ctx, WATCH_2, "voice")
+    assert _library(watch_2) == _library(_voice())
+    assert watch_2["watchSpeakReplyInSilentMode"] is True
+
+
 def test_relinking_voice_writes_nothing(ctx) -> None:
     _voice_record(ctx)
     first = _link(ctx, [WATCH_2])

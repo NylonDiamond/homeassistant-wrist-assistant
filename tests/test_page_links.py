@@ -468,6 +468,28 @@ def test_a_voice_link_onto_a_watchs_own_settings_keeps_its_speech_settings() -> 
     assert kept["watchSpeakReplyInSilentMode"] is True
 
 
+def test_a_blank_unit_is_never_taken() -> None:
+    """A new watch's voice settings (the panel's defaults fixture) hold
+    nothing of the unit, so a link onto them needs no ``replace``; one phrase,
+    an engine or a speaker of its own is enough to ask."""
+    defaults = json.loads((_FRONTEND / "test" / "fixtures-voice" / "01-defaults.json").read_text())
+    assert links.unit_is_blank(defaults, _PHRASE_KEYS)
+    assert links.unit_is_blank({}, _PHRASE_KEYS) and links.unit_is_blank(None, _PHRASE_KEYS)
+    _s, target, link = links.apply_unit_link(_voice(), defaults, "voice", "phrases")
+    assert target["phrases"] == _voice()["phrases"] and target["linkIds"] == {"phrases": link}
+    for own in ({"defaultTTSEngine": "tts.piper"}, {"defaultSpeakers": ["media_player.den"]}):
+        assert not links.unit_is_blank({**defaults, **own}, _PHRASE_KEYS)
+        with pytest.raises(links.PageLinkError) as err:
+            links.apply_unit_link(_voice(), {**defaults, **own}, "voice", "phrases")
+        assert err.value.code == "unit_taken"
+
+
+def test_apply_unit_link_refuses_a_source_that_is_not_a_document() -> None:
+    with pytest.raises(links.PageLinkError) as err:
+        links.apply_unit_link(None, _other_voice(), "voice", "phrases")
+    assert err.value.code == "not_found"
+
+
 def test_fan_out_of_voice_carries_the_library_and_never_the_watch_settings() -> None:
     source, target, link = links.apply_unit_link(_voice(), _other_voice(), "voice", "phrases", True)
     source["phrases"] = source["phrases"][:1]

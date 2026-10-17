@@ -2433,7 +2433,8 @@ class WatchConfigStore:
         ``not_for_iphone`` for a target that may not own the kind
         (``WATCH_CONFIG_PHONE_KINDS``), ``not_found`` for a source with no
         record of the kind, ``unit_taken`` for a target that holds its own
-        unit (another link, or other contents) unless ``replace`` is true,
+        unit (another link, or other contents, never a blank unit such as
+        a new watch's voice settings) unless ``replace`` is true,
         ``awaiting_move``, and the page link's own refusals (``id_taken``).
         A link that ``replace`` took off a target and is then left on one
         owner only is dropped there.
