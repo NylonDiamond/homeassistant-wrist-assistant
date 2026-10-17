@@ -20268,7 +20268,7 @@ export class WristAssistantPanel extends LitElement {
     const ask = html`<div class="hb-ask">
         <p>This removes <b>${row.name}</b> from this Home Assistant.
           ${kept === 0 ? nothing : html`${kept === 1 ? "Its complication is" : `Its ${kept} complications are`} kept, under ${UNASSIGNED_LABEL} on the Complications tab.`}
-          ${row.kind === "watch" ? "Its pages, menus and watch settings are deleted." : nothing}</p>
+          Its pages, status pages and menus stay in your library.${row.kind === "watch" ? " Its watch settings are deleted." : nothing}</p>
         <p class="quiet">Use this for a device you no longer use. If the app is still on it, the device can connect again later, but it starts empty. This cannot be undone.</p>
         ${this.deviceForgetError ? html`<p class="dev-err" title=${errTitle(this.deviceForgetError) ?? nothing}>${this.deviceForgetError}</p>` : nothing}
         <div class="dev-acts">
