@@ -9,6 +9,7 @@ import { XLARGE_OFFERED, familiesFor } from "../src/layouts.js";
 import type { FamilyKind } from "../src/model.js";
 import {
   type NewChoice,
+  allShapeGroups,
   kindChoices,
   kindOwners,
   kindTitle,
@@ -17,7 +18,6 @@ import {
   newSummary,
   shapeGroups,
   shapeOffered,
-  soleDeviceTick,
 } from "../src/newComplication.js";
 import { LIBRARY_OWNER_ID } from "../src/version.js";
 
@@ -132,8 +132,8 @@ describe("the footer line", () => {
   it("asks for each step in turn", () => {
     expect(newSummary(choice({ named: false }))).toBe("Type a name to start.");
     expect(newSummary(choice({ nameProblem: "Taken." }))).toBe("Taken.");
-    expect(newSummary(choice())).toBe("Now pick a watch, an iPhone or Control Center.");
-    expect(newSummary(choice({ kind: "watch" }))).toBe("Now pick one shape.");
+    expect(newSummary(choice())).toBe("Now pick one shape, or Control Center.");
+    expect(newSummary(choice({ kind: "watch" }))).toBe("Now pick one shape, or Control Center.");
   });
 
   it("says what Create is about to make", () => {
@@ -217,20 +217,19 @@ describe("kindTitle", () => {
   });
 });
 
-describe("soleDeviceTick", () => {
-  const free = () => 0;
-  const full = () => -1;
-
-  it("ticks the home's only device for the design", () => {
-    expect(soleDeviceTick([WATCH], "circular", free)).toBe("w1");
+describe("allShapeGroups", () => {
+  it("lists every kind's rows at once, the watch's first, each naming its kind", () => {
+    const groups = allShapeGroups([WATCH, PHONE]);
+    expect(groups.map((g) => [g.kind, g.key])).toEqual([["watch", "watch"], ["iphone", "lock"], ["iphone", "home"]]);
+    expect(groups[0]!.families).toEqual(shapeGroups("watch", [WATCH, PHONE])[0]!.families);
   });
 
-  it("leaves Unassigned on when there is a choice to make", () => {
-    expect(soleDeviceTick([WATCH, WATCH2], "circular", free)).toBeUndefined();
-    expect(soleDeviceTick([], "circular", free)).toBeUndefined();
+  it("leaves out a kind the home has not, and never lists Control Center as a row", () => {
+    expect(allShapeGroups([WATCH]).map((g) => g.kind)).toEqual(["watch"]);
+    expect(allShapeGroups([WATCH, PHONE]).some((g) => (g.kind as string) === "control")).toBe(false);
   });
 
-  it("never ticks a device with no free seat", () => {
-    expect(soleDeviceTick([WATCH], "circular", full)).toBeUndefined();
+  it("offers both devices' shapes in a home with no device the panel can write to", () => {
+    expect([...new Set(allShapeGroups([]).map((g) => g.kind))]).toEqual(["watch", "iphone"]);
   });
 });

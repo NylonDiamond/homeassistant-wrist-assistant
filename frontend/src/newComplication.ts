@@ -1,10 +1,12 @@
-// The New complication dialog, as four questions with pure answers.
+// The New complication dialog, as two questions with pure answers.
 //
 // A complication is one shape on one kind of device, so the dialog asks for
-// exactly that: a name, a device kind, one shape, and whose devices get a copy.
-// Everything here is a function over the home's devices, so the wording and the
-// refusals can be read in a test without a browser. Plan: app repo
-// docs/complication_one_shape_per_document.md.
+// exactly that: a name, then one shape from a grid that lists every kind's
+// shapes at once (a watch face, an iPhone's Lock Screen and Home Screen, and
+// Control Center, which has no shape). It is made on no device; the editor's
+// Devices row puts it on one. Everything here is a function over the home's
+// devices, so the wording and the refusals can be read in a test without a
+// browser. Plan: app repo docs/complication_one_shape_per_document.md.
 
 import type { DeviceOwner } from "./copies.js";
 import { ALL_FAMILIES, comingSoonFamilies, familiesFor, isHomeFamily } from "./layouts.js";
@@ -99,6 +101,22 @@ export function shapeGroups(kind: NewKind, owners: readonly DeviceOwner[]): Shap
   return groups;
 }
 
+/** One row of the dialog's shape grid, with the kind of device it is for, so
+ * one pick answers both "which device" and "which shape". */
+export interface KindShapeGroup extends ShapeGroup {
+  kind: "watch" | "iphone";
+}
+
+/** The shape grid: every kind the home is offered (`kindChoices`), each with
+ * its rows (`shapeGroups`), the watch's first. Control Center is not a row
+ * here: it has no shape, so the dialog draws it as a card of its own after
+ * the rows, when `kindChoices` offers it. */
+export function allShapeGroups(owners: readonly DeviceOwner[]): KindShapeGroup[] {
+  return kindChoices(owners)
+    .filter((kind): kind is "watch" | "iphone" => kind !== "control")
+    .flatMap((kind) => shapeGroups(kind, owners).map((group) => ({ ...group, kind })));
+}
+
 /** Whether one shape is still on offer for the picked kind, which is what
  * clears the pick when the kind changes under it. */
 export function shapeOffered(kind: NewKind, owners: readonly DeviceOwner[], family: FamilyKind | undefined): boolean {
@@ -106,20 +124,22 @@ export function shapeOffered(kind: NewKind, owners: readonly DeviceOwner[], fami
   return shapeGroups(kind, owners).some((g) => g.families.includes(family));
 }
 
-/** What the dialog knows about its own four steps, which is all the footer
- * line is about. */
+/** What the dialog knows about its own steps, which is all the footer line
+ * is about. */
 export interface NewChoice {
   /** Whether step 1 has been answered at all. */
   named: boolean;
   /** Step 1's complaint, if it has one: a name another complication has. */
   nameProblem?: string;
-  /** Step 2: the device kind, or undefined while it is unanswered. */
+  /** Step 2: the device kind, which the shape picked answers, or undefined
+   * while it is unanswered. */
   kind?: NewKind;
-  /** Step 3: the one shape. Undefined for a Control Center control, which has
+  /** Step 2: the one shape. Undefined for a Control Center control, which has
    * no shape, and while the step is unanswered. */
   family?: FamilyKind;
-  /** Step 4: how many devices are ticked. None is an answer of its own: the
-   * complication is made in the home's library and waits there. */
+  /** How many devices get it as it is made. The New dialog makes it on none:
+   * the complication is made in the home's library and waits there, and the
+   * editor's Devices row puts it on a device. */
   devices: number;
 }
 
@@ -129,8 +149,7 @@ export interface NewChoice {
 export function newSummary(o: NewChoice): string {
   if (!o.named) return "Type a name to start.";
   if (o.nameProblem !== undefined) return o.nameProblem;
-  if (o.kind === undefined) return "Now pick a watch, an iPhone or Control Center.";
-  if (o.kind !== "control" && o.family === undefined) return "Now pick one shape.";
+  if (o.kind === undefined || (o.kind !== "control" && o.family === undefined)) return "Now pick one shape, or Control Center.";
   const what = o.kind === "control"
     ? "A Control Center control"
     : `${familyTitle(o.family!)} on ${o.kind === "watch" ? "a watch" : "an iPhone"}`;
@@ -140,7 +159,7 @@ export function newSummary(o: NewChoice): string {
 
 /** Whether every step that needs an answer has one, which is the only thing
  * that enables Create. Beside `newSummary` because the two must never
- * disagree. Step 4 is not one of them. */
+ * disagree. The devices are not one of them. */
 export function newReady(o: NewChoice): boolean {
   if (!o.named || o.nameProblem !== undefined || o.kind === undefined) return false;
   return o.kind === "control" || o.family !== undefined;
@@ -175,25 +194,4 @@ export function newRecords(
     label: owner.label,
     slotIndex: freeSlot(owner.ownerId, family),
   }));
-}
-
-/**
- * The device step 4 ticks on its own, or undefined to leave Unassigned on.
- *
- * Only when the home offers exactly one device for this design and it has a
- * seat free. Unassigned as the resting answer made sense with several devices
- * to choose from, but in a home with one watch it meant nearly every new
- * design was made on no device, saved, and never reached the wrist. With one
- * device there is no choice for the tick to make on the author's behalf, and
- * it can still be unticked. A full device is never ticked, the same rule its
- * row follows.
- */
-export function soleDeviceTick(
-  offered: readonly DeviceOwner[],
-  family: FamilyKind | undefined,
-  freeSlot: (ownerId: string, family: FamilyKind | undefined) => number,
-): string | undefined {
-  if (offered.length !== 1) return undefined;
-  const only = offered[0]!;
-  return freeSlot(only.ownerId, family) >= 0 ? only.ownerId : undefined;
 }

@@ -207,9 +207,9 @@ import {
   newReady,
   newRecords,
   newSummary,
+  allShapeGroups,
   shapeGroups,
   shapeOffered,
-  soleDeviceTick,
 } from "./newComplication.js";
 import { type HaPerson, type Person, deviceShortName, haPeople, peopleOf } from "./people.js";
 import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt, shapeOnlyArt, shapeWell, watchWell } from "./shapeArt.js";
@@ -10024,7 +10024,7 @@ export class WristAssistantPanel extends LitElement {
     ];
     const saving: [string, string][] = [
       ["Save", `Writes the complication to Home Assistant (${m}S). It is dimmed while there is nothing to save. Nothing saves by itself.`],
-      [UNASSIGNED_LABEL, `A design made with no device ticked is kept under ${UNASSIGNED_LABEL}, on the Complications tab. Nothing shows it until you add it to a device.`],
+      [UNASSIGNED_LABEL, `A new design starts under ${UNASSIGNED_LABEL}, on the Complications tab. Nothing shows it until you add it to a device from its Devices row.`],
       ["Saved", "Beside Save: when this complication was last saved, or Not saved yet. After a save it also says whether the watch has it. The footer says whether there are unsaved changes."],
       ["Reaching the watch", "Open Wrist Assistant on the watch and it pulls every save by itself. There is no separate send step."],
       ["On the face", onTheFaceStep(undefined)],
@@ -14643,24 +14643,13 @@ export class WristAssistantPanel extends LitElement {
       .filter((row) => row.devices.length > 0);
   }
 
-  /** The devices step 4 offers: the ones of the picked kind that draw the
-   * picked shape. A control is offered to every device that has one. */
-  private newOffered(): DeviceOwner[] {
-    const kind = this.newKind;
-    if (kind === undefined) return [];
-    const mine = kindOwners(this.deviceOwners(), kind);
-    if (kind === "control" || this.newFamily === undefined) return mine;
-    return mine.filter((o) => o.families.includes(this.newFamily!));
-  }
-
   /** How many seats one device has taken, for the line on a full row. */
   private slotsTakenOn(ownerId: string): number {
     return new Set(this.slotHoldersOn(ownerId).map((h) => h.slotIndex).filter((n) => n >= 0)).size;
   }
 
   /**
-   * The New complication dialog: a name, a device kind, one shape, and whose
-   * devices get it.
+   * The New complication dialog: a name, then one shape.
    *
    * A complication is one shape on one kind of device, so the dialog asks for
    * exactly that and nothing more. It used to offer every shape in the home as
@@ -14670,34 +14659,33 @@ export class WristAssistantPanel extends LitElement {
    * copies nobody could see. One shape is the whole of it now: a second shape
    * is a second complication, and "Duplicate as" makes it from a finished one.
    *
-   * Four numbered steps, each a tinted container with a badge, and each one
-   * waiting visibly until the step before it has an answer. Nothing is picked
-   * when it opens except, in step 4, a home's only device: a tinted default
-   * reads as a recommendation, and the shape is the one thing about a
-   * complication that cannot be changed later without moving every layer.
+   * The shape grid lists every kind at once, a watch face's row and an
+   * iPhone's two, each shape drawn in its device's outline, and Control
+   * Center as a card of its own, so one pick answers "which device" and
+   * "which shape" together. No device is asked for: the complication is made
+   * in the home's library, as New page and New menu make theirs, and the
+   * editor's Devices row puts it on a device. Two numbered steps, each a
+   * tinted container with a badge, the second waiting visibly until the name
+   * is typed.
    */
   private renderNewDialog() {
     const nameProblem = this.newNameProblem();
     const named = this.newName.trim() !== "";
     const owners = this.deviceOwners();
-    const kinds = kindChoices(owners);
     const kind = this.newKind;
-    const groups = kind === undefined ? [] : shapeGroups(kind, owners);
-    const offered = this.newOffered();
-    const people = this.newPeople(offered);
-    const ticked = offered.filter((o) => this.newOwners.has(o.ownerId)).length;
-    const state = { named, nameProblem, kind, family: this.newFamily, devices: ticked };
+    const groups = allShapeGroups(owners);
+    const control = kindChoices(owners).includes("control");
+    const state = { named, nameProblem, kind, family: this.newFamily, devices: 0 };
     const summary = newSummary(state);
     const ready = newReady(state);
     // A step is an answer to a question the step before it has not been asked
     // yet, so it waits rather than refuses: dimmed, unclickable, and saying so
     // to a screen reader.
     const wait = (ok: boolean) => ok ? "" : "waiting";
-    const shapeStep = kind !== undefined && kind !== "control";
     return html`<dialog class="new-dialog" @keydown=${this.newKeys} @close=${() => { this.newOpen = false; }}>
       <div class="new-head">
         <h2>New complication</h2>
-        <span class="new-head-note">Name it, pick a device, pick one shape.</span>
+        <span class="new-head-note">Name it, pick one shape.</span>
         <span class="spacer"></span>
         <button class="icon" title="Cancel" aria-label="Cancel" @click=${() => this.closeNewDialog()}>${uiIcon("close")}</button>
       </div>
@@ -14709,29 +14697,22 @@ export class WristAssistantPanel extends LitElement {
             @input=${(e: Event) => { this.newName = (e.target as HTMLInputElement).value; }} />
           ${nameProblem ? html`<div class="hint err">${nameProblem}</div>` : nothing}
         </section>
-        <section class="new-step step-kind ${wait(named)}" aria-disabled=${named ? "false" : "true"}>
-          ${this.renderStepHead(2, "Pick the device", named
-            ? "A complication is one shape on one kind of device."
+        <section class="new-step step-shapes ${wait(named)}" aria-disabled=${named ? "false" : "true"}>
+          ${this.renderStepHead(2, "Pick one shape", named
+            ? "Blue shows where it sits. One shape per complication, on one kind of device. It is made on no device; the editor's Devices row puts it on one."
             : "Waits for a name.")}
-          <div class="kind-cards" role="radiogroup" aria-label="Device">
-            ${kinds.map((k) => this.renderKindCard(k, this.newKind === k, (picked) => this.pickKind(picked)))}
+          <div class="shape-rows" role="radiogroup" aria-label="Shape">
+            ${groups.map((group) => this.renderShapeGroup(group.kind, group, kind === group.kind ? this.newFamily : undefined,
+              (family) => this.pickShape(group.kind, family)))}
+            ${!control ? nothing : html`<div class="shape-row">
+              <div class="shape-row-head">
+                <span class="shape-row-kinds" aria-hidden="true">${uiIcon("watch")}${uiIcon("phone")}</span>
+                <span class="shape-row-title">${kindTitle("control")}</span>
+              </div>
+              <div class="shape-cards">${this.renderKindCard("control", kind === "control", () => this.pickShape("control", undefined))}</div>
+            </div>`}
           </div>
         </section>
-        ${!shapeStep ? nothing : html`<section class="new-step step-shapes" aria-disabled="false">
-          ${this.renderStepHead(3, "Pick one shape", "Blue shows where it sits. One shape per complication.")}
-          <div class="shape-rows" role="radiogroup" aria-label="Shape">
-            ${groups.map((group) => this.renderShapeGroup(kind!, group, this.newFamily,
-              (family) => { this.newFamily = family; this.keepTickedOwners(); this.tickSoleDevice(); }))}
-          </div>
-        </section>`}
-        ${people.length === 0 ? nothing : html`<section class="new-step step-people ${wait(ready)}"
-          aria-disabled=${ready ? "false" : "true"}>
-          ${this.renderStepHead(shapeStep ? 4 : 3, "Choose whose devices get it",
-            `Each tick is a complication of its own on that device, to edit there. ${UNASSIGNED_LABEL} keeps it off every device until you pick one.`)}
-          ${this.renderUnassignedTick()}
-          <div class="people-grid" role="group" aria-label="Devices">${people.map((row) =>
-            this.renderPersonBox(row, this.newOwners, this.newFamily, (id) => this.toggleNewOwner(id)))}</div>
-        </section>`}
       </div>
       <div class="new-foot">
         <span class="new-count">${summary}</span>
@@ -14809,36 +14790,8 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The Unassigned row above the people, and the step's resting answer.
-   *
-   * Ticking no device is a real choice: the complication is made and waits on
-   * the home's shelf until it is put somewhere. Before this row that choice was
-   * drawn as the absence of every other choice, which reads as a step nobody
-   * answered, and it is why the dialog used to tick the author's own devices
-   * for them. Drawn as a tick rather than a note so the step always has exactly
-   * one thing lit when it opens.
-   *
-   * It is on when nothing else is, and clicking it clears every device tick.
-   * Clicking it while it is already on does nothing, because there is nothing
-   * below it to fall back to.
-   */
-  private renderUnassignedTick() {
-    const on = this.newOwners.size === 0;
-    return html`<div class="unassigned-row" role="group" aria-label=${UNASSIGNED_LABEL}>
-      <button type="button" role="checkbox" class="dev-tick ${on ? "on" : ""}"
-        aria-checked=${on ? "true" : "false"}
-        title="Make it and leave it on no device. Put it on one any time."
-        @click=${() => { this.newOwners = new Set(); }}>
-        ${on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
-        <span class="dev-card-ico">${uiIcon("layers")}</span>
-        <span class="dev-card-name">${UNASSIGNED_LABEL}</span>
-        <span class="dev-row-note">kept for later</span>
-      </button>
-    </div>`;
-  }
-
-  /**
-   * One person's box in step 4: their name, then a checkbox per device.
+   * One person's box in "Duplicate as": their name, then a checkbox per
+   * device.
    *
    * A device with no seat left is drawn with the seats it has taken rather
    * than simply greyed, because "why can I not tick my watch" is a question
@@ -14872,51 +14825,20 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Step 2, answered.
+   * Step 2, answered: one shape, which names its kind of device too, or
+   * Control Center, which has no shape.
    *
-   * The shape goes with it unless the new kind still offers it, because a
-   * corner picked for a watch means nothing on an iPhone.
-   *
-   * No device is ticked from a choice of several. This used to tick the
-   * author's own devices of the new kind, on the theory that "mine" is the
+   * No device is ticked. This used to tick the author's own devices of the
+   * new kind, then a home's only device, on the theory that "mine" is the
    * answer nearly every time. It reads as the dialog answering its own
-   * question: a tick here writes a record on a real device, and picking a kind
-   * is not consent to that. Unassigned is the resting answer, drawn as its own
-   * ticked row so the step never looks unanswered, and a device is one click
-   * away. The one exception is a home with a single device for the design,
-   * where there is nothing to choose (`tickSoleDevice`).
+   * question: a tick here writes a record on a real device, and picking a
+   * shape is not consent to that. The complication is made in the library,
+   * and the editor's Devices row is one click away.
    */
-  private pickKind(kind: NewKind) {
+  private pickShape(kind: NewKind, family: FamilyKind | undefined) {
     this.newKind = kind;
-    if (kind === "control" || !shapeOffered(kind, this.deviceOwners(), this.newFamily)) {
-      this.newFamily = undefined;
-    }
+    this.newFamily = kind === "control" ? undefined : family;
     this.newOwners = new Set();
-    this.tickSoleDevice();
-  }
-
-  /** Drop a tick on a device the new shape leaves behind, so Create never
-   * writes a record the device cannot draw. */
-  private keepTickedOwners() {
-    const offered = new Set(this.newOffered().map((o) => o.ownerId));
-    this.newOwners = new Set([...this.newOwners].filter((id) => offered.has(id)));
-  }
-
-  /** Once the kind and the shape are answered, tick the home's only device
-   * that can take the design (see `soleDeviceTick`). A tick already made is
-   * left alone. */
-  private tickSoleDevice() {
-    if (this.newOwners.size > 0 || this.newKind === undefined) return;
-    if (this.newKind !== "control" && this.newFamily === undefined) return;
-    const only = soleDeviceTick(this.newOffered(), this.newFamily, (id, f) => this.freeSlotOn(id, f));
-    if (only !== undefined) this.newOwners = new Set([only]);
-  }
-
-  /** Tick or untick one device. Each tick is a complication of its own. */
-  private toggleNewOwner(ownerId: string) {
-    const next = new Set(this.newOwners);
-    if (!next.delete(ownerId)) next.add(ownerId);
-    this.newOwners = next;
   }
 
   private openNewDialog() {
@@ -20623,9 +20545,7 @@ export class WristAssistantPanel extends LitElement {
   private newFromShape(kind: NewKind, family: FamilyKind | undefined) {
     if (this.freeSlot() < 0) return;
     this.openNewDialog();
-    this.pickKind(kind);
-    if (family !== undefined) this.newFamily = family;
-    this.tickSoleDevice();
+    this.pickShape(kind, family);
   }
 
   // ── canvas column ─────────────────────────────────────────────────────
