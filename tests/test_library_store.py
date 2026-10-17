@@ -327,6 +327,55 @@ def test_another_page_under_a_taken_id_gets_its_own_and_the_references_follow(en
     assert _page(store.get(WATCH, "pages").document, LIGHTS)["name"] == "Lights"
 
 
+def test_restoring_a_revision_from_before_the_library_keeps_to_the_owners_own_ids(env) -> None:
+    """The second watch's Lights was forked to a new id by the migration,
+    and its history still holds the revision from before, under the old id,
+    which is now the first watch's item. Restoring it updates the second
+    watch's own copy, never the first watch's page."""
+    _seed(env.mod, {WATCH: {"pages": _pages()}, WATCH_2: {"pages": _pages(lights="Other lights")}})
+    store = env.store_now()
+    mine = {p["name"]: p["id"] for p in _doc(env, WATCH_2)["pages"]}
+    assert mine["Other lights"] != LIGHTS and mine["Home"] != HOME
+    edited = _doc(env, WATCH_2)
+    _page(edited, mine["Other lights"])["name"] = "Edited lights"
+    _save(env, WATCH_2, edited)
+    assert store.get(WATCH_2, "pages").history_entry(1) is not None, "the old one is kept"
+    theirs = store.get(WATCH, "pages")
+    env.changes.clear()
+
+    store.restore(WATCH_2, "pages", 1, base_revision=store.get(WATCH_2, "pages").revision)
+
+    restored = _doc(env, WATCH_2)
+    assert _ids(restored) == [SYSTEM, mine["Home"], mine["Other lights"]]
+    assert _page(restored, mine["Other lights"])["name"] == "Other lights"
+    assert _page(restored, mine["Home"])["items"][0]["entityId"] == f"page.{mine['Other lights']}"
+    assert store.get(WATCH, "pages").revision == theirs.revision, "the first watch is not written"
+    summary = store.library_summary()
+    assert summary["pages"][LIGHTS]["item"]["name"] == "Lights"
+    assert summary["pages"][LIGHTS]["owners"] == [WATCH]
+    assert summary["pages"][HOME]["owners"] == [WATCH]
+    assert env.changes == [(WATCH_2, "pages")]
+
+
+def test_a_restore_keeps_an_old_id_the_owner_picked_itself_later(env) -> None:
+    """A renamed old id the owner has ticked on again since names that item
+    for it now: a restore naming it updates that item, as any restore does."""
+    _seed(env.mod, {WATCH: {"pages": _pages()}, WATCH_2: {"pages": _pages(lights="Other lights")}})
+    store = env.store_now()
+    store.library_pick(WATCH_2, "pages", LIGHTS, on=True)
+    held = _doc(env, WATCH_2)
+    revision = store.get(WATCH_2, "pages").revision
+    _page(held, LIGHTS)["name"] = "Shared lights"
+    _save(env, WATCH_2, held)
+    assert store.library_summary()["pages"][LIGHTS]["item"]["name"] == "Shared lights"
+
+    store.restore(WATCH_2, "pages", revision, base_revision=store.get(WATCH_2, "pages").revision)
+
+    assert LIGHTS in _ids(_doc(env, WATCH_2))
+    assert store.library_summary()["pages"][LIGHTS]["item"]["name"] == "Lights"
+    assert _page(_doc(env, WATCH), LIGHTS)["name"] == "Lights"
+
+
 def test_the_migration_never_runs_again_once_the_file_exists(env) -> None:
     _seed(env.mod, {WATCH: {"menus": _menus()}, WATCH_2: {"menus": _menus(beam="none")}})
     store = env.store_now()

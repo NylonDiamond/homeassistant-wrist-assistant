@@ -2244,6 +2244,8 @@ class WatchConfigStore:
         size: int,
         existing: WatchConfigRecord | None,
         link_failures: list[str] | None,
+        *,
+        restored: bool = False,
     ) -> WatchConfigRecord:
         """A panel save or restore once every check passed: a library kind
         goes into the library first and is stored as the library builds it;
@@ -2251,7 +2253,9 @@ class WatchConfigStore:
         before = existing.document if existing is not None else None
         prep = None
         if kind in LIBRARY_KINDS:
-            prep = self._prepare_library_save(owner_watch_id, kind, document, existing, panel=True)
+            prep = self._prepare_library_save(
+                owner_watch_id, kind, document, existing, panel=True, restored=restored
+            )
             document, size = prep.document, prep.size
         if existing is None:
             record = self._panel_create(owner_watch_id, kind, document, size)
@@ -2274,6 +2278,7 @@ class WatchConfigStore:
         existing: WatchConfigRecord | None,
         *,
         panel: bool,
+        restored: bool = False,
     ) -> _LibrarySave:
         """Map one owner's saved document back into the library
         (:func:`library.map_back`), changing nothing yet.
@@ -2283,6 +2288,11 @@ class WatchConfigStore:
           page under an id the library holds with other content is another
           page and gets a new id. Ids an earlier first upload of this owner
           renamed are renamed in this one first.
+        * A restore (``restored``) renames those same ids first too, but for
+          an old id the owner picks now (it chose that item itself later):
+          a revision from before the library gave the owner's copy a new id
+          still names the old one, which is now another device's item, and
+          must update the owner's own copy, never that item.
         * A ``linkId`` or ``linkIds`` the document still carries (loaded
           from a record written before the library dropped them, or a
           restored revision) means nothing: a menus save or restore maps
@@ -2297,8 +2307,14 @@ class WatchConfigStore:
         self._check_library()
         before_doc = existing.document if existing is not None else None
         sent: dict[str, Any] = document
-        if existing is None:
+        if existing is None or restored:
             renames = held_renames(self._library, owner_watch_id)
+            if existing is not None:
+                for held_kind, ids in renames.items():
+                    picked = self._picked_ids(self._library, owner_watch_id, held_kind)
+                    renames[held_kind] = {
+                        old: new for old, new in ids.items() if old.upper() not in picked
+                    }
             if renames["pages"] or renames["status_pages"]:
                 sent = rename_refs(kind, sent, renames["pages"], renames["status_pages"])
         try:
@@ -2484,7 +2500,9 @@ class WatchConfigStore:
         document = copy.deepcopy(entry.document)
         document, _trimmed = self._for_owner(owner_watch_id, kind, document)
         size = validate_document(kind, document, check_items=True)
-        return self._panel_write(owner_watch_id, kind, document, size, existing, link_failures)
+        return self._panel_write(
+            owner_watch_id, kind, document, size, existing, link_failures, restored=True
+        )
 
     @staticmethod
     def _panel_kind(kind: Any) -> str:
