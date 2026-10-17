@@ -2,7 +2,9 @@
 // and the inspector's page card) and on the Pages tab's cards: a switch per
 // device, on where the page is, with a line for what the last switch did
 // and Done. The rules behind the switches are `links.ts` and
-// `all-pages-model.ts`; this is only the drawing and its look.
+// `all-pages-model.ts`; this is only the drawing and its look. The voice
+// editor draws the same menu for a watch's phrases (`watch-voice/links.ts`),
+// with its own head, foot and switch titles.
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
@@ -25,6 +27,12 @@ export interface DevicesMenuInput {
   /** Each device's color (`deviceColorVar`), on its glyph and the row's
    * edge, as on the Pages tab. None leaves the rows plain. */
   colorOf?(ownerId: string): string | undefined;
+  /** The line over the switches, "This page is on" when left out. */
+  head?: string;
+  /** The line at the foot, `DEVICES_MENU_NOTE` when left out. */
+  foot?: string;
+  /** A switch's hover text when it can be flipped. Left out, a page's. */
+  titleOf?(place: PageDevicePlace): string;
   onToggle(place: PageDevicePlace): void;
   onDone(): void;
 }
@@ -40,12 +48,12 @@ export const DEVICES_MENU_NOTE = "On means the page is on that device. An edit o
 export function renderPageDevicesMenu(input: DevicesMenuInput): TemplateResult {
   const { name, places, blocked, busy, note } = input;
   return html`<div class="pk-dup-menu pe-dev-menu ${input.className ?? ""}" role="group" aria-label=${`Devices for ${name}`}>
-    <div class="pk-dup-head">This page is on</div>
+    <div class="pk-dup-head">${input.head ?? "This page is on"}</div>
     ${blocked === undefined ? nothing : html`<div class="pe-dev-note warn">${blocked}</div>`}
     ${places.map((place) => {
       const label = place.device.name;
       const off = place.stuck !== undefined || blocked !== undefined || busy;
-      const title = place.stuck ?? blocked ?? (place.on
+      const title = place.stuck ?? blocked ?? input.titleOf?.(place) ?? (place.on
         ? `Take it off ${label}. Its own order and Hidden go with it.`
         : `Put it on ${label}. An edit on one device then shows on both.`);
       const color = input.colorOf?.(place.device.ownerId);
@@ -67,7 +75,7 @@ export function renderPageDevicesMenu(input: DevicesMenuInput): TemplateResult {
     })}
     ${busy ? html`<div class="pe-dev-note">Saving…</div>` : nothing}
     ${note === undefined ? nothing : html`<div class="pe-dev-note ${note.kind}" role="status">${note.text}</div>`}
-    <div class="pk-dup-note">${DEVICES_MENU_NOTE}</div>
+    <div class="pk-dup-note">${input.foot ?? DEVICES_MENU_NOTE}</div>
     <button type="button" class="pk-dup-done" @click=${() => input.onDone()}>Done</button>
   </div>`;
 }
