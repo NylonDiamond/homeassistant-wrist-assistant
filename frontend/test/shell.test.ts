@@ -25,7 +25,7 @@ import {
   reopensDesign,
   navigatePanel,
   panelPrefix,
-  panelTabs,
+  barTabOf,
   panelUrl,
   renderTabBar,
   swallowsSaveKey,
@@ -217,11 +217,18 @@ describe("addresses", () => {
     expect(tabPath("watch", "w2", "p1")).toBe("/pages/w2");
   });
 
-  it("offers every tab to everybody, the iPhone app only on a home with phone pages", () => {
-    expect(PANEL_TABS).toEqual(["home", "watch", "iphone", "pages", "complications"]);
-    expect(panelTabs(true)).toEqual(["home", "watch", "iphone", "pages", "complications"]);
-    expect(panelTabs(false)).toEqual(["home", "watch", "pages", "complications"]);
-    expect(panelTabs(false, "iphone")).toEqual(["home", "watch", "iphone", "pages", "complications"]);
+  it("offers three tabs to everybody: no Watch app or iPhone app tab", () => {
+    expect(PANEL_TABS).toEqual(["home", "pages", "complications"]);
+  });
+
+  it("marks Home in the bar on a watch's or an iPhone's screens", () => {
+    expect(barTabOf(at("/menus/w1"))).toBe("home");
+    expect(barTabOf(at("/settings/w1"))).toBe("home");
+    expect(barTabOf(at("/http-actions"))).toBe("home");
+    expect(barTabOf(at("/iphone/pages/p1"))).toBe("home");
+    expect(barTabOf(at("/all-pages"))).toBe("pages");
+    expect(barTabOf(at("/complications"))).toBe("complications");
+    expect(barTabOf(at(""))).toBe("home");
   });
 
   it("takes the prefix from the route when there is one", () => {
@@ -382,51 +389,36 @@ describe("reopensDesign", () => {
 });
 
 describe("renderTabBar", () => {
-  const bar = (path: string, menu = false, phones = false) => flat(renderTabBar({
-    route: at(path), menu, onMenu: () => undefined, onTab: () => undefined, phones,
+  const bar = (path: string, menu = false) => flat(renderTabBar({
+    route: at(path), menu, onMenu: () => undefined, onTab: () => undefined,
   }));
 
-  it("draws every tab, as links to their addresses", () => {
+  it("draws Home, Pages and Complications, as links to their addresses", () => {
     const text = bar("");
     expect(text).toContain(">Home</a>");
-    expect(text).toContain(">Watch app</a>");
+    expect(text).toContain(">Pages</a>");
     expect(text).toContain(">Complications</a>");
-    expect(text.indexOf("Home</a>")).toBeLessThan(text.indexOf("Watch app</a>"));
-    expect(text.indexOf("Watch app</a>")).toBeLessThan(text.indexOf("Complications</a>"));
+    expect(text.indexOf("Home</a>")).toBeLessThan(text.indexOf(">Pages</a>"));
+    expect(text.indexOf(">Pages</a>")).toBeLessThan(text.indexOf("Complications</a>"));
+    expect(text).not.toContain("Watch app</a>");
     expect(text).not.toContain("iPhone app</a>");
+    expect(text).toMatch(/href=\/wrist-assistant [^>]*>Home<\/a>/);
   });
 
-  it("draws the iPhone app between the Watch app and Complications on a home with phone pages", () => {
-    const text = bar("", false, true);
-    expect(text.indexOf("Watch app</a>")).toBeLessThan(text.indexOf(">iPhone app</a>"));
-    expect(text.indexOf(">iPhone app</a>")).toBeLessThan(text.indexOf("Complications</a>"));
-    expect(text).toMatch(/href=\/wrist-assistant\/iphone\/pages [^>]*>iPhone app<\/a>/);
-    expect(flat(renderTabBar({ route: at(""), menu: false, onMenu: () => undefined, onTab: () => undefined, phones: true, iphone: "p1" })))
-      .toMatch(/href=\/wrist-assistant\/iphone\/pages\/p1 [^>]*>iPhone app<\/a>/);
-  });
-
-  it("marks the tab on screen and no other", () => {
+  it("marks the tab on screen and no other, Home on a device's screens", () => {
     const marks = (text: string) => text.match(/wa-tab on/g)?.length ?? 0;
-    for (const [path, label] of [["", "Home"], ["/menus/w1", "Watch app"], ["/iphone/menus/p1", "iPhone app"], ["/complications", "Complications"]] as const) {
-      const text = bar(path, false, true);
+    for (const [path, label] of [["", "Home"], ["/menus/w1", "Home"], ["/iphone/menus/p1", "Home"], ["/all-pages", "Pages"], ["/complications", "Complications"]] as const) {
+      const text = bar(path);
       expect(marks(text), path).toBe(1);
       expect(text).toMatch(new RegExp(`wa-tab on[^>]*>${label}</a>`));
     }
   });
 
-  it("links the Watch app tab to Pages on the shared watch", () => {
-    const text = flat(renderTabBar({
-      route: at(""), menu: false, onMenu: () => undefined, onTab: () => undefined, watch: "w2",
-    }));
-    expect(text).toMatch(/href=\/wrist-assistant\/pages\/w2 [^>]*>Watch app<\/a>/);
-    expect(bar("")).toMatch(/href=\/wrist-assistant\/pages [^>]*>Watch app<\/a>/);
-  });
-
-  it("puts an orange dot on the Watch app tab, named for a screen reader, while a watch screen is unsaved", () => {
+  it("puts an orange dot on the Home tab, named for a screen reader, while a device screen is unsaved", () => {
     const text = (watchUnsaved?: boolean) => flat(renderTabBar({
       route: at(""), menu: false, onMenu: () => undefined, onTab: () => undefined, watchUnsaved,
     }));
-    expect(text(true)).toMatch(/>Watch app<i class="wa-unsaved" role="img" aria-label="unsaved changes"><\/i><\/a>/);
+    expect(text(true)).toMatch(/>Home<i class="wa-unsaved" role="img" aria-label="unsaved changes"><\/i><\/a>/);
     expect(text(true).match(/wa-unsaved/g)).toHaveLength(1);
     expect(text(false)).not.toContain("wa-unsaved");
     expect(text(undefined)).not.toContain("wa-unsaved");

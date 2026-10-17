@@ -221,12 +221,18 @@ describe("the watch screens under the row", () => {
 });
 
 describe("links into the Watch app carry the shared watch", () => {
-  it("in the Watch app and iPhone app tabs", () => {
+  it("not in the tab bar, which has no Watch app or iPhone app tab to carry one", () => {
     const render = method("  override render() {");
-    expect(render).toContain("watch: this.sharedWatch,");
-    expect(render).toContain("iphone: this.sharedPhone,");
-    expect(render).toContain("phones: this.phonePages,");
-    expect(method("  private openTab(")).toContain("this.goTo(tabPath(tab, this.sharedWatch, this.sharedPhone));");
+    expect(render).not.toContain("watch: this.sharedWatch,");
+    expect(render).not.toContain("iphone: this.sharedPhone,");
+    expect(method("  private openTab(")).toContain("this.goTo(tabPath(tab));");
+  });
+
+  it("Home's side bar links the whole home's screens, HTTP actions and Cameras, now that no tab does", () => {
+    expect(method("  private renderHome() {")).toContain("${this.renderHomeShared()}");
+    const shared = method("  private renderHomeShared() {");
+    expect(shared).toContain("WATCH_SCREENS.filter((s) => s.shared === true && s.retired !== true)");
+    expect(shared).toContain("this.goTo(path);");
   });
 
   it("on Home's picked device, whose doors open a screen on that device's own watch or iPhone", () => {

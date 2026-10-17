@@ -235,6 +235,13 @@ export function seenWords(owner: Pick<OwnerSummary, "polling" | "last_seen_secon
 /** Home's small print under the devices: what Synced and Waiting are about.
  * The totals already say what each word means, so this only says what it
  * covers, which on a watch is more than its complications. */
+/** The line under each of the whole home's screens in Home's side bar
+ * (`renderHomeShared`): what it holds, short enough for one line. */
+export const HOME_SHARED_SUB: Partial<Record<WatchScreen["id"], string>> = {
+  "http-actions": "Web requests every device can run",
+  "cameras": "How each camera is framed in alerts",
+};
+
 export const HOME_SYNC_NOTE = "On a watch, Synced and Waiting cover its complications and the whole watch app: pages, menus and settings.";
 
 /** A device the server holds but that never talked to it: no app version,
@@ -612,6 +619,18 @@ export const homeStyles = css`
   .hb-row-sub { font-size: 11px; line-height: 1.3; color: var(--wa-muted); overflow-wrap: anywhere; }
   .hb-row-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--s); }
   button.hb-row.on .hb-row-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--s) 22%, transparent); }
+  /* The whole home's screens: rows like a device's, as links, each glyph
+     in its screen's hue as the watch row draws it. */
+  .hb-shared { margin-top: 6px; }
+  a.hb-link {
+    display: flex; align-items: center; gap: 11px; width: 100%; box-sizing: border-box; padding: 6px 10px 6px 6px;
+    border-radius: 11px; text-decoration: none; color: var(--wa-ink); border: 1px solid transparent;
+    transition: background-color .15s ease;
+  }
+  a.hb-link:hover { background-color: var(--wa-hover); }
+  a.hb-link:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .hb-link-ic { color: var(--h); }
+  .hb-link-ic svg.ui-icon { width: 18px; height: 18px; }
   .hb-side > .home-small { margin-top: auto; padding: 10px 8px 0; font-size: 11px; }
 
   /* The picked device. */
@@ -859,7 +878,7 @@ export const homeStyles = css`
   a.hb-door:hover .hb-door-go, button.hb-door:hover .hb-door-go,
   a.hb-door:focus-visible .hb-door-go, button.hb-door:focus-visible .hb-door-go { opacity: 1; transform: none; }
   @media (prefers-reduced-motion: reduce) {
-    button.hb-row, a.hb-door, button.hb-door, .hb-door-go { transition: none; }
+    button.hb-row, a.hb-link, a.hb-door, button.hb-door, .hb-door-go { transition: none; }
     a.hb-door:hover, button.hb-door:hover { transform: none; }
   }
   /* The rename field, the Remove step and the notes, in the detail. */

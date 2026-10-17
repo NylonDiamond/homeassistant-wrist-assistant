@@ -143,7 +143,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, homePill, homeSync, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDoorLook, homeGroups, homePageThumbs, HOME_PAGE_THUMB_WIDTH, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_RING_LENGTH, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDoorLook, homeGroups, homePageThumbs, HOME_PAGE_THUMB_WIDTH, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_RING_LENGTH, HOME_SHARED_SUB, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
 import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
 import { APP_STORE_URL, type GettingStarted, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
 import { type QrPicture, qrPicture } from "./qr-code.js";
@@ -448,10 +448,10 @@ import { NOT_ON_WATCH_NOTE, isWatchComplicationsRoute, splitForWatch, watchCompl
 import {
   COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, deviceScreenPath, editorKeysLive, iphoneInnerRoute, iphoneScreenOf,
   iphoneScreenPath, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
-  panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath,
+  panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath, watchScreenSentence,
 } from "./shell.js";
 import { adoptRouteWatch, iphoneRouteOwner, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
-import { type WatchScreenId, markRowMore, renderWatchRow, showRowLink, unsavedScreens, watchRowStyles } from "./watch-row.js";
+import { WATCH_SCREEN_LOOK, type WatchScreenId, markRowMore, renderWatchRow, showRowLink, unsavedScreens, watchRowStyles } from "./watch-row.js";
 import { headBarStyles } from "./head-bar.js";
 import { isWatchSettingsRoute, settingsPageSavesOnKey } from "./watch-settings-page.js";
 import { type WatchHttpLibrary, readWatchHttpLibrary, watchHttpLibraryReadMeansNone } from "./watch-pages/http-library.js";
@@ -11007,9 +11007,6 @@ export class WristAssistantPanel extends LitElement {
       menu: this.narrow || this.hass.dockedSidebar === "always_hidden",
       onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
       onTab: (tab) => this.openTab(tab),
-      watch: this.sharedWatch,
-      iphone: this.sharedPhone,
-      phones: this.phonePages,
       onHelp: () => this.openHelpSheet(),
       watchUnsaved: this.unsavedNow.length > 0,
     });
@@ -11061,15 +11058,14 @@ export class WristAssistantPanel extends LitElement {
     });
   }
 
-  /** A tab pressed in the bar. The tab already on screen stays as it is, so
-   * pressing Watch app on Menus does not throw the person back to Pages. The
-   * Watch app opens on Pages for the shared watch, the iPhone app on Pages
-   * for the shared iPhone. Complications always opens the whole list
+  /** A tab pressed in the bar. The tab already on screen stays as it is.
+   * Home pressed on a watch's or an iPhone's screen goes back to Home, where
+   * those screens open from. Complications always opens the whole list
    * (`showAllComplications`), even from inside it. */
   private openTab(tab: PanelTab) {
     if (tab === "complications") this.showAllComplications();
     if (tab === tabOfRoute(this.route)) return;
-    this.goTo(tabPath(tab, this.sharedWatch, this.sharedPhone));
+    this.goTo(tabPath(tab));
   }
 
   /**
@@ -19659,6 +19655,7 @@ export class WristAssistantPanel extends LitElement {
           <button type="button" class="home-btn add hb-pair" title="Pair a watch or iPhone, by a code or a QR code"
             @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair a device</span></button>
           ${groups.map((g) => this.renderHomeGroup(g, row.id, elapsed))}
+          ${this.renderHomeShared()}
           <p class="home-small">${HOME_SYNC_NOTE}</p>
         </aside>
         <section class="hb-main" aria-label=${row.name}>
@@ -19835,6 +19832,27 @@ export class WristAssistantPanel extends LitElement {
         ? html`<span class="hb-person-note" title="No Home Assistant user is linked to these devices. The name is read from a device's name.">Not linked to a user</span>`
         : nothing}
       ${g.rows.map((d) => this.renderHomeRow(d, d.id === pick, elapsed))}
+    </section>`;
+  }
+
+  /** The screens that belong to the whole home, not one device, under the
+   * people in Home's side bar: HTTP actions and Cameras. With no Watch app
+   * tab, this is their way in. Each is a real link, so a middle click opens
+   * it in a new browser tab. */
+  private renderHomeShared() {
+    const screens = WATCH_SCREENS.filter((s) => s.shared === true && s.retired !== true);
+    return html`<section class="hb-group hb-shared" aria-label="For the whole home">
+      <div class="hb-person"><h2 class="hb-person-name">For the whole home</h2></div>
+      ${screens.map((screen) => {
+        const look = WATCH_SCREEN_LOOK[screen.id];
+        const path = watchScreenPath(screen);
+        return html`<a class="hb-row hb-link" href=${panelUrl(this.route, path, globalThis.location?.pathname ?? "")}
+          title=${watchScreenSentence(screen)} style=${`--h:${look.hue}`}
+          @click=${(e: MouseEvent) => { if (!isPlainClick(e)) return; e.preventDefault(); this.goTo(path); }}>
+          <span class="hb-icon hb-link-ic" aria-hidden="true">${uiIcon(look.icon)}</span>
+          <span class="hb-row-t"><span class="hb-row-name">${screen.label}</span><span class="hb-row-sub">${HOME_SHARED_SUB[screen.id] ?? ""}</span></span>
+        </a>`;
+      })}
     </section>`;
   }
 

@@ -1,6 +1,7 @@
-// The panel's shell: the five tabs across the top (Home, Watch app, iPhone
-// app, Pages, Complications), which address each one lives at, and the bar
-// that moves between them.
+// The panel's shell: the three tabs across the top (Home, Pages,
+// Complications), which address each screen lives at, and the bar that moves
+// between them. A watch's or an iPhone's own screens have no tab: Home's
+// doors open them, and they count as Home in the bar.
 //
 // The tab is never stored. It is read from the route Home Assistant hands the
 // panel, so a reload, a bookmark and the browser's Back button all agree with
@@ -220,14 +221,17 @@ export function tabPath(tab: PanelTab, watch?: string, iphone?: string): string 
 }
 
 /** The tabs across the top, in order. Every signed in person gets them all:
- * the server lists each person only the devices they may manage. The iPhone
- * app only shows on a home with phone pages (`panelTabs`). */
-export const PANEL_TABS: readonly PanelTab[] = ["home", "watch", "iphone", "pages", "complications"];
+ * the server lists each person only the devices they may manage. The Watch
+ * app and the iPhone app have no tab of their own: a device's screens open
+ * from its doors on Home, and the bar marks Home while one is on show
+ * (`barTabOf`). */
+export const PANEL_TABS: readonly PanelTab[] = ["home", "pages", "complications"];
 
-/** The tabs the bar shows: all of them on a home with phone pages, else all
- * but the iPhone app, unless it is the tab on screen. */
-export function panelTabs(phones: boolean, current?: PanelTab): PanelTab[] {
-  return PANEL_TABS.filter((tab) => tab !== "iphone" || phones || current === "iphone");
+/** The tab the bar marks for a route: a watch's or an iPhone's screens,
+ * reached from Home, mark Home. */
+export function barTabOf(route: PanelRoute | undefined): PanelTab {
+  const tab = tabOfRoute(route);
+  return tab === "watch" || tab === "iphone" ? "home" : tab;
 }
 
 /** Every tab's sub-path, as one pattern anchored at the end of an address:
@@ -345,17 +349,12 @@ export interface TabBarInput {
   menu: boolean;
   onMenu: () => void;
   onTab: (tab: PanelTab) => void;
-  /** The Watch app's shared watch, which its tab's link carries. */
-  watch?: string;
-  /** The iPhone app's shared iPhone, likewise. */
-  iphone?: string;
-  /** The home has phone pages: the bar shows the iPhone app. */
-  phones?: boolean;
   /** Open the Help sheet (`help-sheet.ts`). The Help button sits at the
    * bar's right end, on every tab; without this there is none. */
   onHelp?: () => void;
-  /** Whether any watch screen holds unsaved work: the Watch app tab then
-   * carries an orange dot, seen from Home and Complications too. */
+  /** Whether any watch or iPhone screen holds unsaved work: the Home tab,
+   * where those screens open from, then carries an orange dot, seen from
+   * Pages and Complications too. */
   watchUnsaved?: boolean;
 }
 
@@ -368,25 +367,25 @@ const HELP_ICON = html`<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stro
 /** The tabs, above whatever the tab draws. Each is a real link, so a middle
  * click opens it in a new browser tab; a plain click moves in place. */
 export function renderTabBar(input: TabBarInput): TemplateResult {
-  const current = tabOfRoute(input.route);
-  const href = (tab: PanelTab) => panelUrl(input.route, tabPath(tab, input.watch, input.iphone), globalThis.location?.pathname ?? "");
+  const current = barTabOf(input.route);
+  const href = (tab: PanelTab) => panelUrl(input.route, tabPath(tab), globalThis.location?.pathname ?? "");
   return html`<nav class="wa-tabs" aria-label="Wrist Assistant">
     ${input.menu ? html`<button class="wa-tabs-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
       @click=${input.onMenu}>${uiIcon("menu")}</button>` : nothing}
     <span class="wa-tabs-name">Wrist Assistant</span>
-    <span class="wa-tabs-list">${panelTabs(input.phones === true, current).map((tab) => html`<a class="wa-tab ${tab === current ? "on" : ""}"
+    <span class="wa-tabs-list">${PANEL_TABS.map((tab) => html`<a class="wa-tab ${tab === current ? "on" : ""}"
       href=${href(tab)} aria-current=${tab === current ? "page" : "false"}
       @click=${(e: MouseEvent) => {
         if (!isPlainClick(e)) return;
         e.preventDefault();
         input.onTab(tab);
-      }}>${TAB_LABEL[tab]}${tab === "watch" && input.watchUnsaved === true ? unsavedDot() : nothing}</a>`)}</span>
+      }}>${TAB_LABEL[tab]}${tab === "home" && input.watchUnsaved === true ? unsavedDot() : nothing}</a>`)}</span>
     ${input.onHelp ? html`<button type="button" class="wa-tabs-help" title="Help and setup guide" aria-label="Help" aria-haspopup="dialog"
       @click=${input.onHelp}>${HELP_ICON}<span>Help</span></button>` : nothing}
   </nav>`;
 }
 
-/** The orange dot that marks unsaved work, on the Watch app tab and on each
+/** The orange dot that marks unsaved work, on the Home tab and on each
  * screen of the Watch app row. A screen reader hears it as words. */
 export function unsavedDot(): TemplateResult {
   return html`<i class="wa-unsaved" role="img" aria-label="unsaved changes"></i>`;

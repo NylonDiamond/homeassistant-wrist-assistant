@@ -159,7 +159,7 @@ export function watchRowSlot(loaded: boolean, watches: number): WatchRowSlot {
 /** Under the menu's watches. */
 export const WATCH_ROW_PHONES_NOTE = "Phones are not here. Phones only get complications and widgets.";
 /** Under the menu's watches on a home with phone pages. */
-export const WATCH_ROW_IPHONE_TAB_NOTE = "iPhones are set up in the iPhone app tab.";
+export const WATCH_ROW_IPHONE_TAB_NOTE = "iPhones are set up from Home: pick one there.";
 /** Beside the pairing button in a home with no watch. */
 export const WATCH_ROW_NONE_NOTE = "No watch has connected yet. Pair one to set up its pages, menus and the rest.";
 /** Beside the pairing button in a home with no iPhone. */
