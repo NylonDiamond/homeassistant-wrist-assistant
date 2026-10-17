@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 import types
+from pathlib import Path
 
 import pytest
 
@@ -38,6 +40,7 @@ SOLO = "AAAAAAAA-0000-4000-8000-000000000003"
 DOORS = "BBBBBBBB-0000-4000-8000-000000000001"
 STARTER = "00000000-0000-0000-0000-000000000001"
 OLD_LINK = "3f0c5b2a9d1e4c7f8a6b0d2e4f6a8c0e"
+_FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
 NAMES = {WATCH: "Jesse's Apple Watch", WATCH_2: "Chen's Apple Watch", PHONE: "Jesse's iPhone"}
 
 
@@ -944,6 +947,24 @@ def test_create_menu_makes_a_menu_no_device_uses_until_one_is_ticked(env) -> Non
     with pytest.raises(env.mod.WatchConfigStoreError) as err:
         store.library_pick(WATCH_2, "menus", fresh["id"], unit="anywhere")
     assert err.value.code == "no_record"
+
+
+@pytest.mark.parametrize("unit", ["anywhere", "entity"])
+def test_create_menu_takes_the_sections_the_panel_sends(env, unit) -> None:
+    """The panel's New menu sends the app's defaults from menu-defaults.json,
+    the unit's keys only (newMenuSections in all-menus-model.ts). The server
+    must take them as they are, or New menu is refused on every box."""
+    defaults = json.loads(
+        (_FRONTEND / "src" / "watch-menus" / "menu-defaults.json").read_text()
+    )["document"]
+    keys = env.mod.MENU_UNITS[unit]
+    sections = {key: copy.deepcopy(defaults[key]) for key in keys}
+    store = env.store_now()
+    result = store.library_create_menu(unit, "New menu", sections)
+    menu = store.library_summary()["menus"][result["id"]]
+    assert menu["kind"] == unit
+    assert menu["sections"] == sections
+    assert menu["owners"] == []
 
 
 @pytest.mark.parametrize(
