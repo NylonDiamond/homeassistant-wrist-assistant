@@ -41,6 +41,9 @@ export interface AllMenusViewInput {
   /** Open a device's menu editor. The element has already asked it for
    * the card's menu. */
   onOpen: (ownerId: string, kind: "watch" | "iphone") => void;
+  /** Open a menu no device uses in the menu editor's library mode
+   * (`library/item-mode.ts`); New menu opens the new one there too. */
+  onOpenLibrary?: (menuId: string) => void;
   /** Called once the chunk has loaded or failed, to draw again. */
   onLoaded: () => void;
 }
@@ -54,5 +57,5 @@ export function renderAllMenusView(input: AllMenusViewInput): TemplateResult {
     return html`<div class="ap-loading">${loadFailed ? "The Menus tab did not load. Reload the page to try again." : "Loading…"}</div>`;
   }
   return html`<wa-all-menus .hass=${input.hass} .owners=${input.owners} .ownersReady=${input.ownersReady} .phones=${input.phones}
-    .icons=${input.icons} .iconsTick=${input.iconsTick} .onOpen=${input.onOpen}></wa-all-menus>`;
+    .icons=${input.icons} .iconsTick=${input.iconsTick} .onOpen=${input.onOpen} .onOpenLibrary=${input.onOpenLibrary}></wa-all-menus>`;
 }

@@ -18,9 +18,14 @@ import { type Msg, fakeHome, settle, standUp } from "./library-tab-fake.js";
 function tab(kind: "pages" | "status_pages" = "pages", admin = true) {
   const home = fakeHome(admin);
   const opened: [string, string, string | undefined][] = [];
-  const t = standUp("wa-all-pages", home, { kind, onOpen: (o: string, k: string, what?: string) => opened.push([o, k, what]) });
+  const library: [string, string][] = [];
+  const t = standUp("wa-all-pages", home, {
+    kind,
+    onOpen: (o: string, k: string, what?: string) => opened.push([o, k, what]),
+    onOpenLibrary: (k: string, id: string) => library.push([k, id]),
+  });
   const sentOf = (type: string) => home.sent.filter((m) => m.type === `wrist_assistant/${type}`);
-  return { ...t, home, opened, sentOf };
+  return { ...t, home, opened, library, sentOf };
 }
 
 /** The view kept for each tab is kept across tests, as in the panel. */
@@ -145,7 +150,7 @@ describe("the Pages tab", () => {
     }
   });
 
-  it("opens a page on the device that has it, picked in its page editor; a page no device has says so", async () => {
+  it("opens a page on the device that has it, picked in its page editor; a page no device has in the library", async () => {
     const t = tab();
     showTab(t, "all");
     await t.ready();
@@ -155,7 +160,9 @@ describe("the Pages tab", () => {
     expect(keptWatchPagesSelection(JESSE).pageId).toBe(PAGE1);
     t.call("open", lib.pages.find((e) => e.id === LONELY));
     expect(t.opened).toHaveLength(1);
-    expect(t.whole()).toContain("No device has this page. Tick one to edit it there.");
+    expect(t.library).toEqual([["pages", LONELY]]);
+    expect(t.whole()).not.toContain("Tick one to edit it there.");
+    expect(t.whole()).toContain(" in the library");
   });
 
   it("has New page: on All it asks which device, on a device's tab it adds the page there", async () => {

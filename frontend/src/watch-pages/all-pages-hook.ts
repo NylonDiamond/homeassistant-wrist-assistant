@@ -47,6 +47,9 @@ export interface AllPagesViewInput {
    * `status_pages` a status page in its status pages editor. The element
    * has already picked the page there, or asked for a new one. */
   onOpen: (ownerId: string, kind: "watch" | "iphone", what?: "pages" | "status_pages") => void;
+  /** Open a page or status page no device has in its editor's library
+   * mode (`library/item-mode.ts`). */
+  onOpenLibrary?: (kind: "pages" | "status_pages", id: string) => void;
   /** Called once the chunk has loaded or failed, to draw again. */
   onLoaded: () => void;
 }
@@ -60,7 +63,7 @@ export function renderAllPagesView(input: AllPagesViewInput): TemplateResult {
     return html`<div class="ap-loading">${loadFailed ? `The ${tab} tab did not load. Reload the page to try again.` : "Loading…"}</div>`;
   }
   return html`<wa-all-pages .kind=${input.kind} .hass=${input.hass} .owners=${input.owners} .ownersReady=${input.ownersReady} .phones=${input.phones}
-    .icons=${input.icons} .iconsTick=${input.iconsTick} .onOpen=${input.onOpen}></wa-all-pages>`;
+    .icons=${input.icons} .iconsTick=${input.iconsTick} .onOpen=${input.onOpen} .onOpenLibrary=${input.onOpenLibrary}></wa-all-pages>`;
 }
 
 /** The stand-in line's look, added to the panel's sheet. */

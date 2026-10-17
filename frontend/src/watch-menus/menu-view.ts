@@ -180,6 +180,9 @@ export interface MenusViewHost {
   /** The badge on a menu's row, after its count: the library menu's own
    * name, "Home menu". */
   menuBadge?(menu: MenusSection): string | undefined;
+  /** The rows the Menus card shows, when not all three: one library menu
+   * edited on its own shows only its unit's (`librarySections`). */
+  readonly sections?: readonly MenusSection[];
   /** Apply `change` to the document as it is now: one undo step, or with
    * `coalesce` a step the next edits with the same key replace. */
   edit(change: (document: MenusDocument) => MenusDocument, coalesce?: string): boolean;
@@ -195,6 +198,12 @@ export const MENUS_SECTIONS: readonly [MenusSection, string][] = [
   ["entity", "Entity quick menu"],
   ["switcher", "Page switcher"],
 ];
+
+/** The Menus card's rows for one library menu of `unit`: an Anywhere menu
+ * with the page switcher, or the Entity quick menu alone. */
+export function librarySections(unit: "anywhere" | "entity"): readonly MenusSection[] {
+  return unit === "entity" ? ["entity"] : ["anywhere", "switcher"];
+}
 
 export const SWITCHER_LINE = "Each page's icon, color and name are set here: pick a page in the Pages card.";
 
@@ -665,7 +674,7 @@ export function renderMenusCard(host: MenusViewHost): TemplateResult {
     </div>
     <p class="me-intro">${MENUS_INTRO}</p>
     <div class="layers me-menu-list" role="list">
-      ${MENUS_SECTIONS.map(([id, label]) => {
+      ${MENUS_SECTIONS.filter(([id]) => host.sections === undefined || host.sections.includes(id)).map(([id, label]) => {
         const on = id === shown;
         const pick = () => { if (!on) selectMenu(host, id); };
         const named = host.menuBadge?.(id);

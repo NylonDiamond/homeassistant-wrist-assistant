@@ -16,6 +16,8 @@ export interface HeldMenu {
   name: string;
   kind: MenuUnit;
   owners: string[];
+  /** The slots of a menu no device uses, which no record holds. */
+  sections?: JsonObject;
 }
 
 export interface LibraryHomeOptions {
@@ -23,6 +25,8 @@ export interface LibraryHomeOptions {
   menus?: Record<string, HeldMenu>;
   /** Pages the library holds that no device picks. */
   unpicked?: Record<string, JsonObject>;
+  /** Status pages the library holds that no device picks. */
+  unpickedStatus?: Record<string, JsonObject>;
   /** The complications on each device (`/list`). */
   complications?: Record<string, JsonObject[]>;
   /** Earlier saves (`watch_config/history_entry`), by `owner/kind/revision`. */
@@ -45,6 +49,10 @@ export function libraryHome(records: Record<string, unknown>, options: LibraryHo
   for (const [at, document] of Object.entries(records)) held.set(at, { revision: 4, document });
   const menus = structuredClone(options.menus ?? {});
   const unpicked = new Map(Object.entries(options.unpicked ?? {}));
+  const unpickedStatus = new Map(Object.entries(options.unpickedStatus ?? {}));
+  /** Each item's own revision, by `kind/id`: 1 until a library item save. */
+  const itemRevisions = new Map<string, number>();
+  const revisionOf = (kind: string, id: string) => itemRevisions.get(`${kind}/${id}`) ?? 1;
   const sent: JsonObject[] = [];
 
   const listOf = (owner: string, kind: "pages" | "status_pages"): JsonObject[] => {
@@ -62,6 +70,7 @@ export function libraryHome(records: Record<string, unknown>, options: LibraryHo
   const summary = (): LibrarySummary => {
     const out: LibrarySummary = { pages: {}, status_pages: {}, menus: {}, picks: {} };
     for (const [id, page] of unpicked) out.pages[id] = { item: page, owners: [] };
+    for (const [id, page] of unpickedStatus) out.status_pages[id] = { item: page, owners: [] };
     for (const owner of owners()) {
       const picks: LibraryOwnerPicks = {};
       for (const kind of ["pages", "status_pages"] as const) {
@@ -86,11 +95,67 @@ export function libraryHome(records: Record<string, unknown>, options: LibraryHo
       if (Object.keys(picks).length > 0) out.picks[owner] = picks;
     }
     for (const [id, menu] of Object.entries(menus)) {
-      const first = menu.owners[0] === undefined ? undefined : held.get(`${menu.owners[0]}/menus`)?.document as JsonObject | undefined;
-      const sections = Object.fromEntries(UNIT_KEYS[menu.kind].flatMap((k) => (first?.[k] === undefined ? [] : [[k, first[k]]])));
-      out.menus[id] = { name: menu.name, kind: menu.kind, sections, owners: [...menu.owners].sort() } satisfies LibraryMenuEntry;
+      out.menus[id] = { name: menu.name, kind: menu.kind, sections: menuSections(menu), owners: [...menu.owners].sort() } satisfies LibraryMenuEntry;
+    }
+    for (const kind of ["pages", "status_pages", "menus"] as const) {
+      for (const [id, entry] of Object.entries(out[kind])) entry.revision = revisionOf(kind, id);
     }
     return out;
+  };
+
+  /** A menu's slots: its first user's record's, else its own. */
+  const menuSections = (menu: HeldMenu): JsonObject => {
+    const first = menu.owners[0] === undefined ? undefined : held.get(`${menu.owners[0]}/menus`)?.document as JsonObject | undefined;
+    if (first === undefined) return structuredClone(menu.sections ?? {});
+    return Object.fromEntries(UNIT_KEYS[menu.kind].flatMap((k) => (first[k] === undefined ? [] : [[k, first[k]]])));
+  };
+
+  /** `library/item`: the item as a whole document of its kind. */
+  const libraryItemOf = (msg: JsonObject): { document: JsonObject; revision: number; name?: string } => {
+    const kind = msg.kind as "pages" | "status_pages" | "menus";
+    const id = msg.item_id as string;
+    if (kind === "menus") {
+      const menu = menus[id];
+      if (menu === undefined) throw { code: "not_found", message: "no such menu" };
+      return { document: { schemaVersion: 1, quickAction: {}, entityRadial: {}, pageSwitcher: {}, ...menuSections(menu) }, revision: revisionOf(kind, id), name: menu.name };
+    }
+    const entry = summary()[kind][id];
+    if (entry === undefined) throw { code: "not_found", message: "no such item" };
+    return { document: { schemaVersion: 1, [LIST_KEYS[kind]]: [structuredClone(entry.item)] }, revision: revisionOf(kind, id) };
+  };
+
+  /** `library/item/save`: the one item out of the document, onto every
+   * device that picks it, its revision bumped; refused as the server does. */
+  const saveItem = (msg: JsonObject): { revision: number } => {
+    const kind = msg.kind as "pages" | "status_pages" | "menus";
+    const id = msg.item_id as string;
+    const now = libraryItemOf(msg).revision;
+    if (msg.base_revision !== now) throw { code: "conflict", message: `stored revision is ${now}, save was based on ${msg.base_revision as number}` };
+    const document = msg.document as JsonObject;
+    if (kind === "menus") {
+      const menu = menus[id]!;
+      const sections = Object.fromEntries(UNIT_KEYS[menu.kind].map((k) => [k, structuredClone(document[k])]));
+      for (const owner of menu.owners) {
+        const at = `${owner}/menus`;
+        const r = held.get(at);
+        held.set(at, { revision: (r?.revision ?? 0) + 1, document: { ...(r?.document as JsonObject | undefined), ...sections } });
+      }
+      if (menu.owners.length === 0) menu.sections = sections;
+    } else {
+      const list = document[LIST_KEYS[kind]];
+      if (!Array.isArray(list) || list.length !== 1 || (list[0] as JsonObject).id !== id) throw { code: "invalid", message: "the document must hold this item alone" };
+      const page = item(list[0] as JsonObject);
+      const users = owners().filter((o) => listOf(o, kind).some((p) => p.id === id));
+      for (const owner of users) putList(owner, kind, listOf(owner, kind).map((p) => (p.id === id ? { ...page, ...(p.isHidden === true ? { isHidden: true } : {}) } : p)));
+      if (users.length === 0) (kind === "pages" ? unpicked : unpickedStatus).set(id, page);
+    }
+    itemRevisions.set(`${kind}/${id}`, now + 1);
+    return { revision: now + 1 };
+  };
+
+  /** Move an item on behind the editor's back, as a save from elsewhere. */
+  const bumpItem = (kind: "pages" | "status_pages" | "menus", id: string) => {
+    itemRevisions.set(`${kind}/${id}`, revisionOf(kind, id) + 1);
   };
 
   const record = (at: string): WatchConfigRecord => {
@@ -148,6 +213,9 @@ export function libraryHome(records: Record<string, unknown>, options: LibraryHo
       held.set(at, { revision: now + 1, document: msg.document });
       return { revision: now + 1 };
     }
+    // Before the complications' `/save` below, which this ends with too.
+    if (options.noLibrary !== true && type.endsWith("library/item")) return libraryItemOf(msg);
+    if (options.noLibrary !== true && type.endsWith("library/item/save")) return saveItem(msg);
     if (type.endsWith("/list")) return { records: (options.complications?.[msg.owner_watch_id as string] ?? []).map((document, i) => ({ id: `c${i}`, revision: 1, deleted: false, document })) };
     if (type.endsWith("/save_record") || type.endsWith("/save")) return { revision: 2 };
     if (options.noLibrary !== true) {
@@ -190,7 +258,7 @@ export function libraryHome(records: Record<string, unknown>, options: LibraryHo
 
   /** The commands of one type sent so far (`library/pick`, say). */
   const of = (type: string): JsonObject[] => sent.filter((m) => (m.type as string).endsWith(type));
-  return { hass, held, sent, menus, of, summary };
+  return { hass, held, sent, menus, of, summary, bumpItem };
 }
 
 /** A Lit template flattened to its text, directives with their values. */

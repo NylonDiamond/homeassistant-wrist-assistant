@@ -436,8 +436,8 @@ import { renderWatchPagePreview, watchPagePreviewStyles } from "./watch-pages/pr
 import { type WatchPage, asWatchPagesDocument, watchPageName, watchPagesOf } from "./watch-pages/model.js";
 import { watchFrameStyles } from "./watch-frame.js";
 import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles } from "./watch-pages/hook.js";
-import { allPagesHookStyles, renderAllPagesView } from "./watch-pages/all-pages-hook.js";
-import { renderAllMenusView } from "./watch-menus/all-menus-hook.js";
+import { ALL_PAGES_PATH, ALL_STATUS_PAGES_PATH, allPagesHookStyles, renderAllPagesView } from "./watch-pages/all-pages-hook.js";
+import { ALL_MENUS_PATH, renderAllMenusView } from "./watch-menus/all-menus-hook.js";
 import { dropWatchMenusDrafts, isWatchMenusRoute, renderWatchMenusView, watchMenusDirty, watchMenusHookStyles } from "./watch-menus/hook.js";
 import { dropWatchVoiceDrafts, isWatchVoiceRoute, renderWatchVoiceView, watchVoiceDirty, watchVoiceHookStyles } from "./watch-voice/hook.js";
 import { dropWatchStatusPagesDrafts, isWatchStatusPagesRoute, renderWatchStatusPagesView, watchStatusPagesDirty, watchStatusPagesHookStyles } from "./watch-status-pages/hook.js";
@@ -447,9 +447,9 @@ import { dropWatchHttpActionsDrafts, isWatchHttpActionsRoute, renderWatchHttpAct
 import { dropWatchCamerasDrafts, isWatchCamerasRoute, renderWatchCamerasView, watchCamerasDirty } from "./watch-cameras/hook.js";
 import { NOT_ON_WATCH_NOTE, isWatchComplicationsRoute, splitForWatch, watchComplicationsLead, watchComplicationsStyles } from "./watch-complications.js";
 import {
-  COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, deviceScreenPath, editorKeysLive, iphoneInnerRoute, iphoneScreenOf,
+  COMPLICATIONS_PATH, type LibraryItemRef, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, deviceScreenPath, editorKeysLive, iphoneInnerRoute, iphoneScreenOf,
   iphoneScreenPath, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
-  barTabOf, panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath, watchScreenSentence,
+  barTabOf, libraryItemPath, libraryRouteOf, panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath, watchScreenSentence,
 } from "./shell.js";
 import { adoptRouteWatch, iphoneRouteOwner, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
 import { WATCH_SCREEN_LOOK, type WatchScreenId, markRowMore, renderWatchRow, showRowLink, unsavedScreens, watchRowStyles } from "./watch-row.js";
@@ -11501,7 +11501,29 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
+  /**
+   * One library item in its kind's editor, on `/library/<kind>/<id>`
+   * (`libraryItemPath`): a page, status page or menu edited in the library
+   * itself, with no device. It stands under the tab bar alone, with no
+   * device row, and draws its own bar; Back goes to its kind's tab.
+   */
+  private renderLibraryItem(ref: LibraryItemRef) {
+    const back = ref.kind === "menus" ? ALL_MENUS_PATH : ref.kind === "status_pages" ? ALL_STATUS_PAGES_PATH : ALL_PAGES_PATH;
+    const input = {
+      hass: this.hass, owners: this.owners, ownerId: undefined, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+      menu: false, onMenu: () => undefined, onBack: () => this.goTo(back),
+      actions: nothing as typeof nothing, phones: this.phonePages, dialogs: nothing as typeof nothing, libraryItem: ref,
+      onLoaded: () => this.requestUpdate(),
+    };
+    if (ref.kind === "menus") return renderWatchMenusView(input);
+    if (ref.kind === "status_pages") return renderWatchStatusPagesView(input);
+    return renderWatchPagesView(input);
+  }
+
   private renderTab() {
+    // Before the tabs: a library item's address marks its kind's tab too.
+    const item = libraryRouteOf(this.route);
+    if (item !== undefined) return this.renderLibraryItem(item);
     const tab = tabOfRoute(this.route);
     if (tab === "home") return this.renderHome();
     // The iPhone app: its row, then the screen on the shared iPhone.
@@ -11520,6 +11542,7 @@ export class WristAssistantPanel extends LitElement {
           const screen = what === "status_pages" ? WATCH_SCREENS.find((s) => s.id === "status-pages") : undefined;
           this.goTo(deviceScreenPath(kind, screen ?? WATCH_SCREENS[0]!, ownerId));
         },
+        onOpenLibrary: (kind, id) => this.goTo(libraryItemPath(kind, id)),
         onLoaded: () => this.requestUpdate(),
       });
     }
@@ -11534,6 +11557,7 @@ export class WristAssistantPanel extends LitElement {
           this.pickWatch(ownerId);
           this.goTo(deviceScreenPath(kind, WATCH_SCREENS.find((s) => s.id === "menus")!, ownerId));
         },
+        onOpenLibrary: (id) => this.goTo(libraryItemPath("menus", id)),
         onLoaded: () => this.requestUpdate(),
       });
     }

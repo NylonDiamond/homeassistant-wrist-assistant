@@ -52,6 +52,9 @@ export type LibraryObject = Record<string, unknown>;
 export interface LibraryItemEntry {
   item: LibraryObject;
   owners: string[];
+  /** The item's own revision, bumped on every change to its content.
+   * Absent from an integration older than library editing. */
+  revision?: number;
 }
 
 /** One menu in the summary. `sections` holds `quickAction` and
@@ -62,6 +65,8 @@ export interface LibraryMenuEntry {
   kind: MenuUnit;
   sections: LibraryObject;
   owners: string[];
+  /** As `LibraryItemEntry.revision`; a rename bumps it too. */
+  revision?: number;
 }
 
 /** One of a device's page picks: a library page (with `isHidden` when it is
@@ -196,6 +201,41 @@ export async function deleteLibraryItem(hass: HassLike, kind: LibraryKind, itemI
   return hass.connection.sendMessagePromise<LibraryDeleteReply>({ type: `${LIB}/delete`, kind, item_id: itemId });
 }
 
+/** `library/item`: one item as a whole document of its kind, in the shape a
+ * device's record of that kind has, so the editors read it as they read a
+ * record. A page or status page document holds that one page; a menus
+ * document holds the menu's sections, the other unit's sections blank.
+ * `revision` is the item's own (it starts at 1). A menu also has `name`. */
+export interface LibraryItemReply {
+  document: LibraryObject;
+  revision: number;
+  name?: string;
+}
+
+/** What `library/item/save` answers: the item's revision now. */
+export interface LibraryItemSaveReply {
+  revision: number;
+}
+
+/** Read one item for its editor's library mode. Refusals: `not_found`,
+ * `invalid` (an unknown kind), `unauthorized` (an item none of the caller's
+ * devices picks, for anyone but an administrator), `unavailable`. */
+export async function fetchLibraryItem(hass: HassLike, kind: LibraryKind, itemId: string) {
+  return hass.connection.sendMessagePromise<LibraryItemReply>({ type: `${LIB}/item`, kind, item_id: itemId });
+}
+
+/** Save one item edited in the library: `document` is a whole document of
+ * the kind holding only this item (for a menu, its unit's sections; the
+ * other unit's are ignored). Every device that picks it is written again.
+ * Refusals: `conflict` (the item moved past `baseRevision`; the message
+ * says "stored revision is N", as a record save's does), `invalid` (a bad
+ * document, another item's id in it), `not_found`, `unauthorized`. */
+export async function saveLibraryItem(hass: HassLike, kind: LibraryKind, itemId: string, baseRevision: number, document: LibraryObject) {
+  return hass.connection.sendMessagePromise<LibraryItemSaveReply>({
+    type: `${LIB}/item/save`, kind, item_id: itemId, base_revision: baseRevision, document,
+  });
+}
+
 /** What the tabs say on an integration older than the library. */
 export const LIBRARY_UNSUPPORTED_TEXT = "This version of the integration has no library yet. Update it first.";
 
@@ -207,6 +247,7 @@ export function libraryErrorText(err: unknown): string {
     case "unknown_device": return "That device is not paired with this Home Assistant any more.";
     case "not_found": return "That is not in the library any more.";
     case "in_use": return "A device still uses this menu. Pick another menu for it first.";
+    case "conflict": return "Someone else changed this in the meantime. It was read again.";
     case "no_record": return "No device uses this menu yet, so it cannot start this device's menus.";
     case "awaiting_move": return `${WAIT_FOR_IPHONE_TEXT} Try again after that.`;
     case "unauthorized": return "Your Home Assistant user is not allowed to change that device.";
