@@ -89,7 +89,9 @@ import {
   libraryDraftKey,
   libraryItemIO,
   libraryModeStyles,
+  type PreviewKind,
   previewOwner,
+  storedPreviewKind,
   renderBarDevices,
   renderLibraryTag,
   renderPreviewPicker,
@@ -788,13 +790,16 @@ export class WaPageEditor extends LitElement {
   @property({ attribute: false }) barHost: HTMLElement | undefined = undefined;
   /** Library mode (`library/item-mode.ts`): this one page, edited in the
    * library with no device. `watchId` is then only the device it is drawn
-   * on ("Preview as"), which also lends its catalog, behavior, voice,
+   * on ("Preview on"), which also lends its catalog, behavior, voice,
    * status pages and pages; the draft is kept under `libraryDraftKey`, and
    * nothing of a device's own (order, Hide here, history) is shown. */
   @property({ attribute: false }) libraryItem: LibraryItemRef | undefined = undefined;
   private readonly headBar = new HeadBar(this);
 
   @state() private watchId?: string;
+  /** Library mode's Preview on: the kind of device drawn on. `watchId` is
+   * then the home's first device of that kind, or undefined with none. */
+  @state() private previewKind: PreviewKind = "watch";
   /** The library page open now, in library mode. */
   private openedItem?: LibraryItemRef;
   /** The summary revision a quiet read was last asked for. */
@@ -1529,12 +1534,13 @@ export class WaPageEditor extends LitElement {
 
   // ── library mode ───────────────────────────────────────────────────────
 
-  /** Library mode: the preview device (the shown one while it is in the
-   * home, else the remembered one, else the first watch), the page read
-   * when it changes, and read again quietly once the summary says it moved
-   * on elsewhere. */
+  /** Library mode: the preview device (the home's first device of the kind
+   * remembered for the session, a watch to start), the page read when it
+   * changes, and read again quietly once the summary says it moved on
+   * elsewhere. */
   private followLibraryItem(ref: LibraryItemRef): void {
-    const preview = previewOwner(this.watches, this.watchId);
+    if (!sameLibraryItem(ref, this.openedItem)) this.previewKind = storedPreviewKind();
+    const preview = previewOwner(this.watches, this.previewKind);
     if (preview !== this.watchId || (preview === undefined && this.openedItem === undefined)) this.openPreview(preview);
     if (!sameLibraryItem(ref, this.openedItem)) {
       this.openedItem = ref;
@@ -1547,6 +1553,12 @@ export class WaPageEditor extends LitElement {
       this.followedRevision = moved;
       void this.load(libraryDraftKey(ref), true);
     }
+  }
+
+  /** Preview on: the kind picked, drawn on the home's first device of it. */
+  private pickPreview(kind: PreviewKind): void {
+    this.previewKind = kind;
+    this.openPreview(previewOwner(this.watches, kind));
   }
 
   /** Library mode's device to draw on: its catalog, HTTP actions, status
@@ -3426,6 +3438,9 @@ export class WaPageEditor extends LitElement {
   /** The device on show is one of the home's iPhones (`phone-pages.ts`):
    * its pages start empty, and Not on this iPhone can fill them. */
   private get onPhone(): boolean {
+    // In library mode Preview on decides, so an iPhone is drawn with no
+    // iPhone in the home too.
+    if (this.libraryItem !== undefined) return this.previewKind === "iphone";
     return this.phones && isPhoneId(this.ownerList, this.watchId);
   }
 
@@ -4602,7 +4617,7 @@ export class WaPageEditor extends LitElement {
           <span class="word keep">Live preview</span>
         </label>
         ${sep}`}
-      ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.watches, this.watchId, (id) => this.openPreview(id))}${sep}`}
+      ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.previewKind, (kind) => this.pickPreview(kind))}${sep}`}
       <button class="tb pe-case" aria-disabled="true" tabindex="-1"
         title=${phone ? `${PHONE_FRAME_TEXT} The page's background color beside it.` : `This watch's screen, ${caseLabel}. The page's background color beside it.`}>
         ${uiIcon(phone ? "phone" : "watch")}<span class="word keep">${caseLabel}</span><i class="tint-dot" style=${`--sw:${watchScreenColor(page)}`}></i></button>

@@ -172,7 +172,7 @@ describe("the Pages tab", () => {
     await t.ready();
     expect(t.whole()).toContain("New page");
     expect(t.whole()).not.toContain("Add a page on");
-    // Node has no sessionStorage; the editor's Preview as is remembered there.
+    // Node has no sessionStorage; the editor's Preview on is remembered there.
     const held = new Map<string, string>();
     const was = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
     Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: { getItem: (k: string) => held.get(k) ?? null, setItem: (k: string, v: string) => held.set(k, v) } });
@@ -203,8 +203,8 @@ describe("the Pages tab", () => {
     expect(t.el.newForm).toBeUndefined();
     expect(t.library).toEqual([["pages", page.id]]);
     expect(t.opened).toHaveLength(0);
-    // Preview on iPhone: the editor opens drawing on the home's iPhone.
-    expect(held.get(LIBRARY_PREVIEW_KEY)).toBe(PHONE);
+    // Preview on iPhone: the editor opens drawing on an iPhone.
+    expect(held.get(LIBRARY_PREVIEW_KEY)).toBe("iphone");
     if (was) Object.defineProperty(globalThis, "sessionStorage", was);
     else delete (globalThis as { sessionStorage?: unknown }).sessionStorage;
     showTab(t, CHEN);

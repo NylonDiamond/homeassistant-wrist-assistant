@@ -74,7 +74,9 @@ import {
   libraryDraftKey,
   libraryItemIO,
   libraryModeStyles,
+  type PreviewKind,
   previewOwner,
+  storedPreviewKind,
   renderBarDevices,
   renderLibraryTag,
   renderPreviewPicker,
@@ -287,7 +289,7 @@ export class WaStatusPagesEditor extends LitElement {
   @property({ attribute: false }) barHost: HTMLElement | undefined = undefined;
   /** Library mode (`library/item-mode.ts`): this one status page, edited in
    * the library with no device. `watchId` is then only the device it is
-   * drawn on ("Preview as"); the draft is kept under `libraryDraftKey`. */
+   * drawn on ("Preview on"); the draft is kept under `libraryDraftKey`. */
   @property({ attribute: false }) libraryItem: LibraryItemRef | undefined = undefined;
   private readonly headBar = new HeadBar(this);
 
@@ -356,8 +358,15 @@ export class WaStatusPagesEditor extends LitElement {
 
   /** The shown device, for the lines that name it. */
   private get device(): SettingDevice {
+    // In library mode Preview on decides, so an iPhone is drawn with no
+    // iPhone in the home too.
+    if (this.libraryItem !== undefined) return this.previewKind;
     return isPhoneId(this.watches, this.watchId) ? "iphone" : "watch";
   }
+
+  /** Library mode's Preview on: the kind of device drawn on. `watchId` is
+   * then the home's first device of that kind, or undefined with none. */
+  @state() private previewKind: PreviewKind = "watch";
 
   /** The status pages being edited. While Home Assistant holds none for the
    * watch it is the new watch's ready draft (`new-watch.ts`), on the
@@ -534,12 +543,13 @@ export class WaStatusPagesEditor extends LitElement {
     void this.load(watchId, true);
   };
 
-  /** Library mode: the preview device (the shown one while it is in the
-   * home, else the remembered one, else the first watch), the item read
-   * when it changes, and read again quietly once the summary says it moved
-   * on elsewhere. */
+  /** Library mode: the preview device (the home's first device of the kind
+   * remembered for the session, a watch to start), the item read when it
+   * changes, and read again quietly once the summary says it moved on
+   * elsewhere. */
   private followLibraryItem(ref: LibraryItemRef): void {
-    const preview = previewOwner(this.watches, this.watchId);
+    if (!sameLibraryItem(ref, this.openedItem)) this.previewKind = storedPreviewKind();
+    const preview = previewOwner(this.watches, this.previewKind);
     if (preview !== this.watchId) this.watchId = preview;
     if (!sameLibraryItem(ref, this.openedItem)) {
       this.openedItem = ref;
@@ -1541,7 +1551,7 @@ export class WaStatusPagesEditor extends LitElement {
       </div>
       <div class="stage-area sp-stage-area">
         <div class="stage-tools" role="toolbar" aria-label="Stage tools">
-          ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(watches, this.watchId, (id) => { this.watchId = id; })}<span class="tb-sep" aria-hidden="true"></span>`}
+          ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.previewKind, (kind) => { this.previewKind = kind; this.watchId = previewOwner(watches, kind); })}<span class="tb-sep" aria-hidden="true"></span>`}
           <button class="tb sp-case" aria-disabled="true" tabindex="-1" title=${phone ? PHONE_SIZE_TEXT : `This watch's screen, ${watchCase.label}.`}>
             ${uiIcon(phone ? "phone" : "watch")}<span class="word keep">${caseLabel}</span></button>
           <span class="tb-sep" aria-hidden="true"></span>

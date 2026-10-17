@@ -404,8 +404,8 @@ export class WaAllPages extends LitElement {
    * device has (`library/item/create`), then its editor in library mode,
    * where a tick puts it on a device. The library is read again after it,
    * so its card shows with no device ticked. The dialog's Preview on names
-   * the kind of device the editor first draws it on: the first device of
-   * that kind is remembered as the editor's Preview as.
+   * the kind of device the editor first draws it on, remembered as the
+   * editor's Preview on.
    */
   private async makeCard(): Promise<void> {
     const form = this.newForm;
@@ -428,8 +428,7 @@ export class WaAllPages extends LitElement {
       return;
     }
     this.newForm = undefined;
-    const preview = this.devices.find((d) => d.kind === (form.preview ?? previewKinds(this.devices)[0]));
-    if (preview !== undefined) rememberPreview(preview.ownerId);
+    rememberPreview(form.preview ?? previewKinds(this.devices)[0] ?? "watch");
     // Straight into the new page, in the library: no device has it yet.
     this.onOpenLibrary?.(this.kind, made.reply.id);
   }

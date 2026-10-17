@@ -2,8 +2,9 @@
 // library itself (`library/item-mode.ts`). Each editor is stood up with a
 // `libraryItem` against the stand-in Home Assistant (`library-editor-home.ts`),
 // which reads and saves one item as the server does. Checked: the one item
-// document is what is edited, "Preview as" stands where the device picker
-// was, nothing of a device's own is drawn (order, Hide here, history,
+// document is what is edited, "Preview on" (a watch or an iPhone thumbnail)
+// stands in the stage strip, the devices stand in the bar, nothing of a
+// device's own is drawn (order, Hide here, history,
 // delivery, Not on this watch), the ticks and Delete are there, a save is a
 // `library/item/save` over the item's revision, and a conflict reads the
 // item again and saves over the new revision. Then the addresses, the bar's
@@ -16,7 +17,7 @@ import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
 import { fetchLibraryItem, saveLibraryItem } from "../src/library/client.js";
 import { nothing } from "lit";
-import { PREVIEW_NONE_TEXT, libraryDeleteText, libraryDraftKey, libraryRecord, onDevicesText, previewOwner, renderPreviewPicker, sameLibraryItem } from "../src/library/item-mode.js";
+import { LIBRARY_PREVIEW_KEY, libraryDeleteText, libraryDraftKey, libraryRecord, onDevicesQuestion, onDevicesText, previewOwner, rememberPreview, renderPreviewPicker, sameLibraryItem, storedPreviewKind } from "../src/library/item-mode.js";
 import { barTabOf, libraryItemPath, libraryRouteOf, panelPrefix, screenIdOf, swallowsSaveKey, tabOfRoute } from "../src/shell.js";
 import { ALL_MENUS_PATH } from "../src/watch-menus/all-menus-hook.js";
 import { forgetWatchMenusDraft, keptWatchMenusDraft } from "../src/watch-menus/draft.js";
@@ -150,14 +151,16 @@ describe("the status pages editor in library mode", () => {
     const bar = flat(e.call("renderTopBar", e.draft(), e.owners));
     expect(bar).toContain("Back to the Status pages tab");
     for (const gone of ["tb-sync", "Complications", "sp-watch-picker", "tb-saved", "Preview as"]) expect(bar).not.toContain(gone);
-    // The devices stand in the bar, right after the way back: the count,
-    // then a tick per device. Not in the Page card.
-    expect(bar).toMatch(/tb-back[\s\S]*lib-on none[\s\S]*On no device yet[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone[\s\S]*class="spacer"/);
+    // The devices stand in the bar, right after the way back: the question,
+    // a tick per device, then the count. Not in the Page card.
+    expect(bar).toMatch(/tb-back[\s\S]*lib-on none[\s\S]*Which devices do you want this on\?[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone[\s\S]*On no device yet[\s\S]*class="spacer"/);
     expect(bar).not.toContain("On this watch.");
     expect(e.host().ticks).toBeUndefined();
-    // Preview as sits in the strip over the stage, beside the size and the zoom.
+    // Preview on sits in the strip over the stage, beside the size and the
+    // zoom: the watch and iPhone thumbnails, no device named.
     const stage = flat(e.call("renderStage", e.host(), e.owners));
-    expect(stage).toMatch(/class="stage-tools"[\s\S]*Preview as[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone/);
+    expect(stage).toMatch(/class="stage-tools"[\s\S]*Preview on[\s\S]*lib-preview-thumb watch on[\s\S]*lib-preview-thumb iphone /);
+    expect(stage.slice(stage.indexOf("Preview on"), stage.indexOf("Preview on an iPhone"))).not.toContain("Jesse");
     const card = flat(renderPagesCard(e.host()));
     expect(e.host().single).toBe(true);
     for (const gone of ["sp-add-page", "Move up", "Move down"]) expect(card).not.toContain(gone);
@@ -210,15 +213,24 @@ describe("the page editor in library mode", () => {
     const bar = flat(e.call("renderTopBar", e.draft()));
     expect(bar).toContain("Back to the Pages tab");
     for (const gone of ["Add page", "tb-menus", "tb-sync", "pe-watch-picker", "Preview as"]) expect(bar).not.toContain(gone);
-    // The devices stand in the bar, right after the way back: the count,
-    // then a tick per device. The inspector's Devices row is not drawn.
-    expect(bar).toMatch(/tb-back[\s\S]*lib-on none[\s\S]*On no device yet[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone[\s\S]*class="spacer"/);
+    // The devices stand in the bar, right after the way back: the question,
+    // a tick per device, then the count. The inspector's Devices row is not
+    // drawn.
+    expect(bar).toMatch(/tb-back[\s\S]*lib-on none[\s\S]*Which devices do you want this on\?[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone[\s\S]*On no device yet[\s\S]*class="spacer"/);
     expect(bar).not.toContain("On this watch.");
     expect(e.call("renderPageTicks", e.page())).toBe(nothing);
     const body = e.body();
-    // Preview as sits in the strip over the stage, beside the size and the zoom.
+    // Preview on sits in the strip over the stage, beside the size and the
+    // zoom: the watch and iPhone thumbnails.
     const tools = flat(e.call("renderStageTools", e.page(), "46 mm", false, false));
-    expect(tools).toMatch(/class="stage-tools"[\s\S]*Preview as[\s\S]*46 mm[\s\S]*Zoom/);
+    expect(tools).toMatch(/class="stage-tools"[\s\S]*Preview on[\s\S]*lib-preview-thumb watch on[\s\S]*lib-preview-thumb iphone [\s\S]*46 mm[\s\S]*Zoom/);
+    // The iPhone thumbnail draws the page on the home's iPhone; with the
+    // watch thumbnail it is the watch again.
+    e.call("pickPreview", "iphone");
+    expect(e.el.watchId).toBe(e.phone);
+    expect(e.el.device).toBe("iphone");
+    e.call("pickPreview", "watch");
+    expect(e.el.watchId).toBe(e.watch);
     for (const gone of ["Drag to move", "Add an empty page after the last one", "Hide Shed on the", "pe-linked", "cf-bar", "See all pages"]) {
       expect(body, gone).not.toContain(gone);
     }
@@ -285,11 +297,11 @@ describe("the menu editor in library mode", () => {
     const bar = flat(e.call("renderTopBar", e.draft(), e.owners));
     expect(bar).toContain("Back to the Menus tab");
     for (const gone of ["tb-pages", "tb-sync", "me-watch-picker", "Preview as", "lt-hint"]) expect(bar).not.toContain(gone);
-    expect(bar).toMatch(/tb-back[\s\S]*lib-on none[\s\S]*No device uses it yet[\s\S]*lt-chip off rd[\s\S]*Jesse's Watch[\s\S]*class="spacer"/);
+    expect(bar).toMatch(/tb-back[\s\S]*lib-on none[\s\S]*Which devices should use this menu\?[\s\S]*lt-chip off rd[\s\S]*Jesse's Watch[\s\S]*No device uses it yet[\s\S]*class="spacer"/);
     const body = flat(e.call("renderBody", e.owners));
     expect(body).not.toContain("cf-bar");
-    // Preview as sits in the strip over the stage, beside the size and the zoom.
-    expect(body).toMatch(/class="stage-tools"[\s\S]*Preview as/);
+    // Preview on sits in the strip over the stage, beside the size and the zoom.
+    expect(body).toMatch(/class="stage-tools"[\s\S]*Preview on[\s\S]*lib-preview-thumb watch on/);
   });
 
   it("shows only an Entity quick menu's row, and opens on it", async () => {
@@ -336,25 +348,34 @@ describe("library mode's pieces", () => {
     expect(keptWatchPagesDraft(key)).toBeUndefined();
   });
 
-  it("previews on the shown device, else the remembered one, else the first watch, else the first device", () => {
+  it("previews on the home's first device of the kind picked, a watch unless the session remembers an iPhone", () => {
     const watch = owner({ owner_watch_id: "w" });
     const phone = owner({ owner_watch_id: "p", device_kind: "iphone", phone_pages: true });
-    expect(previewOwner([phone, watch], undefined)).toBe("w");
-    expect(previewOwner([phone], undefined)).toBe("p");
-    expect(previewOwner([], undefined)).toBeUndefined();
-    expect(previewOwner([phone, watch], "p")).toBe("p");
-    expect(previewOwner([phone, watch], "gone")).toBe("w");
-    const held = new Map<string, string>([["wrist-assistant-panel.library.preview.v1", "p"]]);
+    expect(previewOwner([phone, watch], "watch")).toBe("w");
+    expect(previewOwner([phone, watch], "iphone")).toBe("p");
+    // No device of the kind: none, and the editor draws on the reference device.
+    expect(previewOwner([phone], "watch")).toBeUndefined();
+    expect(previewOwner([watch], "iphone")).toBeUndefined();
+    expect(previewOwner([], "watch")).toBeUndefined();
+    const held = new Map<string, string>();
     const was = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
     Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: { getItem: (k: string) => held.get(k) ?? null, setItem: (k: string, v: string) => held.set(k, v) } });
     try {
-      expect(previewOwner([phone, watch], undefined)).toBe("p");
+      expect(storedPreviewKind()).toBe("watch");
+      rememberPreview("iphone");
+      expect(held.get(LIBRARY_PREVIEW_KEY)).toBe("iphone");
+      expect(storedPreviewKind()).toBe("iphone");
+      held.set(LIBRARY_PREVIEW_KEY, "junk");
+      expect(storedPreviewKind()).toBe("watch");
     } finally {
       if (was === undefined) delete (globalThis as { sessionStorage?: unknown }).sessionStorage;
       else Object.defineProperty(globalThis, "sessionStorage", was);
     }
-    expect(flat(renderPreviewPicker([], undefined, () => undefined))).toContain(PREVIEW_NONE_TEXT);
-    expect(flat(renderPreviewPicker([watch, phone], "w", () => undefined))).toContain("Preview as");
+    // Two thumbnails, the shown one pressed. No device is named.
+    const picker = flat(renderPreviewPicker("iphone", () => undefined));
+    expect(picker).toContain("Preview on");
+    expect(picker).toMatch(/lib-preview-thumb watch "[\s\S]*aria-pressed=false[\s\S]*lib-preview-thumb iphone on[\s\S]*aria-pressed=true/);
+    expect(picker).not.toContain("Jesse");
   });
 
   it("says in the bar how many devices have the item", () => {
@@ -365,18 +386,10 @@ describe("library mode's pieces", () => {
     expect(onDevicesText("menus", 2)).toBe("Used by 2 devices");
   });
 
-  it("keeps the Preview as choice in step with the device drawn, through the live selected property", () => {
-    const watch = owner({ owner_watch_id: "w" });
-    const phone = owner({ owner_watch_id: "p", device_kind: "iphone", phone_pages: true });
-    const picker = renderPreviewPicker([watch, phone], "p", () => undefined);
-    const options = picker.values.find(Array.isArray) as { strings: readonly string[]; values: unknown[] }[];
-    expect(options).toHaveLength(2);
-    for (const option of options) {
-      expect(option.strings.join("")).toContain(".selected=");
-      expect(option.strings.join("")).not.toContain("?selected=");
-    }
-    const chosen = options.map((o) => (o.values[1] as { values: unknown[] }).values[0]);
-    expect(chosen).toEqual([false, true]);
+  it("asks which devices the item goes on, over the ticks", () => {
+    expect(onDevicesQuestion("pages")).toBe("Which devices do you want this on?");
+    expect(onDevicesQuestion("status_pages")).toBe("Which devices do you want this on?");
+    expect(onDevicesQuestion("menus")).toBe("Which devices should use this menu?");
   });
 
   it("reads an item as a record, and compares items ignoring case", () => {
@@ -388,7 +401,7 @@ describe("library mode's pieces", () => {
   });
 
   it("never breaks a sentence with a dash", () => {
-    for (const text of [libraryDeleteText(0), libraryDeleteText(1), libraryDeleteText(3), PREVIEW_NONE_TEXT]) {
+    for (const text of [libraryDeleteText(0), libraryDeleteText(1), libraryDeleteText(3), onDevicesQuestion("pages"), onDevicesQuestion("menus"), onDevicesText("pages", 0), onDevicesText("menus", 2)]) {
       expect(text).not.toMatch(/[–—]| - /);
     }
   });

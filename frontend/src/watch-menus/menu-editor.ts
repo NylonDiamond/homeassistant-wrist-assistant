@@ -87,7 +87,9 @@ import {
   libraryDraftKey,
   libraryItemIO,
   libraryModeStyles,
+  type PreviewKind,
   previewOwner,
+  storedPreviewKind,
   renderBarDevices,
   renderLibraryTag,
   renderPreviewPicker,
@@ -446,7 +448,7 @@ export class WaMenuEditor extends LitElement {
   @property({ attribute: false }) barHost: HTMLElement | undefined = undefined;
   /** Library mode (`library/item-mode.ts`): this one menu, edited in the
    * library with no device. `watchId` is then only the device it is drawn
-   * on ("Preview as"), which also lends its catalog, behavior, voice,
+   * on ("Preview on"), which also lends its catalog, behavior, voice,
    * status pages and pages; the draft is kept under `libraryDraftKey`, and
    * only the menu's own unit is shown and saved. */
   @property({ attribute: false }) libraryItem: LibraryItemRef | undefined = undefined;
@@ -568,8 +570,15 @@ export class WaMenuEditor extends LitElement {
 
   /** The shown device, for the lines that name it. */
   private get device(): SettingDevice {
+    // In library mode Preview on decides, so an iPhone is drawn with no
+    // iPhone in the home too.
+    if (this.libraryItem !== undefined) return this.previewKind;
     return isPhoneId(this.watches, this.watchId) ? "iphone" : "watch";
   }
+
+  /** Library mode's Preview on: the kind of device drawn on. `watchId` is
+   * then the home's first device of that kind, or undefined with none. */
+  @state() private previewKind: PreviewKind = "watch";
 
   /** The menus being edited. While Home Assistant holds none for the watch
    * it is the new watch's ready draft (`new-watch.ts`), on the defaults at
@@ -873,7 +882,8 @@ export class WaMenuEditor extends LitElement {
    * names it, and the menu read again quietly once the summary says it
    * moved on elsewhere. */
   private followLibraryItem(ref: LibraryItemRef): void {
-    const preview = previewOwner(this.watches, this.watchId);
+    if (!sameLibraryItem(ref, this.openedItem)) this.previewKind = storedPreviewKind();
+    const preview = previewOwner(this.watches, this.previewKind);
     if (preview !== this.watchId || (preview === undefined && this.openedItem === undefined)) this.openPreview(preview);
     if (!sameLibraryItem(ref, this.openedItem)) {
       this.openedItem = ref;
@@ -891,6 +901,12 @@ export class WaMenuEditor extends LitElement {
       this.followedRevision = moved;
       void this.load(key, true);
     }
+  }
+
+  /** Preview on: the kind picked, drawn on the home's first device of it. */
+  private pickPreview(kind: PreviewKind): void {
+    this.previewKind = kind;
+    this.openPreview(previewOwner(this.watches, kind));
   }
 
   /** Library mode's device to draw on: its catalog, HTTP actions, status
@@ -2152,7 +2168,7 @@ export class WaMenuEditor extends LitElement {
     const shownAs = (zoom: number): string => stageZoomLabel(phone ? zoom * PHONE_STAGE_ZOOM : zoom);
     return html`<div class="stage-tools" role="toolbar" aria-label="Stage tools">
       ${renderMenuStageTools(host)}
-      ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.watches, this.watchId, (id) => this.openPreview(id))}<span class="tb-sep" aria-hidden="true"></span>`}
+      ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.previewKind, (kind) => this.pickPreview(kind))}<span class="tb-sep" aria-hidden="true"></span>`}
       <button class="tb me-case" aria-disabled="true" tabindex="-1" title=${phone ? PHONE_SIZE_TEXT : `This watch's screen, ${caseLabel}.`}>
         ${uiIcon(phone ? "phone" : "watch")}<span class="word keep">${caseLabel}</span></button>
       <span class="tb-sep" aria-hidden="true"></span>
