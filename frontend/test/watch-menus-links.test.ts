@@ -382,6 +382,8 @@ describe("the editor's Devices", () => {
     e.el.places = placesFor(e.watchId);
     let text = flat(renderMenuInspector(e.host()));
     expect(text).toContain(`<span class="me-devices-h">Devices</span>`);
+    // A group, so its label is read out.
+    expect(text).toContain(`class="me-devices" role="group" aria-label=Where the Anywhere menu is`);
     // A chip per device that shares it, this one first, and no field under
     // Glow in the Look card any more.
     const line = text.slice(text.indexOf(`class="me-devices"`), text.indexOf("me-menu-note"));

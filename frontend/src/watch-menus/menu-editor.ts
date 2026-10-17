@@ -1628,7 +1628,7 @@ export class WaMenuEditor extends LitElement {
     const holders = menuUnitHolders(this.draft?.document, unit, watchId, this.places);
     const devices = this.linkDevices;
     const chips = holders.length > 1 ? holders.flatMap((id) => devices.find((d) => d.ownerId === id) ?? []) : [];
-    return html`<div class="me-devices" aria-label=${`Where the ${MENU_UNIT_NAMES[unit]} is`}>
+    return html`<div class="me-devices" role="group" aria-label=${`Where the ${MENU_UNIT_NAMES[unit]} is`}>
       <span class="me-devices-h">Devices</span>
       <span class="me-devices-on">${chips.length === 0
         ? html`<span class="me-devices-only">This ${deviceNoun(this.device)} only</span>`
