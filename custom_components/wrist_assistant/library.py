@@ -33,7 +33,10 @@ The shape, as stored in ``wrist_assistant.library`` (:func:`validate_library`)::
           "menus":        {"anywhere"?: "<menu id>", "entity"?: "<menu id>"}
         }
       },
-      "hashes": {"<owner id>": {"<kind>": "<hash>"}}
+      "hashes":    {"<owner id>": {"<kind>": "<hash>"}},
+      "revisions": {"<owner id>": {"<kind>": <revision>}},
+      "renames":   {"<owner id>": {"pages": {"<old id>": "<new id>"},
+                                   "status_pages": {"<old id>": "<new id>"}}}
     }
 
 Where this differs from the plan's sketch, it is to keep each device's
@@ -44,9 +47,14 @@ records exactly as they were:
   same way, since the store keeps it per device today.
 * A system page (``isSystemPage: true``) is the device's own and never an
   item: its pick holds the whole page object, in its place in the order.
-* ``hashes`` is room for the store to remember each record as last written,
-  so it can tell a record changed by older code at the next start. Nothing
-  here reads it.
+* ``hashes`` and ``revisions`` are room for the store to remember each
+  record as last written, so it can tell at the next start a record changed
+  by older code (a later revision) from one whose save never reached the
+  disk (an earlier one). Nothing here reads them.
+* ``renames`` is the page and status page ids the library gave an owner's
+  pages new ids for (a migration, or a first upload under an id another
+  page holds), so the store can point the owner's later first records of
+  the other kinds at them. Nothing here reads it either.
 
 While the current panel still folds its cards from the link keys inside the
 documents, a materialised record carries ``linkId`` (pages and status pages)
@@ -277,7 +285,15 @@ def _check_name(name: Any) -> str:
 
 def empty_library() -> dict[str, Any]:
     """A library holding nothing and picked by no one."""
-    return {"pages": {}, "status_pages": {}, "menus": {}, "picks": {}, "hashes": {}}
+    return {
+        "pages": {},
+        "status_pages": {},
+        "menus": {},
+        "picks": {},
+        "hashes": {},
+        "revisions": {},
+        "renames": {},
+    }
 
 
 def validate_library(raw: Any) -> dict[str, Any]:
@@ -334,6 +350,59 @@ def validate_library(raw: Any) -> dict[str, Any]:
             kept = {k: v for k, v in held.items() if isinstance(k, str) and isinstance(v, str)}
             if kept:
                 lib["hashes"][owner] = kept
+    revisions = raw.get("revisions")
+    for owner, held in revisions.items() if isinstance(revisions, dict) else []:
+        if isinstance(owner, str) and owner and isinstance(held, dict):
+            numbers = {
+                k: v
+                for k, v in held.items()
+                if isinstance(k, str) and isinstance(v, int) and not isinstance(v, bool) and v >= 0
+            }
+            if numbers:
+                lib["revisions"][owner] = numbers
+    renames = raw.get("renames")
+    for owner, held in renames.items() if isinstance(renames, dict) else []:
+        if not isinstance(owner, str) or not owner or not isinstance(held, dict):
+            continue
+        maps = {
+            kind: {
+                old: new
+                for old, new in held[kind].items()
+                if isinstance(old, str) and old and isinstance(new, str) and new
+            }
+            for kind in LIST_KEYS
+            if isinstance(held.get(kind), dict)
+        }
+        if any(maps.values()):
+            lib["renames"][owner] = {kind: maps.get(kind, {}) for kind in LIST_KEYS}
+    return lib
+
+
+def held_renames(library: Mapping[str, Any], owner_id: str) -> dict[str, dict[str, str]]:
+    """The ids the library renamed for an owner, ``{"pages": {old: new},
+    "status_pages": {old: new}}`` (empty maps when none). A copy."""
+    held = library.get("renames", {}).get(owner_id, {})
+    return {kind: dict(held.get(kind, {})) for kind in LIST_KEYS}
+
+
+def hold_renames(
+    library: Mapping[str, Any], owner_id: str, renamed: Mapping[str, Mapping[str, str]]
+) -> dict[str, Any]:
+    """The library with more of an owner's renamed ids remembered. A rename
+    of an id that was itself the new id of an earlier rename moves that
+    earlier one on too, so every old id names the latest."""
+    lib = copy.deepcopy(dict(library))
+    held = held_renames(lib, owner_id)
+    for kind in LIST_KEYS:
+        fresh = _renames(renamed.get(kind, {}))
+        if not fresh:
+            continue
+        maps = held[kind]
+        for old, new in list(maps.items()):
+            maps[old] = fresh.get(_key(new), new)
+        maps.update(renamed.get(kind, {}))
+    if any(held.values()):
+        lib.setdefault("renames", {})[owner_id] = held
     return lib
 
 
@@ -695,6 +764,7 @@ def _merge_owner(
     same sections, and anything else makes a new menu.
     """
     docs = {k: copy.deepcopy(v) for k, v in docs.items() if isinstance(v, dict)}
+    as_given = docs.get("menus")
     renamed: dict[str, dict[str, str]] = {"pages": {}, "status_pages": {}}
     origin: dict[tuple[str, str], str] = {}
     moved: set[tuple[str, str]] = set()
@@ -732,8 +802,22 @@ def _merge_owner(
             picks[kind] = _commit_pages(lib, kind, docs[kind], own.get(kind, ()), links, origin)
     new_menus: list[str] = []
     if "menus" in docs:
+        # A unit whose slots the renames rewrote is no longer the menu its
+        # old link token names: it opens this owner's own copy of a page.
+        rewritten = {
+            unit
+            for unit, keys in MENU_UNITS.items()
+            if any(as_given.get(k) != docs["menus"].get(k) for k in keys)
+        }
         picks["menus"] = _commit_menus(
-            lib, picks.get("menus", {}), docs["menus"], own.get("menus", ()), links, owner_name, new_menus
+            lib,
+            picks.get("menus", {}),
+            docs["menus"],
+            own.get("menus", ()),
+            links,
+            owner_name,
+            new_menus,
+            rewritten,
         )
     return _Merged({k: v for k, v in renamed.items() if v}, docs, new_menus)
 
@@ -819,9 +903,12 @@ def _commit_menus(
     links: _Links | None,
     owner_name: str | None,
     new_menus: list[str],
+    rewritten: Container[str] = (),
 ) -> dict[str, str]:
     """The owner's menu picks from its menus document, updating, joining or
-    making the menus they name."""
+    making the menus they name. The old link token of a unit in
+    ``rewritten`` (its slots were pointed at renamed pages) is not
+    followed: it joins a menu only by equal sections."""
     out: dict[str, str] = {}
     tokens = document.get(LINK_IDS_KEY) if isinstance(document.get(LINK_IDS_KEY), dict) else {}
     for unit, keys in MENU_UNITS.items():
@@ -832,6 +919,8 @@ def _commit_menus(
                 out[unit] = picked
             continue
         token = tokens.get(unit) if isinstance(tokens.get(unit), str) and tokens.get(unit) else None
+        if unit in rewritten:
+            token = None
         if picked is not None and unit in own:
             lib["menus"][picked]["sections"] = sections
             out[unit] = picked
@@ -1278,7 +1367,9 @@ def move_picks(
     library: Mapping[str, Any], source: str, target: str, kinds: Iterable[str]
 ) -> Change:
     """Carry ``source``'s picks of ``kinds`` (the kinds whose record moved
-    whole) to ``target`` in place of its own, then forget ``source``."""
+    whole) to ``target`` in place of its own, then forget ``source``. The
+    ids renamed for ``source`` go to ``target`` too, beside its own (its own
+    win), since its records now hold them."""
     kinds = list(kinds)
     for kind in kinds:
         _check_kind(kind)
@@ -1288,6 +1379,11 @@ def move_picks(
         if kind in held:
             lib["picks"].setdefault(target, {})[kind] = held[kind]
     lib["hashes"].pop(source, None)
+    lib.get("revisions", {}).pop(source, None)
+    moved = lib.get("renames", {}).pop(source, None)
+    if moved:
+        mine = held_renames(lib, target)
+        lib["renames"][target] = {kind: {**moved.get(kind, {}), **mine[kind]} for kind in LIST_KEYS}
     return _change(library, lib)
 
 
@@ -1297,5 +1393,6 @@ def forget(library: Mapping[str, Any], owner_id: str) -> Change:
     link key comes off)."""
     lib = copy.deepcopy(dict(library))
     lib["picks"].pop(owner_id, None)
-    lib["hashes"].pop(owner_id, None)
+    for notes in ("hashes", "revisions", "renames"):
+        lib.get(notes, {}).pop(owner_id, None)
     return _change(library, lib)

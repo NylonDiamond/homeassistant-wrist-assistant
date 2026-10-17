@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from test_watch_config_ws import ALICE, ROOT, env  # noqa: F401 (env: the links fixture's own)
+from test_watch_config_ws import ALICE, BOB, ROOT, env  # noqa: F401 (env: the links fixture's own)
 from test_watch_pages_link_ws import (  # noqa: F401 (links is a fixture)
     DOORS,
     HOME,
@@ -136,6 +136,61 @@ def test_a_non_admin_may_pick_only_on_their_own_devices(ctx) -> None:
         ctx, ctx.ws.ws_library_pick, ALICE, owner_id=WATCH_2, kind="pages", item_id=HOME, on=True
     )
     assert codes == ["unauthorized"]
+
+
+def test_a_non_admin_may_not_pick_an_item_only_another_user_s_device_has(ctx) -> None:
+    """Bob's summary never shows Alice's Lights, and a link from her watch
+    is refused; a pick by id must be too, or he could put her page on his
+    watch and edit it on hers from there."""
+    before = ctx.store.get(WATCH, "pages").revision
+    codes = _codes(
+        ctx, ctx.ws.ws_library_pick, BOB, owner_id=WATCH_2, kind="pages", item_id=LIGHTS, on=True
+    )
+    assert codes == ["unauthorized"]
+    assert ctx.store.get(WATCH_2, "pages") is None
+    assert ctx.store.get(WATCH, "pages").revision == before
+    ctx.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
+    codes = _codes(
+        ctx,
+        ctx.ws.ws_library_pick,
+        BOB,
+        owner_id=WATCH_2,
+        kind="menus",
+        unit="anywhere",
+        item_id=_menu_of(ctx, WATCH),
+    )
+    assert codes == ["unauthorized"]
+    # An item no device has is an administrator's, as the summary shows it.
+    ctx.store.library_pick(WATCH, "pages", LIGHTS, on=False)
+    codes = _codes(
+        ctx, ctx.ws.ws_library_pick, ALICE, owner_id=WATCH, kind="pages", item_id=LIGHTS, on=True
+    )
+    assert codes == ["unauthorized"]
+    assert _ok(
+        ctx, ctx.ws.ws_library_pick, ROOT, owner_id=WATCH_2, kind="pages", item_id=LIGHTS, on=True
+    )
+    # Taking an item off one's own device needs only the device.
+    assert _ok(
+        ctx, ctx.ws.ws_library_pick, BOB, owner_id=WATCH_2, kind="pages", item_id=LIGHTS, on=False
+    )
+
+
+def test_a_non_admin_may_start_a_device_s_menus_from_a_menu_their_watch_uses(ctx) -> None:
+    """Alice's iPhone has no menus; it may take the menu her watch uses, and
+    starts from her watch's record, with an Entity quick menu of its own."""
+    ctx.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
+    ctx.store.panel_save(WATCH_2, "menus", _menus("none"), base_revision=0)
+    _ok(
+        ctx,
+        ctx.ws.ws_library_pick,
+        ALICE,
+        owner_id=PHONE,
+        kind="menus",
+        unit="anywhere",
+        item_id=_menu_of(ctx, WATCH),
+    )
+    assert ctx.store.get(PHONE, "menus").document["quickAction"]["beamStyle"] == "auroraWash"
+    assert _menu_of(ctx, PHONE, "entity") not in (_menu_of(ctx, WATCH, "entity"), _menu_of(ctx, WATCH_2, "entity"))
 
 
 # ── library/menus/copy, rename, delete ───────────────────────────────────

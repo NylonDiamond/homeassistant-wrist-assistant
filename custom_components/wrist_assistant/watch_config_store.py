@@ -189,6 +189,8 @@ from .library import (
     copy_picks,
     delete_item,
     empty_library,
+    held_renames,
+    hold_renames,
     link_groups,
     map_back,
     materialise,
@@ -1210,14 +1212,17 @@ DeliveryListener = Callable[[WatchConfigDelivery], None]
 class _LibrarySave(NamedTuple):
     """A save of a library kind, worked out before anything is written: the
     document the record will hold, whether that is the document as sent, its
-    size, the library after the save, and the page and status page ids the
-    save gave new ids (``{kind: {old: new}}``)."""
+    size, the library after the save, the page and status page ids the save
+    gave new ids (``{kind: {old: new}}``), and whether any id in what is
+    stored differs from what was sent (this save's forks, or ids an earlier
+    first record of the owner renamed), which a device cannot know."""
 
     document: dict[str, Any]
     kept: bool
     size: int
     library: dict[str, Any]
     renamed: dict[str, dict[str, str]]
+    rewritten: bool
 
 
 # Whether an owner id has a pair in the secret store: the one question the
@@ -1279,10 +1284,6 @@ class WatchConfigStore:
         )
         self._library_failed = False
         self._library_save_pending = False
-        # The page and status page ids a device's first upload of a kind gave
-        # new ids, by owner, so its next first uploads (the iPhone sends a
-        # watch's kinds one after another) point at them too. Memory only.
-        self._owner_renames: dict[str, dict[str, dict[str, str]]] = {}
         # The owner order of the index as read, which the migration follows.
         self._index_order: list[str] = []
         self._listeners: list[ChangeListener] = []
@@ -1492,7 +1493,14 @@ class WatchConfigStore:
                 self._schedule_library_save()
 
     def _migrate_library(self) -> None:
-        """Build the library from the records (the first start with it)."""
+        """Build the library from the records (the first start with it).
+
+        Owners are taken in the index's order, which is the owner ids
+        sorted. So where two copies of one page differ, whether linked (a
+        fan-out that failed on a cap left them apart) or not, the owner
+        whose id sorts first keeps its content under the id; which copy was
+        edited last is not known here. The ids the migration renamed are
+        kept in the library for each owner's later first records."""
         records = {
             owner: {
                 kind: record.document
@@ -1505,6 +1513,8 @@ class WatchConfigStore:
         names = {owner: self._owner_name(owner) for owner in records}
         result = migrate(records, self._index_order, names)
         self._library = result.library
+        for owner, renamed in sorted(result.renamed.items()):
+            self._library = hold_renames(self._library, owner, renamed)
         for owner, by_kind in sorted(result.rewritten.items()):
             for kind, document in by_kind.items():
                 self._write_quietly(owner, kind, document, _MIGRATION_WRITER)
@@ -1528,9 +1538,15 @@ class WatchConfigStore:
         older code) is forgotten. Each readable record of a library kind
         whose hash is not the one the library noted for it is mapped back as
         that owner's save, in index order, a first one for a kind the owner
-        picks nothing of (:func:`library.map_back` with ``fork_conflicts``).
-        Then every record that differs from what the library now builds is
-        written again."""
+        picks nothing of (:func:`library.map_back` with ``fork_conflicts``),
+        with the ids the library renamed for the owner so far (this run's
+        and earlier ones) rewritten in it first, exactly as a first upload
+        is (:meth:`_prepare_library_save`). A record at a revision below the
+        one the library noted for it is not mapped back: its own save never
+        reached the disk while the library's did (a hard crash inside the
+        save window), so the library is the newer of the two. Then every
+        record that differs from what the library now builds is written
+        again, those stale ones included."""
         lib = self._library
         for owner in sorted(lib["picks"]):
             if owner not in self._records and owner not in self._failed_owners:
@@ -1544,22 +1560,36 @@ class WatchConfigStore:
                 record = self._records.get(owner, {}).get(kind)
                 if record is None or lib["hashes"].get(owner, {}).get(kind) == record.hash:
                     continue
+                noted = lib["revisions"].get(owner, {}).get(kind)
+                if noted is not None and record.revision < noted:
+                    _LOGGER.info(
+                        "The %s of %s on disk is older than the library; building it again",
+                        kind,
+                        owner,
+                    )
+                    continue
                 first = kind not in lib["picks"].get(owner, {})
+                document = record.document
+                if first:
+                    renames = held_renames(lib, owner)
+                    document = rename_refs(
+                        kind, document, renames["pages"], renames["status_pages"]
+                    )
                 try:
                     result = map_back(
                         lib,
                         owner,
                         kind,
-                        record.document,
+                        document,
                         fork_conflicts=first,
                         owner_name=self._owner_name(owner),
                     )
                 except LibraryError as err:
                     _LOGGER.warning("Could not fold %s of %s into the library: %s", kind, owner, err)
                     continue
-                lib = result.library
+                lib = hold_renames(result.library, owner, result.renamed)
                 mapped += 1
-                self._apply_renames(owner, result.renamed, _MIGRATION_WRITER)
+                self._follow_renames(owner, result.renamed, _MIGRATION_WRITER)
         self._library = lib
         self._sync_records(_MIGRATION_WRITER)
         if mapped:
@@ -1609,15 +1639,18 @@ class WatchConfigStore:
             self._schedule_library_save()
 
     def _note_hash(self, owner_watch_id: str, kind: str, *, save: bool = True) -> None:
-        """Remember the hash of the owner's record of a library kind, as it
-        now stands in step with the library (see :meth:`_reconcile_library`)."""
+        """Remember the hash and revision of the owner's record of a library
+        kind, as it now stands in step with the library (see
+        :meth:`_reconcile_library`)."""
         record = self._records.get(owner_watch_id, {}).get(kind)
         if record is None or kind not in LIBRARY_KINDS:
             return
         held = self._library["hashes"].setdefault(owner_watch_id, {})
-        if held.get(kind) == record.hash:
+        revisions = self._library["revisions"].setdefault(owner_watch_id, {})
+        if held.get(kind) == record.hash and revisions.get(kind) == record.revision:
             return
         held[kind] = record.hash
+        revisions[kind] = record.revision
         if save:
             self._schedule_library_save()
 
@@ -1648,20 +1681,18 @@ class WatchConfigStore:
         except Exception:
             _LOGGER.exception("Could not point the complications of %s at renamed pages", owner_watch_id)
 
-    def _apply_renames(
+    def _follow_renames(
         self, owner_watch_id: str, renamed: dict[str, dict[str, str]], updated_by: str
     ) -> None:
         """After a save gave some of an owner's pages or status pages new ids:
         point its rooms (the ``rooms`` record, or a watch's ``behavior``) and
-        its complications at the new ids, and remember them for its next
-        first upload (:attr:`_owner_renames`)."""
+        its complications at the new ids. The library remembers them for the
+        owner's later first records (``renames``, :func:`library.hold_renames`),
+        which its caller has already done."""
         pages = renamed.get("pages", {})
         status = renamed.get("status_pages", {})
         if not pages and not status:
             return
-        held = self._owner_renames.setdefault(owner_watch_id, {"pages": {}, "status_pages": {}})
-        held["pages"].update(pages)
-        held["status_pages"].update(status)
         for kind in ("rooms", "behavior"):
             document = self._document(owner_watch_id, kind)
             if document is None:
@@ -2109,9 +2140,11 @@ class WatchConfigStore:
             self._replace(record, document, document_hash, size, updated_by)
         # The device that wrote this revision holds it. Without this a phone's
         # own upload would read in the panel as "waiting for the iPhone" until
-        # its next get. Not when the library gave one of its pages a new id:
-        # then the device holds something else and must pull this.
-        if prep is None or not prep.renamed:
+        # its next get. Not when the library gave one of its pages a new id,
+        # now or at an earlier first upload: then the device holds something
+        # else and must pull this. A link key alone does not count; the app
+        # drops it anyway.
+        if prep is None or not prep.rewritten:
             record.mark_delivered(record.revision)
         self._schedule_owner_save(owner_watch_id)
         # Announced even though the writer already knows: the phone's own
@@ -2269,9 +2302,10 @@ class WatchConfigStore:
         self._check_library()
         before_doc = existing.document if existing is not None else None
         sent: dict[str, Any] = document
-        renames = self._owner_renames.get(owner_watch_id)
-        if existing is None and renames:
-            sent = rename_refs(kind, sent, renames["pages"], renames["status_pages"])
+        if existing is None:
+            renames = held_renames(self._library, owner_watch_id)
+            if renames["pages"] or renames["status_pages"]:
+                sent = rename_refs(kind, sent, renames["pages"], renames["status_pages"])
         lib = self._library
         try:
             if panel and kind == "menus" and before_doc is not None:
@@ -2285,6 +2319,8 @@ class WatchConfigStore:
                 owner_name=self._owner_name(owner_watch_id),
             )
             lib = result.library
+            if result.renamed:
+                lib = hold_renames(lib, owner_watch_id, result.renamed)
             if kind == "menus":
                 lib = self._with_slot_pages(lib, owner_watch_id, before_doc, sent)
         except LibraryError as err:
@@ -2304,7 +2340,11 @@ class WatchConfigStore:
             built = materialise(lib, owner_watch_id, other, record.document if record else None)
             if built is not None:
                 validate_document(other, built)
-        return _LibrarySave(final, kept, size, lib, result.renamed)
+        # Ids the device cannot know were rewritten (a fork of this save, or
+        # of an earlier first record of the owner): the device holds
+        # something else and must pull what is stored.
+        rewritten = bool(result.renamed) or sent != document
+        return _LibrarySave(final, kept, size, lib, result.renamed, rewritten)
 
     def _finish_library_save(
         self, owner_watch_id: str, kind: str, prep: _LibrarySave, updated_by: str
@@ -2320,7 +2360,7 @@ class WatchConfigStore:
             skip=frozenset({(owner_watch_id, kind)}),
         )
         self._note_hash(owner_watch_id, kind)
-        self._apply_renames(owner_watch_id, prep.renamed, updated_by)
+        self._follow_renames(owner_watch_id, prep.renamed, updated_by)
         return failed
 
     def _copy_name(self, owner_watch_id: str) -> str:
@@ -3313,21 +3353,29 @@ class WatchConfigStore:
         on: Any = None,
         unit: Any = None,
         updated_by: str = WATCH_CONFIG_PANEL_WRITER,
+        may_read: Callable[[str], bool] | None = None,
     ) -> dict[str, Any]:
         """Tick or untick a library item on one device (``library/pick``).
+
+        ``may_read`` limits the devices a first menus record may be started
+        from to those the caller may manage (every device when None).
 
         Pages and status pages: ``on`` true appends the item to the device's
         order, visible; putting a page on also puts on the status pages its
         tiles open (:func:`library.reach`). ``on`` false takes it off; the
         item stays in the library. Menus: ``unit`` (``anywhere`` or
         ``entity``) and the menu ``item_id`` the device uses for it from
-        now on. Every record the pick changes is written, the device's and
-        those of the devices sharing an item whose link mark comes or goes.
+        now on; a device with no menus record yet starts from a device that
+        uses that menu, keeping a copy of that device's other menu as its
+        own (:meth:`_first_menus`). Every record the pick changes is
+        written, the device's and those of the devices sharing an item whose
+        link mark comes or goes.
 
         Refused, before anything is written: ``invalid``, ``unknown_device``,
         ``not_for_iphone``, ``not_found`` for an item the library does not
-        hold, and ``awaiting_move`` for a watch whose iPhone may still move
-        its own setup here.
+        hold, ``no_record`` for a menu no device with menus uses picked onto
+        a device with none, and ``awaiting_move`` for a watch whose iPhone
+        may still move its own setup here.
 
         Returns ``{"revisions": {owner: {kind: revision}}}`` for the records
         written."""
@@ -3340,6 +3388,7 @@ class WatchConfigStore:
         self._check_owner_kind(owner_watch_id, kind)
         if not isinstance(item_id, str) or not item_id:
             raise WatchConfigValidationError("id is required")
+        seeds: dict[tuple[str, str], dict[str, Any]] = {}
         try:
             if kind == "menus":
                 if unit not in MENU_UNITS:
@@ -3347,6 +3396,12 @@ class WatchConfigStore:
                         f"unit must be one of {', '.join(MENU_UNITS)}"
                     )
                 change = pick_menu(self._library, owner_watch_id, unit, item_id)
+                if self._document(owner_watch_id, "menus") is None:
+                    lib, seed = self._first_menus(
+                        change.library, owner_watch_id, unit, item_id, may_read
+                    )
+                    change = change._replace(library=lib)
+                    seeds[(owner_watch_id, "menus")] = seed
             else:
                 if not isinstance(on, bool):
                     raise WatchConfigValidationError("on must be true or false")
@@ -3355,9 +3410,53 @@ class WatchConfigStore:
         except LibraryError as err:
             raise WatchConfigLinkError(err.code, err.message) from err
         written, _failed = self._apply_library(
-            change.library, updated_by, first=owner_watch_id, strict=True, refuse_awaiting=True
+            change.library,
+            updated_by,
+            first=owner_watch_id,
+            strict=True,
+            refuse_awaiting=True,
+            seeds=seeds,
         )
         return {"revisions": self._revisions_of(written)}
+
+    def _first_menus(
+        self,
+        lib: dict[str, Any],
+        owner_watch_id: str,
+        unit: str,
+        menu_id: str,
+        may_read: Callable[[str], bool] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """For a menu picked onto a device with no menus record yet, as a
+        menus link onto such a device does (:meth:`_link_menus`): the device
+        starts from the record of a readable device that uses that menu
+        (the first by id that ``may_read`` allows), with that device's menu
+        of the other unit as the device's own copy, so only the picked menu
+        is shared. ``(library, seed document)``. Refused ``no_record`` when
+        no such device has a menus record, since a menus record needs both
+        units."""
+        source = next(
+            (
+                other
+                for other in pickers(lib, "menus").get(menu_id, [])
+                if other != owner_watch_id
+                and other not in self._failed_owners
+                and (may_read is None or may_read(other))
+                and self._document(other, "menus") is not None
+            ),
+            None,
+        )
+        if source is None:
+            raise WatchConfigNoRecordError(
+                "the device has no menus yet and no device uses this menu to "
+                "start them from; give it menus first"
+            )
+        for other, other_id in lib["picks"].get(source, {}).get("menus", {}).items():
+            if other == unit:
+                continue
+            lib = pick_menu(lib, owner_watch_id, other, other_id).library
+            lib = copy_menu(lib, owner_watch_id, other, self._copy_name(owner_watch_id)).library
+        return lib, without_unit_links(self._document(source, "menus"))
 
     def library_copy_menu(
         self,
@@ -3554,7 +3653,6 @@ class WatchConfigStore:
             if kind in records and (ops := link_ops(kind)) is not None
         }
         self._failed_owners.discard(owner_watch_id)
-        self._owner_renames.pop(owner_watch_id, None)
         if had:
             self._remove_owner_file(owner_watch_id)
             self._schedule_index_save()
@@ -3564,8 +3662,11 @@ class WatchConfigStore:
         writer = updated_by or f"forget:{owner_watch_id}"
         if not self._library_failed and owner_watch_id in self._library["picks"]:
             self._apply_library(library_forget(self._library, owner_watch_id).library, writer)
-        elif owner_watch_id in self._library["hashes"]:
-            self._library["hashes"].pop(owner_watch_id, None)
+        elif any(
+            owner_watch_id in self._library[notes] for notes in ("hashes", "revisions", "renames")
+        ):
+            for notes in ("hashes", "revisions", "renames"):
+                self._library[notes].pop(owner_watch_id, None)
             self._schedule_library_save()
         self._drop_last_copies(owner_watch_id, lost, writer)
         return had

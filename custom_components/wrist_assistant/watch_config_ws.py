@@ -907,6 +907,30 @@ def _may_change_item(
     return require_owner(hass, connection, msg, *owners)
 
 
+def _may_take_item(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+    store: WatchConfigStore,
+    kind: str,
+    item_id: str,
+) -> bool:
+    """Whether the caller may put one library item on a device of theirs: an
+    item is theirs to take when a device they manage already has it, and an
+    item no device has is an administrator's, as ``library/summary`` shows
+    them. Otherwise anyone could pull another user's page onto their own
+    watch by id and then edit it there, which a link never allowed (the
+    starter status pages have fixed ids). An id the library does not hold is
+    let through, so the store answers ``not_found``."""
+    owners = store.library_item_owners(kind, item_id)
+    if owners is None or is_admin(connection):
+        return True
+    if any(may_manage_owner(hass, connection, owner) for owner in owners):
+        return True
+    connection.send_error(msg["id"], "unauthorized", "no device of yours has this item")
+    return False
+
+
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_LIBRARY_PICK,
@@ -934,14 +958,19 @@ def ws_library_pick(
     (``WatchConfigStore.library_pick``). ``revisions`` names every record
     written, other devices' too where an item's link mark came or went.
     Refused ``invalid``, ``unknown_device``, ``not_for_iphone``,
-    ``not_found``, ``awaiting_move``, and ``unauthorized`` for a device the
-    caller may not manage.
+    ``not_found``, ``no_record``, ``awaiting_move``, and ``unauthorized``
+    for a device the caller may not manage, or for an item put on that no
+    device the caller manages has (for anyone but an administrator).
+    Taking an item off needs only the device.
     """
     store = _store(hass)
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     if not require_owner(hass, connection, msg, msg["owner_id"]):
+        return
+    taking = msg["kind"] == "menus" or msg.get("on") is True
+    if taking and not _may_take_item(hass, connection, msg, store, msg["kind"], msg["item_id"]):
         return
     try:
         result = store.library_pick(
@@ -950,6 +979,9 @@ def ws_library_pick(
             msg["item_id"],
             on=msg.get("on"),
             unit=msg.get("unit"),
+            may_read=None
+            if is_admin(connection)
+            else lambda owner: may_manage_owner(hass, connection, owner),
         )
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)

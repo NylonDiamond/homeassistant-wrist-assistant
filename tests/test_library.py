@@ -361,6 +361,30 @@ def test_linked_menus_are_one_menu_and_drop_the_old_token() -> None:
     assert MENU_LINK not in json.dumps(result.library)
 
 
+def test_a_linked_menu_whose_slots_follow_a_fork_is_not_joined_by_its_token() -> None:
+    """Both watches carry one old token on the Entity quick menu, whose
+    light slot opens Lights. The second watch's Lights differs and was never
+    linked (a fan-out that failed on a cap), so it forks and that watch's
+    slot is rewritten to the fork. Joining by the token would throw that
+    rewrite away and leave its slot on the first watch's Lights, which it
+    does not pick."""
+    records = {
+        WATCH: _record(_pages(), menus=_menus(links={"entity": MENU_LINK})),
+        WATCH_2: _record(_pages("Other lights"), menus=_menus(links={"entity": MENU_LINK})),
+    }
+    result = _migrate(records)
+    fork = result.renamed[WATCH_2]["pages"][LIGHTS]
+    picks = result.library["picks"]
+    assert picks[WATCH]["menus"]["entity"] != picks[WATCH_2]["menus"]["entity"]
+    mine = result.library["menus"][picks[WATCH_2]["menus"]["entity"]]
+    assert mine["sections"]["entityRadial"]["lightSlots"][0]["action"]["pageId"] == fork
+    theirs = result.library["menus"][picks[WATCH]["menus"]["entity"]]
+    assert theirs["sections"]["entityRadial"]["lightSlots"][0]["action"]["pageId"] == LIGHTS
+    # The Anywhere menu, whose slots open Home, is rewritten too (Home's
+    # tile opens Lights, so Home forked); it is not joined either.
+    assert picks[WATCH]["menus"]["anywhere"] != picks[WATCH_2]["menus"]["anywhere"]
+
+
 # ── materialise ──────────────────────────────────────────────────────────
 
 
@@ -723,6 +747,27 @@ def test_validate_library_round_trips_and_drops_junk() -> None:
     assert "anywhere" not in clean["picks"][WATCH]["menus"]
     assert "" not in clean["picks"]
     assert clean["hashes"] == {WATCH: {"pages": "abc"}}
+    raw["revisions"] = {WATCH: {"pages": 4, "menus": "4", "status_pages": True}, PHONE: []}
+    raw["renames"] = {WATCH: {"pages": {HOME: "NEW", "": "X", "Y": 3}}, PHONE: {"pages": {}}}
+    clean = lib.validate_library(raw)
+    assert clean["revisions"] == {WATCH: {"pages": 4}}
+    assert clean["renames"] == {WATCH: {"pages": {HOME: "NEW"}, "status_pages": {}}}
+    assert lib.validate_library(json.loads(json.dumps(clean))) == clean
+
+
+def test_renames_are_held_per_owner_and_follow_a_later_rename() -> None:
+    library = lib.hold_renames(lib.empty_library(), WATCH, {"status_pages": {STARTER: "S1"}})
+    library = lib.hold_renames(library, WATCH, {"status_pages": {"s1": "S2"}, "pages": {HOME: "H"}})
+    assert lib.held_renames(library, WATCH) == {
+        "pages": {HOME: "H"},
+        "status_pages": {STARTER: "S2", "s1": "S2"},
+    }
+    assert lib.held_renames(library, PHONE) == {"pages": {}, "status_pages": {}}
+    assert lib.hold_renames(library, PHONE, {}) == library
+    moved = lib.move_picks(library, WATCH, WATCH_3, []).library
+    assert WATCH not in moved["renames"]
+    assert lib.held_renames(moved, WATCH_3) == lib.held_renames(library, WATCH)
+    assert WATCH not in lib.forget(library, WATCH).library["renames"]
 
 
 def test_no_function_changes_the_library_it_is_given() -> None:
@@ -742,6 +787,7 @@ def test_no_function_changes_the_library_it_is_given() -> None:
     lib.map_back(library, WATCH, "menus", _menus(beam="x"))
     lib.map_back(library, PHONE, "status_pages", _status(starter_name="Power"), fork_conflicts=True)
     lib.materialise(library, WATCH, "pages", _pages())
+    lib.hold_renames(library, WATCH, {"pages": {HOME: "NEW"}})
     assert library == before
 
 

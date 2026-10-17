@@ -306,6 +306,100 @@ def test_a_record_changed_behind_the_library_s_back_is_folded_in_at_the_next_sta
     )
 
 
+OTHER_HOME = "CCCCCCCC-0000-4000-8000-000000000001"
+
+
+def _older_code_records(mod, owner: str, files: dict[str, dict]) -> None:
+    """``owner``'s records as older code would leave them after a rollback
+    (the library never saw them): its file and its place in the index."""
+    _FakeStore.files[mod._owner_key(owner)] = {
+        "owner_watch_id": owner,
+        "records": {kind: _record(1, doc) for kind, doc in files.items()},
+    }
+    index = _FakeStore.files[INDEX_KEY]
+    index["owners"] = sorted({*index["owners"], owner})
+
+
+def _starter_menus() -> dict:
+    menus = _menus()
+    menus["quickAction"]["slots"] = [_slot(1, {"type": "showStatusPage", "pageId": STARTER})]
+    return menus
+
+
+def test_a_fork_at_the_next_start_follows_into_the_same_device_s_tiles_and_slots(env) -> None:
+    """The first watch's starter is edited ("Batteries"). Older code left the
+    second watch with the default starter, a Home whose tile opens it and a
+    menu slot that opens it. The next start forks the second watch's starter
+    to an id of its own, and its tile and slot open that, not the first
+    watch's Batteries, which it does not pick."""
+    env.store_now()
+    _save(env, WATCH, _status(starter="Batteries"), "status_pages")
+    _older_code_records(
+        env.mod,
+        WATCH_2,
+        {
+            "status_pages": _status(starter="Climate"),
+            "pages": {
+                "schemaVersion": 1,
+                "pages": [{"id": OTHER_HOME, "name": "Home",
+                           "items": [_tile(1, f"status_page.{STARTER}")]}],
+            },
+            "menus": _starter_menus(),
+        },
+    )
+    again = env.store_now()
+    status = again.get(WATCH_2, "status_pages").document
+    [fork] = [p["id"] for p in status["statusPages"] if p["name"] == "Climate"]
+    assert fork != STARTER
+    home = _page(again.get(WATCH_2, "pages").document, OTHER_HOME)
+    assert home["items"][0]["entityId"] == f"status_page.{fork}"
+    slots = again.get(WATCH_2, "menus").document["quickAction"]["slots"]
+    assert slots[0]["action"]["pageId"] == fork
+    assert _page(_doc(env, WATCH, "status_pages"), STARTER, "statusPages")["name"] == "Batteries"
+    assert _FakeStore.files[LIBRARY_KEY]["renames"][WATCH_2]["status_pages"] == {STARTER: fork}
+
+
+def test_a_first_record_after_a_restart_follows_an_earlier_fork(env) -> None:
+    """The renames are kept in the library file, not in memory: the iPhone's
+    first menus upload after a restart still opens its own starter."""
+    store = env.store_now()
+    _save(env, WATCH, _status(starter="Batteries"), "status_pages")
+    store.put(PHONE, "status_pages", _status(starter="Mine"), document_hash=HASH,
+              base_revision=0, updated_by=PHONE)
+    [own] = [i for i in _ids(_doc(env, PHONE, "status_pages"), "statusPages")
+             if i not in (DOORS, STARTER)]
+    again = env.store_now()
+    menus = again.put(PHONE, "menus", _starter_menus(), document_hash=HASH, base_revision=0,
+                      updated_by=PHONE)
+    assert menus.document["quickAction"]["slots"][0]["action"]["pageId"] == own
+    assert menus.delivered_revision == 0, "the phone holds slots on the old id; it must pull"
+    again.forget_owner(PHONE)
+    assert PHONE not in _FakeStore.files[LIBRARY_KEY]["renames"]
+    assert PHONE not in _FakeStore.files[LIBRARY_KEY]["revisions"]
+
+
+def test_a_record_whose_save_never_reached_the_disk_is_built_again_not_mapped_back(env) -> None:
+    """A hard crash inside the save window: the first watch's edit of a
+    shared page and the library reached the disk, the second watch's
+    rebuilt record did not. Its record on disk is older than the revision
+    the library noted, so the next start builds it again from the library
+    instead of taking it as a save that undoes the edit."""
+    store = env.store_now()
+    _save(env, WATCH, _pages())
+    store.link_pages(WATCH, [LIGHTS], [WATCH_2])
+    key = env.mod._owner_key(WATCH_2)
+    lost = copy.deepcopy(_FakeStore.files[key])
+    doc = _doc(env, WATCH)
+    _page(doc, LIGHTS)["name"] = "Lights, edited"
+    _save(env, WATCH, doc)
+    assert _page(_doc(env, WATCH_2), LIGHTS)["name"] == "Lights, edited"
+    _FakeStore.files[key] = lost
+    again = env.store_now()
+    for owner in (WATCH, WATCH_2):
+        assert _page(again.get(owner, "pages").document, LIGHTS)["name"] == "Lights, edited"
+    assert again.library_summary()["pages"][LIGHTS]["item"]["name"] == "Lights, edited"
+
+
 def test_a_device_forgotten_by_older_code_leaves_the_library_at_the_next_start(env) -> None:
     store = env.store_now()
     _save(env, WATCH, _pages())
@@ -436,6 +530,9 @@ def test_an_iphone_s_first_upload_forks_a_different_starter_and_follows_it(env) 
     store.put(PHONE, "menus", menus, document_hash=HASH, base_revision=0, updated_by=PHONE)
     slots = store.get(PHONE, "menus").document["quickAction"]["slots"]
     assert slots[-1]["action"]["pageId"] == own
+    assert store.get(PHONE, "menus").delivered_revision == 0, (
+        "its slot was rewritten, so the phone must pull the menus too"
+    )
 
 
 def test_a_save_over_its_cap_with_the_link_marks_is_refused_whole(env, monkeypatch) -> None:
@@ -531,6 +628,50 @@ def test_pick_of_a_menu_makes_it_the_device_s_menu(env) -> None:
     store.library_pick(PHONE, "menus", watch_menu, unit="anywhere")
     assert _doc(env, PHONE, "menus")["quickAction"]["beamStyle"] == "auroraWash"
     assert _doc(env, PHONE, "menus")["linkIds"] == {"anywhere": watch_menu}
+
+
+def test_pick_of_a_menu_starts_the_menus_of_a_device_that_has_none(env) -> None:
+    """The picked menu is shared; the other unit starts as the device's own
+    copy of the menu the first device uses, as a menus link onto a device
+    with none does."""
+    store = env.store_now()
+    _save(env, WATCH, _menus(), "menus")
+    picks = store.library_summary()["picks"][WATCH]["menus"]
+    result = store.library_pick(WATCH_2, "menus", picks["anywhere"], unit="anywhere")
+    menus = _doc(env, WATCH_2, "menus")
+    watch = _doc(env, WATCH, "menus")
+    assert menus["linkIds"] == {"anywhere": picks["anywhere"]} == watch["linkIds"]
+    assert {k: v for k, v in menus.items() if k != "linkIds"} == _menus()
+    mine = store.library_summary()["picks"][WATCH_2]["menus"]
+    assert mine["anywhere"] == picks["anywhere"]
+    assert mine["entity"] != picks["entity"]
+    assert store.library_summary()["menus"][mine["entity"]]["name"] == "Chen's Apple Watch's menu"
+    assert set(result["revisions"]) == {WATCH, WATCH_2}
+
+
+def test_a_first_menus_pick_starts_only_from_a_device_the_caller_may_read(env) -> None:
+    store = env.store_now()
+    _save(env, WATCH, _menus(), "menus")
+    theirs = _menus()
+    theirs["entityRadial"]["allSlots"] = []
+    _save(env, WATCH_2, theirs, "menus")
+    shared = store.library_summary()["picks"][WATCH]["menus"]["anywhere"]
+    store.library_pick(WATCH_2, "menus", shared, unit="anywhere")
+    store.library_pick(PHONE, "menus", shared, unit="anywhere", may_read=lambda o: o != WATCH)
+    assert _doc(env, PHONE, "menus")["entityRadial"] == theirs["entityRadial"], "from Chen's watch"
+
+
+def test_pick_of_a_menu_no_device_uses_onto_a_device_with_none_is_refused(env) -> None:
+    store = env.store_now()
+    _save(env, WATCH, _menus(), "menus")
+    spare = store.library_summary()["picks"][WATCH]["menus"]["anywhere"]
+    store.library_copy_menu(WATCH, "anywhere", "Mine")
+    env.changes.clear()
+    with pytest.raises(env.mod.WatchConfigStoreError) as err:
+        store.library_pick(WATCH_2, "menus", spare, unit="anywhere")
+    assert err.value.code == "no_record"
+    assert env.changes == [] and store.get(WATCH_2, "menus") is None
+    assert WATCH_2 not in store.library_summary()["picks"]
 
 
 @pytest.mark.parametrize(
