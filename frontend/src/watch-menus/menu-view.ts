@@ -172,13 +172,14 @@ export interface MenusViewHost {
   /** The host of a page's switcher settings, editing the pages draft;
    * undefined while there is no pages draft or no such page. */
   switcherSettings?(pageId: string): SwitcherSettingsHost | undefined;
-  /** The Devices line at the top of a menu's own settings, under its name
-   * (`menu-devices.ts`), and the menu it opens under it. Absent, or nothing,
-   * where menus are not shared (an older integration, one device, a test). */
-  devicesLine?(menu: MenusSection): TemplateResult | typeof nothing;
-  /** The badge on a linked menu's row, after its count: "Also on Jesse's
-   * iPhone". */
-  linkBadge?(menu: MenusSection): string | undefined;
+  /** The top of a menu's own settings: the library menu's name, Used by
+   * with a tick per device, and Make a copy for this watch (the editor's
+   * `libraryHead`). Absent, or nothing, before the library is read (an
+   * older integration, a device with no menus yet, a test). */
+  libraryHead?(menu: MenusSection): TemplateResult | typeof nothing;
+  /** The badge on a menu's row, after its count: the library menu's own
+   * name, "Home menu". */
+  menuBadge?(menu: MenusSection): string | undefined;
   /** Apply `change` to the document as it is now: one undo step, or with
    * `coalesce` a step the next edits with the same key replace. */
   edit(change: (document: MenusDocument) => MenusDocument, coalesce?: string): boolean;
@@ -667,7 +668,7 @@ export function renderMenusCard(host: MenusViewHost): TemplateResult {
       ${MENUS_SECTIONS.map(([id, label]) => {
         const on = id === shown;
         const pick = () => { if (!on) selectMenu(host, id); };
-        const shared = host.linkBadge?.(id);
+        const named = host.menuBadge?.(id);
         return html`<div class="layer me-menu-row ${on ? "hl" : ""}" data-menu=${id} role="listitem" tabindex="0"
           aria-current=${on ? "true" : "false"} aria-label=${label} title=${MENU_LINES[id]}
           @click=${pick}
@@ -678,8 +679,8 @@ export function renderMenusCard(host: MenusViewHost): TemplateResult {
           }}>
           <span class="grip" aria-hidden="true"></span>
           ${menuThumb(host, id)}
-          <span class="name"><b><span class="nm-t">${label}</span><span class="me-menu-count">${menuRowCount(host, id)}</span>${shared === undefined
-            ? nothing : html`<span class="badge pe-linked" title=${shared}>${shared}</span>`}</b><small>${MENU_ROW_LINES[id]}</small></span>
+          <span class="name"><b><span class="nm-t">${label}</span><span class="me-menu-count">${menuRowCount(host, id)}</span>${named === undefined
+            ? nothing : html`<span class="badge me-named" title=${`This device uses "${named}"`}>${named}</span>`}</b><small>${MENU_ROW_LINES[id]}</small></span>
         </div>`;
       })}
     </div>
@@ -1302,14 +1303,14 @@ function renderEntityMenuCard(host: MenusViewHost): TemplateResult {
 /** The line under a menu's own cards that has slots. */
 export const MENU_PICK_NOTE = "Click a slot on the watch to change what it does.";
 
-/** The shown menu's own settings, with no slot selected: first where the
- * menu is (its Devices line, right under its name, where the eye lands),
- * then what it is and its cards. */
+/** The shown menu's own settings, with no slot selected: first the library
+ * menu it is (its name, Used by and the copy, right under the crumb, where
+ * the eye lands), then what it is and its cards. */
 function renderMenuSettings(host: MenusViewHost, menu: MenusSection): TemplateResult {
   const cards = menu === "anywhere" ? renderAnywhereStyleCards(host)
     : menu === "switcher" ? renderSwitcherStyleCard(host)
     : renderEntityMenuCard(host);
-  return html`${host.devicesLine?.(menu) ?? nothing}<p class="me-menu-note">${MENU_LINES[menu]}</p>${cards}
+  return html`${host.libraryHead?.(menu) ?? nothing}<p class="me-menu-note">${MENU_LINES[menu]}</p>${cards}
     <p class="me-menu-note me-pick-note">${menu === "switcher" ? SWITCHER_PICK_NOTE : MENU_PICK_NOTE}</p>`;
 }
 

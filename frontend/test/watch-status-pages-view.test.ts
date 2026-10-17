@@ -114,7 +114,7 @@ describe("the cards", () => {
     expect(pages).toContain("House");
     expect(pages).toContain("Lights");
     expect(pages).toContain("starter");
-    expect(pages).toContain("One of the app's starter pages. It is edited and linked like any other.");
+    expect(pages).toContain("One of the app's starter pages. It is edited and put on devices like any other.");
     expect(pages).not.toContain("Every device has its own");
     const rows = flat(renderRowsCard(h));
     expect(rows).toContain("Security");
