@@ -292,8 +292,11 @@ export function joinWords(words: readonly string[]): string {
 
 /**
  * What else a link put on `target`, beside the pages asked for: "Also added:
- * Lights and 1 status page". Undefined when it added nothing more. Page names
- * come from `source`, the device the pages came from.
+ * Lights and 1 status page." Then the starter status pages the target held
+ * its own copy of, which the link took over and made the source's: "Linked
+ * its own copy of 1 status page, which now matches." Undefined when it did
+ * nothing more. Page names come from `source`, the device the pages came
+ * from.
  */
 export function linkAlsoAddedText(
   reply: WatchPagesLinkReply,
@@ -311,7 +314,15 @@ export function linkAlsoAddedText(
   const status = (added.status_pages ?? []).length;
   const words = [...names];
   if (status > 0) words.push(status === 1 ? "1 status page" : `${status} status pages`);
-  return words.length === 0 ? undefined : `Also added: ${joinWords(words)}.`;
+  const adopted = (added.adopted_status_pages ?? []).length;
+  const lines: string[] = [];
+  if (words.length > 0) lines.push(`Also added: ${joinWords(words)}.`);
+  if (adopted > 0) {
+    lines.push(adopted === 1
+      ? "Linked its own copy of 1 status page, which now matches."
+      : `Linked its own copies of ${adopted} status pages, which now match.`);
+  }
+  return lines.length === 0 ? undefined : lines.join(" ");
 }
 
 /** One linked unit of a whole document (a menu, the phrases) as a restore

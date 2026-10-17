@@ -810,9 +810,11 @@ const WP = "wrist_assistant/watch_pages";
 
 /** What `watch_pages/link` put on each target: the page ids and status page
  * ids it added there (the ones asked for, and what their tiles open), and
- * the link id each asked page now carries. */
+ * the link id each asked page now carries. `adopted_status_pages` names the
+ * target's own copies of starter status pages that the link took over in
+ * place, made the source's; absent from integrations older than it. */
 export interface WatchPagesLinkReply {
-  targets: Record<string, { pages: string[]; status_pages: string[] }>;
+  targets: Record<string, { pages: string[]; status_pages: string[]; adopted_status_pages?: string[] }>;
   link_ids: Record<string, string>;
 }
 
@@ -848,11 +850,13 @@ export async function linkWatchPages(
 }
 
 /** What `watch_pages/link_all` did: the page ids and status page ids it put
- * on the target, and the kinds it copied there because the target had none
- * (`menus`, `rooms`). */
+ * on the target, the target's own starter status pages it took over in
+ * place (`adopted_status_pages`, absent from older integrations), and the
+ * kinds it copied there because the target had none (`menus`, `rooms`). */
 export interface WatchPagesLinkAllReply {
   pages: string[];
   status_pages: string[];
+  adopted_status_pages?: string[];
   copied: string[];
 }
 
@@ -877,7 +881,7 @@ export type WatchLinkUnitKind = "menus" | "voice";
  * written there, and the pages and status pages a menus link brought along;
  * the link id of each unit. */
 export interface WatchUnitsLinkReply {
-  targets: Record<string, { pages: string[]; status_pages: string[]; units: string[] }>;
+  targets: Record<string, { pages: string[]; status_pages: string[]; adopted_status_pages?: string[]; units: string[] }>;
   link_ids: Record<string, string>;
 }
 
@@ -914,7 +918,7 @@ export type WatchMenusLinkUnit = "anywhere" | "entity";
  * pages the slots brought along and the units written there, and the link
  * id of each unit. */
 export interface WatchMenusLinkReply extends WatchPagesLinkReply {
-  targets: Record<string, { pages: string[]; status_pages: string[]; units: WatchMenusLinkUnit[] }>;
+  targets: Record<string, { pages: string[]; status_pages: string[]; adopted_status_pages?: string[]; units: WatchMenusLinkUnit[] }>;
   link_ids: Partial<Record<WatchMenusLinkUnit, string>>;
 }
 

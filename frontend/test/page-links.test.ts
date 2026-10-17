@@ -212,6 +212,13 @@ describe("what else a link added", () => {
     expect(linkAlsoAddedText(reply, "p1", [HALL.toLowerCase()], source)).toBe("Also added: Yard, Den and 1 status page.");
   });
 
+  it("says when the target's own starter status pages were linked and made the same", () => {
+    const one = { targets: { p1: { pages: [HALL, YARD], status_pages: [], adopted_status_pages: [U(1)] } }, link_ids: {} };
+    expect(linkAlsoAddedText(one, "p1", [HALL], source)).toBe("Also added: Yard. Linked its own copy of 1 status page, which now matches.");
+    const two = { targets: { p1: { pages: [HALL], status_pages: [], adopted_status_pages: [U(1), U(2)] } }, link_ids: {} };
+    expect(linkAlsoAddedText(two, "p1", [HALL], source)).toBe("Linked its own copies of 2 status pages, which now match.");
+  });
+
   it("is nothing when only the page asked for went", () => {
     const reply = { targets: { p1: { pages: [HALL], status_pages: [] } }, link_ids: {} };
     expect(linkAlsoAddedText(reply, "p1", [HALL], source)).toBeUndefined();
