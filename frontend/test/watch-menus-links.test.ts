@@ -1,7 +1,8 @@
-// Menus linked across devices: the rules the menu editor's Devices menu
-// draws from (`menu-links.ts`), its drawing (`menu-devices.ts`), the link
-// call, and the editor's Devices entry, badge, card line and replace
-// question.
+// Menus linked across devices: the rules the Menus tab's Devices menu still
+// draws from until step 4 of the one library plan (`menu-links.ts`), its
+// drawing (`menu-devices.ts`) and the link call; then the menu editor
+// opening on the menu a Menus tab card asked for, and naming a device a save
+// could not reach.
 
 import { html } from "lit";
 import { describe, expect, it } from "vitest";
@@ -37,7 +38,7 @@ import {
   unlinkMenuUnit,
   withoutMenuUnitLink,
 } from "../src/watch-menus/menu-links.js";
-import { type MenusViewHost, renderMenuInspector, renderMenusCard, shownMenu } from "../src/watch-menus/menu-view.js";
+import { type MenusViewHost, shownMenu } from "../src/watch-menus/menu-view.js";
 import { type MenusDocument, setWatchMenuStyle } from "../src/watch-menus/model.js";
 import { type LinkDevice, linkDevicesOf } from "../src/watch-pages/links.js";
 
@@ -356,53 +357,9 @@ function editor(document: MenusDocument, places: WatchPagesPlaces | undefined, s
   return { el, watchId, host, whole: () => flat((el.render as () => unknown).call(el)) };
 }
 
-describe("the editor's Devices", () => {
-  const placesFor = (watchId: string): WatchPagesPlaces => ({ pages: {}, status_pages: {}, menus: { [ANY_LINK]: { unit: "anywhere", owners: [watchId, "links-w2"] } } });
-
-  it("puts Devices in the ··· menu while the integration shares pages", () => {
-    const { el, whole } = editor(DEFAULTS, { pages: {}, status_pages: {}, menus: {} });
-    el.topMenuOpen = true;
-    expect(whole()).toContain(">Devices…</button>");
-    const off = editor(DEFAULTS, undefined);
-    off.el.topMenuOpen = true;
-    expect(off.whole()).not.toContain(">Devices…</button>");
-  });
-
-  it("badges a linked menu's row and its switcher, and leaves the Entity quick menu alone", () => {
-    const e = editor(linked({ anywhere: ANY_LINK }), undefined);
-    e.el.places = placesFor(e.watchId);
-    const card = flat(renderMenusCard(e.host()));
-    expect(card.split("Also on Chen's Watch").length - 1).toBe(4);
-    const entityRow = card.slice(card.indexOf("data-menu=entity"), card.indexOf("data-menu=switcher"));
-    expect(entityRow).not.toContain("pe-linked");
-  });
-
-  it("draws a Devices line at the top of the menu's settings that opens its menu", () => {
-    const e = editor(linked({ anywhere: ANY_LINK }), undefined);
-    e.el.places = placesFor(e.watchId);
-    let text = flat(renderMenuInspector(e.host()));
-    expect(text).toContain(`<span class="me-devices-h">Devices</span>`);
-    // A group, so its label is read out.
-    expect(text).toContain(`class="me-devices" role="group" aria-label=Where the Anywhere menu is`);
-    // A chip per device that shares it, this one first, and no field under
-    // Glow in the Look card any more.
-    const line = text.slice(text.indexOf(`class="me-devices"`), text.indexOf("me-menu-note"));
-    expect(line.indexOf("Jesse's Watch")).toBeGreaterThan(-1);
-    expect(line.indexOf("Jesse's Watch")).toBeLessThan(line.indexOf("Chen's Watch"));
-    expect(line).toContain("Also on Chen's Watch");
-    expect(text).not.toContain("me-dev-field");
-    // Under the menu's name, before what it is and before the Look card.
-    expect(text.indexOf(`class="me-devices"`)).toBeGreaterThan(text.indexOf(">Anywhere menu</span>"));
-    expect(text.indexOf(`class="me-devices"`)).toBeLessThan(text.indexOf("me-menu-note"));
-    expect(text.indexOf(`class="me-devices"`)).toBeLessThan(text.indexOf(">Look<"));
-    (e.el.openDevices as (m: unknown) => void).call(e.el, { where: "card", unit: "anywhere" });
-    text = flat(renderMenuInspector(e.host()));
-    expect(text).toContain("The Anywhere menu is on");
-    expect(text).not.toContain("The Entity quick menu is on");
-    // The menu opens under the line, still above the Look card.
-    expect(text.indexOf("The Anywhere menu is on")).toBeLessThan(text.indexOf(">Look<"));
-  });
-
+// The editor's library parts (name, Used by, Make a copy) are
+// `library-menu-editor.test.ts`.
+describe("the menu editor", () => {
   it("opens on the menu a Menus tab card asked for, on its own settings", () => {
     const e = editor(DEFAULTS, { pages: {}, status_pages: {}, menus: {} });
     e.el.hass = {
@@ -416,50 +373,6 @@ describe("the editor's Devices", () => {
     expect(takeWatchMenuAsk(e.watchId)).toBeUndefined();
   });
 
-  it("says a menu on this device alone is here only, with Devices beside it", () => {
-    const e = editor(DEFAULTS, { pages: {}, status_pages: {}, menus: {} });
-    const text = flat(renderMenuInspector(e.host()));
-    expect(text).toContain(`<span class="me-devices-only">This watch only</span>`);
-    expect(text).toContain("<span>Devices</span>");
-    expect(text).not.toContain("me-dev-chip");
-  });
-
-  it("puts a linked menu's badge on its row after the count", () => {
-    const e = editor(linked({ anywhere: ANY_LINK }), undefined);
-    e.el.places = placesFor(e.watchId);
-    const card = flat(renderMenusCard(e.host()));
-    const row = card.slice(card.indexOf("data-menu=anywhere"), card.indexOf("data-menu=entity"));
-    expect(row.indexOf("me-menu-count")).toBeLessThan(row.indexOf("pe-linked"));
-    expect(row.indexOf("pe-linked")).toBeLessThan(row.indexOf("<small>"));
-  });
-
-  /** An editor whose link is refused `unit_taken` until sent with replace,
-   * and whose other watch's menus read as `theirs`. */
-  function takenEditor(theirs: MenusDocument) {
-    const sent: Record<string, unknown>[] = [];
-    const e = editor(DEFAULTS, { pages: {}, status_pages: {}, menus: {} }, async (m) => {
-      sent.push(m);
-      if (m.type === "wrist_assistant/watch_pages/link" && m.replace !== true) throw Object.assign(new Error("taken"), { code: "unit_taken" });
-      if (m.type === "wrist_assistant/watch_pages/link") return { targets: { "links-w2": { pages: [], status_pages: [], units: ["anywhere"] } }, link_ids: { anywhere: ANY_LINK } };
-      if (m.type === "wrist_assistant/watch_pages/places") return { pages: {}, status_pages: {}, menus: {} };
-      if (m.type === "wrist_assistant/watch_config/get" && m.owner_watch_id === "links-w2") return { revision: 2, document: theirs };
-      return { revision: 4, document: DEFAULTS };
-    });
-    return { e, sent };
-  }
-
-  it("replaces a menu the other device never edited without asking", async () => {
-    const { e, sent } = takenEditor(DEFAULTS);
-    await (e.el.linkMenuTo as (u: string, t: string) => Promise<void>).call(e.el, "anywhere", "links-w2");
-    expect(e.el.replaceAsk).toBeUndefined();
-    expect(sent.filter((m) => m.type === "wrist_assistant/watch_pages/link").map((m) => m.replace)).toEqual([false, true]);
-    expect((e.el.devicesNote as { text: string }).text).toBe("The Anywhere menu is on Chen's Watch now.");
-    // The Anywhere menu left as the app made it, but linked elsewhere, asks.
-    const elsewhere = takenEditor(linked({ anywhere: "c".repeat(32) }));
-    await (elsewhere.e.el.linkMenuTo as (u: string, t: string) => Promise<void>).call(elsewhere.e.el, "anywhere", "links-w2");
-    expect(elsewhere.e.el.replaceAsk).toEqual({ unit: "anywhere", target: "links-w2" });
-  });
-
   it("tells a never edited menu by its unit's sections only", () => {
     expect(menuUnitIsDefault(DEFAULTS, "anywhere")).toBe(true);
     expect(menuUnitIsDefault(linked({ anywhere: ANY_LINK }), "entity")).toBe(true);
@@ -468,19 +381,6 @@ describe("the editor's Devices", () => {
     expect(menuUnitIsDefault(edited, "entity")).toBe(true);
     expect(menuUnitIsDefault(withTargets(), "entity")).toBe(false);
     expect(menuUnitIsDefault(undefined, "anywhere")).toBe(false);
-  });
-
-  it("asks before replacing a device's own menu, then sends replace", async () => {
-    const { e, sent } = takenEditor(withTargets());
-    await (e.el.linkMenuTo as (u: string, t: string) => Promise<void>).call(e.el, "anywhere", "links-w2");
-    expect(e.el.replaceAsk).toEqual({ unit: "anywhere", target: "links-w2" });
-    const text = e.whole();
-    expect(text).toContain("Replace the Anywhere menu on Chen's Watch?");
-    expect(text).toContain("Its own is lost.");
-    await (e.el.linkMenuTo as (u: string, t: string, r: boolean) => Promise<void>).call(e.el, "anywhere", "links-w2", true);
-    const links = sent.filter((m) => m.type === "wrist_assistant/watch_pages/link");
-    expect(links.map((m) => m.replace)).toEqual([false, true]);
-    expect((e.el.devicesNote as { text: string }).text).toBe("The Anywhere menu is on Chen's Watch now.");
   });
 
   it("names a linked device that kept the old menus after a save or a restore", async () => {
@@ -503,25 +403,4 @@ describe("the editor's Devices", () => {
     expect((e.el.note as { text: string }).text).toContain("Chen's Watch kept the old version: Home Assistant could not update the linked menus there.");
   });
 
-  it("says in the restore question what it does to the linked menus", () => {
-    const e = editor(linked({ anywhere: ANY_LINK, entity: ENTITY_LINK }), undefined);
-    e.el.places = { pages: {}, status_pages: {}, menus: {
-      [ANY_LINK]: { unit: "anywhere", owners: [e.watchId, "links-w2"] },
-      [ENTITY_LINK]: { unit: "entity", owners: [e.watchId, "links-w2"] },
-    } };
-    const lines = (e.el.restoreLinks as (n: unknown, r: unknown) => string[]).call(e.el, linked({ anywhere: ANY_LINK, entity: ENTITY_LINK }), linked({ anywhere: ANY_LINK }));
-    expect(lines).toEqual([
-      "Also changes the Anywhere menu on Chen's Watch.",
-      "Unlinks the Entity quick menu on this watch from Chen's Watch, which keeps its copy as it is.",
-    ]);
-  });
-
-  it("will not link over unsaved edits", () => {
-    const e = editor(DEFAULTS, { pages: {}, status_pages: {}, menus: {} });
-    const draft = e.el.draft as { apply(d: MenusDocument): boolean };
-    draft.apply(setWatchMenuStyle(DEFAULTS, "quickAction", "beamIntensity", 0.9));
-    expect((e.el.devicesBlocked as () => string | undefined).call(e.el)).toContain("Save or discard your edits first.");
-    const old = editor(DEFAULTS, { pages: {}, status_pages: {} });
-    expect((old.el.devicesBlocked as () => string | undefined).call(old.el)).toBe(MENU_LINKS_UPDATE_TEXT);
-  });
 });

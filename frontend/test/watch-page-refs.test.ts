@@ -187,7 +187,9 @@ describe("the page editor's delete", () => {
     expect(source).toContain("const deleted = deletedPageIds(watchPagesOf(draft.base), watchPagesOf(draft.document));");
     expect(source).toContain("if (result.ok && deleted.length > 0) {");
     expect(source).toContain("const cleared = await this.clearPageRefs(hass, watchId, deleted, elsewhere);");
-    expect(source).toContain("pageHolders(findWatchPage(draft.base, id), watchId, this.places).length > 1");
+    // A shared menu keeps its slots to a page other devices still have, as
+    // the library says.
+    expect(source).toContain(`deleted.filter((id) => devicesFor(lib, "pages", id).some((o) => !sameId(o, watchId)))`);
     // The clearing itself is shared with the Pages tab (page-links-io.ts).
     const io = readFileSync(join(__dirname, "..", "src", "watch-pages", "page-links-io.ts"), "utf8");
     expect(io).toContain(`await saveWatchConfig(hass, ownerId, "menus", record.revision, next);`);
