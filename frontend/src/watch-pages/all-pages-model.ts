@@ -4,6 +4,14 @@
 // A linked page (the same `linkId` on several devices, `links.ts`) is one
 // card with a chip per device it is on; any other page is a card of its own.
 // Linked status pages are cards the same way, on the Status pages tab.
+//
+// The app's five starter status pages (`isSystemStatusPage`) link like any
+// other status page, and each has the same fixed id on every device. So a
+// starter is one card for every device that holds that id: its linked copies
+// and its unlinked ones together. While some copies are not linked the card
+// says so, and its Link button links them all (`starterLink`); Home
+// Assistant then takes over each target's own copy.
+//
 // This module is the pure part both tabs draw from: the cards and the device
 // tabs over them, the Device menu (watches or iPhones), which device a card
 // opens on, and the switches of a card's Devices menu. The element is
@@ -13,7 +21,7 @@ import type { WatchPagesLinkKind } from "../ha-api.js";
 import { type StatusPagesDocument, isSystemStatusPage, statusPageId, statusPageRows, statusPagesOf } from "../watch-status-pages/model.js";
 import { statusPageLinkId, statusPageTitle } from "../watch-status-pages/links.js";
 import { listedWatchPages } from "./edit.js";
-import { type LinkDevice, type PageDevicePlace, DEVICES_SYSTEM_TEXT, DEVICES_WAIT_TAG, DEVICES_WAIT_TEXT, pageLinkId } from "./links.js";
+import { type LinkDevice, type PageDevicePlace, DEVICES_SYSTEM_TEXT, DEVICES_WAIT_TAG, DEVICES_WAIT_TEXT, joinWords, pageLinkId } from "./links.js";
 import { type WatchPage, type WatchPagesDocument, isHiddenWatchPage, isSmartWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPageTiles } from "./model.js";
 
 /** What a card is: a page, or a status page. */
@@ -89,6 +97,9 @@ export interface PageCard {
   /** A status page's rows; 0 for a page. */
   rows: number;
   smart: boolean;
+  /** One of the app's starter status pages: its copies on every device are
+   * on this one card, linked or not (`unlinkedCopies`). */
+  starter?: true;
   /** In device order, never empty. */
   copies: PageCopy[];
 }
@@ -100,9 +111,10 @@ const upper = (id: string): string => id.toUpperCase();
  * device's own page order: a linked page where it first shows, once, with
  * every device that holds its link. Then every status page the same way, as
  * status page cards from `statusDocs`. System pages are left out, as the page
- * editor lists none, and so are the five system status pages, which are
- * copied and never linked. A device not in `docs` or `statusDocs` (not read,
- * or no record) brings nothing of that kind.
+ * editor lists none. A starter status page is one card for every device that
+ * holds its id without a link, and those copies join its linked card when
+ * there is one (`joinStarters`). A device not in `docs` or `statusDocs` (not
+ * read, or no record) brings nothing of that kind.
  */
 export function pageCards(
   devices: readonly LinkDevice[],
@@ -149,9 +161,13 @@ export function pageCards(
     if (doc === undefined) continue;
     statusPagesOf(doc).forEach((page, index) => {
       const pageId = statusPageId(page);
-      if (pageId === "" || isSystemStatusPage(page)) return;
+      if (pageId === "") return;
       const linkId = statusPageLinkId(page);
-      const key = linkId === undefined ? `status:${device.ownerId}:${upper(pageId)}` : `status-link:${linkId}`;
+      const starter = isSystemStatusPage(page);
+      // A starter's unlinked copies share one card: the same id is the same
+      // starter on every device. Any other unlinked page is its device's own.
+      const key = linkId !== undefined ? `status-link:${linkId}`
+        : starter ? `status-starter:${upper(pageId)}` : `status:${device.ownerId}:${upper(pageId)}`;
       place(key, { device, page, hidden: false, index }, () => ({
         kind: "status_pages",
         pageId,
@@ -159,11 +175,99 @@ export function pageCards(
         tiles: 0,
         rows: statusPageRows(page).length,
         smart: false,
+        ...(starter ? { starter: true as const } : {}),
         ...(linkId === undefined ? {} : { linkId }),
       }));
     });
   }
-  return cards;
+  return joinStarters(cards, devices);
+}
+
+/**
+ * A starter's unlinked copies onto its linked card, when some devices hold
+ * it linked: one card per starter, the linked one's place in the list, its
+ * copies in device order. A starter linked twice over (two links, one id) is
+ * two cards, and the unlinked copies join the first.
+ */
+function joinStarters(cards: PageCard[], devices: readonly LinkDevice[]): PageCard[] {
+  const linked = new Map<string, PageCard>();
+  for (const card of cards) {
+    if (card.starter && card.linkId !== undefined && !linked.has(upper(card.pageId))) linked.set(upper(card.pageId), card);
+  }
+  if (linked.size === 0) return cards;
+  const order = new Map(devices.map((d, i) => [d.ownerId, i]));
+  return cards.filter((card) => {
+    const into = card.starter && card.linkId === undefined ? linked.get(upper(card.pageId)) : undefined;
+    if (into === undefined) return true;
+    for (const copy of card.copies) {
+      if (!into.copies.some((c) => c.device.ownerId === copy.device.ownerId)) into.copies.push(copy);
+    }
+    into.copies.sort((a, b) => (order.get(a.device.ownerId) ?? 0) - (order.get(b.device.ownerId) ?? 0));
+    return false;
+  });
+}
+
+/** A starter card's copies that carry no link: each is its device's own
+ * copy of the starter. None for any other card. */
+export function unlinkedCopies(card: PageCard): PageCopy[] {
+  return card.starter ? card.copies.filter((c) => statusPageLinkId(c.page) === undefined) : [];
+}
+
+/** The line on a starter card whose copies are all their devices' own. */
+export const STARTER_UNLINKED_TEXT = "Not linked: each device has its own copy.";
+
+/**
+ * The line on a starter card while some of its copies are not linked, or
+ * undefined: none for a card on one device, or one whose copies are all
+ * linked. "Not linked: each device has its own copy." when none is linked,
+ * else which devices still hold their own.
+ */
+export function starterUnlinkedText(card: PageCard): string | undefined {
+  const loose = unlinkedCopies(card);
+  if (card.copies.length < 2 || loose.length === 0) return undefined;
+  if (card.linkId === undefined) return STARTER_UNLINKED_TEXT;
+  const names = joinWords(loose.map((c) => c.device.name));
+  return `Not linked on ${names}: ${loose.length === 1 ? "it has its own copy" : "each has its own copy"}.`;
+}
+
+/** What a starter card's Link sends: `linkWatchPages` from `source` with
+ * `pageId`, onto `targets`, kind `status_pages`. */
+export interface StarterLink {
+  source: string;
+  pageId: string;
+  targets: string[];
+}
+
+/**
+ * A starter card's Link: every copy linked into one. With none linked yet
+ * the source is the device tab's copy, else the first device holding it,
+ * and the targets the others. With some linked, the source is a linked copy
+ * (the device tab's when it is one) and the targets the unlinked copies.
+ * Undefined when there is nothing to link (`starterUnlinkedText`), and
+ * "dirty" when the source or a target holds unsaved edits in its status
+ * pages editor: the link writes them all as saved.
+ */
+export function starterLink(card: PageCard, filter: PagesFilter, dirty: (ownerId: string, kind: CardKind) => boolean): StarterLink | "dirty" | undefined {
+  if (starterUnlinkedText(card) === undefined) return undefined;
+  const loose = unlinkedCopies(card);
+  const tab = filter === ALL_FILTER ? undefined : copyOn(card, filter);
+  let source: PageCopy;
+  let targets: PageCopy[];
+  if (card.linkId === undefined) {
+    source = tab ?? card.copies[0]!;
+    targets = card.copies.filter((c) => c !== source);
+  } else {
+    const held = card.copies.filter((c) => statusPageLinkId(c.page) === card.linkId);
+    source = (tab !== undefined && held.includes(tab) ? tab : undefined) ?? held[0]!;
+    targets = loose;
+  }
+  if ([source, ...targets].some((c) => dirty(c.device.ownerId, card.kind))) return "dirty";
+  return { source: source.device.ownerId, pageId: statusPageId(source.page), targets: targets.map((c) => c.device.ownerId) };
+}
+
+/** What a starter's Link said once it was done. */
+export function starterLinkedText(names: readonly string[]): string {
+  return `Linked on ${joinWords(names)}. An edit on one now shows on all of them.`;
 }
 
 /** The cards of one kind, in the order given. */
@@ -295,9 +399,10 @@ export function cardDevicePlaces(devices: readonly LinkDevice[], card: PageCard,
 /** The device a link copies the page from: the first that holds it with no
  * unsaved edits in its editor (the page editor, or for a status page the
  * status pages editor: `dirty` is asked with the card's kind), else
- * undefined (`devicesDirtyText`). */
+ * undefined (`devicesDirtyText`). On a linked card only a copy with its link
+ * counts, so a starter's unlinked copy never starts a second link. */
 export function linkSource(card: PageCard, dirty: (ownerId: string, kind: CardKind) => boolean): string | undefined {
-  return card.copies.find((c) => !dirty(c.device.ownerId, card.kind))?.device.ownerId;
+  return card.copies.find((c) => (card.linkId === undefined || pageLinkId(c.page) === card.linkId) && !dirty(c.device.ownerId, card.kind))?.device.ownerId;
 }
 
 /** The line under a card's name: its tile count, or "Smart page", or a
@@ -316,8 +421,8 @@ export function emptyText(filter: PagesFilter, devices: readonly LinkDevice[], s
   if (kind !== "all") return `No ${one} here is on ${kind === "watch" ? "a watch" : "an iPhone"}.`;
   const device = devices.find((d) => d.ownerId === filter);
   if (cardKind === "status_pages") {
-    if (device !== undefined) return `No status pages on ${device.name} yet. The five starter pages every device has are not listed here.`;
-    return "No device has status pages of its own yet. Use New status page to make one.";
+    if (device !== undefined) return `No status pages on ${device.name} yet.`;
+    return "No device has status pages yet. Use New status page to make one.";
   }
   if (device !== undefined) return `No pages on ${device.name} yet.`;
   return "No device has pages yet. Open a device's Pages to make one.";

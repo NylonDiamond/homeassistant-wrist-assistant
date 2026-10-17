@@ -12,6 +12,10 @@
 // `links-io.ts`). What can be worked out without the element is in
 // `all-pages-model.ts`.
 //
+// A starter status page is one card for every device that holds it. While
+// some of those copies are not linked, the card says so over its chips, and
+// its Link button links them all in one call (`starterLink`).
+//
 // Every device's record of the tab's kind is read when the tab opens, and a
 // device's again whenever Home Assistant says it changed
 // (`subscribeWatchConfig`). The panel loads this file the first time either
@@ -60,6 +64,9 @@ import {
   resolveFilter,
   resolveKind,
   shownCards,
+  starterLink,
+  starterLinkedText,
+  starterUnlinkedText,
 } from "./all-pages-model.js";
 import {
   type BulkResult,
@@ -230,6 +237,8 @@ export class WaAllPages extends LitElement {
   @state() private menuAt?: MenuAt;
   @state() private linking = false;
   @state() private devicesNote?: WatchPagesNote;
+  /** What a starter card's Link did, on the card by one of its copies. */
+  @state() private linkNote?: { at: MenuAt; note: WatchPagesNote };
   /** New page's menu of devices is open. */
   @state() private newOpen = false;
   /** Select mode: a click picks a card instead of opening it. */
@@ -325,6 +334,7 @@ export class WaAllPages extends LitElement {
     this.anchor = undefined;
     this.bulkMenu = undefined;
     this.bulkNote = undefined;
+    this.linkNote = undefined;
     this.newOpen = false;
     this.closeDevices();
   }
@@ -552,7 +562,11 @@ export class WaAllPages extends LitElement {
   }
 
   private cardOfMenu(cards: readonly PageCard[]): PageCard | undefined {
-    const at = this.menuAt;
+    return this.cardAt(cards, this.menuAt);
+  }
+
+  /** The card that holds a copy, by its device and page id. */
+  private cardAt(cards: readonly PageCard[], at: MenuAt | undefined): PageCard | undefined {
     if (at === undefined) return undefined;
     return cards.find((c) => {
       const copy = copyOn(c, at.ownerId);
@@ -612,6 +626,40 @@ export class WaAllPages extends LitElement {
     const stays = place.on ? card.copies.find((c) => c.device.ownerId !== target) : card.copies[0];
     if (stays !== undefined && this.menuAt !== undefined) this.menuAt = { ownerId: stays.device.ownerId, pageId };
     this.devicesNote = note;
+    await this.loadAll();
+  }
+
+  /**
+   * A starter card's Link: every device's own copy of the starter linked
+   * into one (`starterLink`), in one `watch_pages/link` call. Home Assistant
+   * replaces each target's copy with the source's. Then every device is read
+   * again, and the card says what happened.
+   */
+  private async linkStarter(card: PageCard): Promise<void> {
+    const hass = this.hassNow;
+    if (!hass || this.linking) return;
+    const plan = starterLink(card, resolveFilter(this.filter, this.devices), dirtyHere);
+    if (plan === undefined) return;
+    const at = { ownerId: card.copies[0]!.device.ownerId, pageId: card.pageId };
+    if (plan === "dirty") {
+      this.linkNote = { at, note: { kind: "warn", text: devicesDirtyText(card.kind) } };
+      return;
+    }
+    const view = this.kindSeq;
+    const name = (id: string) => this.devices.find((d) => d.ownerId === id)?.name ?? "a device";
+    this.linking = true;
+    this.linkNote = undefined;
+    let note: WatchPagesNote;
+    try {
+      await linkWatchPages(hass, plan.source, [plan.pageId], plan.targets, card.kind);
+      note = { kind: "ok", text: starterLinkedText([plan.source, ...plan.targets].map(name)) };
+    } catch (err) {
+      note = { kind: "err", text: `Not linked. ${linkErrorText(err)}` };
+    } finally {
+      this.linking = false;
+    }
+    if (view !== this.kindSeq) return;
+    this.linkNote = { at: { ownerId: plan.source, pageId: plan.pageId }, note };
     await this.loadAll();
   }
 
@@ -942,6 +990,7 @@ export class WaAllPages extends LitElement {
       <button type="button" class="ap-thumb" tabindex="-1" aria-hidden="true" title=${title} @click=${click}>
         ${card.kind === "status_pages" ? this.renderStatusThumb(copy) : this.renderThumb(copy)}
       </button>
+      ${this.renderStarterLine(card, cards)}
       <div class="ap-foot">
         <span class="ap-devs">${card.copies.map((c) => html`<span class="ap-dev ${c.hidden ? "dim" : ""}" style=${color(c.device.ownerId)}
           title=${c.hidden ? `On ${c.device.name}, hidden there` : `On ${c.device.name}`}>
@@ -952,6 +1001,23 @@ export class WaAllPages extends LitElement {
           @click=${() => (menuOpen ? this.closeDevices() : this.openDevices(card))}>${uiIcon("phone")}<span>Devices</span>${uiIcon("chevron")}</button>` : nothing}
       </div>
       ${menuOpen ? this.renderMenu(card, devices) : nothing}
+    </div>`;
+  }
+
+  /** Over a starter card's chips while some copies are not linked: the
+   * line and Link (`starterLink`). Then what the last Link did, on the card
+   * it was for. Nothing on any other card. */
+  private renderStarterLine(card: PageCard, cards: readonly PageCard[]): TemplateResult | typeof nothing {
+    const text = starterUnlinkedText(card);
+    const note = this.linkNote !== undefined && this.cardAt(cards, this.linkNote.at)?.key === card.key ? this.linkNote.note : undefined;
+    if (text === undefined && note === undefined) return nothing;
+    const button = text !== undefined && !this.selecting && this.linksOn;
+    return html`<div class="ap-same">
+      ${text === undefined ? nothing : html`<div class="ap-same-row"><span class="ap-same-t">${text}</span>
+        ${button ? html`<button type="button" class="ap-same-btn" ?disabled=${this.linking}
+          title=${`Link every copy of ${card.name} into one. Each device's own copy is replaced.`}
+          @click=${() => void this.linkStarter(card)}>${uiIcon("link")}<span>Link</span></button>` : nothing}</div>`}
+      ${note === undefined ? nothing : html`<div class="ap-same-note ${note.kind}" role="status">${note.text}</div>`}
     </div>`;
   }
 

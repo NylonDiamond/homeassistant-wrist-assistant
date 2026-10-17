@@ -9,11 +9,12 @@ import { type HassLike, type WatchPagesPlaces, linkWatchPages } from "../src/ha-
 import { DEVICES_HERE_TEXT, DEVICES_WAIT_TAG, type LinkDevice, type ListRemoveIO } from "../src/watch-pages/links.js";
 import type { JsonObject } from "../src/watch-pages/model.js";
 import {
+  STATUS_OWN_COPY_TAG,
   elsewhereStatusPages,
   removeStatusPagesFrom,
+  starterCopiesElsewhere,
   statusPageDevicePlaces,
   statusPageLinkId,
-  statusPageMayLink,
 } from "../src/watch-status-pages/links.js";
 import { askNewStatusPage } from "../src/watch-status-pages/draft.js";
 import { type StatusPagesDocument, removeStatusPage, statusPagesOf } from "../src/watch-status-pages/model.js";
@@ -82,9 +83,25 @@ describe("a status page's Devices menu", () => {
     expect(row.stuck).toBeDefined();
   });
 
-  it("is not for a system status page", () => {
-    expect(statusPageMayLink(sp(SYSTEM, "Lights On"))).toBe(false);
-    expect(statusPageMayLink(sp(HOUSE, "House"))).toBe(true);
+  it("tags a device that holds its own copy of a starter page, off and free to tick", () => {
+    const docs = new Map<string, StatusPagesDocument>([
+      ["w1", sdoc(sp(SYSTEM, "Lights On"))],
+      ["w2", sdoc(sp(SYSTEM, "Lights On"), sp(HOUSE, "House"))],
+      ["p1", sdoc(sp(SYSTEM, "Lights On", { linkId: "S9" }), sp(HOUSE, "Other house"))],
+    ]);
+    const own = starterCopiesElsewhere(sp(SYSTEM, "Lights On"), "w1", docs);
+    // The iPhone's copy is linked elsewhere, so it is not this device's to take.
+    expect([...own]).toEqual(["w2"]);
+    const rows = statusPageDevicePlaces(DEVICES, sp(SYSTEM, "Lights On"), "w1", places, new Set(), own);
+    expect(rows.map((r) => [r.device.ownerId, r.on, r.tag, r.stuck])).toEqual([
+      ["w1", true, undefined, DEVICES_HERE_TEXT],
+      ["w2", false, STATUS_OWN_COPY_TAG, undefined],
+      ["p1", false, undefined, undefined],
+    ]);
+    // Any other page with the same id elsewhere is another page.
+    expect([...starterCopiesElsewhere(sp(HOUSE, "House"), "p1", docs)]).toEqual([]);
+    // A starter by its flag counts too, on either side.
+    expect([...starterCopiesElsewhere(sp(MINE, "Who's Home", { isSystemDefault: true }), "w1", new Map([["w2", sdoc(sp(MINE, "Who's Home"))]]))]).toEqual(["w2"]);
   });
 
   it("reads the link id only when it is a string", () => {
@@ -109,11 +126,22 @@ describe("the Not on this list", () => {
     ]);
   });
 
-  it("leaves out system pages and ids this device holds", () => {
+  it("leaves out the ids this device holds, a starter page too", () => {
     const ids = elsewhereStatusPages("w1", here, DEVICES, docs).flatMap((g) => g.pages.map((p) => p.pageId));
     expect(ids).not.toContain(SYSTEM);
     expect(ids).not.toContain(CLASH);
     expect(ids).not.toContain(HOUSE);
+  });
+
+  it("lists a starter page this device lacks, once, under the first device holding it", () => {
+    const groups = elsewhereStatusPages("p1", sdoc(sp(MINE, "Mine")), DEVICES, new Map([
+      ["w1", sdoc(sp(SYSTEM, "Lights On"))],
+      ["w2", sdoc(sp(SYSTEM, "Lights On"), sp(DOORS, "Doors"))],
+    ]));
+    expect(groups.map((g) => [g.device.ownerId, g.pages.map((p) => p.name)])).toEqual([
+      ["w1", ["Lights On"]],
+      ["w2", ["Doors"]],
+    ]);
   });
 
   it("lists nothing for a device not read", () => {
@@ -178,8 +206,9 @@ describe("the status pages editor's linked pages", () => {
 
   /** The editor on a watch with House (linked to the iPhone), Doors and a
    * starter page; the iPhone holds House and its own Phone page. With
-   * `newPage`, the Status pages tab asked for a new page there first. */
-  async function editor(newPage = false) {
+   * `newPage`, the Status pages tab asked for a new page there first; with
+   * `phoneStarter` the iPhone holds its own copy of the starter page too. */
+  async function editor(newPage = false, phoneStarter = false) {
     const n = ++made;
     const watch = `sl-w1-${n}`;
     const phone = `sl-p1-${n}`;
@@ -189,7 +218,7 @@ describe("the status pages editor's linked pages", () => {
     ] as unknown as import("../src/ha-api.js").OwnerSummary[];
     const held = new Map<string, { revision: number; document: JsonObject }>([
       [`${watch}/status_pages`, { revision: 5, document: sdoc(sp(SYSTEM, "Lights On"), sp(HOUSE, "House", { linkId: "S1" }), sp(DOORS, "Doors")) }],
-      [`${phone}/status_pages`, { revision: 4, document: sdoc(sp(HOUSE, "House", { linkId: "S1" }), sp(MINE, "Phone")) }],
+      [`${phone}/status_pages`, { revision: 4, document: sdoc(...(phoneStarter ? [sp(SYSTEM, "Lights On")] : []), sp(HOUSE, "House", { linkId: "S1" }), sp(MINE, "Phone")) }],
     ]);
     const sent: JsonObject[] = [];
     const hass = {
@@ -235,9 +264,10 @@ describe("the status pages editor's linked pages", () => {
     return { el, watch, phone, held, sent, call, host, page };
   }
 
-  it("has a Devices menu on every page but the starter pages, on the row and in the Page card", async () => {
+  it("has a Devices menu on every page, the starter pages too, on the row and in the Page card", async () => {
     const { host, page, el } = await editor();
-    expect(host().devices?.(page(SYSTEM))).toBeUndefined();
+    expect(host().devices?.(page(SYSTEM))).toBeDefined();
+    expect(flat(renderPagesCard(host()))).toContain("Devices for Lights On");
     const doors = host().devices?.(page(DOORS));
     expect(doors).toBeDefined();
     expect(flat(renderPagesCard(host()))).toContain("Devices for Doors");
@@ -259,6 +289,18 @@ describe("the status pages editor's linked pages", () => {
     await call<Promise<void>>("toggleDevice", HOUSE, { device: { ownerId: phone, name: "Jesse's iPhone", kind: "iphone" }, on: true, here: false });
     expect((held.get(`${phone}/status_pages`)!.document.statusPages as JsonObject[]).map((p) => p.name)).toEqual(["Phone"]);
     expect((el.devicesNote as { text: string }).text).toBe("Taken off Jesse's iPhone.");
+  });
+
+  it("marks the iPhone's own copy of a starter page, and ticking it links the two", async () => {
+    const { call, host, page, watch, phone, sent, el } = await editor(false, true);
+    host().devices!(page(SYSTEM))!.toggle("row");
+    const menu = flat(host().devices!(page(SYSTEM))!.menu("row"));
+    expect(menu).toContain("own copy");
+    expect(flat(renderPagesCard(host()))).not.toContain("Add Lights On here");
+    await call<Promise<void>>("toggleDevice", SYSTEM, { device: { ownerId: phone, name: "Jesse's iPhone", kind: "iphone" }, on: false, here: false, tag: STATUS_OWN_COPY_TAG });
+    expect(sent.filter((m) => (m.type as string).endsWith("watch_pages/link")).map((m) => [m.source_id, m.page_ids, m.targets, m.kind]))
+      .toEqual([[watch, [SYSTEM], [phone], "status_pages"]]);
+    expect((el.devicesNote as { text: string }).text).toBe("Linked with Jesse's iPhone. Its own copy is now this one.");
   });
 
   it("lists what the iPhone holds and this watch does not, and adds it here linked", async () => {

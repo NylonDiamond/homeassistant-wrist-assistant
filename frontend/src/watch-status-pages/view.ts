@@ -418,7 +418,7 @@ function pageRow(host: StatusPagesViewHost, page: JsonObject, index: number, cou
     ${thumb(host, "doc.text.fill", "#5B8FD4")}
     <span class="name"><b><span class="nm-t">${name || "Untitled page"}</span></b><small>${plural(rows, "row", "rows")}</small></span>
     <span class="right">
-      <span class="badges">${shared === undefined ? nothing : html`<span class="badge sp-linked" title=${`${shared}. An edit here shows there too.`}>${shared}</span>`}${isSystemStatusPage(page) ? html`<span class="badge" title="One of the app's starter pages. The watch treats it as any other page.">starter</span>` : nothing}</span>
+      <span class="badges">${shared === undefined ? nothing : html`<span class="badge sp-linked" title=${`${shared}. An edit here shows there too.`}>${shared}</span>`}${isSystemStatusPage(page) ? html`<span class="badge" title="One of the app's starter pages. It is edited and linked like any other.">starter</span>` : nothing}</span>
       <span class="acts">
         <button type="button" class="icon" ?disabled=${host.busy || index === 0} title="Move up" aria-label=${`Move ${name} up`}
           @click=${() => move(id, index - 1)}>${uiIcon("up")}</button>
@@ -1095,7 +1095,7 @@ function renderPageCard(host: StatusPagesViewHost, page: JsonObject): TemplateRe
   const open = devices?.open === "card";
   return card(host, "page", "page", "Page", html`<fieldset class="sp-body" ?disabled=${host.busy} aria-label="Page">
     ${textField("Name", name, (v) => host.edit((d) => renameStatusPage(d, pageId, v), `page:${pageId}:name`), { placeholder: "Page Name" })}
-    ${isSystemStatusPage(page) ? html`<div class="hint ts-under">One of the app's starter pages. It is edited and deleted like any other. Every device has its own.</div>` : nothing}
+    ${isSystemStatusPage(page) ? html`<div class="hint ts-under">One of the app's starter pages. It is edited, linked and deleted like any other.</div>` : nothing}
     <div class="sp-acts">
       ${devices === undefined ? nothing : html`<button type="button" class="pe-btn sp-dev-open ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
         title="Pick the devices this status page is on"

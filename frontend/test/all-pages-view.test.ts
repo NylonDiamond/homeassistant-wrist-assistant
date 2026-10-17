@@ -84,7 +84,14 @@ function tab(status = false, kind: "pages" | "status_pages" = "pages") {
           const ids = msg.page_ids as string[];
           const from = pagesOf(source, kind).map((p) => (ids.includes(p.id as string) ? { ...p, linkId: p.linkId ?? `L-${p.id as string}` } : p));
           put(source, from, kind);
-          for (const target of msg.targets as string[]) put(target, [...pagesOf(target, kind), ...from.filter((p) => ids.includes(p.id as string))], kind);
+          // A target holding the id already (a starter's own copy) has it
+          // taken over in its place, as Home Assistant does.
+          for (const target of msg.targets as string[]) {
+            const linked = from.filter((p) => ids.includes(p.id as string));
+            const there = pagesOf(target, kind);
+            const kept = there.map((p) => linked.find((l) => l.id === p.id) ?? p);
+            put(target, [...kept, ...linked.filter((l) => !there.some((p) => p.id === l.id))], kind);
+          }
           const added = (t: string) => (kind === "status_pages" ? { pages: [], status_pages: ids } : { pages: ids, status_pages: [] });
           return Promise.resolve({ targets: Object.fromEntries((msg.targets as string[]).map((t) => [t, added(t)])) });
         }
@@ -392,14 +399,15 @@ describe("the Status pages tab", () => {
     expect(t.sent.some((m) => (m.type as string).endsWith("watch_config/get") && m.kind === "status_pages")).toBe(false);
   });
 
-  it("shows the status pages, a linked one once, the starter pages left out", async () => {
+  it("shows the status pages, a linked one once, a starter page once for both devices", async () => {
     const t = await statusTab();
     const text = t.whole();
     expect(text).toMatch(/<h1>Status pages<\/h1>/);
-    expect(text).toContain("2 status pages on your watches and iPhones. A status page is a read-only screen of rows that a tile or a menu slot opens.");
+    expect(text).toContain("3 status pages on your watches and iPhones. A status page is a read-only screen of rows that a tile or a menu slot opens.");
     expect(text).toMatch(/ap-name">House</);
     expect(text).toMatch(/ap-name">Doors</);
-    expect(text).not.toMatch(/ap-name">Lights On</);
+    expect(text).toMatch(/ap-name">Lights On</);
+    expect(t.card("Lights On").copies.map((c) => c.device.ownerId)).toEqual([t.watch, t.phone]);
     expect(text).not.toMatch(/ap-name">Hall</);
     expect(text).toContain("0 rows");
     expect(text).toContain("sp-screen");
@@ -464,11 +472,42 @@ describe("the Status pages tab", () => {
     expect((t.el.devicesNote as { text: string }).text).toBe("Taken off Jesse's iPhone.");
   });
 
+  it("says a starter page on both devices is not linked, and Link links the two into one card", async () => {
+    const t = await statusTab();
+    const before = t.whole();
+    expect(before).toContain("Not linked: each device has its own copy.");
+    expect(before).toContain("<span>Link</span>");
+    expect(before).toContain("Link every copy of Lights On into one.");
+    // A starter has its Devices menu like any other status page.
+    expect(t.place(t.card("Lights On"), t.phone).on).toBe(true);
+    expect(t.place(t.card("Lights On"), t.phone).stuck).toBeUndefined();
+    await t.call<Promise<void>>("linkStarter", t.card("Lights On"));
+    expect(t.sent.filter((m) => (m.type as string).endsWith("watch_pages/link")).map((m) => [m.source_id, m.page_ids, m.targets, m.kind]))
+      .toEqual([[t.watch, [STARTER], [t.phone], "status_pages"]]);
+    const lights = t.cards().filter((c) => c.pageId === STARTER);
+    expect(lights.map((c) => [c.key, c.copies.map((p) => p.device.ownerId)])).toEqual([[`status-link:L-${STARTER}`, [t.watch, t.phone]]]);
+    const after = t.whole();
+    expect(after).not.toContain("Not linked");
+    expect(after).toContain("Linked on Jesse's Watch and Jesse's iPhone. An edit on one now shows on all of them.");
+    // The phone's own copy was taken over in its place, not added twice.
+    expect((t.held.get(`${t.phone}/status_pages`)!.document.statusPages as JsonObject[]).map((p) => p.name)).toEqual(["Lights On", "House"]);
+  });
+
+  it("links a starter page from the device tab's copy", async () => {
+    const t = await statusTab();
+    t.call("setFilter", t.phone);
+    await t.call<Promise<void>>("linkStarter", t.card("Lights On"));
+    expect(t.sent.filter((m) => (m.type as string).endsWith("watch_pages/link")).map((m) => [m.source_id, m.targets]))
+      .toEqual([[t.phone, [t.watch]]]);
+    t.call("setFilter", "all");
+  });
+
   it("picks status pages, and deletes them from every device without touching pages", async () => {
     const t = await statusTab();
     t.call("startSelect");
     expect(t.whole()).toContain("Pick a status page to start.");
-    t.call("selectShown", true);
+    t.call("pick", t.card("House"), false);
+    t.call("pick", t.card("Doors"), false);
     expect((t.el.selected as Set<string>).size).toBe(2);
     t.call("openBulkMenu", "delete");
     expect(t.whole()).toContain("Delete 2 status pages from 2 devices?");

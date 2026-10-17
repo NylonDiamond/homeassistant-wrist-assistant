@@ -6,9 +6,11 @@
 // This module is the pure part the status page editor draws from: the
 // switches of a status page's Devices menu, the status pages other devices
 // hold that this one does not (its Not on this list), and taking status
-// pages out of another device's record. The five system status pages are
-// never linked (Home Assistant copies them), so they get no Devices menu and
-// are never listed.
+// pages out of another device's record. The app's five starter status pages
+// link like any other. Each has the same fixed id on every device, so a
+// device holding its own copy of one is marked in the Devices menu ("own
+// copy"): ticking it links that copy, and Home Assistant replaces it with
+// this one.
 
 import type { WatchPagesPlaces } from "../ha-api.js";
 import {
@@ -47,16 +49,34 @@ export function statusPageTitle(page: JsonObject): string {
   return statusPageName(page) || "Untitled page";
 }
 
-/** Whether a status page can have a Devices menu: any but a system page. */
-export function statusPageMayLink(page: JsonObject): boolean {
-  return !isSystemStatusPage(page);
+/** The few words on a device's switch when it holds its own copy of a
+ * starter page, not linked to this one. */
+export const STATUS_OWN_COPY_TAG = "own copy";
+
+/**
+ * The devices among `docs` (each other device's status pages, as read) that
+ * hold their own copy of a starter page: the same id, with no link. None for
+ * any other page, whose id on another device is another page.
+ */
+export function starterCopiesElsewhere(page: JsonObject, here: string, docs: ReadonlyMap<string, StatusPagesDocument>): Set<string> {
+  const owners = new Set<string>();
+  const pageId = statusPageId(page);
+  if (pageId === "") return owners;
+  for (const [ownerId, doc] of docs) {
+    if (ownerId === here) continue;
+    const held = findStatusPage(doc, pageId);
+    if (held !== undefined && statusPageLinkId(held) === undefined && (isSystemStatusPage(page) || isSystemStatusPage(held))) owners.add(ownerId);
+  }
+  return owners;
 }
 
 /**
  * The Devices menu for one status page, the page editor's rules: a switch
  * per device, on where the page is. The device the editor is on cannot be
  * switched off (Delete does that). A watch in `waiting` (`awaitingMove`, from
- * the status pages records) cannot take the page yet.
+ * the status pages records) cannot take the page yet. A device in `own`
+ * (`starterCopiesElsewhere`) is off and tagged "own copy": ticking it links
+ * its copy to this one.
  */
 export function statusPageDevicePlaces(
   devices: readonly LinkDevice[],
@@ -64,6 +84,7 @@ export function statusPageDevicePlaces(
   here: string,
   places: WatchPagesPlaces | undefined,
   waiting: ReadonlySet<string> = new Set(),
+  own: ReadonlySet<string> = new Set(),
 ): PageDevicePlace[] {
   const holders = new Set(statusPageHolders(page, here, places));
   return devices.map((device) => {
@@ -72,6 +93,7 @@ export function statusPageDevicePlaces(
     if (!isHere && !on && waiting.has(device.ownerId)) {
       return { device, on, here: false, stuck: DEVICES_WAIT_TEXT, tag: DEVICES_WAIT_TAG };
     }
+    if (!isHere && !on && own.has(device.ownerId)) return { device, on, here: false, tag: STATUS_OWN_COPY_TAG };
     return { device, on, here: isHere, ...(isHere ? { stuck: DEVICES_HERE_TEXT } : {}) };
   });
 }
@@ -97,9 +119,10 @@ const key = (id: string): string => id.toUpperCase();
  * The status page editor's Not on this list: every status page the other
  * devices hold that this one does not, grouped by the device it comes from,
  * in device order. A linked one is listed once, under the first device that
- * holds it. One whose id this device holds already is left out (adding it
- * could only be refused), and so are the system pages. `docs` is each other
- * device's status pages, as read; a device not in it lists nothing.
+ * holds it, and so is a starter page, which has the same id on every device.
+ * One whose id this device holds already is left out (adding it could only
+ * be refused, or for a starter it is here). `docs` is each other device's
+ * status pages, as read; a device not in it lists nothing.
  */
 export function elsewhereStatusPages(
   here: string,
@@ -110,6 +133,7 @@ export function elsewhereStatusPages(
   const herePages = statusPagesOf(hereDoc);
   const hereIds = new Set(herePages.map((p) => key(statusPageId(p))));
   const seenLinks = new Set(herePages.flatMap((p) => statusPageLinkId(p) ?? []));
+  const seenStarters = new Set<string>();
   const groups: ElsewhereStatusGroup[] = [];
   for (const device of devices) {
     if (device.ownerId === here) continue;
@@ -118,7 +142,11 @@ export function elsewhereStatusPages(
     const pages: ElsewhereStatusPage[] = [];
     for (const page of statusPagesOf(doc)) {
       const pageId = statusPageId(page);
-      if (pageId === "" || isSystemStatusPage(page) || hereIds.has(key(pageId))) continue;
+      if (pageId === "" || hereIds.has(key(pageId))) continue;
+      if (isSystemStatusPage(page)) {
+        if (seenStarters.has(key(pageId))) continue;
+        seenStarters.add(key(pageId));
+      }
       const linkId = statusPageLinkId(page);
       if (linkId !== undefined) {
         if (seenLinks.has(linkId)) continue;

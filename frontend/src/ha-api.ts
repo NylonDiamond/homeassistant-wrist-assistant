@@ -821,10 +821,13 @@ export type WatchPagesLinkKind = "pages" | "status_pages";
 
 /** Put pages of `sourceId` on the `targets` devices as linked copies, with
  * the pages and status pages their tiles open. Checked first, then written.
- * With `kind` `status_pages` the ids are status pages, linked alone (a
- * system status page is copied, never linked), and `link_ids` names theirs.
+ * With `kind` `status_pages` the ids are status pages, linked alone, and
+ * `link_ids` names theirs. A starter status page links like any other: a
+ * target holding its own copy (the same id, no link) has that copy taken
+ * over, linked and made the source's.
  * Refusals: `unknown_device`, `not_found`, `system_page`, `id_taken` (a
- * target holds that id for a page that is not linked), `awaiting_move`, and
+ * target holds that id for a page that is not linked, or under another
+ * link), `awaiting_move`, and
  * the generic ones. An integration older than linked pages answers
  * `unknown_command`. `kind` is only sent for status pages, so a pages link
  * reads as it always did. */
