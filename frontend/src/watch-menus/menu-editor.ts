@@ -97,6 +97,8 @@ import {
   menuLinksKnown,
   menuReplaceAsk,
   menuUnitHolders,
+  menuUnitIsDefault,
+  menuUnitLinkId,
   unlinkMenuUnit,
 } from "./menu-links.js";
 import { isPhoneId } from "../phone-pages.js";
@@ -1497,8 +1499,10 @@ export class WaMenuEditor extends LitElement {
    * Put a unit, as saved, on another device, linked, with the pages and
    * status pages its slots open (`watch_pages/link` with `kind: "menus"`).
    * A device with its own menu there is refused `unit_taken`: the question
-   * comes up, and Replace sends the link again with `replace`. This
-   * device's copy gets its link too, and arrives as a change.
+   * comes up, and Replace sends the link again with `replace`. A device
+   * whose menu there is still the app's own (`menuUnitIsDefault`), linked to
+   * nothing, loses nothing, so the link is sent again at once with no
+   * question. This device's copy gets its link too, and arrives as a change.
    */
   private async linkMenuTo(unit: MenuLinkUnit, target: string, replace = false): Promise<void> {
     const hass = this.hass;
@@ -1506,6 +1510,7 @@ export class WaMenuEditor extends LitElement {
     if (!hass || watchId === undefined || target === watchId || this.linking || this.devicesBlocked() !== undefined) return;
     this.linking = true;
     this.devicesNote = undefined;
+    let untouched = false;
     try {
       const reply = await linkWatchMenus(hass, watchId, [unit], [target], replace);
       if (watchId !== this.watchId) return;
@@ -1516,10 +1521,27 @@ export class WaMenuEditor extends LitElement {
       void this.load(watchId, true);
     } catch (err) {
       if (watchId !== this.watchId) return;
-      if (errCode(err) === "unit_taken" && !replace) this.replaceAsk = { unit, target };
-      else this.devicesNote = { kind: "err", text: `Not added. ${menuLinkErrorText(err)}` };
+      if (errCode(err) === "unit_taken" && !replace) {
+        untouched = await this.menuIsUntouched(target, unit);
+        if (!untouched && watchId === this.watchId) this.replaceAsk = { unit, target };
+      } else this.devicesNote = { kind: "err", text: `Not added. ${menuLinkErrorText(err)}` };
     } finally {
       this.linking = false;
+    }
+    if (untouched && watchId === this.watchId) await this.linkMenuTo(unit, target, true);
+  }
+
+  /** Whether `owner`'s menu for `unit` is the app's own, never edited and
+   * linked to nothing. A record that cannot be read is not. */
+  private async menuIsUntouched(owner: string, unit: MenuLinkUnit): Promise<boolean> {
+    const hass = this.hass;
+    if (!hass) return false;
+    try {
+      const record = await fetchWatchConfig(hass, owner, "menus");
+      const document = record.revision > 0 ? asWatchMenusDocument(record.document) : undefined;
+      return menuUnitLinkId(document, unit) === undefined && menuUnitIsDefault(document, unit);
+    } catch {
+      return false;
     }
   }
 

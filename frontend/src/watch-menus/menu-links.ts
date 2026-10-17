@@ -18,11 +18,12 @@
 
 import type { WatchConfigRecord, WatchMenusLinkUnit, WatchPagesPlaces } from "../ha-api.js";
 import { type LinkDevice, type PageDevicePlace, deviceWord, joinWords, linkBadgeText } from "../watch-pages/links.js";
+import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import { isJsonObject } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { WAIT_FOR_IPHONE_TEXT } from "../watch-settings.js";
 import type { MenusSection } from "./menu-view.js";
-import { type MenusDocument, type WatchMenusSection, asWatchMenusDocument, withMenuKey, withoutMenuKey } from "./model.js";
+import { type MenusDocument, type WatchMenusSection, asWatchMenusDocument, watchMenusDefaults, withMenuKey, withoutMenuKey } from "./model.js";
 
 export type MenuLinkUnit = WatchMenusLinkUnit;
 
@@ -125,6 +126,18 @@ export function menuDeviceTitle(unit: MenuLinkUnit, place: PageDevicePlace): str
   return place.on
     ? `Unlink ${label}. It keeps this ${MENU_UNIT_NAMES[unit]} as it is, and an edit then stays on its own device.`
     : `Put this ${MENU_UNIT_NAMES[unit]} on ${label}. An edit on one device then shows on both.`;
+}
+
+/**
+ * Whether a device's menu for a unit is still the app's own, never edited:
+ * each of its sections as `menu-defaults.json` holds it. Home Assistant
+ * cannot tell, so it refuses a link over it as `unit_taken` like any other
+ * menu; the editor then replaces it without asking, since nothing is lost.
+ */
+export function menuUnitIsDefault(document: MenusDocument | undefined, unit: MenuLinkUnit): boolean {
+  if (document === undefined) return false;
+  const defaults = watchMenusDefaults();
+  return MENU_UNIT_SECTIONS[unit].every((s) => sameWatchPagesJson(document[s], defaults[s]));
 }
 
 /** The question before a tick replaces a device's own menu. */

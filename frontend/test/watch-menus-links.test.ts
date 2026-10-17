@@ -30,6 +30,7 @@ import {
   menuLinksKnown,
   menuReplaceAskText,
   menuUnitHolders,
+  menuUnitIsDefault,
   menuUnitLinkId,
   menuUnitTargets,
   unlinkMenuUnit,
@@ -368,15 +369,45 @@ describe("the editor's Devices", () => {
     expect(text).not.toContain("The Entity quick menu is on");
   });
 
-  it("asks before replacing a device's own menu, then sends replace", async () => {
+  /** An editor whose link is refused `unit_taken` until sent with replace,
+   * and whose other watch's menus read as `theirs`. */
+  function takenEditor(theirs: MenusDocument) {
     const sent: Record<string, unknown>[] = [];
     const e = editor(DEFAULTS, { pages: {}, status_pages: {}, menus: {} }, async (m) => {
       sent.push(m);
       if (m.type === "wrist_assistant/watch_pages/link" && m.replace !== true) throw Object.assign(new Error("taken"), { code: "unit_taken" });
       if (m.type === "wrist_assistant/watch_pages/link") return { targets: { "links-w2": { pages: [], status_pages: [], units: ["anywhere"] } }, link_ids: { anywhere: ANY_LINK } };
       if (m.type === "wrist_assistant/watch_pages/places") return { pages: {}, status_pages: {}, menus: {} };
+      if (m.type === "wrist_assistant/watch_config/get" && m.owner_watch_id === "links-w2") return { revision: 2, document: theirs };
       return { revision: 4, document: DEFAULTS };
     });
+    return { e, sent };
+  }
+
+  it("replaces a menu the other device never edited without asking", async () => {
+    const { e, sent } = takenEditor(DEFAULTS);
+    await (e.el.linkMenuTo as (u: string, t: string) => Promise<void>).call(e.el, "anywhere", "links-w2");
+    expect(e.el.replaceAsk).toBeUndefined();
+    expect(sent.filter((m) => m.type === "wrist_assistant/watch_pages/link").map((m) => m.replace)).toEqual([false, true]);
+    expect((e.el.devicesNote as { text: string }).text).toBe("The Anywhere menu is on Chen's Watch now.");
+    // The Anywhere menu left as the app made it, but linked elsewhere, asks.
+    const elsewhere = takenEditor(linked({ anywhere: "c".repeat(32) }));
+    await (elsewhere.e.el.linkMenuTo as (u: string, t: string) => Promise<void>).call(elsewhere.e.el, "anywhere", "links-w2");
+    expect(elsewhere.e.el.replaceAsk).toEqual({ unit: "anywhere", target: "links-w2" });
+  });
+
+  it("tells a never edited menu by its unit's sections only", () => {
+    expect(menuUnitIsDefault(DEFAULTS, "anywhere")).toBe(true);
+    expect(menuUnitIsDefault(linked({ anywhere: ANY_LINK }), "entity")).toBe(true);
+    const edited = setWatchMenuStyle(DEFAULTS, "quickAction", "beamIntensity", 0.9);
+    expect(menuUnitIsDefault(edited, "anywhere")).toBe(false);
+    expect(menuUnitIsDefault(edited, "entity")).toBe(true);
+    expect(menuUnitIsDefault(withTargets(), "entity")).toBe(false);
+    expect(menuUnitIsDefault(undefined, "anywhere")).toBe(false);
+  });
+
+  it("asks before replacing a device's own menu, then sends replace", async () => {
+    const { e, sent } = takenEditor(withTargets());
     await (e.el.linkMenuTo as (u: string, t: string) => Promise<void>).call(e.el, "anywhere", "links-w2");
     expect(e.el.replaceAsk).toEqual({ unit: "anywhere", target: "links-w2" });
     const text = e.whole();
