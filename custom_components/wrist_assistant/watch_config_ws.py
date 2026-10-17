@@ -701,8 +701,8 @@ def ws_watch_config_subscribe(
 def ws_watch_pages_link(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Put pages, status pages or menus of one device on other devices,
-    linked.
+    """Put pages, status pages, menus or voice settings of one device on
+    other devices, linked.
 
     Result: {"targets": {<target id>: {"pages": [ids added],
                                        "status_pages": [ids added]}},
@@ -720,14 +720,18 @@ def ws_watch_pages_link(
     each unit goes onto each target under one link id, with the pages and
     status pages its slots open (``WatchConfigStore.link_units``). Each
     target's entry gains ``units``, the units written there, and
-    ``link_ids`` is ``{<unit>: <linkId>}``.
+    ``link_ids`` is ``{<unit>: <linkId>}``. ``kind`` ``voice`` is the same
+    with the one unit ``phrases``: a watch's phrase library and its
+    defaults, never the watch's own speech settings, and nothing brought
+    along. Only watches hold voice.
 
     Checked whole before anything is written. Refused
     ``unknown_device`` (a source or target that is not a paired device),
-    ``not_found`` (a page the source does not list, or no menus there),
-    ``system_page``, ``id_taken`` (a target holds another page under that
-    id), ``unit_taken`` (a target has its own menu for a unit, unless
-    ``replace``), ``not_for_iphone`` (a kind an iPhone may not own),
+    ``not_found`` (a page the source does not list, or no menus or voice
+    there), ``system_page``, ``id_taken`` (a target holds another page under
+    that id), ``unit_taken`` (a target has its own menu or phrase library for
+    a unit, unless ``replace``), ``not_for_iphone`` (a kind an iPhone may not
+    own, voice among them),
     ``awaiting_move`` (a target watch holds no record of a kind the link
     writes while its iPhone may still move its own here), ``invalid``,
     and ``unauthorized`` for a device the caller may not manage: the source
@@ -816,6 +820,8 @@ def ws_watch_pages_places(
     Result: {"pages": {<linkId>: [owner id, ...]},
              "status_pages": {<linkId>: [owner id, ...]},
              "menus": {<linkId>: {"unit": "anywhere" | "entity",
+                                  "owners": [owner id, ...]}},
+             "voice": {<linkId>: {"unit": "phrases",
                                   "owners": [owner id, ...]}}}
 
     Only the devices the caller may manage are named (all of them for an

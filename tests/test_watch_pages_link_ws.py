@@ -195,6 +195,59 @@ def test_link_of_menus_follows_the_owner_gate(links) -> None:
     assert links.store.get(WATCH_2, "menus") is None
 
 
+def _voice(engine: str = "tts.piper") -> dict:
+    return {
+        "defaultSpeakers": ["media_player.kitchen"],
+        "defaultTTSEngine": engine,
+        "phrases": [{"id": "P1", "label": "Dinner", "message": "Dinner is ready."}],
+        "schemaVersion": 1,
+        "watchSpeakReplyInSilentMode": False,
+    }
+
+
+def test_link_of_voice_answers_the_unit_and_places_names_it(links) -> None:
+    links.store.panel_save(WATCH, "voice", _voice(), base_revision=0)
+    connection = _link(links, source_id=WATCH, targets=[WATCH_2], kind="voice", units=["phrases"])
+    assert connection.errors == []
+    link = links.store.get(WATCH, "voice").document["linkIds"]["phrases"]
+    assert connection.results[1] == {
+        "targets": {WATCH_2: {"pages": [], "status_pages": [], "units": ["phrases"]}},
+        "link_ids": {"phrases": link},
+    }
+    watch_2 = links.store.get(WATCH_2, "voice").document
+    assert watch_2["phrases"] == _voice()["phrases"]
+    assert "watchSpeakReplyInSilentMode" not in watch_2, "the watch's own setting stays"
+    admin = _run(links, links.ws.ws_watch_pages_places).results[1]
+    assert admin["voice"] == {link: {"unit": "phrases", "owners": [WATCH, WATCH_2]}}
+    alice = _run(links, links.ws.ws_watch_pages_places, ALICE).results[1]
+    assert alice["voice"] == {link: {"unit": "phrases", "owners": [WATCH]}}
+
+
+def test_link_of_voice_asks_before_replacing_a_watchs_own(links) -> None:
+    links.store.panel_save(WATCH, "voice", _voice(), base_revision=0)
+    links.store.panel_save(WATCH_2, "voice", _voice(engine="tts.cloud"), base_revision=0)
+    msg = {"source_id": WATCH, "targets": [WATCH_2], "kind": "voice", "units": ["phrases"]}
+    assert [error[1] for error in _link(links, **msg).errors] == ["unit_taken"]
+    assert _link(links, **msg, replace=True).errors == []
+    assert links.store.get(WATCH_2, "voice").document["defaultTTSEngine"] == "tts.piper"
+
+
+@pytest.mark.parametrize(
+    ("msg", "code"),
+    [
+        ({"targets": [PHONE], "units": ["phrases"]}, "not_for_iphone"),
+        ({"targets": [WATCH_2], "units": ["anywhere"]}, "invalid"),
+        ({"targets": [WATCH_2]}, "invalid"),
+    ],
+)
+def test_link_of_voice_refusals(links, msg, code) -> None:
+    links.store.panel_save(WATCH, "voice", _voice(), base_revision=0)
+    connection = _link(links, source_id=WATCH, kind="voice", **msg)
+    assert [error[1] for error in connection.errors] == [code]
+    assert links.store.get(WATCH_2, "voice") is None
+    assert "linkIds" not in links.store.get(WATCH, "voice").document
+
+
 def test_link_refuses_an_id_the_target_holds(links) -> None:
     links.store.panel_save(
         PHONE, "pages", {"schemaVersion": 1, "pages": [{"id": LIGHTS, "name": "Mine", "items": []}]},
@@ -222,6 +275,7 @@ def test_places_names_the_holders_the_caller_may_see(links) -> None:
         "pages": {home: everyone, lights: everyone},
         "status_pages": {doors: everyone},
         "menus": {},
+        "voice": {},
     }
     alice = _run(links, links.ws.ws_watch_pages_places, ALICE).results[1]
     assert alice["pages"] == {home: [PHONE, WATCH], lights: [PHONE, WATCH]}
