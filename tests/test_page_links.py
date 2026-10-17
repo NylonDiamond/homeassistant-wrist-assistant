@@ -1,4 +1,5 @@
-"""Pure tests for ``page_links.py``: one page on several devices.
+"""Pure tests for ``page_links.py``: the page walk, the rooms copy, and a
+watch's linked voice settings.
 
 The module imports nothing from Home Assistant or the package, so it is
 loaded straight from its file.
@@ -6,7 +7,6 @@ loaded straight from its file.
 
 from __future__ import annotations
 
-import copy
 import importlib.util
 import json
 import sys
@@ -90,270 +90,7 @@ def test_reach_does_not_walk_a_smart_page_or_follow_missing_status_pages() -> No
     assert links.link_reach(pages, None, [HOME]) == ([HOME], [])
 
 
-def test_check_link_refuses_missing_and_system_pages() -> None:
-    links.check_link(_pages(), [HOME])
-    with pytest.raises(links.PageLinkError) as err:
-        links.check_link(_pages(), ["missing"])
-    assert err.value.code == "not_found"
-    with pytest.raises(links.PageLinkError) as err:
-        links.check_link(_pages(), [SYSTEM])
-    assert err.value.code == "system_page"
-
-
-def test_check_link_of_status_pages_refuses_only_a_missing_one() -> None:
-    links.check_link(_status(), [STATUS.lower(), SYSTEM_STATUS], "statusPages")
-    with pytest.raises(links.PageLinkError) as err:
-        links.check_link(_status(), [HOME], "statusPages")
-    assert err.value.code == "not_found"
-    assert "status page" in err.value.message
-
-
-# ── apply_link ───────────────────────────────────────────────────────────
-
-
-def test_apply_link_assigns_link_ids_and_appends_to_the_target() -> None:
-    source = _pages()
-    before = copy.deepcopy(source)
-    target = {"schemaVersion": 1, "pages": [{"id": "OWN", "name": "Mine"}]}
-    new_source, new_target, added, ids, _adopted = links.apply_link(
-        source, target, "pages", [HOME, DEEP]
-    )
-    assert source == before, "the input is never changed"
-    assert added == [HOME, DEEP]
-    assert set(ids) == {HOME, DEEP}
-    assert all(len(link) == 32 for link in ids.values())
-    assert [p["id"] for p in new_target["pages"]] == ["OWN", HOME, DEEP]
-    by_id = {p["id"]: p for p in new_source["pages"]}
-    assert by_id[HOME]["linkId"] == ids[HOME]
-    assert new_target["pages"][1]["linkId"] == ids[HOME]
-    assert new_target["pages"][2]["isHidden"] is True, "the source's isHidden is copied"
-    assert "linkId" not in by_id[ALONE]
-
-
-def test_apply_link_keeps_an_existing_link_id_and_a_target_copy() -> None:
-    source = _pages()
-    source["pages"][1]["linkId"] = "L-HOME"
-    target = {"pages": [{"id": HOME.lower(), "name": "Old", "linkId": "L-HOME"}]}
-    new_source, new_target, added, ids, _adopted = links.apply_link(source, target, "pages", [HOME])
-    assert ids == {HOME: "L-HOME"}
-    assert added == []
-    assert new_target == target
-    assert new_source == source
-
-
-def test_apply_link_refuses_an_id_the_target_holds_unlinked() -> None:
-    target = {"pages": [{"id": HOME, "name": "Other"}]}
-    with pytest.raises(links.PageLinkError) as err:
-        links.apply_link(_pages(), target, "pages", [HOME])
-    assert err.value.code == "id_taken"
-    target["pages"][0]["linkId"] = "someone-else"
-    with pytest.raises(links.PageLinkError):
-        links.apply_link(_pages(), target, "pages", [HOME])
-
-
-def test_apply_link_onto_no_record_starts_an_empty_document() -> None:
-    _source, target, added, _ids, _adopted = links.apply_link(_pages(), None, "pages", [ALONE])
-    assert target["schemaVersion"] == 1
-    assert [p["id"] for p in target["pages"]] == [ALONE]
-    assert added == [ALONE]
-
-
-def test_apply_link_refuses_system_and_missing_pages() -> None:
-    with pytest.raises(links.PageLinkError) as err:
-        links.apply_link(_pages(), None, "pages", [SYSTEM])
-    assert err.value.code == "system_page"
-    with pytest.raises(links.PageLinkError) as err:
-        links.apply_link(_pages(), None, "pages", ["x"])
-    assert err.value.code == "not_found"
-
-
-def test_a_starter_status_page_links_like_any_other() -> None:
-    source, target, added, ids, adopted = links.apply_link(
-        _status(), None, "statusPages", [SYSTEM_STATUS, STATUS]
-    )
-    assert added == [SYSTEM_STATUS, STATUS]
-    assert adopted == []
-    assert set(ids) == {SYSTEM_STATUS, STATUS}
-    assert source["statusPages"][0]["linkId"] == ids[SYSTEM_STATUS]
-    assert target["statusPages"][0]["linkId"] == ids[SYSTEM_STATUS]
-    assert target["statusPages"][0]["isSystemDefault"] is True
-
-
-def test_a_starter_the_target_holds_unlinked_is_adopted_in_its_place() -> None:
-    held = {
-        "schemaVersion": 1,
-        "statusPages": [
-            {"id": "PHONE-ONLY", "name": "Phone", "rows": []},
-            {
-                "id": SYSTEM_STATUS.lower(),
-                "name": "Mine",
-                "rows": [{"id": "R1"}],
-                "isHidden": True,
-                "extra": 1,
-            },
-        ],
-    }
-    before = copy.deepcopy(held)
-    source, target, added, ids, adopted = links.apply_link(
-        _status(), held, "statusPages", [SYSTEM_STATUS]
-    )
-    assert held == before, "the input is never changed"
-    assert added == [], "an adopted page is not added"
-    assert adopted == [SYSTEM_STATUS], "it is named as adopted"
-    link = ids[SYSTEM_STATUS]
-    assert source["statusPages"][0]["linkId"] == link
-    assert [p["id"] for p in target["statusPages"]] == ["PHONE-ONLY", SYSTEM_STATUS.lower()]
-    assert target["statusPages"][1] == {
-        "id": SYSTEM_STATUS.lower(),
-        "name": "Batteries",
-        "rows": [],
-        "isSystemDefault": True,
-        "linkId": link,
-        "isHidden": True,
-    }, "the source's contents, the target's place, id spelling and isHidden"
-    # Linked from then on: a second link onto it writes nothing.
-    _s, again, added, _i, adopted = links.apply_link(
-        source, target, "statusPages", [SYSTEM_STATUS]
-    )
-    assert again == target and added == [] and adopted == []
-
-
-def test_a_starter_is_adopted_when_either_side_says_so() -> None:
-    # Only the target's copy carries isSystemDefault, under an id that is
-    # not one of the five fixed ones.
-    source = {"statusPages": [{"id": STATUS, "name": "Doors", "rows": []}]}
-    held = {"statusPages": [{"id": STATUS, "name": "Old", "isSystemDefault": True}]}
-    _s, target, _a, ids, _ad = links.apply_link(source, held, "statusPages", [STATUS])
-    assert target["statusPages"] == [
-        {"id": STATUS, "name": "Doors", "rows": [], "linkId": ids[STATUS]}
-    ]
-    # And with the mark on the source alone.
-    source["statusPages"][0]["isSystemDefault"] = True
-    held = {"statusPages": [{"id": STATUS, "name": "Old"}]}
-    _s, target, _a, ids, _ad = links.apply_link(source, held, "statusPages", [STATUS])
-    assert target["statusPages"][0]["linkId"] == ids[STATUS]
-
-
-def test_a_status_page_clash_is_still_id_taken() -> None:
-    # Another status page under a non-starter id, unlinked.
-    held = {"statusPages": [{"id": STATUS, "name": "Other", "rows": []}]}
-    with pytest.raises(links.PageLinkError) as err:
-        links.apply_link(_status(), held, "statusPages", [STATUS])
-    assert err.value.code == "id_taken"
-    # A starter copy linked to something else.
-    held = {"statusPages": [{"id": SYSTEM_STATUS, "name": "Mine", "linkId": "L-ELSE"}]}
-    with pytest.raises(links.PageLinkError) as err:
-        links.apply_link(_status(), held, "statusPages", [SYSTEM_STATUS])
-    assert err.value.code == "id_taken"
-    # Pages never adopt, whatever their id.
-    held = {"pages": [{"id": SYSTEM_STATUS, "name": "Other"}]}
-    source = {"pages": [{"id": SYSTEM_STATUS, "name": "Mine"}]}
-    with pytest.raises(links.PageLinkError) as err:
-        links.apply_link(source, held, "pages", [SYSTEM_STATUS])
-    assert err.value.code == "id_taken"
-
-
-def test_a_linked_starter_fans_out_and_drops_its_last_link() -> None:
-    held = {"statusPages": [{"id": SYSTEM_STATUS, "name": "Mine", "rows": [], "isHidden": True}]}
-    source, target, _a, ids, _ad = links.apply_link(
-        _status(), held, "statusPages", [SYSTEM_STATUS]
-    )
-    source["statusPages"][0]["name"] = "Power"
-    out = links.fan_out(source, target, "statusPages")
-    assert out["statusPages"][0]["name"] == "Power"
-    assert out["statusPages"][0]["isHidden"] is True
-    dropped = links.drop_link(out, "statusPages", ids[SYSTEM_STATUS])
-    assert "linkId" not in dropped["statusPages"][0]
-    assert links.link_places({"w": source, "p": out}, "statusPages") == {
-        ids[SYSTEM_STATUS]: ["p", "w"]
-    }
-
-
-def test_starters_linked_elsewhere_names_only_starters_held_under_another_link() -> None:
-    source = _status()
-    held = {
-        "statusPages": [
-            {"id": SYSTEM_STATUS.lower(), "name": "Mine", "linkId": "L-ELSE"},
-            {"id": STATUS, "name": "Other", "linkId": "L-OTHER"},
-        ]
-    }
-    ids = [SYSTEM_STATUS, STATUS]
-    assert links.starters_linked_elsewhere(source, held, ids) == [SYSTEM_STATUS]
-    # The source under the same link: nothing to leave out.
-    source["statusPages"][0]["linkId"] = "L-ELSE"
-    assert links.starters_linked_elsewhere(source, held, ids) == []
-    # A held copy with no link is adopted, never left out.
-    held["statusPages"][0].pop("linkId")
-    source["statusPages"][0].pop("linkId")
-    assert links.starters_linked_elsewhere(source, held, ids) == []
-    assert links.starters_linked_elsewhere(source, None, ids) == []
-
-
-# ── fan_out ──────────────────────────────────────────────────────────────
-
-
-def _linked_pair() -> tuple[dict, dict]:
-    source, target, _added, _ids, _adopted = links.apply_link(
-        _pages(), None, "pages", [HOME, DEEP]
-    )
-    return source, target
-
-
-def test_fan_out_replaces_linked_pages_keeping_place_and_hidden() -> None:
-    source, target = _linked_pair()
-    target["pages"].insert(0, {"id": "PHONE-ONLY", "name": "Phone"})
-    target["pages"].reverse()  # DEEP, HOME, PHONE-ONLY
-    target["pages"][1]["isHidden"] = True
-    source["pages"][1]["name"] = "Home renamed"
-    source["pages"][1]["isHidden"] = False
-    source["pages"][3]["name"] = "Deep renamed"
-    out = links.fan_out(source, target, "pages")
-    assert [p["id"] for p in out["pages"]] == [DEEP, HOME, "PHONE-ONLY"]
-    assert out["pages"][1]["name"] == "Home renamed"
-    assert out["pages"][1]["isHidden"] is True, "the other device's isHidden stays"
-    assert out["pages"][0]["name"] == "Deep renamed"
-    assert out["pages"][0]["isHidden"] is True
-    assert out["pages"][2] == {"id": "PHONE-ONLY", "name": "Phone"}
-
-
-def test_fan_out_drops_hidden_the_other_never_had() -> None:
-    source, target = _linked_pair()
-    del target["pages"][1]["isHidden"]
-    source["pages"][3]["name"] = "Changed"
-    out = links.fan_out(source, target, "pages")
-    assert "isHidden" not in out["pages"][1]
-
-
-def test_fan_out_is_none_when_nothing_changes() -> None:
-    source, target = _linked_pair()
-    assert links.fan_out(source, target, "pages") is None
-    target["pages"][0]["isHidden"] = True
-    assert links.fan_out(source, target, "pages") is None, "only isHidden differs"
-    assert links.fan_out(_pages(), target, "pages") is None, "no links in the save"
-
-
-def test_fan_out_never_removes_a_page_or_moves_a_duplicate() -> None:
-    source, target = _linked_pair()
-    dup = copy.deepcopy(source["pages"][1])
-    dup["id"] = "DUPLICATE"
-    dup["name"] = "Copy"
-    source["pages"] = [p for p in source["pages"] if p["id"] != HOME] + [dup]
-    assert links.fan_out(source, target, "pages") is None
-
-
 # ── helpers ──────────────────────────────────────────────────────────────
-
-
-def test_link_ids_drop_link_and_places() -> None:
-    source, target = _linked_pair()
-    ids = links.link_ids(source, "pages")
-    assert ids == links.link_ids(target, "pages") and len(ids) == 2
-    one = min(ids)
-    dropped = links.drop_link(target, "pages", one)
-    assert links.link_ids(dropped, "pages") == ids - {one}
-    assert links.drop_link(dropped, "pages", one) is None
-    places = links.link_places({"w": source, "p": target, "x": None}, "pages")
-    assert places == {link: ["p", "w"] for link in sorted(ids)}
 
 
 def test_listed_page_ids_and_rooms_from_behavior() -> None:
@@ -363,162 +100,22 @@ def test_listed_page_ids_and_rooms_from_behavior() -> None:
     assert links.rooms_from_behavior(
         {"roomAutoSwitchEnabled": True, "roomQuickJumpMappings": [], "other": 1}
     ) == {"schemaVersion": 1, "roomAutoSwitchEnabled": True, "roomQuickJumpMappings": []}
+    assert links.ids_in(_status(), "statusPages") == [SYSTEM_STATUS, STATUS]
 
 
-# ── linked units (the menus) ─────────────────────────────────────────────
-
-_FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
-_PAGE = "3E4D1000-0000-4000-8000-000000000385"
-_STATUS_PAGE = "3E4D1000-0000-4000-8000-000000000386"
-
-
-def _menus() -> dict:
-    """The panel's configured menus fixture: an Anywhere menu with a Go to
-    page and a Status page slot, an Entity quick menu with neither."""
-    return json.loads((_FRONTEND / "test" / "fixtures-menus" / "02-configured.json").read_text())
-
-
-def _other_menus() -> dict:
-    other = _menus()
-    other["quickAction"]["beamStyle"] = "none"
-    other["entityRadial"]["lightInheritsAll"] = False
-    other["pageSwitcher"]["displayMode"] = "name"
-    return other
-
-
-def test_the_menu_page_actions_are_the_tables_page_payloads() -> None:
-    table = json.loads((_FRONTEND / "src" / "watch-menus" / "menu-actions.json").read_text())
-    wanted = {
-        action["raw"]: (spec["key"], spec["target"])
-        for action in table["actions"]
-        for spec in action.get("payload", [])
-        if spec.get("type") == "uuid" and spec.get("target") in ("page", "statusPage")
-    }
-    assert links._MENU_PAGE_ACTIONS == wanted
-
-
-def test_menu_targets_walks_every_slot_list_of_the_units_asked() -> None:
-    menus = _menus()
-    assert links.menu_targets(menus) == ([_PAGE], [_STATUS_PAGE])
-    assert links.menu_targets(menus, ["entity"]) == ([], [])
-    radial = menus["entityRadial"]
-    radial["lightSlots"].append(
-        {"id": "S1", "action": {"type": "navigateToPage", "pageId": HOME}}
-    )
-    radial["entityOverrides"]["climate.hallway"].append(
-        {"id": "S2", "action": {"type": "showStatusPage", "pageId": STATUS}}
-    )
-    radial["allSlots"].append({"id": "S3", "action": {"type": "navigateToPage", "pageId": _PAGE.lower()}})
-    radial["allSlots"].append({"id": "S4", "action": {"type": "showStatusPage"}})
-    assert links.menu_targets(menus, ["entity"]) == ([_PAGE.lower(), HOME], [STATUS])
-    assert links.menu_targets(menus) == ([_PAGE, HOME], [_STATUS_PAGE, STATUS]), "each id once"
-    assert links.menu_targets(None) == ([], [])
-
-
-def test_apply_unit_link_marks_both_and_copies_the_units_keys() -> None:
-    source, target = _menus(), _other_menus()
-    before = copy.deepcopy(source)
-    new_source, new_target, link = links.apply_unit_link(
-        source, target, "menus", "anywhere", replace=True
-    )
-    assert source == before, "the input is never changed"
-    assert len(link) == 32
-    assert new_source["linkIds"] == {"anywhere": link} == new_target["linkIds"]
-    assert new_target["quickAction"] == source["quickAction"]
-    assert new_target["pageSwitcher"] == source["pageSwitcher"]
-    assert new_target["entityRadial"] == target["entityRadial"], "the other unit stays"
-    assert list(new_target) == sorted(new_target), "linkIds goes in at its sorted place"
-    for key in ("quickAction", "entityRadial", "pageSwitcher"):
-        assert "linkId" not in new_target[key] and "linkIds" not in new_target[key]
-
-
-def test_apply_unit_link_refuses_a_taken_unit_unless_replaced() -> None:
-    with pytest.raises(links.PageLinkError) as err:
-        links.apply_unit_link(_menus(), _other_menus(), "menus", "anywhere")
-    assert err.value.code == "unit_taken"
-    # The same keys are no clash, and nor is a unit the target lacks.
-    _s, same, _l = links.apply_unit_link(_menus(), _menus(), "menus", "anywhere")
-    assert same["linkIds"]["anywhere"]
-    bare = {"schemaVersion": 1, "entityRadial": {}}
-    _s, filled, _l = links.apply_unit_link(_menus(), bare, "menus", "anywhere")
-    assert filled["quickAction"] == _menus()["quickAction"]
-    # A target linked elsewhere for the unit is taken even with equal keys.
-    elsewhere = {**_menus(), "linkIds": {"anywhere": "L-OTHER"}}
-    with pytest.raises(links.PageLinkError):
-        links.apply_unit_link(_menus(), elsewhere, "menus", "anywhere")
-    _s, replaced, link = links.apply_unit_link(_menus(), elsewhere, "menus", "anywhere", True)
-    assert replaced["linkIds"] == {"anywhere": link} and link != "L-OTHER"
-
-
-def test_apply_unit_link_keeps_an_existing_link_and_relinks_its_copy() -> None:
-    source = {**_menus(), "linkIds": {"entity": "L-E"}}
-    target = {**_other_menus(), "linkIds": {"entity": "L-E"}}
-    new_source, new_target, link = links.apply_unit_link(source, target, "menus", "entity")
-    assert link == "L-E"
-    assert new_source == source
-    assert new_target["entityRadial"] == source["entityRadial"]
-    assert new_target["quickAction"] == target["quickAction"]
-
-
-def test_apply_unit_link_onto_no_document_copies_the_source_unlinked_but_the_unit() -> None:
-    source = {**_menus(), "linkIds": {"entity": "L-E"}}
-    _s, target, link = links.apply_unit_link(source, None, "menus", "anywhere")
-    assert target["linkIds"] == {"anywhere": link}, "the entity link is not brought along"
-    assert {k: v for k, v in target.items() if k != "linkIds"} == _menus()
-
-
-def test_fan_out_units_replaces_only_the_linked_units() -> None:
-    source, target, link = links.apply_unit_link(_menus(), _other_menus(), "menus", "anywhere", True)
-    source["quickAction"]["beamStyle"] = "ripplePulse"
-    source["entityRadial"]["lightInheritsAll"] = True
-    del source["pageSwitcher"]
-    out = links.fan_out_units(source, target, "menus")
-    assert out["quickAction"]["beamStyle"] == "ripplePulse"
-    assert "pageSwitcher" not in out, "a key the save lacks is removed"
-    assert out["entityRadial"]["lightInheritsAll"] is False, "the entity menu is not linked"
-    assert out["linkIds"] == {"anywhere": link}
-    assert links.fan_out_units(source, out, "menus") is None, "nothing left to change"
-    assert links.fan_out_units(_menus(), target, "menus") is None, "no links in the save"
-    other_link = {**source, "linkIds": {"anywhere": "L-OTHER"}}
-    assert links.fan_out_units(other_link, target, "menus") is None
-    assert links.fan_out_units(source, None, "menus") is None
-
-
-def test_unit_link_ids_drop_and_places() -> None:
-    document = {**_menus(), "linkIds": {"anywhere": "L-A", "entity": "L-E", "x": "L-X"}}
-    assert links.unit_links(document, "menus") == {"anywhere": "L-A", "entity": "L-E"}
-    assert links.unit_link_ids(document, "menus") == {"L-A", "L-E"}
-    assert links.unit_link_ids({"linkIds": {"anywhere": ""}}, "menus") == set()
-    dropped = links.drop_unit_link(document, "menus", "L-A")
-    assert dropped["linkIds"] == {"entity": "L-E", "x": "L-X"}
-    assert links.drop_unit_link(dropped, "menus", "L-A") is None
-    gone = links.drop_unit_link({**_menus(), "linkIds": {"entity": "L-E"}}, "menus", "L-E")
-    assert "linkIds" not in gone
-    places = links.unit_link_places(
-        {"w": document, "p": {"linkIds": {"anywhere": "L-A"}}, "x": None}, "menus"
-    )
-    assert places == {
-        "L-A": {"unit": "anywhere", "owners": ["p", "w"]},
-        "L-E": {"unit": "entity", "owners": ["w"]},
-    }
-    assert "linkIds" not in links.without_unit_links(document)
-
-
-def test_link_ops_reach_both_grains() -> None:
-    assert links.LINKABLE_KINDS == ("pages", "status_pages", "menus", "voice")
-    assert links.link_ops("rooms") is None
-    pages = links.link_ops("pages")
-    source, _target = _linked_pair()
-    assert pages.ids(source) == links.link_ids(source, "pages")
-    menus = links.link_ops("menus")
-    linked = {**_menus(), "linkIds": {"anywhere": "L-A"}}
-    assert menus.ids(linked) == {"L-A"}
-    assert "linkIds" not in menus.drop(linked, "L-A")
-    assert menus.fan_out(linked, {**_other_menus(), "linkIds": {"anywhere": "L-A"}})
+def test_only_voice_links() -> None:
+    """Pages, status pages and menus live in the library now: no link code
+    is left for them here."""
+    assert list(links.LINK_UNITS) == ["voice"]
+    for kind in ("pages", "status_pages", "menus", "rooms"):
+        assert links.link_ops(kind) is None
+    for gone in ("LINKED_KINDS", "LINK_KEY", "apply_link", "fan_out", "drop_link", "menu_targets"):
+        assert not hasattr(links, gone), gone
 
 
 # ── linked units (the voice settings) ────────────────────────────────────
 
+_FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
 _PHRASE_KEYS = ("defaultAssistAgentId", "defaultSpeakers", "defaultTTSEngine", "phrases")
 _WATCH_KEYS = ("watchSpeakReplyInSilentMode", "watchSpeechVoiceIdentifier")
 
@@ -621,3 +218,36 @@ def test_fan_out_of_voice_carries_the_library_and_never_the_watch_settings() -> 
     assert links.unit_link_places({"w": source, "x": out}, "voice") == {
         link: {"unit": "phrases", "owners": ["w", "x"]}
     }
+
+
+def test_apply_unit_link_keeps_an_existing_link_and_relinks_its_copy() -> None:
+    source = {**_voice(), "linkIds": {"phrases": "L-P"}}
+    target = {**_other_voice(), "linkIds": {"phrases": "L-P"}}
+    new_source, new_target, link = links.apply_unit_link(source, target, "voice", "phrases")
+    assert link == "L-P"
+    assert new_source == source
+    assert new_target["phrases"] == source["phrases"]
+    assert new_target["watchSpeechVoiceIdentifier"] == _other_voice()["watchSpeechVoiceIdentifier"]
+    # A target linked elsewhere is taken even with equal keys.
+    elsewhere = {**_voice(), "linkIds": {"phrases": "L-OTHER"}}
+    with pytest.raises(links.PageLinkError):
+        links.apply_unit_link(_voice(), elsewhere, "voice", "phrases")
+    _s, replaced, link = links.apply_unit_link(_voice(), elsewhere, "voice", "phrases", True)
+    assert replaced["linkIds"] == {"phrases": link} and link != "L-OTHER"
+
+
+def test_unit_link_ids_drop_and_places() -> None:
+    document = {**_voice(), "linkIds": {"phrases": "L-P", "anywhere": "L-OLD"}}
+    assert links.unit_links(document, "voice") == {"phrases": "L-P"}, "only the kind's units"
+    assert links.unit_link_ids(document, "voice") == {"L-P"}
+    assert links.unit_link_ids({"linkIds": {"phrases": ""}}, "voice") == set()
+    dropped = links.drop_unit_link(document, "voice", "L-P")
+    assert dropped["linkIds"] == {"anywhere": "L-OLD"}
+    assert links.drop_unit_link(dropped, "voice", "L-P") is None
+    gone = links.drop_unit_link({**_voice(), "linkIds": {"phrases": "L-P"}}, "voice", "L-P")
+    assert "linkIds" not in gone
+    places = links.unit_link_places(
+        {"w": document, "p": {"linkIds": {"phrases": "L-P"}}, "x": None}, "voice"
+    )
+    assert places == {"L-P": {"unit": "phrases", "owners": ["p", "w"]}}
+    assert "linkIds" not in links.without_unit_links(document)

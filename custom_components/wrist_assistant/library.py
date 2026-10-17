@@ -56,11 +56,14 @@ records exactly as they were:
   page holds), so the store can point the owner's later first records of
   the other kinds at them. Nothing here reads it either.
 
-While the current panel still folds its cards from the link keys inside the
-documents, a materialised record carries ``linkId`` (pages and status pages)
-or ``linkIds[unit]`` (menus) on every item that two or more devices pick, set
-to the item's id. An item on one device carries none. Step 4 of the plan
-drops them.
+A materialised record carries no link keys: no ``linkId`` on a page or
+status page, no ``linkIds`` on a menus document. Records written before step
+4 of the plan carried them on every item two or more devices picked, and a
+panel that loaded one may still send them back. Wherever they arrive they
+are read as if absent: an item stored here never holds ``linkId``, and a
+materialised menus document drops any ``linkIds`` its template carries. Only
+the one-time :func:`migrate` reads them, as the old link tokens that join
+copies of one page or menu.
 
 Pure, with no Home Assistant import, so it is tested on its own. Every
 function returns new objects and never changes what it is given. Ids are
@@ -94,8 +97,9 @@ MENU_UNITS: dict[str, tuple[str, ...]] = {
 # A menu's name when it is the only one of its kind.
 MENU_NAMES: dict[str, str] = {"anywhere": "Anywhere menu", "entity": "Entity quick menu"}
 
-# The per-device key on a page, and the link keys the records carry while
-# the current panel reads them.
+# The per-device key on a page, and the link keys older records and old
+# panel saves may still carry (read only by the migration, dropped
+# everywhere else).
 HIDDEN_KEY = "isHidden"
 LINK_KEY = "linkId"
 LINK_IDS_KEY = "linkIds"
@@ -109,8 +113,9 @@ _ROOM_MAPPINGS_KEY = "roomQuickJumpMappings"
 _PAGE_TILE_KINDS = ("page", "show_page")
 _STATUS_TILE_KIND = "status_page"
 
-# The menu actions that open a page or a status page, by the kind they open.
-# Both name it in `pageId` (`page_links._MENU_PAGE_ACTIONS`).
+# The menu actions that open a page or a status page, by the kind they open
+# (`menu-actions.json`, the `uuid` payloads whose `target` is `page` or
+# `statusPage`). Both name it in `pageId`.
 _MENU_ACTIONS: dict[str, str] = {"pages": "navigateToPage", "status_pages": "showStatusPage"}
 _MENU_PAGE_KEY = "pageId"
 
@@ -135,7 +140,8 @@ class Change(NamedTuple):
 
 
 class Copied(NamedTuple):
-    """:func:`copy_menu`'s result: a :class:`Change` plus the new menu's id."""
+    """:func:`copy_menu`'s and :func:`create_menu`'s result: a
+    :class:`Change` plus the new menu's id."""
 
     library: dict[str, Any]
     touched: dict[str, list[str]]
@@ -147,7 +153,7 @@ class MapBack(NamedTuple):
 
     ``touched`` is as in :class:`Change`. The saving owner is in it for the
     saved kind only when what it saved differs from its materialised record
-    (a link key added or taken off, an id renamed). ``renamed`` is
+    (a stale link key dropped, an id renamed). ``renamed`` is
     ``{kind: {old id: new id}}`` for the pages and status pages the save
     gave new ids (only with ``fork_conflicts``), so the caller can rewrite
     the owner's rooms and complications (:func:`rename_refs`,
@@ -252,8 +258,9 @@ def _with_key(document: Mapping[str, Any], key: str, value: Any) -> dict[str, An
 
 
 def _slot_lists(section: Any) -> list[list[Any]]:
-    """Every slot list of a menus section: ``slots``, each ``*Slots`` list
-    and each ``entityOverrides`` list (``page_links._menu_slot_lists``)."""
+    """Every slot list of a menus section: the Anywhere menu's ``slots``,
+    the Entity quick menu's ``*Slots`` lists and each ``entityOverrides``
+    list (the lists the store's menus guard checks)."""
     if not isinstance(section, dict):
         return []
     lists = [section["slots"]] if isinstance(section.get("slots"), list) else []
@@ -480,22 +487,6 @@ def pickers(library: Mapping[str, Any], kind: str) -> dict[str, list[str]]:
     return out
 
 
-def link_groups(library: Mapping[str, Any], kind: str) -> dict[str, Any]:
-    """The ``watch_pages/places`` shape the current panel reads, from the
-    picks: every item two or more owners pick, keyed by the link token the
-    records carry (the item's id). Pages and status pages give
-    ``{id: [owners]}``, menus ``{id: {"unit": unit, "owners": [owners]}}``,
-    owners sorted. The caller filters them to the owners the viewer may
-    manage."""
-    groups = {i: owners for i, owners in pickers(library, kind).items() if len(owners) >= 2}
-    if kind != "menus":
-        return dict(sorted(groups.items()))
-    return {
-        menu_id: {"unit": library["menus"][menu_id]["kind"], "owners": owners}
-        for menu_id, owners in sorted(groups.items())
-    }
-
-
 def materialise(
     library: Mapping[str, Any],
     owner_id: str,
@@ -513,14 +504,14 @@ def materialise(
     template the document is ``{"schemaVersion": 1, ...}``.
 
     * Pages and status pages: the list is the picks in order, each the
-      library item with the pick's ``isHidden`` when it has one, and
-      ``linkId`` (the item's id) when two or more owners pick the item. A
-      system page is the pick's own object.
+      library item with the pick's ``isHidden`` when it has one. A system
+      page is the pick's own object. The list is built from the items, so a
+      ``linkId`` in the template's list never survives.
     * Menus: ``quickAction`` and ``pageSwitcher`` from the picked Anywhere
       menu, ``entityRadial`` from the picked Entity quick menu, each placed
-      where the template has it or at its sorted place, and ``linkIds[unit]``
-      (the menu's id) for a menu two or more owners pick. A unit with no
-      pick keeps the template's sections.
+      where the template has it or at its sorted place. A unit with no pick
+      keeps the template's sections. A ``linkIds`` the template carries (an
+      old record, or an old panel save) is dropped.
     """
     _check_kind(kind)
     held = library["picks"].get(owner_id)
@@ -529,9 +520,8 @@ def materialise(
     base: dict[str, Any] = (
         copy.deepcopy(dict(template)) if isinstance(template, Mapping) else {"schemaVersion": 1}
     )
-    counts = _pick_counts(library, kind)
     if kind == "menus":
-        return _materialise_menus(library, held["menus"], base, counts)
+        return _materialise_menus(library, held["menus"], base)
     out: list[dict[str, Any]] = []
     for pick in held[kind]:
         if "page" in pick:
@@ -543,21 +533,15 @@ def materialise(
         page = copy.deepcopy(item)
         if HIDDEN_KEY in pick:
             page[HIDDEN_KEY] = copy.deepcopy(pick[HIDDEN_KEY])
-        if counts.get(pick["id"], 0) >= 2:
-            page[LINK_KEY] = item["id"]
         out.append(page)
     base[LIST_KEYS[kind]] = out
     return base
 
 
 def _materialise_menus(
-    library: Mapping[str, Any],
-    picked: Mapping[str, str],
-    base: dict[str, Any],
-    counts: Mapping[str, int],
+    library: Mapping[str, Any], picked: Mapping[str, str], base: dict[str, Any]
 ) -> dict[str, Any]:
     doc = base
-    links: dict[str, str] = {}
     for unit, keys in MENU_UNITS.items():
         menu = library["menus"].get(picked.get(unit, ""))
         if menu is None:
@@ -567,12 +551,8 @@ def _materialise_menus(
                 doc = _with_key(doc, key, copy.deepcopy(menu["sections"][key]))
             else:
                 doc.pop(key, None)
-        if counts.get(picked[unit], 0) >= 2:
-            links[unit] = picked[unit]
-    doc = {k: v for k, v in doc.items() if k != LINK_IDS_KEY}
-    if links:
-        doc = _with_key(doc, LINK_IDS_KEY, dict(sorted(links.items())))
-    return doc
+    # A stale mark from before the library dropped them: never written.
+    return {k: v for k, v in doc.items() if k != LINK_IDS_KEY}
 
 
 def changed_owners(
@@ -607,6 +587,33 @@ def reach(library: Mapping[str, Any], page_ids: Iterable[str]) -> tuple[list[str
     pages_doc = {"pages": list(library["pages"].values())}
     status_doc = {"statusPages": list(library["status_pages"].values())}
     return link_reach(pages_doc, status_doc, page_ids)
+
+
+def menu_targets(
+    menus_doc: Any, units: Iterable[str] | None = None
+) -> tuple[list[str], list[str]]:
+    """The page ids and status page ids a menus document's slots open, each
+    once in the order first met, as stored. ``units`` limits the walk to
+    those units' sections (every unit when None). Only Go to page and
+    Status page slots count; a speak phrase or HTTP action slot points at
+    something else."""
+    if not isinstance(menus_doc, dict):
+        return [], []
+    names = MENU_UNITS if units is None else units
+    actions = {action: kind for kind, action in _MENU_ACTIONS.items()}
+    found: dict[str, dict[str, str]] = {"pages": {}, "status_pages": {}}
+    for unit in names:
+        for key in MENU_UNITS[unit]:
+            for slots in _slot_lists(menus_doc.get(key)):
+                for slot in slots:
+                    action = slot.get("action") if isinstance(slot, dict) else None
+                    if not isinstance(action, dict) or action.get("type") not in actions:
+                        continue
+                    page_id = action.get(_MENU_PAGE_KEY)
+                    if (page_key := _key(page_id)) is None:
+                        continue
+                    found[actions[action["type"]]].setdefault(page_key, page_id)
+    return list(found["pages"].values()), list(found["status_pages"].values())
 
 
 # ── renaming references ──────────────────────────────────────────────────
@@ -1084,9 +1091,9 @@ def map_back(
       Anywhere menu, ``entityRadial`` its picked Entity quick menu. A unit
       it picks nothing for yet makes a new menu, named with ``owner_name``
       when another menu of the kind exists, and picks it. ``linkIds`` in the
-      document means nothing here (the apps never send it). A caller that
-      reads a dropped ``linkIds[unit]`` as "unlink" calls :func:`copy_menu`
-      first.
+      document means nothing here: never a pick, a fork or an unlink, so a
+      save carrying a stale one (or a restore of a revision that held one)
+      maps onto the menus the owner uses now, like any other save.
 
     ``fork_conflicts`` is for an owner's first record of the kind (the
     iPhone's one-time upload of a watch's setup): a page or status page
@@ -1240,6 +1247,34 @@ def copy_menu(library: Mapping[str, Any], owner_id: str, unit: str, name: str) -
     return Copied(change.library, change.touched, new_id)
 
 
+def create_menu(
+    library: Mapping[str, Any], unit: str, name: str, sections: Mapping[str, Any]
+) -> Copied:
+    """A new menu of ``unit`` named ``name`` holding ``sections``, picked by
+    no one (the Menus tab's New menu; a tick then puts it on a device), so
+    no record changes. ``sections`` holds exactly the unit's keys
+    (:data:`MENU_UNITS`), each an object; the store checks what is inside
+    them. ``invalid`` for an unknown unit, an empty name or another shape."""
+    _check_unit(unit)
+    name = _check_name(name)
+    if not isinstance(sections, Mapping) or set(sections) != set(MENU_UNITS[unit]):
+        raise LibraryError(
+            "invalid", f"sections must hold exactly {', '.join(MENU_UNITS[unit])}"
+        )
+    for key in MENU_UNITS[unit]:
+        if not isinstance(sections[key], dict):
+            raise LibraryError("invalid", f"sections.{key} must be an object")
+    lib = copy.deepcopy(dict(library))
+    new_id = new_item_id()
+    lib["menus"][new_id] = {
+        "name": name,
+        "kind": unit,
+        "sections": {key: copy.deepcopy(sections[key]) for key in MENU_UNITS[unit]},
+    }
+    change = _change(library, lib)
+    return Copied(change.library, change.touched, new_id)
+
+
 def rename_menu(library: Mapping[str, Any], menu_id: str, name: str) -> dict[str, Any]:
     """The library with a menu renamed. A name is not in any record, so no
     device changes. ``not_found`` or ``invalid`` (an empty name)."""
@@ -1388,9 +1423,8 @@ def move_picks(
 
 
 def forget(library: Mapping[str, Any], owner_id: str) -> Change:
-    """The library without an owner's picks. Its items stay. Other owners
-    are touched where an item they share with it is now on them alone (its
-    link key comes off)."""
+    """The library without an owner's picks. Its items stay, and no other
+    owner's records change."""
     lib = copy.deepcopy(dict(library))
     lib["picks"].pop(owner_id, None)
     for notes in ("hashes", "revisions", "renames"):

@@ -133,16 +133,16 @@ the library and the owner's picks, so the apps read them as before. Every
 accepted write of one of them, by any writer, is mapped back into the
 library before it is stored, and every other record the change reaches is
 rebuilt and written as a new revision there in the same call, so an edit
-on one device reaches every device that picked the item. While two or more
-owners pick an item their records carry its id as ``linkId`` (or under the
-menus' top-level ``linkIds``), which the current panel folds its cards
-from. The first start with the library builds it from the records. The
-panel's link ops (``link_pages``, ``link_device``, ``link_units``) are
-picks now. A watch's voice settings still link copy by copy
-(``page_links.py``): the phrase library with its defaults is one unit, kept
-in step on every write (``_spread_links``), and the watch's own speech
-settings never travel. Only watches hold voice, so an iPhone is never a
-voice target.
+on one device reaches every device that picked the item. The records carry
+no link keys: a ``linkId`` or ``linkIds`` still in an old record or a save
+is dropped, and is never a pick, a fork or an unlink. The first start with
+the library builds it from the records. The iPhone's copy of a watch's setup
+(``link_device``, the signed ``phone_pages_link_watch``) is picks too. A
+watch's voice settings still link copy by copy (``page_links.py``,
+``link_units``): the phrase library with its defaults is one unit, kept in
+step on every write (``_spread_links``), and the watch's own speech settings
+never travel. Only watches hold voice, so an iPhone is never a voice
+target.
 
 Deliveries and reports have listeners of their own
 (:meth:`WatchConfigStore.async_add_delivery_listener`), heard only by the panel's Home
@@ -187,13 +187,14 @@ from .library import (
     changed_owners,
     copy_menu,
     copy_picks,
+    create_menu,
     delete_item,
     empty_library,
     held_renames,
     hold_renames,
-    link_groups,
     map_back,
     materialise,
+    menu_targets,
     migrate,
     move_picks,
     pick_menu,
@@ -207,26 +208,21 @@ from .library import forget as library_forget
 from .library import reach as library_reach
 from .page_links import (
     LINK_UNITS,
-    LINKED_KINDS,
     LinkOps,
     PageLinkError,
     apply_unit_link,
-    check_link,
     ids_in,
     link_ops,
-    link_reach,
     listed_page_ids,
-    menu_targets,
     rooms_from_behavior,
-    unit_is_blank,
     unit_link_places,
     unit_links,
     without_unit_links,
 )
 
-# The kinds still linked the old way, copy by copy (page_links.py): only the
-# voice settings now. Pages, status pages and menus live in the library.
-_COPY_LINKED_KINDS: tuple[str, ...] = tuple(k for k in LINK_UNITS if k not in LIBRARY_KINDS)
+# The kinds still linked copy by copy (page_links.py): only the voice
+# settings. Pages, status pages and menus live in the library.
+_COPY_LINKED_KINDS: tuple[str, ...] = tuple(LINK_UNITS)
 
 # Who the store names as the writer of what the first start with the
 # library rewrote.
@@ -380,16 +376,14 @@ class WatchConfigPhoneKindError(WatchConfigStoreError):
 
 
 class WatchConfigLinkError(WatchConfigStoreError):
-    """A page link that cannot be made (:meth:`WatchConfigStore.link_pages`).
+    """A pick, a library change or a voice link that cannot be made.
 
-    ``code`` is the reason: ``unknown_device`` for a source or target that is
-    not a paired device, ``not_found`` for a page the source does not hold,
-    ``system_page`` for a system page, ``id_taken`` for a target that holds
-    another page under the same id, ``unit_taken`` for a target with its own
-    menu or phrase library for a unit (:meth:`WatchConfigStore.link_units`),
-    ``awaiting_move``
-    for a target watch
-    whose iPhone may still move its own pages here (the link would make the
+    ``code`` is the reason: ``unknown_device`` for a device that is not a
+    paired one, ``not_found`` for an item the library does not hold (or a
+    source with no voice settings), ``in_use`` for a menu a device still
+    uses, ``unit_taken`` for a target with its own phrase library
+    (:meth:`WatchConfigStore.link_units`), ``awaiting_move`` for a watch
+    whose iPhone may still move its own setup here (the write would make the
     first record that move skips).
     """
 
@@ -1258,8 +1252,8 @@ class WatchConfigStore:
 
         ``may_await_move`` answers whether an iPhone may still move a watch's
         own setup here (the owner list's ``has_iphone``). Setup passes
-        ``WidgetSecretStore.may_await_move``. A link never makes such a
-        watch's first record of a kind (``awaiting_move``, see
+        ``WidgetSecretStore.may_await_move``. A pick, a copy or a voice link
+        never makes such a watch's first record of a kind (``awaiting_move``, see
         :meth:`_check_not_awaiting_move`). Without it no watch waits.
 
         ``device_name`` names an owner as its user calls it, for the menus
@@ -2114,8 +2108,8 @@ class WatchConfigStore:
         if kind in LIBRARY_KINDS:
             # Into the library first. What is stored is what the library
             # builds for this device; when that is not the document as sent
-            # (a link key the app never keeps, a page given a new id), the
-            # hash is the server's, so it describes what is stored.
+            # (a stale link key dropped, a page given a new id), the hash is
+            # the server's, so it describes what is stored.
             prep = self._prepare_library_save(owner_watch_id, kind, document, existing, panel=False)
             if not prep.kept:
                 document_hash = canonical_hash(prep.document)
@@ -2142,8 +2136,8 @@ class WatchConfigStore:
         # own upload would read in the panel as "waiting for the iPhone" until
         # its next get. Not when the library gave one of its pages a new id,
         # now or at an earlier first upload: then the device holds something
-        # else and must pull this. A link key alone does not count; the app
-        # drops it anyway.
+        # else and must pull this. A dropped link key alone does not count;
+        # the app never reads it.
         if prep is None or not prep.rewritten:
             record.mark_delivered(record.revision)
         self._schedule_owner_save(owner_watch_id)
@@ -2211,10 +2205,12 @@ class WatchConfigStore:
         record the panel created), which is what makes the panel show the
         save as waiting until a device's next get collects it.
 
-        A linked kind is then handed on to the other copies
-        (:meth:`_spread_links`). The save stands even when a copy cannot take
-        it; each owner left out of step is appended to ``link_failures`` when
-        the caller passes a list, so the panel can say which device missed it.
+        A library kind then reaches every other device that picks what the
+        save changed; linked voice settings are handed on to the other copies
+        (:meth:`_spread_links`). The save stands even when a record cannot
+        take it; each owner left out of step is appended to ``link_failures``
+        when the caller passes a list, so the panel can say which device
+        missed it.
         """
         if not isinstance(owner_watch_id, str) or not owner_watch_id:
             raise WatchConfigValidationError("owner_watch_id is required")
@@ -2287,11 +2283,10 @@ class WatchConfigStore:
           page under an id the library holds with other content is another
           page and gets a new id. Ids an earlier first upload of this owner
           renamed are renamed in this one first.
-        * The panel's menus save reads the link marks as the current panel
-          means them: ``linkIds[unit]`` taken off a shared menu is "Unlink"
-          (the device gets its own copy of the menu); naming another menu is
-          picking that one. A device never sends ``linkIds``, so a put never
-          reads them.
+        * A ``linkId`` or ``linkIds`` the document still carries (loaded
+          from a record written before the library dropped them, or a
+          restored revision) means nothing: a menus save or restore maps
+          onto the menus the device uses now, like any save.
         * A menus save that adds a Go to page or Status page slot to a menu
           other devices use brings that page (with what it reaches) to them.
 
@@ -2306,12 +2301,9 @@ class WatchConfigStore:
             renames = held_renames(self._library, owner_watch_id)
             if renames["pages"] or renames["status_pages"]:
                 sent = rename_refs(kind, sent, renames["pages"], renames["status_pages"])
-        lib = self._library
         try:
-            if panel and kind == "menus" and before_doc is not None:
-                lib = self._follow_menu_links(lib, owner_watch_id, before_doc, sent)
             result = map_back(
-                lib,
+                self._library,
                 owner_watch_id,
                 kind,
                 sent,
@@ -2331,7 +2323,8 @@ class WatchConfigStore:
         kept = stored == document
         final = document if kept else stored
         # The same guard the save itself met (the tile level for the panel):
-        # what the library adds is link keys and ids, never tiles.
+        # what the library changes is ids, and stale link keys dropped,
+        # never tiles.
         size = validate_document(kind, final, check_items=panel)
         for other in changed_owners(self._library, lib).get(owner_watch_id, []):
             if other == kind:
@@ -2365,35 +2358,6 @@ class WatchConfigStore:
 
     def _copy_name(self, owner_watch_id: str) -> str:
         return f"{self._owner_name(owner_watch_id)}'s menu"
-
-    def _follow_menu_links(
-        self,
-        lib: dict[str, Any],
-        owner_watch_id: str,
-        before_doc: dict[str, Any],
-        document: dict[str, Any],
-    ) -> dict[str, Any]:
-        """The library after the link marks of a panel menus save: a unit
-        whose ``linkIds`` names another menu of its kind picks that menu (a
-        restore of a save made while linked to it); a unit whose mark the
-        stored record carried and the save drops gets its own copy of the
-        shared menu (the panel's Unlink). An unknown mark changes nothing."""
-        held = unit_links(before_doc, "menus")
-        sent = unit_links(document, "menus")
-        for unit in MENU_UNITS:
-            current = lib["picks"].get(owner_watch_id, {}).get("menus", {}).get(unit)
-            token = sent.get(unit)
-            menu = lib["menus"].get(token) if token is not None else None
-            if menu is not None and menu["kind"] == unit and token != current:
-                lib = pick_menu(lib, owner_watch_id, unit, token).library
-            elif (
-                token is None
-                and unit in held
-                and current is not None
-                and len(pickers(lib, "menus").get(current, [])) >= 2
-            ):
-                lib = copy_menu(lib, owner_watch_id, unit, self._copy_name(owner_watch_id)).library
-        return lib
 
     def _with_slot_pages(
         self,
@@ -2486,8 +2450,8 @@ class WatchConfigStore:
         same kinds, the same ``no_record`` and ``conflict`` refusals on
         ``base_revision``, the same shape guard with the tile level, the
         server's hash, ``updated_by`` ``panel``, the current document filed
-        into the history, listeners told, and the linked copies that could
-        not take it appended to ``link_failures``. The entry stays in the
+        into the history, listeners told, and the other devices whose record
+        could not take it appended to ``link_failures``. The entry stays in the
         history too, until five later saves push it out.
 
         Refused with :class:`WatchConfigNotFoundError` when the record holds
@@ -2650,21 +2614,21 @@ class WatchConfigStore:
         self._notify(record.owner_watch_id, record.kind, record.revision)
         return record
 
-    # ── linked pages ───────────────────────────────────────────────────
+    # ── records Home Assistant writes itself ───────────────────────────
     #
-    # A page on more than one device is the same page id in each device's
-    # record plus a `linkId` (page_links.py). The store keeps the copies in
-    # step: every accepted write of a linked kind (a device put, a panel save
-    # or create, a restore) is handed on to each other owner holding one of
-    # its links (`_spread_links`). Everything runs in the one call that made
-    # the write, on the event loop, so no other write lands between them.
+    # The library rebuilds every record a change reaches (`_apply_library`),
+    # and linked voice settings are kept in step copy by copy: every
+    # accepted write of a voice record (a device put, a panel save or create,
+    # a restore) is handed on to each other owner holding one of its links
+    # (`_spread_links`). Everything runs in the one call that made the
+    # write, on the event loop, so no other write lands between them.
 
     def _write(
         self, owner_watch_id: str, kind: str, document: dict[str, Any], updated_by: str
     ) -> WatchConfigRecord:
-        """Write a document Home Assistant made itself (a linked copy kept in
-        step, a link, a ``linkId`` dropped, a device's menus copied) as the
-        owner's next revision, or its first. The server's hash, ``updated_by``
+        """Write a document Home Assistant made itself (a record the library
+        rebuilt, a linked voice copy kept in step or its link dropped, a
+        device's rooms copied) as the owner's next revision, or its first. The server's hash, ``updated_by``
         as given, delivery left where it was so the panel shows it waiting,
         listeners told so the device wakes. It never spreads links itself: its
         callers write every owner a change reaches, so a write never sets off
@@ -2824,7 +2788,7 @@ class WatchConfigStore:
         )
 
     def _check_not_awaiting_move(self, owner_watch_id: str, kind: str) -> None:
-        """Refuse a link that would make a watch's first record of ``kind``
+        """Refuse a write that would make a watch's first record of ``kind``
         while its iPhone may still move that kind here (:meth:`_awaits_move`)."""
         if self._awaits_move(owner_watch_id, kind):
             raise WatchConfigLinkError(
@@ -2870,7 +2834,7 @@ class WatchConfigStore:
     ) -> tuple[dict[str, Any], dict[str, dict[str, list[str]]]]:
         """The library with ``page_ids`` and ``status_ids`` picked by each
         target where it does not pick them yet, appended with the source's
-        ``isHidden`` as a link has always brought it, and the reply's
+        ``isHidden`` (:meth:`link_device`), and the reply's
         ``targets``: per target the ids it did not pick before.
         ``adopted_status_pages`` is always empty: one id is one item now, so
         there is never a target's own copy to adopt."""
@@ -2910,108 +2874,33 @@ class WatchConfigStore:
             if key in wanted and "isHidden" in source.get(key, {}):
                 pick["isHidden"] = copy.deepcopy(source[key]["isHidden"])
 
-    def _link_ids(self, kind: str, ids: list[str]) -> dict[str, str]:
-        """The link token of each id the reply names: the library item's id,
-        which is what the records carry as ``linkId`` while two or more
-        devices pick it."""
-        index = {item_id.upper(): item_id for item_id in self._library[kind]}
-        return {i: index[i.upper()] for i in ids if i.upper() in index}
-
-    def link_pages(
-        self,
-        source_owner: Any,
-        page_ids: Any,
-        targets: Any,
-        *,
-        kind: str = "pages",
-        updated_by: str = WATCH_CONFIG_PANEL_WRITER,
-    ) -> dict[str, Any]:
-        """Put pages of one device on other devices (``watch_pages/link``):
-        each target picks the same library items.
-
-        Each page in ``page_ids`` and every page and status page it reaches
-        through its tiles (:func:`page_links.link_reach`) is picked by each
-        target, appended to its order with no ``isHidden``. ``kind``
-        ``status_pages`` puts status pages on instead: ``page_ids`` are
-        status page ids, each picked as it is, nothing walked. What a target
-        already picks stays as it is. Since an item on two devices is one
-        item, a change on either reaches both from then on, and both records
-        carry the item's id as ``linkId`` while the current panel folds its
-        cards from it.
-
-        Refused, before anything is written: ``unknown_device`` (a source or
-        target that is not a paired device), ``not_found`` (a page the
-        source does not list), ``system_page``, ``invalid``, and
-        ``awaiting_move`` for a target watch with no record of a kind the
-        link writes while its iPhone may still move its own here.
-
-        Returns ``{"targets": {target: {"pages": [ids added],
-        "status_pages": [ids added], "adopted_status_pages": []}},
-        "link_ids": {page id: linkId}}``.
-        """
-        if (
-            not isinstance(page_ids, list)
-            or not page_ids
-            or not all(isinstance(page_id, str) and page_id for page_id in page_ids)
-        ):
-            raise WatchConfigValidationError("page_ids must be a non-empty list of page ids")
-        if kind not in LINKED_KINDS:
-            raise WatchConfigValidationError(
-                f"kind must be one of {', '.join(sorted(LINKED_KINDS))}"
-            )
-        self._check_library()
-        source_owner = self._check_link_owner(source_owner)
-        target_list = self._check_targets(
-            source_owner, targets, "a page cannot be linked to its own device"
-        )
-        pages_doc = self._document(source_owner, "pages")
-        status_doc = self._document(source_owner, "status_pages")
-        status_key = LINKED_KINDS["status_pages"]
-        try:
-            if kind == "status_pages":
-                check_link(status_doc, page_ids, status_key)
-                wanted = {page_id.upper() for page_id in page_ids}
-                reach_pages: list[str] = []
-                reach_status = [i for i in ids_in(status_doc, status_key) if i.upper() in wanted]
-            else:
-                check_link(pages_doc, page_ids)
-                reach_pages, reach_status = link_reach(pages_doc, status_doc, page_ids)
-        except PageLinkError as err:
-            raise WatchConfigLinkError(err.code, err.message) from err
-        lib, reply_targets = self._link_onto(source_owner, target_list, reach_pages, reach_status)
-        written, _failed = self._apply_library(
-            lib, updated_by, first=source_owner, strict=True, refuse_awaiting=True
-        )
-        if written:
-            _LOGGER.info(
-                "Put %d %s of %s on %s",
-                len(page_ids),
-                kind.replace("_", " "),
-                source_owner,
-                ", ".join(reply_targets),
-            )
-        linked = reach_status if kind == "status_pages" else reach_pages
-        return {"targets": reply_targets, "link_ids": self._link_ids(kind, linked)}
-
     def link_device(
         self, source_owner: Any, target_owner: Any, *, updated_by: str
     ) -> dict[str, Any]:
-        """Give one device every page of another (``phone_pages_link_watch``
-        and the panel's Add all): the target picks what the source picks.
+        """Give one device every page of another (the iPhone's signed
+        ``phone_pages_link_watch``, "Use pages from <watch>"): the target
+        picks what the source picks.
 
         Every page the source picks but its system pages, and every status
         page, appended to the target's own in the source's order with the
-        source's ``isHidden`` (:func:`library.copy_picks`), with the same
-        refusals as :meth:`link_pages`. Then, for a target with no record of
-        the kind, the source's menus (the target uses the same Anywhere and
-        Entity quick menu, so an edit of either reaches both) and its rooms,
-        copied once: the ids are the same, so the rooms open the same
-        pages. A source whose rooms live in its ``behavior`` (a watch's main
-        house) gives the room keys from there. Neither is put on a watch
-        whose iPhone may still move that kind here (:meth:`_awaits_move`).
+        source's ``isHidden``, where the target does not pick it yet. Then,
+        for a target with no record of the kind, the source's menus (the
+        target uses the same Anywhere and Entity quick menu, so an edit of
+        either reaches both) and its rooms, copied once: the ids are the
+        same, so the rooms open the same pages. A source whose rooms live in
+        its ``behavior`` (a watch's main house) gives the room keys from
+        there. Neither is put on a watch whose iPhone may still move that
+        kind here (:meth:`_awaits_move`).
 
-        Returns :meth:`link_pages`'s reply, ``link_ids`` naming every page
-        of the source, plus ``copied``: the kinds given once.
+        Refused, before anything is written: ``unknown_device`` (a source or
+        target that is not a paired device), ``invalid``, and
+        ``awaiting_move`` for a target watch with no record of a kind this
+        writes while its iPhone may still move its own here.
+
+        Returns ``{"targets": {target: {"pages": [ids added],
+        "status_pages": [ids added], "adopted_status_pages": []}},
+        "page_ids": [every page of the source], "copied": [kinds given
+        once]}``.
         """
         self._check_library()
         source_owner = self._check_link_owner(source_owner)
@@ -3061,41 +2950,22 @@ class WatchConfigStore:
             target_owner,
             ", ".join(copied) or "nothing else",
         )
-        return {
-            "targets": reply_targets,
-            "link_ids": self._link_ids("pages", page_ids),
-            "copied": copied,
-        }
+        return {"targets": reply_targets, "page_ids": page_ids, "copied": copied}
 
     def link_places(self) -> dict[str, dict[str, Any]]:
-        """For each link token, the owners that hold it, per linked kind:
-        ``{"pages": {linkId: [owner, ...]}, "status_pages": {...}, "menus":
-        {linkId: {"unit": unit, "owners": [owner, ...]}}, "voice": {...}}``.
-
-        For pages, status pages and menus these are the library items two or
-        more devices pick (:func:`library.link_groups`), keyed by the item's
-        id, the ``linkId`` / ``linkIds`` their records carry. The voice
-        settings still link copy by copy. An owner whose file could not be
-        read is left out."""
-
-        def documents(kind: str) -> dict[str, Any]:
-            return {
+        """For each voice link id, its unit and the owners that hold it:
+        ``{"voice": {linkId: {"unit": "phrases", "owners": [owner, ...]}}}``.
+        Only the voice settings link; who has a page, status page or menu
+        is ``library_summary``. An owner whose file could not be read is
+        left out."""
+        places: dict[str, dict[str, Any]] = {}
+        for kind in _COPY_LINKED_KINDS:
+            documents = {
                 owner: by_kind[kind].document
                 for owner, by_kind in self._records.items()
                 if kind in by_kind and owner not in self._failed_owners
             }
-
-        places: dict[str, dict[str, Any]] = {}
-        for kind in ("pages", "status_pages", "menus"):
-            shown: dict[str, Any] = {}
-            for link, place in link_groups(self._library, kind).items():
-                owners = place["owners"] if kind == "menus" else place
-                kept = [owner for owner in owners if owner not in self._failed_owners]
-                if kept:
-                    shown[link] = {**place, "owners": kept} if kind == "menus" else kept
-            places[kind] = shown
-        for kind in _COPY_LINKED_KINDS:
-            places[kind] = unit_link_places(documents(kind), kind)
+            places[kind] = unit_link_places(documents, kind)
         return places
 
     def link_units(
@@ -3108,36 +2978,39 @@ class WatchConfigStore:
         replace: Any = False,
         updated_by: str = WATCH_CONFIG_PANEL_WRITER,
     ) -> dict[str, Any]:
-        """Put units of one device's ``kind`` document on other devices
-        (``watch_pages/link`` with a unit kind, :data:`LINK_UNITS`).
+        """Put units of one watch's voice settings on other watches
+        (``watch_pages/link`` with kind ``voice``, :data:`LINK_UNITS`).
 
-        For the menus (units ``anywhere`` and ``entity``) each target picks
-        the source's library menu for each unit, so they use one menu from
-        then on (:meth:`_link_menus`). The voice settings (unit ``phrases``)
-        still link copy by copy: each target is given the source's phrase
-        library and defaults under one link id, kept in step on every save
-        of any copy (:meth:`_spread_links`); a target holding no voice yet
-        is given the source's document less the watch's own speech
-        settings (:func:`page_links.apply_unit_link`).
+        The voice settings (unit ``phrases``) link copy by copy: each target
+        is given the source's phrase library and defaults under one link id,
+        kept in step on every save of any copy (:meth:`_spread_links`); a
+        target holding no voice yet is given the source's document less the
+        watch's own speech settings (:func:`page_links.apply_unit_link`).
+        Pages, status pages and menus never link: each lives once in the
+        library and a device picks it (:meth:`library_pick`).
 
-        Refused, before anything is written: ``invalid`` for a kind that does
-        not link by unit or a unit it does not name, ``unknown_device``,
-        ``not_for_iphone`` for a target that may not own the kind
-        (``WATCH_CONFIG_PHONE_KINDS``), ``not_found`` for a source with no
-        record of the kind, ``unit_taken`` for a target that holds its own
-        unit (another menu or link, or other contents, never a blank unit
+        Refused, before anything is written: ``invalid`` for any kind but
+        ``voice`` (a library kind among them) or a unit it does not name,
+        ``unknown_device``, ``not_for_iphone`` for a target that may not own
+        the kind (``WATCH_CONFIG_PHONE_KINDS``), ``not_found`` for a source
+        with no record of the kind, ``unit_taken`` for a target that holds
+        its own unit (another link, or other contents, never a blank unit
         such as a new watch's voice settings) unless ``replace`` is true,
         and ``awaiting_move``. A voice link that ``replace`` took off a
         target and is then left on one owner only is dropped there.
 
-        Returns ``{"targets": {target: {"pages": [ids added], "status_pages":
-        [ids added], "adopted_status_pages": [], "units": [units
-        written]}}, "link_ids": {unit: linkId}}``; a menu's link id is its
-        library id.
+        Returns ``{"targets": {target: {"pages": [], "status_pages": [],
+        "adopted_status_pages": [], "units": [units written]}},
+        "link_ids": {unit: linkId}}``.
         """
+        if kind in LIBRARY_KINDS:
+            raise WatchConfigValidationError(
+                f"{kind.replace('_', ' ')} no longer link: a device picks them from the library "
+                "(library/pick); only voice links"
+            )
         if kind not in LINK_UNITS:
             raise WatchConfigValidationError(
-                f"kind must be one of {', '.join(sorted((*LINKED_KINDS, *LINK_UNITS)))}"
+                f"kind must be one of {', '.join(sorted(LINK_UNITS))}"
             )
         if (
             not isinstance(units, list)
@@ -3159,11 +3032,6 @@ class WatchConfigStore:
         source_doc = self._document(source_owner, kind)
         if source_doc is None:
             raise WatchConfigLinkError("not_found", f"{source_owner} has no {kind}")
-        if kind in LIBRARY_KINDS:
-            return self._link_menus(
-                source_owner, source_doc, units, target_list, replace, updated_by
-            )
-
         reply_targets: dict[str, dict[str, list[str]]] = {
             target: {"pages": [], "status_pages": [], "adopted_status_pages": []}
             for target in target_list
@@ -3209,93 +3077,6 @@ class WatchConfigStore:
                 ", ".join(reply_targets),
             )
         return {"targets": reply_targets, "link_ids": link_ids_out}
-
-    def _link_menus(
-        self,
-        source_owner: str,
-        source_doc: dict[str, Any],
-        units: list[str],
-        targets: list[str],
-        replace: bool,
-        updated_by: str,
-    ) -> dict[str, Any]:
-        """A menus link as picks: each target picks the source's menu for each
-        unit, after the pages and status pages those units' slots open
-        (:func:`page_links.menu_targets`), with what those pages reach, as
-        :meth:`link_pages` puts them on. A slot pointing at a page the
-        source does not list, or a system page, brings nothing.
-
-        A target that picks another menu for a unit is refused
-        ``unit_taken``, unless ``replace`` (its own menu then stays in the
-        library, picked by no one) or that menu is the same or blank. A
-        target with no menus record yet is given the source's document as
-        its start, the other unit as its own copy of the source's menu, so
-        only ``units`` are shared."""
-        self._check_library()
-        lib = self._library
-        picked = lib["picks"].get(source_owner, {}).get("menus", {})
-        for unit in units:
-            if picked.get(unit) not in lib["menus"]:
-                raise WatchConfigLinkError("not_found", f"{source_owner} has no {unit} menu")
-        slot_pages, slot_status = menu_targets(source_doc, units)
-        pages_doc = self._document(source_owner, "pages")
-        status_doc = self._document(source_owner, "status_pages")
-        listed = {page_id.upper() for page_id in listed_page_ids(pages_doc)}
-        page_ids = [page_id for page_id in slot_pages if page_id.upper() in listed]
-        reach_pages, reach_status = link_reach(pages_doc, status_doc, page_ids)
-        held_status = {i.upper(): i for i in ids_in(status_doc, LINKED_KINDS["status_pages"])}
-        wanted = {i.upper() for i in reach_status} | {
-            i.upper() for i in slot_status if i.upper() in held_status
-        }
-        status_ids = [i for i in held_status.values() if i.upper() in wanted]
-        lib, reply_targets = self._link_onto(source_owner, targets, reach_pages, status_ids, lib)
-        seeds: dict[tuple[str, str], dict[str, Any]] = {}
-        try:
-            for target in targets:
-                own = dict(lib["picks"].get(target, {}).get("menus", {}))
-                written: list[str] = []
-                for unit in units:
-                    menu_id = picked[unit]
-                    if own.get(unit) == menu_id:
-                        continue
-                    if (
-                        own.get(unit) in lib["menus"]
-                        and not replace
-                        and not self._menu_takes(lib, own[unit], menu_id, unit)
-                    ):
-                        raise WatchConfigLinkError(
-                            "unit_taken", f"the device already holds its own menus for {unit}"
-                        )
-                    lib = pick_menu(lib, target, unit, menu_id).library
-                    written.append(unit)
-                if self._document(target, "menus") is None:
-                    for unit, menu_id in picked.items():
-                        if unit in units or unit in own:
-                            continue
-                        lib = pick_menu(lib, target, unit, menu_id).library
-                        lib = copy_menu(lib, target, unit, self._copy_name(target)).library
-                    seeds[(target, "menus")] = without_unit_links(source_doc)
-                reply_targets[target]["units"] = written
-        except LibraryError as err:
-            raise WatchConfigLinkError(err.code, err.message) from err
-        written_records, _failed = self._apply_library(
-            lib, updated_by, first=source_owner, strict=True, refuse_awaiting=True, seeds=seeds
-        )
-        if written_records:
-            _LOGGER.info(
-                "Put the menus (%s) of %s on %s",
-                ", ".join(units),
-                source_owner,
-                ", ".join(reply_targets),
-            )
-        return {"targets": reply_targets, "link_ids": {unit: picked[unit] for unit in units}}
-
-    @staticmethod
-    def _menu_takes(lib: dict[str, Any], own: str, menu_id: str, unit: str) -> bool:
-        """Whether a target's menu ``own`` gives way to ``menu_id`` without
-        ``replace``: the same sections, or none worth keeping."""
-        mine = lib["menus"][own]["sections"]
-        return mine == lib["menus"][menu_id]["sections"] or unit_is_blank(mine, MENU_UNITS[unit])
 
     # ── the library's own ops (library/* in watch_config_ws.py) ────────
 
@@ -3367,9 +3148,9 @@ class WatchConfigStore:
         ``entity``) and the menu ``item_id`` the device uses for it from
         now on; a device with no menus record yet starts from a device that
         uses that menu, keeping a copy of that device's other menu as its
-        own (:meth:`_first_menus`). Every record the pick changes is
-        written, the device's and those of the devices sharing an item whose
-        link mark comes or goes.
+        own (:meth:`_first_menus`). Only the device's own records are
+        written (its pages and the status pages they bring along, or its
+        menus); no other device's record changes.
 
         Refused, before anything is written: ``invalid``, ``unknown_device``,
         ``not_for_iphone``, ``not_found`` for an item the library does not
@@ -3427,9 +3208,8 @@ class WatchConfigStore:
         menu_id: str,
         may_read: Callable[[str], bool] | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """For a menu picked onto a device with no menus record yet, as a
-        menus link onto such a device does (:meth:`_link_menus`): the device
-        starts from the record of a readable device that uses that menu
+        """For a menu picked onto a device with no menus record yet: the
+        device starts from the record of a readable device that uses that menu
         (the first by id that ``may_read`` allows), with that device's menu
         of the other unit as the device's own copy, so only the picked menu
         is shared. ``(library, seed document)``. Refused ``no_record`` when
@@ -3483,6 +3263,35 @@ class WatchConfigStore:
         )
         return {"id": copied.id, "revisions": self._revisions_of(written)}
 
+    def library_create_menu(self, unit: Any, name: Any, sections: Any) -> dict[str, Any]:
+        """A new library menu that no device uses yet (the Menus tab's New
+        menu, ``library/menus/create``); a tick then puts it on a device.
+
+        ``sections`` holds exactly the unit's keys as a menus document holds
+        them (``quickAction`` and ``pageSwitcher`` for ``anywhere``,
+        ``entityRadial`` for ``entity``), checked by the same guard every
+        menus document meets (:func:`_check_menus`): each an object, every
+        slot list a list of slots with unique ids. No record is written, so
+        no device changes and ``revisions`` is empty.
+
+        Refused ``invalid`` for an unknown unit, an empty name or sections of
+        another shape. Returns ``{"id": <new menu id>, "revisions": {}}``."""
+        self._check_library()
+        if not isinstance(unit, str) or unit not in MENU_UNITS:
+            raise WatchConfigValidationError(f"unit must be one of {', '.join(MENU_UNITS)}")
+        if not isinstance(sections, dict):
+            raise WatchConfigValidationError("sections must be an object")
+        try:
+            created = create_menu(self._library, unit, name, sections)
+        except LibraryError as err:
+            raise WatchConfigValidationError(err.message) from err
+        # The menus guard needs every section; the other unit's are blanks
+        # it does not look inside.
+        validate_document("menus", {**{key: {} for key in _MENUS_SECTION_KEYS}, **sections})
+        self._set_library(created.library)
+        _LOGGER.info("Made the %s menu %s in the library", unit, created.id)
+        return {"id": created.id, "revisions": {}}
+
     def library_rename_menu(self, menu_id: Any, name: Any) -> None:
         """Rename a library menu (``library/menus/rename``). No record holds a
         menu's name, so no device changes. Refused ``not_found`` or
@@ -3534,7 +3343,10 @@ class WatchConfigStore:
             "status_pages": len(lib["status_pages"]),
             "menus": len(lib["menus"]),
             "devices": len(lib["picks"]),
-            "shared": {kind: len(link_groups(lib, kind)) for kind in LIBRARY_KINDS},
+            "shared": {
+                kind: sum(1 for owners in pickers(lib, kind).values() if len(owners) >= 2)
+                for kind in LIBRARY_KINDS
+            },
         }
 
     def page_photo_history(self) -> tuple[dict[str, list[dict[str, Any]]], bool]:
@@ -3636,13 +3448,12 @@ class WatchConfigStore:
         while open stops treating its stored revision as current. An
         unreadable file had no kinds anyone could see, so it announces none.
 
-        The owner's picks leave the library; the items stay. A library item
-        it shared with exactly one other owner is then on that owner alone,
-        and a linked voice library (page_links.py) left on exactly one other
-        owner is no longer linked to anything, so the link mark is dropped
-        there, as that owner's next revision written by ``updated_by``
-        (``forget:<owner>`` when not given), after the forget's own
-        announcements.
+        The owner's picks leave the library; the items stay, and no other
+        owner's pages, status pages or menus change. A linked voice library
+        (page_links.py) left on exactly one other owner is no longer linked
+        to anything, so the link mark is dropped there, as that owner's next
+        revision written by ``updated_by`` (``forget:<owner>`` when not
+        given), after the forget's own announcements.
         """
         had = owner_watch_id in self._records or owner_watch_id in self._failed_owners
         records = self._records.pop(owner_watch_id, {})

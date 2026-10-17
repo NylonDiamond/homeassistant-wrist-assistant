@@ -1,14 +1,14 @@
-"""In-process tests for menus on several devices in ``WatchConfigStore``,
-now one library (``library.py``).
+"""In-process tests for menus on several devices in ``WatchConfigStore``:
+one library menu, ticked onto devices (``library.py``).
 
-The same store and fixture as ``test_page_links_store.py``. The current
-panel's menus link (``link_units``) makes several owners use one library
-menu for a unit (the Anywhere menu with the page switcher, or the Entity
-quick menu), and brings the pages and status pages its slots open. Every
-accepted write of ``menus`` updates the menus the owner uses, and each other
-owner using one of them is written again. While two or more owners use a
-menu their records carry its id under the top-level ``linkIds``; the
-panel's Unlink (a save without it) gives the owner its own copy.
+The same store and fixture as ``test_page_links_store.py``. A tick
+(``library_pick`` with kind ``menus``) makes a device use a library menu for
+a unit (the Anywhere menu with the page switcher, or the Entity quick menu).
+Every accepted write of ``menus`` updates the menus the owner uses, and each
+other owner using one of them is written again. No record carries a link
+mark: "Make a copy for this watch" (``library_copy_menu``) is the way to a
+device's own menu, and a forget or a move never writes another device's
+menus. Menus no longer link (``link_units`` refuses them).
 """
 
 from __future__ import annotations
@@ -74,61 +74,6 @@ def _menus_record(ctx) -> None:
     ctx.changes.clear()
 
 
-def _link(ctx, units, targets, **kwargs):
-    return ctx.store.link_units("menus", WATCH, units, targets, **kwargs)
-
-
-# ── link_units ───────────────────────────────────────────────────────────
-
-
-def test_a_menu_link_onto_a_device_with_none_copies_the_menus_and_its_pages(ctx) -> None:
-    _menus_record(ctx)
-    result = _link(ctx, ["anywhere"], [PHONE])
-    link = result["link_ids"]["anywhere"]
-    assert result == {
-        "targets": {
-            PHONE: {
-                "pages": [HOME, LIGHTS],
-                "status_pages": [DOORS],
-                "adopted_status_pages": [],
-                "units": ["anywhere"],
-            }
-        },
-        "link_ids": {"anywhere": link},
-    }
-    watch = _doc(ctx, WATCH, "menus")
-    phone = _doc(ctx, PHONE, "menus")
-    assert watch["linkIds"] == {"anywhere": link} == phone["linkIds"]
-    assert {k: v for k, v in phone.items() if k != "linkIds"} == _menus()
-    assert list(phone) == sorted(phone)
-    # The pages its slots open came along, linked; the system page, the
-    # missing page and the phrase did not.
-    assert [p["id"] for p in _doc(ctx, PHONE)["pages"]] == [HOME, LIGHTS]
-    assert _doc(ctx, PHONE)["pages"][0]["linkId"]
-    assert _doc(ctx, PHONE, "status_pages")["statusPages"][0]["linkId"]
-    # What a slot opens is written before the slot, on each device.
-    assert ctx.changes == [
-        (WATCH, "status_pages"),
-        (WATCH, "pages"),
-        (WATCH, "menus"),
-        (PHONE, "status_pages"),
-        (PHONE, "pages"),
-        (PHONE, "menus"),
-    ]
-
-
-def test_the_entity_menu_brings_only_its_own_slots_pages(ctx) -> None:
-    _menus_record(ctx)
-    result = _link(ctx, ["entity"], [PHONE])
-    assert result["targets"][PHONE] == {
-        "pages": [SOLO],
-        "status_pages": [],
-        "adopted_status_pages": [],
-        "units": ["entity"],
-    }
-    assert _doc(ctx, PHONE, "menus")["linkIds"] == {"entity": result["link_ids"]["entity"]}
-
-
 def _starter_status(name: str, *others: dict) -> dict:
     return {
         "schemaVersion": 1,
@@ -136,97 +81,73 @@ def _starter_status(name: str, *others: dict) -> dict:
     }
 
 
-def test_a_menu_slot_that_opens_a_starter_brings_it_beside_the_targets_own(ctx) -> None:
-    """A Status page slot that opens a starter status page brings it to the
-    target like any status page. The target's own different starter came
-    under an id of its own, so the two stand side by side."""
-    _save(ctx, WATCH, _starter_status("Batteries", {"id": DOORS, "name": "Doors", "rows": []}),
-          "status_pages")
-    _save(ctx, PHONE, _starter_status("Mine"), "status_pages")
-    [own] = [p["id"] for p in _doc(ctx, PHONE, "status_pages")["statusPages"]]
-    assert own != STARTER
-    menus = _menus()
-    menus["entityRadial"]["allSlots"].append(
-        _slot(9, {"type": "showStatusPage", "pageId": STARTER})
-    )
-    _save(ctx, WATCH, menus, "menus")
-    ctx.changes.clear()
-    result = _link(ctx, ["entity"], [PHONE])
-    assert result["targets"][PHONE]["status_pages"] == [STARTER]
-    assert result["targets"][PHONE]["adopted_status_pages"] == []
-    watch = _doc(ctx, WATCH, "status_pages")["statusPages"]
-    phone = _doc(ctx, PHONE, "status_pages")["statusPages"]
-    assert [p["id"] for p in phone] == [own, STARTER]
-    assert phone[1]["name"] == "Batteries"
-    assert phone[1]["linkId"] == watch[1]["linkId"] == STARTER
-    assert "linkId" not in watch[0], "the Doors page its slots never open stays the watch's"
+def _picked(ctx, owner: str) -> dict:
+    return ctx.store.library_summary()["picks"][owner]["menus"]
 
 
-def test_a_target_with_its_own_menu_is_refused_unless_replaced(ctx) -> None:
+def _tick(ctx, units, targets) -> dict:
+    """Tick the menus the watch uses for ``units`` onto each target."""
+    menus = _picked(ctx, WATCH)
+    for target in targets:
+        for unit in units:
+            ctx.store.library_pick(target, "menus", menus[unit], unit=unit)
+    return menus
+
+
+def _linked(ctx, units=("anywhere",), targets=(PHONE,)) -> dict:
+    """The watch's menus, and each target with the pages the watch's slots
+    open and the watch's menus for ``units``."""
     _menus_record(ctx)
-    _save(ctx, WATCH_2, _menus(beam="none", light=False), "menus")
+    for target in targets:
+        for page_id in (HOME, LIGHTS):
+            ctx.store.library_pick(target, "pages", page_id, on=True)
+    menus = _tick(ctx, units, targets)
     ctx.changes.clear()
-    with pytest.raises(ctx.mod.WatchConfigLinkError) as err:
-        _link(ctx, ["anywhere"], [PHONE, WATCH_2])
-    assert err.value.code == "unit_taken"
-    assert ctx.changes == [], "checked whole first: the phone got nothing either"
-    assert ctx.store.get(PHONE, "menus") is None
-
-    result = _link(ctx, ["anywhere"], [WATCH_2], replace=True)
-    assert result["targets"][WATCH_2]["units"] == ["anywhere"]
-    watch_2 = _doc(ctx, WATCH_2, "menus")
-    assert watch_2["quickAction"]["beamStyle"] == "auroraWash"
-    assert watch_2["entityRadial"]["lightInheritsAll"] is False, "the other unit stays its own"
+    return menus
 
 
-def test_relinking_writes_nothing(ctx) -> None:
+def _no_link_ids(ctx, *owners: str) -> bool:
+    return all("linkIds" not in _doc(ctx, owner, "menus") for owner in owners)
+
+
+# ── ticks ────────────────────────────────────────────────────────────────
+
+
+def test_a_tick_onto_a_device_with_no_menus_starts_them_from_the_watch(ctx) -> None:
     _menus_record(ctx)
-    first = _link(ctx, ["anywhere", "entity"], [PHONE])
-    ctx.changes.clear()
-    again = _link(ctx, ["entity", "anywhere"], [PHONE])
-    assert again["link_ids"] == first["link_ids"]
-    assert again["targets"][PHONE] == {
-        "pages": [],
-        "status_pages": [],
-        "adopted_status_pages": [],
-        "units": [],
-    }
+    menus = _tick(ctx, ["anywhere"], [PHONE])
+    assert _doc(ctx, PHONE, "menus") == _menus()
+    assert _no_link_ids(ctx, WATCH, PHONE)
+    mine = _picked(ctx, PHONE)
+    assert mine["anywhere"] == menus["anywhere"]
+    assert mine["entity"] != menus["entity"], "the other menu is the phone's own copy"
+    assert ctx.changes == [(PHONE, "menus")], "the watch is not written"
+
+
+def test_ticking_the_same_menu_again_writes_nothing(ctx) -> None:
+    _linked(ctx, units=("anywhere", "entity"))
+    _tick(ctx, ["entity", "anywhere"], [PHONE])
     assert ctx.changes == []
 
 
-@pytest.mark.parametrize(
-    ("kind", "units", "targets", "code"),
-    [
-        ("menus", ["both"], [PHONE], "invalid"),
-        ("menus", [], [PHONE], "invalid"),
-        ("menus", "anywhere", [PHONE], "invalid"),
-        ("pages", ["anywhere"], [PHONE], "invalid"),
-        ("menus", ["anywhere"], [WATCH], "invalid"),
-        ("menus", ["anywhere"], ["stranger"], "unknown_device"),
-    ],
-)
-def test_menu_link_refusals_write_nothing(ctx, kind, units, targets, code) -> None:
+@pytest.mark.parametrize("kind", ["menus", "pages", "status_pages"])
+def test_the_library_kinds_no_longer_link(ctx, kind) -> None:
     _menus_record(ctx)
     with pytest.raises(ctx.mod.WatchConfigStoreError) as err:
-        ctx.store.link_units(kind, WATCH, units, targets)
-    assert err.value.code == code
+        ctx.store.link_units(kind, WATCH, ["anywhere"], [PHONE])
+    assert err.value.code == "invalid"
+    assert "library/pick" in err.value.message
     assert ctx.changes == []
 
 
-def test_a_source_with_no_menus_is_not_found(ctx) -> None:
-    with pytest.raises(ctx.mod.WatchConfigLinkError) as err:
-        _link(ctx, ["anywhere"], [PHONE])
-    assert err.value.code == "not_found"
-
-
-def test_a_menu_link_never_starts_the_menus_of_a_watch_awaiting_its_move(ctx) -> None:
+def test_a_tick_never_starts_the_menus_of_a_watch_awaiting_its_move(ctx) -> None:
     _menus_record(ctx)
     _save(ctx, WATCH_2, {"schemaVersion": 1, "pages": []})
     _save(ctx, WATCH_2, {"schemaVersion": 1, "statusPages": []}, "status_pages")
     ctx.awaiting.add(WATCH_2)
     ctx.changes.clear()
     with pytest.raises(ctx.mod.WatchConfigLinkError) as err:
-        _link(ctx, ["entity"], [WATCH_2])
+        _tick(ctx, ["entity"], [WATCH_2])
     assert err.value.code == "awaiting_move"
     assert ctx.changes == []
     assert ctx.store.get(WATCH_2, "menus") is None
@@ -239,17 +160,10 @@ def test_the_target_check_is_the_phone_kinds_table(ctx) -> None:
         ctx.store.link_units("voice", WATCH, ["phrases"], [PHONE])
 
 
-# ── fan-out ──────────────────────────────────────────────────────────────
+# ── an edit reaches every device using the menu ──────────────────────────
 
 
-def _linked(ctx, units=("anywhere",), targets=(PHONE,)) -> dict:
-    _menus_record(ctx)
-    result = _link(ctx, list(units), list(targets))
-    ctx.changes.clear()
-    return result
-
-
-def test_a_linked_unit_edit_reaches_the_copy_and_an_unlinked_one_does_not(ctx) -> None:
+def test_a_shared_menu_edit_reaches_the_other_and_its_own_menu_does_not(ctx) -> None:
     _linked(ctx)
     watch = _doc(ctx, WATCH, "menus")
     watch["quickAction"]["beamStyle"] = "ripplePulse"
@@ -269,9 +183,10 @@ def test_a_linked_unit_edit_reaches_the_copy_and_an_unlinked_one_does_not(ctx) -
     assert _doc(ctx, PHONE, "menus")["entityRadial"]["lightInheritsAll"] is True
 
 
-def test_a_slot_added_to_a_linked_menu_brings_its_page_along(ctx) -> None:
-    """A Go to page slot added after the link opens a page the other device
-    lacks: the page comes along, linked, before the menu that opens it."""
+def test_a_slot_added_to_a_shared_menu_brings_its_page_along(ctx) -> None:
+    """A Go to page slot added to a menu another device uses opens a page
+    that device lacks: the page comes along, before the menu that opens
+    it."""
     _linked(ctx)
     assert SOLO not in [p["id"] for p in _doc(ctx, PHONE)["pages"]]
     watch = _doc(ctx, WATCH, "menus")
@@ -279,9 +194,8 @@ def test_a_slot_added_to_a_linked_menu_brings_its_page_along(ctx) -> None:
     _save(ctx, WATCH, watch, "menus")
     phone_pages = _doc(ctx, PHONE)["pages"]
     assert [p["id"] for p in phone_pages] == [HOME, LIGHTS, SOLO]
-    solo = next(p for p in _doc(ctx, WATCH)["pages"] if p["id"] == SOLO)
-    assert phone_pages[-1]["linkId"] == solo["linkId"]
-    assert ctx.changes == [(WATCH, "menus"), (WATCH, "pages"), (PHONE, "pages"), (PHONE, "menus")]
+    assert all("linkId" not in p for p in phone_pages)
+    assert ctx.changes == [(WATCH, "menus"), (PHONE, "pages"), (PHONE, "menus")]
     assert _doc(ctx, PHONE, "menus")["quickAction"]["slots"][-1]["action"]["pageId"] == SOLO
 
     # A slot the menu already had brings nothing again, even once the page
@@ -296,9 +210,9 @@ def test_a_slot_added_to_a_linked_menu_brings_its_page_along(ctx) -> None:
     assert ctx.changes == [(WATCH, "menus"), (PHONE, "menus")]
 
 
-def test_a_slot_added_to_a_linked_menu_brings_a_starter_onto_the_other(ctx) -> None:
-    """A Status page slot added after the link that opens a starter puts
-    that starter on the other device too, before the menu that opens it."""
+def test_a_slot_added_to_a_shared_menu_brings_a_starter_onto_the_other(ctx) -> None:
+    """A Status page slot added that opens a starter puts that starter on
+    the other device too, before the menu that opens it."""
     _save(ctx, WATCH, _starter_status("Batteries", {"id": DOORS, "name": "Doors", "rows": []}),
           "status_pages")
     _linked(ctx)
@@ -308,14 +222,8 @@ def test_a_slot_added_to_a_linked_menu_brings_a_starter_onto_the_other(ctx) -> N
     _save(ctx, WATCH, watch, "menus")
     held = _doc(ctx, PHONE, "status_pages")["statusPages"]
     assert [p["id"] for p in held] == [DOORS, STARTER]
-    assert held[1]["linkId"] == STARTER and held[1]["name"] == "Batteries"
-    assert _doc(ctx, WATCH, "status_pages")["statusPages"][1]["linkId"] == STARTER
-    assert ctx.changes == [
-        (WATCH, "menus"),
-        (WATCH, "status_pages"),
-        (PHONE, "status_pages"),
-        (PHONE, "menus"),
-    ]
+    assert held[1]["name"] == "Batteries" and "linkId" not in held[1]
+    assert ctx.changes == [(WATCH, "menus"), (PHONE, "status_pages"), (PHONE, "menus")]
 
 
 def test_a_status_page_saved_under_a_shared_id_is_an_edit_of_it(ctx) -> None:
@@ -349,7 +257,7 @@ def test_a_slot_whose_page_the_other_device_already_has_brings_nothing(ctx) -> N
     assert _doc(ctx, PHONE, "menus")["quickAction"]["slots"][-1]["action"]["pageId"] == SOLO
 
 
-def test_a_device_put_and_a_restore_fan_out(ctx) -> None:
+def test_a_device_put_and_a_restore_reach_the_other(ctx) -> None:
     _linked(ctx)
     record = ctx.store.get(PHONE, "menus")
     phone = copy.deepcopy(record.document)
@@ -360,68 +268,64 @@ def test_a_device_put_and_a_restore_fan_out(ctx) -> None:
     assert _doc(ctx, WATCH, "menus")["quickAction"]["beamStyle"] == "none"
     assert ctx.store.get(WATCH, "menus").updated_by == PHONE
 
-    linked_revision = ctx.store.get(PHONE, "menus").history[0].revision
+    shared_revision = ctx.store.get(PHONE, "menus").history[0].revision
     ctx.store.restore(
-        PHONE, "menus", linked_revision, base_revision=ctx.store.get(PHONE, "menus").revision
+        PHONE, "menus", shared_revision, base_revision=ctx.store.get(PHONE, "menus").revision
     )
     assert _doc(ctx, WATCH, "menus")["quickAction"]["beamStyle"] == "auroraWash"
 
 
-def test_unlinking_one_of_two_drops_the_link_on_the_other(ctx) -> None:
-    _linked(ctx, units=("anywhere", "entity"))
+def test_a_copy_for_this_watch_is_the_way_to_a_menu_of_its_own(ctx) -> None:
+    menus = _linked(ctx, units=("anywhere", "entity"))
+    copied = ctx.store.library_copy_menu(PHONE, "anywhere", "Phone menu")
+    assert _picked(ctx, PHONE) == {"anywhere": copied["id"], "entity": menus["entity"]}
     phone = _doc(ctx, PHONE, "menus")
-    phone["linkIds"] = {"entity": phone["linkIds"]["entity"]}
+    phone["quickAction"]["beamStyle"] = "none"
+    phone["entityRadial"]["lightInheritsAll"] = False
+    ctx.changes.clear()
     _save(ctx, PHONE, phone, "menus")
     watch = _doc(ctx, WATCH, "menus")
-    assert set(watch["linkIds"]) == {"entity"}
+    assert watch["quickAction"]["beamStyle"] == "auroraWash", "the copy is the phone's alone"
+    assert watch["entityRadial"]["lightInheritsAll"] is False, "the entity menu is still shared"
     assert ctx.changes == [(PHONE, "menus"), (WATCH, "menus")]
 
 
-def test_forgetting_one_of_two_holders_drops_the_menu_link(ctx) -> None:
-    _linked(ctx, units=("anywhere", "entity"))
+def test_forgetting_the_other_device_leaves_the_watch_s_menus_alone(ctx) -> None:
+    menus = _linked(ctx, units=("anywhere", "entity"))
+    revision = ctx.store.get(WATCH, "menus").revision
     ctx.store.forget_owner(PHONE)
-    assert "linkIds" not in _doc(ctx, WATCH, "menus")
-    assert ctx.store.get(WATCH, "menus").updated_by == f"forget:{PHONE}"
-    assert ctx.store.link_places()["menus"] == {}
+    assert ctx.store.get(WATCH, "menus").revision == revision
+    assert _picked(ctx, WATCH) == menus
+    assert ctx.store.library_summary()["menus"][menus["anywhere"]]["owners"] == [WATCH]
 
 
-def test_forgetting_one_of_three_holders_keeps_the_menu_link(ctx) -> None:
-    result = _linked(ctx, targets=(PHONE, WATCH_2))
-    link = result["link_ids"]["anywhere"]
-    ctx.store.forget_owner(PHONE)
-    assert _doc(ctx, WATCH, "menus")["linkIds"] == {"anywhere": link}
-    assert _doc(ctx, WATCH_2, "menus")["linkIds"] == {"anywhere": link}
-
-
-def test_a_replaced_link_left_on_one_owner_is_dropped_there(ctx) -> None:
-    """The phone's Anywhere menu was linked to the watch; linking another
-    watch's onto the phone leaves the first watch's link on it alone."""
-    result = _linked(ctx)
-    old = result["link_ids"]["anywhere"]
+def test_ticking_another_menu_moves_the_device_off_the_first(ctx) -> None:
+    menus = _linked(ctx)
     third = _menus(beam="none")
     third["quickAction"]["slots"] = []
     ctx.store.panel_save(WATCH_2, "menus", third, base_revision=0)
-    new = ctx.store.link_units("menus", WATCH_2, ["anywhere"], [PHONE], replace=True)
-    link = new["link_ids"]["anywhere"]
-    assert link != old
-    assert _doc(ctx, PHONE, "menus")["linkIds"] == {"anywhere": link}
+    theirs = _picked(ctx, WATCH_2)["anywhere"]
+    revision = ctx.store.get(WATCH, "menus").revision
+    ctx.store.library_pick(PHONE, "menus", theirs, unit="anywhere")
     assert _doc(ctx, PHONE, "menus")["quickAction"]["beamStyle"] == "none"
-    assert "linkIds" not in _doc(ctx, WATCH, "menus"), "the old link had one copy left"
-    assert _doc(ctx, WATCH, "menus")["quickAction"]["beamStyle"] == "auroraWash"
+    assert ctx.store.get(WATCH, "menus").revision == revision, "the watch is not written"
+    summary = ctx.store.library_summary()["menus"]
+    assert summary[menus["anywhere"]]["owners"] == [WATCH]
+    assert summary[theirs]["owners"] == [PHONE, WATCH_2]
 
 
-def test_a_move_carries_the_menu_link_to_the_new_id(ctx) -> None:
-    result = _linked(ctx)
-    link = result["link_ids"]["anywhere"]
+def test_a_move_carries_the_menu_picks_to_the_new_id(ctx) -> None:
+    menus = _linked(ctx)
+    phone = ctx.store.get(PHONE, "menus").revision
     ctx.store.move_owner(WATCH, WATCH_3, updated_by="move")
-    assert _doc(ctx, WATCH_3, "menus")["linkIds"] == {"anywhere": link}
-    assert _doc(ctx, PHONE, "menus")["linkIds"] == {"anywhere": link}
-    assert ctx.store.link_places()["menus"] == {
-        link: {"unit": "anywhere", "owners": sorted([PHONE, WATCH_3])}
-    }
+    assert _picked(ctx, WATCH_3) == menus
+    assert ctx.store.get(PHONE, "menus").revision == phone
+    owners = ctx.store.library_summary()["menus"][menus["anywhere"]]["owners"]
+    assert owners == sorted([PHONE, WATCH_3])
+    assert _no_link_ids(ctx, WATCH_3, PHONE)
 
 
-def test_a_copy_over_its_cap_is_left_and_the_save_stands(ctx, monkeypatch) -> None:
+def test_a_record_over_its_cap_is_left_and_the_save_stands(ctx, monkeypatch) -> None:
     _linked(ctx)
     real = ctx.mod.validate_document
 
@@ -443,28 +347,17 @@ def test_a_copy_over_its_cap_is_left_and_the_save_stands(ctx, monkeypatch) -> No
     assert _doc(ctx, PHONE, "menus")["quickAction"]["beamStyle"] == "auroraWash"
 
 
-# ── places and link_device ───────────────────────────────────────────────
-
-
-def test_link_places_names_each_menu_links_unit_and_holders(ctx) -> None:
-    result = _linked(ctx, units=("anywhere", "entity"), targets=(PHONE, WATCH_2))
-    everyone = sorted([PHONE, WATCH, WATCH_2])
-    assert ctx.store.link_places()["menus"] == {
-        result["link_ids"]["anywhere"]: {"unit": "anywhere", "owners": everyone},
-        result["link_ids"]["entity"]: {"unit": "entity", "owners": everyone},
-    }
+# ── the iPhone's copy of a watch (link_device) ───────────────────────────
 
 
 def test_link_device_gives_the_target_the_source_s_menus(ctx) -> None:
-    """Add all onto a device with no menus: it uses the source's Anywhere
-    and Entity quick menu, one menu each on every device that uses it."""
-    result = _linked(ctx)
-    anywhere = result["link_ids"]["anywhere"]
+    """A device with no menus uses the source's Anywhere and Entity quick
+    menu, one menu each on every device that uses it."""
+    menus = _linked(ctx)
     out = ctx.store.link_device(WATCH, WATCH_2, updated_by="panel")
     assert out["copied"] == ["menus"]
-    watch_2 = _doc(ctx, WATCH_2, "menus")
-    assert watch_2["linkIds"] == _doc(ctx, WATCH, "menus")["linkIds"]
-    places = ctx.store.link_places()["menus"]
-    assert places[anywhere] == {"unit": "anywhere", "owners": sorted([PHONE, WATCH, WATCH_2])}
-    entity = watch_2["linkIds"]["entity"]
-    assert places[entity] == {"unit": "entity", "owners": sorted([WATCH, WATCH_2])}
+    assert _picked(ctx, WATCH_2) == menus
+    assert _doc(ctx, WATCH_2, "menus") == _doc(ctx, WATCH, "menus")
+    summary = ctx.store.library_summary()["menus"]
+    assert summary[menus["anywhere"]]["owners"] == sorted([PHONE, WATCH, WATCH_2])
+    assert summary[menus["entity"]]["owners"] == sorted([WATCH, WATCH_2])

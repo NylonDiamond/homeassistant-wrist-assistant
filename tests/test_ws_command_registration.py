@@ -14,7 +14,9 @@ The panel is open to every signed-in user (``complication_panel.py``), and
 each command falls in exactly one of four groups (``panel_access.py``):
 
 * ``_ADMIN``: keeps ``@websocket_api.require_admin``. Only the gallery key,
-  which is about the home's public face rather than anyone's devices.
+  which is about the home's public face rather than anyone's devices, and a
+  new library menu, which no device uses yet (a menu no device uses is an
+  administrator's).
 * ``_OWNER``: names one device (or two, for a move) and calls an owner
   check before it reads or writes: ``require_owner`` for the panel's
   commands, and ``may_follow_owner`` / ``_may_follow_owner`` for the
@@ -68,8 +70,11 @@ _MODULES = [
 ]
 
 # The gallery key lets whoever holds it delete this home's gallery uploads.
+# A new menu belongs to no device until one is ticked, so it is an
+# administrator's, like every library item no device has.
 _ADMIN = {
     _MODULE.name: {"ws_gallery_key"},
+    _WATCH_CONFIG_MODULE.name: {"ws_library_menus_create"},
 }
 
 # Command -> the owner check it must call. Every one of them is refused for
@@ -101,10 +106,9 @@ _OWNER = {
         "ws_watch_config_history_entry": "require_owner",
         "ws_watch_config_restore": "require_owner",
         "ws_watch_voices_get": "require_owner",
-        # Linking writes the source's pages and every target's: the caller
-        # must manage each one (pinned below).
+        # A voice link writes the source watch's voice settings and every
+        # target's: the caller must manage each one (pinned below).
         "ws_watch_pages_link": "require_owner",
-        "ws_watch_pages_link_all": "require_owner",
         # The library: a pick or a menu copy names its device; a rename or
         # delete names an item, and the caller must manage every device
         # that has it (an item no device has is an administrator's).
@@ -353,9 +357,10 @@ def test_a_move_checks_both_of_its_owners() -> None:
     assert named == {"source_owner_watch_id", "target_owner_watch_id"}
 
 
-def test_a_page_link_checks_its_source_and_every_target() -> None:
-    """A link writes the source's pages and each target's; a non-admin must
-    manage all of them, or they could put pages on someone else's watch."""
+def test_a_voice_link_checks_its_source_and_every_target() -> None:
+    """A link writes the source's voice settings and each target's; a
+    non-admin must manage all of them, or they could put a phrase library on
+    someone else's watch."""
     node = _command(_WATCH_CONFIG_MODULE, "ws_watch_pages_link")
     [call] = [
         c
@@ -366,13 +371,16 @@ def test_a_page_link_checks_its_source_and_every_target() -> None:
         ast.unparse(arg.value if isinstance(arg, ast.Starred) else arg) for arg in call.args[3:]
     }
     assert named == {"msg['source_id']", "msg['targets']"}
-    node = _command(_WATCH_CONFIG_MODULE, "ws_watch_pages_link_all")
-    [call] = [
-        c
-        for c in ast.walk(node)
-        if isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id == "require_owner"
-    ]
-    assert {ast.unparse(arg) for arg in call.args[3:]} == {"msg['source_id']", "msg['target_id']"}
+
+
+def test_link_all_is_no_longer_a_command() -> None:
+    """Add all went with linked pages: a device picks what it wants from
+    the library. A panel that still sends it hears ``unknown_command``."""
+    source = _WATCH_CONFIG_MODULE.read_text()
+    assert "link_all" not in source
+    names = {node.name for node in _command_functions(_tree(_WATCH_CONFIG_MODULE))}
+    assert "ws_watch_pages_link_all" not in names
+    assert "ws_library_menus_create" in _registered_names(_tree(_WATCH_CONFIG_MODULE))
 
 
 @pytest.mark.parametrize(

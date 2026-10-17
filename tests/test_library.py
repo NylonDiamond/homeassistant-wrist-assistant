@@ -33,6 +33,8 @@ def _load(name: str):
 page_links = _load("page_links")
 lib = _load("library")
 
+_FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
+
 WATCH = "watch-A"
 WATCH_2 = "watch-B"
 WATCH_3 = "watch-C"
@@ -165,11 +167,11 @@ def test_identical_copies_are_one_item_picked_by_both() -> None:
     assert library["picks"][WATCH_2]["pages"][2] == {"id": LIGHTS, "isHidden": False}
     assert library["picks"][WATCH]["pages"][0]["page"]["isSystemPage"] is True
     assert result.renamed == {}
-    # Both now carry a link on every shared page, so both records change.
-    assert result.changed == {WATCH: ["status_pages", "pages"], WATCH_2: ["status_pages", "pages"]}
-    built = lib.materialise(library, WATCH, "pages", records[WATCH]["pages"])
-    assert _page(built, LIGHTS)["linkId"] == LIGHTS
-    assert "linkId" not in _page(built, SYSTEM)
+    # Shared, but no record carries a link mark, so neither changes.
+    assert result.changed == {}
+    for owner in (WATCH, WATCH_2):
+        built = lib.materialise(library, owner, "pages", records[owner]["pages"])
+        assert built == records[owner]["pages"]
 
 
 def test_one_device_alone_is_unchanged() -> None:
@@ -191,7 +193,8 @@ def test_linked_copies_are_one_item_even_when_they_differ() -> None:
     assert result.renamed == {}
     built = lib.materialise(result.library, WATCH_2, "pages", records[WATCH_2]["pages"])
     assert _page(built, LIGHTS)["name"] == "Lights"
-    assert _page(built, LIGHTS)["linkId"] == LIGHTS
+    assert "linkId" not in _page(built, LIGHTS), "the old token is dropped, nothing in its place"
+    assert result.changed == {WATCH: ["pages"], WATCH_2: ["pages"]}
 
 
 def test_only_the_same_token_joins_a_differing_copy() -> None:
@@ -237,10 +240,10 @@ def test_a_taken_id_with_other_content_gets_a_new_id_and_its_references_follow()
     # The rooms record is rewritten; the stay sentinel is left alone.
     assert result.rewritten[WATCH_2]["rooms"]["roomQuickJumpFallbackPageId"] == new_lights
     assert result.rewritten[WATCH_2]["rooms"]["roomQuickJumpMappings"] == {"kitchen": new_lights, "hall": "STAY_ON_CURRENT_PAGE"}
-    assert result.changed[WATCH_2] == ["status_pages", "pages", "menus", "rooms"]
-    # Status pages are still shared, so both get a link there; A's pages
-    # and menus are its own.
-    assert result.changed[WATCH] == ["status_pages"]
+    assert result.changed[WATCH_2] == ["pages", "menus", "rooms"]
+    # Status pages are still shared, A's pages and menus are its own: A's
+    # records are left exactly as they were.
+    assert WATCH not in result.changed
     # The complication report: the caller rewrites with the pages map.
     moved = lib.rename_complication(complication, result.renamed[WATCH_2]["pages"])
     assert moved["openPageId"] == new_lights
@@ -266,7 +269,8 @@ def test_a_taken_status_page_id_rewrites_tiles_and_slots() -> None:
     menus_b = lib.materialise(library, WATCH_2, "menus")
     assert menus_b["quickAction"]["slots"][1]["action"]["pageId"] == new_doors
     # The entity menus are still the same, so still one menu.
-    assert menus_b["linkIds"] == {"entity": library["picks"][WATCH]["menus"]["entity"]}
+    assert library["picks"][WATCH_2]["menus"]["entity"] == library["picks"][WATCH]["menus"]["entity"]
+    assert "linkIds" not in menus_b
 
 
 def test_starters_on_three_devices() -> None:
@@ -325,8 +329,8 @@ def test_identical_menus_are_one_menu_of_each_kind() -> None:
     assert set(menus[anywhere]["sections"]) == {"quickAction", "pageSwitcher"}
     assert result.library["picks"][WATCH_2]["menus"] == result.library["picks"][WATCH]["menus"]
     built = lib.materialise(result.library, WATCH, "menus", records[WATCH]["menus"])
-    assert list(built) == sorted(built)
-    assert built["linkIds"] == dict(sorted(result.library["picks"][WATCH]["menus"].items()))
+    assert built == records[WATCH]["menus"], "one menu on both, and no link marks"
+    assert result.changed == {}
 
 
 def test_differing_menus_are_named_after_their_first_device() -> None:
@@ -357,7 +361,7 @@ def test_linked_menus_are_one_menu_and_drop_the_old_token() -> None:
     assert result.library["menus"][anywhere]["name"] == "Anywhere menu"
     built = lib.materialise(result.library, WATCH_2, "menus", records[WATCH_2]["menus"])
     assert built["quickAction"]["beamStyle"] == "auroraWash"
-    assert built["linkIds"]["anywhere"] == anywhere
+    assert "linkIds" not in built
     assert MENU_LINK not in json.dumps(result.library)
 
 
@@ -388,7 +392,7 @@ def test_a_linked_menu_whose_slots_follow_a_fork_is_not_joined_by_its_token() ->
 # ── materialise ──────────────────────────────────────────────────────────
 
 
-def test_migrate_then_materialise_gives_back_every_record_less_its_link_keys() -> None:
+def test_migrate_then_materialise_gives_back_every_record_less_its_old_link_keys() -> None:
     records = {
         WATCH: _record(_pages(link=LINK), _status(doors_link=LINK), _menus(links={"anywhere": MENU_LINK})),
         WATCH_2: _record(_pages(hidden=False, link=LINK), _status(doors_link=LINK), _menus(links={"anywhere": MENU_LINK})),
@@ -401,12 +405,32 @@ def test_migrate_then_materialise_gives_back_every_record_less_its_link_keys() -
     for owner, held in records.items():
         for kind, record in held.items():
             built = lib.materialise(result.library, owner, kind, record)
-            assert _strip(built) == _strip(record), (owner, kind)
+            assert built == _strip(record), (owner, kind)
     built = lib.materialise(result.library, WATCH_3, "menus", records[WATCH_3]["menus"])
     assert list(built)[-1] == "futureKey"
-    assert list(built)[1] == "linkIds"
     # Pages LIGHTS and HOME are on four devices, DOORS too.
-    assert lib.link_groups(result.library, "pages") == {HOME: sorted(ORDER), LIGHTS: sorted(ORDER)}
+    shared = {i: o for i, o in lib.pickers(result.library, "pages").items() if len(o) >= 2}
+    assert shared == {HOME: sorted(ORDER), LIGHTS: sorted(ORDER)}
+    assert result.changed == {
+        WATCH: ["status_pages", "pages", "menus"],
+        WATCH_2: ["status_pages", "pages", "menus"],
+    }, "only the records that carried a link key"
+
+
+def test_materialise_writes_no_link_keys_on_a_shared_page_or_menu() -> None:
+    library = _shared()
+    assert lib.pickers(library, "pages")[LIGHTS] == [WATCH, WATCH_2]
+    for owner in (WATCH, WATCH_2):
+        for kind, key in (("pages", "pages"), ("status_pages", "statusPages")):
+            built = lib.materialise(library, owner, kind)
+            assert all("linkId" not in page for page in built[key]), (owner, kind)
+        assert "linkIds" not in lib.materialise(library, owner, "menus")
+    # A template that still carries them (an old record, an old panel save)
+    # gives a record without them.
+    template = _menus(links={"anywhere": "stale", "entity": "stale"})
+    assert lib.materialise(library, WATCH, "menus", template) == _menus()
+    pages = _pages(link=LIGHTS)
+    assert lib.materialise(library, WATCH, "pages", pages) == _pages()
 
 
 def test_materialise_is_none_for_an_owner_with_no_picks_of_the_kind() -> None:
@@ -445,8 +469,8 @@ def test_a_page_edit_reaches_every_device_that_picks_it() -> None:
     result = lib.map_back(library, WATCH, "pages", saved)
     assert library == before, "map_back changed its input"
     assert result.library["pages"][LIGHTS]["name"] == "Lamps"
-    # Watch A sent no link keys, so its record differs from what it sent.
-    assert result.touched == {WATCH: ["pages"], WATCH_2: ["pages"]}
+    # Watch A's record is what it sent; watch B, which has Lights too, changes.
+    assert result.touched == {WATCH_2: ["pages"]}
     assert _page(lib.materialise(result.library, WATCH_2, "pages"), LIGHTS)["name"] == "Lamps"
     assert result.renamed == {}
 
@@ -455,10 +479,15 @@ def test_a_save_equal_to_the_record_touches_no_one() -> None:
     library = _shared()
     saved = lib.materialise(library, WATCH, "pages")
     assert lib.map_back(library, WATCH, "pages", saved).touched == {}
-    # The same save without the link keys only touches the saver.
-    result = lib.map_back(library, WATCH, "pages", _strip(saved))
+    # The same save still carrying old link keys (one naming another page)
+    # only touches the saver, whose record drops them; nothing else moves.
+    stale = copy.deepcopy(saved)
+    _page(stale, LIGHTS)["linkId"] = LIGHTS
+    _page(stale, HOME)["linkId"] = LINK
+    result = lib.map_back(library, WATCH, "pages", stale)
     assert result.touched == {WATCH: ["pages"]}
     assert result.library == library
+    assert lib.materialise(result.library, WATCH, "pages", stale) == saved
 
 
 def test_hiding_a_page_is_the_device_s_own() -> None:
@@ -480,9 +509,8 @@ def test_a_save_that_drops_a_page_drops_the_pick_only() -> None:
     result = lib.map_back(library, WATCH, "pages", saved)
     assert LIGHTS in result.library["pages"]
     assert [p["id"] for p in result.library["picks"][WATCH]["pages"]] == [SYSTEM, HOME]
-    # Watch B is now alone with it, so its link comes off there.
-    assert result.touched == {WATCH_2: ["pages"]}
-    assert "linkId" not in _page(lib.materialise(result.library, WATCH_2, "pages"), LIGHTS)
+    # Watch B, now alone with it, is not touched.
+    assert result.touched == {}
     assert lib.pickers(result.library, "pages")[LIGHTS] == [WATCH_2]
 
 
@@ -502,7 +530,7 @@ def test_a_save_that_adds_another_device_s_page_shares_it() -> None:
     saved["pages"].append({"id": SOLO, "name": "Solo", "items": []})
     result = lib.map_back(library, WATCH, "pages", saved)
     assert lib.pickers(result.library, "pages")[SOLO] == [PHONE, WATCH]
-    assert result.touched == {PHONE: ["pages"], WATCH: ["pages"]}
+    assert result.touched == {}, "the phone's record is as it was"
 
 
 def test_a_status_pages_save_maps_back_the_same_way() -> None:
@@ -554,7 +582,7 @@ def test_a_first_record_with_another_starter_forks_with_fork_conflicts() -> None
     plain = lib.map_back(library, PHONE, "status_pages", upload)
     # Without it, the upload is an edit of the shared starter.
     assert plain.library["status_pages"][STARTER]["name"] == "Power"
-    assert plain.touched == {WATCH: ["status_pages"], WATCH_2: ["status_pages"], PHONE: ["status_pages"]}
+    assert plain.touched == {WATCH: ["status_pages"], WATCH_2: ["status_pages"]}
     forked = lib.map_back(library, PHONE, "status_pages", upload, fork_conflicts=True)
     new = forked.renamed["status_pages"][STARTER]
     assert forked.library["status_pages"][STARTER]["name"] == "Batteries"
@@ -598,13 +626,13 @@ def test_pick_page_appends_with_reach_and_takes_off() -> None:
     result = lib.pick_page(library, PHONE, "pages", HOME.lower(), True, status)
     assert [p["id"] for p in result.library["picks"][PHONE]["pages"]] == [SOLO, HOME]
     assert sorted(p["id"] for p in result.library["picks"][PHONE]["status_pages"]) == sorted([DOORS, STARTER])
-    assert result.touched == {PHONE: ["status_pages", "pages"], WATCH: ["status_pages", "pages"]}
+    assert result.touched == {PHONE: ["status_pages", "pages"]}, "only the device ticked"
     again = lib.pick_page(result.library, PHONE, "pages", HOME, True)
     assert again.touched == {} and again.library == result.library
     off = lib.pick_page(result.library, PHONE, "pages", HOME, False)
     assert [p["id"] for p in off.library["picks"][PHONE]["pages"]] == [SOLO]
     assert HOME in off.library["pages"]
-    assert off.touched == {PHONE: ["pages"], WATCH: ["pages"]}
+    assert off.touched == {PHONE: ["pages"]}
     with pytest.raises(lib.LibraryError) as err:
         lib.pick_page(library, PHONE, "pages", SYSTEM, True)
     assert err.value.code == "not_found"
@@ -623,8 +651,8 @@ def test_pick_copy_and_rename_menus() -> None:
     copied = lib.copy_menu(library, WATCH_2, "anywhere", "Chen's menu")
     assert copied.library["menus"][copied.id]["name"] == "Chen's menu"
     assert copied.library["picks"][WATCH_2]["menus"]["anywhere"] == copied.id
-    assert copied.touched == {WATCH: ["menus"], WATCH_2: ["menus"]}
-    assert "anywhere" not in lib.materialise(copied.library, WATCH, "menus")["linkIds"]
+    assert copied.touched == {}, "the same sections, so no record changes"
+    assert "linkIds" not in lib.materialise(copied.library, WATCH, "menus")
     back = lib.pick_menu(copied.library, WATCH_2, "anywhere", anywhere)
     assert back.library["picks"][WATCH_2]["menus"]["anywhere"] == anywhere
     renamed = lib.rename_menu(back.library, copied.id, "  Spare  ")
@@ -681,16 +709,60 @@ def test_a_menu_in_use_is_not_deleted() -> None:
     assert err.value.code == "not_found"
 
 
-def test_link_groups_are_the_places_shape() -> None:
+def test_the_menu_page_actions_are_the_tables_page_payloads() -> None:
+    table = json.loads((_FRONTEND / "src" / "watch-menus" / "menu-actions.json").read_text())
+    wanted = {
+        action["raw"]: (spec["key"], spec["target"])
+        for action in table["actions"]
+        for spec in action.get("payload", [])
+        if spec.get("type") == "uuid" and spec.get("target") in ("page", "statusPage")
+    }
+    kinds = {"pages": "page", "status_pages": "statusPage"}
+    assert {
+        action: (lib._MENU_PAGE_KEY, kinds[kind]) for kind, action in lib._MENU_ACTIONS.items()
+    } == wanted
+
+
+def test_menu_targets_walks_every_slot_list_of_the_units_asked() -> None:
+    menus = _menus()
+    assert lib.menu_targets(menus) == ([HOME, LIGHTS], [DOORS])
+    assert lib.menu_targets(menus, ["anywhere"]) == ([HOME], [DOORS])
+    radial = menus["entityRadial"]
+    radial["entityOverrides"] = {
+        "climate.hallway": [_slot(3, {"type": "showStatusPage", "pageId": STARTER})]
+    }
+    radial["allSlots"].append(_slot(4, {"type": "navigateToPage", "pageId": LIGHTS.lower()}))
+    radial["allSlots"].append(_slot(5, {"type": "showStatusPage"}))
+    assert lib.menu_targets(menus, ["entity"]) == ([LIGHTS.lower()], [STARTER]), "each id once"
+    assert lib.menu_targets(menus) == ([HOME, LIGHTS.lower()], [DOORS, STARTER])
+    assert lib.menu_targets(None) == ([], [])
+
+
+def test_create_menu_makes_a_menu_no_one_picks() -> None:
     library = _shared()
-    pages = lib.link_groups(library, "pages")
-    assert pages == {HOME: [WATCH, WATCH_2], LIGHTS: [WATCH, WATCH_2]}
-    status = lib.link_groups(library, "status_pages")
-    assert set(status) == {*STARTERS, DOORS}
-    menus = lib.link_groups(library, "menus")
-    assert {v["unit"] for v in menus.values()} == {"anywhere", "entity"}
-    assert all(v["owners"] == [WATCH, WATCH_2] for v in menus.values())
-    assert lib.pickers(library, "pages")[SOLO] == [PHONE]
+    before = copy.deepcopy(library)
+    sections = {"quickAction": {"slots": []}, "pageSwitcher": {"displayMode": "name"}}
+    made = lib.create_menu(library, "anywhere", "  Guest menu ", sections)
+    assert library == before, "create_menu changed its input"
+    assert made.touched == {}
+    assert made.library["menus"][made.id] == {
+        "name": "Guest menu",
+        "kind": "anywhere",
+        "sections": sections,
+    }
+    assert lib.pickers(made.library, "menus")[made.id] == []
+    sections["quickAction"]["slots"].append({"id": "S1"})
+    assert made.library["menus"][made.id]["sections"]["quickAction"]["slots"] == [], "a copy"
+    for unit, name, bad in (
+        ("both", "Menu", {}),
+        ("entity", " ", {"entityRadial": {}}),
+        ("entity", "Menu", {"entityRadial": {}, "pageSwitcher": {}}),
+        ("anywhere", "Menu", {"quickAction": {}}),
+        ("anywhere", "Menu", {"quickAction": {}, "pageSwitcher": []}),
+    ):
+        with pytest.raises(lib.LibraryError) as err:
+            lib.create_menu(library, unit, name, bad)
+        assert err.value.code == "invalid", (unit, name, bad)
 
 
 def test_copy_picks_adds_what_the_target_lacks() -> None:
@@ -713,10 +785,10 @@ def test_move_and_forget() -> None:
     assert WATCH_2 not in moved.library["picks"]
     assert moved.library["picks"][WATCH_3]["pages"] == library["picks"][WATCH_2]["pages"]
     assert "status_pages" not in moved.library["picks"][WATCH_3]
-    # Watch A's status pages lose their links: B's went with the forget.
-    assert moved.touched[WATCH] == ["status_pages"]
+    # Watch A, which shared everything with B, is not touched.
+    assert WATCH not in moved.touched
     gone = lib.forget(library, WATCH_2)
-    assert gone.touched == {WATCH: ["status_pages", "pages", "menus"], WATCH_2: ["status_pages", "pages", "menus"]}
+    assert gone.touched == {WATCH_2: ["status_pages", "pages", "menus"]}
     assert HOME in gone.library["pages"]
     assert lib.materialise(gone.library, WATCH, "pages") == lib.materialise(_migrate({WATCH: _record(_pages())}).library, WATCH, "pages")
 

@@ -331,11 +331,10 @@ def test_a_voice_copy_over_its_cap_is_left_and_the_save_stands(ctx, monkeypatch)
 def test_link_places_names_the_voice_link_and_its_watches(ctx) -> None:
     link = _linked(ctx)
     places = ctx.store.link_places()
-    assert places["voice"] == {link: {"unit": "phrases", "owners": [WATCH, WATCH_2]}}
-    assert places["menus"] == {}
+    assert places == {"voice": {link: {"unit": "phrases", "owners": [WATCH, WATCH_2]}}}
 
 
-def test_a_menu_link_leaves_the_voice_alone(ctx) -> None:
+def test_a_menu_tick_leaves_the_voice_alone(ctx) -> None:
     _voice_record(ctx)
     menus = {
         "entityRadial": {"allSlots": [], "schemaVersion": 1},
@@ -345,6 +344,7 @@ def test_a_menu_link_leaves_the_voice_alone(ctx) -> None:
     }
     _save(ctx, WATCH, menus, "menus")
     ctx.changes.clear()
-    ctx.store.link_units("menus", WATCH, ["anywhere"], [WATCH_2])
+    menu_id = ctx.store.library_summary()["picks"][WATCH]["menus"]["anywhere"]
+    ctx.store.library_pick(WATCH_2, "menus", menu_id, unit="anywhere")
     assert ctx.store.get(WATCH_2, "voice") is None
     assert "linkIds" not in _doc(ctx, WATCH, "voice")

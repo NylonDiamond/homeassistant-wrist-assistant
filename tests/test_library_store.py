@@ -156,13 +156,36 @@ def _page(document: dict, page_id: str, key: str = "pages") -> dict:
     return next(page for page in document[key] if page["id"] == page_id)
 
 
+def _share(env, ids: list[str], targets: list[str], kind: str = "pages") -> None:
+    """Tick each item onto each target, as the panel's Pages tab does."""
+    for target in targets:
+        for item_id in ids:
+            env.store.library_pick(target, kind, item_id, on=True)
+
+
+def _share_menus(env, source: str, targets: list[str], units=("anywhere", "entity")) -> dict:
+    """Tick the menus ``source`` uses onto each target. Returns them by unit."""
+    picked = env.store.library_summary()["picks"][source]["menus"]
+    for target in targets:
+        for unit in units:
+            env.store.library_pick(target, "menus", picked[unit], unit=unit)
+    return picked
+
+
+def _no_link_keys(document: dict) -> bool:
+    """Whether a record carries neither link key anywhere the old code put
+    them: ``linkIds`` at the top, ``linkId`` on a page or status page."""
+    lists = [document.get("pages", []), document.get("statusPages", [])]
+    return "linkIds" not in document and all("linkId" not in p for items in lists for p in items)
+
+
 # ── the migration ────────────────────────────────────────────────────────
 
 
 def test_a_first_start_builds_the_library_from_the_records_and_writes_it(env) -> None:
     """Identical copies and linked copies become one item each; the records
-    of linked pages trade the old token for the item's id, as one new
-    revision; a record already in its library form is not written again."""
+    of linked pages lose the old token, as one new revision; a record
+    already in its library form is not written again."""
     _seed(
         env.mod,
         {
@@ -186,9 +209,13 @@ def test_a_first_start_builds_the_library_from_the_records_and_writes_it(env) ->
 
     watch = store.get(WATCH, "pages")
     assert watch.revision > 1 and watch.updated_by == "library"
-    assert _page(watch.document, LIGHTS)["linkId"] == LIGHTS
-    assert _page(watch.document, HOME)["linkId"] == HOME
+    assert _no_link_keys(watch.document)
     assert _page(store.get(WATCH_2, "pages").document, LIGHTS)["name"] == "Lights"
+    assert _no_link_keys(store.get(WATCH_2, "pages").document)
+    for owner in (WATCH, WATCH_2):
+        menus = store.get(owner, "menus")
+        assert menus.revision == 1, "a record with nothing to drop is not written"
+        assert _no_link_keys(menus.document)
     assert LIBRARY_KEY in _FakeStore.files
     assert _FakeStore.files[LIBRARY_KEY]["hashes"][WATCH]["pages"] == watch.hash
 
@@ -199,6 +226,66 @@ def test_a_device_alone_is_left_exactly_as_it_was(env) -> None:
     for kind, doc in (("pages", _pages()), ("status_pages", _status()), ("menus", _menus())):
         record = store.get(WATCH, kind)
         assert (record.revision, record.hash, record.document) == (1, HASH, doc)
+
+
+def _mark_as_step_one(mod, owner: str, kind: str, mark) -> None:
+    """Put the link keys the step 1 code wrote back into ``owner``'s record
+    on disk, with a hash the library file notes as its own, as a box that
+    ran that code holds them: ``mark`` changes the document in place."""
+    key = mod._owner_key(owner)
+    record = _FakeStore.files[key]["records"][kind]
+    mark(record["document"])
+    digest = f"{owner}-{kind}".encode().hex().ljust(64, "0")[:64]
+    record["hash"] = digest
+    _FakeStore.files[LIBRARY_KEY]["hashes"][owner][kind] = digest
+
+
+def test_a_box_whose_records_carry_the_old_link_keys_starts_without_them(env) -> None:
+    """The live box after step 1: its records carry ``linkId`` (the item's
+    id) on shared pages and status pages and ``linkIds`` (the menu's id) on
+    shared menus, and the library file notes their hashes. Starting the new
+    code folds nothing back (no fork, no unlink, no new item, no new menu):
+    each such record is written once more without the keys, by the
+    library, and the library itself is unchanged."""
+    store = env.store_now()
+    _save(env, WATCH, _pages())
+    _save(env, WATCH, _status(), "status_pages")
+    _save(env, WATCH, _menus(), "menus")
+    _share(env, [HOME, LIGHTS], [WATCH_2])
+    menus = _share_menus(env, WATCH, [WATCH_2])
+    before = store.library_summary()
+    revisions = {o: store.revisions(o) for o in (WATCH, WATCH_2)}
+
+    def pages_mark(doc):
+        for page in doc["pages"]:
+            if page["id"] in (HOME, LIGHTS):
+                page["linkId"] = page["id"]
+
+    def status_mark(doc):
+        doc["statusPages"][0]["linkId"] = DOORS
+
+    def menus_mark(doc):
+        doc["linkIds"] = {"anywhere": menus["anywhere"], "entity": menus["entity"]}
+
+    for owner in (WATCH, WATCH_2):
+        _mark_as_step_one(env.mod, owner, "pages", pages_mark)
+        _mark_as_step_one(env.mod, owner, "status_pages", status_mark)
+        _mark_as_step_one(env.mod, owner, "menus", menus_mark)
+
+    again = env.store_now()
+    assert again.library_summary() == before, "same items, same picks, nothing forked"
+    for owner in (WATCH, WATCH_2):
+        for kind in ("pages", "status_pages", "menus"):
+            record = again.get(owner, kind)
+            assert _no_link_keys(record.document), (owner, kind)
+            assert record.revision > revisions[owner][kind], "written once more"
+            assert record.updated_by == "library"
+            assert record.history_entry(revisions[owner][kind]) is not None, "the old one is kept"
+    assert env.renamed == []
+    # Built again from a file it wrote itself: the next start writes nothing.
+    settled = {o: again.revisions(o) for o in (WATCH, WATCH_2)}
+    third = env.store_now()
+    assert {o: third.revisions(o) for o in (WATCH, WATCH_2)} == settled
 
 
 def test_another_page_under_a_taken_id_gets_its_own_and_the_references_follow(env) -> None:
@@ -290,9 +377,9 @@ def test_a_record_changed_behind_the_library_s_back_is_folded_in_at_the_next_sta
     """A save by older code after a rollback: the record's hash is not the
     one the library noted, so the next start maps it back as that device's
     save, and the other device that picks the page is written again."""
-    store = env.store_now()
+    env.store_now()
     _save(env, WATCH, _pages())
-    store.link_pages(WATCH, [LIGHTS], [WATCH_2])
+    _share(env, [LIGHTS], [WATCH_2])
     key = env.mod._owner_key(WATCH)
     on_disk = _FakeStore.files[key]["records"]["pages"]
     _page(on_disk["document"], LIGHTS)["name"] = "Lights, renamed by older code"
@@ -384,9 +471,9 @@ def test_a_record_whose_save_never_reached_the_disk_is_built_again_not_mapped_ba
     rebuilt record did not. Its record on disk is older than the revision
     the library noted, so the next start builds it again from the library
     instead of taking it as a save that undoes the edit."""
-    store = env.store_now()
+    env.store_now()
     _save(env, WATCH, _pages())
-    store.link_pages(WATCH, [LIGHTS], [WATCH_2])
+    _share(env, [LIGHTS], [WATCH_2])
     key = env.mod._owner_key(WATCH_2)
     lost = copy.deepcopy(_FakeStore.files[key])
     doc = _doc(env, WATCH)
@@ -401,9 +488,9 @@ def test_a_record_whose_save_never_reached_the_disk_is_built_again_not_mapped_ba
 
 
 def test_a_device_forgotten_by_older_code_leaves_the_library_at_the_next_start(env) -> None:
-    store = env.store_now()
+    env.store_now()
     _save(env, WATCH, _pages())
-    store.link_pages(WATCH, [LIGHTS], [WATCH_2])
+    _share(env, [LIGHTS], [WATCH_2])
     # Older code forgot WATCH_2: its file and index entry are gone.
     _FakeStore.files.pop(env.mod._owner_key(WATCH_2))
     _FakeStore.files[INDEX_KEY]["owners"] = [WATCH]
@@ -418,20 +505,18 @@ def test_a_device_forgotten_by_older_code_leaves_the_library_at_the_next_start(e
 def test_a_device_put_reaches_every_device_that_picked_the_page(env) -> None:
     store = env.store_now()
     _save(env, WATCH, _pages())
-    store.link_pages(WATCH, [LIGHTS], [PHONE, WATCH_2])
+    _share(env, [LIGHTS], [PHONE, WATCH_2])
     record = store.get(PHONE, "pages")
     sent = copy.deepcopy(record.document)
-    for page in sent["pages"]:
-        page.pop("linkId", None)  # the app keeps no link marks
     _page(sent, LIGHTS)["name"] = "From the phone"
     env.changes.clear()
     put = store.put(PHONE, "pages", sent, document_hash=HASH, base_revision=record.revision,
                     updated_by=PHONE)
-    assert _page(put.document, LIGHTS)["linkId"] == LIGHTS, "stored as the library builds it"
-    assert put.hash != HASH, "so the hash is the server's"
+    assert (put.hash, put.document) == (HASH, sent), "a shared page is stored as sent"
     assert put.delivered_revision == put.revision
     for owner in (WATCH, WATCH_2):
         assert _page(_doc(env, owner), LIGHTS)["name"] == "From the phone"
+        assert _no_link_keys(_doc(env, owner))
         assert store.get(owner, "pages").updated_by == PHONE
     assert env.changes == [(PHONE, "pages"), (WATCH, "pages"), (WATCH_2, "pages")]
 
@@ -446,52 +531,112 @@ def test_a_put_kept_as_sent_keeps_the_client_s_hash(env) -> None:
 def test_a_panel_save_of_a_menu_reaches_every_device_using_it(env) -> None:
     store = env.store_now()
     _save(env, WATCH, _menus(), "menus")
-    store.link_units("menus", WATCH, ["anywhere", "entity"], [PHONE, WATCH_2])
+    _share_menus(env, WATCH, [PHONE, WATCH_2])
     edited = _doc(env, WATCH_2, "menus")
     edited["quickAction"]["beamStyle"] = "ripplePulse"
     env.changes.clear()
     _save(env, WATCH_2, edited, "menus")
     for owner in (WATCH, PHONE):
         assert _doc(env, owner, "menus")["quickAction"]["beamStyle"] == "ripplePulse"
+        assert _no_link_keys(_doc(env, owner, "menus"))
     # The saving device first, then the others in id order.
     assert env.changes == [(WATCH_2, "menus"), (PHONE, "menus"), (WATCH, "menus")]
+    assert store.library_summary()["picks"][WATCH_2]["menus"] == (
+        store.library_summary()["picks"][WATCH]["menus"]
+    )
 
 
-def test_the_panel_s_menu_unlink_gives_the_device_its_own_copy(env) -> None:
+def test_a_panel_save_that_still_carries_link_keys_changes_only_the_content(env) -> None:
+    """A page or menus document the panel loaded before the restart still
+    holds the old marks, or marks naming something else: none of them is a
+    pick, a fork or an unlink. Only the content reaches the library, and the
+    record is stored without them."""
+    store = env.store_now()
+    _save(env, WATCH, _pages())
+    _save(env, WATCH, _menus(), "menus")
+    _share(env, [LIGHTS], [WATCH_2])
+    shared = _share_menus(env, WATCH, [WATCH_2])
+    _save(env, PHONE, _menus(beam="none"), "menus")
+    phone_menu = store.library_summary()["picks"][PHONE]["menus"]["anywhere"]
+    before = store.library_summary()
+
+    pages = _doc(env, WATCH)
+    _page(pages, LIGHTS)["linkId"] = LIGHTS
+    _page(pages, HOME)["linkId"] = "3f0c5b2a9d1e4c7f8a6b0d2e4f6a8c0e"
+    _page(pages, LIGHTS)["name"] = "Lights, edited"
+    stored = _save(env, WATCH, pages)
+    assert _no_link_keys(stored.document)
+    assert _page(_doc(env, WATCH_2), LIGHTS)["name"] == "Lights, edited"
+
+    menus = _doc(env, WATCH_2, "menus")
+    menus["linkIds"] = {"anywhere": phone_menu}  # names another menu
+    menus["quickAction"]["beamStyle"] = "ripplePulse"
+    _save(env, WATCH_2, menus, "menus")
+    assert _no_link_keys(_doc(env, WATCH_2, "menus"))
+    assert _doc(env, WATCH, "menus")["quickAction"]["beamStyle"] == "ripplePulse"
+    assert _doc(env, PHONE, "menus")["quickAction"]["beamStyle"] == "none"
+
+    menus = _doc(env, WATCH, "menus")
+    menus["linkIds"] = {}  # every mark taken off
+    menus["quickAction"]["beamStyle"] = "auroraWash"
+    _save(env, WATCH, menus, "menus")
+    assert _doc(env, WATCH_2, "menus")["quickAction"]["beamStyle"] == "auroraWash", "no fork"
+
+    after = store.library_summary()
+    assert after["picks"] == before["picks"]
+    assert sorted(after["pages"]) == sorted(before["pages"])
+    assert sorted(after["menus"]) == sorted(before["menus"])
+    assert after["picks"][WATCH_2]["menus"] == shared
+
+
+def test_a_device_put_carrying_link_ids_never_moves_a_menu(env) -> None:
     store = env.store_now()
     _save(env, WATCH, _menus(), "menus")
-    result = store.link_units("menus", WATCH, ["anywhere"], [PHONE])
-    shared = result["link_ids"]["anywhere"]
-    phone = _doc(env, PHONE, "menus")
-    phone.pop("linkIds")
-    phone["quickAction"]["beamStyle"] = "none"
-    _save(env, PHONE, phone, "menus")
-    assert "linkIds" not in _doc(env, PHONE, "menus")
-    assert "linkIds" not in _doc(env, WATCH, "menus")
-    assert _doc(env, WATCH, "menus")["quickAction"]["beamStyle"] == "auroraWash"
-    menus = store.library_summary()["menus"]
-    assert menus[shared]["owners"] == [WATCH]
-    [copy_id] = [i for i, m in menus.items() if m["kind"] == "anywhere" and m["owners"] == [PHONE]]
-    assert menus[copy_id]["name"] == "Jesse's iPhone's menu"
-
-
-def test_a_device_put_without_link_ids_never_unlinks_a_menu(env) -> None:
-    store = env.store_now()
-    _save(env, WATCH, _menus(), "menus")
-    store.link_units("menus", WATCH, ["anywhere"], [PHONE])
+    shared = _share_menus(env, WATCH, [PHONE], units=("anywhere",))
     record = store.get(PHONE, "menus")
-    sent = {k: v for k, v in record.document.items() if k != "linkIds"}
+    sent = {**record.document, "linkIds": {"anywhere": "3f0c5b2a9d1e4c7f8a6b0d2e4f6a8c0e"}}
     sent["quickAction"] = {**sent["quickAction"], "beamStyle": "none"}
-    store.put(PHONE, "menus", sent, document_hash=HASH, base_revision=record.revision,
-              updated_by=PHONE)
+    put = store.put(PHONE, "menus", sent, document_hash=HASH, base_revision=record.revision,
+                    updated_by=PHONE)
+    assert _no_link_keys(put.document) and put.hash != HASH
     assert _doc(env, WATCH, "menus")["quickAction"]["beamStyle"] == "none"
-    assert _doc(env, PHONE, "menus")["linkIds"] == _doc(env, WATCH, "menus")["linkIds"]
+    assert store.library_summary()["picks"][PHONE]["menus"]["anywhere"] == shared["anywhere"]
+
+
+def test_a_restore_of_a_menus_revision_from_before_the_library_edits_the_shared_menu(env) -> None:
+    """Both watches linked their Anywhere menu under an old token before the
+    library. The migration made it one menu and wrote both records again,
+    so the history holds the linked revision. Restoring it is a save of
+    that document: its token means nothing, so the sections land on the
+    menu the watch uses now, and the other watch, which uses it too, gets
+    them. No device gets a copy."""
+    linked = {**_menus(), "linkIds": {"anywhere": OLD_LINK}}
+    _seed(env.mod, {WATCH: {"menus": linked}, WATCH_2: {"menus": copy.deepcopy(linked)}})
+    store = env.store_now()
+    summary = store.library_summary()
+    [menu_id] = [i for i, m in summary["menus"].items() if m["kind"] == "anywhere"]
+    assert summary["menus"][menu_id]["owners"] == [WATCH, WATCH_2]
+    old = store.get(WATCH, "menus").history_entry(1)
+    assert old.document["linkIds"] == {"anywhere": OLD_LINK}
+    edited = _doc(env, WATCH, "menus")
+    edited["quickAction"]["beamStyle"] = "ripplePulse"
+    _save(env, WATCH, edited, "menus")
+    assert _doc(env, WATCH_2, "menus")["quickAction"]["beamStyle"] == "ripplePulse"
+
+    store.restore(WATCH, "menus", 1, base_revision=store.get(WATCH, "menus").revision)
+    for owner in (WATCH, WATCH_2):
+        menus = _doc(env, owner, "menus")
+        assert menus["quickAction"]["beamStyle"] == "auroraWash"
+        assert _no_link_keys(menus)
+    after = store.library_summary()
+    assert sorted(after["menus"]) == sorted(summary["menus"]), "no copy was made"
+    assert after["menus"][menu_id]["owners"] == [WATCH, WATCH_2]
 
 
 def test_a_restore_maps_back_as_a_save(env) -> None:
     store = env.store_now()
     _save(env, WATCH, _pages())
-    store.link_pages(WATCH, [LIGHTS], [PHONE])
+    _share(env, [LIGHTS], [PHONE])
     linked = store.get(PHONE, "pages").revision
     phone = _doc(env, PHONE)
     _page(phone, LIGHTS)["name"] = "Renamed"
@@ -535,29 +680,6 @@ def test_an_iphone_s_first_upload_forks_a_different_starter_and_follows_it(env) 
     )
 
 
-def test_a_save_over_its_cap_with_the_link_marks_is_refused_whole(env, monkeypatch) -> None:
-    store = env.store_now()
-    _save(env, WATCH, _pages())
-    store.link_pages(WATCH, [LIGHTS], [PHONE])
-    real = env.mod.validate_document
-
-    def capped(kind, document, **kwargs):
-        if kind == "pages" and any("linkId" in p and p.get("name") == "Big" for p in document["pages"]):
-            raise env.mod.WatchConfigValidationError("too big")
-        return real(kind, document, **kwargs)
-
-    monkeypatch.setattr(env.mod, "validate_document", capped)
-    doc = _doc(env, PHONE)
-    _page(doc, LIGHTS)["name"] = "Big"
-    for page in doc["pages"]:
-        page.pop("linkId", None)
-    revision = store.get(PHONE, "pages").revision
-    with pytest.raises(env.mod.WatchConfigValidationError):
-        store.put(PHONE, "pages", doc, document_hash=HASH, base_revision=revision, updated_by=PHONE)
-    assert store.get(PHONE, "pages").revision == revision
-    assert store.library_summary()["pages"][LIGHTS]["item"]["name"] == "Lights"
-
-
 # ── forget and move ──────────────────────────────────────────────────────
 
 
@@ -565,12 +687,14 @@ def test_a_forget_drops_the_picks_and_keeps_the_items(env) -> None:
     store = env.store_now()
     _save(env, WATCH, _pages())
     store.link_device(WATCH, PHONE, updated_by="panel")
+    phone = store.get(PHONE, "pages").revision
+    env.changes.clear()
     store.forget_owner(WATCH)
     summary = store.library_summary()
     assert WATCH not in summary["picks"]
     assert summary["pages"][HOME]["owners"] == [PHONE]
-    assert "linkId" not in _page(_doc(env, PHONE), HOME)
-    assert store.get(PHONE, "pages").updated_by == f"forget:{WATCH}"
+    assert store.get(PHONE, "pages").revision == phone, "the phone's record is not touched"
+    assert all(owner == WATCH for owner, _kind in env.changes)
     assert WATCH not in _FakeStore.files[LIBRARY_KEY]["hashes"]
 
 
@@ -578,26 +702,27 @@ def test_a_move_carries_the_picks_to_the_new_id(env) -> None:
     store = env.store_now()
     _save(env, WATCH, _pages())
     _save(env, WATCH, _menus(), "menus")
-    store.link_pages(WATCH, [LIGHTS], [PHONE])
+    _share(env, [LIGHTS], [PHONE])
     before = store.library_summary()["picks"][WATCH]
+    phone = store.get(PHONE, "pages").revision
     store.move_owner(WATCH, WATCH_3, updated_by="move")
     summary = store.library_summary()
     assert WATCH not in summary["picks"]
     assert summary["picks"][WATCH_3] == before
     assert summary["pages"][LIGHTS]["owners"] == [PHONE, WATCH_3]
-    assert _page(_doc(env, WATCH_3), LIGHTS)["linkId"] == LIGHTS
-    assert _page(_doc(env, PHONE), LIGHTS)["linkId"] == LIGHTS
+    assert _no_link_keys(_doc(env, WATCH_3))
+    assert store.get(PHONE, "pages").revision == phone, "the phone's record is not touched"
 
 
 def test_a_move_onto_a_device_that_kept_its_own_drops_the_source_s_picks(env) -> None:
     store = env.store_now()
     _save(env, WATCH, _pages())
-    store.link_pages(WATCH, [LIGHTS], [WATCH_2])
+    _share(env, [LIGHTS], [WATCH_2])
     store.move_owner(WATCH, WATCH_2, updated_by="move")
     summary = store.library_summary()
     assert WATCH not in summary["picks"]
     assert summary["pages"][LIGHTS]["owners"] == [WATCH_2]
-    assert "linkId" not in _page(_doc(env, WATCH_2), LIGHTS)
+    assert _no_link_keys(_doc(env, WATCH_2))
 
 
 # ── the library's own ops ────────────────────────────────────────────────
@@ -611,11 +736,11 @@ def test_pick_puts_a_page_on_with_its_status_pages_and_takes_it_off(env) -> None
     result = store.library_pick(PHONE, "pages", HOME, on=True)
     assert _ids(_doc(env, PHONE)) == [HOME]
     assert _ids(_doc(env, PHONE, "status_pages"), "statusPages") == [DOORS], "its tile opens Doors"
-    assert set(result["revisions"]) == {WATCH, PHONE}
+    assert set(result["revisions"]) == {PHONE}, "the watch, which has it too, is not written"
     assert result["revisions"][PHONE]["pages"] == store.get(PHONE, "pages").revision
+    assert _no_link_keys(_doc(env, PHONE)) and _no_link_keys(_doc(env, WATCH))
     store.library_pick(PHONE, "pages", HOME, on=False)
     assert _doc(env, PHONE)["pages"] == []
-    assert "linkId" not in _page(_doc(env, WATCH), HOME)
     assert HOME in store.library_summary()["pages"], "the item stays"
 
 
@@ -625,28 +750,27 @@ def test_pick_of_a_menu_makes_it_the_device_s_menu(env) -> None:
     _save(env, PHONE, _menus(beam="none"), "menus")
     menus = store.library_summary()["menus"]
     [watch_menu] = [i for i, m in menus.items() if m["kind"] == "anywhere" and m["owners"] == [WATCH]]
-    store.library_pick(PHONE, "menus", watch_menu, unit="anywhere")
+    watch = store.get(WATCH, "menus").revision
+    result = store.library_pick(PHONE, "menus", watch_menu, unit="anywhere")
     assert _doc(env, PHONE, "menus")["quickAction"]["beamStyle"] == "auroraWash"
-    assert _doc(env, PHONE, "menus")["linkIds"] == {"anywhere": watch_menu}
+    assert _no_link_keys(_doc(env, PHONE, "menus"))
+    assert set(result["revisions"]) == {PHONE}
+    assert store.get(WATCH, "menus").revision == watch
 
 
 def test_pick_of_a_menu_starts_the_menus_of_a_device_that_has_none(env) -> None:
     """The picked menu is shared; the other unit starts as the device's own
-    copy of the menu the first device uses, as a menus link onto a device
-    with none does."""
+    copy of the menu the first device uses."""
     store = env.store_now()
     _save(env, WATCH, _menus(), "menus")
     picks = store.library_summary()["picks"][WATCH]["menus"]
     result = store.library_pick(WATCH_2, "menus", picks["anywhere"], unit="anywhere")
-    menus = _doc(env, WATCH_2, "menus")
-    watch = _doc(env, WATCH, "menus")
-    assert menus["linkIds"] == {"anywhere": picks["anywhere"]} == watch["linkIds"]
-    assert {k: v for k, v in menus.items() if k != "linkIds"} == _menus()
+    assert _doc(env, WATCH_2, "menus") == _menus() == _doc(env, WATCH, "menus")
     mine = store.library_summary()["picks"][WATCH_2]["menus"]
     assert mine["anywhere"] == picks["anywhere"]
     assert mine["entity"] != picks["entity"]
     assert store.library_summary()["menus"][mine["entity"]]["name"] == "Chen's Apple Watch's menu"
-    assert set(result["revisions"]) == {WATCH, WATCH_2}
+    assert set(result["revisions"]) == {WATCH_2}
 
 
 def test_a_first_menus_pick_starts_only_from_a_device_the_caller_may_read(env) -> None:
@@ -708,11 +832,17 @@ def test_pick_never_starts_the_pages_of_a_watch_awaiting_its_move(env) -> None:
 def test_copy_menu_gives_the_device_its_own_and_rename_names_it(env) -> None:
     store = env.store_now()
     _save(env, WATCH, _menus(), "menus")
-    store.link_units("menus", WATCH, ["anywhere"], [PHONE])
+    _share_menus(env, WATCH, [PHONE], units=("anywhere",))
+    watch = store.get(WATCH, "menus").revision
     result = store.library_copy_menu(PHONE, "anywhere", "Phone menu")
-    assert "linkIds" not in _doc(env, PHONE, "menus")
-    assert "linkIds" not in _doc(env, WATCH, "menus")
+    assert result["revisions"] == {}, "the same sections: no record changes"
+    assert store.get(WATCH, "menus").revision == watch
     assert store.library_summary()["menus"][result["id"]]["owners"] == [PHONE]
+    # From then on an edit of the copy stays on the phone.
+    phone = _doc(env, PHONE, "menus")
+    phone["quickAction"]["beamStyle"] = "none"
+    _save(env, PHONE, phone, "menus")
+    assert _doc(env, WATCH, "menus")["quickAction"]["beamStyle"] == "auroraWash"
     store.library_rename_menu(result["id"], "Travel menu")
     assert store.library_summary()["menus"][result["id"]]["name"] == "Travel menu"
     with pytest.raises(env.mod.WatchConfigLinkError) as err:
@@ -768,7 +898,7 @@ def test_the_photo_sweep_keeps_what_a_library_page_no_device_picks_names(env) ->
 def test_diagnostics_count_the_library_and_name_nothing(env) -> None:
     store = env.store_now()
     _save(env, WATCH, _pages())
-    store.link_pages(WATCH, [LIGHTS], [PHONE])
+    _share(env, [LIGHTS], [PHONE])
     report = store.library_diagnostics()
     assert report == {
         "readable": True,
@@ -778,3 +908,64 @@ def test_diagnostics_count_the_library_and_name_nothing(env) -> None:
         "devices": 2,
         "shared": {"status_pages": 0, "pages": 1, "menus": 0},
     }
+
+
+# ── a new menu no device uses ────────────────────────────────────────────
+
+
+def test_create_menu_makes_a_menu_no_device_uses_until_one_is_ticked(env) -> None:
+    store = env.store_now()
+    _save(env, WATCH, _menus(), "menus")
+    before = store.get(WATCH, "menus").revision
+    env.changes.clear()
+    radial = {"allSlots": [_slot(1, {"type": "assist"}), _slot(2, {"type": "toggle"})]}
+    result = store.library_create_menu("entity", " Guest menu ", {"entityRadial": radial})
+    assert result["revisions"] == {}
+    assert env.changes == [], "no record is written"
+    assert store.get(WATCH, "menus").revision == before, "no device moves off its menu"
+    menu = store.library_summary()["menus"][result["id"]]
+    assert menu == {
+        "name": "Guest menu",
+        "kind": "entity",
+        "sections": {"entityRadial": radial},
+        "owners": [],
+    }
+    assert env.store_now().library_summary()["menus"][result["id"]]["owners"] == [], "kept"
+
+    store = env.store
+    store.library_pick(WATCH, "menus", result["id"], unit="entity")
+    assert _doc(env, WATCH, "menus")["entityRadial"] == radial
+    assert _doc(env, WATCH, "menus")["quickAction"] == _menus()["quickAction"]
+    # A device with no menus record has nothing to start the other menu
+    # from, so a tick of a menu only that new one holds is refused there.
+    fresh = store.library_create_menu("anywhere", "Spare", {
+        "quickAction": {"slots": []}, "pageSwitcher": {},
+    })
+    with pytest.raises(env.mod.WatchConfigStoreError) as err:
+        store.library_pick(WATCH_2, "menus", fresh["id"], unit="anywhere")
+    assert err.value.code == "no_record"
+
+
+@pytest.mark.parametrize(
+    ("unit", "name", "sections"),
+    [
+        ("both", "Menu", {"entityRadial": {}}),
+        ("entity", "  ", {"entityRadial": {}}),
+        ("entity", "Menu", {}),
+        ("entity", "Menu", {"entityRadial": {}, "quickAction": {}}),
+        ("anywhere", "Menu", {"quickAction": {}}),
+        ("anywhere", "Menu", {"quickAction": [], "pageSwitcher": {}}),
+        ("anywhere", "Menu", {"quickAction": {"slots": {}}, "pageSwitcher": {}}),
+        ("anywhere", "Menu", {"quickAction": {"slots": [_slot(1, {}), _slot(1, {})]},
+                              "pageSwitcher": {}}),
+        ("entity", "Menu", {"entityRadial": {"allSlots": [{"action": {}}]}}),
+        ("entity", "Menu", {"entityRadial": {"entityOverrides": []}}),
+        ("entity", "Menu", "not an object"),
+    ],
+)
+def test_create_menu_refuses_another_shape(env, unit, name, sections) -> None:
+    store = env.store_now()
+    with pytest.raises(env.mod.WatchConfigValidationError) as err:
+        store.library_create_menu(unit, name, sections)
+    assert err.value.code == "invalid"
+    assert store.library_summary()["menus"] == {}

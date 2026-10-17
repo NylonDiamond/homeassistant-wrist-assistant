@@ -4298,9 +4298,9 @@ async def _op_phone_pages_link_watch(ctx: _OpContext) -> Response:
     Reply: {"ok": true, "pages": <how many of the watch's pages the phone has>}
 
     The phone picks what the watch picks from the home's library
-    (``WatchConfigStore.link_device``, the panel's Add all): every page of
-    the watch but its system pages, and every status page, so an edit on
-    either reaches both; and, for a kind the phone has no record of, the
+    (``WatchConfigStore.link_device``): every page of the watch but its
+    system pages, and every status page, so an edit on either reaches
+    both; and, for a kind the phone has no record of, the
     watch's menus (the same menus from then on) and its rooms, given once.
     The phone's parked poll wakes with the new revisions. Refused
     ``not_an_iphone`` (403) for a watch, ``invalid_watch`` (400) for a watch
@@ -4333,7 +4333,7 @@ async def _op_phone_pages_link_watch(ctx: _OpContext) -> Response:
         )
     except WatchConfigStoreError as err:
         return _watch_config_refusal(ctx, err)
-    return ctx.signed_json({"ok": True, "pages": len(result["link_ids"])})
+    return ctx.signed_json({"ok": True, "pages": len(result["page_ids"])})
 
 
 async def _op_watch_voices_put(ctx: _OpContext) -> Response:

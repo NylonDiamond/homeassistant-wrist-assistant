@@ -1,10 +1,14 @@
-"""In-process tests for the panel's linked pages commands,
-``wrist_assistant/watch_pages/link`` and ``wrist_assistant/watch_pages/places``.
+"""In-process tests for the panel's voice link commands,
+``wrist_assistant/watch_pages/link`` and ``wrist_assistant/watch_pages/places``,
+and the link failures a save or restore names.
 
 Run as ``test_watch_config_ws.py`` runs the other watch config commands, over
 a real ``WatchConfigStore`` whose pairing checks know two watches and an
-iPhone. The store's own rules are in ``test_page_links_store.py``; here the
-result shapes, the error codes and the owner gate.
+iPhone. Only a watch's voice settings still link; pages, status pages and
+menus live in the library, so both commands refuse them, and
+``watch_pages/link_all`` is gone. The store's own rules are in
+``test_voice_links_store.py``; here the result shapes, the error codes and
+the owner gate.
 """
 
 from __future__ import annotations
@@ -90,118 +94,64 @@ def _link(links, user=ROOT, **msg) -> _Connection:
     return _run(links, links.ws.ws_watch_pages_link, user, **msg)
 
 
-def test_link_answers_what_each_target_gained_and_the_link_ids(links) -> None:
-    connection = _link(links, source_id=WATCH, page_ids=[HOME], targets=[PHONE])
-    assert connection.errors == []
-    result = connection.results[1]
-    watch = links.store.get(WATCH, "pages").document["pages"]
-    assert result == {
-        "targets": {
-            PHONE: {"pages": [HOME, LIGHTS], "status_pages": [DOORS], "adopted_status_pages": []}
-        },
-        "link_ids": {HOME: watch[0]["linkId"], LIGHTS: watch[1]["linkId"]},
-    }
-    assert [p["id"] for p in links.store.get(PHONE, "pages").document["pages"]] == [HOME, LIGHTS]
+def _pick(links, page_id: str, targets: list[str]) -> None:
+    for target in targets:
+        links.store.library_pick(target, "pages", page_id, on=True)
 
 
-@pytest.mark.parametrize(
-    ("msg", "code"),
-    [
-        ({"source_id": WATCH, "page_ids": ["nope"], "targets": [PHONE]}, "not_found"),
-        ({"source_id": WATCH, "page_ids": [HOME], "targets": ["ghost"]}, "unknown_device"),
-        ({"source_id": WATCH, "page_ids": [], "targets": [PHONE]}, "invalid"),
-    ],
-)
-def test_link_refusals_carry_the_store_s_code(links, msg, code) -> None:
-    connection = _link(links, **msg)
-    assert connection.results == {}
-    assert [error[1] for error in connection.errors] == [code]
-
-
-def test_link_of_status_pages_links_them_alone(links) -> None:
-    connection = _link(
-        links, source_id=WATCH, page_ids=[DOORS], targets=[PHONE], kind="status_pages"
-    )
-    assert connection.errors == []
-    doors = links.store.get(WATCH, "status_pages").document["statusPages"][0]["linkId"]
-    assert connection.results[1] == {
-        "targets": {PHONE: {"pages": [], "status_pages": [DOORS], "adopted_status_pages": []}},
-        "link_ids": {DOORS: doors},
-    }
-    assert links.store.get(PHONE, "pages") is None
-    missing = _link(links, source_id=WATCH, page_ids=[HOME], targets=[PHONE], kind="status_pages")
-    assert [error[1] for error in missing.errors] == ["not_found"]
-
-
-def _menus(beam: str = "auroraWash") -> dict:
+def _menus() -> dict:
     return {
         "entityRadial": {"allSlots": [], "schemaVersion": 1},
         "pageSwitcher": {"schemaVersion": 1},
-        "quickAction": {
-            "beamStyle": beam,
-            "schemaVersion": 1,
-            "slots": [{"id": "S1", "action": {"type": "navigateToPage", "pageId": LIGHTS}}],
-        },
+        "quickAction": {"slots": [], "schemaVersion": 1},
         "schemaVersion": 1,
     }
 
 
-def test_link_of_menus_answers_the_units_and_what_came_along(links) -> None:
-    links.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
-    connection = _link(links, source_id=WATCH, targets=[PHONE], kind="menus", units=["anywhere"])
-    assert connection.errors == []
-    link = links.store.get(WATCH, "menus").document["linkIds"]["anywhere"]
-    assert connection.results[1] == {
-        "targets": {
-            PHONE: {
-                "pages": [LIGHTS],
-                "status_pages": [],
-                "adopted_status_pages": [],
-                "units": ["anywhere"],
-            }
-        },
-        "link_ids": {"anywhere": link},
-    }
-    assert links.store.get(PHONE, "menus").document["linkIds"] == {"anywhere": link}
-    places = _run(links, links.ws.ws_watch_pages_places, ALICE).results[1]
-    assert places["menus"] == {link: {"unit": "anywhere", "owners": [PHONE, WATCH]}}
-
-
-def test_link_of_menus_asks_before_replacing_a_targets_own(links) -> None:
-    links.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
-    links.store.panel_save(PHONE, "menus", _menus(beam="none"), base_revision=0)
-    taken = _link(links, source_id=WATCH, targets=[PHONE], kind="menus", units=["anywhere"])
-    assert [error[1] for error in taken.errors] == ["unit_taken"]
-    replaced = _link(
-        links, source_id=WATCH, targets=[PHONE], kind="menus", units=["anywhere"], replace=True
-    )
-    assert replaced.errors == []
-    assert links.store.get(PHONE, "menus").document["quickAction"]["beamStyle"] == "auroraWash"
+# ── pages, status pages and menus no longer link ─────────────────────────
 
 
 @pytest.mark.parametrize(
-    ("msg", "code"),
+    "msg",
     [
-        ({"kind": "menus", "units": ["everything"]}, "invalid"),
-        ({"kind": "menus"}, "invalid"),
-        ({"kind": "rooms", "page_ids": [HOME]}, "invalid"),
-        ({"kind": "pages"}, "invalid"),
+        {"page_ids": [HOME]},
+        {"page_ids": [HOME], "kind": "pages"},
+        {"page_ids": [DOORS], "kind": "status_pages"},
+        {"kind": "menus", "units": ["anywhere"]},
+        {"kind": "menus", "units": ["anywhere"], "replace": True},
     ],
 )
-def test_link_of_menus_refusals(links, msg, code) -> None:
+def test_link_refuses_the_library_kinds(links, msg) -> None:
     links.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
     connection = _link(links, source_id=WATCH, targets=[PHONE], **msg)
-    assert [error[1] for error in connection.errors] == [code]
-    assert links.store.get(PHONE, "menus") is None
+    assert connection.results == {}
+    [(_id, code, message)] = connection.errors
+    assert code == "invalid"
+    assert "library/pick" in message
+    for kind in ("pages", "status_pages", "menus"):
+        assert links.store.get(PHONE, kind) is None
 
 
-def test_link_of_menus_follows_the_owner_gate(links) -> None:
-    links.store.panel_save(WATCH, "menus", _menus(), base_revision=0)
-    theirs = _link(
-        links, ALICE, source_id=WATCH, targets=[WATCH_2], kind="menus", units=["entity"]
-    )
-    assert [error[1] for error in theirs.errors] == ["unauthorized"]
-    assert links.store.get(WATCH_2, "menus") is None
+@pytest.mark.parametrize("kind", ["pages", "status_pages", "menus"])
+def test_places_refuses_the_library_kinds(links, kind) -> None:
+    connection = _run(links, links.ws.ws_watch_pages_places, kind=kind)
+    assert connection.results == {}
+    [(_id, code, message)] = connection.errors
+    assert code == "invalid" and "library/summary" in message
+
+
+def test_places_names_only_voice_however_much_the_devices_share(links) -> None:
+    _pick(links, HOME, [PHONE, WATCH_2])
+    assert _run(links, links.ws.ws_watch_pages_places).results[1] == {"voice": {}}
+    assert _run(links, links.ws.ws_watch_pages_places, kind="voice").results[1] == {"voice": {}}
+
+
+def test_link_all_is_gone(links) -> None:
+    assert not hasattr(links.ws, "ws_watch_pages_link_all")
+    assert not hasattr(links.ws, "_CMD_PAGES_LINK_ALL")
+
+
+# ── voice ────────────────────────────────────────────────────────────────
 
 
 def _voice(engine: str = "tts.piper") -> dict:
@@ -264,139 +214,24 @@ def test_link_of_voice_refusals(links, msg, code) -> None:
     assert "linkIds" not in links.store.get(WATCH, "voice").document
 
 
-def test_a_target_s_own_page_under_the_same_id_never_refuses_a_link(links) -> None:
-    """The phone's page under the watch's id with other content was given an
-    id of its own when it arrived, so there is no id_taken any more."""
-    links.store.panel_save(
-        PHONE, "pages", {"schemaVersion": 1, "pages": [{"id": LIGHTS, "name": "Mine", "items": []}]},
-        base_revision=0,
-    )
-    connection = _link(links, source_id=WATCH, page_ids=[HOME], targets=[PHONE])
-    assert connection.errors == []
-    assert connection.results[1]["targets"][PHONE]["pages"] == [HOME, LIGHTS]
-    names = [p["name"] for p in links.store.get(PHONE, "pages").document["pages"]]
-    assert names == ["Mine", "Home", "Lights"]
-
-
-def test_a_non_admin_may_link_only_between_their_own_devices(links) -> None:
-    mine = _link(links, ALICE, source_id=WATCH, page_ids=[LIGHTS], targets=[PHONE])
-    assert mine.errors == []
-    theirs = _link(links, ALICE, source_id=WATCH, page_ids=[HOME], targets=[PHONE, WATCH_2])
-    assert [error[1] for error in theirs.errors] == ["unauthorized"]
-    assert links.store.get(WATCH_2, "pages") is None
-
-
-def test_places_names_the_holders_the_caller_may_see(links) -> None:
-    result = _link(links, source_id=WATCH, page_ids=[HOME], targets=[PHONE, WATCH_2]).results[1]
-    home, lights = result["link_ids"][HOME], result["link_ids"][LIGHTS]
-    doors = links.store.get(WATCH, "status_pages").document["statusPages"][0]["linkId"]
-    everyone = sorted([PHONE, WATCH, WATCH_2])
-    admin = _run(links, links.ws.ws_watch_pages_places).results[1]
-    assert admin == {
-        "pages": {home: everyone, lights: everyone},
-        "status_pages": {doors: everyone},
-        "menus": {},
-        "voice": {},
-    }
-    alice = _run(links, links.ws.ws_watch_pages_places, ALICE).results[1]
-    assert alice["pages"] == {home: [PHONE, WATCH], lights: [PHONE, WATCH]}
-
-
 def test_both_commands_answer_unavailable_before_the_integration_is_ready(links) -> None:
     links.hass.data = {}
-    assert _link(links, source_id=WATCH, page_ids=[HOME], targets=[PHONE]).errors == [
-        (1, "unavailable", "integration not ready")
-    ]
+    msg = {"source_id": WATCH, "targets": [WATCH_2], "kind": "voice", "units": ["phrases"]}
+    assert _link(links, **msg).errors == [(1, "unavailable", "integration not ready")]
     assert _run(links, links.ws.ws_watch_pages_places).errors == [
         (1, "unavailable", "integration not ready")
     ]
 
 
-# ── link_all ─────────────────────────────────────────────────────────────
+def test_a_non_admin_may_link_voice_only_between_their_own_watches(links) -> None:
+    links.store.panel_save(WATCH, "voice", _voice(), base_revision=0)
+    msg = {"source_id": WATCH, "targets": [WATCH_2], "kind": "voice", "units": ["phrases"]}
+    theirs = _link(links, ALICE, **msg)
+    assert [error[1] for error in theirs.errors] == ["unauthorized"]
+    assert links.store.get(WATCH_2, "voice") is None
 
 
-def _link_all(links, user=ROOT, **msg) -> _Connection:
-    return _run(links, links.ws.ws_watch_pages_link_all, user, **msg)
-
-
-def test_link_all_links_every_page_and_status_page_and_copies_menus(links) -> None:
-    menus = {"quickAction": {"slots": []}, "entityRadial": {}, "pageSwitcher": {}}
-    links.store.panel_save(WATCH, "menus", menus, base_revision=0)
-    links.store.panel_save(
-        WATCH,
-        "status_pages",
-        {
-            "schemaVersion": 1,
-            "statusPages": [
-                {"id": DOORS, "name": "Doors", "rows": []},
-                {"id": "BBBBBBBB-0000-4000-8000-000000000002", "name": "Menu only", "rows": []},
-            ],
-        },
-        base_revision=links.store.get(WATCH, "status_pages").revision,
-    )
-    connection = _link_all(links, source_id=WATCH, target_id=PHONE)
-    assert connection.errors == []
-    assert connection.results[1] == {
-        "pages": [HOME, LIGHTS],
-        "status_pages": [DOORS, "BBBBBBBB-0000-4000-8000-000000000002"],
-        "adopted_status_pages": [],
-        "copied": ["menus"],
-    }
-    # The phone uses the watch's menus: the same content, marked as shared.
-    phone_menus = links.store.get(PHONE, "menus").document
-    assert {k: v for k, v in phone_menus.items() if k != "linkIds"} == menus
-    assert phone_menus["linkIds"] == links.store.get(WATCH, "menus").document["linkIds"]
-    assert links.store.get(PHONE, "menus").updated_by == "panel"
-    again = _link_all(links, source_id=WATCH, target_id=PHONE).results[1]
-    assert again == {"pages": [], "status_pages": [], "adopted_status_pages": [], "copied": []}
-
-
-@pytest.mark.parametrize(
-    ("msg", "code", "user"),
-    [
-        ({"source_id": WATCH, "target_id": "ghost"}, "unknown_device", ROOT),
-        ({"source_id": WATCH, "target_id": WATCH}, "invalid", ROOT),
-        ({"source_id": WATCH, "target_id": WATCH_2}, "unauthorized", ALICE),
-    ],
-)
-def test_link_all_refusals(links, msg, code, user) -> None:
-    connection = _link_all(links, user, **msg)
-    assert connection.results == {}
-    assert [error[1] for error in connection.errors] == [code]
-    assert links.store.get(WATCH_2, "pages") is None
-
-
-def test_link_all_onto_a_target_with_its_own_page_under_the_same_id(links) -> None:
-    links.store.panel_save(
-        PHONE, "pages", {"schemaVersion": 1, "pages": [{"id": HOME, "name": "Mine", "items": []}]},
-        base_revision=0,
-    )
-    connection = _link_all(links, source_id=WATCH, target_id=PHONE)
-    assert connection.errors == []
-    assert connection.results[1]["pages"] == [HOME, LIGHTS]
-    assert links.store.get(PHONE, "status_pages").document["statusPages"][0]["id"] == DOORS
-
-
-# ── a watch still waiting for its iPhone's move ──────────────────────────
-
-
-def test_link_onto_a_watch_awaiting_its_move_answers_awaiting_move(links) -> None:
-    links.awaiting.add(WATCH_2)
-    connection = _link(links, source_id=WATCH, page_ids=[LIGHTS], targets=[WATCH_2])
-    assert connection.results == {}
-    assert [error[1] for error in connection.errors] == ["awaiting_move"]
-    assert links.store.get(WATCH_2, "pages") is None
-
-
-def test_link_all_onto_a_watch_awaiting_its_move_answers_awaiting_move(links) -> None:
-    links.awaiting.add(WATCH_2)
-    connection = _link_all(links, source_id=WATCH, target_id=WATCH_2)
-    assert [error[1] for error in connection.errors] == ["awaiting_move"]
-    assert links.store.get(WATCH_2, "pages") is None
-    assert links.store.get(WATCH_2, "status_pages") is None
-
-
-# ── save and restore name the copies left out of step ────────────────────
+# ── save and restore name the devices left out of step ───────────────────
 
 
 class _Registry:
@@ -408,18 +243,18 @@ class _Registry:
         return None
 
 
-def test_save_and_restore_name_the_linked_copies_that_could_not_take_it(
+def test_save_and_restore_name_the_devices_that_could_not_take_it(
     links, monkeypatch
 ) -> None:
-    _link(links, source_id=WATCH, page_ids=[LIGHTS], targets=[PHONE, WATCH_2])
+    _pick(links, LIGHTS, [PHONE, WATCH_2])
     links.hass.devices = _Registry()
     # WATCH_2 is not in the secret store: its name is null.
     links.hass.data[DOMAIN].widget_secret_store = _Secrets({WATCH: "alice", PHONE: "alice"})
     real = links.mod.validate_document
 
     def capped(kind, document, **kwargs):
-        # A copy (written without the tile level) is over its cap once it
-        # holds the new name; the saved document itself is not.
+        # Another device's record (written without the tile level) is over
+        # its cap once it holds the new name; the saved document is not.
         names = [p.get("name") for p in document.get("pages", [])]
         if not kwargs.get("check_items") and "Bigger" in names:
             raise links.mod.WatchConfigValidationError("too big")
@@ -461,8 +296,8 @@ def test_save_and_restore_name_the_linked_copies_that_could_not_take_it(
     assert restored.results[1]["link_failures"] == []
 
 
-def test_a_save_whose_copies_all_took_it_has_no_link_failures(links) -> None:
-    _link(links, source_id=WATCH, page_ids=[LIGHTS], targets=[PHONE])
+def test_a_save_every_device_took_has_no_link_failures(links) -> None:
+    _pick(links, LIGHTS, [PHONE])
     record = links.store.get(WATCH, "pages")
     document = copy.deepcopy(record.document)
     document["pages"][1]["name"] = "Lamps"
