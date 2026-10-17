@@ -43,9 +43,10 @@ export interface AllPagesViewInput {
   icons: IconProvider;
   /** Bumped whenever `icons` has something new to draw. */
   iconsTick: number;
-  /** Open a page in its device's page editor. The element has already
-   * picked the page there. */
-  onOpen: (ownerId: string, kind: "watch" | "iphone") => void;
+  /** Open a page in its device's page editor, or with `what`
+   * `status_pages` an info page in its status pages editor. The element has
+   * already picked the page there. */
+  onOpen: (ownerId: string, kind: "watch" | "iphone", what?: "pages" | "status_pages") => void;
   /** Called once the chunk has loaded or failed, to draw again. */
   onLoaded: () => void;
 }
