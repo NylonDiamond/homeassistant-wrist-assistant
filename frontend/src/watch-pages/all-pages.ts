@@ -780,13 +780,14 @@ export class WaAllPages extends LitElement {
   protected override render(): TemplateResult {
     const devices = this.devices;
     if (devices.length === 0 && !this.ownersReady) return html`<div class="ap-page"><div class="ap-wrap"><p class="ap-empty">Loading…</p></div></div>`;
-    const all = this.cards;
     const what = this.kind;
     const cards = this.kindCards;
     const filter = resolveFilter(this.filter, devices);
     const kind = this.deviceKindNow();
     const shown = shownCards(cards, filter, this.search, kind);
-    const loading = this.readState !== "ready" && all.length === 0;
+    // Counted in the tab's kind only, so cards of the other kind, read
+    // before the element was told to switch, never hide the loading line.
+    const loading = this.readState !== "ready" && cards.length === 0;
     const failed = this.failed.map((id) => devices.find((d) => d.ownerId === id)?.name).filter((n): n is string => n !== undefined);
     const tabbed = devices.length > 1;
     const one = cardNoun(what);
