@@ -7420,7 +7420,7 @@ import{a as mg,b as wg,c as vg}from"./chunks/chunk-VSEGYYJX.js";import{a as mo}f
         @click=${ve=>{ci(ve)&&(ve.preventDefault(),this.pickWatch(s),this.goTo(q))}}>${F}</a>`},Ae=jr(this.pickerRows(),s).filter(C=>C.copies.some(I=>I.ownerId===s&&I.item.kind==="record")).length,L=this.deviceForgetBusy,ne=c`<div class="hb-ask">
         <p>This removes <b>${e.name}</b> from this Home Assistant.
           ${Ae===0?h:c`${Ae===1?"Its complication is":`Its ${Ae} complications are`} kept, under ${Z} on the Complications tab.`}
-          ${e.kind==="watch"?"Its pages, menus and watch settings are deleted.":h}</p>
+          Its pages, status pages and menus stay in your library.${e.kind==="watch"?" Its watch settings are deleted.":h}</p>
         <p class="quiet">Use this for a device you no longer use. If the app is still on it, the device can connect again later, but it starts empty. This cannot be undone.</p>
         ${this.deviceForgetError?c`<p class="dev-err" title=${We(this.deviceForgetError)??h}>${this.deviceForgetError}</p>`:h}
         <div class="dev-acts">
