@@ -141,10 +141,13 @@ export function findStatusRow(page: JsonObject | undefined, rowId: string): Json
   return page === undefined ? undefined : statusPageRows(page).find((r) => sameStatusId(statusRowId(r), rowId));
 }
 
-/** Whether a page is one of the app's five system pages: their fixed ids.
+/** Whether a page is one of the app's five starter pages: their fixed ids,
+ * or `isSystemDefault: true` (a starter page an older app or a copy gave
+ * its own id), the same rule as Home Assistant's `is_system_status_page`.
  * The watch treats them as any other page. */
 export function isSystemStatusPage(page: JsonObject): boolean {
-  return STATUS_PAGE_KEYS.systemDefaultIds.some((id) => sameStatusId(id, statusPageId(page)));
+  return page["isSystemDefault"] === true
+    || STATUS_PAGE_KEYS.systemDefaultIds.some((id) => sameStatusId(id, statusPageId(page)));
 }
 
 // ── writing keys ─────────────────────────────────────────────────────────

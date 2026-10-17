@@ -129,6 +129,13 @@ describe("the defaults and the starts", () => {
     expect(statusPagesDefaults()).not.toBe(statusPagesDefaults());
   });
 
+  it("counts a page flagged isSystemDefault as a starter page too, whatever its id, as Home Assistant does", () => {
+    expect(isSystemStatusPage({ id: "F269C7E0-457B-4592-AC58-FAC05CAD2E87", name: "Who's Home", isSystemDefault: true })).toBe(true);
+    expect(isSystemStatusPage({ id: "F269C7E0-457B-4592-AC58-FAC05CAD2E87", name: "Who's Home", isSystemDefault: false })).toBe(false);
+    expect(isSystemStatusPage({ id: "F269C7E0-457B-4592-AC58-FAC05CAD2E87", name: "Who's Home" })).toBe(false);
+    expect(isSystemStatusPage({ id: "00000000-0000-0000-0000-000000000002", isSystemDefault: false })).toBe(true);
+  });
+
   it("an empty list is the empty fixture", () => {
     expect(JSON.stringify(statusPagesEmpty())).toBe(read("03-empty.json").text.trimEnd());
   });

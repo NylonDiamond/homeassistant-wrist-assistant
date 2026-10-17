@@ -160,6 +160,20 @@ export function shownMenuCards(cards: readonly MenuCard[], filter: PagesFilter, 
   return cards.filter((c) => matches(c) && onKind(c, kind) && (filter === ALL_FILTER || menuCopyOn(c, filter) !== undefined));
 }
 
+/** The heading over each section of the tab's cards. */
+export const MENU_SECTION_TITLES: Readonly<Record<MenuLinkUnit, string>> = {
+  anywhere: "Anywhere menus",
+  entity: "Entity quick menus",
+};
+
+/** The shown cards split into one section per unit, Anywhere menus first,
+ * each in the cards' own order. A unit with no card has no section. */
+export function menuSections(shown: readonly MenuCard[]): { unit: MenuLinkUnit; cards: MenuCard[] }[] {
+  return MENU_LINK_UNITS
+    .map((unit) => ({ unit, cards: shown.filter((c) => c.unit === unit) }))
+    .filter((s) => s.cards.length > 0);
+}
+
 /** The copy a card opens in the menu editor: the device tab's, else the
  * first of the Device menu's kind, else the first watch's, else the first
  * device's. */

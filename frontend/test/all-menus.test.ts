@@ -21,6 +21,8 @@ import {
   menuCards,
   menuFilterChips,
   menuKindOptions,
+  MENU_SECTION_TITLES,
+  menuSections,
   menusEmptyText,
   openMenuCopy,
   shownMenuCards,
@@ -137,6 +139,15 @@ describe("the Menus tab's tabs, Device menu and search", () => {
     expect(shownMenuCards(cards, ALL_FILTER, "", "iphone")).toHaveLength(2);
     expect(shownMenuCards(cards, ALL_FILTER, "", "watch")).toHaveLength(4);
     expect(menuKindOptions(cards).map((o) => [o.label, o.count])).toEqual([["All", 5], ["Watches", 4], ["iPhones", 2]]);
+  });
+
+  it("splits the shown cards into an Anywhere menus section and an Entity quick menus section", () => {
+    const sections = menuSections(shownMenuCards(cards, ALL_FILTER));
+    expect(sections.map((s) => [MENU_SECTION_TITLES[s.unit], s.cards.length])).toEqual([["Anywhere menus", 2], ["Entity quick menus", 3]]);
+    expect(sections.every((s) => s.cards.every((c) => c.unit === s.unit))).toBe(true);
+    // A unit with no card has no section.
+    expect(menuSections(shownMenuCards(cards, ALL_FILTER).filter((c) => c.unit === "entity")).map((s) => s.unit)).toEqual(["entity"]);
+    expect(menuSections([])).toEqual([]);
   });
 
   it("searches the menu's name and the devices it is on, in any case", () => {

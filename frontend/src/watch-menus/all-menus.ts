@@ -58,6 +58,8 @@ import {
   menuCopyOn,
   menuFilterChips,
   menuKindOptions,
+  MENU_SECTION_TITLES,
+  menuSections,
   menusEmptyText,
   openMenuCopy,
   shownMenuCards,
@@ -565,11 +567,21 @@ export class WaAllMenus extends LitElement {
         <div class="pk-body" role=${tabbed ? "tabpanel" : nothing} aria-labelledby=${tabbed ? `am-tab-${filter}` : nothing}>
           ${loading ? html`<p class="ap-empty">${reading}</p>`
             : shown.length === 0 ? html`<p class="ap-empty">${menusEmptyText(filter, devices, this.search, kind)}</p>`
-            : html`<div class="ap-grid" role="list">${shown.map((card) => this.renderCard(card, devices, cards))}</div>`}
+            : this.renderSections(shown, devices, cards)}
         </div>
         <div class="pk-foot"><span class="pk-foot-hint">${hint}</span></div>
       </div>
     </div></div>`;
+  }
+
+  /** The cards in two sections, Anywhere menus first, then Entity quick
+   * menus, each under its own heading. A section with no card is left
+   * out. */
+  private renderSections(shown: readonly MenuCard[], devices: readonly LinkDevice[], cards: readonly MenuCard[]): TemplateResult {
+    return html`${menuSections(shown).map(({ unit, cards: inUnit }) => html`<section class="am-section" aria-labelledby=${`am-section-${unit}`}>
+      <h2 class="am-section-title" id=${`am-section-${unit}`}>${MENU_SECTION_TITLES[unit]} <span class="am-section-n">${inUnit.length}</span></h2>
+      <div class="ap-grid" role="list">${inUnit.map((card) => this.renderCard(card, devices, cards))}</div>
+    </section>`)}`;
   }
 
   /** The head, the Pages tab's without Multi select: the Device menu and
@@ -696,6 +708,12 @@ export class WaAllMenus extends LitElement {
     /* The Devices menu hangs under its card, as on the Pages tab, not in
        the flow as in the editor's inspector. */
     .ap-card > .pe-dev-menu.am-dev-menu { margin: 0; box-shadow: var(--wa-shadow-pop, 0 10px 30px rgba(0, 0, 0, .35)); }
+    /* The two sections, Anywhere menus and Entity quick menus, each under
+       a small heading with its count. */
+    .am-section { display: flex; flex-direction: column; gap: 10px; }
+    .am-section + .am-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--wa-line); }
+    .am-section-title { margin: 0; padding: 0 2px; font-size: 13px; font-weight: 600; letter-spacing: .01em; color: var(--wa-text); }
+    .am-section-n { margin-left: 4px; font-weight: 500; color: var(--wa-muted); }
   `];
 }
 
