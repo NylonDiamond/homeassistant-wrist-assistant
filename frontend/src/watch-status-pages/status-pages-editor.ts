@@ -20,6 +20,12 @@
 // still move the status pages here it waits, and "Start fresh instead" opens
 // the same ready screen.
 //
+// A status page can be on several devices, linked, as a page can: each page
+// but the starter ones has the page editor's Devices menu (`devices-menu.ts`)
+// on its row and in the Page card, a delete of a linked page asks here or on
+// every device, and a Not on this list under the pages adds what the other
+// devices hold. The rules are `links.ts`, the writes `links-io.ts`.
+//
 // The panel loads this module on its own, with one `import()`, when its route
 // is `/status-pages` (`hook.ts`). Nothing it imports may import `icons.ts`.
 //
@@ -52,10 +58,12 @@ import {
   fetchWatchConfigHistory,
   fetchWatchConfigHistoryEntry,
   fetchWatchPagesPlaces,
+  linkWatchPages,
   restoreWatchConfig,
   saveWatchConfig,
   subscribeWatchConfig,
 } from "../ha-api.js";
+import { devicesMenuStyles, renderPageDevicesMenu } from "../watch-pages/devices-menu.js";
 import { isPhoneId } from "../phone-pages.js";
 import { deviceColor, deviceColors } from "../device-colors.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
@@ -74,8 +82,25 @@ import {
   renderConfigSaved,
 } from "../watch-pages/config-foot.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
-import { type LinkDevice, linkBadgeText, linkDevicesOf, statusPageHolders, statusPagesSharedText } from "../watch-pages/links.js";
-import { isJsonObject } from "../watch-pages/model.js";
+import {
+  type LinkDevice,
+  type PageDevicePlace,
+  type PagesRecordFacts,
+  awaitingMove,
+  deleteChoices,
+  deviceWord,
+  elsewhereTitle,
+  joinWords,
+  linkBadgeText,
+  linkDevicesOf,
+  linkErrorText,
+  pagesRecordFacts,
+  statusPageHolders,
+  statusPagesSharedText,
+} from "../watch-pages/links.js";
+import { type ElsewhereStatusPage, elsewhereStatusPages, statusPageDevicePlaces, statusPageMayLink, statusPageTitle } from "./links.js";
+import { takeStatusPageOff } from "./links-io.js";
+import { type JsonObject, isJsonObject } from "../watch-pages/model.js";
 import { type WatchPagesNote, linkFailuresOf, watchCommandError, withLinkFailures } from "../watch-pages/save-note.js";
 import { friendlyError } from "../friendly-error.js";
 import { restoredText } from "../revision-words.js";
@@ -99,6 +124,7 @@ import {
   keptStatusPagesDraft,
   newWatchStatusPagesDraft,
   saveStatusPagesDraft,
+  takeStatusPageAsk,
   takeStatusPagesRecord,
 } from "./draft.js";
 import {
@@ -115,6 +141,10 @@ import {
   type StatusPagesDocument,
   STATUS_PAGES_UPDATE_TEXT,
   asStatusPagesDocument,
+  findStatusPage,
+  removeStatusPage,
+  sameStatusId,
+  statusPageId,
   statusPageName,
   statusPagesBudget,
   statusPagesOf,
@@ -124,14 +154,17 @@ import {
 import { statusPagesKeptText, statusPagesSaveNote } from "./save-note.js";
 import {
   STATUS_PAGES_STAGE_HINT,
+  type StatusDevicesWhere,
   type StatusPagesViewHost,
   deselectStatusRow,
   loadStatusPagesZoom,
   renderPagesCard,
   renderRowsCard,
+  renderStatusElsewhere,
   renderStatusInspector,
   renderStatusPageScreen,
   saveStatusPagesZoom,
+  selectStatusPage,
   shownStatusPage,
   statusPagesViewStyles,
   statusStageFacts,
@@ -257,6 +290,22 @@ export class WaStatusPagesEditor extends LitElement {
    * the badges on linked status pages. Undefined until read, and on an
    * integration without linked pages. */
   @state() private places?: WatchPagesPlaces;
+  /** The other devices' status pages as last read, for the Not on this
+   * list; a device with none, or not read, is missing. */
+  @state() private elsewhere: ReadonlyMap<string, StatusPagesDocument> = new Map();
+  /** What each other device's status pages record said, for the watches
+   * that wait for their iPhone (`awaitingMove`). */
+  @state() private elsewhereFacts: ReadonlyMap<string, PagesRecordFacts> = new Map();
+  /** The page whose Devices menu is open, and where. */
+  @state() private devicesMenu?: { pageId: string; where: StatusDevicesWhere };
+  @state() private devicesNote?: Note;
+  /** What the last + in the Not on this list did. */
+  @state() private elsewhereNote?: Note;
+  /** A link or an unlink is out. */
+  @state() private linking = false;
+  /** The delete question for a page on other devices too. */
+  @state() private deleteAsk?: { pageId: string };
+  @state() private deletingAll = false;
   @state() private topMenuOpen = false;
   @state() private watchMenuOpen = false;
   @state() private zoom = loadStatusPagesZoom();
@@ -492,8 +541,15 @@ export class WaStatusPagesEditor extends LitElement {
       this.endScrub();
       this.uiState.clear();
       this.places = undefined;
+      this.elsewhere = new Map();
+      this.elsewhereFacts = new Map();
+      this.closeDevices();
+      this.elsewhereNote = undefined;
       quiet = false;
     }
+    // The Pages tab's Info page card opened this device on one page.
+    const asked = takeStatusPageAsk(watchId);
+    if (asked !== undefined) selectStatusPage({ uiState: this.uiState, requestUpdate: () => this.requestUpdate() }, asked);
     this.startSubscription(watchId);
     void this.load(watchId, quiet);
   }
@@ -539,9 +595,10 @@ export class WaStatusPagesEditor extends LitElement {
     void this.loadPlaces(watchId);
   }
 
-  /** Read where the linked status pages are, for their badges. An
-   * integration without linked pages (`unknown_command`) shows none; any
-   * other failure keeps what was known. */
+  /** Read where the linked status pages are, for their badges and Devices
+   * menus, then the other devices' status pages for the Not on this list.
+   * An integration without linked pages (`unknown_command`) shows none of
+   * them; any other failure keeps what was known. */
   private async loadPlaces(watchId: string): Promise<void> {
     const hass = this.hass;
     if (!hass) return;
@@ -555,7 +612,22 @@ export class WaStatusPagesEditor extends LitElement {
       };
     } catch (err) {
       if (seq === this.placesSeq && errCode(err) === "unknown_command") this.places = undefined;
+      return;
     }
+    const others = this.linkDevices.filter((d) => d.ownerId !== watchId);
+    const read = await Promise.all(others.map(async (d): Promise<{ id: string; doc?: StatusPagesDocument; facts?: PagesRecordFacts }> => {
+      try {
+        const record = await fetchWatchConfig(hass, d.ownerId, "status_pages");
+        const doc = record.revision > 0 ? asStatusPagesDocument(record.document) : undefined;
+        return { id: d.ownerId, facts: pagesRecordFacts(record), ...(doc === undefined ? {} : { doc }) };
+      } catch {
+        // A device whose status pages could not be read lists nothing.
+        return { id: d.ownerId };
+      }
+    }));
+    if (seq !== this.placesSeq || watchId !== this.watchId) return;
+    this.elsewhere = new Map(read.flatMap((r): [string, StatusPagesDocument][] => (r.doc === undefined ? [] : [[r.id, r.doc]])));
+    this.elsewhereFacts = new Map(read.flatMap((r): [string, PagesRecordFacts][] => (r.facts === undefined ? [] : [[r.id, r.facts]])));
   }
 
   /** Every device a status page can be on, named as the page editor names
@@ -764,19 +836,248 @@ export class WaStatusPagesEditor extends LitElement {
     };
   }
 
-  /** The view's link badges and its shared line, from the places as last
-   * read. None before they are read, and on an integration without linked
-   * pages. */
-  private linkHost(draft: StatusPagesDraft): Pick<StatusPagesViewHost, "linkBadge" | "sharedLine"> {
+  /** The view's link badges, its shared line, the Devices menus, the delete
+   * that asks for a linked page, and the Not on this list, from the places
+   * as last read. None before they are read, and on an integration without
+   * linked pages. */
+  private linkHost(draft: StatusPagesDraft): Pick<StatusPagesViewHost, "linkBadge" | "sharedLine" | "devices" | "deletePage" | "elsewhere"> {
     const places = this.places;
     const watchId = this.watchId;
     if (places === undefined || watchId === undefined) return {};
     const devices = this.linkDevices;
     const line = statusPagesSharedText(statusPagesOf(draft.document), watchId, places, devices);
+    const menus = devices.length > 1;
+    const elsewhere = this.renderElsewhere(draft.document);
     return {
       linkBadge: (page) => linkBadgeText(statusPageHolders(page, watchId, places), watchId, devices),
       ...(line === undefined ? {} : { sharedLine: line }),
+      devices: (page) => {
+        if (!menus || !statusPageMayLink(page)) return undefined;
+        const pageId = statusPageId(page);
+        const at = this.devicesMenu;
+        const open = at !== undefined && sameStatusId(at.pageId, pageId) ? at.where : undefined;
+        return {
+          ...(open === undefined ? {} : { open }),
+          toggle: (where) => (open === where ? this.closeDevices() : this.openDevices(pageId, where)),
+          menu: (where) => this.renderDevicesMenu(page, where),
+        };
+      },
+      deletePage: (pageId) => this.askDelete(pageId),
+      ...(elsewhere === nothing ? {} : { elsewhere }),
     };
+  }
+
+  // ── linked status pages ────────────────────────────────────────────────
+
+  private deviceName(ownerId: string): string {
+    return this.linkDevices.find((d) => d.ownerId === ownerId)?.name ?? "the other device";
+  }
+
+  /** The watches that wait for their iPhone to move their status pages
+   * here, so none can go on them yet. */
+  private waitingDevices(): Set<string> {
+    return awaitingMove(this.owners.length > 0 ? this.owners : (this.ownList ?? []), this.elsewhereFacts);
+  }
+
+  /** Open a page's Devices menu, and read the places again for it. */
+  private openDevices(pageId: string, where: StatusDevicesWhere): void {
+    this.devicesNote = undefined;
+    this.devicesMenu = { pageId, where };
+    if (this.watchId !== undefined) void this.loadPlaces(this.watchId);
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector?.<HTMLElement>(".pe-dev-menu")?.scrollIntoView({ block: "nearest" });
+    });
+  }
+
+  private closeDevices(): void {
+    this.devicesMenu = undefined;
+    this.devicesNote = undefined;
+  }
+
+  /** Why no status page can go on or off another device now, or undefined:
+   * a link copies the page as saved, so not over edits. */
+  private linkBlocked(): string | undefined {
+    if (this.saving) return "Saving. Try again once the save is done.";
+    if (this.dirty) return `Save or discard your edits first. A status page goes on another device as it is saved on this ${deviceWord(this.device)}.`;
+    return undefined;
+  }
+
+  /** The menu for one page (`devices-menu.ts`), the page editor's rules:
+   * this device stays on, Delete takes it off here. */
+  private renderDevicesMenu(page: JsonObject, where: StatusDevicesWhere): TemplateResult {
+    const watchId = this.watchId ?? "";
+    const pageId = statusPageId(page);
+    const blocked = this.linkBlocked();
+    return renderPageDevicesMenu({
+      name: statusPageTitle(page),
+      places: statusPageDevicePlaces(this.linkDevices, page, watchId, this.places, this.waitingDevices()),
+      ...(blocked === undefined ? {} : { blocked }),
+      busy: this.linking,
+      ...(this.devicesNote === undefined ? {} : { note: this.devicesNote }),
+      className: `at-${where}`,
+      colorOf: (ownerId) => this.colorOf(ownerId),
+      onToggle: (place) => void this.toggleDevice(pageId, place),
+      onDone: () => this.closeDevices(),
+    });
+  }
+
+  /**
+   * A switch flipped. On: the page, as saved, goes on that device as a
+   * linked status page (`watch_pages/link` with `kind` `status_pages`), and
+   * this device's copy gets its link too, which arrives as a change. Off:
+   * the page comes off that device (`takeStatusPageOff`).
+   */
+  private async toggleDevice(pageId: string, place: PageDevicePlace): Promise<void> {
+    const hass = this.hass;
+    const watchId = this.watchId;
+    const target = place.device.ownerId;
+    if (!hass || watchId === undefined || target === watchId || this.linking || place.stuck !== undefined || this.linkBlocked() !== undefined) return;
+    const name = place.device.name;
+    this.linking = true;
+    this.devicesNote = undefined;
+    let note: Note;
+    try {
+      if (place.on) {
+        const refusal = await takeStatusPageOff(hass, target, pageId, name);
+        note = refusal === undefined ? { kind: "ok", text: `Taken off ${name}.` } : { kind: "err", text: refusal };
+      } else {
+        await linkWatchPages(hass, watchId, [pageId], [target], "status_pages");
+        note = { kind: "ok", text: `Added to ${name}.` };
+      }
+    } catch (err) {
+      note = { kind: "err", text: `Not added. ${linkErrorText(err)}` };
+    } finally {
+      this.linking = false;
+    }
+    if (watchId !== this.watchId) return;
+    this.devicesNote = note;
+    void this.loadPlaces(watchId);
+  }
+
+  /** The Not on this list (`elsewhereStatusPages`), or nothing. */
+  private renderElsewhere(document: StatusPagesDocument): TemplateResult | typeof nothing {
+    const watchId = this.watchId;
+    if (watchId === undefined) return nothing;
+    const groups = elsewhereStatusPages(watchId, document, this.linkDevices, this.elsewhere);
+    const blocked = this.linkBlocked();
+    return renderStatusElsewhere({
+      title: elsewhereTitle(this.device),
+      here: deviceWord(this.device),
+      groups,
+      colorOf: (ownerId) => this.colorOf(ownerId),
+      ...(blocked === undefined ? {} : { blocked }),
+      busy: this.linking,
+      ...(this.elsewhereNote === undefined ? {} : { note: this.elsewhereNote }),
+      onAdd: (page) => void this.addHere(page),
+    });
+  }
+
+  /** + in the Not on this list: the status page, as saved on the device it
+   * comes from, goes on this one, linked. It arrives as a change, and is
+   * shown once it is here. */
+  private async addHere(page: ElsewhereStatusPage): Promise<void> {
+    const hass = this.hass;
+    const watchId = this.watchId;
+    if (!hass || watchId === undefined || this.linking || this.linkBlocked() !== undefined) return;
+    const from = this.deviceName(page.ownerId);
+    if (keptStatusPagesDraft(page.ownerId)?.dirty ?? false) {
+      this.elsewhereNote = { kind: "warn", text: `Not added: ${from} has unsaved edits to its status pages. Save or discard them first.` };
+      return;
+    }
+    this.linking = true;
+    this.elsewhereNote = undefined;
+    try {
+      await linkWatchPages(hass, page.ownerId, [page.pageId], [watchId], "status_pages");
+      if (watchId !== this.watchId) return;
+      this.elsewhereNote = { kind: "ok", text: `Added ${page.name} from ${from}.` };
+      selectStatusPage({ uiState: this.uiState, requestUpdate: () => this.requestUpdate() }, page.pageId);
+      void this.load(watchId, true);
+    } catch (err) {
+      if (watchId === this.watchId) this.elsewhereNote = { kind: "err", text: `Not added. ${linkErrorText(err)}` };
+    } finally {
+      this.linking = false;
+    }
+  }
+
+  /** Delete a page. One on other devices too asks first, here or on every
+   * device; any other goes at once, an edit Save sends, as it always did. */
+  private askDelete(pageId: string): void {
+    const watchId = this.watchId;
+    const page = findStatusPage(this.draft?.document, pageId);
+    if (watchId === undefined || page === undefined || this.saving) return;
+    const holders = statusPageHolders(page, watchId, this.places);
+    if (this.places === undefined || holders.length < 2) {
+      this.edit((d) => removeStatusPage(d, pageId));
+      return;
+    }
+    this.closeDevices();
+    this.deleteAsk = { pageId };
+  }
+
+  private closeDelete(): void {
+    this.renderRoot?.querySelector<HTMLDialogElement>("dialog.sp-del-ask")?.close();
+    this.deleteAsk = undefined;
+  }
+
+  /** Delete on this device only: an edit, which Save sends. */
+  private deleteHere(): void {
+    const ask = this.deleteAsk;
+    this.closeDelete();
+    if (ask !== undefined) this.edit((d) => removeStatusPage(d, ask.pageId));
+  }
+
+  /**
+   * Delete on every device: the page comes off each other device that holds
+   * it at once (`takeStatusPageOff`, as unticking it there does), then off
+   * this one as an edit that Save sends. A device whose copy could not be
+   * taken off is named in the note; this device's delete goes ahead.
+   */
+  private async deleteEverywhere(): Promise<void> {
+    const ask = this.deleteAsk;
+    const hass = this.hass;
+    const watchId = this.watchId;
+    const page = ask === undefined ? undefined : findStatusPage(this.draft?.document, ask.pageId);
+    if (!ask || !hass || watchId === undefined || page === undefined || this.deletingAll) return;
+    const others = statusPageHolders(page, watchId, this.places).filter((id) => id !== watchId);
+    this.deletingAll = true;
+    const failed: string[] = [];
+    for (const owner of others) {
+      const refusal = await takeStatusPageOff(hass, owner, ask.pageId, this.deviceName(owner));
+      if (refusal !== undefined) failed.push(refusal);
+    }
+    this.deletingAll = false;
+    if (watchId !== this.watchId) return;
+    this.deleteHere();
+    const here = deviceWord(this.device);
+    this.note = failed.length > 0
+      ? { kind: "warn", text: `Deleted here. ${failed.join(" ")} Save to finish the delete on this ${here}.` }
+      : { kind: "ok", text: `Deleted on the other devices. Save to finish the delete on this ${here}.` };
+    void this.loadPlaces(watchId);
+  }
+
+  /** The delete question for a status page on other devices too. */
+  private renderDeleteAsk(ask: { pageId: string }): TemplateResult | typeof nothing {
+    const watchId = this.watchId;
+    const page = findStatusPage(this.draft?.document, ask.pageId);
+    if (watchId === undefined || page === undefined) return nothing;
+    const holders = statusPageHolders(page, watchId, this.places);
+    const choices = deleteChoices(holders, this.device);
+    if (choices === undefined) return nothing;
+    const others = holders.filter((h) => h !== watchId).map((h) => this.deviceName(h));
+    const busy = this.deletingAll;
+    return html`<dialog class="pe-ask sp-del-ask" aria-labelledby="sp-del-title"
+      @cancel=${(e: Event) => { if (busy) e.preventDefault(); }}
+      @close=${() => { if (!this.deletingAll) this.deleteAsk = undefined; }}>
+      <h3 id="sp-del-title">Delete "${statusPageTitle(page)}"?</h3>
+      <p>It is also on ${joinWords(others)}. You can undo the delete here until you leave this page.
+        ${choices.all} takes it off ${others.length === 1 ? "that device" : "those devices"} at once, which undo here does not bring back.</p>
+      <div class="pe-ask-foot">
+        <button class="pe-btn" ?disabled=${busy} @click=${() => this.closeDelete()}>Cancel</button>
+        <button class="pe-btn pe-danger sp-del-here" ?disabled=${busy} @click=${() => this.deleteHere()}>${choices.here}</button>
+        <button class="pe-btn pe-primary pe-danger sp-del-all" ?disabled=${busy || this.saving}
+          @click=${() => void this.deleteEverywhere()}>${busy ? "Deleting…" : choices.all}</button>
+      </div>
+    </dialog>`;
   }
 
   private undo(): void {
@@ -916,6 +1217,11 @@ export class WaStatusPagesEditor extends LitElement {
       this.watchMenuOpen = false;
       return;
     }
+    if (e.key === "Escape" && this.devicesMenu !== undefined) {
+      e.preventDefault();
+      this.closeDevices();
+      return;
+    }
     if (isTextField(path[0])) return;
     if (mod && !e.altKey && key === "z") {
       e.preventDefault();
@@ -936,11 +1242,12 @@ export class WaStatusPagesEditor extends LitElement {
   };
 
   private onWindowPointerDown = (e: PointerEvent): void => {
-    if (!this.topMenuOpen && !this.watchMenuOpen) return;
+    if (!this.topMenuOpen && !this.watchMenuOpen && this.devicesMenu === undefined) return;
     const path = e.composedPath();
     const within = (name: string) => path.some((n) => n instanceof HTMLElement && n.classList.contains(name));
     if (this.topMenuOpen && !within("pe-top-menu")) this.topMenuOpen = false;
     if (this.watchMenuOpen && !within("sp-watch-picker")) this.watchMenuOpen = false;
+    if (this.devicesMenu !== undefined && !within("pe-dev-menu") && !within("sp-dev-open")) this.closeDevices();
   };
 
   // ── drawing ────────────────────────────────────────────────────────────
@@ -956,6 +1263,7 @@ export class WaStatusPagesEditor extends LitElement {
       </div>
       ${this.renderBody(watches)}
       ${this.restoreAsk ? this.renderRestoreAsk(this.restoreAsk) : nothing}
+      ${this.deleteAsk && !this.restoreAsk ? this.renderDeleteAsk(this.deleteAsk) : nothing}
     `;
   }
 
@@ -1389,7 +1697,7 @@ export class WaStatusPagesEditor extends LitElement {
     dialog.pe-ask p.pe-muted { font-size: 13px; }
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
     :host([narrow]) { --cf-pad: 12px; }
-  `, statusPagesViewStyles, configFootStyles, headBarStyles];
+  `, statusPagesViewStyles, devicesMenuStyles, configFootStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-status-pages-editor")) {

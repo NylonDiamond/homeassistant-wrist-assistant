@@ -1,6 +1,7 @@
 // The status page editor's views, drawn from a host, in the complication
 // editor's chrome (`editor-chrome.ts`) as the page and menu editors wear it:
-// the Status pages card (the list: add, pick, move, delete), the Rows card
+// the Status pages card (the list: add, pick, move, Devices, delete, and the
+// Not on this list under it), the Rows card
 // (the picked page's rows: pick, move, hide, remove, add), the watch preview
 // the canvas draws from Home Assistant's states with the watch's own rules
 // (`rules.ts`), and the inspector: a picked row's Row card, the Add a row
@@ -28,7 +29,9 @@ import { type PhonePagesLayout, renderDeviceFrame } from "../phone-frame.js";
 import { type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOpen } from "../watch-pages/fold-memory.js";
 import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import type { JsonObject } from "../watch-pages/model.js";
+import type { WatchPagesNote } from "../watch-pages/save-note.js";
 import { STAGE_ZOOM_STEPS } from "../watch-pages/stage.js";
+import type { ElsewhereStatusGroup, ElsewhereStatusPage } from "./links.js";
 import {
   type StatusPagesDocument,
   type StatusStyleField,
@@ -106,6 +109,17 @@ export interface StatusPagesViewHost {
   /** The line under the page list when some pages are on other devices too
    * (`statusPagesSharedText`). */
   readonly sharedLine?: string;
+  /** A page's Devices menu (`devices-menu.ts`), the page editor's: where it
+   * is open, a way to open or close it on the page row or the Page card,
+   * and the menu. Undefined for a page that gets none (a system page, one
+   * device, an integration without linked pages). */
+  devices?(page: JsonObject): StatusPageDevices | undefined;
+  /** Delete a page. A linked page asks first, here or on every device.
+   * Without it, Delete is an edit at once, as it always was. */
+  deletePage?(pageId: string): void;
+  /** Drawn under the page list: the status pages the other devices hold
+   * that this one does not, each with a way to add it here. */
+  readonly elsewhere?: TemplateResult;
   /** Apply `change` to the document as it is now: one undo step, or with
    * `coalesce` a step the next edits with the same key replace. */
   edit(change: (document: StatusPagesDocument) => StatusPagesDocument, coalesce?: string): boolean;
@@ -113,7 +127,25 @@ export interface StatusPagesViewHost {
   requestUpdate(): void;
 }
 
+/** Where a status page's Devices menu hangs: under its row in the list, or
+ * in the inspector's Page card. */
+export type StatusDevicesWhere = "row" | "card";
+
+/** One page's Devices menu, as the host hands it to the views. */
+export interface StatusPageDevices {
+  /** Where it is open now, or undefined when closed. */
+  open?: StatusDevicesWhere;
+  toggle(where: StatusDevicesWhere): void;
+  menu(where: StatusDevicesWhere): TemplateResult;
+}
+
 type ViewState = Pick<StatusPagesViewHost, "uiState" | "document">;
+
+/** Delete a page: the host's way, which asks for a linked one, else at once. */
+function deletePage(host: StatusPagesViewHost, pageId: string): void {
+  if (host.deletePage !== undefined) host.deletePage(pageId);
+  else host.edit((d) => removeStatusPage(d, pageId));
+}
 
 const FOLD_MODULE = "status-pages";
 const PAGE_KEY = "sp:page";
@@ -371,10 +403,12 @@ function pageRow(host: StatusPagesViewHost, page: JsonObject, index: number, cou
   const drag = dragHandlers(host, "page", id, index, move);
   const pick = () => { if (!on) selectStatusPage(host, id); };
   const shared = host.linkBadge?.(page);
-  return html`<div class="layer sp-page-row ${on ? "hl" : ""}" data-page=${id} role="listitem" tabindex="0"
-    draggable=${host.busy ? "false" : "true"} aria-current=${on ? "true" : "false"} aria-label=${name || "Untitled page"}
+  const devices = host.devices?.(page);
+  const devicesOpen = devices?.open === "row";
+  return html`<div class="layer sp-page-row ${on ? "hl" : ""} ${devicesOpen ? "menu-open" : ""}" data-page=${id} role="listitem" tabindex="0"
+    draggable=${host.busy || devicesOpen ? "false" : "true"} aria-current=${on ? "true" : "false"} aria-label=${name || "Untitled page"}
     @dragstart=${drag.start} @dragover=${drag.over} @drop=${drag.drop} @dragend=${drag.end}
-    @click=${(e: Event) => { if (!(e.target instanceof Element && e.target.closest("button"))) pick(); }}
+    @click=${(e: Event) => { if (!(e.target instanceof Element && e.target.closest("button, .pe-dev-menu"))) pick(); }}
     @keydown=${(e: KeyboardEvent) => {
       if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
       e.preventDefault();
@@ -390,10 +424,14 @@ function pageRow(host: StatusPagesViewHost, page: JsonObject, index: number, cou
           @click=${() => move(id, index - 1)}>${uiIcon("up")}</button>
         <button type="button" class="icon" ?disabled=${host.busy || index === count - 1} title="Move down" aria-label=${`Move ${name} down`}
           @click=${() => move(id, index + 1)}>${uiIcon("down")}</button>
+        ${devices === undefined ? nothing : html`<button type="button" class="icon sp-dev-open ${devicesOpen ? "on" : ""}"
+          title="Pick the devices this status page is on" aria-label=${`Devices for ${name}`} aria-expanded=${devicesOpen ? "true" : "false"}
+          @click=${() => devices.toggle("row")}>${uiIcon("phone")}</button>`}
         <button type="button" class="icon danger" ?disabled=${host.busy} title="Delete" aria-label=${`Delete ${name}`}
-          @click=${() => host.edit((d) => removeStatusPage(d, id))}>${uiIcon("delete")}</button>
+          @click=${() => deletePage(host, id)}>${uiIcon("delete")}</button>
       </span>
     </span>
+    ${devicesOpen ? devices.menu("row") : nothing}
   </div>`;
 }
 
@@ -414,7 +452,54 @@ export function renderPagesCard(host: StatusPagesViewHost): TemplateResult {
       ? html`<div class="lc-note">No status pages. Add one to show the live state of entities you pick.</div>`
       : html`<div class="layers sp-page-list" role="list">${pages.map((p, i) => pageRow(host, p, i, pages.length, shown))}</div>`}
     ${host.sharedLine === undefined || pages.length === 0 ? nothing : html`<div class="lc-note sp-shared-note" role="note">${host.sharedLine}</div>`}
+    ${host.elsewhere ?? nothing}
   </section>`;
+}
+
+/** What the Not on this list is drawn from (`elsewhereStatusPages`). */
+export interface StatusElsewhereInput {
+  /** "Not on this watch", or iPhone (`elsewhereTitle`). */
+  title: string;
+  /** This device in the lines' words: "watch" or "iPhone" (`deviceWord`). */
+  here: string;
+  groups: readonly ElsewhereStatusGroup[];
+  /** Each device's color (`deviceColorVar`), on its glyph. */
+  colorOf?(ownerId: string): string | undefined;
+  /** Why nothing can be added now, or undefined. */
+  blocked?: string;
+  /** A link is out. */
+  busy: boolean;
+  /** What the last add did. */
+  note?: WatchPagesNote;
+  onAdd(page: ElsewhereStatusPage): void;
+}
+
+/**
+ * The Not on this list, under the page list, as the page editor's was: the
+ * status pages each other device holds that this one does not, under that
+ * device's name, each with + to put it here, linked. Nothing when there are
+ * none and nothing to say.
+ */
+export function renderStatusElsewhere(input: StatusElsewhereInput): TemplateResult | typeof nothing {
+  const { groups, blocked, busy, note } = input;
+  if (groups.length === 0 && note === undefined) return nothing;
+  return html`<div class="sp-else" role="group" aria-label=${input.title}>
+    <div class="sp-else-h">${input.title}</div>
+    ${groups.map((g) => {
+      const color = input.colorOf?.(g.device.ownerId);
+      return html`<div class="sp-else-dev" style=${color === undefined ? nothing : `--dc:${color}`}>
+          ${uiIcon(g.device.kind === "iphone" ? "phone" : "watch")}<span>${g.device.name}</span></div>
+        ${g.pages.map((p) => html`<div class="sp-else-row">
+          <span class="sp-else-name" title=${p.name}>${p.name}</span>
+          <button type="button" class="icon" ?disabled=${busy || blocked !== undefined}
+            title=${blocked ?? `Put ${p.name} on this ${input.here} too, linked: an edit on one device then shows on both.`}
+            aria-label=${`Add ${p.name} here`} @click=${() => input.onAdd(p)}>${uiIcon("plus")}</button>
+        </div>`)}`;
+    })}
+    ${busy ? html`<div class="sp-else-note">Adding…</div>` : nothing}
+    ${blocked === undefined || groups.length === 0 ? nothing : html`<div class="sp-else-note warn">${blocked}</div>`}
+    ${note === undefined ? nothing : html`<div class="sp-else-note ${note.kind}" role="status">${note.text}</div>`}
+  </div>`;
 }
 
 // ── the Rows card ────────────────────────────────────────────────────────
@@ -545,13 +630,17 @@ function pill(style: PreviewStyle, color: string): string {
   return "";
 }
 
-function previewIcon(host: StatusPagesViewHost, style: PreviewStyle, row: StatusPreviewRow, size: number, scale: number): TemplateResult {
+/** What drawing the watch screen needs of the host: the Pages tab's cards
+ * hand in only this (`renderStatusPagePicture`). */
+type ScreenHost = Pick<StatusPagesViewHost, "hass" | "icons" | "scale" | "screen" | "phone" | "uiState" | "document" | "requestUpdate">;
+
+function previewIcon(host: ScreenHost, style: PreviewStyle, row: StatusPreviewRow, size: number, scale: number): TemplateResult {
   const color = hexColor(row.color);
   return html`<span class="sp-w-icon" style=${`width:${size * scale}px`}>${glyph(host, row.icon, Math.round(size * 0.8 * scale), color)}</span>`;
 }
 
 /** One row of a single column page (`statusRow`), or a header. */
-function previewRow(host: StatusPagesViewHost, style: PreviewStyle, row: StatusPreviewRow, selectedId: string | undefined): TemplateResult {
+function previewRow(host: ScreenHost, style: PreviewStyle, row: StatusPreviewRow, selectedId: string | undefined): TemplateResult {
   const s = host.scale;
   const sizes = TEXT_SIZES[style.textSize] ?? TEXT_SIZES.medium!;
   const on = selectedId !== undefined && sameStatusId(selectedId, row.rowId);
@@ -573,7 +662,7 @@ function previewRow(host: StatusPagesViewHost, style: PreviewStyle, row: StatusP
 }
 
 /** One cell of a two column page (`twoColCell`): the icon and the value. */
-function previewCell(host: StatusPagesViewHost, style: PreviewStyle, row: StatusPreviewRow, selectedId: string | undefined): TemplateResult {
+function previewCell(host: ScreenHost, style: PreviewStyle, row: StatusPreviewRow, selectedId: string | undefined): TemplateResult {
   const s = host.scale;
   const sizes = TEXT_SIZES[style.textSize] ?? TEXT_SIZES.medium!;
   const on = selectedId !== undefined && sameStatusId(selectedId, row.rowId);
@@ -598,6 +687,37 @@ function divider(scale: number): TemplateResult {
  * now, then Done. Hidden rows are not drawn. A row tapped here is picked.
  */
 export function renderStatusPageScreen(host: StatusPagesViewHost): TemplateResult {
+  const label = host.phone === undefined ? "Status page on the watch" : "Status page on the iPhone";
+  return renderDeviceFrame(host.phone, host.screen, host.scale, statusScreenBox(host, label), label, host.icons);
+}
+
+/**
+ * One status page alone, as the watch draws it, with no watch or iPhone
+ * around it and nothing to pick: the picture on an info page card of the
+ * Pages tab. `scale` is points to pixels on `screen`.
+ */
+export function renderStatusPagePicture(input: {
+  page: JsonObject;
+  hass: HassLike;
+  icons: IconProvider;
+  screen: { width: number; height: number };
+  scale: number;
+}): TemplateResult {
+  const host: ScreenHost = {
+    hass: input.hass,
+    icons: input.icons,
+    screen: input.screen,
+    scale: input.scale,
+    uiState: new Map<string, unknown>([[PAGE_KEY, statusPageId(input.page)]]),
+    document: { statusPages: [input.page] },
+    requestUpdate: () => undefined,
+  };
+  return statusScreenBox(host, `${statusPageName(input.page) || "Untitled page"} on the watch`);
+}
+
+/** The watch screen with the shown page on it: the card of its rows, then
+ * Done. */
+function statusScreenBox(host: ScreenHost, label: string): TemplateResult {
   const { width, height } = host.screen;
   const s = host.scale;
   const page = shownStatusPage(host);
@@ -626,10 +746,8 @@ export function renderStatusPageScreen(host: StatusPagesViewHost): TemplateResul
       <div class="sp-w-done" style=${`font-size:${15 * s}px;padding:${12 * s}px 0;border-radius:${20 * s}px`}>Done</div>
     </div>`;
   }
-  const label = host.phone === undefined ? "Status page on the watch" : "Status page on the iPhone";
-  const box = html`<div class="sp-screen" role="group" aria-label=${label}
+  return html`<div class="sp-screen" role="group" aria-label=${label}
     style=${`width:${Math.round(width * s)}px;min-height:${Math.round(height * s)}px`}>${content}</div>`;
-  return renderDeviceFrame(host.phone, { width, height }, s, box, label, host.icons);
 }
 
 /** The canvas head's facts: the page's rows and what the watch draws. */
@@ -968,18 +1086,25 @@ function renderLookCards(host: StatusPagesViewHost, page: JsonObject): TemplateR
     </div>`;
 }
 
-/** The Page card: the name, and Delete. */
+/** The Page card: the name, Devices when the page can be on other devices,
+ * and Delete. */
 function renderPageCard(host: StatusPagesViewHost, page: JsonObject): TemplateResult {
   const pageId = statusPageId(page);
   const name = statusPageName(page);
+  const devices = host.devices?.(page);
+  const open = devices?.open === "card";
   return card(host, "page", "page", "Page", html`<fieldset class="sp-body" ?disabled=${host.busy} aria-label="Page">
     ${textField("Name", name, (v) => host.edit((d) => renameStatusPage(d, pageId, v), `page:${pageId}:name`), { placeholder: "Page Name" })}
-    ${isSystemStatusPage(page) ? html`<div class="hint ts-under">One of the app's starter pages. It is edited and deleted like any other.</div>` : nothing}
+    ${isSystemStatusPage(page) ? html`<div class="hint ts-under">One of the app's starter pages. It is edited and deleted like any other. Every device has its own.</div>` : nothing}
     <div class="sp-acts">
+      ${devices === undefined ? nothing : html`<button type="button" class="pe-btn sp-dev-open ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
+        title="Pick the devices this status page is on"
+        @click=${() => devices.toggle("card")}>${uiIcon("phone")}<span>Devices</span></button>`}
       <button type="button" class="pe-btn pe-danger" ?disabled=${host.busy} title="Delete this status page"
-        @click=${() => host.edit((d) => removeStatusPage(d, pageId))}>${uiIcon("delete")}<span>Delete page</span></button>
+        @click=${() => deletePage(host, pageId)}>${uiIcon("delete")}<span>Delete page</span></button>
     </div>
-  </fieldset>`, { summary: name });
+  </fieldset>
+  ${open ? devices.menu("card") : nothing}`, { summary: name });
 }
 
 function presetButton(host: StatusPagesViewHost, preset: StatusPagePreset, on: boolean, pick: () => void): TemplateResult {
@@ -1130,6 +1255,28 @@ export const statusPagesViewStyles = css`
     color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 12%, transparent);
   }
   .lc-btn.on { box-shadow: var(--wa-ring); }
+  /* A page's Devices menu, the page editor's: under its row, over the rows
+     below, or in the Page card. */
+  .layer.sp-page-row { position: relative; }
+  .layer.sp-page-row.menu-open { z-index: 31; }
+  .layer > .pe-dev-menu.at-row { position: absolute; top: calc(100% - 4px); left: 6px; right: 6px; z-index: 31; }
+  .pe-dev-menu.at-card { margin-top: 8px; box-shadow: none; }
+  .layer .acts button.icon.sp-dev-open.on, .pe-btn.sp-dev-open.on { color: var(--wa-accent); }
+  /* The Not on this list, under the page list. */
+  .sp-else { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px 10px; border-top: 1px solid var(--wa-line); }
+  .sp-else-h { font-size: 11.5px; font-weight: 700; color: var(--wa-muted); }
+  .sp-else-dev { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11.5px; color: var(--wa-muted); }
+  .sp-else-dev svg { width: 12px; height: 12px; color: var(--dc, var(--wa-muted)); }
+  .sp-else-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 2px 4px 2px 8px; border-radius: 6px; font-size: 12.5px; }
+  .sp-else-row:hover { background: var(--wa-hover); }
+  .sp-else-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sp-else-row button.icon { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--wa-ink); cursor: pointer; }
+  .sp-else-row button.icon:hover:not(:disabled) { background: var(--wa-field); }
+  .sp-else-row button.icon:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .sp-else-row button.icon:disabled { opacity: .4; cursor: default; }
+  .sp-else-note { font-size: 11px; line-height: 1.4; color: var(--wa-muted); }
+  .sp-else-note.ok { color: var(--wa-ok, var(--wa-ink)); }
+  .sp-else-note.warn, .sp-else-note.err { color: var(--wa-need); }
   .layer .acts button.icon { display: inline-grid; place-items: center; padding: 0; }
   .layer .acts button.icon:disabled { opacity: .35; cursor: default; }
   .layer .thumb.sp-thumb { display: grid; place-items: center; background: color-mix(in srgb, var(--c, #888) 22%, #000); }
