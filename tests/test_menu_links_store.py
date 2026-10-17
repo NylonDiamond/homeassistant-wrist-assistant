@@ -1,12 +1,14 @@
-"""In-process tests for linked menus in ``WatchConfigStore``.
+"""In-process tests for menus on several devices in ``WatchConfigStore``,
+now one library (``library.py``).
 
-The same store and fixture as ``test_page_links_store.py``. A menus link
-(``link_units``) puts one unit of the menus (the Anywhere menu with the page
-switcher, or the Entity quick menu) on several owners under one id in a
-top-level ``linkIds``, and brings the pages and status pages its slots open.
-Every accepted write of ``menus`` is then handed on to each other owner
-holding one of its units' links; a link left on one owner only is dropped
-there.
+The same store and fixture as ``test_page_links_store.py``. The current
+panel's menus link (``link_units``) makes several owners use one library
+menu for a unit (the Anywhere menu with the page switcher, or the Entity
+quick menu), and brings the pages and status pages its slots open. Every
+accepted write of ``menus`` updates the menus the owner uses, and each other
+owner using one of them is written again. While two or more owners use a
+menu their records carry its id under the top-level ``linkIds``; the
+panel's Unlink (a save without it) gives the owner its own copy.
 """
 
 from __future__ import annotations
@@ -104,13 +106,13 @@ def test_a_menu_link_onto_a_device_with_none_copies_the_menus_and_its_pages(ctx)
     assert [p["id"] for p in _doc(ctx, PHONE)["pages"]] == [HOME, LIGHTS]
     assert _doc(ctx, PHONE)["pages"][0]["linkId"]
     assert _doc(ctx, PHONE, "status_pages")["statusPages"][0]["linkId"]
-    # What a slot opens is written before the slot.
+    # What a slot opens is written before the slot, on each device.
     assert ctx.changes == [
         (WATCH, "status_pages"),
         (WATCH, "pages"),
+        (WATCH, "menus"),
         (PHONE, "status_pages"),
         (PHONE, "pages"),
-        (WATCH, "menus"),
         (PHONE, "menus"),
     ]
 
@@ -134,12 +136,15 @@ def _starter_status(name: str, *others: dict) -> dict:
     }
 
 
-def test_a_menu_slot_that_opens_a_starter_links_the_targets_own_copy(ctx) -> None:
-    """A Status page slot that opens a starter status page links it to the
-    target like any status page, adopting the copy the target already has."""
+def test_a_menu_slot_that_opens_a_starter_brings_it_beside_the_targets_own(ctx) -> None:
+    """A Status page slot that opens a starter status page brings it to the
+    target like any status page. The target's own different starter came
+    under an id of its own, so the two stand side by side."""
     _save(ctx, WATCH, _starter_status("Batteries", {"id": DOORS, "name": "Doors", "rows": []}),
           "status_pages")
     _save(ctx, PHONE, _starter_status("Mine"), "status_pages")
+    [own] = [p["id"] for p in _doc(ctx, PHONE, "status_pages")["statusPages"]]
+    assert own != STARTER
     menus = _menus()
     menus["entityRadial"]["allSlots"].append(
         _slot(9, {"type": "showStatusPage", "pageId": STARTER})
@@ -147,14 +152,14 @@ def test_a_menu_slot_that_opens_a_starter_links_the_targets_own_copy(ctx) -> Non
     _save(ctx, WATCH, menus, "menus")
     ctx.changes.clear()
     result = _link(ctx, ["entity"], [PHONE])
-    assert result["targets"][PHONE]["status_pages"] == [], "adopted, not added"
-    assert result["targets"][PHONE]["adopted_status_pages"] == [STARTER]
+    assert result["targets"][PHONE]["status_pages"] == [STARTER]
+    assert result["targets"][PHONE]["adopted_status_pages"] == []
     watch = _doc(ctx, WATCH, "status_pages")["statusPages"]
     phone = _doc(ctx, PHONE, "status_pages")["statusPages"]
-    assert [p["id"] for p in phone] == [STARTER]
-    assert phone[0]["name"] == "Batteries"
-    assert phone[0]["linkId"] == watch[1]["linkId"]
-    assert "linkId" not in watch[0], "the Doors page its slots never open stays unlinked"
+    assert [p["id"] for p in phone] == [own, STARTER]
+    assert phone[1]["name"] == "Batteries"
+    assert phone[1]["linkId"] == watch[1]["linkId"] == STARTER
+    assert "linkId" not in watch[0], "the Doors page its slots never open stays the watch's"
 
 
 def test_a_target_with_its_own_menu_is_refused_unless_replaced(ctx) -> None:
@@ -291,24 +296,20 @@ def test_a_slot_added_to_a_linked_menu_brings_its_page_along(ctx) -> None:
     assert ctx.changes == [(WATCH, "menus"), (PHONE, "menus")]
 
 
-def test_a_slot_added_to_a_linked_menu_links_a_starter_onto_the_other(ctx) -> None:
-    """A Status page slot added after the link that opens a starter links
-    that starter onto the other device, adopting its own copy there."""
+def test_a_slot_added_to_a_linked_menu_brings_a_starter_onto_the_other(ctx) -> None:
+    """A Status page slot added after the link that opens a starter puts
+    that starter on the other device too, before the menu that opens it."""
     _save(ctx, WATCH, _starter_status("Batteries", {"id": DOORS, "name": "Doors", "rows": []}),
           "status_pages")
     _linked(ctx)
-    phone = _doc(ctx, PHONE, "status_pages")
-    phone["statusPages"].append({"id": STARTER, "name": "Mine", "rows": [], "isHidden": True})
-    _save(ctx, PHONE, phone, "status_pages")
-    ctx.changes.clear()
+    assert [p["id"] for p in _doc(ctx, PHONE, "status_pages")["statusPages"]] == [DOORS]
     watch = _doc(ctx, WATCH, "menus")
     watch["quickAction"]["slots"].append(_slot(6, {"type": "showStatusPage", "pageId": STARTER}))
     _save(ctx, WATCH, watch, "menus")
-    starter = _doc(ctx, WATCH, "status_pages")["statusPages"][1]
     held = _doc(ctx, PHONE, "status_pages")["statusPages"]
     assert [p["id"] for p in held] == [DOORS, STARTER]
-    assert held[1]["linkId"] == starter["linkId"]
-    assert held[1]["name"] == "Batteries" and held[1]["isHidden"] is True
+    assert held[1]["linkId"] == STARTER and held[1]["name"] == "Batteries"
+    assert _doc(ctx, WATCH, "status_pages")["statusPages"][1]["linkId"] == STARTER
     assert ctx.changes == [
         (WATCH, "menus"),
         (WATCH, "status_pages"),
@@ -317,7 +318,24 @@ def test_a_slot_added_to_a_linked_menu_links_a_starter_onto_the_other(ctx) -> No
     ]
 
 
-def test_a_slot_whose_page_the_other_device_cannot_take_still_fans_out(ctx) -> None:
+def test_a_status_page_saved_under_a_shared_id_is_an_edit_of_it(ctx) -> None:
+    """One id is one page: a device that saves a status page under an id
+    the library holds edits that page, for every device that has it."""
+    _save(ctx, WATCH, _starter_status("Batteries", {"id": DOORS, "name": "Doors", "rows": []}),
+          "status_pages")
+    _linked(ctx)
+    phone = _doc(ctx, PHONE, "status_pages")
+    phone["statusPages"].append({"id": STARTER, "name": "Mine", "rows": [], "isHidden": True})
+    _save(ctx, PHONE, phone, "status_pages")
+    assert _doc(ctx, WATCH, "status_pages")["statusPages"][1]["name"] == "Mine"
+    held = _doc(ctx, PHONE, "status_pages")["statusPages"]
+    assert held[1]["isHidden"] is True, "hidden on the phone only"
+    assert "isHidden" not in _doc(ctx, WATCH, "status_pages")["statusPages"][1]
+
+
+def test_a_slot_whose_page_the_other_device_already_has_brings_nothing(ctx) -> None:
+    """The phone saved a page under SOLO's id, which is an edit of SOLO, so
+    it has SOLO already: the new slot writes its menus and nothing more."""
     _linked(ctx)
     phone = _doc(ctx, PHONE)
     phone["pages"].append({"id": SOLO, "name": "Phone's own", "items": []})
@@ -326,8 +344,8 @@ def test_a_slot_whose_page_the_other_device_cannot_take_still_fans_out(ctx) -> N
     watch = _doc(ctx, WATCH, "menus")
     watch["quickAction"]["slots"].append(_slot(6, {"type": "navigateToPage", "pageId": SOLO}))
     _save(ctx, WATCH, watch, "menus")
-    assert ctx.changes == [(WATCH, "menus"), (PHONE, "menus")], "id_taken: the page stays"
-    assert next(p for p in _doc(ctx, PHONE)["pages"] if p["id"] == SOLO)["name"] == "Phone's own"
+    assert ctx.changes == [(WATCH, "menus"), (PHONE, "menus")]
+    assert next(p for p in _doc(ctx, WATCH)["pages"] if p["id"] == SOLO)["name"] == "Phone's own"
     assert _doc(ctx, PHONE, "menus")["quickAction"]["slots"][-1]["action"]["pageId"] == SOLO
 
 
@@ -437,9 +455,16 @@ def test_link_places_names_each_menu_links_unit_and_holders(ctx) -> None:
     }
 
 
-def test_link_device_copies_the_menus_without_their_links(ctx) -> None:
-    _linked(ctx)
-    result = ctx.store.link_device(WATCH, WATCH_2, updated_by="panel")
-    assert result["copied"] == ["menus"]
-    assert "linkIds" not in _doc(ctx, WATCH_2, "menus")
-    assert set(ctx.store.link_places()["menus"].popitem()[1]["owners"]) == {PHONE, WATCH}
+def test_link_device_gives_the_target_the_source_s_menus(ctx) -> None:
+    """Add all onto a device with no menus: it uses the source's Anywhere
+    and Entity quick menu, one menu each on every device that uses it."""
+    result = _linked(ctx)
+    anywhere = result["link_ids"]["anywhere"]
+    out = ctx.store.link_device(WATCH, WATCH_2, updated_by="panel")
+    assert out["copied"] == ["menus"]
+    watch_2 = _doc(ctx, WATCH_2, "menus")
+    assert watch_2["linkIds"] == _doc(ctx, WATCH, "menus")["linkIds"]
+    places = ctx.store.link_places()["menus"]
+    assert places[anywhere] == {"unit": "anywhere", "owners": sorted([PHONE, WATCH, WATCH_2])}
+    entity = watch_2["linkIds"]["entity"]
+    assert places[entity] == {"unit": "entity", "owners": sorted([WATCH, WATCH_2])}

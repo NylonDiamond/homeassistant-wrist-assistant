@@ -4295,16 +4295,18 @@ async def _op_phone_pages_link_watch(ctx: _OpContext) -> Response:
     """Link every page of one of the user's watches to the iPhone that signs.
 
     Body:  {"watch_id": <str>}
-    Reply: {"ok": true, "pages": <how many pages are linked>}
+    Reply: {"ok": true, "pages": <how many of the watch's pages the phone has>}
 
-    Every page of the watch but its system pages, and every status page,
-    goes onto the phone as a linked page (``WatchConfigStore.link_device``,
-    the panel's ``watch_pages/link``), and the watch's menus and rooms are
-    copied once for a kind the phone has no record of. The phone's parked
-    poll wakes with the new revisions. Refused ``not_an_iphone`` (403) for a
-    watch, ``invalid_watch`` (400) for a watch that is not one of the phone's
-    user's, ``id_taken`` (409) when the phone already holds another page
-    under one of the ids; nothing is written then.
+    The phone picks what the watch picks from the home's library
+    (``WatchConfigStore.link_device``, the panel's Add all): every page of
+    the watch but its system pages, and every status page, so an edit on
+    either reaches both; and, for a kind the phone has no record of, the
+    watch's menus (the same menus from then on) and its rooms, given once.
+    The phone's parked poll wakes with the new revisions. Refused
+    ``not_an_iphone`` (403) for a watch, ``invalid_watch`` (400) for a watch
+    that is not one of the phone's user's; nothing is written then. The 409
+    for ``id_taken`` stays below but no longer happens: one id is one
+    library page.
     """
     secrets = ctx.domain_data.widget_secret_store
     store = ctx.domain_data.watch_config_store

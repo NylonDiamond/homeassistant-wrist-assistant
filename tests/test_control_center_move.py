@@ -96,6 +96,7 @@ def _loaded_modules():
         sys.modules[_PKG] = pkg
         _load("const")
         _load("page_links")
+        _load("library")
         yield types.SimpleNamespace(
             complications=_load("complication_store"),
             watch_config=_load("watch_config_store"),

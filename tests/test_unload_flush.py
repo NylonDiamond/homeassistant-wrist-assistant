@@ -148,8 +148,9 @@ def _loaded_package():
         sys.modules[_PKG] = pkg
         # The real constants: const.py imports nothing at run time.
         _load("const")
-        # The watch config store's pure helper for linked pages.
+        # The watch config store's pure helpers: linked pages, the library.
         _load("page_links")
+        _load("library")
         # The crop store's only import from it; the camera code needs aiohttp.
         _stub(
             f"{_PKG}.camera_stream",

@@ -264,13 +264,18 @@ def test_link_of_voice_refusals(links, msg, code) -> None:
     assert "linkIds" not in links.store.get(WATCH, "voice").document
 
 
-def test_link_refuses_an_id_the_target_holds(links) -> None:
+def test_a_target_s_own_page_under_the_same_id_never_refuses_a_link(links) -> None:
+    """The phone's page under the watch's id with other content was given an
+    id of its own when it arrived, so there is no id_taken any more."""
     links.store.panel_save(
         PHONE, "pages", {"schemaVersion": 1, "pages": [{"id": LIGHTS, "name": "Mine", "items": []}]},
         base_revision=0,
     )
     connection = _link(links, source_id=WATCH, page_ids=[HOME], targets=[PHONE])
-    assert [error[1] for error in connection.errors] == ["id_taken"]
+    assert connection.errors == []
+    assert connection.results[1]["targets"][PHONE]["pages"] == [HOME, LIGHTS]
+    names = [p["name"] for p in links.store.get(PHONE, "pages").document["pages"]]
+    assert names == ["Mine", "Home", "Lights"]
 
 
 def test_a_non_admin_may_link_only_between_their_own_devices(links) -> None:
@@ -337,7 +342,10 @@ def test_link_all_links_every_page_and_status_page_and_copies_menus(links) -> No
         "adopted_status_pages": [],
         "copied": ["menus"],
     }
-    assert links.store.get(PHONE, "menus").document == menus
+    # The phone uses the watch's menus: the same content, marked as shared.
+    phone_menus = links.store.get(PHONE, "menus").document
+    assert {k: v for k, v in phone_menus.items() if k != "linkIds"} == menus
+    assert phone_menus["linkIds"] == links.store.get(WATCH, "menus").document["linkIds"]
     assert links.store.get(PHONE, "menus").updated_by == "panel"
     again = _link_all(links, source_id=WATCH, target_id=PHONE).results[1]
     assert again == {"pages": [], "status_pages": [], "adopted_status_pages": [], "copied": []}
@@ -358,14 +366,15 @@ def test_link_all_refusals(links, msg, code, user) -> None:
     assert links.store.get(WATCH_2, "pages") is None
 
 
-def test_link_all_refuses_an_id_the_target_holds(links) -> None:
+def test_link_all_onto_a_target_with_its_own_page_under_the_same_id(links) -> None:
     links.store.panel_save(
         PHONE, "pages", {"schemaVersion": 1, "pages": [{"id": HOME, "name": "Mine", "items": []}]},
         base_revision=0,
     )
     connection = _link_all(links, source_id=WATCH, target_id=PHONE)
-    assert [error[1] for error in connection.errors] == ["id_taken"]
-    assert links.store.get(PHONE, "status_pages") is None
+    assert connection.errors == []
+    assert connection.results[1]["pages"] == [HOME, LIGHTS]
+    assert links.store.get(PHONE, "status_pages").document["statusPages"][0]["id"] == DOORS
 
 
 # ── a watch still waiting for its iPhone's move ──────────────────────────

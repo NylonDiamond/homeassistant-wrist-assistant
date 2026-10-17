@@ -155,6 +155,11 @@ CARD_PREVIEW_STORAGE_VERSION = 1
 # owner id, so one watch's save never rewrites another watch's document.
 WATCH_CONFIG_STORAGE_KEY = "wrist_assistant.watch_config"
 WATCH_CONFIG_STORAGE_VERSION = 1
+# The home's one library of pages, status pages and menus, and each device's
+# picks from it (library.py). The watch config store keeps it beside the
+# per-device records, which are built from it.
+WATCH_LIBRARY_STORAGE_KEY = "wrist_assistant.library"
+WATCH_LIBRARY_STORAGE_VERSION = 1
 # The kinds a client may read and write: the page config (`GridConfiguration`
 # in the app), the watch behavior settings (`BehaviorPreferences`), the
 # library catalog (`WatchLibraryCatalog`: the phone's HTTP actions and status

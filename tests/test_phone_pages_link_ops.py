@@ -253,7 +253,10 @@ def test_link_watch_links_every_page_and_status_page(env) -> None:
     watch = env.store.get(WATCH, "pages").document["pages"]
     assert phone.document["pages"][0]["linkId"] == watch[1]["linkId"]
     assert env.store.get(PHONE, "status_pages").document["statusPages"][0]["id"] == DOORS
-    assert env.store.get(PHONE, "menus").document == menus
+    # The phone uses the watch's menus, marked as shared while it does.
+    phone_menus = env.store.get(PHONE, "menus").document
+    assert {k: v for k, v in phone_menus.items() if k != "linkIds"} == menus
+    assert phone_menus["linkIds"] == env.store.get(WATCH, "menus").document["linkIds"]
     assert env.store.get(PHONE, "rooms") is None, "the watch has no rooms to copy"
 
 
@@ -265,16 +268,20 @@ def test_link_watch_refuses_a_watch_that_is_not_the_phone_s(env, watch_id) -> No
     assert env.store.get(PHONE, "pages") is None
 
 
-def test_link_watch_answers_id_taken_with_409_and_writes_nothing(env) -> None:
+def test_link_watch_beside_a_phone_page_under_the_same_id(env) -> None:
+    """The phone's own page under one of the watch's ids, with other
+    content, got an id of its own when it arrived: the link no longer
+    answers id_taken, it puts the watch's pages beside it."""
     env.store.panel_save(
         PHONE, "pages", {"schemaVersion": 1, "pages": [{"id": LIGHTS, "name": "Mine", "items": []}]},
         base_revision=0,
     )
     reply = _op(env, "_op_phone_pages_link_watch", {"watch_id": WATCH})
-    assert reply.status == 409
-    assert reply.body["error"] == "id_taken"
-    assert env.store.get(PHONE, "status_pages") is None
-    assert "linkId" not in env.store.get(WATCH, "pages").document["pages"][1]
+    assert (reply.status, reply.body) == (200, {"ok": True, "pages": 2})
+    names = [p["name"] for p in env.store.get(PHONE, "pages").document["pages"]]
+    assert names == ["Mine", "Home", "Lights"]
+    lights = next(p for p in env.store.get(WATCH, "pages").document["pages"] if p["id"] == LIGHTS)
+    assert lights["linkId"] == LIGHTS
 
 
 # ── static: dispatch table, capability ───────────────────────────────────

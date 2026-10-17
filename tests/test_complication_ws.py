@@ -186,6 +186,8 @@ def _loaded_modules():
             PHONE_BEHAVIOR_DECODE_KEYS=frozenset({"schemaVersion"}),
             WATCH_CONFIG_MAX_DOCUMENT_BYTES={"pages": 4096, "behavior": 4096},
             WATCH_CONFIG_HISTORY_LIMIT=5,
+            WATCH_LIBRARY_STORAGE_KEY="wrist_assistant.library",
+            WATCH_LIBRARY_STORAGE_VERSION=1,
         )
         # Neither series module is exercised here; complication_ws only needs
         # their names to build its command schemas at import time.
@@ -241,6 +243,7 @@ def _loaded_modules():
         # The real one: forget and move reach into it, and what they leave
         # behind is asserted below.
         _load("page_links")
+        _load("library")
         watch_config_mod = _load("watch_config_store")
         # The real one: the live subscriptions reach the store through it.
         _load("listener_relay")
