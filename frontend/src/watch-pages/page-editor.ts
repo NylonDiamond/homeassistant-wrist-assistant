@@ -3661,7 +3661,6 @@ export class WaPageEditor extends LitElement {
       <button class="tb-btn tb-back" title="Back to the Pages tab" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>Pages</span></button>
       ${renderLibraryTag()}
       <span class="spacer"></span>
-      ${renderPreviewPicker(this.watches, this.watchId, (id) => this.openPreview(id))}
       ${this.renderTopMenu(draft)}
       ${draft ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S). A save reaches every device that has this page.` : `Nothing to save (${MOD}S)`}
@@ -4580,6 +4579,7 @@ export class WaPageEditor extends LitElement {
           <span class="word keep">Live preview</span>
         </label>
         ${sep}`}
+      ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.watches, this.watchId, (id) => this.openPreview(id))}${sep}`}
       <button class="tb pe-case" aria-disabled="true" tabindex="-1"
         title=${phone ? `${PHONE_FRAME_TEXT} The page's background color beside it.` : `This watch's screen, ${caseLabel}. The page's background color beside it.`}>
         ${uiIcon(phone ? "phone" : "watch")}<span class="word keep">${caseLabel}</span><i class="tint-dot" style=${`--sw:${watchScreenColor(page)}`}></i></button>

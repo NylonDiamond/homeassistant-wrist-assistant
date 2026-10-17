@@ -147,11 +147,11 @@ describe("the status pages editor in library mode", () => {
   it("draws Preview as, the ticks and Delete, and no Add, order, history or delivery", async () => {
     const e = await statusEditor();
     const bar = flat(e.call("renderTopBar", e.draft(), e.owners));
-    expect(bar).toContain("Preview as");
-    expect(bar).toContain("Jesse's Watch");
-    expect(bar).toContain("Jesse's iPhone");
     expect(bar).toContain("Back to the Status pages tab");
-    for (const gone of ["tb-sync", "Complications", "sp-watch-picker", "tb-saved"]) expect(bar).not.toContain(gone);
+    for (const gone of ["tb-sync", "Complications", "sp-watch-picker", "tb-saved", "Preview as"]) expect(bar).not.toContain(gone);
+    // Preview as sits in the strip over the stage, beside the size and the zoom.
+    const stage = flat(e.call("renderStage", e.host(), e.owners));
+    expect(stage).toMatch(/class="stage-tools"[\s\S]*Preview as[\s\S]*Jesse's Watch[\s\S]*Jesse's iPhone/);
     const card = flat(renderPagesCard(e.host()));
     expect(e.host().single).toBe(true);
     for (const gone of ["sp-add-page", "Move up", "Move down"]) expect(card).not.toContain(gone);
@@ -206,10 +206,12 @@ describe("the page editor in library mode", () => {
     expect(e.ha.of("library/item")).toEqual([{ type: "wrist_assistant/library/item", kind: "pages", item_id: SHED }]);
     expect((e.draft().document.pages as JsonObject[]).map((p) => p.id)).toEqual([SHED]);
     const bar = flat(e.call("renderTopBar", e.draft()));
-    expect(bar).toContain("Preview as");
     expect(bar).toContain("Back to the Pages tab");
-    for (const gone of ["Add page", "tb-menus", "tb-sync", "pe-watch-picker"]) expect(bar).not.toContain(gone);
+    for (const gone of ["Add page", "tb-menus", "tb-sync", "pe-watch-picker", "Preview as"]) expect(bar).not.toContain(gone);
     const body = e.body();
+    // Preview as sits in the strip over the stage, beside the size and the zoom.
+    const tools = flat(e.call("renderStageTools", e.page(), "46 mm", false, false));
+    expect(tools).toMatch(/class="stage-tools"[\s\S]*Preview as[\s\S]*46 mm[\s\S]*Zoom/);
     for (const gone of ["Drag to move", "Add an empty page after the last one", "Hide Shed on the", "pe-linked", "cf-bar", "See all pages"]) {
       expect(body, gone).not.toContain(gone);
     }
@@ -276,10 +278,12 @@ describe("the menu editor in library mode", () => {
     expect(head).toContain("Delete from the library");
     expect(head).not.toContain("Make a copy");
     const bar = flat(e.call("renderTopBar", e.draft(), e.owners));
-    expect(bar).toContain("Preview as");
     expect(bar).toContain("Back to the Menus tab");
-    for (const gone of ["tb-pages", "tb-sync", "me-watch-picker"]) expect(bar).not.toContain(gone);
-    expect(flat(e.call("renderBody", e.owners))).not.toContain("cf-bar");
+    for (const gone of ["tb-pages", "tb-sync", "me-watch-picker", "Preview as"]) expect(bar).not.toContain(gone);
+    const body = flat(e.call("renderBody", e.owners));
+    expect(body).not.toContain("cf-bar");
+    // Preview as sits in the strip over the stage, beside the size and the zoom.
+    expect(body).toMatch(/class="stage-tools"[\s\S]*Preview as/);
   });
 
   it("shows only an Entity quick menu's row, and opens on it", async () => {

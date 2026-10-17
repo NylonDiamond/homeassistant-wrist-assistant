@@ -1939,7 +1939,6 @@ export class WaMenuEditor extends LitElement {
       <button class="tb-btn tb-back" title="Back to the Menus tab" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>Menus</span></button>
       ${renderLibraryTag()}
       <span class="spacer"></span>
-      ${renderPreviewPicker(watches, this.watchId, (id) => this.openPreview(id))}
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S). A save reaches every device that uses this menu.` : `Nothing to save (${MOD}S)`}
@@ -2130,6 +2129,7 @@ export class WaMenuEditor extends LitElement {
     const shownAs = (zoom: number): string => stageZoomLabel(phone ? zoom * PHONE_STAGE_ZOOM : zoom);
     return html`<div class="stage-tools" role="toolbar" aria-label="Stage tools">
       ${renderMenuStageTools(host)}
+      ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.watches, this.watchId, (id) => this.openPreview(id))}<span class="tb-sep" aria-hidden="true"></span>`}
       <button class="tb me-case" aria-disabled="true" tabindex="-1" title=${phone ? PHONE_SIZE_TEXT : `This watch's screen, ${caseLabel}.`}>
         ${uiIcon(phone ? "phone" : "watch")}<span class="word keep">${caseLabel}</span></button>
       <span class="tb-sep" aria-hidden="true"></span>

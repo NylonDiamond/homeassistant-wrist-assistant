@@ -162,6 +162,10 @@ export function renderLibraryTag(): TemplateResult {
 
 export const libraryModeStyles = css`
   .lib-preview { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--wa-muted); }
+  /* In the strip over the stage, beside the watch's size and the zoom: the
+     strip's own height, so it reads as one of its tools. */
+  .stage-tools .lib-preview { padding-left: 6px; font-size: 12px; white-space: nowrap; }
+  .stage-tools .lib-preview-pick { min-height: 24px; height: 24px; max-width: 170px; font-size: 12px; padding: 0 4px; }
   .lib-preview-none { font-style: italic; }
   .lib-preview-pick {
     min-height: 28px; max-width: 220px; padding: 0 6px; border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-sm, 8px);
