@@ -17,7 +17,7 @@ import { join } from "node:path";
 
 import type { JsonObject } from "../src/watch-pages/model.js";
 import { WatchMenusDraft } from "../src/watch-menus/draft.js";
-import { mergeWatchMenus } from "../src/watch-menus/merge.js";
+import { mergeWatchMenus, watchMenusClashes } from "../src/watch-menus/merge.js";
 import {
   MENU_KEYS,
   type MenuTargets,
@@ -231,14 +231,15 @@ const PANEL_CASES: { file: string; build: (d: MenusDocument) => MenusDocument }[
 ];
 
 /** Every key the panel wrote, checked against `menu-keys.json`: a key of the
- * type, an enum value the tables name. `keep` and opaque keys are the
- * phone's and are not looked into. */
+ * type (or a key Home Assistant writes there, `linkKeys`), an enum value the
+ * tables name. `keep` and opaque keys are the phone's and are not looked
+ * into. */
 function unknownKeys(value: unknown, type: string, path: string): string[] {
   const spec = MENU_KEYS.types[type];
   if (spec === undefined || typeof value !== "object" || value === null) return [];
   const out: string[] = [];
   for (const [key, v] of Object.entries(value as JsonObject)) {
-    const k = spec.keys[key];
+    const k = spec.keys[key] ?? MENU_KEYS.linkKeys[type]?.[key];
     if (k === undefined) {
       out.push(`${path}.${key}`);
       continue;
@@ -306,5 +307,49 @@ describe("panel-written menus", () => {
     expect(slot.icon).toBe("lightbulb");
     const added = ((built.quickAction as JsonObject).slots as JsonObject[]).at(-1)!;
     expect(added).toMatchObject({ id: "3E4D2000-0000-4000-8000-000000000001", position: "bottomRight", action: { pageId: PAGE_ID, type: "navigateToPage" } });
+  });
+});
+
+describe("menus Home Assistant linked", () => {
+  const LINKS = { anywhere: "a".repeat(32), entity: "b".repeat(32) };
+  // Home Assistant puts `linkIds` at its sorted place among the top keys.
+  const linked = (): MenusDocument => {
+    const defaults = read("01-defaults.json").doc;
+    const out: MenusDocument = {};
+    for (const [k, v] of Object.entries(defaults)) {
+      if (k === "pageSwitcher") out.linkIds = { ...LINKS };
+      out[k] = v;
+    }
+    return deepFreeze(out);
+  };
+
+  it("lists linkIds as a key the panel keeps and the watch's types do not", () => {
+    expect(MENU_KEYS.linkKeys.document?.linkIds).toMatchObject({ type: "map", keep: true });
+    expect(MENU_KEYS.types.document?.keys.linkIds).toBeUndefined();
+  });
+
+  it("names only keys the tables know", () => {
+    expect(unknownKeys(linked(), "document", "$")).toEqual([]);
+  });
+
+  it("keeps linkIds as it came through every edit", () => {
+    const doc = linked();
+    for (const c of PANEL_CASES) {
+      const built = c.build(doc);
+      expect(built.linkIds, c.file).toBe(doc.linkIds);
+      expect(Object.keys(built), c.file).toEqual(Object.keys(doc));
+    }
+  });
+
+  it("takes a link the server made or dropped, and keeps the local edits", () => {
+    const base = linked();
+    const local = setWatchMenuStyle(base, "quickAction", "beamIntensity", 0.9);
+    const { linkIds: _, ...unlinked } = base;
+    const merged = mergeWatchMenus(base, local, unlinked);
+    expect(merged.linkIds).toBeUndefined();
+    expect((merged.quickAction as JsonObject).beamIntensity).toBe(0.9);
+    const relinked = mergeWatchMenus(unlinked, setWatchMenuStyle(unlinked, "quickAction", "beamIntensity", 0.9), base);
+    expect(relinked.linkIds).toEqual(LINKS);
+    expect(watchMenusClashes(unlinked, unlinked, base)).toEqual([]);
   });
 });

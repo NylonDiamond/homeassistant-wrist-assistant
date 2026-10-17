@@ -4,6 +4,9 @@
 // (`quickAction`), the Entity quick menu (`entityRadial`) and the page
 // switcher (`pageSwitcher`), each one value. A key the local side changed
 // since the base keeps the local value; every other key takes the server's.
+// `linkIds` (the menus linked across devices, `menu-links.ts`) merges by key
+// the same way. The editor never changes it, so a link Home Assistant made or
+// dropped meanwhile always comes through, and it is never a clash to show.
 // The iPhone used to run the same rule (`WatchConfigMirror`, `.mergeByKey`)
 // with itself as the local side; in the panel the local side is the draft. The
 // case files in `frontend/test/fixtures-menus/merge` are the specification
