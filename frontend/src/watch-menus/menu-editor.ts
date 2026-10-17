@@ -1234,6 +1234,7 @@ export class WaMenuEditor extends LitElement {
       switcherPages: rows.filter((p) => !p.hidden).map(({ hidden: _, ...page }) => page),
       switcherRows: rows,
       switcherSettings: (pageId) => this.switcherSettingsHost(pageId),
+      menuFoot: (menu) => (menu === "switcher" ? nothing : this.libraryHead(menu)),
       menuBadge: (menu) => this.menuBadge(menu),
       get document() { return draft.document; },
       get targets() { return self.targets(); },
@@ -1501,35 +1502,14 @@ export class WaMenuEditor extends LitElement {
   }
 
   /**
-   * The card under the Menus list on the left, for the shown menu: which
-   * library menu this device uses for it (`libraryHead`). Jesse,
-   * 2026-10-17: it sits with the list of the device's menus, not in the
-   * inspector, which is about the menu's look and slots. Nothing before
-   * the library is read.
-   */
-  private renderLibraryCard(): TemplateResult | typeof nothing {
-    const menu = shownMenu({ uiState: this.uiState });
-    const used = this.libraryMenuOf(menu);
-    if (used === undefined) return nothing;
-    const head = this.libraryHead(menu);
-    if (head === nothing) return nothing;
-    return html`<section class="card lc me-lib-card" aria-label=${`${MENU_UNIT_TITLES[used.unit]} in your home`} style="--c: var(--wa-lc-pages, #26a69a)">
-      <div class="lc-head">
-        <span class="swatch">${uiIcon("radial")}</span><span class="lc-title">${MENU_UNIT_TITLES[used.unit]}</span>
-        <span class="lc-sub" title=${`The ${MENU_UNIT_TITLES[used.unit]} this ${deviceNoun(this.device)} uses, and the devices that use it too.`}>which one this ${deviceNoun(this.device)} uses</span>
-      </div>
-      ${head}
-    </section>`;
-  }
-
-  /**
-   * The library menu this device uses for the shown menu, in the card under
-   * the Menus list: the menu's name (a library menu has one, "Home menu"),
+   * The foot of a menu's row in the Menus card (Jesse, 2026-10-17: with the
+   * menu, not in the inspector, so a device is taken off or a copy made
+   * right there): the menu's name (a library menu has one, "Home menu"),
    * Used by with a round tick per device (a device uses one menu of each
    * kind, so a tick moves that device to this menu; the ticked ones cannot
    * be unticked), and, for a menu other devices use too, "Make a copy for
-   * this watch". The page switcher's is the Anywhere menu's. Nothing before
-   * the library is read.
+   * this watch". Clicks in it stop at the row, which picks the menu on a
+   * click. Nothing before the library is read.
    */
   private libraryHead(menu: MenusSection): TemplateResult | typeof nothing {
     const used = this.libraryMenuOf(menu);
@@ -1544,7 +1524,7 @@ export class WaMenuEditor extends LitElement {
     const copyBlocked = this.saving ? "Saving…" : (this.draft?.dirty ?? false) ? copyBlockedText(this.linkKind) : undefined;
     const note = store.noteFor("menus", used.id);
     const admin = this.hass?.user?.is_admin;
-    return html`<div class="me-lib" role="group" aria-label=${title}>
+    return html`<div class="me-lib" role="group" aria-label=${title} @click=${(e: Event) => e.stopPropagation()}>
       <label class="me-lib-name"><span class="me-lib-h">Name</span>
         <input type="text" class="me-lib-input" aria-label=${`${title} name`} placeholder=${title} maxlength="80"
           .value=${live(naming?.value ?? used.name)}
@@ -1999,7 +1979,6 @@ export class WaMenuEditor extends LitElement {
     <div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
       <div class="column left">
         ${renderMenusCard(host)}
-        ${this.renderLibraryCard()}
         ${renderSlotsCard(host)}
       </div>
       ${this.renderGutter("left")}
@@ -2262,9 +2241,11 @@ export class WaMenuEditor extends LitElement {
 
     :host([narrow]) { --cf-pad: 12px; }
 
-    /* The card under the Menus list: the shown menu's name, Used by with a
-       round tick per device, and Make a copy for this watch (libraryHead). */
-    .me-lib { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px 12px; }
+    /* The foot of a menu's row in the Menus card: the menu's name, Used by
+       with a round tick per device, and Make a copy for this watch
+       (libraryHead). */
+    .me-lib { display: flex; flex-direction: column; gap: 8px; padding: 0; font-weight: 400; }
+    .me-lib-name { max-width: 420px; }
     .me-lib-name { display: flex; flex-direction: column; gap: 4px; }
     .me-lib-h { font-size: 11.5px; font-weight: 600; color: var(--wa-muted); }
     .me-lib-input {

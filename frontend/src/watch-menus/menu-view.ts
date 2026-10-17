@@ -172,6 +172,11 @@ export interface MenusViewHost {
   /** The host of a page's switcher settings, editing the pages draft;
    * undefined while there is no pages draft or no such page. */
   switcherSettings?(pageId: string): SwitcherSettingsHost | undefined;
+  /** The foot of a menu's row in the Menus card: which library menu this
+   * device uses for it, its name, Used by with a tick per device, and Make
+   * a copy for this watch (the editor's `libraryHead`). Absent, or nothing,
+   * before the library is read, and for the page switcher. */
+  menuFoot?(menu: MenusSection): TemplateResult | typeof nothing;
   /** The badge on a menu's row, after its count: the library menu's own
    * name, "Home menu". */
   menuBadge?(menu: MenusSection): string | undefined;
@@ -675,7 +680,8 @@ export function renderMenusCard(host: MenusViewHost): TemplateResult {
           <span class="grip" aria-hidden="true"></span>
           ${menuThumb(host, id)}
           <span class="name"><b><span class="nm-t">${label}</span><span class="me-menu-count">${menuRowCount(host, id)}</span>${named === undefined
-            ? nothing : html`<span class="badge me-named" title=${`This device uses "${named}"`}>${named}</span>`}</b><small>${MENU_ROW_LINES[id]}</small></span>
+            ? nothing : html`<span class="badge me-named" title=${`This device uses "${named}"`}>${named}</span>`}</b><small>${MENU_ROW_LINES[id]}</small>
+            ${host.menuFoot?.(id) ?? nothing}</span>
         </div>`;
       })}
     </div>
@@ -1324,6 +1330,7 @@ export const menuViewStyles = css`
   .me-menu-row .name b .nm-t { white-space: normal; overflow: visible; }
   .me-menu-row .name .me-menu-count { font-size: 12px; font-weight: 500; color: var(--wa-muted); white-space: nowrap; }
   .me-menu-row .name small { white-space: normal; overflow: visible; line-height: 1.35; }
+  .me-menu-row .name .me-lib { margin-top: 6px; }
   .layer .acts button.icon { display: inline-grid; place-items: center; padding: 0; }
   .layer .acts button.icon:disabled { opacity: .35; cursor: default; }
   /* A slot's or a page's icon in its color, on the black well. */

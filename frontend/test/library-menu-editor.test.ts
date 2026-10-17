@@ -78,15 +78,17 @@ async function editor(options: { library?: boolean; history?: Record<string, Jso
 }
 
 describe("the menu editor's library menu", () => {
-  it("puts the menu's name and Used by in a card under the Menus list, and nothing of it in the inspector", async () => {
-    const { host, call } = await editor();
-    const card = flat(call("renderLibraryCard"));
-    expect(card).toContain(`class="card lc me-lib-card" aria-label=Anywhere menu in your home`);
-    expect(card).toContain(`<span class="lc-title">Anywhere menu</span>`);
-    expect(card).toContain("which one this watch uses");
-    expect(card).toContain(`class="me-lib" role="group" aria-label=Anywhere menu`);
-    expect(card).toMatch(/me-lib-input[\s\S]*Home menu/);
-    expect(card).toContain(`<span class="lt-hint">Used by</span>`);
+  it("puts the menu's name, Used by and the copy at the foot of its row in the Menus card, and nothing of it in the inspector", async () => {
+    const { host } = await editor();
+    const menus = flat(renderMenusCard(host()));
+    const rows = menus.split(`class="layer me-menu-row`);
+    expect(rows).toHaveLength(4);
+    expect(rows[1]).toContain(`class="me-lib" role="group" aria-label=Anywhere menu`);
+    expect(rows[1]).toMatch(/me-lib-input[\s\S]*Home menu/);
+    expect(rows[1]).toContain(`<span class="lt-hint">Used by</span>`);
+    expect(rows[2]).toContain(`aria-label=Entity quick menu`);
+    // The page switcher has no menu of its own.
+    expect(rows[3]).not.toContain("me-lib");
     const inspector = flat(renderMenuInspector(host()));
     expect(inspector).not.toContain("me-lib");
     expect(inspector).not.toContain("me-devices");
