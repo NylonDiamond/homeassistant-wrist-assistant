@@ -816,17 +816,31 @@ export interface WatchPagesLinkReply {
   link_ids: Record<string, string>;
 }
 
+/** What `linkWatchPages` links: pages, or status pages on their own. */
+export type WatchPagesLinkKind = "pages" | "status_pages";
+
 /** Put pages of `sourceId` on the `targets` devices as linked copies, with
  * the pages and status pages their tiles open. Checked first, then written.
+ * With `kind` `status_pages` the ids are status pages, linked alone (a
+ * system status page is copied, never linked), and `link_ids` names theirs.
  * Refusals: `unknown_device`, `not_found`, `system_page`, `id_taken` (a
- * target holds that id for a page that is not linked), and the generic ones.
- * An integration older than linked pages answers `unknown_command`. */
-export async function linkWatchPages(hass: HassLike, sourceId: string, pageIds: readonly string[], targets: readonly string[]) {
+ * target holds that id for a page that is not linked), `awaiting_move`, and
+ * the generic ones. An integration older than linked pages answers
+ * `unknown_command`. `kind` is only sent for status pages, so a pages link
+ * reads as it always did. */
+export async function linkWatchPages(
+  hass: HassLike,
+  sourceId: string,
+  pageIds: readonly string[],
+  targets: readonly string[],
+  kind: WatchPagesLinkKind = "pages",
+) {
   return hass.connection.sendMessagePromise<WatchPagesLinkReply>({
     type: `${WP}/link`,
     source_id: sourceId,
     page_ids: [...pageIds],
     targets: [...targets],
+    ...(kind === "pages" ? {} : { kind }),
   });
 }
 
