@@ -84,6 +84,18 @@ describe("adding all watch pages", () => {
     expect(result).toEqual({ ok: true, pages: 2, statusPages: 1, saved: ["pages", "menus", "rooms"], firstPageId: HALL });
   });
 
+  it("counts the phone's own starter status pages it linked, apart from those added", async () => {
+    const s = io({ pages: [HALL], status_pages: [S_ONE], adopted_status_pages: [U(20), U(21)], copied: [] });
+    expect(await addWatchPagesToPhone(s.io, { watch: "w1", phone: "p1" }))
+      .toEqual({ ok: true, pages: 1, statusPages: 1, adoptedStatusPages: 2, saved: ["pages"], firstPageId: HALL });
+  });
+
+  it("is not nothing when it only linked the phone's own starter status pages", async () => {
+    const s = io({ pages: [], status_pages: [], adopted_status_pages: [U(20)], copied: [] });
+    expect(await addWatchPagesToPhone(s.io, { watch: "w1", phone: "p1" }))
+      .toEqual({ ok: true, pages: 0, statusPages: 0, adoptedStatusPages: 1, saved: ["pages"] });
+  });
+
   it("reads no menus when none were copied", async () => {
     const s = io({ pages: [YARD], status_pages: [], copied: [] }, SPEAKING);
     const result = await addWatchPagesToPhone(s.io, { watch: "w1", phone: "p1" });
@@ -134,6 +146,13 @@ describe("the note after an add", () => {
       .toEqual({ kind: "warn", text: "Nothing added. The iPhone has every page of this watch already." });
   });
 
+  it("says the phone's own starter status pages were linked and now match", () => {
+    expect(phoneAddNote(ok({ pages: 2, adoptedStatusPages: 5, saved: ["pages"] }), "W").text)
+      .toBe("Added 2 pages from W. Also linked the iPhone's own copies of 5 status pages, which now match the watch. They stay linked: an edit on one device shows on both.");
+    expect(phoneAddNote(ok({ adoptedStatusPages: 1, saved: ["pages"] }), "W").text)
+      .toBe("Linked the iPhone's own copy of 1 status page with W. It now matches the watch. They stay linked: an edit on one device shows on both.");
+  });
+
   it("says when a copied Speak Phrase slot will not work on the iPhone", () => {
     expect(phoneAddNote(ok({ pages: 2, saved: ["pages", "menus"], speakPhraseSlots: 1 }), "W").text)
       .toBe("Added 2 pages and the menus from W. They stay linked: an edit on one device shows on both. 1 Speak Phrase slot in the menus will not work on the iPhone, which has no voice phrases.");
@@ -144,6 +163,7 @@ describe("the note after an add", () => {
       phoneAddNote(ok({ pages: 2, statusPages: 1, saved: ["pages"] }), "W").text,
       phoneAddNote({ ok: false, code: "x", message: "m", saved: [] }, "W").text,
       phoneAddNote(ok({ pages: 2, saved: ["pages", "menus"], speakPhraseSlots: 3 }), "W").text,
+      phoneAddNote(ok({ adoptedStatusPages: 3, saved: ["pages"] }), "W").text,
     ];
     for (const text of texts) expect(text).not.toMatch(/ - |–|—/);
   });

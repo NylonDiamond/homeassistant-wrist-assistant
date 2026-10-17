@@ -10,6 +10,10 @@
 // that has its own keeps them. Their slots and rooms keep working as they
 // are, since the page ids match.
 //
+// The app's starter status pages have the same ids on both. A phone that
+// holds its own copy of one has it linked in place and made the watch's, so
+// the note counts those apart from the pages added.
+//
 // A Speak Phrase slot is copied as it is, though its phrase is one of the
 // watch's voice phrases, which a phone does not keep: the note after the add
 // says how many such slots will not work on the iPhone.
@@ -75,6 +79,9 @@ export type PhoneAddResult =
     ok: true;
     /** Pages and status pages the link put on the phone. */
     pages: number; statusPages: number;
+    /** The phone's own starter status pages the link took over, made the
+     * watch's; absent when none. */
+    adoptedStatusPages?: number;
     /** What was written: `pages` when anything was linked, then the menus
      * and rooms copied. */
     saved: PhoneAddKind[];
@@ -99,9 +106,10 @@ export async function addWatchPagesToPhone(io: PhoneAddIO, input: PhoneAddInput)
   }
   const pages = Array.isArray(reply?.pages) ? reply.pages.filter((id): id is string => typeof id === "string") : [];
   const statusPages = Array.isArray(reply?.status_pages) ? reply.status_pages.length : 0;
+  const adopted = Array.isArray(reply?.adopted_status_pages) ? reply.adopted_status_pages.length : 0;
   const copied = Array.isArray(reply?.copied) ? reply.copied : [];
   const saved: PhoneAddKind[] = [];
-  if (pages.length > 0 || statusPages > 0) saved.push("pages");
+  if (pages.length > 0 || statusPages > 0 || adopted > 0) saved.push("pages");
   if (copied.includes("menus")) saved.push("menus");
   if (copied.includes("rooms")) saved.push("rooms");
   if (saved.length === 0) {
@@ -118,6 +126,7 @@ export async function addWatchPagesToPhone(io: PhoneAddIO, input: PhoneAddInput)
   }
   return {
     ok: true, pages: pages.length, statusPages, saved,
+    ...(adopted > 0 ? { adoptedStatusPages: adopted } : {}),
     ...(pages.length > 0 ? { firstPageId: pages[0]! } : {}),
     ...(speak > 0 ? { speakPhraseSlots: speak } : {}),
   };
@@ -140,10 +149,16 @@ export function phoneAddNote(result: PhoneAddResult, watchName: string): { kind:
     if (result.statusPages > 0) what.push(count(result.statusPages, "status page", "status pages"));
     if (result.saved.includes("menus")) what.push("the menus");
     if (result.saved.includes("rooms")) what.push("the rooms");
-    const linked = result.pages > 0 || result.statusPages > 0 ? " They stay linked: an edit on one device shows on both." : "";
+    const adopted = result.adoptedStatusPages ?? 0;
+    const own = adopted === 1 ? "the iPhone's own copy of 1 status page" : `the iPhone's own copies of ${adopted} status pages`;
+    const matches = adopted === 1 ? "matches" : "match";
+    const lead = what.length > 0
+      ? `Added ${list(what)} from ${watchName}.${adopted > 0 ? ` Also linked ${own}, which now ${matches} the watch.` : ""}`
+      : `Linked ${own} with ${watchName}. ${adopted === 1 ? "It now matches" : "They now match"} the watch.`;
+    const linked = result.pages > 0 || result.statusPages > 0 || adopted > 0 ? " They stay linked: an edit on one device shows on both." : "";
     const speak = result.speakPhraseSlots ?? 0;
     const voice = speak === 0 ? "" : ` ${speak === 1 ? "1 Speak Phrase slot" : `${speak} Speak Phrase slots`} in the menus will not work on the iPhone, which has no voice phrases.`;
-    return { kind: "ok", text: `Added ${list(what)} from ${watchName}.${linked}${voice}` };
+    return { kind: "ok", text: `${lead}${linked}${voice}` };
   }
   if (result.code === "nothing") return { kind: "warn", text: `Nothing added. ${result.message}` };
   const reason = result.message === "" ? "" : `: ${result.message}`;
