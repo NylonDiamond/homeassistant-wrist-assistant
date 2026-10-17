@@ -64,7 +64,7 @@ import {
   cardNoun,
   cardsTitle,
   deviceView,
-  dropBefore,
+  dropChange,
   emptyText,
   filterChips,
   footText,
@@ -827,7 +827,9 @@ export class WaAllPages extends LitElement {
         const dragged = this.dragId;
         this.dragId = undefined;
         this.overId = undefined;
-        if (dragged !== undefined) move(dropBefore(ids, dragged, pick.id));
+        // The dragged row moves, not the one it lands on.
+        const change = dragged === undefined ? undefined : dropChange(ids, dragged, pick.id);
+        if (change !== undefined) void this.changePicks(device, change, [...ids]);
       }}
       @dragend=${() => { this.dragId = undefined; this.overId = undefined; }}
       @keydown=${(e: KeyboardEvent) => {

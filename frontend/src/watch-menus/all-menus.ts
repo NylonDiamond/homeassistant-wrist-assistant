@@ -26,7 +26,7 @@ import { type HassLike, type OwnerSummary, fetchWatchConfig, saveWatchConfig } f
 import { deviceColor, deviceColorsCache } from "../device-colors.js";
 import { LIBRARY_UNSUPPORTED_TEXT, type MenuUnit } from "../library/client.js";
 import { type Library, type LibraryMenu, hasItem, holdsRecord, libraryMenus, menuDocument, pagesDocumentFor, sameId } from "../library/model.js";
-import { renderMenuRowPicture, rowPictureStyles } from "../library/row-picture.js";
+import { ROW_MENU_PICTURE_H, renderMenuRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
 import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
@@ -543,7 +543,7 @@ export class WaAllMenus extends LitElement {
         <span class="lt-sect-r">${menusDeviceFoot(device)}</span></div>
       <div class="lt-list" role="list" aria-label=${onDeviceTitle(device)}>${rows.map((row) => html`<div class="lt-row" role="listitem" data-unit=${row.unit}>
         <button type="button" class="lt-row-open" title=${`Edit the ${row.title} on ${device.name}`} @click=${() => this.openUnit(device, row.unit)}>
-          ${row.menu === undefined ? html`<span class="lr-ring" style="width:40px;height:40px" aria-hidden="true"></span>` : renderMenuRowPicture({
+          ${row.menu === undefined ? html`<span class="lr-ring" style=${`width:${ROW_MENU_PICTURE_H}px;height:${ROW_MENU_PICTURE_H}px`} aria-hidden="true"></span>` : renderMenuRowPicture({
             menu: row.menu, hass: this.hassNow, icons: this.icons, tick: this.iconsTick, onReady: () => this.requestUpdate(),
             ...(row.unit === "anywhere" ? { pages } : {}),
           })}

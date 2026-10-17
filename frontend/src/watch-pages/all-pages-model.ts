@@ -195,6 +195,13 @@ export function dropBefore(order: readonly string[], dragged: string, target: st
   return to + 1 < order.length ? order[to + 1]! : null;
 }
 
+/** The change a drop makes: the dragged pick, and what it lands before.
+ * Undefined for a drop that changes nothing. */
+export function dropChange(order: readonly string[], dragged: string, target: string): { id: string; before: string | null } | undefined {
+  const before = dropBefore(order, dragged, target);
+  return before === undefined ? undefined : { id: dragged, before };
+}
+
 /** `order` with `id` moved before `before` (null: to the end). */
 export function movedOrder(order: readonly string[], id: string, before: string | null): string[] {
   const rest = order.filter((o) => !sameId(o, id));

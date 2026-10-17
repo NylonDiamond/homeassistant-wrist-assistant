@@ -1,8 +1,8 @@
 // A small picture for every row of a library list: a page as one watch (or
 // iPhone) screen of its tiles, a status page as the watch draws it, a menu
-// as its screen with the ring of slots. Mock frames 2a and 2b: a page or
-// status page 36 by 44, on an iPhone 26 wide, a menu 40 tall, and the
-// dimmed "Not on this watch" cards 76 wide.
+// as its screen with the ring of slots. Mock frames 2a and 2b, grown: a
+// page or status page 56 by 68, on an iPhone 40 wide, a menu 56 tall, and
+// the dimmed "Not on this watch" cards 76 wide.
 //
 // Each reuses the drawer the rest of the panel has: the page editor's row
 // thumb (the page's background and the tiles that reach onto its first
@@ -33,14 +33,15 @@ import { renderStatusPagePicture } from "../watch-status-pages/view.js";
 import type { MenuUnit } from "./client.js";
 import { type LibraryMenu, menuDocument } from "./model.js";
 
-/** A page or status page in a list row, on a watch, in CSS pixels. */
-export const ROW_PICTURE_W = 36;
+/** A page or status page in a list row, on a watch, in CSS pixels. The
+ * mock drew them 36 wide; they grew to be readable (Jesse, 2026-10-17). */
+export const ROW_PICTURE_W = 56;
 /** The same on an iPhone. */
-export const ROW_PICTURE_PHONE_W = 26;
+export const ROW_PICTURE_PHONE_W = 40;
 /** The tallest a row picture is drawn. */
-export const ROW_PICTURE_H = 44;
+export const ROW_PICTURE_H = 68;
 /** A menu in a list row: its screen's height. */
-export const ROW_MENU_PICTURE_H = 40;
+export const ROW_MENU_PICTURE_H = 56;
 /** A dimmed "Not on this watch" card's picture. */
 export const SMALL_CARD_PICTURE_W = 76;
 
@@ -212,7 +213,7 @@ export const rowPictureStyles = css`
   .lr-pic.ph { border-radius: 6px; }
   .lr-tile { position: absolute; overflow: hidden; pointer-events: none; }
   .lr-smart { display: grid; place-items: center; color: rgba(255, 255, 255, .7); }
-  .lr-smart svg { width: 12px; height: 12px; }
+  .lr-smart svg { width: 16px; height: 16px; }
   .lr-status .wa-watch { padding: 0; margin: 0; background: none; box-shadow: none; border-radius: 0; }
   .lr-status .wa-watch::before, .lr-status .wa-watch::after { display: none; }
   .lr-ring { display: block; flex: none; border-radius: 50%; border: 1px dashed var(--wa-line-strong); box-sizing: border-box; }

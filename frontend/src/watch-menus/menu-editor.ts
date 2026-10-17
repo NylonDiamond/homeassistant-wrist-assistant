@@ -1234,7 +1234,6 @@ export class WaMenuEditor extends LitElement {
       switcherPages: rows.filter((p) => !p.hidden).map(({ hidden: _, ...page }) => page),
       switcherRows: rows,
       switcherSettings: (pageId) => this.switcherSettingsHost(pageId),
-      libraryHead: (menu) => this.libraryHead(menu),
       menuBadge: (menu) => this.menuBadge(menu),
       get document() { return draft.document; },
       get targets() { return self.targets(); },
@@ -1502,12 +1501,35 @@ export class WaMenuEditor extends LitElement {
   }
 
   /**
-   * The top of a menu's own settings, in place of the Devices line: the
-   * menu's name (a library menu has one, "Home menu"), Used by with a round
-   * tick per device (a device uses one menu of each kind, so a tick moves
-   * that device to this menu; the ticked ones cannot be unticked), and, for
-   * a menu other devices use too, "Make a copy for this watch". The page
-   * switcher's is the Anywhere menu's. Nothing before the library is read.
+   * The card under the Menus list on the left, for the shown menu: which
+   * library menu this device uses for it (`libraryHead`). Jesse,
+   * 2026-10-17: it sits with the list of the device's menus, not in the
+   * inspector, which is about the menu's look and slots. Nothing before
+   * the library is read.
+   */
+  private renderLibraryCard(): TemplateResult | typeof nothing {
+    const menu = shownMenu({ uiState: this.uiState });
+    const used = this.libraryMenuOf(menu);
+    if (used === undefined) return nothing;
+    const head = this.libraryHead(menu);
+    if (head === nothing) return nothing;
+    return html`<section class="card lc me-lib-card" aria-label=${`${MENU_UNIT_TITLES[used.unit]} in your home`} style="--c: var(--wa-lc-pages, #26a69a)">
+      <div class="lc-head">
+        <span class="swatch">${uiIcon("radial")}</span><span class="lc-title">${MENU_UNIT_TITLES[used.unit]}</span>
+        <span class="lc-sub" title=${`The ${MENU_UNIT_TITLES[used.unit]} this ${deviceNoun(this.device)} uses, and the devices that use it too.`}>which one this ${deviceNoun(this.device)} uses</span>
+      </div>
+      ${head}
+    </section>`;
+  }
+
+  /**
+   * The library menu this device uses for the shown menu, in the card under
+   * the Menus list: the menu's name (a library menu has one, "Home menu"),
+   * Used by with a round tick per device (a device uses one menu of each
+   * kind, so a tick moves that device to this menu; the ticked ones cannot
+   * be unticked), and, for a menu other devices use too, "Make a copy for
+   * this watch". The page switcher's is the Anywhere menu's. Nothing before
+   * the library is read.
    */
   private libraryHead(menu: MenusSection): TemplateResult | typeof nothing {
     const used = this.libraryMenuOf(menu);
@@ -1977,6 +1999,7 @@ export class WaMenuEditor extends LitElement {
     <div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
       <div class="column left">
         ${renderMenusCard(host)}
+        ${this.renderLibraryCard()}
         ${renderSlotsCard(host)}
       </div>
       ${this.renderGutter("left")}
@@ -2239,9 +2262,9 @@ export class WaMenuEditor extends LitElement {
 
     :host([narrow]) { --cf-pad: 12px; }
 
-    /* The top of a menu's own settings: its name, Used by with a round tick
-       per device, and Make a copy for this watch (libraryHead). */
-    .me-lib { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px 12px; margin-bottom: 8px; border-bottom: 1px solid var(--wa-line); }
+    /* The card under the Menus list: the shown menu's name, Used by with a
+       round tick per device, and Make a copy for this watch (libraryHead). */
+    .me-lib { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px 12px; }
     .me-lib-name { display: flex; flex-direction: column; gap: 4px; }
     .me-lib-h { font-size: 11.5px; font-weight: 600; color: var(--wa-muted); }
     .me-lib-input {

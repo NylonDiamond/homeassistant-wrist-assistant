@@ -78,17 +78,20 @@ async function editor(options: { library?: boolean; history?: Record<string, Jso
 }
 
 describe("the menu editor's library menu", () => {
-  it("puts the menu's name and Used by at the top of its settings, in place of the Devices line", async () => {
-    const { host } = await editor();
-    const text = flat(renderMenuInspector(host()));
-    expect(text).toContain(`class="me-lib" role="group" aria-label=Anywhere menu`);
-    expect(text).toMatch(/me-lib-input[\s\S]*Home menu/);
-    expect(text).toContain(`<span class="lt-hint">Used by</span>`);
-    expect(text).not.toContain("me-devices");
-    expect(text).not.toContain("<span>Devices</span>");
-    // Under the crumb, before what the menu is and its cards.
-    expect(text.indexOf(`class="me-lib"`)).toBeLessThan(text.indexOf("me-menu-note"));
-    expect(text.indexOf(`class="me-lib"`)).toBeLessThan(text.indexOf(">Look<"));
+  it("puts the menu's name and Used by in a card under the Menus list, and nothing of it in the inspector", async () => {
+    const { host, call } = await editor();
+    const card = flat(call("renderLibraryCard"));
+    expect(card).toContain(`class="card lc me-lib-card" aria-label=Anywhere menu in your home`);
+    expect(card).toContain(`<span class="lc-title">Anywhere menu</span>`);
+    expect(card).toContain("which one this watch uses");
+    expect(card).toContain(`class="me-lib" role="group" aria-label=Anywhere menu`);
+    expect(card).toMatch(/me-lib-input[\s\S]*Home menu/);
+    expect(card).toContain(`<span class="lt-hint">Used by</span>`);
+    const inspector = flat(renderMenuInspector(host()));
+    expect(inspector).not.toContain("me-lib");
+    expect(inspector).not.toContain("me-devices");
+    expect(inspector).not.toContain("<span>Devices</span>");
+    expect(inspector).toContain("me-menu-note");
   });
 
   it("draws a round tick per device, those that use it ticked and fixed", async () => {

@@ -17,6 +17,7 @@ import {
   cardsTitle,
   deviceView,
   dropBefore,
+  dropChange,
   emptyText,
   filterChips,
   footText,
@@ -123,6 +124,10 @@ describe("a device's tab", () => {
     expect(dropBefore(order, "a", "c")).toBeNull();
     expect(dropBefore(order, "b", "B")).toBeUndefined();
     expect(dropBefore(order, "x", "a")).toBeUndefined();
+    // The drop moves the dragged row, never the one it lands on.
+    expect(dropChange(order, "c", "a")).toEqual({ id: "c", before: "a" });
+    expect(dropChange(order, "a", "c")).toEqual({ id: "a", before: null });
+    expect(dropChange(order, "a", "a")).toBeUndefined();
     expect(movedOrder(order, "a", null)).toEqual(["b", "c", "a"]);
     expect(movedOrder(order, "c", "a")).toEqual(["c", "a", "b"]);
     expect(movedOrder(order, "a", "c")).toEqual(["b", "a", "c"]);
