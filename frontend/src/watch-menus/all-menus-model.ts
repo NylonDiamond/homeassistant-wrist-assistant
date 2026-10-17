@@ -10,6 +10,11 @@
 // the search, which device a card opens on, and the switches of a card's
 // Devices menu. The element is `all-menus.ts`; the head and the tabs are the
 // Pages tab's (`all-pages-model.ts`).
+//
+// Two unlinked cards of one unit can hold the very same menu (most often
+// both still the app's own). Each then says whose it is the same as
+// (`sameMenuDevices`), and its Link links them with no question
+// (`sameMenuLink`): replacing a menu with one just like it loses nothing.
 
 import type { WatchPagesPlaces } from "../ha-api.js";
 import {
@@ -19,7 +24,8 @@ import {
   type PagesFilter,
   type PagesKind,
 } from "../watch-pages/all-pages-model.js";
-import type { LinkDevice, PageDevicePlace } from "../watch-pages/links.js";
+import { type LinkDevice, type PageDevicePlace, joinWords } from "../watch-pages/links.js";
+import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import {
   MENU_DEVICES_SWITCHER_TEXT,
   MENU_DEVICES_WAIT_TAG,
@@ -28,6 +34,7 @@ import {
   MENU_LINKS_UPDATE_TEXT,
   MENU_PHRASE_GAP_TEXT,
   MENU_UNIT_NAMES,
+  MENU_UNIT_SECTIONS,
   type MenuDevicesGroup,
   type MenuLinkUnit,
   menuAlsoAddsText,
@@ -252,6 +259,69 @@ export function menuCardGroup(facts: MenuCardFacts): MenuDevicesGroup {
     lines,
     linked: false,
   };
+}
+
+/**
+ * Whether two devices' menus are the same for `unit`: each of the unit's
+ * sections (`MENU_UNIT_SECTIONS`, so the Anywhere menu with the page
+ * switcher) alike as JSON, whatever the order of its keys. The link ids sit
+ * outside the sections, so they never count.
+ */
+export function sameMenuUnit(a: MenusDocument, b: MenusDocument, unit: MenuLinkUnit): boolean {
+  return MENU_UNIT_SECTIONS[unit].every((s) => sameWatchPagesJson(a[s], b[s]));
+}
+
+/**
+ * For each unlinked card, the devices whose unlinked card of the same unit
+ * holds the same menu (`sameMenuUnit`), in device order. A card with no such
+ * twin, and every linked card, is missing. Read from every card, not only
+ * those shown, so a device tab still names the twin on another device.
+ */
+export function sameMenuDevices(cards: readonly MenuCard[]): Map<string, LinkDevice[]> {
+  const loose = cards.filter((c) => c.linkId === undefined);
+  const same = new Map<string, LinkDevice[]>();
+  for (const card of loose) {
+    const mine = card.copies[0]!;
+    const twins = loose.filter((other) => other !== card && other.unit === card.unit
+      && other.copies[0]!.device.ownerId !== mine.device.ownerId
+      && sameMenuUnit(mine.document, other.copies[0]!.document, card.unit));
+    if (twins.length > 0) same.set(card.key, twins.map((t) => t.copies[0]!.device));
+  }
+  return same;
+}
+
+/** The line on a card that holds the same menu as other devices: "Same as
+ * Jesse's iPhone's." */
+export function sameMenuText(devices: readonly LinkDevice[]): string {
+  return `Same as ${joinWords(devices.map((d) => `${d.name}'s`))}.`;
+}
+
+/** What a card's Link sends: `linkWatchMenus` from `source` for `unit` onto
+ * `targets`, with `replace`, since their menus are the same. */
+export interface SameMenuLink {
+  source: string;
+  unit: MenuLinkUnit;
+  targets: string[];
+}
+
+/**
+ * A card's Link onto the devices that hold the same menu: from the card's
+ * own device to those in `same` (`sameMenuDevices`). Undefined for a card
+ * with no twin. "dirty" while the source or a target holds unsaved edits in
+ * its menu editor: those could differ from what was read.
+ */
+export function sameMenuLink(card: MenuCard, same: ReadonlyMap<string, readonly LinkDevice[]>, dirty: (ownerId: string) => boolean): SameMenuLink | "dirty" | undefined {
+  const twins = same.get(card.key);
+  if (twins === undefined || twins.length === 0) return undefined;
+  const source = card.copies[0]!.device.ownerId;
+  const targets = twins.map((d) => d.ownerId);
+  if ([source, ...targets].some(dirty)) return "dirty";
+  return { source, unit: card.unit, targets };
+}
+
+/** What a card's Link said once it was done. */
+export function sameMenuLinkedText(unit: MenuLinkUnit, names: readonly string[]): string {
+  return `The ${MENU_UNIT_NAMES[unit]} is linked with ${joinWords(names)} now. An edit on one shows on all of them.`;
 }
 
 /** What the tab says with no card to show. */

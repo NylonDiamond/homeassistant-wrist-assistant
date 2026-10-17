@@ -25,6 +25,11 @@ import {
   menuSections,
   menusEmptyText,
   openMenuCopy,
+  sameMenuDevices,
+  sameMenuLink,
+  sameMenuLinkedText,
+  sameMenuText,
+  sameMenuUnit,
   shownMenuCards,
 } from "../src/watch-menus/all-menus-model.js";
 import { askWatchMenu, dropAllWatchMenus, takeWatchMenuAsk, takeWatchMenusRecord } from "../src/watch-menus/draft.js";
@@ -221,6 +226,66 @@ describe("a Menus tab card's Devices menu", () => {
   });
 });
 
+describe("menus that are the same on two devices", () => {
+  /** The keys of every object in reverse order: the same JSON. */
+  const reversed = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(reversed);
+    if (v !== null && typeof v === "object") return Object.fromEntries(Object.entries(v).reverse().map(([k, x]) => [k, reversed(x)]));
+    return v;
+  };
+
+  it("compares the unit's sections whatever their key order, and never the link ids", () => {
+    expect(sameMenuUnit(DEFAULTS, reversed(DEFAULTS) as MenusDocument, "anywhere")).toBe(true);
+    expect(sameMenuUnit(DEFAULTS, linked({ entity: ENTITY_LINK }), "anywhere")).toBe(true);
+    expect(sameMenuUnit(DEFAULTS, anywhereWith(2), "anywhere")).toBe(false);
+    // Only the Anywhere menu's slots differ: the Entity quick menus are the same.
+    expect(sameMenuUnit(DEFAULTS, anywhereWith(2), "entity")).toBe(true);
+    // The page switcher is part of the Anywhere menu.
+    const switcher = structuredClone(DEFAULTS);
+    switcher.pageSwitcher = { ...(switcher.pageSwitcher as object), glowIntensity: 0.123 };
+    expect(sameMenuUnit(DEFAULTS, switcher, "anywhere")).toBe(false);
+    expect(sameMenuUnit(DEFAULTS, switcher, "entity")).toBe(true);
+  });
+
+  it("names the other devices with the same menu on each unlinked card, never on a linked one", () => {
+    const docs = new Map<string, MenusDocument>([
+      [WATCH, DEFAULTS],
+      [PHONE, anywhereWith(2)],
+      [OTHER, reversed(DEFAULTS) as MenusDocument],
+    ]);
+    const cards = menuCards(DEVICES, docs);
+    const same = sameMenuDevices(cards);
+    const names = (ownerId: string, unit: string) => same.get(`menu:${ownerId}:${unit}`)?.map((d) => d.ownerId);
+    expect(names(WATCH, "anywhere")).toEqual([OTHER]);
+    expect(names(OTHER, "anywhere")).toEqual([WATCH]);
+    expect(names(PHONE, "anywhere")).toBeUndefined();
+    expect(names(WATCH, "entity")).toEqual([PHONE, OTHER]);
+    // A linked card is one card already: it is never named, nor names any.
+    const withLink = new Map(docs).set(WATCH, linked({ anywhere: ANY_LINK })).set(PHONE, linked({ anywhere: ANY_LINK }));
+    const linkedSame = sameMenuDevices(menuCards(DEVICES, withLink));
+    expect(linkedSame.get(`menu-link:anywhere:${ANY_LINK}`)).toBeUndefined();
+    expect(linkedSame.get(`menu:${OTHER}:anywhere`)).toBeUndefined();
+  });
+
+  it("says whose it is the same as", () => {
+    expect(sameMenuText([DEVICES[2]!])).toBe("Same as Chen's Watch's.");
+    expect(sameMenuText([DEVICES[1]!, DEVICES[2]!])).toBe("Same as Jesse's iPhone's and Chen's Watch's.");
+    expect(sameMenuLinkedText("anywhere", ["Chen's Watch"])).toBe("The Anywhere menu is linked with Chen's Watch now. An edit on one shows on all of them.");
+  });
+
+  it("links from the card's own device onto every twin, with replace, unless an editor holds edits", () => {
+    const cards = menuCards(DEVICES, new Map([[WATCH, DEFAULTS], [PHONE, DEFAULTS], [OTHER, anywhereWith(1)]]));
+    const same = sameMenuDevices(cards);
+    const phoneAnywhere = cards.find((c) => c.key === `menu:${PHONE}:anywhere`)!;
+    expect(sameMenuLink(phoneAnywhere, same, () => false)).toEqual({ source: PHONE, unit: "anywhere", targets: [WATCH] });
+    const watchEntity = cards.find((c) => c.key === `menu:${WATCH}:entity`)!;
+    expect(sameMenuLink(watchEntity, same, () => false)).toEqual({ source: WATCH, unit: "entity", targets: [PHONE, OTHER] });
+    expect(sameMenuLink(watchEntity, same, (id) => id === OTHER)).toBe("dirty");
+    const otherAnywhere = cards.find((c) => c.key === `menu:${OTHER}:anywhere`)!;
+    expect(sameMenuLink(otherAnywhere, same, () => false)).toBeUndefined();
+  });
+});
+
 // ── the element ─────────────────────────────────────────────────────────
 
 const flat = (v: unknown): string => {
@@ -337,6 +402,49 @@ describe("the Menus tab", () => {
     await (undone.t.el.link as (s: string, u: string, g: string) => Promise<void>).call(undone.t.el, WATCH, "anywhere", OTHER);
     expect(undone.links()).toEqual([false, true]);
     expect(undone.t.el.replaceAsk).toBeUndefined();
+  });
+
+  it("says a menu is the same as another device's, and Link links them with replace and no question", async () => {
+    const sent: Record<string, unknown>[] = [];
+    let linkedNow = false;
+    const t = tab(new Map([[WATCH, DEFAULTS], [OTHER, anywhereWith(2)]]), async (m) => {
+      sent.push(m);
+      if (m.type === "wrist_assistant/watch_pages/link") {
+        linkedNow = true;
+        return { targets: { [OTHER]: { pages: [], status_pages: [], units: ["entity"] } }, link_ids: { entity: ENTITY_LINK } };
+      }
+      if (m.type === "wrist_assistant/watch_pages/places") return { pages: {}, status_pages: {}, menus: {} };
+      if (m.kind !== "menus") return { revision: 0, document: null };
+      const base = m.owner_watch_id === OTHER ? anywhereWith(2) : DEFAULTS;
+      return { revision: 4, document: linkedNow ? { ...base, linkIds: { entity: ENTITY_LINK } } : base };
+    });
+    const before = t.whole();
+    // The Entity quick menus are the same; the Anywhere menus differ.
+    expect(before).toContain("Same as Chen's Watch's.");
+    expect(before).toContain("Same as Jesse's Watch's.");
+    expect(before.split("Same as").length - 1).toBe(2);
+    expect(before).toContain("<span>Link</span>");
+    const entity = t.cards().find((c) => c.key === `menu:${WATCH}:entity`)!;
+    await (t.el.linkSame as (c: MenuCard) => Promise<void>).call(t.el, entity);
+    const links = sent.filter((m) => m.type === "wrist_assistant/watch_pages/link");
+    expect(links.map((m) => [m.source_id, m.kind, m.units, m.targets, m.replace])).toEqual([[WATCH, "menus", ["entity"], [OTHER], true]]);
+    // No fresh read to judge the target: the content is the same.
+    expect(sent.filter((m) => m.type === "wrist_assistant/watch_config/get" && m.owner_watch_id === OTHER && m.kind === "menus")).toHaveLength(1);
+    expect(t.el.replaceAsk).toBeUndefined();
+    const entities = t.cards().filter((c) => c.unit === "entity");
+    expect(entities.map((c) => [c.key, c.copies.map((x) => x.device.ownerId)])).toEqual([[`menu-link:entity:${ENTITY_LINK}`, [WATCH, OTHER]]]);
+    const after = t.whole();
+    expect(after).not.toContain("Same as");
+    expect(after).toContain("The Entity quick menu is linked with Chen's Watch now. An edit on one shows on all of them.");
+  });
+
+  it("says nothing of a menu unlike every other device's", () => {
+    const t = tab(new Map([[WATCH, anywhereWith(1)], [OTHER, anywhereWith(2)]]));
+    const text = t.whole();
+    // The Anywhere menus differ; the Entity quick menus are the same.
+    expect(text.split("Same as").length - 1).toBe(2);
+    const alone = tab(new Map([[WATCH, DEFAULTS]]));
+    expect(alone.whole()).not.toContain("Same as");
   });
 
   it("will not share a menu whose every copy has unsaved edits", () => {

@@ -11,6 +11,10 @@
 // and the unlink (`unlinkMenuUnit`). What can be worked out without the
 // element is in `all-menus-model.ts`.
 //
+// An unlinked card whose menu is the very same as another device's says so
+// ("Same as Chen's Watch's."), and its Link links them in one call with
+// `replace`, asking nothing (`sameMenuLink`). The cards then fold into one.
+//
 // Every device's menus are read when the tab opens, with its pages and its
 // status pages for the lines of a card's Devices menu, and a device's again
 // whenever Home Assistant says one of them changed. The panel loads this
@@ -39,6 +43,7 @@ import {
   type PageDevicePlace,
   type PagesRecordFacts,
   awaitingMove,
+  joinWords,
   linkAlsoAddedText,
   linkDevicesOf,
   pagesRecordFacts,
@@ -62,6 +67,10 @@ import {
   menuSections,
   menusEmptyText,
   openMenuCopy,
+  sameMenuDevices,
+  sameMenuLink,
+  sameMenuLinkedText,
+  sameMenuText,
   shownMenuCards,
 } from "./all-menus-model.js";
 import { askWatchMenu, keptWatchMenusDraft } from "./draft.js";
@@ -185,6 +194,8 @@ export class WaAllMenus extends LitElement {
   @state() private linking = false;
   @state() private devicesNote?: WatchPagesNote;
   @state() private replaceAsk?: ReplaceAsk;
+  /** What a card's Same as Link did, on the card by one of its copies. */
+  @state() private sameNote?: { at: MenuAt; note: WatchPagesNote };
 
   private hassNow?: HassLike;
   private hassDrawnAt = 0;
@@ -196,6 +207,7 @@ export class WaAllMenus extends LitElement {
   private unsubscribers: (() => Promise<void> | void)[] = [];
   private subscribeSeq = 0;
   private cardsMemo?: { docs: ReadonlyMap<string, MenusDocument>; devices: readonly LinkDevice[]; cards: MenuCard[] };
+  private sameMemo?: { cards: readonly MenuCard[]; same: Map<string, LinkDevice[]> };
 
   /** Home Assistant. A new object on every state change: the pictures are
    * drawn again at most every couple of seconds for it. */
@@ -261,6 +273,15 @@ export class WaAllMenus extends LitElement {
     const cards = menuCards(devices, this.docs);
     this.cardsMemo = { docs: this.docs, devices, cards };
     return cards;
+  }
+
+  /** For each unlinked card, the devices that hold the same menu
+   * (`sameMenuDevices`), worked out again only when the cards change. */
+  private sameOf(cards: readonly MenuCard[]): Map<string, LinkDevice[]> {
+    if (this.sameMemo?.cards === cards) return this.sameMemo.same;
+    const same = sameMenuDevices(cards);
+    this.sameMemo = { cards, same };
+    return same;
   }
 
   private get filter(): PagesFilter {
@@ -518,6 +539,39 @@ export class WaAllMenus extends LitElement {
     await this.loadAll();
   }
 
+  /**
+   * A card's Same as Link: the menu, as saved on the card's device, onto
+   * every device that holds the same one (`sameMenuLink`), in one call with
+   * `replace` and no question, since nothing differs. The pages and status
+   * pages its slots open come along, as for any menu link. Then every device
+   * is read again, and the one card left says what happened.
+   */
+  private async linkSame(card: MenuCard): Promise<void> {
+    const hass = this.hassNow;
+    if (!hass || this.linking) return;
+    const plan = sameMenuLink(card, this.sameOf(this.cards), dirtyHere);
+    if (plan === undefined) return;
+    const at: MenuAt = { ownerId: card.copies[0]!.device.ownerId, unit: card.unit };
+    if (plan === "dirty") {
+      this.sameNote = { at, note: { kind: "warn", text: MENU_CARD_DIRTY_TEXT } };
+      return;
+    }
+    this.linking = true;
+    this.sameNote = undefined;
+    let note: WatchPagesNote;
+    try {
+      const reply = await linkWatchMenus(hass, plan.source, [plan.unit], plan.targets, true);
+      const also = [...new Set(plan.targets.flatMap((t) => linkAlsoAddedText(reply, t, [], this.pages.get(plan.source)) ?? []))];
+      note = { kind: "ok", text: [sameMenuLinkedText(plan.unit, plan.targets.map((t) => this.deviceName(t))), ...also].join(" ") };
+    } catch (err) {
+      note = { kind: "err", text: `Not linked. ${menuLinkErrorText(err)}` };
+    } finally {
+      this.linking = false;
+    }
+    this.sameNote = { at, note };
+    await this.loadAll();
+  }
+
   /** Escape closes the replace question, then a card's Devices menu. */
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.key !== "Escape") return;
@@ -642,6 +696,7 @@ export class WaAllMenus extends LitElement {
       <button type="button" class="ap-thumb" tabindex="-1" aria-hidden="true" title=${title} @click=${() => this.open(card)}>
         ${this.renderThumb(card, copy)}
       </button>
+      ${this.renderSame(card, cards, devicesOn)}
       <div class="ap-foot">
         <span class="ap-devs">${card.copies.map((c) => html`<span class="ap-dev" style=${color(c.device.ownerId)} title=${`On ${c.device.name}`}>
           ${uiIcon(c.device.kind === "iphone" ? "phone" : "watch")}<span class="ap-dev-n">${c.device.name}</span>
@@ -651,6 +706,23 @@ export class WaAllMenus extends LitElement {
           @click=${() => (menuOpen ? this.closeDevices() : this.openDevices(card))}>${uiIcon("phone")}<span>Devices</span>${uiIcon("chevron")}</button>` : nothing}
       </div>
       ${menuOpen ? this.renderMenu(card, devices) : nothing}
+    </div>`;
+  }
+
+  /** Over an unlinked card's chips while another device holds the very same
+   * menu: "Same as Chen's Watch's." and Link, when menus can be linked here.
+   * Then what the last Link did, on the card it was for. */
+  private renderSame(card: MenuCard, cards: readonly MenuCard[], linkable: boolean): TemplateResult | typeof nothing {
+    const twins = this.sameOf(cards).get(card.key);
+    const at = this.sameNote?.at;
+    const note = at !== undefined && card.unit === at.unit && menuCopyOn(card, at.ownerId) !== undefined ? this.sameNote!.note : undefined;
+    if (twins === undefined && note === undefined) return nothing;
+    return html`<div class="ap-same">
+      ${twins === undefined ? nothing : html`<div class="ap-same-row"><span class="ap-same-t">${sameMenuText(twins)}</span>
+        ${linkable ? html`<button type="button" class="ap-same-btn" ?disabled=${this.linking}
+          title=${`Link this ${card.name} with ${joinWords(twins.map((d) => d.name))}. An edit on one then shows on all of them.`}
+          @click=${() => void this.linkSame(card)}>${uiIcon("link")}<span>Link</span></button>` : nothing}</div>`}
+      ${note === undefined ? nothing : html`<div class="ap-same-note ${note.kind}" role="status">${note.text}</div>`}
     </div>`;
   }
 
