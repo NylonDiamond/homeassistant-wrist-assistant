@@ -998,6 +998,39 @@ def test_replace_item_refuses_another_item_or_shape() -> None:
         assert err.value.code == code, (kind, item_id)
 
 
+def test_create_item_adds_a_page_no_device_has() -> None:
+    library = _shared()
+    before = copy.deepcopy(library)
+    page = {"id": "new-1", "name": "Garage", "items": [], "isHidden": True, "linkId": LINK}
+    made = lib.create_item(library, "pages", page)
+    assert library == before
+    assert made.id == "new-1"
+    assert made.library["pages"]["new-1"] == {"id": "new-1", "name": "Garage", "items": []}
+    assert made.touched == {}, "no device picks it, so no record changes"
+    assert _revs(made.library, "pages")["new-1"] == 1
+    assert lib.pickers(made.library, "pages")["new-1"] == []
+    status = lib.create_item(library, "status_pages", {"id": "SP-9", "name": "Gates", "rows": []})
+    assert status.library["status_pages"]["SP-9"] == {"id": "SP-9", "name": "Gates", "rows": []}
+    assert _revs(status.library, "status_pages")["SP-9"] == 1
+
+
+def test_create_item_refuses_a_menu_a_held_id_or_a_system_page() -> None:
+    library = _shared()
+    cases = [
+        ("menus", {"id": "M1"}),
+        ("voice", {"id": "V1"}),
+        ("pages", {"name": "No id", "items": []}),
+        ("pages", {"id": LIGHTS.lower(), "name": "Twin", "items": []}),
+        ("pages", {"id": "sys", "name": "Settings", "isSystemPage": True, "items": []}),
+        ("status_pages", {"id": DOORS, "name": "Twin", "rows": []}),
+        ("pages", "not an object"),
+    ]
+    for kind, content in cases:
+        with pytest.raises(lib.LibraryError) as err:
+            lib.create_item(library, kind, content)
+        assert err.value.code == "invalid", (kind, content)
+
+
 def test_replace_item_changes_nothing_it_is_given() -> None:
     library = _shared()
     before = copy.deepcopy(library)

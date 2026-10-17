@@ -46,6 +46,7 @@ Commands:
     wrist_assistant/library/item                {kind, item_id}
     wrist_assistant/library/item/save           {kind, item_id, base_revision,
                                                  document}
+    wrist_assistant/library/item/create         {kind, document}
 
 (The item is ``item_id``, where the plan says ``id``: a WebSocket message's
 own ``id`` is its message number.)
@@ -134,6 +135,7 @@ _CMD_LIBRARY_DELETE = f"{DOMAIN}/library/delete"
 _CMD_LIBRARY_SUMMARY = f"{DOMAIN}/library/summary"
 _CMD_LIBRARY_ITEM = f"{DOMAIN}/library/item"
 _CMD_LIBRARY_ITEM_SAVE = f"{DOMAIN}/library/item/save"
+_CMD_LIBRARY_ITEM_CREATE = f"{DOMAIN}/library/item/create"
 
 
 # The kinds whose documents are a list of items, and the key holding it.
@@ -224,6 +226,7 @@ def async_register_watch_config_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_library_summary)
     websocket_api.async_register_command(hass, ws_library_item)
     websocket_api.async_register_command(hass, ws_library_item_save)
+    websocket_api.async_register_command(hass, ws_library_item_create)
 
 
 @websocket_api.websocket_command(
@@ -1127,6 +1130,44 @@ def ws_library_item_save(
         result = store.library_save_item(
             msg["kind"], msg["item_id"], msg["base_revision"], msg["document"]
         )
+    except WatchConfigStoreError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_LIBRARY_ITEM_CREATE,
+        vol.Required("kind"): str,
+        vol.Required("document"): dict,
+    }
+)
+@callback
+def ws_library_item_create(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Make a new page or status page in the library that no device has yet
+    (the Pages and Status pages tabs' New page). The panel opens it in the
+    library; a tick (``library/pick``) then puts it on a device.
+
+    Request: {kind: "pages" | "status_pages", document}
+    Result:  {"id": <the page's id>, "revision": 1}
+
+    ``document`` is a whole document of the kind holding the one new page,
+    as ``library/item`` gives one back, checked as a panel save of the kind
+    is (``WatchConfigStore.library_create_item``). No record is written.
+    Administrators only (a page no device has is an administrator's).
+    Refused ``invalid`` (a menu, another shape, other than one page, a
+    system page, an id the library holds) and ``unauthorized``.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    try:
+        result = store.library_create_item(msg["kind"], msg["document"])
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
         return

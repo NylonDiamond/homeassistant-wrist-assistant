@@ -963,6 +963,64 @@ def test_diagnostics_count_the_library_and_name_nothing(env) -> None:
     }
 
 
+# ── a new page no device has ─────────────────────────────────────────────
+
+
+def test_create_item_makes_a_page_no_device_has_until_one_is_ticked(env) -> None:
+    store = env.store_now()
+    _save(env, WATCH, _pages())
+    _save(env, WATCH, _status(), "status_pages")
+    before = store.get(WATCH, "pages").revision
+    env.changes.clear()
+    page = {"id": "new-page-1", "name": "Garage", "items": [_tile(1, "light.a")]}
+    result = store.library_create_item("pages", {"schemaVersion": 1, "pages": [page]})
+    assert result == {"id": "new-page-1", "revision": 1}
+    assert env.changes == [], "no record is written"
+    assert store.get(WATCH, "pages").revision == before
+    entry = store.library_summary()["pages"]["new-page-1"]
+    assert entry == {"item": page, "owners": [], "revision": 1}
+    assert store.library_item("pages", "new-page-1") == {
+        "document": {"schemaVersion": 1, "pages": [page]},
+        "revision": 1,
+    }
+    assert env.store_now().library_summary()["pages"]["new-page-1"]["owners"] == [], "kept"
+
+    store = env.store
+    status = {"id": "new-status-1", "name": "Gates", "rows": []}
+    made = store.library_create_item("status_pages", {"schemaVersion": 1, "statusPages": [status]})
+    assert made == {"id": "new-status-1", "revision": 1}
+    assert store.library_summary()["status_pages"]["new-status-1"]["item"] == status
+
+    # A tick puts the page on a device, as any library page.
+    store.library_pick(WATCH, "pages", "new-page-1", on=True)
+    assert _page(_doc(env, WATCH), "new-page-1")["name"] == "Garage"
+
+
+@pytest.mark.parametrize(
+    ("kind", "document"),
+    [
+        ("menus", {"schemaVersion": 1, "quickAction": {}, "pageSwitcher": {}, "entityRadial": {}}),
+        ("voice", {"schemaVersion": 1, "phrases": []}),
+        ("pages", {"schemaVersion": 1, "pages": []}),
+        ("pages", {"schemaVersion": 1, "pages": [{"id": "a", "name": "A", "items": []}, {"id": "b", "name": "B", "items": []}]}),
+        ("pages", {"schemaVersion": 1, "pages": [{"id": "s", "name": "Settings", "isSystemPage": True, "items": []}]}),
+        ("pages", {"schemaVersion": 1, "pages": [{"id": LIGHTS, "name": "Twin", "items": []}]}),
+        ("pages", {"schemaVersion": 1, "pages": [{"id": "x", "name": "Bad tile", "items": [{"id": "t"}]}]}),
+        ("status_pages", {"schemaVersion": 1, "statusPages": [{"id": DOORS, "name": "Twin", "rows": []}]}),
+        ("status_pages", {"schemaVersion": 1, "pages": [{"id": "x", "name": "Wrong list", "rows": []}]}),
+    ],
+)
+def test_create_item_refuses_what_is_not_one_new_page(env, kind, document) -> None:
+    store = env.store_now()
+    _save(env, WATCH, _pages())
+    _save(env, WATCH, _status(), "status_pages")
+    summary = store.library_summary()
+    with pytest.raises(env.mod.WatchConfigStoreError) as err:
+        store.library_create_item(kind, document)
+    assert err.value.code == "invalid"
+    assert store.library_summary() == summary
+
+
 # ── a new menu no device uses ────────────────────────────────────────────
 
 

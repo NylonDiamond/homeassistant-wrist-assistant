@@ -187,6 +187,7 @@ from .library import (
     changed_owners,
     copy_menu,
     copy_picks,
+    create_item,
     create_menu,
     delete_item,
     empty_library,
@@ -3476,6 +3477,35 @@ class WatchConfigStore:
             copied.library, updated_by, first=owner_watch_id, strict=True
         )
         return {"id": copied.id, "revisions": self._revisions_of(written)}
+
+    def library_create_item(self, kind: Any, document: Any) -> dict[str, Any]:
+        """A new page or status page in the library that no device has yet
+        (the Pages and Status pages tabs' New page, ``library/item/create``);
+        the panel then opens it in the library, and a tick puts it on a
+        device.
+
+        ``document`` is a whole document of the kind holding the one new
+        page, as ``library/item`` would give it back, and meets the guard a
+        panel save of the kind meets (:func:`validate_document` with
+        ``check_items``). No record is written, so no device changes.
+
+        Refused ``invalid`` for a menu, a document of another shape or with
+        other than one page, a system page, or an id the library already
+        holds. Returns ``{"id": <the page's id>, "revision": 1}``."""
+        self._check_library()
+        if kind not in ("pages", "status_pages"):
+            raise WatchConfigValidationError("kind must be pages or status_pages")
+        validate_document(kind, document, check_items=True)
+        pages = document[_KIND_LIST_KEYS[kind]]
+        if len(pages) != 1:
+            raise WatchConfigValidationError("the document must hold exactly one page")
+        try:
+            created = create_item(self._library, kind, pages[0])
+        except LibraryError as err:
+            raise WatchConfigValidationError(err.message) from err
+        self._set_library(created.library)
+        _LOGGER.info("Made %s %s in the library", kind, created.id)
+        return {"id": created.id, "revision": item_revision(self._library, kind, created.id)}
 
     def library_create_menu(self, unit: Any, name: Any, sections: Any) -> dict[str, Any]:
         """A new library menu that no device uses yet (the Menus tab's New

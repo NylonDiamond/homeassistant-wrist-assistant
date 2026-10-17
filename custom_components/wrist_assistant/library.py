@@ -1377,6 +1377,27 @@ def create_menu(
     return Copied(change.library, change.touched, new_id)
 
 
+def create_item(library: Mapping[str, Any], kind: str, content: Mapping[str, Any]) -> Copied:
+    """A new page or status page in the library, picked by no one (the
+    Pages and Status pages tabs' New page; a tick then puts it on a
+    device), so no record changes. ``content`` is the page object the panel
+    made, with its id; it is kept as :func:`replace_item` keeps one
+    (``isHidden`` and ``linkId`` dropped). ``invalid`` for a menu, a page
+    with no id, an id the library already holds or a system page."""
+    _check_kind(kind, ("pages", "status_pages"))
+    if not isinstance(content, Mapping) or _key(content.get("id")) is None:
+        raise LibraryError("invalid", "the page needs an id")
+    if kind == "pages" and _is_system_page(content):
+        raise LibraryError("invalid", "a system page is never a library item")
+    new_id = str(content["id"])
+    if _key(new_id) in _index(library[kind]):
+        raise LibraryError("invalid", f"the library already holds {kind} item {new_id}")
+    lib = copy.deepcopy(dict(library))
+    lib[kind][new_id] = _content(content)
+    change = _change(library, lib)
+    return Copied(change.library, change.touched, new_id)
+
+
 def rename_menu(library: Mapping[str, Any], menu_id: str, name: str) -> dict[str, Any]:
     """The library with a menu renamed. A name is not in any record, so no
     device changes, but it is the menu's content: a new name moves the

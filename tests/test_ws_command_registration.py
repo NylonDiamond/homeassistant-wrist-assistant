@@ -74,7 +74,7 @@ _MODULES = [
 # administrator's, like every library item no device has.
 _ADMIN = {
     _MODULE.name: {"ws_gallery_key"},
-    _WATCH_CONFIG_MODULE.name: {"ws_library_menus_create"},
+    _WATCH_CONFIG_MODULE.name: {"ws_library_menus_create", "ws_library_item_create"},
 }
 
 # Command -> the owner check it must call. Every one of them is refused for

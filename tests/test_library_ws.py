@@ -255,6 +255,49 @@ def test_create_refuses_a_bad_shape_as_invalid(ctx, msg) -> None:
     assert ctx.store.library_summary()["menus"] == {}
 
 
+# ── library/item/create ──────────────────────────────────────────────────
+
+
+def test_item_create_makes_a_page_no_device_has(ctx) -> None:
+    """Administrators only, by ``require_admin`` (pinned in
+    test_ws_command_registration)."""
+    before = ctx.store.get(WATCH, "pages").revision
+    page = {"id": "NEW-PAGE", "name": "Garage", "items": []}
+    document = {"schemaVersion": 1, "pages": [page]}
+    made = _ok(ctx, ctx.ws.ws_library_item_create, kind="pages", document=document)
+    assert made == {"id": "NEW-PAGE", "revision": 1}
+    assert ctx.store.get(WATCH, "pages").revision == before, "no record is written"
+    summary = _ok(ctx, ctx.ws.ws_library_summary)
+    assert summary["pages"]["NEW-PAGE"] == {"item": page, "owners": [], "revision": 1}
+    read = _ok(ctx, ctx.ws.ws_library_item, kind="pages", item_id="NEW-PAGE")
+    assert read == {"document": document, "revision": 1}
+    status = {"id": "NEW-STATUS", "name": "Gates", "rows": []}
+    made = _ok(ctx, ctx.ws.ws_library_item_create, kind="status_pages",
+               document={"schemaVersion": 1, "statusPages": [status]})
+    assert made == {"id": "NEW-STATUS", "revision": 1}
+
+
+@pytest.mark.parametrize(
+    "msg",
+    [
+        {"kind": "menus", "document": {"schemaVersion": 1, "quickAction": {}, "pageSwitcher": {}, "entityRadial": {}}},
+        {"kind": "pages", "document": {"schemaVersion": 1, "pages": []}},
+        {"kind": "pages", "document": {"schemaVersion": 1, "pages": [{"id": HOME, "name": "Twin", "items": []}]}},
+        {"kind": "status_pages", "document": {"schemaVersion": 1, "statusPages": [{"name": "No id", "rows": []}]}},
+    ],
+)
+def test_item_create_refuses_what_is_not_one_new_page(ctx, msg) -> None:
+    pages = set(ctx.store.library_summary()["pages"])
+    assert _codes(ctx, ctx.ws.ws_library_item_create, **msg) == ["invalid"]
+    assert set(ctx.store.library_summary()["pages"]) == pages
+
+
+def test_item_create_answers_unavailable_before_the_integration_is_ready(ctx) -> None:
+    ctx.hass.data = {}
+    document = {"schemaVersion": 1, "pages": [{"id": "N", "name": "N", "items": []}]}
+    assert _codes(ctx, ctx.ws.ws_library_item_create, kind="pages", document=document) == ["unavailable"]
+
+
 def test_create_answers_unavailable_before_the_integration_is_ready(ctx) -> None:
     ctx.hass.data = {}
     msg = {"unit": "entity", "name": "Menu", "sections": {"entityRadial": {}}}
