@@ -3166,13 +3166,15 @@ class WatchConfigStore:
         return out
 
     def library_item_owners(self, kind: Any, item_id: Any) -> list[str] | None:
-        """The owners that pick one library item (ids compared ignoring
-        case), or None when the library holds no such item or kind."""
+        """The owners that pick one library item, or None when the library
+        holds no such item or kind. The id is resolved as the item ops
+        resolve it (:func:`stored_item_id`), so a permission check and the op
+        it guards always name the same item."""
         if kind not in LIBRARY_KINDS or not isinstance(item_id, str):
             return None
-        index = {key.upper(): key for key in self._library[kind]}
-        stored = index.get(item_id.upper())
-        if stored is None:
+        try:
+            stored = stored_item_id(self._library, kind, item_id)
+        except LibraryError:
             return None
         return pickers(self._library, kind)[stored]
 
@@ -3236,6 +3238,12 @@ class WatchConfigStore:
         """Save one library item edited in the library itself
         (``library/item/save``), compare and swap on the item's revision.
 
+        ``base_revision`` is compared first: one other than the item's
+        revision is a ``conflict`` whatever the document holds, so a stale
+        editor always reads the item again before it hears anything else. (A
+        record save checks the shape first, to match a device's save; no
+        device saves a library item, so there is nothing here to match.)
+
         ``document`` is a whole document of the kind, as :meth:`library_item`
         gives it. It meets the guard a panel save of the kind meets
         (:func:`validate_document` with ``check_items``). Then the item is
@@ -3262,7 +3270,6 @@ class WatchConfigStore:
         self._check_library()
         kind, stored = self._library_item_id(kind, item_id)
         base_revision = _validate_base_revision(base_revision)
-        validate_document(kind, document, check_items=True)
         current = item_revision(self._library, kind, stored)
         if base_revision != current:
             raise WatchConfigConflictError(
@@ -3270,6 +3277,7 @@ class WatchConfigStore:
                 current,
                 None,
             )
+        validate_document(kind, document, check_items=True)
         if kind == "menus":
             unit = self._library["menus"][stored]["kind"]
             before = self._library["menus"][stored]["sections"]

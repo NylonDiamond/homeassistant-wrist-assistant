@@ -1282,6 +1282,35 @@ def test_an_item_save_on_a_stale_base_is_a_conflict(env) -> None:
     assert store.library_item("pages", LIGHTS)["document"]["pages"][0]["name"] == "Lamps"
 
 
+def test_a_stale_item_save_is_a_conflict_even_when_its_document_is_refused(env) -> None:
+    store, _ = _two_watches(env)
+    item = store.library_item("pages", LIGHTS)
+    item["document"]["pages"][0]["name"] = "Lamps"
+    store.library_save_item("pages", LIGHTS, 1, item["document"])
+    for document in ({"schemaVersion": 1}, {"schemaVersion": 1, "pages": []}):
+        with pytest.raises(env.mod.WatchConfigStoreError) as err:
+            store.library_save_item("pages", LIGHTS, 1, document)
+        assert err.value.code == "conflict", document
+        assert err.value.revision == 2
+
+
+def test_the_permission_lookup_resolves_an_item_as_the_item_ops_do(env) -> None:
+    store, menus = _two_watches(env)
+    menu_id = menus["anywhere"]
+    users = sorted(store.library_item_owners("menus", menu_id))
+    assert users == sorted([WATCH, WATCH_2])
+    assert sorted(store.library_item_owners("menus", menu_id.lower())) == users
+    assert sorted(store.library_item_owners("pages", LIGHTS.lower())) == sorted([WATCH, WATCH_2])
+    # A menu id that differs only by case names the menu spelled exactly so,
+    # in the permission check as in the op.
+    twin = menu_id.lower()
+    store._library["menus"][twin] = copy.deepcopy(store._library["menus"][menu_id])
+    assert store.library_item_owners("menus", twin) == []
+    assert sorted(store.library_item_owners("menus", menu_id)) == users
+    assert store.library_item_owners("menus", "missing") is None
+    assert store.library_item_owners("voice", menu_id) is None
+
+
 def test_an_item_save_refuses_another_item_or_shape(env) -> None:
     store, menus = _two_watches(env)
     page = _page(_pages(), LIGHTS)
