@@ -3,7 +3,8 @@
 // name at the top of its settings, renamed once typing stops; Used by with a
 // round tick per device; "Make a copy for this watch"; the menu's name on its
 // row; the restore question naming the devices that use the menus it
-// changes; and every save keeping `linkIds` exactly as loaded.
+// changes; and every save passing an old record's `linkIds` through
+// untouched, as any key the editor does not know (Home Assistant ignores it).
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -23,8 +24,8 @@ const HOME = "CCCC1000-0000-4000-8000-000000000001";
 const CHEN_MENU = "CCCC1000-0000-4000-8000-000000000002";
 const QUICK = "CCCC1000-0000-4000-8000-000000000003";
 
-/** The defaults with the server's link marks, as a shared menu's record
- * carries them. */
+/** The defaults with the link marks a record saved before the library may
+ * still carry. */
 const marked = (links: Record<string, string>): MenusDocument => ({ ...structuredClone(DEFAULTS), linkIds: links });
 
 let made = 0;
@@ -186,7 +187,7 @@ describe("the menu editor's library menu", () => {
     expect(ha.of("library/menus/copy")).toEqual([]);
   });
 
-  it("saves the menus with linkIds exactly as loaded", async () => {
+  it("saves the menus with an old record's linkIds untouched, never reading or dropping it", async () => {
     const { el, call, ha, watch } = await editor();
     const draft = el.draft as { apply(d: MenusDocument): boolean; document: MenusDocument };
     draft.apply(setWatchMenuStyle(draft.document, "quickAction", "beamIntensity", 0.9));

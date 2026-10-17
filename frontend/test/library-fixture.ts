@@ -2,7 +2,7 @@
 // pages, status pages and menus, as `library/summary` answers.
 
 import type { LibrarySummary } from "../src/library/client.js";
-import type { LinkDevice } from "../src/watch-pages/links.js";
+import type { LinkDevice } from "../src/watch-pages/devices.js";
 
 export const CHEN = "chen-watch";
 export const JESSE = "jesse-watch";

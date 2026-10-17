@@ -6,10 +6,10 @@
 // When it reads again:
 // - when the first listener comes (a tab or editor opened), always, so
 //   what was read while nothing listened is never trusted;
-// - after every write made here (`pick`, `pickMenu`, `copyMenu`,
-//   `renameMenu`, `deleteItem`), whether it was taken or refused: a rename,
-//   or a delete of an item no device has, writes no record and so sends no
-//   change event;
+// - after every write made here (`pick`, `pickMenu`, `createMenu`,
+//   `copyMenu`, `renameMenu`, `deleteItem`), whether it was taken or
+//   refused: a new menu, a rename, or a delete of an item no device has,
+//   writes no record and so sends no change event;
 // - 250 ms after a `watch_config/subscribe` event of kind `pages`,
 //   `status_pages` or `menus` on any device a listener named, so a burst of
 //   saves (an editor's save, another panel's tick, a device's own upload)
@@ -24,8 +24,7 @@
 // shows the state asked for meanwhile (`pending`), and a refusal is kept as
 // a note on the item (`noteFor`) until the next write on that item.
 //
-// Nothing here saves a device's record, so the records' `linkId` and
-// `linkIds` are never touched; the editors' own saves keep them as loaded.
+// Nothing here saves a device's record: the editors' own saves do that.
 // Plan: app repo docs/one_library_plan_2026-10.md.
 
 import { type HassLike, subscribeWatchConfig } from "../ha-api.js";
@@ -34,9 +33,12 @@ import {
   type LibraryKind,
   type LibraryListKind,
   type LibraryMenuCopyReply,
+  type LibraryMenuCreateReply,
+  type LibraryObject,
   type LibraryPickReply,
   type MenuUnit,
   copyLibraryMenu,
+  createLibraryMenu,
   deleteLibraryItem,
   fetchLibrarySummary,
   libraryErrorCode,
@@ -191,6 +193,12 @@ export class LibraryStore {
   pickMenu(ownerId: string, unit: MenuUnit, menuId: string): Promise<LibraryWrite<LibraryPickReply>> {
     return this.write(noteKey("menus", menuId), pendingKey("menus", ownerId, unit), { menuId },
       () => pickLibraryMenu(this.hass, ownerId, unit, menuId));
+  }
+
+  /** New menu: a library menu of `unit` named `name`, made of `sections`,
+   * that no device uses until one is ticked. */
+  createMenu(unit: MenuUnit, name: string, sections: LibraryObject): Promise<LibraryWrite<LibraryMenuCreateReply>> {
+    return this.write(undefined, undefined, undefined, () => createLibraryMenu(this.hass, unit, name, sections));
   }
 
   /** "Make a copy for this watch": a new menu from the one the device uses

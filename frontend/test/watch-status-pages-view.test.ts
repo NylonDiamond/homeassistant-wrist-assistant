@@ -124,7 +124,7 @@ describe("the cards", () => {
     expect(rows).toContain("hidden");
   });
 
-  it("mark a linked status page with the device it is also on, and say an edit shows there too", () => {
+  it("mark a status page other devices have too with the device it is also on, and say an edit shows there too", () => {
     const h = host(CONFIGURED);
     expect(flat(renderPagesCard(h))).not.toContain("sp-linked");
     const linked: StatusPagesViewHost = {

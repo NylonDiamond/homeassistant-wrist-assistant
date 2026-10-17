@@ -4,14 +4,12 @@
 // order with what it hides.
 //
 // Pure: no element, no Home Assistant. The summary is the one source of
-// which device has what. The records' `linkId` and `linkIds` keys are never
-// read here (Home Assistant still writes them until step 4 of the plan, and
-// every save keeps them as loaded). Ids are compared ignoring case, as the
-// server compares them; owner ids too, as the device colors do.
-// Plan: app repo docs/one_library_plan_2026-10.md, steps 2 and 3.
+// which device has what. Ids are compared ignoring case, as the server
+// compares them; owner ids too, as the device colors do.
+// Plan: app repo docs/one_library_plan_2026-10.md, steps 2 to 4.
 
-import type { LinkDevice } from "../watch-pages/links.js";
-import { joinWords } from "../watch-pages/links.js";
+import type { LinkDevice } from "../watch-pages/devices.js";
+import { joinWords } from "../watch-pages/devices.js";
 import type { MenusDocument } from "../watch-menus/model.js";
 import { type WatchPage, type WatchPagesDocument, isSmartWatchPage, watchPageName, watchPageTiles } from "../watch-pages/model.js";
 import { isSystemStatusPage, statusPageName, statusPageRows } from "../watch-status-pages/model.js";
@@ -250,7 +248,7 @@ export function otherMenus(lib: Library, ownerId: string, unit: MenuUnit): Libra
 
 /** A menu as a menus document, for its picture (`wa-menu-thumbs`) and its
  * slot count (`menuRowCount`). Never saved: a menus save is always the
- * device's own record as loaded, so its `linkIds` stay as they were. */
+ * device's own record as loaded. */
 export function menuDocument(menu: LibraryMenu): MenusDocument {
   return { schemaVersion: 1, ...structuredClone(menu.sections) };
 }

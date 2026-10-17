@@ -7,8 +7,7 @@
 // after every write and every change Home Assistant tells of. A card's row of
 // ticks is its devices (`library/ticks.ts`): tick one to put the page there,
 // untick it to take it off. A card opens its page in a device's page editor,
-// or a status page in its status pages editor (`openDevice`). Nothing here
-// reads a record's `linkId`.
+// or a status page in its status pages editor (`openDevice`).
 //
 // The head is the Complications list page's: Multi select, the Device menu
 // (watches or iPhones) and the search, over a row of device tabs. On All the
@@ -98,7 +97,7 @@ import { type PickChange, changeDevicePicks, picksDirtyText } from "./all-pages-
 import { pagesBulkIO, picksIO } from "./all-pages-io.js";
 import { NO_ICONS as NO_PICTURE_ICONS } from "./editor-host.js";
 import { askNewWatchPage, keepWatchPagesSelection, keptWatchPagesDraft } from "./kept.js";
-import { DEVICES_WAIT_TEXT, type LinkDevice, type PagesRecordFacts, awaitingMove, freePlanText, linkDevicesOf } from "./links.js";
+import { DEVICES_WAIT_TEXT, type LinkDevice, type PagesRecordFacts, awaitingMove, freePlanText, linkDevicesOf } from "./devices.js";
 import { tickItem } from "./library-editing-io.js";
 import { libraryListStyles } from "./library-list-styles.js";
 import { listTabStyles } from "./list-tab-styles.js";

@@ -1,7 +1,8 @@
 // A device tab's Hide here and order: one save of the device's own record,
 // with only `isHidden` or the order changed. A system page keeps its place,
-// every other key stays as loaded (the `linkId` marks Home Assistant still
-// writes included), and a conflict reads again.
+// every other key stays as loaded (an old record's `linkId` included: the
+// panel never reads it, and Home Assistant ignores it), and a conflict reads
+// again.
 
 import { describe, expect, it } from "vitest";
 

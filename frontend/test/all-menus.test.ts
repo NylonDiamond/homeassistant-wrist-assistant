@@ -1,9 +1,9 @@
 // The Menus tab, drawn from the library: one card per menu in two sections,
 // its name, its slots, its picture and a round tick per device; a tick moves
 // that device onto the menu. A device's tab shows its two menus with a pick
-// of another, then the rest. New menu copies a device's menu under a name and
-// sets it back to the app's own; a menu no device uses can be deleted. Plus
-// the menu editor's ask that opens it on one menu.
+// of another, then the rest. New menu makes a menu no device uses, the app's
+// own for its kind, and moves no device; a menu no device uses can be
+// deleted. Plus the menu editor's ask that opens it on one menu.
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -25,8 +25,10 @@ import {
   menuSections,
   menusDeviceFoot,
   menusEmptyText,
-  newMenuDevices,
+  NEW_MENU_ADMIN_TEXT,
+  newMenuMadeText,
   newMenuName,
+  newMenuSections,
   newMenuText,
   openMenuDevice,
   restMenus,
@@ -35,7 +37,6 @@ import {
 import { askWatchMenu, dropAllWatchMenus, takeWatchMenuAsk } from "../src/watch-menus/draft.js";
 import { shownMenu, showMenuSettings, selectedMenuSlot } from "../src/watch-menus/menu-view.js";
 import { type MenusDocument, watchMenusDefaults } from "../src/watch-menus/model.js";
-import { RESET_ATTEMPTS, freshUnitDocument, resetMenuUnit, type MenusRecordIO } from "../src/watch-menus/new-menu.js";
 import { ALL_FILTER } from "../src/watch-pages/all-pages-model.js";
 import { CHEN, CHEN_MENU, DEVICES, HOME_MENU, JESSE, PHONE, QUICK, SPARE, summary } from "./library-fixture.js";
 import { fakeHome, standUp } from "./library-tab-fake.js";
@@ -43,7 +44,7 @@ import { fakeHome, standUp } from "./library-tab-fake.js";
 const DEFAULTS = JSON.parse(readFileSync(join(__dirname, "fixtures-menus", "01-defaults.json"), "utf8")) as MenusDocument;
 const lib = () => libraryOf(summary());
 const menu = (id: string) => lib().menus.find((m) => m.id === id)!;
-const [CHEN_D, JESSE_D, PHONE_D] = DEVICES as [typeof DEVICES[0], typeof DEVICES[0], typeof DEVICES[0]];
+const [, JESSE_D, PHONE_D] = DEVICES as [typeof DEVICES[0], typeof DEVICES[0], typeof DEVICES[0]];
 
 describe("the Menus tab's cards", () => {
   it("are one per library menu, each with its name, in two sections, Anywhere menus first", () => {
@@ -54,7 +55,7 @@ describe("the Menus tab's cards", () => {
     ]);
   });
 
-  it("keep both sections when one has no menu, for its New menu", () => {
+  it("keep both sections when one has no menu", () => {
     // "chen" finds Chen's menu by name, and the Entity quick menu Chen Watch uses.
     expect(menuSections(shownMenus(lib(), "chen", "all", DEVICES)).map((s) => s.menus.map((m) => m.id))).toEqual([[CHEN_MENU], [QUICK]]);
     expect(menuSections(shownMenus(lib(), "home")).map((s) => s.menus.length)).toEqual([1, 0]);
@@ -104,60 +105,30 @@ describe("a device's menus", () => {
 });
 
 describe("New menu", () => {
-  it("offers a name not taken yet, and the devices that have a menu to start from", () => {
+  it("offers a name not taken yet for the kind of menu", () => {
     expect(newMenuName(lib(), "anywhere")).toBe("New menu");
+    expect(newMenuName(lib(), "entity")).toBe("New quick menu");
     const withNew = summary();
     withNew.menus["X"] = { name: "New quick menu", kind: "entity", sections: {}, owners: [] };
     expect(newMenuName(libraryOf(withNew), "entity")).toBe("New quick menu 2");
-    expect(newMenuDevices(lib(), "anywhere", DEVICES).map((d) => d.ownerId)).toEqual([CHEN, JESSE, PHONE]);
-    expect(newMenuDevices(undefined, "anywhere", DEVICES)).toEqual([]);
-    expect(newMenuText("entity", CHEN_D)).toBe("It starts as the app's own Entity quick menu, and Chen Watch uses it from now on.");
   });
 
-  it("sets only the unit's sections back to the app's own, every other key as it was", () => {
-    const doc: MenusDocument = { schemaVersion: 1, quickAction: { slots: [] }, entityRadial: { mine: true }, linkIds: { entity: QUICK } };
-    const fresh = freshUnitDocument(doc, "anywhere");
-    expect(fresh.quickAction).toEqual(watchMenusDefaults().quickAction);
-    expect(fresh.entityRadial).toBe(doc.entityRadial);
-    expect(fresh.linkIds).toBe(doc.linkIds);
-    const entity = freshUnitDocument(doc, "entity");
-    expect(entity.entityRadial).toEqual(watchMenusDefaults().entityRadial);
-    expect(entity.quickAction).toBe(doc.quickAction);
+  it("starts as the app's own menu for the unit, exactly the keys a menus document holds for it", () => {
+    const defaults = watchMenusDefaults();
+    const anywhere = newMenuSections("anywhere");
+    expect(Object.keys(anywhere).sort()).toEqual(["pageSwitcher", "quickAction"]);
+    expect(anywhere.quickAction).toEqual(defaults.quickAction);
+    expect(anywhere.pageSwitcher).toEqual(defaults.pageSwitcher);
+    expect(newMenuSections("entity")).toEqual({ entityRadial: defaults.entityRadial });
+    // A fresh copy each time, never the table itself.
+    expect(newMenuSections("entity").entityRadial).not.toBe(newMenuSections("entity").entityRadial);
+    // A key the defaults lack is left out, never sent empty.
+    expect(newMenuSections("anywhere", { schemaVersion: 1, quickAction: { slots: [] } })).toEqual({ quickAction: { slots: [] } });
   });
 
-  function io(record: { revision: number; document: MenusDocument }, conflicts = 0) {
-    const saves: { base: number; document: MenusDocument }[] = [];
-    let left = conflicts;
-    const calls: MenusRecordIO = {
-      read: async () => record,
-      save: async (_o, base, document) => {
-        if (left-- > 0) throw { code: "conflict", message: "conflict" };
-        saves.push({ base, document });
-        return { revision: base + 1 };
-      },
-    };
-    return { calls, saves };
-  }
-
-  it("resets on a record read after the copy, and never on one marking another menu", async () => {
-    const ok = io({ revision: 5, document: { schemaVersion: 1, quickAction: { slots: [{ id: "x" }] }, linkIds: { entity: QUICK } } });
-    expect(await resetMenuUnit(ok.calls, CHEN, "anywhere", "NEW", 5)).toEqual({ ok: true });
-    expect(ok.saves[0]!.base).toBe(5);
-    expect(ok.saves[0]!.document.linkIds).toEqual({ entity: QUICK });
-    const stale = io({ revision: 4, document: { schemaVersion: 1 } });
-    expect(await resetMenuUnit(stale.calls, CHEN, "anywhere", "NEW", 5)).toMatchObject({ ok: false, code: "stale" });
-    const moved = io({ revision: 6, document: { schemaVersion: 1, linkIds: { anywhere: HOME_MENU } } });
-    expect(await resetMenuUnit(moved.calls, CHEN, "anywhere", "NEW", 5)).toMatchObject({ ok: false, code: "moved" });
-    expect(stale.saves.length + moved.saves.length).toBe(0);
-    const same = io({ revision: 6, document: { schemaVersion: 1, linkIds: { anywhere: "new" } } });
-    expect(await resetMenuUnit(same.calls, CHEN, "anywhere", "NEW", 5)).toEqual({ ok: true });
-  });
-
-  it("reads again on a conflict, up to its limit", async () => {
-    const once = io({ revision: 5, document: { schemaVersion: 1 } }, 1);
-    expect(await resetMenuUnit(once.calls, CHEN, "entity", "NEW")).toEqual({ ok: true });
-    const always = io({ revision: 5, document: { schemaVersion: 1 } }, RESET_ATTEMPTS);
-    expect(await resetMenuUnit(always.calls, CHEN, "entity", "NEW")).toMatchObject({ ok: false, code: "conflict" });
+  it("says no device uses it until one is ticked", () => {
+    expect(newMenuText("entity")).toBe("It starts as the app's own Entity quick menu. No device uses it until you tick one on its card.");
+    expect(newMenuMadeText("Kitchen menu")).toBe("Made Kitchen menu. Tick a device on its card to use it there.");
   });
 });
 
@@ -165,11 +136,11 @@ describe("the tab's words", () => {
   it("count the menus in the home and say what a device uses", () => {
     expect(allMenusLead(4)).toBe("4 menus in your home. Each device uses one Anywhere menu and one Entity quick menu.");
     expect(allMenusLead(1)).toBe(`1 menu in your home. ${ALL_MENUS_LEAD}`);
-    expect(MENUS_FOOT).toBe("Click a menu to edit it. Pick a device on a card and that device uses this menu from now on. Give a menu a name so you can tell them apart.");
+    expect(MENUS_FOOT).toBe("Click a menu to edit it. Pick a device on a card and that device uses this menu from now on. New menu makes one no device uses yet.");
     expect(menusDeviceFoot(PHONE_D)).toBe("Pick which menu this iPhone uses. Click a menu to edit it.");
     expect(menusEmptyText([], "")).toBe("No watch or iPhone has connected yet. Pair one on the Home tab.");
     expect(menusEmptyText(DEVICES, "zz")).toBe("No menu or device has that name.");
-    for (const text of [allMenusLead(2), MENUS_FOOT, menusDeviceFoot(JESSE_D), MENU_NO_USER_TEXT, newMenuText("anywhere", CHEN_D)]) {
+    for (const text of [allMenusLead(2), MENUS_FOOT, menusDeviceFoot(JESSE_D), MENU_NO_USER_TEXT, newMenuText("anywhere"), newMenuMadeText("A"), NEW_MENU_ADMIN_TEXT]) {
       expect(text).not.toMatch(/[–—]| - /);
       expect(text).not.toMatch(/[Ll]ink|Same as/);
     }
@@ -230,25 +201,82 @@ describe("the Menus tab", () => {
     expect(t.whole()).toContain(MENU_NO_USER_TEXT);
   });
 
-  it("makes a new menu as a copy, then sets it back to the app's own on the device's record", async () => {
+  it("has one New menu, in the tab's head, and none in the sections", async () => {
     const t = tab();
     t.call("setFilter", ALL_FILTER);
     await t.ready();
-    t.call("toggleNew", "entity");
-    expect(t.whole()).toContain("It starts as the app's own Entity quick menu");
-    t.el.newForm = { ...(t.el.newForm as object), name: "  Kitchen menu ", ownerId: JESSE };
+    const text = t.whole();
+    expect(text.split("<span>New menu</span>").length - 1).toBe(1);
+    const head = text.slice(text.indexOf(`<div class="ap-head">`), text.indexOf(`class="pk-surface`));
+    expect(head).toContain("<span>New menu</span>");
+  });
+
+  it("makes a menu no device uses with library/menus/create, and moves no device", async () => {
+    const t = tab();
+    t.call("setFilter", ALL_FILTER);
+    await t.ready();
+    const before = structuredClone(t.home.lib.picks);
+    t.call("toggleNew");
+    expect(t.whole()).toContain("It starts as the app's own Anywhere menu. No device uses it until you tick one on its card.");
+    // For picks the kind of menu, never a device.
+    expect(t.whole()).toContain(`<option value=entity ?selected=false>Entity quick menu</option>`);
+    t.call("setNewUnit", t.el.newForm, "entity");
+    expect((t.el.newForm as { name: string }).name).toBe("New quick menu");
+    t.el.newForm = { ...(t.el.newForm as object), name: "  Kitchen menu " };
     await t.call("makeMenu");
-    expect(t.sentOf("library/menus/copy")).toEqual([{ type: "wrist_assistant/library/menus/copy", owner_id: JESSE, unit: "entity", name: "Kitchen menu" }]);
-    const save = t.sentOf("watch_config/save").at(-1)!;
-    expect(save).toMatchObject({ owner_watch_id: JESSE, kind: "menus" });
-    const doc = save.document as MenusDocument;
-    expect(doc.entityRadial).toEqual(watchMenusDefaults().entityRadial);
-    // The Anywhere menu and its mark stay as read.
-    expect(doc.linkIds).toEqual({ anywhere: HOME_MENU });
-    const made = Object.values(t.home.lib.menus).find((m) => m.name === "Kitchen menu")!;
-    expect(made.owners).toEqual([JESSE]);
+    expect(t.sentOf("library/menus/create")).toEqual([{
+      type: "wrist_assistant/library/menus/create", unit: "entity", name: "Kitchen menu", sections: { entityRadial: watchMenusDefaults().entityRadial },
+    }]);
+    // Nothing else is written: no copy, no record saved, no tick.
+    expect(t.sentOf("library/menus/copy")).toEqual([]);
+    expect(t.sentOf("watch_config/save")).toEqual([]);
+    expect(t.sentOf("library/pick")).toEqual([]);
+    expect(t.home.lib.picks).toEqual(before);
+    const made = Object.entries(t.home.lib.menus).find(([, m]) => m.name === "Kitchen menu")!;
+    expect(made[1].owners).toEqual([]);
     expect(t.el.newForm).toBeUndefined();
-    expect(t.whole()).toContain("Made Kitchen menu. Jesse Apple Watch uses it from now on.");
+    const text = t.whole();
+    expect(text).toContain("Made Kitchen menu. Tick a device on its card to use it there.");
+    // The library was read again: the new card is there, with no device ticked.
+    const card = text.slice(text.indexOf(`data-card=${made[0]}`));
+    expect(card).toContain(`<b class="ap-name">Kitchen menu</b>`);
+    expect(t.libNow().menus.find((m) => m.id === made[0])?.owners).toEqual([]);
+  });
+
+  it("asks for a name, and keeps the form open with the refusal", async () => {
+    const t = tab();
+    t.call("setFilter", ALL_FILTER);
+    await t.ready();
+    t.call("toggleNew");
+    t.el.newForm = { ...(t.el.newForm as object), name: "   " };
+    await t.call("makeMenu");
+    expect(t.sentOf("library/menus/create")).toEqual([]);
+    expect(t.whole()).toContain("Give the menu a name.");
+    t.home.refuse.set("wrist_assistant/library/menus/create", { code: "invalid", message: "Bad menu." });
+    t.el.newForm = { ...(t.el.newForm as object), name: "Kitchen menu" };
+    await t.call("makeMenu");
+    expect(t.el.newForm).toBeDefined();
+    expect(t.whole()).toContain("Not made. Bad menu.");
+  });
+
+  it("is greyed for anyone who is not an administrator", async () => {
+    const t = tab(false);
+    t.call("setFilter", ALL_FILTER);
+    await t.ready();
+    expect(t.whole()).toContain(NEW_MENU_ADMIN_TEXT);
+  });
+
+  it("puts a new menu on a device with a tick", async () => {
+    const t = tab();
+    t.call("setFilter", ALL_FILTER);
+    await t.ready();
+    t.call("toggleNew");
+    await t.call("makeMenu");
+    const id = Object.entries(t.home.lib.menus).find(([, m]) => m.name === "New menu")![0];
+    t.call("use", t.libNow().menus.find((m) => m.id === id), CHEN);
+    await t.lib.store?.refresh();
+    expect(t.sentOf("library/pick").at(-1)).toEqual({ type: "wrist_assistant/library/pick", owner_id: CHEN, kind: "menus", unit: "anywhere", item_id: id });
+    expect(t.home.lib.menus[id]!.owners).toEqual([CHEN]);
   });
 
   it("deletes a menu no device uses after asking", async () => {

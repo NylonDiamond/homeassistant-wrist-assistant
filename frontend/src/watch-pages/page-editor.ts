@@ -39,8 +39,7 @@
 // its delete asks "Remove from this watch only" or "Delete from the
 // library", and "Not on this watch" under the pages adds the library's rest
 // here. Home Assistant maps a save back onto the library, so an edit reaches
-// every device that has the page. The words are `library-editing.ts`. The
-// records' `linkId` keys are saved exactly as loaded and never read.
+// every device that has the page. The words are `library-editing.ts`.
 //
 // Plan: app repo docs/pages_in_home_assistant_step3.md, and
 // docs/one_library_plan_2026-10.md, step 3.
@@ -147,7 +146,7 @@ import {
   watchRecordUnreadable,
 } from "../watch-settings.js";
 import { isPhoneId } from "../phone-pages.js";
-import { type LinkDevice, deviceWord, joinWords, linkDevicesOf } from "./links.js";
+import { type LinkDevice, deviceWord, joinWords, linkDevicesOf } from "./devices.js";
 import { type RoomsKind, roomsKindFor } from "../watch-rooms/model.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
 import {
@@ -3229,7 +3228,7 @@ export class WaPageEditor extends LitElement {
     return this.onPhone ? "iphone" : "watch";
   }
 
-  /** Every device a page can be on (`links.ts`): the Watch app's devices,
+  /** Every device a page can be on (`devices.ts`): the Watch app's devices,
    * the watches and, on a home that keeps phone pages, the iPhones. */
   private get linkDevices(): LinkDevice[] {
     return linkDevicesOf(this.ownerList, this.phones);

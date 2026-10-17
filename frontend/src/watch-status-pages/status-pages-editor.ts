@@ -27,7 +27,6 @@
 // and "Not on this watch" under the pages adds the library's rest here. Home
 // Assistant maps a save back onto the library, so an edit reaches every
 // device that has the page. The rules are `watch-pages/library-editing.ts`.
-// The records' `linkId` keys are saved exactly as loaded and never read.
 //
 // The panel loads this module on its own, with one `import()`, when its route
 // is `/status-pages` (`hook.ts`). Nothing it imports may import `icons.ts`.
@@ -97,8 +96,7 @@ import {
   renderConfigSaved,
 } from "../watch-pages/config-foot.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
-import { type LinkDevice, deviceWord, linkDevicesOf } from "../watch-pages/links.js";
-import { statusPageTitle } from "./links.js";
+import { type LinkDevice, deviceWord, linkDevicesOf } from "../watch-pages/devices.js";
 import { clearStatusPageRefs } from "./links-io.js";
 import { deletedPageIds, keepSlotsOf } from "../watch-pages/page-refs.js";
 import { type JsonObject, isJsonObject } from "../watch-pages/model.js";
@@ -148,6 +146,7 @@ import {
   sameStatusId,
   statusPageId,
   statusPageName,
+  statusPageTitle,
   statusPagesBudget,
   statusPagesOf,
   statusPagesReadMeansUnsupported,

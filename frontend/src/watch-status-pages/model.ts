@@ -119,6 +119,11 @@ export function statusPageName(page: JsonObject): string {
   return typeof page.name === "string" ? page.name : "";
 }
 
+/** A status page's name as the lists show it. */
+export function statusPageTitle(page: JsonObject): string {
+  return statusPageName(page) || "Untitled page";
+}
+
 /** The rows of a page: every entry that is an object. */
 export function statusPageRows(page: JsonObject): JsonObject[] {
   return Array.isArray(page.rows) ? page.rows.filter(isJsonObject) : [];

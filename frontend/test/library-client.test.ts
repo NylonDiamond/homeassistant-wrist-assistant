@@ -7,7 +7,9 @@ import { describe, expect, it } from "vitest";
 import type { HassLike } from "../src/ha-api.js";
 import {
   LIBRARY_UNSUPPORTED_TEXT,
+  MENU_UNIT_SECTIONS,
   copyLibraryMenu,
+  createLibraryMenu,
   deleteLibraryItem,
   deleteLibraryMenu,
   fetchLibrarySummary,
@@ -41,6 +43,7 @@ describe("library commands", () => {
     await pickLibraryItem(hass, "w1", "status_pages", "S1", false);
     await pickLibraryMenu(hass, "w1", "entity", "M1");
     await copyLibraryMenu(hass, "w1", "anywhere", "Chen's menu");
+    await createLibraryMenu(hass, "entity", "Kitchen menu", { entityRadial: { slots: [] } });
     await renameLibraryMenu(hass, "M1", "Home menu");
     await deleteLibraryMenu(hass, "M1");
     await deleteLibraryItem(hass, "status_pages", "S1");
@@ -50,11 +53,19 @@ describe("library commands", () => {
       { type: "wrist_assistant/library/pick", owner_id: "w1", kind: "status_pages", item_id: "S1", on: false },
       { type: "wrist_assistant/library/pick", owner_id: "w1", kind: "menus", unit: "entity", item_id: "M1" },
       { type: "wrist_assistant/library/menus/copy", owner_id: "w1", unit: "anywhere", name: "Chen's menu" },
+      // A new menu names no device: no device uses it until one is ticked.
+      { type: "wrist_assistant/library/menus/create", unit: "entity", name: "Kitchen menu", sections: { entityRadial: { slots: [] } } },
       { type: "wrist_assistant/library/menus/rename", item_id: "M1", name: "Home menu" },
       { type: "wrist_assistant/library/menus/delete", item_id: "M1" },
       { type: "wrist_assistant/library/delete", kind: "status_pages", item_id: "S1" },
     ]);
     for (const msg of sent) expect(msg).not.toHaveProperty("id");
+  });
+});
+
+describe("a menu's sections", () => {
+  it("are the keys of a menus document each unit is made of, as the server names them", () => {
+    expect(MENU_UNIT_SECTIONS).toEqual({ anywhere: ["quickAction", "pageSwitcher"], entity: ["entityRadial"] });
   });
 });
 

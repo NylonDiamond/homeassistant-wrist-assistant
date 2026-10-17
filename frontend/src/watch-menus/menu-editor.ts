@@ -40,9 +40,7 @@
 // (Used by, a round tick each, which moves that device to this menu) and
 // makes a copy for this device ("Make a copy for this watch"). Home
 // Assistant maps a save back onto the library menu, so an edit here reaches
-// every device that uses it. The record's `linkIds` key is saved exactly as
-// loaded and never read: a save that dropped it would give this device its
-// own copy.
+// every device that uses it.
 //
 // The panel loads this module on its own, with one `import()`, when its route
 // is `/menus` (`hook.ts`). Nothing it imports may import `icons.ts`.
@@ -81,7 +79,7 @@ import {
   subscribeWatchConfig,
 } from "../ha-api.js";
 import { live } from "lit/directives/live.js";
-import { type LinkDevice, joinWords, linkDevicesOf } from "../watch-pages/links.js";
+import { type LinkDevice, joinWords, linkDevicesOf } from "../watch-pages/devices.js";
 import type { MenuUnit } from "../library/client.js";
 import { type LibraryMenu, MENU_UNIT_TITLES, menuFor, sameId } from "../library/model.js";
 import { LibraryController } from "../library/store.js";
@@ -1402,7 +1400,7 @@ export class WaMenuEditor extends LitElement {
 
   // ── the library: the menu's name, Used by, Make a copy ─────────────────
 
-  /** Every device a menu can be used by (`links.ts`): the Watch app's
+  /** Every device a menu can be used by (`watch-pages/devices.ts`): the Watch app's
    * devices, the watches and, on a home that keeps phone pages, the
    * iPhones, which have menus too. */
   private get linkDevices(): LinkDevice[] {
@@ -1574,9 +1572,8 @@ export class WaMenuEditor extends LitElement {
       (reply) => {
         if (this.restoreAsk !== ask) return;
         // A restore is a save of this device's menus: a menu it changes
-        // changes on every device that uses that menu too, and an old save
-        // can move this device onto another menu or a copy of its own.
-        const links = menuRestoreLines(this.lib.library, watchId, record.document, reply.document, this.linkDevices, this.linkKind);
+        // changes on every device that uses that menu too.
+        const links = menuRestoreLines(this.lib.library, watchId, record.document, reply.document, this.linkDevices);
         this.restoreAsk = { ...ask, summary: watchMenusSummary(reply.document), links };
       },
       () => undefined,

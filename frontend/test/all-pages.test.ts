@@ -35,7 +35,7 @@ import {
   restTitle,
   shownItems,
 } from "../src/watch-pages/all-pages-model.js";
-import { linkDevicesOf } from "../src/watch-pages/links.js";
+import { linkDevicesOf } from "../src/watch-pages/devices.js";
 import { CAMERA, CHEN, DEVICES, DOORS, JESSE, LIGHTS, LONELY, PAGE1, PHONE, SMART, STARTER, summary } from "./library-fixture.js";
 
 const lib = () => libraryOf(summary());

@@ -21,7 +21,7 @@
 // (unlinking it). Server side: `page_links.py`, `LINK_UNITS["voice"]`.
 
 import type { WatchConfigRecord, WatchUnitPlace } from "../ha-api.js";
-import { type LinkDevice, type PageDevicePlace, joinWords } from "../watch-pages/links.js";
+import { type LinkDevice, type PageDevicePlace, joinWords } from "../watch-pages/devices.js";
 import { isJsonObject } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { WAIT_FOR_IPHONE_TEXT } from "../watch-settings.js";
@@ -161,6 +161,44 @@ export function voiceReplaceQuestion(name: string): string {
 
 /** What a tick that replaced a watch's own phrases says it left there. */
 export const VOICE_REPLACE_KEEPS_TEXT = "Its watch voice and Silent Mode setting stay as they were.";
+
+/** One linked unit of a whole document (the phrases) as a restore sees it:
+ * its name in a sentence, its link id now and in the save that would come
+ * back, and the other watches that hold each link. */
+export interface RestoreLinkUnit {
+  name: string;
+  now?: string;
+  restored?: string;
+  /** The other watches holding a link, by name. */
+  holders(link: string): string[];
+}
+
+/**
+ * What restoring a whole voice document does to its links, one line per
+ * change: a save that keeps a unit's link changes the copies too ("Also
+ * changes the phrases and defaults on Chen's Watch."), one without it
+ * unlinks this watch ("Unlinks the phrases and defaults on this watch from
+ * Chen's Watch, which keeps its copy as it is."), and one with another link
+ * joins the watches that hold it. Home Assistant does each of these on the
+ * restore. `here` is "watch". Empty when no link moves anything.
+ */
+export function restoreLinkLines(units: readonly RestoreLinkUnit[], here: string): string[] {
+  const lines: string[] = [];
+  for (const unit of units) {
+    const now = unit.now === undefined ? [] : unit.holders(unit.now);
+    const restored = unit.restored === undefined ? [] : unit.holders(unit.restored);
+    if (unit.now !== undefined && unit.restored === unit.now) {
+      if (now.length > 0) lines.push(`Also changes the ${unit.name} on ${joinWords(now)}.`);
+      continue;
+    }
+    if (now.length > 0) {
+      const keeps = now.length === 1 ? "which keeps its copy as it is" : "which keep their copies as they are";
+      lines.push(`Unlinks the ${unit.name} on this ${here} from ${joinWords(now)}, ${keeps}.`);
+    }
+    if (restored.length > 0) lines.push(`Also changes the ${unit.name} on ${joinWords(restored)}, which it was shared with in that save.`);
+  }
+  return lines;
+}
 
 /** A link refusal in the editor's words. */
 export function voiceLinkErrorText(err: unknown): string {

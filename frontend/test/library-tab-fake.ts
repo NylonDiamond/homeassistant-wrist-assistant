@@ -1,8 +1,7 @@
 // A stand-in Home Assistant for the Pages, Status pages and Menus tabs: the
 // library summary of `library-fixture.ts`, the picks and menu ops on it, each
-// device's records as Home Assistant materialises them (with the `linkId` and
-// `linkIds` marks step 1 still writes, so a test can see a save keep them),
-// and each device's complications.
+// device's records as Home Assistant materialises them (no link marks), and
+// each device's complications.
 
 import type { HassLike, OwnerSummary } from "../src/ha-api.js";
 import type { LibrarySummary, MenuUnit } from "../src/library/client.js";
@@ -48,8 +47,8 @@ export function fakeHome(admin = true) {
   const sent: Msg[] = [];
   const refuse = new Map<string, { code: string; message: string }>();
 
-  /** A device's pages record, materialised from the library as Home
-   * Assistant does: a shared page marked with its `linkId`. */
+  /** A device's records, materialised from the library as Home Assistant
+   * does: the picked items in the device's order, with its Hide here. */
   const materialise = (owner: string) => {
     const picks = lib.picks[owner];
     if (picks?.pages !== undefined) {
@@ -57,7 +56,6 @@ export function fakeHome(admin = true) {
         if (p.page !== undefined) return p.page;
         const entry = Object.entries(lib.pages).find(([id]) => up(id) === up(p.id))?.[1];
         const item: JsonObject = { ...(entry?.item ?? { id: p.id }) };
-        if ((entry?.owners.length ?? 0) >= 2) item.linkId = up(p.id);
         if (p.isHidden === true) item.isHidden = true;
         return item;
       });
@@ -71,14 +69,11 @@ export function fakeHome(admin = true) {
     }
     if (picks?.menus !== undefined) {
       const doc: JsonObject = { schemaVersion: 1 };
-      const linkIds: Record<string, string> = {};
-      for (const [unit, id] of Object.entries(picks.menus)) {
+      for (const id of Object.values(picks.menus)) {
         const menu = lib.menus[id!];
         if (menu === undefined) continue;
         Object.assign(doc, structuredClone(menu.sections));
-        if (menu.owners.length >= 2) linkIds[unit] = id!;
       }
-      if (Object.keys(linkIds).length > 0) doc.linkIds = linkIds;
       const now = held.get(`${owner}/menus`);
       held.set(`${owner}/menus`, { revision: (now?.revision ?? 0) + 1, document: doc });
     }
@@ -131,6 +126,18 @@ export function fakeHome(admin = true) {
       lib.picks[owner]!.menus = { ...lib.picks[owner]!.menus, [unit]: id };
       for (const o of Object.keys(lib.picks)) materialise(o);
       return { id, revisions: { [owner]: { menus: held.get(`${owner}/menus`)!.revision } } };
+    }
+    if (type === "wrist_assistant/library/menus/create") {
+      // Administrators only, as Home Assistant's `require_admin`.
+      if (!admin) throw { code: "unauthorized", message: "Unauthorized" };
+      const unit = msg.unit as MenuUnit;
+      const name = (msg.name as string).trim();
+      const sections = msg.sections as JsonObject;
+      const keys = unit === "entity" ? ["entityRadial"] : unit === "anywhere" ? ["pageSwitcher", "quickAction"] : undefined;
+      if (keys === undefined || name === "" || Object.keys(sections).sort().join() !== keys.join()) throw { code: "invalid", message: "invalid menu" };
+      const id = `EEEE0000-0000-4000-8000-${String(n).padStart(6, "0")}${String(Object.keys(lib.menus).length).padStart(6, "0")}`;
+      lib.menus[id] = { name, kind: unit, sections: structuredClone(sections), owners: [] };
+      return { id, revisions: {} };
     }
     if (type === "wrist_assistant/library/menus/delete" || (type === "wrist_assistant/library/delete" && msg.kind === "menus")) {
       const id = msg.item_id as string;
