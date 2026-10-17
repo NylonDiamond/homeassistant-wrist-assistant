@@ -269,6 +269,26 @@ def test_a_linked_starter_fans_out_and_drops_its_last_link() -> None:
     }
 
 
+def test_starters_linked_elsewhere_names_only_starters_held_under_another_link() -> None:
+    source = _status()
+    held = {
+        "statusPages": [
+            {"id": SYSTEM_STATUS.lower(), "name": "Mine", "linkId": "L-ELSE"},
+            {"id": STATUS, "name": "Other", "linkId": "L-OTHER"},
+        ]
+    }
+    ids = [SYSTEM_STATUS, STATUS]
+    assert links.starters_linked_elsewhere(source, held, ids) == [SYSTEM_STATUS]
+    # The source under the same link: nothing to leave out.
+    source["statusPages"][0]["linkId"] = "L-ELSE"
+    assert links.starters_linked_elsewhere(source, held, ids) == []
+    # A held copy with no link is adopted, never left out.
+    held["statusPages"][0].pop("linkId")
+    source["statusPages"][0].pop("linkId")
+    assert links.starters_linked_elsewhere(source, held, ids) == []
+    assert links.starters_linked_elsewhere(source, None, ids) == []
+
+
 # ── fan_out ──────────────────────────────────────────────────────────────
 
 

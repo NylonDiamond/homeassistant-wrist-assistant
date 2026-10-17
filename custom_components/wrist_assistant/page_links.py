@@ -27,7 +27,9 @@ A starter status page (one of the app's five fixed ids, or
 ``isSystemDefault: true``) links like any other status page. It has the
 same id on every device already, so a device that holds its own copy with
 no ``linkId`` is not refused: that copy is adopted, taking the link and the
-source's contents (:func:`apply_link`).
+source's contents (:func:`apply_link`). One it holds under another link
+refuses a link of that starter by name, and is left out of any other link
+that reaches it (:func:`starters_linked_elsewhere`).
 
 The store (``watch_config_store.py``) keeps the copies in step: after every
 accepted write of a linked kind it hands each other device holding one of
@@ -220,6 +222,30 @@ def new_link_id() -> str:
     return uuid.uuid4().hex
 
 
+def starters_linked_elsewhere(source_doc: Any, target_doc: Any, ids: Iterable[str]) -> list[str]:
+    """The starter status pages among ``ids`` that the target holds under a
+    ``linkId`` the source's copy does not carry (the source's with none, or
+    another). :func:`apply_link` refuses those (``id_taken``), so a link the
+    user did not ask of the starters by name (a page or menu that opens one,
+    a whole device) leaves them out: the target's copy already opens under
+    the same id, linked with some other device. Ids as ``ids`` gives them."""
+    key = LINKED_KINDS["status_pages"]
+    source_by_key = {_key(page.get("id")): page for page in items(source_doc, key)}
+    target_by_key = {_key(page.get("id")): page for page in items(target_doc, key)}
+    out: list[str] = []
+    for page_id in ids:
+        page = source_by_key.get(_key(page_id))
+        held = target_by_key.get(_key(page_id))
+        if page is None or held is None:
+            continue
+        if not (is_system_status_page(page) or is_system_status_page(held)):
+            continue
+        held_link = held.get(LINK_KEY)
+        if isinstance(held_link, str) and held_link and held_link != page.get(LINK_KEY):
+            out.append(page_id)
+    return out
+
+
 def apply_link(
     source_doc: Any, target_doc: Any, key: str, ids: Iterable[str]
 ) -> tuple[dict[str, Any], dict[str, Any], list[str], dict[str, str], list[str]]:
@@ -241,7 +267,8 @@ def apply_link(
     target holds with no ``linkId`` is adopted where it stands. It takes the
     link and the source's contents, keeping its place and its ``isHidden``
     as :func:`fan_out` does, and is counted in ``adopted``, not ``added``. A
-    starter copy with another ``linkId`` is still ``id_taken``.
+    starter copy with another ``linkId`` is still ``id_taken``
+    (:func:`starters_linked_elsewhere` names those first).
     """
     source = copy.deepcopy(source_doc) if isinstance(source_doc, dict) else empty_document(key)
     target = copy.deepcopy(target_doc) if isinstance(target_doc, dict) else empty_document(key)

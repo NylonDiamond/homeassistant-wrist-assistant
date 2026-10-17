@@ -640,6 +640,54 @@ def test_link_device_links_the_starters_on_both_sides(env) -> None:
     assert again["targets"][PHONE]["status_pages"] == []
 
 
+def test_link_device_leaves_out_a_starter_linked_with_a_third_device(env) -> None:
+    """Add all onto a phone whose starter is linked with another watch: the
+    starter stays as it is on both sides and everything else is linked, so a
+    third device never refuses the whole add."""
+    _save(env, WATCH, _with_starter("Batteries", isSystemDefault=True), "status_pages")
+    only_starter = {
+        "schemaVersion": 1,
+        "statusPages": [{"id": STARTER, "name": "Theirs", "rows": []}],
+    }
+    _save(env, WATCH_2, only_starter, "status_pages")
+    _save(env, PHONE, only_starter, "status_pages")
+    first = env.store.link_pages(WATCH_2, [STARTER], [PHONE], kind="status_pages")
+    other_link = first["link_ids"][STARTER]
+    result = env.store.link_device(WATCH, PHONE, updated_by=PHONE)
+    assert set(result["link_ids"]) == {HOME, LIGHTS, SOLO}
+    assert result["targets"][PHONE]["adopted_status_pages"] == []
+    watch = _doc(env, WATCH, "status_pages")["statusPages"]
+    phone = _doc(env, PHONE, "status_pages")["statusPages"]
+    assert "linkId" not in watch[1], "the watch's starter stays its own"
+    starter = next(p for p in phone if p["id"] == STARTER)
+    assert starter["linkId"] == other_link and starter["name"] == "Theirs"
+    assert next(p for p in phone if p["id"] == DOORS)["linkId"] == watch[0]["linkId"]
+
+
+def test_a_page_link_reaching_a_starter_linked_elsewhere_leaves_it_out(env) -> None:
+    pages = _watch_pages()
+    pages["pages"][3]["items"] = [_tile(1, f"status_page.{STARTER}")]
+    _save(env, WATCH, pages)
+    _save(env, WATCH, _with_starter("Batteries"), "status_pages")
+    _save(
+        env,
+        PHONE,
+        {
+            "schemaVersion": 1,
+            "statusPages": [{"id": STARTER, "name": "Mine", "rows": [], "linkId": "L-ELSE"}],
+        },
+        "status_pages",
+    )
+    result = env.store.link_pages(WATCH, [SOLO], [PHONE])
+    assert result["targets"][PHONE] == {
+        "pages": [SOLO],
+        "status_pages": [],
+        "adopted_status_pages": [],
+    }
+    assert _doc(env, PHONE, "status_pages")["statusPages"][0]["linkId"] == "L-ELSE"
+    assert "linkId" not in _doc(env, WATCH, "status_pages")["statusPages"][1]
+
+
 def test_link_places_names_every_holder(env) -> None:
     result = env.store.link_pages(WATCH, [SOLO], [PHONE, WATCH_2])
     places = env.store.link_places()

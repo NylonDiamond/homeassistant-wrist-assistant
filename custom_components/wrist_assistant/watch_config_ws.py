@@ -718,7 +718,9 @@ def ws_watch_pages_link(
     unlinked copy of one takes the link and the source's contents in place
     (keeping its ``isHidden``), and that id is in its
     ``adopted_status_pages``, not its ``status_pages`` list, which names only
-    the pages appended.
+    the pages appended. A starter a target holds linked with another device
+    is refused ``id_taken`` when linked by name, and left out of a link of
+    pages or menus that reaches it.
 
     With ``kind`` ``menus`` the op takes ``units`` (``anywhere``,
     ``entity``) instead of ``page_ids``, and ``replace`` (default false):

@@ -189,6 +189,7 @@ from .page_links import (
     listed_page_ids,
     menu_targets,
     rooms_from_behavior,
+    starters_linked_elsewhere,
     unit_link_places,
     unit_links,
     without_unit_links,
@@ -2222,7 +2223,12 @@ class WatchConfigStore:
         (:func:`page_links.link_reach`). With ``kind`` ``status_pages`` the
         link is of the status pages ``status_ids`` alone: each must be one
         the source holds (``not_found``), ``page_ids`` is empty and nothing is
-        walked. The reply's ``link_ids`` are those of ``kind``. Returns the
+        walked. Any other link leaves out, per target, a starter status page
+        the target holds linked with another device
+        (:func:`page_links.starters_linked_elsewhere`): the user did not name
+        it, and the target's copy opens under the same id all the same. A
+        link of the starter by name is refused ``id_taken`` for it. The
+        reply's ``link_ids`` are those of ``kind``. Returns the
         writes in the order they
         go (the source's when it gained links, then each target's status
         pages before its pages, so a tile is never saved before what it
@@ -2266,9 +2272,22 @@ class WatchConfigStore:
                 new_status = None
                 added_status: list[str] = []
                 adopted_status: list[str] = []
-                if reach_status:
+                target_reach = reach_status
+                if kind != "status_pages":
+                    kept = starters_linked_elsewhere(source_status, target_status, reach_status)
+                    if kept:
+                        kept_keys = {page_id.upper() for page_id in kept}
+                        target_reach = [i for i in reach_status if i.upper() not in kept_keys]
+                        _LOGGER.info(
+                            "Left %s out of the link from %s to %s, which holds it "
+                            "linked with another device",
+                            ", ".join(kept),
+                            source_owner,
+                            target,
+                        )
+                if target_reach:
                     source_status, new_status, added_status, links, adopted_status = apply_link(
-                        source_status, target_status, LINKED_KINDS["status_pages"], reach_status
+                        source_status, target_status, LINKED_KINDS["status_pages"], target_reach
                     )
                     status_links.update(links)
                 target_pages = self._document(target, "pages")
@@ -2356,8 +2375,9 @@ class WatchConfigStore:
         is. Every source and target must be a paired device
         (``unknown_device``), every page one the source lists (``not_found``)
         and not a system page (``system_page``), no target may hold
-        another page under one of the ids (``id_taken``; a starter status
-        page linked to something else counts), and no target may
+        another page under one of the ids (``id_taken``; with ``kind``
+        ``status_pages``, a starter status page linked to something else
+        counts, while a page link leaves such a starter out), and no target may
         be a watch still waiting for its iPhone to move a kind the link would
         write (``awaiting_move``); everything is checked before anything is
         written.
@@ -2401,7 +2421,9 @@ class WatchConfigStore:
 
         Every page but the system pages, and every status page (the starters
         too, each adopting the target's own unlinked copy), linked as
-        :meth:`link_pages` links them, with the same refusals. Then the
+        :meth:`link_pages` links them, with the same refusals. A starter the
+        target holds linked with another device is left out, as a page link
+        leaves it out (:meth:`_plan_link`), so it never refuses the rest. Then the
         source's menus and rooms are copied once, unlinked, for a kind the
         target holds no record of: the ids match, so the menu slots and the
         rooms open the same pages. A copied menus document leaves the
