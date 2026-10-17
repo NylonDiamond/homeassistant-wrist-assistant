@@ -500,4 +500,23 @@ describe("the Status pages tab", () => {
     await t.call<Promise<void>>("loadAll");
     expect(t.cards().filter((c) => c.kind === "pages").map((c) => c.name)).toEqual(["Hall", "Den", "Mine"]);
   });
+
+  it("finishes an action begun before a switch to the other kind, but says nothing there", async () => {
+    const t = await statusTab();
+    t.call("startSelect");
+    t.call("pick", t.card("Doors"), false);
+    const running = t.call<Promise<void>>("runBulk", "delete");
+    t.el.kind = "pages";
+    t.call("willUpdate", new Map([["kind", "status_pages"]]));
+    await running;
+    // The status page went, but the Pages tab shows no line about it.
+    expect((t.held.get(`${t.watch}/status_pages`)!.document.statusPages as JsonObject[]).map((p) => p.name)).toEqual(["Lights On", "House"]);
+    expect(t.el.bulkNote).toBeUndefined();
+    expect(t.el.bulkBusy).toBeUndefined();
+    expect((t.el.selected as Set<string>).size).toBe(0);
+    // The first read of both devices and the delete's own read of the
+    // watch, but no read of every device again for the tab it left.
+    const statusReads = t.sent.filter((m) => (m.type as string).endsWith("watch_config/get") && m.kind === "status_pages").length;
+    expect(statusReads).toBe(3);
+  });
 });

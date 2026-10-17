@@ -247,6 +247,9 @@ export class WaAllPages extends LitElement {
   private anchor?: string;
   private hassDrawnAt = 0;
   private loadSeq = 0;
+  /** Bumped when the tab is told to list the other kind, so an action
+   * still running for the old kind says nothing on the new one. */
+  private kindSeq = 0;
   private readSeq = new Map<string, number>();
   private reloadTimers = new Map<string, number>();
   /** The device ids read and listened to, as one string. */
@@ -312,6 +315,7 @@ export class WaAllPages extends LitElement {
   private kindChanged(): void {
     this.endSubscriptions();
     this.loadSeq++;
+    this.kindSeq++;
     this.deviceSig = undefined;
     this.readState = "idle";
     this.failed = [];
@@ -740,11 +744,13 @@ export class WaAllPages extends LitElement {
    * Run an action on the picked cards, one device at a time: add them to
    * or take them off the devices given, or delete them. Then read every
    * device again and say in one line what happened. The cards stay picked
-   * where their pages are still there.
+   * where their pages are still there. Told the other kind meanwhile, the
+   * action still finishes but says nothing: the new kind reads its own.
    */
   private async runBulk(kind: BulkKind, targets: readonly string[] = []): Promise<void> {
     const hass = this.hassNow;
     if (!hass || this.bulkBusy !== undefined) return;
+    const view = this.kindSeq;
     const devices = this.devices;
     const picked = this.pickedCards();
     if (picked.length === 0) return;
@@ -765,12 +771,17 @@ export class WaAllPages extends LitElement {
     } catch (err) {
       note = { kind: "err", text: watchCommandError(err).message };
     }
+    if (view !== this.kindSeq) {
+      this.bulkBusy = undefined;
+      return;
+    }
     this.bulkBusy = `Reading the ${cardNoun(this.kind, 2)} again…`;
     try {
       await this.loadAll();
     } finally {
       this.bulkBusy = undefined;
     }
+    if (view !== this.kindSeq) return;
     this.selected = keepPresent(remapSelection(picked, this.kindCards), this.shownNow().map((c) => c.key));
     this.anchor = undefined;
     this.bulkNote = note;
