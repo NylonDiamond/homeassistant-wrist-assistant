@@ -181,12 +181,11 @@ def test_a_menu_link_never_starts_the_menus_of_a_watch_awaiting_its_move(ctx) ->
     assert ctx.store.get(WATCH_2, "menus") is None
 
 
-def test_the_target_check_is_the_phone_kinds_table(ctx, monkeypatch) -> None:
+def test_the_target_check_is_the_phone_kinds_table(ctx) -> None:
     """An iPhone owns its menus, so it is a target; a unit kind it may not
-    own is refused for it with no code of its own."""
-    monkeypatch.setitem(ctx.mod.LINK_UNITS, "voice", {"all": ("ttsPhrases",)})
+    own (the voice settings) is refused for it with no code of its own."""
     with pytest.raises(ctx.mod.WatchConfigPhoneKindError):
-        ctx.store.link_units("voice", WATCH, ["all"], [PHONE])
+        ctx.store.link_units("voice", WATCH, ["phrases"], [PHONE])
 
 
 # ── fan-out ──────────────────────────────────────────────────────────────

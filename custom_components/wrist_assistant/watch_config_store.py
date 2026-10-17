@@ -134,7 +134,10 @@ copy reaches every copy in the same call. A link left on one owner only is
 dropped there. ``link_pages`` and ``link_device`` make links. The menus
 link by unit (the Anywhere menu, the Entity quick menu) under a top-level
 ``linkIds``, made by ``link_units`` and kept in step the same way
-(``page_links.link_ops`` gives the store each kind's functions).
+(``page_links.link_ops`` gives the store each kind's functions). So do a
+watch's voice settings: the phrase library with its defaults is one unit,
+and the watch's own speech settings never travel. Only watches hold voice,
+so an iPhone is never a voice target.
 
 Deliveries and reports have listeners of their own
 (:meth:`WatchConfigStore.async_add_delivery_listener`), heard only by the panel's Home
@@ -345,7 +348,8 @@ class WatchConfigLinkError(WatchConfigStoreError):
     not a paired device, ``not_found`` for a page the source does not hold,
     ``system_page`` for a system page, ``id_taken`` for a target that holds
     another page under the same id, ``unit_taken`` for a target with its own
-    menu for a unit (:meth:`WatchConfigStore.link_units`), ``awaiting_move``
+    menu or phrase library for a unit (:meth:`WatchConfigStore.link_units`),
+    ``awaiting_move``
     for a target watch
     whose iPhone may still move its own pages here (the link would make the
     first record that move skips).
@@ -2380,9 +2384,9 @@ class WatchConfigStore:
     def link_places(self) -> dict[str, dict[str, Any]]:
         """For each link id, the owners that hold it, per linked kind:
         ``{"pages": {linkId: [owner, ...]}, "status_pages": {...}, "menus":
-        {linkId: {"unit": unit, "owners": [owner, ...]}}}``. A unit kind
-        names each link's unit too. An owner whose file could not be read is
-        left out."""
+        {linkId: {"unit": unit, "owners": [owner, ...]}}, "voice": {...}}``.
+        A unit kind names each link's unit too. An owner whose file could not
+        be read is left out."""
 
         def documents(kind: str) -> dict[str, Any]:
             return {
@@ -2415,8 +2419,10 @@ class WatchConfigStore:
         link id for it (a new one when it has none, written to the source
         too), from then on kept in step on every save of any copy
         (:meth:`_spread_links`). A target holding no record of the kind is
-        given the source's whole document, only ``units`` linked
-        (:func:`page_links.apply_unit_link`). For the menus, the pages and
+        given the source's whole document, only ``units`` linked, less the
+        source device's own keys (:func:`page_links.apply_unit_link`): for
+        the voice settings (unit ``phrases``) the watch's speech settings
+        stay behind. A voice link brings nothing else. For the menus, the pages and
         status pages the units' slots open (:func:`page_links.menu_targets`)
         are linked onto each target as :meth:`link_pages` links them, with
         what those pages reach; a slot pointing at a page the source does not
@@ -2455,7 +2461,7 @@ class WatchConfigStore:
             raise WatchConfigValidationError("targets must be a list of device ids")
         for target in targets:
             if target == source_owner:
-                raise WatchConfigValidationError(f"{kind} cannot be linked to their own device")
+                raise WatchConfigValidationError(f"a device's {kind} cannot be linked to itself")
             self._check_link_owner(target)
             self._check_owner_kind(target, kind)
         source_doc = self._document(source_owner, kind)
