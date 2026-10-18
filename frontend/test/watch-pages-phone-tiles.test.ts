@@ -16,6 +16,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { HassEntityState } from "../src/ha-api.js";
 import pageKeys from "../src/watch-pages/page-keys.json";
 import { DEFAULT_PHONE, phonePagesLayout } from "../src/phone-frame.js";
 import { renderPageRowPicture } from "../src/library/row-picture.js";
@@ -613,6 +614,21 @@ describe("a tile only the iPhone draws in the pictures", () => {
     // The iPhone's preview keeps the tile in the page.
     const drawn = flatten(renderWatchPagePreview(input));
     expect(drawn).toContain('data-phone-face=map');
+    expect(drawn).not.toContain("wp-phone-out");
+  });
+
+  it("draws no outline for a skipped tile the iPhone hides under the live states", () => {
+    const showWhen = { comparisonOperator: "eq", entityId: "person.alex", state: "home" };
+    const gated = { ...page, items: [{ ...map, showWhen }, light] };
+    const away = { "person.alex": { entity_id: "person.alex", state: "not_home", attributes: {} } } as unknown as Record<string, HassEntityState>;
+    const home = { "person.alex": { entity_id: "person.alex", state: "home", attributes: {} } } as unknown as Record<string, HassEntityState>;
+    expect(watchSkippedTilesLayout(gated, screen, { states: away })).toEqual([]);
+    expect(watchSkippedTilesLayout(gated, screen, { states: home }).map((t) => t.tile.id)).toEqual(["M"]);
+    // Every tile is on in the all-on picture, and without states nothing is
+    // left out.
+    expect(watchSkippedTilesLayout(gated, screen, { states: away, stateMode: "all-on" }).map((t) => t.tile.id)).toEqual(["M"]);
+    expect(watchSkippedTilesLayout(gated, screen, {}).map((t) => t.tile.id)).toEqual(["M"]);
+    const drawn = flatten(renderWatchPagePreview({ page: gated, pages: [gated], screen, scale: 1, states: away }));
     expect(drawn).not.toContain("wp-phone-out");
   });
 

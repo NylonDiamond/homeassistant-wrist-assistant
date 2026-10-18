@@ -3425,10 +3425,19 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
 
 /** The tiles a watch skips (`tileDrawsOn`), placed where the page as stored
  * puts them, with nothing hidden or skipped: where each one's outline goes
- * in a watch's picture. Empty for a page with none. */
-export function watchSkippedTilesLayout(page: WatchPage, screen: { width: number; height: number }, input: Pick<WatchPagePreviewInput, "phone">): PlacedWatchTile[] {
+ * in a watch's picture. A skipped tile the iPhone itself leaves out under
+ * `states` and `templates` (`watchTileHidden`, as `watchReflowPage` drops it
+ * from the iPhone's picture) has no outline either; in the all-on picture,
+ * or without states, none is left out. Empty for a page with none. */
+export function watchSkippedTilesLayout(
+  page: WatchPage,
+  screen: { width: number; height: number },
+  input: Pick<WatchPagePreviewInput, "phone" | "states" | "templates" | "stateMode">,
+): PlacedWatchTile[] {
   if (watchPageTiles(page).every((t) => tileDrawsOn(t, "watch"))) return [];
-  return watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(input) }).tiles.filter((t) => !tileDrawsOn(t.tile, "watch"));
+  const states = input.stateMode === "all-on" ? undefined : input.states;
+  return watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(input) }).tiles
+    .filter((t) => !tileDrawsOn(t.tile, "watch") && (states === undefined || !watchTileHidden(t.tile, states, input.templates)));
 }
 
 /**

@@ -133,8 +133,8 @@ export function pageCrop(page: WatchPage, states: Record<string, unknown> | unde
   if (isSmartWatchPage(page)) return { top: 0, height: screen.height };
   const layout = watchPreviewLayout(watchReflowPage(page, states as Parameters<typeof watchReflowPage>[1]), screen);
   // The outlines of the tiles a watch skips count too: the picture shows
-  // where each sits on the iPhone.
-  const tiles = [...layout.tiles, ...watchSkippedTilesLayout(page, screen, {})];
+  // where each sits on the iPhone, unless the iPhone leaves it out too.
+  const tiles = [...layout.tiles, ...watchSkippedTilesLayout(page, screen, { states: states as Parameters<typeof watchReflowPage>[1] })];
   if (tiles.length === 0) return { top: 0, height: screen.height };
   const titled = renderWatchPageTitle(page, 1, layout.topInset, icons) !== nothing;
   const top = titled ? 0 : Math.max(0, layout.topInset + Math.min(...tiles.map((t) => t.y)) - PIC_PAD_PT);
