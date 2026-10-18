@@ -21,6 +21,7 @@ import {
   tileEntityId,
   tileGeometry,
   tileKind,
+  tileDrawsOn,
   tileKindLabel,
   watchPageExtent,
   watchPageId,
@@ -28,6 +29,7 @@ import {
   watchPageTiles,
   watchPagesOf,
 } from "../src/watch-pages/model.js";
+import tileDevicesTable from "../src/watch-pages/tile-devices.json";
 
 const dir = join(__dirname, "fixtures-pages");
 const files = existsSync(dir)
@@ -87,4 +89,31 @@ describe("shared page fixtures", () => {
       });
     });
   }
+});
+
+// 07 is the iPhone's page: a tile for every key only the iPhone reads and
+// one tile of each kind only the iPhone draws. It must keep all of them
+// through a save, and a watch must skip exactly the four kinds.
+describe("07-phone-tiles.json", () => {
+  const file = "07-phone-tiles.json";
+  const present = files.includes(file);
+
+  it.skipIf(!present)("holds every iPhone key and kind, and a watch skips the four kinds", () => {
+    const doc = asWatchPagesDocument(JSON.parse(readFileSync(join(dir, file), "utf8")))!;
+    const tiles = watchPagesOf(doc).flatMap(watchPageTiles);
+    const phoneKinds = Object.entries(tileDevicesTable.kinds)
+      .filter(([, devices]) => devices.length === 1 && devices[0] === "iphone")
+      .map(([kind]) => kind)
+      .sort();
+    expect([...new Set(tiles.map((t) => tileKind(tileEntityId(t))).filter((k) => phoneKinds.includes(k)))].sort()).toEqual(phoneKinds);
+    for (const key of Object.keys(tileDevicesTable.keys)) {
+      expect(tiles.some((t) => t[key] !== undefined), key).toBe(true);
+    }
+    const skipped = tiles.filter((t) => !tileDrawsOn(t, "watch"));
+    expect(skipped.map((t) => tileKind(tileEntityId(t))).sort()).toEqual(phoneKinds);
+    expect(tiles.every((t) => tileDrawsOn(t, "iphone"))).toBe(true);
+
+    const saved = encodeWatchPages(openWatchPages(doc));
+    expect(JSON.stringify(saved)).toBe(JSON.stringify(doc));
+  });
 });
