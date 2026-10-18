@@ -784,7 +784,10 @@ describe("checkWatchPagesValues", () => {
     expect(checkWatchPagesValues(withTile({ holdSlideActions: ["sideways", "toggle"] }))).toEqual([
       'Page 1 ("Home"), tile 2 (camera.door): holdSlideActions holds the direction "sideways".',
     ]);
-    expect(checkWatchPagesValues(withTile({}, { gridDensity: "huge" }))).toEqual(['Page 1 ("Home"): gridDensity holds "huge", which is not one of its choices.']);
+    expect(checkWatchPagesValues(withTile({}, { backgroundImageFit: "huge" }))).toEqual(['Page 1 ("Home"): backgroundImageFit holds "huge", which is not one of its choices.']);
+    // A grid density the app does not know reads as standard, so a future
+    // density never makes a document unreadable.
+    expect(checkWatchPagesValues(withTile({}, { gridDensity: "huge" }))).toEqual([]);
     expect(checkWatchPagesValues(withTile({}, { dynamicConfig: { ...FULL_DYNAMIC_CONFIG, sortOrder: "name" } }))).toEqual([
       'Page 1 ("Home"): dynamicConfig: sortOrder holds "name", which is not one of its choices.',
     ]);

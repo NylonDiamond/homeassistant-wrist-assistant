@@ -388,6 +388,35 @@
       "gte",
       "lte",
       "contains"
+    ],
+    "TileHistoryRange": [
+      "1h",
+      "6h",
+      "24h",
+      "7d"
+    ],
+    "MapTileZoom": [
+      "fit",
+      "city",
+      "street"
+    ],
+    "MapTileStyle": [
+      "standard",
+      "satellite"
+    ],
+    "ChartTileStyle": [
+      "line",
+      "bars",
+      "area"
+    ],
+    "TextFieldTargetKind": [
+      "input_text",
+      "script",
+      "assist"
+    ],
+    "TextFieldSubmit": [
+      "return",
+      "button"
     ]
   },
   "types": {
@@ -442,6 +471,7 @@
         "gridDensity": {
           "type": "enum",
           "enum": "GridDensity",
+          "strict": false,
           "required": false,
           "default": "standard",
           "fresh": true
@@ -1553,6 +1583,105 @@
           "required": true,
           "default": 0,
           "fresh": true
+        },
+        "cameraTileLive": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
+        "sensorChart": {
+          "type": "enum",
+          "enum": "TileHistoryRange",
+          "strict": false,
+          "required": false
+        },
+        "mediaArtwork": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
+        "templateLines": {
+          "type": "int",
+          "required": false,
+          "default": 5
+        },
+        "mapEntityIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false
+        },
+        "mapZoom": {
+          "type": "enum",
+          "enum": "MapTileZoom",
+          "strict": false,
+          "required": false,
+          "default": "fit"
+        },
+        "mapStyle": {
+          "type": "enum",
+          "enum": "MapTileStyle",
+          "strict": false,
+          "required": false,
+          "default": "standard"
+        },
+        "chartEntityIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false
+        },
+        "chartRange": {
+          "type": "enum",
+          "enum": "TileHistoryRange",
+          "strict": false,
+          "required": false,
+          "default": "24h"
+        },
+        "chartStyle": {
+          "type": "enum",
+          "enum": "ChartTileStyle",
+          "strict": false,
+          "required": false,
+          "default": "line"
+        },
+        "textTargetKind": {
+          "type": "enum",
+          "enum": "TextFieldTargetKind",
+          "strict": false,
+          "required": false,
+          "default": "input_text"
+        },
+        "textTargetId": {
+          "type": "string",
+          "required": false
+        },
+        "textTargetField": {
+          "type": "string",
+          "required": false
+        },
+        "textPlaceholder": {
+          "type": "string",
+          "required": false
+        },
+        "textSubmit": {
+          "type": "enum",
+          "enum": "TextFieldSubmit",
+          "strict": false,
+          "required": false,
+          "default": "return"
+        },
+        "webURL": {
+          "type": "string",
+          "required": false
+        },
+        "webScroll": {
+          "type": "bool",
+          "required": false,
+          "default": true
+        },
+        "webInteractive": {
+          "type": "bool",
+          "required": false,
+          "default": true
         }
       }
     },
@@ -2185,7 +2314,11 @@
       "template": "template.<UUID>, shows the result of templateString.",
       "assist": "assist.voice_hub, the Assist tile.",
       "speak_message": "speak_message.voice_hub, the Speak Message tile.",
-      "webhook_inbox": "webhook_inbox.all; webhook_inbox.<topic> is reserved for a single topic."
+      "webhook_inbox": "webhook_inbox.all; webhook_inbox.<topic> is reserved for a single topic.",
+      "map": "map.<UUID>, a map of the entities in mapEntityIds. iPhone only.",
+      "chart": "chart.<UUID>, a history chart of the entities in chartEntityIds. iPhone only.",
+      "text_field": "text_field.<UUID>, a text field that sends what is typed to textTargetId or Assist. iPhone only.",
+      "web": "web.<UUID>, a web page from webURL. iPhone only."
     },
     "grid": "Placement is absolute on a 12 column grid: gridCol 0 to 11, gridRow from 0, colSpan 1 to 12, rowSpan from 1. Nothing in the decoder stops overlaps.",
     "pageIds": "Every page needs a unique id. A page without one gets a new id on every decode; duplicate page ids crash the watch.",

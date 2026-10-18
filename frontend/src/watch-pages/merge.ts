@@ -907,6 +907,11 @@ function tileLabel(index: number, tile: JsonObject): string {
  * Rules card cannot show says how to get rid of it. Keys it does not
  * know, and `null`, are left alone, as the phone leaves them. Run over the
  * whole document before a save, after `checkWatchPages`.
+ *
+ * The document is the same for every device that picks a page, so an
+ * iPhone only tile or key (`tile-devices.json`) on a page a watch shows is
+ * no problem: the watch skips the tile or ignores the key. Its value is
+ * still checked by its type, as the watch decodes it like any other.
  */
 export function checkWatchPagesValues(document: unknown): string[] {
   if (!isJsonObject(document)) return [];
