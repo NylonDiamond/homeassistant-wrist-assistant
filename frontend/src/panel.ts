@@ -229,7 +229,7 @@ import { conflictText, savedByWords, savedLine, versionLabel, versionWhen } from
 import { ScrollFades } from "./scroll-fade.js";
 import { chromeDarkValues, chromeRuns, chromeTokens, litOutline, plainOutline } from "./editor-chrome.js";
 import { libraryModeStyles } from "./library/item-mode.js";
-import { FOLD_AFTER, type TickChip, libraryTicksStyles, renderTickChips } from "./library/ticks.js";
+import { type TickChip, libraryTicksStyles, renderTickChips } from "./library/ticks.js";
 import { statesSummary } from "./states.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { elementSize, isHiddenDocument, smallestSize, withHidden, type Placement } from "./model.js";
@@ -20596,8 +20596,8 @@ export class WristAssistantPanel extends LitElement {
    * once and then takes it off (`removeRowFrom`), so one slip of the pointer
    * does not pull a design off a watch. The last copy goes to Unassigned
    * rather than being deleted. The same block, in the same place, as a
-   * page's, and drawn by the same `renderTickChips`, so with many devices or
-   * a narrow canvas the unticked ones fold into "+ Add to a device" here too.
+   * page's, and drawn by the same `renderTickChips`, so when the chips do not
+   * fit the strip the unticked ones fold into "+ Add to a device" here too.
    */
   private renderCanvasDevices(cfg: CustomComplicationConfig) {
     const question = "Which devices do you want this on?";
@@ -20644,7 +20644,7 @@ export class WristAssistantPanel extends LitElement {
     };
     return html`<div class="lib-on over-stage ${on === 0 ? "none" : ""}" role="group" aria-label=${question}>
       <span class="lib-on-l">${question}</span>
-      ${renderTickChips(chips, { fold: chips.length > FOLD_AFTER, foldLabel: "Add to a device" }, onPick)}
+      ${renderTickChips(chips, { foldLabel: "Add to a device" }, onPick)}
       <span class="lib-on-n">${on === 0 ? "On no device yet" : `On ${on} ${on === 1 ? "device" : "devices"}`}</span>
     </div>`;
   }

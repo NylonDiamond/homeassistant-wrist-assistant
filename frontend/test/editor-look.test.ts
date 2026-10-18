@@ -249,14 +249,21 @@ describe("the device chips in the strip over the preview", () => {
     expect(canvasStyles.cssText).not.toContain("cv-devices");
   });
 
-  it("fold the unticked ones into one chip with many devices or a narrow canvas, never the ticked ones", () => {
+  it("fold the unticked ones into one chip only when the row says they do not fit, never the ticked ones", () => {
     expect(decls(panelCss, ".lt-fold").display).toBe("none");
-    expect(decls(panelCss, ".lt-ticks.many .lt-fold").display).toBe("inline-flex");
-    expect(decls(panelCss, ".lt-ticks.many .lt-chips > .lt-chip.off:not(.add)").display).toBe("none");
+    expect(decls(panelCss, "wa-chip-row[folded] > .lt-fold").display).toBe("inline-flex");
+    // Out of the flow but still measured: hidden, not display none.
+    const off = decls(panelCss, "wa-chip-row[folded] > .lt-chip.off:not(.add)");
+    expect(off.position).toBe("absolute");
+    expect(off.visibility).toBe("hidden");
+    expect(off["pointer-events"]).toBe("none");
+    expect(off.display).toBeUndefined();
+    expect(decls(panelCss, "wa-chip-row").position).toBe("relative");
     expect(decls(panelCss, ".lt-fold-pop .lt-chip.off").display).toBe("inline-flex");
     expect(decls(panelCss, ".lt-fold-pop").position).toBe("absolute");
-    expect(panelCss).toMatch(/@container cvcard \(max-width: 720px\)\s*\{\s*\.lib-on \.lt-ticks \.lt-chips > \.lt-chip\.off:not\(\.add\)\s*\{\s*display: none;/);
-    expect(decls(panelCss, ".lib-on .lt-ticks .lt-fold").display).toBe("inline-flex");
+    // No count class and no width query decide it any more.
+    expect(panelCss).not.toContain(".lt-ticks.many");
+    expect(panelCss).not.toMatch(/@container cvcard \(max-width: 720px\)\s*\{\s*\.lib-on/);
     expect(panelCss).not.toMatch(/\.lt-chip\.on[^{]*\{[^}]*display: none/);
   });
 
