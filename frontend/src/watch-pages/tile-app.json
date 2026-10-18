@@ -1675,6 +1675,151 @@
       }
     ]
   },
+  "phoneTiles": {
+    "note": "The four kinds only the iPhone draws (tile-devices.json kinds with [\"iphone\"]): a map, a chart, a text field and a web card. A watch skips the whole tile and packs the page without it. Every key below is optional and none is fresh; an absent key reads as its absent value. Their task is the phoneTile section, before Icon, tagged iPhone. No reset.",
+    "map": {
+      "add": {
+        "entityIdPrefix": "map.",
+        "icon": "map.fill",
+        "hex": "#34C759",
+        "customLabel": "Map",
+        "colSpan": 12,
+        "rowSpan": 8
+      },
+      "title": "Map",
+      "entities": {
+        "key": "mapEntityIds",
+        "domains": ["person", "device_tracker", "zone"],
+        "write": "Each pick is appended once; removing the last one removes the key."
+      },
+      "zoom": {
+        "key": "mapZoom",
+        "absent": "fit",
+        "choices": [
+          { "value": "fit", "label": "Fit" },
+          { "value": "city", "label": "City" },
+          { "value": "street", "label": "Street" }
+        ],
+        "write": "The absent value removes the key."
+      },
+      "style": {
+        "key": "mapStyle",
+        "absent": "standard",
+        "choices": [
+          { "value": "standard", "label": "Standard" },
+          { "value": "satellite", "label": "Satellite" }
+        ],
+        "write": "The absent value removes the key."
+      }
+    },
+    "chart": {
+      "add": {
+        "entityIdPrefix": "chart.",
+        "icon": "chart.xyaxis.line",
+        "hex": "#0A84FF",
+        "customLabel": "Chart",
+        "colSpan": 12,
+        "rowSpan": 6
+      },
+      "title": "Chart",
+      "entities": {
+        "key": "chartEntityIds",
+        "max": 4,
+        "write": "Each pick is appended once, at most max; removing the last one removes the key. The iPhone ignores entries after the fourth."
+      },
+      "range": {
+        "key": "chartRange",
+        "absent": "24h",
+        "choices": [
+          { "value": "1h", "label": "1 hour" },
+          { "value": "6h", "label": "6 hours" },
+          { "value": "24h", "label": "24 hours" },
+          { "value": "7d", "label": "7 days" }
+        ],
+        "write": "The absent value removes the key."
+      },
+      "style": {
+        "key": "chartStyle",
+        "absent": "line",
+        "choices": [
+          { "value": "line", "label": "Line" },
+          { "value": "bars", "label": "Bars" },
+          { "value": "area", "label": "Area" }
+        ],
+        "write": "The absent value removes the key."
+      }
+    },
+    "textField": {
+      "add": {
+        "entityIdPrefix": "text_field.",
+        "icon": "character.cursor.ibeam",
+        "hex": "#8E8E93",
+        "customLabel": "Text field",
+        "colSpan": 12,
+        "rowSpan": 2,
+        "textTargetKind": "input_text"
+      },
+      "title": "Text field",
+      "targetKind": {
+        "key": "textTargetKind",
+        "absent": "input_text",
+        "choices": [
+          { "value": "input_text", "label": "Input text", "domain": "input_text" },
+          { "value": "script", "label": "Script", "domain": "script" },
+          { "value": "assist", "label": "Assist" }
+        ],
+        "write": "Always written, the absent value too (the add writes it on every new tile). A change of kind removes textTargetId when it is not of the new kind's domain, and textTargetField unless the new kind is script."
+      },
+      "target": {
+        "key": "textTargetId",
+        "write": "An entity of the kind's domain; clearing it removes the key. Unused for assist."
+      },
+      "field": {
+        "key": "textTargetField",
+        "write": "The script field that receives the text, as typed and trimmed; empty removes the key. Used for script only."
+      },
+      "placeholder": {
+        "key": "textPlaceholder",
+        "write": "As typed; empty removes the key, and the iPhone then shows the tile's name."
+      },
+      "submit": {
+        "key": "textSubmit",
+        "absent": "return",
+        "choices": [
+          { "value": "return", "label": "Return key" },
+          { "value": "button", "label": "Button" }
+        ],
+        "write": "The absent value removes the key."
+      }
+    },
+    "web": {
+      "add": {
+        "entityIdPrefix": "web.",
+        "icon": "globe",
+        "hex": "#5E5CE6",
+        "customLabel": "Web card",
+        "colSpan": 12,
+        "rowSpan": 8
+      },
+      "title": "Web card",
+      "url": {
+        "key": "webURL",
+        "schemes": ["http", "https"],
+        "write": "As typed and trimmed; empty removes the key. Anything but an http or https address draws No address on the iPhone."
+      },
+      "scroll": {
+        "key": "webScroll",
+        "absent": true,
+        "write": "On removes the key, off writes false."
+      },
+      "interactive": {
+        "key": "webInteractive",
+        "absent": true,
+        "write": "On removes the key, off writes false. Off: a tap opens the page full screen."
+      },
+      "help": "An HA dashboard address works after you sign in once inside the card on the iPhone."
+    }
+  },
   "resets": {
     "data": "Reset Data on an assist or speak tile writes resets.data of tile-special.json, which removes assistReplyOutputMode too.",
     "none": ["template", "musicHub", "pointControl"]

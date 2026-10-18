@@ -164,6 +164,15 @@ interface TileAppTable {
   pointControl: { add: AppAddSpec };
   assist: { add: { entityId: string; picker: string; extras?: Record<string, unknown> } };
   speak: { add: { entityId: string; picker: string; extras?: Record<string, unknown> } };
+  phoneTiles: Record<WatchPhoneAddKind, { add: PhoneAddSpec }>;
+}
+
+/** A tile only the iPhone draws (`tile-app.json` `phoneTiles`): an app tile
+ * with its own size, and for a text field the target kind it starts with. */
+interface PhoneAddSpec extends AppAddSpec {
+  colSpan: number;
+  rowSpan: number;
+  textTargetKind?: string;
 }
 
 /** The app tile table as the app wrote it. Exported for the tests. */
@@ -917,6 +926,36 @@ export function newWatchAppTile(
   return freshTile(fields);
 }
 
+// ── tiles only the iPhone draws ──────────────────────────────────────────
+
+/** The four kinds only the iPhone draws, as an add names them. */
+export type WatchPhoneAddKind = "map" | "chart" | "textField" | "web";
+
+/**
+ * A new map, chart, text field or web card tile (`tile-app.json`
+ * `phoneTiles`): the fresh keys, `entityId` the kind's prefix and a new
+ * upper case id (made first), then the tile's own id, the kind's fixed icon,
+ * color and label, its own size, and for a text field `textTargetKind`
+ * (Input text), which the contract has the panel write on every new one.
+ * None of the kind's other keys: absent reads as the default. Placed at row
+ * 0, column 0; the add places it.
+ */
+export function newWatchPhoneTile(kind: WatchPhoneAddKind, options?: WatchEditOptions): WatchPageTile {
+  const spec = APP.phoneTiles[kind].add;
+  const entityId = `${spec.entityIdPrefix}${newIdFrom(options)}`;
+  const fields: JsonObject = {
+    id: newIdFrom(options),
+    entityId,
+    icon: spec.icon,
+    color: spec.hex,
+    customLabel: spec.customLabel,
+    colSpan: spec.colSpan,
+    rowSpan: spec.rowSpan,
+  };
+  if (spec.textTargetKind !== undefined) fields.textTargetKind = spec.textTargetKind;
+  return freshTile(fields);
+}
+
 /** One add, in the shape the case files use. A music hub add carries the
  * home's media players (`watchMediaPlayersFromHass`); assist and speak
  * message tiles are entity adds of `WATCH_ASSIST_ENTITY_ID` and
@@ -931,7 +970,8 @@ export type WatchTileAdd =
   | { kind: "statusPage"; statusPage: WatchLibraryEntryAdd }
   | { kind: "template" }
   | { kind: "musicHub"; players: readonly WatchMediaPlayer[] }
-  | { kind: "pointControl" };
+  | { kind: "pointControl" }
+  | { kind: WatchPhoneAddKind };
 
 /** The library entry of a library add. */
 function libraryEntryOf(add: Extract<WatchTileAdd, { kind: WatchLibraryAddKind }>): WatchLibraryEntryAdd {
@@ -959,6 +999,11 @@ export function newWatchTile(add: WatchTileAdd, page: WatchPage | undefined, opt
       return newWatchAppTile(add.kind, options);
     case "musicHub":
       return newWatchAppTile(add.kind, options, add.players);
+    case "map":
+    case "chart":
+    case "textField":
+    case "web":
+      return newWatchPhoneTile(add.kind, options);
   }
 }
 
@@ -991,6 +1036,11 @@ const REPEATABLE_KINDS: ReadonlySet<string> = new Set([
   "template",
   "music_hub",
   "point_control",
+  // The tiles only the iPhone draws: a new id each.
+  "map",
+  "chart",
+  "text_field",
+  "web",
 ]);
 
 /** The first page with this id, system pages included, with its place. */
@@ -1022,6 +1072,11 @@ export function watchAddEntityId(add: WatchTileAdd): string {
     case "musicHub":
     case "pointControl":
       return appSpec(add.kind).entityIdPrefix;
+    case "map":
+    case "chart":
+    case "textField":
+    case "web":
+      return APP.phoneTiles[add.kind].add.entityIdPrefix;
   }
 }
 
