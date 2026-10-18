@@ -17,8 +17,10 @@
 // Plan: app repo docs/pages_in_home_assistant_step3.md.
 
 import type { HassEntityState } from "../ha-api.js";
+import type { SettingDevice } from "../watch-settings.js";
 import tileApp from "./tile-app.json";
 import tileDefaults from "./tile-defaults.json";
+import tileDevicesTable from "./tile-devices.json";
 import tileSmart from "./tile-smart.json";
 
 export type JsonObject = Record<string, unknown>;
@@ -173,7 +175,44 @@ export const VIRTUAL_TILE_KINDS: Readonly<Record<string, string>> = {
   speak_message: "Speak message",
   webhook_inbox: "Webhook inbox",
   divider: "Header",
+  map: "Map",
+  chart: "Chart",
+  text_field: "Text field",
+  web: "Web card",
 };
+
+// ── which device draws a tile ────────────────────────────────────────────
+
+/** Both devices, the answer for a kind or key the table does not list. */
+const BOTH_DEVICES: readonly SettingDevice[] = ["watch", "iphone"];
+
+const TILE_DEVICES = tileDevicesTable as unknown as {
+  kinds: Readonly<Record<string, readonly SettingDevice[]>>;
+  keys: Readonly<Record<string, readonly SettingDevice[]>>;
+};
+
+/** The devices that draw a tile of this kind (`tile-devices.json` `kinds`):
+ * both, or the iPhone only. A kind the table does not list reads as both.
+ * The server copies every tile to every device that picks its page; a device
+ * skips a kind it does not draw and packs the page as if the tile were
+ * hidden. App repo docs/phone_native_pages_plan_2026-10.md, decision 2. */
+export function tileDevices(kind: string): readonly SettingDevice[] {
+  return Object.hasOwn(TILE_DEVICES.kinds, kind) ? TILE_DEVICES.kinds[kind]! : BOTH_DEVICES;
+}
+
+/** The devices that read a tile key (`tile-devices.json` `keys`): the iPhone
+ * only for the keys that add to a tile both devices draw (a live camera, a
+ * chart under a sensor), both for every other key. A watch keeps a phone
+ * only key as stored and ignores it. */
+export function keyDevices(key: string): readonly SettingDevice[] {
+  return Object.hasOwn(TILE_DEVICES.keys, key) ? TILE_DEVICES.keys[key]! : BOTH_DEVICES;
+}
+
+/** Whether `device` draws this tile, by the kind in its entity id. */
+export function tileDrawsOn(tile: { entityId?: unknown }, device: SettingDevice): boolean {
+  const entityId = typeof tile.entityId === "string" ? tile.entityId : "";
+  return tileDevices(tileKind(entityId)).includes(device);
+}
 
 /** The Home Assistant domains a tile is likely to hold, by plain name. A
  * domain missing here is still an entity tile when Home Assistant has the
