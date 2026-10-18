@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import { SymbolBrowser } from "../src/symbols.js";
-import { WATCH_PHONE_GREYED_TEXT, WATCH_PHONE_GROUP_TITLE, watchAddEmptyText, watchLeftOutText } from "../src/watch-pages/add-tile-list.js";
+import { WATCH_PHONE_GREYED_TEXT, WATCH_PHONE_GROUP_TITLE, watchAddEmptyText, watchLeftOutText, watchPhoneTilesBlockedText } from "../src/watch-pages/add-tile-list.js";
 import { WATCH_PHONE_TILE_STAGE_TEXT } from "../src/watch-pages/preview.js";
 import {
   type WatchCatalog,
@@ -215,6 +215,8 @@ describe("the kinds only the iPhone draws", () => {
     expect(WATCH_PHONE_GROUP_TITLE).toBe("iPhone only");
     expect(WATCH_PHONE_GREYED_TEXT).toBe("Shown on the iPhone only");
     expect(WATCH_PHONE_TILE_STAGE_TEXT).toBe("Not on a watch");
+    // "iPhone only" without a hyphen, as everywhere else, and a full stop.
+    expect(watchPhoneTilesBlockedText({ name: "Den Watch", version: "3.1.0" })).toBe("Den Watch runs 3.1.0; iPhone only tiles need 3.2.0.");
   });
 
   it("never name the watch in their settings, on an iPhone's editor or a watch's", () => {

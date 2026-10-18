@@ -310,7 +310,7 @@ function renderPhoneGroup(host: AddTileHost, view: AddTileView): TemplateResult 
   const blocked = greyed ? undefined : watchAppAddBlockedText(WATCH_PHONE_ADD_BUTTONS[0]!.key, host.musicAssistant, group.oldWatch);
   const off = greyed || blocked !== undefined;
   const why = greyed ? WATCH_PHONE_GREYED_TEXT : blocked;
-  return html`<div class="at-phone ${greyed ? "greyed" : ""}">
+  return html`<div class="at-phone ${off ? "greyed" : ""}">
     <div class="at-sub at-phone-h">${uiIcon("phone")}<span>${WATCH_PHONE_GROUP_TITLE}</span></div>
     <div class="at-kinds" role="group" aria-label=${WATCH_PHONE_GROUP_TITLE}>
       ${WATCH_PHONE_ADD_BUTTONS.map((b) => html`<button type="button" class="pe-btn at-phone-btn" ?disabled=${host.busy || off}
@@ -695,7 +695,8 @@ export const addTileStyles = css`
   button.at-more:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--wa-accent); }
 
   /* The "iPhone only" group, last: each kind with the phone glyph; greyed
-     on a watch's editor. */
+     on a watch's editor, and on an iPhone's while an old watch holds the
+     page. */
   .at-phone { display: flex; flex-direction: column; gap: 6px; }
   .at-phone-h { display: inline-flex; align-items: center; gap: 5px; }
   .at-phone-h > svg.ui-icon { width: 13px; height: 13px; flex: none; }

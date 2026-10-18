@@ -379,9 +379,9 @@ export function watchPhoneTilesGroupOf(group: WatchPhoneTilesGroup | undefined, 
   return group ?? (shown === "iphone" ? { state: "open" } : { state: "hidden" });
 }
 
-/** "Jesse's watch runs 3.1.0; iPhone-only tiles need 3.2.0". */
+/** "Jesse's watch runs 3.1.0; iPhone only tiles need 3.2.0." */
 export function watchPhoneTilesBlockedText(watch: WatchOldWatch): string {
-  return `${watch.name} runs ${watch.version}; iPhone-only tiles need ${MIN_WATCH_VERSION_FOR_PHONE_TILES}`;
+  return `${watch.name} runs ${watch.version}; iPhone only tiles need ${MIN_WATCH_VERSION_FOR_PHONE_TILES}.`;
 }
 
 // ── words ────────────────────────────────────────────────────────────────
