@@ -1,5 +1,8 @@
 // A tile's "Show only when" (`showWhen`): the comparison against the watch's
-// `VisibilityOperator.evaluate`, the setters, and the preview's reflow.
+// `VisibilityOperator.evaluate`, the setters, and the preview's reflow. And
+// its Show tile template (`showWhenTemplate`): the truthiness the watch's
+// `GridConfiguration.TemplateCondition` reads, the setter, the render
+// requests and the preview.
 
 import { describe, expect, it } from "vitest";
 
@@ -10,14 +13,26 @@ import { findWatchPage } from "../src/watch-pages/edit.js";
 import { watchReflowPage, watchTileHidden } from "../src/watch-pages/preview.js";
 import {
   WATCH_SHOW_WHEN_OPERATOR_VALUES,
+  WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS,
   watchShowWhenCompares,
   watchShowWhenPasses,
   watchShowWhenStateChoices,
+  watchShowWhenTemplateShows,
+  watchTemplateTruthy,
   watchTileShowWhen,
+  watchTileShowWhenTemplate,
 } from "../src/watch-pages/show-when.js";
+import {
+  type WatchTemplateRender,
+  watchMergedRenders,
+  watchShowWhenTemplateAllows,
+  watchShowWhenTemplateKey,
+  watchTemplateRequests,
+} from "../src/watch-pages/app-model.js";
 import {
   setWatchTileShowAlways,
   setWatchTileShowWhenEntity,
+  setWatchTileShowWhenTemplate,
   setWatchTileShowWhileOn,
   watchShowTileMode,
   setWatchTileShowWhenOperator,
@@ -196,5 +211,112 @@ describe("the preview", () => {
     const home = states(state("person.alex", "home"), state("light.lamp", "on"));
     expect(watchTileHidden(front, home)).toBe(false);
     expect(watchReflowPage(page, home)).toBe(page);
+  });
+});
+
+describe("Show tile: Template", () => {
+  const condition = { comparisonOperator: "eq", entityId: "person.alex", state: "home" };
+  const dark = "{{ is_state('sun.sun', 'below_horizon') }}";
+
+  it("reads true as Home Assistant's template conditions do", () => {
+    // The same table as the watch's TemplateConditionTests.
+    for (const yes of ["true", "True", " TRUE ", "on", "On", "yes", "enable", "1", "2", "-1", "0.5", "1e3", "inf"]) {
+      expect(watchTemplateTruthy(yes), yes).toBe(true);
+    }
+    for (const no of ["", "  ", "false", "off", "no", "disable", "0", "0.0", "-0", "None", "home", "nan", "[]", "{}", "truthy"]) {
+      expect(watchTemplateTruthy(no), no).toBe(false);
+    }
+  });
+
+  it("shows the tile with no render, a failed one, or unknown and unavailable", () => {
+    expect(watchShowWhenTemplateShows(undefined)).toBe(true);
+    expect(watchShowWhenTemplateShows({ ok: false, error: "UndefinedError: 'x' is undefined" })).toBe(true);
+    expect(watchShowWhenTemplateShows({ ok: true, value: "unknown" })).toBe(true);
+    expect(watchShowWhenTemplateShows({ ok: true, value: "Unavailable" })).toBe(true);
+    expect(watchShowWhenTemplateShows({ ok: true, value: "true" })).toBe(true);
+    expect(watchShowWhenTemplateShows({ ok: true, value: "false" })).toBe(false);
+    expect(watchShowWhenTemplateShows({ ok: true, value: "" })).toBe(false);
+  });
+
+  it("is listed in page-keys.json as an optional string", () => {
+    const tile = (pageKeys as { types: Record<string, { keys: Record<string, unknown> }> }).types.tile!.keys;
+    expect(tile.showWhenTemplate).toEqual({ type: "string", required: false });
+  });
+
+  it("reads a blank text as none", () => {
+    expect(watchTileShowWhenTemplate({ ...door, showWhenTemplate: dark } as WatchPageTile)).toBe(dark);
+    expect(watchTileShowWhenTemplate({ ...door, showWhenTemplate: " \n " } as WatchPageTile)).toBeUndefined();
+    expect(watchTileShowWhenTemplate({ ...door, showWhenTemplate: 3 } as WatchPageTile)).toBeUndefined();
+  });
+
+  it("is a choice of its own, after a stored condition", () => {
+    expect(watchShowTileMode({ ...door, showWhenTemplate: dark } as WatchPageTile)).toBe("template");
+    expect(watchShowTileMode({ ...door, hideWhenInactive: true, showWhenTemplate: dark } as WatchPageTile)).toBe("template");
+    expect(watchShowTileMode({ ...door, showWhen: condition, showWhenTemplate: dark } as WatchPageTile)).toBe("when");
+  });
+
+  it("writes the text as typed and drops the other choices", () => {
+    const both = docWith({ ...door, hideWhenInactive: true, showWhen: condition });
+    const written = tileIn(setWatchTileShowWhenTemplate(both, PAGE, DOOR, dark));
+    expect(written.showWhenTemplate).toBe(dark);
+    expect(Object.hasOwn(written, "hideWhenInactive") || Object.hasOwn(written, "showWhen")).toBe(false);
+    // Spaces typed so far stay.
+    expect(tileIn(setWatchTileShowWhenTemplate(both, PAGE, DOOR, "{{ ")).showWhenTemplate).toBe("{{ ");
+    // Empty is Always again.
+    const withText = docWith({ ...door, showWhenTemplate: dark });
+    expect(Object.hasOwn(tileIn(setWatchTileShowWhenTemplate(withText, PAGE, DOOR, "")), "showWhenTemplate")).toBe(false);
+    expect(setWatchTileShowWhenTemplate(withText, PAGE, DOOR, dark)).toBe(withText);
+    expect(setWatchTileShowWhenTemplate(withText, PAGE, DOOR, 3 as never)).toBe(withText);
+  });
+
+  it("goes when another choice is made", () => {
+    const withText = docWith({ ...door, showWhenTemplate: dark });
+    expect(Object.hasOwn(tileIn(setWatchTileShowAlways(withText, PAGE, DOOR)), "showWhenTemplate")).toBe(false);
+    expect(Object.hasOwn(tileIn(setWatchTileShowWhileOn(withText, PAGE, DOOR)), "showWhenTemplate")).toBe(false);
+    expect(Object.hasOwn(tileIn(setWatchTileShowWhenEntity(withText, PAGE, DOOR, "person.alex", "home")), "showWhenTemplate")).toBe(false);
+  });
+
+  it("is rendered with the page's template tiles, under a key of its own", () => {
+    const tpl = { id: "T", entityId: "template.X", templateString: "{{ 1 }}", showWhenTemplate: dark } as WatchPageTile;
+    const blank = { id: "B", entityId: "light.b", showWhenTemplate: "  " } as WatchPageTile;
+    const long = { id: "G", entityId: "light.g", showWhenTemplate: "x".repeat(WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS + 1) } as WatchPageTile;
+    const page = { id: PAGE, name: "Home", items: [{ ...door, showWhenTemplate: dark }, tpl, blank, long] } as WatchPage;
+    expect(watchTemplateRequests(page)).toEqual({
+      [watchShowWhenTemplateKey(DOOR)]: dark,
+      [watchShowWhenTemplateKey("T")]: dark,
+      T: "{{ 1 }}",
+    });
+  });
+
+  describe("the preview", () => {
+    const front = { ...door, showWhenTemplate: dark } as WatchPageTile;
+    const lamp = { id: "L", entityId: "light.lamp", gridRow: 0, gridCol: 4, colSpan: 4, rowSpan: 4 } as WatchPageTile;
+    const page = { id: PAGE, name: "Home", items: [front, lamp] } as WatchPage;
+    const on = states(state("light.lamp", "on"));
+    const renders = (value: string, text = dark): Map<string, WatchTemplateRender> =>
+      watchMergedRenders(new Map(), { [watchShowWhenTemplateKey(DOOR)]: text }, { [watchShowWhenTemplateKey(DOOR)]: { ok: true, value } });
+
+    it("hides the tile while the template renders false, and packs the rest", () => {
+      expect(watchTileHidden(front, on, renders("false"))).toBe(true);
+      const packed = watchReflowPage(page, on, 12, renders("false")).items as WatchPageTile[];
+      expect(packed.map((t) => t.id)).toEqual(["L"]);
+    });
+
+    it("keeps it while true, before the first render, and for a render of another text", () => {
+      expect(watchTileHidden(front, on, renders("true"))).toBe(false);
+      expect(watchTileHidden(front, on)).toBe(false);
+      expect(watchShowWhenTemplateAllows(renders("false", "{{ false }}"), front)).toBe(true);
+      expect(watchReflowPage(page, on, 12, renders("true"))).toBe(page);
+    });
+
+    it("needs Hide when off and Only when to pass too", () => {
+      const off = states(state("light.lamp", "off"));
+      const both = { ...lamp, hideWhenInactive: true, showWhenTemplate: dark } as WatchPageTile;
+      const r = watchMergedRenders(new Map(), { [watchShowWhenTemplateKey("L")]: dark }, { [watchShowWhenTemplateKey("L")]: { ok: true, value: "true" } });
+      expect(watchTileHidden(both, off, r)).toBe(true);
+      expect(watchTileHidden(both, on, r)).toBe(false);
+      const gated = { ...front, showWhen: condition } as WatchPageTile;
+      expect(watchTileHidden(gated, states(state("person.alex", "not_home")), renders("true"))).toBe(true);
+    });
   });
 });

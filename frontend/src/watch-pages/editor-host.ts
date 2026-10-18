@@ -89,8 +89,9 @@ export interface WatchPagesEditorHost {
   readonly cloudTTS: boolean | undefined;
   /** The shown page's template tiles rendered by Home Assistant
    * (`render_values`, as the watch's `template` op renders them), by tile
-   * id: a value, or the error Home Assistant gave, with the text it was
-   * asked for. A tile is missing until its first answer is in, and keeps its
+   * id, and its tiles' Show tile templates by `watchShowWhenTemplateKey`: a
+   * value, or the error Home Assistant gave, with the text it was asked
+   * for. A tile is missing until its first answer is in, and keeps its
    * last answer while a newer one is out or after a call failed; read it
    * through `watchTemplateRender`, which shows it only for the same text.
    * Held by the element, never in the draft. A getter. */

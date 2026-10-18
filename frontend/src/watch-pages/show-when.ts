@@ -83,6 +83,52 @@ export function watchShowWhenPasses(condition: WatchShowWhen, states: Readonly<R
   return state === undefined ? true : watchShowWhenCompares(condition.comparisonOperator, state, condition.state);
 }
 
+// ── Show tile: Template (`showWhenTemplate`) ─────────────────────────────
+
+/** The longest template the watch sends Home Assistant to follow
+ * (`DELTA_MAX_TEMPLATE_CHARS`). A longer one is never asked about, so the
+ * tile always shows. */
+export const WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS = 4096;
+
+/** The tile's Show tile template, or undefined when it has none (a blank
+ * text is none). */
+export function watchTileShowWhenTemplate(tile: WatchPageTile): string | undefined {
+  const raw = tile.showWhenTemplate;
+  return typeof raw === "string" && raw.trim() !== "" ? raw : undefined;
+}
+
+/** Results that say Home Assistant has no answer: they show the tile, as an
+ * entity with no state does for Only when. */
+const NO_ANSWER_WORDS = new Set(["unknown", "unavailable"]);
+
+/** The words Home Assistant reads as true (`cv.boolean`). */
+const TRUE_WORDS = new Set(["true", "on", "yes", "enable"]);
+
+/**
+ * Whether a rendered template reads as true, as Home Assistant's template
+ * conditions read one: `true`, `on`, `yes`, `enable` in any case, or a
+ * number other than 0. Everything else is false, an empty render included.
+ * The watch's side is `GridConfiguration.TemplateCondition.isTruthy`.
+ */
+export function watchTemplateTruthy(text: string): boolean {
+  const word = text.trim().toLowerCase();
+  if (TRUE_WORDS.has(word)) return true;
+  const number = swiftDouble(word);
+  return number !== undefined && number !== 0;
+}
+
+/**
+ * Whether a Show tile template lets the tile show, given its last render
+ * (`TemplateCondition.passes`): no render yet, a render that failed, or
+ * `unknown` / `unavailable` show it; anything else shows it only when it
+ * reads as true (`watchTemplateTruthy`).
+ */
+export function watchShowWhenTemplateShows(result: { ok: true; value: string } | { ok: false; error: string } | undefined): boolean {
+  if (result === undefined || !result.ok) return true;
+  if (NO_ANSWER_WORDS.has(result.value.trim().toLowerCase())) return true;
+  return watchTemplateTruthy(result.value);
+}
+
 /** A value the Value row offers: what is stored, and the words shown. */
 export interface WatchShowWhenChoice {
   value: string;

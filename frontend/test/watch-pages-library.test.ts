@@ -417,10 +417,10 @@ describe("the hold and slide menus with a catalog", () => {
 
 describe("the Tile card for a library tile", () => {
   it("gets Target first, then its own task", () => {
-    expect(watchTileSettingsSections(http())).toEqual(["target", "request", "icon", "text", "border", "action", "background"]);
+    expect(watchTileSettingsSections(http())).toEqual(["target", "request", "icon", "text", "border", "action", "visibility", "background"]);
     // A removed macro tile: one line, nothing to edit.
     expect(watchTileSettingsSections(macro())).toEqual(["removed"]);
-    expect(watchTileSettingsSections(statusPage())).toEqual(["target", "icon", "text", "border", "action", "background"]);
+    expect(watchTileSettingsSections(statusPage())).toEqual(["target", "icon", "text", "border", "action", "visibility", "background"]);
   });
 
   it("the Target menu lists the kind's entries with the phone's subtitles and warnings", () => {

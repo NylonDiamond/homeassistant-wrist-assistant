@@ -119,7 +119,8 @@ class WatchSession:
     entities: set[str] = field(default_factory=set)
     entities_synced: bool = False
     templates: dict[str, str] = field(default_factory=dict)
-    template_values: dict[str, str] = field(default_factory=dict)
+    # The last value sent per template, None for a render that raised.
+    template_values: dict[str, str | None] = field(default_factory=dict)
     template_deps: dict[str, _TemplateDeps] = field(default_factory=dict)
     last_seen: datetime = field(default_factory=dt_util.utcnow)
     first_seen: datetime = field(default_factory=dt_util.utcnow)
@@ -2056,8 +2057,13 @@ class DeltaCoordinator:
 
     def _render_template_tracked(
         self, template_str: str,
-    ) -> tuple[str, _TemplateDeps]:
-        """Render a template and return (value, dependencies)."""
+    ) -> tuple[str | None, _TemplateDeps]:
+        """Render a template and return (value, dependencies).
+
+        The value is None when the render raised, so the event can say so
+        (`_template_event`): a tile's "Show only when" template shows the
+        tile on an error, and an empty render is a different answer.
+        """
         import time as _time
 
         tpl = Template(template_str, self.hass)
@@ -2084,26 +2090,32 @@ class DeltaCoordinator:
         # the actual template output. It raises the render's own error.
         try:
             rendered = info.result()
-        except Exception:  # noqa: BLE001 (a template error renders as "")
+        except Exception:  # noqa: BLE001 (a template error is reported, not raised)
             _LOGGER.debug("Template render failed: %.120s", template_str, exc_info=True)
-            return "", deps
+            return None, deps
         value = str(rendered).strip() if rendered is not None else ""
         return value, deps
 
     @staticmethod
-    def _template_event(tile_id: str, value: str, now_ts: float) -> dict[str, Any]:
+    def _template_event(tile_id: str, value: str | None, now_ts: float) -> dict[str, Any]:
         """Build a delta event dict for a template value.
 
         If the rendered value contains newlines, each line is sent as an
-        equal entry in the ``lines`` attribute for uniform rendering.
+        equal entry in the ``lines`` attribute for uniform rendering. A
+        render that raised (``value`` None) has no lines and ``error: true``,
+        so the watch can tell it from a template that rendered empty. Older
+        apps read only ``lines`` and see the empty value they always did.
         """
         lines = [l for l in value.split("\n") if l] if value else []
         entity_id = f"template.{tile_id}"
-        return {
+        event: dict[str, Any] = {
             "entity_id": entity_id,
             "lines": lines,
             "last_updated": now_ts,
         }
+        if value is None:
+            event["error"] = True
+        return event
 
     def _evaluate_templates(
         self, session: WatchSession, changed_ids: set[str] | None = None,
@@ -2132,15 +2144,15 @@ class DeltaCoordinator:
                 if not self._template_needs_render(cached_deps, changed_ids, changed_domains):
                     continue
 
+            value: str | None
             try:
                 value, deps = self._render_template_tracked(template_str)
                 session.template_deps[tile_id] = deps
             except Exception:
-                value = ""
+                value = None
                 session.template_deps[tile_id] = _TemplateDeps(frozenset(), frozenset(), False)
 
-            previous = session.template_values.get(tile_id)
-            if value != previous:
+            if tile_id not in session.template_values or session.template_values[tile_id] != value:
                 session.template_values[tile_id] = value
                 changed.append(self._template_event(tile_id, value, now_ts))
 
@@ -2157,11 +2169,12 @@ class DeltaCoordinator:
         now_ts = dt_util.utcnow().timestamp()
 
         for tile_id, template_str in session.templates.items():
+            value: str | None
             try:
                 value, deps = self._render_template_tracked(template_str)
                 session.template_deps[tile_id] = deps
             except Exception:
-                value = ""
+                value = None
                 session.template_deps[tile_id] = _TemplateDeps(frozenset(), frozenset(), False)
 
             session.template_values[tile_id] = value

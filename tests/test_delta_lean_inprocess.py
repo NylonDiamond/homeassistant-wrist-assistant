@@ -717,12 +717,55 @@ def test_a_template_that_raised_renders_again_when_its_entity_changes(coordinato
             coord, entities=[], templates={"t1": "{{ states('sensor.source') | float }}"}
         )
         (event,) = body["events"]
-        assert event == {"entity_id": "template.t1", "lines": [], "last_updated": event["last_updated"]}
+        assert event == {
+            "entity_id": "template.t1", "lines": [], "error": True, "last_updated": event["last_updated"],
+        }
         assert coord._sessions["w1"].template_deps["t1"].entities == frozenset({sensor})
 
         _change(hass, coord, sensor, "40")
         status, body = await _poll(coord, since=body["next_cursor"], timeout=0)
         assert [e["lines"] for e in body["events"]] == [["40 W"]]
+        assert "error" not in body["events"][0]
+
+    asyncio.run(run())
+
+
+def test_a_template_error_and_an_empty_render_are_two_answers(coordinator) -> None:
+    """A tile's "Show only when" template shows the tile on an error and
+    hides it on an empty render, so a change from one to the other is news:
+    the event goes out, and only the error carries `error`."""
+    module, hass, coord = coordinator
+    sensor = "sensor.flag"
+    hass.states.set(sensor, "broken")
+
+    class _Template:
+        def __init__(self, source: str, _hass: Any) -> None:
+            self.source = source
+
+        def async_render_to_info(self) -> _RenderInfo:
+            state = hass.states.get(sensor).state
+            if state == "broken":
+                return _RenderInfo(ValueError("no"), {sensor})
+            return _RenderInfo("" if state == "empty" else state, {sensor})
+
+    module.Template = _Template
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[], templates={"show_1": "{{ x }}"})
+        assert [(e["lines"], e.get("error")) for e in body["events"]] == [([], True)]
+
+        _change(hass, coord, sensor, "empty")
+        status, body = await _poll(coord, since=body["next_cursor"], timeout=0)
+        assert [(e["lines"], e.get("error")) for e in body["events"]] == [([], None)]
+
+        _change(hass, coord, sensor, "True")
+        status, body = await _poll(coord, since=body["next_cursor"], timeout=0)
+        assert [(e["lines"], e.get("error")) for e in body["events"]] == [(["True"], None)]
+
+        # The same answer again is no news.
+        _change(hass, coord, sensor, "True")
+        status, body = await _poll(coord, since=body["next_cursor"], timeout=0)
+        assert not body or not body.get("events")
 
     asyncio.run(run())
 

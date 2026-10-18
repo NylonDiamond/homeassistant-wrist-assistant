@@ -57,13 +57,13 @@ function documentWith(...pages: WatchPage[]): WatchPagesDocument {
 
 describe("sections", () => {
   it("gives each kind its sections in the order of the phone's tasks", () => {
-    expect(watchTileSettingsSections(tile("light.desk"))).toEqual(["icon", "state", "text", "border", "action", "background"]);
-    expect(watchTileSettingsSections(tile("switch.fan"))).toEqual(["icon", "text", "border", "action", "background"]);
-    expect(watchTileSettingsSections(tile("climate.hall"))).toEqual(["icon", "state", "text", "border", "action", "background"]);
+    expect(watchTileSettingsSections(tile("light.desk"))).toEqual(["icon", "state", "text", "border", "action", "visibility", "background"]);
+    expect(watchTileSettingsSections(tile("switch.fan"))).toEqual(["icon", "text", "border", "action", "visibility", "background"]);
+    expect(watchTileSettingsSections(tile("climate.hall"))).toEqual(["icon", "state", "text", "border", "action", "visibility", "background"]);
     // No Border or Background on a header: the watch reads none of their keys.
-    expect(watchTileSettingsSections(tile("divider.line.custom"))).toEqual(["header", "action"]);
-    expect(watchTileSettingsSections(tile(`page.${P2}`))).toEqual(["opens", "icon", "text", "border", "action", "background"]);
-    expect(watchTileSettingsSections(tile(`show_page.${P2}`))).toEqual(["opens", "icon", "text", "border", "action", "background"]);
+    expect(watchTileSettingsSections(tile("divider.line.custom"))).toEqual(["header", "action", "visibility"]);
+    expect(watchTileSettingsSections(tile(`page.${P2}`))).toEqual(["opens", "icon", "text", "border", "action", "visibility", "background"]);
+    expect(watchTileSettingsSections(tile(`show_page.${P2}`))).toEqual(["opens", "icon", "text", "border", "action", "visibility", "background"]);
     expect(watchTileSettingsSections(tile("spacer.ABC"))).toEqual(["border", "background"]);
   });
 });

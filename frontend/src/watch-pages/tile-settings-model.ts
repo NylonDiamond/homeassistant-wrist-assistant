@@ -167,6 +167,7 @@ export const WATCH_TILE_SETTING_KEYS: readonly string[] = [
   "requiresConfirmation",
   "hideWhenInactive",
   "showWhen",
+  "showWhenTemplate",
   "automationSkipConditionOverride",
   "entityId",
 ];
@@ -1328,25 +1329,53 @@ export function setWatchTileHideWhenOff(
   return setKey(document, pageId, tileId, "hideWhenInactive", () => (on ? true : REMOVE));
 }
 
-/** The Show Tile choice: Always, Only While On (`hideWhenInactive`) or Only
- * When (`showWhen`). */
-export type WatchShowTileMode = "always" | "on" | "when";
+/** The Show Tile choice: Always, Only While On (`hideWhenInactive`), Only
+ * When (`showWhen`) or Template (`showWhenTemplate`). */
+export type WatchShowTileMode = "always" | "on" | "when" | "template";
 
 /** What Show Tile reads for a tile. A stored condition wins, readable or
- * not, so the row that can replace or remove it is the one shown. */
+ * not, so the row that can replace or remove it is the one shown; then a
+ * stored template, whatever its text. */
 export function watchShowTileMode(tile: WatchPageTile): WatchShowTileMode {
   if (Object.hasOwn(tile, "showWhen")) return "when";
+  if (Object.hasOwn(tile, "showWhenTemplate")) return "template";
   return tile.hideWhenInactive === true ? "on" : "always";
 }
 
-/** Show Tile → Always: neither key. */
+/** The tile without any Show Tile key but `keep`. */
+function withoutShowKeys(tile: WatchPageTile, keep?: string): WatchPageTile {
+  let next = tile;
+  for (const key of ["hideWhenInactive", "showWhen", "showWhenTemplate"]) if (key !== keep) next = withoutKey(next, key);
+  return next;
+}
+
+/** Show Tile → Always: none of the keys. */
 export function setWatchTileShowAlways(document: WatchPagesDocument, pageId: string, tileId: string): WatchPagesDocument {
-  return editTile(document, pageId, tileId, (tile) => withoutKey(withoutKey(tile, "hideWhenInactive"), "showWhen"));
+  return editTile(document, pageId, tileId, (tile) => withoutShowKeys(tile));
 }
 
 /** Show Tile → Only While On: `hideWhenInactive: true` and no condition. */
 export function setWatchTileShowWhileOn(document: WatchPagesDocument, pageId: string, tileId: string): WatchPagesDocument {
-  return editTile(document, pageId, tileId, (tile) => withoutKey(withKey(tile, "hideWhenInactive", true), "showWhen"));
+  return editTile(document, pageId, tileId, (tile) => withKey(withoutShowKeys(tile, "hideWhenInactive"), "hideWhenInactive", true));
+}
+
+/**
+ * Show Tile → Template: the text as typed, kept as it is (Home Assistant
+ * reads it, and a box being typed in must not lose its spaces); Only While
+ * On and Only When go, as Show Tile holds one choice. An empty text removes
+ * the key, which is Always again; a text of only white space is stored and
+ * read as none (`watchTileShowWhenTemplate`). Anything but a string is
+ * refused.
+ */
+export function setWatchTileShowWhenTemplate(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  text: string,
+): WatchPagesDocument {
+  if (typeof text !== "string") return document;
+  return editTile(document, pageId, tileId, (tile) =>
+    text === "" ? withoutKey(tile, "showWhenTemplate") : withKey(withoutShowKeys(tile, "showWhenTemplate"), "showWhenTemplate", text));
 }
 
 const SHOW_WHEN_ENTITY_RE = /^[a-z0-9_]+\.[a-z0-9_]+$/i;
@@ -1376,7 +1405,7 @@ export function setWatchTileShowWhenEntity(
   return editTile(document, pageId, tileId, (tile) => {
     const old = watchTileShowWhen(tile);
     const value = showWhenValue({ entityId: id, comparisonOperator: old?.comparisonOperator ?? "eq", state });
-    return withoutKey(withKey(tile, "showWhen", value), "hideWhenInactive");
+    return withKey(withoutShowKeys(tile, "showWhen"), "showWhen", value);
   });
 }
 

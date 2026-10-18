@@ -101,7 +101,7 @@ describe("the special table", () => {
   });
 
   it("puts the task before Icon, and a TV media player gets the Remote task", () => {
-    expect(watchTileSettingsSections(tile("camera.door"))).toEqual(["special", "icon", "text", "border", "action", "background"]);
+    expect(watchTileSettingsSections(tile("camera.door"))).toEqual(["special", "icon", "text", "border", "action", "visibility", "background"]);
     expect(watchTileSettingsSections(tile("vacuum.robo"))[0]).toBe("special");
     // Climate's options are the State rows: no task of its own.
     expect(watchTileSettingsSections(tile("climate.hall"))).not.toContain("special");
