@@ -228,6 +228,8 @@ import { NEWER_VERSION_TEXT, NOT_READY_TEXT, friendlyError, rawErrorText } from 
 import { conflictText, savedByWords, savedLine, versionLabel, versionWhen } from "./revision-words.js";
 import { ScrollFades } from "./scroll-fade.js";
 import { chromeDarkValues, chromeRuns, chromeTokens, litOutline, plainOutline } from "./editor-chrome.js";
+import { libraryModeStyles } from "./library/item-mode.js";
+import { libraryTicksStyles } from "./library/ticks.js";
 import { statesSummary } from "./states.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { elementSize, isHiddenDocument, smallestSize, withHidden, type Placement } from "./model.js";
@@ -1936,7 +1938,7 @@ export class WristAssistantPanel extends LitElement {
    * held the next click on the face for most of a second after a native menu
    * closed, so a drag right after a change lagged (measured 2026-09-12: the
    * press was 650 to 900 ms old on arrival, with no long task on the page). */
-  @state() private openMenu?: "grid" | "case" | "tint" | "list" | "place" | "snap" | "add";
+  @state() private openMenu?: "grid" | "case" | "tint" | "list" | "place" | "snap";
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
@@ -2515,7 +2517,7 @@ export class WristAssistantPanel extends LitElement {
   // The form controls' rules live in `form-styles.ts`, shared with the page
   // editor, and go back in here in pieces at the places they were cut from,
   // so this sheet's cascade is the same rule for rule.
-  static override styles = [css`
+  static override styles = [libraryTicksStyles, libraryModeStyles, css`
     :host {
       /* Column so the footer can sit under a layout that takes the rest of the
          height, rather than being pushed off the bottom of the page. */
@@ -3996,9 +3998,6 @@ export class WristAssistantPanel extends LitElement {
     .layout.cols-1 .doc-row .doc-shape { flex: 0 1 auto; min-width: 0; }
     .layout.cols-1 .doc-row .doc-shape .paren { display: none; }
     .layout.cols-1 .bar-row.doc-places { flex-wrap: nowrap; }
-    .layout.cols-1 .doc-places .doc-on { flex: 0 1 auto; min-width: 0; flex-wrap: nowrap; }
-    .layout.cols-1 .doc-places .doc-chip { min-width: 0; }
-    .layout.cols-1 .doc-places .doc-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   `, chromeRuns.card, css`
     /* The left column does not scroll: the Pages card keeps its one line and
        the Layers card takes the rest, scrolling its own rows. The Background
@@ -4619,64 +4618,6 @@ export class WristAssistantPanel extends LitElement {
        to put it somewhere else. Ruled off from the drawing tools below it. */
     .doc-places { gap: 4px 8px; padding-top: 0; padding-bottom: 7px; border-bottom: 1px solid var(--wa-line); }
     .doc-on-pre { font-size: 11.5px; font-weight: 600; color: var(--wa-muted); flex: none; }
-    .doc-on { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
-    /* A chip per device the design is on: a label, not a control. Every one
-       is lit, the copy the editor has open included, because they are all the
-       same design and all equally on. Split into the name and the trash for
-       that device, the way a page tab is. */
-    .doc-chip {
-      display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 0 0 9px;
-      border-radius: 999px; font-size: 11.5px; font-weight: 600; overflow: hidden;
-      background: var(--wa-card);
-      border: 1px solid transparent; color: var(--wa-ink); white-space: nowrap;
-    }
-    .doc-chip > svg { width: 13px; height: 13px; opacity: .85; }
-    /* Red on the plain input ground, not on the accent: it is the one control
-       on the chip that takes something away, and it should not look like part
-       of the device it removes. */
-    button.doc-trash {
-      display: inline-flex; align-items: center; justify-content: center; flex: none;
-      width: 24px; align-self: stretch; padding: 0; margin-left: 4px;
-      border: 0; border-left: 1px solid color-mix(in srgb, var(--wa-accent-ink) 25%, transparent);
-      font: inherit; background: var(--wa-input); color: #FF453A; cursor: pointer;
-    }
-    button.doc-trash svg.ui-icon { width: 13px; height: 13px; }
-    button.doc-trash:hover:not(:disabled) { background: color-mix(in srgb, #FF453A 22%, var(--wa-input)); }
-    button.doc-trash:disabled { color: var(--wa-muted); opacity: .6; cursor: default; }
-    button.doc-trash:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
-    /* Armed: the trash becomes the question, filled red and wide enough for
-       the word, so the second press is plainly a different button. */
-    button.doc-trash.armed {
-      width: auto; padding: 0 8px; background: #FF453A; color: #fff;
-      border-left-color: color-mix(in srgb, #fff 35%, transparent);
-    }
-    button.doc-trash.armed:hover { background: color-mix(in srgb, #fff 12%, #FF453A); }
-    button.doc-trash .sure { font-size: 11px; font-weight: 700; letter-spacing: .01em; }
-    /* "Add to a device" and its menu. A dashed edge so it reads as the empty
-       place after the chips rather than as one more device. */
-    .place-tool { position: relative; display: inline-flex; }
-    .place-tool .pop-menu { left: 0; right: auto; min-width: 200px; }
-    button.doc-add {
-      display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 8px;
-      border-radius: 999px; font: inherit; font-size: 11.5px; font-weight: 600;
-      background: transparent; border: 1px dashed var(--wa-line-strong); color: var(--wa-muted);
-      white-space: nowrap; cursor: pointer;
-    }
-    button.doc-add:hover:not(:disabled) { border-style: solid; border-color: var(--wa-accent); color: var(--wa-ink); }
-    button.doc-add:disabled { opacity: .5; cursor: default; }
-    button.doc-add svg { width: 12px; height: 12px; }
-    .pop-menu .row.place-row { display: flex; align-items: center; gap: 7px; }
-    .place-row svg { width: 14px; height: 14px; flex: none; opacity: .8; color: var(--dc, inherit); }
-    /* Each device's color on the row's left edge, as in the Pages tab's menus. */
-    .pop-menu .row.place-row { box-shadow: inset 3px 0 0 var(--dc, transparent); }
-    .place-row .place-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .place-row .place-no { flex: none; font-size: 10.5px; font-weight: 600; color: var(--wa-muted); }
-    .place-row:disabled { opacity: .55; cursor: default; }
-    .place-row:disabled:hover { background: transparent; }
-    .place-note {
-      margin: 4px 4px 2px; max-width: 240px; font-size: 11px; line-height: 1.4; color: var(--wa-muted);
-      white-space: normal;
-    }
     /* The shape in brackets after the complication's name. Lighter than the
        name and the same size, so the pair reads as one line rather than as a
        heading with a subtitle. A note rides after it, so "nothing shown" and
@@ -5069,13 +5010,6 @@ export class WristAssistantPanel extends LitElement {
     .del-acts button { height: 32px; padding: 0 14px; }
     .xf-lead b.del-name { color: var(--wa-accent); }
   `, chromeRuns.canvasHeadTail, css`
-    .doc-pop .row { display: flex; align-items: center; gap: 8px; }
-    .doc-pop .row .why { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--wa-muted); }
-    .doc-pop .row .spacer { flex: 1; }
-    .doc-pop .row svg.ui-icon { width: 13px; height: 13px; opacity: .7; }
-    .doc-pop .row.danger { color: #FF453A; }
-    .doc-pop .doc-places-list, .doc-pop .doc-del { display: flex; flex-direction: column; gap: 1px; }
-    .doc-pop .doc-places-list { padding-left: 10px; }
     .pop-menu .row:disabled { opacity: .5; cursor: default; }
     .pop-menu .row:disabled:hover { background: transparent; }
     .pop-sep { height: 1px; margin: 4px 2px; background: var(--wa-line); }
@@ -14212,7 +14146,7 @@ export class WristAssistantPanel extends LitElement {
   /** Open or shut one of the preview bar's menus; opening one shuts the other.
    * A press anywhere outside the open menu's control shuts it, the same way
    * the complication picker closes. */
-  private toggleMenu(menu: "grid" | "case" | "tint" | "list" | "place" | "snap" | "add", next = this.openMenu !== menu) {
+  private toggleMenu(menu: "grid" | "case" | "tint" | "list" | "place" | "snap", next = this.openMenu !== menu) {
     this.openMenu = next ? menu : this.openMenu === menu ? undefined : this.openMenu;
     if (this.openMenu !== undefined) window.addEventListener("pointerdown", this.menuOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.menuOutside, { capture: true });
@@ -17967,22 +17901,18 @@ export class WristAssistantPanel extends LitElement {
    *
    * Unassigned is where New puts a design when no device is ticked, and from
    * the editor nothing said so: Save went quiet, the header said Synced, and
-   * the watch never got it. So it is said in words here, every time, with
-   * the canvas head's own Add to a device one click away. Before the first
-   * save there is nothing to add yet, which the line says instead.
+   * the watch never got it. So it is said in words here, every time. The
+   * line names the device strip over the preview rather than carrying a
+   * button of its own: the strip's ticks are the one way on, and they sit
+   * just below. Before the first save there is nothing to tick yet, which
+   * the line says instead.
    */
   private renderNotOnDeviceBanner(): TemplateResult | undefined {
     const cfg = this.draft?.config;
     if (!cfg || !this.openOnNoDevice) return undefined;
     const unsaved = this.draft?.baseRevision === null;
-    const row = this.openRow();
-    const family = supportedFamilies(cfg)[0];
-    const canAdd = this.canEdit && !unsaved && row !== undefined
-      && this.rowPlaces(row, family).some((p) => !p.on && p.owner.kind !== "library");
     return html`<div class="banner note link-note not-on-device">
       <span>${unsaved ? NOT_ON_A_DEVICE_UNSAVED_LINE : NOT_ON_A_DEVICE_LINE}</span>
-      ${canAdd ? html`<button class="link" ?disabled=${this.saving}
-        @click=${() => this.toggleMenu("add", true)}>Add to a device</button>` : nothing}
     </div>`;
   }
 
@@ -20576,6 +20506,7 @@ export class WristAssistantPanel extends LitElement {
       return html`
         <div class="card canvas-card">
           ${this.renderCanvasHead(cfg, layouts)}
+          ${this.renderCanvasDevices(cfg)}
           <div class="stage-area">
             <div class="stage-wrap"><div class="stage control-stage">${this.renderControlStage(cfg)}</div></div>
             ${this.renderValuesRow()}
@@ -20596,6 +20527,7 @@ export class WristAssistantPanel extends LitElement {
     return html`
       <div class="card canvas-card">
         ${this.renderCanvasHead(cfg, layouts)}
+        ${this.renderCanvasDevices(cfg)}
         <div class="stage-area">
           <div class="stage-wrap ${tiles ? "first-run" : ""}"
             style=${`--wa-ratio:${ratio};--wa-reserve:${reserve}px;--wa-zoom:${this.canvasZoom}`}>
@@ -20629,33 +20561,23 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The header over the canvas, one 48px row: what this is (the name, typed
-   * over in place, then shape and page, muted), where it lives (one chip per
-   * device), what is done to the whole of it (Add to a device, Duplicate,
-   * Delete), and a "···" menu for History.
+   * The header over the canvas, one row: what this is (the name, typed over
+   * in place, then shape and page, muted) and what is done to the whole of it
+   * (Undo, Redo, Duplicate, Delete). Where it lives is the device strip right
+   * under it (`renderCanvasDevices`), the same block a page's editor has.
    *
-   * It folds the three rows that used to sit here: the name with its actions,
-   * the devices with "Add to a device", and the tool row. The tools went onto
-   * the floating toolbar. A document that still holds a shape and a Control
-   * Center control keeps its segmented switch, here, in place of the shape's
-   * name.
+   * It folds the rows that used to sit here: the name with its actions and
+   * the tool row. The tools went onto the floating toolbar. A document that
+   * still holds a shape and a Control Center control keeps its segmented
+   * switch, here, in place of the shape's name.
    */
   private renderCanvasHead(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
     const f = supportedFamilies(cfg)[0];
     const seg = this.hasControlTab(cfg);
     const paged = usesPages(cfg) && !this.inControlView;
     const pagePart = paged ? `page ${this.shownPage()} of ${pagesSpecOf(cfg).count}` : "";
-    const row = this.openRow();
-    const on = row ? this.rowPlaces(row, f).filter((p) => p.on) : [];
     return html`<div class="cv-head">
       ${this.renderNameField(cfg)}
-      ${row && on.length > 0 || this.canEdit ? html`<span class="cv-part cv-where"><span class="cv-slash" aria-hidden="true">/</span>
-        <span class="cv-devices">
-          ${row && on.length > 0 ? html`<span class="doc-on" role="group" aria-label="Devices this complication is on">
-            ${on.map((place) => this.renderPlaceChip(row, place))}
-          </span>` : nothing}
-          ${this.canEdit ? this.renderAddToDevice(cfg) : nothing}
-        </span></span>` : nothing}
       <span class="cv-part cv-what"><span class="cv-slash" aria-hidden="true">/</span>
       ${seg
         ? html`${this.renderShapeSwitch(cfg, layouts)}${pagePart ? html`<span class="cv-shape">${pagePart}</span>` : nothing}`
@@ -20668,12 +20590,68 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
+   * The device strip under the canvas head, the page editor's: the question,
+   * a tick per device of this design's kind (ticked where it is), then the
+   * count. Ticking writes a linked copy there (`addRowTo`); unticking arms
+   * once and then takes it off (`removeRowFrom`), so one slip of the pointer
+   * does not pull a design off a watch. The last copy goes to Unassigned
+   * rather than being deleted. The same block, in the same place, as a
+   * page's.
+   */
+  private renderCanvasDevices(cfg: CustomComplicationConfig) {
+    const question = "Which devices do you want this on?";
+    const row = this.openRow();
+    if (!row) {
+      return html`<div class="lib-on over-stage none" role="group" aria-label=${question}>
+        <span class="lib-on-l">${question}</span><span class="lib-on-n">Save it first. Then tick a device to put it there.</span>
+      </div>`;
+    }
+    const f = supportedFamilies(cfg)[0];
+    const places = this.rowPlaces(row, f).filter((p) => p.owner.kind !== "library");
+    const on = places.filter((p) => p.on).length;
+    const chips = places.map((place) => {
+      const target = place.owner;
+      const label = placeLabel(target, f);
+      const block = place.on ? undefined : this.placeBlock(place, f, label);
+      const armed = this.placeTrashArm === target.ownerId;
+      const hue = this.deviceColorOf(target.ownerId);
+      const stuck = block?.why
+        ?? (place.on && place.last && this.libraryOwner() === undefined ? `This integration has no ${UNASSIGNED_LABEL} list to move it to. Delete removes it.` : undefined)
+        ?? (!this.canEdit ? "Only an administrator can change where this is." : undefined);
+      const title = stuck ?? (place.on
+        ? armed ? `Press again to take it off ${label}.` : place.last ? `On ${label}. Click to take it off and keep it under ${UNASSIGNED_LABEL}.` : `On ${label}. Click to take it off.`
+        : `Put it on ${label}. Saving it saves it everywhere it is.`);
+      return html`<button type="button" class="lt-chip ${place.on ? "on" : "off"} ${stuck === undefined ? "" : "stuck"}"
+        style=${hue ? `--dc:${hue}` : nothing} title=${title} ?disabled=${this.saving}
+        aria-pressed=${place.on ? "true" : "false"} aria-disabled=${stuck === undefined ? "false" : "true"}
+        @click=${() => {
+          if (stuck !== undefined) return;
+          if (!place.on) { void this.addRowTo(row, target, true); return; }
+          if (!armed) { this.armPlaceTrash(target.ownerId); return; }
+          this.disarmPlaceTrash();
+          void this.removeRowFrom(row, place, true, true);
+        }}><span class="lt-box" aria-hidden="true"></span><span class="lt-name">${label}</span>${armed
+          ? html`<em>sure?</em>`
+          // A device that cannot take it says why in a word on the chip, the
+          // way the old menu's row did, not only in a tooltip a touch screen
+          // never shows.
+          : block ? html`<em>${block.tag}</em>` : nothing}</button>`;
+    });
+    return html`<div class="lib-on over-stage ${on === 0 ? "none" : ""}" role="group" aria-label=${question}>
+      <span class="lib-on-l">${question}</span>
+      <div class="lt-ticks"><span class="lt-chips" role="group" aria-label="Devices">${chips}</span></div>
+      <span class="lib-on-n">${on === 0 ? "On no device yet" : `On ${on} ${on === 1 ? "device" : "devices"}`}</span>
+    </div>`;
+  }
+
+  /**
    * What is done to the whole complication, as icon buttons at the right of
    * the canvas head: Undo and Redo, then Duplicate and Delete, parted by
    * hairlines. Undo takes back inspector edits too, so it stands with the
    * whole-document actions rather than the canvas's view controls. Delete arms
    * the way it always did: one press asks in place, and a design on several
-   * devices asks which. Add to a device stands with the device chips instead.
+   * devices asks which. Putting it on a device, or taking it off one, is the
+   * device strip under the head.
    */
   private renderDocActions(cfg: CustomComplicationConfig) {
     if (!this.canEdit) return nothing;
@@ -20721,15 +20699,16 @@ export class WristAssistantPanel extends LitElement {
         : n === 1
           ? html`${quoted} is on <b>${hereName}</b>. A face or widget using it loses it.`
           : html`${quoted} is on ${n} devices: <b>${[hereName, ...others].join(", ")}</b>. A face or widget using it loses it.`;
-    // The way to keep the design while freeing the device: the × on its chip
-    // in the canvas head. Only said where an Unassigned list exists to hold it.
+    // The way to keep the design while freeing the device: unticking it in
+    // the device strip over the preview. Only said where an Unassigned list
+    // exists to hold the last copy.
     const keep = !unsaved && !shelved && this.libraryOwner() !== undefined;
     return html`<dialog class="xf del-dialog" @close=${close}>
       ${this.dialogHead(`Delete “${name}”?`, "", close)}
       <div class="xfer-body">
         <div class="xf-lead warn">${uiIcon("info")}<span>${where}</span></div>
         ${unsaved ? nothing : html`<div class="xf-lead">${uiIcon("info")}<span>This cannot be undone.${keep
-          ? html` To take it off a device and keep the design, close this and press the × on the device chip instead. The last copy goes to ${UNASSIGNED_LIST}.` : nothing}</span></div>`}
+          ? html` To take it off a device and keep the design, close this and untick the device in the strip over the preview instead (click its ticked chip twice). The last copy goes to ${UNASSIGNED_LIST}.` : nothing}</span></div>`}
         <div class="del-acts">
           <button class="ghost" @click=${close}>Cancel</button>
           ${!unsaved && n > 1
@@ -20739,35 +20718,6 @@ export class WristAssistantPanel extends LitElement {
         </div>
       </div>
     </dialog>`;
-  }
-
-  /**
-   * "Add to a device", a button with its own menu on the canvas head: the
-   * picker's own Devices menu, on the complication the editor has open. See
-   * `renderAddPlaceRow` for what a row does. It is there even when it cannot
-   * act, disabled with the reason, so the way to put a design on a second
-   * watch is always findable.
-   */
-  private renderAddToDevice(cfg: CustomComplicationConfig) {
-    const row = this.openRow();
-    const family = supportedFamilies(cfg)[0];
-    const places = row ? this.rowPlaces(row, family) : [];
-    const rest = places.filter((p) => !p.on && p.owner.kind !== "library");
-    const why = !row
-      ? "Save it first. Then it can go on another device too."
-      : rest.length === 0
-        ? "There is no other device of this kind to put it on."
-        : undefined;
-    const open = this.openMenu === "add" && why === undefined;
-    return html`<span class="case-tool add-tool" data-menu="add">
-      <button class="cv-act" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
-        ?disabled=${this.saving || why !== undefined} title=${why ?? "Put this complication on another device too"}
-        @click=${() => this.toggleMenu("add")}>Add to a device<span class="caret">${uiIcon("chevron")}</span></button>
-      ${open && row ? html`<div class="pop-menu doc-pop" role="menu" aria-label="Add to a device">
-        ${rest.map((place) => this.renderAddPlaceRow(row, place, family))}
-        <div class="place-note">A linked copy is written there. Saving this one saves it there too.</div>
-      </div>` : nothing}
-    </span>`;
   }
 
   private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, deviceCase: PreviewCase, overlay?: TemplateResult) {
@@ -21377,89 +21327,7 @@ export class WristAssistantPanel extends LitElement {
     return cfg.control !== undefined && ownerSupportsControls(this.selectedOwner);
   }
 
-  /**
-   * One device this design is on, and a trash that takes it off again.
-   *
-   * Every chip is lit, the open copy's included: they are all the same design
-   * and all equally on. The chip itself does nothing when it is clicked, since
-   * every copy of a link is the same document. Opening another device's copy
-   * would reload the editor onto a record that draws exactly what is already
-   * on the screen.
-   *
-   * The trash arms before it writes, the way a page's does: one press asks,
-   * the next one does it, and it forgets after a few seconds. It is the
-   * picker's own untick underneath, so the design's last copy anywhere is
-   * moved to Unassigned rather than deleted.
-   *
-   * Every chip's trash works, the open copy's included. Its record cannot be
-   * deleted out from under the draft built on it, so that one lands the
-   * editor somewhere first: on another copy of the link, or on the
-   * Unassigned copy the shelving makes. Both are this same document, so the
-   * screen does not change. The only trash that cannot act is the last copy
-   * of a design that is already unassigned, which has nowhere left to go.
-   */
-  private renderPlaceChip(row: PickerRow, place: DevicePlace) {
-    const target = place.owner;
-    const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
-    const icon = target.kind === "library" ? "layers" : target.kind === "iphone" ? "phone" : "watch";
-    const here = place.copies.some((c) => this.isOpenCopy(c));
-    const stuck = place.last && target.kind === "library"
-      ? `It is under ${UNASSIGNED_LABEL} already. Delete removes it.`
-      : place.last && this.libraryOwner() === undefined
-        ? `This integration has no ${UNASSIGNED_LABEL} list to move it to. Delete removes it.`
-        : here && this.draft?.baseRevision === null
-          ? "This complication has never been saved. Save it first."
-          : undefined;
-    const off = place.last
-      ? `Take it off ${label} and keep it under ${UNASSIGNED_LABEL}`
-      : `Take it off ${label}. A face or widget already using it keeps it.`;
-    const armed = this.placeTrashArm === target.ownerId;
-    const ask = `Press again to take it off ${label}.`;
-    // The Unassigned chip has no x: there is nowhere further to take it off to.
-    const mayEdit = this.canEdit && target.kind !== "library";
-    // The device's own color (`device-colors.ts`), the one its tab wears.
-    const hue = target.kind === "library" ? undefined : this.deviceColorOf(target.ownerId);
-    return html`<span class="doc-chip ${hue ? "hued" : ""}" aria-current=${here ? "true" : nothing}
-      style=${hue ? `--chip-c: ${hue}` : nothing}>
-      ${uiIcon(icon)}<span class="doc-chip-name">${label}</span>
-      ${mayEdit ? html`<button type="button" class="doc-trash ${armed ? "armed" : ""}"
-        ?disabled=${this.saving || stuck !== undefined}
-        title=${stuck ?? (armed ? ask : off)} aria-label=${stuck ?? (armed ? ask : `Take ${row.name} off ${label}`)}
-        @click=${() => {
-          if (!armed) { this.armPlaceTrash(target.ownerId); return; }
-          this.disarmPlaceTrash();
-          void this.removeRowFrom(row, place, true, true);
-        }}>${armed ? html`<span class="sure">sure?</span>` : uiIcon("close")}</button>` : nothing}
-    </span>`;
-  }
-
-  /**
-   * One device offered in "Add to a device". It calls the picker's own write,
-   * so the seat check, the making of the design's first link and the wording
-   * of what happened are one set of rules. A device that cannot take it is
-   * listed with the reason rather than left out.
-   *
-   * Never the library. Unassigned is where a design waits when it is on
-   * nothing, not one more place to be at the same time, and taking the last
-   * device off already puts it there. Only devices of this design's kind are
-   * offered; crossing from a watch to an iPhone is "Duplicate as". A control has no shape to cross, so it is
-   * offered to both kinds.
-   */
-  private renderAddPlaceRow(row: PickerRow, place: DevicePlace, family: FamilyKind | undefined) {
-    const target = place.owner;
-    const label = placeLabel(target, family);
-    const icon = target.kind === "iphone" ? "phone" : "watch";
-    const block = this.placeBlock(place, family, label);
-    const title = block?.why ?? `Put it on ${label}. Saving it saves it everywhere it is.`;
-    return html`<button type="button" class="row place-row" role="menuitem" style=${this.deviceStyle(target.ownerId)}
-      ?disabled=${this.saving || block !== undefined} title=${title}
-      @click=${() => { this.toggleMenu("add", false); void this.addRowTo(row, target, true); }}>
-      ${uiIcon(icon)}<span class="place-name">${label}</span>
-      ${block ? html`<small class="place-no">${block.tag}</small>` : nothing}
-    </button>`;
-  }
-
-  /** Why one device cannot take this design, in a word for the row and a
+  /** Why one device cannot take this design, in a word for a tag and a
    * sentence for its tooltip. The same two reasons the picker's menu gives. */
   private placeBlock(place: DevicePlace, family: FamilyKind | undefined, label: string) {
     const owner = this.ownerOf(place.owner.ownerId);

@@ -78,6 +78,7 @@ import {
 import { clearPageRefs as clearPageRefsOn } from "./page-links-io.js";
 import { deviceColor, deviceColorsCache } from "../device-colors.js";
 import { type LibraryItem, devicesFor, libraryItem, pagesDocumentFor, sameId } from "../library/model.js";
+import { linkBadgeStyles, renderLinkBadge } from "../library/link-badge.js";
 import { renderPageRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
 import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
@@ -101,8 +102,8 @@ import {
 import {
   dirtyElsewhereText,
   hereTickText,
-  libraryBadgeText,
   libraryDeleteChoices,
+  libraryLinkBadge,
   restRows,
   restoreOthersText,
   unsavedTicksText,
@@ -3500,13 +3501,11 @@ export class WaPageEditor extends LitElement {
    * read; a page not saved yet says to save first.
    */
   private renderPageTicks(page: WatchPage): TemplateResult | typeof nothing {
-    // In library mode the ticks stand in the bar (`renderBarDevices`).
-    if (this.libraryItem !== undefined) return nothing;
     const body = this.pageTicksBody(page);
     if (body === undefined) return nothing;
     const lib = this.lib.library;
     const count = lib === undefined ? 0 : (libraryItem(lib, "pages", watchPageId(page))?.owners.length ?? 0);
-    return renderBarDevices("pages", count, body, "card");
+    return renderBarDevices("pages", count, body, "stage");
   }
 
   /** The ticks themselves, or the save-first line; undefined when there is
@@ -3536,19 +3535,6 @@ export class WaPageEditor extends LitElement {
       ...(admin === undefined ? {} : { admin }),
       locked: (ownerId) => this.pageTickLocked(entry.id, ownerId),
     }, (ownerId, on) => { void tickItem(this.hass, store, ownerId, "pages", entry.id, on); });
-  }
-
-  /** Library mode's device block in the bar: how many devices have the
-   * page, then its ticks. Nothing before the page or the library is read. */
-  private renderBarDevices(draft: WatchPagesDraft | undefined): TemplateResult | typeof nothing {
-    const lib = this.lib.library;
-    const item = this.libraryItem;
-    // The one page of the item, whether or not a row is picked yet.
-    const page = draft === undefined ? undefined : watchPagesOf(draft.document)[0];
-    if (lib === undefined || item === undefined || page === undefined) return nothing;
-    const body = this.pageTicksBody(page);
-    if (body === undefined) return nothing;
-    return renderBarDevices("pages", libraryItem(lib, "pages", item.id)?.owners.length ?? 0, body);
   }
 
   /**
@@ -3697,7 +3683,6 @@ export class WaPageEditor extends LitElement {
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
       <button class="tb-btn tb-back" title="Back to the Pages tab" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>Pages</span></button>
       ${renderLibraryTag()}
-      ${this.renderBarDevices(draft)}
       <span class="spacer"></span>
       ${this.renderTopMenu(draft)}
       ${draft ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
@@ -4198,7 +4183,7 @@ export class WaPageEditor extends LitElement {
     // In library mode the page stands alone: no order, no Hide here, and no
     // badge naming the preview device's sharers.
     const inLibrary = this.libraryItem !== undefined;
-    const shared = this.watchId === undefined || inLibrary ? undefined : libraryBadgeText(this.lib.library, "pages", id, this.watchId, this.linkDevices);
+    const shared = this.watchId === undefined || inLibrary ? undefined : libraryLinkBadge(this.lib.library, "pages", id, this.watchId, this.linkDevices, (o) => this.colorOf(o));
     const where = deviceWord(this.linkKind);
     return html`<div class="layer pe-page-row ${on ? "hl" : ""} ${hidden ? "dim" : ""} ${dragging ? "pe-dragging" : ""} ${menu ? "menu-open" : ""}"
       data-page=${id} role="listitem" tabindex="0" aria-current=${on ? "true" : "false"} aria-label=${name}
@@ -4225,7 +4210,7 @@ export class WaPageEditor extends LitElement {
       </span>
       <span class="right">
         <span class="badges">
-          ${shared === undefined ? nothing : html`<span class="badge pe-linked" title=${shared}>${shared}</span>`}
+          ${shared === undefined ? nothing : renderLinkBadge(shared.others, shared.title, shared.colorOf)}
           ${smart ? html`<span class="badge pe-smart">smart</span>` : nothing}
           ${hidden ? html`<span class="badge">hidden</span>` : nothing}
         </span>
@@ -4521,6 +4506,7 @@ export class WaPageEditor extends LitElement {
       : "Drag a tile to move it, or onto another tile to swap the two. Drag an edge or the corner of the selected tile to resize it. Arrow keys move the selected tile.";
     return html`<div class="card canvas-card lit pe-canvas" aria-label="Page">
       ${this.renderCanvasHead(page, watches, facts, phone ? PHONE_FRAME_TEXT : found === undefined ? `${watchCase.label}, this watch's size is not known` : undefined, tile)}
+      ${this.renderPageTicks(page)}
       <div class="stage-area pe-stage-area">
         ${this.renderStageTools(page, headers, smart, phone)}
         <div class="pe-stage-body">
@@ -4984,7 +4970,6 @@ export class WaPageEditor extends LitElement {
   private renderPageCards(page: WatchPage, host: WatchPagesEditorHost | undefined): TemplateResult {
     const id = watchPageId(page);
     return html`<div class="pe-page-insp">
-      ${this.renderPageTicks(page)}
       ${this.renderRulesCard(page)}
       ${host === undefined ? nothing : renderPageLookCard(host)}
       ${this.renderOnWatchCard(page, host)}
@@ -5344,7 +5329,7 @@ export class WaPageEditor extends LitElement {
   // after and win the ties. The two modules' rules come last, so a module can
   // size its own parts of this element (its dialog, say) without outranking
   // anything.
-  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchPagePreviewStyles, watchFrameStyles, phoneFrameStyles, libraryTicksStyles, rowPictureStyles, libraryRestStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchPagePreviewStyles, watchFrameStyles, phoneFrameStyles, libraryTicksStyles, rowPictureStyles, linkBadgeStyles, libraryRestStyles, css`
     /* A column, so the foot bar (config-foot.ts) can take the space left
        at the foot of a short editor; --cf-pad is the padding it reaches
        through to sit edge to edge. */
@@ -5869,13 +5854,6 @@ export class WaPageEditor extends LitElement {
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
     /* An iPhone with no pages: its way to start. */
     .pe-empty-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px; }
-
-    /* The badge of a page other devices have too: the device it is also on,
-       cut short in a narrow list (its title holds the whole name). */
-    .badge.pe-linked {
-      max-width: 140px; overflow: hidden; text-overflow: ellipsis; display: inline-block; line-height: 20px;
-      color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 12%, transparent);
-    }
 
     /* The page's tick row, at the top of its settings (renderPageTicks):
        a chip per device, the library's ticks (libraryTicksStyles). */

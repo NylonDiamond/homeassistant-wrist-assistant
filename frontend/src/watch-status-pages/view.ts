@@ -26,6 +26,8 @@ import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import { type UiIconName, uiIcon } from "../ui-icons.js";
 import { type PhonePagesLayout, renderDeviceFrame } from "../phone-frame.js";
+import { linkBadgeStyles, renderLinkBadge } from "../library/link-badge.js";
+import type { LinkBadge } from "../watch-pages/library-editing.js";
 import { type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOpen } from "../watch-pages/fold-memory.js";
 import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import type { JsonObject } from "../watch-pages/model.js";
@@ -105,13 +107,14 @@ export interface StatusPagesViewHost {
    * iPhone", or undefined for one on this device alone
    * (`libraryBadgeText`). */
   linkBadge?(page: JsonObject): string | undefined;
+  /** The same badge drawn as an icon per other device, in its color, with
+   * that sentence as its tooltip (`libraryLinkBadge`, `library/link-badge.ts`).
+   * Undefined for a page on this device alone. A host that gives it is
+   * drawn with it, and `linkBadge` goes unused. */
+  linkDevices?(page: JsonObject): LinkBadge | undefined;
   /** The line under the page list when some pages are on other devices too
    * (`statusSharedText`). */
   readonly sharedLine?: string;
-  /** A page's tick row in its Page card: a chip per device, ticked where
-   * the page is (`library/ticks.ts`). Absent with one device, before the
-   * library is read, and on an integration older than it. */
-  ticks?(page: JsonObject): TemplateResult;
   /** Delete a page. One other devices have too asks first: off this device
    * only, or out of the library. Without it, Delete is an edit at once, as
    * it always was. */
@@ -387,6 +390,17 @@ function rowColor(host: StatusPagesViewHost, row: JsonObject): string {
 
 // ── the Status pages card ────────────────────────────────────────────────
 
+/** A page row's badge for the other devices that have the page: the device
+ * icons when the host gives them, else the sentence. Either way the tooltip
+ * adds that an edit here reaches them too. */
+function linkBadge(host: StatusPagesViewHost, page: JsonObject): TemplateResult | typeof nothing {
+  const devices = host.linkDevices?.(page);
+  if (devices !== undefined) return renderLinkBadge(devices.others, `${devices.title}. An edit here shows there too.`, devices.colorOf);
+  const shared = host.linkBadge?.(page);
+  if (shared === undefined) return nothing;
+  return html`<span class="badge sp-linked" title=${`${shared}. An edit here shows there too.`}>${shared}</span>`;
+}
+
 function pageRow(host: StatusPagesViewHost, page: JsonObject, index: number, count: number, shown: JsonObject | undefined): TemplateResult {
   const id = statusPageId(page);
   const name = statusPageName(page);
@@ -395,7 +409,6 @@ function pageRow(host: StatusPagesViewHost, page: JsonObject, index: number, cou
   const move = (from: string, to: number) => host.edit((d) => moveStatusPage(d, from, to));
   const drag = dragHandlers(host, "page", id, index, move);
   const pick = () => { if (!on) selectStatusPage(host, id); };
-  const shared = host.linkBadge?.(page);
   const single = host.single === true;
   return html`<div class="layer sp-page-row ${on ? "hl" : ""}" data-page=${id} role="listitem" tabindex="0"
     draggable=${host.busy || single ? "false" : "true"} aria-current=${on ? "true" : "false"} aria-label=${name || "Untitled page"}
@@ -410,7 +423,7 @@ function pageRow(host: StatusPagesViewHost, page: JsonObject, index: number, cou
     ${thumb(host, "doc.text.fill", "#5B8FD4")}
     <span class="name"><b><span class="nm-t">${name || "Untitled page"}</span></b><small>${plural(rows, "row", "rows")}</small></span>
     <span class="right">
-      <span class="badges">${shared === undefined ? nothing : html`<span class="badge sp-linked" title=${`${shared}. An edit here shows there too.`}>${shared}</span>`}${isSystemStatusPage(page) ? html`<span class="badge" title="One of the app's starter pages. It is edited and put on devices like any other.">starter</span>` : nothing}</span>
+      <span class="badges">${linkBadge(host, page)}${isSystemStatusPage(page) ? html`<span class="badge" title="One of the app's starter pages. It is edited and put on devices like any other.">starter</span>` : nothing}</span>
       <span class="acts">
         ${single ? nothing : html`<button type="button" class="icon" ?disabled=${host.busy || index === 0} title="Move up" aria-label=${`Move ${name} up`}
           @click=${() => move(id, index - 1)}>${uiIcon("up")}</button>
@@ -1028,15 +1041,14 @@ function renderLookCards(host: StatusPagesViewHost, page: JsonObject): TemplateR
     </div>`;
 }
 
-/** The Page card: the name, the tick row when the page can be on other
- * devices, and Delete. */
+/** The Page card: the name and Delete. The devices the page is on are in
+ * the strip under the canvas head, as in every editor. */
 function renderPageCard(host: StatusPagesViewHost, page: JsonObject): TemplateResult {
   const pageId = statusPageId(page);
   const name = statusPageName(page);
   return card(host, "page", "page", "Page", html`<fieldset class="sp-body" ?disabled=${host.busy} aria-label="Page">
     ${textField("Name", name, (v) => host.edit((d) => renameStatusPage(d, pageId, v), `page:${pageId}:name`), { placeholder: "Page Name" })}
     ${isSystemStatusPage(page) ? html`<div class="hint ts-under">One of the app's starter pages. It is edited, put on devices and deleted like any other.</div>` : nothing}
-    ${host.ticks?.(page) ?? nothing}
     <div class="sp-acts">
       <button type="button" class="pe-btn pe-danger" ?disabled=${host.busy} title="Delete this status page"
         @click=${() => deletePage(host, pageId)}>${uiIcon("delete")}<span>Delete page</span></button>
@@ -1185,17 +1197,18 @@ export const statusPagesViewStyles = css`
   .sp-pages-card > .lc-note, .sp-rows-card > .lc-note { margin: 8px 12px; color: var(--wa-muted); }
   .sp-rows-card > .lc-note.sp-drag-note { margin-top: 0; font-size: 11.5px; }
   .sp-pages-card > .lc-note.sp-shared-note { margin-top: 0; font-size: 11.5px; }
-  /* The badge of a status page other devices have too, the page editor's
-     (\`.badge.pe-linked\`):
-     cut short in a narrow list, its title holds the whole name. */
+  /* The badge of a status page other devices have too: the device icons
+     (linkBadgeStyles, here because the editors take this sheet) for a host
+     that gives \`linkDevices\`, else the sentence, cut short in a narrow
+     list, its title holding the whole name. */
+  ${linkBadgeStyles}
   .badge.sp-linked {
     max-width: 140px; overflow: hidden; text-overflow: ellipsis; display: inline-block; line-height: 20px; white-space: nowrap;
     color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 12%, transparent);
   }
   .lc-btn.on { box-shadow: var(--wa-ring); }
-  /* A status page's tick row in its Page card (libraryTicksStyles). */
-  .sp-lib { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
-  .sp-lib-h { font-size: 11.5px; font-weight: 600; color: var(--wa-muted); }
+  /* The save-first line in place of a status page's ticks, in the strip
+     under the canvas head (libraryTicksStyles has the ticks). */
   .sp-lib-hint { margin: 0; font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
   .layer .acts button.icon { display: inline-grid; place-items: center; padding: 0; }
   .layer .acts button.icon:disabled { opacity: .35; cursor: default; }

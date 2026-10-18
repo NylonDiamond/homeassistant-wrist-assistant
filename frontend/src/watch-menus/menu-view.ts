@@ -173,8 +173,9 @@ export interface MenusViewHost {
    * undefined while there is no pages draft or no such page. */
   switcherSettings?(pageId: string): SwitcherSettingsHost | undefined;
   /** The foot of a menu's row in the Menus card: which library menu this
-   * device uses for it, its name, Used by with a tick per device, and Make
-   * a copy for this watch (the editor's `libraryHead`). Absent, or nothing,
+   * device uses for it, its name, and Make a copy for this watch (the
+   * editor's `libraryHead`; the devices that use it are in the strip under
+   * the canvas head). Absent, or nothing,
    * before the library is read, and for the page switcher. */
   menuFoot?(menu: MenusSection): TemplateResult | typeof nothing;
   /** The badge on a menu's row, after its count: the library menu's own
@@ -1314,8 +1315,9 @@ function renderEntityMenuCard(host: MenusViewHost): TemplateResult {
 export const MENU_PICK_NOTE = "Click a slot on the watch to change what it does.";
 
 /** The shown menu's own settings, with no slot selected: what it is and its
- * cards. Which library menu it is (its name, Used by and the copy) is the
- * editor's card under the Menus list on the left. */
+ * cards. Which library menu it is (its name and the copy) is the foot of
+ * its row in the Menus list on the left, and the devices that use it are in
+ * the strip under the canvas head. */
 function renderMenuSettings(host: MenusViewHost, menu: MenusSection): TemplateResult {
   const cards = menu === "anywhere" ? renderAnywhereStyleCards(host)
     : menu === "switcher" ? renderSwitcherStyleCard(host)

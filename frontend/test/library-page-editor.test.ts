@@ -82,15 +82,16 @@ describe("the page editor's devices, from the library", () => {
   it("badges a page other devices have too, and not one only here", async () => {
     const { body } = await editor();
     const text = body();
-    expect(text).toMatch(/pe-linked[^>]*>Also on Jesse's iPhone</);
+    // An iPhone icon, the sentence its tooltip.
+    expect(text).toMatch(/badge lk-badge[^>]*title=Also on Jesse's iPhone[\s\S]*?<rect x="6" y="2\.5"/);
     // Hall and Yard, not Mine.
-    expect(text.match(/badge pe-linked/g)).toHaveLength(2);
+    expect(text.match(/badge lk-badge/g)).toHaveLength(2);
   });
 
   it("draws a tick per device in the page's settings, this one locked on", async () => {
     const { ticks, phone } = await editor();
     const hall = ticks(HALL);
-    expect(hall).toMatch(/lib-on card[\s\S]*Which devices do you want this on\?/);
+    expect(hall).toMatch(/lib-on over-stage[\s\S]*Which devices do you want this on\?/);
     expect(hall).toContain("Jesse's Watch");
     expect(hall).toContain("Jesse's iPhone");
     expect(hall).toContain("On this watch. Delete takes the page off it.");

@@ -247,7 +247,7 @@ describe("the library", () => {
     expect(d.label).toBe("Not on a device yet");
     // The tooltip used to point at an "Appears on" control that is gone.
     expect(d.title).not.toContain("Appears on");
-    expect(d.title).toContain("Add it to a device");
+    expect(d.title).toContain("Tick a device over the preview");
     expect(d.note).toBeUndefined();
     expect(d.resend).toBe(false);
     expect(d.refresh).toBe(false);
@@ -432,7 +432,7 @@ describe("How this works", () => {
 
   it("names the watch app for a design on a device, and the device for one on none", () => {
     expect(howItWorksSteps("watch", false)[2]).toBe("Save, then open Wrist Assistant on your watch to get it.");
-    expect(howItWorksSteps(undefined, true)[2]).toBe("Save, then add it to a device.");
+    expect(howItWorksSteps(undefined, true)[2]).toBe("Save, then tick a device over the preview.");
   });
 
   it("says where to pick it on each device", () => {

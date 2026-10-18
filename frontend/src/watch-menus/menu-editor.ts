@@ -36,9 +36,10 @@
 // and "Start fresh instead" opens the same ready screen.
 //
 // Each of the device's two menus is a menu of the home's library
-// (`library/`): the top of its settings names it, says which devices use it
-// (Used by, a round tick each, which moves that device to this menu) and
-// makes a copy for this device ("Make a copy for this watch"). Home
+// (`library/`): the foot of its row in the Menus card names it and makes a
+// copy for this device ("Make a copy for this watch"), and the strip under
+// the canvas head says which devices use it (a round tick each, which moves
+// that device to this menu). Home
 // Assistant maps a save back onto the library menu, so an edit here reaches
 // every device that uses it.
 //
@@ -1674,13 +1675,12 @@ export class WaMenuEditor extends LitElement {
 
   /**
    * The foot of a menu's row in the Menus card (Jesse, 2026-10-17: with the
-   * menu, not in the inspector, so a device is taken off or a copy made
-   * right there): the menu's name (a library menu has one, "Home menu"),
-   * Used by with a round tick per device (a device uses one menu of each
-   * kind, so a tick moves that device to this menu; the ticked ones cannot
-   * be unticked), and, for a menu other devices use too, "Make a copy for
-   * this watch". Clicks in it stop at the row, which picks the menu on a
-   * click. Nothing before the library is read.
+   * menu, not in the inspector, so a copy is made right there): the menu's
+   * name (a library menu has one, "Home menu") and, for a menu other devices
+   * use too, "Make a copy for this watch". The devices that use it are in
+   * the strip under the canvas head (`renderStageDevices`), as in every
+   * editor. Clicks in it stop at the row, which picks the menu on a click.
+   * Nothing before the library is read.
    */
   private libraryHead(menu: MenusSection): TemplateResult | typeof nothing {
     const used = this.libraryMenuOf(menu);
@@ -1706,7 +1706,6 @@ export class WaMenuEditor extends LitElement {
           }}
           @blur=${() => this.flushRename()} />
       </label>
-      ${!inLibrary && devices.length > 1 ? renderBarDevices("menus", used.owners.length, this.menuTicks(used, true), "card") : nothing}
       ${inLibrary ? this.renderLibraryDelete(used) : others.length === 0 ? nothing : html`<div class="me-lib-copy">
         <span class="me-lib-hint">An edit here changes it on ${joinWords(ownerWords(others, devices))} too.</span>
         <button type="button" class="pe-btn me-copy" ?disabled=${copyBlocked !== undefined || this.copying}
@@ -1720,8 +1719,9 @@ export class WaMenuEditor extends LitElement {
 
   /** The menu's tick row: Used by with a round tick per device (a device
    * uses one menu of each kind, so a tick moves that device to this menu;
-   * the ticked ones cannot be unticked). In the bar the count says "Used
-   * by", so the row's own words are left off there. */
+   * the ticked ones cannot be unticked). In the strip under the canvas head
+   * the question and the count say it, so the row's own words are left off
+   * there. */
   private menuTicks(used: LibraryMenu, inBar = false): TemplateResult {
     const store = this.lib.store!;
     const admin = this.hass?.user?.is_admin;
@@ -1738,14 +1738,21 @@ export class WaMenuEditor extends LitElement {
     }, (ownerId) => { void store.pickMenu(ownerId, used.unit, used.id); });
   }
 
-  /** Library mode's device block in the bar: how many devices use the
-   * menu, then its ticks. Nothing before the library is read. */
-  private renderBarDevices(): TemplateResult | typeof nothing {
-    const lib = this.lib.library;
+  /** The shown menu's devices, in the strip under the canvas head where
+   * every editor has them: how many devices use the menu, then its round
+   * ticks. Nothing before the library or the menus are read, and, on a
+   * device, with no other device to move to it. */
+  private renderStageDevices(host: MenusViewHost): TemplateResult | typeof nothing {
     const item = this.libraryItem;
-    const used = lib === undefined || item === undefined ? undefined : libraryMenu(lib, item.id);
+    const lib = this.lib.library;
+    let used: LibraryMenu | undefined;
+    if (item !== undefined) {
+      used = lib === undefined ? undefined : libraryMenu(lib, item.id);
+    } else {
+      used = this.linkDevices.length > 1 ? this.libraryMenuOf(shownMenu(host)) : undefined;
+    }
     if (used === undefined || this.lib.store === undefined || this.draft === undefined) return nothing;
-    return renderBarDevices("menus", used.owners.length, this.menuTicks(used, true));
+    return renderBarDevices("menus", used.owners.length, this.menuTicks(used, true), "stage");
   }
 
   /** Library mode's Delete from the library, for a menu no device uses (a
@@ -1963,10 +1970,10 @@ export class WaMenuEditor extends LitElement {
     </div>`;
   }
 
-  /** Library mode's bar: back to the Menus tab, the Library tag, the
-   * devices that use the menu with a round tick each, then the ··· menu
-   * and Save. No delivery and no way to Pages: a save reaches every device
-   * that uses the menu, each on its own. Preview as is in the strip over
+  /** Library mode's bar: back to the Menus tab, the Library tag, then the
+   * ··· menu and Save. No delivery and no way to Pages: a save reaches every
+   * device that uses the menu, each on its own. The devices that use it are
+   * in the strip under the canvas head, Preview as in the tool strip over
    * the stage. */
   private renderLibraryBar(draft: WatchMenusDraft | undefined, watches: readonly OwnerSummary[]): TemplateResult {
     const editing = draft !== undefined;
@@ -1976,7 +1983,6 @@ export class WaMenuEditor extends LitElement {
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
       <button class="tb-btn tb-back" title="Back to the Menus tab" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>Menus</span></button>
       ${renderLibraryTag()}
-      ${this.renderBarDevices()}
       <span class="spacer"></span>
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
@@ -2121,7 +2127,8 @@ export class WaMenuEditor extends LitElement {
   /**
    * The canvas card: the head (the shown menu's name, the watch's name as
    * text (the picker that changes it is in the top bar), the menu's facts
-   * and the watch's size, then Undo and Redo), the dotted stage
+   * and the watch's size, then Undo and Redo), the strip of devices that
+   * use the shown menu, the dotted stage
    * with the floating tool strip over the watch, and the hint under it.
    * Menus have no live state, so there is no Live strip.
    */
@@ -2148,6 +2155,7 @@ export class WaMenuEditor extends LitElement {
             @click=${() => this.redo()}>${uiIcon("redo")}</button>
         </span>
       </div>
+      ${this.renderStageDevices(host)}
       <div class="stage-area me-stage-area" @click=${this.onStageClick}>
         ${this.renderStageTools(host)}
         ${renderMenuHowTo(host)}
@@ -2490,9 +2498,8 @@ export class WaMenuEditor extends LitElement {
 
     :host([narrow]) { --cf-pad: 12px; }
 
-    /* The foot of a menu's row in the Menus card: the menu's name, Used by
-       with a round tick per device, and Make a copy for this watch
-       (libraryHead). */
+    /* The foot of a menu's row in the Menus card: the menu's name and Make
+       a copy for this watch (libraryHead). */
     .me-lib { display: flex; flex-direction: column; gap: 8px; padding: 0; font-weight: 400; }
     .me-lib-name { max-width: 420px; }
     .me-lib-name { display: flex; flex-direction: column; gap: 4px; }

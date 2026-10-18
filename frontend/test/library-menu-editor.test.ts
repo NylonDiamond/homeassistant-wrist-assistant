@@ -1,7 +1,8 @@
 // The menu editor's library parts, against a stand-in Home Assistant that
 // works the library as the server does (`library-editor-home.ts`): the menu's
-// name at the top of its settings, renamed once typing stops; Used by with a
-// round tick per device; "Make a copy for this watch"; the menu's name on its
+// name at the foot of its row, renamed once typing stops; a round tick per
+// device in the strip under the canvas head; "Make a copy for this watch";
+// the menu's name on its
 // row; the restore question naming the devices that use the menus it
 // changes; and every save passing an old record's `linkIds` through
 // untouched, as any key the editor does not know (Home Assistant ignores it).
@@ -13,7 +14,7 @@ import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
 import { forgetWatchMenusDraft, keptWatchMenusDraft, takeWatchMenusRecord } from "../src/watch-menus/draft.js";
 import { MENU_RENAME_MS, menuUnitOf } from "../src/watch-menus/menu-editor.js";
-import { type MenusViewHost, renderMenuInspector, renderMenusCard } from "../src/watch-menus/menu-view.js";
+import { type MenusViewHost, renderMenuInspector, renderMenusCard, selectMenu } from "../src/watch-menus/menu-view.js";
 import { type MenusDocument, setWatchMenuStyle } from "../src/watch-menus/model.js";
 import type { JsonObject } from "../src/watch-pages/model.js";
 import { connectLibrary, flat, libraryHome, settle } from "./library-editor-home.js";
@@ -86,9 +87,10 @@ describe("the menu editor's library menu", () => {
     expect(rows).toHaveLength(4);
     expect(rows[1]).toContain(`class="me-lib" role="group" aria-label=Anywhere menu`);
     expect(rows[1]).toMatch(/me-lib-input[\s\S]*Home menu/);
-    // The ticks stand in the framed block that asks which devices use it.
-    expect(rows[1]).toMatch(/lib-on card[\s\S]*Which devices should use this menu\?[\s\S]*lt-chip/);
-    expect(rows[1]).not.toContain("lt-hint");
+    // The ticks are not in the row: they stand in the framed strip under
+    // the canvas head that asks which devices use it.
+    expect(rows[1]).not.toContain("lib-on");
+    expect(rows[1]).not.toContain("lt-chip");
     expect(rows[2]).toContain(`aria-label=Entity quick menu`);
     // The page switcher has no menu of its own.
     expect(rows[3]).not.toContain("me-lib");
@@ -99,9 +101,12 @@ describe("the menu editor's library menu", () => {
     expect(inspector).toContain("me-menu-note");
   });
 
-  it("draws a round tick per device, those that use it ticked and fixed", async () => {
-    const { head } = await editor();
-    const text = head();
+  it("draws a round tick per device under the canvas head, those that use it ticked and fixed", async () => {
+    const { call, el, host } = await editor();
+    const text = flat(call("renderStageDevices", host()));
+    expect(text).toContain("lib-on over-stage");
+    expect(text).not.toContain("lt-hint");
+    expect(flat(call("renderStage", host(), el.owners))).toMatch(/cv-head[\s\S]*lib-on over-stage[\s\S]*lt-chip[\s\S]*class="stage-area/);
     expect(text.match(/lt-chip on +rd/g)).toHaveLength(2);
     expect(text.match(/lt-chip off +rd/g)).toHaveLength(1);
     expect(text).toMatch(/lt-chip off +rd[^>]*title=Use this menu on Chen's Watch\.[^>]*aria-disabled=false/);
@@ -109,12 +114,14 @@ describe("the menu editor's library menu", () => {
   });
 
   it("names the page switcher's menu as the Anywhere menu's, and the Entity quick menu its own", async () => {
-    const { call } = await editor();
+    const { call, host } = await editor();
     expect(menuUnitOf("switcher")).toBe("anywhere");
     expect(flat(call("libraryHead", "switcher"))).toMatch(/me-lib-input[\s\S]*Home menu/);
     const entity = flat(call("libraryHead", "entity"));
     expect(entity).toMatch(/me-lib-input[\s\S]*Entity quick menu/);
-    expect(entity.match(/lt-chip on +rd/g)).toHaveLength(3);
+    // With the Entity quick menu shown, the strip has its devices.
+    selectMenu(host(), "entity");
+    expect(flat(call("renderStageDevices", host())).match(/lt-chip on +rd/g)).toHaveLength(3);
   });
 
   it("moves another device to this menu with library/pick", async () => {

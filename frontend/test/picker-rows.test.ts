@@ -423,7 +423,7 @@ describe("personIndex", () => {
     expect(personColorVar(personIndex(people, LIBRARY_OWNER_ID))).toBeUndefined();
   });
 
-  // The device chips in the canvas head wear the same color as that person's
+  // The device chips in the strip over the preview wear the same color as that person's
   // tabs, so one device is one color everywhere. A device in the home but
   // nobody's gets its kind's hue; Unassigned stays plain.
   it("colors a device chip with its person's color, its kind's hue, or nothing", () => {

@@ -9,8 +9,10 @@ import {
   copyMenuName,
   dirtyElsewhereText,
   hereTickText,
+  libraryBadgeDevices,
   libraryBadgeText,
   libraryDeleteChoices,
+  libraryLinkBadge,
   menuLabel,
   menuRestoreLines,
   otherOwners,
@@ -39,6 +41,23 @@ describe("who else has an item", () => {
     expect(libraryBadgeText(lib, "status_pages", STARTER, JESSE, DEVICES)).toBe("On 3 devices");
     expect(libraryBadgeText(lib, "pages", SMART, JESSE, DEVICES)).toBeUndefined();
     expect(libraryBadgeText(undefined, "pages", PAGE1, JESSE, DEVICES)).toBeUndefined();
+  });
+
+  it("draws the badge as the other devices, in device order, with a stand-in for one the list does not know", () => {
+    expect(libraryBadgeDevices(lib, "pages", PAGE1, JESSE, DEVICES)).toEqual([DEVICES[2]]);
+    expect(libraryBadgeDevices(lib, "status_pages", STARTER, JESSE.toUpperCase(), DEVICES)).toEqual([DEVICES[0], DEVICES[2]]);
+    expect(libraryBadgeDevices(lib, "status_pages", STARTER, JESSE, DEVICES.slice(1))).toEqual([
+      DEVICES[2],
+      { ownerId: CHEN, name: "another device", kind: "watch" },
+    ]);
+    expect(libraryBadgeDevices(lib, "pages", SMART, JESSE, DEVICES)).toEqual([]);
+    expect(libraryBadgeDevices(undefined, "pages", PAGE1, JESSE, DEVICES)).toEqual([]);
+  });
+
+  it("hands a host the devices, the sentence and the colors in one, or nothing for an item here alone", () => {
+    const colorOf = (o: string) => (o === PHONE ? "#f00" : undefined);
+    expect(libraryLinkBadge(lib, "pages", PAGE1, JESSE, DEVICES, colorOf)).toEqual({ others: [DEVICES[2]], title: "Also on iPhone 15 Pro", colorOf });
+    expect(libraryLinkBadge(lib, "pages", SMART, JESSE, DEVICES, colorOf)).toBeUndefined();
   });
 
   it("says why a tick is locked", () => {
