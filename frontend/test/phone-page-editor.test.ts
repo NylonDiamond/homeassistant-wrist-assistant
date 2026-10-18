@@ -200,12 +200,26 @@ describe("the stage on an iPhone", () => {
     const text = whole();
     expect(text).toContain("iPhone 17 Pro");
     expect(text).toContain(PHONE_FRAME_TEXT);
-    expect(text).toContain('class="wa-phone"');
+    // In the iPhone look, the default while the phone's settings say nothing.
+    expect(text).toContain('class="wa-phone ios"');
+    expect(text).toContain('class="wa-phone-title"');
     expect(text).not.toContain('class="wa-watch"');
     expect(text).not.toContain("watch frame");
     expect(text).toContain("iPhone showing Mine");
     // The tool strip's zoom is the phone's own: half the watch's 150%.
     expect(text).toContain(">75%<");
+  });
+
+  it("draws the Watch look when the phone's Page look says so", () => {
+    const mine: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: U(90), name: "Mine", items: [tile(1, "light.a")] }] };
+    const { el, whole } = phoneEditor(mine);
+    el.selectedPageId = U(90);
+    el.behavior = { phonePageLook: "watch" };
+    const text = whole();
+    expect(text).toContain('class="wa-phone"');
+    expect(text).not.toContain("wa-phone ios");
+    expect(text).not.toContain("wa-phone-title");
+    expect(text).toContain("iPhone showing Mine");
   });
 });
 

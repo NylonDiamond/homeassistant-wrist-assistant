@@ -19,7 +19,11 @@
 // An iPhone's page is drawn the same way in the iPhone's pages area
 // (`phone-frame.ts`), which is the page code's screen on the phone: no side
 // safe area, no watch clock, the page dots where the Pages tab puts them,
-// and the phone around it.
+// and the phone around it. In the phone's iPhone look (its `phonePageLook`
+// setting, the default) the page's name is the frame's large title instead
+// of the watch's small one, a page with no background of its own sits on the
+// grouped background, tiles take 22 point corners, and the dots are a plain
+// page control under the pages.
 //
 // Drawn in HTML rather than one SVG so a long name can end in an ellipsis.
 // Every size is in points times `scale`, so the picture is the screen grown
@@ -74,7 +78,17 @@ import {
 } from "./app-model.js";
 import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
 import { renderWatchFrame } from "../watch-frame.js";
-import { type PhonePageDots, type PhonePagesLayout, renderPhoneFrame } from "../phone-frame.js";
+import {
+  PHONE_GROUPED_BACKGROUND,
+  PHONE_LABEL_INK,
+  PHONE_PAGE_CONTROL_DOT,
+  PHONE_PAGE_CONTROL_GAP,
+  type PhonePageDots,
+  type PhonePagesLayout,
+  phoneDrawsIphoneLook,
+  phoneTileCornerRadius,
+  renderPhoneFrame,
+} from "../phone-frame.js";
 import { readSmartConfig, smartRuleIndexForTile, smartSyntheticPage, smartTrackingWords, smartWord } from "./smart-model.js";
 import { watchShowWhenPasses, watchTileShowWhen } from "./show-when.js";
 
@@ -122,7 +136,8 @@ export interface WatchPagePreviewInput {
    * Without one, no photo is drawn. */
   photo?: (id: string) => string | undefined;
   /** The page is an iPhone's: `screen` is its pages area, and the picture
-   * is drawn in the iPhone (`phone-frame.ts`) rather than a watch. */
+   * is drawn in the iPhone (`phone-frame.ts`) rather than a watch, in the
+   * look the layout carries (`phonePagesLayout` with `look`). */
   phone?: PhonePagesLayout;
 }
 
@@ -146,10 +161,9 @@ export function renderWatchPageIndicator(input: WatchPagePreviewInput, s: number
  * there is one page to show. */
 export function watchPageIndicatorRow(input: WatchPagePreviewInput, s: number): PhonePageDots | undefined {
   const b = input.behavior ?? {};
-  if (b.showPageIndicator === false) return undefined;
-  const visible = input.pages.filter((p) => p.isHidden !== true && p.isSystemPage !== true);
-  if (visible.length < 2) return undefined;
-  const current = Math.max(0, visible.findIndex((p) => p.id === input.page.id));
+  const shown = indicatorPages(input);
+  if (shown === undefined) return undefined;
+  const { visible, current } = shown;
   const { width } = input.screen;
   const metric = watchUniformScale(input.screen);
   const size = ({ Small: 0.75, Medium: 1, Large: 1.35 } as Record<string, number>)[String(b.pageIndicatorSize ?? "Small")] ?? 0.75;
@@ -181,6 +195,28 @@ export function watchPageIndicatorRow(input: WatchPagePreviewInput, s: number): 
     })}`;
   }
   return { row, height: rowHeight, top };
+}
+
+/** The pages a page indicator counts (none hidden, no system page) and the
+ * shown page's place among them; undefined when the indicator is off or
+ * there is one page to show. */
+function indicatorPages(input: WatchPagePreviewInput): { visible: WatchPage[]; current: number } | undefined {
+  if (input.behavior?.showPageIndicator === false) return undefined;
+  const visible = input.pages.filter((p) => p.isHidden !== true && p.isSystemPage !== true);
+  if (visible.length < 2) return undefined;
+  return { visible, current: Math.max(0, visible.findIndex((p) => p.id === input.page.id)) };
+}
+
+/** The iPhone look's page control, in the strip under the pages: a 7 point
+ * dot per page 9 points apart, the shown page's in the label ink and the
+ * others at 0.3. The watch's dot shape, size, brightness, color and place
+ * settings do not apply; Page dots off still hides it. */
+export function phonePageControlRow(input: WatchPagePreviewInput, s: number): PhonePageDots | undefined {
+  const shown = indicatorPages(input);
+  if (shown === undefined) return undefined;
+  const px = (pt: number) => `${Math.round(pt * s * 100) / 100}px`;
+  const row = html`${shown.visible.map((_, i) => html`<span class="wa-phone-pc" style=${`width:${px(PHONE_PAGE_CONTROL_DOT)};height:${px(PHONE_PAGE_CONTROL_DOT)};margin-left:${px(i === 0 ? 0 : PHONE_PAGE_CONTROL_GAP)};background:${PHONE_LABEL_INK};opacity:${i === shown.current ? 1 : 0.3}`}></span>`)}`;
+  return { row, height: PHONE_PAGE_CONTROL_DOT, top: false };
 }
 
 /** `WatchScreenMetrics.uniformScale`: the screen's width and height against
@@ -373,6 +409,12 @@ export function watchPreviewTileLabel(tile: WatchPageTile, input: Pick<WatchPage
 export function watchTileCornerRadius(widthPt: number, heightPt: number): number {
   const side = Math.min(widthPt, heightPt);
   return side < 25 ? 4 : side < 40 ? 5 : side < 60 ? 6 : 8;
+}
+
+/** A tile's corner radius in a picture, in points: 22 in an iPhone's
+ * iPhone look (`phoneTileCornerRadius`), else the watch's. */
+export function previewTileCornerRadius(input: Pick<WatchPagePreviewInput, "phone">, widthPt: number, heightPt: number): number {
+  return phoneDrawsIphoneLook(input.phone) ? phoneTileCornerRadius(widthPt, heightPt) : watchTileCornerRadius(widthPt, heightPt);
 }
 
 /** Whether the watch draws a tile's name: the tile is at least 35 points
@@ -656,6 +698,35 @@ export function watchScreenLayers(
       ? nothing
       : html`<span class=${`${className} ${className}-over`} style=${`inset:0;background:${over.join(", ")}`} aria-hidden="true"></span>`}`,
   };
+}
+
+/** Whether a page has a background of its own: a photo, a color or
+ * gradient, a pattern, or an animation. Without one it draws its theme's
+ * default background. */
+export function watchPageHasOwnBackground(page: WatchPage): boolean {
+  if (watchPagePhoto(page) !== undefined) return true;
+  const color = parseTileColor(page.backgroundColor);
+  if (color?.kind === "solid" || color?.kind === "gradient") return true;
+  const pattern = watchPageValue(page, "backgroundPattern");
+  if (typeof pattern === "string" && pattern !== "none") return true;
+  const overlay = watchPageValue(page, "backgroundOverlay");
+  return typeof overlay === "string" && overlay !== "none";
+}
+
+/** `watchScreenLayers` for a picture: in an iPhone's iPhone look a page with
+ * no background of its own sits on the system's grouped background (light
+ * or dark with the panel's skin); every other page, and every page in the
+ * Watch look or on a watch, as `watchScreenLayers` draws it. */
+export function previewScreenLayers(
+  input: Pick<WatchPagePreviewInput, "phone">,
+  page: WatchPage,
+  s: number,
+  screen: { width: number; height: number },
+  photoUrl: ((id: string) => string | undefined) | undefined,
+  className = "wp-page-photo",
+): { background: string; layers: TemplateResult | typeof nothing } {
+  if (phoneDrawsIphoneLook(input.phone) && !watchPageHasOwnBackground(page)) return { background: PHONE_GROUPED_BACKGROUND, layers: nothing };
+  return watchScreenLayers(page, s, screen, photoUrl, className);
 }
 
 /** A theme's own page background (`TileGridPageView.fallbackPageBackground`),
@@ -1638,7 +1709,7 @@ function cameraFace(tile: WatchPageTile, width: number, height: number, box: str
   const entityId = tileEntityId(tile);
   const group = tileKind(entityId) === "multicam";
   const ink = ownInk(tile.color) ?? themeInk(input.page, "entityCamera");
-  const radius = watchCameraCornerRadius(width, height) * s;
+  const radius = (phoneDrawsIphoneLook(input.phone) ? phoneTileCornerRadius(width, height) : watchCameraCornerRadius(width, height)) * s;
   const preview = tile.cameraDisplayMode === "preview";
   const symbolPt = watchTileIconSize(tile, width, height);
   // The watch strokes the rim after it clips the tile, so the line is
@@ -1802,7 +1873,8 @@ export function watchTemplateRichText(text: string, ink: string, px: number, ico
  * effect, and only the template's text (or the placeholder or the warning)
  * inside. */
 function templateFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, unit: number, s: number, hint: string | undefined): TemplateResult {
-  const radius = watchTileCornerRadius(width, height) * s;
+  const radiusPt = previewTileCornerRadius(input, width, height);
+  const radius = radiusPt * s;
   // Always lit, as `SimpleTemplateTile` passes `isActive: true`.
   const ground = watchTileFill(parseTileColor(tile.color), flatInk(tile.color, themeInk(input.page, "entitySensor").hex), true, watchTileColorOpacity(tile), { width, height });
   const border = watchTileBorder(tile, true, watchTileFallbackInk(tile, input.page, input.states));
@@ -1827,7 +1899,7 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
     style=${`${box}border-radius:${radius}px;background:${ground};padding:${padY * s}px ${padX * s}px`}>
     ${tileUnderlay(tile, input, true, { width, height }, s)}
     ${content}
-    ${renderTileRim(border, width, height, s)}
+    ${renderTileRim(border, width, height, s, radiusPt)}
   </div>`;
 }
 
@@ -1940,12 +2012,13 @@ export function watchBorderContentPadding(tile: WatchPageTile): number {
 }
 
 /** A tile's border drawn over its content: the rounded rectangle on the
- * tile's edge, stroked, the outer half clipped away by the tile. */
-function renderTileRim(border: WatchTileBorder | undefined, widthPt: number, heightPt: number, s: number): TemplateResult | typeof nothing {
+ * tile's edge, stroked, the outer half clipped away by the tile, whose
+ * corners are `radiusPt`. */
+function renderTileRim(border: WatchTileBorder | undefined, widthPt: number, heightPt: number, s: number, radiusPt: number): TemplateResult | typeof nothing {
   if (border === undefined) return nothing;
   const w = widthPt * s;
   const h = heightPt * s;
-  const r = watchTileCornerRadius(widthPt, heightPt) * s;
+  const r = radiusPt * s;
   const id = `wp-rim-${++paintSeq}`;
   const stroke = border.paint.kind === "flat" ? border.paint.css : `url(#${id})`;
   const defs = border.paint.kind === "gradient"
@@ -2927,7 +3000,7 @@ function tileFace(
     </div>`;
   }
   if (cls === "spacer") {
-    return html`<div class="wp-spacer" style=${`${box}border-radius:${watchTileCornerRadius(width, height) * s}px;${watchSpacerStyle(tile, s, { width, height })}`} title=${titled ? hint : nothing}>${tileUnderlay(tile, input, true, { width, height }, s, true)}</div>`;
+    return html`<div class="wp-spacer" style=${`${box}border-radius:${previewTileCornerRadius(input, width, height) * s}px;${watchSpacerStyle(tile, s, { width, height })}`} title=${titled ? hint : nothing}>${tileUnderlay(tile, input, true, { width, height }, s, true)}</div>`;
   }
 
   if (kind === "camera" || kind === "multicam") return cameraFace(tile, width, height, box, input, unit, s, titled ? hint : undefined);
@@ -2938,7 +3011,8 @@ function tileFace(
   // one line at the bottom, a badge top left. There is no other layout for a
   // short tile: under 35 points tall the name goes and the symbol grows.
   const states = input.states;
-  const radius = watchTileCornerRadius(width, height) * s;
+  const radiusPt = previewTileCornerRadius(input, width, height);
+  const radius = radiusPt * s;
   const raw = states !== undefined && Object.hasOwn(states, entityId) ? String(states[entityId]?.state ?? "") : undefined;
   const key = watchTileStateKey(tile, raw);
   const stateSymbol = look === undefined && !unknown ? stateEntry(tile.stateIcons, key) : undefined;
@@ -3033,7 +3107,7 @@ function tileFace(
     ${art === undefined ? nothing : albumArt(art)}
     <span class="wp-icon" style=${iconStyle}>${icon}</span>
     ${showLabel ? html`<span class="wp-label" style=${labelCss}>${words}</span>` : nothing}
-    ${renderTileRim(border, width, height, s)}
+    ${renderTileRim(border, width, height, s, radiusPt)}
     ${unknown ? nothing : tileOverlay(tile, input, lit, width, s)}
     ${badge === undefined ? nothing : html`<span class="wp-badge" style=${badgeCss}>${badge.text}</span>`}
     ${unknown || look !== undefined ? nothing : mediaStatusIcon(tile, input, width, height, s)}
@@ -3230,12 +3304,12 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
   const layout = watchPreviewLayout(watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states, WATCH_GRID_COLUMNS, input.templates, phone ? "iphone" : "watch"), screen, { sideInset: watchPreviewSideInset(input) });
   const height = watchPreviewHeight(layout, phone);
   const scrolls = height > screen.height + 0.5;
-  const back = watchScreenLayers(page, s, screen, input.photo);
+  const back = previewScreenLayers(input, page, s, screen, input.photo);
   return renderPreviewFrame(input, s, html`<div class="wp-screen" role="group" aria-label=${`Preview of ${name}`}
     style=${`width:${width}px;height:${height * s}px;background:${back.background}`}>
     ${back.layers}
     ${phone ? nothing : renderWatchClock(screen, s, layout.topInset, input.icons)}
-    ${renderWatchPageTitle(page, s, layout.topInset, input.icons, input.behavior)}
+    ${renderPreviewPageTitle(input, page, s, layout.topInset)}
     ${layout.tiles.length === 0 ? html`<div class="wp-smart"><span>No tiles on this page.</span></div>` : nothing}
     ${layout.tiles.map((placed) => renderTile(placed, input, layout.unit, layout.topInset, s))}
     ${phone ? nothing : renderWatchPageIndicator(input, s)}
@@ -3263,8 +3337,23 @@ export function watchPreviewHeight(layout: WatchPageLayout, phone: boolean): num
  */
 export function renderPreviewFrame(input: WatchPagePreviewInput, s: number, body: TemplateResult, label?: string): TemplateResult {
   if (input.phone === undefined) return renderWatchFrame(input.screen, s, body, label);
+  if (phoneDrawsIphoneLook(input.phone)) {
+    // The iPhone look: the page's name as the large title, the page
+    // control under the pages.
+    const control = phonePageControlRow(input, s);
+    const title = typeof input.page.name === "string" ? input.page.name.trim() : "";
+    return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, title, ...(control === undefined ? {} : { dots: control }) });
+  }
   const dots = watchPageIndicatorRow(input, s);
   return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, ...(dots === undefined ? {} : { dots }) });
+}
+
+/** The watch's small page title in the top band (`renderWatchPageTitle`),
+ * except in an iPhone's iPhone look, where the frame's large title names
+ * the page instead. */
+export function renderPreviewPageTitle(input: WatchPagePreviewInput, page: WatchPage, s: number, topInset: number): TemplateResult | typeof nothing {
+  if (phoneDrawsIphoneLook(input.phone)) return nothing;
+  return renderWatchPageTitle(page, s, topInset, input.icons, input.behavior);
 }
 
 /**
@@ -3286,7 +3375,7 @@ function renderSmartPreview(given: WatchPagePreviewInput): TemplateResult {
   const shown: WatchPage = { ...synthetic };
   delete shown.dynamicConfig;
   const layout = watchPreviewLayout(shown, screen, { sideInset: watchPreviewSideInset(input) });
-  const back = watchScreenLayers(page, s, screen, input.photo);
+  const back = previewScreenLayers(input, page, s, screen, input.photo);
   const phone = input.phone !== undefined;
   if (config === undefined || layout.tiles.length === 0) {
     const tracking = config === undefined ? "" : smartTrackingWords(config);
@@ -3295,7 +3384,7 @@ function renderSmartPreview(given: WatchPagePreviewInput): TemplateResult {
       style=${`width:${width}px;height:${screen.height * s}px;background:${back.background}`}>
       ${back.layers}
       ${phone ? nothing : renderWatchClock(screen, s, layout.topInset, input.icons)}
-      ${renderWatchPageTitle(shown, s, layout.topInset, input.icons, input.behavior)}
+      ${renderPreviewPageTitle(input, shown, s, layout.topInset)}
       <div class="wp-smart">
         ${check === undefined ? nothing : html`<span class="wp-smart-check">${check}</span>`}
         <b>${smartWord("allOff")}</b>
@@ -3328,7 +3417,7 @@ function renderSmartPreview(given: WatchPagePreviewInput): TemplateResult {
     style=${`width:${width}px;height:${height * s}px;background:${back.background}`}>
     ${back.layers}
     ${phone ? nothing : renderWatchClock(screen, s, layout.topInset, input.icons)}
-    ${renderWatchPageTitle(shown, s, layout.topInset, input.icons, input.behavior)}
+    ${renderPreviewPageTitle(input, shown, s, layout.topInset)}
     ${layout.tiles.map(tile)}
     ${phone ? nothing : renderWatchPageIndicator(input, s)}
     ${height > screen.height + 0.5 ? renderWatchScreenFold(screen.height * s, phone) : nothing}

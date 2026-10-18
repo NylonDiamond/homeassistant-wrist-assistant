@@ -273,14 +273,15 @@ import {
   watchPagePreviewScrolls,
   watchPagePreviewStyles,
   watchPreviewTileLabel,
-  renderWatchPageTitle,
+  previewScreenLayers,
+  previewTileCornerRadius,
+  renderPreviewPageTitle,
   watchScreenColor,
-  watchScreenLayers,
   watchTileSymbol,
 } from "./preview.js";
 import { PagePhotoStore } from "./page-photo-store.js";
 import { addWatchTile, watchAddRefusal, watchAddThemeOf, watchKindColor } from "./tile-new.js";
-import { renderWatchClock, watchPreviewLayout, watchPreviewSideInset, watchTileCornerRadius } from "./preview.js";
+import { renderWatchClock, watchPreviewLayout, watchPreviewSideInset } from "./preview.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import {
   PHONE_SIZE_TEXT,
@@ -288,6 +289,7 @@ import {
   type PhonePagesLayout,
   phoneFrameStyles,
   phoneModelForScreenSize,
+  phonePageLookOf,
   phonePagesLayout,
   phonePagesScreen,
 } from "../phone-frame.js";
@@ -4091,12 +4093,13 @@ export class WaPageEditor extends LitElement {
     return this.onPhone ? 0 : WATCH_GRID_SIDE_INSET;
   }
 
-  /** On an iPhone, where its Pages tab lays itself out (`phone-frame.ts`);
-   * undefined on a watch. */
+  /** On an iPhone, where its Pages tab lays itself out (`phone-frame.ts`),
+   * in the Page look its own settings ask for (the iPhone look until they
+   * are read, as the phone draws with none); undefined on a watch. */
   private phoneLayoutOf(owner: OwnerSummary | undefined): PhonePagesLayout | undefined {
     if (!this.onPhone) return undefined;
     const shown = owner ?? this.ownerList.find((o) => o.owner_watch_id === this.watchId);
-    return phonePagesLayout(phoneModelForScreenSize(shown?.screen_size));
+    return phonePagesLayout(phoneModelForScreenSize(shown?.screen_size), { look: phonePageLookOf(this.behavior) });
   }
 
   /** What a picture of `page` is drawn with at `scale`, the stage's own
@@ -4156,7 +4159,7 @@ export class WaPageEditor extends LitElement {
     const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(input) });
     // Only what reaches onto the screen: a long page costs no more than a short one.
     const shown = layout.tiles.filter((t) => layout.topInset + t.y < screen.height);
-    const back = watchScreenLayers(page, s, screen, this.photoUrl);
+    const back = previewScreenLayers(input, page, s, screen, this.photoUrl);
     return html`<span class="thumb pe-thumb" style=${`background:${back.background}`} aria-hidden="true">
       ${back.layers}
       ${shown.map((t) => html`<span class="pe-thumb-tile"
@@ -4791,14 +4794,14 @@ export class WaPageEditor extends LitElement {
       : selectedPlaced && !move
         ? cellRectPx(grid, drawnRect(watchTileRect(selectedPlaced.tile)))
         : undefined;
-    const back = watchScreenLayers(shown, s, screen, this.photoUrl);
+    const back = previewScreenLayers(input, shown, s, screen, this.photoUrl);
     // The grid's cells show only while a tile is moved or resized.
     return renderPreviewFrame(input, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""}" tabindex="-1" role="group" aria-label=${`Layout of ${watchPageName(page)}`}
       style=${`width:${width}px;height:${height}px;background:${back.background}`}
       @click=${() => this.selectTile(undefined)}>
       ${back.layers}
       ${phone ? nothing : renderWatchClock(screen, s, layout.topInset, input.icons)}
-      ${renderWatchPageTitle(shown, s, layout.topInset, input.icons, input.behavior)}
+      ${renderPreviewPageTitle(input, shown, s, layout.topInset)}
       <svg class="pe-cells" width=${width} height=${gridHeight} viewBox=${`0 0 ${width} ${gridHeight}`}
         style=${`top:${grid.top}px`} aria-hidden="true"><path d=${cellsPath(grid, rows, 3 * s)} /></svg>
       ${height > screen.height * s + 0.5 ? renderWatchScreenFold(screen.height * s, phone) : nothing}
@@ -4855,8 +4858,9 @@ export class WaPageEditor extends LitElement {
     }
     const face = renderWatchTileFace(tile, { width: width / s, height: height / s }, input, unit);
     // The ring of a selected tile follows the tile's own corners, which are
-    // the watch's (`watchTileCornerRadius`).
-    const radius = watchTileCornerRadius(width / s, height / s) * s;
+    // the watch's, or 22 points in an iPhone's iPhone look
+    // (`previewTileCornerRadius`).
+    const radius = previewTileCornerRadius(input, width / s, height / s) * s;
     const box = `left:${left}px;top:${top}px;width:${width}px;height:${height}px;border-radius:${radius}px;${shift}`;
     // A tile with no id cannot be named by an edit; it is drawn and left be.
     if (id === "") return html`<div class="pe-tile fixed ${tileKind(tileEntityId(tile)) === "spacer" ? "spacer" : ""}" style=${box} aria-hidden="true">${face}</div>`;
