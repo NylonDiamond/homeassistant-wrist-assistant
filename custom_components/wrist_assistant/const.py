@@ -297,6 +297,21 @@ PHONE_BEHAVIOR_DECODE_KEYS = frozenset(
         "hapticIntensity",
     }
 )
+# The tile kinds only an iPhone draws, and the tile keys only an iPhone reads
+# on tiles both devices draw: the entries the panel's device table
+# (frontend/src/watch-pages/tile-devices.json) gives `["iphone"]`.
+# tests/test_tile_devices.py keeps them equal to it.
+#
+# The server strips nothing with them. A page lives once in the library and
+# `materialise` copies it whole to every device that picks it; a watch record
+# saved without the phone's tiles would map back to the library without them
+# and delete them for the iPhone too. So every device gets every tile, and a
+# watch skips a kind it does not draw and ignores a key it does not read. The
+# lists are here for the day the server needs to name them to a device.
+PHONE_ONLY_TILE_KINDS = frozenset({"map", "chart", "text_field", "web"})
+PHONE_ONLY_TILE_KEYS = frozenset(
+    {"cameraTileLive", "sensorChart", "mediaArtwork", "templateLines"}
+)
 # `updated_by` on a record the panel saved, in place of a device's signing id.
 WATCH_CONFIG_PANEL_WRITER = "panel"
 # Compact UTF-8 JSON size a stored document may reach, per kind. Every kind in
