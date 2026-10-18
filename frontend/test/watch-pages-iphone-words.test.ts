@@ -135,6 +135,23 @@ describe("tile settings on an iPhone", () => {
     expect(phone).toContain("The iPhone leaves the tile out while it is off.");
   });
 
+  it("draw Show tile in its own Visibility card, with a template's result now", () => {
+    const dark = "{{ is_state('sun.sun', 'below_horizon') }}";
+    const host = (value: { ok: true; value: string } | { ok: false; error: string } | undefined, device?: "iphone") => {
+      const h = tileHost([tile("light.desk", { showWhenTemplate: dark })], device);
+      const renders = new Map(value === undefined ? [] : [[`show:${TILE_ID}`, { text: dark, result: value }]]);
+      return Object.assign(Object.create(Object.getPrototypeOf(h)), h, { templateRenders: renders }) as TileSettingsHost;
+    };
+    const drawn = text(renderTileSettings(host({ ok: true, value: "False" })));
+    expect(drawn).toContain("Visibility");
+    expect(drawn).toContain("Now it renders <code>False</code>, so the tile is hidden.");
+    expect(text(renderTileSettings(host({ ok: true, value: "true" })))).toContain("so the tile is shown.");
+    expect(text(renderTileSettings(host(undefined)))).toContain("Rendering in Home Assistant…");
+    const failed = text(renderTileSettings(host({ ok: false, error: "TemplateSyntaxError: unexpected '}'" }, "iphone")));
+    expect(failed).toContain("TemplateSyntaxError: unexpected '}' While it fails, the iPhone shows the tile.");
+    expect(failed.match(/[^.>]*\b(the watch|watch's)\b[^.<]*/gi) ?? []).toEqual([]);
+  });
+
   it("name the iPhone in the notes and refusals", () => {
     expect(watchLabelNote(tile("light.desk"), "iphone")).toBe("Leave it empty to show the name Home Assistant has.");
     const http = tile(`http_action.${ACTION}`);

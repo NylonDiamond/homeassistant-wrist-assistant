@@ -33,7 +33,7 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import type { EntityRef } from "../model.js";
-import { type EntityPickSource, checkField, colorField, entityField, numberField, segField, sliderField, symbolField, symbolNameSet, textField } from "../editors.js";
+import { type EntityPickSource, checkField, colorField, entityField, numberField, segField, sliderField, symbolField, symbolNameSet, templateBox, textField } from "../editors.js";
 import { sectionCard } from "../editor-chrome.js";
 import { goToWatchHttpActions } from "../shell.js";
 import { uiIcon } from "../ui-icons.js";
@@ -85,10 +85,14 @@ import { findWatchPage } from "./edit.js";
 import {
   type WatchShowWhenOperator,
   WATCH_SHOW_WHEN_OPERATORS,
+  WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS,
   watchShowWhenPasses,
   watchShowWhenStateChoices,
+  watchShowWhenTemplateShows,
   watchTileShowWhen,
+  watchTileShowWhenTemplate,
 } from "./show-when.js";
+import { watchShowWhenTemplateRender } from "./app-model.js";
 import { type WatchPageTile, type WatchPagesDocument, WATCH_REMOVED_TILE_TEXT, tileEntityId, tileKind, watchPageId, watchPageName, watchPagesOf } from "./model.js";
 import {
   type WatchLibraryKind,
@@ -170,6 +174,7 @@ import {
   setWatchTilePeekSkipAnimation,
   setWatchTileRainbow,
   setWatchTileShowLabel,
+  setWatchTileShowWhenTemplate,
   setWatchTileSingleTap,
   setWatchTileSkipConditions,
   setWatchTileTapAnimation,
@@ -616,8 +621,10 @@ const SECTION_KEYS: Readonly<Partial<Record<WatchTileSettingsSection, readonly s
   text: ["showLabel", "labelFontSizeOverride", "labelFontWeight", "labelFontDesign", "labelShadow", "labelColorHex"],
   action: [
     "singleTapAction", "holdSlideActions", "holdSlideTriggerTargets", "holdSlideHTTPActionTargets", "holdSlideHTTPActionShowBanner",
-    "holdSlideHTTPActionBannerSeconds", "requiresConfirmation", "hideWhenInactive", "showWhen", "automationSkipConditionOverride",
+    "holdSlideHTTPActionBannerSeconds", "requiresConfirmation", "automationSkipConditionOverride",
   ],
+  // Show tile, every choice of it.
+  visibility: ["hideWhenInactive", "showWhen", "showWhenTemplate"],
 };
 
 /** Whether `read` gives the tile something other than it gives the same
@@ -656,8 +663,10 @@ const SECTION_READS: Readonly<Partial<Record<WatchTileSettingsSection, (tile: Wa
     const a = watchTileActionSettings(t);
     const slides = ["holdSlideActions", "holdSlideTriggerTargets", "holdSlideHTTPActionTargets", "holdSlideHTTPActionShowBanner", "holdSlideHTTPActionBannerSeconds"]
       .map((key) => t[key]);
-    return [watchSingleTapSettings(t).resolvedLabel, a.askBeforeRunning.value, a.hideWhenOff, t.showWhen, a.skipConditions.value, slides];
+    return [watchSingleTapSettings(t).resolvedLabel, a.askBeforeRunning.value, a.skipConditions.value, slides];
   },
+  // A blank template is none, as on the watch.
+  visibility: (t) => [t.hideWhenInactive === true, t.showWhen, watchTileShowWhenTemplate(t)],
 };
 
 /**
@@ -680,6 +689,7 @@ export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTi
     case "request":
     case "text":
     case "action":
+    case "visibility":
       return stored;
     case "icon": {
       if (stored) return true;
@@ -792,6 +802,8 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
       const tap = watchSingleTapSettings(tile);
       return tap.picker ? `Tap: ${tap.resolvedLabel}` : "";
     }
+    case "visibility":
+      return showTileSummary(host);
     case "size":
     case "removed":
       return "";
@@ -828,6 +840,8 @@ function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection):
       return renderText(host);
     case "action":
       return renderAction(host);
+    case "visibility":
+      return renderShowTile(host);
     case "state":
       return renderState(host);
     case "border":
@@ -1259,7 +1273,6 @@ function renderAction(host: TileSettingsHost): TemplateResult {
           commit(host, "singleTap", (d) => setWatchTileSingleTap(d, host.pageId, host.tileId, v === WATCH_DEFAULT_CHOICE ? null : v)))}
     ${slides === undefined ? nothing : renderHoldSlide(host, slides)}
     ${ask}
-    ${renderShowTile(host)}
     ${a.skipConditions.shown
       ? html`<div class="ts-stack">${segField<WatchSkipChoice>("Skip conditions", watchSkipChoice(a.skipConditions.value), WATCH_SKIP_CHOICES as [WatchSkipChoice, string][], (v) =>
           commit(host, "skipConditions", (d) => setWatchTileSkipConditions(d, host.pageId, host.tileId, watchSkipValue(v))))}</div>
@@ -1269,22 +1282,59 @@ function renderAction(host: TileSettingsHost): TemplateResult {
 
 const SHOW_TILE_CHOICES: [WatchShowTileMode, string][] = [
   ["always", "Always"],
-  ["on", "Only while on"],
-  ["when", "Only when…"],
+  ["on", "While on"],
+  ["when", "When…"],
+  ["template", "Template"],
 ];
 
-/**
- * Show Tile: Always, Only While On (`hideWhenInactive`) or Only When
- * (`showWhen`). Only When stores nothing until an entity is picked, so the
- * choice is held in `uiState` until then and the tile keeps what it had.
- */
-function renderShowTile(host: TileSettingsHost): TemplateResult {
+/** The words of each choice in full, as the buttons' tooltips. */
+const SHOW_TILE_TITLES: Partial<Record<WatchShowTileMode, string>> = {
+  on: "Only while on",
+  when: "Only when another entity is in a state",
+  template: "Only while a Home Assistant template renders true",
+};
+
+/** The choice Show Tile draws: what is stored, or the choice picked that
+ * stores nothing yet (Only When before an entity, Template before a text). */
+function shownShowTileMode(host: TileSettingsHost): { mode: WatchShowTileMode; pendingKey: string } {
   const stored = watchShowTileMode(host.tile);
   const pendingKey = `${KEY}:showTile:${host.tileId.toUpperCase()}`;
-  const mode: WatchShowTileMode = stored !== "when" && host.uiState.get(pendingKey) === "when" ? "when" : stored;
+  const pending = host.uiState.get(pendingKey);
+  const mode: WatchShowTileMode = (pending === "when" || pending === "template") && pending !== stored ? pending : stored;
+  return { mode, pendingKey };
+}
+
+/** The Visibility card's line while folded: the choice, with the entity of
+ * Only When. Nothing for Always. */
+function showTileSummary(host: TileSettingsHost): string {
+  switch (watchShowTileMode(host.tile)) {
+    case "always":
+      return "";
+    case "on":
+      return "Only while on";
+    case "when": {
+      const c = watchTileShowWhen(host.tile);
+      if (c === undefined || c.entityId === "") return "Only when…";
+      const friendly = host.hass.states[c.entityId]?.attributes?.friendly_name;
+      return `Only when ${typeof friendly === "string" && friendly.trim() !== "" ? friendly : c.entityId}`;
+    }
+    case "template":
+      return watchTileShowWhenTemplate(host.tile) === undefined ? "Template (empty)" : "Template";
+  }
+}
+
+/**
+ * Show Tile, the Visibility card: Always, Only While On
+ * (`hideWhenInactive`), Only When (`showWhen`) or Template
+ * (`showWhenTemplate`). Only When stores nothing until an entity is picked,
+ * and Template nothing until a text is typed, so the choice is held in
+ * `uiState` until then and the tile keeps what it had.
+ */
+function renderShowTile(host: TileSettingsHost): TemplateResult {
+  const { mode, pendingKey } = shownShowTileMode(host);
   const pick = (v: WatchShowTileMode) => {
-    if (v === "when") {
-      host.uiState.set(pendingKey, "when");
+    if (v === "when" || v === "template") {
+      host.uiState.set(pendingKey, v);
       host.requestUpdate();
       return;
     }
@@ -1294,13 +1344,57 @@ function renderShowTile(host: TileSettingsHost): TemplateResult {
     host.requestUpdate();
   };
   return html`<div class="ts-sub">
-    <div class="ts-stack">${segField<WatchShowTileMode>("Show tile", mode, SHOW_TILE_CHOICES, (v) => pick(v))}</div>
+    <div class="ts-stack">${segField<WatchShowTileMode>("Show tile", mode, SHOW_TILE_CHOICES, (v) => pick(v), { titles: SHOW_TILE_TITLES })}</div>
     ${mode === "always"
       ? html`<div class="hint ts-under">The ${hostDeviceNoun(host)} always shows this tile.</div>`
       : mode === "on"
         ? html`<div class="hint ts-under">The ${hostDeviceNoun(host)} leaves the tile out while it is off.</div>`
-        : renderShowWhen(host, pendingKey)}
+        : mode === "when"
+          ? renderShowWhen(host, pendingKey)
+          : renderShowWhenTemplate(host, pendingKey)}
   </div>`;
+}
+
+/**
+ * Template: Home Assistant renders the text and the device shows the tile
+ * only while the result reads as true (`watchTemplateTruthy`). Under the box
+ * the result now, from the same renders the stage draws with, or Home
+ * Assistant's error, which shows the tile.
+ */
+function renderShowWhenTemplate(host: TileSettingsHost, pendingKey: string): TemplateResult {
+  const tile = host.tile;
+  const stored = typeof tile.showWhenTemplate === "string" ? tile.showWhenTemplate : "";
+  const text = watchTileShowWhenTemplate(tile);
+  const render = watchShowWhenTemplateRender(host.templateRenders, tile);
+  const noun = hostDeviceNoun(host);
+  const write = (value: string, typing: boolean) => {
+    // Emptied, the box stays: the key goes, the choice does not.
+    if (value === "") host.uiState.set(pendingKey, "template");
+    commit(host, "showWhenTemplate", (d) => setWatchTileShowWhenTemplate(d, host.pageId, host.tileId, value), typing ? { typing: true } : {});
+  };
+  let now: TemplateResult;
+  if (text === undefined) {
+    now = html`<div class="hint ts-under">Type a template, for example <code>{{ is_state('person.alex', 'home') }}</code>. Until then the ${noun} always shows the tile.</div>`;
+  } else if (text.length > WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS) {
+    now = html`<div class="hint warn ts-under">Longer than ${WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS} characters, so the ${noun} never asks Home Assistant about it and always shows the tile.</div>`;
+  } else if (render === undefined) {
+    now = html`<div class="hint ts-under" role="status">Rendering in Home Assistant…</div>`;
+  } else if (!render.ok) {
+    now = html`<div class="hint warn ts-under" role="status">${render.error} While it fails, the ${noun} shows the tile.</div>`;
+  } else {
+    const shown = watchShowWhenTemplateShows(render);
+    const value = render.value.trim();
+    now = html`<div class="hint ts-under" role="status">Now it renders <code>${value === "" ? "(empty)" : value}</code>, so the tile is ${shown ? "shown" : "hidden"}.</div>`;
+  }
+  return html`
+    <div class="ts-show-tpl">${templateBox(host, stored, {
+      label: "Template", rows: 3, key: `tile-${host.tileId}-show-tpl`, use: "condition", bare: false,
+      placeholder: "{{ is_state('person.alex', 'home') }}",
+      ...(render !== undefined && !render.ok ? { error: render.error } : {}),
+      write,
+      onBlur: () => host.endCoalesce(),
+    })}</div>
+    ${now}`;
 }
 
 /** Only When: an entity, a comparison and a state. Picking an entity makes

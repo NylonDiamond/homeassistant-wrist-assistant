@@ -13,7 +13,9 @@ export type TemplateUse =
   /** An SF Symbol name. */
   | "symbol"
   /** An SF Symbol name or a whole `mdi:` name: a rich text icon part. */
-  | "symbolMdi";
+  | "symbolMdi"
+  /** True or false: a watch tile's Show tile template. */
+  | "condition";
 
 export interface TemplateRecipe {
   id: string;
@@ -32,6 +34,7 @@ export interface TemplateRecipe {
 export const LIGHTS_ON_TEMPLATE = "💡 {{ states.light | selectattr('state', 'eq', 'on') | list | count }} Lights On";
 
 const TEXT: readonly TemplateUse[] = ["text"];
+const CONDITION: readonly TemplateUse[] = ["condition"];
 const ICONS: readonly TemplateUse[] = ["symbol", "symbolMdi"];
 const ANY: readonly string[] = [];
 
@@ -75,6 +78,31 @@ export const TEMPLATE_RECIPES: readonly TemplateRecipe[] = [
     id: "mdi", label: "MDI icon by state", title: "One Material Design icon when on, another when off",
     domains: ANY, uses: ["symbolMdi"],
     build: (e) => `{{ 'mdi:lightbulb-on' if is_state('${e}', 'on') else 'mdi:lightbulb-outline' }}`,
+  },
+  {
+    id: "isOn", label: "Is on", title: "True while the entity is on",
+    domains: ANY, uses: CONDITION,
+    build: (e) => `{{ is_state('${e}', 'on') }}`,
+  },
+  {
+    id: "isHome", label: "Is home", title: "True while the person is home",
+    domains: ["person", "device_tracker"], uses: CONDITION,
+    build: (e) => `{{ is_state('${e}', 'home') }}`,
+  },
+  {
+    id: "above", label: "Above a number", title: "True while the state is above 20",
+    domains: ANY, uses: CONDITION,
+    build: (e) => `{{ states('${e}') | float(0) > 20 }}`,
+  },
+  {
+    id: "anyoneHome", label: "Anyone home", title: "True while someone is home",
+    uses: CONDITION,
+    build: () => "{{ states.person | selectattr('state', 'eq', 'home') | list | count > 0 }}",
+  },
+  {
+    id: "dark", label: "After sunset", title: "True while the sun is below the horizon",
+    uses: CONDITION,
+    build: () => "{{ is_state('sun.sun', 'below_horizon') }}",
   },
   {
     id: "sf", label: "Symbol by state", title: "One SF Symbol when on, another when off",
@@ -197,6 +225,10 @@ export function templateHint(use: TemplateUse, bare: boolean): string[] {
     ? "Home Assistant renders this. Write {{ … }} around each part that reads something, or write one expression on its own, like states('sensor.power')."
     : "Home Assistant renders this. Write {{ … }} around each part that reads something, like {{ states('sensor.power') }}."];
   if (use === "text") lines.push("The result should be one value: words or a number.");
+  if (use === "condition") {
+    lines.push("The tile shows while the result is true, on, yes or a number other than 0, and is left out for anything else.");
+    lines.push("A template that fails, or renders unknown or unavailable, shows the tile. Home Assistant renders it again when an entity it reads changes.");
+  }
   if (use === "symbol") lines.push("The result should be an SF Symbol name, like lightbulb.fill. An empty result draws nothing.");
   if (use === "symbolMdi") {
     lines.push("The result should be an SF Symbol name, like lightbulb.fill, or a Material Design icon written out in full, like 'mdi:water'. A name pieced together, like 'mdi:water-' ~ level, does not draw.");

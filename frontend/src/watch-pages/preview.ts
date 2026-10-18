@@ -65,6 +65,7 @@ import {
   type WatchTemplateRender,
   watchInboxLabel,
   watchMusicHubActiveSpeaker,
+  watchShowWhenTemplateAllows,
   watchTemplateRender,
   watchTemplateText,
 } from "./app-model.js";
@@ -272,16 +273,24 @@ export function watchEntityActive(entityId: string, states: Readonly<Record<stri
 }
 
 /** Whether the watch leaves the tile out right now
- * (`GridItemConfig.isVisible`). */
-export function watchTileHidden(tile: WatchPageTile, states: Readonly<Record<string, HassEntityState>>): boolean {
+ * (`GridItemConfig.isVisible`): Hide when off, Only when and the Show tile
+ * template each can, and all three must let it show. A template with no
+ * render in `templates` for its text as it stands lets it show. */
+export function watchTileHidden(
+  tile: WatchPageTile,
+  states: Readonly<Record<string, HassEntityState>>,
+  templates?: ReadonlyMap<string, WatchTemplateRender>,
+): boolean {
   if (tile.hideWhenInactive === true && tileEntityId(tile) !== "" && !watchEntityActive(tileEntityId(tile), states)) return true;
   const condition = watchTileShowWhen(tile);
-  return condition !== undefined && !watchShowWhenPasses(condition, states);
+  if (condition !== undefined && !watchShowWhenPasses(condition, states)) return true;
+  return !watchShowWhenTemplateAllows(templates, tile);
 }
 
 /**
  * A page as the watch lays it out once its "hide when off" tiles that are
- * off, and its "show only when" tiles whose condition fails, are gone
+ * off, and its "show only when" tiles whose condition or template fails
+ * (`watchTileHidden`, with the template renders in `templates`), are gone
  * (`InteractiveGrid.computeReflow`): with nothing hidden, the
  * page itself; else every other tile but the headers is packed again, in
  * row then column order, into the first free place at or below the top of
@@ -289,10 +298,15 @@ export function watchTileHidden(tile: WatchPageTile, states: Readonly<Record<str
  * their rows; a tile that cannot fit its section stays where it is stored.
  * Without states nothing is hidden.
  */
-export function watchReflowPage(page: WatchPage, states: Readonly<Record<string, HassEntityState>> | undefined, columns = 12): WatchPage {
+export function watchReflowPage(
+  page: WatchPage,
+  states: Readonly<Record<string, HassEntityState>> | undefined,
+  columns = 12,
+  templates?: ReadonlyMap<string, WatchTemplateRender>,
+): WatchPage {
   if (states === undefined) return page;
   const items = watchPageTiles(page);
-  const hidden = new Set(items.filter((t) => watchTileHidden(t, states)));
+  const hidden = new Set(items.filter((t) => watchTileHidden(t, states, templates)));
   if (hidden.size === 0) return page;
   const isDivider = (t: WatchPageTile) => tileKind(tileEntityId(t)) === "divider";
   const dividerRows = items.filter(isDivider).flatMap((t) => {
@@ -3206,7 +3220,7 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
   if (isSmartWatchPage(page)) return renderSmartPreview(input);
   // Tiles hidden while off are gone and the rest packed up, as on the watch;
   // in the all-on picture every tile is on, so none is hidden.
-  const layout = watchPreviewLayout(watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states), screen, { sideInset: watchPreviewSideInset(input) });
+  const layout = watchPreviewLayout(watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states, 12, input.templates), screen, { sideInset: watchPreviewSideInset(input) });
   const phone = input.phone !== undefined;
   const height = watchPreviewHeight(layout, phone);
   const scrolls = height > screen.height + 0.5;

@@ -256,18 +256,18 @@ describe("Collapse all", () => {
     const before = flat(inspector(el));
     expect(before).toContain(">Collapse all</button>");
     expect(before).not.toContain("data-open=false");
-    expect(before.match(/data-open=true/g)?.length).toBe(7);
+    expect(before.match(/data-open=true/g)?.length).toBe(8);
 
     click(inspector(el), ">Collapse all<");
     const folded = flat(inspector(el));
     expect(folded).toContain(">Expand all</button>");
     expect(folded).not.toContain("data-open=true");
-    expect(folded.match(/data-open=false/g)?.length).toBe(7);
+    expect(folded.match(/data-open=false/g)?.length).toBe(8);
     // The pinned Name card has no fold.
     expect(folded).toContain(`<section class="sec name-sec" data-open="true"`);
     // Across a reload too.
     expect(Object.keys(JSON.parse(storage.data[FOLD_STORE_KEY]!))).toEqual(
-      ["action", "background", "border", "icon", "size", "state", "text"].map((s) => `tile-settings:${s}`),
+      ["action", "background", "border", "icon", "size", "state", "text", "visibility"].map((s) => `tile-settings:${s}`),
     );
 
     click(inspector(el), ">Expand all<");
@@ -316,7 +316,7 @@ describe("the tile's cards", () => {
     const text = flat(inspector(editor(hallPage(), DIMMER)));
     const body = text.slice(text.indexOf(`<div class="insp-body">`));
     const titles = [...body.matchAll(/<h4>([^<]+)/g)].map((m) => m[1]);
-    expect(titles).toEqual(["Name", "Size", "Icon and color", "State", "Text", "Border", "Action", "Background"]);
+    expect(titles).toEqual(["Name", "Size", "Icon and color", "State", "Text", "Border", "Action", "Visibility", "Background"]);
     const name = card(body, "Name");
     expect(name).toContain(`class="sec name-sec"`);
     expect(name).toContain(`aria-label="Label"`);
@@ -671,8 +671,20 @@ describe("the changed dot", () => {
 
   it("Action: only for a stored action that differs from what the watch does without it", () => {
     expect(watchTileSectionChanged(tileHost(DIMMER_TILE), "action")).toBe(false);
-    expect(watchTileSectionChanged(tileHost({ ...DIMMER_TILE, hideWhenInactive: true }), "action")).toBe(true);
     expect(watchTileSectionChanged(tileHost({ ...DIMMER_TILE, singleTapAction: "openControl" }), "action")).toBe(true);
+    // Show tile is the Visibility card's now.
+    expect(watchTileSectionChanged(tileHost({ ...DIMMER_TILE, hideWhenInactive: true }), "action")).toBe(false);
+    expect(watchTileSectionChanged(tileHost({ ...DIMMER_TILE, showWhenTemplate: "{{ true }}" }), "action")).toBe(false);
+  });
+
+  it("Visibility: for any Show tile choice but Always, and not for a blank template", () => {
+    expect(watchTileSectionChanged(tileHost(DIMMER_TILE), "visibility")).toBe(false);
+    expect(watchTileSectionChanged(tileHost({ ...DIMMER_TILE, hideWhenInactive: true }), "visibility")).toBe(true);
+    expect(watchTileSectionChanged(tileHost({ ...DIMMER_TILE, hideWhenInactive: false }), "visibility")).toBe(false);
+    const showWhen = { comparisonOperator: "eq", entityId: "person.alex", state: "home" };
+    expect(watchTileSectionChanged(tileHost({ ...DIMMER_TILE, showWhen }), "visibility")).toBe(true);
+    expect(watchTileSectionChanged(tileHost({ ...DIMMER_TILE, showWhenTemplate: "{{ is_state('sun.sun', 'below_horizon') }}" }), "visibility")).toBe(true);
+    expect(watchTileSectionChanged(tileHost({ ...DIMMER_TILE, showWhenTemplate: "   " }), "visibility")).toBe(false);
   });
 
   it("Icon: for a size or shadow of the tile's own, or an icon away from the kind's", () => {

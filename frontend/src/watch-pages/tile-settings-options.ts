@@ -88,6 +88,8 @@ export type WatchTileSettingsSection =
   | "text"
   | "border"
   | "action"
+  // Show tile: Always, Only while on, Only when, Template.
+  | "visibility"
   // A tile's place and size, and a smart page rule's own tile size (part 3f
   // batch 3): drawn only when the caller hands the section's rows in.
   | "size"
@@ -106,6 +108,7 @@ export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettin
   text: "Text",
   border: "Border",
   action: "Action",
+  visibility: "Visibility",
   size: "Size",
   background: "Background",
 };
@@ -122,7 +125,8 @@ export interface WatchSectionBadge {
  * that does the same job looks the same in both editors: what the tile is
  * about (its target, request, header, special task) is Content, its
  * look is Look, its words are Extras (teal), the per-state look is States,
- * the tap is Tap and the place on the page is Position.
+ * the tap is Tap, when it shows at all is Visibility and the place on the
+ * page is Position.
  */
 export const WATCH_TILE_SECTION_BADGES: Readonly<Record<WatchTileSettingsSection, WatchSectionBadge>> = {
   size: { color: SECTION_COLOR.position, icon: "place" },
@@ -138,6 +142,7 @@ export const WATCH_TILE_SECTION_BADGES: Readonly<Record<WatchTileSettingsSection
   text: { color: SECTION_COLOR.numbers, icon: "text" },
   state: { color: SECTION_COLOR.states, icon: "states" },
   action: { color: SECTION_COLOR.tap, icon: "tap" },
+  visibility: { color: SECTION_COLOR.visibility, icon: "show" },
 };
 
 /** The pinned Name card's badge, a tile's and a page's alike. */
@@ -184,13 +189,14 @@ export function watchDomainStyleSections(stateTask: boolean): WatchTileSettingsS
 
 /**
  * The sections a tile gets, in the order of the phone's tasks: Border and
- * Background only for a spacer (it has no icon or words); Header and Action
- * for a header, whose look is on the Header task; Opens first for a go to
+ * Background only for a spacer (it has no icon or words); Header, Action and
+ * Visibility for a header, whose look is on the Header task; Opens first for a go to
  * page or peek tile; Target first for an HTTP action or status page tile,
  * then Request (an HTTP action); only the line that says why for a tile of
  * a removed kind (a macro), which the panel keeps as stored; Icon and color,
- * State (for the domains the phone shows it for), Text, Border, Action and
- * Background for everything else. A smart page never gets here.
+ * State (for the domains the phone shows it for), Text, Border, Action,
+ * Visibility (Show tile, which the phone kept in Action) and Background for
+ * everything else. A smart page never gets here.
  *
  * A header has no Border or Background, a departure from the phone, which
  * shows both: the watch's `DividerTile` reads none of their keys.
@@ -203,7 +209,7 @@ export function watchDomainStyleSections(stateTask: boolean): WatchTileSettingsS
 export function watchTileSettingsSections(tile: WatchPageTile, states?: WatchSpecialStates): WatchTileSettingsSection[] {
   const kind = tileKind(tileEntityId(tile));
   if (kind === "spacer") return ["border", "background"];
-  if (kind === "divider") return ["header", "action"];
+  if (kind === "divider") return ["header", "action", "visibility"];
   if (isWatchRemovedTileKind(kind)) return ["removed"];
   const out: WatchTileSettingsSection[] = [];
   if (watchPageLinkTarget(tile) !== undefined) out.push("opens");
@@ -215,7 +221,7 @@ export function watchTileSettingsSections(tile: WatchPageTile, states?: WatchSpe
   if (watchSpecialTask(tile, states) !== undefined) out.push("special");
   out.push("icon");
   if (watchTileHasStateTask(tile)) out.push("state");
-  out.push("text", "border", "action", "background");
+  out.push("text", "border", "action", "visibility", "background");
   return out;
 }
 

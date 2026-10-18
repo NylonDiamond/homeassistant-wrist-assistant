@@ -1254,6 +1254,10 @@
           "ref": "tileCondition",
           "required": false
         },
+        "showWhenTemplate": {
+          "type": "string",
+          "required": false
+        },
         "peekDisableAnimation": {
           "type": "bool",
           "required": false,

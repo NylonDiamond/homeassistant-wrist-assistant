@@ -41,6 +41,7 @@ import {
   watchPagesOf,
 } from "./model.js";
 import { watchCapitalized } from "./tile-new.js";
+import { WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS, watchShowWhenTemplateShows, watchTileShowWhenTemplate } from "./show-when.js";
 
 // ── the home ─────────────────────────────────────────────────────────────
 
@@ -90,17 +91,29 @@ export function watchTemplateText(tile: WatchPageTile): string {
   return typeof tile.templateString === "string" ? tile.templateString : "";
 }
 
+/** The request key of a tile's Show tile template (`showWhenTemplate`):
+ * apart from its template tile text, which is keyed by the bare id. */
+export function watchShowWhenTemplateKey(tileId: string): string {
+  return `show:${tileId}`;
+}
+
 /**
  * What the preview asks `render_values` for on one page: each template
  * tile's id and text, for every template tile with an id and a text that is
  * not blank (Home Assistant refuses a blank one; the preview draws it
- * without asking). A tile listed twice under one id is asked once, its
- * first text.
+ * without asking), and each Show tile template under its tile's
+ * `watchShowWhenTemplateKey`, one the watch would send (no longer than
+ * `WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS`). A tile listed twice under one id
+ * is asked once, its first text.
  */
 export function watchTemplateRequests(page: WatchPage | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   for (const tile of watchPageTiles(page)) {
-    if (!isWatchTemplateTile(tile) || typeof tile.id !== "string" || tile.id === "") continue;
+    if (typeof tile.id !== "string" || tile.id === "") continue;
+    const show = watchTileShowWhenTemplate(tile);
+    const showKey = watchShowWhenTemplateKey(tile.id);
+    if (show !== undefined && show.length <= WATCH_SHOW_WHEN_TEMPLATE_MAX_CHARS && !Object.hasOwn(out, showKey)) out[showKey] = show;
+    if (!isWatchTemplateTile(tile)) continue;
     const text = watchTemplateText(tile);
     if (text.trim() === "" || Object.hasOwn(out, tile.id)) continue;
     out[tile.id] = text;
@@ -147,6 +160,28 @@ export function watchTemplateRender(
   if (typeof tile.id !== "string") return undefined;
   const held = renders?.get(tile.id);
   return held !== undefined && held.text === watchTemplateText(tile) ? held.result : undefined;
+}
+
+/** A tile's Show tile template's last render for its text as it stands,
+ * undefined when there is none yet or it was for another text. */
+export function watchShowWhenTemplateRender(
+  renders: ReadonlyMap<string, WatchTemplateRender> | undefined,
+  tile: WatchPageTile,
+): RenderResult | undefined {
+  const text = watchTileShowWhenTemplate(tile);
+  if (typeof tile.id !== "string" || text === undefined) return undefined;
+  const held = renders?.get(watchShowWhenTemplateKey(tile.id));
+  return held !== undefined && held.text === text ? held.result : undefined;
+}
+
+/** Whether a tile's Show tile template lets it show now in the preview: true
+ * with no template, and with no render of the text as it stands. */
+export function watchShowWhenTemplateAllows(
+  renders: ReadonlyMap<string, WatchTemplateRender> | undefined,
+  tile: WatchPageTile,
+): boolean {
+  if (watchTileShowWhenTemplate(tile) === undefined) return true;
+  return watchShowWhenTemplateShows(watchShowWhenTemplateRender(renders, tile));
 }
 
 // ── music hub ────────────────────────────────────────────────────────────

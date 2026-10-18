@@ -67,6 +67,9 @@ export const SECTION_COLOR = {
   position: "var(--wa-hue-pink)",
   states: "var(--wa-hue-yellow)",
   tap: "var(--wa-hue-red)",
+  /** A watch tile's Visibility card (Show tile): the one hue no other
+   * section card uses. */
+  visibility: "var(--wa-hue-purple)",
   /** The Home Screen card, between a shape's Look and its Rules. */
   home: "var(--wa-hue-blue)",
   /** A layer's name and other cards about no section: neutral. */
