@@ -288,7 +288,7 @@ export const WATCH_PHONE_KEY_WORDS: Readonly<Record<WatchPhoneKey, { title: stri
   cameraTileLive: {
     title: "Live video",
     label: "Live video in the tile",
-    help: "2 frames a second while the tile is on screen. Up to 4 live tiles at once; the rest show snapshots. Uses more battery.",
+    help: "2 frames a second while the tile is on screen. Up to 4 live tiles at once; the rest show snapshots. Uses more battery. Needs the paid Camera Live Streaming feature; without it the tile keeps its snapshots.",
   },
   sensorChart: {
     title: "Chart",
