@@ -1,7 +1,10 @@
 // An iPhone's pages are edited with the same tile and page settings as a
 // watch's. The lines that name the device showing the page say "iPhone"
 // there (the host's `device`), and keep saying "watch" for a watch or a
-// host that names no device.
+// host that names no device. A tile only the iPhone draws names the iPhone
+// on every editor, and the words the editor adds for the iPhone only tiles
+// and keys (the Add tile group, the stage outline, the "iPhone extras" fold,
+// the device strip's "skips 2", the Help sheet's line) are checked here.
 
 import { describe, expect, it } from "vitest";
 
@@ -32,7 +35,11 @@ import {
   watchLabelNote,
   watchLibraryTargetMenu,
 } from "../src/watch-pages/tile-settings-options.js";
-import { renderTileSettings } from "../src/watch-pages/tile-settings.js";
+import { renderTileName, renderTileSettings } from "../src/watch-pages/tile-settings.js";
+import { PAGES_PHONE_TILES_TEXT } from "../src/help-sheet.js";
+import { tickSkipsText, tickSkipsTitle } from "../src/library/ticks.js";
+import { WATCH_PHONE_SETTING_KEYS, watchPhoneKeyKinds } from "../src/watch-pages/phone-keys-model.js";
+import { isVirtualTileKind } from "../src/watch-pages/model.js";
 
 // The views ask for the focused field (`document.activeElement`); Node has
 // no document.
@@ -188,7 +195,11 @@ describe("the keys only the iPhone reads", () => {
   it("fold on a watch's editor under iPhone extras, and never name the watch on an iPhone's", () => {
     expect(WATCH_PHONE_EXTRAS_TITLE).toBe("iPhone extras");
     expect(WATCH_PHONE_EXTRAS_HINT).toBe("The watch ignores these");
-    for (const entityId of ["camera.door", "sensor.temp", "media_player.kitchen"]) {
+    // Every kind that has a key only the iPhone reads.
+    const kinds = [...new Set(WATCH_PHONE_SETTING_KEYS.flatMap((key) => watchPhoneKeyKinds(key)))];
+    expect(kinds.length).toBeGreaterThanOrEqual(6);
+    const ids = kinds.map((kind) => (isVirtualTileKind(kind) ? `${kind}.C3A0E000-0000-4000-8000-0000000000B7` : `${kind}.thing`));
+    for (const entityId of ids) {
       const watch = text(renderTileSettings(tileHost([tile(entityId)])));
       expect(watch, entityId).toContain("iPhone extras");
       expect(watch, entityId).toContain("The watch ignores these");
@@ -206,12 +217,22 @@ describe("the kinds only the iPhone draws", () => {
     expect(WATCH_PHONE_TILE_STAGE_TEXT).toBe("Not on a watch");
   });
 
-  it("never name the watch in their settings on an iPhone's editor", () => {
+  it("never name the watch in their settings, on an iPhone's editor or a watch's", () => {
     for (const kind of ["map", "chart", "text_field", "web"]) {
-      const phone = text(renderTileSettings(tileHost([tile(`${kind}.C3A0E000-0000-4000-8000-0000000000B7`)], "iphone")));
-      expect(phone, kind).toContain("iPhone");
-      expect(phone.match(/[^.>]*\b(the watch|watch's)\b[^.<]*/gi) ?? [], kind).toEqual([]);
+      for (const device of ["iphone", undefined] as const) {
+        const host = tileHost([tile(`${kind}.C3A0E000-0000-4000-8000-0000000000B7`, { color: "#RAINBOW" })], device);
+        const drawn = text(renderTileName(host)) + text(renderTileSettings(host));
+        expect(drawn, kind).toContain("The iPhone cycles the tile through every color.");
+        expect(drawn.match(/[^.>]*\b(the watch|watch's)\b[^.<]*/gi) ?? [], `${kind} on ${device ?? "watch"}`).toEqual([]);
+      }
     }
+  });
+
+  it("are counted on a watch's chip in the contract's words, and the tooltip names an iPhone", () => {
+    expect(tickSkipsText(2)).toBe("skips 2");
+    expect(tickSkipsTitle("Den Watch", ["Map", "Web card"])).toBe("Den Watch skips Map and Web card: only an iPhone shows them.");
+    expect(PAGES_PHONE_TILES_TEXT).toBe("A few tiles, like a map or a web card, are for the iPhone only. A watch skips them, and its chip on the card says how many.");
+    for (const line of [tickSkipsText(2), tickSkipsTitle("Den Watch", ["Map"]), PAGES_PHONE_TILES_TEXT]) expect(line).not.toMatch(/[–—]| - /);
   });
 });
 

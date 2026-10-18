@@ -263,6 +263,7 @@ import {
   watchPageTiles,
   watchPagesOf,
 } from "./model.js";
+import { watchSkippedTileNames } from "./phone-tiles-model.js";
 import {
   type WatchPagePreviewInput,
   PHONE_SCREEN_FOLD_TEXT,
@@ -3533,6 +3534,9 @@ export class WaPageEditor extends LitElement {
       itemId: entry.id,
       devices,
       colorOf: (ownerId) => this.colorOf(ownerId),
+      // The page as edited here, so a map added a moment ago counts on the
+      // watch chips before it is saved.
+      skips: watchSkippedTileNames(page),
       pending: store.pending,
       ...(note === undefined ? {} : { note }),
       ...(admin === undefined ? {} : { admin }),

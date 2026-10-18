@@ -103,6 +103,7 @@ import { tickItem } from "./library-editing-io.js";
 import { libraryListStyles } from "./library-list-styles.js";
 import { listTabStyles } from "./list-tab-styles.js";
 import { type WatchPage, isSmartWatchPage, watchPagesOf } from "./model.js";
+import { watchSkippedTileNames } from "./phone-tiles-model.js";
 import { newWatchPage, newWatchPageName } from "./edit.js";
 import { newId } from "../model.js";
 import { rememberPreview } from "../library/item-mode.js";
@@ -798,14 +799,16 @@ export class WaAllPages extends LitElement {
   }
 
   /** A card's row of ticks: one per device, or on a device tab's rest the
-   * item's devices and "Add to this watch". */
+   * item's devices and "Add to this watch". A page's watch chips count the
+   * tiles a watch skips there, as the device strip over the stage does. */
   private renderCardTicks(library: Library, entry: LibraryItem, devices: readonly LinkDevice[], waiting: ReadonlySet<string>, addFor?: string): TemplateResult {
     const store = this.lib.store;
     const key = itemKey(entry);
     const note = store?.noteFor(entry.kind, entry.id) ?? this.tickNotes.get(key);
     const admin = this.hassNow?.user?.is_admin;
+    const skips = entry.kind === "pages" ? watchSkippedTileNames(entry.item as WatchPage) : [];
     return renderTicks({
-      library, kind: entry.kind, itemId: entry.id, devices, colorOf: this.colorOf,
+      library, kind: entry.kind, itemId: entry.id, devices, colorOf: this.colorOf, skips,
       ...(store === undefined ? {} : { pending: store.pending }),
       ...(note === undefined ? {} : { note }),
       ...(admin === undefined ? {} : { admin }),

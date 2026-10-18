@@ -13,7 +13,18 @@
 
 import tileApp from "./tile-app.json";
 import { REMOVE, editTile, isBool, setKey, withKey, withoutKey } from "./tile-settings-model.js";
-import { type WatchPageTile, type WatchPagesDocument, VIRTUAL_TILE_KINDS, tileDevices, tileEntityId, tileKind } from "./model.js";
+import {
+  type WatchPage,
+  type WatchPageTile,
+  type WatchPagesDocument,
+  VIRTUAL_TILE_KINDS,
+  tileDevices,
+  tileDrawsOn,
+  tileEntityId,
+  tileKind,
+  tileLabel,
+  watchPageTiles,
+} from "./model.js";
 
 /** A kind only the iPhone draws, as the entity id spells it. */
 export type WatchPhoneTileKind = "map" | "chart" | "text_field" | "web";
@@ -82,6 +93,16 @@ export function isWatchPhoneTileKind(kind: string): kind is WatchPhoneTileKind {
 export function watchPhoneTileKindOf(tile: WatchPageTile): WatchPhoneTileKind | undefined {
   const kind = tileKind(tileEntityId(tile));
   return isWatchPhoneTileKind(kind) ? kind : undefined;
+}
+
+/**
+ * The names of the tiles a watch skips on this page (`tileDrawsOn`), in the
+ * page's order: what the device strip's watch chips count ("skips 2") and
+ * list in their tooltip. A tile only the iPhone draws is named by its label,
+ * else its kind ("Map"). Empty for a page a watch draws whole.
+ */
+export function watchSkippedTileNames(page: WatchPage | undefined): string[] {
+  return watchPageTiles(page).filter((tile) => !tileDrawsOn(tile, "watch")).map((tile) => tileLabel(tile));
 }
 
 /** The add rule of a kind: its id prefix, fixed icon, color, name and size. */

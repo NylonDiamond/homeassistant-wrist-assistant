@@ -104,6 +104,21 @@ describe("the page editor's devices, from the library", () => {
     expect(phone).toBeDefined();
   });
 
+  it("counts on the watch's chip the tiles it skips, from the page as edited, before a save", async () => {
+    const { ticks, draft } = await editor();
+    expect(ticks(MINE)).not.toContain("lt-skips");
+    const doc = structuredClone(draft().document);
+    const mine = (doc.pages as JsonObject[]).find((p) => p.id === MINE)!;
+    mine.items = [...(mine.items as JsonObject[]), { id: U(200), entityId: `map.${U(201)}`, gridCol: 0, gridRow: 6, colSpan: 12, rowSpan: 4 }];
+    draft().apply(doc);
+    const strip = ticks(MINE);
+    expect(strip).toContain(`Jesse's Watch</span><em class="lt-skips" title=Jesse's Watch skips Map: only an iPhone shows it.>skips 1</em></button>`);
+    expect(strip).not.toMatch(/Jesse's iPhone<\/span><em class="lt-skips"/);
+    // One strip, still: the count is inside the chip the row measures.
+    expect(strip.match(/lib-on over-stage/g)).toHaveLength(1);
+    expect(strip.match(/<wa-chip-row/g)).toHaveLength(1);
+  });
+
   it("puts a page on another device with library/pick, and takes it off again", async () => {
     const { el, ha, phone } = await editor();
     const store = (el.lib as { store: { pick(o: string, k: string, i: string, on: boolean): Promise<unknown> } }).store;

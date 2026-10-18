@@ -9,6 +9,10 @@
 // 2a). A tick shows the state asked for while its write is out, and the
 // item's last refusal shows under the row in the tabs' warning ink.
 //
+// A page holding tiles only the iPhone draws (a map, a web card) gives each
+// watch's chip a small count, "skips 2", whose tooltip names the tiles: a
+// watch packs the page without them.
+//
 // `tickChips` is the pure part (testable without a browser);
 // `renderTicks` draws it through `renderTickChips`, whose row folds the
 // unticked chips into one "+ Add to a device" chip when they do not fit the
@@ -17,7 +21,7 @@
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import "./chip-row.js";
-import { type LinkDevice, deviceWord } from "../watch-pages/devices.js";
+import { type LinkDevice, deviceWord, joinWords } from "../watch-pages/devices.js";
 import type { LibraryKind } from "./client.js";
 import { type Library, libraryItem, libraryMenu, sameId } from "./model.js";
 import { type PendingPick, pendingKey } from "./store.js";
@@ -47,6 +51,10 @@ export interface TicksInput {
   /** The words over a menu's row; "Used by" unless given, none with
    * false. Never drawn for pages or status pages. */
   hint?: string | false;
+  /** The tiles a watch skips on this page, by name (`watchSkippedTileNames`):
+   * each watch's chip then says how many ("skips 2") and lists them in its
+   * tooltip. Pages only; empty or absent adds nothing. */
+  skips?: readonly string[];
 }
 
 /** One chip of the row. */
@@ -77,6 +85,10 @@ export interface TickChip {
    * editor's "not this shape", "full" or "sure?", said on the chip because a
    * touch screen never shows the tooltip. */
   tag?: string;
+  /** A watch's count of the page's tiles only the iPhone draws, in its own
+   * `<em>` after the name ("skips 2"), and the tooltip that lists them. In
+   * the chip, so the strip's fold measures the wider chip. */
+  skips?: { text: string; title: string };
 }
 
 /** Why a device cannot take an item no device has. */
@@ -87,8 +99,32 @@ export function menuOnTitle(name: string, unitTitle: string): string {
   return `${name} uses this menu. To change that, pick another ${unitTitle} for it.`;
 }
 
-/** The chips of one item's row. */
+/** A watch chip's count of the tiles it skips on the page: "skips 2". */
+export function tickSkipsText(count: number): string {
+  return `skips ${count}`;
+}
+
+/** That count's tooltip, naming the watch and the tiles: four names at
+ * most, then how many more. */
+export function tickSkipsTitle(name: string, tiles: readonly string[]): string {
+  const shown = tiles.length <= 4 ? joinWords(tiles) : `${tiles.slice(0, 3).join(", ")} and ${tiles.length - 3} more`;
+  return `${name} skips ${shown}: only an iPhone shows ${tiles.length === 1 ? "it" : "them"}.`;
+}
+
+/** The chips of one item's row, each watch's with the tiles it skips
+ * (`TicksInput.skips`). */
 export function tickChips(input: TicksInput): TickChip[] {
+  const chips = plainTickChips(input);
+  const skipped = input.kind === "pages" ? (input.skips ?? []) : [];
+  if (skipped.length === 0) return chips;
+  return chips.map((chip) => {
+    if (chip.device !== "watch") return chip;
+    const title = tickSkipsTitle(chip.name, skipped);
+    return { ...chip, title: `${chip.title} ${title}`, skips: { text: tickSkipsText(skipped.length), title } };
+  });
+}
+
+function plainTickChips(input: TicksInput): TickChip[] {
   const { library, kind, itemId, devices } = input;
   const round = kind === "menus";
   const menu = round ? libraryMenu(library, itemId) : undefined;
@@ -180,7 +216,9 @@ export function renderTickChips(chips: readonly TickChip[], opts: TickChipsOptio
         if (c.next !== undefined) onPick(c.ownerId, c.next);
       }}><span class="lt-box" aria-hidden="true"></span><span class="lt-name">${c.label}</span>${c.hidden
         ? html`<em>hidden</em>`
-        : c.tag === undefined ? nothing : html`<em>${c.tag}</em>`}</button>`;
+        : c.tag === undefined ? nothing : html`<em>${c.tag}</em>`}${c.skips === undefined
+        ? nothing
+        : html`<em class="lt-skips" title=${c.skips.title}>${c.skips.text}</em>`}</button>`;
   // The dashed "Add to this watch" chip is already the way in, so it never
   // folds and never asks for a fold of its own.
   const folds = chips.some((c) => !c.on && !c.add);
@@ -250,7 +288,9 @@ export const libraryTicksStyles = css`
   .lt-chip.on.rd { cursor: default; }
   .lt-chip.add { border-style: dashed; background: transparent; color: var(--wa-muted); }
   .lt-chip.dim { opacity: .55; }
-  .lt-chip em { font-style: normal; font-size: 10px; color: var(--wa-muted); }
+  /* The tags after the name never shrink or wrap: the name takes the
+     ellipsis, so a narrow chip still says "skips 2" whole. */
+  .lt-chip em { flex: none; white-space: nowrap; font-style: normal; font-size: 10px; color: var(--wa-muted); }
   .lt-chip.busy { opacity: .6; cursor: progress; }
   .lt-chip.stuck { opacity: .45; cursor: not-allowed; }
   .lt-note { margin: 0; font-size: 11.5px; line-height: 1.35; color: var(--wa-need); }

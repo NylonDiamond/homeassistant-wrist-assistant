@@ -76,7 +76,8 @@ import {
 } from "./styling-model.js";
 import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider, watchStylingTheme, watchTitleSwatches } from "./tile-styling.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
-import { type TileSettingsHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
+import type { SettingDevice } from "../watch-settings.js";
+import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import { forgetSpecialStatus, renderSpecial, specialSummary, watchSpecialSectionTitle } from "./special-settings.js";
 import { renderInboxLine, renderPhoneTileTask } from "./app-settings.js";
@@ -592,8 +593,20 @@ export function tileSettingsFoldIds(host: TileSettingsHost, sections: readonly W
   return sections.filter((s) => !inboxLine(host, s)).map((section) => ({ module: KEY, section, ...(startsFolded(section) ? { folded: true } : {}) }));
 }
 
+/**
+ * The host the tile's lines are written for. A tile only the iPhone draws
+ * (a map, a web card) is never shown by a watch, so on a watch's editor its
+ * lines name the iPhone too ("The iPhone picks the icon"), not a watch that
+ * skips it. Any other tile keeps the host's device.
+ */
+export function tileWordsHost(host: TileSettingsHost): TileSettingsHost {
+  if (hostDevice(host) === "iphone" || watchPhoneTileKindOf(host.tile) === undefined) return host;
+  return extendHost(host, { device: (): SettingDevice => "iphone" });
+}
+
 /** The settings cards for `host.tile`, or nothing. */
-export function renderTileSettings(host: TileSettingsHost, extras: TileSettingsExtras = {}): TemplateResult | typeof nothing {
+export function renderTileSettings(watchHost: TileSettingsHost, extras: TileSettingsExtras = {}): TemplateResult | typeof nothing {
+  const host = tileWordsHost(watchHost);
   const sections = (extras.sections ?? watchTileSectionsFor(host.tile, host.hass.states, hostDevice(host))).filter((s) => s !== "size" || extras.size !== undefined);
   if (sections.length === 0) return nothing;
   dropStaleTyping(host);
@@ -791,7 +804,8 @@ export function watchNameSection(input: TemplateResult, under: TemplateResult | 
  * the editor lets the box go when the selection moves, as it does the
  * settings' own fields.
  */
-export function renderTileName(host: TileSettingsHost): TemplateResult | typeof nothing {
+export function renderTileName(watchHost: TileSettingsHost): TemplateResult | typeof nothing {
+  const host = tileWordsHost(watchHost);
   if (host.domainStyle === true || !watchTileSettingsSections(host.tile, host.hass.states).includes("text")) return nothing;
   const tile = host.tile;
   const fallback = watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document), host.catalog);

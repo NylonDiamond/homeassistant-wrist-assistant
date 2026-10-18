@@ -60,9 +60,14 @@ const COMPLICATIONS_TEXT = [
   "Pick one in the list to change it, or make a new one.",
 ];
 
+/** The Pages tab's line about the tiles only the iPhone draws, and the
+ * count on a watch's chip ("skips 2", `library/ticks.ts`). */
+export const PAGES_PHONE_TILES_TEXT = "A few tiles, like a map or a web card, are for the iPhone only. A watch skips them, and its chip on the card says how many.";
+
 const PAGES_TEXT = [
   "Pages lists every page in your home, one card each. Tick a device on a card and the page is on it: one page, the same everywhere, so an edit shows on every device that has it.",
   "Pick a page to edit it, or make a new one. A device's tab sets its order and what it hides.",
+  PAGES_PHONE_TILES_TEXT,
 ];
 
 const STATUS_PAGES_TEXT = [

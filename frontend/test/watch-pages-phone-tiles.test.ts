@@ -61,6 +61,7 @@ import {
   watchMapEntityIds,
   watchMapZoom,
   watchPhoneTileSummary,
+  watchSkippedTileNames,
   watchTextTargetKind,
   watchWebScroll,
   watchWebURLLoads,
@@ -76,7 +77,7 @@ import {
 } from "../src/watch-pages/preview.js";
 import { type WatchPhoneAddKind, addNewWatchTile, newWatchTile, watchAddEntityId } from "../src/watch-pages/tile-new.js";
 import { watchTileSectionsFor } from "../src/watch-pages/tile-settings-options.js";
-import { renderTileSettings, tileInspectorSections } from "../src/watch-pages/tile-settings.js";
+import { renderTileName, renderTileSettings, tileInspectorSections, tileWordsHost } from "../src/watch-pages/tile-settings.js";
 
 // The views ask for the focused field (`document.activeElement`); Node has
 // no document.
@@ -509,6 +510,47 @@ describe("the settings of the iPhone only kinds", () => {
 function tileOf(doc: WatchPagesDocument): WatchPageTile {
   return ((doc.pages as WatchPage[])[0]!.items as WatchPageTile[]).find((t) => t.id === TILE)!;
 }
+
+describe("the settings of an iPhone only tile on a watch's editor", () => {
+  it("name the iPhone, the one device that shows the tile, as an iPhone's editor does", () => {
+    for (const kind of WATCH_PHONE_TILE_KINDS) {
+      const { host } = tileHost(`${kind}.${UUID}`, { color: "#RAINBOW", hideWhenInactive: true }, "watch");
+      const text = flatten(renderTileName(host)) + flatten(draw(host));
+      expect(text.match(/[^.>]*\b(the watch|watch's)\b[^.<]*/gi) ?? [], kind).toEqual([]);
+      for (const line of ["The iPhone picks the icon", "The iPhone cycles the tile through every color.", "The iPhone leaves the tile out while it is off."]) {
+        expect(text, `${kind}: ${line}`).toContain(line);
+      }
+      // The host itself still names the watch: only the tile's lines move.
+      expect(host.device).toBe("watch");
+      expect(tileWordsHost(host).device).toBe("iphone");
+    }
+    // Any other tile keeps the watch's words.
+    const { host } = tileHost("light.desk", { color: "#RAINBOW" }, "watch");
+    expect(tileWordsHost(host)).toBe(host);
+    expect(flatten(draw(host))).toContain("The watch cycles the tile through every color.");
+  });
+});
+
+describe("the tiles a watch skips on a page", () => {
+  it("are named in the page's order, by label else by kind, for the device strip's count", () => {
+    const page: WatchPage = {
+      id: PAGE,
+      name: "Living",
+      items: [
+        { id: "a", entityId: "light.desk" },
+        { id: "b", entityId: `map.${UUID}` },
+        { id: "c", entityId: `web.${UUID}`, customLabel: "Garden cam" },
+        { id: "d", entityId: "sensor.temp", sensorChart: "24h" },
+        { id: "e", entityId: `chart.${UUID}`, isHidden: true },
+      ],
+    };
+    // A phone-only key on a tile both draw is no skip: the watch draws the
+    // tile and ignores the key.
+    expect(watchSkippedTileNames(page)).toEqual(["Map", "Garden cam", "Chart"]);
+    expect(watchSkippedTileNames({ id: PAGE, name: "Lights", items: [{ id: "a", entityId: "light.desk" }] })).toEqual([]);
+    expect(watchSkippedTileNames(undefined)).toEqual([]);
+  });
+});
 
 // ── the stage and the pictures ───────────────────────────────────────────
 

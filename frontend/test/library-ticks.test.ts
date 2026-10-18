@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { libraryOf } from "../src/library/model.js";
 import { pendingKey } from "../src/library/store.js";
 import { chipsFold } from "../src/library/chip-row.js";
-import { TICK_ADMIN_TEXT, type TickChip, renderTickChips, renderTicks, tickChips, type TicksInput } from "../src/library/ticks.js";
+import { TICK_ADMIN_TEXT, type TickChip, renderTickChips, renderTicks, tickChips, tickSkipsText, tickSkipsTitle, type TicksInput } from "../src/library/ticks.js";
 import { CHEN, CHEN_MENU, DEVICES, HOME_MENU, JESSE, LIGHTS, LONELY, PAGE1, PHONE, QUICK, summary } from "./library-fixture.js";
 
 const flat = (v: unknown): string => {
@@ -190,5 +190,54 @@ describe("chipsFold", () => {
     expect(chipsFold([200], 50, 200)).toBe(false);
     expect(chipsFold([100, 100], 10, 210)).toBe(false);
     expect(chipsFold([100, 100], 10, 209)).toBe(true);
+  });
+});
+
+describe("the tiles a watch skips", () => {
+  it("count on every watch's chip, never the iPhone's, and the tooltip names them", () => {
+    const chips = tickChips(input({ skips: ["Map", "Garden"] }));
+    expect(chips.map((c) => [c.name, c.skips?.text])).toEqual([
+      ["Chen Watch", "skips 2"],
+      ["Jesse Apple Watch", "skips 2"],
+      ["iPhone 15 Pro", undefined],
+    ]);
+    expect(chips[0]!.skips!.title).toBe("Chen Watch skips Map and Garden: only an iPhone shows them.");
+    // The chip's own tooltip keeps what a click does, then the tiles.
+    expect(chips[0]!.title).toBe("Not on Chen Watch. Tick to put the page there. Chen Watch skips Map and Garden: only an iPhone shows them.");
+    expect(chips[2]!.title).toBe("On iPhone 15 Pro. Untick to take the page off it.");
+    // A watch's "Add to this watch" chip counts them too.
+    const add = tickChips(input({ itemId: LIGHTS, addFor: JESSE, skips: ["Map"] }));
+    expect(add.map((c) => [c.label, c.skips?.text])).toEqual([["Chen Watch", "skips 1"], ["Add to this watch", "skips 1"]]);
+  });
+
+  it("add nothing for a page a watch draws whole, or for a menu or a status page", () => {
+    expect(tickChips(input({})).every((c) => c.skips === undefined)).toBe(true);
+    expect(tickChips(input({ skips: [] })).every((c) => c.skips === undefined)).toBe(true);
+    expect(tickChips(input({ kind: "menus", itemId: HOME_MENU, skips: ["Map"] })).every((c) => c.skips === undefined)).toBe(true);
+    expect(tickChips(input({ kind: "status_pages", itemId: PAGE1, skips: ["Map"] })).every((c) => c.skips === undefined)).toBe(true);
+  });
+
+  it("say the contract's words: skips and the count, the tiles in the tooltip, four at most", () => {
+    expect(tickSkipsText(1)).toBe("skips 1");
+    expect(tickSkipsText(2)).toBe("skips 2");
+    expect(tickSkipsTitle("Den Watch", ["Map"])).toBe("Den Watch skips Map: only an iPhone shows it.");
+    expect(tickSkipsTitle("Den Watch", ["Map", "Chart", "Notes", "Web card"])).toBe("Den Watch skips Map, Chart, Notes and Web card: only an iPhone shows them.");
+    expect(tickSkipsTitle("Den Watch", ["Map", "Chart", "Notes", "Web card", "Garden"])).toBe("Den Watch skips Map, Chart, Notes and 2 more: only an iPhone shows them.");
+  });
+
+  it("draw the count inside the chip, in the strip's line and in the fold's popover, so the fold measures the wider chip", () => {
+    const text = flat(renderTicks(input({ skips: ["Map", "Garden"] }), () => undefined));
+    const em = `<em class="lt-skips" title=Chen Watch skips Map and Garden: only an iPhone shows them.>skips 2</em>`;
+    // In the chip's button, after its name: the row measures each chip's
+    // own width (chip-row.ts), so the count is part of what it adds up.
+    expect(text).toContain(`Chen Watch</span>${em}</button>`);
+    const line = text.slice(0, text.indexOf("lt-fold-pop"));
+    expect(line.split(">skips 2</em></button>").length - 1).toBe(2);
+    expect(text.slice(text.indexOf("lt-fold-pop")).split(">skips 2</em></button>").length - 1).toBe(2);
+    // A hidden watch says both.
+    expect(text).toContain("<em>hidden</em><em class=\"lt-skips\"");
+    // Chips that fit the strip without the count fold with it.
+    expect(chipsFold([120, 140, 110], 6, 382)).toBe(false);
+    expect(chipsFold([120 + 44, 140 + 44, 110], 6, 382)).toBe(true);
   });
 });

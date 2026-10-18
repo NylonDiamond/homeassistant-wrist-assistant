@@ -15,7 +15,7 @@ import {
   watchesWithPages,
 } from "../src/getting-started.js";
 import type { OwnerSummary, WatchConfigSummary } from "../src/ha-api.js";
-import { HELP_LIBRARY_TEXT, helpScreen, renderHelpSheet } from "../src/help-sheet.js";
+import { HELP_LIBRARY_TEXT, PAGES_PHONE_TILES_TEXT, helpScreen, renderHelpSheet } from "../src/help-sheet.js";
 import { IPHONE_SCREENS, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, iphoneScreenPath, renderTabBar } from "../src/shell.js";
 import { WATCH_CAMERAS_HELP_URL } from "../src/watch-cameras/hook.js";
 import { WATCH_CONTROL_CENTER_HELP_URL } from "../src/watch-control-center/hook.js";
@@ -185,6 +185,8 @@ describe("the Help sheet", () => {
     expect(h.text[0]).toBe("Pages lists every page in your home, one card each. Tick a device on a card and the page is on it: one page, the same everywhere, so an edit shows on every device that has it.");
     expect(h.text.join(" ")).not.toMatch(/Devices|[Ll]ink/);
     expect(h.text.join(" ")).not.toMatch(/status page|info page/i);
+    // The tiles only the iPhone draws, and the count on a watch's chip.
+    expect(h.text).toContain(PAGES_PHONE_TILES_TEXT);
     for (const line of h.text) expect(line).not.toMatch(/[–—]| - /);
   });
 
