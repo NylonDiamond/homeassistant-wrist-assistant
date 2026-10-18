@@ -6,7 +6,8 @@
 import { describe, expect, it } from "vitest";
 
 import { SymbolBrowser } from "../src/symbols.js";
-import { watchAddEmptyText, watchLeftOutText } from "../src/watch-pages/add-tile-list.js";
+import { WATCH_PHONE_GREYED_TEXT, WATCH_PHONE_GROUP_TITLE, watchAddEmptyText, watchLeftOutText } from "../src/watch-pages/add-tile-list.js";
+import { WATCH_PHONE_TILE_STAGE_TEXT } from "../src/watch-pages/preview.js";
 import {
   type WatchCatalog,
   readWatchCatalog,
@@ -194,6 +195,22 @@ describe("the keys only the iPhone reads", () => {
       const phone = text(renderTileSettings(tileHost([tile(entityId)], "iphone")));
       expect(phone, entityId).not.toContain("iPhone extras");
       expect(phone.match(/[^.>]*\b(the watch|watch's)\b[^.<]*/gi) ?? [], entityId).toEqual([]);
+    }
+  });
+});
+
+describe("the kinds only the iPhone draws", () => {
+  it("say the contract's words in the Add tile dialog and on a watch's stage", () => {
+    expect(WATCH_PHONE_GROUP_TITLE).toBe("iPhone only");
+    expect(WATCH_PHONE_GREYED_TEXT).toBe("Shown on the iPhone only");
+    expect(WATCH_PHONE_TILE_STAGE_TEXT).toBe("Not on a watch");
+  });
+
+  it("never name the watch in their settings on an iPhone's editor", () => {
+    for (const kind of ["map", "chart", "text_field", "web"]) {
+      const phone = text(renderTileSettings(tileHost([tile(`${kind}.C3A0E000-0000-4000-8000-0000000000B7`)], "iphone")));
+      expect(phone, kind).toContain("iPhone");
+      expect(phone.match(/[^.>]*\b(the watch|watch's)\b[^.<]*/gi) ?? [], kind).toEqual([]);
     }
   });
 });
