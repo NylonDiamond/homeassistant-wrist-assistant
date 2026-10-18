@@ -272,6 +272,18 @@
       "title": "Pages",
       "settings": [
         {
+          "key": "phonePageLook",
+          "devices": ["iphone"],
+          "type": "enum",
+          "label": "Page look",
+          "help": "iPhone draws pages like an iPhone app. Watch keeps the watch's look, only bigger.",
+          "default": "iphone",
+          "options": [
+            {"value": "iphone", "label": "iPhone"},
+            {"value": "watch", "label": "Watch"}
+          ]
+        },
+        {
           "key": "pageTitleMode",
           "devices": ["watch", "iphone"],
           "type": "enum",

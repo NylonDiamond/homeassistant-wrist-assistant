@@ -60,7 +60,8 @@ export interface CatalogSetting {
   key: string;
   /** The devices that read this key. Every entry of the catalog says it:
    * `["watch"]` for a watch only setting, `["watch", "iphone"]` for one the
-   * iPhone keeps too. The integration keeps only `iphone` keys on a phone's
+   * iPhone keeps too, `["iphone"]` for one only the iPhone reads (its Page
+   * look). The integration keeps only `iphone` keys on a phone's
    * settings (`PHONE_BEHAVIOR_KEYS`, which a test holds to this file).
    * Optional for a catalog built in a test. */
   devices?: readonly SettingDevice[];
@@ -740,13 +741,16 @@ const BEHAVIOR_APP_DEFAULTS: Readonly<Record<string, unknown>> = {
  * `initial` value or else its default, and the keys the app's decoder needs
  * beside them (`BEHAVIOR_APP_DEFAULTS`). A row whose default is nothing stored (an
  * entity with no target, no twist actions) is left out, as the phone stores
- * none. Keys in sorted order, as the phone's encoder writes them. A new
- * object on every call.
+ * none, and so is a row only the iPhone reads (`phonePageLook`): a watch
+ * never reads it, and on a phone an absent key is its default. Keys in
+ * sorted order, as the phone's encoder writes them. A new object on every
+ * call.
  */
 export function watchBehaviorDefaults(catalog: WatchSettingsCatalog = WATCH_SETTINGS_CATALOG): BehaviorDocument {
   const fields: Record<string, unknown> = { schemaVersion: BEHAVIOR_SCHEMA_VERSION };
   for (const setting of catalogSettings(catalog)) {
     if ((setting.type === "entity" || setting.type === "motionGestures") && setting.default === "") continue;
+    if (!(setting.devices ?? ["watch"]).includes("watch")) continue;
     fields[setting.key] = structuredClone(setting.initial ?? setting.default);
   }
   for (const [key, value] of Object.entries(BEHAVIOR_APP_DEFAULTS)) {

@@ -203,6 +203,13 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   },
 
   // ── navigation ──
+  phonePageLook: {
+    icon: "apps.iphone", // panel's own; the iPhone's own row
+    options: {
+      "iphone": { icon: "iphone" },
+      "watch": { icon: "applewatch" },
+    },
+  },
   pageTransitionStyle: {
     icon: "rectangle.2.swap", // panel's own; the app's Default choice
     demo: "pageTransition",

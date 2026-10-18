@@ -187,12 +187,13 @@ describe("the catalog", () => {
 
   // The integration keeps only the `iphone` keys on a phone's settings, and
   // its own copy of that list is held to this file by a Python test.
-  it("says for every row which devices read it: the watch always, the iPhone for 35", () => {
+  it("says for every row which devices read it: the watch for all but the Page look, the iPhone for 36", () => {
     for (const s of settings) {
       expect(s.devices, s.key).toBeDefined();
-      expect([["watch"], ["watch", "iphone"]], s.key).toContainEqual([...s.devices!]);
+      expect([["watch"], ["watch", "iphone"], ["iphone"]], s.key).toContainEqual([...s.devices!]);
     }
-    expect(settings.filter((s) => s.devices!.includes("iphone")).length).toBe(35);
+    expect(settings.filter((s) => s.devices!.includes("iphone")).length).toBe(36);
+    expect(settings.filter((s) => !s.devices!.includes("watch")).map((s) => s.key)).toEqual(["phonePageLook"]);
     expect(
       settings
         .filter((s) => !s.devices!.includes("iphone"))
@@ -524,7 +525,9 @@ describe("the defaults a new watch's settings open on", () => {
     expect(doc.schemaVersion).toBe(BEHAVIOR_SCHEMA_VERSION);
     expect(BEHAVIOR_SCHEMA_VERSION).toBe(1);
     for (const setting of catalogSettings()) {
-      if ((setting.type === "entity" || setting.type === "motionGestures") && setting.default === "") {
+      // Nothing stored, and the iPhone's own Page look, which no watch reads
+      // and a phone reads absent as its default.
+      if (((setting.type === "entity" || setting.type === "motionGestures") && setting.default === "") || !setting.devices!.includes("watch")) {
         expect(Object.hasOwn(doc, setting.key), setting.key).toBe(false);
       } else {
         expect(doc[setting.key], setting.key).toEqual(setting.initial ?? setting.default);

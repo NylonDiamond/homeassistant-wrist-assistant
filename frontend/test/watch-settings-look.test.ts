@@ -247,7 +247,8 @@ describe("the dialog", () => {
   it("draws every enum of up to five as a row of tile buttons, the rest as menus", () => {
     const { tree, text } = dialog({ ...watchBehaviorDefaults(), cameraRefreshOnOpen: true, showPageIndicator: true });
     const shown = text();
-    const tiled = settings.filter(usesTiles).map((s) => s.key);
+    // A watch's dialog: the iPhone's own Page look is not on it.
+    const tiled = settings.filter(usesTiles).filter((s) => s.devices?.includes("watch") !== false).map((s) => s.key);
     // The bounce domains' strip is a tile row too, of switches rather than choices.
     const rows = templates(tree(), "ws-tile-row")
       .filter((t) => !t.values.includes("pendingAnimationDisabledDomains"))

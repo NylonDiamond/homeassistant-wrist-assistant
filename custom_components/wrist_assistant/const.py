@@ -258,6 +258,7 @@ PHONE_BEHAVIOR_KEYS = frozenset(
         "showPendingAnimation",
         "pendingAnimationDisabledDomains",
         # Navigation
+        "phonePageLook",
         "pageTransitionStyle",
         "pageTitleMode",
         "showPageIndicator",
