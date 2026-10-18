@@ -62,7 +62,9 @@ import {
   watchPageName,
 } from "./model.js";
 import type { SettingDevice } from "../watch-settings.js";
+import { uiIcon } from "../ui-icons.js";
 import { watchPageTheme, watchPageValue } from "./page-settings-model.js";
+import { watchTextPlaceholder, watchTextSubmit, watchWebURL } from "./phone-tiles-model.js";
 import { watchPagePhoto, watchPagePhotoStyle } from "./page-photo.js";
 import { WATCH_TILE_DEFAULTS, watchKindColor, watchThemeRoleColors } from "./tile-new.js";
 import { watchStateDomains, watchStylingTheme } from "./tile-styling.js";
@@ -2970,6 +2972,93 @@ function withStateMode(tile: WatchPageTile, input: WatchPagePreviewInput): Watch
   return states === input.states ? input : { ...input, states };
 }
 
+// ── tiles only the iPhone draws ──────────────────────────────────────────
+
+/** The words in a phone only tile's outline on a watch. */
+export const WATCH_PHONE_TILE_STAGE_TEXT = "Not on a watch";
+
+/** The shortest outline, in points, that has room for its words under the
+ * glyph. */
+const PHONE_OUTLINE_TEXT_MIN_HEIGHT = 35;
+
+/**
+ * A tile the watch does not draw (`tileDrawsOn`, an iPhone only kind), as a
+ * watch's picture shows it: a dashed outline at its place with the phone
+ * glyph and "Not on a watch". The watch skips the tile and packs the page
+ * without it (`watchReflowPage`); the outline only says where it sits on the
+ * iPhone, under the tiles that move up into its place.
+ */
+function phoneOnlyOutline(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, s: number, hint: string | undefined): TemplateResult {
+  const radius = previewTileCornerRadius(input, width, height) * s;
+  const glyph = Math.max(8, Math.min(18, Math.min(width, height) * 0.4)) * s;
+  const words = height >= PHONE_OUTLINE_TEXT_MIN_HEIGHT && width >= 30;
+  return html`<div class="wp-tile wp-phone-out" data-phone-only=${tileKind(tileEntityId(tile))}
+    style=${`${box}border-radius:${radius}px;border-width:${Math.max(1, Math.round(s))}px;gap:${2 * s}px`}
+    title=${hint === undefined ? nothing : `${hint} · ${WATCH_PHONE_TILE_STAGE_TEXT}`}>
+    <span class="wp-phone-glyph" style=${`width:${glyph}px;height:${glyph}px`}>${uiIcon("phone")}</span>
+    ${words ? html`<span class="wp-phone-words" style=${`font-size:${8.5 * s}px`}>${WATCH_PHONE_TILE_STAGE_TEXT}</span>` : nothing}
+  </div>`;
+}
+
+/** The fake series a chart tile's face draws, x and y from 0 to 1. */
+const FAKE_CHART: readonly [number, number][] = [[0, 0.72], [0.18, 0.58], [0.36, 0.64], [0.54, 0.38], [0.72, 0.46], [0.86, 0.26], [1, 0.3]];
+
+/**
+ * A tile only the iPhone draws, as an iPhone's picture shows it: simple
+ * faces, not the real thing. A map is its glyph on a muted green block, a
+ * chart a small made up line in the tile's color, a text field a rounded
+ * field with its placeholder (and a send button when it submits with one),
+ * a web card a globe on a card with the address's host.
+ */
+function phoneTileFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, s: number, hint: string | undefined): TemplateResult {
+  const kind = tileKind(tileEntityId(tile));
+  const radius = previewTileCornerRadius(input, width, height) * s;
+  const ink = flatInk(tile.color, "#0A84FF");
+  const side = Math.min(width, height);
+  const frame = (cls: string, body: TemplateResult, ground: string) => html`<div class="wp-tile wp-phone-face ${cls}" data-phone-face=${kind}
+    style=${`${box}border-radius:${radius}px;background:${ground}`} title=${hint ?? nothing}>${body}</div>`;
+  switch (kind) {
+    case "map":
+      return frame("map", html`<span class="wp-icon">${symbolMark(input.icons, "map.fill", Math.min(28, side * 0.42) * s, "#D7EBDD")}</span>`,
+        "linear-gradient(135deg, #3E5A47, #2F4638)");
+    case "chart": {
+      const w = width * s;
+      const h = height * s;
+      const pad = 6 * s;
+      const points = FAKE_CHART.map(([x, y]) => `${Math.round((pad + x * (w - 2 * pad)) * 10) / 10},${Math.round((pad + y * (h - 2 * pad)) * 10) / 10}`).join(" ");
+      return frame("chart", html`<svg class="wp-phone-chart" width=${w} height=${h} viewBox=${`0 0 ${w} ${h}`} aria-hidden="true">
+        ${svg`<polyline points=${points} fill="none" stroke=${ink} stroke-width=${Math.max(1.5, 2 * s)} stroke-linecap="round" stroke-linejoin="round" />`}
+      </svg>`, `color-mix(in srgb, ${ink} 14%, #1C1C1E)`);
+    }
+    case "text_field": {
+      const own = watchTextPlaceholder(tile);
+      const label = typeof tile.customLabel === "string" && tile.customLabel.trim() !== "" ? tile.customLabel : tileKindLabel(kind);
+      const button = watchTextSubmit(tile) === "button";
+      const fieldH = Math.max(14, Math.min(34, height - 8)) * s;
+      return frame("text", html`<span class="wp-phone-field" style=${`height:${fieldH}px;border-radius:${Math.min(10, fieldH / s / 2) * s}px;font-size:${Math.min(13, fieldH / s * 0.45) * s}px;padding:0 ${8 * s}px`}>
+          <span class="wp-phone-ph">${own !== "" ? own : label}</span></span>
+        ${button ? html`<span class="wp-phone-send" style=${`width:${fieldH}px;height:${fieldH}px;background:${ink}`}></span>` : nothing}`,
+        "rgba(255, 255, 255, 0.06)");
+    }
+    case "web": {
+      const url = watchWebURL(tile).trim();
+      let host = "";
+      try {
+        host = url === "" ? "" : new URL(url).host;
+      } catch {
+        host = "";
+      }
+      const glyph = Math.max(10, Math.min(28, side * 0.38)) * s;
+      return frame("web", html`<span class="wp-phone-bar" style=${`height:${Math.min(10, height * 0.12) * s}px`}></span>
+        <span class="wp-phone-glyph web" style=${`width:${glyph}px;height:${glyph}px;color:${ink}`}>${uiIcon("globe")}</span>
+        ${host !== "" && height >= PHONE_OUTLINE_TEXT_MIN_HEIGHT ? html`<span class="wp-phone-words" style=${`font-size:${9 * s}px`}>${host}</span>` : nothing}`,
+        "#2C2C2E");
+    }
+    default:
+      return frame("", html``, "rgba(255, 255, 255, 0.08)");
+  }
+}
+
 function tileFace(
   stored: WatchPageTile,
   width: number,
@@ -3009,6 +3098,13 @@ function tileFace(
     return html`<div class="wp-spacer" style=${`${box}border-radius:${previewTileCornerRadius(input, width, height) * s}px;${watchSpacerStyle(tile, s, { width, height })}`} title=${titled ? hint : nothing}>${tileUnderlay(tile, input, true, { width, height }, s, true)}</div>`;
   }
 
+  // A kind only the iPhone draws: its outline on a watch, a simple face on
+  // an iPhone.
+  if (!tileDrawsOn(tile, "watch")) {
+    return input.phone === undefined
+      ? phoneOnlyOutline(tile, width, height, box, input, s, titled ? hint : undefined)
+      : phoneTileFace(tile, width, height, box, input, s, titled ? hint : undefined);
+  }
   if (kind === "camera" || kind === "multicam") return cameraFace(tile, width, height, box, input, unit, s, titled ? hint : undefined);
   if (kind === "template") return templateFace(tile, width, height, box, input, unit, s, titled ? hint : undefined);
 
@@ -3308,6 +3404,9 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
   // device does not draw is gone in both.
   const phone = input.phone !== undefined;
   const layout = watchPreviewLayout(watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states, WATCH_GRID_COLUMNS, input.templates, phone ? "iphone" : "watch"), screen, { sideInset: watchPreviewSideInset(input) });
+  // The tiles a watch skips, as dashed outlines where the page stores them
+  // and under the tiles that move up into their place.
+  const skipped = phone ? [] : watchSkippedTilesLayout(page, screen, input);
   const height = watchPreviewHeight(layout, phone);
   const scrolls = height > screen.height + 0.5;
   const back = previewScreenLayers(input, page, s, screen, input.photo);
@@ -3316,11 +3415,20 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
     ${back.layers}
     ${phone ? nothing : renderWatchClock(screen, s, layout.topInset, input.icons)}
     ${renderPreviewPageTitle(input, page, s, layout.topInset)}
-    ${layout.tiles.length === 0 ? html`<div class="wp-smart"><span>No tiles on this page.</span></div>` : nothing}
+    ${layout.tiles.length === 0 && skipped.length === 0 ? html`<div class="wp-smart"><span>No tiles on this page.</span></div>` : nothing}
+    ${skipped.map((placed) => renderTile(placed, input, layout.unit, layout.topInset, s))}
     ${layout.tiles.map((placed) => renderTile(placed, input, layout.unit, layout.topInset, s))}
     ${phone ? nothing : renderWatchPageIndicator(input, s)}
     ${scrolls ? renderWatchScreenFold(screen.height * s, phone) : nothing}
   </div>`);
+}
+
+/** The tiles a watch skips (`tileDrawsOn`), placed where the page as stored
+ * puts them, with nothing hidden or skipped: where each one's outline goes
+ * in a watch's picture. Empty for a page with none. */
+export function watchSkippedTilesLayout(page: WatchPage, screen: { width: number; height: number }, input: Pick<WatchPagePreviewInput, "phone">): PlacedWatchTile[] {
+  if (watchPageTiles(page).every((t) => tileDrawsOn(t, "watch"))) return [];
+  return watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(input) }).tiles.filter((t) => !tileDrawsOn(t.tile, "watch"));
 }
 
 /**
@@ -3536,6 +3644,30 @@ export const watchPagePreviewStyles = css`
   }
   .wp-tpl-icon { display: inline-block; vertical-align: -0.12em; }
   .wp-tile.unknown { outline: 1px dashed rgba(255, 255, 255, 0.3); outline-offset: -1px; }
+  /* A tile only the iPhone draws, on a watch: a dashed outline at its place
+     with the phone glyph and "Not on a watch". */
+  .wp-tile.wp-phone-out {
+    box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    border: 1px dashed rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0.03); color: rgba(255, 255, 255, 0.6);
+  }
+  .wp-phone-glyph { display: inline-grid; place-items: center; flex: none; }
+  .wp-phone-glyph > svg.ui-icon { width: 100%; height: 100%; }
+  .wp-phone-words {
+    max-width: 92%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.15;
+    font-family: ${unsafeCSS(WATCH_ROUNDED_FAMILY)}; font-weight: 600; color: rgba(255, 255, 255, 0.6);
+  }
+  /* The same tiles on an iPhone: simple faces. */
+  .wp-tile.wp-phone-face { display: flex; align-items: center; justify-content: center; gap: 6%; }
+  .wp-phone-face.web { flex-direction: column; gap: 3%; }
+  .wp-phone-chart { position: absolute; inset: 0; display: block; }
+  .wp-phone-field {
+    box-sizing: border-box; flex: 1; min-width: 0; margin-left: 6%; display: flex; align-items: center;
+    background: rgba(255, 255, 255, 0.12); color: rgba(235, 235, 245, 0.45); font-family: system-ui, sans-serif;
+  }
+  .wp-phone-field:last-child { margin-right: 6%; }
+  .wp-phone-ph { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wp-phone-send { flex: none; margin-right: 6%; border-radius: 50%; }
+  .wp-phone-bar { position: absolute; left: 0; right: 0; top: 0; background: rgba(255, 255, 255, 0.1); }
   .wp-sym { display: block; flex: none; position: relative; }
   .wp-under { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
   .wp-bar { position: absolute; border-radius: 999px; pointer-events: none; }

@@ -108,7 +108,7 @@ import { newId } from "../model.js";
 import { rememberPreview } from "../library/item-mode.js";
 import { type NewItemForm, type NewPreview, newItemDialogStyles, openNewItemDialog, renderNewItemDialog } from "../library/new-dialog.js";
 import { newStatusPage, nextStatusPageName } from "../watch-status-pages/model.js";
-import { renderWatchPagePreview, renderWatchPageTitle, watchPagePreviewStyles, watchPreviewLayout, watchReflowPage } from "./preview.js";
+import { renderWatchPagePreview, renderWatchPageTitle, watchPagePreviewStyles, watchPreviewLayout, watchReflowPage, watchSkippedTilesLayout } from "./preview.js";
 import { type WatchPagesNote, watchCommandError } from "./save-note.js";
 
 /** How wide a card's picture of its page is, in CSS pixels. */
@@ -131,10 +131,13 @@ export function pageCrop(page: WatchPage, states: Record<string, unknown> | unde
   screen: { width: number; height: number } = PIC_SCREEN): { top: number; height: number } {
   if (isSmartWatchPage(page)) return { top: 0, height: screen.height };
   const layout = watchPreviewLayout(watchReflowPage(page, states as Parameters<typeof watchReflowPage>[1]), screen);
-  if (layout.tiles.length === 0) return { top: 0, height: screen.height };
+  // The outlines of the tiles a watch skips count too: the picture shows
+  // where each sits on the iPhone.
+  const tiles = [...layout.tiles, ...watchSkippedTilesLayout(page, screen, {})];
+  if (tiles.length === 0) return { top: 0, height: screen.height };
   const titled = renderWatchPageTitle(page, 1, layout.topInset, icons) !== nothing;
-  const top = titled ? 0 : Math.max(0, layout.topInset + Math.min(...layout.tiles.map((t) => t.y)) - PIC_PAD_PT);
-  const bottom = layout.topInset + Math.max(...layout.tiles.map((t) => t.y + t.height)) + PIC_PAD_PT;
+  const top = titled ? 0 : Math.max(0, layout.topInset + Math.min(...tiles.map((t) => t.y)) - PIC_PAD_PT);
+  const bottom = layout.topInset + Math.max(...tiles.map((t) => t.y + t.height)) + PIC_PAD_PT;
   return { top, height: Math.max(1, bottom - top) };
 }
 /** How often a stream of state changes draws the pictures again. */
