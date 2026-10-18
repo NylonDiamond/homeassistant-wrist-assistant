@@ -23,6 +23,8 @@ import { watchPagesSaveNote } from "../src/watch-pages/save-note.js";
 import { smartDuplicateDomainNote, smartWord } from "../src/watch-pages/smart-model.js";
 import { type SwitcherSettingsHost, renderSwitcherSettings } from "../src/watch-pages/switcher-settings.js";
 import {
+  WATCH_PHONE_EXTRAS_HINT,
+  WATCH_PHONE_EXTRAS_TITLE,
   watchColorRefusal,
   watchHTTPReplyMenu,
   watchHoldSlideMenus,
@@ -178,6 +180,21 @@ describe("tile settings on an iPhone", () => {
       .toBe("Not in this iPhone's status pages, and this iPhone has no other status pages. The tile stays as it is.");
     // A watch, as before.
     expect(watchLibraryMissingText(own, "statusPage")).toBe("Not in this watch's status pages");
+  });
+});
+
+describe("the keys only the iPhone reads", () => {
+  it("fold on a watch's editor under iPhone extras, and never name the watch on an iPhone's", () => {
+    expect(WATCH_PHONE_EXTRAS_TITLE).toBe("iPhone extras");
+    expect(WATCH_PHONE_EXTRAS_HINT).toBe("The watch ignores these");
+    for (const entityId of ["camera.door", "sensor.temp", "media_player.kitchen"]) {
+      const watch = text(renderTileSettings(tileHost([tile(entityId)])));
+      expect(watch, entityId).toContain("iPhone extras");
+      expect(watch, entityId).toContain("The watch ignores these");
+      const phone = text(renderTileSettings(tileHost([tile(entityId)], "iphone")));
+      expect(phone, entityId).not.toContain("iPhone extras");
+      expect(phone.match(/[^.>]*\b(the watch|watch's)\b[^.<]*/gi) ?? [], entityId).toEqual([]);
+    }
   });
 });
 

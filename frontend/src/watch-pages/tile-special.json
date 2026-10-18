@@ -699,6 +699,12 @@
     ],
     "ratioName": "The first ratioNames entry within 0.1, else over 1.5 \"%.2f:1 (Wide)\", over 0.9 \"%.2f:1\", else \"1:%.2f (Tall)\" of 1 / ratio.",
     "detectFallbackRatio": 1.78,
+    "live": {
+      "key": "cameraTileLive",
+      "kinds": ["camera", "multicam"],
+      "absent": false,
+      "write": "On writes true, off removes the key. Only the iPhone reads it (tile-devices.json keys): it streams the tile at 2 frames a second while on screen, at most 4 tiles at once. The watch keeps its snapshot."
+    },
     "detection": "Detect Camera Ratio with the ratio of the snapshot (width / height). A single camera: cameraAspectRatio is the ratio; gridCol becomes 0 when gridCol plus the best fit's colSpan passes the page's columns; then the resize to the best fit, pushing the tiles it overlaps down. A snapshot that does not load changes nothing."
   },
   "multicam": {

@@ -233,9 +233,27 @@ import {
   watchSwatchesInGradient,
   watchTileFallbackName,
   watchTileSettingsSections,
+  watchTileSectionsFor,
   watchTriggerEntityName,
   watchWholeRefusal,
+  WATCH_PHONE_EXTRAS_HINT,
+  WATCH_PHONE_KEY_WORDS,
+  watchPhoneKeySummary,
+  watchSensorChartMenu,
+  watchSensorChartShortNote,
+  watchTemplateLinesMenu,
 } from "./tile-settings-options.js";
+import {
+  type WatchPhoneKey,
+  setWatchCameraTileLive,
+  setWatchMediaArtwork,
+  setWatchSensorChart,
+  setWatchTemplateLines,
+  watchCameraTileLive,
+  watchMediaArtwork,
+  watchPhoneKeyChanged,
+  watchPhoneKeysOf,
+} from "./phone-keys-model.js";
 import {
   watchAddThemeOf,
   watchAddUsesGradient,
@@ -257,12 +275,18 @@ const KEY = "tile-settings";
  * A fold is kept by section, not by tile (a person who folds Action keeps it
  * folded from tile to tile), and across reloads (`fold-memory.ts`). */
 function isOpen(host: TileSettingsHost, section: WatchTileSettingsSection): boolean {
-  return sectionOpen(host.uiState, KEY, section);
+  return sectionOpen(host.uiState, KEY, section, startsFolded(section));
 }
 
 function toggle(host: TileSettingsHost, section: WatchTileSettingsSection): void {
-  setSectionOpen(host.uiState, KEY, section, !isOpen(host, section));
+  setSectionOpen(host.uiState, KEY, section, !isOpen(host, section), startsFolded(section));
   host.requestUpdate();
+}
+
+/** The one section that starts folded: a watch's iPhone extras, whose rows
+ * the watch ignores. */
+function startsFolded(section: WatchTileSettingsSection): boolean {
+  return section === "phoneExtras";
 }
 
 /** Keys of one field of the selected tile: the text typed in it, and the
@@ -543,9 +567,10 @@ export interface TileSettingsExtras {
 }
 
 /** The sections a page's selected tile gets in the inspector: its place and
- * size first, as the page editor hands those rows in, then the tile's own. */
+ * size first, as the page editor hands those rows in, then the tile's own on
+ * the device showing the page (`watchTileSectionsFor`). */
 export function tileInspectorSections(host: TileSettingsHost): WatchTileSettingsSection[] {
-  return ["size", ...watchTileSettingsSections(host.tile, host.hass.states)];
+  return ["size", ...watchTileSectionsFor(host.tile, host.hass.states, hostDevice(host))];
 }
 
 /** Whether the section is one line rather than a card: the webhook inbox's,
@@ -563,12 +588,12 @@ function renderRemovedLine(): TemplateResult {
 /** The folds the inspector's Collapse all turns: each of the sections that is
  * drawn as a card. */
 export function tileSettingsFoldIds(host: TileSettingsHost, sections: readonly WatchTileSettingsSection[]): FoldId[] {
-  return sections.filter((s) => !inboxLine(host, s)).map((section) => ({ module: KEY, section }));
+  return sections.filter((s) => !inboxLine(host, s)).map((section) => ({ module: KEY, section, ...(startsFolded(section) ? { folded: true } : {}) }));
 }
 
 /** The settings cards for `host.tile`, or nothing. */
 export function renderTileSettings(host: TileSettingsHost, extras: TileSettingsExtras = {}): TemplateResult | typeof nothing {
-  const sections = (extras.sections ?? watchTileSettingsSections(host.tile, host.hass.states)).filter((s) => s !== "size" || extras.size !== undefined);
+  const sections = (extras.sections ?? watchTileSectionsFor(host.tile, host.hass.states, hostDevice(host))).filter((s) => s !== "size" || extras.size !== undefined);
   if (sections.length === 0) return nothing;
   dropStaleTyping(host);
   return html`<div class="ts-root">
@@ -583,8 +608,12 @@ function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection
   if (section === "removed") return renderRemovedLine();
   if (inboxLine(host, section)) return renderInboxLine(host);
   const open = isOpen(host, section);
-  const title = section === "special" ? watchSpecialSectionTitle(host) : WATCH_TILE_SETTINGS_SECTION_TITLES[section];
+  const phoneKey = section === "phone" ? watchPhoneKeysOf(host.tile, host.hass.states)[0] : undefined;
+  const title = section === "special"
+    ? watchSpecialSectionTitle(host)
+    : phoneKey !== undefined ? WATCH_PHONE_KEY_WORDS[phoneKey].title : WATCH_TILE_SETTINGS_SECTION_TITLES[section];
   const summary = open ? "" : section === "size" ? (extras.size?.summary() ?? "") : sectionSummary(host, section);
+  const phone = section === "phone" || section === "phoneExtras";
   const badge = WATCH_TILE_SECTION_BADGES[section];
   const changed = section === "size" ? extras.size?.changed?.() === true : watchTileSectionChanged(host, section);
   // A fieldset only to switch every control off at once while a save is out.
@@ -599,9 +628,16 @@ function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection
     open,
     onToggle: () => toggle(host, section),
     ...(summary === "" ? {} : { summary }),
+    ...(section === "phoneExtras" ? { help: WATCH_PHONE_EXTRAS_HINT } : {}),
+    ...(phone ? { tag: phoneTag() } : {}),
     dot: changed,
     id: `${KEY}:${section}`,
   }, body);
+}
+
+/** The small iPhone tag on a card or group only the iPhone reads. */
+function phoneTag(): TemplateResult {
+  return html`<span class="ts-dev-tag" title="Only the iPhone reads this">${uiIcon("phone")}iPhone</span>`;
 }
 
 // ── the changed dot ──────────────────────────────────────────────────────
@@ -711,6 +747,9 @@ export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTi
     case "border":
     case "background":
       return taskModified(host, section);
+    case "phone":
+    case "phoneExtras":
+      return watchPhoneKeysOf(tile, host.hass.states).some((key) => watchPhoneKeyChanged(tile, key));
     case "opens":
     case "target":
     case "special":
@@ -804,6 +843,10 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
     }
     case "visibility":
       return showTileSummary(host);
+    case "phone":
+      return watchPhoneKeysOf(tile, host.hass.states).map((key) => watchPhoneKeySummary(tile, key)).filter((s) => s !== "").join(", ");
+    case "phoneExtras":
+      return WATCH_PHONE_EXTRAS_HINT;
     case "size":
     case "removed":
       return "";
@@ -848,9 +891,52 @@ function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection):
       return renderBorder(host);
     case "background":
       return renderBackground(host);
+    case "phone":
+      return renderPhoneKeys(host, false);
+    case "phoneExtras":
+      return renderPhoneKeys(host, true);
     case "size":
     case "removed":
       return html``;
+  }
+}
+
+// ── the keys only the iPhone reads ──────────────────────────────────────
+
+/**
+ * The tile's phone keys (`watchPhoneKeysOf`): on an iPhone's editor one card
+ * titled by its key; in a watch's "iPhone extras" each key under its own
+ * heading with the iPhone tag.
+ */
+function renderPhoneKeys(host: TileSettingsHost, grouped: boolean): TemplateResult {
+  const keys = watchPhoneKeysOf(host.tile, host.hass.states);
+  return html`${keys.map((key) => html`
+    ${grouped || keys.length > 1
+      ? html`<div class="ts-sub-h"><span>${WATCH_PHONE_KEY_WORDS[key].title}</span>${phoneTag()}</div>`
+      : nothing}
+    ${renderPhoneKey(host, key)}`)}`;
+}
+
+function renderPhoneKey(host: TileSettingsHost, key: WatchPhoneKey): TemplateResult {
+  const tile = host.tile;
+  const words = WATCH_PHONE_KEY_WORDS[key];
+  const help = html`<div class="hint ts-under">${words.help}</div>`;
+  switch (key) {
+    case "cameraTileLive":
+      return html`${checkField(words.label, watchCameraTileLive(tile), (on) =>
+        commit(host, key, (d) => setWatchCameraTileLive(d, host.pageId, host.tileId, on)))}${help}`;
+    case "mediaArtwork":
+      return html`${checkField(words.label, watchMediaArtwork(tile), (on) =>
+        commit(host, key, (d) => setWatchMediaArtwork(d, host.pageId, host.tileId, on)))}${help}`;
+    case "sensorChart": {
+      const short = watchSensorChartShortNote(tile);
+      return html`${menuField(words.label, watchSensorChartMenu(tile), (v) =>
+        commit(host, key, (d) => setWatchSensorChart(d, host.pageId, host.tileId, v === WATCH_DEFAULT_CHOICE ? null : v)))}${help}
+        ${short === undefined ? nothing : html`<div class="hint warn ts-under" role="status">${short}</div>`}`;
+    }
+    case "templateLines":
+      return html`${menuField(words.label, watchTemplateLinesMenu(tile), (v) =>
+        commit(host, key, (d) => setWatchTemplateLines(d, host.pageId, host.tileId, Number(v))))}${help}`;
   }
 }
 
@@ -2033,6 +2119,14 @@ export const tileSettingsStyles = css`
   .ts-nested .hint.ts-under { padding-left: calc(var(--wa-lab) + 8px); }
   .ts-note { padding-left: calc(var(--wa-lab) + 8px); }
   .ts-faint { color: var(--wa-muted); font-weight: 400; }
+  /* The iPhone tag on a card or group only the iPhone reads. */
+  .ts-dev-tag {
+    display: inline-flex; align-items: center; gap: 3px; flex: none; margin-left: 6px; padding: 0 6px; height: 16px;
+    border: 1px solid var(--wa-line-strong); border-radius: 8px; vertical-align: 1px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0; color: var(--wa-muted);
+  }
+  .ts-dev-tag svg { width: 10px; height: 10px; flex: none; }
+  .ts-sub-h > .ts-dev-tag { margin-left: 0; }
 
   .ts-glyph-dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, .55); }
   .ts-target-now { padding: 4px 0 2px; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }

@@ -67,6 +67,14 @@
     "write": "The editor writes templateString on every change, as typed: no trim, an emptied editor writes \"\", the key is never removed. Each opening of the phone's editor sheet is one undo step.",
     "reset": "The Template task has no reset and no modified dot.",
     "unusedKeys": ["templateRefreshInterval"],
+    "lines": {
+      "key": "templateLines",
+      "kinds": ["template"],
+      "min": 1,
+      "max": 8,
+      "absent": 5,
+      "write": "A whole number from min to max; picking absent removes the key. Only the iPhone reads it (tile-devices.json keys): the most lines it shows of the result. The watch keeps its own 5."
+    },
     "richText": {
       "marker": "\\[icon:([^\\]]+)\\]",
       "rule": "Every marker becomes an icon; the text between markers stays text. Inside a marker the words split on whitespace: the first word is the symbol, the first later word starting color: (any case) gives the color, an empty color is none. A marker with no word stays as literal text.",

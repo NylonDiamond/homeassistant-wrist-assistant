@@ -98,4 +98,18 @@ describe("fold memory", () => {
     expect(JSON.parse(storage.data[FOLD_STORE_KEY]!)).toEqual({ "page-settings:theme": true });
     expect(anySectionOpen(ui, [])).toBe(false);
   });
+
+  it("starts a folded section folded, and stores only its opening", () => {
+    const ui = new Map<string, unknown>();
+    expect(sectionOpen(ui, "tile-settings", "phoneExtras", true)).toBe(false);
+    setSectionOpen(ui, "tile-settings", "phoneExtras", true, true);
+    expect(JSON.parse(storage.data[FOLD_STORE_KEY]!)).toEqual({ "tile-settings:phoneExtras": false });
+    expect(sectionOpen(new Map(), "tile-settings", "phoneExtras", true)).toBe(true);
+    // Collapse all folds it back to where it starts, which is not stored.
+    const ids: FoldId[] = [{ module: "tile-settings", section: "icon" }, { module: "tile-settings", section: "phoneExtras", folded: true }];
+    expect(anySectionOpen(new Map(), ids)).toBe(true);
+    setSectionsOpen(ui, ids, false);
+    expect(JSON.parse(storage.data[FOLD_STORE_KEY]!)).toEqual({ "tile-settings:icon": true });
+    expect(sectionOpen(new Map(), "tile-settings", "phoneExtras", true)).toBe(false);
+  });
 });

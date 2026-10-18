@@ -1657,6 +1657,9 @@ export interface SectionCardOptions {
   help?: string;
   /** Written to `data-sec`. */
   id?: string;
+  /** A small tag after the title (the iPhone's, on a card only the iPhone
+   * reads). */
+  tag?: TemplateResult;
 }
 
 /** One inspector section card, with the markup of editors.ts's `card()`:
@@ -1675,7 +1678,7 @@ export function sectionCard(opts: SectionCardOptions, body: TemplateResult): Tem
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); }
       }}>
       <span class="swatch">${opts.icon}</span>
-      <span class="tt"><h4>${opts.title}${opts.dot ? html`<span class="sec-dot" aria-hidden="true"></span>` : nothing}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
+      <span class="tt"><h4>${opts.title}${opts.tag ?? nothing}${opts.dot ? html`<span class="sec-dot" aria-hidden="true"></span>` : nothing}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
       <span class="chev">${uiIcon("chevron")}</span>
     </div>
     ${open ? html`<div class="sec-b">${opts.help ? html`<p class="hint">${opts.help}</p>` : nothing}${body}</div>` : nothing}

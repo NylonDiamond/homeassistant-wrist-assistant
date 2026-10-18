@@ -55,6 +55,18 @@ import { sameWatchId, findWatchPage } from "./edit.js";
 import { watchTileHasStateTask } from "./styling-model.js";
 import { type WatchSpecialStates, watchSpecialTask } from "./special-model.js";
 import {
+  type WatchPhoneKey,
+  WATCH_MEDIA_CONTROLS_MIN_COLUMNS,
+  WATCH_SENSOR_CHART_CHOICES,
+  WATCH_SENSOR_CHART_MIN_ROWS,
+  WATCH_TEMPLATE_LINES,
+  watchCameraTileLive,
+  watchMediaArtwork,
+  watchPhoneKeysOf,
+  watchSensorChart,
+  watchTemplateLines,
+} from "./phone-keys-model.js";
+import {
   type WatchPage,
   type WatchPageTile,
   type WatchPagesDocument,
@@ -93,7 +105,12 @@ export type WatchTileSettingsSection =
   // A tile's place and size, and a smart page rule's own tile size (part 3f
   // batch 3): drawn only when the caller hands the section's rows in.
   | "size"
-  | "background";
+  | "background"
+  // The keys only the iPhone reads (`phone-keys-model.ts`): on an iPhone's
+  // editor in their natural place, titled by the key; on a watch's editor
+  // all of them in one folded card at the end (`watchTileSectionsFor`).
+  | "phone"
+  | "phoneExtras";
 
 export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettingsSection, string>> = {
   opens: "Opens",
@@ -111,6 +128,9 @@ export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettin
   visibility: "Visibility",
   size: "Size",
   background: "Background",
+  // Drawn under the key's own title (`WATCH_PHONE_KEY_WORDS`).
+  phone: "iPhone",
+  phoneExtras: "iPhone extras",
 };
 
 /** A section card's mark: the inspector color it is tinted with and the
@@ -143,6 +163,8 @@ export const WATCH_TILE_SECTION_BADGES: Readonly<Record<WatchTileSettingsSection
   state: { color: SECTION_COLOR.states, icon: "states" },
   action: { color: SECTION_COLOR.tap, icon: "tap" },
   visibility: { color: SECTION_COLOR.visibility, icon: "show" },
+  phone: { color: SECTION_COLOR.content, icon: "phone" },
+  phoneExtras: { color: SECTION_COLOR.place, icon: "phone" },
 };
 
 /** The pinned Name card's badge, a tile's and a page's alike. */
@@ -223,6 +245,101 @@ export function watchTileSettingsSections(tile: WatchPageTile, states?: WatchSpe
   if (watchTileHasStateTask(tile)) out.push("state");
   out.push("text", "border", "action", "visibility", "background");
   return out;
+}
+
+/**
+ * The sections a tile gets on `device`'s editor: `watchTileSettingsSections`
+ * with the keys only the iPhone reads (`watchPhoneKeysOf`), when the tile
+ * has any. On an iPhone they are one card in their natural place: after the
+ * kind's task (a camera's Live video, a template's Lines), else after State
+ * (a sensor's Chart, a media player's Artwork), else before Icon. On a watch
+ * they sit together in the folded "iPhone extras" card, last.
+ */
+export function watchTileSectionsFor(tile: WatchPageTile, states: WatchSpecialStates | undefined, device: SettingDevice): WatchTileSettingsSection[] {
+  const out = watchTileSettingsSections(tile, states);
+  if (watchPhoneKeysOf(tile, states).length === 0) return out;
+  if (device === "watch") return [...out, "phoneExtras"];
+  const after = ["state", "special"].map((s) => out.indexOf(s as WatchTileSettingsSection)).find((i) => i >= 0);
+  const at = after !== undefined ? after + 1 : Math.max(0, out.indexOf("icon"));
+  return [...out.slice(0, at), "phone", ...out.slice(at)];
+}
+
+// ── the keys only the iPhone reads ──────────────────────────────────────
+
+/** The folded card's title on a watch's editor, and the line it shows. */
+export const WATCH_PHONE_EXTRAS_TITLE = "iPhone extras";
+export const WATCH_PHONE_EXTRAS_HINT = "The watch ignores these";
+
+/** Each phone key's card or group title, its row's label, and the line
+ * under the row. */
+export const WATCH_PHONE_KEY_WORDS: Readonly<Record<WatchPhoneKey, { title: string; label: string; help: string }>> = {
+  cameraTileLive: {
+    title: "Live video",
+    label: "Live video in the tile",
+    help: "2 frames a second while the tile is on screen. Up to 4 live tiles at once; the rest show snapshots. Uses more battery.",
+  },
+  sensorChart: {
+    title: "Chart",
+    label: "Chart under the value",
+    help: `Needs a tile at least ${WATCH_SENSOR_CHART_MIN_ROWS} rows tall.`,
+  },
+  mediaArtwork: {
+    title: "Artwork",
+    label: "Artwork and controls",
+    help: `Shows the album art, title and artist, with previous, play and next on tiles ${WATCH_MEDIA_CONTROLS_MIN_COLUMNS} columns and wider.`,
+  },
+  templateLines: {
+    title: "Lines",
+    label: "Lines",
+    help: "The most lines the iPhone shows of the result.",
+  },
+};
+
+/** The chart menu: Off, then the ranges; a stored value the panel does not
+ * offer is shown first, disabled (the iPhone reads it as 24 hours). */
+export function watchSensorChartMenu(tile: WatchPageTile): WatchMenu {
+  const choices = WATCH_SENSOR_CHART_CHOICES.map((c) => ({ value: c.value ?? WATCH_DEFAULT_CHOICE, label: c.label }));
+  return watchChoiceMenu(choices, watchSensorChart(tile) ?? WATCH_DEFAULT_CHOICE);
+}
+
+/** The line under the chart menu when the chart is on and the tile is too
+ * short for it, naming its height. Undefined otherwise. */
+export function watchSensorChartShortNote(tile: WatchPageTile): string | undefined {
+  if (watchSensorChart(tile) === undefined) return undefined;
+  const rows = Number(tile.rowSpan);
+  if (!Number.isFinite(rows) || rows >= WATCH_SENSOR_CHART_MIN_ROWS) return undefined;
+  return `This tile is ${rows} ${rows === 1 ? "row" : "rows"} tall, so the iPhone shows no chart. Make it ${WATCH_SENSOR_CHART_MIN_ROWS} or taller.`;
+}
+
+/** The Lines menu: 1 to 8, the absent value marked as the default; a stored
+ * value off the range shown first, disabled. */
+export function watchTemplateLinesMenu(tile: WatchPageTile): WatchMenu {
+  const { min, max, absent } = WATCH_TEMPLATE_LINES;
+  const choices = Array.from({ length: max - min + 1 }, (_, i) => {
+    const n = min + i;
+    return { value: String(n), label: n === absent ? `${n} (default)` : String(n) };
+  });
+  const stored = watchTemplateLines(tile);
+  return watchChoiceMenu(choices, stored === undefined ? String(absent) : String(stored));
+}
+
+/** What a folded phone card says it holds. */
+export function watchPhoneKeySummary(tile: WatchPageTile, key: WatchPhoneKey): string {
+  switch (key) {
+    case "cameraTileLive":
+      return watchCameraTileLive(tile) ? "Live" : "";
+    case "mediaArtwork":
+      return watchMediaArtwork(tile) ? "On" : "";
+    case "sensorChart": {
+      const stored = watchSensorChart(tile);
+      if (stored === undefined) return "";
+      return WATCH_SENSOR_CHART_CHOICES.find((c) => c.value === stored)?.label ?? stored;
+    }
+    case "templateLines": {
+      const n = watchTemplateLines(tile);
+      return n === undefined ? "" : `${String(n)} lines`;
+    }
+  }
 }
 
 // ── menus ────────────────────────────────────────────────────────────────

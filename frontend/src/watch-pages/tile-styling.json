@@ -2515,6 +2515,44 @@
     },
     "note": "Each task's reset writes exactly these keys, null removing the key, on every tile it applies to; Page on the page. A page key that the encoder writes only under a condition (writeWhen in page-keys.json) is then not written. Reset Page clears the image keys like any other; the photo stays in Home Assistant's photo store until no page names it (the iPhone app also drops its own cached copy)."
   },
+  "phone": {
+    "sensorChart": {
+      "key": "sensorChart",
+      "kinds": ["sensor", "binary_sensor"],
+      "choices": [
+        {
+          "value": null,
+          "label": "Off"
+        },
+        {
+          "value": "1h",
+          "label": "1 hour"
+        },
+        {
+          "value": "6h",
+          "label": "6 hours"
+        },
+        {
+          "value": "24h",
+          "label": "24 hours"
+        },
+        {
+          "value": "7d",
+          "label": "7 days"
+        }
+      ],
+      "minRows": 4,
+      "write": "Off removes the key; a range writes its value. A stored value not among the choices reads as 24h on the iPhone, so the chart stays on."
+    },
+    "mediaArtwork": {
+      "key": "mediaArtwork",
+      "kinds": ["media_player"],
+      "absent": false,
+      "controlsMinColumns": 6,
+      "write": "On writes true, off removes the key. Not offered on a TV media player drawn as a remote (tile-special.json tasks.tvRemote)."
+    },
+    "note": "Tile keys only the iPhone reads (tile-devices.json keys), on the kinds both devices draw; no reset covers them. tile-special.json camera.live and tile-app.json template.lines are the other two. The watch decodes them and reads none."
+  },
   "remap": {
     "rule": "remapKnownThemeHex(hex, to): a gradient token is remapped end by end, an end that is not known kept (normalized). #000000 and #FFFFFF stay. A hex in roleByHex maps to the target theme's roleHexes for that role. Else, for each theme in themeOrder, for each list in indexLists, a hex found in that theme's list maps to the target theme's list at the same index, when the two lists are the same length. Else the hex is not known (null) and the caller keeps it. Hexes are compared upper case with a leading #.",
     "roleByHex": {
