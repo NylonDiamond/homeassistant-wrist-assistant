@@ -16,6 +16,8 @@
 // contract", item 16).
 
 import { css, html, nothing, type TemplateResult } from "lit";
+import { live } from "lit/directives/live.js";
+import { repeat } from "lit/directives/repeat.js";
 import { browserStorage, type ColumnStorage } from "../column-split.js";
 import { sectionCard } from "../editor-chrome.js";
 import { checkField, entityField, numberField, segField, selectField, settingTitle, sliderField, symbolField, textField } from "../editors.js";
@@ -253,6 +255,7 @@ export function selectStatusPage(host: Pick<StatusPagesViewHost, "uiState" | "re
   host.uiState.set(PAGE_KEY, pageId);
   host.uiState.delete(ROW_KEY);
   host.uiState.delete(ADD_KEY);
+  forgetChecklistOrders(host.uiState);
   host.requestUpdate();
 }
 
@@ -266,6 +269,7 @@ export function selectStatusRow(host: Pick<StatusPagesViewHost, "uiState" | "req
   if (rowId === undefined) host.uiState.delete(ROW_KEY);
   else host.uiState.set(ROW_KEY, rowId);
   host.uiState.delete(ADD_KEY);
+  forgetChecklistOrders(host.uiState);
   host.requestUpdate();
 }
 
@@ -275,6 +279,7 @@ export function deselectStatusRow(host: Pick<StatusPagesViewHost, "uiState" | "r
   if (selectedStatusRow(host) === undefined && !host.uiState.has(ADD_KEY)) return false;
   host.uiState.delete(ROW_KEY);
   host.uiState.delete(ADD_KEY);
+  forgetChecklistOrders(host.uiState);
   host.requestUpdate();
   return true;
 }
@@ -309,6 +314,7 @@ function setAddState(host: Pick<StatusPagesViewHost, "uiState" | "requestUpdate"
 /** Open the add card. */
 export function openStatusAddRow(host: Pick<StatusPagesViewHost, "uiState" | "requestUpdate">, kind: AddKind = "entity"): void {
   host.uiState.delete(ADDED_KEY);
+  forgetChecklistOrders(host.uiState);
   setAddState(host, { kind, mode: "all", picked: [] });
 }
 
@@ -762,8 +768,40 @@ export function statusInspectorFolds(host: ViewState): FoldId[] {
   return [{ module: FOLD_MODULE, section: "page" }, ...look];
 }
 
+/** The suffix of the uiState key that holds a checklist's order. */
+const CHECKLIST_ORDER = ":order";
+
+/** A checklist's order as it was first drawn: the search it was drawn for
+ * and the entities picked then. */
+interface ChecklistOrder {
+  query: string;
+  first: readonly string[];
+}
+
+/**
+ * The order of an entity checklist: the entities matching `query` (by id
+ * or name), those in `first` on top, then the rest, each part in the order
+ * of `choices`. `first` is the picks as they were when the list was drawn
+ * for this search, not the picks now, so a tick never moves a row out from
+ * under the pointer and puts another entity there.
+ */
+export function entityChecklistOrder(choices: readonly string[], first: readonly string[], query: string, nameOf: (entityId: string) => string): string[] {
+  const q = query.trim().toLowerCase();
+  const top = new Set(first);
+  const matches = choices.filter((id) => q === "" || id.toLowerCase().includes(q) || nameOf(id).toLowerCase().includes(q));
+  return [...matches.filter((id) => top.has(id)), ...matches.filter((id) => !top.has(id))];
+}
+
+/** Forget every checklist's order, so the next draw puts the picks then on
+ * top. On a change of page, row or add. */
+function forgetChecklistOrders(uiState: Map<string, unknown>): void {
+  for (const key of [...uiState.keys()]) if (key.endsWith(CHECKLIST_ORDER)) uiState.delete(key);
+}
+
 /** A searchable list of entities with a box each: the picked ones first,
- * then the rest by name. */
+ * then the rest by name. The order holds while boxes are ticked (see
+ * `entityChecklistOrder`), and each row is keyed by its entity and shows
+ * its box's state live, so a box always shows its own entity's pick. */
 function entityChecklist(
   host: StatusPagesViewHost,
   key: string,
@@ -772,18 +810,23 @@ function entityChecklist(
   toggleOne: (entityId: string, on: boolean) => void,
 ): TemplateResult {
   const queryKey = `${key}:q`;
+  const orderKey = `${key}${CHECKLIST_ORDER}`;
   const query = String(host.uiState.get(queryKey) ?? "").trim().toLowerCase();
   const pickedSet = new Set(picked);
-  const matches = choices.filter((id) => query === "" || id.toLowerCase().includes(query) || nameOf(host.hass, id).toLowerCase().includes(query));
-  const ordered = [...matches.filter((id) => pickedSet.has(id)), ...matches.filter((id) => !pickedSet.has(id))];
+  let order = host.uiState.get(orderKey) as ChecklistOrder | undefined;
+  if (order === undefined || order.query !== query) {
+    order = { query, first: [...picked] };
+    host.uiState.set(orderKey, order);
+  }
+  const ordered = entityChecklistOrder(choices, order.first, query, (id) => nameOf(host.hass, id));
   const shown = ordered.slice(0, 200);
   return html`<div class="sp-pick">
     <input type="search" class="sp-pick-q" placeholder="Search entities" aria-label="Search entities" .value=${String(host.uiState.get(queryKey) ?? "")}
       @input=${(e: Event) => { host.uiState.set(queryKey, (e.target as HTMLInputElement).value); host.requestUpdate(); }} />
     <div class="sp-pick-list" role="group" aria-label="Entities">
       ${shown.length === 0 ? html`<div class="sp-pick-none">${choices.length === 0 ? "No entity of this kind in Home Assistant." : "No entity matches."}</div>` : nothing}
-      ${shown.map((id) => html`<label class="sp-pick-row">
-        <input type="checkbox" .checked=${pickedSet.has(id)} ?disabled=${host.busy}
+      ${repeat(shown, (id) => id, (id) => html`<label class="sp-pick-row">
+        <input type="checkbox" .checked=${live(pickedSet.has(id))} ?disabled=${host.busy}
           @change=${(e: Event) => toggleOne(id, (e.target as HTMLInputElement).checked)} />
         <span class="sp-pick-name">${nameOf(host.hass, id)}</span><code>${id}</code>
       </label>`)}
@@ -829,9 +872,13 @@ function renderRowCard(host: StatusPagesViewHost, page: JsonObject, row: JsonObj
       });
     }, `sp:entity:${id}`, { clearable: false })}</div>`);
   }
+  // Whether the Show State control is drawn, which the Show all states
+  // hint points at.
+  let stateShown = false;
   if (counted && r.domain !== "sensor") {
     const options = stateOptions(r.domain, r.deviceClassFilter);
     if (options.length >= 2) {
+      stateShown = true;
       const current = effectiveFilterState(r);
       const choices: [string, string][] = options.map((o) => [o.value, o.label]);
       if (!choices.some(([v]) => v === current)) choices.push([current, swiftCapitalized(current)]);
@@ -841,9 +888,15 @@ function renderRowCard(host: StatusPagesViewHost, page: JsonObject, row: JsonObj
   if (r.rowType === "dynamicList") {
     parts.push(segField("Entities", allMatching ? "all" : "specific", statusEnumChoices("DynamicMode") as ["all" | "specific", string][], (v) => set("dynamicMode", v)));
     parts.push(checkField("Show all states", r.showAllStates === true, (v) => set("showAllStates", v ? true : undefined), false));
-    parts.push(html`<div class="hint ts-under">On: every entity is listed whatever its state. Off: only those in the state above.</div>`);
+    const off = stateShown ? "only those in the state above" : `only those whose state is “${effectiveFilterState(r)}”`;
+    const max = r.maxNumericValue === undefined ? "" : " Either way, the max value below still applies.";
+    parts.push(html`<div class="hint ts-under">On: every entity is listed whatever its state. Off: ${off}.${max}</div>`);
   }
-  if (r.domain === "sensor" && (r.rowType === "groupCount" || allMatching)) {
+  // The max value is drawn wherever the watch applies it: a sensor group
+  // count, a sensor list of either kind (hand picked too), and a list of
+  // any other domain still holding one, as the watch narrows every dynamic
+  // list by it.
+  if (r.domain === "sensor" ? counted : r.rowType === "dynamicList" && r.maxNumericValue !== undefined) {
     parts.push(numberField(maxValueLabel(r.deviceClassFilter), r.maxNumericValue, (v) => set("maxNumericValue", v, `row:${id}:max`),
       { optional: true, placeholder: "No limit", def: null }));
     parts.push(html`<div class="hint ts-under">Only states at or below it count. Empty is no limit.</div>`);
