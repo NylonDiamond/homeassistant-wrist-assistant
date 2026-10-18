@@ -57,7 +57,7 @@ export const WATCH_TILE_SIZE_PRESETS: readonly { name: string; colSpan: number; 
   { name: "XSmall", colSpan: 3, rowSpan: 3 },
   { name: "Small", colSpan: 4, rowSpan: 4 },
   { name: "Medium", colSpan: 6, rowSpan: 4 },
-  { name: "Large", colSpan: 12, rowSpan: 4 },
+  { name: "Large", colSpan: COLUMNS, rowSpan: 4 },
 ];
 
 // ── ids ──────────────────────────────────────────────────────────────────
@@ -580,6 +580,10 @@ function canPlaceIgnoring(
   return true;
 }
 
+/** The rows `findNonOverlappingPosition` scans last, from row 0: the phone's
+ * `0..<12`. A count of rows, not the column count, though both are 12. */
+const FREE_PLACE_SCAN_ROWS = 12;
+
 /** `findNonOverlappingPosition`: a place for a tile of this size that misses
  * the avoided rectangle and every other tile: right under it, then right
  * above it, then rows 0 to 11 only. In each row the columns go out from the
@@ -617,7 +621,7 @@ function findNonOverlappingPosition(
   if (above >= 0) {
     for (const col of colOrder) if (valid(above, col)) return { row: above, col };
   }
-  for (let row = 0; row < 12; row++) {
+  for (let row = 0; row < FREE_PLACE_SCAN_ROWS; row++) {
     for (const col of colOrder) if (valid(row, col)) return { row, col };
   }
   return undefined;

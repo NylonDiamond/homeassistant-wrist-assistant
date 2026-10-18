@@ -2703,7 +2703,7 @@ export class WaPageEditor extends LitElement {
     if (tile === undefined) return;
     const rect = watchTileRect(tile);
     if (!Number.isInteger(col) || !Number.isInteger(row)) return this.refuse("Use a whole number.");
-    const lastCol = 12 - rect.colSpan + 1;
+    const lastCol = WATCH_GRID_COLUMNS - rect.colSpan + 1;
     if (col < 1 || col > lastCol) {
       return this.refuse(lastCol === 1 ? "A tile this wide starts in column 1." : `A tile this wide starts in a column from 1 to ${lastCol}.`);
     }
@@ -2730,7 +2730,7 @@ export class WaPageEditor extends LitElement {
     const tile = this.tileOn(page, tileId);
     if (tile === undefined) return;
     if (!Number.isInteger(colSpan) || !Number.isInteger(rowSpan)) return this.refuse("Use a whole number.");
-    if (colSpan < 1 || colSpan > 12) return this.refuse("A tile is 1 to 12 columns wide.");
+    if (colSpan < 1 || colSpan > WATCH_GRID_COLUMNS) return this.refuse(`A tile is 1 to ${WATCH_GRID_COLUMNS} columns wide.`);
     if (rowSpan < 1) return this.refuse("A tile is at least 1 row high.");
     const rect = { ...watchTileRect(tile), colSpan, rowSpan };
     if (rect.row + rowSpan > WATCH_EDITOR_MAX_ROWS) {
@@ -5120,9 +5120,9 @@ export class WaPageEditor extends LitElement {
           <span>Column ${rect.col + 1}, row ${rect.row + 1} · ${rect.colSpan}×${rect.rowSpan}</span>
         </button>
         ${fieldsOpen ? html`<div class="pe-fields" id="pe-size-fields">
-          ${field("Column", rect.col + 1, 1, 12 - rect.colSpan + 1, (v) => this.placeTile(v, rect.row + 1))}
+          ${field("Column", rect.col + 1, 1, WATCH_GRID_COLUMNS - rect.colSpan + 1, (v) => this.placeTile(v, rect.row + 1))}
           ${field("Row", rect.row + 1, 1, WATCH_EDITOR_MAX_ROWS - rect.rowSpan + 1, (v) => this.placeTile(rect.col + 1, v))}
-          ${field("Width", rect.colSpan, 1, 12, (v) => this.sizeTile(v, rect.rowSpan))}
+          ${field("Width", rect.colSpan, 1, WATCH_GRID_COLUMNS, (v) => this.sizeTile(v, rect.rowSpan))}
           ${field("Height", rect.rowSpan, 1, WATCH_EDITOR_MAX_ROWS - rect.row, (v) => this.sizeTile(rect.colSpan, v))}
         </div>` : nothing}
         ${this.fieldNote ? html`<p class="pe-warn" role="status">${this.fieldNote}</p>` : nothing}`,

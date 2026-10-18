@@ -33,6 +33,7 @@ import {
   type WatchPage,
   type WatchPageLayout,
   type WatchPageLayoutOptions,
+  WATCH_GRID_COLUMNS,
   WATCH_GRID_SIDE_INSET,
   type WatchPageTile,
   type WatchTileColor,
@@ -301,7 +302,7 @@ export function watchTileHidden(
 export function watchReflowPage(
   page: WatchPage,
   states: Readonly<Record<string, HassEntityState>> | undefined,
-  columns = 12,
+  columns = WATCH_GRID_COLUMNS,
   templates?: ReadonlyMap<string, WatchTemplateRender>,
 ): WatchPage {
   if (states === undefined) return page;
@@ -3220,7 +3221,7 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
   if (isSmartWatchPage(page)) return renderSmartPreview(input);
   // Tiles hidden while off are gone and the rest packed up, as on the watch;
   // in the all-on picture every tile is on, so none is hidden.
-  const layout = watchPreviewLayout(watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states, 12, input.templates), screen, { sideInset: watchPreviewSideInset(input) });
+  const layout = watchPreviewLayout(watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states, WATCH_GRID_COLUMNS, input.templates), screen, { sideInset: watchPreviewSideInset(input) });
   const phone = input.phone !== undefined;
   const height = watchPreviewHeight(layout, phone);
   const scrolls = height > screen.height + 0.5;

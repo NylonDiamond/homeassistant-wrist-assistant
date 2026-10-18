@@ -272,7 +272,7 @@ export const WATCH_SMART_SORT_ORDERS: readonly string[] = KEYS.enums.DynamicSort
 export const WATCH_SMART_MODES: readonly string[] = KEYS.enums.SelectionMode ?? [];
 
 /** The range of the page's tile spans and of a rule's own spans. */
-export const WATCH_SMART_SPAN_RANGE = { min: 1, max: 12 } as const;
+export const WATCH_SMART_SPAN_RANGE = { min: 1, max: WATCH_GRID_COLUMNS } as const;
 /** The range of a header's text size, and what an absent one reads as. */
 export const WATCH_SMART_HEADER_SIZE_RANGE = { min: 8, max: 20, auto: 10 } as const;
 /** The domains the watch skips the active test for. */
