@@ -611,6 +611,17 @@ describe("a tile only the iPhone draws in the pictures", () => {
     expect(faces.text).toContain("wp-phone-send");
     expect(faces.web).toContain("example.org");
     expect(faces.web).toContain("<circle");
+    // The text field washes the ink of what it sits on: white on this
+    // theme's dark page, the screen's ink on the iPhone look's grouped
+    // background, so it reads on the light skin too.
+    expect(faces.text).toContain("color-mix(in srgb, #FFFFFF 12%, transparent)");
+    const black = { ...page, backgroundColor: "#000000" };
+    const field = { ...map, entityId: `text_field.${UUID}` };
+    const grouped = flatten(renderWatchTileFace(field, { width: 180, height: 40 }, { ...input, page: black, pages: [black] }, 14));
+    expect(grouped).toContain("color-mix(in srgb, var(--wa-phone-ink, #000000) 12%, transparent)");
+    expect(grouped).not.toContain("#FFFFFF");
+    const watchLook = flatten(renderWatchTileFace(field, { width: 180, height: 40 }, { ...input, page: black, pages: [black], phone: phonePagesLayout(DEFAULT_PHONE, { look: "watch" }) }, 14));
+    expect(watchLook).toContain("color-mix(in srgb, #FFFFFF 12%, transparent)");
     // The iPhone's preview keeps the tile in the page.
     const drawn = flatten(renderWatchPagePreview(input));
     expect(drawn).toContain('data-phone-face=map');

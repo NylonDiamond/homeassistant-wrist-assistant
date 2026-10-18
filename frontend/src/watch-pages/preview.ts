@@ -3035,10 +3035,15 @@ function phoneTileFace(tile: WatchPageTile, width: number, height: number, box: 
       const label = typeof tile.customLabel === "string" && tile.customLabel.trim() !== "" ? tile.customLabel : tileKindLabel(kind);
       const button = watchTextSubmit(tile) === "button";
       const fieldH = Math.max(14, Math.min(34, height - 8)) * s;
-      return frame("text", html`<span class="wp-phone-field" style=${`height:${fieldH}px;border-radius:${Math.min(10, fieldH / s / 2) * s}px;font-size:${Math.min(13, fieldH / s * 0.45) * s}px;padding:0 ${8 * s}px`}>
+      // The field has no color of its own, only washes of the ink of what it
+      // sits on: the screen's ink on the iPhone look's grouped background
+      // (black on the light skin, white on the dark), white on any other page.
+      const fieldInk = phoneDrawsIphoneLook(input.phone) && watchPageHasDefaultBlackBackground(input.page) ? PHONE_LABEL_INK : "#FFFFFF";
+      const wash = (pct: number) => `color-mix(in srgb, ${fieldInk} ${pct}%, transparent)`;
+      return frame("text", html`<span class="wp-phone-field" style=${`height:${fieldH}px;border-radius:${Math.min(10, fieldH / s / 2) * s}px;font-size:${Math.min(13, fieldH / s * 0.45) * s}px;padding:0 ${8 * s}px;background:${wash(12)};color:${wash(45)}`}>
           <span class="wp-phone-ph">${own !== "" ? own : label}</span></span>
         ${button ? html`<span class="wp-phone-send" style=${`width:${fieldH}px;height:${fieldH}px;background:${ink}`}></span>` : nothing}`,
-        "rgba(255, 255, 255, 0.06)");
+        wash(6));
     }
     case "web": {
       const url = watchWebURL(tile).trim();
@@ -3671,7 +3676,7 @@ export const watchPagePreviewStyles = css`
   .wp-phone-chart { position: absolute; inset: 0; display: block; }
   .wp-phone-field {
     box-sizing: border-box; flex: 1; min-width: 0; margin-left: 6%; display: flex; align-items: center;
-    background: rgba(255, 255, 255, 0.12); color: rgba(235, 235, 245, 0.45); font-family: system-ui, sans-serif;
+    font-family: system-ui, sans-serif;
   }
   .wp-phone-field:last-child { margin-right: 6%; }
   .wp-phone-ph { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
