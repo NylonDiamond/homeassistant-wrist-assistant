@@ -107,8 +107,11 @@ describe("the menu editor's library menu", () => {
     expect(text).toContain("lib-on over-stage");
     expect(text).not.toContain("lt-hint");
     expect(flat(call("renderStage", host(), el.owners))).toMatch(/cv-head[\s\S]*lib-on over-stage[\s\S]*lt-chip[\s\S]*class="stage-area/);
-    expect(text.match(/lt-chip on +rd/g)).toHaveLength(2);
-    expect(text.match(/lt-chip off +rd/g)).toHaveLength(1);
+    // The inline chips; the fold's popover after them holds the same again.
+    const inline = text.split("<details")[0]!;
+    expect(inline.match(/lt-chip on +rd/g)).toHaveLength(2);
+    expect(inline.match(/lt-chip off +rd/g)).toHaveLength(1);
+    expect(text).toContain("+ Use on a device");
     expect(text).toMatch(/lt-chip off +rd[^>]*title=Use this menu on Chen's Watch\.[^>]*aria-disabled=false/);
     expect(text).toMatch(/title=Jesse's iPhone uses this menu\. To change that, pick another Anywhere menu for it\.\s+aria-pressed=true aria-disabled=true/);
   });

@@ -219,7 +219,8 @@ export const libraryModeStyles = css`
   }
   /* The device strip under the canvas head (renderBarDevices): framed in
      the accent, the question in bold, the chips a size up from the cards',
-     then the count. It wraps when the canvas card is narrow. */
+     then the count. It wraps when the canvas card is narrow, after the
+     unticked chips have folded (below). */
   .lib-on {
     display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; min-width: 0; flex: 0 1 auto;
     margin-left: 6px; padding: 5px 12px; border-radius: 10px;
@@ -239,4 +240,11 @@ export const libraryModeStyles = css`
   .lib-on.over-stage { flex: none; margin: 6px 6px 0; padding: 7px 12px; box-sizing: border-box; }
   .lib-on.over-stage .lt-ticks { flex: 1 1 auto; }
   .lib-on.over-stage .lib-on-n { margin-left: auto; }
+  /* A narrow canvas card folds the unticked chips into "+ Add to a device"
+     at any device count, the way more than four devices always do
+     (renderTickChips's "many"), so the strip stays one or two lines. */
+  @container cvcard (max-width: 720px) {
+    .lib-on .lt-ticks .lt-chips > .lt-chip.off:not(.add) { display: none; }
+    .lib-on .lt-ticks .lt-fold { display: inline-flex; }
+  }
 `;

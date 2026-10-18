@@ -249,6 +249,17 @@ describe("the device chips in the strip over the preview", () => {
     expect(canvasStyles.cssText).not.toContain("cv-devices");
   });
 
+  it("fold the unticked ones into one chip with many devices or a narrow canvas, never the ticked ones", () => {
+    expect(decls(panelCss, ".lt-fold").display).toBe("none");
+    expect(decls(panelCss, ".lt-ticks.many .lt-fold").display).toBe("inline-flex");
+    expect(decls(panelCss, ".lt-ticks.many .lt-chips > .lt-chip.off:not(.add)").display).toBe("none");
+    expect(decls(panelCss, ".lt-fold-pop .lt-chip.off").display).toBe("inline-flex");
+    expect(decls(panelCss, ".lt-fold-pop").position).toBe("absolute");
+    expect(panelCss).toMatch(/@container cvcard \(max-width: 720px\)\s*\{\s*\.lib-on \.lt-ticks \.lt-chips > \.lt-chip\.off:not\(\.add\)\s*\{\s*display: none;/);
+    expect(decls(panelCss, ".lib-on .lt-ticks .lt-fold").display).toBe("inline-flex");
+    expect(panelCss).not.toMatch(/\.lt-chip\.on[^{]*\{[^}]*display: none/);
+  });
+
   it("wash a ticked chip with its device's hue, fill its box with it, and edge every chip in it", () => {
     expect(ticked.background).toBe("color-mix(in srgb, var(--dc, var(--wa-muted)) 18%, var(--wa-card))");
     expect(box.background).toBe("var(--dc, var(--wa-muted))");

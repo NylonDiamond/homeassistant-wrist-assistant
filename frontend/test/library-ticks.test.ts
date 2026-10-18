@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { libraryOf } from "../src/library/model.js";
 import { pendingKey } from "../src/library/store.js";
-import { TICK_ADMIN_TEXT, renderTicks, tickChips, type TicksInput } from "../src/library/ticks.js";
+import { FOLD_AFTER, TICK_ADMIN_TEXT, type TickChip, renderTickChips, renderTicks, tickChips, type TicksInput } from "../src/library/ticks.js";
 import { CHEN, CHEN_MENU, DEVICES, HOME_MENU, JESSE, LIGHTS, LONELY, PAGE1, PHONE, QUICK, summary } from "./library-fixture.js";
 
 const flat = (v: unknown): string => {
@@ -116,12 +116,59 @@ describe("renderTicks", () => {
       return out;
     };
     const event = { stopPropagation: () => undefined } as unknown as Event;
-    // The first handler is the row's own, which only stops the click.
-    const page = clicks(renderTicks(input({}), (o, on) => asked.push([o, on]))).slice(1);
-    page.forEach((fn) => fn(event));
+    // The first handler is the row's own, which only stops the click; then
+    // the three inline chips, the fold's toggle, and the fold's three.
+    const all = clicks(renderTicks(input({}), (o, on) => asked.push([o, on])));
+    expect(all).toHaveLength(8);
+    all.slice(1, 4).forEach((fn) => fn(event));
     expect(asked).toEqual([[CHEN, true], [JESSE, false], [PHONE, false]]);
     asked.length = 0;
-    clicks(renderTicks(input({ kind: "menus", itemId: HOME_MENU }), (o, on) => asked.push([o, on]))).slice(1).forEach((fn) => fn(event));
+    all.slice(5).forEach((fn) => fn(event));
+    expect(asked).toEqual([[CHEN, true], [JESSE, false], [PHONE, false]]);
+    asked.length = 0;
+    clicks(renderTicks(input({ kind: "menus", itemId: HOME_MENU }), (o, on) => asked.push([o, on]))).slice(1, 4).forEach((fn) => fn(event));
     expect(asked).toEqual([[CHEN, true]]);
+  });
+});
+
+describe("renderTickChips", () => {
+  const chip = (ownerId: string, on: boolean, over: Partial<TickChip> = {}): TickChip => ({
+    ownerId, name: ownerId, device: "watch", color: undefined, shape: "square", on, hidden: false, busy: false, add: false,
+    label: ownerId, title: ownerId, next: !on, ...over,
+  });
+  const opts = { fold: false, foldLabel: "Add to a device" };
+  /** The fold's popover markup: everything after the pop's opening tag. */
+  const pop = (text: string) => text.slice(text.indexOf("lt-fold-pop"));
+
+  it("keeps the fold in the DOM, hidden, while a few devices have one off", () => {
+    const text = flat(renderTickChips([chip("a", true), chip("b", false), chip("c", true)], opts, () => undefined));
+    expect(text).toContain(`<details class="lt-fold"`);
+    expect(text).toContain("+ Add to a device");
+    expect(text).not.toContain("many");
+  });
+
+  it("folds with more than four devices", () => {
+    const five = ["a", "b", "c", "d", "e"].map((o, i) => chip(o, i === 0));
+    const text = flat(renderTickChips(five, { ...opts, fold: five.length > FOLD_AFTER }, () => undefined));
+    expect(text).toContain("lt-ticks many");
+  });
+
+  it("draws no fold when every device has it, or only the dashed Add chip is off", () => {
+    expect(flat(renderTickChips([chip("a", true), chip("b", true)], opts, () => undefined))).not.toContain("lt-fold");
+    expect(flat(renderTickChips([chip("a", true), chip("b", false, { add: true })], opts, () => undefined))).not.toContain("lt-fold");
+  });
+
+  it("holds every chip in the popover, on and off, with its tag", () => {
+    const text = flat(renderTickChips([chip("a", true), chip("b", false, { tag: "full" }), chip("c", false)], opts, () => undefined));
+    const inPop = pop(text);
+    expect(inPop.match(/class="lt-chip /g)).toHaveLength(3);
+    expect(inPop).toContain("lt-chip on");
+    expect(inPop).toContain("lt-chip off");
+    expect(inPop).toContain("<em>full</em>");
+  });
+
+  it("says Use on a device for menus and Add to a device for pages", () => {
+    expect(flat(renderTicks(input({ kind: "menus", itemId: HOME_MENU }), () => undefined))).toContain("+ Use on a device");
+    expect(flat(renderTicks(input({}), () => undefined))).toContain("+ Add to a device");
   });
 });

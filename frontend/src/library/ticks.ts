@@ -10,7 +10,8 @@
 // item's last refusal shows under the row in the tabs' warning ink.
 //
 // `tickChips` is the pure part (testable without a browser);
-// `renderTicks` draws it. The writes are the caller's: usually the shared
+// `renderTicks` draws it through `renderTickChips`, which folds the
+// unticked chips into one "+ Add to a device" chip when there are many. The writes are the caller's: usually the shared
 // store's `pick` and `pickMenu` (`store.ts`).
 
 import { css, html, nothing, type TemplateResult } from "lit";
@@ -70,6 +71,10 @@ export interface TickChip {
   next: boolean | undefined;
   /** Why a click does nothing, when it is not plain. */
   stuck?: string;
+  /** A short word after the name, in the chip's `<em>`: the complication
+   * editor's "not this shape", "full" or "sure?", said on the chip because a
+   * touch screen never shows the tooltip. */
+  tag?: string;
 }
 
 /** Why a device cannot take an item no device has. */
@@ -131,18 +136,93 @@ export function tickChips(input: TicksInput): TickChip[] {
 export function renderTicks(input: TicksInput, onPick: (ownerId: string, on: boolean) => void): TemplateResult {
   const chips = tickChips(input);
   const hint = input.kind === "menus" && input.hint !== false ? (input.hint ?? "Used by") : undefined;
-  return html`<div class="lt-ticks" @click=${(e: Event) => e.stopPropagation()}>
-    ${hint === undefined ? nothing : html`<span class="lt-hint">${hint}</span>`}
-    <span class="lt-chips" role="group" aria-label=${hint ?? "Devices"}>${chips.map((chip) => html`<button type="button"
-      class="lt-chip ${chip.on ? "on" : "off"} ${chip.shape === "round" ? "rd" : ""} ${chip.add ? "add" : ""} ${chip.busy ? "busy" : ""} ${chip.stuck === undefined ? "" : "stuck"} ${chip.hidden ? "dim" : ""}"
-      style=${chip.color === undefined ? nothing : `--dc:${chip.color}`} title=${chip.title}
-      aria-pressed=${chip.on ? "true" : "false"} aria-disabled=${chip.next === undefined ? "true" : "false"}
+  return renderTickChips(chips, {
+    fold: chips.length > FOLD_AFTER,
+    foldLabel: input.kind === "menus" ? "Use on a device" : "Add to a device",
+    ...(hint === undefined ? {} : { hint }),
+    ...(input.note === undefined ? {} : { note: input.note }),
+  }, onPick);
+}
+
+/** More devices than this and the unticked ones fold into one chip. */
+export const FOLD_AFTER = 4;
+
+/** How a row of chips is drawn (`renderTickChips`). */
+export interface TickChipsOptions {
+  /** Fold the unticked chips into the "+ Add to a device" chip at any width
+   * (more than `FOLD_AFTER` devices). The device strip also folds them when
+   * the canvas card is narrow, by a container query. */
+  fold: boolean;
+  /** The fold chip's words, after the "+". */
+  foldLabel: string;
+  /** The words over the row (a menu's "Used by"). */
+  hint?: string;
+  /** The item's last refusal, under the row. */
+  note?: string;
+}
+
+/**
+ * Draws a row of chips: every chip inline, then, when one is off, a fold
+ * chip that opens the whole list (on and off) in a small popover. CSS shows
+ * the fold only when `many` or a narrow canvas card asks for it, and hides
+ * the inline off chips then, so the ticked ones always stay in the line
+ * (Jesse, 2026-10-17: six devices on a narrow canvas wrapped the strip to
+ * three rows). Pages, status pages and menus come here through
+ * `renderTicks`; the complication editor builds its own chips from its
+ * device places and calls this directly.
+ *
+ * The popover is a `<details>`, so it needs no open state of its own; it
+ * closes on a click outside it or Escape.
+ */
+export function renderTickChips(chips: readonly TickChip[], opts: TickChipsOptions, onPick: (ownerId: string, on: boolean) => void): TemplateResult {
+  const chip = (c: TickChip) => html`<button type="button"
+      class="lt-chip ${c.on ? "on" : "off"} ${c.shape === "round" ? "rd" : ""} ${c.add ? "add" : ""} ${c.busy ? "busy" : ""} ${c.stuck === undefined ? "" : "stuck"} ${c.hidden ? "dim" : ""}"
+      style=${c.color === undefined ? nothing : `--dc:${c.color}`} title=${c.title}
+      aria-pressed=${c.on ? "true" : "false"} aria-disabled=${c.next === undefined ? "true" : "false"}
       @click=${(e: Event) => {
         e.stopPropagation();
-        if (chip.next !== undefined) onPick(chip.ownerId, chip.next);
-      }}><span class="lt-box" aria-hidden="true"></span><span class="lt-name">${chip.label}</span>${chip.hidden ? html`<em>hidden</em>` : nothing}</button>`)}</span>
-    ${input.note === undefined ? nothing : html`<p class="lt-note" role="alert">${input.note}</p>`}
+        if (c.next !== undefined) onPick(c.ownerId, c.next);
+      }}><span class="lt-box" aria-hidden="true"></span><span class="lt-name">${c.label}</span>${c.hidden
+        ? html`<em>hidden</em>`
+        : c.tag === undefined ? nothing : html`<em>${c.tag}</em>`}</button>`;
+  // The dashed "Add to this watch" chip is already the way in, so it never
+  // folds and never asks for a fold of its own.
+  const folds = chips.some((c) => !c.on && !c.add);
+  return html`<div class="lt-ticks ${opts.fold ? "many" : ""}" @click=${(e: Event) => e.stopPropagation()}>
+    ${opts.hint === undefined ? nothing : html`<span class="lt-hint">${opts.hint}</span>`}
+    <span class="lt-chips" role="group" aria-label=${opts.hint ?? "Devices"}>${chips.map(chip)}${folds
+      // Inside the chips' line, so the fold sits right after the ticked
+      // chips both in the strip's row and on a library card's column.
+      ? html`<details class="lt-fold" @toggle=${foldToggled}>
+      <summary class="lt-chip add lt-fold-sum"><span class="lt-name">+ ${opts.foldLabel}</span><svg class="lt-chev" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 4l2.5 2.5L7.5 4"/></svg></summary>
+      <div class="lt-fold-pop" role="group" aria-label=${opts.foldLabel}>${chips.map(chip)}</div>
+    </details>`
+      : nothing}</span>
+    ${opts.note === undefined ? nothing : html`<p class="lt-note" role="alert">${opts.note}</p>`}
   </div>`;
+}
+
+/** While a fold's popover is open, a click outside it or Escape shuts it.
+ * The listeners go when it shuts, however it shut. */
+function foldToggled(e: Event): void {
+  const details = e.currentTarget as HTMLDetailsElement;
+  if (!details.open) return;
+  const doc = details.ownerDocument;
+  const outside = (ev: Event) => {
+    if (!ev.composedPath().includes(details)) details.open = false;
+  };
+  const key = (ev: KeyboardEvent) => {
+    if (ev.key === "Escape") details.open = false;
+  };
+  const stop = () => {
+    if (details.open) return;
+    doc.removeEventListener("pointerdown", outside, true);
+    doc.removeEventListener("keydown", key, true);
+    details.removeEventListener("toggle", stop);
+  };
+  doc.addEventListener("pointerdown", outside, true);
+  doc.addEventListener("keydown", key, true);
+  details.addEventListener("toggle", stop);
 }
 
 /** The row's look, in the panel's tokens: the mock's chip, 22px tall. */
@@ -178,4 +258,24 @@ export const libraryTicksStyles = css`
   .lt-chip.busy { opacity: .6; cursor: progress; }
   .lt-chip.stuck { opacity: .45; cursor: not-allowed; }
   .lt-note { margin: 0; font-size: 11.5px; line-height: 1.35; color: var(--wa-need); }
+  /* The fold (renderTickChips): in the DOM whenever a chip is off, shown
+     only when the row has many devices (or the device strip's narrow query
+     asks), and then the inline off chips step aside for it. */
+  .lt-fold { display: none; position: relative; min-width: 0; }
+  .lt-ticks.many .lt-chips > .lt-chip.off:not(.add) { display: none; }
+  .lt-ticks.many .lt-fold { display: inline-flex; }
+  .lt-fold-sum { list-style: none; user-select: none; }
+  .lt-fold-sum::-webkit-details-marker { display: none; }
+  .lt-fold-sum::marker { content: ""; }
+  .lt-fold-sum:hover { color: var(--wa-ink); border-color: var(--wa-muted); }
+  .lt-chev { flex: none; width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; transition: transform .12s ease-out; }
+  .lt-fold[open] > .lt-fold-sum { color: var(--wa-ink); border-color: var(--wa-muted); }
+  .lt-fold[open] .lt-chev { transform: rotate(180deg); }
+  .lt-fold-pop {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 50;
+    display: flex; flex-wrap: wrap; gap: 6px; min-width: 240px; max-width: 360px; padding: 8px; box-sizing: border-box;
+    background: var(--wa-card); border: 1px solid var(--wa-line-strong); border-radius: 10px;
+    box-shadow: var(--wa-shadow-pop, 0 8px 24px rgba(0, 0, 0, .28));
+  }
+  .lt-fold-pop .lt-chip.off { display: inline-flex; }
 `;

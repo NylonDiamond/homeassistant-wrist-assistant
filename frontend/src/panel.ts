@@ -229,7 +229,7 @@ import { conflictText, savedByWords, savedLine, versionLabel, versionWhen } from
 import { ScrollFades } from "./scroll-fade.js";
 import { chromeDarkValues, chromeRuns, chromeTokens, litOutline, plainOutline } from "./editor-chrome.js";
 import { libraryModeStyles } from "./library/item-mode.js";
-import { libraryTicksStyles } from "./library/ticks.js";
+import { FOLD_AFTER, type TickChip, libraryTicksStyles, renderTickChips } from "./library/ticks.js";
 import { statesSummary } from "./states.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { elementSize, isHiddenDocument, smallestSize, withHidden, type Placement } from "./model.js";
@@ -20596,7 +20596,8 @@ export class WristAssistantPanel extends LitElement {
    * once and then takes it off (`removeRowFrom`), so one slip of the pointer
    * does not pull a design off a watch. The last copy goes to Unassigned
    * rather than being deleted. The same block, in the same place, as a
-   * page's.
+   * page's, and drawn by the same `renderTickChips`, so with many devices or
+   * a narrow canvas the unticked ones fold into "+ Add to a device" here too.
    */
   private renderCanvasDevices(cfg: CustomComplicationConfig) {
     const question = "Which devices do you want this on?";
@@ -20609,37 +20610,41 @@ export class WristAssistantPanel extends LitElement {
     const f = supportedFamilies(cfg)[0];
     const places = this.rowPlaces(row, f).filter((p) => p.owner.kind !== "library");
     const on = places.filter((p) => p.on).length;
-    const chips = places.map((place) => {
+    const chips = places.map((place): TickChip => {
       const target = place.owner;
       const label = placeLabel(target, f);
       const block = place.on ? undefined : this.placeBlock(place, f, label);
       const armed = this.placeTrashArm === target.ownerId;
-      const hue = this.deviceColorOf(target.ownerId);
       const stuck = block?.why
         ?? (place.on && place.last && this.libraryOwner() === undefined ? `This integration has no ${UNASSIGNED_LABEL} list to move it to. Delete removes it.` : undefined)
         ?? (!this.canEdit ? "Only an administrator can change where this is." : undefined);
       const title = stuck ?? (place.on
         ? armed ? `Press again to take it off ${label}.` : place.last ? `On ${label}. Click to take it off and keep it under ${UNASSIGNED_LABEL}.` : `On ${label}. Click to take it off.`
         : `Put it on ${label}. Saving it saves it everywhere it is.`);
-      return html`<button type="button" class="lt-chip ${place.on ? "on" : "off"} ${stuck === undefined ? "" : "stuck"}"
-        style=${hue ? `--dc:${hue}` : nothing} title=${title} ?disabled=${this.saving}
-        aria-pressed=${place.on ? "true" : "false"} aria-disabled=${stuck === undefined ? "false" : "true"}
-        @click=${() => {
-          if (stuck !== undefined) return;
-          if (!place.on) { void this.addRowTo(row, target, true); return; }
-          if (!armed) { this.armPlaceTrash(target.ownerId); return; }
-          this.disarmPlaceTrash();
-          void this.removeRowFrom(row, place, true, true);
-        }}><span class="lt-box" aria-hidden="true"></span><span class="lt-name">${label}</span>${armed
-          ? html`<em>sure?</em>`
-          // A device that cannot take it says why in a word on the chip, the
-          // way the old menu's row did, not only in a tooltip a touch screen
-          // never shows.
-          : block ? html`<em>${block.tag}</em>` : nothing}</button>`;
+      // A device that cannot take it says why in a word on the chip, the way
+      // the old menu's row did, not only in a tooltip a touch screen never
+      // shows; an armed chip asks "sure?" the same way.
+      const tag = armed ? "sure?" : block?.tag;
+      return {
+        ownerId: target.ownerId, name: label, device: target.kind === "iphone" ? "iphone" : "watch",
+        color: this.deviceColorOf(target.ownerId), shape: "square", on: place.on, hidden: false,
+        busy: this.saving, add: false, label, title,
+        next: stuck !== undefined || this.saving ? undefined : !place.on,
+        ...(stuck === undefined ? {} : { stuck }),
+        ...(tag === undefined ? {} : { tag }),
+      };
     });
+    const onPick = (ownerId: string, putOn: boolean) => {
+      const place = places.find((p) => p.owner.ownerId === ownerId);
+      if (!place) return;
+      if (putOn) { void this.addRowTo(row, place.owner, true); return; }
+      if (this.placeTrashArm !== ownerId) { this.armPlaceTrash(ownerId); return; }
+      this.disarmPlaceTrash();
+      void this.removeRowFrom(row, place, true, true);
+    };
     return html`<div class="lib-on over-stage ${on === 0 ? "none" : ""}" role="group" aria-label=${question}>
       <span class="lib-on-l">${question}</span>
-      <div class="lt-ticks"><span class="lt-chips" role="group" aria-label="Devices">${chips}</span></div>
+      ${renderTickChips(chips, { fold: chips.length > FOLD_AFTER, foldLabel: "Add to a device" }, onPick)}
       <span class="lib-on-n">${on === 0 ? "On no device yet" : `On ${on} ${on === 1 ? "device" : "devices"}`}</span>
     </div>`;
   }
