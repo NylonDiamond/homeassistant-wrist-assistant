@@ -11,7 +11,16 @@ import tileDevicesTable from "../src/watch-pages/tile-devices.json";
 import tileDefaults from "../src/watch-pages/tile-defaults.json";
 import pageKeys from "../src/watch-pages/page-keys.json";
 import { checkWatchPagesValues } from "../src/watch-pages/merge.js";
-import { VIRTUAL_TILE_KINDS, keyDevices, tileDevices, tileDrawsOn } from "../src/watch-pages/model.js";
+import {
+  VIRTUAL_TILE_KINDS,
+  WATCH_GRID_COLUMNS,
+  type WatchPage,
+  type WatchPageTile,
+  keyDevices,
+  tileDevices,
+  tileDrawsOn,
+} from "../src/watch-pages/model.js";
+import { watchReflowPage } from "../src/watch-pages/preview.js";
 
 const TABLE = tileDevicesTable as unknown as {
   version: number;
@@ -78,6 +87,23 @@ describe("tile-devices.json", () => {
     // A text entity is not a text field.
     expect(tileDrawsOn({ entityId: "text.note" }, "watch")).toBe(true);
     expect(tileDrawsOn({}, "watch")).toBe(true);
+  });
+
+  it("leaves an iPhone only tile out of the watch's reflow and keeps it on the iPhone's", () => {
+    const id = "6F1C1E0A-0000-4000-8000-00000000000A";
+    const map = { id: "M", entityId: `map.${id}`, gridRow: 0, gridCol: 0, colSpan: 6, rowSpan: 4 } as WatchPageTile;
+    const lamp = { id: "L", entityId: "light.lamp", gridRow: 0, gridCol: 6, colSpan: 6, rowSpan: 4 } as WatchPageTile;
+    const page = { id: "P", name: "Home", items: [map, lamp] } as WatchPage;
+    // With states and without (the all-on picture), the watch packs the
+    // lamp into the map's place.
+    for (const states of [{}, undefined]) {
+      const packed = watchReflowPage(page, states).items as WatchPageTile[];
+      expect(packed.map((t) => t.id)).toEqual(["L"]);
+      expect(packed[0]!.gridCol).toBe(0);
+      expect(watchReflowPage(page, states, WATCH_GRID_COLUMNS, undefined, "iphone")).toBe(page);
+    }
+    const plain = { id: "P", name: "Home", items: [lamp] } as WatchPage;
+    expect(watchReflowPage(plain, undefined)).toBe(plain);
   });
 
   it("names the four iPhone only kinds", () => {

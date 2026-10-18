@@ -53,9 +53,11 @@ import {
   tileStateText,
   tileSymbol,
   tileTarget,
+  tileDrawsOn,
   watchPageLayout,
   watchPageName,
 } from "./model.js";
+import type { SettingDevice } from "../watch-settings.js";
 import { watchPageTheme, watchPageValue } from "./page-settings-model.js";
 import { watchPagePhoto, watchPagePhotoStyle } from "./page-photo.js";
 import { WATCH_TILE_DEFAULTS, watchKindColor, watchThemeRoleColors } from "./tile-new.js";
@@ -297,17 +299,19 @@ export function watchTileHidden(
  * row then column order, into the first free place at or below the top of
  * its section (the rows between the headers around it), headers keeping
  * their rows; a tile that cannot fit its section stays where it is stored.
- * Without states nothing is hidden.
+ * A tile `device` does not draw (`tileDrawsOn`, an iPhone only kind on the
+ * watch) is gone the same way (`GridItemConfig.drawsOn`), with or without
+ * states. Without states nothing else is hidden.
  */
 export function watchReflowPage(
   page: WatchPage,
   states: Readonly<Record<string, HassEntityState>> | undefined,
   columns = WATCH_GRID_COLUMNS,
   templates?: ReadonlyMap<string, WatchTemplateRender>,
+  device: SettingDevice = "watch",
 ): WatchPage {
-  if (states === undefined) return page;
   const items = watchPageTiles(page);
-  const hidden = new Set(items.filter((t) => watchTileHidden(t, states, templates)));
+  const hidden = new Set(items.filter((t) => !tileDrawsOn(t, device) || (states !== undefined && watchTileHidden(t, states, templates))));
   if (hidden.size === 0) return page;
   const isDivider = (t: WatchPageTile) => tileKind(tileEntityId(t)) === "divider";
   const dividerRows = items.filter(isDivider).flatMap((t) => {
@@ -3220,9 +3224,10 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
   const name = watchPageName(page);
   if (isSmartWatchPage(page)) return renderSmartPreview(input);
   // Tiles hidden while off are gone and the rest packed up, as on the watch;
-  // in the all-on picture every tile is on, so none is hidden.
-  const layout = watchPreviewLayout(watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states, WATCH_GRID_COLUMNS, input.templates), screen, { sideInset: watchPreviewSideInset(input) });
+  // in the all-on picture every tile is on, so none is hidden. A tile the
+  // device does not draw is gone in both.
   const phone = input.phone !== undefined;
+  const layout = watchPreviewLayout(watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states, WATCH_GRID_COLUMNS, input.templates, phone ? "iphone" : "watch"), screen, { sideInset: watchPreviewSideInset(input) });
   const height = watchPreviewHeight(layout, phone);
   const scrolls = height > screen.height + 0.5;
   const back = watchScreenLayers(page, s, screen, input.photo);
