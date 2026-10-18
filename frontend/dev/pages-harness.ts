@@ -1108,6 +1108,8 @@ type FieldType = "str" | "int" | "dict" | "list" | "bool";
  * refused, as `BASE_COMMAND_MESSAGE_SCHEMA` refuses them. */
 const SCHEMAS: Record<string, { fields: Record<string, FieldType>; admin: boolean }> = {
   [CMD.owners]: { fields: {}, admin: true },
+  // The library's summary, read off the stored pages, for the device ticks.
+  ["wrist_assistant/library/summary"]: { fields: {}, admin: false },
   [CMD.get]: { fields: { owner_watch_id: "str", kind: "str" }, admin: true },
   [CMD.save]: { fields: { owner_watch_id: "str", kind: "str", base_revision: "int", document: "dict" }, admin: true },
   [CMD.history]: { fields: { owner_watch_id: "str", kind: "str" }, admin: true },
@@ -1186,6 +1188,27 @@ function answer(message: Json): unknown {
   switch (message.type) {
     case CMD.owners:
       return { owners: clone(OWNERS), max_schema_version: 10, token: 0 };
+    case "wrist_assistant/library/summary": {
+      // Every page once, with the watches whose stored pages hold it, and
+      // each watch's picks in its order. A system page is the watch's own.
+      const pages: Record<string, { item: Json; owners: string[] }> = {};
+      const picks: Json = {};
+      for (const [own, kinds] of store.records) {
+        const doc = kinds.get("pages")?.document;
+        const list = Array.isArray(doc?.pages) ? doc.pages as Json[] : [];
+        const mine: Json[] = [];
+        for (const page of list) {
+          if (typeof page.id !== "string") continue;
+          if (page.isSystemPage === true) { mine.push({ id: page.id, page: clone(page) }); continue; }
+          const { isHidden, ...item } = page;
+          const entry = (pages[page.id] ??= { item: clone(item), owners: [] });
+          entry.owners.push(own);
+          mine.push(isHidden === true ? { id: page.id, isHidden: true } : { id: page.id });
+        }
+        picks[own] = { pages: mine };
+      }
+      return { pages, status_pages: {}, menus: {}, picks };
+    }
     case CMD.get: {
       const record = store.get(owner, message.kind);
       if (message.kind === "pages") { shownWatchId = owner; onHarnessChange(); }
@@ -1421,7 +1444,8 @@ try {
 } catch {
   // No storage here: the defaults stand.
 }
-dark = prefs.dark;
+// `#dark` in the address asks for the dark skin on a fresh browser too.
+dark = prefs.dark || location.hash.includes("dark");
 
 function savePrefs(): void {
   try {

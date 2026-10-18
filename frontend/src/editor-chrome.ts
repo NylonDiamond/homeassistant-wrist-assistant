@@ -955,8 +955,6 @@ export const chromeTokens = css`
       --wa-float-shadow: none;
       --wa-float-sep: var(--wa-line-strong);
       --wa-hint: var(--wa-muted);
-      --wa-chip-bg: var(--wa-card);
-      --wa-chip-line: transparent;
       --wa-live: var(--wa-hue-green);
       --wa-testing: var(--wa-hue-orange);
       /* On the black face, in either skin. */
@@ -964,14 +962,16 @@ export const chromeTokens = css`
     }
 `;
 
-/** The canvas card's head: the name, the devices, the shape and the
- * whole-document actions. */
+/** The canvas card's head: the name, the shape and the whole-document
+ * actions. Where a complication is lives in the device strip under the head
+ * (`libraryTicksStyles`), not in it; the other editors' heads still carry a
+ * device part (`.cv-where`). */
 const canvasHeadRun = css`
     .column.canvas > .card.canvas-card { min-height: 440px; container: cvcard / inline-size; }
     /* The head wraps rather than squeezes. It used to be one fixed 48px line
-       with every part allowed to shrink, so in a middling width the device
-       chips were clipped and the shape's name cut to nothing, with no sign
-       anything was missing. Now each part (the name, the devices, the shape,
+       with every part allowed to shrink, so in a middling width the shape's
+       name was cut to nothing with no sign anything was missing. Now each
+       part (the name, the device part where an editor has one, the shape,
        the actions) keeps its natural width, and a part that does not fit
        moves down to a second line whole, slash and all. The actions keep to
        the right edge of whichever line they land on. */
@@ -985,9 +985,8 @@ const canvasHeadRun = css`
     .cv-acts { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-left: auto; }
     .cv-head .tb-name { flex: 0 1 auto; margin-left: -8px; }
     .cv-slash { flex: none; color: var(--wa-line-strong); }
-    /* The whole-complication actions: quiet outlined buttons that read as one
-       set with the device chips beside them. Delete goes red, and while it is
-       armed the choices stand in its place. */
+    /* The whole-document actions: quiet buttons that read as one set. Delete
+       goes red, and while it is armed the choices stand in its place. */
     button.cv-act {
       display: inline-flex; align-items: center; gap: 4px; flex: none; height: 26px; padding: 0 10px; border-radius: 6px; cursor: pointer;
       font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap;
@@ -998,20 +997,10 @@ const canvasHeadRun = css`
     button.cv-act:disabled { opacity: .45; cursor: default; }
     button.cv-act.danger { color: var(--wa-hue-red); }
     button.cv-act.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-hue-red) 14%, var(--wa-card)); }
-    /* Add to a device makes something, so it wears the green lit outline the
-       other Add buttons do. */
-    .add-tool > button.cv-act {
-      --c: var(--wa-hue-green); --lo-fill: var(--wa-card); --lo-mid: var(--wa-go-mid);
-      height: 24px; padding: 0 9px;
-      ${plainOutline}
-    }
-    .add-tool > button.cv-act:hover:not(:disabled), .add-tool > button.cv-act[aria-expanded="true"] { --lo-fill: var(--wa-hover); ${plainOutline} }
-    button.cv-act .caret { display: inline-flex; margin-right: -3px; color: var(--wa-hint); }
-    button.cv-act .caret svg { width: 11px; height: 11px; }
 `;
 
 /** The canvas card's head, continued: icon actions, undo, the dividers,
- * the device chips and the narrow fold. */
+ * the shape and the narrow fold. */
 const canvasHeadTailRun = css`
     button.cv-act.icon { width: 26px; padding: 0; justify-content: center; }
     button.cv-act.icon svg.ui-icon { width: 15px; height: 15px; }
@@ -1019,12 +1008,9 @@ const canvasHeadTailRun = css`
        there is none. */
     button.cv-act.undo:disabled { opacity: 1; color: var(--wa-faint); }
     .cv-del { display: inline-flex; align-items: center; gap: 6px; flex: none; }
-    /* Hairlines part the head's groups: the devices, the actions, Delete,
-       and the ··· menu. */
+    /* Hairlines part the head's groups: Undo and Redo, Duplicate, and
+       Delete. */
     .cv-div { width: 1px; height: 20px; flex: none; background: var(--wa-line); }
-    .cv-devices { display: inline-flex; align-items: center; gap: 6px; flex: 0 8 auto; min-width: 0; }
-    .case-tool.add-tool .pop-menu { left: 0; right: auto; min-width: 230px; }
-    .case-tool.add-tool .place-note { padding: 6px 10px 4px; font-size: 11px; color: var(--wa-muted); }
     .cv-shape {
       display: inline-flex; align-items: center; gap: 6px; flex: 0 4 auto; min-width: 0;
       font-size: 12px; color: var(--wa-muted); white-space: nowrap;
@@ -1035,42 +1021,12 @@ const canvasHeadTailRun = css`
     .cv-shape .warn svg { width: 14px; height: 14px; }
     .cv-head .shape-seg { padding: 2px; gap: 2px; border-radius: 9px; flex-wrap: nowrap; }
     .cv-head .shape-seg button.tab { height: 26px; padding: 0 10px; font-size: 12px; }
-    /* Several devices wrap onto more lines rather than hide past the edge. */
-    .cv-head .doc-on { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; row-gap: 6px; flex: 0 1 auto; min-width: 0; }
-    .cv-head .cv-devices { flex-wrap: wrap; row-gap: 6px; }
-    .cv-head .doc-chip {
-      height: 28px; gap: 8px; padding: 0 8px 0 10px; border-radius: 6px; min-width: 0; flex: 0 1 auto;
-      background: var(--wa-chip-bg); border: 1px solid var(--wa-chip-line);
-      font-size: 13px; font-weight: 500; color: var(--wa-ink);
-    }
-    .cv-head .doc-chip > svg { width: 13px; height: 13px; flex: none; }
-    /* A device chip wears its device's color, the one its tab wears in
-       Browse and on the Pages tab (device-colors.ts), so a device is one
-       color everywhere: a low wash of it over the card and a thin edge of it. The
-       glyph is the hue pulled a quarter toward the ink, the name is ink.
-       Unassigned is nobody's, so it stays a plain card with a visible edge. */
-    .cv-head .doc-chip.hued {
-      background: color-mix(in srgb, var(--chip-c) 18%, var(--wa-card));
-      border-color: color-mix(in srgb, var(--chip-c) 60%, var(--wa-card));
-    }
-    .cv-head .doc-chip.hued > svg { color: color-mix(in srgb, var(--chip-c) 75%, var(--wa-ink)); opacity: 1; }
-    .cv-head .doc-chip:not(.hued) { border-color: var(--wa-line-strong); }
-    .cv-head .doc-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    /* The x that takes the design off a device is always there, quiet, and
-       goes red only under the pointer or while it is armed. */
-    .cv-head .doc-chip button.doc-trash {
-      width: 18px; height: 18px; margin: 0; align-self: center; border: 0; border-radius: 9px;
-      background: var(--wa-raise); color: var(--wa-ink); opacity: .85; overflow: hidden; cursor: pointer;
-      transition: opacity .12s ease-out;
-    }
-    .cv-head .doc-chip button.doc-trash:hover:not(:disabled), .cv-head .doc-chip button.doc-trash:focus-visible { opacity: 1; color: #FF453A; background: color-mix(in srgb, #FF453A 16%, transparent); }
-    .cv-head .doc-chip button.doc-trash:disabled { opacity: .3; cursor: default; }
-    .cv-head .doc-chip button.doc-trash.armed { width: auto; padding: 0 7px; background: #FF453A; color: #fff; }
     /* A narrow canvas (a phone, or a column dragged in) cannot hold the head
-       on one line: "Add to a device" was drawn over the shape's name and the
-       Duplicate button. It folds to two rows instead: the name and its shape
-       with the whole-document actions, then the devices. The ::after is the
-       line break, a full width item of no height. */
+       on one line: the parts were drawn over the shape's name and the
+       Duplicate button. It folds instead: the name with the whole-document
+       actions, then its shape, then the device part in the editors whose
+       head has one. The ::after is the line break, a full width item of no
+       height. */
     @container cvcard (max-width: 560px) {
       .cv-head { padding: 6px 12px 8px; column-gap: 8px; }
       .cv-head::after { content: ""; order: 3; flex: 0 0 100%; height: 0; }

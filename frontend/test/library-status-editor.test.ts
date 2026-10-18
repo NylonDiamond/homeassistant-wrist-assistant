@@ -1,7 +1,7 @@
 // The status pages editor's library parts, against a stand-in Home
 // Assistant that works the library as the server does
-// (`library-editor-home.ts`): the badges and the shared line, the tick row in
-// the Page card, "Not on this watch" with its Add, the delete question, a
+// (`library-editor-home.ts`): the badges and the shared line, the tick strip
+// under the canvas head, "Not on this watch" with its Add, the delete question, a
 // status page deleted on its only device staying in the library, an untick
 // clearing that device's Status page slots, the restore question naming the
 // other devices, and the Status pages tab's New status page as the editor
@@ -69,23 +69,30 @@ async function editor(options: { newPage?: boolean; history?: Record<string, Jso
 describe("the status pages editor's devices, from the library", () => {
   it("badges the pages other devices have too, and says so under the list", async () => {
     const { host, page } = await editor();
-    expect(host().linkBadge?.(page(HOUSE))).toBe("Also on Jesse's iPhone");
-    expect(host().linkBadge?.(page(DOORS))).toBeUndefined();
+    // The badge is the other device's icon, the sentence its tooltip.
+    const badge = host().linkDevices?.(page(HOUSE));
+    expect(badge?.title).toBe("Also on Jesse's iPhone");
+    expect(badge?.others.map((d) => d.kind)).toEqual(["iphone"]);
+    expect(host().linkDevices?.(page(DOORS))).toBeUndefined();
     expect(host().sharedLine).toBe("2 of these status pages are also on Jesse's iPhone. An edit here shows there too.");
     const card = flat(renderPagesCard(host()));
     expect(card).not.toContain("Devices for");
   });
 
-  it("draws a tick per device in the Page card, this one locked on", async () => {
-    const { host, page } = await editor();
-    const ticks = flat(host().ticks?.(page(HOUSE)));
+  it("draws a tick per device in the strip under the canvas head, this one locked on", async () => {
+    const { call, el, host, page } = await editor();
+    const ticks = flat(call("renderStageDevices", page(HOUSE)));
+    expect(ticks).toContain("lib-on over-stage");
     expect(ticks).toContain("Jesse's Watch");
     expect(ticks).toContain("Jesse's iPhone");
     expect(ticks).toContain("On this watch. Delete takes the status page off it.");
-    expect(flat(host().ticks?.(page(DOORS)))).toMatch(/lt-chip off[^>]*title=Not on Jesse's iPhone\. Tick to put the status page there\./);
-    // The card shows it, with no Devices button.
+    expect(flat(call("renderStageDevices", page(DOORS)))).toMatch(/lt-chip off[^>]*title=Not on Jesse's iPhone\. Tick to put the status page there\./);
+    // The stage draws the shown page's, under the head; the Page card has
+    // none, and no Devices button.
+    const stage = flat(call("renderStage", host(), el.owners));
+    expect(stage).toMatch(/cv-head[\s\S]*lib-on over-stage[\s\S]*lt-ticks[\s\S]*class="stage-area/);
     const inspector = flat(renderStatusInspector(host()));
-    expect(inspector).toContain("lt-ticks");
+    expect(inspector).not.toContain("lt-ticks");
     expect(inspector).not.toContain("sp-dev-open");
   });
 

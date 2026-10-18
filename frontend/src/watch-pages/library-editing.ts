@@ -55,6 +55,45 @@ export function libraryBadgeText(lib: Library | undefined, kind: LibraryListKind
   return linkBadgeText([here, ...spelled], here, devices);
 }
 
+/** The devices a row's badge draws, one icon each: the other devices that
+ * have the item, in device order, then a watch called "another device" for
+ * each owner the device list does not know (a device since removed, or one
+ * the editor was not told about). Empty where `libraryBadgeText` is
+ * undefined. */
+export function libraryBadgeDevices(lib: Library | undefined, kind: LibraryListKind, id: string, here: string, devices: readonly LinkDevice[]): LinkDevice[] {
+  if (lib === undefined) return [];
+  const others = otherOwners(lib, kind, id, here);
+  const known = devices.filter((d) => others.some((o) => sameId(o, d.ownerId)));
+  const unknown = others
+    .filter((o) => !devices.some((d) => sameId(d.ownerId, o)))
+    .map((o): LinkDevice => ({ ownerId: o, name: "another device", kind: "watch" }));
+  return [...known, ...unknown];
+}
+
+/** What a row's device badge needs (`library/link-badge.ts`): the devices,
+ * the sentence for its tooltip, and each device's color. */
+export interface LinkBadge {
+  others: LinkDevice[];
+  title: string;
+  colorOf: (ownerId: string) => string | undefined;
+}
+
+/** The badge of a row of an item other devices have too, or undefined for
+ * one on this device alone. One call for the editors' hosts, so a list's
+ * row and its tooltip are worked out from the same summary. */
+export function libraryLinkBadge(
+  lib: Library | undefined,
+  kind: LibraryListKind,
+  id: string,
+  here: string,
+  devices: readonly LinkDevice[],
+  colorOf: (ownerId: string) => string | undefined,
+): LinkBadge | undefined {
+  const title = libraryBadgeText(lib, kind, id, here, devices);
+  if (title === undefined) return undefined;
+  return { others: libraryBadgeDevices(lib, kind, id, here, devices), title, colorOf };
+}
+
 /** Why the tick of the device on screen cannot be clicked: Delete takes the
  * item off it. */
 export function hereTickText(kind: LibraryListKind, device: LinkDevice["kind"]): string {

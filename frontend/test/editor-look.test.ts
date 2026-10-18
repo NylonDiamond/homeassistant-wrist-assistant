@@ -1,7 +1,7 @@
 // Four small matters of look, each held in both skins through the panel's
 // own tokens: no scroll bar between the canvas and the inspector, an Advanced
-// rules editor whose boxes, buttons and words read apart, device chips that
-// wear their person's color, and a green Save while there is something to
+// rules editor whose boxes, buttons and words read apart, device ticks over
+// the preview that wear their person's color, and a green Save while there is something to
 // save. The contrast checks resolve the real token values (and the
 // color-mix() recipes over them) out of the sheets, so a token that drifts
 // below 4.5:1 fails here rather than on someone's screen.
@@ -234,23 +234,52 @@ describe("the Advanced rules editor's look", () => {
 
 // ── 3. the device chips ────────────────────────────────────────────────────
 
-describe("the device chips in the canvas head", () => {
-  const chip = decls(canvasStyles.cssText, ".cv-head .doc-chip.hued");
-  const glyph = decls(canvasStyles.cssText, ".cv-head .doc-chip.hued > svg");
+// The devices a complication is on are the tick strip under the canvas head
+// (`renderCanvasDevices`), the same chips a page's editor draws, styled by
+// the library's sheets the panel takes in. The head itself has no chips.
+describe("the device chips in the strip over the preview", () => {
+  const ticked = decls(panelCss, ".lt-chip.on");
+  const box = decls(panelCss, ".lt-chip.on .lt-box");
+  const strip = decls(panelCss, ".lib-on .lt-chip");
 
-  it("wash the card with the chip's hue and edge it in the same hue", () => {
-    expect(chip.background).toBe("color-mix(in srgb, var(--chip-c) 18%, var(--wa-card))");
-    expect(chip["border-color"]).toBe("color-mix(in srgb, var(--chip-c) 60%, var(--wa-card))");
+  it("are in the panel's own sheet, and the head draws none of the old ones", () => {
+    expect(ticked.background).toBeDefined();
+    expect(decls(panelCss, ".lib-on.over-stage").margin).toBeDefined();
+    expect(canvasStyles.cssText).not.toContain("doc-chip");
+    expect(canvasStyles.cssText).not.toContain("cv-devices");
+  });
+
+  it("fold the unticked ones into one chip only when the row says they do not fit, never the ticked ones", () => {
+    expect(decls(panelCss, ".lt-fold").display).toBe("none");
+    expect(decls(panelCss, "wa-chip-row[folded] > .lt-fold").display).toBe("inline-flex");
+    // Out of the flow but still measured: hidden, not display none.
+    const off = decls(panelCss, "wa-chip-row[folded] > .lt-chip.off:not(.add)");
+    expect(off.position).toBe("absolute");
+    expect(off.visibility).toBe("hidden");
+    expect(off["pointer-events"]).toBe("none");
+    expect(off.display).toBeUndefined();
+    expect(decls(panelCss, "wa-chip-row").position).toBe("relative");
+    expect(decls(panelCss, ".lt-fold-pop .lt-chip.off").display).toBe("inline-flex");
+    expect(decls(panelCss, ".lt-fold-pop").position).toBe("absolute");
+    // No count class and no width query decide it any more.
+    expect(panelCss).not.toContain(".lt-ticks.many");
+    expect(panelCss).not.toMatch(/@container cvcard \(max-width: 720px\)\s*\{\s*\.lib-on/);
+    expect(panelCss).not.toMatch(/\.lt-chip\.on[^{]*\{[^}]*display: none/);
+  });
+
+  it("wash a ticked chip with its device's hue, fill its box with it, and edge every chip in it", () => {
+    expect(ticked.background).toBe("color-mix(in srgb, var(--dc, var(--wa-muted)) 18%, var(--wa-card))");
+    expect(box.background).toBe("var(--dc, var(--wa-muted))");
+    expect(strip["border-color"]).toBe("color-mix(in srgb, var(--dc, var(--wa-muted)) 55%, transparent)");
   });
 
   for (const [skin, base] of skins) {
-    it(`keep the name and the glyph readable on every person's color, ${skin}`, () => {
+    it(`keep a ticked chip's name readable on every person's color, ${skin}`, () => {
       const hues = [1, 2, 3, 4, 5, 6].map((n) => `var(--wa-person-${n})`).concat(["var(--wa-hue-blue)", "var(--wa-hue-green)"]);
       for (const hue of hues) {
-        const t = { ...base, "chip-c": hue };
-        const bg = color(chip.background!, t);
+        const t = { ...base, dc: hue };
+        const bg = color(ticked.background!, t);
         expect(contrast(color("var(--wa-ink)", t), bg), `${hue} name`).toBeGreaterThanOrEqual(4.5);
-        expect(contrast(color(glyph.color!, t), bg), `${hue} glyph`).toBeGreaterThanOrEqual(4.5);
         // Plainly not the plain card any more.
         expect(contrast(bg, color("var(--wa-card)", t)), `${hue} wash`).toBeGreaterThan(1.1);
       }

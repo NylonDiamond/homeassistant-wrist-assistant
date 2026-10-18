@@ -21,10 +21,11 @@
 // the same ready screen.
 //
 // Every status page lives once in the home's library (`library/`), and a
-// device picks from it, as pages do: the Page card has a tick per device
-// (`library/pick`), a row of a page other devices have too wears their name,
-// its delete asks "Remove from this watch only" or "Delete from the library",
-// and "Not on this watch" under the pages adds the library's rest here. Home
+// device picks from it, as pages do: the strip under the canvas head has a
+// tick per device (`library/pick`), a row of a page other devices have too
+// wears their name, its delete asks "Remove from this watch only" or "Delete
+// from the library", and "Not on this watch" under the pages adds the
+// library's rest here. Home
 // Assistant maps a save back onto the library, so an edit reaches every
 // device that has the page. The rules are `watch-pages/library-editing.ts`.
 //
@@ -86,8 +87,8 @@ import {
 import {
   dirtyElsewhereText,
   hereTickText,
-  libraryBadgeText,
   libraryDeleteChoices,
+  libraryLinkBadge,
   restRows,
   restoreOthersText,
   statusSharedText,
@@ -315,7 +316,7 @@ export class WaStatusPagesEditor extends LitElement {
   /** The library (`library/store.ts`): every status page once, with the
    * devices that have it, read from `library/summary` and read again when
    * any device's status pages change. It draws the badges, the shared line,
-   * the tick row in the Page card, "Not on this watch" and the delete
+   * the tick strip under the canvas head, "Not on this watch" and the delete
    * question. Undefined before the first read and on an integration older
    * than the library, which leaves all of them off. */
   private readonly lib = new LibraryController(this, () => this.hass, () => this.linkDevices.map((d) => d.ownerId));
@@ -892,15 +893,15 @@ export class WaStatusPagesEditor extends LitElement {
     };
   }
 
-  /** The view's badges, its shared line, the tick row in the Page card, the
-   * delete that asks for a page other devices have too, and Not on this
-   * watch, from the library as last read. None before it is read, and on an
-   * integration older than the library. */
-  private libraryHost(draft: StatusPagesDraft): Pick<StatusPagesViewHost, "linkBadge" | "sharedLine" | "ticks" | "deletePage" | "elsewhere" | "single"> {
+  /** The view's badges, its shared line, the delete that asks for a page
+   * other devices have too, and Not on this watch, from the library as last
+   * read. None before it is read, and on an integration older than the
+   * library. The ticks are not the view's: they stand in the strip under the
+   * canvas head (`renderStageDevices`), in both modes. */
+  private libraryHost(draft: StatusPagesDraft): Pick<StatusPagesViewHost, "linkDevices" | "sharedLine" | "deletePage" | "elsewhere" | "single"> {
     const lib = this.lib.library;
     // Library mode: the one page and Delete, which asks to delete it from
-    // the library. Its ticks stand in the bar (`renderBarDevices`), not in
-    // the Page card. Nothing of the device's.
+    // the library. Nothing of the device's.
     if (this.libraryItem !== undefined) {
       return {
         single: true,
@@ -913,9 +914,8 @@ export class WaStatusPagesEditor extends LitElement {
     const line = statusSharedText(lib, watchId, statusPagesOf(draft.document).map(statusPageId), devices);
     const elsewhere = this.renderElsewhere();
     return {
-      linkBadge: (page) => libraryBadgeText(lib, "status_pages", statusPageId(page), watchId, devices),
+      linkDevices: (page) => libraryLinkBadge(lib, "status_pages", statusPageId(page), watchId, devices, (o) => this.colorOf(o)),
       ...(line === undefined ? {} : { sharedLine: line }),
-      ...(devices.length > 1 ? { ticks: (page: JsonObject) => this.renderStatusTicks(page) } : {}),
       deletePage: (pageId) => this.askDelete(pageId),
       ...(elsewhere === nothing ? {} : { elsewhere }),
     };
@@ -951,16 +951,20 @@ export class WaStatusPagesEditor extends LitElement {
   }
 
   /**
-   * A status page's tick row in its Page card, where the Devices button
-   * was: a chip per device, ticked where the page is (`library/pick`).
-   * Ticking puts the page, as saved, on that device; unsaved edits here
-   * reach it with the next save, since it is one page. A page not saved yet
-   * says to save first.
+   * The shown status page's devices, in the strip under the canvas head
+   * where every editor has them: a chip per device, ticked where the page
+   * is (`library/pick`). Ticking puts the page, as saved, on that device;
+   * unsaved edits here reach it with the next save, since it is one page. A
+   * page not saved yet says to save first. Nothing before the page or the
+   * library is read, and, on a device, with no other device to put it on.
    */
-  private renderStatusTicks(page: JsonObject): TemplateResult {
+  private renderStageDevices(page: JsonObject | undefined): TemplateResult | typeof nothing {
     const lib = this.lib.library;
-    const count = lib === undefined ? 0 : (libraryItem(lib, "status_pages", statusPageId(page))?.owners.length ?? 0);
-    return html`<div class="sp-lib">${renderBarDevices("status_pages", count, this.statusTicksBody(page), "card")}</div>`;
+    if (lib === undefined || page === undefined) return nothing;
+    const item = this.libraryItem;
+    if (item === undefined && (this.watchId === undefined || this.linkDevices.length <= 1)) return nothing;
+    const count = libraryItem(lib, "status_pages", item?.id ?? statusPageId(page))?.owners.length ?? 0;
+    return renderBarDevices("status_pages", count, this.statusTicksBody(page), "stage");
   }
 
   /** The ticks themselves, or the save-first line. */
@@ -986,17 +990,6 @@ export class WaStatusPagesEditor extends LitElement {
       ...(admin === undefined ? {} : { admin }),
       locked: (ownerId) => this.statusTickLocked(entry.id, ownerId),
     }, (ownerId, on) => { void tickItem(this.hass, store, ownerId, "status_pages", entry.id, on); });
-  }
-
-  /** Library mode's device block in the bar: how many devices have the
-   * status page, then its ticks. Nothing before the page or the library is
-   * read. */
-  private renderBarDevices(draft: StatusPagesDraft | undefined): TemplateResult | typeof nothing {
-    const lib = this.lib.library;
-    const item = this.libraryItem;
-    const page = draft === undefined ? undefined : statusPagesOf(draft.document)[0];
-    if (lib === undefined || item === undefined || page === undefined) return nothing;
-    return renderBarDevices("status_pages", libraryItem(lib, "status_pages", item.id)?.owners.length ?? 0, this.statusTicksBody(page));
   }
 
   /** "Not on this watch", under the page list: the library's status pages
@@ -1382,9 +1375,10 @@ export class WaStatusPagesEditor extends LitElement {
   }
 
   /** Library mode's bar: back to the Status pages tab, the Library tag,
-   * the devices that have the page with a tick each, then the ··· menu and
-   * Save. No delivery: a save reaches every device that has the page, each
-   * on its own. Preview as is in the strip over the stage. */
+   * then the ··· menu and Save. No delivery: a save reaches every device
+   * that has the page, each on its own. The devices that have it are in the
+   * strip under the canvas head, Preview as in the tool strip over the
+   * stage. */
   private renderLibraryBar(draft: StatusPagesDraft | undefined, watches: readonly OwnerSummary[]): TemplateResult {
     const editing = draft !== undefined;
     const dirty = editing && this.dirty;
@@ -1393,7 +1387,6 @@ export class WaStatusPagesEditor extends LitElement {
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
       <button class="tb-btn tb-back" title="Back to the Status pages tab" @click=${() => this.onBack?.()}>${uiIcon("left")}<span>Status pages</span></button>
       ${renderLibraryTag()}
-      ${this.renderBarDevices(draft)}
       <span class="spacer"></span>
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
@@ -1550,6 +1543,7 @@ export class WaStatusPagesEditor extends LitElement {
             @click=${() => this.redo()}>${uiIcon("redo")}</button>
         </span>
       </div>
+      ${this.renderStageDevices(page)}
       <div class="stage-area sp-stage-area">
         <div class="stage-tools" role="toolbar" aria-label="Stage tools">
           ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.previewKind, (kind) => { this.previewKind = kind; this.watchId = previewOwner(watches, kind); })}<span class="tb-sep" aria-hidden="true"></span>`}

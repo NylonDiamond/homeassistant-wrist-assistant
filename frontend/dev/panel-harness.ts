@@ -78,6 +78,13 @@ const allOwners: OwnerSummary[] = [
     paired_iphone_id: PHONE, app_version: "3.0.1", app_build: "2", screen_size: "208x248",
     complication_count: records.length, token: records.length, applied_token: records.length, is_orphan: false,
   },
+  // A second watch with nothing on it, so the editor's device strip has a
+  // device to offer.
+  {
+    owner_watch_id: `${WATCH}-2`, device_name: "Chen Watch", device_kind: "watch", paired_iphone_name: "Chen's iPhone",
+    paired_iphone_id: `${PHONE}-2`, app_version: "3.0.1", app_build: "2", screen_size: "187x223",
+    complication_count: 0, token: 0, applied_token: 0, is_orphan: false,
+  },
 ];
 const owners: OwnerSummary[] = EMPTY ? [] : allOwners;
 

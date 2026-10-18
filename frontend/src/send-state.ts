@@ -164,12 +164,12 @@ export function agoWords(seconds: number): string {
  * ticked, and people saved there and waited for a watch that was never going
  * to get it. */
 export const NOT_ON_A_DEVICE = "Not on a device yet";
-export const NOT_ON_A_DEVICE_LINE = "Not on a device yet. Add it to a device to send it to your watch.";
-/** The same line before the first save, when Add to a device is not offered
- * yet: it adds a copy of the saved design. */
-export const NOT_ON_A_DEVICE_UNSAVED_LINE = "Not on a device yet. Save it, then add it to a device to send it to your watch.";
+export const NOT_ON_A_DEVICE_LINE = "Not on a device yet. Tick a device over the preview to send it to your watch.";
+/** The same line before the first save, when the device strip over the
+ * preview has no ticks yet: a tick adds a copy of the saved design. */
+export const NOT_ON_A_DEVICE_UNSAVED_LINE = "Not on a device yet. Save it, then tick a device over the preview to send it to your watch.";
 export const NOT_ON_A_DEVICE_HELP =
-  "A design on no device is sent nowhere. Add it to a device to send it to your watch.";
+  "A design on no device is sent nowhere. Tick a device over the preview to send it to your watch.";
 
 /** Status text and its explanation; `resend` offers the watch's re-wake link,
  * only while the watch is listening (a closed watch app has no long-poll to
@@ -433,7 +433,7 @@ export function onTheFaceStep(device: HowDevice): string {
  */
 export function howItWorksSteps(device: HowDevice, onNoDevice: boolean): string[] {
   const save = onNoDevice
-    ? "Save, then add it to a device."
+    ? "Save, then tick a device over the preview."
     : `Save, then open Wrist Assistant on your ${device === "iphone" ? "iPhone" : "watch"} to get it.`;
   return [
     "Add layers. Each one shows an entity.",

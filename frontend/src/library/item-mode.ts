@@ -180,15 +180,18 @@ export function onDevicesText(kind: LibraryKind, count: number): string {
 }
 
 /**
- * The bar's device block in library mode: the question, a tick per device
- * (`renderTicks`), then the count. It stands in the bar under the top bar,
- * right after the way back, framed in the accent so it is the first thing
- * seen (Jesse, 2026-10-17: the inspector's Devices row and the menu row's
- * Used by were too easy to miss, and the plain count was still too quiet).
- * With no device yet the count is in the warning ink.
+ * The device strip: the question, a tick per device (`renderTicks`), then
+ * the count. It stands under the canvas head, over the preview, in every
+ * editor and in both modes, framed in the accent so it is found in the same
+ * place whichever thing is open (Jesse, 2026-10-17: the inspector's Devices
+ * row, the menu row's Used by and the bar's block each stood somewhere
+ * else, and were too easy to miss). With no device yet the count is in the
+ * warning ink. `where` is only ever "stage" now.
  */
-export function renderBarDevices(kind: LibraryKind, count: number, ticks: TemplateResult, where: "bar" | "card" = "bar"): TemplateResult {
-  return html`<div class="lib-on ${where} ${count === 0 ? "none" : ""}" role="group" aria-label=${onDevicesQuestion(kind)}>
+export function renderBarDevices(kind: LibraryKind, count: number, ticks: TemplateResult, _where: "stage" = "stage"): TemplateResult {
+  // "over-stage", not "stage": the complication editor's drawing stage owns
+  // that class.
+  return html`<div class="lib-on over-stage ${count === 0 ? "none" : ""}" role="group" aria-label=${onDevicesQuestion(kind)}>
     <span class="lib-on-l">${onDevicesQuestion(kind)}</span>${ticks}<span class="lib-on-n">${onDevicesText(kind, count)}</span>
   </div>`;
 }
@@ -214,9 +217,12 @@ export const libraryModeStyles = css`
     display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 999px;
     border: 1px solid var(--wa-line); color: var(--wa-muted); font-size: 11.5px; font-weight: 600;
   }
-  /* The device block in the bar: a framed strip in the accent, the question
-     in bold, the chips a size up from the cards', then the count. It wraps
-     when the bar is narrow. */
+  /* The device strip under the canvas head (renderBarDevices): framed in
+     the accent, the question in bold, the chips a size up from the cards',
+     then the count. It wraps when the canvas card is narrow: the chips take
+     a line of their own under the question, and only when they cannot all
+     fit even that line do the unticked ones fold into "+ Add to a device"
+     (the chip row measures it, chip-row.ts). */
   .lib-on {
     display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; min-width: 0; flex: 0 1 auto;
     margin-left: 6px; padding: 5px 12px; border-radius: 10px;
@@ -231,12 +237,9 @@ export const libraryModeStyles = css`
   .lib-on .lt-chip { height: 28px; padding: 0 11px 0 9px; font-size: 12.5px; border-color: color-mix(in srgb, var(--dc, var(--wa-muted)) 55%, transparent); }
   .lib-on .lt-chip.off { color: var(--wa-ink); }
   .lib-on .lt-box { width: 13px; height: 13px; }
-  .wa-bar.stacked .lib-on { order: 3; flex: 1 1 100%; margin-left: 0; }
-  /* The same block on a device's editor, where the bar is the panel's
-     header: at the top of the page's settings, in the status page's card,
-     at the foot of the menu's row. The whole width, the question on its own
-     line. */
-  .lib-on.card { flex: none; width: 100%; box-sizing: border-box; margin: 0 0 10px; padding: 8px 10px 9px; gap: 6px 10px; }
-  .lib-on.card .lib-on-l { flex: 1 1 100%; white-space: normal; }
-  .lib-on.card .lt-ticks { flex: 1 1 auto; }
+  /* Its place under the canvas head, over the stage: the canvas card's
+     width, one line when it fits, the question first. */
+  .lib-on.over-stage { flex: none; margin: 6px 6px 0; padding: 7px 12px; box-sizing: border-box; }
+  .lib-on.over-stage .lt-ticks { flex: 1 1 auto; }
+  .lib-on.over-stage .lib-on-n { margin-left: auto; }
 `;

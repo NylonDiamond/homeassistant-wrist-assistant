@@ -365,7 +365,8 @@ describe("Multi select", () => {
     const ask = t.whole();
     expect(ask).toContain("Delete 1 page from the library?");
     expect(ask).toContain("It comes off Jesse Apple Watch and iPhone 15 Pro, with the tiles, menu slots and complication taps that open it.");
-    expect(ask).not.toContain("Add to");
+    // The old "Add to…" menu; a card's fold chip says "+ Add to a device".
+    expect(ask).not.toContain("Add to…");
     await t.call("runDelete");
     expect(t.sentOf("library/delete")).toEqual([{ type: "wrist_assistant/library/delete", kind: "pages", item_id: PAGE1 }]);
     const tap = t.sentOf("complications/save").at(-1)!;

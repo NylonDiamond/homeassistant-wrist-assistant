@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import { libraryOf } from "../src/library/model.js";
 import { pendingKey } from "../src/library/store.js";
-import { TICK_ADMIN_TEXT, renderTicks, tickChips, type TicksInput } from "../src/library/ticks.js";
+import { chipsFold } from "../src/library/chip-row.js";
+import { TICK_ADMIN_TEXT, type TickChip, renderTickChips, renderTicks, tickChips, type TicksInput } from "../src/library/ticks.js";
 import { CHEN, CHEN_MENU, DEVICES, HOME_MENU, JESSE, LIGHTS, LONELY, PAGE1, PHONE, QUICK, summary } from "./library-fixture.js";
 
 const flat = (v: unknown): string => {
@@ -116,12 +117,78 @@ describe("renderTicks", () => {
       return out;
     };
     const event = { stopPropagation: () => undefined } as unknown as Event;
-    // The first handler is the row's own, which only stops the click.
-    const page = clicks(renderTicks(input({}), (o, on) => asked.push([o, on]))).slice(1);
-    page.forEach((fn) => fn(event));
+    // The first handler is the row's own, which only stops the click; then
+    // the three inline chips, the fold's toggle, and the fold's three.
+    const all = clicks(renderTicks(input({}), (o, on) => asked.push([o, on])));
+    expect(all).toHaveLength(8);
+    all.slice(1, 4).forEach((fn) => fn(event));
     expect(asked).toEqual([[CHEN, true], [JESSE, false], [PHONE, false]]);
     asked.length = 0;
-    clicks(renderTicks(input({ kind: "menus", itemId: HOME_MENU }), (o, on) => asked.push([o, on]))).slice(1).forEach((fn) => fn(event));
+    all.slice(5).forEach((fn) => fn(event));
+    expect(asked).toEqual([[CHEN, true], [JESSE, false], [PHONE, false]]);
+    asked.length = 0;
+    clicks(renderTicks(input({ kind: "menus", itemId: HOME_MENU }), (o, on) => asked.push([o, on]))).slice(1, 4).forEach((fn) => fn(event));
     expect(asked).toEqual([[CHEN, true]]);
+  });
+});
+
+describe("renderTickChips", () => {
+  const chip = (ownerId: string, on: boolean, over: Partial<TickChip> = {}): TickChip => ({
+    ownerId, name: ownerId, device: "watch", color: undefined, shape: "square", on, hidden: false, busy: false, add: false,
+    label: ownerId, title: ownerId, next: !on, ...over,
+  });
+  const opts = { foldLabel: "Add to a device" };
+  /** The fold's popover markup: everything after the pop's opening tag. */
+  const pop = (text: string) => text.slice(text.indexOf("lt-fold-pop"));
+
+  it("keeps the fold in the DOM, inside the measuring row, while a device has it off", () => {
+    const text = flat(renderTickChips([chip("a", true), chip("b", false), chip("c", true)], opts, () => undefined));
+    expect(text).toContain(`<wa-chip-row class="lt-chips" role="group"`);
+    expect(text).toContain(`<details class="lt-fold"`);
+    expect(text.indexOf(`<details class="lt-fold"`)).toBeLessThan(text.indexOf("</wa-chip-row>"));
+    expect(text).toContain("+ Add to a device");
+    // However many devices there are, folding is the row's measurement,
+    // never a count in the markup.
+    const six = ["a", "b", "c", "d", "e", "f"].map((o, i) => chip(o, i === 0));
+    expect(flat(renderTickChips(six, opts, () => undefined))).not.toContain("folded");
+  });
+
+  it("draws no fold when every device has it, or only the dashed Add chip is off", () => {
+    expect(flat(renderTickChips([chip("a", true), chip("b", true)], opts, () => undefined))).not.toContain("lt-fold");
+    expect(flat(renderTickChips([chip("a", true), chip("b", false, { add: true })], opts, () => undefined))).not.toContain("lt-fold");
+  });
+
+  it("holds every chip in the popover, on and off, with its tag", () => {
+    const text = flat(renderTickChips([chip("a", true), chip("b", false, { tag: "full" }), chip("c", false)], opts, () => undefined));
+    const inPop = pop(text);
+    expect(inPop.match(/class="lt-chip /g)).toHaveLength(3);
+    expect(inPop).toContain("lt-chip on");
+    expect(inPop).toContain("lt-chip off");
+    expect(inPop).toContain("<em>full</em>");
+  });
+
+  it("says Use on a device for menus and Add to a device for pages", () => {
+    expect(flat(renderTicks(input({ kind: "menus", itemId: HOME_MENU }), () => undefined))).toContain("+ Use on a device");
+    expect(flat(renderTicks(input({}), () => undefined))).toContain("+ Add to a device");
+  });
+});
+
+describe("chipsFold", () => {
+  it("keeps chips that fit the line exactly", () => {
+    expect(chipsFold([100, 120, 80], 6, 312)).toBe(false);
+  });
+
+  it("folds one pixel over the line", () => {
+    expect(chipsFold([100, 120, 80], 6, 311)).toBe(true);
+  });
+
+  it("never folds an empty row", () => {
+    expect(chipsFold([], 6, 0)).toBe(false);
+  });
+
+  it("counts the gap between chips only, not before the first or after the last", () => {
+    expect(chipsFold([200], 50, 200)).toBe(false);
+    expect(chipsFold([100, 100], 10, 210)).toBe(false);
+    expect(chipsFold([100, 100], 10, 209)).toBe(true);
   });
 });

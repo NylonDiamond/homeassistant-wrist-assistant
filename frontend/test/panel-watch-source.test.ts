@@ -236,7 +236,10 @@ describe("links into the Watch app carry the shared watch", () => {
     expect(shared).toContain(`<p class="hb-lead">\${HOME_LIBRARY_LEAD}</p>`);
     expect(shared).toContain("this.goTo(path);");
     // The Library is HTTP actions and Cameras only: no Photos or Parts screen.
-    expect(SOURCE).not.toContain("./library/");
+    // The panel takes only the shared library's two sheets from `./library/`,
+    // for the complication editor's device strip over the preview, which
+    // draws the same tick chips a page's editor does.
+    expect(SOURCE.match(/from "\.\/library\/[^"]+"/g) ?? []).toEqual(['from "./library/item-mode.js"', 'from "./library/ticks.js"']);
     expect(SOURCE).not.toContain(`case "photos":`);
     expect(SOURCE).not.toContain(`case "parts":`);
   });
