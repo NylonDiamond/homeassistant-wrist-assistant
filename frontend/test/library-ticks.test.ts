@@ -194,20 +194,24 @@ describe("chipsFold", () => {
 });
 
 describe("the tiles a watch skips", () => {
-  it("count on every watch's chip, never the iPhone's, and the tooltip names them", () => {
+  it("count on each ticked watch's chip, never an unticked watch's or the iPhone's, and the tooltip names them", () => {
     const chips = tickChips(input({ skips: ["Map", "Garden"] }));
-    expect(chips.map((c) => [c.name, c.skips?.text])).toEqual([
-      ["Chen Watch", "skips 2"],
-      ["Jesse Apple Watch", "skips 2"],
-      ["iPhone 15 Pro", undefined],
+    expect(chips.map((c) => [c.name, c.on, c.skips?.text])).toEqual([
+      ["Chen Watch", false, undefined],
+      ["Jesse Apple Watch", true, "skips 2"],
+      ["iPhone 15 Pro", true, undefined],
     ]);
-    expect(chips[0]!.skips!.title).toBe("Chen Watch skips Map and Garden: only an iPhone shows them.");
+    expect(chips[1]!.skips!.title).toBe("Jesse Apple Watch skips Map and Garden: only an iPhone shows them.");
     // The chip's own tooltip keeps what a click does, then the tiles.
-    expect(chips[0]!.title).toBe("Not on Chen Watch. Tick to put the page there. Chen Watch skips Map and Garden: only an iPhone shows them.");
+    expect(chips[1]!.title).toBe("On Jesse Apple Watch, hidden there. Untick to take the page off it. Jesse Apple Watch skips Map and Garden: only an iPhone shows them.");
+    // A watch without the page skips nothing.
+    expect(chips[0]!.title).toBe("Not on Chen Watch. Tick to put the page there.");
     expect(chips[2]!.title).toBe("On iPhone 15 Pro. Untick to take the page off it.");
-    // A watch's "Add to this watch" chip counts them too.
+    // Nor does a watch's "Add to this watch" chip; a tick asked for counts.
     const add = tickChips(input({ itemId: LIGHTS, addFor: JESSE, skips: ["Map"] }));
-    expect(add.map((c) => [c.label, c.skips?.text])).toEqual([["Chen Watch", "skips 1"], ["Add to this watch", "skips 1"]]);
+    expect(add.map((c) => [c.label, c.skips?.text])).toEqual([["Chen Watch", "skips 1"], ["Add to this watch", undefined]]);
+    const pending = new Map([[pendingKey("pages", CHEN, PAGE1), { on: true }]]);
+    expect(tickChips(input({ pending, skips: ["Map"] }))[0]!.skips?.text).toBe("skips 1");
   });
 
   it("add nothing for a page a watch draws whole, or for a menu or a status page", () => {
@@ -227,15 +231,15 @@ describe("the tiles a watch skips", () => {
 
   it("draw the count inside the chip, in the strip's line and in the fold's popover, so the fold measures the wider chip", () => {
     const text = flat(renderTicks(input({ skips: ["Map", "Garden"] }), () => undefined));
-    const em = `<em class="lt-skips" title=Chen Watch skips Map and Garden: only an iPhone shows them.>skips 2</em>`;
+    const em = `<em class="lt-skips" title=Jesse Apple Watch skips Map and Garden: only an iPhone shows them.>skips 2</em>`;
     // In the chip's button, after its name: the row measures each chip's
-    // own width (chip-row.ts), so the count is part of what it adds up.
-    expect(text).toContain(`Chen Watch</span>${em}</button>`);
+    // own width (chip-row.ts), so the count is part of what it adds up. A
+    // hidden watch says both.
+    expect(text).toContain(`Jesse Apple Watch</span><em>hidden</em>${em}</button>`);
+    // The one ticked watch, in the line and in the popover.
     const line = text.slice(0, text.indexOf("lt-fold-pop"));
-    expect(line.split(">skips 2</em></button>").length - 1).toBe(2);
-    expect(text.slice(text.indexOf("lt-fold-pop")).split(">skips 2</em></button>").length - 1).toBe(2);
-    // A hidden watch says both.
-    expect(text).toContain("<em>hidden</em><em class=\"lt-skips\"");
+    expect(line.split(">skips 2</em></button>").length - 1).toBe(1);
+    expect(text.slice(text.indexOf("lt-fold-pop")).split(">skips 2</em></button>").length - 1).toBe(1);
     // Chips that fit the strip without the count fold with it.
     expect(chipsFold([120, 140, 110], 6, 382)).toBe(false);
     expect(chipsFold([120 + 44, 140 + 44, 110], 6, 382)).toBe(true);

@@ -72,7 +72,7 @@ describe("the Pages tab", () => {
     expect(text).toMatch(/pk-tab-name">iPhone 15 Pro<\/span>\s*<span class="pk-tab-count">1</);
   });
 
-  it("counts the tiles a watch skips on a page's watch ticks, never on the iPhone's", async () => {
+  it("counts the tiles a watch skips on a page's ticked watch chips, never an unticked watch's or the iPhone's", async () => {
     const t = tab();
     const map = { id: "m", entityId: "map.C3A0E000-0000-4000-8000-0000000000B7", gridCol: 0, gridRow: 0, colSpan: 12, rowSpan: 4 };
     const web = { id: "w", entityId: "web.C3A0E000-0000-4000-8000-0000000000B8", customLabel: "Garden", gridCol: 0, gridRow: 4, colSpan: 6, rowSpan: 4 };
@@ -83,9 +83,10 @@ describe("the Pages tab", () => {
     const text = t.whole();
     const card = text.slice(text.indexOf(`data-card=${PAGE1}`));
     const ticks = card.slice(card.indexOf("lt-ticks"), card.indexOf("</wa-chip-row>"));
-    const skips = `<em class="lt-skips" title=Chen Watch skips Map and Garden: only an iPhone shows them.>skips 2</em>`;
-    expect(ticks).toContain(`Chen Watch</span>${skips}</button>`);
-    expect(ticks).toMatch(/Jesse Apple Watch<\/span><em>hidden<\/em><em class="lt-skips"[^>]*>skips 2<\/em><\/button>/);
+    // Chen Watch does not hold the page, so it skips nothing.
+    expect(ticks).toContain(`Chen Watch</span></button>`);
+    const skips = `<em class="lt-skips" title=Jesse Apple Watch skips Map and Garden: only an iPhone shows them.>skips 2</em>`;
+    expect(ticks).toContain(`Jesse Apple Watch</span><em>hidden</em>${skips}</button>`);
     expect(ticks).not.toMatch(/iPhone 15 Pro<\/span><em class="lt-skips"/);
     // A page a watch draws whole says nothing.
     const lights = text.slice(text.indexOf(`data-card=${LIGHTS}`));

@@ -10,8 +10,8 @@
 // item's last refusal shows under the row in the tabs' warning ink.
 //
 // A page holding tiles only the iPhone draws (a map, a web card) gives each
-// watch's chip a small count, "skips 2", whose tooltip names the tiles: a
-// watch packs the page without them.
+// ticked watch's chip a small count, "skips 2", whose tooltip names the
+// tiles: a watch packs the page without them.
 //
 // `tickChips` is the pure part (testable without a browser);
 // `renderTicks` draws it through `renderTickChips`, whose row folds the
@@ -52,8 +52,8 @@ export interface TicksInput {
    * false. Never drawn for pages or status pages. */
   hint?: string | false;
   /** The tiles a watch skips on this page, by name (`watchSkippedTileNames`):
-   * each watch's chip then says how many ("skips 2") and lists them in its
-   * tooltip. Pages only; empty or absent adds nothing. */
+   * each ticked watch's chip then says how many ("skips 2") and lists them
+   * in its tooltip. Pages only; empty or absent adds nothing. */
   skips?: readonly string[];
 }
 
@@ -111,14 +111,15 @@ export function tickSkipsTitle(name: string, tiles: readonly string[]): string {
   return `${name} skips ${shown}: only an iPhone shows ${tiles.length === 1 ? "it" : "them"}.`;
 }
 
-/** The chips of one item's row, each watch's with the tiles it skips
- * (`TicksInput.skips`). */
+/** The chips of one item's row, each ticked watch's with the tiles it skips
+ * (`TicksInput.skips`). A watch that does not hold the page skips nothing,
+ * so its chip says nothing about them. */
 export function tickChips(input: TicksInput): TickChip[] {
   const chips = plainTickChips(input);
   const skipped = input.kind === "pages" ? (input.skips ?? []) : [];
   if (skipped.length === 0) return chips;
   return chips.map((chip) => {
-    if (chip.device !== "watch") return chip;
+    if (chip.device !== "watch" || !chip.on) return chip;
     const title = tickSkipsTitle(chip.name, skipped);
     return { ...chip, title: `${chip.title} ${title}`, skips: { text: tickSkipsText(skipped.length), title } };
   });
