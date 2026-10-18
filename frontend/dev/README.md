@@ -27,6 +27,9 @@ ignored by git.
   still waiting for the iPhone) and an Ultra (49 mm, no record). The pages
   come from `test/fixtures-pages/*.json`; every entity they name has a
   made-up state.
+- Two iPhones whose app has phone pages, offered beside the watches: Alex's
+  holds the iPhone only tiles page (`07-phone-tiles`), drawn in the iPhone
+  look; Sam's has no record.
 - The strip acts on the watch the element shows (the last `get` for `pages`):
   - iPhone: rename, move a tile, reorder pages, style a page (a pattern as
     its one decoration, a title, and borders, a pattern, an effect and state

@@ -551,8 +551,9 @@ const OWNERS: OwnerSummary[] = [
   owner({ owner_watch_id: ALEX_WATCH, device_name: "Apple Watch", paired_iphone_name: "Alex's iPhone", paired_iphone_id: ALEX_PHONE, screen_size: "208x248" }),
   owner({ owner_watch_id: SAM_WATCH, device_name: "Apple Watch", paired_iphone_name: "Sam's iPhone", paired_iphone_id: SAM_PHONE, screen_size: "187x223" }),
   owner({ owner_watch_id: ULTRA_WATCH, device_name: "Apple Watch Ultra", paired_iphone_name: "Alex's iPhone", paired_iphone_id: ALEX_PHONE, screen_size: "205x251" }),
-  owner({ owner_watch_id: ALEX_PHONE, device_kind: "iphone", device_name: "Alex's iPhone" }),
-  owner({ owner_watch_id: SAM_PHONE, device_kind: "iphone", device_name: "Sam's iPhone" }),
+  // Both iPhones run an app with phone pages, so the editor offers them.
+  owner({ owner_watch_id: ALEX_PHONE, device_kind: "iphone", device_name: "Alex's iPhone", phone_pages: true }),
+  owner({ owner_watch_id: SAM_PHONE, device_kind: "iphone", device_name: "Sam's iPhone", phone_pages: true }),
   owner({ owner_watch_id: "library", device_kind: "library", device_name: "Library", app_version: null, app_build: null }),
 ];
 
@@ -643,6 +644,11 @@ function seedStore(): void {
   }
 
   // The Ultra has no record at all: the view's "no pages yet" state.
+
+  // Alex's iPhone: its own pages, the iPhone only tiles page, drawn in the
+  // iPhone look (no behavior record, so the default look). Sam's iPhone has
+  // none.
+  store.put(ALEX_PHONE, "pages", combine("07-phone-tiles"), { base: 0, by: ALEX_PHONE, at: minutesAgo(20), notify: false });
 
   // Menus (`?menus`): Alex's iPhone sent a configured set, Sam's the
   // defaults; the Ultra has none, for "Start with the defaults".
@@ -1493,6 +1499,8 @@ function mount(): void {
   el.hass = makeHass();
   el.owners = OWNERS;
   el.ownerId = undefined;
+  // The home advertises phone pages, so the iPhones are offered too.
+  el.phones = true;
   el.narrow = prefs.narrow;
   el.icons = noIcons ? undefined : icons;
   el.loadImageSize = loadStandInImage;
