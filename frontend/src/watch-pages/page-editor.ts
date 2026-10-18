@@ -3572,6 +3572,7 @@ export class WaPageEditor extends LitElement {
         ...(this.icons === undefined ? {} : { icons: this.icons }),
         tick: this.iconsTick,
         iphone: this.onPhone,
+        look: phonePageLookOf(this.behavior),
       }),
       more: html`<a class="pe-else-all" href=${allPagesHref()} title="Every page in your home, and the devices each is on"
         @click=${(e: MouseEvent) => {

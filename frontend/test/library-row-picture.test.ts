@@ -41,6 +41,22 @@ describe("renderPageRowPicture", () => {
     expect(flat(renderPageRowPicture({ page, iphone: true }))).toContain(`width:${ROW_PICTURE_PHONE_W}px`);
   });
 
+  it("draws an iPhone's page in its Page look, as the stage does", () => {
+    const black = { ...page, id: "B", backgroundColor: "#000000" };
+    // The iPhone look, the default: the grouped background and 22 point corners.
+    const ios = flat(renderPageRowPicture({ page: black, iphone: true }));
+    expect(ios).toContain("background:var(--wa-phone-grouped");
+    expect(flat(renderPageRowPicture({ page: black, iphone: true, look: "iphone" }))).toBe(ios);
+    // The Watch look keeps the page's black and the watch's corners; a
+    // watch's row never changes.
+    const watchLook = flat(renderPageRowPicture({ page: black, iphone: true, look: "watch" }));
+    expect(watchLook).not.toContain("wa-phone-grouped");
+    const radius = (text: string): string | undefined => /border-radius:([^;"]+)/.exec(text)?.[1];
+    expect(radius(ios)).toBeDefined();
+    expect(radius(ios)).not.toBe(radius(watchLook));
+    expect(flat(renderPageRowPicture({ page: black }))).not.toContain("wa-phone-grouped");
+  });
+
   it("draws a smart page as its glyph", () => {
     const text = flat(renderPageRowPicture({ page: { id: "S", items: [], dynamicConfig: {} } }));
     expect(text).toContain("lr-smart");

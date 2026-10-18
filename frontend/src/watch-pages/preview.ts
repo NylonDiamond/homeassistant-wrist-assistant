@@ -700,23 +700,29 @@ export function watchScreenLayers(
   };
 }
 
-/** Whether a page has a background of its own: a photo, a color or
- * gradient, a pattern, or an animation. Without one it draws its theme's
- * default background. */
-export function watchPageHasOwnBackground(page: WatchPage): boolean {
-  if (watchPagePhoto(page) !== undefined) return true;
-  const color = parseTileColor(page.backgroundColor);
-  if (color?.kind === "solid" || color?.kind === "gradient") return true;
+/** Whether a page has the default black background, the one every new page
+ * is given (`PhonePagesRules.hasDefaultBlackBackground`): its color exactly
+ * black (`#000000` or `#000`), no photo, no pattern, no animation, and its
+ * brightness at most 1. A page with no color at all draws its theme's
+ * background, so it is not one. */
+export function watchPageHasDefaultBlackBackground(page: WatchPage): boolean {
+  const color = page.backgroundColor;
+  if (typeof color !== "string") return false;
+  let hex = color.trim().toUpperCase();
+  if (hex.startsWith("#")) hex = hex.slice(1);
+  if (hex !== "000000" && hex !== "000") return false;
+  if (numberOr(watchPageValue(page, "backgroundBrightness"), 0.6) > 1) return false;
+  if (typeof page.backgroundImageId === "string" && page.backgroundImageId !== "") return false;
   const pattern = watchPageValue(page, "backgroundPattern");
-  if (typeof pattern === "string" && pattern !== "none") return true;
+  if (typeof pattern === "string" && pattern !== "none") return false;
   const overlay = watchPageValue(page, "backgroundOverlay");
-  return typeof overlay === "string" && overlay !== "none";
+  return typeof overlay !== "string" || overlay === "none";
 }
 
 /** `watchScreenLayers` for a picture: in an iPhone's iPhone look a page with
- * no background of its own sits on the system's grouped background (light
- * or dark with the panel's skin); every other page, and every page in the
- * Watch look or on a watch, as `watchScreenLayers` draws it. */
+ * the default black background sits on the system's grouped background
+ * (light or dark with the panel's skin); every other page, and every page
+ * in the Watch look or on a watch, as `watchScreenLayers` draws it. */
 export function previewScreenLayers(
   input: Pick<WatchPagePreviewInput, "phone">,
   page: WatchPage,
@@ -725,7 +731,7 @@ export function previewScreenLayers(
   photoUrl: ((id: string) => string | undefined) | undefined,
   className = "wp-page-photo",
 ): { background: string; layers: TemplateResult | typeof nothing } {
-  if (phoneDrawsIphoneLook(input.phone) && !watchPageHasOwnBackground(page)) return { background: PHONE_GROUPED_BACKGROUND, layers: nothing };
+  if (phoneDrawsIphoneLook(input.phone) && watchPageHasDefaultBlackBackground(page)) return { background: PHONE_GROUPED_BACKGROUND, layers: nothing };
   return watchScreenLayers(page, s, screen, photoUrl, className);
 }
 
@@ -3339,9 +3345,10 @@ export function renderPreviewFrame(input: WatchPagePreviewInput, s: number, body
   if (input.phone === undefined) return renderWatchFrame(input.screen, s, body, label);
   if (phoneDrawsIphoneLook(input.phone)) {
     // The iPhone look: the page's name as the large title, the page
-    // control under the pages.
+    // control under the pages. The phone's Page name setting (devices watch
+    // and iPhone) hides it, as it hides the watch's title; its band stays.
     const control = phonePageControlRow(input, s);
-    const title = typeof input.page.name === "string" ? input.page.name.trim() : "";
+    const title = input.behavior?.pageTitleMode === "Off" || typeof input.page.name !== "string" ? "" : input.page.name.trim();
     return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, title, ...(control === undefined ? {} : { dots: control }) });
   }
   const dots = watchPageIndicatorRow(input, s);

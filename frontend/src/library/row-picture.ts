@@ -16,7 +16,7 @@
 
 import { css, html, type TemplateResult } from "lit";
 import type { HassEntityState, HassLike } from "../ha-api.js";
-import { phonePagesLayout, phonePagesScreen } from "../phone-frame.js";
+import { type PhonePageLook, phonePagesLayout, phonePagesScreen } from "../phone-frame.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { NO_ICONS } from "../watch-pages/editor-host.js";
@@ -26,8 +26,8 @@ import {
   renderWatchTileFace,
   watchPreviewLayout,
   watchPreviewSideInset,
+  previewScreenLayers,
   watchScreenColor,
-  watchScreenLayers,
 } from "../watch-pages/preview.js";
 import { renderStatusPagePicture } from "../watch-status-pages/view.js";
 import type { MenuUnit } from "./client.js";
@@ -66,6 +66,9 @@ export interface PageRowPictureInput {
   tick?: number;
   /** Drawn as an iPhone's page: narrower, the phone's pages area. */
   iphone?: boolean;
+  /** An iPhone's Page look (`phonePageLook`), so the row draws the page as
+   * that phone's stage does; the iPhone look when not given. */
+  look?: PhonePageLook;
   /** In CSS pixels; `ROW_PICTURE_W` (or `ROW_PICTURE_PHONE_W`) when not
    * given. */
   width?: number;
@@ -99,12 +102,13 @@ export function renderPageRowPicture(input: PageRowPictureInput): TemplateResult
   const iphone = input.iphone === true;
   const width = input.width ?? (iphone ? ROW_PICTURE_PHONE_W : ROW_PICTURE_W);
   const stamp = [input.states, input.icons, input.tick, input.pages];
-  return keptPicture(input.page, `page:${iphone ? "p" : "w"}:${width}`, stamp, () => drawPage(input, width, iphone));
+  const look = input.look ?? "iphone";
+  return keptPicture(input.page, `page:${iphone ? `p:${look}` : "w"}:${width}`, stamp, () => drawPage(input, width, iphone, look));
 }
 
-function drawPage(input: PageRowPictureInput, width: number, iphone: boolean): TemplateResult {
+function drawPage(input: PageRowPictureInput, width: number, iphone: boolean, look: PhonePageLook): TemplateResult {
   const { page } = input;
-  const phone = iphone ? phonePagesLayout() : undefined;
+  const phone = iphone ? phonePagesLayout(undefined, { look }) : undefined;
   const screen = phone === undefined ? WATCH_SCREEN : phonePagesScreen(phone);
   const s = width / screen.width;
   const height = Math.min(Math.round(screen.height * s), heightFor(Math.max(width, ROW_PICTURE_W)));
@@ -121,7 +125,7 @@ function drawPage(input: PageRowPictureInput, width: number, iphone: boolean): T
   const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(preview) });
   // Only what reaches onto the picture: a long page costs no more than a short one.
   const shown = layout.tiles.filter((t) => (layout.topInset + t.y) * s < height);
-  const back = watchScreenLayers(page, s, screen, undefined);
+  const back = previewScreenLayers(preview, page, s, screen, undefined);
   return html`<span class="lr-pic ${iphone ? "ph" : ""}" style=${`${box};background:${back.background}`} aria-hidden="true">
     ${back.layers}
     ${shown.map((t) => html`<span class="lr-tile"

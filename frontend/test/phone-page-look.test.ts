@@ -1,7 +1,7 @@
 // An iPhone's Page look (`phonePageLook`, phone-frame.ts): in the iPhone
 // look, the default, the phone's preview draws the page's name as a large
-// title above the pages area, a page with no background of its own on the
-// system's grouped background, 22 point tile corners and a plain page
+// title above the pages area, a page with the default black background on
+// the system's grouped background, 22 point tile corners and a plain page
 // control; in the Watch look the phone keeps the frame it always had; and a
 // watch never changes, whatever a document says.
 
@@ -22,7 +22,7 @@ import type { WatchPage } from "../src/watch-pages/model.js";
 import {
   previewTileCornerRadius,
   renderWatchPagePreview,
-  watchPageHasOwnBackground,
+  watchPageHasDefaultBlackBackground,
   watchScreenBackground,
   watchTileCornerRadius,
 } from "../src/watch-pages/preview.js";
@@ -46,6 +46,8 @@ const LIVING: WatchPage = {
   name: "Living Room",
   fullScreen: false,
   pageTitleDisplayStyle: "pill",
+  // What the panel writes on every new page (page-keys.json "new").
+  backgroundColor: "#000000",
   items: ITEMS,
 };
 const KITCHEN: WatchPage = { ...LIVING, id: "5A17E000-0000-4000-8000-000000000011", name: "Kitchen" };
@@ -140,16 +142,22 @@ describe("the iPhone look", () => {
     expect(phonePicture(KITCHEN, iphone, { showPageIndicator: false })).not.toContain("wa-phone-pc");
   });
 
-  it("keeps a page's own color, gradient, photo, pattern or animation", () => {
-    expect(watchPageHasOwnBackground(LIVING)).toBe(false);
+  it("puts only a page with the default black background on the grouped background", () => {
+    // PhonePagesRules.hasDefaultBlackBackground: exactly black, nothing over it.
+    expect(watchPageHasDefaultBlackBackground(LIVING)).toBe(true);
+    expect(watchPageHasDefaultBlackBackground({ ...LIVING, backgroundColor: "#000" })).toBe(true);
+    expect(watchPageHasDefaultBlackBackground({ ...LIVING, backgroundColor: " 000000 " })).toBe(true);
+    expect(watchPageHasDefaultBlackBackground({ ...LIVING, backgroundBrightness: 1 })).toBe(true);
     for (const own of [
       { backgroundColor: "#FF0000" },
-      { backgroundColor: "GRADIENT|#FF0000|#0000FF" },
+      { backgroundColor: "#00000080" },
+      { backgroundColor: "GRADIENT|#000000|#000000" },
       { backgroundImageId: "photo-1" },
       { backgroundPattern: "grid" },
       { backgroundOverlay: "aurora" },
+      { backgroundBrightness: 1.2 },
     ]) {
-      expect(watchPageHasOwnBackground({ ...LIVING, ...own }), JSON.stringify(own)).toBe(true);
+      expect(watchPageHasDefaultBlackBackground({ ...LIVING, ...own }), JSON.stringify(own)).toBe(false);
     }
     const redPage = { ...LIVING, backgroundColor: "#FF0000" };
     const red = phonePicture(redPage);
@@ -157,6 +165,22 @@ describe("the iPhone look", () => {
     expect(red).toContain(`background:${watchScreenBackground(redPage, 1, phonePagesScreen(iphone))}`);
     // The large title stays: it is the iPhone's, not the page's.
     expect(red).toContain("<span>Living Room</span>");
+  });
+
+  it("keeps the theme's background on a page with no color at all", () => {
+    const themed: WatchPage = { ...LIVING };
+    delete themed.backgroundColor;
+    expect(watchPageHasDefaultBlackBackground(themed)).toBe(false);
+    const text = phonePicture(themed);
+    expect(text).not.toContain("background:var(--wa-phone-grouped");
+    expect(text).toContain(`background:${watchScreenBackground(themed, 1, phonePagesScreen(iphone))}`);
+  });
+
+  it("hides the large title, keeping its band, when the phone's Page name setting is Hide", () => {
+    const text = phonePicture(LIVING, iphone, { pageTitleMode: "Off" });
+    expect(text).toContain('<div class="wa-phone-title"');
+    expect(text).not.toContain("<span>Living Room</span>");
+    expect(phonePicture(LIVING, iphone, { pageTitleMode: "Auto" })).toContain("<span>Living Room</span>");
   });
 });
 
