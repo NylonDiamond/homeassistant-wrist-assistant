@@ -66,6 +66,7 @@ import {
   watchSensorChart,
   watchTemplateLines,
 } from "./phone-keys-model.js";
+import { isWatchPhoneTileKind } from "./phone-tiles-model.js";
 import {
   type WatchPage,
   type WatchPageTile,
@@ -110,7 +111,11 @@ export type WatchTileSettingsSection =
   // editor in their natural place, titled by the key; on a watch's editor
   // all of them in one folded card at the end (`watchTileSectionsFor`).
   | "phone"
-  | "phoneExtras";
+  | "phoneExtras"
+  // The task of a kind only the iPhone draws (`phone-tiles-model.ts`): a
+  // map's places, a chart's series, a text field's target, a web card's
+  // address. Before Icon, titled by the kind, tagged iPhone.
+  | "phoneTile";
 
 export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettingsSection, string>> = {
   opens: "Opens",
@@ -131,6 +136,8 @@ export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettin
   // Drawn under the key's own title (`WATCH_PHONE_KEY_WORDS`).
   phone: "iPhone",
   phoneExtras: "iPhone extras",
+  // Drawn under the kind's own title (`watchPhoneTileTitle`).
+  phoneTile: "iPhone",
 };
 
 /** A section card's mark: the inspector color it is tinted with and the
@@ -165,6 +172,7 @@ export const WATCH_TILE_SECTION_BADGES: Readonly<Record<WatchTileSettingsSection
   visibility: { color: SECTION_COLOR.visibility, icon: "show" },
   phone: { color: SECTION_COLOR.content, icon: "phone" },
   phoneExtras: { color: SECTION_COLOR.place, icon: "phone" },
+  phoneTile: { color: SECTION_COLOR.content, icon: "phone" },
 };
 
 /** The pinned Name card's badge, a tile's and a page's alike. */
@@ -233,6 +241,10 @@ export function watchTileSettingsSections(tile: WatchPageTile, states?: WatchSpe
   if (kind === "spacer") return ["border", "background"];
   if (kind === "divider") return ["header", "action", "visibility"];
   if (isWatchRemovedTileKind(kind)) return ["removed"];
+  // A kind only the iPhone draws: its own task, then the look and when it
+  // shows. No Action: the iPhone gives each its own tap (a marker, the field,
+  // the page full screen).
+  if (isWatchPhoneTileKind(kind)) return ["phoneTile", "icon", "text", "border", "visibility", "background"];
   const out: WatchTileSettingsSection[] = [];
   if (watchPageLinkTarget(tile) !== undefined) out.push("opens");
   const library = watchLibraryTarget(tileEntityId(tile));

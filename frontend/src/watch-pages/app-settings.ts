@@ -15,12 +15,58 @@
 // contract".
 
 import { css, html, nothing, type TemplateResult } from "lit";
-import { checkField, segField, sliderField, templateBox, textField } from "../editors.js";
+import { checkField, entityField, segField, sliderField, templateBox, textField } from "../editors.js";
+import type { EntityRef } from "../model.js";
 import { uiIcon } from "../ui-icons.js";
 import { type TileSettingsHost, hostDeviceNoun } from "./editor-host.js";
-import { tileEntityId } from "./model.js";
+import { tileEntityId, tileKind } from "./model.js";
+import {
+  WATCH_CHART_MAX_ENTITIES,
+  WATCH_CHART_RANGES,
+  WATCH_CHART_STYLES,
+  WATCH_MAP_ENTITY_DOMAINS,
+  WATCH_MAP_STYLES,
+  WATCH_MAP_ZOOMS,
+  WATCH_TEXT_SUBMITS,
+  WATCH_TEXT_TARGET_KINDS,
+  WATCH_WEB_CARD_HELP,
+  addWatchChartEntity,
+  addWatchMapEntity,
+  removeWatchChartEntity,
+  removeWatchMapEntity,
+  setWatchChartRange,
+  setWatchChartStyle,
+  setWatchMapStyle,
+  setWatchMapZoom,
+  setWatchTextPlaceholder,
+  setWatchTextSubmit,
+  setWatchTextTargetField,
+  setWatchTextTargetId,
+  setWatchTextTargetKind,
+  setWatchWebInteractive,
+  setWatchWebScroll,
+  setWatchWebURL,
+  watchChartEntityIds,
+  watchChartRange,
+  watchChartStyle,
+  watchMapEntityIds,
+  watchMapStyle,
+  watchMapZoom,
+  watchPhoneTileKindOf,
+  watchTextPlaceholder,
+  watchTextSubmit,
+  watchTextTargetDomain,
+  watchTextTargetField,
+  watchTextTargetId,
+  watchTextTargetKind,
+  watchWebInteractive,
+  watchWebScroll,
+  watchWebURL,
+  watchWebURLNote,
+} from "./phone-tiles-model.js";
 import { watchTemplateRichText, watchTemplateTileLook } from "./preview.js";
-import { commit, linkButton, menuField, typed, typingField } from "./tile-settings.js";
+import { commit, fieldNote, linkButton, menuField, typed, typingField } from "./tile-settings.js";
+import { watchChoiceMenu, watchTileFallbackName } from "./tile-settings-options.js";
 import { WATCH_VOICE_DEFAULTS_UNKNOWN_TEXT } from "../watch-voice/defaults.js";
 import {
   type WatchAppChoice,
@@ -426,6 +472,155 @@ function renderPointer(host: TileSettingsHost): TemplateResult {
     ${watchPointControlSwitches(host.behavior).map((s) => html`<div class="field ap-read"><span>${s.label}</span><b>${s.on ? "On" : "Off"}</b></div>
       <div class="hint ts-under">${s.detail}</div>`)}
     <div class="hint">${A.pointControl.readOnlyLine}</div>`;
+}
+
+// ── the kinds only the iPhone draws ──────────────────────────────────────
+//
+// A map, a chart, a text field and a web card (phone native pages, phase 3):
+// the `phoneTile` section, before Icon, under the kind's title with the
+// iPhone tag (`tile-settings.ts`). Their rules are `tile-app.json`
+// `phoneTiles`, the setters `phone-tiles-model.ts`. No reset.
+
+/** The task's rows for a tile only the iPhone draws; nothing for any other
+ * tile. */
+export function renderPhoneTileTask(host: TileSettingsHost): TemplateResult {
+  switch (watchPhoneTileKindOf(host.tile)) {
+    case "map":
+      return renderMap(host);
+    case "chart":
+      return renderChart(host);
+    case "text_field":
+      return renderTextField(host);
+    case "web":
+      return renderWebCard(host);
+    default:
+      return html``;
+  }
+}
+
+/** An entity as an entity field holds it. */
+function entityRef(host: TileSettingsHost, entityId: string): EntityRef {
+  return { entityId, displayName: entityId === "" ? "" : nameOf(host, entityId), domain: tileKind(entityId) };
+}
+
+/** A list of entities, each with its remove button, then the field that
+ * adds one (left out once the list is full, with `full` in its place). */
+function entityList(
+  host: TileSettingsHost,
+  setting: string,
+  ids: readonly string[],
+  remove: (id: string) => void,
+  add: TemplateResult | undefined,
+  full: string,
+): TemplateResult {
+  return html`
+    ${ids.map((id) => html`<div class="sp-card"><div class="sp-card-h">
+      <span class="sp-name" title=${id}>${nameOf(host, id)}</span>
+      ${unavailable(host, id) ? html`<span class="sp-faint">Not in Home Assistant</span>` : nothing}
+      <button type="button" class="sp-icon-btn" aria-label="Remove ${nameOf(host, id)}" title="Remove"
+        @click=${() => remove(id)}>${uiIcon("delete")}</button></div></div>`)}
+    ${add === undefined ? html`<div class="hint">${full}</div>` : html`<div class="ts-stack">${add}</div>`}
+    ${fieldNote(host, setting)}`;
+}
+
+function choiceMenu(rule: { choices: readonly { value: string; label: string }[] }, value: string) {
+  return watchChoiceMenu(rule.choices.map((c) => ({ value: c.value, label: c.label })), value);
+}
+
+function renderMap(host: TileSettingsHost): TemplateResult {
+  const tile = host.tile;
+  const ids = watchMapEntityIds(tile);
+  const add = (next: EntityRef) => {
+    const id = next.entityId.trim();
+    if (id === "") return;
+    if (!WATCH_MAP_ENTITY_DOMAINS.includes(tileKind(id))) return commit(host, "mapAdd", (d) => d, { reason: "Pick a person, a device tracker or a zone." });
+    if (ids.includes(id)) return commit(host, "mapAdd", (d) => d, { reason: "That one is on the map already." });
+    commit(host, "mapAdd", (d) => addWatchMapEntity(d, ...at(host), id));
+  };
+  return html`
+    <div class="hint">A marker for each person or tracker, a circle for each zone.</div>
+    ${entityList(host, "mapAdd", ids, (id) => commit(host, "mapAdd", (d) => removeWatchMapEntity(d, ...at(host), id)),
+      entityField({ hass: host.hass }, "Add to map", entityRef(host, ""), add, `pe:ph:mapAdd:${host.tileId}`, { domain: WATCH_MAP_ENTITY_DOMAINS, clearable: false }), "")}
+    ${menuField("Zoom", choiceMenu(WATCH_MAP_ZOOMS, watchMapZoom(tile)), (v) => commit(host, "mapZoom", (d) => setWatchMapZoom(d, ...at(host), v)))}
+    <div class="hint ts-under">Fit shows every marker. City and Street center on the first one.</div>
+    ${menuField("Style", choiceMenu(WATCH_MAP_STYLES, watchMapStyle(tile)), (v) => commit(host, "mapStyle", (d) => setWatchMapStyle(d, ...at(host), v)))}`;
+}
+
+function renderChart(host: TileSettingsHost): TemplateResult {
+  const tile = host.tile;
+  const ids = watchChartEntityIds(tile);
+  const max = WATCH_CHART_MAX_ENTITIES;
+  const add = (next: EntityRef) => {
+    const id = next.entityId.trim();
+    if (id === "") return;
+    if (ids.includes(id)) return commit(host, "chartAdd", (d) => d, { reason: "That entity is on the chart already." });
+    commit(host, "chartAdd", (d) => addWatchChartEntity(d, ...at(host), id));
+  };
+  const field = ids.length >= max
+    ? undefined
+    : entityField({ hass: host.hass }, "Add entity", entityRef(host, ""), add, `pe:ph:chartAdd:${host.tileId}`, { preferNumeric: true, clearable: false });
+  return html`
+    <div class="hint">Up to ${max} entities over one time range, named in the legend.</div>
+    ${entityList(host, "chartAdd", ids, (id) => commit(host, "chartAdd", (d) => removeWatchChartEntity(d, ...at(host), id)),
+      field, `The chart holds ${max}. Remove one to add another.`)}
+    ${menuField("Range", choiceMenu(WATCH_CHART_RANGES, watchChartRange(tile)), (v) => commit(host, "chartRange", (d) => setWatchChartRange(d, ...at(host), v)))}
+    ${menuField("Style", choiceMenu(WATCH_CHART_STYLES, watchChartStyle(tile)), (v) => commit(host, "chartStyle", (d) => setWatchChartStyle(d, ...at(host), v)))}`;
+}
+
+function renderTextField(host: TileSettingsHost): TemplateResult {
+  const tile = host.tile;
+  const kind = watchTextTargetKind(tile);
+  const domain = watchTextTargetDomain(kind);
+  const target = watchTextTargetId(tile);
+  const pickTarget = (next: EntityRef, source?: string) => {
+    const id = next.entityId.trim();
+    if (id === "" || source === "clear") return commit(host, "textTarget", (d) => setWatchTextTargetId(d, ...at(host), ""));
+    if (domain === undefined || tileKind(id) !== domain) {
+      return commit(host, "textTarget", (d) => d, { reason: domain === "script" ? "Pick a script." : "Pick an input text." });
+    }
+    commit(host, "textTarget", (d) => setWatchTextTargetId(d, ...at(host), id));
+  };
+  const placeholderKey = "textPlaceholder";
+  const fieldKey = "textField";
+  return html`
+    ${menuField("Sends to", choiceMenu(WATCH_TEXT_TARGET_KINDS, kind), (v) => commit(host, "textKind", (d) => setWatchTextTargetKind(d, ...at(host), v)))}
+    <div class="hint ts-under">${kind === "script"
+      ? "Runs the script with the text in the field named below."
+      : kind === "assist" ? "Asks Assist, and shows the reply under the field." : "Sets the input text to what was typed."}</div>
+    ${domain === undefined
+      ? nothing
+      : html`<div class="ts-stack">${entityField({ hass: host.hass }, domain === "script" ? "Script" : "Input text", entityRef(host, target), pickTarget,
+          `pe:ph:textTarget:${host.tileId}`, { domain, needed: target === "" })}</div>${fieldNote(host, "textTarget")}`}
+    ${kind === "script"
+      ? typingField(host, fieldKey, textField("Field name", typed(host, fieldKey) ?? watchTextTargetField(tile), (v) =>
+          commit(host, fieldKey, (d) => setWatchTextTargetField(d, ...at(host), v), { typing: true }), { placeholder: "text", mono: true }))
+      : nothing}
+    ${typingField(host, placeholderKey, textField("Placeholder", typed(host, placeholderKey) ?? watchTextPlaceholder(tile), (v) =>
+      commit(host, placeholderKey, (d) => setWatchTextPlaceholder(d, ...at(host), v), { typing: true }), { placeholder: tileName(host) }))}
+    <div class="hint ts-under">Grey text in the empty field. Empty shows the tile's name.</div>
+    ${menuField("Submit with", choiceMenu(WATCH_TEXT_SUBMITS, watchTextSubmit(tile)), (v) => commit(host, "textSubmit", (d) => setWatchTextSubmit(d, ...at(host), v)))}`;
+}
+
+/** The tile's name as the iPhone draws it: its label, else its kind's. */
+function tileName(host: TileSettingsHost): string {
+  const label = host.tile.customLabel;
+  return typeof label === "string" && label.trim() !== "" ? label : watchTileFallbackName(host.tile, host.hass.states, [], host.catalog);
+}
+
+function renderWebCard(host: TileSettingsHost): TemplateResult {
+  const tile = host.tile;
+  const key = "webURL";
+  const url = typed(host, key) ?? watchWebURL(tile);
+  const note = watchWebURLNote(url);
+  return html`
+    ${typingField(host, key, textField("Address", url, (v) => commit(host, key, (d) => setWatchWebURL(d, ...at(host), v), { typing: true }),
+      { placeholder: "https://", mono: true }))}
+    ${note === undefined ? nothing : html`<div class="hint warn ts-under" role="status">${note}</div>`}
+    <div class="hint ts-under">${WATCH_WEB_CARD_HELP}</div>
+    ${checkField("Scroll", watchWebScroll(tile), (on) => commit(host, "webScroll", (d) => setWatchWebScroll(d, ...at(host), on)))}
+    <div class="hint ts-under">The page scrolls inside the tile.</div>
+    ${checkField("Interactive", watchWebInteractive(tile), (on) => commit(host, "webInteractive", (d) => setWatchWebInteractive(d, ...at(host), on)))}
+    <div class="hint ts-under">The page takes taps inside the tile. Off: a tap opens it full screen.</div>`;
 }
 
 /** The kinds whose task has no reset in this module's tasks: template,

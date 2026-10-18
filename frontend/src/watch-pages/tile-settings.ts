@@ -79,7 +79,8 @@ import { watchPageSwatchTheme } from "./page-settings-model.js";
 import { type TileSettingsHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import { forgetSpecialStatus, renderSpecial, specialSummary, watchSpecialSectionTitle } from "./special-settings.js";
-import { renderInboxLine } from "./app-settings.js";
+import { renderInboxLine, renderPhoneTileTask } from "./app-settings.js";
+import { watchPhoneTileChanged, watchPhoneTileKindOf, watchPhoneTileSummary, watchPhoneTileTitle } from "./phone-tiles-model.js";
 import { watchSpecialTask } from "./special-model.js";
 import { findWatchPage } from "./edit.js";
 import {
@@ -609,11 +610,13 @@ function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection
   if (inboxLine(host, section)) return renderInboxLine(host);
   const open = isOpen(host, section);
   const phoneKey = section === "phone" ? watchPhoneKeysOf(host.tile, host.hass.states)[0] : undefined;
+  const phoneKind = section === "phoneTile" ? watchPhoneTileKindOf(host.tile) : undefined;
   const title = section === "special"
     ? watchSpecialSectionTitle(host)
-    : phoneKey !== undefined ? WATCH_PHONE_KEY_WORDS[phoneKey].title : WATCH_TILE_SETTINGS_SECTION_TITLES[section];
+    : phoneKey !== undefined ? WATCH_PHONE_KEY_WORDS[phoneKey].title
+    : phoneKind !== undefined ? watchPhoneTileTitle(phoneKind) : WATCH_TILE_SETTINGS_SECTION_TITLES[section];
   const summary = open ? "" : section === "size" ? (extras.size?.summary() ?? "") : sectionSummary(host, section);
-  const phone = section === "phone" || section === "phoneExtras";
+  const phone = section === "phone" || section === "phoneExtras" || section === "phoneTile";
   const badge = WATCH_TILE_SECTION_BADGES[section];
   const changed = section === "size" ? extras.size?.changed?.() === true : watchTileSectionChanged(host, section);
   // A fieldset only to switch every control off at once while a save is out.
@@ -750,6 +753,8 @@ export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTi
     case "phone":
     case "phoneExtras":
       return watchPhoneKeysOf(tile, host.hass.states).some((key) => watchPhoneKeyChanged(tile, key));
+    case "phoneTile":
+      return watchPhoneTileChanged(tile);
     case "opens":
     case "target":
     case "special":
@@ -847,6 +852,8 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
       return watchPhoneKeysOf(tile, host.hass.states).map((key) => watchPhoneKeySummary(tile, key)).filter((s) => s !== "").join(", ");
     case "phoneExtras":
       return WATCH_PHONE_EXTRAS_HINT;
+    case "phoneTile":
+      return watchPhoneTileSummary(tile);
     case "size":
     case "removed":
       return "";
@@ -895,6 +902,8 @@ function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection):
       return renderPhoneKeys(host, false);
     case "phoneExtras":
       return renderPhoneKeys(host, true);
+    case "phoneTile":
+      return renderPhoneTileTask(host);
     case "size":
     case "removed":
       return html``;
