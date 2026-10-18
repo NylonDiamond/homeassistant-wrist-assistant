@@ -167,6 +167,7 @@ import { isPhoneId } from "../phone-pages.js";
 import { type LinkDevice, deviceWord, joinWords, linkDevicesOf } from "./devices.js";
 import { type RoomsKind, roomsKindFor } from "../watch-rooms/model.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
+import { type WatchPhoneTilesGroup, type WatchPhoneTilesPicker, watchPhoneTilesGroup } from "./add-tile-list.js";
 import {
   SavedAgoTicker,
   configFootStatus,
@@ -5176,6 +5177,7 @@ export class WaPageEditor extends LitElement {
     const addHost: AddTileHost = extendHost(host, {
       tileId: () => (selectedTile() === undefined ? undefined : this.selectedTileId),
       tile: selectedTile,
+      phoneTiles: () => this.phoneTilesGroup(watchPageId(page)),
       close: () => close,
     });
     return html`<dialog class="pe-ask pe-add-dialog" aria-labelledby="pe-add-title"
@@ -5186,6 +5188,29 @@ export class WaPageEditor extends LitElement {
       </div>
       ${renderAddTile(addHost)}
     </dialog>`;
+  }
+
+  /**
+   * How the Add tile dialog's "iPhone only" group shows for a page
+   * (`watchPhoneTilesGroup`): from the device on show (the Preview on device
+   * in library mode) and the devices that pick the page, as the library
+   * has them, with this device among them outside library mode (a page not
+   * saved yet is on it alone). Each watch carries the app version it
+   * reported, for the version gate.
+   */
+  private phoneTilesGroup(pageId: string): WatchPhoneTilesGroup {
+    const lib = this.lib.library;
+    const owners = new Set((lib === undefined ? [] : devicesFor(lib, "pages", pageId)).map((o) => o.toUpperCase()));
+    const here = this.watchId;
+    if (this.libraryItem === undefined && here !== undefined) owners.add(here.toUpperCase());
+    const pickers: WatchPhoneTilesPicker[] = this.linkDevices
+      .filter((d) => owners.has(d.ownerId.toUpperCase()))
+      .map((d) => ({
+        kind: d.kind,
+        name: d.name,
+        version: this.ownerList.find((o) => sameId(o.owner_watch_id, d.ownerId))?.app_version ?? null,
+      }));
+    return watchPhoneTilesGroup(this.device, pickers);
   }
 
   /** On a smart page, its Rules cards (`smart-settings.ts`): the Rules card,

@@ -14,10 +14,12 @@
 
 import { type EntityChoice, areaLookup, entityChoices, searchEntities } from "../editors.js";
 import type { HassEntityState, HassLike } from "../ha-api.js";
+import { MIN_WATCH_VERSION_FOR_PHONE_TILES, watchSupportsPhoneTiles } from "../version.js";
 import { type SettingDevice, deviceNoun } from "../watch-settings.js";
 import {
   type WatchAddRefusal,
   type WatchHassView,
+  type WatchPhoneAddKind,
   type WatchTileAdd,
   WATCH_ASSIST_ENTITY_ID,
   WATCH_MUSIC_ASSISTANT_REQUIRED_TEXT,
@@ -277,13 +279,109 @@ export function watchAppAdd(key: WatchAppAddKey, hass: Pick<WatchHassView, "stat
   }
 }
 
-/** Why a button cannot add, or undefined when it can. Music Hub needs Music
+/**
+ * Why a button cannot add, or undefined when it can. Music Hub needs Music
  * Assistant (any config entry of the domain, the phone's rule): while that is
  * not known to be there (not installed, still asking, or the call failed),
- * the button is off and says the phone's alert words. */
-export function watchAppAddBlockedText(key: WatchAppAddKey, musicAssistant: boolean | undefined): string | undefined {
+ * the button is off and says the phone's alert words. A tile only the
+ * iPhone draws is refused while a watch that picks the page runs an app too
+ * old to skip it (`oldWatch`, from `watchPhoneTilesGroup`): that watch would
+ * draw it as a grey placeholder.
+ */
+export function watchAppAddBlockedText(
+  key: WatchAppAddKey | WatchPhoneAddKind,
+  musicAssistant: boolean | undefined,
+  oldWatch?: WatchOldWatch,
+): string | undefined {
   if (key === "musicHub" && musicAssistant !== true) return WATCH_MUSIC_ASSISTANT_REQUIRED_TEXT;
+  if (isPhoneAddKey(key) && oldWatch !== undefined) return watchPhoneTilesBlockedText(oldWatch);
   return undefined;
+}
+
+// ── tiles only the iPhone draws ──────────────────────────────────────────
+
+/** The group's title, last in the dialog. */
+export const WATCH_PHONE_GROUP_TITLE = "iPhone only";
+
+/** What each of its rows says on a watch's editor, where it is greyed. */
+export const WATCH_PHONE_GREYED_TEXT = "Shown on the iPhone only";
+
+/** One button of the group: the kind, its words, the line after an add. */
+export interface WatchPhoneAddButton {
+  key: WatchPhoneAddKind;
+  label: string;
+  done: string;
+}
+
+/** The group's buttons, in the order of the app's kinds. */
+export const WATCH_PHONE_ADD_BUTTONS: readonly WatchPhoneAddButton[] = [
+  { key: "map", label: "Map", done: "Added a Map tile." },
+  { key: "chart", label: "Chart", done: "Added a Chart tile." },
+  { key: "textField", label: "Text field", done: "Added a Text field tile." },
+  { key: "web", label: "Web card", done: "Added a Web card tile." },
+];
+
+function isPhoneAddKey(key: string): key is WatchPhoneAddKind {
+  return WATCH_PHONE_ADD_BUTTONS.some((b) => b.key === key);
+}
+
+/** The add a phone button makes. */
+export function watchPhoneAdd(key: WatchPhoneAddKind): WatchTileAdd {
+  return { kind: key };
+}
+
+/** A watch that picks the page and runs an app too old to skip the iPhone
+ * only tiles: its name and the version it reported. */
+export interface WatchOldWatch {
+  name: string;
+  version: string;
+}
+
+/** A device that picks the page, as the group reads it. */
+export interface WatchPhoneTilesPicker {
+  kind: "watch" | "iphone";
+  name: string;
+  /** The app version it reported; null or absent when none. */
+  version?: string | null;
+}
+
+/**
+ * How the group shows:
+ * - `hidden`: no iPhone picks the page and none is previewed, so the kinds
+ *   would show nowhere.
+ * - `greyed`: listed but off, on a watch's editor (or the watch preview in
+ *   library mode), so a person learns the kinds exist.
+ * - `open`: on an iPhone's editor or preview. `oldWatch` is set when a watch
+ *   that also picks the page runs an app below
+ *   `MIN_WATCH_VERSION_FOR_PHONE_TILES`; the buttons then refuse and say so.
+ */
+export interface WatchPhoneTilesGroup {
+  state: "hidden" | "greyed" | "open";
+  oldWatch?: WatchOldWatch;
+}
+
+/**
+ * The group for the device the page is shown on and the devices that pick
+ * the page. A watch whose version is not reported is taken as new enough
+ * (`watchSupportsPhoneTiles`); of several old ones the first is named.
+ */
+export function watchPhoneTilesGroup(shown: SettingDevice, pickers: readonly WatchPhoneTilesPicker[]): WatchPhoneTilesGroup {
+  const phonePicks = pickers.some((p) => p.kind === "iphone");
+  if (shown !== "iphone" && !phonePicks) return { state: "hidden" };
+  if (shown !== "iphone") return { state: "greyed" };
+  const old = pickers.find((p) => p.kind === "watch" && !watchSupportsPhoneTiles(p.version));
+  return old === undefined ? { state: "open" } : { state: "open", oldWatch: { name: old.name, version: old.version ?? "" } };
+}
+
+/** The group a host shows: the one the editor worked out, else by the
+ * device alone (open on an iPhone, hidden on a watch). */
+export function watchPhoneTilesGroupOf(group: WatchPhoneTilesGroup | undefined, shown: SettingDevice): WatchPhoneTilesGroup {
+  return group ?? (shown === "iphone" ? { state: "open" } : { state: "hidden" });
+}
+
+/** "Jesse's watch runs 3.1.0; iPhone-only tiles need 3.2.0". */
+export function watchPhoneTilesBlockedText(watch: WatchOldWatch): string {
+  return `${watch.name} runs ${watch.version}; iPhone-only tiles need ${MIN_WATCH_VERSION_FOR_PHONE_TILES}`;
 }
 
 // ── words ────────────────────────────────────────────────────────────────

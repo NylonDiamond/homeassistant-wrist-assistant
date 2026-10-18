@@ -16,6 +16,7 @@ import type { HassLike } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import { type SettingDevice, deviceNoun } from "../watch-settings.js";
+import type { WatchPhoneTilesGroup } from "./add-tile-list.js";
 import type { WatchTemplateRender } from "./app-model.js";
 import type { WatchCatalog, WatchCatalogVoice } from "./catalog.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
@@ -160,6 +161,10 @@ export interface TileSettingsHost extends WatchPagesEditorHost {
 export interface AddTileHost extends WatchPagesEditorHost {
   readonly tileId: string | undefined;
   readonly tile: WatchPageTile | undefined;
+  /** How the "iPhone only" group shows (`watchPhoneTilesGroup`), from the
+   * devices that pick the page and their app versions. A getter. Absent: by
+   * the device alone (`watchPhoneTilesGroupOf`). */
+  readonly phoneTiles?: WatchPhoneTilesGroup;
   /** Close the dialog, as Cancel or Escape does. */
   close(): void;
 }

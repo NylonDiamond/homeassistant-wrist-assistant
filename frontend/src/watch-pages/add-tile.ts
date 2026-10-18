@@ -4,7 +4,10 @@
 // catalog (part 3e), or one of the app's own tiles: Music Hub,
 // Template, Assist, Speak Message and Point Control (3f batch 2). With no
 // catalog, one line says where the library lists come from; without Music
-// Assistant, Music Hub is off and one line says why.
+// Assistant, Music Hub is off and one line says why. Last, the "iPhone
+// only" group: a map, a chart, a text field and a web card (phone native
+// pages, phase 3), greyed on a watch's editor and hidden on a page no iPhone
+// picks.
 //
 // `<wa-page-editor>` opens the dialog from the stage's Add tile button and
 // draws `renderAddTile` under the dialog's title; Escape, the close button
@@ -29,11 +32,17 @@ import { uiIcon } from "../ui-icons.js";
 import {
   type WatchAddCandidate,
   type WatchAppAddButton,
+  type WatchPhoneAddButton,
   WATCH_ADD_BUSY_TEXT,
   WATCH_ADD_ROWS,
   WATCH_APP_ADD_BUTTONS,
+  WATCH_PHONE_ADD_BUTTONS,
+  WATCH_PHONE_GREYED_TEXT,
+  WATCH_PHONE_GROUP_TITLE,
   WatchAddListCache,
   watchAppAdd,
+  watchPhoneAdd,
+  watchPhoneTilesGroupOf,
   watchAppAddBlockedText,
   watchAddEmptyText,
   watchAddHighlightIndex,
@@ -270,6 +279,46 @@ function addApp(host: AddTileHost, view: AddTileView, button: WatchAppAddButton)
     return;
   }
   commit(host, view, watchAppAdd(button.key, host.hass), button.done);
+}
+
+/** Add a tile only the iPhone draws. Refused on a watch's editor, where the
+ * group is greyed, and while a watch that picks the page runs an app too old
+ * to skip it, which the note then names. */
+function addPhone(host: AddTileHost, view: AddTileView, button: WatchPhoneAddButton): void {
+  const group = watchPhoneTilesGroupOf(host.phoneTiles, hostDevice(host));
+  if (group.state !== "open") {
+    view.note = { tone: "err", text: WATCH_PHONE_GREYED_TEXT };
+    host.requestUpdate();
+    return;
+  }
+  const blocked = watchAppAddBlockedText(button.key, host.musicAssistant, group.oldWatch);
+  if (blocked !== undefined) {
+    view.note = { tone: "err", text: blocked };
+    host.requestUpdate();
+    return;
+  }
+  commit(host, view, watchPhoneAdd(button.key), button.done);
+}
+
+/** The "iPhone only" group, last: each kind with the phone glyph. Greyed on
+ * a watch's editor with what the rows mean; off with the reason while a
+ * watch that picks the page is too old; nothing on a page no iPhone picks. */
+function renderPhoneGroup(host: AddTileHost, view: AddTileView): TemplateResult | typeof nothing {
+  const group = watchPhoneTilesGroupOf(host.phoneTiles, hostDevice(host));
+  if (group.state === "hidden") return nothing;
+  const greyed = group.state === "greyed";
+  const blocked = greyed ? undefined : watchAppAddBlockedText(WATCH_PHONE_ADD_BUTTONS[0]!.key, host.musicAssistant, group.oldWatch);
+  const off = greyed || blocked !== undefined;
+  const why = greyed ? WATCH_PHONE_GREYED_TEXT : blocked;
+  return html`<div class="at-phone ${greyed ? "greyed" : ""}">
+    <div class="at-sub at-phone-h">${uiIcon("phone")}<span>${WATCH_PHONE_GROUP_TITLE}</span></div>
+    <div class="at-kinds" role="group" aria-label=${WATCH_PHONE_GROUP_TITLE}>
+      ${WATCH_PHONE_ADD_BUTTONS.map((b) => html`<button type="button" class="pe-btn at-phone-btn" ?disabled=${host.busy || off}
+        title=${why ?? nothing} aria-describedby=${why === undefined ? nothing : "at-phone-why"}
+        @click=${() => addPhone(host, view, b)}>${uiIcon("phone")}<span>${b.label}</span></button>`)}
+    </div>
+    ${why === undefined ? nothing : html`<div class="at-muted" id="at-phone-why">${why}</div>`}
+  </div>`;
 }
 
 // ── drawing ──────────────────────────────────────────────────────────────
@@ -566,6 +615,7 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
       </div>
       ${leftOut === undefined ? nothing : html`<div class="at-muted">${leftOut}</div>`}
     </div>
+    ${renderPhoneGroup(host, view)}
 
     ${note === undefined
       ? nothing
@@ -643,6 +693,16 @@ export const addTileStyles = css`
   }
   button.at-more:hover { background: color-mix(in srgb, var(--wa-accent) 12%, transparent); }
   button.at-more:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--wa-accent); }
+
+  /* The "iPhone only" group, last: each kind with the phone glyph; greyed
+     on a watch's editor. */
+  .at-phone { display: flex; flex-direction: column; gap: 6px; }
+  .at-phone-h { display: inline-flex; align-items: center; gap: 5px; }
+  .at-phone-h > svg.ui-icon { width: 13px; height: 13px; flex: none; }
+  .at-phone-btn { gap: 5px; }
+  .at-phone-btn > svg.ui-icon { width: 13px; height: 13px; flex: none; }
+  .at-phone-btn > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .at-phone.greyed .at-kinds { opacity: .55; }
 
   .at-note { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; line-height: 1.4; color: var(--wa-muted); }
   .at-note.ok { color: var(--wa-green, var(--wa-ink)); }

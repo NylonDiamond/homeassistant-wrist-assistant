@@ -34,6 +34,21 @@ export const MIN_WATCH_VERSION_FOR_CHART_LOOKS: string | null = null;
  * release that draws the layer is cut. */
 export const MIN_WATCH_VERSION_FOR_CHART_TIMES_LAYER: string | null = null;
 
+/** First watch app version that skips the iPhone only tile kinds (map,
+ * chart, text_field, web) instead of drawing them as grey placeholders.
+ * Confirmed at release time: bump it if the release that ships the skip is
+ * not 3.2.0. */
+export const MIN_WATCH_VERSION_FOR_PHONE_TILES = "3.2.0";
+
+/** Whether a watch app at this version skips the iPhone only kinds. A
+ * version not yet reported reads as new enough, as `deviceSupportsControls`
+ * does. */
+export function watchSupportsPhoneTiles(appVersion: string | null | undefined): boolean {
+  const have = parseVersion(appVersion);
+  if (!have) return true;
+  return compareVersions(have, parseVersion(MIN_WATCH_VERSION_FOR_PHONE_TILES)!) >= 0;
+}
+
 /** First iPhone app version that draws custom complications on the lock
  * screen. The phone is an owner in its own right from that release: it signs
  * with its own identity, pulls its own records and renders them in the iOS
