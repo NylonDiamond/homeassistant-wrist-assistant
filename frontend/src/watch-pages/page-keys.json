@@ -1587,7 +1587,7 @@
         "cameraTileLive": {
           "type": "bool",
           "required": false,
-          "default": false
+          "default": true
         },
         "sensorChart": {
           "type": "enum",

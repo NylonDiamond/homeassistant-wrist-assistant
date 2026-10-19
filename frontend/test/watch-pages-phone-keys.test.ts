@@ -30,6 +30,8 @@ import {
   setWatchCameraTileLive,
   setWatchSensorChart,
   setWatchTemplateLines,
+  watchCameraTileLive,
+  watchPhoneKeyChanged,
   watchPhoneKeyKinds,
   watchPhoneKeysOf,
 } from "../src/watch-pages/phone-keys-model.js";
@@ -272,22 +274,27 @@ function sectionChecks(opts: {
 }
 
 describe("Live video", () => {
-  it("is a switch on a camera that writes cameraTileLive, and folds on a watch", () => {
+  it("is a switch on a camera that writes cameraTileLive false, and folds on a watch", () => {
     sectionChecks({
       entityId: "camera.door",
       title: "Live video",
       label: "Live video in the tile",
-      help: "2 frames a second while the tile is on screen. Up to 4 live tiles at once; the rest show snapshots. Uses more battery.",
+      help: "On by default. The tile streams at 2 frames a second while it is on screen. Up to 4 tiles stream at once; the rest show snapshots. Turn it off on tiles that should keep snapshots.",
       before: "Camera",
-      press: (root) => check(root, "Live video in the tile", true),
-      wrote: (t) => expect(t.cameraTileLive).toBe(true),
+      press: (root) => check(root, "Live video in the tile", false),
+      wrote: (t) => expect(t.cameraTileLive).toBe(false),
     });
   });
 
-  it("removes the key when switched off, on a camera group too", () => {
-    const { host, tile } = tileHost(GROUP, { cameraTileLive: true }, "iphone");
+  it("is on for a tile without the key, and removes the key when switched on again, on a camera group too", () => {
+    expect(watchCameraTileLive({ entityId: "camera.door" })).toBe(true);
+    expect(watchCameraTileLive({ entityId: "camera.door", cameraTileLive: "yes" })).toBe(true);
+    expect(watchCameraTileLive({ entityId: "camera.door", cameraTileLive: false })).toBe(false);
+    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraTileLive: true }, "cameraTileLive")).toBe(false);
+    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraTileLive: false }, "cameraTileLive")).toBe(true);
+    const { host, tile } = tileHost(GROUP, { cameraTileLive: false }, "iphone");
     expect(titles(draw(host))).toContain("Live video");
-    check(draw(host), "Live video in the tile", false);
+    check(draw(host), "Live video in the tile", true);
     expect(Object.hasOwn(tile(), "cameraTileLive")).toBe(false);
   });
 });

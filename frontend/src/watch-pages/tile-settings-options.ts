@@ -288,7 +288,7 @@ export const WATCH_PHONE_KEY_WORDS: Readonly<Record<WatchPhoneKey, { title: stri
   cameraTileLive: {
     title: "Live video",
     label: "Live video in the tile",
-    help: "2 frames a second while the tile is on screen. Up to 4 live tiles at once; the rest show snapshots. Uses more battery.",
+    help: "On by default. The tile streams at 2 frames a second while it is on screen. Up to 4 tiles stream at once; the rest show snapshots. Turn it off on tiles that should keep snapshots.",
   },
   sensorChart: {
     title: "Chart",
@@ -339,7 +339,7 @@ export function watchTemplateLinesMenu(tile: WatchPageTile): WatchMenu {
 export function watchPhoneKeySummary(tile: WatchPageTile, key: WatchPhoneKey): string {
   switch (key) {
     case "cameraTileLive":
-      return watchCameraTileLive(tile) ? "Live" : "";
+      return watchCameraTileLive(tile) ? "" : "Snapshots";
     case "mediaArtwork":
       return watchMediaArtwork(tile) ? "On" : "";
     case "sensorChart": {

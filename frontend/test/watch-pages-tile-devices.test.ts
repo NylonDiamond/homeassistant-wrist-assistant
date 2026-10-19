@@ -123,7 +123,7 @@ describe("checkWatchPagesValues and the iPhone only tiles", () => {
 
   it("finds nothing wrong with iPhone only keys and kinds on a page a watch shows", () => {
     const doc = document([
-      { id: ids(2), entityId: "camera.door", cameraTileLive: true },
+      { id: ids(2), entityId: "camera.door", cameraTileLive: false },
       { id: ids(3), entityId: "sensor.power", sensorChart: "6h" },
       { id: ids(4), entityId: "media_player.den", mediaArtwork: true },
       { id: ids(5), entityId: `template.${ids(5)}`, templateLines: 8 },

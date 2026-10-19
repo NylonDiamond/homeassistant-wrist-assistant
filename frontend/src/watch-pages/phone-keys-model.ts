@@ -82,7 +82,7 @@ export function watchPhoneKeysOf(tile: WatchPageTile, states?: WatchSpecialState
 
 // ── reading ──────────────────────────────────────────────────────────────
 
-/** Live video in the tile: true only when `true` is stored. */
+/** Live video in the tile: on unless `false` is stored. */
 export function watchCameraTileLive(tile: WatchPageTile): boolean {
   return isBool(tile.cameraTileLive) ? tile.cameraTileLive : LIVE.absent;
 }
@@ -128,10 +128,11 @@ function offered(tile: WatchPageTile, key: WatchPhoneKey): boolean {
   return watchPhoneKeyKinds(key).includes(tileKind(tileEntityId(tile)));
 }
 
-/** "Live video in the tile": on writes true, off removes the key. */
+/** "Live video in the tile", on by default: off writes false, on removes
+ * the key, as "Dim when off" does. */
 export function setWatchCameraTileLive(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean): WatchPagesDocument {
   if (!isBool(on)) return document;
-  return setKey(document, pageId, tileId, LIVE.key, (tile) => (offered(tile, LIVE.key) ? (on ? true : REMOVE) : undefined));
+  return setKey(document, pageId, tileId, LIVE.key, (tile) => (offered(tile, LIVE.key) ? (on ? REMOVE : false) : undefined));
 }
 
 /** "Chart under the value": a range writes its value, null (Off) removes
