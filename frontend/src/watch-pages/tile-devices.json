@@ -71,6 +71,7 @@
   },
   "keys": {
     "cameraTileLive": ["iphone"],
+    "cameraTileStream": ["iphone"],
     "sensorChart": ["iphone"],
     "mediaArtwork": ["iphone"],
     "templateLines": ["iphone"]

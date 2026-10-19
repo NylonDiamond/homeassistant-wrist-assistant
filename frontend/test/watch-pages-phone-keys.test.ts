@@ -28,9 +28,11 @@ import { type WatchPage, type WatchPageTile, type WatchPagesDocument, tileDevice
 import {
   WATCH_PHONE_SETTING_KEYS,
   setWatchCameraTileLive,
+  setWatchCameraTileStream,
   setWatchSensorChart,
   setWatchTemplateLines,
   watchCameraTileLive,
+  watchCameraTileStream,
   watchPhoneKeyChanged,
   watchPhoneKeyKinds,
   watchPhoneKeysOf,
@@ -38,6 +40,8 @@ import {
 import {
   WATCH_PHONE_EXTRAS_HINT,
   WATCH_PHONE_EXTRAS_TITLE,
+  watchCameraTileStreamMenu,
+  watchPhoneKeySummary,
   watchSensorChartMenu,
   watchTemplateLinesMenu,
   watchTileSectionsFor,
@@ -162,6 +166,7 @@ describe("the rules files and the device table", () => {
   it("name exactly the keys the device table gives the iPhone alone, each a page-keys.json tile key", () => {
     const declared = [
       tileSpecial.camera.live.key,
+      tileSpecial.camera.stream.key,
       tileStyling.phone.sensorChart.key,
       tileStyling.phone.mediaArtwork.key,
       tileApp.template.lines.key,
@@ -174,6 +179,7 @@ describe("the rules files and the device table", () => {
 
   it("offer each key on kinds both devices draw, as the contract lists them", () => {
     expect(watchPhoneKeyKinds("cameraTileLive")).toEqual(["camera", "multicam"]);
+    expect(watchPhoneKeyKinds("cameraTileStream")).toEqual(["camera", "multicam"]);
     expect(watchPhoneKeyKinds("sensorChart")).toEqual(["sensor", "binary_sensor"]);
     expect(watchPhoneKeyKinds("mediaArtwork")).toEqual(["media_player"]);
     expect(watchPhoneKeyKinds("templateLines")).toEqual(["template"]);
@@ -183,8 +189,8 @@ describe("the rules files and the device table", () => {
   });
 
   it("give a tile its kind's key and no other", () => {
-    expect(watchPhoneKeysOf({ entityId: "camera.door" })).toEqual(["cameraTileLive"]);
-    expect(watchPhoneKeysOf({ entityId: GROUP })).toEqual(["cameraTileLive"]);
+    expect(watchPhoneKeysOf({ entityId: "camera.door" })).toEqual(["cameraTileLive", "cameraTileStream"]);
+    expect(watchPhoneKeysOf({ entityId: GROUP })).toEqual(["cameraTileLive", "cameraTileStream"]);
     expect(watchPhoneKeysOf({ entityId: "binary_sensor.door" })).toEqual(["sensorChart"]);
     expect(watchPhoneKeysOf({ entityId: "media_player.kitchen" })).toEqual(["mediaArtwork"]);
     expect(watchPhoneKeysOf({ entityId: TEMPLATE })).toEqual(["templateLines"]);
@@ -200,6 +206,7 @@ describe("the rules files and the device table", () => {
       { id: "T3", entityId: TEMPLATE },
     ] }] };
     expect(setWatchCameraTileLive(doc, PAGE, TILE, true)).toBe(doc);
+    expect(setWatchCameraTileStream(doc, PAGE, TILE, "main")).toBe(doc);
     expect(setWatchSensorChart(doc, PAGE, "T2", "30d")).toBe(doc);
     expect(setWatchTemplateLines(doc, PAGE, "T3", 9)).toBe(doc);
     expect(setWatchTemplateLines(doc, PAGE, "T3", 2.5)).toBe(doc);
@@ -279,7 +286,7 @@ describe("Live video", () => {
       entityId: "camera.door",
       title: "Live video",
       label: "Live video in the tile",
-      help: "On by default. The tile streams at 2 frames a second while it is on screen. Up to 4 tiles stream at once; the rest show snapshots. Turn it off on tiles that should keep snapshots.",
+      help: "On by default. The tile plays live video while it is on screen. Up to 12 cameras play at once; the rest show snapshots. Turn it off on tiles that should keep snapshots.",
       before: "Camera",
       press: (root) => check(root, "Live video in the tile", false),
       wrote: (t) => expect(t.cameraTileLive).toBe(false),
@@ -296,6 +303,50 @@ describe("Live video", () => {
     expect(titles(draw(host))).toContain("Live video");
     check(draw(host), "Live video in the tile", true);
     expect(Object.hasOwn(tile(), "cameraTileLive")).toBe(false);
+  });
+});
+
+describe("Stream", () => {
+  it("is a menu under Live video, with no heading of its own, that writes cameraTileStream", () => {
+    const { host, tile } = tileHost("camera.door", {}, "iphone");
+    const drawn = draw(host);
+    const text = flatten(drawn);
+    expect(titles(drawn)).toContain("Live video");
+    expect(titles(drawn)).not.toContain("Stream");
+    expect(text).not.toContain('<span>Live video</span>');
+    expect(text).toContain("Quick start plays the camera's small stream at once");
+    pick(drawn, "Stream", "main");
+    expect(tile().cameraTileStream).toBe("main");
+    pick(draw(host), "Stream", "auto");
+    expect(Object.hasOwn(tile(), "cameraTileStream")).toBe(false);
+  });
+
+  it("offers quick start first, reads anything else as it, and hides while live video is off", () => {
+    expect(watchCameraTileStreamMenu({ entityId: "camera.door" }).options.map((o) => o.label)).toEqual([
+      "Quick start, then sharp (default)", "Small stream only", "Full stream only",
+    ]);
+    expect(watchCameraTileStream({ entityId: "camera.door" })).toBe("auto");
+    expect(watchCameraTileStream({ entityId: "camera.door", cameraTileStream: "4k" })).toBe("auto");
+    expect(watchCameraTileStream({ entityId: "camera.door", cameraTileStream: "sub" })).toBe("sub");
+    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraTileStream: "auto" }, "cameraTileStream")).toBe(false);
+    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraTileStream: "main" }, "cameraTileStream")).toBe(true);
+    expect(watchPhoneKeySummary({ entityId: "camera.door", cameraTileStream: "sub" }, "cameraTileStream")).toBe("Small stream");
+    expect(watchPhoneKeySummary({ entityId: "camera.door", cameraTileStream: "sub", cameraTileLive: false }, "cameraTileStream")).toBe("");
+
+    const off = tileHost(GROUP, { cameraTileLive: false }, "iphone");
+    expect(flatten(draw(off.host))).not.toContain("Quick start plays");
+    check(draw(off.host), "Live video in the tile", true);
+    expect(flatten(draw(off.host))).toContain("Quick start plays");
+  });
+
+  it("sits under Live video in the watch's folded group too", () => {
+    const { host, tile } = tileHost("camera.door", {}, "watch");
+    fold(draw(host), WATCH_PHONE_EXTRAS_TITLE);
+    const open = draw(host);
+    expect(flatten(open)).toMatch(/<span>Live video<\/span><span class="ts-dev-tag"/);
+    expect(flatten(open)).not.toMatch(/ts-sub-h"><span>Stream/);
+    pick(open, "Stream", "sub");
+    expect(tile().cameraTileStream).toBe("sub");
   });
 });
 

@@ -389,6 +389,11 @@
       "lte",
       "contains"
     ],
+    "CameraTileStream": [
+      "auto",
+      "sub",
+      "main"
+    ],
     "TileHistoryRange": [
       "1h",
       "6h",
@@ -1588,6 +1593,13 @@
           "type": "bool",
           "required": false,
           "default": true
+        },
+        "cameraTileStream": {
+          "type": "enum",
+          "enum": "CameraTileStream",
+          "strict": false,
+          "required": false,
+          "default": "auto"
         },
         "sensorChart": {
           "type": "enum",

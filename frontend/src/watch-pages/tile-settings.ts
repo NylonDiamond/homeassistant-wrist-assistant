@@ -241,6 +241,7 @@ import {
   WATCH_PHONE_EXTRAS_HINT,
   WATCH_PHONE_KEY_WORDS,
   watchPhoneKeySummary,
+  watchCameraTileStreamMenu,
   watchSensorChartMenu,
   watchSensorChartShortNote,
   watchTemplateLinesMenu,
@@ -248,6 +249,7 @@ import {
 import {
   type WatchPhoneKey,
   setWatchCameraTileLive,
+  setWatchCameraTileStream,
   setWatchMediaArtwork,
   setWatchSensorChart,
   setWatchTemplateLines,
@@ -932,9 +934,13 @@ function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection):
  * heading with the iPhone tag.
  */
 function renderPhoneKeys(host: TileSettingsHost, grouped: boolean): TemplateResult {
-  const keys = watchPhoneKeysOf(host.tile, host.hass.states);
+  // The stream sits under Live video, without a heading of its own, and only
+  // while the live video is on.
+  const keys = watchPhoneKeysOf(host.tile, host.hass.states)
+    .filter((key) => key !== "cameraTileStream" || watchCameraTileLive(host.tile));
+  const headed = keys.filter((key) => key !== "cameraTileStream");
   return html`${keys.map((key) => html`
-    ${grouped || keys.length > 1
+    ${key !== "cameraTileStream" && (grouped || headed.length > 1)
       ? html`<div class="ts-sub-h"><span>${WATCH_PHONE_KEY_WORDS[key].title}</span>${phoneTag()}</div>`
       : nothing}
     ${renderPhoneKey(host, key)}`)}`;
@@ -948,6 +954,9 @@ function renderPhoneKey(host: TileSettingsHost, key: WatchPhoneKey): TemplateRes
     case "cameraTileLive":
       return html`${checkField(words.label, watchCameraTileLive(tile), (on) =>
         commit(host, key, (d) => setWatchCameraTileLive(d, host.pageId, host.tileId, on)))}${help}`;
+    case "cameraTileStream":
+      return html`${menuField(words.label, watchCameraTileStreamMenu(tile), (v) =>
+        commit(host, key, (d) => setWatchCameraTileStream(d, host.pageId, host.tileId, v)))}${help}`;
     case "mediaArtwork":
       return html`${checkField(words.label, watchMediaArtwork(tile), (on) =>
         commit(host, key, (d) => setWatchMediaArtwork(d, host.pageId, host.tileId, on)))}${help}`;

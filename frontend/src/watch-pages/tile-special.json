@@ -703,7 +703,18 @@
       "key": "cameraTileLive",
       "kinds": ["camera", "multicam"],
       "absent": true,
-      "write": "On by default: off writes false, on removes the key. Only the iPhone reads it (tile-devices.json keys): it streams the tile at 2 frames a second while on screen, at most 4 tiles at once, unless the key is false. The watch keeps its snapshot."
+      "write": "On by default: off writes false, on removes the key. Only the iPhone reads it (tile-devices.json keys): it plays the tile's live video while on screen unless the key is false, over WebRTC for up to 12 cameras at once (MJPEG at 2 frames a second for up to 4 on a Home Assistant without it). The watch keeps its snapshot."
+    },
+    "stream": {
+      "key": "cameraTileStream",
+      "kinds": ["camera", "multicam"],
+      "absent": "auto",
+      "choices": [
+        { "value": "auto", "label": "Quick start, then sharp (default)" },
+        { "value": "sub", "label": "Small stream only" },
+        { "value": "main", "label": "Full stream only" }
+      ],
+      "write": "Offered under Live video while it is on. auto removes the key, sub and main write their value. Only the iPhone reads it: which of the camera's two streams (Home Assistant's camera device groups, sd and hd) a live tile plays. auto starts on the small stream and swaps to the full one at its first frame when the tile draws the small one larger than it is; sub and main play only that one. A camera with one stream plays it for all three. Tiles that show the same camera play the strongest: main, then auto, then sub."
     },
     "detection": "Detect Camera Ratio with the ratio of the snapshot (width / height). A single camera: cameraAspectRatio is the ratio; gridCol becomes 0 when gridCol plus the best fit's colSpan passes the page's columns; then the resize to the best fit, pushing the tiles it overlaps down. A snapshot that does not load changes nothing."
   },

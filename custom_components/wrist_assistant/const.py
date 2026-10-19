@@ -315,7 +315,7 @@ PHONE_BEHAVIOR_DECODE_KEYS = frozenset(
 # lists are here for the day the server needs to name them to a device.
 PHONE_ONLY_TILE_KINDS = frozenset({"map", "chart", "text_field", "web"})
 PHONE_ONLY_TILE_KEYS = frozenset(
-    {"cameraTileLive", "sensorChart", "mediaArtwork", "templateLines"}
+    {"cameraTileLive", "cameraTileStream", "sensorChart", "mediaArtwork", "templateLines"}
 )
 # `updated_by` on a record the panel saved, in place of a device's signing id.
 WATCH_CONFIG_PANEL_WRITER = "panel"

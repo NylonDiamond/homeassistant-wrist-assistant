@@ -56,11 +56,14 @@ import { watchTileHasStateTask } from "./styling-model.js";
 import { type WatchSpecialStates, watchSpecialTask } from "./special-model.js";
 import {
   type WatchPhoneKey,
+  WATCH_CAMERA_TILE_STREAM_ABSENT,
+  WATCH_CAMERA_TILE_STREAM_CHOICES,
   WATCH_MEDIA_CONTROLS_MIN_COLUMNS,
   WATCH_SENSOR_CHART_CHOICES,
   WATCH_SENSOR_CHART_MIN_ROWS,
   WATCH_TEMPLATE_LINES,
   watchCameraTileLive,
+  watchCameraTileStream,
   watchMediaArtwork,
   watchPhoneKeysOf,
   watchSensorChart,
@@ -288,7 +291,12 @@ export const WATCH_PHONE_KEY_WORDS: Readonly<Record<WatchPhoneKey, { title: stri
   cameraTileLive: {
     title: "Live video",
     label: "Live video in the tile",
-    help: "On by default. The tile streams at 2 frames a second while it is on screen. Up to 4 tiles stream at once; the rest show snapshots. Turn it off on tiles that should keep snapshots.",
+    help: "On by default. The tile plays live video while it is on screen. Up to 12 cameras play at once; the rest show snapshots. Turn it off on tiles that should keep snapshots.",
+  },
+  cameraTileStream: {
+    title: "Stream",
+    label: "Stream",
+    help: "Quick start plays the camera's small stream at once, then switches to the full stream when the tile is big enough to show more. Small is the fastest and uses the least data. Full is the sharpest, but takes a little longer to start. A camera with only one stream plays it with every choice.",
   },
   sensorChart: {
     title: "Chart",
@@ -323,6 +331,11 @@ export function watchSensorChartShortNote(tile: WatchPageTile): string | undefin
   return `This tile is ${rows} ${rows === 1 ? "row" : "rows"} tall, so the iPhone shows no chart. Make it ${WATCH_SENSOR_CHART_MIN_ROWS} or taller.`;
 }
 
+/** The Stream menu: quick start (the default), small, full. */
+export function watchCameraTileStreamMenu(tile: WatchPageTile): WatchMenu {
+  return watchChoiceMenu([...WATCH_CAMERA_TILE_STREAM_CHOICES], watchCameraTileStream(tile));
+}
+
 /** The Lines menu: 1 to 8, the absent value marked as the default; a stored
  * value off the range shown first, disabled. */
 export function watchTemplateLinesMenu(tile: WatchPageTile): WatchMenu {
@@ -340,6 +353,11 @@ export function watchPhoneKeySummary(tile: WatchPageTile, key: WatchPhoneKey): s
   switch (key) {
     case "cameraTileLive":
       return watchCameraTileLive(tile) ? "" : "Snapshots";
+    case "cameraTileStream": {
+      const stream = watchCameraTileStream(tile);
+      if (stream === WATCH_CAMERA_TILE_STREAM_ABSENT || !watchCameraTileLive(tile)) return "";
+      return stream === "sub" ? "Small stream" : "Full stream";
+    }
     case "mediaArtwork":
       return watchMediaArtwork(tile) ? "On" : "";
     case "sensorChart": {
