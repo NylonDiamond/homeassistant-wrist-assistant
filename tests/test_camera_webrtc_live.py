@@ -159,3 +159,32 @@ def test_refusals_carry_a_reason(phone) -> None:
     assert r.status_code == 400
     r = phone("webrtc_cameras", {"entity_ids": "camera.x"})
     assert r.status_code == 400
+
+
+def test_main_streams_answer_an_h264_offer(phone, base_url, session) -> None:
+    """The main stream a big iPhone tile swaps up to (`quality_level: hd`).
+
+    Prints, per camera with a separate main stream, whether go2rtc answers
+    the phone's H.264-only offer for it. A main stream in H.265 is turned
+    down (`m=video 0`) or refused: the phone's WebRTC build cannot decode
+    it, and the tile stays on its sub stream.
+    """
+    cameras = _camera_ids(base_url, session)
+    if not cameras:
+        pytest.skip("no camera entities on this instance")
+    sub = phone("webrtc_cameras", {"entity_ids": cameras, "quality_level": "sd"}).json()["cameras"]
+    main = phone("webrtc_cameras", {"entity_ids": cameras, "quality_level": "hd"}).json()["cameras"]
+    separate = [cid for cid in cameras if main[cid]["webrtc"] and main[cid]["source"] != sub[cid]["source"]]
+    if not separate:
+        pytest.skip("no camera here has a main stream apart from its sub stream")
+    for cid in separate:
+        source = main[cid]["source"]
+        start = time.monotonic()
+        reply = phone("webrtc_offer", {"entity_id": source, "offer": OFFER}).json()
+        elapsed_ms = (time.monotonic() - start) * 1000
+        if not reply["ok"]:
+            print(f"\n{cid}: main {source} refused in {elapsed_ms:.0f} ms ({reply['error']}: {reply.get('message', '')})")
+            continue
+        turned_down = any(line.startswith("m=video 0 ") for line in reply["answer"].splitlines())
+        print(f"\n{cid}: main {source} answered in {elapsed_ms:.0f} ms{', video turned down' if turned_down else ''}")
+        phone("webrtc_close", {"session_ids": [reply["session_id"]]})

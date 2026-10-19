@@ -40,8 +40,9 @@ _LOGGER = logging.getLogger(__name__)
 
 # How long an offer waits for the camera's answer. go2rtc answers after it has
 # the camera's tracks, which means after it has connected to the camera when
-# nothing else is watching it; a slow camera takes a few seconds for that.
-ANSWER_TIMEOUT_SECONDS = 10.0
+# nothing else is watching it; a slow camera takes a few seconds for that. A
+# 4K main stream on the dev box took 7.3 s (2026-10-18), hence the room.
+ANSWER_TIMEOUT_SECONDS = 15.0
 # How long the offer reply waits for the first server candidate when the
 # answer arrived without one. Short on purpose: the phone does not need it to
 # connect (see the module docstring), it only saves a later poll.
