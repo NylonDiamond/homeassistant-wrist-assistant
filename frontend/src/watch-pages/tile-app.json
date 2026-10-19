@@ -1637,7 +1637,7 @@
   },
   "webhookInbox": {
     "roundTrip": "No add and no task in the panel: a webhook_inbox. tile is carried as it is, entityId never rewritten. Every common task works on it.",
-    "setUpLine": "Webhook inbox. Set up on the iPhone.",
+    "setUpLine": "Webhook inbox. The watch no longer has an inbox; this tile does nothing.",
     "topicRule": "The part after webhook_inbox.; empty or all means every topic (\"All topics\"), anything else is \"#<topic>\".",
     "labelRule": "The watch draws customLabel when it is set (even empty), else \"#<topic>\", else \"Inbox\".",
     "icon": "tray",

@@ -1,7 +1,7 @@
 """Cross-tenant authorization smoke test for /v2 ``companion_watch_id`` ops.
 
 A v2 op that accepts ``companion_watch_id`` (notifications_status,
-webhook_provision, notifications_register, send_test_notification) must only
+notifications_register, send_test_notification) must only
 act on a companion watch bound to the same Home Assistant user as the
 authenticated caller, and, when the watch records an ``owner_iphone_id``, one
 that names the caller. Otherwise any device authenticated to a shared HA
@@ -10,7 +10,7 @@ another user's watch and read or mutate its entry. An unbound caller may only
 name itself; the in-process cases for that are in ``test_push_ops_inprocess.py``.
 
 This exercises the read-only ``notifications_status`` op (no side effects on
-the live HA) as the representative case; all four ops route through the shared
+the live HA) as the representative case; all three ops route through the shared
 ``_resolve_companion_target`` guard, so the status code here proves the gate.
 
 Since step 6 an ``ios`` token files under the phone that signed, whatever

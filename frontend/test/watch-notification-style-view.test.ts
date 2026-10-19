@@ -198,15 +198,16 @@ describe("Watch settings with the notification style", () => {
     const at = (s: string) => shown.indexOf(s);
     expect(at("data-sec=ws-camera")).toBeGreaterThan(0);
     expect(at("data-sec=ws-notifications")).toBeGreaterThan(at("data-sec=ws-camera"));
-    // Sounds is its own group. Wrist Webhooks is hidden in the app, so its
-    // card is never drawn.
+    // Sounds is its own group. Wrist Webhooks is gone, so no card and no
+    // row for its button size is drawn.
     expect(shown).not.toContain("data-sec=ws-wristWebhooks");
+    expect(shown).not.toContain("data-key=storedWebhookButtonSize");
     expect(at("data-sec=ws-sounds")).toBeGreaterThan(at("data-sec=ws-notifications"));
     expect(at(`data-sec="ws-pair"`)).toBeGreaterThan(at("data-sec=ws-sounds"));
     // The preview leads the Notifications card.
     expect(at('class="ns-pv"')).toBeGreaterThan(at("data-sec=ws-notifications"));
     expect(at('class="ns-pv"')).toBeLessThan(at("data-key=backgroundStyle"));
-    for (const r of NOTIFICATION_STYLE_SECTIONS.filter((s) => s.id !== "wristWebhooks").flatMap((s) => s.groups.flatMap((g) => g.rows))) {
+    for (const r of NOTIFICATION_STYLE_SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.rows))) {
       expect(shown, r.key).toContain(`data-key=${r.key}`);
     }
     expect(shown).toContain("notification style revision 5");
@@ -340,13 +341,13 @@ describe("Watch settings with the notification style", () => {
     expect(inside.note?.text).toContain("already has your changes");
   });
 
-  it("hides the three cards when the integration does not keep the kind", async () => {
+  it("hides the notification style's cards when the integration does not keep the kind", async () => {
     const { inside, ha, text, foot } = await dialog({ behavior: record("behavior", 3, watchBehaviorDefaults()) });
     expect(ha.gets(KIND)).toHaveLength(1);
     expect(inside.styleUnsupported).toBe(true);
     const shown = text();
     expect(shown).toContain("data-sec=ws-camera");
-    for (const id of ["notifications", "sounds", "wristWebhooks", "notification-style"]) expect(shown).not.toContain(`data-sec=ws-${id}`);
+    for (const id of ["notifications", "sounds", "notification-style"]) expect(shown).not.toContain(`data-sec=ws-${id}`);
     expect(shown).not.toContain(STYLE_NO_RECORD_TITLE);
     expect(shown).not.toContain("notification style revision");
     expect(foot()).not.toContain("Notification style");

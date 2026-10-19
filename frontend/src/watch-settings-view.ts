@@ -28,8 +28,8 @@
 // which group). Every setting is always in one group: nothing is hidden.
 //
 // The watch's notification style (kind `notification_style`) is a second
-// record shown on the same page, as the Notifications, Sounds and Wrist
-// Webhooks cards. It loads with `behavior`, and the one Save sends whichever
+// record shown on the same page, as the Notifications and Sounds cards. It
+// loads with `behavior`, and the one Save sends whichever
 // of the two changed, each over its own revision. Its thinking is in
 // `watch-notification-style/model.ts`.
 //
@@ -167,7 +167,6 @@ const SECTION_LOOK: Record<string, { icon: UiIconName; color: string }> = {
 const STYLE_LOOK: Record<StyleSection["id"], { icon: UiIconName; color: string }> = {
   notifications: { icon: "note", color: SECTION_COLOR.position },
   sounds: { icon: "states", color: "var(--wa-hue-blue)" },
-  wristWebhooks: { icon: "link", color: SECTION_COLOR.states },
 };
 
 interface Note {
@@ -1218,7 +1217,7 @@ export class WatchSettings implements ReactiveController {
 
   // ── the notification style's cards ─────────────────────────────────────
 
-  /** What stands in for the Notifications, Sounds and Wrist Webhooks cards:
+  /** What stands in for the Notifications and Sounds cards:
    * one card while there is no record yet or it cannot be read, `null`
    * while there is nothing to draw yet, or undefined when the record's own
    * cards draw. The caller leaves them all out on an integration that does
@@ -1245,7 +1244,7 @@ export class WatchSettings implements ReactiveController {
     return undefined;
   }
 
-  /** The one card that stands in for the three. */
+  /** The one card that stands in for the two. */
   private renderStyleCard(body: TemplateResult) {
     const look = STYLE_LOOK.notifications;
     return html`<section class="sec ns-card" data-sec="ws-notification-style" data-open="true" data-help="on" style=${`--c:${look.color};--ws-hue:${look.color}`}>

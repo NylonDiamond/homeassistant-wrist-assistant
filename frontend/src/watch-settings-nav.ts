@@ -2,10 +2,7 @@
 // group shows, and the search that looks through every group at once. The
 // page shows one group at a time, so a person new to the app meets a short
 // list of settings instead of all of them. Every setting the app still uses
-// is in one group, and the search finds any of them. The Wrist Webhooks card
-// is in none: the app hid that feature on 2026-09-28, so the card is never
-// drawn, though its keys stay in the notification style model and are kept
-// on save.
+// is in one group, and the search finds any of them.
 //
 // A card is one catalog section (`watch-settings-catalog.json`), one of the
 // notification style's sections, or the pairing or client certificate card.
@@ -18,7 +15,7 @@ import type { UiIconName } from "./ui-icons.js";
 /** The page's cards, by the id each one draws under (`data-sec="ws-<id>"`). */
 export type SettingsCardId =
   | "connection" | "gestures" | "motion" | "navigation" | "controls" | "camera"
-  | "notifications" | "sounds" | "wristWebhooks"
+  | "notifications" | "sounds"
   | "pair" | "cert";
 
 export interface SettingsGroup {

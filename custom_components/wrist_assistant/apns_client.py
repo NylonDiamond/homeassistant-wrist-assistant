@@ -159,9 +159,8 @@ class APNsClient:
     async def ensure_relay_token(self, watch_id: str, platform: str) -> str | None:
         """Return a valid relay_token for a registered device, minting one if needed.
 
-        Used by webhook provisioning, which must present relay_token +
-        device_token pairs as proof of device control. Returns None when the
-        device has no registration or the relay is unreachable.
+        Used to bind a just-registered device ahead of its first push. Returns
+        None when the device has no registration or the relay is unreachable.
         """
         entry = self._notification_store.get_entry(watch_id, platform)
         if entry is None:
@@ -174,15 +173,6 @@ class APNsClient:
             environment=entry.environment,
             existing=entry,
         )
-
-    async def relay_post(self, path: str, payload: dict) -> dict | None:
-        """POST JSON to the relay and return the parsed response (None on error).
-
-        Public wrapper for relay endpoints beyond the push pipeline (webhook
-        provisioning/device sync). Connection details and logging stay in one
-        place.
-        """
-        return await self._post_json(path, payload)
 
     async def _register_device(
         self,

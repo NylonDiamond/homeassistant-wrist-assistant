@@ -265,11 +265,11 @@ describe("the page's look", () => {
 describe("the side panel's groups", () => {
   const cards = SETTINGS_GROUPS.flatMap((g) => g.cards);
 
-  it("puts every card in exactly one group, and the hidden Wrist Webhooks in none", () => {
+  it("puts every card in exactly one group", () => {
     expect(new Set(cards).size).toBe(cards.length);
     const expected = [
       ...WATCH_SETTINGS_CATALOG.sections.map((s) => s.id),
-      ...NOTIFICATION_STYLE_SECTIONS.map((s) => s.id).filter((id) => id !== "wristWebhooks"),
+      ...NOTIFICATION_STYLE_SECTIONS.map((s) => s.id),
       "pair", "cert",
     ];
     expect([...cards].sort()).toEqual([...expected].sort());

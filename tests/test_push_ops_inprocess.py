@@ -44,7 +44,6 @@ _NAMES = (
     "_op_notifications_register",
     "_op_notifications_status",
     "_op_send_test_notification",
-    "_op_webhook_provision",
 )
 
 
@@ -96,7 +95,6 @@ class _Env:
         self.hass = _Hass()
         self.prebound: list[tuple[str, str]] = []
         self.delivered: list[list[str]] = []
-        self.provisioned: list[str] = []
         self.domain_data = types.SimpleNamespace(
             notification_store=self.tokens, widget_secret_store=self.secrets
         )
@@ -151,20 +149,9 @@ class _Env:
             "_prebind_relay_token": lambda hass, data, wid, platform: env.prebound.append(
                 (wid, platform)
             ),
-            "WEBHOOK_ID_METADATA_KEY": "webhook_id",
-            "async_sync_webhook_devices": self._sync_webhook,
-            "async_provision_webhook": self._provision_webhook,
         }
         exec(code, namespace)  # noqa: S102
         return namespace
-
-    async def _sync_webhook(self, data, watch_id):
-        return None
-
-    async def _provision_webhook(self, data, watch_id):
-        """Stands in for the relay round trip; the reply carries the tokens."""
-        self.provisioned.append(watch_id)
-        return {"ok": True, "webhook_id": f"hook-{watch_id}", "publish_token": "secret"}
 
     def call(self, op: str, signer: str, payload: dict) -> _Response:
         secret = self.secrets.get(signer)
@@ -356,21 +343,19 @@ def _companion_ops(env, signer: str, companion: str) -> dict[str, int]:
         "notifications_register": _register(env, signer, "TOKEN", **payload).status,
         "notifications_status": env.call("notifications_status", signer, payload).status,
         "send_test_notification": env.call("send_test_notification", signer, payload).status,
-        "webhook_provision": env.call("webhook_provision", signer, payload).status,
     }
 
 
 def test_an_unbound_caller_cannot_reach_another_user_s_code_paired_watch(env) -> None:
     """A code-paired watch names no owning phone, and a legacy entry has no
-    user, so neither old check fired: the caller got the watch's webhook
-    tokens, could push to it and could read its platforms."""
+    user, so neither old check fired: the caller could push to the watch and
+    read its platforms."""
     env.secrets.entries["legacy"] = _phone(None)
     env.secrets.entries["w-code"] = _watch("u2", owner=None)
     env.tokens.register("w-code", "WC", platform="watchos")
 
     statuses = _companion_ops(env, "legacy", "w-code")
     assert statuses == dict.fromkeys(statuses, 403)
-    assert env.provisioned == []
     assert env.delivered == []
     assert env.tokens.get_entry("legacy", "ios") is None
 
@@ -386,7 +371,6 @@ def test_a_bound_caller_cannot_reach_an_unbound_watch(env) -> None:
     env.secrets.entries["w-old"] = _watch(None, owner=None)
     statuses = _companion_ops(env, "p1", "w-old")
     assert statuses == dict.fromkeys(statuses, 403)
-    assert env.provisioned == []
 
 
 def test_a_caller_cannot_name_a_device_with_no_entry(env) -> None:
@@ -399,14 +383,12 @@ def test_a_caller_may_reach_a_code_paired_watch_of_its_own_user(env) -> None:
     env.tokens.register("w-code", "WC", platform="watchos")
     statuses = _companion_ops(env, "p1", "w-code")
     assert statuses == dict.fromkeys(statuses, 200)
-    assert env.provisioned == ["w-code"]
 
 
 def test_an_unbound_caller_may_still_name_itself(env) -> None:
     env.secrets.entries["legacy"] = _watch(None, owner=None)
-    reply = env.call("webhook_provision", "legacy", {"companion_watch_id": "legacy"})
+    reply = env.call("notifications_status", "legacy", {"companion_watch_id": "legacy"})
     assert reply.status == 200
-    assert env.provisioned == ["legacy"]
 
 
 def test_a_refusal_keeps_the_answer_older_apps_know(env) -> None:

@@ -85,9 +85,8 @@ from .const import LIBRARY_OWNER_ID
 from .sealed_box import SealedBoxError, x25519_public_key
 from .widget_hmac import DEFAULT_HMAC_ALGO, SUPPORTED_HMAC_ALGOS
 
-# The relay's Notifier pairing uses the same code: six characters with the
-# look-alikes (0, O, 1, I) left out, so a code read off a watch face is
-# typed right the first time.
+# Six characters with the look-alikes (0, O, 1, I) left out, so a code read
+# off a watch face is typed right the first time.
 PAIR_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 PAIR_CODE_LENGTH = 6
 PAIR_REQUEST_TTL_SECONDS = 600

@@ -2,8 +2,8 @@
 //
 // A watch's notification style is one JSON document, the app's
 // `NotificationStyleConfig`: how the Long Look draws a notification's
-// buttons, the watch app's sounds and their volume, the delivery route and
-// the Wrist Webhooks button size. Home Assistant keeps it as the kind
+// buttons, the watch app's sounds and their volume, and the delivery route.
+// Home Assistant keeps it as the kind
 // `notification_style`, beside `behavior`, and the Watch settings page edits
 // both behind one Save. Plan: app repo docs/pages_in_home_assistant_step4.md,
 // "4d batch 2 build contract", items 10 to 12.
@@ -19,8 +19,8 @@
 //
 // - An absent key means the watch's default. The form shows the default and
 //   leaves the key absent unless someone changes it.
-// - A key the panel does not show (none today, but a newer app may add one)
-//   is written back exactly as it was read.
+// - A key the panel does not show (the retired Wrist Webhooks button size,
+//   or one a newer app adds) is written back exactly as it was read.
 // - Nothing is ever written as null. An optional key that should say "the
 //   default" is left out instead.
 
@@ -77,7 +77,7 @@ export interface StyleGroup {
 }
 
 export interface StyleSection {
-  id: "notifications" | "sounds" | "wristWebhooks";
+  id: "notifications" | "sounds";
   title: string;
   groups: StyleGroup[];
 }
@@ -134,7 +134,6 @@ export const NOTIFICATION_STYLE_ICONS: Readonly<Record<string, string>> = {
   arcSlideTickSound: "speaker.wave.2.fill",
   successSound: "speaker.wave.2.fill",
   cancelSound: "speaker.wave.2.fill",
-  storedWebhookButtonSize: "arrow.up.left.and.arrow.down.right",
 };
 
 /** `"useEntityTintColor is false"` as a condition on another key. */
@@ -148,7 +147,6 @@ function parseShownWhen(text: string | undefined): StyleRow["showIf"] {
 function absentValue(key: string, entry: TableKey): StyleValue {
   if (entry.type === "sound") return ABSENT;
   if (key === table.delivery.key) return table.delivery.absentReadsAs;
-  if (key === table.webhookButtonSize.key) return table.webhookButtonSize.absentReadsAs;
   return entry.default as StyleValue;
 }
 
@@ -184,14 +182,16 @@ function tableGroups(sectionId: string): { label: string; keys: string[] }[] {
 }
 
 /**
- * The dialog's three sections, in the phone's order and grouping:
+ * The dialog's two sections, in the phone's order and grouping:
  *
  * - **Notifications**: the phone's Notification Style screen (Style, Color,
  *   Content, Animation), then Delivery from its Notifications screen.
  * - **Sounds**: Volume, then the seven sounds. The Button Press Sound sits
  *   on the phone's Style screen; here it leads the other six, so every sound
  *   is in one place.
- * - **Wrist Webhooks**: the webhook button size.
+ *
+ * The table's Wrist Webhooks section (its button size) is left out: the
+ * feature is gone, and the key is kept on save as it was read.
  */
 function buildSections(): StyleSection[] {
   const groups = (sectionId: string, skip: readonly string[] = []) =>
@@ -213,7 +213,6 @@ function buildSections(): StyleSection[] {
         rows: (g.label === "Sounds" ? [...pressSound, ...g.keys] : g.keys).map(rowFor),
       })),
     },
-    { id: "wristWebhooks", title: "Wrist Webhooks", groups: groups("wristWebhooks") },
   ];
 }
 
@@ -461,7 +460,7 @@ export function readStyleDocument(document: unknown): StyleDocument | undefined 
 
 /** Whether a failed read means this integration does not keep the kind:
  * one older than it refuses it as `invalid`, one older than the store does
- * not know the command. The dialog then leaves the three sections out. */
+ * not know the command. The dialog then leaves the two sections out. */
 export function notificationStyleReadMeansUnsupported(error: unknown): boolean {
   const code = watchCommandError(error).code;
   return code === "invalid" || code === "unknown_command";
