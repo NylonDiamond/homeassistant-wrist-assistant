@@ -277,7 +277,7 @@ describe("Live video", () => {
       entityId: "camera.door",
       title: "Live video",
       label: "Live video in the tile",
-      help: "2 frames a second while the tile is on screen. Up to 4 live tiles at once; the rest show snapshots. Uses more battery. Needs the paid Camera Live Streaming feature; without it the tile keeps its snapshots.",
+      help: "2 frames a second while the tile is on screen. Up to 4 live tiles at once; the rest show snapshots. Uses more battery.",
       before: "Camera",
       press: (root) => check(root, "Live video in the tile", true),
       wrote: (t) => expect(t.cameraTileLive).toBe(true),
