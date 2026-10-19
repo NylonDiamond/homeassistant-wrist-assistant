@@ -124,6 +124,15 @@ from .camera_stream import (
     run_batch_snapshot_stream,
     run_mjpeg_stream,
 )
+from .camera_webrtc import MAX_CAMERAS_PER_CALL as MAX_WEBRTC_CAMERAS_PER_CALL
+from .camera_webrtc import MAX_OFFER_BYTES as MAX_WEBRTC_OFFER_BYTES
+from .camera_webrtc import (
+    CameraWebRTCSessions,
+    WebRTCOfferError,
+    camera_supports_webrtc,
+)
+from .camera_webrtc import client_configuration as webrtc_client_configuration
+from .camera_webrtc import get_camera as get_webrtc_camera
 from .client_certificate_store import ClientCertificateError
 from .complication_store import (
     ComplicationConflictError,
@@ -2557,6 +2566,142 @@ async def _op_stream_close(ctx: _OpContext) -> Response:
     return ctx.signed_json({"ok": True, "released": released})
 
 
+# ── camera WebRTC signaling (the iPhone's live tiles, camera_webrtc.py) ──
+
+
+def _webrtc_sessions(ctx: _OpContext) -> CameraWebRTCSessions | None:
+    return ctx.domain_data.webrtc_sessions
+
+
+async def _op_webrtc_cameras(ctx: _OpContext) -> Response:
+    """Which cameras can play WebRTC, and what each one plays.
+
+    Body: `{"entity_ids": ["camera.x", ...], "quality_level": "sd"|"hd"}`.
+    `quality_level` picks a device's sub or main stream the way
+    `stream_update` does; left out, each camera plays itself.
+
+    Reply: `{"cameras": {"camera.x": {"webrtc": bool, "source":
+    "camera.x_sub", "client": {...}}}}`. `client` is the source camera's
+    WebRTC client configuration as the frontend gets it (ICE servers and any
+    data channel), present only when `webrtc` is true.
+    """
+    raw = ctx.payload.get("entity_ids")
+    if not isinstance(raw, list) or not raw:
+        return Response(status=400, text="entity_ids array required")
+    quality_level = ctx.payload.get("quality_level")
+    if quality_level is not None and quality_level not in ("sd", "hd"):
+        return Response(status=400, text="quality_level must be 'sd' or 'hd'")
+
+    available = _webrtc_sessions(ctx) is not None
+    coordinator = ctx.domain_data.camera_stream_coordinator
+    cameras: dict[str, Any] = {}
+    for entity_id in raw[:MAX_WEBRTC_CAMERAS_PER_CALL]:
+        if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
+            continue
+        source = entity_id
+        if quality_level is not None:
+            source = (
+                coordinator.resolve_quality_level(ctx.hass, entity_id, quality_level)
+                or entity_id
+            )
+        entry: dict[str, Any] = {"webrtc": False, "source": source}
+        if available:
+            try:
+                camera = get_webrtc_camera(ctx.hass, source)
+            except HomeAssistantError:
+                camera = None
+            if camera is not None and camera_supports_webrtc(camera):
+                entry["webrtc"] = True
+                entry["client"] = webrtc_client_configuration(camera)
+        cameras[entity_id] = entry
+    return ctx.signed_json({"ok": True, "cameras": cameras})
+
+
+async def _op_webrtc_offer(ctx: _OpContext) -> Response:
+    """Hand the phone's WebRTC offer to a camera and return its answer.
+
+    Body: `{"entity_id": "camera.x", "offer": "<sdp>"}`. The entity is the
+    `source` webrtc_cameras named. Reply: `{"ok": true, "session_id",
+    "answer", "candidates": [...]}`, or `{"ok": false, "error": code,
+    "message"}` when the camera cannot play WebRTC (`unsupported`) or the
+    exchange failed (`offer_failed`, `timeout`, or the provider's own code).
+    """
+    sessions = _webrtc_sessions(ctx)
+    if sessions is None:
+        return ctx.signed_json(
+            {"ok": False, "error": "unsupported", "message": "No WebRTC on this Home Assistant"}
+        )
+    entity_id = ctx.payload.get("entity_id")
+    offer = ctx.payload.get("offer")
+    if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
+        return Response(status=400, text="entity_id required and must be a camera")
+    if not isinstance(offer, str) or not offer or len(offer) > MAX_WEBRTC_OFFER_BYTES:
+        return Response(status=400, text="offer required")
+    if ctx.hass.states.get(entity_id) is None:
+        return Response(status=404, text="Camera entity not found")
+
+    try:
+        camera = get_webrtc_camera(ctx.hass, entity_id)
+    except HomeAssistantError as err:
+        return ctx.signed_json({"ok": False, "error": "offer_failed", "message": str(err)})
+    if not camera_supports_webrtc(camera):
+        return ctx.signed_json(
+            {"ok": False, "error": "unsupported", "message": "Camera does not support WebRTC"}
+        )
+
+    try:
+        result = await sessions.async_offer(ctx.watch_id, entity_id, camera, offer)
+    except WebRTCOfferError as err:
+        _LOGGER.debug("WebRTC offer for %s failed: %s %s", entity_id, err.code, err.message)
+        return ctx.signed_json({"ok": False, "error": err.code, "message": err.message})
+    return ctx.signed_json({"ok": True, **result})
+
+
+async def _op_webrtc_candidates(ctx: _OpContext) -> Response:
+    """Swap candidates on a session still being set up.
+
+    Body: `{"session_id", "candidates": [{"candidate", "sdpMid",
+    "sdpMLineIndex"}, ...]}` (the list may be empty: the call then only
+    collects the server's). Reply: `{"ok": true, "candidates": [...]}`, with
+    `error` and `message` when the camera has since reported a failure, or
+    `{"ok": false, "error": "gone"}` for a session that no longer exists.
+    """
+    sessions = _webrtc_sessions(ctx)
+    session_id = ctx.payload.get("session_id")
+    candidates = ctx.payload.get("candidates") or []
+    if not isinstance(session_id, str) or not isinstance(candidates, list):
+        return Response(status=400, text="session_id and candidates required")
+    result = (
+        await sessions.async_candidates(ctx.watch_id, session_id, candidates)
+        if sessions is not None
+        else None
+    )
+    if result is None:
+        return ctx.signed_json({"ok": False, "error": "gone"})
+    return ctx.signed_json({"ok": True, **result})
+
+
+async def _op_webrtc_keepalive(ctx: _OpContext) -> Response:
+    """Keep the phone's sessions open. Body: `{"session_ids": [...]}`.
+    Reply: `{"ok": true, "alive": [...]}`, the ones that still are."""
+    sessions = _webrtc_sessions(ctx)
+    raw = ctx.payload.get("session_ids")
+    if not isinstance(raw, list):
+        return Response(status=400, text="session_ids array required")
+    alive = sessions.keepalive(ctx.watch_id, raw) if sessions is not None else []
+    return ctx.signed_json({"ok": True, "alive": alive})
+
+
+async def _op_webrtc_close(ctx: _OpContext) -> Response:
+    """Close the phone's sessions. Body: `{"session_ids": [...]}`."""
+    sessions = _webrtc_sessions(ctx)
+    raw = ctx.payload.get("session_ids")
+    if not isinstance(raw, list):
+        return Response(status=400, text="session_ids array required")
+    closed = sessions.close(ctx.watch_id, raw) if sessions is not None else 0
+    return ctx.signed_json({"ok": True, "closed": closed})
+
+
 async def _op_verify_identity(ctx: _OpContext) -> Response:
     """Mutual-HMAC identity probe used by the iOS app before sending a bearer.
 
@@ -4939,6 +5084,12 @@ _OP_HANDLERS: dict[str, Any] = {
     "stream_open": _op_stream_open,
     "stream_update": _op_stream_update,
     "stream_close": _op_stream_close,
+    # The iPhone's live camera tiles over WebRTC (camera_webrtc.py).
+    "webrtc_cameras": _op_webrtc_cameras,
+    "webrtc_offer": _op_webrtc_offer,
+    "webrtc_candidates": _op_webrtc_candidates,
+    "webrtc_keepalive": _op_webrtc_keepalive,
+    "webrtc_close": _op_webrtc_close,
     "verify_identity": _op_verify_identity,
     "update_metadata": _op_update_metadata,
     "rekey": _op_rekey,

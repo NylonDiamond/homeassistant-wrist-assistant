@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from .apns_client import APNsClient
     from .batch_snapshot_settings_store import BatchSnapshotSettingsStore
     from .camera_stream import CameraStreamCoordinator
+    from .camera_webrtc import CameraWebRTCSessions
     from .card_preview_store import CardPreviewStore
     from .client_certificate_store import ClientCertificateStore
     from .complication_push import ComplicationPhonePush
@@ -99,6 +100,9 @@ class WristAssistantData:
     # wake. Built after the relay client is resolved, so it is None for the
     # moment between the two and on an instance whose relay never came up.
     complication_push: ComplicationPhonePush | None = field(default=None)
+    # The iPhone's WebRTC camera signaling sessions (camera_webrtc.py). None on
+    # a Home Assistant older than the async WebRTC camera API (2024.11).
+    webrtc_sessions: CameraWebRTCSessions | None = field(default=None)
 
 
 type WristAssistantConfigEntry = ConfigEntry[WristAssistantData]

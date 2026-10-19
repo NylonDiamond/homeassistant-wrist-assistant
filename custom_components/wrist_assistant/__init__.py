@@ -38,6 +38,7 @@ from .camera_stream import (
     capture_notification_snapshot,
     jpeg_aspect,
 )
+from .camera_webrtc import CameraWebRTCSessions, webrtc_api_available
 from .card_preview_store import CardPreviewStore
 from .client_certificate_store import ClientCertificateStore
 from .client_certificate_ws import async_register_client_certificate_commands
@@ -1116,6 +1117,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         client_certificate_store=client_certificate_store,
         watch_logs_store=watch_logs_store,
     )
+    # The iPhone's live camera tiles negotiate WebRTC through the webrtc_* ops
+    # (camera_webrtc.py). The app looks for the capability before it tries,
+    # and keeps its MJPEG tiles on a Home Assistant without the API.
+    if webrtc_api_available():
+        webrtc_sessions = CameraWebRTCSessions()
+        webrtc_sessions.start(hass.loop)
+        runtime_data.webrtc_sessions = webrtc_sessions
+        coordinator.register_capability("camera_webrtc")
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
     # Live panel and phone subscriptions stay open across a reload; point
@@ -1243,6 +1252,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         pair_request_store.shutdown()
         pair_offer_store.shutdown()
         complication_push.shutdown()
+        if runtime_data.webrtc_sessions is not None:
+            runtime_data.webrtc_sessions.shutdown()
 
     entry.async_on_unload(
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _handle_stop)
@@ -1437,6 +1448,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
             data.batch_snapshot_token_store.shutdown()
             data.pair_request_store.shutdown()
             data.pair_offer_store.shutdown()
+            if data.webrtc_sessions is not None:
+                data.webrtc_sessions.shutdown()
             # A reload builds a fresh one. Without this the old instance's
             # parked timers still fire, against a relay client and a store
             # this entry has already let go of.
