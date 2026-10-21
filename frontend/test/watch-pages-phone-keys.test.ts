@@ -373,19 +373,19 @@ describe("Full screen", () => {
     const drawn = draw(host);
     expect(titles(drawn)).not.toContain("Full screen");
     expect(flatten(drawn)).toContain("A double tap on the iPhone switches between SD and HD.");
-    segPick(drawn, "Full screen", "SD");
-    expect(tile().cameraFullScreenStream).toBe("sd");
-    segPick(draw(host), "Full screen", "HD");
+    segPick(drawn, "Full screen", "HD");
+    expect(tile().cameraFullScreenStream).toBe("hd");
+    segPick(draw(host), "Full screen", "SD");
     expect(Object.hasOwn(tile(), "cameraFullScreenStream")).toBe(false);
   });
 
-  it("reads anything but sd as HD", () => {
-    expect(watchCameraFullScreenStream({ entityId: "camera.door" })).toBe("hd");
-    expect(watchCameraFullScreenStream({ entityId: "camera.door", cameraFullScreenStream: "4k" })).toBe("hd");
-    expect(watchCameraFullScreenStream({ entityId: "camera.door", cameraFullScreenStream: "sd" })).toBe("sd");
-    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraFullScreenStream: "hd" }, "cameraFullScreenStream")).toBe(false);
-    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraFullScreenStream: "sd" }, "cameraFullScreenStream")).toBe(true);
-    expect(watchPhoneKeySummary({ entityId: "camera.door", cameraFullScreenStream: "sd" }, "cameraFullScreenStream")).toBe("Full screen SD");
+  it("reads anything but hd as SD", () => {
+    expect(watchCameraFullScreenStream({ entityId: "camera.door" })).toBe("sd");
+    expect(watchCameraFullScreenStream({ entityId: "camera.door", cameraFullScreenStream: "4k" })).toBe("sd");
+    expect(watchCameraFullScreenStream({ entityId: "camera.door", cameraFullScreenStream: "hd" })).toBe("hd");
+    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraFullScreenStream: "sd" }, "cameraFullScreenStream")).toBe(false);
+    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraFullScreenStream: "hd" }, "cameraFullScreenStream")).toBe(true);
+    expect(watchPhoneKeySummary({ entityId: "camera.door", cameraFullScreenStream: "hd" }, "cameraFullScreenStream")).toBe("Full screen HD");
     expect(watchPhoneKeySummary({ entityId: "camera.door" }, "cameraFullScreenStream")).toBe("");
   });
 });

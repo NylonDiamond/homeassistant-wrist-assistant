@@ -1610,7 +1610,7 @@
           "enum": "CameraFullScreenStream",
           "strict": false,
           "required": false,
-          "default": "hd"
+          "default": "sd"
         },
         "sensorChart": {
           "type": "enum",

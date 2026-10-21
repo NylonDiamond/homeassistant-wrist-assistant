@@ -61,7 +61,7 @@ export const WATCH_CAMERA_TILE_STREAM_CHOICES: readonly { value: string; label: 
 /** What a tile without the stream key plays. */
 export const WATCH_CAMERA_TILE_STREAM_ABSENT = STREAM.absent;
 
-/** The full screen stream's choices, SD then HD (the absent one). */
+/** The full screen stream's choices, SD (the absent one) then HD. */
 export const WATCH_CAMERA_FULL_SCREEN_CHOICES: readonly { value: string; label: string }[] = FULL_SCREEN.choices;
 
 /** What full screen opens on for a tile without the key. */
@@ -111,8 +111,8 @@ export function watchCameraTileStream(tile: WatchPageTile): string {
   return typeof stored === "string" && STREAM.choices.some((c) => c.value === stored) ? stored : STREAM.absent;
 }
 
-/** The stream full screen opens on: the stored choice, else HD. A value
- * that is not a choice reads as HD, as the iPhone reads it. */
+/** The stream full screen opens on: the stored choice, else SD. A value
+ * that is not a choice reads as SD, as the iPhone reads it. */
 export function watchCameraFullScreenStream(tile: WatchPageTile): string {
   const stored = tile.cameraFullScreenStream;
   return typeof stored === "string" && FULL_SCREEN.choices.some((c) => c.value === stored) ? stored : FULL_SCREEN.absent;
@@ -177,7 +177,7 @@ export function setWatchCameraTileStream(document: WatchPagesDocument, pageId: s
   return setKey(document, pageId, tileId, STREAM.key, (tile) => (offered(tile, STREAM.key) ? (stream === STREAM.absent ? REMOVE : stream) : undefined));
 }
 
-/** "Full screen": sd writes its value, hd removes the key. A value that
+/** "Full screen": hd writes its value, sd removes the key. A value that
  * is not a choice is refused. */
 export function setWatchCameraFullScreenStream(document: WatchPagesDocument, pageId: string, tileId: string, stream: string): WatchPagesDocument {
   if (!FULL_SCREEN.choices.some((c) => c.value === stream)) return document;

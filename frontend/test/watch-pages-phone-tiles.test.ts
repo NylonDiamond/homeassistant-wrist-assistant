@@ -31,7 +31,7 @@ import {
   watchPhoneTilesGroup,
   watchPhoneTilesGroupOf,
 } from "../src/watch-pages/add-tile-list.js";
-import { renderAddTile } from "../src/watch-pages/add-tile.js";
+import { detectNewCameraRatio, renderAddTile } from "../src/watch-pages/add-tile.js";
 import { pageCrop } from "../src/watch-pages/all-pages.js";
 import { WatchPagesDraft } from "../src/watch-pages/draft.js";
 import { type AddTileHost, NO_ICONS, type TileSettingsHost } from "../src/watch-pages/editor-host.js";
@@ -76,7 +76,7 @@ import {
   watchReflowPage,
   watchSkippedTilesLayout,
 } from "../src/watch-pages/preview.js";
-import { type WatchPhoneAddKind, addNewWatchTile, newWatchTile, watchAddEntityId } from "../src/watch-pages/tile-new.js";
+import { type WatchPhoneAddKind, addNewWatchTile, newWatchTile, watchAddEntityId, watchEntityAddFromHass } from "../src/watch-pages/tile-new.js";
 import { watchTileSectionsFor } from "../src/watch-pages/tile-settings-options.js";
 import { renderTileName, renderTileSettings, tileInspectorSections, tileWordsHost } from "../src/watch-pages/tile-settings.js";
 
@@ -658,5 +658,23 @@ describe("a tile only the iPhone draws in the pictures", () => {
     const iphone = flatten(renderPageRowPicture({ page: rowPage, iphone: true }));
     expect(iphone).toContain("wp-phone-face");
     expect(iphone).not.toContain("wp-phone-out");
+  });
+});
+
+describe("adding a camera", () => {
+  it("detects its ratio from the snapshot, as Detect camera ratio does", async () => {
+    const { host, tiles } = addHost("iphone");
+    const states = { "camera.porch": { entity_id: "camera.porch", state: "idle", attributes: { friendly_name: "Porch", entity_picture: "/api/camera_proxy/camera.porch?token=t" } } };
+    Object.defineProperty(host, "hass", { value: { states } });
+    const loaded: string[] = [];
+    Object.defineProperty(host, "loadImageSize", { value: async (url: string) => { loaded.push(url); return { width: 2560, height: 720 }; } });
+    // As a click on the row does: the tile added, then the detection.
+    host.apply(addNewWatchTile(host.document, PAGE, { kind: "entity", ...watchEntityAddFromHass(host.hass, "camera.porch") }).document);
+    detectNewCameraRatio(host, "camera.porch");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(loaded).toEqual(["/api/camera_proxy/camera.porch?token=t"]);
+    const [tile] = tiles();
+    expect(tile?.entityId).toBe("camera.porch");
+    expect(Number(tile?.cameraAspectRatio)).toBeCloseTo(3.56, 2);
   });
 });

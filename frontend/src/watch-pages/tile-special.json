@@ -718,12 +718,12 @@
     "fullScreen": {
       "key": "cameraFullScreenStream",
       "kinds": ["camera", "multicam"],
-      "absent": "hd",
+      "absent": "sd",
       "choices": [
         { "value": "sd", "label": "SD" },
         { "value": "hd", "label": "HD" }
       ],
-      "write": "hd removes the key, sd writes it. Only the iPhone reads it: which stream the full screen view opens a camera of this tile on. hd starts on the small stream and swaps to the main one at its first frame, as auto does; sd stays on the small stream. A double tap switches between the two either way. Offered whatever Live video says: the full screen view always plays live."
+      "write": "sd removes the key, hd writes it. Only the iPhone reads it: which stream the full screen view opens a camera of this tile on. sd (the default) stays on the small stream; hd starts on the small stream and swaps to the main one at its first frame, as auto does. A double tap switches between the two either way. Offered whatever Live video says: the full screen view always plays live."
     },
     "detection": "Detect Camera Ratio with the ratio of the snapshot (width / height). A single camera: cameraAspectRatio is the ratio; gridCol becomes 0 when gridCol plus the best fit's colSpan passes the page's columns; then the resize to the best fit, pushing the tiles it overlaps down. A snapshot that does not load changes nothing."
   },

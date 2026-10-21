@@ -76,13 +76,15 @@ import {
   watchLibraryLister,
   watchNoPhoneLibraryText,
 } from "./catalog.js";
-import { type AddTileHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
+import { type AddTileHost, type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
+import { detectCameraRatio } from "./special-settings.js";
 import {
   type WatchPage,
   isHiddenWatchPage,
   isSmartWatchPage,
   parseTileColor,
   tileEntityId,
+  tileKind,
   tileInkColor,
   watchPageId,
   watchPageName,
@@ -262,10 +264,23 @@ function addEntity(
   const add: WatchTileAdd = { kind: "entity", ...watchEntityAddFromHass(host.hass, c.entityId) };
   if (!commit(host, view, add, `Added ${name}.`, name)) return;
   view.keep.add(c.entityId);
+  if (tileKind(c.entityId) === "camera") detectNewCameraRatio(host, c.entityId);
   // On to the next row that can still be added, so Enter, Enter, Enter adds
   // three in a row.
   const next = watchAddNextOpen(results, index, (id) => id === c.entityId || onPage.has(id));
   view.highlighted = results[next]?.entityId;
+}
+
+/** A camera just added gets its ratio and size from its snapshot, as
+ * Detect camera ratio in its Camera card does, as an undo step of its own.
+ * A snapshot that does not load leaves the tile as it was added. */
+export function detectNewCameraRatio(host: AddTileHost, entityId: string): void {
+  const tile = watchPageTiles(host.page).find((t) => tileEntityId(t) === entityId);
+  const tileId = tile?.id;
+  if (typeof tileId !== "string") return;
+  const find = () => watchPageTiles(host.page).find((t) => t.id === tileId) ?? tile!;
+  const at = extendHost<AddTileHost, Pick<TileSettingsHost, "tileId" | "tile">>(host, { tileId: () => tileId, tile: find });
+  void detectCameraRatio(at as unknown as TileSettingsHost, tileId);
 }
 
 function addLink(host: AddTileHost, view: AddTileView, kind: LinkKind, target: WatchPage): void {

@@ -302,7 +302,7 @@ export const WATCH_PHONE_KEY_WORDS: Readonly<Record<WatchPhoneKey, { title: stri
   cameraFullScreenStream: {
     title: "Full screen",
     label: "Full screen",
-    help: "The stream a tap opens. HD starts on SD for a moment, then switches. A double tap on the iPhone switches between SD and HD.",
+    help: "The stream a tap opens. SD by default: it starts fastest. HD starts on SD for a moment, then switches. A double tap on the iPhone switches between SD and HD.",
   },
   sensorChart: {
     title: "Chart",
@@ -360,7 +360,7 @@ export function watchPhoneKeySummary(tile: WatchPageTile, key: WatchPhoneKey): s
       return "SD";
     }
     case "cameraFullScreenStream":
-      return watchCameraFullScreenStream(tile) === WATCH_CAMERA_FULL_SCREEN_ABSENT ? "" : "Full screen SD";
+      return watchCameraFullScreenStream(tile) === WATCH_CAMERA_FULL_SCREEN_ABSENT ? "" : "Full screen HD";
     case "mediaArtwork":
       return watchMediaArtwork(tile) ? "On" : "";
     case "sensorChart": {
