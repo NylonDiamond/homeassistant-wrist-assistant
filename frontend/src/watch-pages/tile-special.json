@@ -702,27 +702,26 @@
     "live": {
       "key": "cameraTileLive",
       "kinds": ["camera", "multicam"],
-      "absent": true,
-      "write": "On by default: off writes false, on removes the key. Only the iPhone reads it (tile-devices.json keys): it plays the tile's live video while on screen unless the key is false, over WebRTC for up to 12 cameras at once (MJPEG at 2 frames a second for up to 4 on a Home Assistant without it). The watch keeps its snapshot."
+      "absent": false,
+      "write": "Off by default: on writes true, off removes the key (a false stored before 2026-10-21, when the default was on, reads as off too). Only the iPhone reads it (tile-devices.json keys): it plays the tile's live video while on screen when the key is true, over WebRTC for up to 12 cameras at once (MJPEG at 2 frames a second for up to 4 on a Home Assistant without it). The watch keeps its snapshot."
     },
     "stream": {
       "key": "cameraTileStream",
       "kinds": ["camera", "multicam"],
       "absent": "auto",
       "choices": [
-        { "value": "auto", "label": "Auto" },
         { "value": "sub", "label": "SD" },
-        { "value": "main", "label": "HD" }
+        { "value": "auto", "label": "HD" }
       ],
-      "write": "Offered under Live video while it is on. auto removes the key, sub and main write their value. Only the iPhone reads it: which of the camera's two streams (Home Assistant's camera device groups, sd and hd) a live tile plays. auto starts on the small stream and swaps to the full one at its first frame when the tile draws the small one larger than it is; sub and main play only that one. A camera with one stream plays it for all three. Tiles that show the same camera play the strongest: main, then auto, then sub. The panel names them Auto, SD and HD."
+      "write": "Offered under Live video while it is on. auto removes the key, sub and main write their value. Only the iPhone reads it: which of the camera's two streams (Home Assistant's camera device groups, sd and hd) a live tile plays. auto starts on the small stream and swaps to the full one at its first frame when the tile draws the small one larger than it is; sub and main play only that one. A camera with one stream plays it for all three. Tiles that show the same camera play the strongest: main, then auto, then sub. The panel offers sub as SD and auto as HD; main (the full stream alone, which only waited longer for the same picture) is no longer offered, and a stored main reads as HD on both sides."
     },
     "fullScreen": {
       "key": "cameraFullScreenStream",
       "kinds": ["camera", "multicam"],
       "absent": "hd",
       "choices": [
-        { "value": "hd", "label": "HD" },
-        { "value": "sd", "label": "SD" }
+        { "value": "sd", "label": "SD" },
+        { "value": "hd", "label": "HD" }
       ],
       "write": "hd removes the key, sd writes it. Only the iPhone reads it: which stream the full screen view opens a camera of this tile on. hd starts on the small stream and swaps to the main one at its first frame, as auto does; sd stays on the small stream. A double tap switches between the two either way. Offered whatever Live video says: the full screen view always plays live."
     },

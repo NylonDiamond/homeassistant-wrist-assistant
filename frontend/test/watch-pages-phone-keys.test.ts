@@ -291,65 +291,73 @@ function sectionChecks(opts: {
 }
 
 describe("Live video", () => {
-  it("is a switch on a camera that writes cameraTileLive false, and folds on a watch", () => {
+  it("is a switch on a camera that writes cameraTileLive true, and folds on a watch", () => {
     sectionChecks({
       entityId: "camera.door",
       title: "Live video",
       label: "Live video in the tile",
-      help: "On by default. The tile plays live video while it is on screen. Up to 12 cameras play at once; the rest show snapshots. Turn it off on tiles that should keep snapshots.",
+      help: "Off by default, so the tile shows snapshots. On, it plays live video while it is on screen. Up to 12 cameras play at once; the rest show snapshots.",
       before: "Camera",
-      press: (root) => check(root, "Live video in the tile", false),
-      wrote: (t) => expect(t.cameraTileLive).toBe(false),
+      press: (root) => check(root, "Live video in the tile", true),
+      wrote: (t) => expect(t.cameraTileLive).toBe(true),
     });
   });
 
-  it("is on for a tile without the key, and removes the key when switched on again, on a camera group too", () => {
-    expect(watchCameraTileLive({ entityId: "camera.door" })).toBe(true);
-    expect(watchCameraTileLive({ entityId: "camera.door", cameraTileLive: "yes" })).toBe(true);
+  it("is off for a tile without the key, and removes the key when switched off again, on a camera group too", () => {
+    expect(watchCameraTileLive({ entityId: "camera.door" })).toBe(false);
+    expect(watchCameraTileLive({ entityId: "camera.door", cameraTileLive: "yes" })).toBe(false);
+    expect(watchCameraTileLive({ entityId: "camera.door", cameraTileLive: true })).toBe(true);
+    // A false stored while the default was on still reads as off.
     expect(watchCameraTileLive({ entityId: "camera.door", cameraTileLive: false })).toBe(false);
-    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraTileLive: true }, "cameraTileLive")).toBe(false);
-    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraTileLive: false }, "cameraTileLive")).toBe(true);
-    const { host, tile } = tileHost(GROUP, { cameraTileLive: false }, "iphone");
+    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraTileLive: false }, "cameraTileLive")).toBe(false);
+    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraTileLive: true }, "cameraTileLive")).toBe(true);
+    expect(watchPhoneKeySummary({ entityId: "camera.door", cameraTileLive: true }, "cameraTileLive")).toBe("Live");
+    expect(watchPhoneKeySummary({ entityId: "camera.door" }, "cameraTileLive")).toBe("");
+    const { host, tile } = tileHost(GROUP, { cameraTileLive: true }, "iphone");
     expect(titles(draw(host))).toContain("Live video");
-    check(draw(host), "Live video in the tile", true);
+    check(draw(host), "Live video in the tile", false);
     expect(Object.hasOwn(tile(), "cameraTileLive")).toBe(false);
   });
 });
 
 describe("Stream", () => {
-  it("is Auto, SD and HD buttons under Live video, with no heading of their own, that write cameraTileStream", () => {
-    const { host, tile } = tileHost("camera.door", {}, "iphone");
+  it("is SD and HD buttons under Live video, with no heading of their own, that write cameraTileStream", () => {
+    const { host, tile } = tileHost("camera.door", { cameraTileLive: true }, "iphone");
     const drawn = draw(host);
     const text = flatten(drawn);
     expect(titles(drawn)).toContain("Live video");
     expect(titles(drawn)).not.toContain("Stream");
     expect(text).not.toContain('<span>Live video</span>');
     expect(text).not.toContain('<span>Full screen</span>');
-    expect(text).toContain("Auto starts on SD, then switches to HD");
-    segPick(drawn, "Stream", "HD");
-    expect(tile().cameraTileStream).toBe("main");
-    segPick(draw(host), "Stream", "Auto");
+    expect(text).toContain("HD starts on SD so video shows at once");
+    segPick(drawn, "Stream", "SD");
+    expect(tile().cameraTileStream).toBe("sub");
+    segPick(draw(host), "Stream", "HD");
     expect(Object.hasOwn(tile(), "cameraTileStream")).toBe(false);
   });
 
-  it("offers Auto first, reads anything else as it, and hides while live video is off", () => {
-    expect(tileSpecial.camera.stream.choices.map((c) => c.label)).toEqual(["Auto", "SD", "HD"]);
+  it("offers SD and HD, reads anything else (the retired main too) as HD, and hides while live video is off", () => {
+    expect(tileSpecial.camera.stream.choices.map((c) => [c.value, c.label])).toEqual([["sub", "SD"], ["auto", "HD"]]);
     expect(watchCameraTileStream({ entityId: "camera.door" })).toBe("auto");
     expect(watchCameraTileStream({ entityId: "camera.door", cameraTileStream: "4k" })).toBe("auto");
+    expect(watchCameraTileStream({ entityId: "camera.door", cameraTileStream: "main" })).toBe("auto");
     expect(watchCameraTileStream({ entityId: "camera.door", cameraTileStream: "sub" })).toBe("sub");
+    expect(setWatchCameraTileStream({ schemaVersion: 1, pages: [{ id: PAGE, items: [{ id: TILE, entityId: "camera.door" }] }] }, PAGE, TILE, "main").pages)
+      .toEqual([{ id: PAGE, items: [{ id: TILE, entityId: "camera.door" }] }]);
     expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraTileStream: "auto" }, "cameraTileStream")).toBe(false);
-    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraTileStream: "main" }, "cameraTileStream")).toBe(true);
-    expect(watchPhoneKeySummary({ entityId: "camera.door", cameraTileStream: "sub" }, "cameraTileStream")).toBe("SD");
-    expect(watchPhoneKeySummary({ entityId: "camera.door", cameraTileStream: "sub", cameraTileLive: false }, "cameraTileStream")).toBe("");
+    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraTileStream: "main" }, "cameraTileStream")).toBe(false);
+    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraTileStream: "sub" }, "cameraTileStream")).toBe(true);
+    expect(watchPhoneKeySummary({ entityId: "camera.door", cameraTileStream: "sub", cameraTileLive: true }, "cameraTileStream")).toBe("SD");
+    expect(watchPhoneKeySummary({ entityId: "camera.door", cameraTileStream: "sub" }, "cameraTileStream")).toBe("");
 
-    const off = tileHost(GROUP, { cameraTileLive: false }, "iphone");
-    expect(flatten(draw(off.host))).not.toContain("Auto starts on SD");
+    const off = tileHost(GROUP, {}, "iphone");
+    expect(flatten(draw(off.host))).not.toContain("HD starts on SD so video shows");
     check(draw(off.host), "Live video in the tile", true);
-    expect(flatten(draw(off.host))).toContain("Auto starts on SD");
+    expect(flatten(draw(off.host))).toContain("HD starts on SD so video shows");
   });
 
   it("sits under Live video in the watch's folded group too", () => {
-    const { host, tile } = tileHost("camera.door", {}, "watch");
+    const { host, tile } = tileHost("camera.door", { cameraTileLive: true }, "watch");
     fold(draw(host), WATCH_PHONE_EXTRAS_TITLE);
     const open = draw(host);
     expect(flatten(open)).toMatch(/<span>Live video<\/span><span class="ts-dev-tag"/);
@@ -361,7 +369,7 @@ describe("Stream", () => {
 
 describe("Full screen", () => {
   it("is HD and SD buttons under Live video that write cameraFullScreenStream, shown with live video off too", () => {
-    const { host, tile } = tileHost("camera.door", { cameraTileLive: false }, "iphone");
+    const { host, tile } = tileHost("camera.door", {}, "iphone");
     const drawn = draw(host);
     expect(titles(drawn)).not.toContain("Full screen");
     expect(flatten(drawn)).toContain("A double tap on the iPhone switches between SD and HD.");

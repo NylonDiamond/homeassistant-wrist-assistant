@@ -1596,7 +1596,7 @@
         "cameraTileLive": {
           "type": "bool",
           "required": false,
-          "default": true
+          "default": false
         },
         "cameraTileStream": {
           "type": "enum",

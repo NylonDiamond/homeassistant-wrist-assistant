@@ -58,7 +58,6 @@ import {
   type WatchPhoneKey,
   WATCH_CAMERA_FULL_SCREEN_ABSENT,
   WATCH_CAMERA_TILE_STREAM_ABSENT,
-  WATCH_CAMERA_TILE_STREAM_CHOICES,
   WATCH_MEDIA_CONTROLS_MIN_COLUMNS,
   WATCH_SENSOR_CHART_CHOICES,
   WATCH_SENSOR_CHART_MIN_ROWS,
@@ -293,12 +292,12 @@ export const WATCH_PHONE_KEY_WORDS: Readonly<Record<WatchPhoneKey, { title: stri
   cameraTileLive: {
     title: "Live video",
     label: "Live video in the tile",
-    help: "On by default. The tile plays live video while it is on screen. Up to 12 cameras play at once; the rest show snapshots. Turn it off on tiles that should keep snapshots.",
+    help: "Off by default, so the tile shows snapshots. On, it plays live video while it is on screen. Up to 12 cameras play at once; the rest show snapshots.",
   },
   cameraTileStream: {
     title: "Stream",
     label: "Stream",
-    help: "Auto starts on SD, then switches to HD when the tile is big enough to show more. SD starts fastest and uses the least data. HD is the sharpest.",
+    help: "HD starts on SD so video shows at once, then switches to HD when the tile is big enough to show more. SD starts fastest and uses the least data.",
   },
   cameraFullScreenStream: {
     title: "Full screen",
@@ -338,11 +337,6 @@ export function watchSensorChartShortNote(tile: WatchPageTile): string | undefin
   return `This tile is ${rows} ${rows === 1 ? "row" : "rows"} tall, so the iPhone shows no chart. Make it ${WATCH_SENSOR_CHART_MIN_ROWS} or taller.`;
 }
 
-/** The Stream menu: quick start (the default), small, full. */
-export function watchCameraTileStreamMenu(tile: WatchPageTile): WatchMenu {
-  return watchChoiceMenu([...WATCH_CAMERA_TILE_STREAM_CHOICES], watchCameraTileStream(tile));
-}
-
 /** The Lines menu: 1 to 8, the absent value marked as the default; a stored
  * value off the range shown first, disabled. */
 export function watchTemplateLinesMenu(tile: WatchPageTile): WatchMenu {
@@ -359,11 +353,11 @@ export function watchTemplateLinesMenu(tile: WatchPageTile): WatchMenu {
 export function watchPhoneKeySummary(tile: WatchPageTile, key: WatchPhoneKey): string {
   switch (key) {
     case "cameraTileLive":
-      return watchCameraTileLive(tile) ? "" : "Snapshots";
+      return watchCameraTileLive(tile) ? "Live" : "";
     case "cameraTileStream": {
       const stream = watchCameraTileStream(tile);
       if (stream === WATCH_CAMERA_TILE_STREAM_ABSENT || !watchCameraTileLive(tile)) return "";
-      return stream === "sub" ? "SD" : "HD";
+      return "SD";
     }
     case "cameraFullScreenStream":
       return watchCameraFullScreenStream(tile) === WATCH_CAMERA_FULL_SCREEN_ABSENT ? "" : "Full screen SD";

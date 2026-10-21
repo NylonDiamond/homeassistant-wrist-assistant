@@ -55,13 +55,13 @@ export function watchPhoneKeyKinds(key: WatchPhoneKey): readonly string[] {
   return RULES.find((r) => r.key === key)?.kinds ?? [];
 }
 
-/** The live stream's choices, the absent one (auto) first. */
+/** The live stream's choices, SD then HD (auto, the absent one). */
 export const WATCH_CAMERA_TILE_STREAM_CHOICES: readonly { value: string; label: string }[] = STREAM.choices;
 
 /** What a tile without the stream key plays. */
 export const WATCH_CAMERA_TILE_STREAM_ABSENT = STREAM.absent;
 
-/** The full screen stream's choices, the absent one (HD) first. */
+/** The full screen stream's choices, SD then HD (the absent one). */
 export const WATCH_CAMERA_FULL_SCREEN_CHOICES: readonly { value: string; label: string }[] = FULL_SCREEN.choices;
 
 /** What full screen opens on for a tile without the key. */
@@ -98,13 +98,14 @@ export function watchPhoneKeysOf(tile: WatchPageTile, states?: WatchSpecialState
 
 // ── reading ──────────────────────────────────────────────────────────────
 
-/** Live video in the tile: on unless `false` is stored. */
+/** Live video in the tile: on only when `true` is stored. */
 export function watchCameraTileLive(tile: WatchPageTile): boolean {
   return isBool(tile.cameraTileLive) ? tile.cameraTileLive : LIVE.absent;
 }
 
-/** The stream a live tile plays: the stored choice, else auto. A value
- * that is not a choice reads as auto, as the iPhone reads it. */
+/** The stream a live tile plays: the stored choice, else auto (HD). A
+ * value that is not a choice, the retired main among them, reads as auto,
+ * as the iPhone reads it. */
 export function watchCameraTileStream(tile: WatchPageTile): string {
   const stored = tile.cameraTileStream;
   return typeof stored === "string" && STREAM.choices.some((c) => c.value === stored) ? stored : STREAM.absent;
@@ -162,14 +163,14 @@ function offered(tile: WatchPageTile, key: WatchPhoneKey): boolean {
   return watchPhoneKeyKinds(key).includes(tileKind(tileEntityId(tile)));
 }
 
-/** "Live video in the tile", on by default: off writes false, on removes
- * the key, as "Dim when off" does. */
+/** "Live video in the tile", off by default: on writes true, off removes
+ * the key. */
 export function setWatchCameraTileLive(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean): WatchPagesDocument {
   if (!isBool(on)) return document;
-  return setKey(document, pageId, tileId, LIVE.key, (tile) => (offered(tile, LIVE.key) ? (on ? REMOVE : false) : undefined));
+  return setKey(document, pageId, tileId, LIVE.key, (tile) => (offered(tile, LIVE.key) ? (on ? true : REMOVE) : undefined));
 }
 
-/** "Stream": sub or main writes its value, auto removes the key. A value
+/** "Stream": sub (SD) writes its value, auto (HD) removes the key. A value
  * that is not a choice is refused. */
 export function setWatchCameraTileStream(document: WatchPagesDocument, pageId: string, tileId: string, stream: string): WatchPagesDocument {
   if (!STREAM.choices.some((c) => c.value === stream)) return document;
