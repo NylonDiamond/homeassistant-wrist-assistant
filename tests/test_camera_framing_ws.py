@@ -235,6 +235,8 @@ def test_list_names_a_device_as_the_phone_did(env) -> None:
         "stream": {"override": None, "auto": SD},
         # A snapshot variant cannot open as a live stream.
         "stream_choices": [HD, SD],
+        # The two a live iPhone tile plays.
+        "streams": {"sd": SD, "hd": HD},
     }
 
 
@@ -259,6 +261,7 @@ def test_a_camera_with_no_registry_entry_is_a_row_of_its_own(env) -> None:
     assert garage["all_entity_ids"] == ["camera.yaml_garage"]
     assert garage["stream"] == {"override": None, "auto": None}
     assert garage["stream_choices"] == ["camera.yaml_garage"]
+    assert garage["streams"] == {"sd": None, "hd": None}
 
 
 # ── save ─────────────────────────────────────────────────────────────────
