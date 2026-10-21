@@ -27,10 +27,12 @@ import { FOLD_STORE_KEY } from "../src/watch-pages/fold-memory.js";
 import { type WatchPage, type WatchPageTile, type WatchPagesDocument, tileDevices } from "../src/watch-pages/model.js";
 import {
   WATCH_PHONE_SETTING_KEYS,
+  setWatchCameraFullScreenStream,
   setWatchCameraTileLive,
   setWatchCameraTileStream,
   setWatchSensorChart,
   setWatchTemplateLines,
+  watchCameraFullScreenStream,
   watchCameraTileLive,
   watchCameraTileStream,
   watchPhoneKeyChanged,
@@ -40,7 +42,6 @@ import {
 import {
   WATCH_PHONE_EXTRAS_HINT,
   WATCH_PHONE_EXTRAS_TITLE,
-  watchCameraTileStreamMenu,
   watchPhoneKeySummary,
   watchSensorChartMenu,
   watchTemplateLinesMenu,
@@ -111,6 +112,12 @@ function handler(root: unknown, marker: string, event: string): (e?: unknown) =>
 
 const check = (root: unknown, marker: string, on: boolean) => handler(root, marker, "@change=")({ target: { checked: on } });
 const pick = (root: unknown, marker: string, value: string) => handler(root, marker, "@change=")({ target: { value } });
+/** The button `text` of the segmented row labelled `label` pressed. */
+const segPick = (root: unknown, label: string, text: string) => {
+  const group = templates(root).find((t) => flatten(t).includes(`role="radiogroup" aria-label=${label}>`));
+  if (group === undefined) throw new Error(`no ${label} buttons`);
+  handler(group, `>${text}</button>`, "@click=")({ currentTarget: null });
+};
 /** A card's head pressed, as a click on its title row. */
 const fold = (root: unknown, title: string) => handler(root, `<h4>${title}`, "@click=")();
 
@@ -167,6 +174,7 @@ describe("the rules files and the device table", () => {
     const declared = [
       tileSpecial.camera.live.key,
       tileSpecial.camera.stream.key,
+      tileSpecial.camera.fullScreen.key,
       tileStyling.phone.sensorChart.key,
       tileStyling.phone.mediaArtwork.key,
       tileApp.template.lines.key,
@@ -180,6 +188,7 @@ describe("the rules files and the device table", () => {
   it("offer each key on kinds both devices draw, as the contract lists them", () => {
     expect(watchPhoneKeyKinds("cameraTileLive")).toEqual(["camera", "multicam"]);
     expect(watchPhoneKeyKinds("cameraTileStream")).toEqual(["camera", "multicam"]);
+    expect(watchPhoneKeyKinds("cameraFullScreenStream")).toEqual(["camera", "multicam"]);
     expect(watchPhoneKeyKinds("sensorChart")).toEqual(["sensor", "binary_sensor"]);
     expect(watchPhoneKeyKinds("mediaArtwork")).toEqual(["media_player"]);
     expect(watchPhoneKeyKinds("templateLines")).toEqual(["template"]);
@@ -189,8 +198,8 @@ describe("the rules files and the device table", () => {
   });
 
   it("give a tile its kind's key and no other", () => {
-    expect(watchPhoneKeysOf({ entityId: "camera.door" })).toEqual(["cameraTileLive", "cameraTileStream"]);
-    expect(watchPhoneKeysOf({ entityId: GROUP })).toEqual(["cameraTileLive", "cameraTileStream"]);
+    expect(watchPhoneKeysOf({ entityId: "camera.door" })).toEqual(["cameraTileLive", "cameraTileStream", "cameraFullScreenStream"]);
+    expect(watchPhoneKeysOf({ entityId: GROUP })).toEqual(["cameraTileLive", "cameraTileStream", "cameraFullScreenStream"]);
     expect(watchPhoneKeysOf({ entityId: "binary_sensor.door" })).toEqual(["sensorChart"]);
     expect(watchPhoneKeysOf({ entityId: "media_player.kitchen" })).toEqual(["mediaArtwork"]);
     expect(watchPhoneKeysOf({ entityId: TEMPLATE })).toEqual(["templateLines"]);
@@ -207,6 +216,7 @@ describe("the rules files and the device table", () => {
     ] }] };
     expect(setWatchCameraTileLive(doc, PAGE, TILE, true)).toBe(doc);
     expect(setWatchCameraTileStream(doc, PAGE, TILE, "main")).toBe(doc);
+    expect(setWatchCameraFullScreenStream(doc, PAGE, TILE, "sd")).toBe(doc);
     expect(setWatchSensorChart(doc, PAGE, "T2", "30d")).toBe(doc);
     expect(setWatchTemplateLines(doc, PAGE, "T3", 9)).toBe(doc);
     expect(setWatchTemplateLines(doc, PAGE, "T3", 2.5)).toBe(doc);
@@ -307,36 +317,35 @@ describe("Live video", () => {
 });
 
 describe("Stream", () => {
-  it("is a menu under Live video, with no heading of its own, that writes cameraTileStream", () => {
+  it("is Auto, SD and HD buttons under Live video, with no heading of their own, that write cameraTileStream", () => {
     const { host, tile } = tileHost("camera.door", {}, "iphone");
     const drawn = draw(host);
     const text = flatten(drawn);
     expect(titles(drawn)).toContain("Live video");
     expect(titles(drawn)).not.toContain("Stream");
     expect(text).not.toContain('<span>Live video</span>');
-    expect(text).toContain("Quick start plays the camera's small stream at once");
-    pick(drawn, "Stream", "main");
+    expect(text).not.toContain('<span>Full screen</span>');
+    expect(text).toContain("Auto starts on SD, then switches to HD");
+    segPick(drawn, "Stream", "HD");
     expect(tile().cameraTileStream).toBe("main");
-    pick(draw(host), "Stream", "auto");
+    segPick(draw(host), "Stream", "Auto");
     expect(Object.hasOwn(tile(), "cameraTileStream")).toBe(false);
   });
 
-  it("offers quick start first, reads anything else as it, and hides while live video is off", () => {
-    expect(watchCameraTileStreamMenu({ entityId: "camera.door" }).options.map((o) => o.label)).toEqual([
-      "Quick start, then sharp (default)", "Small stream only", "Full stream only",
-    ]);
+  it("offers Auto first, reads anything else as it, and hides while live video is off", () => {
+    expect(tileSpecial.camera.stream.choices.map((c) => c.label)).toEqual(["Auto", "SD", "HD"]);
     expect(watchCameraTileStream({ entityId: "camera.door" })).toBe("auto");
     expect(watchCameraTileStream({ entityId: "camera.door", cameraTileStream: "4k" })).toBe("auto");
     expect(watchCameraTileStream({ entityId: "camera.door", cameraTileStream: "sub" })).toBe("sub");
     expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraTileStream: "auto" }, "cameraTileStream")).toBe(false);
     expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraTileStream: "main" }, "cameraTileStream")).toBe(true);
-    expect(watchPhoneKeySummary({ entityId: "camera.door", cameraTileStream: "sub" }, "cameraTileStream")).toBe("Small stream");
+    expect(watchPhoneKeySummary({ entityId: "camera.door", cameraTileStream: "sub" }, "cameraTileStream")).toBe("SD");
     expect(watchPhoneKeySummary({ entityId: "camera.door", cameraTileStream: "sub", cameraTileLive: false }, "cameraTileStream")).toBe("");
 
     const off = tileHost(GROUP, { cameraTileLive: false }, "iphone");
-    expect(flatten(draw(off.host))).not.toContain("Quick start plays");
+    expect(flatten(draw(off.host))).not.toContain("Auto starts on SD");
     check(draw(off.host), "Live video in the tile", true);
-    expect(flatten(draw(off.host))).toContain("Quick start plays");
+    expect(flatten(draw(off.host))).toContain("Auto starts on SD");
   });
 
   it("sits under Live video in the watch's folded group too", () => {
@@ -345,8 +354,46 @@ describe("Stream", () => {
     const open = draw(host);
     expect(flatten(open)).toMatch(/<span>Live video<\/span><span class="ts-dev-tag"/);
     expect(flatten(open)).not.toMatch(/ts-sub-h"><span>Stream/);
-    pick(open, "Stream", "sub");
+    segPick(open, "Stream", "SD");
     expect(tile().cameraTileStream).toBe("sub");
+  });
+});
+
+describe("Full screen", () => {
+  it("is HD and SD buttons under Live video that write cameraFullScreenStream, shown with live video off too", () => {
+    const { host, tile } = tileHost("camera.door", { cameraTileLive: false }, "iphone");
+    const drawn = draw(host);
+    expect(titles(drawn)).not.toContain("Full screen");
+    expect(flatten(drawn)).toContain("A double tap on the iPhone switches between SD and HD.");
+    segPick(drawn, "Full screen", "SD");
+    expect(tile().cameraFullScreenStream).toBe("sd");
+    segPick(draw(host), "Full screen", "HD");
+    expect(Object.hasOwn(tile(), "cameraFullScreenStream")).toBe(false);
+  });
+
+  it("reads anything but sd as HD", () => {
+    expect(watchCameraFullScreenStream({ entityId: "camera.door" })).toBe("hd");
+    expect(watchCameraFullScreenStream({ entityId: "camera.door", cameraFullScreenStream: "4k" })).toBe("hd");
+    expect(watchCameraFullScreenStream({ entityId: "camera.door", cameraFullScreenStream: "sd" })).toBe("sd");
+    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraFullScreenStream: "hd" }, "cameraFullScreenStream")).toBe(false);
+    expect(watchPhoneKeyChanged({ entityId: "camera.door", cameraFullScreenStream: "sd" }, "cameraFullScreenStream")).toBe(true);
+    expect(watchPhoneKeySummary({ entityId: "camera.door", cameraFullScreenStream: "sd" }, "cameraFullScreenStream")).toBe("Full screen SD");
+    expect(watchPhoneKeySummary({ entityId: "camera.door" }, "cameraFullScreenStream")).toBe("");
+  });
+});
+
+describe("Preview", () => {
+  it("offers Play SD on a camera, and a Play HD once the integration names a separate HD stream", () => {
+    const { host } = tileHost("camera.door", {}, "iphone");
+    const text = flatten(draw(host));
+    expect(text).toContain("Play SD");
+    // No camera rows in the test: one stream, so no HD button.
+    expect(text).not.toContain("Play HD");
+    expect(text).toContain("Live tiles in the editor");
+    // Pressed, it plays the stream in a box and the button stops it.
+    handler(draw(host), ">Play SD</button>", "@click=")();
+    expect(flatten(draw(host))).toContain("<wa-camera-live");
+    expect(flatten(draw(host))).toContain(">Stop</button>");
   });
 });
 

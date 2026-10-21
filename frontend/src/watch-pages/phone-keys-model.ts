@@ -4,8 +4,9 @@
 // which tile gets which key, what each one reads as, and the setters.
 //
 // The keys are the device table's (`tile-devices.json` `keys`); each one's
-// rule lives in the table of the task it sits beside: `cameraTileLive` and
-// `cameraTileStream` in `tile-special.json` (`camera.live`, `camera.stream`),
+// rule lives in the table of the task it sits beside: `cameraTileLive`,
+// `cameraTileStream` and `cameraFullScreenStream` in `tile-special.json`
+// (`camera.live`, `camera.stream`, `camera.fullScreen`),
 // `templateLines` in `tile-app.json`
 // (`template.lines`), `sensorChart` and `mediaArtwork` in `tile-styling.json`
 // (`phone`). The watch decodes them and reads none, so nothing here changes
@@ -22,7 +23,7 @@ import { isWatchTvRemote, type WatchSpecialStates } from "./special-model.js";
 import { type WatchPageTile, type WatchPagesDocument, keyDevices, tileEntityId, tileKind } from "./model.js";
 
 /** A tile key only the iPhone reads, in the order the inspector lists them. */
-export type WatchPhoneKey = "cameraTileLive" | "cameraTileStream" | "sensorChart" | "mediaArtwork" | "templateLines";
+export type WatchPhoneKey = "cameraTileLive" | "cameraTileStream" | "cameraFullScreenStream" | "sensorChart" | "mediaArtwork" | "templateLines";
 
 /** One choice of the chart's range: a value of `TileHistoryRange`, or null
  * for Off (no key). */
@@ -38,12 +39,13 @@ interface PhoneKeyRule {
 
 const LIVE = tileSpecial.camera.live as PhoneKeyRule & { absent: boolean };
 const STREAM = tileSpecial.camera.stream as PhoneKeyRule & { absent: string; choices: { value: string; label: string }[] };
+const FULL_SCREEN = tileSpecial.camera.fullScreen as PhoneKeyRule & { absent: string; choices: { value: string; label: string }[] };
 const LINES = tileApp.template.lines as PhoneKeyRule & { min: number; max: number; absent: number };
 const CHART = tileStyling.phone.sensorChart as PhoneKeyRule & { choices: WatchPhoneChoice[]; minRows: number };
 const ARTWORK = tileStyling.phone.mediaArtwork as PhoneKeyRule & { absent: boolean; controlsMinColumns: number };
 
 /** Every phone key's rule, in the inspector's order. */
-const RULES: readonly PhoneKeyRule[] = [LIVE, STREAM, CHART, ARTWORK, LINES];
+const RULES: readonly PhoneKeyRule[] = [LIVE, STREAM, FULL_SCREEN, CHART, ARTWORK, LINES];
 
 /** The keys the panel writes here, for the key tests. */
 export const WATCH_PHONE_SETTING_KEYS: readonly WatchPhoneKey[] = RULES.map((r) => r.key);
@@ -58,6 +60,12 @@ export const WATCH_CAMERA_TILE_STREAM_CHOICES: readonly { value: string; label: 
 
 /** What a tile without the stream key plays. */
 export const WATCH_CAMERA_TILE_STREAM_ABSENT = STREAM.absent;
+
+/** The full screen stream's choices, the absent one (HD) first. */
+export const WATCH_CAMERA_FULL_SCREEN_CHOICES: readonly { value: string; label: string }[] = FULL_SCREEN.choices;
+
+/** What full screen opens on for a tile without the key. */
+export const WATCH_CAMERA_FULL_SCREEN_ABSENT = FULL_SCREEN.absent;
 
 /** The chart's choices, Off first. */
 export const WATCH_SENSOR_CHART_CHOICES: readonly WatchPhoneChoice[] = CHART.choices;
@@ -102,6 +110,13 @@ export function watchCameraTileStream(tile: WatchPageTile): string {
   return typeof stored === "string" && STREAM.choices.some((c) => c.value === stored) ? stored : STREAM.absent;
 }
 
+/** The stream full screen opens on: the stored choice, else HD. A value
+ * that is not a choice reads as HD, as the iPhone reads it. */
+export function watchCameraFullScreenStream(tile: WatchPageTile): string {
+  const stored = tile.cameraFullScreenStream;
+  return typeof stored === "string" && FULL_SCREEN.choices.some((c) => c.value === stored) ? stored : FULL_SCREEN.absent;
+}
+
 /** The chart's stored range, or undefined for Off. A stored value that is
  * not a string reads as Off, as the iPhone's decoder drops the tile key. */
 export function watchSensorChart(tile: WatchPageTile): string | undefined {
@@ -128,6 +143,8 @@ export function watchPhoneKeyChanged(tile: WatchPageTile, key: WatchPhoneKey): b
       return watchCameraTileLive(tile) !== LIVE.absent;
     case "cameraTileStream":
       return watchCameraTileStream(tile) !== STREAM.absent;
+    case "cameraFullScreenStream":
+      return watchCameraFullScreenStream(tile) !== FULL_SCREEN.absent;
     case "mediaArtwork":
       return watchMediaArtwork(tile) !== ARTWORK.absent;
     case "sensorChart":
@@ -157,6 +174,13 @@ export function setWatchCameraTileLive(document: WatchPagesDocument, pageId: str
 export function setWatchCameraTileStream(document: WatchPagesDocument, pageId: string, tileId: string, stream: string): WatchPagesDocument {
   if (!STREAM.choices.some((c) => c.value === stream)) return document;
   return setKey(document, pageId, tileId, STREAM.key, (tile) => (offered(tile, STREAM.key) ? (stream === STREAM.absent ? REMOVE : stream) : undefined));
+}
+
+/** "Full screen": sd writes its value, hd removes the key. A value that
+ * is not a choice is refused. */
+export function setWatchCameraFullScreenStream(document: WatchPagesDocument, pageId: string, tileId: string, stream: string): WatchPagesDocument {
+  if (!FULL_SCREEN.choices.some((c) => c.value === stream)) return document;
+  return setKey(document, pageId, tileId, FULL_SCREEN.key, (tile) => (offered(tile, FULL_SCREEN.key) ? (stream === FULL_SCREEN.absent ? REMOVE : stream) : undefined));
 }
 
 /** "Chart under the value": a range writes its value, null (Off) removes

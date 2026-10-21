@@ -394,6 +394,10 @@
       "sub",
       "main"
     ],
+    "CameraFullScreenStream": [
+      "hd",
+      "sd"
+    ],
     "TileHistoryRange": [
       "1h",
       "6h",
@@ -1600,6 +1604,13 @@
           "strict": false,
           "required": false,
           "default": "auto"
+        },
+        "cameraFullScreenStream": {
+          "type": "enum",
+          "enum": "CameraFullScreenStream",
+          "strict": false,
+          "required": false,
+          "default": "hd"
         },
         "sensorChart": {
           "type": "enum",

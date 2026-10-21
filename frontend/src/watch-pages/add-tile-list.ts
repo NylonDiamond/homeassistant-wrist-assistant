@@ -65,6 +65,10 @@ export interface WatchAddPoolInput {
    * until the search changes, so the row a person just used does not vanish
    * from under the pointer. */
   keep: ReadonlySet<string>;
+  /** Entities left out of the pool: a camera's other streams
+   * (`watchHiddenCameraIds`), so each camera is one row. One on the page
+   * or kept still shows. */
+  hidden?: ReadonlySet<string>;
 }
 
 function byName(a: WatchAddKind, b: WatchAddKind): number {
@@ -79,7 +83,7 @@ function byName(a: WatchAddKind, b: WatchAddKind): number {
  * kinds count only what can still be added.
  */
 export function watchAddPool(input: WatchAddPoolInput): WatchAddPool {
-  const { hass, onPage, keep } = input;
+  const { hass, onPage, keep, hidden } = input;
   const listed: Record<string, HassEntityState> = {};
   const already: Record<string, HassEntityState> = {};
   const kindOf = new Map<string, string>();
@@ -92,6 +96,7 @@ export function watchAddPool(input: WatchAddPoolInput): WatchAddPool {
       leftOut += 1;
       continue;
     }
+    if (hidden?.has(id) === true && !onPage.has(id) && !keep.has(id)) continue;
     kindOf.set(id, addable.name);
     if (onPage.has(id) && !keep.has(id)) already[id] = state;
     else listed[id] = state;
@@ -135,6 +140,7 @@ export class WatchAddListCache {
   private registries: readonly unknown[] = [];
   private pageKey = "";
   private keepKey = "";
+  private hidden: ReadonlySet<string> | undefined;
   private pool: WatchAddPool | undefined;
   private resultsFor: { pool: WatchAddPool; query: string; kind: string } | undefined;
   private results: WatchAddCandidate[] = [];
@@ -157,6 +163,7 @@ export class WatchAddListCache {
       this.pool !== undefined &&
       pageKey === this.pageKey &&
       keepKey === this.keepKey &&
+      input.hidden === this.hidden &&
       sameItems(ids, this.ids) &&
       sameItems(names, this.names) &&
       sameItems(registries, this.registries);
@@ -167,6 +174,7 @@ export class WatchAddListCache {
       this.registries = registries;
       this.pageKey = pageKey;
       this.keepKey = keepKey;
+      this.hidden = input.hidden;
     }
     return this.pool!;
   }

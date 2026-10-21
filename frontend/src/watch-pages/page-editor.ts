@@ -75,6 +75,7 @@ import {
   keepSlotsOf,
   menuSlotsOpeningPage,
 } from "./page-refs.js";
+import { watchCameraLiveEntity, watchCameraRows, watchEditorLiveCameras } from "./camera-live.js";
 import { clearPageRefs as clearPageRefsOn } from "./page-links-io.js";
 import { deviceColor, deviceColorsCache } from "../device-colors.js";
 import { type LibraryItem, devicesFor, libraryItem, pagesDocumentFor, sameId } from "../library/model.js";
@@ -4494,6 +4495,13 @@ export class WaPageEditor extends LitElement {
       stateMode: this.liveStates ? "live" : "all-on",
       testedIds: this.testedIds(),
     };
+    // An iPhone page's camera tiles play live when the Live video card's
+    // switch says so (off by default, kept in this browser).
+    const hass = this.hass;
+    if (phoneLayout !== undefined && hass !== undefined && watchEditorLiveCameras()) {
+      const rows = watchCameraRows(hass, () => this.requestUpdate());
+      input.liveCameras = { hass, entityFor: (id) => watchCameraLiveEntity(rows, id) };
+    }
     if (config !== undefined) {
       // The selected rule's tiles draw full, the rest faint; a click on a
       // tile selects its rule.

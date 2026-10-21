@@ -30,7 +30,8 @@
 // evenly rather than a layout of its own.
 
 import { css, html, nothing, svg, unsafeCSS, type TemplateResult } from "lit";
-import type { HassEntityState } from "../ha-api.js";
+import type { HassEntityState, HassLike } from "../ha-api.js";
+import "./camera-live.js";
 import type { IconProvider } from "../renderer.js";
 import {
   type PlacedWatchTile,
@@ -141,6 +142,9 @@ export interface WatchPagePreviewInput {
    * is drawn in the iPhone (`phone-frame.ts`) rather than a watch, in the
    * look the layout carries (`phonePagesLayout` with `look`). */
   phone?: PhonePagesLayout;
+  /** Play camera tiles live over the snapshot (`<wa-camera-live>`), each on
+   * the entity `entityFor` names (its SD stream). Absent: snapshots only. */
+  liveCameras?: { hass: HassLike; entityFor: (entityId: string) => string };
 }
 
 /** The watch's own page indicator, when the document has more than one
@@ -1711,6 +1715,14 @@ function snapshot(url: string, fill: boolean, w: number, h: number, ox: number, 
   return html`<span class="wp-snap" role="img" aria-label="Snapshot" style=${css}></span>`;
 }
 
+/** A camera playing live over its snapshot, when the stage plays them
+ * (`liveCameras`). */
+function liveOver(input: WatchPagePreviewInput, entityId: string, fill: boolean): TemplateResult | typeof nothing {
+  const live = input.liveCameras;
+  if (live === undefined) return nothing;
+  return html`<wa-camera-live class="wp-live" .hass=${live.hass} .entity=${live.entityFor(entityId)} .fit=${!fill}></wa-camera-live>`;
+}
+
 /** A camera or camera group tile as the watch draws it: no tile ground, a
  * rounded box with its own border. */
 function cameraFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, unit: number, s: number, hint: string | undefined): TemplateResult {
@@ -1749,6 +1761,7 @@ function cameraFace(tile: WatchPageTile, width: number, height: number, box: str
       ${url !== undefined
         ? snapshot(url, fill, width, height, storedNumber(tile.cameraFillOffsetX) ?? 0, storedNumber(tile.cameraFillOffsetY) ?? 0, s)
         : html`<span class="wp-cam-empty"></span>${symbol === undefined ? nothing : html`<span style="opacity:0.6;display:flex">${symbolMark(input.icons, symbol, symbolPt * s, ink.hex)}</span>`}`}
+      ${liveOver(input, entityId, fill)}
       ${rim}
     </div>`;
   }
@@ -1788,6 +1801,7 @@ function cameraFace(tile: WatchPageTile, width: number, height: number, box: str
         ${url !== undefined
           ? snapshot(url, watchMultiCamCellFill(tile, i) === "fill", cellW, h, storedNumber(offsetsX[i]) ?? 0, storedNumber(offsetsY[i]) ?? 0, s)
           : html`<span style="opacity:0.2;display:flex">${symbolMark(input.icons, "video.fill", small * 0.3 * s, "#FFFFFF")}</span>`}
+        ${gone ? nothing : liveOver(input, id, watchMultiCamCellFill(tile, i) === "fill")}
         ${gone ? html`<span class="wp-cell-gone"><span style="opacity:0.7;display:flex">${symbolMark(input.icons, "video.slash.fill", small * 0.25 * s, "#FFFFFF")}</span></span>` : nothing}
       </span>`);
     }
@@ -3726,6 +3740,7 @@ export const watchPagePreviewStyles = css`
   .wp-cam-rim { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
   .wp-cam-empty { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.3); }
   .wp-snap { position: absolute; inset: 0; display: block; background-repeat: no-repeat; }
+  .wp-live { position: absolute; inset: 0; background: transparent; }
   .wp-cell { position: absolute; overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; }
   .wp-cell-gone { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(255, 59, 48, 0.3); }
   .wp-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -1065,8 +1065,10 @@ export interface CameraViewport {
 /** One camera as the list command answers: the device's representative
  * entity, every entity of that device (a crop is written to all of them),
  * its crop (null for the full frame), whether the watch opens its live view
- * zoomed to the crop, and which stream a tap on the alert's picture opens:
- * the override set here, or else the one Home Assistant detects. */
+ * zoomed to the crop, which stream a tap on the alert's picture opens (the
+ * override set here, or else the one Home Assistant detects), and the
+ * device's SD and HD streams, the two a live iPhone tile plays (absent from
+ * an integration older than them). */
 export interface CameraFraming {
   entity_id: string;
   name: string;
@@ -1075,6 +1077,7 @@ export interface CameraFraming {
   open_zoomed: boolean;
   stream: { override: string | null; auto: string | null };
   stream_choices: string[];
+  streams?: { sd: string | null; hd: string | null };
 }
 
 /** Every camera in the home with its framing. An integration

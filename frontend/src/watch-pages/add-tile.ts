@@ -27,6 +27,8 @@
 import { css, html, nothing, svg, type TemplateResult } from "lit";
 import { AsyncDirective, directive } from "lit/async-directive.js";
 import { guard } from "lit/directives/guard.js";
+import { watchCameraRows, watchHiddenCameraIds } from "./camera-live.js";
+import type { CameraFraming } from "../ha-api.js";
 import { goToWatchHttpActions } from "../shell.js";
 import { uiIcon } from "../ui-icons.js";
 import {
@@ -217,6 +219,24 @@ function commit(host: AddTileHost, view: AddTileView, add: WatchTileAdd, done: s
 
 /** The name a row shows: the label the tile will store (the friendly name,
  * else the object id made readable). */
+/** Each list of camera rows' hidden entities, built once per list so the
+ * pool cache sees the same set while nothing changed. */
+const hiddenByRows = new WeakMap<readonly CameraFraming[], { key: number; hidden: ReadonlySet<string> }>();
+
+/** A camera's other streams, left out of the list: each camera is one row,
+ * its SD stream. Undefined until the integration has listed the cameras. */
+function hiddenCameras(host: AddTileHost): ReadonlySet<string> | undefined {
+  const rows = watchCameraRows(host.hass, () => host.requestUpdate());
+  if (rows === undefined) return undefined;
+  // Built again only when the rows or the set of entities change.
+  const key = Object.keys(host.hass.states ?? {}).length;
+  const cached = hiddenByRows.get(rows);
+  if (cached !== undefined && cached.key === key) return cached.hidden;
+  const hidden = watchHiddenCameraIds(rows, host.hass.states ?? {});
+  hiddenByRows.set(rows, { key, hidden });
+  return hidden;
+}
+
 function rowName(c: WatchAddCandidate): string {
   return watchEntityLabel(c.entityId, c.name === c.entityId ? undefined : c.name);
 }
@@ -463,7 +483,7 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
   // not, the refusal no longer holds.
   const note = view.note?.text === WATCH_ADD_BUSY_TEXT ? undefined : view.note;
   const onPage = new Set(watchPageTiles(host.page).map(tileEntityId));
-  const pool = view.cache.poolFor({ hass: host.hass, onPage, keep: view.keep });
+  const pool = view.cache.poolFor({ hass: host.hass, onPage, keep: view.keep, hidden: hiddenCameras(host) });
   const results = view.cache.resultsOf(pool, view.query, view.kind);
   const hl = watchAddHighlightIndex(results, view.highlighted);
   const count = watchAddRowCount(results.length, view.shown, hl);

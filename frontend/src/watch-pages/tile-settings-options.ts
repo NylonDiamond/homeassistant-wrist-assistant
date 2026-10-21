@@ -56,12 +56,14 @@ import { watchTileHasStateTask } from "./styling-model.js";
 import { type WatchSpecialStates, watchSpecialTask } from "./special-model.js";
 import {
   type WatchPhoneKey,
+  WATCH_CAMERA_FULL_SCREEN_ABSENT,
   WATCH_CAMERA_TILE_STREAM_ABSENT,
   WATCH_CAMERA_TILE_STREAM_CHOICES,
   WATCH_MEDIA_CONTROLS_MIN_COLUMNS,
   WATCH_SENSOR_CHART_CHOICES,
   WATCH_SENSOR_CHART_MIN_ROWS,
   WATCH_TEMPLATE_LINES,
+  watchCameraFullScreenStream,
   watchCameraTileLive,
   watchCameraTileStream,
   watchMediaArtwork,
@@ -296,7 +298,12 @@ export const WATCH_PHONE_KEY_WORDS: Readonly<Record<WatchPhoneKey, { title: stri
   cameraTileStream: {
     title: "Stream",
     label: "Stream",
-    help: "Quick start plays the camera's small stream at once, then switches to the full stream when the tile is big enough to show more. Small is the fastest and uses the least data. Full is the sharpest, but takes a little longer to start. A camera with only one stream plays it with every choice.",
+    help: "Auto starts on SD, then switches to HD when the tile is big enough to show more. SD starts fastest and uses the least data. HD is the sharpest.",
+  },
+  cameraFullScreenStream: {
+    title: "Full screen",
+    label: "Full screen",
+    help: "The stream a tap opens. HD starts on SD for a moment, then switches. A double tap on the iPhone switches between SD and HD.",
   },
   sensorChart: {
     title: "Chart",
@@ -356,8 +363,10 @@ export function watchPhoneKeySummary(tile: WatchPageTile, key: WatchPhoneKey): s
     case "cameraTileStream": {
       const stream = watchCameraTileStream(tile);
       if (stream === WATCH_CAMERA_TILE_STREAM_ABSENT || !watchCameraTileLive(tile)) return "";
-      return stream === "sub" ? "Small stream" : "Full stream";
+      return stream === "sub" ? "SD" : "HD";
     }
+    case "cameraFullScreenStream":
+      return watchCameraFullScreenStream(tile) === WATCH_CAMERA_FULL_SCREEN_ABSENT ? "" : "Full screen SD";
     case "mediaArtwork":
       return watchMediaArtwork(tile) ? "On" : "";
     case "sensorChart": {

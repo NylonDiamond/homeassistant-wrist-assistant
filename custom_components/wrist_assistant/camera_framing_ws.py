@@ -86,7 +86,12 @@ def _stream_choices(all_ids: list[str]) -> list[str]:
 
 
 def _camera_row(
-    hass: HomeAssistant, data: Any, entity_id: str, name: str, all_ids: list[str]
+    hass: HomeAssistant,
+    data: Any,
+    entity_id: str,
+    name: str,
+    all_ids: list[str],
+    roles: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     crop_store = data.snapshot_crop_store
     crop = crop_store.get(entity_id)
@@ -103,7 +108,16 @@ def _camera_row(
             "auto": resolve_stream_sibling(hass, entity_id),
         },
         "stream_choices": _stream_choices(all_ids),
+        "streams": {
+            "sd": _role(roles, "sd_stream"),
+            "hd": _role(roles, "hd_stream"),
+        },
     }
+
+
+def _role(roles: dict[str, Any] | None, key: str) -> str | None:
+    value = (roles or {}).get(key)
+    return value if _is_camera(value) else None
 
 
 def _state_name(state: Any) -> str:
@@ -125,7 +139,7 @@ def ws_cameras_list(
 
     Result: {"cameras": [{"entity_id", "name", "all_entity_ids", "viewport",
              "open_zoomed", "stream": {"override", "auto"},
-             "stream_choices"}]}
+             "stream_choices", "streams": {"sd", "hd"}}]}
 
     Built as the phone built its list. Cameras come grouped by device
     (``build_camera_device_groups``). A row's ``entity_id`` is the variant an
@@ -140,7 +154,9 @@ def ws_cameras_list(
     ``viewport`` is the saved crop, null for the full frame. ``stream`` is
     the saved override for the live stream a tapped alert opens (null when
     none) and the one picked without it (null when no device knows the
-    camera). Rows are sorted by name.
+    camera). ``streams`` names the device's sub (sd) and main (hd) stream,
+    each null when the device has none: the two a live iPhone tile plays
+    (``quality_level`` on ``webrtc_cameras``). Rows are sorted by name.
     """
     data = _domain_data(hass)
     if (
@@ -164,7 +180,7 @@ def ws_cameras_list(
         all_ids = group_ids or [entity_id]
         covered.update(all_ids)
         cameras.append(
-            _camera_row(hass, data, entity_id, group.get("name") or entity_id, all_ids)
+            _camera_row(hass, data, entity_id, group.get("name") or entity_id, all_ids, roles)
         )
 
     for state in hass.states.async_all("camera"):

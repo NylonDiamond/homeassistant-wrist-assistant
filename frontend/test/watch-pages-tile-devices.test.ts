@@ -31,7 +31,7 @@ const TABLE = tileDevicesTable as unknown as {
 const BOTH = ["watch", "iphone"];
 const PHONE = ["iphone"];
 const PHONE_ONLY_KINDS = ["chart", "map", "text_field", "web"];
-const PHONE_ONLY_KEYS = ["cameraTileLive", "cameraTileStream", "mediaArtwork", "sensorChart", "templateLines"];
+const PHONE_ONLY_KEYS = ["cameraFullScreenStream", "cameraTileLive", "cameraTileStream", "mediaArtwork", "sensorChart", "templateLines"];
 
 describe("tile-devices.json", () => {
   it("lists every virtual kind and every addable domain, and nothing else", () => {

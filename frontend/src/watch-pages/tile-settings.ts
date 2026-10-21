@@ -95,6 +95,7 @@ import {
   watchTileShowWhenTemplate,
 } from "./show-when.js";
 import { watchShowWhenTemplateRender } from "./app-model.js";
+import { setWatchEditorLiveCameras, watchCameraRows, watchCameraStreamsFrom, watchEditorLiveCameras } from "./camera-live.js";
 import { type WatchPageTile, type WatchPagesDocument, WATCH_REMOVED_TILE_TEXT, tileEntityId, tileKind, watchPageId, watchPageName, watchPagesOf } from "./model.js";
 import {
   type WatchLibraryKind,
@@ -241,19 +242,25 @@ import {
   WATCH_PHONE_EXTRAS_HINT,
   WATCH_PHONE_KEY_WORDS,
   watchPhoneKeySummary,
-  watchCameraTileStreamMenu,
   watchSensorChartMenu,
   watchSensorChartShortNote,
   watchTemplateLinesMenu,
 } from "./tile-settings-options.js";
 import {
   type WatchPhoneKey,
+  WATCH_CAMERA_FULL_SCREEN_ABSENT,
+  WATCH_CAMERA_FULL_SCREEN_CHOICES,
+  WATCH_CAMERA_TILE_STREAM_ABSENT,
+  WATCH_CAMERA_TILE_STREAM_CHOICES,
+  setWatchCameraFullScreenStream,
   setWatchCameraTileLive,
   setWatchCameraTileStream,
   setWatchMediaArtwork,
   setWatchSensorChart,
   setWatchTemplateLines,
+  watchCameraFullScreenStream,
   watchCameraTileLive,
+  watchCameraTileStream,
   watchMediaArtwork,
   watchPhoneKeyChanged,
   watchPhoneKeysOf,
@@ -934,16 +941,78 @@ function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection):
  * heading with the iPhone tag.
  */
 function renderPhoneKeys(host: TileSettingsHost, grouped: boolean): TemplateResult {
-  // The stream sits under Live video, without a heading of its own, and only
-  // while the live video is on.
+  // The stream and the full screen stream sit under Live video, without a
+  // heading of their own; the stream only while the live video is on.
   const keys = watchPhoneKeysOf(host.tile, host.hass.states)
     .filter((key) => key !== "cameraTileStream" || watchCameraTileLive(host.tile));
-  const headed = keys.filter((key) => key !== "cameraTileStream");
-  return html`${keys.map((key) => html`
-    ${key !== "cameraTileStream" && (grouped || headed.length > 1)
+  const unheaded = (key: WatchPhoneKey) => key === "cameraTileStream" || key === "cameraFullScreenStream";
+  const headed = keys.filter((key) => !unheaded(key));
+  const camera = keys.includes("cameraTileLive");
+  return html`${camera ? renderCameraStreams(host) : nothing}${keys.map((key) => html`
+    ${!unheaded(key) && (grouped || headed.length > 1)
       ? html`<div class="ts-sub-h"><span>${WATCH_PHONE_KEY_WORDS[key].title}</span>${phoneTag()}</div>`
       : nothing}
-    ${renderPhoneKey(host, key)}`)}`;
+    ${renderPhoneKey(host, key)}`)}${camera ? renderCameraPlay(host) : nothing}`;
+}
+
+/** The line naming the camera's two streams, the ones a live tile plays:
+ * a person picks one camera and both come with it. Nothing until the
+ * integration has listed the cameras, or for a camera group. */
+function renderCameraStreams(host: TileSettingsHost): TemplateResult | typeof nothing {
+  const entityId = tileEntityId(host.tile);
+  if (tileKind(entityId) !== "camera") return nothing;
+  const rows = watchCameraRows(host.hass, () => host.requestUpdate());
+  const streams = rows === undefined ? undefined : watchCameraStreamsFrom(rows, entityId);
+  if (streams === undefined) return nothing;
+  const name = (id: string) => {
+    const friendly = host.hass.states[id]?.attributes?.friendly_name;
+    return typeof friendly === "string" && friendly !== "" ? friendly : id;
+  };
+  const both = streams.sd !== undefined && streams.hd !== undefined && streams.sd !== streams.hd;
+  const text = both
+    ? html`<b>SD</b> ${name(streams.sd!)} · <b>HD</b> ${name(streams.hd!)}`
+    : html`One stream: ${name(streams.sd ?? streams.hd ?? entityId)}. SD and HD play the same.`;
+  return html`<div class="hint ts-streams" title=${both ? `${streams.sd} and ${streams.hd}` : entityId}>${text}</div>`;
+}
+
+/** The uiState key of the tile's Play box: the stream it plays, if any. */
+const playKey = (host: TileSettingsHost) => `camera-play:${host.tileId}`;
+
+/** Play buttons for the camera's SD and HD streams, and the box that plays
+ * the one picked, with its size, codec and frame rate; then the stage's
+ * live tiles switch. */
+function renderCameraPlay(host: TileSettingsHost): TemplateResult {
+  const entityId = tileEntityId(host.tile);
+  const single = tileKind(entityId) === "camera";
+  const rows = single ? watchCameraRows(host.hass, () => host.requestUpdate()) : undefined;
+  const streams = rows === undefined ? undefined : watchCameraStreamsFrom(rows, entityId);
+  const sd = streams?.sd ?? entityId;
+  const hd = streams?.hd ?? entityId;
+  const playing = host.uiState.get(playKey(host)) as "sd" | "hd" | undefined;
+  const play = (which: "sd" | "hd" | undefined) => {
+    if (which === undefined) host.uiState.delete(playKey(host));
+    else host.uiState.set(playKey(host), which);
+    host.requestUpdate();
+  };
+  const ratio = Number(host.tile.cameraAspectRatio);
+  const wide = Number.isFinite(ratio) && ratio > 0 ? ratio > 1 : undefined;
+  const box = Number.isFinite(ratio) && ratio > 0 ? Math.min(Math.max(ratio, 0.5), 4) : 16 / 9;
+  const liveTiles = watchEditorLiveCameras();
+  return html`
+    ${single ? html`<div class="field ts-play"><span>Preview</span><div class="ts-play-btns">
+      <button type="button" class="pe-chip ${playing === "sd" ? "on" : ""}" aria-pressed=${playing === "sd" ? "true" : "false"}
+        @click=${() => play(playing === "sd" ? undefined : "sd")}>${playing === "sd" ? "Stop" : "Play SD"}</button>
+      ${hd !== sd ? html`<button type="button" class="pe-chip ${playing === "hd" ? "on" : ""}" aria-pressed=${playing === "hd" ? "true" : "false"}
+        @click=${() => play(playing === "hd" ? undefined : "hd")}>${playing === "hd" ? "Stop" : "Play HD"}</button>` : nothing}
+    </div></div>
+    ${playing === undefined ? nothing : html`<wa-camera-live class="ts-play-box" style=${`aspect-ratio:${box}`}
+      .hass=${host.hass} .entity=${playing === "hd" ? hd : sd} .fit=${true} .info=${true} .wide=${wide}></wa-camera-live>`}
+    <div class="hint ts-under">Plays the stream here, in this browser, with its size, codec and frame rate. The iPhone turns a sideways HD stream the same way.</div>` : nothing}
+    ${checkField("Live tiles in the editor", liveTiles, (on) => {
+      setWatchEditorLiveCameras(on);
+      host.requestUpdate();
+    })}
+    <div class="hint ts-under">Off by default. Plays every camera tile of an iPhone page on its SD stream in the preview. Each one keeps a stream open while the editor shows the page. This browser keeps the switch.</div>`;
 }
 
 function renderPhoneKey(host: TileSettingsHost, key: WatchPhoneKey): TemplateResult {
@@ -955,8 +1024,11 @@ function renderPhoneKey(host: TileSettingsHost, key: WatchPhoneKey): TemplateRes
       return html`${checkField(words.label, watchCameraTileLive(tile), (on) =>
         commit(host, key, (d) => setWatchCameraTileLive(d, host.pageId, host.tileId, on)))}${help}`;
     case "cameraTileStream":
-      return html`${menuField(words.label, watchCameraTileStreamMenu(tile), (v) =>
-        commit(host, key, (d) => setWatchCameraTileStream(d, host.pageId, host.tileId, v)))}${help}`;
+      return html`${segField(words.label, watchCameraTileStream(tile), WATCH_CAMERA_TILE_STREAM_CHOICES.map((c) => [c.value, c.label] as [string, string]), (v) =>
+        commit(host, key, (d) => setWatchCameraTileStream(d, host.pageId, host.tileId, v)), { def: WATCH_CAMERA_TILE_STREAM_ABSENT })}${help}`;
+    case "cameraFullScreenStream":
+      return html`${segField(words.label, watchCameraFullScreenStream(tile), WATCH_CAMERA_FULL_SCREEN_CHOICES.map((c) => [c.value, c.label] as [string, string]), (v) =>
+        commit(host, key, (d) => setWatchCameraFullScreenStream(d, host.pageId, host.tileId, v)), { def: WATCH_CAMERA_FULL_SCREEN_ABSENT })}${help}`;
     case "mediaArtwork":
       return html`${checkField(words.label, watchMediaArtwork(tile), (on) =>
         commit(host, key, (d) => setWatchMediaArtwork(d, host.pageId, host.tileId, on)))}${help}`;
@@ -2196,6 +2268,11 @@ export const tileSettingsStyles = css`
   button.ghost.ts-reset-btn:hover:not(:disabled) { color: var(--wa-ink); }
 
   .ts-sub { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 4px; }
+  .ts-streams { margin: 0 0 6px; }
+  .ts-streams b { font-weight: 600; }
+  .ts-play { align-items: center; }
+  .ts-play-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ts-play-box { width: 100%; max-height: 360px; border-radius: 8px; margin: 4px 0 2px; }
   .ts-sub-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 6px;
     font-size: 11.5px; font-weight: 650; color: var(--wa-muted); letter-spacing: .02em; }
   /* A group's one line of description, under its heading and over its rows,
