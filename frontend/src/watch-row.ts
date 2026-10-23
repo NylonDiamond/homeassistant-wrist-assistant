@@ -45,6 +45,7 @@ import {
   iphoneScreenOf, iphoneScreenPath, isPlainClick, panelUrl, unsavedDot, watchScreenOf, watchScreenPath, watchScreenSentence,
 } from "./shell.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
+import { listFocusPath } from "./watch-pages/all-pages-hook.js";
 import type { PanelRoute } from "./watch-pages/hook.js";
 import { settingsWatches, watchName } from "./watch-settings.js";
 
@@ -110,9 +111,9 @@ const screenById = (id: WatchScreenId): WatchScreen => WATCH_SCREENS.find((scree
 
 /** The row's links, in the order of Home's doors on the same device
  * (`deviceSheetTabs`), Settings apart (`watchRowSettingsLink`). A watch's
- * complications are its own screen; an iPhone's widgets and any device's
- * Control Center controls open the Complications tab on that device, as
- * Home's doors do. In the iPhone app's row, each screen is at its
+ * complications, an iPhone's widgets and any device's Control Center
+ * controls open the Complications board focused on that device, as Home's
+ * doors do. In the iPhone app's row, each screen is at its
  * `/iphone` address. The Library's screens are the home's, never in a
  * device's row (`sharedRowLinks`). */
 export function watchRowLinks(route: PanelRoute | undefined, watch: string | undefined, kind: RowKind = "watch"): WatchRowLink[] {
@@ -122,10 +123,11 @@ export function watchRowLinks(route: PanelRoute | undefined, watch: string | und
   });
   return deviceSheetTabs(kind, true).flatMap((tab): WatchRowLink[] => {
     if (tab.kind === "screen") return tab.screen.id === WATCH_SETTINGS_SCREEN.id ? [] : [linkOf(tab.screen)];
-    if (kind === "watch" && tab.filter === "all") return [linkOf(screenById("watch-complications"))];
-    // An old link to the retired Control Center screen marks its door.
+    // Complications, widgets and Control Center open the Complications
+    // board focused on this device (plan step 5). An old link to the
+    // retired Control Center screen marks its door.
     const screen = screenById(tab.filter === "all" ? "watch-complications" : "control-center");
-    return [{ screen, label: tab.label, path: COMPLICATIONS_PATH, on: tab.filter === "control" && shown === "control-center", list: tab.filter }];
+    return [{ screen, label: tab.label, path: listFocusPath(COMPLICATIONS_PATH, watch), on: tab.filter === "control" && shown === "control-center", list: tab.filter }];
   });
 }
 

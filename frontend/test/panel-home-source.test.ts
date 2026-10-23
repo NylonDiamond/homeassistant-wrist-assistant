@@ -191,10 +191,13 @@ describe("Home's picked device", () => {
     expect(detail).toContain("const path = deviceScreenPath(row.kind, screen, ownerId);");
     expect(detail.indexOf("this.pickWatch(ownerId);")).toBeLessThan(detail.indexOf("this.goTo(path);"));
     expect(detail).toContain("this.openDeviceList(ownerId, filter);");
-    const list = method("  private openDeviceList(");
+    // The board focused on the device (plan step 5), after closing a design
+    // open in the editor; Cards, if picked, opens on that device's tab.
+    const list = method("  private async openDeviceList(");
     expect(list).toContain("this.pickerFilter = filter;");
     expect(list).toContain("this.pickPickerTab(ownerId);");
-    expect(list).toContain("if (this.draft) this.openPicker();");
+    expect(list).toContain("if (this.draft?.dirty && !this.confirmDiscard()) return;");
+    expect(list).toContain("this.goTo(listFocusPath(COMPLICATIONS_PATH, ownerId));");
     const count = method("  private homeTileCount(");
     expect(count).toContain("this.watchCounts.get(d.id)?.[t.count]");
   });
@@ -355,10 +358,11 @@ describe("Home's Pair a device dialog", () => {
 });
 
 describe("the doors to a device's complications", () => {
-  it("opens a watch's complications on the Watch app's Complications screen, and a phone's on the list", () => {
+  it("opens any device's complications, widgets and controls on the Complications board focused on it", () => {
     const detail = method("  private renderHomeDetail(");
     const screenOf = between(detail, "const screenOf = (t: DeviceSheetTab)", "\n    const go");
-    expect(screenOf).toContain(`t.filter === "all" && row.kind === "watch" ? WATCH_SCREENS.find((s) => s.id === "watch-complications")`);
+    expect(screenOf).toContain(`t.kind === "screen" ? t.screen : undefined;`);
+    expect(screenOf).not.toContain("watch-complications");
     const go = between(detail, "const go = (t: DeviceSheetTab) => {", "\n    };");
     expect(go).toContain("this.goTo(deviceScreenPath(row.kind, screen, ownerId));");
     expect(go).toContain(`if (t.kind === "list") openList(t.filter); return;`);

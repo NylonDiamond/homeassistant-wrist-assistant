@@ -230,6 +230,11 @@ import { ScrollFades } from "./scroll-fade.js";
 import { chromeDarkValues, chromeRuns, chromeTokens, litOutline, plainOutline } from "./editor-chrome.js";
 import { libraryModeStyles } from "./library/item-mode.js";
 import { type TickChip, libraryTicksStyles, renderTickChips } from "./library/ticks.js";
+import { type BoardCell, type BoardColumn, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen,
+  SAVED_FLASH_MS, WideWatch, boardStyles, renderBoard, renderViewSwitch } from "./library/board.js";
+import type { LinkDevice } from "./watch-pages/devices.js";
+import { COMP_WHERE_HINTS, COMP_WHERE_ORDER, COMP_WHERE_TITLES, type CompListView, type CompWhere, compCell, compLeftOutText, compNoun,
+  compBoardStyles, compRowOrder, compWhere, readCompView, saveCompView } from "./complication-board.js";
 import { statesSummary } from "./states.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { elementSize, isHiddenDocument, smallestSize, withHidden, type Placement } from "./model.js";
@@ -447,7 +452,7 @@ import { dropWatchControlCenterDrafts, isWatchControlCenterRoute, renderWatchCon
 import { dropWatchRoomsDrafts, isWatchRoomsRoute, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles } from "./watch-rooms/hook.js";
 import { dropWatchHttpActionsDrafts, isWatchHttpActionsRoute, renderWatchHttpActionsView, watchHttpActionsDirty } from "./watch-http-actions/hook.js";
 import { dropWatchCamerasDrafts, isWatchCamerasRoute, renderWatchCamerasView, watchCamerasDirty } from "./watch-cameras/hook.js";
-import { NOT_ON_WATCH_NOTE, isWatchComplicationsRoute, splitForWatch, watchComplicationsLead, watchComplicationsStyles } from "./watch-complications.js";
+import { isWatchComplicationsRoute, watchComplicationsStyles } from "./watch-complications.js";
 import {
   COMPLICATIONS_PATH, type LibraryItemRef, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, deviceListPath, deviceScreenPath, editorKeysLive, iphoneInnerRoute, iphoneScreenOf,
   iphoneScreenPath, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
@@ -663,6 +668,19 @@ type PickerItem =
 
 /** One row of the header picker: one complication, on however many devices. */
 type PickerRow = PickerListRow<PickerItem>;
+
+/** One row of the Complications board (`renderCompBoard`): the design, its
+ * shape, the kind of device it stands on, its section, and its place list.
+ * A locked copy (an iPhone app preset, another home's) has no places. */
+interface CompBoardItem {
+  row: PickerRow;
+  family: FamilyKind | undefined;
+  control: boolean;
+  kind: DeviceKind;
+  where: CompWhere;
+  places: DevicePlace[];
+  locked?: { badge: string; title: string };
+}
 
 /** How many complications a device's Complications door on Home draws, and
  * how tall each, in CSS pixels. A tile that does not fit the door's width
@@ -1749,6 +1767,16 @@ export class WristAssistantPanel extends LitElement {
   /** What has been typed into the picker's search field. It narrows on the
    * name and on the people who have it, and combines with the chip. */
   @state() private pickerQuery = "";
+  /** The Complications tab as the board or as cards (plan step 5), kept in
+   * this browser. A focused device is always the board. */
+  @state() private compView: CompListView = readCompView(() => window.localStorage);
+  /** The board box whose write is out, as `<row key>|<owner>`. */
+  @state() private compBoardBusy?: string;
+  /** "Saved" beside the head, for a moment after a box's write lands. */
+  @state() private compBoardSaved = false;
+  private compBoardSavedTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Whether the panel is wide enough for the board's big row pictures. */
+  private compRoomy = new WideWatch(this);
   /** Whether a card draws the complication on its own rather than on its
    * device. The device says where a shape sits, which is what somebody
    * placing one asks; the shape on its own is bigger and is what somebody
@@ -6060,7 +6088,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, watchComplicationsStyles, helpSheetStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, watchComplicationsStyles, helpSheetStyles, boardStyles, compBoardStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -11071,7 +11099,14 @@ export class WristAssistantPanel extends LitElement {
     const watch = watchScreenOf(this.route);
     const phone = watch === undefined ? iphoneScreenOf(this.route) : undefined;
     const screen = watch ?? phone;
-    if (screen === undefined || deviceListPath(screen.id, undefined) === undefined) return undefined;
+    if (screen === undefined) return undefined;
+    // A watch's Complications screen is its column on the Complications
+    // board (plan step 5).
+    if (screen.id === "watch-complications") {
+      if (!this.linkReady && this.owners.length === 0) return undefined;
+      return listFocusPath(COMPLICATIONS_PATH, this.sharedWatch);
+    }
+    if (deviceListPath(screen.id, undefined) === undefined) return undefined;
     if (!this.linkReady && this.owners.length === 0) return undefined;
     return deviceListPath(screen.id, watch !== undefined ? this.sharedWatch : this.sharedPhone);
   }
@@ -11417,9 +11452,11 @@ export class WristAssistantPanel extends LitElement {
         barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
       });
-      // A watch's complications, on `/watch-complications`: a view of the
-      // Complications tab's cards on one watch. A watch's alone.
-      case "watch-complications": return this.renderWatchComplications(owner);
+      // A watch's complications are its column on the Complications board
+      // (plan step 5): `updated` moves this address there once the device
+      // list is in (`boardAddressFor`).
+      case "watch-complications":
+        return html`<div class="ws-page"><div class="ws-cols one"><p class="home-empty">Loading…</p></div></div>`;
       // Cameras, on `/cameras`: how each camera is framed in alerts, which is
       // the camera's own in Home Assistant, so it too is handed no watch.
       case "cameras": return renderWatchCamerasView({
@@ -14282,83 +14319,6 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
-  /**
-   * The Watch app's Complications screen: the designs on the shared watch,
-   * then every other one under "Not on this watch". The cards are the
-   * Complications tab's own, so Devices, Hide and Delete work the same, and
-   * a card opens its design in that tab's editor. Ticking this watch in a
-   * card's Devices menu moves the card up into the first list.
-   */
-  private renderWatchComplications(watchId: string | undefined) {
-    const watches = settingsWatches(this.owners);
-    const watch = watches.find((w) => w.owner_watch_id === watchId);
-    if (watch === undefined) {
-      const loading = !this.linkReady && this.owners.length === 0;
-      return html`<div class="wc-page"><div class="wc-wrap">
-        <p class="wc-empty">${loading ? "Loading…" : "No watch has connected yet. Pair one in Settings to see its complications here."}</p>
-      </div></div>`;
-    }
-    const ready = listsReady({
-      devicesLoaded: this.linkReady && this.loadError === undefined,
-      ownerBusy: this.ownerBusy,
-      ownerId: this.ownerId,
-      otherListsOwner: this.otherListsOwner,
-      otherListsRead: this.otherListsRead,
-    });
-    const name = watchName(watch, watches);
-    const devices = this.pickerDevices();
-    const { on, off } = splitForWatch(this.pickerRows(), watch.owner_watch_id, {
-      isWatch: (ownerId) => deviceKindOf(this.ownerOf(ownerId)) === "watch",
-      shelfFitsWatch: (row) => familiesOfItem(row.open.item).some((f) => WATCH_SHAPES.includes(f)),
-    });
-    const full = this.freeSlot() < 0;
-    // A card not on this watch draws the copy it has, on its own device.
-    const offBoxes = () => {
-      const byOwner = new Map<string, PickerRow[]>();
-      for (const { row, at } of off) byOwner.set(at, [...(byOwner.get(at) ?? []), row]);
-      // A heading per device only when there is more than one, so the shape
-      // boxes under each say whose they are.
-      const many = byOwner.size > 1;
-      return [...byOwner].map(([at, rows]) => html`<div class="wc-dev">
-        ${many ? html`<h3 class="wc-dev-name" style=${this.deviceStyle(at)}>${uiIcon(tabIcon(deviceKindOf(this.ownerOf(at))))}<span>${devices.find((dv) => dv.ownerId === at)?.label ?? this.ownerName(at)}</span></h3>` : nothing}
-        ${this.renderPickerGroups(sortPickerRows(rows, devices, at), at, undefined)}
-      </div>`);
-    };
-    return html`<div class="wc-page"><div class="wc-wrap">
-      <div class="wc-head">
-        <div class="wc-head-text">
-          <h1>Complications on ${name}</h1>
-          <p class="wc-lead">${ready ? watchComplicationsLead(on.length, name) : "Reading every device's list…"}</p>
-        </div>
-        <div class="wc-acts">
-          <button class="cl-btn" title="See every complication and widget in the home"
-            @click=${() => this.goTo(COMPLICATIONS_PATH)}>${uiIcon("compact")}<span>All complications</span></button>
-          <button class="cl-btn cl-new" ?disabled=${full || this.ownerBusy}
-            title=${full ? "Every device is full. Delete a complication first." : "Make a new complication"}
-            @click=${() => { this.goTo(COMPLICATIONS_PATH); this.openNewDialog(); }}>${uiIcon("plus")}<span>New complication</span></button>
-        </div>
-      </div>
-      <section class="wc-sec on" aria-label=${`On ${name}`}>
-        <div class="wc-sec-top">
-          <span class="wc-sec-chip" aria-hidden="true">${uiIcon("check")}</span>
-          <span class="wc-sec-t"><h2>On this watch</h2><span class="wc-sec-note">Ready to pick when you edit a watch face.</span></span>
-          <span class="wc-sec-count">${on.length}</span>
-        </div>
-        ${on.length === 0
-          ? html`<div class="wc-empty">${ready ? "Nothing yet." : "Loading…"}</div>`
-          : this.renderPickerGroups(sortPickerRows(on, devices, watch.owner_watch_id), watch.owner_watch_id, undefined)}
-      </section>
-      ${off.length === 0 ? nothing : html`<section class="wc-sec off" aria-label="Not on this watch">
-        <div class="wc-sec-top">
-          <span class="wc-sec-chip" aria-hidden="true">${uiIcon("plus")}</span>
-          <span class="wc-sec-t"><h2>Not on this watch</h2><span class="wc-sec-note">${NOT_ON_WATCH_NOTE}</span></span>
-          <span class="wc-sec-count">${off.length}</span>
-        </div>
-        ${offBoxes()}
-      </section>`}
-    </div></div>`;
-  }
-
   /** The list page has gone: a design opened, or another tab. It lets go of
    * what the dialog lets go of when it shuts. */
   private leaveListPage() {
@@ -14425,13 +14385,17 @@ export class WristAssistantPanel extends LitElement {
     // tab and the Shape menu give the same number.
     const total = rows.length;
     const full = this.freeSlot() < 0;
-    return html`<div class="cl-page"><div class="cl-wrap">
+    const focus = this.compFocus();
+    const board = focus !== undefined || this.compView === "board";
+    return html`<div class="cl-page ${board ? "cl-board" : ""}"><div class="cl-wrap">
       <div class="cl-head">
         <div class="cl-head-text">
           <h1>Complications</h1>
           <p class="cl-lead">${state === "loading" ? "Reading every device's list…" : listPageLead(total)}</p>
         </div>
         <div class="cl-acts">
+          ${this.compBoardSaved ? html`<span class="bd-saved" role="status">${uiIcon("check")}<span>Saved</span></span>` : nothing}
+          ${focus === undefined ? renderViewSwitch(this.compView, (v) => this.setCompView(v), "complications") : nothing}
           <a class="cl-btn cl-gallery" href=${GALLERY_PAGE} target="_blank" rel="noopener"
             title="Ready-made complications from other people">${uiIcon("globe")}<span>Gallery</span></a>
           <button class="cl-btn cl-import" ?disabled=${full}
@@ -14442,8 +14406,261 @@ export class WristAssistantPanel extends LitElement {
             @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>
         </div>
       </div>
-      ${state === "loading" ? html`<p class="cl-loading">Loading…</p>` : this.renderPickerSurface("page")}
+      ${state === "loading" ? html`<p class="cl-loading">Loading…</p>` : board ? this.renderCompBoard(focus) : this.renderPickerSurface("page")}
     </div></div>`;
+  }
+
+  // ── the Complications board (plan step 5) ─────────────────────────────
+
+  /** The device the address focuses (`/complications/<owner>`), once the
+   * board lists it. */
+  private compFocus(): string | undefined {
+    const owner = listFocusOf(this.route?.path, COMPLICATIONS_PATH);
+    if (owner === undefined) return undefined;
+    return this.compBoardDevices().find((d) => d.ownerId.toUpperCase() === owner.toUpperCase())?.ownerId;
+  }
+
+  /** Board or Cards, remembered. Cards leaves a focused device. */
+  private setCompView(view: CompListView) {
+    this.compView = view;
+    saveCompView(() => window.localStorage, view);
+    if (view === "cards" && this.compFocus() !== undefined) this.goTo(COMPLICATIONS_PATH);
+  }
+
+  /** Every device the board has a column for: the home's watches and
+   * iPhones, the shelf and gone devices left out. */
+  private compBoardDevices(): LinkDevice[] {
+    return ownersByKind(this.owners)
+      .filter((o) => !isLibraryOwner(o) && !o.is_orphan)
+      .map((o) => ({ ownerId: o.owner_watch_id, name: this.ownerName(o.owner_watch_id), kind: deviceKindOf(o) === "iphone" ? "iphone" : "watch" }));
+  }
+
+  /** What one row is drawn from: the design, its shape, the kind of device
+   * it stands on, the board section, and its place list. */
+  private compBoardItem(row: PickerRow): CompBoardItem {
+    const item = row.open.item;
+    if (item.kind === "locked") {
+      const family = ALL_FAMILIES.find((f) => item.families.includes(f));
+      const kind = deviceKindOf(this.ownerOf(row.open.ownerId));
+      return { row, family, control: false, kind, where: family === undefined ? "other" : compWhere(kind, family, false), places: [], locked: { badge: item.badge, title: item.title } };
+    }
+    const family = ALL_FAMILIES.find((f) => familiesOf(item.record).includes(f));
+    const control = hasControlOf(item.record);
+    const copies = row.copies.filter((c) => c.item.kind === "record").map((c): PlaceCopy => ({ ownerId: c.ownerId, id: c.id }));
+    const kind = designKind(copies, (id) => deviceKindOf(this.ownerOf(id)));
+    return { row, family, control, kind, where: compWhere(kind, family, control), places: this.rowPlaces(row, family) };
+  }
+
+  /**
+   * The board: a row per design, a column per device (plan step 5).
+   *
+   * On every device the rows are grouped by where the shape sits. On a
+   * focused device its designs come first, then the ones that could go on
+   * it, each with a box to add it; the other kind's designs are left out,
+   * since that device cannot show them.
+   */
+  private renderCompBoard(focus: string | undefined) {
+    const people = this.people();
+    const devices = this.compBoardDevices();
+    const query = this.pickerQuery.trim().toLocaleLowerCase();
+    const rows = this.pickerRows();
+    const items = rows.filter((row) => this.pickerMatches(row, query, people)).map((row) => this.compBoardItem(row));
+    const columns: BoardColumn[] = devices.map((device) => ({
+      device, color: this.deviceColorOf(device.ownerId), count: rows.filter((r) => r.copies.some((c) => c.ownerId === device.ownerId)).length,
+    }));
+    const search = html`<div class="cb-tools"><label class="pk-search">
+        ${uiIcon("search")}
+        <input type="search" class="pk-search-input" .value=${this.pickerQuery} placeholder="Search by name or person" aria-label="Search complications"
+          @input=${(e: Event) => { this.pickerQuery = (e.target as HTMLInputElement).value; }} />
+      </label></div>`;
+    if (devices.length === 0) return html`${search}<p class="cb-empty">No watch or iPhone has connected yet. Pair one on Home to put complications on it.</p>`;
+    const byOrder = (a: CompBoardItem, b: CompBoardItem) =>
+      COMP_WHERE_ORDER.indexOf(a.where) - COMP_WHERE_ORDER.indexOf(b.where) || compRowOrder({ family: a.family, name: a.row.name }, { family: b.family, name: b.row.name });
+    const emptyText = query !== "" ? `Nothing matches "${this.pickerQuery.trim()}".` : "No complications yet.";
+    const device = focus === undefined ? undefined : devices.find((d) => d.ownerId === focus);
+    let sections: BoardSection[];
+    let foot: TemplateResult | typeof nothing = nothing;
+    if (device === undefined) {
+      sections = COMP_WHERE_ORDER.map((where): BoardSection => {
+        const mine = items.filter((it) => it.where === where).sort(byOrder);
+        return { key: where, title: COMP_WHERE_TITLES[where], count: mine.length, hint: COMP_WHERE_HINTS[where], rows: mine.map((it) => this.compBoardRow(it, devices)) };
+      }).filter((s) => s.rows.length > 0);
+      if (sections.length === 0) sections = [{ key: "none", rows: [], empty: emptyText }];
+    } else {
+      const here = (it: CompBoardItem) => it.row.copies.some((c) => c.ownerId === device.ownerId);
+      const fits = (it: CompBoardItem) => it.locked === undefined && it.places.some((p) => p.owner.ownerId === device.ownerId);
+      const on = items.filter(here).sort(byOrder);
+      const rest = items.filter((it) => !here(it) && fits(it)).sort(byOrder);
+      const leftOut = items.filter((it) => !here(it) && !fits(it)).length;
+      const noun = compNoun(device.kind, 2);
+      sections = [
+        {
+          key: "on", title: `On ${device.name}`, count: on.length, hint: "Untick a box to take it off.",
+          rows: on.map((it) => this.compBoardRow(it, devices, device)),
+          empty: query !== "" ? emptyText : `No ${noun} on ${device.name} yet.`,
+        },
+        {
+          key: "rest", title: `Not on ${device.name}`, count: rest.length, hint: `Tick its box under ${device.name} to add it.`,
+          rows: rest.map((it) => this.compBoardRow(it, devices, device, true)),
+          empty: query !== "" ? emptyText : `Every ${compNoun(device.kind, 1)} that fits is on ${device.name}.`,
+        },
+      ];
+      const left = compLeftOutText(device.kind, leftOut);
+      foot = left === undefined ? nothing : html`<p class="lt-line bd-foot-line">${left}</p>`;
+    }
+    return html`${device === undefined ? nothing : this.renderCompFocusHead(device, columns.find((c) => c.device.ownerId === device.ownerId)?.count ?? 0)}
+      ${search}
+      ${renderBoard({
+        label: "Complications on each device",
+        thing: "Complication",
+        columns,
+        ...(device === undefined ? {} : { focus: device.ownerId }),
+        onFocus: (ownerId) => this.goTo(listFocusPath(COMPLICATIONS_PATH, ownerId)),
+        wide: this.compRoomy.wide,
+        focusWord: "Focus",
+        focusTitle: (d) => `Show ${d.name}'s ${compNoun(d.kind, 2)} first`,
+        sections,
+      })}
+      ${foot}`;
+  }
+
+  /** A focused device's head: who it is, how many it has, its own screens,
+   * and the way back to every device. */
+  private renderCompFocusHead(device: LinkDevice, total: number) {
+    const word = device.kind === "iphone" ? "iPhone" : "watch";
+    const own: DeviceOwnScreen[] = device.kind === "watch" ? ["settings", "rooms", "voice"] : ["settings", "rooms"];
+    const color = this.deviceColorOf(device.ownerId);
+    return html`<div class="bd-focus" style=${color === undefined ? nothing : `--dc:${color}`}>
+      <span class="bd-focus-glyph" aria-hidden="true">${uiIcon(device.kind === "iphone" ? "phone" : "watch")}</span>
+      <span class="bd-focus-t"><b>${device.name}</b> <span>${total} ${compNoun(device.kind, total)}</span></span>
+      <span class="bd-focus-own">Also on this ${word}:
+        ${own.map((screen) => html`<button type="button" class="bd-link" @click=${() => this.openOwnScreen(device.ownerId, device.kind, screen)}>${DEVICE_OWN_LABELS[screen]}</button>`)}</span>
+      <button type="button" class="bd-focus-all" @click=${() => this.goTo(COMPLICATIONS_PATH)}>${uiIcon("grid")}<span>All devices</span></button>
+    </div>`;
+  }
+
+  /** One design's row: its picture, name and shape, then a box per device.
+   * On a focused device its row also has Hide here in that column; a row
+   * that could go on it is dimmed. */
+  private compBoardRow(it: CompBoardItem, devices: readonly LinkDevice[], focus?: LinkDevice, dim = false): BoardRow {
+    const { row } = it;
+    const shelved = isShelvedRow(row);
+    const shape = cardShapeTitle(it.family, it.control);
+    const detail = it.locked !== undefined ? `${shape} · ${it.locked.badge}` : shelved ? `${shape} · On no device yet` : shape;
+    const open = focus === undefined ? row.open : row.copies.find((c) => c.ownerId === focus.ownerId) ?? row.open;
+    const noteOpen = this.pickerNote === row.key;
+    return {
+      key: row.key,
+      name: row.name,
+      detail,
+      picture: this.compBoardPicture(it, open),
+      openTitle: it.locked !== undefined ? it.locked.title : "Open this complication",
+      onOpen: () => {
+        if (it.locked !== undefined) this.pickerNote = noteOpen ? undefined : row.key;
+        else void this.openFromPicker(row, open);
+      },
+      cells: devices.map((d) => this.compBoardCell(it, d, focus !== undefined && d.ownerId === focus.ownerId)),
+      ...(dim ? { dim: true } : {}),
+      ...(it.locked !== undefined && noteOpen ? { under: html`<p class="lt-note ok">${it.locked.title}</p>` } : {}),
+    };
+  }
+
+  /** One box: where the design is on one device, and what a click there
+   * does (`compCell`). */
+  private compBoardCell(it: CompBoardItem, device: LinkDevice, focused: boolean): BoardCell {
+    const { row } = it;
+    const color = this.deviceColorOf(device.ownerId);
+    const base = { ownerId: device.ownerId, name: device.name, device: device.kind, color, shape: "square" as const, add: false, label: device.name };
+    if (it.locked !== undefined) {
+      if (!row.copies.some((c) => c.ownerId === device.ownerId)) return { dashTitle: `Only the device it was made on has it. ${it.locked.title}` };
+      const chip: TickChip = { ...base, on: true, hidden: false, busy: false, title: it.locked.title, next: undefined, stuck: it.locked.title };
+      return { chip, note: "locked", noteTitle: it.locked.title };
+    }
+    const place = it.places.find((p) => p.owner.ownerId === device.ownerId);
+    const owner = this.ownerOf(device.ownerId);
+    const cell = compCell({
+      listed: place !== undefined,
+      on: place?.on ?? false,
+      draws: place?.draws ?? false,
+      full: place !== undefined && place.draws && !place.on && this.freeSlotOn(device.ownerId, it.family) < 0,
+      ...(place !== undefined && !place.on && !place.draws && !deviceSupportsShapes(owner) ? { tooOld: updateDeviceMessage(owner) } : {}),
+      last: place?.last ?? false,
+      designKind: it.kind,
+      deviceKind: device.kind,
+      deviceName: device.name,
+      lockShape: it.family === "rectangular" || it.family === "circular" || it.family === "inline",
+      shelfName: UNASSIGNED_LABEL,
+    });
+    if (cell.dash !== undefined || place === undefined) return { dashTitle: cell.dash ?? `Does not fit ${device.name}` };
+    const busy = this.compBoardBusy === `${row.key}|${device.ownerId}`;
+    const record = place.on ? this.recordAt(device.ownerId, place.copies[0]!.id) : undefined;
+    const hidden = record !== undefined && this.rowHidden(record);
+    const chip: TickChip = {
+      ...base, on: busy ? !cell.on : cell.on, hidden, busy, title: cell.title,
+      next: busy || this.saving ? undefined : cell.next,
+    };
+    const out: BoardCell = { chip, onPick: (on) => void this.compBoardTick(it, place, on) };
+    if (cell.note !== undefined) {
+      out.note = cell.note;
+      out.noteTitle = cell.title;
+      if (cell.noteWarn === true) out.noteWarn = true;
+    }
+    if (focused && record !== undefined) {
+      out.eye = {
+        hidden, busy: this.saving,
+        title: hidden ? `Show ${row.name} in ${device.name}'s list again` : `Hide here: keep ${row.name} on ${device.name} without listing it. A face or widget already using it keeps it.`,
+        onToggle: () => void this.compBoardHide(record, !hidden, device.ownerId),
+      };
+    }
+    return out;
+  }
+
+  /** A row's small picture: the shape as the device it opens on draws it. */
+  private compBoardPicture(it: CompBoardItem, copy: PickerCopy<PickerItem>) {
+    const kind = deviceKindOf(this.ownerOf(copy.ownerId));
+    const device = this.cardDevice(kind, it.family);
+    const width = this.compRoomy.size(device === "iphone" && it.family !== undefined && isHomeFamily(it.family) ? 64 : 76);
+    let live: LiveShapes = {};
+    if (copy.item.kind === "record") {
+      const record = copy.item.record;
+      const pictured = this.cardFromPreview(copy.ownerId, record, it.family, device);
+      const preview = pictured ? undefined : this.recordPreview(record);
+      const drawn = preview ? this.cardLive(preview.config, preview.entities) : undefined;
+      if (preview && !pictured) this.queueCardPreview(copy.ownerId, record, preview.config);
+      live = pictured ?? (drawn ? (device === "iphone" ? drawn.phone : drawn.watch) : {});
+    }
+    const well = shapeWell(it.family, device);
+    return html`<span class="cb-pic" style=${`width:${width}px;${well === undefined ? "" : `aspect-ratio:${well}`}`}>${shapeOnlyArt(it.family, device, live)}</span>`;
+  }
+
+  /** A box clicked: put the design on that device, or take it off, then say
+   * "Saved" when nothing went wrong. */
+  private async compBoardTick(it: CompBoardItem, place: DevicePlace, on: boolean) {
+    if (this.saving) return;
+    const said = this.copyStatus;
+    this.compBoardBusy = `${it.row.key}|${place.owner.ownerId}`;
+    this.saveError = undefined;
+    try {
+      if (on) await this.addRowTo(it.row, place.owner, true);
+      else await this.removeRowFrom(it.row, place, true);
+    } finally {
+      this.compBoardBusy = undefined;
+    }
+    if (this.saveError === undefined && this.copyStatus === said) this.flashCompSaved();
+  }
+
+  /** Hide here, or show again, from a focused column. */
+  private async compBoardHide(record: ComplicationRecord, hide: boolean, ownerId: string) {
+    const said = this.copyStatus;
+    this.saveError = undefined;
+    await this.setPickerHidden(record, hide, ownerId);
+    if (this.saveError === undefined && this.copyStatus === said) this.flashCompSaved();
+  }
+
+  private flashCompSaved() {
+    clearTimeout(this.compBoardSavedTimer);
+    this.compBoardSaved = true;
+    this.compBoardSavedTimer = setTimeout(() => { this.compBoardSaved = false; }, SAVED_FLASH_MS);
   }
 
   /** A press on the backdrop shuts the dialog. A modal dialog's backdrop is
@@ -19864,15 +20081,22 @@ export class WristAssistantPanel extends LitElement {
       .map(({ picture, round, name }) => ({ picture, round, name }));
   }
 
-  /** Open a device's complications on the Complications tab: all of them
-   * (an iPhone's widgets), or only those with a Control Center control. */
-  private openDeviceList(ownerId: string, filter: "all" | "control") {
+  /** Open a device's complications: the Complications board focused on it
+   * (plan step 5), for a watch's complications, an iPhone's widgets and
+   * either's Control Center door. A design open in the editor closes
+   * first, after the usual question when it has unsaved edits. The Cards
+   * view, if picked later, opens on that device's tab with the same
+   * filter. */
+  private async openDeviceList(ownerId: string, filter: "all" | "control") {
     this.toggleWatchRowMenu(false);
+    if (this.draft) {
+      await this.draftSave;
+      if (this.draft?.dirty && !this.confirmDiscard()) return;
+      this.selectNone();
+    }
     this.pickerFilter = filter;
     this.pickPickerTab(ownerId);
-    this.goTo(COMPLICATIONS_PATH);
-    // With a design open the tab is the editor, so the list opens over it.
-    if (this.draft) this.openPicker();
+    this.goTo(listFocusPath(COMPLICATIONS_PATH, ownerId));
   }
 
   /** Each device's verdict as Home gives it, for the device chip in the
@@ -20029,13 +20253,10 @@ export class WristAssistantPanel extends LitElement {
     };
     const count = (t: DeviceSheetTab) => this.homeTileCount(t, row, owner);
     const openList = (filter: "all" | "control") => this.openDeviceList(ownerId, filter);
-    // Open one of the device's pages: its complications on the
-    // Complications tab, or a watch screen on this watch.
-    // A watch's complications open the Watch app's Complications screen on
-    // this watch; an iPhone's widgets and any device's controls the list.
-    const screenOf = (t: DeviceSheetTab): WatchScreen | undefined => t.kind === "screen"
-      ? t.screen
-      : t.filter === "all" && row.kind === "watch" ? WATCH_SCREENS.find((s) => s.id === "watch-complications") : undefined;
+    // Open one of the device's pages: a watch screen on this device, or its
+    // complications, widgets or controls on the Complications board focused
+    // on it (plan step 5).
+    const screenOf = (t: DeviceSheetTab): WatchScreen | undefined => t.kind === "screen" ? t.screen : undefined;
     const go = (t: DeviceSheetTab) => {
       const screen = screenOf(t);
       if (screen === undefined) { if (t.kind === "list") openList(t.filter); return; }
