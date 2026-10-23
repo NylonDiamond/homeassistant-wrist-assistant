@@ -49,6 +49,8 @@ import {
   MENUS_WAIT_TEXT,
   NEW_MENU_ADMIN_TEXT,
   allMenusLead,
+  duplicateMenuTitle,
+  duplicatedMenuText,
   menuDetail,
   menuMatches,
   menuSections,
@@ -62,7 +64,8 @@ import {
   restMenus,
   shownMenus,
 } from "./all-menus-model.js";
-import { askWatchMenu, keptWatchMenusDraft } from "./draft.js";
+import { copyMenuName } from "../watch-pages/library-editing.js";
+import { keptWatchMenusDraft } from "./draft.js";
 import "./menu-thumbs.js";
 import type { MenusDocument } from "./model.js";
 
@@ -132,12 +135,10 @@ export class WaAllMenus extends LitElement {
   @property({ attribute: false }) phones = false;
   @property({ attribute: false }) icons?: IconProvider;
   @property({ attribute: false }) iconsTick = 0;
-  /** Open a device's menu editor. The element has already asked it for the
-   * card's menu (`askWatchMenu`). */
-  @property({ attribute: false }) onOpen?: (ownerId: string, kind: "watch" | "iphone") => void;
-  /** Open a menu no device uses in the menu editor's library mode. A menu
-   * New menu has just made opens there too. */
-  @property({ attribute: false }) onOpenLibrary?: (menuId: string) => void;
+  /** Open a menu in the one editor, the menu editor's library mode, with
+   * the focused device when there is one. A menu New menu has just made
+   * opens there too. */
+  @property({ attribute: false }) onOpenLibrary?: (menuId: string, from?: string) => void;
   /** The focused device, by owner id: the address's (`/all-menus/<owner>`). */
   @property({ attribute: false }) focusOwner?: string;
   /** Focus a device's column, or with undefined every device. */
@@ -155,6 +156,8 @@ export class WaAllMenus extends LitElement {
   @state() private deleting = false;
   /** "Saved" beside the head, for a moment after a dot's write lands. */
   @state() private saved = false;
+  /** The menu a Duplicate is copying, while it is out. */
+  @state() private copying?: string;
   private savedTimer: ReturnType<typeof setTimeout> | undefined;
 
   private hassNow?: HassLike;
@@ -249,16 +252,25 @@ export class WaAllMenus extends LitElement {
     this.savedTimer = setTimeout(() => { this.saved = false; }, SAVED_FLASH_MS);
   }
 
-  /** Open a menu in a device's menu editor: the device tab's, or one that
-   * uses it. A menu no device uses opens in the library itself. */
-  private open(menu: LibraryMenu, device?: LinkDevice): void {
-    const on = device ?? openMenuDevice(menu, this.filter, "all", this.devices);
-    if (on === undefined) {
-      this.onOpenLibrary?.(menu.id);
-      return;
-    }
-    askWatchMenu(on.ownerId, menu.unit);
-    this.onOpen?.(on.ownerId, on.kind);
+  /** Open a menu in the one editor, the library's, whichever devices use
+   * it (plan step 4). From a focused board the device goes along, so the
+   * editor rings it and Back comes back to that board. */
+  private open(menu: LibraryMenu): void {
+    this.onOpenLibrary?.(menu.id, this.focusOwner);
+  }
+
+  /** Duplicate: a copy of `menu` named "<device>'s menu", which `device`
+   * uses in its place from now on; the other devices keep `menu`. */
+  private async duplicate(menu: LibraryMenu, device: LinkDevice): Promise<void> {
+    const store = this.lib.store;
+    if (store === undefined || this.copying !== undefined) return;
+    const name = copyMenuName(device.name);
+    this.copying = menu.id;
+    this.newNote = undefined;
+    const result = await store.copyMenu(device.ownerId, menu.unit, name);
+    this.copying = undefined;
+    this.newNote = result.ok ? { kind: "ok", text: duplicatedMenuText(name, device.name) } : { kind: "err", text: `Not copied. ${result.text}` };
+    if (result.ok) this.flashSaved();
   }
 
   /** A tick, or a pick in a device's menu: the device uses this menu for
@@ -460,7 +472,7 @@ export class WaAllMenus extends LitElement {
 
   private renderCard(library: Library, menu: LibraryMenu, devices: readonly LinkDevice[], waiting: ReadonlySet<string>): TemplateResult {
     const opensOn = openMenuDevice(menu, ALL_FILTER, "all", devices);
-    const title = opensOn === undefined ? libraryEditTitle(menu.name) : `Edit ${menu.name} on ${opensOn.name}`;
+    const title = libraryEditTitle(menu.name);
     return html`<div class="ap-card" role="listitem" data-card=${menu.id}>
       <div class="ap-top">
         <button type="button" class="ap-open" title=${title} @click=${() => this.open(menu)}>
@@ -559,12 +571,22 @@ export class WaAllMenus extends LitElement {
         menu, hass: this.hassNow, icons: this.icons, tick: this.iconsTick, onReady: () => this.requestUpdate(), height: this.roomy.size(BOARD_PICTURE_H),
         ...(menu.unit === "anywhere" && opensOn !== undefined ? { pages: pagesDocumentFor(library, opensOn.ownerId) } : {}),
       }),
-      openTitle: opensOn === undefined ? libraryEditTitle(menu.name) : `Edit ${menu.name} on ${opensOn.name}`,
-      onOpen: () => this.open(menu, opensOn),
+      openTitle: libraryEditTitle(menu.name),
+      onOpen: () => this.open(menu),
       cells,
       ...(focus !== undefined && !menu.owners.some((o) => sameId(o, focus.ownerId)) ? { dim: true } : {}),
       ...(input.note === undefined ? {} : { note: { text: input.note, kind: "warn" as const } }),
     };
+    // Duplicate, on a focused device sharing this menu with another: a copy
+    // only it uses from now on (`library/menus/copy`). It was the device
+    // Menus screen's "Duplicate" (plan step 4).
+    const shared = focus !== undefined && menu.owners.some((o) => sameId(o, focus.ownerId)) && menu.owners.some((o) => !sameId(o, focus.ownerId));
+    if (shared && focus !== undefined) {
+      const busy = this.copying !== undefined;
+      row.actions = html`<button type="button" class="bd-act" ?disabled=${busy}
+        title=${busy ? "Duplicating…" : duplicateMenuTitle(menu.name, focus.name)} aria-label=${duplicateMenuTitle(menu.name, focus.name)}
+        @click=${(e: Event) => { e.stopPropagation(); void this.duplicate(menu, focus); }}>${uiIcon("duplicate")}</button>`;
+    }
     if (unused) {
       if (this.deleteAsk === menu.id) row.under = this.renderDeleteAsk(menu);
       else row.actions = html`<button type="button" class="bd-act danger" title=${`Delete ${menu.name} from the library. No device uses it.`}

@@ -1,51 +1,51 @@
-import{Aa as f,ha as g}from"./chunk-FRYLQJ57.js";import{z as v}from"./chunk-FPM6QSJV.js";import{b as c,d as i,e as w,g as r,nh as b}from"./chunk-BDP52PL7.js";var z="dialog.lib-new";function u(e){return e==="menus"?"New menu":e==="status_pages"?"New status page":"New page"}function k(e){return e==="menus"?"menu":e==="status_pages"?"status page":"page"}function T(e,a){return e==="menus"?"Name it, pick its kind.":a.length>1?"Name it, pick where to preview it.":"Name it."}function C(e,a){let o=a.name.trim();if(o==="")return"Type a name to start.";if(e==="menus"){let t=a.unit??"anywhere";return`${o}, an ${g[t]} no device uses yet. Tick a device any time.`}return`${o}, a ${k(e)} no device has yet. Tick a device any time.`}function E(e){return e==="entity"?"Opens on an entity. Its actions in a ring.":"Opens on any screen. Your shortcuts for the whole watch."}function D(e){return e==="iphone"?"Drawn on an iPhone's screen first.":"Drawn on a watch face first."}function N(e){let a=e==="entity"?6:8,o=Array.from({length:a},(t,n)=>{let l=n/a*Math.PI*2-Math.PI/2;return w`<circle cx=${(16+Math.cos(l)*10).toFixed(2)} cy=${(16+Math.sin(l)*10).toFixed(2)} r="2.4" />`});return i`<svg class="lib-new-art" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true">
+import{ia as x}from"./chunk-5XTDZLK3.js";import{z as b}from"./chunk-TRRRK4WX.js";import{b as l,d as o,e as c,g as s,nh as w}from"./chunk-BDP52PL7.js";var k="dialog.lib-new";function g(e){return e==="menus"?"New menu":e==="status_pages"?"New status page":"New page"}function f(e){return e==="menus"?"menu":e==="status_pages"?"status page":"page"}function y(e,a){return e==="menus"?"Name it, pick its kind.":a.length>1?"Name it, pick where to preview it.":"Name it."}function $(e,a){let i=a.name.trim();if(i==="")return"Type a name to start.";if(e==="menus"){let t=a.unit??"anywhere";return`${i}, an ${x[t]} no device uses yet. Tick a device any time.`}return`${i}, a ${f(e)} no device has yet. Tick a device any time.`}function z(e){return e==="entity"?"Opens on an entity. Its actions in a ring.":"Opens on any screen. Your shortcuts for the whole watch."}function N(e){return e==="iphone"?"Drawn on an iPhone's screen first.":"Drawn on a watch face first."}function M(e){let a=e==="entity"?6:8,i=Array.from({length:a},(t,r)=>{let p=r/a*Math.PI*2-Math.PI/2;return c`<circle cx=${(16+Math.cos(p)*10).toFixed(2)} cy=${(16+Math.sin(p)*10).toFixed(2)} r="2.4" />`});return o`<svg class="lib-new-art" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true">
     <circle cx="16" cy="16" r="14.5" fill="none" stroke="var(--wa-shape-outline, currentColor)" stroke-width="1" opacity=".45" />
-    ${o}${e==="entity"?w`<circle cx="16" cy="16" r="3" />`:r}
-  </svg>`}function I(e){return e?i`<span class="pick-tick" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>`:i`<span class="pick-tick off" aria-hidden="true"></span>`}function m(e,a,o,t,n,l){return i`<button type="button" class="shape-card lib-new-card ${e?"on":""}" role="radio" aria-checked=${e?"true":"false"}
-    title=${o} ?disabled=${l} @click=${n}>
+    ${i}${e==="entity"?c`<circle cx="16" cy="16" r="3" />`:s}
+  </svg>`}function T(e){return e?o`<span class="pick-tick" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>`:o`<span class="pick-tick off" aria-hidden="true"></span>`}function v(e,a,i,t,r,p){return o`<button type="button" class="shape-card lib-new-card ${e?"on":""}" role="radio" aria-checked=${e?"true":"false"}
+    title=${i} ?disabled=${p} @click=${r}>
     <span class="shape-arts">${t}</span>
     <span class="shape-card-name">${a}</span>
-    <span class="shape-card-note">${o}</span>
-    ${I(e)}
-  </button>`}function h(e,a,o){return i`<div class="new-step-head">
+    <span class="shape-card-note">${i}</span>
+    ${T(e)}
+  </button>`}function h(e,a,i){return o`<div class="new-step-head">
     <span class="new-step-num" aria-hidden="true">${e}</span>
     <span class="new-step-title">${a}</span>
-    <span class="new-step-hint">${o}</span>
-  </div>`}function j(e,a,o,t){let n=a.name.trim()!=="",l=k(e),p=n?"":"waiting",x=e==="menus",s=x||o.length>1;return i`<dialog class="new-dialog lib-new" aria-label=${u(e)} @close=${()=>t.onClose()}
-    @cancel=${d=>{d.preventDefault(),a.busy||t.onClose()}}>
-    <form class="lib-new-form" @submit=${d=>{d.preventDefault(),n&&!a.busy&&t.onMake()}}>
+    <span class="new-step-hint">${i}</span>
+  </div>`}function D(e,a,i,t){let r=a.name.trim()!=="",p=f(e),u=r?"":"waiting",d=e==="menus",m=d||i.length>1;return o`<dialog class="new-dialog lib-new" aria-label=${g(e)} @close=${()=>t.onClose()}
+    @cancel=${n=>{n.preventDefault(),a.busy||t.onClose()}}>
+    <form class="lib-new-form" @submit=${n=>{n.preventDefault(),r&&!a.busy&&t.onMake()}}>
       <div class="new-head">
-        <h2>${u(e)}</h2>
-        <span class="new-head-note">${T(e,o)}</span>
+        <h2>${g(e)}</h2>
+        <span class="new-head-note">${y(e,i)}</span>
         <span class="spacer"></span>
-        <button type="button" class="icon lib-new-x" title="Cancel" aria-label="Cancel" ?disabled=${a.busy} @click=${()=>t.onClose()}>${b("close")}</button>
+        <button type="button" class="icon lib-new-x" title="Cancel" aria-label="Cancel" ?disabled=${a.busy} @click=${()=>t.onClose()}>${w("close")}</button>
       </div>
       <div class="new-body">
         <section class="new-step step-name">
-          ${h(1,"Name it",x?"The name the Menus tab and the editor show.":`The name the ${l}'s card and the ${e==="status_pages"?"watch":"device"} show.`)}
-          <input type="text" class="new-name" .value=${v(a.name)} maxlength="80" autofocus aria-label=${`${u(e)} name`}
-            ?disabled=${a.busy} @input=${d=>t.onName(d.target.value)} />
+          ${h(1,"Name it",d?"The name the Menus tab and the editor show.":`The name the ${p}'s card and the ${e==="status_pages"?"watch":"device"} show.`)}
+          <input type="text" class="new-name" .value=${b(a.name)} maxlength="80" autofocus aria-label=${`${g(e)} name`}
+            ?disabled=${a.busy} @input=${n=>t.onName(n.target.value)} />
         </section>
-        ${s?x?i`<section class="new-step step-shapes ${p}" aria-disabled=${n?"false":"true"}>
-          ${h(2,"Which kind",n?"A device uses one of each. It starts as the app's own menu of that kind.":"Waits for a name.")}
+        ${m?d?o`<section class="new-step step-shapes ${u}" aria-disabled=${r?"false":"true"}>
+          ${h(2,"Which kind",r?"A device uses one of each. It starts as the app's own menu of that kind.":"Waits for a name.")}
           <div class="shape-cards" role="radiogroup" aria-label="Kind of menu">
-            ${["anywhere","entity"].map(d=>m((a.unit??"anywhere")===d,g[d],E(d),N(d),()=>t.onUnit?.(d),a.busy))}
+            ${["anywhere","entity"].map(n=>v((a.unit??"anywhere")===n,x[n],z(n),M(n),()=>t.onUnit?.(n),a.busy))}
           </div>
-        </section>`:i`<section class="new-step step-shapes ${p}" aria-disabled=${n?"false":"true"}>
-          ${h(2,"Preview on",n?"Only the picture the editor opens with. Nothing is put on a device; the ticks do that.":"Waits for a name.")}
+        </section>`:o`<section class="new-step step-shapes ${u}" aria-disabled=${r?"false":"true"}>
+          ${h(2,"Preview on",r?"Only the picture the editor opens with. Nothing is put on a device; the ticks do that.":"Waits for a name.")}
           <div class="shape-cards" role="radiogroup" aria-label="Preview on">
-            ${o.map(d=>m((a.preview??o[0])===d,d==="iphone"?"iPhone":"Watch",D(d),i`<span class="lib-new-art lib-new-device">${b(d==="iphone"?"phone":"watch")}</span>`,()=>t.onPreview?.(d),a.busy))}
+            ${i.map(n=>v((a.preview??i[0])===n,n==="iphone"?"iPhone":"Watch",N(n),o`<span class="lib-new-art lib-new-device">${w(n==="iphone"?"phone":"watch")}</span>`,()=>t.onPreview?.(n),a.busy))}
           </div>
-        </section>`:r}
-        ${a.note===void 0?r:i`<p class="lt-line ${a.note.kind}" role="status">${a.note.text}</p>`}
+        </section>`:s}
+        ${a.note===void 0?s:o`<p class="lt-line ${a.note.kind}" role="status">${a.note.text}</p>`}
       </div>
       <div class="new-foot">
-        <span class="new-count">${C(e,a)}</span>
+        <span class="new-count">${$(e,a)}</span>
         <button type="button" class="lib-new-btn" ?disabled=${a.busy} @click=${()=>t.onClose()}>Cancel</button>
-        <button type="submit" class="lib-new-btn primary" ?disabled=${!n||a.busy} title=${n?`Make the ${l}`:"Type a name to start."}>${a.busy?"Making\u2026":"Create"}</button>
+        <button type="submit" class="lib-new-btn primary" ?disabled=${!r||a.busy} title=${r?`Make the ${p}`:"Type a name to start."}>${a.busy?"Making\u2026":"Create"}</button>
       </div>
     </form>
-  </dialog>`}function K(e){let a=e?.querySelector?.(z);a&&(!a.open&&typeof a.showModal=="function"&&a.showModal(),a.querySelector("input.new-name")?.select())}var H=c`
+  </dialog>`}function L(e){let a=e?.querySelector?.(k);a&&(!a.open&&typeof a.showModal=="function"&&a.showModal(),a.querySelector("input.new-name")?.select())}var j=l`
   dialog.lib-new {
     width: min(560px, calc(100vw - 32px)); padding: 0;
     border: 1px solid var(--wa-line); border-radius: 12px;
@@ -137,219 +137,7 @@ import{Aa as f,ha as g}from"./chunk-FRYLQJ57.js";import{z as v}from"./chunk-FPM6
     .lib-new .new-head .spacer { display: none; }
     .lib-new .new-body { padding: 12px; }
   }
-`;var q={settings:"Settings",rooms:"Rooms",voice:"Voice"},G=1800,R=1500,M=1.9,y=class{constructor(a){this.host=a;this.wide=!1;a.addController(this)}hostConnected(){typeof ResizeObserver>"u"||(this.seen=new ResizeObserver(a=>{let t=(a[0]?.contentRect.width??0)>=R;t!==this.wide&&(this.wide=t,this.host.requestUpdate())}),this.seen.observe(this.host))}hostDisconnected(){this.seen?.disconnect(),this.seen=void 0}size(a){return this.wide?Math.round(a*M):a}};function X(e,a,o){let t=(n,l,p)=>i`<button type="button" class="bd-view-opt ${e===n?"on":""}"
-    aria-pressed=${e===n?"true":"false"} title=${p} @click=${()=>{e!==n&&a(n)}}>${b(n==="board"?"checklist":"grid")}<span>${l}</span></button>`;return i`<span class="bd-view" role="group" aria-label=${`How to show the ${o}`}>
-    ${t("board","Board",`Every ${o.replace(/s$/,"")} as a row, every device as a column`)}${t("cards","Cards",`Every ${o.replace(/s$/,"")} as a card with its picture`)}
-  </span>`}var $=(e,a)=>e!==void 0&&a!==void 0&&e.toUpperCase()===a.toUpperCase();function Y(e){let a=e.columns.length+1,o=e.columns.findIndex(t=>$(t.device.ownerId,e.focus));return i`<div class="bd-scroll">
-    <table class="bd ${o>=0?"focused":""} ${e.wide===!0?"wide":""}" aria-label=${e.label}>
-      <thead><tr>
-        <th scope="col" class="bd-thing">${e.thing}</th>
-        ${e.columns.map(t=>B(t,$(t.device.ownerId,e.focus),e))}
-      </tr></thead>
-      ${e.sections.map(t=>i`<tbody class="bd-sect-body" data-section=${t.key}>
-        ${t.title===void 0?r:i`<tr class="bd-sect"><th colspan=${a} scope="colgroup">
-          <span class="bd-sect-t">${t.title}${t.count===void 0?r:i` <small>${t.count}</small>`}</span>
-          ${t.hint===void 0?r:i`<span class="bd-sect-r">${t.hint}</span>`}
-        </th></tr>`}
-        ${t.rows.length===0&&t.empty!==void 0?i`<tr class="bd-none"><td colspan=${a}>${t.empty}</td></tr>`:t.rows.map(n=>L(n,e.columns,o,a))}
-      </tbody>`)}
-    </table>
-  </div>`}function B(e,a,o){let t=e.device;return i`<th scope="col" class="bd-col ${a?"on":""}" style=${e.color===void 0?r:`--dc:${e.color}`}>
-    <button type="button" class="bd-col-btn" aria-pressed=${a?"true":"false"}
-      title=${a?"Back to every device":o.focusTitle(t)}
-      @click=${()=>o.onFocus(a?void 0:t.ownerId)}>
-      <span class="bd-col-top">
-        <span class="bd-col-glyph" aria-hidden="true">${b(t.kind==="iphone"?"phone":"watch")}</span>
-        <span class="bd-col-name">${t.name}</span>
-      </span>
-      <span class="bd-col-sub"><span class="bd-col-n">${e.count}</span>
-        <span class="bd-col-go">${a?"All":o.focusWord}<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 4l2.5 2.5L7.5 4"/></svg></span></span>
-    </button>
-  </th>`}function L(e,a,o,t){let n=e.drag,l=`bd-row ${e.dim?"dim":""} ${e.select?.picked?"picked":""} ${n?.dragging?"dragging":""} ${n?.over?"drag-over":""} ${n?.below?"below":""}`,p=i`<tr class=${l} data-row=${e.key} draggable=${n?.on?"true":"false"}
-    @dragstart=${s=>n?.onStart(s)}
-    @dragover=${s=>n?.onOver(s)}
-    @drop=${s=>n?.onDrop(s)}
-    @dragend=${()=>n?.onEnd()}
-    @keydown=${s=>n?.onKey(s)}>
-    <th scope="row" class="bd-thing">
-      <span class="bd-thing-in">
-        ${n===void 0?r:i`<span class="bd-grip" aria-hidden="true" title=${n.on?"Drag to order":""}>${b("grip")}</span>`}
-        ${e.select===void 0?r:i`<input type="checkbox" class="pk-card-pick" .checked=${e.select.picked}
-          ?disabled=${e.select.disabled} aria-label=${e.select.label}
-          @click=${s=>{s.stopPropagation(),e.select.onPick(s)}} />`}
-        <button type="button" class="bd-open" title=${e.openTitle} @click=${s=>e.onOpen(s)}>
-          ${e.picture??r}
-          <span class="bd-nm"><span class="bd-n">${e.name}</span><span class="bd-m">${e.detail}</span></span>
-        </button>
-        ${e.actions??r}
-      </span>
-    </th>
-    ${a.map((s,d)=>P(e.cells[d],s,d===o))}
-  </tr>`;return e.ask!==void 0||e.note!==void 0||e.under!==void 0?i`${p}<tr class="bd-under ${e.dim?"dim":""}"><td colspan=${t}>
-    ${e.ask===void 0?r:f(e.ask)}
-    ${e.note===void 0?r:e.note.kind==="ok"?i`<p class="lt-note ok" role="status">${e.note.text}</p>`:i`<p class="lt-note" role="alert">${e.note.text}</p>`}
-    ${e.under??r}
-  </td></tr>`:p}function P(e,a,o){let t=a.color===void 0?r:`--dc:${a.color}`,n=e?.chip;if(n===void 0)return i`<td class="bd-cell ${o?"on":""}" style=${t}>
-      <span class="bd-dash" role="img" aria-label=${e?.dashTitle??`Does not fit ${a.device.name}`} title=${e?.dashTitle??`Does not fit ${a.device.name}`}></span>
-    </td>`;let l=n.shape==="round";return i`<td class="bd-cell ${o?"on":""}" style=${t}>
-    <span class="bd-cell-in">
-      <button type="button" class="bd-box ${n.on?"ticked":""} ${l?"rd":""} ${n.busy?"busy":""} ${n.stuck===void 0?"":"stuck"} ${n.hidden?"dim":""}"
-        title=${n.title} aria-label=${`${n.name}: ${n.title}`}
-        aria-pressed=${n.on?"true":"false"} aria-disabled=${n.next===void 0?"true":"false"}
-        @click=${p=>{p.stopPropagation(),n.next!==void 0&&e?.onPick?.(n.next)}}><span class="bd-mark" aria-hidden="true"></span></button>
-      ${e?.eye===void 0?r:i`<button type="button" class="bd-eye ${e.eye.hidden?"hid":""}" ?disabled=${e.eye.busy}
-        title=${e.eye.title} aria-label=${e.eye.title} aria-pressed=${e.eye.hidden?"true":"false"}
-        @click=${p=>{p.stopPropagation(),e.eye.onToggle()}}>${b(e.eye.hidden?"hide":"show")}</button>`}
-    </span>
-    ${n.hidden&&e?.note===void 0?i`<em class="bd-note">hidden</em>`:r}
-    ${e?.note===void 0?r:i`<em class="bd-note ${e.noteWarn?"warn":""}" title=${e.noteTitle??r}>${e.note}</em>`}
-  </td>`}var J=c`
-  .bd-scroll { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
-  table.bd { border-collapse: separate; border-spacing: 0; width: 100%; min-width: max-content; font-size: 12.5px; }
-  .bd th, .bd td { padding: 0; text-align: left; font-weight: inherit; }
-  .bd thead th { position: sticky; top: 0; z-index: 2; background: var(--wa-card); border-bottom: 1px solid var(--wa-line); vertical-align: bottom; }
-  .bd .bd-thing { position: sticky; left: 0; z-index: 1; background: var(--wa-card); min-width: 220px; max-width: 320px; }
-  .bd thead .bd-thing { z-index: 3; padding: 8px 10px; font-size: 11.5px; color: var(--wa-muted); font-weight: 600; }
-  .bd-col { min-width: 96px; text-align: center; }
-  .bd-col.on { background: color-mix(in srgb, var(--dc, var(--wa-accent)) 14%, var(--wa-card)); }
-  .bd-col-btn {
-    display: flex; flex-direction: column; align-items: center; gap: 3px; width: 100%; padding: 8px 8px 7px; box-sizing: border-box;
-    border: 0; background: none; font: inherit; color: var(--wa-ink); cursor: pointer; border-radius: 8px 8px 0 0;
-    border-bottom: 3px solid color-mix(in srgb, var(--dc, var(--wa-muted)) 70%, transparent);
-  }
-  .bd-col-btn:hover { background: var(--wa-hover); }
-  .bd-col-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .bd-col-top { display: inline-flex; align-items: center; gap: 5px; max-width: 150px; }
-  .bd-col-glyph { display: inline-flex; color: var(--dc, var(--wa-muted)); }
-  .bd-col-glyph svg { width: 14px; height: 14px; }
-  .bd-col-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 12.5px; }
-  .bd-col-sub { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--wa-muted); }
-  .bd-col-n { font-variant-numeric: tabular-nums; }
-  .bd-col-go { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--wa-line); }
-  .bd-col-btn:hover .bd-col-go, .bd-col.on .bd-col-go { color: var(--wa-ink); border-color: var(--wa-line-strong); }
-  .bd-col-go svg { width: 9px; height: 9px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-
-  .bd-sect th { padding: 14px 10px 6px; border-bottom: 1px solid var(--wa-line); background: var(--wa-card); }
-  .bd-sect th > * { position: sticky; left: 10px; }
-  .bd-sect-t { font-size: 12.5px; font-weight: 600; color: var(--wa-ink); }
-  .bd-sect-t small { margin-left: 4px; font-size: 12px; font-weight: 500; color: var(--wa-muted); }
-  .bd-sect-r { margin-left: 12px; font-size: 11.5px; color: var(--wa-muted); font-weight: 400; }
-  .bd-none td { padding: 10px; font-size: 12.5px; color: var(--wa-muted); }
-
-  .bd-row > * { border-bottom: 1px solid var(--wa-line); }
-  .bd-row:hover > * { background: color-mix(in srgb, var(--wa-hover) 60%, var(--wa-card)); }
-  .bd-row:hover > .bd-cell.on, .bd-cell.on { background: color-mix(in srgb, var(--dc, var(--wa-accent)) 8%, var(--wa-card)); }
-  .bd-row.dim .bd-open { opacity: .6; }
-  .bd-row.picked > .bd-thing { box-shadow: inset 3px 0 0 var(--wa-ink); }
-  .bd-row.dragging { opacity: .5; }
-  .bd-row.drag-over > * { box-shadow: inset 0 2px 0 var(--wa-accent); }
-  .bd-row.drag-over.below > * { box-shadow: inset 0 -2px 0 var(--wa-accent); }
-  .bd-thing-in { display: flex; align-items: center; gap: 6px; padding: 6px 10px; min-width: 0; }
-  .bd-grip { display: inline-flex; flex: none; color: var(--wa-muted); cursor: grab; }
-  .bd-grip svg { width: 14px; height: 14px; }
-  .bd-open {
-    display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; padding: 2px; margin: 0;
-    border: 0; border-radius: 8px; background: none; font: inherit; color: var(--wa-ink); text-align: left; cursor: pointer;
-  }
-  .bd-open:hover .bd-n { text-decoration: underline; text-underline-offset: 2px; }
-  .bd-open:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .bd-nm { display: flex; flex-direction: column; min-width: 0; }
-  .bd-n { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .bd-m { font-size: 11.5px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-  .bd .bd-cell { text-align: center; vertical-align: middle; padding: 6px 4px; }
-  .bd-cell-in { display: inline-flex; align-items: center; gap: 4px; }
-  .bd-box {
-    display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0;
-    border: 0; border-radius: 7px; background: none; cursor: pointer;
-  }
-  .bd-box:hover:not(.stuck):not(.busy) { background: var(--wa-hover); }
-  .bd-box:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .bd-mark {
-    display: block; width: 16px; height: 16px; box-sizing: border-box; border-radius: 4px;
-    border: 1.5px solid color-mix(in srgb, var(--dc, var(--wa-muted)) 70%, var(--wa-line-strong));
-  }
-  .bd-box.rd .bd-mark { border-radius: 50%; }
-  .bd-box.ticked .bd-mark { background: var(--dc, var(--wa-accent)); border-color: var(--dc, var(--wa-accent)); position: relative; }
-  .bd-box.ticked:not(.rd) .bd-mark::after {
-    content: ""; position: absolute; top: 1px; left: 4.5px; width: 4px; height: 8px;
-    border: solid var(--wa-card); border-width: 0 2px 2px 0; transform: rotate(45deg);
-  }
-  .bd-box.ticked.rd .bd-mark { box-shadow: inset 0 0 0 3px var(--wa-card); }
-  .bd-box.ticked.rd { cursor: default; }
-  .bd-box.dim .bd-mark { opacity: .5; }
-  .bd-box.busy { opacity: .55; cursor: progress; }
-  .bd-box.stuck { opacity: .4; cursor: not-allowed; }
-  .bd-dash { display: inline-block; width: 12px; height: 2px; border-radius: 1px; background: var(--wa-line-strong); vertical-align: middle; }
-  .bd-eye {
-    display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0;
-    border: 0; border-radius: 6px; background: none; color: var(--wa-muted); cursor: pointer;
-  }
-  .bd-eye svg { width: 15px; height: 15px; }
-  .bd-eye:hover:not(:disabled) { background: var(--wa-hover); color: var(--wa-ink); }
-  .bd-eye.hid { color: var(--wa-need); }
-  .bd-eye:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .bd-eye:disabled { opacity: .45; cursor: progress; }
-  .bd-note { display: block; margin-top: 1px; font-style: normal; font-size: 10.5px; line-height: 1.2; color: var(--wa-muted); white-space: nowrap; }
-  .bd-note.warn { color: var(--wa-need); }
-
-  /* Board | Cards, in the head: the panel's segmented switch. */
-  .bd-view { display: inline-flex; flex: none; padding: 2px; gap: 2px; border-radius: 8px; background: var(--wa-seg, var(--wa-field)); border: 1px solid var(--wa-line); }
-  .bd-view-opt {
-    display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border: 0; border-radius: 6px;
-    background: none; font: inherit; font-size: 12px; font-weight: 600; color: var(--wa-muted); cursor: pointer;
-  }
-  .bd-view-opt svg { width: 13px; height: 13px; }
-  .bd-view-opt.on { background: var(--wa-seg-on, var(--wa-card)); color: var(--wa-ink); }
-  .bd-view-opt:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  /* "Saved" for a moment after a box's write, apart from any Save button. */
-  .bd-saved { display: inline-flex; align-items: center; gap: 4px; flex: none; font-size: 12px; color: var(--wa-ok, var(--wa-muted)); }
-  .bd-saved svg { width: 13px; height: 13px; }
-  /* A focused device's head, over the board, in the device's color. */
-  .bd-focus {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 0 10px; padding: 10px 12px;
-    border-radius: 10px; border: 1px solid color-mix(in srgb, var(--dc, var(--wa-accent)) 45%, var(--wa-line));
-    background: color-mix(in srgb, var(--dc, var(--wa-accent)) 8%, var(--wa-card));
-  }
-  .bd-focus-glyph { display: inline-flex; color: var(--dc, var(--wa-muted)); }
-  .bd-focus-glyph svg { width: 16px; height: 16px; }
-  .bd-focus-t { flex: 1 1 260px; min-width: 0; font-size: 13px; color: var(--wa-muted); }
-  .bd-focus-t b { font-weight: 600; color: var(--wa-ink); margin-right: 4px; }
-  .bd-focus-own { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; color: var(--wa-muted); }
-  .bd-link {
-    padding: 0; border: 0; background: none; font: inherit; font-size: 12px; font-weight: 600; color: var(--wa-ink); cursor: pointer;
-    text-decoration: underline; text-decoration-color: var(--wa-line-strong); text-underline-offset: 2px;
-  }
-  .bd-link:hover { text-decoration-color: currentColor; }
-  .bd-link:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 3px; }
-  .bd-focus-all {
-    display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 7px;
-    border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink);
-    font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
-  }
-  .bd-focus-all svg { width: 13px; height: 13px; }
-  .bd-focus-all:hover { background: var(--wa-hover); }
-  .bd-focus-all:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .bd-foot-line { margin-top: 8px; }
-
-  .bd-under td { padding: 0 10px 8px; border-bottom: 1px solid var(--wa-line); }
-  .bd-under td > * { position: sticky; left: 10px; max-width: min(560px, calc(100vw - 60px)); }
-  .bd-under .lt-ask { margin-top: 2px; }
-  .bd.wide { font-size: 13.5px; }
-  .bd.wide .bd-thing { min-width: 320px; max-width: 460px; }
-  .bd.wide .bd-thing-in { padding: 8px 14px; gap: 10px; }
-  .bd.wide .bd-open { gap: 14px; }
-  .bd.wide .bd-n { font-size: 14.5px; }
-  .bd.wide .bd-m { font-size: 12.5px; }
-  .bd.wide .bd-col { min-width: 130px; }
-  .bd.wide .bd-col-name { font-size: 13.5px; }
-  .bd.wide .bd-col-top { max-width: 220px; }
-  @media (max-width: 640px) {
-    .bd .bd-thing { min-width: 150px; max-width: 200px; }
-    .bd-thing-in { padding: 6px; }
-    .bd-col { min-width: 76px; }
-  }
-`;var ee=c`
+`;var S=l`
   .lt-view { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
   .lt-sect { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; padding: 0 2px; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); }
   .lt-sect small { font-size: 12px; font-weight: 500; color: color-mix(in srgb, var(--wa-muted) 75%, transparent); }
@@ -409,7 +197,7 @@ import{Aa as f,ha as g}from"./chunk-FRYLQJ57.js";import{z as v}from"./chunk-FPM6
     .lt-row { padding: 7px 10px 7px 6px; gap: 8px; }
     .lt-pick-sel { max-width: 130px; }
   }
-`;var te=c`
+`;var R=l`
   :host { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; color: var(--wa-ink); }
   * { box-sizing: border-box; }
   svg { display: block; }
@@ -542,4 +330,4 @@ import{Aa as f,ha as g}from"./chunk-FRYLQJ57.js";import{z as v}from"./chunk-FPM6
     .pk-body { padding: 10px; }
     .ap-grid { gap: 8px; }
   }
-`;export{j as a,K as b,H as c,q as d,G as e,y as f,X as g,Y as h,J as i,ee as j,te as k};
+`;export{D as a,L as b,j as c,S as d,R as e};

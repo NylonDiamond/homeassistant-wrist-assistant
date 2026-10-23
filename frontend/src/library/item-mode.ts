@@ -16,17 +16,22 @@
 // guards, which look at every kept draft, cover it.
 // Plan: app repo docs/one_library_plan_2026-10.md.
 
-import { css, html, svg, type TemplateResult } from "lit";
+import { css, html, nothing, svg, type TemplateResult } from "lit";
+import { keyed } from "lit/directives/keyed.js";
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../ha-api.js";
 import { isPhoneId } from "../phone-pages.js";
 import { type LibraryKind, type LibraryObject, fetchLibraryItem, saveLibraryItem } from "./client.js";
 import { type Library, libraryItem, libraryMenu } from "./model.js";
+import { SAVED_FLASH_MS } from "./board.js";
 import type { LibraryStore } from "./store.js";
 
 /** One item of the library, as an editor's library mode is handed it. */
 export interface LibraryItemRef {
   kind: LibraryKind;
   id: string;
+  /** The device whose focused board opened it, by owner id: the editor rings
+   * it in the strip, and Back goes to that board. */
+  from?: string;
 }
 
 /** The key a library mode draft is kept under: "library:pages:<id>". It can
@@ -132,11 +137,40 @@ export function rememberPreview(kind: PreviewKind): void {
   }
 }
 
-/** The device to draw on for `kind`: the home's first device of that kind,
- * undefined when it has none (the editor then draws on the reference
- * device of the kind). */
-export function previewOwner(devices: readonly OwnerSummary[], kind: PreviewKind): string | undefined {
-  return devices.find((d) => isPhoneId(devices, d.owner_watch_id) === (kind === "iphone"))?.owner_watch_id;
+/** The device to draw on for `kind`: the first of `prefer` of that kind
+ * (the device the editor was opened from, then the devices that have the
+ * item), else the home's first device of that kind, undefined when it has
+ * none (the editor then draws on the reference device of the kind). */
+export function previewOwner(devices: readonly OwnerSummary[], kind: PreviewKind, prefer: readonly (string | undefined)[] = []): string | undefined {
+  const ofKind = (d: OwnerSummary) => isPhoneId(devices, d.owner_watch_id) === (kind === "iphone");
+  for (const id of prefer) {
+    if (id === undefined) continue;
+    const d = devices.find((o) => o.owner_watch_id.toUpperCase() === id.toUpperCase());
+    if (d !== undefined && ofKind(d)) return d.owner_watch_id;
+  }
+  return devices.find(ofKind)?.owner_watch_id;
+}
+
+/** The devices that have a library item, by owner id; undefined before the
+ * library is read. */
+export function libraryOwners(lib: Library | undefined, ref: LibraryItemRef): readonly string[] | undefined {
+  if (lib === undefined) return undefined;
+  return (ref.kind === "menus" ? libraryMenu(lib, ref.id)?.owners : libraryItem(lib, ref.kind, ref.id)?.owners) ?? [];
+}
+
+/** The kind an item opens previewed on: the kind of the device it was
+ * opened from; else the one kind every device that has it is; else the kind
+ * remembered for the session. */
+export function startPreviewKind(devices: readonly OwnerSummary[], ref: LibraryItemRef, owners: readonly string[] | undefined): PreviewKind {
+  const kindOf = (id: string): PreviewKind | undefined => {
+    const d = devices.find((o) => o.owner_watch_id.toUpperCase() === id.toUpperCase());
+    return d === undefined ? undefined : isPhoneId(devices, d.owner_watch_id) ? "iphone" : "watch";
+  };
+  const from = ref.from === undefined ? undefined : kindOf(ref.from);
+  if (from !== undefined) return from;
+  const kinds = new Set((owners ?? []).map(kindOf).filter((k): k is PreviewKind => k !== undefined));
+  if (kinds.size === 1) return [...kinds][0]!;
+  return storedPreviewKind();
 }
 
 /** The two thumbnails: a plain watch and a plain iPhone. */
@@ -188,12 +222,21 @@ export function onDevicesText(kind: LibraryKind, count: number): string {
  * else, and were too easy to miss). With no device yet the count is in the
  * warning ink. `where` is only ever "stage" now.
  */
-export function renderBarDevices(kind: LibraryKind, count: number, ticks: TemplateResult, _where: "stage" = "stage"): TemplateResult {
+export function renderBarDevices(kind: LibraryKind, count: number, ticks: TemplateResult, savedAt?: number): TemplateResult {
   // "over-stage", not "stage": the complication editor's drawing stage owns
   // that class.
   return html`<div class="lib-on over-stage ${count === 0 ? "none" : ""}" role="group" aria-label=${onDevicesQuestion(kind)}>
-    <span class="lib-on-l">${onDevicesQuestion(kind)}</span>${ticks}<span class="lib-on-n">${onDevicesText(kind, count)}</span>
+    <span class="lib-on-l">${onDevicesQuestion(kind)}</span>${ticks}<span class="lib-on-n">${onDevicesText(kind, count)}</span>${renderStripSaved(savedAt)}
   </div>`;
+}
+
+/** "Saved" beside the strip for a moment after a tick's write lands
+ * (`LibraryStore.savedStamp`), never on the Save button: a tick saves at
+ * once, an edit waits for Save. Keyed on the stamp, so each write plays the
+ * fade again; a stamp older than the flash draws nothing. */
+export function renderStripSaved(savedAt: number | undefined, now = Date.now()): TemplateResult | typeof nothing {
+  if (savedAt === undefined || now - savedAt >= SAVED_FLASH_MS) return nothing;
+  return html`${keyed(savedAt, html`<span class="lib-saved" role="status" style=${`animation-delay:${Math.max(0, SAVED_FLASH_MS - 400 - (now - savedAt))}ms`}>Saved</span>`)}`;
 }
 
 export const libraryModeStyles = css`
@@ -244,4 +287,10 @@ export const libraryModeStyles = css`
   .lib-on.over-stage { flex: none; margin: 6px 6px 0; padding: 7px 12px; box-sizing: border-box; }
   .lib-on.over-stage .lt-ticks { flex: 1 1 auto; }
   .lib-on.over-stage .lib-on-n { margin-left: auto; }
+  /* "Saved" after the count, fading out once the flash is over. */
+  .lib-saved {
+    font-size: 12px; font-weight: 600; color: var(--wa-green); white-space: nowrap;
+    animation: lib-saved-out .4s ease-in forwards;
+  }
+  @keyframes lib-saved-out { to { opacity: 0; } }
 `;

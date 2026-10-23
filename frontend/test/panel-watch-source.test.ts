@@ -96,15 +96,20 @@ describe("the watch screens under the row", () => {
     expect(iphone).toContain("const screen = iphoneScreenOf(this.route);");
   });
 
-  it("hands each of the six that follow a device the device it is drawn for, in the shell's mode, with no Watch settings button of their own", () => {
-    for (const view of ["renderWatchPagesView", "renderWatchMenusView", "renderWatchVoiceView", "renderWatchStatusPagesView", "renderWatchControlCenterView", "renderWatchRoomsView"]) {
+  it("hands each of the three that follow a device the device it is drawn for, in the shell's mode, with no Watch settings button of their own", () => {
+    for (const view of ["renderWatchVoiceView", "renderWatchControlCenterView", "renderWatchRoomsView"]) {
       const body = call(view);
       expect(body, view).toContain("ownerId: owner,");
       expect(body, view).toContain("shell: true,");
       expect(body, view).toContain("actions: nothing,");
       expect(body, view).toContain("dialogs: nothing,");
     }
-    expect(count(screens, "ownerId: owner,")).toBe(6);
+    expect(count(screens, "ownerId: owner,")).toBe(3);
+    // A device's Pages, Status pages and Menus are its column on the board
+    // (plan step 4): their addresses move there, and draw no editor.
+    for (const id of ["pages", "menus", "status-pages"]) expect(screens).toContain(`case "${id}":`);
+    expect(screens).not.toContain("renderWatchPagesView");
+    expect(method("  private boardAddressFor(")).toContain("deviceListPath(screen.id, watch !== undefined ? this.sharedWatch : this.sharedPhone)");
     expect(screens).not.toContain("watchSettings.renderButton");
     expect(screens).not.toContain("watchSettings.render(");
     expect(SOURCE).not.toContain("watchOnlyOwner");
@@ -112,11 +117,9 @@ describe("the watch screens under the row", () => {
     expect(tab).not.toMatch(/RouteOwner\(this\.route\) \?\? this\.ownerId/);
   });
 
-  it("lets the four screens a phone has open an iPhone on a home with phone pages, and no other", () => {
-    for (const view of ["renderWatchPagesView", "renderWatchMenusView", "renderWatchStatusPagesView", "renderWatchRoomsView"]) {
-      expect(call(view), view).toContain("phones: this.phonePages,");
-    }
-    expect(count(screens, "phones: this.phonePages,")).toBe(4);
+  it("lets Rooms open an iPhone on a home with phone pages, and no other screen that follows a device", () => {
+    expect(call("renderWatchRoomsView")).toContain("phones: this.phonePages,");
+    expect(count(screens, "phones: this.phonePages,")).toBe(1);
     expect(method("  private withWatchRow(")).toContain("phones: this.phonePages,");
   });
 
@@ -270,7 +273,7 @@ describe("the Settings page", () => {
     // The editors are drawn by one switch, for the Watch app and the iPhone
     // app alike (`renderWatchScreen`).
     const screens = method("  private renderWatchScreen(");
-    expect(screens.match(/barHost: this\.watchBarHost,/g)).toHaveLength(8);
+    expect(screens.match(/barHost: this\.watchBarHost,/g)).toHaveLength(5);
   });
 
   it("follows the shared watch on every draw, once the devices are in, and leaves on any other route", () => {

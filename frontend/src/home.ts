@@ -729,10 +729,10 @@ export const homeStyles = css`
      space either side of one narrow column. */
   @container (min-width: 1400px) {
     .hb-detail {
-      max-width: 1760px; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+      max-width: 2200px; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
       grid-template-areas: "bar bar" "stage info"; column-gap: 32px; row-gap: 18px; align-items: start;
     }
-    .hb-main > .home-welcome-slot { max-width: 1760px; }
+    .hb-main > .home-welcome-slot { max-width: 2200px; }
     .hb-bar { grid-area: bar; }
     .hb-stage { grid-area: stage; position: sticky; top: 18px; height: 560px; }
     .hb-info { grid-area: info; display: flex; flex-direction: column; gap: 18px; }

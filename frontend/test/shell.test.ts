@@ -123,9 +123,13 @@ describe("iPhone app screens", () => {
   });
 
   it("are where a device's screen is for an iPhone, and the Watch app's for a watch", () => {
-    expect(deviceScreenPath("iphone", WATCH_SCREENS[0]!, "p1")).toBe("/iphone/pages/p1");
+    // A device's Pages, Status pages and Menus are its column on the board.
+    expect(deviceScreenPath("iphone", WATCH_SCREENS[0]!, "p1")).toBe("/all-pages/p1");
+    expect(deviceScreenPath("watch", WATCH_SCREENS.find((s) => s.id === "menus")!, "w1")).toBe("/all-menus/w1");
+    expect(deviceScreenPath("watch", WATCH_SCREENS.find((s) => s.id === "status-pages")!, "w1")).toBe("/all-status-pages/w1");
+    expect(deviceScreenPath("watch", WATCH_SCREENS.find((s) => s.id === "rooms")!, "w1")).toBe("/rooms/w1");
     expect(deviceScreenPath("iphone", WATCH_SETTINGS_SCREEN, "p1")).toBe("/iphone/settings/p1");
-    expect(deviceScreenPath("watch", WATCH_SCREENS[0]!, "w1")).toBe("/pages/w1");
+    expect(deviceScreenPath("watch", WATCH_SCREENS[0]!, "w1")).toBe("/all-pages/w1");
   });
 });
 

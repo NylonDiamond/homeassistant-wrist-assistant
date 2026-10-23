@@ -184,10 +184,10 @@ export function openDevice(entry: { owners: readonly string[] }, filter: PagesFi
     ?? holders[0];
 }
 
-/** The title of a card no device has: a click opens it in the library
- * itself (`library/item-mode.ts`). */
+/** The title of a card or a row: a click opens it in the one editor, the
+ * library's (`library/item-mode.ts`), whichever devices have it. */
 export function libraryEditTitle(name: string): string {
-  return `Edit ${name} in the library`;
+  return `Edit ${name}`;
 }
 
 /** A device tab's first heading. */

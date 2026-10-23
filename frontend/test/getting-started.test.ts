@@ -301,8 +301,8 @@ describe("the panel's wiring", () => {
     expect(render).toContain("${this.helpSheetOpen ? this.renderHelpSheet() : nothing}");
   });
 
-  it("opens New page on the Pages screen of the step's watch", () => {
-    expect(method("  private renderHelpSheet() {")).toContain("this.goTo(watchScreenPath(WATCH_SCREENS[0]!, watch))");
+  it("opens New page on the Pages board, focused on the step's watch", () => {
+    expect(method("  private renderHelpSheet() {")).toContain(`this.goTo(deviceListPath("pages", watch)!)`);
   });
 
   it("puts focus back on the Help button when the sheet closes by itself", () => {

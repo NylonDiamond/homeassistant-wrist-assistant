@@ -63,6 +63,9 @@ export interface TicksInput {
    * each ticked watch's chip then says how many ("skips 2") and lists them
    * in its tooltip. Pages only; empty or absent adds nothing. */
   skips?: readonly string[];
+  /** The device the editor was opened from (`LibraryItemRef.from`): its chip
+   * wears a ring and says "viewing". */
+  viewing?: string;
 }
 
 /** How a row's note reads. */
@@ -111,6 +114,8 @@ export interface TickChip {
    * `<em>` after the name ("skips 2"), and the tooltip that lists them. In
    * the chip, so the strip's fold measures the wider chip. */
   skips?: { text: string; title: string };
+  /** The device the editor was opened from: a ring and "viewing". */
+  viewing?: boolean;
 }
 
 /** Why a device cannot take an item no device has. */
@@ -174,7 +179,8 @@ function plainTickChips(input: TicksInput): TickChip[] {
     const hidden = on && !busy && hiddenOn(ownerId);
     const color = input.colorOf(ownerId);
     const label = add ? `Add to this ${deviceWord(device.kind)}` : device.name;
-    const base = { ownerId, name: device.name, device: device.kind, color, shape: round ? "round" as const : "square" as const, on, hidden, busy, add, label };
+    const viewing = input.viewing !== undefined && sameId(ownerId, input.viewing);
+    const base = { ownerId, name: device.name, device: device.kind, color, shape: round ? "round" as const : "square" as const, on, hidden, busy, add, label, ...(viewing ? { viewing } : {}) };
     if (busy) return { ...base, title: "Saving…", next: undefined };
     const locked = input.locked?.(ownerId);
     if (locked !== undefined) return { ...base, title: locked, next: undefined, stuck: locked };
@@ -237,8 +243,8 @@ export interface TickChipsOptions {
  */
 export function renderTickChips(chips: readonly TickChip[], opts: TickChipsOptions, onPick: (ownerId: string, on: boolean) => void): TemplateResult {
   const chip = (c: TickChip) => html`<button type="button"
-      class="lt-chip ${c.on ? "on" : "off"} ${c.shape === "round" ? "rd" : ""} ${c.add ? "add" : ""} ${c.busy ? "busy" : ""} ${c.stuck === undefined ? "" : "stuck"} ${c.hidden ? "dim" : ""}"
-      style=${c.color === undefined ? nothing : `--dc:${c.color}`} title=${c.title}
+      class="lt-chip ${c.on ? "on" : "off"} ${c.shape === "round" ? "rd" : ""} ${c.add ? "add" : ""} ${c.busy ? "busy" : ""} ${c.stuck === undefined ? "" : "stuck"} ${c.hidden ? "dim" : ""} ${c.viewing === true ? "viewing" : ""}"
+      style=${c.color === undefined ? nothing : `--dc:${c.color}`} title=${c.viewing === true ? `${c.title} You came here from ${c.name}.` : c.title}
       aria-pressed=${c.on ? "true" : "false"} aria-disabled=${c.next === undefined ? "true" : "false"}
       @click=${(e: Event) => {
         e.stopPropagation();
@@ -247,7 +253,7 @@ export function renderTickChips(chips: readonly TickChip[], opts: TickChipsOptio
         ? html`<em>hidden</em>`
         : c.tag === undefined ? nothing : html`<em>${c.tag}</em>`}${c.skips === undefined
         ? nothing
-        : html`<em class="lt-skips" title=${c.skips.title}>${c.skips.text}</em>`}</button>`;
+        : html`<em class="lt-skips" title=${c.skips.title}>${c.skips.text}</em>`}${c.viewing === true ? html`<em class="lt-viewing">viewing</em>` : nothing}</button>`;
   // The dashed "Add to this watch" chip is already the way in, so it never
   // folds and never asks for a fold of its own.
   const folds = chips.some((c) => !c.on && !c.add);
@@ -333,6 +339,10 @@ export const libraryTicksStyles = css`
   .lt-chip.on.rd { cursor: default; }
   .lt-chip.add { border-style: dashed; background: transparent; color: var(--wa-muted); }
   .lt-chip.dim { opacity: .55; }
+  /* The device the editor was opened from: a ring in its color, never a
+     grey chip, and "viewing" after its name. */
+  .lt-chip.viewing { box-shadow: 0 0 0 2px var(--wa-card), 0 0 0 3.5px var(--dc, var(--wa-ink)); }
+  .lt-chip.viewing em.lt-viewing { color: var(--wa-ink); font-weight: 600; }
   /* The tags after the name never shrink or wrap: the name takes the
      ellipsis, so a narrow chip still says "skips 2" whole. */
   .lt-chip em { flex: none; white-space: nowrap; font-style: normal; font-size: 10px; color: var(--wa-muted); }

@@ -330,8 +330,8 @@ describe("Home's Pair a device dialog", () => {
     expect(dialog).toContain("this.renderPairNextBody(this.pairNext)");
     expect(dialog).toContain("<span>${this.homePair.subtitle}</span>");
     const next = method("  private renderPairNextBody(watchId: string) {");
-    // New page: the Pages screen on this watch, the way Home's doors go.
-    expect(next).toContain("const path = watchScreenPath(WATCH_SCREENS[0]!, watchId);");
+    // New page: the Pages board focused on this watch, the way Home's doors go.
+    expect(next).toContain(`const path = deviceListPath("pages", watchId)!;`);
     expect(next).toContain("this.pickWatch(watchId);\n        this.goTo(path);");
     expect(next).toContain("this.goTo(COMPLICATIONS_PATH);");
     expect(next).toContain(`this.homePair.open(this.hass, { mode: "choose" });`);

@@ -41,12 +41,10 @@ export interface AllMenusViewInput {
   icons: IconProvider;
   /** Bumped whenever `icons` has something new to draw. */
   iconsTick: number;
-  /** Open a device's menu editor. The element has already asked it for
-   * the card's menu. */
-  onOpen: (ownerId: string, kind: "watch" | "iphone") => void;
-  /** Open a menu no device uses in the menu editor's library mode
-   * (`library/item-mode.ts`); New menu opens the new one there too. */
-  onOpenLibrary?: (menuId: string) => void;
+  /** Open a menu in the one editor, the menu editor's library mode
+   * (`library/item-mode.ts`), with the focused device when there is one;
+   * New menu opens the new one there too. */
+  onOpenLibrary?: (menuId: string, from?: string) => void;
   /** The device the address focuses. */
   focusOwner?: string;
   /** Focus a device, or every device with undefined: move to its address. */
@@ -66,6 +64,6 @@ export function renderAllMenusView(input: AllMenusViewInput): TemplateResult {
     return html`<div class="ap-loading">${loadFailed ? "The Menus tab did not load. Reload the page to try again." : "Loading…"}</div>`;
   }
   return html`<wa-all-menus .hass=${input.hass} .owners=${input.owners} .ownersReady=${input.ownersReady} .phones=${input.phones}
-    .icons=${input.icons} .iconsTick=${input.iconsTick} .onOpen=${input.onOpen} .onOpenLibrary=${input.onOpenLibrary}
+    .icons=${input.icons} .iconsTick=${input.iconsTick} .onOpenLibrary=${input.onOpenLibrary}
     .focusOwner=${input.focusOwner} .onFocus=${input.onFocus} .onOpenScreen=${input.onOpenScreen}></wa-all-menus>`;
 }

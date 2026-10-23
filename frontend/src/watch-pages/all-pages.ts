@@ -54,7 +54,7 @@ import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import { watchFrameStyles } from "../watch-frame.js";
-import { askNewStatusPage, askStatusPage, keptStatusPagesDraft } from "../watch-status-pages/draft.js";
+import { keptStatusPagesDraft } from "../watch-status-pages/draft.js";
 import { renderStatusPagePicture, statusPagesViewStyles } from "../watch-status-pages/view.js";
 import {
   ALL_FILTER,
@@ -98,7 +98,7 @@ import {
 import { type PickChange, changeDevicePicks, picksDirtyText } from "./all-pages-picks.js";
 import { pagesBulkIO, picksIO } from "./all-pages-io.js";
 import { NO_ICONS as NO_PICTURE_ICONS } from "./editor-host.js";
-import { askNewWatchPage, keepWatchPagesSelection, keptWatchPagesDraft } from "./kept.js";
+import { keptWatchPagesDraft } from "./kept.js";
 import { DEVICES_WAIT_TEXT, type LinkDevice, type PagesRecordFacts, awaitingMove, deviceWord, freePlanText, linkDevicesOf } from "./devices.js";
 import { type UntickAsk, askUntick, tickItem } from "./library-editing-io.js";
 import { libraryListStyles } from "./library-list-styles.js";
@@ -213,11 +213,9 @@ export class WaAllPages extends LitElement {
   @property({ attribute: false }) phones = false;
   @property({ attribute: false }) icons?: IconProvider;
   @property({ attribute: false }) iconsTick = 0;
-  /** Open a device's page editor, or with `what` `status_pages` its status
-   * pages editor. */
-  @property({ attribute: false }) onOpen?: (ownerId: string, kind: "watch" | "iphone", what?: CardKind) => void;
-  /** Open an item no device has in its editor's library mode. */
-  @property({ attribute: false }) onOpenLibrary?: (kind: CardKind, id: string) => void;
+  /** Open an item in the one editor, its editor's library mode, with the
+   * focused device when there is one. */
+  @property({ attribute: false }) onOpenLibrary?: (kind: CardKind, id: string, from?: string) => void;
   /** The focused device, by owner id: the address's (`/all-pages/<owner>`). */
   @property({ attribute: false }) focusOwner?: string;
   /** Focus a device's column, or with undefined every device: the host
@@ -391,18 +389,39 @@ export class WaAllPages extends LitElement {
     this.pruneSelected();
   }
 
-  /** New page on a device's tab: its page editor opens and adds one there.
-   * On the Status pages tab, New status page: its status pages editor
-   * does. */
-  private newPage(device: LinkDevice): void {
+  /**
+   * New page on a focused device: an empty page named as the app names the
+   * next one, put last on that device with a save of its own record, then
+   * open in the one editor with the device ringed (plan step 4). Anyone who
+   * manages the device may, where a page no device has is an
+   * administrator's. On the Status pages tab, the same for a status page.
+   */
+  private async newPage(device: LinkDevice): Promise<void> {
+    const hass = this.hassNow;
+    const store = this.lib.store;
+    if (hass === undefined || store === undefined || this.picksBusy) return;
     this.newForm = undefined;
-    if (this.kind === "status_pages") {
-      askNewStatusPage(device.ownerId);
-      this.onOpen?.(device.ownerId, device.kind, "status_pages");
+    const kind = this.kind;
+    if (dirtyHere(device.ownerId, kind)) {
+      this.picksNote = { kind: "warn", text: picksDirtyText(kind, device.name) };
       return;
     }
-    askNewWatchPage(device.ownerId);
-    this.onOpen?.(device.ownerId, device.kind);
+    const id = newId();
+    const name = this.nextCardName();
+    const add = kind === "status_pages" ? newStatusPage(name, id) : newWatchPage(id, name);
+    this.picksBusy = true;
+    this.picksNote = undefined;
+    let made = false;
+    try {
+      const result = await changeDevicePicks(picksIO(hass), device.ownerId, kind, { add: add as unknown as Extract<PickChange, { add: unknown }>["add"] });
+      made = result.ok && result.changed;
+      if (!result.ok) this.picksNote = { kind: "err", text: `Not made on ${device.name}. ${result.message}` };
+    } catch (err) {
+      this.picksNote = { kind: "err", text: watchCommandError(err).message };
+    }
+    await store.refresh();
+    this.picksBusy = false;
+    if (made) this.onOpenLibrary?.(kind, id, device.ownerId);
   }
 
   /** Whether New page may make a page in the library: administrators only,
@@ -467,22 +486,11 @@ export class WaAllPages extends LitElement {
     this.onOpenLibrary?.(this.kind, made.reply.id);
   }
 
-  /** Open an item in a device's editor, on that item: the device tab's, or
-   * one that has it (`openDevice`). An item no device has opens in the
-   * library itself. */
-  private open(entry: LibraryItem, device?: LinkDevice): void {
-    const on = device ?? openDevice(entry, this.filter, "all", this.devices);
-    if (on === undefined) {
-      this.onOpenLibrary?.(entry.kind, entry.id);
-      return;
-    }
-    if (entry.kind === "status_pages") {
-      askStatusPage(on.ownerId, entry.id);
-      this.onOpen?.(on.ownerId, on.kind, "status_pages");
-      return;
-    }
-    keepWatchPagesSelection(on.ownerId, { pageId: entry.id });
-    this.onOpen?.(on.ownerId, on.kind);
+  /** Open an item in the one editor, the library's, whichever devices have
+   * it (plan step 4). From a focused board the device goes along, so the
+   * editor rings it and Back comes back to that board. */
+  private open(entry: LibraryItem): void {
+    this.onOpenLibrary?.(entry.kind, entry.id, this.focusOwner);
   }
 
   /** A tick: put the item on the device, or take it off, with that device's
@@ -549,7 +557,7 @@ export class WaAllPages extends LitElement {
   /** A device tab's Hide here, Show here or a move: one save of that
    * device's record, then the library read again. Not while the device's
    * editor holds unsaved edits, which the save would land under. */
-  private async changePicks(device: LinkDevice, change: PickChange, order?: string[]): Promise<void> {
+  private async changePicks(device: LinkDevice, change: Exclude<PickChange, { add: unknown }>, order?: string[]): Promise<void> {
     const hass = this.hassNow;
     const store = this.lib.store;
     if (hass === undefined || store === undefined || this.picksBusy) return;
@@ -813,7 +821,7 @@ export class WaAllPages extends LitElement {
     if (device !== undefined) {
       return html`<div class="ap-new">
         <button type="button" class="ap-new-btn" title=${`Add ${aCard(this.kind)} on ${device.name}`}
-          @click=${() => this.newPage(device)}>
+          ?disabled=${this.picksBusy} @click=${() => void this.newPage(device)}>
           ${uiIcon("plus")}<span>${label}</span></button>
       </div>`;
     }
@@ -879,7 +887,7 @@ export class WaAllPages extends LitElement {
     const key = itemKey(entry);
     const picked = selecting && this.selected.has(key);
     const opensOn = openDevice(entry, ALL_FILTER, "all", devices);
-    const title = this.openTitle(entry, opensOn);
+    const title = this.openTitle(entry);
     const click = (e: MouseEvent) => this.cardClick(e, entry);
     return html`<div class="ap-card ${selecting ? "picking" : ""} ${picked ? "picked" : ""}" role="listitem" data-card=${key}
       @click=${(e: MouseEvent) => { if (selecting) click(e); }}>
@@ -903,13 +911,13 @@ export class WaAllPages extends LitElement {
   }
 
   /** What a card's or a row's name says it opens: Pick in Multi select,
-   * else the page on the device it opens on, or in the library. */
-  private openTitle(entry: LibraryItem, opensOn: LinkDevice | undefined): string {
+   * else the item in the one editor. */
+  private openTitle(entry: LibraryItem): string {
     if (this.selecting) {
       const picked = this.selected.has(itemKey(entry));
       return `${picked ? "Let" : "Pick"} ${entry.name}${picked ? " go" : ""}`;
     }
-    return opensOn === undefined ? libraryEditTitle(entry.name) : `Edit ${entry.name} on ${opensOn.name}`;
+    return libraryEditTitle(entry.name);
   }
 
   // ── the board ──────────────────────────────────────────────────────────
@@ -990,10 +998,10 @@ export class WaAllPages extends LitElement {
     const key = itemKey(entry);
     const row: BoardRow = {
       key, name: entry.name, detail: cardDetail(entry), picture: this.rowPicture(entry, focus?.pick !== undefined ? focus.device : undefined),
-      openTitle: focus?.pick !== undefined ? `Edit ${entry.name} on ${focus.device.name}. Alt+Up or Alt+Down moves it.` : this.openTitle(entry, opensOn),
+      openTitle: focus?.pick !== undefined ? `${libraryEditTitle(entry.name)}. Alt+Up or Alt+Down moves it.` : this.openTitle(entry),
       onOpen: (e) => {
         if (focus?.pick !== undefined && !e.metaKey && !e.ctrlKey) {
-          this.open(entry, focus.device);
+          this.open(entry);
           return;
         }
         this.cardClick(e, entry);
@@ -1005,7 +1013,7 @@ export class WaAllPages extends LitElement {
       ...(input.note === undefined ? {} : { note: { text: input.note, kind: input.noteKind ?? "warn" } }),
     };
     if (selecting) {
-      row.select = { picked: this.selected.has(key), disabled: this.bulkBusy !== undefined, label: this.openTitle(entry, opensOn), onPick: (e) => this.pick(entry, e.shiftKey) };
+      row.select = { picked: this.selected.has(key), disabled: this.bulkBusy !== undefined, label: this.openTitle(entry), onPick: (e) => this.pick(entry, e.shiftKey) };
     }
     return row;
   }

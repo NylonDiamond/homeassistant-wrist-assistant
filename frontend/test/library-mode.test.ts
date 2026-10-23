@@ -33,7 +33,7 @@ import "../src/watch-status-pages/status-pages-editor.js";
 import { type StatusPagesViewHost, renderPagesCard, renderStatusInspector } from "../src/watch-status-pages/view.js";
 import { connectLibrary, flat, libraryHome, settle } from "./library-editor-home.js";
 import { fakeHome } from "./library-tab-fake.js";
-import { LONELY } from "./library-fixture.js";
+import { JESSE, LONELY } from "./library-fixture.js";
 
 const DEFAULTS = JSON.parse(readFileSync(join(__dirname, "fixtures-menus", "01-defaults.json"), "utf8")) as MenusDocument;
 
@@ -424,7 +424,12 @@ describe("the library's addresses", () => {
     expect(libraryRouteOf(route("/library/pages/A%20B"))).toEqual({ kind: "pages", id: "A B" });
     expect(libraryRouteOf(route(`/library/status-pages/${SHED}`))).toEqual({ kind: "status_pages", id: SHED });
     expect(libraryRouteOf(route(`/library/menus/${SPARE}/`))).toEqual({ kind: "menus", id: SPARE });
-    for (const other of ["/library", "/library/pages", "/library/rooms/x", "/library/pages/x/y", "/pages/x", ALL_MENUS_PATH]) {
+    // Opened from a focused board, the device follows the id.
+    expect(libraryItemPath("pages", "A B", JESSE)).toBe(`/library/pages/A%20B/${encodeURIComponent(JESSE)}`);
+    expect(libraryItemPath("menus", SPARE, "")).toBe(`/library/menus/${SPARE}`);
+    expect(libraryRouteOf(route(`/library/pages/A%20B/${encodeURIComponent(JESSE)}`))).toEqual({ kind: "pages", id: "A B", from: JESSE });
+    expect(libraryRouteOf(route(`/library/menus/${SPARE}/x/`))).toEqual({ kind: "menus", id: SPARE, from: "x" });
+    for (const other of ["/library", "/library/pages", "/library/rooms/x", "/library/pages/x/y/z", "/pages/x", ALL_MENUS_PATH]) {
       expect(libraryRouteOf(route(other)), other).toBeUndefined();
     }
   });

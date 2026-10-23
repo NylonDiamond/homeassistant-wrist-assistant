@@ -21,11 +21,11 @@ import { type Msg, fakeHome, settle, standUp } from "./library-tab-fake.js";
 function tab(kind: "pages" | "status_pages" = "pages", admin = true) {
   const home = fakeHome(admin);
   const opened: [string, string, string | undefined][] = [];
-  const library: [string, string][] = [];
+  const library: string[][] = [];
   const t = standUp("wa-all-pages", home, {
     kind,
     onOpen: (o: string, k: string, what?: string) => opened.push([o, k, what]),
-    onOpenLibrary: (k: string, id: string) => library.push([k, id]),
+    onOpenLibrary: (k: string, id: string, from?: string) => library.push(from === undefined ? [k, id] : [k, id, from]),
   });
   const sentOf = (type: string) => home.sent.filter((m) => m.type === `wrist_assistant/${type}`);
   return { ...t, home, opened, library, sentOf };
@@ -227,22 +227,24 @@ describe("the Pages tab", () => {
     }
   });
 
-  it("opens a page on the device that has it, picked in its page editor; a page no device has in the library", async () => {
+  it("opens every page in the one editor, the library's, whichever devices have it, with the focused device", async () => {
     const t = tab();
     showTab(t, "all");
     await t.ready();
     const lib = (t.el.lib as { library: { pages: { id: string }[] } }).library;
     t.call("open", lib.pages.find((e) => e.id === PAGE1));
-    expect(t.opened.at(-1)).toEqual([JESSE, "watch", undefined]);
-    expect(keptWatchPagesSelection(JESSE).pageId).toBe(PAGE1);
     t.call("open", lib.pages.find((e) => e.id === LONELY));
-    expect(t.opened).toHaveLength(1);
-    expect(t.library).toEqual([["pages", LONELY]]);
-    expect(t.whole()).not.toContain("Tick one to edit it there.");
-    expect(t.whole()).toContain(" in the library");
+    expect(t.opened).toHaveLength(0);
+    expect(t.library).toEqual([["pages", PAGE1], ["pages", LONELY]]);
+    expect(keptWatchPagesSelection(JESSE).pageId).toBeUndefined();
+    expect(t.whole()).not.toContain(" in the library");
+    showTab(t, JESSE);
+    await t.ready();
+    t.call("open", lib.pages.find((e) => e.id === PAGE1));
+    expect(t.library.at(-1)).toEqual(["pages", PAGE1, JESSE]);
   });
 
-  it("has New page: on All it asks for a name and makes the page in the library, on a device's tab it adds the page there", async () => {
+  it("has New page: on All it asks for a name and makes the page in the library, on a focused device it adds the page there and opens it", async () => {
     const t = tab();
     showTab(t, "all");
     await t.ready();
@@ -283,10 +285,19 @@ describe("the Pages tab", () => {
     expect(held.get(LIBRARY_PREVIEW_KEY)).toBe("iphone");
     if (was) Object.defineProperty(globalThis, "sessionStorage", was);
     else delete (globalThis as { sessionStorage?: unknown }).sessionStorage;
+    // On a focused device: a page saved last on that device's own record,
+    // then open in the one editor with the device ringed. No ask is left
+    // for a device editor.
     showTab(t, CHEN);
-    t.call("newPage", { ownerId: CHEN, name: "Chen Watch", kind: "watch" });
-    expect(takeNewWatchPageAsk(CHEN)).toBe(true);
-    expect(t.opened.at(-1)).toEqual([CHEN, "watch", undefined]);
+    await t.ready();
+    await t.call("newPage", { ownerId: CHEN, name: "Chen Watch", kind: "watch" });
+    const saved = t.sentOf("watch_config/save").at(-1)!;
+    expect(saved.owner_watch_id).toBe(CHEN);
+    const added = (saved.document as { pages: JsonObject[] }).pages.at(-1)!;
+    expect(added.name).toMatch(/^New Page \d+$/);
+    expect(t.library.at(-1)).toEqual(["pages", added.id, CHEN]);
+    expect(takeNewWatchPageAsk(CHEN)).toBe(false);
+    expect(t.opened).toHaveLength(0);
   });
 
   it("refuses an empty name and says why New page is greyed for anyone but an administrator", async () => {
@@ -482,7 +493,7 @@ describe("the Status pages tab", () => {
     expect(t.sentOf("library/pick").at(-1)).toEqual({ type: "wrist_assistant/library/pick", owner_id: CHEN, kind: "status_pages", item_id: DOORS, on: true });
   });
 
-  it("lists a device's status pages with no Hide here, and opens one in its status pages editor", async () => {
+  it("lists a device's status pages with no Hide here, and opens one in the one editor", async () => {
     const t = tab("status_pages");
     showTab(t, JESSE);
     await t.ready();
@@ -493,8 +504,9 @@ describe("the Status pages tab", () => {
     expect(text).toContain("Every status page in your library is on Jesse Apple Watch.");
     const lib = (t.el.lib as { library: { statusPages: { id: string }[] } }).library;
     t.call("open", lib.statusPages.find((e) => e.id === STARTER));
-    expect(t.opened.at(-1)).toEqual([JESSE, "watch", "status_pages"]);
-    expect(takeStatusPageAsk(JESSE)).toBe(STARTER);
+    expect(t.opened).toHaveLength(0);
+    expect(t.library.at(-1)).toEqual(["status_pages", STARTER, JESSE]);
+    expect(takeStatusPageAsk(JESSE)).toBeUndefined();
   });
 
   it("drops what was picked and typed when told to list the other kind", async () => {

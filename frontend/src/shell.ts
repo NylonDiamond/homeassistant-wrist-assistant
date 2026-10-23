@@ -63,7 +63,7 @@ import { WATCH_CONTROL_CENTER_PATH, isWatchControlCenterRoute } from "./watch-co
 import { WATCH_HTTP_ACTIONS_PATH, isWatchHttpActionsRoute } from "./watch-http-actions/hook.js";
 import { ALL_MENUS_PATH } from "./watch-menus/all-menus-hook.js";
 import { WATCH_MENUS_PATH, isWatchMenusRoute } from "./watch-menus/hook.js";
-import { ALL_PAGES_PATH, ALL_STATUS_PAGES_PATH } from "./watch-pages/all-pages-hook.js";
+import { ALL_PAGES_PATH, ALL_STATUS_PAGES_PATH, listFocusPath } from "./watch-pages/all-pages-hook.js";
 import { type PanelRoute, WATCH_PAGES_PATH, isWatchPagesRoute } from "./watch-pages/hook.js";
 import { WATCH_ROOMS_PATH, isWatchRoomsRoute } from "./watch-rooms/hook.js";
 import { WATCH_SETTINGS_PATH, isWatchSettingsRoute } from "./watch-settings-page.js";
@@ -208,9 +208,18 @@ export function iphoneScreenPath(screen: WatchScreen, owner?: string): string {
 }
 
 /** A screen's address on one device: the iPhone app's for an iPhone, the
- * Watch app's for a watch. */
+ * Watch app's for a watch. A device's Pages, Status pages and Menus are its
+ * column on the board (`deviceListPath`). */
 export function deviceScreenPath(kind: "watch" | "iphone", screen: WatchScreen, owner: string): string {
-  return kind === "iphone" ? iphoneScreenPath(screen, owner) : watchScreenPath(screen, owner);
+  return deviceListPath(screen.id, owner) ?? (kind === "iphone" ? iphoneScreenPath(screen, owner) : watchScreenPath(screen, owner));
+}
+
+/** A device's own Pages, Status pages or Menus screen is its column on the
+ * board now (plan step 4): that tab's address, focused on the device, or on
+ * every device with no owner. Undefined for any other screen. */
+export function deviceListPath(id: WatchScreen["id"], owner: string | undefined): string | undefined {
+  const base = id === "pages" ? ALL_PAGES_PATH : id === "status-pages" ? ALL_STATUS_PAGES_PATH : id === "menus" ? ALL_MENUS_PATH : undefined;
+  return base === undefined ? undefined : listFocusPath(base, owner);
 }
 
 export function isComplicationsRoute(route: PanelRoute | undefined): boolean {
@@ -231,26 +240,31 @@ const LIBRARY_SEGMENTS: readonly { kind: LibraryKind; segment: string; tab: BarT
 ];
 
 /** One item's address in the library: `/library/pages/<id>`,
- * `/library/status-pages/<id>` or `/library/menus/<id>`. */
-export function libraryItemPath(kind: LibraryKind, id: string): string {
+ * `/library/status-pages/<id>` or `/library/menus/<id>`. Opened from one
+ * device's focused board, the device follows (`/library/pages/<id>/<owner>`):
+ * the editor rings it, and Back goes to that board. */
+export function libraryItemPath(kind: LibraryKind, id: string, from?: string): string {
   const segment = LIBRARY_SEGMENTS.find((s) => s.kind === kind)!.segment;
-  return `${LIBRARY_PATH}/${segment}/${encodeURIComponent(id)}`;
+  const base = `${LIBRARY_PATH}/${segment}/${encodeURIComponent(id)}`;
+  return from === undefined || from === "" ? base : `${base}/${encodeURIComponent(from)}`;
 }
 
 /** The item a library address names, or undefined for any other route. */
 export function libraryRouteOf(route: PanelRoute | undefined): LibraryItemRef | undefined {
   const path = route?.path ?? "";
   if (!path.startsWith(`${LIBRARY_PATH}/`)) return undefined;
-  const [segment, raw, ...rest] = path.slice(LIBRARY_PATH.length + 1).split("/");
+  const [segment, raw, fromRaw, ...rest] = path.slice(LIBRARY_PATH.length + 1).split("/");
   const known = LIBRARY_SEGMENTS.find((s) => s.segment === segment);
   if (known === undefined || raw === undefined || raw === "" || rest.some((p) => p !== "")) return undefined;
   let id: string;
+  let from: string | undefined;
   try {
     id = decodeURIComponent(raw);
+    from = fromRaw === undefined || fromRaw === "" ? undefined : decodeURIComponent(fromRaw);
   } catch {
     return undefined;
   }
-  return { kind: known.kind, id };
+  return from === undefined ? { kind: known.kind, id } : { kind: known.kind, id, from };
 }
 
 /** The tab a library address marks: the item's kind's. */

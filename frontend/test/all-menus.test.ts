@@ -136,10 +136,10 @@ describe("the Menus tab", () => {
   function tab(admin = true) {
     const home = fakeHome(admin);
     const opened: [string, string][] = [];
-    const library: string[] = [];
+    const library: (string | [string, string])[] = [];
     const t = standUp("wa-all-menus", home, {
       onOpen: (o: string, k: string) => opened.push([o, k]),
-      onOpenLibrary: (id: string) => library.push(id),
+      onOpenLibrary: (id: string, from?: string) => library.push(from === undefined ? id : [id, from]),
     });
     const sentOf = (type: string) => home.sent.filter((m) => m.type === `wrist_assistant/${type}`);
     const libNow = () => (t.el.lib as { library: { menus: LibraryMenu[] } }).library;
@@ -204,18 +204,21 @@ describe("the Menus tab", () => {
     expect(t.sentOf("watch_config/save")).toEqual([]);
   });
 
-  it("opens a card's menu in a device's editor, on that menu; a menu no device uses in the library", async () => {
+  it("opens every menu in the one editor, the library's, whichever devices use it, with the focused device", async () => {
     const t = tab();
     show(t);
     await t.ready();
     t.call("open", t.libNow().menus.find((m) => m.id === QUICK));
-    expect(t.opened.at(-1)).toEqual([CHEN, "watch"]);
-    expect(takeWatchMenuAsk(CHEN)).toBe("entity");
     t.call("open", t.libNow().menus.find((m) => m.id === SPARE));
-    expect(t.opened).toHaveLength(1);
-    expect(t.library).toEqual([SPARE]);
-    expect(t.whole()).not.toContain("Pick one to edit it there.");
-    expect(t.whole()).toContain(" in the library");
+    expect(t.opened).toHaveLength(0);
+    expect(t.library).toEqual([QUICK, SPARE]);
+    expect(takeWatchMenuAsk(CHEN)).toBeUndefined();
+    expect(t.whole()).not.toContain(" in the library");
+    expect(t.whole()).not.toContain(" on Chen Watch\"");
+    show(t, "board", CHEN);
+    await t.ready();
+    t.call("open", t.libNow().menus.find((m) => m.id === QUICK));
+    expect(t.library.at(-1)).toEqual([QUICK, CHEN]);
   });
 
   it("has one New menu, in the tab's head, and none in the sections", async () => {

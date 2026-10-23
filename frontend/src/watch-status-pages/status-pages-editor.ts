@@ -69,19 +69,20 @@ import { LibraryController } from "../library/store.js";
 import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
 import { libraryErrorText } from "../library/client.js";
 import {
-  type LibraryItemRef,
   fetchLibraryRecord,
   libraryDeleteText,
   libraryDraftKey,
   libraryItemIO,
+  type LibraryItemRef,
   libraryModeStyles,
+  libraryOwners,
   type PreviewKind,
   previewOwner,
-  storedPreviewKind,
   renderBarDevices,
   renderLibraryTag,
   renderPreviewPicker,
   sameLibraryItem,
+  startPreviewKind,
   summaryRevision,
 } from "../library/item-mode.js";
 import {
@@ -299,6 +300,8 @@ export class WaStatusPagesEditor extends LitElement {
   @state() private watchId?: string;
   /** The library item open now, in library mode. */
   private openedItem?: LibraryItemRef;
+  /** Library mode's preview kind was picked with the library read. */
+  private previewSettled = false;
   /** The summary revision a quiet read was last asked for. */
   private followedRevision?: number;
   @state() private record?: WatchConfigRecord;
@@ -554,8 +557,13 @@ export class WaStatusPagesEditor extends LitElement {
    * changes, and read again quietly once the summary says it moved on
    * elsewhere. */
   private followLibraryItem(ref: LibraryItemRef): void {
-    if (!sameLibraryItem(ref, this.openedItem)) this.previewKind = storedPreviewKind();
-    const preview = previewOwner(this.watches, this.previewKind);
+    // The kind is decided once per item, when the library says who has it.
+    const owners = libraryOwners(this.lib.library, ref);
+    if (!sameLibraryItem(ref, this.openedItem) || !this.previewSettled) {
+      this.previewKind = startPreviewKind(this.watches, ref, owners);
+      this.previewSettled = owners !== undefined;
+    }
+    const preview = previewOwner(this.watches, this.previewKind, [ref.from, ...(owners ?? [])]);
     if (preview !== this.watchId) this.watchId = preview;
     if (!sameLibraryItem(ref, this.openedItem)) {
       this.openedItem = ref;
@@ -970,7 +978,7 @@ export class WaStatusPagesEditor extends LitElement {
     const item = this.libraryItem;
     if (item === undefined && (this.watchId === undefined || this.linkDevices.length <= 1)) return nothing;
     const count = libraryItem(lib, "status_pages", item?.id ?? statusPageId(page))?.owners.length ?? 0;
-    return renderBarDevices("status_pages", count, this.statusTicksBody(page), "stage");
+    return renderBarDevices("status_pages", count, this.statusTicksBody(page), this.lib.store?.savedStamp("status_pages", item?.id ?? statusPageId(page)));
   }
 
   /** The ticks themselves, or the save-first line. */
@@ -992,6 +1000,7 @@ export class WaStatusPagesEditor extends LitElement {
       kind: "status_pages",
       itemId: entry.id,
       devices: this.linkDevices,
+      ...(this.libraryItem?.from === undefined ? {} : { viewing: this.libraryItem.from }),
       colorOf: (ownerId) => this.colorOf(ownerId),
       pending: store.pending,
       ...(note === undefined ? {} : { note }),
@@ -1582,7 +1591,7 @@ export class WaStatusPagesEditor extends LitElement {
       ${this.renderStageDevices(page)}
       <div class="stage-area sp-stage-area">
         <div class="stage-tools" role="toolbar" aria-label="Stage tools">
-          ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.previewKind, (kind) => { this.previewKind = kind; this.watchId = previewOwner(watches, kind); })}<span class="tb-sep" aria-hidden="true"></span>`}
+          ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.previewKind, (kind) => { this.previewKind = kind; this.watchId = previewOwner(watches, kind, [this.libraryItem?.from, ...(libraryOwners(this.lib.library, this.libraryItem!) ?? [])]); })}<span class="tb-sep" aria-hidden="true"></span>`}
           <span class="tb-zoom" role="group" aria-label="Zoom">
             <button class="tb icon" ?disabled=${scale <= stageZoomOut(scale)} aria-label="Zoom out" title="Zoom out"
               @click=${() => this.setZoom(stageZoomOut(scale))}>−</button>

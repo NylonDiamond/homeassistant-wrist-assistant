@@ -2,8 +2,8 @@
 // tile is selected: the theme pictures with its role colors and the Solid or
 // Gradient switch, the background decoration (one at a time, as the phone's
 // Page task), the page title, and Reset (part 3d). How the page shows in the
-// page switcher is set in the menu editor (`switcher-settings.ts`), beside
-// the switcher's own look, as on the iPhone.
+// page switcher is its own card in the page editor (`switcher-settings.ts`),
+// since a device's Menus screen, where it used to be, is gone (plan step 4).
 //
 // `<wa-page-editor>` draws the card through `renderPageLookCard`, which holds
 // each section's body (`renderPageSettingBody`) under its heading and ends
@@ -203,6 +203,8 @@ export function watchPageThemeSwatch(theme: string): string {
 
 /** The page editor's On the watch card's fold, kept beside the Look card's. */
 export const PAGE_WATCH_FOLD: FoldId = Object.freeze({ module: KEY, section: "watch" });
+/** The In the page switcher card's fold (`switcher-settings.ts`'s rows). */
+export const PAGE_SWITCHER_FOLD: FoldId = Object.freeze({ module: KEY, section: "switcher" });
 
 /** The fold the inspector's Collapse all turns for the Look card. */
 export function pageLookFoldIds(): FoldId[] {

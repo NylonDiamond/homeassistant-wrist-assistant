@@ -137,9 +137,9 @@ describe("which device a card opens on", () => {
     expect(openDevice(entry(LIGHTS), ALL_FILTER, "iphone", DEVICES)?.ownerId).toBe(CHEN);
   });
 
-  it("is none for an item no device has, whose card opens it in the library", () => {
+  it("is none for an item no device has; every card says Edit, as it opens in the one editor", () => {
     expect(openDevice(entry(LONELY), ALL_FILTER, "all", DEVICES)).toBeUndefined();
-    expect(libraryEditTitle("Shed")).toBe("Edit Shed in the library");
+    expect(libraryEditTitle("Shed")).toBe("Edit Shed");
   });
 });
 

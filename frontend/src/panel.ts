@@ -449,7 +449,7 @@ import { dropWatchHttpActionsDrafts, isWatchHttpActionsRoute, renderWatchHttpAct
 import { dropWatchCamerasDrafts, isWatchCamerasRoute, renderWatchCamerasView, watchCamerasDirty } from "./watch-cameras/hook.js";
 import { NOT_ON_WATCH_NOTE, isWatchComplicationsRoute, splitForWatch, watchComplicationsLead, watchComplicationsStyles } from "./watch-complications.js";
 import {
-  COMPLICATIONS_PATH, type LibraryItemRef, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, deviceScreenPath, editorKeysLive, iphoneInnerRoute, iphoneScreenOf,
+  COMPLICATIONS_PATH, type LibraryItemRef, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, deviceListPath, deviceScreenPath, editorKeysLive, iphoneInnerRoute, iphoneScreenOf,
   iphoneScreenPath, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
   barTabOf, libraryItemPath, libraryRouteOf, panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath, watchScreenSentence,
 } from "./shell.js";
@@ -6546,6 +6546,16 @@ export class WristAssistantPanel extends LitElement {
       const to = iphoneAddressFor(this.route, this.owners, this.phonePages);
       if (to !== undefined) this.goTo(to, true);
     }
+    // A device's own Pages, Status pages and Menus screens are its column on
+    // the board now (plan step 4). Their addresses, which the iPhone app
+    // builds for "Open in Home Assistant" (`/pages/<owner>`,
+    // `/iphone/pages/<owner>`, `/iphone`), open that board focused on the
+    // device, rewritten in place. Once the device list is in, so an address
+    // with no device finds the remembered one.
+    if (changed.has("route") || changed.has("owners") || changed.has("phonePages")) {
+      const to = this.boardAddressFor();
+      if (to !== undefined) this.goTo(to, true);
+    }
     // The Settings page follows the row's shared device on every draw, and
     // reads again on the way back to it. Not before the device list is in,
     // so a home with watches never shows the "no watch" card first. The
@@ -10984,7 +10994,7 @@ export class WristAssistantPanel extends LitElement {
       version: this.panel?.config?.version,
       onClosed: () => this.closeHelpSheet(true),
       onPair: () => { if (home()) this.openPairDialog(); },
-      onNewPage: (watch) => { this.closeHelpSheet(false); this.goTo(watchScreenPath(WATCH_SCREENS[0]!, watch)); },
+      onNewPage: (watch) => { this.closeHelpSheet(false); this.goTo(deviceListPath("pages", watch)!); },
       ...(tabOfRoute(this.route) === "complications"
         ? { onEditorHelp: () => { this.closeHelpSheet(false); this.helpTab = "basics"; this.helpOpen = true; } }
         : {}),
@@ -11052,6 +11062,18 @@ export class WristAssistantPanel extends LitElement {
     const phones = this.rowPhones;
     if (phones.length === 0 && (this.linkReady || this.owners.length > 0)) return undefined;
     return resolveWatchPick(phones, { route: iphoneRouteOwner(this.route), saved: this.phonePick, fallback: undefined });
+  }
+
+  /** The board address a device list screen's address now opens
+   * (`deviceListPath`), or undefined off those screens and while the device
+   * list is still out. */
+  private boardAddressFor(): string | undefined {
+    const watch = watchScreenOf(this.route);
+    const phone = watch === undefined ? iphoneScreenOf(this.route) : undefined;
+    const screen = watch ?? phone;
+    if (screen === undefined || deviceListPath(screen.id, undefined) === undefined) return undefined;
+    if (!this.linkReady && this.owners.length === 0) return undefined;
+    return deviceListPath(screen.id, watch !== undefined ? this.sharedWatch : this.sharedPhone);
   }
 
   /** Remember the shared watch, for this visit and the next. */
@@ -11342,32 +11364,13 @@ export class WristAssistantPanel extends LitElement {
   private renderWatchScreen(id: WatchScreen["id"], owner: string | undefined) {
     switch (id) {
       case "settings": return this.renderSettingsPage();
-      // `/pages` and `/pages/<owner_watch_id>`, which opens it on that watch.
-      case "pages": return renderWatchPagesView({
-        hass: this.hass, owners: this.owners, ownerId: owner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
-        menu: false,
-        onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
-        onBack: () => this.goTo(COMPLICATIONS_PATH),
-        actions: nothing,
-        shell: true,
-        phones: this.phonePages,
-        dialogs: nothing,
-        barHost: this.watchBarHost,
-        onLoaded: () => this.requestUpdate(),
-      });
-      // The menu editor likewise, on `/menus` and `/menus/<owner_watch_id>`.
-      case "menus": return renderWatchMenusView({
-        hass: this.hass, owners: this.owners, ownerId: owner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
-        menu: false,
-        onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
-        onBack: () => this.goTo(COMPLICATIONS_PATH),
-        actions: nothing,
-        shell: true,
-        phones: this.phonePages,
-        dialogs: nothing,
-        barHost: this.watchBarHost,
-        onLoaded: () => this.requestUpdate(),
-      });
+      // A device's Pages, Status pages and Menus are its column on the board
+      // (plan step 4): `updated` moves these addresses there once the device
+      // list is in (`boardAddressFor`). Until then, nothing to edit.
+      case "pages":
+      case "menus":
+      case "status-pages":
+        return html`<div class="ws-page"><div class="ws-cols one"><p class="home-empty">Loading…</p></div></div>`;
       // The voice editor likewise, on `/voice` and `/voice/<owner_watch_id>`.
       // A watch's alone: the iPhone app has no link to it.
       case "voice": return renderWatchVoiceView({
@@ -11377,20 +11380,6 @@ export class WristAssistantPanel extends LitElement {
         onBack: () => this.goTo(COMPLICATIONS_PATH),
         actions: nothing,
         shell: true,
-        dialogs: nothing,
-        barHost: this.watchBarHost,
-        onLoaded: () => this.requestUpdate(),
-      });
-      // The status page editor likewise, on `/status-pages` and
-      // `/status-pages/<owner_watch_id>`.
-      case "status-pages": return renderWatchStatusPagesView({
-        hass: this.hass, owners: this.owners, ownerId: owner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
-        menu: false,
-        onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
-        onBack: () => this.goTo(COMPLICATIONS_PATH),
-        actions: nothing,
-        shell: true,
-        phones: this.phonePages,
         dialogs: nothing,
         barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
@@ -11445,10 +11434,12 @@ export class WristAssistantPanel extends LitElement {
    * One library item in its kind's editor, on `/library/<kind>/<id>`
    * (`libraryItemPath`): a page, status page or menu edited in the library
    * itself, with no device. It stands under the tab bar alone, with no
-   * device row, and draws its own bar; Back goes to its kind's tab.
+   * device row, and draws its own bar; Back goes to its kind's tab, focused
+   * on the device it was opened from when the address names one.
    */
   private renderLibraryItem(ref: LibraryItemRef) {
-    const back = ref.kind === "menus" ? ALL_MENUS_PATH : ref.kind === "status_pages" ? ALL_STATUS_PAGES_PATH : ALL_PAGES_PATH;
+    const list = ref.kind === "menus" ? ALL_MENUS_PATH : ref.kind === "status_pages" ? ALL_STATUS_PAGES_PATH : ALL_PAGES_PATH;
+    const back = ref.from === undefined ? list : listFocusPath(list, ref.from);
     const input = {
       hass: this.hass, owners: this.owners, ownerId: undefined, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
       menu: false, onMenu: () => undefined, onBack: () => this.goTo(back),
@@ -11483,12 +11474,7 @@ export class WristAssistantPanel extends LitElement {
         onOpenScreen: (ownerId, kind, screen) => this.openOwnScreen(ownerId, kind, screen),
         hass: this.hass, owners: this.owners, ownersReady: this.linkReady, phones: this.phonePages,
         icons: this.icons, iconsTick: this.iconsTick,
-        onOpen: (ownerId, kind, what) => {
-          this.pickWatch(ownerId);
-          const screen = what === "status_pages" ? WATCH_SCREENS.find((s) => s.id === "status-pages") : undefined;
-          this.goTo(deviceScreenPath(kind, screen ?? WATCH_SCREENS[0]!, ownerId));
-        },
-        onOpenLibrary: (kind, id) => this.goTo(libraryItemPath(kind, id)),
+        onOpenLibrary: (kind, id, from) => this.goTo(libraryItemPath(kind, id, from)),
         onLoaded: () => this.requestUpdate(),
       });
     }
@@ -11503,11 +11489,7 @@ export class WristAssistantPanel extends LitElement {
         onOpenScreen: (ownerId, kind, screen) => this.openOwnScreen(ownerId, kind, screen),
         hass: this.hass, owners: this.owners, ownersReady: this.linkReady, phones: this.phonePages,
         icons: this.icons, iconsTick: this.iconsTick,
-        onOpen: (ownerId, kind) => {
-          this.pickWatch(ownerId);
-          this.goTo(deviceScreenPath(kind, WATCH_SCREENS.find((s) => s.id === "menus")!, ownerId));
-        },
-        onOpenLibrary: (id) => this.goTo(libraryItemPath("menus", id)),
+        onOpenLibrary: (id, from) => this.goTo(libraryItemPath("menus", id, from)),
         onLoaded: () => this.requestUpdate(),
       });
     }
@@ -20334,7 +20316,7 @@ export class WristAssistantPanel extends LitElement {
     const owner = this.ownerOf(watchId);
     if (row === undefined || owner === undefined) return undefined;
     const group = homeGroups(this.people(), devices).find((g) => g.rows.some((r) => r.id === watchId));
-    const path = watchScreenPath(WATCH_SCREENS[0]!, watchId);
+    const path = deviceListPath("pages", watchId)!;
     return renderPairNext({
       name: row.name,
       facts: pairedFactsLine(deviceFacts(owner, "watch"), group?.person?.label),

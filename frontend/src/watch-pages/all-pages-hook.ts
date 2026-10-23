@@ -66,13 +66,10 @@ export interface AllPagesViewInput {
   icons: IconProvider;
   /** Bumped whenever `icons` has something new to draw. */
   iconsTick: number;
-  /** Open a page in its device's page editor, or with `what`
-   * `status_pages` a status page in its status pages editor. The element
-   * has already picked the page there, or asked for a new one. */
-  onOpen: (ownerId: string, kind: "watch" | "iphone", what?: "pages" | "status_pages") => void;
-  /** Open a page or status page no device has in its editor's library
-   * mode (`library/item-mode.ts`). */
-  onOpenLibrary?: (kind: "pages" | "status_pages", id: string) => void;
+  /** Open a page or status page in the one editor, its editor's library
+   * mode (`library/item-mode.ts`), with the focused device when there is
+   * one. */
+  onOpenLibrary?: (kind: "pages" | "status_pages", id: string, from?: string) => void;
   /** The device the address focuses (`listFocusOf`). */
   focusOwner?: string;
   /** Focus a device, or every device with undefined: move to its address. */
@@ -92,7 +89,7 @@ export function renderAllPagesView(input: AllPagesViewInput): TemplateResult {
     return html`<div class="ap-loading">${loadFailed ? `The ${tab} tab did not load. Reload the page to try again.` : "Loading…"}</div>`;
   }
   return html`<wa-all-pages .kind=${input.kind} .hass=${input.hass} .owners=${input.owners} .ownersReady=${input.ownersReady} .phones=${input.phones}
-    .icons=${input.icons} .iconsTick=${input.iconsTick} .onOpen=${input.onOpen} .onOpenLibrary=${input.onOpenLibrary}
+    .icons=${input.icons} .iconsTick=${input.iconsTick} .onOpenLibrary=${input.onOpenLibrary}
     .focusOwner=${input.focusOwner} .onFocus=${input.onFocus} .onOpenScreen=${input.onOpenScreen}></wa-all-pages>`;
 }
 

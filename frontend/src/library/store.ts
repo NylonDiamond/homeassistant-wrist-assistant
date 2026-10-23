@@ -110,6 +110,8 @@ export class LibraryStore {
   private readonly listeners = new Set<Listener>();
   private readonly pendingTicks = new Map<string, PendingPick>();
   private readonly notes = new Map<string, string>();
+  /** When each item's last write landed, by its note key, in ms. */
+  private readonly savedAt = new Map<string, number>();
   private reading: Promise<void> | undefined;
   private again = false;
   private reloadTimer: ReturnType<typeof setTimeout> | undefined;
@@ -134,6 +136,12 @@ export class LibraryStore {
    * on it. */
   noteFor(kind: LibraryKind, itemId: string): string | undefined {
     return this.notes.get(noteKey(kind, itemId));
+  }
+
+  /** When the last write on an item landed (ms since the epoch), so an
+   * editor's device strip can flash "Saved" beside it. */
+  savedStamp(kind: LibraryKind, itemId: string): number | undefined {
+    return this.savedAt.get(noteKey(kind, itemId));
   }
 
   /** Forget an item's note, once its words were shown and dismissed. */
@@ -284,6 +292,7 @@ export class LibraryStore {
     let result: LibraryWrite<T>;
     try {
       result = { ok: true, reply: await run() };
+      if (note !== undefined) this.savedAt.set(note, Date.now());
     } catch (err) {
       const code = libraryErrorCode(err);
       const text = libraryErrorText(err);

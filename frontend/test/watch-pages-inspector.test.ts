@@ -287,15 +287,16 @@ describe("Collapse all", () => {
     expect(text).toContain(">Collapse all</button>");
   });
 
-  it("turns the page's Look and On the watch cards with no tile selected", () => {
+  it("turns the page's Look, On the watch and In the page switcher cards with no tile selected", () => {
     const el = editor(hallPage());
     click(inspector(el), ">Collapse all<");
-    expect(Object.keys(JSON.parse(storage.data[FOLD_STORE_KEY]!))).toEqual(["page-settings:look", "page-settings:watch"]);
+    expect(Object.keys(JSON.parse(storage.data[FOLD_STORE_KEY]!))).toEqual(["page-settings:look", "page-settings:switcher", "page-settings:watch"]);
     const folded = flat(inspector(el));
     expect(folded).not.toContain("data-open=true");
     // Folded, each card says what it holds.
     expect(card(folded, "Look")).toContain(`<span class="sum">${watchThemeDisplayName("neonLagoon")}, None, Hidden</span>`);
     expect(card(folded, "On the watch")).toContain(`<span class="sum">Shown</span>`);
+    expect(folded).toContain("<h4>In the page switcher");
   });
 
   it("turns the smart page's cards and the page's own with no tile selected", () => {
@@ -406,15 +407,15 @@ describe("the tile's cards", () => {
 });
 
 describe("the inspector with no tile", () => {
-  it("holds the page's settings: Look, On the watch, the line, then Delete page", () => {
+  it("holds the page's settings: Look, On the watch, In the page switcher, the line, then Delete page", () => {
     const text = flat(inspector(editor(hallPage())));
     const body = text.slice(text.indexOf(`<div class="insp-body">`));
-    expect([...body.matchAll(/<h4>([^<]+)/g)].map((m) => m[1])).toEqual(["Look", "On the watch"]);
+    expect([...body.matchAll(/<h4>([^<]+)/g)].map((m) => m[1])).toEqual(["Look", "On the watch", "In the page switcher"]);
     expect(card(body, "Look")).toContain(`--c:${SECTION_COLOR.look}`);
     expect(card(body, "Look")).toContain(swatch("look"));
     expect(card(body, "On the watch")).toContain(`--c:${SECTION_COLOR.place}`);
     expect(body).not.toContain(`aria-label="Page name"`);
-    const order = ["<h4>Look", "<h4>On the watch", "Click a tile on the watch to edit it.", "Delete page"].map((p) => body.indexOf(p));
+    const order = ["<h4>Look", "<h4>On the watch", "<h4>In the page switcher", "Click a tile on the watch to edit it.", "Delete page"].map((p) => body.indexOf(p));
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(body).not.toContain("above the watch");
     // No duplicate page action exists, so none is offered.
@@ -449,7 +450,7 @@ describe("the inspector with no tile", () => {
     const text = flat(inspector(editor(smartHall())));
     expect(text).toContain(`>Smart page</span><span class="nm" title=Hall>Hall</span>`);
     const titles = [...text.matchAll(/<h4>([^<]+)/g)].map((m) => m[1]);
-    expect(titles).toEqual(["Rules", "Header", "Icon and color", "State", "Text", "Border", "Action", "Size", "Background", "Look", "On the watch"]);
+    expect(titles).toEqual(["Rules", "Header", "Icon and color", "State", "Text", "Border", "Action", "Size", "Background", "Look", "On the watch", "In the page switcher"]);
     for (const title of ["Rules", "Header"]) {
       expect(card(text, title), title).toContain(`--c:${SMART_SECTION_BADGE.color}`);
       expect(card(text, title), title).toContain(swatch("states"));

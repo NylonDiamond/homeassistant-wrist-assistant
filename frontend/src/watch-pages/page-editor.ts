@@ -85,19 +85,20 @@ import { LibraryController } from "../library/store.js";
 import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
 import { libraryErrorText } from "../library/client.js";
 import {
-  type LibraryItemRef,
   fetchLibraryRecord,
   libraryDeleteText,
   libraryDraftKey,
   libraryItemIO,
+  type LibraryItemRef,
   libraryModeStyles,
+  libraryOwners,
   type PreviewKind,
   previewOwner,
-  storedPreviewKind,
   renderBarDevices,
   renderLibraryTag,
   renderPreviewPicker,
   sameLibraryItem,
+  startPreviewKind,
   summaryRevision,
 } from "../library/item-mode.js";
 import {
@@ -315,6 +316,7 @@ import {
 } from "./tile-settings.js";
 import { type WatchGroupActions, renderPickedGroupCard, renderTileGroupLine } from "./group-settings.js";
 import {
+  PAGE_SWITCHER_FOLD,
   PAGE_WATCH_FOLD,
   WATCH_PAGE_CHIP_COLOR,
   pageLookFoldIds,
@@ -322,6 +324,7 @@ import {
   renderPageLookCard,
   watchPageSectionChanged,
 } from "./page-settings.js";
+import { type SwitcherSettingsHost, SWITCHER_SECTION_TITLE, renderSwitcherSettings, switcherSettingsSummary, watchPageSwitcherChanged } from "./switcher-settings.js";
 import { watchTileKindColor } from "./tile-settings-options.js";
 import { type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOpen } from "./fold-memory.js";
 import { specialSettingsStyles } from "./special-settings.js";
@@ -819,6 +822,8 @@ export class WaPageEditor extends LitElement {
   @state() private previewKind: PreviewKind = "watch";
   /** The library page open now, in library mode. */
   private openedItem?: LibraryItemRef;
+  /** Library mode's preview kind was picked with the library read. */
+  private previewSettled = false;
   /** The summary revision a quiet read was last asked for. */
   private followedRevision?: number;
   /** Library mode's delete question is open, on this page. */
@@ -1576,8 +1581,13 @@ export class WaPageEditor extends LitElement {
    * changes, and read again quietly once the summary says it moved on
    * elsewhere. */
   private followLibraryItem(ref: LibraryItemRef): void {
-    if (!sameLibraryItem(ref, this.openedItem)) this.previewKind = storedPreviewKind();
-    const preview = previewOwner(this.watches, this.previewKind);
+    // The kind is decided once per item, when the library says who has it.
+    const owners = libraryOwners(this.lib.library, ref);
+    if (!sameLibraryItem(ref, this.openedItem) || !this.previewSettled) {
+      this.previewKind = startPreviewKind(this.watches, ref, owners);
+      this.previewSettled = owners !== undefined;
+    }
+    const preview = previewOwner(this.watches, this.previewKind, [ref.from, ...(owners ?? [])]);
     if (preview !== this.watchId || (preview === undefined && this.openedItem === undefined)) this.openPreview(preview);
     if (!sameLibraryItem(ref, this.openedItem)) {
       this.openedItem = ref;
@@ -1595,7 +1605,7 @@ export class WaPageEditor extends LitElement {
   /** Preview on: the kind picked, drawn on the home's first device of it. */
   private pickPreview(kind: PreviewKind): void {
     this.previewKind = kind;
-    this.openPreview(previewOwner(this.watches, kind));
+    this.openPreview(previewOwner(this.watches, kind, [this.libraryItem?.from, ...(libraryOwners(this.lib.library, this.libraryItem!) ?? [])]));
   }
 
   /** Library mode's device to draw on: its catalog, HTTP actions, status
@@ -3567,7 +3577,7 @@ export class WaPageEditor extends LitElement {
     if (body === undefined) return nothing;
     const lib = this.lib.library;
     const count = lib === undefined ? 0 : (libraryItem(lib, "pages", watchPageId(page))?.owners.length ?? 0);
-    return renderBarDevices("pages", count, body, "stage");
+    return renderBarDevices("pages", count, body, this.lib.store?.savedStamp("pages", watchPageId(page)));
   }
 
   /** The ticks themselves, or the save-first line; undefined when there is
@@ -3593,6 +3603,7 @@ export class WaPageEditor extends LitElement {
       kind: "pages",
       itemId: entry.id,
       devices,
+      ...(this.libraryItem?.from === undefined ? {} : { viewing: this.libraryItem.from }),
       colorOf: (ownerId) => this.colorOf(ownerId),
       // The page as edited here, so a map added a moment ago counts on the
       // watch chips before it is saved.
@@ -5106,7 +5117,7 @@ export class WaPageEditor extends LitElement {
     // Every card drawn now that folds, for Collapse all: it folds them all
     // while one is open, else opens them all, through the fold memory.
     const folds: FoldId[] = tile === undefined
-      ? (host === undefined ? [] : [...smartFoldIds(host), ...pageLookFoldIds(), PAGE_WATCH_FOLD])
+      ? (host === undefined ? [] : [...smartFoldIds(host), ...pageLookFoldIds(), PAGE_WATCH_FOLD, PAGE_SWITCHER_FOLD])
       : (tileHost === undefined ? [] : tileSettingsFoldIds(tileHost, tileInspectorSections(tileHost)));
     const anyOpen = anySectionOpen(this.uiState, folds);
     return html`
@@ -5133,6 +5144,7 @@ export class WaPageEditor extends LitElement {
       ${this.renderRulesCard(page)}
       ${host === undefined ? nothing : renderPageLookCard(host)}
       ${this.renderOnWatchCard(page, host)}
+      ${host === undefined ? nothing : this.renderSwitcherCard(host)}
       ${this.renderNoTileCard(page)}
       <div class="pe-page-acts">
         <button type="button" class="pe-btn pe-danger" @click=${() => this.askDelete(id)}>${uiIcon("delete")}<span>Delete page</span></button>
@@ -5171,6 +5183,43 @@ export class WaPageEditor extends LitElement {
         ${renderSmartPageSwitch(host, { detail: "Fills itself from its rules with what is on right now." })}
         ${renderSmartPageBody(host)}`}
     </div>` : html``);
+  }
+
+  /**
+   * The In the page switcher card: how this page shows in the page switcher
+   * (hidden there, its name or an icon, its text, icon and color). The menu
+   * editor drew these only on one device's Menus screen; they are the page's
+   * own keys, so the one page editor holds them now (plan step 4). The rows
+   * are `switcher-settings.ts`'s, on a host over this editor's own draft.
+   */
+  private renderSwitcherCard(host: WatchPagesEditorHost): TemplateResult {
+    const { module, section } = PAGE_SWITCHER_FOLD;
+    const open = sectionOpen(this.uiState, module, section);
+    const page = host.page;
+    const settings: SwitcherSettingsHost = {
+      get page() { return host.page; },
+      pageId: host.pageId,
+      icons: host.icons,
+      symbols: host.symbols,
+      uiState: host.uiState,
+      ...(host.device === undefined ? {} : { device: host.device }),
+      get busy() { return host.busy; },
+      edit: (change, opts) => {
+        host.apply(change(host.document), opts?.typing === true ? { coalesce: `switcher:${host.pageId.toUpperCase()}` } : undefined);
+      },
+      endCoalesce: () => host.endCoalesce(),
+      requestUpdate: () => host.requestUpdate(),
+    };
+    return sectionCard({
+      color: SECTION_COLOR.content,
+      icon: uiIcon("watch"),
+      title: SWITCHER_SECTION_TITLE,
+      open,
+      onToggle: () => { setSectionOpen(this.uiState, module, section, !open); this.requestUpdate(); },
+      dot: watchPageSwitcherChanged(page),
+      ...(open ? {} : { summary: switcherSettingsSummary(page) }),
+      id: `${module}:${section}`,
+    }, open ? html`<fieldset class="ts-body pe-switcher" ?disabled=${host.busy} aria-label=${SWITCHER_SECTION_TITLE}>${renderSwitcherSettings(settings)}</fieldset>` : html``);
   }
 
   /**

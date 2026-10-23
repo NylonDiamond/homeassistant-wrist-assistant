@@ -139,3 +139,13 @@ export function menusEmptyText(devices: readonly LinkDevice[], search: string, k
   if (kind !== "all") return `No menu here is used on ${kind === "watch" ? "a watch" : "an iPhone"}.`;
   return "None yet.";
 }
+
+/** The Duplicate button's tooltip on a focused device's shared menu. */
+export function duplicateMenuTitle(menu: string, device: string): string {
+  return `Duplicate ${menu} for ${device}. The other devices keep this one.`;
+}
+
+/** What Duplicate says once the copy is in use. */
+export function duplicatedMenuText(name: string, device: string): string {
+  return `${device} uses its own copy now, "${name}". Edits to it change only ${device}.`;
+}

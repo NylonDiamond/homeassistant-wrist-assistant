@@ -83,18 +83,19 @@ import { live } from "lit/directives/live.js";
 import { type LinkDevice, joinWords, linkDevicesOf } from "../watch-pages/devices.js";
 import { type MenuUnit, libraryErrorText } from "../library/client.js";
 import {
-  type LibraryItemRef,
   fetchLibraryRecord,
   libraryDraftKey,
   libraryItemIO,
+  type LibraryItemRef,
   libraryModeStyles,
+  libraryOwners,
   type PreviewKind,
   previewOwner,
-  storedPreviewKind,
   renderBarDevices,
   renderLibraryTag,
   renderPreviewPicker,
   sameLibraryItem,
+  startPreviewKind,
   summaryRevision,
 } from "../library/item-mode.js";
 import { type LibraryMenu, MENU_UNIT_TITLES, libraryMenu, menuFor, sameId } from "../library/model.js";
@@ -461,6 +462,8 @@ export class WaMenuEditor extends LitElement {
   @state() private watchId?: string;
   /** The library menu open now, in library mode. */
   private openedItem?: LibraryItemRef;
+  /** Library mode's preview kind was picked with the library read. */
+  private previewSettled = false;
   /** The summary revision a quiet read was last asked for. */
   private followedRevision?: number;
   /** The library menu whose unit the Menus card was turned to. */
@@ -886,8 +889,13 @@ export class WaMenuEditor extends LitElement {
    * names it, and the menu read again quietly once the summary says it
    * moved on elsewhere. */
   private followLibraryItem(ref: LibraryItemRef): void {
-    if (!sameLibraryItem(ref, this.openedItem)) this.previewKind = storedPreviewKind();
-    const preview = previewOwner(this.watches, this.previewKind);
+    // The kind is decided once per item, when the library says who has it.
+    const owners = libraryOwners(this.lib.library, ref);
+    if (!sameLibraryItem(ref, this.openedItem) || !this.previewSettled) {
+      this.previewKind = startPreviewKind(this.watches, ref, owners);
+      this.previewSettled = owners !== undefined;
+    }
+    const preview = previewOwner(this.watches, this.previewKind, [ref.from, ...(owners ?? [])]);
     if (preview !== this.watchId || (preview === undefined && this.openedItem === undefined)) this.openPreview(preview);
     if (!sameLibraryItem(ref, this.openedItem)) {
       this.openedItem = ref;
@@ -910,7 +918,7 @@ export class WaMenuEditor extends LitElement {
   /** Preview on: the kind picked, drawn on the home's first device of it. */
   private pickPreview(kind: PreviewKind): void {
     this.previewKind = kind;
-    this.openPreview(previewOwner(this.watches, kind));
+    this.openPreview(previewOwner(this.watches, kind, [this.libraryItem?.from, ...(libraryOwners(this.lib.library, this.libraryItem!) ?? [])]));
   }
 
   /** Library mode's device to draw on: its catalog, HTTP actions, status
@@ -1732,6 +1740,7 @@ export class WaMenuEditor extends LitElement {
       library: this.lib.library!,
       kind: "menus",
       itemId: used.id,
+      ...(this.libraryItem?.from === undefined ? {} : { viewing: this.libraryItem.from }),
       devices: this.linkDevices,
       colorOf: (ownerId) => this.colorOf(ownerId),
       pending: store.pending,
@@ -1755,7 +1764,7 @@ export class WaMenuEditor extends LitElement {
       used = this.linkDevices.length > 1 ? this.libraryMenuOf(shownMenu(host)) : undefined;
     }
     if (used === undefined || this.lib.store === undefined || this.draft === undefined) return nothing;
-    return renderBarDevices("menus", used.owners.length, this.menuTicks(used, true), "stage");
+    return renderBarDevices("menus", used.owners.length, this.menuTicks(used, true), this.lib.store?.savedStamp("menus", used.id));
   }
 
   /** Library mode's Delete from the library, for a menu no device uses (a

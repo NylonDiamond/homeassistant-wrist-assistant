@@ -18,10 +18,14 @@ import { watchCommandError } from "./save-note.js";
 import type { CardKind } from "./all-pages-model.js";
 
 /** One change to a device's picks. `before` names the pick to put `id` in
- * front of, null for the end. */
+ * front of, null for the end. `add` is a new page or status page, put last
+ * on the device (a focused board's New page, plan step 4): a save of the
+ * device's own record, which anyone who manages the device may make, where
+ * a page no device has is an administrator's alone. */
 export type PickChange =
   | { hidden: boolean; id: string }
-  | { id: string; before: string | null };
+  | { id: string; before: string | null }
+  | { add: JsonObject & { id: string } };
 
 /** The list key of a kind's document. */
 function listKey(kind: CardKind): "pages" | "statusPages" {
@@ -41,6 +45,12 @@ function movable(kind: CardKind, entry: unknown): entry is JsonObject {
  * list that is not a page, stays where it was.
  */
 export function changedPicks(kind: CardKind, document: JsonObject, change: PickChange): JsonObject {
+  if ("add" in change) {
+    const list = document[listKey(kind)];
+    const now = Array.isArray(list) ? list : [];
+    if (now.some((e) => isJsonObject(e) && typeof e.id === "string" && sameId(e.id, change.add.id))) return document;
+    return { ...document, [listKey(kind)]: [...now, change.add] };
+  }
   if ("hidden" in change) {
     // Status pages have no Hide here.
     return kind === "status_pages" ? document : setWatchPageHidden(document, change.id, change.hidden);
@@ -73,6 +83,9 @@ export interface PicksIO {
   save(ownerId: string, kind: CardKind, baseRevision: number, document: JsonObject): Promise<{ revision: number }>;
 }
 
+/** Why New page cannot add to a device with no record yet. */
+export const NO_RECORD_TEXT = "It has no pages yet. Open Wrist Assistant on it once, then try again.";
+
 /** The most times one change is sent before conflicts end it. */
 export const PICKS_ATTEMPTS = 3;
 
@@ -95,7 +108,9 @@ export async function changeDevicePicks(io: PicksIO, ownerId: string, kind: Card
     const doc = record.revision > 0
       ? (kind === "status_pages" ? asStatusPagesDocument(record.document) : asWatchPagesDocument(record.document))
       : undefined;
-    if (doc === undefined) return { ok: true, changed: false };
+    // A device with no record yet (a new watch, one waiting for its
+    // iPhone's move) is set up by its app first; an add would start it over.
+    if (doc === undefined) return "add" in change ? { ok: false, code: "no_record", message: NO_RECORD_TEXT } : { ok: true, changed: false };
     const next = changedPicks(kind, doc, change);
     if (next === doc) return { ok: true, changed: false };
     try {
