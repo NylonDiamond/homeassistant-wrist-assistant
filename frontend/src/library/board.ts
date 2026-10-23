@@ -40,6 +40,9 @@ const BOARD_WIDE_PX = 1500;
 export const BOARD_WIDE_SCALE = 2.2;
 const BOARD_MID_PX = 900;
 export const BOARD_MID_SCALE = 1.5;
+/** Under this width (a phone), smaller, so the names keep their room. */
+const BOARD_SMALL_PX = 560;
+export const BOARD_SMALL_SCALE = 0.8;
 
 /** Tells its host whether it is wide (`BOARD_WIDE_PX`), and asks it to draw
  * again when that, or its picture scale, changes. */
@@ -57,7 +60,7 @@ export class WideWatch implements ReactiveController {
     this.seen = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width ?? 0;
       const wide = width >= BOARD_WIDE_PX;
-      const scale = wide ? BOARD_WIDE_SCALE : width >= BOARD_MID_PX ? BOARD_MID_SCALE : 1;
+      const scale = wide ? BOARD_WIDE_SCALE : width >= BOARD_MID_PX ? BOARD_MID_SCALE : width > 0 && width < BOARD_SMALL_PX ? BOARD_SMALL_SCALE : 1;
       if (wide === this.wide && scale === this.scale) return;
       this.wide = wide;
       this.scale = scale;
@@ -321,7 +324,7 @@ export const boardStyles = css`
     min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
     overflow-wrap: anywhere; line-height: 1.25; font-weight: 600; font-size: 12.5px;
   }
-  .bd-col-sub { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--wa-muted); }
+  .bd-col-sub { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
   .bd-col-n { font-variant-numeric: tabular-nums; }
   .bd-col-go { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--wa-line); }
   .bd-col-btn:hover .bd-col-go, .bd-col.on .bd-col-go { color: var(--wa-ink); border-color: var(--wa-line-strong); }
@@ -447,9 +450,11 @@ export const boardStyles = css`
     .bd .bd-thing, .bd.wide .bd-thing { min-width: 0; width: 150px; max-width: 150px; }
     .bd-thing-in, .bd.wide .bd-thing-in { padding: 6px; gap: 6px; }
     .bd-open, .bd.wide .bd-open { gap: 8px; }
-    .bd-n, .bd.wide .bd-n { font-size: 13px; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+    .bd-n, .bd.wide .bd-n { font-size: 13px; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: break-word; }
     .bd-col-name, .bd.wide .bd-col-name { font-size: 11.5px; }
     .bd-col-glyph { display: none; }
+    .bd-col-sub { gap: 4px; font-size: 10.5px; }
+    .bd-col-go { padding: 1px 4px; }
   }
 `;
 

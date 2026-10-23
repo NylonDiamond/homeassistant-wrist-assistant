@@ -208,6 +208,12 @@ const topBarRun = css`
     header.stacked > .tb-sync, .wa-bar.stacked > .tb-sync { flex: 1 0 auto; max-width: 100%; }
     header.stacked .tb-sync-l, .wa-bar.stacked .tb-sync-l { flex: none; }
     header.stacked .tb-sync-n, .wa-bar.stacked .tb-sync-n { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    /* A bar with no design open holds only the pill, ··· and the help: one
+       row, the pill first, its note cut before anything wraps. Two rows left
+       the help alone on the first. */
+    header.stacked.bar-list::after { content: none; }
+    header.stacked.bar-list > .tb-sync { order: 0; flex: 0 1 auto; min-width: 0; }
+    header.stacked.bar-list > .side-menu { order: 0; }
     /* Home Assistant's own menu, which a phone hides behind this button. */
     header button.icon.tb-menu, .wa-bar button.icon.tb-menu { margin-left: -6px; }
     /* The buttons that move between the editors (Pages, Menus, Watch, and

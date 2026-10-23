@@ -11644,7 +11644,8 @@ export class WristAssistantPanel extends LitElement {
     // a design open it leads with the way back to that list, then Browse,
     // which opens the same list over the editor.
     const open = this.designOpen;
-    return html`<header class=${stacked ? "stacked" : nothing}>
+    const barClass = [stacked ? "stacked" : "", open ? "" : "bar-list"].filter((c) => c !== "").join(" ");
+    return html`<header class=${barClass === "" ? nothing : barClass}>
       ${open ? this.renderBackToList() : nothing}
       ${open ? this.renderPicker() : nothing}
       ${open ? html`<span class="tb-div" aria-hidden="true"></span>` : nothing}
