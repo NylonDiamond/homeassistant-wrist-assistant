@@ -1,4 +1,4 @@
-import{M as m,q as p}from"./chunk-TII47Z4B.js";import{m as d}from"./chunk-WWKDSKNH.js";import{ya as o}from"./chunk-7ECLFNJH.js";import{b as a,d as n,g as l}from"./chunk-BDP52PL7.js";function h(e){let{rows:t,here:i}=e;if(t.length===0)return l;let s=d(i.kind);return n`<div class="lb-rest ${e.standalone===!0?"standalone":""}" role="group" aria-label=${s}>
+import{M as m,q as p}from"./chunk-IUT3EZFJ.js";import{m as d}from"./chunk-DY6QLTIA.js";import{ya as o}from"./chunk-32BWDOCI.js";import{b as a,d as n,g as l}from"./chunk-BDP52PL7.js";function h(e){let{rows:t,here:i}=e;if(t.length===0)return l;let s=d(i.kind);return n`<div class="lb-rest ${e.standalone===!0?"standalone":""}" role="group" aria-label=${s}>
     <div class="lb-rest-h"><span class="lb-rest-t">${s}</span><small>${t.length}</small>
       <span class="lb-rest-sp"></span>${e.more??l}</div>
     <p class="lb-rest-hint">${m(p(e.kind,2))}</p>

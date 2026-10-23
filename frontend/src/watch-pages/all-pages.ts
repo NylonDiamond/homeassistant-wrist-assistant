@@ -144,8 +144,10 @@ export function pageCrop(page: WatchPage, states: Record<string, unknown> | unde
 }
 /** How often a stream of state changes draws the pictures again. */
 const STATES_EVERY_MS = 2000;
-/** How wide a board row's picture is, in CSS pixels. */
+/** How wide a board row's picture is, in CSS pixels: a watch's, and an
+ * iPhone's, which is taller for its width, so both rows stay one height. */
 const BOARD_PICTURE_W = 34;
+const BOARD_PHONE_PICTURE_W = 22;
 
 /** Where each tab's Board or Cards is remembered in this browser, as the
  * Complications list remembers its On device | Shape only toggle. The Pages
@@ -1023,7 +1025,7 @@ export class WaAllPages extends LitElement {
       return renderStatusRowPicture({ page: entry.item, hass: this.hassNow, width: BOARD_PICTURE_W, tick: this.iconsTick, ...(this.icons === undefined ? {} : { icons: this.icons }) });
     }
     return renderPageRowPicture({
-      page: entry.item as WatchPage, width: BOARD_PICTURE_W, tick: this.iconsTick, iphone: device?.kind === "iphone",
+      page: entry.item as WatchPage, width: device?.kind === "iphone" ? BOARD_PHONE_PICTURE_W : BOARD_PICTURE_W, tick: this.iconsTick, iphone: device?.kind === "iphone",
       ...(this.hassNow === undefined ? {} : { states: this.hassNow.states }),
       ...(this.icons === undefined ? {} : { icons: this.icons }),
     });

@@ -298,7 +298,7 @@ export const boardStyles = css`
   .bd-n { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bd-m { font-size: 11.5px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .bd-cell { text-align: center; vertical-align: middle; padding: 6px 4px; }
+  .bd .bd-cell { text-align: center; vertical-align: middle; padding: 6px 4px; }
   .bd-cell-in { display: inline-flex; align-items: center; gap: 4px; }
   .bd-box {
     display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0;
