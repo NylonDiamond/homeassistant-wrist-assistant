@@ -52,7 +52,7 @@ export interface HelpScreen {
 const HOME_TEXT = [
   "Home lists every watch and iPhone, who it belongs to, and whether it has your latest changes.",
   "Waiting means the device gets them the next time Wrist Assistant opens on it.",
-  "Its Library holds what every device shares: HTTP actions and camera framing.",
+  "On every device holds what the whole home shares: HTTP actions and camera framing.",
 ];
 
 const COMPLICATIONS_TEXT = [
@@ -65,19 +65,19 @@ const COMPLICATIONS_TEXT = [
 export const PAGES_PHONE_TILES_TEXT = "A few tiles, like a map or a web card, are for the iPhone only. A watch skips them, and its chip on the card says how many.";
 
 const PAGES_TEXT = [
-  "Pages lists every page in your home, one card each. Tick a device on a card and the page is on it: one page, the same everywhere, so an edit shows on every device that has it.",
-  "Pick a page to edit it, or make a new one. A device's tab sets its order and what it hides.",
+  "Pages lists every page in your home, with a column for each device. Tick a box and the page is on that device: one page, the same everywhere, so an edit shows on every device that has it.",
+  "Pick a page to edit it, or make a new one. Click a device's name to set its order and what it hides.",
   PAGES_PHONE_TILES_TEXT,
 ];
 
 const STATUS_PAGES_TEXT = [
   "Status pages lists every status page in your home. A status page is a read-only screen of rows that a tile or a menu slot opens.",
-  "Tick a device on a card to put it there. It is the same page on every device that has it: an edit shows on all of them. Pick one to edit it, or make a new one.",
+  "Tick a box to put it on that device. It is the same status page on every device that has it: an edit shows on all of them. Pick one to edit it, or make a new one.",
 ];
 
 const MENUS_TEXT = [
-  "Menus lists every menu in your home. Each device uses one Anywhere menu and one Entity quick menu, and a menu used by more than one device is the same menu: an edit shows on all of them.",
-  "The page switcher goes with the Anywhere menu. Pick a menu to edit it, or pick a device on its card to have that device use it. For a menu of one device's own, open it there and use Make a copy for this watch. New menu makes a menu no device uses yet: tick a device on its card to use it there.",
+  "Menus lists every menu in your home. Each device uses one Anywhere menu and one Entity quick menu, and a menu on more than one device is the same menu: an edit shows on all of them.",
+  "The page switcher goes with the Anywhere menu. Pick a menu to edit it, or pick a dot to have that device use it. To change a menu on one device only, click the device's name, then Duplicate its menu. New menu starts on no device yet.",
 ];
 
 /** Each screen's guide in the docs: what the ? in the screen's own bar
@@ -94,8 +94,8 @@ const SCREEN_GUIDES: Partial<Record<WatchScreen["id"], string>> = {
   "cameras": WATCH_CAMERAS_HELP_URL,
 };
 
-/** What the sheet says of whose a Library screen is. */
-export const HELP_LIBRARY_TEXT = "It is in Home's Library, shared by every device in this home.";
+/** What the sheet says of whose a whole-home screen is. */
+export const HELP_LIBRARY_TEXT = "It is on every device in this home: Home lists it under On every device.";
 
 /** A watch screen's blurb as a sentence (its name, then the blurb, which
  * reads on from the name), then whose it is. The blurbs are

@@ -1776,10 +1776,10 @@ export class WaMenuEditor extends LitElement {
     }
     if (!this.menuDeleteAsk) {
       return html`<button type="button" class="pe-btn pe-danger me-lib-del" ?disabled=${this.saving}
-        title=${`Delete ${menu.name} from the library`} @click=${() => { this.menuDeleteAsk = true; }}>Delete from the library</button>`;
+        title=${`Delete ${menu.name}. It is on no device yet.`} @click=${() => { this.menuDeleteAsk = true; }}>Delete</button>`;
     }
     return html`<div class="me-lib-copy me-lib-del-ask" role="alertdialog" aria-label=${`Delete ${menu.name}?`}>
-      <span class="me-lib-hint"><b>Delete ${menu.name}?</b> No device uses it. This cannot be undone.</span>
+      <span class="me-lib-hint"><b>Delete ${menu.name}?</b> It is on no device yet. This cannot be undone.</span>
       <button type="button" class="pe-btn pe-danger" @click=${() => void this.deleteLibraryMenu(menu)}>Really delete</button>
       <button type="button" class="pe-btn" @click=${() => { this.menuDeleteAsk = false; }}>Cancel</button>
     </div>`;

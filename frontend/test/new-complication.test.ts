@@ -145,7 +145,7 @@ describe("the footer line", () => {
 
   it("says where a design with no device ticked goes", () => {
     expect(newSummary(choice({ kind: "watch", family: "rectangular", devices: 0 })))
-      .toBe("Rectangular on a watch, not on a device yet. Tick a device any time.");
+      .toBe("Rectangular on a watch, on no device yet. Tick a device any time.");
   });
 
   it("enables Create once the shape is picked, whatever step 4 says", () => {

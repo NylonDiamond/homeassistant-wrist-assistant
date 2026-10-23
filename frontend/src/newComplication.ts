@@ -153,7 +153,7 @@ export function newSummary(o: NewChoice): string {
   const what = o.kind === "control"
     ? "A Control Center control"
     : `${familyTitle(o.family!)} on ${o.kind === "watch" ? "a watch" : "an iPhone"}`;
-  if (o.devices === 0) return `${what}, not on a device yet. Tick a device any time.`;
+  if (o.devices === 0) return `${what}, on no device yet. Tick a device any time.`;
   return `${what}, on ${o.devices} ${o.devices === 1 ? "device" : "devices"}`;
 }
 

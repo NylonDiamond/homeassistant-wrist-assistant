@@ -129,20 +129,20 @@ export function deletePlan(entries: readonly LibraryItem[], devices: readonly Li
 const nameOf = (devices: readonly LinkDevice[], ownerId: string): string =>
   devices.find((d) => sameId(d.ownerId, ownerId))?.name ?? "a device";
 
-/** The delete question: "Delete 2 pages from the library?", and a line on
+/** The delete question: "Delete 2 pages?", and a line on
  * the devices they come off and what goes with them, as the editors' delete
  * everywhere says. */
 export function deleteAskText(plan: DeletePlan, devices: readonly LinkDevice[]): { title: string; body: string } {
   const n = plan.items.length;
   const it = n === 1 ? "it" : "them";
-  const title = `Delete ${n} ${cardNoun(plan.kind, n)} from the library?`;
+  const title = `Delete ${n} ${cardNoun(plan.kind, n)}?`;
   const where = plan.devices.map((id) => nameOf(devices, id));
   const what = plan.kind === "status_pages"
     ? `with the tiles and menu slots that open ${it}`
     : `with the tiles, menu slots and complication taps that open ${it}`;
   const parts = [
     where.length === 0
-      ? `No device has ${it}. This cannot be undone.`
+      ? `${n === 1 ? "It is" : "They are"} on no device yet. This cannot be undone.`
       : `${n === 1 ? "It comes" : "They come"} off ${joinWords(where)}, ${what}. This cannot be undone.`,
   ];
   for (const k of plan.kept) {

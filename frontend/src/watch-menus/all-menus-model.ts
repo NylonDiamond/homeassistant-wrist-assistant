@@ -32,7 +32,7 @@ export function allMenusLead(total: number): string {
 }
 
 /** The surface's foot on Cards. */
-export const MENUS_FOOT = "Click a menu to edit it. Pick a device on a card and that device uses this menu from now on. New menu makes one no device uses yet.";
+export const MENUS_FOOT = "Click a menu to edit it. Tick a device on a card and that device uses this menu from now on. New menu starts on no device yet.";
 
 /** The foot on the board. */
 export const MENUS_BOARD_FOOT = "Click a menu to edit it. Pick a dot and that device uses this menu from now on. Click a device's name to see its menus first.";
@@ -115,12 +115,12 @@ export function newMenuName(library: Library | undefined, unit: MenuUnit): strin
 /** The line in New menu's form: what it starts as, and that no device uses
  * it until one is ticked. */
 export function newMenuText(unit: MenuUnit): string {
-  return `It starts as the app's own ${MENU_UNIT_TITLES[unit]}. No device uses it until you tick one on its card.`;
+  return `It starts as the app's own ${MENU_UNIT_TITLES[unit]}, on no device yet.`;
 }
 
 /** What New menu says once the menu is made. */
 export function newMenuMadeText(name: string): string {
-  return `Made ${name}. Tick a device on its card to use it there.`;
+  return `Made ${name}, on no device yet. Pick a device for it any time.`;
 }
 
 /** Why New menu is not offered to someone who is not an administrator. */

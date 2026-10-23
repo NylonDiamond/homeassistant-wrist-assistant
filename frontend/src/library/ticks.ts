@@ -204,7 +204,7 @@ export function renderTicks(input: TicksInput, onPick: (ownerId: string, on: boo
   const chips = tickChips(input);
   const hint = input.kind === "menus" && input.hint !== false ? (input.hint ?? "Used by") : undefined;
   return renderTickChips(chips, {
-    foldLabel: input.kind === "menus" ? "Use on a device" : "Add to a device",
+    foldLabel: "Add to a device",
     ...(hint === undefined ? {} : { hint }),
     ...(input.note === undefined ? {} : { note: input.note }),
     ...(input.noteKind === undefined ? {} : { noteKind: input.noteKind }),

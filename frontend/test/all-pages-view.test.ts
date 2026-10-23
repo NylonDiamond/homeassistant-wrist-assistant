@@ -102,7 +102,7 @@ describe("the Pages tab", () => {
     // No device's record is read to draw the cards.
     expect(t.sentOf("watch_config/get")).toEqual([]);
     const text = t.whole();
-    expect(text).toContain("Your page library: 5 pages. Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.");
+    expect(text).toContain("5 pages in your home. Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.");
     expect(text.split(`class="ap-card `).length - 1).toBe(5);
     expect(text).toContain("lt-chip on");
     expect(text).toContain("lt-chip off");
@@ -266,10 +266,10 @@ describe("the Pages tab", () => {
     expect(dialog).toContain("Name it");
     expect(dialog).toContain("Preview on");
     expect(dialog).toContain("Nothing is put on a device; the ticks do that.");
-    expect(dialog).toContain("New Page 2, a page no device has yet. Tick a device any time.");
+    expect(dialog).toContain("New Page 2, a page on no device yet. Tick a device any time.");
     expect(dialog).not.toContain("Apple Watch");
     t.el.newForm = { ...form, name: " Garage ", preview: "iphone" };
-    expect(t.whole()).toContain("Garage, a page no device has yet.");
+    expect(t.whole()).toContain("Garage, a page on no device yet.");
     await t.call("makeCard");
     const sent = t.sentOf("library/item/create");
     expect(sent).toHaveLength(1);
@@ -325,7 +325,7 @@ describe("the Pages tab", () => {
     expect(form.name).toMatch(/^New Page \d+$/);
     expect(t.whole()).toContain("<h2>New status page</h2>");
     t.el.newForm = { ...form, name: "Gates" };
-    expect(t.whole()).toContain("Gates, a status page no device has yet. Tick a device any time.");
+    expect(t.whole()).toContain("Gates, a status page on no device yet. Tick a device any time.");
     await t.call("makeCard");
     const sent = t.sentOf("library/item/create");
     expect(sent).toHaveLength(1);
@@ -457,7 +457,7 @@ describe("Multi select", () => {
     t.call("pick", lib.pages.find((e) => e.id === PAGE1), false);
     t.call("toggleAsk");
     const ask = t.whole();
-    expect(ask).toContain("Delete 1 page from the library?");
+    expect(ask).toContain("Delete 1 page?");
     expect(ask).toContain("It comes off Jesse Apple Watch and iPhone 15 Pro, with the tiles, menu slots and complication taps that open it.");
     // The old "Add to…" menu; a card's fold chip says "+ Add to a device".
     expect(ask).not.toContain("Add to…");
@@ -477,7 +477,7 @@ describe("the Status pages tab", () => {
     showCards(t);
     await t.ready();
     const text = t.whole();
-    expect(text).toContain("Your status page library: 2 status pages.");
+    expect(text).toContain("2 status pages in your home.");
     expect(text).toContain("1 row · starter");
     expect(text).toContain("Click a status page to edit it. Tick a device to put it there.");
     expect(text).not.toContain("Not linked");
@@ -501,7 +501,7 @@ describe("the Status pages tab", () => {
     expect(text).toContain("2 rows");
     expect(text).not.toContain("Hide here");
     expect(text).not.toContain("bd-eye");
-    expect(text).toContain("Every status page in your library is on Jesse Apple Watch.");
+    expect(text).toContain("Every status page in your home is on Jesse Apple Watch.");
     const lib = (t.el.lib as { library: { statusPages: { id: string }[] } }).library;
     t.call("open", lib.statusPages.find((e) => e.id === STARTER));
     expect(t.opened).toHaveLength(0);

@@ -328,7 +328,7 @@ describe("deleting a page under the library", () => {
     expect([...new Set(ha.of("/list").map((m) => m.owner_watch_id))].sort()).toEqual([watch, phone].sort());
     expect(ha.of("/save").filter((m) => !(m.type as string).endsWith("watch_config/save")).map((m) => m.owner_watch_id)).toEqual([phone]);
     expect((draft().document.pages as JsonObject[]).map((p) => p.name)).toEqual(["Yard", "Mine"]);
-    expect((el.note as { text: string }).text).toBe("Deleted from the library and from every device. Cleared the deleted page from the tap of 1 complication.");
+    expect((el.note as { text: string }).text).toBe("Deleted from every device. Cleared the deleted page from the tap of 1 complication.");
     expect(el.deleteAsk).toBeUndefined();
   });
 });

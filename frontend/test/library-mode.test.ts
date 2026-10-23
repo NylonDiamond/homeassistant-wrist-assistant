@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
 import { fetchLibraryItem, saveLibraryItem } from "../src/library/client.js";
 import { nothing } from "lit";
-import { LIBRARY_PREVIEW_KEY, libraryDeleteText, libraryDraftKey, libraryRecord, onDevicesQuestion, onDevicesText, previewOwner, rememberPreview, renderPreviewPicker, sameLibraryItem, storedPreviewKind } from "../src/library/item-mode.js";
+import { DELETE_EVERY_DEVICE, DELETE_THIS_DEVICE, LIBRARY_PREVIEW_KEY, libraryDeleteText, libraryDeleteTitle, libraryDraftKey, libraryRecord, onDevicesQuestion, onDevicesText, previewOwner, rememberPreview, renderPreviewPicker, sameLibraryItem, storedPreviewKind } from "../src/library/item-mode.js";
 import { barTabOf, libraryItemPath, libraryRouteOf, panelPrefix, screenIdOf, swallowsSaveKey, tabOfRoute } from "../src/shell.js";
 import { ALL_MENUS_PATH } from "../src/watch-menus/all-menus-hook.js";
 import { forgetWatchMenusDraft, keptWatchMenusDraft } from "../src/watch-menus/draft.js";
@@ -197,11 +197,13 @@ describe("the status pages editor in library mode", () => {
     expect(e.ha.summary().status_pages[LONE]!.revision).toBe(4);
   });
 
-  it("asks Delete from the library alone, with no Remove from this watch", async () => {
+  it("asks Delete alone for a status page on no device, with no Remove from this watch", async () => {
     const e = await statusEditor();
     e.call("askDelete", LONE);
     const ask = flat(e.call("renderDeleteAsk", { pageId: LONE }));
-    expect(ask).toContain("from the library?");
+    expect(ask).toMatch(/<h3 id="sp-del-title">Delete "[^"]+"\?<\/h3>/);
+    expect(ask).not.toContain("from the library");
+    expect(ask).not.toContain(DELETE_THIS_DEVICE);
     expect(ask).toContain(libraryDeleteText(0));
     expect(ask).not.toContain("Remove from this");
   });
@@ -248,7 +250,7 @@ describe("the page editor in library mode", () => {
     expect(e.draft().document).toBe(before);
   });
 
-  it("saves with library/item/save, and asks Delete from the library alone", async () => {
+  it("saves with library/item/save, and asks Delete alone for a page on no device", async () => {
     const e = await pageEditor();
     const draft = e.draft();
     draft.apply({ ...draft.document, pages: [{ ...e.page(), name: "Big shed" }] } as WatchPagesDocument);
@@ -262,7 +264,7 @@ describe("the page editor in library mode", () => {
     e.call("askDelete", SHED);
     expect(e.el.deleteAsk).toBeUndefined();
     const ask = flat(e.call("renderLibraryDeleteAsk", SHED, e.draft().document));
-    expect(ask).toContain(`Delete "Big shed" from the library?`);
+    expect(ask).toContain(`Delete "Big shed"?`);
     expect(ask).toContain(libraryDeleteText(0));
     // No device's menus, complications or rooms are read for it.
     expect(e.ha.of("watch_config/get").filter((m) => m.kind === "menus")).toEqual([]);
@@ -295,7 +297,7 @@ describe("the menu editor in library mode", () => {
     expect(shownMenu(e.host())).toBe("anywhere");
     const head = flat(e.call("libraryHead", "anywhere"));
     expect(head).toMatch(/me-lib-input[\s\S]*Spare/);
-    expect(head).toContain("Delete from the library");
+    expect(head).toContain(">Delete</button>");
     expect(head).not.toContain("Make a copy");
     // The row's foot keeps the name and Delete; the devices stand in the
     // strip under the canvas head, with a round tick per device.
@@ -305,7 +307,7 @@ describe("the menu editor in library mode", () => {
     for (const gone of ["tb-pages", "tb-sync", "me-watch-picker", "Preview as", "lt-hint", "lib-on"]) expect(bar).not.toContain(gone);
     const body = flat(e.call("renderBody", e.owners));
     expect(body).not.toContain("cf-bar");
-    expect(body).toMatch(/cv-head[\s\S]*lib-on over-stage none[\s\S]*Which devices should use this menu\?[\s\S]*lt-chip off rd[\s\S]*Jesse's Watch[\s\S]*No device uses it yet[\s\S]*class="stage-area/);
+    expect(body).toMatch(/cv-head[\s\S]*lib-on over-stage none[\s\S]*Which devices should use this menu\?[\s\S]*lt-chip off rd[\s\S]*Jesse's Watch[\s\S]*On no device yet[\s\S]*class="stage-area/);
     expect(body).not.toContain("lt-hint");
     // Preview on sits in the strip over the stage, beside the size and the zoom.
     expect(body).toMatch(/class="stage-tools"[\s\S]*Preview on[\s\S]*lib-preview-thumb watch on/);
@@ -385,12 +387,25 @@ describe("library mode's pieces", () => {
     expect(picker).not.toContain("Jesse");
   });
 
+  it("asks a delete in one set of words: This device or Every device", () => {
+    expect(libraryDeleteTitle("Lights")).toBe(`Delete "Lights"?`);
+    expect([DELETE_THIS_DEVICE, DELETE_EVERY_DEVICE]).toEqual(["This device", "Every device"]);
+    expect(libraryDeleteText(0)).toBe("It is on no device yet. It is deleted for good, with every tile and menu slot that opened it.");
+    expect(libraryDeleteText(1)).toBe("It is on 1 device. It is deleted for good, with every tile and menu slot that opened it.");
+    expect(libraryDeleteText(3, "Jesse's Watch")).toBe("It is on 3 devices. This device takes it off Jesse's Watch only, and you can tick it again. "
+      + "Every device deletes it for good, with every tile and menu slot that opened it.");
+    expect(libraryDeleteText(3)).toContain("To take it off one device, untick it instead.");
+    for (const text of [libraryDeleteText(0), libraryDeleteText(3, "A"), libraryDeleteText(3)]) {
+      expect(text).not.toMatch(/library|[–—]| - /);
+    }
+  });
+
   it("says in the bar how many devices have the item", () => {
     expect(onDevicesText("pages", 0)).toBe("On no device yet");
     expect(onDevicesText("status_pages", 1)).toBe("On 1 device");
     expect(onDevicesText("pages", 3)).toBe("On 3 devices");
-    expect(onDevicesText("menus", 0)).toBe("No device uses it yet");
-    expect(onDevicesText("menus", 2)).toBe("Used by 2 devices");
+    expect(onDevicesText("menus", 0)).toBe("On no device yet");
+    expect(onDevicesText("menus", 2)).toBe("On 2 devices");
   });
 
   it("asks which devices the item goes on, over the ticks", () => {

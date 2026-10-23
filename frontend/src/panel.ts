@@ -228,7 +228,7 @@ import { NEWER_VERSION_TEXT, NOT_READY_TEXT, friendlyError, rawErrorText } from 
 import { conflictText, savedByWords, savedLine, versionLabel, versionWhen } from "./revision-words.js";
 import { ScrollFades } from "./scroll-fade.js";
 import { chromeDarkValues, chromeRuns, chromeTokens, litOutline, plainOutline } from "./editor-chrome.js";
-import { libraryModeStyles } from "./library/item-mode.js";
+import { DELETE_EVERY_DEVICE, DELETE_THIS_DEVICE, libraryModeStyles } from "./library/item-mode.js";
 import { type TickChip, libraryTicksStyles, renderTickChips } from "./library/ticks.js";
 import { type BoardCell, type BoardColumn, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen,
   SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, renderBoard, renderViewSwitch } from "./library/board.js";
@@ -797,7 +797,7 @@ function tabIcon(kind: DeviceKind | "all"): UiIconName {
 
 /** What Unassigned is for, said where it is rather than in a tooltip: nobody
  * leaves a design there without being told what it means. */
-const LIBRARY_NOTE = "Not on any device yet. Duplicate one to a device to use it.";
+const LIBRARY_NOTE = "On no device yet. Tick a device on one to use it.";
 
 /** A phrase at the head of a sentence. "this watch" and "the Not on a device
  * list" both go in the same slot, and neither starts with a capital. */
@@ -20517,7 +20517,7 @@ export class WristAssistantPanel extends LitElement {
     const ask = html`<div class="hb-ask">
         <p>This removes <b>${row.name}</b> from this Home Assistant.
           ${kept === 0 ? nothing : html`${kept === 1 ? "Its complication is" : `Its ${kept} complications are`} kept, under ${UNASSIGNED_LABEL} on the Complications tab.`}
-          Its pages, status pages and menus stay in your library.${row.kind === "watch" ? " Its watch settings are deleted." : nothing}</p>
+          Its pages, status pages and menus are kept for your other devices.${row.kind === "watch" ? " Its watch settings are deleted." : nothing}</p>
         <p class="quiet">Use this for a device you no longer use. If the app is still on it, the device can connect again later, but it starts empty. This cannot be undone.</p>
         ${this.deviceForgetError ? html`<p class="dev-err" title=${errTitle(this.deviceForgetError) ?? nothing}>${this.deviceForgetError}</p>` : nothing}
         <div class="dev-acts">
@@ -21082,12 +21082,12 @@ export class WristAssistantPanel extends LitElement {
       <div class="xfer-body">
         <div class="xf-lead warn">${uiIcon("info")}<span>${where}</span></div>
         ${unsaved ? nothing : html`<div class="xf-lead">${uiIcon("info")}<span>This cannot be undone.${keep
-          ? html` To take it off a device and keep the design, close this and untick the device in the strip over the preview instead (click its ticked chip twice). The last copy goes to ${UNASSIGNED_LIST}.` : nothing}</span></div>`}
+          ? html` To take it off a device and keep the design, close this and untick the device in the strip over the preview instead. The last copy goes to ${UNASSIGNED_LIST}.` : nothing}</span></div>`}
         <div class="del-acts">
           <button class="ghost" @click=${close}>Cancel</button>
           ${!unsaved && n > 1
-            ? html`<button class="danger" @click=${() => go(false)}>Delete on ${hereName} only</button>
-              <button class="danger" @click=${() => go(true)}>Delete on all ${n} devices</button>`
+            ? html`<button class="danger" title=${`Delete it on ${hereName} only`} @click=${() => go(false)}>${DELETE_THIS_DEVICE}</button>
+              <button class="danger" title=${`Delete it on all ${n} devices`} @click=${() => go(true)}>${DELETE_EVERY_DEVICE}</button>`
             : html`<button class="danger" @click=${() => go(true)}>Delete</button>`}
         </div>
       </div>
@@ -22108,7 +22108,7 @@ export class WristAssistantPanel extends LitElement {
     const family = supportedFamilies(cfg)[0];
     const shelved = isLibraryOwner(this.selectedOwner) || !this.selectedOwner;
     const shape = family === undefined ? "Control Center" : familyTitle(family);
-    const where = shelved || !this.selectedOwner ? "not on a device yet" : `on ${ownerLabel(this.selectedOwner)}`;
+    const where = shelved || !this.selectedOwner ? "on no device yet" : `on ${ownerLabel(this.selectedOwner)}`;
     const also = cfg.control !== undefined && family !== undefined ? ", with a Control Center control" : "";
     return {
       line: `${shape}, ${where}${also}`,

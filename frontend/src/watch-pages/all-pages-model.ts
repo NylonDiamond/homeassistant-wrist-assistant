@@ -54,8 +54,8 @@ export function cardsTitle(kind: CardKind): string {
  * one fact a newcomer needs (mock frames 1a and 1d). An empty library says
  * only that: the empty block under it says what to do. */
 export function allPagesLead(total: number, kind: CardKind = "pages"): string {
-  if (total === 0) return `Your ${cardNoun(kind)} library is empty.`;
-  return `Your ${cardNoun(kind)} library: ${total} ${cardNoun(kind, total)}. ${kind === "status_pages" ? STATUS_PAGES_LEAD : ALL_PAGES_LEAD}`;
+  if (total === 0) return `No ${cardNoun(kind, 2)} yet.`;
+  return `${total} ${cardNoun(kind, total)} in your home. ${kind === "status_pages" ? STATUS_PAGES_LEAD : ALL_PAGES_LEAD}`;
 }
 
 /** The All tab's block when the library holds none of the kind: how a page

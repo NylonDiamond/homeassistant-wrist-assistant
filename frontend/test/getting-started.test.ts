@@ -161,7 +161,7 @@ describe("the Help sheet", () => {
 
   it("names the screen in view: Home, Complications, and each watch screen by its own blurb", () => {
     expect(helpScreen(at(""))).toMatchObject({ name: "Home" });
-    expect(helpScreen(at("")).text).toContain("Its Library holds what every device shares: HTTP actions and camera framing.");
+    expect(helpScreen(at("")).text).toContain("On every device holds what the whole home shares: HTTP actions and camera framing.");
     expect(helpScreen(undefined).name).toBe("Home");
     expect(helpScreen(at("/complications")).name).toBe("Complications");
     for (const screen of [...WATCH_SCREENS, WATCH_SETTINGS_SCREEN]) {
@@ -172,7 +172,7 @@ describe("the Help sheet", () => {
     expect(helpScreen(at("/http-actions")).text[1]).toBe(HELP_LIBRARY_TEXT);
     expect(helpScreen(at("/cameras")).text).toEqual([
       "Cameras sets how each camera's picture is framed in alerts, the same on the watch and the iPhone.",
-      "It is in Home's Library, shared by every device in this home.",
+      "It is on every device in this home: Home lists it under On every device.",
     ]);
     expect(helpScreen(at("/photos")).name).toBe("Home");
     expect(helpScreen(at("/pages/w1")).text[1]).toBe("It is for the watch picked at the top.");
@@ -182,7 +182,7 @@ describe("the Help sheet", () => {
     const h = helpScreen(at("/all-pages"));
     expect(h.name).toBe("Pages");
     expect(h.more).toBe(WATCH_PAGES_HELP_URL);
-    expect(h.text[0]).toBe("Pages lists every page in your home, one card each. Tick a device on a card and the page is on it: one page, the same everywhere, so an edit shows on every device that has it.");
+    expect(h.text[0]).toBe("Pages lists every page in your home, with a column for each device. Tick a box and the page is on that device: one page, the same everywhere, so an edit shows on every device that has it.");
     expect(h.text.join(" ")).not.toMatch(/Devices|[Ll]ink/);
     expect(h.text.join(" ")).not.toMatch(/status page|info page/i);
     // The tiles only the iPhone draws, and the count on a watch's chip.
@@ -195,7 +195,7 @@ describe("the Help sheet", () => {
     expect(h.name).toBe("Status pages");
     expect(h.more).toBe(WATCH_STATUS_PAGES_HELP_URL);
     expect(h.text[0]).toBe("Status pages lists every status page in your home. A status page is a read-only screen of rows that a tile or a menu slot opens.");
-    expect(h.text.join(" ")).toContain("the same page on every device that has it: an edit shows on all of them");
+    expect(h.text.join(" ")).toContain("the same status page on every device that has it: an edit shows on all of them");
     expect(h.text.join(" ")).not.toMatch(/info page/i);
     for (const line of h.text) expect(line).not.toMatch(/[–—]| - /);
     // A device's own Status pages screen is still that screen.
@@ -206,7 +206,7 @@ describe("the Help sheet", () => {
     const h = helpScreen(at("/all-menus"));
     expect(h.name).toBe("Menus");
     expect(h.more).toBe(WATCH_MENUS_HELP_URL);
-    expect(h.text[0]).toBe("Menus lists every menu in your home. Each device uses one Anywhere menu and one Entity quick menu, and a menu used by more than one device is the same menu: an edit shows on all of them.");
+    expect(h.text[0]).toBe("Menus lists every menu in your home. Each device uses one Anywhere menu and one Entity quick menu, and a menu on more than one device is the same menu: an edit shows on all of them.");
     expect(h.text.join(" ")).toContain("The page switcher goes with the Anywhere menu.");
     expect(h.text.join(" ")).not.toMatch(/Devices on its card/);
     for (const line of h.text) expect(line).not.toMatch(/[–—]| - /);

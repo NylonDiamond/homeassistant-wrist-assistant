@@ -72,7 +72,10 @@ import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
 import { libraryErrorText } from "../library/client.js";
 import {
   fetchLibraryRecord,
+  DELETE_EVERY_DEVICE,
+  DELETE_THIS_DEVICE,
   libraryDeleteText,
+  libraryDeleteTitle,
   libraryDraftKey,
   libraryItemIO,
   type LibraryItemRef,
@@ -1205,8 +1208,8 @@ export class WaStatusPagesEditor extends LitElement {
     }
     const failed = result.reply.link_failures ?? [];
     this.note = failed.length > 0
-      ? { kind: "warn", text: `Deleted from the library. Could not update ${failed.map((f) => f.name).join(", ")}.` }
-      : { kind: "ok", text: "Deleted from the library and from every device." };
+      ? { kind: "warn", text: `Deleted. Could not update ${failed.map((f) => f.name).join(", ")}.` }
+      : { kind: "ok", text: "Deleted from every device." };
   }
 
   /** The delete question for a status page other devices have too. */
@@ -1214,16 +1217,24 @@ export class WaStatusPagesEditor extends LitElement {
     const page = findStatusPage(this.draft?.document, ask.pageId);
     const busy = this.deletingAll;
     if (page !== undefined && this.libraryItem !== undefined) {
+      // "This device" (an untick, on the device it was opened from, when
+      // another device has it too) or "Every device" (plan step 8).
       const owners = this.lib.library === undefined ? [] : devicesFor(this.lib.library, "status_pages", ask.pageId);
+      const from = this.libraryItem.from;
+      const entry = this.lib.library === undefined ? undefined : libraryItem(this.lib.library, "status_pages", ask.pageId);
+      const here = from !== undefined && entry !== undefined && owners.length > 1 && owners.some((o) => sameId(o, from)) ? from : undefined;
       return html`<dialog class="pe-ask sp-del-ask" aria-labelledby="sp-del-title"
         @cancel=${(e: Event) => { if (busy) e.preventDefault(); }}
         @close=${() => { if (!this.deletingAll) this.deleteAsk = undefined; }}>
-        <h3 id="sp-del-title">Delete "${statusPageTitle(page)}" from the library?</h3>
-        <p>${libraryDeleteText(owners.length)}</p>
+        <h3 id="sp-del-title">${libraryDeleteTitle(statusPageTitle(page))}</h3>
+        <p>${libraryDeleteText(owners.length, here === undefined ? undefined : this.deviceName(here))}</p>
         <div class="pe-ask-foot sp-del-foot">
           <button class="pe-btn" ?disabled=${busy} @click=${() => this.closeDelete()}>Cancel</button>
+          ${here === undefined || entry === undefined ? nothing : html`<button class="pe-btn pe-danger sp-del-here" ?disabled=${busy || this.saving}
+            title=${`Take it off ${this.deviceName(here)} only`}
+            @click=${() => { this.closeDelete(); this.tickStatusPage(entry, here, false); }}>${DELETE_THIS_DEVICE}</button>`}
           <button class="pe-btn pe-primary pe-danger sp-del-all" ?disabled=${busy || this.saving}
-            @click=${() => void this.deleteFromLibrary()}>${busy ? "Deleting…" : "Delete from the library"}</button>
+            @click=${() => void this.deleteFromLibrary()}>${busy ? "Deleting…" : owners.length > 1 ? DELETE_EVERY_DEVICE : "Delete"}</button>
         </div>
       </dialog>`;
     }
@@ -1714,7 +1725,7 @@ export class WaStatusPagesEditor extends LitElement {
       title: "On each device",
       open,
       onToggle: () => { setSectionOpen(this.uiState, module, section, !open); this.requestUpdate(); },
-      ...(open ? {} : { summary: lines.length === 0 ? "On no device" : `${lines.length} ${lines.length === 1 ? "device" : "devices"}` }),
+      ...(open ? {} : { summary: lines.length === 0 ? "On no device yet" : `${lines.length} ${lines.length === 1 ? "device" : "devices"}` }),
       id: `${module}:${section}`,
     }, open ? renderOnEachDevice({
       kind: "status_pages",

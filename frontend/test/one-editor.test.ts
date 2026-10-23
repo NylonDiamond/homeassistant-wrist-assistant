@@ -180,7 +180,7 @@ describe("the left list in the one editor", () => {
     const items = libraryItems(lib, "pages");
     expect(listedItems(items, PAGE1, "all")).toHaveLength(items.length);
     expect(listedItems(items, PAGE1, "none").map((e) => e.id).sort()).toEqual([LONELY, PAGE1].sort());
-    expect(itemWhereText({ owners: [] })).toBe("On no device");
+    expect(itemWhereText({ owners: [] })).toBe("On no device yet");
     expect(itemWhereText({ owners: [JESSE] })).toBe("On 1 device");
     expect(itemWhereText({ owners: [JESSE, PHONE] })).toBe("On 2 devices");
   });

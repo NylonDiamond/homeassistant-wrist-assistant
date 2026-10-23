@@ -514,13 +514,13 @@ export class WaAllMenus extends LitElement {
 
   /** Delete on a menu no device uses: one press asks in place. */
   private renderDelete(menu: LibraryMenu): TemplateResult {
-    return this.deleteAsk === menu.id ? this.renderDeleteAsk(menu) : html`<button type="button" class="am-btn danger am-del" title=${`Delete ${menu.name} from the library`}
+    return this.deleteAsk === menu.id ? this.renderDeleteAsk(menu) : html`<button type="button" class="am-btn danger am-del" title=${`Delete ${menu.name}. It is on no device yet.`}
       @click=${(e: Event) => { e.stopPropagation(); this.deleteAsk = menu.id; }}>${uiIcon("delete")}<span>Delete</span></button>`;
   }
 
   private renderDeleteAsk(menu: LibraryMenu): TemplateResult {
     return html`<div class="am-del-ask" role="alertdialog" aria-label=${`Delete ${menu.name}?`}>
-      <span><b>Delete ${menu.name}?</b> No device uses it. This cannot be undone.</span>
+      <span><b>Delete ${menu.name}?</b> It is on no device yet. This cannot be undone.</span>
       <span class="am-new-acts">
         <button type="button" class="am-btn danger" ?disabled=${this.deleting} @click=${() => void this.deleteMenu(menu)}>Really delete</button>
         <button type="button" class="am-btn" ?disabled=${this.deleting} @click=${() => { this.deleteAsk = undefined; }}>Cancel</button>
@@ -613,7 +613,7 @@ export class WaAllMenus extends LitElement {
     }
     if (unused) {
       if (this.deleteAsk === menu.id) row.under = this.renderDeleteAsk(menu);
-      else row.actions = html`<button type="button" class="bd-act danger" title=${`Delete ${menu.name} from the library. No device uses it.`}
+      else row.actions = html`<button type="button" class="bd-act danger" title=${`Delete ${menu.name}. It is on no device yet.`}
         aria-label=${`Delete ${menu.name}`} @click=${(e: Event) => { e.stopPropagation(); this.deleteAsk = menu.id; }}>${uiIcon("delete")}</button>`;
     }
     return row;

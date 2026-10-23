@@ -145,10 +145,10 @@ describe("which device a card opens on", () => {
 
 describe("the tab's words", () => {
   it("count the items in the library in the line under the title, and say what the library is", () => {
-    expect(allPagesLead(12)).toBe("Your page library: 12 pages. Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.");
-    expect(allPagesLead(1)).toBe("Your page library: 1 page. Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.");
-    expect(allPagesLead(5, "status_pages")).toBe("Your status page library: 5 status pages. A status page is a read-only screen of rows that a tile or a menu slot opens.");
-    expect(allPagesLead(0)).toBe("Your page library is empty.");
+    expect(allPagesLead(12)).toBe("12 pages in your home. Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.");
+    expect(allPagesLead(1)).toBe("1 page in your home. Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.");
+    expect(allPagesLead(5, "status_pages")).toBe("5 status pages in your home. A status page is a read-only screen of rows that a tile or a menu slot opens.");
+    expect(allPagesLead(0)).toBe("No pages yet.");
   });
 
   it("explain an empty library, and send anyone who may not make a page to an administrator", () => {

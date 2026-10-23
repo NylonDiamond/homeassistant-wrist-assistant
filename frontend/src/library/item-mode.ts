@@ -95,13 +95,28 @@ export function summaryRevision(lib: Library | undefined, ref: LibraryItemRef): 
   return ref.kind === "menus" ? libraryMenu(lib, ref.id)?.revision : libraryItem(lib, ref.kind, ref.id)?.revision;
 }
 
-/** What the library mode delete question says, for an item `devices`
- * devices have. */
-export function libraryDeleteText(devices: number): string {
+/** The delete question's title, the same for every kind (plan step 8). */
+export function libraryDeleteTitle(name: string): string {
+  return `Delete "${name}"?`;
+}
+
+/** The delete question's two answers: "This device" takes the item off the
+ * device it was opened from (an untick), "Every device" deletes it. */
+export const DELETE_THIS_DEVICE = "This device";
+export const DELETE_EVERY_DEVICE = "Every device";
+
+/** What the delete question says, for an item `devices` devices have.
+ * `here` names the device it was opened from when "This device" is offered
+ * (it has the item, and so does another device). */
+export function libraryDeleteText(devices: number, here?: string): string {
   const opened = "with every tile and menu slot that opened it";
-  if (devices <= 0) return `No device has it. It is deleted for good, ${opened}.`;
-  const from = devices === 1 ? "the device that has it" : `all ${devices} devices that have it`;
-  return `It goes from ${from} too, ${opened}. This cannot be undone.`;
+  if (devices <= 0) return `It is on no device yet. It is deleted for good, ${opened}.`;
+  if (devices === 1) return `It is on 1 device. It is deleted for good, ${opened}.`;
+  if (here !== undefined) {
+    return `It is on ${devices} devices. ${DELETE_THIS_DEVICE} takes it off ${here} only, and you can tick it again. `
+      + `${DELETE_EVERY_DEVICE} deletes it for good, ${opened}.`;
+  }
+  return `It is on ${devices} devices. Delete takes it off every device for good, ${opened}. To take it off one device, untick it instead.`;
 }
 
 // ── Preview on ───────────────────────────────────────────────────────────
@@ -241,9 +256,10 @@ export function previewLabel(kind: PreviewKind, names: readonly string[]): strin
   return `${word} · ${names.join(", ")}`;
 }
 
-/** The library mode line in the bar, before the picker. */
+/** The tag in the bar, before the picker: one thing for every device that
+ * has it, the pair of a device's own screens' "Not shared". */
 export function renderLibraryTag(): TemplateResult {
-  return html`<span class="lib-mode-tag" title="Edited in the library. A save reaches every device that has it.">Library</span>`;
+  return html`<span class="lib-mode-tag" title="One for every device that has it. A save reaches all of them.">Shared</span>`;
 }
 
 // ── the devices, in the bar ──────────────────────────────────────────────
@@ -253,11 +269,11 @@ export function onDevicesQuestion(kind: LibraryKind): string {
   return kind === "menus" ? "Which devices should use this menu?" : "Which devices do you want this on?";
 }
 
-/** The count after the ticks: how many devices have the item. */
-export function onDevicesText(kind: LibraryKind, count: number): string {
-  if (count === 0) return kind === "menus" ? "No device uses it yet" : "On no device yet";
-  const noun = count === 1 ? "device" : "devices";
-  return kind === "menus" ? `Used by ${count} ${noun}` : `On ${count} ${noun}`;
+/** The count after the ticks: how many devices have the item, in the same
+ * words for every kind. */
+export function onDevicesText(_kind: LibraryKind, count: number): string {
+  if (count === 0) return "On no device yet";
+  return `On ${count} ${count === 1 ? "device" : "devices"}`;
 }
 
 /**

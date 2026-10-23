@@ -68,18 +68,18 @@ describe("the delete", () => {
     expect(plan.items.map((i) => i.id)).toEqual([LIGHTS]);
     expect(plan.kept).toEqual([{ name: "New Page 1", dirty: [PHONE] }]);
     const ask = deleteAskText(plan, DEVICES);
-    expect(ask.title).toBe("Delete 1 page from the library?");
+    expect(ask.title).toBe("Delete 1 page?");
     expect(ask.body).toBe("It comes off Chen Watch, with the tiles, menu slots and complication taps that open it. This cannot be undone. New Page 1 stays: iPhone 15 Pro has unsaved edits.");
   });
 
-  it("asks about the library, and an item no device has", () => {
+  it("asks about the pages, and an item on no device yet", () => {
     const two = deleteAskText(deletePlan(items("pages", CAMERA, PAGE1), DEVICES, clean), DEVICES);
-    expect(two.title).toBe("Delete 2 pages from the library?");
+    expect(two.title).toBe("Delete 2 pages?");
     expect(two.body).toBe("They come off Chen Watch, Jesse Apple Watch and iPhone 15 Pro, with the tiles, menu slots and complication taps that open them. This cannot be undone.");
     const lonely = deleteAskText(deletePlan(items("pages", LONELY), DEVICES, clean), DEVICES);
-    expect(lonely.body).toBe("No device has it. This cannot be undone.");
+    expect(lonely.body).toBe("It is on no device yet. This cannot be undone.");
     const status = deleteAskText(deletePlan(items("status_pages", DOORS), DEVICES, clean), DEVICES);
-    expect(status.title).toBe("Delete 1 status page from the library?");
+    expect(status.title).toBe("Delete 1 status page?");
     expect(status.body).toBe("It comes off Jesse Apple Watch, with the tiles and menu slots that open it. This cannot be undone.");
     for (const text of [two.title, two.body, lonely.body, status.body]) expect(text).not.toMatch(/[–—]| - /);
   });

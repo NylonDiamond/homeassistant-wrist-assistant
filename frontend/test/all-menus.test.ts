@@ -110,8 +110,8 @@ describe("New menu", () => {
   });
 
   it("says no device uses it until one is ticked", () => {
-    expect(newMenuText("entity")).toBe("It starts as the app's own Entity quick menu. No device uses it until you tick one on its card.");
-    expect(newMenuMadeText("Kitchen menu")).toBe("Made Kitchen menu. Tick a device on its card to use it there.");
+    expect(newMenuText("entity")).toBe("It starts as the app's own Entity quick menu, on no device yet.");
+    expect(newMenuMadeText("Kitchen menu")).toBe("Made Kitchen menu, on no device yet. Pick a device for it any time.");
   });
 });
 
@@ -119,7 +119,7 @@ describe("the tab's words", () => {
   it("count the menus in the home and say what a device uses", () => {
     expect(allMenusLead(4)).toBe("4 menus in your home. Each device uses one Anywhere menu and one Entity quick menu.");
     expect(allMenusLead(1)).toBe(`1 menu in your home. ${ALL_MENUS_LEAD}`);
-    expect(MENUS_FOOT).toBe("Click a menu to edit it. Pick a device on a card and that device uses this menu from now on. New menu makes one no device uses yet.");
+    expect(MENUS_FOOT).toBe("Click a menu to edit it. Tick a device on a card and that device uses this menu from now on. New menu starts on no device yet.");
     expect(MENUS_BOARD_FOOT).toBe("Click a menu to edit it. Pick a dot and that device uses this menu from now on. Click a device's name to see its menus first.");
     expect(MENUS_BOARD_HINT).toBe("Each device uses one of each kind. Pick a dot to switch.");
     expect(menusDeviceFoot(PHONE_D)).toBe("Pick which menu this iPhone uses. Click a menu to edit it.");
@@ -245,11 +245,11 @@ describe("the Menus tab", () => {
     expect(dialog).toContain("Which kind");
     expect(dialog).toMatch(/shape-card lib-new-card on"[\s\S]*Anywhere menu/);
     expect(dialog).toMatch(/shape-card lib-new-card "[\s\S]*Entity quick menu/);
-    expect(dialog).toContain("New menu, an Anywhere menu no device uses yet. Tick a device any time.");
+    expect(dialog).toContain("New menu, an Anywhere menu on no device yet. Tick a device any time.");
     expect(dialog).not.toContain("Chen Watch");
     t.call("setNewUnit", t.el.newForm, "entity");
     expect((t.el.newForm as { name: string }).name).toBe("New quick menu");
-    expect(t.whole()).toContain("New quick menu, an Entity quick menu no device uses yet.");
+    expect(t.whole()).toContain("New quick menu, an Entity quick menu on no device yet.");
     t.el.newForm = { ...(t.el.newForm as object), name: "  Kitchen menu " };
     await t.call("makeMenu");
     expect(t.sentOf("library/menus/create")).toEqual([{
@@ -340,7 +340,7 @@ describe("the Menus tab", () => {
     show(t);
     await t.ready();
     t.el.deleteAsk = SPARE;
-    expect(t.whole()).toContain("No device uses it. This cannot be undone.");
+    expect(t.whole()).toContain("It is on no device yet. This cannot be undone.");
     await t.call("deleteMenu", t.libNow().menus.find((m) => m.id === SPARE));
     expect(t.sentOf("library/delete").at(-1)).toEqual({ type: "wrist_assistant/library/delete", kind: "menus", item_id: SPARE });
     expect(t.home.lib.menus[SPARE]).toBeUndefined();

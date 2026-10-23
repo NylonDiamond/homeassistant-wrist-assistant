@@ -1098,7 +1098,7 @@ export class WaAllPages extends LitElement {
         },
         {
           key: "rest", title: restTitle(device), count: view.rest.length, hint: `Tick its box under ${device.name} to add it.`, rows: rest,
-          empty: this.search.trim() === "" ? `Every ${cardNoun(this.kind)} in your library is on ${device.name}.` : `No other ${cardNoun(this.kind)} has that name.`,
+          empty: this.search.trim() === "" ? `Every ${cardNoun(this.kind)} in your home is on ${device.name}.` : `No other ${cardNoun(this.kind)} has that name.`,
         },
       ], device.ownerId)}
       <p class="lt-line bd-foot-line">${total} ${total === 1 ? cardNoun(this.kind) : many} on ${device.name}.</p>`;
@@ -1189,7 +1189,7 @@ export class WaAllPages extends LitElement {
       ${this.asking && !none
         ? this.renderDeleteAsk(picked, devices)
         : html`<button type="button" class="ghost danger small" ?disabled=${busy || none}
-            title=${`Delete these ${many} from the library, and from every device they are on`}
+            title=${`Delete these ${many} from every device they are on`}
             @click=${() => this.toggleAsk()}>${uiIcon("delete")}<span>Delete…</span></button>`}
       <button type="button" class="primary small pk-bar-done" ?disabled=${busy}
         title=${`Stop picking and go back to opening one ${one} at a time`}

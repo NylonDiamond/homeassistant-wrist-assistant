@@ -193,8 +193,8 @@ describe("renderTickChips", () => {
     expect(inPop).toContain("<em>full</em>");
   });
 
-  it("says Use on a device for menus and Add to a device for pages", () => {
-    expect(flat(renderTicks(input({ kind: "menus", itemId: HOME_MENU }), () => undefined))).toContain("+ Use on a device");
+  it("says Add to a device for menus and pages alike", () => {
+    expect(flat(renderTicks(input({ kind: "menus", itemId: HOME_MENU }), () => undefined))).toContain("+ Add to a device");
     expect(flat(renderTicks(input({}), () => undefined))).toContain("+ Add to a device");
   });
 });

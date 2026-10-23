@@ -69,9 +69,9 @@ export function newItemSummary(kind: LibraryKind, form: NewItemForm): string {
   if (name === "") return "Type a name to start.";
   if (kind === "menus") {
     const unit = form.unit ?? "anywhere";
-    return `${name}, an ${MENU_UNIT_TITLES[unit]} no device uses yet. Tick a device any time.`;
+    return `${name}, an ${MENU_UNIT_TITLES[unit]} on no device yet. Tick a device any time.`;
   }
-  return `${name}, a ${newItemNoun(kind)} no device has yet. Tick a device any time.`;
+  return `${name}, a ${newItemNoun(kind)} on no device yet. Tick a device any time.`;
 }
 
 /** What a menu of each kind is, under its card. */

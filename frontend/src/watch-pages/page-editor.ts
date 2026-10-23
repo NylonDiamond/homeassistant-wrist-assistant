@@ -88,7 +88,10 @@ import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
 import { libraryErrorText } from "../library/client.js";
 import {
   fetchLibraryRecord,
+  DELETE_EVERY_DEVICE,
+  DELETE_THIS_DEVICE,
   libraryDeleteText,
+  libraryDeleteTitle,
   libraryDraftKey,
   libraryItemIO,
   type LibraryItemRef,
@@ -2612,8 +2615,8 @@ export class WaPageEditor extends LitElement {
     const failed = result.reply.link_failures ?? [];
     const words = failed.length > 0 ? ` Could not update ${joinWords(failed.map((f) => f.name))}.` : "";
     this.note = taps?.kind === "warn"
-      ? { kind: "warn", text: `Deleted from the library.${words} ${taps.text}` }
-      : { kind: failed.length > 0 ? "warn" : "ok", text: `Deleted from the library and from every device.${words}${taps === undefined ? "" : ` ${taps.text}`}` };
+      ? { kind: "warn", text: `Deleted.${words} ${taps.text}` }
+      : { kind: failed.length > 0 ? "warn" : "ok", text: `Deleted from every device.${words}${taps === undefined ? "" : ` ${taps.text}`}` };
   }
 
   /**
@@ -2644,21 +2647,29 @@ export class WaPageEditor extends LitElement {
     this.onBack?.();
   }
 
-  /** Library mode's delete question: out of the library, or not at all. */
+  /** Library mode's delete question: "This device" (an untick, on the
+   * device the page was opened from, when another device has it too) or
+   * "Every device" (out of the library), or not at all (plan step 8). */
   private renderLibraryDeleteAsk(pageId: string, document: WatchPagesDocument): TemplateResult | typeof nothing {
     const page = findWatchPage(document, pageId);
     if (page === undefined) return nothing;
     const owners = this.lib.library === undefined ? [] : devicesFor(this.lib.library, "pages", pageId);
+    const from = this.libraryItem?.from;
+    const entry = this.lib.library === undefined ? undefined : libraryItem(this.lib.library, "pages", pageId);
+    const here = from !== undefined && entry !== undefined && owners.length > 1 && owners.some((o) => sameId(o, from)) ? from : undefined;
     const busy = this.deletingAll;
     return html`<dialog class="pe-ask pe-lib-del-ask" aria-labelledby="pe-lib-del-title"
       @cancel=${(e: Event) => { if (busy) e.preventDefault(); }}
       @close=${() => { if (!this.deletingAll) this.libraryDeleteAsk = undefined; }}>
-      <h3 id="pe-lib-del-title">Delete "${watchPageName(page)}" from the library?</h3>
-      <p>${libraryDeleteText(owners.length)}</p>
+      <h3 id="pe-lib-del-title">${libraryDeleteTitle(watchPageName(page))}</h3>
+      <p>${libraryDeleteText(owners.length, here === undefined ? undefined : this.deviceName(here))}</p>
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${busy} @click=${() => this.closeAsk()}>Cancel</button>
+        ${here === undefined || entry === undefined ? nothing : html`<button class="pe-btn pe-danger pe-del-here" ?disabled=${busy || this.saving}
+          title=${`Take it off ${this.deviceName(here)} only`}
+          @click=${() => { this.closeAsk(); this.tickPage(entry, here, false); }}>${DELETE_THIS_DEVICE}</button>`}
         <button class="pe-btn pe-primary pe-danger pe-del-all" ?disabled=${busy || this.saving}
-          @click=${() => void this.deleteItemFromLibrary()}>${busy ? "Deleting…" : "Delete from the library"}</button>
+          @click=${() => void this.deleteItemFromLibrary()}>${busy ? "Deleting…" : owners.length > 1 ? DELETE_EVERY_DEVICE : "Delete"}</button>
       </div>
     </dialog>`;
   }
@@ -4444,7 +4455,7 @@ export class WaPageEditor extends LitElement {
           <button class="row" role="menuitem" @click=${() => this.startRename(id)}>Rename</button>
           ${inLibrary ? nothing : html`<button class="row" role="menuitem" ?disabled=${index === 0} @click=${() => this.movePage(id, index - 1, true)}>Move up</button>
           <button class="row" role="menuitem" ?disabled=${index >= count - 1} @click=${() => this.movePage(id, index + 1, true)}>Move down</button>`}
-          <button class="row pe-danger" role="menuitem" @click=${() => this.askDelete(id)}>${inLibrary ? "Delete from the library" : "Delete"}</button>
+          <button class="row pe-danger" role="menuitem" @click=${() => this.askDelete(id)}>Delete</button>
         </div>` : nothing}
     </div>`;
   }
@@ -5325,7 +5336,7 @@ export class WaPageEditor extends LitElement {
     const open = sectionOpen(this.uiState, module, section);
     const lines = onEachDeviceLines(this.lib.library, "pages", ref.id, this.linkDevices, this.configSummary);
     const hidden = lines.filter((l) => l.hidden).length;
-    const summary = lines.length === 0 ? "On no device" : `${plural(lines.length, "device", "devices")}${hidden > 0 ? `, hidden on ${hidden}` : ""}`;
+    const summary = lines.length === 0 ? "On no device yet" : `${plural(lines.length, "device", "devices")}${hidden > 0 ? `, hidden on ${hidden}` : ""}`;
     return sectionCard({
       color: SECTION_COLOR.place,
       icon: uiIcon("layers"),

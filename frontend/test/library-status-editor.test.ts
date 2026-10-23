@@ -144,7 +144,7 @@ describe("the status pages editor's devices, from the library", () => {
     expect(ha.of("library/delete").map((m) => [m.kind, m.item_id])).toEqual([["status_pages", HOUSE]]);
     expect(statusPagesOf(ha.held.get(`${phone}/status_pages`)!.document as StatusPagesDocument).map((p) => p.name)).toEqual(["Lights On", "Phone"]);
     expect(statusPagesOf(host().document).map((p) => p.name)).toEqual(["Lights On", "Doors"]);
-    expect((el.note as { text: string }).text).toBe("Deleted from the library and from every device.");
+    expect((el.note as { text: string }).text).toBe("Deleted from every device.");
   });
 
   it("leaves a status page in the library when the save takes it off its only device", async () => {

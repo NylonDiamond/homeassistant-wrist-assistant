@@ -17,10 +17,10 @@ export function listedItems(items: readonly LibraryItem[], openId: string, filte
   return items.filter((entry) => sameId(entry.id, openId) || filter === "all" || entry.owners.length === 0);
 }
 
-/** "On no device", "On 1 device", "On 3 devices". */
+/** "On no device yet", "On 1 device", "On 3 devices". */
 export function itemWhereText(entry: Pick<LibraryItem, "owners">): string {
   const n = entry.owners.length;
-  return n === 0 ? "On no device" : `On ${n} ${n === 1 ? "device" : "devices"}`;
+  return n === 0 ? "On no device yet" : `On ${n} ${n === 1 ? "device" : "devices"}`;
 }
 
 /** The two-way filter, for the head of the list's card. */
@@ -28,12 +28,12 @@ export function renderItemFilter(filter: ItemFilter, onPick: (filter: ItemFilter
   const pick = (to: ItemFilter, label: string, title: string) => html`<button type="button" class="lib-filter ${filter === to ? "on" : ""}"
     aria-pressed=${filter === to ? "true" : "false"} title=${title} @click=${() => { if (filter !== to) onPick(to); }}>${label}</button>`;
   return html`<span class="lib-filters" role="group" aria-label="Show">
-    ${pick("all", "All", `Every ${noun} in the library`)}
-    ${pick("none", "On no device", `Only the ${noun}s no device has yet`)}
+    ${pick("all", "All", `Every ${noun} in your home`)}
+    ${pick("none", "On no device yet", `Only the ${noun}s on no device yet`)}
   </span>`;
 }
 
-/** The line under the list when "On no device" leaves only the open one. */
+/** The line under the list when "On no device yet" leaves only the open one. */
 export function renderNoneLeft(filter: ItemFilter, shown: number, noun: string): TemplateResult | typeof nothing {
   return filter === "none" && shown <= 1 ? html`<div class="lc-note">Every other ${noun} is on a device.</div>` : nothing;
 }
