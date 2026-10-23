@@ -180,14 +180,14 @@ describe("the menu editor's library menu", () => {
 
   it("makes a copy for this watch, named after it, and shows the copy", async () => {
     const { call, ha, el, watch, head } = await editor();
-    expect(head()).toContain("Make a copy for this watch");
+    expect(head()).toContain(">Duplicate</button>");
     expect(head()).toContain("An edit here changes it on Jesse's iPhone too.");
     await call<Promise<void>>("makeCopy", { id: HOME, name: "Home menu", unit: "anywhere", sections: {}, owners: [] });
     expect(ha.of("library/menus/copy").map((m) => [m.owner_id, m.unit, m.name])).toEqual([[watch, "anywhere", "Jesse's Watch's menu"]]);
     expect((el.libNote as { text: string }).text).toBe(`This watch uses its own copy now, "Jesse's Watch's menu". Edits here change only this watch.`);
     const after = head();
     expect(after).toMatch(/me-lib-input[\s\S]*Jesse's Watch's menu/);
-    expect(after).not.toContain("Make a copy for this watch");
+    expect(after).not.toContain(">Duplicate</button>");
   });
 
   it("will not copy over unsaved edits", async () => {

@@ -154,7 +154,7 @@ describe("the HTTP actions screen, shared by every watch", () => {
   it("has no watch picker and no way back, and says it is shared", () => {
     const { bar } = shared();
     expect(bar).toContain(`class="wa-bar`);
-    expect(bar).toContain("Shared by every watch.");
+    expect(bar).toContain("Shared by every watch and iPhone.");
     expect(bar).not.toContain("tb-back");
     expect(bar).not.toContain(">Complications</span>");
     expect(bar).not.toMatch(/watch-picker/);

@@ -2427,11 +2427,6 @@ export class WristAssistantPanel extends LitElement {
     this.litSection = id;
     this.litSectionTimer = window.setTimeout(() => { this.litSection = undefined; }, 3200);
   }
-  /** The device whose chip in the devices row has its trash armed, by owner
-   * id. Same rule as the page trash: one press asks, the next takes the
-   * design off that device, and it forgets after a few seconds. */
-  @state() private placeTrashArm?: string;
-  private placeTrashTimer?: number;
   @state() private moveTarget?: string;
   @state() private moving = false;
   @state() private moveError?: string;
@@ -7329,8 +7324,6 @@ export class WristAssistantPanel extends LitElement {
     // Where the last write landed was about the complication that is going.
     this.copyStatus = undefined;
     this.copyOpen = undefined;
-    // An armed trash belongs to the devices row of the complication leaving.
-    this.disarmPlaceTrash();
   }
 
   private confirmDiscard(): boolean {
@@ -8038,20 +8031,6 @@ export class WristAssistantPanel extends LitElement {
   private disarmPageTrash() {
     window.clearTimeout(this.pageTrashTimer);
     this.pageTrashArm = undefined;
-  }
-
-  /** Ask before taking a design off a device, the way a page's trash asks:
-   * the trash reads "sure?" until it is pressed again, or until this runs
-   * out. The write deletes that device's record, so it earns the question. */
-  private armPlaceTrash(ownerId: string) {
-    window.clearTimeout(this.placeTrashTimer);
-    this.placeTrashArm = ownerId;
-    this.placeTrashTimer = window.setTimeout(() => { this.placeTrashArm = undefined; }, PAGE_TRASH_ARM_MS);
-  }
-
-  private disarmPlaceTrash() {
-    window.clearTimeout(this.placeTrashTimer);
-    this.placeTrashArm = undefined;
   }
 
   /** Drop anything selected that the showing page does not draw. Layers of the
@@ -9976,7 +9955,7 @@ export class WristAssistantPanel extends LitElement {
     ];
     const saving: [string, string][] = [
       ["Save", `Writes the complication to Home Assistant (${m}S). It is dimmed while there is nothing to save. Nothing saves by itself.`],
-      [UNASSIGNED_LABEL, `A new design starts under ${UNASSIGNED_LABEL}, on the Complications tab. Nothing shows it until you add it to a device from its Devices row.`],
+      [UNASSIGNED_LABEL, `A new design starts under ${UNASSIGNED_LABEL}, on the Complications tab. Nothing shows it until you tick a device in the strip over the preview.`],
       ["Saved", "Beside Save: when this complication was last saved, or Not saved yet. After a save it also says whether the watch has it. The footer says whether there are unsaved changes."],
       ["Reaching the watch", "Open Wrist Assistant on the watch and it pulls every save by itself. There is no separate send step."],
       ["On the face", onTheFaceStep(undefined)],
@@ -12878,7 +12857,7 @@ export class WristAssistantPanel extends LitElement {
       const hid = rec !== undefined && this.rowHidden(rec);
       return html`<span class="pk-card-dev ${hid ? "dim" : ""} ${shelf ? "shelf" : ""}" style=${this.deviceStyle(c.ownerId)}
         title=${shelf ? "On no device yet" : hid ? `On ${name}, hidden from its list` : `On ${name}`}>
-        ${uiIcon(tabIcon(kind))}<span class="pk-card-dev-n">${name}</span>${hid ? html`<em>hidden</em>` : nothing}
+        ${uiIcon(tabIcon(kind))}<span class="pk-card-dev-n">${name}</span>${hid ? html`<em>not in its list</em>` : nothing}
       </span>`;
     })}</div>`;
   }
@@ -13495,7 +13474,7 @@ export class WristAssistantPanel extends LitElement {
               ?disabled=${this.saving} @change=${togglePick}>`
           : nothing}
         <button type="button" class="pk-card-name" title=${doing} @click=${hit}>${recName}</button>
-        ${hidden ? html`<span class="pk-tag" title="These do not show in their device's own list of complications. A face or widget that already has one keeps it.">hidden</span>` : nothing}
+        ${hidden ? html`<span class="pk-tag" title="These do not show in their device's own list of complications. A face or widget that already has one keeps it.">Not in its list</span>` : nothing}
         <span class="pk-card-acts ${confirming ? "asking" : ""} ${picking ? "away" : ""}">
           ${confirming
             ? linked
@@ -14651,7 +14630,7 @@ export class WristAssistantPanel extends LitElement {
         </section>
         <section class="new-step step-shapes ${wait(named)}" aria-disabled=${named ? "false" : "true"}>
           ${this.renderStepHead(2, "Pick one shape", named
-            ? "Blue shows where it sits. One shape per complication, on one kind of device. It is made on no device; the editor's Devices row puts it on one."
+            ? "Blue shows where it sits. One shape per complication, on one kind of device. It is made on no device; the strip over the preview puts it on one."
             : "Waits for a name.")}
           <div class="shape-rows" role="radiogroup" aria-label="Shape">
             ${groups.map((group) => this.renderShapeGroup(group.kind, group, kind === group.kind ? this.newFamily : undefined,
@@ -20610,9 +20589,9 @@ export class WristAssistantPanel extends LitElement {
   /**
    * The device strip under the canvas head, the page editor's: the question,
    * a tick per device of this design's kind (ticked where it is), then the
-   * count. Ticking writes a linked copy there (`addRowTo`); unticking arms
-   * once and then takes it off (`removeRowFrom`), so one slip of the pointer
-   * does not pull a design off a watch. The last copy goes to Unassigned
+   * count. Ticking writes a linked copy there (`addRowTo`); unticking takes
+   * it off in one click (`removeRowFrom`), like a page's chip. The last copy
+   * goes to Unassigned
    * rather than being deleted. The same block, in the same place, as a
    * page's, and drawn by the same `renderTickChips`, so when the chips do not
    * fit the strip the unticked ones fold into "+ Add to a device" here too.
@@ -20632,17 +20611,16 @@ export class WristAssistantPanel extends LitElement {
       const target = place.owner;
       const label = placeLabel(target, f);
       const block = place.on ? undefined : this.placeBlock(place, f, label);
-      const armed = this.placeTrashArm === target.ownerId;
       const stuck = block?.why
         ?? (place.on && place.last && this.libraryOwner() === undefined ? `This integration has no ${UNASSIGNED_LABEL} list to move it to. Delete removes it.` : undefined)
         ?? (!this.canEdit ? "Only an administrator can change where this is." : undefined);
       const title = stuck ?? (place.on
-        ? armed ? `Press again to take it off ${label}.` : place.last ? `On ${label}. Click to take it off and keep it under ${UNASSIGNED_LABEL}.` : `On ${label}. Click to take it off.`
+        ? place.last ? `On ${label}. Click to take it off and keep it under ${UNASSIGNED_LABEL}.` : `On ${label}. Click to take it off.`
         : `Put it on ${label}. Saving it saves it everywhere it is.`);
       // A device that cannot take it says why in a word on the chip, the way
       // the old menu's row did, not only in a tooltip a touch screen never
-      // shows; an armed chip asks "sure?" the same way.
-      const tag = armed ? "sure?" : block?.tag;
+      // shows.
+      const tag = block?.tag;
       return {
         ownerId: target.ownerId, name: label, device: target.kind === "iphone" ? "iphone" : "watch",
         color: this.deviceColorOf(target.ownerId), shape: "square", on: place.on, hidden: false,
@@ -20656,8 +20634,6 @@ export class WristAssistantPanel extends LitElement {
       const place = places.find((p) => p.owner.ownerId === ownerId);
       if (!place) return;
       if (putOn) { void this.addRowTo(row, place.owner, true); return; }
-      if (this.placeTrashArm !== ownerId) { this.armPlaceTrash(ownerId); return; }
-      this.disarmPlaceTrash();
       void this.removeRowFrom(row, place, true, true);
     };
     return html`<div class="lib-on over-stage ${on === 0 ? "none" : ""}" role="group" aria-label=${question}>

@@ -1713,7 +1713,7 @@ export class WaMenuEditor extends LitElement {
         <span class="me-lib-hint">An edit here changes it on ${joinWords(ownerWords(others, devices))} too.</span>
         <button type="button" class="pe-btn me-copy" ?disabled=${copyBlocked !== undefined || this.copying}
           title=${copyBlocked ?? `A copy of this menu that only this ${word} uses. The other devices keep this one.`}
-          @click=${() => void this.makeCopy(used)}>${this.copying ? "Copying…" : `Make a copy for this ${word}`}</button>
+          @click=${() => void this.makeCopy(used)}>${this.copying ? "Duplicating…" : "Duplicate"}</button>
       </div>`}
       ${note === undefined ? nothing : html`<p class="me-lib-note err" role="alert">${note}</p>`}
       ${this.libNote === undefined ? nothing : html`<p class="me-lib-note ${this.libNote.kind}" role="status">${this.libNote.text}</p>`}

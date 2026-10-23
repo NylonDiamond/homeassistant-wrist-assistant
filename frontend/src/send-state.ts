@@ -163,13 +163,13 @@ export function agoWords(seconds: number): string {
  * header. The home's shelf is where a new design lands when no device is
  * ticked, and people saved there and waited for a watch that was never going
  * to get it. */
-export const NOT_ON_A_DEVICE = "Not on a device yet";
-export const NOT_ON_A_DEVICE_LINE = "Not on a device yet. Tick a device over the preview to send it to your watch.";
+export const NOT_ON_A_DEVICE = "On no device yet";
+export const NOT_ON_A_DEVICE_LINE = "On no device yet. Tick a device over the preview to put it on a watch or an iPhone.";
 /** The same line before the first save, when the device strip over the
  * preview has no ticks yet: a tick adds a copy of the saved design. */
-export const NOT_ON_A_DEVICE_UNSAVED_LINE = "Not on a device yet. Save it, then tick a device over the preview to send it to your watch.";
+export const NOT_ON_A_DEVICE_UNSAVED_LINE = "On no device yet. Save it, then tick a device over the preview to put it on a watch or an iPhone.";
 export const NOT_ON_A_DEVICE_HELP =
-  "A design on no device is sent nowhere. Tick a device over the preview to send it to your watch.";
+  "A design on no device is sent nowhere. Tick a device over the preview to put it on a watch or an iPhone.";
 
 /** Status text and its explanation; `resend` offers the watch's re-wake link,
  * only while the watch is listening (a closed watch app has no long-poll to

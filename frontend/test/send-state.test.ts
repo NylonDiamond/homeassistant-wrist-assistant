@@ -244,7 +244,7 @@ describe("the library", () => {
 
   it("says where it went and offers neither Resend nor Refresh", () => {
     const d = describeSend({ kind: "library" });
-    expect(d.label).toBe("Not on a device yet");
+    expect(d.label).toBe("On no device yet");
     // The tooltip used to point at an "Appears on" control that is gone.
     expect(d.title).not.toContain("Appears on");
     expect(d.title).toContain("Tick a device over the preview");
@@ -380,12 +380,12 @@ describe("the header pill over a design on no device", () => {
   // that was never going to reach any of them.
   it("does not say Synced while the open design is on no device", () => {
     const p = homePill({ kind: "synced", devices: ["Watch"] }, true);
-    expect(p?.label).toBe("Not on a device yet");
+    expect(p?.label).toBe("On no device yet");
     expect(p?.tone).toBe("warn");
   });
 
   it("says so even when no device in the home counts yet", () => {
-    expect(homePill(undefined, true)?.label).toBe("Not on a device yet");
+    expect(homePill(undefined, true)?.label).toBe("On no device yet");
   });
 
   it("keeps a waiting device's news, which is true of the design too", () => {
