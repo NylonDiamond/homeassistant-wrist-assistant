@@ -704,9 +704,9 @@ function typedNumber(text: string): number {
 const PAGE_END_TEXT = `The page ends at row ${WATCH_EDITOR_MAX_ROWS}.`;
 const SAVING_TEXT = "Saving. Tiles and pages move again once the save is done.";
 
-/** What the iPhone's picture is: its Pages tab, at the size every iPhone
- * is drawn at, since the phone does not report its screen. */
-export const PHONE_FRAME_TEXT = `The iPhone's Pages tab. ${PHONE_SIZE_TEXT}`;
+/** What the iPhone's picture is: its pages screen, at the size every
+ * iPhone is drawn at, since the phone does not report its screen. */
+export const PHONE_FRAME_TEXT = `The iPhone's pages screen. ${PHONE_SIZE_TEXT}`;
 
 
 /** What an iPhone with no pages says under its title (`phone-pages.ts`). */
@@ -4108,7 +4108,7 @@ export class WaPageEditor extends LitElement {
   // ── the page list ──────────────────────────────────────────────────────
 
   /** The page code's screen in points: the watch's case, else the
-   * reference case; on an iPhone its Pages tab's pages area. */
+   * reference case; on an iPhone its pages screen's pages area. */
   private screenOf(owner: OwnerSummary | undefined): { width: number; height: number } {
     const phone = this.phoneLayoutOf(owner);
     if (phone !== undefined) return phonePagesScreen(phone);
@@ -4121,7 +4121,7 @@ export class WaPageEditor extends LitElement {
     return this.onPhone ? 0 : WATCH_GRID_SIDE_INSET;
   }
 
-  /** On an iPhone, where its Pages tab lays itself out (`phone-frame.ts`),
+  /** On an iPhone, where its pages screen lays itself out (`phone-frame.ts`),
    * in the Page look its own settings ask for (the iPhone look until they
    * are read, as the phone draws with none); undefined on a watch. */
   private phoneLayoutOf(owner: OwnerSummary | undefined): PhonePagesLayout | undefined {
@@ -4485,7 +4485,7 @@ export class WaPageEditor extends LitElement {
     watches: readonly OwnerSummary[],
     tile: WatchPageTile | undefined,
   ): TemplateResult {
-    // An iPhone is drawn as an iPhone, its page laid out in the Pages tab's
+    // An iPhone is drawn as an iPhone, its page laid out in the pages screen's
     // pages area (`phone-frame.ts`), at half the watch's zoom so the taller
     // phone fits the same stage.
     const phoneLayout = this.phoneLayoutOf(owner);
@@ -5727,9 +5727,9 @@ export class WaPageEditor extends LitElement {
        light skin, so when the page has no color of its own (the ink class)
        its marks, cells and handle rings are built from the phone's label
        ink and ground instead. */
-    .wa-phone.ios.ink .pe-screen { --pe-mark: color-mix(in srgb, var(--wa-phone-ink, #000000) 70%, var(--wa-accent)); }
-    .wa-phone.ios.ink .pe-cells > path { fill: color-mix(in srgb, var(--wa-phone-ink, #000000) 7%, transparent); }
-    .wa-phone.ios.ink .pe-handle { box-shadow: 0 0 0 1.5px var(--wa-phone-grouped, #f2f2f7), 0 1px 3px rgba(0, 0, 0, .35); }
+    .wa-phone.ios.ink .pe-screen { --pe-mark: color-mix(in srgb, var(--wa-phone-ink, #14161a) 70%, var(--wa-accent)); }
+    .wa-phone.ios.ink .pe-cells > path { fill: color-mix(in srgb, var(--wa-phone-ink, #14161a) 7%, transparent); }
+    .wa-phone.ios.ink .pe-handle { box-shadow: 0 0 0 1.5px var(--wa-phone-grouped, #f1f2f5), 0 1px 3px rgba(0, 0, 0, .35); }
     /* A tile has no ground of its own: the screen draws the page's
        background (color, brightness, pattern) under it, as the watch does,
        and the face draws the tile, with no edge of the editor's own, so an

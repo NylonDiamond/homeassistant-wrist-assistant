@@ -69,6 +69,8 @@ import {
   smartResetPreset,
   smartRuleAfterDelete,
   smartRuleIndexForTile,
+  smartDomainName,
+  smartPresetName,
   smartRuleName,
   smartStandInTile,
   smartStyleStandIn,
@@ -601,11 +603,20 @@ describe("add a rule", () => {
     expect(smartPresetAdded(twoWays, { label: "x", icon: "", domain: "binary_sensor", deviceClassFilter: ["door", "window"] })).toBe(false);
   });
 
-  it("names a rule after its preset, else its domain", () => {
+  it("names a rule after its preset, else its domain, in the panel's plural", () => {
     expect(smartRuleName(view(rule(R1, "binary_sensor", { deviceClassFilter: ["door"] })), TABLE)).toBe("Doors");
-    expect(smartRuleName(view(rule(R1, "binary_sensor", { deviceClassFilter: ["door", "window"] })), TABLE)).toBe("Binary Sensors");
+    expect(smartRuleName(view(rule(R1, "binary_sensor", { deviceClassFilter: ["door", "window"] })), TABLE)).toBe("Binary sensors");
     expect(smartRuleName(view(rule(R1, "switch")), TABLE)).toBe("Switches");
-    expect(smartRuleName(view(rule(R1, "garden_hose")), TABLE)).toBe("Garden_Hose");
+    expect(smartRuleName(view(rule(R1, "media_player")), TABLE)).toBe("Media players");
+    expect(smartRuleName(view(rule(R1, "garden_hose")), TABLE)).toBe("Garden hose");
+  });
+
+  it("names a whole domain preset by its kind in plural, and keeps the label it writes", () => {
+    const toggles = WATCH_SMART.presets.find((p) => p.domain === "input_boolean")!;
+    expect(smartPresetName(toggles)).toBe("Toggles");
+    // The label is the header an add writes, which the watch draws.
+    expect(toggles.label).toBe("Input Booleans");
+    expect(smartPresetName(WATCH_SMART.presets.find((p) => p.label === "Doors")!)).toBe("Doors");
   });
 });
 
@@ -1174,7 +1185,7 @@ describe("tile-smart.json", () => {
 
   it("names an unknown domain as Foundation capitalizes it", () => {
     for (const s of (raw.domains as Json).other ? (((raw.domains as Json).other as Json).samples as Json[]) : []) {
-      expect(smartRuleName(view(rule(R1, s.domain as string)))).toBe(s.displayName);
+      expect(smartDomainName(s.domain as string)).toBe(s.displayName);
     }
   });
 
@@ -1216,9 +1227,12 @@ describe("tile-smart.json", () => {
 
   it("names chips and writes the add and the reset as the samples do", () => {
     const presets = raw.presets as Json;
+    // The samples are the phone's chips; the panel names a kind with its own
+    // plural (`tileKindPlural`) and a narrowed preset by its label.
+    const panelChips: Readonly<Record<string, string>> = { "Binary Sensors": "Binary sensors", Person: "People" };
     for (const s of presets.chipSamples as Json[]) {
       const r = rule(R1, s.domain as string, s.deviceClassFilter === null ? {} : { deviceClassFilter: s.deviceClassFilter });
-      expect(smartRuleName(view(r))).toBe(s.chip);
+      expect(smartRuleName(view(r))).toBe(panelChips[s.chip as string] ?? s.chip);
     }
     const added = presets.addSample as Json;
     const preset = WATCH_SMART.presets.find((p) => p.label === added.headerLabel)!;

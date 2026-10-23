@@ -101,7 +101,7 @@ export interface StatusPagesViewHost {
   readonly screen: { width: number; height: number };
   /** Points to pixels for the canvas's watch: the stage's zoom. */
   readonly scale: number;
-  /** The device is an iPhone: `screen` is its Pages tab's pages area, where
+  /** The device is an iPhone: `screen` is its pages screen's pages area, where
    * the phone draws a status page over the pages, and the page is drawn in
    * the iPhone (`phone-frame.ts`). */
   readonly phone?: PhonePagesLayout;

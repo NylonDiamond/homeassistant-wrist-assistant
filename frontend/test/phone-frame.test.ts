@@ -1,9 +1,11 @@
-// The iPhone drawn around its pages (`phone-frame.ts`): where the Pages tab
-// puts its pages area, its page dots and its tab bar, and where the watch's
-// page code then puts each tile in that area, checked against the iPhone 17
-// Pro simulator. The numbers were read off a 3x screenshot and the
-// accessibility frames of box a's "PP Phone A" (nine 4 by 4 tiles) on
-// 2026-10-10, with the phone showing its home switcher (two homes).
+// The iPhone drawn around its pages (`phone-frame.ts`): where the pages
+// screen puts its top row, its pages area and its page dots, and where the
+// watch's page code then puts each tile in that area, checked against the
+// iPhone 17 Pro simulator. The tiles' numbers were read off a 3x screenshot
+// and the accessibility frames of box a's "PP Phone A" (nine 4 by 4 tiles)
+// on 2026-10-10, with the phone showing its home switcher (two homes), and
+// are kept here from the pages area's top left, which the chrome above it
+// does not change.
 
 import { describe, expect, it } from "vitest";
 
@@ -63,14 +65,14 @@ const PHONE_A: WatchPage = {
   items: ITEMS,
 };
 
-/** The sim's tiles, in points from the screen's top left: three columns at
- * 6, 136.67 and 267.33, three rows at 154, 284.67 and 415.33, each 128.67
- * square. */
-const MEASURED_COLS = [6, 136.67, 267.33];
-const MEASURED_ROWS = [154, 284.67, 415.33];
+/** The sim's tiles, in points from the pages area's top left: three
+ * columns at 0, 130.67 and 261.33, three rows at 34, 164.67 and 295.33,
+ * each 128.67 square. */
+const MEASURED_COLS = [0, 130.67, 261.33];
+const MEASURED_ROWS = [34, 164.67, 295.33];
 const MEASURED_SIDE = 128.67;
 
-describe("the iPhone's Pages tab", () => {
+describe("the iPhone's pages screen", () => {
   it("draws every iPhone as the iPhone 17 Pro while the phone reports no size", () => {
     expect(DEFAULT_PHONE.label).toBe("iPhone 17 Pro");
     expect(DEFAULT_PHONE.screen).toEqual({ width: 402, height: 874 });
@@ -79,22 +81,24 @@ describe("the iPhone's Pages tab", () => {
     expect(phoneModelForScreenSize("393x852").label).toBe("iPhone 15 Pro");
   });
 
-  it("puts the pages area, the dots strip and the tab bar where the simulator does", () => {
-    // Measured with the home switcher: pages area 6 to 396 across, 120 to
-    // 765 down; tab bar 12 to 390 across, 779 to 840 down; the switcher 16
-    // to 386 across, 62 to 104 down.
+  it("puts the top row, the pages area and the dots strip where the app does, with no tab bar", () => {
+    // With the home switcher: the switcher 16 to 386 across, 62 to 104 down,
+    // 8 under it the 44 point top row, 8 more, then the pages area down to
+    // the dots strip just above the safe area.
     const two = phonePagesLayout(DEFAULT_PHONE, { switcher: true });
     expect(two.switcher).toEqual({ x: 16, y: 62, width: 370, height: 42 });
-    expect(two.area).toEqual({ x: 6, y: 120, width: 390, height: 645 });
-    expect(two.bottomBar).toEqual({ x: 0, y: 765, width: 402, height: 14 });
-    expect(two.tabBar).toEqual({ x: 12, y: 779, width: 378, height: 61 });
-    // The panel draws no switcher: the pages start 50 points higher, so the
-    // pages area is the 390 by 695 the phone has with one home.
+    expect(two.topRow).toEqual({ x: 6, y: 112, width: 390, height: 44 });
+    expect(two.area).toEqual({ x: 6, y: 164, width: 390, height: 662 });
+    expect(two.bottomBar).toEqual({ x: 0, y: 826, width: 402, height: 14 });
+    expect(two.bottomBar.y + two.bottomBar.height).toBe(DEFAULT_PHONE.screen.height - DEFAULT_PHONE.safeBottom);
+    // The panel draws no switcher: the top row sits right under the status
+    // bar and the pages start 50 points higher, 390 by 712.
     const one = phonePagesLayout();
     expect(one.switcher).toBeUndefined();
-    expect(one.area).toEqual({ x: 6, y: 70, width: 390, height: 695 });
-    expect(one.tabBar).toEqual(two.tabBar);
-    expect(phonePagesScreen(one)).toEqual({ width: 390, height: 695 });
+    expect(one.topRow).toEqual({ x: 6, y: 62, width: 390, height: 44 });
+    expect(one.area).toEqual({ x: 6, y: 114, width: 390, height: 712 });
+    expect(one.bottomBar).toEqual(two.bottomBar);
+    expect(phonePagesScreen(one)).toEqual({ width: 390, height: 712 });
   });
 
   it("lays a page's tiles out in the pages area to within a point of the simulator", () => {
@@ -105,14 +109,14 @@ describe("the iPhone's Pages tab", () => {
     expect(placed.topInset).toBe(WATCH_GRID_TOP_INSET);
     expect(placed.tiles).toHaveLength(9);
     for (const [i, t] of placed.tiles.entries()) {
-      const x = layout.area.x + t.x;
-      const y = layout.area.y + placed.topInset + t.y;
+      const x = t.x;
+      const y = placed.topInset + t.y;
       expect(Math.abs(x - MEASURED_COLS[i % 3]!)).toBeLessThan(1);
       expect(Math.abs(y - MEASURED_ROWS[Math.floor(i / 3)]!)).toBeLessThan(1);
       expect(Math.abs(t.width - MEASURED_SIDE)).toBeLessThan(1);
       expect(Math.abs(t.height - MEASURED_SIDE)).toBeLessThan(1);
     }
-    // The page fits: three rows end at 544, well above the pages area's end,
+    // The page fits: three rows end 424 down, well above the pages area's end,
     // so the phone is drawn at its own height, with no fold.
     expect(watchPreviewHeight(placed, true)).toBe(screen.height);
   });
@@ -122,8 +126,8 @@ describe("the iPhone's Pages tab", () => {
     const grid = stageGrid(layout.area.width, WATCH_GRID_TOP_INSET, 1, 0);
     expect(grid.left).toBe(0);
     const last = cellRectPx(grid, { col: 8, row: 8, colSpan: 4, rowSpan: 4 });
-    expect(Math.abs(layout.area.x + last.left - MEASURED_COLS[2]!)).toBeLessThan(1);
-    expect(Math.abs(layout.area.y + last.top - MEASURED_ROWS[2]!)).toBeLessThan(1);
+    expect(Math.abs(last.left - MEASURED_COLS[2]!)).toBeLessThan(1);
+    expect(Math.abs(last.top - MEASURED_ROWS[2]!)).toBeLessThan(1);
     expect(Math.abs(last.width - MEASURED_SIDE)).toBeLessThan(1);
   });
 
@@ -138,7 +142,7 @@ describe("the iPhone's Pages tab", () => {
 
   it("draws the page dots at the top of the pages area as the phone does", () => {
     // Measured: six lines (Lines, Large, Top) from 103.67 to 298.33 across,
-    // 123 to 127 down.
+    // 123 to 127 down, 3 below the top of the pages area at 120.
     const layout = phonePagesLayout(DEFAULT_PHONE, { switcher: true });
     const pages = Array.from({ length: 6 }, (_, i) => ({ ...PHONE_A, id: `P${i}` }));
     const input: WatchPagePreviewInput = {
@@ -147,7 +151,7 @@ describe("the iPhone's Pages tab", () => {
     };
     const dots = watchPageIndicatorRow(input, 1)!;
     expect(dots.top).toBe(true);
-    expect(layout.area.y + PHONE_PAGE_DOTS_TOP).toBe(123);
+    expect(PHONE_PAGE_DOTS_TOP).toBe(123 - 120);
     expect(Math.abs(dots.height - 4)).toBeLessThan(0.1);
     const row = flat(dots.row);
     const widths = [...row.matchAll(/width:([\d.]+)px/g)].map((m) => Number(m[1]));
@@ -161,8 +165,10 @@ describe("the iPhone's Pages tab", () => {
     const phone = flat(renderWatchPagePreview({ page: PHONE_A, pages: [PHONE_A], screen: phonePagesScreen(layout), phone: layout, scale: 1 }));
     expect(phone).toContain('class="wa-phone"');
     expect(phone).toContain("9:41");
-    expect(phone).toContain("Pages");
-    expect(phone).toContain("Settings");
+    // The top row's gear, and no grid with one page; no tab bar.
+    expect(phone).toContain("wa-phone-gear");
+    expect(phone).not.toContain("wa-phone-grid");
+    expect(phone).not.toContain("wa-phone-tab");
     expect(phone).not.toContain("wa-watch");
     expect(phone).not.toContain("wp-clock");
     // The watch keeps its own case and clock.
@@ -176,7 +182,7 @@ describe("the iPhone's Pages tab", () => {
     const layout = phonePagesLayout();
     const long: WatchPage = { ...PHONE_A, items: [...ITEMS, { id: "X", entityId: "light.x", gridCol: 0, gridRow: 30, colSpan: 4, rowSpan: 4 }] };
     const text = flat(renderWatchPagePreview({ page: long, pages: [long], screen: phonePagesScreen(layout), phone: layout, scale: 1 }));
-    expect(text).toContain('class="wp-fold" style=top:695px');
+    expect(text).toContain('class="wp-fold" style=top:712px');
     expect(text).toContain("the end of the iPhone's screen");
   });
 
@@ -205,7 +211,7 @@ describe("the iPhone's status pages and menus", () => {
     const phone = flat(renderStatusPageScreen({ ...base, document, screen: phonePagesScreen(layout), scale: 1, phone: layout }));
     expect(phone).toContain('class="wa-phone"');
     expect(phone).toContain("Status page on the iPhone");
-    expect(phone).toContain("width:390px;min-height:695px");
+    expect(phone).toContain("width:390px;min-height:712px");
     expect(phone).not.toContain("wa-watch");
     const watch = flat(renderStatusPageScreen({ ...base, document, screen: { width: 208, height: 248 }, scale: 1 }));
     expect(watch).toContain('class="wa-watch"');
@@ -219,7 +225,7 @@ describe("the iPhone's status pages and menus", () => {
     } as unknown as MenusViewHost;
     const text = flat(renderMenuScreen(host));
     expect(text).toContain('class="wa-phone"');
-    expect(text).toContain("width:390px;height:695px");
+    expect(text).toContain("width:390px;height:712px");
     expect(text).not.toContain("wa-watch");
   });
 });

@@ -20,7 +20,7 @@ import { type TileSettingsHost, type WatchPagesEditorHost, extendHost } from "..
 import type { JsonObject, WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { tileLabel } from "../src/watch-pages/model.js";
 import { renderWatchPagePreview } from "../src/watch-pages/preview.js";
-import { WATCH_SMART, readSmartConfig, smartWord } from "../src/watch-pages/smart-model.js";
+import { WATCH_SMART, readSmartConfig, smartPresetName, smartWord } from "../src/watch-pages/smart-model.js";
 import {
   SMART_PRESET_ADDED_REASON,
   renderSmartPageRows,
@@ -331,7 +331,9 @@ describe("Add Domain", () => {
     const dialog = flatten(renderSmartRulesCard(s.host));
     expect(dialog).toContain(`<h3 id="sm-add-title">${W("addDomain")}</h3>`);
     expect(dialog).toContain(W("pickerIntro"));
-    for (const preset of WATCH_SMART.presets) expect(dialog).toContain(`>${preset.label}<`);
+    for (const preset of WATCH_SMART.presets) expect(dialog).toContain(`>${smartPresetName(preset)}<`);
+    expect(dialog).toContain(">Toggles<");
+    expect(dialog).not.toContain(">Input Booleans<");
     expect(dialog).not.toContain(">Persons<");
     // Lights is on the page: off, with the check and the reason.
     expect(dialog).toMatch(new RegExp(`sm-preset added" \\?disabled=true\\s+title=${SMART_PRESET_ADDED_REASON}`));

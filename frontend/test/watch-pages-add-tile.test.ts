@@ -25,7 +25,7 @@ import {
   watchAddedCountText,
   watchLeftOutText,
 } from "../src/watch-pages/add-tile-list.js";
-import { type WatchPage, type WatchPageTile, type WatchPagesDocument, tileKindLabel } from "../src/watch-pages/model.js";
+import { type WatchPage, type WatchPageTile, type WatchPagesDocument, tileKindLabel, tileKindPlural } from "../src/watch-pages/model.js";
 import { type WatchAddRefusal, WATCH_TILE_APP, addNewWatchTile } from "../src/watch-pages/tile-new.js";
 
 function st(entityId: string, state: string, friendly?: string): HassEntityState {
@@ -93,13 +93,13 @@ describe("the pool", () => {
     expect(ids(pool.onPage)).toEqual(["light.kitchen"]);
   });
 
-  it("names each row's kind as the phone's add does, and takes the area from the registries", () => {
+  it("names each row's kind in the panel's plural, and takes the area from the registries", () => {
     const pool = watchAddPool(input());
     const byId = new Map(pool.candidates.map((c) => [c.entityId, c]));
     expect(byId.get("light.kitchen")).toMatchObject({ name: "Kitchen", kind: "Lights", area: "Kitchen" });
     // The device's area when the entity has none of its own.
     expect(byId.get("switch.kettle")).toMatchObject({ kind: "Switches", area: "Kitchen" });
-    expect(byId.get("binary_sensor.back_door")).toMatchObject({ kind: "Sensors" });
+    expect(byId.get("binary_sensor.back_door")).toMatchObject({ kind: "Binary sensors" });
     expect(byId.get("binary_sensor.back_door")?.area).toBeUndefined();
     // No friendly name: the search row's name is the id, as in the panel.
     expect(byId.get("light.no_name")?.name).toBe("light.no_name");
@@ -108,11 +108,49 @@ describe("the pool", () => {
   it("lists the kinds by name with how many can still be added", () => {
     const pool = watchAddPool(input({ onPage: new Set(["light.porch"]) }));
     expect(pool.kinds).toEqual([
+      { name: "Binary sensors", count: 1 },
       { name: "Lights", count: 2 },
-      { name: "Media Players", count: 1 },
-      { name: "Sensors", count: 2 },
+      { name: "Media players", count: 1 },
+      { name: "Sensors", count: 1 },
       { name: "Switches", count: 1 },
     ]);
+  });
+
+  it("names a kind with the word the Tiles list uses, in plural, and files the voice pieces as one kind", () => {
+    const pool = watchAddPool({
+      hass: {
+        states: states([
+          st("person.jesse", "home"),
+          st("input_boolean.guest", "off"),
+          st("input_datetime.alarm", "07:00:00"),
+          st("todo.shopping", "2"),
+          st("conversation.home_assistant", "unknown"),
+          st("tts.piper", "unknown"),
+          st("stt.whisper", "unknown"),
+          st("wake_word.openwakeword", "unknown"),
+          st("assist_satellite.kitchen", "idle"),
+        ]),
+      },
+      onPage: new Set(),
+      keep: new Set(),
+    });
+    expect(pool.kinds).toEqual([
+      { name: "Dates and times", count: 1 },
+      { name: "People", count: 1 },
+      { name: "To-do lists", count: 1 },
+      { name: "Toggles", count: 1 },
+      { name: "Voice assistants", count: 5 },
+    ]);
+    for (const [kind, one, many] of [
+      ["person", "Person", "People"],
+      ["input_boolean", "Toggle", "Toggles"],
+      ["todo", "To-do list", "To-do lists"],
+      ["input_datetime", "Date and time", "Dates and times"],
+      ["tts", "Voice assistant", "Voice assistants"],
+    ]) {
+      expect([tileKindLabel(kind!), tileKindPlural(kind!)]).toEqual([one, many]);
+    }
+    expect(tileKindPlural("water_softener")).toBe("Water softener");
   });
 
   it("keeps a row added during this search, without counting it", () => {
@@ -149,10 +187,8 @@ describe("the rows of a search", () => {
   });
 
   it("narrows to one kind", () => {
-    expect(ids(watchAddResults(pool.candidates, "", "Sensors"))).toEqual([
-      "binary_sensor.back_door",
-      "sensor.kitchen_temperature",
-    ]);
+    expect(ids(watchAddResults(pool.candidates, "", "Sensors"))).toEqual(["sensor.kitchen_temperature"]);
+    expect(ids(watchAddResults(pool.candidates, "", "Binary sensors"))).toEqual(["binary_sensor.back_door"]);
     expect(ids(watchAddResults(pool.candidates, "kitchen", "Lights"))).toEqual(["light.kitchen"]);
   });
 

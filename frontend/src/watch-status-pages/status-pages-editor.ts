@@ -865,7 +865,7 @@ export class WaStatusPagesEditor extends LitElement {
     return (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
   }
 
-  /** On an iPhone, where its Pages tab lays itself out: a status page opens
+  /** On an iPhone, where its pages screen lays itself out: a status page opens
    * over its pages area (`phone-frame.ts`). Undefined on a watch. */
   private phoneLayout(): PhonePagesLayout | undefined {
     if (this.device !== "iphone") return undefined;

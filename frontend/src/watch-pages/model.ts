@@ -221,14 +221,18 @@ export function tileDrawsOn(tile: { entityId?: unknown }, device: SettingDevice)
  * entity; see `tileClass`. */
 const DOMAIN_LABELS: Readonly<Record<string, string>> = {
   alarm_control_panel: "Alarm",
+  assist_satellite: "Voice assistant",
   automation: "Automation",
   binary_sensor: "Binary sensor",
   button: "Button",
   calendar: "Calendar",
   camera: "Camera",
   climate: "Climate",
+  conversation: "Voice assistant",
   counter: "Counter",
   cover: "Cover",
+  date: "Date",
+  datetime: "Date and time",
   device_tracker: "Device tracker",
   event: "Event",
   fan: "Fan",
@@ -252,17 +256,83 @@ const DOMAIN_LABELS: Readonly<Record<string, string>> = {
   select: "Choice",
   sensor: "Sensor",
   siren: "Siren",
+  stt: "Voice assistant",
   sun: "Sun",
   switch: "Switch",
   text: "Text",
+  time: "Time",
   timer: "Timer",
   todo: "To-do list",
+  tts: "Voice assistant",
   update: "Update",
   vacuum: "Vacuum",
   valve: "Valve",
+  wake_word: "Voice assistant",
   water_heater: "Water heater",
   weather: "Weather",
   zone: "Zone",
+};
+
+/** The plural of each name in `DOMAIN_LABELS`, from the same word ("Person",
+ * "People"): what the panel calls a kind when it names many of it, in the
+ * Add tile kind menu and its row tags and in a smart page's chips. A name
+ * that is not counted ("Climate", "Text", "Weather") stays as it is. The
+ * Home Assistant voice pieces (an agent, a satellite, speech in and out, a
+ * wake word) are one kind, as Home Assistant's own Voice assistants page
+ * keeps them. The apps keep their own names (`tile-defaults.json`
+ * `addable`, `tile-smart.json`); these are the panel's alone. */
+const DOMAIN_PLURALS: Readonly<Record<string, string>> = {
+  alarm_control_panel: "Alarms",
+  assist_satellite: "Voice assistants",
+  automation: "Automations",
+  binary_sensor: "Binary sensors",
+  button: "Buttons",
+  calendar: "Calendars",
+  camera: "Cameras",
+  climate: "Climate",
+  conversation: "Voice assistants",
+  counter: "Counters",
+  cover: "Covers",
+  date: "Dates",
+  datetime: "Dates and times",
+  device_tracker: "Device trackers",
+  event: "Events",
+  fan: "Fans",
+  humidifier: "Humidifiers",
+  image: "Images",
+  input_boolean: "Toggles",
+  input_button: "Buttons",
+  input_datetime: "Dates and times",
+  input_number: "Numbers",
+  input_select: "Choices",
+  input_text: "Text",
+  lawn_mower: "Lawn mowers",
+  light: "Lights",
+  lock: "Locks",
+  media_player: "Media players",
+  number: "Numbers",
+  person: "People",
+  remote: "Remotes",
+  scene: "Scenes",
+  script: "Scripts",
+  select: "Choices",
+  sensor: "Sensors",
+  siren: "Sirens",
+  stt: "Voice assistants",
+  sun: "Sun",
+  switch: "Switches",
+  text: "Text",
+  time: "Times",
+  timer: "Timers",
+  todo: "To-do lists",
+  tts: "Voice assistants",
+  update: "Updates",
+  vacuum: "Vacuums",
+  valve: "Valves",
+  wake_word: "Voice assistants",
+  water_heater: "Water heaters",
+  weather: "Weather",
+  zone: "Zones",
 };
 
 /**
@@ -330,6 +400,13 @@ export function tileKindLabel(kind: string): string {
   if (isVirtualTileKind(kind)) return VIRTUAL_TILE_KINDS[kind]!;
   if (isWatchRemovedTileKind(kind)) return `${REMOVED_TILE_KINDS[kind]!} (removed)`;
   return DOMAIN_LABELS[kind] ?? (humanize(kind) || "Tile");
+}
+
+/** A Home Assistant domain in plain words when the panel names many of it
+ * (`DOMAIN_PLURALS`): "People", "Toggles", "To-do lists". A domain with no
+ * plural of its own is made readable as `tileKindLabel` does. */
+export function tileKindPlural(kind: string): string {
+  return DOMAIN_PLURALS[kind] ?? (humanize(kind) || "Tiles");
 }
 
 /** The watch's names of the domains a smart page fills from ("Binary

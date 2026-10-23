@@ -43,6 +43,7 @@ import {
   type WatchPagesDocument,
   WATCH_GRID_COLUMNS,
   isJsonObject,
+  tileKindPlural,
   watchPageId,
   watchPagesOf,
 } from "./model.js";
@@ -447,9 +448,19 @@ export function smartResetPreset(rule: WatchSmartRule, table: WatchSmartTable = 
   return smartPresetForRule(rule, table) ?? table.presets.find((p) => p.domain === rule.domain && p.deviceClassFilter === undefined);
 }
 
-/** A rule chip's name: its preset's label, else the domain's name. */
+/** A preset's name in the panel: a whole domain preset by its kind in
+ * plural (`tileKindPlural`: "Toggles"), one narrowed to device classes by
+ * its own label ("Doors"). The label itself stays what an add writes as the
+ * header, which the watch draws. */
+export function smartPresetName(preset: WatchSmartPreset): string {
+  return preset.deviceClassFilter === undefined ? tileKindPlural(preset.domain) : preset.label;
+}
+
+/** A rule chip's name: its preset's (`smartPresetName`), else the domain's
+ * kind in plural. */
 export function smartRuleName(rule: WatchSmartRule, table: WatchSmartTable = WATCH_SMART): string {
-  return smartPresetForRule(rule, table)?.label ?? smartDomainName(rule.domain, table);
+  const preset = smartPresetForRule(rule, table);
+  return preset !== undefined ? smartPresetName(preset) : tileKindPlural(rule.domain);
 }
 
 // ── plumbing ─────────────────────────────────────────────────────────────

@@ -202,7 +202,14 @@ describe("the stage on an iPhone", () => {
     expect(text).toContain(PHONE_FRAME_TEXT);
     // In the iPhone look, the default while the phone's settings say nothing.
     expect(text).toContain('class="wa-phone ios"');
-    expect(text).toContain('class="wa-phone-title"');
+    // The one-screen app's top row: no tab bar, no large title. "Mine" sets
+    // no title style, so the phone names it nowhere, and with one page there
+    // is no grid.
+    expect(text).toContain('class="wa-phone-top"');
+    expect(text).toContain("wa-phone-gear");
+    expect(text).not.toContain("wa-phone-grid");
+    expect(text).not.toContain("wa-phone-tab");
+    expect(text).not.toContain("wa-phone-title");
     expect(text).not.toContain('class="wa-watch"');
     expect(text).not.toContain("watch frame");
     expect(text).toContain("iPhone showing Mine");

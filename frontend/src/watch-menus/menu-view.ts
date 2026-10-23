@@ -159,7 +159,7 @@ export interface MenusViewHost {
   readonly screen: MenusScreen;
   /** Points to pixels for the canvas's watch: the stage's zoom. */
   readonly scale: number;
-  /** The device is an iPhone: `screen` is its Pages tab's pages area, where
+  /** The device is an iPhone: `screen` is its pages screen's pages area, where
    * the phone opens its menus over the pages, and the menus are drawn in the
    * iPhone (`phone-frame.ts`). */
   readonly phone?: PhonePagesLayout;

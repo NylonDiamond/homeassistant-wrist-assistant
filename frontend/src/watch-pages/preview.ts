@@ -18,12 +18,12 @@
 //
 // An iPhone's page is drawn the same way in the iPhone's pages area
 // (`phone-frame.ts`), which is the page code's screen on the phone: no side
-// safe area, no watch clock, the page dots where the Pages tab puts them,
-// and the phone around it. In the phone's iPhone look (its `phonePageLook`
-// setting, the default) the page's name is the frame's large title instead
-// of the watch's small one, a page with no background of its own sits on the
-// grouped background, tiles take 22 point corners, and the dots are a plain
-// page control under the pages.
+// safe area, no watch clock, the page dots where the pages screen puts
+// them, and the phone around it. In the phone's iPhone look (its
+// `phonePageLook` setting, the default) the page's name sits in the frame's
+// top row instead of the watch's small title, a page with no background of
+// its own sits on the app's graphite ground, tiles take 22 point corners,
+// and the dots are a plain page control under the pages.
 //
 // Drawn in HTML rather than one SVG so a long name can end in an ellipsis.
 // Every size is in points times `scale`, so the picture is the screen grown
@@ -3474,27 +3474,31 @@ export function watchPreviewHeight(layout: WatchPageLayout, phone: boolean): num
 /**
  * Wrap a picture of the page code's screen in its device: the watch's case
  * (`renderWatchFrame`, as before), or for an iPhone the phone around its
- * pages area with the page dots where the Pages tab puts them
- * (`renderPhoneFrame`).
+ * pages area with the page dots where the pages screen puts them
+ * (`renderPhoneFrame`). The top row's grid shows with two or more pages to
+ * show (`PhonePagesRules.visiblePages`), as the phone hides it with one.
  */
 export function renderPreviewFrame(input: WatchPagePreviewInput, s: number, body: TemplateResult, label?: string): TemplateResult {
   if (input.phone === undefined) return renderWatchFrame(input.screen, s, body, label);
+  const grid = input.pages.filter((p) => p.isHidden !== true && p.isSystemPage !== true).length >= 2;
   if (phoneDrawsIphoneLook(input.phone)) {
-    // The iPhone look: the page's name as the large title, the page
-    // control under the pages. The phone's Page name setting (devices watch
-    // and iPhone) hides it, as it hides the watch's title; its band stays.
+    // The iPhone look: the page's name in the top row, the page control
+    // under the pages. The phone's Page name setting (devices watch and
+    // iPhone) hides it, as it hides the watch's title, and so does a page
+    // whose title style is none (`PhonePagesRules.showsPageTitle`).
     const control = phonePageControlRow(input, s);
-    const title = input.behavior?.pageTitleMode === "Off" || typeof input.page.name !== "string" ? "" : input.page.name.trim();
+    const hidden = input.behavior?.pageTitleMode === "Off" || watchPageValue(input.page, "pageTitleDisplayStyle") === "none";
+    const title = hidden || typeof input.page.name !== "string" ? "" : input.page.name.trim();
     const ink = watchPageHasDefaultBlackBackground(input.page);
-    return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, title, ink, ...(control === undefined ? {} : { dots: control }) });
+    return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, title, ink, grid, ...(control === undefined ? {} : { dots: control }) });
   }
   const dots = watchPageIndicatorRow(input, s);
-  return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, ...(dots === undefined ? {} : { dots }) });
+  return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, grid, ...(dots === undefined ? {} : { dots }) });
 }
 
 /** The watch's small page title in the top band (`renderWatchPageTitle`),
- * except in an iPhone's iPhone look, where the frame's large title names
- * the page instead. */
+ * except in an iPhone's iPhone look, where the frame's top row names the
+ * page instead. */
 export function renderPreviewPageTitle(input: WatchPagePreviewInput, page: WatchPage, s: number, topInset: number): TemplateResult | typeof nothing {
   if (phoneDrawsIphoneLook(input.phone)) return nothing;
   return renderWatchPageTitle(page, s, topInset, input.icons, input.behavior);
@@ -3569,7 +3573,7 @@ function renderSmartPreview(given: WatchPagePreviewInput): TemplateResult {
 }
 
 /** The dashed line where the watch's screen ends, or with `phone` where the
- * iPhone's pages area ends, above its tab bar. The words that explain it
+ * iPhone's pages area ends, just above its page dots. The words that explain it
  * go outside the picture (`WATCH_SCREEN_FOLD_TEXT`), where they cover no
  * tile. */
 export function renderWatchScreenFold(top: number, phone = false): TemplateResult {
@@ -3578,8 +3582,8 @@ export function renderWatchScreenFold(top: number, phone = false): TemplateResul
 
 export const WATCH_SCREEN_FOLD_TEXT = "The dashed line marks the end of the watch's screen. The page scrolls on below it.";
 
-/** The fold's words on an iPhone: its pages end above the tab bar. */
-export const PHONE_SCREEN_FOLD_TEXT = "The dashed line marks the end of the iPhone's screen, above its tab bar. The page scrolls on below it.";
+/** The fold's words on an iPhone: its pages end at the page dots. */
+export const PHONE_SCREEN_FOLD_TEXT = "The dashed line marks the end of the iPhone's screen. The page scrolls on below it.";
 
 /** Whether the picture of a page runs past the screen, so it shows the
  * fold. A smart page never does. With `phone`, an iPhone's pages area. */

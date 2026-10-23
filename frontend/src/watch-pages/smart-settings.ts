@@ -45,7 +45,7 @@ import { type TileSettingsHost, type WatchPagesEditorHost, extendHost, hostDevic
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
 import { sameWatchId } from "./edit.js";
-import { type JsonObject, type WatchPage, type WatchPageTile, type WatchPagesDocument, isJsonObject, watchPagesOf } from "./model.js";
+import { type JsonObject, type WatchPage, type WatchPageTile, type WatchPagesDocument, isJsonObject, tileKindPlural, watchPagesOf } from "./model.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
 import {
   type WatchSmartConfig,
@@ -91,6 +91,7 @@ import {
   smartMaxValueLabel,
   smartMaxValueText,
   smartPresetAdded,
+  smartPresetName,
   smartRuleAfterDelete,
   smartRuleName,
   smartRulePlace,
@@ -571,7 +572,7 @@ function renderRuleRows(host: WatchPagesEditorHost, rh: TileSettingsHost, rule: 
           ${smartRuleUnresolved(rule)
             ? html`<span class="sm-warn">${W("notResolved")}</span>`
             : count === 0
-              ? html`<span class="sm-none">No ${smartDomainName(rule.domain).toLowerCase()} in Home Assistant yet</span>`
+              ? html`<span class="sm-none">No ${tileKindPlural(rule.domain).toLowerCase()} in Home Assistant yet</span>`
               : html`<span>${count} ${count === 1 ? "entity" : "entities"}</span>`}
           ${linkButton(W("resolve"), "List the domain's entities from Home Assistant now. A save does it too.", () =>
             commit(rh, "resolve", (d) => withResolvedRule(d, P, R, host.hass.states)))}
@@ -639,7 +640,7 @@ function renderEntityPick(host: WatchPagesEditorHost, rh: TileSettingsHost, rule
     <div class="ap-list sm-pick" role="group" aria-label=${selectedWord(picked.length)}>
       ${picked.map((id) => row(id, true))}
       ${rest.slice(0, PICK_LIMIT).map((id) => row(id, false))}
-      ${ids.length === 0 && picked.length === 0 ? html`<div class="hint">No ${smartDomainName(rule.domain).toLowerCase()} in Home Assistant${filter.length > 0 ? " with these device classes" : ""}.</div>` : nothing}
+      ${ids.length === 0 && picked.length === 0 ? html`<div class="hint">No ${tileKindPlural(rule.domain).toLowerCase()} in Home Assistant${filter.length > 0 ? " with these device classes" : ""}.</div>` : nothing}
       ${rest.length > PICK_LIMIT ? html`<div class="hint">${rest.length - PICK_LIMIT} more. Search to narrow the list.</div>` : nothing}
     </div>`;
 }
@@ -739,10 +740,10 @@ function renderAddDomain(host: WatchPagesEditorHost, config: WatchSmartConfig): 
         const added = smartPresetAdded(config, preset);
         const glyph = host.icons.render(preset.icon, 22, smartDomainColorHex(preset.domain, host.page));
         return html`<button type="button" class="sm-preset ${added ? "added" : ""}" ?disabled=${added || host.busy}
-          title=${added ? SMART_PRESET_ADDED_REASON : preset.label}
+          title=${added ? SMART_PRESET_ADDED_REASON : smartPresetName(preset)}
           @click=${(e: Event) => smartPresetPicked(host, preset, e.currentTarget)}>
           <span class="sm-preset-glyph" aria-hidden="true">${glyph ?? nothing}</span>
-          <span class="sm-preset-label">${preset.label}</span>
+          <span class="sm-preset-label">${smartPresetName(preset)}</span>
           ${added ? html`<span class="at-added">${uiIcon("check")}Added</span>` : nothing}
         </button>`;
       })}

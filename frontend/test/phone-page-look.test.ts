@@ -1,9 +1,9 @@
 // An iPhone's Page look (`phonePageLook`, phone-frame.ts): in the iPhone
-// look, the default, the phone's preview draws the page's name as a large
-// title above the pages area, a page with the default black background on
-// the system's grouped background, 22 point tile corners and a plain page
-// control; in the Watch look the phone keeps the frame it always had; and a
-// watch never changes, whatever a document says.
+// look, the default, the phone's preview draws the page's name centred in
+// the top row, a page with the default black background on the app's
+// graphite ground, 22 point tile corners and a plain page control; in the
+// Watch look the phone keeps the watch's own drawing; and a watch never
+// changes, whatever a document says.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_PHONE,
-  PHONE_LARGE_TITLE_HEIGHT,
+  PHONE_TOP_ROW_HEIGHT,
   phoneFrameStyles,
   phonePageLookOf,
   phonePagesLayout,
@@ -87,33 +87,57 @@ describe("the Page look setting", () => {
 });
 
 describe("the iPhone look", () => {
-  it("puts the large title's band above the pages area, which is that much shorter", () => {
+  it("keeps the pages area the Watch look's, with the top row's buttons on the tiles' edges", () => {
     expect(iphone.look).toBe("iphone");
-    expect(iphone.title).toEqual({ x: 16, y: 70, width: 370, height: PHONE_LARGE_TITLE_HEIGHT });
-    expect(iphone.area).toEqual({ x: 6, y: 70 + PHONE_LARGE_TITLE_HEIGHT, width: 390, height: 695 - PHONE_LARGE_TITLE_HEIGHT });
-    expect(iphone.tabBar).toEqual(old.tabBar);
+    expect(iphone.topRow).toEqual({ x: 16, y: 62, width: 370, height: PHONE_TOP_ROW_HEIGHT });
+    expect(old.topRow).toEqual({ x: 6, y: 62, width: 390, height: PHONE_TOP_ROW_HEIGHT });
+    expect(iphone.area).toEqual(old.area);
+    expect(iphone.area).toEqual({ x: 6, y: 114, width: 390, height: 712 });
     expect(iphone.bottomBar).toEqual(old.bottomBar);
   });
 
-  it("draws the page's name as the large title on the grouped background, with no watch title", () => {
+  it("names the page in the top row between the grid and the gear, on the graphite ground, with no watch title", () => {
     const text = phonePicture(LIVING);
-    // A page with no color of its own sits on the grouped background: `ink`.
+    // A page with no color of its own sits on the graphite ground: `ink`.
     expect(text).toContain('class="wa-phone ios ink"');
-    expect(text).toContain('<div class="wa-phone-title"');
+    expect(text).toContain('<div class="wa-phone-top"');
+    expect(text).toContain('<span class="wa-phone-title"');
     expect(text).toContain("<span>Living Room</span>");
-    expect(text).toContain("font-size:34px");
-    expect(text).toContain("background:var(--wa-phone-grouped, #f2f2f7)");
+    expect(text).toContain("font-size:16px");
+    expect(text).toContain("left:68px;right:68px");
+    // Grid, then the name, then the gear, each button 40 points round.
+    const grid = text.indexOf("wa-phone-glass wa-phone-grid");
+    const name = text.indexOf("<span>Living Room</span>");
+    const gear = text.indexOf("wa-phone-glass wa-phone-gear");
+    expect(grid).toBeGreaterThan(0);
+    expect(name).toBeGreaterThan(grid);
+    expect(gear).toBeGreaterThan(name);
+    expect(text).toContain("width:40px;height:40px");
+    expect(text).toContain("background:var(--wa-phone-grouped, #f1f2f5)");
+    // No large title, no tab bar.
+    expect(text).not.toContain("font-size:34px");
+    expect(text).not.toContain("wa-phone-tab");
     // The watch's own small title in the top band is gone.
     expect(text).not.toContain('class="wp-title');
     expect(text).not.toContain("wp-clock");
   });
 
-  it("follows the panel's light and dark skins for the grouped background", () => {
+  it("shows the grid only with two or more pages to show", () => {
+    const one = flat(renderWatchPagePreview({ page: LIVING, pages: [LIVING], screen: phonePagesScreen(iphone), phone: iphone, scale: 1 }));
+    expect(one).not.toContain("wa-phone-grid");
+    expect(one).toContain("wa-phone-gear");
+    // A hidden page does not count.
+    const hidden = flat(renderWatchPagePreview({ page: LIVING, pages: [LIVING, { ...KITCHEN, isHidden: true }], screen: phonePagesScreen(iphone), phone: iphone, scale: 1 }));
+    expect(hidden).not.toContain("wa-phone-grid");
+    expect(phonePicture(LIVING)).toContain("wa-phone-grid");
+  });
+
+  it("follows the panel's light and dark skins for the graphite ground", () => {
     const css = phoneFrameStyles.cssText;
-    expect(css).toContain(".wa-phone.ios .wa-phone-screen { background: var(--wa-phone-grouped, #f2f2f7); color: var(--wa-phone-ink, #000000); }");
+    expect(css).toContain(".wa-phone.ios .wa-phone-screen { background: var(--wa-phone-grouped, #f1f2f5); color: var(--wa-phone-ink, #14161a); }");
     const panel = readFileSync(join(__dirname, "..", "src", "panel.ts"), "utf8");
-    const light = panel.indexOf("--wa-phone-grouped: #f2f2f7;");
-    const dark = panel.indexOf("--wa-phone-grouped: #000000;");
+    const light = panel.indexOf("--wa-phone-grouped: #f1f2f5;");
+    const dark = panel.indexOf("--wa-phone-grouped: #0e0f11;");
     expect(light).toBeGreaterThan(0);
     expect(dark).toBeGreaterThan(light);
     expect(panel.lastIndexOf(":host([dark]) {", dark)).toBeGreaterThan(light);
@@ -164,7 +188,7 @@ describe("the iPhone look", () => {
     const red = phonePicture(redPage);
     expect(red).not.toContain("background:var(--wa-phone-grouped");
     expect(red).toContain(`background:${watchScreenBackground(redPage, 1, phonePagesScreen(iphone))}`);
-    // The large title stays: it is the iPhone's, not the page's.
+    // The name in the top row stays: it is the iPhone's, not the page's.
     expect(red).toContain("<span>Living Room</span>");
   });
 
@@ -177,27 +201,40 @@ describe("the iPhone look", () => {
     expect(text).toContain(`background:${watchScreenBackground(themed, 1, phonePagesScreen(iphone))}`);
   });
 
-  it("hides the large title, keeping its band, when the phone's Page name setting is Hide", () => {
+  it("hides the name, keeping the top row, when the phone's Page name setting is Hide", () => {
     const text = phonePicture(LIVING, iphone, { pageTitleMode: "Off" });
-    expect(text).toContain('<div class="wa-phone-title"');
+    expect(text).toContain('<div class="wa-phone-top"');
+    expect(text).not.toContain("wa-phone-title");
     expect(text).not.toContain("<span>Living Room</span>");
     expect(phonePicture(LIVING, iphone, { pageTitleMode: "Auto" })).toContain("<span>Living Room</span>");
+  });
+
+  it("hides the name on a page whose title style is none, as the app does", () => {
+    // PhonePagesRules.showsPageTitle: a style other than none, and a name.
+    expect(phonePicture({ ...LIVING, pageTitleDisplayStyle: "none" })).not.toContain("wa-phone-title");
+    const unstyled: WatchPage = { ...LIVING };
+    delete unstyled.pageTitleDisplayStyle;
+    expect(phonePicture(unstyled)).not.toContain("wa-phone-title");
+    expect(phonePicture({ ...LIVING, name: "  " })).not.toContain("wa-phone-title");
   });
 });
 
 describe("the Watch look on an iPhone", () => {
-  it("lays the phone out as it always was", () => {
+  it("lays the phone out as a phone with no Page look says", () => {
     const watchLook = phonePagesLayout(DEFAULT_PHONE, { look: "watch" });
     expect(watchLook).toEqual(old);
     expect(watchLook.look).toBeUndefined();
-    expect(watchLook.title).toBeUndefined();
-    expect(old.area).toEqual({ x: 6, y: 70, width: 390, height: 695 });
+    expect(old.area).toEqual({ x: 6, y: 114, width: 390, height: 712 });
   });
 
-  it("draws the old frame: the watch's title, background, corners and dots", () => {
+  it("draws the watch's own frame: the watch's title, background, corners and dots", () => {
     const text = phonePicture(LIVING, old);
     expect(text).toContain('class="wa-phone"');
     expect(text).not.toContain("wa-phone ios");
+    // The top row keeps its grid and gear, with the name left to the watch's
+    // own title in the page.
+    expect(text).toContain("wa-phone-grid");
+    expect(text).toContain("wa-phone-gear");
     expect(text).not.toContain("wa-phone-title");
     expect(text).not.toContain("wa-phone-grouped");
     expect(text).not.toContain("wa-phone-pc");

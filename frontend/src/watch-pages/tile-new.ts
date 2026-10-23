@@ -554,8 +554,9 @@ function routeFor(domain: string, picker: string | undefined): AddRoute | undefi
 
 export interface WatchAddableDomain {
   domain: string;
-  /** The plain name of the domain for the picker ("Lights", "Media
-   * Players"): the name of the domain's preferred route. */
+  /** The phone's name of the domain for the picker ("Lights", "Media
+   * Players"): the name of the domain's preferred route. The panel names a
+   * kind with `tileKindPlural` instead. */
   name: string;
   /** The picker of that route. */
   picker: string;

@@ -1,7 +1,8 @@
-// The iPhone drawn around its pages, as the app's Pages tab shows them: the
-// phone's body and screen, the status bar and the Dynamic Island, the strip
-// above the pages, the pages area itself, the strip under it for bottom page
-// dots, and the app's floating tab bar (Pages, Watch, Widgets, Settings).
+// The iPhone drawn around its pages, as the app's one screen shows them:
+// the phone's body and screen, the status bar and the Dynamic Island, the
+// top row (the grid for all pages, the page's name, the gear for Settings),
+// the strip above the pages, the pages area itself, and the strip under it
+// for bottom page dots. The app has no tab bar and no large title.
 //
 // The pages area is the page code's screen on the phone
 // (`PlatformDevice.pagesArea`): the watch's own page code lays the tiles out
@@ -11,16 +12,16 @@
 //
 //   safe area top
 //   home switcher, 42 tall, 16 in from each side, then 8 (two or more homes only)
+//   top row, 44 (`PhonePagesView.topControls`)
 //   top bar, 8 (`PhonePagesBoard.topBar`, a clear strip)
 //   pages area, 6 in from each side (`PhonePagesBoard.sideInset`)
 //   bottom bar, 14 (the page dots when they sit at the bottom)
-//   tab bar, 61, 12 in from each side (`MainBottomBar`, floating)
 //   safe area bottom
 //
-// Measured on the iPhone 17 Pro simulator (402 by 874 points), 2026-10-10:
-// pages area 6 to 396 across and 120 to 765 down with the home switcher,
-// tab bar 12 to 390 across and 779 to 840 down. Without the switcher the
-// pages area starts at 70, 390 by 695 points.
+// On the iPhone 17 Pro (402 by 874 points) without the switcher the pages
+// area is 6 to 396 across and 114 to 826 down, 390 by 712 points. The
+// tiles' places inside it were measured on the simulator on 2026-10-10 and
+// do not move with the chrome around it.
 //
 // The panel draws no home switcher: the phone shows one only with two or
 // more homes, which Home Assistant cannot see, and the single home case is
@@ -29,12 +30,11 @@
 //
 // A phone's Page look setting (`phonePageLook`) picks how it draws its
 // pages. The iPhone look, the default, draws them as an iPhone app would:
-// the page's name as a large title in a band above the pages area (which
-// is that much shorter), the system's grouped background behind a page
-// with no background of its own, in the panel's light or dark skin, round
-// 22 point tile corners, and a plain page control in the strip under the
-// pages. The Watch look keeps the watch's own drawing, bigger, exactly as
-// before the setting.
+// the page's name centred in the top row, the app's graphite ground behind
+// a page with no background of its own, in the panel's light or dark skin,
+// round 22 point tile corners, and a plain page control in the strip under
+// the pages. The Watch look keeps the watch's own drawing, bigger, with the
+// watch's small title in the page instead of the name in the top row.
 
 import { css, html, svg, type TemplateResult, nothing, unsafeCSS } from "lit";
 
@@ -95,11 +95,18 @@ export const PHONE_PAGE_DOTS_TOP = 3;
 export const PHONE_SWITCHER_HEIGHT = 42;
 export const PHONE_SWITCHER_SIDE = 16;
 export const PHONE_SWITCHER_GAP = 8;
-/** The floating tab bar's height (measured), its side room (`DS.space(.s)`)
- * and its corner radius. */
-export const PHONE_TAB_BAR_HEIGHT = 61;
-export const PHONE_TAB_BAR_SIDE = 12;
-export const PHONE_TAB_BAR_RADIUS = 28;
+/** The top row (`PhonePagesView.topControls`): 44 tall, a 40 point round
+ * glass button at each end in a 44 point target (`PhonePagesChrome`), lined
+ * up with the tiles' edges, which sit `PhoneVault.gutter` in with the
+ * iPhone look and the pages' side inset with the Watch look. */
+export const PHONE_TOP_ROW_HEIGHT = 44;
+export const PHONE_TOP_BUTTON = 40;
+export const PHONE_TOP_ROW_SIDE_IPHONE = 16;
+/** The page's name in the top row (`PhoneVault.Typography.title`, 16 point
+ * semibold), held this far in from each side so it clears both buttons and
+ * stays centred (`pageTitleInset`). */
+export const PHONE_TOP_TITLE_SIZE = 16;
+export const PHONE_TOP_TITLE_INSET = 68;
 
 /** How an iPhone draws its pages, its `phonePageLook` setting: like an
  * iPhone app, or like a big watch. */
@@ -112,13 +119,6 @@ export function phonePageLookOf(behavior: Readonly<Record<string, unknown>> | un
   return behavior?.phonePageLook === "watch" ? "watch" : "iphone";
 }
 
-/** The iPhone look's large title: its band above the pages area (the
- * height of a navigation bar's large title row), its type size, bold, and
- * its room from the screen's left edge, all in points. */
-export const PHONE_LARGE_TITLE_HEIGHT = 52;
-export const PHONE_LARGE_TITLE_SIZE = 34;
-export const PHONE_LARGE_TITLE_SIDE = 16;
-
 /** The iPhone look's tile corners in points, held to half the tile's short
  * side as SwiftUI holds a rounded rectangle's. */
 export const PHONE_TILE_RADIUS = 22;
@@ -128,10 +128,11 @@ export function phoneTileCornerRadius(widthPt: number, heightPt: number): number
   return Math.min(PHONE_TILE_RADIUS, Math.min(widthPt, heightPt) / 2);
 }
 
-/** The system's grouped background and its label ink, which the panel sets
- * for its light and dark skins (`--wa-phone-grouped`, `--wa-phone-ink`). */
-export const PHONE_GROUPED_BACKGROUND = "var(--wa-phone-grouped, #f2f2f7)";
-export const PHONE_LABEL_INK = "var(--wa-phone-ink, #000000)";
+/** The app's graphite ground (`PhoneVault` `.ground`) and its ink, which
+ * the panel sets for its light and dark skins (`--wa-phone-grouped`,
+ * `--wa-phone-ink`). */
+export const PHONE_GROUPED_BACKGROUND = "var(--wa-phone-grouped, #f1f2f5)";
+export const PHONE_LABEL_INK = "var(--wa-phone-ink, #14161a)";
 
 /** The iPhone look's page control: each dot's size and the room between
  * two, in points; the current page's dot is the label ink, the others the
@@ -147,49 +148,47 @@ export interface PhoneRect {
   height: number;
 }
 
-/** Where the Pages tab puts everything on one iPhone's screen. */
+/** Where the pages screen puts everything on one iPhone's screen. */
 export interface PhonePagesLayout {
   model: PhoneModel;
   /** The home switcher, when drawn. */
   switcher?: PhoneRect;
   /** Set only for the iPhone look; absent is the Watch look. */
   look?: "iphone";
-  /** The iPhone look's large title band, above the pages area. */
-  title?: PhoneRect;
+  /** The top row, from the grid button's left edge to the gear's right
+   * edge: the buttons line up with the tiles' edges. */
+  topRow: PhoneRect;
   /** The pages area: the screen the page code lays a page out on. */
   area: PhoneRect;
-  /** The strip under the pages area, where bottom page dots sit. */
+  /** The strip under the pages area, where bottom page dots sit, just above
+   * the safe area. */
   bottomBar: PhoneRect;
-  tabBar: PhoneRect;
 }
 
-/** Where the Pages tab lays itself out on `model`, with the home switcher
- * when `switcher` (a phone with two or more homes). With `look` "iphone"
- * the large title's band sits between the top bar and the pages area, which
- * starts that much lower; without it (the Watch look, and every status page
- * and menu) the layout is the one the phone has always had. */
+/** Where the pages screen lays itself out on `model`, with the home
+ * switcher when `switcher` (a phone with two or more homes). The top row is
+ * the same height in both looks, so the pages area is too; `look` "iphone"
+ * only moves the top row's buttons in to the iPhone look's tile edges. The
+ * pages area runs down to the strip for the page dots. */
 export function phonePagesLayout(model: PhoneModel = DEFAULT_PHONE, options?: { switcher?: boolean; look?: PhonePageLook }): PhonePagesLayout {
   const { width, height } = model.screen;
+  const iphone = options?.look === "iphone";
   let top = model.safeTop;
   let switcher: PhoneRect | undefined;
   if (options?.switcher === true) {
     switcher = { x: PHONE_SWITCHER_SIDE, y: top, width: width - PHONE_SWITCHER_SIDE * 2, height: PHONE_SWITCHER_HEIGHT };
     top += PHONE_SWITCHER_HEIGHT + PHONE_SWITCHER_GAP;
   }
-  top += PHONE_PAGES_TOP_BAR;
-  let title: PhoneRect | undefined;
-  if (options?.look === "iphone") {
-    title = { x: PHONE_LARGE_TITLE_SIDE, y: top, width: width - PHONE_LARGE_TITLE_SIDE * 2, height: PHONE_LARGE_TITLE_HEIGHT };
-    top += PHONE_LARGE_TITLE_HEIGHT;
-  }
-  const tabBar = { x: PHONE_TAB_BAR_SIDE, y: height - model.safeBottom - PHONE_TAB_BAR_HEIGHT, width: width - PHONE_TAB_BAR_SIDE * 2, height: PHONE_TAB_BAR_HEIGHT };
-  const bottomBar = { x: 0, y: tabBar.y - PHONE_PAGES_BOTTOM_BAR, width, height: PHONE_PAGES_BOTTOM_BAR };
+  const side = iphone ? PHONE_TOP_ROW_SIDE_IPHONE : PHONE_PAGES_SIDE_INSET;
+  const topRow = { x: side, y: top, width: width - side * 2, height: PHONE_TOP_ROW_HEIGHT };
+  top += PHONE_TOP_ROW_HEIGHT + PHONE_PAGES_TOP_BAR;
+  const bottomBar = { x: 0, y: height - model.safeBottom - PHONE_PAGES_BOTTOM_BAR, width, height: PHONE_PAGES_BOTTOM_BAR };
   const area = { x: PHONE_PAGES_SIDE_INSET, y: top, width: width - PHONE_PAGES_SIDE_INSET * 2, height: bottomBar.y - top };
   return {
     model,
     ...(switcher === undefined ? {} : { switcher }),
-    ...(title === undefined ? {} : { look: "iphone" as const, title }),
-    area, bottomBar, tabBar,
+    ...(iphone ? { look: "iphone" as const } : {}),
+    topRow, area, bottomBar,
   };
 }
 
@@ -225,18 +224,6 @@ export interface PhonePageDots {
   height: number;
   top: boolean;
 }
-
-/** The tab bar's tabs, as `MainBottomBar` lists them. Pages is the one on. */
-const TABS: readonly { title: string; icon: string }[] = [
-  { title: "Pages", icon: "square.grid.2x2" },
-  { title: "Watch", icon: "applewatch" },
-  { title: "Widgets", icon: "widget.small" },
-  { title: "Settings", icon: "gearshape.fill" },
-];
-
-/** The app's accent (`sunnyBeachDay`) and its quiet text, as measured. */
-const ACCENT = "#2EC4B6";
-const QUIET = "#BCBCBC";
 
 /** The time the status bar shows. */
 const STATUS_TIME = "9:41";
@@ -277,42 +264,54 @@ function statusBar(model: PhoneModel, s: number, icons: IconProvider | undefined
   </div>`;
 }
 
-/** The floating tab bar: four equal tabs, each its symbol over its title,
- * Pages lit in the accent. */
-function tabBar(layout: PhonePagesLayout, s: number, icons: IconProvider | undefined): TemplateResult {
+/** The top row: at the left the grid (`square.grid.2x2`) that opens all
+ * pages, only with `grid` (two or more pages to show), at the right the
+ * gear (`gearshape.fill`) for Settings, each a round glass button, and
+ * `title`, the page's name, centred between them. The glyphs are drawn here
+ * in the screen's ink, as the status bar's Wi-Fi mark is, since the symbol
+ * provider takes a hex ink only. */
+function topRow(layout: PhonePagesLayout, s: number, ios: boolean, grid: boolean, title: string): TemplateResult {
   const px = (pt: number) => `${r2(pt * s)}px`;
-  const bar = layout.tabBar;
-  return html`<div class="wa-phone-tabs" aria-hidden="true"
-    style=${`height:${px(bar.height)};margin:0 ${px(bar.x)};border-radius:${px(PHONE_TAB_BAR_RADIUS)}`}>
-    ${TABS.map((tab, i) => {
-      const ink = i === 0 ? ACCENT : QUIET;
-      const glyph = symbol(icons, tab.icon, 22 * s, ink, () => html`<span class="wa-phone-tab-dot" style=${`width:${px(20)};height:${px(20)};border-color:${ink}`}></span>`);
-      return html`<span class="wa-phone-tab" style=${`color:${ink};gap:${px(4)};font-size:${px(10)};${i === 0 ? "transform:scale(1.12)" : ""}`}>${glyph}<span>${tab.title}</span></span>`;
-    })}
+  const row = layout.topRow;
+  const fill = ios ? "currentColor" : "#fff";
+  const glyph = r2(16 * s);
+  const button = (name: string, mark: TemplateResult) =>
+    html`<span class=${`wa-phone-glass ${name}`} style=${`width:${px(PHONE_TOP_BUTTON)};height:${px(PHONE_TOP_BUTTON)}`}>
+      <svg width=${glyph} height=${glyph} viewBox="0 0 16 16" aria-hidden="true">${mark}</svg>
+    </span>`;
+  const gridMark = svg`${[1.5, 9.1].flatMap((y) => [1.5, 9.1].map((x) => svg`<rect x=${x} y=${y} width="5.4" height="5.4" rx="1.5" fill="none" stroke="${fill}" stroke-width="1.6" />`))}`;
+  // Eight teeth round a ring with a hole in the middle.
+  const gearMark = svg`<circle cx="8" cy="8" r="6.3" fill="none" stroke="${fill}" stroke-width="2.6" stroke-dasharray="2.47 2.48" stroke-dashoffset="1.24" />
+    <circle cx="8" cy="8" r="4.3" fill="none" stroke="${fill}" stroke-width="3.2" />`;
+  return html`<div class="wa-phone-top" style=${`height:${px(row.height)};padding:0 ${px(row.x)}`}>
+    ${grid ? button("wa-phone-grid", gridMark) : nothing}
+    ${title === "" ? nothing : html`<span class="wa-phone-title" style=${`left:${px(PHONE_TOP_TITLE_INSET)};right:${px(PHONE_TOP_TITLE_INSET)};font-size:${px(PHONE_TOP_TITLE_SIZE)}`}><span>${title}</span></span>`}
+    ${button("wa-phone-gear", gearMark)}
   </div>`;
 }
 
 /**
  * Wrap `area` (a box the pages area's width, at least its height, the page
- * code's screen) in the iPhone: its body, status bar, the strip above the
- * pages, the strip under them with the page dots when they sit at the
- * bottom, and the tab bar. A box taller than the pages area (a page that
- * scrolls on) makes the phone that much taller, as the watch's case grows,
- * so everything under the pages keeps its place below them. The box gets
+ * code's screen) in the iPhone: its body, status bar, top row, the strip
+ * above the pages, and the strip under them with the page dots when they
+ * sit at the bottom. A box taller than the pages area (a page that scrolls
+ * on) makes the phone that much taller, as the watch's case grows, so
+ * everything under the pages keeps its place below them. The box gets
  * `--wf-radius: 0px`: the pages area has square corners.
  *
- * A layout in the iPhone look (`phonePagesLayout` with `look`) adds the
- * large title band with `title` in it, and the `ios` class, which draws the
- * screen around the pages on the grouped background in the label ink.
- * `ink` adds the `ink` class when the page itself sits on that grouped
- * background (no color of its own), so marks drawn over the page can use
- * the label ink too; a page with its own color keeps light marks.
+ * The top row's grid shows only with `grid` (two or more pages to show), as
+ * the phone hides it with one. A layout in the iPhone look
+ * (`phonePagesLayout` with `look`) puts `title` in the top row and adds the
+ * `ios` class, which draws the screen around the pages on the graphite
+ * ground in its ink. `ink` adds the `ink` class when the page itself sits on
+ * that ground (no color of its own), so marks drawn over the page can use
+ * the ink too; a page with its own color keeps light marks.
  */
 export function renderPhoneFrame(
   layout: PhonePagesLayout,
   scale: number,
   area: TemplateResult,
-  options?: { label?: string; icons?: IconProvider; dots?: PhonePageDots; title?: string; ink?: boolean },
+  options?: { label?: string; icons?: IconProvider; dots?: PhonePageDots; title?: string; ink?: boolean; grid?: boolean },
 ): TemplateResult {
   const s = scale;
   const { model } = layout;
@@ -328,21 +327,19 @@ export function renderPhoneFrame(
   const dots = options?.dots;
   const switcher = layout.switcher === undefined ? nothing
     : html`<div class="wa-phone-switcher" aria-hidden="true" style=${`height:${px(layout.switcher.height)};margin:0 ${px(layout.switcher.x)} ${px(PHONE_SWITCHER_GAP)}`}></div>`;
-  const title = layout.title === undefined ? nothing
-    : html`<div class="wa-phone-title" style=${`height:${px(layout.title.height)};padding:0 ${px(layout.title.x)};font-size:${px(PHONE_LARGE_TITLE_SIZE)}`}><span>${options?.title ?? ""}</span></div>`;
+  const title = ios ? (options?.title ?? "").trim() : "";
   return html`<div class="wa-phone${ios ? " ios" : ""}${ios && options?.ink === true ? " ink" : ""}" aria-label=${options?.label ?? "iPhone"}
     style=${`--pf-bezel:${bezel}px;--pf-rim:${rim}px;--pf-radius:${radius}px;--wf-radius:0px;--pf-left-top:${at(0.17)};--pf-left-h:${at(0.22)};--pf-right-top:${at(0.26)};--pf-right-h:${at(0.1)}`}>
     <div class="wa-phone-screen" style=${`width:${px(model.screen.width)};min-height:${px(model.screen.height)}`}>
       ${statusBar(model, s, options?.icons, ios)}
       ${switcher}
+      ${topRow(layout, s, ios, options?.grid === true, title)}
       <div class="wa-phone-gap" style=${`height:${px(PHONE_PAGES_TOP_BAR)}`}></div>
-      ${title}
       <div class="wa-phone-area" style=${`margin:0 ${px(layout.area.x)};min-height:${px(layout.area.height)}`}>
         ${area}
         ${dots?.top === true ? html`<span class="wa-phone-dots" style=${`top:${px(PHONE_PAGE_DOTS_TOP)};height:${px(dots.height)}`}>${dots.row}</span>` : nothing}
       </div>
       <div class="wa-phone-dots-bar" style=${`height:${px(layout.bottomBar.height)}`}>${dots?.top === false ? dots.row : nothing}</div>
-      ${tabBar(layout, s, options?.icons)}
       <div class="wa-phone-foot" style=${`height:${px(model.safeBottom)}`}>
         ${model.safeBottom > 0 ? html`<span class="wa-phone-home" style=${`width:${px(134)};height:${px(5)};bottom:${px(8)}`}></span>` : nothing}
       </div>
@@ -440,38 +437,39 @@ export const phoneFrameStyles = css`
   .wa-phone-area .wp-screen { font-family: "SF Pro Text", "SF Pro", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
   .wa-phone-dots { position: absolute; left: 0; right: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 4; }
   .wa-phone-dots-bar { display: flex; align-items: center; justify-content: center; }
-  .wa-phone-tabs {
+  /* The top row: two round glass buttons at its ends, dark glass on the
+     Watch look's dark screen, and the page's name centred between them. */
+  .wa-phone-top { position: relative; display: flex; align-items: center; box-sizing: border-box; }
+  .wa-phone-glass {
     display: flex;
     align-items: center;
+    justify-content: center;
     box-sizing: border-box;
-    background: #1e1e20;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-bottom-color: rgba(255, 255, 255, 0.16);
-    box-shadow: 0 5px 12px rgba(0, 0, 0, 0.35);
+    border-radius: 50%;
+    background: rgba(44, 46, 51, 0.52);
+    box-shadow: inset 0 0 0 1px rgba(242, 246, 252, 0.08), 0 4px 12px rgba(0, 0, 0, 0.18);
   }
-  .wa-phone-tab { flex: 1; display: flex; flex-direction: column; align-items: center; font-weight: 600; line-height: 1; }
-  .wa-phone-tab svg { display: block; }
-  .wa-phone-tab-dot { box-sizing: border-box; border: 2px solid; border-radius: 5px; }
-  .wa-phone-foot { position: relative; }
-  .wa-phone-home { position: absolute; left: 50%; transform: translateX(-50%); border-radius: 999px; background: rgba(255, 255, 255, 0.7); }
-  /* The iPhone look: the screen on the system's grouped background in the
-     label ink, light or dark with the panel's skin, the large title, and the
-     tab bar, battery and home bar in the same ink. */
-  .wa-phone.ios .wa-phone-screen { background: ${unsafeCSS(PHONE_GROUPED_BACKGROUND)}; color: ${unsafeCSS(PHONE_LABEL_INK)}; }
+  .wa-phone-glass svg { display: block; opacity: 0.92; }
+  .wa-phone-gear { margin-left: auto; }
   .wa-phone-title {
-    display: flex; align-items: center; box-sizing: border-box; overflow: hidden;
-    font-family: "SF Pro Display", "SF Pro", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-weight: 700; line-height: 1.2; letter-spacing: 0.01em;
+    position: absolute; top: 0; bottom: 0;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+    font-weight: 600; line-height: 1.2; letter-spacing: -0.01em;
   }
   .wa-phone-title > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .wa-phone-foot { position: relative; }
+  .wa-phone-home { position: absolute; left: 50%; transform: translateX(-50%); border-radius: 999px; background: rgba(255, 255, 255, 0.7); }
+  /* The iPhone look: the screen on the app's graphite ground in its ink,
+     light or dark with the panel's skin, and the top row's glass, battery
+     and home bar in the same skin. */
+  .wa-phone.ios .wa-phone-screen { background: ${unsafeCSS(PHONE_GROUPED_BACKGROUND)}; color: ${unsafeCSS(PHONE_LABEL_INK)}; }
+  .wa-phone.ios .wa-phone-glass {
+    background: var(--wa-phone-glass, rgba(255, 255, 255, 0.74));
+    box-shadow: inset 0 0 0 1px var(--wa-phone-glass-rim, rgba(20, 22, 26, 0.07)), 0 3px 10px rgba(0, 0, 0, 0.08);
+  }
   .wa-phone.ios .wa-phone-battery { border-color: color-mix(in srgb, currentColor 45%, transparent); }
   .wa-phone.ios .wa-phone-battery i { background: currentColor; }
   .wa-phone.ios .wa-phone-home { background: currentColor; opacity: 0.7; }
-  .wa-phone.ios .wa-phone-tabs {
-    background: var(--wa-phone-bar, rgba(255, 255, 255, 0.92));
-    border-color: var(--wa-phone-bar-line, rgba(0, 0, 0, 0.12));
-    box-shadow: 0 5px 12px rgba(0, 0, 0, 0.12);
-  }
   .wa-phone.ios .wp-fold { border-top-color: color-mix(in srgb, ${unsafeCSS(PHONE_LABEL_INK)} 45%, transparent); }
   .wa-phone-pc { flex: none; border-radius: 50%; }
 `;

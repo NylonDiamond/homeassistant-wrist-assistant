@@ -28,10 +28,10 @@ import {
   watchAddableDomain,
   watchMediaPlayersFromHass,
 } from "./tile-new.js";
-import { VIRTUAL_TILE_KINDS } from "./model.js";
+import { VIRTUAL_TILE_KINDS, tileKindPlural } from "./model.js";
 
 /** One row: the panel's search row, plus the plain name of the entity's kind
- * as the phone's add names it ("Lights", "Media Players"). */
+ * in plural, the panel's own (`tileKindPlural`: "Lights", "People"). */
 export interface WatchAddCandidate extends EntityChoice {
   kind: string;
 }
@@ -98,7 +98,7 @@ export function watchAddPool(input: WatchAddPoolInput): WatchAddPool {
       continue;
     }
     if (hidden?.has(id) === true && !onPage.has(id) && !keep.has(id)) continue;
-    kindOf.set(id, addable.name);
+    kindOf.set(id, tileKindPlural(addable.domain));
     if (onPage.has(id) && !keep.has(id)) already[id] = state;
     else listed[id] = state;
   }

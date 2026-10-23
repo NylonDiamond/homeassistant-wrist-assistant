@@ -1370,7 +1370,7 @@ export class WaMenuEditor extends LitElement {
     return (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
   }
 
-  /** On an iPhone, where its Pages tab lays itself out: the menus open over
+  /** On an iPhone, where its pages screen lays itself out: the menus open over
    * its pages area (`phone-frame.ts`). Undefined on a watch. */
   private phoneLayout(): PhonePagesLayout | undefined {
     if (this.device !== "iphone") return undefined;
