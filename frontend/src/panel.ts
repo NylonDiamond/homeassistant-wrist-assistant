@@ -3307,8 +3307,11 @@ export class WristAssistantPanel extends LitElement {
     .pk-dup-open svg { width: 10px; height: 10px; }
     /* The glyph stands in for the word only where cards are small. */
     .pk-dup-ic { display: none; }
+    /* As wide as the picture, and never thinner than its rows need: on a
+       small card it runs past the card, and fitPickerDupMenu keeps it inside
+       the list. */
     .pk-dup-menu {
-      position: absolute; top: 4px; left: 0; right: 0; z-index: 5;
+      position: absolute; top: 4px; left: 0; right: 0; z-index: 5; min-width: 220px;
       display: flex; flex-direction: column; gap: 4px; padding: 8px;
       border: 1px solid var(--wa-line-strong); border-radius: 10px;
       background: var(--wa-card); box-shadow: var(--wa-shadow-pop);
