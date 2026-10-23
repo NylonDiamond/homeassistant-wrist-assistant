@@ -144,19 +144,20 @@ describe("homePageThumbs", () => {
 describe("deviceCardTiles", () => {
   const labels = (kind: "watch" | "iphone") => deviceCardTiles(kind).map((t) => t.label);
 
-  it("gives a watch a tile for each counted page, complications and pages first, and an iPhone its widgets and controls", () => {
-    expect(labels("watch")).toEqual(["Complications", "Pages", "Status pages", "Control Center"]);
-    expect(labels("iphone")).toEqual(["Widgets", "Control Center"]);
+  it("gives a watch a tile for each counted page, complications and pages first, and an iPhone its widgets, Control Center never", () => {
+    expect(labels("watch")).toEqual(["Complications", "Pages", "Status pages"]);
+    expect(labels("iphone")).toEqual(["Widgets"]);
   });
 
   it("puts an iPhone's pages after its widgets on a home with phone pages", () => {
-    expect(deviceCardTiles("iphone", true).map((t) => t.label)).toEqual(["Widgets", "Pages", "Status pages", "Control Center"]);
-    expect(deviceCardTiles("iphone", true).map((t) => countWord(t.label, 2))).toEqual(["widgets", "pages", "status", "controls"]);
+    expect(deviceCardTiles("iphone", true).map((t) => t.label)).toEqual(["Widgets", "Pages", "Status pages"]);
+    expect(deviceCardTiles("iphone", true).map((t) => countWord(t.label, 2))).toEqual(["widgets", "pages", "status"]);
   });
 
   it("cuts a two word page name to one under the number", () => {
-    expect(labels("watch").map(tileWord)).toEqual(["Complications", "Pages", "Status", "Controls"]);
-    expect(labels("iphone").map(tileWord)).toEqual(["Widgets", "Controls"]);
+    expect(labels("watch").map(tileWord)).toEqual(["Complications", "Pages", "Status"]);
+    expect(labels("iphone").map(tileWord)).toEqual(["Widgets"]);
+    expect(tileWord("Control Center")).toBe("Controls");
   });
 });
 
@@ -324,6 +325,9 @@ describe("homeRowSub", () => {
     expect(homeRowSub("watch", 1, "Online now")).toBe("1 complication · Online now");
     expect(homeRowSub("iphone", 1, undefined)).toBe("1 widget");
     expect(homeRowSub("iphone", 0, "Never connected")).toBe("0 widgets · Never connected");
+    // Pages lead when the device has them (plan step 6).
+    expect(homeRowSub("watch", 3, "Seen 1 h ago", 4)).toBe("4 pages, 3 complications · 1 h ago");
+    expect(homeRowSub("iphone", 1, undefined, 1)).toBe("1 page, 1 widget");
   });
 });
 

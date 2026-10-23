@@ -143,7 +143,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type DeviceSync, type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, homePill, homeSync, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDoorLook, homeGroups, homePageThumbs, HOME_PAGE_THUMB_WIDTH, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_LIBRARY_LEAD, HOME_LIBRARY_TITLE, HOME_RING_LENGTH, HOME_SHARED_SUB, HOME_SYNC_NOTE, homeLibraryScreens, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDoorLook, homeGroups, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_LIBRARY_LEAD, HOME_LIBRARY_TITLE, HOME_RING_LENGTH, HOME_SHARED_SUB, HOME_SYNC_NOTE, homeLibraryScreens, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
 import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
 import { APP_STORE_URL, type GettingStarted, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
 import { type QrPicture, qrPicture } from "./qr-code.js";
@@ -233,6 +233,8 @@ import { type TickChip, libraryTicksStyles, renderTickChips } from "./library/ti
 import { type BoardCell, type BoardColumn, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen,
   SAVED_FLASH_MS, WideWatch, boardStyles, renderBoard, renderViewSwitch } from "./library/board.js";
 import type { LinkDevice } from "./watch-pages/devices.js";
+import { LINEUP_OWN_TAG, type LineupGroup, type LineupLine, homeAllStyles, homeLineupStyles, renderLineupGroup } from "./home-lineup-look.js";
+import { renderHomeLineup } from "./home-lineup-hook.js";
 import { COMP_WHERE_HINTS, COMP_WHERE_ORDER, COMP_WHERE_TITLES, type CompListView, type CompWhere, compCell, compLeftOutText, compNoun,
   compBoardStyles, compRowOrder, compWhere, readCompView, saveCompView } from "./complication-board.js";
 import { statesSummary } from "./states.js";
@@ -439,8 +441,7 @@ import {
   formSegStyles,
   rangeFill,
 } from "./form-styles.js";
-import { renderWatchPagePreview, watchPagePreviewStyles } from "./watch-pages/preview.js";
-import { type WatchPage, asWatchPagesDocument, watchPageName, watchPagesOf } from "./watch-pages/model.js";
+import { watchPagePreviewStyles } from "./watch-pages/preview.js";
 import { watchFrameStyles } from "./watch-frame.js";
 import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles } from "./watch-pages/hook.js";
 import { ALL_PAGES_PATH, ALL_STATUS_PAGES_PATH, type ListOwnScreen, allPagesHookStyles, listFocusOf, listFocusPath, renderAllPagesView } from "./watch-pages/all-pages-hook.js";
@@ -669,6 +670,24 @@ type PickerItem =
 /** One row of the header picker: one complication, on however many devices. */
 type PickerRow = PickerListRow<PickerItem>;
 
+/** A row of a small table on Home's "All devices" (`renderHomeAllTable`). */
+interface HomeAllRow {
+  key: string;
+  name: string;
+  detail: string;
+  icon: UiIconName;
+  hue: string;
+  openTitle?: string;
+  onOpen?: () => void;
+  cell: (device: LinkDevice) => TemplateResult;
+}
+
+/** The board's row order: by section, then shape, then name. */
+function compItemOrder(a: CompBoardItem, b: CompBoardItem): number {
+  return COMP_WHERE_ORDER.indexOf(a.where) - COMP_WHERE_ORDER.indexOf(b.where)
+    || compRowOrder({ family: a.family, name: a.row.name }, { family: b.family, name: b.row.name });
+}
+
 /** One row of the Complications board (`renderCompBoard`): the design, its
  * shape, the kind of device it stands on, its section, and its place list.
  * A locked copy (an iPhone app preset, another home's) has no places. */
@@ -681,13 +700,6 @@ interface CompBoardItem {
   places: DevicePlace[];
   locked?: { badge: string; title: string };
 }
-
-/** How many complications a device's Complications door on Home draws, and
- * how tall each, in CSS pixels. A tile that does not fit the door's width
- * wraps to a second line, which the strip's one-tile height hides, so no
- * tile is ever cut in half. */
-const HOME_COMP_THUMBS = 8;
-const HOME_COMP_THUMB_HEIGHT = 34;
 
 /** The shapes a watch face draws: a shelved design with none of them is a
  * phone design, left off the Watch app's Complications screen. */
@@ -1569,6 +1581,10 @@ export class WristAssistantPanel extends LitElement {
   /** The device picked on Home, by owner id. Undefined, or a device that has
    * left, shows the one heard from last (`homePickOf`). */
   @state() private homePick?: string;
+  /** Home shows "All devices" (plan step 6) rather than one device. */
+  @state() private homeAll = false;
+  /** Home's "Find a thing", on All devices. */
+  @state() private homeQuery = "";
   /** The device Home's detail showed when last drawn, so a new pick slides
    * in (`animateHomePick`). */
   private homeShown?: string;
@@ -1589,16 +1605,6 @@ export class WristAssistantPanel extends LitElement {
   @state() private deviceRenameBusy = false;
   @state() private deviceRenameError?: string;
   @state() private deviceCounts?: { owner: string; counts: Partial<Record<DeviceCountKind, number>> };
-  /** Each watch's pages as Home Assistant holds them, read when the watch is
-   * shown on Home, for the pictures on its Pages door. */
-  @state() private homePages: ReadonlyMap<string, readonly WatchPage[]> = new Map();
-  /** Each watch's pages and menus records as stored, for the pictures of its
-   * three menus on the Menus door (`wa-menu-thumbs`). */
-  @state() private homeMenus: ReadonlyMap<string, { pages: unknown; menus: unknown }> = new Map();
-  /** Whether the menu pictures' element has loaded (`loadMenuThumbs`). */
-  @state() private menuThumbsReady = false;
-  private menuThumbsAsked = false;
-  private homePagesAsked = new Set<string>();
 
   /** The Watch app's shared watch as last picked, remembered per browser
    * (`watch-pick.ts`). Never the complications device: `sharedWatch` works
@@ -6088,7 +6094,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, watchComplicationsStyles, helpSheetStyles, boardStyles, compBoardStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, watchComplicationsStyles, helpSheetStyles, boardStyles, compBoardStyles, homeLineupStyles, homeAllStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -14460,32 +14466,23 @@ export class WristAssistantPanel extends LitElement {
    * since that device cannot show them.
    */
   private renderCompBoard(focus: string | undefined) {
-    const people = this.people();
     const devices = this.compBoardDevices();
     const query = this.pickerQuery.trim().toLocaleLowerCase();
-    const rows = this.pickerRows();
-    const items = rows.filter((row) => this.pickerMatches(row, query, people)).map((row) => this.compBoardItem(row));
-    const columns: BoardColumn[] = devices.map((device) => ({
-      device, color: this.deviceColorOf(device.ownerId), count: rows.filter((r) => r.copies.some((c) => c.ownerId === device.ownerId)).length,
-    }));
+    const items = this.compBoardItems(query);
+    const columns = this.compBoardColumns(devices);
     const search = html`<div class="cb-tools"><label class="pk-search">
         ${uiIcon("search")}
         <input type="search" class="pk-search-input" .value=${this.pickerQuery} placeholder="Search by name or person" aria-label="Search complications"
           @input=${(e: Event) => { this.pickerQuery = (e.target as HTMLInputElement).value; }} />
       </label></div>`;
     if (devices.length === 0) return html`${search}<p class="cb-empty">No watch or iPhone has connected yet. Pair one on Home to put complications on it.</p>`;
-    const byOrder = (a: CompBoardItem, b: CompBoardItem) =>
-      COMP_WHERE_ORDER.indexOf(a.where) - COMP_WHERE_ORDER.indexOf(b.where) || compRowOrder({ family: a.family, name: a.row.name }, { family: b.family, name: b.row.name });
+    const byOrder = compItemOrder;
     const emptyText = query !== "" ? `Nothing matches "${this.pickerQuery.trim()}".` : "No complications yet.";
     const device = focus === undefined ? undefined : devices.find((d) => d.ownerId === focus);
     let sections: BoardSection[];
     let foot: TemplateResult | typeof nothing = nothing;
     if (device === undefined) {
-      sections = COMP_WHERE_ORDER.map((where): BoardSection => {
-        const mine = items.filter((it) => it.where === where).sort(byOrder);
-        return { key: where, title: COMP_WHERE_TITLES[where], count: mine.length, hint: COMP_WHERE_HINTS[where], rows: mine.map((it) => this.compBoardRow(it, devices)) };
-      }).filter((s) => s.rows.length > 0);
-      if (sections.length === 0) sections = [{ key: "none", rows: [], empty: emptyText }];
+      sections = this.compAllSections(items, devices, emptyText);
     } else {
       const here = (it: CompBoardItem) => it.row.copies.some((c) => c.ownerId === device.ownerId);
       // Could go on it: its box there is a tick, not a dash (a Home Screen
@@ -14525,6 +14522,48 @@ export class WristAssistantPanel extends LitElement {
         sections,
       })}
       ${foot}`;
+  }
+
+  /** The board's rows: every design, those a search leaves. */
+  private compBoardItems(query: string): CompBoardItem[] {
+    const people = this.people();
+    return this.pickerRows().filter((row) => this.pickerMatches(row, query, people)).map((row) => this.compBoardItem(row));
+  }
+
+  /** The board's columns, each with how many designs that device has. */
+  private compBoardColumns(devices: readonly LinkDevice[]): BoardColumn[] {
+    const rows = this.pickerRows();
+    return devices.map((device) => ({
+      device, color: this.deviceColorOf(device.ownerId), count: rows.filter((r) => r.copies.some((c) => c.ownerId === device.ownerId)).length,
+    }));
+  }
+
+  /** The board on every device: a section per place a shape sits. */
+  private compAllSections(items: readonly CompBoardItem[], devices: readonly LinkDevice[], emptyText: string): BoardSection[] {
+    const sections = COMP_WHERE_ORDER.map((where): BoardSection => {
+      const mine = items.filter((it) => it.where === where).sort(compItemOrder);
+      return { key: where, title: COMP_WHERE_TITLES[where], count: mine.length, hint: COMP_WHERE_HINTS[where], rows: mine.map((it) => this.compBoardRow(it, devices)) };
+    }).filter((s) => s.rows.length > 0);
+    return sections.length === 0 ? [{ key: "none", rows: [], empty: emptyText }] : sections;
+  }
+
+  /** The Complications board on every device, for Home's "All devices"
+   * (plan step 6), under Home's own search. A column head opens the
+   * Complications tab's board focused on that device. */
+  private renderCompBoardAll(query: string) {
+    const devices = this.compBoardDevices();
+    if (devices.length === 0) return html`<p class="cb-empty">No watch or iPhone has connected yet.</p>`;
+    const q = query.trim().toLocaleLowerCase();
+    return renderBoard({
+      label: "Complications on each device",
+      thing: "Complication",
+      columns: this.compBoardColumns(devices),
+      onFocus: (ownerId) => this.goTo(listFocusPath(COMPLICATIONS_PATH, ownerId)),
+      wide: this.compRoomy.wide,
+      focusWord: "Focus",
+      focusTitle: (d) => `Show ${d.name}'s ${compNoun(d.kind, 2)} first, on the Complications tab`,
+      sections: this.compAllSections(this.compBoardItems(q), devices, q !== "" ? `Nothing matches "${query.trim()}".` : "No complications yet."),
+    });
   }
 
   /** A focused device's head: who it is, how many it has, its own screens,
@@ -19776,12 +19815,13 @@ export class WristAssistantPanel extends LitElement {
           ${this.renderHomeStatus(devices, elapsed)}
           <button type="button" class="home-btn add hb-pair" title="Pair a watch or iPhone, by a code or a QR code"
             @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair a device</span></button>
-          ${groups.map((g) => this.renderHomeGroup(g, row.id, elapsed))}
+          ${this.renderHomeAllRow(devices.length)}
+          ${groups.map((g) => this.renderHomeGroup(g, this.homeAll ? "" : row.id, elapsed))}
           ${this.renderHomeShared()}
           <p class="home-small">${HOME_SYNC_NOTE}</p>
         </aside>
-        <section class="hb-main" aria-label=${row.name}>
-          ${this.renderHomeDetail(row, devices, groups, elapsed)}
+        <section class="hb-main" aria-label=${this.homeAll ? "All devices" : row.name}>
+          ${this.homeAll ? this.renderHomeAll() : this.renderHomeDetail(row, devices, groups, elapsed)}
         </section>
       </div>
       ${pair}`;
@@ -19980,6 +20020,223 @@ export class WristAssistantPanel extends LitElement {
     </section>`;
   }
 
+  /** "All devices", at the top of Home's side bar (plan step 6): every
+   * thing in the home and the devices it is on, as one table. */
+  private renderHomeAllRow(n: number) {
+    const on = this.homeAll;
+    return html`<button type="button" class="hb-row hb-all ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+      style="--h:var(--wa-hue-grey)" title="Every thing in your home, and the devices it is on" @click=${() => { this.homeAll = true; }}>
+      <span class="hb-icon hb-link-ic" aria-hidden="true">${uiIcon("grid")}</span>
+      <span class="hb-row-t"><span class="hb-row-name">All devices</span><span class="hb-row-sub">${n} ${n === 1 ? "device" : "devices"}, every thing on each</span></span>
+    </button>`;
+  }
+
+  /** How many pages a device's row leads with, as the summary counts them,
+   * or undefined when nothing has said or the device has no pages. */
+  private homePageCount(d: HomeDeviceRow): number | undefined {
+    if (d.kind === "iphone" && !this.phonePages) return undefined;
+    return this.watchCounts.get(d.id)?.pages ?? (this.deviceCounts?.owner === d.id ? this.deviceCounts.counts.pages : undefined);
+  }
+
+  /**
+   * Home with "All devices" picked (plan step 6): the boards as one table,
+   * under one search. Pages, status pages and menus are their tabs' own
+   * boards, drawn without their heads (`embedded`); then the
+   * complications; then what is on every device, with a lock in each box;
+   * then each device's own screens, with Open. A tick saves at once, as on
+   * the tabs; a column head opens that tab's board focused on the device.
+   */
+  private renderHomeAll() {
+    const q = this.homeQuery;
+    const common = {
+      hass: this.hass, owners: this.owners, ownersReady: this.linkReady || this.owners.length > 0, phones: this.phonePages,
+      icons: this.icons, iconsTick: this.iconsTick, embedded: true, searchText: q,
+      onOpenScreen: (ownerId: string, kind: "watch" | "iphone", screen: ListOwnScreen) => this.openOwnScreen(ownerId, kind, screen),
+      onLoaded: () => this.requestUpdate(),
+    };
+    const part = (title: string, body: unknown, tab?: string) => html`<section class="ha-part" aria-label=${title}>
+      <div class="ha-part-head"><h3>${title}</h3>
+        ${tab === undefined ? nothing : html`<button type="button" class="hl-change" title=${`Open the ${title} tab`} @click=${() => this.goTo(tab)}>Open tab${uiIcon("right")}</button>`}</div>
+      ${body}
+    </section>`;
+    return html`<div class="ha">
+      <div class="ha-head">
+        <div class="ha-head-t"><h2>All devices</h2><p>Every thing in your home, and the devices it is on. A tick saves at once. Click a device's name to change its order.</p></div>
+        <label class="pk-search ha-search">
+          ${uiIcon("search")}
+          <input type="search" class="pk-search-input" .value=${q} placeholder="Find a thing" aria-label="Find a thing"
+            @input=${(e: Event) => { this.homeQuery = (e.target as HTMLInputElement).value; }} />
+        </label>
+      </div>
+      ${part("Pages", renderAllPagesView({ ...common, kind: "pages",
+        onOpenLibrary: (kind, id, from) => this.goTo(libraryItemPath(kind, id, from)),
+        onFocus: (ownerId) => this.goTo(listFocusPath(ALL_PAGES_PATH, ownerId)) }), ALL_PAGES_PATH)}
+      ${part("Status pages", renderAllPagesView({ ...common, kind: "status_pages",
+        onOpenLibrary: (kind, id, from) => this.goTo(libraryItemPath(kind, id, from)),
+        onFocus: (ownerId) => this.goTo(listFocusPath(ALL_STATUS_PAGES_PATH, ownerId)) }), ALL_STATUS_PAGES_PATH)}
+      ${part("Menus", renderAllMenusView({ ...common,
+        onOpenLibrary: (id, from) => this.goTo(libraryItemPath("menus", id, from)),
+        onFocus: (ownerId) => this.goTo(listFocusPath(ALL_MENUS_PATH, ownerId)) }), ALL_MENUS_PATH)}
+      ${part("Complications and widgets", html`<div class="bd-fixed">${this.renderCompBoardAll(q)}</div>`, COMPLICATIONS_PATH)}
+      ${part(HOME_LIBRARY_TITLE, this.renderHomeAllShared(q))}
+      ${part("Each device's own", this.renderHomeAllOwn(q))}
+    </div>`;
+  }
+
+  /** A small table in the board's look, for Home's "All devices" parts
+   * that have nothing to tick: a row per screen, a box per device. */
+  private renderHomeAllTable(label: string, thing: string, rows: readonly HomeAllRow[], empty: string) {
+    const devices = this.compBoardDevices();
+    const span = devices.length + 1;
+    return html`<div class="bd-scroll bd-fixed"><table class="bd" aria-label=${label}>
+      <thead><tr>
+        <th scope="col" class="bd-thing">${thing}</th>
+        ${devices.map((d) => {
+          const color = this.deviceColorOf(d.ownerId);
+          return html`<th scope="col" class="bd-col" style=${color === undefined ? nothing : `--dc:${color}`}><span class="ha-col">
+            <span class="bd-col-glyph" aria-hidden="true">${uiIcon(d.kind === "iphone" ? "phone" : "watch")}</span><span class="bd-col-name">${d.name}</span></span></th>`;
+        })}
+      </tr></thead>
+      <tbody>${rows.length === 0 ? html`<tr class="bd-none"><td colspan=${span}>${empty}</td></tr>` : rows.map((r) => html`<tr class="bd-row">
+        <th scope="row" class="bd-thing"><span class="bd-thing-in">
+          <button type="button" class="bd-open" title=${r.openTitle ?? r.name} ?disabled=${r.onOpen === undefined} @click=${() => r.onOpen?.()}>
+            <span class="ha-ic" style=${`--h:${r.hue}`} aria-hidden="true">${uiIcon(r.icon)}</span>
+            <span class="bd-nm"><span class="bd-n">${r.name}</span><span class="bd-m">${r.detail}</span></span>
+          </button></span></th>
+        ${devices.map((d) => {
+          const color = this.deviceColorOf(d.ownerId);
+          return html`<td class="bd-cell" style=${color === undefined ? nothing : `--dc:${color}`}>${r.cell(d)}</td>`;
+        })}
+      </tr>`)}</tbody>
+    </table></div>`;
+  }
+
+  /** "On every device": HTTP actions and Cameras, kept once for the whole
+   * home, with a lock in every box: nothing to pick. */
+  private renderHomeAllShared(query: string) {
+    const q = query.trim().toLocaleLowerCase();
+    const rows = homeLibraryScreens()
+      .filter((screen) => q === "" || screen.label.toLocaleLowerCase().includes(q))
+      .map((screen): HomeAllRow => {
+        const look = WATCH_SCREEN_LOOK[screen.id];
+        return {
+          key: screen.id, name: screen.label, detail: HOME_SHARED_SUB[screen.id] ?? "", icon: look.icon, hue: look.hue,
+          openTitle: `Open ${screen.label}`, onOpen: () => this.goTo(watchScreenPath(screen)),
+          cell: (d) => html`<span class="ha-lock" role="img" aria-label=${`On ${d.name}, as on every device`} title="On every device. Nothing to pick.">${uiIcon("lock")}</span>`,
+        };
+      });
+    return this.renderHomeAllTable("On every device", "Thing", rows, `Nothing on every device matches "${query.trim()}".`);
+  }
+
+  /** "Each device's own": Settings, Rooms and Voice, kept by each device
+   * for itself, with Open per device; "watch only" where an iPhone has
+   * none. */
+  private renderHomeAllOwn(query: string) {
+    const q = query.trim().toLocaleLowerCase();
+    const ids: readonly WatchScreen["id"][] = [WATCH_SETTINGS_SCREEN.id, "rooms", "voice"];
+    const screenFor = (d: LinkDevice, id: WatchScreen["id"]): WatchScreen | undefined =>
+      deviceSheetTabs(d.kind, this.phonePages).flatMap((t) => (t.kind === "screen" && t.screen.id === id ? [t.screen] : []))[0];
+    const rows = ids.flatMap((id): HomeAllRow[] => {
+      const screen = id === WATCH_SETTINGS_SCREEN.id ? WATCH_SETTINGS_SCREEN : WATCH_SCREENS.find((sc) => sc.id === id);
+      if (screen === undefined || (q !== "" && !screen.label.toLocaleLowerCase().includes(q))) return [];
+      const look = WATCH_SCREEN_LOOK[screen.id];
+      return [{
+        key: id, name: screen.label, detail: LINEUP_OWN_TAG, icon: look.icon, hue: look.hue,
+        cell: (d) => {
+          const here = screenFor(d, id);
+          if (here === undefined) {
+            const why = id === "voice" ? "watch only" : "in the app";
+            return html`<em class="bd-note" title=${id === "voice" ? "Voice is the watch's alone." : `${d.name} keeps this in the iPhone app.`}>${why}</em>`;
+          }
+          const path = deviceScreenPath(d.kind, here, d.ownerId);
+          return html`<a class="hl-edit" href=${panelUrl(this.route, path, globalThis.location?.pathname ?? "")} title=${`${screen.label} on ${d.name}`}
+            @click=${(e: MouseEvent) => { if (!isPlainClick(e)) return; e.preventDefault(); this.pickWatch(d.ownerId); this.goTo(path); }}>Open</a>`;
+        },
+      }];
+    });
+    return this.renderHomeAllTable("Each device's own", "Screen", rows, `No screen matches "${query.trim()}".`);
+  }
+
+  /** One device picked on Home (plan step 6): what is on it, in its order,
+   * a group per kind, then its own screens. Pages, status pages and menus
+   * come from the library (`wa-home-lineup`); the complications and the
+   * own screens are drawn here. Edit opens a thing in its tab's one editor;
+   * Change opens that tab's board focused on this device. */
+  private renderHomeLineup(row: HomeDeviceRow) {
+    const ownerId = row.id;
+    const word = row.kind === "watch" ? "watch" : "iPhone";
+    const listOf = (kind: "pages" | "status_pages" | "menus") => kind === "menus" ? ALL_MENUS_PATH : kind === "status_pages" ? ALL_STATUS_PAGES_PATH : ALL_PAGES_PATH;
+    const library = row.kind === "watch" || this.phonePages ? renderHomeLineup({
+      hass: this.hass, ownerId, kind: row.kind, phones: this.phonePages, icons: this.icons, iconsTick: this.iconsTick,
+      onEdit: (kind, id) => this.goTo(libraryItemPath(kind, id, ownerId)),
+      onChange: (kind) => this.goTo(listFocusPath(listOf(kind), ownerId)),
+      onLoaded: () => this.requestUpdate(),
+    }) : nothing;
+    const own = this.homeOwnGroup(row);
+    return html`<h3 class="home-title">On this ${word}</h3>
+      <div class="hl-groups hb-lineup">
+        ${library}
+        ${renderLineupGroup(this.homeCompGroup(row))}
+        ${own.lines.length === 0 ? nothing : renderLineupGroup(own)}
+      </div>`;
+  }
+
+  /** A device's complications (a watch) or widgets (an iPhone), in its own
+   * order, each with Edit; Change opens the Complications board focused on
+   * it. */
+  private homeCompGroup(row: HomeDeviceRow): LineupGroup {
+    const ownerId = row.id;
+    const word = row.kind === "watch" ? "watch" : "iPhone";
+    const on = rowsOnDevice(this.pickerRows(), ownerId)
+      .map((r) => ({ row: r, copy: r.copies.find((c) => c.ownerId === ownerId)! }))
+      .sort((a, b) => a.copy.slot - b.copy.slot);
+    const lines = on.map(({ row: r, copy }): LineupLine => {
+      const it = this.compBoardItem(r);
+      const shape = cardShapeTitle(it.family, it.control);
+      const record = copy.item.kind === "record" ? copy.item.record : undefined;
+      return {
+        key: r.key,
+        name: r.name,
+        detail: it.locked !== undefined ? `${shape} · ${it.locked.badge}` : shape,
+        picture: this.compBoardPicture(it, copy),
+        ...(record !== undefined && this.rowHidden(record) ? { hidden: true } : {}),
+        ...(record === undefined ? {} : { action: { label: "Edit", title: `Edit ${r.name}`, onClick: () => void this.openFromHome(r, copy) } }),
+      };
+    });
+    return {
+      key: "complications", title: row.kind === "watch" ? "Complications" : "Widgets", icon: row.kind === "watch" ? "gauge" : "grid",
+      hue: "var(--wa-hue-blue)", lines, empty: `No ${row.kind === "watch" ? "complications" : "widgets"} on this ${word} yet.`,
+      change: { title: `Put complications on this ${word} or take them off`, onClick: () => void this.openDeviceList(ownerId, "all") },
+    };
+  }
+
+  /** A device's own screens: Settings, Rooms and Voice (a watch's alone),
+   * each "Not shared", with Open. */
+  private homeOwnGroup(row: HomeDeviceRow): LineupGroup {
+    const word = row.kind === "watch" ? "watch" : "iPhone";
+    const own = new Set<string>([WATCH_SETTINGS_SCREEN.id, "rooms", "voice"]);
+    const screens = deviceSheetTabs(row.kind, this.phonePages).flatMap((t) => (t.kind === "screen" && own.has(t.screen.id) ? [t] : []));
+    const lines = screens.map((t): LineupLine => {
+      const screen = (t as Extract<DeviceSheetTab, { kind: "screen" }>).screen;
+      const path = deviceScreenPath(row.kind, screen, row.id);
+      return {
+        key: screen.id, name: t.label, detail: homeDoorLook(t, row.kind).blurb, tag: LINEUP_OWN_TAG,
+        action: {
+          label: "Open", title: `${t.label} on ${row.name}`, href: panelUrl(this.route, path, globalThis.location?.pathname ?? ""),
+          onClick: () => { this.pickWatch(row.id); this.goTo(path); },
+        },
+      };
+    });
+    return { key: "own", title: `This ${word}'s own`, icon: "sliders", hue: "var(--wa-hue-grey)", noCount: true, lines, empty: "" };
+  }
+
+  /** Edit on a complication's line: open it in the editor on the
+   * Complications tab. Nothing moves when the editor kept unsaved work. */
+  private async openFromHome(row: PickerRow, copy: PickerCopy<PickerItem>) {
+    await this.openFromPicker(row, copy);
+    if (this.ownerId === copy.ownerId && this.selectedId === copy.id) this.goTo(COMPLICATIONS_PATH);
+  }
+
   /** One device's row in Home's side bar, which picks it: its small drawing,
    * its name, what it holds and when it was heard from, and a dot in its
    * sync color. A device whose user was deleted says so, and picking it
@@ -19998,7 +20255,7 @@ export class WristAssistantPanel extends LitElement {
       style=${color === undefined ? nothing : `--c:${color}`}
       title=${`${d.name}: ${gone ? USER_GONE_TEXT : homeDeviceLabel(d)}`} @click=${() => this.openHomeDevice(d.id, gone)}>
       <span class="hb-icon ${color === undefined ? "" : "tinted"}" style=${color === undefined ? nothing : `--c:${color}`} aria-hidden="true">${homeMiniArt(d.kind, held > 0)}</span>
-      <span class="hb-row-t"><span class="hb-row-name">${d.name}</span><span class="hb-row-sub">${gone ? USER_GONE_TEXT : homeRowSub(d.kind, held, heard)}</span></span>
+      <span class="hb-row-t"><span class="hb-row-name">${d.name}</span><span class="hb-row-sub">${gone ? USER_GONE_TEXT : homeRowSub(d.kind, held, heard, this.homePageCount(d))}</span></span>
       <i class="hb-row-dot" aria-hidden="true"></i>
     </button>`;
   }
@@ -20059,31 +20316,6 @@ export class WristAssistantPanel extends LitElement {
     return { circles: round, ...(rect === undefined ? {} : { rect }), ...(widgets.length === 0 ? {} : { widgets }) };
   }
 
-  /** The pictures on a device's Complications door on Home: its saved
-   * complications in seat order, those with a current card picture, at most
-   * `HOME_COMP_THUMBS`. On an iPhone the Home Screen widgets lead, since they
-   * are what it mostly holds. */
-  private homeCompThumbs(ownerId: string, kind: "watch" | "iphone"): { picture: HomeFacePicture; round: boolean; name: string }[] {
-    const copies = this.pickerRows().flatMap((r) => r.copies).filter((c) => c.ownerId === ownerId).sort((a, b) => a.slot - b.slot);
-    const out: { picture: HomeFacePicture; round: boolean; name: string; rank: number }[] = [];
-    for (const c of copies) {
-      if (c.item.kind !== "record") continue;
-      const record = c.item.record;
-      const key = `${ownerId}|${record.id}`;
-      const preview = this.cardPreviews.get(key);
-      if (!preview || !this.previewIsCurrent(preview, record) || this.cardPictures.failing(key)) continue;
-      const url = this.cardPictures.urlFor(key, cardPreviewAddress(ownerId, record.id, record.revision));
-      if (url === undefined) continue;
-      const family = preview.family;
-      const round = family === "circular" || family === "corner";
-      const widget = family === "small" || family === "medium" || family === "large" || family === "xlarge";
-      const picture: HomeFacePicture = { url, width: preview.width, height: preview.height, ...(preview.focus ? { focus: preview.focus } : {}) };
-      out.push({ picture, round, name: c.name, rank: kind === "iphone" && widget ? 0 : 1 });
-    }
-    return out.sort((a, b) => a.rank - b.rank).slice(0, HOME_COMP_THUMBS)
-      .map(({ picture, round, name }) => ({ picture, round, name }));
-  }
-
   /** Open a device's complications: the Complications board focused on it
    * (plan step 5), for a watch's complications, an iPhone's widgets and
    * either's Control Center door. A design open in the editor closes
@@ -20124,38 +20356,8 @@ export class WristAssistantPanel extends LitElement {
     this.deviceRename = undefined;
     this.deviceRenameError = undefined;
     this.homePick = ownerId;
+    this.homeAll = false;
     void this.loadDeviceCounts(ownerId);
-    void this.loadHomePages(ownerId);
-  }
-
-  /** Read a watch's pages for the pictures on its Pages door. Read again
-   * each time the watch is picked, so the pictures follow its edits; a
-   * failed read leaves the door its line. */
-  private async loadHomePages(ownerId: string) {
-    if (deviceKindOf(this.ownerOf(ownerId)) !== "watch") return;
-    this.homePagesAsked.add(ownerId);
-    try {
-      const [record, menus] = await Promise.all([
-        fetchWatchConfig(this.hass, ownerId, "pages"),
-        fetchWatchConfig(this.hass, ownerId, "menus").catch(() => undefined),
-      ]);
-      this.homePages = new Map(this.homePages).set(ownerId, watchPagesOf(asWatchPagesDocument(record.document)));
-      this.homeMenus = new Map(this.homeMenus).set(ownerId, {
-        pages: record.document,
-        menus: menus !== undefined && menus.revision > 0 ? menus.document : undefined,
-      });
-    } catch {
-      // The doors keep their lines.
-    }
-  }
-
-  /** Load the element that draws a watch's three menus small, once. It is in
-   * the menu editor's chunk, so the panel's first download stays as it was;
-   * a failure leaves the Menus door its line. */
-  private loadMenuThumbs() {
-    if (this.menuThumbsAsked) return;
-    this.menuThumbsAsked = true;
-    void import("./watch-menus/menu-thumbs.js").then(() => { this.menuThumbsReady = true; }, () => undefined);
   }
 
   /** Read the counts a device's doors wear, from the stored records, for an
@@ -20284,84 +20486,6 @@ export class WristAssistantPanel extends LitElement {
     const art = row.kind === "watch"
       ? homeWatchArt(`pick-${row.id}`, held, row.sync, face)
       : homePhoneArt(`pick-${row.id}`, held, row.sync, face);
-    if (row.kind === "watch" && !gone && !this.homePagesAsked.has(ownerId)) void this.loadHomePages(ownerId);
-    const pageThumbs = row.kind === "watch" && !gone ? homePageThumbs(this.homePages.get(ownerId) ?? []) : undefined;
-    const screen = (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
-    // One screen of each of the watch's first pages, drawn as the page
-    // editor draws them, small enough that four sit across a door.
-    const pagesStrip = () => {
-      if (pageThumbs === undefined || pageThumbs.length === 0) return undefined;
-      const scale = HOME_PAGE_THUMB_WIDTH / screen.width;
-      const all = this.homePages.get(ownerId) ?? [];
-      return html`<span class="hb-door-pages" aria-hidden="true" style=${`--hb-screen-h:${Math.round(screen.height * scale * 100) / 100}px`}>
-        ${pageThumbs.map((page) => html`<span class="hb-page" title=${watchPageName(page)}>${renderWatchPagePreview({
-          page, pages: all, screen, states: this.hass.states, icons: this.icons, scale,
-        })}</span>`)}
-      </span>`;
-    };
-    // The Complications door (Widgets on an iPhone) draws the device's first
-    // complications, small, the way the Pages door draws its pages: each
-    // card picture on a black tile of one height, a round one cut to its
-    // disc, a wide one at its own proportions.
-    const compsStrip = () => {
-      const thumbs = this.homeCompThumbs(ownerId, row.kind);
-      if (thumbs.length === 0) return undefined;
-      const h = HOME_COMP_THUMB_HEIGHT;
-      return html`<span class="hb-door-comps" aria-hidden="true" style=${`--hb-comp-h:${h}px`}>
-        ${thumbs.map(({ picture: p, round, name }) => {
-          if (round) {
-            const d = p.focus?.diameter ?? Math.max(p.width, p.height);
-            const s = h / d;
-            const fx = p.focus?.cx ?? p.width / 2;
-            const fy = p.focus?.cy ?? p.height / 2;
-            return html`<span class="hb-comp round" title=${name} style=${`width:${h}px;background-image:url("${p.url}");`
-              + `background-size:${(p.width * s).toFixed(1)}px ${(p.height * s).toFixed(1)}px;`
-              + `background-position:${(h / 2 - fx * s).toFixed(1)}px ${(h / 2 - fy * s).toFixed(1)}px`}></span>`;
-          }
-          const w = Math.min(h * 2.6, Math.max(h, h * p.width / Math.max(1, p.height)));
-          return html`<span class="hb-comp" title=${name} style=${`width:${w.toFixed(1)}px;background-image:url("${p.url}")`}></span>`;
-        })}
-      </span>`;
-    };
-    // The Menus door draws the watch's three menus as the Menus screen
-    // does: the Anywhere menu, the Entity quick menu and the page switcher.
-    const menusStrip = () => {
-      const held = this.homeMenus.get(ownerId);
-      if (row.kind !== "watch" || gone || held === undefined) return undefined;
-      this.loadMenuThumbs();
-      if (!this.menuThumbsReady) return undefined;
-      const h = Math.round(screen.height * (HOME_PAGE_THUMB_WIDTH / screen.width) * 100) / 100;
-      return html`<span class="hb-door-pages" aria-hidden="true" style=${`--hb-screen-h:${h}px`}>
-        <wa-menu-thumbs .hass=${this.hass} .icons=${this.icons} .tick=${this.iconsTick} .menus=${held.menus} .pages=${held.pages}
-          .screen=${screen} .height=${h}></wa-menu-thumbs>
-      </span>`;
-    };
-    const door = (t: DeviceSheetTab) => {
-      const look = homeDoorLook(t, row.kind);
-      const n = t.kind === "list" || t.count !== undefined ? count(t) : undefined;
-      const strip = t.kind === "screen" && t.screen.id === "pages" ? pagesStrip()
-        : t.kind === "screen" && t.screen.id === "menus" ? menusStrip()
-        : t.kind === "list" && t.filter === "all" ? compsStrip() : undefined;
-      const body = html`<span class="hb-door-top">
-          <span class="hb-door-chip" aria-hidden="true">${uiIcon(look.icon)}</span>
-          <span class="hb-door-l">${t.label}</span>
-          ${n === undefined ? nothing : n === 0 ? html`<b class="hb-door-n none">None</b>` : html`<b class="hb-door-n">${n}</b>`}
-        </span>
-        <span class="hb-door-foot">${strip ?? html`<span class="hb-door-b">${look.blurb}</span>`}<span class="hb-door-go" aria-hidden="true">${uiIcon("right")}</span></span>`;
-      const screen = screenOf(t);
-      if (screen === undefined) {
-        return html`<button type="button" class="hb-door" style=${`--h:${look.hue}`} title=${`${t.label} on ${row.name}`}
-          @click=${() => { if (t.kind === "list") openList(t.filter); }}>${body}</button>`;
-      }
-      const path = deviceScreenPath(row.kind, screen, ownerId);
-      return html`<a class="hb-door" style=${`--h:${look.hue}`} href=${panelUrl(this.route, path, window.location.pathname)} title=${`${t.label} on ${row.name}`}
-        @click=${(e: MouseEvent) => {
-          if (!isPlainClick(e)) return;
-          e.preventDefault();
-          this.pickWatch(ownerId);
-          this.goTo(path);
-        }}>${body}</a>`;
-    };
     const designs = rowsOnDevice(this.pickerRows(), ownerId).filter((r) => r.copies.some((c) => c.ownerId === ownerId && c.item.kind === "record"));
     const kept = designs.length;
     const busy = this.deviceForgetBusy;
@@ -20398,8 +20522,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="hb-state-t"><b>${homeDeviceLabel(row)}</b><span>${syncSub}${pending === undefined ? "" : ` · ${pending}`}</span></span>
         ${heard === undefined ? nothing : html`<span class="hb-seen"><span>Last seen</span><b>${heard.replace(/^Seen /, "")}</b></span>`}
       </div>
-      <h3 class="home-title">Open on this ${row.kind === "watch" ? "watch" : "iPhone"}</h3>
-      <nav class="hb-doors" aria-label=${`Pages for ${row.name}`}>${deviceSheetTabs(row.kind, this.phonePages).map(door)}</nav>`;
+      ${this.renderHomeLineup(row)}`;
     return html`<div class="hb-detail" data-pick=${ownerId} style=${`--c:${color}`}>
       <div class="hb-bar">
         <span class="hb-crumb"><i aria-hidden="true"></i>${whose}${uiIcon("right")}<b>${row.name}</b></span>

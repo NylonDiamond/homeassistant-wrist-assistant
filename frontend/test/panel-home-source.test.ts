@@ -45,7 +45,9 @@ describe("Home's page", () => {
   it("is a device browser: the side bar of devices, and the picked device beside it", () => {
     expect(home).toContain(`<aside class="hb-side" aria-label="Devices">`);
     expect(home).toContain("const pick = homePickOf(devices, this.homePick, (id) => this.ownerOf(id));");
-    expect(home).toContain("${this.renderHomeDetail(row, devices, groups, elapsed)}");
+    expect(home).toContain("${this.homeAll ? this.renderHomeAll() : this.renderHomeDetail(row, devices, groups, elapsed)}");
+    // "All devices" leads the side bar (plan step 6).
+    expect(home.indexOf("${this.renderHomeAllRow(devices.length)}")).toBeLessThan(home.indexOf("${groups.map("));
     expect(home.indexOf("this.renderHomeStatus(")).toBeLessThan(home.indexOf("hb-pair"));
     expect(home.indexOf("hb-pair")).toBeLessThan(home.indexOf("groups.map((g) => this.renderHomeGroup("));
   });
@@ -124,7 +126,7 @@ describe("Home's device rows", () => {
   it("picks its device, saying what it holds and when it was heard from", () => {
     expect(row).toContain(`aria-pressed=\${on ? "true" : "false"}`);
     expect(row).toContain("@click=${() => this.openHomeDevice(d.id, gone)}");
-    expect(row).toContain("homeRowSub(d.kind, held, heard)");
+    expect(row).toContain("homeRowSub(d.kind, held, heard, this.homePageCount(d))");
     expect(row).toContain("homeMiniArt(d.kind, held > 0)");
   });
 
@@ -184,12 +186,20 @@ describe("Home's picked device", () => {
     expect(detail).toContain("const syncSub = rejected ? attentionText(row, undefined)");
   });
 
-  it("has a door for each of the device's pages, each opening it on this device", () => {
-    expect(detail).toContain("${deviceSheetTabs(row.kind, this.phonePages).map(door)}");
-    expect(detail).toContain("const look = homeDoorLook(t, row.kind);");
-    // An iPhone's pages open in the iPhone app, a watch's in the Watch app.
-    expect(detail).toContain("const path = deviceScreenPath(row.kind, screen, ownerId);");
-    expect(detail.indexOf("this.pickWatch(ownerId);")).toBeLessThan(detail.indexOf("this.goTo(path);"));
+  it("lists what is on the device in its order, each line with Edit and each group with Change (plan step 6)", () => {
+    expect(detail).toContain("${this.renderHomeLineup(row)}");
+    expect(detail).not.toContain("hb-doors");
+    const lineup = method("  private renderHomeLineup(row: HomeDeviceRow) {");
+    expect(lineup).toContain("onEdit: (kind, id) => this.goTo(libraryItemPath(kind, id, ownerId)),");
+    expect(lineup).toContain("onChange: (kind) => this.goTo(listFocusPath(listOf(kind), ownerId)),");
+    expect(lineup).toContain("${renderLineupGroup(this.homeCompGroup(row))}");
+    const comps = method("  private homeCompGroup(row: HomeDeviceRow): LineupGroup {");
+    expect(comps).toContain(`onClick: () => void this.openDeviceList(ownerId, "all")`);
+    // A device's own screens open on that device, in the iPhone app for an
+    // iPhone.
+    const own = method("  private homeOwnGroup(row: HomeDeviceRow): LineupGroup {");
+    expect(own).toContain("const path = deviceScreenPath(row.kind, screen, row.id);");
+    expect(own).toContain("onClick: () => { this.pickWatch(row.id); this.goTo(path); },");
     expect(detail).toContain("this.openDeviceList(ownerId, filter);");
     // The board focused on the device (plan step 5), after closing a design
     // open in the editor; Cards, if picked, opens on that device's tab.
@@ -366,10 +376,6 @@ describe("the doors to a device's complications", () => {
     const go = between(detail, "const go = (t: DeviceSheetTab) => {", "\n    };");
     expect(go).toContain("this.goTo(deviceScreenPath(row.kind, screen, ownerId));");
     expect(go).toContain(`if (t.kind === "list") openList(t.filter); return;`);
-    // The door under the device takes the same way as the count by it.
-    const door = between(detail, "const door = (t: DeviceSheetTab) => {", "\n    };");
-    expect(door).toContain("const screen = screenOf(t);");
-    expect(door).toContain("const path = deviceScreenPath(row.kind, screen, ownerId);");
   });
 
   it("opens the Complications tab on every complication, closing a design with nothing unsaved", () => {

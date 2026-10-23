@@ -179,10 +179,12 @@ export function deviceSheetTabs(kind: "watch" | "iphone", phones = false): Devic
 /** The count tiles on a device's card on Home, each a door to that page on
  * this device: the sheet's tabs that carry a count. A watch has its
  * complications, then its pages and status pages; an iPhone has its
- * widgets, then on a home with phone pages its pages and status pages, then
- * its Control Center controls. Settings, which counts nothing, is the card's own door. */
+ * widgets, then on a home with phone pages its pages and status pages.
+ * Control Center has no count on Home (plan step 6): its controls are
+ * complications, on the same board. */
 export function deviceCardTiles(kind: "watch" | "iphone", phones = false): DeviceSheetTab[] {
-  const tiles = deviceSheetTabs(kind, phones).filter((t) => t.kind === "list" || t.count !== undefined);
+  const tiles = deviceSheetTabs(kind, phones)
+    .filter((t) => (t.kind === "list" && t.filter === "all") || (t.kind === "screen" && t.count !== undefined && t.count !== "control_center"));
   const all = tiles.filter((t) => t.kind === "list" && t.filter === "all");
   return [...all, ...tiles.filter((t) => !all.includes(t))];
 }
@@ -237,10 +239,10 @@ export function seenWords(owner: Pick<OwnerSummary, "polling" | "last_seen_secon
  * covers, which on a watch is more than its complications. */
 /** The name of Home's side bar section for the whole home's screens, which
  * the row over those screens says too (`SHARED_ROW_LABEL`). */
-export const HOME_LIBRARY_TITLE = "Library";
+export const HOME_LIBRARY_TITLE = "On every device";
 
 /** The section's one line under its name. */
-export const HOME_LIBRARY_LEAD = "Building blocks your devices' pages and menus point at.";
+export const HOME_LIBRARY_LEAD = "Kept once for the whole home. Every watch and iPhone uses them.";
 
 /** The screens Home's Library lists, in order: every screen of the whole
  * home (`shared`) that is not retired. */
@@ -385,11 +387,15 @@ export function homeStep(rows: readonly Pick<HomeDeviceRow, "id">[], current: st
   return rows[(at + step + rows.length) % rows.length]!.id;
 }
 
-/** A list row's line under the device's name: what it holds, then when it
- * was heard from. "22 complications · 1 h ago", "1 widget · Online now". */
-export function homeRowSub(kind: "watch" | "iphone", held: number, heard: string | undefined): string {
+/** A list row's line under the device's name: what it holds, pages first
+ * when it has pages (plan step 6), then when it was heard from.
+ * "4 pages, 22 complications · 1 h ago", "1 widget · Online now". `pages`
+ * is undefined when nothing has said, or the device has no pages. */
+export function homeRowSub(kind: "watch" | "iphone", held: number, heard: string | undefined, pages?: number): string {
   const word = kind === "watch" ? (held === 1 ? "complication" : "complications") : (held === 1 ? "widget" : "widgets");
-  return [`${held} ${word}`, heard?.replace(/^Seen /, "")].filter((w): w is string => w !== undefined).join(" · ");
+  const holds = [pages === undefined ? undefined : `${pages} ${pages === 1 ? "page" : "pages"}`, `${held} ${word}`]
+    .filter((w): w is string => w !== undefined).join(", ");
+  return [holds, heard?.replace(/^Seen /, "")].filter((w): w is string => w !== undefined).join(" · ");
 }
 
 /** How one door on the picked device looks: its glyph, the section hue its

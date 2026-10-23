@@ -51,6 +51,10 @@ export interface AllMenusViewInput {
   onFocus: (ownerId: string | undefined) => void;
   /** Open a device's Settings, Rooms or Voice. */
   onOpenScreen: (ownerId: string, kind: "watch" | "iphone", screen: ListOwnScreen) => void;
+  /** Drawn inside Home's "All devices": the board alone, under the host's
+   * search (`searchText`). */
+  embedded?: boolean;
+  searchText?: string;
   /** Called once the chunk has loaded or failed, to draw again. */
   onLoaded: () => void;
 }
@@ -65,5 +69,6 @@ export function renderAllMenusView(input: AllMenusViewInput): TemplateResult {
   }
   return html`<wa-all-menus .hass=${input.hass} .owners=${input.owners} .ownersReady=${input.ownersReady} .phones=${input.phones}
     .icons=${input.icons} .iconsTick=${input.iconsTick} .onOpenLibrary=${input.onOpenLibrary}
-    .focusOwner=${input.focusOwner} .onFocus=${input.onFocus} .onOpenScreen=${input.onOpenScreen}></wa-all-menus>`;
+    .focusOwner=${input.focusOwner} .onFocus=${input.onFocus} .onOpenScreen=${input.onOpenScreen}
+    ?embedded=${input.embedded === true} .searchText=${input.searchText ?? ""}></wa-all-menus>`;
 }

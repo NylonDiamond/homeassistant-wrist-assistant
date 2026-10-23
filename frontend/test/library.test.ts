@@ -41,8 +41,8 @@ const OWNERS = [
 
 describe("Home's Library", () => {
   it("is the side bar section of the whole home's screens, with its own line", () => {
-    expect(HOME_LIBRARY_TITLE).toBe("Library");
-    expect(HOME_LIBRARY_LEAD).toBe("Building blocks your devices' pages and menus point at.");
+    expect(HOME_LIBRARY_TITLE).toBe("On every device");
+    expect(HOME_LIBRARY_LEAD).toBe("Kept once for the whole home. Every watch and iPhone uses them.");
     expect(homeLibraryScreens().map((s) => s.id)).toEqual(["http-actions", "cameras"]);
     for (const screen of homeLibraryScreens()) {
       expect(HOME_SHARED_SUB[screen.id], screen.id).toBeTruthy();
@@ -52,14 +52,14 @@ describe("Home's Library", () => {
     expect(Object.keys(HOME_SHARED_SUB)).toEqual(["http-actions", "cameras"]);
   });
 
-  it("names the row over its screens Library, with the Home button and each screen", () => {
+  it("names the row over its screens On every device, with the Home button and each screen", () => {
     expect(SHARED_ROW_LABEL).toBe(HOME_LIBRARY_TITLE);
     const input: WatchRowInput = {
       route: route("/cameras"), owners: OWNERS, watch: "w1", loaded: true, menuOpen: false,
       onMenu: () => undefined, onPick: () => undefined, onGo: () => undefined, onHome: () => undefined,
     };
     const text = flat(renderWatchRow(input));
-    expect(text).toContain(`<span class="wa-wr-shared">Library</span>`);
+    expect(text).toContain(`<span class="wa-wr-shared">On every device</span>`);
     expect(text).toContain(`class="wa-wr-home"`);
     expect(text).toContain("Back to Home");
     for (const label of ["HTTP actions", "Cameras"]) expect(text).toContain(`>${label}</a>`);

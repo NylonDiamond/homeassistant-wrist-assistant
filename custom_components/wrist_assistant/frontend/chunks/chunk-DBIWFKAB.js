@@ -1,4 +1,4 @@
-import{b as w,d as s}from"./chunk-BDP52PL7.js";import{i}from"./chunk-TGJNCNIU.js";var l=6;function f(r){return`var(--wa-person-${r%l+1})`}function h(r){let e=r.filter(o=>i(o)!=="library"),t=o=>[...o.filter(n=>i(n)==="watch"),...o.filter(n=>i(n)==="iphone")];return[...t(e.filter(o=>!o.is_orphan)),...t(e.filter(o=>o.is_orphan))].map(o=>o.owner_watch_id)}function u(r){let e=new Map;return h(r).forEach((t,o)=>{let n=t.toUpperCase();e.has(n)||e.set(n,f(o))}),e}function y(r,e){return e===void 0?void 0:r.get(e.toUpperCase())}function _(){let r,e=new Map;return t=>(t!==r&&(r=t,e=u(t)),e)}var b=.145,x=.045,v=.018,m=.05;function g(r,e){let t=r*e;return{radius:Math.round(t*b),bezel:Math.round(t*x),rim:Math.max(2,Math.round(t*v)),crown:Math.round(t*m)}}function R(r,e,t,o){let n=g(r.width,e),c=[`--wf-radius:${n.radius}px`,`--wf-bezel:${n.bezel}px`,`--wf-rim:${n.rim}px`,`--wf-crown:${n.crown}px`];if(r.height!==void 0&&r.height>0){let p=r.height*e+n.bezel*2,a=d=>`${Math.round(p*d*100)/100}px`;c.push(`--wf-crown-top:${a(.19)}`,`--wf-crown-h:${a(.16)}`,`--wf-button-top:${a(.42)}`,`--wf-button-h:${a(.22)}`)}return s`<div class="wa-watch" aria-label=${o??"Watch"} style=${c.join(";")}>${t}</div>`}var T=w`
+import{b as w,d as i}from"./chunk-BDP52PL7.js";var s=.145,b=.045,f=.018,d=.05;function l(r,e){let a=r*e;return{radius:Math.round(a*s),bezel:Math.round(a*b),rim:Math.max(2,Math.round(a*f)),crown:Math.round(a*d)}}function u(r,e,a,c){let t=l(r.width,e),n=[`--wf-radius:${t.radius}px`,`--wf-bezel:${t.bezel}px`,`--wf-rim:${t.rim}px`,`--wf-crown:${t.crown}px`];if(r.height!==void 0&&r.height>0){let h=r.height*e+t.bezel*2,o=p=>`${Math.round(h*p*100)/100}px`;n.push(`--wf-crown-top:${o(.19)}`,`--wf-crown-h:${o(.16)}`,`--wf-button-top:${o(.42)}`,`--wf-button-h:${o(.22)}`)}return i`<div class="wa-watch" aria-label=${c??"Watch"} style=${n.join(";")}>${a}</div>`}var m=w`
   .wa-watch {
     position: relative;
     display: inline-block;
@@ -48,4 +48,4 @@ import{b as w,d as s}from"./chunk-BDP52PL7.js";import{i}from"./chunk-TGJNCNIU.js
     border-radius: var(--wf-radius, 28px);
     box-shadow: none;
   }
-`;export{u as a,y as b,_ as c,R as d,T as e};
+`;export{u as a,m as b};

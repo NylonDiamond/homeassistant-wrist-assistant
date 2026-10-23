@@ -21,7 +21,7 @@
 // The focus is in the address (`/all-menus/<owner>`). The panel loads this
 // file the first time the tab opens (`all-menus-hook.ts`).
 
-import { LitElement, css, html, nothing, type TemplateResult } from "lit";
+import { LitElement, type PropertyValues, css, html, nothing, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import type { HassLike, OwnerSummary } from "../ha-api.js";
 import { deviceColor, deviceColorsCache } from "../device-colors.js";
@@ -32,7 +32,7 @@ import { renderMenuRowPicture, rowPictureStyles } from "../library/row-picture.j
 import { LibraryController } from "../library/store.js";
 import { newItemDialogStyles, openNewItemDialog, renderNewItemDialog } from "../library/new-dialog.js";
 import { type BoardCell, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen, type ListView,
-  SAVED_FLASH_MS, WideWatch, boardStyles, renderBoard, renderViewSwitch } from "../library/board.js";
+  SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, renderBoard, renderViewSwitch } from "../library/board.js";
 import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
@@ -145,6 +145,11 @@ export class WaAllMenus extends LitElement {
   @property({ attribute: false }) onFocus?: (ownerId: string | undefined) => void;
   /** Open one of a device's own screens: Settings, Rooms or Voice. */
   @property({ attribute: false }) onOpenScreen?: (ownerId: string, kind: "watch" | "iphone", screen: DeviceOwnScreen) => void;
+  /** Drawn inside Home's "All devices" (plan step 6): the board alone,
+   * with no head, title or New, under the host's one search. */
+  @property({ type: Boolean, reflect: true }) embedded = false;
+  /** The host's search, when embedded. */
+  @property({ attribute: false }) searchText = "";
 
   @state() private search = "";
   /** New menu's form, open under the tab's head. */
@@ -193,6 +198,10 @@ export class WaAllMenus extends LitElement {
     clearTimeout(this.savedTimer);
   }
 
+  protected override willUpdate(changed: PropertyValues): void {
+    if (this.embedded && changed.has("searchText")) this.search = this.searchText;
+  }
+
   /** Whether this tab is wide enough for big row pictures. */
   private roomy = new WideWatch(this);
 
@@ -218,7 +227,7 @@ export class WaAllMenus extends LitElement {
 
   /** Board or Cards. A focused device is always the board. */
   private get view(): ListView {
-    return this.filterDevice() !== undefined ? "board" : keptView().view;
+    return this.embedded || this.filterDevice() !== undefined ? "board" : keptView().view;
   }
 
   /** The watches that wait for their iPhone to move their menus here: none
@@ -364,6 +373,7 @@ export class WaAllMenus extends LitElement {
   protected override render(): TemplateResult {
     const devices = this.devices;
     if (devices.length === 0 && !this.ownersReady) return html`<div class="ap-page"><div class="ap-wrap"><p class="ap-empty">Loading…</p></div></div>`;
+    if (this.embedded) return this.renderEmbedded();
     const library = this.lib.library;
     const readState = this.lib.readState;
     const device = this.filterDevice();
@@ -395,6 +405,20 @@ export class WaAllMenus extends LitElement {
         <div class="pk-foot"><span class="pk-foot-hint">${device === undefined ? (view === "board" ? MENUS_BOARD_FOOT : MENUS_FOOT) : menusDeviceFoot(device)}</span></div>
       </div>
     </div></div>`;
+  }
+
+  /** Inside Home's "All devices": the board on every device, a dot a
+   * pick as on the tab, with "Saved" over it for a moment after a write. */
+  private renderEmbedded(): TemplateResult {
+    const library = this.lib.library;
+    const devices = this.devices;
+    const readState = this.lib.readState;
+    if (library === undefined) {
+      const why = readState === "unsupported" ? LIBRARY_UNSUPPORTED_TEXT : readState === "failed" ? (this.lib.store?.readError ?? "Could not read the library.") : "Reading the menus…";
+      return html`<p class="ap-empty">${why}</p>`;
+    }
+    if (devices.length === 0) return html`<p class="ap-empty">No device can have menus.</p>`;
+    return html`${this.saved ? html`<span class="bd-saved ap-embed-saved" role="status">${uiIcon("check")}<span>Saved</span></span>` : nothing}${this.renderBoardAll(library, devices)}`;
   }
 
   /** Cards: the menus in two sections, Anywhere menus first, each under its
@@ -625,7 +649,9 @@ export class WaAllMenus extends LitElement {
       ], device.ownerId)}`;
   }
 
-  static override styles = [listTabStyles, libraryListStyles, libraryTicksStyles, rowPictureStyles, newItemDialogStyles, boardStyles, css`
+  static override styles = [listTabStyles, libraryListStyles, libraryTicksStyles, rowPictureStyles, newItemDialogStyles, boardStyles, boardStackStyles, css`
+    .ap-embed-saved { position: absolute; right: 0; top: -26px; }
+    :host([embedded]) { position: relative; }
     /* The menu's picture: the watch screen alone, as the Pages tab's cards
        draw a page. */
     .ap-thumb wa-menu-thumbs { flex: none; width: 100%; }

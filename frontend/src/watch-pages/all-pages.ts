@@ -49,7 +49,7 @@ import {
 import { renderPageRowPicture, renderStatusRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
 import { type BoardCell, type BoardColumn, type BoardDrag, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen, type ListView,
-  SAVED_FLASH_MS, WideWatch, boardStyles, renderBoard, renderViewSwitch } from "../library/board.js";
+  SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, renderBoard, renderViewSwitch } from "../library/board.js";
 import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
@@ -223,6 +223,11 @@ export class WaAllPages extends LitElement {
   @property({ attribute: false }) onFocus?: (ownerId: string | undefined) => void;
   /** Open one of a device's own screens: Settings, Rooms or Voice. */
   @property({ attribute: false }) onOpenScreen?: (ownerId: string, kind: "watch" | "iphone", screen: DeviceOwnScreen) => void;
+  /** Drawn inside Home's "All devices" (plan step 6): the board alone,
+   * with no head, title or New, under the host's one search. */
+  @property({ type: Boolean, reflect: true }) embedded = false;
+  /** The host's search, when embedded. */
+  @property({ attribute: false }) searchText = "";
 
   @state() private search = "";
   /** New page's dialog, open: a name for a page the library gets and no
@@ -306,6 +311,7 @@ export class WaAllPages extends LitElement {
     if (changed.has("kind") && changed.get("kind") !== undefined) this.kindChanged();
     // Focused on another device: a selection belongs to every device.
     if (changed.has("focusOwner") && this.focusOwner !== undefined) this.endSelect(true);
+    if (this.embedded && changed.has("searchText")) this.search = this.searchText;
     // The board's pages say where a device on the free plan shows only its
     // first page.
     if (this.kind === "pages") for (const d of this.devices) if (!this.freeAsked.has(d.ownerId)) void this.readFree(d.ownerId);
@@ -336,7 +342,7 @@ export class WaAllPages extends LitElement {
   /** Board or Cards, kept for each tab apart (`keptView`). A focused device
    * is always the board: its column is the focus. */
   private get view(): ListView {
-    return this.filterDevice() !== undefined ? "board" : keptView(this.kind).view;
+    return this.embedded || this.filterDevice() !== undefined ? "board" : keptView(this.kind).view;
   }
 
   /** Whether this tab is wide enough for big row pictures. */
@@ -726,6 +732,7 @@ export class WaAllPages extends LitElement {
   protected override render(): TemplateResult {
     const devices = this.devices;
     if (devices.length === 0 && !this.ownersReady) return html`<div class="ap-page"><div class="ap-wrap"><p class="ap-empty">Loading…</p></div></div>`;
+    if (this.embedded) return this.renderEmbedded();
     const what = this.kind;
     const library = this.lib.library;
     const readState = this.lib.readState;
@@ -760,6 +767,24 @@ export class WaAllPages extends LitElement {
         <div class="pk-foot"><span class="pk-foot-hint">${footText(what, device, this.selecting && device === undefined, view)}</span></div>
       </div>
     </div></div>`;
+  }
+
+  /** Inside Home's "All devices": the board on every device, a box a
+   * tick as on the tab, with "Saved" over it for a moment after a write. */
+  private renderEmbedded(): TemplateResult {
+    const library = this.lib.library;
+    const devices = this.devices;
+    const many = cardNoun(this.kind, 2);
+    const readState = this.lib.readState;
+    if (library === undefined) {
+      const why = readState === "unsupported" ? LIBRARY_UNSUPPORTED_TEXT : readState === "failed" ? (this.lib.store?.readError ?? "Could not read the library.") : `Reading the ${many}…`;
+      return html`<p class="ap-empty">${why}</p>`;
+    }
+    if (devices.length === 0) return html`<p class="ap-empty">No device can have ${many}.</p>`;
+    const body = libraryItems(library, this.kind).length === 0
+      ? html`<p class="ap-empty">No ${many} yet.</p>`
+      : this.renderBoardAll(library, devices);
+    return html`${this.saved ? html`<span class="bd-saved ap-embed-saved" role="status">${uiIcon("check")}<span>Saved</span></span>` : nothing}${body}`;
   }
 
   /** Cards: one card per item of the library, in its order. */
@@ -1233,7 +1258,9 @@ export class WaAllPages extends LitElement {
    * this tab's own: New page, Multi select and its bar, and a page's
    * picture. */
   static override styles = [watchPagePreviewStyles, watchFrameStyles, statusPagesViewStyles, listTabStyles, libraryListStyles,
-    libraryTicksStyles, rowPictureStyles, newItemDialogStyles, boardStyles, css`
+    libraryTicksStyles, rowPictureStyles, newItemDialogStyles, boardStyles, boardStackStyles, css`
+    .ap-embed-saved { position: absolute; right: 0; top: -26px; }
+    :host([embedded]) { position: relative; }
     /* New page: filled, as New complication is, the one way to start a page
        from this tab. On All it opens the New dialog (new-dialog.ts). */
     .ap-new { position: relative; flex: none; }

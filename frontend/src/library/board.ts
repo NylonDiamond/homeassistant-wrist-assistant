@@ -432,3 +432,13 @@ export const boardStyles = css`
     .bd-col { min-width: 76px; }
   }
 `;
+
+/** Boards stacked into one table on Home's "All devices" (plan step 6):
+ * each a fixed layout with one name column width, so their device columns
+ * line up. An element drawn there carries `embedded`; the panel's own board
+ * sits in a `.bd-fixed`. */
+export const boardStackStyles = css`
+  :host([embedded]) { display: block; }
+  :host([embedded]) table.bd, .bd-fixed table.bd { table-layout: fixed; min-width: 0; }
+  :host([embedded]) table.bd th.bd-thing, .bd-fixed table.bd th.bd-thing { width: var(--bd-thing-w, 340px); }
+`;
