@@ -47,6 +47,25 @@ describe("a device's lineup on Home", () => {
     expect(out[2]!.lines.map((l) => l.key)).toEqual(["anywhere", "entity"]);
   });
 
+  it("draws its page pictures at the width it is handed, an iPhone's narrower", () => {
+    const width = (kind: "watch" | "iphone", pageWidth: number | undefined) => {
+      const out = lineupGroups(libraryOf(summary()), CHEN, kind, {
+        ...(pageWidth === undefined ? {} : { pageWidth }),
+        onEdit: () => {}, onChange: () => {},
+      });
+      const match = /width:(\d+)px/.exec(flat(out[0]!.lines[0]!.picture));
+      return match === null ? undefined : Number(match[1]);
+    };
+    expect(width("watch", undefined)).toBe(56);
+    expect(width("watch", 140)).toBe(140);
+    expect(width("iphone", 140)).toBe(100);
+  });
+
+  it("wears the preview's own styles, so a camera's snapshot is drawn", () => {
+    const source = readFileSync(new URL("../src/home-lineup.ts", import.meta.url), "utf8");
+    expect(source).toMatch(/static override styles = \[watchPagePreviewStyles, watchFrameStyles, statusPagesViewStyles,/);
+  });
+
   it("names the device kind in its empty lines and its sub line", () => {
     const { out } = groups("nobody", "iphone");
     expect(out.map((g) => g.lines.length)).toEqual([0, 0, 0]);

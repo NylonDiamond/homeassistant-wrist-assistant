@@ -13,12 +13,21 @@ import { MENU_UNIT_TITLES, itemsFor, menuFor, type Library } from "./library/mod
 import { renderPageRowPicture, renderStatusRowPicture, rowPictureStyles } from "./library/row-picture.js";
 import { LibraryController } from "./library/store.js";
 import type { IconProvider } from "./renderer.js";
+import { watchFrameStyles } from "./watch-frame.js";
 import type { WatchPage } from "./watch-pages/model.js";
+import { watchPagePreviewStyles } from "./watch-pages/preview.js";
+import { statusPagesViewStyles } from "./watch-status-pages/view.js";
 
 /** Pictures are drawn again at most this often for a new `hass`. */
 const STATES_EVERY_MS = 2000;
-const PAGE_PICTURE_W = 56;
-const PHONE_PAGE_PICTURE_W = 40;
+/** A page card's picture: as wide as its card lets it be (`fitPictures`),
+ * between these, in CSS pixels. An iPhone's is `PHONE_PICTURE_RATIO` of
+ * that, so its taller page keeps the cards one height. */
+const PAGE_PICTURE_MIN = 56;
+const PAGE_PICTURE_MAX = 200;
+const PHONE_PICTURE_RATIO = 40 / 56;
+/** The share of a page card's width its picture takes. */
+const PAGE_PICTURE_SHARE = 0.8;
 const STATUS_PICTURE_W = 34;
 
 export class WaHomeLineup extends LitElement {
@@ -36,6 +45,9 @@ export class WaHomeLineup extends LitElement {
 
   private hassNow?: HassLike;
   private hassDrawnAt = 0;
+  /** The page pictures' width, fitted to the cards (`fitPictures`). */
+  private pageW = PAGE_PICTURE_MIN;
+  private seen?: ResizeObserver;
 
   private readonly lib = new LibraryController(this, () => this.hassNow, () => (this.ownerId === "" ? [] : [this.ownerId]));
 
@@ -64,12 +76,42 @@ export class WaHomeLineup extends LitElement {
       ...(this.hassNow === undefined ? {} : { hass: this.hassNow }),
       ...(this.icons === undefined ? {} : { icons: this.icons }),
       tick: this.iconsTick,
+      pageWidth: this.pageW,
       onEdit: (kind, id) => this.onEdit?.(kind, id),
       onChange: (kind) => this.onChange?.(kind),
     }).map(renderLineupGroup)}</div>`;
   }
 
-  static override styles = [rowPictureStyles, homeLineupStyles];
+  override connectedCallback(): void {
+    super.connectedCallback();
+    if (typeof ResizeObserver === "undefined") return;
+    this.seen = new ResizeObserver(() => this.fitPictures());
+    this.seen.observe(this);
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.seen?.disconnect();
+    this.seen = undefined;
+  }
+
+  protected override updated(): void {
+    this.fitPictures();
+  }
+
+  /** Size the page pictures to the cards they stand in: the cards' width
+   * comes from the grid, not from the pictures, so this settles at once. */
+  private fitPictures(): void {
+    const card = this.renderRoot.querySelector<HTMLElement>(".hl-lines.strip .hl-line");
+    if (card === null) return;
+    const inner = card.clientWidth - 16;
+    const width = Math.max(PAGE_PICTURE_MIN, Math.min(PAGE_PICTURE_MAX, Math.floor((inner * PAGE_PICTURE_SHARE) / 4) * 4));
+    if (width === this.pageW) return;
+    this.pageW = width;
+    this.requestUpdate();
+  }
+
+  static override styles = [watchPagePreviewStyles, watchFrameStyles, statusPagesViewStyles, rowPictureStyles, homeLineupStyles];
 }
 
 /** What the groups draw with. */
@@ -77,6 +119,8 @@ export interface LineupDraw {
   hass?: HassLike;
   icons?: IconProvider;
   tick?: number;
+  /** A watch page picture's width; an iPhone's is narrower. */
+  pageWidth?: number;
   onEdit: (kind: LibraryKind, id: string) => void;
   onChange: (kind: LibraryKind) => void;
 }
@@ -87,13 +131,15 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
   const iphone = kind === "iphone";
   const pages = itemsFor(library, ownerId, "pages");
   const states = draw.hass?.states;
+  const watchW = draw.pageWidth ?? PAGE_PICTURE_MIN;
+  const pageW = iphone ? Math.round(watchW * PHONE_PICTURE_RATIO) : watchW;
   const pageLines = pages.map((pick): LineupLine => ({
     key: pick.id,
     name: pick.entry.name,
     detail: pick.entry.detail,
     hidden: pick.hidden,
     picture: renderPageRowPicture({
-      page: pick.entry.item as WatchPage, width: iphone ? PHONE_PAGE_PICTURE_W : PAGE_PICTURE_W, iphone,
+      page: pick.entry.item as WatchPage, width: pageW, iphone,
       ...(states === undefined ? {} : { states }),
       ...(draw.icons === undefined ? {} : { icons: draw.icons }),
       ...(draw.tick === undefined ? {} : { tick: draw.tick }),
