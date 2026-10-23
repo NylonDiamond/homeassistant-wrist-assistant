@@ -20099,10 +20099,13 @@ export class WristAssistantPanel extends LitElement {
       </tr></thead>
       <tbody>${rows.length === 0 ? html`<tr class="bd-none"><td colspan=${span}>${empty}</td></tr>` : rows.map((r) => html`<tr class="bd-row">
         <th scope="row" class="bd-thing"><span class="bd-thing-in">
-          <button type="button" class="bd-open" title=${r.openTitle ?? r.name} ?disabled=${r.onOpen === undefined} @click=${() => r.onOpen?.()}>
-            <span class="ha-ic" style=${`--h:${r.hue}`} aria-hidden="true">${uiIcon(r.icon)}</span>
-            <span class="bd-nm"><span class="bd-n">${r.name}</span><span class="bd-m">${r.detail}</span></span>
-          </button></span></th>
+          ${r.onOpen === undefined
+            ? html`<span class="bd-open ha-still"><span class="ha-ic" style=${`--h:${r.hue}`} aria-hidden="true">${uiIcon(r.icon)}</span>
+                <span class="bd-nm"><span class="bd-n">${r.name}</span><span class="bd-m">${r.detail}</span></span></span>`
+            : html`<button type="button" class="bd-open" title=${r.openTitle ?? r.name} @click=${() => r.onOpen?.()}>
+                <span class="ha-ic" style=${`--h:${r.hue}`} aria-hidden="true">${uiIcon(r.icon)}</span>
+                <span class="bd-nm"><span class="bd-n">${r.name}</span><span class="bd-m">${r.detail}</span></span>
+              </button>`}</span></th>
         ${devices.map((d) => {
           const color = this.deviceColorOf(d.ownerId);
           return html`<td class="bd-cell" style=${color === undefined ? nothing : `--dc:${color}`}>${r.cell(d)}</td>`;

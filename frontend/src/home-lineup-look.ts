@@ -158,6 +158,7 @@ export const homeAllStyles = css`
     border: 1px solid var(--h, var(--wa-line)); color: var(--wa-ink);
   }
   .ha-ic svg { width: 15px; height: 15px; }
+  .ha-still { cursor: default; }
   .ha-lock { display: inline-flex; color: var(--wa-muted); }
   .ha-lock svg { width: 14px; height: 14px; }
   .hb-lineup { margin-top: 4px; }
