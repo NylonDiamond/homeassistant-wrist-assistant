@@ -20515,29 +20515,6 @@ export class WristAssistantPanel extends LitElement {
       const next = homeStep(devices, ownerId, dir);
       if (next !== undefined) this.openHomeDevice(next);
     };
-    const count = (t: DeviceSheetTab) => this.homeTileCount(t, row, owner);
-    const openList = (filter: "all" | "control") => this.openDeviceList(ownerId, filter);
-    // Open one of the device's pages: a watch screen on this device, or its
-    // complications, widgets or controls on the Complications board focused
-    // on it (plan step 5).
-    const screenOf = (t: DeviceSheetTab): WatchScreen | undefined => t.kind === "screen" ? t.screen : undefined;
-    const go = (t: DeviceSheetTab) => {
-      const screen = screenOf(t);
-      if (screen === undefined) { if (t.kind === "list") openList(t.filter); return; }
-      this.pickWatch(ownerId);
-      this.goTo(deviceScreenPath(row.kind, screen, ownerId));
-    };
-    // The two counts that point at the device, each a door to its page: a
-    // watch's complications and pages, an iPhone's widgets and its Control
-    // Center controls.
-    const call = (t: DeviceSheetTab | undefined, side: "l" | "r") => {
-      if (t === undefined) return nothing;
-      const n = count(t);
-      const word = t.kind === "list" && t.filter === "control" ? "Control Center" : countWord(t.label, n);
-      const body = html`<span class="hb-call-n"><b class=${n === 0 ? "none" : ""}>${n ?? "–"}</b><span>${word}</span></span>`;
-      return html`<button type="button" class="hb-call ${side}" title=${`${t.label} on ${row.name}`} @click=${() => go(t)}>${body}</button>`;
-    };
-    const [callL, callR] = deviceCardTiles(row.kind, this.phonePages);
     const face = gone ? undefined : this.homeFace(ownerId, row.kind);
     const art = row.kind === "watch"
       ? homeWatchArt(`pick-${row.id}`, held, row.sync, face)
@@ -20580,7 +20557,12 @@ export class WristAssistantPanel extends LitElement {
       </div>`;
     return html`<div class="hb-detail" data-pick=${ownerId} style=${`--c:${color}`}>
       <div class="hb-bar">
-        <span class="hb-crumb"><i aria-hidden="true"></i>${whose}${uiIcon("right")}<b>${row.name}</b></span>
+        <div class="hb-hero">
+          <div class="hb-stage"><div class="hb-device" aria-hidden="true">${art}</div></div>
+          <div class="hb-name"><h2>${this.deviceForgetAsk ? `Remove “${row.name}”?` : row.name}</h2>
+            <span class="hb-facts"><i aria-hidden="true"></i>${whose} · ${facts}</span></div>
+          ${this.deviceForgetAsk || gone ? nothing : overview}
+        </div>
         <div class="hb-acts">
           ${devices.length > 1 ? html`
             <button type="button" class="hb-step" title="Previous device" aria-label="Previous device" @click=${() => step(-1)}>${uiIcon("left")}</button>
@@ -20594,18 +20576,11 @@ export class WristAssistantPanel extends LitElement {
                 @click=${() => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); }}>Remove</button>`}
         </div>
       </div>
-      <div class="hb-hero">
-        <div class="hb-stage">
-          <span class="hb-floor" aria-hidden="true"></span>
-          <div class="hb-device" aria-hidden="true">${art}</div>
-        </div>
-        <div class="hb-info">
-          <div class="hb-name"><h2>${this.deviceForgetAsk ? `Remove “${row.name}”?` : row.name}</h2><span class="hb-facts">${facts}</span></div>
+      ${this.devicePaired === ownerId || renaming || this.deviceForgetAsk || gone ? html`<div class="hb-info">
           ${this.devicePaired === ownerId ? html`<div class="dev-paired" role="status">${uiIcon("check")}<span><b>Paired successfully.</b> ${row.name} is now on this Home Assistant.</span></div>` : nothing}
           ${renaming ? renameForm : nothing}
-          ${this.deviceForgetAsk ? ask : gone ? goneNote : html`${overview}<div class="hb-calls">${call(callL, "l")}${call(callR, "r")}</div>`}
-        </div>
-      </div>
+          ${this.deviceForgetAsk ? ask : gone ? goneNote : nothing}
+        </div>` : nothing}
       ${this.deviceForgetAsk || gone ? nothing : this.renderHomeLineup(row)}
     </div>`;
   }

@@ -707,9 +707,9 @@ export const homeStyles = css`
   /* One slim row: the device small in its lit box, its name and facts, its
      sync state as a pill, and its two counts. The page under it is its
      pages; this row only says which device it is (Jesse, 2026-10-23). */
-  .hb-hero { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .hb-hero { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
   .hb-stage {
-    position: relative; flex: none; width: 52px; height: 52px; border-radius: 12px; overflow: hidden; box-sizing: border-box;
+    position: relative; flex: none; width: 44px; height: 44px; border-radius: 11px; overflow: hidden; box-sizing: border-box;
     border: 1px solid transparent;
     background:
       radial-gradient(46% 70% at 50% 0%, var(--wa-stage-light) 0%, transparent 80%) padding-box,
@@ -724,7 +724,7 @@ export const homeStyles = css`
     border-top: 1px solid color-mix(in srgb, var(--wa-ink) 5%, transparent);
   }
   .hb-device { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
-  .hb-device svg.ha-art { width: auto; height: 42px; }
+  .hb-device svg.ha-art { width: auto; height: 36px; }
   /* The two counts, each a door to its page: a number and its word. */
   .hb-calls { display: flex; flex-wrap: wrap; gap: 6px; }
   button.hb-call {
@@ -831,12 +831,12 @@ export const homeStyles = css`
     .hw-choices { flex-wrap: nowrap; gap: 14px; }
   }
   /* Beside the stage: its name and facts, the sync well, then its counts. */
-  .hb-info { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
-  /* What takes a whole line when it shows: the rename field, Remove's
-     question, a note. */
-  .hb-info > .hb-rename, .hb-info > .hb-ask, .hb-info > .dev-paired { flex-basis: 100%; }
-  .hb-name { display: flex; flex-direction: column; gap: 1px; padding: 0 2px; min-width: 0; margin-right: auto; }
+  /* Under the bar while it shows: the rename field, Remove's question, a
+     note. */
+  .hb-info { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  .hb-name { display: flex; flex-direction: column; gap: 1px; padding: 0 2px; min-width: 0; }
   .hb-name h2 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -.02em; line-height: 1.15; overflow-wrap: anywhere; }
+  .hb-facts i { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--c); vertical-align: 1px; }
   .hb-facts { font-size: 12px; line-height: 1.45; color: var(--wa-muted); overflow-wrap: anywhere; }
   /* The sync state in a well lit in its color: a chip, its word and what it
      means, and when the device was last heard from. */

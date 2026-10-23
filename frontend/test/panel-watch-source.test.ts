@@ -258,10 +258,7 @@ describe("links into the Watch app carry the shared watch", () => {
     expect(SOURCE).not.toContain(`case "parts":`);
   });
 
-  it("on Home's picked device, whose doors open a screen on that device's own watch or iPhone", () => {
-    const detail = method("  private renderHomeDetail(");
-    expect(detail).toContain("this.goTo(deviceScreenPath(row.kind, screen, ownerId));");
-    expect(detail).toContain("this.pickWatch(ownerId);");
+  it("on Home's picked device, whose own screens open on that device's own watch or iPhone", () => {
     const own = method("  private homeOwnGroup(row: HomeDeviceRow): LineupGroup {");
     expect(own).toContain(`href: panelUrl(this.route, path, globalThis.location?.pathname ?? ""),`);
     expect(method("  private renderHome() {")).not.toContain("watchSettings.");

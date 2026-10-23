@@ -154,11 +154,10 @@ describe("Home's picked device", () => {
     expect(face).toContain("widgets.length < 4");
   });
 
-  it("makes the two counts beside the device doors to their pages, Control Center by its own name", () => {
-    expect(detail).toContain("const [callL, callR] = deviceCardTiles(row.kind, this.phonePages);");
-    expect(detail).toContain(`<button type="button" class="hb-call \${side}" title=\${\`\${t.label} on \${row.name}\`} @click=\${() => go(t)}>`);
-    expect(detail).toContain(`const word = t.kind === "list" && t.filter === "control" ? "Control Center" : countWord(t.label, n);`);
-    expect(detail).toContain("if (t.kind === \"list\") openList(t.filter); return;");
+  it("names the device, its owner and its sync state in its bar, with no count buttons: its lineup below lists them", () => {
+    expect(detail).toContain(`<div class="hb-stage"><div class="hb-device" aria-hidden="true">\${art}</div></div>`);
+    expect(detail).toContain("${this.deviceForgetAsk || gone ? nothing : overview}");
+    expect(detail).not.toContain("hb-call");
   });
 
   it("slides a newly picked device in, unless the person asks for less motion", () => {
@@ -201,7 +200,6 @@ describe("Home's picked device", () => {
     const own = method("  private homeOwnGroup(row: HomeDeviceRow): LineupGroup {");
     expect(own).toContain("const path = deviceScreenPath(row.kind, screen, row.id);");
     expect(own).toContain("onClick: () => { this.pickWatch(row.id); this.goTo(path); },");
-    expect(detail).toContain("this.openDeviceList(ownerId, filter);");
     // The board focused on the device (plan step 5), after closing a design
     // open in the editor; Cards, if picked, opens on that device's tab.
     const list = method("  private async openDeviceList(");
@@ -235,7 +233,7 @@ describe("Home's picked device", () => {
     expect(detail).not.toContain("is_admin");
     expect(detail).toContain("@click=${() => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); }}>Remove</button>");
     expect(detail).toContain("@click=${() => void this.forgetDeviceNow(ownerId)}");
-    expect(detail).toContain("${this.deviceForgetAsk ? ask : gone ? goneNote : html`${overview}");
+    expect(detail).toContain("${this.deviceForgetAsk ? ask : gone ? goneNote : nothing}");
   });
 
   it("renames the device through the integration, from a button on its bar, for everyone", () => {
@@ -369,16 +367,6 @@ describe("Home's Pair a device dialog", () => {
 });
 
 describe("the doors to a device's complications", () => {
-  it("opens any device's complications, widgets and controls on the Complications board focused on it", () => {
-    const detail = method("  private renderHomeDetail(");
-    const screenOf = between(detail, "const screenOf = (t: DeviceSheetTab)", "\n    const go");
-    expect(screenOf).toContain(`t.kind === "screen" ? t.screen : undefined;`);
-    expect(screenOf).not.toContain("watch-complications");
-    const go = between(detail, "const go = (t: DeviceSheetTab) => {", "\n    };");
-    expect(go).toContain("this.goTo(deviceScreenPath(row.kind, screen, ownerId));");
-    expect(go).toContain(`if (t.kind === "list") openList(t.filter); return;`);
-  });
-
   it("opens the Complications tab on every complication, closing a design with nothing unsaved", () => {
     expect(method("  private openTab(tab: PanelTab) {")).toContain(`if (tab === "complications") this.showAllComplications();`);
     const all = method("  private showAllComplications() {");
