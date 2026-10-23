@@ -52,9 +52,11 @@ function withinPage(rect: WatchRect): boolean {
   return rect.row + rect.rowSpan <= WATCH_EDITOR_MAX_ROWS;
 }
 
-/** The phone's four size presets, columns by rows. */
+/** The phone's four size presets, columns by rows. A smart page's rule
+ * offers the same four under the same names (`tile-smart.json`
+ * `domainStyle.sizePresets`); change both. */
 export const WATCH_TILE_SIZE_PRESETS: readonly { name: string; colSpan: number; rowSpan: number }[] = [
-  { name: "XSmall", colSpan: 3, rowSpan: 3 },
+  { name: "Extra small", colSpan: 3, rowSpan: 3 },
   { name: "Small", colSpan: 4, rowSpan: 4 },
   { name: "Medium", colSpan: 6, rowSpan: 4 },
   { name: "Large", colSpan: COLUMNS, rowSpan: 4 },

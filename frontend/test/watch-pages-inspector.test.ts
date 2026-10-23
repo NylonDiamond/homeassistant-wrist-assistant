@@ -524,7 +524,7 @@ describe("the inspector with several tiles picked", () => {
     const el = pickedHall();
     let text = flat(inspector(el));
     let group = card(text, "Group");
-    expect(group).toContain("A group draws one background pattern and one animated overlay across its tiles.");
+    expect(group).toContain("A group draws one background pattern and one effect across its tiles.");
     expect(group).toMatch(/class="pe-btn pe-group-make" \?disabled=false/);
     click(inspector(el), "pe-group-make");
     const page = el.currentPage()!;
@@ -537,8 +537,11 @@ describe("the inspector with several tiles picked", () => {
     text = flat(inspector(el));
     group = card(text, "Group");
     expect(group).toContain("2 tiles");
-    expect(group).toContain("Background pattern");
-    expect(group).toContain("Animated overlay");
+    // Named as the tile card names a tile's own: Pattern and Effect, each
+    // with its Type.
+    expect(group).toContain("<span>Pattern</span>");
+    expect(group).toContain("<span>Effect</span>");
+    expect(group).not.toContain("Animated overlay");
     expect(group).not.toContain("pe-group-make");
     click(inspector(el), "pe-group-ungroup");
     expect(el.currentPage()!.groups).toEqual([]);

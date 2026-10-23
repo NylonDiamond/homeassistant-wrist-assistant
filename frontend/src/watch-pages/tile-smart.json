@@ -44,8 +44,13 @@
     "disable": "dynamicConfig removed and nothing else, so the page is left empty. No dialog.",
     "tileSizePresets": [
       {
-        "name": "Small",
+        "name": "Mini",
         "cols": 2,
+        "rows": 2
+      },
+      {
+        "name": "Banner",
+        "cols": 4,
         "rows": 2
       },
       {
@@ -54,17 +59,12 @@
         "rows": 3
       },
       {
-        "name": "Banner",
-        "cols": 4,
-        "rows": 2
-      },
-      {
-        "name": "Full Width",
+        "name": "Wide",
         "cols": 8,
         "rows": 3
       }
     ],
-    "tileSizeRule": "A preset writes tileColSpan and tileRowSpan; a box writes one. Each is clamped to spanRange. A preset shows selected while both match.",
+    "tileSizeRule": "A preset writes tileColSpan and tileRowSpan; a box writes one. Each is clamped to spanRange. A preset shows selected while both match. The boxes show behind Custom, or while the size matches no preset. No name here is one of domainStyle.sizePresets, which are the tile editor's: a name means one size everywhere.",
     "spanRange": {
       "min": 1,
       "max": 12
@@ -1220,7 +1220,7 @@
     },
     "sizePresets": [
       {
-        "name": "XSmall",
+        "name": "Extra small",
         "cols": 3,
         "rows": 3
       },
@@ -1240,7 +1240,7 @@
         "rows": 4
       }
     ],
-    "sizeRule": "A preset or the boxes write colSpan and rowSpan, clamped to page.spanRange.",
+    "sizeRule": "A preset or the boxes write colSpan and rowSpan, clamped to page.spanRange. The boxes show behind Custom, or while the size matches no preset and is not the page size.",
     "pageSize": "Removes colSpan and rowSpan from tileStyle directly, so the page's tile size applies.",
     "noRow": ["usePersonPhoto"]
   },
@@ -1275,7 +1275,7 @@
     "activeWhen": "Active when state is",
     "updates": "Updates",
     "updatesHelp": "How this page gets the latest entity states.",
-    "tileSize": "Tile Size",
+    "tileSize": "Tile size",
     "sizeSubtitle": "{cols}w × {rows}h",
     "showLabels": "Show labels",
     "sortOrder": "Sort order",

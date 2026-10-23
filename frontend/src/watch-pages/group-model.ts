@@ -57,6 +57,10 @@ export const WATCH_GROUP_SLIDERS: Readonly<Record<"patternOpacity" | "patternSca
 /** The opacity the old editor started a pattern at, and wrote with it. */
 export const WATCH_GROUP_PATTERN_OPACITY = 0.5;
 
+/** The overlay color a group draws with none stored (the watch's
+ * `TileGroup.overlayColor` default). */
+export const WATCH_GROUP_OVERLAY_COLOR = "#FFFFFF";
+
 const ENUMS = (pageKeys as unknown as { enums: Record<string, string[]> }).enums;
 const PATTERNS: readonly string[] = ENUMS.TileBackgroundPattern ?? [];
 const OVERLAYS: readonly string[] = ENUMS.GroupOverlayStyle ?? [];
@@ -82,7 +86,7 @@ export function watchGroupLook(group: JsonObject): WatchGroupLook {
     patternScale: num(group.backgroundPatternScale) ?? 1,
     patternColor: str(group.backgroundPatternColor),
     overlay: str(group.overlayStyle) ?? "none",
-    overlayColor: str(group.overlayColor) ?? "#FFFFFF",
+    overlayColor: str(group.overlayColor) ?? WATCH_GROUP_OVERLAY_COLOR,
     overlaySpeed: num(group.overlaySpeed) ?? 1,
     overlayIntensity: num(group.overlayIntensity) ?? 1,
     overlaySize: num(group.overlaySize) ?? 1,
@@ -215,9 +219,11 @@ export const setWatchGroupOverlay: GroupSetter<string> = (document, pageId, grou
   return editWatchTileGroup(document, pageId, groupId, (group) => withGroupKey(group, "overlayStyle", value));
 };
 
-/** Overlay color, `#RRGGBB`. Required, so there is no "none". */
+/** Overlay color, `#RRGGBB` or `#RAINBOW` (the watch cycles the effect
+ * through every color, `GroupAnimatedOverlayView`). Required, so there is
+ * no "none": the picker's Default writes white. */
 export const setWatchGroupOverlayColor: GroupSetter<string> = (document, pageId, groupId, color) => {
-  const v = normalizeWatchColor(color, "solid");
+  const v = typeof color === "string" && color.trim().toUpperCase() === "#RAINBOW" ? "#RAINBOW" : normalizeWatchColor(color, "solid");
   if (v === undefined) return document;
   return editWatchTileGroup(document, pageId, groupId, (group) => withGroupKey(group, "overlayColor", v));
 };

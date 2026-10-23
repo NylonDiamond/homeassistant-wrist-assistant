@@ -16,14 +16,11 @@
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import type { EntityRef } from "../model.js";
-import { checkField, colorField, entityField, segField, sliderField, symbolField, textField } from "../editors.js";
+import { checkField, entityField, segField, sliderField, symbolField, textField } from "../editors.js";
 import { uiIcon } from "../ui-icons.js";
 import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type WatchPagesDocument, tileEntityId, tileKind, watchPageTiles } from "./model.js";
-import { watchPageSwatchTheme } from "./page-settings-model.js";
-import { watchThemeDisplayName, watchThemeSwatches } from "./tile-new.js";
-import { watchColorRefusal, watchCustomBoxColor } from "./tile-settings-options.js";
-import { commit, fieldNote, linkButton, menuField, resetButton, swatchRow, typed, typingField } from "./tile-settings.js";
+import { colorPicker, commit, fieldNote, linkButton, menuField, resetButton, typed, typingField } from "./tile-settings.js";
 import { appSummary, isWatchAppTaskKind, renderAppTask, watchAppTaskHasReset } from "./app-settings.js";
 import {
   type WatchSpecialResize,
@@ -320,13 +317,6 @@ function renderLaunchers(host: TileSettingsHost): TemplateResult {
       const labelSetting = `launcherLabel:${rowKey}`;
       const iconSetting = `launcherIcon:${rowKey}`;
       const colorSetting = `launcherColor:${rowKey}`;
-      const writeColor = (value: string | null, typing = false) =>
-        commit(host, colorSetting, (d) => setWatchRemoteLauncherColor(d, ...at(host), i, value), { typing });
-      const custom = (value: string | undefined) => {
-        const reason = watchColorRefusal(value, hostDevice(host));
-        if (reason !== undefined || value === undefined) return commit(host, colorSetting, (d) => d, { reason: reason ?? "Pick a color." });
-        writeColor(value.toUpperCase(), true);
-      };
       return html`<div class="sp-card">
         <div class="sp-card-h"><span class="sp-name">${row.label || nameOf(host, row.scriptId)}</span>
           <span class="sp-faint">${row.scriptId}</span>
@@ -337,10 +327,14 @@ function renderLaunchers(host: TileSettingsHost): TemplateResult {
         ${typingField(host, iconSetting, symbolField({ icons: host.icons, symbols: host.symbols, device: hostDevice(host) }, typed(host, iconSetting) ?? row.icon, (v) =>
           commit(host, iconSetting, (d) => setWatchRemoteLauncherIcon(d, ...at(host), i, v.trim() === "" ? null : v)),
           `pe:sp:launcher:${host.tileId}:${i}`, { tint: row.color }))}
-        <div class="ts-chips sp-indent"><button type="button" class="pe-chip ${row.color === "" ? "on" : ""}" aria-pressed=${row.color === "" ? "true" : "false"}
-          title="The remote's accent color" @click=${() => writeColor(null)}>Accent</button></div>
-        <div class="ts-swatch-row">${swatchRow("Quick action colors", palette, row.color, (v) => writeColor(v))}</div>
-        ${typingField(host, colorSetting, html`<div class="ts-no-alpha">${colorField("Custom", typed(host, colorSetting) ?? watchCustomBoxColor(row.color === "" ? undefined : row.color), custom)}</div>`)}
+        ${colorPicker(host, colorSetting, {
+          label: "Color",
+          color: () => (row.color === "" ? undefined : row.color),
+          swatches: palette,
+          swatchesLabel: "Quick action colors",
+          defaultTitle: "The remote's accent color",
+          write: (d, v) => setWatchRemoteLauncherColor(d, ...at(host), i, v),
+        })}
       </div>`;
     })}
     <div class="ts-stack">${entityField({ hass: host.hass }, "Add quick action", refOf(host, undefined), add, `pe:sp:launcherAdd:${host.tileId}`, { domain: "script", clearable: false })}</div>
@@ -658,7 +652,6 @@ function renderGroupWith(host: TileSettingsHost): TemplateResult {
 function renderCameraGroup(host: TileSettingsHost): TemplateResult {
   const g = watchCameraGroupSettings(host.tile);
   const total = g.weights?.reduce((a, b) => a + b, 0) ?? 0;
-  const theme = watchPageSwatchTheme(host.page);
   const addCamera = (next: EntityRef) => {
     const id = next.entityId.trim();
     if (id === "") return;
@@ -666,11 +659,11 @@ function renderCameraGroup(host: TileSettingsHost): TemplateResult {
     if (g.cameraIds.includes(id)) return commit(host, "groupAdd", (d) => d, { reason: "That camera is in the group already." });
     commit(host, "groupAdd", (d) => addWatchCamerasToGroup(d, ...at(host), [id]));
   };
-  const writeColor = (value: string, typing = false) => commit(host, "borderColor", (d) => setWatchCameraBorderColor(d, ...at(host), value), { typing });
-  const customColor = (value: string | undefined) => {
-    const reason = watchColorRefusal(value, hostDevice(host));
-    if (reason !== undefined || value === undefined) return commit(host, "borderColor", (d) => d, { reason: reason ?? "Pick a color." });
-    writeColor(value, true);
+  /** The border's color when an edit is made, with the `#` the stored
+   * default leaves out. */
+  const borderColor = () => {
+    const c = watchCameraGroupSettings(host.tile).border.color;
+    return c === "#RAINBOW" || c.startsWith("#") ? c : `#${c}`;
   };
   const split = () => {
     let first: string | undefined;
@@ -722,12 +715,16 @@ function renderCameraGroup(host: TileSettingsHost): TemplateResult {
     ${checkField("Grid border", g.border.on, (on) => commit(host, "border", (d) => setWatchCameraBorder(d, ...at(host), on)))}
     ${g.border.on
       ? html`
-        <div class="ts-swatch-row">${swatchRow(`Border: ${watchThemeDisplayName(theme)} colors`, watchThemeSwatches(theme, false), g.border.color.startsWith("#") ? g.border.color : `#${g.border.color}`, (v) => writeColor(v))}</div>
-        <div class="ts-chips sp-indent"><button type="button" class="pe-chip ${g.border.color === "#RAINBOW" ? "on" : ""}" aria-pressed=${g.border.color === "#RAINBOW" ? "true" : "false"}
-          @click=${() => writeColor("#RAINBOW")}>Rainbow</button></div>
-        ${typingField(host, "borderColor", html`<div class="ts-no-alpha">${colorField("Custom", typed(host, "borderColor") ?? watchCustomBoxColor(g.border.color === "#RAINBOW" ? undefined : g.border.color.startsWith("#") ? g.border.color : `#${g.border.color}`), customColor)}</div>`)}
         ${segField("Thickness", g.border.thickness, T.multicam.borderThicknesses.map((c) => [c.value, c.label] as [string, string]), (v) =>
-          commit(host, "borderThickness", (d) => setWatchCameraBorderThickness(d, ...at(host), v)))}`
+          commit(host, "borderThickness", (d) => setWatchCameraBorderThickness(d, ...at(host), v)))}
+        ${colorPicker(host, "borderColor", {
+          label: "Border color",
+          color: borderColor,
+          rainbow: true,
+          defaultTitle: `White, the ${hostDeviceNoun(host)}'s own border color`,
+          defaultValue: `#${T.multicam.borderDefaults.multiCamBorderColor.replace(/^#/, "")}`,
+          write: (d, v) => (v === null ? d : setWatchCameraBorderColor(d, ...at(host), v)),
+        })}`
       : nothing}
     <div class="ts-sub-h"><span>Tile size</span></div>
     ${renderDetect(host, g.ratio)}
@@ -880,7 +877,6 @@ function renderCalendars(host: TileSettingsHost): TemplateResult {
   return html`
     <div class="hint">Calendars merged into this tile. The ${hostDeviceNoun(host)}'s calendar sheet colors each one's events.</div>
     ${ids.map((id, i) => {
-      const color = watchCalendarSourceColor(tile, id);
       return html`<div class="sp-card">
         <div class="sp-card-h"><span class="sp-name">${nameOf(host, id)}</span>
           ${i === 0 ? html`<span class="sp-faint">Primary</span>` : nothing}
@@ -889,11 +885,14 @@ function renderCalendars(host: TileSettingsHost): TemplateResult {
                 title=${i === 0 ? "The next calendar becomes the primary" : "Remove"}
                 @click=${() => commit(host, "calendarRemove", (d) => removeWatchCalendar(d, ...at(host), id))}>${uiIcon("delete")}</button>`
             : nothing}</div>
-        <div class="sp-color-row">
-          <button type="button" class="pe-chip ${color === undefined ? "on" : ""}" aria-pressed=${color === undefined ? "true" : "false"}
-            @click=${() => commit(host, `calendarColor:${i}`, (d) => setWatchCalendarColor(d, ...at(host), id, null))}>None</button>
-          ${swatchRow(`${nameOf(host, id)} colors`, palette, color, (v) => commit(host, `calendarColor:${i}`, (d) => setWatchCalendarColor(d, ...at(host), id, v)))}
-        </div>
+        ${colorPicker(host, `calendarColor:${id}`, {
+          label: "Color",
+          color: () => watchCalendarSourceColor(host.tile, id),
+          swatches: palette,
+          swatchesLabel: `${nameOf(host, id)} colors`,
+          defaultTitle: "No color: its events show without a color mark",
+          write: (d, v) => setWatchCalendarColor(d, ...at(host), id, v),
+        })}
       </div>`;
     })}
     <div class="ts-stack">${entityField({ hass: host.hass }, "Add calendar", refOf(host, undefined), add, `pe:sp:calendarAdd:${host.tileId}`, { domain: "calendar", clearable: false })}</div>
@@ -957,7 +956,6 @@ export const specialSettingsStyles = css`
   .sp-icon-btn svg.ui-icon { width: 15px; height: 15px; }
   .sp-list-row { display: flex; align-items: center; gap: 6px; padding: 2px 0 2px calc(var(--wa-lab) + 8px); font-size: 12.5px; }
   .sp-list-row > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .sp-color-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 2px 0; }
   .sp-stepper { display: flex; align-items: center; gap: 8px; }
   .sp-best { font-size: 10.5px; color: var(--wa-accent); font-weight: 600; }
   .sp-ratio { align-self: center; }

@@ -12,8 +12,13 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PHONE,
   PHONE_PAGE_DOTS_TOP,
+  PHONE_PAGES_BOTTOM_BAR,
+  PHONE_PAGES_BOTTOM_BAR_TOP_DOTS,
+  PHONE_PAGES_DOCK_BAR,
+  PHONE_PAGES_TOP_BAR,
   PHONE_STAGE_ZOOM,
   phoneModelForScreenSize,
+  phonePagesDotsOf,
   phonePagesLayout,
   phonePagesScreen,
 } from "../src/phone-frame.js";
@@ -83,22 +88,55 @@ describe("the iPhone's pages screen", () => {
 
   it("puts the top row, the pages area and the dots strip where the app does, with no tab bar", () => {
     // With the home switcher: the switcher 16 to 386 across, 62 to 104 down,
-    // 8 under it the 44 point top row, 8 more, then the pages area down to
-    // the dots strip just above the safe area.
+    // 8 under it the 44 point top row, the 12 point clear strip
+    // (`PhonePagesView.topBar`), then the pages area down to the dots' 32
+    // point bar (`pageBarHeight`) just above the safe area.
     const two = phonePagesLayout(DEFAULT_PHONE, { switcher: true });
     expect(two.switcher).toEqual({ x: 16, y: 62, width: 370, height: 42 });
     expect(two.topRow).toEqual({ x: 6, y: 112, width: 390, height: 44 });
-    expect(two.area).toEqual({ x: 6, y: 164, width: 390, height: 662 });
-    expect(two.bottomBar).toEqual({ x: 0, y: 826, width: 402, height: 14 });
+    expect(PHONE_PAGES_TOP_BAR).toBe(12);
+    expect(two.area).toEqual({ x: 6, y: 168, width: 390, height: 640 });
+    expect(two.bottomBar).toEqual({ x: 0, y: 808, width: 402, height: 32 });
     expect(two.bottomBar.y + two.bottomBar.height).toBe(DEFAULT_PHONE.screen.height - DEFAULT_PHONE.safeBottom);
     // The panel draws no switcher: the top row sits right under the status
-    // bar and the pages start 50 points higher, 390 by 712.
+    // bar and the pages start 50 points higher, 390 by 690.
     const one = phonePagesLayout();
     expect(one.switcher).toBeUndefined();
     expect(one.topRow).toEqual({ x: 6, y: 62, width: 390, height: 44 });
-    expect(one.area).toEqual({ x: 6, y: 114, width: 390, height: 712 });
+    expect(one.area).toEqual({ x: 6, y: 118, width: 390, height: 690 });
     expect(one.bottomBar).toEqual(two.bottomBar);
-    expect(phonePagesScreen(one)).toEqual({ width: 390, height: 712 });
+    expect(phonePagesScreen(one)).toEqual({ width: 390, height: 690 });
+  });
+
+  it("sizes the bar under the pages as the app's bottomBarHeight does", () => {
+    const bar = (look: "iphone" | "watch", shown: boolean, top: boolean) => phonePagesLayout(DEFAULT_PHONE, { look, dots: { shown, top } }).bottomBar.height;
+    // The iPhone look's dock, 38 points of glass and 8 of air, while its
+    // dots show; the dots' place setting is the watch's and it ignores it.
+    expect(PHONE_PAGES_DOCK_BAR).toBe(46);
+    expect(bar("iphone", true, false)).toBe(46);
+    expect(bar("iphone", true, true)).toBe(46);
+    // No dock (one page, or dots off): the plain 32 point bar.
+    expect(bar("iphone", false, false)).toBe(PHONE_PAGES_BOTTOM_BAR);
+    expect(bar("iphone", false, true)).toBe(32);
+    // The Watch look: 14 under its dots at the top, else 32, dots or not.
+    expect(bar("watch", true, true)).toBe(PHONE_PAGES_BOTTOM_BAR_TOP_DOTS);
+    expect(bar("watch", false, true)).toBe(14);
+    expect(bar("watch", true, false)).toBe(32);
+    expect(bar("watch", false, false)).toBe(32);
+    // With no dots given, the phone's defaults: dots on, at the bottom.
+    expect(phonePagesLayout(DEFAULT_PHONE, { look: "iphone" }).bottomBar.height).toBe(46);
+    expect(phonePagesLayout().bottomBar.height).toBe(32);
+    // The pages area ends on the bar: 676 tall over the dock, 708 over the
+    // Watch look's short strip.
+    expect(phonePagesLayout(DEFAULT_PHONE, { look: "iphone" }).area).toEqual({ x: 6, y: 118, width: 390, height: 676 });
+    expect(phonePagesLayout(DEFAULT_PHONE, { dots: { shown: true, top: true } }).area.height).toBe(708);
+  });
+
+  it("reads the dots' place from the phone's settings and its shown pages", () => {
+    expect(phonePagesDotsOf(undefined, 2)).toEqual({ shown: true, top: false });
+    expect(phonePagesDotsOf({}, 1)).toEqual({ shown: false, top: false });
+    expect(phonePagesDotsOf({ showPageIndicator: false }, 5)).toEqual({ shown: false, top: false });
+    expect(phonePagesDotsOf({ pageIndicatorPosition: "Top" }, 3)).toEqual({ shown: true, top: true });
   });
 
   it("lays a page's tiles out in the pages area to within a point of the simulator", () => {
@@ -182,8 +220,14 @@ describe("the iPhone's pages screen", () => {
     const layout = phonePagesLayout();
     const long: WatchPage = { ...PHONE_A, items: [...ITEMS, { id: "X", entityId: "light.x", gridCol: 0, gridRow: 30, colSpan: 4, rowSpan: 4 }] };
     const text = flat(renderWatchPagePreview({ page: long, pages: [long], screen: phonePagesScreen(layout), phone: layout, scale: 1 }));
-    expect(text).toContain('class="wp-fold" style=top:712px');
+    expect(text).toContain('class="wp-fold" style=top:690px');
     expect(text).toContain("the end of the iPhone's screen");
+    // The iPhone look ends its pages higher, on the dock's bar.
+    const iphone = phonePagesLayout(DEFAULT_PHONE, { look: "iphone" });
+    const over = flat(renderWatchPagePreview({ page: long, pages: [long, { ...long, id: "P2" }], screen: phonePagesScreen(iphone), phone: iphone, scale: 1 }));
+    expect(over).toContain('class="wp-fold" style=top:676px');
+    expect(over).toContain('class="wa-phone-dots-bar" style=height:46px');
+    expect(over).toContain("height:12px");
   });
 
   it("draws the phone at half the watch's zoom", () => {
@@ -211,7 +255,7 @@ describe("the iPhone's status pages and menus", () => {
     const phone = flat(renderStatusPageScreen({ ...base, document, screen: phonePagesScreen(layout), scale: 1, phone: layout }));
     expect(phone).toContain('class="wa-phone"');
     expect(phone).toContain("Status page on the iPhone");
-    expect(phone).toContain("width:390px;min-height:712px");
+    expect(phone).toContain("width:390px;min-height:690px");
     expect(phone).not.toContain("wa-watch");
     const watch = flat(renderStatusPageScreen({ ...base, document, screen: { width: 208, height: 248 }, scale: 1 }));
     expect(watch).toContain('class="wa-watch"');
@@ -225,7 +269,7 @@ describe("the iPhone's status pages and menus", () => {
     } as unknown as MenusViewHost;
     const text = flat(renderMenuScreen(host));
     expect(text).toContain('class="wa-phone"');
-    expect(text).toContain("width:390px;height:712px");
+    expect(text).toContain("width:390px;height:690px");
     expect(text).not.toContain("wa-watch");
   });
 });

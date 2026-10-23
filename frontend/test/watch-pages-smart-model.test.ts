@@ -1166,12 +1166,12 @@ describe("tile-smart.json", () => {
     expect(WATCH_SMART.presets.some((p) => p.domain === "person")).toBe(false);
     expect(WATCH_SMART.presets.every((p) => WATCH_SMART.domains.some((d) => d.domain === p.domain))).toBe(true);
     expect(WATCH_SMART.pageSizes.map((s) => [s.name, s.colSpan, s.rowSpan])).toEqual([
-      ["Small", 2, 2],
-      ["Standard", 4, 3],
+      ["Mini", 2, 2],
       ["Banner", 4, 2],
-      ["Full Width", 8, 3],
+      ["Standard", 4, 3],
+      ["Wide", 8, 3],
     ]);
-    expect(WATCH_SMART.styleSizes.map((s) => s.name)).toEqual(["XSmall", "Small", "Medium", "Large"]);
+    expect(WATCH_SMART.styleSizes.map((s) => s.name)).toEqual(["Extra small", "Small", "Medium", "Large"]);
     expect(WATCH_SMART.headerStyles.map((s) => s.value)).toEqual(["none", "gap", "line", "label"]);
   });
 

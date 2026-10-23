@@ -16,11 +16,12 @@
 // the page editor's sheet already carries.
 
 import { type TemplateResult, html, nothing } from "lit";
-import { colorField, sliderField } from "../editors.js";
+import { sliderField } from "../editors.js";
 import { uiIcon } from "../ui-icons.js";
-import { type TileSettingsHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
+import { type TileSettingsHost, hostDeviceNoun } from "./editor-host.js";
 import { leaveWatchTileGroup, makeWatchTileGroup, ungroupWatchTileGroup, watchTilesAdjacent } from "./edit.js";
 import {
+  WATCH_GROUP_OVERLAY_COLOR,
   WATCH_GROUP_SLIDERS,
   setWatchGroupOverlay,
   setWatchGroupOverlayColor,
@@ -37,10 +38,7 @@ import {
   watchTileGroup,
 } from "./group-model.js";
 import type { WatchPagesDocument } from "./model.js";
-import { watchPageSwatchTheme } from "./page-settings-model.js";
-import { watchThemeSwatches } from "./tile-new.js";
-import { watchColorRefusal, watchCustomBoxColor } from "./tile-settings-options.js";
-import { commit, stylingEnumField, swatchRow, typed, typingField } from "./tile-settings.js";
+import { colorPicker, commit, stylingEnumField, typingField } from "./tile-settings.js";
 import type { WatchStylingSlider } from "./tile-styling.js";
 
 /** Words the card and its tests share. */
@@ -51,7 +49,7 @@ export const WATCH_GROUP_TEXT = {
   leave: "Leave group",
   edit: "Edit group",
   notAdjacent: "Tiles must touch to make a group.",
-  about: "A group draws one background pattern and one animated overlay across its tiles.",
+  about: "A group draws one background pattern and one effect across its tiles.",
 } as const;
 
 /** What the page editor does for the group rows that change the pick. */
@@ -92,53 +90,45 @@ function groupSlider(
   }), value);
 }
 
-/** The page theme's solid swatches and a custom box; `clear` adds the chip
- * for no color of its own. */
-function groupColor(
-  host: TileSettingsHost,
-  setting: string,
-  label: string,
-  color: string | undefined,
-  set: (d: WatchPagesDocument, value: string) => WatchPagesDocument,
-  clear?: { label: string; title: string; write: (d: WatchPagesDocument) => WatchPagesDocument },
-): TemplateResult {
-  const swatches = watchThemeSwatches(watchPageSwatchTheme(host.page), false);
-  const custom = (value: string | undefined): void => {
-    const reason = watchColorRefusal(value, hostDevice(host));
-    if (reason !== undefined || value === undefined) return commit(host, setting, (d) => d, { reason: reason ?? "Pick a color." });
-    commit(host, setting, (d) => set(d, value), { typing: true });
-  };
-  return html`
-    <div class="ts-sub-h"><span>${label}</span></div>
-    <div class="ts-swatch-row">${swatchRow(label, swatches, color, (v) => commit(host, setting, (d) => set(d, v)))}</div>
-    ${typingField(host, setting, html`<div class="ts-no-alpha">${colorField("Custom", typed(host, setting) ?? watchCustomBoxColor(color), custom)}</div>`)}
-    ${clear === undefined ? nothing : html`<div class="ts-after">
-      <button type="button" class="pe-chip ${color === undefined ? "on" : ""}" aria-pressed=${color === undefined ? "true" : "false"}
-        title=${clear.title} @click=${() => commit(host, setting, clear.write)}>${clear.label}</button>
-    </div>`}`;
-}
-
-/** The group's look: Pattern with its opacity, size and color, then
- * Overlay with its color, speed, intensity and size. */
+/** The group's look, as the tile card names it: Pattern with its type,
+ * opacity, size and color, then Effect with its type, color, speed,
+ * intensity and size. The colors are the cards' one picker (`colorPicker`):
+ * solid only, as the watch reads a group's colors, and Rainbow for the
+ * effect, which the watch cycles. */
 function renderGroupLook(host: TileSettingsHost, groupId: string): TemplateResult | typeof nothing {
   const group = watchTileGroup(host.page, groupId);
   if (group === undefined) return nothing;
   const g = watchGroupLook(group);
   const pid = host.pageId;
   const key = (s: string) => `group:${groupId.toUpperCase()}:${s}`;
+  /** The group's look when an edit is made, not when it was drawn. */
+  const now = () => {
+    const at = watchTileGroup(host.page, groupId);
+    return at === undefined ? g : watchGroupLook(at);
+  };
   return html`
-    <div class="ts-sub-h"><span>Background pattern</span></div>
-    ${stylingEnumField("Pattern", "backgroundPattern", g.pattern, (v) => commit(host, key("pattern"), (d) => setWatchGroupPattern(d, pid, groupId, v)))}
+    <div class="ts-sub-h"><span>Pattern</span></div>
+    ${stylingEnumField("Type", "backgroundPattern", g.pattern, (v) => commit(host, key("pattern"), (d) => setWatchGroupPattern(d, pid, groupId, v)))}
     ${g.pattern === "none" ? nothing : html`
       ${groupSlider(host, groupId, key("patternOpacity"), "Opacity", WATCH_GROUP_SLIDERS.patternOpacity, g.patternOpacity, g.patternColor === undefined ? 1 : 0.5, setWatchGroupPatternOpacity, percent)}
       ${groupSlider(host, groupId, key("patternScale"), "Size", WATCH_GROUP_SLIDERS.patternScale, g.patternScale, 1, setWatchGroupPatternScale, times)}
-      ${groupColor(host, key("patternColor"), "Pattern color", g.patternColor,
-        (d, v) => setWatchGroupPatternColor(d, pid, groupId, v),
-        { label: "Default gray", title: `No color of its own: the ${hostDeviceNoun(host)} draws the pattern in gray`, write: (d) => setWatchGroupPatternColor(d, pid, groupId, null) })}`}
-    <div class="ts-sub-h"><span>Animated overlay</span></div>
-    ${stylingEnumField("Overlay", "tileAnimation", g.overlay, (v) => commit(host, key("overlay"), (d) => setWatchGroupOverlay(d, pid, groupId, v)))}
+      ${colorPicker(host, key("patternColor"), {
+        label: "Pattern color",
+        color: () => now().patternColor,
+        defaultTitle: `Gray, the ${hostDeviceNoun(host)}'s own pattern color`,
+        write: (d, v) => setWatchGroupPatternColor(d, pid, groupId, v),
+      })}`}
+    <div class="ts-sub-h"><span>Effect</span></div>
+    ${stylingEnumField("Type", "tileAnimation", g.overlay, (v) => commit(host, key("overlay"), (d) => setWatchGroupOverlay(d, pid, groupId, v)))}
     ${g.overlay === "none" ? nothing : html`
-      ${groupColor(host, key("overlayColor"), "Overlay color", g.overlayColor, (d, v) => setWatchGroupOverlayColor(d, pid, groupId, v))}
+      ${colorPicker(host, key("overlayColor"), {
+        label: "Effect color",
+        color: () => now().overlayColor,
+        rainbow: true,
+        defaultTitle: `White, the ${hostDeviceNoun(host)}'s own effect color`,
+        defaultValue: WATCH_GROUP_OVERLAY_COLOR,
+        write: (d, v) => setWatchGroupOverlayColor(d, pid, groupId, v ?? WATCH_GROUP_OVERLAY_COLOR),
+      })}
       ${groupSlider(host, groupId, key("overlaySpeed"), "Speed", WATCH_GROUP_SLIDERS.overlaySpeed, g.overlaySpeed, 1, setWatchGroupOverlaySpeed, times)}
       ${groupSlider(host, groupId, key("overlayIntensity"), "Intensity", WATCH_GROUP_SLIDERS.overlayIntensity, g.overlayIntensity, 1, setWatchGroupOverlayIntensity, times)}
       ${groupSlider(host, groupId, key("overlaySize"), "Size", WATCH_GROUP_SLIDERS.overlaySize, g.overlaySize, 1, setWatchGroupOverlaySize, times)}`}`;

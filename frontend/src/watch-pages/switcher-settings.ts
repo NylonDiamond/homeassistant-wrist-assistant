@@ -14,10 +14,11 @@
 // the document at the moment it commits (`host.edit`).
 
 import { html, nothing, type TemplateResult } from "lit";
-import { checkField, colorField, segField, symbolField, textField } from "../editors.js";
+import { checkField, segField, symbolField, textField } from "../editors.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import type { SettingDevice } from "../watch-settings.js";
+import { colorPickerView } from "./color-picker.js";
 import { hostDevice, hostDeviceNoun } from "./editor-host.js";
 import type { WatchPage, WatchPagesDocument } from "./model.js";
 import {
@@ -29,7 +30,10 @@ import {
   setWatchPageSwitcherText,
   watchPageReadsOtherThanDefault,
   watchPageSettings,
+  watchPageSwatchTheme,
 } from "./page-settings-model.js";
+import { watchThemeDisplayName, watchThemeSwatches } from "./tile-new.js";
+import { watchCustomBoxColor } from "./tile-settings-options.js";
 
 /** What the rows are handed on every draw. `page` and `busy` are getters
  * that read the pages draft each time, never a copy taken at the draw. */
@@ -184,7 +188,8 @@ function typingRow(host: SwitcherSettingsHost, setting: string, body: TemplateRe
 
 /**
  * The page's rows for the page switcher: Hidden, Show as Name or Icon, the
- * name, Automatic icon, the icon, the color (with its switch), and the hint.
+ * name, Automatic icon, the icon, the color (the cards' one picker,
+ * `colorPickerView`, Default leaving it to the watch), and the hint.
  * Each left empty is chosen by the watch, as on the iPhone. Typed text left
  * over from a field no longer focused is dropped first.
  */
@@ -196,8 +201,9 @@ export function renderSwitcherSettings(host: SwitcherSettingsHost): TemplateResu
   const modes = WATCH_PAGE_SWITCHER_MODES.map((m) => [m, m === "icon" ? "Icon" : "Name"] as [string, string]);
   const name = typeof page.name === "string" ? page.name : "";
   const setIcon = (value: string) => write(host, (d) => setWatchPageSwitcherIcon(d, host.pageId, value));
-  const setColor = (value: string | undefined) => write(host, (d) => setWatchPageSwitcherColor(d, host.pageId, value), true);
+  const setColor = (value: string | undefined, typing = false) => write(host, (d) => setWatchPageSwitcherColor(d, host.pageId, value), typing);
   const device = hostDeviceNoun(host);
+  const theme = watchPageSwatchTheme(page);
   return html`
     ${checkField("Hidden", s.hideFromSwitcher, (v) => write(host, (d) => setWatchPageHideFromSwitcher(d, host.pageId, v)), false)}
     ${s.hideFromSwitcher ? html`<div class="hint ts-under">The page stays on the ${device}. Only the switcher leaves it out.</div>` : nothing}
@@ -211,6 +217,15 @@ export function renderSwitcherSettings(host: SwitcherSettingsHost): TemplateResu
     </div>
     ${typingRow(host, "switcherIcon", symbolField({ icons: host.icons, symbols: host.symbols, device: hostDevice(host) }, typed(host, "switcherIcon") ?? s.switcherIcon ?? "", setIcon, "sw:switcher-icon",
       { emptyText: `Picked by the ${device}`, tint: s.switcherColor }))}
-    ${typingRow(host, "switcherColor", html`<div class="ts-no-alpha">${colorField("Color", typed(host, "switcherColor") ?? s.switcherColor, setColor, true, null, { switchOn: s.switcherColor !== undefined })}</div>`)}
+    ${colorPickerView({
+      label: "Color",
+      color: s.switcherColor,
+      swatches: watchThemeSwatches(theme, false),
+      swatchesLabel: `Color: ${watchThemeDisplayName(theme)} colors`,
+      pickSwatch: (v) => setColor(v),
+      default: { title: `The ${device} picks a color for each page`, on: s.switcherColor === undefined, pick: () => setColor(undefined) },
+      custom: { shown: typed(host, "switcherColor") ?? watchCustomBoxColor(s.switcherColor), pick: (v) => { if (v !== undefined) setColor(v, true); } },
+      wrap: (body) => typingRow(host, "switcherColor", body),
+    })}
     <div class="hint ts-under">Left empty, the ${device} shows the page's name and picks the icon and color itself.</div>`;
 }

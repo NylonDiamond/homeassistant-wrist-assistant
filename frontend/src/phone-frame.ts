@@ -13,15 +13,19 @@
 //   safe area top
 //   home switcher, 42 tall, 16 in from each side, then 8 (two or more homes only)
 //   top row, 44 (`PhonePagesView.topControls`)
-//   top bar, 8 (`PhonePagesBoard.topBar`, a clear strip)
-//   pages area, 6 in from each side (`PhonePagesBoard.sideInset`)
-//   bottom bar, 14 (the page dots when they sit at the bottom)
+//   top bar, 12 (`PhonePagesView.topBar`, a clear strip, `DS.space(.s)`)
+//   pages area, 6 in from each side (`PhonePagesView.sideInset`)
+//   bottom bar (`PhonePagesView.bottomBarHeight`): 46 for the iPhone look's
+//     dock (`PhonePagesDock.height` 38, and 8) when its dots show, 14 under
+//     the Watch look's dots at the top, else 32 (`pageBarHeight`)
 //   safe area bottom
 //
 // On the iPhone 17 Pro (402 by 874 points) without the switcher the pages
-// area is 6 to 396 across and 114 to 826 down, 390 by 712 points. The
-// tiles' places inside it were measured on the simulator on 2026-10-10 and
-// do not move with the chrome around it.
+// area is 6 to 396 across and starts 118 down; it ends at 794 above the
+// dock (676 tall), at 808 with no dock and the dots not at the top (690
+// tall), or at 826 under the Watch look's top dots (708 tall). The tiles'
+// places inside it were measured on the simulator on 2026-10-10 and do not
+// move with the chrome around it.
 //
 // The panel draws no home switcher: the phone shows one only with two or
 // more homes, which Home Assistant cannot see, and the single home case is
@@ -81,12 +85,20 @@ export function phoneModelForScreenSize(screenSize: string | null | undefined): 
   return PHONE_MODELS.find((m) => m.screen.width === width && m.screen.height === height) ?? DEFAULT_PHONE;
 }
 
-/** `PhonePagesBoard.sideInset`: the room each side of the pages area. */
+/** `PhonePagesView.sideInset`: the room each side of the pages area. */
 export const PHONE_PAGES_SIDE_INSET = 6;
-/** `PhonePagesBoard.topBar` with no page pushed: a clear strip, `DS.space(.xs)`. */
-export const PHONE_PAGES_TOP_BAR = 8;
-/** `PhonePagesBoard.bottomBar`: the page dots when they sit at the bottom. */
-export const PHONE_PAGES_BOTTOM_BAR = 14;
+/** `PhonePagesView.topBar` with no page pushed: a clear strip, `DS.space(.s)`. */
+export const PHONE_PAGES_TOP_BAR = 12;
+/** `PhonePagesView.pageBarHeight`: the dots' bar under the pages, a thumb's
+ * height, with the dots in it or not (one page, dots off, or the iPhone
+ * look with no dock to show). */
+export const PHONE_PAGES_BOTTOM_BAR = 32;
+/** The bar under the pages with the Watch look's dots at the top of them. */
+export const PHONE_PAGES_BOTTOM_BAR_TOP_DOTS = 14;
+/** `PhonePagesDock.height`: the iPhone look's glass capsule for its dots. */
+export const PHONE_PAGES_DOCK_HEIGHT = 38;
+/** `PhonePagesView.phoneDockBarHeight`: the dock and a little air round it. */
+export const PHONE_PAGES_DOCK_BAR = PHONE_PAGES_DOCK_HEIGHT + 8;
 /** How far the page dots sit below the top of the pages area when they are
  * at the top. */
 export const PHONE_PAGE_DOTS_TOP = 3;
@@ -160,17 +172,46 @@ export interface PhonePagesLayout {
   topRow: PhoneRect;
   /** The pages area: the screen the page code lays a page out on. */
   area: PhoneRect;
-  /** The strip under the pages area, where bottom page dots sit, just above
-   * the safe area. */
+  /** The bar under the pages area, where bottom page dots or the iPhone
+   * look's dock sit, just above the safe area. */
   bottomBar: PhoneRect;
+}
+
+/** What the bar under the pages is sized for: whether the page dots show
+ * (`showPageIndicator` on, and two or more pages to show), and whether the
+ * phone's settings put them at the top (`pageIndicatorPosition`, which the
+ * iPhone look does not read). */
+export interface PhonePagesDotsPlace {
+  shown: boolean;
+  top: boolean;
+}
+
+/** The dots' place from a phone's behavior document and how many pages it
+ * shows (`PhonePagesRules.visiblePages`: none hidden, no system page). */
+export function phonePagesDotsOf(behavior: Readonly<Record<string, unknown>> | undefined, visiblePages: number): PhonePagesDotsPlace {
+  return { shown: behavior?.showPageIndicator !== false && visiblePages > 1, top: behavior?.pageIndicatorPosition === "Top" };
+}
+
+/** `PhonePagesView.bottomBarHeight`: the dock's bar with the iPhone look
+ * while its dots show, the short strip under the Watch look's top dots,
+ * else the dots' thumb high bar, dots in it or not. */
+export function phonePagesBottomBarHeight(iphone: boolean, dots: PhonePagesDotsPlace): number {
+  if (iphone && dots.shown) return PHONE_PAGES_DOCK_BAR;
+  if (!iphone && dots.top) return PHONE_PAGES_BOTTOM_BAR_TOP_DOTS;
+  return PHONE_PAGES_BOTTOM_BAR;
 }
 
 /** Where the pages screen lays itself out on `model`, with the home
  * switcher when `switcher` (a phone with two or more homes). The top row is
- * the same height in both looks, so the pages area is too; `look` "iphone"
- * only moves the top row's buttons in to the iPhone look's tile edges. The
- * pages area runs down to the strip for the page dots. */
-export function phonePagesLayout(model: PhoneModel = DEFAULT_PHONE, options?: { switcher?: boolean; look?: PhonePageLook }): PhonePagesLayout {
+ * the same height in both looks; `look` "iphone" moves the top row's
+ * buttons in to the iPhone look's tile edges. The pages area runs down to
+ * the bar under it, whose height follows the look and `dots`; with no
+ * `dots`, the phone's own defaults: dots on, at the bottom, two or more
+ * pages. */
+export function phonePagesLayout(
+  model: PhoneModel = DEFAULT_PHONE,
+  options?: { switcher?: boolean; look?: PhonePageLook; dots?: PhonePagesDotsPlace },
+): PhonePagesLayout {
   const { width, height } = model.screen;
   const iphone = options?.look === "iphone";
   let top = model.safeTop;
@@ -182,7 +223,8 @@ export function phonePagesLayout(model: PhoneModel = DEFAULT_PHONE, options?: { 
   const side = iphone ? PHONE_TOP_ROW_SIDE_IPHONE : PHONE_PAGES_SIDE_INSET;
   const topRow = { x: side, y: top, width: width - side * 2, height: PHONE_TOP_ROW_HEIGHT };
   top += PHONE_TOP_ROW_HEIGHT + PHONE_PAGES_TOP_BAR;
-  const bottomBar = { x: 0, y: height - model.safeBottom - PHONE_PAGES_BOTTOM_BAR, width, height: PHONE_PAGES_BOTTOM_BAR };
+  const bar = phonePagesBottomBarHeight(iphone, options?.dots ?? { shown: true, top: false });
+  const bottomBar = { x: 0, y: height - model.safeBottom - bar, width, height: bar };
   const area = { x: PHONE_PAGES_SIDE_INSET, y: top, width: width - PHONE_PAGES_SIDE_INSET * 2, height: bottomBar.y - top };
   return {
     model,

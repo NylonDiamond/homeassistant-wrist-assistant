@@ -1433,7 +1433,11 @@ export const menuViewStyles = css`
   /* A picked page's Automatic icon chip, as the page editor drew it. */
   .ts-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 6px; }
   .ts-swatch-row { padding: 2px 0 4px calc(var(--wa-lab) + 8px); }
-  .ts-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+  /* The page switcher's Color heading, as the tile settings draw one. */
+  .ts-sub-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 6px;
+    font-size: 11.5px; font-weight: 650; color: var(--wa-muted); letter-spacing: .02em; }
+  .ts-swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .ts-swatches > .ts-color-default { min-height: 24px; margin-right: 2px; }
   .ts-swatch {
     width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
     background: var(--sw); box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .45);

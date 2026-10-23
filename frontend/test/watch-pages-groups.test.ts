@@ -284,7 +284,10 @@ describe("the group's look", () => {
     expect(setWatchGroupOverlaySpeed(before, PAGE, G, 4)).toBe(before);
     expect(setWatchGroupOverlayIntensity(before, PAGE, G, 0.25)).toBe(before);
     expect(setWatchGroupOverlaySize(before, PAGE, G, 3)).toBe(before);
-    expect(setWatchGroupOverlayColor(before, PAGE, G, "#RAINBOW")).toBe(before);
+    expect(setWatchGroupOverlayColor(before, PAGE, G, "GRADIENT|#FF0000|#0000FF")).toBe(before);
+    // The watch cycles a group's effect through every color on `#RAINBOW`
+    // (`GroupAnimatedOverlayView`), as it does a tile's.
+    expect(groupIn(setWatchGroupOverlayColor(before, PAGE, G, "#rainbow")).overlayColor).toBe("#RAINBOW");
   });
 
   it("keeps every key it does not know, and the rest of the page as it was", () => {

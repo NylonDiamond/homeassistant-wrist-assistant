@@ -297,6 +297,7 @@ import {
   phoneFrameStyles,
   phoneModelForScreenSize,
   phonePageLookOf,
+  phonePagesDotsOf,
   phonePagesLayout,
   phonePagesScreen,
 } from "../phone-frame.js";
@@ -721,10 +722,15 @@ export const PHONE_PAGES_EMPTY_TEXT = "Add a page and build it here, or add one 
 export function watchPagesPlanText(kind: LinkDevice["kind"]): { title: string; body: string } {
   return {
     title: "One page is always free.",
-    body: `On the free plan, the ${deviceWord(kind)} shows your first page that is not hidden. Pro shows every page, with no limit. `
+    body: `${watchPagesPlanLine(kind)} Pro shows every page, with no limit. `
       + "Pro is one purchase for life, with no subscription. "
       + "It also pays for development: Wrist Assistant is my full-time job, so it keeps getting better.",
   };
+}
+
+/** The plan line's first sentence, all the stacked page menu says of it. */
+export function watchPagesPlanLine(kind: LinkDevice["kind"]): string {
+  return `On the free plan, the ${deviceWord(kind)} shows your first page that is not hidden.`;
 }
 
 /** The plan line on a watch. */
@@ -937,6 +943,8 @@ export class WaPageEditor extends LitElement {
   @state() private topMenuOpen = false;
   /** The top bar's watch picker is open. */
   @state() private watchMenuOpen = false;
+  /** The stacked canvas head's page menu is open. */
+  @state() private pageMenuOpen = false;
   /** Why the last value typed in the tile card was refused. */
   @state() private fieldNote?: string;
   /** The note a refused drag or resize on the stage put in the line under
@@ -1006,6 +1014,9 @@ export class WaPageEditor extends LitElement {
   private followedSave?: Promise<unknown>;
   /** Things to do once the next draw is on screen. */
   private focusRename = false;
+  /** A page added while stacked is named in the canvas head, where the
+   * person is, not in its row far down the page. */
+  private focusHeadName = false;
   private focusPageRow?: string;
   private focusMenu = false;
   private focusHistory = false;
@@ -1286,6 +1297,12 @@ export class WaPageEditor extends LitElement {
     if (this.focusRename) {
       this.focusRename = false;
       const input = this.renderRoot.querySelector<HTMLInputElement>("input.pe-rename");
+      input?.focus();
+      input?.select();
+    }
+    if (this.focusHeadName) {
+      this.focusHeadName = false;
+      const input = this.renderRoot.querySelector<HTMLInputElement>(".cv-head input.tb-name-input");
       input?.focus();
       input?.select();
     }
@@ -2337,7 +2354,10 @@ export class WaPageEditor extends LitElement {
     if (page === undefined) return;
     const id = watchPageId(page);
     this.selectPage(id);
-    this.startRename(id);
+    // Stacked, the page's row is under the inspector: renaming it there
+    // scrolled the person away from the page they just made.
+    if (this.stacked) this.focusHeadName = true;
+    else this.startRename(id);
   }
 
   private startRename(pageId: string): void {
@@ -2824,6 +2844,12 @@ export class WaPageEditor extends LitElement {
       void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLElement>(".wa-bar .pe-watch-open")?.focus());
       return;
     }
+    if (e.key === "Escape" && this.pageMenuOpen) {
+      e.preventDefault();
+      this.pageMenuOpen = false;
+      void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLElement>(".cv-head .pe-page-open")?.focus());
+      return;
+    }
     if (isTextField(path[0])) return;
     const dragging = this.gesture !== undefined || this.rowDrag !== undefined;
     if (mod && !e.altKey && key === "z") {
@@ -2892,14 +2918,15 @@ export class WaPageEditor extends LitElement {
   }
 
   /** A press anywhere outside an open menu (a page row's, the top bar's
-   * ···, or the watch picker) closes it. */
+   * ···, the watch picker, or the stacked head's page menu) closes it. */
   private onWindowPointerDown = (e: PointerEvent): void => {
-    if (this.menuPageId === undefined && !this.topMenuOpen && !this.watchMenuOpen) return;
+    if (this.menuPageId === undefined && !this.topMenuOpen && !this.watchMenuOpen && !this.pageMenuOpen) return;
     const path = e.composedPath();
     const within = (...names: string[]) => path.some((n) => n instanceof HTMLElement && names.some((c) => n.classList.contains(c)));
     if (this.menuPageId !== undefined && !within("pe-menu", "pe-more")) this.menuPageId = undefined;
     if (this.topMenuOpen && !within("pe-top-menu")) this.topMenuOpen = false;
     if (this.watchMenuOpen && !within("pe-watch-picker")) this.watchMenuOpen = false;
+    if (this.pageMenuOpen && !within("pe-page-pick")) this.pageMenuOpen = false;
   };
 
   // ── pointer gestures ───────────────────────────────────────────────────
@@ -4039,6 +4066,8 @@ export class WaPageEditor extends LitElement {
       <div class="column canvas">
         ${page ? this.renderStage(page, pages, owner, watches, tile) : html`<div class="card canvas-card pe-no-page">
             <p class="pe-muted">${listed.length === 0 ? "Add a page to start." : "Pick a page."}</p>
+            ${this.stacked && listed.length === 0 && !inLibrary ? html`<button class="pe-btn pe-add-first" ?disabled=${this.saving}
+              title=${this.saving ? SAVING_TEXT : "Add an empty page"} @click=${() => this.addPage()}>${uiIcon("plus")}<span>Add page</span></button>` : nothing}
           </div>`}
       </div>
       ${this.renderGutter("right")}
@@ -4156,11 +4185,19 @@ export class WaPageEditor extends LitElement {
 
   /** On an iPhone, where its pages screen lays itself out (`phone-frame.ts`),
    * in the Page look its own settings ask for (the iPhone look until they
-   * are read, as the phone draws with none); undefined on a watch. */
+   * are read, as the phone draws with none), its pages ending at the bar
+   * its dots settings and its shown pages size; undefined on a watch. */
   private phoneLayoutOf(owner: OwnerSummary | undefined): PhonePagesLayout | undefined {
     if (!this.onPhone) return undefined;
     const shown = owner ?? this.ownerList.find((o) => o.owner_watch_id === this.watchId);
-    return phonePagesLayout(phoneModelForScreenSize(shown?.screen_size), { look: phonePageLookOf(this.behavior) });
+    const document = this.draft?.document;
+    const visible = document === undefined ? 0
+      : watchPagesOf(this.contextPages(document)).filter((p) => p.isHidden !== true && p.isSystemPage !== true).length;
+    return phonePagesLayout(phoneModelForScreenSize(shown?.screen_size), {
+      look: phonePageLookOf(this.behavior),
+      // Before a draft, the phone's own defaults.
+      ...(document === undefined ? {} : { dots: phonePagesDotsOf(this.behavior, visible) }),
+    });
   }
 
   /** What a picture of `page` is drawn with at `scale`, the stage's own
@@ -4595,8 +4632,8 @@ export class WaPageEditor extends LitElement {
 
   /** The canvas head: the page's name, typed over where it stands (the
    * same rename as the page row's), the open watch's name (picked in the
-   * top bar), the page's facts, and at the right the edit actions. It reads
-   * "Hall / Sim / 6 tiles · 16 rows · 46 mm". */
+   * top bar), the page's facts, and at the right the edit actions, led when
+   * stacked by the page menu. It reads "Hall / Sim / 6 tiles · 16 rows · 46 mm". */
   private renderCanvasHead(
     page: WatchPage,
     watches: readonly OwnerSummary[],
@@ -4639,6 +4676,7 @@ export class WaPageEditor extends LitElement {
       <span class="cv-part cv-what"><span class="cv-slash" aria-hidden="true">/</span>
         <span class="cv-shape" title=${factsTitle ?? facts.join(" · ")}><span class="fam">${facts.join(" · ")}</span></span></span>
       <span class="cv-acts">
+        ${this.renderPageMenu(page)}
         <button class="cv-act icon undo" ?disabled=${!draft?.canUndo} title=${`Undo (${MOD}Z)`} aria-label="Undo"
           @click=${() => this.undo()}>${uiIcon("undo")}</button>
         <button class="cv-act icon undo" ?disabled=${!draft?.canRedo} title=${IS_MAC ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Y)"} aria-label="Redo"
@@ -4651,6 +4689,51 @@ export class WaPageEditor extends LitElement {
           @click=${() => this.deleteTile()}>${uiIcon("delete")}</button>
       </span>
     </div>`;
+  }
+
+  /**
+   * The stacked head's page menu. One column puts the Pages card under the
+   * inspector, so on a phone switching or adding a page meant scrolling past
+   * every setting. The button reads where the shown page stands ("2/5"); its
+   * menu, the width of the head, lists the device's pages with a check on
+   * the shown one, then Add page, the Pages card's own Add (off while a
+   * save runs), and the free plan's line when the device said it is on it.
+   * Beside the stage the Pages card is in sight, so it is not drawn there,
+   * nor in library mode, where a page stands alone.
+   */
+  private renderPageMenu(page: WatchPage): TemplateResult | typeof nothing {
+    const document = this.draft?.document;
+    if (!this.stacked || this.libraryItem !== undefined || document === undefined) return nothing;
+    const listed = listedWatchPages(document);
+    const id = watchPageId(page);
+    const at = listed.findIndex((p) => sameWatchId(watchPageId(p), id));
+    const open = this.pageMenuOpen;
+    const where = deviceWord(this.linkKind);
+    const place = at < 0 ? `${listed.length}` : `${at + 1}/${listed.length}`;
+    return html`<span class="pe-page-pick">
+      <button class="cv-act pe-page-open" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
+        title="Pick a page, or add one" aria-label=${at < 0 ? "Pages. Pick a page, or add one" : `Page ${at + 1} of ${listed.length}: ${watchPageName(page)}. Pick another, or add one`}
+        @click=${() => { this.pageMenuOpen = !open; }}>${uiIcon("pages")}<span class="pe-page-place">${place}</span>${uiIcon("chevron")}</button>
+      ${open ? html`<div class="pop-menu pe-page-menu" role="menu" aria-label=${`Pages on this ${where}`}>
+        <div class="pe-page-menu-list">
+          ${repeat(listed, (p) => watchPageId(p), (p) => {
+            const pid = watchPageId(p);
+            const on = sameWatchId(pid, id);
+            return html`<button class="row pe-page-menu-row" role="menuitemradio" aria-checked=${on ? "true" : "false"} data-page=${pid}
+              @click=${() => { this.pageMenuOpen = false; if (!on) this.selectPage(pid); }}>
+              <span class="pe-page-menu-name">${watchPageName(p)}</span>
+              ${isSmartWatchPage(p) ? html`<small class="pe-page-menu-tag">smart</small>` : nothing}
+              ${isHiddenWatchPage(p) ? html`<small class="pe-page-menu-tag">hidden</small>` : nothing}
+              ${on ? html`<span class="pe-watch-check">${uiIcon("check")}</span>` : nothing}
+            </button>`;
+          })}
+        </div>
+        <button class="row pe-page-menu-add" role="menuitem" ?disabled=${this.saving}
+          title=${this.saving ? SAVING_TEXT : "Add an empty page after the last one"}
+          @click=${() => { this.pageMenuOpen = false; this.addPage(); }}>${uiIcon("plus")}<span>Add page</span></button>
+        ${this.record?.multiple_pages === false ? html`<p class="pe-page-menu-note">${watchPagesPlanLine(this.linkKind)}</p>` : nothing}
+      </div>` : nothing}
+    </span><span class="cv-div" aria-hidden="true"></span>`;
   }
 
   /** The floating tool strip over the stage, the complication editor's:
@@ -5680,6 +5763,36 @@ export class WaPageEditor extends LitElement {
     .pe-watch-row[aria-checked="true"] { background: color-mix(in srgb, var(--wa-accent) 14%, transparent); }
     .pe-watch-check { display: inline-flex; color: var(--wa-accent); }
     .pe-watch-check svg.ui-icon { width: 14px; height: 14px; }
+    /* The stacked head's page menu (renderPageMenu): a quiet head button
+       that reads where the page stands, and the panel's pop menu hung the
+       width of the head under it, so a 360px phone holds it with nothing to
+       scroll sideways. The head rises over the stage while it is open. */
+    .layout.pe-layout.cols-1 .pe-canvas > .cv-head { position: relative; z-index: 20; }
+    .pe-page-pick { display: inline-flex; }
+    button.cv-act.pe-page-open {
+      gap: 5px; padding: 0 6px 0 8px; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+      color: var(--wa-label, var(--wa-ink)); box-shadow: inset 0 0 0 1px var(--wa-line);
+    }
+    button.cv-act.pe-page-open:focus-visible { box-shadow: var(--wa-ring); }
+    .pe-page-open svg.ui-icon { width: 14px; height: 14px; flex: none; }
+    .pe-page-open svg.ui-icon:last-child { width: 12px; height: 12px; opacity: .6; transition: transform .12s ease-out; }
+    .pe-page-open[aria-expanded="true"] svg.ui-icon:last-child { transform: rotate(180deg); }
+    .pop-menu.pe-page-menu { top: calc(100% + 4px); left: 0; right: 0; min-width: 0; max-width: none; cursor: default; }
+    .pe-page-menu-list {
+      /* The canvas card clips, so a long list scrolls in a box the
+         shortest stage still holds, Add page under it in sight. */
+      display: flex; flex-direction: column; gap: 1px; max-height: min(40dvh, 232px); overflow-y: auto;
+      overscroll-behavior: contain; scrollbar-width: thin; padding-bottom: 4px; margin-bottom: 4px; border-bottom: 1px solid var(--wa-line);
+    }
+    .pe-page-menu .row.pe-page-menu-row, .pe-page-menu .row.pe-page-menu-add { display: flex; align-items: center; gap: 8px; min-height: 38px; }
+    .pe-page-menu-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .pe-page-menu-tag { flex: none; font-size: 11px; font-weight: 500; color: var(--wa-muted); }
+    .pe-page-menu-row[aria-checked="true"] { background: color-mix(in srgb, var(--wa-accent) 14%, transparent); }
+    .pe-page-menu .row.pe-page-menu-add { color: var(--wa-accent); }
+    .pe-page-menu-add svg.ui-icon { width: 14px; height: 14px; flex: none; }
+    .pe-page-menu .row:disabled { opacity: .5; cursor: default; }
+    .pe-page-menu .row:disabled:hover { background: transparent; }
+    .pe-page-menu-note { margin: 4px 10px; font-size: 11px; line-height: 1.35; color: var(--wa-muted); white-space: normal; }
     /* The open watch in the canvas head: plain words, as the shape's. */
     .cv-shape.pe-watch-crumb { color: var(--wa-ink); font-weight: 500; }
     /* The tool strip rides in the flow at the top, so the area needs no head

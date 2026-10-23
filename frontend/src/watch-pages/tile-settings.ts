@@ -76,6 +76,7 @@ import {
 } from "./styling-model.js";
 import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider, watchStylingTheme, watchTitleSwatches } from "./tile-styling.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
+import { colorPickerView } from "./color-picker.js";
 import type { SettingDevice } from "../watch-settings.js";
 import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
@@ -498,27 +499,6 @@ export function menuField(label: string, menu: WatchMenu, pick: (value: string) 
           : html`<optgroup label=${run.group}>${run.options.map(option)}</optgroup>`)}
       </select></label>
     ${menu.note === undefined ? nothing : html`<div class="hint ts-under">${menu.note}</div>`}`;
-}
-
-/** A row of small round color buttons, the page theme's swatches. */
-export function swatchRow(
-  label: string,
-  swatches: readonly string[],
-  current: unknown,
-  pick: (color: string) => void,
-): TemplateResult {
-  return html`<div class="ts-swatches" role="group" aria-label=${label}>
-    ${swatches.map((value) => {
-      const ends = watchColorEnds(value);
-      if (ends === undefined) return nothing;
-      const on = sameWatchColor(current, value);
-      const name = ends.from === ends.to ? ends.from : `Gradient from ${ends.from} to ${ends.to}`;
-      return html`<button type="button" class="ts-swatch ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
-        title=${name} aria-label=${name}
-        style=${`--sw:linear-gradient(135deg, ${ends.from}, ${ends.to})`}
-        @click=${() => pick(value)}></button>`;
-    })}
-  </div>`;
 }
 
 /** A small text button beside a row, for a way back to a default. */
@@ -1365,19 +1345,23 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
   // A rule's style only with no color of its own.
   const atDefault = color === undefined || (host.domainStyle !== true && defaultColor !== undefined && sameWatchColor(color, defaultColor));
   const resetColor = () => commit(host, "color", watchTileDefaultColorEdit(host));
-  const typedHex = typed(host, "color");
-  return html`
-    ${segField<WatchColorModeChoice>("Color", mode, WATCH_COLOR_MODES as [WatchColorModeChoice, string][], (v) => pickMode(v))}
-    ${mode === "rainbow" ? html`<div class="hint ts-under">The ${hostDeviceNoun(host)} cycles the tile through every color.</div>` : nothing}
-    <div class="ts-swatch-row">
-      ${swatchRow(`${watchThemeDisplayName(theme)} colors`, swatches, color, (v) => write(v))}
-    </div>
-    ${typingField(host, "color", html`<div class="ts-no-alpha">${colorField("Custom", typedHex ?? watchCustomBoxColor(color), custom)}</div>`)}
-    <div class="ts-after">
-      <button type="button" class="pe-chip ${atDefault ? "on" : ""}" aria-pressed=${atDefault ? "true" : "false"}
-        title=${defaultColor === undefined || host.domainStyle === true ? `No color of its own: the ${hostDeviceNoun(host)} picks one` : `The theme's color for this kind of tile: ${defaultColor}`}
-        @click=${resetColor}>Default color</button>
-    </div>`;
+  // The Form switch is this picker's heading: the Icon card has no Color
+  // heading of its own.
+  return colorPickerView({
+    color,
+    swatches,
+    swatchesLabel: `${watchThemeDisplayName(theme)} colors`,
+    pickSwatch: (v) => write(v),
+    default: {
+      title: defaultColor === undefined || host.domainStyle === true ? `The ${hostDeviceNoun(host)} picks one` : `The theme's color for this kind of tile, ${defaultColor}`,
+      on: atDefault,
+      pick: resetColor,
+    },
+    form: { title: "Color", shown: mode, forms: WATCH_COLOR_MODES.map(([m]) => m), pick: pickMode },
+    ...(mode === "rainbow" ? { note: `The ${hostDeviceNoun(host)} cycles the tile through every color.` } : {}),
+    custom: { shown: typed(host, "color") ?? watchCustomBoxColor(color), pick: custom },
+    wrap: (body) => typingField(host, "color", body),
+  });
 }
 
 function renderIconSize(host: TileSettingsHost): TemplateResult {
@@ -1430,13 +1414,16 @@ function renderText(host: TileSettingsHost): TemplateResult {
     ${menuField("Weight", watchFontWeightMenu(t.fontWeight), (v) => commit(host, "fontWeight", (d) => setWatchTileFontWeight(d, host.pageId, host.tileId, v)))}
     ${menuField("Design", watchFontDesignMenu(t.fontDesign), (v) => commit(host, "fontDesign", (d) => setWatchTileFontDesign(d, host.pageId, host.tileId, v)))}
     ${checkField("Text shadow", t.textShadow, (on) => commit(host, "textShadow", (d) => setWatchTileTextShadow(d, host.pageId, host.tileId, on)))}
-    <div class="ts-sub-h"><span>Label color</span></div>
-    <div class="ts-swatch-row">${swatchRow("Label color", watchStylingTheme(watchPageSwatchTheme(host.page))?.pageTitleSwatches ?? watchTitleSwatches(), t.labelColor, (c) => setLabelColor(c))}</div>
-    ${typingField(host, "labelColor", html`<div class="ts-no-alpha">${colorField("Custom", labelColor, setLabelColor)}</div>`)}
-    <div class="ts-after">
-      <button type="button" class="pe-chip ${t.labelColor === undefined ? "on" : ""}" aria-pressed=${t.labelColor === undefined ? "true" : "false"}
-        title="No color of its own: the theme's label color" @click=${() => setLabelColor(undefined)}>Theme color</button>
-    </div>`;
+    ${colorPickerView({
+      label: "Label color",
+      color: t.labelColor,
+      swatches: watchStylingTheme(watchPageSwatchTheme(host.page))?.pageTitleSwatches ?? watchTitleSwatches(),
+      swatchesLabel: "Label color",
+      pickSwatch: (c) => setLabelColor(c),
+      default: { title: "The theme's label color", on: t.labelColor === undefined, pick: () => setLabelColor(undefined) },
+      custom: { shown: labelColor, pick: setLabelColor },
+      wrap: (body) => typingField(host, "labelColor", body),
+    })}`;
 }
 
 // ── action ───────────────────────────────────────────────────────────────
@@ -1779,15 +1766,18 @@ function renderHeader(host: TileSettingsHost): TemplateResult {
         <div class="hint ts-under">Empty is Auto (${WATCH_HEADER_TEXT_SIZE_RANGE.auto} pt). Or ${WATCH_HEADER_TEXT_SIZE_RANGE.min} to ${WATCH_HEADER_TEXT_SIZE_RANGE.max}.</div>`
       : html`<div class="hint ts-under">A line across the page. Pick Label for words between two lines.</div>`}
     ${typingField(host, "headerGlow", sliderField("Line glow", glow, setGlow, { min: 0, max: 100, step: 5, def: 0, unit: "%" }), watchGlowPercent(h.glow))}
-    <div class="ts-sub-h"><span>Color</span></div>
-    <div class="ts-swatch-row">
-      ${swatchRow(`${watchThemeDisplayName(theme)} colors`, watchThemeSwatches(theme, false), h.color, (v) => writeColor(v))}
-    </div>
-    ${typingField(host, "headerColor", html`<div class="ts-no-alpha">${colorField("Custom", typed(host, "headerColor") ?? watchCustomBoxColor(h.color), custom)}</div>`)}
-    ${defaultColor === undefined
-      ? nothing
-      : html`<div class="ts-after"><button type="button" class="pe-chip ${atDefault ? "on" : ""}" aria-pressed=${atDefault ? "true" : "false"}
-          title=${`The header's own color: ${defaultColor}`} @click=${() => writeColor(defaultColor)}>Default color</button></div>`}`;
+    ${colorPickerView({
+      label: "Color",
+      color: h.color,
+      swatches: watchThemeSwatches(theme, false),
+      swatchesLabel: `${watchThemeDisplayName(theme)} colors`,
+      pickSwatch: (v) => writeColor(v),
+      ...(defaultColor === undefined
+        ? {}
+        : { default: { title: `The header's own color, ${defaultColor}`, on: atDefault, pick: () => writeColor(defaultColor) } }),
+      custom: { shown: typed(host, "headerColor") ?? watchCustomBoxColor(h.color), pick: custom },
+      wrap: (body) => typingField(host, "headerColor", body),
+    })}`;
 }
 
 // ── styling: shared rows ─────────────────────────────────────────────────
@@ -1873,15 +1863,9 @@ function resetRow(host: TileSettingsHost, task: WatchTileStylingTask, words: str
     commit(host, `reset:${task}`, (d) => (domain ? clearWatchTileTask : resetWatchTileTask)(d, host.pageId, host.tileId, task)))}</div>`;
 }
 
-/**
- * A color of a styling task: Solid or Gradient (and Rainbow where the phone
- * offers it), the page theme's swatches in that form, a custom color, and a
- * chip for no color of its own (the key removed). With no color stored the
- * swatches follow the page's Solid or Gradient switch until a form is
- * picked.
- */
-/** What a styling palette needs: its color, read when an edit is made (two
- * edits in one task must not start from the color drawn), and its setter. */
+/** What a color picker needs: its color, read when an edit is made (two
+ * edits in one task must not start from the color drawn), and its setter,
+ * which takes null for Default where Default removes the key. */
 export interface StylingPaletteSource {
   color: () => string | undefined;
   write: (document: WatchPagesDocument, value: string | null) => WatchPagesDocument;
@@ -1923,33 +1907,73 @@ export function stylingPaletteActions(host: TileSettingsHost, setting: string, s
   return { gradient, pickMode, custom, swatch: (value: string) => write(value), clear: () => write(null) };
 }
 
-function stylingPalette(
-  host: TileSettingsHost,
-  setting: string,
-  opts: StylingPaletteSource & {
-    label: string;
-    rainbow: boolean;
-    absentLabel: string;
-    absentTitle: string;
-  },
-): TemplateResult {
-  const color = opts.color();
+/** A card's color picker (`colorPicker`): what it shows beyond its color
+ * and setter. */
+export interface ColorPickerSource extends StylingPaletteSource {
+  /** The heading over the picker. */
+  label: string;
+  /** What Default draws, as the chip's tooltip ("Gray, the watch's own
+   * pattern color"). Absent: no Default chip. */
+  defaultTitle?: string;
+  /** What Default writes: null (the default) removes the key; a color is
+   * the one the device draws when the key holds none, for a key that must
+   * hold a color. */
+  defaultValue?: string | null;
+  /** Offer Gradient, where the key takes `GRADIENT|…`. */
+  gradient?: boolean;
+  /** Offer Rainbow, only where the device draws `#RAINBOW` for the key. */
+  rainbow?: boolean;
+  /** Solid swatches other than the page theme's, and what a screen reader
+   * calls them. */
+  swatches?: readonly string[];
+  swatchesLabel?: string;
+}
+
+/**
+ * One color of a card, as every card draws it (`colorPickerView`): Form
+ * where the key takes more than one form, then Default and the swatches,
+ * then Custom. With Gradient offered the swatches follow the page's Solid
+ * or Gradient switch until a form is picked (`stylingPaletteActions`).
+ * Without it a custom color is written as `#RRGGBB`, and Solid on a rainbow
+ * writes Default's color, else the first swatch.
+ */
+export function colorPicker(host: TileSettingsHost, setting: string, o: ColorPickerSource): TemplateResult {
+  const color = o.color();
   const mode = watchColorModeChoice(color);
-  const act = stylingPaletteActions(host, setting, opts);
-  const gradient = act.gradient();
   const theme = watchPageSwatchTheme(host.page);
-  const swatches = watchThemeSwatches(theme, gradient);
-  const modes = (WATCH_COLOR_MODES as [WatchColorModeChoice, string][]).filter(([m]) => m !== "rainbow" || opts.rainbow);
-  const shownMode = mode === "none" ? (gradient ? "gradient" : "solid") : mode;
-  return html`
-    <div class="ts-sub-h"><span>${opts.label}</span></div>
-    ${segField<WatchColorModeChoice>("Form", shownMode, modes, (v) => act.pickMode(v))}
-    <div class="ts-swatch-row">${swatchRow(`${opts.label}: ${watchThemeDisplayName(theme)} colors`, swatches, color, act.swatch)}</div>
-    ${typingField(host, setting, html`<div class="ts-no-alpha">${colorField("Custom", typed(host, setting) ?? watchCustomBoxColor(color), act.custom)}</div>`)}
-    <div class="ts-after">
-      <button type="button" class="pe-chip ${color === undefined ? "on" : ""}" aria-pressed=${color === undefined ? "true" : "false"}
-        title=${opts.absentTitle} @click=${act.clear}>${opts.absentLabel}</button>
-    </div>`;
+  const defaultValue = o.defaultValue ?? null;
+  const write = (value: string | null, typing = false) => commit(host, setting, (d) => o.write(d, value), { typing });
+  const act = o.gradient === true ? stylingPaletteActions(host, setting, o) : undefined;
+  const gradient = act?.gradient() ?? false;
+  const swatches = o.swatches ?? watchThemeSwatches(theme, gradient);
+  const pickForm = act?.pickMode ?? ((next: WatchColorModeChoice): void => {
+    if (next === "rainbow") return write("#RAINBOW");
+    if (next !== "solid" || watchColorModeChoice(o.color()) !== "rainbow") return;
+    const back = defaultValue ?? swatches[0];
+    if (back !== undefined) write(back);
+  });
+  const custom = act?.custom ?? ((value: string | undefined): void => {
+    const reason = watchColorRefusal(value, hostDevice(host));
+    if (reason !== undefined || value === undefined) return commit(host, setting, (d) => d, { reason: reason ?? "Pick a color." });
+    write(value.toUpperCase(), true);
+  });
+  const atDefault = color === undefined || (defaultValue !== null && sameWatchColor(color, defaultValue));
+  const forms: ("solid" | "gradient" | "rainbow")[] = ["solid"];
+  if (o.gradient === true) forms.push("gradient");
+  if (o.rainbow === true) forms.push("rainbow");
+  return colorPickerView({
+    label: o.label,
+    color,
+    swatches,
+    swatchesLabel: o.swatchesLabel ?? `${o.label}: ${watchThemeDisplayName(theme)} colors`,
+    pickSwatch: (v) => write(v),
+    ...(o.defaultTitle === undefined
+      ? {}
+      : { default: { title: o.defaultTitle, on: atDefault, pick: () => { if (!atDefault) write(defaultValue); } } }),
+    form: { shown: mode === "none" ? (gradient ? "gradient" : "solid") : mode, forms, pick: pickForm },
+    custom: { shown: typed(host, setting) ?? watchCustomBoxColor(color), pick: custom },
+    wrap: (body) => typingField(host, setting, body),
+  });
 }
 
 // ── styling: State ───────────────────────────────────────────────────────
@@ -2102,10 +2126,15 @@ function renderStateColorPicker(host: TileSettingsHost, state: string, color: st
     write(value, true);
   };
   return html`<div class="ts-nested">
-    <div class="ts-swatch-row">${swatchRow(`${watchThemeDisplayName(theme)} colors`, watchThemeSwatches(theme, false), color, (v) => write(v))}</div>
-    ${typingField(host, setting, html`<div class="ts-no-alpha">${colorField("Custom", typed(host, setting) ?? watchCustomBoxColor(color), custom)}</div>`)}
-    <div class="ts-after"><button type="button" class="pe-chip ${color === undefined ? "on" : ""}" aria-pressed=${color === undefined ? "true" : "false"}
-      title="No color of its own: the tile's color" @click=${() => write(null)}>Default</button></div>
+    ${colorPickerView({
+      color,
+      swatches: watchThemeSwatches(theme, false),
+      swatchesLabel: `${watchThemeDisplayName(theme)} colors`,
+      pickSwatch: (v) => write(v),
+      default: { title: "The tile's color", on: color === undefined, pick: () => write(null) },
+      custom: { shown: typed(host, setting) ?? watchCustomBoxColor(color), pick: custom },
+      wrap: (body) => typingField(host, setting, body),
+    })}
   </div>`;
 }
 
@@ -2142,12 +2171,12 @@ function renderBorder(host: TileSettingsHost): TemplateResult {
         ${sliderRow(host, "borderSize", "Size", "borderAnimationSize", b.size, setWatchTileBorderSize, { reset: reset("borderAnimationSize") })}`}` : nothing}
     ${b.style === "none" ? nothing : html`
       ${boolRow(host, "borderActiveOnly", "Only when on", b.activeOnly, setWatchTileBorderActiveOnly)}
-      ${stylingPalette(host, "borderColor", {
+      ${colorPicker(host, "borderColor", {
         label: "Border color",
         color: () => watchTileBorderSettings(host.tile).color,
+        gradient: true,
         rainbow: true,
-        absentLabel: "Tile color",
-        absentTitle: "No color of its own: the border takes the tile's color",
+        defaultTitle: "The tile's color",
         write: (d, v) => setWatchTileBorderColor(d, host.pageId, host.tileId, v),
       })}`}
     ${resetRow(host, "border", "Border")}`;
@@ -2164,12 +2193,11 @@ function renderBackground(host: TileSettingsHost): TemplateResult {
     ${g.pattern === "none" ? nothing : html`
       ${sliderRow(host, "patternOpacity", "Opacity", "patternOpacity", g.patternOpacity, setWatchTilePatternOpacity, { reset: reset("patternOpacity"), percent: true })}
       ${sliderRow(host, "patternScale", "Size", "patternScale", g.patternScale, setWatchTilePatternScale)}
-      ${stylingPalette(host, "patternColor", {
+      ${colorPicker(host, "patternColor", {
         label: "Pattern color",
         color: () => watchTileBackgroundSettings(host.tile).patternColor,
-        rainbow: false,
-        absentLabel: "Default gray",
-        absentTitle: `No color of its own: the ${hostDeviceNoun(host)} draws the pattern in gray`,
+        gradient: true,
+        defaultTitle: `Gray, the ${hostDeviceNoun(host)}'s own pattern color`,
         write: (d, v) => setWatchTilePatternColor(d, host.pageId, host.tileId, v),
       })}`}
     ${tileKind(tileEntityId(host.tile)) === "spacer" ? resetRow(host, "background", "Background") : renderEffect(host, g, reset)}`;
@@ -2181,12 +2209,12 @@ function renderEffect(host: TileSettingsHost, g: ReturnType<typeof watchTileBack
     ${enumRow(host, "effect", "Type", "tileAnimation", g.effect, setWatchTileEffect)}
     ${g.effect === "none" ? nothing : html`
       ${boolRow(host, "effectActiveOnly", "Only when on", g.effectActiveOnly, setWatchTileEffectActiveOnly)}
-      ${stylingPalette(host, "effectColor", {
+      ${colorPicker(host, "effectColor", {
         label: "Effect color",
         color: () => watchTileBackgroundSettings(host.tile).effectColor,
+        gradient: true,
         rainbow: true,
-        absentLabel: "Tile color",
-        absentTitle: "No color of its own: the effect takes the tile's color",
+        defaultTitle: "The tile's color",
         write: (d, v) => setWatchTileEffectColor(d, host.pageId, host.tileId, v),
       })}
       ${sliderRow(host, "effectSpeed", "Speed", "animationSpeed", g.speed, setWatchTileEffectSpeed, { reset: reset("animationSpeed") })}
@@ -2238,7 +2266,10 @@ export const tileSettingsStyles = css`
   .ts-after { padding-left: calc(var(--wa-lab) + 8px); }
 
   .ts-swatch-row { padding: 2px 0 4px calc(var(--wa-lab) + 8px); }
-  .ts-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ts-swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  /* A color picker's Default chip leads its swatches (\`color-picker.ts\`),
+     a little shorter than a chip alone so the row keeps the swatches' height. */
+  .ts-swatches > .ts-color-default { min-height: 24px; margin-right: 2px; }
   .ts-swatch {
     width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
     background: var(--sw); box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .45);

@@ -910,6 +910,138 @@ describe("the canvas head", () => {
   });
 });
 
+describe("the stacked page menu", () => {
+  /** The canvas head's markup. */
+  const headOf = (text: string) => text.slice(text.indexOf(`<div class="cv-head">`), text.indexOf(`<div class="stage-area`));
+
+  it("is in the canvas head only when stacked, saying where the shown page stands", () => {
+    const { el, body } = editor();
+    expect(body()).not.toContain("pe-page-open");
+    el.hostWidth = 360;
+    const head = headOf(body());
+    expect(body()).toContain(`<div class="layout pe-layout cols-1"`);
+    expect(head).toContain(`<button class="cv-act pe-page-open" aria-haspopup="menu" aria-expanded=false`);
+    expect(head).toContain(`aria-label=Page 1 of 2: Hall. Pick another, or add one`);
+    expect(head).toContain(`<span class="pe-page-place">1/2</span>`);
+    // Before Undo, with a hairline after it; no menu until it is pressed.
+    expect(head.indexOf("pe-page-open")).toBeLessThan(head.indexOf(`aria-label="Undo"`));
+    expect(head).not.toContain("pe-page-menu");
+    // Home Assistant saying it is a phone stacks it too.
+    const narrow = editor();
+    narrow.el.narrow = true;
+    expect(headOf(narrow.body())).toContain("pe-page-open");
+  });
+
+  it("lists the pages with a check on the shown one, then Add page", () => {
+    const { el, body } = editor();
+    el.hostWidth = 360;
+    el.pageMenuOpen = true;
+    const head = headOf(body());
+    const menu = head.slice(head.indexOf(`class="pop-menu pe-page-menu"`));
+    expect(menu).toContain(`role="menu" aria-label=Pages on this watch`);
+    expect(menu.match(/class="row pe-page-menu-row"/g)).toHaveLength(2);
+    expect(menu).toMatch(/aria-checked=true data-page=P-HALL/);
+    expect(menu).toMatch(/aria-checked=false data-page=P-YARD/);
+    expect(menu).toContain(`<span class="pe-page-menu-name">Hall</span>`);
+    expect(menu.indexOf("P-HALL")).toBeLessThan(menu.indexOf("P-YARD"));
+    const add = menu.slice(menu.indexOf(`class="row pe-page-menu-add"`));
+    expect(add).toContain(`?disabled=false`);
+    expect(add).toContain(">Add page</span>");
+    expect(menu.indexOf("pe-page-menu-add")).toBeGreaterThan(menu.indexOf("P-YARD"));
+    // No free plan line for a watch that never said it is on it.
+    expect(menu).not.toContain("pe-page-menu-note");
+  });
+
+  it("shows the picked page and closes; the shown one changes nothing", () => {
+    const { el } = editor();
+    el.leaveTile = () => undefined;
+    el.hostWidth = 360;
+    el.pageMenuOpen = true;
+    const row = (id: string) => findTemplate((el.renderBody as (w: readonly OwnerSummary[]) => unknown).call(el, el.owners as OwnerSummary[]),
+      (t) => t.strings[0]!.includes(`<button class="row pe-page-menu-row"`) && t.values.includes(id))!;
+    listener(row("P-HALL"), "click")({} as Event);
+    expect(el.pageMenuOpen).toBe(false);
+    expect(el.selectedPageId).toBe("P-HALL");
+    el.pageMenuOpen = true;
+    listener(row("P-YARD"), "click")({} as Event);
+    expect(el.pageMenuOpen).toBe(false);
+    expect(el.selectedPageId).toBe("P-YARD");
+  });
+
+  it("adds a page as the Pages card does, and names it in the head, not in its far row", () => {
+    const { el } = editor();
+    el.leaveTile = () => undefined;
+    el.hostWidth = 360;
+    el.pageMenuOpen = true;
+    const drawn = (el.renderBody as (w: readonly OwnerSummary[]) => unknown).call(el, el.owners as OwnerSummary[]);
+    // The menu's own template: its first click is Add page's.
+    const add = findTemplate(drawn, (t) => t.strings[0]!.includes(`class="pop-menu pe-page-menu"`))!;
+    listener(add, "click")({} as Event);
+    const pages = (el as unknown as { draft: { document: WatchPagesDocument } }).draft.document.pages as { id: string }[];
+    expect(pages).toHaveLength(3);
+    expect(el.selectedPageId).toBe(pages[2]!.id);
+    expect(el.pageMenuOpen).toBe(false);
+    expect(el.renaming).toBeUndefined();
+    expect(el.focusHeadName).toBe(true);
+    // Beside the stage the Pages card is in sight, and its row is renamed.
+    const wide = editor();
+    wide.el.leaveTile = () => undefined;
+    (wide.el.addPage as () => void).call(wide.el);
+    expect(wide.el.renaming).toBeDefined();
+    expect(wide.el.focusHeadName).toBe(false);
+  });
+
+  it("holds Add page while a save runs, and says the free plan's line on a free device", () => {
+    const { el, body } = editor();
+    el.hostWidth = 360;
+    el.pageMenuOpen = true;
+    el.record = { ...(el.record as WatchConfigRecord), multiple_pages: false };
+    Object.defineProperty(el, "saving", { get: () => true });
+    const head = headOf(body());
+    const add = head.slice(head.indexOf(`class="row pe-page-menu-add"`));
+    expect(add).toContain(`?disabled=true`);
+    expect(add).toContain("Saving. Tiles and pages move again once the save is done.");
+    expect(head).toContain(`<p class="pe-page-menu-note">On the free plan, the watch shows your first page that is not hidden.</p>`);
+  });
+
+  it("is not drawn for a library page, which stands alone", () => {
+    const { el } = editor();
+    el.hostWidth = 360;
+    const page = (el.currentPage as () => unknown).call(el);
+    expect(flat((el.renderPageMenu as (p: unknown) => unknown).call(el, page))).toContain("pe-page-open");
+    el.libraryItem = { id: "P-HALL" };
+    expect(flat((el.renderPageMenu as (p: unknown) => unknown).call(el, page))).toBe("");
+  });
+
+  it("closes on a press outside it, not on one inside", () => {
+    // Node has no elements: the handler asks only for each one's classes.
+    class Element { constructor(readonly classList: { contains: (c: string) => boolean }) {} }
+    vi.stubGlobal("HTMLElement", Element);
+    try {
+      const { el } = editor();
+      el.pageMenuOpen = true;
+      const at = (...classes: string[]) => new Element({ contains: (c) => classes.includes(c) });
+      const press = (...path: object[]) => (el.onWindowPointerDown as (e: PointerEvent) => void)({ composedPath: () => path } as unknown as PointerEvent);
+      press(at("row", "pe-page-menu-row"), at("pe-page-pick"));
+      expect(el.pageMenuOpen).toBe(true);
+      press(at("pe-screen"));
+      expect(el.pageMenuOpen).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("hangs the menu the width of the head, so a 360 point phone needs no sideways scroll", () => {
+    const css = sheet();
+    const menu = rule(css, ".pop-menu.pe-page-menu");
+    expect(menu).toMatch(/left:\s*0/);
+    expect(menu).toMatch(/right:\s*0/);
+    expect(menu).toMatch(/max-width:\s*none/);
+    expect(rule(css, ".layout.pe-layout.cols-1 .pe-canvas > .cv-head")).toMatch(/position:\s*relative/);
+    expect(rule(css, ".pe-page-menu-name")).toContain("text-overflow: ellipsis");
+  });
+});
+
 /** The state chips in a strip's markup, in order: each one's word and
  * whether it is the kept one. */
 function stateChips(strip: string): { word: string; on: boolean }[] {

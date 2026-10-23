@@ -15,7 +15,7 @@
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("3d build contract").
 
 import { css, html, nothing, type TemplateResult } from "lit";
-import { checkField, colorField, segField, sliderField, symbolField, symbolNameSet } from "../editors.js";
+import { checkField, segField, sliderField, symbolField, symbolNameSet } from "../editors.js";
 import { sectionCard } from "../editor-chrome.js";
 import { SECTION_COLOR } from "../kinds.js";
 import { uiIcon } from "../ui-icons.js";
@@ -60,7 +60,8 @@ import {
 } from "./page-settings-model.js";
 import { pagePhotoIdsInUse, samePagePhotoId } from "./page-photo.js";
 import type { PagePhotoStore } from "./page-photo-store.js";
-import { commit, dropStaleTyping, linkButton, resetButton, stylingEnumField, swatchRow, typed, typingField } from "./tile-settings.js";
+import { commit, dropStaleTyping, linkButton, resetButton, stylingEnumField, typed, typingField } from "./tile-settings.js";
+import { colorPickerView } from "./color-picker.js";
 import {
   sameWatchColor,
   watchColorEnds,
@@ -371,13 +372,19 @@ function pagePalette(sh: TileSettingsHost, setting: string, opts: PagePaletteSou
   const act = pagePaletteActions(sh, setting, opts);
   const color = opts.color();
   const swatches = act.gradient() ? opts.swatches.map((h) => watchGradientOf(h)) : [...opts.swatches];
-  const modes: ["solid" | "gradient" | "rainbow", string][] = [["solid", "Solid"], ["gradient", "Gradient"]];
-  if (opts.rainbow) modes.push(["rainbow", "Rainbow"]);
-  return html`
-    <div class="ts-sub-h"><span>${opts.label}</span></div>
-    ${segField("Form", act.shown(), modes, (v) => act.pickMode(v))}
-    <div class="ts-swatch-row">${swatchRow(opts.label, swatches, color, act.swatch)}</div>
-    ${typingField(sh, setting, html`<div class="ts-no-alpha">${colorField("Custom", typed(sh, setting) ?? watchCustomBoxColor(color), act.custom)}</div>`)}`;
+  const forms: ("solid" | "gradient" | "rainbow")[] = opts.rainbow ? ["solid", "gradient", "rainbow"] : ["solid", "gradient"];
+  // The cards' one picker (`colorPickerView`), with no Default: each key
+  // here always draws a color of the theme's when it holds none.
+  return colorPickerView({
+    label: opts.label,
+    color,
+    swatches,
+    swatchesLabel: opts.label,
+    pickSwatch: act.swatch,
+    form: { shown: act.shown(), forms, pick: (v) => { if (v !== "none") act.pickMode(v); } },
+    custom: { shown: typed(sh, setting) ?? watchCustomBoxColor(color), pick: act.custom },
+    wrap: (body) => typingField(sh, setting, body),
+  });
 }
 
 /** A Page task slider; a drag or a run of typing is one undo step. */

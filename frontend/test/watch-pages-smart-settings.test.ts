@@ -15,6 +15,7 @@ import type { HassEntityState } from "../src/ha-api.js";
 import type { IconProvider } from "../src/renderer.js";
 import { SymbolBrowser } from "../src/symbols.js";
 import { type WatchPagesApplyOptions, WatchPagesDraft } from "../src/watch-pages/draft.js";
+import { WATCH_TILE_SIZE_PRESETS } from "../src/watch-pages/edit.js";
 import { checkWatchPagesValues } from "../src/watch-pages/merge.js";
 import { type TileSettingsHost, type WatchPagesEditorHost, extendHost } from "../src/watch-pages/editor-host.js";
 import type { JsonObject, WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
@@ -285,9 +286,12 @@ describe("the smart page rows", () => {
     check(renderSmartPageBody(s.host), W("showLabels"), false);
     expect(s.config()?.tileShowLabel).toBe(false);
     const rows = flatten(renderSmartPageBody(s.host));
-    expect(rows).toMatch(/pe-chip on" aria-pressed=true title=4w × 3h\s+@click=>Standard/);
-    click(renderSmartPageBody(s.host), ">Small<");
+    expect(rows).toMatch(/pe-chip sm-size on" aria-pressed=true aria-label=Standard, 4 by 3 [^>]*>\s*<span class="sm-size-name">Standard<\/span><span class="sm-size-dims" aria-hidden="true">4×3<\/span>/);
+    // A preset's size, the boxes behind Custom.
+    expect(rows).not.toContain("Columns");
+    click(renderSmartPageBody(s.host), ">Mini<");
     expect([s.config()?.tileColSpan, s.config()?.tileRowSpan]).toEqual([2, 2]);
+    click(renderSmartPageBody(s.host), ">Custom<");
     type(renderSmartPageBody(s.host), "Columns", "7");
     expect(s.config()?.tileColSpan).toBe(7);
     type(renderSmartPageBody(s.host), "Rows", "40");
@@ -295,6 +299,35 @@ describe("the smart page rows", () => {
     expect(flatten(renderSmartPageBody(s.host))).toContain("Use a number from 1 to 12.");
     pick(renderSmartPageBody(s.host), W("sortOrder"), "alphabetical");
     expect(s.config()?.sortOrder).toBe("alphabetical");
+  });
+
+  it("show the size under each name, and the boxes only behind Custom or for a size no preset has", () => {
+    const s = setup(smartPage([]));
+    const chips = () => flatten(renderSmartPageBody(s.host));
+    for (const p of WATCH_SMART.pageSizes) expect(chips()).toContain(`>${p.name}</span><span class="sm-size-dims" aria-hidden="true">${p.colSpan}×${p.rowSpan}<`);
+    expect(chips()).toMatch(/pe-chip sm-size " aria-pressed=false aria-label=Custom [^>]*>\s*<span class="sm-size-name">Custom<\/span><\/button>/);
+    expect(chips()).not.toContain("Columns");
+    // Custom opens the boxes and is the chip shown selected, writing nothing.
+    const before = s.applied.length;
+    click(renderSmartPageBody(s.host), ">Custom<");
+    expect(s.applied.length).toBe(before);
+    expect(chips()).toContain("Columns");
+    expect(chips()).toMatch(/pe-chip sm-size on" aria-pressed=true aria-label=Custom /);
+    expect(chips()).toMatch(/pe-chip sm-size " aria-pressed=false aria-label=Standard, 4 by 3 /);
+    // A typed size that lands on a preset keeps its boxes open.
+    type(renderSmartPageBody(s.host), "Columns", "5");
+    type(renderSmartPageBody(s.host), "Columns", "4");
+    expect([s.config()?.tileColSpan, s.config()?.tileRowSpan]).toEqual([4, 3]);
+    expect(chips()).toContain("Columns");
+    // A preset closes them.
+    click(renderSmartPageBody(s.host), ">Wide<");
+    expect([s.config()?.tileColSpan, s.config()?.tileRowSpan]).toEqual([8, 3]);
+    expect(chips()).not.toContain("Columns");
+    // A stored size no preset has opens them on its own, and Custom shows it.
+    const odd = setup(smartPage([], { tileColSpan: 5, tileRowSpan: 2 }));
+    const oddChips = flatten(renderSmartPageBody(odd.host));
+    expect(oddChips).toContain("Columns");
+    expect(oddChips).toMatch(/pe-chip sm-size on" aria-pressed=true aria-label=Custom, 5 by 2 [^>]*>\s*<span class="sm-size-name">Custom<\/span><span class="sm-size-dims" aria-hidden="true">5×2</);
   });
 });
 
@@ -493,7 +526,8 @@ describe("a rule's Header", () => {
     for (const style of ["None", "Gap", "Line", "Label"]) expect(card).toContain(`>${style}<`);
     expect(card).toContain("placeholder=Lights");
     expect(card).toContain("placeholder=10");
-    expect(card).toContain(W("colorDefault"));
+    // The header color is the cards' one picker: its chip says Default.
+    expect(card).toMatch(/aria-label=Default color\s+title=White, the watch's own header color/);
     type(renderSmartRulesCard(s.host), W("labelText"), "Inside");
     type(renderSmartRulesCard(s.host), W("labelText"), "Indoor");
     expect(s.rule(R1).headerLabel).toBe("Indoor");
@@ -513,7 +547,7 @@ describe("a rule's Header", () => {
     const swatch = /title=(#[0-9A-F]{6})/i.exec(flatten(renderSmartRulesCard(s.host)).split(`<span>${W("color")}</span>`)[1]!)![1]!;
     click(renderSmartRulesCard(s.host), `title=${swatch}`);
     expect(s.rule(R1).headerColor).toBe(swatch.toUpperCase());
-    click(renderSmartRulesCard(s.host), W("colorDefault"));
+    click(renderSmartRulesCard(s.host), "title=White, the watch's own header color");
     expect(Object.hasOwn(s.rule(R1), "headerColor")).toBe(false);
     click(renderSmartRulesCard(s.host), ">None<");
     expect(s.rule(R1).header).toBe("none");
@@ -629,15 +663,17 @@ describe("a rule's style through the stand-in tile", () => {
     style.uiState.set("tile-settings:open:icon", true);
     const view = () => renderTileSettings(style, { sections: ["icon"] });
     const lit = (words: string) => new RegExp(`class="pe-chip on" aria-pressed=true[^>]*>${words}<`).test(flatten(view()));
+    // The color's Default is the cards' one picker's chip.
+    const colorLit = () => flatten(view()).includes(`class="pe-chip ts-color-default on" aria-pressed=true`);
     // The kind's add icon is still the rule's own: not lit.
     expect(lit("Default")).toBe(false);
-    expect(lit("Default color")).toBe(false);
-    click(view(), ">Default<");
+    expect(colorLit()).toBe(false);
+    click(view(), "No icon of its own");
     expect(s.rule(R1).tileStyle).toEqual({ color: "#FFCC00", iconShadow: true });
     expect(lit("Default")).toBe(true);
-    click(view(), ">Default color<");
+    click(view(), "ts-color-default");
     expect(s.rule(R1).tileStyle).toEqual({ iconShadow: true });
-    expect(lit("Default color")).toBe(true);
+    expect(colorLit()).toBe(true);
     expect(checkWatchPagesValues(s.draft.document)).toEqual([]);
     s.draft.undo();
     expect((s.rule(R1).tileStyle as JsonObject).color).toBe("#FFCC00");
@@ -672,12 +708,48 @@ describe("a rule's style through the stand-in tile", () => {
     const card = flatten(renderSmartRulesCard(s.host));
     expect(card.indexOf("<h4>Size")).toBeGreaterThan(-1);
     expect(card.indexOf("<h4>Size")).toBeLessThan(card.indexOf("<h4>Background"));
-    for (const p of WATCH_SMART.styleSizes) expect(card).toContain(`>${p.name}<`);
+    for (const p of WATCH_SMART.styleSizes) expect(card).toContain(`>${p.name}</span><span class="sm-size-dims" aria-hidden="true">${p.colSpan}×${p.rowSpan}<`);
+    expect(card).toMatch(/pe-chip sm-size on" aria-pressed=true aria-label=Page size, 4 by 3 /);
+    expect(card).not.toContain("Columns");
     click(renderSmartRulesCard(s.host), ">Medium<");
     expect([(s.rule(R1).tileStyle as JsonObject).colSpan, (s.rule(R1).tileStyle as JsonObject).rowSpan]).toEqual([6, 4]);
+    // Folded, Size sums up as the preset's name and size.
+    s.host.uiState.set("tile-settings:open:size", false);
+    expect(flatten(renderSmartRulesCard(s.host))).toContain("Medium, 6×4");
+    s.host.uiState.set("tile-settings:open:size", true);
     click(renderSmartRulesCard(s.host), `>${W("pageSize")}<`);
     expect(Object.hasOwn(s.rule(R1).tileStyle as JsonObject, "colSpan")).toBe(false);
     expect(Object.hasOwn(s.rule(R1).tileStyle as JsonObject, "rowSpan")).toBe(false);
+  });
+
+  it("keeps a rule's Columns and Rows behind Custom, open on their own for a size no chip has", () => {
+    const s = setup(smartPage([LIGHTS]));
+    click(renderSmartRulesCard(s.host), ">Custom<");
+    let card = flatten(renderSmartRulesCard(s.host));
+    expect(card).toContain("Columns");
+    expect(card).toContain("Empty takes the page's tile size, 4×3.");
+    type(renderSmartRulesCard(s.host), "Columns", "5");
+    expect((s.rule(R1).tileStyle as JsonObject).colSpan).toBe(5);
+    expect(flatten(renderSmartRulesCard(s.host))).toMatch(/aria-label=Custom, 5 by 3 /);
+    s.host.uiState.set("tile-settings:open:size", false);
+    expect(flatten(renderSmartRulesCard(s.host))).toContain("Custom, 5×3");
+    s.host.uiState.set("tile-settings:open:size", true);
+    // Picking a chip folds them away again.
+    click(renderSmartRulesCard(s.host), ">Large<");
+    expect(flatten(renderSmartRulesCard(s.host))).not.toContain("Columns");
+    // A rule stored with a size of its own opens them without Custom.
+    const odd = setup(smartPage([{ ...LIGHTS, tileStyle: { colSpan: 2, rowSpan: 5 } }]));
+    card = flatten(renderSmartRulesCard(odd.host));
+    expect(card).toContain("Columns");
+    expect(card).toMatch(/pe-chip sm-size on" aria-pressed=true aria-label=Custom, 2 by 5 /);
+  });
+
+  it("names every size once: no page preset shares a name with a rule's, and the rule's are the tile editor's", () => {
+    const page = WATCH_SMART.pageSizes.map((p) => p.name);
+    const style = WATCH_SMART.styleSizes.map((p) => p.name);
+    expect(page.filter((n) => style.includes(n))).toEqual([]);
+    expect(WATCH_SMART.styleSizes.map((p) => [p.name, p.colSpan, p.rowSpan])).toEqual(WATCH_TILE_SIZE_PRESETS.map((p) => [p.name, p.colSpan, p.rowSpan]));
+    for (const n of [...page, ...style]) expect(n).toMatch(/^[A-Z][a-z]*( [a-z]+)*$/);
   });
 });
 

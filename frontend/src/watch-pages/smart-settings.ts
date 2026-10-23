@@ -1,6 +1,6 @@
 // Smart pages in the page editor (part 3f batch 3): the Smart Page switch
 // with the phone's convert question and a smart page's own rows (Updates,
-// Tile Size, Show labels, Sort order) in the inspector's On the watch card,
+// Tile size, Show labels, Sort order) in the inspector's On the watch card,
 // and the inspector's Rules cards (`sectionCard`, editor-chrome.ts) in the Rules
 // color: a chip per rule, the Add entities dialog and the selected rule's
 // rows, then its Header and its per-domain style through the tile settings'
@@ -18,7 +18,7 @@
 // writes. The panel has rows and buttons the phone lacks, and their words
 // are the panel's own, written here: the card's "Rules" heading and strip
 // label, "Header", "Show", the "N entity"/"N entities" count and the
-// badge's "Entities", "Columns" and "Rows" on the size boxes, the heading's
+// badge's "Entities", "Custom" with "Columns" and "Rows" on its size boxes, the heading's
 // "Up", "Down", "Reset" and "Delete" with their tooltips, "Size", "Search",
 // the Refresh list tooltip, the pick's "(not found)", "No ... in Home
 // Assistant" and "N more" lines, the hints under the boxes ("Empty is ...",
@@ -38,16 +38,15 @@
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
-import { checkField, colorField, numberField, segField, sliderField, textField } from "../editors.js";
+import { checkField, numberField, segField, sliderField, textField } from "../editors.js";
 import { sectionCard } from "../editor-chrome.js";
 import { SECTION_COLOR } from "../kinds.js";
 import { uiIcon } from "../ui-icons.js";
-import { type TileSettingsHost, type WatchPagesEditorHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
+import { type TileSettingsHost, type WatchPagesEditorHost, extendHost, hostDeviceNoun } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
 import { sameWatchId } from "./edit.js";
 import { type JsonObject, type WatchPage, type WatchPageTile, type WatchPagesDocument, isJsonObject, tileKindLabel, tileKindPlural, watchPagesOf } from "./model.js";
-import { watchPageSwatchTheme } from "./page-settings-model.js";
 import {
   type WatchSmartConfig,
   type WatchSmartPreset,
@@ -104,17 +103,15 @@ import {
   toggleSmartRuleDeviceClass,
   withResolvedRule,
 } from "./smart-model.js";
-import { commit, linkButton, menuField, reasonOf, renderTileSettings, swatchRow, tileSettingsFoldIds, typed, typedNumber, typingField } from "./tile-settings.js";
+import { colorPicker, commit, linkButton, menuField, reasonOf, renderTileSettings, tileSettingsFoldIds, typed, typedNumber, typingField } from "./tile-settings.js";
 import {
   type WatchSectionBadge,
   type WatchTileSettingsSection,
   watchColorEnds,
-  watchColorRefusal,
-  watchCustomBoxColor,
   watchDomainStyleSections,
   watchWholeRefusal,
 } from "./tile-settings-options.js";
-import { watchAddThemeOf, watchThemeDisplayName, watchThemeRoleColors, watchThemeSwatches } from "./tile-new.js";
+import { watchAddThemeOf, watchThemeRoleColors } from "./tile-new.js";
 
 /** Every `uiState` key of this module starts with this. */
 const KEY = "smart";
@@ -250,6 +247,35 @@ export function smartStageFacts(page: WatchPage, states: Parameters<typeof smart
 function chip(label: string, on: boolean, title: string, action: () => void, extra: TemplateResult | typeof nothing = nothing): TemplateResult {
   return html`<button type="button" class="pe-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"} title=${title}
     @click=${action}>${extra}${label}</button>`;
+}
+
+/** A size as a size chip's second line shows it, columns × rows: "4×3". */
+const dims = (cols: number, rows: number): string => `${cols}×${rows}`;
+
+/** A size chip: the name, and under it the size in columns × rows, muted.
+ * Custom holds no size until the stored one matches no other chip. */
+function sizeChip(label: string, size: { cols: number; rows: number } | undefined, on: boolean, title: string, action: () => void): TemplateResult {
+  const spoken = size === undefined ? label : `${label}, ${size.cols} by ${size.rows}`;
+  return html`<button type="button" class="pe-chip sm-size ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"} aria-label=${spoken} title=${title}
+    @click=${action}><span class="sm-size-name">${label}</span>${size === undefined
+      ? nothing : html`<span class="sm-size-dims" aria-hidden="true">${dims(size.cols, size.rows)}</span>`}</button>`;
+}
+
+/** The Columns and Rows boxes of one size (the page's, `page:<id>`, or a
+ * rule's, `rule:<page>:<rule>`) were opened with Custom or typed in: they
+ * stay until a chip is picked, so a typed size that lands on a preset keeps
+ * its boxes. */
+function sizeCustomKey(scope: string): string {
+  return `${KEY}:custom:${scope.toUpperCase()}`;
+}
+
+function sizeCustomOpen(host: WatchPagesEditorHost, scope: string): boolean {
+  return host.uiState.get(sizeCustomKey(scope)) === true;
+}
+
+function setSizeCustomOpen(host: WatchPagesEditorHost, scope: string, open: boolean): void {
+  if (open) host.uiState.set(sizeCustomKey(scope), true);
+  else host.uiState.delete(sizeCustomKey(scope));
 }
 
 /** A small text button on a rule's heading line. */
@@ -444,15 +470,42 @@ function smartPageRows(host: WatchPagesEditorHost, config: WatchSmartConfig): Te
         <div class="hint ts-under">${s.detail}</div>`;
     })}
     <div class="ts-sub-h"><span>${W("tileSize")}</span></div>
-    <div class="ts-chips" role="group" aria-label=${W("tileSize")}>
-      ${WATCH_SMART.pageSizes.map((p) => chip(p.name, p.colSpan === config.tileColSpan && p.rowSpan === config.tileRowSpan,
-        W("sizeSubtitle", { cols: p.colSpan, rows: p.rowSpan }), () => commit(sh, "tileSize", (d) => setSmartTileSize(d, P, p.colSpan, p.rowSpan))))}
-    </div>
-    ${spanBox(sh, "tileColSpan", "Columns", config.tileColSpan, (d, v) => (v === null ? d : setSmartTileColSpan(d, P, v)))}
-    ${spanBox(sh, "tileRowSpan", "Rows", config.tileRowSpan, (d, v) => (v === null ? d : setSmartTileRowSpan(d, P, v)))}
+    ${pageSizeRows(host, sh, config)}
     ${checkField(W("showLabels"), config.tileShowLabel, (on) => commit(sh, "tileShowLabel", (d) => setSmartTileShowLabel(d, P, on)))}
     ${menuField(W("sortOrder"), { options: SORT_ORDERS, selected: config.sortOrder }, (v) => commit(sh, "sortOrder", (d) => setSmartSortOrder(d, P, v)))}
   `;
+}
+
+/** The page's tile size: a chip per preset with its size under the name,
+ * then Custom, whose Columns and Rows boxes show only once it is picked or
+ * while the stored size matches no preset. */
+function pageSizeRows(host: WatchPagesEditorHost, sh: TileSettingsHost, config: WatchSmartConfig): TemplateResult {
+  const P = host.pageId;
+  const scope = `page:${P}`;
+  const cols = config.tileColSpan;
+  const rows = config.tileRowSpan;
+  const matched = WATCH_SMART.pageSizes.some((p) => p.colSpan === cols && p.rowSpan === rows);
+  const custom = sizeCustomOpen(host, scope) || !matched;
+  const typedSize = (write: (d: WatchPagesDocument, v: number) => WatchPagesDocument) => (d: WatchPagesDocument, v: number | null) => {
+    setSizeCustomOpen(host, scope, true);
+    return v === null ? d : write(d, v);
+  };
+  return html`
+    <div class="ts-chips" role="group" aria-label=${W("tileSize")}>
+      ${WATCH_SMART.pageSizes.map((p) => sizeChip(p.name, { cols: p.colSpan, rows: p.rowSpan }, !custom && p.colSpan === cols && p.rowSpan === rows,
+        `Each tile ${p.colSpan} columns wide and ${p.rowSpan} rows tall`, () => {
+          setSizeCustomOpen(host, scope, false);
+          commit(sh, "tileSize", (d) => setSmartTileSize(d, P, p.colSpan, p.rowSpan));
+          host.requestUpdate();
+        }))}
+      ${sizeChip("Custom", matched ? undefined : { cols, rows }, custom, "Type the columns and rows", () => {
+        setSizeCustomOpen(host, scope, true);
+        host.requestUpdate();
+      })}
+    </div>
+    ${custom ? html`
+      ${spanBox(sh, "tileColSpan", "Columns", cols, typedSize((d, v) => setSmartTileColSpan(d, P, v)))}
+      ${spanBox(sh, "tileRowSpan", "Rows", rows, typedSize((d, v) => setSmartTileRowSpan(d, P, v)))}` : nothing}`;
 }
 
 // ── the Rules card ───────────────────────────────────────────────────────
@@ -668,13 +721,6 @@ function renderHeader(host: WatchPagesEditorHost, rh: TileSettingsHost, rule: Wa
   const setSize = (v: number | undefined) =>
     commit(rh, "headerSize", (d) => setSmartRuleHeaderSize(d, P, R, v ?? null), { typing: true, ...(v === undefined ? {} : reasonOf(watchWholeRefusal(v, min, max))) });
   const glow = typedNumber(typed(rh, "headerGlow"), rule.headerGlow) ?? 0;
-  const theme = watchPageSwatchTheme(host.page);
-  const writeColor = (v: string | undefined, typing = false) => commit(rh, "headerColor", (d) => setSmartRuleHeaderColor(d, P, R, v), { typing });
-  const custom = (v: string | undefined) => {
-    const reason = watchColorRefusal(v, hostDevice(host));
-    if (reason !== undefined || v === undefined) return commit(rh, "headerColor", (d) => d, { reason: reason ?? "Pick a color." });
-    writeColor(v, true);
-  };
   const lined = rule.header === "line" || rule.header === "label";
   return html`
     ${segField(W("style"), rule.header, WATCH_SMART.headerStyles.map((s) => [s.value, s.label] as [string, string]), (v) =>
@@ -692,36 +738,65 @@ function renderHeader(host: WatchPagesEditorHost, rh: TileSettingsHost, rule: Wa
         }), Math.round(rule.headerGlow * 100))}
         <div class="hint ts-under">${rule.headerGlow <= 0 ? W("off") : W("percent", { value: Math.round(rule.headerGlow * 100) })}</div>`
       : nothing}
-    <div class="ts-sub-h"><span>${W("color")}</span></div>
-    <div class="ts-swatch-row">${swatchRow(`${watchThemeDisplayName(theme)} colors`, watchThemeSwatches(theme, false), rule.headerColor, (v) => writeColor(v))}</div>
-    ${typingField(rh, "headerColor", html`<div class="ts-no-alpha">${colorField("Custom", typed(rh, "headerColor") ?? watchCustomBoxColor(rule.headerColor), custom)}</div>`)}
-    <div class="ts-after">${chip(W("colorDefault", { device: hostDeviceNoun(host) }), rule.headerColor === undefined, `No color of its own: the ${hostDeviceNoun(host)} draws the header white`, () => writeColor(undefined))}</div>`;
+    ${colorPicker(rh, "headerColor", {
+      label: W("color"),
+      color: () => rule.headerColor,
+      defaultTitle: `White, the ${hostDeviceNoun(host)}'s own header color`,
+      write: (d, v) => setSmartRuleHeaderColor(d, P, R, v ?? undefined),
+    })}`;
 }
 
 // ── a rule's size ────────────────────────────────────────────────────────
 
+/** The Size card's summary: "Page size", a preset's name and size
+ * ("Medium, 6×4"), or "Custom, 5×3". */
 function sizeSummary(config: WatchSmartConfig, rule: WatchSmartRule): string {
   const cs = rule.tileStyle?.colSpan;
   const rs = rule.tileStyle?.rowSpan;
   if (cs === undefined && rs === undefined) return W("pageSize");
-  return W("sizeSubtitle", { cols: cs ?? config.tileColSpan, rows: rs ?? config.tileRowSpan });
+  const cols = cs ?? config.tileColSpan;
+  const rows = rs ?? config.tileRowSpan;
+  const preset = WATCH_SMART.styleSizes.find((p) => cs === p.colSpan && rs === p.rowSpan);
+  return `${preset?.name ?? "Custom"}, ${dims(cols, rows)}`;
 }
 
+/** A rule's size: Page size, a chip per preset with its size under the
+ * name, then Custom, whose Columns and Rows boxes show only once it is
+ * picked or while the stored size is neither the page's nor a preset. */
 function renderRuleSize(host: WatchPagesEditorHost, rh: TileSettingsHost, config: WatchSmartConfig, rule: WatchSmartRule): TemplateResult {
   const P = host.pageId;
   const R = rule.id;
+  const scope = `rule:${P}:${R}`;
   const cs = rule.tileStyle?.colSpan;
   const rs = rule.tileStyle?.rowSpan;
-  const page = W("sizeSubtitle", { cols: config.tileColSpan, rows: config.tileRowSpan });
+  const pageCols = config.tileColSpan;
+  const pageRows = config.tileRowSpan;
+  const pageSize = cs === undefined && rs === undefined;
+  const matched = pageSize || WATCH_SMART.styleSizes.some((p) => cs === p.colSpan && rs === p.rowSpan);
+  const custom = sizeCustomOpen(host, scope) || !matched;
+  const pick = (size: { colSpan: number; rowSpan: number } | undefined) => {
+    setSizeCustomOpen(host, scope, false);
+    commit(rh, "size", (d) => setSmartRuleSize(d, P, R, size));
+    host.requestUpdate();
+  };
+  const typedSpan = (key: "colSpan" | "rowSpan") => (d: WatchPagesDocument, v: number | null) => {
+    setSizeCustomOpen(host, scope, true);
+    return setSmartRuleSpan(d, P, R, key, v);
+  };
   return html`
     <div class="ts-chips" role="group" aria-label="Size">
-      ${chip(W("pageSize"), cs === undefined && rs === undefined, `The page's tile size, ${page}`, () => commit(rh, "size", (d) => setSmartRuleSize(d, P, R, undefined)))}
-      ${WATCH_SMART.styleSizes.map((p) => chip(p.name, cs === p.colSpan && rs === p.rowSpan, W("sizeSubtitle", { cols: p.colSpan, rows: p.rowSpan }), () =>
-        commit(rh, "size", (d) => setSmartRuleSize(d, P, R, { colSpan: p.colSpan, rowSpan: p.rowSpan }))))}
+      ${sizeChip(W("pageSize"), { cols: pageCols, rows: pageRows }, !custom && pageSize, "The page's tile size", () => pick(undefined))}
+      ${WATCH_SMART.styleSizes.map((p) => sizeChip(p.name, { cols: p.colSpan, rows: p.rowSpan }, !custom && cs === p.colSpan && rs === p.rowSpan,
+        `${p.colSpan} columns wide and ${p.rowSpan} rows tall`, () => pick({ colSpan: p.colSpan, rowSpan: p.rowSpan })))}
+      ${sizeChip("Custom", matched ? undefined : { cols: cs ?? pageCols, rows: rs ?? pageRows }, custom, "Type the columns and rows", () => {
+        setSizeCustomOpen(host, scope, true);
+        host.requestUpdate();
+      })}
     </div>
-    ${spanBox(rh, "colSpan", "Columns", cs, (d, v) => setSmartRuleSpan(d, P, R, "colSpan", v), { placeholder: String(config.tileColSpan) })}
-    ${spanBox(rh, "rowSpan", "Rows", rs, (d, v) => setSmartRuleSpan(d, P, R, "rowSpan", v), { placeholder: String(config.tileRowSpan) })}
-    <div class="hint ts-under">Empty takes the page's tile size, ${page}.</div>`;
+    ${custom ? html`
+      ${spanBox(rh, "colSpan", "Columns", cs, typedSpan("colSpan"), { placeholder: String(pageCols) })}
+      ${spanBox(rh, "rowSpan", "Rows", rs, typedSpan("rowSpan"), { placeholder: String(pageRows) })}
+      <div class="hint ts-under">Empty takes the page's tile size, ${dims(pageCols, pageRows)}.</div>` : nothing}`;
 }
 
 // ── Add Domain ───────────────────────────────────────────────────────────
@@ -769,6 +844,13 @@ export const smartSettingsStyles = css`
   .sm-chip { display: inline-flex; align-items: center; gap: 5px; }
   .sm-chip-glyph { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; background: #0b0b0d; }
   .sm-chip-glyph svg { display: block; }
+  /* A size chip: the name over its columns × rows. The row stretches every
+     chip to the tallest, so Custom with no size of its own centers its name. */
+  .pe-chip.sm-size {
+    display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    min-width: 60px; padding: 5px 12px; border-radius: 12px; line-height: 1.2;
+  }
+  .sm-size-dims { font-size: 11px; font-weight: 400; color: var(--wa-muted); font-variant-numeric: tabular-nums; }
   .sm-add-btn { display: inline-flex; align-items: center; gap: 4px; }
   .sm-add-btn svg.ui-icon { width: 12px; height: 12px; }
   .sm-add-btn.first { color: var(--wa-accent); border-color: color-mix(in srgb, var(--wa-accent) 50%, transparent); }

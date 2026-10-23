@@ -87,13 +87,18 @@ describe("the Page look setting", () => {
 });
 
 describe("the iPhone look", () => {
-  it("keeps the pages area the Watch look's, with the top row's buttons on the tiles' edges", () => {
+  it("keeps the pages area's top and sides the Watch look's, ending it on the dock's bar, with the top row's buttons on the tiles' edges", () => {
     expect(iphone.look).toBe("iphone");
     expect(iphone.topRow).toEqual({ x: 16, y: 62, width: 370, height: PHONE_TOP_ROW_HEIGHT });
     expect(old.topRow).toEqual({ x: 6, y: 62, width: 390, height: PHONE_TOP_ROW_HEIGHT });
-    expect(iphone.area).toEqual(old.area);
-    expect(iphone.area).toEqual({ x: 6, y: 114, width: 390, height: 712 });
-    expect(iphone.bottomBar).toEqual(old.bottomBar);
+    expect({ x: iphone.area.x, y: iphone.area.y, width: iphone.area.width }).toEqual({ x: old.area.x, y: old.area.y, width: old.area.width });
+    // The dock's 46 point bar against the Watch look's 32 point one.
+    expect(iphone.area).toEqual({ x: 6, y: 118, width: 390, height: 676 });
+    expect(iphone.bottomBar).toEqual({ x: 0, y: 794, width: 402, height: 46 });
+    expect(old.bottomBar).toEqual({ x: 0, y: 808, width: 402, height: 32 });
+    // With one page to show there is no dock, and the bar is the plain one.
+    const one = phonePagesLayout(DEFAULT_PHONE, { look: "iphone", dots: { shown: false, top: false } });
+    expect(one.area).toEqual(old.area);
   });
 
   it("names the page in the top row between the grid and the gear, on the graphite ground, with no watch title", () => {
@@ -224,7 +229,7 @@ describe("the Watch look on an iPhone", () => {
     const watchLook = phonePagesLayout(DEFAULT_PHONE, { look: "watch" });
     expect(watchLook).toEqual(old);
     expect(watchLook.look).toBeUndefined();
-    expect(old.area).toEqual({ x: 6, y: 114, width: 390, height: 712 });
+    expect(old.area).toEqual({ x: 6, y: 118, width: 390, height: 690 });
   });
 
   it("draws the watch's own frame: the watch's title, background, corners and dots", () => {
