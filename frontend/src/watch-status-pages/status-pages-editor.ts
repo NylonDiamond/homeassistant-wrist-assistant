@@ -91,6 +91,7 @@ import { type LinkDevice, linkDevicesOf } from "../watch-pages/devices.js";
 import type { JsonObject } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
+import { StageFitWatch } from "../watch-pages/stage-fit.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import {
   PHONE_STAGE_ZOOM,
@@ -238,6 +239,8 @@ export class WaStatusPagesEditor extends LitElement {
   @state() private deletingAll = false;
   @state() private topMenuOpen = false;
   @state() private zoom = loadStatusPagesZoom();
+  /** Fit held to the stage's width (`stage-fit.ts`). */
+  private stageFit = new StageFitWatch(this, ".sp-stage-body", () => this.stageScale);
   @state() private columns: ColumnWidths = { ...SP_COLUMNS_DEFAULT };
   @state() private hostWidth = 0;
   @state() private hostHeight = 0;
@@ -987,7 +990,7 @@ export class WaStatusPagesEditor extends LitElement {
   // ── the stage ──────────────────────────────────────────────────────────
 
   private get stageScale(): number {
-    return this.zoom ?? stageFitZoom(this.narrow || this.stacked);
+    return this.zoom ?? this.stageFit.fit(stageFitZoom(this.narrow || this.stacked));
   }
 
   private setZoom(scale: number | undefined): void {
@@ -1008,7 +1011,7 @@ export class WaStatusPagesEditor extends LitElement {
     const name = page === undefined ? "Status pages" : statusPageName(page) || "Untitled page";
     const draft = this.draft;
     const scale = this.stageScale;
-    const fit = stageFitZoom(this.narrow || this.stacked);
+    const fit = this.stageFit.fit(stageFitZoom(this.narrow || this.stacked));
     return html`<div class="card canvas-card lit sp-canvas" aria-label="Status page">
       <div class="cv-head">
         <span class="cv-title" title=${name}>${name}</span>

@@ -303,6 +303,7 @@ import {
   stageZoomLabel,
   stageZoomOut,
 } from "./stage.js";
+import { StageFitWatch } from "./stage-fit.js";
 
 // The entry file asks whether a page draft holds edits before it lets the
 // person leave; it cannot import this chunk to find out, so the chunk tells it.
@@ -792,6 +793,8 @@ export class WaPageEditor extends LitElement {
   /** The stage's scale as stepped with the zoom buttons, undefined while it
    * fits (`stageFitZoom`). Remembered between visits. */
   @state() private zoom = loadStageZoom();
+  /** Fit held to the stage's width (`stage-fit.ts`). */
+  private stageFit = new StageFitWatch(this, ".pe-stage-body", () => this.stageScale);
   /** The top bar's ··· menu is open. */
   @state() private topMenuOpen = false;
   /** Why the last value typed in the tile card was refused. */
@@ -3485,7 +3488,7 @@ export class WaPageEditor extends LitElement {
 
   /** The stage's scale now: as stepped, else the fit for the width. */
   private get stageScale(): number {
-    return this.zoom ?? stageFitZoom(this.narrow || this.stacked);
+    return this.zoom ?? this.stageFit.fit(stageFitZoom(this.narrow || this.stacked));
   }
 
   private setZoom(scale: number | undefined): void {
@@ -3765,7 +3768,7 @@ export class WaPageEditor extends LitElement {
   private renderStageTools(page: WatchPage, headers: boolean, smart: boolean, phone = false): TemplateResult {
     const sep = html`<span class="tb-sep" aria-hidden="true"></span>`;
     const scale = this.stageScale;
-    const fit = stageFitZoom(this.narrow || this.stacked);
+    const fit = this.stageFit.fit(stageFitZoom(this.narrow || this.stacked));
     // The percent is of the device's own points: an iPhone is drawn at
     // `PHONE_STAGE_ZOOM` of the watch's zoom.
     const shownAs = (zoom: number): string => stageZoomLabel(phone ? zoom * PHONE_STAGE_ZOOM : zoom);

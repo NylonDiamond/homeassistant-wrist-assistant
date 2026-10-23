@@ -114,6 +114,7 @@ import {
 } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
+import { StageFitWatch } from "../watch-pages/stage-fit.js";
 import { type SettingDevice, watchAppDevices, watchName } from "../watch-settings.js";
 import {
   type WatchMenusDraft,
@@ -359,6 +360,8 @@ export class WaMenuEditor extends LitElement {
   /** The stage's scale as stepped with the zoom buttons, undefined while it
    * fits (`stageFitZoom`). Remembered between visits (`MENUS_ZOOM_KEY`). */
   @state() private zoom = loadMenusZoom();
+  /** Fit held to the stage's width (`stage-fit.ts`). */
+  private stageFit = new StageFitWatch(this, ".me-stage-body", () => this.stageScale);
   /** The side columns' widths as dragged (a preference, saved), and the
    * host's measured content width and height, which fit them and cap the
    * self-scrolling columns. Zero before the first measurement. */
@@ -1380,7 +1383,7 @@ export class WaMenuEditor extends LitElement {
   /** The stage's scale now: as stepped, else the page editor's fit for the
    * width. */
   private get stageScale(): number {
-    return this.zoom ?? stageFitZoom(this.narrow || this.stacked);
+    return this.zoom ?? this.stageFit.fit(stageFitZoom(this.narrow || this.stacked));
   }
 
   private setZoom(scale: number | undefined): void {
@@ -1433,7 +1436,7 @@ export class WaMenuEditor extends LitElement {
   private renderStageTools(host: MenusViewHost): TemplateResult {
     const phone = host.phone !== undefined;
     const scale = this.stageScale;
-    const fit = stageFitZoom(this.narrow || this.stacked);
+    const fit = this.stageFit.fit(stageFitZoom(this.narrow || this.stacked));
     // The percent is of the device's own points.
     const shownAs = (zoom: number): string => stageZoomLabel(phone ? zoom * PHONE_STAGE_ZOOM : zoom);
     return html`<div class="stage-tools" role="toolbar" aria-label="Stage tools">
