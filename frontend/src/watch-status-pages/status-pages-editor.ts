@@ -1223,6 +1223,9 @@ export class WaStatusPagesEditor extends LitElement {
     .pe-layout.cols-3 > .column.left > .card:last-child { flex: 1 1 0; }
     .pe-layout.cols-3 > .column.left > .card > :not(.layers) { flex: none; }
     .pe-layout.cols-3 > .column.left > .card > .layers { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+    /* The open status page's own row stays whole over the others, which
+       scroll under it: one bar in the card, not two. */
+    .pe-layout.cols-3 > .column.left > .sp-pages-card > .layers:has(+ .sp-lib-others) { flex: none; overflow: visible; }
     .pe-layout.cols-3 > .column.inspector { overflow-y: auto; overscroll-behavior: contain; }
     .pe-layout.cols-3 > .column.canvas { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; overscroll-behavior: contain; }
     .pe-layout.cols-3 > .column.canvas > .card { flex: none; }
@@ -1246,7 +1249,9 @@ export class WaStatusPagesEditor extends LitElement {
     @container (max-width: 460px) {
       .sp-stage-area { padding-top: 92px; }
     }
-    .sp-stage-body { display: flex; justify-content: center; padding: 0 4px 4px; overflow-x: auto; overflow-y: hidden; }
+    /* "safe": a watch wider than the stage starts at its left edge, so all
+       of it can be scrolled to, instead of hanging off both sides. */
+    .sp-stage-body { display: flex; justify-content: safe center; padding: 0 4px 4px; overflow-x: auto; overflow-y: hidden; }
     .sp-stage-area > .under {
       display: flex; flex-direction: column; gap: 4px; align-self: center; max-width: 460px; text-align: center;
       font-size: 11.5px; font-weight: 400; line-height: 15px; color: var(--wa-hint, var(--wa-muted));

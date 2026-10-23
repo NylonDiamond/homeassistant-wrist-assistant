@@ -4734,7 +4734,9 @@ export class WaPageEditor extends LitElement {
     }
     /* The picture keeps its size and the stage scrolls sideways under it on
        a screen narrower than the watch drawn at this scale. */
-    .pe-stage-body { display: flex; justify-content: center; padding: 0 4px 4px; overflow-x: auto; overflow-y: hidden; }
+    /* "safe": a watch wider than the stage starts at its left edge, so all
+       of it can be scrolled to, instead of hanging off both sides. */
+    .pe-stage-body { display: flex; justify-content: safe center; padding: 0 4px 4px; overflow-x: auto; overflow-y: hidden; }
     .pe-stage-area > .under {
       flex-direction: column; gap: 4px; align-self: center; max-width: 460px;
       font-size: 11.5px; font-weight: 400; line-height: 15px; color: var(--wa-hint, var(--wa-muted));
