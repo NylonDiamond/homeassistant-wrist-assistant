@@ -7,18 +7,18 @@ import{l as h}from"./chunk-MOKE4TXR.js";import{b as p,d as i,g as t,nh as s}from
       ${e.change===void 0?t:i`<button type="button" class="hl-change" title=${e.change.title} @click=${e.change.onClick}>Change${s("right")}</button>`}
     </div>
     ${e.under??t}
-    ${e.lines.length===0?i`<p class="hl-empty">${e.empty}</p>`:i`<ol class="hl-lines ${e.strip===!0?"strip":""}"
+    ${e.lines.length===0?i`<p class="hl-empty">${e.empty}</p>`:i`<ol class="hl-lines ${e.strip===!0?"strip":""}" style=${e.cell===void 0?"":`--hl-cell:${e.cell}px`}
           @dragover=${a=>e.zone?.onOver(a)} @drop=${a=>e.zone?.onDrop(a)}
           >${h(e.lines,a=>a.key,(a,d)=>x(a,d,e.strip===!0&&e.numbered!==!1))}</ol>`}
-  </section>`}function x(e,a,d){let o=e.action,r=e.drag,l=e.remove,c=["hl-line",e.hidden===!0?"hid":"",r?.on===!0?"drags":"",r?.dragging===!0?"dragging":""].filter(n=>n!=="").join(" ");return i`<li class=${c} data-line=${e.key} draggable=${r?.on===!0?"true":"false"}
+  </section>`}function x(e,a,d){let l=e.action,r=e.drag,o=e.remove,c=["hl-line",e.hidden===!0?"hid":"",r?.on===!0?"drags":"",r?.dragging===!0?"dragging":""].filter(n=>n!=="").join(" ");return i`<li class=${c} data-line=${e.key} draggable=${r?.on===!0?"true":"false"}
     @dragstart=${n=>r?.onStart(n)} @dragover=${n=>r?.onOver(n)}
     @drop=${n=>r?.onDrop(n)} @dragend=${()=>r?.onEnd()}>
     ${d?i`<span class="hl-i" aria-hidden="true">${a+1}</span>`:t}
     ${r===void 0?t:i`<span class="hl-grip" tabindex=${r.on?"0":"-1"} role="button"
       aria-label=${`Move ${e.name}. Alt and the arrow keys move it.`} title=${r.on?"Drag to change the order":""}
       @keydown=${n=>r.onKey(n)}>${s("grip")}</span>`}
-    ${l===void 0?t:i`<button type="button" class="hl-rm" title=${l.title} aria-label=${l.title} ?disabled=${l.busy===!0}
-      @click=${n=>{n.stopPropagation(),l.onClick()}}>${s("close")}</button>`}
+    ${o===void 0?t:i`<button type="button" class="hl-rm" title=${o.title} aria-label=${o.title} ?disabled=${o.busy===!0}
+      @click=${n=>{n.stopPropagation(),o.onClick()}}>${s("close")}</button>`}
     ${e.picture===void 0?t:i`<span class="hl-pic">${e.picture}</span>`}
     <span class="hl-t">
       <b class="hl-name">${e.name}</b>
@@ -27,8 +27,8 @@ import{l as h}from"./chunk-MOKE4TXR.js";import{b as p,d as i,g as t,nh as s}from
         ${e.tag===void 0?t:i`<em class="hl-tag own">${e.tag}</em>`}
         ${e.detail??t}</small>`}
     </span>
-    ${o===void 0?t:o.href!==void 0?i`<a class="hl-edit" href=${o.href} title=${o.title}
-          @click=${n=>{n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey||(n.preventDefault(),o.onClick())}}>${o.label}</a>`:i`<button type="button" class="hl-edit" title=${o.title} @click=${o.onClick}>${o.label}</button>`}
+    ${l===void 0?t:l.href!==void 0?i`<a class="hl-edit" href=${l.href} title=${l.title}
+          @click=${n=>{n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey||(n.preventDefault(),l.onClick())}}>${l.label}</a>`:i`<button type="button" class="hl-edit" title=${l.title} @click=${l.onClick}>${l.label}</button>`}
   </li>`}var b=p`
   .hl-groups { display: flex; flex-direction: column; gap: 18px; }
   .hl-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -50,7 +50,7 @@ import{l as h}from"./chunk-MOKE4TXR.js";import{b as p,d as i,g as t,nh as s}from
   .hl-change:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .hl-empty { margin: 0; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--wa-line); font-size: 12.5px; color: var(--wa-muted); }
   .hl-lines { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; }
-  .hl-lines.strip { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .hl-lines.strip { grid-template-columns: repeat(auto-fill, minmax(var(--hl-cell, 150px), 1fr)); gap: 8px; }
   .hl-line {
     display: flex; align-items: center; gap: 10px; min-width: 0; padding: 7px 8px 7px 10px; border-radius: 10px;
     border: 1px solid var(--wa-line); background: var(--wa-card);

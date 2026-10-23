@@ -68,6 +68,9 @@ export interface LineupGroup {
   /** A strip's cards wear their place in it; false for one whose order
    * means nothing on the device. */
   numbered?: boolean;
+  /** A strip's narrowest card, in px, when its pictures are wider than a
+   * page's (complications grow with the room). */
+  cell?: number;
   /** Drawn under the head: a question before a remove, or what one did. */
   under?: TemplateResult;
   /** The list's own drop target, so a line let go between two lines lands. */
@@ -92,7 +95,7 @@ export function renderLineupGroup(g: LineupGroup): TemplateResult {
     ${g.under ?? nothing}
     ${g.lines.length === 0
       ? html`<p class="hl-empty">${g.empty}</p>`
-      : html`<ol class="hl-lines ${g.strip === true ? "strip" : ""}"
+      : html`<ol class="hl-lines ${g.strip === true ? "strip" : ""}" style=${g.cell === undefined ? "" : `--hl-cell:${g.cell}px`}
           @dragover=${(e: DragEvent) => g.zone?.onOver(e)} @drop=${(e: DragEvent) => g.zone?.onDrop(e)}
           >${repeat(g.lines, (line) => line.key, (line, i) => renderLine(line, i, g.strip === true && g.numbered !== false))}</ol>`}
   </section>`;
@@ -156,7 +159,7 @@ export const homeLineupStyles = css`
   .hl-change:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .hl-empty { margin: 0; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--wa-line); font-size: 12.5px; color: var(--wa-muted); }
   .hl-lines { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; }
-  .hl-lines.strip { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .hl-lines.strip { grid-template-columns: repeat(auto-fill, minmax(var(--hl-cell, 150px), 1fr)); gap: 8px; }
   .hl-line {
     display: flex; align-items: center; gap: 10px; min-width: 0; padding: 7px 8px 7px 10px; border-radius: 10px;
     border: 1px solid var(--wa-line); background: var(--wa-card);

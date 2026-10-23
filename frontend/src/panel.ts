@@ -20242,6 +20242,9 @@ export class WristAssistantPanel extends LitElement {
       ...(said === undefined ? {} : { under: html`<p class="hl-note ${said.tone}" role=${said.tone === "err" ? "alert" : "status"}><span>${said.text}</span></p>` }),
       key: "complications", title: row.kind === "watch" ? "Complications" : "Widgets", icon: row.kind === "watch" ? "gauge" : "grid",
       hue: "var(--wa-hue-blue)", lines, empty: `No ${row.kind === "watch" ? "complications" : "widgets"} on this ${word} yet.`,
+      // Cards like the pages', each as wide as the widest picture: a picture
+      // grows with the room, and in a row it pushed the name out.
+      strip: true, numbered: false, cell: Math.min(COMP_BOARD_PICTURE_MAX, this.compRoomy.size(76)) + 18,
       change: { title: `Put complications on this ${word} or take them off`, onClick: () => void this.openDeviceList(ownerId, "all") },
     };
   }
