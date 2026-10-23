@@ -1,4 +1,4 @@
-import{d as w,e as R,ha as g,ia as x,ya as L}from"./chunk-TS6GX5ZO.js";import{h as u}from"./chunk-IILNIGIO.js";import{b as y,c as k,e as $}from"./chunk-MRBHOOOB.js";import{b as p,d as o,e as h,g as d,nh as b}from"./chunk-PGFG6NDE.js";var S=y(class extends k{constructor(){super(...arguments),this.key=d}render(e,n){return this.key=e,n}update(e,[n,t]){return n!==this.key&&($(e),this.key=n),t}});var P="(max-width: 640px)",f=new Set;function ce(e,n,t=E()){return n==="board"&&t&&!f.has(e)?"cards":n}function pe(e,n){n==="board"?f.add(e):f.delete(e)}function E(){try{return window.matchMedia(P).matches}catch{return!1}}var be={settings:"Settings",rooms:"Rooms",voice:"Voice"},v=1800,I=1500,C=2.2,B=1900,O=3.2,K=900,A=1.5,V=560,M=.8,T=class{constructor(n){this.host=n;this.wide=!1;this.scale=1;n.addController(this)}hostConnected(){typeof ResizeObserver>"u"||(this.seen=new ResizeObserver(n=>{let t=n[0]?.contentRect.width??0,i=t>=I,r=t>=B?O:i?C:t>=K?A:t>0&&t<V?M:1;i===this.wide&&r===this.scale||(this.wide=i,this.scale=r,this.host.requestUpdate())}),this.seen.observe(this.host))}hostDisconnected(){this.seen?.disconnect(),this.seen=void 0}size(n){return Math.round(n*this.scale)}};function ue(e,n,t){let i=(r,a,s)=>o`<button type="button" class="bd-view-opt ${e===r?"on":""}"
+import{d as w,e as R,ha as g,ia as x,ya as L}from"./chunk-TS6GX5ZO.js";import{h as u}from"./chunk-244A4AFP.js";import{b as y,c as k,e as $}from"./chunk-7MCGDSRI.js";import{b as p,d as o,e as h,g as d,nh as b}from"./chunk-PGFG6NDE.js";var S=y(class extends k{constructor(){super(...arguments),this.key=d}render(e,n){return this.key=e,n}update(e,[n,t]){return n!==this.key&&($(e),this.key=n),t}});var P="(max-width: 640px)",f=new Set;function ce(e,n,t=E()){return n==="board"&&t&&!f.has(e)?"cards":n}function pe(e,n){n==="board"?f.add(e):f.delete(e)}function E(){try{return window.matchMedia(P).matches}catch{return!1}}var be={settings:"Settings",rooms:"Rooms",voice:"Voice"},v=1800,I=1500,C=2.2,B=1900,O=3.2,K=900,A=1.5,V=560,M=.8,T=class{constructor(n){this.host=n;this.wide=!1;this.scale=1;n.addController(this)}hostConnected(){typeof ResizeObserver>"u"||(this.seen=new ResizeObserver(n=>{let t=n[0]?.contentRect.width??0,i=t>=I,r=t>=B?O:i?C:t>=K?A:t>0&&t<V?M:1;i===this.wide&&r===this.scale||(this.wide=i,this.scale=r,this.host.requestUpdate())}),this.seen.observe(this.host))}hostDisconnected(){this.seen?.disconnect(),this.seen=void 0}size(n){return Math.round(n*this.scale)}};function ue(e,n,t){let i=(r,a,s)=>o`<button type="button" class="bd-view-opt ${e===r?"on":""}"
     aria-pressed=${e===r?"true":"false"} title=${s} @click=${()=>{e!==r&&n(r)}}>${b(r==="board"?"checklist":"grid")}<span>${a}</span></button>`;return o`<span class="bd-view" role="group" aria-label=${`How to show the ${t}`}>
     ${i("board","Board",`Every ${t.replace(/s$/,"")} as a row, every device as a column`)}${i("cards","Cards",`Every ${t.replace(/s$/,"")} as a card with its picture`)}
   </span>`}var _=(e,n)=>e!==void 0&&n!==void 0&&e.toUpperCase()===n.toUpperCase();function he(e){let n=e.columns.length+1,t=e.columns.findIndex(i=>_(i.device.ownerId,e.focus));return o`<div class="bd-scroll">
@@ -110,11 +110,15 @@ import{d as w,e as R,ha as g,ia as x,ya as L}from"./chunk-TS6GX5ZO.js";import{h 
   .bd-none td { padding: 10px; font-size: 12.5px; color: var(--wa-muted); }
   /* A run of rows of one kind inside a section (a shape): a band in small
      capitals with room above it, so one kind ends before the next begins. */
-  .bd-group th { padding: 18px 10px 6px; background: var(--bd-ground); border-bottom: 1px solid var(--wa-line-strong); }
+  .bd-group th {
+    padding: 9px 10px; background: color-mix(in srgb, var(--wa-ink) 5%, var(--bd-ground));
+    border-top: 14px solid var(--bd-ground); border-bottom: 1px solid var(--wa-line-strong);
+    box-shadow: inset 0 1px 0 var(--wa-line-strong);
+  }
   .bd-group th > * { position: sticky; left: 10px; }
-  .bd-group-t { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-label); }
-  .bd-group-t small { margin-left: 4px; font-size: 11px; font-weight: 500; letter-spacing: 0; color: var(--wa-muted); }
-  .bd-sect + .bd-group th, .bd-sect-body > .bd-group:nth-child(2) th { padding-top: 10px; }
+  .bd-group-t { font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-ink); }
+  .bd-group-t small { margin-left: 6px; font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--wa-muted); }
+  .bd-sect + .bd-group th { border-top-width: 0; }
 
   .bd-row > * { border-bottom: 1px solid var(--wa-line); }
   .bd-row:hover > * { background: color-mix(in srgb, var(--wa-hover) 60%, var(--bd-ground)); }

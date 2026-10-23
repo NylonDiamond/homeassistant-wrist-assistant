@@ -382,11 +382,15 @@ export const boardStyles = css`
   .bd-none td { padding: 10px; font-size: 12.5px; color: var(--wa-muted); }
   /* A run of rows of one kind inside a section (a shape): a band in small
      capitals with room above it, so one kind ends before the next begins. */
-  .bd-group th { padding: 18px 10px 6px; background: var(--bd-ground); border-bottom: 1px solid var(--wa-line-strong); }
+  .bd-group th {
+    padding: 9px 10px; background: color-mix(in srgb, var(--wa-ink) 5%, var(--bd-ground));
+    border-top: 14px solid var(--bd-ground); border-bottom: 1px solid var(--wa-line-strong);
+    box-shadow: inset 0 1px 0 var(--wa-line-strong);
+  }
   .bd-group th > * { position: sticky; left: 10px; }
-  .bd-group-t { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-label); }
-  .bd-group-t small { margin-left: 4px; font-size: 11px; font-weight: 500; letter-spacing: 0; color: var(--wa-muted); }
-  .bd-sect + .bd-group th, .bd-sect-body > .bd-group:nth-child(2) th { padding-top: 10px; }
+  .bd-group-t { font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-ink); }
+  .bd-group-t small { margin-left: 6px; font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--wa-muted); }
+  .bd-sect + .bd-group th { border-top-width: 0; }
 
   .bd-row > * { border-bottom: 1px solid var(--wa-line); }
   .bd-row:hover > * { background: color-mix(in srgb, var(--wa-hover) 60%, var(--bd-ground)); }
