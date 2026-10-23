@@ -6,8 +6,9 @@
 // asking first, the delete question offering This device and Every device,
 // and a delete from the library forgetting the draft and going back.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { laterHidden, laterToast, resetLaterForTest, sendLaterNow } from "../src/delete-later.js";
 import type { OwnerSummary } from "../src/ha-api.js";
 import { DELETE_EVERY_DEVICE, DELETE_THIS_DEVICE, libraryDraftKey } from "../src/library/item-mode.js";
 import { libraryItem } from "../src/library/model.js";
@@ -67,6 +68,8 @@ async function editor() {
 }
 
 describe("the status pages editor's devices, from the library", () => {
+  afterEach(resetLaterForTest);
+
   it("draws a tick per device in the strip under the canvas head, none locked", async () => {
     const { call, el, host, page } = await editor();
     expect(statusPagesOf(host().document).map((p) => p.id)).toEqual([HOUSE]);
@@ -124,12 +127,17 @@ describe("the status pages editor's devices, from the library", () => {
     expect(ask).toContain("Take it off Jesse's Watch only");
   });
 
-  it("deletes from the library at once, forgets its draft and goes back", async () => {
+  it("goes back at once with Undo, then deletes from the library and forgets its draft", async () => {
     const { call, el, ha, key, phone } = await editor();
     let back = 0;
     el.onBack = () => { back++; };
     call("askDelete", HOUSE);
-    await call<Promise<void>>("deleteFromLibrary");
+    call("deleteFromLibrary");
+    expect(back).toBe(1);
+    expect(laterToast()?.undo).toBe(true);
+    expect(ha.of("library/delete")).toEqual([]);
+    sendLaterNow();
+    await vi.waitFor(() => expect(laterHidden().size).toBe(0));
     await settle();
     expect(ha.of("library/delete").map((m) => [m.kind, m.item_id])).toEqual([["status_pages", HOUSE]]);
     expect(statusPagesOf(ha.held.get(`${phone}/status_pages`)!.document as StatusPagesDocument).map((p) => p.name)).toEqual(["Phone"]);

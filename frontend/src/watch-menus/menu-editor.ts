@@ -75,6 +75,7 @@ import {
   summaryRevision,
 } from "../library/item-mode.js";
 import { type LibraryMenu, MENU_UNIT_TITLES, libraryMenu, sameId } from "../library/model.js";
+import { UNDO_AFTER_TEXT } from "../delete-later.js";
 import { LibraryController } from "../library/store.js";
 import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
 import { dirtyElsewhereText } from "../watch-pages/library-editing.js";
@@ -1205,24 +1206,23 @@ export class WaMenuEditor extends LitElement {
         title=${`Delete ${menu.name}. It is on no device yet.`} @click=${() => { this.menuDeleteAsk = true; }}>Delete</button>`;
     }
     return html`<div class="me-lib-copy me-lib-del-ask" role="alertdialog" aria-label=${`Delete ${menu.name}?`}>
-      <span class="me-lib-hint"><b>Delete ${menu.name}?</b> It is on no device yet. This cannot be undone.</span>
-      <button type="button" class="pe-btn pe-danger" @click=${() => void this.deleteLibraryMenu(menu)}>Really delete</button>
+      <span class="me-lib-hint"><b>Delete ${menu.name}?</b> It is on no device yet. ${UNDO_AFTER_TEXT}</span>
+      <button type="button" class="pe-btn pe-danger" @click=${() => this.deleteLibraryMenu(menu)}>Really delete</button>
       <button type="button" class="pe-btn" @click=${() => { this.menuDeleteAsk = false; }}>Cancel</button>
     </div>`;
   }
 
-  private async deleteLibraryMenu(menu: LibraryMenu): Promise<void> {
+  /** Back to the Menus tab at once, with Undo: the delete is sent when its
+   * toast goes (`delete-later.ts`), and the kept draft goes with it then. */
+  private deleteLibraryMenu(menu: LibraryMenu): void {
     const store = this.lib.store;
     const key = this.recordKey;
     if (store === undefined || key === undefined || this.libraryItem === undefined) return;
     this.menuDeleteAsk = false;
-    const result = await store.deleteItem("menus", menu.id);
-    if (key !== this.recordKey) return;
-    if (!result.ok) {
-      this.libNote = { kind: "err", text: `Not deleted. ${result.text}` };
-      return;
-    }
-    forgetWatchMenusDraft(key);
+    store.deleteItemLater("menus", menu.id, `Deleted ${menu.name}.`, async () => {
+      forgetWatchMenusDraft(key);
+      return undefined;
+    });
     this.onBack?.();
   }
 

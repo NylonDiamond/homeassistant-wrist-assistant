@@ -27,6 +27,7 @@ import type { HassLike, OwnerSummary } from "../ha-api.js";
 import { deviceColor, deviceColorsCache } from "../device-colors.js";
 import { LIBRARY_UNSUPPORTED_TEXT, type MenuUnit } from "../library/client.js";
 import { MENU_UNITS } from "../library/client.js";
+import { UNDO_AFTER_TEXT } from "../delete-later.js";
 import { type Library, type LibraryMenu, hasItem, holdsRecord, libraryMenus, menuDocument, menuFor, pagesDocumentFor, sameId } from "../library/model.js";
 import { renderMenuRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
@@ -159,7 +160,6 @@ export class WaAllMenus extends LitElement {
   @state() private newNote?: WatchPagesNote;
   /** The menu whose delete is being asked about. */
   @state() private deleteAsk?: string;
-  @state() private deleting = false;
   /** "Saved" beside the head, for a moment after a dot's write lands. */
   @state() private saved = false;
   /** The menu a Duplicate is copying, while it is out. */
@@ -348,14 +348,13 @@ export class WaAllMenus extends LitElement {
     else this.newNote = { kind: "ok", text: newMenuMadeText(name) };
   }
 
-  /** Delete a menu no device uses, after its question. */
-  private async deleteMenu(menu: LibraryMenu): Promise<void> {
+  /** Delete a menu no device uses, after its question, with Undo: it hides
+   * at once and the delete is sent when its toast goes (`delete-later.ts`). */
+  private deleteMenu(menu: LibraryMenu): void {
     const store = this.lib.store;
-    if (store === undefined || this.deleting) return;
-    this.deleting = true;
-    await store.deleteItem("menus", menu.id);
-    this.deleting = false;
+    if (store === undefined) return;
     this.deleteAsk = undefined;
+    store.deleteItemLater("menus", menu.id, `Deleted ${menu.name}.`);
   }
 
   /** Escape closes New menu's form, then a delete question. */
@@ -364,7 +363,7 @@ export class WaAllMenus extends LitElement {
     if (this.newForm !== undefined && !this.newForm.busy) {
       e.preventDefault();
       this.newForm = undefined;
-    } else if (this.deleteAsk !== undefined && !this.deleting) {
+    } else if (this.deleteAsk !== undefined) {
       e.preventDefault();
       this.deleteAsk = undefined;
     }
@@ -522,10 +521,10 @@ export class WaAllMenus extends LitElement {
 
   private renderDeleteAsk(menu: LibraryMenu): TemplateResult {
     return html`<div class="am-del-ask" role="alertdialog" aria-label=${`Delete ${menu.name}?`}>
-      <span><b>Delete ${menu.name}?</b> It is on no device yet. This cannot be undone.</span>
+      <span><b>Delete ${menu.name}?</b> It is on no device yet. ${UNDO_AFTER_TEXT}</span>
       <span class="am-new-acts">
-        <button type="button" class="am-btn danger" ?disabled=${this.deleting} @click=${() => void this.deleteMenu(menu)}>Really delete</button>
-        <button type="button" class="am-btn" ?disabled=${this.deleting} @click=${() => { this.deleteAsk = undefined; }}>Cancel</button>
+        <button type="button" class="am-btn danger" @click=${() => this.deleteMenu(menu)}>Really delete</button>
+        <button type="button" class="am-btn" @click=${() => { this.deleteAsk = undefined; }}>Cancel</button>
       </span>
     </div>`;
   }

@@ -2033,27 +2033,26 @@ export class WaPageEditor extends LitElement {
    * Delete from the library: the page goes from every device
    * that has it (none, for a page no device has), with every tile and menu
    * slot that opened it, and those devices' complication taps that opened
-   * it are cleared. Then the kept draft goes too, and the way is back to
-   * the Pages tab.
+   * it are cleared. The way is back to the Pages tab at once, with Undo:
+   * the delete is sent when its toast goes (`delete-later.ts`), and the
+   * kept draft goes with it then.
    */
-  private async deleteItemFromLibrary(): Promise<void> {
+  private deleteItemFromLibrary(): void {
     const pageId = this.libraryDeleteAsk;
     const hass = this.hass;
     const key = this.recordKey;
     const store = this.lib.store;
     if (pageId === undefined || !hass || key === undefined || store === undefined || this.deletingAll) return;
-    const owners = store.library === undefined ? [] : [...devicesFor(store.library, "pages", pageId)];
-    this.deletingAll = true;
-    const result = await store.deleteItem("pages", pageId);
-    if (result.ok && owners.length > 0) await clearComplicationTaps(hass, owners, [pageId]);
-    this.deletingAll = false;
+    const library = store.library;
+    const owners = library === undefined ? [] : [...devicesFor(library, "pages", pageId)];
+    const name = (library === undefined ? undefined : libraryItem(library, "pages", pageId)?.name) ?? "the page";
     this.closeAsk();
-    if (key !== this.recordKey) return;
-    if (!result.ok) {
-      this.note = { kind: "err", text: `Not deleted. ${result.text}` };
-      return;
-    }
-    forgetWatchPagesDraft(key);
+    store.deleteItemLater("pages", pageId, `Deleted ${name}.`, async () => {
+      forgetWatchPagesDraft(key);
+      if (owners.length === 0) return undefined;
+      const taps = await clearComplicationTaps(hass, owners, [pageId]);
+      return taps?.kind === "warn" ? taps.text : undefined;
+    });
     this.onBack?.();
   }
 

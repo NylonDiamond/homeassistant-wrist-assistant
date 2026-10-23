@@ -6,7 +6,9 @@
 // the home), saves Hide here and the order on that device's own record, and
 // deletes from the library.
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { laterHidden, laterToast, resetLaterForTest, sendLaterNow, undoLater } from "../src/delete-later.js";
 
 import "../src/watch-pages/all-pages.js";
 import { pageCrop } from "../src/watch-pages/all-pages.js";
@@ -445,6 +447,8 @@ describe("a focused device", () => {
 });
 
 describe("Multi select", () => {
+  afterEach(resetLaterForTest);
+
   it("deletes the picked pages from the library after asking, then clears the complication taps that opened them", async () => {
     const t = tab();
     showTab(t, "all");
@@ -460,12 +464,33 @@ describe("Multi select", () => {
     // The old "Add to…" menu; a card's fold chip says "+ Add to a device".
     expect(ask).not.toContain("Add to…");
     await t.call("runDelete");
+    // Hidden at once, with Undo; sent when the toast goes.
+    expect(laterToast()).toEqual({ text: "Deleted New Page 1.", tone: "ok", undo: true });
+    expect((t.el.lib as { library: { pages: { id: string }[] } }).library.pages.some((e) => e.id === PAGE1)).toBe(false);
+    expect(t.sentOf("library/delete")).toEqual([]);
+    sendLaterNow();
+    // Hidden until it has landed and the library was read again.
+    await vi.waitFor(() => expect(laterHidden().size).toBe(0));
+    expect(laterToast()).toBeUndefined();
     expect(t.sentOf("library/delete")).toEqual([{ type: "wrist_assistant/library/delete", kind: "pages", item_id: PAGE1 }]);
     const tap = t.sentOf("complications/save").at(-1)!;
     expect(tap).toMatchObject({ owner_watch_id: JESSE, base_revision: 2 });
     expect((tap.document as Msg).openPageId).toBeUndefined();
     expect(t.home.lib.pages[PAGE1]).toBeUndefined();
-    expect(t.whole()).toContain("Deleted New Page 1.");
+  });
+
+  it("puts the picked pages back on Undo, and sends nothing", async () => {
+    const t = tab();
+    showTab(t, "all");
+    await t.ready();
+    const shown = () => (t.el.lib as { library: { pages: { id: string }[] } }).library.pages.map((e) => e.id);
+    t.call("startSelect");
+    t.call("pick", (t.el.lib as { library: { pages: { id: string }[] } }).library.pages.find((e) => e.id === PAGE1), false);
+    await t.call("runDelete");
+    expect(shown()).not.toContain(PAGE1);
+    expect(undoLater()).toBe(true);
+    expect(shown()).toContain(PAGE1);
+    expect(t.sentOf("library/delete")).toEqual([]);
   });
 });
 

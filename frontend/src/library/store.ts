@@ -37,7 +37,9 @@ import {
   type LibraryItemSaveReply,
   type LibraryMenuCreateReply,
   type LibraryObject,
+  type LibraryOwnerPicks,
   type LibraryPickReply,
+  type LibrarySummary,
   type MenuUnit,
   copyLibraryMenu,
   createLibraryItem,
@@ -53,6 +55,7 @@ import {
 } from "./client.js";
 import { type Library, holdsRecord, libraryOf } from "./model.js";
 import { watchMenusDefaults } from "../watch-menus/model.js";
+import { deleteLater, laterHidden, laterKey, laterVersion, onLaterChange } from "../delete-later.js";
 
 /** Where the read stands. `unsupported` is an integration older than the
  * library (`unknown_command`). */
@@ -97,9 +100,30 @@ interface Listener {
   owners: readonly string[];
 }
 
+/** The summary with the items a delete with Undo hides left out
+ * (`delete-later.ts`): from the items, and from every device's picks. A
+ * system page pick is the device's own and stays. */
+export function summaryWithout(summary: LibrarySummary, hidden: ReadonlySet<string>): LibrarySummary {
+  const gone = (kind: LibraryKind, id: string) => hidden.has(laterKey(kind, id));
+  const keep = <T>(kind: LibraryKind, items: Record<string, T> | undefined) =>
+    Object.fromEntries(Object.entries(items ?? {}).filter(([id]) => !gone(kind, id)));
+  const picks: Record<string, LibraryOwnerPicks> = {};
+  for (const [owner, held] of Object.entries(summary.picks ?? {})) {
+    picks[owner] = {
+      ...held,
+      ...(held.pages === undefined ? {} : { pages: held.pages.filter((p) => p.page !== undefined || !gone("pages", p.id)) }),
+      ...(held.status_pages === undefined ? {} : { status_pages: held.status_pages.filter((p) => !gone("status_pages", p.id)) }),
+    };
+  }
+  return { pages: keep("pages", summary.pages), status_pages: keep("status_pages", summary.status_pages), menus: keep("menus", summary.menus), picks };
+}
+
 export class LibraryStore {
   /** The newest summary read, kept through a failed read again. */
-  library: Library | undefined;
+  private read: Library | undefined;
+  /** `read` with what waits to be deleted left out, for one `read` and one
+   * `laterVersion`. */
+  private shown: { read: Library; version: number; library: Library } | undefined;
   readState: LibraryReadState = "idle";
   /** Why the last read failed, in plain words; undefined after a good one. */
   readError: string | undefined;
@@ -120,6 +144,26 @@ export class LibraryStore {
 
   constructor(hass: HassLike) {
     this.hass = hass;
+    // A delete waiting, undone or landed changes what the library shows.
+    onLaterChange(() => this.changed());
+  }
+
+  /** The library last read, less what a delete with Undo hides now. */
+  get library(): Library | undefined {
+    const read = this.read;
+    if (read === undefined) return undefined;
+    const hidden = laterHidden();
+    if (![...hidden].some((k) => !k.startsWith("complications|"))) return read;
+    const version = laterVersion();
+    if (this.shown?.read !== read || this.shown.version !== version) {
+      this.shown = { read, version, library: libraryOf(summaryWithout(read.summary, hidden)) };
+    }
+    return this.shown.library;
+  }
+
+  /** Set by a read; a test may set it too. */
+  set library(value: Library | undefined) {
+    this.read = value;
   }
 
   /** The newest `hass` for the commands (the connection stays the same). */
@@ -241,6 +285,28 @@ export class LibraryStore {
    * page are the caller's to clear. */
   deleteItem(kind: LibraryKind, itemId: string): Promise<LibraryWrite<LibraryDeleteReply>> {
     return this.write(noteKey(kind, itemId), undefined, undefined, () => deleteLibraryItem(this.hass, kind, itemId));
+  }
+
+  /** Delete with Undo (`delete-later.ts`): the item hides at once and
+   * `library/delete` is sent when the toast goes. `after` runs once the
+   * delete landed (a page's complication taps), and says what it could not
+   * do. */
+  deleteItemLater(kind: LibraryKind, itemId: string, text: string, after?: () => Promise<string | undefined>): void {
+    deleteLater({
+      text,
+      hide: [laterKey(kind, itemId)],
+      send: async () => {
+        const result = await this.deleteItem(kind, itemId);
+        if (!result.ok) return `Not deleted. ${result.text}`;
+        const stuck = result.reply.link_failures?.length ?? 0;
+        const more = await after?.();
+        const parts = [
+          stuck > 0 ? `Could not take it off ${stuck === 1 ? "1 device" : `${stuck} devices`}.` : undefined,
+          more,
+        ].filter((p): p is string => p !== undefined && p !== "");
+        return parts.length === 0 ? undefined : parts.join(" ");
+      },
+    });
   }
 
   /** Save one item edited in the library (`library/item/save`). Unlike the

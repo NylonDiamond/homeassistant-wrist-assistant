@@ -12,6 +12,7 @@
 // page. The element is `all-pages.ts`; this is the part a test reaches
 // without it.
 
+import { UNDO_AFTER_TEXT } from "../delete-later.js";
 import type { LibraryDeleteReply, LibraryKind } from "../library/client.js";
 import type { LibraryItem } from "../library/model.js";
 import { sameId } from "../library/model.js";
@@ -142,8 +143,8 @@ export function deleteAskText(plan: DeletePlan, devices: readonly LinkDevice[]):
     : `with the tiles, menu slots and complication taps that open ${it}`;
   const parts = [
     where.length === 0
-      ? `${n === 1 ? "It is" : "They are"} on no device yet. This cannot be undone.`
-      : `${n === 1 ? "It comes" : "They come"} off ${joinWords(where)}, ${what}. This cannot be undone.`,
+      ? `${n === 1 ? "It is" : "They are"} on no device yet. ${UNDO_AFTER_TEXT}`
+      : `${n === 1 ? "It comes" : "They come"} off ${joinWords(where)}, ${what}. ${UNDO_AFTER_TEXT}`,
   ];
   for (const k of plan.kept) {
     const names = k.dirty.map((id) => nameOf(devices, id));

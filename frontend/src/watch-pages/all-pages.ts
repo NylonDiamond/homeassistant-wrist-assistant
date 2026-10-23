@@ -83,8 +83,10 @@ import {
   restTitle,
   shownItems,
 } from "./all-pages-model.js";
+import { deleteLater, laterKey } from "../delete-later.js";
 import {
   bulkResultText,
+  countText,
   deleteAskText,
   deletePlan,
   itemKey,
@@ -694,39 +696,41 @@ export class WaAllPages extends LitElement {
   }
 
   /**
-   * Delete the picked items from the library, one at a time, then clear the
-   * complication taps that opened a deleted page, then read the library
-   * again and say in one line what happened. Told the other kind meanwhile,
-   * the delete still finishes but says nothing.
+   * Delete the picked items, with Undo: they hide at once and a toast says
+   * so (`delete-later.ts`). When it goes, each is deleted from the library,
+   * the complication taps that opened a deleted page are cleared, and the
+   * library is read again; anything that went wrong is the toast's to say.
+   * An item a device with unsaved edits has stays, and the bar says why.
    */
-  private async runDelete(): Promise<void> {
+  private runDelete(): void {
     const hass = this.hassNow;
     const store = this.lib.store;
     if (hass === undefined || store === undefined || this.bulkBusy !== undefined) return;
     const picked = this.pickedItems();
     if (picked.length === 0) return;
-    const view = this.kindSeq;
     const devices = this.devices;
+    const plan = deletePlan(picked, devices, dirtyHere);
     this.asking = false;
-    this.bulkNote = undefined;
-    this.bulkBusy = "Working…";
-    let note: WatchPagesNote;
-    try {
-      const result = await runDelete(pagesBulkIO(hass), deletePlan(picked, devices, dirtyHere), devices, (text) => { this.bulkBusy = text; });
-      note = bulkResultText(result);
-    } catch (err) {
-      note = { kind: "err", text: watchCommandError(err).message };
-    }
-    this.bulkBusy = "Reading the library again…";
-    try {
-      await store.refresh();
-    } finally {
-      this.bulkBusy = undefined;
-    }
-    if (view !== this.kindSeq) return;
-    this.pruneSelected();
     this.anchor = undefined;
-    this.bulkNote = note;
+    const kept = bulkResultText({ kind: plan.kind, gone: [], kept: plan.kept, failed: [], stuck: [], taps: [] });
+    this.bulkNote = plan.kept.length > 0 ? kept : undefined;
+    if (plan.items.length === 0) return;
+    const n = plan.items.length;
+    deleteLater({
+      text: `Deleted ${n === 1 ? plan.items[0]!.name : countText(plan.kind, n)}.`,
+      hide: plan.items.map((item) => laterKey(plan.kind, item.id)),
+      send: async () => {
+        let note: WatchPagesNote;
+        try {
+          note = bulkResultText(await runDelete(pagesBulkIO(hass), { ...plan, kept: [] }, devices));
+        } catch (err) {
+          note = { kind: "err", text: watchCommandError(err).message };
+        }
+        await store.refresh();
+        return note.kind === "ok" ? undefined : note.text;
+      },
+    });
+    this.pruneSelected();
   }
 
   // ── drawing ────────────────────────────────────────────────────────────
@@ -1205,7 +1209,7 @@ export class WaAllPages extends LitElement {
     const ask = deleteAskText(plan, devices);
     return html`<span class="pk-bar-ask" id="ap-del-ask"><b>${ask.title}</b> ${ask.body}</span>
       <button type="button" class="ghost danger small" aria-describedby="ap-del-ask" ?disabled=${plan.items.length === 0}
-        @click=${() => void this.runDelete()}>Really delete</button>
+        @click=${() => this.runDelete()}>Really delete</button>
       <button type="button" class="ghost small pk-bar-cancel" @click=${() => { this.asking = false; }}>Cancel</button>`;
   }
 

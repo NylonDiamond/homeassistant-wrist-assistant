@@ -764,23 +764,22 @@ export class WaStatusPagesEditor extends LitElement {
   /**
    * "Delete from the library": the status page goes from every device at
    * once (`library/delete`), with every tile and menu slot that opened it.
-   * Its kept draft goes too, and the way is back to the Status pages tab.
+   * The way is back to the Status pages tab at once, with Undo: the delete
+   * is sent when its toast goes (`delete-later.ts`), and the kept draft
+   * goes with it then.
    */
-  private async deleteFromLibrary(): Promise<void> {
+  private deleteFromLibrary(): void {
     const ask = this.deleteAsk;
     const store = this.lib.store;
     const key = this.recordKey;
     if (!ask || store === undefined || key === undefined || this.deletingAll) return;
-    this.deletingAll = true;
-    const result = await store.deleteItem("status_pages", ask.pageId);
-    this.deletingAll = false;
-    if (key !== this.recordKey) return;
+    const library = store.library;
+    const name = (library === undefined ? undefined : libraryItem(library, "status_pages", ask.pageId)?.name) ?? "the status page";
     this.closeDelete();
-    if (!result.ok) {
-      this.note = { kind: "err", text: `Not deleted. ${result.text}` };
-      return;
-    }
-    forgetStatusPagesDraft(key);
+    store.deleteItemLater("status_pages", ask.pageId, `Deleted ${name}.`, async () => {
+      forgetStatusPagesDraft(key);
+      return undefined;
+    });
     this.onBack?.();
   }
 

@@ -229,6 +229,7 @@ import { conflictText, savedByWords, savedLine, versionLabel, versionWhen } from
 import { ScrollFades } from "./scroll-fade.js";
 import { chromeDarkValues, chromeRuns, chromeTokens, litOutline, plainOutline } from "./editor-chrome.js";
 import { DELETE_EVERY_DEVICE, DELETE_THIS_DEVICE, libraryModeStyles } from "./library/item-mode.js";
+import { UNDO_AFTER_TEXT, deleteLater, dismissLater, holdLater, laterHidden, laterKey, laterToast, laterWaiting, onLaterChange, sendLaterNow, undoKeyTakesDelete, undoLater } from "./delete-later.js";
 import { type TickChip, libraryTicksStyles, renderTickChips } from "./library/ticks.js";
 import { type BoardCell, type BoardColumn, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen,
   SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, noteViewPick, phoneView, renderBoard, renderViewSwitch } from "./library/board.js";
@@ -2516,6 +2517,14 @@ export class WristAssistantPanel extends LitElement {
   private lastPressHitId?: string;
   private keyHandler = (e: KeyboardEvent) => {
     if (e.key === "Alt") this.altHeld = true;
+    // ⌘Z with a delete waiting undoes it, where no editor has the key (Home,
+    // a list tab, Complications with nothing open). In a field it undoes the
+    // typing, as always.
+    if (laterWaiting() && undoKeyTakesDelete(e) && swallowsSaveKey(this.route, this.draft !== undefined)) {
+      e.preventDefault();
+      undoLater();
+      return;
+    }
     // The Settings page is the panel's own drawing, not an element with keys
     // of its own, so the panel saves it, in the iPhone app too.
     if (settingsPageSavesOnKey(iphoneInnerRoute(this.route) ?? this.route, e)) {
@@ -3316,6 +3325,24 @@ export class WristAssistantPanel extends LitElement {
       border: 1px solid var(--wa-line-strong); border-radius: 10px;
       background: var(--wa-card); box-shadow: var(--wa-shadow-pop);
     }
+    /* A delete's toast with Undo (delete-later.ts), at the foot of every
+       screen, over whatever is there. */
+    .wa-toast {
+      position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 50;
+      display: flex; align-items: center; gap: 12px; max-width: min(560px, calc(100vw - 32px));
+      padding: 8px 8px 8px 14px; border: 1px solid var(--wa-line-strong); border-radius: 10px;
+      background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop); font-size: 13px;
+    }
+    .wa-toast.err { border-color: var(--error-color, #db4437); }
+    .wa-toast > span { flex: 1; min-width: 0; }
+    .wa-toast button {
+      flex: none; font: inherit; cursor: pointer; border-radius: 7px;
+      border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink);
+    }
+    .wa-toast button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .wa-toast-undo { padding: 4px 12px; font-weight: 600; color: var(--wa-accent); }
+    .wa-toast-close { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; }
+    .wa-toast-close svg { width: 14px; height: 14px; }
     .pk-dup-row {
       display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; cursor: pointer;
       font: inherit; font-size: 12px; color: var(--wa-ink);
@@ -6151,6 +6178,7 @@ export class WristAssistantPanel extends LitElement {
     window.addEventListener("keyup", this.keyUpHandler);
     window.addEventListener("blur", this.blurHandler);
     window.addEventListener("beforeunload", this.beforeUnload);
+    this.laterOff = onLaterChange(() => this.requestUpdate());
     window.addEventListener("pointerdown", this.pressStart, { capture: true });
     window.addEventListener("pointerup", this.pressEnd, { capture: true });
     window.addEventListener("pointercancel", this.pressEnd, { capture: true });
@@ -6394,8 +6422,15 @@ export class WristAssistantPanel extends LitElement {
     bar.addEventListener("pointercancel", finish);
   }
 
+  /** Stops hearing the delete with Undo's changes. */
+  private laterOff?: () => void;
+
   override disconnectedCallback() {
     super.disconnectedCallback();
+    // Leaving the panel sends a waiting delete: its toast goes with it.
+    this.laterOff?.();
+    this.laterOff = undefined;
+    sendLaterNow();
     for (const type of UNSAVED_NUDGES) this.removeEventListener(type, this.unsavedSoon, { capture: true });
     this.syncUnsavedTicker(false);
     // A QR code still open in Home's pairing dialog or its welcome stops
@@ -8563,46 +8598,65 @@ export class WristAssistantPanel extends LitElement {
     await this.deleteSaved(this.selectedId, this.draft.baseRevision, this.ownerId, everywhere);
   }
 
-  /** Delete one saved complication on the server: the open one from the
-   * inspector's Delete, or any row from the picker's, on whichever device that
-   * row's copy sits. A conflict on the open one opens the conflict banner, as a
-   * save's would; on another row it is a plain error, since there is no draft
-   * of it to reconcile. */
+  /** Delete one saved complication: the open one from the inspector's
+   * Delete, or any row from the picker's, on whichever device that row's
+   * copy sits, with Undo (`deleteRecordsLater`). Delete is the whole design,
+   * every device it is on, unless `everywhere` is false; taking it off one
+   * device is the card's Devices menu. */
   private async deleteSaved(id: string, revision: number, ownerId = this.ownerId, everywhere = true) {
     if (!ownerId) return;
-    const open = ownerId === this.ownerId && id === this.selectedId;
-    // Read before the delete: the record is gone from the lists after it.
-    // `everywhere` false keeps the design's copies on the other devices.
+    // Read now: the copies are named by the link the record carries.
+    const record = this.recordAt(ownerId, id);
     const link = everywhere ? this.linkOf(ownerId, id) : undefined;
-    this.saving = true;
-    try {
-      const result = await deleteRecord(this.hass, ownerId, id, revision);
-      if (!result.ok) {
-        if (result.error === "conflict" && open) this.conflict = { current: result.current ?? null, message: result.message ?? "This complication changed on the server." };
-        else this.saveError = outText(result, "Delete failed");
-        return;
-      }
-      if (open) {
-        this.clearDraft();
-        this.selectedId = undefined;
-      }
-      // Delete is the whole design: every device it is on. Taking it off one
-      // device is the card's Devices menu.
-      const kept = await this.deleteLinkedSiblings(link, ownerId, id);
-      if (kept.length > 0) {
-        this.saveError = `Deleted here, but not on ${joinNames(kept)}: a copy changed on the server. Delete it from its own card.`;
-      }
-      await this.loadRecords();
-      // A row on another device is gone from that device's list, not this
-      // one's, so the list the picker draws it from is the one to re-read.
-      await this.loadOtherLists();
-    } catch (err) {
-      this.saveError = errText(err);
-    } finally {
-      this.saving = false;
-      this.confirmDelete = false;
-      this.pickerConfirmDelete = undefined;
+    const name = String(record?.document?.name ?? "the complication");
+    this.deleteRecordsLater(`Deleted ${name}.`, [
+      { ownerId, id, revision },
+      ...this.linkedSiblings(link, ownerId, id).map((s) => ({ ownerId: s.ownerId, id: s.record.id, revision: s.record.revision })),
+    ]);
+  }
+
+  /**
+   * Delete records with Undo (`delete-later.ts`): they hide at once, and
+   * one open in the editor closes; when the toast goes each is deleted at
+   * the revision it was read at, and the lists are read again. A copy that
+   * changed meanwhile stays, and the toast names its device.
+   */
+  private deleteRecordsLater(text: string, records: readonly { ownerId: string; id: string; revision: number }[]) {
+    if (records.length === 0) return;
+    if (records.some((r) => r.ownerId === this.ownerId && r.id === this.selectedId)) {
+      this.clearDraft();
+      this.selectedId = undefined;
     }
+    this.confirmDelete = false;
+    this.pickerConfirmDelete = undefined;
+    deleteLater({
+      text,
+      hide: records.map((r) => laterKey("complications", r.id, r.ownerId)),
+      send: async () => {
+        const kept: string[] = [];
+        let fail: string | undefined;
+        for (const r of records) {
+          try {
+            const gone = await deleteRecord(this.hass, r.ownerId, r.id, r.revision);
+            if (!gone.ok) {
+              if (gone.error === "conflict") kept.push(this.ownerName(r.ownerId));
+              else fail ??= outText(gone, "Delete failed");
+            }
+          } catch (err) {
+            fail ??= errText(err);
+          }
+        }
+        await this.loadRecords();
+        // A row on another device is gone from that device's list, not this
+        // one's, so the list the picker draws it from is read again too.
+        await this.loadOtherLists();
+        const parts = [
+          kept.length === 0 ? undefined : `Not deleted on ${joinNames([...new Set(kept)])}: it changed on the server. Delete it from its own card.`,
+          fail,
+        ].filter((p): p is string => p !== undefined);
+        return parts.length === 0 ? undefined : parts.join(" ");
+      },
+    });
   }
 
   // ── linked copies ─────────────────────────────────────────────────────
@@ -8684,21 +8738,6 @@ export class WristAssistantPanel extends LitElement {
     if (failed.length > 0) {
       this.saveError = `Saved here, but not on ${joinNames(failed)}: the copy there changed on the server. Save again.`;
     }
-  }
-
-  /** Delete every other copy of one link. The devices whose copy would not
-   * go are returned by name. */
-  private async deleteLinkedSiblings(link: string | undefined, ownerId: string, id: string): Promise<string[]> {
-    const kept: string[] = [];
-    for (const s of this.linkedSiblings(link, ownerId, id)) {
-      try {
-        const gone = await deleteRecord(this.hass, s.ownerId, s.record.id, s.record.revision);
-        if (!gone.ok) kept.push(this.ownerName(s.ownerId));
-      } catch {
-        kept.push(this.ownerName(s.ownerId));
-      }
-    }
-    return kept;
   }
 
   /** What to call one device in a line the author reads. */
@@ -10995,7 +11034,22 @@ export class WristAssistantPanel extends LitElement {
       onHelp: () => this.openHelpSheet(),
       watchUnsaved: this.unsavedNow.length > 0,
     });
-    return html`${bar}${this.renderTab()}${this.helpSheetOpen ? this.renderHelpSheet() : nothing}`;
+    return html`${bar}${this.renderTab()}${this.helpSheetOpen ? this.renderHelpSheet() : nothing}${this.renderDeleteToast()}`;
+  }
+
+  /** The toast of a delete with Undo (`delete-later.ts`), at the foot of
+   * every screen: what was deleted and Undo while it waits, or why it
+   * failed, with a close button. A pointer over it holds the wait. */
+  private renderDeleteToast() {
+    const toast = laterToast();
+    if (toast === undefined) return nothing;
+    return html`<div class="wa-toast ${toast.tone}" role=${toast.tone === "err" ? "alert" : "status"}
+      @pointerenter=${() => holdLater(true)} @pointerleave=${() => holdLater(false)}>
+      <span>${toast.text}</span>
+      ${toast.undo
+        ? html`<button type="button" class="wa-toast-undo" title=${`Undo (${KEY_MOD}Z)`} @click=${() => undoLater()}>Undo</button>`
+        : html`<button type="button" class="wa-toast-close" aria-label="Close" @click=${() => dismissLater()}>${uiIcon("close")}</button>`}
+    </div>`;
   }
 
   // ── getting started and the Help sheet ────────────────────────────────
@@ -12059,12 +12113,16 @@ export class WristAssistantPanel extends LitElement {
    */
   private pickerCopies(): PickerCopy<PickerItem>[] {
     const out: PickerCopy<PickerItem>[] = [];
+    const later = laterHidden();
     const add = (ownerId: string, records: readonly ComplicationRecord[], occupied: readonly OccupiedSlot[]) => {
       const seats: number[] = [];
       for (const record of records) {
         if (record.deleted) continue;
         const slot = Number(record.document?.slotIndex ?? 0);
         seats.push(slot);
+        // Waiting to be deleted, with Undo: gone from every list, its seat
+        // still held, so nothing else shows there meanwhile.
+        if (later.has(laterKey("complications", record.id, ownerId))) continue;
         const link = record.document?.linkId;
         out.push({
           ownerId,
@@ -13381,13 +13439,23 @@ export class WristAssistantPanel extends LitElement {
    * design goes from every device it is on, and the question asked first
    * says so.
    */
-  private async batchDelete() {
-    await this.runBatch("Deleting", async (at) => {
-      const record = this.recordAt(at.ownerId, at.id);
-      if (!record) return;
-      await this.deleteSaved(record.id, record.revision, at.ownerId, false);
+  private batchDelete() {
+    if (this.saving || this.pickerBatchNote !== undefined) return;
+    const groups = this.pickedGroups();
+    const records = groups.flat().flatMap((key) => {
+      const at = this.cardAt(key);
+      const record = at === undefined ? undefined : this.recordAt(at.ownerId, at.id);
+      return at === undefined || record === undefined ? [] : [{ ownerId: at.ownerId, id: record.id, revision: record.revision }];
     });
+    this.pickerBatchAsk = undefined;
+    this.pickerBatchAdd = false;
+    this.saveError = undefined;
+    this.copyStatus = undefined;
     this.pickerPicked = [];
+    const one = groups.length === 1 ? this.recordAt(records[0]?.ownerId ?? "", records[0]?.id ?? "") : undefined;
+    this.deleteRecordsLater(one === undefined
+      ? `Deleted ${groups.length} complications.`
+      : `Deleted ${String(one.document?.name ?? "the complication")}.`, records);
   }
 
   /** Put a copy of every picked design on one more device. One already there
@@ -21084,10 +21152,8 @@ export class WristAssistantPanel extends LitElement {
    * all of them. A draft that was never saved has nothing on the server, so
    * deleting it just closes it, and the dialog says so.
    *
-   * The server keeps a tombstone with the document in its history, but the
-   * panel has no list of deleted complications to bring one back from, so
-   * the dialog says it cannot be undone: that is what is true for the person
-   * reading it.
+   * The delete waits for its toast, whose Undo brings it back untouched
+   * (`deleteRecordsLater`), and the dialog says so.
    */
   private renderDeleteDialog() {
     const cfg = this.draft?.config;
@@ -21117,7 +21183,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.dialogHead(`Delete “${name}”?`, "", close)}
       <div class="xfer-body">
         <div class="xf-lead warn">${uiIcon("info")}<span>${where}</span></div>
-        ${unsaved ? nothing : html`<div class="xf-lead">${uiIcon("info")}<span>This cannot be undone.${keep
+        ${unsaved ? nothing : html`<div class="xf-lead">${uiIcon("info")}<span>${UNDO_AFTER_TEXT}${keep
           ? html` To take it off a device and keep the design, close this and untick the device in the strip over the preview instead. The last copy goes to ${UNASSIGNED_LIST}.` : nothing}</span></div>`}
         <div class="del-acts">
           <button class="ghost" @click=${close}>Cancel</button>

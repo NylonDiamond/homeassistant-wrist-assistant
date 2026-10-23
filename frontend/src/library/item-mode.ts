@@ -19,6 +19,7 @@
 import { css, html, nothing, svg, type TemplateResult } from "lit";
 import { keyed } from "lit/directives/keyed.js";
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../ha-api.js";
+import { UNDO_AFTER_TEXT } from "../delete-later.js";
 import { isPhoneId } from "../phone-pages.js";
 import { type LibraryKind, type LibraryObject, fetchLibraryItem, saveLibraryItem } from "./client.js";
 import { type Library, libraryItem, libraryMenu } from "./model.js";
@@ -110,13 +111,13 @@ export const DELETE_EVERY_DEVICE = "Every device";
  * (it has the item, and so does another device). */
 export function libraryDeleteText(devices: number, here?: string): string {
   const opened = "with every tile and menu slot that opened it";
-  if (devices <= 0) return `It is on no device yet. It is deleted for good, ${opened}.`;
-  if (devices === 1) return `It is on 1 device. It is deleted for good, ${opened}.`;
+  if (devices <= 0) return `It is on no device yet. It is deleted, ${opened}. ${UNDO_AFTER_TEXT}`;
+  if (devices === 1) return `It is on 1 device. It is deleted, ${opened}. ${UNDO_AFTER_TEXT}`;
   if (here !== undefined) {
     return `It is on ${devices} devices. ${DELETE_THIS_DEVICE} takes it off ${here} only, and you can tick it again. `
-      + `${DELETE_EVERY_DEVICE} deletes it for good, ${opened}.`;
+      + `${DELETE_EVERY_DEVICE} deletes it, ${opened}. ${UNDO_AFTER_TEXT}`;
   }
-  return `It is on ${devices} devices. Delete takes it off every device for good, ${opened}. To take it off one device, untick it instead.`;
+  return `It is on ${devices} devices. Delete takes it off every device, ${opened}. ${UNDO_AFTER_TEXT} To take it off one device, untick it instead.`;
 }
 
 // ── Preview on ───────────────────────────────────────────────────────────

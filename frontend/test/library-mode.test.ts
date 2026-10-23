@@ -384,10 +384,10 @@ describe("library mode's pieces", () => {
   it("asks a delete in one set of words: This device or Every device", () => {
     expect(libraryDeleteTitle("Lights")).toBe(`Delete "Lights"?`);
     expect([DELETE_THIS_DEVICE, DELETE_EVERY_DEVICE]).toEqual(["This device", "Every device"]);
-    expect(libraryDeleteText(0)).toBe("It is on no device yet. It is deleted for good, with every tile and menu slot that opened it.");
-    expect(libraryDeleteText(1)).toBe("It is on 1 device. It is deleted for good, with every tile and menu slot that opened it.");
+    expect(libraryDeleteText(0)).toBe("It is on no device yet. It is deleted, with every tile and menu slot that opened it. You can undo it for 10 seconds after.");
+    expect(libraryDeleteText(1)).toBe("It is on 1 device. It is deleted, with every tile and menu slot that opened it. You can undo it for 10 seconds after.");
     expect(libraryDeleteText(3, "Jesse's Watch")).toBe("It is on 3 devices. This device takes it off Jesse's Watch only, and you can tick it again. "
-      + "Every device deletes it for good, with every tile and menu slot that opened it.");
+      + "Every device deletes it, with every tile and menu slot that opened it. You can undo it for 10 seconds after.");
     expect(libraryDeleteText(3)).toContain("To take it off one device, untick it instead.");
     for (const text of [libraryDeleteText(0), libraryDeleteText(3, "A"), libraryDeleteText(3)]) {
       expect(text).not.toMatch(/library|[–—]| - /);

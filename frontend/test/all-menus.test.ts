@@ -6,9 +6,11 @@
 // own for its kind, and moves no device; a menu no device uses can be
 // deleted. Plus the menu editor's ask that opens it on one menu.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+
+import { laterHidden, laterToast, resetLaterForTest, sendLaterNow, undoLater } from "../src/delete-later.js";
 
 import { libraryOf, type LibraryMenu } from "../src/library/model.js";
 import "../src/watch-menus/all-menus.js";
@@ -129,6 +131,8 @@ describe("the tab's words", () => {
 });
 
 describe("the Menus tab", () => {
+  afterEach(resetLaterForTest);
+
   function tab(admin = true) {
     const home = fakeHome(admin);
     const opened: [string, string][] = [];
@@ -335,10 +339,29 @@ describe("the Menus tab", () => {
     show(t);
     await t.ready();
     t.el.deleteAsk = SPARE;
-    expect(t.whole()).toContain("It is on no device yet. This cannot be undone.");
+    expect(t.whole()).toContain("It is on no device yet. You can undo it for 10 seconds after.");
     await t.call("deleteMenu", t.libNow().menus.find((m) => m.id === SPARE));
+    // Hidden at once, with Undo; nothing is sent until the toast goes.
+    expect(laterToast()).toEqual({ text: "Deleted Entity quick menu.", tone: "ok", undo: true });
+    expect(t.libNow().menus.some((m) => m.id === SPARE)).toBe(false);
+    expect(t.sentOf("library/delete")).toEqual([]);
+    sendLaterNow();
+    await vi.waitFor(() => expect(laterHidden().size).toBe(0));
     expect(t.sentOf("library/delete").at(-1)).toEqual({ type: "wrist_assistant/library/delete", kind: "menus", item_id: SPARE });
+    expect(laterToast()).toBeUndefined();
     expect(t.home.lib.menus[SPARE]).toBeUndefined();
+  });
+
+  it("puts a deleted menu back on Undo, and sends nothing", async () => {
+    const t = tab();
+    show(t);
+    await t.ready();
+    await t.call("deleteMenu", t.libNow().menus.find((m) => m.id === SPARE));
+    expect(t.libNow().menus.some((m) => m.id === SPARE)).toBe(false);
+    expect(undoLater()).toBe(true);
+    expect(t.libNow().menus.some((m) => m.id === SPARE)).toBe(true);
+    expect(laterToast()).toBeUndefined();
+    expect(t.sentOf("library/delete")).toEqual([]);
   });
 
   it("shows a focused device's two menus first, then the rest dimmed", async () => {
