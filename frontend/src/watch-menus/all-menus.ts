@@ -94,11 +94,12 @@ let kept: KeptView | undefined;
  * off keeps it while the panel is open. */
 function keptView(): KeptView {
   if (kept !== undefined) return kept;
-  const view: KeptView = { view: "board" };
+  // Cards first, as on every list tab. Board once picked.
+  const view: KeptView = { view: "cards" };
   try {
     const raw = window.localStorage.getItem(VIEW_STORE_KEY);
     const saved = raw ? (JSON.parse(raw) as { view?: unknown }) : {};
-    if (saved.view === "cards") view.view = "cards";
+    if (saved.view === "board") view.view = "board";
   } catch {
     /* Storage off: the defaults. */
   }

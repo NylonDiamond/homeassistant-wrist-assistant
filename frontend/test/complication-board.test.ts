@@ -84,14 +84,14 @@ describe("a focused device on the Complications board", () => {
 });
 
 describe("Board or Cards", () => {
-  it("starts on the board and keeps Cards once picked", () => {
+  it("starts on Cards and keeps the board once picked", () => {
     const held = new Map<string, string>();
     const storage = () => ({ getItem: (k: string) => held.get(k) ?? null, setItem: (k: string, v: string) => { held.set(k, v); } }) as unknown as Storage;
-    expect(readCompView(storage)).toBe("board");
-    saveCompView(storage, "cards");
-    expect(held.get(COMP_VIEW_STORE_KEY)).toBe("cards");
     expect(readCompView(storage)).toBe("cards");
-    expect(readCompView(() => { throw new Error("off"); })).toBe("board");
+    saveCompView(storage, "board");
+    expect(held.get(COMP_VIEW_STORE_KEY)).toBe("board");
+    expect(readCompView(storage)).toBe("board");
+    expect(readCompView(() => { throw new Error("off"); })).toBe("cards");
   });
 });
 

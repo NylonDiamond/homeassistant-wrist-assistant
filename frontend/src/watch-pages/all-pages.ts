@@ -174,11 +174,12 @@ const kept = new Map<CardKind, KeptView>();
 function keptView(cards: CardKind): KeptView {
   const held = kept.get(cards);
   if (held !== undefined) return held;
-  const view: KeptView = { view: "board" };
+  // Cards first: a page is found by its picture. Board once picked.
+  const view: KeptView = { view: "cards" };
   try {
     const raw = window.localStorage.getItem(VIEW_STORE_KEYS[cards]);
     const saved = raw ? (JSON.parse(raw) as { view?: unknown }) : {};
-    if (saved.view === "cards") view.view = "cards";
+    if (saved.view === "board") view.view = "board";
   } catch {
     /* Storage off: the defaults. */
   }

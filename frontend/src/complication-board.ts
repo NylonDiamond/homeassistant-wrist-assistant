@@ -162,9 +162,10 @@ export const COMP_VIEW_STORE_KEY = "wrist-assistant:complications-view";
 export function readCompView(storage: () => Storage): CompListView {
   try {
     const raw = storage().getItem(COMP_VIEW_STORE_KEY);
-    return raw === "cards" ? "cards" : "board";
+    // Cards first, as on every list tab. Board once picked.
+    return raw === "board" ? "board" : "cards";
   } catch {
-    return "board";
+    return "cards";
   }
 }
 
