@@ -63,9 +63,18 @@ function loadCamerasEditor(): Promise<void> {
   return loading;
 }
 
+/** One of the signed in person's devices, a test alert can go to. */
+export interface CameraTestDevice {
+  id: string;
+  name: string;
+}
+
 export interface WatchCamerasViewInput {
   hass: HassLike;
   narrow: boolean;
+  /** The signed in person's devices, in Home's order, for the test's Send
+   * to. */
+  devices: readonly CameraTestDevice[];
   /** The box in the panel's Watch app header the editor draws its bar
    * in (`head-bar.ts`). Left out, the bar is drawn on top of the editor. */
   barHost?: HTMLElement;
@@ -79,7 +88,7 @@ export function renderWatchCamerasView(input: WatchCamerasViewInput): TemplateRe
   const ready = customElements.get("wa-cameras-editor") !== undefined;
   if (!ready && !loadFailed) void loadCamerasEditor().then(input.onLoaded, input.onLoaded);
   return ready
-    ? html`<wa-cameras-editor .hass=${input.hass} ?narrow=${input.narrow} .barHost=${input.barHost}></wa-cameras-editor>`
+    ? html`<wa-cameras-editor .hass=${input.hass} ?narrow=${input.narrow} .barHost=${input.barHost} .devices=${input.devices}></wa-cameras-editor>`
     : html`<div class="wp-loading">
         ${loadFailed ? html`<span>The Cameras screen did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
       </div>`;

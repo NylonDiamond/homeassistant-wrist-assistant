@@ -143,7 +143,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type DeviceSync, type HowDevice, NOT_ON_A_DEVICE_LINE, NOT_ON_A_DEVICE_UNSAVED_LINE, type SendState, afterSaveLine, agoWords, describeSend, homePill, homeSync, howItWorksSteps, onTheFaceStep, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDoorLook, homeGroups, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_LIBRARY_LEAD, HOME_LIBRARY_TITLE, HOME_RING_LENGTH, HOME_SHARED_SUB, HOME_SYNC_NOTE, homeLibraryScreens, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, attentionText, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceLabel, homeDeviceRows, homeDoorLook, homeGroups, homePickOf, homeRowSub, homeStep, homeTotals, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_LIBRARY_LEAD, HOME_LIBRARY_TITLE, HOME_SHARED_SUB, HOME_SYNC_NOTE, homeLibraryScreens, NEVER_CONNECTED_TEXT, neverConnected, USER_GONE_TEXT, userGone } from "./home.js";
 import { type HomeFace, type HomeFacePicture, homeChoiceArt, homeMiniArt, homePhoneArt, homeWatchArt } from "./home-art.js";
 import { APP_STORE_URL, type GettingStarted, SETUP_GUIDE_URL, TROUBLESHOOTING_URL, gettingStarted, watchesWithPages } from "./getting-started.js";
 import { type QrPicture, qrPicture } from "./qr-code.js";
@@ -11540,6 +11540,7 @@ export class WristAssistantPanel extends LitElement {
       // the camera's own in Home Assistant, so it too is handed no watch.
       case "cameras": return renderWatchCamerasView({
         hass: this.hass, narrow: this.narrow,
+        devices: this.myTestDevices(),
         barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
       });
@@ -11875,6 +11876,16 @@ export class WristAssistantPanel extends LitElement {
     const states = this.hass?.states ?? {};
     if (this.haPersonsFor?.states !== states) this.haPersonsFor = { states, persons: haPeople(states) };
     return peopleOf(this.owners, this.haPersonsFor.persons);
+  }
+
+  /** The signed in person's own devices, named as Home names them, that a
+   * camera's test alert can be sent to: bound to them (a watch through its
+   * iPhone too), not a removed user's, not an orphan. */
+  private myTestDevices(): { id: string; name: string }[] {
+    const me = this.hass?.user?.id;
+    if (me === undefined) return [];
+    const mine = new Set(this.owners.filter((o) => o.user_id === me && o.user_gone !== true && !o.is_orphan).map((o) => o.owner_watch_id));
+    return this.homeDevices().filter((d) => mine.has(d.id)).map((d) => ({ id: d.id, name: d.name }));
   }
 
   /** Every owner as the sync rule reads it, named the way the pill and
@@ -19854,10 +19865,9 @@ export class WristAssistantPanel extends LitElement {
    * complications, so Home does not repeat them; it answers "what is in this
    * home, whose is it, and is each one up to date", one device at a time.
    *
-   * The side bar has the head, the household's state (`renderHomeStatus`:
-   * a ring of every device, Waiting to sync with a line per waiting device,
-   * and the totals), Pair a device, then every device, grouped by the person
-   * it belongs to (`people`), each device in its own color
+   * The side bar has the head, Pair a device, then every device, grouped
+   * in a box by the person it belongs to (`people`), the box's head saying
+   * how their devices stand, each device in its own color
    * (`device-colors.ts`). A device's word is the header pill's rule for its
    * complications; a watch's is the worse of that and its watch app records
    * (`deviceVerdict`).
@@ -19900,9 +19910,10 @@ export class WristAssistantPanel extends LitElement {
       <div class="home hb">
         <aside class="hb-side" aria-label="Devices">
           <div class="hb-head"><h1>Home</h1>${lead}${scope}</div>
-          ${this.renderHomeStatus(devices, elapsed)}
-          <button type="button" class="home-btn add hb-pair" title="Pair a watch or iPhone, by a code or a QR code"
-            @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair a device</span></button>
+          <button type="button" class="hb-pair" @click=${() => this.openPairDialog()}>
+            <span class="hb-pair-ic" aria-hidden="true">${uiIcon("plus")}</span>
+            <span class="hb-pair-t"><b>Pair a device</b><span>A watch with a code, an iPhone with a QR code</span></span>
+          </button>
           ${this.renderHomeAllRow(devices.length)}
           ${groups.map((g) => this.renderHomeGroup(g, this.homeAll ? "" : row.id, elapsed))}
           ${this.renderHomeShared()}
@@ -20015,50 +20026,6 @@ export class WristAssistantPanel extends LitElement {
             </section>`)}
         </ol>
       </div></div>`;
-  }
-
-  /** Home's household state, at the top of the side bar: a ring of every
-   * device (synced green, waiting amber), its words, Waiting to sync with a
-   * line per waiting device in its device's color (`device-colors.ts`) that
-   * picks it, and the totals. Lit amber while anything waits. */
-  private renderHomeStatus(devices: readonly HomeDeviceRow[], elapsed: number) {
-    const totals = homeTotals(devices);
-    const last = lastSeenDevice(devices, (id) => this.ownerOf(id), elapsed);
-    // A watch that could not use the last save is listed too: it needs a
-    // look as much as one that waits, and "Every device has your latest
-    // changes" would not be true of it.
-    const waiting = devices.filter(needsAttention);
-    const ring = homeRing(totals, HOME_RING_LENGTH);
-    const lastWords = last === undefined ? undefined : last.unit === "" ? last.n : `${last.n} ${last.unit}`;
-    const ringArt = html`<svg class="hb-ring" viewBox="0 0 44 44" aria-hidden="true">
-        <circle class="track" cx="22" cy="22" r="18"></circle>
-        ${totals.synced > 0 ? svg`<circle class="ok" cx="22" cy="22" r="18" stroke-linecap="round" stroke-dasharray=${ring.synced} transform="rotate(-90 22 22)"></circle>` : nothing}
-        ${totals.waiting > 0 ? svg`<circle class="wait" cx="22" cy="22" r="18" stroke-linecap="round" stroke-dasharray=${ring.waiting} stroke-dashoffset=${ring.offset} transform="rotate(-90 22 22)"></circle>` : nothing}
-      </svg>`;
-    const seen = last === undefined ? undefined : `seen ${lastWords}`;
-    const sub = [waiting.length > 0 ? `${waiting.length} waiting` : undefined, seen].filter((w): w is string => w !== undefined).join(" · ");
-    const head = html`${ringArt}<span class="hb-sum-t"><b>${homeRingHead(totals)}</b>${sub === "" ? nothing : html`<span>${sub}</span>`}</span>`;
-    // Small, so the devices under it lead: one line, and what waits folded
-    // under it until it is opened.
-    if (waiting.length === 0) {
-      return html`<section class="hb-sum" aria-label="Sync"
-        title=${`Every device has your latest changes.${last === undefined ? "" : ` Last seen: ${last.name}, ${lastWords}.`}`}>
-        <div class="hb-sum-top">${head}</div>
-      </section>`;
-    }
-    return html`<details class="hb-sum on" aria-label="Sync">
-      <summary class="hb-sum-top">${head}<span class="hb-sum-go" aria-hidden="true">${uiIcon("chevron")}</span></summary>
-      <h2 class="home-title">Waiting to sync ${waiting.length}</h2>
-      <div class="hb-waits">${waiting.map((d) => {
-        const pending = pendingWords(this.ownerOf(d.id));
-        const gone = userGone(this.ownerOf(d.id));
-        return html`<button type="button" class="hb-wait" style=${`--c:${this.deviceColorOf(d.id) ?? "var(--wa-hue-grey)"}`}
-          title=${`Open ${d.name}`} @click=${() => this.openHomeDevice(d.id, gone)}>
-          <i aria-hidden="true"></i>
-          <span class="hb-wait-t"><b>${d.name}</b><span>${gone ? USER_GONE_TEXT : attentionText(d, pending)}</span></span>
-        </button>`;
-      })}</div>
-    </details>`;
   }
 
   /** One person's devices in Home's side bar: their picture (or initial),

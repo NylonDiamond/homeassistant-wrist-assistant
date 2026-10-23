@@ -303,33 +303,6 @@ export function homeTotals(rows: readonly Pick<HomeDeviceRow, "sync" | "rejected
   return { all: rows.length, synced: count("synced"), waiting: count("waiting"), idle: count("idle") };
 }
 
-/** The device heard from last, for the totals' Last seen: a watch holding a
- * long-poll is "Now", else the shortest time since it was seen, aged by the
- * time since the list was read (`elapsed`, seconds), as a number and its
- * unit. Nothing when no device has been heard from since the server started. */
-export function lastSeenDevice(
-  rows: readonly Pick<HomeDeviceRow, "id" | "name">[],
-  ownerOf: (id: string) => Pick<OwnerSummary, "polling" | "last_seen_seconds"> | undefined,
-  elapsed: number,
-): { name: string; n: string; unit: string } | undefined {
-  let best: { name: string; seconds: number } | undefined;
-  for (const r of rows) {
-    const owner = ownerOf(r.id);
-    const seconds = owner?.polling === true ? 0 : owner?.last_seen_seconds;
-    if (typeof seconds !== "number") continue;
-    if (best === undefined || seconds < best.seconds) best = { name: r.name, seconds };
-  }
-  if (best === undefined) return undefined;
-  const seconds = best.seconds === 0 ? 0 : best.seconds + Math.max(0, elapsed);
-  if (seconds < 60) return { name: best.name, n: "Now", unit: "" };
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return { name: best.name, n: `${minutes}`, unit: "min ago" };
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return { name: best.name, n: `${hours}`, unit: "h ago" };
-  const days = Math.floor(hours / 24);
-  return { name: best.name, n: `${days}`, unit: days === 1 ? "day ago" : "days ago" };
-}
-
 /** Home's devices by person, in the people's own order: each person with
  * their rows, in the rows' order (watches, then phones). A row no person
  * holds, which only an inconsistent list could give, ends up in a group of
@@ -441,28 +414,6 @@ export function homePageThumbs(pages: readonly WatchPage[], max = HOME_PAGE_THUM
   return pages.filter((p) => !isHiddenWatchPage(p) && !isSystemWatchPage(p)).slice(0, max);
 }
 
-/** The length round Home's ring, a circle of radius 18 in a 44 box. */
-export const HOME_RING_LENGTH = 2 * Math.PI * 18;
-
-/** Home's ring of every device: the synced share in green from the top,
- * then the waiting share in amber after it, as stroke dash lengths on a
- * circle of `length`. A device that never synced leaves its share empty. */
-export function homeRing(totals: { all: number; synced: number; waiting: number }, length: number): { synced: string; waiting: string; offset: string } {
-  const share = (n: number) => (totals.all === 0 ? 0 : (n / totals.all) * length);
-  const synced = share(totals.synced);
-  const waiting = share(totals.waiting);
-  const fmt = (n: number) => `${Math.round(n * 10) / 10}`;
-  return { synced: `${fmt(synced)} ${fmt(length)}`, waiting: `${fmt(waiting)} ${fmt(length)}`, offset: fmt(-synced) };
-}
-
-/** The ring's words: "All 6 synced", "5 of 6 synced", or "1 device" with
- * nothing synced yet. */
-export function homeRingHead(totals: { all: number; synced: number }): string {
-  if (totals.all > 0 && totals.synced === totals.all) return `All ${totals.all} synced`;
-  if (totals.synced === 0) return `${totals.all} ${totals.all === 1 ? "device" : "devices"}`;
-  return `${totals.synced} of ${totals.all} synced`;
-}
-
 /**
  * Home's look, added to the panel's sheet. A device browser: the household's
  * devices down a side bar, grouped by person, and the picked device on the
@@ -552,8 +503,7 @@ export const homeStyles = css`
   }
   /* All devices, picked, is lit like a picked device, in the accent. */
   button.hb-row.hb-all { --c: var(--wa-accent); }
-  /* The side bar: the head, the household's state, Pair a device, then
-     every device by person. */
+  /* The side bar: the head, Pair a device, then every device by person. */
   .hb-side {
     flex: 1 1 280px; max-width: 340px; min-width: 0; box-sizing: border-box;
     display: flex; flex-direction: column; gap: 16px; padding: 20px 12px 18px;
@@ -563,52 +513,37 @@ export const homeStyles = css`
   .hb-head h1 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.02em; }
   .hb-head .home-lead { font-size: 12px; line-height: 1.45; }
   .hb-head .home-scope { font-size: 11.5px; }
-  /* The household's state, small so the devices under it lead: a ring of
-     every device (synced green, waiting amber), its words on one line, and
-     the waiting devices folded under it until it is opened. Lit green from
-     its top left, or amber while anything waits. */
-  .hb-sum {
-    --c: var(--wa-green); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
+  /* Pair a device, the side bar's one call to action: a card lit green from
+     its top left, a green plus in a round chip, its name and how each kind
+     pairs. */
+  button.hb-pair {
+    --c: var(--wa-green); --lo-fill: color-mix(in srgb, var(--wa-green) 7%, var(--wa-card)); --lo-mid: var(--wa-card-mid);
     ${litOutline}
     border-width: 1px;
-    display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 11px; box-shadow: var(--home-lift);
+    display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; padding: 12px 14px;
+    border-radius: 13px; font: inherit; text-align: left; cursor: pointer; color: var(--wa-ink);
+    box-shadow: var(--home-lift); transition: filter .15s ease;
   }
-  .hb-sum.on { --c: var(--wa-amber); }
-  .hb-sum-top { display: flex; align-items: center; gap: 10px; list-style: none; }
-  summary.hb-sum-top { cursor: pointer; border-radius: 8px; }
-  summary.hb-sum-top::-webkit-details-marker { display: none; }
-  summary.hb-sum-top:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .hb-sum-go { margin-left: auto; display: grid; color: var(--wa-muted); transition: transform .15s ease; }
-  .hb-sum-go svg.ui-icon { width: 12px; height: 12px; }
-  details.hb-sum[open] .hb-sum-go { transform: rotate(180deg); }
-  details.hb-sum > .home-title { padding: 6px 2px 0; font-size: 10px; color: var(--c); }
-  .hb-ring { flex: none; width: 26px; height: 26px; }
-  .hb-ring circle { fill: none; stroke-width: 5; }
-  .hb-ring .track { stroke: var(--wa-line-strong); }
-  .hb-ring .ok { stroke: var(--wa-green); }
-  .hb-ring .wait { stroke: var(--wa-amber); }
-  .hb-sum-t { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-  .hb-sum-t b { font-size: 13px; font-weight: 500; letter-spacing: -.01em; }
-  .hb-sum-t span { font-size: 11px; color: var(--wa-muted); overflow-wrap: anywhere; }
-  /* A waiting device: its name and what it waits for, opening it. */
-  .hb-waits { display: flex; flex-direction: column; }
-  button.hb-wait {
-    display: flex; align-items: flex-start; gap: 9px; width: 100%; padding: 8px 0; box-sizing: border-box;
-    font: inherit; text-align: left; cursor: pointer; color: var(--wa-ink);
-    background: transparent; border: 0; border-top: 1px solid var(--wa-line);
+  button.hb-pair:hover { filter: brightness(1.12); }
+  button.hb-pair:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .hb-pair-ic {
+    width: 36px; height: 36px; flex: none; border-radius: 50%; display: grid; place-items: center;
+    color: var(--wa-green); background: color-mix(in srgb, var(--wa-green) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--wa-green) 45%, transparent);
   }
-  button.hb-wait:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
-  button.hb-wait i { width: 6px; height: 6px; flex: none; margin-top: 6px; border-radius: 50%; background: var(--c); }
-  .hb-wait-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-  .hb-wait-t b { font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; }
-  .hb-wait-t span { font-size: 11.5px; color: var(--wa-muted); overflow-wrap: anywhere; }
-  button.hb-wait:hover .hb-wait-t b { text-decoration: underline; }
-  button.home-btn.hb-pair { width: 100%; height: 36px; justify-content: center; border-radius: 10px; }
-  .hb-pair svg.ui-icon { color: var(--wa-green); }
+  .hb-pair-ic svg.ui-icon { width: 18px; height: 18px; }
+  .hb-pair-t { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .hb-pair-t b { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+  .hb-pair-t span { font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
   /* One person: their picture (or initial) ringed in grey (the colors are
      the devices'), their
-     name in small capitals, how their devices stand, then a row each. */
+     name in small capitals, how their devices stand, then a row each, all
+     in one box. */
   .hb-group { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .hb-group:not(.hb-shared) {
+    padding: 4px 4px 6px; border-radius: 14px; border: 1px solid var(--wa-line);
+    background: var(--home-card); box-shadow: var(--home-lift);
+  }
   .hb-person { display: flex; align-items: center; gap: 9px; padding: 8px 8px 6px; min-width: 0; }
   .hb-avatar {
     width: 22px; height: 22px; flex: none; box-sizing: border-box; border-radius: 50%; overflow: hidden;

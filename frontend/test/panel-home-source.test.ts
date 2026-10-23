@@ -27,7 +27,6 @@ function between(text: string, from: string, to: string): string {
 }
 
 const home = method("  private renderHome() {");
-const status = method("  private renderHomeStatus(");
 const group = method("  private renderHomeGroup(");
 const row = method("  private renderHomeRow(");
 const detail = method("  private renderHomeDetail(");
@@ -48,7 +47,7 @@ describe("Home's page", () => {
     expect(home).toContain("${this.homeAll ? this.renderHomeAll() : this.renderHomeDetail(row, devices, groups, elapsed)}");
     // "All devices" leads the side bar (plan step 6).
     expect(home.indexOf("${this.renderHomeAllRow(devices.length)}")).toBeLessThan(home.indexOf("${groups.map("));
-    expect(home.indexOf("this.renderHomeStatus(")).toBeLessThan(home.indexOf("hb-pair"));
+    expect(home.indexOf("hb-pair")).toBeLessThan(home.indexOf("${this.renderHomeAllRow(devices.length)}"));
     expect(home.indexOf("hb-pair")).toBeLessThan(home.indexOf("groups.map((g) => this.renderHomeGroup("));
   });
 
@@ -66,7 +65,8 @@ describe("Home's page", () => {
   it("has no New complication button, only Pair a device", () => {
     expect(home).not.toContain("openNewDialog");
     expect(home).not.toContain("New complication");
-    expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<span>Pair a device</span>");
+    expect(home).toContain(`<button type="button" class="hb-pair" @click=\${() => this.openPairDialog()}>`);
+    expect(home).toContain("<b>Pair a device</b>");
   });
 
   it("says in small print what the states cover: the watch app too", () => {
@@ -82,26 +82,10 @@ describe("Home's page", () => {
 });
 
 describe("Home's household state", () => {
-  it("sits at the top of the side bar, only once there are devices", () => {
-    expect(home.indexOf("if (failed || loading || devices.length === 0) {")).toBeLessThan(home.indexOf("this.renderHomeStatus(devices, elapsed)"));
-  });
-
-  it("counts the devices, draws them as a ring, and names the one heard from last", () => {
-    expect(status).toContain("const totals = homeTotals(devices);");
-    expect(status).toContain("const ring = homeRing(totals, HOME_RING_LENGTH);");
-    expect(status).toContain("<b>${homeRingHead(totals)}</b>");
-    expect(status).toContain("const last = lastSeenDevice(devices, (id) => this.ownerOf(id), elapsed);");
-  });
-
-  it("lists every waiting device under Waiting to sync, lit amber, each picking it", () => {
-    expect(status).toContain(`<h2 class="home-title">Waiting to sync \${waiting.length}</h2>`);
-    // A watch that could not use the last save is listed too (`needsAttention`).
-    expect(status).toContain("const waiting = devices.filter(needsAttention);");
-    expect(status).toContain("attentionText(d, pending)");
-    // Folded until opened, so the devices under it lead.
-    expect(status).toContain(`<details class="hb-sum on" aria-label="Sync">`);
-    expect(status).toContain("@click=${() => this.openHomeDevice(d.id, gone)}");
-    expect(status).toContain("Every device has your latest changes.");
+  it("is no card of its own: each person's box says how their devices stand", () => {
+    expect(SOURCE).not.toContain("renderHomeStatus");
+    expect(SOURCE).not.toContain("hb-sum");
+    expect(group).toContain(`const sum = waiting > 0 ? \`\${waiting} waiting\``);
   });
 });
 
@@ -299,7 +283,8 @@ describe("coming back to Home", () => {
 describe("Home's Pair a device dialog", () => {
   it("opens from the side bar's button for everyone; a home with no devices pairs in its welcome", () => {
     expect(home).not.toContain("home-device-add");
-    expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<span>Pair a device</span>");
+    expect(home).toContain(`<button type="button" class="hb-pair" @click=\${() => this.openPairDialog()}>`);
+    expect(home).toContain("<b>Pair a device</b>");
     expect(home).toContain("const pair = this.pairOpen ? this.renderPairDialog() : nothing;");
   });
 

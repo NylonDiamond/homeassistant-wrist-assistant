@@ -445,6 +445,44 @@ def test_test_with_only_iphones_targets_the_iphones(env) -> None:
     assert push["target_watch_ids"] == ["iphone:root"]
 
 
+def test_test_to_picked_devices_targets_only_the_caller_s(env) -> None:
+    """A pick is taken as it is, an iPhone beside a watch included, but
+    another user's device is dropped."""
+    secrets = env.data.widget_secret_store
+    tokens = env.data.notification_store
+    secrets.register("watch-root", SECRET, "watch-self-provision", user_id="root")
+    secrets.register("iphone:root", SECRET, IPHONE_LABEL, user_id="root")
+    secrets.register("watch-chen", SECRET, "watch-self-provision", user_id="chen")
+    tokens.register("iphone:root", "token-phone", platform="ios")
+    tokens.register("watch-chen", "token-chen", platform="watchos")
+
+    result = _ok(env, env.ws.ws_cameras_test, camera=HD, devices=["iphone:root", "watch-chen"])
+    assert result == {"ok": True, "sent": 1}
+    [push] = env.pushes
+    assert push["target_watch_ids"] == ["iphone:root"]
+
+
+def test_test_to_a_watch_bound_through_its_iphone(env) -> None:
+    secrets = env.data.widget_secret_store
+    tokens = env.data.notification_store
+    secrets.register("iphone:root", SECRET, IPHONE_LABEL, user_id="root")
+    secrets.register("watch-old", SECRET, "watch-self-provision", owner_iphone_id="iphone:root")
+    tokens.register("watch-old", "token-old", platform="watchos")
+
+    assert _ok(env, env.ws.ws_cameras_test, camera=HD, devices=["watch-old"]) == {"ok": True, "sent": 1}
+    assert env.pushes[0]["target_watch_ids"] == ["watch-old"]
+
+
+def test_test_to_no_device_of_the_caller_s_answers_no_devices(env) -> None:
+    secrets = env.data.widget_secret_store
+    secrets.register("watch-root", SECRET, "watch-self-provision", user_id="root")
+    secrets.register("watch-chen", SECRET, "watch-self-provision", user_id="chen")
+    for picked in (["watch-chen"], ["nope"], []):
+        result = _ok(env, env.ws.ws_cameras_test, camera=HD, devices=picked)
+        assert result == {"ok": False, "sent": 0, "reason": "no_devices"}
+    assert env.pushes == []
+
+
 def test_test_that_sends_nothing_is_not_ok(env) -> None:
     env.data.widget_secret_store.register("watch-root", SECRET, "watch-self-provision", user_id="root")
     env.data.notification_store.register("watch-root", "token-root", platform="watchos")

@@ -40,7 +40,7 @@ import {
   rebaseCameraDraft,
   startCameraDraft,
 } from "./draft.js";
-import { registerWatchCamerasDrafts } from "./hook.js";
+import { type CameraTestDevice, registerWatchCamerasDrafts } from "./hook.js";
 import {
   CROP_CORNERS,
   type CameraEdit,
@@ -112,6 +112,8 @@ export class WaCamerasEditor extends LitElement {
   /** The box in the panel's Watch app header the bar is drawn in
    * (`head-bar.ts`). Without one the bar is drawn on top. */
   @property({ attribute: false }) barHost: HTMLElement | undefined = undefined;
+  /** The signed in person's devices, for the test's Send to. */
+  @property({ attribute: false }) devices: readonly CameraTestDevice[] = [];
   private readonly headBar = new HeadBar(this);
 
   @state() private cameras?: CameraFraming[];
@@ -122,6 +124,8 @@ export class WaCamerasEditor extends LitElement {
   @state() private saving = false;
   @state() private testing = false;
   @state() private testLine?: { ok: boolean; text: string };
+  /** The device the test goes to, by id; empty for every device. */
+  @state() private testTo = "";
 
   /** Each camera's full frame, by entity, held for this visit. */
   private readonly pictures = new PictureCache({
@@ -326,12 +330,20 @@ export class WaCamerasEditor extends LitElement {
     // in first, as the phone's Send Test did.
     if (cameraDraftDirty() && !(await this.save())) return;
     this.testing = true;
+    const to = this.testDevice();
     try {
-      this.testLine = cameraTestWords(await sendCameraTest(hass, camera.entity_id, camera.name, TEST_MESSAGE));
+      const reply = await sendCameraTest(hass, camera.entity_id, camera.name, TEST_MESSAGE, to === undefined ? undefined : [to.id]);
+      this.testLine = cameraTestWords(reply, to?.name);
     } catch (err) {
       this.testLine = { ok: false, text: `Not sent. ${watchCommandError(err).message}` };
     }
     this.testing = false;
+  }
+
+  /** The picked device the test goes to, or undefined for every device
+   * (also when the picked one has gone from the list). */
+  private testDevice(): CameraTestDevice | undefined {
+    return this.testTo === "" ? undefined : this.devices.find((d) => d.id === this.testTo);
   }
 
   // ── the crop box ───────────────────────────────────────────────────────
@@ -552,7 +564,13 @@ export class WaCamerasEditor extends LitElement {
         <section class="sec" style=${`--c:${SECTION_COLOR.numbers}`}>
           ${this.secHead(uiIcon("check"), "Test")}
           <div class="sec-b">
-            <p class="hint keep">Sends a real alert with this camera's picture to every device of yours paired with this Home Assistant.${cameraDraftDirty() ? " Your changes are saved first." : ""}</p>
+            <p class="hint keep">Sends a real alert with this camera's picture to ${this.devices.length > 1 ? "the device you pick" : "every device of yours paired with this Home Assistant"}.${cameraDraftDirty() ? " Your changes are saved first." : ""}</p>
+            ${this.devices.length > 1 ? html`<label class="cm-to"><span>Send to</span>
+              <select class="cm-select" ?disabled=${this.testing || this.saving}
+                @change=${(e: Event) => { this.testTo = (e.target as HTMLSelectElement).value; this.testLine = undefined; }}>
+                <option value="" ?selected=${this.testDevice() === undefined}>Every device of yours</option>
+                ${this.devices.map((d) => html`<option value=${d.id} ?selected=${this.testDevice()?.id === d.id}>${d.name}</option>`)}
+              </select></label>` : nothing}
             <div class="cm-row">
               <button class="cm-btn" ?disabled=${this.testing || this.saving} @click=${() => void this.sendTest()}>
                 ${this.testing ? "Sending…" : "Send a test alert"}</button>
@@ -753,6 +771,7 @@ export class WaCamerasEditor extends LitElement {
     .cm-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }
     .cm-handle.se { left: 100%; top: 100%; cursor: nwse-resize; }
     select.cm-select { width: 100%; min-width: 0; }
+    .cm-to { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; font-size: 12px; color: var(--wa-muted); }
     label.cm-check { display: flex; align-items: center; gap: 10px; font-size: 13px; cursor: pointer; }
     label.cm-check:has(input:disabled) { color: var(--wa-muted); cursor: default; }
     .cm-result { font-size: 13px; }

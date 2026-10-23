@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { countWord, deviceCardTiles, deviceFacts, homeDoorLook, homeGroups, homePageThumbs, homePickOf, homeRing, homeRingHead, homeRowSub, homeStep, homeTotalBucket, homeTotals, lastSeenDevice, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
+import { countWord, deviceCardTiles, deviceFacts, homeDoorLook, homeGroups, homePageThumbs, homePickOf, homeRowSub, homeStep, homeTotalBucket, homeTotals, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
 import { phoneWidgetPlaces } from "../src/home-art.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
@@ -238,30 +238,6 @@ describe("homeTotals", () => {
   });
 });
 
-describe("lastSeenDevice", () => {
-  const rows = [{ id: "a", name: "Watch" }, { id: "b", name: "Phone" }, { id: "c", name: "Quiet" }];
-
-  it("names the device seen most recently, aged by the time since the list was read", () => {
-    const seen: Record<string, { polling: boolean; last_seen_seconds: number | null }> = {
-      a: { polling: false, last_seen_seconds: 7200 },
-      b: { polling: false, last_seen_seconds: 1800 },
-      c: { polling: false, last_seen_seconds: null },
-    };
-    expect(lastSeenDevice(rows, (id) => seen[id], 420)).toEqual({ name: "Phone", n: "37", unit: "min ago" });
-  });
-
-  it("puts a polling watch first, as Now", () => {
-    const seen = { a: { polling: true, last_seen_seconds: 90 }, b: { polling: false, last_seen_seconds: 5 } };
-    expect(lastSeenDevice(rows, (id) => seen[id as "a" | "b"], 600)).toEqual({ name: "Watch", n: "Now", unit: "" });
-  });
-
-  it("says hours and days, and nothing when no device has been heard from", () => {
-    expect(lastSeenDevice(rows.slice(0, 1), () => ({ polling: false, last_seen_seconds: 3 * 3600 }), 0)).toEqual({ name: "Watch", n: "3", unit: "h ago" });
-    expect(lastSeenDevice(rows.slice(0, 1), () => ({ polling: false, last_seen_seconds: 86400 }), 0)).toEqual({ name: "Watch", n: "1", unit: "day ago" });
-    expect(lastSeenDevice(rows, () => undefined, 0)).toBeUndefined();
-  });
-});
-
 describe("homeGroups", () => {
   const row = (id: string) => ({ id, name: id, kind: "watch" as const, sync: "synced" as const, waitingFor: [] });
 
@@ -367,19 +343,6 @@ describe("homeDoorLook's Control Center line", () => {
   it("says the controls are buttons in Control Center, made from designs", () => {
     const tab = deviceSheetTabs("iphone").find((t) => t.kind === "list" && t.filter === "control")!;
     expect(homeDoorLook(tab, "iphone").blurb).toBe("Buttons in Control Center, from your designs.");
-  });
-});
-
-describe("homeRing and homeRingHead", () => {
-  it("draws the synced share from the top and the waiting share after it", () => {
-    expect(homeRing({ all: 4, synced: 3, waiting: 1 }, 100)).toEqual({ synced: "75 100", waiting: "25 100", offset: "-75" });
-    expect(homeRing({ all: 0, synced: 0, waiting: 0 }, 100)).toEqual({ synced: "0 100", waiting: "0 100", offset: "0" });
-  });
-
-  it("says all synced, how many of how many, or just how many devices", () => {
-    expect(homeRingHead({ all: 6, synced: 6 })).toBe("All 6 synced");
-    expect(homeRingHead({ all: 6, synced: 5 })).toBe("5 of 6 synced");
-    expect(homeRingHead({ all: 1, synced: 0 })).toBe("1 device");
   });
 });
 

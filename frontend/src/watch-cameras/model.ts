@@ -144,12 +144,13 @@ export function shortCameraId(entityId: string): string {
   return entityId.startsWith("camera.") ? entityId.slice("camera.".length) : entityId;
 }
 
-/** A test alert's answer in plain words, and whether it went. */
-export function cameraTestWords(reply: CameraTestReply): { ok: boolean; text: string } {
-  if (reply.ok && reply.sent > 0) return { ok: true, text: `Sent to ${reply.sent} ${reply.sent === 1 ? "device" : "devices"}.` };
+/** A test alert's answer in plain words, and whether it went. `to` is the
+ * one device it was sent to, when one was picked. */
+export function cameraTestWords(reply: CameraTestReply, to?: string): { ok: boolean; text: string } {
+  if (reply.ok && reply.sent > 0) return { ok: true, text: to === undefined ? `Sent to ${reply.sent} ${reply.sent === 1 ? "device" : "devices"}.` : `Sent to ${to}.` };
   switch (reply.reason) {
-    case "no_devices": return { ok: false, text: "No device of yours is paired with this Home Assistant." };
-    case "no_push_token": return { ok: false, text: "Your devices have no push token yet. Open the app once." };
+    case "no_devices": return { ok: false, text: to === undefined ? "No device of yours is paired with this Home Assistant." : `${to} is not paired to you any more.` };
+    case "no_push_token": return { ok: false, text: to === undefined ? "Your devices have no push token yet. Open the app once." : `${to} has no push token yet. Open the app on it once.` };
     case undefined:
     case "": return { ok: false, text: "Not sent. No device took the alert." };
     default: return { ok: false, text: `Not sent: ${reply.reason}` };

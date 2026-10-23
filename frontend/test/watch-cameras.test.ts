@@ -216,6 +216,10 @@ describe("words", () => {
     expect(cameraTestWords({ ok: false, sent: 0, reason: "no_push_token" }).text).toBe("Your devices have no push token yet. Open the app once.");
     expect(cameraTestWords({ ok: false, sent: 0, reason: "APNs said no" })).toEqual({ ok: false, text: "Not sent: APNs said no" });
     expect(cameraTestWords({ ok: false, sent: 0 }).ok).toBe(false);
+    // Sent to one picked device, it is named.
+    expect(cameraTestWords({ ok: true, sent: 1 }, "Chen Watch")).toEqual({ ok: true, text: "Sent to Chen Watch." });
+    expect(cameraTestWords({ ok: false, sent: 0, reason: "no_push_token" }, "Chen Watch").text).toBe("Chen Watch has no push token yet. Open the app on it once.");
+    expect(cameraTestWords({ ok: false, sent: 0, reason: "no_devices" }, "Chen Watch").text).toBe("Chen Watch is not paired to you any more.");
   });
 });
 

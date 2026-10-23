@@ -1112,12 +1112,13 @@ export interface CameraTestReply {
 
 /** Send a real alert with this camera's picture to the signed in person's
  * devices. */
-export async function sendCameraTest(hass: HassLike, camera: string, title?: string, message?: string) {
+export async function sendCameraTest(hass: HassLike, camera: string, title?: string, message?: string, devices?: readonly string[]) {
   return hass.connection.sendMessagePromise<CameraTestReply>({
     type: `${CAMERAS}/test`,
     camera,
     ...(title === undefined ? {} : { title }),
     ...(message === undefined ? {} : { message }),
+    ...(devices === undefined ? {} : { devices: [...devices] }),
   });
 }
 

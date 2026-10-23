@@ -17,7 +17,7 @@ Commands:
 
     wrist_assistant/cameras/list  {}
     wrist_assistant/cameras/save  {entity_ids, viewport, open_zoomed?, stream_entity?}
-    wrist_assistant/cameras/test  {camera, title?, message?}
+    wrist_assistant/cameras/test  {camera, title?, message?, devices?}
 
 Every refusal is a WebSocket error with a stable code: ``invalid`` (a bad
 payload), ``unavailable`` (the integration is not ready, or notifications are
@@ -58,6 +58,16 @@ def _domain_data(hass: HomeAssistant) -> Any:
 def _user_id(connection: ActiveConnection) -> str | None:
     user = getattr(connection, "user", None)
     return user.id if user is not None else None
+
+
+def _belongs_to(secrets: dict[str, Any], entry: Any, user_id: str) -> bool:
+    """Whether a device is the user's: its own key is bound to them or, for
+    a watch whose key never was, its paired iPhone's is."""
+    own = getattr(entry, "user_id", None)
+    if own is not None:
+        return own == user_id
+    phone = secrets.get(getattr(entry, "owner_iphone_id", None) or "")
+    return phone is not None and getattr(phone, "user_id", None) == user_id
 
 
 def _is_camera(value: Any) -> bool:
@@ -322,6 +332,7 @@ def ws_cameras_save(
         vol.Required("camera"): str,
         vol.Optional("title"): str,
         vol.Optional("message"): str,
+        vol.Optional("devices"): [str],
     }
 )
 @websocket_api.async_response
@@ -342,10 +353,21 @@ async def ws_cameras_test(
     ``ok`` is false with ``reason`` ``no_devices`` when that user has no
     device here at all, and ``no_push_token`` when none of the targets leads
     to a push token. A failed delivery is the error ``failed``.
+
+    ``devices`` picks the targets instead: only those of them that are the
+    caller's, a device's own key bound to the caller or, for a watch whose
+    key never was, its paired iPhone's (the owner list's rule). Another
+    user's device is dropped, and none left is ``no_devices``.
     """
     camera = msg.get("camera")
     if not _is_camera(camera):
         connection.send_error(msg["id"], "invalid", "camera must be a camera entity id")
+        return
+    picked = msg.get("devices")
+    if picked is not None and (
+        not isinstance(picked, list) or not all(isinstance(d, str) for d in picked)
+    ):
+        connection.send_error(msg["id"], "invalid", "devices must be a list of device ids")
         return
 
     data = _domain_data(hass)
@@ -365,11 +387,24 @@ async def ws_cameras_test(
         for device_id, entry in secrets.items()
         if user_id is not None and getattr(entry, "user_id", None) == user_id
     )
+    if picked is not None:
+        bound = sorted(
+            {
+                device_id
+                for device_id in picked
+                if user_id is not None
+                and device_id in secrets
+                and _belongs_to(secrets, secrets[device_id], user_id)
+            }
+        )
     if not bound:
         connection.send_result(msg["id"], {"ok": False, "sent": 0, "reason": "no_devices"})
         return
-    watches = [device_id for device_id in bound if not is_iphone_entry(secrets[device_id])]
-    targets = watches or bound
+    if picked is not None:
+        targets = bound
+    else:
+        watches = [device_id for device_id in bound if not is_iphone_entry(secrets[device_id])]
+        targets = watches or bound
     if not resolve_push_routes(
         secrets, token_store.all_entries, token_store.delivery_modes(), targets
     ):
