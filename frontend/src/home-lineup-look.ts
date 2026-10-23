@@ -65,6 +65,9 @@ export interface LineupGroup {
   change?: { title: string; onClick: () => void };
   /** Drawn as a strip of small cards rather than a list (pages). */
   strip?: boolean;
+  /** A strip's cards wear their place in it; false for one whose order
+   * means nothing on the device. */
+  numbered?: boolean;
   /** Drawn under the head: a question before a remove, or what one did. */
   under?: TemplateResult;
   /** The list's own drop target, so a line let go between two lines lands. */
@@ -91,7 +94,7 @@ export function renderLineupGroup(g: LineupGroup): TemplateResult {
       ? html`<p class="hl-empty">${g.empty}</p>`
       : html`<ol class="hl-lines ${g.strip === true ? "strip" : ""}"
           @dragover=${(e: DragEvent) => g.zone?.onOver(e)} @drop=${(e: DragEvent) => g.zone?.onDrop(e)}
-          >${repeat(g.lines, (line) => line.key, (line, i) => renderLine(line, i, g.strip === true))}</ol>`}
+          >${repeat(g.lines, (line) => line.key, (line, i) => renderLine(line, i, g.strip === true && g.numbered !== false))}</ol>`}
   </section>`;
 }
 

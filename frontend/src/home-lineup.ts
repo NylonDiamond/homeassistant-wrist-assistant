@@ -36,7 +36,6 @@ const PAGE_PICTURE_MAX = 200;
 const PHONE_PICTURE_RATIO = 40 / 56;
 /** The share of a page card's width its picture takes. */
 const PAGE_PICTURE_SHARE = 0.8;
-const STATUS_PICTURE_W = 34;
 
 export class WaHomeLineup extends LitElement {
   @property({ attribute: false }) ownerId = "";
@@ -429,7 +428,7 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
     detail: pick.entry.detail,
     hidden: pick.hidden,
     picture: renderStatusRowPicture({
-      page: pick.entry.item, hass: draw.hass, width: STATUS_PICTURE_W,
+      page: pick.entry.item, hass: draw.hass, width: pageW,
       ...(draw.icons === undefined ? {} : { icons: draw.icons }),
       ...(draw.tick === undefined ? {} : { tick: draw.tick }),
     }),
@@ -458,7 +457,9 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
     },
     {
       key: "status_pages", title: "Status pages", icon: "checklist", hue: "var(--wa-hue-yellow)",
-      lines: statusLines, empty: `No status pages on this ${word} yet.`,
+      // Cards with their pictures as big as a page's, but no numbers: a
+      // status page's order shows nowhere on the device.
+      lines: statusLines, strip: true, numbered: false, empty: `No status pages on this ${word} yet.`,
       ...(underStatus === undefined ? {} : { under: underStatus }),
       change: { title: `Add, order and hide status pages on this ${word}`, onClick: () => draw.onChange("status_pages") },
     },

@@ -411,7 +411,6 @@ describe("the shell's and Home's look", () => {
     const stage = text.slice(text.indexOf(".hb-stage {"), text.indexOf("}", text.indexOf(".hb-stage {")));
     expect(stage).toContain("radial-gradient(46% 70% at 50% 0%, var(--wa-stage-light) 0%, transparent 80%)");
     expect(stage).toContain("var(--wa-stage-top)");
-    expect(text).toContain("var(--wa-stage-reflect)");
   });
 
   it("draws every Home control with a one pixel outline", () => {

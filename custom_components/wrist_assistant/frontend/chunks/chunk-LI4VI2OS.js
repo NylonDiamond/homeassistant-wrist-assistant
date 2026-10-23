@@ -1,4 +1,4 @@
-import{l as h}from"./chunk-MOKE4TXR.js";import{b as d,d as i,g as t,nh as s}from"./chunk-PGFG6NDE.js";var g="Hidden here",v="Not shared";function w(e){return i`<section class="hl-group" aria-label=${e.title} style=${`--h:${e.hue}`}>
+import{l as h}from"./chunk-MOKE4TXR.js";import{b as p,d as i,g as t,nh as s}from"./chunk-PGFG6NDE.js";var g="Hidden here",v="Not shared";function w(e){return i`<section class="hl-group" aria-label=${e.title} style=${`--h:${e.hue}`}>
     <div class="hl-head">
       <span class="hl-chip" aria-hidden="true">${s(e.icon)}</span>
       <h3 class="hl-title">${e.title}</h3>
@@ -9,11 +9,11 @@ import{l as h}from"./chunk-MOKE4TXR.js";import{b as d,d as i,g as t,nh as s}from
     ${e.under??t}
     ${e.lines.length===0?i`<p class="hl-empty">${e.empty}</p>`:i`<ol class="hl-lines ${e.strip===!0?"strip":""}"
           @dragover=${a=>e.zone?.onOver(a)} @drop=${a=>e.zone?.onDrop(a)}
-          >${h(e.lines,a=>a.key,(a,p)=>x(a,p,e.strip===!0))}</ol>`}
-  </section>`}function x(e,a,p){let o=e.action,r=e.drag,l=e.remove,c=["hl-line",e.hidden===!0?"hid":"",r?.on===!0?"drags":"",r?.dragging===!0?"dragging":""].filter(n=>n!=="").join(" ");return i`<li class=${c} data-line=${e.key} draggable=${r?.on===!0?"true":"false"}
+          >${h(e.lines,a=>a.key,(a,d)=>x(a,d,e.strip===!0&&e.numbered!==!1))}</ol>`}
+  </section>`}function x(e,a,d){let o=e.action,r=e.drag,l=e.remove,c=["hl-line",e.hidden===!0?"hid":"",r?.on===!0?"drags":"",r?.dragging===!0?"dragging":""].filter(n=>n!=="").join(" ");return i`<li class=${c} data-line=${e.key} draggable=${r?.on===!0?"true":"false"}
     @dragstart=${n=>r?.onStart(n)} @dragover=${n=>r?.onOver(n)}
     @drop=${n=>r?.onDrop(n)} @dragend=${()=>r?.onEnd()}>
-    ${p?i`<span class="hl-i" aria-hidden="true">${a+1}</span>`:t}
+    ${d?i`<span class="hl-i" aria-hidden="true">${a+1}</span>`:t}
     ${r===void 0?t:i`<span class="hl-grip" tabindex=${r.on?"0":"-1"} role="button"
       aria-label=${`Move ${e.name}. Alt and the arrow keys move it.`} title=${r.on?"Drag to change the order":""}
       @keydown=${n=>r.onKey(n)}>${s("grip")}</span>`}
@@ -29,7 +29,7 @@ import{l as h}from"./chunk-MOKE4TXR.js";import{b as d,d as i,g as t,nh as s}from
     </span>
     ${o===void 0?t:o.href!==void 0?i`<a class="hl-edit" href=${o.href} title=${o.title}
           @click=${n=>{n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey||(n.preventDefault(),o.onClick())}}>${o.label}</a>`:i`<button type="button" class="hl-edit" title=${o.title} @click=${o.onClick}>${o.label}</button>`}
-  </li>`}var b=d`
+  </li>`}var b=p`
   .hl-groups { display: flex; flex-direction: column; gap: 18px; }
   .hl-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .hl-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -114,7 +114,7 @@ import{l as h}from"./chunk-MOKE4TXR.js";import{b as d,d as i,g as t,nh as s}from
   @media (prefers-reduced-motion: reduce) { .hl-rm { transition: none; } }
   .hl-edit:hover { background: var(--wa-hover); }
   .hl-edit:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-`,y=d`
+`,y=p`
   .ha { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
   .ha-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
   .ha-head-t { flex: 1 1 320px; min-width: 0; }

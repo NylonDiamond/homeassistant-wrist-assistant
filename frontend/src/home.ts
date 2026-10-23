@@ -704,9 +704,12 @@ export const homeStyles = css`
      state and its two counts. The stage is the device standing in a soft
      light from above, on a floor that gives back its reflection, lit along
      its edge in its device's color. */
-  .hb-hero { display: flex; align-items: stretch; gap: 18px; min-width: 0; }
+  /* One slim row: the device small in its lit box, its name and facts, its
+     sync state as a pill, and its two counts. The page under it is its
+     pages; this row only says which device it is (Jesse, 2026-10-23). */
+  .hb-hero { display: flex; align-items: center; gap: 14px; min-width: 0; }
   .hb-stage {
-    position: relative; flex: none; width: 190px; height: 190px; border-radius: 18px; overflow: hidden; box-sizing: border-box;
+    position: relative; flex: none; width: 52px; height: 52px; border-radius: 12px; overflow: hidden; box-sizing: border-box;
     border: 1px solid transparent;
     background:
       radial-gradient(46% 70% at 50% 0%, var(--wa-stage-light) 0%, transparent 80%) padding-box,
@@ -716,43 +719,33 @@ export const homeStyles = css`
     box-shadow: var(--home-lift);
   }
   .hb-floor {
-    position: absolute; left: 0; right: 0; bottom: 0; height: 42px;
+    display: none; position: absolute; left: 0; right: 0; bottom: 0; height: 42px;
     background: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 3%, transparent), transparent);
     border-top: 1px solid color-mix(in srgb, var(--wa-ink) 5%, transparent);
   }
-  .hb-device { position: absolute; left: 0; right: 0; top: 18px; display: flex; justify-content: center; }
-  .hb-device svg.ha-art {
-    width: auto; height: 128px;
-    -webkit-box-reflect: below 3px linear-gradient(transparent 72%, var(--wa-stage-reflect));
-  }
+  .hb-device { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .hb-device svg.ha-art { width: auto; height: 42px; }
   /* The two counts, each a door to its page: a number and its word. */
-  .hb-calls { display: flex; flex-wrap: wrap; gap: 8px; }
+  .hb-calls { display: flex; flex-wrap: wrap; gap: 6px; }
   button.hb-call {
-    display: inline-flex; align-items: baseline; gap: 6px; height: 32px; box-sizing: border-box; padding: 0 12px;
+    display: inline-flex; align-items: baseline; gap: 6px; height: 28px; box-sizing: border-box; padding: 0 10px;
     border-radius: 9px; font: inherit; color: var(--wa-ink); cursor: pointer;
     background: var(--home-card); border: 1px solid var(--wa-line-strong); box-shadow: var(--home-lift);
   }
   button.hb-call:hover { background: var(--wa-hover); }
   button.hb-call:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .hb-call-n { display: inline-flex; align-items: baseline; gap: 6px; line-height: 30px; }
-  .hb-call-n b { font-size: 16px; font-weight: 400; font-variant-numeric: tabular-nums; }
+  .hb-call-n { display: inline-flex; align-items: baseline; gap: 5px; line-height: 26px; }
+  .hb-call-n b { font-size: 14px; font-weight: 400; font-variant-numeric: tabular-nums; }
   .hb-call-n b.none { color: var(--wa-faint); }
   .hb-call-n span { font-size: 12px; color: var(--wa-muted); }
   button.hb-call:hover .hb-call-n span { color: var(--wa-ink); }
   /* A big screen at normal zoom: the device a little bigger, and its pages
      as wide as the room, so they fill it rather than one narrow column. */
+  /* A big screen at normal zoom: its pages as wide as the room, so they
+     fill it rather than one narrow column. */
   @container (min-width: 1400px) {
     .hb-detail { max-width: 2200px; }
     .hb-main > .home-welcome-slot { max-width: 2200px; }
-    .hb-stage { width: 220px; height: 220px; }
-    .hb-device svg.ha-art { height: 150px; }
-  }
-  @container (max-width: 620px) {
-    .hb-hero { gap: 12px; }
-    .hb-stage { width: 112px; height: 132px; border-radius: 14px; }
-    .hb-device { top: 12px; }
-    .hb-device svg.ha-art { height: 92px; }
-    .hb-floor { height: 30px; }
   }
   /* The welcome, in a home with no devices yet: three numbered steps down
      the page, joined by a thin line. Install the app, pick the device on
@@ -838,32 +831,35 @@ export const homeStyles = css`
     .hw-choices { flex-wrap: nowrap; gap: 14px; }
   }
   /* Beside the stage: its name and facts, the sync well, then its counts. */
-  .hb-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
-  .hb-name { display: flex; flex-direction: column; gap: 4px; padding: 0 2px; min-width: 0; }
-  .hb-name h2 { margin: 0; font-size: 24px; font-weight: 500; letter-spacing: -.02em; line-height: 1.15; overflow-wrap: anywhere; }
-  .hb-facts { font-size: 13px; line-height: 1.45; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .hb-info { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+  /* What takes a whole line when it shows: the rename field, Remove's
+     question, a note. */
+  .hb-info > .hb-rename, .hb-info > .hb-ask, .hb-info > .dev-paired { flex-basis: 100%; }
+  .hb-name { display: flex; flex-direction: column; gap: 1px; padding: 0 2px; min-width: 0; margin-right: auto; }
+  .hb-name h2 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -.02em; line-height: 1.15; overflow-wrap: anywhere; }
+  .hb-facts { font-size: 12px; line-height: 1.45; color: var(--wa-muted); overflow-wrap: anywhere; }
   /* The sync state in a well lit in its color: a chip, its word and what it
      means, and when the device was last heard from. */
   .hb-state {
     --c: var(--wa-muted); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
     ${litOutline}
     border-width: 1px;
-    display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 12px;
+    display: flex; align-items: center; gap: 8px; min-height: 28px; box-sizing: border-box; padding: 3px 12px 3px 4px; border-radius: 999px;
   }
   .hb-state.synced { --c: var(--wa-green); }
   .hb-state.waiting { --c: var(--wa-amber); }
   .hb-state.rejected { --c: var(--error-color); }
   .hb-state-chip {
-    width: 28px; height: 28px; flex: none; box-sizing: border-box; border-radius: 9px; display: grid; place-items: center;
+    width: 20px; height: 20px; flex: none; box-sizing: border-box; border-radius: 50%; display: grid; place-items: center;
     border: 1px solid var(--c); color: var(--c);
   }
-  .hb-state-chip svg.ui-icon { width: 15px; height: 15px; }
-  .hb-state-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .hb-state-t b { font-size: 14px; font-weight: 500; color: var(--c); }
-  .hb-state-t span { font-size: 12.5px; color: var(--wa-muted); overflow-wrap: anywhere; }
-  .hb-seen { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-  .hb-seen span { font-size: 10px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--wa-faint); }
-  .hb-seen b { font-size: 12.5px; font-weight: 400; color: var(--wa-label); }
+  .hb-state-chip svg.ui-icon { width: 11px; height: 11px; }
+  .hb-state-t { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; }
+  .hb-state-t b { font-size: 12.5px; font-weight: 500; color: var(--c); }
+  .hb-state-t span { font-size: 12px; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .hb-seen { flex: none; display: flex; align-items: baseline; gap: 4px; padding-left: 8px; border-left: 1px solid var(--wa-line); }
+  .hb-seen span { font-size: 12px; color: var(--wa-muted); }
+  .hb-seen b { font-size: 12px; font-weight: 400; color: var(--wa-label); }
   .hb-detail > .home-title { padding: 6px 2px 0; color: var(--wa-muted); }
   /* A door per page, each opening it on this device: a chip in the page's
      section hue, its name, how many it holds, and a line on what it is for. */
@@ -966,7 +962,7 @@ export const homeStyles = css`
   @media (max-width: 720px) {
     .hb-side { max-width: none; border-right: 0; border-bottom: 1px solid var(--wa-line); }
     .hb-main { padding: 16px 12px 32px; }
-    .hb-name h2 { font-size: 20px; }
+    .hb-name h2 { font-size: 17px; }
   }
   @media (max-width: 640px) {
     .home-pad { padding: 14px 12px 32px; }
