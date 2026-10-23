@@ -1,21 +1,23 @@
-import{d as w,e as $,ha as x,ia as g,ya as R}from"./chunk-TS6GX5ZO.js";import{h as u}from"./chunk-K7PR5IBX.js";import{b as m,c as y,e as k}from"./chunk-LTCSOITJ.js";import{b as p,d as o,e as h,g as d,nh as b}from"./chunk-PGFG6NDE.js";var L=m(class extends y{constructor(){super(...arguments),this.key=d}render(e,n){return this.key=e,n}update(e,[n,t]){return n!==this.key&&(k(e),this.key=n),t}});var ae={settings:"Settings",rooms:"Rooms",voice:"Voice"},f=1800,z=1500,E=2.2,P=1900,C=3.2,I=900,B=1.5,O=560,K=.8,S=class{constructor(n){this.host=n;this.wide=!1;this.scale=1;n.addController(this)}hostConnected(){typeof ResizeObserver>"u"||(this.seen=new ResizeObserver(n=>{let t=n[0]?.contentRect.width??0,i=t>=z,r=t>=P?C:i?E:t>=I?B:t>0&&t<O?K:1;i===this.wide&&r===this.scale||(this.wide=i,this.scale=r,this.host.requestUpdate())}),this.seen.observe(this.host))}hostDisconnected(){this.seen?.disconnect(),this.seen=void 0}size(n){return Math.round(n*this.scale)}};function de(e,n,t){let i=(r,a,s)=>o`<button type="button" class="bd-view-opt ${e===r?"on":""}"
+import{d as w,e as R,ha as g,ia as x,ya as L}from"./chunk-TS6GX5ZO.js";import{h as u}from"./chunk-IILNIGIO.js";import{b as y,c as k,e as $}from"./chunk-MRBHOOOB.js";import{b as p,d as o,e as h,g as d,nh as b}from"./chunk-PGFG6NDE.js";var S=y(class extends k{constructor(){super(...arguments),this.key=d}render(e,n){return this.key=e,n}update(e,[n,t]){return n!==this.key&&($(e),this.key=n),t}});var P="(max-width: 640px)",f=new Set;function ce(e,n,t=E()){return n==="board"&&t&&!f.has(e)?"cards":n}function pe(e,n){n==="board"?f.add(e):f.delete(e)}function E(){try{return window.matchMedia(P).matches}catch{return!1}}var be={settings:"Settings",rooms:"Rooms",voice:"Voice"},v=1800,I=1500,C=2.2,B=1900,O=3.2,K=900,A=1.5,V=560,M=.8,T=class{constructor(n){this.host=n;this.wide=!1;this.scale=1;n.addController(this)}hostConnected(){typeof ResizeObserver>"u"||(this.seen=new ResizeObserver(n=>{let t=n[0]?.contentRect.width??0,i=t>=I,r=t>=B?O:i?C:t>=K?A:t>0&&t<V?M:1;i===this.wide&&r===this.scale||(this.wide=i,this.scale=r,this.host.requestUpdate())}),this.seen.observe(this.host))}hostDisconnected(){this.seen?.disconnect(),this.seen=void 0}size(n){return Math.round(n*this.scale)}};function ue(e,n,t){let i=(r,a,s)=>o`<button type="button" class="bd-view-opt ${e===r?"on":""}"
     aria-pressed=${e===r?"true":"false"} title=${s} @click=${()=>{e!==r&&n(r)}}>${b(r==="board"?"checklist":"grid")}<span>${a}</span></button>`;return o`<span class="bd-view" role="group" aria-label=${`How to show the ${t}`}>
     ${i("board","Board",`Every ${t.replace(/s$/,"")} as a row, every device as a column`)}${i("cards","Cards",`Every ${t.replace(/s$/,"")} as a card with its picture`)}
-  </span>`}var T=(e,n)=>e!==void 0&&n!==void 0&&e.toUpperCase()===n.toUpperCase();function se(e){let n=e.columns.length+1,t=e.columns.findIndex(i=>T(i.device.ownerId,e.focus));return o`<div class="bd-scroll">
+  </span>`}var _=(e,n)=>e!==void 0&&n!==void 0&&e.toUpperCase()===n.toUpperCase();function he(e){let n=e.columns.length+1,t=e.columns.findIndex(i=>_(i.device.ownerId,e.focus));return o`<div class="bd-scroll">
     <table class="bd ${t>=0?"focused":""} ${e.wide===!0?"wide":""}" aria-label=${e.label} style=${`--bd-n:${e.columns.length}`}>
       <thead><tr>
         <th scope="col" class="bd-thing">${e.thing}</th>
-        ${e.columns.map(i=>A(i,T(i.device.ownerId,e.focus),e))}
+        ${e.columns.map(i=>H(i,_(i.device.ownerId,e.focus),e))}
       </tr></thead>
       ${e.sections.map(i=>o`<tbody class="bd-sect-body" data-section=${i.key}>
         ${i.title===void 0?d:o`<tr class="bd-sect"><th colspan=${n} scope="colgroup">
           <span class="bd-sect-t">${i.title}${i.count===void 0?d:o` <small>${i.count}</small>`}</span>
           ${i.hint===void 0?d:o`<span class="bd-sect-r">${i.hint}</span>`}
         </th></tr>`}
-        ${i.rows.length===0&&i.empty!==void 0?o`<tr class="bd-none"><td colspan=${n}>${i.empty}</td></tr>`:i.rows.map(r=>M(r,e.columns,t,n))}
+        ${i.rows.length===0&&i.empty!==void 0?o`<tr class="bd-none"><td colspan=${n}>${i.empty}</td></tr>`:i.rows.map((r,a)=>o`${r.group!==void 0&&r.group!==i.rows[a-1]?.group?j(r.group,i.rows.slice(a).findIndex(s=>s.group!==r.group),i.rows.length-a,n):d}${U(r,e.columns,t,n)}`)}
       </tbody>`)}
     </table>
-  </div>`}function A(e,n,t){let i=e.device;return o`<th scope="col" class="bd-col ${n?"on":""}" style=${e.color===void 0?d:`--dc:${e.color}`}>
+  </div>`}function j(e,n,t,i){return o`<tr class="bd-group"><th colspan=${i} scope="rowgroup">
+    <span class="bd-group-t">${e} <small>${n<0?t:n}</small></span>
+  </th></tr>`}function H(e,n,t){let i=e.device;return o`<th scope="col" class="bd-col ${n?"on":""}" style=${e.color===void 0?d:`--dc:${e.color}`}>
     <button type="button" class="bd-col-btn" aria-pressed=${n?"true":"false"}
       title=${n?"Back to every device":t.focusTitle(i)}
       @click=${()=>t.onFocus(n?void 0:i.ownerId)}>
@@ -26,7 +28,7 @@ import{d as w,e as $,ha as x,ia as g,ya as R}from"./chunk-TS6GX5ZO.js";import{h 
       <span class="bd-col-sub"><span class="bd-col-n">${e.count}</span>
         <span class="bd-col-go">${n?"All":t.focusWord}<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 4l2.5 2.5L7.5 4"/></svg></span></span>
     </button>
-  </th>`}function M(e,n,t,i){let r=e.drag,a=`bd-row ${e.dim?"dim":""} ${e.select?.picked?"picked":""} ${r?.dragging?"dragging":""} ${r?.over?"drag-over":""} ${r?.below?"below":""}`,s=o`<tr class=${a} data-row=${e.key} draggable=${r?.on?"true":"false"}
+  </th>`}function U(e,n,t,i){let r=e.drag,a=`bd-row ${e.dim?"dim":""} ${e.select?.picked?"picked":""} ${r?.dragging?"dragging":""} ${r?.over?"drag-over":""} ${r?.below?"below":""}`,s=o`<tr class=${a} data-row=${e.key} draggable=${r?.on?"true":"false"}
     @dragstart=${l=>r?.onStart(l)}
     @dragover=${l=>r?.onOver(l)}
     @drop=${l=>r?.onDrop(l)}
@@ -45,12 +47,12 @@ import{d as w,e as $,ha as x,ia as g,ya as R}from"./chunk-TS6GX5ZO.js";import{h 
         ${e.actions??d}
       </span>
     </th>
-    ${n.map((l,v)=>j(e.cells[v],l,v===t))}
+    ${n.map((l,m)=>W(e.cells[m],l,m===t))}
   </tr>`;return e.ask!==void 0||e.note!==void 0||e.under!==void 0?o`${s}<tr class="bd-under ${e.dim?"dim":""}"><td colspan=${i}>
-    ${e.ask===void 0?d:R(e.ask)}
+    ${e.ask===void 0?d:L(e.ask)}
     ${e.note===void 0?d:e.note.kind==="ok"?o`<p class="lt-note ok" role="status">${e.note.text}</p>`:o`<p class="lt-note" role="alert">${e.note.text}</p>`}
     ${e.under??d}
-  </td></tr>`:s}function j(e,n,t){let i=n.color===void 0?d:`--dc:${n.color}`,r=e?.chip;if(r===void 0)return o`<td class="bd-cell ${t?"on":""}" style=${i}>
+  </td></tr>`:s}function W(e,n,t){let i=n.color===void 0?d:`--dc:${n.color}`,r=e?.chip;if(r===void 0)return o`<td class="bd-cell ${t?"on":""}" style=${i}>
       <span class="bd-dash" role="img" aria-label=${e?.dashTitle??`Does not fit ${n.device.name}`} title=${e?.dashTitle??`Does not fit ${n.device.name}`}></span>
     </td>`;let a=r.shape==="round";return o`<td class="bd-cell ${t?"on":""}" style=${i}>
     <span class="bd-cell-in">
@@ -64,7 +66,7 @@ import{d as w,e as $,ha as x,ia as g,ya as R}from"./chunk-TS6GX5ZO.js";import{h 
     </span>
     ${r.hidden&&e?.note===void 0?o`<em class="bd-note">hidden</em>`:d}
     ${e?.note===void 0?d:o`<em class="bd-note ${e.noteWarn?"warn":""}" title=${e.noteTitle??d}>${e.note}</em>`}
-  </td>`}var le=p`
+  </td>`}var we=p`
   .bd-scroll { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
   /* The device columns keep one narrow width (--bd-col-w) and the first
      column takes the rest, so a wide screen gives its room to the things'
@@ -106,6 +108,13 @@ import{d as w,e as $,ha as x,ia as g,ya as R}from"./chunk-TS6GX5ZO.js";import{h 
   .bd-sect-t small { margin-left: 4px; font-size: 12px; font-weight: 500; color: var(--wa-muted); }
   .bd-sect-r { margin-left: 12px; font-size: 11.5px; color: var(--wa-muted); font-weight: 400; }
   .bd-none td { padding: 10px; font-size: 12.5px; color: var(--wa-muted); }
+  /* A run of rows of one kind inside a section (a shape): a band in small
+     capitals with room above it, so one kind ends before the next begins. */
+  .bd-group th { padding: 18px 10px 6px; background: var(--bd-ground); border-bottom: 1px solid var(--wa-line-strong); }
+  .bd-group th > * { position: sticky; left: 10px; }
+  .bd-group-t { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-label); }
+  .bd-group-t small { margin-left: 4px; font-size: 11px; font-weight: 500; letter-spacing: 0; color: var(--wa-muted); }
+  .bd-sect + .bd-group th, .bd-sect-body > .bd-group:nth-child(2) th { padding-top: 10px; }
 
   .bd-row > * { border-bottom: 1px solid var(--wa-line); }
   .bd-row:hover > * { background: color-mix(in srgb, var(--wa-hover) 60%, var(--bd-ground)); }
@@ -226,7 +235,7 @@ import{d as w,e as $,ha as x,ia as g,ya as R}from"./chunk-TS6GX5ZO.js";import{h 
     .bd-col-sub { gap: 4px; font-size: 10.5px; }
     .bd-col-go { padding: 1px 4px; }
   }
-`,ce=p`
+`,ge=p`
   :host([embedded]) { display: block; }
   :host([embedded]) table.bd, .bd-fixed table.bd {
     --bd-col-w: var(--bd-stack-col-w, 112px);
@@ -235,18 +244,18 @@ import{d as w,e as $,ha as x,ia as g,ya as R}from"./chunk-TS6GX5ZO.js";import{h 
   @media (max-width: 640px) {
     :host([embedded]) table.bd, .bd-fixed table.bd { --bd-col-w: 78px; --bd-thing-min: 150px; }
   }
-`;function fe(e){return`library:${e.kind}:${e.id}`}function ve(e,n){return e===void 0||n===void 0?e===n:e.kind===n.kind&&e.id.toUpperCase()===n.id.toUpperCase()}function V(e,n){return{kind:e,revision:n.revision,document:n.document,hash:null,updated_at:null,updated_by:null,delivered_revision:0,delivered_at:null}}async function me(e,n){let t=await w(e,n.kind,n.id);return{...V(n.kind,t),...typeof t.name=="string"?{name:t.name}:{}}}function ye(e,n,t){return{save:(i,r)=>n!==void 0?n.saveItem(t.kind,t.id,i,r):$(e,t.kind,t.id,i,r),fetch:async()=>{let i=await w(e,t.kind,t.id);return{revision:i.revision,document:i.document}}}}function ke(e,n){if(e!==void 0)return n.kind==="menus"?g(e,n.id)?.revision:x(e,n.kind,n.id)?.revision}function $e(e){return`Delete "${e}"?`}var H="This device",U="Every device";function Re(e,n){let t="with every tile and menu slot that opened it";return e<=0?`It is on no device yet. It is deleted for good, ${t}.`:e===1?`It is on 1 device. It is deleted for good, ${t}.`:n!==void 0?`It is on ${e} devices. ${H} takes it off ${n} only, and you can tick it again. ${U} deletes it for good, ${t}.`:`It is on ${e} devices. Delete takes it off every device for good, ${t}. To take it off one device, untick it instead.`}var _="wrist-assistant-panel.library.preview-kind.v1";function W(){try{return globalThis.sessionStorage?.getItem(_)==="iphone"?"iphone":"watch"}catch{return"watch"}}function q(e){try{globalThis.sessionStorage?.setItem(_,e)}catch{}}function Le(e,n,t=[]){let i=r=>u(e,r.owner_watch_id)===(n==="iphone");for(let r of t){if(r===void 0)continue;let a=e.find(s=>s.owner_watch_id.toUpperCase()===r.toUpperCase());if(a!==void 0&&i(a))return a.owner_watch_id}return e.find(i)?.owner_watch_id}function Se(e,n){if(e!==void 0)return(n.kind==="menus"?g(e,n.id)?.owners:x(e,n.kind,n.id)?.owners)??[]}function Te(e,n,t){let i=s=>{let c=e.find(l=>l.owner_watch_id.toUpperCase()===s.toUpperCase());return c===void 0?void 0:u(e,c.owner_watch_id)?"iphone":"watch"},r=n.from===void 0?void 0:i(n.from);if(r!==void 0)return r;let a=new Set((t??[]).map(i).filter(s=>s!==void 0));return a.size===1?[...a][0]:W()}function F(e){return e==="watch"?h`<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6.5" y="1" width="7" height="3" rx="1"/><rect x="6.5" y="16" width="7" height="3" rx="1"/><rect x="4" y="3.5" width="12" height="13" rx="3.5"/></svg>`:h`<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="1" width="10" height="18" rx="2.5"/><rect class="pv-notch" x="8" y="2.2" width="4" height="1.2" rx=".6"/></svg>`}function N(){return h`<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="1" y="5.5" width="7.5" height="9" rx="2.4"/><rect x="11" y="2" width="7.5" height="16" rx="2"/></svg>`}function De(e,n,t){let i=t?.on===!0,r=(a,s)=>{let c=e===a&&!i;return o`<button type="button" class="lib-preview-thumb ${a} ${c?"on":""}"
+`;function Re(e){return`library:${e.kind}:${e.id}`}function Le(e,n){return e===void 0||n===void 0?e===n:e.kind===n.kind&&e.id.toUpperCase()===n.id.toUpperCase()}function N(e,n){return{kind:e,revision:n.revision,document:n.document,hash:null,updated_at:null,updated_by:null,delivered_revision:0,delivered_at:null}}async function Se(e,n){let t=await w(e,n.kind,n.id);return{...N(n.kind,t),...typeof t.name=="string"?{name:t.name}:{}}}function Te(e,n,t){return{save:(i,r)=>n!==void 0?n.saveItem(t.kind,t.id,i,r):R(e,t.kind,t.id,i,r),fetch:async()=>{let i=await w(e,t.kind,t.id);return{revision:i.revision,document:i.document}}}}function _e(e,n){if(e!==void 0)return n.kind==="menus"?x(e,n.id)?.revision:g(e,n.kind,n.id)?.revision}function ze(e){return`Delete "${e}"?`}var q="This device",F="Every device";function De(e,n){let t="with every tile and menu slot that opened it";return e<=0?`It is on no device yet. It is deleted for good, ${t}.`:e===1?`It is on 1 device. It is deleted for good, ${t}.`:n!==void 0?`It is on ${e} devices. ${q} takes it off ${n} only, and you can tick it again. ${F} deletes it for good, ${t}.`:`It is on ${e} devices. Delete takes it off every device for good, ${t}. To take it off one device, untick it instead.`}var D="wrist-assistant-panel.library.preview-kind.v1";function X(){try{return globalThis.sessionStorage?.getItem(D)==="iphone"?"iphone":"watch"}catch{return"watch"}}function Y(e){try{globalThis.sessionStorage?.setItem(D,e)}catch{}}function Pe(e,n,t=[]){let i=r=>u(e,r.owner_watch_id)===(n==="iphone");for(let r of t){if(r===void 0)continue;let a=e.find(s=>s.owner_watch_id.toUpperCase()===r.toUpperCase());if(a!==void 0&&i(a))return a.owner_watch_id}return e.find(i)?.owner_watch_id}function Ee(e,n){if(e!==void 0)return(n.kind==="menus"?x(e,n.id)?.owners:g(e,n.kind,n.id)?.owners)??[]}function Ie(e,n,t){let i=s=>{let c=e.find(l=>l.owner_watch_id.toUpperCase()===s.toUpperCase());return c===void 0?void 0:u(e,c.owner_watch_id)?"iphone":"watch"},r=n.from===void 0?void 0:i(n.from);if(r!==void 0)return r;let a=new Set((t??[]).map(i).filter(s=>s!==void 0));return a.size===1?[...a][0]:X()}function G(e){return e==="watch"?h`<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6.5" y="1" width="7" height="3" rx="1"/><rect x="6.5" y="16" width="7" height="3" rx="1"/><rect x="4" y="3.5" width="12" height="13" rx="3.5"/></svg>`:h`<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="1" width="10" height="18" rx="2.5"/><rect class="pv-notch" x="8" y="2.2" width="4" height="1.2" rx=".6"/></svg>`}function Q(){return h`<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="1" y="5.5" width="7.5" height="9" rx="2.4"/><rect x="11" y="2" width="7.5" height="16" rx="2"/></svg>`}function Ce(e,n,t){let i=t?.on===!0,r=(a,s)=>{let c=e===a&&!i;return o`<button type="button" class="lib-preview-thumb ${a} ${c?"on":""}"
       aria-pressed=${c?"true":"false"} title=${s} aria-label=${s}
-      @click=${()=>{c||(q(a),n(a))}}>${F(a)}</button>`};return o`<span class="lib-preview" role="group" aria-label="Preview on" title="What this is drawn on. Nothing is changed on any device.">
+      @click=${()=>{c||(Y(a),n(a))}}>${G(a)}</button>`};return o`<span class="lib-preview" role="group" aria-label="Preview on" title="What this is drawn on. Nothing is changed on any device.">
     <span class="lib-preview-l">Preview on</span>
     ${r("watch","Preview on a watch")}
     ${r("iphone","Preview on an iPhone")}
     ${t===void 0?d:o`<button type="button" class="lib-preview-thumb duo ${i?"on":""}"
       aria-pressed=${i?"true":"false"} title="Side by side: a watch and an iPhone" aria-label="Side by side: a watch and an iPhone"
-      @click=${()=>{i||t.pick()}}>${N()}</button>`}
-  </span>`}function _e(e,n,t){return!t||new Set(e.map(a=>u(e,a.owner_watch_id))).size<2?!1:new Set((n??[]).flatMap(a=>{let s=e.find(c=>c.owner_watch_id.toUpperCase()===a.toUpperCase());return s===void 0?[]:[u(e,s.owner_watch_id)]})).size!==1}function ze(e){return e==="watch"?"iphone":"watch"}function Ee(e,n){let t=e==="watch"?"Watch":"iPhone";return n.length===0?`${t} \xB7 on no ${e==="watch"?"watch":"iPhone"} yet`:`${t} \xB7 ${n.join(", ")}`}function Pe(){return o`<span class="lib-mode-tag" title="One for every device that has it. A save reaches all of them.">Shared</span>`}function D(e){return e==="menus"?"Which devices should use this menu?":"Which devices do you want this on?"}function X(e,n){return n===0?"On no device yet":`On ${n} ${n===1?"device":"devices"}`}function Ce(e,n,t,i){return o`<div class="lib-on over-stage ${n===0?"none":""}" role="group" aria-label=${D(e)}>
-    <span class="lib-on-l">${D(e)}</span>${t}<span class="lib-on-n">${X(e,n)}</span>${Y(i)}
-  </div>`}function Y(e,n=Date.now()){return e===void 0||n-e>=f?d:o`${L(e,o`<span class="lib-saved" role="status" style=${`animation-delay:${Math.max(0,f-400-(n-e))}ms`}>Saved</span>`)}`}var Ie=p`
+      @click=${()=>{i||t.pick()}}>${Q()}</button>`}
+  </span>`}function Be(e,n,t){return!t||new Set(e.map(a=>u(e,a.owner_watch_id))).size<2?!1:new Set((n??[]).flatMap(a=>{let s=e.find(c=>c.owner_watch_id.toUpperCase()===a.toUpperCase());return s===void 0?[]:[u(e,s.owner_watch_id)]})).size!==1}function Oe(e){return e==="watch"?"iphone":"watch"}function Ke(e,n){let t=e==="watch"?"Watch":"iPhone";return n.length===0?`${t} \xB7 on no ${e==="watch"?"watch":"iPhone"} yet`:`${t} \xB7 ${n.join(", ")}`}function Ae(){return o`<span class="lib-mode-tag" title="One for every device that has it. A save reaches all of them.">Shared</span>`}function z(e){return e==="menus"?"Which devices should use this menu?":"Which devices do you want this on?"}function J(e,n){return n===0?"On no device yet":`On ${n} ${n===1?"device":"devices"}`}function Ve(e,n,t,i){return o`<div class="lib-on over-stage ${n===0?"none":""}" role="group" aria-label=${z(e)}>
+    <span class="lib-on-l">${z(e)}</span>${t}<span class="lib-on-n">${J(e,n)}</span>${Z(i)}
+  </div>`}function Z(e,n=Date.now()){return e===void 0||n-e>=v?d:o`${S(e,o`<span class="lib-saved" role="status" style=${`animation-delay:${Math.max(0,v-400-(n-e))}ms`}>Saved</span>`)}`}var Me=p`
   /* Preview on, in the strip over the stage beside the watch's size and the
      zoom: the words, then the two thumbnails, the shown one filled in the
      accent. */
@@ -321,4 +330,4 @@ import{d as w,e as $,ha as x,ia as g,ya as R}from"./chunk-TS6GX5ZO.js";import{h 
     animation: lib-saved-out .4s ease-in forwards;
   }
   @keyframes lib-saved-out { to { opacity: 0; } }
-`;export{L as a,ae as b,f as c,S as d,de as e,se as f,le as g,ce as h,fe as i,ve as j,me as k,ye as l,ke as m,$e as n,H as o,U as p,Re as q,q as r,Le as s,Se as t,Te as u,De as v,_e as w,ze as x,Ee as y,Pe as z,Ce as A,Ie as B};
+`;export{S as a,ce as b,pe as c,be as d,v as e,T as f,ue as g,he as h,we as i,ge as j,Re as k,Le as l,Se as m,Te as n,_e as o,ze as p,q,F as r,De as s,Y as t,Pe as u,Ee as v,Ie as w,Ce as x,Be as y,Oe as z,Ke as A,Ae as B,Ve as C,Me as D};

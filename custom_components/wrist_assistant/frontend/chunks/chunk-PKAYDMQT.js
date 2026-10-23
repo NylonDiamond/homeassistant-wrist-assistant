@@ -1,33 +1,35 @@
-import{b as d,d as n,g as t,nh as l}from"./chunk-PGFG6NDE.js";var c="Hidden here",f="Not shared";function w(e){return n`<section class="hl-group" aria-label=${e.title} style=${`--h:${e.hue}`}>
+import{l as h}from"./chunk-MRBHOOOB.js";import{b as d,d as i,g as t,nh as s}from"./chunk-PGFG6NDE.js";var g="Hidden here",v="Not shared";function w(e){return i`<section class="hl-group" aria-label=${e.title} style=${`--h:${e.hue}`}>
     <div class="hl-head">
-      <span class="hl-chip" aria-hidden="true">${l(e.icon)}</span>
+      <span class="hl-chip" aria-hidden="true">${s(e.icon)}</span>
       <h3 class="hl-title">${e.title}</h3>
-      ${e.noCount===!0?t:n`<span class="hl-n">${e.lines.length}</span>`}
-      ${e.sub===void 0?t:n`<span class="hl-sub">${e.sub}</span>`}
-      ${e.change===void 0?t:n`<button type="button" class="hl-change" title=${e.change.title} @click=${e.change.onClick}>Change${l("right")}</button>`}
+      ${e.noCount===!0?t:i`<span class="hl-n">${e.lines.length}</span>`}
+      ${e.sub===void 0?t:i`<span class="hl-sub">${e.sub}</span>`}
+      ${e.change===void 0?t:i`<button type="button" class="hl-change" title=${e.change.title} @click=${e.change.onClick}>Change${s("right")}</button>`}
     </div>
     ${e.under??t}
-    ${e.lines.length===0?n`<p class="hl-empty">${e.empty}</p>`:n`<ol class="hl-lines ${e.strip===!0?"strip":""}">${e.lines.map((p,s)=>x(p,s,e.strip===!0))}</ol>`}
-  </section>`}function x(e,p,s){let a=e.action,r=e.drag,o=e.remove,h=["hl-line",e.hidden===!0?"hid":"",r?.on===!0?"drags":"",r?.dragging===!0?"dragging":"",r?.over===!0?r.after?"drop-after":"drop-before":""].filter(i=>i!=="").join(" ");return n`<li class=${h} data-line=${e.key} draggable=${r?.on===!0?"true":"false"}
-    @dragstart=${i=>r?.onStart(i)} @dragover=${i=>r?.onOver(i)}
-    @drop=${i=>r?.onDrop(i)} @dragend=${()=>r?.onEnd()}>
-    ${s?n`<span class="hl-i" aria-hidden="true">${p+1}</span>`:t}
-    ${r===void 0?t:n`<span class="hl-grip" tabindex=${r.on?"0":"-1"} role="button"
+    ${e.lines.length===0?i`<p class="hl-empty">${e.empty}</p>`:i`<ol class="hl-lines ${e.strip===!0?"strip":""}"
+          @dragover=${a=>e.zone?.onOver(a)} @drop=${a=>e.zone?.onDrop(a)}
+          >${h(e.lines,a=>a.key,(a,p)=>x(a,p,e.strip===!0))}</ol>`}
+  </section>`}function x(e,a,p){let o=e.action,r=e.drag,l=e.remove,c=["hl-line",e.hidden===!0?"hid":"",r?.on===!0?"drags":"",r?.dragging===!0?"dragging":""].filter(n=>n!=="").join(" ");return i`<li class=${c} data-line=${e.key} draggable=${r?.on===!0?"true":"false"}
+    @dragstart=${n=>r?.onStart(n)} @dragover=${n=>r?.onOver(n)}
+    @drop=${n=>r?.onDrop(n)} @dragend=${()=>r?.onEnd()}>
+    ${p?i`<span class="hl-i" aria-hidden="true">${a+1}</span>`:t}
+    ${r===void 0?t:i`<span class="hl-grip" tabindex=${r.on?"0":"-1"} role="button"
       aria-label=${`Move ${e.name}. Alt and the arrow keys move it.`} title=${r.on?"Drag to change the order":""}
-      @keydown=${i=>r.onKey(i)}>${l("grip")}</span>`}
-    ${o===void 0?t:n`<button type="button" class="hl-rm" title=${o.title} aria-label=${o.title} ?disabled=${o.busy===!0}
-      @click=${i=>{i.stopPropagation(),o.onClick()}}>${l("close")}</button>`}
-    ${e.picture===void 0?t:n`<span class="hl-pic">${e.picture}</span>`}
+      @keydown=${n=>r.onKey(n)}>${s("grip")}</span>`}
+    ${l===void 0?t:i`<button type="button" class="hl-rm" title=${l.title} aria-label=${l.title} ?disabled=${l.busy===!0}
+      @click=${n=>{n.stopPropagation(),l.onClick()}}>${s("close")}</button>`}
+    ${e.picture===void 0?t:i`<span class="hl-pic">${e.picture}</span>`}
     <span class="hl-t">
       <b class="hl-name">${e.name}</b>
-      ${e.detail===void 0&&e.hidden!==!0&&e.tag===void 0?t:n`<small class="hl-detail">
-        ${e.hidden===!0?n`<em class="hl-tag">${c}</em>`:t}
-        ${e.tag===void 0?t:n`<em class="hl-tag own">${e.tag}</em>`}
+      ${e.detail===void 0&&e.hidden!==!0&&e.tag===void 0?t:i`<small class="hl-detail">
+        ${e.hidden===!0?i`<em class="hl-tag">${g}</em>`:t}
+        ${e.tag===void 0?t:i`<em class="hl-tag own">${e.tag}</em>`}
         ${e.detail??t}</small>`}
     </span>
-    ${a===void 0?t:a.href!==void 0?n`<a class="hl-edit" href=${a.href} title=${a.title}
-          @click=${i=>{i.button!==0||i.metaKey||i.ctrlKey||i.shiftKey||i.altKey||(i.preventDefault(),a.onClick())}}>${a.label}</a>`:n`<button type="button" class="hl-edit" title=${a.title} @click=${a.onClick}>${a.label}</button>`}
-  </li>`}var m=d`
+    ${o===void 0?t:o.href!==void 0?i`<a class="hl-edit" href=${o.href} title=${o.title}
+          @click=${n=>{n.button!==0||n.metaKey||n.ctrlKey||n.shiftKey||n.altKey||(n.preventDefault(),o.onClick())}}>${o.label}</a>`:i`<button type="button" class="hl-edit" title=${o.title} @click=${o.onClick}>${o.label}</button>`}
+  </li>`}var b=d`
   .hl-groups { display: flex; flex-direction: column; gap: 18px; }
   .hl-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .hl-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -73,11 +75,14 @@ import{b as d,d as n,g as t,nh as l}from"./chunk-PGFG6NDE.js";var c="Hidden here
      with no hover. The drop lands on the side the line is drawn on. */
   .hl-line { position: relative; }
   .hl-line.drags { cursor: grab; }
-  .hl-line.dragging { opacity: .45; }
-  .hl-line.drop-before { box-shadow: -3px 0 0 var(--wa-accent); }
-  .hl-line.drop-after { box-shadow: 3px 0 0 var(--wa-accent); }
-  .hl-lines:not(.strip) .hl-line.drop-before { box-shadow: 0 -3px 0 var(--wa-accent); }
-  .hl-lines:not(.strip) .hl-line.drop-after { box-shadow: 0 3px 0 var(--wa-accent); }
+  /* The dragged line's slot, where it would land: an empty dashed place in
+     the accent, the card itself faint inside it. */
+  .hl-line.dragging {
+    border-style: dashed; border-color: var(--wa-accent);
+    background: color-mix(in srgb, var(--wa-accent) 7%, var(--wa-card));
+  }
+  .hl-line.dragging > * { opacity: .25; }
+  .hl-lines:has(.hl-line.dragging) .hl-rm { opacity: 0; }
   .hl-grip {
     display: inline-flex; align-items: center; justify-content: center; flex: none; width: 18px; height: 22px; border-radius: 5px;
     color: var(--wa-muted); cursor: grab;
@@ -109,7 +114,7 @@ import{b as d,d as n,g as t,nh as l}from"./chunk-PGFG6NDE.js";var c="Hidden here
   @media (prefers-reduced-motion: reduce) { .hl-rm { transition: none; } }
   .hl-edit:hover { background: var(--wa-hover); }
   .hl-edit:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-`,v=d`
+`,y=d`
   .ha { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
   .ha-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
   .ha-head-t { flex: 1 1 320px; min-width: 0; }
@@ -129,4 +134,4 @@ import{b as d,d as n,g as t,nh as l}from"./chunk-PGFG6NDE.js";var c="Hidden here
   .ha-lock { display: inline-flex; color: var(--wa-muted); }
   .ha-lock svg { width: 14px; height: 14px; }
   .hb-lineup { margin-top: 4px; }
-`;export{f as a,w as b,m as c,v as d};
+`;export{v as a,w as b,b as c,y as d};

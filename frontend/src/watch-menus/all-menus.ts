@@ -32,7 +32,7 @@ import { renderMenuRowPicture, rowPictureStyles } from "../library/row-picture.j
 import { LibraryController } from "../library/store.js";
 import { newItemDialogStyles, openNewItemDialog, renderNewItemDialog } from "../library/new-dialog.js";
 import { type BoardCell, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen, type ListView,
-  SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, renderBoard, renderViewSwitch } from "../library/board.js";
+  SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, noteViewPick, phoneView, renderBoard, renderViewSwitch } from "../library/board.js";
 import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
@@ -227,7 +227,7 @@ export class WaAllMenus extends LitElement {
 
   /** Board or Cards. A focused device is always the board. */
   private get view(): ListView {
-    return this.embedded || this.filterDevice() !== undefined ? "board" : keptView().view;
+    return this.embedded || this.filterDevice() !== undefined ? "board" : phoneView("menus", keptView().view);
   }
 
   /** The watches that wait for their iPhone to move their menus here: none
@@ -249,6 +249,7 @@ export class WaAllMenus extends LitElement {
 
   /** Board or Cards, remembered. Cards leaves a focused device. */
   private setView(view: ListView): void {
+    noteViewPick("menus", view);
     keepView({ view });
     if (view === "cards" && this.filterDevice() !== undefined) this.setFocus(undefined);
     this.requestUpdate();

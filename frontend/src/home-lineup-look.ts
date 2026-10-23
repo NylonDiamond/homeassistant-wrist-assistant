@@ -12,6 +12,7 @@
 // one list.
 
 import { css, html, nothing, type TemplateResult } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 
 /** One thing on the device. */
@@ -33,14 +34,12 @@ export interface LineupLine {
   remove?: { title: string; busy?: boolean; onClick: () => void };
 }
 
-/** A line's drag: the board's (`BoardDrag`), with the drop drawn before or
- * after the line it is over. */
+/** A line's drag. While it is dragged, the lines are drawn in the order it
+ * would land in, so the ones it passes move aside; its own slot is drawn
+ * empty (`dragging`). */
 export interface LineupDrag {
   on: boolean;
   dragging: boolean;
-  over: boolean;
-  /** The drop lands after the line, not before it. */
-  after: boolean;
   onStart: (e: DragEvent) => void;
   onOver: (e: DragEvent) => void;
   onDrop: (e: DragEvent) => void;
@@ -68,6 +67,8 @@ export interface LineupGroup {
   strip?: boolean;
   /** Drawn under the head: a question before a remove, or what one did. */
   under?: TemplateResult;
+  /** The list's own drop target, so a line let go between two lines lands. */
+  zone?: { onOver: (e: DragEvent) => void; onDrop: (e: DragEvent) => void };
 }
 
 /** The words of a hidden line's tag. */
@@ -88,7 +89,9 @@ export function renderLineupGroup(g: LineupGroup): TemplateResult {
     ${g.under ?? nothing}
     ${g.lines.length === 0
       ? html`<p class="hl-empty">${g.empty}</p>`
-      : html`<ol class="hl-lines ${g.strip === true ? "strip" : ""}">${g.lines.map((line, i) => renderLine(line, i, g.strip === true))}</ol>`}
+      : html`<ol class="hl-lines ${g.strip === true ? "strip" : ""}"
+          @dragover=${(e: DragEvent) => g.zone?.onOver(e)} @drop=${(e: DragEvent) => g.zone?.onDrop(e)}
+          >${repeat(g.lines, (line) => line.key, (line, i) => renderLine(line, i, g.strip === true))}</ol>`}
   </section>`;
 }
 
@@ -98,7 +101,6 @@ function renderLine(line: LineupLine, index: number, numbered: boolean): Templat
   const r = line.remove;
   const cls = [
     "hl-line", line.hidden === true ? "hid" : "", d?.on === true ? "drags" : "", d?.dragging === true ? "dragging" : "",
-    d?.over === true ? (d.after ? "drop-after" : "drop-before") : "",
   ].filter((c) => c !== "").join(" ");
   return html`<li class=${cls} data-line=${line.key} draggable=${d?.on === true ? "true" : "false"}
     @dragstart=${(e: DragEvent) => d?.onStart(e)} @dragover=${(e: DragEvent) => d?.onOver(e)}
@@ -176,11 +178,14 @@ export const homeLineupStyles = css`
      with no hover. The drop lands on the side the line is drawn on. */
   .hl-line { position: relative; }
   .hl-line.drags { cursor: grab; }
-  .hl-line.dragging { opacity: .45; }
-  .hl-line.drop-before { box-shadow: -3px 0 0 var(--wa-accent); }
-  .hl-line.drop-after { box-shadow: 3px 0 0 var(--wa-accent); }
-  .hl-lines:not(.strip) .hl-line.drop-before { box-shadow: 0 -3px 0 var(--wa-accent); }
-  .hl-lines:not(.strip) .hl-line.drop-after { box-shadow: 0 3px 0 var(--wa-accent); }
+  /* The dragged line's slot, where it would land: an empty dashed place in
+     the accent, the card itself faint inside it. */
+  .hl-line.dragging {
+    border-style: dashed; border-color: var(--wa-accent);
+    background: color-mix(in srgb, var(--wa-accent) 7%, var(--wa-card));
+  }
+  .hl-line.dragging > * { opacity: .25; }
+  .hl-lines:has(.hl-line.dragging) .hl-rm { opacity: 0; }
   .hl-grip {
     display: inline-flex; align-items: center; justify-content: center; flex: none; width: 18px; height: 22px; border-radius: 5px;
     color: var(--wa-muted); cursor: grab;

@@ -24,6 +24,33 @@ import { type TickAsk, type TickChip, type TickNoteKind, renderTickAsk } from ".
 /** How a list tab shows its things: the board, or one card each. */
 export type ListView = "board" | "cards";
 
+/** A screen this narrow (a phone) shows a list tab's things as cards: the
+ * board's device columns would scroll sideways. */
+export const PHONE_LIST_QUERY = "(max-width: 640px)";
+
+/** The tabs where Board was picked on this visit, which a phone then keeps. */
+const boardPickedHere = new Set<string>();
+
+/** The view a tab shows: its kept one, except Cards on a phone unless Board
+ * was picked on this visit (`noteViewPick`). */
+export function phoneView(tab: string, view: ListView, narrow = phoneNarrow()): ListView {
+  return view === "board" && narrow && !boardPickedHere.has(tab) ? "cards" : view;
+}
+
+/** A tab's Board or Cards, picked by hand. */
+export function noteViewPick(tab: string, view: ListView): void {
+  if (view === "board") boardPickedHere.add(tab);
+  else boardPickedHere.delete(tab);
+}
+
+function phoneNarrow(): boolean {
+  try {
+    return window.matchMedia(PHONE_LIST_QUERY).matches;
+  } catch {
+    return false;
+  }
+}
+
 /** A device's own screens, one click away from its focused column. */
 export type DeviceOwnScreen = "settings" | "rooms" | "voice";
 
@@ -157,6 +184,9 @@ export interface BoardRow {
   note?: { text: string; kind: TickNoteKind };
   /** Anything else drawn across the row under it (a delete question). */
   under?: TemplateResult;
+  /** A heading inside the section, drawn over the first of a run of rows
+   * that share it (a complication's shape). */
+  group?: string;
 }
 
 /** A group of rows under a heading. */
@@ -209,10 +239,21 @@ export function renderBoard(input: BoardInput): TemplateResult {
         </th></tr>`}
         ${section.rows.length === 0 && section.empty !== undefined
           ? html`<tr class="bd-none"><td colspan=${span}>${section.empty}</td></tr>`
-          : section.rows.map((row) => renderRow(row, input.columns, focusAt, span))}
+          : section.rows.map((row, i) => html`${row.group !== undefined && row.group !== section.rows[i - 1]?.group
+            ? renderGroup(row.group, section.rows.slice(i).findIndex((r) => r.group !== row.group), section.rows.length - i, span)
+            : nothing}${renderRow(row, input.columns, focusAt, span)}`)}
       </tbody>`)}
     </table>
   </div>`;
+}
+
+/** A run of rows' heading: its name and how many rows it has (`ends`, the
+ * index of the first row past the run, or -1 when the run reaches the
+ * section's last of `left` rows). */
+function renderGroup(group: string, ends: number, left: number, span: number): TemplateResult {
+  return html`<tr class="bd-group"><th colspan=${span} scope="rowgroup">
+    <span class="bd-group-t">${group} <small>${ends < 0 ? left : ends}</small></span>
+  </th></tr>`;
 }
 
 function renderHead(col: BoardColumn, focused: boolean, input: BoardInput): TemplateResult {
@@ -339,6 +380,13 @@ export const boardStyles = css`
   .bd-sect-t small { margin-left: 4px; font-size: 12px; font-weight: 500; color: var(--wa-muted); }
   .bd-sect-r { margin-left: 12px; font-size: 11.5px; color: var(--wa-muted); font-weight: 400; }
   .bd-none td { padding: 10px; font-size: 12.5px; color: var(--wa-muted); }
+  /* A run of rows of one kind inside a section (a shape): a band in small
+     capitals with room above it, so one kind ends before the next begins. */
+  .bd-group th { padding: 18px 10px 6px; background: var(--bd-ground); border-bottom: 1px solid var(--wa-line-strong); }
+  .bd-group th > * { position: sticky; left: 10px; }
+  .bd-group-t { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-label); }
+  .bd-group-t small { margin-left: 4px; font-size: 11px; font-weight: 500; letter-spacing: 0; color: var(--wa-muted); }
+  .bd-sect + .bd-group th, .bd-sect-body > .bd-group:nth-child(2) th { padding-top: 10px; }
 
   .bd-row > * { border-bottom: 1px solid var(--wa-line); }
   .bd-row:hover > * { background: color-mix(in srgb, var(--wa-hover) 60%, var(--bd-ground)); }

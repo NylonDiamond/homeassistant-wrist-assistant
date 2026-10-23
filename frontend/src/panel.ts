@@ -231,7 +231,7 @@ import { chromeDarkValues, chromeRuns, chromeTokens, litOutline, plainOutline } 
 import { DELETE_EVERY_DEVICE, DELETE_THIS_DEVICE, libraryModeStyles } from "./library/item-mode.js";
 import { type TickChip, libraryTicksStyles, renderTickChips } from "./library/ticks.js";
 import { type BoardCell, type BoardColumn, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen,
-  SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, renderBoard, renderViewSwitch } from "./library/board.js";
+  SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, noteViewPick, phoneView, renderBoard, renderViewSwitch } from "./library/board.js";
 import type { LinkDevice } from "./watch-pages/devices.js";
 import { LINEUP_OWN_TAG, type LineupGroup, type LineupLine, homeAllStyles, homeLineupStyles, renderLineupGroup } from "./home-lineup-look.js";
 import { renderHomeLineup } from "./home-lineup-hook.js";
@@ -3383,6 +3383,17 @@ export class WristAssistantPanel extends LitElement {
        they stay, beside the name rather than over it. */
     @media (hover: none) {
       .pk-card-acts { position: static; transform: none; padding-left: 0; background: none; opacity: 1; pointer-events: auto; }
+    }
+    /* A small card (a round shape's, or any card on a phone): Devices is its
+       glyph, and the buttons lie across the name's whole row, inside the
+       card, rather than running out past its left edge. */
+    .pk-grid .pk-card { container: pkcard / inline-size; }
+    @container pkcard (max-width: 230px) {
+      .pk-dup-l { display: none; }
+      .pk-dup-ic { display: inline-flex; }
+      .pk-dup-ic svg { width: 13px; height: 13px; }
+      .pk-dup-open { padding: 3px 5px; }
+      .pk-card-acts { left: 0; justify-content: flex-end; padding-left: 0; background: var(--wa-card); }
     }
     .pk-card-acts button.icon { width: 26px; height: 26px; background: var(--wa-card); }
     .pk-card-acts button.small { min-height: 24px; padding: 0 7px; background: var(--wa-card); }
@@ -14392,7 +14403,8 @@ export class WristAssistantPanel extends LitElement {
     const total = rows.length;
     const full = this.freeSlot() < 0;
     const focus = this.compFocus();
-    const board = focus !== undefined || this.compView === "board";
+    const view = phoneView("complications", this.compView);
+    const board = focus !== undefined || view === "board";
     return html`<div class="cl-page ${board ? "cl-board" : ""}"><div class="cl-wrap">
       <div class="cl-head">
         <div class="cl-head-text">
@@ -14401,7 +14413,7 @@ export class WristAssistantPanel extends LitElement {
         </div>
         <div class="cl-acts">
           ${this.compBoardSaved ? html`<span class="bd-saved" role="status">${uiIcon("check")}<span>Saved</span></span>` : nothing}
-          ${focus === undefined ? renderViewSwitch(this.compView, (v) => this.setCompView(v), "complications") : nothing}
+          ${focus === undefined ? renderViewSwitch(view, (v) => this.setCompView(v), "complications") : nothing}
           <a class="cl-btn cl-gallery" href=${GALLERY_PAGE} target="_blank" rel="noopener"
             title="Ready-made complications from other people">${uiIcon("globe")}<span>Gallery</span></a>
           <button class="cl-btn cl-import" ?disabled=${full}
@@ -14428,7 +14440,10 @@ export class WristAssistantPanel extends LitElement {
 
   /** Board or Cards, remembered. Cards leaves a focused device. */
   private setCompView(view: CompListView) {
+    noteViewPick("complications", view);
     this.compView = view;
+    // Board on a phone, kept already: the pick alone changes what shows.
+    this.requestUpdate();
     saveCompView(() => window.localStorage, view);
     if (view === "cards" && this.compFocus() !== undefined) this.goTo(COMPLICATIONS_PATH);
   }
@@ -14602,6 +14617,7 @@ export class WristAssistantPanel extends LitElement {
         else void this.openFromPicker(row, open);
       },
       cells: devices.map((d) => this.compBoardCell(it, d, focus !== undefined && d.ownerId === focus.ownerId)),
+      group: shape,
       ...(dim ? { dim: true } : {}),
       ...(it.locked !== undefined && noteOpen ? { under: html`<p class="lt-note ok">${it.locked.title}</p>` } : {}),
     };
@@ -19943,34 +19959,35 @@ export class WristAssistantPanel extends LitElement {
     const waiting = devices.filter(needsAttention);
     const ring = homeRing(totals, HOME_RING_LENGTH);
     const lastWords = last === undefined ? undefined : last.unit === "" ? last.n : `${last.n} ${last.unit}`;
-    return html`<section class="hb-sum ${waiting.length > 0 ? "on" : ""}" aria-label="Sync">
-      <div class="hb-sum-top">
-        <svg class="hb-ring" viewBox="0 0 44 44" aria-hidden="true">
-          <circle class="track" cx="22" cy="22" r="18"></circle>
-          ${totals.synced > 0 ? svg`<circle class="ok" cx="22" cy="22" r="18" stroke-linecap="round" stroke-dasharray=${ring.synced} transform="rotate(-90 22 22)"></circle>` : nothing}
-          ${totals.waiting > 0 ? svg`<circle class="wait" cx="22" cy="22" r="18" stroke-linecap="round" stroke-dasharray=${ring.waiting} stroke-dashoffset=${ring.offset} transform="rotate(-90 22 22)"></circle>` : nothing}
-        </svg>
-        <div class="hb-sum-t"><b>${homeRingHead(totals)}</b><h2 class="home-title">Waiting to sync ${waiting.length}</h2></div>
-      </div>
-      ${waiting.length === 0
-        ? html`<p class="hb-sum-line">Every device has your latest changes.${last === undefined ? nothing : ` Last seen: ${last.name}, ${lastWords}.`}</p>`
-        : html`<div class="hb-waits">${waiting.map((d) => {
-          const pending = pendingWords(this.ownerOf(d.id));
-          const gone = userGone(this.ownerOf(d.id));
-          return html`<button type="button" class="hb-wait" style=${`--c:${this.deviceColorOf(d.id) ?? "var(--wa-hue-grey)"}`}
-            title=${`Open ${d.name}`} @click=${() => this.openHomeDevice(d.id, gone)}>
-            <i aria-hidden="true"></i>
-            <span class="hb-wait-t"><b>${d.name}</b><span>${gone ? USER_GONE_TEXT : attentionText(d, pending)}</span></span>
-          </button>`;
-        })}</div>`}
-      <div class="hb-totals">
-        <div class="hb-total"><b>${totals.all}</b><span>Devices</span></div>
-        <div class="hb-total"><b class="ok">${totals.synced}</b><span>Synced</span></div>
-        <div class="hb-total"><b class=${totals.waiting > 0 ? "wait" : ""}>${totals.waiting}</b><span>Waiting</span></div>
-        ${last === undefined ? nothing : html`<div class="hb-total" title=${`${last.name}, ${lastWords}`}>
-          <b>${last.unit === "" ? last.n : `${last.n} ${last.unit.replace(/ ago$/, "")}`}</b><span>Last seen</span></div>`}
-      </div>
-    </section>`;
+    const ringArt = html`<svg class="hb-ring" viewBox="0 0 44 44" aria-hidden="true">
+        <circle class="track" cx="22" cy="22" r="18"></circle>
+        ${totals.synced > 0 ? svg`<circle class="ok" cx="22" cy="22" r="18" stroke-linecap="round" stroke-dasharray=${ring.synced} transform="rotate(-90 22 22)"></circle>` : nothing}
+        ${totals.waiting > 0 ? svg`<circle class="wait" cx="22" cy="22" r="18" stroke-linecap="round" stroke-dasharray=${ring.waiting} stroke-dashoffset=${ring.offset} transform="rotate(-90 22 22)"></circle>` : nothing}
+      </svg>`;
+    const seen = last === undefined ? undefined : `seen ${lastWords}`;
+    const sub = [waiting.length > 0 ? `${waiting.length} waiting` : undefined, seen].filter((w): w is string => w !== undefined).join(" · ");
+    const head = html`${ringArt}<span class="hb-sum-t"><b>${homeRingHead(totals)}</b>${sub === "" ? nothing : html`<span>${sub}</span>`}</span>`;
+    // Small, so the devices under it lead: one line, and what waits folded
+    // under it until it is opened.
+    if (waiting.length === 0) {
+      return html`<section class="hb-sum" aria-label="Sync"
+        title=${`Every device has your latest changes.${last === undefined ? "" : ` Last seen: ${last.name}, ${lastWords}.`}`}>
+        <div class="hb-sum-top">${head}</div>
+      </section>`;
+    }
+    return html`<details class="hb-sum on" aria-label="Sync">
+      <summary class="hb-sum-top">${head}<span class="hb-sum-go" aria-hidden="true">${uiIcon("chevron")}</span></summary>
+      <h2 class="home-title">Waiting to sync ${waiting.length}</h2>
+      <div class="hb-waits">${waiting.map((d) => {
+        const pending = pendingWords(this.ownerOf(d.id));
+        const gone = userGone(this.ownerOf(d.id));
+        return html`<button type="button" class="hb-wait" style=${`--c:${this.deviceColorOf(d.id) ?? "var(--wa-hue-grey)"}`}
+          title=${`Open ${d.name}`} @click=${() => this.openHomeDevice(d.id, gone)}>
+          <i aria-hidden="true"></i>
+          <span class="hb-wait-t"><b>${d.name}</b><span>${gone ? USER_GONE_TEXT : attentionText(d, pending)}</span></span>
+        </button>`;
+      })}</div>
+    </details>`;
   }
 
   /** One person's devices in Home's side bar: their picture (or initial),
@@ -20518,10 +20535,7 @@ export class WristAssistantPanel extends LitElement {
       const n = count(t);
       const word = t.kind === "list" && t.filter === "control" ? "Control Center" : countWord(t.label, n);
       const body = html`<span class="hb-call-n"><b class=${n === 0 ? "none" : ""}>${n ?? "–"}</b><span>${word}</span></span>`;
-      return html`<button type="button" class="hb-call ${side}" title=${`${t.label} on ${row.name}`} @click=${() => go(t)}>
-        ${side === "l" ? html`${body}<span class="hb-call-line" aria-hidden="true"></span><i aria-hidden="true"></i>`
-          : html`<i aria-hidden="true"></i><span class="hb-call-line" aria-hidden="true"></span>${body}`}
-      </button>`;
+      return html`<button type="button" class="hb-call ${side}" title=${`${t.label} on ${row.name}`} @click=${() => go(t)}>${body}</button>`;
     };
     const [callL, callR] = deviceCardTiles(row.kind, this.phonePages);
     const face = gone ? undefined : this.homeFace(ownerId, row.kind);
@@ -20563,8 +20577,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="hb-state-chip" aria-hidden="true">${uiIcon(rejected ? "info" : row.sync === "waiting" ? "clock" : "check")}</span>
         <span class="hb-state-t"><b>${homeDeviceLabel(row)}</b><span>${syncSub}${pending === undefined ? "" : ` · ${pending}`}</span></span>
         ${heard === undefined ? nothing : html`<span class="hb-seen"><span>Last seen</span><b>${heard.replace(/^Seen /, "")}</b></span>`}
-      </div>
-      ${this.renderHomeLineup(row)}`;
+      </div>`;
     return html`<div class="hb-detail" data-pick=${ownerId} style=${`--c:${color}`}>
       <div class="hb-bar">
         <span class="hb-crumb"><i aria-hidden="true"></i>${whose}${uiIcon("right")}<b>${row.name}</b></span>
@@ -20581,18 +20594,19 @@ export class WristAssistantPanel extends LitElement {
                 @click=${() => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); }}>Remove</button>`}
         </div>
       </div>
-      <div class="hb-stage">
-        <span class="hb-floor" aria-hidden="true"></span>
-        ${gone ? nothing : html`<span class="hb-badge ${state}" aria-hidden="true"><i></i>${homeDeviceLabel(row)}</span>`}
-        <div class="hb-calls" style=${`--off:${row.kind === "watch" ? 128 : 96}px`}>${gone ? nothing : html`${call(callL, "l")}${call(callR, "r")}`}</div>
-        <div class="hb-device" aria-hidden="true">${art}</div>
+      <div class="hb-hero">
+        <div class="hb-stage">
+          <span class="hb-floor" aria-hidden="true"></span>
+          <div class="hb-device" aria-hidden="true">${art}</div>
+        </div>
+        <div class="hb-info">
+          <div class="hb-name"><h2>${this.deviceForgetAsk ? `Remove “${row.name}”?` : row.name}</h2><span class="hb-facts">${facts}</span></div>
+          ${this.devicePaired === ownerId ? html`<div class="dev-paired" role="status">${uiIcon("check")}<span><b>Paired successfully.</b> ${row.name} is now on this Home Assistant.</span></div>` : nothing}
+          ${renaming ? renameForm : nothing}
+          ${this.deviceForgetAsk ? ask : gone ? goneNote : html`${overview}<div class="hb-calls">${call(callL, "l")}${call(callR, "r")}</div>`}
+        </div>
       </div>
-      <div class="hb-info">
-        <div class="hb-name"><h2>${this.deviceForgetAsk ? `Remove “${row.name}”?` : row.name}</h2><span class="hb-facts">${facts}</span></div>
-        ${this.devicePaired === ownerId ? html`<div class="dev-paired" role="status">${uiIcon("check")}<span><b>Paired successfully.</b> ${row.name} is now on this Home Assistant.</span></div>` : nothing}
-        ${renaming ? renameForm : nothing}
-        ${this.deviceForgetAsk ? ask : gone ? goneNote : overview}
-      </div>
+      ${this.deviceForgetAsk || gone ? nothing : this.renderHomeLineup(row)}
     </div>`;
   }
 

@@ -98,7 +98,8 @@ describe("Home's household state", () => {
     // A watch that could not use the last save is listed too (`needsAttention`).
     expect(status).toContain("const waiting = devices.filter(needsAttention);");
     expect(status).toContain("attentionText(d, pending)");
-    expect(status).toContain(`<section class="hb-sum \${waiting.length > 0 ? "on" : ""}"`);
+    // Folded until opened, so the devices under it lead.
+    expect(status).toContain(`<details class="hb-sum on" aria-label="Sync">`);
     expect(status).toContain("@click=${() => this.openHomeDevice(d.id, gone)}");
     expect(status).toContain("Every device has your latest changes.");
   });
@@ -187,7 +188,7 @@ describe("Home's picked device", () => {
   });
 
   it("lists what is on the device in its order, each line with Edit and each group with Change (plan step 6)", () => {
-    expect(detail).toContain("${this.renderHomeLineup(row)}");
+    expect(detail).toContain("${this.deviceForgetAsk || gone ? nothing : this.renderHomeLineup(row)}");
     expect(detail).not.toContain("hb-doors");
     const lineup = method("  private renderHomeLineup(row: HomeDeviceRow) {");
     expect(lineup).toContain("onEdit: (kind, id) => this.goTo(libraryItemPath(kind, id, ownerId)),");
@@ -234,7 +235,7 @@ describe("Home's picked device", () => {
     expect(detail).not.toContain("is_admin");
     expect(detail).toContain("@click=${() => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); }}>Remove</button>");
     expect(detail).toContain("@click=${() => void this.forgetDeviceNow(ownerId)}");
-    expect(detail).toContain("${this.deviceForgetAsk ? ask : gone ? goneNote : overview}");
+    expect(detail).toContain("${this.deviceForgetAsk ? ask : gone ? goneNote : html`${overview}");
   });
 
   it("renames the device through the integration, from a button on its bar, for everyone", () => {

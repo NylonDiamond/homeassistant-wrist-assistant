@@ -49,7 +49,7 @@ import {
 import { renderPageRowPicture, renderStatusRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
 import { type BoardCell, type BoardColumn, type BoardDrag, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen, type ListView,
-  SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, renderBoard, renderViewSwitch } from "../library/board.js";
+  SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, noteViewPick, phoneView, renderBoard, renderViewSwitch } from "../library/board.js";
 import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
@@ -342,7 +342,7 @@ export class WaAllPages extends LitElement {
   /** Board or Cards, kept for each tab apart (`keptView`). A focused device
    * is always the board: its column is the focus. */
   private get view(): ListView {
-    return this.embedded || this.filterDevice() !== undefined ? "board" : keptView(this.kind).view;
+    return this.embedded || this.filterDevice() !== undefined ? "board" : phoneView(this.kind, keptView(this.kind).view);
   }
 
   /** Whether this tab is wide enough for big row pictures. */
@@ -378,6 +378,7 @@ export class WaAllPages extends LitElement {
 
   /** Board or Cards, remembered. Cards leaves a focused device. */
   private setView(view: ListView): void {
+    noteViewPick(this.kind, view);
     keepView(this.kind, { view });
     if (view === "cards" && this.filterDevice() !== undefined) this.setFocus(undefined);
     this.requestUpdate();

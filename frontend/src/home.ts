@@ -563,26 +563,33 @@ export const homeStyles = css`
   .hb-head h1 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.02em; }
   .hb-head .home-lead { font-size: 12px; line-height: 1.45; }
   .hb-head .home-scope { font-size: 11.5px; }
-  /* The household's state: a ring of every device, synced in green and
-     waiting in amber, its words, the waiting devices, then the four totals.
-     Lit green from its top left, or amber while anything waits. */
+  /* The household's state, small so the devices under it lead: a ring of
+     every device (synced green, waiting amber), its words on one line, and
+     the waiting devices folded under it until it is opened. Lit green from
+     its top left, or amber while anything waits. */
   .hb-sum {
     --c: var(--wa-green); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
     ${litOutline}
     border-width: 1px;
-    display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 14px; box-shadow: var(--home-lift);
+    display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 11px; box-shadow: var(--home-lift);
   }
   .hb-sum.on { --c: var(--wa-amber); }
-  .hb-sum-top { display: flex; align-items: center; gap: 12px; }
-  .hb-ring { flex: none; width: 44px; height: 44px; }
-  .hb-ring circle { fill: none; stroke-width: 4; }
+  .hb-sum-top { display: flex; align-items: center; gap: 10px; list-style: none; }
+  summary.hb-sum-top { cursor: pointer; border-radius: 8px; }
+  summary.hb-sum-top::-webkit-details-marker { display: none; }
+  summary.hb-sum-top:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .hb-sum-go { margin-left: auto; display: grid; color: var(--wa-muted); transition: transform .15s ease; }
+  .hb-sum-go svg.ui-icon { width: 12px; height: 12px; }
+  details.hb-sum[open] .hb-sum-go { transform: rotate(180deg); }
+  details.hb-sum > .home-title { padding: 6px 2px 0; font-size: 10px; color: var(--c); }
+  .hb-ring { flex: none; width: 26px; height: 26px; }
+  .hb-ring circle { fill: none; stroke-width: 5; }
   .hb-ring .track { stroke: var(--wa-line-strong); }
   .hb-ring .ok { stroke: var(--wa-green); }
   .hb-ring .wait { stroke: var(--wa-amber); }
-  .hb-sum-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-  .hb-sum-t b { font-size: 15px; font-weight: 500; letter-spacing: -.01em; }
-  .hb-sum-t .home-title { font-size: 10.5px; color: var(--c); }
-  .hb-sum-line { margin: 0; font-size: 12px; line-height: 1.45; color: var(--wa-label); }
+  .hb-sum-t { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .hb-sum-t b { font-size: 13px; font-weight: 500; letter-spacing: -.01em; }
+  .hb-sum-t span { font-size: 11px; color: var(--wa-muted); overflow-wrap: anywhere; }
   /* A waiting device: its name and what it waits for, opening it. */
   .hb-waits { display: flex; flex-direction: column; }
   button.hb-wait {
@@ -596,12 +603,6 @@ export const homeStyles = css`
   .hb-wait-t b { font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; }
   .hb-wait-t span { font-size: 11.5px; color: var(--wa-muted); overflow-wrap: anywhere; }
   button.hb-wait:hover .hb-wait-t b { text-decoration: underline; }
-  .hb-totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding-top: 10px; border-top: 1px solid var(--wa-line); }
-  .hb-total { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-  .hb-total b { font-size: 17px; font-weight: 400; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .hb-total b.ok { color: var(--wa-green); }
-  .hb-total b.wait { color: var(--wa-amber); }
-  .hb-total span { font-size: 10px; letter-spacing: .04em; color: var(--wa-muted); overflow-wrap: anywhere; }
   button.home-btn.hb-pair { width: 100%; height: 36px; justify-content: center; border-radius: 10px; }
   .hb-pair svg.ui-icon { color: var(--wa-green); }
   /* One person: their picture (or initial) ringed in grey (the colors are
@@ -698,11 +699,14 @@ export const homeStyles = css`
   .hb-acts .home-btn { height: 32px; border-radius: 9px; }
   button.home-btn.hb-remove { color: var(--error-color); background: transparent; border-color: color-mix(in srgb, var(--error-color) 50%, var(--wa-line)); }
   button.home-btn.hb-remove:hover { background: color-mix(in srgb, var(--error-color) 10%, transparent); }
-  /* The stage: the device standing in a soft light from above, on a floor
-     that gives back its reflection, lit along its edge in its device's
-     color. Two counts point at it from either side. */
+  /* The device at the top of its page, small, so its pages and the rest it
+     holds below are the page: a stage a hand wide beside its name, its sync
+     state and its two counts. The stage is the device standing in a soft
+     light from above, on a floor that gives back its reflection, lit along
+     its edge in its device's color. */
+  .hb-hero { display: flex; align-items: stretch; gap: 18px; min-width: 0; }
   .hb-stage {
-    position: relative; height: 380px; border-radius: 24px; overflow: hidden; box-sizing: border-box;
+    position: relative; flex: none; width: 190px; height: 190px; border-radius: 18px; overflow: hidden; box-sizing: border-box;
     border: 1px solid transparent;
     background:
       radial-gradient(46% 70% at 50% 0%, var(--wa-stage-light) 0%, transparent 80%) padding-box,
@@ -712,68 +716,43 @@ export const homeStyles = css`
     box-shadow: var(--home-lift);
   }
   .hb-floor {
-    position: absolute; left: 0; right: 0; bottom: 0; height: 96px;
+    position: absolute; left: 0; right: 0; bottom: 0; height: 42px;
     background: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 3%, transparent), transparent);
     border-top: 1px solid color-mix(in srgb, var(--wa-ink) 5%, transparent);
   }
-  .hb-device { position: absolute; left: 0; right: 0; top: 44px; display: flex; justify-content: center; }
+  .hb-device { position: absolute; left: 0; right: 0; top: 18px; display: flex; justify-content: center; }
   .hb-device svg.ha-art {
-    width: auto; height: 236px;
-    -webkit-box-reflect: below 4px linear-gradient(transparent 72%, var(--wa-stage-reflect));
+    width: auto; height: 128px;
+    -webkit-box-reflect: below 3px linear-gradient(transparent 72%, var(--wa-stage-reflect));
   }
-  .hb-badge {
-    --s: var(--wa-muted);
-    position: absolute; top: 16px; right: 16px; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px;
-    border-radius: 999px; font-size: 12px; font-weight: 500; color: var(--s);
-    background: color-mix(in srgb, var(--s) 10%, transparent); border: 1px solid color-mix(in srgb, var(--s) 35%, transparent);
-  }
-  .hb-badge.synced { --s: var(--wa-green); }
-  .hb-badge.waiting { --s: var(--wa-amber); }
-  .hb-badge.rejected { --s: var(--error-color); }
-  .hb-badge i { width: 6px; height: 6px; border-radius: 50%; background: var(--s); }
-  .hb-calls { position: absolute; inset: 0; pointer-events: none; }
+  /* The two counts, each a door to its page: a number and its word. */
+  .hb-calls { display: flex; flex-wrap: wrap; gap: 8px; }
   button.hb-call {
-    position: absolute; top: 132px; display: flex; align-items: center; gap: 10px; padding: 6px 8px; margin: -6px -8px;
-    border-radius: 10px; font: inherit; color: var(--wa-ink); background: transparent; border: 0; cursor: pointer; pointer-events: auto;
+    display: inline-flex; align-items: baseline; gap: 6px; height: 32px; box-sizing: border-box; padding: 0 12px;
+    border-radius: 9px; font: inherit; color: var(--wa-ink); cursor: pointer;
+    background: var(--home-card); border: 1px solid var(--wa-line-strong); box-shadow: var(--home-lift);
   }
-  button.hb-call:hover .hb-call-n span { color: var(--wa-ink); }
-  button.hb-call:hover .hb-call-line { width: 64px; }
+  button.hb-call:hover { background: var(--wa-hover); }
   button.hb-call:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .hb-call.l { right: calc(50% + var(--off)); }
-  .hb-call.r { left: calc(50% + var(--off)); }
-  .hb-call-n { display: flex; flex-direction: column; gap: 3px; }
-  .hb-call.l .hb-call-n { align-items: flex-end; }
-  .hb-call-n b { font-size: 28px; font-weight: 300; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .hb-call-n { display: inline-flex; align-items: baseline; gap: 6px; line-height: 30px; }
+  .hb-call-n b { font-size: 16px; font-weight: 400; font-variant-numeric: tabular-nums; }
   .hb-call-n b.none { color: var(--wa-faint); }
-  .hb-call-n span { font-size: 10.5px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--wa-muted); }
-  .hb-call-line { width: 56px; height: 1px; transition: width .2s ease; }
-  .hb-call.l .hb-call-line { background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--wa-ink) 30%, transparent)); }
-  .hb-call.r .hb-call-line { background: linear-gradient(90deg, color-mix(in srgb, var(--wa-ink) 30%, transparent), transparent); }
-  .hb-call i { width: 5px; height: 5px; border-radius: 50%; background: var(--c); }
-  .hb-call.r i { background: var(--wa-label); }
-  /* A big screen at normal zoom: the stage on the left, its name, sync state
-     and doors on the right, so the room holds the device instead of empty
-     space either side of one narrow column. */
+  .hb-call-n span { font-size: 12px; color: var(--wa-muted); }
+  button.hb-call:hover .hb-call-n span { color: var(--wa-ink); }
+  /* A big screen at normal zoom: the device a little bigger, and its pages
+     as wide as the room, so they fill it rather than one narrow column. */
   @container (min-width: 1400px) {
-    .hb-detail {
-      max-width: 2200px; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-      grid-template-areas: "bar bar" "stage info"; column-gap: 32px; row-gap: 18px; align-items: start;
-    }
+    .hb-detail { max-width: 2200px; }
     .hb-main > .home-welcome-slot { max-width: 2200px; }
-    .hb-bar { grid-area: bar; }
-    .hb-stage { grid-area: stage; position: sticky; top: 64px; height: 560px; }
-    .hb-info { grid-area: info; display: flex; flex-direction: column; gap: 18px; }
-    .hb-device { top: 64px; }
-    .hb-device svg.ha-art { height: 340px; }
-    button.hb-call { top: 190px; }
-    .hb-floor { height: 130px; }
-    .hb-detail .hb-doors { grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); margin-top: 0; }
-    .hb-detail a.hb-door, .hb-detail button.hb-door { min-height: 132px; }
+    .hb-stage { width: 220px; height: 220px; }
+    .hb-device svg.ha-art { height: 150px; }
   }
   @container (max-width: 620px) {
-    .hb-calls { display: none; }
-    .hb-stage { height: 320px; }
-    .hb-device svg.ha-art { height: 200px; }
+    .hb-hero { gap: 12px; }
+    .hb-stage { width: 112px; height: 132px; border-radius: 14px; }
+    .hb-device { top: 12px; }
+    .hb-device svg.ha-art { height: 92px; }
+    .hb-floor { height: 30px; }
   }
   /* The welcome, in a home with no devices yet: three numbered steps down
      the page, joined by a thin line. Install the app, pick the device on
@@ -806,7 +785,7 @@ export const homeStyles = css`
   /* Pick one: both devices on Home's lit stage, its edge plain grey. The one
      picked is drawn in full with one thin green arc turning slowly round it;
      the other is faint inside a dashed ring. */
-  .hb-stage.hw-stage { --c: var(--wa-line-strong); height: auto; display: flex; justify-content: center; padding: 28px 20px 30px; }
+  .hb-stage.hw-stage { --c: var(--wa-line-strong); width: auto; height: auto; border-radius: 24px; display: flex; justify-content: center; padding: 28px 20px 30px; }
   .hw-choices { position: relative; display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 24px 72px; }
   button.hw-choice {
     display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 0; margin: 0;
@@ -858,10 +837,10 @@ export const homeStyles = css`
     .hw-ghost-art { transform: scale(.5); }
     .hw-choices { flex-wrap: nowrap; gap: 14px; }
   }
-  /* Under the stage: its name and facts, the sync well, then its doors. */
-  .hb-info { display: flex; flex-direction: column; gap: 18px; }
-  .hb-name { display: flex; flex-direction: column; gap: 6px; padding: 4px 2px 0; min-width: 0; }
-  .hb-name h2 { margin: 0; font-size: 30px; font-weight: 500; letter-spacing: -.025em; line-height: 1.15; overflow-wrap: anywhere; }
+  /* Beside the stage: its name and facts, the sync well, then its counts. */
+  .hb-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+  .hb-name { display: flex; flex-direction: column; gap: 4px; padding: 0 2px; min-width: 0; }
+  .hb-name h2 { margin: 0; font-size: 24px; font-weight: 500; letter-spacing: -.02em; line-height: 1.15; overflow-wrap: anywhere; }
   .hb-facts { font-size: 13px; line-height: 1.45; color: var(--wa-muted); overflow-wrap: anywhere; }
   /* The sync state in a well lit in its color: a chip, its word and what it
      means, and when the device was last heard from. */
@@ -869,13 +848,13 @@ export const homeStyles = css`
     --c: var(--wa-muted); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
     ${litOutline}
     border-width: 1px;
-    display: flex; align-items: center; gap: 14px; padding: 13px 16px; border-radius: 14px;
+    display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 12px;
   }
   .hb-state.synced { --c: var(--wa-green); }
   .hb-state.waiting { --c: var(--wa-amber); }
   .hb-state.rejected { --c: var(--error-color); }
   .hb-state-chip {
-    width: 32px; height: 32px; flex: none; box-sizing: border-box; border-radius: 9px; display: grid; place-items: center;
+    width: 28px; height: 28px; flex: none; box-sizing: border-box; border-radius: 9px; display: grid; place-items: center;
     border: 1px solid var(--c); color: var(--c);
   }
   .hb-state-chip svg.ui-icon { width: 15px; height: 15px; }
@@ -885,7 +864,7 @@ export const homeStyles = css`
   .hb-seen { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
   .hb-seen span { font-size: 10px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--wa-faint); }
   .hb-seen b { font-size: 12.5px; font-weight: 400; color: var(--wa-label); }
-  .hb-info .home-title { padding: 6px 2px 0; color: var(--wa-muted); }
+  .hb-detail > .home-title { padding: 6px 2px 0; color: var(--wa-muted); }
   /* A door per page, each opening it on this device: a chip in the page's
      section hue, its name, how many it holds, and a line on what it is for. */
   .hb-doors { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(208px, 100%), 1fr)); gap: 10px; margin-top: -6px; }
@@ -987,7 +966,7 @@ export const homeStyles = css`
   @media (max-width: 720px) {
     .hb-side { max-width: none; border-right: 0; border-bottom: 1px solid var(--wa-line); }
     .hb-main { padding: 16px 12px 32px; }
-    .hb-name h2 { font-size: 24px; }
+    .hb-name h2 { font-size: 20px; }
   }
   @media (max-width: 640px) {
     .home-pad { padding: 14px 12px 32px; }

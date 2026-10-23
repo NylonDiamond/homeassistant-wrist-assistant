@@ -97,7 +97,8 @@ describe("Board or Cards", () => {
 
 describe("the panel's Complications board", () => {
   it("draws the board on the list page unless Cards is picked, and always on a focused device", () => {
-    expect(PANEL).toContain(`const board = focus !== undefined || this.compView === "board";`);
+    expect(PANEL).toContain(`const view = phoneView("complications", this.compView);`);
+    expect(PANEL).toContain(`const board = focus !== undefined || view === "board";`);
     expect(PANEL).toContain(`board ? this.renderCompBoard(focus) : this.renderPickerSurface("page")`);
   });
 

@@ -15,7 +15,7 @@ import { LibraryController } from "./library/store.js";
 import { libraryTicksStyles, renderTickAsk } from "./library/ticks.js";
 import type { IconProvider } from "./renderer.js";
 import { watchFrameStyles } from "./watch-frame.js";
-import { dropChange, inOrder, movedOrder } from "./watch-pages/all-pages-model.js";
+import { inOrder, movedOrder } from "./watch-pages/all-pages-model.js";
 import { changeDevicePicks, picksDirtyText } from "./watch-pages/all-pages-picks.js";
 import { picksIO } from "./watch-pages/all-pages-io.js";
 import { keptWatchPagesDraft } from "./watch-pages/kept.js";
@@ -53,9 +53,11 @@ export class WaHomeLineup extends LitElement {
   /** The device's name, for what a move or a remove says. */
   @property({ attribute: false }) deviceName = "";
 
-  /** The line being dragged, and the one it is over. */
-  @state() private dragged?: { kind: OrderedKind; id: string };
-  @state() private overId?: string;
+  /** The line being dragged: its kind, the order when it was picked up,
+   * the order it would land in now (the cards it passes move aside), and
+   * whether its slot has faded yet (after the browser drew the card it
+   * drags, so that picture is the card at full strength). */
+  @state() private drag?: { kind: OrderedKind; id: string; from: readonly string[]; order?: string[]; lifted: boolean };
   /** The order a drag asked for, shown until the read after its save. */
   @state() private orderAsked?: { kind: OrderedKind; ids: string[] };
   /** A move or a remove is on its way: nothing else starts. */
@@ -100,8 +102,16 @@ export class WaHomeLineup extends LitElement {
       tick: this.iconsTick,
       pageWidth: this.pageW,
       arrange: {
-        order: (kind) => (this.orderAsked?.kind === kind ? this.orderAsked.ids : undefined),
-        drag: (kind, pick, index, ids) => this.lineDrag(kind, pick, index, ids),
+        order: (kind) => (this.drag?.kind === kind && this.drag.order !== undefined ? this.drag.order
+          : this.orderAsked?.kind === kind ? this.orderAsked.ids : undefined),
+        // Only pages: their order is the order the device swipes them. A
+        // status page opens from a tile or a menu slot, so its order shows
+        // nowhere on the device.
+        drag: (kind, pick, index, ids) => (kind === "pages" ? this.lineDrag(kind, pick, index, ids) : undefined),
+        zone: (kind) => (kind === "pages" ? {
+          onOver: (e) => { if (this.drag?.kind === kind) e.preventDefault(); },
+          onDrop: (e) => { if (this.drag?.kind !== kind) return; e.preventDefault(); this.dropDrag(); },
+        } : undefined),
         remove: (kind, pick, next) => ({
           title: `Take ${pick.entry.name} off ${this.device}`,
           busy: this.busy !== undefined,
@@ -133,50 +143,101 @@ export class WaHomeLineup extends LitElement {
     </p>`;
   }
 
-  /** A line's drag in its kind's order: drop it on another line, or Alt and
-   * the arrow keys. Off while a change is on its way. */
+  /** A line's drag in its kind's order: the cards it passes move aside to
+   * show where it would land, and letting go there moves it; let go
+   * anywhere else and they slide back. Alt and the arrow keys move it a
+   * step. Off while a change is on its way. */
   private lineDrag(kind: OrderedKind, pick: LibraryPick, index: number, ids: readonly string[]): LineupDrag {
     const on = this.busy === undefined;
-    const dragging = this.dragged !== undefined && this.dragged.kind === kind;
-    const from = dragging ? ids.findIndex((id) => sameId(id, this.dragged!.id)) : -1;
-    const over = dragging && this.overId !== undefined && sameId(this.overId, pick.id) && from !== index;
-    const end = () => { this.dragged = undefined; this.overId = undefined; };
+    const now = this.drag;
     return {
       on,
-      dragging: dragging && sameId(this.dragged!.id, pick.id),
-      over,
-      after: over && from < index,
+      dragging: now !== undefined && now.kind === kind && now.lifted && sameId(now.id, pick.id),
       onStart: (e) => {
         if (!on) return;
-        this.dragged = { kind, id: pick.id };
+        this.drag = { kind, id: pick.id, from: [...ids], lifted: false };
         e.dataTransfer?.setData("text/plain", pick.id);
         if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+        requestAnimationFrame(() => {
+          if (this.drag !== undefined && sameId(this.drag.id, pick.id)) this.drag = { ...this.drag, lifted: true };
+        });
       },
       onOver: (e) => {
-        if (this.dragged?.kind !== kind) return;
+        const held = this.drag;
+        if (held?.kind !== kind) return;
         e.preventDefault();
-        if (this.overId !== pick.id) this.overId = pick.id;
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        if (sameId(held.id, pick.id)) return;
+        const at = ids.findIndex((id) => sameId(id, held.id));
+        if (at < 0) return;
+        // Into the place of the card it is over: past it going forward,
+        // before it going back. That card is then where the dragged one
+        // was, away from the pointer, so the two never swap back and forth.
+        const order = movedOrder(ids, held.id, at < index ? ids[index + 1] ?? null : pick.id);
+        if (order.every((id, i) => id === ids[i])) return;
+        this.flipFrom = this.linePlaces();
+        this.drag = { ...held, order };
       },
       onDrop: (e) => {
-        if (this.dragged?.kind !== kind) return;
+        if (this.drag?.kind !== kind) return;
         e.preventDefault();
-        const id = this.dragged.id;
-        end();
-        // The dragged line moves, not the one it lands on.
-        const change = dropChange(ids, id, pick.id);
-        if (change !== undefined) void this.move(kind, change, ids);
+        this.dropDrag();
       },
-      onEnd: end,
+      onEnd: () => {
+        if (this.drag === undefined) return;
+        // Let go outside the cards: they slide back.
+        this.flipFrom = this.linePlaces();
+        this.drag = undefined;
+      },
       onKey: (e) => {
         if (!e.altKey || !on) return;
         const back = e.key === "ArrowUp" || e.key === "ArrowLeft";
         const forth = e.key === "ArrowDown" || e.key === "ArrowRight";
         if (!back && !forth) return;
         e.preventDefault();
+        this.flipFrom = this.linePlaces();
         if (back && index > 0) void this.move(kind, { id: pick.id, before: ids[index - 1]! }, ids);
         if (forth && index < ids.length - 1) void this.move(kind, { id: pick.id, before: ids[index + 2] ?? null }, ids);
       },
     };
+  }
+
+  /** Let go over the cards: the order shown is the one saved. */
+  private dropDrag(): void {
+    const held = this.drag;
+    this.drag = undefined;
+    if (held?.order === undefined || held.order.every((id, i) => sameId(id, held.from[i]))) return;
+    const at = held.order.findIndex((id) => sameId(id, held.id));
+    void this.move(held.kind, { id: held.id, before: held.order[at + 1] ?? null }, held.from);
+  }
+
+  /** Where each page card is now, by its id, for `flip`. */
+  private flipFrom?: Map<string, DOMRect>;
+
+  private linePlaces(): Map<string, DOMRect> {
+    const places = new Map<string, DOMRect>();
+    for (const li of this.renderRoot.querySelectorAll<HTMLElement>(".hl-lines.strip > .hl-line")) {
+      places.set(li.dataset.line ?? "", li.getBoundingClientRect());
+    }
+    return places;
+  }
+
+  /** Slide each page card from where it was (`flipFrom`) to its new place,
+   * so a card moving aside is seen to move rather than to jump. */
+  private flip(): void {
+    const from = this.flipFrom;
+    this.flipFrom = undefined;
+    if (from === undefined || typeof window.matchMedia !== "function" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    for (const li of this.renderRoot.querySelectorAll<HTMLElement>(".hl-lines.strip > .hl-line")) {
+      const was = from.get(li.dataset.line ?? "");
+      if (was === undefined || typeof li.animate !== "function") continue;
+      for (const running of li.getAnimations()) running.cancel();
+      const place = li.getBoundingClientRect();
+      const dx = was.left - place.left;
+      const dy = was.top - place.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+      li.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 200, easing: "cubic-bezier(.2, .7, .2, 1)" });
+    }
   }
 
   /** Move a pick in the device's order: one save of its record, as the
@@ -284,6 +345,7 @@ export class WaHomeLineup extends LitElement {
   }
 
   protected override updated(): void {
+    this.flip();
     this.fitPictures();
   }
 
@@ -310,7 +372,9 @@ export type OrderedKind = "pages" | "status_pages";
 export interface LineupArrange {
   /** The order a drag asked for, shown until the read after its save. */
   order?: (kind: OrderedKind) => readonly string[] | undefined;
-  drag?: (kind: OrderedKind, pick: LibraryPick, index: number, ids: readonly string[]) => LineupDrag;
+  drag?: (kind: OrderedKind, pick: LibraryPick, index: number, ids: readonly string[]) => LineupDrag | undefined;
+  /** The list's own drop: a card let go in a gap between cards still lands. */
+  zone?: (kind: OrderedKind) => LineupGroup["zone"];
   /** `next` is the id after it, so an undo can put it back in its place. */
   remove?: (kind: OrderedKind, pick: LibraryPick, next: string | null) => LineupLine["remove"];
   under?: (kind: OrderedKind) => TemplateResult | undefined;
@@ -372,6 +436,7 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
     action: { label: "Edit", title: `Edit ${pick.entry.name}`, onClick: () => draw.onEdit("status_pages", pick.id) },
   }));
   const underPages = arrange?.under?.("pages");
+  const zonePages = arrange?.zone?.("pages");
   const underStatus = arrange?.under?.("status_pages");
   const units: MenuUnit[] = ["anywhere", "entity"];
   const menuLines = units.flatMap((unit): LineupLine[] => {
@@ -389,6 +454,7 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
       lines: pageLines, strip: true, empty: `No pages on this ${word} yet.`,
       change: { title: `Add, order and hide pages on this ${word}`, onClick: () => draw.onChange("pages") },
       ...(underPages === undefined ? {} : { under: underPages }),
+      ...(zonePages === undefined ? {} : { zone: zonePages }),
     },
     {
       key: "status_pages", title: "Status pages", icon: "checklist", hue: "var(--wa-hue-yellow)",
