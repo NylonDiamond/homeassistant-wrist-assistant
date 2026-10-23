@@ -79,7 +79,7 @@ def test_the_phone_keys_are_the_catalog_s_iphone_keys() -> None:
         if "iphone" in setting["devices"]:
             from_catalog |= _document_keys(setting)
     assert _const_set("PHONE_BEHAVIOR_KEYS") == from_catalog
-    assert len(from_catalog) == 36
+    assert len(from_catalog) == 32
 
 
 def test_no_watch_only_key_is_a_phone_key() -> None:

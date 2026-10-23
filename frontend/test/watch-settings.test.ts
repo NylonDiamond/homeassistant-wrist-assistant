@@ -187,12 +187,12 @@ describe("the catalog", () => {
 
   // The integration keeps only the `iphone` keys on a phone's settings, and
   // its own copy of that list is held to this file by a Python test.
-  it("says for every row which devices read it: the watch for all but the Page look, the iPhone for 36", () => {
+  it("says for every row which devices read it: the watch for all but the Page look, the iPhone for 32", () => {
     for (const s of settings) {
       expect(s.devices, s.key).toBeDefined();
       expect([["watch"], ["watch", "iphone"], ["iphone"]], s.key).toContainEqual([...s.devices!]);
     }
-    expect(settings.filter((s) => s.devices!.includes("iphone")).length).toBe(36);
+    expect(settings.filter((s) => s.devices!.includes("iphone")).length).toBe(32);
     expect(settings.filter((s) => !s.devices!.includes("watch")).map((s) => s.key)).toEqual(["phonePageLook"]);
     expect(
       settings
@@ -208,14 +208,25 @@ describe("the catalog", () => {
       "motionGestureActionsJSON",
       "motionGestureSensitivity",
       "motionGestureSensitivityLevel",
+      "pointControlShowHUD",
       "serverMode",
       "sliderCrownSensitivity",
+      "topSectionDoubleTapAction",
+      "topSectionDoubleTapSceneTargetId",
+      "topSectionDoubleTapScriptTargetId",
     ]);
   });
 
   it("hangs every iPhone row's showIf on another iPhone row", () => {
     for (const s of settings.filter((x) => x.showIf !== undefined && x.devices!.includes("iphone"))) {
       expect(byKey.get(s.showIf!.key)!.devices, s.key).toContain("iphone");
+    }
+  });
+
+  it("hangs every phoneShowIf on an iPhone row", () => {
+    for (const s of settings.filter((x) => x.phoneShowIf !== undefined)) {
+      expect(s.devices, s.key).toContain("iphone");
+      expect(byKey.get(s.phoneShowIf!.key)!.devices, s.key).toContain("iphone");
     }
   });
 

@@ -80,7 +80,7 @@
         },
         {
           "key": "topSectionDoubleTapAction",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch"],
           "type": "enum",
           "label": "Double-tap the page title",
           "help": "Tap the name at the top of a page twice. Switch home needs two or more homes on this watch.",
@@ -100,7 +100,7 @@
         },
         {
           "key": "topSectionDoubleTapSceneTargetId",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch"],
           "type": "entity",
           "domain": "scene",
           "label": "Scene",
@@ -110,7 +110,7 @@
         },
         {
           "key": "topSectionDoubleTapScriptTargetId",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch"],
           "type": "entity",
           "domain": "script",
           "label": "Script",
@@ -315,7 +315,8 @@
             {"value": "Dots", "label": "Dots"},
             {"value": "Dash", "label": "Dash"}
           ],
-          "showIf": {"key": "showPageIndicator", "equals": true}
+          "showIf": {"key": "showPageIndicator", "equals": true},
+          "phoneShowIf": {"key": "phonePageLook", "equals": "watch"}
         },
         {
           "key": "pageIndicatorOpacity",
@@ -329,7 +330,8 @@
             {"value": "Medium", "label": "Medium"},
             {"value": "Bright", "label": "Bright"}
           ],
-          "showIf": {"key": "showPageIndicator", "equals": true}
+          "showIf": {"key": "showPageIndicator", "equals": true},
+          "phoneShowIf": {"key": "phonePageLook", "equals": "watch"}
         },
         {
           "key": "pageIndicatorPosition",
@@ -341,7 +343,8 @@
             {"value": "Bottom", "label": "Bottom"},
             {"value": "Top", "label": "Top"}
           ],
-          "showIf": {"key": "showPageIndicator", "equals": true}
+          "showIf": {"key": "showPageIndicator", "equals": true},
+          "phoneShowIf": {"key": "phonePageLook", "equals": "watch"}
         },
         {
           "key": "pageIndicatorSize",
@@ -354,7 +357,8 @@
             {"value": "Medium", "label": "Medium"},
             {"value": "Large", "label": "Large"}
           ],
-          "showIf": {"key": "showPageIndicator", "equals": true}
+          "showIf": {"key": "showPageIndicator", "equals": true},
+          "phoneShowIf": {"key": "phonePageLook", "equals": "watch"}
         },
         {
           "key": "pageIndicatorColorHex",
@@ -363,7 +367,8 @@
           "label": "Dot color",
           "help": "White unless you pick another color.",
           "default": "#FFFFFF",
-          "showIf": {"key": "showPageIndicator", "equals": true}
+          "showIf": {"key": "showPageIndicator", "equals": true},
+          "phoneShowIf": {"key": "phonePageLook", "equals": "watch"}
         },
         {
           "key": "bottomEdgePageSwipeSensitivity",
@@ -415,7 +420,8 @@
             {"value": "Regular", "label": "Regular"},
             {"value": "Thick", "label": "Thick"},
             {"value": "Ultra Thick", "label": "Ultra thick (most solid)"}
-          ]
+          ],
+          "phoneShowIf": {"key": "phonePageLook", "equals": "watch"}
         }
       ]
     },
@@ -489,7 +495,7 @@
         },
         {
           "key": "pointControlShowHUD",
-          "devices": ["watch", "iphone"],
+          "devices": ["watch"],
           "type": "bool",
           "label": "Point Control label",
           "help": "While Point Control runs, show the name of the device you point at. You set up what to point at in Rooms.",

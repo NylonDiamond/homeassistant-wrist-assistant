@@ -19,7 +19,7 @@ import { NOT_FOR_IPHONE_TEXT, watchCommandError, watchPagesSaveNote } from "../s
 import { roomsKindFor, roomsSaveNote } from "../src/watch-rooms/model.js";
 import "../src/watch-rooms/rooms-editor.js";
 import { IPHONE_ROW_NONE_NOTE, type WatchRowInput, renderWatchRow, watchRowChoices, watchRowLinks } from "../src/watch-row.js";
-import { WATCH_SETTINGS_CATALOG, catalogFor, settingsTitle, watchAppDevices } from "../src/watch-settings.js";
+import { WATCH_SETTINGS_CATALOG, catalogFor, formValues, isShown, settingsTitle, watchAppDevices } from "../src/watch-settings.js";
 import { statusPagesSaveNote } from "../src/watch-status-pages/save-note.js";
 import { watchVoiceSaveNote } from "../src/watch-voice/save-note.js";
 import "../src/watch-voice/voice-editor.js";
@@ -95,7 +95,7 @@ describe("iPhone settings", () => {
     const sections = catalogFor("iphone");
     expect(sections.map((s) => s.id)).toEqual(["gestures", "navigation", "controls", "camera"]);
     const settings = sections.flatMap((s) => s.settings);
-    expect(settings).toHaveLength(36);
+    expect(settings).toHaveLength(32);
     expect(settings.every((s) => s.devices?.includes("iphone"))).toBe(true);
     // The Page look leads the iPhone's Pages card.
     expect(sections.find((s) => s.id === "navigation")!.settings[0]!.key).toBe("phonePageLook");
@@ -104,6 +104,28 @@ describe("iPhone settings", () => {
   it("leave a watch's page as it was, without the iPhone's Page look", () => {
     const withoutLook = WATCH_SETTINGS_CATALOG.sections.map((s) => ({ ...s, settings: s.settings.filter((x) => x.key !== "phonePageLook") }));
     expect(catalogFor("watch")).toEqual(withoutLook);
+  });
+
+  it("leave out the watch only title double tap and Point Control label", () => {
+    const keys = catalogFor("iphone").flatMap((s) => s.settings).map((s) => s.key);
+    for (const key of ["topSectionDoubleTapAction", "topSectionDoubleTapSceneTargetId", "topSectionDoubleTapScriptTargetId", "pointControlShowHUD"]) {
+      expect(keys).not.toContain(key);
+    }
+  });
+
+  it("show the dots' look and the popup background only with the Watch look", () => {
+    const rows = catalogFor("iphone").flatMap((s) => s.settings);
+    const watchLookOnly = ["pageIndicatorStyle", "pageIndicatorOpacity", "pageIndicatorPosition", "pageIndicatorSize", "pageIndicatorColorHex", "popupBackgroundMaterial"];
+    for (const key of watchLookOnly) {
+      const row = rows.find((s) => s.key === key)!;
+      expect(isShown(row, formValues({}))).toBe(false);
+      expect(isShown(row, formValues({ phonePageLook: "watch" }))).toBe(true);
+    }
+    // A watch draws them whatever the phone's look.
+    const watchRows = catalogFor("watch").flatMap((s) => s.settings);
+    for (const key of watchLookOnly) {
+      expect(isShown(watchRows.find((s) => s.key === key)!, formValues({}))).toBe(true);
+    }
   });
 
   it("count a setting that names no device as the watch's alone", () => {

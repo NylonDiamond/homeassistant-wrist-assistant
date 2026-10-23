@@ -85,6 +85,12 @@ export interface CatalogSetting {
   /** Hide the row unless another key, after defaults, holds this value, or
    * holds anything but `notEquals`. */
   showIf?: { key: string; equals?: SettingValue; notEquals?: SettingValue };
+  /** On an iPhone, also hide the row unless this holds: the page dots'
+   * look and the popup background, which only the phone's Watch look
+   * draws. `catalogFor("iphone")` turns it into `andShowIf`. */
+  phoneShowIf?: { key: string; equals?: SettingValue; notEquals?: SettingValue };
+  /** A second condition the row must also meet, set only by `catalogFor`. */
+  andShowIf?: { key: string; equals?: SettingValue; notEquals?: SettingValue };
 }
 
 export interface CatalogSection {
@@ -283,12 +289,18 @@ export function formValues(
 /** Whether a row is drawn, given the form's values after defaults. A row
  * whose `showIf` names a key the form has no value for stays hidden. */
 export function isShown(setting: CatalogSetting, values: ReadonlyMap<string, SettingValue>): boolean {
-  const showIf = setting.showIf;
-  if (showIf === undefined) return true;
-  if (!values.has(showIf.key)) return false;
-  const value = values.get(showIf.key);
-  if (showIf.notEquals !== undefined) return !sameValue(value, showIf.notEquals);
-  return sameValue(value, showIf.equals);
+  return conditionHolds(setting.showIf, values) && conditionHolds(setting.andShowIf, values);
+}
+
+function conditionHolds(
+  condition: CatalogSetting["showIf"],
+  values: ReadonlyMap<string, SettingValue>,
+): boolean {
+  if (condition === undefined) return true;
+  if (!values.has(condition.key)) return false;
+  const value = values.get(condition.key);
+  if (condition.notEquals !== undefined) return !sameValue(value, condition.notEquals);
+  return sameValue(value, condition.equals);
 }
 
 /** A value as it is kept: a color as `#RRGGBB`, a list of domains sorted. */
@@ -589,10 +601,16 @@ export function settingsTitle(device: SettingDevice): string {
 
 /** The catalog's sections as one device reads them: only the settings whose
  * `devices` names it, and no section left empty. A setting that names no
- * device is the watch's alone. */
+ * device is the watch's alone. On an iPhone a row's `phoneShowIf` becomes
+ * a second condition it must meet (`andShowIf`). */
 export function catalogFor(device: SettingDevice, catalog: WatchSettingsCatalog = WATCH_SETTINGS_CATALOG): CatalogSection[] {
+  const forDevice = (s: CatalogSetting): CatalogSetting =>
+    device === "iphone" && s.phoneShowIf !== undefined ? { ...s, andShowIf: s.phoneShowIf } : s;
   return catalog.sections
-    .map((section) => ({ ...section, settings: section.settings.filter((s) => (s.devices ?? ["watch"]).includes(device)) }))
+    .map((section) => ({
+      ...section,
+      settings: section.settings.filter((s) => (s.devices ?? ["watch"]).includes(device)).map(forDevice),
+    }))
     .filter((section) => section.settings.length > 0);
 }
 
