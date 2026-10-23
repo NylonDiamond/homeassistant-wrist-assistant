@@ -15,7 +15,6 @@ import {
   dropAllWatchMenus,
   forgetWatchMenusDraft,
   keptWatchMenusDraft,
-  newWatchMenusDraft,
   saveWatchMenusDraft,
   takeWatchMenusRecord,
 } from "../src/watch-menus/draft.js";
@@ -27,7 +26,6 @@ import {
   scrubWatchMenuOrphanTriggers,
   setWatchMenuSlotAction,
   setWatchMenuStyle,
-  watchMenusDefaults,
 } from "../src/watch-menus/model.js";
 import { watchMenusReplacedText, watchMenusSaveNote } from "../src/watch-menus/save-note.js";
 
@@ -282,106 +280,7 @@ describe("the kept drafts", () => {
   });
 });
 
-describe("no record: a new watch opens ready", () => {
-  it("opens on the defaults at revision 0, unsaved and not dirty", () => {
-    dropAllWatchMenus();
-    const draft = newWatchMenusDraft("n1");
-    expect(draft.revision).toBe(0);
-    expect(draft.document).toEqual(DEFAULTS);
-    expect(draft.document).toEqual(watchMenusDefaults());
-    expect(draft.dirty).toBe(false);
-    expect(anyWatchMenusDirty()).toBe(false);
-    expect(newWatchMenusDraft("n1")).toBe(draft);
-    expect(keptWatchMenusDraft("n1")).toBe(draft);
-    dropAllWatchMenus();
-  });
-
-  it("counts as unsaved only after a change, and Discard goes back to the defaults", () => {
-    dropAllWatchMenus();
-    const draft = newWatchMenusDraft("n2");
-    draft.apply(style(draft.document, "showIconBubble", true));
-    expect(anyWatchMenusDirty()).toBe(true);
-    expect(draft.discard()).toBe(true);
-    expect(draft.document).toEqual(DEFAULTS);
-    expect(draft.dirty).toBe(false);
-    dropAllWatchMenus();
-  });
-
-  it("makes the record with its first save, a save over revision 0", async () => {
-    dropAllWatchMenus();
-    const draft = newWatchMenusDraft("n3");
-    draft.apply(style(draft.document, "showIconBubble", true));
-    const calls: [number, MenusDocument][] = [];
-    const result = await saveWatchMenusDraft(draft, {
-      save: async (base, document) => { calls.push([base, document]); return { revision: 1 }; },
-      fetch: async () => { throw new Error("not read"); },
-    });
-    expect(result).toMatchObject({ ok: true, revision: 1, merged: false });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]![0]).toBe(0);
-    expect(calls[0]![1]).toEqual(style(DEFAULTS, "showIconBubble", true));
-    expect(draft.revision).toBe(1);
-    expect(draft.dirty).toBe(false);
-    dropAllWatchMenus();
-  });
-
-  it("merges onto a record that came meanwhile, as any conflict", async () => {
-    dropAllWatchMenus();
-    const draft = newWatchMenusDraft("n4");
-    draft.apply(style(draft.document, "showIconBubble", true));
-    const theirs = switcher(DEFAULTS, "selectedScale", 1.4);
-    const bases: number[] = [];
-    const result = await saveWatchMenusDraft(draft, {
-      save: async (base) => {
-        bases.push(base);
-        if (base === 0) throw refusal("conflict");
-        return { revision: 4 };
-      },
-      fetch: async () => ({ revision: 3, document: theirs }),
-    });
-    expect(bases).toEqual([0, 3]);
-    expect(result).toMatchObject({ ok: true, revision: 4, merged: true });
-    expect(draft.document).toEqual(style(theirs, "showIconBubble", true));
-    dropAllWatchMenus();
-  });
-
-  it("refuses a first save on a watch that is not paired as no_record", async () => {
-    dropAllWatchMenus();
-    const draft = newWatchMenusDraft("n5");
-    draft.apply(style(draft.document, "showIconBubble", true));
-    const result = await saveWatchMenusDraft(draft, {
-      save: async () => { throw refusal("no_record"); },
-      fetch: async () => { throw new Error("not read"); },
-    });
-    expect(result).toMatchObject({ ok: false, code: "no_record" });
-    expect(draft.dirty).toBe(true);
-    dropAllWatchMenus();
-  });
-
-  it("moves a kept draft from an earlier record onto the defaults, its edits kept", () => {
-    dropAllWatchMenus();
-    const old = takeWatchMenusRecord("n6", DEFAULTS, 7).draft;
-    old.apply(style(old.document, "showIconBubble", true));
-    const fresh = newWatchMenusDraft("n6");
-    expect(fresh).toBe(old);
-    expect(fresh.revision).toBe(0);
-    expect(fresh.document).toEqual(style(DEFAULTS, "showIconBubble", true));
-    expect(fresh.dirty).toBe(true);
-    dropAllWatchMenus();
-  });
-
-  it("takes the record when one arrives, keeping the edits on top", () => {
-    dropAllWatchMenus();
-    const draft = newWatchMenusDraft("n7");
-    draft.apply(style(draft.document, "showIconBubble", true));
-    const theirs = switcher(DEFAULTS, "selectedScale", 1.4);
-    const taken = takeWatchMenusRecord("n7", theirs, 2);
-    expect(taken.draft).toBe(draft);
-    expect(taken.mergedIntoEdits).toBe(true);
-    expect(draft.revision).toBe(2);
-    expect(draft.document).toEqual(style(theirs, "showIconBubble", true));
-    dropAllWatchMenus();
-  });
+describe("no record: the words", () => {
 
   it("says the wait's title in plain words, with no iPhone switch", () => {
     expect(WATCH_MENUS_NO_RECORD_TITLE).toBe("No menus from this watch yet.");

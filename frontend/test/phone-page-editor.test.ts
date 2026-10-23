@@ -1,15 +1,16 @@
-// The page editor on an iPhone, against a stand-in Home Assistant that
-// records every command: the empty editor with Add page, the delete question's
-// room lines, the stage's label, and the phone across homes with and without
-// phone pages. The library's parts of the editor (ticks, Not on this iPhone,
-// the delete choices) are `library-page-editor.test.ts`.
+// The page editor previewing a library page on an iPhone, against a stand-in
+// Home Assistant that records every command: the stage's label and look, the
+// page's cards naming the iPhone, and the phone among the devices to preview
+// on, on a home with and without phone pages. The library's parts of the
+// editor (ticks, unticks) are `library-page-editor.test.ts`.
 
 import { describe, expect, it } from "vitest";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
-import { forgetWatchPagesDraft, keptWatchPagesDraft, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
+import { libraryDraftKey } from "../src/library/item-mode.js";
+import { forgetWatchPagesDraft, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { JsonObject, WatchPagesDocument } from "../src/watch-pages/model.js";
-import { PHONE_FRAME_TEXT, PHONE_PAGES_EMPTY_TEXT } from "../src/watch-pages/page-editor.js";
+import { PHONE_FRAME_TEXT } from "../src/watch-pages/page-editor.js";
 
 const flat = (v: unknown): string => {
   if (Array.isArray(v)) return v.map(flat).join("");
@@ -48,6 +49,9 @@ const owner = (o: Partial<OwnerSummary>): OwnerSummary => ({
 
 let made = 0;
 
+/** The id of the one page a library page's document holds. */
+const watchPageIdOf = (pages: WatchPagesDocument): string => ((pages.pages as JsonObject[])[0]!.id as string);
+
 /** A stand-in Home Assistant: records by `owner/kind`, every command sent,
  * and saves that check their base revision as the store does. An integration
  * with no library: `library/summary` is an unknown command. */
@@ -84,9 +88,10 @@ function home(records: Record<string, JsonObject>) {
   return { hass, held, sent };
 }
 
-/** The page editor on the home's iPhone, in the shell with phone pages, its
- * pages record as given (none for revision 0). */
-function phoneEditor(pages: WatchPagesDocument | undefined, records: Record<string, JsonObject> = {}, phones = true) {
+/** The page editor on a library page, `pages` its document, previewed on the
+ * home's iPhone (Preview on), on a home with phone pages unless `phones` is
+ * false. */
+function phoneEditor(pages: WatchPagesDocument, records: Record<string, JsonObject> = {}, phones = true) {
   const n = ++made;
   const watch = `ce-w1-${n}`;
   const phone = `ce-p1-${n}`;
@@ -101,20 +106,22 @@ function phoneEditor(pages: WatchPagesDocument | undefined, records: Record<stri
     [`${watch}/behavior`]: { roomQuickJumpFallbackPageId: HALL, longPressDuration: 0.5 },
   };
   for (const [k, v] of Object.entries(records)) all[k.replace("PHONE", phone)] = v;
-  if (pages !== undefined) all[`${phone}/pages`] = pages as JsonObject;
   const ha = home(all);
   const Ctor = customElements.get("wa-page-editor") as unknown as new () => Record<string, unknown>;
   const el = new Ctor();
   el.hass = ha.hass;
   el.owners = owners;
   el.phones = phones;
-  el.shellOwnsWatch = true;
+  const ref = { kind: "pages" as const, id: watchPageIdOf(pages) };
+  el.libraryItem = ref;
+  // As `followLibraryItem` leaves it once it opened the item on an iPhone.
+  el.openedItem = ref;
+  el.previewKind = "iphone";
   el.watchId = phone;
-  forgetWatchPagesDraft(phone);
-  el.record = (pages === undefined
-    ? { kind: "pages", revision: 0, hash: null, updated_at: null, updated_by: null, delivered_revision: 0, delivered_at: null }
-    : { kind: "pages", revision: 4, hash: null, updated_at: null, updated_by: "panel", delivered_revision: 4, delivered_at: null, document: pages }) as unknown as WatchConfigRecord;
-  if (pages !== undefined) takeWatchPagesRecord(phone, pages, 4);
+  const key = libraryDraftKey(ref);
+  forgetWatchPagesDraft(key);
+  el.record = { kind: "pages", revision: 4, hash: null, updated_at: null, updated_by: null, delivered_revision: 0, delivered_at: null, document: pages } as unknown as WatchConfigRecord;
+  takeWatchPagesRecord(key, pages, 4);
   el.renderInspector = () => "";
   // Never connected: nothing is drawn into a shadow root to look in.
   el.renderRoot = { activeElement: null, querySelector: () => null };
@@ -127,70 +134,6 @@ function phoneEditor(pages: WatchPagesDocument | undefined, records: Record<stri
     whole: () => flat(call("render")),
   };
 }
-
-/** Wait for the stand-in's answers to land. */
-const settle = () => new Promise((r) => setTimeout(r, 0));
-
-describe("an iPhone with no pages", () => {
-  it("shows an empty editor with Add page, never the watch's start, and no Add all watch pages", () => {
-    const { body } = phoneEditor(undefined);
-    const text = body();
-    expect(text).toContain("No pages on this iPhone yet.");
-    expect(text).toContain(PHONE_PAGES_EMPTY_TEXT);
-    expect(PHONE_PAGES_EMPTY_TEXT).not.toContain("linked");
-    expect(text).toMatch(/pe-add-first[\s\S]*Add page/);
-    expect(text).not.toContain("Add all watch pages");
-    expect(text).not.toContain("Copy from watch");
-    expect(text).not.toContain("Start with an empty page");
-    expect(text).not.toContain("No pages from this watch yet.");
-  });
-
-  it("shows the same once a record lists no pages, with the foot bar for its earlier saves", () => {
-    const { el, body, whole } = phoneEditor({ schemaVersion: 1, pages: [] });
-    const text = body();
-    expect(text).toContain("No pages on this iPhone yet.");
-    expect(text).toContain("History");
-    el.topMenuOpen = true;
-    expect(whole()).not.toContain("Add all watch pages");
-  });
-
-  it("adds a first page from Add page in a record that lists none, as one undo step", () => {
-    const { el, phone, call } = phoneEditor({ schemaVersion: 1, pages: [] });
-    call("addPage");
-    const draft = keptWatchPagesDraft(phone)!;
-    expect((draft.document.pages as unknown[]).length).toBe(1);
-    expect(draft.canUndo).toBe(true);
-    expect(el.renaming).toBeDefined();
-  });
-
-  it("is not how a watch with no pages reads", () => {
-    const { el, watch, owners, call } = phoneEditor(undefined);
-    el.watchId = watch;
-    const text = flat(call("renderBody", owners));
-    // A watch with no pages opens ready on one empty page.
-    expect(text).toContain("pe-layout");
-    expect(text).not.toContain("No pages on this iPhone yet.");
-  });
-});
-
-describe("deleting a page on an iPhone", () => {
-  it("reads the phone's rooms record and lists the rooms that open the page", async () => {
-    const mine: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: U(90), name: "Mine", items: [] }] };
-    const rooms = { schemaVersion: 1, roomQuickJumpFallbackPageId: U(90), roomQuickJumpMappings: { kitchen: U(90) } };
-    const { el, phone, ha, call } = phoneEditor(mine, { "PHONE/rooms": rooms });
-    call("askDelete", U(90));
-    await settle();
-    const gets = ha.sent.filter((m) => (m.type as string).endsWith("watch_config/get") && m.owner_watch_id === phone).map((m) => m.kind);
-    expect(gets).toContain("rooms");
-    expect(gets).not.toContain("behavior");
-    expect(el.deleteAsk).toMatchObject({ roomsKind: "rooms", behaviorState: "ready", behavior: rooms });
-    const text = flat(call("renderDeleteAsk", el.deleteAsk, mine));
-    expect(text).toContain("This home's rooms name this page for room quick jump:");
-    expect(text).toContain("The page it opens when no room matches");
-    expect(text).toContain("The page for <b>kitchen</b>");
-    expect(text).toContain("After the delete the iPhone opens another page there instead.");
-  });
-});
 
 describe("the stage on an iPhone", () => {
   it("draws an iPhone, named as the iPhone 17 Pro it is drawn as", () => {
@@ -245,29 +188,26 @@ describe("the page's cards on an iPhone", () => {
 });
 
 describe("the iPhone across homes", () => {
-  it("is listed and edited on a home with phone pages, and gone on one without", () => {
-    const on = phoneEditor(undefined, {}, true);
+  const mine: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: U(90), name: "Mine", items: [] }] };
+
+  it("is a device to preview on with phone pages, and not on a home without", () => {
+    const on = phoneEditor(mine, {}, true);
     expect((on.el.watches as OwnerSummary[]).map((o) => o.owner_watch_id)).toEqual([on.watch, on.phone]);
-    expect(on.el.onPhone).toBe(true);
     // The same phone on a home whose integration has no phone pages: not
-    // listed, and its id no longer makes this an iPhone editor.
-    const off = phoneEditor(undefined, {}, false);
+    // listed.
+    const off = phoneEditor(mine, {}, false);
     expect((off.el.watches as OwnerSummary[]).map((o) => o.owner_watch_id)).toEqual([off.watch]);
-    expect(off.el.onPhone).toBe(false);
-    expect(flat(off.call("renderBody", off.owners))).not.toContain("No pages on this iPhone yet.");
   });
 
   it("follows a home switch: another home's device list, with or without its phone", () => {
-    const { el, phone } = phoneEditor(undefined);
-    expect(el.onPhone).toBe(true);
+    const { el, phone } = phoneEditor(mine);
     // The next home lists only a watch, and keeps no phone pages.
     el.owners = [owner({ owner_watch_id: "other-home-watch", device_name: "Watch" })];
     el.phones = false;
-    expect(el.onPhone).toBe(false);
     expect((el.watches as OwnerSummary[]).map((o) => o.owner_watch_id)).toEqual(["other-home-watch"]);
     // And back on a home that lists the same phone with phone pages.
     el.owners = [owner({ owner_watch_id: "w9" }), owner({ owner_watch_id: phone, device_kind: "iphone", phone_pages: true })];
     el.phones = true;
-    expect(el.onPhone).toBe(true);
+    expect((el.watches as OwnerSummary[]).map((o) => o.owner_watch_id)).toEqual(["w9", phone]);
   });
 });

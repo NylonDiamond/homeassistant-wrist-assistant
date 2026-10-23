@@ -32,10 +32,9 @@ import {
   restMenus,
   shownMenus,
 } from "../src/watch-menus/all-menus-model.js";
-import { askWatchMenu, dropAllWatchMenus, takeWatchMenuAsk } from "../src/watch-menus/draft.js";
 import { shownMenu, showMenuSettings, selectedMenuSlot } from "../src/watch-menus/menu-view.js";
 import { type MenusDocument, watchMenusDefaults } from "../src/watch-menus/model.js";
-import { ALL_FILTER, libraryEditTitle } from "../src/watch-pages/all-pages-model.js";
+import { libraryEditTitle } from "../src/watch-pages/all-pages-model.js";
 import { CHEN, CHEN_MENU, DEVICES, HOME_MENU, JESSE, PHONE, QUICK, SPARE, summary } from "./library-fixture.js";
 import { fakeHome, standUp } from "./library-tab-fake.js";
 
@@ -55,7 +54,7 @@ describe("the Menus tab's cards", () => {
 
   it("keep both sections when one has no menu", () => {
     // "chen" finds Chen's menu by name, and the Entity quick menu Chen Watch uses.
-    expect(menuSections(shownMenus(lib(), "chen", "all", DEVICES)).map((s) => s.menus.map((m) => m.id))).toEqual([[CHEN_MENU], [QUICK]]);
+    expect(menuSections(shownMenus(lib(), "chen", DEVICES)).map((s) => s.menus.map((m) => m.id))).toEqual([[CHEN_MENU], [QUICK]]);
     expect(menuSections(shownMenus(lib(), "home")).map((s) => s.menus.length)).toEqual([1, 0]);
     expect(menuSections([]).map((s) => s.unit)).toEqual(["anywhere", "entity"]);
   });
@@ -66,17 +65,14 @@ describe("the Menus tab's cards", () => {
     expect(menuDetail(full)).toMatch(/^\d+ slots$/);
   });
 
-  it("are found by the menu's name or a device that uses it, and kept to one kind of device", () => {
+  it("are found by the menu's name or a device that uses it", () => {
     expect(shownMenus(lib(), "home").map((m) => m.id)).toEqual([HOME_MENU]);
-    expect(shownMenus(lib(), "iphone 15", "all", DEVICES).map((m) => m.id)).toEqual([HOME_MENU, QUICK]);
-    expect(shownMenus(lib(), "", "iphone", DEVICES).map((m) => m.id)).toEqual([HOME_MENU, QUICK]);
+    expect(shownMenus(lib(), "iphone 15", DEVICES).map((m) => m.id)).toEqual([HOME_MENU, QUICK]);
   });
 
-  it("open on the focused device when it uses the menu, else the first watch", () => {
-    expect(openMenuDevice(menu(HOME_MENU), PHONE, "all", DEVICES)?.ownerId).toBe(PHONE);
-    expect(openMenuDevice(menu(HOME_MENU), CHEN, "all", DEVICES)?.ownerId).toBe(JESSE);
-    expect(openMenuDevice(menu(HOME_MENU), ALL_FILTER, "iphone", DEVICES)?.ownerId).toBe(PHONE);
-    expect(openMenuDevice(menu(SPARE), ALL_FILTER, "all", DEVICES)).toBeUndefined();
+  it("draw their picture for the first watch that uses the menu, else the first device", () => {
+    expect(openMenuDevice(menu(HOME_MENU), DEVICES)?.ownerId).toBe(JESSE);
+    expect(openMenuDevice(menu(SPARE), DEVICES)).toBeUndefined();
   });
 });
 
@@ -212,7 +208,6 @@ describe("the Menus tab", () => {
     t.call("open", t.libNow().menus.find((m) => m.id === SPARE));
     expect(t.opened).toHaveLength(0);
     expect(t.library).toEqual([QUICK, SPARE]);
-    expect(takeWatchMenuAsk(CHEN)).toBeUndefined();
     expect(t.whole()).not.toContain(" in the library");
     expect(t.whole()).not.toContain(" on Chen Watch\"");
     show(t, "board", CHEN);
@@ -363,14 +358,6 @@ describe("the Menus tab", () => {
 });
 
 describe("opening a card in the menu editor", () => {
-  it("asks once per device, and a dropped draft set drops the ask", () => {
-    askWatchMenu("watch-a", "entity");
-    expect(takeWatchMenuAsk("watch-a")).toBe("entity");
-    expect(takeWatchMenuAsk("watch-a")).toBeUndefined();
-    askWatchMenu("watch-b", "anywhere");
-    dropAllWatchMenus();
-    expect(takeWatchMenuAsk("watch-b")).toBeUndefined();
-  });
 
   it("shows the menu on its own settings, letting go of a picked slot", () => {
     const slotId = (DEFAULTS.quickAction as { slots: { id: string }[] }).slots[0]!.id;

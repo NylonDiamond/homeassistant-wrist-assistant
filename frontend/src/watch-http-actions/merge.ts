@@ -3,8 +3,7 @@
 //
 // The grain is the document's top-level keys, each one value, except the
 // two lists: `actions`, matched by `id`, and `globalVariables`, matched by
-// `key`. The rule for each list is the Control Center list's
-// (`watch-control-center/merge.ts`), with the draft as the local side:
+// `key`. The rule for each list, with the draft as the local side:
 // - An element both sides hold is local's whole when local changed it since
 //   the base (one the base has none of counts as changed), else the
 //   server's whole. Its keys are never mixed: an action's URL, headers and

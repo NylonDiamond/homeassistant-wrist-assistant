@@ -1,21 +1,18 @@
-// The six watch screens that follow a watch, when the panel's Watch app row
-// owns the watch (`shellOwnsWatch`): the bar leaves out the screen's own
-// watch picker, the way back to complications and the links to sibling
-// screens, and the screen follows the watch the panel hands it. Left off,
-// every bar is as it was, which the screens' own bar tests hold. The seventh,
-// HTTP actions, is shared by every watch: it never has a picker or a way
-// back, and follows no watch.
+// The two watch screens of a device's own that follow a watch, Voice and
+// Rooms, when the panel's device row owns the watch (`shellOwnsWatch`): the
+// bar leaves out the screen's own watch picker, the way back to
+// complications and the links to sibling screens, and the screen follows the
+// watch the panel hands it. Left off, every bar is as it was, which the
+// screens' own bar tests hold. HTTP actions is shared by every watch: it
+// never has a picker or a way back, and follows no watch. Pages, status
+// pages and menus open in the one editor, with no device of their own.
 
 import { html } from "lit";
 import { describe, expect, it } from "vitest";
 
 import type { HassLike, OwnerSummary } from "../src/ha-api.js";
-import "../src/watch-control-center/control-center-editor.js";
 import "../src/watch-http-actions/http-actions-editor.js";
-import "../src/watch-menus/menu-editor.js";
-import "../src/watch-pages/page-editor.js";
 import "../src/watch-rooms/rooms-editor.js";
-import "../src/watch-status-pages/status-pages-editor.js";
 import "../src/watch-voice/voice-editor.js";
 
 const flat = (v: unknown): string => {
@@ -40,12 +37,10 @@ function barOf(text: string): string {
   return text.slice(at);
 }
 
+// The page editor is no longer one: it edits one library page, and follows
+// no watch.
 const TAGS = [
-  "wa-page-editor",
-  "wa-menu-editor",
   "wa-voice-editor",
-  "wa-status-pages-editor",
-  "wa-control-center-editor",
   "wa-rooms-editor",
 ] as const;
 
@@ -93,13 +88,6 @@ describe("a watch screen's bar", () => {
       expect(shell).not.toMatch(/-watch-picker/);
     });
   }
-
-  it("leaves out Pages' link to Menus and Menus' link to Pages when the shell owns the watch", () => {
-    expect(editor("wa-page-editor", false).bar()).toContain(`class="tb-btn tb-menus"`);
-    expect(editor("wa-page-editor", true).bar()).not.toContain("tb-menus");
-    expect(editor("wa-menu-editor", false).bar()).toContain(`class="tb-btn tb-pages"`);
-    expect(editor("wa-menu-editor", true).bar()).not.toContain("tb-pages");
-  });
 
   for (const tag of TAGS) {
     it(`${tag}: has no ? of its own, in or out of the shell: the panel's Help is the one help`, () => {

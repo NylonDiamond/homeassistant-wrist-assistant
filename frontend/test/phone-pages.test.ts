@@ -12,11 +12,7 @@ import type { HassLike, OwnerSummary } from "../src/ha-api.js";
 import { moveKindMatches } from "../src/layouts.js";
 import { PHONE_PAGES_CAPABILITY, hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "../src/phone-pages.js";
 import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN, screenTakesPhone } from "../src/shell.js";
-import "../src/watch-control-center/control-center-editor.js";
-import "../src/watch-menus/menu-editor.js";
-import "../src/watch-pages/page-editor.js";
 import { IPHONE_PICK_KEY, WATCH_PICK_KEY, iphoneRouteOwner, loadWatchPick, resolveWatchPick, saveWatchPick } from "../src/watch-pick.js";
-import { controlCenterSaveNote } from "../src/watch-control-center/save-note.js";
 import { httpActionsSaveNote } from "../src/watch-http-actions/save-note.js";
 import { watchMenusSaveNote } from "../src/watch-menus/save-note.js";
 import { NOT_FOR_IPHONE_TEXT, watchCommandError, watchPagesSaveNote } from "../src/watch-pages/save-note.js";
@@ -25,7 +21,6 @@ import "../src/watch-rooms/rooms-editor.js";
 import { IPHONE_ROW_NONE_NOTE, type WatchRowInput, renderWatchRow, watchRowChoices, watchRowLinks } from "../src/watch-row.js";
 import { WATCH_SETTINGS_CATALOG, catalogFor, settingsTitle, watchAppDevices } from "../src/watch-settings.js";
 import { statusPagesSaveNote } from "../src/watch-status-pages/save-note.js";
-import "../src/watch-status-pages/status-pages-editor.js";
 import { watchVoiceSaveNote } from "../src/watch-voice/save-note.js";
 import "../src/watch-voice/voice-editor.js";
 
@@ -355,7 +350,8 @@ describe("the screens a phone has", () => {
     return { opened, phone: owners[1]!.owner_watch_id };
   }
 
-  for (const tag of ["wa-page-editor", "wa-menu-editor", "wa-status-pages-editor", "wa-rooms-editor"]) {
+  // The page editor edits one library page and follows no device.
+  for (const tag of ["wa-rooms-editor"]) {
     it(`${tag}: opens the phone it is handed with phone pages, and stays on the watch without`, () => {
       const on = editor(tag, true);
       expect(on.opened).toEqual([on.phone]);
@@ -363,12 +359,10 @@ describe("the screens a phone has", () => {
     });
   }
 
-  for (const tag of ["wa-control-center-editor", "wa-voice-editor"]) {
-    it(`${tag}: takes no phone at all`, () => {
-      const el = new (customElements.get(tag) as unknown as new () => Record<string, unknown>)();
-      expect("phones" in el).toBe(false);
-    });
-  }
+  it("wa-voice-editor: takes no phone at all", () => {
+    const el = new (customElements.get("wa-voice-editor") as unknown as new () => Record<string, unknown>)();
+    expect("phones" in el).toBe(false);
+  });
 
   it("keeps a phone's rooms in its own rooms record, on every home", () => {
     expect(roomsKindFor({ device_kind: "iphone" })).toBe("rooms");
@@ -398,7 +392,6 @@ describe("a refusal as not_for_iphone", () => {
       watchPagesSaveNote(failed),
       watchMenusSaveNote(failed),
       statusPagesSaveNote(failed),
-      controlCenterSaveNote(failed),
       watchVoiceSaveNote(failed),
       httpActionsSaveNote(failed),
       roomsSaveNote({ ok: false, ...refused }, "rooms"),

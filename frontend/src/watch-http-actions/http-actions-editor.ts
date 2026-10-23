@@ -9,8 +9,7 @@
 // gutter, and one main pane with the picked action's request over its
 // response, or the Globals table. The views are `view.ts`.
 //
-// The host pattern of the Control Center editor
-// (`watch-control-center/control-center-editor.ts`): the library read with
+// The host pattern: the library read with
 // `http_actions/get` and kept as raw JSON in a draft (`draft.ts`) with undo
 // and redo, a save through `http_actions/save` that merges by action and by
 // global when the library changed somewhere else, the leave guard, and the

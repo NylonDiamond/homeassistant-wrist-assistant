@@ -1,8 +1,8 @@
 // The look the tabs that list things across devices share: the Pages and
 // Status pages tabs (`all-pages.ts`) and the Menus tab
 // (`watch-menus/all-menus.ts`). The title and its line, then one outlined
-// surface holding the head (the Device menu and the search), the device
-// tabs, the cards and the foot; each card its name, its picture, its device
+// surface holding the head (the view switch and the search), the board
+// or the cards, and the foot; each card its name, its picture, its device
 // chips and Devices. What only one tab has (Multi select's bar, New page, a
 // page's picture) stays in that tab's own sheet.
 
@@ -127,8 +127,7 @@ export const listTabStyles = css`
   .ap-dev.dim { opacity: .55; }
   .ap-dev em { font-style: normal; font-size: 10px; color: var(--wa-muted); }
   /* A phone, as the Complications surface folds there: the head's
-     controls wrap, the search and the Device menu share a line, the tabs
-     wrap and the head stops being pinned. */
+     controls wrap and the head stops being pinned. */
   @media (max-width: 640px) {
     .ap-page { padding: 14px 12px 32px; }
     .ap-head h1 { font-size: 22px; }

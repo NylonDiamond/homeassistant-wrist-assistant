@@ -616,7 +616,7 @@ export class WaAllPages extends LitElement {
   /** The cards or rows shown now on every device, under the search. */
   private shownNow(): LibraryItem[] {
     const library = this.lib.library;
-    return library === undefined ? [] : shownItems(library, this.kind, this.search, "all", this.devices);
+    return library === undefined ? [] : shownItems(library, this.kind, this.search);
   }
 
   /** The picked cards among those shown, in the order shown. */
@@ -791,8 +791,8 @@ export class WaAllPages extends LitElement {
   private renderAll(library: Library, devices: readonly LinkDevice[]): TemplateResult {
     const empty = this.renderEmptyLibrary(library, devices);
     if (empty !== undefined) return empty;
-    const shown = shownItems(library, this.kind, this.search, "all", devices);
-    if (shown.length === 0) return html`<p class="ap-empty">${emptyText(devices, this.search, "all", this.kind)}</p>`;
+    const shown = shownItems(library, this.kind, this.search);
+    if (shown.length === 0) return html`<p class="ap-empty">${emptyText(devices, this.search, this.kind)}</p>`;
     const waiting = this.waiting(library);
     return html`<div class="ap-grid" role="list">${shown.map((entry) => this.renderCard(library, entry, devices, waiting))}</div>`;
   }
@@ -911,7 +911,7 @@ export class WaAllPages extends LitElement {
     const selecting = this.selecting;
     const key = itemKey(entry);
     const picked = selecting && this.selected.has(key);
-    const opensOn = openDevice(entry, ALL_FILTER, "all", devices);
+    const opensOn = openDevice(entry, devices);
     const title = this.openTitle(entry);
     const click = (e: MouseEvent) => this.cardClick(e, entry);
     return html`<div class="ap-card ${selecting ? "picking" : ""} ${picked ? "picked" : ""}" role="listitem" data-card=${key}
@@ -956,12 +956,12 @@ export class WaAllPages extends LitElement {
   private renderBoardAll(library: Library, devices: readonly LinkDevice[]): TemplateResult {
     const empty = this.renderEmptyLibrary(library, devices);
     if (empty !== undefined) return empty;
-    if (devices.length === 0) return html`<p class="ap-empty">${emptyText(devices, this.search, "all", this.kind)}</p>`;
+    if (devices.length === 0) return html`<p class="ap-empty">${emptyText(devices, this.search, this.kind)}</p>`;
     const waiting = this.waiting(library);
-    const shown = shownItems(library, this.kind, this.search, "all", devices);
+    const shown = shownItems(library, this.kind, this.search);
     return this.renderBoardOf(library, devices, [{
       key: "all", rows: shown.map((entry) => this.boardRow(library, entry, devices, waiting)),
-      empty: emptyText(devices, this.search, "all", this.kind),
+      empty: emptyText(devices, this.search, this.kind),
     }]);
   }
 
@@ -1018,7 +1018,6 @@ export class WaAllPages extends LitElement {
       }
       return cell;
     });
-    const opensOn = focus?.pick !== undefined ? focus.device : openDevice(entry, ALL_FILTER, "all", devices);
     const selecting = this.selecting && focus === undefined;
     const key = itemKey(entry);
     const row: BoardRow = {

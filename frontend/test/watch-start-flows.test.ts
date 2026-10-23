@@ -1,25 +1,22 @@
-// A new watch as the person meets it on the two screens that open ready: the
-// page editor on one empty page and Watch settings on the defaults, while
-// Home Assistant holds no record and no iPhone will send one. Nothing is
-// stored and nothing counts as unsaved until a change; Save is greyed out with
-// its reason beside it; the first Save creates the record over revision 0;
-// Discard goes back to the opening state. While an iPhone may still move the
-// watch's setup here, the screen waits, and "Start fresh instead" opens the
-// same ready screen without saving. A record this panel cannot read opens
-// nothing. The builders have their own tests; this drives the element and
-// the page controller over a stand-in Home Assistant connection.
+// A new watch as the person meets it on Watch settings, which opens ready on
+// the defaults while Home Assistant holds no record and no iPhone will send
+// one. Nothing is stored and nothing counts as unsaved until a change; Save
+// is greyed out with its reason beside it; the first Save creates the record
+// over revision 0; Discard goes back to the opening state. While an iPhone
+// may still move the watch's setup here, the screen waits, and "Start fresh
+// instead" opens the same ready screen without saving. A record this panel
+// cannot read opens nothing, on Watch settings and in the page editor. The
+// builders have their own tests; this drives the element and the page
+// controller over a stand-in Home Assistant connection.
 //
-// No DOM: the page editor is made but never connected (so it never draws,
-// polls or reloads), and both are read by flattening the Lit templates they
-// return.
+// No DOM: the page editor is made but never connected (so it never draws or
+// reloads), and both are read by flattening the Lit templates they return.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
 import { WaPageEditor } from "../src/watch-pages/page-editor.js";
-import { newWatchPage, setWatchPageName } from "../src/watch-pages/edit.js";
-import { anyWatchPagesDirty, dropAllWatchPages, keptWatchPagesDraft, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
-import type { WatchPagesDocument } from "../src/watch-pages/model.js";
+import { dropAllWatchPages } from "../src/watch-pages/kept.js";
 import { WatchSettings } from "../src/watch-settings-view.js";
 import { anyWatchSettingsDirty, dropWatchSettingsDrafts } from "../src/watch-settings-draft.js";
 import { SETTINGS_GROUPS } from "../src/watch-settings-nav.js";
@@ -28,7 +25,6 @@ import {
   NEW_WATCH_TEXT,
   NOTHING_TO_SAVE_TEXT,
   PAGES_UNREADABLE_TEXT,
-  PAIR_FIRST_TEXT,
   SETTINGS_PAIR_FIRST_TEXT,
   SETTINGS_UNREADABLE_TEXT,
   START_FRESH_BUTTON,
@@ -129,9 +125,6 @@ const owner = (id: string, extra: Partial<OwnerSummary> = {}): OwnerSummary => (
   is_orphan: false,
 } as OwnerSummary);
 
-/** Let the voided loads a save kicks off run to their end. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-
 /** `window.confirm` for the start fresh question, and nothing else. */
 const realWindow = (globalThis as { window?: unknown }).window;
 function answer(yes: boolean) {
@@ -142,189 +135,40 @@ function answer(yes: boolean) {
 
 // ── the page editor ──────────────────────────────────────────────────────
 
+// The page editor is a library page's only: there is no ready page for a new
+// device any more. What is left of its part here is the record it cannot read.
+
 /** The element's private parts this file reads and drives. */
 interface PageEditorInside {
   hass?: HassLike;
   owners: readonly OwnerSummary[];
   watchId?: string;
+  libraryItem?: { kind: "pages"; id: string };
   record?: WatchConfigRecord;
-  note?: { kind: string; text: string };
-  draft?: { document: WatchPagesDocument; revision: number; dirty: boolean; apply(next: WatchPagesDocument): boolean };
-  isNew: boolean;
+  draft?: unknown;
   save(): Promise<void>;
-  discard(): void;
-  askStartFresh(state?: "wait" | "start"): void;
-  render(): unknown;
   renderBody(watches: readonly OwnerSummary[]): unknown;
-  renderTopBar(draft: unknown): unknown;
 }
 
 let pageWatch = 0;
 
-/** An unconnected page editor on a watch of its own (kept drafts are per
- * watch and live for the module), showing `held`. */
-function pageEditor(
-  held: WatchConfigRecord,
-  onSave?: (msg: Record<string, unknown>) => Promise<{ revision: number }>,
-  extra: Partial<OwnerSummary> = {},
-) {
+/** An unconnected page editor on a library page of its own (kept drafts
+ * live for the module), previewed on a watch, showing `held`. */
+function pageEditor(held: WatchConfigRecord) {
   const id = `start-pages-${++pageWatch}`;
-  const ha = fakeHass("pages", held, onSave);
+  const ha = fakeHass("pages", held);
   const el = new WaPageEditor() as unknown as PageEditorInside;
   el.hass = ha.hass;
-  el.owners = [owner(id, extra)];
+  el.owners = [owner(id)];
+  el.libraryItem = { kind: "pages", id };
   el.watchId = id;
   el.record = held;
-  return {
-    el,
-    ha,
-    id,
-    body: () => flatten(el.renderBody(el.owners)),
-    bar: () => flatten(el.renderTopBar(el.draft)),
-    all: () => flatten(el.render()),
-  };
+  return { el, ha, body: () => flatten(el.renderBody(el.owners)) };
 }
 
-/** Rename the ready page: the person's first change. */
-function renameFirstPage(el: PageEditorInside, name: string): void {
-  const draft = el.draft!;
-  const id = String((draft.document.pages as { id: string }[])[0]!.id);
-  draft.apply(setWatchPageName(draft.document, id, name));
-}
-
-describe("the page editor on a new watch", () => {
-  beforeEach(() => answer(false));
+describe("the page editor over a record it cannot read", () => {
   afterEach(() => {
-    (globalThis as { window?: unknown }).window = realWindow;
     dropAllWatchPages();
-  });
-
-  it("opens ready on one empty page, with no Start, nothing stored and nothing unsaved", () => {
-    for (const extra of [{ has_iphone: false }, {}]) {
-      // `{}` is an integration older than the field: the same ready page.
-      const { el, ha, all } = pageEditor(record(0), undefined, extra);
-      const draft = el.draft!;
-      expect(draft.revision).toBe(0);
-      expect(draft.dirty).toBe(false);
-      expect(draft.document.pages as unknown[]).toHaveLength(1);
-      expect(el.isNew).toBe(true);
-      expect(anyWatchPagesDirty()).toBe(false);
-      expect(ha.saves()).toHaveLength(0);
-      const text = all();
-      expect(text).toContain(NEW_WATCH_TEXT);
-      expect(text).toContain("pe-note info pe-new");
-      expect(text).not.toContain("Start with");
-      expect(text).not.toContain(WAIT_FOR_IPHONE_TEXT);
-      expect(text).not.toContain(START_FRESH_BUTTON);
-      expect(text).not.toContain(PAGES_UNREADABLE_TEXT);
-      dropAllWatchPages();
-    }
-  });
-
-  it("greys Save out with its reason beside it until a change", () => {
-    const { el, bar } = pageEditor(record(0));
-    expect(bar()).toMatch(/class="primary save "\s*\?disabled=true/);
-    expect(bar()).toContain(NOTHING_TO_SAVE_TEXT);
-    renameFirstPage(el, "Living room");
-    expect(el.draft!.dirty).toBe(true);
-    expect(anyWatchPagesDirty()).toBe(true);
-    expect(bar()).toMatch(/class="primary save dirty"\s*\?disabled=false/);
-    expect(bar()).not.toContain(NOTHING_TO_SAVE_TEXT);
-  });
-
-  it("goes back to the empty page on Discard", () => {
-    const { el, bar } = pageEditor(record(0));
-    const opened = structuredClone(el.draft!.document);
-    renameFirstPage(el, "Living room");
-    el.discard();
-    expect(el.draft!.dirty).toBe(false);
-    expect(el.draft!.document).toEqual(opened);
-    expect(el.isNew).toBe(true);
-    expect(bar()).toContain(NOTHING_TO_SAVE_TEXT);
-  });
-
-  it("creates the record on the first Save, over revision 0, with the change in it", async () => {
-    const { el, ha, all } = pageEditor(record(0));
-    renameFirstPage(el, "Living room");
-    await el.save();
-    await settle();
-    const saves = ha.saves();
-    expect(saves).toHaveLength(1);
-    expect(saves[0]).toMatchObject({ kind: "pages", base_revision: 0 });
-    const pages = (saves[0]!.document as { pages: { name: string }[] }).pages;
-    expect(pages.map((p) => p.name)).toEqual(["Living room"]);
-    expect(el.draft?.revision).toBe(1);
-    expect(el.draft?.dirty).toBe(false);
-    expect(el.isNew).toBe(false);
-    expect(el.note).toBeUndefined();
-    expect(all()).not.toContain(NEW_WATCH_TEXT);
-  });
-
-  it("asks for a pairing first when the first Save is refused as no_record, and keeps the change", async () => {
-    const { el, ha } = pageEditor(record(0), async () => { throw refusal("no_record"); });
-    renameFirstPage(el, "Living room");
-    await el.save();
-    await settle();
-    expect(el.note).toEqual({ kind: "warn", text: PAIR_FIRST_TEXT });
-    expect(ha.gets()).toHaveLength(0);
-    expect(el.draft?.revision).toBe(0);
-    expect(el.draft?.dirty).toBe(true);
-    expect(el.isNew).toBe(true);
-  });
-
-  it("merges a record that came meanwhile under the change on a conflict, then saves over it", async () => {
-    const theirs = { schemaVersion: 1, pages: [newWatchPage("7E1A0000-0000-4000-8000-000000000001", "Home")] };
-    const fake: { ha?: ReturnType<typeof fakeHass> } = {};
-    const bases: unknown[] = [];
-    const { el, ha } = pageEditor(record(0), async (msg) => {
-      bases.push(msg.base_revision);
-      if (msg.base_revision === 0) {
-        fake.ha!.hold(record(1, theirs));
-        throw refusal("conflict", "stored revision is 1, save was based on 0");
-      }
-      return { revision: 2 };
-    });
-    fake.ha = ha;
-    renameFirstPage(el, "Mine");
-    await el.save();
-    await settle();
-    expect(bases).toEqual([0, 1]);
-    expect(el.note).toEqual({ kind: "ok", text: "Saved. Changes made somewhere else were merged in." });
-    expect(el.draft?.revision).toBe(2);
-    const names = (el.draft!.document.pages as { name: string }[]).map((p) => p.name);
-    expect(names).toContain("Home");
-    expect(names).toContain("Mine");
-  });
-
-  it("waits for the iPhone's move, with a small link to start fresh, while the watch has an iPhone", () => {
-    const { el, body } = pageEditor(record(0), undefined, { has_iphone: true });
-    const text = body();
-    expect(el.draft).toBeUndefined();
-    expect(el.isNew).toBe(false);
-    expect(text).toContain(WAIT_FOR_IPHONE_TEXT);
-    expect(text).toContain(START_FRESH_BUTTON);
-    expect(text).toContain("link start-fresh");
-    expect(text).not.toContain(NEW_WATCH_TEXT);
-    expect(text.indexOf(START_FRESH_BUTTON)).toBeGreaterThan(text.indexOf(WAIT_FOR_IPHONE_TEXT));
-  });
-
-  it("opens the same ready page from the link after a yes, and saves nothing", async () => {
-    const no = answer(false);
-    const { el, ha, all } = pageEditor(record(0), undefined, { has_iphone: true });
-    el.askStartFresh("wait");
-    expect(no).toHaveBeenCalledWith(START_FRESH_CONFIRM_TEXT);
-    expect(el.draft).toBeUndefined();
-    const yes = answer(true);
-    el.askStartFresh("wait");
-    await settle();
-    expect(yes).toHaveBeenCalledTimes(1);
-    expect(el.draft?.revision).toBe(0);
-    expect(el.draft?.dirty).toBe(false);
-    expect(el.isNew).toBe(true);
-    expect(ha.saves()).toHaveLength(0);
-    const text = all();
-    expect(text).toContain(NEW_WATCH_TEXT);
-    expect(text).not.toContain(WAIT_FOR_IPHONE_TEXT);
   });
 
   it("opens nothing over a record it cannot read, and never saves over one", async () => {
@@ -343,18 +187,6 @@ describe("the page editor on a new watch", () => {
     expect(pagesUnreadableText("watch")).toContain("pages for this watch");
     expect(pagesUnreadableText("iphone")).toContain("pages for this iPhone");
     expect(pagesUnreadableText("iphone")).toContain("Update Wrist Assistant in HACS, then reload.");
-  });
-
-  it("keeps edits from a record that went away, instead of opening the ready page over them", () => {
-    const { el, id, body } = pageEditor(record(0));
-    const kept = takeWatchPagesRecord(id, { schemaVersion: 1, pages: [{ id: "P1", name: "Home", items: [] }] }, 3).draft;
-    kept.apply(setWatchPageName(kept.document, "P1", "Kitchen"));
-    expect(el.draft).toBeUndefined();
-    const text = body();
-    expect(text).toContain("Your unsaved edits from before are kept.");
-    expect(text).toContain("Discard the kept edits");
-    expect(text).not.toContain(START_FRESH_BUTTON);
-    expect(keptWatchPagesDraft(id)).toBe(kept);
   });
 });
 

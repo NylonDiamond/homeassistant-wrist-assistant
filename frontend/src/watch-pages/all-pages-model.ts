@@ -14,7 +14,7 @@
 // Plan: app repo docs/one_library_plan_2026-10.md, step 2.
 
 import type { LibraryListKind } from "../library/client.js";
-import { type Library, type LibraryItem, type LibraryPick, countFor, itemsFor, libraryItems, restFor, sameId } from "../library/model.js";
+import { type Library, type LibraryItem, type LibraryPick, itemsFor, libraryItems, restFor, sameId } from "../library/model.js";
 import { type LinkDevice, deviceWord } from "./devices.js";
 
 /** What a card is: a page, or a status page. */
@@ -100,14 +100,6 @@ export function resolveFilter(filter: PagesFilter | undefined, devices: readonly
   return filter !== undefined && devices.some((d) => d.ownerId === filter) ? filter : ALL_FILTER;
 }
 
-/** Every item, or only those on a watch, or only those on an iPhone. */
-export type PagesKind = "all" | "watch" | "iphone";
-
-/** Whether one of an item's devices is of this kind. */
-export function ownersOnKind(owners: readonly string[], kind: PagesKind, devices: readonly LinkDevice[]): boolean {
-  return kind === "all" || devices.some((d) => d.kind === kind && owners.some((o) => sameId(o, d.ownerId)));
-}
-
 /** Whether a name matches the search, in any case. An empty search
  * matches everything. */
 export function matchesSearch(name: string, search: string): boolean {
@@ -115,13 +107,13 @@ export function matchesSearch(name: string, search: string): boolean {
   return words === "" || name.toLowerCase().includes(words);
 }
 
-/** The cards the All tab shows: the library's items of the kind, in its
- * order, under the search and the Device menu. */
-export function shownItems(library: Library, kind: CardKind, search = "", deviceKind: PagesKind = "all", devices: readonly LinkDevice[] = []): LibraryItem[] {
-  return libraryItems(library, kind).filter((e) => matchesSearch(e.name, search) && ownersOnKind(e.owners, deviceKind, devices));
+/** The rows the board shows: the library's items of the kind, in its
+ * order, under the search. */
+export function shownItems(library: Library, kind: CardKind, search = ""): LibraryItem[] {
+  return libraryItems(library, kind).filter((e) => matchesSearch(e.name, search));
 }
 
-/** A device's tab: its picks in its own order, then the rest of the
+/** A focused device: its picks in its own order, then the rest of the
  * library, each under the search. */
 export interface DeviceView {
   device: LinkDevice;
@@ -173,15 +165,12 @@ export function movedOrder(order: readonly string[], id: string, before: string 
   return [...rest.slice(0, at), held, ...rest.slice(at)];
 }
 
-/** The device a card opens on: the device tab's when it has the item, else
- * the first of the Device menu's kind, else the first watch, else the first
- * device that has it. Undefined for an item no listed device has. */
-export function openDevice(entry: { owners: readonly string[] }, filter: PagesFilter, deviceKind: PagesKind, devices: readonly LinkDevice[]): LinkDevice | undefined {
+/** The device a card's picture is drawn for: the first watch that has the
+ * item, else the first device that has it. Undefined for an item no listed
+ * device has. */
+export function openDevice(entry: { owners: readonly string[] }, devices: readonly LinkDevice[]): LinkDevice | undefined {
   const holders = devices.filter((d) => entry.owners.some((o) => sameId(o, d.ownerId)));
-  return (filter === ALL_FILTER ? undefined : holders.find((d) => d.ownerId === filter))
-    ?? (deviceKind === "all" ? undefined : holders.find((d) => d.kind === deviceKind))
-    ?? holders.find((d) => d.kind === "watch")
-    ?? holders[0];
+  return holders.find((d) => d.kind === "watch") ?? holders[0];
 }
 
 /** The title of a card or a row: a click opens it in the one editor, the
@@ -190,7 +179,7 @@ export function libraryEditTitle(name: string): string {
   return `Edit ${name}`;
 }
 
-/** A device tab's first heading. */
+/** A focused device's first heading. */
 export function onDeviceTitle(device: LinkDevice): string {
   return `On ${device.name}`;
 }
@@ -205,17 +194,7 @@ export function restTitle(device: LinkDevice): string {
   return `Not on this ${deviceWord(device.kind)}`;
 }
 
-/** The line beside "Not on this watch": what the rest is, and how one of
- * them comes here. `noun` is the plural the list holds. The pages tab,
- * the status pages tab, the menus tab and the editors' own lists all say
- * this one line (`library-rest.ts`). */
-export function restHint(noun: string): string {
-  return `${noun.charAt(0).toUpperCase()}${noun.slice(1)} on your other devices, or on none yet. Add one here with its Add chip.`;
-}
-
-export const REST_HINT = restHint("pages");
-
-/** What a device tab says with nothing on the device. `rest` is how many
+/** What a focused device says with nothing on it. `rest` is how many
  * the library has that this device does not: with none there is nothing to
  * tick below. `admin` false is a user who cannot make one (New is off). */
 export function noPicksText(device: LinkDevice, kind: CardKind, search: string, rest?: number, admin = true): string {
@@ -229,12 +208,10 @@ export function noPicksText(device: LinkDevice, kind: CardKind, search: string, 
   return `No ${cardNoun(kind, 2)} on ${device.name} yet. Tick one below, or make a new one.`;
 }
 
-/** What the All tab says with no card to show. */
-export function emptyText(devices: readonly LinkDevice[], search: string, kind: PagesKind = "all", cardKind: CardKind = "pages"): string {
+/** What the board says with no row to show. */
+export function emptyText(devices: readonly LinkDevice[], search: string, cardKind: CardKind = "pages"): string {
   if (devices.length === 0) return "No watch or iPhone has connected yet. Pair one on the Home tab.";
-  const one = cardNoun(cardKind);
-  if (search.trim() !== "") return `No ${one} has that name.`;
-  if (kind !== "all") return `No ${one} here is on ${kind === "watch" ? "a watch" : "an iPhone"}.`;
+  if (search.trim() !== "") return `No ${cardNoun(cardKind)} has that name.`;
   return cardKind === "status_pages"
     ? "Your home has no status pages yet. Use New status page to make one."
     : "Your home has no pages yet. Use New page to make one.";

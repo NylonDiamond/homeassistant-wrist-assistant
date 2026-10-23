@@ -20,7 +20,7 @@ import { isJsonObject } from "../watch-pages/model.js";
 import type { WatchConfigLinkFailure } from "../ha-api.js";
 import { linkFailuresOf, watchCommandError } from "../watch-pages/save-note.js";
 import { mergeStatusPages, statusPagesClashes } from "./merge.js";
-import { type StatusPagesDocument, checkStatusPages, statusPagesDefaults } from "./model.js";
+import { type StatusPagesDocument, checkStatusPages } from "./model.js";
 
 export const STATUS_PAGES_UNDO_LIMIT = 100;
 export const STATUS_PAGES_SAVE_ATTEMPTS = 3;
@@ -332,26 +332,6 @@ export function takeStatusPagesRecord(
   return { draft: held, mergedIntoEdits: dirty && changed, kept: dirty ? held.kept : [] };
 }
 
-/**
- * The draft a new watch's status pages screen opens on while Home Assistant
- * holds none for it (`watch-menus/new-watch.ts`): the kept one, else a new
- * one on the app's five system pages at revision 0, unsaved and not dirty.
- * Nothing is written: its first save is a save over revision 0, which makes
- * the record. A kept draft from an earlier record (Home Assistant started
- * over) is moved onto the defaults at revision 0, its edits kept, unless it
- * is being saved.
- */
-export function newWatchStatusPagesDraft(watchId: string): StatusPagesDraft {
-  const held = drafts.get(watchId);
-  if (held === undefined) {
-    const fresh = new StatusPagesDraft(statusPagesDefaults(), 0);
-    drafts.set(watchId, fresh);
-    return fresh;
-  }
-  if (held.revision > 0 && !held.saving) held.restart(statusPagesDefaults(), 0);
-  return held;
-}
-
 export function forgetStatusPagesDraft(watchId: string): void {
   drafts.delete(watchId);
 }
@@ -363,37 +343,4 @@ export function anyStatusPagesDirty(): boolean {
 
 export function dropAllStatusPages(): void {
   drafts.clear();
-  pageAsks.clear();
-  newPageAsks.clear();
-}
-
-/** The status page each device's editor should show as it opens: a card on
- * the Status pages tab asked for it. */
-const pageAsks = new Map<string, string>();
-
-/** Ask the editor to show `pageId` the next time it opens `watchId`. */
-export function askStatusPage(watchId: string, pageId: string): void {
-  pageAsks.set(watchId, pageId);
-}
-
-/** The status page asked for on `watchId`, forgetting the ask. */
-export function takeStatusPageAsk(watchId: string): string | undefined {
-  const pageId = pageAsks.get(watchId);
-  pageAsks.delete(watchId);
-  return pageId;
-}
-
-/** The devices whose status pages editor should add a page as it opens: the
- * Status pages tab's New status page asked for one there. */
-const newPageAsks = new Set<string>();
-
-/** Ask the editor to add a status page on `watchId` the next time it reads
- * them. */
-export function askNewStatusPage(watchId: string): void {
-  newPageAsks.add(watchId);
-}
-
-/** Whether a status page was asked for on `watchId`, forgetting the ask. */
-export function takeNewStatusPageAsk(watchId: string): boolean {
-  return newPageAsks.delete(watchId);
 }

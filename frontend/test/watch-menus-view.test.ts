@@ -1,27 +1,26 @@
 // The menu editor in the complication editor's chrome, as the page editor
-// wears it: the top bar, the Menus card that picks the one menu the canvas
-// and the inspector show, the labels around the watch that stand for the
-// slots, the canvas with its watch chips, facts, tools, zoom and hint, and
-// the inspector's crumbs and cards. Then the watch screen itself: the ring
+// wears it: the Menus card that picks the one menu the canvas and the
+// inspector show, the labels around the watch that stand for the slots, the
+// canvas with its facts, tools, zoom and hint, and the inspector's crumbs
+// and cards. Then the watch screen itself: the ring
 // placed on a screen of the watch's real proportions with the menu's look,
 // and the page switcher drawn from the pages record.
 
-import { html } from "lit";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
 import { SECTION_COLOR } from "../src/kinds.js";
+import { libraryDraftKey } from "../src/library/item-mode.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
 import { SymbolBrowser } from "../src/symbols.js";
 import { takeWatchMenusRecord } from "../src/watch-menus/draft.js";
-import { PAGES_PATH_FROM_MENUS, WATCH_MENUS_HELP_URL, dropWatchMenusDrafts, watchMenusDirty } from "../src/watch-menus/hook.js";
+import { WATCH_MENUS_HELP_URL } from "../src/watch-menus/hook.js";
 import {
   ME_COLUMNS_KEY,
   WATCH_SWITCHER_COLORS,
   WATCH_SWITCHER_LEFT_OUT_COLOR,
-  joinSaveNotes,
   watchSwitcherPages,
   watchSwitcherRows,
 } from "../src/watch-menus/menu-editor.js";
@@ -89,14 +88,11 @@ import { readWatchCatalog } from "../src/watch-pages/catalog.js";
 import { WatchPagesDraft } from "../src/watch-pages/draft.js";
 import { readWatchHttpLibrary, watchCatalogWithHttpLibrary } from "../src/watch-pages/http-library.js";
 import { findWatchPage } from "../src/watch-pages/edit.js";
-import { WATCH_PAGES_PATH } from "../src/watch-pages/hook.js";
-import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
 import { WATCH_PAGE_CHIP_COLOR } from "../src/watch-pages/page-settings.js";
-import { setWatchPageHideFromSwitcher, setWatchPageSwitcherText } from "../src/watch-pages/page-settings-model.js";
+import { setWatchPageHideFromSwitcher } from "../src/watch-pages/page-settings-model.js";
 import { STAGE_ZOOM_KEY } from "../src/watch-pages/stage.js";
 import type { SwitcherSettingsHost } from "../src/watch-pages/switcher-settings.js";
-import { NEW_WATCH_TEXT, NOTHING_TO_SAVE_TEXT, START_FRESH_BUTTON } from "../src/watch-settings.js";
 
 const DEFAULTS = JSON.parse(readFileSync(join(__dirname, "fixtures-menus", "01-defaults.json"), "utf8")) as MenusDocument;
 const ANYWHERE_COUNT = watchMenuSlots(DEFAULTS, ANYWHERE).length;
@@ -505,22 +501,29 @@ const WATCHES = [
 
 let editors = 0;
 
-/** The editor with the defaults open on the first watch, an administrator's
- * hass, and the panel's Watch settings button handed in. */
-function editor(revision = 4) {
-  const watchId = `${WATCHES[0]!.owner_watch_id}-${++editors}`;
+/** The editor with a library Anywhere menu open on the defaults, drawn on
+ * the first watch, and an administrator's hass. The library is a stand-in
+ * that names the menu's unit and has no store, so the menu's name and its
+ * devices are left off. */
+function editor() {
+  const n = ++editors;
+  const watchId = `${WATCHES[0]!.owner_watch_id}-${n}`;
   const owners = [{ ...WATCHES[0]!, owner_watch_id: watchId }, WATCHES[1]!] as OwnerSummary[];
+  const ref = { kind: "menus" as const, id: `3E4D9000-0000-4000-8000-${n.toString(16).toUpperCase().padStart(12, "0")}` };
+  const menu = { id: ref.id, name: "Anywhere menu", unit: "anywhere", sections: {}, owners: [] };
   const Ctor = customElements.get("wa-menu-editor") as unknown as new () => Record<string, unknown>;
   const el = new Ctor();
   el.hass = { user: { is_admin: true }, states: {} } as unknown as HassLike;
   el.owners = owners;
+  el.libraryItem = ref;
+  el.openedItem = ref;
   el.watchId = watchId;
+  el.lib = { library: { menus: [menu], index: { menus: new Map([[ref.id, menu]]) } }, store: undefined, readState: "ready" };
   el.record = {
-    kind: "menus", revision, hash: null, updated_at: new Date(Date.now() - 2 * 60_000).toISOString(), updated_by: "panel",
-    delivered_revision: revision, delivered_at: null, document: revision > 0 ? DEFAULTS : null,
+    kind: "menus", revision: 4, hash: null, updated_at: null, updated_by: null,
+    delivered_revision: 0, delivered_at: null, document: DEFAULTS,
   } as unknown as WatchConfigRecord;
-  el.barActions = html`<button class="tb-btn tb-watch">Watch settings</button>`;
-  if (revision > 0) takeWatchMenusRecord(watchId, DEFAULTS, revision);
+  takeWatchMenusRecord(libraryDraftKey(ref), DEFAULTS, 4);
   return {
     el,
     owners,
@@ -529,88 +532,9 @@ function editor(revision = 4) {
   };
 }
 
-describe("the top bar", () => {
-  it("has the way back, the sync pill, ···, Save, when it was saved, Pages and Watch settings, and no ?", () => {
-    const text = editor().whole();
-    const bar = text.slice(text.indexOf(`<div class="wa-bar`), text.indexOf(`<div class="layout`));
-    const order = [
-      `class="tb-btn tb-back"`, `class="picker me-watch-picker"`, `class="tb-sync ok"`, `class="tb-btn tb-more"`,
-      `class="primary save `, `<span class="tb-saved"`, `class="tb-btn tb-pages"`, `class="tb-btn tb-watch"`,
-    ];
-    for (const part of order) expect(bar, part).toContain(part);
-    const places = order.map((part) => bar.indexOf(part));
-    expect([...places].sort((a, b) => a - b)).toEqual(places);
-    expect(bar).toContain(">Complications</span>");
-    expect(bar).toContain(">Synced</span>");
-    expect(bar).toContain(">Saved 2 min ago</span>");
-    expect(bar).toContain(">Pages</span>");
-    expect(bar).toContain(`aria-label="Watch menus"`);
-    // The panel's Help sheet links the screen's guide; the bar has no ?.
-    expect(bar).not.toContain(`class="help"`);
-    // Undo and Redo are in the canvas head; the old title and toolbar are gone.
-    expect(bar).not.toContain(`aria-label="Undo"`);
-    expect(text).not.toContain(`class="pe-tools"`);
-    expect(text).not.toContain("Watch menus</h2>");
+describe("the menus guide", () => {
+  it("is linked from the panel's Help sheet", () => {
     expect(WATCH_MENUS_HELP_URL).toBe("https://docs.wrist-assistant.com/watch-app/quick-menu/");
-    expect(PAGES_PATH_FROM_MENUS).toBe(WATCH_PAGES_PATH);
-  });
-
-  it("says Waiting while no device has collected the save, and opens the ··· menu with Discard edits", () => {
-    const { el, whole } = editor();
-    el.record = { ...(el.record as WatchConfigRecord), delivered_revision: 3 };
-    el.topMenuOpen = true;
-    const text = whole();
-    expect(text).toContain(`class="tb-sync warn"`);
-    expect(text).toContain(">Waiting for the watch</span>");
-    expect(text).toContain(">Discard edits</button>");
-  });
-
-  it("picks the watch from the bar: the shown one's name, and a menu of every watch with a check on it", () => {
-    const { el, whole } = editor();
-    let text = whole();
-    const picker = (t: string) => t.slice(t.indexOf(`<span class="picker me-watch-picker">`), t.indexOf(`class="tb-sync`));
-    expect(picker(text)).toContain(`<span class="tb-browse-l">Jesse's Watch</span>`);
-    expect(picker(text)).toContain(`aria-expanded=false`);
-    expect(picker(text)).not.toContain("me-watch-menu");
-    el.watchMenuOpen = true;
-    text = whole();
-    const menu = picker(text);
-    expect(menu).toContain(`aria-expanded=true`);
-    expect(count(menu, `class="row me-watch-row"`)).toBe(2);
-    expect(menu).toMatch(/aria-checked=true\s+@click=>\s*<span class="pe-chip-glyph"[^]*?>Jesse's Watch<\/span>\s*<span class="me-watch-check" aria-hidden="true"><svg/);
-    expect(menu).toMatch(/aria-checked=false\s+@click=>\s*<span class="pe-chip-glyph"[^]*?>Chen's Watch<\/span>\s*<span class="me-watch-check" aria-hidden="true"><\/span>/);
-  });
-
-  it("shows the picker in every state of the body, and not for a single watch", () => {
-    const bar = (t: string) => t.slice(t.indexOf(`<div class="wa-bar`), t.indexOf(`</div>`, t.indexOf(`class="tb-btn tb-watch"`)));
-    // No menus yet: only the empty card, and the picker is the way out.
-    expect(bar(editor(0).whole())).toContain(`class="picker me-watch-picker"`);
-    const loading = editor();
-    loading.el.loading = true;
-    expect(loading.whole()).toContain(`class="picker me-watch-picker"`);
-    const unsupported = editor();
-    unsupported.el.unsupported = true;
-    expect(unsupported.whole()).toContain(`class="picker me-watch-picker"`);
-    const failed = editor();
-    failed.el.loadError = "boom";
-    expect(failed.whole()).toContain(`class="picker me-watch-picker"`);
-    const single = editor();
-    single.el.owners = [(single.owners as OwnerSummary[])[0]!];
-    expect(single.whole()).not.toContain("me-watch-picker");
-  });
-
-  it("offers no Start for a watch with no menus yet: Save is greyed out and says why", () => {
-    const { el, whole } = editor(0);
-    el.topMenuOpen = true;
-    const text = whole();
-    const bar = text.slice(text.indexOf(`<div class="wa-bar`), text.indexOf(`<div class="pe-note nw-banner`));
-    expect(bar).not.toContain("Start with");
-    expect(bar).not.toContain(START_FRESH_BUTTON);
-    expect(bar).toMatch(/<button class="row" role="menuitem" \?disabled=true\s+title=Go back to the defaults/);
-    expect(bar).toContain(`class="primary save " ?disabled=true`);
-    expect(bar).toContain(`<span>${NOTHING_TO_SAVE_TEXT}</span>`);
-    expect(bar).not.toContain("tb-sync");
-    expect(text).toContain(NEW_WATCH_TEXT);
   });
 });
 
@@ -998,125 +922,6 @@ describe("the switcher's rows", () => {
   });
 });
 
-// ── the element's two drafts ─────────────────────────────────────────────
-
-describe("the element with a page draft", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  /** The editor with the pages record read into a page draft, and a hass
-   * whose connection records every command and saves at revision 9. */
-  function withPages() {
-    const e = editor();
-    const watchId = e.el.watchId as string;
-    const sent: Record<string, unknown>[] = [];
-    e.el.hass = {
-      user: { is_admin: true },
-      states: {},
-      connection: {
-        sendMessagePromise: async (message: Record<string, unknown>) => {
-          sent.push(message);
-          if (String(message.type).endsWith("/save")) return { revision: 9 };
-          throw Object.assign(new Error("not here"), { code: "unknown_command" });
-        },
-      },
-    } as unknown as HassLike;
-    e.el.pagesRecord = { revision: 3, document: PAGES };
-    const { draft: pages } = takeWatchPagesRecord(watchId, PAGES, 3);
-    vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout });
-    return { ...e, watchId, sent, pages };
-  }
-
-  const call = (el: Record<string, unknown>, name: string) => (el[name] as () => unknown).call(el);
-
-  it("counts a page edit as unsaved: Save lit, Unsaved changes, Discard edits on, and the panel's guard", () => {
-    dropWatchMenusDrafts();
-    expect(watchMenusDirty()).toBe(false);
-    const { el, whole, pages } = withPages();
-    expect(whole()).toContain(`class="primary save "`);
-    pages.apply(setWatchPageSwitcherText(PAGES, HOME, "Front"));
-    el.topMenuOpen = true;
-    const text = whole();
-    expect(text).toContain(`class="primary save dirty"`);
-    expect(text).toContain(`<span class="tb-saved" title=Unsaved changes>`);
-    expect(text).toMatch(/<button class="row" role="menuitem" \?disabled=false\s+title=Go back to the copy Home Assistant holds/);
-    expect(watchMenusDirty()).toBe(true);
-    // Leaving the panel anyway drops the page draft too.
-    dropWatchMenusDrafts();
-    expect(watchMenusDirty()).toBe(false);
-  });
-
-  it("shows a page draft's edit in the switcher at once", () => {
-    const { el, body, pages } = withPages();
-    (el.uiState as Map<string, unknown>).set("me:menu", "switcher");
-    pages.apply(setWatchPageSwitcherText(PAGES, HOME, "Front"));
-    const text = body();
-    expect(text).toMatch(/title=Home[^>]*>[\s\S]*?<span class="ms-sw-text">Fron<\/span>/);
-    expect(text).toContain("<small>Shown as Front</small>");
-  });
-
-  it("saves only the pages when only they hold edits", async () => {
-    const { el, sent, pages } = withPages();
-    pages.apply(setWatchPageSwitcherText(PAGES, HOME, "Front"));
-    await call(el, "save");
-    const saves = sent.filter((m) => String(m.type).endsWith("/save"));
-    expect(saves.map((m) => m.kind)).toEqual(["pages"]);
-    expect(saves[0]!.base_revision).toBe(3);
-    expect(findWatchPage(saves[0]!.document as WatchPagesDocument, HOME)?.switcherText).toBe("Front");
-    expect(pages.dirty).toBe(false);
-    expect(pages.revision).toBe(9);
-  });
-
-  it("saves the menus and then the pages when both hold edits", async () => {
-    const { el, sent, pages, watchId } = withPages();
-    const menus = takeWatchMenusRecord(watchId, DEFAULTS, 4).draft;
-    menus.apply(setWatchMenuStyle(DEFAULTS, "pageSwitcher", "selectedScale", 1.3));
-    pages.apply(setWatchPageSwitcherText(PAGES, HOME, "Front"));
-    await call(el, "save");
-    expect(sent.filter((m) => String(m.type).endsWith("/save")).map((m) => m.kind)).toEqual(["menus", "pages"]);
-    expect(menus.dirty).toBe(false);
-    expect(pages.dirty).toBe(false);
-  });
-
-  it("discards both drafts", () => {
-    const { el, pages, watchId } = withPages();
-    const menus = takeWatchMenusRecord(watchId, DEFAULTS, 4).draft;
-    menus.apply(setWatchMenuStyle(DEFAULTS, "pageSwitcher", "selectedScale", 1.3));
-    pages.apply(setWatchPageSwitcherText(PAGES, HOME, "Front"));
-    call(el, "discard");
-    expect(menus.dirty).toBe(false);
-    expect(pages.dirty).toBe(false);
-    expect((el.note as { text: string }).text).toBe("Edits discarded. Undo brings them back.");
-  });
-
-  it("undoes the pages while a page is picked in the switcher, else the menus", () => {
-    const { el, pages, watchId } = withPages();
-    const menus = takeWatchMenusRecord(watchId, DEFAULTS, 4).draft;
-    menus.apply(setWatchMenuStyle(DEFAULTS, "pageSwitcher", "selectedScale", 1.3));
-    pages.apply(setWatchPageSwitcherText(PAGES, HOME, "Front"));
-    const ui = el.uiState as Map<string, unknown>;
-    ui.set("me:menu", "switcher");
-    ui.set("me:sw:page", HOME);
-    call(el, "undo");
-    expect(pages.dirty).toBe(false);
-    expect(menus.dirty).toBe(true);
-    ui.delete("me:sw:page");
-    call(el, "undo");
-    expect(menus.dirty).toBe(false);
-  });
-});
-
-describe("the note after saving both", () => {
-  it("joins the two notes, once when they say the same, in the graver kind", () => {
-    expect(joinSaveNotes(undefined, undefined)).toBeUndefined();
-    expect(joinSaveNotes({ kind: "ok", text: "A." }, undefined)).toEqual({ kind: "ok", text: "A." });
-    expect(joinSaveNotes(undefined, { kind: "warn", text: "B." })).toEqual({ kind: "warn", text: "B." });
-    expect(joinSaveNotes({ kind: "ok", text: "A." }, { kind: "err", text: "B." })).toEqual({ kind: "err", text: "A. B." });
-    expect(joinSaveNotes({ kind: "ok", text: "Same." }, { kind: "ok", text: "Same." })).toEqual({ kind: "ok", text: "Same." });
-  });
-});
-
 // ── the hints on an iPhone ───────────────────────────────────────────────
 
 describe("the Speak Phrase and Show Status Page hints on an iPhone", () => {
@@ -1241,10 +1046,11 @@ describe("the Run HTTP Action target", () => {
     expect(before).not.toContain("(on the iPhone)");
   });
 
-  it("is read when a watch opens, which a return to the editor does too, and on a reconnect", () => {
+  it("is read when the preview device opens, which a return to the editor does too, and on a reconnect", () => {
     const source = readFileSync(join(__dirname, "..", "src", "watch-menus", "menu-editor.ts"), "utf8");
     expect(source.match(/void this\.loadHttpLibrary\(\);/g)).toHaveLength(2);
-    expect(source).toMatch(/connectedCallback\(\): void \{[\s\S]*?this\.openWatch\(this\.watchId, true\)/);
+    expect(source).toMatch(/connectedCallback\(\): void \{[\s\S]*?this\.openPreview\(this\.watchId\)/);
+    expect(source).toMatch(/private openPreview\([\s\S]*?this\.loadContext\(watchId\)/);
   });
 
   it("the element lists the joined list, and reads the library with the integration's answer", async () => {

@@ -16,8 +16,8 @@
 // Plan: app repo docs/one_library_plan_2026-10.md, step 2.
 
 import { MENU_UNITS, MENU_UNIT_SECTIONS, type MenuUnit } from "../library/client.js";
-import { type Library, type LibraryMenu, MENU_UNIT_TITLES, alsoOnText, libraryMenus, menuDocument, menuFor, otherMenus, sameId } from "../library/model.js";
-import { ALL_FILTER, type PagesFilter, type PagesKind, matchesSearch, ownersOnKind } from "../watch-pages/all-pages-model.js";
+import { type Library, type LibraryMenu, MENU_UNIT_TITLES, libraryMenus, menuDocument, otherMenus, sameId } from "../library/model.js";
+import { matchesSearch } from "../watch-pages/all-pages-model.js";
 import { type LinkDevice, deviceWord } from "../watch-pages/devices.js";
 import { WAIT_FOR_IPHONE_TEXT } from "../watch-settings.js";
 import { menuRowCount } from "./menu-view.js";
@@ -74,10 +74,9 @@ export function menuMatches(menu: LibraryMenu, search: string, devices: readonly
   return devices.some((d) => menu.owners.some((o) => sameId(o, d.ownerId)) && matchesSearch(d.name, search) && search.trim() !== "");
 }
 
-/** The menus All shows, in the library's order, under the search and the
- * Device menu. */
-export function shownMenus(library: Library, search = "", kind: PagesKind = "all", devices: readonly LinkDevice[] = []): LibraryMenu[] {
-  return libraryMenus(library).filter((m) => menuMatches(m, search, devices) && ownersOnKind(m.owners, kind, devices));
+/** The menus the board shows, in the library's order, under the search. */
+export function shownMenus(library: Library, search = "", devices: readonly LinkDevice[] = []): LibraryMenu[] {
+  return libraryMenus(library).filter((m) => menuMatches(m, search, devices));
 }
 
 /** The shown menus split into the two sections, Anywhere menus first. Both
@@ -86,15 +85,12 @@ export function menuSections(shown: readonly LibraryMenu[]): { unit: MenuUnit; m
   return MENU_UNITS.map((unit) => ({ unit, menus: shown.filter((m) => m.unit === unit) }));
 }
 
-/** The device a card opens on: the device tab's when it uses the menu,
- * else the first of the Device menu's kind, else the first watch, else the
- * first device that uses it. Undefined for a menu no device uses. */
-export function openMenuDevice(menu: LibraryMenu, filter: PagesFilter, kind: PagesKind, devices: readonly LinkDevice[]): LinkDevice | undefined {
+/** The device a card's picture is drawn for: the first watch that uses
+ * the menu, else the first device that uses it. Undefined for a menu no
+ * device uses. */
+export function openMenuDevice(menu: LibraryMenu, devices: readonly LinkDevice[]): LinkDevice | undefined {
   const users = devices.filter((d) => menu.owners.some((o) => sameId(o, d.ownerId)));
-  return (filter === ALL_FILTER ? undefined : users.find((d) => d.ownerId === filter))
-    ?? (kind === "all" ? undefined : users.find((d) => d.kind === kind))
-    ?? users.find((d) => d.kind === "watch")
-    ?? users[0];
+  return users.find((d) => d.kind === "watch") ?? users[0];
 }
 
 /** "Not on this watch": the library's menus a device does not use, under
@@ -133,10 +129,9 @@ export function newMenuSections(unit: MenuUnit, defaults: MenusDocument = watchM
 }
 
 /** What the tab says with no menu to show. */
-export function menusEmptyText(devices: readonly LinkDevice[], search: string, kind: PagesKind = "all"): string {
+export function menusEmptyText(devices: readonly LinkDevice[], search: string): string {
   if (devices.length === 0) return "No watch or iPhone has connected yet. Pair one on the Home tab.";
   if (search.trim() !== "") return "No menu or device has that name.";
-  if (kind !== "all") return `No menu here is used on ${kind === "watch" ? "a watch" : "an iPhone"}.`;
   return "None yet.";
 }
 

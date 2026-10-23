@@ -96,18 +96,20 @@ describe("the watch screens under the row", () => {
     expect(iphone).toContain("const screen = iphoneScreenOf(this.route);");
   });
 
-  it("hands each of the three that follow a device the device it is drawn for, in the shell's mode, with no Watch settings button of their own", () => {
-    for (const view of ["renderWatchVoiceView", "renderWatchControlCenterView", "renderWatchRoomsView"]) {
+  it("hands each of the two that follow a device the device it is drawn for, in the shell's mode, with no Watch settings button of their own", () => {
+    for (const view of ["renderWatchVoiceView", "renderWatchRoomsView"]) {
       const body = call(view);
       expect(body, view).toContain("ownerId: owner,");
       expect(body, view).toContain("shell: true,");
       expect(body, view).toContain("actions: nothing,");
       expect(body, view).toContain("dialogs: nothing,");
     }
-    expect(count(screens, "ownerId: owner,")).toBe(3);
+    expect(count(screens, "ownerId: owner,")).toBe(2);
     // A device's Pages, Status pages and Menus are its column on the board
-    // (plan step 4): their addresses move there, and draw no editor.
-    for (const id of ["pages", "menus", "status-pages"]) expect(screens).toContain(`case "${id}":`);
+    // (plan step 4), and the old Control Center and Complications screens
+    // are its column on the Complications board: their addresses move
+    // there, and draw no editor.
+    for (const id of ["pages", "menus", "status-pages", "watch-complications", "control-center"]) expect(screens).toContain(`case "${id}":`);
     expect(screens).not.toContain("renderWatchPagesView");
     expect(method("  private boardAddressFor(")).toContain("deviceListPath(screen.id, watch !== undefined ? this.sharedWatch : this.sharedPhone)");
     expect(screens).not.toContain("watchSettings.renderButton");
@@ -193,7 +195,6 @@ describe("the watch screens under the row", () => {
       `case "pages": return { dirty: watchPagesDirty(), drop: dropWatchPagesDrafts };`,
       `case "menus": return { dirty: watchMenusDirty(), drop: dropWatchMenusDrafts };`,
       `case "status-pages": return { dirty: watchStatusPagesDirty(), drop: dropWatchStatusPagesDrafts };`,
-      `case "control-center": return { dirty: watchControlCenterDirty(), drop: dropWatchControlCenterDrafts };`,
       `case "rooms": return { dirty: watchRoomsDirty(), drop: dropWatchRoomsDrafts };`,
       `case "voice": return { dirty: watchVoiceDirty(), drop: dropWatchVoiceDrafts };`,
       `case "http-actions": return { dirty: watchHttpActionsDirty(), drop: dropWatchHttpActionsDrafts };`,
@@ -284,7 +285,7 @@ describe("the Settings page", () => {
     // The editors are drawn by one switch, for the Watch app and the iPhone
     // app alike (`renderWatchScreen`).
     const screens = method("  private renderWatchScreen(");
-    expect(screens.match(/barHost: this\.watchBarHost,/g)).toHaveLength(5);
+    expect(screens.match(/barHost: this\.watchBarHost,/g)).toHaveLength(4);
   });
 
   it("follows the shared watch on every draw, once the devices are in, and leaves on any other route", () => {

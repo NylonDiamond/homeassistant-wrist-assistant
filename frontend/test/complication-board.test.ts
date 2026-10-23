@@ -111,8 +111,8 @@ describe("the panel's Complications board", () => {
     expect(PANEL).toContain("const fits = (it: CompBoardItem) => it.locked === undefined && this.compBoardCell(it, device, false).chip !== undefined;");
   });
 
-  it("moves a watch's old Complications screen address to its board column", () => {
-    expect(PANEL).toContain(`if (screen.id === "watch-complications") {`);
+  it("moves a watch's old Complications and Control Center addresses to its board column", () => {
+    expect(PANEL).toContain(`if (screen.id === "watch-complications" || screen.id === "control-center") {`);
     expect(PANEL).toContain("return listFocusPath(COMPLICATIONS_PATH, this.sharedWatch);");
   });
 });

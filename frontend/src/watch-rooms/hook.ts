@@ -9,12 +9,11 @@
 // panel's first download; `rooms-editor.ts`, its model and its table arrive
 // the first time the route is opened.
 
-import { css, html, nothing, type TemplateResult } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import type { HassLike, OwnerSummary } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import type { PanelRoute } from "../watch-pages/hook.js";
-import { settingsWatches } from "../watch-settings.js";
 
 export const WATCH_ROOMS_PATH = "/rooms";
 
@@ -97,14 +96,6 @@ function loadRoomsEditor(): Promise<void> {
   return loading;
 }
 
-/** The top bar's way in, after Status pages. Only in a home with a watch, as
- * for those. */
-export function renderWatchRoomsButton(owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
-  if (settingsWatches(owners).length === 0) return nothing;
-  return html`<button class="tb-btn tb-rooms" title="The watch's rooms: switching pages by room and point control"
-    @click=${open}>${uiIcon("home")}<span>Rooms</span></button>`;
-}
-
 export interface WatchRoomsViewInput {
   hass: HassLike;
   owners: readonly OwnerSummary[];
@@ -151,9 +142,3 @@ export function renderWatchRoomsView(input: WatchRoomsViewInput): TemplateResult
           ${loadFailed ? html`<span>The Rooms editor did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
         </div>`}`;
 }
-
-/** The button's look, added to the panel's sheet beside the other editors'. */
-export const watchRoomsHookStyles = css`
-  button.tb-btn.tb-rooms { display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; }
-  button.tb-btn.tb-rooms svg.ui-icon { width: 14px; height: 14px; }
-`;

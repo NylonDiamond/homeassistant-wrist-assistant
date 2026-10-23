@@ -68,13 +68,11 @@ describe("the bar's look in the header", () => {
 });
 
 describe("every watch editor", () => {
+  // The page editor is a library page's only, whose bar is never in the
+  // header, so it is not among them.
   const editors = [
-    "watch-pages/page-editor.ts",
-    "watch-menus/menu-editor.ts",
-    "watch-status-pages/status-pages-editor.ts",
     "watch-rooms/rooms-editor.ts",
     "watch-voice/voice-editor.ts",
-    "watch-control-center/control-center-editor.ts",
     "watch-http-actions/http-actions-editor.ts",
     "watch-cameras/cameras-editor.ts",
   ];
@@ -94,8 +92,8 @@ describe("every watch editor", () => {
     });
   }
 
-  it("each hook hands the editor the box", () => {
-    for (const hook of ["watch-pages", "watch-menus", "watch-status-pages", "watch-rooms", "watch-voice", "watch-control-center", "watch-http-actions", "watch-cameras"]) {
+  it("each hook of a device's own or the whole home's screen hands the editor the box", () => {
+    for (const hook of ["watch-rooms", "watch-voice", "watch-http-actions", "watch-cameras"]) {
       const src = readFileSync(new URL(`../src/${hook}/hook.ts`, import.meta.url), "utf8");
       expect(src, hook).toContain("barHost?: HTMLElement;");
       expect(src, hook).toContain(".barHost=${input.barHost}");

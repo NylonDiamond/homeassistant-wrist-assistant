@@ -1,20 +1,21 @@
 // The page editor element itself, where it can be read without a page: the
 // keys it leaves to a focused field, and the stage's tiles, which stand on
 // the page's own background rather than on a patch of its color. Then the
-// complication editor's chrome it wears: the top bar, the Tiles card, the
-// canvas head with its watch chips, the Live strip and the zoom.
+// complication editor's chrome it wears: the Tiles card, the canvas head,
+// the Live strip and the zoom. The editor is stood up in library mode, its
+// only mode, on one library page.
 
 import { html } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
+import { libraryDraftKey } from "../src/library/item-mode.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
-import { NEW_WATCH_TEXT } from "../src/watch-settings.js";
 import { type WatchCatalog, readWatchCatalog } from "../src/watch-pages/catalog.js";
 import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
-import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
+import { forgetWatchPagesDraft, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
-import { PAGE_LIST_HEIGHT, WATCH_PAGES_PLAN_TEXT, clampPageListHeight, loadPageListHeight, watchPagesPlanText } from "../src/watch-pages/page-editor.js";
+import { PAGE_LIST_HEIGHT, clampPageListHeight, loadPageListHeight } from "../src/watch-pages/page-editor.js";
 import {
   STAGE_ZOOM_KEY,
   loadStageZoom,
@@ -104,8 +105,9 @@ const WATCHES = [
 
 let editors = 0;
 
-/** The editor with HALL open on the first watch, an administrator's hass,
- * and the panel's Watch settings button handed in. */
+/** The editor with HALL open in the library, previewed on the first watch,
+ * an administrator's hass, and a button for the bar's right end handed in.
+ * The draft also holds Yard, an empty page, for the tests that need one. */
 function editor(selectedTileId?: string) {
   const watchId = `${WATCHES[0]!.owner_watch_id}-${++editors}`;
   const owners = [{ ...WATCHES[0]!, owner_watch_id: watchId }, WATCHES[1]!] as OwnerSummary[];
@@ -116,6 +118,10 @@ function editor(selectedTileId?: string) {
     states: { "light.right": { entity_id: "light.right", state: "on", attributes: { friendly_name: "Right lamp" } } },
   } as unknown as HassLike;
   el.owners = owners;
+  const ref = { kind: "pages", id: "P-HALL" };
+  el.libraryItem = ref;
+  // As `followLibraryItem` leaves it once it opened the item.
+  el.openedItem = ref;
   el.watchId = watchId;
   el.record = {
     kind: "pages", revision: 4, hash: null, updated_at: new Date(Date.now() - 2 * 60_000).toISOString(), updated_by: "panel",
@@ -125,7 +131,9 @@ function editor(selectedTileId?: string) {
   // The inspector's own markup is not what these tests read, and its field
   // rows ask the document what has focus, which Node does not have.
   el.renderInspector = () => html`<div class="insp-stub"></div>`;
-  takeWatchPagesRecord(watchId, HALL, 4);
+  const key = libraryDraftKey(ref as { kind: "pages"; id: string });
+  forgetWatchPagesDraft(key);
+  takeWatchPagesRecord(key, HALL, 4);
   el.selectedPageId = "P-HALL";
   el.selectedTileId = selectedTileId;
   return {
@@ -149,99 +157,6 @@ function tileRow(text: string, id: string): string {
 function rowPlaces(text: string, ids: readonly string[]): number[] {
   return ids.map((id) => text.search(new RegExp(`data-row-tile=${id}\\s`)));
 }
-
-describe("the top bar", () => {
-  it("has the way back, Add page, the watch picker, the sync pill, ···, Save, when it was saved, Menus and Watch settings, and no ?", () => {
-    const text = editor().whole();
-    const bar = text.slice(text.indexOf(`<div class="wa-bar`), text.indexOf(`<div class="layout`));
-    const order = [
-      `class="tb-btn tb-back"`, `class="tb-btn tb-new"`, `<div class="picker pe-watch-picker">`, `class="tb-sync ok"`, `class="tb-btn tb-more"`,
-      `class="primary save `, `<span class="tb-saved"`, `class="tb-btn tb-menus"`, `class="tb-btn tb-watch"`,
-    ];
-    for (const part of order) expect(bar, part).toContain(part);
-    const places = order.map((part) => bar.indexOf(part));
-    expect([...places].sort((a, b) => a - b)).toEqual(places);
-    expect(bar).toContain(">Complications</span>");
-    expect(bar).toContain(">Add page</span>");
-    expect(bar).toContain(">Synced</span>");
-    expect(bar).toContain(">Saved 2 min ago</span>");
-    expect(bar).toContain(">Menus</span>");
-    // The panel's Help sheet links the screen's guide; the bar has no ?.
-    expect(bar).not.toContain(`class="help"`);
-    // Undo and Redo moved to the canvas head; the old toolbar is gone.
-    expect(bar).not.toContain(`aria-label="Undo"`);
-    expect(text).not.toContain(`class="pe-tools"`);
-  });
-
-  it("says Waiting while no device has collected the save, and opens the ··· menu with Discard edits", () => {
-    const { el, whole } = editor();
-    el.record = { ...(el.record as WatchConfigRecord), delivered_revision: 3 };
-    el.topMenuOpen = true;
-    const text = whole();
-    expect(text).toContain(`class="tb-sync warn"`);
-    expect(text).toContain(">Waiting for the watch</span>");
-    expect(text).toContain(">Discard edits</button>");
-  });
-});
-
-describe("the watch picker", () => {
-  /** The markup from the bar on. */
-  const barOf = (text: string) => text.slice(text.indexOf(`<div class="wa-bar`));
-
-  it("names the open watch with its glyph and a caret, and lists every watch with a check on the open one", () => {
-    const { el, whole } = editor();
-    let bar = barOf(whole());
-    const button = bar.slice(bar.indexOf(`class="tb-browse pe-watch-open"`), bar.indexOf("</button>", bar.indexOf(`class="tb-browse pe-watch-open"`)));
-    expect(button).toContain(`class="pe-chip-glyph"`);
-    expect(button).toContain(`<span class="tb-browse-l">Jesse's Watch</span>`);
-    expect(button).toContain(`aria-expanded=false`);
-    expect(bar).not.toContain(`class="pop-menu pe-watch-menu"`);
-    el.watchMenuOpen = true;
-    bar = barOf(whole());
-    const menu = bar.slice(bar.indexOf(`class="pop-menu pe-watch-menu"`));
-    expect(menu.match(/class="row pe-watch-row"/g)).toHaveLength(2);
-    expect(menu).toContain(`<span class="pe-watch-name">Jesse's Watch</span><span class="pe-watch-check">`);
-    expect(menu).toContain(`<span class="pe-watch-name">Chen's Watch</span>\n`);
-    expect(menu).toMatch(/aria-checked=true data-watch=chrome-w1-\d+/);
-    expect(menu).toMatch(/aria-checked=false data-watch=chrome-w2/);
-  });
-
-  it("opens the picked watch and closes the menu; the open one changes nothing", () => {
-    const { el, owners, whole } = editor();
-    const opened: string[] = [];
-    el.openWatch = (id: string) => { opened.push(id); };
-    el.watchMenuOpen = true;
-    const drawn = (el.render as () => unknown).call(el);
-    const row = (id: string) => findTemplate(drawn, (t) => t.strings[0]!.includes(`<button class="row pe-watch-row"`) && t.values.includes(id));
-    listener(row(owners[0]!.owner_watch_id)!, "click")({} as Event);
-    expect(opened).toEqual([]);
-    expect(el.watchMenuOpen).toBe(false);
-    el.watchMenuOpen = true;
-    listener(row("chrome-w2")!, "click")({} as Event);
-    expect(opened).toEqual(["chrome-w2"]);
-    expect(el.watchMenuOpen).toBe(false);
-    expect(whole()).not.toContain(`class="pop-menu pe-watch-menu"`);
-  });
-
-  it("is there with no pages, while loading and with no record, and not with one watch", () => {
-    const { el, whole } = editor();
-    // A watch with no pages yet: the ready page, unsaved, under the bar.
-    el.record = { ...(el.record as WatchConfigRecord), revision: 0, document: null };
-    let text = whole();
-    expect(text).toContain(NEW_WATCH_TEXT);
-    expect(text).toContain(`<div class="picker pe-watch-picker">`);
-    el.loading = true;
-    text = whole();
-    expect(text).toContain(`class="pe-empty">Loading…`);
-    expect(text).toContain(`<div class="picker pe-watch-picker">`);
-    el.loading = false;
-    el.loadError = "unknown_command";
-    expect(whole()).toContain(`<div class="picker pe-watch-picker">`);
-    el.loadError = undefined;
-    el.owners = [(el.owners as OwnerSummary[])[0]!];
-    expect(whole()).not.toContain("pe-watch-picker");
-  });
-});
 
 describe("the Tiles card", () => {
   it("lists the page's tiles in reading order, row then column, with their badges", () => {
@@ -317,9 +232,10 @@ describe("the Tiles card", () => {
   it("says a smart page fills itself instead of listing tiles", () => {
     const { el, body } = editor();
     const smart = { ...HALL, pages: [{ id: "P-SMART", name: "Lights on", dynamicConfig: { rules: [] } }] } as unknown as WatchPagesDocument;
-    const watchId = el.watchId as string;
-    takeWatchPagesRecord(`${watchId}-smart`, smart, 1);
-    el.watchId = `${watchId}-smart`;
+    const ref = { kind: "pages" as const, id: "P-SMART" };
+    forgetWatchPagesDraft(libraryDraftKey(ref));
+    takeWatchPagesRecord(libraryDraftKey(ref), smart, 1);
+    el.libraryItem = ref;
     el.selectedPageId = "P-SMART";
     const text = body();
     const card = text.slice(text.indexOf(`class="card lc pe-tiles-card"`));
@@ -327,12 +243,10 @@ describe("the Tiles card", () => {
     expect(card).not.toContain("pe-tile-row");
   });
 
-  it("lists the pages in the Pages card, the open one lit", () => {
+  it("lists the open page in the Pages card, lit", () => {
     const text = editor().body();
     const card = text.slice(text.indexOf(`class="card lc pe-pages-card`), text.indexOf(`class="card lc pe-tiles-card"`));
-    expect(card).toContain(">2 pages</span>");
     expect(card).toMatch(/class="layer pe-page-row hl [^"]*"\s+data-page=P-HALL/);
-    expect(card).toMatch(/class="layer pe-page-row  [^"]*"\s+data-page=P-YARD/);
   });
 
   it("puts a drag bar between the Pages and Tiles cards that sets the page list's height", () => {
@@ -361,29 +275,6 @@ describe("the Tiles card", () => {
     expect(loadPageListHeight(stored("5"))).toBe(PAGE_LIST_HEIGHT.min);
     for (const value of [null, "", "0", "-3", "junk"]) expect(loadPageListHeight(stored(value))).toBeUndefined();
     expect(loadPageListHeight(undefined)).toBeUndefined();
-  });
-
-  it("says under the pages that one page is always free, to a free watch only", () => {
-    const pagesCard = (text: string) => text.slice(text.indexOf(`class="card lc pe-pages-card`), text.indexOf(`class="card lc pe-tiles-card"`));
-    const e = editor();
-    // A watch that never said (an older app), then one that shows every page.
-    expect(pagesCard(e.body())).not.toContain("pe-plan-note");
-    e.el.record = { ...(e.el.record as WatchConfigRecord), multiple_pages: true };
-    expect(pagesCard(e.body())).not.toContain("pe-plan-note");
-    e.el.record = { ...(e.el.record as WatchConfigRecord), multiple_pages: false };
-    const card = pagesCard(e.body());
-    expect(card).toContain(`class="lc-note pe-plan-note"`);
-    expect(card).toContain(WATCH_PAGES_PLAN_TEXT.title);
-    expect(card).toContain(WATCH_PAGES_PLAN_TEXT.body);
-    expect(`${WATCH_PAGES_PLAN_TEXT.title} ${WATCH_PAGES_PLAN_TEXT.body}`).not.toMatch(/[–—]| - /);
-  });
-
-  it("names the device on screen in the free plan line", () => {
-    expect(WATCH_PAGES_PLAN_TEXT.body).toContain("the watch shows your first page");
-    const phone = watchPagesPlanText("iphone");
-    expect(phone.title).toBe(WATCH_PAGES_PLAN_TEXT.title);
-    expect(phone.body).toContain("the iPhone shows your first page");
-    expect(phone.body).not.toContain("watch");
   });
 });
 
@@ -478,21 +369,12 @@ describe("a click on a row", () => {
     expect(el.selectedTileId).toBe("T-GAP");
   });
 
-  it("on a Pages row's name opens that page, and not from its buttons", () => {
-    const { el, owners } = editor("T-LEFT");
-    el.leaveTile = () => undefined;
-    const row = node("DIV", "layer", "pe-page-row");
-    rowOf(el, owners, "page", "P-YARD")(clickOn(row, [node("BUTTON", "icon", "pe-more"), node("SPAN", "acts")]));
-    expect(el.selectedPageId).toBe("P-HALL");
-    rowOf(el, owners, "page", "P-YARD")(clickOn(row, [node("SPAN", "nm-t"), node("B"), node("SPAN", "name")]));
-    expect(el.selectedPageId).toBe("P-YARD");
-    expect(el.selectedTileId).toBeUndefined();
-  });
-
-  it("on the open page's own row lets the tile go, so the page's cards show", () => {
+  it("on the open page's own row lets the tile go, so the page's cards show, and not from its buttons", () => {
     const { el, owners } = editor("T-LEFT");
     el.leaveTile = () => undefined;
     const row = node("DIV", "layer", "pe-page-row", "hl");
+    rowOf(el, owners, "page", "P-HALL")(clickOn(row, [node("BUTTON", "icon", "pe-more"), node("SPAN", "acts")]));
+    expect(el.selectedTileId).toBe("T-LEFT");
     rowOf(el, owners, "page", "P-HALL")(clickOn(row, [node("SPAN", "nm-t"), node("B"), node("SPAN", "name")]));
     expect(el.selectedPageId).toBe("P-HALL");
     expect(el.selectedTileId).toBeUndefined();
@@ -907,138 +789,6 @@ describe("the canvas head", () => {
     expect(copy.entityId).toMatch(/^spacer\./);
     expect(copy.entityId).not.toBe(items[0]!.entityId);
     expect(el.selectedTileId).toBe(copy.id);
-  });
-});
-
-describe("the stacked page menu", () => {
-  /** The canvas head's markup. */
-  const headOf = (text: string) => text.slice(text.indexOf(`<div class="cv-head">`), text.indexOf(`<div class="stage-area`));
-
-  it("is in the canvas head only when stacked, saying where the shown page stands", () => {
-    const { el, body } = editor();
-    expect(body()).not.toContain("pe-page-open");
-    el.hostWidth = 360;
-    const head = headOf(body());
-    expect(body()).toContain(`<div class="layout pe-layout cols-1"`);
-    expect(head).toContain(`<button class="cv-act pe-page-open" aria-haspopup="menu" aria-expanded=false`);
-    expect(head).toContain(`aria-label=Page 1 of 2: Hall. Pick another, or add one`);
-    expect(head).toContain(`<span class="pe-page-place">1/2</span>`);
-    // Before Undo, with a hairline after it; no menu until it is pressed.
-    expect(head.indexOf("pe-page-open")).toBeLessThan(head.indexOf(`aria-label="Undo"`));
-    expect(head).not.toContain("pe-page-menu");
-    // Home Assistant saying it is a phone stacks it too.
-    const narrow = editor();
-    narrow.el.narrow = true;
-    expect(headOf(narrow.body())).toContain("pe-page-open");
-  });
-
-  it("lists the pages with a check on the shown one, then Add page", () => {
-    const { el, body } = editor();
-    el.hostWidth = 360;
-    el.pageMenuOpen = true;
-    const head = headOf(body());
-    const menu = head.slice(head.indexOf(`class="pop-menu pe-page-menu"`));
-    expect(menu).toContain(`role="menu" aria-label=Pages on this watch`);
-    expect(menu.match(/class="row pe-page-menu-row"/g)).toHaveLength(2);
-    expect(menu).toMatch(/aria-checked=true data-page=P-HALL/);
-    expect(menu).toMatch(/aria-checked=false data-page=P-YARD/);
-    expect(menu).toContain(`<span class="pe-page-menu-name">Hall</span>`);
-    expect(menu.indexOf("P-HALL")).toBeLessThan(menu.indexOf("P-YARD"));
-    const add = menu.slice(menu.indexOf(`class="row pe-page-menu-add"`));
-    expect(add).toContain(`?disabled=false`);
-    expect(add).toContain(">Add page</span>");
-    expect(menu.indexOf("pe-page-menu-add")).toBeGreaterThan(menu.indexOf("P-YARD"));
-    // No free plan line for a watch that never said it is on it.
-    expect(menu).not.toContain("pe-page-menu-note");
-  });
-
-  it("shows the picked page and closes; the shown one changes nothing", () => {
-    const { el } = editor();
-    el.leaveTile = () => undefined;
-    el.hostWidth = 360;
-    el.pageMenuOpen = true;
-    const row = (id: string) => findTemplate((el.renderBody as (w: readonly OwnerSummary[]) => unknown).call(el, el.owners as OwnerSummary[]),
-      (t) => t.strings[0]!.includes(`<button class="row pe-page-menu-row"`) && t.values.includes(id))!;
-    listener(row("P-HALL"), "click")({} as Event);
-    expect(el.pageMenuOpen).toBe(false);
-    expect(el.selectedPageId).toBe("P-HALL");
-    el.pageMenuOpen = true;
-    listener(row("P-YARD"), "click")({} as Event);
-    expect(el.pageMenuOpen).toBe(false);
-    expect(el.selectedPageId).toBe("P-YARD");
-  });
-
-  it("adds a page as the Pages card does, and names it in the head, not in its far row", () => {
-    const { el } = editor();
-    el.leaveTile = () => undefined;
-    el.hostWidth = 360;
-    el.pageMenuOpen = true;
-    const drawn = (el.renderBody as (w: readonly OwnerSummary[]) => unknown).call(el, el.owners as OwnerSummary[]);
-    // The menu's own template: its first click is Add page's.
-    const add = findTemplate(drawn, (t) => t.strings[0]!.includes(`class="pop-menu pe-page-menu"`))!;
-    listener(add, "click")({} as Event);
-    const pages = (el as unknown as { draft: { document: WatchPagesDocument } }).draft.document.pages as { id: string }[];
-    expect(pages).toHaveLength(3);
-    expect(el.selectedPageId).toBe(pages[2]!.id);
-    expect(el.pageMenuOpen).toBe(false);
-    expect(el.renaming).toBeUndefined();
-    expect(el.focusHeadName).toBe(true);
-    // Beside the stage the Pages card is in sight, and its row is renamed.
-    const wide = editor();
-    wide.el.leaveTile = () => undefined;
-    (wide.el.addPage as () => void).call(wide.el);
-    expect(wide.el.renaming).toBeDefined();
-    expect(wide.el.focusHeadName).toBe(false);
-  });
-
-  it("holds Add page while a save runs, and says the free plan's line on a free device", () => {
-    const { el, body } = editor();
-    el.hostWidth = 360;
-    el.pageMenuOpen = true;
-    el.record = { ...(el.record as WatchConfigRecord), multiple_pages: false };
-    Object.defineProperty(el, "saving", { get: () => true });
-    const head = headOf(body());
-    const add = head.slice(head.indexOf(`class="row pe-page-menu-add"`));
-    expect(add).toContain(`?disabled=true`);
-    expect(add).toContain("Saving. Tiles and pages move again once the save is done.");
-    expect(head).toContain(`<p class="pe-page-menu-note">On the free plan, the watch shows your first page that is not hidden.</p>`);
-  });
-
-  it("is not drawn for a library page, which stands alone", () => {
-    const { el } = editor();
-    el.hostWidth = 360;
-    const page = (el.currentPage as () => unknown).call(el);
-    expect(flat((el.renderPageMenu as (p: unknown) => unknown).call(el, page))).toContain("pe-page-open");
-    el.libraryItem = { id: "P-HALL" };
-    expect(flat((el.renderPageMenu as (p: unknown) => unknown).call(el, page))).toBe("");
-  });
-
-  it("closes on a press outside it, not on one inside", () => {
-    // Node has no elements: the handler asks only for each one's classes.
-    class Element { constructor(readonly classList: { contains: (c: string) => boolean }) {} }
-    vi.stubGlobal("HTMLElement", Element);
-    try {
-      const { el } = editor();
-      el.pageMenuOpen = true;
-      const at = (...classes: string[]) => new Element({ contains: (c) => classes.includes(c) });
-      const press = (...path: object[]) => (el.onWindowPointerDown as (e: PointerEvent) => void)({ composedPath: () => path } as unknown as PointerEvent);
-      press(at("row", "pe-page-menu-row"), at("pe-page-pick"));
-      expect(el.pageMenuOpen).toBe(true);
-      press(at("pe-screen"));
-      expect(el.pageMenuOpen).toBe(false);
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it("hangs the menu the width of the head, so a 360 point phone needs no sideways scroll", () => {
-    const css = sheet();
-    const menu = rule(css, ".pop-menu.pe-page-menu");
-    expect(menu).toMatch(/left:\s*0/);
-    expect(menu).toMatch(/right:\s*0/);
-    expect(menu).toMatch(/max-width:\s*none/);
-    expect(rule(css, ".layout.pe-layout.cols-1 .pe-canvas > .cv-head")).toMatch(/position:\s*relative/);
-    expect(rule(css, ".pe-page-menu-name")).toContain("text-overflow: ellipsis");
   });
 });
 

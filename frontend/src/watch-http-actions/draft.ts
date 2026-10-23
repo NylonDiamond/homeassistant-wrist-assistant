@@ -1,9 +1,8 @@
 // The HTTP action library being edited in the panel, how it is saved, and
 // the one draft kept for it.
 //
-// The Control Center draft's shape (`watch-control-center/draft.ts`): the
-// document Home Assistant holds (`base`) at its revision, the document as
-// edited now, and the undo and redo steps between. When Home Assistant moves
+// The draft's shape: the document Home Assistant holds (`base`) at its
+// revision, the document as edited now, and the undo and redo steps between. When Home Assistant moves
 // on under an open draft (a phone handing its library over, or a save that
 // met a conflict) every step is merged onto the newer document by
 // `mergeHttpActions`, so no edit to an action or global the other side left

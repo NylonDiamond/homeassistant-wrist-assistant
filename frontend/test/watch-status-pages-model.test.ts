@@ -10,10 +10,7 @@ import { join } from "node:path";
 import type { JsonObject } from "../src/watch-pages/model.js";
 import {
   StatusPagesDraft,
-  anyStatusPagesDirty,
   forgetStatusPagesDraft,
-  keptStatusPagesDraft,
-  newWatchStatusPagesDraft,
   saveStatusPagesDraft,
   takeStatusPagesRecord,
 } from "../src/watch-status-pages/draft.js";
@@ -50,9 +47,7 @@ import {
   statusPagesDefaults,
   statusPagesEmpty,
   statusPagesOf,
-  statusPagesReadMeansUnsupported,
   statusPagesSize,
-  statusPagesSummary,
   statusStyleFields,
   statusStyleValue,
 } from "../src/watch-status-pages/model.js";
@@ -138,59 +133,6 @@ describe("the defaults and the starts", () => {
 
   it("an empty list is the empty fixture", () => {
     expect(JSON.stringify(statusPagesEmpty())).toBe(read("03-empty.json").text.trimEnd());
-  });
-
-  it("a new watch opens on the defaults at revision 0, unsaved, and its first save makes the record", async () => {
-    const watch = "SP-NEW-WATCH";
-    forgetStatusPagesDraft(watch);
-    const draft = newWatchStatusPagesDraft(watch);
-    expect(draft.revision).toBe(0);
-    expect(draft.document).toEqual(statusPagesDefaults());
-    expect(draft.dirty).toBe(false);
-    expect(anyStatusPagesDirty()).toBe(false);
-    expect(keptStatusPagesDraft(watch)).toBe(draft);
-    draft.apply(renameStatusPage(draft.document, STATUS_PAGE_KEYS.systemDefaultIds[0]!, "Mine"));
-    expect(anyStatusPagesDirty()).toBe(true);
-    const sent: [number, unknown][] = [];
-    const result = await saveStatusPagesDraft(draft, {
-      save: async (base, document) => { sent.push([base, document]); return { revision: 1 }; },
-      fetch: async () => { throw new Error("not read"); },
-    });
-    expect(result).toMatchObject({ ok: true, revision: 1 });
-    expect(sent).toHaveLength(1);
-    expect(sent[0]![0]).toBe(0);
-    expect(draft.dirty).toBe(false);
-    forgetStatusPagesDraft(watch);
-  });
-
-  it("a new watch's Discard goes back to the defaults", () => {
-    const watch = "SP-NEW-DISCARD";
-    forgetStatusPagesDraft(watch);
-    const draft = newWatchStatusPagesDraft(watch);
-    draft.apply(renameStatusPage(draft.document, STATUS_PAGE_KEYS.systemDefaultIds[0]!, "Mine"));
-    expect(draft.discard()).toBe(true);
-    expect(draft.document).toEqual(statusPagesDefaults());
-    expect(draft.dirty).toBe(false);
-    forgetStatusPagesDraft(watch);
-  });
-
-  it("a kept draft from an earlier record moves onto the defaults at revision 0, its edits kept", () => {
-    const watch = "SP-NEW-RESTART";
-    forgetStatusPagesDraft(watch);
-    const old = takeStatusPagesRecord(watch, statusPagesDefaults(), 5).draft;
-    old.apply(renameStatusPage(old.document, STATUS_PAGE_KEYS.systemDefaultIds[0]!, "Mine"));
-    const fresh = newWatchStatusPagesDraft(watch);
-    expect(fresh).toBe(old);
-    expect(fresh.revision).toBe(0);
-    expect(fresh.dirty).toBe(true);
-    expect(statusPagesOf(fresh.document)[0]?.name).toBe("Mine");
-    forgetStatusPagesDraft(watch);
-  });
-
-  it("an integration older than the kind refuses the read", () => {
-    expect(statusPagesReadMeansUnsupported({ code: "invalid" })).toBe(true);
-    expect(statusPagesReadMeansUnsupported({ code: "unknown_command" })).toBe(true);
-    expect(statusPagesReadMeansUnsupported({ code: "timeout" })).toBe(false);
   });
 
   it("a record with no revision leaves a kept draft as it is, and a read makes one", () => {
@@ -383,10 +325,6 @@ describe("the shape check", () => {
     ]);
   });
 
-  it("a restore says how many pages and rows", () => {
-    expect(statusPagesSummary(statusPagesDefaults())).toBe("5 status pages, 5 rows in all.");
-    expect(statusPagesSummary(undefined)).toBe("0 status pages, 0 rows in all.");
-  });
 });
 
 // ── the merge ────────────────────────────────────────────────────────────

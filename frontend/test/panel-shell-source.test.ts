@@ -45,13 +45,14 @@ describe("the panel's shell wiring", () => {
 
   it("hands Home Assistant's menu to the tab bar, not to each watch screen", () => {
     expect(SOURCE).not.toMatch(/\n {8}menu: this\.narrow/);
-    // Voice, Control Center and Rooms: a device's Pages, Status pages and
-    // Menus are its column on the board (plan step 4).
-    expect(SOURCE.match(/\n {8}menu: false,/g)).toHaveLength(3);
+    // Voice and Rooms: a device's Pages, Status pages and Menus are its
+    // column on the board (plan step 4), and Control Center moved into
+    // complications.
+    expect(SOURCE.match(/\n {8}menu: false,/g)).toHaveLength(2);
   });
 
   it("sends each watch screen's way back to the Complications tab", () => {
-    expect(SOURCE.match(/onBack: \(\) => this\.goTo\(COMPLICATIONS_PATH\)/g)).toHaveLength(3);
+    expect(SOURCE.match(/onBack: \(\) => this\.goTo\(COMPLICATIONS_PATH\)/g)).toHaveLength(2);
   });
 
   it("hands HTTP actions neither a menu nor a way back: it only ever stands under the row", () => {

@@ -18,7 +18,7 @@ import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import { isJsonObject } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { mergeWatchMenus, watchMenusClashes } from "./merge.js";
-import { type MenusDocument, WATCH_MENUS_SECTIONS, type WatchMenusSection, checkWatchMenus, watchMenusDefaults } from "./model.js";
+import { type MenusDocument, WATCH_MENUS_SECTIONS, type WatchMenusSection, checkWatchMenus } from "./model.js";
 
 export const WATCH_MENUS_UNDO_LIMIT = 100;
 export const WATCH_MENUS_SAVE_ATTEMPTS = 3;
@@ -335,25 +335,6 @@ export function takeWatchMenusRecord(
   return { draft: held, mergedIntoEdits: dirty && changed, replaced: dirty ? held.replaced : [] };
 }
 
-/**
- * The draft a new watch's menu screen opens on while Home Assistant holds no
- * menus for it (`new-watch.ts`): the kept one, else a new one on the app's
- * defaults at revision 0, unsaved and not dirty. Nothing is written: its
- * first save is a save over revision 0, which makes the record. A kept
- * draft from an earlier record (Home Assistant started over) is moved onto
- * the defaults at revision 0, its edits kept, unless it is being saved.
- */
-export function newWatchMenusDraft(watchId: string): WatchMenusDraft {
-  const held = drafts.get(watchId);
-  if (held === undefined) {
-    const fresh = new WatchMenusDraft(watchMenusDefaults(), 0);
-    drafts.set(watchId, fresh);
-    return fresh;
-  }
-  if (held.revision > 0 && !held.saving) held.restart(watchMenusDefaults(), 0);
-  return held;
-}
-
 export function forgetWatchMenusDraft(watchId: string): void {
   drafts.delete(watchId);
 }
@@ -365,22 +346,4 @@ export function anyWatchMenusDirty(): boolean {
 
 export function dropAllWatchMenus(): void {
   drafts.clear();
-  menuAsks.clear();
-}
-
-/** The menu each device's editor should show as it opens: a card on the
- * Menus tab asked for it. */
-const menuAsks = new Map<string, "anywhere" | "entity">();
-
-/** Ask the editor to show `menu`, on its own settings, the next time it
- * opens `watchId`. */
-export function askWatchMenu(watchId: string, menu: "anywhere" | "entity"): void {
-  menuAsks.set(watchId, menu);
-}
-
-/** The menu asked for on `watchId`, forgetting the ask. */
-export function takeWatchMenuAsk(watchId: string): "anywhere" | "entity" | undefined {
-  const menu = menuAsks.get(watchId);
-  menuAsks.delete(watchId);
-  return menu;
 }

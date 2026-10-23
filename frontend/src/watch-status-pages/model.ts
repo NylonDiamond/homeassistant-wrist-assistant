@@ -26,7 +26,6 @@ import statusPageKeys from "./status-page-keys.json";
 import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import { randomWatchId } from "../watch-pages/edit.js";
 import { type JsonObject, WATCH_CONFIG_LIMIT_BYTES, isJsonObject, sizeOf } from "../watch-pages/model.js";
-import { watchCommandError } from "../watch-pages/save-note.js";
 import { type StatusPagePreset, type StatusStates, STATUS_PAGE_RULES, defaultStatusIcon, readStatusRow } from "./rules.js";
 
 // ── the tables ───────────────────────────────────────────────────────────
@@ -92,12 +91,6 @@ export function asStatusPagesDocument(value: unknown): StatusPagesDocument | und
 /** The document as compact JSON in UTF-8 bytes, as the sync measures it. */
 export function statusPagesSize(document: StatusPagesDocument): number {
   return sizeOf(document);
-}
-
-export function statusPagesBudget(document: StatusPagesDocument): { size: number; limit: number; share: number; near: boolean } {
-  const size = statusPagesSize(document);
-  const share = size / STATUS_PAGES_LIMIT_BYTES;
-  return { size, limit: STATUS_PAGES_LIMIT_BYTES, share, near: share > 0.8 };
 }
 
 /** The raw page list, or an empty one when there is none. */
@@ -620,14 +613,6 @@ export function checkStatusPages(document: unknown): string[] {
   return problems;
 }
 
-/** A restore's one line: how many pages and rows. */
-export function statusPagesSummary(document: unknown): string {
-  const pages = statusPagesOf(asStatusPagesDocument(document));
-  const rows = pages.reduce((n, p) => n + statusPageRows(p).length, 0);
-  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-  return `${plural(pages.length, "status page", "status pages")}, ${plural(rows, "row", "rows")} in all.`;
-}
-
 // ── no record ────────────────────────────────────────────────────────────
 
 /** Over the wait while an iPhone may still move the status pages here. A
@@ -636,11 +621,3 @@ export function statusPagesSummary(document: unknown): string {
 export const STATUS_PAGES_NO_RECORD_TITLE = "No status pages from this watch yet.";
 
 export const STATUS_PAGES_UPDATE_TEXT = "Update the integration to edit status pages here.";
-
-/** Whether a failed read means this integration does not keep status pages:
- * one older than the kind refuses it as `invalid`, one older than the store
- * does not know the command. */
-export function statusPagesReadMeansUnsupported(error: unknown): boolean {
-  const code = watchCommandError(error).code;
-  return code === "invalid" || code === "unknown_command";
-}

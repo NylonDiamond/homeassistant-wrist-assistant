@@ -16,7 +16,6 @@ import {
   countClearedMenuRefs,
   countMenuRefs,
   countPageTaps,
-  deletedPageIds,
   keepSlotsOf,
   menuSlotsOpeningPage,
   menuSlotsOpeningStatusPage,
@@ -217,39 +216,8 @@ describe("what an untick would clear, counted before it asks", () => {
   });
 });
 
-describe("the pages a save deletes", () => {
-  it("are the ids the base lists and the saved pages do not", () => {
-    const base = [{ id: LIVING }, { id: BEDROOM }, { id: "SYS" }];
-    expect(deletedPageIds(base, [{ id: BEDROOM.toLowerCase() }, { id: "SYS" }])).toEqual([LIVING]);
-    expect(deletedPageIds(base, base)).toEqual([]);
-    expect(deletedPageIds([{}], [])).toEqual([]);
-  });
-});
-
-describe("the page editor's delete", () => {
-  // No test mounts the editor's delete dialog, so its wiring is read from
-  // the source, the way the panel's Home is (panel-home-source.test.ts).
-  const source = readFileSync(join(__dirname, "..", "src", "watch-pages", "page-editor.ts"), "utf8");
-
-  it("names the menu slots and complication taps instead of saying the list leaves them out", () => {
-    expect(source).not.toContain("This list does not include those.");
-    expect(source).toContain(`fetchWatchConfig(hass, watchId, "menus")`);
-    expect(source).toContain("fetchList(hass, watchId)");
-    expect(source).toContain("menuSlotsOpeningPage(ask.menus, ask.pageId)");
-    expect(source).toContain("complicationsOpeningPage(ask.complications ?? [], ask.pageId)");
-  });
-
-  it("clears them once the save that deletes the page has landed", () => {
-    expect(source).toContain("const deleted = deletedPageIds(watchPagesOf(draft.base), watchPagesOf(draft.document));");
-    expect(source).toContain("if (result.ok && deleted.length > 0) {");
-    expect(source).toContain("const cleared = await this.clearPageRefs(hass, watchId, deleted, keep);");
-    // A shared menu keeps its slots to a page other devices using it still
-    // have, as the library says.
-    expect(source).toContain(`const keep = keepSlotsOf(this.lib.library, watchId, "pages");`);
-    // The page stays in the library: the save removes the pick, never the
-    // item, and the tiles the delete question kept stay kept.
-    expect(source).not.toContain("deleteOrphans");
-    // The clearing itself is shared with an untick (page-links-io.ts).
+describe("clearing a page off a device", () => {
+  it("saves the device's menus and each complication that opened it (page-links-io.ts), as an untick does", () => {
     const io = readFileSync(join(__dirname, "..", "src", "watch-pages", "page-links-io.ts"), "utf8");
     expect(io).toContain(`await saveWatchConfig(hass, ownerId, "menus", record.revision, next);`);
     expect(io).toContain("await saveRecord(hass, ownerId, next, record.revision);");

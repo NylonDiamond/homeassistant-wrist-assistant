@@ -3,10 +3,10 @@
 // rests on: a document opened and saved with no edit goes back exactly as it
 // came, and an edit changes its own key and nothing else.
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { HassEntityState } from "../src/ha-api.js";
-import { isWatchPagesRoute, navigateWatchPages, watchPagesRouteOwner, watchPagesUrl } from "../src/watch-pages/hook.js";
+import { isWatchPagesRoute, watchPagesRouteOwner } from "../src/watch-pages/hook.js";
 import WATCH_APP from "../src/watch-pages/tile-app.json";
 import tileDefaults from "../src/watch-pages/tile-defaults.json";
 import {
@@ -415,14 +415,6 @@ describe("the panel route", () => {
     expect(isWatchPagesRoute(undefined)).toBe(false);
   });
 
-  it("builds both addresses from the route, or from the address bar without one", () => {
-    const route = { prefix: "/wrist-assistant", path: "" };
-    expect(watchPagesUrl(route, true)).toBe("/wrist-assistant/pages");
-    expect(watchPagesUrl(route, false)).toBe("/wrist-assistant");
-    expect(watchPagesUrl(undefined, false, "/wrist-assistant/pages")).toBe("/wrist-assistant");
-    expect(watchPagesUrl(undefined, true, "/wrist-assistant")).toBe("/wrist-assistant/pages");
-  });
-
   it("reads the watch a link names from the first segment after /pages/", () => {
     const at = (path: string) => watchPagesRouteOwner({ prefix: "/wrist-assistant", path });
     expect(at("/pages/watch-1")).toBe("watch-1");
@@ -445,53 +437,4 @@ describe("the panel route", () => {
     expect(watchPagesRouteOwner(undefined)).toBeUndefined();
   });
 
-  it("builds the plain addresses from a route that names a watch", () => {
-    const route = { prefix: "/wrist-assistant", path: "/pages/watch-1" };
-    expect(watchPagesUrl(route, true)).toBe("/wrist-assistant/pages");
-    expect(watchPagesUrl(route, false)).toBe("/wrist-assistant");
-    expect(watchPagesUrl(undefined, false, "/wrist-assistant/pages/watch-1")).toBe("/wrist-assistant");
-    expect(watchPagesUrl(undefined, true, "/wrist-assistant/pages/watch-1/x")).toBe("/wrist-assistant/pages");
-  });
-
-  describe("moving between addresses", () => {
-    let pushed: string[];
-    let events: string[];
-    const stubAt = (pathname: string) => {
-      pushed = [];
-      events = [];
-      vi.stubGlobal("window", {
-        location: { pathname },
-        dispatchEvent: (e: Event) => { events.push(e.type); return true; },
-      });
-      vi.stubGlobal("history", { pushState: (_s: unknown, _t: string, url: string) => { pushed.push(url); } });
-    };
-    afterEach(() => { vi.unstubAllGlobals(); });
-
-    it("goes back from a watch's address to the panel itself", () => {
-      stubAt("/wrist-assistant/pages/watch-1");
-      navigateWatchPages({ prefix: "/wrist-assistant", path: "/pages/watch-1" }, false);
-      expect(pushed).toEqual(["/wrist-assistant"]);
-      expect(events).toEqual(["location-changed"]);
-    });
-
-    it("goes back the same way without a route", () => {
-      stubAt("/wrist-assistant/pages/watch-1");
-      navigateWatchPages(undefined, false);
-      expect(pushed).toEqual(["/wrist-assistant"]);
-    });
-
-    it("opens the editor at the plain address, never a watch's", () => {
-      stubAt("/wrist-assistant");
-      navigateWatchPages({ prefix: "/wrist-assistant", path: "" }, true);
-      expect(pushed).toEqual(["/wrist-assistant/pages"]);
-      expect(events).toEqual(["location-changed"]);
-    });
-
-    it("stays put when already at the address", () => {
-      stubAt("/wrist-assistant/pages");
-      navigateWatchPages({ prefix: "/wrist-assistant", path: "/pages" }, true);
-      expect(pushed).toEqual([]);
-      expect(events).toEqual([]);
-    });
-  });
 });

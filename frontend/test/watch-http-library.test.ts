@@ -457,11 +457,11 @@ describe("the Target card of an HTTP action tile", () => {
 describe("the page editor reads the library", () => {
   const source = readFileSync(join(__dirname, "..", "src", "watch-pages", "page-editor.ts"), "utf8");
 
-  it("on opening a watch, which a return to the editor does too, and on a reconnect", () => {
+  it("on opening the preview device, which a return to the editor does too, and on a reconnect", () => {
     expect(source.match(/void this\.loadHttpLibrary\(\);/g)).toHaveLength(2);
     expect(source).toContain("fetchHttpActions(hass)");
     expect(source).toContain("watchCatalogWithHttpLibrary(");
-    // A return to the editor opens its watch again.
-    expect(source).toMatch(/connectedCallback\(\): void \{[\s\S]*?this\.openWatch\(this\.watchId, true\)/);
+    // A return to the editor opens its preview device again.
+    expect(source).toMatch(/connectedCallback\(\): void \{[\s\S]*?this\.openPreview\(this\.watchId\)/);
   });
 });

@@ -11,9 +11,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import "../src/watch-pages/all-pages.js";
 import { pageCrop } from "../src/watch-pages/all-pages.js";
 import type { UntickAsk } from "../src/watch-pages/library-editing-io.js";
-import { forgetWatchPagesDraft, keptWatchPagesSelection, takeNewWatchPageAsk, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
+import { forgetWatchPagesDraft, keptWatchPagesSelection, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { JsonObject } from "../src/watch-pages/model.js";
-import { takeStatusPageAsk } from "../src/watch-status-pages/draft.js";
 import { LIBRARY_PREVIEW_KEY } from "../src/library/item-mode.js";
 import { CAMERA, CHEN, CHEN_MENU, DOORS, JESSE, LIGHTS, LONELY, PAGE1, PHONE, SMART, STARTER, SYSTEM } from "./library-fixture.js";
 import { type Msg, fakeHome, settle, standUp } from "./library-tab-fake.js";
@@ -296,7 +295,6 @@ describe("the Pages tab", () => {
     const added = (saved.document as { pages: JsonObject[] }).pages.at(-1)!;
     expect(added.name).toMatch(/^New Page \d+$/);
     expect(t.library.at(-1)).toEqual(["pages", added.id, CHEN]);
-    expect(takeNewWatchPageAsk(CHEN)).toBe(false);
     expect(t.opened).toHaveLength(0);
   });
 
@@ -506,7 +504,6 @@ describe("the Status pages tab", () => {
     t.call("open", lib.statusPages.find((e) => e.id === STARTER));
     expect(t.opened).toHaveLength(0);
     expect(t.library.at(-1)).toEqual(["status_pages", STARTER, JESSE]);
-    expect(takeStatusPageAsk(JESSE)).toBeUndefined();
   });
 
   it("drops what was picked and typed when told to list the other kind", async () => {

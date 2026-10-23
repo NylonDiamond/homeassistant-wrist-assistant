@@ -121,9 +121,8 @@ export interface StatusPagesViewHost {
    * only, or out of the library. Without it, Delete is an edit at once, as
    * it always was. */
   deletePage?(pageId: string): void;
-  /** Drawn under the page list: "Not on this watch", the library's status
-   * pages this device does not have, each with a way to add it here
-   * (`watch-pages/library-rest.ts`). */
+  /** Drawn under the page list: the editor's list of every status page in
+   * the library (`library/item-list.ts`). */
   readonly elsewhere?: TemplateResult;
   /** One status page edited in the library on its own: no Add, and its row
    * has no drag and no Move up or down. Delete stays, through

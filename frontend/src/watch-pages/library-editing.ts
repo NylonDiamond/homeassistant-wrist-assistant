@@ -4,24 +4,13 @@
 //
 // The words: the tick row's locks, the question an untick asks when it
 // clears menu slots or taps and the note it leaves, the badge on a row, the
-// delete question ("Delete on all 3 devices" or "Remove from this watch
-// only"), the line a restore adds when it changes other devices too, the
-// rows of "Not on this watch", and the name a menu's copy starts with.
+// line under status pages other devices have too, and the name a menu's
+// Duplicate starts with.
 // Plan: app repo docs/one_library_plan_2026-10.md, step 3.
 
-import { type LibraryListKind, MENU_UNITS, MENU_UNIT_SECTIONS, type MenuUnit } from "../library/client.js";
-import {
-  type Library,
-  type LibraryItem,
-  type LibraryMenu,
-  MENU_UNIT_TITLES,
-  devicesFor,
-  libraryItem,
-  menuFor,
-  restFor,
-  sameId,
-} from "../library/model.js";
-import { type LinkDevice, deviceWord, joinWords, linkBadgeText } from "./devices.js";
+import type { LibraryListKind } from "../library/client.js";
+import { type Library, devicesFor, sameId } from "../library/model.js";
+import { type LinkDevice, joinWords, linkBadgeText } from "./devices.js";
 import type { PageRefCount } from "./page-refs.js";
 import type { WatchPagesNote } from "./save-note.js";
 
@@ -97,12 +86,6 @@ export function libraryLinkBadge(
   return { others: libraryBadgeDevices(lib, kind, id, here, devices), title, colorOf };
 }
 
-/** Why the tick of the device on screen cannot be clicked: Delete takes the
- * item off it. */
-export function hereTickText(kind: LibraryListKind, device: LinkDevice["kind"]): string {
-  return `On this ${deviceWord(device)}. Delete takes the ${noun(kind)} off it.`;
-}
-
 /** Why another device's tick cannot be unticked: its editor in this tab
  * holds unsaved edits, whose next save would put the item back. */
 export function dirtyElsewhereText(name: string): string {
@@ -156,162 +139,6 @@ export function untickNote(item: string, device: string, cleared: PageRefCount, 
   return words === "" ? undefined : { kind: "ok", text: took };
 }
 
-/** The delete question's two answers, for an item other devices have too. */
-export interface LibraryDeleteChoices {
-  /** How many devices have it, this one with them. */
-  count: number;
-  /** The other devices, by name. */
-  others: string[];
-  /** "Remove from this watch only". */
-  remove: string;
-  /** "Delete on all 3 devices". */
-  library: string;
-  /** The question's line under its title. */
-  body: string;
-}
-
-/**
- * The delete question's answers for an item other devices have too, or
- * undefined for one on this device alone (or not in the library yet), which
- * the editor deletes as it always did.
- */
-export function libraryDeleteChoices(
-  lib: Library | undefined,
-  kind: LibraryListKind,
-  id: string,
-  here: string,
-  device: LinkDevice["kind"],
-  devices: readonly LinkDevice[],
-): LibraryDeleteChoices | undefined {
-  if (lib === undefined) return undefined;
-  const others = otherOwners(lib, kind, id, here);
-  if (others.length === 0) return undefined;
-  const count = others.length + 1;
-  const names = ownerWords(others, devices);
-  const word = deviceWord(device);
-  const remove = `Remove from this ${word} only`;
-  const library = `Delete on all ${count} devices`;
-  const them = others.length === 1 ? "that device keeps it" : "those devices keep it";
-  return {
-    count,
-    others: names,
-    remove,
-    library,
-    body: `It is also on ${joinWords(names)}. Remove takes it off this ${word} when you save, and ${them}. Undo brings it back. `
-      + `${library} applies right away to every device, and undo does not bring it back.`,
-  };
-}
-
-/** The keys that are never the item's content: left out when a restored
- * item is matched against the library's. `isHidden` is a device's own pick;
- * `linkId` is only in revisions saved before the library, and Home Assistant
- * drops it from whatever it maps back, so a restore never changes it. */
-const PICK_KEYS: ReadonlySet<string> = new Set(["isHidden", "linkId"]);
-
-/** JSON with its keys sorted, so two objects with the same content compare
- * equal whatever order their keys were written in. */
-function canonical(value: unknown, top = false): string {
-  if (Array.isArray(value)) return `[${value.map((v) => canonical(v)).join(",")}]`;
-  if (value !== null && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([k, v]) => v !== undefined && !(top && PICK_KEYS.has(k)))
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(",")}}`;
-  }
-  return JSON.stringify(value) ?? "null";
-}
-
-/** A restored page holds the same as the library's item: its own Hide here
- * and the old link key aside. */
-export function sameItemContent(a: unknown, b: unknown): boolean {
-  return canonical(a, true) === canonical(b, true);
-}
-
-function idOf(item: unknown): string | undefined {
-  const id = (item as { id?: unknown } | null)?.id;
-  return typeof id === "string" && id !== "" ? id : undefined;
-}
-
-function nameOf(entry: LibraryItem): string {
-  return `"${entry.name}"`;
-}
-
-/**
- * The line a restore question adds when the restore changes other devices
- * too: a restore of a device's pages (or status pages) is a save of them, so
- * every page in the restored save that differs from the library's and that
- * other devices have changes there too. "It also changes "Lights" on Chen
- * Watch, which has it too." Undefined when it changes only this device.
- */
-export function restoreOthersText(
-  lib: Library | undefined,
-  kind: LibraryListKind,
-  here: string,
-  restored: readonly unknown[],
-  devices: readonly LinkDevice[],
-): string | undefined {
-  if (lib === undefined) return undefined;
-  const changed: LibraryItem[] = [];
-  const owners = new Map<string, string>();
-  for (const item of restored) {
-    const id = idOf(item);
-    const entry = id === undefined ? undefined : libraryItem(lib, kind, id);
-    if (entry === undefined) continue;
-    const others = entry.owners.filter((o) => !sameId(o, here));
-    if (others.length === 0 || sameItemContent(item, entry.item)) continue;
-    changed.push(entry);
-    for (const o of others) owners.set(o.toUpperCase(), o);
-  }
-  if (changed.length === 0) return undefined;
-  const shown = changed.slice(0, 3).map(nameOf);
-  const more = changed.length - shown.length;
-  const what = more > 0 ? `${shown.join(", ")} and ${more} more ${more === 1 ? noun(kind) : `${noun(kind)}s`}` : joinWords(shown);
-  const names = ownerWords([...owners.values()], devices);
-  const one = owners.size === 1;
-  const it = changed.length === 1 ? "it" : "them";
-  return `It also changes ${what} on ${joinWords(names)}, which ${one ? "has" : "have"} ${it} too.`;
-}
-
-function unitPart(document: unknown, unit: MenuUnit): Record<string, unknown> {
-  const doc = document !== null && typeof document === "object" ? (document as Record<string, unknown>) : {};
-  return Object.fromEntries(MENU_UNIT_SECTIONS[unit].flatMap((k) => (doc[k] === undefined ? [] : [[k, doc[k]]])));
-}
-
-/** "the Anywhere menu", or "the Anywhere menu "Home menu"" for one with a
- * name of its own. */
-export function menuLabel(menu: LibraryMenu): string {
-  const title = MENU_UNIT_TITLES[menu.unit];
-  return menu.name === title ? `the ${title}` : `the ${title} "${menu.name}"`;
-}
-
-/**
- * The lines a menus restore question adds, one per unit the restore changes
- * on other devices too. A restore is a save of this device's menus, so each
- * unit's restored slots go onto the menu this device uses now, which every
- * device that uses it shows: "It also changes the Anywhere menu "Home menu"
- * on iPhone 15 Pro, which uses it too." Nothing else in the restored save
- * picks a menu. Empty when it changes only this device.
- */
-export function menuRestoreLines(
-  lib: Library | undefined,
-  here: string,
-  now: unknown,
-  restored: unknown,
-  devices: readonly LinkDevice[],
-): string[] {
-  if (lib === undefined) return [];
-  const lines: string[] = [];
-  for (const unit of MENU_UNITS) {
-    const menu = menuFor(lib, here, unit);
-    if (menu === undefined) continue;
-    const others = menu.owners.filter((o) => !sameId(o, here));
-    if (others.length === 0) continue;
-    if (canonical(unitPart(now, unit)) === canonical(unitPart(restored, unit))) continue;
-    lines.push(`It also changes ${menuLabel(menu)} on ${joinWords(ownerWords(others, devices))}, which ${others.length === 1 ? "uses" : "use"} it too.`);
-  }
-  return lines;
-}
-
 /** The line under a device's status pages when some are on other devices
  * too: "These status pages are also on Jesse's iPhone. An edit here shows
  * there too." Undefined when none is. */
@@ -328,40 +155,7 @@ export function statusSharedText(lib: Library | undefined, here: string, ids: re
   return `${which} also on ${joinWords(ownerWords([...owners.values()], devices))}. An edit here shows there too.`;
 }
 
-/** One row of "Not on this watch". */
-export interface RestRow {
-  entry: LibraryItem;
-  /** "11 tiles · on Chen Watch", "1 row · on no device". */
-  meta: string;
-}
-
-/** "Not on this watch": the library's pages, or status pages, this device
- * does not have, each with the devices that do. */
-export function restRows(lib: Library | undefined, here: string, kind: LibraryListKind, devices: readonly LinkDevice[]): RestRow[] {
-  if (lib === undefined) return [];
-  return restFor(lib, here, kind).map((entry) => {
-    const where = entry.owners.length === 0 ? "on no device" : `on ${joinWords(ownerWords(entry.owners, devices))}`;
-    const starter = entry.starter ? " · starter" : "";
-    return { entry, meta: `${entry.detail}${starter} · ${where}` };
-  });
-}
-
-/** "Not on this watch", or iPhone. */
-export function restTitle(device: LinkDevice["kind"]): string {
-  return `Not on this ${deviceWord(device)}`;
-}
-
-/** The name "Make a copy for this watch" gives the copy first. */
+/** The name Duplicate gives a device's copy of a menu first. */
 export function copyMenuName(deviceName: string): string {
   return `${deviceName}'s menu`;
-}
-
-/** What "Make a copy for this watch" says once the copy is in use. */
-export function copiedMenuText(name: string, device: LinkDevice["kind"]): string {
-  return `This ${deviceWord(device)} uses its own copy now, "${name}". Edits here change only this ${deviceWord(device)}.`;
-}
-
-/** Why "Make a copy for this watch" waits: it copies the menu as saved. */
-export function copyBlockedText(device: LinkDevice["kind"]): string {
-  return `Save or discard your edits first. The copy is made from the menu as saved on this ${deviceWord(device)}.`;
 }

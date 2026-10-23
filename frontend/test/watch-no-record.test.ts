@@ -14,18 +14,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
-import { WaControlCenterEditor } from "../src/watch-control-center/control-center-editor.js";
-import {
-  CONTROL_CENTER_NO_RECORD_TEXT,
-  CONTROL_CENTER_NO_RECORD_TITLE,
-  CONTROL_CENTER_START_EMPTY_BUTTON,
-} from "../src/watch-control-center/model.js";
-import { CONTROL_CENTER_MOVED_LINK, CONTROL_CENTER_MOVED_TITLE } from "../src/watch-control-center/view.js";
 import { HTTP_ACTIONS_PHONE_TEXT } from "../src/watch-http-actions/model.js";
 import type { HassLike } from "../src/ha-api.js";
 import { dropAllWatchMenus } from "../src/watch-menus/draft.js";
-import { WaMenuEditor } from "../src/watch-menus/menu-editor.js";
-import { WATCH_MENUS_NO_RECORD_TITLE, WATCH_MENUS_UPDATE_TEXT } from "../src/watch-menus/model.js";
+import { WATCH_MENUS_NO_RECORD_TITLE } from "../src/watch-menus/model.js";
 import {
   choseStartFresh,
   firstSaveNote,
@@ -48,8 +40,7 @@ import {
   noRecordStart,
 } from "../src/watch-settings.js";
 import { dropAllStatusPages } from "../src/watch-status-pages/draft.js";
-import { STATUS_PAGES_NO_RECORD_TITLE, STATUS_PAGES_UPDATE_TEXT } from "../src/watch-status-pages/model.js";
-import { WaStatusPagesEditor } from "../src/watch-status-pages/status-pages-editor.js";
+import { STATUS_PAGES_NO_RECORD_TITLE } from "../src/watch-status-pages/model.js";
 import { dropAllWatchVoice } from "../src/watch-voice/draft.js";
 import { WATCH_VOICE_NO_RECORD_TITLE, WATCH_VOICE_UPDATE_TEXT } from "../src/watch-voice/model.js";
 import { WaVoiceEditor } from "../src/watch-voice/voice-editor.js";
@@ -133,12 +124,7 @@ describe("the no-record words", () => {
     expect(START_FRESH_CONFIRM_TEXT).toBe("Your iPhone's setup will not move. Start fresh?");
   });
 
-  it("give every editor a start line that matches its button", () => {
-    for (const [text, button] of [
-      [CONTROL_CENTER_NO_RECORD_TEXT, CONTROL_CENTER_START_EMPTY_BUTTON],
-    ]) {
-      expect(text).toBe(`${button} to begin.`);
-    }
+  it("give the rooms and HTTP actions their own wait lines", () => {
     expect(ROOMS_WAIT_TEXT).toBe(`Rooms are part of the watch's settings. ${WAIT_FOR_IPHONE_TEXT}`);
     expect(HTTP_ACTIONS_PHONE_TEXT).toBe("Update Wrist Assistant on your iPhone and open it once. Its HTTP actions move here by themselves.");
   });
@@ -147,7 +133,7 @@ describe("the no-record words", () => {
     for (const text of [
       WAIT_FOR_IPHONE_TEXT, START_FRESH_BUTTON, START_FRESH_CONFIRM_TEXT,
       WATCH_MENUS_NO_RECORD_TITLE, WATCH_VOICE_NO_RECORD_TITLE,
-      STATUS_PAGES_NO_RECORD_TITLE, CONTROL_CENTER_NO_RECORD_TEXT,
+      STATUS_PAGES_NO_RECORD_TITLE,
       ROOMS_NO_RECORD_TITLE, ROOMS_WAIT_TEXT, HTTP_ACTIONS_PHONE_TEXT, NEW_WATCH_TEXT, NOTHING_TO_SAVE_TEXT,
     ]) {
       expect(text).not.toMatch(/Edit pages in Home Assistant|Pages in Home Assistant|turn on/);
@@ -206,9 +192,7 @@ interface EditorInside {
 const HASS = { states: {}, entities: {}, devices: {}, areas: {}, user: { is_admin: true }, language: "en" } as unknown as HassLike;
 
 const editors: { name: string; make: () => EditorInside; kind: string; title: string; update: string }[] = [
-  { name: "menus", make: () => new WaMenuEditor() as unknown as EditorInside, kind: "menus", title: WATCH_MENUS_NO_RECORD_TITLE, update: WATCH_MENUS_UPDATE_TEXT },
   { name: "voice", make: () => new WaVoiceEditor() as unknown as EditorInside, kind: "voice", title: WATCH_VOICE_NO_RECORD_TITLE, update: WATCH_VOICE_UPDATE_TEXT },
-  { name: "status pages", make: () => new WaStatusPagesEditor() as unknown as EditorInside, kind: "status_pages", title: STATUS_PAGES_NO_RECORD_TITLE, update: STATUS_PAGES_UPDATE_TEXT },
 ];
 
 function dropDrafts(): void {
@@ -218,22 +202,6 @@ function dropDrafts(): void {
   forgetRoomsDraft("w1");
   forgetStartFreshChoices();
 }
-
-describe("the Control Center editor with no record", () => {
-  it("shows the moved note and never offers a fresh list, iPhone or not", () => {
-    for (const extra of [{ has_iphone: false }, {}, { has_iphone: true }]) {
-      const el = new WaControlCenterEditor() as unknown as EditorInside;
-      el.watchId = "w1";
-      el.record = empty("control_center");
-      const text = flatten(el.renderBody([owner("w1", extra)]));
-      expect(text).toContain(CONTROL_CENTER_MOVED_TITLE);
-      expect(text).toContain(CONTROL_CENTER_MOVED_LINK);
-      expect(text).not.toContain(CONTROL_CENTER_START_EMPTY_BUTTON);
-      expect(text).not.toContain(START_FRESH_BUTTON);
-      expect(text).not.toContain(WAIT_FOR_IPHONE_TEXT);
-    }
-  });
-});
 
 describe.each(editors)("the $name editor with no record", ({ make, kind, title, update }) => {
   const opened = (extra: Partial<OwnerSummary>) => {
@@ -333,36 +301,6 @@ describe("the rooms editor with no record", () => {
     expect(waiting).toContain(ROOMS_WAIT_TEXT);
     expect(waiting).toContain(START_FRESH_BUTTON);
     expect(waiting).not.toContain(NEW_WATCH_TEXT);
-  });
-});
-
-describe("the menus and status pages editors on an iPhone with no record", () => {
-  const phone = owner("p1", { device_kind: "iphone", phone_pages: true, device_name: "iPhone", has_iphone: false });
-  const cases = [
-    { make: () => new WaMenuEditor(), kind: "menus", watchTitle: WATCH_MENUS_NO_RECORD_TITLE },
-    { make: () => new WaStatusPagesEditor(), kind: "status_pages", watchTitle: STATUS_PAGES_NO_RECORD_TITLE },
-  ];
-  afterEach(() => {
-    dropDrafts();
-    forgetRoomsDraft("p1");
-  });
-
-  it.each(cases)("opens ready as a new iPhone, not a watch, for $kind", ({ make, kind, watchTitle }) => {
-    const el = make() as unknown as EditorInside & { phones: boolean };
-    el.hass = HASS;
-    el.owners = [owner("w1", { has_iphone: false }), phone];
-    el.phones = true;
-    el.watchId = "p1";
-    el.record = empty(kind);
-    const text = flatten(el.renderBody(el.owners));
-    expect(text).toContain(newDeviceText("iphone"));
-    expect(text).not.toContain(NEW_WATCH_TEXT);
-    expect(text).not.toContain(watchTitle);
-    expect(text).not.toContain(WAIT_FOR_IPHONE_TEXT);
-
-    // The same editor on the watch keeps the watch's words.
-    el.watchId = "w1";
-    expect(flatten(el.renderBody(el.owners))).toContain(NEW_WATCH_TEXT);
   });
 });
 

@@ -1,15 +1,13 @@
 // The page editor's library parts, against a stand-in Home Assistant that
 // works the library as the server does (`library-editor-home.ts`): the tick
-// row in a page's settings, the badge on a row, "Not on this watch" with its
-// Add, the delete question ("Remove from this watch only" or "Delete from the
-// library"), a page deleted on its only device staying in the library, an
-// untick clearing that device's menu slots and taps, the restore question
-// naming the other devices, and every save keeping the records' `linkId` as
-// loaded.
+// row over the stage of a library page, a tick and an untick through
+// `library/pick`, an untick clearing that device's menu slots and taps, and
+// the lock on a device whose page draft holds unsaved edits.
 
 import { describe, expect, it } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
+import { libraryDraftKey } from "../src/library/item-mode.js";
 import { libraryItem } from "../src/library/model.js";
 import { forgetWatchPagesDraft, keptWatchPagesDraft } from "../src/watch-pages/kept.js";
 import { tickItem } from "../src/watch-pages/library-editing-io.js";
@@ -31,12 +29,12 @@ const pagesDoc = (...pages: JsonObject[]): WatchPagesDocument => ({ schemaVersio
 let made = 0;
 
 /**
- * The page editor on Jesse's Watch. The watch has Hall (on the iPhone too,
- * with the server's link mark), Yard (on the iPhone too) and Mine (only
- * here); the iPhone has Hall, Yard and Den (only there). With `library`
- * false the integration has no library.
+ * The page editor on Hall in the library, previewed on Jesse's Watch. The
+ * watch has Hall (on the iPhone too, with the server's link mark), Yard (on
+ * the iPhone too) and Mine (only here); the iPhone has Hall, Yard and Den
+ * (only there).
  */
-async function editor(options: { library?: boolean; history?: Record<string, JsonObject>; complications?: Record<string, JsonObject[]> } = {}) {
+async function editor(options: { complications?: Record<string, JsonObject[]> } = {}) {
   const n = ++made;
   const watch = `lp-w1-${n}`;
   const phone = `lp-p1-${n}`;
@@ -50,74 +48,66 @@ async function editor(options: { library?: boolean; history?: Record<string, Jso
     [`${watch}/pages`]: pagesDoc(hall, yard, { id: MINE, name: "Mine", items: [tile(1, "light.mine")] }),
     [`${phone}/pages`]: pagesDoc(hall, { ...yard, isHidden: true }, { id: DEN, name: "Den", items: [tile(1, "light.den")] }),
   }, {
-    ...(options.library === false ? { noLibrary: true } : {}),
     unpicked: { [SHED]: { id: SHED, name: "Shed", items: [] } },
-    ...(options.history === undefined ? {} : { history: options.history }),
     ...(options.complications === undefined ? {} : { complications: options.complications }),
   });
   const Ctor = customElements.get("wa-page-editor") as unknown as new () => Record<string, unknown>;
   const el = new Ctor();
+  const ref = { kind: "pages" as const, id: HALL };
   el.hass = ha.hass;
   el.owners = owners;
   el.phones = true;
-  el.shellOwnsWatch = true;
+  el.libraryItem = ref;
+  // As `followLibraryItem` leaves it once it opened the item.
+  el.openedItem = ref;
   el.watchId = watch;
-  forgetWatchPagesDraft(watch);
+  const key = libraryDraftKey(ref);
+  forgetWatchPagesDraft(key);
   el.renderInspector = () => "";
   el.renderRoot = { activeElement: null, querySelector: () => null };
   el.leaveTile = () => undefined;
   Object.defineProperty(el, "updateComplete", { value: Promise.resolve(true) });
   const call = <T>(name: string, ...args: unknown[]): T => (el[name] as (...a: unknown[]) => T).apply(el, args);
-  await call<Promise<void>>("load", watch);
+  await call<Promise<void>>("load", key);
   await connectLibrary(el);
-  const draft = () => keptWatchPagesDraft(watch)!;
-  const page = (id: string) => (draft().document.pages as JsonObject[]).find((p) => p.id === id)!;
+  const draft = () => keptWatchPagesDraft(key)!;
+  const page = () => (draft().document.pages as JsonObject[])[0]!;
   return {
     el, ha, watch, phone, owners, call, draft, page,
-    body: () => flat(call("renderBody", owners)),
-    ticks: (id: string) => flat(call("renderPageTicks", page(id))),
+    ticks: () => flat(call("renderPageTicks", page())),
   };
 }
 
 describe("the page editor's devices, from the library", () => {
-  it("badges a page other devices have too, and not one only here", async () => {
-    const { body } = await editor();
-    const text = body();
-    // An iPhone icon, the sentence its tooltip.
-    expect(text).toMatch(/badge lk-badge[^>]*title=Also on Jesse's iPhone[\s\S]*?<rect x="6" y="2\.5"/);
-    // Hall and Yard, not Mine.
-    expect(text.match(/badge lk-badge/g)).toHaveLength(2);
-  });
-
-  it("draws a tick per device in the page's settings, this one locked on", async () => {
-    const { ticks, phone } = await editor();
-    const hall = ticks(HALL);
+  it("draws a tick per device over the stage, with no device locked as this one", async () => {
+    const { ticks } = await editor();
+    const hall = ticks();
     expect(hall).toMatch(/lib-on over-stage[\s\S]*Which devices do you want this on\?/);
     expect(hall).toContain("Jesse's Watch");
     expect(hall).toContain("Jesse's iPhone");
-    expect(hall).toContain("On this watch. Delete takes the page off it.");
+    expect(hall).not.toContain("On this watch. Delete takes the page off it.");
     expect(hall).toMatch(/lt-chip on[^>]*title=On Jesse's iPhone\. Untick to take the page off it\./);
-    expect(hall).toMatch(/lt-chip on +stuck[^>]*title=On this watch\./);
-    const mine = ticks(MINE);
-    expect(mine).toMatch(/lt-chip off[^>]*title=Not on Jesse's iPhone\. Tick to put the page there\./);
-    // Hidden on the iPhone: still ticked, dimmed.
-    expect(ticks(YARD)).toContain("<em>hidden</em>");
-    expect(phone).toBeDefined();
   });
 
   it("counts on the watch's chip the tiles it skips, from the page as edited, before a save", async () => {
     const { ticks, draft } = await editor();
-    expect(ticks(MINE)).not.toContain("lt-skips");
+    expect(ticks()).not.toContain("lt-skips");
     const doc = structuredClone(draft().document);
-    const mine = (doc.pages as JsonObject[]).find((p) => p.id === MINE)!;
-    mine.items = [...(mine.items as JsonObject[]), { id: U(200), entityId: `map.${U(201)}`, gridCol: 0, gridRow: 6, colSpan: 12, rowSpan: 4 }];
+    const hall = (doc.pages as JsonObject[])[0]!;
+    hall.items = [...(hall.items as JsonObject[]), { id: U(200), entityId: `map.${U(201)}`, gridCol: 0, gridRow: 9, colSpan: 12, rowSpan: 4 }];
     draft().apply(doc);
-    const strip = ticks(MINE);
+    const strip = ticks();
     expect(strip).toContain(`Jesse's Watch</span><em class="lt-skips" title=Jesse's Watch skips Map: only an iPhone shows it.>skips 1</em></button>`);
     expect(strip).not.toMatch(/Jesse's iPhone<\/span><em class="lt-skips"/);
     // One strip, still: the count is inside the chip the row measures.
     expect(strip.match(/lib-on over-stage/g)).toHaveLength(1);
     expect(strip.match(/<wa-chip-row/g)).toHaveLength(1);
+  });
+
+  it("says to save first for a page the library does not list yet", async () => {
+    const { call } = await editor();
+    const text = flat(call("renderPageTicks", { id: U(999), name: "New", items: [] }));
+    expect(text).toContain("Save first, then tick a device to put the page there too.");
   });
 
   it("puts a page on another device with library/pick, and takes it off again", async () => {
@@ -130,120 +120,22 @@ describe("the page editor's devices, from the library", () => {
     expect(ha.summary().pages[MINE]!.owners).not.toContain(phone);
   });
 
-  it("will not untick a device whose page editor holds unsaved edits", async () => {
+  it("will not untick a device whose page draft holds unsaved edits", async () => {
     const { call, phone, watch } = await editor();
-    // The iPhone's draft, opened in this tab and edited.
+    // The iPhone's draft, kept in this tab and edited.
     const { takeWatchPagesRecord } = await import("../src/watch-pages/kept.js");
     takeWatchPagesRecord(phone, pagesDoc({ id: HALL, name: "Hall", items: [] }), 4);
     keptWatchPagesDraft(phone)!.apply(pagesDoc({ id: HALL, name: "Hall here", items: [] }));
     expect(call("pageTickLocked", HALL, phone)).toBe("Save or discard the edits on Jesse's iPhone first.");
     // A device that does not have it can still take it.
     expect(call("pageTickLocked", MINE, phone)).toBeUndefined();
-    expect(call("pageTickLocked", HALL, watch)).toBe("On this watch. Delete takes the page off it.");
+    // No device is "here": the preview device ticks as any.
+    expect(call("pageTickLocked", HALL, watch)).toBeUndefined();
     forgetWatchPagesDraft(phone);
-  });
-
-  it("says to save first for a page not in the library yet", async () => {
-    const { call, draft, ticks } = await editor();
-    call("addPage");
-    const added = (draft().document.pages as JsonObject[]).at(-1)!;
-    expect(ticks(added.id as string)).toContain("Save first, then tick a device to put the page there too.");
-  });
-
-  it("lists the library's rest under Not on this watch, with a picture and Add to this watch", async () => {
-    const { body } = await editor();
-    const text = body();
-    expect(text).toContain("Not on this watch");
-    expect(text).toContain("Pages on your other devices, or on none yet. Add one here with its Add chip.");
-    expect(text).toMatch(/data-item=11B0E000-0000-4000-8000-000000000003[\s\S]*Den[\s\S]*1 tile · on Jesse's iPhone/);
-    expect(text).toContain("Shed");
-    expect(text).toContain("0 tiles · on no device");
-    expect(text).toContain("Add to this watch");
-    expect(text).toContain("lr-pic");
-    expect(text).toContain(">See all pages</a>");
-    expect(text).not.toContain("on other devices.");
-  });
-
-  it("adds one here with library/pick, then shows it", async () => {
-    const { el, ha, call, watch, draft } = await editor();
-    await call<Promise<void>>("addFromLibrary", DEN);
-    expect(ha.of("library/pick").map((m) => [m.owner_id, m.kind, m.item_id, m.on])).toEqual([[watch, "pages", DEN, true]]);
-    expect((draft().document.pages as JsonObject[]).map((p) => p.name)).toEqual(["Hall", "Yard", "Mine", "Den"]);
-    expect(el.selectedPageId).toBe(DEN);
-  });
-
-  it("is all off on an integration with no library", async () => {
-    const { body, ticks } = await editor({ library: false });
-    const text = body();
-    expect(text).not.toContain("Also on");
-    expect(text).not.toContain("Not on this watch");
-    expect(ticks(HALL)).toBe("");
   });
 });
 
-describe("deleting a page under the library", () => {
-  it("asks for a page other devices have too: remove here only, or delete from the library", async () => {
-    const { el, call, draft } = await editor();
-    call("askDelete", HALL);
-    await settle();
-    // Its tiles sit on pages other devices may have too: kept unless asked.
-    expect((el.deleteAsk as { removeLinks: boolean }).removeLinks).toBe(false);
-    const text = flat(call("renderDeleteAsk", el.deleteAsk, draft().document));
-    expect(text).toContain("It is also on Jesse's iPhone.");
-    expect(text).toContain("Remove from this watch only");
-    expect(text).toContain("Delete on all 2 devices");
-    expect(text).toContain("applies right away to every device");
-    expect(text).not.toContain("Nothing changes on the watch until you save.");
-    expect(text).toContain(`class="pe-btn pe-del-here"`);
-  });
-
-  it("asks only Delete page for a page on this device alone", async () => {
-    const { el, call, draft } = await editor();
-    call("askDelete", MINE);
-    await settle();
-    expect((el.deleteAsk as { removeLinks: boolean }).removeLinks).toBe(true);
-    const text = flat(call("renderDeleteAsk", el.deleteAsk, draft().document));
-    expect(text).toContain(">Delete page<");
-    expect(text).toContain("Nothing changes on the watch until you save. Undo brings it back.");
-    expect(text).not.toContain("Delete on all");
-  });
-
-  it("removes it from this watch only as an edit, and the save keeps every link mark as loaded", async () => {
-    const { el, ha, call, watch, draft } = await editor();
-    call("askDelete", HALL);
-    await settle();
-    call("deletePage");
-    expect((draft().document.pages as JsonObject[]).map((p) => p.name)).toEqual(["Yard", "Mine"]);
-    await call<Promise<unknown>>("save", true);
-    const saved = ha.of("watch_config/save").find((m) => m.owner_watch_id === watch)!.document as WatchPagesDocument;
-    expect((saved.pages as JsonObject[]).map((p) => [p.name, p.linkId])).toEqual([["Yard", YARD], ["Mine", undefined]]);
-    // The iPhone still has it: nothing leaves the library.
-    expect(ha.of("library/delete")).toEqual([]);
-    expect(el.watchId).toBe(watch);
-  });
-
-  it("leaves a page in the library when the save takes it off its only device, and keeps the tiles the question kept", async () => {
-    const { el, ha, call, watch } = await editor();
-    // Hall has a tile that opens Yard; Yard goes, but its tiles are kept.
-    call("askDelete", YARD);
-    await settle();
-    el.deleteAsk = { ...(el.deleteAsk as object), removeLinks: false };
-    call("deletePage");
-    await call<Promise<unknown>>("save", true);
-    // The save removes the pick, never the item: no library/delete, which
-    // would clear every tile that opened it on every page.
-    expect(ha.of("library/delete")).toEqual([]);
-    const saved = ha.of("watch_config/save").find((m) => m.owner_watch_id === watch)!.document as WatchPagesDocument;
-    const hall = (saved.pages as JsonObject[]).find((p) => p.id === HALL)!;
-    expect((hall.items as JsonObject[]).map((t) => t.entityId)).toContain(`page.${YARD}`);
-    // Mine, on this watch alone, the same.
-    call("askDelete", MINE);
-    await settle();
-    call("deletePage");
-    await call<Promise<unknown>>("save", true);
-    expect(ha.of("library/delete")).toEqual([]);
-  });
-
+describe("unticking a device under the library", () => {
   it("clears this device's menu slots to a page an untick took off it, and keeps a shared menu's slot another device needs", async () => {
     const n = made + 1;
     const watch = `lp-w1-${n}`;
@@ -315,37 +207,5 @@ describe("deleting a page under the library", () => {
     expect(el.untickAsk).toBeUndefined();
     expect(ha.of("library/pick").map((m) => [m.item_id, m.on])).toEqual([[DEN, false]]);
     expect(el.note).toBeUndefined();
-  });
-
-  it("deletes from the library at once, clears the complication taps on every device that had it, and shows it gone", async () => {
-    const tap = { name: "Hall tap", openPageId: HALL, tapAction: { type: "openPage" } };
-    const { el, ha, call, watch, phone, draft } = await editor({ complications: { [`lp-p1-${made + 1}`]: [tap] } });
-    call("askDelete", HALL);
-    await settle();
-    await call<Promise<void>>("deleteFromLibrary");
-    await settle();
-    expect(ha.of("library/delete").map((m) => [m.kind, m.item_id])).toEqual([["pages", HALL]]);
-    expect([...new Set(ha.of("/list").map((m) => m.owner_watch_id))].sort()).toEqual([watch, phone].sort());
-    expect(ha.of("/save").filter((m) => !(m.type as string).endsWith("watch_config/save")).map((m) => m.owner_watch_id)).toEqual([phone]);
-    expect((draft().document.pages as JsonObject[]).map((p) => p.name)).toEqual(["Yard", "Mine"]);
-    expect((el.note as { text: string }).text).toBe("Deleted from every device. Cleared the deleted page from the tap of 1 complication.");
-    expect(el.deleteAsk).toBeUndefined();
-  });
-});
-
-describe("restoring under the library", () => {
-  it("names the other devices a restore changes, and not for a page only here", async () => {
-    const changed = pagesDoc({ id: HALL, name: "Hall", items: [] }, { id: MINE, name: "Mine before", items: [] });
-    const same = pagesDoc({ id: YARD, name: "Yard", isHidden: true, linkId: YARD, items: [tile(1, "light.yard")] });
-    const n = made + 1;
-    const { el, call } = await editor({ history: { [`lp-w1-${n}/pages/2`]: changed, [`lp-w1-${n}/pages/3`]: same } });
-    call("askRestore", { revision: 2, updated_at: null, updated_by: "panel", size: 10 });
-    await settle();
-    expect((el.restoreAsk as { others?: string }).others).toBe(`It also changes "Hall" on Jesse's iPhone, which has it too.`);
-    expect(flat(call("renderRestoreAsk", el.restoreAsk))).toContain(`It also changes "Hall" on Jesse's iPhone, which has it too.`);
-    // The same content, its Hide here and link mark aside: nothing changes there.
-    call("askRestore", { revision: 3, updated_at: null, updated_by: "panel", size: 10 });
-    await settle();
-    expect((el.restoreAsk as { others?: string }).others).toBeUndefined();
   });
 });

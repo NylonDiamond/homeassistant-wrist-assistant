@@ -1,21 +1,22 @@
 // The panel's way into the status page editor, kept out of `panel.ts`: the
-// route it answers to, the top bar's button, what the editor's own top bar is
-// handed from the panel (the way back, the Home Assistant menu, Watch
-// settings), and the one `import()` that loads the editor's own chunk. The
-// same pattern as the menu editor's (`watch-menus/hook.ts`).
+// old device address it still answers to, what the editor's own top bar is
+// handed from the panel (the way back, the Home Assistant menu), and the one
+// `import()` that loads the editor's own chunk. The same pattern as the menu
+// editor's (`watch-menus/hook.ts`).
 //
-// The editor lives on a sub-path of the panel, `/wrist-assistant/status-pages`,
-// and `/status-pages/<owner_watch_id>` opens it on one watch. Only this file
-// is in the panel's first download; `status-pages-editor.ts`, its model and
-// its tables arrive the first time the route is opened.
+// The editor opens one status page of the home, on
+// `/library/status_pages/<id>`. The old device address,
+// `/status-pages/<owner_watch_id>`, moves to the Status pages board focused
+// on that device (`boardAddressFor` in panel.ts). Only this file is in the
+// panel's first download; `status-pages-editor.ts`, its model and its tables
+// arrive the first time a status page is opened.
 
-import { css, html, nothing, type TemplateResult } from "lit";
+import { html, type nothing, type TemplateResult } from "lit";
 import type { HassLike, OwnerSummary } from "../ha-api.js";
 import type { LibraryItemRef } from "../library/item-mode.js";
 import type { IconProvider } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import type { PanelRoute } from "../watch-pages/hook.js";
-import { settingsWatches } from "../watch-settings.js";
 
 export const WATCH_STATUS_PAGES_PATH = "/status-pages";
 
@@ -24,9 +25,8 @@ export function isWatchStatusPagesRoute(route: PanelRoute | undefined): boolean 
   return path === WATCH_STATUS_PAGES_PATH || path.startsWith(`${WATCH_STATUS_PAGES_PATH}/`);
 }
 
-/** The watch a link opens the editor on: the first segment after
- * `/status-pages/`, decoded. None, or one that does not decode, gives
- * nothing. */
+/** The watch a link names: the first segment after `/status-pages/`,
+ * decoded. None, or one that does not decode, gives nothing. */
 export function watchStatusPagesRouteOwner(route: PanelRoute | undefined): string | undefined {
   const path = route?.path ?? "";
   const lead = `${WATCH_STATUS_PAGES_PATH}/`;
@@ -39,22 +39,6 @@ export function watchStatusPagesRouteOwner(route: PanelRoute | undefined): strin
   } catch {
     return undefined;
   }
-}
-
-/** The panel's own address, with or without the editor's sub-path. Without a
- * route it is worked out from the address bar. */
-export function watchStatusPagesUrl(route: PanelRoute | undefined, open: boolean, pathname = ""): string {
-  const prefix = route?.prefix ?? pathname.replace(/\/status-pages(\/.*)?$/, "");
-  return open ? `${prefix}${WATCH_STATUS_PAGES_PATH}` : prefix;
-}
-
-/** Go to the editor or back, as Home Assistant's own frontend moves between
- * addresses: a new history entry, then `location-changed`. */
-export function navigateWatchStatusPages(route: PanelRoute | undefined, open: boolean): void {
-  const url = watchStatusPagesUrl(route, open, window.location.pathname);
-  if (url === "" || url === window.location.pathname) return;
-  history.pushState(null, "", url);
-  window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
 }
 
 /** The help page the editor's "?" opens. */
@@ -99,18 +83,9 @@ function loadStatusPagesEditor(): Promise<void> {
   return loading;
 }
 
-/** The top bar's way in, beside Pages and Menus. Only in a home with a
- * watch, as for those. */
-export function renderWatchStatusPagesButton(owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
-  if (settingsWatches(owners).length === 0) return nothing;
-  return html`<button class="tb-btn tb-status-pages" title="The watch's status pages"
-    @click=${open}>${uiIcon("list")}<span>Status pages</span></button>`;
-}
-
 export interface WatchStatusPagesViewInput {
   hass: HassLike;
   owners: readonly OwnerSummary[];
-  ownerId: string | undefined;
   narrow: boolean;
   icons: IconProvider;
   iconsTick: number;
@@ -119,54 +94,33 @@ export interface WatchStatusPagesViewInput {
   menu: boolean;
   onMenu: () => void;
   onBack: () => void;
-  /** The panel's Watch app row owns the watch (`watch-row.ts`): the editor
-   * follows `ownerId` and leaves out its own watch picker, the way back and
-   * its links to the other screens. Left out, the editor is as it was. */
-  shell?: boolean;
   /** The home keeps phone pages: the editor opens an iPhone too. */
   phones?: boolean;
-  /** Buttons for the right of the bar: the panel's Watch settings. */
+  /** Buttons for the right of the bar. */
   actions: TemplateResult | typeof nothing;
-  /** Dialogs the bar's buttons open. */
-  dialogs: TemplateResult | typeof nothing;
-  /** The box in the panel's Watch app header the editor draws its bar
-   * in (`head-bar.ts`). Left out, the bar is drawn on top of the editor. */
-  barHost?: HTMLElement;
-  /** Library mode: one status page edited in the library, with no device
-   * (`library/item-mode.ts`). `ownerId` is then ignored. */
+  /** The status page edited (`library/item-mode.ts`). */
   libraryItem?: LibraryItemRef;
-  /** Library mode: open another item of the library, from the list. */
+  /** Open another item of the library, from the list. */
   onOpenItem?: (id: string) => void;
-  /** Library mode: open a device's board focused on it (On each device). */
+  /** Open a device's board focused on it (On each device). */
   onOpenBoard?: (ownerId: string) => void;
   onLoaded: () => void;
 }
 
-/** The whole panel while the route is `/status-pages`: the editor, which
- * draws its own top bar with the way back, the Home Assistant menu and the
- * panel's Watch settings button handed in here. Until the chunk is in, a
+/** One status page in the editor, which draws its own top bar with the way
+ * back and the Home Assistant menu handed in here. Until the chunk is in, a
  * plain line with the way back stands in. */
 export function renderWatchStatusPagesView(input: WatchStatusPagesViewInput): TemplateResult {
   const ready = customElements.get("wa-status-pages-editor") !== undefined;
   if (!ready && !loadFailed) void loadStatusPagesEditor().then(input.onLoaded, input.onLoaded);
-  return html`${input.dialogs}
-    ${ready
-      ? html`<wa-status-pages-editor .hass=${input.hass} .owners=${input.owners} .ownerId=${input.ownerId}
-          .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}
-          .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack}
-          .barActions=${input.actions} .shellOwnsWatch=${input.shell === true} .barHost=${input.barHost}
-          .phones=${input.phones === true} .libraryItem=${input.libraryItem}
-          .onOpenItem=${input.onOpenItem} .onOpenBoard=${input.onOpenBoard}></wa-status-pages-editor>`
-      : html`<div class="wp-loading">
-          ${input.shell === true ? nothing : (input.libraryItem === undefined
-            ? html`<button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>`
-            : html`<button class="tb-btn tb-back" title="Back to the Status pages tab" @click=${input.onBack}>${uiIcon("left")}<span>Status pages</span></button>`)}
-          ${loadFailed ? html`<span>The status page editor did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
-        </div>`}`;
+  return ready
+    ? html`<wa-status-pages-editor .hass=${input.hass} .owners=${input.owners}
+        .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}
+        .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack}
+        .barActions=${input.actions} .phones=${input.phones === true} .libraryItem=${input.libraryItem}
+        .onOpenItem=${input.onOpenItem} .onOpenBoard=${input.onOpenBoard}></wa-status-pages-editor>`
+    : html`<div class="wp-loading">
+        <button class="tb-btn tb-back" title="Back to the Status pages tab" @click=${input.onBack}>${uiIcon("left")}<span>Status pages</span></button>
+        ${loadFailed ? html`<span>The status page editor did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
+      </div>`;
 }
-
-/** The button's look, added to the panel's sheet beside the other editors'. */
-export const watchStatusPagesHookStyles = css`
-  button.tb-btn.tb-status-pages { display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; }
-  button.tb-btn.tb-status-pages svg.ui-icon { width: 14px; height: 14px; }
-`;

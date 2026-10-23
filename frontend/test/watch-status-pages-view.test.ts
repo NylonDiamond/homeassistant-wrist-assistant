@@ -1,5 +1,5 @@
-// The status page editor's views, flattened to text: the route and the top
-// bar's button, the Status pages and Rows cards, the watch preview drawn from
+// The status page editor's views, flattened to text: the old route, the
+// Status pages and Rows cards, the watch preview drawn from
 // the states, the inspector's cards for a page, a row and an add, and the
 // edits their buttons make.
 
@@ -7,14 +7,12 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { HassLike, OwnerSummary } from "../src/ha-api.js";
+import type { HassLike } from "../src/ha-api.js";
 import { SymbolBrowser } from "../src/symbols.js";
 import {
   WATCH_STATUS_PAGES_PATH,
   isWatchStatusPagesRoute,
-  renderWatchStatusPagesButton,
   watchStatusPagesRouteOwner,
-  watchStatusPagesUrl,
 } from "../src/watch-status-pages/hook.js";
 import { type StatusPagesDocument, findStatusPage, statusPageRows, statusPagesOf } from "../src/watch-status-pages/model.js";
 import {
@@ -87,7 +85,7 @@ function host(document: StatusPagesDocument): StatusPagesViewHost & { edits: num
   return h;
 }
 
-describe("the route and the button", () => {
+describe("the route", () => {
   it("answers /status-pages and /status-pages/<owner>", () => {
     expect(WATCH_STATUS_PAGES_PATH).toBe("/status-pages");
     expect(isWatchStatusPagesRoute({ prefix: "/wrist-assistant", path: "/status-pages" })).toBe(true);
@@ -96,14 +94,6 @@ describe("the route and the button", () => {
     expect(isWatchStatusPagesRoute({ prefix: "/wrist-assistant", path: "/pages" })).toBe(false);
     expect(watchStatusPagesRouteOwner({ prefix: "/wrist-assistant", path: "/status-pages/A%20B" })).toBe("A B");
     expect(watchStatusPagesRouteOwner({ prefix: "/wrist-assistant", path: "/status-pages/%E0" })).toBeUndefined();
-    expect(watchStatusPagesUrl(undefined, false, "/wrist-assistant/status-pages/X")).toBe("/wrist-assistant");
-    expect(watchStatusPagesUrl({ prefix: "/wa", path: "" }, true)).toBe("/wa/status-pages");
-  });
-
-  it("is drawn in a home with a watch, and not in one without", () => {
-    const watch = { owner_watch_id: "W1", device_kind: "watch" } as unknown as OwnerSummary;
-    expect(flat(renderWatchStatusPagesButton([watch], () => undefined))).toContain("Status pages");
-    expect(renderWatchStatusPagesButton([], () => undefined)).not.toHaveProperty("strings");
   });
 });
 

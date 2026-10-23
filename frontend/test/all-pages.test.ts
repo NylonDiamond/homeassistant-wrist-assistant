@@ -8,7 +8,6 @@ import type { OwnerSummary } from "../src/ha-api.js";
 import { libraryOf } from "../src/library/model.js";
 import {
   ALL_FILTER,
-  REST_HINT,
   aCard,
   allPagesLead,
   cardDetail,
@@ -24,7 +23,6 @@ import {
   movedOrder,
   libraryEditTitle,
   noPicksText,
-  restHint,
   onDeviceTitle,
   openDevice,
   orderHint,
@@ -33,7 +31,7 @@ import {
   shownItems,
 } from "../src/watch-pages/all-pages-model.js";
 import { linkDevicesOf } from "../src/watch-pages/devices.js";
-import { CAMERA, CHEN, DEVICES, DOORS, JESSE, LIGHTS, LONELY, PAGE1, PHONE, SMART, STARTER, summary } from "./library-fixture.js";
+import { CAMERA, CHEN, DEVICES, DOORS, JESSE, LIGHTS, LONELY, PAGE1, SMART, STARTER, summary } from "./library-fixture.js";
 
 const lib = () => libraryOf(summary());
 const [CHEN_D, JESSE_D, PHONE_D] = DEVICES as [typeof DEVICES[0], typeof DEVICES[0], typeof DEVICES[0]];
@@ -54,11 +52,8 @@ describe("the cards", () => {
     expect(detail("status_pages", DOORS)).toBe("2 rows");
   });
 
-  it("are found by name in any case, and kept to one kind of device", () => {
+  it("are found by name in any case", () => {
     expect(shownItems(lib(), "pages", "LIGHT").map((e) => e.id)).toEqual([LIGHTS]);
-    expect(shownItems(lib(), "pages", "", "iphone", DEVICES).map((e) => e.id)).toEqual([PAGE1]);
-    // An item no device has is on no kind of device.
-    expect(shownItems(lib(), "pages", "", "watch", DEVICES).map((e) => e.id)).toEqual([LIGHTS, CAMERA, PAGE1, SMART]);
   });
 });
 
@@ -114,8 +109,6 @@ describe("a focused device", () => {
     expect(orderHint(PHONE_D)).toBe("Drag to order. The order is this iPhone's own.");
     expect(restTitle(JESSE_D)).toBe("Not on this watch");
     expect(restTitle(PHONE_D)).toBe("Not on this iPhone");
-    expect(REST_HINT).toBe("Pages on your other devices, or on none yet. Add one here with its Add chip.");
-    expect(restHint("status pages")).toBe("Status pages on your other devices, or on none yet. Add one here with its Add chip.");
     expect(noPicksText(CHEN_D, "pages", "")).toBe("No pages on Chen Watch yet. Tick one below, or make a new one.");
     // Nothing below to tick: the library holds nothing this device lacks.
     expect(noPicksText(CHEN_D, "pages", "", 0)).toBe("No pages on Chen Watch yet. Use New page to make one.");
@@ -129,16 +122,13 @@ describe("a focused device", () => {
 describe("which device a card opens on", () => {
   const entry = (id: string) => shownItems(lib(), "pages").find((e) => e.id === id)!;
 
-  it("is the device tab's when it has the item, else the Device menu's kind, else the first watch", () => {
-    expect(openDevice(entry(PAGE1), PHONE, "all", DEVICES)?.ownerId).toBe(PHONE);
-    expect(openDevice(entry(PAGE1), CHEN, "all", DEVICES)?.ownerId).toBe(JESSE);
-    expect(openDevice(entry(PAGE1), ALL_FILTER, "iphone", DEVICES)?.ownerId).toBe(PHONE);
-    expect(openDevice(entry(PAGE1), ALL_FILTER, "all", DEVICES)?.ownerId).toBe(JESSE);
-    expect(openDevice(entry(LIGHTS), ALL_FILTER, "iphone", DEVICES)?.ownerId).toBe(CHEN);
+  it("is the first watch that has the item, else the first device that has it", () => {
+    expect(openDevice(entry(PAGE1), DEVICES)?.ownerId).toBe(JESSE);
+    expect(openDevice(entry(LIGHTS), DEVICES)?.ownerId).toBe(CHEN);
   });
 
   it("is none for an item no device has; every card says Edit, as it opens in the one editor", () => {
-    expect(openDevice(entry(LONELY), ALL_FILTER, "all", DEVICES)).toBeUndefined();
+    expect(openDevice(entry(LONELY), DEVICES)).toBeUndefined();
     expect(libraryEditTitle("Shed")).toBe("Edit Shed");
   });
 });
@@ -171,8 +161,7 @@ describe("the tab's words", () => {
     expect(emptyText([], "")).toBe("No watch or iPhone has connected yet. Pair one on the Home tab.");
     expect(emptyText(DEVICES, "")).toBe("Your home has no pages yet. Use New page to make one.");
     expect(emptyText(DEVICES, "zz")).toBe("No page has that name.");
-    expect(emptyText(DEVICES, "", "iphone")).toBe("No page here is on an iPhone.");
-    expect(emptyText(DEVICES, "", "all", "status_pages")).toBe("Your home has no status pages yet. Use New status page to make one.");
+    expect(emptyText(DEVICES, "", "status_pages")).toBe("Your home has no status pages yet. Use New status page to make one.");
   });
 
   it("name the tab and a card by their kind", () => {
@@ -184,7 +173,7 @@ describe("the tab's words", () => {
 
   it("never break a sentence with a dash, and never speak of links", () => {
     const texts = [
-      allPagesLead(2), allPagesLead(2, "status_pages"), footText("pages", JESSE_D), footText("pages", undefined), footText("pages", undefined, false, "cards"), REST_HINT,
+      allPagesLead(2), allPagesLead(2, "status_pages"), footText("pages", JESSE_D), footText("pages", undefined), footText("pages", undefined, false, "cards"),
       orderHint(CHEN_D), libraryEditTitle("Shed"), noPicksText(PHONE_D, "pages", ""), emptyText(DEVICES, ""),
       allPagesLead(0), emptyLibraryText("pages", true), emptyLibraryText("pages", false), noPicksText(PHONE_D, "pages", "", 0),
     ];

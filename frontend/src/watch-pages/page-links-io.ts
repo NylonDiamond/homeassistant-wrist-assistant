@@ -1,7 +1,6 @@
 // The writes a page leaving a device makes beyond the page editor's own
 // draft: clearing the menu slots and complication taps there that opened it.
-// The page editor runs it after a save that took pages off, and an untick of
-// a device runs it after `library/pick` took the page off
+// An untick of a device runs it after `library/pick` took the page off
 // (`library-editing-io.ts`), having counted them first to ask
 // (`countPageRefs`). The Pages tab's multi-select calls are
 // `all-pages-io.ts`.
@@ -19,11 +18,6 @@ import {
   countMenuRefs,
   countPageTaps,
 } from "./page-refs.js";
-import type { WatchPagesNote } from "./save-note.js";
-
-function plural(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`;
-}
 
 /**
  * Take the slots of a device's menus that open one of `pageIds` (Status page
@@ -110,21 +104,4 @@ export async function clearPageRefCounts(hass: HassLike, ownerId: string, pageId
     failed.push("the complications");
   }
   return { slots, taps, complications, failed };
-}
-
-/**
- * After pages went from a device in a save: `clearPageRefCounts`, and a
- * note that says what was cleared, or what could not be.
- */
-export async function clearPageRefs(hass: HassLike, ownerId: string, pageIds: string[], keep: KeepSlot = KEEP_NO_SLOT): Promise<WatchPagesNote | undefined> {
-  const { slots, complications, failed } = await clearPageRefCounts(hass, ownerId, pageIds, keep);
-  const done = [
-    slots > 0 ? plural(slots, "menu slot", "menu slots") : undefined,
-    complications > 0 ? `the tap of ${plural(complications, "complication", "complications")}` : undefined,
-  ].filter((w): w is string => w !== undefined);
-  if (failed.length > 0) {
-    return { kind: "warn", text: `Saved. Could not clear the deleted page from ${failed.join(", ")}: change ${failed.length === 1 ? "it" : "them"} by hand.` };
-  }
-  if (done.length === 0) return undefined;
-  return { kind: "ok", text: `Saved. Cleared the deleted page from ${done.join(" and ")}.` };
 }

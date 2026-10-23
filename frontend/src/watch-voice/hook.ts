@@ -8,12 +8,11 @@
 // panel's first download; `voice-editor.ts` and its model arrive the first
 // time the route is opened.
 
-import { css, html, nothing, svg, type TemplateResult } from "lit";
+import { html, nothing, svg, type TemplateResult } from "lit";
 import type { HassLike, OwnerSummary } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
 import type { PanelRoute } from "../watch-pages/hook.js";
-import { settingsWatches } from "../watch-settings.js";
 
 export const WATCH_VOICE_PATH = "/voice";
 
@@ -96,18 +95,10 @@ function loadVoiceEditor(): Promise<void> {
   return loading;
 }
 
-/** The button's glyph: a speaker with two waves, stroked like `uiIcon`'s. */
+/** Voice's glyph: a speaker with two waves, stroked like `uiIcon`'s. */
 export function voiceGlyph(): TemplateResult {
   return html`<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${svg`<path d="M4 9.5H7.5L12 5.5V18.5L7.5 14.5H4Z" /><path d="M15.5 9.2A4 4 0 0 1 15.5 14.8" /><path d="M18.2 6.8A7.5 7.5 0 0 1 18.2 17.2" />`}</svg>`;
-}
-
-/** The top bar's way in, beside Menus. Only in a home with a watch, as for
- * Pages and Menus. */
-export function renderWatchVoiceButton(owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
-  if (settingsWatches(owners).length === 0) return nothing;
-  return html`<button class="tb-btn tb-voice" title="The watch's voice defaults, phrases and watch voice"
-    @click=${open}>${voiceGlyph()}<span>Voice</span></button>`;
 }
 
 export interface WatchVoiceViewInput {
@@ -153,9 +144,3 @@ export function renderWatchVoiceView(input: WatchVoiceViewInput): TemplateResult
           ${loadFailed ? html`<span>The voice editor did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
         </div>`}`;
 }
-
-/** The button's look, added to the panel's sheet beside the menu editor's. */
-export const watchVoiceHookStyles = css`
-  button.tb-btn.tb-voice { display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; }
-  button.tb-btn.tb-voice svg.ui-icon { width: 14px; height: 14px; }
-`;

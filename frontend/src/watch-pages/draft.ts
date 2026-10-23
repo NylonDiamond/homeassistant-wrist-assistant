@@ -14,7 +14,6 @@
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("3b build contract").
 
 import type { WatchConfigLinkFailure } from "../ha-api.js";
-import { type WatchEditOptions, addWatchPage } from "./edit.js";
 import { type WatchPagesDocument, isJsonObject } from "./model.js";
 import { checkWatchPages, checkWatchPagesValues, mergeWatchPages, sameWatchPagesJson } from "./merge.js";
 import { settleMergedWatchPages } from "./page-settings-model.js";
@@ -439,20 +438,4 @@ async function runSave(draft: WatchPagesDraft, io: WatchPagesSaveIO): Promise<Wa
     draft.saved(sent, revision);
     return { ok: true, revision: draft.revision, merged, ...(linkFailures.length === 0 ? {} : { linkFailures }) };
   }
-}
-
-// ── no record: the ready page ────────────────────────────────────────────
-
-/**
- * The first page document of a watch Home Assistant holds no pages for: one
- * new, empty page, built as `addWatchPage` builds one ("New Page 1", every
- * `fresh` key of `page-keys.json`), at schema 1. Keys in sorted order, as the
- * phone's encoder writes them, so it is the phone's own new page document to
- * the byte. The editor opens on it, unsaved (`readyWatchPagesDraft`), and the
- * first save sends it over revision 0. Pure: the page id comes from
- * `options.newId` when given.
- */
-export function startWatchPages(options?: WatchEditOptions): WatchPagesDocument {
-  const { pages } = addWatchPage({}, options);
-  return { pages, schemaVersion: 1 };
 }

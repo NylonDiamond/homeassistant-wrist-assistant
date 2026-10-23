@@ -3,13 +3,13 @@
 // keeps, the ring, the style rows, the Entity quick menu's inherit switch
 // and per-entity menus, the size budget, the shape check, and the route.
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { JsonObject } from "../src/watch-pages/model.js";
-import { isWatchMenusRoute, navigateWatchMenus, watchMenusRouteOwner, watchMenusUrl } from "../src/watch-menus/hook.js";
-import { watchMenuPageTargets, watchMenusSummary } from "../src/watch-menus/menu-editor.js";
+import { isWatchMenusRoute, watchMenusRouteOwner } from "../src/watch-menus/hook.js";
+import { watchMenuPageTargets } from "../src/watch-menus/menu-editor.js";
 import { MENUS_SECTIONS, SWITCHER_LINE, selectedMenuSlot } from "../src/watch-menus/menu-view.js";
 import {
   ANYWHERE,
@@ -51,9 +51,8 @@ import {
   watchMenuStyleFields,
   watchMenuStyleShown,
   watchMenuStyleValue,
-  watchMenusBudget,
+  watchMenusSize,
   watchMenusDefaults,
-  watchMenusReadMeansUnsupported,
   watchMenuShowForTypes,
   watchMenuOppositePosition,
   WATCH_MENUS_UNREAD_SWITCHER_KEYS,
@@ -104,16 +103,6 @@ describe("the defaults", () => {
     expect(a).toEqual(DEFAULTS);
     expect(watchMenusDefaults()).not.toBe(a);
     expect(checkWatchMenus(a)).toEqual([]);
-  });
-});
-
-describe("no record", () => {
-  it("reads an integration that does not know the kind as unsupported, a dropped socket as not", () => {
-    expect(watchMenusReadMeansUnsupported({ code: "invalid", message: "kind must be one of" })).toBe(true);
-    expect(watchMenusReadMeansUnsupported({ code: "unknown_command", message: "Unknown command." })).toBe(true);
-    expect(watchMenusReadMeansUnsupported({ type: "result", success: false, error: { code: "invalid", message: "x" } })).toBe(true);
-    expect(watchMenusReadMeansUnsupported({ code: 3, message: "Connection lost" })).toBe(false);
-    expect(watchMenusReadMeansUnsupported(new Error("timeout"))).toBe(false);
   });
 });
 
@@ -476,13 +465,8 @@ describe("Entity quick menu", () => {
 
 describe("budget and shape", () => {
   it("measures compact UTF-8 JSON against Home Assistant's 256 KB cap for menus", () => {
-    const b = watchMenusBudget(DEFAULTS);
-    expect(b.limit).toBe(WATCH_MENUS_LIMIT_BYTES);
-    expect(b.limit).toBe(256 * 1024);
-    expect(b.size).toBe(Buffer.byteLength(JSON.stringify(DEFAULTS)));
-    expect(b.near).toBe(false);
-    const big = anywhere(...Array.from({ length: 1 }, () => s("X", "topLeft", { type: "pages" }, { pad: "x".repeat(210_000) })));
-    expect(watchMenusBudget(big).near).toBe(true);
+    expect(WATCH_MENUS_LIMIT_BYTES).toBe(256 * 1024);
+    expect(watchMenusSize(DEFAULTS)).toBe(Buffer.byteLength(JSON.stringify(DEFAULTS)));
   });
 
   it("finds what Home Assistant's shape check refuses", () => {
@@ -536,11 +520,6 @@ describe("pickers' names", () => {
     expect(watchMenuPageTargets(undefined)).toEqual([]);
   });
 
-  it("says what an earlier save holds", () => {
-    expect(watchMenusSummary(DEFAULTS)).toBe("Anywhere menu: 8 slots. No entity has its own menu.");
-    expect(watchMenusSummary(CONFIGURED)).toBe("Anywhere menu: 8 slots. 1 entity has its own menu.");
-  });
-
   it("names the three sections in the phone's words", () => {
     expect(MENUS_SECTIONS.map(([, label]) => label)).toEqual(["Anywhere menu", "Entity quick menu", "Page switcher"]);
     expect(SWITCHER_LINE).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
@@ -567,29 +546,4 @@ describe("the route", () => {
     expect(at("/pages/watch-1")).toBeUndefined();
   });
 
-  it("builds both addresses from the route, or from the address bar without one", () => {
-    const route = { prefix: "/wrist-assistant", path: "/menus/watch-1" };
-    expect(watchMenusUrl(route, true)).toBe("/wrist-assistant/menus");
-    expect(watchMenusUrl(route, false)).toBe("/wrist-assistant");
-    expect(watchMenusUrl(undefined, false, "/wrist-assistant/menus/watch-1")).toBe("/wrist-assistant");
-    expect(watchMenusUrl(undefined, true, "/wrist-assistant")).toBe("/wrist-assistant/menus");
-  });
-
-  describe("moving between addresses", () => {
-    afterEach(() => vi.unstubAllGlobals());
-
-    it("pushes the new address and tells Home Assistant", () => {
-      const pushed: string[] = [];
-      const events: string[] = [];
-      vi.stubGlobal("window", {
-        location: { pathname: "/wrist-assistant" },
-        dispatchEvent: (e: Event) => { events.push(e.type); return true; },
-      });
-      vi.stubGlobal("history", { pushState: (_s: unknown, _t: string, url: string) => pushed.push(url) });
-      vi.stubGlobal("CustomEvent", class extends Event { constructor(type: string) { super(type); } });
-      navigateWatchMenus({ prefix: "/wrist-assistant", path: "" }, true);
-      expect(pushed).toEqual(["/wrist-assistant/menus"]);
-      expect(events).toEqual(["location-changed"]);
-    });
-  });
 });

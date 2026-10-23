@@ -246,12 +246,3 @@ export function clearPageFromComplication(document: JsonObject, pageIds: readonl
   }
   return changed ? next : undefined;
 }
-
-/** The page ids `before` lists that `after` does not: the pages a save
- * deletes. */
-export function deletedPageIds(before: readonly { id?: unknown }[], after: readonly { id?: unknown }[]): string[] {
-  return before
-    .map((page) => page.id)
-    .filter((id): id is string => typeof id === "string" && id !== "")
-    .filter((id) => !after.some((page) => sameWatchId(page.id, id)));
-}

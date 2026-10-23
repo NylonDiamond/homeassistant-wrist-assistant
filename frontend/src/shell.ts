@@ -117,9 +117,9 @@ export interface WatchScreen {
   /** Shared by every watch: the address never names one, and the screen
    * follows none. These are Home's Library. */
   shared?: true;
-  /** No longer linked from the watch row or Home: its address still works,
-   * so an old link lands on the screen. Control Center is one: its tiles
-   * moved into complication controls. */
+  /** No longer linked from the watch row or Home, and no screen of its own:
+   * its address still works and moves to the Complications board. Control
+   * Center is one: its tiles moved into complication controls. */
   retired?: true;
 }
 
@@ -378,17 +378,6 @@ export function navigatePanel(route: PanelRoute | undefined, path: string, repla
  * nothing is lost and the leave guards still cover it. */
 export function goToWatchHttpActions(): void {
   navigatePanel(undefined, WATCH_HTTP_ACTIONS_PATH);
-}
-
-/** From inside an editor to the Pages tab, the panel's own way, as
- * `goToWatchHttpActions`. */
-export function goToAllPages(): void {
-  navigatePanel(undefined, ALL_PAGES_PATH);
-}
-
-/** The Pages tab's full address, for a link's own `href`. */
-export function allPagesHref(): string {
-  return panelUrl(undefined, ALL_PAGES_PATH, globalThis.location?.pathname ?? "");
 }
 
 /** A plain left click, which the panel turns into its own move. Anything

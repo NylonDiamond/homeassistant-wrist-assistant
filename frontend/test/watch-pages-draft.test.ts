@@ -3,8 +3,6 @@
 // that merges and tries again on a conflict.
 
 import { describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import type { JsonObject, WatchPagesDocument } from "../src/watch-pages/model.js";
 import {
@@ -13,13 +11,8 @@ import {
   WatchPagesDraft,
   type WatchPagesSaveIO,
   saveWatchPagesDraft,
-  startWatchPages,
 } from "../src/watch-pages/draft.js";
-import { newWatchPage } from "../src/watch-pages/edit.js";
-import { dropAllWatchPages, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
-import { checkWatchPages, checkWatchPagesValues } from "../src/watch-pages/merge.js";
 import { linkFailuresOf, linkFailuresText, watchPagesSaveNote, withLinkFailures } from "../src/watch-pages/save-note.js";
-import pageKeys from "../src/watch-pages/page-keys.json";
 
 // ── documents ────────────────────────────────────────────────────────────
 
@@ -708,96 +701,6 @@ describe("a save that tidies the document first", () => {
 });
 
 // ── no record: the ready page ────────────────────────────────────────────
-
-describe("the ready page of a watch with no pages", () => {
-  const NEW_PAGE_FIXTURE = readFileSync(join(__dirname, "fixtures-pages", "06-new-page.json"), "utf8");
-  const PHONE_ID = "5A17E000-0000-4000-8000-00000000000F";
-  const refusal = (code: string, message = code) => Object.assign(new Error(message), { code });
-
-  it("is the phone's own new page document to the byte: one page from the fresh keys, schema 1", () => {
-    const doc = startWatchPages({ newId: () => PHONE_ID.toLowerCase() });
-    expect(JSON.stringify(doc)).toBe(NEW_PAGE_FIXTURE.trimEnd());
-    expect(doc.schemaVersion).toBe(1);
-    expect(pageKeys.types.document.keys.schemaVersion.default).toBe(1);
-    const pages = doc.pages as JsonObject[];
-    expect(pages).toHaveLength(1);
-    expect(pages[0]).toEqual(newWatchPage(PHONE_ID, "New Page 1"));
-    expect(checkWatchPages(doc)).toEqual([]);
-    expect(checkWatchPagesValues(doc)).toEqual([]);
-  });
-
-  it("makes a new upper case id each time", () => {
-    const a = (startWatchPages().pages as JsonObject[])[0]!.id as string;
-    const b = (startWatchPages().pages as JsonObject[])[0]!.id as string;
-    expect(a).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/);
-    expect(a).not.toBe(b);
-  });
-
-  it("is clean on a draft at revision 0, and its first save goes over revision 0", async () => {
-    const draft = new WatchPagesDraft(startWatchPages({ newId: () => PHONE_ID }), 0);
-    expect(draft.dirty).toBe(false);
-    const page = (draft.document.pages as JsonObject[])[0]!;
-    draft.apply({ ...draft.document, pages: [{ ...page, name: "Living room" }] });
-    expect(draft.dirty).toBe(true);
-    const calls: [number, WatchPagesDocument][] = [];
-    const result = await saveWatchPagesDraft(draft, {
-      save: async (base, doc) => { calls.push([base, doc]); return { revision: 1 }; },
-      fetch: async () => { throw new Error("no read on a plain create"); },
-    });
-    expect(result).toEqual({ ok: true, revision: 1, merged: false });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]![0]).toBe(0);
-    expect((calls[0]![1].pages as JsonObject[])[0]).toMatchObject({ id: PHONE_ID, name: "Living room" });
-    expect(draft.revision).toBe(1);
-    expect(draft.dirty).toBe(false);
-  });
-
-  it("ends a first save refused as no_record with that code, the edits kept", async () => {
-    const draft = new WatchPagesDraft(startWatchPages({ newId: () => PHONE_ID }), 0);
-    draft.apply({ ...draft.document, extra: 1 });
-    const result = await saveWatchPagesDraft(draft, {
-      save: async () => { throw refusal("no_record"); },
-      fetch: async () => ({ revision: 0, document: undefined }),
-    });
-    expect(result).toMatchObject({ ok: false, code: "no_record", revision: 0 });
-    expect(draft.dirty).toBe(true);
-  });
-
-  it("merges a record that came meanwhile under the edits on a conflict, and saves over it", async () => {
-    const draft = new WatchPagesDraft(startWatchPages({ newId: () => PHONE_ID }), 0);
-    const page = (draft.document.pages as JsonObject[])[0]!;
-    draft.apply({ ...draft.document, pages: [{ ...page, name: "Mine" }] });
-    const theirs = document();
-    const bases: number[] = [];
-    const result = await saveWatchPagesDraft(draft, {
-      save: async (base) => {
-        bases.push(base);
-        if (base === 0) throw refusal("conflict", "stored revision is 2, save was based on 0");
-        return { revision: 3 };
-      },
-      fetch: async () => ({ revision: 2, document: theirs }),
-    });
-    expect(bases).toEqual([0, 2]);
-    expect(result).toMatchObject({ ok: true, revision: 3, merged: true });
-    // Their page, and the ready page with the edit on it.
-    const names = (draft.base.pages as JsonObject[]).map((p) => p.name);
-    expect(names).toContain("Home");
-    expect(names).toContain("Mine");
-  });
-
-  it("a kept draft with edits takes the new record in, merged", async () => {
-    dropAllWatchPages();
-    const old = takeWatchPagesRecord("w-start", document(), 4).draft;
-    old.apply(withName(document(), "Edited"));
-    expect(old.dirty).toBe(true);
-    const created = startWatchPages({ newId: () => PHONE_ID });
-    const taken = takeWatchPagesRecord("w-start", created, 1);
-    expect(taken.draft).toBe(old);
-    expect(taken.draft.revision).toBe(1);
-    expect(taken.draft.base).toBe(created);
-    dropAllWatchPages();
-  });
-});
 
 describe("the devices a save left behind", () => {
   it("are read leniently from the reply: a missing or odd list is none, a nameless entry its id", () => {

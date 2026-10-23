@@ -1,23 +1,22 @@
-// The panel's way into the watch page editor, kept out of `panel.ts`: the
-// route it answers to, the top bar's button, what the editor's own top bar
-// is handed from the panel (the way back, the Home Assistant menu, Watch
-// settings), and the one `import()` that loads the editor's own chunk.
+// The panel's way into the page editor, kept out of `panel.ts`: the old
+// device address it still answers to, what the editor's own top bar is
+// handed from the panel (the way back, the Home Assistant menu), and the one
+// `import()` that loads the editor's own chunk.
 //
-// The editor lives on a sub-path of the panel, `/wrist-assistant/pages`, so a
-// reload stays in it and the browser's Back button leaves it. Home Assistant
-// hands a custom panel its `route` (`{prefix, path}`) and changes it when the
-// address changes; the panel draws the editor whenever the path is `/pages`.
+// The editor opens one page of the home, on `/library/pages/<id>`. The old
+// device addresses, `/pages/<owner_watch_id>` and
+// `/iphone/pages/<owner_watch_id>` as the iPhone app's "Open in Home
+// Assistant" builds them, move to the Pages board focused on that device
+// (`boardAddressFor` in panel.ts).
 //
 // Only this file is in the panel's first download. `page-editor.ts`, its
-// model and its preview arrive the first time the route is opened.
+// model and its preview arrive the first time a page is opened.
 
-import { css, html, nothing, type TemplateResult } from "lit";
+import { css, html, type nothing, type TemplateResult } from "lit";
 import type { HassLike, OwnerSummary } from "../ha-api.js";
 import type { LibraryItemRef } from "../library/item-mode.js";
 import type { IconProvider } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
-import { WATCH_MENUS_PATH } from "../watch-menus/hook.js";
-import { settingsWatches } from "../watch-settings.js";
 
 /** What Home Assistant passes a custom panel as `route`. */
 export interface PanelRoute {
@@ -32,10 +31,10 @@ export function isWatchPagesRoute(route: PanelRoute | undefined): boolean {
   return path === WATCH_PAGES_PATH || path.startsWith(`${WATCH_PAGES_PATH}/`);
 }
 
-/** The watch a link opens the editor on: `/pages/<owner_watch_id>`, as the
- * iPhone app's "Open in Home Assistant" builds it. Only the first segment
- * after `/pages/` counts. None, or one that does not decode, gives nothing,
- * and the editor makes its usual pick. */
+/** The device an old link names: `/pages/<owner_watch_id>`, as the iPhone
+ * app's "Open in Home Assistant" builds it. Only the first segment after
+ * `/pages/` counts. None, or one that does not decode, gives nothing, and the
+ * board focuses the remembered device. */
 export function watchPagesRouteOwner(route: PanelRoute | undefined): string | undefined {
   const path = route?.path ?? "";
   const lead = `${WATCH_PAGES_PATH}/`;
@@ -50,37 +49,8 @@ export function watchPagesRouteOwner(route: PanelRoute | undefined): string | un
   }
 }
 
-/** The panel's own address, with or without the editor's sub-path. Without a
- * route (a frontend that does not pass one) it is worked out from the
- * address bar. */
-export function watchPagesUrl(route: PanelRoute | undefined, pages: boolean, pathname = ""): string {
-  const prefix = route?.prefix ?? pathname.replace(/\/pages(\/.*)?$/, "");
-  return pages ? `${prefix}${WATCH_PAGES_PATH}` : prefix;
-}
-
-/** Go to the editor or back, the way Home Assistant's own frontend moves
- * between addresses: a new history entry, then `location-changed`, which
- * makes it hand the panel the new route. */
-export function navigateWatchPages(route: PanelRoute | undefined, pages: boolean): void {
-  const url = watchPagesUrl(route, pages, window.location.pathname);
-  if (url === "" || url === window.location.pathname) return;
-  history.pushState(null, "", url);
-  window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
-}
-
 /** The help page the editor's "?" opens. */
 export const WATCH_PAGES_HELP_URL = "https://docs.wrist-assistant.com/watch-app/pages-in-home-assistant/";
-
-/** From the page editor to the menu editor: the panel's own address (the
- * route's prefix, else the address bar less `/pages`) with `/menus`, the way
- * the panel's own Menus button goes. */
-export function navigateMenusFromPages(route: PanelRoute | undefined): void {
-  const prefix = watchPagesUrl(route, false, window.location.pathname);
-  const url = `${prefix}${WATCH_MENUS_PATH}`;
-  if (url === window.location.pathname) return;
-  history.pushState(null, "", url);
-  window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
-}
 
 /** What the editor's chunk tells the entry about the page drafts it keeps. */
 export interface WatchPagesDraftProbe {
@@ -127,18 +97,9 @@ function loadPageEditor(): Promise<void> {
   return loading;
 }
 
-/** The top bar's way in, beside Watch settings. Only in a home with a watch,
- * as for Watch settings. */
-export function renderWatchPagesButton(owners: readonly OwnerSummary[], open: () => void): TemplateResult | typeof nothing {
-  if (settingsWatches(owners).length === 0) return nothing;
-  return html`<button class="tb-btn tb-pages" title="The watch's pages, as Home Assistant keeps them"
-    @click=${open}>${uiIcon("pages")}<span>Pages</span></button>`;
-}
-
 export interface WatchPagesViewInput {
   hass: HassLike;
   owners: readonly OwnerSummary[];
-  ownerId: string | undefined;
   narrow: boolean;
   icons: IconProvider;
   /** Bumped by the panel whenever `icons` has something new to draw, so the
@@ -149,62 +110,45 @@ export interface WatchPagesViewInput {
   menu: boolean;
   onMenu: () => void;
   onBack: () => void;
-  /** The panel's Watch app row owns the watch (`watch-row.ts`): the editor
-   * follows `ownerId` and leaves out its own watch picker, the way back and
-   * its links to the other screens. Left out, the editor is as it was. */
-  shell?: boolean;
-  /** The home keeps phone pages (`phone-pages.ts`): the editor opens an
-   * iPhone too, on the phone's own pages. */
+  /** The home keeps phone pages (`phone-pages.ts`): the editor previews on
+   * an iPhone too. */
   phones?: boolean;
-  /** To the menu editor. Without it the editor goes there from the address
-   * bar (`navigateMenusFromPages`). */
-  onMenus?: () => void;
-  /** Buttons for the right of the bar: the panel's Watch settings. */
+  /** Buttons for the right of the bar. */
   actions: TemplateResult | typeof nothing;
-  /** Dialogs the bar's buttons open. */
-  dialogs: TemplateResult | typeof nothing;
-  /** Called once the editor's chunk has loaded or failed, to draw again. */
-  /** The box in the panel's Watch app header the editor draws its bar
-   * in (`head-bar.ts`). Left out, the bar is drawn on top of the editor. */
-  barHost?: HTMLElement;
-  /** Library mode: one item edited in the library, with no device
-   * (`library/item-mode.ts`). `ownerId` is then ignored. */
+  /** The page edited (`library/item-mode.ts`). */
   libraryItem?: LibraryItemRef;
-  /** Library mode: open another item of the library, from the list. */
+  /** Open another page of the library, from the list. */
   onOpenItem?: (id: string) => void;
-  /** Library mode: open a device's board focused on it (On each device). */
+  /** Open a device's board focused on it (On each device). */
   onOpenBoard?: (ownerId: string) => void;
+  /** Called once the editor's chunk has loaded or failed, to draw again. */
   onLoaded: () => void;
 }
 
-/** The whole panel while the route is `/pages`: the editor, which draws its
- * own top bar (the complication editor's, `editor-chrome.ts`) with the way
- * back, the Home Assistant menu and the panel's Watch settings button handed
- * in here. The dialogs that button opens stay the panel's, drawn beside it.
- * Until the chunk is in, a plain bar with the way back stands in. */
+/** One page in the editor, which draws its own top bar (the complication
+ * editor's, `editor-chrome.ts`) with the way back and the Home Assistant
+ * menu handed in here. Until the chunk is in, a plain bar with the way back
+ * stands in. */
 export function renderWatchPagesView(input: WatchPagesViewInput): TemplateResult {
   const ready = customElements.get("wa-page-editor") !== undefined;
   if (!ready && !loadFailed) void loadPageEditor().then(input.onLoaded, input.onLoaded);
-  return html`${input.dialogs}
-    ${ready
-      ? html`<wa-page-editor .hass=${input.hass} .owners=${input.owners} .ownerId=${input.ownerId}
-          .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}
-          .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack} .onMenus=${input.onMenus}
-          .barActions=${input.actions} .shellOwnsWatch=${input.shell === true} .barHost=${input.barHost}
-          .phones=${input.phones === true} .libraryItem=${input.libraryItem}
-          .onOpenItem=${input.onOpenItem} .onOpenBoard=${input.onOpenBoard}></wa-page-editor>`
-      : html`<div class="wp-loading">
-          ${input.shell === true ? nothing : (input.libraryItem === undefined
-            ? html`<button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>`
-            : html`<button class="tb-btn tb-back" title="Back to the Pages tab" @click=${input.onBack}>${uiIcon("left")}<span>Pages</span></button>`)}
-          ${loadFailed ? html`<span>The page editor did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
-        </div>`}`;
+  return ready
+    ? html`<wa-page-editor .hass=${input.hass} .owners=${input.owners}
+        .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}
+        .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack}
+        .barActions=${input.actions} .phones=${input.phones === true} .libraryItem=${input.libraryItem}
+        .onOpenItem=${input.onOpenItem} .onOpenBoard=${input.onOpenBoard}></wa-page-editor>`
+    : html`<div class="wp-loading">
+        <button class="tb-btn tb-back" title="Back to the Pages tab" @click=${input.onBack}>${uiIcon("left")}<span>Pages</span></button>
+        ${loadFailed ? html`<span>The page editor did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
+      </div>`;
 }
 
-/** The two buttons' look, added to the panel's sheet: the glyph and its
- * words on one line, like Watch settings. */
+/** The way back's look, added to the panel's sheet: the glyph and its words
+ * on one line, and the line that stands in while an editor loads. The menu
+ * and status page editors use it too. */
 export const watchPagesHookStyles = css`
-  button.tb-btn.tb-pages, button.tb-btn.tb-back { display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; }
-  button.tb-btn.tb-pages svg.ui-icon, button.tb-btn.tb-back svg.ui-icon { width: 14px; height: 14px; }
+  button.tb-btn.tb-back { display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; }
+  button.tb-btn.tb-back svg.ui-icon { width: 14px; height: 14px; }
   .wp-loading { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 12px 16px; color: var(--wa-muted); }
 `;

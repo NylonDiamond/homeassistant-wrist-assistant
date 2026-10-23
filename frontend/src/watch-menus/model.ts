@@ -30,7 +30,6 @@ import menuKeys from "./menu-keys.json";
 import { randomWatchId } from "../watch-pages/edit.js";
 import { sameWatchPagesJson } from "../watch-pages/merge.js";
 import { type JsonObject, WATCH_CONFIG_LIMIT_BYTES, isJsonObject, sizeOf } from "../watch-pages/model.js";
-import { watchCommandError } from "../watch-pages/save-note.js";
 
 // ── the tables ───────────────────────────────────────────────────────────
 
@@ -178,14 +177,6 @@ export function asWatchMenusDocument(value: unknown): MenusDocument | undefined 
 /** The document as compact JSON in UTF-8 bytes, as the sync measures it. */
 export function watchMenusSize(document: MenusDocument): number {
   return sizeOf(document);
-}
-
-/** The budget line: the size, its share of the limit, and whether it is
- * close to it (over 80 percent). */
-export function watchMenusBudget(document: MenusDocument): { size: number; limit: number; share: number; near: boolean } {
-  const size = watchMenusSize(document);
-  const share = size / WATCH_MENUS_LIMIT_BYTES;
-  return { size, limit: WATCH_MENUS_LIMIT_BYTES, share, near: share > 0.8 };
 }
 
 /** One section as stored, or an empty object when there is none. Never
@@ -1127,11 +1118,3 @@ export const WATCH_MENUS_NO_RECORD_TITLE = "No menus from this watch yet.";
 export const PHONE_NO_PHRASES_TEXT = "An iPhone has no voice phrases, so Speak Phrase does nothing there.";
 
 export const WATCH_MENUS_UPDATE_TEXT = "Update the integration to edit menus here.";
-
-/** Whether a failed read of the menus means this integration does not keep
- * them: one older than the kind refuses it as `invalid`, one older than the
- * store does not know the command. */
-export function watchMenusReadMeansUnsupported(error: unknown): boolean {
-  const code = watchCommandError(error).code;
-  return code === "invalid" || code === "unknown_command";
-}

@@ -424,7 +424,7 @@ export class WaAllMenus extends LitElement {
   /** Cards: the menus in two sections, Anywhere menus first, each under its
    * heading with its count. */
   private renderSections(library: Library, devices: readonly LinkDevice[]): TemplateResult {
-    const shown = shownMenus(library, this.search, "all", devices);
+    const shown = shownMenus(library, this.search, devices);
     const waiting = this.waiting(library);
     return html`${menuSections(shown).map(({ unit, menus }) => html`<section class="am-section" aria-labelledby=${`am-section-${unit}`}>
       <div class="am-section-head">
@@ -495,7 +495,7 @@ export class WaAllMenus extends LitElement {
   }
 
   private renderCard(library: Library, menu: LibraryMenu, devices: readonly LinkDevice[], waiting: ReadonlySet<string>): TemplateResult {
-    const opensOn = openMenuDevice(menu, ALL_FILTER, "all", devices);
+    const opensOn = openMenuDevice(menu, devices);
     const title = libraryEditTitle(menu.name);
     return html`<div class="ap-card" role="listitem" data-card=${menu.id}>
       <div class="ap-top">
@@ -566,7 +566,7 @@ export class WaAllMenus extends LitElement {
   /** The board on every device: Anywhere menus, then Entity quick menus, a
    * row each, a round dot per device. */
   private renderBoardAll(library: Library, devices: readonly LinkDevice[]): TemplateResult {
-    const shown = shownMenus(library, this.search, "all", devices);
+    const shown = shownMenus(library, this.search, devices);
     const waiting = this.waiting(library);
     return this.renderBoardOf(library, devices, menuSections(shown).map(({ unit, menus }) => ({
       key: unit, title: MENU_SECTION_TITLES[unit], count: menus.length, hint: MENUS_BOARD_HINT,
@@ -587,7 +587,7 @@ export class WaAllMenus extends LitElement {
       const title = now === undefined || chip.next === undefined ? chip.title : `${chip.title.replace(/\.$/, "")}. Replaces ${now.name} there.`;
       return { chip: { ...chip, title }, onPick: () => this.use(menu, chip.ownerId) };
     });
-    const opensOn = focus !== undefined && menu.owners.some((o) => sameId(o, focus.ownerId)) ? focus : openMenuDevice(menu, ALL_FILTER, "all", devices);
+    const opensOn = focus !== undefined && menu.owners.some((o) => sameId(o, focus.ownerId)) ? focus : openMenuDevice(menu, devices);
     const unused = menu.owners.length === 0;
     const row: BoardRow = {
       key: menu.id, name: menu.name, detail: menuDetail(menu),

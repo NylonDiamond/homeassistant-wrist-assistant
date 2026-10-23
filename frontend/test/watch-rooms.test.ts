@@ -10,7 +10,6 @@ import { RoomsDraft, saveRoomsDraft, takeRoomsRecord, forgetRoomsDraft } from ".
 import {
   WATCH_ROOMS_PATH,
   isWatchRoomsRoute,
-  renderWatchRoomsButton,
   watchRoomsRouteOwner,
   watchRoomsUrl,
 } from "../src/watch-rooms/hook.js";
@@ -591,12 +590,6 @@ describe("the route and the button", () => {
     expect(watchRoomsRouteOwner({ prefix: "/wrist-assistant", path: "/rooms/%E0" })).toBeUndefined();
     expect(watchRoomsUrl(undefined, false, "/wrist-assistant/rooms/X")).toBe("/wrist-assistant");
     expect(watchRoomsUrl({ prefix: "/wa", path: "" }, true)).toBe("/wa/rooms");
-  });
-
-  it("is drawn in a home with a watch, and not in one without", () => {
-    const watch = { owner_watch_id: "W1", device_kind: "watch" } as unknown as OwnerSummary;
-    expect(flat(renderWatchRoomsButton([watch], () => undefined))).toContain("Rooms");
-    expect(renderWatchRoomsButton([], () => undefined)).not.toHaveProperty("strings");
   });
 });
 

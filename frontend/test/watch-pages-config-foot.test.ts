@@ -1,8 +1,8 @@
 // The foot bar of the page and menu editors (`config-foot.ts`): the stored
 // copy's size on the left once it nears the cap, History on the right, the
-// History and View as JSON dialogs, and the header's sync pill. Then the page editor drawn with a record, to
-// check the bar is there and the Page card sits under the watch, in the
-// stage card, with the settings column holding only the Tile card.
+// History and View as JSON dialogs, and the header's sync pill. Then the page
+// editor drawn with a library page open, which has no foot bar, to check its
+// page settings sit in the inspector and its top block sticks.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
@@ -28,7 +28,8 @@ import {
   VIEW_JSON_LABEL,
 } from "../src/watch-pages/config-foot.js";
 import { nothing } from "lit";
-import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
+import { libraryDraftKey } from "../src/library/item-mode.js";
+import { forgetWatchPagesDraft, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import { type WatchPagesDocument, WATCH_CONFIG_LIMIT_BYTES, WATCH_PAGES_LIMIT_BYTES } from "../src/watch-pages/model.js";
 import "../src/watch-pages/page-editor.js";
 import { takeWatchMenusRecord } from "../src/watch-menus/draft.js";
@@ -254,34 +255,26 @@ describe("the page editor", () => {
     owner_watch_id: "foot-test-watch", device_name: "Apple Watch", device_kind: "watch", paired_iphone_name: null,
   } as unknown as OwnerSummary;
 
-  /** The element's body with the fixture's pages open, as markup; with
-   * `hass`, Home Assistant is there to edit through. */
+  /** The element's body with the fixture's first page open in the library,
+   * previewed on the watch, as markup; with `hass`, Home Assistant is there
+   * to edit through. */
   function body(hass?: Record<string, unknown>): string {
     const Ctor = customElements.get("wa-page-editor") as unknown as new () => Record<string, unknown>;
     const el = new Ctor();
     if (hass !== undefined) el.hass = hass;
     el.owners = [owner];
+    const id = (document.pages as { id: string }[])[0]!.id;
+    const ref = { kind: "pages" as const, id };
+    el.libraryItem = ref;
+    el.openedItem = ref;
     el.watchId = owner.owner_watch_id;
     el.record = record({ document: document as unknown as Record<string, unknown> });
-    takeWatchPagesRecord(owner.owner_watch_id, document, 7);
-    el.selectedPageId = (document.pages as { id: string }[])[0]!.id;
+    forgetWatchPagesDraft(libraryDraftKey(ref));
+    takeWatchPagesRecord(libraryDraftKey(ref), document, 7);
+    el.selectedPageId = id;
     const draw = el.renderBody as (watches: readonly OwnerSummary[]) => unknown;
     return flat(draw.call(el, [owner]));
   }
-
-  it("pins the foot bar under the columns, with no Stored copy or Earlier saves card", () => {
-    const text = body();
-    expect(text).toContain(`<footer class="cf-bar"`);
-    expect(text).not.toContain(">Saved here");
-    expect(text).not.toContain("used of 700 KB");
-    expect(text).toContain(">History</button>");
-    expect(text).not.toContain("Raw configuration");
-    expect(text).not.toContain("Stored copy</h3>");
-    expect(text).not.toContain("Earlier saves</h3>");
-    const inspector = text.indexOf(`<div class="column inspector card">`);
-    expect(inspector).toBeGreaterThan(-1);
-    expect(inspector).toBeLessThan(text.indexOf(`<footer class="cf-bar"`));
-  });
 
   it("draws the page's own settings in the inspector with no tile selected, and none over the watch", () => {
     // The page's fields ask for the focused one; Node has no document.
@@ -305,7 +298,7 @@ describe("the page editor", () => {
     expect(stage).toBeGreaterThan(head);
     expect(card).not.toContain("pe-pstrip");
     expect(card).not.toContain(`class="sec name-sec"`);
-    const side = text.slice(inspector, text.indexOf(`<footer class="cf-bar"`));
+    const side = text.slice(inspector);
     expect(side).toContain(`<div class="insp-head">`);
     expect(side).toContain(`>Page</span><span class="nm"`);
     expect(side).not.toContain(`class="sec name-sec"`);
@@ -322,7 +315,7 @@ describe("the page editor", () => {
     const element = customElements.get("wa-page-editor") as unknown as { styles: unknown };
     const sheet = (s: unknown): string => (Array.isArray(s) ? s.map(sheet).join("\n") : String((s as { cssText?: string } | undefined)?.cssText ?? ""));
     const css = sheet(element.styles);
-    for (const selector of [".wa-bar", ".layout {", ".card.lc", ".layer {", ".canvas-card", ".stage-tools", ".values-bar", ".cf-bar"]) {
+    for (const selector of [".wa-bar", ".layout {", ".card.lc", ".layer {", ".canvas-card", ".stage-tools", ".values-bar"]) {
       expect(css, selector).toContain(selector);
     }
     expect(css).not.toContain(".pe-stage-settings");
@@ -400,8 +393,13 @@ describe("the sticky top block", () => {
     const el = new Ctor();
     el.watchId = watchId;
     if (tag === "wa-page-editor") {
+      // A library page, still loading: the body is the short Loading line.
+      const ref = { kind: "pages" as const, id: watchId };
+      el.libraryItem = ref;
+      el.loading = true;
       el.record = record({ updated_at: fiveMinutesAgo() });
-      const { draft } = takeWatchPagesRecord(watchId, pagesDocument, 7);
+      forgetWatchPagesDraft(libraryDraftKey(ref));
+      const { draft } = takeWatchPagesRecord(libraryDraftKey(ref), pagesDocument, 7);
       if (dirty) draft.apply({ ...pagesDocument, pages: [...(pagesDocument.pages as unknown[]), { id: "added", name: "Added" }] } as WatchPagesDocument);
     } else {
       el.record = record({ kind: "menus", updated_at: fiveMinutesAgo() });
@@ -411,7 +409,8 @@ describe("the sticky top block", () => {
     return flat((el.render as () => unknown).call(el));
   }
 
-  /** The sticky block's rule and the host's, which both editors keep. */
+  /** The sticky block's rule and the host's, which both editors keep. The
+   * page editor has no foot bar, so no foot bar's layer to stand above. */
   function expectStickyBlock(tag: "wa-page-editor" | "wa-menu-editor"): void {
     const css = styles(tag);
     const block = rule(css, ".pe-top");
@@ -420,8 +419,7 @@ describe("the sticky top block", () => {
     expect(block).toMatch(/z-index:\s*7/);
     expect(block).toMatch(/background:\s*var\(--wa-bg\)/);
     expect(block).toMatch(/margin:\s*calc\(-1 \* var\(--cf-pad, 16px\)\) calc\(-1 \* var\(--cf-pad, 16px\)\) 0/);
-    // Above the foot bar's own layer, which the cards sit under.
-    expect(rule(css, ".cf-bar")).toMatch(/z-index:\s*6/);
+    expect(rule(css, ".cf-bar")).toBe("");
     expect(rule(css, ":host")).toMatch(/scroll-padding-top:\s*var\(--pe-top-h, 0px\)/);
   }
 
@@ -439,18 +437,6 @@ describe("the sticky top block", () => {
     expectStickyBlock("wa-page-editor");
   });
 
-  it("wa-page-editor: says when the stored copy was saved, beside Save, and Unsaved changes on it while dirty", () => {
-    const clean = drawn("wa-page-editor", "wa-page-editor-saved-clean", false);
-    expect(clean).toContain(">Saved 5 min ago</span>");
-    expect(clean.indexOf(">Save</button>")).toBeLessThan(clean.indexOf(">Saved 5 min ago<"));
-    expect(clean).toContain(`class="primary save "`);
-    expect(clean).not.toContain("Unsaved changes");
-    const dirty = drawn("wa-page-editor", "wa-page-editor-saved-dirty", true);
-    expect(dirty).toContain(`class="primary save dirty"`);
-    expect(dirty).toContain(`<span class="tb-saved" title=Unsaved changes>`);
-    expect(dirty).toContain(">Saved 5 min ago</span>");
-  });
-
   it("wa-menu-editor: draws its own top bar, the complication editor's, as the sticky block, edge to edge", () => {
     const text = drawn("wa-menu-editor", "wa-menu-editor-sticky", false);
     const top = text.indexOf(`<div class="pe-top">`);
@@ -463,19 +449,17 @@ describe("the sticky top block", () => {
     expect(text).not.toContain(`class="pe-head"`);
     // The bar closes inside the block: the body comes after it.
     expect(text.indexOf(`class="pe-empty"`)).toBeGreaterThan(bar);
-    expectStickyBlock("wa-menu-editor");
-  });
-
-  it("wa-menu-editor: says when the stored copy was saved, beside Save, and Unsaved changes on it while dirty", () => {
-    const clean = drawn("wa-menu-editor", "wa-menu-editor-saved-clean", false);
-    expect(clean).toContain(">Saved 5 min ago</span>");
-    expect(clean.indexOf(">Save</button>")).toBeLessThan(clean.indexOf(">Saved 5 min ago<"));
-    expect(clean).toContain(`class="primary save "`);
-    expect(clean).not.toContain("Unsaved changes");
-    const dirty = drawn("wa-menu-editor", "wa-menu-editor-saved-dirty", true);
-    expect(dirty).toContain(`class="primary save dirty"`);
-    expect(dirty).toContain(`<span class="tb-saved" title=Unsaved changes>`);
-    expect(dirty).toContain(">Saved 5 min ago</span>");
+    // The sticky block's rule and the host's. The menu editor has no foot
+    // bar, so no foot bar's layer to stand above.
+    const css = styles("wa-menu-editor");
+    const block = rule(css, ".pe-top");
+    expect(block).toMatch(/position:\s*sticky/);
+    expect(block).toMatch(/top:\s*calc\(-1 \* var\(--cf-pad, 16px\)\)/);
+    expect(block).toMatch(/z-index:\s*7/);
+    expect(block).toMatch(/background:\s*var\(--wa-bg\)/);
+    expect(block).toMatch(/margin:\s*calc\(-1 \* var\(--cf-pad, 16px\)\) calc\(-1 \* var\(--cf-pad, 16px\)\) 0/);
+    expect(rule(css, ".cf-bar")).toBe("");
+    expect(rule(css, ":host")).toMatch(/scroll-padding-top:\s*var\(--pe-top-h, 0px\)/);
   });
 
   it("moves both editors' sticky side columns under the block", () => {

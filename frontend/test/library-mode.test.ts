@@ -242,12 +242,6 @@ describe("the page editor in library mode", () => {
     for (const gone of ["Drag to move", "Add an empty page after the last one", "Hide Shed on the", "pe-linked", "cf-bar", "See all pages"]) {
       expect(body, gone).not.toContain(gone);
     }
-    // Order and Hide here are a device's: neither moves the document.
-    const before = e.draft().document;
-    e.call("movePage", SHED, 0);
-    e.call("setHidden", SHED, true);
-    e.call("addPage");
-    expect(e.draft().document).toBe(before);
   });
 
   it("saves with library/item/save, and asks Delete alone for a page on no device", async () => {
@@ -334,7 +328,7 @@ describe("the menu editor in library mode", () => {
     expect(e.ha.of("watch_config/save")).toEqual([]);
     expect(e.ha.menus[SPARE]!.sections?.quickAction).toMatchObject({ beamIntensity: 0.9 });
     // No page draft: the page switcher's pages are the preview device's, read only.
-    expect(e.call("switcherSettingsHost", HALL)).toBeUndefined();
+    expect(e.host().switcherSettings).toBeUndefined();
   });
 });
 

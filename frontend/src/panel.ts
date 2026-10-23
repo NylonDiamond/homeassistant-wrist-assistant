@@ -443,17 +443,15 @@ import {
 } from "./form-styles.js";
 import { watchPagePreviewStyles } from "./watch-pages/preview.js";
 import { watchFrameStyles } from "./watch-frame.js";
-import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles } from "./watch-pages/hook.js";
+import { type PanelRoute, dropWatchPagesDrafts, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles } from "./watch-pages/hook.js";
 import { ALL_PAGES_PATH, ALL_STATUS_PAGES_PATH, type ListOwnScreen, allPagesHookStyles, listFocusOf, listFocusPath, renderAllPagesView } from "./watch-pages/all-pages-hook.js";
 import { ALL_MENUS_PATH, renderAllMenusView } from "./watch-menus/all-menus-hook.js";
-import { dropWatchMenusDrafts, isWatchMenusRoute, renderWatchMenusView, watchMenusDirty, watchMenusHookStyles } from "./watch-menus/hook.js";
-import { dropWatchVoiceDrafts, isWatchVoiceRoute, renderWatchVoiceView, watchVoiceDirty, watchVoiceHookStyles } from "./watch-voice/hook.js";
-import { dropWatchStatusPagesDrafts, isWatchStatusPagesRoute, renderWatchStatusPagesView, watchStatusPagesDirty, watchStatusPagesHookStyles } from "./watch-status-pages/hook.js";
-import { dropWatchControlCenterDrafts, isWatchControlCenterRoute, renderWatchControlCenterView, watchControlCenterDirty, watchControlCenterHookStyles } from "./watch-control-center/hook.js";
-import { dropWatchRoomsDrafts, isWatchRoomsRoute, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles } from "./watch-rooms/hook.js";
-import { dropWatchHttpActionsDrafts, isWatchHttpActionsRoute, renderWatchHttpActionsView, watchHttpActionsDirty } from "./watch-http-actions/hook.js";
-import { dropWatchCamerasDrafts, isWatchCamerasRoute, renderWatchCamerasView, watchCamerasDirty } from "./watch-cameras/hook.js";
-import { isWatchComplicationsRoute, watchComplicationsStyles } from "./watch-complications.js";
+import { dropWatchMenusDrafts, renderWatchMenusView, watchMenusDirty } from "./watch-menus/hook.js";
+import { dropWatchVoiceDrafts, renderWatchVoiceView, watchVoiceDirty } from "./watch-voice/hook.js";
+import { dropWatchStatusPagesDrafts, renderWatchStatusPagesView, watchStatusPagesDirty } from "./watch-status-pages/hook.js";
+import { dropWatchRoomsDrafts, renderWatchRoomsView, watchRoomsDirty } from "./watch-rooms/hook.js";
+import { dropWatchHttpActionsDrafts, renderWatchHttpActionsView, watchHttpActionsDirty } from "./watch-http-actions/hook.js";
+import { dropWatchCamerasDrafts, renderWatchCamerasView, watchCamerasDirty } from "./watch-cameras/hook.js";
 import {
   COMPLICATIONS_PATH, type LibraryItemRef, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, deviceListPath, deviceScreenPath, editorKeysLive, iphoneInnerRoute, iphoneScreenOf,
   iphoneScreenPath, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
@@ -6094,7 +6092,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, watchComplicationsStyles, helpSheetStyles, boardStyles, boardStackStyles, compBoardStyles, homeLineupStyles, homeAllStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, helpSheetStyles, boardStyles, boardStackStyles, compBoardStyles, homeLineupStyles, homeAllStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -6431,7 +6429,7 @@ export class WristAssistantPanel extends LitElement {
    * It cannot offer a Save button; no page can add one to that dialog. The
    * `returnValue` is for Safari, which ignores `preventDefault` here. */
   private beforeUnload = (e: BeforeUnloadEvent) => {
-    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty() && !watchControlCenterDirty() && !watchRoomsDirty() && !watchHttpActionsDirty() && !watchCamerasDirty() && !anyWatchSettingsDirty()) return;
+    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty() && !watchRoomsDirty() && !watchHttpActionsDirty() && !watchCamerasDirty() && !anyWatchSettingsDirty()) return;
     e.preventDefault();
     e.returnValue = "";
   };
@@ -6449,7 +6447,7 @@ export class WristAssistantPanel extends LitElement {
   private leaveGuard = (e: MouseEvent) => {
     // The watch screens' drafts count too, Watch settings' included: they
     // outlive their routes.
-    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty() && !watchControlCenterDirty() && !watchRoomsDirty() && !watchHttpActionsDirty() && !watchCamerasDirty() && !anyWatchSettingsDirty()) return;
+    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty() && !watchRoomsDirty() && !watchHttpActionsDirty() && !watchCamerasDirty() && !anyWatchSettingsDirty()) return;
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const path = e.composedPath();
     if (path.includes(this)) return;
@@ -6462,7 +6460,6 @@ export class WristAssistantPanel extends LitElement {
       dropWatchMenusDrafts();
       dropWatchVoiceDrafts();
       dropWatchStatusPagesDrafts();
-      dropWatchControlCenterDrafts();
       dropWatchRoomsDrafts();
       dropWatchHttpActionsDrafts();
       dropWatchCamerasDrafts();
@@ -6481,7 +6478,6 @@ export class WristAssistantPanel extends LitElement {
       case "pages": return { dirty: watchPagesDirty(), drop: dropWatchPagesDrafts };
       case "menus": return { dirty: watchMenusDirty(), drop: dropWatchMenusDrafts };
       case "status-pages": return { dirty: watchStatusPagesDirty(), drop: dropWatchStatusPagesDrafts };
-      case "control-center": return { dirty: watchControlCenterDirty(), drop: dropWatchControlCenterDrafts };
       case "rooms": return { dirty: watchRoomsDirty(), drop: dropWatchRoomsDrafts };
       case "voice": return { dirty: watchVoiceDirty(), drop: dropWatchVoiceDrafts };
       case "http-actions": return { dirty: watchHttpActionsDirty(), drop: dropWatchHttpActionsDrafts };
@@ -6613,13 +6609,6 @@ export class WristAssistantPanel extends LitElement {
       if (next !== undefined && next !== this.watchPick) this.rememberWatch(next);
       const phone = adoptRouteWatch(this.phonePick, iphoneRouteOwner(this.route), this.rowPhones);
       if (phone !== undefined && phone !== this.phonePick) this.rememberPhone(phone);
-    }
-    // Home counts every device's complications, so coming back to it reads
-    // the other devices' lists again, the way opening the list does.
-    if (changed.has("route") && isWatchComplicationsRoute(this.route)
-      && !isWatchComplicationsRoute(changed.get("route") as PanelRoute | undefined) && this.owners.length > 0) {
-      if (this.pickerSelecting) this.setPickerSelecting(false);
-      if (!this.ownerBusy) void this.loadOtherLists();
     }
     if (changed.has("route") && tabOfRoute(this.route) === "home" && changed.get("route") !== undefined
       && tabOfRoute(changed.get("route") as PanelRoute | undefined) !== "home" && this.owners.length > 0) {
@@ -11107,8 +11096,9 @@ export class WristAssistantPanel extends LitElement {
     const screen = watch ?? phone;
     if (screen === undefined) return undefined;
     // A watch's Complications screen is its column on the Complications
-    // board (plan step 5).
-    if (screen.id === "watch-complications") {
+    // board (plan step 5). The old Control Center editor's address goes
+    // there too: its list moved into complication controls.
+    if (screen.id === "watch-complications" || screen.id === "control-center") {
       if (!this.linkReady && this.owners.length === 0) return undefined;
       return listFocusPath(COMPLICATIONS_PATH, this.sharedWatch);
     }
@@ -11275,7 +11265,6 @@ export class WristAssistantPanel extends LitElement {
       pages: watchPagesDirty(),
       menus: this.menusDirty(),
       "status-pages": watchStatusPagesDirty(),
-      "control-center": watchControlCenterDirty(),
       rooms: watchRoomsDirty(),
       voice: watchVoiceDirty(),
       "http-actions": watchHttpActionsDirty(),
@@ -11447,19 +11436,6 @@ export class WristAssistantPanel extends LitElement {
         barHost: this.watchBarHost,
         onLoaded: () => this.requestUpdate(),
       });
-      // The Control Center editor likewise, on `/control-center` and
-      // `/control-center/<owner_watch_id>`. A watch's alone, like Voice.
-      case "control-center": return renderWatchControlCenterView({
-        hass: this.hass, owners: this.owners, ownerId: owner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
-        menu: false,
-        onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
-        onBack: () => this.goTo(COMPLICATIONS_PATH),
-        actions: nothing,
-        shell: true,
-        dialogs: nothing,
-        barHost: this.watchBarHost,
-        onLoaded: () => this.requestUpdate(),
-      });
       // The Rooms editor likewise, on `/rooms` and `/rooms/<owner_watch_id>`.
       case "rooms": return renderWatchRoomsView({
         hass: this.hass, owners: this.owners, ownerId: owner, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
@@ -11481,9 +11457,11 @@ export class WristAssistantPanel extends LitElement {
         onLoaded: () => this.requestUpdate(),
       });
       // A watch's complications are its column on the Complications board
-      // (plan step 5): `updated` moves this address there once the device
-      // list is in (`boardAddressFor`).
+      // (plan step 5), and so are the controls the old Control Center editor
+      // kept: `updated` moves these addresses there once the device list is
+      // in (`boardAddressFor`).
       case "watch-complications":
+      case "control-center":
         return html`<div class="ws-page"><div class="ws-cols one"><p class="home-empty">Loading…</p></div></div>`;
       // Cameras, on `/cameras`: how each camera is framed in alerts, which is
       // the camera's own in Home Assistant, so it too is handed no watch.
@@ -11506,9 +11484,9 @@ export class WristAssistantPanel extends LitElement {
     const list = ref.kind === "menus" ? ALL_MENUS_PATH : ref.kind === "status_pages" ? ALL_STATUS_PAGES_PATH : ALL_PAGES_PATH;
     const back = ref.from === undefined ? list : listFocusPath(list, ref.from);
     const input = {
-      hass: this.hass, owners: this.owners, ownerId: undefined, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+      hass: this.hass, owners: this.owners, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
       menu: false, onMenu: () => undefined, onBack: () => this.goTo(back),
-      actions: nothing as typeof nothing, phones: this.phonePages, dialogs: nothing as typeof nothing, libraryItem: ref,
+      actions: nothing as typeof nothing, phones: this.phonePages, libraryItem: ref,
       onLoaded: () => this.requestUpdate(),
       onOpenItem: (id: string) => this.goTo(libraryItemPath(ref.kind, id, ref.from)),
       onOpenBoard: (ownerId: string) => this.goTo(listFocusPath(list, ownerId)),
@@ -12722,12 +12700,8 @@ export class WristAssistantPanel extends LitElement {
     // The dialog shuts first. From the list page, or a recent card on Home,
     // there is no dialog to shut.
     if (this.pickerOpen) this.togglePicker(false);
-    // From the Watch app's Complications screen the editor is on the
-    // Complications tab, so the panel moves there once the design is open.
-    const fromWatch = isWatchComplicationsRoute(this.route);
     if (target === this.ownerId) {
       this.selectRecord(this.records.find((r) => r.id === record.id) ?? record);
-      if (fromWatch) this.goTo(COMPLICATIONS_PATH);
       return;
     }
     await this.selectOwner(target);
@@ -12736,7 +12710,6 @@ export class WristAssistantPanel extends LitElement {
     if (this.ownerId !== target) return;
     // Prefer the copy the switch just loaded: it carries the current revision.
     this.selectRecord(this.records.find((r) => r.id === record.id) ?? record);
-    if (fromWatch) this.goTo(COMPLICATIONS_PATH);
   }
 
   /** New from inside the picker. One button, whatever the chips are on: the
@@ -14100,11 +14073,10 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** Keep an open Devices menu inside the box that scrolls it, sideways: a
-   * menu wider than its card (the Watch app's Complications screen draws
-   * small cards) would otherwise run off the page's edge. */
+   * menu wider than its card would otherwise run off the page's edge. */
   private fitPickerDupMenu(menu: HTMLElement) {
     menu.style.marginLeft = "";
-    const box = menu.closest<HTMLElement>(".wc-page, .cl-page, .pk-body") ?? this;
+    const box = menu.closest<HTMLElement>(".cl-page, .pk-body") ?? this;
     const edge = box.getBoundingClientRect();
     const r = menu.getBoundingClientRect();
     const pad = 8;

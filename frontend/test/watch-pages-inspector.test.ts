@@ -2,8 +2,9 @@
 // head with the breadcrumb (Page back to the page, the selected tile's kind
 // chip and name) and Collapse all, the pinned Name card, and the section
 // cards with their badges and changed dots for a tile. With no tile
-// selected, the page's own settings: the Look card and the On the watch
-// card, a line saying how to reach a tile, and Delete page.
+// selected, the page's own settings: the On each device card, the Look card
+// and the On the watch card, a line saying how to reach a tile, and Delete
+// page. The editor holds the page in the library, its only mode.
 //
 // No DOM: the element's `renderInspector` is drawn to its Lit template and
 // read as text, and its buttons are pressed by calling the handler the
@@ -16,7 +17,8 @@ import { SECTION_COLOR } from "../src/kinds.js";
 import { uiIcon } from "../src/ui-icons.js";
 import type { TileSettingsHost } from "../src/watch-pages/editor-host.js";
 import { FOLD_STORE_KEY } from "../src/watch-pages/fold-memory.js";
-import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
+import { libraryDraftKey } from "../src/library/item-mode.js";
+import { forgetWatchPagesDraft, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { WATCH_PAGE_CHIP_COLOR, watchPageSectionChanged } from "../src/watch-pages/page-settings.js";
 import { resetWatchPage } from "../src/watch-pages/page-settings-model.js";
@@ -153,20 +155,25 @@ type Editor = Record<string, unknown> & {
 
 let watchSeq = 0;
 
-/** A page editor holding `page`, with a host to edit through: Home
- * Assistant's states, and a record and draft of its own. */
+/** A page editor holding `page` in the library, previewed on a watch, with
+ * a host to edit through: Home Assistant's states, and a record and draft
+ * of its own. */
 function editor(page: WatchPage, selectedTile?: string): Editor {
   const Ctor = customElements.get("wa-page-editor") as unknown as new () => Editor;
   const el = new Ctor();
   const watchId = `inspector-test-${++watchSeq}`;
   const document = { schemaVersion: 1, pages: [page] } as unknown as WatchPagesDocument;
   el.owners = [{ owner_watch_id: watchId, device_name: "Apple Watch", device_kind: "watch", paired_iphone_name: null } as unknown as OwnerSummary];
+  const ref = { kind: "pages" as const, id: PAGE };
+  el.libraryItem = ref;
+  el.openedItem = ref;
   el.watchId = watchId;
   el.record = {
     kind: "pages", revision: 7, hash: null, updated_at: "2026-10-03T11:55:00Z", updated_by: "panel",
     delivered_revision: 7, delivered_at: null, document: document as unknown as Record<string, unknown>,
   } as WatchConfigRecord;
-  takeWatchPagesRecord(watchId, document, 7);
+  forgetWatchPagesDraft(libraryDraftKey(ref));
+  takeWatchPagesRecord(libraryDraftKey(ref), document, 7);
   el.hass = { states: STATES, entities: {} };
   el.selectedPageId = PAGE;
   el.selectedTileId = selectedTile;
@@ -287,10 +294,10 @@ describe("Collapse all", () => {
     expect(text).toContain(">Collapse all</button>");
   });
 
-  it("turns the page's Look, On the watch and In the page switcher cards with no tile selected", () => {
+  it("turns the page's On each device, Look, On the watch and In the page switcher cards with no tile selected", () => {
     const el = editor(hallPage());
     click(inspector(el), ">Collapse all<");
-    expect(Object.keys(JSON.parse(storage.data[FOLD_STORE_KEY]!))).toEqual(["page-settings:look", "page-settings:switcher", "page-settings:watch"]);
+    expect(Object.keys(JSON.parse(storage.data[FOLD_STORE_KEY]!))).toEqual(["page-settings:devices", "page-settings:look", "page-settings:switcher", "page-settings:watch"]);
     const folded = flat(inspector(el));
     expect(folded).not.toContain("data-open=true");
     // Folded, each card says what it holds.
@@ -407,10 +414,10 @@ describe("the tile's cards", () => {
 });
 
 describe("the inspector with no tile", () => {
-  it("holds the page's settings: Look, On the watch, In the page switcher, the line, then Delete page", () => {
+  it("holds the page's settings: On each device, Look, On the watch, In the page switcher, the line, then Delete page", () => {
     const text = flat(inspector(editor(hallPage())));
     const body = text.slice(text.indexOf(`<div class="insp-body">`));
-    expect([...body.matchAll(/<h4>([^<]+)/g)].map((m) => m[1])).toEqual(["Look", "On the watch", "In the page switcher"]);
+    expect([...body.matchAll(/<h4>([^<]+)/g)].map((m) => m[1])).toEqual(["On each device", "Look", "On the watch", "In the page switcher"]);
     expect(card(body, "Look")).toContain(`--c:${SECTION_COLOR.look}`);
     expect(card(body, "Look")).toContain(swatch("look"));
     expect(card(body, "On the watch")).toContain(`--c:${SECTION_COLOR.place}`);
@@ -429,28 +436,23 @@ describe("the inspector with no tile", () => {
     expect(text).not.toContain("Click a tile on the watch to edit it.");
   });
 
-  it("holds Hidden and the Smart Page switch in On the watch, each with its line, and Hidden turns the page off on the watch", () => {
+  it("holds the Smart Page switch in On the watch with its line, and no Hidden: Hide here is each device's own", () => {
     const el = editor(hallPage());
     const watch = card(flat(inspector(el)), "On the watch");
-    expect(watch).toContain(`<span class="pe-ow-l">Hidden</span><span class="pe-ow-d">Kept here, but the watch does not show it.</span>`);
+    expect(watch).not.toContain(`<span class="pe-ow-l">Hidden</span>`);
     expect(watch).toContain(`<span class="pe-ow-l">Smart page</span><span class="pe-ow-d">Fills itself from its rules with what is on right now.</span>`);
-    expect(watch.indexOf(">Hidden<")).toBeLessThan(watch.indexOf(">Smart page<"));
     expect(watch).not.toContain("sec-dot");
     // The page's own rows of a smart page are not on a plain page.
     expect(watch).not.toContain("Live Updates");
-    // Hidden, pressed: the page is hidden, and the card wears its dot.
-    const t = templates(inspector(el)).find((c) => c.strings.some((x) => x.includes(`<span class="pe-ow-l">Hidden</span>`)))!;
-    const at = t.strings.findIndex((x) => x.trimEnd().endsWith("@change="));
-    (t.values[at] as (e: unknown) => void)({ target: { checked: true } });
-    expect((el.currentPage() as { isHidden?: boolean }).isHidden).toBe(true);
-    expect(card(flat(inspector(el)), "On the watch")).toContain(`<h4>On the watch<span class="sec-dot"`);
+    // A page stored hidden wears the card's dot.
+    expect(card(flat(inspector(editor(hallPage({ isHidden: true })))), "On the watch")).toContain(`<h4>On the watch<span class="sec-dot"`);
   });
 
   it("on a smart page holds the Rules cards in the Rules color, and the rule's own, then the page's own with the smart rows", () => {
     const text = flat(inspector(editor(smartHall())));
     expect(text).toContain(`>Smart page</span><span class="nm" title=Hall>Hall</span>`);
     const titles = [...text.matchAll(/<h4>([^<]+)/g)].map((m) => m[1]);
-    expect(titles).toEqual(["Rules", "Header", "Icon and color", "State", "Text", "Border", "Action", "Size", "Background", "Look", "On the watch", "In the page switcher"]);
+    expect(titles).toEqual(["On each device", "Rules", "Header", "Icon and color", "State", "Text", "Border", "Action", "Size", "Background", "Look", "On the watch", "In the page switcher"]);
     for (const title of ["Rules", "Header"]) {
       expect(card(text, title), title).toContain(`--c:${SMART_SECTION_BADGE.color}`);
       expect(card(text, title), title).toContain(swatch("states"));
