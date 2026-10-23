@@ -95,6 +95,21 @@ interface ActionsTable {
 
 const TABLE = tileActions as unknown as ActionsTable;
 
+/** The table's action and trigger mode words are the phone's, in Title Case,
+ * and `actions` is checked against the watch (`WatchPagesTablesTests`), so
+ * the file keeps them. The panel shows them in sentence case, as the rest of
+ * the panel writes: every word after the first in lower case, an acronym
+ * (HTTP) kept. */
+export function watchSentenceCase(words: string): string {
+  return words
+    .split(" ")
+    .map((w, i) => (i === 0 || /^[A-Z0-9]{2,}$/.test(w.replace(/[^A-Za-z0-9]/g, "")) ? w : w.toLowerCase()))
+    .join(" ");
+}
+
+/** The panel's own name for an action where the phone's is a developer's. */
+const PANEL_ACTION_LABELS: ReadonlyMap<string, string> = new Map([["triggerEntity", "Control another entity"]]);
+
 const ACTION_LABELS: ReadonlyMap<string, string> = new Map(TABLE.actions.map((a) => [a.raw, a.label]));
 const LIBRARY_ACTIONS: ReadonlySet<string> = new Set(TABLE.libraryActions);
 
@@ -109,7 +124,7 @@ export interface WatchChoice {
 export const WATCH_SLIDE_DIRECTIONS: readonly WatchSlideDirection[] = TABLE.directions;
 
 /** The words the phone shows for a stored action it does not know. */
-export const WATCH_UNKNOWN_ACTION_LABEL: string = TABLE.unknownActionLabel;
+export const WATCH_UNKNOWN_ACTION_LABEL: string = watchSentenceCase(TABLE.unknownActionLabel);
 
 /** The Font Weight menu. Regular is stored as no key. */
 export const WATCH_LABEL_FONT_WEIGHTS: readonly WatchChoice[] = TABLE.labelFontWeights.map((c) => ({
@@ -187,7 +202,8 @@ export function watchTileKindEntry(tile: WatchPageTile): WatchTileKindEntry {
 /** The words for an action on this kind: the kind's own words, else the
  * action's, else the words for an unknown action. */
 export function watchTapActionLabel(entry: WatchTileKindEntry, action: string): string {
-  return entry.labels[action] ?? ACTION_LABELS.get(action) ?? TABLE.unknownActionLabel;
+  const words = PANEL_ACTION_LABELS.get(action) ?? entry.labels[action] ?? ACTION_LABELS.get(action);
+  return words === undefined ? WATCH_UNKNOWN_ACTION_LABEL : watchSentenceCase(words);
 }
 
 /** Whether an action needs a library entry when it is a hold and slide
@@ -1006,7 +1022,7 @@ export function watchHoldSlideSettings(tile: WatchPageTile, options: WatchHoldSl
       stored,
       default: fallback,
       resolved,
-      resolvedLabel: unknown ? TABLE.unknownActionLabel : watchTapActionLabel(entry, resolved),
+      resolvedLabel: unknown ? WATCH_UNKNOWN_ACTION_LABEL : watchTapActionLabel(entry, resolved),
       offered: offered.map((a) => ({ value: a, label: watchTapActionLabel(entry, a) })),
       storedNotOffered: stored !== undefined && !offered.includes(stored),
       storedLabel: stored === undefined ? undefined : watchTapActionLabel(entry, stored),
@@ -1193,7 +1209,7 @@ function watchTriggerModeValues(domain: string): string[] {
 
 /** The trigger modes offered for a target domain, with their words. */
 export function watchTriggerModes(domain: string): WatchChoice[] {
-  return watchTriggerModeValues(domain).map((m) => ({ value: m, label: TABLE.triggerEntity.modeLabels[m] ?? m }));
+  return watchTriggerModeValues(domain).map((m) => ({ value: m, label: watchSentenceCase(TABLE.triggerEntity.modeLabels[m] ?? m) }));
 }
 
 /** Whether an entity id names something a Trigger Entity may target:

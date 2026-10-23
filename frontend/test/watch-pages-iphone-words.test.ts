@@ -251,8 +251,8 @@ describe("a smart page on an iPhone", () => {
   it("names the iPhone in the shared domain note and the header's default color", () => {
     const config = { rules: [{ id: "a", domain: "light" }, { id: "b", domain: "light" }] } as unknown as Parameters<typeof smartDuplicateDomainNote>[0];
     expect(smartDuplicateDomainNote(config, undefined, "iPhone"))
-      .toBe("Two rules share light. The iPhone draws every light group with the first rule's header and style.");
-    expect(smartDuplicateDomainNote(config)).toBe("Two rules share light. The watch draws every light group with the first rule's header and style.");
+      .toBe("Two rules show lights. The iPhone draws all lights with the first rule's header and style.");
+    expect(smartDuplicateDomainNote(config)).toBe("Two rules show lights. The watch draws all lights with the first rule's header and style.");
     expect(smartWord("colorDefault", { device: "iPhone" })).toBe("Default (white on the iPhone)");
     expect(smartWord("colorDefault")).toBe("Default (white on the watch)");
   });

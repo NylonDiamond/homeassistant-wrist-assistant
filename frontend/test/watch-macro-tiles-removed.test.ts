@@ -176,7 +176,7 @@ describe("a stored runMacro value", () => {
 
   it("reads as removed, and no table offers it or anything else for macros", () => {
     const right = watchHoldSlideSettings(porch(holdDoc())).directions[3]!;
-    expect(right).toMatchObject({ direction: "right", stored: "runMacro", storedNotOffered: true, storedLabel: "Macro (Removed)" });
+    expect(right).toMatchObject({ direction: "right", stored: "runMacro", storedNotOffered: true, storedLabel: "Macro (removed)" });
     expect(right.offered.map((c) => c.value)).not.toContain("runMacro");
     expect(isWatchLibraryAction("runMacro")).toBe(false);
     expect(tileActions.libraryActions).toEqual(["httpAction"]);

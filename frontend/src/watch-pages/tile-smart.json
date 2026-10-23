@@ -585,43 +585,43 @@
     "maxValueLabels": [
       {
         "filter": null,
-        "label": "Max value"
+        "label": "Show only at or below"
       },
       {
         "filter": [],
-        "label": "Max value"
+        "label": "Show only at or below"
       },
       {
         "filter": ["battery"],
-        "label": "Max value (%)"
+        "label": "Show only at or below (%)"
       },
       {
         "filter": ["temperature", "battery"],
-        "label": "Max value (°)"
+        "label": "Show only at or below (°)"
       },
       {
         "filter": ["humidity"],
-        "label": "Max value (%)"
+        "label": "Show only at or below (%)"
       },
       {
         "filter": ["moisture"],
-        "label": "Max value (%)"
+        "label": "Show only at or below (%)"
       },
       {
         "filter": ["power"],
-        "label": "Max value (W)"
+        "label": "Show only at or below (W)"
       },
       {
         "filter": ["illuminance"],
-        "label": "Max value (lx)"
+        "label": "Show only at or below (lx)"
       },
       {
         "filter": ["pressure"],
-        "label": "Max value (hPa)"
+        "label": "Show only at or below (hPa)"
       },
       {
         "filter": ["voltage"],
-        "label": "Max value"
+        "label": "Show only at or below"
       }
     ],
     "maxValueLabelRule": "Read from the first device class of the rule's filter only.",
@@ -629,17 +629,17 @@
       "modes": [
         {
           "value": "all",
-          "label": "All"
+          "label": "Every {kind}"
         },
         {
           "value": "specific",
-          "label": "Specific"
+          "label": "Hand-picked"
         }
       ],
-      "mode": "All or Specific. Nothing else changes; a switch to All resolves the rule.",
-      "all": "All shows the count badge and a Resolve button. While the list is absent it shows Not resolved; an empty list shows a muted line that Home Assistant has none of the domain yet.",
+      "mode": "All or Specific, labeled Show. {kind} is the domain's plain name in lower case (Every light). Nothing else changes; a switch to All resolves the rule.",
+      "all": "All shows the count badge and a Refresh list button. While the list is absent it shows List not loaded yet; an empty list shows a muted line that Home Assistant has none of the domain yet.",
       "specific": "Specific shows the pick count and a pick of the domain's entities, filtered by the rule's device classes when it has any. Save writes entityIds in pick order, a repeat dropped.",
-      "resolve": "An all rule's resolvedEntityIds: every entity id Home Assistant has with the prefix <domain>., sorted by code point; the device class filter is not applied. Written even when empty (the watch reads [] as none). When: the Resolve button, a switch to All, after an add (every all rule), and in the panel before a save for every all rule of a page the draft changed.",
+      "resolve": "An all rule's resolvedEntityIds: every entity id Home Assistant has with the prefix <domain>., sorted by code point; the device class filter is not applied. Written even when empty (the watch reads [] as none). When: the Refresh list button, a switch to All, after an add (every all rule), and in the panel before a save for every all rule of a page the draft changed.",
       "resolveSample": {
         "states": [
           "light.example_study",
@@ -1258,18 +1258,18 @@
     "disable": "Disable",
     "ruleCountOne": "1 rule",
     "ruleCountMany": "{count} rules",
-    "addDomain": "Add Domain",
+    "addDomain": "Add entities",
     "add": "Add",
     "pickerIntro": "Pick what to show. Each matching entity becomes its own tile. You can switch to hand-picked entities after adding.",
     "selectDomain": "Select a domain above",
     "resolving": "Resolving...",
-    "notResolved": "Not resolved",
-    "resolve": "Resolve",
+    "notResolved": "List not loaded yet",
+    "resolve": "Refresh list",
     "entitiesSelectedOne": "1 entity selected",
     "entitiesSelected": "{count} entities selected",
     "showWhen": "Show when {state}",
     "playingOnly": "Playing only",
-    "deviceClass": "Device Class",
+    "deviceClass": "Only these types",
     "noLimit": "No limit",
     "done": "Done",
     "activeWhen": "Active when state is",
@@ -1296,7 +1296,7 @@
     "active": "{count} Active",
     "tracking": "Tracking {parts}",
     "noEntities": "No entities configured",
-    "sharedDomain": "Two rules share {domain}. The {device} draws every {domain} group with the first rule's header and style."
+    "sharedDomain": "Two rules show {kinds}. The {device} draws all {kinds} with the first rule's header and style."
   },
   "resets": {
     "rule": {
@@ -1452,12 +1452,12 @@
     ],
     "ruleRequired": ["domain"],
     "rule": "Before a save: a dynamicConfig missing any of dynamicConfigRequired, or a rule without domain, is refused; the value checks of page-keys.json apply inside.",
-    "sharedDomain": "A note, never a refusal, for each domain more than one rule names, in first rule order.",
+    "sharedDomain": "A note, never a refusal, for each domain more than one rule names, in first rule order, naming the domain by its plain plural in lower case.",
     "sharedDomainSample": {
       "domains": ["binary_sensor", "light", "binary_sensor"],
       "shared": ["binary_sensor"],
       "notes": [
-        "Two rules share binary_sensor. The watch draws every binary_sensor group with the first rule's header and style."
+        "Two rules show binary sensors. The watch draws all binary sensors with the first rule's header and style."
       ]
     },
     "title": "The watch's page title: allOff with no active entity; domainOn when exactly one rule has active entities (its count and displayName, an unknown domain capitalized); else active with the page's total.",

@@ -306,7 +306,7 @@ describe("the page editor's menus over the joined list", () => {
     // Only the library, and the slide's action is not in it.
     const stored = { ...lamp, holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", "C3A0E000-0000-4000-8000-0000000000FF"] } as WatchPageTile;
     const missing = watchHoldSlideMenus(stored, alone)!.rows[0]!;
-    expect(missing.options.find((o) => o.value === missing.selected)).toMatchObject({ label: "Run HTTP Action (not in the list)", disabled: true });
+    expect(missing.options.find((o) => o.value === missing.selected)).toMatchObject({ label: "Run HTTP action (not in the list)", disabled: true });
     expect(missing.note).toBe("This action is no longer in the list. Pick another, or the watch fails the slide.");
     // Beside the phone's catalog the words stay the iPhone's.
     expect(watchHoldSlideMenus(stored, joined)!.rows[0]!.note).toBe("The iPhone no longer lists this action. Pick another, or the watch fails the slide.");

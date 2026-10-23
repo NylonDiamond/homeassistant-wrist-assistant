@@ -148,13 +148,20 @@ function unavailable(host: TileSettingsHost, entityId: string): boolean {
   return state === undefined || state === "unavailable";
 }
 
-function seg(choices: readonly WatchAppChoice[], short = false): [string, string][] {
-  return choices.map((c) => [c.value, short ? (c.shortLabel ?? c.label) : c.label]);
+function seg(choices: readonly WatchAppChoice[], short = false, host?: TileSettingsHost): [string, string][] {
+  return choices.map((c) => [c.value, onDevice(host, short ? (c.shortLabel ?? c.label) : c.label)]);
 }
 
-function detailOf(choices: readonly WatchAppChoice[], value: string): string | undefined {
+function detailOf(choices: readonly WatchAppChoice[], value: string, host?: TileSettingsHost): string | undefined {
   const c = choices.find((x) => x.value === value);
-  return c?.detail ?? c?.help;
+  const detail = c?.detail ?? c?.help;
+  return detail === undefined ? undefined : onDevice(host, detail);
+}
+
+/** The table's words with `{device}` as the device the editor is for
+ * ("watch" or "iPhone"). */
+function onDevice(host: TileSettingsHost | undefined, words: string): string {
+  return host === undefined ? words : words.replaceAll("{device}", hostDeviceNoun(host));
 }
 
 // ── the section ──────────────────────────────────────────────────────────
@@ -172,9 +179,9 @@ export function appSummary(host: TileSettingsHost, kind: string): string {
       return `${n} speaker${n === 1 ? "" : "s"}`;
     }
     case "assist":
-      return A.assist.modes.find((m) => m.value === watchAssistSettings(tile).mode)?.label ?? "";
+      return onDevice(host, A.assist.modes.find((m) => m.value === watchAssistSettings(tile).mode)?.label ?? "");
     case "speak_message":
-      return A.speak.outputs.find((o) => o.value === watchSpeakSettings(tile).output)?.label ?? "";
+      return onDevice(host, A.speak.outputs.find((o) => o.value === watchSpeakSettings(tile).output)?.label ?? "");
     case "webhook_inbox":
       return watchInboxTopicWords(tileEntityId(tile));
     default:
@@ -238,15 +245,14 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
         @click=${() => commit(host, "templatePreset", (d) => setWatchTemplatePreset(d, ...at(host), p.id))}>${p.label}</button>`;
     })}</div>
     <div class="ap-text">${templateBox(host, text, {
-      label: "Jinja2 Template", rows: 6, key: `tile-${host.tileId}-tpl`, use: "text", bare: false,
-      placeholder: "Tap to edit template...", error: look.kind === "error" ? look.error : undefined,
+      label: "Template", rows: 6, key: `tile-${host.tileId}-tpl`, use: "text", bare: false,
+      placeholder: "{{ states('sensor.outside_temperature') }}°", error: look.kind === "error" ? look.error : undefined,
       write,
       onBlur: () => host.endCoalesce(),
     })}</div>
     <div class="ts-sub-h"><span>Preview</span></div>
     ${result}
-    <div class="hint">Add [icon:symbolName] for inline SF Symbols, e.g. [icon:lightbulb.fill]</div>
-    <div class="hint">Color one icon with [icon:snowflake color:blue] or color:#FF8800</div>`;
+    <div class="hint">Add an icon with [icon:lightbulb.fill]. Color it with [icon:snowflake color:blue].</div>`;
 }
 
 // ── Music ────────────────────────────────────────────────────────────────
@@ -268,8 +274,7 @@ function renderMusicHub(host: TileSettingsHost): TemplateResult {
     ${checkField(w.albumArt, tile.showAlbumArt !== false, (on) => commit(host, "albumArt", (d) => setWatchMusicHubAlbumArt(d, ...at(host), on)))}
     <div class="hint ts-under">${w.albumArtDetail}</div>
     <div class="ts-sub-h"><span>${w.speakerList}</span><span class="ap-faint">${speakers.length}</span></div>
-    <div class="hint">${w.speakersHeader}</div>
-    ${speakers.length === 0 ? html`<div class="hint">${w.noSpeakers}</div>` : nothing}
+    <div class="hint">${onDevice(host, speakers.length === 0 ? w.noSpeakers : w.speakersHeader)}</div>
     ${speakers.map((id, i) => html`<div class="sp-list-row ap-row"><span>${nameOf(host, id)}${unavailable(host, id) ? html` <span class="ap-faint">unavailable</span>` : nothing}</span>
       <button type="button" class="sp-icon-btn" ?disabled=${i === 0} aria-label="Move ${nameOf(host, id)} up"
         @click=${() => commit(host, "musicOrder", (d) => moveWatchMusicHubSpeaker(d, ...at(host), i, i - 1))}>${uiIcon("up")}</button>
@@ -278,9 +283,8 @@ function renderMusicHub(host: TileSettingsHost): TemplateResult {
       <button type="button" class="sp-icon-btn" aria-label="Remove ${nameOf(host, id)}" title="Also leaves every preset"
         @click=${() => commit(host, "musicSpeakers", (d) => removeWatchMusicHubSpeaker(d, ...at(host), i))}>${uiIcon("delete")}</button></div>`)}
     ${menuField(w.addSpeaker, { options, selected: "" }, addSpeaker)}
-    <div class="hint">${w.speakersFooter}</div>
     <div class="ts-sub-h"><span>${w.presets}</span><span class="ap-faint">${w.presetCount.replace("{count}", String(presets.length)).replace("{max}", String(A.musicHub.maxPresets))}</span></div>
-    <div class="hint">${w.presetsHeader}</div>
+    <div class="hint">${onDevice(host, w.presetsHeader)}</div>
     ${presets.map((p, i) => {
       const setting = `presetName:${i}`;
       return html`<div class="sp-card">
@@ -331,11 +335,11 @@ function speakerChecklist(host: TileSettingsHost, label: string, key: WatchSpeak
     <div class="ap-list" role="group" aria-label=${label}>
       ${all.length === 0 ? html`<div class="hint">No media players in Home Assistant.</div>` : nothing}
       ${announcing.length > 0 ? html`<div class="ap-group">Speakers</div>${announcing.map(row)}` : nothing}
-      ${others.length > 0 ? html`${announcing.length > 0 ? html`<div class="ap-group">Other Media Players</div>` : nothing}${others.map(row)}` : nothing}
+      ${others.length > 0 ? html`${announcing.length > 0 ? html`<div class="ap-group">Other media players</div>` : nothing}${others.map(row)}` : nothing}
     </div>`;
 }
 
-/** The Conversation Agent picker: the default first, named by the voice
+/** The Conversation agent picker: the default first, named by the voice
  * defaults, then the agents. */
 function agentMenu(host: TileSettingsHost, agent: string | undefined): TemplateResult {
   const voice = voiceOf(host);
@@ -345,7 +349,7 @@ function agentMenu(host: TileSettingsHost, agent: string | undefined): TemplateR
   const options = [{ value: "", label: fallback }, ...agents.map((c) => ({ value: c.entityId, label: c.missing ? `${c.entityId} (not found)` : c.name }))];
   return html`
     <div class="ts-sub-h"><span>Assistant</span></div>
-    ${menuField("Conversation Agent", { options, selected: agent ?? "" }, (v) =>
+    ${menuField("Conversation agent", { options, selected: agent ?? "" }, (v) =>
       commit(host, "agent", (d) => setWatchVoiceId(d, ...at(host), "assistAgentId", v === "" ? null : v)))}
     ${agent !== undefined
       ? html`<div class="ts-after">${linkButton(A.assist.agent.useDefault, "Remove this tile's agent", () =>
@@ -354,7 +358,7 @@ function agentMenu(host: TileSettingsHost, agent: string | undefined): TemplateR
     <div class="hint ts-under">${A.assist.agent.help}</div>`;
 }
 
-/** The Voice Engine picker: the default first, named by the voice defaults
+/** The Voice engine picker: the default first, named by the voice defaults
  * ("Not set" when there is none), then the engines. */
 function engineMenu(host: TileSettingsHost, key: "assistTTSEngine" | "speakMessageTTSEngine", engine: string | undefined): TemplateResult {
   const voice = voiceOf(host);
@@ -370,14 +374,14 @@ function engineMenu(host: TileSettingsHost, key: "assistTTSEngine" | "speakMessa
   ];
   return html`
     <div class="sp-contents ${engine === undefined && fallback?.configured === false ? "ap-unset" : ""}">
-      ${menuField("Voice Engine", { options, selected: engine ?? "" }, (v) => commit(host, key, (d) => setWatchVoiceId(d, ...at(host), key, v === "" ? null : v)))}</div>
+      ${menuField("Voice engine", { options, selected: engine ?? "" }, (v) => commit(host, key, (d) => setWatchVoiceId(d, ...at(host), key, v === "" ? null : v)))}</div>
     ${engine !== undefined
       ? html`<div class="ts-after">${linkButton(A.voice.engine.useDefault, "Remove this tile's engine", () => commit(host, key, (d) => setWatchVoiceId(d, ...at(host), key, null)))}</div>`
       : nothing}
     <div class="hint ts-under">${A.voice.engine.help}</div>`;
 }
 
-/** Speech Volume and, unless it keeps the speakers' volume, Target Volume
+/** Speech volume and, unless it keeps the speakers' volume, Target volume
  * with the three presets. */
 function volumeRows(
   host: TileSettingsHost,
@@ -391,13 +395,13 @@ function volumeRows(
   const write = (value: number, typing: boolean) => commit(host, key, (d) => setWatchVoiceVolume(d, ...at(host), key, value), { typing });
   return html`
     ${short
-      ? segField("Speech Volume", mode, seg(A.voice.volumeModes, true), (value) => setMode(value))
+      ? segField("Speech volume", mode, seg(A.voice.volumeModes, true), (value) => setMode(value))
       : // Assist's long words, the phone's radio rows, as a menu.
-        menuField("Speech Volume", { options: A.voice.volumeModes.map((c) => ({ value: c.value, label: c.label })), selected: mode }, setMode)}
+        menuField("Speech volume", { options: A.voice.volumeModes.map((c) => ({ value: c.value, label: c.label })), selected: mode }, setMode)}
     <div class="hint ts-under">${detailOf(A.voice.volumeModes, mode) ?? ""}</div>
     ${mode === "keepCurrent"
       ? nothing
-      : html`${typingField(host, key, sliderField("Target Volume", percent, (value) => write(value, true), {
+      : html`${typingField(host, key, sliderField("Target volume", percent, (value) => write(value, true), {
           min: v.min, max: v.max, step: v.step, def: v.absent, format: (n) => `${Math.round(n)}%`,
         }), percent)}
         <div class="ts-chips sp-indent">${v.presets.map((p) => html`<button type="button" class="pe-chip ${percent === p.value ? "on" : ""}"
@@ -405,8 +409,8 @@ function volumeRows(
 }
 
 function listenRow(host: TileSettingsHost, on: boolean, set: (on: boolean) => void): TemplateResult {
-  return html`<div class="ts-sub-h"><span>Voice Input</span></div>
-    ${checkField("Start Listening Immediately", on, set)}`;
+  return html`<div class="ts-sub-h"><span>Voice input</span></div>
+    ${checkField("Start listening right away", on, set)}`;
 }
 
 function voiceDefaultsLine(host: TileSettingsHost): TemplateResult | typeof nothing {
@@ -420,17 +424,17 @@ function renderAssist(host: TileSettingsHost): TemplateResult {
   return html`
     ${voiceDefaultsLine(host)}
     ${agentMenu(host, s.agent)}
-    ${segField("Assist Mode", s.mode, seg(A.assist.modes), (v) => commit(host, "assistMode", (d) => setWatchAssistMode(d, ...at(host), v)))}
-    <div class="hint ts-under">${detailOf(A.assist.modes, s.mode) ?? ""}</div>
+    ${segField("Assist mode", s.mode, seg(A.assist.modes, false, host), (v) => commit(host, "assistMode", (d) => setWatchAssistMode(d, ...at(host), v)))}
+    <div class="hint ts-under">${detailOf(A.assist.modes, s.mode, host) ?? ""}</div>
     ${s.replyOutputMode !== undefined
-      ? html`<div class="hint warn">An older reply setting decides this tile's reply on the ${hostDeviceNoun(host)}. An Assist Mode or Reply Speaker change removes it.</div>`
+      ? html`<div class="hint warn">An older reply setting decides this tile's reply on the ${hostDeviceNoun(host)}. Changing Assist mode or Reply speaker removes it.</div>`
       : nothing}
     ${speakReply
-      ? html`${segField("Reply Speaker", s.replySpeaker, seg(A.assist.replySpeakers), (v) => commit(host, "replySpeaker", (d) => setWatchAssistReplySpeaker(d, ...at(host), v)))}
+      ? html`${segField("Reply speaker", s.replySpeaker, seg(A.assist.replySpeakers), (v) => commit(host, "replySpeaker", (d) => setWatchAssistReplySpeaker(d, ...at(host), v)))}
         <div class="hint ts-under">${choose ? detailOf(A.assist.replySpeakers, s.replySpeaker) : A.assist.watchSpeakerNote}</div>`
       : nothing}
     ${choose
-      ? html`${speakerChecklist(host, "Choose Speakers", "assistTargetSpeakerIds", s.speakers)}
+      ? html`${speakerChecklist(host, "Choose speakers", "assistTargetSpeakerIds", s.speakers)}
         <div class="hint ${s.speakers.length === 0 ? "warn" : ""}">${watchSpeakerCountSummary(s.speakers)}</div>
         ${engineMenu(host, "assistTTSEngine", s.engine)}
         ${volumeRows(host, s.volumeMode, s.volumePercent, (v) => commit(host, "assistVolumeMode", (d) => setWatchAssistVolumeMode(d, ...at(host), v)), "assistSpeechVolumePercent", false)}`
@@ -445,18 +449,18 @@ function renderSpeak(host: TileSettingsHost): TemplateResult {
   const hasEngine = s.engine !== undefined || (voice?.defaultTTSEngine ?? "").trim() !== "";
   return html`
     ${voiceDefaultsLine(host)}
-    ${segField("Speaker", s.output, seg(A.speak.outputs), (v) => commit(host, "speakOutput", (d) => setWatchSpeakOutput(d, ...at(host), v)))}
-    <div class="hint ts-under">${detailOf(A.speak.outputs, s.output) ?? ""}</div>
+    ${segField("Speaker", s.output, seg(A.speak.outputs, false, host), (v) => commit(host, "speakOutput", (d) => setWatchSpeakOutput(d, ...at(host), v)))}
+    <div class="hint ts-under">${detailOf(A.speak.outputs, s.output, host) ?? ""}</div>
     ${s.output === "watchSpeaker" ? html`<div class="hint">${A.speak.watchSpeakerNote}</div>` : nothing}
     ${s.output === "configuredSpeakers"
-      ? html`${speakerChecklist(host, "Choose Speakers", "speakMessageTargetSpeakerIds", s.speakers)}
+      ? html`${speakerChecklist(host, "Choose speakers", "speakMessageTargetSpeakerIds", s.speakers)}
         <div class="hint ${s.speakers.length === 0 ? "warn" : ""}">${named(s.speakers)}</div>`
       : nothing}
     ${s.output === "chooseEachTime"
-      ? html`${speakerChecklist(host, "Speakers Shown on Watch", "speakMessageChooseListSpeakerIds", s.watchList)}
+      ? html`${speakerChecklist(host, `Speakers shown on the ${hostDeviceNoun(host)}`, "speakMessageChooseListSpeakerIds", s.watchList)}
         <div class="hint">${named(s.watchList)}</div>
-        ${s.watchList.length === 0 ? html`<div class="hint warn">${A.speak.warnings.chooseEachTimeEmptyList}</div>` : nothing}
-        ${voice !== undefined && !hasEngine ? html`<div class="hint warn">${A.speak.warnings.chooseEachTimeNoEngine}</div>` : nothing}`
+        ${s.watchList.length === 0 ? html`<div class="hint warn">${onDevice(host, A.speak.warnings.chooseEachTimeEmptyList)}</div>` : nothing}
+        ${voice !== undefined && !hasEngine ? html`<div class="hint warn">${onDevice(host, A.speak.warnings.chooseEachTimeNoEngine)}</div>` : nothing}`
       : nothing}
     ${s.output === "watchSpeaker"
       ? nothing

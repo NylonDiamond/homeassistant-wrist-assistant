@@ -299,7 +299,7 @@ interface AppTable {
     minSpeakersForPresets: number;
     presetName: string;
     words: Record<
-      "albumArt" | "albumArtDetail" | "speakersHeader" | "speakersFooter" | "speakerList" | "noSpeakers" | "addSpeaker" | "presetsHeader" | "presets" | "presetCount" | "addPreset",
+      "albumArt" | "albumArtDetail" | "speakersHeader" | "speakerList" | "noSpeakers" | "addSpeaker" | "presetsHeader" | "presets" | "presetCount" | "addPreset",
       string
     >;
     musicAssistant: { domain: string; title: string; message: string };

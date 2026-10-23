@@ -2,7 +2,7 @@
 // with the phone's convert question and a smart page's own rows (Updates,
 // Tile Size, Show labels, Sort order) in the inspector's On the watch card,
 // and the inspector's Rules cards (`sectionCard`, editor-chrome.ts) in the Rules
-// color: a chip per rule, the Add Domain dialog and the selected rule's
+// color: a chip per rule, the Add entities dialog and the selected rule's
 // rows, then its Header and its per-domain style through the tile settings'
 // cards.
 //
@@ -17,14 +17,15 @@
 // The phone's words come from `tile-smart.json`, which the Swift side
 // writes. The panel has rows and buttons the phone lacks, and their words
 // are the panel's own, written here: the card's "Rules" heading and strip
-// label, "Header", "Mode", the "N entity"/"N entities" count and the
+// label, "Header", "Show", the "N entity"/"N entities" count and the
 // badge's "Entities", "Columns" and "Rows" on the size boxes, the heading's
 // "Up", "Down", "Reset" and "Delete" with their tooltips, "Size", "Search",
-// the Resolve tooltip, the pick's "(not found)", "No ... in Home
+// the Refresh list tooltip, the pick's "(not found)", "No ... in Home
 // Assistant" and "N more" lines, the hints under the boxes ("Empty is ...",
-// "Empty takes the page's tile size"), the refusals, "Added" and its
-// reason (`SMART_PRESET_ADDED_REASON`) on Add Domain, and the chip
-// tooltips. A new word goes in the table when the phone shows it too.
+// "Empty takes the page's tile size", "Empty shows every sensor ..."), the
+// refusals, "Added" and its reason (`SMART_PRESET_ADDED_REASON`) on Add
+// entities, and the chip tooltips. A domain shown to the user is named by
+// `tileKindLabel` or `tileKindPlural`, never by its id. A new word goes in the table when the phone shows it too.
 //
 // The per-domain style edits a stand-in tile (`smartStyleStandIn`): a host
 // whose document is the stand-in, whose `apply` writes the keys a setter
@@ -45,7 +46,7 @@ import { type TileSettingsHost, type WatchPagesEditorHost, extendHost, hostDevic
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
 import { sameWatchId } from "./edit.js";
-import { type JsonObject, type WatchPage, type WatchPageTile, type WatchPagesDocument, isJsonObject, tileKindPlural, watchPagesOf } from "./model.js";
+import { type JsonObject, type WatchPage, type WatchPageTile, type WatchPagesDocument, isJsonObject, tileKindLabel, tileKindPlural, watchPagesOf } from "./model.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
 import {
   type WatchSmartConfig,
@@ -147,16 +148,22 @@ const PAGE_SWITCHES = listAt(objectAt(WATCH_SMART.raw, "page"), "switches").flat
 /** The two sort orders with their words. */
 const SORT_ORDERS = listAt(objectAt(WATCH_SMART.raw, "page"), "sortOrders").map((o) => ({ value: str(o.value), label: str(o.label) }));
 
-/** The rule's two modes with their words. */
+/** The rule's two modes with their words, `{kind}` still in them. */
 const MODES = listAt(objectAt(objectAt(WATCH_SMART.raw, "domains"), "rows"), "modes").map((m) => [str(m.value), str(m.label)] as [string, string]);
+
+/** The modes for a rule of `domain`: "Every light" and "Hand-picked". */
+function modesFor(domain: string): [string, string][] {
+  const kind = tileKindLabel(domain).toLowerCase();
+  return MODES.map(([value, label]) => [value, label.replace("{kind}", kind)]);
+}
 
 /** The color role and chip symbol of a domain the table does not list. */
 const OTHER = objectAt(objectAt(WATCH_SMART.raw, "domains"), "other");
 const OTHER_ROLE = str(OTHER.colorRole) || "entitySensor";
 const OTHER_CHIP_ICON = str(OTHER.chipIcon) || "questionmark.circle";
 
-/** Why an Add Domain card is off. */
-export const SMART_PRESET_ADDED_REASON = "Added: a rule on this page has this domain and filter.";
+/** Why an Add entities card is off. */
+export const SMART_PRESET_ADDED_REASON = "Added: a rule on this page already shows these.";
 
 // ── hosts ────────────────────────────────────────────────────────────────
 
@@ -460,7 +467,7 @@ function ruleGlyph(host: WatchPagesEditorHost, rule: WatchSmartRule, size: numbe
 
 /**
  * The Rules cards of a smart page, or nothing for a page that is not one:
- * the Rules card (a chip per rule, Add Domain, the selected rule's heading
+ * the Rules card (a chip per rule, Add entities, the selected rule's heading
  * and rows), then the selected rule's Header card and its style through the
  * tile settings' cards, each a card of its own beside the others.
  */
@@ -485,7 +492,7 @@ export function renderSmartRulesCard(host: WatchPagesEditorHost): TemplateResult
     ${note === undefined ? nothing : html`<p class="hint warn sm-note" role="note">${note}</p>`}
     <div class="sm-strip" role="group" aria-label="Rules">
       ${config.rules.map((r, i) => html`<button type="button" class="pe-chip sm-chip ${i === index ? "on" : ""}" aria-pressed=${i === index ? "true" : "false"}
-        title=${r.domain} @click=${() => host.selectSmartRule(r.id)}><span class="sm-chip-glyph" aria-hidden="true">${ruleGlyph(host, r, 13)}</span>${smartRuleName(r)}</button>`)}
+        title=${tileKindPlural(r.domain)} @click=${() => host.selectSmartRule(r.id)}><span class="sm-chip-glyph" aria-hidden="true">${ruleGlyph(host, r, 13)}</span>${smartRuleName(r)}</button>`)}
       <button type="button" class="pe-chip sm-add-btn ${config.rules.length === 0 ? "first" : ""}" aria-haspopup="dialog" ?disabled=${host.busy}
         @click=${() => openAsk(host, "add")}>${uiIcon("plus")}${W("addDomain")}</button>
     </div>
@@ -526,7 +533,7 @@ function renderRule(host: WatchPagesEditorHost, rule: WatchSmartRule, index: num
       <span class="sm-acts">
         ${actButton("Up", `Move ${name} up`, host.busy || first, () => commit(rh, "move", (d) => moveSmartRuleBy(d, P, R, -1)))}
         ${actButton("Down", `Move ${name} down`, host.busy || last, () => commit(rh, "move", (d) => moveSmartRuleBy(d, P, R, 1)))}
-        ${actButton("Reset", "The rule's look and filters back as its preset adds it. The mode, picks and device classes stay.", host.busy, () =>
+        ${actButton("Reset", "The rule's look and filters back as its preset adds it. What it shows, the picks and the types stay.", host.busy, () =>
           commit(rh, "reset", (d) => resetSmartRule(d, P, R, smartDomainColorHex(rule.domain, host.page))))}
         ${actButton("Delete", `Delete ${name}. Undo brings it back.`, host.busy, () => smartRuleDeleted(host, R, index))}
       </span>
@@ -566,7 +573,7 @@ function renderRuleRows(host: WatchPagesEditorHost, rh: TileSettingsHost, rule: 
     });
   };
   return html`
-    ${segField("Mode", rule.mode, MODES, (v) => commit(rh, "mode", (d) => setSmartRuleMode(d, P, R, v, host.hass.states)))}
+    ${segField("Show", rule.mode, modesFor(rule.domain), (v) => commit(rh, "mode", (d) => setSmartRuleMode(d, P, R, v, host.hass.states)))}
     ${rule.mode === "all"
       ? html`<div class="sm-line">
           ${smartRuleUnresolved(rule)
@@ -574,7 +581,7 @@ function renderRuleRows(host: WatchPagesEditorHost, rh: TileSettingsHost, rule: 
             : count === 0
               ? html`<span class="sm-none">No ${tileKindPlural(rule.domain).toLowerCase()} in Home Assistant yet</span>`
               : html`<span>${count} ${count === 1 ? "entity" : "entities"}</span>`}
-          ${linkButton(W("resolve"), "List the domain's entities from Home Assistant now. A save does it too.", () =>
+          ${linkButton(W("resolve"), `Read the ${tileKindPlural(rule.domain).toLowerCase()} from Home Assistant again now. A save does it too.`, () =>
             commit(rh, "resolve", (d) => withResolvedRule(d, P, R, host.hass.states)))}
         </div>`
       : html`<div class="ts-sub-h"><span>${selectedWord(rule.entityIds.length)}</span></div>
@@ -588,12 +595,13 @@ function renderRuleRows(host: WatchPagesEditorHost, rh: TileSettingsHost, rule: 
     ${info !== undefined && info.deviceClasses.length > 0
       ? html`<div class="ts-sub-h"><span>${W("deviceClass")}</span></div>
         <div class="ts-chips" role="group" aria-label=${W("deviceClass")}>
-          ${info.deviceClasses.map((c) => chip(c.label, rule.deviceClassFilter?.includes(c.value) === true, c.value, () =>
+          ${info.deviceClasses.map((c) => chip(c.label, rule.deviceClassFilter?.includes(c.value) === true, "Show this type. With none picked, every type shows.", () =>
             commit(rh, "deviceClass", (d) => toggleSmartRuleDeviceClass(d, P, R, c.value))))}
         </div>`
       : nothing}
     ${info?.maxValue === true
-      ? typingField(rh, "maxValue", textField(smartMaxValueLabel(rule), maxText, writeMax, { placeholder: W("noLimit") }))
+      ? html`${typingField(rh, "maxValue", textField(smartMaxValueLabel(rule), maxText, writeMax, { placeholder: W("noLimit") }))}
+        <div class="hint ts-under">Empty shows every sensor. 20 shows batteries at 20% or lower.</div>`
       : nothing}
     ${info?.activeWhen === true
       ? typingField(rh, "activeWhen", textField(W("activeWhen"), typed(rh, "activeWhen") ?? rule.activeWhen ?? "", (v) =>
@@ -640,7 +648,7 @@ function renderEntityPick(host: WatchPagesEditorHost, rh: TileSettingsHost, rule
     <div class="ap-list sm-pick" role="group" aria-label=${selectedWord(picked.length)}>
       ${picked.map((id) => row(id, true))}
       ${rest.slice(0, PICK_LIMIT).map((id) => row(id, false))}
-      ${ids.length === 0 && picked.length === 0 ? html`<div class="hint">No ${tileKindPlural(rule.domain).toLowerCase()} in Home Assistant${filter.length > 0 ? " with these device classes" : ""}.</div>` : nothing}
+      ${ids.length === 0 && picked.length === 0 ? html`<div class="hint">No ${tileKindPlural(rule.domain).toLowerCase()} in Home Assistant${filter.length > 0 ? " of these types" : ""}.</div>` : nothing}
       ${rest.length > PICK_LIMIT ? html`<div class="hint">${rest.length - PICK_LIMIT} more. Search to narrow the list.</div>` : nothing}
     </div>`;
 }

@@ -71,7 +71,7 @@ describe("sections", () => {
 describe("single tap menu", () => {
   it("starts with the default in the kind's words, then the offered actions", () => {
     const menu = watchSingleTapMenu(tile("light.desk"))!;
-    expect(menu.options[0]).toEqual({ value: WATCH_DEFAULT_CHOICE, label: "Default (Toggle Light)" });
+    expect(menu.options[0]).toEqual({ value: WATCH_DEFAULT_CHOICE, label: "Default (Toggle light)" });
     expect(menu.options.slice(1).map((o) => o.value)).toEqual(["toggle", "openControl", "none"]);
     expect(menu.selected).toBe(WATCH_DEFAULT_CHOICE);
     expect(menu.note).toBeUndefined();
@@ -83,7 +83,7 @@ describe("single tap menu", () => {
 
   it("shows a stored value it does not offer or an unknown string as the current entry, disabled", () => {
     // runMacro: a value stored before macros were removed.
-    for (const [stored, label] of [["runMacro", "Macro (Removed)"], ["nextTrack", "Next Track"], ["dance", "Sync Needed"]] as const) {
+    for (const [stored, label] of [["runMacro", "Macro (removed)"], ["nextTrack", "Next track"], ["dance", "Sync needed"]] as const) {
       const menu = watchSingleTapMenu(tile("light.desk", { singleTapAction: stored }))!;
       const current = menu.options.find((o) => o.value === menu.selected)!;
       expect(isWatchStoredChoice(menu.selected)).toBe(true);
@@ -106,7 +106,7 @@ describe("hold and slide menus", () => {
     expect(menus.rows.map((r) => r.title)).toEqual(["Up", "Down", "Left", "Right"]);
     expect(menus.rows.map((r) => r.options[0]!.label)).toEqual([
       "Default (None)",
-      "Default (Open Light Controls)",
+      "Default (Open light controls)",
       "Default (None)",
       "Default (None)",
     ]);
@@ -122,7 +122,7 @@ describe("hold and slide menus", () => {
 
   it("names the default from the kind even while the direction is stored", () => {
     const menus = watchHoldSlideMenus(tile("light.desk", { holdSlideActions: ["down", "none"] }))!;
-    expect(menus.rows[1]!.options[0]!.label).toBe("Default (Open Light Controls)");
+    expect(menus.rows[1]!.options[0]!.label).toBe("Default (Open light controls)");
     expect(menus.rows[1]!.selected).toBe("none");
     expect(menus.anyStored).toBe(true);
   });
@@ -130,7 +130,7 @@ describe("hold and slide menus", () => {
   it("shows a stored HTTP action as the current entry, disabled", () => {
     const row = watchHoldSlideMenus(tile("light.desk", { holdSlideActions: ["up", "httpAction"] }))!.rows[0]!;
     expect(isWatchStoredChoice(row.selected)).toBe(true);
-    expect(row.options.find((o) => o.value === row.selected)).toMatchObject({ label: "Run HTTP Action", disabled: true });
+    expect(row.options.find((o) => o.value === row.selected)).toMatchObject({ label: "Run HTTP action", disabled: true });
     expect(row.note).toBe(WATCH_NOT_OFFERED_NOTE);
   });
 

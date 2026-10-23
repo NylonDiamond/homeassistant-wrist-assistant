@@ -347,7 +347,7 @@ describe("the hold and slide menus with a catalog", () => {
   it("list each action under one heading, before None; a warning in the words", () => {
     const row = watchHoldSlideMenus(lamp(), CATALOG)!.rows[0]!;
     const http = row.options.filter((o) => o.group !== undefined);
-    expect(http.map((o) => o.group)).toEqual(["Run HTTP Action", "Run HTTP Action", "Run HTTP Action", "Run HTTP Action"]);
+    expect(http.map((o) => o.group)).toEqual(["Run HTTP action", "Run HTTP action", "Run HTTP action", "Run HTTP action"]);
     expect(http.map((o) => watchHTTPSlideChoice(o.value))).toEqual(CATALOG.httpActions.map((a) => a.id));
     expect(http.at(-1)!.label).toBe("Garage Door (needs setup on the iPhone)");
     expect(row.options.at(-1)!.value).toBe("none");
@@ -382,12 +382,12 @@ describe("the hold and slide menus with a catalog", () => {
     const tile = lamp({ holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", "C3A0E000-0000-4000-8000-0000000000FF"] });
     const row = watchHoldSlideMenus(tile, CATALOG)!.rows[0]!;
     expect(isWatchStoredChoice(row.selected)).toBe(true);
-    expect(row.options.find((o) => o.value === row.selected)).toMatchObject({ label: "Run HTTP Action (not on the iPhone)", disabled: true });
+    expect(row.options.find((o) => o.value === row.selected)).toMatchObject({ label: "Run HTTP action (not on the iPhone)", disabled: true });
     expect(row.note).toMatch(/no longer lists/);
     expect(row.http?.entry).toBeUndefined();
     // Without a catalog it is shown, not offered, and its banner keys stay editable.
     const plain = watchHoldSlideMenus(tile)!.rows[0]!;
-    expect(plain.options.find((o) => o.value === plain.selected)).toMatchObject({ label: "Run HTTP Action", disabled: true });
+    expect(plain.options.find((o) => o.value === plain.selected)).toMatchObject({ label: "Run HTTP action", disabled: true });
     expect(plain.http).toBeDefined();
   });
 

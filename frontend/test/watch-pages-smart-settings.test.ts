@@ -1,6 +1,6 @@
 // The smart page views (part 3f batch 3): the Page card's Smart Page switch
 // with the phone's convert question and its rows, the Rules card (the chip
-// strip, Add Domain, each rule row, the Header), the per-domain style
+// strip, Add entities, each rule row, the Header), the per-domain style
 // through the stand-in tile, and the stage's facts and faint tiles.
 //
 // No DOM: each view is drawn to its Lit templates, read as text, and its
@@ -307,7 +307,8 @@ describe("the rule strip", () => {
     expect(card).toContain(">Lights</button>");
     expect(card).toContain(">Doors</button>");
     expect(card).toContain(">Batteries</button>");
-    expect(card).toMatch(/sm-chip on" aria-pressed=true\s+title=light/);
+    expect(card).toMatch(/sm-chip on" aria-pressed=true\s+title=Lights/);
+    expect(card).not.toMatch(/title=binary_sensor/);
     click(renderSmartRulesCard(s.host), ">Doors</button>");
     expect(s.selected()).toBe(R2);
     expect(smartSelectedRuleIndex(s.config()!, s.selected())).toBe(1);
@@ -316,7 +317,7 @@ describe("the rule strip", () => {
   it("shows the shared domain note above the strip", () => {
     const windows = ruleOf("55555555-0000-4000-8000-000000000005", "binary_sensor", { deviceClassFilter: ["window"] });
     const card = flatten(renderSmartRulesCard(setup(smartPage([DOORS, windows])).host));
-    expect(card).toContain(W("sharedDomain", { domain: "binary_sensor" }));
+    expect(card).toContain("Two rules show binary sensors. The watch draws all binary sensors with the first rule's header and style.");
   });
 
   it("draws nothing on a page that is not smart", () => {
@@ -324,7 +325,7 @@ describe("the rule strip", () => {
   });
 });
 
-describe("Add Domain", () => {
+describe("Add entities", () => {
   it("lists the presets with the added ones off and checked, and a pick adds, resolves, selects and closes", () => {
     const s = setup(smartPage([LIGHTS]));
     click(renderSmartRulesCard(s.host), W("addDomain"));
@@ -362,12 +363,15 @@ describe("Add Domain", () => {
 });
 
 describe("a rule's rows", () => {
-  it("All shows the count and Resolve, or Not resolved; Resolve writes the list", () => {
+  it("Every shows the count and Refresh list, or List not loaded yet; Refresh list writes the list", () => {
     const s = setup(smartPage([LIGHTS, DOORS]));
     expect(flatten(renderSmartRulesCard(s.host))).toContain("3 entities");
     s.host.selectSmartRule(R2);
     const card = flatten(renderSmartRulesCard(s.host));
     expect(card).toContain(W("notResolved"));
+    expect(card).toContain(">Every binary sensor<");
+    expect(card).toContain(">Hand-picked<");
+    expect(card).not.toContain(">Specific<");
     click(renderSmartRulesCard(s.host), `>${W("resolve")}<`);
     expect(s.rule(R2).resolvedEntityIds).toEqual(["binary_sensor.front_door", "binary_sensor.hall_window"]);
   });
@@ -381,9 +385,9 @@ describe("a rule's rows", () => {
     expect(card).toContain("in Home Assistant yet");
   });
 
-  it("Specific lists the domain's entities, filtered by the device classes, picks first, and a tick writes the picks", () => {
+  it("Hand-picked lists the domain's entities, filtered by the device classes, picks first, and a tick writes the picks", () => {
     const s = setup(smartPage([DOORS]));
-    click(renderSmartRulesCard(s.host), ">Specific<");
+    click(renderSmartRulesCard(s.host), ">Hand-picked<");
     expect(s.rule(R2).mode).toBe("specific");
     let card = flatten(renderSmartRulesCard(s.host));
     expect(card).toContain(W("entitiesSelected", { count: 0 }));
@@ -395,8 +399,8 @@ describe("a rule's rows", () => {
     expect(card).toContain(W("entitiesSelectedOne"));
     expect(card).toContain("1 entity selected");
     expect(card).not.toMatch(/(^|[^0-9])1 entities selected/);
-    // Back to All resolves the rule from the states.
-    click(renderSmartRulesCard(s.host), ">All<");
+    // Back to Every binary sensor resolves the rule from the states.
+    click(renderSmartRulesCard(s.host), ">Every binary sensor<");
     expect(s.rule(R2).mode).toBe("all");
     expect(s.rule(R2).resolvedEntityIds).toEqual(["binary_sensor.front_door", "binary_sensor.hall_window"]);
     expect(s.rule(R2).entityIds).toEqual(["binary_sensor.front_door"]);
@@ -430,14 +434,15 @@ describe("a rule's rows", () => {
   it("writes the max value, refuses text that is no number and keeps the stored value", () => {
     const s = setup(smartPage([BATTERIES]));
     const card = flatten(renderSmartRulesCard(s.host));
-    expect(card).toContain("Max value (%)");
+    expect(card).toContain("Show only at or below (%)");
     expect(card).toContain(`placeholder=${W("noLimit")}`);
-    type(renderSmartRulesCard(s.host), "Max value (%)", "20");
+    expect(card).toContain("Empty shows every sensor. 20 shows batteries at 20% or lower.");
+    type(renderSmartRulesCard(s.host), "Show only at or below (%)", "20");
     expect(s.rule(R3).maxNumericValue).toBe(20);
-    type(renderSmartRulesCard(s.host), "Max value (%)", "abc");
+    type(renderSmartRulesCard(s.host), "Show only at or below (%)", "abc");
     expect(s.rule(R3).maxNumericValue).toBe(20);
     expect(flatten(renderSmartRulesCard(s.host))).toContain("Use a number");
-    type(renderSmartRulesCard(s.host), "Max value (%)", "");
+    type(renderSmartRulesCard(s.host), "Show only at or below (%)", "");
     expect(Object.hasOwn(s.rule(R3), "maxNumericValue")).toBe(false);
   });
 

@@ -1098,7 +1098,7 @@ describe("the layout", () => {
       { ruleIndex: 1, entityIds: ["binary_sensor.kitchen"] },
     ]);
     expect(items.map((i) => [i.customLabel ?? i.icon])).toEqual([["Doors"], ["door"], ["Doors"], ["door"]]);
-    expect(smartDuplicateDomainNote(c, TABLE)).toBe("Two rules share binary_sensor. The watch draws every binary_sensor group with the first rule's header and style.");
+    expect(smartDuplicateDomainNote(c, TABLE)).toBe("Two rules show binary sensors. The watch draws all binary sensors with the first rule's header and style.");
     expect(smartDuplicateDomainNote(configOfRules([rule(R1, "light")]), TABLE)).toBeUndefined();
   });
 

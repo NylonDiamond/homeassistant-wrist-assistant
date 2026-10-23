@@ -63,6 +63,7 @@ import {
   watchPageLinkTarget,
   watchSingleTapSettings,
   watchStorageIconName,
+  watchSentenceCase,
   watchTapActionLabel,
   watchTileActionSettings,
   watchTileIconSettings,
@@ -941,7 +942,7 @@ describe("readers follow the table", () => {
       expect(single.picker).toBe(entry.tapPicker);
       expect(single.offered.map((c) => c.value)).toEqual((entry.tapActions as string[]).filter((a) => !isWatchLibraryAction(a)));
       expect(single.offered.map((c) => c.label)).toEqual(
-        single.offered.map((c) => (entry.labels as Record<string, string>)[c.value] ?? c.value),
+        single.offered.map((c) => watchSentenceCase((entry.labels as Record<string, string>)[c.value] ?? c.value)),
       );
       expect(single.stored).toBeUndefined();
       expect(single.absent).toBe(entry.absentTap);
@@ -974,14 +975,14 @@ describe("readers follow the table", () => {
     const tile = reader("light.desk_lamp");
     const single = watchSingleTapSettings(tile);
     expect(single.offered).toEqual([
-      { value: "toggle", label: "Toggle Light" },
-      { value: "openControl", label: "Open Light Controls" },
+      { value: "toggle", label: "Toggle light" },
+      { value: "openControl", label: "Open light controls" },
       { value: "none", label: "None" },
     ]);
     expect(single.resolved).toBe("toggle");
     expect(single.storedNotOffered).toBe(false);
     const down = watchHoldSlideSettings(tile).directions[1]!;
-    expect(down).toMatchObject({ default: "openControl", resolved: "openControl", resolvedLabel: "Open Light Controls" });
+    expect(down).toMatchObject({ default: "openControl", resolved: "openControl", resolvedLabel: "Open light controls" });
     expect(down.offered.map((c) => c.value)).toEqual(["toggle", "openControl", "triggerEntity", "none"]);
     expect(watchHoldSlideSettings(tile).directions[0]).toMatchObject({ default: undefined, resolved: "none" });
     expect(watchTileIconSettings(tile).dimWhenOff.applies).toBe(true);
@@ -989,9 +990,9 @@ describe("readers follow the table", () => {
 
   it("stored values the panel does not offer are shown, not offered", () => {
     const stale = watchSingleTapSettings(reader("light.desk_lamp", { singleTapAction: "nextTrack" }));
-    expect(stale).toMatchObject({ stored: "nextTrack", storedNotOffered: true, resolved: "toggle", storedLabel: "Next Track" });
+    expect(stale).toMatchObject({ stored: "nextTrack", storedNotOffered: true, resolved: "toggle", storedLabel: "Next track" });
     const unknown = watchSingleTapSettings(reader("light.desk_lamp", { singleTapAction: "teleport" }));
-    expect(unknown).toMatchObject({ storedNotOffered: true, resolved: "toggle", storedLabel: "Sync Needed" });
+    expect(unknown).toMatchObject({ storedNotOffered: true, resolved: "toggle", storedLabel: "Sync needed" });
     // Run HTTP Action on its own kind is offered: the tile is the target.
     const http = watchSingleTapSettings(reader("http_action.C3A0E000-0000-4000-8000-000000000070", { singleTapAction: "httpAction" }));
     expect(http).toMatchObject({ storedNotOffered: false, resolved: "httpAction", absent: "httpAction" });
@@ -999,24 +1000,25 @@ describe("readers follow the table", () => {
     // runMacro, stored before macros were removed, is shown as removed and
     // never offered.
     const slides = watchHoldSlideSettings(reader("light.desk_lamp", { holdSlideActions: ["right", "runMacro", "up", "teleport"] }));
-    expect(slides.directions[3]).toMatchObject({ stored: "runMacro", storedNotOffered: true, resolved: "none", storedLabel: "Macro (Removed)" });
-    expect(slides.directions[0]).toMatchObject({ stored: "teleport", storedNotOffered: true, resolvedLabel: "Sync Needed" });
+    expect(slides.directions[3]).toMatchObject({ stored: "runMacro", storedNotOffered: true, resolved: "none", storedLabel: "Macro (removed)" });
+    expect(slides.directions[0]).toMatchObject({ stored: "teleport", storedNotOffered: true, resolvedLabel: "Sync needed" });
     expect(slides.anyStored).toBe(true);
   });
 
-  it("a trigger direction without its target reads as Sync Needed", () => {
+  it("a trigger direction without its target reads as Sync needed", () => {
     const tile = reader("light.desk_lamp", { holdSlideActions: ["left", "triggerEntity"] });
-    expect(watchHoldSlideSettings(tile).directions[2]).toMatchObject({ resolved: "triggerEntity", resolvedLabel: "Sync Needed" });
+    expect(watchHoldSlideSettings(tile).directions[2]).toMatchObject({ resolved: "triggerEntity", resolvedLabel: "Sync needed" });
     const set = reader("light.desk_lamp", fixture("hold-slide-trigger-mode"));
     const left = watchHoldSlideSettings(set).directions[2]!;
-    expect(left.resolvedLabel).toBe("Trigger Entity");
+    // The panel's own name for Trigger Entity, the phone's.
+    expect(left.resolvedLabel).toBe("Control another entity");
     expect(left.target).toEqual({ entityId: "script.good_morning", mode: "run", friendlyName: "Good Morning", modeOffered: true });
   });
 
   it("a cover, an automation, a sensor, a lock", () => {
     expect(watchSingleTapSettings(reader("cover.blinds")).offered.map((c) => c.label)).toEqual([
-      "Toggle Cover",
-      "Open Cover Controls",
+      "Toggle cover",
+      "Open cover controls",
       "Open",
       "Close",
       "Stop",
@@ -1027,7 +1029,7 @@ describe("readers follow the table", () => {
       shown: true,
       value: false,
     });
-    expect(watchSingleTapSettings(reader("sensor.temperature")).offered.map((c) => c.label)).toEqual(["Open Details", "None"]);
+    expect(watchSingleTapSettings(reader("sensor.temperature")).offered.map((c) => c.label)).toEqual(["Open details", "None"]);
     expect(watchTileIconSettings(reader("sensor.temperature")).dimWhenOff.applies).toBe(false);
     expect(watchTileActionSettings(reader("lock.back_door")).askBeforeRunning).toEqual({ stored: undefined, default: true, value: true });
     expect(watchTileActionSettings(reader("lock.back_door", { requiresConfirmation: false })).askBeforeRunning.value).toBe(false);
@@ -1051,7 +1053,7 @@ describe("readers follow the table", () => {
     expect(watchSingleTapSettings(reader("spacer.x")).picker).toBe(false);
     expect(watchHoldSlideSettings(reader("spacer.x")).picker).toBe(false);
     const other = reader("frobnicator.thing");
-    expect(watchSingleTapSettings(other).offered.map((c) => c.label)).toEqual(["Toggle", "Open Controls", "None"]);
+    expect(watchSingleTapSettings(other).offered.map((c) => c.label)).toEqual(["Toggle", "Open controls", "None"]);
   });
 
   it("text and icon settings", () => {
@@ -1095,7 +1097,10 @@ describe("readers follow the table", () => {
     expect(WATCH_ICON_TAP_ANIMATIONS[0]).toEqual({ value: "replace", label: "Morph" });
     expect(WATCH_ICON_TAP_ANIMATIONS).toHaveLength(10);
     expect(watchTapActionLabel(KINDS.template as never, "toggle")).toBe("Refresh");
-    expect(watchTapActionLabel(KINDS["*"] as never, "teleport")).toBe("Sync Needed");
+    expect(watchTapActionLabel(KINDS["*"] as never, "teleport")).toBe("Sync needed");
+    expect(watchTapActionLabel(KINDS["*"] as never, "httpAction")).toBe("Run HTTP action");
+    expect(watchTapActionLabel(KINDS["*"] as never, "triggerEntity")).toBe("Control another entity");
+    expect(watchTriggerModes("light").map((m) => m.label)).toEqual(["Toggle", "Turn on", "Turn off", "Refresh"]);
   });
 });
 

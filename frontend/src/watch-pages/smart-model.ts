@@ -859,8 +859,8 @@ export function setSmartRuleMaxValue(document: WatchPagesDocument, pageId: strin
 }
 
 /** The max value box's caption, read from the first device class of the
- * rule's filter ("Max value (%)" for battery), by the table's samples;
- * "Max value" for any other. */
+ * rule's filter ("Show only at or below (%)" for battery), by the table's
+ * samples; "Show only at or below" for any other. */
 export function smartMaxValueLabel(rule: WatchSmartRule, table: WatchSmartTable = WATCH_SMART): string {
   const samples = objects(isJsonObject(table.raw.domains) ? table.raw.domains.maxValueLabels : undefined);
   const first = rule.deviceClassFilter?.[0];
@@ -877,7 +877,7 @@ export function smartCountBadge(rule: WatchSmartRule): number | undefined {
   return count > 0 ? count : undefined;
 }
 
-/** "Not resolved": an `all` rule whose list was never read. An empty list
+/** "List not loaded yet": an `all` rule whose list was never read. An empty list
  * was read and found none, so it is not a warning: the home has none of
  * that kind yet. */
 export function smartRuleUnresolved(rule: WatchSmartRule): boolean {
@@ -1465,13 +1465,14 @@ export function smartSharedDomains(config: WatchSmartConfig): string[] {
 
 /** The note for rules that share a domain (the watch draws every group of
  * the domain with the first rule's header and style), one sentence per
- * shared domain, naming the domain as stored and `device`, the device
- * showing the page ("watch" or "iPhone"); undefined when no two rules share
- * one. A note, never a refusal. */
+ * shared domain, naming the domain by its plain plural in lower case
+ * ("binary sensors") and `device`, the device showing the page ("watch" or
+ * "iPhone"); undefined when no two rules share one. A note, never a
+ * refusal. */
 export function smartDuplicateDomainNote(config: WatchSmartConfig, table: WatchSmartTable = WATCH_SMART, device = "watch"): string | undefined {
   const shared = smartSharedDomains(config);
   if (shared.length === 0) return undefined;
-  return shared.map((domain) => smartWord("sharedDomain", { domain, device }, table)).join(" ");
+  return shared.map((domain) => smartWord("sharedDomain", { kinds: tileKindPlural(domain).toLowerCase(), device }, table)).join(" ");
 }
 
 /** Which rule drew a synthetic tile, by index in `config.rules`: the first

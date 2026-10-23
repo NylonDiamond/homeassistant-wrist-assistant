@@ -410,17 +410,16 @@
       "undo": "Every write is one undo step."
     },
     "words": {
-      "albumArt": "Show Album Art",
-      "albumArtDetail": "Display artwork as tile background",
-      "speakersHeader": "Speakers available for grouping on watch",
-      "speakersFooter": "Library, queue, search, and provider-aware grouping require the Music Assistant integration in Home Assistant.",
-      "speakerList": "Speaker List",
-      "noSpeakers": "No speakers added yet",
-      "addSpeaker": "Add Speaker",
-      "presetsHeader": "Optional quick-pick buttons shown above speaker list on watch",
-      "presets": "Speaker Presets",
+      "albumArt": "Show album art",
+      "albumArtDetail": "Shows the artwork as the tile's background.",
+      "speakersHeader": "Speakers you can group from the {device}.",
+      "speakerList": "Speaker list",
+      "noSpeakers": "No speakers yet. Add the ones you want to group from the {device}.",
+      "addSpeaker": "Add speaker",
+      "presetsHeader": "Optional quick picks shown above the speaker list on the {device}.",
+      "presets": "Speaker presets",
       "presetCount": "{count} / {max}",
-      "addPreset": "Add Preset",
+      "addPreset": "Add preset",
       "presetName": "Name",
       "presetNamePlaceholder": "Preset name",
       "presetSpeakersOne": "1 speaker",
@@ -445,12 +444,12 @@
     "modes": [
       {
         "value": "assistOnly",
-        "label": "Silent Reply",
-        "detail": "Send your voice command to Home Assistant and see the reply on your watch."
+        "label": "Silent reply",
+        "detail": "Send your voice command to Home Assistant and see the reply on your {device}."
       },
       {
         "value": "assistAndSpeakReply",
-        "label": "Speak Reply",
+        "label": "Speak reply",
         "detail": "Send your command to Home Assistant and speak the reply on a speaker."
       }
     ],
@@ -464,8 +463,8 @@
       },
       {
         "value": "configuredSpeakers",
-        "label": "Choose Speakers",
-        "detail": "Uses this tile's chosen speakers and TTS engine. Falls back to the global defaults when nothing is selected."
+        "label": "Choose speakers",
+        "detail": "Uses this tile's chosen speakers and voice engine. Falls back to the global defaults when nothing is selected."
       }
     ],
     "replySpeakerAbsent": "watchSpeaker",
@@ -480,17 +479,17 @@
     ],
     "words": {
       "assistant": "Assistant",
-      "conversationAgent": "Conversation Agent",
-      "assistMode": "Assist Mode",
-      "replySpeaker": "Reply Speaker",
-      "chooseSpeakers": "Choose Speakers",
+      "conversationAgent": "Conversation agent",
+      "assistMode": "Assist mode",
+      "replySpeaker": "Reply speaker",
+      "chooseSpeakers": "Choose speakers",
       "chooseSpeakersHint": "Pick one or more Home Assistant speaker devices (including speaker groups) for this tile.",
       "chooseSpeakersEmptyHint": "Pick at least one Home Assistant speaker device (or speaker group) for this tile.",
-      "voiceEngine": "Voice Engine",
-      "speechVolume": "Speech Volume",
-      "targetVolume": "Target Volume",
-      "voiceInput": "Voice Input",
-      "listen": "Start Listening Immediately",
+      "voiceEngine": "Voice engine",
+      "speechVolume": "Speech volume",
+      "targetVolume": "Target volume",
+      "voiceInput": "Voice input",
+      "listen": "Start listening right away",
       "listenDetail": "Starts dictation capture right away after Assist asks for your command.",
       "firstUseSetup": "First use setup: when the Apple Watch typing screen appears, tap the bottom-right button, choose Mic, then tap Done. After that, later taps will default to mic listening."
     },
@@ -524,7 +523,7 @@
     "listenAbsent": true,
     "agent": {
       "help": "Pick a conversation agent such as an LLM-backed assistant. Default uses Home Assistant's normal Assist route.",
-      "useDefault": "Use Default Assistant",
+      "useDefault": "Use default assistant",
       "write": "A pick is written trimmed; Clear and Use Default Assistant remove assistAgentId."
     }
   },
@@ -549,13 +548,13 @@
       },
       {
         "value": "configuredSpeakers",
-        "label": "Choose Speakers",
-        "help": "Uses this tile's selected speakers and TTS engine. Falls back to the global defaults when nothing is selected."
+        "label": "Choose speakers",
+        "help": "Uses this tile's selected speakers and voice engine. Falls back to the global defaults when nothing is selected."
       },
       {
         "value": "chooseEachTime",
-        "label": "Choose on Watch",
-        "help": "Prompts on watch from this tile's configured speaker list."
+        "label": "Choose on {device}",
+        "help": "Asks on the {device} which of this tile's speakers to use."
       }
     ],
     "outputAbsent": "watchSpeaker",
@@ -568,23 +567,23 @@
     ],
     "words": {
       "speaker": "Speaker",
-      "chooseSpeakers": "Choose Speakers",
+      "chooseSpeakers": "Choose speakers",
       "chooseSpeakersHint": "Pick one or more Home Assistant speaker devices for this tile.",
       "chooseSpeakersEmptyHint": "Pick at least one Home Assistant speaker device for this tile.",
-      "speakersShownOnWatch": "Speakers Shown on Watch",
-      "chooseWatchList": "Choose Watch List",
+      "speakersShownOnWatch": "Speakers shown on the {device}",
+      "chooseWatchList": "Choose list",
       "watchListHint": "Only these Home Assistant speaker devices appear in the watch picker for this tile.",
-      "voiceEngine": "Voice Engine",
-      "speechVolume": "Speech Volume",
-      "targetVolume": "Target Volume",
-      "voiceInput": "Voice Input",
-      "listen": "Start Listening Immediately",
+      "voiceEngine": "Voice engine",
+      "speechVolume": "Speech volume",
+      "targetVolume": "Target volume",
+      "voiceInput": "Voice input",
+      "listen": "Start listening right away",
       "listenDetail": "Starts dictation capture right away when the tile opens.",
       "firstUseSetup": "First use setup: when the Apple Watch typing screen appears, tap the bottom-right button, choose Mic, then tap Done. After that, later taps will default to mic listening."
     },
     "warnings": {
-      "chooseEachTimeEmptyList": "Choose at least one Home Assistant speaker to show on watch for this tile.",
-      "chooseEachTimeNoEngine": "Set a voice engine for this tile. The watch will ask which Home speaker to use each time.",
+      "chooseEachTimeEmptyList": "Pick at least one speaker to show on the {device} for this tile.",
+      "chooseEachTimeNoEngine": "Set a voice engine for this tile. The {device} asks which speaker to use each time.",
       "rule": "Under Choose on Watch: the first while the watch list is empty, the second while neither the tile nor the voice defaults have an engine."
     },
     "listenAbsent": true
@@ -640,20 +639,20 @@
     "volumeModes": [
       {
         "value": "keepCurrent",
-        "label": "Keep Current",
+        "label": "Keep current",
         "shortLabel": "Keep",
         "detail": "Uses each target speaker's current volume."
       },
       {
         "value": "setForMessageThenRestore",
-        "label": "Set for Message + Restore",
-        "shortLabel": "Set + Restore",
+        "label": "Set for message + restore",
+        "shortLabel": "Set + restore",
         "detail": "Sets the selected volume before speaking, then restores previous volume after the message."
       },
       {
         "value": "setAndKeep",
-        "label": "Set and Keep",
-        "shortLabel": "Set + Keep",
+        "label": "Set and keep",
+        "shortLabel": "Set + keep",
         "detail": "Sets the selected volume before speaking and leaves it there."
       }
     ],
@@ -689,7 +688,7 @@
     },
     "engine": {
       "help": "Home Assistant voice engine used for this tile (for example: Google Translate, Piper, Nabu Casa TTS).",
-      "useDefault": "Use Default Engine",
+      "useDefault": "Use default engine",
       "write": "A pick is written trimmed; Use Default Engine (shown while the tile has an engine) removes the key.",
       "display": "The tile's engine, else the voice default engine, by name; else \"Not set\" in the warning color.",
       "displaySamples": [
