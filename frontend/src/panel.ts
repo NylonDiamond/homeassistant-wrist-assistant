@@ -527,6 +527,9 @@ const PUBLIC_ROW_LABEL: Record<string, string> = {
 /** More names of one kind than this fold behind one line in the public name check. */
 const PUBLIC_FOLD_AT = 6;
 
+/** The widest a complication's picture on the board grows, in CSS pixels. */
+const COMP_BOARD_PICTURE_MAX = 190;
+
 /** Which kind of public name a row is: its key's prefix, or the read-only
  * group it came from. */
 function publicRowKind(row: PublicRow): string {
@@ -14656,7 +14659,8 @@ export class WristAssistantPanel extends LitElement {
   private compBoardPicture(it: CompBoardItem, copy: PickerCopy<PickerItem>) {
     const kind = deviceKindOf(this.ownerOf(copy.ownerId));
     const device = this.cardDevice(kind, it.family);
-    const width = this.compRoomy.size(device === "iphone" && it.family !== undefined && isHomeFamily(it.family) ? 64 : 76);
+    // A complication is wide already: it grows with the room, to a point.
+    const width = Math.min(COMP_BOARD_PICTURE_MAX, this.compRoomy.size(device === "iphone" && it.family !== undefined && isHomeFamily(it.family) ? 64 : 76));
     let live: LiveShapes = {};
     if (copy.item.kind === "record") {
       const record = copy.item.record;

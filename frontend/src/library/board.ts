@@ -38,6 +38,9 @@ export const SAVED_FLASH_MS = 1800;
  * `BOARD_MID_PX` wide, `BOARD_MID_SCALE` times. */
 const BOARD_WIDE_PX = 1500;
 export const BOARD_WIDE_SCALE = 2.2;
+/** A 4K screen at normal zoom: bigger again. */
+const BOARD_HUGE_PX = 1900;
+export const BOARD_HUGE_SCALE = 3.2;
 const BOARD_MID_PX = 900;
 export const BOARD_MID_SCALE = 1.5;
 /** Under this width (a phone), smaller, so the names keep their room. */
@@ -60,7 +63,7 @@ export class WideWatch implements ReactiveController {
     this.seen = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width ?? 0;
       const wide = width >= BOARD_WIDE_PX;
-      const scale = wide ? BOARD_WIDE_SCALE : width >= BOARD_MID_PX ? BOARD_MID_SCALE : width > 0 && width < BOARD_SMALL_PX ? BOARD_SMALL_SCALE : 1;
+      const scale = width >= BOARD_HUGE_PX ? BOARD_HUGE_SCALE : wide ? BOARD_WIDE_SCALE : width >= BOARD_MID_PX ? BOARD_MID_SCALE : width > 0 && width < BOARD_SMALL_PX ? BOARD_SMALL_SCALE : 1;
       if (wide === this.wide && scale === this.scale) return;
       this.wide = wide;
       this.scale = scale;
