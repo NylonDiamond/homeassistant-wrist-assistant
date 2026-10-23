@@ -2735,9 +2735,9 @@ export class WaPageEditor extends LitElement {
    * scrolls sideways only, though the browser reports it as scrolling down
    * too while a dragged tile hangs below it. */
   private scroller(): HTMLElement | undefined {
-    // Beside the lists the stage scrolls in its own column; stacked, the
+    // Beside the lists the stage scrolls in its own box; stacked, the
     // editor or the page around it does.
-    let node: Node | null = this.renderRoot?.querySelector<HTMLElement>(".column.canvas") ?? this;
+    let node: Node | null = this.renderRoot?.querySelector<HTMLElement>(".pe-stage-body") ?? this;
     while (node) {
       if (node instanceof HTMLElement) {
         const overflow = getComputedStyle(node).overflowY;
@@ -4580,10 +4580,16 @@ export class WaPageEditor extends LitElement {
     .pe-layout.cols-3 > .column.left > .card > :not(.layers) { flex: none; }
     .pe-layout.cols-3 > .column.left > .card > .layers { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
     .pe-layout.cols-3 > .column.inspector { overflow-y: auto; overscroll-behavior: contain; }
-    /* The stage scrolls in its own column, with a thin bar of its own, so a
-       long page can still be dragged down its length. */
+    /* The canvas card fills its column: its head, the devices and the tool
+       strip stay put, and only the watch scrolls between them, with a thin
+       bar of its own, so a long page can still be dragged down its length.
+       The column itself scrolls only on a screen too short for the card. */
     .pe-layout.cols-3 > .column.canvas { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; overscroll-behavior: contain; }
-    .pe-layout.cols-3 > .column.canvas > .card { flex: none; }
+    .pe-layout.cols-3 > .column.canvas > .card.canvas-card.pe-canvas { flex: 1 1 auto; min-height: 420px; }
+    .pe-layout.cols-3 .pe-canvas > :not(.pe-stage-area) { flex: none; }
+    .pe-layout.cols-3 .pe-stage-area { flex: 1 1 auto; min-height: 0; }
+    .pe-layout.cols-3 .pe-stage-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
+    .pe-layout.cols-3 .pe-stage-area > :not(.pe-stage-body) { flex: none; }
     /* One column under 820px, the complication editor's order: the page and
        its tiles, the settings, then the lists. Nothing sticks there: a sticky
        inspector slid over the Tiles card under it and took its clicks. The
