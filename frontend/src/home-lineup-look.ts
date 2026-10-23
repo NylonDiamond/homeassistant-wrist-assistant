@@ -188,7 +188,8 @@ export const homeLineupStyles = css`
   .hl-grip svg { width: 14px; height: 14px; }
   .hl-grip:hover { color: var(--wa-ink); background: var(--wa-hover); }
   .hl-grip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .hl-lines.strip .hl-grip { position: absolute; top: 5px; left: 22px; }
+  /* Under the number, in the card's left margin, clear of the picture. */
+  .hl-lines.strip .hl-grip { position: absolute; top: 24px; left: 3px; z-index: 1; }
   .hl-rm {
     display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; padding: 0;
     border-radius: 6px; border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-muted); cursor: pointer;

@@ -8,13 +8,13 @@ import{b as d,d as n,g as t,nh as l}from"./chunk-PGFG6NDE.js";var c="Hidden here
     </div>
     ${e.under??t}
     ${e.lines.length===0?n`<p class="hl-empty">${e.empty}</p>`:n`<ol class="hl-lines ${e.strip===!0?"strip":""}">${e.lines.map((p,s)=>x(p,s,e.strip===!0))}</ol>`}
-  </section>`}function x(e,p,s){let r=e.action,a=e.drag,o=e.remove,h=["hl-line",e.hidden===!0?"hid":"",a?.on===!0?"drags":"",a?.dragging===!0?"dragging":"",a?.over===!0?a.after?"drop-after":"drop-before":""].filter(i=>i!=="").join(" ");return n`<li class=${h} data-line=${e.key} draggable=${a?.on===!0?"true":"false"}
-    @dragstart=${i=>a?.onStart(i)} @dragover=${i=>a?.onOver(i)}
-    @drop=${i=>a?.onDrop(i)} @dragend=${()=>a?.onEnd()}>
+  </section>`}function x(e,p,s){let a=e.action,r=e.drag,o=e.remove,h=["hl-line",e.hidden===!0?"hid":"",r?.on===!0?"drags":"",r?.dragging===!0?"dragging":"",r?.over===!0?r.after?"drop-after":"drop-before":""].filter(i=>i!=="").join(" ");return n`<li class=${h} data-line=${e.key} draggable=${r?.on===!0?"true":"false"}
+    @dragstart=${i=>r?.onStart(i)} @dragover=${i=>r?.onOver(i)}
+    @drop=${i=>r?.onDrop(i)} @dragend=${()=>r?.onEnd()}>
     ${s?n`<span class="hl-i" aria-hidden="true">${p+1}</span>`:t}
-    ${a===void 0?t:n`<span class="hl-grip" tabindex=${a.on?"0":"-1"} role="button"
-      aria-label=${`Move ${e.name}. Alt and the arrow keys move it.`} title=${a.on?"Drag to change the order":""}
-      @keydown=${i=>a.onKey(i)}>${l("grip")}</span>`}
+    ${r===void 0?t:n`<span class="hl-grip" tabindex=${r.on?"0":"-1"} role="button"
+      aria-label=${`Move ${e.name}. Alt and the arrow keys move it.`} title=${r.on?"Drag to change the order":""}
+      @keydown=${i=>r.onKey(i)}>${l("grip")}</span>`}
     ${o===void 0?t:n`<button type="button" class="hl-rm" title=${o.title} aria-label=${o.title} ?disabled=${o.busy===!0}
       @click=${i=>{i.stopPropagation(),o.onClick()}}>${l("close")}</button>`}
     ${e.picture===void 0?t:n`<span class="hl-pic">${e.picture}</span>`}
@@ -25,8 +25,8 @@ import{b as d,d as n,g as t,nh as l}from"./chunk-PGFG6NDE.js";var c="Hidden here
         ${e.tag===void 0?t:n`<em class="hl-tag own">${e.tag}</em>`}
         ${e.detail??t}</small>`}
     </span>
-    ${r===void 0?t:r.href!==void 0?n`<a class="hl-edit" href=${r.href} title=${r.title}
-          @click=${i=>{i.button!==0||i.metaKey||i.ctrlKey||i.shiftKey||i.altKey||(i.preventDefault(),r.onClick())}}>${r.label}</a>`:n`<button type="button" class="hl-edit" title=${r.title} @click=${r.onClick}>${r.label}</button>`}
+    ${a===void 0?t:a.href!==void 0?n`<a class="hl-edit" href=${a.href} title=${a.title}
+          @click=${i=>{i.button!==0||i.metaKey||i.ctrlKey||i.shiftKey||i.altKey||(i.preventDefault(),a.onClick())}}>${a.label}</a>`:n`<button type="button" class="hl-edit" title=${a.title} @click=${a.onClick}>${a.label}</button>`}
   </li>`}var m=d`
   .hl-groups { display: flex; flex-direction: column; gap: 18px; }
   .hl-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -85,7 +85,8 @@ import{b as d,d as n,g as t,nh as l}from"./chunk-PGFG6NDE.js";var c="Hidden here
   .hl-grip svg { width: 14px; height: 14px; }
   .hl-grip:hover { color: var(--wa-ink); background: var(--wa-hover); }
   .hl-grip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .hl-lines.strip .hl-grip { position: absolute; top: 5px; left: 22px; }
+  /* Under the number, in the card's left margin, clear of the picture. */
+  .hl-lines.strip .hl-grip { position: absolute; top: 24px; left: 3px; z-index: 1; }
   .hl-rm {
     display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; padding: 0;
     border-radius: 6px; border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-muted); cursor: pointer;
