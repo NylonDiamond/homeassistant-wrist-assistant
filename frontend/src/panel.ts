@@ -20019,7 +20019,7 @@ export class WristAssistantPanel extends LitElement {
   private renderHomeAllRow(n: number) {
     const on = this.homeAll;
     return html`<button type="button" class="hb-row hb-all ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
-      style="--h:var(--wa-hue-grey)" title="Every thing in your home, and the devices it is on" @click=${() => { this.homeAll = true; }}>
+      style="--h:var(--wa-hue-grey)" title="Every thing in your home, and the devices it is on" @click=${() => this.openHomeAll()}>
       <span class="hb-icon hb-link-ic" aria-hidden="true">${uiIcon("grid")}</span>
       <span class="hb-row-t"><span class="hb-row-name">All devices</span><span class="hb-row-sub">${n} ${n === 1 ? "device" : "devices"}, every thing on each</span></span>
     </button>`;
@@ -20358,6 +20358,16 @@ export class WristAssistantPanel extends LitElement {
     void this.loadDeviceCounts(ownerId);
   }
 
+  /** Show All devices on Home. On a narrow page, where it sits under the
+   * list, it is brought into view. */
+  private openHomeAll() {
+    this.homeAll = true;
+    void this.updateComplete.then(() => {
+      if (!window.matchMedia?.("(max-width: 720px)").matches) return;
+      this.renderRoot.querySelector<HTMLElement>(".ha")?.scrollIntoView({ block: "start" });
+    });
+  }
+
   /** Read the counts a device's doors wear, from the stored records, for an
    * integration whose summary leaves them out. A watch has three; an iPhone
    * has its pages, on a home with phone pages. A reply that lands after
@@ -20404,7 +20414,9 @@ export class WristAssistantPanel extends LitElement {
     const before = this.homeShown;
     this.homeShown = shown;
     if (!detail || shown === undefined || before === undefined || before === shown) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+    if (window.matchMedia?.("(max-width: 720px)").matches) detail.scrollIntoView({ block: "start", behavior: still ? "auto" : "smooth" });
+    if (still) return;
     const ease = "cubic-bezier(0.2, 0.8, 0.2, 1)";
     detail.querySelector(".hb-device")?.animate(
       [{ opacity: 0, transform: "translateY(22px) scale(0.95)" }, { opacity: 1, transform: "none" }], { duration: 520, easing: ease });
@@ -20412,7 +20424,6 @@ export class WristAssistantPanel extends LitElement {
       [{ opacity: 0 }, { opacity: 1 }], { duration: 420, delay: 140, easing: ease, fill: "backwards" });
     detail.querySelector(".hb-info")?.animate(
       [{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }], { duration: 380, delay: 60, easing: ease, fill: "backwards" });
-    if (window.matchMedia?.("(max-width: 720px)").matches) detail.scrollIntoView({ block: "start", behavior: "smooth" });
   }
 
   /**

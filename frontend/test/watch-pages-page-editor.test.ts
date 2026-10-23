@@ -249,7 +249,7 @@ describe("the Tiles card", () => {
     expect(card).toMatch(/class="layer pe-page-row hl [^"]*"\s+data-page=P-HALL/);
   });
 
-  it("puts a drag bar between the Pages and Tiles cards that sets the page list's height", () => {
+  it("puts a drag bar between the Pages and Tiles cards that sets the Pages card's height", () => {
     const e = editor();
     const text = e.body();
     const pagesAt = text.indexOf(`class="card lc pe-pages-card`);
@@ -260,9 +260,16 @@ describe("the Tiles card", () => {
     expect(text).toMatch(/class="pe-list-split" role="separator" aria-orientation="horizontal"/);
     // No height of its own until dragged: the CSS default.
     expect(text).not.toContain("--pe-list-h");
+    expect(text).not.toContain("list-set");
     e.el.pageListHeight = 500;
     expect(e.body()).toContain("--pe-list-h:500px;");
-    expect(rule(sheet(), ".layout.pe-layout.cols-3 .pe-pages-card > .pe-page-list")).toContain("max-height: var(--pe-list-h, min(40dvh, 360px))");
+    expect(e.body()).toMatch(/class="layout pe-layout cols-3 list-set"/);
+    // Half the column by default; the dragged height once there is one,
+    // always leaving the Tiles card room.
+    expect(rule(sheet(), ".layout.pe-layout.cols-3 .pe-pages-card")).toContain("max-height: 50%");
+    expect(rule(sheet(), ".layout.pe-layout.cols-3.list-set .pe-pages-card")).toMatch(/height:\s*var\(--pe-list-h\)/);
+    // The list scrolls inside its card, the Tiles list inside its own.
+    expect(rule(sheet(), ".pe-layout.cols-3 > .column.left > .card > .layers")).toMatch(/overflow-y:\s*auto/);
     expect(rule(sheet(), ".layout.pe-layout.cols-1 .pe-list-split")).toContain("display: none");
   });
 
@@ -730,12 +737,9 @@ describe("the stacked layout", () => {
     const stacked = rule(css, ".layout.pe-layout.cols-1 > .column.left, .layout.pe-layout.cols-1 > .column.canvas, .layout.pe-layout.cols-1 > .column.inspector");
     expect(stacked).toMatch(/position:\s*static/);
     expect(stacked).toMatch(/max-height:\s*none/);
-    // The container query's reset is as strong as the sticky rule it undoes,
-    // and comes after it.
-    const sticky = css.indexOf(".pe-layout > .column.left, .pe-layout > .column.inspector {");
-    const reset = css.indexOf(".pe-layout > .column.left, .pe-layout > .column.canvas, .pe-layout > .column.inspector {");
-    expect(sticky).toBeGreaterThan(-1);
-    expect(reset).toBeGreaterThan(sticky);
+    // Beside the watch nothing sticks either: each part scrolls in its own box.
+    // (Its edge fades, ::before and ::after, still stick inside its box.)
+    expect(css).not.toMatch(/\.column\.(left|inspector)\s*\{[^}]*position:\s*sticky/);
     expect(editor().body()).toContain(`<div class="layout pe-layout cols-3"`);
   });
 });

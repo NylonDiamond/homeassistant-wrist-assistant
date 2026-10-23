@@ -547,7 +547,11 @@ export const homeStyles = css`
       position: sticky; top: 0; align-self: flex-start; height: 100cqh;
       overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
     }
+    /* A fixed height must not squeeze its parts: it scrolls instead. */
+    .hb-side > * { flex-shrink: 0; }
   }
+  /* All devices, picked, is lit like a picked device, in the accent. */
+  button.hb-row.hb-all { --c: var(--wa-accent); }
   /* The side bar: the head, the household's state, Pair a device, then
      every device by person. */
   .hb-side {

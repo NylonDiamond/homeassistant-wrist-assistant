@@ -35,6 +35,7 @@ import "../src/watch-pages/page-editor.js";
 import { takeWatchMenusRecord } from "../src/watch-menus/draft.js";
 import type { MenusDocument } from "../src/watch-menus/model.js";
 import "../src/watch-menus/menu-editor.js";
+import "../src/watch-status-pages/status-pages-editor.js";
 import { COLLECTED_PILL_TEXT, WAITING_HELP_TEXT, WAITING_PILL_TEXT } from "../src/watch-settings.js";
 
 /** A template flattened to its markup, values in place (a bound attribute
@@ -371,7 +372,7 @@ describe("the sticky top block", () => {
   const menusDocument = JSON.parse(readFileSync(join(__dirname, "fixtures-menus", "01-defaults.json"), "utf8")) as MenusDocument;
   const fiveMinutesAgo = () => new Date(Date.now() - 5 * 60_000).toISOString();
 
-  function styles(tag: "wa-page-editor" | "wa-menu-editor"): string {
+  function styles(tag: "wa-page-editor" | "wa-status-pages-editor" | "wa-menu-editor"): string {
     const element = customElements.get(tag) as unknown as { styles: unknown };
     const sheet = (s: unknown): string => (Array.isArray(s) ? s.map(sheet).join("\n") : String((s as { cssText?: string } | undefined)?.cssText ?? ""));
     return sheet(element.styles);
@@ -462,12 +463,16 @@ describe("the sticky top block", () => {
     expect(rule(css, ":host")).toMatch(/scroll-padding-top:\s*var\(--pe-top-h, 0px\)/);
   });
 
-  it("moves both editors' sticky side columns under the block", () => {
-    for (const tag of ["wa-page-editor", "wa-menu-editor"] as const) {
-      const columns = rule(styles(tag), ".pe-layout > .column.left, .pe-layout > .column.inspector");
-      expect(columns, tag).toContain("--pe-under-top: max(0px, calc(var(--pe-top-h, 0px) - var(--cf-pad, 16px)))");
-      expect(columns, tag).toMatch(/top:\s*var\(--pe-under-top\)/);
-      expect(columns, tag).toMatch(/max-height:\s*calc\(var\(--pe-view-h, calc\(100dvh - 120px\)\) - 30px - var\(--pe-under-top\)\)/);
+  it("keeps every editor one screen tall beside the lists, each part scrolling in its own box", () => {
+    for (const tag of ["wa-page-editor", "wa-status-pages-editor", "wa-menu-editor"] as const) {
+      const css = styles(tag);
+      expect(rule(css, ".layout.pe-layout.cols-3"), tag).toMatch(/flex:\s*1 1 0;\s*min-height:\s*0;\s*overflow:\s*hidden/);
+      expect(rule(css, ".pe-layout.cols-3 > .column.inspector"), tag).toMatch(/overflow-y:\s*auto/);
+      expect(rule(css, ".pe-layout.cols-3 > .column.canvas"), tag).toMatch(/overflow-y:\s*auto/);
+      // No column sticks under the top block any more: none needs to.
+      expect(css, tag).not.toContain("--pe-under-top");
+      // Stacked, the editor scrolls as one page again.
+      expect(rule(css, ".layout.pe-layout.cols-1"), tag).toMatch(/overflow:\s*visible/);
     }
   });
 });

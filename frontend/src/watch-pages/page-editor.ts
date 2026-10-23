@@ -3133,7 +3133,7 @@ export class WaPageEditor extends LitElement {
     // part scrolls in its own box. The Pages card is as tall as its bar was
     // dragged, else at most half the column.
     const listH = this.pageListHeight !== undefined ? `--pe-list-h:${this.pageListHeight}px;` : "";
-    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"} ${listH === "" ? "" : "list-set"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${listH}`}>
+    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}${listH === "" ? "" : " list-set"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${listH}`}>
       <div class="column left">
         ${this.renderPageList(listed, pages, owner)}
         ${this.renderListSplit()}
@@ -4538,6 +4538,8 @@ export class WaPageEditor extends LitElement {
        as the panel's own bar draws them. */
     .wa-bar button.tb-btn:has(> svg.ui-icon) { display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; }
     .wa-bar button.tb-btn svg.ui-icon { width: 14px; height: 14px; }
+    /* Stacked, the way back stays first on the first line, not under it. */
+    .wa-bar.stacked > button.tb-btn.tb-back { order: 0; }
     .wa-bar button.tb-btn:disabled, .wa-bar button.primary.save:disabled { opacity: .45; cursor: default; }
     .wa-bar .pop-menu .row:disabled { opacity: .5; cursor: default; }
     .wa-bar .pop-menu .row:disabled:hover { background: transparent; }
@@ -4726,6 +4728,10 @@ export class WaPageEditor extends LitElement {
        room above it; the 64px it once kept left a band of empty canvas
        between the page bar and the strip. */
     .pe-stage-area { position: relative; padding: 12px 12px 12px; gap: 10px; }
+    /* A phone: the watch at its fit size needs every pixel of the width. */
+    @container (max-width: 460px) {
+      .pe-stage-area { padding-inline: 4px; }
+    }
     /* The picture keeps its size and the stage scrolls sideways under it on
        a screen narrower than the watch drawn at this scale. */
     .pe-stage-body { display: flex; justify-content: center; padding: 0 4px 4px; overflow-x: auto; overflow-y: hidden; }

@@ -1191,6 +1191,8 @@ export class WaStatusPagesEditor extends LitElement {
     code { font-family: monospace; font-size: 12px; overflow-wrap: anywhere; }
     .wa-bar button.tb-btn:has(> svg.ui-icon) { display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; }
     .wa-bar button.tb-btn svg.ui-icon { width: 14px; height: 14px; }
+    /* Stacked, the way back stays first on the first line, not under it. */
+    .wa-bar.stacked > button.tb-btn.tb-back { order: 0; }
     .wa-bar button.tb-btn:disabled, .wa-bar button.primary.save:disabled { opacity: .45; cursor: default; }
     .wa-bar .pop-menu .row:disabled { opacity: .5; cursor: default; }
     .wa-bar .pop-menu .row:disabled:hover { background: transparent; }

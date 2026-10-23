@@ -527,18 +527,16 @@ export const shellStyles = css`
   /* A phone: the name on top, then the tabs and Help on one line under it.
      The empty ::after is the line break, a full width item of no height, so
      the rows carry their own margins instead of a row gap counted twice.
-     Help keeps only its sign, and the tabs slide sideways rather than wrap
-     if a very narrow screen cannot hold them all. */
+     Help keeps only its sign, and the tabs wrap onto a second line if the
+     screen cannot hold them all: sliding sideways hid Complications behind
+     the edge with nothing to say it was there (2026-10-23). */
   @media (max-width: 480px) {
     nav.wa-tabs { row-gap: 0; padding-block: 3px; }
     nav.wa-tabs > * { margin-block: 3px; }
     nav.wa-tabs::after { content: ""; order: 1; flex: 0 0 100%; height: 0; margin: 0; }
     .wa-tabs-list, button.wa-tabs-help { order: 2; }
-    .wa-tabs-list {
-      flex: 1 1 0; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
-      margin: 0 0 0 -3px; padding: 3px;
-    }
-    .wa-tabs-list::-webkit-scrollbar { display: none; }
+    .wa-tabs-list { flex: 1 1 0; min-width: 0; flex-wrap: wrap; gap: 6px; }
+    button.wa-tabs-help { align-self: flex-start; }
     a.wa-tab { flex: none; padding: 0 10px; }
     button.wa-tabs-help { width: 28px; padding: 0; justify-content: center; flex: none; }
     button.wa-tabs-help > span { display: none; }
