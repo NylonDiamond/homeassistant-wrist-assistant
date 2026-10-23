@@ -14418,7 +14418,7 @@ export class WristAssistantPanel extends LitElement {
           ${this.compBoardSaved ? html`<span class="bd-saved" role="status">${uiIcon("check")}<span>Saved</span></span>` : nothing}
           ${focus === undefined ? renderViewSwitch(view, (v) => this.setCompView(v), "complications") : nothing}
           <a class="cl-btn cl-gallery" href=${GALLERY_PAGE} target="_blank" rel="noopener"
-            title="Ready-made complications from other people">${uiIcon("globe")}<span>Gallery</span></a>
+            title="Ready-made complications from other people">${uiIcon("globe")}<span>Online gallery</span></a>
           <button class="cl-btn cl-import" ?disabled=${full}
             title=${full ? "Every device is full. Delete a complication first." : "Paste a complication somebody shared"}
             @click=${() => this.openImportDialog()}>${uiIcon("paste")}<span>Import</span></button>
@@ -15548,7 +15548,7 @@ export class WristAssistantPanel extends LitElement {
           @click=${() => this.openGalleryDialog()}>
           <span class="ic">${uiIcon("globe")}</span><b>${posted?.kind === "live" ? "Update in online gallery" : posted?.kind === "pending" ? "Send to gallery again" : "Post to online gallery"}</b>
           <span>${!share ? "Only shares can go"
-            : !mayPost ? "Only an administrator can post to the gallery"
+            : !mayPost ? "Only an administrator can post to the online gallery"
             : posted?.kind === "live" ? "A new version. The link and votes stay"
             : posted?.kind === "pending" ? "Takes the place of the copy in review"
             : "Everyone can find it, after review"}</span>
@@ -16305,7 +16305,7 @@ export class WristAssistantPanel extends LitElement {
       <b>Sent for review</b>
       <p>${this.galleryReplaces
         ? "The new version goes up after it is approved. Until then the old one stays."
-        : "It shows in the gallery after it is approved. Check My uploads for its status."}</p>
+        : "It shows in the online gallery after it is approved. Check My uploads for its status."}</p>
       <div class="btns">
         <button class="small" @click=${() => this.setGalleryTab("mine")}>My uploads</button>
         <button class="primary" @click=${() => this.finishGallery()}>Done</button>
@@ -16382,7 +16382,7 @@ export class WristAssistantPanel extends LitElement {
             @input=${(e: Event) => { this.galleryNickname = (e.target as HTMLInputElement).value; }} /></label>
         ${problems.length > 0 ? html`<ul class="xf-blockers" role="alert">${problems.map((p) => html`<li>${p}</li>`)}</ul>` : nothing}
       </div>
-      <div>${this.galleryCard()}<div class="xf-caption">How it looks in the gallery</div></div>
+      <div>${this.galleryCard()}<div class="xf-caption">How it looks in the online gallery</div></div>
     </div>`;
   }
 

@@ -956,8 +956,8 @@ export function galleryLinkFor(items: readonly GalleryUpload[], sourceId: string
 export function galleryUploadSubline(u: GalleryUpload): string {
   if (u.status === "rejected") return u.rejectReason ? u.rejectReason : "No reason was given.";
   if (isPendingUpdate(u)) return "The old version stays up until this one is approved.";
-  if (u.status === "pending") return "It shows in the gallery after it is approved.";
-  if (u.status === "removed") return "It is no longer in the gallery.";
+  if (u.status === "pending") return "It shows in the online gallery after it is approved.";
+  if (u.status === "removed") return "It is no longer in the online gallery.";
   const votes = u.voteCount === 1 ? "1 vote" : `${u.voteCount} votes`;
   const imports = u.importCount === 1 ? "added once" : `added ${u.importCount} times`;
   return `${votes} · ${imports}`;
@@ -975,7 +975,7 @@ export async function deleteMyUpload(
 /** What each status reads as in the uploads list. */
 export const GALLERY_STATUS_LABEL: Record<GalleryUploadStatus, string> = {
   pending: "Waiting for review",
-  approved: "In the gallery",
+  approved: "In the online gallery",
   rejected: "Not approved",
   removed: "Removed",
 };
