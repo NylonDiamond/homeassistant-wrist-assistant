@@ -107,6 +107,10 @@ describe("the panel's Complications board", () => {
     expect(PANEL).toContain("if (this.saveError === undefined && this.copyStatus === said) this.flashCompSaved();");
   });
 
+  it("lists under a focused device only what could go on it: a box there, never a dash", () => {
+    expect(PANEL).toContain("const fits = (it: CompBoardItem) => it.locked === undefined && this.compBoardCell(it, device, false).chip !== undefined;");
+  });
+
   it("moves a watch's old Complications screen address to its board column", () => {
     expect(PANEL).toContain(`if (screen.id === "watch-complications") {`);
     expect(PANEL).toContain("return listFocusPath(COMPLICATIONS_PATH, this.sharedWatch);");

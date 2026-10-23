@@ -14488,7 +14488,10 @@ export class WristAssistantPanel extends LitElement {
       if (sections.length === 0) sections = [{ key: "none", rows: [], empty: emptyText }];
     } else {
       const here = (it: CompBoardItem) => it.row.copies.some((c) => c.ownerId === device.ownerId);
-      const fits = (it: CompBoardItem) => it.locked === undefined && it.places.some((p) => p.owner.ownerId === device.ownerId);
+      // Could go on it: its box there is a tick, not a dash (a Home Screen
+      // size on no device yet is listed for a watch, but a watch cannot
+      // draw it).
+      const fits = (it: CompBoardItem) => it.locked === undefined && this.compBoardCell(it, device, false).chip !== undefined;
       const on = items.filter(here).sort(byOrder);
       const rest = items.filter((it) => !here(it) && fits(it)).sort(byOrder);
       const leftOut = items.filter((it) => !here(it) && !fits(it)).length;
