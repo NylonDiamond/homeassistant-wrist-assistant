@@ -22,7 +22,7 @@ export const listTabStyles = css`
     padding: var(--ap-top) clamp(16px, 4vw, 40px) 48px;
     background: var(--wa-bg); color: var(--wa-ink);
   }
-  .ap-wrap { width: min(1400px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+  .ap-wrap { width: min(2200px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
   .ap-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; padding: 0 2px; }
   .ap-head-text { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .ap-head h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.02em; }

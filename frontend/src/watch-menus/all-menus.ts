@@ -32,7 +32,7 @@ import { renderMenuRowPicture, rowPictureStyles } from "../library/row-picture.j
 import { LibraryController } from "../library/store.js";
 import { newItemDialogStyles, openNewItemDialog, renderNewItemDialog } from "../library/new-dialog.js";
 import { type BoardCell, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen, type ListView,
-  SAVED_FLASH_MS, boardStyles, renderBoard, renderViewSwitch } from "../library/board.js";
+  SAVED_FLASH_MS, WideWatch, boardStyles, renderBoard, renderViewSwitch } from "../library/board.js";
 import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
@@ -189,6 +189,9 @@ export class WaAllMenus extends LitElement {
     window.removeEventListener("keydown", this.onKeyDown);
     clearTimeout(this.savedTimer);
   }
+
+  /** Whether this tab is wide enough for big row pictures. */
+  private roomy = new WideWatch(this);
 
   private colorsFor = deviceColorsCache();
 
@@ -517,6 +520,7 @@ export class WaAllMenus extends LitElement {
       })),
       ...(focus === undefined ? {} : { focus }),
       onFocus: (ownerId) => this.setFocus(ownerId),
+      wide: this.roomy.wide,
       focusWord: "Its menus",
       focusTitle: (d) => `Show the menus ${d.name} uses first`,
       sections,
@@ -552,7 +556,7 @@ export class WaAllMenus extends LitElement {
     const row: BoardRow = {
       key: menu.id, name: menu.name, detail: menuDetail(menu),
       picture: renderMenuRowPicture({
-        menu, hass: this.hassNow, icons: this.icons, tick: this.iconsTick, onReady: () => this.requestUpdate(), height: BOARD_PICTURE_H,
+        menu, hass: this.hassNow, icons: this.icons, tick: this.iconsTick, onReady: () => this.requestUpdate(), height: this.roomy.size(BOARD_PICTURE_H),
         ...(menu.unit === "anywhere" && opensOn !== undefined ? { pages: pagesDocumentFor(library, opensOn.ownerId) } : {}),
       }),
       openTitle: opensOn === undefined ? libraryEditTitle(menu.name) : `Edit ${menu.name} on ${opensOn.name}`,

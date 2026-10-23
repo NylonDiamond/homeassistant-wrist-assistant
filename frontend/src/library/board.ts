@@ -16,7 +16,7 @@
 // them, so the table, its sticky first column and its focus look are the
 // same on every tab.
 
-import { css, html, nothing, type TemplateResult } from "lit";
+import { css, html, nothing, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from "lit";
 import { uiIcon } from "../ui-icons.js";
 import type { LinkDevice } from "../watch-pages/devices.js";
 import { type TickAsk, type TickChip, type TickNoteKind, renderTickAsk } from "./ticks.js";
@@ -31,6 +31,45 @@ export const DEVICE_OWN_LABELS: Readonly<Record<DeviceOwnScreen, string>> = { se
 
 /** How long "Saved" shows beside the head after a box's write lands. */
 export const SAVED_FLASH_MS = 1800;
+
+/** A list tab at least this wide (a big screen at normal zoom) draws its
+ * rows' pictures `BOARD_WIDE_SCALE` times bigger, so the room shows the
+ * things themselves instead of empty space either side. */
+const BOARD_WIDE_PX = 1500;
+export const BOARD_WIDE_SCALE = 1.9;
+
+/** Tells its host whether it is wide (`BOARD_WIDE_PX`), and asks it to draw
+ * again when that changes. */
+export class WideWatch implements ReactiveController {
+  wide = false;
+  private seen?: ResizeObserver;
+
+  constructor(private readonly host: ReactiveControllerHost & HTMLElement) {
+    host.addController(this);
+  }
+
+  hostConnected(): void {
+    if (typeof ResizeObserver === "undefined") return;
+    this.seen = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      const wide = width >= BOARD_WIDE_PX;
+      if (wide === this.wide) return;
+      this.wide = wide;
+      this.host.requestUpdate();
+    });
+    this.seen.observe(this.host);
+  }
+
+  hostDisconnected(): void {
+    this.seen?.disconnect();
+    this.seen = undefined;
+  }
+
+  /** A picture size for this width. */
+  size(base: number): number {
+    return this.wide ? Math.round(base * BOARD_WIDE_SCALE) : base;
+  }
+}
 
 /** Board or Cards, in a list tab's head. `many` names what is listed. */
 export function renderViewSwitch(view: ListView, onPick: (view: ListView) => void, many: string): TemplateResult {
@@ -135,6 +174,8 @@ export interface BoardInput {
   focusWord: string;
   focusTitle: (device: LinkDevice) => string;
   sections: readonly BoardSection[];
+  /** A big screen (`WideWatch`): bigger type and a roomier first column. */
+  wide?: boolean;
 }
 
 /** Whether two owner ids name one device. */
@@ -144,7 +185,7 @@ export function renderBoard(input: BoardInput): TemplateResult {
   const span = input.columns.length + 1;
   const focusAt = input.columns.findIndex((c) => same(c.device.ownerId, input.focus));
   return html`<div class="bd-scroll">
-    <table class="bd ${focusAt >= 0 ? "focused" : ""}" aria-label=${input.label}>
+    <table class="bd ${focusAt >= 0 ? "focused" : ""} ${input.wide === true ? "wide" : ""}" aria-label=${input.label}>
       <thead><tr>
         <th scope="col" class="bd-thing">${input.thing}</th>
         ${input.columns.map((col) => renderHead(col, same(col.device.ownerId, input.focus), input))}
@@ -376,6 +417,15 @@ export const boardStyles = css`
   .bd-under td { padding: 0 10px 8px; border-bottom: 1px solid var(--wa-line); }
   .bd-under td > * { position: sticky; left: 10px; max-width: min(560px, calc(100vw - 60px)); }
   .bd-under .lt-ask { margin-top: 2px; }
+  .bd.wide { font-size: 13.5px; }
+  .bd.wide .bd-thing { min-width: 320px; max-width: 460px; }
+  .bd.wide .bd-thing-in { padding: 8px 14px; gap: 10px; }
+  .bd.wide .bd-open { gap: 14px; }
+  .bd.wide .bd-n { font-size: 14.5px; }
+  .bd.wide .bd-m { font-size: 12.5px; }
+  .bd.wide .bd-col { min-width: 130px; }
+  .bd.wide .bd-col-name { font-size: 13.5px; }
+  .bd.wide .bd-col-top { max-width: 220px; }
   @media (max-width: 640px) {
     .bd .bd-thing { min-width: 150px; max-width: 200px; }
     .bd-thing-in { padding: 6px; }

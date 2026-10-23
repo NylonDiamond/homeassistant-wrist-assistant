@@ -724,6 +724,25 @@ export const homeStyles = css`
   .hb-call.r .hb-call-line { background: linear-gradient(90deg, color-mix(in srgb, var(--wa-ink) 30%, transparent), transparent); }
   .hb-call i { width: 5px; height: 5px; border-radius: 50%; background: var(--c); }
   .hb-call.r i { background: var(--wa-label); }
+  /* A big screen at normal zoom: the stage on the left, its name, sync state
+     and doors on the right, so the room holds the device instead of empty
+     space either side of one narrow column. */
+  @container (min-width: 1400px) {
+    .hb-detail {
+      max-width: 1760px; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+      grid-template-areas: "bar bar" "stage info"; column-gap: 32px; row-gap: 18px; align-items: start;
+    }
+    .hb-main > .home-welcome-slot { max-width: 1760px; }
+    .hb-bar { grid-area: bar; }
+    .hb-stage { grid-area: stage; position: sticky; top: 18px; height: 560px; }
+    .hb-info { grid-area: info; display: flex; flex-direction: column; gap: 18px; }
+    .hb-device { top: 64px; }
+    .hb-device svg.ha-art { height: 340px; }
+    button.hb-call { top: 190px; }
+    .hb-floor { height: 130px; }
+    .hb-detail .hb-doors { grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); margin-top: 0; }
+    .hb-detail a.hb-door, .hb-detail button.hb-door { min-height: 132px; }
+  }
   @container (max-width: 620px) {
     .hb-calls { display: none; }
     .hb-stage { height: 320px; }

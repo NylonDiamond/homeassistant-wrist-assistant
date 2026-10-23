@@ -49,7 +49,7 @@ import {
 import { renderPageRowPicture, renderStatusRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
 import { type BoardCell, type BoardColumn, type BoardDrag, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen, type ListView,
-  SAVED_FLASH_MS, boardStyles, renderBoard, renderViewSwitch } from "../library/board.js";
+  SAVED_FLASH_MS, WideWatch, boardStyles, renderBoard, renderViewSwitch } from "../library/board.js";
 import { type TicksInput, libraryTicksStyles, renderTicks, tickChips } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
@@ -340,6 +340,9 @@ export class WaAllPages extends LitElement {
   private get view(): ListView {
     return this.filterDevice() !== undefined ? "board" : keptView(this.kind).view;
   }
+
+  /** Whether this tab is wide enough for big row pictures. */
+  private roomy = new WideWatch(this);
 
   private colorsFor = deviceColorsCache();
 
@@ -938,6 +941,7 @@ export class WaAllPages extends LitElement {
       columns: this.boardColumns(library, devices),
       ...(focus === undefined ? {} : { focus }),
       onFocus: (ownerId) => this.setFocus(ownerId),
+      wide: this.roomy.wide,
       focusWord: "Order",
       focusTitle: (d) => `Show ${d.name}'s ${many} first, in its order`,
       sections,
@@ -1022,10 +1026,10 @@ export class WaAllPages extends LitElement {
    * focused iPhone does. */
   private rowPicture(entry: LibraryItem, device: LinkDevice | undefined): TemplateResult {
     if (entry.kind === "status_pages") {
-      return renderStatusRowPicture({ page: entry.item, hass: this.hassNow, width: BOARD_PICTURE_W, tick: this.iconsTick, ...(this.icons === undefined ? {} : { icons: this.icons }) });
+      return renderStatusRowPicture({ page: entry.item, hass: this.hassNow, width: this.roomy.size(BOARD_PICTURE_W), tick: this.iconsTick, ...(this.icons === undefined ? {} : { icons: this.icons }) });
     }
     return renderPageRowPicture({
-      page: entry.item as WatchPage, width: device?.kind === "iphone" ? BOARD_PHONE_PICTURE_W : BOARD_PICTURE_W, tick: this.iconsTick, iphone: device?.kind === "iphone",
+      page: entry.item as WatchPage, width: this.roomy.size(device?.kind === "iphone" ? BOARD_PHONE_PICTURE_W : BOARD_PICTURE_W), tick: this.iconsTick, iphone: device?.kind === "iphone",
       ...(this.hassNow === undefined ? {} : { states: this.hassNow.states }),
       ...(this.icons === undefined ? {} : { icons: this.icons }),
     });
