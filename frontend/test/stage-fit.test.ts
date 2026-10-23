@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { STAGE_FIT_FLOOR, StageFitWatch } from "../src/watch-pages/stage-fit.js";
+import { STAGE_FIT_FLOOR, STAGE_ROOMY_TALL, STAGE_ROOMY_WIDE, STAGE_ROOMY_ZOOM, StageFitWatch } from "../src/watch-pages/stage-fit.js";
 
 /** A host with one stage box of the given widths, drawn at `scale`. */
 function setup(room: number, used: number, scale = 1.5) {
@@ -32,6 +32,21 @@ describe("the stage's Fit", () => {
     expect(asked()).toBe(1);
     // A picked zoom under the cap is left as it is.
     expect(fit.fit(1)).toBe(1);
+  });
+
+  it("draws the watch bigger on a big stage in a tall window, and asks to draw again", () => {
+    const tall = globalThis.innerHeight;
+    try {
+      (globalThis as { innerHeight?: number }).innerHeight = STAGE_ROOMY_TALL;
+      const { fit, asked } = setup(STAGE_ROOMY_WIDE, STAGE_ROOMY_WIDE);
+      fit.hostUpdated();
+      expect(asked()).toBe(1);
+      expect(fit.fit(1.5)).toBe(STAGE_ROOMY_ZOOM);
+      (globalThis as { innerHeight?: number }).innerHeight = STAGE_ROOMY_TALL - 1;
+      expect(fit.fit(1.5)).toBe(1.5);
+    } finally {
+      (globalThis as { innerHeight?: number }).innerHeight = tall;
+    }
   });
 
   it("never goes under its floor", () => {

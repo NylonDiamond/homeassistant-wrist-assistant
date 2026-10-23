@@ -10,6 +10,13 @@ import type { ReactiveController, ReactiveControllerHost } from "lit";
 /** The least scale the fit goes down to: past it the stage scrolls. */
 export const STAGE_FIT_FLOOR = 0.75;
 
+/** A stage at least this wide, in a window at least `STAGE_ROOMY_TALL`
+ * tall (a big screen at normal zoom), fits at `STAGE_ROOMY_ZOOM`: the watch
+ * at 150% stood small in a mostly empty stage there. */
+export const STAGE_ROOMY_WIDE = 1000;
+export const STAGE_ROOMY_TALL = 1100;
+export const STAGE_ROOMY_ZOOM = 2;
+
 export class StageFitWatch implements ReactiveController {
   /** The largest scale that fits the stage's width, or Infinity while
    * everything fits. */
@@ -28,9 +35,14 @@ export class StageFitWatch implements ReactiveController {
     host.addController(this);
   }
 
-  /** `base` held to the stage's width. */
+  /** `base`, raised on a roomy stage, then held to the stage's width. */
   fit(base: number): number {
-    return Math.min(base, this.cap);
+    return Math.min(this.roomy() ? Math.max(base, STAGE_ROOMY_ZOOM) : base, this.cap);
+  }
+
+  /** Whether the stage is big enough to draw the watch bigger. */
+  private roomy(): boolean {
+    return this.width >= STAGE_ROOMY_WIDE && (globalThis.innerHeight ?? 0) >= STAGE_ROOMY_TALL;
   }
 
   hostUpdated(): void {
@@ -38,10 +50,15 @@ export class StageFitWatch implements ReactiveController {
     if (box !== this.box) {
       this.seen?.disconnect();
       this.box = box;
+      const was = this.roomy();
       this.width = box?.clientWidth ?? 0;
       if (box !== undefined && typeof ResizeObserver !== "undefined") {
         this.seen = new ResizeObserver(() => this.resized());
         this.seen.observe(box);
+      }
+      if (this.roomy() !== was) {
+        this.host.requestUpdate();
+        return;
       }
     }
     this.measure();
@@ -58,8 +75,9 @@ export class StageFitWatch implements ReactiveController {
     const width = this.box?.clientWidth ?? 0;
     if (Math.abs(width - this.width) < 1) return;
     const grew = width > this.width;
+    const was = this.roomy();
     this.width = width;
-    if (grew && this.cap !== Number.POSITIVE_INFINITY) {
+    if ((grew && this.cap !== Number.POSITIVE_INFINITY) || this.roomy() !== was) {
       this.cap = Number.POSITIVE_INFINITY;
       this.host.requestUpdate();
       return;
