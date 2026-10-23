@@ -3110,7 +3110,7 @@ export class WristAssistantPanel extends LitElement {
     /* The card with the "Devices" menu open climbs over its neighbours,
        since the menu is absolute inside it and the grid would otherwise clip
        it under the next card along. */
-    .pk-card.over { z-index: 3; }
+    .pk-card.dup-on { z-index: 3; }
     .pk-card[aria-current="true"] { border-color: var(--wa-ink); box-shadow: 0 0 0 1px var(--wa-ink); }
     /* Hidden designs stay in the grid, quieter. They used to fold away under a
        "Hidden (3)" heading, which is a second list to remember in a surface
@@ -3378,7 +3378,7 @@ export class WristAssistantPanel extends LitElement {
       opacity: 0; pointer-events: none; transition: opacity .12s ease-out;
     }
     .pk-card:hover .pk-card-acts, .pk-card:focus-within .pk-card-acts,
-    .pk-card.over .pk-card-acts, .pk-card-acts.asking { opacity: 1; pointer-events: auto; }
+    .pk-card.dup-on .pk-card-acts, .pk-card-acts.asking { opacity: 1; pointer-events: auto; }
     /* A touch screen has no hover, so there is no way to bring these out:
        they stay, beside the name rather than over it. */
     @media (hover: none) {
@@ -13523,7 +13523,7 @@ export class WristAssistantPanel extends LitElement {
     const togglePick = () => this.pickMany(pickKeys, !picked);
     const hit = () => { if (picking) togglePick(); else void this.openFromPicker(row, actOn); };
     const doing = picking ? (picked ? `Let ${recName} go` : `Pick ${recName}`) : "Open this complication";
-    return html`<div class="pk-card ${hidden ? "dim" : ""} ${menu ? "over" : ""} ${shelved ? "shelved" : ""}
+    return html`<div class="pk-card ${hidden ? "dim" : ""} ${menu ? "dup-on" : ""} ${shelved ? "shelved" : ""}
       ${picking ? "picking" : ""} ${picked ? "picked" : ""}"
       aria-current=${open ? "true" : "false"}>
       <div class="pk-card-top">

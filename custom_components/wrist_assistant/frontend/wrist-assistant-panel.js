@@ -2739,7 +2739,7 @@ import{a as yg,b as xg,c as kg}from"./chunks/chunk-G3WQHSTC.js";import{a as zl,b
     /* The card with the "Devices" menu open climbs over its neighbours,
        since the menu is absolute inside it and the grid would otherwise clip
        it under the next card along. */
-    .pk-card.over { z-index: 3; }
+    .pk-card.dup-on { z-index: 3; }
     .pk-card[aria-current="true"] { border-color: var(--wa-ink); box-shadow: 0 0 0 1px var(--wa-ink); }
     /* Hidden designs stay in the grid, quieter. They used to fold away under a
        "Hidden (3)" heading, which is a second list to remember in a surface
@@ -3007,7 +3007,7 @@ import{a as yg,b as xg,c as kg}from"./chunks/chunk-G3WQHSTC.js";import{a as zl,b
       opacity: 0; pointer-events: none; transition: opacity .12s ease-out;
     }
     .pk-card:hover .pk-card-acts, .pk-card:focus-within .pk-card-acts,
-    .pk-card.over .pk-card-acts, .pk-card-acts.asking { opacity: 1; pointer-events: auto; }
+    .pk-card.dup-on .pk-card-acts, .pk-card-acts.asking { opacity: 1; pointer-events: auto; }
     /* A touch screen has no hover, so there is no way to bring these out:
        they stay, beside the name rather than over it. */
     @media (hover: none) {
@@ -6262,7 +6262,7 @@ import{a as yg,b as xg,c as kg}from"./chunks/chunk-G3WQHSTC.js";import{a as zl,b
           </button>
         </div>
         ${this.pickerNote===e.key?c`<div class="pk-note">${L.title}</div>`:u}
-      </div>`}let o=i.item.record,l=this.selectedCopyOf(e),d=l!==void 0&&l.ownerId===i.ownerId?l:i,p=d.ownerId,h=d.item.kind==="record"?d.item.record:o,f=d===l,g=this.rowHidden(h),m=e.name,$=Me.filter(L=>Fs(o).includes(L))[0],T=Li(o),C=this.ownerOf(p),R=K(C)?le:`the ${Vr(C)}'s complication list`,S=A(this.ownerOf(i.ownerId)),I=this.cardDevice(S,$),E=!f||this.canEdit,O=this.pickerConfirmDelete===h.id,D=L=>L.stopPropagation(),q=f?void 0:this.cardFromPreview(i.ownerId,o,$,I),de=q?void 0:this.recordPreview(o),pe=de?this.cardLive(de.config,de.entities):void 0;!f&&de&&!q&&this.queueCardPreview(i.ownerId,o,de.config);let Z=this.pickerDupFor===n,Q=e.copies.length>1,he=L=>{f?this.deleteCurrent(L):this.deleteSaved(h.id,h.revision,p,L)},ce=this.pickerSelecting,j=t===ie,se=j?this.pickKeysOf(e,t):[`${p}|${h.id}`],be=ce&&se.length>0&&se.every(L=>this.pickerPicked.includes(L)),ze=()=>this.pickMany(se,!be),ut=()=>{ce?ze():this.openFromPicker(e,d)},nt=ce?be?`Let ${m} go`:`Pick ${m}`:"Open this complication";return c`<div class="pk-card ${g?"dim":""} ${Z?"over":""} ${s?"shelved":""}
+      </div>`}let o=i.item.record,l=this.selectedCopyOf(e),d=l!==void 0&&l.ownerId===i.ownerId?l:i,p=d.ownerId,h=d.item.kind==="record"?d.item.record:o,f=d===l,g=this.rowHidden(h),m=e.name,$=Me.filter(L=>Fs(o).includes(L))[0],T=Li(o),C=this.ownerOf(p),R=K(C)?le:`the ${Vr(C)}'s complication list`,S=A(this.ownerOf(i.ownerId)),I=this.cardDevice(S,$),E=!f||this.canEdit,O=this.pickerConfirmDelete===h.id,D=L=>L.stopPropagation(),q=f?void 0:this.cardFromPreview(i.ownerId,o,$,I),de=q?void 0:this.recordPreview(o),pe=de?this.cardLive(de.config,de.entities):void 0;!f&&de&&!q&&this.queueCardPreview(i.ownerId,o,de.config);let Z=this.pickerDupFor===n,Q=e.copies.length>1,he=L=>{f?this.deleteCurrent(L):this.deleteSaved(h.id,h.revision,p,L)},ce=this.pickerSelecting,j=t===ie,se=j?this.pickKeysOf(e,t):[`${p}|${h.id}`],be=ce&&se.length>0&&se.every(L=>this.pickerPicked.includes(L)),ze=()=>this.pickMany(se,!be),ut=()=>{ce?ze():this.openFromPicker(e,d)},nt=ce?be?`Let ${m} go`:`Pick ${m}`:"Open this complication";return c`<div class="pk-card ${g?"dim":""} ${Z?"dup-on":""} ${s?"shelved":""}
       ${ce?"picking":""} ${be?"picked":""}"
       aria-current=${f?"true":"false"}>
       <div class="pk-card-top">

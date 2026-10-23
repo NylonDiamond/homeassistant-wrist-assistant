@@ -55,6 +55,14 @@ describe("a board section's groups", () => {
   });
 });
 
+describe("a complication card with its Devices menu open", () => {
+  it("has a class of its own: the canvas pill's .over would squeeze a small card to nothing", () => {
+    const source = readFileSync(new URL("../src/panel.ts", import.meta.url), "utf8");
+    expect(source).toContain(`\${menu ? "dup-on" : ""}`);
+    expect(source).not.toContain(".pk-card.over");
+  });
+});
+
 describe("Home's drag", () => {
   const source = readFileSync(new URL("../src/home-lineup.ts", import.meta.url), "utf8");
 
