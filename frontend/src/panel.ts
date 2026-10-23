@@ -1780,7 +1780,7 @@ export class WristAssistantPanel extends LitElement {
   /** The board box whose write is out, as `<row key>|<owner>`. */
   @state() private compBoardBusy?: string;
   /** What Home's last complication remove did, under that device's group. */
-  @state() private homeCompSaid?: { ownerId: string; tone: "ok" | "warn" | "err"; text: string };
+  @state() private homeCompSaid?: { ownerId: string; tone: "ok" | "warn" | "err"; text: string; undo?: () => void };
   /** "Saved" beside the head, for a moment after a box's write lands. */
   @state() private compBoardSaved = false;
   private compBoardSavedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -20239,7 +20239,8 @@ export class WristAssistantPanel extends LitElement {
     });
     const said = this.homeCompSaid?.ownerId === ownerId ? this.homeCompSaid : undefined;
     return {
-      ...(said === undefined ? {} : { under: html`<p class="hl-note ${said.tone}" role=${said.tone === "err" ? "alert" : "status"}><span>${said.text}</span></p>` }),
+      ...(said === undefined ? {} : { under: html`<p class="hl-note ${said.tone}" role=${said.tone === "err" ? "alert" : "status"}><span>${said.text}</span>
+        ${said.undo === undefined ? nothing : html`<button type="button" ?disabled=${this.saving || this.compBoardBusy !== undefined} @click=${said.undo}>Undo</button>`}</p>` }),
       key: "complications", title: row.kind === "watch" ? "Complications" : "Widgets", icon: row.kind === "watch" ? "gauge" : "grid",
       hue: "var(--wa-hue-blue)", lines, empty: `No ${row.kind === "watch" ? "complications" : "widgets"} on this ${word} yet.`,
       // Cards like the pages', each as wide as the widest picture: a picture
@@ -20261,7 +20262,30 @@ export class WristAssistantPanel extends LitElement {
     await this.compBoardTick(it, place, false);
     this.homeCompSaid = this.saveError !== undefined
       ? { ownerId, tone: "err", text: `Not taken off ${device}. ${this.saveError}` }
-      : { ownerId, tone: "ok", text: `Took ${name} off ${device}.${place.last ? " It waits under Not on a device on the Complications tab." : ""}` };
+      : {
+        ownerId, tone: "ok", text: `Took ${name} off ${device}.${place.last ? " It waits under Not on a device on the Complications tab." : ""}`,
+        undo: () => void this.compBackOnFromHome(it, ownerId, name, device),
+      };
+  }
+
+  /** Undo on Home: put the design back on the device it was taken off, as
+   * ticking its box does. Found again from today's rows, since taking it off
+   * may have moved its last copy under Not on a device. */
+  private async compBackOnFromHome(was: CompBoardItem, ownerId: string, name: string, device: string) {
+    const rows = this.pickerRows();
+    const row = rows.find((r) => r.key === was.row.key)
+      ?? rows.find((r) => r.name === was.row.name && this.compBoardItem(r).family === was.family);
+    const it = row === undefined ? undefined : this.compBoardItem(row);
+    const place = it?.places.find((p) => !p.on && p.owner.ownerId === ownerId);
+    if (it === undefined || place === undefined) {
+      this.homeCompSaid = { ownerId, tone: "err", text: `Could not put ${name} back on ${device}. Tick it on the Complications tab.` };
+      return;
+    }
+    this.homeCompSaid = undefined;
+    await this.compBoardTick(it, place, true);
+    this.homeCompSaid = this.saveError !== undefined
+      ? { ownerId, tone: "err", text: `Not put back on ${device}. ${this.saveError}` }
+      : { ownerId, tone: "ok", text: `Put ${name} back on ${device}.` };
   }
 
   /** A device's own screens: Settings, Rooms and Voice (a watch's alone),

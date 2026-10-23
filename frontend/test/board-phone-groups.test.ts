@@ -63,6 +63,14 @@ describe("a complication card with its Devices menu open", () => {
   });
 });
 
+describe("a complication taken off on Home", () => {
+  it("says so with Undo, as a page does, and Undo puts it back on that device", () => {
+    const source = readFileSync(new URL("../src/panel.ts", import.meta.url), "utf8");
+    expect(source).toContain("undo: () => void this.compBackOnFromHome(it, ownerId, name, device),");
+    expect(source).toContain("await this.compBoardTick(it, place, true);");
+  });
+});
+
 describe("Home's drag", () => {
   const source = readFileSync(new URL("../src/home-lineup.ts", import.meta.url), "utf8");
 
