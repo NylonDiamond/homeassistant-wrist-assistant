@@ -77,7 +77,7 @@ const PIC_SCREEN = REFERENCE_CASE.screen;
 /** How often a stream of state changes draws the pictures again. */
 const STATES_EVERY_MS = 2000;
 /** How tall a board row's menu picture is, in CSS pixels. */
-const BOARD_PICTURE_H = 38;
+const BOARD_PICTURE_H = 50;
 
 /** Where the tab's view is remembered in this browser, as the Pages tab
  * remembers its. */

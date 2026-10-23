@@ -20053,7 +20053,8 @@ export class WristAssistantPanel extends LitElement {
         ${tab === undefined ? nothing : html`<button type="button" class="hl-change" title=${`Open the ${title} tab`} @click=${() => this.goTo(tab)}>Open tab${uiIcon("right")}</button>`}</div>
       ${body}
     </section>`;
-    return html`<div class="ha">
+    // The device count, for the stacked tables' least width (`boardStackStyles`).
+    return html`<div class="ha" style=${`--bd-n:${this.compBoardDevices().length}`}>
       <div class="ha-head">
         <div class="ha-head-t"><h2>All devices</h2><p>Every thing in your home, and the devices it is on. A tick saves at once. Click a device's name to change its order.</p></div>
         <label class="pk-search ha-search">

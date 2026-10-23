@@ -34,14 +34,18 @@ export const SAVED_FLASH_MS = 1800;
 
 /** A list tab at least this wide (a big screen at normal zoom) draws its
  * rows' pictures `BOARD_WIDE_SCALE` times bigger, so the room shows the
- * things themselves instead of empty space either side. */
+ * things themselves instead of empty space either side; one at least
+ * `BOARD_MID_PX` wide, `BOARD_MID_SCALE` times. */
 const BOARD_WIDE_PX = 1500;
-export const BOARD_WIDE_SCALE = 1.9;
+export const BOARD_WIDE_SCALE = 2.2;
+const BOARD_MID_PX = 900;
+export const BOARD_MID_SCALE = 1.5;
 
 /** Tells its host whether it is wide (`BOARD_WIDE_PX`), and asks it to draw
- * again when that changes. */
+ * again when that, or its picture scale, changes. */
 export class WideWatch implements ReactiveController {
   wide = false;
+  private scale = 1;
   private seen?: ResizeObserver;
 
   constructor(private readonly host: ReactiveControllerHost & HTMLElement) {
@@ -53,8 +57,10 @@ export class WideWatch implements ReactiveController {
     this.seen = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width ?? 0;
       const wide = width >= BOARD_WIDE_PX;
-      if (wide === this.wide) return;
+      const scale = wide ? BOARD_WIDE_SCALE : width >= BOARD_MID_PX ? BOARD_MID_SCALE : 1;
+      if (wide === this.wide && scale === this.scale) return;
       this.wide = wide;
+      this.scale = scale;
       this.host.requestUpdate();
     });
     this.seen.observe(this.host);
@@ -67,7 +73,7 @@ export class WideWatch implements ReactiveController {
 
   /** A picture size for this width. */
   size(base: number): number {
-    return this.wide ? Math.round(base * BOARD_WIDE_SCALE) : base;
+    return Math.round(base * this.scale);
   }
 }
 
@@ -185,7 +191,7 @@ export function renderBoard(input: BoardInput): TemplateResult {
   const span = input.columns.length + 1;
   const focusAt = input.columns.findIndex((c) => same(c.device.ownerId, input.focus));
   return html`<div class="bd-scroll">
-    <table class="bd ${focusAt >= 0 ? "focused" : ""} ${input.wide === true ? "wide" : ""}" aria-label=${input.label}>
+    <table class="bd ${focusAt >= 0 ? "focused" : ""} ${input.wide === true ? "wide" : ""}" aria-label=${input.label} style=${`--bd-n:${input.columns.length}`}>
       <thead><tr>
         <th scope="col" class="bd-thing">${input.thing}</th>
         ${input.columns.map((col) => renderHead(col, same(col.device.ownerId, input.focus), input))}
@@ -287,24 +293,32 @@ function renderCell(cell: BoardCell | undefined, col: BoardColumn, focused: bool
  * never scrolls sideways. */
 export const boardStyles = css`
   .bd-scroll { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
-  table.bd { border-collapse: separate; border-spacing: 0; width: 100%; min-width: max-content; font-size: 12.5px; }
+  /* The device columns keep one narrow width (--bd-col-w) and the first
+     column takes the rest, so a wide screen gives its room to the things'
+     pictures, not to gaps between ticks (Jesse, 2026-10-23). */
+  table.bd { --bd-col-w: 104px; border-collapse: separate; border-spacing: 0; width: 100%; min-width: max-content; font-size: 12.5px; }
   .bd th, .bd td { padding: 0; text-align: left; font-weight: inherit; }
   .bd thead th { position: sticky; top: 0; z-index: 2; background: var(--wa-card); border-bottom: 1px solid var(--wa-line); vertical-align: bottom; }
-  .bd .bd-thing { position: sticky; left: 0; z-index: 1; background: var(--wa-card); min-width: 220px; max-width: 320px; }
+  .bd .bd-thing { position: sticky; left: 0; z-index: 1; background: var(--wa-card); min-width: 220px; }
   .bd thead .bd-thing { z-index: 3; padding: 8px 10px; font-size: 11.5px; color: var(--wa-muted); font-weight: 600; }
-  .bd-col { min-width: 96px; text-align: center; }
+  .bd-col { width: var(--bd-col-w); min-width: var(--bd-col-w); max-width: var(--bd-col-w); text-align: center; }
+  .bd td.bd-cell { width: var(--bd-col-w); }
   .bd-col.on { background: color-mix(in srgb, var(--dc, var(--wa-accent)) 14%, var(--wa-card)); }
   .bd-col-btn {
-    display: flex; flex-direction: column; align-items: center; gap: 3px; width: 100%; padding: 8px 8px 7px; box-sizing: border-box;
+    display: flex; flex-direction: column; align-items: center; gap: 3px; width: 100%; padding: 8px 4px 7px; box-sizing: border-box;
     border: 0; background: none; font: inherit; color: var(--wa-ink); cursor: pointer; border-radius: 8px 8px 0 0;
     border-bottom: 3px solid color-mix(in srgb, var(--dc, var(--wa-muted)) 70%, transparent);
   }
   .bd-col-btn:hover { background: var(--wa-hover); }
   .bd-col-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .bd-col-top { display: inline-flex; align-items: center; gap: 5px; max-width: 150px; }
-  .bd-col-glyph { display: inline-flex; color: var(--dc, var(--wa-muted)); }
+  /* A long name takes two lines rather than widen its column. */
+  .bd-col-top { display: inline-flex; align-items: flex-start; justify-content: center; gap: 4px; max-width: 100%; }
+  .bd-col-glyph { display: inline-flex; flex: none; margin-top: 1px; color: var(--dc, var(--wa-muted)); }
   .bd-col-glyph svg { width: 14px; height: 14px; }
-  .bd-col-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 12.5px; }
+  .bd-col-name {
+    min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+    overflow-wrap: anywhere; line-height: 1.25; font-weight: 600; font-size: 12.5px;
+  }
   .bd-col-sub { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--wa-muted); }
   .bd-col-n { font-variant-numeric: tabular-nums; }
   .bd-col-go { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--wa-line); }
@@ -417,28 +431,38 @@ export const boardStyles = css`
   .bd-under td { padding: 0 10px 8px; border-bottom: 1px solid var(--wa-line); }
   .bd-under td > * { position: sticky; left: 10px; max-width: min(560px, calc(100vw - 60px)); }
   .bd-under .lt-ask { margin-top: 2px; }
-  .bd.wide { font-size: 13.5px; }
-  .bd.wide .bd-thing { min-width: 320px; max-width: 460px; }
+  .bd.wide { --bd-col-w: 124px; font-size: 13.5px; }
+  .bd.wide .bd-thing { min-width: 320px; }
   .bd.wide .bd-thing-in { padding: 8px 14px; gap: 10px; }
-  .bd.wide .bd-open { gap: 14px; }
-  .bd.wide .bd-n { font-size: 14.5px; }
+  .bd.wide .bd-open { gap: 16px; }
+  .bd.wide .bd-n { font-size: 15px; }
   .bd.wide .bd-m { font-size: 12.5px; }
-  .bd.wide .bd-col { min-width: 130px; }
-  .bd.wide .bd-col-name { font-size: 13.5px; }
-  .bd.wide .bd-col-top { max-width: 220px; }
+  .bd.wide .bd-col-name { font-size: 13px; }
+  /* A phone: the first column stays put and narrow while the device
+     columns scroll sideways under it. */
   @media (max-width: 640px) {
-    .bd .bd-thing { min-width: 150px; max-width: 200px; }
-    .bd-thing-in { padding: 6px; }
-    .bd-col { min-width: 76px; }
+    table.bd { --bd-col-w: 78px; }
+    .bd .bd-thing, .bd.wide .bd-thing { min-width: 0; width: 150px; max-width: 150px; }
+    .bd-thing-in, .bd.wide .bd-thing-in { padding: 6px; gap: 6px; }
+    .bd-open, .bd.wide .bd-open { gap: 8px; }
+    .bd-n, .bd.wide .bd-n { font-size: 13px; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+    .bd-col-name, .bd.wide .bd-col-name { font-size: 11.5px; }
+    .bd-col-glyph { display: none; }
   }
 `;
 
 /** Boards stacked into one table on Home's "All devices" (plan step 6):
- * each a fixed layout with one name column width, so their device columns
- * line up. An element drawn there carries `embedded`; the panel's own board
- * sits in a `.bd-fixed`. */
+ * each a fixed layout with one device column width, so their device columns
+ * line up; the name column takes the rest, never less than --bd-thing-min.
+ * An element drawn there carries `embedded`; the panel's own board sits in
+ * a `.bd-fixed`. --bd-n is the table's number of device columns. */
 export const boardStackStyles = css`
   :host([embedded]) { display: block; }
-  :host([embedded]) table.bd, .bd-fixed table.bd { table-layout: fixed; min-width: 0; }
-  :host([embedded]) table.bd th.bd-thing, .bd-fixed table.bd th.bd-thing { width: var(--bd-thing-w, 340px); }
+  :host([embedded]) table.bd, .bd-fixed table.bd {
+    --bd-col-w: var(--bd-stack-col-w, 112px);
+    table-layout: fixed; min-width: calc(var(--bd-thing-min, 300px) + var(--bd-n, 0) * var(--bd-col-w));
+  }
+  @media (max-width: 640px) {
+    :host([embedded]) table.bd, .bd-fixed table.bd { --bd-col-w: 78px; --bd-thing-min: 150px; }
+  }
 `;

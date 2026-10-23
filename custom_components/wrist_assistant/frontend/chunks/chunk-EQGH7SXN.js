@@ -19,7 +19,7 @@ import{b as o,d as i,g as n,nh as p}from"./chunk-BDP52PL7.js";var s="Hidden here
     </span>
     ${t===void 0?n:t.href!==void 0?i`<a class="hl-edit" href=${t.href} title=${t.title}
           @click=${a=>{a.button!==0||a.metaKey||a.ctrlKey||a.shiftKey||a.altKey||(a.preventDefault(),t.onClick())}}>${t.label}</a>`:i`<button type="button" class="hl-edit" title=${t.title} @click=${t.onClick}>${t.label}</button>`}
-  </li>`}var g=o`
+  </li>`}var f=o`
   .hl-groups { display: flex; flex-direction: column; gap: 18px; }
   .hl-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .hl-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -62,8 +62,8 @@ import{b as o,d as i,g as n,nh as p}from"./chunk-BDP52PL7.js";var s="Hidden here
   .hl-lines.strip .hl-edit { align-self: stretch; }
   .hl-edit:hover { background: var(--wa-hover); }
   .hl-edit:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-`,f=o`
-  .ha { display: flex; flex-direction: column; gap: 22px; min-width: 0; --bd-thing-w: 340px; }
+`,g=o`
+  .ha { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
   .ha-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
   .ha-head-t { flex: 1 1 320px; min-width: 0; }
   .ha-head-t h2 { margin: 0; font-size: 20px; font-weight: 600; color: var(--wa-ink); }
@@ -82,4 +82,4 @@ import{b as o,d as i,g as n,nh as p}from"./chunk-BDP52PL7.js";var s="Hidden here
   .ha-lock { display: inline-flex; color: var(--wa-muted); }
   .ha-lock svg { width: 14px; height: 14px; }
   .hb-lineup { margin-top: 4px; }
-`;export{x as a,u as b,g as c,f as d};
+`;export{x as a,u as b,f as c,g as d};

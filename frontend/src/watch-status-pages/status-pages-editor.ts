@@ -1209,16 +1209,22 @@ export class WaStatusPagesEditor extends LitElement {
       display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 560px;
       padding: 20px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 16px); background: var(--wa-card);
     }
-    .layout.pe-layout { flex: none; min-height: auto; overflow: visible; align-items: start; padding: 0; margin-bottom: 14px; }
-    .pe-layout > .column.left, .pe-layout > .column.inspector {
-      --pe-under-top: max(0px, calc(var(--pe-top-h, 0px) - var(--cf-pad, 16px)));
-      position: sticky; top: var(--pe-under-top);
-      max-height: calc(var(--pe-view-h, calc(100dvh - 120px)) - 30px - var(--pe-under-top));
-      overflow-y: auto; overflow-x: hidden;
-    }
+    /* One screen tall, as the page editor: the editor never scrolls as a
+       whole, and each list, the stage and the inspector scroll in their own
+       box, so every card stays on screen. */
+    .layout.pe-layout { padding: 0; align-items: stretch; }
+    .layout.pe-layout.cols-3 { flex: 1 1 0; min-height: 0; overflow: hidden; }
     .pe-layout > .column.left { display: flex; flex-direction: column; gap: 8px; scrollbar-gutter: auto; }
-    .pe-layout > .column.left > .card { flex: none; }
-    .pe-layout > .column.canvas { overflow: visible; min-height: auto; }
+    .pe-layout.cols-3 > .column.left { overflow: hidden; }
+    .pe-layout.cols-3 > .column.left > .card { display: flex; flex-direction: column; min-height: 120px; }
+    .pe-layout.cols-3 > .column.left > .card:first-child { flex: 0 1 auto; max-height: 50%; }
+    .pe-layout.cols-3 > .column.left > .card:last-child { flex: 1 1 0; }
+    .pe-layout.cols-3 > .column.left > .card > :not(.layers) { flex: none; }
+    .pe-layout.cols-3 > .column.left > .card > .layers { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+    .pe-layout.cols-3 > .column.inspector { overflow-y: auto; overscroll-behavior: contain; }
+    .pe-layout.cols-3 > .column.canvas { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; overscroll-behavior: contain; }
+    .pe-layout.cols-3 > .column.canvas > .card { flex: none; }
+    .layout.pe-layout.cols-1 { flex: none; min-height: auto; overflow: visible; }
     @container (max-width: 820px) {
       .layout.pe-layout { grid-template-columns: minmax(0, 1fr); }
       .pe-layout > .gutter { display: none; }

@@ -337,7 +337,8 @@ const PE_COLUMNS_KEY = "wrist-assistant-panel.pages.columns.v1";
  * the Pages and Tiles cards (a preference, saved). Undefined is the CSS
  * default, `min(40dvh, 360px)`. A list shorter than the height just ends. */
 export const PAGE_LIST_HEIGHT = { min: 96, max: 1600, step: 24 } as const;
-const PAGE_LIST_HEIGHT_KEY = "wrist-assistant-panel.pages.page-list-height.v1";
+// v2: the Pages card's height, no longer the list's inside it.
+const PAGE_LIST_HEIGHT_KEY = "wrist-assistant-panel.pages.page-list-height.v2";
 
 /** A page list height kept within its limits, in whole pixels. */
 export function clampPageListHeight(n: number): number {
@@ -805,13 +806,12 @@ export class WaPageEditor extends LitElement {
   @state() private addTileOpen = false;
 
   /** The side columns' widths as dragged (a preference, saved), and the
-   * host's measured content width and height, which fit them and cap the
-   * self-scrolling columns. Zero before the first measurement. */
+   * host's measured content width, which fits them. Zero before the first
+   * measurement. */
   @state() private columns: ColumnWidths = { ...PE_COLUMNS_DEFAULT };
-  /** The page list's dragged height beside the watch; undefined for the default. */
+  /** The Pages card's dragged height beside the watch; undefined for the default. */
   @state() private pageListHeight?: number;
   @state() private hostWidth = 0;
-  @state() private hostHeight = 0;
   private sizeObserver?: ResizeObserver;
   /** The sticky block at the top (the bar and a note under it) the observer
    * measures, and its height: written to `--pe-top-h` on the host for the
@@ -2735,7 +2735,9 @@ export class WaPageEditor extends LitElement {
    * scrolls sideways only, though the browser reports it as scrolling down
    * too while a dragged tile hangs below it. */
   private scroller(): HTMLElement | undefined {
-    let node: Node | null = this;
+    // Beside the lists the stage scrolls in its own column; stacked, the
+    // editor or the page around it does.
+    let node: Node | null = this.renderRoot?.querySelector<HTMLElement>(".column.canvas") ?? this;
     while (node) {
       if (node instanceof HTMLElement) {
         const overflow = getComputedStyle(node).overflowY;
@@ -2997,9 +2999,6 @@ export class WaPageEditor extends LitElement {
         }
         const box = entry.contentRect;
         if (Math.abs(box.width - this.hostWidth) >= 1) this.hostWidth = box.width;
-        // The content box: a sticky column stops at the host's padding, so
-        // this is the height it can have on screen.
-        if (Math.abs(box.height - this.hostHeight) >= 1) this.hostHeight = box.height;
       }
     });
     this.sizeObserver.observe(this);
@@ -3061,8 +3060,8 @@ export class WaPageEditor extends LitElement {
    * as one and the list has no height of its own. */
   private renderListSplit(): TemplateResult {
     const shownHeight = (): number => {
-      const list = this.renderRoot.querySelector<HTMLElement>(".pe-page-list");
-      return list?.clientHeight ?? this.pageListHeight ?? 360;
+      const card = this.renderRoot.querySelector<HTMLElement>(".pe-pages-card");
+      return card?.offsetHeight ?? this.pageListHeight ?? 360;
     };
     const set = (height: number | undefined): void => {
       this.pageListHeight = height === undefined ? undefined : clampPageListHeight(height);
@@ -3128,13 +3127,13 @@ export class WaPageEditor extends LitElement {
     const owner = watches.find((w) => w.owner_watch_id === this.watchId);
     const tile = page === undefined || this.selectedTileId === undefined ? undefined : this.tileOn(page, this.selectedTileId);
     const fit = this.fittedColumns();
-    const view = this.hostHeight > 0 ? `--pe-view-h:${this.hostHeight}px;` : "";
     // The complication editor's three columns (`editor-chrome.ts`): the
     // Pages and Tiles cards, the canvas card, and the inspector, with a
-    // drag gutter between each pair. Unlike there, the editor scrolls as a
-    // whole and the side columns stick under the top bar.
+    // drag gutter between each pair. The editor is one screen tall and each
+    // part scrolls in its own box. The Pages card is as tall as its bar was
+    // dragged, else at most half the column.
     const listH = this.pageListHeight !== undefined ? `--pe-list-h:${this.pageListHeight}px;` : "";
-    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}${listH}`}>
+    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"} ${listH === "" ? "" : "list-set"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${listH}`}>
       <div class="column left">
         ${this.renderPageList(listed, pages, owner)}
         ${this.renderListSplit()}
@@ -4560,33 +4559,31 @@ export class WaPageEditor extends LitElement {
       padding: 20px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 16px); background: var(--wa-card);
     }
 
-    /* The complication editor's three columns (editor-chrome.ts), with one
-       difference: there the editor is one viewport tall and each column
-       scrolls inside it; here the editor scrolls as a whole, the stage with
-       it, so a long page can be dragged down its length. The side widths come
-       in as custom properties already fitted to the measured host width
-       (fitColumnWidths). */
-    .layout.pe-layout {
-      flex: none; min-height: auto; overflow: visible; align-items: start; padding: 0;
-      /* Room at the editor's foot. */
-      margin-bottom: 14px;
+    /* The complication editor's three columns (editor-chrome.ts): the editor
+       is one viewport tall and never scrolls as a whole. Each part scrolls in
+       its own box: the page list, the tile list, the stage and the
+       inspector, so every card stays on screen (Jesse, 2026-10-23: two
+       scroll bars, one inside the other, read as broken). The side widths
+       come in as custom properties already fitted to the measured host
+       width (fitColumnWidths). */
+    .layout.pe-layout { padding: 0; align-items: stretch; }
+    .layout.pe-layout.cols-3 { flex: 1 1 0; min-height: 0; overflow: hidden; }
+    .layout.pe-layout.cols-1 { flex: none; min-height: auto; overflow: visible; }
+    .pe-layout > .column.left {
+      display: flex; flex-direction: column; gap: 6px; overflow: hidden; scrollbar-gutter: auto;
     }
-    /* The Pages and Tiles cards and the inspector stay in view while the
-       stage scrolls the editor: each sticks just under the sticky top block
-       (the host's scroll box, inside its padding, starts --cf-pad down; the
-       block reaches --pe-top-h down from the edge) and, when taller than the
-       room left, scrolls on its own. --pe-view-h is the host's measured
-       content height, less what the top block covers past the padding and
-       30px of air at the foot. */
-    .pe-layout > .column.left, .pe-layout > .column.inspector {
-      --pe-under-top: max(0px, calc(var(--pe-top-h, 0px) - var(--cf-pad, 16px)));
-      position: sticky; top: var(--pe-under-top);
-      max-height: calc(var(--pe-view-h, calc(100dvh - 120px)) - 30px - var(--pe-under-top));
-      overflow-y: auto; overflow-x: hidden;
-    }
-    .pe-layout > .column.left { scrollbar-gutter: auto; }
-    .pe-layout > .column.left > .card { flex: none; }
-    .pe-layout > .column.canvas { overflow: visible; min-height: auto; }
+    /* The Pages card takes the height the bar between the cards sets (or
+       its rows' height, if less); the Tiles card takes the rest. Each list
+       scrolls inside its card. */
+    .pe-layout.cols-3 > .column.left > .pe-pages-card { flex: 0 1 auto; min-height: 120px; display: flex; flex-direction: column; }
+    .pe-layout.cols-3 > .column.left > .pe-tiles-card { flex: 1 1 0; min-height: 140px; display: flex; flex-direction: column; }
+    .pe-layout.cols-3 > .column.left > .card > :not(.layers) { flex: none; }
+    .pe-layout.cols-3 > .column.left > .card > .layers { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+    .pe-layout.cols-3 > .column.inspector { overflow-y: auto; overscroll-behavior: contain; }
+    /* The stage scrolls in its own column, with a thin bar of its own, so a
+       long page can still be dragged down its length. */
+    .pe-layout.cols-3 > .column.canvas { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; overscroll-behavior: contain; }
+    .pe-layout.cols-3 > .column.canvas > .card { flex: none; }
     /* One column under 820px, the complication editor's order: the page and
        its tiles, the settings, then the lists. Nothing sticks there: a sticky
        inspector slid over the Tiles card under it and took its clicks. The
@@ -4614,9 +4611,10 @@ export class WaPageEditor extends LitElement {
     .pe-pages-card > .lc-note, .pe-tiles-card > .lc-note { margin: 8px 12px; color: var(--wa-muted); }
     /* Beside the watch, a long page list scrolls in its own box, so the
        Tiles card under it stays in sight. Stacked, the page scrolls as one. */
-    .layout.pe-layout.cols-3 .pe-pages-card > .pe-page-list {
-      position: relative; max-height: var(--pe-list-h, min(40dvh, 360px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
-    }
+    .layout.pe-layout.cols-3 .pe-pages-card > .pe-page-list { position: relative; }
+    /* Half the column, or what the bar between the cards was dragged to. */
+    .layout.pe-layout.cols-3 .pe-pages-card { max-height: 50%; }
+    .layout.pe-layout.cols-3.list-set .pe-pages-card { max-height: calc(100% - 200px); height: var(--pe-list-h); flex: none; }
     /* The bar between the Pages and Tiles cards: the gutters' look, turned
        on its side. It sits in the column's gap, so it adds no room. */
     .pe-list-split {

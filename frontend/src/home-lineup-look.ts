@@ -140,10 +140,10 @@ export const homeLineupStyles = css`
 `;
 
 /** Home's "All devices" (plan step 6): its head and search, then a part per
- * kind, each a board; the parts' tables share one name column width, so
+ * kind, each a board; the parts' tables share one device column width, so
  * their device columns line up (`boardStackStyles`). */
 export const homeAllStyles = css`
-  .ha { display: flex; flex-direction: column; gap: 22px; min-width: 0; --bd-thing-w: 340px; }
+  .ha { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
   .ha-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
   .ha-head-t { flex: 1 1 320px; min-width: 0; }
   .ha-head-t h2 { margin: 0; font-size: 20px; font-weight: 600; color: var(--wa-ink); }
