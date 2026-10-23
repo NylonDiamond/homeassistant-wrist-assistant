@@ -675,7 +675,13 @@ export const homeStyles = css`
   .hb-main > .home-welcome-slot { max-width: 940px; margin: 0 auto 18px; }
   /* Its bar: whose it is and its name, the arrows to the device before and
      after it, Rename and Remove. */
-  .hb-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; }
+  /* It stays at the top while the device's page scrolls under it, on the
+     page's own ground, so whose page it is and its arrows never go. */
+  .hb-bar {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px;
+    position: sticky; top: 0; z-index: 6; margin: 0 -8px; padding: 8px;
+    background: var(--wa-bg); box-shadow: 0 1px 0 var(--wa-line);
+  }
   .hb-crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; color: var(--wa-muted); }
   .hb-crumb i { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--c); }
   .hb-crumb b { font-weight: 500; color: var(--wa-ink); overflow-wrap: anywhere; }
@@ -755,7 +761,7 @@ export const homeStyles = css`
     }
     .hb-main > .home-welcome-slot { max-width: 2200px; }
     .hb-bar { grid-area: bar; }
-    .hb-stage { grid-area: stage; position: sticky; top: 18px; height: 560px; }
+    .hb-stage { grid-area: stage; position: sticky; top: 64px; height: 560px; }
     .hb-info { grid-area: info; display: flex; flex-direction: column; gap: 18px; }
     .hb-device { top: 64px; }
     .hb-device svg.ha-art { height: 340px; }

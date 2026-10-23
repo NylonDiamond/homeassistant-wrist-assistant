@@ -1779,6 +1779,8 @@ export class WristAssistantPanel extends LitElement {
   @state() private compView: CompListView = readCompView(() => window.localStorage);
   /** The board box whose write is out, as `<row key>|<owner>`. */
   @state() private compBoardBusy?: string;
+  /** What Home's last complication remove did, under that device's group. */
+  @state() private homeCompSaid?: { ownerId: string; tone: "ok" | "warn" | "err"; text: string };
   /** "Saved" beside the head, for a moment after a box's write lands. */
   @state() private compBoardSaved = false;
   private compBoardSavedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -20170,7 +20172,7 @@ export class WristAssistantPanel extends LitElement {
     const word = row.kind === "watch" ? "watch" : "iPhone";
     const listOf = (kind: "pages" | "status_pages" | "menus") => kind === "menus" ? ALL_MENUS_PATH : kind === "status_pages" ? ALL_STATUS_PAGES_PATH : ALL_PAGES_PATH;
     const library = row.kind === "watch" || this.phonePages ? renderHomeLineup({
-      hass: this.hass, ownerId, kind: row.kind, phones: this.phonePages, icons: this.icons, iconsTick: this.iconsTick,
+      hass: this.hass, ownerId, deviceName: row.name, kind: row.kind, phones: this.phonePages, icons: this.icons, iconsTick: this.iconsTick,
       onEdit: (kind, id) => this.goTo(libraryItemPath(kind, id, ownerId)),
       onChange: (kind) => this.goTo(listFocusPath(listOf(kind), ownerId)),
       onLoaded: () => this.requestUpdate(),
@@ -20197,7 +20199,16 @@ export class WristAssistantPanel extends LitElement {
       const it = this.compBoardItem(r);
       const shape = cardShapeTitle(it.family, it.control);
       const record = copy.item.kind === "record" ? copy.item.record : undefined;
+      // Take it off this device, as unticking its box on the board does. A
+      // locked copy (an app preset) has no place and no way off.
+      const place = it.places.find((p) => p.on && p.owner.ownerId === ownerId);
+      const remove = place === undefined || record === undefined ? undefined : {
+        title: `Take ${r.name} off ${row.name}`,
+        busy: this.saving || this.compBoardBusy !== undefined,
+        onClick: () => void this.compOffFromHome(it, place, ownerId, r.name, row.name),
+      };
       return {
+        ...(remove === undefined ? {} : { remove }),
         key: r.key,
         name: r.name,
         detail: it.locked !== undefined ? `${shape} · ${it.locked.badge}` : shape,
@@ -20206,11 +20217,28 @@ export class WristAssistantPanel extends LitElement {
         ...(record === undefined ? {} : { action: { label: "Edit", title: `Edit ${r.name}`, onClick: () => void this.openFromHome(r, copy) } }),
       };
     });
+    const said = this.homeCompSaid?.ownerId === ownerId ? this.homeCompSaid : undefined;
     return {
+      ...(said === undefined ? {} : { under: html`<p class="hl-note ${said.tone}" role=${said.tone === "err" ? "alert" : "status"}><span>${said.text}</span></p>` }),
       key: "complications", title: row.kind === "watch" ? "Complications" : "Widgets", icon: row.kind === "watch" ? "gauge" : "grid",
       hue: "var(--wa-hue-blue)", lines, empty: `No ${row.kind === "watch" ? "complications" : "widgets"} on this ${word} yet.`,
       change: { title: `Put complications on this ${word} or take them off`, onClick: () => void this.openDeviceList(ownerId, "all") },
     };
+  }
+
+  /** Take a complication off one device from Home, as the board's box
+   * does, then say under the group what happened. One still open in the
+   * editor stays: close it there first. */
+  private async compOffFromHome(it: CompBoardItem, place: DevicePlace, ownerId: string, name: string, device: string) {
+    if (place.copies.some((c) => this.isOpenCopy(c))) {
+      this.homeCompSaid = { ownerId, tone: "warn", text: `${name} is open in the editor. Close it there first, then take it off ${device}.` };
+      return;
+    }
+    this.homeCompSaid = undefined;
+    await this.compBoardTick(it, place, false);
+    this.homeCompSaid = this.saveError !== undefined
+      ? { ownerId, tone: "err", text: `Not taken off ${device}. ${this.saveError}` }
+      : { ownerId, tone: "ok", text: `Took ${name} off ${device}.${place.last ? " It waits under Not on a device on the Complications tab." : ""}` };
   }
 
   /** A device's own screens: Settings, Rooms and Voice (a watch's alone),

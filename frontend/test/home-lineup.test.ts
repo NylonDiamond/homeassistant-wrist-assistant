@@ -3,13 +3,14 @@
 // "All devices", the boards as one table.
 
 import { describe, expect, it } from "vitest";
+import { html } from "lit";
 import { readFileSync } from "node:fs";
 
 import { libraryOf } from "../src/library/model.js";
 import { lineupGroups } from "../src/home-lineup.js";
 import { LINEUP_HIDDEN_TAG, LINEUP_OWN_TAG, renderLineupGroup } from "../src/home-lineup-look.js";
 import type { LibraryKind } from "../src/library/client.js";
-import { CHEN, CHEN_MENU, JESSE, PAGE1, SMART, summary } from "./library-fixture.js";
+import { CAMERA, CHEN, CHEN_MENU, JESSE, LIGHTS, PAGE1, SMART, summary } from "./library-fixture.js";
 import { flat } from "./library-editor-home.js";
 
 const PANEL = readFileSync(new URL("../src/panel.ts", import.meta.url), "utf8");
@@ -59,6 +60,35 @@ describe("a device's lineup on Home", () => {
     expect(width("watch", undefined)).toBe(56);
     expect(width("watch", 140)).toBe(140);
     expect(width("iphone", 140)).toBe(100);
+  });
+
+  it("hands each page and status page its drag and its remove, the remove knowing the one after it", () => {
+    const seen: string[] = [];
+    const drag = { on: true, dragging: false, over: false, after: false, onStart: () => {}, onOver: () => {}, onDrop: () => {}, onEnd: () => {}, onKey: () => {} };
+    const out = lineupGroups(libraryOf(summary()), CHEN, "watch", {
+      arrange: {
+        // An asked order shows first: Lights before Camera.
+        order: (kind) => (kind === "pages" ? [LIGHTS] : undefined),
+        drag: (kind, pick, index) => { seen.push(`drag:${kind}:${index}:${pick.entry.name}`); return drag; },
+        remove: (kind, pick, next) => { seen.push(`rm:${kind}:${pick.entry.name}:${next?.toUpperCase() ?? "end"}`); return { title: `Take ${pick.entry.name} off`, onClick: () => {} }; },
+        under: (kind) => (kind === "pages" ? html`<p>said</p>` : undefined),
+      },
+      onEdit: () => {}, onChange: () => {},
+    });
+    expect(out[0]!.lines.map((l) => l.name)).toEqual(["Lights", "Camera"]);
+    expect(seen).toContain("drag:pages:0:Lights");
+    expect(seen).toContain(`rm:pages:Lights:${CAMERA}`);
+    expect(seen).toContain("rm:pages:Camera:end");
+    expect(seen.some((s) => s.startsWith("rm:status_pages:"))).toBe(true);
+    // Menus are used, not kept: no drag, no remove.
+    expect(out[2]!.lines.every((l) => l.drag === undefined && l.remove === undefined)).toBe(true);
+    expect(out[0]!.under).toBeDefined();
+    expect(out[1]!.under).toBeUndefined();
+    const text = flat(renderLineupGroup(out[0]!));
+    expect(text).toContain(`class="hl-grip"`);
+    expect(text).toContain(`class="hl-rm"`);
+    expect(text).toContain("Take Lights off");
+    expect(text).toContain("<p>said</p>");
   });
 
   it("wears the preview's own styles, so a camera's snapshot is drawn", () => {

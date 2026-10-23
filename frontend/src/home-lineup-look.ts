@@ -27,6 +27,26 @@ export interface LineupLine {
   tag?: string;
   /** The line's button: "Edit", or "Open" for a device's own screen. */
   action?: { label: string; title: string; onClick: () => void; href?: string };
+  /** Drag to order: a grip that always shows, and the drop's look. */
+  drag?: LineupDrag;
+  /** Take it off this device: a small button shown on hover or focus. */
+  remove?: { title: string; busy?: boolean; onClick: () => void };
+}
+
+/** A line's drag: the board's (`BoardDrag`), with the drop drawn before or
+ * after the line it is over. */
+export interface LineupDrag {
+  on: boolean;
+  dragging: boolean;
+  over: boolean;
+  /** The drop lands after the line, not before it. */
+  after: boolean;
+  onStart: (e: DragEvent) => void;
+  onOver: (e: DragEvent) => void;
+  onDrop: (e: DragEvent) => void;
+  onEnd: () => void;
+  /** Alt+Left/Up and Alt+Right/Down move it a step. */
+  onKey: (e: KeyboardEvent) => void;
 }
 
 export interface LineupGroup {
@@ -46,6 +66,8 @@ export interface LineupGroup {
   change?: { title: string; onClick: () => void };
   /** Drawn as a strip of small cards rather than a list (pages). */
   strip?: boolean;
+  /** Drawn under the head: a question before a remove, or what one did. */
+  under?: TemplateResult;
 }
 
 /** The words of a hidden line's tag. */
@@ -63,6 +85,7 @@ export function renderLineupGroup(g: LineupGroup): TemplateResult {
       ${g.sub === undefined ? nothing : html`<span class="hl-sub">${g.sub}</span>`}
       ${g.change === undefined ? nothing : html`<button type="button" class="hl-change" title=${g.change.title} @click=${g.change.onClick}>Change${uiIcon("right")}</button>`}
     </div>
+    ${g.under ?? nothing}
     ${g.lines.length === 0
       ? html`<p class="hl-empty">${g.empty}</p>`
       : html`<ol class="hl-lines ${g.strip === true ? "strip" : ""}">${g.lines.map((line, i) => renderLine(line, i, g.strip === true))}</ol>`}
@@ -71,8 +94,21 @@ export function renderLineupGroup(g: LineupGroup): TemplateResult {
 
 function renderLine(line: LineupLine, index: number, numbered: boolean): TemplateResult {
   const a = line.action;
-  return html`<li class="hl-line ${line.hidden === true ? "hid" : ""}" data-line=${line.key}>
+  const d = line.drag;
+  const r = line.remove;
+  const cls = [
+    "hl-line", line.hidden === true ? "hid" : "", d?.on === true ? "drags" : "", d?.dragging === true ? "dragging" : "",
+    d?.over === true ? (d.after ? "drop-after" : "drop-before") : "",
+  ].filter((c) => c !== "").join(" ");
+  return html`<li class=${cls} data-line=${line.key} draggable=${d?.on === true ? "true" : "false"}
+    @dragstart=${(e: DragEvent) => d?.onStart(e)} @dragover=${(e: DragEvent) => d?.onOver(e)}
+    @drop=${(e: DragEvent) => d?.onDrop(e)} @dragend=${() => d?.onEnd()}>
     ${numbered ? html`<span class="hl-i" aria-hidden="true">${index + 1}</span>` : nothing}
+    ${d === undefined ? nothing : html`<span class="hl-grip" tabindex=${d.on ? "0" : "-1"} role="button"
+      aria-label=${`Move ${line.name}. Alt and the arrow keys move it.`} title=${d.on ? "Drag to change the order" : ""}
+      @keydown=${(e: KeyboardEvent) => d.onKey(e)}>${uiIcon("grip")}</span>`}
+    ${r === undefined ? nothing : html`<button type="button" class="hl-rm" title=${r.title} aria-label=${r.title} ?disabled=${r.busy === true}
+      @click=${(e: Event) => { e.stopPropagation(); r.onClick(); }}>${uiIcon("close")}</button>`}
     ${line.picture === undefined ? nothing : html`<span class="hl-pic">${line.picture}</span>`}
     <span class="hl-t">
       <b class="hl-name">${line.name}</b>
@@ -135,6 +171,44 @@ export const homeLineupStyles = css`
     text-decoration: none; cursor: pointer;
   }
   .hl-lines.strip .hl-edit { align-self: stretch; }
+  /* Order and take off. The grip always shows; the remove button shows
+     while the pointer or the focus is on the line, and always on a screen
+     with no hover. The drop lands on the side the line is drawn on. */
+  .hl-line { position: relative; }
+  .hl-line.drags { cursor: grab; }
+  .hl-line.dragging { opacity: .45; }
+  .hl-line.drop-before { box-shadow: -3px 0 0 var(--wa-accent); }
+  .hl-line.drop-after { box-shadow: 3px 0 0 var(--wa-accent); }
+  .hl-lines:not(.strip) .hl-line.drop-before { box-shadow: 0 -3px 0 var(--wa-accent); }
+  .hl-lines:not(.strip) .hl-line.drop-after { box-shadow: 0 3px 0 var(--wa-accent); }
+  .hl-grip {
+    display: inline-flex; align-items: center; justify-content: center; flex: none; width: 18px; height: 22px; border-radius: 5px;
+    color: var(--wa-muted); cursor: grab;
+  }
+  .hl-grip svg { width: 14px; height: 14px; }
+  .hl-grip:hover { color: var(--wa-ink); background: var(--wa-hover); }
+  .hl-grip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .hl-lines.strip .hl-grip { position: absolute; top: 5px; left: 22px; }
+  .hl-rm {
+    display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; padding: 0;
+    border-radius: 6px; border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-muted); cursor: pointer;
+    opacity: 0; transition: opacity .12s ease;
+  }
+  .hl-rm svg { width: 13px; height: 13px; }
+  .hl-line:hover .hl-rm, .hl-line:focus-within .hl-rm { opacity: 1; }
+  .hl-rm:hover:not(:disabled) { color: var(--wa-need); border-color: color-mix(in srgb, var(--wa-need) 50%, var(--wa-line)); }
+  .hl-rm:focus-visible { outline: none; box-shadow: var(--wa-ring); opacity: 1; }
+  .hl-rm:disabled { cursor: progress; opacity: .5; }
+  @media (hover: none) { .hl-rm { opacity: 1; } }
+  .hl-lines.strip .hl-rm { position: absolute; top: 4px; right: 4px; z-index: 1; }
+  .hl-lines:not(.strip) .hl-rm { order: 9; }
+  .hl-note { margin: 0; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--wa-line); font-size: 12.5px; color: var(--wa-muted);
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  .hl-note.warn { color: var(--wa-amber); border-color: var(--wa-amber-line, var(--wa-line)); }
+  .hl-note.err { color: var(--wa-need); border-color: color-mix(in srgb, var(--wa-need) 40%, var(--wa-line)); }
+  .hl-note button { padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--wa-ink); cursor: pointer;
+    text-decoration: underline; text-underline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .hl-rm { transition: none; } }
   .hl-edit:hover { background: var(--wa-hover); }
   .hl-edit:focus-visible { outline: none; box-shadow: var(--wa-ring); }
 `;

@@ -1,51 +1,51 @@
-import{ea as d,fa as b,ga as y,na as $,oa as L}from"./chunk-ZUAREVPI.js";import{b as x}from"./chunk-P3S4W6I4.js";import{k}from"./chunk-XGVYSF2G.js";import{b as c,d as p,e as g,g as w,nh as h}from"./chunk-PGFG6NDE.js";var T="dialog.lib-new";function f(e){return e==="menus"?"New menu":e==="status_pages"?"New status page":"New page"}function N(e){return e==="menus"?"menu":e==="status_pages"?"status page":"page"}function I(e,a){return e==="menus"?"Name it, pick its kind.":a.length>1?"Name it, pick where to preview it.":"Name it."}function D(e,a){let t=a.name.trim();if(t==="")return"Type a name to start.";if(e==="menus"){let n=a.unit??"anywhere";return`${t}, an ${b[n]} on no device yet. Tick a device any time.`}return`${t}, a ${N(e)} on no device yet. Tick a device any time.`}function P(e){return e==="entity"?"Opens on an entity. Its actions in a ring.":"Opens on any screen. Your shortcuts for the whole watch."}function E(e){return e==="iphone"?"Drawn on an iPhone's screen first.":"Drawn on a watch face first."}function M(e){let a=e==="entity"?6:8,t=Array.from({length:a},(n,r)=>{let i=r/a*Math.PI*2-Math.PI/2;return g`<circle cx=${(16+Math.cos(i)*10).toFixed(2)} cy=${(16+Math.sin(i)*10).toFixed(2)} r="2.4" />`});return p`<svg class="lib-new-art" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true">
+import{fa as x}from"./chunk-TS6GX5ZO.js";import{k as b}from"./chunk-LTCSOITJ.js";import{b as l,d as o,e as c,g as s,nh as w}from"./chunk-PGFG6NDE.js";var k="dialog.lib-new";function g(e){return e==="menus"?"New menu":e==="status_pages"?"New status page":"New page"}function f(e){return e==="menus"?"menu":e==="status_pages"?"status page":"page"}function y(e,a){return e==="menus"?"Name it, pick its kind.":a.length>1?"Name it, pick where to preview it.":"Name it."}function $(e,a){let i=a.name.trim();if(i==="")return"Type a name to start.";if(e==="menus"){let t=a.unit??"anywhere";return`${i}, an ${x[t]} on no device yet. Tick a device any time.`}return`${i}, a ${f(e)} on no device yet. Tick a device any time.`}function z(e){return e==="entity"?"Opens on an entity. Its actions in a ring.":"Opens on any screen. Your shortcuts for the whole watch."}function N(e){return e==="iphone"?"Drawn on an iPhone's screen first.":"Drawn on a watch face first."}function M(e){let a=e==="entity"?6:8,i=Array.from({length:a},(t,r)=>{let p=r/a*Math.PI*2-Math.PI/2;return c`<circle cx=${(16+Math.cos(p)*10).toFixed(2)} cy=${(16+Math.sin(p)*10).toFixed(2)} r="2.4" />`});return o`<svg class="lib-new-art" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true">
     <circle cx="16" cy="16" r="14.5" fill="none" stroke="var(--wa-shape-outline, currentColor)" stroke-width="1" opacity=".45" />
-    ${t}${e==="entity"?g`<circle cx="16" cy="16" r="3" />`:w}
-  </svg>`}function K(e){return e?p`<span class="pick-tick" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>`:p`<span class="pick-tick off" aria-hidden="true"></span>`}function C(e,a,t,n,r,i){return p`<button type="button" class="shape-card lib-new-card ${e?"on":""}" role="radio" aria-checked=${e?"true":"false"}
-    title=${t} ?disabled=${i} @click=${r}>
-    <span class="shape-arts">${n}</span>
+    ${i}${e==="entity"?c`<circle cx="16" cy="16" r="3" />`:s}
+  </svg>`}function T(e){return e?o`<span class="pick-tick" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>`:o`<span class="pick-tick off" aria-hidden="true"></span>`}function v(e,a,i,t,r,p){return o`<button type="button" class="shape-card lib-new-card ${e?"on":""}" role="radio" aria-checked=${e?"true":"false"}
+    title=${i} ?disabled=${p} @click=${r}>
+    <span class="shape-arts">${t}</span>
     <span class="shape-card-name">${a}</span>
-    <span class="shape-card-note">${t}</span>
-    ${K(e)}
-  </button>`}function m(e,a,t){return p`<div class="new-step-head">
+    <span class="shape-card-note">${i}</span>
+    ${T(e)}
+  </button>`}function h(e,a,i){return o`<div class="new-step-head">
     <span class="new-step-num" aria-hidden="true">${e}</span>
     <span class="new-step-title">${a}</span>
-    <span class="new-step-hint">${t}</span>
-  </div>`}function W(e,a,t,n){let r=a.name.trim()!=="",i=N(e),l=r?"":"waiting",u=e==="menus",z=u||t.length>1;return p`<dialog class="new-dialog lib-new" aria-label=${f(e)} @close=${()=>n.onClose()}
-    @cancel=${o=>{o.preventDefault(),a.busy||n.onClose()}}>
-    <form class="lib-new-form" @submit=${o=>{o.preventDefault(),r&&!a.busy&&n.onMake()}}>
+    <span class="new-step-hint">${i}</span>
+  </div>`}function D(e,a,i,t){let r=a.name.trim()!=="",p=f(e),u=r?"":"waiting",d=e==="menus",m=d||i.length>1;return o`<dialog class="new-dialog lib-new" aria-label=${g(e)} @close=${()=>t.onClose()}
+    @cancel=${n=>{n.preventDefault(),a.busy||t.onClose()}}>
+    <form class="lib-new-form" @submit=${n=>{n.preventDefault(),r&&!a.busy&&t.onMake()}}>
       <div class="new-head">
-        <h2>${f(e)}</h2>
-        <span class="new-head-note">${I(e,t)}</span>
+        <h2>${g(e)}</h2>
+        <span class="new-head-note">${y(e,i)}</span>
         <span class="spacer"></span>
-        <button type="button" class="icon lib-new-x" title="Cancel" aria-label="Cancel" ?disabled=${a.busy} @click=${()=>n.onClose()}>${h("close")}</button>
+        <button type="button" class="icon lib-new-x" title="Cancel" aria-label="Cancel" ?disabled=${a.busy} @click=${()=>t.onClose()}>${w("close")}</button>
       </div>
       <div class="new-body">
         <section class="new-step step-name">
-          ${m(1,"Name it",u?"The name the Menus tab and the editor show.":`The name the ${i}'s card and the ${e==="status_pages"?"watch":"device"} show.`)}
-          <input type="text" class="new-name" .value=${k(a.name)} maxlength="80" autofocus aria-label=${`${f(e)} name`}
-            ?disabled=${a.busy} @input=${o=>n.onName(o.target.value)} />
+          ${h(1,"Name it",d?"The name the Menus tab and the editor show.":`The name the ${p}'s card and the ${e==="status_pages"?"watch":"device"} show.`)}
+          <input type="text" class="new-name" .value=${b(a.name)} maxlength="80" autofocus aria-label=${`${g(e)} name`}
+            ?disabled=${a.busy} @input=${n=>t.onName(n.target.value)} />
         </section>
-        ${z?u?p`<section class="new-step step-shapes ${l}" aria-disabled=${r?"false":"true"}>
-          ${m(2,"Which kind",r?"A device uses one of each. It starts as the app's own menu of that kind.":"Waits for a name.")}
+        ${m?d?o`<section class="new-step step-shapes ${u}" aria-disabled=${r?"false":"true"}>
+          ${h(2,"Which kind",r?"A device uses one of each. It starts as the app's own menu of that kind.":"Waits for a name.")}
           <div class="shape-cards" role="radiogroup" aria-label="Kind of menu">
-            ${["anywhere","entity"].map(o=>C((a.unit??"anywhere")===o,b[o],P(o),M(o),()=>n.onUnit?.(o),a.busy))}
+            ${["anywhere","entity"].map(n=>v((a.unit??"anywhere")===n,x[n],z(n),M(n),()=>t.onUnit?.(n),a.busy))}
           </div>
-        </section>`:p`<section class="new-step step-shapes ${l}" aria-disabled=${r?"false":"true"}>
-          ${m(2,"Preview on",r?"Only the picture the editor opens with. Nothing is put on a device; the ticks do that.":"Waits for a name.")}
+        </section>`:o`<section class="new-step step-shapes ${u}" aria-disabled=${r?"false":"true"}>
+          ${h(2,"Preview on",r?"Only the picture the editor opens with. Nothing is put on a device; the ticks do that.":"Waits for a name.")}
           <div class="shape-cards" role="radiogroup" aria-label="Preview on">
-            ${t.map(o=>C((a.preview??t[0])===o,o==="iphone"?"iPhone":"Watch",E(o),p`<span class="lib-new-art lib-new-device">${h(o==="iphone"?"phone":"watch")}</span>`,()=>n.onPreview?.(o),a.busy))}
+            ${i.map(n=>v((a.preview??i[0])===n,n==="iphone"?"iPhone":"Watch",N(n),o`<span class="lib-new-art lib-new-device">${w(n==="iphone"?"phone":"watch")}</span>`,()=>t.onPreview?.(n),a.busy))}
           </div>
-        </section>`:w}
-        ${a.note===void 0?w:p`<p class="lt-line ${a.note.kind}" role="status">${a.note.text}</p>`}
+        </section>`:s}
+        ${a.note===void 0?s:o`<p class="lt-line ${a.note.kind}" role="status">${a.note.text}</p>`}
       </div>
       <div class="new-foot">
-        <span class="new-count">${D(e,a)}</span>
-        <button type="button" class="lib-new-btn" ?disabled=${a.busy} @click=${()=>n.onClose()}>Cancel</button>
-        <button type="submit" class="lib-new-btn primary" ?disabled=${!r||a.busy} title=${r?`Make the ${i}`:"Type a name to start."}>${a.busy?"Making\u2026":"Create"}</button>
+        <span class="new-count">${$(e,a)}</span>
+        <button type="button" class="lib-new-btn" ?disabled=${a.busy} @click=${()=>t.onClose()}>Cancel</button>
+        <button type="submit" class="lib-new-btn primary" ?disabled=${!r||a.busy} title=${r?`Make the ${p}`:"Type a name to start."}>${a.busy?"Making\u2026":"Create"}</button>
       </div>
     </form>
-  </dialog>`}function B(e){let a=e?.querySelector?.(T);a&&(!a.open&&typeof a.showModal=="function"&&a.showModal(),a.querySelector("input.new-name")?.select())}var q=c`
+  </dialog>`}function L(e){let a=e?.querySelector?.(k);a&&(!a.open&&typeof a.showModal=="function"&&a.showModal(),a.querySelector("input.new-name")?.select())}var j=l`
   dialog.lib-new {
     width: min(560px, calc(100vw - 32px)); padding: 0;
     border: 1px solid var(--wa-line); border-radius: 12px;
@@ -137,7 +137,7 @@ import{ea as d,fa as b,ga as y,na as $,oa as L}from"./chunk-ZUAREVPI.js";import{
     .lib-new .new-head .spacer { display: none; }
     .lib-new .new-body { padding: 12px; }
   }
-`;var _="Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.",A="A status page is a read-only screen of rows that a tile or a menu slot opens.";function s(e,a=1){let t=e==="status_pages"?"status page":"page";return a===1?t:`${t}s`}function S(e){return e==="status_pages"?"a status page":"a page"}function J(e){return`Only a Home Assistant administrator can make a new ${s(e)}.`}function Q(e){return e==="status_pages"?"Status pages":"Pages"}function X(e,a="pages"){return e===0?`No ${s(a,2)} yet.`:`${e} ${s(a,e)} in your home. ${a==="status_pages"?A:_}`}function Z(e,a){return a?`Make ${S(e)} once, then tick each watch or iPhone that should show it.`:`Ask a Home Assistant administrator to make the first ${s(e)}.`}function ee(e,a,t=!1,n="board"){let r=s(e);if(t)return`Click ${s(e,2)} to pick them. Shift+click picks every ${r} between two.`;if(a!==void 0){let i=x(a.kind);return e==="status_pages"?`Click a status page to edit it. Drag to order. The order is this ${i}'s own.`:`Click a page to edit it. Drag to order, and Hide here (the eye) keeps a page on this ${i} without showing it.`}return n==="board"?e==="status_pages"?"Click a status page to edit it. Tick a box to put it on that device. Click a device's name to order its status pages.":"Click a page to edit it. Tick a box to show the page on that device. Click a device's name to order its pages.":e==="status_pages"?"Click a status page to edit it. Tick a device to put it there.":"Click a page to edit it. Tick a device to show the page there. One page, the same everywhere."}function ae(e){return e.starter?`${e.detail} \xB7 starter`:e.detail}var U="all";function te(e,a){return e!==void 0&&a.some(t=>t.ownerId===e)?e:U}function v(e,a){let t=a.trim().toLowerCase();return t===""||e.toLowerCase().includes(t)}function ne(e,a,t=""){return y(e,a).filter(n=>v(n.name,t))}function re(e,a,t,n=""){return{device:a,picks:$(e,a.ownerId,t).filter(r=>v(r.entry.name,n)),rest:L(e,a.ownerId,t).filter(r=>v(r.name,n))}}function ie(e,a){if(a===void 0)return[...e];let t=a.flatMap(n=>e.filter(r=>d(r.id,n)));return[...t,...e.filter(n=>!t.includes(n))]}function F(e,a,t){let n=e.findIndex(i=>d(i,a)),r=e.findIndex(i=>d(i,t));if(!(n<0||r<0||n===r))return r<n?e[r]:r+1<e.length?e[r+1]:null}function oe(e,a,t){let n=F(e,a,t);return n===void 0?void 0:{id:a,before:n}}function se(e,a,t){let n=e.filter(l=>!d(l,a)),r=t===null?-1:n.findIndex(l=>d(l,t)),i=e.find(l=>d(l,a))??a;return r<0?[...n,i]:[...n.slice(0,r),i,...n.slice(r)]}function pe(e,a){let t=a.filter(n=>e.owners.some(r=>d(r,n.ownerId)));return t.find(n=>n.kind==="watch")??t[0]}function le(e){return`Edit ${e}`}function de(e){return`On ${e.name}`}function ce(e){return`Drag to order. The order is this ${x(e.kind)}'s own.`}function we(e){return`Not on this ${x(e.kind)}`}function xe(e,a,t,n,r=!0){return t.trim()!==""?`No ${s(a)} on ${e.name} has that name.`:n===0?r?`No ${s(a,2)} on ${e.name} yet. Use New ${s(a)} to make one.`:`No ${s(a,2)} on ${e.name} yet. Ask a Home Assistant administrator to make the first one.`:r?`No ${s(a,2)} on ${e.name} yet. Tick one below, or make a new one.`:`No ${s(a,2)} on ${e.name} yet. Tick one below.`}function ue(e,a,t="pages"){return e.length===0?"No watch or iPhone has connected yet. Pair one on the Home tab.":a.trim()!==""?`No ${s(t)} has that name.`:t==="status_pages"?"Your home has no status pages yet. Use New status page to make one.":"Your home has no pages yet. Use New page to make one."}var be=c`
+`;var S=l`
   .lt-view { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
   .lt-sect { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; padding: 0 2px; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); }
   .lt-sect small { font-size: 12px; font-weight: 500; color: color-mix(in srgb, var(--wa-muted) 75%, transparent); }
@@ -197,7 +197,7 @@ import{ea as d,fa as b,ga as y,na as $,oa as L}from"./chunk-ZUAREVPI.js";import{
     .lt-row { padding: 7px 10px 7px 6px; gap: 8px; }
     .lt-pick-sel { max-width: 130px; }
   }
-`;var ve=c`
+`;var R=l`
   :host { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; color: var(--wa-ink); }
   * { box-sizing: border-box; }
   svg { display: block; }
@@ -329,4 +329,4 @@ import{ea as d,fa as b,ga as y,na as $,oa as L}from"./chunk-ZUAREVPI.js";import{
     .pk-body { padding: 10px; }
     .ap-grid { gap: 8px; }
   }
-`;export{W as a,B as b,q as c,s as d,S as e,J as f,Q as g,X as h,Z as i,ee as j,ae as k,U as l,te as m,v as n,ne as o,re as p,ie as q,oe as r,se as s,pe as t,le as u,de as v,ce as w,we as x,xe as y,ue as z,be as A,ve as B};
+`;export{D as a,L as b,j as c,S as d,R as e};

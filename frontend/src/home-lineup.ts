@@ -4,18 +4,26 @@
 // uses. Its own chunk, loaded by `home-lineup-hook.ts`, since the library
 // store and the pictures are not in the panel's first download.
 
-import { LitElement, html, type TemplateResult } from "lit";
-import { property } from "lit/decorators.js";
+import { LitElement, html, nothing, type TemplateResult } from "lit";
+import { property, state } from "lit/decorators.js";
 import type { HassLike } from "./ha-api.js";
-import { type LineupGroup, type LineupLine, homeLineupStyles, renderLineupGroup } from "./home-lineup-look.js";
+import { type LineupDrag, type LineupGroup, type LineupLine, homeLineupStyles, renderLineupGroup } from "./home-lineup-look.js";
 import type { LibraryKind, MenuUnit } from "./library/client.js";
-import { MENU_UNIT_TITLES, itemsFor, menuFor, type Library } from "./library/model.js";
+import { MENU_UNIT_TITLES, itemsFor, menuFor, sameId, type Library, type LibraryPick } from "./library/model.js";
 import { renderPageRowPicture, renderStatusRowPicture, rowPictureStyles } from "./library/row-picture.js";
 import { LibraryController } from "./library/store.js";
+import { libraryTicksStyles, renderTickAsk } from "./library/ticks.js";
 import type { IconProvider } from "./renderer.js";
 import { watchFrameStyles } from "./watch-frame.js";
+import { dropChange, inOrder, movedOrder } from "./watch-pages/all-pages-model.js";
+import { changeDevicePicks, picksDirtyText } from "./watch-pages/all-pages-picks.js";
+import { picksIO } from "./watch-pages/all-pages-io.js";
+import { keptWatchPagesDraft } from "./watch-pages/kept.js";
+import { type UntickAsk, askUntick, tickItem } from "./watch-pages/library-editing-io.js";
 import type { WatchPage } from "./watch-pages/model.js";
 import { watchPagePreviewStyles } from "./watch-pages/preview.js";
+import { watchCommandError } from "./watch-pages/save-note.js";
+import { keptStatusPagesDraft } from "./watch-status-pages/draft.js";
 import { statusPagesViewStyles } from "./watch-status-pages/view.js";
 
 /** Pictures are drawn again at most this often for a new `hass`. */
@@ -42,6 +50,20 @@ export class WaHomeLineup extends LitElement {
   @property({ attribute: false }) onEdit?: (kind: LibraryKind, id: string) => void;
   /** Change: that tab's board, focused on this device. */
   @property({ attribute: false }) onChange?: (kind: LibraryKind) => void;
+  /** The device's name, for what a move or a remove says. */
+  @property({ attribute: false }) deviceName = "";
+
+  /** The line being dragged, and the one it is over. */
+  @state() private dragged?: { kind: OrderedKind; id: string };
+  @state() private overId?: string;
+  /** The order a drag asked for, shown until the read after its save. */
+  @state() private orderAsked?: { kind: OrderedKind; ids: string[] };
+  /** A move or a remove is on its way: nothing else starts. */
+  @state() private busy?: string;
+  /** A remove's question, when it would clear menu slots or taps. */
+  @state() private ask?: UntickAsk;
+  /** What the last move or remove did, under its group; a remove can be undone. */
+  @state() private said?: { kind: OrderedKind; tone: "ok" | "warn" | "err"; text: string; undo?: () => void };
 
   private hassNow?: HassLike;
   private hassDrawnAt = 0;
@@ -77,9 +99,175 @@ export class WaHomeLineup extends LitElement {
       ...(this.icons === undefined ? {} : { icons: this.icons }),
       tick: this.iconsTick,
       pageWidth: this.pageW,
+      arrange: {
+        order: (kind) => (this.orderAsked?.kind === kind ? this.orderAsked.ids : undefined),
+        drag: (kind, pick, index, ids) => this.lineDrag(kind, pick, index, ids),
+        remove: (kind, pick, next) => ({
+          title: `Take ${pick.entry.name} off ${this.device}`,
+          busy: this.busy !== undefined,
+          onClick: () => void this.takeOff(kind, pick, next),
+        }),
+        under: (kind) => this.renderUnder(kind),
+      },
       onEdit: (kind, id) => this.onEdit?.(kind, id),
       onChange: (kind) => this.onChange?.(kind),
     }).map(renderLineupGroup)}</div>`;
+  }
+
+  /** A device's name for the words, or "this watch". */
+  private get device(): string {
+    return this.deviceName || `this ${this.kind === "iphone" ? "iPhone" : "watch"}`;
+  }
+
+  /** Under a group: a remove's question, or what the last change did. */
+  private renderUnder(kind: OrderedKind): TemplateResult | undefined {
+    const ask = this.ask;
+    if (ask !== undefined && ask.kind === kind) {
+      return renderTickAsk({ ownerId: ask.ownerId, text: ask.text, onRemove: () => void this.removeAsked(ask), onCancel: () => { this.ask = undefined; } });
+    }
+    const said = this.said;
+    if (said === undefined || said.kind !== kind) return undefined;
+    return html`<p class="hl-note ${said.tone}" role=${said.tone === "err" ? "alert" : "status"}>
+      <span>${said.text}</span>
+      ${said.undo === undefined ? nothing : html`<button type="button" ?disabled=${this.busy !== undefined} @click=${said.undo}>Undo</button>`}
+    </p>`;
+  }
+
+  /** A line's drag in its kind's order: drop it on another line, or Alt and
+   * the arrow keys. Off while a change is on its way. */
+  private lineDrag(kind: OrderedKind, pick: LibraryPick, index: number, ids: readonly string[]): LineupDrag {
+    const on = this.busy === undefined;
+    const dragging = this.dragged !== undefined && this.dragged.kind === kind;
+    const from = dragging ? ids.findIndex((id) => sameId(id, this.dragged!.id)) : -1;
+    const over = dragging && this.overId !== undefined && sameId(this.overId, pick.id) && from !== index;
+    const end = () => { this.dragged = undefined; this.overId = undefined; };
+    return {
+      on,
+      dragging: dragging && sameId(this.dragged!.id, pick.id),
+      over,
+      after: over && from < index,
+      onStart: (e) => {
+        if (!on) return;
+        this.dragged = { kind, id: pick.id };
+        e.dataTransfer?.setData("text/plain", pick.id);
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+      },
+      onOver: (e) => {
+        if (this.dragged?.kind !== kind) return;
+        e.preventDefault();
+        if (this.overId !== pick.id) this.overId = pick.id;
+      },
+      onDrop: (e) => {
+        if (this.dragged?.kind !== kind) return;
+        e.preventDefault();
+        const id = this.dragged.id;
+        end();
+        // The dragged line moves, not the one it lands on.
+        const change = dropChange(ids, id, pick.id);
+        if (change !== undefined) void this.move(kind, change, ids);
+      },
+      onEnd: end,
+      onKey: (e) => {
+        if (!e.altKey || !on) return;
+        const back = e.key === "ArrowUp" || e.key === "ArrowLeft";
+        const forth = e.key === "ArrowDown" || e.key === "ArrowRight";
+        if (!back && !forth) return;
+        e.preventDefault();
+        if (back && index > 0) void this.move(kind, { id: pick.id, before: ids[index - 1]! }, ids);
+        if (forth && index < ids.length - 1) void this.move(kind, { id: pick.id, before: ids[index + 2] ?? null }, ids);
+      },
+    };
+  }
+
+  /** Move a pick in the device's order: one save of its record, as the
+   * focused board does, then the library read again. Not while the
+   * device's editor holds unsaved edits, which the save would land under. */
+  private async move(kind: OrderedKind, change: { id: string; before: string | null }, ids: readonly string[]): Promise<void> {
+    const hass = this.hassNow;
+    const store = this.lib.store;
+    if (hass === undefined || store === undefined || this.busy !== undefined) return;
+    const dirty = (kind === "status_pages" ? keptStatusPagesDraft(this.ownerId)?.dirty : keptWatchPagesDraft(this.ownerId)?.dirty) ?? false;
+    if (dirty) {
+      this.said = { kind, tone: "warn", text: picksDirtyText(kind, this.device) };
+      return;
+    }
+    this.busy = change.id;
+    this.said = undefined;
+    this.ask = undefined;
+    this.orderAsked = { kind, ids: movedOrder([...ids], change.id, change.before) };
+    try {
+      const result = await changeDevicePicks(picksIO(hass), this.ownerId, kind, change);
+      if (!result.ok) this.said = { kind, tone: "err", text: `Not moved on ${this.device}: ${result.message.replace(/\.$/, "")}.` };
+    } catch (err) {
+      this.said = { kind, tone: "err", text: watchCommandError(err).message };
+    }
+    await store.refresh();
+    this.orderAsked = undefined;
+    this.busy = undefined;
+  }
+
+  /** Take a pick off the device. When that would clear menu slots or taps
+   * that open it, ask first (`askUntick`); else it goes at once, with Undo. */
+  private async takeOff(kind: OrderedKind, pick: LibraryPick, next: string | null): Promise<void> {
+    const store = this.lib.store;
+    if (store === undefined || this.busy !== undefined) return;
+    this.busy = pick.id;
+    this.said = undefined;
+    this.ask = undefined;
+    const names = { item: pick.entry.name, device: this.device };
+    try {
+      this.ask = await askUntick(this.hassNow, store, this.ownerId, kind, pick.id, names);
+      if (this.ask === undefined) this.saidRemoved(kind, pick.id, names.item, next, store.noteFor(kind, pick.id));
+    } finally {
+      this.busy = undefined;
+    }
+  }
+
+  /** Remove under its question, then say what it cleared. */
+  private async removeAsked(ask: UntickAsk): Promise<void> {
+    const store = this.lib.store;
+    this.ask = undefined;
+    if (store === undefined || this.busy !== undefined) return;
+    const kind = ask.kind as OrderedKind;
+    this.busy = ask.itemId;
+    try {
+      const result = await tickItem(this.hassNow, store, ask.ownerId, ask.kind, ask.itemId, false, ask.names);
+      if (!result.ok) this.said = { kind, tone: "err", text: result.text };
+      else if (result.note !== undefined) this.said = { kind, tone: result.note.kind === "ok" ? "ok" : "warn", text: result.note.text };
+      else this.saidRemoved(kind, ask.itemId, ask.names.item, null, undefined);
+    } finally {
+      this.busy = undefined;
+    }
+  }
+
+  /** "Took X off the watch", with Undo: put it back, where it was. */
+  private saidRemoved(kind: OrderedKind, id: string, name: string, next: string | null, failed: string | undefined): void {
+    if (failed !== undefined) {
+      this.said = { kind, tone: "err", text: failed };
+      return;
+    }
+    this.said = { kind, tone: "ok", text: `Took ${name} off ${this.device}.`, undo: () => void this.putBack(kind, id, next) };
+  }
+
+  /** Undo a remove: the pick goes back on, at the end, then before the one
+   * that followed it. */
+  private async putBack(kind: OrderedKind, id: string, next: string | null): Promise<void> {
+    const store = this.lib.store;
+    if (store === undefined || this.busy !== undefined) return;
+    this.busy = id;
+    this.said = undefined;
+    try {
+      const result = await tickItem(this.hassNow, store, this.ownerId, kind, id, true);
+      if (!result.ok) {
+        this.said = { kind, tone: "err", text: result.text };
+        return;
+      }
+    } finally {
+      this.busy = undefined;
+    }
+    const library = this.lib.library;
+    const ids = library === undefined ? [] : itemsFor(library, this.ownerId, kind).map((p) => p.id);
+    if (next !== null && ids.some((o) => sameId(o, next))) await this.move(kind, { id, before: next }, ids);
   }
 
   override connectedCallback(): void {
@@ -111,7 +299,21 @@ export class WaHomeLineup extends LitElement {
     this.requestUpdate();
   }
 
-  static override styles = [watchPagePreviewStyles, watchFrameStyles, statusPagesViewStyles, rowPictureStyles, homeLineupStyles];
+  static override styles = [watchPagePreviewStyles, watchFrameStyles, statusPagesViewStyles, rowPictureStyles, libraryTicksStyles, homeLineupStyles];
+}
+
+/** The two kinds a device keeps in an order of its own. */
+export type OrderedKind = "pages" | "status_pages";
+
+/** A device's own order and picks, changed from Home: drag, remove, and
+ * what to draw under a group while one is asked or done. */
+export interface LineupArrange {
+  /** The order a drag asked for, shown until the read after its save. */
+  order?: (kind: OrderedKind) => readonly string[] | undefined;
+  drag?: (kind: OrderedKind, pick: LibraryPick, index: number, ids: readonly string[]) => LineupDrag;
+  /** `next` is the id after it, so an undo can put it back in its place. */
+  remove?: (kind: OrderedKind, pick: LibraryPick, next: string | null) => LineupLine["remove"];
+  under?: (kind: OrderedKind) => TemplateResult | undefined;
 }
 
 /** What the groups draw with. */
@@ -121,6 +323,7 @@ export interface LineupDraw {
   tick?: number;
   /** A watch page picture's width; an iPhone's is narrower. */
   pageWidth?: number;
+  arrange?: LineupArrange;
   onEdit: (kind: LibraryKind, id: string) => void;
   onChange: (kind: LibraryKind) => void;
 }
@@ -129,11 +332,21 @@ export interface LineupDraw {
 export function lineupGroups(library: Library, ownerId: string, kind: "watch" | "iphone", draw: LineupDraw): LineupGroup[] {
   const word = kind === "iphone" ? "iPhone" : "watch";
   const iphone = kind === "iphone";
-  const pages = itemsFor(library, ownerId, "pages");
   const states = draw.hass?.states;
   const watchW = draw.pageWidth ?? PAGE_PICTURE_MIN;
   const pageW = iphone ? Math.round(watchW * PHONE_PICTURE_RATIO) : watchW;
-  const pageLines = pages.map((pick): LineupLine => ({
+  const arrange = draw.arrange;
+  /** A kind's picks in the device's order, each with its drag and remove. */
+  const linesOf = (k: OrderedKind, line: (pick: LibraryPick) => LineupLine): LineupLine[] => {
+    const picks = inOrder(itemsFor(library, ownerId, k), arrange?.order?.(k));
+    const ids = picks.map((p) => p.id);
+    return picks.map((pick, i) => {
+      const drag = arrange?.drag?.(k, pick, i, ids);
+      const remove = arrange?.remove?.(k, pick, ids[i + 1] ?? null);
+      return { ...line(pick), ...(drag === undefined ? {} : { drag }), ...(remove === undefined ? {} : { remove }) };
+    });
+  };
+  const pageLines = linesOf("pages", (pick) => ({
     key: pick.id,
     name: pick.entry.name,
     detail: pick.entry.detail,
@@ -146,7 +359,7 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
     }),
     action: { label: "Edit", title: `Edit ${pick.entry.name}`, onClick: () => draw.onEdit("pages", pick.id) },
   }));
-  const statusLines = itemsFor(library, ownerId, "status_pages").map((pick): LineupLine => ({
+  const statusLines = linesOf("status_pages", (pick) => ({
     key: pick.id,
     name: pick.entry.name,
     detail: pick.entry.detail,
@@ -158,6 +371,8 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
     }),
     action: { label: "Edit", title: `Edit ${pick.entry.name}`, onClick: () => draw.onEdit("status_pages", pick.id) },
   }));
+  const underPages = arrange?.under?.("pages");
+  const underStatus = arrange?.under?.("status_pages");
   const units: MenuUnit[] = ["anywhere", "entity"];
   const menuLines = units.flatMap((unit): LineupLine[] => {
     const menu = menuFor(library, ownerId, unit);
@@ -173,10 +388,12 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
       key: "pages", title: "Pages", icon: "pages", hue: "var(--wa-hue-green)", sub: `in the order the ${word} swipes them`,
       lines: pageLines, strip: true, empty: `No pages on this ${word} yet.`,
       change: { title: `Add, order and hide pages on this ${word}`, onClick: () => draw.onChange("pages") },
+      ...(underPages === undefined ? {} : { under: underPages }),
     },
     {
       key: "status_pages", title: "Status pages", icon: "checklist", hue: "var(--wa-hue-yellow)",
       lines: statusLines, empty: `No status pages on this ${word} yet.`,
+      ...(underStatus === undefined ? {} : { under: underStatus }),
       change: { title: `Add, order and hide status pages on this ${word}`, onClick: () => draw.onChange("status_pages") },
     },
     {
