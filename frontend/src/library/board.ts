@@ -296,10 +296,12 @@ export const boardStyles = css`
   /* The device columns keep one narrow width (--bd-col-w) and the first
      column takes the rest, so a wide screen gives its room to the things'
      pictures, not to gaps between ticks (Jesse, 2026-10-23). */
-  table.bd { --bd-col-w: 104px; border-collapse: separate; border-spacing: 0; width: 100%; min-width: max-content; font-size: 12.5px; }
+  table.bd { --bd-col-w: 104px; --bd-ground: var(--wa-bg); border-collapse: separate; border-spacing: 0; width: 100%; min-width: max-content; font-size: 12.5px; }
   .bd th, .bd td { padding: 0; text-align: left; font-weight: inherit; }
   .bd thead th { position: sticky; top: 0; z-index: 2; background: var(--wa-card); border-bottom: 1px solid var(--wa-line); vertical-align: bottom; }
-  .bd .bd-thing { position: sticky; left: 0; z-index: 1; background: var(--wa-card); min-width: 220px; }
+  /* The rows stand on the page's own ground, the first column too, so the
+     board reads as one surface under a raised head. */
+  .bd .bd-thing { position: sticky; left: 0; z-index: 1; background: var(--bd-ground); min-width: 220px; }
   .bd thead .bd-thing { z-index: 3; padding: 8px 10px; font-size: 11.5px; color: var(--wa-muted); font-weight: 600; }
   .bd-col { width: var(--bd-col-w); min-width: var(--bd-col-w); max-width: var(--bd-col-w); text-align: center; }
   .bd td.bd-cell { width: var(--bd-col-w); }
@@ -325,7 +327,7 @@ export const boardStyles = css`
   .bd-col-btn:hover .bd-col-go, .bd-col.on .bd-col-go { color: var(--wa-ink); border-color: var(--wa-line-strong); }
   .bd-col-go svg { width: 9px; height: 9px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
-  .bd-sect th { padding: 14px 10px 6px; border-bottom: 1px solid var(--wa-line); background: var(--wa-card); }
+  .bd-sect th { padding: 14px 10px 6px; border-bottom: 1px solid var(--wa-line); background: var(--bd-ground); }
   .bd-sect th > * { position: sticky; left: 10px; }
   .bd-sect-t { font-size: 12.5px; font-weight: 600; color: var(--wa-ink); }
   .bd-sect-t small { margin-left: 4px; font-size: 12px; font-weight: 500; color: var(--wa-muted); }
@@ -333,8 +335,8 @@ export const boardStyles = css`
   .bd-none td { padding: 10px; font-size: 12.5px; color: var(--wa-muted); }
 
   .bd-row > * { border-bottom: 1px solid var(--wa-line); }
-  .bd-row:hover > * { background: color-mix(in srgb, var(--wa-hover) 60%, var(--wa-card)); }
-  .bd-row:hover > .bd-cell.on, .bd-cell.on { background: color-mix(in srgb, var(--dc, var(--wa-accent)) 8%, var(--wa-card)); }
+  .bd-row:hover > * { background: color-mix(in srgb, var(--wa-hover) 60%, var(--bd-ground)); }
+  .bd-row:hover > .bd-cell.on, .bd-cell.on { background: color-mix(in srgb, var(--dc, var(--wa-accent)) 8%, var(--bd-ground)); }
   .bd-row.dim .bd-open { opacity: .6; }
   .bd-row.picked > .bd-thing { box-shadow: inset 3px 0 0 var(--wa-ink); }
   .bd-row.dragging { opacity: .5; }
