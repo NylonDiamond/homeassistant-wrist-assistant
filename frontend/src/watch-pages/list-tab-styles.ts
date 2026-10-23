@@ -116,6 +116,44 @@ export const listTabStyles = css`
   .ap-name { min-width: 0; font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ap-card:not(.picking) .ap-open:hover .ap-name { text-decoration: underline; text-underline-offset: 2px; }
   .ap-detail { font-size: 11.5px; color: var(--wa-muted); }
+  /* Delete, at the right end of a card's name row, as a Complications card
+     has it: out on hover, with the keyboard in the card, or while its
+     question is open; always out on a touch screen, which has no hover. */
+  .ap-del {
+    display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; padding: 0;
+    border-radius: 6px; border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-muted); cursor: pointer;
+    opacity: 0; transition: opacity .12s ease-out;
+  }
+  .ap-card:hover .ap-del, .ap-card:focus-within .ap-del, .ap-card.asking .ap-del { opacity: 1; }
+  @media (hover: none) { .ap-del { opacity: 1; } }
+  .ap-del svg { width: 13px; height: 13px; }
+  .ap-del:hover:not(:disabled), .bd-act.danger:hover:not(:disabled) {
+    color: var(--error-color, #b42318); border-color: color-mix(in srgb, var(--error-color, #b42318) 45%, var(--wa-line));
+  }
+  .ap-del:focus-visible, .bd-act:focus-visible { outline: none; box-shadow: var(--wa-ring); opacity: 1; }
+  .ap-del:disabled, .bd-act:disabled { opacity: .45; cursor: default; }
+  /* The same, an icon button after a board row's name. */
+  .bd-act {
+    display: inline-flex; align-items: center; justify-content: center; flex: none; width: 26px; height: 26px; padding: 0;
+    border-radius: 6px; border: 1px solid transparent; background: none; color: var(--wa-muted); cursor: pointer;
+  }
+  .bd-act svg { width: 14px; height: 14px; }
+  /* A delete's question, under the card's devices or across the row. */
+  .ap-ask { display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 1.4; color: var(--wa-ink); }
+  .ap-ask b { font-weight: 600; }
+  .ap-ask-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ap-ask-btn {
+    display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 7px;
+    border: 1px solid var(--wa-line-strong); background: var(--wa-panel, var(--wa-card)); color: var(--wa-ink);
+    font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .ap-ask-btn:hover { background: var(--wa-hover); }
+  .ap-ask-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .ap-ask-btn.danger {
+    color: var(--error-color, #b42318);
+    border-color: color-mix(in srgb, var(--error-color, #b42318) 45%, var(--wa-line));
+    background: color-mix(in srgb, var(--error-color, #b42318) 10%, var(--wa-panel, var(--wa-card)));
+  }
   .ap-devs { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
   .ap-dev {
     display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 7px 2px 5px; border-radius: 999px;

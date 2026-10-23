@@ -1,51 +1,51 @@
-import{ra as x}from"./chunk-FU5232KD.js";import{k as b}from"./chunk-HP5CTAZX.js";import{b as l,d as o,e as c,g as s,nh as w}from"./chunk-PGFG6NDE.js";var k="dialog.lib-new";function g(e){return e==="menus"?"New menu":e==="status_pages"?"New status page":"New page"}function f(e){return e==="menus"?"menu":e==="status_pages"?"status page":"page"}function y(e,a){return e==="menus"?"Name it, pick its kind.":a.length>1?"Name it, pick where to preview it.":"Name it."}function $(e,a){let i=a.name.trim();if(i==="")return"Type a name to start.";if(e==="menus"){let t=a.unit??"anywhere";return`${i}, an ${x[t]} on no device yet. Tick a device any time.`}return`${i}, a ${f(e)} on no device yet. Tick a device any time.`}function z(e){return e==="entity"?"Opens on an entity. Its actions in a ring.":"Opens on any screen. Your shortcuts for the whole watch."}function N(e){return e==="iphone"?"Drawn on an iPhone's screen first.":"Drawn on a watch face first."}function M(e){let a=e==="entity"?6:8,i=Array.from({length:a},(t,r)=>{let p=r/a*Math.PI*2-Math.PI/2;return c`<circle cx=${(16+Math.cos(p)*10).toFixed(2)} cy=${(16+Math.sin(p)*10).toFixed(2)} r="2.4" />`});return o`<svg class="lib-new-art" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true">
+import{ra as x}from"./chunk-FU5232KD.js";import{k as u}from"./chunk-AEJJBU2L.js";import{b as l,d as t,e as c,g as s,nh as w}from"./chunk-PGFG6NDE.js";var k="dialog.lib-new";function h(e){return e==="menus"?"New menu":e==="status_pages"?"New status page":"New page"}function f(e){return e==="menus"?"menu":e==="status_pages"?"status page":"page"}function y(e,a){return e==="menus"?"Name it, pick its kind.":a.length>1?"Name it, pick where to preview it.":"Name it."}function $(e,a){let r=a.name.trim();if(r==="")return"Type a name to start.";if(e==="menus"){let i=a.unit??"anywhere";return`${r}, an ${x[i]} on no device yet. Tick a device any time.`}return`${r}, a ${f(e)} on no device yet. Tick a device any time.`}function z(e){return e==="entity"?"Opens on an entity. Its actions in a ring.":"Opens on any screen. Your shortcuts for the whole watch."}function N(e){return e==="iphone"?"Drawn on an iPhone's screen first.":"Drawn on a watch face first."}function T(e){let a=e==="entity"?6:8,r=Array.from({length:a},(i,o)=>{let p=o/a*Math.PI*2-Math.PI/2;return c`<circle cx=${(16+Math.cos(p)*10).toFixed(2)} cy=${(16+Math.sin(p)*10).toFixed(2)} r="2.4" />`});return t`<svg class="lib-new-art" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true">
     <circle cx="16" cy="16" r="14.5" fill="none" stroke="var(--wa-shape-outline, currentColor)" stroke-width="1" opacity=".45" />
-    ${i}${e==="entity"?c`<circle cx="16" cy="16" r="3" />`:s}
-  </svg>`}function T(e){return e?o`<span class="pick-tick" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>`:o`<span class="pick-tick off" aria-hidden="true"></span>`}function v(e,a,i,t,r,p){return o`<button type="button" class="shape-card lib-new-card ${e?"on":""}" role="radio" aria-checked=${e?"true":"false"}
-    title=${i} ?disabled=${p} @click=${r}>
-    <span class="shape-arts">${t}</span>
+    ${r}${e==="entity"?c`<circle cx="16" cy="16" r="3" />`:s}
+  </svg>`}function M(e){return e?t`<span class="pick-tick" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>`:t`<span class="pick-tick off" aria-hidden="true"></span>`}function v(e,a,r,i,o,p){return t`<button type="button" class="shape-card lib-new-card ${e?"on":""}" role="radio" aria-checked=${e?"true":"false"}
+    title=${r} ?disabled=${p} @click=${o}>
+    <span class="shape-arts">${i}</span>
     <span class="shape-card-name">${a}</span>
-    <span class="shape-card-note">${i}</span>
-    ${T(e)}
-  </button>`}function h(e,a,i){return o`<div class="new-step-head">
+    <span class="shape-card-note">${r}</span>
+    ${M(e)}
+  </button>`}function g(e,a,r){return t`<div class="new-step-head">
     <span class="new-step-num" aria-hidden="true">${e}</span>
     <span class="new-step-title">${a}</span>
-    <span class="new-step-hint">${i}</span>
-  </div>`}function D(e,a,i,t){let r=a.name.trim()!=="",p=f(e),u=r?"":"waiting",d=e==="menus",m=d||i.length>1;return o`<dialog class="new-dialog lib-new" aria-label=${g(e)} @close=${()=>t.onClose()}
-    @cancel=${n=>{n.preventDefault(),a.busy||t.onClose()}}>
-    <form class="lib-new-form" @submit=${n=>{n.preventDefault(),r&&!a.busy&&t.onMake()}}>
+    <span class="new-step-hint">${r}</span>
+  </div>`}function D(e,a,r,i){let o=a.name.trim()!=="",p=f(e),b=o?"":"waiting",d=e==="menus",m=d||r.length>1;return t`<dialog class="new-dialog lib-new" aria-label=${h(e)} @close=${()=>i.onClose()}
+    @cancel=${n=>{n.preventDefault(),a.busy||i.onClose()}}>
+    <form class="lib-new-form" @submit=${n=>{n.preventDefault(),o&&!a.busy&&i.onMake()}}>
       <div class="new-head">
-        <h2>${g(e)}</h2>
-        <span class="new-head-note">${y(e,i)}</span>
+        <h2>${h(e)}</h2>
+        <span class="new-head-note">${y(e,r)}</span>
         <span class="spacer"></span>
-        <button type="button" class="icon lib-new-x" title="Cancel" aria-label="Cancel" ?disabled=${a.busy} @click=${()=>t.onClose()}>${w("close")}</button>
+        <button type="button" class="icon lib-new-x" title="Cancel" aria-label="Cancel" ?disabled=${a.busy} @click=${()=>i.onClose()}>${w("close")}</button>
       </div>
       <div class="new-body">
         <section class="new-step step-name">
-          ${h(1,"Name it",d?"The name the Menus tab and the editor show.":`The name the ${p}'s card and the ${e==="status_pages"?"watch":"device"} show.`)}
-          <input type="text" class="new-name" .value=${b(a.name)} maxlength="80" autofocus aria-label=${`${g(e)} name`}
-            ?disabled=${a.busy} @input=${n=>t.onName(n.target.value)} />
+          ${g(1,"Name it",d?"The name the Menus tab and the editor show.":`The name the ${p}'s card and the ${e==="status_pages"?"watch":"device"} show.`)}
+          <input type="text" class="new-name" .value=${u(a.name)} maxlength="80" autofocus aria-label=${`${h(e)} name`}
+            ?disabled=${a.busy} @input=${n=>i.onName(n.target.value)} />
         </section>
-        ${m?d?o`<section class="new-step step-shapes ${u}" aria-disabled=${r?"false":"true"}>
-          ${h(2,"Which kind",r?"A device uses one of each. It starts as the app's own menu of that kind.":"Waits for a name.")}
+        ${m?d?t`<section class="new-step step-shapes ${b}" aria-disabled=${o?"false":"true"}>
+          ${g(2,"Which kind",o?"A device uses one of each. It starts as the app's own menu of that kind.":"Waits for a name.")}
           <div class="shape-cards" role="radiogroup" aria-label="Kind of menu">
-            ${["anywhere","entity"].map(n=>v((a.unit??"anywhere")===n,x[n],z(n),M(n),()=>t.onUnit?.(n),a.busy))}
+            ${["anywhere","entity"].map(n=>v((a.unit??"anywhere")===n,x[n],z(n),T(n),()=>i.onUnit?.(n),a.busy))}
           </div>
-        </section>`:o`<section class="new-step step-shapes ${u}" aria-disabled=${r?"false":"true"}>
-          ${h(2,"Preview on",r?"Only the picture the editor opens with. Nothing is put on a device; the ticks do that.":"Waits for a name.")}
+        </section>`:t`<section class="new-step step-shapes ${b}" aria-disabled=${o?"false":"true"}>
+          ${g(2,"Preview on",o?"Only the picture the editor opens with. Nothing is put on a device; the ticks do that.":"Waits for a name.")}
           <div class="shape-cards" role="radiogroup" aria-label="Preview on">
-            ${i.map(n=>v((a.preview??i[0])===n,n==="iphone"?"iPhone":"Watch",N(n),o`<span class="lib-new-art lib-new-device">${w(n==="iphone"?"phone":"watch")}</span>`,()=>t.onPreview?.(n),a.busy))}
+            ${r.map(n=>v((a.preview??r[0])===n,n==="iphone"?"iPhone":"Watch",N(n),t`<span class="lib-new-art lib-new-device">${w(n==="iphone"?"phone":"watch")}</span>`,()=>i.onPreview?.(n),a.busy))}
           </div>
         </section>`:s}
-        ${a.note===void 0?s:o`<p class="lt-line ${a.note.kind}" role="status">${a.note.text}</p>`}
+        ${a.note===void 0?s:t`<p class="lt-line ${a.note.kind}" role="status">${a.note.text}</p>`}
       </div>
       <div class="new-foot">
         <span class="new-count">${$(e,a)}</span>
-        <button type="button" class="lib-new-btn" ?disabled=${a.busy} @click=${()=>t.onClose()}>Cancel</button>
-        <button type="submit" class="lib-new-btn primary" ?disabled=${!r||a.busy} title=${r?`Make the ${p}`:"Type a name to start."}>${a.busy?"Making\u2026":"Create"}</button>
+        <button type="button" class="lib-new-btn" ?disabled=${a.busy} @click=${()=>i.onClose()}>Cancel</button>
+        <button type="submit" class="lib-new-btn primary" ?disabled=${!o||a.busy} title=${o?`Make the ${p}`:"Type a name to start."}>${a.busy?"Making\u2026":"Create"}</button>
       </div>
     </form>
-  </dialog>`}function L(e){let a=e?.querySelector?.(k);a&&(!a.open&&typeof a.showModal=="function"&&a.showModal(),a.querySelector("input.new-name")?.select())}var j=l`
+  </dialog>`}function j(e){let a=e?.querySelector?.(k);a&&(!a.open&&typeof a.showModal=="function"&&a.showModal(),a.querySelector("input.new-name")?.select())}var L=l`
   dialog.lib-new {
     width: min(560px, calc(100vw - 32px)); padding: 0;
     border: 1px solid var(--wa-line); border-radius: 12px;
@@ -197,7 +197,7 @@ import{ra as x}from"./chunk-FU5232KD.js";import{k as b}from"./chunk-HP5CTAZX.js"
     .lt-row { padding: 7px 10px 7px 6px; gap: 8px; }
     .lt-pick-sel { max-width: 130px; }
   }
-`;var R=l`
+`;var H=l`
   :host { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; color: var(--wa-ink); }
   * { box-sizing: border-box; }
   svg { display: block; }
@@ -305,6 +305,44 @@ import{ra as x}from"./chunk-FU5232KD.js";import{k as b}from"./chunk-HP5CTAZX.js"
   .ap-name { min-width: 0; font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ap-card:not(.picking) .ap-open:hover .ap-name { text-decoration: underline; text-underline-offset: 2px; }
   .ap-detail { font-size: 11.5px; color: var(--wa-muted); }
+  /* Delete, at the right end of a card's name row, as a Complications card
+     has it: out on hover, with the keyboard in the card, or while its
+     question is open; always out on a touch screen, which has no hover. */
+  .ap-del {
+    display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; padding: 0;
+    border-radius: 6px; border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-muted); cursor: pointer;
+    opacity: 0; transition: opacity .12s ease-out;
+  }
+  .ap-card:hover .ap-del, .ap-card:focus-within .ap-del, .ap-card.asking .ap-del { opacity: 1; }
+  @media (hover: none) { .ap-del { opacity: 1; } }
+  .ap-del svg { width: 13px; height: 13px; }
+  .ap-del:hover:not(:disabled), .bd-act.danger:hover:not(:disabled) {
+    color: var(--error-color, #b42318); border-color: color-mix(in srgb, var(--error-color, #b42318) 45%, var(--wa-line));
+  }
+  .ap-del:focus-visible, .bd-act:focus-visible { outline: none; box-shadow: var(--wa-ring); opacity: 1; }
+  .ap-del:disabled, .bd-act:disabled { opacity: .45; cursor: default; }
+  /* The same, an icon button after a board row's name. */
+  .bd-act {
+    display: inline-flex; align-items: center; justify-content: center; flex: none; width: 26px; height: 26px; padding: 0;
+    border-radius: 6px; border: 1px solid transparent; background: none; color: var(--wa-muted); cursor: pointer;
+  }
+  .bd-act svg { width: 14px; height: 14px; }
+  /* A delete's question, under the card's devices or across the row. */
+  .ap-ask { display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 1.4; color: var(--wa-ink); }
+  .ap-ask b { font-weight: 600; }
+  .ap-ask-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ap-ask-btn {
+    display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 7px;
+    border: 1px solid var(--wa-line-strong); background: var(--wa-panel, var(--wa-card)); color: var(--wa-ink);
+    font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .ap-ask-btn:hover { background: var(--wa-hover); }
+  .ap-ask-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .ap-ask-btn.danger {
+    color: var(--error-color, #b42318);
+    border-color: color-mix(in srgb, var(--error-color, #b42318) 45%, var(--wa-line));
+    background: color-mix(in srgb, var(--error-color, #b42318) 10%, var(--wa-panel, var(--wa-card)));
+  }
   .ap-devs { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
   .ap-dev {
     display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 7px 2px 5px; border-radius: 999px;
@@ -329,4 +367,4 @@ import{ra as x}from"./chunk-FU5232KD.js";import{k as b}from"./chunk-HP5CTAZX.js"
     .pk-body { padding: 10px; }
     .ap-grid { gap: 8px; }
   }
-`;export{D as a,L as b,j as c,S as d,R as e};
+`;export{D as a,j as b,L as c,S as d,H as e};

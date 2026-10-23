@@ -479,6 +479,37 @@ describe("Multi select", () => {
     expect(t.home.lib.pages[PAGE1]).toBeUndefined();
   });
 
+  it("gives every card and row its own Delete, which asks in place, then deletes with Undo", async () => {
+    const t = tab();
+    showCards(t);
+    await t.ready();
+    const lib = () => (t.el.lib as { library: { pages: { id: string; name: string }[] } }).library;
+    expect(t.whole().split(`class=ap-del`).length - 1).toBe(lib().pages.length);
+    t.el.itemAsk = PAGE1.toUpperCase();
+    const ask = t.whole();
+    expect(ask).toContain("<b>Delete New Page 1?</b> It comes off Jesse Apple Watch and iPhone 15 Pro");
+    expect(ask).toContain(">Really delete<");
+    expect(ask).not.toContain(">This device<");
+    t.call("deleteEntries", [lib().pages.find((e) => e.id === PAGE1)]);
+    expect(laterToast()?.text).toBe("Deleted New Page 1.");
+    expect(lib().pages.some((e) => e.id === PAGE1)).toBe(false);
+    expect(t.sentOf("library/delete")).toEqual([]);
+    showTab(t, "all");
+    expect(t.whole().split(`bd-act danger`).length - 1).toBe(lib().pages.length);
+  });
+
+  it("offers This device or Every device on a focused device that shares the page", async () => {
+    const t = tab();
+    showTab(t, JESSE);
+    await t.ready();
+    t.el.itemAsk = PAGE1.toUpperCase();
+    const ask = t.whole();
+    expect(ask).toContain(">This device<");
+    expect(ask).toContain(">Every device<");
+    t.el.itemAsk = LIGHTS.toUpperCase();
+    expect(t.whole()).not.toContain(">This device<");
+  });
+
   it("puts the picked pages back on Undo, and sends nothing", async () => {
     const t = tab();
     showTab(t, "all");

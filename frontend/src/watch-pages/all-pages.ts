@@ -109,7 +109,7 @@ import { type WatchPage, isSmartWatchPage, watchPageTiles, watchPagesOf } from "
 import { watchSkippedTileNames } from "./phone-tiles-model.js";
 import { newWatchPage, newWatchPageName } from "./edit.js";
 import { newId } from "../model.js";
-import { rememberPreview } from "../library/item-mode.js";
+import { DELETE_EVERY_DEVICE, DELETE_THIS_DEVICE, rememberPreview } from "../library/item-mode.js";
 import { type NewItemForm, type NewPreview, newItemDialogStyles, openNewItemDialog, renderNewItemDialog } from "../library/new-dialog.js";
 import { newStatusPage, nextStatusPageName } from "../watch-status-pages/model.js";
 import { renderWatchPagePreview, renderWatchPageTitle, watchPagePreviewStyles, watchPreviewLayout, watchReflowPage, watchSkippedTilesLayout } from "./preview.js";
@@ -244,6 +244,8 @@ export class WaAllPages extends LitElement {
   @state() private asking = false;
   /** The line while a delete runs, and what the last one did. */
   @state() private bulkBusy?: string;
+  /** The item whose own Delete is asking, by `itemKey`. */
+  @state() private itemAsk?: string;
   @state() private bulkNote?: WatchPagesNote;
   /** What a tick said beyond the store's refusals (the free plan, what an
    * untick cleared), by `itemKey`. */
@@ -606,7 +608,10 @@ export class WaAllPages extends LitElement {
    * select. */
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.key !== "Escape") return;
-    if (this.asking && this.bulkBusy === undefined) {
+    if (this.itemAsk !== undefined) {
+      e.preventDefault();
+      this.itemAsk = undefined;
+    } else if (this.asking && this.bulkBusy === undefined) {
       e.preventDefault();
       this.asking = false;
     } else if (this.selecting && this.bulkBusy === undefined) {
@@ -636,6 +641,7 @@ export class WaAllPages extends LitElement {
 
   private startSelect(): void {
     this.selecting = true;
+    this.itemAsk = undefined;
     this.bulkNote = undefined;
   }
 
@@ -703,15 +709,21 @@ export class WaAllPages extends LitElement {
    * An item a device with unsaved edits has stays, and the bar says why.
    */
   private runDelete(): void {
+    const picked = this.pickedItems();
+    if (picked.length === 0) return;
+    this.asking = false;
+    this.anchor = undefined;
+    this.deleteEntries(picked);
+    this.pruneSelected();
+  }
+
+  /** `runDelete` for any items: Multi select's, or one card's or row's. */
+  private deleteEntries(entries: readonly LibraryItem[]): void {
     const hass = this.hassNow;
     const store = this.lib.store;
     if (hass === undefined || store === undefined || this.bulkBusy !== undefined) return;
-    const picked = this.pickedItems();
-    if (picked.length === 0) return;
     const devices = this.devices;
-    const plan = deletePlan(picked, devices, dirtyHere);
-    this.asking = false;
-    this.anchor = undefined;
+    const plan = deletePlan(entries, devices, dirtyHere);
     const kept = bulkResultText({ kind: plan.kind, gone: [], kept: plan.kept, failed: [], stuck: [], taps: [] });
     this.bulkNote = plan.kept.length > 0 ? kept : undefined;
     if (plan.items.length === 0) return;
@@ -730,7 +742,41 @@ export class WaAllPages extends LitElement {
         return note.kind === "ok" ? undefined : note.text;
       },
     });
-    this.pruneSelected();
+  }
+
+  /** Delete, at the end of a card's name row or after a board row's name:
+   * one press asks in place, as a Complications card does. */
+  private renderItemDelete(entry: LibraryItem, cls: string): TemplateResult {
+    return html`<button type="button" class=${cls} title=${`Delete ${entry.name}`} aria-label=${`Delete ${entry.name}`}
+      ?disabled=${this.bulkBusy !== undefined}
+      @click=${(e: Event) => { e.stopPropagation(); this.itemAsk = itemKey(entry); }}>${uiIcon("delete")}</button>`;
+  }
+
+  /**
+   * One item's delete question: what goes with it, then Really delete. On
+   * a focused device that shares it with another, This device (an untick
+   * there) or Every device, as the editor asks. An item a device with
+   * unsaved edits has says so, with only Close.
+   */
+  private renderItemAsk(entry: LibraryItem, devices: readonly LinkDevice[], focus?: LinkDevice): TemplateResult {
+    const plan = deletePlan([entry], devices, dirtyHere);
+    const ask = deleteAskText(plan, devices);
+    const close = () => { this.itemAsk = undefined; };
+    const gone = () => { close(); this.deleteEntries([entry]); };
+    const here = focus !== undefined && entry.owners.some((o) => sameId(o, focus.ownerId)) && entry.owners.some((o) => !sameId(o, focus.ownerId))
+      ? focus : undefined;
+    const can = plan.items.length > 0;
+    return html`<div class="ap-ask" role="alertdialog" aria-label=${`Delete ${entry.name}?`} @click=${(e: Event) => e.stopPropagation()}>
+      <span><b>Delete ${entry.name}?</b> ${ask.body}</span>
+      <span class="ap-ask-acts">
+        ${!can ? nothing : here === undefined
+          ? html`<button type="button" class="ap-ask-btn danger" @click=${gone}>Really delete</button>`
+          : html`<button type="button" class="ap-ask-btn danger" title=${`Take it off ${here.name} only`}
+              @click=${() => { close(); void this.tick(entry, here.ownerId, false); }}>${DELETE_THIS_DEVICE}</button>
+            <button type="button" class="ap-ask-btn danger" title="Delete it on every device" @click=${gone}>${DELETE_EVERY_DEVICE}</button>`}
+        <button type="button" class="ap-ask-btn" @click=${close}>${can ? "Cancel" : "Close"}</button>
+      </span>
+    </div>`;
   }
 
   // ── drawing ────────────────────────────────────────────────────────────
@@ -920,7 +966,8 @@ export class WaAllPages extends LitElement {
     const opensOn = openDevice(entry, devices);
     const title = this.openTitle(entry);
     const click = (e: MouseEvent) => this.cardClick(e, entry);
-    return html`<div class="ap-card ${selecting ? "picking" : ""} ${picked ? "picked" : ""}" role="listitem" data-card=${key}
+    const asking = !selecting && this.itemAsk === key;
+    return html`<div class="ap-card ${selecting ? "picking" : ""} ${picked ? "picked" : ""} ${asking ? "asking" : ""}" role="listitem" data-card=${key}
       @click=${(e: MouseEvent) => { if (selecting) click(e); }}>
       <div class="ap-top">
         ${selecting ? html`<input type="checkbox" class="pk-card-pick" .checked=${live(picked)} ?disabled=${this.bulkBusy !== undefined}
@@ -933,11 +980,13 @@ export class WaAllPages extends LitElement {
           <b class="ap-name">${entry.name}</b>
           <small class="ap-detail">${cardDetail(entry)}</small>
         </button>
+        ${selecting ? nothing : this.renderItemDelete(entry, "ap-del")}
       </div>
       <button type="button" class="ap-thumb" tabindex="-1" aria-hidden="true" title=${title} @click=${click}>
         ${entry.kind === "status_pages" ? this.renderStatusThumb(entry) : this.renderThumb(library, entry, opensOn)}
       </button>
       ${this.renderCardTicks(library, entry, devices, waiting)}
+      ${asking ? this.renderItemAsk(entry, devices) : nothing}
     </div>`;
   }
 
@@ -1044,6 +1093,9 @@ export class WaAllPages extends LitElement {
     };
     if (selecting) {
       row.select = { picked: this.selected.has(key), disabled: this.bulkBusy !== undefined, label: this.openTitle(entry), onPick: (e) => this.pick(entry, e.shiftKey) };
+    } else {
+      row.actions = this.renderItemDelete(entry, "bd-act danger");
+      if (this.itemAsk === key) row.under = this.renderItemAsk(entry, devices, focus?.device);
     }
     return row;
   }

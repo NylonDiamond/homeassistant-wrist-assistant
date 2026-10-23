@@ -26,6 +26,7 @@ import {
   menusDeviceFoot,
   menusEmptyText,
   NEW_MENU_ADMIN_TEXT,
+  menuInUseText,
   newMenuMadeText,
   newMenuName,
   newMenuSections,
@@ -154,7 +155,7 @@ describe("the Menus tab", () => {
     t.el.focusOwner = focus;
   }
 
-  it("draws the board by default: a row per menu in two sections, a round dot per device, and Delete only on a menu no device uses", async () => {
+  it("draws the board by default: a row per menu in two sections, a round dot per device, and Delete on every row", async () => {
     const t = tab();
     show(t, "board");
     await t.ready();
@@ -168,7 +169,7 @@ describe("the Menus tab", () => {
     expect(text).toMatch(/bd-box ticked rd/);
     // A dot not taken says which menu it replaces there.
     expect(text).toContain("Use this menu on Chen Watch. Replaces Chen's menu there.");
-    expect(text.split(`aria-label=Delete `).length - 1).toBe(1);
+    expect(text.split(`aria-label=Delete `).length - 1).toBe(4);
     for (const gone of ["pk-tab", ">Device<", "Link", "Same as"]) expect(text).not.toContain(gone);
   });
 
@@ -188,8 +189,25 @@ describe("the Menus tab", () => {
     expect(text).toContain("Search by menu or device");
     expect(text).not.toContain("Multi select");
     for (const gone of ["ap-dev-open", ">Devices<", "Link", "Same as", "Not linked"]) expect(text).not.toContain(gone);
-    // Only the menu no device uses can be deleted from its card.
-    expect(text.split(">Delete<").length - 1).toBe(1);
+    // Delete on every card's name row, as a Complications card has it.
+    expect(text.split(`class=ap-del`).length - 1).toBe(4);
+  });
+
+  it("asks before a delete, and says how to free a menu a device uses", async () => {
+    const t = tab();
+    show(t);
+    await t.ready();
+    t.el.deleteAsk = SPARE;
+    expect(t.whole()).toContain("It is on no device yet. You can undo it for 10 seconds after.");
+    expect(t.whole()).toContain(">Really delete<");
+    t.el.deleteAsk = HOME_MENU;
+    const busy = t.whole();
+    expect(busy).toContain("Home menu is in use.");
+    expect(busy).toMatch(/uses? it\. To delete it, pick another menu for (that device|each of them) first\./);
+    expect(busy).not.toContain(">Really delete<");
+    expect(busy).toContain(">Close<");
+    expect(menuInUseText(["Chen Watch"])).toBe("Chen Watch uses it. To delete it, pick another menu for that device first.");
+    expect(menuInUseText(["A", "B"])).toBe("A and B use it. To delete it, pick another menu for each of them first.");
   });
 
   it("moves a device onto a menu with a tick, with item_id and its unit", async () => {

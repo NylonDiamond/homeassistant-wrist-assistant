@@ -58,6 +58,7 @@ import {
   menusDeviceFoot,
   menusDirtyText,
   menusEmptyText,
+  menuInUseText,
   newMenuMadeText,
   newMenuName,
   newMenuSections,
@@ -498,33 +499,44 @@ export class WaAllMenus extends LitElement {
   private renderCard(library: Library, menu: LibraryMenu, devices: readonly LinkDevice[], waiting: ReadonlySet<string>): TemplateResult {
     const opensOn = openMenuDevice(menu, devices);
     const title = libraryEditTitle(menu.name);
-    return html`<div class="ap-card" role="listitem" data-card=${menu.id}>
+    const asking = this.deleteAsk === menu.id;
+    return html`<div class="ap-card ${asking ? "asking" : ""}" role="listitem" data-card=${menu.id}>
       <div class="ap-top">
         <button type="button" class="ap-open" title=${title} @click=${() => this.open(menu)}>
           <b class="ap-name">${menu.name}</b>
           <small class="ap-detail">${menuDetail(menu)}</small>
         </button>
+        ${this.renderDeleteButton(menu, "ap-del")}
       </div>
       <button type="button" class="ap-thumb" tabindex="-1" aria-hidden="true" title=${title} @click=${() => this.open(menu)}>
         ${this.renderThumb(library, menu, opensOn, PIC_H)}
       </button>
       ${this.renderCardTicks(library, menu, devices, waiting)}
-      ${menu.owners.length === 0 ? this.renderDelete(menu) : nothing}
+      ${asking ? this.renderDeleteAsk(menu, devices) : nothing}
     </div>`;
   }
 
-  /** Delete on a menu no device uses: one press asks in place. */
-  private renderDelete(menu: LibraryMenu): TemplateResult {
-    return this.deleteAsk === menu.id ? this.renderDeleteAsk(menu) : html`<button type="button" class="am-btn danger am-del" title=${`Delete ${menu.name}. It is on no device yet.`}
-      @click=${(e: Event) => { e.stopPropagation(); this.deleteAsk = menu.id; }}>${uiIcon("delete")}<span>Delete</span></button>`;
+  /** Delete, at the end of a card's name row or after a board row's name:
+   * one press asks in place, as a Complications card does. */
+  private renderDeleteButton(menu: LibraryMenu, cls: string): TemplateResult {
+    return html`<button type="button" class=${cls} title=${`Delete ${menu.name}`} aria-label=${`Delete ${menu.name}`}
+      @click=${(e: Event) => { e.stopPropagation(); this.deleteAsk = menu.id; }}>${uiIcon("delete")}</button>`;
   }
 
-  private renderDeleteAsk(menu: LibraryMenu): TemplateResult {
-    return html`<div class="am-del-ask" role="alertdialog" aria-label=${`Delete ${menu.name}?`}>
-      <span><b>Delete ${menu.name}?</b> It is on no device yet. ${UNDO_AFTER_TEXT}</span>
-      <span class="am-new-acts">
-        <button type="button" class="am-btn danger" @click=${() => this.deleteMenu(menu)}>Really delete</button>
-        <button type="button" class="am-btn" @click=${() => { this.deleteAsk = undefined; }}>Cancel</button>
+  /** The question. A menu a device uses cannot go (`in_use`), so for one
+   * the question says which devices use it and how to free it, with only
+   * Close. */
+  private renderDeleteAsk(menu: LibraryMenu, devices: readonly LinkDevice[]): TemplateResult {
+    const close = () => { this.deleteAsk = undefined; };
+    const users = [...new Set(menu.owners.map((o) => devices.find((d) => sameId(d.ownerId, o))?.name ?? "A device"))];
+    const free = users.length === 0;
+    return html`<div class="ap-ask" role="alertdialog" aria-label=${`Delete ${menu.name}?`} @click=${(e: Event) => e.stopPropagation()}>
+      ${free
+        ? html`<span><b>Delete ${menu.name}?</b> It is on no device yet. ${UNDO_AFTER_TEXT}</span>`
+        : html`<span><b>${menu.name} is in use.</b> ${menuInUseText(users)}</span>`}
+      <span class="ap-ask-acts">
+        ${free ? html`<button type="button" class="ap-ask-btn danger" @click=${() => this.deleteMenu(menu)}>Really delete</button>` : nothing}
+        <button type="button" class="ap-ask-btn" @click=${close}>${free ? "Cancel" : "Close"}</button>
       </span>
     </div>`;
   }
@@ -589,7 +601,6 @@ export class WaAllMenus extends LitElement {
       return { chip: { ...chip, title }, onPick: () => this.use(menu, chip.ownerId) };
     });
     const opensOn = focus !== undefined && menu.owners.some((o) => sameId(o, focus.ownerId)) ? focus : openMenuDevice(menu, devices);
-    const unused = menu.owners.length === 0;
     const row: BoardRow = {
       key: menu.id, name: menu.name, detail: menuDetail(menu),
       picture: renderMenuRowPicture({
@@ -612,11 +623,9 @@ export class WaAllMenus extends LitElement {
         title=${busy ? "Duplicating…" : duplicateMenuTitle(menu.name, focus.name)} aria-label=${duplicateMenuTitle(menu.name, focus.name)}
         @click=${(e: Event) => { e.stopPropagation(); void this.duplicate(menu, focus); }}>${uiIcon("duplicate")}</button>`;
     }
-    if (unused) {
-      if (this.deleteAsk === menu.id) row.under = this.renderDeleteAsk(menu);
-      else row.actions = html`<button type="button" class="bd-act danger" title=${`Delete ${menu.name}. It is on no device yet.`}
-        aria-label=${`Delete ${menu.name}`} @click=${(e: Event) => { e.stopPropagation(); this.deleteAsk = menu.id; }}>${uiIcon("delete")}</button>`;
-    }
+    const del = this.renderDeleteButton(menu, "bd-act danger");
+    row.actions = row.actions === undefined ? del : html`${row.actions}${del}`;
+    if (this.deleteAsk === menu.id) row.under = this.renderDeleteAsk(menu, devices);
     return row;
   }
 
@@ -689,18 +698,6 @@ export class WaAllMenus extends LitElement {
       border-color: color-mix(in srgb, var(--error-color, #b42318) 45%, var(--wa-line));
       background: color-mix(in srgb, var(--error-color, #b42318) 10%, var(--wa-panel, var(--wa-card)));
     }
-    .am-del { align-self: flex-start; height: 24px; font-size: 11.5px; }
-    .am-del-ask { display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 1.4; color: var(--wa-ink); }
-    .am-del-ask b { font-weight: 600; }
-    /* Delete on a board row of a menu no device uses: an icon button after
-       its name. */
-    .bd-act {
-      display: inline-flex; align-items: center; justify-content: center; flex: none; width: 26px; height: 26px; padding: 0;
-      border-radius: 6px; border: 1px solid transparent; background: none; color: var(--wa-muted); cursor: pointer;
-    }
-    .bd-act svg { width: 14px; height: 14px; }
-    .bd-act.danger:hover { color: var(--error-color, #b42318); border-color: color-mix(in srgb, var(--error-color, #b42318) 45%, var(--wa-line)); }
-    .bd-act:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   `];
 }
 

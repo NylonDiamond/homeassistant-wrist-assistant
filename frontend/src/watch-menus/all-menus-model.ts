@@ -18,7 +18,7 @@
 import { MENU_UNITS, MENU_UNIT_SECTIONS, type MenuUnit } from "../library/client.js";
 import { type Library, type LibraryMenu, MENU_UNIT_TITLES, libraryMenus, menuDocument, otherMenus, sameId } from "../library/model.js";
 import { matchesSearch } from "../watch-pages/all-pages-model.js";
-import { type LinkDevice, deviceWord } from "../watch-pages/devices.js";
+import { type LinkDevice, deviceWord, joinWords } from "../watch-pages/devices.js";
 import { WAIT_FOR_IPHONE_TEXT } from "../watch-settings.js";
 import { menuRowCount } from "./menu-view.js";
 import { type MenusDocument, watchMenusDefaults } from "./model.js";
@@ -112,6 +112,12 @@ export function newMenuName(library: Library | undefined, unit: MenuUnit): strin
  * it until one is ticked. */
 export function newMenuText(unit: MenuUnit): string {
   return `It starts as the app's own ${MENU_UNIT_TITLES[unit]}, on no device yet.`;
+}
+
+/** Why a menu in use cannot be deleted, and how to free it. */
+export function menuInUseText(users: readonly string[]): string {
+  const one = users.length === 1;
+  return `${joinWords(users)} ${one ? "uses" : "use"} it. To delete it, pick another menu for ${one ? "that device" : "each of them"} first.`;
 }
 
 /** What New menu says once the menu is made. */
