@@ -129,6 +129,9 @@ export interface StatusPagesViewHost {
    * has no drag and no Move up or down. Delete stays, through
    * `deletePage`. */
   readonly single?: boolean;
+  /** Library mode: the filter at the right of the Status pages card's head
+   * (every status page, or those on no device). */
+  readonly listTools?: TemplateResult;
   /** Apply `change` to the document as it is now: one undo step, or with
    * `coalesce` a step the next edits with the same key replace. */
   edit(change: (document: StatusPagesDocument) => StatusPagesDocument, coalesce?: string): boolean;
@@ -450,8 +453,9 @@ export function renderPagesCard(host: StatusPagesViewHost): TemplateResult {
   return html`<section class="card lc sp-pages-card" aria-label="Status pages" style="--c: var(--wa-lc-pages, #26a69a); --thumb-w: 44px; --thumb-h: 22px">
     <div class="lc-head">
       <span class="swatch">${uiIcon("list")}</span><span class="lc-title">Status pages</span>
-      <span class="lc-sub" title=${STATUS_PAGES_CARD_LINE}>${plural(pages.length, "page", "pages")}</span>
+      ${host.single === true ? nothing : html`<span class="lc-sub" title=${STATUS_PAGES_CARD_LINE}>${plural(pages.length, "page", "pages")}</span>`}
       <span class="spacer"></span>
+      ${host.listTools ?? nothing}
       ${host.single === true ? nothing : html`<button type="button" class="lc-btn pri sp-add-page" aria-label="Add status page" ?disabled=${host.busy}
         title="Add a status page" @click=${() => addPage(host)}>${uiIcon("plus")}<span>Add</span></button>`}
     </div>

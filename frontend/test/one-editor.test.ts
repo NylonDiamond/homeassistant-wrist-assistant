@@ -7,11 +7,16 @@ import { nothing } from "lit";
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
 import { libraryOf } from "../src/library/model.js";
-import { previewOwner, renderStripSaved, startPreviewKind } from "../src/library/item-mode.js";
+import { previewLabel, previewOwner, renderPreviewPicker, renderStripSaved, startPreviewKind, startSideBySide } from "../src/library/item-mode.js";
+import { itemWhereText, listedItems } from "../src/library/item-list.js";
+import { onEachDeviceLines, ordinal, placeText, syncText } from "../src/library/on-each-device.js";
+import { libraryItems } from "../src/library/model.js";
+import { deviceDifferenceText } from "../src/watch-pages/device-differences.js";
+import type { WatchPage } from "../src/watch-pages/model.js";
 import { renderTicks } from "../src/library/ticks.js";
 import { NO_RECORD_TEXT, changeDevicePicks, changedPicks } from "../src/watch-pages/all-pages-picks.js";
 import { duplicateMenuTitle, duplicatedMenuText } from "../src/watch-menus/all-menus-model.js";
-import { CHEN, DEVICES, JESSE, LIGHTS, PAGE1, summary } from "./library-fixture.js";
+import { CHEN, DEVICES, JESSE, LIGHTS, LONELY, PAGE1, PHONE, STARTER, summary } from "./library-fixture.js";
 import { flat } from "./library-editor-home.js";
 
 const owner = (o: Partial<OwnerSummary>): OwnerSummary => ({
@@ -84,5 +89,99 @@ describe("Duplicate on a focused device's shared menu", () => {
   it("names the device and what the copy does", () => {
     expect(duplicateMenuTitle("Home", "Jesse Apple Watch")).toBe("Duplicate Home for Jesse Apple Watch. The other devices keep this one.");
     expect(duplicatedMenuText("Jesse Apple Watch's menu", "Jesse Apple Watch")).toBe(`Jesse Apple Watch uses its own copy now, "Jesse Apple Watch's menu". Edits to it change only Jesse Apple Watch.`);
+  });
+});
+
+describe("Side by side", () => {
+  const watch = owner({ owner_watch_id: "w" });
+  const phone = owner({ owner_watch_id: "p", device_kind: "iphone", phone_pages: true });
+
+  it("opens Side by side for a page on both kinds or on none, alone for one kind", () => {
+    expect(startSideBySide([watch, phone], ["w", "p"], true)).toBe(true);
+    expect(startSideBySide([watch, phone], [], true)).toBe(true);
+    expect(startSideBySide([watch, phone], ["w"], true)).toBe(false);
+    expect(startSideBySide([watch, phone], ["p"], true)).toBe(false);
+    // A home with no iPhone, or none kept: one preview.
+    expect(startSideBySide([watch], [], true)).toBe(false);
+    expect(startSideBySide([watch, phone], [], false)).toBe(false);
+  });
+
+  it("labels each preview with the devices of its kind that have it", () => {
+    expect(previewLabel("watch", ["Jesse Apple Watch", "Chen Watch"])).toBe("Watch · Jesse Apple Watch, Chen Watch");
+    expect(previewLabel("iphone", [])).toBe("iPhone · on no iPhone yet");
+  });
+
+  it("draws a third thumbnail only when asked", () => {
+    expect(flat(renderPreviewPicker("watch", () => undefined))).not.toContain("Side by side");
+    expect(flat(renderPreviewPicker("watch", () => undefined, { on: true, pick: () => undefined }))).toContain("Side by side");
+  });
+});
+
+describe("the differences line under each preview", () => {
+  const page: WatchPage = {
+    id: "P",
+    name: "Living",
+    items: [
+      { id: "a", entityId: "light.desk" },
+      { id: "b", entityId: "map.AAAA0000-0000-4000-8000-0000000000A1" },
+      { id: "c", entityId: "web.AAAA0000-0000-4000-8000-0000000000A2", customLabel: "Garden cam" },
+      { id: "d", entityId: "camera.door", cameraTileLive: true },
+      { id: "e", entityId: "sensor.temp", sensorChart: "24h" },
+    ],
+  };
+
+  it("says only what each kind does otherwise", () => {
+    expect(deviceDifferenceText(page, "watch")).toBe("Skips Map and Garden cam. The camera shows a still picture. The sensor shows no chart.");
+    expect(deviceDifferenceText(page, "iphone")).toBe("Also shows Map and Garden cam. The camera plays live. The sensor shows a chart.");
+  });
+
+  it("has no line for a page both kinds draw the same", () => {
+    const plain: WatchPage = { id: "Q", name: "Lights", items: [{ id: "a", entityId: "light.desk" }, { id: "b", entityId: "camera.door" }] };
+    expect(deviceDifferenceText(plain, "watch")).toBe("");
+    expect(deviceDifferenceText(plain, "iphone")).toBe("");
+  });
+});
+
+describe("On each device", () => {
+  const lib = libraryOf(summary());
+
+  it("lists each device that has the page, with its place and Hide here", () => {
+    const lines = onEachDeviceLines(lib, "pages", PAGE1, DEVICES);
+    expect(lines.map((l) => [l.name, l.place, l.count, l.hidden])).toEqual([
+      ["Jesse Apple Watch", 2, 2, true],
+      ["iPhone 15 Pro", 1, 1, false],
+    ]);
+    expect(lines.every((l) => l.sync === undefined)).toBe(true);
+    expect(placeText(lines[0]!, "pages")).toBe("2nd of 2 pages");
+    expect(placeText(lines[1]!, "pages")).toBe("Its only page");
+    expect(onEachDeviceLines(lib, "pages", LONELY, DEVICES)).toEqual([]);
+  });
+
+  it("reads the sync word from the summary's numbers", () => {
+    const lines = onEachDeviceLines(lib, "status_pages", STARTER, DEVICES, {
+      owners: {
+        [CHEN]: { status_pages: { revision: 4, delivered_revision: 4 } },
+        [JESSE]: { status_pages: { revision: 5, delivered_revision: 3 } },
+      },
+    } as never);
+    expect(lines.map((l) => [l.ownerId, syncText(l)])).toEqual([[CHEN, "Synced"], [JESSE, "Waiting for the watch"], [PHONE, ""]]);
+    expect(placeText(lines[1]!, "status_pages")).toBe("2nd of 2 status pages");
+  });
+
+  it("counts places as people say them", () => {
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 103].map(ordinal)).toEqual(["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "103rd"]);
+  });
+});
+
+describe("the left list in the one editor", () => {
+  const lib = libraryOf(summary());
+
+  it("keeps every page, or with On no device only those and the open one", () => {
+    const items = libraryItems(lib, "pages");
+    expect(listedItems(items, PAGE1, "all")).toHaveLength(items.length);
+    expect(listedItems(items, PAGE1, "none").map((e) => e.id).sort()).toEqual([LONELY, PAGE1].sort());
+    expect(itemWhereText({ owners: [] })).toBe("On no device");
+    expect(itemWhereText({ owners: [JESSE] })).toBe("On 1 device");
+    expect(itemWhereText({ owners: [JESSE, PHONE] })).toBe("On 2 devices");
   });
 });

@@ -205,6 +205,8 @@ export function watchPageThemeSwatch(theme: string): string {
 export const PAGE_WATCH_FOLD: FoldId = Object.freeze({ module: KEY, section: "watch" });
 /** The In the page switcher card's fold (`switcher-settings.ts`'s rows). */
 export const PAGE_SWITCHER_FOLD: FoldId = Object.freeze({ module: KEY, section: "switcher" });
+/** The one editor's On each device card's fold (`library/on-each-device.ts`). */
+export const PAGE_DEVICES_FOLD: FoldId = Object.freeze({ module: KEY, section: "devices" });
 
 /** The fold the inspector's Collapse all turns for the Look card. */
 export function pageLookFoldIds(): FoldId[] {

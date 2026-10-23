@@ -135,6 +135,10 @@ export interface WatchStatusPagesViewInput {
   /** Library mode: one status page edited in the library, with no device
    * (`library/item-mode.ts`). `ownerId` is then ignored. */
   libraryItem?: LibraryItemRef;
+  /** Library mode: open another item of the library, from the list. */
+  onOpenItem?: (id: string) => void;
+  /** Library mode: open a device's board focused on it (On each device). */
+  onOpenBoard?: (ownerId: string) => void;
   onLoaded: () => void;
 }
 
@@ -151,7 +155,8 @@ export function renderWatchStatusPagesView(input: WatchStatusPagesViewInput): Te
           .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}
           .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack}
           .barActions=${input.actions} .shellOwnsWatch=${input.shell === true} .barHost=${input.barHost}
-          .phones=${input.phones === true} .libraryItem=${input.libraryItem}></wa-status-pages-editor>`
+          .phones=${input.phones === true} .libraryItem=${input.libraryItem}
+          .onOpenItem=${input.onOpenItem} .onOpenBoard=${input.onOpenBoard}></wa-status-pages-editor>`
       : html`<div class="wp-loading">
           ${input.shell === true ? nothing : (input.libraryItem === undefined
             ? html`<button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>`

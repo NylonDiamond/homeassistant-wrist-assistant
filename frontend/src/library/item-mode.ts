@@ -180,18 +180,65 @@ function previewArt(kind: PreviewKind): TemplateResult {
     : svg`<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="1" width="10" height="18" rx="2.5"/><rect class="pv-notch" x="8" y="2.2" width="4" height="1.2" rx=".6"/></svg>`;
 }
 
+/** The watch and the iPhone together, for Side by side. */
+function sideBySideArt(): TemplateResult {
+  return svg`<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="1" y="5.5" width="7.5" height="9" rx="2.4"/><rect x="11" y="2" width="7.5" height="16" rx="2"/></svg>`;
+}
+
+/** Side by side in the picker: whether it is on, and its pick. */
+export interface SideBySidePick {
+  on: boolean;
+  pick: () => void;
+}
+
 /** The strip's "Preview on" picker: the watch and iPhone thumbnails, the
- * shown one pressed. A pick changes what the editor draws on and nothing
+ * shown one pressed, and with `both` a third, Side by side, which draws the
+ * other kind too. A pick changes what the editor draws on and nothing
  * else. */
-export function renderPreviewPicker(shown: PreviewKind, onPick: (kind: PreviewKind) => void): TemplateResult {
-  const thumb = (kind: PreviewKind, title: string) => html`<button type="button" class="lib-preview-thumb ${kind} ${shown === kind ? "on" : ""}"
-    aria-pressed=${shown === kind ? "true" : "false"} title=${title} aria-label=${title}
-    @click=${() => { if (shown !== kind) { rememberPreview(kind); onPick(kind); } }}>${previewArt(kind)}</button>`;
+export function renderPreviewPicker(shown: PreviewKind, onPick: (kind: PreviewKind) => void, both?: SideBySidePick): TemplateResult {
+  const duo = both?.on === true;
+  const thumb = (kind: PreviewKind, title: string) => {
+    const on = shown === kind && !duo;
+    return html`<button type="button" class="lib-preview-thumb ${kind} ${on ? "on" : ""}"
+      aria-pressed=${on ? "true" : "false"} title=${title} aria-label=${title}
+      @click=${() => { if (!on) { rememberPreview(kind); onPick(kind); } }}>${previewArt(kind)}</button>`;
+  };
   return html`<span class="lib-preview" role="group" aria-label="Preview on" title="What this is drawn on. Nothing is changed on any device.">
     <span class="lib-preview-l">Preview on</span>
     ${thumb("watch", "Preview on a watch")}
     ${thumb("iphone", "Preview on an iPhone")}
+    ${both === undefined ? nothing : html`<button type="button" class="lib-preview-thumb duo ${duo ? "on" : ""}"
+      aria-pressed=${duo ? "true" : "false"} title="Side by side: a watch and an iPhone" aria-label="Side by side: a watch and an iPhone"
+      @click=${() => { if (!duo) both.pick(); }}>${sideBySideArt()}</button>`}
   </span>`;
+}
+
+/** Whether an item opens Side by side: the home has a watch and an iPhone,
+ * and the item is on both kinds or on no device yet. On one kind only, it
+ * opens on that kind alone. */
+export function startSideBySide(devices: readonly OwnerSummary[], owners: readonly string[] | undefined, phones: boolean): boolean {
+  if (!phones) return false;
+  const kinds = new Set(devices.map((d) => isPhoneId(devices, d.owner_watch_id)));
+  if (kinds.size < 2) return false;
+  const has = new Set((owners ?? []).flatMap((id) => {
+    const d = devices.find((o) => o.owner_watch_id.toUpperCase() === id.toUpperCase());
+    return d === undefined ? [] : [isPhoneId(devices, d.owner_watch_id)];
+  }));
+  return has.size !== 1;
+}
+
+/** The other kind of device. */
+export function otherPreviewKind(kind: PreviewKind): PreviewKind {
+  return kind === "watch" ? "iphone" : "watch";
+}
+
+/** The label over one preview of Side by side: the kind, then the devices
+ * of that kind that have the item ("Watch · Jesse Apple Watch"), or that
+ * none of them has it. */
+export function previewLabel(kind: PreviewKind, names: readonly string[]): string {
+  const word = kind === "watch" ? "Watch" : "iPhone";
+  if (names.length === 0) return `${word} · on no ${kind === "watch" ? "watch" : "iPhone"} yet`;
+  return `${word} · ${names.join(", ")}`;
 }
 
 /** The library mode line in the bar, before the picker. */
@@ -256,6 +303,27 @@ export const libraryModeStyles = css`
   .lib-preview-thumb.on { color: var(--wa-accent, var(--wa-ink)); border-color: color-mix(in srgb, currentColor 45%, transparent); background: color-mix(in srgb, currentColor 14%, transparent); cursor: default; }
   .lib-preview-thumb.on svg { fill: color-mix(in srgb, currentColor 22%, transparent); }
   .lib-preview-thumb.on svg .pv-notch { fill: var(--wa-card); }
+  .lib-preview-thumb.duo { width: 30px; }
+  /* Side by side: the edited preview and the other kind's, each under its
+     label and over its differences line, watch first. They wrap one under
+     the other when the canvas is too narrow for both. */
+  .lib-duo { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 18px 28px; width: 100%; }
+  .lib-duo-side { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+  .lib-duo-side.watch { order: 0; }
+  .lib-duo-side.iphone { order: 1; }
+  .lib-duo-l {
+    display: inline-flex; align-items: center; gap: 6px; max-width: 100%; font-size: 12.5px; font-weight: 600; color: var(--wa-ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .lib-duo-l .lib-duo-tag { font-size: 11px; font-weight: 600; color: var(--wa-muted); }
+  .lib-duo-other {
+    position: relative; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; border-radius: 12px;
+  }
+  .lib-duo-other > * { pointer-events: none; }
+  .lib-duo-other:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--wa-accent, var(--wa-ink)) 45%, transparent); }
+  .lib-duo-other:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  /* The differences line: only what this kind does otherwise. */
+  .lib-diff { max-width: 340px; font-size: 12px; line-height: 1.4; color: var(--wa-muted); text-align: center; }
   .lib-mode-tag {
     display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 999px;
     border: 1px solid var(--wa-line); color: var(--wa-muted); font-size: 11.5px; font-weight: 600;

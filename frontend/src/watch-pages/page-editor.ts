@@ -55,6 +55,7 @@ import {
   type OwnerSummary,
   type WatchConfigHistoryEntry,
   type WatchConfigRecord,
+  type WatchConfigSummary,
   fetchCloudStatus,
   fetchConfigEntries,
   fetchList,
@@ -63,6 +64,7 @@ import {
   fetchWatchConfig,
   fetchWatchConfigHistory,
   fetchWatchConfigHistoryEntry,
+  fetchWatchConfigSummary,
   renderTemplates,
   restoreWatchConfig,
   saveWatchConfig,
@@ -78,7 +80,7 @@ import {
 import { watchCameraLiveEntity, watchCameraRows, watchEditorLiveCameras } from "./camera-live.js";
 import { clearPageRefs as clearPageRefsOn } from "./page-links-io.js";
 import { deviceColor, deviceColorsCache } from "../device-colors.js";
-import { type LibraryItem, devicesFor, libraryItem, pagesDocumentFor, sameId } from "../library/model.js";
+import { type LibraryItem, devicesFor, libraryItem, libraryItems, pagesDocumentFor, sameId } from "../library/model.js";
 import { linkBadgeStyles, renderLinkBadge } from "../library/link-badge.js";
 import { renderPageRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
@@ -92,15 +94,23 @@ import {
   type LibraryItemRef,
   libraryModeStyles,
   libraryOwners,
+  otherPreviewKind,
   type PreviewKind,
+  previewLabel,
   previewOwner,
   renderBarDevices,
   renderLibraryTag,
   renderPreviewPicker,
   sameLibraryItem,
   startPreviewKind,
+  startSideBySide,
   summaryRevision,
 } from "../library/item-mode.js";
+import { onEachDeviceLines, onEachDeviceStyles, renderOnEachDevice } from "../library/on-each-device.js";
+import { type ItemFilter, itemListStyles, itemWhereText, listedItems, renderItemFilter, renderNoneLeft } from "../library/item-list.js";
+import { changeDevicePicks } from "./all-pages-picks.js";
+import { picksIO } from "./all-pages-io.js";
+import { deviceDifferenceText } from "./device-differences.js";
 import {
   dirtyElsewhereText,
   hereTickText,
@@ -316,6 +326,7 @@ import {
 } from "./tile-settings.js";
 import { type WatchGroupActions, renderPickedGroupCard, renderTileGroupLine } from "./group-settings.js";
 import {
+  PAGE_DEVICES_FOLD,
   PAGE_SWITCHER_FOLD,
   PAGE_WATCH_FOLD,
   WATCH_PAGE_CHIP_COLOR,
@@ -814,12 +825,28 @@ export class WaPageEditor extends LitElement {
    * status pages and pages; the draft is kept under `libraryDraftKey`, and
    * nothing of a device's own (order, Hide here, history) is shown. */
   @property({ attribute: false }) libraryItem: LibraryItemRef | undefined = undefined;
+  /** Library mode: open another page of the library, from the Pages card. */
+  @property({ attribute: false }) onOpenItem?: (id: string) => void;
+  /** Library mode: open a device's board focused on it, where its order is
+   * changed (the On each device card). */
+  @property({ attribute: false }) onOpenBoard?: (ownerId: string) => void;
   private readonly headBar = new HeadBar(this);
 
   @state() private watchId?: string;
   /** Library mode's Preview on: the kind of device drawn on. `watchId` is
    * then the home's first device of that kind, or undefined with none. */
   @state() private previewKind: PreviewKind = "watch";
+  /** Library mode's Side by side: the other kind is drawn beside the edited
+   * preview, from the reference of that kind's first device. */
+  @state() private sideBySide = false;
+  /** Library mode's Pages card: every page, or only those on no device. */
+  @state() private listFilter: ItemFilter = "all";
+  /** Library mode: an On each device Hide here write is running. */
+  @state() private hideBusy = false;
+  /** Library mode: the delivery numbers of every device's records, for the
+   * On each device card's sync words; read on open and after each write. */
+  @state() private configSummary?: WatchConfigSummary;
+  private configSummarySeq = 0;
   /** The library page open now, in library mode. */
   private openedItem?: LibraryItemRef;
   /** Library mode's preview kind was picked with the library read. */
@@ -1585,6 +1612,7 @@ export class WaPageEditor extends LitElement {
     const owners = libraryOwners(this.lib.library, ref);
     if (!sameLibraryItem(ref, this.openedItem) || !this.previewSettled) {
       this.previewKind = startPreviewKind(this.watches, ref, owners);
+      this.sideBySide = startSideBySide(this.watches, owners, this.phones);
       this.previewSettled = owners !== undefined;
     }
     const preview = previewOwner(this.watches, this.previewKind, [ref.from, ...(owners ?? [])]);
@@ -1592,6 +1620,7 @@ export class WaPageEditor extends LitElement {
     if (!sameLibraryItem(ref, this.openedItem)) {
       this.openedItem = ref;
       this.openItem();
+      void this.readConfigSummary();
       return;
     }
     const moved = summaryRevision(this.lib.library, ref);
@@ -1602,10 +1631,47 @@ export class WaPageEditor extends LitElement {
     }
   }
 
-  /** Preview on: the kind picked, drawn on the home's first device of it. */
-  private pickPreview(kind: PreviewKind): void {
+  /** Preview on: the kind picked, drawn on the home's first device of it.
+   * `keepBoth` keeps Side by side on (a click on the other preview swaps
+   * which kind is edited); otherwise a kind's thumbnail shows it alone. */
+  private pickPreview(kind: PreviewKind, keepBoth = false): void {
+    this.sideBySide = keepBoth;
+    if (kind === this.previewKind) return;
     this.previewKind = kind;
     this.openPreview(previewOwner(this.watches, kind, [this.libraryItem?.from, ...(libraryOwners(this.lib.library, this.libraryItem!) ?? [])]));
+  }
+
+  /** Read every device's delivery numbers, for the On each device card. An
+   * integration older than the summary leaves the sync words out. */
+  private async readConfigSummary(): Promise<void> {
+    const hass = this.hass;
+    if (hass === undefined || this.libraryItem === undefined) return;
+    const seq = ++this.configSummarySeq;
+    try {
+      const summary = await fetchWatchConfigSummary(hass);
+      if (seq === this.configSummarySeq) this.configSummary = summary;
+    } catch {
+      if (seq === this.configSummarySeq) this.configSummary = undefined;
+    }
+  }
+
+  /** On each device's Hide here: the device's own pick, saved at once as on
+   * its board, then the library read again. */
+  private async hideOn(ownerId: string, hidden: boolean): Promise<void> {
+    const hass = this.hass;
+    const ref = this.libraryItem;
+    if (hass === undefined || ref === undefined || this.hideBusy) return;
+    this.hideBusy = true;
+    const name = this.linkDevices.find((d) => sameId(d.ownerId, ownerId))?.name ?? "the device";
+    try {
+      const result = await changeDevicePicks(picksIO(hass), ownerId, "pages", { hidden, id: ref.id });
+      if (!result.ok) this.note = { kind: "err", text: `Not changed on ${name}: ${result.message.replace(/\.$/, "")}.` };
+    } catch (err) {
+      this.note = { kind: "err", text: watchCommandError(err).message };
+    }
+    await this.lib.store?.refresh();
+    this.hideBusy = false;
+    void this.readConfigSummary();
   }
 
   /** Library mode's device to draw on: its catalog, HTTP actions, status
@@ -2336,6 +2402,9 @@ export class WaPageEditor extends LitElement {
     // A first save refused as `no_record`: the watch is not paired.
     if (watchId === this.recordKey) this.note = first && !result.ok && result.code === "no_record" ? { kind: "warn", text: PAIR_FIRST_TEXT } : watchPagesSaveNote(result, this.device);
     this.saveEnded(watchId);
+    // A library save reaches every device that has the page: their sync
+    // words follow.
+    if (result.ok && item !== undefined) void this.readConfigSummary();
     // Which photos a page uses has moved: the delete buttons follow.
     if (result.ok && this.photos.listState !== "idle") void this.photos.refreshList();
     if (result.ok && deleted.length > 0) {
@@ -4238,20 +4307,49 @@ export class WaPageEditor extends LitElement {
       style=${`--c: var(--wa-lc-pages, #26a69a); --thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px; --page-thumb-w: ${PAGE_THUMB_W}px; --page-thumb-h: ${pageThumbH}px`}>
       <div class="lc-head">
         <span class="swatch">${uiIcon("pages")}</span><span class="lc-title">Pages</span>
-        <span class="lc-sub">${plural(listed.length, "page", "pages")}</span>
+        ${inLibrary ? nothing : html`<span class="lc-sub">${plural(listed.length, "page", "pages")}</span>`}
         <span class="spacer"></span>
-        ${inLibrary ? nothing : html`<button class="lc-btn pri" ?disabled=${this.saving} title=${this.saving ? SAVING_TEXT : "Add an empty page after the last one"}
+        ${inLibrary ? renderItemFilter(this.listFilter, (f) => { this.listFilter = f; }, "page") : html`<button class="lc-btn pri" ?disabled=${this.saving} title=${this.saving ? SAVING_TEXT : "Add an empty page after the last one"}
           @click=${() => this.addPage()}>${uiIcon("plus")}<span>Add</span></button>`}
       </div>
-      ${listed.length === 0 ? html`<div class="lc-note">This ${deviceWord(this.linkKind)} has no pages.</div>` : nothing}
+      ${listed.length === 0 && !inLibrary ? html`<div class="lc-note">This ${deviceWord(this.linkKind)} has no pages.</div>` : nothing}
       ${allHidden && !inLibrary ? html`<div class="lc-note warn">Every page is hidden, so the ${deviceWord(this.linkKind)} shows "No pages".</div>` : nothing}
       <div class="layers pe-page-list" role="list">
-        ${repeat(listed, (p) => watchPageId(p), (p, i) => this.renderPageRow(p, i, listed.length, pages, screen))}
+        ${inLibrary
+          ? this.renderLibraryPageRows(listed, pages, screen)
+          : repeat(listed, (p) => watchPageId(p), (p, i) => this.renderPageRow(p, i, listed.length, pages, screen))}
         ${drag ? html`<div class="pe-drop-line" style=${`top:${drag.lineY}px`} aria-hidden="true"></div>` : nothing}
       </div>
       ${this.record?.multiple_pages === false && !inLibrary ? this.renderPlanNote() : nothing}
       ${inLibrary ? nothing : this.renderElsewhere()}
     </section>`;
+  }
+
+  /**
+   * Library mode's Pages card: every page of the library, in its order,
+   * the open one as an editor row (rename, delete) drawn from the draft,
+   * every other a row that opens it. "On no device" keeps only the pages
+   * no device has, and the open one.
+   */
+  private renderLibraryPageRows(listed: readonly WatchPage[], pages: readonly WatchPage[], screen: { width: number; height: number }): TemplateResult {
+    const ref = this.libraryItem!;
+    const lib = this.lib.library;
+    const open = listed[0];
+    const items = lib === undefined ? [] : libraryItems(lib, "pages");
+    const shown = listedItems(items, ref.id, this.listFilter);
+    // The open page, before the library lists it (a page just made).
+    const rows = shown.some((entry) => sameId(entry.id, ref.id)) || open === undefined ? shown : [undefined, ...shown];
+    return html`${repeat(rows, (entry) => entry?.id ?? ref.id, (entry) => {
+      if (entry === undefined || sameId(entry.id, ref.id)) return open === undefined ? nothing : this.renderPageRow(open, 0, 1, pages, screen);
+      const page = entry.item as WatchPage;
+      return html`<button type="button" class="layer pe-page-row lib-other-row ${entry.owners.length === 0 ? "nowhere" : ""}" role="listitem"
+        data-lib-page=${entry.id} title=${`Open ${entry.name}`} @click=${() => this.onOpenItem?.(entry.id)}>
+        <span class="grip" aria-hidden="true"></span>
+        ${this.renderPageThumb(page, pages, screen)}
+        <span class="name"><b><span class="nm-t">${entry.name}</span></b><small>${entry.detail} · ${itemWhereText(entry)}</small></span>
+      </button>`;
+    })}
+    ${renderNoneLeft(this.listFilter, rows.length, "page")}`;
   }
 
   /** The free plan's line under the page list, for the device on screen. */
@@ -4634,7 +4732,9 @@ export class WaPageEditor extends LitElement {
       <div class="stage-area pe-stage-area">
         ${this.renderStageTools(page, headers, smart, phone)}
         <div class="pe-stage-body">
-          ${smart || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input)}
+          ${this.libraryItem !== undefined
+            ? this.renderLibraryStage(page, pages, input, smart || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input))
+            : smart || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input)}
         </div>
         ${scrolls || hint !== undefined ? html`<div class="under">
           ${scrolls ? html`<span class="tail pe-fold-text">${phone ? PHONE_SCREEN_FOLD_TEXT : WATCH_SCREEN_FOLD_TEXT}</span>` : nothing}
@@ -4644,6 +4744,67 @@ export class WaPageEditor extends LitElement {
       </div>
       ${this.renderLiveStrip(page, tile)}
     </div>`;
+  }
+
+  /** The names of the devices of `kind` that have the library page. */
+  private libraryNamesOf(kind: PreviewKind): string[] {
+    const ref = this.libraryItem;
+    if (ref === undefined) return [];
+    const owners = libraryOwners(this.lib.library, ref) ?? [];
+    return this.linkDevices.filter((d) => d.kind === kind && owners.some((o) => sameId(o, d.ownerId))).map((d) => d.name);
+  }
+
+  /**
+   * Library mode's stage: the edited preview, labelled with the devices of
+   * its kind that have the page and with the line of what that kind does
+   * otherwise; with Side by side, the other kind's preview beside it the
+   * same way. The other one is a picture only: a click on it edits on that
+   * kind instead. Watch first, iPhone second, whichever is edited.
+   */
+  private renderLibraryStage(page: WatchPage, pages: readonly WatchPage[], input: WatchPagePreviewInput, edited: TemplateResult): TemplateResult {
+    const kind = this.previewKind;
+    const side = (k: PreviewKind, body: TemplateResult, tag: string) => {
+      const diff = deviceDifferenceText(page, k);
+      return html`<div class="lib-duo-side ${k}">
+        <span class="lib-duo-l" title=${previewLabel(k, this.libraryNamesOf(k))}>${previewLabel(k, this.libraryNamesOf(k))}<span class="lib-duo-tag">${tag}</span></span>
+        ${body}
+        ${diff === "" ? nothing : html`<span class="lib-diff">${diff}</span>`}
+      </div>`;
+    };
+    if (!this.sideBySide) return html`<div class="lib-duo">${side(kind, edited, "")}</div>`;
+    const other = otherPreviewKind(kind);
+    const word = other === "watch" ? "watch" : "iPhone";
+    return html`<div class="lib-duo">
+      ${side(kind, edited, "editing")}
+      ${side(other, html`<button type="button" class="lib-duo-other" title=${`Click to edit on the ${word}`} aria-label=${`Edit on the ${word}`}
+        @click=${() => this.pickPreview(other, true)}>${renderWatchPagePreview(this.companionInput(page, pages, input, other))}</button>`, "preview")}
+    </div>`;
+  }
+
+  /**
+   * What the other kind's preview of Side by side is drawn with: the
+   * edited preview's states, symbols and renders, on the screen of the
+   * first device of that kind that has the page (else the home's first of
+   * the kind, else the reference one), at the zoom that kind is drawn at.
+   * That device's own settings are not read: an iPhone takes its look's
+   * defaults, as the phone does before its settings load.
+   */
+  private companionInput(page: WatchPage, pages: readonly WatchPage[], input: WatchPagePreviewInput, kind: PreviewKind): WatchPagePreviewInput {
+    const ref = this.libraryItem;
+    const id = previewOwner(this.watches, kind, [ref?.from, ...(ref === undefined ? [] : libraryOwners(this.lib.library, ref) ?? [])]);
+    const owner = this.watches.find((w) => w.owner_watch_id === id);
+    // The edited stage's own: its phone frame, its live cameras and its
+    // smart rule pick.
+    const rest: WatchPagePreviewInput = { ...input };
+    delete rest.phone;
+    delete rest.liveCameras;
+    delete rest.smart;
+    if (kind === "iphone") {
+      const phone = phonePagesLayout(phoneModelForScreenSize(owner?.screen_size), { look: phonePageLookOf(undefined) });
+      return { ...rest, page, pages, behavior: undefined, phone, screen: phonePagesScreen(phone), scale: this.stageScale * PHONE_STAGE_ZOOM };
+    }
+    const screen = (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
+    return { ...rest, page, pages, behavior: undefined, screen, scale: this.stageScale };
   }
 
   /** The canvas head: the page's name, typed over where it stands (the
@@ -4773,7 +4934,8 @@ export class WaPageEditor extends LitElement {
           <span class="word keep">Live preview</span>
         </label>
         ${sep}`}
-      ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.previewKind, (kind) => this.pickPreview(kind))}${sep}`}
+      ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.previewKind, (kind) => this.pickPreview(kind),
+        this.phones ? { on: this.sideBySide, pick: () => { this.sideBySide = true; } } : undefined)}${sep}`}
       <button class="tb pe-case" aria-disabled="true" tabindex="-1" aria-label="Page background"
         title=${`The page's background color, which the ${phone ? "iPhone" : "watch"} paints behind the tiles.`}>
         <i class="tint-dot" style=${`--sw:${watchScreenColor(page)}`}></i></button>
@@ -5117,7 +5279,7 @@ export class WaPageEditor extends LitElement {
     // Every card drawn now that folds, for Collapse all: it folds them all
     // while one is open, else opens them all, through the fold memory.
     const folds: FoldId[] = tile === undefined
-      ? (host === undefined ? [] : [...smartFoldIds(host), ...pageLookFoldIds(), PAGE_WATCH_FOLD, PAGE_SWITCHER_FOLD])
+      ? (host === undefined ? [] : [...(this.libraryItem === undefined ? [] : [PAGE_DEVICES_FOLD]), ...smartFoldIds(host), ...pageLookFoldIds(), PAGE_WATCH_FOLD, PAGE_SWITCHER_FOLD])
       : (tileHost === undefined ? [] : tileSettingsFoldIds(tileHost, tileInspectorSections(tileHost)));
     const anyOpen = anySectionOpen(this.uiState, folds);
     return html`
@@ -5141,6 +5303,7 @@ export class WaPageEditor extends LitElement {
   private renderPageCards(page: WatchPage, host: WatchPagesEditorHost | undefined): TemplateResult {
     const id = watchPageId(page);
     return html`<div class="pe-page-insp">
+      ${this.renderDevicesCard()}
       ${this.renderRulesCard(page)}
       ${host === undefined ? nothing : renderPageLookCard(host)}
       ${this.renderOnWatchCard(page, host)}
@@ -5150,6 +5313,35 @@ export class WaPageEditor extends LitElement {
         <button type="button" class="pe-btn pe-danger" @click=${() => this.askDelete(id)}>${uiIcon("delete")}<span>Delete page</span></button>
       </div>
     </div>`;
+  }
+
+  /** Library mode's On each device card: each device that has the page,
+   * its place there, Hide here and whether it has the last save. Nothing
+   * outside library mode, where the device's own cards say so. */
+  private renderDevicesCard(): TemplateResult | typeof nothing {
+    const ref = this.libraryItem;
+    if (ref === undefined) return nothing;
+    const { module, section } = PAGE_DEVICES_FOLD;
+    const open = sectionOpen(this.uiState, module, section);
+    const lines = onEachDeviceLines(this.lib.library, "pages", ref.id, this.linkDevices, this.configSummary);
+    const hidden = lines.filter((l) => l.hidden).length;
+    const summary = lines.length === 0 ? "On no device" : `${plural(lines.length, "device", "devices")}${hidden > 0 ? `, hidden on ${hidden}` : ""}`;
+    return sectionCard({
+      color: SECTION_COLOR.place,
+      icon: uiIcon("layers"),
+      title: "On each device",
+      open,
+      onToggle: () => { setSectionOpen(this.uiState, module, section, !open); this.requestUpdate(); },
+      ...(open ? {} : { summary }),
+      id: `${module}:${section}`,
+    }, open ? renderOnEachDevice({
+      kind: "pages",
+      lines,
+      colorOf: (o) => this.colorOf(o),
+      busy: this.hideBusy,
+      onHide: (ownerId, on) => void this.hideOn(ownerId, on),
+      ...(this.onOpenBoard === undefined ? {} : { onOpenBoard: this.onOpenBoard }),
+    }) : html``);
   }
 
   /**
@@ -6147,7 +6339,7 @@ export class WaPageEditor extends LitElement {
     @container (max-width: 820px) {
       .pe-hint { display: none; }
     }
-  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, configFootStyles, libraryModeStyles, headBarStyles];
+  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, configFootStyles, libraryModeStyles, onEachDeviceStyles, itemListStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-page-editor")) {

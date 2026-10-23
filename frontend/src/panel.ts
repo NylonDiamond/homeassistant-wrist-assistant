@@ -11445,6 +11445,8 @@ export class WristAssistantPanel extends LitElement {
       menu: false, onMenu: () => undefined, onBack: () => this.goTo(back),
       actions: nothing as typeof nothing, phones: this.phonePages, dialogs: nothing as typeof nothing, libraryItem: ref,
       onLoaded: () => this.requestUpdate(),
+      onOpenItem: (id: string) => this.goTo(libraryItemPath(ref.kind, id, ref.from)),
+      onOpenBoard: (ownerId: string) => this.goTo(listFocusPath(list, ownerId)),
     };
     if (ref.kind === "menus") return renderWatchMenusView(input);
     if (ref.kind === "status_pages") return renderWatchStatusPagesView(input);

@@ -59,11 +59,13 @@ import {
   fetchWatchConfig,
   fetchWatchConfigHistory,
   fetchWatchConfigHistoryEntry,
+  fetchWatchConfigSummary,
   restoreWatchConfig,
   saveWatchConfig,
   subscribeWatchConfig,
+  type WatchConfigSummary,
 } from "../ha-api.js";
-import { type LibraryItem, devicesFor, libraryItem, sameId } from "../library/model.js";
+import { type LibraryItem, devicesFor, libraryItem, libraryItems, sameId } from "../library/model.js";
 import { renderStatusRowPicture, rowPictureStyles } from "../library/row-picture.js";
 import { LibraryController } from "../library/store.js";
 import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
@@ -76,15 +78,23 @@ import {
   type LibraryItemRef,
   libraryModeStyles,
   libraryOwners,
+  otherPreviewKind,
   type PreviewKind,
+  previewLabel,
   previewOwner,
   renderBarDevices,
   renderLibraryTag,
   renderPreviewPicker,
   sameLibraryItem,
   startPreviewKind,
+  startSideBySide,
   summaryRevision,
 } from "../library/item-mode.js";
+import { onEachDeviceLines, onEachDeviceStyles, renderOnEachDevice } from "../library/on-each-device.js";
+import { type ItemFilter, itemListStyles, itemWhereText, listedItems, renderItemFilter, renderNoneLeft } from "../library/item-list.js";
+import { sectionCard } from "../editor-chrome.js";
+import { SECTION_COLOR } from "../kinds.js";
+import { sectionOpen, setSectionOpen } from "../watch-pages/fold-memory.js";
 import {
   dirtyElsewhereText,
   hereTickText,
@@ -295,6 +305,10 @@ export class WaStatusPagesEditor extends LitElement {
    * the library with no device. `watchId` is then only the device it is
    * drawn on ("Preview on"); the draft is kept under `libraryDraftKey`. */
   @property({ attribute: false }) libraryItem: LibraryItemRef | undefined = undefined;
+  /** Library mode: open another status page of the library, from the list. */
+  @property({ attribute: false }) onOpenItem?: (id: string) => void;
+  /** Library mode: open a device's board focused on it (On each device). */
+  @property({ attribute: false }) onOpenBoard?: (ownerId: string) => void;
   private readonly headBar = new HeadBar(this);
 
   @state() private watchId?: string;
@@ -376,6 +390,15 @@ export class WaStatusPagesEditor extends LitElement {
   /** Library mode's Preview on: the kind of device drawn on. `watchId` is
    * then the home's first device of that kind, or undefined with none. */
   @state() private previewKind: PreviewKind = "watch";
+  /** Library mode's Side by side: the other kind is drawn beside the edited
+   * preview. */
+  @state() private sideBySide = false;
+  /** Library mode's Status pages card: every status page, or those on no
+   * device. */
+  @state() private listFilter: ItemFilter = "all";
+  /** Library mode: every device's delivery numbers, for On each device. */
+  @state() private configSummary?: WatchConfigSummary;
+  private configSummarySeq = 0;
 
   /** The status pages being edited. While Home Assistant holds none for the
    * watch it is the new watch's ready draft (`new-watch.ts`), on the
@@ -561,6 +584,7 @@ export class WaStatusPagesEditor extends LitElement {
     const owners = libraryOwners(this.lib.library, ref);
     if (!sameLibraryItem(ref, this.openedItem) || !this.previewSettled) {
       this.previewKind = startPreviewKind(this.watches, ref, owners);
+      this.sideBySide = startSideBySide(this.watches, owners, this.phones);
       this.previewSettled = owners !== undefined;
     }
     const preview = previewOwner(this.watches, this.previewKind, [ref.from, ...(owners ?? [])]);
@@ -568,6 +592,7 @@ export class WaStatusPagesEditor extends LitElement {
     if (!sameLibraryItem(ref, this.openedItem)) {
       this.openedItem = ref;
       this.openItem();
+      void this.readConfigSummary();
       return;
     }
     const moved = summaryRevision(this.lib.library, ref);
@@ -576,6 +601,29 @@ export class WaStatusPagesEditor extends LitElement {
       this.followedRevision = moved;
       void this.load(libraryDraftKey(ref), true);
     }
+  }
+
+  /** Read every device's delivery numbers, for the On each device card. An
+   * integration older than the summary leaves the sync words out. */
+  private async readConfigSummary(): Promise<void> {
+    const hass = this.hass;
+    if (hass === undefined || this.libraryItem === undefined) return;
+    const seq = ++this.configSummarySeq;
+    try {
+      const summary = await fetchWatchConfigSummary(hass);
+      if (seq === this.configSummarySeq) this.configSummary = summary;
+    } catch {
+      if (seq === this.configSummarySeq) this.configSummary = undefined;
+    }
+  }
+
+  /** Preview on: a kind's thumbnail shows it alone; `keepBoth` (a click on
+   * the other preview of Side by side) swaps which kind is edited. */
+  private pickPreview(kind: PreviewKind, keepBoth = false): void {
+    this.sideBySide = keepBoth;
+    if (kind === this.previewKind) return;
+    this.previewKind = kind;
+    this.watchId = previewOwner(this.watches, kind, [this.libraryItem?.from, ...(libraryOwners(this.lib.library, this.libraryItem!) ?? [])]);
   }
 
   /** Open the library item: as `openWatch` does for a device, but with no
@@ -912,7 +960,7 @@ export class WaStatusPagesEditor extends LitElement {
    * read. None before it is read, and on an integration older than the
    * library. The ticks are not the view's: they stand in the strip under the
    * canvas head (`renderStageDevices`), in both modes. */
-  private libraryHost(draft: StatusPagesDraft): Pick<StatusPagesViewHost, "linkDevices" | "sharedLine" | "deletePage" | "elsewhere" | "single"> {
+  private libraryHost(draft: StatusPagesDraft): Pick<StatusPagesViewHost, "linkDevices" | "sharedLine" | "deletePage" | "elsewhere" | "single" | "listTools"> {
     const lib = this.lib.library;
     // Library mode: the one page and Delete, which asks to delete it from
     // the library. Nothing of the device's.
@@ -920,6 +968,8 @@ export class WaStatusPagesEditor extends LitElement {
       return {
         single: true,
         deletePage: (pageId) => this.askDelete(pageId),
+        listTools: renderItemFilter(this.listFilter, (f) => { this.listFilter = f; }, "status page"),
+        elsewhere: this.renderLibraryOthers(),
       };
     }
     const watchId = this.watchId;
@@ -1250,6 +1300,7 @@ export class WaStatusPagesEditor extends LitElement {
       message: errText(err),
     }));
     this.saveEnded(watchId);
+    if (result.ok && item !== undefined) void this.readConfigSummary();
     if (watchId === this.recordKey) this.note = firstSaveNote(first, result.code, statusPagesSaveNote(result));
     if (result.ok && deleted.length > 0) {
       const cleared = await clearStatusPageRefs(hass, watchId, deleted, keep);
@@ -1591,7 +1642,8 @@ export class WaStatusPagesEditor extends LitElement {
       ${this.renderStageDevices(page)}
       <div class="stage-area sp-stage-area">
         <div class="stage-tools" role="toolbar" aria-label="Stage tools">
-          ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.previewKind, (kind) => { this.previewKind = kind; this.watchId = previewOwner(watches, kind, [this.libraryItem?.from, ...(libraryOwners(this.lib.library, this.libraryItem!) ?? [])]); })}<span class="tb-sep" aria-hidden="true"></span>`}
+          ${this.libraryItem === undefined ? nothing : html`${renderPreviewPicker(this.previewKind, (kind) => this.pickPreview(kind),
+            this.phones ? { on: this.sideBySide, pick: () => { this.sideBySide = true; } } : undefined)}<span class="tb-sep" aria-hidden="true"></span>`}
           <span class="tb-zoom" role="group" aria-label="Zoom">
             <button class="tb icon" ?disabled=${scale <= stageZoomOut(scale)} aria-label="Zoom out" title="Zoom out"
               @click=${() => this.setZoom(stageZoomOut(scale))}>−</button>
@@ -1602,10 +1654,94 @@ export class WaStatusPagesEditor extends LitElement {
               @click=${() => this.setZoom(stageZoomIn(scale))}>+</button>
           </span>
         </div>
-        <div class="sp-stage-body">${renderStatusPageScreen(host)}</div>
+        <div class="sp-stage-body">${this.libraryItem === undefined ? renderStatusPageScreen(host) : this.renderLibraryStage(host)}</div>
         <div class="under"><span class="tail">${STATUS_PAGES_STAGE_HINT}</span></div>
       </div>
     </div>`;
+  }
+
+  /** The names of the devices of `kind` that have the library status page. */
+  private libraryNamesOf(kind: PreviewKind): string[] {
+    const ref = this.libraryItem;
+    if (ref === undefined) return [];
+    const owners = libraryOwners(this.lib.library, ref) ?? [];
+    return this.linkDevices.filter((d) => d.kind === kind && owners.some((o) => sameId(o, d.ownerId))).map((d) => d.name);
+  }
+
+  /**
+   * Library mode's stage: the edited status page under the devices of its
+   * kind that have it; with Side by side, the other kind's beside it, a
+   * picture whose click edits on that kind instead. A status page draws the
+   * same on both kinds, so neither has a differences line. Watch first.
+   */
+  private renderLibraryStage(host: StatusPagesViewHost): TemplateResult {
+    const kind = this.previewKind;
+    const side = (k: PreviewKind, body: TemplateResult, tag: string) => html`<div class="lib-duo-side ${k}">
+      <span class="lib-duo-l" title=${previewLabel(k, this.libraryNamesOf(k))}>${previewLabel(k, this.libraryNamesOf(k))}<span class="lib-duo-tag">${tag}</span></span>
+      ${body}
+    </div>`;
+    const edited = renderStatusPageScreen(host);
+    if (!this.sideBySide) return html`<div class="lib-duo">${side(kind, edited, "")}</div>`;
+    const other = otherPreviewKind(kind);
+    const word = other === "watch" ? "watch" : "iPhone";
+    const ref = this.libraryItem;
+    const id = previewOwner(this.watches, other, [ref?.from, ...(ref === undefined ? [] : libraryOwners(this.lib.library, ref) ?? [])]);
+    const owner = this.watches.find((w) => w.owner_watch_id === id);
+    const phone = other === "iphone" ? phonePagesLayout(phoneModelForScreenSize(owner?.screen_size)) : undefined;
+    const screen = phone !== undefined ? phonePagesScreen(phone) : (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
+    const shown: StatusPagesViewHost = { ...host, screen, scale: phone === undefined ? this.stageScale : this.stageScale * PHONE_STAGE_ZOOM };
+    const companion: StatusPagesViewHost = phone === undefined ? (({ phone: _drop, ...rest }) => rest)(shown) : { ...shown, phone };
+    return html`<div class="lib-duo">
+      ${side(kind, edited, "editing")}
+      ${side(other, html`<button type="button" class="lib-duo-other" title=${`Click to edit on the ${word}`} aria-label=${`Edit on the ${word}`}
+        @click=${() => this.pickPreview(other, true)}>${renderStatusPageScreen(companion)}</button>`, "preview")}
+    </div>`;
+  }
+
+  /** Library mode's On each device card: each device that has the status
+   * page, its place there and whether it has the last save. Status pages
+   * have no Hide here. */
+  private renderDevicesCard(): TemplateResult | typeof nothing {
+    const ref = this.libraryItem;
+    if (ref === undefined) return nothing;
+    const module = "status-pages";
+    const section = "devices";
+    const open = sectionOpen(this.uiState, module, section);
+    const lines = onEachDeviceLines(this.lib.library, "status_pages", ref.id, this.linkDevices, this.configSummary);
+    return html`<div class="sp-devices">${sectionCard({
+      color: SECTION_COLOR.place,
+      icon: uiIcon("layers"),
+      title: "On each device",
+      open,
+      onToggle: () => { setSectionOpen(this.uiState, module, section, !open); this.requestUpdate(); },
+      ...(open ? {} : { summary: lines.length === 0 ? "On no device" : `${lines.length} ${lines.length === 1 ? "device" : "devices"}` }),
+      id: `${module}:${section}`,
+    }, open ? renderOnEachDevice({
+      kind: "status_pages",
+      lines,
+      colorOf: (o) => this.colorOf(o),
+      busy: false,
+      onHide: () => undefined,
+      ...(this.onOpenBoard === undefined ? {} : { onOpenBoard: this.onOpenBoard }),
+    }) : html``)}</div>`;
+  }
+
+  /** Library mode's list: every other status page of the library, a row
+   * that opens it, after the open one (the view's own row). */
+  private renderLibraryOthers(): TemplateResult {
+    const ref = this.libraryItem;
+    const lib = this.lib.library;
+    if (ref === undefined || lib === undefined) return html``;
+    const shown = listedItems(libraryItems(lib, "status_pages"), ref.id, this.listFilter);
+    const others = shown.filter((entry) => !sameId(entry.id, ref.id));
+    return html`${others.length === 0 ? nothing : html`<div class="layers sp-page-list sp-lib-others" role="list">
+      ${others.map((entry) => html`<button type="button" class="layer lib-other-row ${entry.owners.length === 0 ? "nowhere" : ""}" role="listitem"
+        data-lib-status=${entry.id} title=${`Open ${entry.name}`} @click=${() => this.onOpenItem?.(entry.id)}>
+        <span class="grip" aria-hidden="true"></span>
+        <span class="thumb sp-lib-thumb" aria-hidden="true">${uiIcon("list")}</span>
+        <span class="name"><b><span class="nm-t">${entry.name}</span></b><small>${entry.detail} · ${itemWhereText(entry)}</small></span>
+      </button>`)}
+    </div>`}${renderNoneLeft(this.listFilter, others.length + 1, "status page")}`;
   }
 
   private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
@@ -1656,6 +1792,7 @@ export class WaStatusPagesEditor extends LitElement {
       </div>
       ${this.renderGutter("right")}
       <div class="column inspector card">
+        ${this.renderDevicesCard()}
         ${renderStatusInspector(host)}
       </div>
     </div>
@@ -1843,7 +1980,13 @@ export class WaStatusPagesEditor extends LitElement {
     .pe-ask-foot.sp-del-foot { flex-wrap: wrap; }
     .sp-restore-others { color: var(--wa-amber); }
     :host([narrow]) { --cf-pad: 12px; }
-  `, statusPagesViewStyles, libraryTicksStyles, rowPictureStyles, libraryRestStyles, configFootStyles, libraryModeStyles, headBarStyles];
+    /* Library mode: On each device over the inspector's cards, and the
+       other status pages under the open one, each with a list glyph. */
+    .sp-devices { margin-bottom: 10px; }
+    .sp-lib-others { margin-top: 2px; }
+    .sp-lib-thumb { display: inline-flex; align-items: center; justify-content: center; color: var(--wa-muted); }
+    .sp-lib-thumb svg.ui-icon { width: 16px; height: 16px; }
+  `, statusPagesViewStyles, libraryTicksStyles, rowPictureStyles, libraryRestStyles, configFootStyles, libraryModeStyles, onEachDeviceStyles, itemListStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-status-pages-editor")) {
