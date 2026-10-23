@@ -5,7 +5,9 @@
 //
 // The addresses are `/all-pages` and `/all-status-pages`, not `/pages` and
 // `/status-pages`: those, with a device after them, are the Watch app's page
-// editor (`hook.ts`) and status pages editor.
+// editor (`hook.ts`) and status pages editor. A device after them
+// (`/all-pages/<owner>`) is the board focused on that device
+// (`listFocusOf`, `listFocusPath`); the Menus tab's address works the same.
 
 import { css, html, type TemplateResult } from "lit";
 import type { HassLike, OwnerSummary } from "../ha-api.js";
@@ -13,6 +15,27 @@ import type { IconProvider } from "../renderer.js";
 
 export const ALL_PAGES_PATH = "/all-pages";
 export const ALL_STATUS_PAGES_PATH = "/all-status-pages";
+
+/** The device a list tab's address focuses: the one segment after `base`,
+ * decoded, or undefined for every device. */
+export function listFocusOf(path: string | undefined, base: string): string | undefined {
+  if (path === undefined || !path.startsWith(`${base}/`)) return undefined;
+  const segment = path.slice(base.length + 1).split("/")[0] ?? "";
+  if (segment === "") return undefined;
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return undefined;
+  }
+}
+
+/** A list tab's address, focused on one device or on every device. */
+export function listFocusPath(base: string, ownerId: string | undefined): string {
+  return ownerId === undefined ? base : `${base}/${encodeURIComponent(ownerId)}`;
+}
+
+/** A device's own screens, one click from its focused column. */
+export type ListOwnScreen = "settings" | "rooms" | "voice";
 
 let loading: Promise<void> | undefined;
 let loadFailed = false;
@@ -50,6 +73,12 @@ export interface AllPagesViewInput {
   /** Open a page or status page no device has in its editor's library
    * mode (`library/item-mode.ts`). */
   onOpenLibrary?: (kind: "pages" | "status_pages", id: string) => void;
+  /** The device the address focuses (`listFocusOf`). */
+  focusOwner?: string;
+  /** Focus a device, or every device with undefined: move to its address. */
+  onFocus: (ownerId: string | undefined) => void;
+  /** Open a device's Settings, Rooms or Voice. */
+  onOpenScreen: (ownerId: string, kind: "watch" | "iphone", screen: ListOwnScreen) => void;
   /** Called once the chunk has loaded or failed, to draw again. */
   onLoaded: () => void;
 }
@@ -63,7 +92,8 @@ export function renderAllPagesView(input: AllPagesViewInput): TemplateResult {
     return html`<div class="ap-loading">${loadFailed ? `The ${tab} tab did not load. Reload the page to try again.` : "Loading…"}</div>`;
   }
   return html`<wa-all-pages .kind=${input.kind} .hass=${input.hass} .owners=${input.owners} .ownersReady=${input.ownersReady} .phones=${input.phones}
-    .icons=${input.icons} .iconsTick=${input.iconsTick} .onOpen=${input.onOpen} .onOpenLibrary=${input.onOpenLibrary}></wa-all-pages>`;
+    .icons=${input.icons} .iconsTick=${input.iconsTick} .onOpen=${input.onOpen} .onOpenLibrary=${input.onOpenLibrary}
+    .focusOwner=${input.focusOwner} .onFocus=${input.onFocus} .onOpenScreen=${input.onOpenScreen}></wa-all-pages>`;
 }
 
 /** The stand-in line's look, added to the panel's sheet. */

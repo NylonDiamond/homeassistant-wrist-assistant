@@ -271,7 +271,7 @@ export function renderTickChips(chips: readonly TickChip[], opts: TickChipsOptio
 /** The untick's question in the row, the way the panel asks in place
  * elsewhere: the words, then Remove in the destructive style and a plain
  * Cancel. */
-function renderTickAsk(ask: TickAsk): TemplateResult {
+export function renderTickAsk(ask: TickAsk): TemplateResult {
   return html`<div class="lt-ask" role="alertdialog" aria-label=${ask.text}>
     <span class="lt-ask-q">${ask.text}</span>
     <span class="lt-ask-acts">

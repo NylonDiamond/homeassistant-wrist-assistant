@@ -9,24 +9,15 @@
 // no card: it is only the Anywhere menu's look, and goes with it. New menu
 // makes a menu no device uses yet; a tick then puts it on one.
 //
-// On a device's tab the list is that device's two menus, each with a menu
-// to pick another (mock frame 2b), then "Not on this watch": the rest of the
-// library's menus, dimmed. This module is the pure part the tab draws from;
+// A focused device lists the two menus it uses, then "Not on this watch":
+// the rest of the library's menus, dimmed. This module is the pure part the tab draws from;
 // the element is `all-menus.ts`, and the head and the tabs are the Pages
 // tab's (`watch-pages/all-pages-model.ts`).
 // Plan: app repo docs/one_library_plan_2026-10.md, step 2.
 
 import { MENU_UNITS, MENU_UNIT_SECTIONS, type MenuUnit } from "../library/client.js";
 import { type Library, type LibraryMenu, MENU_UNIT_TITLES, alsoOnText, libraryMenus, menuDocument, menuFor, otherMenus, sameId } from "../library/model.js";
-import {
-  ALL_FILTER,
-  type FilterChip,
-  type KindOption,
-  type PagesFilter,
-  type PagesKind,
-  matchesSearch,
-  ownersOnKind,
-} from "../watch-pages/all-pages-model.js";
+import { ALL_FILTER, type PagesFilter, type PagesKind, matchesSearch, ownersOnKind } from "../watch-pages/all-pages-model.js";
 import { type LinkDevice, deviceWord } from "../watch-pages/devices.js";
 import { WAIT_FOR_IPHONE_TEXT } from "../watch-settings.js";
 import { menuRowCount } from "./menu-view.js";
@@ -40,8 +31,14 @@ export function allMenusLead(total: number): string {
   return `${total} ${total === 1 ? "menu" : "menus"} in your home. ${ALL_MENUS_LEAD}`;
 }
 
-/** The surface's foot on All. */
+/** The surface's foot on Cards. */
 export const MENUS_FOOT = "Click a menu to edit it. Pick a device on a card and that device uses this menu from now on. New menu makes one no device uses yet.";
+
+/** The foot on the board. */
+export const MENUS_BOARD_FOOT = "Click a menu to edit it. Pick a dot and that device uses this menu from now on. Click a device's name to see its menus first.";
+
+/** The words at each board section's right: the rule a dot follows. */
+export const MENUS_BOARD_HINT = "Each device uses one of each kind. Pick a dot to switch.";
 
 /** The foot on a device's tab. */
 export function menusDeviceFoot(device: LinkDevice): string {
@@ -68,34 +65,6 @@ export function menusDirtyText(name: string): string {
  * Anywhere menu's slots, the Entity quick menu's as it first opens. */
 export function menuDetail(menu: LibraryMenu): string {
   return menuRowCount({ uiState: new Map(), document: menuDocument(menu), switcherPages: [] }, menu.unit);
-}
-
-/** The device tabs over the cards: All with every menu, then each device
- * with how many it uses (two, once it has menus). */
-export function menuFilterChips(
-  devices: readonly LinkDevice[],
-  library: Library | undefined,
-  colorOf: (ownerId: string) => string | undefined = () => undefined,
-): FilterChip[] {
-  return [
-    { id: ALL_FILTER, label: "All", count: library === undefined ? 0 : libraryMenus(library).length },
-    ...devices.map((d) => {
-      const color = colorOf(d.ownerId);
-      return {
-        id: d.ownerId, label: d.name, kind: d.kind, ...(color === undefined ? {} : { color }),
-        count: library === undefined ? 0 : MENU_UNITS.filter((u) => menuFor(library, d.ownerId, u) !== undefined).length,
-      };
-    }),
-  ];
-}
-
-/** The Device menu's options, with how many of the menus given each shows. */
-export function menuKindOptions(menus: readonly LibraryMenu[], devices: readonly LinkDevice[]): KindOption[] {
-  return [
-    { key: "all", label: "All", count: menus.length },
-    { key: "watch", label: "Watches", count: menus.filter((m) => ownersOnKind(m.owners, "watch", devices)).length },
-    { key: "iphone", label: "iPhones", count: menus.filter((m) => ownersOnKind(m.owners, "iphone", devices)).length },
-  ];
 }
 
 /** Whether a menu matches the search: its name, or the name of a device
@@ -126,35 +95,6 @@ export function openMenuDevice(menu: LibraryMenu, filter: PagesFilter, kind: Pag
     ?? (kind === "all" ? undefined : users.find((d) => d.kind === kind))
     ?? users.find((d) => d.kind === "watch")
     ?? users[0];
-}
-
-/** What a click on a menu no device uses says. */
-export const MENU_NO_USER_TEXT = "No device uses this menu. Pick one to edit it there.";
-
-/** One of a device's two menus on its tab. */
-export interface DeviceMenuRow {
-  unit: MenuUnit;
-  /** "Anywhere menu" or "Entity quick menu". */
-  title: string;
-  menu: LibraryMenu | undefined;
-  /** The other menus of the unit it could use instead. */
-  others: LibraryMenu[];
-}
-
-/** A device's two menus, Anywhere first. */
-export function deviceMenuRows(library: Library, ownerId: string): DeviceMenuRow[] {
-  return MENU_UNITS.map((unit) => ({
-    unit,
-    title: MENU_UNIT_TITLES[unit],
-    menu: menuFor(library, ownerId, unit),
-    others: otherMenus(library, ownerId, unit),
-  }));
-}
-
-/** The line under a device's menu: "Home menu · 8 slots · also on iPhone
- * 15 Pro" (mock frame 2b). */
-export function deviceMenuMeta(menu: LibraryMenu, here: string, devices: readonly LinkDevice[]): string {
-  return `${menu.name} · ${menuDetail(menu)} · ${alsoOnText(menu.owners, here, devices)}`;
 }
 
 /** "Not on this watch": the library's menus a device does not use, under

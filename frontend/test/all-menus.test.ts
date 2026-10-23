@@ -1,7 +1,8 @@
-// The Menus tab, drawn from the library: one card per menu in two sections,
-// its name, its slots, its picture and a round tick per device; a tick moves
-// that device onto the menu. A device's tab shows its two menus with a pick
-// of another, then the rest. New menu makes a menu no device uses, the app's
+// The Menus tab, drawn from the library: the board (a row per menu in two
+// sections, a round dot per device) or one card per menu with its name, its
+// slots, its picture and a round tick per device; a dot or a tick moves that
+// device onto the menu. A focused device shows its two menus first, then the
+// rest. New menu makes a menu no device uses, the app's
 // own for its kind, and moves no device; a menu no device uses can be
 // deleted. Plus the menu editor's ask that opens it on one menu.
 
@@ -14,13 +15,11 @@ import "../src/watch-menus/all-menus.js";
 import {
   ALL_MENUS_LEAD,
   MENU_SECTION_TITLES,
+  MENUS_BOARD_FOOT,
+  MENUS_BOARD_HINT,
   MENUS_FOOT,
   allMenusLead,
-  deviceMenuMeta,
-  deviceMenuRows,
   menuDetail,
-  menuFilterChips,
-  menuKindOptions,
   menuSections,
   menusDeviceFoot,
   menusEmptyText,
@@ -71,32 +70,17 @@ describe("the Menus tab's cards", () => {
     expect(shownMenus(lib(), "home").map((m) => m.id)).toEqual([HOME_MENU]);
     expect(shownMenus(lib(), "iphone 15", "all", DEVICES).map((m) => m.id)).toEqual([HOME_MENU, QUICK]);
     expect(shownMenus(lib(), "", "iphone", DEVICES).map((m) => m.id)).toEqual([HOME_MENU, QUICK]);
-    expect(menuKindOptions(shownMenus(lib()), DEVICES).map((o) => [o.label, o.count])).toEqual([["All", 4], ["Watches", 3], ["iPhones", 2]]);
   });
 
-  it("open on the device tab's device when it uses the menu, else the first watch", () => {
+  it("open on the focused device when it uses the menu, else the first watch", () => {
     expect(openMenuDevice(menu(HOME_MENU), PHONE, "all", DEVICES)?.ownerId).toBe(PHONE);
     expect(openMenuDevice(menu(HOME_MENU), CHEN, "all", DEVICES)?.ownerId).toBe(JESSE);
     expect(openMenuDevice(menu(HOME_MENU), ALL_FILTER, "iphone", DEVICES)?.ownerId).toBe(PHONE);
     expect(openMenuDevice(menu(SPARE), ALL_FILTER, "all", DEVICES)).toBeUndefined();
   });
-
-  it("count every menu on All, and each device's two", () => {
-    expect(menuFilterChips(DEVICES, lib()).map((c) => [c.label, c.count])).toEqual([["All", 4], ["Chen Watch", 2], ["Jesse Apple Watch", 2], ["iPhone 15 Pro", 2]]);
-  });
 });
 
 describe("a device's menus", () => {
-  it("are its Anywhere menu and Entity quick menu, each with the others it could use", () => {
-    const rows = deviceMenuRows(lib(), CHEN);
-    expect(rows.map((r) => [r.title, r.menu?.name, r.others.map((m) => m.id)])).toEqual([
-      ["Anywhere menu", "Chen's menu", [HOME_MENU]],
-      ["Entity quick menu", "Entity quick menu", [SPARE]],
-    ]);
-    expect(deviceMenuMeta(menu(HOME_MENU), JESSE, DEVICES)).toBe("Home menu · 0 slots · also on iPhone 15 Pro");
-    expect(deviceMenuMeta(menu(CHEN_MENU), CHEN, DEVICES)).toBe("Chen's menu · 0 slots · only here");
-  });
-
   it("leave the rest of the library for Not on this watch", () => {
     expect(restMenus(lib(), CHEN, "", DEVICES).map((m) => m.id)).toEqual([HOME_MENU, SPARE]);
     expect(restMenus(lib(), CHEN, "home", DEVICES).map((m) => m.id)).toEqual([HOME_MENU]);
@@ -136,10 +120,12 @@ describe("the tab's words", () => {
     expect(allMenusLead(4)).toBe("4 menus in your home. Each device uses one Anywhere menu and one Entity quick menu.");
     expect(allMenusLead(1)).toBe(`1 menu in your home. ${ALL_MENUS_LEAD}`);
     expect(MENUS_FOOT).toBe("Click a menu to edit it. Pick a device on a card and that device uses this menu from now on. New menu makes one no device uses yet.");
+    expect(MENUS_BOARD_FOOT).toBe("Click a menu to edit it. Pick a dot and that device uses this menu from now on. Click a device's name to see its menus first.");
+    expect(MENUS_BOARD_HINT).toBe("Each device uses one of each kind. Pick a dot to switch.");
     expect(menusDeviceFoot(PHONE_D)).toBe("Pick which menu this iPhone uses. Click a menu to edit it.");
     expect(menusEmptyText([], "")).toBe("No watch or iPhone has connected yet. Pair one on the Home tab.");
     expect(menusEmptyText(DEVICES, "zz")).toBe("No menu or device has that name.");
-    for (const text of [allMenusLead(2), MENUS_FOOT, menusDeviceFoot(JESSE_D), libraryEditTitle("A"), newMenuText("anywhere"), newMenuMadeText("A"), NEW_MENU_ADMIN_TEXT]) {
+    for (const text of [allMenusLead(2), MENUS_FOOT, MENUS_BOARD_FOOT, MENUS_BOARD_HINT, menusDeviceFoot(JESSE_D), libraryEditTitle("A"), newMenuText("anywhere"), newMenuMadeText("A"), NEW_MENU_ADMIN_TEXT]) {
       expect(text).not.toMatch(/[–—]| - /);
       expect(text).not.toMatch(/[Ll]ink|Same as/);
     }
@@ -160,9 +146,35 @@ describe("the Menus tab", () => {
     return { ...t, home, opened, library, sentOf, libNow };
   }
 
+  /** Every device, on the board or as cards. The choice is kept across
+   * tests, as in the panel. */
+  function show(t: ReturnType<typeof tab>, view: "board" | "cards" = "cards", focus?: string) {
+    t.el.focusOwner = undefined;
+    t.call("setView", view);
+    t.el.focusOwner = focus;
+  }
+
+  it("draws the board by default: a row per menu in two sections, a round dot per device, and Delete only on a menu no device uses", async () => {
+    const t = tab();
+    show(t, "board");
+    await t.ready();
+    const text = t.whole();
+    expect(text).toContain(`<table class="bd `);
+    expect(text.split(`<tr class=bd-row `).length - 1).toBe(4);
+    expect(text).toContain("Anywhere menus");
+    expect(text).toContain("Entity quick menus");
+    expect(text).toContain(MENUS_BOARD_HINT);
+    expect(text).toContain(MENUS_BOARD_FOOT);
+    expect(text).toMatch(/bd-box ticked rd/);
+    // A dot not taken says which menu it replaces there.
+    expect(text).toContain("Use this menu on Chen Watch. Replaces Chen's menu there.");
+    expect(text.split(`aria-label=Delete `).length - 1).toBe(1);
+    for (const gone of ["pk-tab", ">Device<", "Link", "Same as"]) expect(text).not.toContain(gone);
+  });
+
   it("draws a card per menu with its name and round ticks under Used by, and no Devices, Link or Same as", async () => {
     const t = tab();
-    t.call("setFilter", ALL_FILTER);
+    show(t);
     await t.ready();
     const text = t.whole();
     expect(text).toContain("4 menus in your home.");
@@ -182,7 +194,7 @@ describe("the Menus tab", () => {
 
   it("moves a device onto a menu with a tick, with item_id and its unit", async () => {
     const t = tab();
-    t.call("setFilter", ALL_FILTER);
+    show(t);
     await t.ready();
     t.call("use", t.libNow().menus.find((m) => m.id === HOME_MENU), CHEN);
     await t.lib.store?.refresh();
@@ -194,7 +206,7 @@ describe("the Menus tab", () => {
 
   it("opens a card's menu in a device's editor, on that menu; a menu no device uses in the library", async () => {
     const t = tab();
-    t.call("setFilter", ALL_FILTER);
+    show(t);
     await t.ready();
     t.call("open", t.libNow().menus.find((m) => m.id === QUICK));
     expect(t.opened.at(-1)).toEqual([CHEN, "watch"]);
@@ -208,7 +220,7 @@ describe("the Menus tab", () => {
 
   it("has one New menu, in the tab's head, and none in the sections", async () => {
     const t = tab();
-    t.call("setFilter", ALL_FILTER);
+    show(t);
     await t.ready();
     const text = t.whole();
     expect(text.split("<span>New menu</span>").length - 1).toBe(1);
@@ -218,7 +230,7 @@ describe("the Menus tab", () => {
 
   it("makes a menu no device uses with library/menus/create, and moves no device", async () => {
     const t = tab();
-    t.call("setFilter", ALL_FILTER);
+    show(t);
     await t.ready();
     const before = structuredClone(t.home.lib.picks);
     t.call("toggleNew");
@@ -260,7 +272,7 @@ describe("the Menus tab", () => {
 
   it("asks for a name, and keeps the form open with the refusal", async () => {
     const t = tab();
-    t.call("setFilter", ALL_FILTER);
+    show(t);
     await t.ready();
     t.call("toggleNew");
     t.el.newForm = { ...(t.el.newForm as object), name: "   " };
@@ -276,14 +288,14 @@ describe("the Menus tab", () => {
 
   it("is greyed for anyone who is not an administrator", async () => {
     const t = tab(false);
-    t.call("setFilter", ALL_FILTER);
+    show(t);
     await t.ready();
     expect(t.whole()).toContain(NEW_MENU_ADMIN_TEXT);
   });
 
   it("puts a new menu on a device with a tick", async () => {
     const t = tab();
-    t.call("setFilter", ALL_FILTER);
+    show(t);
     await t.ready();
     t.call("toggleNew");
     await t.call("makeMenu");
@@ -299,7 +311,7 @@ describe("the Menus tab", () => {
     // The iPhone never saved menus: the summary lists no menus for it.
     delete t.home.lib.picks[PHONE]!.menus;
     for (const m of Object.values(t.home.lib.menus)) m.owners = m.owners.filter((o) => o !== PHONE);
-    t.call("setFilter", ALL_FILTER);
+    show(t);
     await t.ready();
     t.call("toggleNew");
     t.call("setNewUnit", t.el.newForm, "entity");
@@ -322,7 +334,7 @@ describe("the Menus tab", () => {
 
   it("deletes a menu no device uses after asking", async () => {
     const t = tab();
-    t.call("setFilter", ALL_FILTER);
+    show(t);
     await t.ready();
     t.el.deleteAsk = SPARE;
     expect(t.whole()).toContain("No device uses it. This cannot be undone.");
@@ -331,19 +343,18 @@ describe("the Menus tab", () => {
     expect(t.home.lib.menus[SPARE]).toBeUndefined();
   });
 
-  it("shows a device's two menus with a pick of another, then the rest dimmed with Add chips", async () => {
+  it("shows a focused device's two menus first, then the rest dimmed", async () => {
     const t = tab();
-    t.call("setFilter", CHEN);
+    show(t, "board", CHEN);
     await t.ready();
     const text = t.whole();
+    expect(text).toContain("<b>Chen Watch</b>");
+    expect(text).toContain("uses Chen's menu and Entity quick menu");
     expect(text).toContain("On Chen Watch");
-    expect(text).toContain("Chen's menu · 0 slots · only here");
-    expect(text).toContain("Entity quick menu · 0 slots · also on Jesse Apple Watch and iPhone 15 Pro");
-    expect(text).toContain("lt-pick-sel");
-    expect(text).toContain(`<option value=${HOME_MENU} ?selected=false>Home menu</option>`);
-    expect(text).toContain(`<option value=${CHEN_MENU} ?selected=true>Chen's menu</option>`);
     expect(text).toContain("Not on this watch");
-    expect(text).toContain("Add to this watch");
+    expect(text).toContain("Pick its dot under Chen Watch to use it there.");
+    expect(text).toMatch(/class=bd-row dim/);
+    expect(text.indexOf(`data-row=${CHEN_MENU}`)).toBeLessThan(text.indexOf(`data-row=${HOME_MENU}`));
     expect(text).toContain("Pick which menu this watch uses. Click a menu to edit it.");
   });
 });

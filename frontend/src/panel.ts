@@ -438,7 +438,7 @@ import { renderWatchPagePreview, watchPagePreviewStyles } from "./watch-pages/pr
 import { type WatchPage, asWatchPagesDocument, watchPageName, watchPagesOf } from "./watch-pages/model.js";
 import { watchFrameStyles } from "./watch-frame.js";
 import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles } from "./watch-pages/hook.js";
-import { ALL_PAGES_PATH, ALL_STATUS_PAGES_PATH, allPagesHookStyles, renderAllPagesView } from "./watch-pages/all-pages-hook.js";
+import { ALL_PAGES_PATH, ALL_STATUS_PAGES_PATH, type ListOwnScreen, allPagesHookStyles, listFocusOf, listFocusPath, renderAllPagesView } from "./watch-pages/all-pages-hook.js";
 import { ALL_MENUS_PATH, renderAllMenusView } from "./watch-menus/all-menus-hook.js";
 import { dropWatchMenusDrafts, isWatchMenusRoute, renderWatchMenusView, watchMenusDirty, watchMenusHookStyles } from "./watch-menus/hook.js";
 import { dropWatchVoiceDrafts, isWatchVoiceRoute, renderWatchVoiceView, watchVoiceDirty, watchVoiceHookStyles } from "./watch-voice/hook.js";
@@ -11281,6 +11281,15 @@ export class WristAssistantPanel extends LitElement {
     return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow, inHead: true });
   }
 
+  /** A device's Settings, Rooms or Voice, from a list tab's focused
+   * device. */
+  private openOwnScreen(ownerId: string, kind: "watch" | "iphone", id: ListOwnScreen) {
+    const screen = id === "settings" ? WATCH_SETTINGS_SCREEN : WATCH_SCREENS.find((s) => s.id === id);
+    if (screen === undefined) return;
+    this.pickWatch(ownerId);
+    this.goTo(deviceScreenPath(kind, screen, ownerId));
+  }
+
   private goTo(path: string, replace = false) {
     if (!replace && !this.leaveScreenFor({ prefix: this.route?.prefix ?? "", path })) return;
     const next = navigatePanel(this.route, path, replace);
@@ -11461,11 +11470,17 @@ export class WristAssistantPanel extends LitElement {
     if (tab === "iphone") return this.withIphoneRow(this.renderIphoneScreen());
     // The Pages tab, on `/all-pages`, and the Status pages tab, on
     // `/all-status-pages`: every page, or every status page, on every watch
-    // and iPhone, one element told which. A card opens its page in that
-    // device's page editor or status pages editor.
+    // and iPhone, one element told which. A row opens its page in that
+    // device's page editor or status pages editor. A device after the
+    // address (`/all-pages/<owner>`) focuses the board on it.
     if (tab === "pages" || tab === "status-pages") {
+      const base = tab === "status-pages" ? ALL_STATUS_PAGES_PATH : ALL_PAGES_PATH;
+      const focusOwner = listFocusOf(this.route?.path, base);
       return renderAllPagesView({
         kind: tab === "status-pages" ? "status_pages" : "pages",
+        ...(focusOwner === undefined ? {} : { focusOwner }),
+        onFocus: (ownerId) => this.goTo(listFocusPath(base, ownerId)),
+        onOpenScreen: (ownerId, kind, screen) => this.openOwnScreen(ownerId, kind, screen),
         hass: this.hass, owners: this.owners, ownersReady: this.linkReady, phones: this.phonePages,
         icons: this.icons, iconsTick: this.iconsTick,
         onOpen: (ownerId, kind, what) => {
@@ -11481,7 +11496,11 @@ export class WristAssistantPanel extends LitElement {
     // menu on every watch and iPhone. A card opens that device's menu
     // editor, which it has already asked for the card's menu.
     if (tab === "menus") {
+      const focusOwner = listFocusOf(this.route?.path, ALL_MENUS_PATH);
       return renderAllMenusView({
+        ...(focusOwner === undefined ? {} : { focusOwner }),
+        onFocus: (ownerId) => this.goTo(listFocusPath(ALL_MENUS_PATH, ownerId)),
+        onOpenScreen: (ownerId, kind, screen) => this.openOwnScreen(ownerId, kind, screen),
         hass: this.hass, owners: this.owners, ownersReady: this.linkReady, phones: this.phonePages,
         icons: this.icons, iconsTick: this.iconsTick,
         onOpen: (ownerId, kind) => {

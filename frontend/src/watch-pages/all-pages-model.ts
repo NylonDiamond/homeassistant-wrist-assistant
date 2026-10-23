@@ -5,13 +5,11 @@
 // from it (`library/model.ts`, read from one `library/summary`). So a card
 // is a library item, and its ticks are the devices that pick it: nothing is
 // folded from the devices' records.
-// On a device's tab the list is that device's picks in its own order, each
-// with Hide here, then "Not on this watch": the rest of the library, dimmed,
-// each with an Add chip.
+// A focused device lists its picks in its own order, each with Hide here,
+// then "Not on this watch": the rest of the library, dimmed.
 //
-// This module is the pure part both tabs draw from: the words, the device
-// tabs over the cards, the Device menu (watches or iPhones), the search,
-// which device a card opens on, and a device tab's two lists. The element is
+// This module is the pure part both tabs draw from: the words, the search,
+// which device a row opens on, and a focused device's two lists. The element is
 // `all-pages.ts`, told by its `kind` which of the two it lists.
 // Plan: app repo docs/one_library_plan_2026-10.md, step 2.
 
@@ -67,15 +65,21 @@ export function emptyLibraryText(kind: CardKind, admin: boolean): string {
   return `Make ${aCard(kind)} once, then tick each watch or iPhone that should show it.`;
 }
 
-/** The line in the surface's foot. */
-export function footText(kind: CardKind, device: LinkDevice | undefined, selecting = false): string {
+/** The line in the surface's foot. On the board (`view`) a click on a
+ * device's name focuses it; Cards has no column to click. */
+export function footText(kind: CardKind, device: LinkDevice | undefined, selecting = false, view: "board" | "cards" = "board"): string {
   const one = cardNoun(kind);
   if (selecting) return `Click ${cardNoun(kind, 2)} to pick them. Shift+click picks every ${one} between two.`;
   if (device !== undefined) {
     const word = deviceWord(device.kind);
     return kind === "status_pages"
       ? `Click a status page to edit it. Drag to order. The order is this ${word}'s own.`
-      : `Click a page to edit it. Drag to order, and Hide here keeps a page on this ${word} without showing it.`;
+      : `Click a page to edit it. Drag to order, and Hide here (the eye) keeps a page on this ${word} without showing it.`;
+  }
+  if (view === "board") {
+    return kind === "status_pages"
+      ? "Click a status page to edit it. Tick a box to put it on that device. Click a device's name to order its status pages."
+      : "Click a page to edit it. Tick a box to show the page on that device. Click a device's name to order its pages.";
   }
   return kind === "status_pages"
     ? "Click a status page to edit it. Tick a device to put it there."
@@ -87,80 +91,21 @@ export function cardDetail(entry: LibraryItem): string {
   return entry.starter ? `${entry.detail} · starter` : entry.detail;
 }
 
-/** "all", or one device's owner id. */
+/** "all", or one device's owner id: the device the board focuses. */
 export type PagesFilter = string;
 export const ALL_FILTER: PagesFilter = "all";
-
-/** One device tab over the cards: All, then one per device, each with how
- * many it shows. */
-export interface FilterChip {
-  id: PagesFilter;
-  label: string;
-  kind?: LinkDevice["kind"];
-  /** The device's color (`device-colors.ts`); All has none. */
-  color?: string;
-  count: number;
-}
-
-/** All with every item of the library, then each device with how many of
- * the kind it picks. */
-export function filterChips(
-  devices: readonly LinkDevice[],
-  library: Library | undefined,
-  kind: CardKind,
-  colorOf: (ownerId: string) => string | undefined = () => undefined,
-): FilterChip[] {
-  return [
-    { id: ALL_FILTER, label: "All", count: library === undefined ? 0 : libraryItems(library, kind).length },
-    ...devices.map((d) => {
-      const color = colorOf(d.ownerId);
-      return {
-        id: d.ownerId, label: d.name, kind: d.kind, ...(color === undefined ? {} : { color }),
-        count: library === undefined ? 0 : countFor(library, d.ownerId, kind),
-      };
-    }),
-  ];
-}
 
 /** A filter kept from before, or All once its device is gone. */
 export function resolveFilter(filter: PagesFilter | undefined, devices: readonly LinkDevice[]): PagesFilter {
   return filter !== undefined && devices.some((d) => d.ownerId === filter) ? filter : ALL_FILTER;
 }
 
-/** The head's Device menu: every item, or only those on a watch, or only
- * those on an iPhone. */
+/** Every item, or only those on a watch, or only those on an iPhone. */
 export type PagesKind = "all" | "watch" | "iphone";
-
-/** Whether the home has both watches and iPhones: only then is there a
- * Device menu to pick from. */
-export function hasBothKinds(devices: readonly LinkDevice[]): boolean {
-  return devices.some((d) => d.kind === "watch") && devices.some((d) => d.kind === "iphone");
-}
-
-/** A kind kept from before, or All once the home has no menu for it. */
-export function resolveKind(kind: PagesKind | undefined, devices: readonly LinkDevice[]): PagesKind {
-  return kind !== undefined && kind !== "all" && hasBothKinds(devices) ? kind : "all";
-}
 
 /** Whether one of an item's devices is of this kind. */
 export function ownersOnKind(owners: readonly string[], kind: PagesKind, devices: readonly LinkDevice[]): boolean {
   return kind === "all" || devices.some((d) => d.kind === kind && owners.some((o) => sameId(o, d.ownerId)));
-}
-
-/** One option of the Device menu, with how many of the items it is given
- * it would show. */
-export interface KindOption {
-  key: PagesKind;
-  label: string;
-  count: number;
-}
-
-export function kindOptions(entries: readonly { owners: readonly string[] }[], devices: readonly LinkDevice[]): KindOption[] {
-  return [
-    { key: "all", label: "All", count: entries.length },
-    { key: "watch", label: "Watches", count: entries.filter((e) => ownersOnKind(e.owners, "watch", devices)).length },
-    { key: "iphone", label: "iPhones", count: entries.filter((e) => ownersOnKind(e.owners, "iphone", devices)).length },
-  ];
 }
 
 /** Whether a name matches the search, in any case. An empty search

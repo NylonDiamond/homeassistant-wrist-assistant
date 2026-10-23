@@ -1,9 +1,10 @@
 // The Pages and Status pages tabs' element against a stand-in Home
-// Assistant: it reads the library once, draws a card per library item with
-// a tick per device, ticks a page on or off a device, opens a page on a
-// device, draws a device's tab (its picks in order with Hide here and a
-// picture, then the rest of the home with Add chips), saves Hide here and the
-// order on that device's own record, and deletes from the library.
+// Assistant: it reads the library once, draws the board (a row per library
+// item, a column per device) or a card per item with a tick per device,
+// ticks a page on or off a device, opens a page on a device, draws a focused
+// device (its picks in order with Hide here and a picture, then the rest of
+// the home), saves Hide here and the order on that device's own record, and
+// deletes from the library.
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -30,9 +31,18 @@ function tab(kind: "pages" | "status_pages" = "pages", admin = true) {
   return { ...t, home, opened, library, sentOf };
 }
 
-/** The view kept for each tab is kept across tests, as in the panel. */
+/** The board, focused on one device or on every device ("all"): the
+ * address's focus, handed in by the panel. */
 function showTab(t: ReturnType<typeof tab>, filter: string) {
-  t.call("setFilter", filter);
+  t.el.focusOwner = undefined;
+  t.call("setView", "board");
+  t.el.focusOwner = filter === "all" ? undefined : filter;
+}
+
+/** Every device, as cards. */
+function showCards(t: ReturnType<typeof tab>) {
+  showTab(t, "all");
+  t.call("setView", "cards");
 }
 
 afterEach(() => {
@@ -44,9 +54,49 @@ afterEach(() => {
 });
 
 describe("the Pages tab", () => {
-  it("reads the library once and draws a card per page with a tick per device, and no Devices, Link or Add to", async () => {
+  it("draws the board by default: a row per page, a column per device, a box where the page is, and no Device menu or device tabs", async () => {
     const t = tab();
     showTab(t, "all");
+    await t.ready();
+    const text = t.whole();
+    expect(text).toContain(`<table class="bd `);
+    expect(text.split(`<tr class=bd-row `).length - 1).toBe(5);
+    expect(text).toContain(`aria-pressed=true`);
+    expect(text).toMatch(/bd-col-name">Jesse Apple Watch<\/span>[\s\S]*?bd-col-n">2</);
+    expect(text).toMatch(/bd-col-name">iPhone 15 Pro<\/span>[\s\S]*?bd-col-n">1</);
+    expect(text).toContain(">Order<");
+    expect(text).toContain(">Board<");
+    expect(text).toContain(">Cards<");
+    expect(text).toContain("Click a page to edit it. Tick a box to show the page on that device. Click a device's name to order its pages.");
+    for (const gone of ["pk-tab", ">Device<", "Watches (", "Link", "Not linked", "Same as"]) expect(text).not.toContain(gone);
+  });
+
+  it("focuses a device from its column head, through the host's address", async () => {
+    const focused: (string | undefined)[] = [];
+    const t = tab();
+    t.el.onFocus = (o: string | undefined) => focused.push(o);
+    showTab(t, "all");
+    await t.ready();
+    t.call("setFocus", CHEN);
+    expect(focused).toEqual([CHEN]);
+    // Cards leaves a focused device.
+    showTab(t, CHEN);
+    t.call("setView", "cards");
+    expect(focused).toEqual([CHEN, undefined]);
+  });
+
+  it("says Saved beside the head for a moment after a box's write", async () => {
+    const t = tab();
+    showTab(t, "all");
+    await t.ready();
+    const entry = (t.el.lib as { library: { pages: { id: string }[] } }).library.pages.find((e) => e.id === LIGHTS)!;
+    await t.call("tick", entry, JESSE, true);
+    expect(t.whole()).toContain(`<span class="bd-saved" role="status">`);
+  });
+
+  it("reads the library once and draws a card per page with a tick per device, and no Devices, Link or Add to", async () => {
+    const t = tab();
+    showCards(t);
     await t.ready();
     expect(t.sentOf("library/summary").length).toBeGreaterThan(0);
     // No device's record is read to draw the cards.
@@ -63,16 +113,6 @@ describe("the Pages tab", () => {
     for (const gone of ["ap-dev-open", ">Devices<", "Link", "Not linked", "Same as", "Add to…", "Remove from…", "Add all"]) expect(text).not.toContain(gone);
   });
 
-  it("counts every page on All and each device's own on its tab", async () => {
-    const t = tab();
-    showTab(t, "all");
-    await t.ready();
-    const text = t.whole();
-    expect(text).toMatch(/pk-tab-name">All<\/span>\s*<span class="pk-tab-count">5</);
-    expect(text).toMatch(/pk-tab-name">Jesse Apple Watch<\/span>\s*<span class="pk-tab-count">2</);
-    expect(text).toMatch(/pk-tab-name">iPhone 15 Pro<\/span>\s*<span class="pk-tab-count">1</);
-  });
-
   it("counts the tiles a watch skips on a page's ticked watch chips, never an unticked watch's or the iPhone's", async () => {
     const t = tab();
     const map = { id: "m", entityId: "map.C3A0E000-0000-4000-8000-0000000000B7", gridCol: 0, gridRow: 0, colSpan: 12, rowSpan: 4 };
@@ -81,6 +121,11 @@ describe("the Pages tab", () => {
     item.items = [...(item.items as unknown[]), map, web] as typeof item.items;
     showTab(t, "all");
     await t.ready();
+    // The board says it under the watch's box.
+    const board = t.whole();
+    const row = board.slice(board.indexOf(`data-row=${PAGE1.toUpperCase()}`));
+    expect(row.slice(0, row.indexOf("</tr>"))).toContain(`title=Jesse Apple Watch skips Map and Garden: only an iPhone shows them.>skips 2</em>`);
+    showCards(t);
     const text = t.whole();
     const card = text.slice(text.indexOf(`data-card=${PAGE1}`));
     const ticks = card.slice(card.indexOf("lt-ticks"), card.indexOf("</wa-chip-row>"));
@@ -288,39 +333,46 @@ describe("the Pages tab", () => {
   });
 });
 
-describe("a device's tab", () => {
-  it("lists the device's pages in its order, each with a picture, its facts and Hide here, then the rest with Add chips", async () => {
+describe("a focused device", () => {
+  it("lists the device's pages in its order, each with a picture and Hide here in its column, then the rest dimmed", async () => {
     const t = tab();
     showTab(t, JESSE);
     await t.ready();
     const text = t.whole();
+    expect(text).toContain("<b>Jesse Apple Watch</b>");
+    expect(text).toContain("2 pages, in the order the watch shows them");
     expect(text).toContain("On Jesse Apple Watch");
     expect(text).toContain("Drag to order. The order is this watch's own.");
-    expect(text).toContain("Smart page · only here");
-    expect(text).toContain("1 tile · hidden here");
-    expect(text).toContain(">Hide here<");
-    expect(text).toContain(">Show here<");
-    expect(text).toContain("lt-row hid");
+    expect(text).toContain(`class="bd-col on"`);
+    expect(text).toContain(`title=Hide here: keep Smart on Jesse Apple Watch without showing it`);
+    expect(text).toContain(`title=Show New Page 1 on Jesse Apple Watch again`);
+    expect(text).toContain("bd-eye hid");
     expect(text).toContain("lr-pic");
-    expect(text.indexOf("Smart page · only here")).toBeLessThan(text.indexOf("1 tile · hidden here"));
+    expect(text).toContain(`draggable=true`);
+    const smart = text.indexOf(`data-row=${SMART.toUpperCase()}`);
+    expect(smart).toBeGreaterThan(0);
+    expect(smart).toBeLessThan(text.indexOf(`data-row=${PAGE1.toUpperCase()}`));
     // The system page is the device's own, never a row.
-    expect(text).not.toContain("Settings");
+    expect(text).not.toContain(`data-row=${SYSTEM.toUpperCase()}`);
     expect(text).toContain("Not on this watch");
-    expect(text).toContain("Pages on your other devices, or on none yet. Add one here with its Add chip.");
-    expect(text).toContain("Add to this watch");
-    expect(text).toContain("ap-card lt-dim");
-    // No Multi select on a device's tab.
+    expect(text).toContain("Tick its box under Jesse Apple Watch to add it.");
+    expect(text).toMatch(/class=bd-row dim/);
+    expect(text).toContain(">All devices<");
+    // No Multi select on a focused device.
     expect(text).not.toContain("Multi select");
   });
 
-  it("draws an iPhone's rows as the iPhone's pages, and says Add to this iPhone", async () => {
+  it("draws an iPhone's rows as the iPhone's pages, and offers its own screens but no Voice", async () => {
     const t = tab();
+    t.el.onOpenScreen = () => undefined;
     showTab(t, PHONE);
     await t.ready();
     const text = t.whole();
     expect(text).toContain("lr-pic ph");
-    expect(text).toContain("Add to this iPhone");
-    expect(text).toContain("1 tile · also on Jesse Apple Watch");
+    expect(text).toContain("Also on this iPhone:");
+    expect(text).toContain(">Settings<");
+    expect(text).toContain(">Rooms<");
+    expect(text).not.toContain(">Voice<");
   });
 
   it("saves Hide here on the device's own record, keeping its system page and every other page as loaded", async () => {
@@ -411,7 +463,7 @@ describe("Multi select", () => {
 describe("the Status pages tab", () => {
   it("draws a card per status page, a starter once for every device, with ticks and no Hide here", async () => {
     const t = tab("status_pages");
-    showTab(t, "all");
+    showCards(t);
     await t.ready();
     const text = t.whole();
     expect(text).toContain("Your status page library: 2 status pages.");
@@ -435,8 +487,9 @@ describe("the Status pages tab", () => {
     showTab(t, JESSE);
     await t.ready();
     const text = t.whole();
-    expect(text).toContain("2 rows · only here");
+    expect(text).toContain("2 rows");
     expect(text).not.toContain("Hide here");
+    expect(text).not.toContain("bd-eye");
     expect(text).toContain("Every status page in your library is on Jesse Apple Watch.");
     const lib = (t.el.lib as { library: { statusPages: { id: string }[] } }).library;
     t.call("open", lib.statusPages.find((e) => e.id === STARTER));

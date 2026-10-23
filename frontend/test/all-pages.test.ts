@@ -1,7 +1,6 @@
 // The Pages tab's and the Status pages tab's rules, drawn from the library:
-// one card per library item, the device tabs and their counts, the Device
-// menu, the search, which device a card opens on, a device tab's two lists
-// and its order, and the tab's words.
+// one row or card per library item, the search, which device a row opens
+// on, a focused device's two lists and its order, and the tab's words.
 
 import { describe, expect, it } from "vitest";
 
@@ -20,11 +19,8 @@ import {
   dropChange,
   emptyLibraryText,
   emptyText,
-  filterChips,
   footText,
-  hasBothKinds,
   inOrder,
-  kindOptions,
   movedOrder,
   libraryEditTitle,
   noPicksText,
@@ -33,7 +29,6 @@ import {
   openDevice,
   orderHint,
   resolveFilter,
-  resolveKind,
   restTitle,
   shownItems,
 } from "../src/watch-pages/all-pages-model.js";
@@ -59,45 +54,23 @@ describe("the cards", () => {
     expect(detail("status_pages", DOORS)).toBe("2 rows");
   });
 
-  it("are found by name in any case, and kept to one kind of device by the Device menu", () => {
+  it("are found by name in any case, and kept to one kind of device", () => {
     expect(shownItems(lib(), "pages", "LIGHT").map((e) => e.id)).toEqual([LIGHTS]);
     expect(shownItems(lib(), "pages", "", "iphone", DEVICES).map((e) => e.id)).toEqual([PAGE1]);
     // An item no device has is on no kind of device.
     expect(shownItems(lib(), "pages", "", "watch", DEVICES).map((e) => e.id)).toEqual([LIGHTS, CAMERA, PAGE1, SMART]);
-    expect(kindOptions(shownItems(lib(), "pages"), DEVICES).map((o) => [o.label, o.count])).toEqual([["All", 5], ["Watches", 4], ["iPhones", 1]]);
   });
 });
 
-describe("the device tabs", () => {
-  it("count every item on All, and each device's own picks, system pages left out", () => {
-    expect(filterChips(DEVICES, lib(), "pages").map((c) => [c.label, c.count])).toEqual([
-      ["All", 5], ["Chen Watch", 2], ["Jesse Apple Watch", 2], ["iPhone 15 Pro", 1],
-    ]);
-    expect(filterChips(DEVICES, lib(), "status_pages").map((c) => [c.label, c.count])).toEqual([
-      ["All", 2], ["Chen Watch", 1], ["Jesse Apple Watch", 2], ["iPhone 15 Pro", 1],
-    ]);
-    expect(filterChips(DEVICES, undefined, "pages").every((c) => c.count === 0)).toBe(true);
-  });
-
-  it("wear each device's color, and none on All", () => {
-    const chips = filterChips(DEVICES, lib(), "pages", (o) => (o === JESSE ? "var(--wa-person-2)" : undefined));
-    expect(chips[0]!.color).toBeUndefined();
-    expect(chips[2]!.color).toBe("var(--wa-person-2)");
-    expect(chips[1]).not.toHaveProperty("color");
-  });
-
-  it("go back to All once their device is gone, and the Device menu to All without both kinds", () => {
+describe("the focus", () => {
+  it("goes back to every device once its device is gone", () => {
     expect(resolveFilter(JESSE, DEVICES)).toBe(JESSE);
     expect(resolveFilter("gone", DEVICES)).toBe(ALL_FILTER);
     expect(resolveFilter(undefined, DEVICES)).toBe(ALL_FILTER);
-    expect(hasBothKinds(DEVICES)).toBe(true);
-    expect(hasBothKinds([CHEN_D, JESSE_D])).toBe(false);
-    expect(resolveKind("iphone", DEVICES)).toBe("iphone");
-    expect(resolveKind("iphone", [CHEN_D])).toBe("all");
   });
 });
 
-describe("a device's tab", () => {
+describe("a focused device", () => {
   it("lists the device's picks in its own order with Hide here, then the rest of the library", () => {
     const view = deviceView(lib(), JESSE_D, "pages");
     expect(view.picks.map((p) => [p.entry.name, p.hidden])).toEqual([["Smart", false], ["New Page 1", true]]);
@@ -185,8 +158,10 @@ describe("the tab's words", () => {
   });
 
   it("say in the foot what a click and a tick do, as the mock does", () => {
-    expect(footText("pages", undefined)).toBe("Click a page to edit it. Tick a device to show the page there. One page, the same everywhere.");
-    expect(footText("status_pages", undefined)).toBe("Click a status page to edit it. Tick a device to put it there.");
+    expect(footText("pages", undefined)).toBe("Click a page to edit it. Tick a box to show the page on that device. Click a device's name to order its pages.");
+    expect(footText("status_pages", undefined)).toBe("Click a status page to edit it. Tick a box to put it on that device. Click a device's name to order its status pages.");
+    expect(footText("pages", undefined, false, "cards")).toBe("Click a page to edit it. Tick a device to show the page there. One page, the same everywhere.");
+    expect(footText("status_pages", undefined, false, "cards")).toBe("Click a status page to edit it. Tick a device to put it there.");
     expect(footText("pages", JESSE_D)).toContain("Hide here");
     expect(footText("status_pages", JESSE_D)).not.toContain("Hide here");
     expect(footText("pages", undefined, true)).toBe("Click pages to pick them. Shift+click picks every page between two.");
@@ -209,7 +184,7 @@ describe("the tab's words", () => {
 
   it("never break a sentence with a dash, and never speak of links", () => {
     const texts = [
-      allPagesLead(2), allPagesLead(2, "status_pages"), footText("pages", JESSE_D), footText("pages", undefined), REST_HINT,
+      allPagesLead(2), allPagesLead(2, "status_pages"), footText("pages", JESSE_D), footText("pages", undefined), footText("pages", undefined, false, "cards"), REST_HINT,
       orderHint(CHEN_D), libraryEditTitle("Shed"), noPicksText(PHONE_D, "pages", ""), emptyText(DEVICES, ""),
       allPagesLead(0), emptyLibraryText("pages", true), emptyLibraryText("pages", false), noPicksText(PHONE_D, "pages", "", 0),
     ];
@@ -236,5 +211,19 @@ describe("the devices a page can be on", () => {
   it("leave out an iPhone whose app is too old to show pages", () => {
     const owners = [owner("p1", "iphone", "Old iPhone", { phone_pages: false }), owner("w1", "watch", "Apple Watch")];
     expect(linkDevicesOf(owners, true).map((d) => d.ownerId)).toEqual(["w1"]);
+  });
+});
+
+describe("a list tab's address", () => {
+  it("names the focused device after the tab's own address, and nothing else", async () => {
+    const { listFocusOf, listFocusPath } = await import("../src/watch-pages/all-pages-hook.js");
+    expect(listFocusOf("/all-pages", "/all-pages")).toBeUndefined();
+    expect(listFocusOf("/all-pages/", "/all-pages")).toBeUndefined();
+    expect(listFocusOf("/all-pages/ab%20c", "/all-pages")).toBe("ab c");
+    expect(listFocusOf("/all-pages-x/ab", "/all-pages")).toBeUndefined();
+    expect(listFocusOf("/all-status-pages/W1", "/all-pages")).toBeUndefined();
+    expect(listFocusOf("/all-menus/%E0%A4%A", "/all-menus")).toBeUndefined();
+    expect(listFocusPath("/all-menus", "a/b")).toBe("/all-menus/a%2Fb");
+    expect(listFocusPath("/all-menus", undefined)).toBe("/all-menus");
   });
 });
