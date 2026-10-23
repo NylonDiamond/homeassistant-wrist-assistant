@@ -3485,7 +3485,8 @@ export function renderPreviewFrame(input: WatchPagePreviewInput, s: number, body
     // and iPhone) hides it, as it hides the watch's title; its band stays.
     const control = phonePageControlRow(input, s);
     const title = input.behavior?.pageTitleMode === "Off" || typeof input.page.name !== "string" ? "" : input.page.name.trim();
-    return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, title, ...(control === undefined ? {} : { dots: control }) });
+    const ink = watchPageHasDefaultBlackBackground(input.page);
+    return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, title, ink, ...(control === undefined ? {} : { dots: control }) });
   }
   const dots = watchPageIndicatorRow(input, s);
   return renderPhoneFrame(input.phone, s, body, { label: label ?? "iPhone", icons: input.icons, ...(dots === undefined ? {} : { dots }) });
@@ -3786,6 +3787,10 @@ export const watchPagePreviewStyles = css`
     font-size: 13px;
   }
   .wp-smart > b { color: #fff; font-size: 15px; }
+  /* On the iPhone look's grouped background (a page with no color of its
+     own), in the phone's label ink. */
+  .wa-phone.ios.ink .wp-smart { color: color-mix(in srgb, ${unsafeCSS(PHONE_LABEL_INK)} 75%, transparent); }
+  .wa-phone.ios.ink .wp-smart > b { color: ${unsafeCSS(PHONE_LABEL_INK)}; }
   .wp-smart-check { display: block; line-height: 0; }
   /* A smart page's tile, in a box of its own so a rule's tiles can be told
      apart: the tiles of every other rule draw faint, as on the phone. */

@@ -67,6 +67,28 @@ export function watchHasConfigEntry(entries: unknown, domain: string): boolean {
   return Array.isArray(entries) && entries.some((e) => isJsonObject(e) && e.domain === domain);
 }
 
+const musicEntityCache = new WeakMap<object, boolean>();
+
+/** Whether Music Assistant is here: the config entry call found one, or an
+ * entity of its platform is in the registry (the call can fail, for a user
+ * who is no administrator say, while the registry is on `hass` for all).
+ * Otherwise the call's answer, undefined while it is not known. */
+export function watchMusicAssistantPresent(
+  entryAnswer: boolean | undefined,
+  entities: Readonly<Record<string, { platform?: string } | undefined>> | undefined,
+): boolean | undefined {
+  if (entryAnswer === true) return true;
+  if (entities !== undefined) {
+    let found = musicEntityCache.get(entities);
+    if (found === undefined) {
+      found = Object.values(entities).some((e) => e?.platform === MUSIC_ASSISTANT_DOMAIN);
+      musicEntityCache.set(entities, found);
+    }
+    if (found) return true;
+  }
+  return entryAnswer;
+}
+
 /** Whether `cloud/status` says Home Assistant Cloud can speak: logged in,
  * and its link `connected`. */
 export function watchCloudTTSAvailable(status: unknown): boolean {

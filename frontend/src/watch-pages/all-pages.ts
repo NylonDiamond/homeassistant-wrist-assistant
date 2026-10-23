@@ -56,7 +56,6 @@ import {
   type DeviceView,
   type PagesFilter,
   type PagesKind,
-  REST_HINT,
   aCard,
   allPagesLead,
   cardDetail,
@@ -64,7 +63,9 @@ import {
   cardsTitle,
   deviceView,
   dropChange,
+  emptyLibraryText,
   emptyText,
+  restHint,
   filterChips,
   footText,
   hasBothKinds,
@@ -702,6 +703,14 @@ export class WaAllPages extends LitElement {
 
   /** All: one card per item of the library, in its order. */
   private renderAll(library: Library, devices: readonly LinkDevice[]): TemplateResult {
+    if (devices.length > 0 && libraryItems(library, this.kind).length === 0) {
+      const may = this.mayMake;
+      return html`<div class="ap-empty-lib">
+        <p>${emptyLibraryText(this.kind, may)}</p>
+        ${may ? html`<button type="button" class="ap-new-btn" ?disabled=${this.newForm?.busy === true} @click=${() => this.toggleNew()}>
+          ${uiIcon("plus")}<span>New ${cardNoun(this.kind)}</span></button>` : nothing}
+      </div>`;
+    }
     const shown = shownItems(library, this.kind, this.search, this.deviceKind, devices);
     if (shown.length === 0) return html`<p class="ap-empty">${emptyText(devices, this.search, this.deviceKind, this.kind)}</p>`;
     const waiting = this.waiting(library);
@@ -871,12 +880,12 @@ export class WaAllPages extends LitElement {
     return html`<div class="lt-view">
       <div class="lt-sect"><span>${onDeviceTitle(device)} <small>${total}</small></span><span class="lt-sect-r">${orderHint(device)}</span></div>
       ${this.picksNote === undefined ? nothing : html`<p class="lt-line ${this.picksNote.kind}" role="status">${this.picksNote.text}</p>`}
-      ${picks.length === 0 ? html`<div class="lt-list"><p class="lt-empty">${noPicksText(device, this.kind, this.search)}</p></div>`
+      ${picks.length === 0 ? html`<div class="lt-list"><p class="lt-empty">${noPicksText(device, this.kind, this.search, view.rest.length, this.mayMake)}</p></div>`
         : html`<div class="lt-list" role="list" aria-label=${onDeviceTitle(device)}>${picks.map((pick, i) => this.renderRow(pick, i, ids, device, devices, drag, pages))}</div>`}
       ${free === undefined ? nothing : html`<p class="lt-line">${free}</p>`}
-      <div class="lt-sect"><span>${restTitle(device)} <small>${view.rest.length}</small></span><span class="lt-sect-r">${REST_HINT}</span></div>
+      <div class="lt-sect"><span>${restTitle(device)} <small>${view.rest.length}</small></span><span class="lt-sect-r">${restHint(cardNoun(this.kind, 2))}</span></div>
       ${view.rest.length === 0
-        ? html`<p class="lt-line">${this.search.trim() === "" ? `Every ${cardNoun(this.kind)} in your home is on ${device.name}.` : `No other ${cardNoun(this.kind)} has that name.`}</p>`
+        ? html`<p class="lt-line">${this.search.trim() === "" ? `Every ${cardNoun(this.kind)} in your library is on ${device.name}.` : `No other ${cardNoun(this.kind)} has that name.`}</p>`
         : html`<div class="ap-grid" role="list">${view.rest.map((entry) => this.renderRest(library, entry, device, devices, waiting))}</div>`}
     </div>`;
   }
@@ -1074,6 +1083,9 @@ export class WaAllPages extends LitElement {
     .ap-new-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .ap-new-btn:disabled { opacity: .45; cursor: default; }
     .ap-new-btn svg { width: 16px; height: 16px; }
+    /* An empty library: how a page works, centered, with New page. */
+    .ap-empty-lib { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 16px; text-align: center; }
+    .ap-empty-lib p { margin: 0; max-width: 40ch; font-size: 14px; line-height: 1.45; color: var(--wa-muted); }
 
     /* A status page's picture: the watch's black screen, one screen tall. */
     .ap-pic-status .sp-screen { pointer-events: none; }

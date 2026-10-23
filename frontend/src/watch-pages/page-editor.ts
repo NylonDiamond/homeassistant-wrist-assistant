@@ -36,8 +36,8 @@
 // Every page lives once in the home's library (`library/`), and a device
 // picks from it: a page's settings open on a tick per device
 // (`library/pick`), a row of a page other devices have too wears their name,
-// its delete asks "Remove from this watch only" or "Delete from the
-// library", and "Not on this watch" under the pages adds the library's rest
+// its delete asks "Remove from this watch only" or "Delete on all 3
+// devices", and "Not on this watch" under the pages adds the library's rest
 // here. Home Assistant maps a save back onto the library, so an edit reaches
 // every device that has the page. The words are `library-editing.ts`.
 //
@@ -121,6 +121,7 @@ import {
   watchCloudTTSAvailable,
   watchHasConfigEntry,
   watchMergedRenders,
+  watchMusicAssistantPresent,
   watchSaveSpeakerWarning,
   watchTemplateRequests,
   watchTemplateSignature,
@@ -148,7 +149,6 @@ import { type TestControl, testControlFor } from "../test-controls.js";
 import { uiIcon } from "../ui-icons.js";
 import {
   NOTHING_TO_SAVE_TEXT,
-  PAGES_UNREADABLE_TEXT,
   PAIR_FIRST_TEXT,
   START_FRESH_BUTTON,
   WAIT_FOR_IPHONE_TEXT,
@@ -159,6 +159,7 @@ import {
   mayStart,
   newDeviceText,
   noRecordStart,
+  pagesUnreadableText,
   savedByLine,
   watchAppDevices,
   watchName,
@@ -176,6 +177,9 @@ import {
   copyConfigText,
   openConfigDialogs,
   renderConfigFoot,
+  renderConfigSyncPill,
+  renderViewJsonItem,
+  restoreQuestionTitle,
   renderConfigHistoryDialog,
   renderConfigRawDialog,
   renderConfigSaved,
@@ -932,6 +936,9 @@ export class WaPageEditor extends LitElement {
   @state() private watchMenuOpen = false;
   /** Why the last value typed in the tile card was refused. */
   @state() private fieldNote?: string;
+  /** The note a refused drag or resize on the stage put in the line under
+   * the bar, so the next edit can take it away again. */
+  private stageRefusal?: Note;
   /** The Size card's Column, Row, Width and Height boxes, folded under the
    * size presets until asked for (or while a typed number was refused). */
   @state() private sizeFieldsOpen = false;
@@ -939,7 +946,7 @@ export class WaPageEditor extends LitElement {
   @state() private addTileOpen = false;
   /** The foot bar's History dialog is open (`config-foot.ts`). */
   @state() private historyOpen = false;
-  /** The foot bar's Raw configuration dialog is open. */
+  /** The View as JSON dialog is open. */
   @state() private rawOpen = false;
   /** The raw JSON went to the clipboard since the dialog opened. */
   @state() private rawCopied = false;
@@ -2088,6 +2095,8 @@ export class WaPageEditor extends LitElement {
     const changed = draft.apply(next, options);
     if (changed) {
       this.fieldNote = undefined;
+      if (this.stageRefusal !== undefined && this.note === this.stageRefusal) this.note = undefined;
+      this.stageRefusal = undefined;
       this.requestUpdate();
     }
     return changed;
@@ -2183,7 +2192,7 @@ export class WaPageEditor extends LitElement {
       voice: () => this.voiceDefaults,
       cameraRefreshDefaults: () => this.cameraRefresh,
       behavior: () => this.behavior,
-      musicAssistant: () => this.homeData.musicAssistant,
+      musicAssistant: () => watchMusicAssistantPresent(this.homeData.musicAssistant, this.hass?.entities),
       cloudTTS: () => this.homeData.cloudTTS,
       templateRenders: () => this.templateRenders,
       smartRuleId: () => {
@@ -2606,7 +2615,7 @@ export class WaPageEditor extends LitElement {
   private duplicateRefusal(page: WatchPage, tile: WatchPageTile): string | undefined {
     const document = this.draft?.document;
     if (document === undefined || tileIdOf(tile) === "") return "This tile cannot be copied.";
-    if (this.busy || this.editingOff(page)) return this.saving ? SAVING_TEXT : "Turn off Watch view to copy a tile.";
+    if (this.busy || this.editingOff(page)) return this.saving ? SAVING_TEXT : `Turn off ${this.viewName} to copy a tile.`;
     const refusal = watchAddRefusal(document, watchPageId(page), tileEntityId(duplicateOf(tile)));
     if (refusal === undefined) return undefined;
     return refusal === "onPage" ? "This page already has a tile for that entity." : "This page takes no more tiles.";
@@ -2695,6 +2704,15 @@ export class WaPageEditor extends LitElement {
   private refuse(reason: string): void {
     this.fieldNote = reason;
     this.requestUpdate();
+  }
+
+  /** Refuse a drag or resize on the stage: the tile snaps back, with the
+   * reason in the line under the bar, which shows whatever card is open
+   * (the Size card's note shows only while that card's boxes are open). */
+  private refuseGesture(reason: string): void {
+    const note: Note = { kind: "warn", text: reason };
+    this.stageRefusal = note;
+    this.note = note;
   }
 
   /** Column or Row typed in the tile card, 1-based. A drop there, without the
@@ -3188,18 +3206,18 @@ export class WaPageEditor extends LitElement {
       if (g.outcome.kind === "move" || g.outcome.kind === "swap") {
         this.edit(dropWatchTile(document, g.pageId, g.tileId, g.cell, g.pointerTileId));
       } else if (g.outcome.kind === "none" && g.cell.row + g.rect.rowSpan > WATCH_EDITOR_MAX_ROWS) {
-        this.refuse(`${PAGE_END_TEXT} A tile this high cannot go that far down.`);
+        this.refuseGesture(`${PAGE_END_TEXT} A tile this high cannot go that far down.`);
       }
       return;
     }
     const preview = g.preview;
     if (preview === undefined || sameRect(g.rect, g.startRect)) return;
     if (preview.refused === "end") {
-      this.refuse(`${PAGE_END_TEXT} That size would push a tile below it past the end, so the tile kept its size.`);
+      this.refuseGesture(`${PAGE_END_TEXT} That size would push a tile below it past the end, so the tile kept its size.`);
       return;
     }
     if (preview.overlaps) {
-      this.refuse("That size would cover a tile above or beside it, so the tile kept its size.");
+      this.refuseGesture("That size would cover a tile above or beside it, so the tile kept its size.");
       return;
     }
     this.edit(resizeWatchTile(document, g.pageId, g.tileId, g.rect, { baseline: g.basePage }));
@@ -3226,7 +3244,7 @@ export class WaPageEditor extends LitElement {
     const next = moveWatchTilesBy(document, g.pageId, group.map((m) => m.id), dcols, drows);
     if (next === undefined) {
       if (group.some((m) => m.rect.row + drows + m.rect.rowSpan > WATCH_EDITOR_MAX_ROWS)) {
-        this.refuse(`${PAGE_END_TEXT} These tiles cannot go that far down.`);
+        this.refuseGesture(`${PAGE_END_TEXT} These tiles cannot go that far down.`);
       }
       return;
     }
@@ -3453,6 +3471,11 @@ export class WaPageEditor extends LitElement {
   /** The shown device, for the lines that name it. */
   private get device(): SettingDevice {
     return this.onPhone ? "iphone" : "watch";
+  }
+
+  /** The name on the stage's view toggle, for the lines that point at it. */
+  private get viewName(): string {
+    return this.onPhone ? "iPhone view" : "Watch view";
   }
 
   /** The shown device as the link rules name it. */
@@ -3715,9 +3738,7 @@ export class WaPageEditor extends LitElement {
       historyState: this.historyState,
       device: this.device,
     });
-    return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
-      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
-    </span>`;
+    return renderConfigSyncPill(status, draft?.dirty ?? false);
   }
 
   /** Whether this watch's iPhone may still move its pages here, so the
@@ -3756,6 +3777,8 @@ export class WaPageEditor extends LitElement {
         ${draft ? html`<button class="row" role="menuitem" ?disabled=${!draft.dirty || this.saving}
           title=${this.isNew ? "Go back to the empty page. Undo brings the edits back." : "Go back to the copy Home Assistant holds. Undo brings the edits back."}
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
+        ${draft && this.libraryItem === undefined && (this.record?.revision ?? 0) > 0
+          ? renderViewJsonItem(run(() => { this.rawCopied = false; this.rawOpen = true; })) : nothing}
         ${start ? html`<button class="row" role="menuitem"
           @click=${run(() => this.askStartFresh())}>${START_FRESH_BUTTON}</button>` : nothing}
       </div>` : nothing}
@@ -3940,7 +3963,7 @@ export class WaPageEditor extends LitElement {
       const id = this.watchId;
       // A record that is there but unreadable (a newer schema) is not "no
       // pages yet": a first save would only meet a conflict.
-      if (watchRecordUnreadable(record, asWatchPagesDocument)) return html`<div class="pe-empty"><span>${PAGES_UNREADABLE_TEXT}</span></div>`;
+      if (watchRecordUnreadable(record, asWatchPagesDocument)) return html`<div class="pe-empty"><span>${pagesUnreadableText(this.device)}</span></div>`;
       // Edits kept from before Home Assistant lost this watch's record (it
       // was removed, or the store started over). They stay, and are merged
       // into the record that comes next (the iPhone's upload); said here,
@@ -4042,7 +4065,7 @@ export class WaPageEditor extends LitElement {
 
   // ── the foot bar ───────────────────────────────────────────────────────
 
-  /** The stored copy's line, History and Raw configuration, pinned to the
+  /** The stored copy's line and History, pinned to the
    * foot of the editor (`config-foot.ts`), with the two dialogs they open. */
   private renderFoot(record: WatchConfigRecord, document: WatchPagesDocument, dirty: boolean): TemplateResult {
     const status = configFootStatus({ record, size: sizeOf(document), limit: WATCH_PAGES_LIMIT_BYTES, noun: "pages", historyState: this.historyState, device: this.device });
@@ -4051,9 +4074,7 @@ export class WaPageEditor extends LitElement {
       status,
       historyState: this.historyState,
       historyOpen: this.historyOpen,
-      rawOpen: this.rawOpen,
       onHistory: () => { this.historyOpen = true; },
-      onRaw: () => { this.rawCopied = false; this.rawOpen = true; },
       device: this.device,
     })}
     ${this.historyOpen ? renderConfigHistoryDialog({
@@ -4258,7 +4279,7 @@ export class WaPageEditor extends LitElement {
     let body: TemplateResult;
     if (page === undefined) body = html`<div class="lc-note">Pick a page to see its tiles.</div>`;
     else if (smart) body = html`<div class="lc-note">A smart page fills itself.</div>`;
-    else if (tiles.length === 0) body = html`<div class="lc-note">No tiles yet. Add one, or drag one in from another page.</div>`;
+    else if (tiles.length === 0) body = html`<div class="lc-note">No tiles yet. Add one to start.</div>`;
     else {
       const screen = this.screenOf(owner);
       const layout = watchPreviewLayout(page, screen, { flat: true, sideInset: this.gridSideInset });
@@ -4290,7 +4311,7 @@ export class WaPageEditor extends LitElement {
         <span class="lc-sub">top to bottom</span>
         <span class="spacer"></span>
         <button class="lc-btn pri pe-add-tile" aria-haspopup="dialog" ?disabled=${addOff}
-          title=${this.saving ? SAVING_TEXT : smart ? "A smart page fills itself." : page !== undefined && this.editingOff(page) ? "Turn off Watch view to add a tile." : "Add a tile to this page"}
+          title=${this.saving ? SAVING_TEXT : smart ? "A smart page fills itself." : page !== undefined && this.editingOff(page) ? `Turn off ${this.viewName} to add a tile.` : "Add a tile to this page"}
           @click=${() => this.openAddTile()}>${uiIcon("plus")}<span>Add</span></button>
       </div>
       ${body}
@@ -4518,7 +4539,7 @@ export class WaPageEditor extends LitElement {
     const scrolls = !smart && (asOnWatch ? watchPagePreviewScrolls(page, screen, phone) : this.editStage(page, input).scrolls);
     const empty = !smart && !asOnWatch && tiles === 0;
     const hint = smart ? undefined
-      : asOnWatch ? `Shown as the ${phone ? "iPhone" : "watch"} draws it. Turn off Watch view to edit.`
+      : asOnWatch ? `Shown as the ${phone ? "iPhone" : "watch"} draws it: headers close up the rows below them. Turn off ${this.viewName} to edit.`
       : empty ? NO_TILES_TEXT
       : "Drag a tile to move it, or onto another tile to swap the two. Drag an edge or the corner of the selected tile to resize it. Arrow keys move the selected tile.";
     return html`<div class="card canvas-card lit pe-canvas" aria-label="Page">
@@ -4626,7 +4647,7 @@ export class WaPageEditor extends LitElement {
         <i class="tint-dot" style=${`--sw:${watchScreenColor(page)}`}></i></button>
       ${headers ? html`${sep}<button class="tb pe-watch-view ${this.asOnWatch ? "lit" : ""}" aria-pressed=${this.asOnWatch ? "true" : "false"}
           title=${`Headers pull the rows below them up on the ${deviceWord(this.linkKind)}. Editing is off while this is on.`}
-          @click=${() => { this.asOnWatch = !this.asOnWatch; this.cancelGestures(); }}><span class="word">${this.onPhone ? "iPhone view" : "Watch view"}</span></button>` : nothing}
+          @click=${() => { this.asOnWatch = !this.asOnWatch; this.cancelGestures(); }}><span class="word">${this.viewName}</span></button>` : nothing}
       ${sep}
       <span class="tb-zoom" role="group" aria-label="Zoom">
         <button class="tb icon pe-zoom-out" ?disabled=${scale <= stageZoomOut(scale)} aria-label="Zoom out" title="Zoom out"
@@ -5243,10 +5264,10 @@ export class WaPageEditor extends LitElement {
     return html`<dialog class="pe-ask" aria-labelledby="pe-ask-title"
       @cancel=${(e: Event) => { if (this.restoring) e.preventDefault(); }}
       @close=${() => { this.restoreAsk = undefined; }}>
-      <h3 id="pe-ask-title">Restore revision ${ask.entry.revision}?</h3>
+      <h3 id="pe-ask-title" title=${`Revision ${ask.entry.revision}`}>${restoreQuestionTitle(ask.entry)}</h3>
       <p>${savedByLine(ask.entry.updated_by, this.device)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
       ${ask.summary ? html`<p class="pe-muted">${ask.summary}</p>` : nothing}
-      <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves. The ${deviceWord(this.linkKind)} picks it up the next time it checks.</p>
+      <p>It is saved again as the newest save. The copy shown now stays in the earlier saves. The ${deviceWord(this.linkKind)} picks it up the next time it checks.</p>
       ${ask.others === undefined ? nothing : html`<p class="pe-restore-others">${ask.others}</p>`}
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${this.restoring} @click=${() => this.closeAsk()}>Cancel</button>
@@ -5273,7 +5294,8 @@ export class WaPageEditor extends LitElement {
       @cancel=${(e: Event) => { if (busy) e.preventDefault(); }}
       @close=${() => { if (!this.deletingAll) this.deleteAsk = undefined; }}>
       <h3 id="pe-del-title">Delete "${name}"?</h3>
-      <p>${isSmartWatchPage(page) ? "A smart page." : `It holds ${plural(tiles, "tile", "tiles")}.`} You can undo the delete until you leave this page.</p>
+      <p>${isSmartWatchPage(page) ? "A smart page." : `It holds ${plural(tiles, "tile", "tiles")}.`}${choices === undefined
+        ? ` Nothing changes on the ${deviceWord(this.linkKind)} until you save. Undo brings it back.` : ""}</p>
       ${choices === undefined ? nothing : html`<p class="pe-del-linked">${choices.body}</p>`}
       ${links.tiles.length > 0 ? html`
         <p>${links.tiles.length === 1 ? "A tile opens this page:" : "These tiles open this page:"}</p>
@@ -5299,7 +5321,7 @@ export class WaPageEditor extends LitElement {
         <button class="pe-btn" ?disabled=${busy} @click=${() => this.closeAsk()}>Cancel</button>
         ${choices === undefined
           ? html`<button class="pe-btn pe-primary pe-danger" @click=${() => this.deletePage()}>Delete page</button>`
-          : html`<button class="pe-btn pe-danger pe-del-here" ?disabled=${busy} @click=${() => this.deletePage()}>${choices.remove}</button>
+          : html`<button class="pe-btn pe-del-here" ?disabled=${busy} @click=${() => this.deletePage()}>${choices.remove}</button>
             <button class="pe-btn pe-primary pe-danger pe-del-all" ?disabled=${busy || this.saving}
               @click=${() => void this.deleteFromLibrary()}>${busy ? "Deleting…" : choices.library}</button>`}
       </div>
@@ -5701,6 +5723,13 @@ export class WaPageEditor extends LitElement {
        light form of the accent: the screen is black in both skins, where the
        light skin's own accent is too dark to see. */
     .pe-screen { --pe-mark: color-mix(in srgb, var(--wa-accent) 55%, #fff); --pe-edge: rgba(255, 255, 255, 0.16); }
+    /* The iPhone look puts the page on the grouped background, light in the
+       light skin, so when the page has no color of its own (the ink class)
+       its marks, cells and handle rings are built from the phone's label
+       ink and ground instead. */
+    .wa-phone.ios.ink .pe-screen { --pe-mark: color-mix(in srgb, var(--wa-phone-ink, #000000) 70%, var(--wa-accent)); }
+    .wa-phone.ios.ink .pe-cells > path { fill: color-mix(in srgb, var(--wa-phone-ink, #000000) 7%, transparent); }
+    .wa-phone.ios.ink .pe-handle { box-shadow: 0 0 0 1.5px var(--wa-phone-grouped, #f2f2f7), 0 1px 3px rgba(0, 0, 0, .35); }
     /* A tile has no ground of its own: the screen draws the page's
        background (color, brightness, pattern) under it, as the watch does,
        and the face draws the tile, with no edge of the editor's own, so an

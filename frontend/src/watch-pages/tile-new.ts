@@ -888,9 +888,10 @@ export function watchTemplateAddText(): string {
   return preset?.template ?? "";
 }
 
-/** The words the phone shows when Music Assistant is missing and Music Hub
- * is pressed (its alert's title and message, as one line). */
-export const WATCH_MUSIC_ASSISTANT_REQUIRED_TEXT = `${APP.musicHub.musicAssistant.title}. ${APP.musicHub.musicAssistant.message}`;
+/** Why the panel's Music Hub add is off when Home Assistant is known to have
+ * no Music Assistant. The phone's alert (`APP.musicHub.musicAssistant`) says
+ * the same in its own words. */
+export const WATCH_MUSIC_ASSISTANT_REQUIRED_TEXT = "The Music tile needs the Music Assistant integration in Home Assistant.";
 
 /**
  * A new template, music hub or point control tile (`TileAddDefaults.appTile`):

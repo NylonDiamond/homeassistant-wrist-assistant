@@ -28,6 +28,7 @@ import {
   watchAddableDomain,
   watchMediaPlayersFromHass,
 } from "./tile-new.js";
+import { VIRTUAL_TILE_KINDS } from "./model.js";
 
 /** One row: the panel's search row, plus the plain name of the entity's kind
  * as the phone's add names it ("Lights", "Media Players"). */
@@ -248,7 +249,7 @@ export type WatchAppAddKey = "musicHub" | "template" | "assist" | "speak" | "poi
 
 export interface WatchAppAddButton {
   key: WatchAppAddKey;
-  /** The button's words, as the phone's chip names it. */
+  /** The button's words: the kind's name in `VIRTUAL_TILE_KINDS`. */
   label: string;
   /** The phone's chip the button sits under. */
   chip: "Media" | "Others";
@@ -256,15 +257,20 @@ export interface WatchAppAddButton {
   done: string;
 }
 
-/** The app tile buttons in the dialog's order: Music Hub (the phone's Media
- * chip), then Template, Assist, Speak Message and Point Control (its Others
- * chip). No Webhook Inbox: on the phone that add is Debug only. */
+/** A button's name: its kind's one name (`VIRTUAL_TILE_KINDS`), so the
+ * button, the tile list and the settings title cannot drift apart. */
+const appName = (kind: string): string => VIRTUAL_TILE_KINDS[kind] ?? kind;
+
+/** The app tile buttons in the dialog's order: Music (the phone's Media
+ * chip), then Template, Assist, Speak and Point control (its Others chip).
+ * No Webhook inbox: on the phone that add is Debug only. A new Speak tile
+ * has no speakers yet, so its line says where to pick them. */
 export const WATCH_APP_ADD_BUTTONS: readonly WatchAppAddButton[] = [
-  { key: "musicHub", label: "Music Hub", chip: "Media", done: "Added a Music Hub tile." },
-  { key: "template", label: "Template", chip: "Others", done: "Added a Template tile." },
-  { key: "assist", label: "Assist", chip: "Others", done: "Added an Assist tile." },
-  { key: "speak", label: "Speak Message", chip: "Others", done: "Added a Speak Message tile." },
-  { key: "pointControl", label: "Point Control", chip: "Others", done: "Added a Point Control tile." },
+  { key: "musicHub", label: appName("music_hub"), chip: "Media", done: `Added a ${appName("music_hub")} tile.` },
+  { key: "template", label: appName("template"), chip: "Others", done: `Added a ${appName("template")} tile.` },
+  { key: "assist", label: appName("assist"), chip: "Others", done: `Added an ${appName("assist")} tile.` },
+  { key: "speak", label: appName("speak_message"), chip: "Others", done: `Added a ${appName("speak_message")} tile. Pick its speakers in the tile's settings before saving.` },
+  { key: "pointControl", label: appName("point_control"), chip: "Others", done: `Added a ${appName("point_control")} tile.` },
 ];
 
 /**
@@ -289,9 +295,10 @@ export function watchAppAdd(key: WatchAppAddKey, hass: Pick<WatchHassView, "stat
 
 /**
  * Why a button cannot add, or undefined when it can. Music Hub needs Music
- * Assistant (any config entry of the domain, the phone's rule): while that is
- * not known to be there (not installed, still asking, or the call failed),
- * the button is off and says the phone's alert words. A tile only the
+ * Assistant (any config entry of the domain, the phone's rule, or an entity
+ * of its platform): only when it is known to be missing is the button off.
+ * While that is not known (still asking, or the call failed, as it can for
+ * a user who is no administrator) the button stays on. A tile only the
  * iPhone draws is refused while a watch that picks the page runs an app too
  * old to skip it (`oldWatch`, from `watchPhoneTilesGroup`): that watch would
  * draw it as a grey placeholder.
@@ -301,7 +308,7 @@ export function watchAppAddBlockedText(
   musicAssistant: boolean | undefined,
   oldWatch?: WatchOldWatch,
 ): string | undefined {
-  if (key === "musicHub" && musicAssistant !== true) return WATCH_MUSIC_ASSISTANT_REQUIRED_TEXT;
+  if (key === "musicHub" && musicAssistant === false) return WATCH_MUSIC_ASSISTANT_REQUIRED_TEXT;
   if (isPhoneAddKey(key) && oldWatch !== undefined) return watchPhoneTilesBlockedText(oldWatch);
   return undefined;
 }

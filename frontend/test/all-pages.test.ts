@@ -18,6 +18,7 @@ import {
   deviceView,
   dropBefore,
   dropChange,
+  emptyLibraryText,
   emptyText,
   filterChips,
   footText,
@@ -27,6 +28,7 @@ import {
   movedOrder,
   libraryEditTitle,
   noPicksText,
+  restHint,
   onDeviceTitle,
   openDevice,
   orderHint,
@@ -139,9 +141,15 @@ describe("a device's tab", () => {
     expect(orderHint(PHONE_D)).toBe("Drag to order. The order is this iPhone's own.");
     expect(restTitle(JESSE_D)).toBe("Not on this watch");
     expect(restTitle(PHONE_D)).toBe("Not on this iPhone");
-    expect(REST_HINT).toBe("The rest of your home. Add one here with a tick.");
+    expect(REST_HINT).toBe("Pages on your other devices, or on none yet. Add one here with its Add chip.");
+    expect(restHint("status pages")).toBe("Status pages on your other devices, or on none yet. Add one here with its Add chip.");
     expect(noPicksText(CHEN_D, "pages", "")).toBe("No pages on Chen Watch yet. Tick one below, or make a new one.");
+    // Nothing below to tick: the library holds nothing this device lacks.
+    expect(noPicksText(CHEN_D, "pages", "", 0)).toBe("No pages on Chen Watch yet. Use New page to make one.");
     expect(noPicksText(CHEN_D, "status_pages", "zz")).toBe("No status page on Chen Watch has that name.");
+    // A user who cannot make a page is not sent to the New button.
+    expect(noPicksText(CHEN_D, "pages", "", 0, false)).toBe("No pages on Chen Watch yet. Ask a Home Assistant administrator to make the first one.");
+    expect(noPicksText(CHEN_D, "pages", "", 3, false)).toBe("No pages on Chen Watch yet. Tick one below.");
   });
 });
 
@@ -163,10 +171,17 @@ describe("which device a card opens on", () => {
 });
 
 describe("the tab's words", () => {
-  it("count the items in the home in the line under the title", () => {
-    expect(allPagesLead(12)).toBe("12 pages in your home. Tick a device and the page is on it.");
-    expect(allPagesLead(1)).toBe("1 page in your home. Tick a device and the page is on it.");
-    expect(allPagesLead(5, "status_pages")).toBe("5 status pages in your home. A status page is a read-only screen of rows that a tile or a menu slot opens.");
+  it("count the items in the library in the line under the title, and say what the library is", () => {
+    expect(allPagesLead(12)).toBe("Your page library: 12 pages. Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.");
+    expect(allPagesLead(1)).toBe("Your page library: 1 page. Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.");
+    expect(allPagesLead(5, "status_pages")).toBe("Your status page library: 5 status pages. A status page is a read-only screen of rows that a tile or a menu slot opens.");
+    expect(allPagesLead(0)).toBe("Your page library is empty.");
+  });
+
+  it("explain an empty library, and send anyone who may not make a page to an administrator", () => {
+    expect(emptyLibraryText("pages", true)).toBe("Make a page once, then tick each watch or iPhone that should show it.");
+    expect(emptyLibraryText("status_pages", true)).toBe("Make a status page once, then tick each watch or iPhone that should show it.");
+    expect(emptyLibraryText("pages", false)).toBe("Ask a Home Assistant administrator to make the first page.");
   });
 
   it("say in the foot what a click and a tick do, as the mock does", () => {
@@ -196,6 +211,7 @@ describe("the tab's words", () => {
     const texts = [
       allPagesLead(2), allPagesLead(2, "status_pages"), footText("pages", JESSE_D), footText("pages", undefined), REST_HINT,
       orderHint(CHEN_D), libraryEditTitle("Shed"), noPicksText(PHONE_D, "pages", ""), emptyText(DEVICES, ""),
+      allPagesLead(0), emptyLibraryText("pages", true), emptyLibraryText("pages", false), noPicksText(PHONE_D, "pages", "", 0),
     ];
     for (const text of texts) {
       expect(text).not.toMatch(/[–—]| - /);

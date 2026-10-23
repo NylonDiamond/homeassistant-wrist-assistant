@@ -9,7 +9,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import settingsCatalog from "../src/watch-settings-catalog.json";
-import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
+import { type WatchPage, type WatchPageTile, type WatchPagesDocument, VIRTUAL_TILE_KINDS } from "../src/watch-pages/model.js";
 import { type WatchPagesApplyOptions, WatchPagesDraft } from "../src/watch-pages/draft.js";
 import { NO_ICONS, type TileSettingsHost } from "../src/watch-pages/editor-host.js";
 import { watchTileSettingsSections } from "../src/watch-pages/tile-settings-options.js";
@@ -83,18 +83,25 @@ describe("the special table", () => {
       lawn_mower: "data:Mower",
       alarm_control_panel: "alarm:Alarm",
       camera: "camera:Camera",
-      multicam: "camera:Camera",
+      multicam: "camera:Multi camera",
       calendar: "calendarSettings:Calendars",
       weather: "weather:Weather",
       person: "person:Person",
       // Part 3f batch 2: the app kinds (`tile-app.json` has their rules).
       assist: "data:Assist",
       speak_message: "data:Speak",
-      point_control: "data:Pointer",
+      point_control: "data:Point control",
       music_hub: "musicHub:Music",
       template: "template:Template",
-      webhook_inbox: "inbox:Inbox",
+      webhook_inbox: "inbox:Webhook inbox",
     });
+    // An app kind's title is its one name, the tile list's.
+    for (const [kind, v] of Object.entries(WATCH_SPECIAL.tasks.kinds)) {
+      if (Object.hasOwn(VIRTUAL_TILE_KINDS, kind)) {
+        expect(v.title, kind).toBe(VIRTUAL_TILE_KINDS[kind]);
+        expect(watchSpecialTask(tile(`${kind}.X`))?.title, kind).toBe(VIRTUAL_TILE_KINDS[kind]);
+      }
+    }
     expect(WATCH_SPECIAL.tasks.order).toEqual(["data", "inbox", "alarm", "camera", "musicHub", "calendarSettings", "weather", "person", "template"]);
     expect(WATCH_SPECIAL.remote.kinds).toHaveLength(21);
     expect(WATCH_SPECIAL.remote.defaultLayout).toHaveLength(12);

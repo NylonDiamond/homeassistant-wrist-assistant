@@ -1,6 +1,6 @@
 // The foot bar of the page and menu editors (`config-foot.ts`): the stored
-// copy's size on the left, History and Raw configuration on the right, and
-// the two dialogs they open. Then the page editor drawn with a record, to
+// copy's size on the left once it nears the cap, History on the right, the
+// History and View as JSON dialogs, and the header's sync pill. Then the page editor drawn with a record, to
 // check the bar is there and the Page card sits under the watch, in the
 // stage card, with the settings column holding only the Tile card.
 
@@ -21,8 +21,13 @@ import {
   renderConfigHistoryDialog,
   renderConfigRawDialog,
   renderConfigSaved,
+  renderConfigSyncPill,
+  renderViewJsonItem,
   rejectedText,
+  restoreQuestionTitle,
+  VIEW_JSON_LABEL,
 } from "../src/watch-pages/config-foot.js";
+import { nothing } from "lit";
 import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import { type WatchPagesDocument, WATCH_CONFIG_LIMIT_BYTES, WATCH_PAGES_LIMIT_BYTES } from "../src/watch-pages/model.js";
 import "../src/watch-pages/page-editor.js";
@@ -55,11 +60,11 @@ const noop = () => undefined;
 
 function foot(r: WatchConfigRecord, historyState: "ready" | "unsupported" = "ready", size = 2_048): string {
   const status = configFootStatus({ record: r, size, limit: 10_240, noun: "pages", historyState, now: NOW });
-  return flat(renderConfigFoot({ status, historyState, historyOpen: false, rawOpen: false, onHistory: noop, onRaw: noop }));
+  return flat(renderConfigFoot({ status, historyState, historyOpen: false, onHistory: noop }));
 }
 
 describe("the foot bar", () => {
-  it("says only the size, then History and Raw configuration: when it was saved and whether it synced are the header's", () => {
+  it("says only History, and the size only near the cap: when it was saved and whether it synced are the header's", () => {
     const text = foot(record());
     // The header says "Saved 5 min ago" and the sync pill "Synced"; the
     // foot does not say them again.
@@ -67,9 +72,10 @@ describe("the foot bar", () => {
     expect(foot(record({ updated_by: "W1" }))).not.toContain("Saved from the watch");
     expect(foot(record({ delivered_revision: 6 }))).not.toContain("Waiting");
     expect(text).toContain(">History</button>");
-    expect(text).toContain(">Raw configuration</button>");
-    expect(text.indexOf(">History<")).toBeLessThan(text.indexOf(">Raw configuration<"));
-    expect(text).toContain("2 KB used of 10 KB");
+    expect(text).not.toContain("Raw configuration");
+    expect(text).not.toContain("cf-size");
+    expect(text).not.toContain("2 KB used of 10 KB");
+    expect(foot(record(), "ready", 9_000)).toContain("8.7 KB used of 10 KB. Close to the limit.");
   });
 
   it("keeps every fact of the old Stored copy card: waiting, rejected, near the limit", () => {
@@ -128,7 +134,7 @@ describe("the foot bar", () => {
     expect(past).toMatchObject({ near: false, over: true });
     expect(past.size).toBe(`300 KB used of 256 KB. ${OVER_LIMIT_TEXT}`);
     expect(past.size).not.toContain("Close to the limit.");
-    const drawn = flat(renderConfigFoot({ status: past, historyState: "ready", historyOpen: false, rawOpen: false, onHistory: noop, onRaw: noop }));
+    const drawn = flat(renderConfigFoot({ status: past, historyState: "ready", historyOpen: false, onHistory: noop }));
     expect(drawn).toContain("cf-size over");
   });
 
@@ -161,7 +167,6 @@ describe("the foot bar", () => {
   it("leaves History out on an integration that keeps no earlier saves", () => {
     const text = foot(record(), "unsupported");
     expect(text).not.toContain(">History<");
-    expect(text).toContain(">Raw configuration<");
   });
 });
 
@@ -178,9 +183,11 @@ describe("the dialogs", () => {
   it("History lists the earlier saves with Restore, the current one marked", () => {
     const text = history(record());
     expect(text).toContain("History of the pages");
-    expect(text).toContain("<b>Revision 7</b>");
+    // Each row leads with who saved it and when; the number is a tooltip.
+    expect(text).toContain("<b>Saved here 5 min ago</b>");
+    expect(text).toContain("<b>Saved from the watch 2 h ago</b>");
+    expect(text).not.toContain("<b>Revision");
     expect(text).toContain(">Current</span>");
-    expect(text).toContain("From the watch");
     expect(text).toContain(">Restore</button>");
     expect(text).not.toContain("Save or discard your edits first.</p>");
     expect(history(record(), true)).toContain("Save or discard your edits first.</p>");
@@ -188,8 +195,8 @@ describe("the dialogs", () => {
       noun: "pages", record: record(), entries, historyState: "ready", dirty: false, restoring: false,
       onRetry: noop, onRestore: noop, onClosed: noop, device: "iphone", now: NOW,
     }));
-    expect(phone).toContain("From the iPhone");
-    expect(phone).not.toContain("From the watch");
+    expect(phone).toContain("Saved from the iPhone");
+    expect(phone).not.toContain("from the watch");
   });
 
   it("History offers the save before one a device could not read", () => {
@@ -201,13 +208,43 @@ describe("the dialogs", () => {
       .toContain("The watch could not use this save: too large for the watch. Restore the save before it.");
   });
 
-  it("Raw configuration shows the open document as JSON, read only, with Copy", () => {
+  it("View as JSON shows the open document as JSON, read only, with Copy", () => {
     const document = { pages: [{ id: "A", name: "Home" }] };
     const text = flat(renderConfigRawDialog({ noun: "pages", document, revision: 7, dirty: true, copied: false, onCopy: noop, onClosed: noop }));
     expect(text).toContain(configRawText(document));
     expect(text).toContain("with your unsaved edits");
     expect(text).toContain(">Copy</button>");
+    expect(text).toContain(">Pages as JSON</h3>");
     expect(text).not.toContain("<textarea");
+  });
+
+  it("the restore question names the save by its time, not its number", () => {
+    expect(restoreQuestionTitle({ updated_at: "2026-10-03T09:00:00Z" }, NOW)).toBe("Put back the save from 3 h ago?");
+    expect(restoreQuestionTitle({ updated_at: "2026-10-03T11:59:30Z" }, NOW)).toBe("Put back the save from just now?");
+    expect(restoreQuestionTitle({ updated_at: null }, NOW)).toBe("Put back this earlier save?");
+  });
+});
+
+describe("the sync pill", () => {
+  const status = (r: WatchConfigRecord) => configFootStatus({ record: r, size: 1, limit: 10, noun: "pages", historyState: "ready", now: NOW });
+
+  it("shows green, amber or red, and steps aside while there are unsaved changes", () => {
+    expect(flat(renderConfigSyncPill(status(record()), false))).toContain(`class="tb-sync ok"`);
+    expect(flat(renderConfigSyncPill(status(record({ delivered_revision: 6 })), false))).toContain(`class="tb-sync warn"`);
+    const rejected = status(record({ revision: 8, delivered_revision: 7, rejected_revision: 8 }));
+    expect(rejected.tone).toBe("err");
+    expect(flat(renderConfigSyncPill(rejected, false))).toContain(`class="tb-sync err"`);
+    // Unsaved edits: "Synced" would be about a copy that is about to change.
+    expect(renderConfigSyncPill(status(record()), true)).toBe(nothing);
+    expect(renderConfigSyncPill(status(record({ delivered_revision: 6 })), true)).toBe(nothing);
+    // A save a device could not read still shows.
+    expect(flat(renderConfigSyncPill(rejected, true))).toContain(`class="tb-sync err"`);
+  });
+
+  it("View as JSON is a row of the ··· menu", () => {
+    expect(flat(renderViewJsonItem(noop))).toContain(`role="menuitem"`);
+    expect(flat(renderViewJsonItem(noop))).toContain(`>${VIEW_JSON_LABEL}</button>`);
+    expect(VIEW_JSON_LABEL).toBe("View as JSON");
   });
 });
 
@@ -236,9 +273,9 @@ describe("the page editor", () => {
     const text = body();
     expect(text).toContain(`<footer class="cf-bar"`);
     expect(text).not.toContain(">Saved here");
-    expect(text).toContain("used of 700 KB");
+    expect(text).not.toContain("used of 700 KB");
     expect(text).toContain(">History</button>");
-    expect(text).toContain(">Raw configuration</button>");
+    expect(text).not.toContain("Raw configuration");
     expect(text).not.toContain("Stored copy</h3>");
     expect(text).not.toContain("Earlier saves</h3>");
     const inspector = text.indexOf(`<div class="column inspector card">`);

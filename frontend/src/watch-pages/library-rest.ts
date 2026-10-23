@@ -9,7 +9,8 @@ import type { LibraryListKind } from "../library/client.js";
 import type { Library, LibraryItem } from "../library/model.js";
 import type { PendingPick } from "../library/store.js";
 import { renderTicks } from "../library/ticks.js";
-import { REST_HINT, type RestRow, restTitle } from "./library-editing.js";
+import { cardNoun, restHint } from "./all-pages-model.js";
+import { type RestRow, restTitle } from "./library-editing.js";
 import type { LinkDevice } from "./devices.js";
 
 export interface LibraryRestInput {
@@ -40,7 +41,7 @@ export function renderLibraryRest(input: LibraryRestInput): TemplateResult | typ
   return html`<div class="lb-rest ${input.standalone === true ? "standalone" : ""}" role="group" aria-label=${title}>
     <div class="lb-rest-h"><span class="lb-rest-t">${title}</span><small>${rows.length}</small>
       <span class="lb-rest-sp"></span>${input.more ?? nothing}</div>
-    <p class="lb-rest-hint">${REST_HINT}</p>
+    <p class="lb-rest-hint">${restHint(cardNoun(input.kind, 2))}</p>
     <ul class="lb-rest-list">${rows.map((row) => html`<li class="lb-rest-row" data-item=${row.entry.id}>
       ${input.picture(row.entry)}
       <span class="lb-rest-name"><b title=${row.entry.name}>${row.entry.name}</b><small>${row.meta}</small></span>

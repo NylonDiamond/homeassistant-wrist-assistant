@@ -25,7 +25,7 @@ import {
   watchAddedCountText,
   watchLeftOutText,
 } from "../src/watch-pages/add-tile-list.js";
-import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
+import { type WatchPage, type WatchPageTile, type WatchPagesDocument, tileKindLabel } from "../src/watch-pages/model.js";
 import { type WatchAddRefusal, WATCH_TILE_APP, addNewWatchTile } from "../src/watch-pages/tile-new.js";
 
 function st(entityId: string, state: string, friendly?: string): HassEntityState {
@@ -343,8 +343,12 @@ describe("the app tile buttons", () => {
     return (doc.pages as WatchPage[])[0]!.items as WatchPageTile[];
   }
 
-  it("lists Music Hub, then Template, Assist, Speak Message and Point Control, and no Webhook Inbox", () => {
-    expect(WATCH_APP_ADD_BUTTONS.map((b) => b.label)).toEqual(["Music Hub", "Template", "Assist", "Speak Message", "Point Control"]);
+  it("lists Music, then Template, Assist, Speak and Point control, and no Webhook inbox", () => {
+    expect(WATCH_APP_ADD_BUTTONS.map((b) => b.label)).toEqual(["Music", "Template", "Assist", "Speak", "Point control"]);
+    // The kind's one name, the one the tile list shows.
+    const kindOf = { musicHub: "music_hub", template: "template", assist: "assist", speak: "speak_message", pointControl: "point_control" } as const;
+    for (const btn of WATCH_APP_ADD_BUTTONS) expect(btn.label).toBe(tileKindLabel(kindOf[btn.key]));
+    expect(WATCH_APP_ADD_BUTTONS.find((x) => x.key === "speak")?.done).toBe("Added a Speak tile. Pick its speakers in the tile's settings before saving.");
     expect(WATCH_APP_ADD_BUTTONS.map((b) => b.chip)).toEqual(["Media", "Others", "Others", "Others", "Others"]);
     expect(WATCH_APP_ADD_BUTTONS.some((b) => /inbox|webhook/i.test(b.label))).toBe(false);
   });
@@ -417,9 +421,9 @@ describe("the app tile buttons", () => {
     expect(tilesOf(doc)[4]!.speakMessageOutputMode).toBeUndefined();
   });
 
-  it("turns Music Hub off with the phone's words until Music Assistant is known to be there", () => {
-    const words = "Music Assistant Required. Install the Music Assistant integration in Home Assistant to use Music Hub.";
-    expect(watchAppAddBlockedText("musicHub", undefined)).toBe(words);
+  it("turns Music Hub off only when Music Assistant is known to be missing", () => {
+    const words = "The Music tile needs the Music Assistant integration in Home Assistant.";
+    expect(watchAppAddBlockedText("musicHub", undefined)).toBeUndefined();
     expect(watchAppAddBlockedText("musicHub", false)).toBe(words);
     expect(watchAppAddBlockedText("musicHub", true)).toBeUndefined();
     for (const b of WATCH_APP_ADD_BUTTONS.filter((x) => x.key !== "musicHub")) {

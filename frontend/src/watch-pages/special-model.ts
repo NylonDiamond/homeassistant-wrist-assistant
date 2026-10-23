@@ -27,7 +27,7 @@ import settingsCatalog from "../watch-settings-catalog.json";
 import { type WatchEditOptions, deleteWatchTile, findWatchPage, firstFreeWatchCell, previewWatchTileResize, randomWatchId, resizeWatchTile, sameWatchId, watchTileRect } from "./edit.js";
 import { REMOVE, editTile, isBool, sameValue, setKey, withField, withKey, withoutKey } from "./tile-settings-model.js";
 import { WATCH_TILE_DEFAULTS, watchCalendarColor, watchCapitalized, watchEntityDefaults, watchFreshTile, watchThemeSwatches } from "./tile-new.js";
-import { type WatchPage, type WatchPageTile, type WatchPagesDocument, WATCH_GRID_COLUMNS, isJsonObject, isSmartWatchPage, tileEntityId, tileKind, tileTarget } from "./model.js";
+import { type WatchPage, type WatchPageTile, type WatchPagesDocument, VIRTUAL_TILE_KINDS, WATCH_GRID_COLUMNS, isJsonObject, isSmartWatchPage, isVirtualTileKind, tileEntityId, tileKind, tileTarget } from "./model.js";
 
 // ── the table ────────────────────────────────────────────────────────────
 
@@ -289,7 +289,9 @@ export function isWatchTvRemote(entityId: string, states: WatchSpecialStates | u
 }
 
 /** The special task a tile gets, its title and the table kind it is read
- * as; undefined for a tile with none. A TV media player is a remote. */
+ * as; undefined for a tile with none. A TV media player is a remote. The
+ * app's own kinds take their one name from `VIRTUAL_TILE_KINDS`, the name
+ * the tile list and the Add task's buttons show. */
 export function watchSpecialTask(
   tile: WatchPageTile,
   states?: WatchSpecialStates,
@@ -297,7 +299,8 @@ export function watchSpecialTask(
   const entityId = tileEntityId(tile);
   const kind = isWatchTvRemote(entityId, states) ? "remote" : tileKind(entityId);
   const entry = Object.hasOwn(T.tasks.kinds, kind) ? T.tasks.kinds[kind] : undefined;
-  return entry === undefined ? undefined : { task: entry.task, title: entry.title, kind };
+  if (entry === undefined) return undefined;
+  return { task: entry.task, title: isVirtualTileKind(kind) ? VIRTUAL_TILE_KINDS[kind]! : entry.title, kind };
 }
 
 // ── whole page plumbing ──────────────────────────────────────────────────

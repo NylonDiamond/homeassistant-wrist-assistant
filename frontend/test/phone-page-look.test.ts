@@ -97,7 +97,8 @@ describe("the iPhone look", () => {
 
   it("draws the page's name as the large title on the grouped background, with no watch title", () => {
     const text = phonePicture(LIVING);
-    expect(text).toContain('class="wa-phone ios"');
+    // A page with no color of its own sits on the grouped background: `ink`.
+    expect(text).toContain('class="wa-phone ios ink"');
     expect(text).toContain('<div class="wa-phone-title"');
     expect(text).toContain("<span>Living Room</span>");
     expect(text).toContain("font-size:34px");

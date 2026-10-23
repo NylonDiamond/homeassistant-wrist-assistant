@@ -153,7 +153,7 @@ describe("the page editor's devices, from the library", () => {
     const { body } = await editor();
     const text = body();
     expect(text).toContain("Not on this watch");
-    expect(text).toContain("The rest of your home. Add one here with a tick.");
+    expect(text).toContain("Pages on your other devices, or on none yet. Add one here with its Add chip.");
     expect(text).toMatch(/data-item=11B0E000-0000-4000-8000-000000000003[\s\S]*Den[\s\S]*1 tile · on Jesse's iPhone/);
     expect(text).toContain("Shed");
     expect(text).toContain("0 tiles · on no device");
@@ -190,8 +190,10 @@ describe("deleting a page under the library", () => {
     const text = flat(call("renderDeleteAsk", el.deleteAsk, draft().document));
     expect(text).toContain("It is also on Jesse's iPhone.");
     expect(text).toContain("Remove from this watch only");
-    expect(text).toContain("Delete from the library (it is on 2 devices)");
-    expect(text).not.toContain("Delete on all");
+    expect(text).toContain("Delete on all 2 devices");
+    expect(text).toContain("applies right away to every device");
+    expect(text).not.toContain("Nothing changes on the watch until you save.");
+    expect(text).toContain(`class="pe-btn pe-del-here"`);
   });
 
   it("asks only Delete page for a page on this device alone", async () => {
@@ -201,7 +203,8 @@ describe("deleting a page under the library", () => {
     expect((el.deleteAsk as { removeLinks: boolean }).removeLinks).toBe(true);
     const text = flat(call("renderDeleteAsk", el.deleteAsk, draft().document));
     expect(text).toContain(">Delete page<");
-    expect(text).not.toContain("Delete from the library");
+    expect(text).toContain("Nothing changes on the watch until you save. Undo brings it back.");
+    expect(text).not.toContain("Delete on all");
   });
 
   it("removes it from this watch only as an edit, and the save keeps every link mark as loaded", async () => {

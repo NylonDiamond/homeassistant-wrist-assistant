@@ -147,6 +147,7 @@ type Editor = Record<string, unknown> & {
   onKeyDown(e: unknown): void;
   tileSettingsHost(page: WatchPage, tile: WatchPageTile): TileSettingsHost | undefined;
   currentPage(): WatchPage | undefined;
+  refuseGesture(reason: string): void;
   selectedTileId?: string;
 };
 
@@ -347,6 +348,15 @@ describe("the tile's cards", () => {
     expect(size).toContain(`class="pe-fields" id="pe-size-fields"`);
     expect(size).toContain("That does not fit.");
     expect(size.indexOf("pe-fields")).toBeLessThan(size.indexOf("pe-warn"));
+  });
+
+  it("says why a drag on the stage was refused in the line under the bar, not in the folded Size card", () => {
+    const el = editor(hallPage(), DIMMER);
+    el.refuseGesture("That size would cover a tile above or beside it, so the tile kept its size.");
+    expect(el.fieldNote).toBeUndefined();
+    expect(el.note).toEqual({ kind: "warn", text: "That size would cover a tile above or beside it, so the tile kept its size." });
+    const size = card(flat(inspector(el)), "Size");
+    expect(size).not.toContain(`class="pe-fields"`);
   });
 
   it("badge each card in the complication editor's colors and glyphs", () => {

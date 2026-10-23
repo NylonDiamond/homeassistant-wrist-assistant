@@ -304,12 +304,15 @@ function tabBar(layout: PhonePagesLayout, s: number, icons: IconProvider | undef
  * A layout in the iPhone look (`phonePagesLayout` with `look`) adds the
  * large title band with `title` in it, and the `ios` class, which draws the
  * screen around the pages on the grouped background in the label ink.
+ * `ink` adds the `ink` class when the page itself sits on that grouped
+ * background (no color of its own), so marks drawn over the page can use
+ * the label ink too; a page with its own color keeps light marks.
  */
 export function renderPhoneFrame(
   layout: PhonePagesLayout,
   scale: number,
   area: TemplateResult,
-  options?: { label?: string; icons?: IconProvider; dots?: PhonePageDots; title?: string },
+  options?: { label?: string; icons?: IconProvider; dots?: PhonePageDots; title?: string; ink?: boolean },
 ): TemplateResult {
   const s = scale;
   const { model } = layout;
@@ -327,7 +330,7 @@ export function renderPhoneFrame(
     : html`<div class="wa-phone-switcher" aria-hidden="true" style=${`height:${px(layout.switcher.height)};margin:0 ${px(layout.switcher.x)} ${px(PHONE_SWITCHER_GAP)}`}></div>`;
   const title = layout.title === undefined ? nothing
     : html`<div class="wa-phone-title" style=${`height:${px(layout.title.height)};padding:0 ${px(layout.title.x)};font-size:${px(PHONE_LARGE_TITLE_SIZE)}`}><span>${options?.title ?? ""}</span></div>`;
-  return html`<div class="wa-phone${ios ? " ios" : ""}" aria-label=${options?.label ?? "iPhone"}
+  return html`<div class="wa-phone${ios ? " ios" : ""}${ios && options?.ink === true ? " ink" : ""}" aria-label=${options?.label ?? "iPhone"}
     style=${`--pf-bezel:${bezel}px;--pf-rim:${rim}px;--pf-radius:${radius}px;--wf-radius:0px;--pf-left-top:${at(0.17)};--pf-left-h:${at(0.22)};--pf-right-top:${at(0.26)};--pf-right-h:${at(0.1)}`}>
     <div class="wa-phone-screen" style=${`width:${px(model.screen.width)};min-height:${px(model.screen.height)}`}>
       ${statusBar(model, s, options?.icons, ios)}

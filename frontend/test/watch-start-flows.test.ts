@@ -36,6 +36,7 @@ import {
   WAIT_FOR_IPHONE_TEXT,
   WATCH_SETTINGS_CATALOG,
   catalogSettings,
+  pagesUnreadableText,
   watchBehaviorDefaults,
   watchRecordUnreadable,
 } from "../src/watch-settings.js";
@@ -335,6 +336,13 @@ describe("the page editor on a new watch", () => {
     expect(el.draft).toBeUndefined();
     await el.save();
     expect(ha.saves()).toHaveLength(0);
+  });
+
+  it("names the device and where to update when a record cannot be read", () => {
+    expect(PAGES_UNREADABLE_TEXT).toBe(pagesUnreadableText("watch"));
+    expect(pagesUnreadableText("watch")).toContain("pages for this watch");
+    expect(pagesUnreadableText("iphone")).toContain("pages for this iPhone");
+    expect(pagesUnreadableText("iphone")).toContain("Update Wrist Assistant in HACS, then reload.");
   });
 
   it("keeps edits from a record that went away, instead of opening the ready page over them", () => {

@@ -118,7 +118,9 @@ describe("the status pages editor's devices, from the library", () => {
     const ask = flat(call("renderDeleteAsk", el.deleteAsk));
     expect(ask).toContain("It is also on Jesse's iPhone.");
     expect(ask).toContain("Remove from this watch only");
-    expect(ask).toContain("Delete from the library (it is on 2 devices)");
+    expect(ask).toContain("Delete on all 2 devices");
+    // The safe choice is not dressed as the dangerous one.
+    expect(ask).toContain(`class="pe-btn sp-del-here"`);
   });
 
   it("removes it from this watch only as an edit, and the save keeps the link marks as loaded", async () => {

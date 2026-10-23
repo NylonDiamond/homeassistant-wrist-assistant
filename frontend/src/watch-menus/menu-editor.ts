@@ -123,6 +123,9 @@ import {
   copyConfigText,
   openConfigDialogs,
   renderConfigFoot,
+  renderConfigSyncPill,
+  renderViewJsonItem,
+  restoreQuestionTitle,
   renderConfigHistoryDialog,
   renderConfigRawDialog,
   renderConfigSaved,
@@ -498,7 +501,7 @@ export class WaMenuEditor extends LitElement {
   @state() private restoring = false;
   /** The foot bar's History dialog is open (`config-foot.ts`). */
   @state() private historyOpen = false;
-  /** The foot bar's Raw configuration dialog is open. */
+  /** The View as JSON dialog is open. */
   @state() private rawOpen = false;
   /** The raw JSON went to the clipboard since the dialog opened. */
   @state() private rawCopied = false;
@@ -2000,9 +2003,7 @@ export class WaMenuEditor extends LitElement {
     if (record === undefined || record.revision <= 0 || this.unsupported) return nothing;
     const budget = draft === undefined ? { size: 0, limit: 1 } : watchMenusBudget(draft.document);
     const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "menus", historyState: this.historyState, device: this.device });
-    return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
-      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
-    </span>`;
+    return renderConfigSyncPill(status, draft?.dirty ?? false);
   }
 
   /** Whether this watch's iPhone may still move this kind here, so the
@@ -2037,6 +2038,8 @@ export class WaMenuEditor extends LitElement {
         ${draft ? html`<button class="row" role="menuitem" ?disabled=${!this.dirty || this.saving}
           title=${this.newWatch ? "Go back to the defaults. Undo brings the edits back." : "Go back to the copy Home Assistant holds. Undo brings the edits back."}
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
+        ${draft && this.libraryItem === undefined && (this.record?.revision ?? 0) > 0
+          ? renderViewJsonItem(run(() => { this.rawCopied = false; this.rawOpen = true; })) : nothing}
         ${start ? html`<button class="row" role="menuitem"
           @click=${run(() => this.startFresh())}>${START_FRESH_BUTTON}</button>` : nothing}
       </div>` : nothing}
@@ -2253,7 +2256,7 @@ export class WaMenuEditor extends LitElement {
     ${fresh || inLibrary ? nothing : this.renderFoot(record, draft.document, draft.dirty)}`;
   }
 
-  /** The stored copy's line, History and Raw configuration, pinned to the
+  /** The stored copy's line and History, pinned to the
    * foot of the editor (`config-foot.ts`), with the two dialogs they open. */
   private renderFoot(record: WatchConfigRecord, document: MenusDocument, dirty: boolean): TemplateResult {
     const budget = watchMenusBudget(document);
@@ -2263,9 +2266,7 @@ export class WaMenuEditor extends LitElement {
       status,
       historyState: this.historyState,
       historyOpen: this.historyOpen,
-      rawOpen: this.rawOpen,
       onHistory: () => { this.historyOpen = true; },
-      onRaw: () => { this.rawCopied = false; this.rawOpen = true; },
     })}
     ${this.historyOpen ? renderConfigHistoryDialog({
       noun: "menus",
@@ -2301,10 +2302,10 @@ export class WaMenuEditor extends LitElement {
     return html`<dialog class="pe-ask" aria-labelledby="me-ask-title"
       @cancel=${(e: Event) => { if (this.restoring) e.preventDefault(); }}
       @close=${() => { this.restoreAsk = undefined; }}>
-      <h3 id="me-ask-title">Restore revision ${ask.entry.revision}?</h3>
+      <h3 id="me-ask-title" title=${`Revision ${ask.entry.revision}`}>${restoreQuestionTitle(ask.entry)}</h3>
       <p>${savedByLine(ask.entry.updated_by, this.device)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
       ${ask.summary ? html`<p class="pe-muted">${ask.summary}</p>` : nothing}
-      <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves.</p>
+      <p>It is saved again as the newest save. The copy shown now stays in the earlier saves.</p>
       ${(ask.links ?? []).map((line) => html`<p>${line}</p>`)}
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${this.restoring} @click=${() => this.closeAsk()}>Cancel</button>

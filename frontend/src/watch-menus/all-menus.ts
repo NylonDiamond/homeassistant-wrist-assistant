@@ -33,7 +33,7 @@ import { newItemDialogStyles, openNewItemDialog, renderNewItemDialog } from "../
 import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
 import { type IconProvider, REFERENCE_CASE } from "../renderer.js";
 import { uiIcon } from "../ui-icons.js";
-import { ALL_FILTER, type PagesFilter, type PagesKind, REST_HINT, hasBothKinds, libraryEditTitle, onDeviceTitle, resolveFilter, resolveKind, restTitle } from "../watch-pages/all-pages-model.js";
+import { ALL_FILTER, type PagesFilter, type PagesKind, hasBothKinds, libraryEditTitle, onDeviceTitle, resolveFilter, resolveKind, restHint, restTitle } from "../watch-pages/all-pages-model.js";
 import { libraryListStyles } from "../watch-pages/library-list-styles.js";
 import { listTabStyles } from "../watch-pages/list-tab-styles.js";
 import { type LinkDevice, type PagesRecordFacts, awaitingMove, linkDevicesOf } from "../watch-pages/devices.js";
@@ -547,7 +547,7 @@ export class WaAllMenus extends LitElement {
         </select>`}
       </div>`)}</div>
       ${notes.map((n) => html`<p class="lt-line warn" role="alert">${n}</p>`)}
-      <div class="lt-sect"><span>${restTitle(device)} <small>${rest.length}</small></span><span class="lt-sect-r">${REST_HINT}</span></div>
+      <div class="lt-sect"><span>${restTitle(device)} <small>${rest.length}</small></span><span class="lt-sect-r">${restHint("menus")}</span></div>
       ${rest.length === 0 ? html`<p class="lt-line">${this.search.trim() === "" ? `${device.name} uses every menu in your home.` : "No other menu has that name."}</p>`
         : html`<div class="ap-grid" role="list">${rest.map((menu) => this.renderCard(library, menu, devices, waiting, device.ownerId))}</div>`}
     </div>`;

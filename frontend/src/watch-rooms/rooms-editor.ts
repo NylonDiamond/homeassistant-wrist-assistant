@@ -4,7 +4,7 @@
 // It wears the other editors' chrome (`editor-chrome.ts`): the top bar with
 // the way back, the watch picker, the sync pill, Save and the panel's Watch
 // settings, then the cards (`view.ts`), then the foot bar with the stored
-// copy's line, History and Raw configuration.
+// copy's line and History.
 //
 // The host pattern of the status page editor
 // (`watch-status-pages/status-pages-editor.ts`): watches from the owners
@@ -68,6 +68,9 @@ import {
   copyConfigText,
   openConfigDialogs,
   renderConfigFoot,
+  renderConfigSyncPill,
+  renderViewJsonItem,
+  restoreQuestionTitle,
   renderConfigHistoryDialog,
   renderConfigRawDialog,
   renderConfigSaved,
@@ -959,9 +962,7 @@ export class WaRoomsEditor extends LitElement {
     if (record === undefined || record.revision <= 0 || draft === undefined) return nothing;
     const budget = roomsBudget(draft.effective, this.kind);
     const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: this.noun, historyState: this.historyState, device: this.device });
-    return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
-      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
-    </span>`;
+    return renderConfigSyncPill(status, draft.dirty);
   }
 
   private renderTopMenu(draft: RoomsDraft | undefined): TemplateResult | typeof nothing {
@@ -975,6 +976,8 @@ export class WaRoomsEditor extends LitElement {
         <button class="row" role="menuitem" ?disabled=${!this.dirty || this.saving}
           title=${this.newWatch ? "Go back to how the screen opened. Undo brings the edits back." : "Go back to the copy Home Assistant holds. Undo brings the edits back."}
           @click=${run(() => this.discard())}>Discard edits</button>
+        ${(this.record?.revision ?? 0) > 0
+          ? renderViewJsonItem(run(() => { this.rawCopied = false; this.rawOpen = true; })) : nothing}
       </div>` : nothing}
     </span>`;
   }
@@ -1059,9 +1062,7 @@ export class WaRoomsEditor extends LitElement {
       status,
       historyState: this.historyState,
       historyOpen: this.historyOpen,
-      rawOpen: this.rawOpen,
       onHistory: () => { this.historyOpen = true; },
-      onRaw: () => { this.rawCopied = false; this.rawOpen = true; },
     })}
     ${this.historyOpen ? renderConfigHistoryDialog({
       noun,
@@ -1096,9 +1097,9 @@ export class WaRoomsEditor extends LitElement {
     return html`<dialog class="pe-ask" aria-labelledby="rm-ask-title"
       @cancel=${(e: Event) => { if (this.restoring) e.preventDefault(); }}
       @close=${() => { this.restoreAsk = undefined; }}>
-      <h3 id="rm-ask-title">Restore revision ${ask.entry.revision}?</h3>
+      <h3 id="rm-ask-title" title=${`Revision ${ask.entry.revision}`}>${restoreQuestionTitle(ask.entry)}</h3>
       <p>${savedByLine(ask.entry.updated_by, this.device)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
-      <p>${this.kind === "rooms" ? "This home's rooms come back as they were in that save." : "Every watch setting comes back as it was in that save, not only the rooms."} It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}, and the copy shown now stays in the earlier saves.</p>
+      <p>${this.kind === "rooms" ? "This home's rooms come back as they were in that save." : "Every watch setting comes back as it was in that save, not only the rooms."} It is saved again as the newest save, and the copy shown now stays in the earlier saves.</p>
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${this.restoring} @click=${() => this.closeAsk()}>Cancel</button>
         <button class="pe-btn pe-primary" ?disabled=${this.restoring} @click=${() => void this.restore()}>${this.restoring ? "Restoring…" : "Restore"}</button>

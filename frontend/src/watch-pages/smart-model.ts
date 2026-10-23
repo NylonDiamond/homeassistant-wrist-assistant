@@ -866,9 +866,11 @@ export function smartCountBadge(rule: WatchSmartRule): number | undefined {
   return count > 0 ? count : undefined;
 }
 
-/** "Not resolved": an `all` rule whose list is absent or empty. */
+/** "Not resolved": an `all` rule whose list was never read. An empty list
+ * was read and found none, so it is not a warning: the home has none of
+ * that kind yet. */
 export function smartRuleUnresolved(rule: WatchSmartRule): boolean {
-  return rule.mode === "all" && (rule.resolvedEntityIds ?? []).length === 0;
+  return rule.mode === "all" && rule.resolvedEntityIds === undefined;
 }
 
 /** How the max value box shows a stored value: a whole number without a

@@ -80,9 +80,10 @@ export interface WatchPagesEditorHost {
    * here: the panel never writes it. A getter. */
   readonly behavior: Readonly<Record<string, unknown>> | undefined;
   /** Whether Music Assistant has a config entry in this home, in any state
-   * (the phone's rule for the Music Hub add); undefined until the element's
-   * call is answered, and after a call that failed. Asked once for the home,
-   * and again after a reconnect. A getter. */
+   * (the phone's rule for the Music Hub add), or an entity of its platform
+   * in the registry; undefined until the element's call is answered, and
+   * after a call that failed. Only false turns the Music Hub add off. Asked
+   * once for the home, and again after a reconnect. A getter. */
   readonly musicAssistant: boolean | undefined;
   /** Whether Home Assistant Cloud is logged in and connected, so `tts.cloud`
    * is a voice engine; undefined until known or when the call failed (the

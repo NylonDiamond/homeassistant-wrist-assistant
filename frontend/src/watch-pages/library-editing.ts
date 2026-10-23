@@ -3,8 +3,8 @@
 // summary (`library/model.ts`) and nothing else.
 //
 // The words: the tick row's locks, the badge on a row, the delete question
-// ("Delete from the library (it is on 3 devices)" or "Remove from this watch
-// only"), the line a restore adds when it changes other devices too, the
+// ("Delete on all 3 devices" or "Remove from this watch only"), the
+// line a restore adds when it changes other devices too, the
 // rows of "Not on this watch", and the name a menu's copy starts with.
 // Plan: app repo docs/one_library_plan_2026-10.md, step 3.
 
@@ -120,7 +120,7 @@ export interface LibraryDeleteChoices {
   others: string[];
   /** "Remove from this watch only". */
   remove: string;
-  /** "Delete from the library (it is on 3 devices)". */
+  /** "Delete on all 3 devices". */
   library: string;
   /** The question's line under its title. */
   body: string;
@@ -146,15 +146,15 @@ export function libraryDeleteChoices(
   const names = ownerWords(others, devices);
   const word = deviceWord(device);
   const remove = `Remove from this ${word} only`;
-  const library = `Delete from the library (it is on ${count} devices)`;
+  const library = `Delete on all ${count} devices`;
   const them = others.length === 1 ? "that device keeps it" : "those devices keep it";
   return {
     count,
     others: names,
     remove,
     library,
-    body: `It is also on ${joinWords(names)}. Remove takes it off this ${word} when you save, and ${them}. `
-      + `Delete from the library takes it off every device at once, which undo here does not bring back.`,
+    body: `It is also on ${joinWords(names)}. Remove takes it off this ${word} when you save, and ${them}. Undo brings it back. `
+      + `${library} applies right away to every device, and undo does not bring it back.`,
   };
 }
 
@@ -306,9 +306,6 @@ export function restRows(lib: Library | undefined, here: string, kind: LibraryLi
 export function restTitle(device: LinkDevice["kind"]): string {
   return `Not on this ${deviceWord(device)}`;
 }
-
-/** The mock's line beside it. */
-export const REST_HINT = "The rest of your home. Add one here with a tick.";
 
 /** The name "Make a copy for this watch" gives the copy first. */
 export function copyMenuName(deviceName: string): string {

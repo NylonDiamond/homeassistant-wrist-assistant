@@ -133,6 +133,7 @@ const topBarRun = css`
     .tb-sync-n { flex: none; font-weight: 500; color: var(--wa-muted); }
     .tb-sync.ok { color: var(--wa-green); }
     .tb-sync.warn { color: var(--wa-amber); }
+    .tb-sync.err { color: var(--wa-need, var(--error-color, #db4437)); }
     .tb-sync.quiet { color: var(--wa-muted); }
     .tb-sync.sending .tb-dot { animation: wa-pulse 1.2s ease-in-out infinite; }
     @keyframes wa-pulse { 50% { opacity: .3; } }

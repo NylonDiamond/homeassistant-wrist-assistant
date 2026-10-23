@@ -73,9 +73,9 @@ describe("the delete question", () => {
     const choices = libraryDeleteChoices(lib, "status_pages", STARTER, JESSE, "watch", DEVICES)!;
     expect(choices.count).toBe(3);
     expect(choices.remove).toBe("Remove from this watch only");
-    expect(choices.library).toBe("Delete from the library (it is on 3 devices)");
-    expect(choices.body).toBe("It is also on Chen Watch and iPhone 15 Pro. Remove takes it off this watch when you save, and those devices keep it. "
-      + "Delete from the library takes it off every device at once, which undo here does not bring back.");
+    expect(choices.library).toBe("Delete on all 3 devices");
+    expect(choices.body).toBe("It is also on Chen Watch and iPhone 15 Pro. Remove takes it off this watch when you save, and those devices keep it. Undo brings it back. "
+      + "Delete on all 3 devices applies right away to every device, and undo does not bring it back.");
     expect(libraryDeleteChoices(lib, "pages", PAGE1, PHONE, "iphone", DEVICES)!.remove).toBe("Remove from this iPhone only");
     expect(libraryDeleteChoices(lib, "pages", PAGE1, PHONE, "iphone", DEVICES)!.body).toContain("that device keeps it");
   });

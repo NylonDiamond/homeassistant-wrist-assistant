@@ -217,14 +217,14 @@ const PLAYERS = ruleOf(R4, "media_player", { mode: "specific", entityIds: ["medi
 // ── the Page card ────────────────────────────────────────────────────────
 
 describe("the Smart Page switch", () => {
-  it("asks before converting a page with tiles, in the phone's words, and Convert is one undo step", () => {
+  it("asks before converting a page with tiles, and Convert is one undo step", () => {
     const s = setup(plainPage(2));
     expect(flatten(renderSmartPageRows(s.host))).toContain(W("smartPage"));
     check(renderSmartPageRows(s.host), W("smartPage"), true);
     expect(s.draft.canUndo).toBe(false);
     const asked = flatten(renderSmartPageRows(s.host));
     expect(asked).toContain(W("convertTitle"));
-    expect(asked).toContain("This will remove all 2 tiles on this page.");
+    expect(asked).toContain("This removes the 2 tiles on this page.");
     expect(asked).toContain(`>${W("cancel")}<`);
     expect(asked).toContain(`>${W("convert")}<`);
     click(renderSmartPageRows(s.host), `>${W("convert")}<`);
@@ -370,6 +370,15 @@ describe("a rule's rows", () => {
     expect(s.rule(R2).resolvedEntityIds).toEqual(["binary_sensor.front_door", "binary_sensor.hall_window"]);
   });
 
+  it("All with an empty list says the home has none yet, with no warning", () => {
+    const s = setup(smartPage([ruleOf(R3, "siren", { resolvedEntityIds: [] })]));
+    s.host.selectSmartRule(R3);
+    const card = flatten(renderSmartRulesCard(s.host));
+    expect(card).not.toContain(W("notResolved"));
+    expect(card).not.toContain("sm-warn");
+    expect(card).toContain("in Home Assistant yet");
+  });
+
   it("Specific lists the domain's entities, filtered by the device classes, picks first, and a tick writes the picks", () => {
     const s = setup(smartPage([DOORS]));
     click(renderSmartRulesCard(s.host), ">Specific<");
@@ -381,7 +390,9 @@ describe("a rule's rows", () => {
     check(renderSmartRulesCard(s.host), "front door", true);
     expect(s.rule(R2).entityIds).toEqual(["binary_sensor.front_door"]);
     card = flatten(renderSmartRulesCard(s.host));
-    expect(card).toContain(W("entitiesSelected", { count: 1 }));
+    expect(card).toContain(W("entitiesSelectedOne"));
+    expect(card).toContain("1 entity selected");
+    expect(card).not.toMatch(/(^|[^0-9])1 entities selected/);
     // Back to All resolves the rule from the states.
     click(renderSmartRulesCard(s.host), ">All<");
     expect(s.rule(R2).mode).toBe("all");

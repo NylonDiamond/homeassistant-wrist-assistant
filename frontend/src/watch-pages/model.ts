@@ -160,7 +160,9 @@ export function tileTarget(entityId: string): string {
   return dot < 0 ? "" : entityId.slice(dot + 1);
 }
 
-/** The app's own tile kinds, which are not Home Assistant entities. */
+/** The app's own tile kinds, which are not Home Assistant entities, with
+ * their one name: the tile list, the Add task's buttons and the settings
+ * title all read it from here. */
 export const VIRTUAL_TILE_KINDS: Readonly<Record<string, string>> = {
   page: "Go to page",
   show_page: "Peek page",
@@ -170,9 +172,9 @@ export const VIRTUAL_TILE_KINDS: Readonly<Record<string, string>> = {
   spacer: "Spacer",
   multicam: "Multi camera",
   point_control: "Point control",
-  music_hub: "Music hub",
+  music_hub: "Music",
   assist: "Assist",
-  speak_message: "Speak message",
+  speak_message: "Speak",
   webhook_inbox: "Webhook inbox",
   divider: "Header",
   map: "Map",

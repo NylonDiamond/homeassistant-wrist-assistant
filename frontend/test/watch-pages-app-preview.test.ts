@@ -14,6 +14,7 @@ import {
   watchCloudTTSAvailable,
   watchHasConfigEntry,
   watchMergedRenders,
+  watchMusicAssistantPresent,
   watchMusicHubActiveSpeaker,
   watchTemplateRender,
   watchTemplateRequests,
@@ -84,6 +85,16 @@ describe("the home wide calls", () => {
     // Another domain's entry, or a reply that is no list, is none.
     expect(watchHasConfigEntry([{ ...MUSIC_ENTRY, domain: "mass" }], MUSIC_ASSISTANT_DOMAIN)).toBe(false);
     for (const junk of [undefined, null, {}, "music_assistant", [null, 3]]) expect(watchHasConfigEntry(junk, MUSIC_ASSISTANT_DOMAIN)).toBe(false);
+  });
+
+  it("count Music Assistant as here when an entity of its platform is, whatever the entry call said", () => {
+    const withMusic = { "media_player.den": { platform: "music_assistant" }, "light.desk": { platform: "hue" } };
+    const without = { "light.desk": { platform: "hue" } };
+    for (const answer of [undefined, false, true]) expect(watchMusicAssistantPresent(answer, withMusic)).toBe(true);
+    expect(watchMusicAssistantPresent(undefined, without)).toBeUndefined();
+    expect(watchMusicAssistantPresent(false, without)).toBe(false);
+    expect(watchMusicAssistantPresent(true, without)).toBe(true);
+    expect(watchMusicAssistantPresent(undefined, undefined)).toBeUndefined();
   });
 
   it("let the cloud speak only while logged in and connected", () => {

@@ -51,7 +51,7 @@ describe("the Pages tab", () => {
     // No device's record is read to draw the cards.
     expect(t.sentOf("watch_config/get")).toEqual([]);
     const text = t.whole();
-    expect(text).toContain("5 pages in your home. Tick a device and the page is on it.");
+    expect(text).toContain("Your page library: 5 pages. Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.");
     expect(text.split(`class="ap-card `).length - 1).toBe(5);
     expect(text).toContain("lt-chip on");
     expect(text).toContain("lt-chip off");
@@ -296,7 +296,7 @@ describe("a device's tab", () => {
     // The system page is the device's own, never a row.
     expect(text).not.toContain("Settings");
     expect(text).toContain("Not on this watch");
-    expect(text).toContain("The rest of your home. Add one here with a tick.");
+    expect(text).toContain("Pages on your other devices, or on none yet. Add one here with its Add chip.");
     expect(text).toContain("Add to this watch");
     expect(text).toContain("ap-card lt-dim");
     // No Multi select on a device's tab.
@@ -404,7 +404,7 @@ describe("the Status pages tab", () => {
     showTab(t, "all");
     await t.ready();
     const text = t.whole();
-    expect(text).toContain("2 status pages in your home.");
+    expect(text).toContain("Your status page library: 2 status pages.");
     expect(text).toContain("1 row · starter");
     expect(text).toContain("Click a status page to edit it. Tick a device to put it there.");
     expect(text).not.toContain("Not linked");
@@ -427,7 +427,7 @@ describe("the Status pages tab", () => {
     const text = t.whole();
     expect(text).toContain("2 rows · only here");
     expect(text).not.toContain("Hide here");
-    expect(text).toContain("Every status page in your home is on Jesse Apple Watch.");
+    expect(text).toContain("Every status page in your library is on Jesse Apple Watch.");
     const lib = (t.el.lib as { library: { statusPages: { id: string }[] } }).library;
     t.call("open", lib.statusPages.find((e) => e.id === STARTER));
     expect(t.opened.at(-1)).toEqual([JESSE, "watch", "status_pages"]);

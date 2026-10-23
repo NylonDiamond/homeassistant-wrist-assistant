@@ -84,6 +84,9 @@ import {
   copyConfigText,
   openConfigDialogs,
   renderConfigFoot,
+  renderConfigSyncPill,
+  renderViewJsonItem,
+  restoreQuestionTitle,
   renderConfigHistoryDialog,
   renderConfigRawDialog,
   renderConfigSaved,
@@ -1337,9 +1340,7 @@ export class WaVoiceEditor extends LitElement {
     if (record === undefined || record.revision <= 0 || this.unsupported) return nothing;
     const budget = draft === undefined ? { size: 0, limit: 1 } : watchVoiceBudget(draft.document);
     const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "voice settings", historyState: this.historyState });
-    return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
-      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
-    </span>`;
+    return renderConfigSyncPill(status, draft?.dirty ?? false);
   }
 
   /** Whether this watch's iPhone may still move this kind here, so the
@@ -1383,6 +1384,8 @@ export class WaVoiceEditor extends LitElement {
         ${saved ? html`<button class="row" role="menuitem" ?disabled=${this.saving || voicePhrasesAreFresh(draft.document)}
           title="No phrases and the app's defaults again. The watch voice and Silent Mode setting stay. Undo brings the phrases back."
           @click=${run(() => this.startFreshPhrases())}>Start fresh</button>` : nothing}
+        ${draft && (this.record?.revision ?? 0) > 0
+          ? renderViewJsonItem(run(() => { this.rawCopied = false; this.rawOpen = true; })) : nothing}
         ${start ? html`<button class="row" role="menuitem"
           @click=${run(() => this.startFresh())}>${START_FRESH_BUTTON}</button>` : nothing}
       </div>` : nothing}
@@ -1552,9 +1555,7 @@ export class WaVoiceEditor extends LitElement {
       status,
       historyState: this.historyState,
       historyOpen: this.historyOpen,
-      rawOpen: this.rawOpen,
       onHistory: () => { this.historyOpen = true; },
-      onRaw: () => { this.rawCopied = false; this.rawOpen = true; },
     })}
     ${this.historyOpen ? renderConfigHistoryDialog({
       noun: "voice settings",
@@ -1588,10 +1589,10 @@ export class WaVoiceEditor extends LitElement {
     return html`<dialog class="pe-ask" aria-labelledby="ve-ask-title"
       @cancel=${(e: Event) => { if (this.restoring) e.preventDefault(); }}
       @close=${() => { this.restoreAsk = undefined; }}>
-      <h3 id="ve-ask-title">Restore revision ${ask.entry.revision}?</h3>
+      <h3 id="ve-ask-title" title=${`Revision ${ask.entry.revision}`}>${restoreQuestionTitle(ask.entry)}</h3>
       <p>${savedBy(ask.entry.updated_by)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
       ${ask.summary ? html`<p class="pe-muted">${ask.summary}</p>` : nothing}
-      <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves.</p>
+      <p>It is saved again as the newest save. The copy shown now stays in the earlier saves.</p>
       ${(ask.links ?? []).map((line) => html`<p>${line}</p>`)}
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${this.restoring} @click=${() => this.closeAsk()}>Cancel</button>

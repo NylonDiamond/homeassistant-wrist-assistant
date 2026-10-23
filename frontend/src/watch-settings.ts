@@ -695,7 +695,12 @@ export const NOTHING_TO_SAVE_TEXT = "Nothing to save yet. Make a change first.";
 /** What the page editor says when Home Assistant holds a pages record this
  * panel cannot read, such as one from a newer schema. The editor does not
  * open ready: a save over revision 0 would only meet a conflict. */
-export const PAGES_UNREADABLE_TEXT = "Home Assistant holds pages for this watch that this panel cannot read. Update the integration.";
+export function pagesUnreadableText(device: SettingDevice): string {
+  return `Home Assistant holds pages for this ${deviceNoun(device)} that this panel cannot read. Update Wrist Assistant in HACS, then reload.`;
+}
+
+/** `pagesUnreadableText` for a watch. */
+export const PAGES_UNREADABLE_TEXT = pagesUnreadableText("watch");
 
 /** The same for Watch settings. */
 export const SETTINGS_UNREADABLE_TEXT = "Home Assistant holds settings for this watch that this panel cannot read. Update the integration.";

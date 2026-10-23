@@ -24,7 +24,7 @@
 // device picks from it, as pages do: the strip under the canvas head has a
 // tick per device (`library/pick`), a row of a page other devices have too
 // wears their name, its delete asks "Remove from this watch only" or "Delete
-// from the library", and "Not on this watch" under the pages adds the
+// on all 3 devices", and "Not on this watch" under the pages adds the
 // library's rest here. Home
 // Assistant maps a save back onto the library, so an edit reaches every
 // device that has the page. The rules are `watch-pages/library-editing.ts`.
@@ -109,6 +109,9 @@ import {
   copyConfigText,
   openConfigDialogs,
   renderConfigFoot,
+  renderConfigSyncPill,
+  renderViewJsonItem,
+  restoreQuestionTitle,
   renderConfigHistoryDialog,
   renderConfigRawDialog,
   renderConfigSaved,
@@ -1138,10 +1141,10 @@ export class WaStatusPagesEditor extends LitElement {
       @cancel=${(e: Event) => { if (busy) e.preventDefault(); }}
       @close=${() => { if (!this.deletingAll) this.deleteAsk = undefined; }}>
       <h3 id="sp-del-title">Delete "${statusPageTitle(page)}"?</h3>
-      <p>${choices.body} You can undo a remove here until you leave this page.</p>
+      <p>${choices.body}</p>
       <div class="pe-ask-foot sp-del-foot">
         <button class="pe-btn" ?disabled=${busy} @click=${() => this.closeDelete()}>Cancel</button>
-        <button class="pe-btn pe-danger sp-del-here" ?disabled=${busy} @click=${() => this.deleteHere()}>${choices.remove}</button>
+        <button class="pe-btn sp-del-here" ?disabled=${busy} @click=${() => this.deleteHere()}>${choices.remove}</button>
         <button class="pe-btn pe-primary pe-danger sp-del-all" ?disabled=${busy || this.saving}
           @click=${() => void this.deleteFromLibrary()}>${busy ? "Deleting…" : choices.library}</button>
       </div>
@@ -1401,9 +1404,7 @@ export class WaStatusPagesEditor extends LitElement {
     if (record === undefined || record.revision <= 0 || this.unsupported) return nothing;
     const budget = draft === undefined ? { size: 0, limit: 1 } : statusPagesBudget(draft.document);
     const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "status pages", historyState: this.historyState, device: this.device });
-    return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
-      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
-    </span>`;
+    return renderConfigSyncPill(status, draft?.dirty ?? false);
   }
 
   /** Whether this watch's iPhone may still move this kind here, so the
@@ -1439,6 +1440,8 @@ export class WaStatusPagesEditor extends LitElement {
         ${draft ? html`<button class="row" role="menuitem" ?disabled=${!this.dirty || this.saving}
           title=${this.newWatch ? "Go back to the defaults. Undo brings the edits back." : "Go back to the copy Home Assistant holds. Undo brings the edits back."}
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
+        ${draft && this.libraryItem === undefined && (this.record?.revision ?? 0) > 0
+          ? renderViewJsonItem(run(() => { this.rawCopied = false; this.rawOpen = true; })) : nothing}
         ${start ? html`<button class="row" role="menuitem"
           @click=${run(() => this.startFresh())}>${START_FRESH_BUTTON}</button>` : nothing}
       </div>` : nothing}
@@ -1625,9 +1628,7 @@ export class WaStatusPagesEditor extends LitElement {
       status,
       historyState: this.historyState,
       historyOpen: this.historyOpen,
-      rawOpen: this.rawOpen,
       onHistory: () => { this.historyOpen = true; },
-      onRaw: () => { this.rawCopied = false; this.rawOpen = true; },
     })}
     ${this.historyOpen ? renderConfigHistoryDialog({
       noun: "status pages",
@@ -1662,10 +1663,10 @@ export class WaStatusPagesEditor extends LitElement {
     return html`<dialog class="pe-ask" aria-labelledby="sp-ask-title"
       @cancel=${(e: Event) => { if (this.restoring) e.preventDefault(); }}
       @close=${() => { this.restoreAsk = undefined; }}>
-      <h3 id="sp-ask-title">Restore revision ${ask.entry.revision}?</h3>
+      <h3 id="sp-ask-title" title=${`Revision ${ask.entry.revision}`}>${restoreQuestionTitle(ask.entry)}</h3>
       <p>${savedByLine(ask.entry.updated_by, this.device)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
       ${ask.summary ? html`<p class="pe-muted">${ask.summary}</p>` : nothing}
-      <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves.</p>
+      <p>It is saved again as the newest save. The copy shown now stays in the earlier saves.</p>
       ${ask.others === undefined ? nothing : html`<p class="sp-restore-others">${ask.others}</p>`}
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${this.restoring} @click=${() => this.closeAsk()}>Cancel</button>

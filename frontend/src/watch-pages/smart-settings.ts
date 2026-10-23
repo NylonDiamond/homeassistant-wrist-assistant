@@ -121,6 +121,9 @@ const ASK = `${KEY}:ask`;
 
 const W = (name: string, values?: Readonly<Record<string, string | number>>): string => smartWord(name, values);
 
+/** "1 entity selected" or "{count} entities selected". */
+const selectedWord = (count: number): string => (count === 1 ? W("entitiesSelectedOne") : W("entitiesSelected", { count }));
+
 // ── the table's parts no reader of the model needs ───────────────────────
 
 function objectAt(value: unknown, key: string): JsonObject {
@@ -567,11 +570,13 @@ function renderRuleRows(host: WatchPagesEditorHost, rh: TileSettingsHost, rule: 
       ? html`<div class="sm-line">
           ${smartRuleUnresolved(rule)
             ? html`<span class="sm-warn">${W("notResolved")}</span>`
-            : html`<span>${count} ${count === 1 ? "entity" : "entities"}</span>`}
+            : count === 0
+              ? html`<span class="sm-none">No ${smartDomainName(rule.domain).toLowerCase()} in Home Assistant yet</span>`
+              : html`<span>${count} ${count === 1 ? "entity" : "entities"}</span>`}
           ${linkButton(W("resolve"), "List the domain's entities from Home Assistant now. A save does it too.", () =>
             commit(rh, "resolve", (d) => withResolvedRule(d, P, R, host.hass.states)))}
         </div>`
-      : html`<div class="ts-sub-h"><span>${W("entitiesSelected", { count: rule.entityIds.length })}</span></div>
+      : html`<div class="ts-sub-h"><span>${selectedWord(rule.entityIds.length)}</span></div>
         ${renderEntityPick(host, rh, rule)}`}
     ${info?.showWhen === undefined
       ? nothing
@@ -631,7 +636,7 @@ function renderEntityPick(host: WatchPagesEditorHost, rh: TileSettingsHost, rule
       ? html`<input type="search" class="sm-find" placeholder="Search" aria-label="Search the entities" .value=${live(String(host.uiState.get(findKey) ?? ""))}
           @input=${(e: Event) => { host.uiState.set(findKey, (e.target as HTMLInputElement).value); host.requestUpdate(); }} />`
       : nothing}
-    <div class="ap-list sm-pick" role="group" aria-label=${W("entitiesSelected", { count: picked.length })}>
+    <div class="ap-list sm-pick" role="group" aria-label=${selectedWord(picked.length)}>
       ${picked.map((id) => row(id, true))}
       ${rest.slice(0, PICK_LIMIT).map((id) => row(id, false))}
       ${ids.length === 0 && picked.length === 0 ? html`<div class="hint">No ${smartDomainName(rule.domain).toLowerCase()} in Home Assistant${filter.length > 0 ? " with these device classes" : ""}.</div>` : nothing}
@@ -767,6 +772,7 @@ export const smartSettingsStyles = css`
   .sm-act:disabled { opacity: .4; cursor: default; }
   .sm-line { display: flex; align-items: center; gap: 8px; padding: 2px 0 6px calc(var(--wa-lab) + 8px); font-size: 12px; }
   .sm-warn { color: var(--wa-warn, #c47f00); font-weight: 600; }
+  .sm-none { color: var(--wa-muted); }
   .sm-find { width: 100%; box-sizing: border-box; margin: 2px 0 4px; padding: 4px 8px; border: 1px solid var(--wa-line); border-radius: 6px;
     background: var(--wa-field); color: var(--wa-ink); font: inherit; font-size: 12px; }
   .sm-pick { max-height: 240px; }

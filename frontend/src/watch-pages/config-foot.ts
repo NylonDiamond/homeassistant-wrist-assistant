@@ -1,15 +1,15 @@
 // The bar pinned to the foot of the page and menu editors, after the
 // complication editor's footer (`panel.ts`, `renderFooter`): on the left the
-// copy's size against what Home Assistant keeps, on the right "History" and
-// "Raw configuration". Who saved it, when, and whether a device has
-// collected it are said once, in the header (`configFootStatus` feeds the
-// sync pill there), not again down here.
+// copy's size against what Home Assistant keeps, once it nears the cap, on
+// the right "History". Who saved it, when, and whether a device has
+// collected it are said once, in the header (`renderConfigSyncPill`), not
+// again down here.
 //
 // History is the earlier saves list that used to be a card of its own, in a
 // dialog, with the same Restore: a row's Restore hands the entry back to the
-// editor, which asks its own restore question. Raw configuration shows the
-// open document as JSON, read only with a Copy button, as the complication
-// editor's raw view is read only.
+// editor, which asks its own restore question. View as JSON, in each
+// editor's ··· menu, shows the open document as JSON, read only with a Copy
+// button, as the complication editor's raw view is read only.
 //
 // The toolbar's "Saved 3 min ago" is here too, read from the same stored
 // copy, with the small timer that keeps it true (`SavedAgoTicker`). It is
@@ -24,7 +24,7 @@ import { type ReactiveController, type ReactiveControllerHost, css, html, nothin
 import type { WatchConfigHistoryEntry, WatchConfigRecord } from "../ha-api.js";
 import { agoWords } from "../send-state.js";
 import { uiIcon } from "../ui-icons.js";
-import { type SettingDevice, COLLECTED_PILL_TEXT, deliveryState, deviceNoun, rejectedNow, savedByLine, savedByWords, savedLine, waitingHelpText, waitingPillText } from "../watch-settings.js";
+import { type SettingDevice, COLLECTED_PILL_TEXT, deliveryState, deviceNoun, rejectedNow, savedByWords, savedLine, waitingHelpText, waitingPillText } from "../watch-settings.js";
 
 export type ConfigHistoryState = "loading" | "ready" | "error" | "unsupported";
 
@@ -127,6 +127,35 @@ export function configFootStatus(i: {
   return { tone: "warn", revision, stamp, state: waitingPillText(i.device ?? "watch"), help: waitingHelpText(i.device ?? "watch"), size, near, over };
 }
 
+/** The header's sync pill, the same in every editor that keeps a stored
+ * copy: green once collected, amber while it waits, red when a device could
+ * not read the save. With unsaved edits on screen "Synced" would describe a
+ * copy that is about to change, so the pill steps aside until the save,
+ * unless a device could not read the last one. */
+export function renderConfigSyncPill(status: ConfigFootStatus, dirty: boolean): TemplateResult | typeof nothing {
+  if (dirty && status.tone !== "err") return nothing;
+  return html`<span class="tb-sync ${status.tone}" title=${`${status.state}. ${status.help}`}>
+      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
+    </span>`;
+}
+
+/** The ··· menu's way to the document as JSON (`renderConfigRawDialog`). */
+export const VIEW_JSON_LABEL = "View as JSON";
+
+/** The ··· menu row that opens it. */
+export function renderViewJsonItem(onOpen: () => void): TemplateResult {
+  return html`<button class="row cf-raw-item" role="menuitem" title="This document as JSON, read only, with Copy"
+    @click=${onOpen}>${VIEW_JSON_LABEL}</button>`;
+}
+
+/** The restore question's title: "Put back the save from 3 h ago?". The
+ * revision number is jargon, so the save is named by its time. */
+export function restoreQuestionTitle(entry: Pick<WatchConfigHistoryEntry, "updated_at">, now: number = Date.now()): string {
+  const when = ago(entry.updated_at, now);
+  if (when === "") return "Put back this earlier save?";
+  return when === "just now" ? "Put back the save from just now?" : `Put back the save from ${when}?`;
+}
+
 /** The toolbar's quiet fact about the stored copy, left of Discard: "Saved
  * 3 min ago", "Saved just now". Empty when there is no stored copy;
  * plain "Saved" for a time that will not parse. A plain save that went
@@ -199,30 +228,30 @@ export interface ConfigFootInput {
   status: ConfigFootStatus;
   historyState: ConfigHistoryState;
   historyOpen: boolean;
-  rawOpen: boolean;
   onHistory: () => void;
-  onRaw: () => void;
   /** The device the record is for; a watch when absent. */
   device?: SettingDevice;
 }
 
-/** The bar itself: the size on the left, History and Raw configuration on
+/** The bar itself: the size on the left once it nears the cap, History on
  * the right. When the copy was saved and whether the device has it are the
  * header's to say (`renderHeadStatus` and the sync pill), so the bar does
- * not say them again. A device that could not read the save lights History,
- * where the earlier save to go back to is offered, and the bar says so. */
+ * not say them again. The JSON view is in the ··· menu
+ * (`renderViewJsonItem`). A device that could not read the save lights
+ * History, where the earlier save to go back to is offered, and the bar
+ * says so. */
 export function renderConfigFoot(i: ConfigFootInput): TemplateResult {
   const s = i.status;
+  // With nothing to say, no bar: an empty strip reads as a fault.
+  if (s.tone !== "err" && !s.near && !s.over && i.historyState === "unsupported") return html``;
   return html`<footer class="cf-bar" aria-label="Stored copy">
     <span class="cf-text">
       ${s.tone === "err" ? html`<span class="cf-help">${s.help}</span>` : nothing}
-      <span class="cf-size ${s.over ? "over" : s.near ? "near" : ""}" title=${`${s.size}${s.size.endsWith(".") ? "" : "."} The second number is the most Home Assistant keeps for one ${deviceNoun(i.device ?? "watch")}.`}>${s.size}</span>
+      ${s.near || s.over ? html`<span class="cf-size ${s.over ? "over" : "near"}" title=${`${s.size}${s.size.endsWith(".") ? "" : "."} The second number is the most Home Assistant keeps for one ${deviceNoun(i.device ?? "watch")}.`}>${s.size}</span>` : nothing}
     </span>
     ${i.historyState === "unsupported" ? nothing : html`<button type="button" class="cf-btn cf-history-btn ${s.tone === "err" ? "lit" : ""}"
       aria-haspopup="dialog" aria-expanded=${i.historyOpen ? "true" : "false"}
       title="Earlier saves, with Restore" @click=${i.onHistory}>History</button>`}
-    <button type="button" class="cf-btn cf-raw-btn" aria-haspopup="dialog" aria-expanded=${i.rawOpen ? "true" : "false"}
-      title="The document as JSON" @click=${i.onRaw}>Raw configuration</button>
   </footer>`;
 }
 
@@ -263,14 +292,14 @@ export function renderConfigHistoryDialog(i: ConfigHistoryInput): TemplateResult
         const current = entry.revision === record.revision;
         const when = ago(entry.updated_at, now);
         return html`<li class=${entry.revision === offer ? "offer" : ""}>
-          <span class="pe-h-text">
-            <b>Revision ${entry.revision}</b>
-            <span class="pe-muted">${savedByLine(entry.updated_by, i.device)}${when ? ` ${when}` : ""} · ${kb(entry.size)}</span>
+          <span class="pe-h-text" title=${`Revision ${entry.revision}`}>
+            <b>${savedLine(entry.updated_by, when, i.device)}</b>
+            <span class="pe-muted">${kb(entry.size)}</span>
           </span>
           ${current
             ? html`<span class="pe-badge">Current</span>`
             : html`<button type="button" class="pe-btn ${entry.revision === offer ? "pe-primary" : ""}" ?disabled=${i.restoring || dirty}
-                title=${dirty ? "Save or discard your edits first." : `Put revision ${entry.revision} back as a new revision`}
+                title=${dirty ? "Save or discard your edits first." : "Put this save back. It is saved again as the newest save."}
                 @click=${() => i.onRestore(entry)}>Restore</button>`}
         </li>`;
       })}
@@ -280,13 +309,13 @@ export function renderConfigHistoryDialog(i: ConfigHistoryInput): TemplateResult
     <div class="cf-dialog-head">
       <div class="cf-dialog-title">
         <h3 id="cf-history-title">History of the ${i.noun}</h3>
-        <span class="pe-muted">Revision ${record.revision} is the stored copy</span>
+        <span class="pe-muted" title=${`Revision ${record.revision}`}>Newest first. Current is the copy Home Assistant holds.</span>
       </div>
       <button type="button" class="cf-close" title="Close" aria-label="Close" @click=${closeOwnDialog}>${uiIcon("close")}</button>
     </div>
     ${rejected ? html`<p class="pe-warn" role="note">${rejectedText(record, i.device)}. Restore the save before it.</p>` : nothing}
     <div class="cf-dialog-body">${body}</div>
-    <p class="pe-muted">Restoring saves the earlier copy again as a new revision. The copy stored now stays in this list.</p>
+    <p class="pe-muted">Restoring saves the earlier copy again as the newest save. The copy stored now stays in this list.</p>
     <div class="pe-ask-foot">
       <button type="button" class="pe-btn" @click=${closeOwnDialog}>Close</button>
     </div>
@@ -309,16 +338,21 @@ export function configRawText(document: unknown): string {
   return JSON.stringify(document, null, 2) ?? "";
 }
 
-/** Raw configuration: the open document as JSON, read only, with Copy. */
+/** The JSON view's title: "Pages as JSON". */
+export function jsonTitle(noun: ConfigNoun): string {
+  return `${noun.charAt(0).toUpperCase()}${noun.slice(1)} as JSON`;
+}
+
+/** View as JSON: the open document as JSON, read only, with Copy. */
 export function renderConfigRawDialog(i: ConfigRawInput): TemplateResult {
   const text = configRawText(i.document);
   return html`<dialog class="cf-dialog cf-raw" aria-labelledby="cf-raw-title" @close=${i.onClosed}>
     <div class="cf-dialog-head">
       <div class="cf-dialog-title">
-        <h3 id="cf-raw-title">Raw configuration</h3>
+        <h3 id="cf-raw-title">${jsonTitle(i.noun)}</h3>
         <span class="pe-muted">${i.dirty
-          ? `The ${i.noun} as ${them(i.noun) === "it" ? "it" : "they"} would be saved, with your unsaved edits, over revision ${i.revision}`
-          : `The ${i.noun} as Home Assistant holds ${them(i.noun)}, revision ${i.revision}`}</span>
+          ? `The ${i.noun} as ${them(i.noun) === "it" ? "it" : "they"} would be saved, with your unsaved edits`
+          : `The ${i.noun} as Home Assistant holds ${them(i.noun)}`}</span>
       </div>
       <button type="button" class="cf-close" title="Close" aria-label="Close" @click=${closeOwnDialog}>${uiIcon("close")}</button>
     </div>

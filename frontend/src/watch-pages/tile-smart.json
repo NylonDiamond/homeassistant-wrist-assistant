@@ -637,7 +637,7 @@
         }
       ],
       "mode": "All or Specific. Nothing else changes; a switch to All resolves the rule.",
-      "all": "All shows the count badge and, while the list is absent or empty, Not resolved with a Resolve button.",
+      "all": "All shows the count badge and a Resolve button. While the list is absent it shows Not resolved; an empty list shows a muted line that Home Assistant has none of the domain yet.",
       "specific": "Specific shows the pick count and a pick of the domain's entities, filtered by the rule's device classes when it has any. Save writes entityIds in pick order, a repeat dropped.",
       "resolve": "An all rule's resolvedEntityIds: every entity id Home Assistant has with the prefix <domain>., sorted by code point; the device class filter is not applied. Written even when empty (the watch reads [] as none). When: the Resolve button, a switch to All, after an add (every all rule), and in the panel before a save for every all rule of a page the draft changed.",
       "resolveSample": {
@@ -668,7 +668,7 @@
           "resolvedEntityIds": [],
           "entityIds": ["light.example_attic"],
           "badge": null,
-          "notResolved": true
+          "notResolved": false
         },
         {
           "mode": "all",
@@ -1246,8 +1246,8 @@
   },
   "words": {
     "convertTitle": "Switch to a smart page?",
-    "convertMessageOne": "This will remove all 1 tile on this page. Smart pages manage entities automatically via domain rules.",
-    "convertMessageMany": "This will remove all {count} tiles on this page. Smart pages manage entities automatically via domain rules.",
+    "convertMessageOne": "This removes the tile on this page. A smart page fills itself with what is on right now.",
+    "convertMessageMany": "This removes the {count} tiles on this page. A smart page fills itself with what is on right now.",
     "cancel": "Cancel",
     "convert": "Convert",
     "smartPage": "Smart page",
@@ -1265,6 +1265,7 @@
     "resolving": "Resolving...",
     "notResolved": "Not resolved",
     "resolve": "Resolve",
+    "entitiesSelectedOne": "1 entity selected",
     "entitiesSelected": "{count} entities selected",
     "showWhen": "Show when {state}",
     "playingOnly": "Playing only",

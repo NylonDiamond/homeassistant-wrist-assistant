@@ -22,8 +22,10 @@ import { type LinkDevice, deviceWord } from "./devices.js";
 /** What a card is: a page, or a status page. */
 export type CardKind = LibraryListKind;
 
-/** The second half of the Pages tab's line under its title. */
-export const ALL_PAGES_LEAD = "Tick a device and the page is on it.";
+/** The second half of the Pages tab's line under its title: what the
+ * library is, so the word means something where the delete and edit lines
+ * use it. */
+export const ALL_PAGES_LEAD = "Each watch and iPhone shows the pages ticked for it, and an edit shows everywhere.";
 
 /** The same on the Status pages tab: what a status page is. */
 export const STATUS_PAGES_LEAD = "A status page is a read-only screen of rows that a tile or a menu slot opens.";
@@ -50,10 +52,19 @@ export function cardsTitle(kind: CardKind): string {
   return kind === "status_pages" ? "Status pages" : "Pages";
 }
 
-/** The line under the tab's title: how many there are in the home, then
- * the one fact a newcomer needs (mock frames 1a and 1d). */
+/** The line under the tab's title: how many the library holds, then the
+ * one fact a newcomer needs (mock frames 1a and 1d). An empty library says
+ * only that: the empty block under it says what to do. */
 export function allPagesLead(total: number, kind: CardKind = "pages"): string {
-  return `${total} ${cardNoun(kind, total)} in your home. ${kind === "status_pages" ? STATUS_PAGES_LEAD : ALL_PAGES_LEAD}`;
+  if (total === 0) return `Your ${cardNoun(kind)} library is empty.`;
+  return `Your ${cardNoun(kind)} library: ${total} ${cardNoun(kind, total)}. ${kind === "status_pages" ? STATUS_PAGES_LEAD : ALL_PAGES_LEAD}`;
+}
+
+/** The All tab's block when the library holds none of the kind: how a page
+ * works, for whoever may make one, or who to ask. */
+export function emptyLibraryText(kind: CardKind, admin: boolean): string {
+  if (!admin) return `Ask a Home Assistant administrator to make the first ${cardNoun(kind)}.`;
+  return `Make ${aCard(kind)} once, then tick each watch or iPhone that should show it.`;
 }
 
 /** The line in the surface's foot. */
@@ -249,11 +260,27 @@ export function restTitle(device: LinkDevice): string {
   return `Not on this ${deviceWord(device.kind)}`;
 }
 
-export const REST_HINT = "The rest of your home. Add one here with a tick.";
+/** The line beside "Not on this watch": what the rest is, and how one of
+ * them comes here. `noun` is the plural the list holds. The pages tab,
+ * the status pages tab, the menus tab and the editors' own lists all say
+ * this one line (`library-rest.ts`). */
+export function restHint(noun: string): string {
+  return `${noun.charAt(0).toUpperCase()}${noun.slice(1)} on your other devices, or on none yet. Add one here with its Add chip.`;
+}
 
-/** What a device tab says with nothing on the device. */
-export function noPicksText(device: LinkDevice, kind: CardKind, search: string): string {
+export const REST_HINT = restHint("pages");
+
+/** What a device tab says with nothing on the device. `rest` is how many
+ * the library has that this device does not: with none there is nothing to
+ * tick below. `admin` false is a user who cannot make one (New is off). */
+export function noPicksText(device: LinkDevice, kind: CardKind, search: string, rest?: number, admin = true): string {
   if (search.trim() !== "") return `No ${cardNoun(kind)} on ${device.name} has that name.`;
+  if (rest === 0) {
+    return admin
+      ? `No ${cardNoun(kind, 2)} on ${device.name} yet. Use New ${cardNoun(kind)} to make one.`
+      : `No ${cardNoun(kind, 2)} on ${device.name} yet. Ask a Home Assistant administrator to make the first one.`;
+  }
+  if (!admin) return `No ${cardNoun(kind, 2)} on ${device.name} yet. Tick one below.`;
   return `No ${cardNoun(kind, 2)} on ${device.name} yet. Tick one below, or make a new one.`;
 }
 

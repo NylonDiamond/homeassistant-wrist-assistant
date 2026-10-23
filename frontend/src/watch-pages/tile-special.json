@@ -36,7 +36,7 @@
       },
       "multicam": {
         "task": "camera",
-        "title": "Camera"
+        "title": "Multi camera"
       },
       "calendar": {
         "task": "calendarSettings",
@@ -60,7 +60,7 @@
       },
       "point_control": {
         "task": "data",
-        "title": "Pointer"
+        "title": "Point control"
       },
       "music_hub": {
         "task": "musicHub",
@@ -72,7 +72,7 @@
       },
       "webhook_inbox": {
         "task": "inbox",
-        "title": "Inbox"
+        "title": "Webhook inbox"
       }
     },
     "placement": "A tile shows its kind's task before Icon; the tasks of different kinds never meet on one tile. A remote, vacuum, lawn mower, assist, speak_message and point_control task is the phone's Data task under the kind's title.",

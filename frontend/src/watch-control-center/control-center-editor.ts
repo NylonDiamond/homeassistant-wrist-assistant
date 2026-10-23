@@ -67,6 +67,9 @@ import {
   copyConfigText,
   openConfigDialogs,
   renderConfigFoot,
+  renderConfigSyncPill,
+  renderViewJsonItem,
+  restoreQuestionTitle,
   renderConfigHistoryDialog,
   renderConfigRawDialog,
   renderConfigSaved,
@@ -932,9 +935,7 @@ export class WaControlCenterEditor extends LitElement {
     if (record === undefined || record.revision <= 0 || this.unsupported || this.moved) return nothing;
     const budget = draft === undefined ? { size: 0, limit: 1 } : controlCenterBudget(draft.document);
     const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "Control Center list", historyState: this.historyState });
-    return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
-      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
-    </span>`;
+    return renderConfigSyncPill(status, draft?.dirty ?? false);
   }
 
   /** Whether this watch's iPhone may still move this kind here, so a start
@@ -962,6 +963,8 @@ export class WaControlCenterEditor extends LitElement {
         ${draft ? html`<button class="row" role="menuitem" ?disabled=${!this.dirty || this.saving}
           title="Go back to the copy Home Assistant holds. Undo brings the edits back."
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
+        ${draft && (this.record?.revision ?? 0) > 0
+          ? renderViewJsonItem(run(() => { this.rawCopied = false; this.rawOpen = true; })) : nothing}
         ${start ? html`<button class="row" role="menuitem" ?disabled=${this.starting}
           @click=${run(() => { if (mayStart(this.noRecordState())) void this.start(); })}>${this.noRecordState() === "wait" ? START_FRESH_BUTTON : CONTROL_CENTER_START_EMPTY_BUTTON}</button>` : nothing}
       </div>` : nothing}
@@ -1140,9 +1143,7 @@ export class WaControlCenterEditor extends LitElement {
       status,
       historyState: this.historyState,
       historyOpen: this.historyOpen,
-      rawOpen: this.rawOpen,
       onHistory: () => { this.historyOpen = true; },
-      onRaw: () => { this.rawCopied = false; this.rawOpen = true; },
     })}
     ${this.historyOpen ? renderConfigHistoryDialog({
       noun: "Control Center list",
@@ -1176,10 +1177,10 @@ export class WaControlCenterEditor extends LitElement {
     return html`<dialog class="pe-ask" aria-labelledby="cc-ask-title"
       @cancel=${(e: Event) => { if (this.restoring) e.preventDefault(); }}
       @close=${() => { this.restoreAsk = undefined; }}>
-      <h3 id="cc-ask-title">Restore revision ${ask.entry.revision}?</h3>
+      <h3 id="cc-ask-title" title=${`Revision ${ask.entry.revision}`}>${restoreQuestionTitle(ask.entry)}</h3>
       <p>${savedBy(ask.entry.updated_by)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
       ${ask.summary ? html`<p class="pe-muted">${ask.summary}</p>` : nothing}
-      <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves.</p>
+      <p>It is saved again as the newest save. The copy shown now stays in the earlier saves.</p>
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${this.restoring} @click=${() => this.closeAsk()}>Cancel</button>
         <button class="pe-btn pe-primary" ?disabled=${this.restoring} @click=${() => void this.restore()}>${this.restoring ? "Restoring…" : "Restore"}</button>

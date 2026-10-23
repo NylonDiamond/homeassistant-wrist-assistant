@@ -600,7 +600,7 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
       <button type="button" class="pe-btn" ?disabled=${busy}
         @click=${() => commit(host, view, { kind: "spacer" }, "Added a spacer.")}>Spacer</button>
       <button type="button" class="pe-btn" ?disabled=${busy}
-        @click=${() => commit(host, view, { kind: "header" }, "Added a header.")}>Header</button>
+        @click=${() => commit(host, view, { kind: "header" }, "Added a header line. Pick Label in its Header card to add a title.")}>Header</button>
       ${listButton("pageLink", "Go to page")}
       ${listButton("peekLink", "Peek page")}
       ${WATCH_APP_ADD_BUTTONS.map((b) => {
