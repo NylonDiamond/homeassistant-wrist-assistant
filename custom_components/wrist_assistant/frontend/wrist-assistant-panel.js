@@ -63,6 +63,17 @@ import{a as vg,b as bg,c as yg}from"./chunks/chunk-T4OUPI4D.js";import{a as Bl,b
 
   /* ── The device browser ── */
   .hb { display: flex; flex-wrap: wrap; align-items: stretch; min-height: 100%; }
+  /* Beside the device, the side bar stays on screen while the device (or
+     All devices) scrolls, and scrolls in its own box when it is longer:
+     a sticky column one screen tall. The browser is a size container for
+     that height, which its parent's flex column gives it. */
+  .home.hb { container: hb / size; }
+  @container hb (min-width: 820px) {
+    .hb-side {
+      position: sticky; top: 0; align-self: flex-start; height: 100cqh;
+      overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+    }
+  }
   /* The side bar: the head, the household's state, Pair a device, then
      every device by person. */
   .hb-side {
