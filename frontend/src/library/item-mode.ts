@@ -237,6 +237,8 @@ export const libraryModeStyles = css`
   .lib-on .lt-chip { height: 28px; padding: 0 11px 0 9px; font-size: 12.5px; border-color: color-mix(in srgb, var(--dc, var(--wa-muted)) 55%, transparent); }
   .lib-on .lt-chip.off { color: var(--wa-ink); }
   .lib-on .lt-box { width: 13px; height: 13px; }
+  /* An untick's question (ticks.ts) takes a line of its own under the chips. */
+  .lib-on .lt-ask { flex: 1 1 100%; max-width: none; }
   /* Its place under the canvas head, over the stage: the canvas card's
      width, one line when it fits, the question first. */
   .lib-on.over-stage { flex: none; margin: 6px 6px 0; padding: 7px 12px; box-sizing: border-box; }

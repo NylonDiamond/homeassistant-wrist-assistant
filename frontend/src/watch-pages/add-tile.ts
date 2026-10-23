@@ -1,10 +1,12 @@
-// The Add tile dialog's body: pick an entity or a kind (spacer, header, go to
-// page, peek page) and add it to the selected page with the phone's defaults
-// (part 3c), or one of the iPhone's HTTP actions and status pages from the
-// catalog (part 3e), or one of the app's own tiles: Music Hub,
-// Template, Assist, Speak Message and Point Control (3f batch 2). With no
-// catalog, one line says where the library lists come from; without Music
-// Assistant, Music Hub is off and one line says why. Last, the "iPhone
+// The Add tile dialog's body. Most adds are entities, so the entity search
+// and its list come first, added to the selected page with the phone's
+// defaults (part 3c). Under them, "Other tiles" in small groups, each button
+// with the icon its tile carries and one line on what it does: Layout
+// (spacer, header), Navigation (go to page, peek page), App tiles (Music,
+// Template, Assist, Speak and Point control, 3f batch 2) and Library (the
+// iPhone's HTTP actions and status pages from the catalog, part 3e). With
+// no catalog, one line says where the library lists come from; without
+// Music Assistant, Music is off and one line says why. Last, the "iPhone
 // only" group: a map, a chart, a text field and a web card (phone native
 // pages, phase 3), greyed on a watch's editor and hidden on a page no iPhone
 // picks.
@@ -30,12 +32,17 @@ import { guard } from "lit/directives/guard.js";
 import { watchCameraRows, watchHiddenCameraIds } from "./camera-live.js";
 import type { CameraFraming } from "../ha-api.js";
 import { goToWatchHttpActions } from "../shell.js";
-import { uiIcon } from "../ui-icons.js";
+import { type UiIconName, uiIcon } from "../ui-icons.js";
 import {
   type WatchAddCandidate,
+  type WatchAddKindKey,
   type WatchAppAddButton,
+  type WatchAppAddKey,
   type WatchPhoneAddButton,
   WATCH_ADD_BUSY_TEXT,
+  WATCH_ADD_GROUP_TITLES,
+  WATCH_ADD_KIND_WORDS,
+  WATCH_ADD_OTHER_TITLE,
   WATCH_ADD_ROWS,
   WATCH_APP_ADD_BUTTONS,
   WATCH_PHONE_ADD_BUTTONS,
@@ -91,6 +98,7 @@ import {
   watchPageTiles,
 } from "./model.js";
 import {
+  type WatchPhoneAddKind,
   type WatchTileAdd,
   addNewWatchTile,
   watchAddRefusal,
@@ -289,10 +297,11 @@ function addLink(host: AddTileHost, view: AddTileView, kind: LinkKind, target: W
   if (commit(host, view, { kind, page: target }, words)) view.links = undefined;
 }
 
-/** What each library list asks, and what an add of it is called. */
-const LIBRARY_WORDS: Readonly<Record<WatchLibraryKind, { question: string; tile: string; button: string }>> = {
-  httpAction: { question: "Which HTTP action should the tile run?", tile: "an HTTP action tile", button: "HTTP action" },
-  statusPage: { question: "Which status page should the tile open?", tile: "a status page tile", button: "Status page" },
+/** What each library list asks, and what an add of it is called. The
+ * button's words are `WATCH_ADD_KIND_WORDS`. */
+const LIBRARY_WORDS: Readonly<Record<WatchLibraryKind, { question: string; tile: string }>> = {
+  httpAction: { question: "Which HTTP action should the tile run?", tile: "an HTTP action tile" },
+  statusPage: { question: "Which status page should the tile open?", tile: "a status page tile" },
 };
 
 /** Add a tile for one entry of the iPhone's library, as the phone's add
@@ -335,7 +344,8 @@ function addPhone(host: AddTileHost, view: AddTileView, button: WatchPhoneAddBut
   commit(host, view, watchPhoneAdd(button.key), button.done);
 }
 
-/** The "iPhone only" group, last: each kind with the phone glyph. Greyed on
+/** The "iPhone only" group, last, titled with the phone glyph, its buttons
+ * drawn as the other kinds' are. Greyed on
  * a watch's editor with what the rows mean; off with the reason while a
  * watch that picks the page is too old; nothing on a page no iPhone picks. */
 function renderPhoneGroup(host: AddTileHost, view: AddTileView): TemplateResult | typeof nothing {
@@ -347,10 +357,13 @@ function renderPhoneGroup(host: AddTileHost, view: AddTileView): TemplateResult 
   const why = greyed ? WATCH_PHONE_GREYED_TEXT : blocked;
   return html`<div class="at-phone ${off ? "greyed" : ""}">
     <div class="at-sub at-phone-h">${uiIcon("phone")}<span>${WATCH_PHONE_GROUP_TITLE}</span></div>
-    <div class="at-kinds" role="group" aria-label=${WATCH_PHONE_GROUP_TITLE}>
-      ${WATCH_PHONE_ADD_BUTTONS.map((b) => html`<button type="button" class="pe-btn at-phone-btn" ?disabled=${host.busy || off}
-        title=${why ?? nothing} aria-describedby=${why === undefined ? nothing : "at-phone-why"}
-        @click=${() => addPhone(host, view, b)}>${uiIcon("phone")}<span>${b.label}</span></button>`)}
+    <div class="at-kind-grid" role="group" aria-label=${WATCH_PHONE_GROUP_TITLE}>
+      ${WATCH_PHONE_ADD_BUTTONS.map((b) => kindButton(host, b.key, b, {
+        disabled: host.busy || off,
+        why,
+        whyId: "at-phone-why",
+        onClick: () => addPhone(host, view, b),
+      }))}
     </div>
     ${why === undefined ? nothing : html`<div class="at-muted" id="at-phone-why">${why}</div>`}
   </div>`;
@@ -476,6 +489,75 @@ function noPhoneLine(text: string | undefined): TemplateResult | typeof nothing 
   return text === undefined ? nothing : html`<div class="at-muted at-lib-none">${text}</div>`;
 }
 
+/** Every kind with a button under "Other tiles". */
+type KindKey = WatchAddKindKey | WatchAppAddKey | WatchPhoneAddKind;
+
+/** The panel's own glyph for a kind whose tile carries no symbol (a spacer,
+ * a header), and for the others until the symbols have loaded. A kind with
+ * neither shows a dot, as an entity row does. */
+const KIND_GLYPH: Readonly<Partial<Record<KindKey, UiIconName>>> = {
+  spacer: "shape",
+  header: "text",
+  pageLink: "arrow",
+  peekLink: "pages",
+  httpAction: "globe",
+  statusPage: "list",
+  template: "braces",
+  assist: "mic",
+  pointControl: "tap",
+  chart: "chart",
+  textField: "keyboard",
+  web: "globe",
+};
+
+/** The symbol's color on the chip's watch black, in both skins. */
+const KIND_INK = "#E5E5EA";
+
+/** A kind's icon as a small tile, the way the entity rows show theirs: the
+ * symbol its new tile carries on the watch's black. */
+function kindChip(host: AddTileHost, key: KindKey, icon: string | undefined): TemplateResult {
+  const px = 16;
+  const glyph = icon === undefined ? undefined : host.icons.render(icon, px, KIND_INK);
+  const fallback = KIND_GLYPH[key];
+  return html`<span class="at-kind-ico">${glyph !== undefined
+    ? html`<svg width=${px} height=${px} viewBox=${`0 0 ${px} ${px}`} aria-hidden="true">${glyph}</svg>`
+    : fallback !== undefined
+      ? uiIcon(fallback)
+      : html`<svg width=${px} height=${px} viewBox=${`0 0 ${px} ${px}`} aria-hidden="true">${svg`<circle cx=${px / 2} cy=${px / 2} r=${px / 5} fill=${KIND_INK} />`}</svg>`}</span>`;
+}
+
+/** One kind's button: its icon, its name and one line on what it does. A
+ * button that opens a list carries `expanded` and a chevron. */
+function kindButton(
+  host: AddTileHost,
+  key: KindKey,
+  words: { label: string; icon: string | undefined; hint: string },
+  options: { disabled: boolean; onClick: () => void; expanded?: boolean; why?: string; whyId?: string },
+): TemplateResult {
+  const { expanded } = options;
+  return html`<button type="button" class="at-kind" ?disabled=${options.disabled}
+    title=${options.why ?? nothing} aria-describedby=${options.why === undefined ? nothing : (options.whyId ?? nothing)}
+    aria-expanded=${expanded === undefined ? nothing : expanded ? "true" : "false"}
+    aria-controls=${expanded === true ? "at-links" : nothing}
+    @click=${options.onClick}>
+    ${kindChip(host, key, words.icon)}
+    <span class="at-kind-text">
+      <span class="at-kind-name">${words.label}</span>
+      <span class="at-kind-hint">${words.hint}</span>
+    </span>
+    ${expanded === undefined ? nothing : uiIcon("chevron")}
+  </button>`;
+}
+
+/** One small group under "Other tiles": its title, then its buttons. */
+function kindGroup(title: string, label: string, buttons: readonly TemplateResult[], after: unknown = nothing): TemplateResult {
+  return html`<div class="at-group">
+    <div class="at-sub">${title}</div>
+    ${buttons.length === 0 ? nothing : html`<div class="at-kind-grid" role="group" aria-label=${label}>${buttons}</div>`}
+    ${after}
+  </div>`;
+}
+
 function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
   const done = html`<div class="at-foot">
       <span class="at-count" role="status">${watchAddedCountText(view.added)}</span>
@@ -517,12 +599,13 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
   const appBlocked = WATCH_APP_ADD_BUTTONS.map((b) => watchAppAddBlockedText(b.key, host.musicAssistant)).find(
     (t) => t !== undefined,
   );
-  const listButton = (kind: OpenList, text: string) => html`<button type="button" class="pe-btn ${view.links === kind ? "on" : ""}"
-    aria-expanded=${view.links === kind ? "true" : "false"} aria-controls=${view.links === kind ? "at-links" : nothing}
-    @click=${() => toggleLinks(kind)}>${text}${uiIcon("chevron")}</button>`;
-  let openList: TemplateResult | typeof nothing = nothing;
-  if (view.links === "pageLink" || view.links === "peekLink") openList = renderLinks(host, view, view.links);
-  else if (view.links !== undefined && watchCatalogKnows(catalog, view.links)) openList = renderLibrary(host, view, view.links, catalog!);
+  // A button that opens a list; the list opens under its own group.
+  const listButton = (kind: OpenList) =>
+    kindButton(host, kind, WATCH_ADD_KIND_WORDS[kind], { disabled: false, expanded: view.links === kind, onClick: () => toggleLinks(kind) });
+  let linkList: TemplateResult | typeof nothing = nothing;
+  let libraryList: TemplateResult | typeof nothing = nothing;
+  if (view.links === "pageLink" || view.links === "peekLink") linkList = renderLinks(host, view, view.links);
+  else if (view.links !== undefined && watchCatalogKnows(catalog, view.links)) libraryList = renderLibrary(host, view, view.links, catalog!);
   const searchChanged = (query: string, kind: string) => {
     view.query = query;
     view.kind = kind;
@@ -594,30 +677,48 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
     </button>`;
   });
 
+  // The other kinds, in their groups under the entities.
+  const layout = kindGroup(WATCH_ADD_GROUP_TITLES.layout, WATCH_ADD_GROUP_TITLES.layout, [
+    kindButton(host, "spacer", WATCH_ADD_KIND_WORDS.spacer, {
+      disabled: busy,
+      onClick: () => commit(host, view, { kind: "spacer" }, "Added a spacer."),
+    }),
+    kindButton(host, "header", WATCH_ADD_KIND_WORDS.header, {
+      disabled: busy,
+      onClick: () => commit(host, view, { kind: "header" }, "Added a header line. Pick Label in its Header card to add a title."),
+    }),
+  ]);
+  const navigation = kindGroup(
+    WATCH_ADD_GROUP_TITLES.navigation,
+    WATCH_ADD_GROUP_TITLES.navigation,
+    [listButton("pageLink"), listButton("peekLink")],
+    linkList,
+  );
+  const apps = kindGroup(
+    WATCH_ADD_GROUP_TITLES.app,
+    WATCH_ADD_GROUP_TITLES.app,
+    WATCH_APP_ADD_BUTTONS.map((b) => {
+      const blocked = watchAppAddBlockedText(b.key, host.musicAssistant);
+      return kindButton(host, b.key, b, {
+        disabled: busy || blocked !== undefined,
+        why: blocked,
+        whyId: "at-app-blocked",
+        onClick: () => addApp(host, view, b),
+      });
+    }),
+    appBlocked === undefined ? nothing : html`<div class="at-muted" id="at-app-blocked">${appBlocked}</div>`,
+  );
+  const library = catalog === undefined
+    ? kindGroup(WATCH_ADD_GROUP_TITLES.library, WATCH_ADD_GROUP_TITLES.library, [], html`<div class="at-muted at-lib-none">${WATCH_NO_CATALOG_TEXT}</div>`)
+    : kindGroup(
+        WATCH_ADD_GROUP_TITLES.library,
+        catalog.noPhone === true ? (catalog.statusPagesFromWatch === true ? `From the ${hostDeviceNoun(host)}` : "From Home Assistant") : "From the iPhone",
+        (Object.keys(LIBRARY_WORDS) as WatchLibraryKind[]).filter((kind) => watchCatalogKnows(catalog, kind)).map((kind) => listButton(kind)),
+        html`${catalog.noPhone === true ? noPhoneLine(watchNoPhoneLibraryText(catalog)) : nothing}${libraryList}`,
+      );
+
   return html`<div class="at-body">
     ${busy ? html`<div class="at-note" role="status">${WATCH_ADD_BUSY_TEXT}</div>` : nothing}
-    <div class="at-kinds" role="group" aria-label="Other tiles">
-      <button type="button" class="pe-btn" ?disabled=${busy}
-        @click=${() => commit(host, view, { kind: "spacer" }, "Added a spacer.")}>Spacer</button>
-      <button type="button" class="pe-btn" ?disabled=${busy}
-        @click=${() => commit(host, view, { kind: "header" }, "Added a header line. Pick Label in its Header card to add a title.")}>Header</button>
-      ${listButton("pageLink", "Go to page")}
-      ${listButton("peekLink", "Peek page")}
-      ${WATCH_APP_ADD_BUTTONS.map((b) => {
-        const blocked = watchAppAddBlockedText(b.key, host.musicAssistant);
-        return html`<button type="button" class="pe-btn" ?disabled=${busy || blocked !== undefined}
-          title=${blocked ?? nothing} aria-describedby=${blocked === undefined ? nothing : "at-app-blocked"}
-          @click=${() => addApp(host, view, b)}>${b.label}</button>`;
-      })}
-    </div>
-    ${appBlocked === undefined ? nothing : html`<div class="at-muted" id="at-app-blocked">${appBlocked}</div>`}
-    ${catalog === undefined
-      ? html`<div class="at-muted at-lib-none">${WATCH_NO_CATALOG_TEXT}</div>`
-      : html`<div class="at-kinds at-lib" role="group" aria-label=${catalog.noPhone === true ? (catalog.statusPagesFromWatch === true ? `From the ${hostDeviceNoun(host)}` : "From Home Assistant") : "From the iPhone"}>
-          ${(Object.keys(LIBRARY_WORDS) as WatchLibraryKind[]).filter((kind) => watchCatalogKnows(catalog, kind)).map((kind) => listButton(kind, LIBRARY_WORDS[kind].button))}
-        </div>
-        ${catalog.noPhone === true ? noPhoneLine(watchNoPhoneLibraryText(catalog)) : nothing}`}
-    ${openList}
 
     <div class="at-ents">
       <label class="at-sub" for="at-search">Entity</label>
@@ -650,7 +751,15 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
       </div>
       ${leftOut === undefined ? nothing : html`<div class="at-muted">${leftOut}</div>`}
     </div>
-    ${renderPhoneGroup(host, view)}
+
+    <section class="at-other" aria-labelledby="at-other-h">
+      <h3 class="at-other-h" id="at-other-h">${WATCH_ADD_OTHER_TITLE}</h3>
+      ${layout}
+      ${navigation}
+      ${apps}
+      ${library}
+      ${renderPhoneGroup(host, view)}
+    </section>
 
     ${note === undefined
       ? nothing
@@ -673,12 +782,6 @@ export const addTileStyles = css`
   .at-sub { font-size: 12px; font-weight: 600; color: var(--wa-muted); }
   .at-muted { font-size: 12px; line-height: 1.4; color: var(--wa-muted); }
 
-  .at-kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-  .at-kinds > .pe-btn { min-width: 0; padding: 0 8px; }
-  .at-kinds > .pe-btn > svg.ui-icon { width: 12px; height: 12px; flex: none; transition: transform .12s ease-out; }
-  .at-kinds > .pe-btn[aria-expanded=true] { background: var(--wa-sel-bg, var(--wa-panel)); border-color: var(--wa-sel-ring, var(--wa-line-strong)); }
-  .at-kinds > .pe-btn[aria-expanded=true] > svg.ui-icon { transform: rotate(180deg); }
-  .at-kinds.at-lib { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .at-tag.warn { color: var(--wa-need); background: color-mix(in srgb, var(--wa-need) 12%, transparent); }
 
   .at-links {
@@ -729,16 +832,46 @@ export const addTileStyles = css`
   button.at-more:hover { background: color-mix(in srgb, var(--wa-accent) 12%, transparent); }
   button.at-more:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--wa-accent); }
 
-  /* The "iPhone only" group, last: each kind with the phone glyph; greyed
+  /* "Other tiles", under the entities: small groups of kinds, each button
+     its tile's icon, its name and one line. As many columns as fit, so a
+     group of one or two fills its row and a phone gets one column. */
+  .at-other { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding-top: 14px; border-top: 1px solid var(--wa-line); }
+  /* Outranks the dialog's own h3, its title. */
+  .at-other > h3.at-other-h { margin: 0; font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--wa-ink); }
+  .at-group { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .at-kind-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 6px; }
+  button.at-kind {
+    display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 48px; padding: 7px 10px 7px 8px;
+    border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-raised, var(--wa-card));
+    color: var(--wa-ink); font: inherit; text-align: left; cursor: pointer;
+    transition: background-color .1s ease-out, border-color .1s ease-out;
+  }
+  button.at-kind:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-accent) 10%, var(--wa-card)); }
+  button.at-kind:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.at-kind:disabled { opacity: .55; cursor: default; }
+  button.at-kind[aria-expanded=true] { background: var(--wa-sel-bg, var(--wa-panel)); border-color: var(--wa-sel-ring, var(--wa-line-strong)); }
+  /* The tile as the watch draws it, as the entity rows' chips: the symbol
+     on the watch's black, in both skins. */
+  .at-kind-ico {
+    flex: none; width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center;
+    background: linear-gradient(rgba(255, 255, 255, .12), rgba(255, 255, 255, .12)), #0b0b0d; color: #E5E5EA;
+  }
+  .at-kind-ico > svg { width: 16px; height: 16px; display: block; }
+  .at-kind-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .at-kind-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+  .at-kind-hint { font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
+  button.at-kind > svg.ui-icon { width: 12px; height: 12px; flex: none; color: var(--wa-muted); transition: transform .12s ease-out; }
+  button.at-kind[aria-expanded=true] > svg.ui-icon { transform: rotate(180deg); }
+
+  /* The "iPhone only" group, last: titled with the phone glyph; greyed
      on a watch's editor, and on an iPhone's while an old watch holds the
      page. */
   .at-phone { display: flex; flex-direction: column; gap: 6px; }
   .at-phone-h { display: inline-flex; align-items: center; gap: 5px; }
   .at-phone-h > svg.ui-icon { width: 13px; height: 13px; flex: none; }
-  .at-phone-btn { gap: 5px; }
-  .at-phone-btn > svg.ui-icon { width: 13px; height: 13px; flex: none; }
-  .at-phone-btn > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .at-phone.greyed .at-kinds { opacity: .55; }
+  .at-phone.greyed .at-kind-grid { opacity: .55; }
+  /* Off already: the grid's own fade is the one that shows. */
+  .at-phone.greyed button.at-kind:disabled { opacity: 1; }
 
   .at-note { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; line-height: 1.4; color: var(--wa-muted); }
   .at-note.ok { color: var(--wa-green, var(--wa-ink)); }
@@ -748,7 +881,6 @@ export const addTileStyles = css`
   .at-count { font-size: 13px; color: var(--wa-muted); }
 
   @media (max-width: 480px) {
-    .at-kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .at-kinds.at-lib { grid-template-columns: minmax(0, 1fr); }
+    .at-kind-grid { grid-template-columns: minmax(0, 1fr); }
   }
 `;

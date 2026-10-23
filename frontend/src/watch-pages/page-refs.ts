@@ -160,6 +160,22 @@ export function countMenuRefs(menus: MenusDocument, pageIds: readonly string[], 
   return pageIds.reduce((n, id) => n + slotsOpening(menus, id, status ? SHOW_STATUS_PAGE : GO_TO_PAGE).length, 0);
 }
 
+/** How many slots `clearPageFromMenus` (with `status`,
+ * `clearStatusPageFromMenus`) would take out of `menus`: a slot `keep`
+ * says a shared menu still needs is not counted. */
+export function countClearedMenuRefs(menus: MenusDocument, pageIds: readonly string[], keep: KeepSlot = KEEP_NO_SLOT, status = false): number {
+  const next = status ? clearStatusPageFromMenus(menus, pageIds, keep) : clearPageFromMenus(menus, pageIds, keep);
+  return next === menus ? 0 : countMenuRefs(menus, pageIds, status) - countMenuRefs(next, pageIds, status);
+}
+
+/** What an untick or a delete clears on one device: its menu slots and
+ * its complication taps (a complication's own tap and each tap layer count
+ * one each) that opened the page. */
+export interface PageRefCount {
+  slots: number;
+  taps: number;
+}
+
 /** How a complication opens the page: its own tap, and how many of its tap
  * layers. */
 export interface ComplicationPageRef {
@@ -193,6 +209,12 @@ export function complicationsOpeningPage(records: readonly ComplicationRecord[],
     found.push({ id: record.id, name, whole, layers });
   }
   return found;
+}
+
+/** How many taps of a complication open one of `pageIds`: its own tap, and
+ * each tap layer. */
+export function countPageTaps(document: JsonObject, pageIds: readonly string[]): number {
+  return (opens(document, pageIds) ? 1 : 0) + tapLayers(document).filter((tap) => opens(tap, pageIds)).length;
 }
 
 /** Take the page out of one holder: its page pair goes, and an "open a

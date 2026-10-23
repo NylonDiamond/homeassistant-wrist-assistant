@@ -2,9 +2,10 @@
 // editors say about the devices an item is on, worked out from the library
 // summary (`library/model.ts`) and nothing else.
 //
-// The words: the tick row's locks, the badge on a row, the delete question
-// ("Delete on all 3 devices" or "Remove from this watch only"), the
-// line a restore adds when it changes other devices too, the
+// The words: the tick row's locks, the question an untick asks when it
+// clears menu slots or taps and the note it leaves, the badge on a row, the
+// delete question ("Delete on all 3 devices" or "Remove from this watch
+// only"), the line a restore adds when it changes other devices too, the
 // rows of "Not on this watch", and the name a menu's copy starts with.
 // Plan: app repo docs/one_library_plan_2026-10.md, step 3.
 
@@ -21,6 +22,8 @@ import {
   sameId,
 } from "../library/model.js";
 import { type LinkDevice, deviceWord, joinWords, linkBadgeText } from "./devices.js";
+import type { PageRefCount } from "./page-refs.js";
+import type { WatchPagesNote } from "./save-note.js";
 
 /** What a list item is called in a sentence. */
 function noun(kind: LibraryListKind): string {
@@ -110,6 +113,47 @@ export function dirtyElsewhereText(name: string): string {
  * not saved). */
 export function unsavedTicksText(kind: LibraryListKind): string {
   return `Save first, then tick a device to put the ${noun(kind)} there too.`;
+}
+
+/** What an untick clears, counted: "2 menu slots and 1 complication tap";
+ * empty for none. */
+export function pageRefWords(count: PageRefCount): string {
+  return joinWords([
+    count.slots > 0 ? `${count.slots} menu ${count.slots === 1 ? "slot" : "slots"}` : undefined,
+    count.taps > 0 ? `${count.taps} complication ${count.taps === 1 ? "tap" : "taps"}` : undefined,
+  ].filter((w): w is string => w !== undefined));
+}
+
+/**
+ * The question an untick asks before it takes an item off a device whose
+ * menu slots or complication taps open it, since those are cleared with it
+ * and ticking again does not bring them back. `count` undefined: they
+ * could not be read, so the question says what may go.
+ */
+export function untickAskText(kind: LibraryListKind, item: string, device: string, count: PageRefCount | undefined): string {
+  const ask = `Take ${item} off ${device}?`;
+  if (count === undefined) {
+    return kind === "status_pages"
+      ? `${ask} Any menu slots that open it there are cleared too.`
+      : `${ask} Any menu slots and complication taps that open it there are cleared too.`;
+  }
+  const one = count.slots + count.taps === 1;
+  return `${ask} ${pageRefWords(count)} that ${one ? "opens it is" : "open it are"} cleared too.`;
+}
+
+/**
+ * What an untick says once it landed: what it cleared on the device, and
+ * what it could not (`failed`: "the menus", a complication's quoted name,
+ * "the complications"). Undefined when it cleared nothing and nothing
+ * failed: the chip says the rest.
+ */
+export function untickNote(item: string, device: string, cleared: PageRefCount, failed: readonly string[]): WatchPagesNote | undefined {
+  const words = pageRefWords(cleared);
+  const took = `Took ${item} off ${device}${words === "" ? "" : ` and cleared ${words} that opened it`}.`;
+  if (failed.length > 0) {
+    return { kind: "warn", text: `${took} Could not clear it from ${joinWords(failed)}: change ${failed.length === 1 ? "that" : "those"} by hand.` };
+  }
+  return words === "" ? undefined : { kind: "ok", text: took };
 }
 
 /** The delete question's two answers, for an item other devices have too. */

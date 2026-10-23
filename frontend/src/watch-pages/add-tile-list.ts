@@ -25,7 +25,10 @@ import {
   WATCH_MUSIC_ASSISTANT_REQUIRED_TEXT,
   WATCH_SPEAK_ENTITY_ID,
   WATCH_TILE_APP,
+  WATCH_TILE_DEFAULTS,
   watchAddableDomain,
+  watchEntityDefaults,
+  watchLibraryTileLook,
   watchMediaPlayersFromHass,
 } from "./tile-new.js";
 import { VIRTUAL_TILE_KINDS, tileKindPlural } from "./model.js";
@@ -253,6 +256,10 @@ export interface WatchAppAddButton {
   label: string;
   /** The phone's chip the button sits under. */
   chip: "Media" | "Others";
+  /** The SF Symbol a new tile of the kind carries, drawn on the button. */
+  icon: string | undefined;
+  /** The one line under the button's name: what the tile does. */
+  hint: string;
   /** The line after an add. */
   done: string;
 }
@@ -261,17 +268,61 @@ export interface WatchAppAddButton {
  * button, the tile list and the settings title cannot drift apart. */
 const appName = (kind: string): string => VIRTUAL_TILE_KINDS[kind] ?? kind;
 
+/** The icon an entity add of the app's fixed id gets (Assist, Speak). */
+const entityIcon = (entityId: string): string | undefined => watchEntityDefaults({ entityId }, undefined).icon;
+
 /** The app tile buttons in the dialog's order: Music (the phone's Media
  * chip), then Template, Assist, Speak and Point control (its Others chip).
  * No Webhook inbox: on the phone that add is Debug only. A new Speak tile
  * has no speakers yet, so its line says where to pick them. */
 export const WATCH_APP_ADD_BUTTONS: readonly WatchAppAddButton[] = [
-  { key: "musicHub", label: appName("music_hub"), chip: "Media", done: `Added a ${appName("music_hub")} tile.` },
-  { key: "template", label: appName("template"), chip: "Others", done: `Added a ${appName("template")} tile.` },
-  { key: "assist", label: appName("assist"), chip: "Others", done: `Added an ${appName("assist")} tile.` },
-  { key: "speak", label: appName("speak_message"), chip: "Others", done: `Added a ${appName("speak_message")} tile. Pick its speakers in the tile's settings before saving.` },
-  { key: "pointControl", label: appName("point_control"), chip: "Others", done: `Added a ${appName("point_control")} tile.` },
+  {
+    key: "musicHub", label: appName("music_hub"), chip: "Media", icon: WATCH_TILE_APP.musicHub.add.icon,
+    hint: "Now playing, on your Music Assistant speakers", done: `Added a ${appName("music_hub")} tile.`,
+  },
+  {
+    key: "template", label: appName("template"), chip: "Others", icon: WATCH_TILE_APP.template.add.icon,
+    hint: "Shows text from a Home Assistant template", done: `Added a ${appName("template")} tile.`,
+  },
+  {
+    key: "assist", label: appName("assist"), chip: "Others", icon: entityIcon(WATCH_ASSIST_ENTITY_ID),
+    hint: "Ask Home Assistant's Assist by voice", done: `Added an ${appName("assist")} tile.`,
+  },
+  {
+    key: "speak", label: appName("speak_message"), chip: "Others", icon: entityIcon(WATCH_SPEAK_ENTITY_ID),
+    hint: "Says a message out loud on your speakers",
+    done: `Added a ${appName("speak_message")} tile. Pick its speakers in the tile's settings before saving.`,
+  },
+  {
+    key: "pointControl", label: appName("point_control"), chip: "Others", icon: WATCH_TILE_APP.pointControl.add.icon,
+    hint: "Aim at a device to control it", done: `Added a ${appName("point_control")} tile.`,
+  },
 ];
+
+/** The dialog's other kinds, each a button in its group under "Other
+ * tiles": the layout kinds, the links, and the iPhone's library lists. */
+export type WatchAddKindKey = "spacer" | "header" | "pageLink" | "peekLink" | "httpAction" | "statusPage";
+
+/** What a kind's button says and draws: its one name, the SF Symbol a new
+ * tile of the kind carries (none for a spacer or a header) and one line. */
+export interface WatchAddKindWords {
+  label: string;
+  icon: string | undefined;
+  hint: string;
+}
+
+export const WATCH_ADD_KIND_WORDS: Readonly<Record<WatchAddKindKey, WatchAddKindWords>> = {
+  spacer: { label: appName("spacer"), icon: undefined, hint: "Empty space between tiles" },
+  header: { label: appName("divider"), icon: undefined, hint: "A line across the page, with a title if you like" },
+  pageLink: { label: appName("page"), icon: WATCH_TILE_DEFAULTS.pageLink.icon, hint: "Goes to another page" },
+  peekLink: { label: appName("show_page"), icon: WATCH_TILE_DEFAULTS.peekLink.icon, hint: "Opens a page over this one for a quick look" },
+  httpAction: { label: appName("http_action"), icon: watchLibraryTileLook("httpAction").icon, hint: "Runs one of your HTTP actions" },
+  statusPage: { label: appName("status_page"), icon: watchLibraryTileLook("statusPage").icon, hint: "Opens one of your status pages" },
+};
+
+/** The titles over the other kinds, in the dialog's order. */
+export const WATCH_ADD_OTHER_TITLE = "Other tiles";
+export const WATCH_ADD_GROUP_TITLES = { layout: "Layout", navigation: "Navigation", app: "App tiles", library: "Library" } as const;
 
 /**
  * The add a button makes: a template, music hub or point control tile with an
@@ -321,19 +372,24 @@ export const WATCH_PHONE_GROUP_TITLE = "iPhone only";
 /** What each of its rows says on a watch's editor, where it is greyed. */
 export const WATCH_PHONE_GREYED_TEXT = "Shown on the iPhone only";
 
-/** One button of the group: the kind, its words, the line after an add. */
+/** One button of the group: the kind, its words, the SF Symbol its new tile
+ * carries, its one line and the line after an add. */
 export interface WatchPhoneAddButton {
   key: WatchPhoneAddKind;
   label: string;
+  icon: string | undefined;
+  hint: string;
   done: string;
 }
 
+const phoneIcon = (key: WatchPhoneAddKind): string | undefined => WATCH_TILE_APP.phoneTiles[key]?.add.icon;
+
 /** The group's buttons, in the order of the app's kinds. */
 export const WATCH_PHONE_ADD_BUTTONS: readonly WatchPhoneAddButton[] = [
-  { key: "map", label: "Map", done: "Added a Map tile." },
-  { key: "chart", label: "Chart", done: "Added a Chart tile." },
-  { key: "textField", label: "Text field", done: "Added a Text field tile." },
-  { key: "web", label: "Web card", done: "Added a Web card tile." },
+  { key: "map", label: "Map", icon: phoneIcon("map"), hint: "Shows people and places on a map", done: "Added a Map tile." },
+  { key: "chart", label: "Chart", icon: phoneIcon("chart"), hint: "Graphs a sensor's history", done: "Added a Chart tile." },
+  { key: "textField", label: "Text field", icon: phoneIcon("textField"), hint: "Sends typed text to a Home Assistant entity", done: "Added a Text field tile." },
+  { key: "web", label: "Web card", icon: phoneIcon("web"), hint: "Shows a web page", done: "Added a Web card tile." },
 ];
 
 function isPhoneAddKey(key: string): key is WatchPhoneAddKind {
@@ -421,9 +477,11 @@ export function watchAddRefusalText(refusal: WatchAddRefusal, name?: string): st
 /** The words while the editor refuses every edit (a save is out). */
 export const WATCH_ADD_BUSY_TEXT = "Wait a moment: the page is being saved.";
 
-/** The foot line: how many tiles this visit added. */
+/** The foot line: how many tiles this visit added. Empty before the first
+ * add, so the foot is only the Done button until there is something to
+ * count. */
 export function watchAddedCountText(count: number): string {
-  if (count <= 0) return "No tiles added yet.";
+  if (count <= 0) return "";
   return count === 1 ? "1 tile added." : `${count} tiles added.`;
 }
 

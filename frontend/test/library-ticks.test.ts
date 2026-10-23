@@ -130,6 +130,32 @@ describe("renderTicks", () => {
     clicks(renderTicks(input({ kind: "menus", itemId: HOME_MENU }), (o, on) => asked.push([o, on]))).slice(1, 4).forEach((fn) => fn(event));
     expect(asked).toEqual([[CHEN, true]]);
   });
+
+  it("asks an untick's question under the row, with Remove and Cancel, and reads a note that is not a refusal quietly", () => {
+    const said: string[] = [];
+    const text = "Take Kitchen off Jesse Apple Watch? 2 menu slots that open it are cleared too.";
+    const tpl = renderTicks(input({
+      ask: { ownerId: JESSE, text, onRemove: () => said.push("remove"), onCancel: () => said.push("cancel") },
+    }), () => undefined);
+    const drawn = flat(tpl);
+    expect(drawn).toContain(`<span class="lt-ask-q">${text}</span>`);
+    expect(drawn).toContain(`class="lt-ask-btn danger"`);
+    expect(drawn).toMatch(/>Remove<\/button>[\s\S]*>Cancel<\/button>/);
+    // The ask's two handlers are the last two in the row.
+    const fns: (() => void)[] = [];
+    const walk = (v: unknown) => {
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (v !== null && typeof v === "object" && "values" in v) (v as { values: unknown[] }).values.forEach(walk);
+      else if (typeof v === "function") fns.push(v as () => void);
+    };
+    walk(tpl);
+    fns.slice(-2).forEach((fn) => fn());
+    expect(said).toEqual(["remove", "cancel"]);
+    expect(flat(renderTicks(input({}), () => undefined))).not.toContain("lt-ask");
+    const ok = flat(renderTicks(input({ note: "Took Kitchen off Jesse Apple Watch.", noteKind: "ok" }), () => undefined));
+    expect(ok).toContain(`<p class="lt-note ok" role="status">Took Kitchen off Jesse Apple Watch.</p>`);
+    expect(flat(renderTicks(input({ note: "No." }), () => undefined))).toContain(`<p class="lt-note" role="alert">No.</p>`);
+  });
 });
 
 describe("renderTickChips", () => {

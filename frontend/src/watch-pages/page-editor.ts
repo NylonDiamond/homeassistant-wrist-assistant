@@ -109,7 +109,7 @@ import {
   restoreOthersText,
   unsavedTicksText,
 } from "./library-editing.js";
-import { clearComplicationTaps, tickItem } from "./library-editing-io.js";
+import { type UntickAsk, askUntick, clearComplicationTaps, tickItem } from "./library-editing-io.js";
 import { libraryRestStyles, renderLibraryRest } from "./library-rest.js";
 import { allPagesHref, goToAllPages, isPlainClick } from "../shell.js";
 import {
@@ -872,6 +872,9 @@ export class WaPageEditor extends LitElement {
   @state() private note?: Note;
   @state() private restoreAsk?: RestoreAsk;
   @state() private restoring = false;
+  /** An untick of a device in the tick row that would clear menu slots or
+   * complication taps there, asking under the row first (`askUntick`). */
+  @state() private untickAsk?: UntickAsk;
   /** The library (`library/store.ts`): every page once, with the devices
    * that have it, read from `library/summary` and read again when any
    * device's pages change. It draws the tick row in the page's settings,
@@ -3552,6 +3555,8 @@ export class WaPageEditor extends LitElement {
       return html`<p class="pe-lib-hint">${unsavedTicksText("pages")}</p>`;
     }
     const note = store.noteFor("pages", entry.id);
+    const asked = this.untickAsk;
+    const ask = asked !== undefined && asked.kind === "pages" && sameId(asked.itemId, entry.id) ? asked : undefined;
     return renderTicks({
       library: lib,
       kind: "pages",
@@ -3565,7 +3570,35 @@ export class WaPageEditor extends LitElement {
       ...(note === undefined ? {} : { note }),
       ...(admin === undefined ? {} : { admin }),
       locked: (ownerId) => this.pageTickLocked(entry.id, ownerId),
-    }, (ownerId, on) => { void tickItem(this.hass, store, ownerId, "pages", entry.id, on); });
+      ...(ask === undefined ? {} : {
+        ask: { ownerId: ask.ownerId, text: ask.text, onRemove: () => void this.untickNow(ask), onCancel: () => { this.untickAsk = undefined; } },
+      }),
+    }, (ownerId, on) => this.tickPage(entry, ownerId, on));
+  }
+
+  /** A click on a chip of the page's tick row: a tick puts the page there
+   * at once; an untick that would clear menu slots or complication taps
+   * there asks first (`askUntick`), and otherwise takes it off at once. */
+  private tickPage(entry: LibraryItem, ownerId: string, on: boolean): void {
+    const store = this.lib.store;
+    if (store === undefined) return;
+    this.untickAsk = undefined;
+    if (on) {
+      void tickItem(this.hass, store, ownerId, "pages", entry.id, true);
+      return;
+    }
+    const names = { item: entry.name, device: this.deviceName(ownerId) };
+    void askUntick(this.hass, store, ownerId, "pages", entry.id, names).then((ask) => { this.untickAsk = ask; });
+  }
+
+  /** Remove under the untick's question: take the page off, then say what
+   * was cleared there. */
+  private async untickNow(ask: UntickAsk): Promise<void> {
+    const store = this.lib.store;
+    this.untickAsk = undefined;
+    if (store === undefined) return;
+    const result = await tickItem(this.hass, store, ask.ownerId, ask.kind, ask.itemId, false, ask.names);
+    if (result.note !== undefined) this.note = result.note;
   }
 
   /**

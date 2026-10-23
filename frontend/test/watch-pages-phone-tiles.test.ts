@@ -23,6 +23,8 @@ import { renderPageRowPicture } from "../src/library/row-picture.js";
 import { SymbolBrowser } from "../src/symbols.js";
 import { MIN_WATCH_VERSION_FOR_PHONE_TILES, watchSupportsPhoneTiles } from "../src/version.js";
 import {
+  WATCH_ADD_KIND_WORDS,
+  WATCH_APP_ADD_BUTTONS,
   WATCH_PHONE_ADD_BUTTONS,
   WATCH_PHONE_GREYED_TEXT,
   WATCH_PHONE_GROUP_TITLE,
@@ -327,20 +329,25 @@ describe("the iPhone only group's place", () => {
 });
 
 describe("the add dialog's iPhone only group", () => {
-  it("lists the four kinds with the phone glyph, last, on an iPhone's editor, and each adds its tile", () => {
+  it("lists the four kinds under the phone glyph, last, on an iPhone's editor, each with its icon and line, and each adds its tile", () => {
     const { host, tiles } = addHost("iphone");
     const body = renderAddTile(host);
     const text = flatten(body);
     expect(text).toContain(`<span>${WATCH_PHONE_GROUP_TITLE}</span>`);
     expect(text.lastIndexOf(WATCH_PHONE_GROUP_TITLE)).toBeGreaterThan(text.indexOf('id="at-search"'));
-    for (const b of WATCH_PHONE_ADD_BUTTONS) expect(text).toContain(`<span>${b.label}</span>`);
+    for (const b of WATCH_PHONE_ADD_BUTTONS) {
+      expect(text).toContain(`<span class="at-kind-name">${b.label}</span>`);
+      expect(text).toContain(`<span class="at-kind-hint">${b.hint}</span>`);
+    }
+    expect(WATCH_PHONE_ADD_BUTTONS.map((b) => b.icon)).toEqual(["map.fill", "chart.xyaxis.line", "character.cursor.ibeam", "globe"]);
+    for (const b of WATCH_PHONE_ADD_BUTTONS) expect(b.hint).not.toMatch(/[–—]| - /);
     expect(WATCH_PHONE_ADD_BUTTONS.map((b) => b.label)).toEqual(["Map", "Chart", "Text field", "Web card"]);
     expect(text).not.toContain(WATCH_PHONE_GREYED_TEXT);
-    // The phone glyph's body, on the title and each row.
+    // The phone glyph's body, on the group's title; each row has its tile's icon.
     const glyph = 'x="6" y="2.5" width="12" height="19"';
-    expect(text.split(glyph).length - 1).toBeGreaterThanOrEqual(5);
+    expect(text.split(glyph).length - 1).toBeGreaterThanOrEqual(1);
     for (const [i, b] of WATCH_PHONE_ADD_BUTTONS.entries()) {
-      handler(renderAddTile(host), `<span>${b.label}</span>`, "@click=")();
+      handler(renderAddTile(host), `<span class="at-kind-name">${b.label}</span>`, "@click=")();
       expect(tiles()).toHaveLength(i + 1);
       expect(tileKind(String(tiles()[i]!.entityId))).toBe(KIND_OF[b.key]);
     }
@@ -353,7 +360,7 @@ describe("the add dialog's iPhone only group", () => {
     expect(text).toContain(WATCH_PHONE_GROUP_TITLE);
     expect(text).toContain("at-phone greyed");
     expect(text).toContain(WATCH_PHONE_GREYED_TEXT);
-    handler(renderAddTile(host), "<span>Map</span>", "@click=")();
+    handler(renderAddTile(host), '<span class="at-kind-name">Map</span>', "@click=")();
     expect(tiles()).toHaveLength(0);
   });
 
@@ -368,9 +375,61 @@ describe("the add dialog's iPhone only group", () => {
     expect(text).toContain("Jesse's watch runs 3.1.0; iPhone only tiles need 3.2.0.");
     // Drawn as greyed as on a watch's editor, so the buttons do not look live.
     expect(text).toContain("at-phone greyed");
-    handler(renderAddTile(host), "<span>Chart</span>", "@click=")();
+    handler(renderAddTile(host), '<span class="at-kind-name">Chart</span>', "@click=")();
     expect(tiles()).toHaveLength(0);
     expect(flatten(renderAddTile(host))).toContain("role=alert");
+  });
+});
+
+describe("the add dialog's order", () => {
+  const name = (label: string) => `<span class="at-kind-name">${label}</span>`;
+
+  it("puts the entity search first, then Other tiles in groups, each kind with its line", () => {
+    const text = flatten(renderAddTile(addHost("iphone").host));
+    const order = [
+      'id="at-search"',
+      "Other tiles",
+      ">Layout<",
+      name("Spacer"),
+      name("Header"),
+      ">Navigation<",
+      name("Go to page"),
+      name("Peek page"),
+      ">App tiles<",
+      ...WATCH_APP_ADD_BUTTONS.map((b) => name(b.label)),
+      ">Library<",
+      `<span>${WATCH_PHONE_GROUP_TITLE}</span>`,
+    ];
+    const at = order.map((marker) => text.indexOf(marker));
+    for (const [i, marker] of order.entries()) expect(at[i], marker).toBeGreaterThanOrEqual(0);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(WATCH_APP_ADD_BUTTONS.map((b) => b.label)).toEqual(["Music", "Template", "Assist", "Speak", "Point control"]);
+    // Every kind says what it does.
+    for (const words of [WATCH_ADD_KIND_WORDS.spacer, WATCH_ADD_KIND_WORDS.header, WATCH_ADD_KIND_WORDS.pageLink, WATCH_ADD_KIND_WORDS.peekLink, ...WATCH_APP_ADD_BUTTONS]) {
+      expect(text).toContain(`<span class="at-kind-hint">${words.hint}</span>`);
+    }
+    // The links open their list, so they say so; the others add at once.
+    expect(text.split("aria-expanded=false").length - 1).toBe(2);
+  });
+
+  it("shows no count in the foot until the first add", () => {
+    const { host, tiles } = addHost("iphone");
+    const before = flatten(renderAddTile(host));
+    expect(before).not.toContain("No tiles added yet");
+    expect(before).toContain('<span class="at-count" role="status"></span>');
+    handler(renderAddTile(host), WATCH_ADD_KIND_WORDS.spacer.hint, "@click=")();
+    expect(tiles()).toHaveLength(1);
+    expect(flatten(renderAddTile(host))).toContain('<span class="at-count" role="status">1 tile added.</span>');
+  });
+
+  it("keeps Music off with its reason when Music Assistant is missing", () => {
+    const { host, tiles } = addHost("iphone");
+    Object.defineProperty(host, "musicAssistant", { value: false });
+    const text = flatten(renderAddTile(host));
+    expect(text).toContain("The Music tile needs the Music Assistant integration in Home Assistant.");
+    expect(text).toContain("aria-describedby=at-app-blocked");
+    handler(renderAddTile(host), WATCH_APP_ADD_BUTTONS[0]!.hint, "@click=")();
+    expect(tiles()).toHaveLength(0);
   });
 });
 

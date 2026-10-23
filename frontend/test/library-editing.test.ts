@@ -22,7 +22,10 @@ import {
   restoreOthersText,
   sameItemContent,
   statusSharedText,
+  pageRefWords,
   unsavedTicksText,
+  untickAskText,
+  untickNote,
 } from "../src/watch-pages/library-editing.js";
 import { CAMERA, CHEN, CHEN_MENU, DEVICES, DOORS, HOME_MENU, JESSE, LIGHTS, LONELY, PAGE1, PHONE, QUICK, SMART, STARTER, summary } from "./library-fixture.js";
 
@@ -179,5 +182,44 @@ describe("Make a copy for this watch", () => {
   it("names the copy after the device, and says what it did", () => {
     expect(copyMenuName("Jesse Apple Watch")).toBe("Jesse Apple Watch's menu");
     expect(copiedMenuText("Jesse Apple Watch's menu", "watch")).toBe(`This watch uses its own copy now, "Jesse Apple Watch's menu". Edits here change only this watch.`);
+  });
+});
+
+describe("the untick's question and note", () => {
+  it("counts the menu slots and complication taps, singular and plural", () => {
+    expect(pageRefWords({ slots: 1, taps: 0 })).toBe("1 menu slot");
+    expect(pageRefWords({ slots: 2, taps: 1 })).toBe("2 menu slots and 1 complication tap");
+    expect(pageRefWords({ slots: 0, taps: 3 })).toBe("3 complication taps");
+    expect(pageRefWords({ slots: 0, taps: 0 })).toBe("");
+  });
+
+  it("asks what goes with the page, the verb agreeing with the count", () => {
+    expect(untickAskText("pages", "Kitchen", "Jesse's Watch", { slots: 2, taps: 1 }))
+      .toBe("Take Kitchen off Jesse's Watch? 2 menu slots and 1 complication tap that open it are cleared too.");
+    expect(untickAskText("pages", "Kitchen", "Jesse's Watch", { slots: 1, taps: 0 }))
+      .toBe("Take Kitchen off Jesse's Watch? 1 menu slot that opens it is cleared too.");
+    expect(untickAskText("pages", "Kitchen", "Jesse's Watch", { slots: 0, taps: 1 }))
+      .toBe("Take Kitchen off Jesse's Watch? 1 complication tap that opens it is cleared too.");
+    expect(untickAskText("status_pages", "Doors", "Jesse's iPhone", { slots: 3, taps: 0 }))
+      .toBe("Take Doors off Jesse's iPhone? 3 menu slots that open it are cleared too.");
+  });
+
+  it("asks without a count when the records could not be read", () => {
+    expect(untickAskText("pages", "Kitchen", "Jesse's Watch", undefined))
+      .toBe("Take Kitchen off Jesse's Watch? Any menu slots and complication taps that open it there are cleared too.");
+    expect(untickAskText("status_pages", "Doors", "Jesse's Watch", undefined))
+      .toBe("Take Doors off Jesse's Watch? Any menu slots that open it there are cleared too.");
+  });
+
+  it("says what was cleared, what could not be, and nothing when nothing was", () => {
+    expect(untickNote("Kitchen", "Jesse's Watch", { slots: 2, taps: 0 }, []))
+      .toEqual({ kind: "ok", text: "Took Kitchen off Jesse's Watch and cleared 2 menu slots that opened it." });
+    expect(untickNote("Kitchen", "Jesse's Watch", { slots: 1, taps: 1 }, []))
+      .toEqual({ kind: "ok", text: "Took Kitchen off Jesse's Watch and cleared 1 menu slot and 1 complication tap that opened it." });
+    expect(untickNote("Kitchen", "Jesse's Watch", { slots: 0, taps: 0 }, [])).toBeUndefined();
+    expect(untickNote("Kitchen", "Jesse's Watch", { slots: 0, taps: 1 }, ["the menus"]))
+      .toEqual({ kind: "warn", text: "Took Kitchen off Jesse's Watch and cleared 1 complication tap that opened it. Could not clear it from the menus: change that by hand." });
+    expect(untickNote("Kitchen", "Jesse's Watch", { slots: 0, taps: 0 }, ["the menus", "\"Lamp\""]))
+      .toEqual({ kind: "warn", text: "Took Kitchen off Jesse's Watch. Could not clear it from the menus and \"Lamp\": change those by hand." });
   });
 });

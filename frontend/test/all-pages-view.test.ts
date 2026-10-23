@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import "../src/watch-pages/all-pages.js";
 import { pageCrop } from "../src/watch-pages/all-pages.js";
+import type { UntickAsk } from "../src/watch-pages/library-editing-io.js";
 import { forgetWatchPagesDraft, keptWatchPagesSelection, takeNewWatchPageAsk, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { JsonObject } from "../src/watch-pages/model.js";
 import { takeStatusPageAsk } from "../src/watch-status-pages/draft.js";
@@ -128,7 +129,16 @@ describe("the Pages tab", () => {
     t.home.materialise(CHEN);
     t.home.complications.set(CHEN, [{ id: "c1", revision: 1, document: { id: "c1", name: "Lights tap", openPageId: LIGHTS, tapAction: { type: "openPage" } } }]);
     const entry = (t.el.lib as { library: { pages: { id: string }[] } }).library.pages.find((e) => e.id === LIGHTS)!;
+    const picks = t.sentOf("library/pick").length;
     await t.call("tick", entry, CHEN, false);
+    // It asks first, under the card's row, and takes nothing off yet.
+    expect(t.sentOf("library/pick")).toHaveLength(picks);
+    const ask = t.el.untickAsk as UntickAsk;
+    expect(ask.text).toBe("Take Lights off Chen Watch? 1 menu slot and 1 complication tap that open it are cleared too.");
+    await t.call("untickNow", ask);
+    expect(t.sentOf("library/pick").at(-1)).toMatchObject({ owner_id: CHEN, on: false, item_id: LIGHTS });
+    expect((t.el.tickNotes as ReadonlyMap<string, unknown>).get(LIGHTS.toUpperCase()))
+      .toEqual({ kind: "ok", text: "Took Lights off Chen Watch and cleared 1 menu slot and 1 complication tap that opened it." });
     const saved = t.sentOf("watch_config/save").filter((m) => m.owner_watch_id === CHEN && m.kind === "menus");
     expect(saved).toHaveLength(1);
     expect(((saved[0]!.document as { quickAction: { slots: { id: string }[] } }).quickAction.slots).map((s) => s.id)).toEqual(["S2"]);

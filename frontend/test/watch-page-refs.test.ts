@@ -13,7 +13,9 @@ import {
   clearPageFromMenus,
   clearStatusPageFromMenus,
   complicationsOpeningPage,
+  countClearedMenuRefs,
   countMenuRefs,
+  countPageTaps,
   deletedPageIds,
   keepSlotsOf,
   menuSlotsOpeningPage,
@@ -193,6 +195,25 @@ describe("complications that open a page", () => {
 
   it("says undefined when nothing in the design opens the page", () => {
     expect(clearPageFromComplication(gauge(), ["0000-NOT-A-PAGE"])).toBeUndefined();
+  });
+});
+
+describe("what an untick would clear, counted before it asks", () => {
+  it("counts the menu slots the clear would take out, leaving a shared menu's kept slots out", () => {
+    const doc = menus();
+    expect(countClearedMenuRefs(doc, [LIVING])).toBe(4);
+    // The shared Anywhere menu keeps S1 and S3 while B has Living.
+    expect(countClearedMenuRefs(doc, [LIVING], keepSlotsOf(sharedLibrary(), "a", "pages"))).toBe(2);
+    expect(countClearedMenuRefs(doc, ["0000-NOT-A-PAGE"])).toBe(0);
+    // Status page slots only with `status`.
+    (doc.quickAction as { slots: unknown[] }).slots.push({ id: "P1", position: "topLeft", action: { type: "showStatusPage", pageId: BEDROOM } });
+    expect(countClearedMenuRefs(doc, [BEDROOM], undefined, true)).toBe(1);
+  });
+
+  it("counts a complication's own tap and each tap layer that opens the page", () => {
+    expect(countPageTaps(gauge(), [LIVING])).toBe(2);
+    expect(countPageTaps(gauge(), [BEDROOM])).toBe(1);
+    expect(countPageTaps(gauge(), ["0000-NOT-A-PAGE"])).toBe(0);
   });
 });
 

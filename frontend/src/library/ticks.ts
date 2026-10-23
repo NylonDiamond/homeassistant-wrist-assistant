@@ -7,7 +7,9 @@
 // On a device tab's "Not on this device" cards the row is the item's own
 // devices, then a dashed "Add to this watch" chip for that device (frame
 // 2a). A tick shows the state asked for while its write is out, and the
-// item's last refusal shows under the row in the tabs' warning ink.
+// item's last refusal shows under the row in the tabs' warning ink. An
+// untick that would clear menu slots or taps asks under the row first
+// (`TickAsk`), and a note that is not a refusal reads in the quiet ink.
 //
 // A page holding tiles only the iPhone draws (a map, a web card) gives each
 // ticked watch's chip a small count, "skips 2", whose tooltip names the
@@ -37,8 +39,14 @@ export interface TicksInput {
   colorOf: (ownerId: string) => string | undefined;
   /** The store's pending ticks (`LibraryStore.pending`). */
   pending?: ReadonlyMap<string, PendingPick>;
-  /** The item's last refusal (`LibraryStore.noteFor`). */
+  /** The item's last refusal (`LibraryStore.noteFor`), or what its last
+   * tick did. */
   note?: string;
+  /** How `note` reads: "warn" (a refusal, the default) in the tabs' warning
+   * ink, "ok" in the quiet ink. */
+  noteKind?: TickNoteKind;
+  /** An untick asking first, under the row (`TickAsk`). */
+  ask?: TickAsk;
   /** The signed in user is an administrator: only one can put on a device
    * an item no device has. */
   admin?: boolean;
@@ -55,6 +63,20 @@ export interface TicksInput {
    * each ticked watch's chip then says how many ("skips 2") and lists them
    * in its tooltip. Pages only; empty or absent adds nothing. */
   skips?: readonly string[];
+}
+
+/** How a row's note reads. */
+export type TickNoteKind = "ok" | "warn" | "err";
+
+/** An untick that asks first: the question under the row, then Remove and
+ * Cancel. The editors ask when taking an item off a device would clear its
+ * menu slots or complication taps there (`askUntick`). */
+export interface TickAsk {
+  /** The device the untick is for. */
+  ownerId: string;
+  text: string;
+  onRemove: () => void;
+  onCancel: () => void;
 }
 
 /** One chip of the row. */
@@ -179,6 +201,8 @@ export function renderTicks(input: TicksInput, onPick: (ownerId: string, on: boo
     foldLabel: input.kind === "menus" ? "Use on a device" : "Add to a device",
     ...(hint === undefined ? {} : { hint }),
     ...(input.note === undefined ? {} : { note: input.note }),
+    ...(input.noteKind === undefined ? {} : { noteKind: input.noteKind }),
+    ...(input.ask === undefined ? {} : { ask: input.ask }),
   }, onPick);
 }
 
@@ -188,8 +212,12 @@ export interface TickChipsOptions {
   foldLabel: string;
   /** The words over the row (a menu's "Used by"). */
   hint?: string;
-  /** The item's last refusal, under the row. */
+  /** The item's last refusal, or what its last tick did, under the row. */
   note?: string;
+  /** How `note` reads; "warn" unless given. */
+  noteKind?: TickNoteKind;
+  /** An untick asking first, under the row. */
+  ask?: TickAsk;
 }
 
 /**
@@ -233,7 +261,23 @@ export function renderTickChips(chips: readonly TickChip[], opts: TickChipsOptio
       <div class="lt-fold-pop" role="group" aria-label=${opts.foldLabel}>${chips.map(chip)}</div>
     </details>`
       : nothing}</wa-chip-row>
-    ${opts.note === undefined ? nothing : html`<p class="lt-note" role="alert">${opts.note}</p>`}
+    ${opts.ask === undefined ? nothing : renderTickAsk(opts.ask)}
+    ${opts.note === undefined ? nothing : opts.noteKind === "ok"
+      ? html`<p class="lt-note ok" role="status">${opts.note}</p>`
+      : html`<p class="lt-note" role="alert">${opts.note}</p>`}
+  </div>`;
+}
+
+/** The untick's question in the row, the way the panel asks in place
+ * elsewhere: the words, then Remove in the destructive style and a plain
+ * Cancel. */
+function renderTickAsk(ask: TickAsk): TemplateResult {
+  return html`<div class="lt-ask" role="alertdialog" aria-label=${ask.text}>
+    <span class="lt-ask-q">${ask.text}</span>
+    <span class="lt-ask-acts">
+      <button type="button" class="lt-ask-btn danger" @click=${() => ask.onRemove()}>Remove</button>
+      <button type="button" class="lt-ask-btn" @click=${() => ask.onCancel()}>Cancel</button>
+    </span>
   </div>`;
 }
 
@@ -295,6 +339,28 @@ export const libraryTicksStyles = css`
   .lt-chip.busy { opacity: .6; cursor: progress; }
   .lt-chip.stuck { opacity: .45; cursor: not-allowed; }
   .lt-note { margin: 0; font-size: 11.5px; line-height: 1.35; color: var(--wa-need); }
+  .lt-note.ok { color: var(--wa-muted); }
+  /* The untick's question (renderTickAsk): the words, then the two buttons
+     in the form sheet's small and danger look, drawn here so a host
+     without that sheet (the Pages tab) draws them the same. */
+  .lt-ask {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; max-width: 520px; padding: 8px 10px;
+    border-radius: 8px; background: var(--wa-card); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
+    font-size: 12px; line-height: 1.4; color: var(--wa-ink);
+  }
+  .lt-ask-q { flex: 1 1 220px; min-width: 0; }
+  .lt-ask-acts { display: inline-flex; gap: 6px; flex: none; }
+  .lt-ask .lt-ask-btn {
+    font: inherit; font-size: 12.5px; font-weight: 600; padding: 0 9px; min-height: 26px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--wa-line-strong); background: var(--wa-field, var(--wa-input)); color: var(--wa-ink);
+  }
+  .lt-ask .lt-ask-btn:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); background: var(--wa-hover); }
+  .lt-ask .lt-ask-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .lt-ask .lt-ask-btn.danger {
+    color: var(--error-color, #e5484d); border-color: color-mix(in srgb, var(--error-color, #e5484d) 45%, transparent);
+    background: color-mix(in srgb, var(--error-color, #e5484d) 8%, transparent);
+  }
+  .lt-ask .lt-ask-btn.danger:hover { background: color-mix(in srgb, var(--error-color, #e5484d) 16%, transparent); border-color: var(--error-color, #e5484d); }
   /* The fold (renderTickChips): in the DOM whenever a chip is off, shown
      only when the row has marked itself folded (chip-row.ts: the chips do
      not fit the device strip), and then the inline off chips step aside for

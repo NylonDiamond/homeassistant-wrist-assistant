@@ -94,7 +94,7 @@ import {
   statusSharedText,
   unsavedTicksText,
 } from "../watch-pages/library-editing.js";
-import { tickItem } from "../watch-pages/library-editing-io.js";
+import { type UntickAsk, askUntick, tickItem } from "../watch-pages/library-editing-io.js";
 import { libraryRestStyles, renderLibraryRest } from "../watch-pages/library-rest.js";
 import { isPhoneId } from "../phone-pages.js";
 import { deviceColor, deviceColors } from "../device-colors.js";
@@ -311,6 +311,9 @@ export class WaStatusPagesEditor extends LitElement {
   @state() private note?: Note;
   @state() private restoreAsk?: RestoreAsk;
   @state() private restoring = false;
+  /** An untick of a device in the tick row that would clear Status page
+   * slots there, asking under the row first (`askUntick`). */
+  @state() private untickAsk?: UntickAsk;
   @state() private historyOpen = false;
   @state() private rawOpen = false;
   @state() private rawCopied = false;
@@ -982,6 +985,8 @@ export class WaStatusPagesEditor extends LitElement {
     }
     const note = store.noteFor("status_pages", entry.id);
     const admin = this.hass?.user?.is_admin;
+    const asked = this.untickAsk;
+    const ask = asked !== undefined && asked.kind === "status_pages" && sameId(asked.itemId, entry.id) ? asked : undefined;
     return renderTicks({
       library: lib,
       kind: "status_pages",
@@ -992,7 +997,35 @@ export class WaStatusPagesEditor extends LitElement {
       ...(note === undefined ? {} : { note }),
       ...(admin === undefined ? {} : { admin }),
       locked: (ownerId) => this.statusTickLocked(entry.id, ownerId),
-    }, (ownerId, on) => { void tickItem(this.hass, store, ownerId, "status_pages", entry.id, on); });
+      ...(ask === undefined ? {} : {
+        ask: { ownerId: ask.ownerId, text: ask.text, onRemove: () => void this.untickNow(ask), onCancel: () => { this.untickAsk = undefined; } },
+      }),
+    }, (ownerId, on) => this.tickStatusPage(entry, ownerId, on));
+  }
+
+  /** A click on a chip of the status page's tick row: a tick puts it there
+   * at once; an untick that would clear Status page slots there asks first
+   * (`askUntick`), and otherwise takes it off at once. */
+  private tickStatusPage(entry: LibraryItem, ownerId: string, on: boolean): void {
+    const store = this.lib.store;
+    if (store === undefined) return;
+    this.untickAsk = undefined;
+    if (on) {
+      void tickItem(this.hass, store, ownerId, "status_pages", entry.id, true);
+      return;
+    }
+    const names = { item: entry.name, device: this.deviceName(ownerId) };
+    void askUntick(this.hass, store, ownerId, "status_pages", entry.id, names).then((ask) => { this.untickAsk = ask; });
+  }
+
+  /** Remove under the untick's question: take the status page off, then
+   * say what was cleared there. */
+  private async untickNow(ask: UntickAsk): Promise<void> {
+    const store = this.lib.store;
+    this.untickAsk = undefined;
+    if (store === undefined) return;
+    const result = await tickItem(this.hass, store, ask.ownerId, ask.kind, ask.itemId, false, ask.names);
+    if (result.note !== undefined) this.note = result.note;
   }
 
   /** "Not on this watch", under the page list: the library's status pages

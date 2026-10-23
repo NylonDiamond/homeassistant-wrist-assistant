@@ -100,7 +100,7 @@ import { pagesBulkIO, picksIO } from "./all-pages-io.js";
 import { NO_ICONS as NO_PICTURE_ICONS } from "./editor-host.js";
 import { askNewWatchPage, keepWatchPagesSelection, keptWatchPagesDraft } from "./kept.js";
 import { DEVICES_WAIT_TEXT, type LinkDevice, type PagesRecordFacts, awaitingMove, freePlanText, linkDevicesOf } from "./devices.js";
-import { tickItem } from "./library-editing-io.js";
+import { type UntickAsk, askUntick, tickItem } from "./library-editing-io.js";
 import { libraryListStyles } from "./library-list-styles.js";
 import { listTabStyles } from "./list-tab-styles.js";
 import { type WatchPage, isSmartWatchPage, watchPagesOf } from "./model.js";
@@ -231,9 +231,12 @@ export class WaAllPages extends LitElement {
   /** The line while a delete runs, and what the last one did. */
   @state() private bulkBusy?: string;
   @state() private bulkNote?: WatchPagesNote;
-  /** What a tick said beyond the store's refusals (the free plan), by
-   * `itemKey`. */
-  @state() private tickNotes: ReadonlyMap<string, string> = new Map();
+  /** What a tick said beyond the store's refusals (the free plan, what an
+   * untick cleared), by `itemKey`. */
+  @state() private tickNotes: ReadonlyMap<string, WatchPagesNote> = new Map();
+  /** An untick that would clear menu slots or complication taps on its
+   * device, asking under its card's row first (`askUntick`). */
+  @state() private untickAsk?: UntickAsk;
   /** A device tab's Hide here or order change on its way, and what the last
    * one said. */
   @state() private picksBusy = false;
@@ -303,6 +306,7 @@ export class WaAllPages extends LitElement {
     this.newForm = undefined;
     this.picksNote = undefined;
     this.tickNotes = new Map();
+    this.untickAsk = undefined;
   }
 
   /** The device tab picked, kept for each tab apart (`keptView`). */
@@ -457,25 +461,46 @@ export class WaAllPages extends LitElement {
   }
 
   /** A tick: put the item on the device, or take it off, with that device's
-   * menu slots and complication taps that opened it (`tickItem`). A page put
-   * on a device on the free plan says that it shows only its first page. */
+   * menu slots and complication taps that opened it (`tickItem`). An untick
+   * that would clear some asks under the card first (`askUntick`). A page
+   * put on a device on the free plan says that it shows only its first
+   * page. */
   private async tick(entry: LibraryItem, ownerId: string, on: boolean): Promise<void> {
     const store = this.lib.store;
     if (store === undefined) return;
-    const key = itemKey(entry);
-    if (this.tickNotes.has(key)) {
-      const notes = new Map(this.tickNotes);
-      notes.delete(key);
-      this.tickNotes = notes;
+    this.dropTickNote(itemKey(entry));
+    this.untickAsk = undefined;
+    if (!on) {
+      const names = { item: entry.name, device: this.devices.find((d) => d.ownerId === ownerId)?.name ?? "the device" };
+      this.untickAsk = await askUntick(this.hassNow, store, ownerId, entry.kind, entry.id, names);
+      return;
     }
-    const result = await tickItem(this.hassNow, store, ownerId, entry.kind, entry.id, on);
-    if (!result.ok || !on || entry.kind !== "pages") return;
+    const key = itemKey(entry);
+    const result = await tickItem(this.hassNow, store, ownerId, entry.kind, entry.id, true);
+    if (!result.ok || entry.kind !== "pages") return;
     const free = await this.readFree(ownerId);
     const library = this.lib.library;
     const name = this.devices.find((d) => d.ownerId === ownerId)?.name;
     if (!free || library === undefined || name === undefined || countFor(library, ownerId, "pages") < 2) return;
     const text = freePlanText([name]);
-    if (text !== undefined) this.tickNotes = new Map(this.tickNotes).set(key, `Added to ${name}. ${text}`);
+    if (text !== undefined) this.tickNotes = new Map(this.tickNotes).set(key, { kind: "warn", text: `Added to ${name}. ${text}` });
+  }
+
+  /** Remove under an untick's question: take the item off, then say under
+   * its card what was cleared there. */
+  private async untickNow(ask: UntickAsk): Promise<void> {
+    const store = this.lib.store;
+    this.untickAsk = undefined;
+    if (store === undefined) return;
+    const result = await tickItem(this.hassNow, store, ask.ownerId, ask.kind, ask.itemId, false, ask.names);
+    if (result.note !== undefined) this.tickNotes = new Map(this.tickNotes).set(itemKey({ id: ask.itemId }), result.note);
+  }
+
+  private dropTickNote(key: string): void {
+    if (!this.tickNotes.has(key)) return;
+    const notes = new Map(this.tickNotes);
+    notes.delete(key);
+    this.tickNotes = notes;
   }
 
   /** Whether a device is on the free plan, as its pages record says now. */
@@ -813,13 +838,19 @@ export class WaAllPages extends LitElement {
   private renderCardTicks(library: Library, entry: LibraryItem, devices: readonly LinkDevice[], waiting: ReadonlySet<string>, addFor?: string): TemplateResult {
     const store = this.lib.store;
     const key = itemKey(entry);
-    const note = store?.noteFor(entry.kind, entry.id) ?? this.tickNotes.get(key);
+    const refusal = store?.noteFor(entry.kind, entry.id);
+    const note: WatchPagesNote | undefined = refusal === undefined ? this.tickNotes.get(key) : { kind: "warn", text: refusal };
+    const asked = this.untickAsk;
+    const ask = asked !== undefined && asked.kind === entry.kind && sameId(asked.itemId, entry.id) ? asked : undefined;
     const admin = this.hassNow?.user?.is_admin;
     const skips = entry.kind === "pages" ? watchSkippedTileNames(entry.item as WatchPage) : [];
     return renderTicks({
       library, kind: entry.kind, itemId: entry.id, devices, colorOf: this.colorOf, skips,
       ...(store === undefined ? {} : { pending: store.pending }),
-      ...(note === undefined ? {} : { note }),
+      ...(note === undefined ? {} : { note: note.text, noteKind: note.kind }),
+      ...(ask === undefined ? {} : {
+        ask: { ownerId: ask.ownerId, text: ask.text, onRemove: () => void this.untickNow(ask), onCancel: () => { this.untickAsk = undefined; } },
+      }),
       ...(admin === undefined ? {} : { admin }),
       ...(addFor === undefined ? {} : { addFor }),
       locked: (ownerId) => {

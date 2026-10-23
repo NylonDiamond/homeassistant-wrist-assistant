@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { HassEntityState } from "../src/ha-api.js";
 import {
+  WATCH_ADD_KIND_WORDS,
   WATCH_ADD_ROWS,
   WATCH_APP_ADD_BUTTONS,
   WatchAddListCache,
@@ -305,7 +306,8 @@ describe("words", () => {
   });
 
   it("counts the visit and the left out entities", () => {
-    expect(watchAddedCountText(0)).toBe("No tiles added yet.");
+    // Nothing before the first add: the foot is only the Done button.
+    expect(watchAddedCountText(0)).toBe("");
     expect(watchAddedCountText(1)).toBe("1 tile added.");
     expect(watchAddedCountText(3)).toBe("3 tiles added.");
     expect(watchLeftOutText(0)).toBeUndefined();
@@ -339,6 +341,21 @@ describe("words", () => {
       watchAddEmptyText("q", "Lights", 3),
     ];
     for (const t of texts) expect(t).not.toMatch(/[–—]| - /);
+  });
+});
+
+describe("the other kinds' words", () => {
+  it("names each kind as the tile list does, with its tile's icon and one short line", () => {
+    const kindOf = { spacer: "spacer", header: "divider", pageLink: "page", peekLink: "show_page", httpAction: "http_action", statusPage: "status_page" } as const;
+    for (const [key, words] of Object.entries(WATCH_ADD_KIND_WORDS)) {
+      expect(words.label, key).toBe(tileKindLabel(kindOf[key as keyof typeof kindOf]));
+      expect(words.hint.length, key).toBeLessThanOrEqual(48);
+    }
+    expect(WATCH_ADD_KIND_WORDS.peekLink.hint).toBe("Opens a page over this one for a quick look");
+    // A spacer and a header carry no symbol; the others carry their tile's.
+    expect(Object.values(WATCH_ADD_KIND_WORDS).map((w) => w.icon)).toEqual([
+      undefined, undefined, "rectangle.on.rectangle", "rectangle.stack.fill", "network", "list.bullet.rectangle.portrait",
+    ]);
   });
 });
 
@@ -467,8 +484,19 @@ describe("the app tile buttons", () => {
     }
   });
 
+  it("gives each button its tile's icon and one short line", () => {
+    expect(WATCH_APP_ADD_BUTTONS.map((b) => b.icon)).toEqual([
+      "music.note.house", "chevron.left.forwardslash.chevron.right", "waveform.and.mic", "message.and.waveform", "hand.point.up.left",
+    ]);
+    for (const b of WATCH_APP_ADD_BUTTONS) expect(b.hint.length, b.key).toBeLessThanOrEqual(48);
+  });
+
   it("never breaks a sentence with a dash", () => {
-    const texts = [...WATCH_APP_ADD_BUTTONS.map((b) => b.done), watchAppAddBlockedText("musicHub", false)!];
+    const texts = [
+      ...WATCH_APP_ADD_BUTTONS.flatMap((b) => [b.done, b.hint]),
+      ...Object.values(WATCH_ADD_KIND_WORDS).map((w) => w.hint),
+      watchAppAddBlockedText("musicHub", false)!,
+    ];
     for (const t of texts) expect(t).not.toMatch(/[–—]| - /);
   });
 });

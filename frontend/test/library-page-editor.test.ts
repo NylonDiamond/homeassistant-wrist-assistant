@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
+import { libraryItem } from "../src/library/model.js";
 import { forgetWatchPagesDraft, keptWatchPagesDraft } from "../src/watch-pages/kept.js";
 import { tickItem } from "../src/watch-pages/library-editing-io.js";
 import type { JsonObject, WatchPagesDocument } from "../src/watch-pages/model.js";
@@ -271,6 +272,49 @@ describe("deleting a page under the library", () => {
     // Ticking on clears nothing.
     expect((await tickItem(ha.hass, store, watch, "pages", DEN, true)).ok).toBe(true);
     expect(ha.of("watch_config/save").filter((m) => m.owner_watch_id === watch && m.kind === "menus")).toHaveLength(1);
+  });
+
+  it("asks before an untick that clears menu slots and taps, and says what it cleared after Remove", async () => {
+    const n = made + 1;
+    const phone = `lp-p1-${n}`;
+    const go = (id: string, pageId: string) => ({ id, position: "topLeft", isVisible: true, action: { type: "navigateToPage", pageId } });
+    const tap = { name: "Den tap", openPageId: DEN, tapAction: { type: "openPage" } };
+    const { el, ha, call } = await editor({ complications: { [phone]: [tap] } });
+    ha.held.set(`${phone}/menus`, { revision: 2, document: { schemaVersion: 1, quickAction: { slots: [go("S1", DEN), go("S2", DEN), go("S3", HALL)] } } });
+    ha.menus.PHONE = { name: "Anywhere menu", kind: "anywhere", owners: [phone] };
+    const store = (el.lib as { store: Parameters<typeof tickItem>[1] }).store;
+    await store.refresh();
+    const den = libraryItem(store.library!, "pages", DEN);
+    call("tickPage", den, phone, false);
+    await settle();
+    await settle();
+    // Nothing taken off yet: the question is under the row.
+    expect(ha.of("library/pick")).toEqual([]);
+    const ask = el.untickAsk as { text: string } | undefined;
+    expect(ask?.text).toBe("Take Den off Jesse's iPhone? 2 menu slots and 1 complication tap that open it are cleared too.");
+    // Cancel leaves the page where it was.
+    (el as Record<string, unknown>).untickAsk = undefined;
+    expect(ha.of("library/pick")).toEqual([]);
+    call("tickPage", den, phone, false);
+    await settle();
+    await settle();
+    await call<Promise<void>>("untickNow", el.untickAsk);
+    expect(ha.of("library/pick").map((m) => [m.item_id, m.on])).toEqual([[DEN, false]]);
+    expect(el.untickAsk).toBeUndefined();
+    expect(el.note).toEqual({ kind: "ok", text: "Took Den off Jesse's iPhone and cleared 2 menu slots and 1 complication tap that opened it." });
+  });
+
+  it("unticks at once when nothing there opens the page", async () => {
+    const { el, ha, call, phone } = await editor();
+    const store = (el.lib as { store: Parameters<typeof tickItem>[1] }).store;
+    const den = libraryItem(store.library!, "pages", DEN);
+    call("tickPage", den, phone, false);
+    await settle();
+    await settle();
+    await settle();
+    expect(el.untickAsk).toBeUndefined();
+    expect(ha.of("library/pick").map((m) => [m.item_id, m.on])).toEqual([[DEN, false]]);
+    expect(el.note).toBeUndefined();
   });
 
   it("deletes from the library at once, clears the complication taps on every device that had it, and shows it gone", async () => {

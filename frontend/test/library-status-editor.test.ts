@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
+import { libraryItem } from "../src/library/model.js";
 import { tickItem } from "../src/watch-pages/library-editing-io.js";
 import type { JsonObject } from "../src/watch-pages/model.js";
 import { askNewStatusPage, forgetStatusPagesDraft } from "../src/watch-status-pages/draft.js";
@@ -168,6 +169,26 @@ describe("the status pages editor's devices, from the library", () => {
     const saved = ha.of("watch_config/save").filter((m) => m.owner_watch_id === watch && m.kind === "menus");
     expect(saved).toHaveLength(1);
     expect(((saved[0]!.document as JsonObject).quickAction as { slots: JsonObject[] }).slots.map((s) => s.id)).toEqual(["S2"]);
+  });
+
+  it("asks before an untick that clears Status page slots, and says what it cleared after Remove", async () => {
+    const n = made + 1;
+    const phone = `ls-p1-${n}`;
+    const show = (id: string, pageId: string) => ({ id, position: "topLeft", isVisible: true, action: { type: "showStatusPage", pageId } });
+    const { el, ha, call } = await editor();
+    ha.held.set(`${phone}/menus`, { revision: 2, document: { schemaVersion: 1, quickAction: { slots: [show("S1", HOUSE)] } } });
+    ha.menus.PHONE = { name: "Anywhere menu", kind: "anywhere", owners: [phone] };
+    const store = (el.lib as { store: Parameters<typeof tickItem>[1] }).store;
+    await store.refresh();
+    const house = libraryItem(store.library!, "status_pages", HOUSE);
+    call("tickStatusPage", house, phone, false);
+    await settle();
+    await settle();
+    expect(ha.of("library/pick")).toEqual([]);
+    expect((el.untickAsk as { text: string }).text).toBe("Take House off Jesse's iPhone? 1 menu slot that opens it is cleared too.");
+    await call<Promise<void>>("untickNow", el.untickAsk);
+    expect(ha.of("library/pick").map((m) => [m.item_id, m.on])).toEqual([[HOUSE, false]]);
+    expect(el.note).toEqual({ kind: "ok", text: "Took House off Jesse's iPhone and cleared 1 menu slot that opened it." });
   });
 
   it("names the other devices a restore changes", async () => {
