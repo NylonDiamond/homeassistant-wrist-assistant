@@ -231,7 +231,7 @@ import { chromeDarkValues, chromeRuns, chromeTokens, litOutline, plainOutline } 
 import { libraryModeStyles } from "./library/item-mode.js";
 import { type TickChip, libraryTicksStyles, renderTickChips } from "./library/ticks.js";
 import { type BoardCell, type BoardColumn, type BoardRow, type BoardSection, DEVICE_OWN_LABELS, type DeviceOwnScreen,
-  SAVED_FLASH_MS, WideWatch, boardStyles, renderBoard, renderViewSwitch } from "./library/board.js";
+  SAVED_FLASH_MS, WideWatch, boardStackStyles, boardStyles, renderBoard, renderViewSwitch } from "./library/board.js";
 import type { LinkDevice } from "./watch-pages/devices.js";
 import { LINEUP_OWN_TAG, type LineupGroup, type LineupLine, homeAllStyles, homeLineupStyles, renderLineupGroup } from "./home-lineup-look.js";
 import { renderHomeLineup } from "./home-lineup-hook.js";
@@ -6094,7 +6094,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, watchComplicationsStyles, helpSheetStyles, boardStyles, compBoardStyles, homeLineupStyles, homeAllStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, watchComplicationsStyles, helpSheetStyles, boardStyles, boardStackStyles, compBoardStyles, homeLineupStyles, homeAllStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
