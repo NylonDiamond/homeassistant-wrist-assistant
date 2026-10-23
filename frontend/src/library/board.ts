@@ -16,7 +16,7 @@
 // them, so the table, its sticky first column and its focus look are the
 // same on every tab.
 
-import { css, html, nothing, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from "lit";
+import { css, html, nothing, unsafeCSS, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from "lit";
 import { uiIcon } from "../ui-icons.js";
 import type { LinkDevice } from "../watch-pages/devices.js";
 import { type TickAsk, type TickChip, type TickNoteKind, renderTickAsk } from "./ticks.js";
@@ -382,6 +382,12 @@ export const boardStyles = css`
   .bd-none td { padding: 10px; font-size: 12.5px; color: var(--wa-muted); }
   /* A run of rows of one kind inside a section (a shape): a band in small
      capitals with room above it, so one kind ends before the next begins. */
+  /* A phone shows a board only when it is focused on one device (else it
+     shows Cards, \`phoneView\`): then only that device's column, so the board
+     never scrolls sideways. */
+  @media ${unsafeCSS(PHONE_LIST_QUERY)} {
+    table.bd.focused .bd-col:not(.on), table.bd.focused td.bd-cell:not(.on) { display: none; }
+  }
   .bd-group th {
     padding: 9px 10px; background: color-mix(in srgb, var(--wa-ink) 5%, var(--bd-ground));
     border-top: 14px solid var(--bd-ground); border-bottom: 1px solid var(--wa-line-strong);
