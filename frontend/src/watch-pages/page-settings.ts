@@ -319,11 +319,12 @@ export interface PagePaletteSource {
 
 /**
  * The edits of a Page task palette, each reading the color when it is made.
- * `gradient()` is whether the swatches show their gradient form. Solid or
- * Gradient rewrites a stored color in that form; with none stored it only
- * turns the swatches, and so it does on the background's OLED black, which
- * the phone leaves black while the swatches turn. On a rainbow it writes the
- * first swatch in that form.
+ * `gradient()` is whether the swatches show their gradient form, as they do
+ * on a rainbow (the last of them). Solid or Gradient rewrites a stored color
+ * in that form; with none stored it only turns the swatches, and so it does
+ * on the background's OLED black, which the phone leaves black while the
+ * swatches turn. On a rainbow Solid writes the first swatch and Gradient
+ * leaves it.
  */
 export function pagePaletteActions(sh: TileSettingsHost, setting: string, source: PagePaletteSource) {
   const formKey = `${KEY}:form:${sh.pageId.toUpperCase()}:${setting}`;
@@ -334,20 +335,19 @@ export function pagePaletteActions(sh: TileSettingsHost, setting: string, source
   };
   const gradient = (): boolean => {
     const stored = storedForm(source.color());
-    if (stored === "gradient") return true;
+    if (stored === "gradient" || stored === "rainbow") return true;
     if (stored === "solid") return false;
     const chosen = sh.uiState.get(formKey);
     return chosen === "gradient" || (chosen === undefined && watchPageSettings(sh.page).gradient);
   };
   const write = (value: string, typing = false) => commit(sh, setting, (d) => source.write(d, value), { typing });
-  const pickMode = (next: "solid" | "gradient" | "rainbow"): void => {
-    if (next === "rainbow") return write("#RAINBOW");
+  const pickMode = (next: "solid" | "gradient"): void => {
     sh.uiState.set(formKey, next);
     const now = source.color();
     const stored = storedForm(now);
     if (stored === "rainbow") {
       const first = source.swatches[0];
-      if (first !== undefined) write(next === "gradient" ? watchGradientOf(first) : first);
+      if (next === "solid" && first !== undefined) write(first);
     } else if ((stored === "solid" || stored === "gradient") && stored !== next && now !== undefined) {
       commit(sh, setting, (d) => (source.modeKey !== undefined
         ? setWatchPageColorMode(d, sh.pageId, source.modeKey, next)
@@ -360,19 +360,19 @@ export function pagePaletteActions(sh: TileSettingsHost, setting: string, source
     if (reason !== undefined || value === undefined) return commit(sh, setting, (d) => d, { reason: reason ?? "Pick a color." });
     write(gradient() ? watchGradientOf(value) : value, true);
   };
-  const shown = (): "solid" | "gradient" | "rainbow" => (storedForm(source.color()) === "rainbow" ? "rainbow" : gradient() ? "gradient" : "solid");
+  const shown = (): "solid" | "gradient" => (gradient() ? "gradient" : "solid");
   return { gradient, shown, pickMode, custom, swatch: (value: string) => write(value) };
 }
 
 /**
  * A color of the Page task: Solid or Gradient, the given swatches in that
- * form, a custom color, and Rainbow where the phone offers it.
+ * form with Rainbow last of the gradients where the phone offers it, and a
+ * custom color.
  */
 function pagePalette(sh: TileSettingsHost, setting: string, opts: PagePaletteSource & { label: string; rainbow?: boolean }): TemplateResult {
   const act = pagePaletteActions(sh, setting, opts);
   const color = opts.color();
   const swatches = act.gradient() ? opts.swatches.map((h) => watchGradientOf(h)) : [...opts.swatches];
-  const forms: ("solid" | "gradient" | "rainbow")[] = opts.rainbow ? ["solid", "gradient", "rainbow"] : ["solid", "gradient"];
   // The cards' one picker (`colorPickerView`), with no Default: each key
   // here always draws a color of the theme's when it holds none.
   return colorPickerView({
@@ -381,7 +381,8 @@ function pagePalette(sh: TileSettingsHost, setting: string, opts: PagePaletteSou
     swatches,
     swatchesLabel: opts.label,
     pickSwatch: act.swatch,
-    form: { shown: act.shown(), forms, pick: (v) => { if (v !== "none") act.pickMode(v); } },
+    form: { shown: act.shown(), forms: ["solid", "gradient"], pick: act.pickMode },
+    ...(opts.rainbow === true ? { rainbow: {} } : {}),
     custom: { shown: typed(sh, setting) ?? watchCustomBoxColor(color), pick: act.custom },
     wrap: (body) => typingField(sh, setting, body),
   });

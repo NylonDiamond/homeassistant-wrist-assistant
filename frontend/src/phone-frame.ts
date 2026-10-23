@@ -14,18 +14,29 @@
 //   home switcher, 42 tall, 16 in from each side, then 8 (two or more homes only)
 //   top row, 44 (`PhonePagesView.topControls`)
 //   top bar, 12 (`PhonePagesView.topBar`, a clear strip, `DS.space(.s)`)
-//   pages area, 6 in from each side (`PhonePagesView.sideInset`)
+//   pages area, 6 in from each side with the Watch look
+//     (`PhonePagesView.sideInset`), 12 with the iPhone look
+//     (`phoneSideInset`: `PhoneVault.gutter` 16 less `PhoneTileGlass.cellInset` 4)
 //   bottom bar (`PhonePagesView.bottomBarHeight`): 46 for the iPhone look's
 //     dock (`PhonePagesDock.height` 38, and 8) when its dots show, 14 under
 //     the Watch look's dots at the top, else 32 (`pageBarHeight`)
 //   safe area bottom
 //
-// On the iPhone 17 Pro (402 by 874 points) without the switcher the pages
-// area is 6 to 396 across and starts 118 down; it ends at 794 above the
-// dock (676 tall), at 808 with no dock and the dots not at the top (690
-// tall), or at 826 under the Watch look's top dots (708 tall). The tiles'
-// places inside it were measured on the simulator on 2026-10-10 and do not
-// move with the chrome around it.
+// The whole column is at most 430 wide, centred
+// (`PhonePagesRules.maxPagesColumnWidth`), which only the widest phones
+// reach. On the iPhone 17 Pro (402 by 874 points) without the switcher the
+// pages area is 6 to 396 across with the Watch look, 12 to 390 with the
+// iPhone look, and starts 118 down; it ends at 794 above the dock (676
+// tall), at 808 with no dock and the dots not at the top (690 tall), or at
+// 826 under the Watch look's top dots (708 tall).
+//
+// Inside the area the page code lays the tiles out as on a watch, 12 columns
+// with 2 points between, across the area's whole width, but its first row
+// starts 4 points down (`WatchScreenMetrics.gridTopInset` on the iPhone,
+// `PHONE_GRID_TOP_INSET`), not the watch's 34. With the iPhone look each
+// tile is then drawn 4 points in from its cell on every side
+// (`PhoneTileGlass.cellInset`), so two tiles sit 10 apart and the outer
+// ones 16 from the screen's edge, the top row's buttons' line.
 //
 // The panel draws no home switcher: the phone shows one only with two or
 // more homes, which Home Assistant cannot see, and the single home case is
@@ -36,9 +47,12 @@
 // pages. The iPhone look, the default, draws them as an iPhone app would:
 // the page's name centred in the top row, the app's graphite ground behind
 // a page with no background of its own, in the panel's light or dark skin,
-// round 22 point tile corners, and a plain page control in the strip under
-// the pages. The Watch look keeps the watch's own drawing, bigger, with the
-// watch's small title in the page instead of the name in the top row.
+// tiles drawn in from their cells with round corners up to 22 points, and
+// the dots in a glass capsule (`PhonePagesDock`) in the strip under the
+// pages. Over a page with its own background the top row and the dock are
+// dark, as the app's chrome is there (`chromeScheme`). The Watch look keeps
+// the watch's own drawing, bigger, with the watch's small title in the page
+// instead of the name in the top row.
 
 import { css, html, svg, type TemplateResult, nothing, unsafeCSS } from "lit";
 
@@ -85,8 +99,26 @@ export function phoneModelForScreenSize(screenSize: string | null | undefined): 
   return PHONE_MODELS.find((m) => m.screen.width === width && m.screen.height === height) ?? DEFAULT_PHONE;
 }
 
-/** `PhonePagesView.sideInset`: the room each side of the pages area. */
+/** `PhonePagesView.sideInset`: the room each side of the pages area with
+ * the Watch look. */
 export const PHONE_PAGES_SIDE_INSET = 6;
+/** `PhoneVault.gutter`: from a tile's edge to the screen's edge with the
+ * iPhone look, the line the top row's buttons sit on too. */
+export const PHONE_VAULT_GUTTER = 16;
+/** `PhoneTileGlass.cellInset`: how far the iPhone look draws each tile in
+ * from its grid cell on every side, so the grid's 2 point gap shows as 10. */
+export const PHONE_TILE_CELL_INSET = 4;
+/** `PhonePagesView.phoneSideInset`: the room each side of the pages area
+ * with the iPhone look, the gutter less the cell inset, so the tiles' own
+ * edges land on the gutter. */
+export const PHONE_PAGES_SIDE_INSET_IPHONE = PHONE_VAULT_GUTTER - PHONE_TILE_CELL_INSET;
+/** `WatchScreenMetrics.gridTopInset` on the iPhone: the pages have no clock
+ * over them, so the first row starts this far down the pages area in either
+ * look, where a watch keeps 34 for its clock. A full screen page keeps none. */
+export const PHONE_GRID_TOP_INSET = 4;
+/** `PhonePagesRules.maxPagesColumnWidth`: the pages' column, top row and all,
+ * is at most this wide, centred on a wider screen. */
+export const PHONE_PAGES_MAX_COLUMN = 430;
 /** `PhonePagesView.topBar` with no page pushed: a clear strip, `DS.space(.s)`. */
 export const PHONE_PAGES_TOP_BAR = 12;
 /** `PhonePagesView.pageBarHeight`: the dots' bar under the pages, a thumb's
@@ -97,6 +129,15 @@ export const PHONE_PAGES_BOTTOM_BAR = 32;
 export const PHONE_PAGES_BOTTOM_BAR_TOP_DOTS = 14;
 /** `PhonePagesDock.height`: the iPhone look's glass capsule for its dots. */
 export const PHONE_PAGES_DOCK_HEIGHT = 38;
+/** The dock's dots (`PhonePagesDock`): each 6 round, 5 apart, the current
+ * page's a 16 point pill, 15 points of glass each side of the row, and at
+ * most 9 at once, the end ones 4 round where more pages lie past them. */
+export const PHONE_DOCK_DOT = 6;
+export const PHONE_DOCK_EDGE_DOT = 4;
+export const PHONE_DOCK_CURRENT_WIDTH = 16;
+export const PHONE_DOCK_DOT_GAP = 5;
+export const PHONE_DOCK_PADDING = 15;
+export const PHONE_DOCK_MAX_DOTS = 9;
 /** `PhonePagesView.phoneDockBarHeight`: the dock and a little air round it. */
 export const PHONE_PAGES_DOCK_BAR = PHONE_PAGES_DOCK_HEIGHT + 8;
 /** How far the page dots sit below the top of the pages area when they are
@@ -110,10 +151,12 @@ export const PHONE_SWITCHER_GAP = 8;
 /** The top row (`PhonePagesView.topControls`): 44 tall, a 40 point round
  * glass button at each end in a 44 point target (`PhonePagesChrome`), lined
  * up with the tiles' edges, which sit `PhoneVault.gutter` in with the
- * iPhone look and the pages' side inset with the Watch look. */
+ * iPhone look and the pages' side inset with the Watch look. The grid's
+ * glyph is 16 points, the gear's 17 (`PhonePagesGearButton`). */
 export const PHONE_TOP_ROW_HEIGHT = 44;
 export const PHONE_TOP_BUTTON = 40;
-export const PHONE_TOP_ROW_SIDE_IPHONE = 16;
+export const PHONE_TOP_GRID_GLYPH = 16;
+export const PHONE_TOP_GEAR_GLYPH = 17;
 /** The page's name in the top row (`PhoneVault.Typography.title`, 16 point
  * semibold), held this far in from each side so it clears both buttons and
  * stays centred (`pageTitleInset`). */
@@ -131,26 +174,29 @@ export function phonePageLookOf(behavior: Readonly<Record<string, unknown>> | un
   return behavior?.phonePageLook === "watch" ? "watch" : "iphone";
 }
 
-/** The iPhone look's tile corners in points, held to half the tile's short
- * side as SwiftUI holds a rounded rectangle's. */
+/** The iPhone look's tile corners in points on a tile big enough for them
+ * (`TileLookMetrics.phoneCornerRadius`). */
 export const PHONE_TILE_RADIUS = 22;
 
-/** A tile's corner radius in the iPhone look, in points. */
+/** A tile's corner radius in the iPhone look, in points, from its grid
+ * cell's size (`TileLookMetrics.cornerRadius`): 22, less on a cell under
+ * 66 points on its short side, a third of it, never under 4. */
 export function phoneTileCornerRadius(widthPt: number, heightPt: number): number {
-  return Math.min(PHONE_TILE_RADIUS, Math.min(widthPt, heightPt) / 2);
+  return Math.min(PHONE_TILE_RADIUS, Math.max(4, Math.round(Math.min(widthPt, heightPt) / 3)));
 }
 
-/** The app's graphite ground (`PhoneVault` `.ground`) and its ink, which
- * the panel sets for its light and dark skins (`--wa-phone-grouped`,
- * `--wa-phone-ink`). */
+/** How far the iPhone look draws a tile in from its grid cell, in points
+ * (`PhoneTileGlass.cellInset(width:height:)`): 4, or a sixth of the cell's
+ * short side, rounded down, when that is less. */
+export function phoneTileCellInset(widthPt: number, heightPt: number): number {
+  return Math.min(PHONE_TILE_CELL_INSET, Math.floor(Math.min(widthPt, heightPt) / 6));
+}
+
+/** The app's graphite ground (`PhoneVault` `.ground`) and its ink
+ * (`.text1`), which the panel sets for its light and dark skins
+ * (`--wa-phone-grouped`, `--wa-phone-ink`). */
 export const PHONE_GROUPED_BACKGROUND = "var(--wa-phone-grouped, #f1f2f5)";
 export const PHONE_LABEL_INK = "var(--wa-phone-ink, #14161a)";
-
-/** The iPhone look's page control: each dot's size and the room between
- * two, in points; the current page's dot is the label ink, the others the
- * same at 0.3. */
-export const PHONE_PAGE_CONTROL_DOT = 7;
-export const PHONE_PAGE_CONTROL_GAP = 9;
 
 /** A rectangle in points from the screen's top left. */
 export interface PhoneRect {
@@ -204,28 +250,32 @@ export function phonePagesBottomBarHeight(iphone: boolean, dots: PhonePagesDotsP
 /** Where the pages screen lays itself out on `model`, with the home
  * switcher when `switcher` (a phone with two or more homes). The top row is
  * the same height in both looks; `look` "iphone" moves the top row's
- * buttons in to the iPhone look's tile edges. The pages area runs down to
- * the bar under it, whose height follows the look and `dots`; with no
- * `dots`, the phone's own defaults: dots on, at the bottom, two or more
- * pages. */
+ * buttons in to the iPhone look's tile edges and the pages area in to its
+ * wider side inset. Both sit in the pages' column, at most 430 wide and
+ * centred. The pages area runs down to the bar under it, whose height
+ * follows the look and `dots`; with no `dots`, the phone's own defaults:
+ * dots on, at the bottom, two or more pages. */
 export function phonePagesLayout(
   model: PhoneModel = DEFAULT_PHONE,
   options?: { switcher?: boolean; look?: PhonePageLook; dots?: PhonePagesDotsPlace },
 ): PhonePagesLayout {
   const { width, height } = model.screen;
   const iphone = options?.look === "iphone";
+  const column = Math.min(width, PHONE_PAGES_MAX_COLUMN);
+  const left = (width - column) / 2;
   let top = model.safeTop;
   let switcher: PhoneRect | undefined;
   if (options?.switcher === true) {
     switcher = { x: PHONE_SWITCHER_SIDE, y: top, width: width - PHONE_SWITCHER_SIDE * 2, height: PHONE_SWITCHER_HEIGHT };
     top += PHONE_SWITCHER_HEIGHT + PHONE_SWITCHER_GAP;
   }
-  const side = iphone ? PHONE_TOP_ROW_SIDE_IPHONE : PHONE_PAGES_SIDE_INSET;
-  const topRow = { x: side, y: top, width: width - side * 2, height: PHONE_TOP_ROW_HEIGHT };
+  const edge = iphone ? PHONE_VAULT_GUTTER : PHONE_PAGES_SIDE_INSET;
+  const topRow = { x: left + edge, y: top, width: column - edge * 2, height: PHONE_TOP_ROW_HEIGHT };
   top += PHONE_TOP_ROW_HEIGHT + PHONE_PAGES_TOP_BAR;
   const bar = phonePagesBottomBarHeight(iphone, options?.dots ?? { shown: true, top: false });
   const bottomBar = { x: 0, y: height - model.safeBottom - bar, width, height: bar };
-  const area = { x: PHONE_PAGES_SIDE_INSET, y: top, width: width - PHONE_PAGES_SIDE_INSET * 2, height: bottomBar.y - top };
+  const side = iphone ? PHONE_PAGES_SIDE_INSET_IPHONE : PHONE_PAGES_SIDE_INSET;
+  const area = { x: left + side, y: top, width: column - side * 2, height: bottomBar.y - top };
   return {
     model,
     ...(switcher === undefined ? {} : { switcher }),
@@ -272,6 +322,33 @@ const STATUS_TIME = "9:41";
 
 const r2 = (v: number): number => Math.round(v * 100) / 100;
 
+/** The pages whose dots the dock shows (`PhonePagesDock.window`): all of
+ * them up to 9, else 9 around `current`. */
+export function phoneDockWindow(count: number, current: number): number[] {
+  if (count <= PHONE_DOCK_MAX_DOTS) return Array.from({ length: Math.max(count, 0) }, (_, i) => i);
+  const start = Math.min(Math.max(current - Math.floor(PHONE_DOCK_MAX_DOTS / 2), 0), count - PHONE_DOCK_MAX_DOTS);
+  return Array.from({ length: PHONE_DOCK_MAX_DOTS }, (_, i) => start + i);
+}
+
+/** The iPhone look's dock (`PhonePagesDock`) for `count` pages with the
+ * `current` one on screen: a glass capsule 38 points tall, its dots in a row
+ * 15 points in from its ends, the current page a 16 point pill in the ink
+ * and the others in the dock's fainter dot color. What the frame centres in
+ * the bar under the pages. */
+export function renderPhoneDock(count: number, current: number, s: number): TemplateResult {
+  const px = (pt: number) => `${r2(pt * s)}px`;
+  const shown = phoneDockWindow(count, current);
+  const first = shown[0];
+  const last = shown[shown.length - 1];
+  const dots = shown.map((i) => {
+    const cut = (i === first && i > 0) || (i === last && i < count - 1);
+    const size = cut ? PHONE_DOCK_EDGE_DOT : PHONE_DOCK_DOT;
+    const on = i === current;
+    return html`<span class=${`wa-phone-dock-dot${on ? " on" : ""}`} style=${`width:${px(on ? PHONE_DOCK_CURRENT_WIDTH : size)};height:${px(size)}`}></span>`;
+  });
+  return html`<span class="wa-phone-dock" style=${`height:${px(PHONE_PAGES_DOCK_HEIGHT)};padding:0 ${px(PHONE_DOCK_PADDING)};gap:${px(PHONE_DOCK_DOT_GAP)}`}>${dots}</span>`;
+}
+
 function symbol(icons: IconProvider | undefined, name: string, px: number, ink: string, fallback: () => TemplateResult): TemplateResult {
   const glyph = icons?.render(name, px, ink);
   return glyph === undefined ? fallback() : html`<svg width=${px} height=${px} viewBox=${`0 0 ${px} ${px}`} aria-hidden="true">${glyph}</svg>`;
@@ -316,19 +393,18 @@ function topRow(layout: PhonePagesLayout, s: number, ios: boolean, grid: boolean
   const px = (pt: number) => `${r2(pt * s)}px`;
   const row = layout.topRow;
   const fill = ios ? "currentColor" : "#fff";
-  const glyph = r2(16 * s);
-  const button = (name: string, mark: TemplateResult) =>
+  const button = (name: string, glyphPt: number, mark: TemplateResult) =>
     html`<span class=${`wa-phone-glass ${name}`} style=${`width:${px(PHONE_TOP_BUTTON)};height:${px(PHONE_TOP_BUTTON)}`}>
-      <svg width=${glyph} height=${glyph} viewBox="0 0 16 16" aria-hidden="true">${mark}</svg>
+      <svg width=${r2(glyphPt * s)} height=${r2(glyphPt * s)} viewBox="0 0 16 16" aria-hidden="true">${mark}</svg>
     </span>`;
   const gridMark = svg`${[1.5, 9.1].flatMap((y) => [1.5, 9.1].map((x) => svg`<rect x=${x} y=${y} width="5.4" height="5.4" rx="1.5" fill="none" stroke="${fill}" stroke-width="1.6" />`))}`;
   // Eight teeth round a ring with a hole in the middle.
   const gearMark = svg`<circle cx="8" cy="8" r="6.3" fill="none" stroke="${fill}" stroke-width="2.6" stroke-dasharray="2.47 2.48" stroke-dashoffset="1.24" />
     <circle cx="8" cy="8" r="4.3" fill="none" stroke="${fill}" stroke-width="3.2" />`;
   return html`<div class="wa-phone-top" style=${`height:${px(row.height)};padding:0 ${px(row.x)}`}>
-    ${grid ? button("wa-phone-grid", gridMark) : nothing}
+    ${grid ? button("wa-phone-grid", PHONE_TOP_GRID_GLYPH, gridMark) : nothing}
     ${title === "" ? nothing : html`<span class="wa-phone-title" style=${`left:${px(PHONE_TOP_TITLE_INSET)};right:${px(PHONE_TOP_TITLE_INSET)};font-size:${px(PHONE_TOP_TITLE_SIZE)}`}><span>${title}</span></span>`}
-    ${button("wa-phone-gear", gearMark)}
+    ${button("wa-phone-gear", PHONE_TOP_GEAR_GLYPH, gearMark)}
   </div>`;
 }
 
@@ -348,12 +424,28 @@ function topRow(layout: PhonePagesLayout, s: number, ios: boolean, grid: boolean
  * ground in its ink. `ink` adds the `ink` class when the page itself sits on
  * that ground (no color of its own), so marks drawn over the page can use
  * the ink too; a page with its own color keeps light marks.
+ *
+ * `backdrop` is the page's background drawn behind the whole screen, under
+ * the status bar, the top row, the margins and the dock, as the app draws
+ * the page on screen behind its whole tab (`PhonePagesView.backdrop`, with
+ * `pageBackdropDrawnByHost` so the page draws none of its own): a CSS
+ * background and the layers over it (a photo, a pattern, an animation). The
+ * box passed as `area` then leaves its own background clear. Without one,
+ * the screen keeps its plain ground (a status page, a menu).
  */
 export function renderPhoneFrame(
   layout: PhonePagesLayout,
   scale: number,
   area: TemplateResult,
-  options?: { label?: string; icons?: IconProvider; dots?: PhonePageDots; title?: string; ink?: boolean; grid?: boolean },
+  options?: {
+    label?: string;
+    icons?: IconProvider;
+    dots?: PhonePageDots;
+    title?: string;
+    ink?: boolean;
+    grid?: boolean;
+    backdrop?: { background: string; layers: TemplateResult | typeof nothing };
+  },
 ): TemplateResult {
   const s = scale;
   const { model } = layout;
@@ -371,8 +463,10 @@ export function renderPhoneFrame(
     : html`<div class="wa-phone-switcher" aria-hidden="true" style=${`height:${px(layout.switcher.height)};margin:0 ${px(layout.switcher.x)} ${px(PHONE_SWITCHER_GAP)}`}></div>`;
   const title = ios ? (options?.title ?? "").trim() : "";
   return html`<div class="wa-phone${ios ? " ios" : ""}${ios && options?.ink === true ? " ink" : ""}" aria-label=${options?.label ?? "iPhone"}
-    style=${`--pf-bezel:${bezel}px;--pf-rim:${rim}px;--pf-radius:${radius}px;--wf-radius:0px;--pf-left-top:${at(0.17)};--pf-left-h:${at(0.22)};--pf-right-top:${at(0.26)};--pf-right-h:${at(0.1)}`}>
+    style=${`--pf-s:${s};--pf-bezel:${bezel}px;--pf-rim:${rim}px;--pf-radius:${radius}px;--wf-radius:0px;--pf-left-top:${at(0.17)};--pf-left-h:${at(0.22)};--pf-right-top:${at(0.26)};--pf-right-h:${at(0.1)}`}>
     <div class="wa-phone-screen" style=${`width:${px(model.screen.width)};min-height:${px(model.screen.height)}`}>
+      ${options?.backdrop === undefined ? nothing
+        : html`<div class="wa-phone-backdrop" aria-hidden="true" style=${`background:${options.backdrop.background}`}>${options.backdrop.layers}</div>`}
       ${statusBar(model, s, options?.icons, ios)}
       ${switcher}
       ${topRow(layout, s, ios, options?.grid === true, title)}
@@ -464,6 +558,10 @@ export const phoneFrameStyles = css`
     -webkit-font-smoothing: antialiased;
   }
   .wa-phone-screen > * { flex: none; }
+  /* The page's background behind everything on the screen: its own stacking
+     layer under the status bar, the top row, the pages and the dock. */
+  .wa-phone-screen { isolation: isolate; }
+  .wa-phone-backdrop { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
   .wa-phone-status { position: relative; }
   .wa-phone-island { position: absolute; border-radius: 999px; background: #000; }
   .wa-phone-time { position: absolute; transform: translate(-50%, -50%); font-weight: 600; line-height: 1; letter-spacing: -0.01em; }
@@ -503,15 +601,36 @@ export const phoneFrameStyles = css`
   .wa-phone-home { position: absolute; left: 50%; transform: translateX(-50%); border-radius: 999px; background: rgba(255, 255, 255, 0.7); }
   /* The iPhone look: the screen on the app's graphite ground in its ink,
      light or dark with the panel's skin, and the top row's glass, battery
-     and home bar in the same skin. */
+     and home bar in the same skin. The glass (PhoneGlass) is the vault's
+     wash with a half point rim, brighter at its top, and a soft shadow
+     5 points down. */
   .wa-phone.ios .wa-phone-screen { background: ${unsafeCSS(PHONE_GROUPED_BACKGROUND)}; color: ${unsafeCSS(PHONE_LABEL_INK)}; }
-  .wa-phone.ios .wa-phone-glass {
+  .wa-phone.ios .wa-phone-glass,
+  .wa-phone-dock {
     background: var(--wa-phone-glass, rgba(255, 255, 255, 0.74));
-    box-shadow: inset 0 0 0 1px var(--wa-phone-glass-rim, rgba(20, 22, 26, 0.07)), 0 3px 10px rgba(0, 0, 0, 0.08);
+    box-shadow:
+      inset 0 0.5px 0 var(--wa-phone-glass-rim-top, rgba(255, 255, 255, 0.9)),
+      inset 0 0 0 0.5px var(--wa-phone-glass-rim, rgba(20, 22, 26, 0.07)),
+      0 calc(5px * var(--pf-s, 1)) calc(16px * var(--pf-s, 1)) var(--wa-phone-glass-shadow, rgba(28, 34, 48, 0.18));
   }
   .wa-phone.ios .wa-phone-battery { border-color: color-mix(in srgb, currentColor 45%, transparent); }
   .wa-phone.ios .wa-phone-battery i { background: currentColor; }
   .wa-phone.ios .wa-phone-home { background: currentColor; opacity: 0.7; }
   .wa-phone.ios .wp-fold { border-top-color: color-mix(in srgb, ${unsafeCSS(PHONE_LABEL_INK)} 45%, transparent); }
-  .wa-phone-pc { flex: none; border-radius: 50%; }
+  /* Over a page with its own background the app draws its chrome dark in
+     either skin (chromeScheme): the vault's dark glass and ink. */
+  .wa-phone.ios:not(.ink) .wa-phone-top,
+  .wa-phone.ios:not(.ink) .wa-phone-dots-bar {
+    --wa-phone-ink: #f2f4f7;
+    --wa-phone-glass: rgba(44, 46, 51, 0.52);
+    --wa-phone-glass-rim: rgba(242, 246, 252, 0.08);
+    --wa-phone-glass-rim-top: rgba(242, 246, 252, 0.16);
+    --wa-phone-glass-shadow: rgba(0, 0, 0, 0.32);
+    --wa-phone-dock-dot: rgba(232, 236, 242, 0.38);
+    color: var(--wa-phone-ink);
+  }
+  /* The dock: its dots in a row, the current page's pill in the ink. */
+  .wa-phone-dock { display: inline-flex; align-items: center; box-sizing: border-box; border-radius: 999px; }
+  .wa-phone-dock-dot { flex: none; border-radius: 999px; background: var(--wa-phone-dock-dot, rgba(20, 22, 26, 0.22)); }
+  .wa-phone-dock-dot.on { background: ${unsafeCSS(PHONE_LABEL_INK)}; }
 `;

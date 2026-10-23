@@ -93,8 +93,8 @@ function groupSlider(
 /** The group's look, as the tile card names it: Pattern with its type,
  * opacity, size and color, then Effect with its type, color, speed,
  * intensity and size. The colors are the cards' one picker (`colorPicker`):
- * solid only, as the watch reads a group's colors, and Rainbow for the
- * effect, which the watch cycles. */
+ * solid only, as the watch reads a group's colors, with a Rainbow swatch
+ * last for the effect, which the watch cycles. */
 function renderGroupLook(host: TileSettingsHost, groupId: string): TemplateResult | typeof nothing {
   const group = watchTileGroup(host.page, groupId);
   if (group === undefined) return nothing;

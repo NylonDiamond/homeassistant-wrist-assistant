@@ -4,12 +4,15 @@
 // each looks and reads the same:
 //
 //   heading
-//   Form       Solid | Gradient | Rainbow    (only where the value has forms)
-//   [Default] ● ● ● ● ● ● ●                  (Default only where it means something)
+//   Form       Solid | Gradient              (only where the value has forms)
+//   [Default] ● ● ● ● ● ● ● ◉                (Default only where it means something)
 //   Custom     ■ #RRGGBB
 //
 // The Default chip is always called "Default"; what it means (the watch's
-// own gray, the tile's color, white) is its tooltip. This module only draws:
+// own gray, the tile's color, white) is its tooltip. Rainbow (◉) is no form
+// of its own: where the device cycles the key through every color it is the
+// last swatch, with the gradients where the key has a Gradient form, else
+// after the solid colors. This module only draws:
 // each caller keeps its own edits and its own typing bookkeeping (`wrap`),
 // so the page switcher, which never imports the tile settings, draws it too.
 
@@ -25,11 +28,18 @@ export const COLOR_CUSTOM_LABEL = "Custom";
 
 /** The Form switch's title and the words of each form. */
 export const COLOR_FORM_LABEL = "Form";
-export const COLOR_FORM_WORDS: Readonly<Record<"solid" | "gradient" | "rainbow", string>> = {
+export const COLOR_FORM_WORDS: Readonly<Record<"solid" | "gradient", string>> = {
   solid: "Solid",
   gradient: "Gradient",
-  rainbow: "Rainbow",
 };
+
+/** What the Rainbow swatch stores and what it is called. */
+export const COLOR_RAINBOW = "#RAINBOW";
+export const COLOR_RAINBOW_LABEL = "Rainbow";
+
+/** The Rainbow swatch's paint: the watch's rainbow (`RainbowHelper.colors`),
+ * across the swatch as the gradients run. */
+const RAINBOW_PAINT = "linear-gradient(135deg, #FF453A, #FF9F0A, #FFD60A, #30D158, #64D2FF, #0A84FF, #BF5AF2)";
 
 export interface ColorPickerView {
   /** The heading over the picker. Absent where the form switch is the
@@ -46,16 +56,19 @@ export interface ColorPickerView {
    * nothing could be called the default. */
   default?: { title: string; on: boolean; pick(): void };
   /** The Form switch, where the value takes more than one form. `shown` may
-   * be `none` (no form lit). `title` replaces "Form" where the switch is the
-   * picker's only heading. */
+   * be `none` (no form lit); a rainbow shows as Gradient. `title` replaces
+   * "Form" where the switch is the picker's only heading. */
   form?: {
     shown: WatchColorModeChoice;
-    forms: readonly ("solid" | "gradient" | "rainbow")[];
-    pick(form: WatchColorModeChoice): void;
+    forms: readonly ("solid" | "gradient")[];
+    pick(form: "solid" | "gradient"): void;
     title?: string;
   };
-  /** A line under the form switch (what Rainbow does). */
-  note?: string;
+  /** The Rainbow swatch, where the device draws `#RAINBOW` for the key: last
+   * in the row, with the gradients where there is a Gradient form. Picking
+   * it is `pickSwatch(COLOR_RAINBOW)`. `note` says what it does, under the
+   * swatches while it is picked. */
+  rainbow?: { note?: string };
   /** The custom box: the solid color it shows and its edit. */
   custom: { shown: string | undefined; pick(value: string | undefined): void };
   /** The caller's typing field around the custom box, which keeps what is
@@ -70,6 +83,7 @@ export function swatchRow(
   current: unknown,
   pick: (color: string) => void,
   lead: TemplateResult | typeof nothing = nothing,
+  tail: TemplateResult | typeof nothing = nothing,
 ): TemplateResult {
   return html`<div class="ts-swatches" role="group" aria-label=${label}>
     ${lead}
@@ -83,7 +97,16 @@ export function swatchRow(
         style=${`--sw:linear-gradient(135deg, ${ends.from}, ${ends.to})`}
         @click=${() => pick(value)}></button>`;
     })}
+    ${tail}
   </div>`;
+}
+
+/** The Rainbow swatch, drawn as the other swatches are. */
+function rainbowSwatch(on: boolean, pick: () => void): TemplateResult {
+  return html`<button type="button" class="ts-swatch ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+    title=${COLOR_RAINBOW_LABEL} aria-label=${COLOR_RAINBOW_LABEL}
+    style=${`--sw:${RAINBOW_PAINT}`}
+    @click=${pick}></button>`;
 }
 
 /** The Default chip, at the head of the swatch row. */
@@ -93,15 +116,24 @@ function defaultChip(d: NonNullable<ColorPickerView["default"]>, label: string |
     title=${d.title} @click=${d.pick}>${COLOR_DEFAULT_LABEL}</button>`;
 }
 
-/** The picker: heading, Form, Default with the swatches, Custom. */
+/** The picker: heading, Form, Default with the swatches and Rainbow, Custom. */
 export function colorPickerView(v: ColorPickerView): TemplateResult {
-  const form = v.form;
+  const form = v.form === undefined || v.form.forms.length < 2 ? undefined : v.form;
+  // A rainbow is one of the gradients.
+  const shown: WatchColorModeChoice = form?.shown === "rainbow" ? "gradient" : (form?.shown ?? "none");
+  const rainbowOn = sameWatchColor(v.color, COLOR_RAINBOW);
+  const rainbow = v.rainbow !== undefined && (form === undefined || !form.forms.includes("gradient") || shown === "gradient")
+    ? rainbowSwatch(rainbowOn, () => v.pickSwatch(COLOR_RAINBOW))
+    : nothing;
+  const note = rainbowOn ? v.rainbow?.note : undefined;
   return html`
     ${v.label === undefined ? nothing : html`<div class="ts-sub-h"><span>${v.label}</span></div>`}
-    ${form === undefined || form.forms.length < 2
+    ${form === undefined
       ? nothing
-      : segField<WatchColorModeChoice>(form.title ?? COLOR_FORM_LABEL, form.shown, form.forms.map((f) => [f, COLOR_FORM_WORDS[f]] as [WatchColorModeChoice, string]), (f) => form.pick(f))}
-    ${v.note === undefined ? nothing : html`<div class="hint ts-under">${v.note}</div>`}
-    <div class="ts-swatch-row">${swatchRow(v.swatchesLabel, v.swatches, v.color, v.pickSwatch, v.default === undefined ? nothing : defaultChip(v.default, v.label ?? form?.title))}</div>
+      : segField<WatchColorModeChoice>(form.title ?? COLOR_FORM_LABEL, shown, form.forms.map((f) => [f, COLOR_FORM_WORDS[f]] as [WatchColorModeChoice, string]), (f) => {
+          if (f === "solid" || f === "gradient") form.pick(f);
+        })}
+    <div class="ts-swatch-row">${swatchRow(v.swatchesLabel, v.swatches, v.color, v.pickSwatch, v.default === undefined ? nothing : defaultChip(v.default, v.label ?? form?.title), rainbow)}</div>
+    ${note === undefined ? nothing : html`<div class="hint ts-under">${note}</div>`}
     ${v.wrap(html`<div class="ts-no-alpha">${colorField(COLOR_CUSTOM_LABEL, v.custom.shown, v.custom.pick)}</div>`)}`;
 }

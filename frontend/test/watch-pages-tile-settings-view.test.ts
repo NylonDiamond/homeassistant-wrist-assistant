@@ -39,7 +39,7 @@ import {
 import { WATCH_ICON_TAP_ANIMATIONS } from "../src/watch-pages/tile-settings-model.js";
 import { type WatchPagesApplyOptions, WatchPagesDraft } from "../src/watch-pages/draft.js";
 import { NO_ICONS, type TileSettingsHost, extendHost } from "../src/watch-pages/editor-host.js";
-import { setWatchPageBackgroundColor, setWatchPageBrightness, watchPageSettings } from "../src/watch-pages/page-settings-model.js";
+import { setWatchPageBackgroundColor, setWatchPageBrightness, setWatchPageOverlayColor, watchPageSettings } from "../src/watch-pages/page-settings-model.js";
 import { pagePaletteActions } from "../src/watch-pages/page-settings.js";
 import { setWatchTileBorderColor, watchTileBorderSettings } from "../src/watch-pages/styling-model.js";
 import { commit, resetDotPressed, stylingPaletteActions } from "../src/watch-pages/tile-settings.js";
@@ -266,6 +266,8 @@ describe("colors", () => {
     expect(watchSwatchesInGradient("#FFC145", true)).toBe(false);
     expect(watchSwatchesInGradient(undefined, true)).toBe(true);
     expect(watchSwatchesInGradient("#RAINBOW", true)).toBe(true);
+    // The rainbow is the last of the gradient swatches, whatever the page adds in.
+    expect(watchSwatchesInGradient("#RAINBOW", false)).toBe(true);
     expect(watchSwatchesInGradient(undefined, false)).toBe(false);
   });
 
@@ -371,13 +373,22 @@ describe("a styling palette", () => {
     expect(tile().borderColor).toBe(watchGradientOf("#00FF00"));
   });
 
-  it("on a rainbow, Solid or Gradient writes the kind's color in that form", () => {
+  it("on a rainbow, shows the gradients; Solid writes the kind's color and Gradient leaves it", () => {
     const kind = watchEntityDefaults({ entityId: "light.desk" }, lightPage()).color!;
-    for (const [mode, expected] of [["solid", kind], ["gradient", watchGradientOf(kind)]] as const) {
-      const { host, tile } = draftHost(lightPage({ borderColor: "#RAINBOW" }));
-      border(host).pickMode(mode);
-      expect(tile().borderColor, mode).toBe(expected);
-    }
+    const { host, tile, draft } = draftHost(lightPage({ borderColor: "#RAINBOW" }));
+    const act = border(host);
+    expect(act.gradient()).toBe(true);
+    act.pickMode("gradient");
+    expect(tile().borderColor).toBe("#RAINBOW");
+    expect(draft.canUndo).toBe(false);
+    act.pickMode("solid");
+    expect(tile().borderColor).toBe(kind);
+  });
+
+  it("on a rainbow, a custom color is written as a gradient", () => {
+    const { host, tile } = draftHost(lightPage({ borderColor: "#RAINBOW" }));
+    border(host).custom("#00ff00");
+    expect(tile().borderColor).toBe(watchGradientOf("#00FF00"));
   });
 });
 
@@ -399,6 +410,23 @@ describe("a page palette", () => {
     act.swatch("#445566");
     act.pickMode("gradient");
     expect(page().backgroundColor).toBe(watchGradientOf("#445566"));
+  });
+
+  it("on a rainbow, shows Gradient; Gradient leaves it and Solid writes the first swatch", () => {
+    const animation = (host: TileSettingsHost) => pagePaletteActions(host, "overlayColor", {
+      color: () => watchPageSettings(host.page).overlayColor,
+      swatches: ["#112233", "#445566"],
+      write: (d, v) => setWatchPageOverlayColor(d, PAGE_ID, v),
+    });
+    const { host, page } = pageHost({ backgroundOverlay: "snow", backgroundOverlayColor: "#RAINBOW" });
+    const act = animation(host);
+    expect(watchPageSettings(page()).overlayColor).toBe("#RAINBOW");
+    expect(act.gradient()).toBe(true);
+    expect(act.shown()).toBe("gradient");
+    act.pickMode("gradient");
+    expect(watchPageSettings(page()).overlayColor).toBe("#RAINBOW");
+    act.pickMode("solid");
+    expect(watchPageSettings(page()).overlayColor).toBe("#112233");
   });
 
   it("on OLED black, Gradient turns the swatches and leaves black as it is", () => {

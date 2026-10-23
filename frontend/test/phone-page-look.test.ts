@@ -1,9 +1,10 @@
 // An iPhone's Page look (`phonePageLook`, phone-frame.ts): in the iPhone
 // look, the default, the phone's preview draws the page's name centred in
 // the top row, a page with the default black background on the app's
-// graphite ground, 22 point tile corners and a plain page control; in the
-// Watch look the phone keeps the watch's own drawing; and a watch never
-// changes, whatever a document says.
+// graphite ground, the pages 12 in from each side with each tile drawn 4 in
+// from its cell and rounded up to 22 points, and the dots in the dock's
+// glass capsule; in the Watch look the phone keeps the watch's own drawing;
+// and a watch never changes, whatever a document says.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -11,15 +12,20 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_PHONE,
+  PHONE_DOCK_MAX_DOTS,
   PHONE_TOP_ROW_HEIGHT,
+  phoneDockWindow,
   phoneFrameStyles,
   phonePageLookOf,
   phonePagesLayout,
   phonePagesScreen,
+  phoneTileCellInset,
   phoneTileCornerRadius,
+  renderPhoneDock,
 } from "../src/phone-frame.js";
 import type { WatchPage } from "../src/watch-pages/model.js";
 import {
+  previewTileCellInset,
   previewTileCornerRadius,
   renderWatchPagePreview,
   watchPageHasDefaultBlackBackground,
@@ -87,18 +93,22 @@ describe("the Page look setting", () => {
 });
 
 describe("the iPhone look", () => {
-  it("keeps the pages area's top and sides the Watch look's, ending it on the dock's bar, with the top row's buttons on the tiles' edges", () => {
+  it("keeps the pages area's top the Watch look's, 12 in from each side, ending it on the dock's bar, with the top row's buttons on the tiles' edges", () => {
     expect(iphone.look).toBe("iphone");
     expect(iphone.topRow).toEqual({ x: 16, y: 62, width: 370, height: PHONE_TOP_ROW_HEIGHT });
     expect(old.topRow).toEqual({ x: 6, y: 62, width: 390, height: PHONE_TOP_ROW_HEIGHT });
-    expect({ x: iphone.area.x, y: iphone.area.y, width: iphone.area.width }).toEqual({ x: old.area.x, y: old.area.y, width: old.area.width });
+    expect(iphone.area.y).toBe(old.area.y);
+    // `PhonePagesView.phoneSideInset`, 12, against the Watch look's 6; the
+    // tiles drawn 4 in from their cells then sit on the top row's 16.
+    expect(iphone.area.x).toBe(12);
+    expect(iphone.area.x + phoneTileCellInset(100, 100)).toBe(iphone.topRow.x);
     // The dock's 46 point bar against the Watch look's 32 point one.
-    expect(iphone.area).toEqual({ x: 6, y: 118, width: 390, height: 676 });
+    expect(iphone.area).toEqual({ x: 12, y: 118, width: 378, height: 676 });
     expect(iphone.bottomBar).toEqual({ x: 0, y: 794, width: 402, height: 46 });
     expect(old.bottomBar).toEqual({ x: 0, y: 808, width: 402, height: 32 });
     // With one page to show there is no dock, and the bar is the plain one.
     const one = phonePagesLayout(DEFAULT_PHONE, { look: "iphone", dots: { shown: false, top: false } });
-    expect(one.area).toEqual(old.area);
+    expect(one.area).toEqual({ ...iphone.area, height: old.area.height });
   });
 
   it("names the page in the top row between the grid and the gear, on the graphite ground, with no watch title", () => {
@@ -146,30 +156,97 @@ describe("the iPhone look", () => {
     expect(light).toBeGreaterThan(0);
     expect(dark).toBeGreaterThan(light);
     expect(panel.lastIndexOf(":host([dark]) {", dark)).toBeGreaterThan(light);
+    // The dock's dots and the glass's top rim and shadow in each skin
+    // (`PhoneVault` `.dockDot`, `.glassRimTop`, `glassShadow`).
+    for (const [token, lightValue, darkValue] of [
+      ["--wa-phone-dock-dot", "rgba(20, 22, 26, 0.22)", "rgba(232, 236, 242, 0.38)"],
+      ["--wa-phone-glass-rim-top", "rgba(255, 255, 255, 0.9)", "rgba(242, 246, 252, 0.16)"],
+      ["--wa-phone-glass-shadow", "rgba(28, 34, 48, 0.18)", "rgba(0, 0, 0, 0.32)"],
+    ] as const) {
+      const lightAt = panel.indexOf(`${token}: ${lightValue};`);
+      const darkAt = panel.indexOf(`${token}: ${darkValue};`);
+      expect(lightAt, token).toBeGreaterThan(0);
+      expect(darkAt, token).toBeGreaterThan(lightAt);
+      expect(panel.lastIndexOf(":host([dark]) {", darkAt), token).toBeGreaterThan(lightAt);
+    }
   });
 
-  it("rounds tiles at 22 points, held to half the tile's short side", () => {
+  it("rounds tiles at 22 points, a third of a smaller cell's short side, never under 4", () => {
+    // `TileLookMetrics.cornerRadius` for the iPhone look, read from the
+    // cell's size, and the app's own test values.
     expect(phoneTileCornerRadius(128, 128)).toBe(22);
-    expect(phoneTileCornerRadius(30, 128)).toBe(15);
+    expect(phoneTileCornerRadius(185, 128)).toBe(22);
+    expect(phoneTileCornerRadius(185, 63)).toBe(21);
+    expect(phoneTileCornerRadius(30, 30)).toBe(10);
+    expect(phoneTileCornerRadius(30, 128)).toBe(10);
+    expect(phoneTileCornerRadius(10, 10)).toBe(4);
     expect(previewTileCornerRadius({ phone: iphone }, 128, 128)).toBe(22);
     expect(previewTileCornerRadius({ phone: old }, 128, 128)).toBe(watchTileCornerRadius(128, 128));
     expect(previewTileCornerRadius({}, 128, 128)).toBe(8);
     const text = phonePicture(LIVING);
     expect(text).toContain("border-radius:22px");
     expect(text).not.toContain("border-radius:8px");
+    // A 1 by 1 tile's cell, 29.67 points, takes 10, not the drawn tile's 7.
+    const small: WatchPage = { ...LIVING, items: [{ ...ITEMS[0]!, colSpan: 1, rowSpan: 1 }] };
+    expect(phonePicture(small)).toContain("border-radius:10px");
   });
 
-  it("draws a plain page control under the pages, one dot a page, the shown page's lit", () => {
+  it("draws each tile 4 points in from its cell, a header and a spacer keeping the whole cell", () => {
+    // `PhoneTileGlass.cellInset(width:height:)`: 4, or a sixth of the
+    // cell's short side, rounded down, when that is less.
+    expect(phoneTileCellInset(124, 124)).toBe(4);
+    expect(phoneTileCellInset(60, 18)).toBe(3);
+    expect(phoneTileCellInset(11, 40)).toBe(1);
+    const light = ITEMS[0]!;
+    expect(previewTileCellInset({ phone: iphone }, light, 124, 124)).toBe(4);
+    expect(previewTileCellInset({ phone: iphone }, { ...light, entityId: "divider.line.light" }, 124, 124)).toBe(0);
+    expect(previewTileCellInset({ phone: iphone }, { ...light, entityId: "spacer.1" }, 124, 124)).toBe(0);
+    // The Watch look and a watch draw every tile in its whole cell.
+    expect(previewTileCellInset({ phone: old }, light, 124, 124)).toBe(0);
+    expect(previewTileCellInset({}, light, 124, 124)).toBe(0);
+  });
+
+  it("draws the dots in the dock's glass capsule under the pages, the shown page a pill", () => {
     const text = phonePicture(KITCHEN);
-    const dots = [...text.matchAll(/class="wa-phone-pc" style=([^>]*)>/g)].map((m) => m[1]!);
-    expect(dots).toHaveLength(3);
-    expect(dots.map((d) => /opacity:([\d.]+)/.exec(d)![1])).toEqual(["0.3", "1", "0.3"]);
-    expect(dots[0]).toContain("width:7px;height:7px");
-    expect(dots[1]).toContain("margin-left:9px");
-    // In the strip under the pages, never over the top of them.
+    // `PhonePagesDock`: 38 tall, 15 of glass each side, dots 6 round and 5
+    // apart, the current page a 16 point pill.
+    expect(text).toContain('<span class="wa-phone-dock" style=height:38px;padding:0 15px;gap:5px>');
+    const dots = [...text.matchAll(/class=(wa-phone-dock-dot(?: on)?) style=([^>]*)>/g)].map((m) => ({ on: m[1]!.endsWith(" on"), style: m[2]! }));
+    expect(dots.map((d) => d.on)).toEqual([false, true, false]);
+    expect(dots[0]!.style).toBe("width:6px;height:6px");
+    expect(dots[1]!.style).toBe("width:16px;height:6px");
+    // In the dock's bar under the pages, never over the top of them.
+    expect(text).toContain('class="wa-phone-dots-bar" style=height:46px><span class="wa-phone-dock"');
     expect(text).not.toContain('class="wa-phone-dots"');
     // Page dots off hides it.
-    expect(phonePicture(KITCHEN, iphone, { showPageIndicator: false })).not.toContain("wa-phone-pc");
+    expect(phonePicture(KITCHEN, iphone, { showPageIndicator: false })).not.toContain("wa-phone-dock");
+  });
+
+  it("shows at most 9 dots, the end ones small where more pages lie past them", () => {
+    expect(PHONE_DOCK_MAX_DOTS).toBe(9);
+    expect(phoneDockWindow(3, 1)).toEqual([0, 1, 2]);
+    expect(phoneDockWindow(12, 0)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(phoneDockWindow(12, 6)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(phoneDockWindow(12, 11)).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    const flatDock = flat(renderPhoneDock(12, 6, 1));
+    const sizes = [...flatDock.matchAll(/style=width:([\d.]+)px;height:([\d.]+)px/g)].map((m) => `${m[1]}x${m[2]}`);
+    expect(sizes).toEqual(["4x4", "6x6", "6x6", "6x6", "16x6", "6x6", "6x6", "6x6", "4x4"]);
+    // At the first page only the far end is cut.
+    const start = [...flat(renderPhoneDock(12, 0, 1)).matchAll(/style=width:([\d.]+)px;height:([\d.]+)px/g)].map((m) => `${m[1]}x${m[2]}`);
+    expect(start[0]).toBe("16x6");
+    expect(start[8]).toBe("4x4");
+  });
+
+  it("draws the top row and the dock dark over a page with its own background, as the app's chrome is", () => {
+    // `chromeScheme`: the system's light or dark only on the vault's
+    // ground, else the app's dark.
+    const css = phoneFrameStyles.cssText;
+    expect(css).toContain(".wa-phone.ios:not(.ink) .wa-phone-top");
+    expect(css).toContain(".wa-phone.ios:not(.ink) .wa-phone-dots-bar");
+    expect(css).toContain("--wa-phone-glass: rgba(44, 46, 51, 0.52);");
+    expect(css).toContain("--wa-phone-dock-dot: rgba(232, 236, 242, 0.38);");
+    expect(phonePicture({ ...LIVING, backgroundColor: "#FF0000" })).toContain('class="wa-phone ios"');
+    expect(phonePicture(LIVING)).toContain('class="wa-phone ios ink"');
   });
 
   it("puts only a page with the default black background on the grouped background", () => {
@@ -192,7 +269,7 @@ describe("the iPhone look", () => {
     const redPage = { ...LIVING, backgroundColor: "#FF0000" };
     const red = phonePicture(redPage);
     expect(red).not.toContain("background:var(--wa-phone-grouped");
-    expect(red).toContain(`background:${watchScreenBackground(redPage, 1, phonePagesScreen(iphone))}`);
+    expect(red).toContain(`<div class="wa-phone-backdrop" aria-hidden="true" style=background:${watchScreenBackground(redPage, 1, DEFAULT_PHONE.screen)}>`);
     // The name in the top row stays: it is the iPhone's, not the page's.
     expect(red).toContain("<span>Living Room</span>");
   });
@@ -203,7 +280,8 @@ describe("the iPhone look", () => {
     expect(watchPageHasDefaultBlackBackground(themed)).toBe(false);
     const text = phonePicture(themed);
     expect(text).not.toContain("background:var(--wa-phone-grouped");
-    expect(text).toContain(`background:${watchScreenBackground(themed, 1, phonePagesScreen(iphone))}`);
+    // Laid out on the whole phone screen, not the pages area.
+    expect(text).toContain(`<div class="wa-phone-backdrop" aria-hidden="true" style=background:${watchScreenBackground(themed, 1, DEFAULT_PHONE.screen)}>`);
   });
 
   it("hides the name, keeping the top row, when the phone's Page name setting is Hide", () => {
@@ -221,6 +299,65 @@ describe("the iPhone look", () => {
     delete unstyled.pageTitleDisplayStyle;
     expect(phonePicture(unstyled)).not.toContain("wa-phone-title");
     expect(phonePicture({ ...LIVING, name: "  " })).not.toContain("wa-phone-title");
+  });
+});
+
+describe("the page's background on an iPhone", () => {
+  // `PhonePagesView.backdrop` behind the whole tab, ignoring the safe area,
+  // with `pageBackdropDrawnByHost` so the page draws none of its own.
+  const backdropOf = (text: string): string => /<div class="wa-phone-backdrop" aria-hidden="true" style=background:([^>]*)>/.exec(text)?.[1] ?? "";
+  const screenOf = (text: string): string => /<div class="wp-screen"[^>]*style=width:[\d.]+px;height:[\d.]+px;background:([^>]*)>/.exec(text)?.[1] ?? "";
+
+  it("fills the whole phone screen behind the status bar, top row, margins and dock, the pages area clear", () => {
+    const redPage = { ...LIVING, backgroundColor: "#FF0000" };
+    const text = phonePicture(redPage);
+    expect(backdropOf(text)).toBe(watchScreenBackground(redPage, 1, DEFAULT_PHONE.screen));
+    expect(screenOf(text)).toBe("transparent");
+    // First on the screen, under everything drawn after it.
+    const at = text.indexOf("wa-phone-backdrop");
+    expect(at).toBeGreaterThan(text.indexOf('class="wa-phone-screen"'));
+    expect(at).toBeLessThan(text.indexOf('class="wa-phone-status"'));
+    const css = phoneFrameStyles.cssText;
+    expect(css).toContain(".wa-phone-screen { isolation: isolate; }");
+    expect(css).toContain(".wa-phone-backdrop { position: absolute; inset: 0; z-index: -1;");
+  });
+
+  it("draws the graphite ground there for a page with the default black background", () => {
+    const text = phonePicture(LIVING);
+    expect(backdropOf(text)).toBe("var(--wa-phone-grouped, #f1f2f5)");
+    expect(screenOf(text)).toBe("transparent");
+  });
+
+  it("lays a gradient, pattern and animation out on the phone's screen", () => {
+    const fancy: WatchPage = { ...LIVING, backgroundColor: "GRADIENT|#FF0000|#0000FF", backgroundPattern: "grid", backgroundOverlay: "aurora" };
+    const text = phonePicture(fancy);
+    expect(backdropOf(text)).toBe(watchScreenBackground(fancy, 1, DEFAULT_PHONE.screen));
+    expect(backdropOf(text)).toContain("radial-gradient");
+    expect(screenOf(text)).toBe("transparent");
+  });
+
+  it("puts a page photo in the backdrop at the phone screen's height", () => {
+    const photographed: WatchPage = { ...LIVING, backgroundImageId: "photo-1" };
+    const text = flat(renderWatchPagePreview({
+      page: photographed, pages: PAGES, screen: phonePagesScreen(iphone), phone: iphone, scale: 1, photo: () => "https://example.test/p.jpg",
+    }));
+    const backdrop = text.slice(text.indexOf("wa-phone-backdrop"), text.indexOf('class="wa-phone-status"'));
+    expect(backdrop).toContain(`class=wp-page-photo-clip style=height:${DEFAULT_PHONE.screen.height}px`);
+    expect(backdrop).toContain("p.jpg");
+    // The pages area draws no photo of its own.
+    expect(text.slice(text.indexOf('class="wa-phone-area"'))).not.toContain("wp-page-photo");
+  });
+
+  it("does the same in the Watch look, whose page backdrop the app also draws behind the tab", () => {
+    const text = phonePicture(LIVING, old);
+    expect(backdropOf(text)).toBe(watchScreenBackground(LIVING, 1, DEFAULT_PHONE.screen));
+    expect(screenOf(text)).toBe("transparent");
+  });
+
+  it("leaves a watch's screen its own background", () => {
+    const text = flat(renderWatchPagePreview({ page: LIVING, pages: PAGES, screen: { width: 208, height: 248 }, scale: 1 }));
+    expect(text).not.toContain("wa-phone-backdrop");
+    expect(screenOf(text)).toBe(watchScreenBackground(LIVING, 1, { width: 208, height: 248 }));
   });
 });
 
@@ -242,7 +379,7 @@ describe("the Watch look on an iPhone", () => {
     expect(text).toContain("wa-phone-gear");
     expect(text).not.toContain("wa-phone-title");
     expect(text).not.toContain("wa-phone-grouped");
-    expect(text).not.toContain("wa-phone-pc");
+    expect(text).not.toContain("wa-phone-dock");
     expect(text).toContain('class="wp-title pill"');
     expect(text).toContain("border-radius:8px");
     expect(text).not.toContain("border-radius:22px");

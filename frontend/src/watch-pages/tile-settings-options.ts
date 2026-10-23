@@ -898,10 +898,11 @@ export function watchLabelNote(tile: WatchPageTile, device: SettingDevice = "wat
  * no color (or one the palette cannot show). */
 export type WatchColorModeChoice = "solid" | "gradient" | "rainbow" | "none";
 
-export const WATCH_COLOR_MODES: readonly ["solid" | "gradient" | "rainbow", string][] = [
+/** The tile color's forms. A rainbow is no form of its own: it is the last
+ * of the Gradient swatches (`color-picker.ts`). */
+export const WATCH_COLOR_MODES: readonly ["solid" | "gradient", string][] = [
   ["solid", "Solid"],
   ["gradient", "Gradient"],
-  ["rainbow", "Rainbow"],
 ];
 
 export function watchColorModeChoice(color: unknown): WatchColorModeChoice {
@@ -909,10 +910,11 @@ export function watchColorModeChoice(color: unknown): WatchColorModeChoice {
 }
 
 /** Whether the swatches show their gradient form: the stored color is a
- * gradient, or, with no color or a rainbow, the page adds in gradients. */
+ * gradient or the rainbow (the last of the gradient swatches), or, with no
+ * color, the page adds in gradients. */
 export function watchSwatchesInGradient(color: unknown, pageUsesGradient: boolean): boolean {
   const mode = watchColorMode(color);
-  return mode === "gradient" || ((mode === undefined || mode === "rainbow") && pageUsesGradient);
+  return mode === "gradient" || mode === "rainbow" || (mode === undefined && pageUsesGradient);
 }
 
 /**

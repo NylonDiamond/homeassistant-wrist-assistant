@@ -3,27 +3,33 @@
 // watch's page code then puts each tile in that area, checked against the
 // iPhone 17 Pro simulator. The tiles' numbers were read off a 3x screenshot
 // and the accessibility frames of box a's "PP Phone A" (nine 4 by 4 tiles)
-// on 2026-10-10, with the phone showing its home switcher (two homes), and
-// are kept here from the pages area's top left, which the chrome above it
-// does not change.
+// on 2026-10-10, with the phone showing its home switcher (two homes) in
+// the Watch look, and are kept here from the pages area's top left, which
+// the chrome above it does not change. The rows then started 34 points
+// down, the watch's room for its clock; since 2026-10-15 the phone keeps 4
+// (`WatchScreenMetrics.gridTopInset` on iOS), so every row is 30 higher.
 
 import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_PHONE,
+  PHONE_GRID_TOP_INSET,
+  PHONE_MODELS,
   PHONE_PAGE_DOTS_TOP,
   PHONE_PAGES_BOTTOM_BAR,
   PHONE_PAGES_BOTTOM_BAR_TOP_DOTS,
   PHONE_PAGES_DOCK_BAR,
+  PHONE_PAGES_SIDE_INSET_IPHONE,
   PHONE_PAGES_TOP_BAR,
   PHONE_STAGE_ZOOM,
+  PHONE_TILE_CELL_INSET,
+  PHONE_VAULT_GUTTER,
   phoneModelForScreenSize,
   phonePagesDotsOf,
   phonePagesLayout,
   phonePagesScreen,
 } from "../src/phone-frame.js";
 import type { WatchPage } from "../src/watch-pages/model.js";
-import { WATCH_GRID_TOP_INSET } from "../src/watch-pages/model.js";
 import {
   type WatchPagePreviewInput,
   renderWatchPagePreview,
@@ -32,6 +38,7 @@ import {
   watchPreviewHeight,
   watchPreviewLayout,
   watchPreviewSideInset,
+  watchPreviewTopInset,
   watchTileIconSize,
   watchTileLabelFontSize,
 } from "../src/watch-pages/preview.js";
@@ -71,10 +78,10 @@ const PHONE_A: WatchPage = {
 };
 
 /** The sim's tiles, in points from the pages area's top left: three
- * columns at 0, 130.67 and 261.33, three rows at 34, 164.67 and 295.33,
- * each 128.67 square. */
+ * columns at 0, 130.67 and 261.33, three rows measured at 34, 164.67 and
+ * 295.33 and now 30 higher, each 128.67 square. */
 const MEASURED_COLS = [0, 130.67, 261.33];
-const MEASURED_ROWS = [34, 164.67, 295.33];
+const MEASURED_ROWS = [34, 164.67, 295.33].map((y) => y - 30);
 const MEASURED_SIDE = 128.67;
 
 describe("the iPhone's pages screen", () => {
@@ -127,8 +134,8 @@ describe("the iPhone's pages screen", () => {
     expect(phonePagesLayout(DEFAULT_PHONE, { look: "iphone" }).bottomBar.height).toBe(46);
     expect(phonePagesLayout().bottomBar.height).toBe(32);
     // The pages area ends on the bar: 676 tall over the dock, 708 over the
-    // Watch look's short strip.
-    expect(phonePagesLayout(DEFAULT_PHONE, { look: "iphone" }).area).toEqual({ x: 6, y: 118, width: 390, height: 676 });
+    // Watch look's short strip. The iPhone look's is 12 in from each side.
+    expect(phonePagesLayout(DEFAULT_PHONE, { look: "iphone" }).area).toEqual({ x: 12, y: 118, width: 378, height: 676 });
     expect(phonePagesLayout(DEFAULT_PHONE, { dots: { shown: true, top: true } }).area.height).toBe(708);
   });
 
@@ -143,8 +150,9 @@ describe("the iPhone's pages screen", () => {
     const layout = phonePagesLayout(DEFAULT_PHONE, { switcher: true });
     const screen = phonePagesScreen(layout);
     expect(watchPreviewSideInset({ phone: layout })).toBe(0);
-    const placed = watchPreviewLayout(PHONE_A, screen, { sideInset: 0 });
-    expect(placed.topInset).toBe(WATCH_GRID_TOP_INSET);
+    expect(watchPreviewTopInset({ phone: layout })).toBe(PHONE_GRID_TOP_INSET);
+    const placed = watchPreviewLayout(PHONE_A, screen, { sideInset: 0, topInset: watchPreviewTopInset({ phone: layout }) });
+    expect(placed.topInset).toBe(4);
     expect(placed.tiles).toHaveLength(9);
     for (const [i, t] of placed.tiles.entries()) {
       const x = t.x;
@@ -161,12 +169,54 @@ describe("the iPhone's pages screen", () => {
 
   it("puts the editing grid's cells on the same rectangles", () => {
     const layout = phonePagesLayout(DEFAULT_PHONE, { switcher: true });
-    const grid = stageGrid(layout.area.width, WATCH_GRID_TOP_INSET, 1, 0);
+    const grid = stageGrid(layout.area.width, PHONE_GRID_TOP_INSET, 1, 0);
     expect(grid.left).toBe(0);
     const last = cellRectPx(grid, { col: 8, row: 8, colSpan: 4, rowSpan: 4 });
     expect(Math.abs(last.left - MEASURED_COLS[2]!)).toBeLessThan(1);
     expect(Math.abs(last.top - MEASURED_ROWS[2]!)).toBeLessThan(1);
     expect(Math.abs(last.width - MEASURED_SIDE)).toBeLessThan(1);
+  });
+
+  it("lays the iPhone look's tiles out 12 in, each drawn 4 in from its cell, as the app's grid does", () => {
+    // `PhonePagesView.phoneSideInset`: `PhoneVault.gutter` 16 less
+    // `PhoneTileGlass.cellInset` 4, so the pages area runs 12 to 390 and
+    // its 12 columns, 2 apart, are (378 - 22) / 12 wide.
+    const layout = phonePagesLayout(DEFAULT_PHONE, { look: "iphone" });
+    expect(PHONE_PAGES_SIDE_INSET_IPHONE).toBe(PHONE_VAULT_GUTTER - PHONE_TILE_CELL_INSET);
+    expect(layout.area.x).toBe(12);
+    expect(layout.area.x + layout.area.width).toBe(DEFAULT_PHONE.screen.width - 12);
+    const screen = phonePagesScreen(layout);
+    const placed = watchPreviewLayout(PHONE_A, screen, { sideInset: 0, topInset: PHONE_GRID_TOP_INSET });
+    expect(placed.unit).toBeCloseTo((378 - 22) / 12, 6);
+    // Each 4 by 4 tile is drawn 4 in from its cell all round: the outer
+    // tiles' edges 16 from the screen's, the top row's buttons' line, and
+    // 10 points between two tiles.
+    const text = flat(renderWatchPagePreview({ page: PHONE_A, pages: [PHONE_A], screen, phone: layout, scale: 1 }));
+    const boxes = [...text.matchAll(/style=left:([\d.]+)px;top:([\d.]+)px;width:([\d.]+)px;height:([\d.]+)px;border-radius/g)]
+      .map((m) => ({ left: Number(m[1]), top: Number(m[2]), width: Number(m[3]), height: Number(m[4]) }));
+    expect(boxes).toHaveLength(9);
+    const side = placed.unit * 4 + 2 * 3;
+    for (const [i, box] of boxes.entries()) {
+      expect(box.width).toBeCloseTo(side - 8, 6);
+      expect(box.height).toBeCloseTo(side - 8, 6);
+      expect(box.left).toBeCloseTo((i % 3) * (side + 2) + 4, 6);
+      expect(box.top).toBeCloseTo(PHONE_GRID_TOP_INSET + Math.floor(i / 3) * (side + 2) + 4, 6);
+    }
+    expect(layout.area.x + boxes[0]!.left).toBe(PHONE_VAULT_GUTTER);
+    expect(layout.area.x + boxes[2]!.left + boxes[2]!.width).toBeCloseTo(DEFAULT_PHONE.screen.width - PHONE_VAULT_GUTTER, 6);
+    expect(boxes[1]!.left - (boxes[0]!.left + boxes[0]!.width)).toBeCloseTo(10, 6);
+  });
+
+  it("keeps the pages in a column at most 430 wide, centred, on a wider phone", () => {
+    // `PhonePagesRules.maxPagesColumnWidth`: the 17 Pro Max's 440 points
+    // leave 5 each side of the column.
+    const max = PHONE_MODELS.find((m) => m.label === "iPhone 17 Pro Max")!;
+    const iphone = phonePagesLayout(max, { look: "iphone" });
+    expect(iphone.topRow).toEqual({ x: 21, y: 62, width: 398, height: 44 });
+    expect(iphone.area).toEqual({ x: 17, y: 118, width: 406, height: 758 });
+    expect(phonePagesLayout(max).area).toEqual({ x: 11, y: 118, width: 418, height: 772 });
+    // A phone narrower than that keeps its whole width.
+    expect(phonePagesLayout(DEFAULT_PHONE).area.x).toBe(6);
   });
 
   it("sizes the names, symbols and readings from the phone's tiles", () => {

@@ -26,6 +26,7 @@ import {
   renderWatchTileFace,
   watchPreviewLayout,
   watchPreviewSideInset,
+  watchPreviewTopInset,
   previewScreenLayers,
   watchScreenColor,
 } from "../watch-pages/preview.js";
@@ -122,7 +123,7 @@ function drawPage(input: PageRowPictureInput, width: number, iphone: boolean, lo
     ...(input.icons === undefined ? {} : { icons: input.icons }),
     ...(phone === undefined ? {} : { phone }),
   };
-  const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(preview) });
+  const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(preview), topInset: watchPreviewTopInset(preview) });
   // Only what reaches onto the picture: a long page costs no more than a short one.
   const shown = layout.tiles.filter((t) => (layout.topInset + t.y) * s < height);
   const back = previewScreenLayers(preview, page, s, screen, undefined);

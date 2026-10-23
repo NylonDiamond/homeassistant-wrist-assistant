@@ -176,7 +176,6 @@ import {
   setWatchTileLabel,
   setWatchTileLabelColor,
   setWatchTilePeekSkipAnimation,
-  setWatchTileRainbow,
   setWatchTileShowLabel,
   setWatchTileShowWhenTemplate,
   setWatchTileSingleTap,
@@ -193,7 +192,6 @@ import {
   watchTileTextSettings,
 } from "./tile-settings-model.js";
 import {
-  type WatchColorModeChoice,
   type WatchHTTPSlideRow,
   type WatchMenu,
   type WatchMenuOption,
@@ -1327,18 +1325,19 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
   const colorNow = () => watchTileIconSettings(host.tile).color;
   const write = (value: string, typing = false) =>
     commit(host, "color", (d) => setWatchTileColor(d, host.pageId, host.tileId, value), { typing });
-  const pickMode = (next: WatchColorModeChoice) => {
-    if (next === "rainbow") return commit(host, "color", (d) => setWatchTileRainbow(d, host.pageId, host.tileId));
-    if (next !== "solid" && next !== "gradient") return;
+  const pickMode = (next: "solid" | "gradient") => {
+    // The rainbow is one of the gradients already.
+    if (next === "gradient" && watchColorModeChoice(colorNow()) === "rainbow") return;
     const value = watchColorForMode(colorNow(), next, fallback, watchGradientOf);
     if (value !== undefined) write(value);
   };
   const custom = (value: string | undefined) => {
     const reason = watchColorRefusal(value, hostDevice(host));
     if (reason !== undefined || value === undefined) return commit(host, "color", (d) => d, { reason: reason ?? "Pick a color." });
-    // A custom color keeps the form the tile is in: a gradient tile gets
-    // the gradient of the picked color, as a swatch would give it.
-    write(watchColorModeChoice(colorNow()) === "gradient" ? watchGradientOf(value) : value, true);
+    // A custom color keeps the form the tile is in: a gradient or rainbow
+    // tile gets the gradient of the picked color, as a swatch would give it.
+    const now = watchColorModeChoice(colorNow());
+    write(now === "gradient" || now === "rainbow" ? watchGradientOf(value) : value, true);
   };
   // No color stored draws the theme's color for the kind, which is what
   // Default writes out.
@@ -1358,7 +1357,7 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
       pick: resetColor,
     },
     form: { title: "Color", shown: mode, forms: WATCH_COLOR_MODES.map(([m]) => m), pick: pickMode },
-    ...(mode === "rainbow" ? { note: `The ${hostDeviceNoun(host)} cycles the tile through every color.` } : {}),
+    rainbow: { note: `The ${hostDeviceNoun(host)} cycles the tile through every color.` },
     custom: { shown: typed(host, "color") ?? watchCustomBoxColor(color), pick: custom },
     wrap: (body) => typingField(host, "color", body),
   });
@@ -1873,23 +1872,23 @@ export interface StylingPaletteSource {
 
 /**
  * The edits of a styling palette, each reading the color when it is made.
- * `gradient()` is whether the swatches show their gradient form. Solid or
- * Gradient on a rainbow writes the kind's color in that form, as the tile
- * color does; with no color stored it only turns the swatches.
+ * `gradient()` is whether the swatches show their gradient form, as they do
+ * on a rainbow (the last of them). Solid on a rainbow writes the kind's
+ * color, as the tile color does; Gradient leaves it. With no color stored
+ * either only turns the swatches.
  */
 export function stylingPaletteActions(host: TileSettingsHost, setting: string, source: StylingPaletteSource) {
   const formKey = `${KEY}:form:${host.tileId.toUpperCase()}:${setting}`;
   const gradient = (): boolean => {
     const mode = watchColorModeChoice(source.color());
     const chosen = host.uiState.get(formKey);
-    return mode === "gradient" || ((mode === "none" || mode === "rainbow") && (chosen === "gradient" || (chosen === undefined && watchAddUsesGradient(host.page))));
+    return mode === "gradient" || mode === "rainbow" || (mode === "none" && (chosen === "gradient" || (chosen === undefined && watchAddUsesGradient(host.page))));
   };
   const write = (value: string | null, typing = false) => commit(host, setting, (d) => source.write(d, value), { typing });
-  const pickMode = (next: WatchColorModeChoice): void => {
-    if (next === "rainbow") return write("#RAINBOW");
-    if (next !== "solid" && next !== "gradient") return;
+  const pickMode = (next: "solid" | "gradient"): void => {
     const now = source.color();
     const mode = watchColorModeChoice(now);
+    if (mode === "rainbow" && next === "gradient") return;
     if (mode === "none") {
       host.uiState.set(formKey, next);
       host.requestUpdate();
@@ -1921,7 +1920,9 @@ export interface ColorPickerSource extends StylingPaletteSource {
   defaultValue?: string | null;
   /** Offer Gradient, where the key takes `GRADIENT|…`. */
   gradient?: boolean;
-  /** Offer Rainbow, only where the device draws `#RAINBOW` for the key. */
+  /** Offer the Rainbow swatch, only where the device draws `#RAINBOW` for
+   * the key: the last of the gradients, or after the solid colors where
+   * there is no Gradient. */
   rainbow?: boolean;
   /** Solid swatches other than the page theme's, and what a screen reader
    * calls them. */
@@ -1931,11 +1932,10 @@ export interface ColorPickerSource extends StylingPaletteSource {
 
 /**
  * One color of a card, as every card draws it (`colorPickerView`): Form
- * where the key takes more than one form, then Default and the swatches,
+ * where the key takes Gradient, then Default, the swatches and Rainbow,
  * then Custom. With Gradient offered the swatches follow the page's Solid
  * or Gradient switch until a form is picked (`stylingPaletteActions`).
- * Without it a custom color is written as `#RRGGBB`, and Solid on a rainbow
- * writes Default's color, else the first swatch.
+ * Without it there is no Form, and a custom color is written as `#RRGGBB`.
  */
 export function colorPicker(host: TileSettingsHost, setting: string, o: ColorPickerSource): TemplateResult {
   const color = o.color();
@@ -1946,21 +1946,12 @@ export function colorPicker(host: TileSettingsHost, setting: string, o: ColorPic
   const act = o.gradient === true ? stylingPaletteActions(host, setting, o) : undefined;
   const gradient = act?.gradient() ?? false;
   const swatches = o.swatches ?? watchThemeSwatches(theme, gradient);
-  const pickForm = act?.pickMode ?? ((next: WatchColorModeChoice): void => {
-    if (next === "rainbow") return write("#RAINBOW");
-    if (next !== "solid" || watchColorModeChoice(o.color()) !== "rainbow") return;
-    const back = defaultValue ?? swatches[0];
-    if (back !== undefined) write(back);
-  });
   const custom = act?.custom ?? ((value: string | undefined): void => {
     const reason = watchColorRefusal(value, hostDevice(host));
     if (reason !== undefined || value === undefined) return commit(host, setting, (d) => d, { reason: reason ?? "Pick a color." });
     write(value.toUpperCase(), true);
   });
   const atDefault = color === undefined || (defaultValue !== null && sameWatchColor(color, defaultValue));
-  const forms: ("solid" | "gradient" | "rainbow")[] = ["solid"];
-  if (o.gradient === true) forms.push("gradient");
-  if (o.rainbow === true) forms.push("rainbow");
   return colorPickerView({
     label: o.label,
     color,
@@ -1970,7 +1961,10 @@ export function colorPicker(host: TileSettingsHost, setting: string, o: ColorPic
     ...(o.defaultTitle === undefined
       ? {}
       : { default: { title: o.defaultTitle, on: atDefault, pick: () => { if (!atDefault) write(defaultValue); } } }),
-    form: { shown: mode === "none" ? (gradient ? "gradient" : "solid") : mode, forms, pick: pickForm },
+    ...(act === undefined
+      ? {}
+      : { form: { shown: mode === "none" || mode === "rainbow" ? (gradient ? "gradient" : "solid") : mode, forms: ["solid", "gradient"], pick: act.pickMode } }),
+    ...(o.rainbow === true ? { rainbow: {} } : {}),
     custom: { shown: typed(host, setting) ?? watchCustomBoxColor(color), pick: custom },
     wrap: (body) => typingField(host, setting, body),
   });

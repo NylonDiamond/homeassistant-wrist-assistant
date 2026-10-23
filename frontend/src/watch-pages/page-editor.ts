@@ -280,6 +280,7 @@ import {
   watchPagePreviewScrolls,
   watchPagePreviewStyles,
   watchPreviewTileLabel,
+  previewFramedScreenLayers,
   previewScreenLayers,
   previewTileCornerRadius,
   renderPreviewPageTitle,
@@ -288,7 +289,7 @@ import {
 } from "./preview.js";
 import { PagePhotoStore } from "./page-photo-store.js";
 import { addWatchTile, watchAddRefusal, watchAddThemeOf, watchKindColor } from "./tile-new.js";
-import { renderWatchClock, watchPreviewLayout, watchPreviewSideInset } from "./preview.js";
+import { renderWatchClock, watchPreviewLayout, watchPreviewSideInset, watchPreviewTopInset } from "./preview.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import {
   PHONE_SIZE_TEXT,
@@ -1030,6 +1031,9 @@ export class WaPageEditor extends LitElement {
   /** The grid's side room in points, as last drawn: the watch's side safe
    * area, none on an iPhone. */
   private stageSideInset = WATCH_GRID_SIDE_INSET;
+  /** The grid's room above in points, as last drawn, on a page that is not
+   * full screen: the watch's 34 for its clock, the iPhone's 4. */
+  private stageTopInset = WATCH_GRID_TOP_INSET;
   /** The watch's screen in points, as last drawn, for the pointer arithmetic. */
   private stageScreen = REFERENCE_CASE.screen;
   private scrollFrame?: number;
@@ -2942,7 +2946,7 @@ export class WaPageEditor extends LitElement {
     const page = this.currentPage();
     if (rect.width <= 0 || page === undefined) return undefined;
     const scale = rect.width / this.stageScreen.width;
-    const topInset = page.fullScreen === true ? 0 : WATCH_GRID_TOP_INSET;
+    const topInset = page.fullScreen === true ? 0 : this.stageTopInset;
     return { grid: stageGrid(this.stageScreen.width, topInset, scale, this.stageSideInset), rect };
   }
 
@@ -4254,7 +4258,7 @@ export class WaPageEditor extends LitElement {
     }
     const s = PAGE_THUMB_W / screen.width;
     const input = this.previewInput(page, pages, screen, s);
-    const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(input) });
+    const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
     // Only what reaches onto the screen: a long page costs no more than a short one.
     const shown = layout.tiles.filter((t) => layout.topInset + t.y < screen.height);
     const back = previewScreenLayers(input, page, s, screen, this.photoUrl);
@@ -4606,6 +4610,7 @@ export class WaPageEditor extends LitElement {
     }
     this.stageScreen = screen;
     this.stageSideInset = this.gridSideInset;
+    this.stageTopInset = watchPreviewTopInset(input);
     const scrolls = !smart && (asOnWatch ? watchPagePreviewScrolls(page, screen, phone) : this.editStage(page, input).scrolls);
     const empty = !smart && !asOnWatch && tiles === 0;
     const hint = smart ? undefined
@@ -4906,7 +4911,7 @@ export class WaPageEditor extends LitElement {
     const move = g?.kind === "move" ? g : undefined;
     const resize = g?.kind === "resize" ? g : undefined;
     const shown = resize?.preview?.page ?? page;
-    const topInset = page.fullScreen === true ? 0 : WATCH_GRID_TOP_INSET;
+    const topInset = page.fullScreen === true ? 0 : watchPreviewTopInset(input);
     const grid = stageGrid(screen.width, topInset, s, watchPreviewSideInset(input));
     // A pick of several reaches as deep as its lowest tile moved.
     const reach = move?.cell && move.group !== undefined
@@ -4927,7 +4932,7 @@ export class WaPageEditor extends LitElement {
     const { s, screen, move, resize, shown, grid, rows, gridHeight, height } = this.editStage(page, input);
     // The preview's own layout on the flat grid: the same side safe area and
     // unit as the watch, so each tile sits where `cellRectPx` puts its cells.
-    const layout = watchPreviewLayout(shown, screen, { flat: true, sideInset: watchPreviewSideInset(input) });
+    const layout = watchPreviewLayout(shown, screen, { flat: true, sideInset: watchPreviewSideInset(input), topInset: watchPreviewTopInset(input) });
     const phone = input.phone !== undefined;
     const width = screen.width * s;
     const selected = this.selectedTileId;
@@ -4945,7 +4950,7 @@ export class WaPageEditor extends LitElement {
       : selectedPlaced && !move
         ? cellRectPx(grid, drawnRect(watchTileRect(selectedPlaced.tile)))
         : undefined;
-    const back = previewScreenLayers(input, shown, s, screen, this.photoUrl);
+    const back = previewFramedScreenLayers(input, shown, s, screen, this.photoUrl);
     // The grid's cells show only while a tile is moved or resized.
     return renderPreviewFrame(input, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""}" tabindex="-1" role="group" aria-label=${`Layout of ${watchPageName(page)}`}
       style=${`width:${width}px;height:${height}px;background:${back.background}`}

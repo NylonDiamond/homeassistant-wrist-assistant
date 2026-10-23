@@ -2656,13 +2656,16 @@ export class WristAssistantPanel extends LitElement {
          place that is empty rather than a shape nobody can see. */
       --wa-art-off: #38383a;
       /* An iPhone drawn in its iPhone page look (phone-frame.ts): the
-         app's graphite ground, its ink and the glass of the top row's
-         buttons, light here and dark in the dark skin, as the phone follows
-         its own mode. */
+         app's graphite ground, its ink, the glass of the top row's buttons
+         and the dock, and the dock's dots, light here and dark in the dark
+         skin, as the phone follows its own mode (PhoneVault). */
       --wa-phone-grouped: #f1f2f5;
       --wa-phone-ink: #14161a;
       --wa-phone-glass: rgba(255, 255, 255, 0.74);
       --wa-phone-glass-rim: rgba(20, 22, 26, 0.07);
+      --wa-phone-glass-rim-top: rgba(255, 255, 255, 0.9);
+      --wa-phone-glass-shadow: rgba(28, 34, 48, 0.18);
+      --wa-phone-dock-dot: rgba(20, 22, 26, 0.22);
       /* One color per person in the picker, handed out by their place in the
          household list. Six hues far enough apart to be told apart at the
          size of a tab glyph, each dark enough here to clear 4.5:1 on a white
@@ -2793,6 +2796,9 @@ export class WristAssistantPanel extends LitElement {
       --wa-phone-ink: #f2f4f7;
       --wa-phone-glass: rgba(44, 46, 51, 0.52);
       --wa-phone-glass-rim: rgba(242, 246, 252, 0.08);
+      --wa-phone-glass-rim-top: rgba(242, 246, 252, 0.16);
+      --wa-phone-glass-shadow: rgba(0, 0, 0, 0.32);
+      --wa-phone-dock-dot: rgba(232, 236, 242, 0.38);
       /* The same six hues, lifted for the dark ground. */
       --wa-person-1: #a78bfa;
       --wa-person-2: #5eead4;
