@@ -1,9 +1,10 @@
-// The header row over a device's screens: Home, the shared watch (a menu
-// of watches, one plain name, or the way to pair the first), then the
-// device's doors in Home's order with Settings last, the screen on show
-// marked, then the screen's own save controls. HTTP actions and Cameras get
-// a row of their own. Read from its helpers and by flattening the template
-// it draws.
+// The slim header row over a device's own screens (plan step 7): Home, the
+// device switcher (the watches and the iPhones in one menu, one plain name,
+// or the way to pair the first), then the device's own screens (Settings,
+// Rooms, Voice on a watch), the screen on show marked, then a Pages link to
+// the focused Pages board, then the screen's own save controls. HTTP actions
+// and Cameras get a row of their own. Read from its helpers and by
+// flattening the template it draws.
 
 import { describe, expect, it } from "vitest";
 
@@ -15,16 +16,18 @@ import {
   SHARED_ROW_LABEL,
   WATCH_ROW_NONE_NOTE,
   WATCH_SCREEN_LOOK,
-  WATCH_ROW_PHONES_NOTE,
   type WatchRowInput,
+  deviceRowChoices,
   markRowMore,
   renderWatchRow,
+  rowHasScreen,
   rowScrollFor,
   unsavedNotice,
   unsavedNoticeText,
   unsavedScreens,
   watchRowChoices,
   sharedRowLinks,
+  watchRowBoardPath,
   watchRowLinks,
   watchRowSlot,
   watchChipSub,
@@ -76,12 +79,15 @@ const OWNERS = [
   owner({ owner_watch_id: "library", device_kind: "library" }),
 ];
 
+/** A home whose iPhone shows pages of its own. */
+const WITH_PHONE = OWNERS.map((o) => (o.owner_watch_id === "p1" ? { ...o, phone_pages: true } : o));
+
 const route = (path: string) => ({ prefix: "/wrist-assistant", path });
 
 function row(over: Partial<WatchRowInput> = {}) {
   const calls: string[] = [];
   const input: WatchRowInput = {
-    route: route("/menus/w1"),
+    route: route("/rooms/w1"),
     owners: OWNERS,
     watch: "w1",
     loaded: true,
@@ -129,33 +135,47 @@ describe("the row's watches", () => {
     expect(watchRowSlot(false, 1)).toBe("one");
     expect(watchRowSlot(true, 2)).toBe("many");
   });
+
+  it("lists the watches, then the iPhones that show pages, in one switcher", () => {
+    const both = deviceRowChoices(WITH_PHONE, "p1", true);
+    expect(both.map((c) => [c.id, c.kind, c.on])).toEqual([["w1", "watch", false], ["w2", "watch", false], ["p1", "iphone", true]]);
+    expect(deviceRowChoices(WITH_PHONE, "w1", false).map((c) => c.id)).toEqual(["w1", "w2"]);
+    // An iPhone whose app is too old for pages has no screens of its own.
+    expect(deviceRowChoices(OWNERS, "w1", true).map((c) => c.id)).toEqual(["w1", "w2"]);
+  });
 });
 
 describe("the row's screen links", () => {
-  it("walks a watch's doors in Home's order, each on the shared watch, Complications and Control Center as its board column, the one on show marked", () => {
-    const links = watchRowLinks(route("/status-pages/w1"), "w2");
-    expect(links.map((l) => l.label ?? l.screen.label)).toEqual(["Pages", "Complications", "Menus", "Status pages", "Control Center", "Rooms", "Voice"]);
-    expect(links.map((l) => l.path)).toEqual(["/pages/w2", "/complications/w2", "/menus/w2", "/status-pages/w2", "/complications/w2", "/rooms/w2", "/voice/w2"]);
-    expect(links.map((l) => l.list)).toEqual([undefined, "all", undefined, undefined, "control", undefined, undefined]);
-    expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["status-pages"]);
+  it("lists a watch's own screens, Settings first, each on the shared watch, the one on show marked", () => {
+    const links = watchRowLinks(route("/rooms/w1"), "w2");
+    expect(links.map((l) => l.screen.label)).toEqual(["Settings", "Rooms", "Voice"]);
+    expect(links.map((l) => l.path)).toEqual(["/settings/w2", "/rooms/w2", "/voice/w2"]);
+    expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["rooms"]);
   });
 
-  it("matches Home's doors on an iPhone: widgets and controls as lists, every screen at its iPhone address", () => {
-    const links = watchRowLinks(route("/iphone/menus/p1"), "p1", "iphone");
-    expect(links.map((l) => l.label ?? l.screen.label)).toEqual(["Pages", "Widgets", "Menus", "Status pages", "Control Center", "Rooms"]);
-    expect(links.map((l) => l.path)).toEqual(["/iphone/pages/p1", "/complications/p1", "/iphone/menus/p1", "/iphone/status-pages/p1", "/complications/p1", "/iphone/rooms/p1"]);
-    expect(links.map((l) => l.list)).toEqual([undefined, "all", undefined, undefined, "control", undefined]);
-    expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["menus"]);
+  it("lists an iPhone's own screens at their iPhone addresses, with no Voice", () => {
+    const links = watchRowLinks(route("/iphone/rooms/p1"), "p1", "iphone");
+    expect(links.map((l) => l.screen.label)).toEqual(["Settings", "Rooms"]);
+    expect(links.map((l) => l.path)).toEqual(["/iphone/settings/p1", "/iphone/rooms/p1"]);
+    expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["rooms"]);
   });
 
-  it("marks the Control Center door while an old link has the retired screen on show", () => {
-    expect(watchRowLinks(route("/pages/w1"), "w1").some((l) => l.on && l.list !== undefined)).toBe(false);
-    const links = watchRowLinks(route("/control-center/w1"), "w1");
-    expect(links.filter((l) => l.on).map((l) => l.label)).toEqual(["Control Center"]);
+  it("knows which screens each kind has of its own", () => {
+    const of = (id: string) => ({ id } as Parameters<typeof rowHasScreen>[0]);
+    expect(rowHasScreen(of("voice"), "watch")).toBe(true);
+    expect(rowHasScreen(of("voice"), "iphone")).toBe(false);
+    expect(rowHasScreen(of("rooms"), "iphone")).toBe(true);
+    expect(rowHasScreen(of("settings"), "iphone")).toBe(true);
+    for (const id of ["pages", "menus", "status-pages", "watch-complications", "http-actions"]) expect(rowHasScreen(of(id), "watch"), id).toBe(false);
   });
 
-  it("never puts a Library screen in a device's row: they have a row of their own, with no watch in their addresses", () => {
-    const own = watchRowLinks(route("/pages/w1"), "w1").map((l) => l.screen.id);
+  it("ends on the Pages board focused on the device", () => {
+    expect(watchRowBoardPath("w1")).toBe("/all-pages/w1");
+    expect(watchRowBoardPath(undefined)).toBe("/all-pages");
+  });
+
+  it("never puts a whole-home screen in a device's row: they have a row of their own, with no watch in their addresses", () => {
+    const own = watchRowLinks(route("/rooms/w1"), "w1").map((l) => l.screen.id);
     for (const id of ["http-actions", "cameras"]) expect(own).not.toContain(id);
     const links = sharedRowLinks(route("/cameras"));
     expect(links.map((l) => l.path)).toEqual(["/http-actions", "/cameras"]);
@@ -164,31 +184,32 @@ describe("the row's screen links", () => {
   });
 
   it("leaves the watch out of the address while there is none, and encodes it when there is", () => {
-    expect(watchRowLinks(route("/pages"), undefined).map((l) => l.path)[0]).toBe("/pages");
-    expect(watchRowLinks(route("/pages"), "a/b").map((l) => l.path)[0]).toBe("/pages/a%2Fb");
+    expect(watchRowLinks(route("/rooms"), undefined).map((l) => l.path)[0]).toBe("/settings");
+    expect(watchRowLinks(route("/rooms"), "a/b").map((l) => l.path)[0]).toBe("/settings/a%2Fb");
   });
 });
 
 describe("the row as drawn", () => {
-  it("puts the watch first, then its doors and Settings, Menus marked as on show", () => {
+  it("puts the device first, then its own screens and the Pages link, Rooms marked as on show", () => {
     const { text } = row();
-    expect(text).not.toContain(">HTTP actions</a>");
-    expect(text).not.toContain(">Cameras</a>");
-    const order = [`class="wa-wr-picker"`, ">Pages</a>", ">Complications</a>", ">Menus</a>", ">Status pages</a>", ">Control Center</a>", ">Rooms</a>", ">Voice</a>", ">Settings</a>"];
+    for (const gone of [">HTTP actions</a>", ">Cameras</a>", ">Menus</a>", ">Status pages</a>", ">Complications</a>", ">Control Center</a>"]) expect(text, gone).not.toContain(gone);
+    const order = [`class="wa-wr-picker"`, ">Settings</a>", ">Rooms</a>", ">Voice</a>", `class="wa-wr-link to-board"`];
     const places = order.map((part) => text.indexOf(part));
     for (const [i, at] of places.entries()) expect(at, order[i]).toBeGreaterThan(-1);
     expect([...places].sort((a, b) => a - b)).toEqual(places);
     expect(text.match(/class="wa-wr-link on"/g)).toHaveLength(1);
-    expect(text).toMatch(/class="wa-wr-link on"\s+href=\/wrist-assistant\/menus\/w1 aria-current=page/);
+    expect(text).toMatch(/class="wa-wr-link on"\s+href=\/wrist-assistant\/rooms\/w1 aria-current=page/);
     expect(text).toContain("href=/wrist-assistant/voice/w1");
-    expect(text).toContain("href=/wrist-assistant/complications/w1 aria-current");
+    expect(text).toContain(`class="wa-wr-link to-board" href=/wrist-assistant/all-pages/w1`);
+    expect(text).toContain("title=This watch's pages, on the Pages board");
+    expect(text).toContain("aria-label=This watch's own");
     expect(text).toContain(`<b class="wa-wr-name">Jesse's Watch</b>`);
     expect(text).not.toContain("wa-wr-menu");
   });
 
-  it("opens a menu of the watches with a check on the shown one, their verdicts, and the phones line", () => {
+  it("opens a menu of the watches with a check on the shown one and their verdicts, and no phones line", () => {
     const { text } = row({ menuOpen: true });
-    const menu = text.slice(text.indexOf(`class="wa-wr-menu"`), text.indexOf("</p>", text.indexOf(`class="wa-wr-menu-note"`)));
+    const menu = text.slice(text.indexOf(`class="wa-wr-menu"`));
     expect(menu).toContain(">You are editing</div>");
     expect(menu.match(/class="wa-wr-row /g)).toHaveLength(2);
     expect(menu).toMatch(/class="wa-wr-row on tinted" role="menuitemradio"\s+style=--dc:var\(--wa-person-1\)\s+aria-checked=true data-watch=w1/);
@@ -197,21 +218,31 @@ describe("the row as drawn", () => {
     expect(menu).toContain(`<span class="wa-wr-check" aria-hidden="true">`);
     expect(menu).toContain(`<i class="wa-wr-dot waiting" aria-hidden="true"></i><span class="wa-wr-row-name">Chen's Watch</span>`);
     expect(menu).toContain(`<span class="wa-wr-sync">Waiting</span>`);
-    expect(menu).toContain(WATCH_ROW_PHONES_NOTE);
-    expect(menu).not.toContain("iPhone");
+    expect(menu).not.toContain("wa-wr-menu-sub");
+    expect(menu).not.toContain("wa-wr-menu-note");
+    expect(menu).not.toContain("Phones only get");
   });
 
-  it("sends a pick, a screen, Settings and the menu's toggle to the panel, Settings as a page on the shared watch, Complications as a list door", () => {
+  it("lists the iPhones under the watches in a home with phone pages, each under its own head", () => {
+    const { text, tpl, calls } = row({ owners: WITH_PHONE, phones: true, menuOpen: true });
+    const menu = text.slice(text.indexOf(`class="wa-wr-menu"`));
+    expect(menu).toContain(`aria-label="Devices"`);
+    const order = [">Watches</div>", "data-watch=w1", "data-watch=w2", ">iPhones</div>", "data-watch=p1 data-kind=iphone"].map((p) => menu.indexOf(p));
+    expect(order.every((at) => at > 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // The toggle, then the three devices: an iPhone is a pick like a watch.
+    handlers(tpl, "@click")[3]!(click);
+    expect(calls).toEqual(["menu:false", "pick:p1"]);
+  });
+
+  it("sends a pick, a screen, the Pages link and the menu's toggle to the panel", () => {
     const shut = row();
-    const [toggle, pages, complications, , statusPages, , , , settings] = handlers(shut.tpl, "@click");
+    const [toggle, settings, , voice, board] = handlers(shut.tpl, "@click");
     toggle!(click);
-    pages!(click);
-    statusPages!(click);
-    complications!(click);
     settings!(click);
-    // Complications is a list door now: the board focused on the watch,
-    // through the panel's onList, which this row is not handed.
-    expect(shut.calls).toEqual(["menu:true", "go:/pages/w1", "go:/status-pages/w1", "go:/settings/w1"]);
+    voice!(click);
+    board!(click);
+    expect(shut.calls).toEqual(["menu:true", "go:/settings/w1", "go:/voice/w1", "go:/all-pages/w1"]);
     expect(shut.text).toContain("href=/wrist-assistant/settings/w1");
 
     const open = row({ menuOpen: true });
@@ -228,19 +259,19 @@ describe("the row as drawn", () => {
   it("leaves a press on the screen on show, and a ⌘ click, to stay put or to the browser", () => {
     const { tpl, calls } = row();
     const links = handlers(tpl, "@click");
-    links[3]!(click);
+    links[2]!(click);
     links[1]!({ ...click, metaKey: true });
+    links[4]!({ ...click, metaKey: true });
     expect(calls).toEqual([]);
   });
 
-  it("goes back to Home first, and opens a list door on the Complications tab", () => {
+  it("goes back to Home first", () => {
     const calls: string[] = [];
-    const { tpl, text } = row({ onHome: () => calls.push("home"), onList: (f) => calls.push(`list:${f}`) });
+    const { tpl, text } = row({ onHome: () => calls.push("home") });
     expect(text.indexOf(`class="wa-wr-home"`)).toBeLessThan(text.indexOf(`class="wa-wr-picker"`));
-    const [home, , , , , , control] = handlers(tpl, "@click");
+    const [home] = handlers(tpl, "@click");
     home!(click);
-    control!(click);
-    expect(calls).toEqual(["home", "list:control"]);
+    expect(calls).toEqual(["home"]);
   });
 
   it("gives the chip Home's verdict when the panel has one, so it never says Synced over a waiting screen", () => {
@@ -258,21 +289,24 @@ describe("the row as drawn", () => {
     expect(text).not.toContain(">Settings</a>");
   });
 
-  it("names a lone watch plainly, with no menu", () => {
+  it("names a lone watch plainly, with no menu, and opens a menu once an iPhone with pages joins it", () => {
     const { text } = row({ owners: [OWNERS[0]!, OWNERS[1]!] });
     expect(text).toContain(`<span class="wa-wr-id"><b class="wa-wr-name">Jesse's Watch</b>`);
-    expect(text).toMatch(/<span class="wa-wr-watch" title="The watch you are setting up">/);
+    expect(text).toMatch(/<span class="wa-wr-watch" title=The watch you are setting up>/);
     expect(text).not.toContain("wa-wr-open");
     expect(text).not.toContain("wa-wr-picker");
+    const withPhone = row({ owners: [WITH_PHONE[0]!, WITH_PHONE[1]!], phones: true }).text;
+    expect(withPhone).toContain(`class="wa-wr-picker"`);
+    expect(withPhone).toContain(`title="Pick the device to set up"`);
   });
 
-  it("offers pairing in a home with no watch, with Settings and no screens", () => {
-    const { text, tpl, calls } = row({ owners: [OWNERS[1]!], watch: undefined, route: route("/pages") });
+  it("offers pairing in a home with no watch, with Settings, no other screen and no Pages link", () => {
+    const { text, tpl, calls } = row({ owners: [OWNERS[1]!], watch: undefined, route: route("/rooms") });
     expect(text).toContain(`class="wa-wr-pair"`);
     expect(text).toContain(">Pair a watch</span>");
     expect(text).toContain(WATCH_ROW_NONE_NOTE);
-    expect(text).not.toContain(`<a class="wa-wr-link "`);
-    expect(text).not.toContain(">Pages</a>");
+    expect(text).not.toContain(">Rooms</a>");
+    expect(text).not.toContain("to-board");
     expect(text).toContain(">Settings</a>");
     const [pair, settings] = handlers(tpl, "@click");
     pair!(click);
@@ -280,12 +314,12 @@ describe("the row as drawn", () => {
     expect(calls).toEqual(["go:/settings", "go:/settings"]);
   });
 
-  it("offers pairing in a home with phone pages whose only device is an iPhone, which belongs to the iPhone app", () => {
-    const { text, tpl, calls } = row({ owners: [OWNERS[1]!], watch: undefined, phones: true, route: route("/pages") });
+  it("offers pairing on a watch's screen in a home whose only device is an iPhone", () => {
+    const { text, tpl, calls } = row({ owners: [WITH_PHONE[1]!], watch: undefined, phones: true, route: route("/rooms") });
     expect(text).not.toContain("Jesse's iPhone");
     expect(text).toContain(`class="wa-wr-pair"`);
     expect(text).toContain(WATCH_ROW_NONE_NOTE);
-    expect(text).not.toContain(">Pages</a>");
+    expect(text).not.toContain(">Rooms</a>");
     const [pair] = handlers(tpl, "@click");
     pair!(click);
     expect(calls).toEqual(["go:/settings"]);
@@ -295,17 +329,18 @@ describe("the row as drawn", () => {
     const { text } = row({ owners: [], watch: undefined, loaded: false });
     expect(text).toContain("Loading…");
     expect(text).not.toContain("Pair a watch");
-    expect(text).toContain(">Pages</a>");
+    expect(text).toContain(">Rooms</a>");
+    expect(text).not.toContain("to-board");
   });
 
   it("marks Settings on the Settings page, and leaves a press on it where it is", () => {
     const on = row({ route: route("/settings/w1") });
-    expect(on.text).toMatch(/class="wa-wr-link wa-wr-settings on"\s+href=\/wrist-assistant\/settings\/w1 aria-current=page/);
+    expect(on.text).toMatch(/class="wa-wr-link on"\s+href=\/wrist-assistant\/settings\/w1 aria-current=page/);
     expect(on.text.match(/ on"/g)).toHaveLength(1);
     const links = handlers(on.tpl, "@click");
-    links.at(-1)!(click);
+    links[1]!(click);
     expect(on.calls).toEqual([]);
-    expect(row().text).toMatch(/class="wa-wr-link wa-wr-settings "\s+href=\/wrist-assistant\/settings\/w1 aria-current=false/);
+    expect(row().text).toMatch(/class="wa-wr-link "\s+href=\/wrist-assistant\/settings\/w1 aria-current=false/);
   });
 });
 
@@ -337,10 +372,10 @@ describe("unsaved work across the screens", () => {
   });
 
   it("dots each unsaved screen in the row, named for a screen reader", () => {
-    const { text } = row({ route: route("/pages/w1"), unsaved: unsavedScreens({ menus: true, settings: true }) });
-    expect(text).toMatch(/>Menus<i class="wa-unsaved" role="img" aria-label="unsaved changes"><\/i><\/a>/);
+    const { text } = row({ route: route("/voice/w1"), unsaved: unsavedScreens({ rooms: true, settings: true }) });
+    expect(text).toMatch(/>Rooms<i class="wa-unsaved" role="img" aria-label="unsaved changes"><\/i><\/a>/);
     expect(text).toMatch(/>Settings<i class="wa-unsaved"/);
-    expect(text).toContain(">Pages</a>");
+    expect(text).toContain(">Voice</a>");
   });
 
   it("draws the bar only while another screen is unsaved, each other screen a link there on the shared watch", () => {
@@ -353,15 +388,18 @@ describe("unsaved work across the screens", () => {
   });
 
   it("says what each screen is, and how it is used on the watch, in its tab's hover card, and nothing for a retired one", () => {
-    const { text } = row({ route: route("/pages/w1") });
+    const { text } = row({ route: route("/rooms/w1") });
     expect(text).not.toContain("wa-wr-blurb");
-    expect(text).not.toMatch(/class="wa-wr-link[^>]*title=/);
-    expect(text).toContain("aria-describedby=wa-wr-tip-pages");
-    expect(text).toContain(`id=wa-wr-tip-pages popover="manual" role="tooltip"`);
-    expect(text).toContain("Pages are the screens you swipe between on the watch: tiles for lights, scenes, cameras and more.");
-    expect(text).toContain(SCREEN_HOW_TO.pages.how);
-    expect(text).toContain(SCREEN_HOW_TO.menus.how);
+    // A screen's tab has a hover card, not a title; the Pages link, which
+    // leaves for another tab, has a plain title.
+    expect(text).not.toMatch(/class="wa-wr-link (?!to-board)[^"]*"[^>]*title=/);
+    expect(text).toContain("aria-describedby=wa-wr-tip-rooms");
+    expect(text).toContain(`id=wa-wr-tip-rooms popover="manual" role="tooltip"`);
+    expect(text).toContain(watchScreenSentence(WATCH_SCREENS.find((s) => s.id === "rooms")!));
+    expect(text).toContain(SCREEN_HOW_TO.rooms.how);
+    expect(text).toContain(SCREEN_HOW_TO.voice.how);
     expect(text).toContain("Settings sets how the watch behaves");
+    expect(text).not.toContain("wa-wr-tip-pages");
     expect(text).not.toContain("wa-wr-tip-control-center");
     expect(watchRowLinkTitle(WATCH_SCREENS.find((s) => s.id === "control-center")!)).toBeUndefined();
     expect(watchRowLinkTitle(WATCH_SCREENS[1]!)).toBe(watchScreenSentence(WATCH_SCREENS[1]!));

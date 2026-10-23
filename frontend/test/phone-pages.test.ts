@@ -22,7 +22,7 @@ import { watchMenusSaveNote } from "../src/watch-menus/save-note.js";
 import { NOT_FOR_IPHONE_TEXT, watchCommandError, watchPagesSaveNote } from "../src/watch-pages/save-note.js";
 import { roomsKindFor, roomsSaveNote } from "../src/watch-rooms/model.js";
 import "../src/watch-rooms/rooms-editor.js";
-import { IPHONE_ROW_NONE_NOTE, WATCH_ROW_IPHONE_TAB_NOTE, WATCH_ROW_PHONES_NOTE, type WatchRowInput, renderWatchRow, watchRowChoices, watchRowLinks } from "../src/watch-row.js";
+import { IPHONE_ROW_NONE_NOTE, type WatchRowInput, renderWatchRow, watchRowChoices, watchRowLinks } from "../src/watch-row.js";
 import { WATCH_SETTINGS_CATALOG, catalogFor, settingsTitle, watchAppDevices } from "../src/watch-settings.js";
 import { statusPagesSaveNote } from "../src/watch-status-pages/save-note.js";
 import "../src/watch-status-pages/status-pages-editor.js";
@@ -194,32 +194,36 @@ describe("the iPhone app's row", () => {
     expect(watchRowChoices(PHONES, "w1").map((c) => c.id)).toEqual(["w1", "w2"]);
   });
 
-  it("names the picked iPhone, offers the others, and says nothing of watches", () => {
+  it("names the picked iPhone, and offers the other iPhones under the watches in one switcher", () => {
     const text = row({ menuOpen: true });
-    expect(text).toContain(`aria-label=iPhone app`);
+    expect(text).toContain(`aria-label=This iPhone's own`);
     expect(text).toContain(`<b class="wa-wr-name">Jesse's iPhone</b>`);
-    expect(text).toContain("aria-label=iPhone: Jesse's iPhone. Pick another");
-    expect(text).toContain("title=Pick the iPhone to set up");
+    expect(text).toContain("aria-label=iPhone: Jesse's iPhone. Pick another device");
+    expect(text).toContain(`title="Pick the device to set up"`);
     expect(text).toContain("How the iPhone app behaves");
     const menu = text.slice(text.indexOf(`class="wa-wr-menu"`));
-    expect(menu).toContain("aria-label=iPhones");
+    expect(menu).toContain(`aria-label="Devices"`);
     expect(menu).toMatch(/data-watch=p2 data-kind=iphone/);
-    expect(menu).not.toContain("data-watch=w1");
+    expect(menu).toMatch(/data-watch=w1 data-kind=watch/);
+    expect(menu.indexOf(">Watches</div>")).toBeLessThan(menu.indexOf(">iPhones</div>"));
     expect(menu).not.toContain("wa-wr-menu-note");
   });
 
-  it("walks Home's iPhone doors, then Settings, each screen at its iPhone app address", () => {
-    const links = watchRowLinks(route, "p1", "iphone");
-    expect(links.map((l) => l.path)).toEqual(["/iphone/pages/p1", "/complications/p1", "/iphone/menus/p1", "/iphone/status-pages/p1", "/complications/p1", "/iphone/rooms/p1"]);
-    expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["menus"]);
-    const text = row();
-    for (const gone of [">Voice</a>", ">HTTP actions</a>", ">Cameras</a>"]) expect(text, gone).not.toContain(gone);
-    const order = [">Pages</a>", ">Widgets</a>", ">Menus</a>", ">Status pages</a>", ">Control Center</a>", ">Rooms</a>", ">Settings</a>"].map((part) => text.indexOf(part));
+  it("lists an iPhone's own screens, Settings first, at their iPhone app addresses, then the Pages link", () => {
+    const at = { prefix: "/wrist-assistant", path: "/iphone/rooms/p1" };
+    const links = watchRowLinks(at, "p1", "iphone");
+    expect(links.map((l) => l.path)).toEqual(["/iphone/settings/p1", "/iphone/rooms/p1"]);
+    expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["rooms"]);
+    const text = row({ route: at });
+    for (const gone of [">Voice</a>", ">HTTP actions</a>", ">Cameras</a>", ">Widgets</a>", ">Menus</a>"]) expect(text, gone).not.toContain(gone);
+    const order = [">Settings</a>", ">Rooms</a>", `class="wa-wr-link to-board"`].map((part) => text.indexOf(part));
     expect(order.every((at) => at > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(text).toContain("href=/wrist-assistant/iphone/settings/p1");
+    expect(text).toContain("href=/wrist-assistant/all-pages/p1");
+    expect(text).toContain("title=This iPhone's pages, on the Pages board");
     expect(row({ route: { prefix: "/wrist-assistant", path: "/iphone/settings/p1" } }))
-      .toMatch(/class="wa-wr-link wa-wr-settings on"\s+href=\/wrist-assistant\/iphone\/settings\/p1 aria-current=page/);
+      .toMatch(/class="wa-wr-link on"\s+href=\/wrist-assistant\/iphone\/settings\/p1 aria-current=page/);
   });
 
   it("offers Pair an iPhone and nothing else in a home with no iPhone", () => {
@@ -259,25 +263,25 @@ describe("the Watch app's row on a home with phone pages", () => {
     ...over,
   });
 
-  it("lists the watches alone, and says the iPhones are in their own tab", () => {
+  it("lists the watches, then the iPhones, in one switcher", () => {
     const text = flat(renderWatchRow(input()));
-    expect(text).not.toContain("data-watch=p1");
-    expect(text).not.toContain("data-kind=iphone");
-    expect(text).toContain(WATCH_ROW_IPHONE_TAB_NOTE);
-    expect(text).not.toContain(WATCH_ROW_PHONES_NOTE);
-    expect(text).toContain("title=Pick the watch to set up");
+    expect(text).toMatch(/data-watch=p1 data-kind=iphone/);
+    expect(text.indexOf("data-watch=w1")).toBeLessThan(text.indexOf("data-watch=p1"));
+    expect(text).not.toContain("wa-wr-menu-note");
+    expect(text).toContain(`title="Pick the device to set up"`);
   });
 
-  it("keeps every watch door on the watch", () => {
-    expect(watchRowLinks({ prefix: "/wrist-assistant", path: "/control-center/w1" }, "w1").map((l) => l.path))
-      .toEqual(["/pages/w1", "/complications/w1", "/menus/w1", "/status-pages/w1", "/complications/w1", "/rooms/w1", "/voice/w1"]);
+  it("keeps a watch's own screens on the watch", () => {
+    expect(watchRowLinks({ prefix: "/wrist-assistant", path: "/rooms/w1" }, "w1").map((l) => l.path))
+      .toEqual(["/settings/w1", "/rooms/w1", "/voice/w1"]);
   });
 
   it("offers Pair a watch in a home with an iPhone and no watch, with no iPhone in the slot", () => {
     const text = flat(renderWatchRow(input({ owners: [OWNERS[0]!], watch: undefined, menuOpen: false })));
     expect(text).toContain(">Pair a watch</span>");
     expect(text).not.toContain("Jesse's iPhone");
-    expect(text).not.toContain(">Pages</a>");
+    expect(text).not.toContain(">Rooms</a>");
+    expect(text).not.toContain("to-board");
   });
 });
 

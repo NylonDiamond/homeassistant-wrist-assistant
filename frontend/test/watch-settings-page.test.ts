@@ -76,8 +76,8 @@ describe("the Settings page's address", () => {
     expect(landingPath(at("/settings/w1"), { shareLink: false })).toBeUndefined();
   });
 
-  it("is the row's last link, apart from the six, on the shared watch, marked on its page", () => {
-    expect(watchRowLinks(at("/settings/w1"), "w1").some((l) => l.on)).toBe(false);
+  it("is the row's first link, on the shared watch, marked on its page", () => {
+    expect(watchRowLinks(at("/settings/w1"), "w1").filter((l) => l.on).map((l) => l.screen)).toEqual([WATCH_SETTINGS_SCREEN]);
     expect(watchRowSettingsLink(at("/settings/w1"), "w1")).toEqual({ screen: WATCH_SETTINGS_SCREEN, path: "/settings/w1", on: true });
     expect(watchRowSettingsLink(at("/pages/w1"), "w1").on).toBe(false);
     expect(watchRowSettingsLink(at("/pages"), undefined).path).toBe("/settings");

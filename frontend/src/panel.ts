@@ -460,7 +460,7 @@ import {
   barTabOf, libraryItemPath, libraryRouteOf, panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath, watchScreenSentence,
 } from "./shell.js";
 import { adoptRouteWatch, iphoneRouteOwner, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
-import { WATCH_SCREEN_LOOK, type WatchScreenId, markRowMore, renderWatchRow, showRowLink, unsavedScreens, watchRowStyles } from "./watch-row.js";
+import { WATCH_SCREEN_LOOK, type WatchScreenId, markRowMore, renderWatchRow, rowHasScreen, showRowLink, unsavedScreens, watchRowStyles } from "./watch-row.js";
 import { headBarStyles } from "./head-bar.js";
 import { isWatchSettingsRoute, settingsPageSavesOnKey } from "./watch-settings-page.js";
 import { type WatchHttpLibrary, readWatchHttpLibrary, watchHttpLibraryReadMeansNone } from "./watch-pages/http-library.js";
@@ -11157,6 +11157,29 @@ export class WristAssistantPanel extends LitElement {
     if (screen !== undefined && iphoneRouteOwner(this.route) !== phoneId) this.goTo(iphoneScreenPath(screen, phoneId), true);
   }
 
+  /**
+   * A device picked in the row's switcher, which lists the watches and the
+   * iPhones together (plan step 7). A device of the same kind is
+   * `pickWatch` or `pickPhone`. A device of the other kind opens the same
+   * screen on it where it has one (an iPhone has no Voice), else its
+   * Settings, rewritten in place like a pick.
+   */
+  private pickRowDevice(deviceId: string) {
+    const iphone = isPhoneId(this.owners, deviceId);
+    const onWatch = watchScreenOf(this.route);
+    const shown = onWatch ?? iphoneScreenOf(this.route);
+    if (shown === undefined || iphone === (onWatch === undefined)) {
+      if (iphone) this.pickPhone(deviceId);
+      else this.pickWatch(deviceId);
+      return;
+    }
+    this.toggleWatchRowMenu(false);
+    const kind = iphone ? "iphone" : "watch";
+    if (iphone) this.rememberPhone(deviceId);
+    else this.rememberWatch(deviceId);
+    this.goTo(deviceScreenPath(kind, rowHasScreen(shown, kind) ? shown : WATCH_SETTINGS_SCREEN, deviceId), true);
+  }
+
   private toggleWatchRowMenu(open: boolean) {
     if (open === this.watchRowMenu) return;
     this.watchRowMenu = open;
@@ -11197,11 +11220,10 @@ export class WristAssistantPanel extends LitElement {
       loaded: this.linkReady || this.owners.length > 0,
       menuOpen: this.watchRowMenu,
       onMenu: (open) => this.toggleWatchRowMenu(open),
-      onPick: (watchId) => this.pickWatch(watchId),
+      onPick: (deviceId) => this.pickRowDevice(deviceId),
       onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
       syncs: this.rowSyncs(),
       onHome: () => this.backToHome(watchScreenOf(this.route)?.shared === true ? undefined : this.sharedWatch),
-      onList: (filter) => { if (this.sharedWatch !== undefined) this.openDeviceList(this.sharedWatch, filter); },
       unsaved: this.unsavedNow,
       people: this.people(),
       end: html`${settings}${this.watchBarHost}`,
@@ -11220,15 +11242,15 @@ export class WristAssistantPanel extends LitElement {
       owners: this.owners,
       watch: this.sharedPhone,
       iphone: true,
+      phones: this.phonePages,
       loaded: this.linkReady || this.owners.length > 0,
       menuOpen: this.watchRowMenu,
       onMenu: (open) => this.toggleWatchRowMenu(open),
-      onPick: (phoneId) => this.pickPhone(phoneId),
+      onPick: (deviceId) => this.pickRowDevice(deviceId),
       onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
       onPair: () => this.openPairDialog(),
       syncs: this.rowSyncs(),
       onHome: () => this.backToHome(this.sharedPhone),
-      onList: (filter) => { if (this.sharedPhone !== undefined) this.openDeviceList(this.sharedPhone, filter); },
       people: this.people(),
       end: html`${settings}${this.watchBarHost}`,
     })}${view}${this.pairOpen ? this.renderPairDialog() : nothing}`;

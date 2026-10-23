@@ -127,9 +127,18 @@ describe("the watch screens under the row", () => {
     const row = method("  private withIphoneRow(");
     expect(row).toContain("watch: this.sharedPhone,");
     expect(row).toContain("iphone: true,");
-    expect(row).toContain("onPick: (phoneId) => this.pickPhone(phoneId),");
+    expect(row).toContain("onPick: (deviceId) => this.pickRowDevice(deviceId),");
     expect(row).toContain("onPair: () => this.openPairDialog(),");
     expect(row).toContain("${this.pairOpen ? this.renderPairDialog() : nothing}");
+  });
+
+  it("moves a pick of the other kind to the same screen on it, else its Settings, in place", () => {
+    const pick = method("  private pickRowDevice(");
+    expect(pick).toContain("if (iphone) this.pickPhone(deviceId);");
+    expect(pick).toContain("else this.pickWatch(deviceId);");
+    expect(pick).toContain("this.goTo(deviceScreenPath(kind, rowHasScreen(shown, kind) ? shown : WATCH_SETTINGS_SCREEN, deviceId), true);");
+    expect(method("  private withWatchRow(")).not.toContain("onList");
+    expect(method("  private withIphoneRow(")).toContain("phones: this.phonePages,");
   });
 
   it("waits for the device list on the iPhone app, then says how to pair an iPhone in a home with none", () => {
@@ -204,7 +213,7 @@ describe("the watch screens under the row", () => {
     expect(row).not.toContain("onSettings");
     expect(row).not.toContain("settingsOpen");
     expect(row).toContain("onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },");
-    expect(row).toContain("onPick: (watchId) => this.pickWatch(watchId),");
+    expect(row).toContain("onPick: (deviceId) => this.pickRowDevice(deviceId),");
     expect(row).toContain("watch: this.sharedWatch,");
     expect(row).not.toContain("admin");
   });
