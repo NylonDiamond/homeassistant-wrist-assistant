@@ -96,6 +96,10 @@ export interface HeadStatusInput {
   /** The device on the screen; a watch when absent. An iPhone's ready
    * screen says "New iPhone". */
   device?: SettingDevice;
+  /** In place of the new device's words, when only part of the screen is
+   * new (a watch whose settings are saved but whose notification style is
+   * not): `status` beside Save, `title` its tooltip. */
+  newWords?: { status: string; title: string };
 }
 
 /**
@@ -106,11 +110,12 @@ export interface HeadStatusInput {
 export function renderHeadStatus(input: HeadStatusInput): TemplateResult | typeof nothing {
   if (input.newWatch) {
     const device = input.device ?? "watch";
-    const text = newDeviceText(device);
+    const text = input.newWords?.title ?? newDeviceText(device);
     const title = input.dirty ? text : `${text} ${NOTHING_TO_SAVE_TEXT}`;
+    const status = input.newWords?.status ?? (device === "iphone" ? NEW_IPHONE_STATUS : NEW_WATCH_STATUS);
     // A phone's bar is narrow: there the line is the short one, so it keeps
     // to one line beside its dot. The tooltip says the whole of it.
-    return html`<span class="tb-status new" role="status" title=${title}><i class="tb-status-dot" aria-hidden="true"></i><span class="tb-long">${device === "iphone" ? NEW_IPHONE_STATUS : NEW_WATCH_STATUS}</span><span class="tb-short" aria-hidden="true">${NEW_WATCH_SHORT}</span></span>`;
+    return html`<span class="tb-status new" role="status" title=${title}><i class="tb-status-dot" aria-hidden="true"></i><span class="tb-long">${status}</span><span class="tb-short" aria-hidden="true">${NEW_WATCH_SHORT}</span></span>`;
   }
   if (input.dirty) {
     const n = input.changes;

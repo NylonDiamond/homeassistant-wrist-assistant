@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { NEW_WATCH_STATUS, headBarStyles, renderHeadStatus } from "../src/head-bar.js";
-import { NEW_WATCH_TEXT, NOTHING_TO_SAVE_TEXT } from "../src/watch-settings.js";
+import { NEW_WATCH_TEXT, NOTHING_TO_SAVE_TEXT, STYLE_NOT_SAVED_STATUS, styleNotSavedText } from "../src/watch-settings.js";
 
 const flat = (v: unknown): string => {
   if (Array.isArray(v)) return v.map(flat).join("");
@@ -27,6 +27,17 @@ describe("the words beside Save", () => {
     expect(clean).toContain(`title=${NEW_WATCH_TEXT} ${NOTHING_TO_SAVE_TEXT}`);
     expect(flat(renderHeadStatus({ newWatch: true, dirty: true }))).toContain(`title=${NEW_WATCH_TEXT}>`);
     expect(NEW_WATCH_STATUS).toBe("New watch, not saved yet");
+  });
+
+  it("names only the notification style when the settings are saved and the style is not", () => {
+    const newWords = { status: STYLE_NOT_SAVED_STATUS, title: styleNotSavedText("watch") };
+    const clean = flat(renderHeadStatus({ newWatch: true, dirty: false, newWords }));
+    expect(clean).toContain(`>${STYLE_NOT_SAVED_STATUS}</span>`);
+    expect(clean).not.toContain(NEW_WATCH_STATUS);
+    expect(clean).toContain(`title=${styleNotSavedText("watch")} ${NOTHING_TO_SAVE_TEXT}`);
+    expect(STYLE_NOT_SAVED_STATUS).toBe("Notification style not saved yet");
+    const view = readFileSync(new URL("../src/watch-settings-view.ts", import.meta.url), "utf8");
+    expect(view).toMatch(/this\.isNew && !this\.behaviorIsNew && this\.styleIsNew/);
   });
 
   it("counts the changes where the screen does, and says Unsaved changes where it does not", () => {

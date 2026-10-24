@@ -15,7 +15,7 @@ import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js
 import { WatchSettings } from "../src/watch-settings-view.js";
 import { dropWatchSettingsDrafts } from "../src/watch-settings-draft.js";
 import { SETTINGS_GROUPS } from "../src/watch-settings-nav.js";
-import { type CatalogSetting, NEW_WATCH_TEXT, SETTINGS_PAIR_FIRST_TEXT, catalogSettings, watchBehaviorDefaults } from "../src/watch-settings.js";
+import { type CatalogSetting, NEW_WATCH_TEXT, SETTINGS_PAIR_FIRST_TEXT, catalogSettings, styleNotSavedText, watchBehaviorDefaults } from "../src/watch-settings.js";
 import {
   NOTIFICATION_STYLE_SECTIONS,
   STYLE_NO_RECORD_TITLE,
@@ -363,7 +363,10 @@ describe("Watch settings with the notification style", () => {
     expect(before).not.toContain("ns-start");
     expect(before).toContain("data-sec=ws-notifications");
     expect(before).toContain("data-sec=ws-sounds");
-    expect(before).toContain(NEW_WATCH_TEXT);
+    // The settings are saved, so the note names the style alone, not a new watch.
+    // (Read up to the apostrophe, which the flattened template may escape.)
+    expect(before).toContain(styleNotSavedText("watch").split("'")[0]);
+    expect(before).not.toContain(NEW_WATCH_TEXT);
     // Nothing is stored, nothing is unsaved, and Save is greyed out.
     expect(ha.saves()).toHaveLength(0);
     expect(inside.styleEdits.size).toBe(0);

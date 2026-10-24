@@ -707,6 +707,16 @@ export function newDeviceText(device: SettingDevice): string {
   return `New ${noun}. The ${noun} keeps what it has until you save here. Your first Save replaces it.`;
 }
 
+/** The header's word when the settings are saved but the notification style
+ * is not: the device is not new, only that one record is. */
+export const STYLE_NOT_SAVED_STATUS = "Notification style not saved yet";
+
+/** `newDeviceText` for that case, the header's tooltip and the page's note. */
+export function styleNotSavedText(device: SettingDevice): string {
+  const noun = deviceNoun(device);
+  return `Home Assistant does not hold this ${noun}'s notification style yet. Its cards show the defaults until you save here. Your first Save replaces the ${noun}'s own style.`;
+}
+
 /** Beside a greyed-out Save on a new watch's screen before any change. */
 export const NOTHING_TO_SAVE_TEXT = "Nothing to save yet. Make a change first.";
 

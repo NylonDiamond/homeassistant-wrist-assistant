@@ -91,6 +91,8 @@ import {
   COLLECTED_PILL_TEXT,
   newDeviceText,
   NOTHING_TO_SAVE_TEXT,
+  STYLE_NOT_SAVED_STATUS,
+  styleNotSavedText,
   SETTINGS_PAIR_FIRST_TEXT,
   SETTINGS_MAIN_HOUSE_TEXT,
   SETTINGS_UNREADABLE_TEXT,
@@ -998,7 +1000,7 @@ export class WatchSettings implements ReactiveController {
     return html`<div class="ws-page">
       <div class="ws-top">
         ${options.inHead === true ? nothing : this.renderBar(name, options.narrow === true, elsewhere)}
-        ${!one && this.isNew && options.inHead !== true ? html`<div class="ws-new" role="note">${uiIcon("info")}<span>${newDeviceText(this.device)}</span></div>` : nothing}
+        ${!one && this.isNew && options.inHead !== true ? html`<div class="ws-new" role="note">${uiIcon("info")}<span>${this.onlyStyleIsNew ? styleNotSavedText(this.device) : newDeviceText(this.device)}</span></div>` : nothing}
         ${this.note ? html`<div class="banner ${this.note.kind} ws-note" role="alert"><span>${this.note.text}</span>
           <button class="link" @click=${() => { this.note = undefined; this.changed(); }}>Dismiss</button></div>` : nothing}
       </div>
@@ -1615,6 +1617,12 @@ export class WatchSettings implements ReactiveController {
     return this.ownerId !== undefined && !this.loading && (this.behaviorIsNew || this.styleIsNew);
   }
 
+  /** The settings are saved and only the notification style is not: the
+   * device is not new, so the words name the style alone. */
+  private get onlyStyleIsNew(): boolean {
+    return this.isNew && !this.behaviorIsNew && this.styleIsNew;
+  }
+
   /** Whether Save can run (`settingsCanSave`). */
   private get canSave(): boolean {
     return settingsCanSave({
@@ -1655,7 +1663,13 @@ export class WatchSettings implements ReactiveController {
     const canSave = this.canSave;
     const words = inHead
       ? html`${this.ownerId === undefined || (elsewhere && changes === 0) ? nothing
-          : renderHeadStatus({ newWatch: this.isNew, dirty: changes > 0, changes, device: this.device })}
+          : renderHeadStatus({
+            newWatch: this.isNew,
+            dirty: changes > 0,
+            changes,
+            device: this.device,
+            newWords: this.onlyStyleIsNew ? { status: STYLE_NOT_SAVED_STATUS, title: styleNotSavedText(this.device) } : undefined,
+          })}
         ${changes === 0 && !elsewhere && !this.isNew ? this.renderDelivery() : nothing}`
       : changes > 0
         ? html`<span class="xf-sub ws-changes">${changes} unsaved ${changes === 1 ? "change" : "changes"}</span>`
