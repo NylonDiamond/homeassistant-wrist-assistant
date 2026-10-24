@@ -1175,6 +1175,104 @@ def test_a_phone_s_own_put_of_a_watch_only_kind_is_a_signed_400(env) -> None:
     assert voice.status == 200
 
 
+# ── the watch's seed ─────────────────────────────────────────────────────
+
+
+def _seed_body(kind: str = "notification_style", **kwargs: Any) -> dict:
+    doc = {"serverMode": "Remote", "schemaVersion": 1} if kind == "behavior" else _batch_2("notification_style")
+    body = _put_body(doc, kind=kind, **kwargs)
+    body["seed"] = True
+    return body
+
+
+@pytest.mark.parametrize("kind", ["behavior", "notification_style"])
+def test_a_watch_seeds_a_kind_home_assistant_holds_no_record_of(env, kind) -> None:
+    """The watch's own copy becomes the first record, its hash as sent, and
+    the subscribers (the panel's open Settings tab) hear the new revision."""
+    heard: list[Any] = []
+    env.store.async_add_listener(heard.append)
+    body = _seed_body(kind)
+    reply = _put(env, body)
+    assert reply.status == 200
+    assert reply.body == {"ok": True, "revision": 1}
+    record = env.store.get(WATCH, kind)
+    assert record.document == body["document"]
+    assert record.hash == HASH_1
+    assert record.updated_by == WATCH
+    # The watch that wrote it holds it, so the panel shows it collected.
+    assert record.delivered_revision == 1
+    assert [(c.owner_watch_id, c.kind, c.revision) for c in heard] == [(WATCH, kind, 1)]
+    got = _get(env, {"kind": kind})
+    assert got.body["document"] == body["document"]
+
+
+def test_a_seed_over_a_stored_record_is_the_usual_conflict(env) -> None:
+    """Someone made the first record since the watch's get: the seed loses,
+    and what is stored stays as it was."""
+    first = _put(env, _put_body(_batch_2("notification_style", "Panel"), kind="notification_style", digest=HASH_2))
+    assert first.body == {"ok": True, "revision": 1}
+    reply = _put(env, _seed_body())
+    assert reply.status == 409
+    assert reply.body == {"ok": False, "error": "conflict", "revision": 1, "hash": HASH_2}
+    assert env.store.get(WATCH, "notification_style").document["buttonFill"] == "Panel"
+
+
+def test_a_seed_is_refused_while_the_iphone_may_still_move_the_setup(env) -> None:
+    """The phone's one-time move sends a kind only while Home Assistant holds
+    none; a seed first would leave the phone's setup behind for good."""
+    env.store = env.mod.WatchConfigStore(_Hass(), may_await_move=lambda owner: owner == WATCH)
+    asyncio.run(env.store.async_load())
+    reply = _put(env, _seed_body())
+    assert reply.status == 400
+    assert reply.body["ok"] is False
+    assert reply.body["error"] == "awaiting_move"
+    assert env.store.get(WATCH, "notification_style") is None
+    # The move itself, a plain put signed as the watch, still lands.
+    move = _put(env, _put_body(_batch_2("notification_style"), kind="notification_style"))
+    assert move.body == {"ok": True, "revision": 1}
+
+
+@pytest.mark.parametrize(
+    ("change", "word"),
+    [
+        ({"kind": "pages", "document": _doc()}, "does not seed"),
+        ({"base_revision": 1}, "first record"),
+        ({"force": True}, "first record"),
+    ],
+)
+def test_a_seed_that_is_not_a_first_record_of_a_seed_kind_is_a_signed_400(env, change, word) -> None:
+    body = {**_seed_body(), **change}
+    reply = _put(env, body)
+    assert reply.status == 400
+    assert reply.body["error"] == "invalid"
+    assert word in reply.body["message"]
+    assert env.store.get(WATCH, body["kind"]) is None
+
+
+def test_an_iphone_never_seeds(env) -> None:
+    env.store = env.mod.WatchConfigStore(_Hass(), is_iphone=lambda owner: owner == PHONE)
+    asyncio.run(env.store.async_load())
+    reply = _put(env, _seed_body("behavior"), watch_id=PHONE)
+    assert reply.status == 400
+    assert env.store.get(PHONE, "behavior") is None
+
+
+def test_only_seed_true_is_a_seed(env) -> None:
+    """Any other value is a plain put, as from an app that never seeds."""
+    env.store = env.mod.WatchConfigStore(_Hass(), may_await_move=lambda owner: owner == WATCH)
+    asyncio.run(env.store.async_load())
+    body = {**_seed_body(), "seed": "yes"}
+    assert _put(env, body).body == {"ok": True, "revision": 1}
+
+
+def test_the_seed_capability_is_advertised() -> None:
+    """The watch seeds only when it sees this."""
+    init = (_PKG_DIR / "__init__.py").read_text()
+    const = (_PKG_DIR / "const.py").read_text()
+    assert "register_capability(WATCH_CONFIG_SEED_CAPABILITY)" in init
+    assert 'WATCH_CONFIG_SEED_CAPABILITY = "watch_config_seed"' in const
+
+
 # ── static: dispatch and capability ──────────────────────────────────────
 
 

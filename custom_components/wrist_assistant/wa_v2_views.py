@@ -4105,10 +4105,13 @@ async def _op_complications_move_status(ctx: _OpContext) -> Response:
 #
 # Three parties: the iPhone mirror writes a record with the put op, the panel
 # writes one over the WebSocket (``watch_config_ws.py``), and the watch reads
-# its own with the get op. The watch writes one thing back with the put op:
+# its own with the get op. The watch writes two things back with the put op:
 # its ``behavior`` record when the Connect via choice changes on the watch,
-# patching only ``serverMode``. It also sends its list of installed voices
-# (watch_voices_put, below), which the panel's voice picker reads.
+# patching only ``serverMode``, and a seed (``seed: true``): its own watch
+# settings or notification style, sent once when Home Assistant holds no
+# record of that kind, so the panel shows what the watch really uses. It also
+# sends its list of installed voices (watch_voices_put, below), which the
+# panel's voice picker reads.
 
 
 def _watch_config_refusal(ctx: _OpContext, err: WatchConfigStoreError) -> Response:
@@ -4360,20 +4363,27 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
 async def _op_watch_config_put(ctx: _OpContext) -> Response:
     """Save the caller's watch config of one kind, compare-and-swap.
 
-    The iPhone mirror's write, and the watch's own ``behavior`` write when
-    Connect via changes on the watch. The panel writes over the WebSocket
-    instead.
+    The iPhone mirror's write, the watch's own ``behavior`` write when
+    Connect via changes on the watch, and the watch's seed. The panel writes
+    over the WebSocket instead.
 
     Body:  {"kind": "pages" | "behavior" | "catalog" | "menus" | "voice"
                     | "notification_style" | "status_pages"
                     | "control_center" | "rooms",
             "base_revision": <int>, "hash": <sha256 hex>, "document": {...},
-            "force": <bool>?}
+            "force": <bool>?, "seed": true?}
     Reply: {"ok": true, "revision": <int>}
     Refusal: signed 409 {"ok": false, "error": "conflict", "revision", "hash"}
              when ``base_revision`` is not the stored revision (0 for no
              record) and ``force`` is not true; signed 400 for a malformed
              request; signed 503 when the stored file could not be read.
+
+    ``seed: true`` (capability ``watch_config_seed``) is a watch sending its
+    own copy of ``behavior`` or ``notification_style`` once, when its get
+    answered no record: it makes the first record and nothing else (base 0,
+    no force), meets the usual 409 when someone made one first, and is a
+    signed 400 ``awaiting_move`` while the watch's iPhone may still move its
+    own setup here. Only ``true`` counts; any other value is no seed.
 
     ``hash`` is the client's own SHA-256 of the document, kept as given and
     handed back by get; the server never recomputes it (see
@@ -4393,6 +4403,7 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
             document_hash=ctx.payload.get("hash"),
             base_revision=ctx.payload.get("base_revision"),
             force=ctx.payload.get("force", False),
+            seed=ctx.payload.get("seed") is True,
             updated_by=ctx.watch_id,
         )
     except WatchConfigStoreError as err:

@@ -99,6 +99,9 @@ PANEL_KINDS = frozenset(
 # The kinds an iPhone may own (phone pages). Kept equal to const.py by
 # test_the_kinds_match_const below.
 PHONE_KINDS = frozenset({"pages", "status_pages", "menus", "rooms", "behavior"})
+# The kinds a watch may seed (its own copy, once, when none is stored). Kept
+# equal to const.py by test_the_kinds_match_const below.
+SEED_KINDS = frozenset({"behavior", "notification_style"})
 # The phone's settings and the keys the app needs to decode a behavior
 # document, read out of const.py; test_phone_behavior_keys.py holds them to
 # the panel's catalog.
@@ -191,6 +194,7 @@ def _loaded_module():
             WATCH_CONFIG_PANEL_KINDS=PANEL_KINDS,
             WATCH_CONFIG_PANEL_WRITER="panel",
             WATCH_CONFIG_PHONE_KINDS=PHONE_KINDS,
+            WATCH_CONFIG_SEED_KINDS=SEED_KINDS,
             PHONE_BEHAVIOR_KEYS=PHONE_BEHAVIOR_KEYS,
             PHONE_BEHAVIOR_DECODE_KEYS=PHONE_BEHAVIOR_DECODE_KEYS,
             WATCH_CONFIG_MAX_DOCUMENT_BYTES={
@@ -810,7 +814,12 @@ def test_the_kinds_match_const() -> None:
             and len(node.targets) == 1
             and isinstance(node.targets[0], ast.Name)
             and node.targets[0].id
-            in ("WATCH_CONFIG_KINDS", "WATCH_CONFIG_PANEL_KINDS", "WATCH_CONFIG_PHONE_KINDS")
+            in (
+                "WATCH_CONFIG_KINDS",
+                "WATCH_CONFIG_PANEL_KINDS",
+                "WATCH_CONFIG_PHONE_KINDS",
+                "WATCH_CONFIG_SEED_KINDS",
+            )
         ):
             # frozenset({...}): the set literal is the call's one argument.
             found[node.targets[0].id] = frozenset(ast.literal_eval(node.value.args[0]))
@@ -818,9 +827,12 @@ def test_the_kinds_match_const() -> None:
         "WATCH_CONFIG_KINDS": KINDS,
         "WATCH_CONFIG_PANEL_KINDS": PANEL_KINDS,
         "WATCH_CONFIG_PHONE_KINDS": PHONE_KINDS,
+        "WATCH_CONFIG_SEED_KINDS": SEED_KINDS,
     }
-    # A phone owns only kinds the panel may write.
+    # A phone owns only kinds the panel may write, and a watch seeds only
+    # kinds the panel shows.
     assert PHONE_KINDS <= PANEL_KINDS
+    assert SEED_KINDS <= PANEL_KINDS
 
 
 def test_behavior_is_any_json_object(mod):
