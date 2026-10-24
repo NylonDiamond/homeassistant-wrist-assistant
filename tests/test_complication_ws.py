@@ -521,6 +521,7 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
     env.store.set_applied_token("watch-A", 1)
 
     row = next(r for r in env.owners() if r["owner_watch_id"] == "watch-A")
+    stamp = env.secrets.get("watch-A").last_provision.isoformat()
     assert row == {
         "owner_watch_id": "watch-A",
         "device_kind": "watch",
@@ -534,6 +535,8 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
         # The build beside the version. Build numbers restart on every new
         # version, so the panel's split gate reads the two together.
         "app_build": "4",
+        # When it was paired, for the panel's This watch card.
+        "last_provision": stamp,
         "screen_size": "208x248",
         "complication_count": 1,
         "token": 1,
@@ -590,6 +593,7 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
     env.save_document("phone-1")
     env.save_document("phone-1")
     env.store.set_applied_token("phone-1", 2)
+    stamp = env.secrets.get("phone-1").last_provision.isoformat()
 
     assert env.owners() == [
         {
@@ -603,6 +607,7 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
             "screen_size": None,
             "app_version": "2.8.0",
             "app_build": "11",
+            "last_provision": stamp,
             "complication_count": 2,
             "token": 2,
             "applied_token": 2,
@@ -748,6 +753,21 @@ def test_every_row_carries_the_app_build_or_none(env) -> None:
         "phone-1": "9",
         LIBRARY: None,
     }
+
+
+def test_a_device_row_says_when_it_was_paired_and_the_library_does_not(env) -> None:
+    """``last_provision`` is the store's own timestamp, as ISO 8601, for the
+    panel's This watch card. A device the store holds no stamp for says
+    None, and so does the Library, which was never paired."""
+    env.add_watch("watch-A")
+    env.add_phone("phone-1")
+    env.secrets.get("phone-1").last_provision = None
+    rows = {r["owner_watch_id"]: r for r in env.owners()}
+    stamp = rows["watch-A"]["last_provision"]
+    assert stamp == env.secrets.get("watch-A").last_provision.isoformat()
+    assert datetime.fromisoformat(stamp).tzinfo is not None
+    assert rows["phone-1"]["last_provision"] is None
+    assert "last_provision" not in rows[LIBRARY]
 
 
 def test_a_phone_renamed_in_ha_shows_the_new_name(env) -> None:
