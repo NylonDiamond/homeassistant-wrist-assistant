@@ -11,7 +11,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ADDRESSES_NETWORK_PATH,
   ADDRESSES_PAGE_SAVE_NOTE,
+  ADDRESSES_SAVED_NOTE,
   addressDraft,
+  addressesEditTitle,
+  addressesHelp,
+  addressesSavedNote,
+  addressHint,
   addressPayload,
   addressProblem,
   addressShown,
@@ -339,8 +344,9 @@ describe("the panel's wiring", () => {
     expect(API).toContain(`type: "wrist_assistant/devices/set_addresses", watch_id: watchId, ...slots,`);
   });
 
-  it("shows a watch's addresses under its bar all the time, with no Addresses button", () => {
-    expect(detail).toContain(`const addresses = row.kind === "watch" && !this.deviceForgetAsk && !gone ? this.renderHomeAddresses(ownerId) : nothing;`);
+  it("shows a watch's or an iPhone's addresses under its bar all the time, with no Addresses button", () => {
+    expect(detail).toContain(`const addresses = !this.deviceForgetAsk && !gone ? this.renderHomeAddresses(ownerId, row.kind) : nothing;`);
+    expect(detail).not.toContain(`row.kind === "watch" && !this.deviceForgetAsk`);
     expect(detail).not.toContain("ADDRESSES_BUTTON");
     expect(SOURCE).not.toContain("ADDRESSES_BUTTON");
     // Under the bar and its transient info, over the lineup.
@@ -351,21 +357,24 @@ describe("the panel's wiring", () => {
   });
 
   it("draws the short block, with Edit opening the form in the same place", () => {
-    const home = method("  private renderHomeAddresses(ownerId: string) {");
+    const home = method("  private renderHomeAddresses(ownerId: string, device: AddressDevice) {");
     expect(home).toContain("renderAddressBlock({");
     expect(home).toContain("editing,");
+    expect(home).toContain("device,");
     expect(home).toContain("onEdit: () => void this.startAddressEdit(ownerId),");
-    expect(home).toContain("form: this.addressFormView(ownerId),");
+    expect(home).toContain("form: this.addressFormView(ownerId, device),");
     expect(home).toContain(`<section class="hb-addrs \${editing ? "editing" : ""}" aria-label=\${ADDRESSES_TITLE}>`);
     // A watch shown without being picked reads its addresses once.
     expect(home).toContain("if (held === undefined && !this.addressReads.has(ownerId)) {");
     expect(home).toContain("queueMicrotask(() => void this.loadDeviceAddresses(ownerId));");
-    expect(method("  private addressFormView(ownerId: string) {")).toContain(`saves: "own" as const,`);
+    const form = method(`  private addressFormView(ownerId: string, device: AddressDevice = "watch") {`);
+    expect(form).toContain(`saves: "own" as const,`);
+    expect(form).toContain("device,");
   });
 
-  it("reads a watch's addresses again each time it is picked on Home", () => {
+  it("reads a watch's or an iPhone's addresses again each time it is picked on Home", () => {
     expect(method("  private openHomeDevice(ownerId: string, forget = false) {"))
-      .toContain(`if (deviceKindOf(this.ownerOf(ownerId)) === "watch") void this.loadDeviceAddresses(ownerId);`);
+      .toContain(`if (deviceKindOf(this.ownerOf(ownerId)) !== "library") void this.loadDeviceAddresses(ownerId);`);
   });
 
   it("hears the Settings page's saves", () => {
@@ -414,5 +423,70 @@ describe("the panel's wiring", () => {
 
   it("carries the form's look", () => {
     expect(SOURCE).toContain("homeStyles, addressStyles,");
+  });
+});
+
+describe("an iPhone's addresses on its page on Home", () => {
+  const phoneRecord = record({ watch_id: "iphone-1", remote_source: "set", remote_url: "https://phone.example.com" });
+  const phoneForm = (over: Partial<AddressFormView> = {}) =>
+    view({ record: phoneRecord, draft: addressDraft(phoneRecord), device: "iphone", ...over });
+  const phoneBlock = (over: Partial<AddressBlockView> = {}): AddressBlockView => ({
+    record: phoneRecord,
+    editing: false,
+    device: "iphone",
+    onEdit: () => {},
+    form: phoneForm(),
+    ...over,
+  });
+
+  it("names the iPhone, never the watch, in the words that name the device", () => {
+    expect(addressHint("remote", "iphone")).toBe("Used when the iPhone is away from home.");
+    expect(addressHint("local", "iphone")).toBe("Used on the same Wi-Fi as Home Assistant.");
+    expect(addressesSavedNote("iphone")).toBe("The iPhone picks up a change the next time it checks in.");
+    expect(addressesEditTitle("iphone")).toBe("Change the addresses this iPhone uses to reach Home Assistant");
+    expect(addressesHelp("iphone")).toBe("The two addresses this iPhone uses to reach Home Assistant.");
+    // A watch, as before, when no device is named.
+    expect(addressesSavedNote()).toBe(ADDRESSES_SAVED_NOTE);
+    expect(addressHint("remote")).toBe("Used when the watch is away from home.");
+  });
+
+  it("shows the same two lines with Automatic tags and one Edit, titled for the iPhone", () => {
+    const text = flatten(renderAddressBlock(phoneBlock()));
+    expect(text).toContain("<dt>Home network</dt>");
+    expect(text).toContain("<dt>Internet</dt>");
+    expect(text).toContain(LOCAL);
+    expect(text).toContain("https://phone.example.com");
+    // The set slot has no tag; the automatic one does.
+    expect(text.split(`class="addr-sum-tag"`).length - 1).toBe(1);
+    expect(text.split(">Edit</button>").length - 1).toBe(1);
+    expect(text).toContain(`title=Change the addresses this iPhone uses to reach Home Assistant`);
+    expect(text).not.toMatch(/\bwatch\b/i);
+  });
+
+  it("opens the form in place, worded for the iPhone, with its own Save", () => {
+    const text = flatten(renderAddressBlock(phoneBlock({ editing: true })));
+    expect(text).toContain("dev-addr-slot");
+    expect(text).toContain("Used when the iPhone is away from home.");
+    expect(text).toContain("The iPhone picks up a change the next time it checks in.");
+    expect(text).toContain(`type="submit"`);
+    expect(text).not.toMatch(/\bwatch\b/i);
+  });
+
+  it("still words a watch's form for the watch", () => {
+    const text = flatten(renderAddressForm(view()));
+    expect(text).toContain("Used when the watch is away from home.");
+    expect(text).toContain("The watch picks up a change the next time it checks in.");
+    expect(text).not.toContain("iPhone");
+  });
+
+  it("draws the block for an iPhone row as for a watch row, and keeps it off the watch Settings tab", () => {
+    const detail = method("  private renderHomeDetail(");
+    // No kind check left in front of the block: every row on Home is a
+    // watch or an iPhone, and both have a record.
+    expect(detail).toContain("this.renderHomeAddresses(ownerId, row.kind)");
+    expect(detail).not.toMatch(/row\.kind === "watch" && !this\.deviceForgetAsk/);
+    // The watch Settings page never names an iPhone for its addresses.
+    const settings = readFileSync(join(__dirname, "..", "src", "watch-settings-view.ts"), "utf8");
+    expect(settings).not.toContain(`device: "iphone"`);
   });
 });

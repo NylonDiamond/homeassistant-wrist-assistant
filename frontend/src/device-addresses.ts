@@ -1,22 +1,32 @@
-// A watch's two addresses: its home network address and its internet
-// address, kept by the integration for each watch (`watch_addresses.py`).
-// Each is Automatic (Home Assistant's own Settings, System, Network), an
-// address someone set, or None. The watch reads them after it pairs and
-// whenever they change, so the panel always shows what the watch uses.
+// A device's two addresses: its home network address and its internet
+// address, kept by the integration for each paired watch and iPhone
+// (`watch_addresses.py`). Each is Automatic (Home Assistant's own Settings,
+// System, Network), an address someone set, or None. The device reads them
+// after it pairs and whenever they change, so the panel always shows what
+// the device uses.
 //
-// Shown and edited in three places with the same parts: a watch's page on
-// Home, which shows both addresses under its bar with Edit opening the form
-// in place; the Connection card of the Watch app's Settings page, the same
-// block, whose form the page's own Save saves; and the "what next" step of
-// Home's pairing dialog. The panel and the Settings page hold the state; the
-// words, the rules and the drawing are here so the tests read them without a
-// DOM.
+// Shown and edited in three places with the same parts: a watch's or an
+// iPhone's page on Home, which shows both addresses under its bar with Edit
+// opening the form in place; the Connection card of the Watch app's
+// Settings page (watches only), the same block, whose form the page's own
+// Save saves; and the "what next" step of Home's pairing dialog. The panel
+// and the Settings page hold the state; the words, the rules and the drawing
+// are here so the tests read them without a DOM. The few words that name
+// the device take it (`AddressDevice`), a watch when left out.
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import type { AddressSource, DeviceAddresses } from "./ha-api.js";
 
 export type AddressSlot = "local" | "remote";
+
+/** The device the addresses belong to, for the words that name it. */
+export type AddressDevice = "watch" | "iphone";
+
+/** The device as a sentence says it: "watch" or "iPhone". */
+function deviceNoun(device: AddressDevice): string {
+  return device === "iphone" ? "iPhone" : "watch";
+}
 
 /** One slot as the form holds it: the setting picked, and the text typed. */
 export interface AddressSlotDraft {
@@ -36,10 +46,15 @@ export const ADDRESS_LABELS: Record<AddressSlot, string> = {
   remote: "Internet address",
 };
 
-/** What each slot is for, under its name. */
+/** What each slot is for, under its name, for the device it belongs to. */
+export function addressHint(slot: AddressSlot, device: AddressDevice = "watch"): string {
+  return slot === "local" ? "Used on the same Wi-Fi as Home Assistant." : `Used when the ${deviceNoun(device)} is away from home.`;
+}
+
+/** What each slot is for, under its name, on a watch. */
 export const ADDRESS_HINTS: Record<AddressSlot, string> = {
-  local: "Used on the same Wi-Fi as Home Assistant.",
-  remote: "Used when the watch is away from home.",
+  local: addressHint("local"),
+  remote: addressHint("remote"),
 };
 
 export const ADDRESS_PLACEHOLDERS: Record<AddressSlot, string> = {
@@ -60,9 +75,17 @@ export const ADDRESS_SHORT_LABELS: Record<AddressSlot, string> = {
 };
 
 export const ADDRESSES_TITLE = "Addresses";
-export const ADDRESSES_HELP = "The two addresses this watch uses to reach Home Assistant.";
+/** What the addresses are, for the device they belong to. */
+export function addressesHelp(device: AddressDevice = "watch"): string {
+  return `The two addresses this ${deviceNoun(device)} uses to reach Home Assistant.`;
+}
+export const ADDRESSES_HELP = addressesHelp();
 export const ADDRESSES_EDIT_TEXT = "Edit";
-export const ADDRESSES_EDIT_TITLE = "Change the addresses this watch uses to reach Home Assistant";
+/** Edit's tooltip, for the device the addresses belong to. */
+export function addressesEditTitle(device: AddressDevice = "watch"): string {
+  return `Change the addresses this ${deviceNoun(device)} uses to reach Home Assistant`;
+}
+export const ADDRESSES_EDIT_TITLE = addressesEditTitle();
 /** The quiet tag on a slot that follows Home Assistant. */
 export const ADDRESSES_AUTOMATIC_TAG = "Automatic";
 export const ADDRESSES_NONE = "None";
@@ -74,7 +97,11 @@ export const ADDRESSES_SEARCH_WORDS = "Addresses, address, URL, home network, in
 export const ADDRESSES_NETWORK_PATH = "/config/network";
 export const ADDRESSES_NETWORK_TEXT = "Settings > System > Network";
 export const ADDRESSES_NOTHING_DETECTED = "nothing set in Home Assistant";
-export const ADDRESSES_SAVED_NOTE = "The watch picks up a change the next time it checks in.";
+/** When a saved change reaches the device. */
+export function addressesSavedNote(device: AddressDevice = "watch"): string {
+  return `The ${deviceNoun(device)} picks up a change the next time it checks in.`;
+}
+export const ADDRESSES_SAVED_NOTE = addressesSavedNote();
 
 const SET_FORM = /^https?:\/\/[^\s/?#@]+\/?$/i;
 
@@ -213,6 +240,9 @@ export interface AddressFormView {
    * something changed, beside Cancel. `page`: the Settings page's Save at
    * the top does, so the form says so and keeps only Cancel. */
   saves?: "own" | "page";
+  /** Whose addresses they are, for the words that name it. A watch when
+   * left out. */
+  device?: AddressDevice;
   onMode: (slot: AddressSlot, mode: AddressSource) => void;
   onText: (slot: AddressSlot, text: string) => void;
   /** Enter in a field. */
@@ -239,11 +269,12 @@ export function renderAddressForm(v: AddressFormView): TemplateResult {
   }
   const changed = changedSlots(record, draft).length > 0;
   const page = v.saves === "page";
+  const device = v.device ?? "watch";
   const slot = (s: AddressSlot) => {
     const d = draft[s];
     return html`<fieldset class="dev-addr-slot" ?disabled=${v.busy}>
       <legend>${ADDRESS_LABELS[s]}</legend>
-      <p class="dev-small">${ADDRESS_HINTS[s]}</p>
+      <p class="dev-small">${addressHint(s, device)}</p>
       <div class="dev-addr-modes" role="radiogroup" aria-label=${ADDRESS_LABELS[s]}>
         ${ADDRESS_MODES.map((m) => html`<label class="dev-addr-mode ${d.mode === m.mode ? "on" : ""}">
           <input type="radio" name=${`addr-${s}`} value=${m.mode} .checked=${live(d.mode === m.mode)}
@@ -262,7 +293,7 @@ export function renderAddressForm(v: AddressFormView): TemplateResult {
         if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); v.onCancel(); }
       }}>
       ${ADDRESS_SLOTS.map(slot)}
-      <p class="dev-small">Automatic follows <a href=${ADDRESSES_NETWORK_PATH} @click=${openNetworkSettings}>${ADDRESSES_NETWORK_TEXT}</a> in Home Assistant. ${ADDRESSES_SAVED_NOTE}</p>
+      <p class="dev-small">Automatic follows <a href=${ADDRESSES_NETWORK_PATH} @click=${openNetworkSettings}>${ADDRESSES_NETWORK_TEXT}</a> in Home Assistant. ${addressesSavedNote(device)}</p>
       ${v.error ? html`<p class="dev-err">${v.error}</p>` : nothing}
       <div class="dev-acts">
         ${page
@@ -285,11 +316,13 @@ export interface AddressBlockView {
   onEdit: () => void;
   /** The form, when `editing`. */
   form: AddressFormView;
+  /** Whose addresses they are, for Edit's tooltip. A watch when left out. */
+  device?: AddressDevice;
 }
 
 /**
  * Both addresses, short: one line each, the slot's name, the address the
- * watch uses or None, and a quiet Automatic tag when it follows Home
+ * watch or iPhone uses or None, and a quiet Automatic tag when it follows Home
  * Assistant. One Edit button opens the form in the block's place. No
  * explaining until then; the form says what each address is for.
  */
@@ -312,7 +345,7 @@ export function renderAddressBlock(v: AddressBlockView): TemplateResult {
   };
   return html`<div class="addr-sum">
     <dl class="addr-sum-list" aria-label=${ADDRESSES_TITLE}>${ADDRESS_SLOTS.map(line)}</dl>
-    <button type="button" class="small lined addr-sum-edit" title=${ADDRESSES_EDIT_TITLE} @click=${v.onEdit}>${ADDRESSES_EDIT_TEXT}</button>
+    <button type="button" class="small lined addr-sum-edit" title=${addressesEditTitle(v.device)} @click=${v.onEdit}>${ADDRESSES_EDIT_TEXT}</button>
   </div>`;
 }
 
