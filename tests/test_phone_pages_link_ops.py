@@ -32,6 +32,7 @@ _NAMES = (
     "_caller_is_iphone",
     "_not_an_iphone",
     "_owner_has_pages",
+    "_owner_shown_page_count",
     "_op_phone_pages_offer",
     "_op_phone_pages_link_watch",
 )
@@ -53,7 +54,12 @@ class _Response:
 
 
 def _device(
-    kind: str, user_id: str | None, device_name: str | None = None, label: str | None = None
+    kind: str,
+    user_id: str | None,
+    device_name: str | None = None,
+    label: str | None = None,
+    app_version: str | None = None,
+    app_build: str | None = None,
 ) -> Any:
     return types.SimpleNamespace(
         device_kind=kind,
@@ -61,6 +67,8 @@ def _device(
         owner_iphone_id=None,
         device_name=device_name,
         label=label,
+        app_version=app_version,
+        app_build=app_build,
     )
 
 
@@ -143,7 +151,13 @@ def env():
         secrets = _Secrets(
             {
                 PHONE: _device("iphone", "user-1"),
-                WATCH: _device("watch", "user-1", device_name="Jesse's Apple Watch"),
+                WATCH: _device(
+                    "watch",
+                    "user-1",
+                    device_name="Jesse's Apple Watch",
+                    app_version="3.1.0",
+                    app_build="4",
+                ),
                 OTHER: _device("watch", "user-1", label="watch-code-pair"),
                 STRANGER: _device("watch", "user-2"),
             }
@@ -202,8 +216,25 @@ def test_offer_lists_the_user_s_watches_with_names_and_pages(env) -> None:
         "ok": True,
         "has_pages": False,
         "watches": [
-            {"id": WATCH, "name": "Jesse's Apple Watch", "has_pages": True, "last_seen_seconds": None},
-            {"id": OTHER, "name": f"Watch {OTHER[:8]}", "has_pages": False, "last_seen_seconds": None},
+            {
+                "id": WATCH,
+                "name": "Jesse's Apple Watch",
+                "has_pages": True,
+                "last_seen_seconds": None,
+                "app_version": "3.1.0",
+                "app_build": "4",
+                # Home shows; Lights is hidden and Settings is a system page.
+                "shown_pages": 1,
+            },
+            {
+                "id": OTHER,
+                "name": f"Watch {OTHER[:8]}",
+                "has_pages": False,
+                "last_seen_seconds": None,
+                "app_version": None,
+                "app_build": None,
+                "shown_pages": 0,
+            },
         ],
     }
 

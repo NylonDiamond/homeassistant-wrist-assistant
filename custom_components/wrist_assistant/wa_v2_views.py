@@ -4347,13 +4347,34 @@ def _owner_has_pages(store: Any, owner_id: str) -> bool:
     return record is not None and bool(listed_page_ids(record.document))
 
 
+def _owner_shown_page_count(store: Any, owner_id: str) -> int:
+    """How many of an owner's pages its device shows: listed pages (no
+    system page) that are not hidden. An unreadable record counts as none."""
+    try:
+        record = store.get(owner_id, "pages")
+    except WatchConfigStoreError:
+        return 0
+    if record is None or not isinstance(record.document, dict):
+        return 0
+    listed = set(listed_page_ids(record.document))
+    pages = record.document.get("pages")
+    return sum(
+        1
+        for page in (pages if isinstance(pages, list) else [])
+        if isinstance(page, dict)
+        and page.get("id") in listed
+        and page.get("isHidden") is not True
+    )
+
+
 async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
     """What the iPhone's ask-once pages screen offers (linked pages, app repo
     ``docs/linked_pages_plan_2026-10.md``).
 
     Body:  {}
     Reply: {"ok": true, "has_pages": <bool>,
-            "watches": [{"id", "name", "has_pages", "last_seen_seconds"}]}
+            "watches": [{"id", "name", "has_pages", "last_seen_seconds",
+                         "app_version", "app_build", "shown_pages"}]}
 
     ``has_pages`` is whether the phone's own pages record lists a page;
     ``watches`` are its user's watches (`phone_watch_ids`), each with its
@@ -4361,7 +4382,10 @@ async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
     device page wins, never how it paired), whether it lists a page, and
     how long since it last polled (the phone's Apple Watch page), the
     same answer as the panel's chip (`_seconds_since_poll`), null for a
-    watch never heard from.
+    watch never heard from. ``app_version`` and ``app_build`` are what the
+    watch last reported (pairing, then ``update_metadata`` after each app
+    update), null when it never said; ``shown_pages`` is how many pages it
+    shows (`_owner_shown_page_count`).
     Refused ``not_an_iphone`` (403) for a watch.
     """
     secrets = ctx.domain_data.widget_secret_store
@@ -4390,6 +4414,9 @@ async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
                     ),
                     "has_pages": _owner_has_pages(store, watch_id),
                     "last_seen_seconds": seen_seconds(watch_id),
+                    "app_version": getattr(entries.get(watch_id), "app_version", None),
+                    "app_build": getattr(entries.get(watch_id), "app_build", None),
+                    "shown_pages": _owner_shown_page_count(store, watch_id),
                 }
                 for watch_id in phone_watch_ids(entries, ctx.watch_id)
             ],
