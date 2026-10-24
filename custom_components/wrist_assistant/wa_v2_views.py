@@ -2767,7 +2767,8 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
 
 
 async def _op_addresses_get(ctx: _OpContext) -> Response:
-    """The caller's own two addresses (watch_addresses.py).
+    """The caller's own two addresses (watch_addresses.py). The caller is a
+    watch or an iPhone, each signed as itself and given its own record.
 
     Body:  {}
     Reply: {"ok": true, "local_url": str|null, "remote_url": str|null,

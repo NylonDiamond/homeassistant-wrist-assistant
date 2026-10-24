@@ -304,3 +304,13 @@ def test_a_watch_s_poll_still_hands_on_both(delta) -> None:
     assert poll["watch_id"] == WATCH
     assert poll["complications_token"] == 7
     assert poll["voices_hash"] == VOICES_HASH
+
+
+def test_a_phone_s_poll_hands_on_the_addresses_hash_it_holds(delta) -> None:
+    """An iPhone reports the addresses hash it holds under ``addresses``, as a
+    watch does, so its lean replies can leave the hash out when it matches."""
+    _poll(delta, PHONE, addresses="a" * 16, lean=True)
+    _poll(delta, WATCH, addresses="b" * 16)
+    phone, watch = delta.coordinator.polls
+    assert (phone["watch_id"], phone["held"].addresses) == (PHONE, "a" * 16)
+    assert (watch["watch_id"], watch["held"].addresses) == (WATCH, "b" * 16)

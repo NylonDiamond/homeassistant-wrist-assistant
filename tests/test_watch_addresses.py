@@ -16,6 +16,9 @@ No Home Assistant. Covered:
   lags answered at once, once.
 * The panel commands' owner check.
 * The capability, the op table and the setup wiring, statically.
+* A paired iPhone, which keeps the same record in the same store: load and
+  save, both ops signed as itself, ``addresses`` and lean on its poll, a
+  panel set waking its parked poll, and the panel commands.
 """
 
 from __future__ import annotations
@@ -427,8 +430,8 @@ def test_every_watch_reply_with_a_body_carries_the_hash(coordinator) -> None:  #
         _attach(coord, hashes)
         _s, body = await _poll(coord, entities=[ent])
         assert body["addresses"] == "a" * 16
-        # A device the lookup gives nothing for (an iPhone) hears nothing.
-        _s, body = await _poll(coord, watch_id="iphone:1", entities=[ent])
+        # A device the lookup gives nothing for (an unknown id) hears nothing.
+        _s, body = await _poll(coord, watch_id="unknown:1", entities=[ent])
         assert "addresses" not in body
 
     asyncio.run(run())
@@ -637,3 +640,184 @@ def test_both_ops_are_in_the_dispatch_table() -> None:
                 table[key.value] = value.id
     assert table["addresses_get"] == "_op_addresses_get"
     assert table["addresses_set"] == "_op_addresses_set"
+
+
+# ── a paired iPhone ──────────────────────────────────────────────────────
+#
+# An iPhone's pair lives in the same WidgetSecretStore as a watch's, told
+# apart only by its label (``device_kind`` "iphone"), so it carries the same
+# two slots and the same rules. These cover the iPhone side end to end.
+
+PHONE = "iphone-1"
+
+
+def _register_phone(store_mod, store, phone_id: str = PHONE, user_id: str = "alice") -> None:
+    store.register(phone_id, SECRET, store_mod.LABEL_IPHONE_SELF_PROVISION, user_id=user_id)
+    assert store.get(phone_id).device_kind == "iphone"
+
+
+def test_an_old_iphone_entry_loads_as_auto_and_a_set_survives_a_save() -> None:
+    with _loaded() as (store_mod, _wa):
+        store = store_mod.WidgetSecretStore(object())
+        store._store.saved = {
+            "secrets": {
+                PHONE: {"secret_b64": SECRET, "label": store_mod.LABEL_IPHONE_SELF_PROVISION}
+            }
+        }
+        asyncio.run(store.async_load())
+        entry = store.get(PHONE)
+        assert entry.device_kind == "iphone"
+        assert (entry.local_url, entry.remote_url) == (None, None)
+        assert "local_url" not in store._serialize()["secrets"][PHONE]
+
+        assert store.set_addresses(PHONE, {"local_url": LOCAL, "remote_url": ""}) is True
+        again = store_mod.WidgetSecretStore(object())
+        again._store.saved = store._store.saved
+        asyncio.run(again.async_load())
+        assert (again.get(PHONE).local_url, again.get(PHONE).remote_url) == (LOCAL, "")
+        # Pairing the iPhone again keeps them.
+        other = base64.b64encode(b"c" * 32).decode()
+        again.register(PHONE, other, store_mod.LABEL_IPHONE_SELF_PROVISION, user_id="alice")
+        assert again.get(PHONE).local_url == LOCAL
+
+
+def test_the_hash_is_given_for_an_iphone_as_for_a_watch() -> None:
+    with _loaded(lambda _hass: (LOCAL, EXTERNAL, None)) as (store_mod, wa):
+        store = _new_store(store_mod)
+        store.register("w1", SECRET, "watch-code-pair", user_id="alice")
+        _register_phone(store_mod, store)
+        expected = wa.AddressRecord(LOCAL, EXTERNAL, "auto", "auto").hash
+        assert wa.addresses_hash_for(object(), store, "w1") == expected
+        assert wa.addresses_hash_for(object(), store, PHONE) == expected
+        assert wa.addresses_hash_for(object(), store, "nobody") is None
+        # Each device's record is its own.
+        store.set_addresses(PHONE, {"remote_url": ""})
+        assert wa.addresses_hash_for(object(), store, "w1") == expected
+        assert wa.addresses_hash_for(object(), store, PHONE) == (
+            wa.AddressRecord(LOCAL, None, "auto", "none").hash
+        )
+
+
+@pytest.fixture
+def phone_ops_env():
+    with _loaded(lambda _hass: (LOCAL, None, CLOUD)) as (store_mod, wa_mod):
+        store = _new_store(store_mod)
+        store.register("w1", SECRET, "watch-code-pair", user_id="alice")
+        _register_phone(store_mod, store)
+        yield types.SimpleNamespace(store=store, coord=_Coord(), ops=_ops(wa_mod), wa=wa_mod)
+
+
+def test_ops_signed_by_an_iphone_act_on_its_own_record(phone_ops_env) -> None:
+    env = phone_ops_env
+    reply = _call(env, "_op_addresses_get", {}, watch_id=PHONE)
+    assert reply.status == 200
+    assert reply.body == env.wa.AddressRecord(LOCAL, CLOUD, "auto", "auto").as_wire()
+
+    reply = _call(env, "_op_addresses_set", {"remote_url": EXTERNAL}, watch_id=PHONE)
+    assert reply.status == 200
+    assert (reply.body["remote_url"], reply.body["remote_source"]) == (EXTERNAL, "set")
+    assert env.coord.woken == [PHONE]
+    # The watch's record did not move.
+    assert env.store.get("w1").remote_url is None
+    assert _call(env, "_op_addresses_get", {}, watch_id=PHONE).body == reply.body
+
+    reply = _call(env, "_op_addresses_set", {"local_url": "nope"}, watch_id=PHONE)
+    assert reply.status == 400
+    assert reply.body == {"ok": False, "error": "invalid_url", "field": "local_url"}
+    assert env.store.get(PHONE).local_url is None
+
+
+def test_an_iphone_reply_carries_the_hash_and_goes_lean(coordinator) -> None:  # noqa: F811
+    module, hass, coord = coordinator
+    ent = "light.addr_phone1"
+    hass.states.set(ent, "off")
+    with _loaded(lambda _hass: (LOCAL, EXTERNAL, None)) as (store_mod, wa):
+        store = _new_store(store_mod)
+        _register_phone(store_mod, store)
+        coord.attach_addresses(lambda device_id: wa.addresses_hash_for(hass, store, device_id))
+        current = wa.AddressRecord(LOCAL, EXTERNAL, "auto", "auto").hash
+
+        async def run() -> None:
+            _s, body = await _poll(coord, watch_id=PHONE, entities=[ent])
+            assert body["addresses"] == current
+            held = module.HeldConfig(addresses=current)
+            _s, body = await _poll(
+                coord, watch_id=PHONE, entities=[ent], lean=True, held=held, force_delta=True
+            )
+            assert "addresses" not in body
+            stale = module.HeldConfig(addresses="b" * 16)
+            _s, body = await _poll(
+                coord, watch_id=PHONE, entities=[ent], lean=True, held=stale, force_delta=True
+            )
+            assert body["addresses"] == current
+
+        asyncio.run(run())
+
+
+def test_a_set_wakes_a_parked_iphone_poll(coordinator) -> None:  # noqa: F811
+    """The panel (or the iPhone) sets an address: the iPhone's parked poll
+    answers at once with the new hash, and the next one parks quietly."""
+    _module, hass, coord = coordinator
+    ent = "light.addr_phone2"
+    hass.states.set(ent, "off")
+    with _loaded(lambda _hass: (LOCAL, EXTERNAL, None)) as (store_mod, wa):
+        store = _new_store(store_mod)
+        _register_phone(store_mod, store)
+        coord.attach_addresses(lambda device_id: wa.addresses_hash_for(hass, store, device_id))
+
+        async def run() -> None:
+            _s, body = await _poll(coord, watch_id=PHONE, entities=[ent])
+            cursor = body["next_cursor"]
+            parked = asyncio.create_task(
+                _poll(coord, watch_id=PHONE, since=cursor, entities=[ent], timeout=10)
+            )
+            await asyncio.sleep(0.05)
+            assert PHONE in coord._waiters
+            started = hass.loop.time()
+            found = wa.update_device_addresses(hass, store, coord, PHONE, {"local_url": ""})
+            record, _detected = found
+            status, body = await asyncio.wait_for(parked, timeout=3)
+            assert status == 200 and body["events"] == []
+            assert body["addresses"] == record.hash
+            assert hass.loop.time() - started < 1.5
+            status, body = await asyncio.wait_for(
+                _poll(coord, watch_id=PHONE, since=cursor, entities=[ent], timeout=1), timeout=3
+            )
+            assert status == 204 and body is None
+
+        asyncio.run(run())
+
+
+def test_the_panel_reads_and_sets_an_iphone_s_addresses(panel_env) -> None:  # noqa: F811
+    env = panel_env
+    _panel_detects((LOCAL, EXTERNAL, CLOUD))
+    ws = env.ws
+    assert env.base.secrets.get("phone-alice").device_kind == "iphone"
+    # The owner check is the one a watch gets.
+    assert _refused(_run(env, ws.ws_device_addresses, BOB, watch_id="phone-alice"))
+    assert _refused(
+        _run(env, ws.ws_set_device_addresses, BOB, watch_id="phone-alice", local_url=LOCAL)
+    )
+    assert env.base.secrets.get("phone-alice").local_url is None
+
+    reply = _ok(_run(env, ws.ws_device_addresses, ALICE, watch_id="phone-alice"))
+    assert reply["watch_id"] == "phone-alice"
+    assert (reply["local_url"], reply["remote_url"]) == (LOCAL, EXTERNAL)
+    assert reply["detected"] == {"internal": LOCAL, "external": EXTERNAL, "cloud": CLOUD}
+
+    reply = _ok(
+        _run(
+            env,
+            ws.ws_set_device_addresses,
+            ALICE,
+            watch_id="phone-alice",
+            local_url="http://10.0.0.9:8123",
+        )
+    )
+    assert (reply["local_url"], reply["local_source"]) == ("http://10.0.0.9:8123", "set")
+    assert ("phone-alice", False) in env.base.coordinator.woken
+    # An administrator sets anyone's iPhone.
+    reply = _ok(_run(env, ws.ws_set_device_addresses, ROOT, watch_id="phone-bob", remote_url=""))
+    assert reply["remote_source"] == "none"
+    bad = _run(env, ws.ws_set_device_addresses, ROOT, watch_id="phone-bob", local_url="ftp://x")
+    assert bad.errors[0][1] == "invalid_url"

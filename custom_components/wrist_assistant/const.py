@@ -482,12 +482,12 @@ SEALED_CODE_PAIRING_CAPABILITY = "sealed_code_pairing"
 # offer_cancel) and /v2/pair/redeem, a code confirm that stores an iPhone,
 # and the signed `rekey` op. The app requires it.
 PHONE_PAIRING_CAPABILITY = "phone_pairing"
-# What the integration advertises once each paired watch has a home network
-# and an internet address kept here (watch_addresses.py): the signed
-# addresses_get and addresses_set ops, and the record's hash as `addresses`
-# on every delta reply with a body to a watch. The watch asks for its
-# addresses after pairing, and sends the ones set on it, only when it sees
-# this.
+# What the integration advertises once each paired watch and iPhone has a
+# home network and an internet address kept here (watch_addresses.py): the
+# signed addresses_get and addresses_set ops, and the record's hash as
+# `addresses` on every delta reply with a body to that device. The device
+# asks for its addresses after pairing, and sends the ones set on it, only
+# when it sees this. The name stayed when iPhones joined.
 WATCH_ADDRESSES_CAPABILITY = "watch_addresses"
 # What the integration advertises once an iPhone may own pages of its own
 # (app repo docs/phone_pages_mvp_2026-10.md, step 1): the watch config store
