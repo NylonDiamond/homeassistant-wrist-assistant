@@ -220,7 +220,7 @@ describe("the watch screens under the row", () => {
   });
 
   it("makes a watch paired in Watch settings the shared one", () => {
-    expect(SOURCE).toContain("}, () => this.icons, (watchId) => this.pickWatch(watchId));");
+    expect(SOURCE).toContain("}, () => this.icons, (watchId) => this.pickWatch(watchId), (watchId, record) => this.keepAddresses(watchId, { record }));");
   });
 
   it("closes the row's watch menu on a press outside it, and lets go of the listener when the panel goes", () => {

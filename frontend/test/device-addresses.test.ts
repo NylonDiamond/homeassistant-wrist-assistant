@@ -1,7 +1,8 @@
 // A watch's two addresses in the panel: the words and rules in
-// device-addresses.ts, the form it draws, the pairing dialog's third step,
-// and how panel.ts wires them, read from its source since no test mounts the
-// panel (as panel-home-source.test.ts does).
+// device-addresses.ts, the short block and the form it draws, the pairing
+// dialog's third step, and how panel.ts wires them, read from its source
+// since no test mounts the panel (as panel-home-source.test.ts does). The
+// Settings page's side is in watch-settings-addresses.test.ts.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -9,13 +10,20 @@ import { html, nothing } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import {
   ADDRESSES_NETWORK_PATH,
+  ADDRESSES_PAGE_SAVE_NOTE,
   addressDraft,
   addressPayload,
   addressProblem,
+  addressShown,
   addressWords,
   automaticLine,
+  changedSlots,
   invalidAddressText,
+  renderAddressBlock,
   renderAddressForm,
+  restoreAddressDraft,
+  withSlotEdit,
+  type AddressBlockView,
   type AddressFormView,
 } from "../src/device-addresses.js";
 import type { DeviceAddresses } from "../src/ha-api.js";
@@ -119,6 +127,49 @@ describe("the address words", () => {
     expect(addressWords(record({ local_url: null }), "local")).toBe("Automatic, nothing set in Home Assistant");
   });
 
+  it("typing picks Set from Automatic or None, and a mode keeps what was typed", () => {
+    const start = addressDraft(record({ remote_source: "none", remote_url: null }));
+    expect(withSlotEdit(start, "local", { text: "h" }).local).toEqual({ mode: "set", text: "h" });
+    expect(withSlotEdit(start, "remote", { text: "h" }).remote).toEqual({ mode: "set", text: "h" });
+    const typed = withSlotEdit(start, "local", { text: LOCAL });
+    expect(withSlotEdit(typed, "local", { mode: "auto" }).local).toEqual({ mode: "auto", text: LOCAL });
+    // The other slot is left alone.
+    expect(typed.remote).toEqual(start.remote);
+  });
+
+  it("knows which slots a draft changes", () => {
+    const r = record({ local_source: "set", local_url: "http://10.0.0.5:8123" });
+    expect(changedSlots(r, addressDraft(r))).toEqual([]);
+    expect(changedSlots(r, withSlotEdit(addressDraft(r), "local", { text: " http://10.0.0.5:8123 " }))).toEqual([]);
+    expect(changedSlots(r, withSlotEdit(addressDraft(r), "local", { text: "http://10.0.0.6:8123" }))).toEqual(["local"]);
+    expect(changedSlots(r, withSlotEdit(addressDraft(r), "remote", { mode: "none" }))).toEqual(["remote"]);
+    // Text kept under Automatic is not a change.
+    expect(changedSlots(record(), { local: { mode: "auto", text: "x" }, remote: { mode: "auto", text: "" } })).toEqual([]);
+  });
+
+  it("lays a kept draft over a newer record, slot by slot", () => {
+    const old = record();
+    const kept = { record: old, draft: withSlotEdit(addressDraft(old), "remote", { mode: "none" }) };
+    // The newer record set the home network address meanwhile: it is kept,
+    // and the internet address keeps its edit.
+    const fresh = record({ local_source: "set", local_url: "http://10.0.0.5" });
+    expect(restoreAddressDraft(kept, fresh)).toEqual({ local: { mode: "set", text: "http://10.0.0.5" }, remote: { mode: "none", text: "" } });
+  });
+
+  it("sends only the slots asked for", () => {
+    const draft = { local: { mode: "set" as const, text: "nope" }, remote: { mode: "none" as const, text: "" } };
+    // The bad local address is not checked when only the remote one goes.
+    expect(addressPayload(draft, ["remote"])).toEqual({ ok: true, slots: { remote_url: "" } });
+    expect(addressPayload(draft, ["local"]).ok).toBe(false);
+  });
+
+  it("shows a slot as its address, or none, and whether it follows Home Assistant", () => {
+    expect(addressShown(record(), "local")).toEqual({ url: LOCAL, automatic: true });
+    expect(addressShown(record({ remote_source: "none", remote_url: null }), "remote")).toEqual({ url: null, automatic: false });
+    expect(addressShown(record({ local_url: null }), "local")).toEqual({ url: null, automatic: true });
+    expect(addressShown(record({ local_source: "set", local_url: "http://10.0.0.5" }), "local")).toEqual({ url: "http://10.0.0.5", automatic: false });
+  });
+
   it("uses no dashes to break a sentence", () => {
     const strings = WORDS.match(/"[^"\n]*"/g) ?? [];
     for (const s of strings) {
@@ -153,6 +204,72 @@ describe("the address form", () => {
     const text = flatten(renderAddressForm(view({ busy: true, error: "Nope" })));
     expect(text).toContain("Saving…");
     expect(text).toContain("Nope");
+  });
+
+  it("wears the panel's Save, greyed out until something changed, then lit", () => {
+    const idle = flatten(renderAddressForm(view()));
+    expect(idle).toContain(`type="submit" class="primary save "`);
+    expect(idle).toMatch(/class="primary save " \?disabled=true/);
+    const changed = view({ draft: withSlotEdit(addressDraft(record()), "remote", { mode: "none" }) });
+    const lit = flatten(renderAddressForm(changed));
+    expect(lit).toMatch(/class="primary save dirty" \?disabled=false/);
+    expect(lit).not.toContain(`class="home-btn"`);
+  });
+
+  it("never greys out a field, so typing into Automatic or None is possible", () => {
+    const none = view({ draft: { local: { mode: "none", text: "" }, remote: { mode: "auto", text: "" } } });
+    const text = flatten(renderAddressForm(none));
+    expect(text).not.toMatch(/dev-addr-in[^>]*\?disabled/);
+  });
+
+  it("leaves Save to the page when the page saves it", () => {
+    const text = flatten(renderAddressForm(view({ saves: "page" })));
+    expect(text).not.toContain(`type="submit"`);
+    expect(text).toContain(ADDRESSES_PAGE_SAVE_NOTE);
+    expect(text).toContain("Cancel");
+  });
+});
+
+describe("the short block", () => {
+  const block = (over: Partial<AddressBlockView> = {}): AddressBlockView => ({
+    record: record(),
+    editing: false,
+    onEdit: () => {},
+    form: view(),
+    ...over,
+  });
+
+  it("shows one line each, Automatic as a quiet tag, and one Edit", () => {
+    const text = flatten(renderAddressBlock(block()));
+    expect(text).toContain("<dt>Home network</dt>");
+    expect(text).toContain("<dt>Internet</dt>");
+    expect(text).toContain(LOCAL);
+    expect(text).toContain(EXTERNAL);
+    expect(text.split(`class="addr-sum-tag"`).length - 1).toBe(2);
+    expect(text.split(">Edit</button>").length - 1).toBe(1);
+    // No explaining until Edit.
+    expect(text).not.toContain("Used on the same Wi-Fi");
+    expect(text).not.toContain("dev-addr-slot");
+  });
+
+  it("says None, with no tag, for a slot set to none", () => {
+    const text = flatten(renderAddressBlock(block({ record: record({ remote_source: "none", remote_url: null, local_source: "set", local_url: "http://10.0.0.5" }) })));
+    expect(text).toContain(">None</span>");
+    expect(text).toContain("http://10.0.0.5");
+    expect(text).not.toContain(`class="addr-sum-tag"`);
+  });
+
+  it("is the form in the same place while editing", () => {
+    const text = flatten(renderAddressBlock(block({ editing: true })));
+    expect(text).toContain("dev-addr-slot");
+    expect(text).not.toContain("<dt>Home network</dt>");
+  });
+
+  it("says it is loading, or why it could not read them", () => {
+    expect(flatten(renderAddressBlock(block({ record: undefined })))).toContain("Loading the addresses…");
+    const failed = flatten(renderAddressBlock(block({ record: undefined, readError: "Could not read the addresses: gone" })));
+    expect(failed).toContain("Could not read the addresses: gone");
+    expect(failed).not.toContain(">Edit</button>");
   });
 
   it("opens Network settings in place on a plain click, through Home Assistant's own move", () => {
@@ -222,14 +339,37 @@ describe("the panel's wiring", () => {
     expect(API).toContain(`type: "wrist_assistant/devices/set_addresses", watch_id: watchId, ...slots,`);
   });
 
-  it("puts an Addresses button beside Rename on a watch's page, and the form in its info", () => {
-    expect(detail).toContain(`const editingAddresses = row.kind === "watch" && this.addressEdit?.owner === ownerId;`);
-    expect(detail).toContain(`\${row.kind === "watch" && !this.deviceForgetAsk && !renaming && !editingAddresses && !gone`);
-    expect(detail).toContain("@click=${() => void this.startAddressEdit(ownerId)}>${ADDRESSES_BUTTON_TEXT}</button>");
-    expect(detail.indexOf(">Rename</button>")).toBeLessThan(detail.indexOf("${ADDRESSES_BUTTON_TEXT}</button>"));
-    expect(detail.indexOf("${ADDRESSES_BUTTON_TEXT}</button>")).toBeLessThan(detail.indexOf(">Remove</button>"));
-    expect(detail).toContain("${editingAddresses && !this.deviceForgetAsk ? this.renderAddressEditor(ownerId) : nothing}");
-    expect(detail).toContain("renaming || editingAddresses || this.deviceForgetAsk || gone ? html`<div class=\"hb-info\">");
+  it("shows a watch's addresses under its bar all the time, with no Addresses button", () => {
+    expect(detail).toContain(`const addresses = row.kind === "watch" && !this.deviceForgetAsk && !gone ? this.renderHomeAddresses(ownerId) : nothing;`);
+    expect(detail).not.toContain("ADDRESSES_BUTTON");
+    expect(SOURCE).not.toContain("ADDRESSES_BUTTON");
+    // Under the bar and its transient info, over the lineup.
+    expect(detail.indexOf(`<div class="hb-bar">`)).toBeLessThan(detail.indexOf("${addresses}"));
+    expect(detail.indexOf(`html\`<div class="hb-info">`)).toBeLessThan(detail.indexOf("${addresses}"));
+    expect(detail.indexOf("${addresses}")).toBeLessThan(detail.indexOf("this.renderHomeLineup(row)"));
+    expect(detail).toContain("renaming || this.deviceForgetAsk || gone ? html`<div class=\"hb-info\">");
+  });
+
+  it("draws the short block, with Edit opening the form in the same place", () => {
+    const home = method("  private renderHomeAddresses(ownerId: string) {");
+    expect(home).toContain("renderAddressBlock({");
+    expect(home).toContain("editing,");
+    expect(home).toContain("onEdit: () => void this.startAddressEdit(ownerId),");
+    expect(home).toContain("form: this.addressFormView(ownerId),");
+    expect(home).toContain(`<section class="hb-addrs \${editing ? "editing" : ""}" aria-label=\${ADDRESSES_TITLE}>`);
+    // A watch shown without being picked reads its addresses once.
+    expect(home).toContain("if (held === undefined && !this.addressReads.has(ownerId)) {");
+    expect(home).toContain("queueMicrotask(() => void this.loadDeviceAddresses(ownerId));");
+    expect(method("  private addressFormView(ownerId: string) {")).toContain(`saves: "own" as const,`);
+  });
+
+  it("reads a watch's addresses again each time it is picked on Home", () => {
+    expect(method("  private openHomeDevice(ownerId: string, forget = false) {"))
+      .toContain(`if (deviceKindOf(this.ownerOf(ownerId)) === "watch") void this.loadDeviceAddresses(ownerId);`);
+  });
+
+  it("hears the Settings page's saves", () => {
+    expect(SOURCE).toContain("(watchId, record) => this.keepAddresses(watchId, { record }));");
   });
 
   it("holds one form at a time, and leaves it when another device is picked", () => {
@@ -242,21 +382,25 @@ describe("the panel's wiring", () => {
     expect(method("  private stopAddressEdit() {")).toContain("if (this.addressBusy) return;");
   });
 
-  it("drops a late read for another watch", () => {
+  it("keeps each watch's addresses on their own, and keeps what was shown when a read again fails", () => {
     const load = method("  private async loadDeviceAddresses(ownerId: string)");
-    expect(load).toContain("if (this.deviceAddresses?.owner !== ownerId) return undefined;");
+    expect(load).toContain("this.keepAddresses(ownerId, { record });");
+    expect(load).toContain("shown === undefined ? { error: `Could not read the addresses: ${errText(err)}` } : { record: shown }");
+    expect(load).toContain("this.addressReads.delete(ownerId);");
   });
 
-  it("checks the draft first, then sends it, and words an invalid_url refusal", () => {
+  it("sends only the changed slots, checked first, and words an invalid_url refusal", () => {
     const save = method("  private async saveAddressesNow(ownerId: string) {");
-    expect(save.indexOf("addressPayload(draft)")).toBeLessThan(save.indexOf("setDeviceAddresses("));
+    expect(save).toContain("const slots = changedSlots(shown, draft);");
+    expect(save).toContain("if (slots.length === 0) return;");
+    expect(save.indexOf("addressPayload(draft, slots)")).toBeLessThan(save.indexOf("setDeviceAddresses("));
     expect(save).toContain(`code === "invalid_url"`);
     expect(save).toContain("invalidAddressText(");
-    expect(save).toContain("this.deviceAddresses = { owner: ownerId, record };");
+    expect(save).toContain("this.keepAddresses(ownerId, { record });");
   });
 
   it("typing an address picks Set", () => {
-    expect(method("  private editAddressSlot(")).toContain(`change.mode ?? (change.text !== undefined ? "set" : was.mode)`);
+    expect(method("  private editAddressSlot(")).toContain("withSlotEdit(edit.draft, slot, change)");
   });
 
   it("shows the addresses in the pairing dialog's what next, editable in place", () => {

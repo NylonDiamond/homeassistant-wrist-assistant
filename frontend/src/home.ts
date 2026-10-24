@@ -787,6 +787,13 @@ export const homeStyles = css`
   /* Under the bar while it shows: the rename field, Remove's question, a
      note. */
   .hb-info { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  /* A watch's two addresses, always under the bar: a slim hairline card of
+     two lines with Edit at the right, and the form in its place while it is
+     open. */
+  .hb-addrs { min-width: 0; }
+  .hb-addrs:not(.editing) {
+    padding: 9px 10px 9px 14px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--home-card, var(--wa-card));
+  }
   .hb-name { display: flex; flex-direction: column; gap: 1px; padding: 0 2px; min-width: 0; }
   .hb-name h2 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -.02em; line-height: 1.15; overflow-wrap: anywhere; }
   .hb-facts i { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--c); vertical-align: 1px; }

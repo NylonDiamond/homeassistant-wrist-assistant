@@ -33,6 +33,14 @@
 // of the two changed, each over its own revision. Its thinking is in
 // `watch-notification-style/model.ts`.
 //
+// A watch's two addresses (`device-addresses.ts`) are a third store, kept by
+// the integration per watch rather than in a config record. They show first
+// in the Connection card, the same short block and form as on Home, and the
+// one Save sends them too (`devices/set_addresses`), only the slots that
+// changed. They are not the behavior settings, so they show for any watch,
+// one whose settings come from another home included, and while the
+// behavior record waits or cannot be read.
+//
 // On a home with phone pages the row's pick can be an iPhone. The page is
 // then "iPhone settings": the same cards, with only the settings the catalog
 // marks for the iPhone (`catalogFor`) and no card left empty. A phone has no
@@ -42,13 +50,30 @@ import { css, html, nothing, type ReactiveController, type ReactiveControllerHos
 import { live } from "lit/directives/live.js";
 import { checkField, colorField, entityField, entityRefFor, percentSliderField, selectField, settingTitle, sliderField } from "./editors.js";
 import {
+  type DeviceAddresses,
   type HassLike,
   type OwnerSummary,
   type WatchConfigRecord,
+  fetchDeviceAddresses,
   fetchWatchConfig,
   saveWatchConfig,
+  setDeviceAddresses,
   subscribeWatchConfig,
 } from "./ha-api.js";
+import {
+  type AddressDraft,
+  type AddressSlot,
+  ADDRESSES_HELP,
+  ADDRESSES_SEARCH_WORDS,
+  ADDRESSES_TITLE,
+  addressDraft,
+  addressPayload,
+  changedSlots,
+  invalidAddressText,
+  renderAddressBlock,
+  restoreAddressDraft,
+  withSlotEdit,
+} from "./device-addresses.js";
 import { SECTION_COLOR } from "./kinds.js";
 import type { IconProvider } from "./renderer.js";
 import { renderHeadStatus } from "./head-bar.js";
@@ -208,6 +233,13 @@ export class WatchSettings implements ReactiveController {
   /** The integration does not keep the kind: its cards are left out. */
   private styleUnsupported = false;
   private styleError?: string;
+  /** The watch's two addresses as the integration has them, read beside
+   * the records. Not for an iPhone. */
+  private addresses?: DeviceAddresses;
+  private addressesError?: string;
+  /** The Connection card's address form is open, with what it holds. Its
+   * changes count toward Save like any setting's. */
+  private addressDraft?: AddressDraft;
   private note?: Note;
   private confirm?: Confirm;
   /** The watch row the page shows, for its no-record state
@@ -247,12 +279,15 @@ export class WatchSettings implements ReactiveController {
   /** `icons` is the panel's symbol provider, asked on every draw: it loads
    * its file on first use and wakes the panel when it can draw more.
    * `onPaired` hears of a watch just paired here once the page has moved to
-   * it, so the panel can make it the watch the Watch app shows. */
+   * it, so the panel can make it the watch the Watch app shows.
+   * `onAddresses` hears of a watch's addresses just saved here, so Home
+   * shows them too. */
   constructor(
     private readonly host: PanelHost,
     private readonly refreshOwners?: RefreshOwners,
     private readonly icons?: () => IconProvider | undefined,
     private readonly onPaired?: (watchId: string) => void,
+    private readonly onAddresses?: (watchId: string, record: DeviceAddresses) => void,
   ) {
     host.addController(this);
   }
@@ -294,6 +329,9 @@ export class WatchSettings implements ReactiveController {
         styleRevision: this.styleRecord?.revision ?? 0,
         styleDocument: this.styleDocument,
         styleEdits: this.styleEdits,
+        addresses: this.addresses !== undefined && this.addressDraft !== undefined
+          ? { record: this.addresses, draft: this.addressDraft }
+          : undefined,
       });
     }
     this.host.requestUpdate();
@@ -336,6 +374,7 @@ export class WatchSettings implements ReactiveController {
       this.loadError = undefined;
       this.loading = false;
       this.clearStyle();
+      this.clearAddresses();
       this.stopPolling();
       this.unfollow();
       this.changed();
@@ -371,18 +410,31 @@ export class WatchSettings implements ReactiveController {
     this.loadError = undefined;
     if (!keepNote) this.note = undefined;
     this.clearStyle();
+    this.clearAddresses();
     this.stopPolling();
     this.changed();
-    // A phone has no notification style: nothing to read, and no card.
-    await Promise.all([this.readBehavior(hass, ownerId, seq), device === "watch" ? this.readStyle(hass, ownerId, seq) : undefined]);
+    // A phone has no notification style and no addresses: nothing to read,
+    // and no card.
+    await Promise.all([
+      this.readBehavior(hass, ownerId, seq),
+      device === "watch" ? this.readStyle(hass, ownerId, seq) : undefined,
+      device === "watch" ? this.readAddresses(hass, ownerId, seq) : undefined,
+    ]);
     if (seq !== this.loadSeq) return;
     // The edits kept for this watch go back on, over the copies just read.
-    const restored = restoreSettingsDraft(keptSettingsDraft(ownerId), this.record, this.styleRecord, {
+    const kept = keptSettingsDraft(ownerId);
+    const restored = restoreSettingsDraft(kept, this.record, this.styleRecord, {
       behavior: this.behaviorIsNew ? this.readyBehavior : undefined,
       style: this.styleIsNew ? this.readyStyle : undefined,
     });
     this.edits = restored.edits;
     this.styleEdits = restored.styleEdits;
+    // A kept address form opens again over the addresses just read, when it
+    // still changes something.
+    if (kept?.addresses !== undefined && this.addresses !== undefined) {
+      const draft = restoreAddressDraft(kept.addresses, this.addresses);
+      this.addressDraft = changedSlots(this.addresses, draft).length > 0 ? draft : undefined;
+    }
     if (restored.moved && !keepNote) this.note = { kind: "warn", text: SETTINGS_MOVED_TEXT };
     this.loading = false;
     this.pollIfWaiting();
@@ -439,6 +491,25 @@ export class WatchSettings implements ReactiveController {
     this.styleEdits = new Map();
     this.styleUnsupported = false;
     this.styleError = undefined;
+  }
+
+  private clearAddresses(): void {
+    this.addresses = undefined;
+    this.addressesError = undefined;
+    this.addressDraft = undefined;
+  }
+
+  /** The watch's two addresses, read beside the records. A failure is said
+   * in the Connection card and leaves the rest of the page alone. */
+  private async readAddresses(hass: HassLike, ownerId: string, seq: number): Promise<void> {
+    try {
+      const record = await fetchDeviceAddresses(hass, ownerId);
+      if (seq !== this.loadSeq) return;
+      this.addresses = record;
+    } catch (err) {
+      if (seq !== this.loadSeq) return;
+      this.addressesError = `Could not read the addresses: ${errText(err)}`;
+    }
   }
 
   private async readBehavior(hass: HassLike, ownerId: string, seq: number): Promise<void> {
@@ -534,16 +605,35 @@ export class WatchSettings implements ReactiveController {
     return styleDirtyKeys(this.styleDocument, this.styleEdits).length;
   }
 
-  /** One Save for both records: each that changed is sent over its own
-   * revision, side by side, and each ends in its own way. A conflict on one
-   * never costs the other its save or its edits. */
+  /** The addresses the open form changes, one for each. */
+  private get addressChanges(): number {
+    return this.addresses === undefined || this.addressDraft === undefined ? 0 : changedSlots(this.addresses, this.addressDraft).length;
+  }
+
+  /** The page shows the watch's addresses: any watch, never an iPhone. */
+  private get showsAddresses(): boolean {
+    return this.device === "watch" && this.ownerId !== undefined;
+  }
+
+  /** One Save for both records and the addresses: each that changed is sent
+   * on its own, side by side, and each ends in its own way. A conflict on
+   * one never costs another its save or its edits. A typed address that
+   * will not do stops the Save before anything is sent, so the page is
+   * never half saved over a typing slip. */
   private async save(): Promise<void> {
     const hass = this.hass;
     const ownerId = this.ownerId;
     if (!hass || ownerId === undefined || this.saving) return;
     const behavior = this.behaviorDocument !== undefined && this.behaviorChanges > 0;
     const style = this.styleDocument !== undefined && this.styleChanges > 0;
-    if (!behavior && !style) return;
+    const addressSlots = this.addresses !== undefined && this.addressDraft !== undefined ? changedSlots(this.addresses, this.addressDraft) : [];
+    if (!behavior && !style && addressSlots.length === 0) return;
+    const addressSend = addressSlots.length === 0 || this.addressDraft === undefined ? undefined : addressPayload(this.addressDraft, addressSlots);
+    if (addressSend !== undefined && !addressSend.ok) {
+      this.note = { kind: "err", text: `Not saved. ${addressSend.message}` };
+      this.changed();
+      return;
+    }
     this.saving = true;
     this.note = undefined;
     this.changed();
@@ -551,6 +641,7 @@ export class WatchSettings implements ReactiveController {
       const notes = await Promise.all([
         behavior ? this.saveBehavior(hass, ownerId) : undefined,
         style ? this.saveStyle(hass, ownerId) : undefined,
+        addressSend?.ok ? this.saveAddresses(hass, ownerId, addressSend.slots) : undefined,
       ]);
       if (ownerId !== this.ownerId) return;
       this.note = joinNotes(notes);
@@ -658,6 +749,51 @@ export class WatchSettings implements ReactiveController {
     return { kind: "err", text: `Could not save the notification style: ${friendlyError(result)}` };
   }
 
+  /** The addresses' save: only the slots that changed. The reply is the
+   * record now held, which the form closes onto unless it was changed again
+   * meanwhile, and Home hears of it. A refusal keeps the form as it is. */
+  private async saveAddresses(hass: HassLike, ownerId: string, slots: { local_url?: string | null; remote_url?: string | null }): Promise<Note | undefined> {
+    const draft = this.addressDraft;
+    try {
+      const record = await setDeviceAddresses(hass, ownerId, slots);
+      if (ownerId !== this.ownerId) return undefined;
+      this.addresses = record;
+      if (this.addressDraft === draft) this.addressDraft = undefined;
+      this.onAddresses?.(ownerId, record);
+      return undefined;
+    } catch (err) {
+      if (ownerId !== this.ownerId) return undefined;
+      const code = (err as { code?: string } | undefined)?.code;
+      return {
+        kind: "err",
+        text: code === "invalid_url" ? invalidAddressText((err as { message?: string }).message) : `Could not save the addresses: ${errText(err)}`,
+      };
+    }
+  }
+
+  /** The Connection card's Edit: the address form opens on what Home
+   * Assistant holds. */
+  private editAddresses(): void {
+    if (this.addresses === undefined) return;
+    this.addressDraft = addressDraft(this.addresses);
+    this.changed();
+  }
+
+  /** One slot of the open form changed. Typing picks Set (`withSlotEdit`). */
+  private editAddressSlot(slot: AddressSlot, change: { mode?: AddressDraft["local"]["mode"]; text?: string }): void {
+    if (this.addressDraft === undefined) return;
+    this.addressDraft = withSlotEdit(this.addressDraft, slot, change);
+    this.confirm = undefined;
+    this.changed();
+  }
+
+  /** The form's Cancel: its changes go and it closes. */
+  private cancelAddresses(): void {
+    if (this.saving) return;
+    this.addressDraft = undefined;
+    this.changed();
+  }
+
   /** "Start fresh instead", while the page waits for the iPhone's move:
    * after a yes, the records Home Assistant does not hold open ready on the
    * defaults. Nothing is saved until Save. */
@@ -729,9 +865,10 @@ export class WatchSettings implements ReactiveController {
 
   // ── discarding ─────────────────────────────────────────────────────────
 
-  /** Whether the form holds unsaved changes to either record. */
+  /** Whether the form holds unsaved changes to either record or the
+   * addresses. */
   get dirty(): boolean {
-    return this.behaviorChanges > 0 || this.styleChanges > 0;
+    return this.behaviorChanges > 0 || this.styleChanges > 0 || this.addressChanges > 0;
   }
 
   /** Save from the keyboard (⌘S or Ctrl+S on the page), as the button would:
@@ -749,7 +886,7 @@ export class WatchSettings implements ReactiveController {
 
   /** The bar's Discard: it asks first, since the edits have no undo. */
   private askDiscard(): void {
-    const changes = this.behaviorChanges + this.styleChanges;
+    const changes = this.behaviorChanges + this.styleChanges + this.addressChanges;
     if (changes === 0) return;
     this.confirm = {
       text: `Throw away ${changes} unsaved ${changes === 1 ? "change" : "changes"}?`,
@@ -760,10 +897,11 @@ export class WatchSettings implements ReactiveController {
   }
 
   /** Back to the copies Home Assistant holds, or on a new watch to the
-   * defaults it opened on. */
+   * defaults it opened on. The address form closes. */
   private discard(): void {
     this.edits = new Map();
     this.styleEdits = new Map();
+    this.addressDraft = undefined;
     this.confirm = undefined;
     this.changed();
   }
@@ -856,6 +994,7 @@ export class WatchSettings implements ReactiveController {
       ${one
         ? html`<div class="ws-cols one"><div class="ws-body ws-col">
             ${elsewhere ? html`<div class="xf-lead ws-main-house">${uiIcon("info")}<span>${SETTINGS_MAIN_HOUSE_TEXT}</span></div>` : this.behaviorStandIn() ?? nothing}
+            ${elsewhere ? this.renderAddressCard([]) ?? nothing : nothing}
             ${this.pairCard.render()}${this.cert.render(hass)}
           </div></div>`
         : this.renderSplit(hass)}
@@ -925,6 +1064,8 @@ export class WatchSettings implements ReactiveController {
    * note counting as one: the side panel lists a group only when it does. */
   private hasCard(card: SettingsCardId): boolean {
     if (card === "pair" || card === "cert") return true;
+    // The addresses fill the Connection card on their own.
+    if (card === "connection" && this.showsAddresses) return true;
     if (NOTIFICATION_STYLE_SECTIONS.some((s) => s.id === card)) return !this.styleUnsupported && this.styleStandIn() !== null;
     // A card with none of the device's settings (an iPhone keeps only some,
     // `catalogFor`) is left out.
@@ -943,6 +1084,7 @@ export class WatchSettings implements ReactiveController {
     for (const s of catalogFor(this.device)) add(s.id as SettingsCardId, s.settings.filter((x) => dirty.has(x.key)).length);
     const styleDirty = new Set(styleDirtyKeys(this.styleDocument, this.styleEdits));
     for (const s of NOTIFICATION_STYLE_SECTIONS) add(s.id, s.groups.reduce((n, g) => n + g.rows.filter((r) => styleDirty.has(r.key)).length, 0));
+    add("connection", this.addressChanges);
     return counts;
   }
 
@@ -971,7 +1113,13 @@ export class WatchSettings implements ReactiveController {
     } else if (behavior !== null && !searching) {
       standIn(new Set(catalogFor(this.device).map((s) => s.id)), behavior);
     }
-    const style = this.styleUnsupported ? null : this.styleStandIn();
+    // Without the behavior cards the addresses keep a Connection card of
+    // their own, over the note that stands in for the rest.
+    if (behavior !== undefined) {
+      const addresses = this.renderAddressCard(terms);
+      if (addresses !== undefined) cards.set("connection", html`${addresses}${cards.get("connection") ?? nothing}`);
+    }
+    const style =this.styleUnsupported ? null : this.styleStandIn();
     const styleDocument = this.styleDocument;
     if (style === undefined && styleDocument !== undefined) {
       const values = styleFormValues(styleDocument, this.styleEdits);
@@ -1054,7 +1202,9 @@ export class WatchSettings implements ReactiveController {
     const group = groupOfCard(section.id as SettingsCardId)?.title;
     const runs = sectionRuns(section, values)
       .filter((run) => [run.setting, ...run.dependents].some((s) => matchesSearch(terms, settingWords(s, section.title, group))));
-    if (runs.length === 0 && terms.length > 0) return undefined;
+    // The addresses lead the Connection card, over Where to connect.
+    const lead = section.id === "connection" ? this.renderAddressRow(terms, section.title, group) : undefined;
+    if (runs.length === 0 && lead === undefined && terms.length > 0) return undefined;
     return html`<section class="sec" data-sec=${`ws-${section.id}`} data-open="true" data-help=${help ? "on" : "off"}
       style=${look ? `--c:${look.color};--ws-hue:${look.color}` : nothing}>
       <div class="sec-h pinned">
@@ -1064,10 +1214,69 @@ export class WatchSettings implements ReactiveController {
           @click=${() => this.toggleHelp(section.id)}>?</button>
       </div>
       <div class="sec-b">
+        ${lead ?? nothing}
         ${runs.map((run) => html`${this.renderRow(hass, run.setting, values)}${run.dependents.length === 0
           ? nothing
           : html`<div class="fgroup">${run.dependents.map((s) => this.renderRow(hass, s, values))}</div>`}`)}
       </div>
+    </section>`;
+  }
+
+  /**
+   * The addresses as the Connection card's first row: its title and help
+   * like any row's, then the short block of both addresses with Edit, which
+   * opens the form in place (`renderAddressBlock`). The page's Save saves
+   * the form, so it has only Cancel. Undefined for an iPhone, and on a
+   * search that does not name them.
+   */
+  private renderAddressRow(terms: readonly string[], card: string, group: string | undefined): TemplateResult | undefined {
+    if (!this.showsAddresses) return undefined;
+    const urls = this.addresses === undefined ? [] : [this.addresses.local_url ?? undefined, this.addresses.remote_url ?? undefined];
+    if (!matchesSearch(terms, [ADDRESSES_TITLE, ADDRESSES_HELP, ADDRESSES_SEARCH_WORDS, card, group, ...urls])) return undefined;
+    const draft = this.addressDraft;
+    return html`<div class="ws-row ws-addr-row" data-key="addresses">
+      ${this.glyph("ws-ic", "globe", 14)}
+      <span class="ws-addr-t">${ADDRESSES_TITLE}</span>
+      <div class="hint">${ADDRESSES_HELP}</div>
+      <div class="ws-addr-body">${renderAddressBlock({
+        record: this.addresses,
+        readError: this.addressesError,
+        editing: draft !== undefined,
+        onEdit: () => this.editAddresses(),
+        form: {
+          record: this.addresses,
+          draft,
+          busy: this.saving,
+          saves: "page",
+          onMode: (slot, mode) => this.editAddressSlot(slot, { mode }),
+          onText: (slot, text) => this.editAddressSlot(slot, { text }),
+          onSave: () => this.saveFromKey(),
+          onCancel: () => this.cancelAddresses(),
+        },
+      })}</div>
+    </div>`;
+  }
+
+  /** A Connection card holding only the addresses, for when the behavior
+   * cards are not there: a watch whose settings come from another home, or
+   * a behavior record that waits or cannot be read. */
+  private renderAddressCard(terms: readonly string[]): TemplateResult | undefined {
+    const section = WATCH_SETTINGS_CATALOG.sections.find((s) => s.id === "connection");
+    const title = section?.title ?? "Connection";
+    const row = this.renderAddressRow(terms, title, groupOfCard("connection")?.title);
+    if (row === undefined) return undefined;
+    const look = SECTION_LOOK.connection!;
+    const help = !this.helpOff.has("connection");
+    const helpLabel = help ? `Hide the help in ${title}` : `Show help for ${title}`;
+    return html`<section class="sec" data-sec="ws-connection" data-open="true" data-help=${help ? "on" : "off"}
+      style=${`--c:${look.color};--ws-hue:${look.color}`}>
+      <div class="sec-h pinned">
+        <span class="swatch">${uiIcon(look.icon)}</span>
+        <span class="tt"><h4>${title}</h4></span>
+        <button type="button" class="sec-help ${help ? "on" : ""}" aria-pressed=${help ? "true" : "false"} title=${helpLabel} aria-label=${helpLabel}
+          @click=${() => this.toggleHelp("connection")}>?</button>
+      </div>
+      <div class="sec-b">${row}</div>
     </section>`;
   }
 
@@ -1366,6 +1575,7 @@ export class WatchSettings implements ReactiveController {
     return settingsCanSave({
       behaviorChanges: this.behaviorChanges,
       styleChanges: this.styleChanges,
+      addressChanges: this.addressChanges,
       busy: this.saving,
       behaviorHeld: this.behaviorDocument !== undefined,
       styleHeld: this.styleDocument !== undefined,
@@ -1393,10 +1603,8 @@ export class WatchSettings implements ReactiveController {
         <button class="primary" @click=${() => { this.confirm = undefined; confirm.run(); }}>${confirm.label}</button>
       </div>`;
     }
-    const behaviorChanges = this.behaviorChanges;
-    const styleChanges = this.styleChanges;
-    const changes = behaviorChanges + styleChanges;
-    // Both records save under the one button. A record Home Assistant does
+    const changes = this.behaviorChanges + this.styleChanges + this.addressChanges;
+    // Both records and the addresses save under the one button. A record Home Assistant does
     // not hold yet is created by its first Save, from the defaults the page
     // opened on; until a change, Save is greyed out and says why beside it.
     const canSave = this.canSave;
@@ -1690,6 +1898,14 @@ export const watchSettingsStyles = css`
     .ws-tile-glyph.demo, .ws-tile-glyph svg.ws-demo { width: 48px; height: 48px; }
   }
   .ws-body > button.ws-retry, .ws-body > button.ws-start { align-self: flex-start; }
+  /* The addresses row: its title and help like any row's, the two lines or
+     the form under them at the row's full width. */
+  .ws-addr-row > .ws-addr-t { grid-column: 2 / -1; grid-row: 1; color: var(--wa-ink); font-size: 13.5px; font-weight: 500; }
+  .ws-addr-row > .ws-addr-body { grid-column: 2 / -1; grid-row: 3; margin-top: 8px; }
+  .ws-addr-row > .ws-addr-body > .addr-sum { padding: 8px 8px 8px 12px; border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-field); }
+  @container xfer (max-width: 440px) {
+    .ws-addr-row > .ws-addr-body { grid-column: 1 / -1; }
+  }
   /* The indicator has no opacity, so the color row drops the percent box. */
   .ws-body .color-box .alpha { display: none; }
   /* The notification style's cards: the phone's groups as small headings
