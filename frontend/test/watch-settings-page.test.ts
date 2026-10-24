@@ -291,7 +291,7 @@ describe("the side panel's groups", () => {
     const expected = [
       ...WATCH_SETTINGS_CATALOG.sections.map((s) => s.id),
       ...NOTIFICATION_STYLE_SECTIONS.map((s) => s.id),
-      "pair", "cert",
+      "device", "cert",
     ];
     expect([...cards].sort()).toEqual([...expected].sort());
   });

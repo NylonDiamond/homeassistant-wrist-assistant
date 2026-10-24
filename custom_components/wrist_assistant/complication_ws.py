@@ -589,6 +589,14 @@ async def ws_owners(
                 # `app_version`; the panel's split migration needs it because
                 # the per-shape slot resolver landed part-way through a beta.
                 "app_build": entry.app_build,
+                # When the device was paired, re-keyed or last sent its app
+                # version (`last_provision`), as ISO 8601. The panel's This
+                # watch card shows it. Null when the store never had one.
+                "last_provision": (
+                    entry.last_provision.isoformat()
+                    if entry.last_provision is not None
+                    else None
+                ),
                 "screen_size": entry.screen_size,
                 "complication_count": len(store.list(device_id)),
                 "token": store.owner_token(device_id),

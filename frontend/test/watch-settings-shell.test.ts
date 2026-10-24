@@ -15,6 +15,7 @@ import { WatchSettings } from "../src/watch-settings-view.js";
 import { SETTINGS_GROUPS } from "../src/watch-settings-nav.js";
 import { type CatalogSetting, catalogSettings, watchBehaviorDefaults } from "../src/watch-settings.js";
 import { SETTINGS_MOVED_TEXT, anyWatchSettingsDirty, dropWatchSettingsDrafts, keptSettingsDraft } from "../src/watch-settings-draft.js";
+import { pairedDateText } from "../src/watch-this-device.js";
 
 interface Tpl {
   strings: readonly string[];
@@ -117,6 +118,9 @@ function fakeHass(newWatch: string, opts: {
         }
         if (type.endsWith("/pair/offer_status")) return opts.offerState ?? { state: "open" };
         if (type.endsWith("/pair/offer_cancel")) return null;
+        if (type.endsWith("/client_certificate/status")) {
+          return { present: false, fingerprint: null, updated_at: null, revision: 0, source: null };
+        }
         throw Object.assign(new Error("unknown"), { code: "unknown_command" });
       },
       async subscribeMessage(callback: (event: unknown) => void, msg: Record<string, unknown>) {
@@ -257,6 +261,82 @@ describe("Watch settings as a page under the Watch app row", () => {
     expect(main.text()).toContain("data-sec=ws-connection");
   });
 
+  describe("Pairing and security on a paired watch's page", () => {
+    const certReads = (sent: Record<string, unknown>[]) => sent.filter((m) => String(m.type).endsWith("/client_certificate/status"));
+    const CHENS = [
+      owner("w1", "Jesse's Watch"),
+      { ...owner("w2", "Chen's Watch"), user_id: "chen", app_build: "7", last_provision: "2026-10-07T12:00:00Z", last_seen_seconds: 600 } as OwnerSummary,
+    ];
+    const pairing = (opened: Awaited<ReturnType<typeof page>>) => {
+      opened.inside.group = "pairing";
+      return flatten(opened.ws.render(opened.ha.hass, CHENS));
+    };
+
+    it("shows This watch in place of Pair a device, with what the panel knows of the watch", async () => {
+      const opened = await page("w2", CHENS);
+      const shown = pairing(opened);
+      expect(shown).toContain(`data-sec="ws-device"`);
+      expect(shown).toContain("<h4>This watch</h4>");
+      expect(shown).not.toContain(`data-sec="ws-pair"`);
+      expect(shown).not.toContain("Type the code");
+      expect(shown).not.toContain("Show a QR code");
+      // The date in the browser's own words ("7 Oct 2026" in en-GB).
+      expect(shown).toContain(`<span>Paired</span>`);
+      expect(shown).toContain(`>${pairedDateText("2026-10-07T12:00:00Z")}</div>`);
+      expect(shown).toMatch(/<span>App<\/span>\s*<div class="readout-v"[^>]*>3\.1\.0 \(7\)</);
+      expect(shown).toMatch(/<span>Last reached Home Assistant<\/span>\s*<div class="readout-v"[^>]*>10 min ago</);
+      // Chen has no person entity here, so the administrator's list names him.
+      expect(shown).toMatch(/<span>Owner<\/span>\s*<div class="readout-v"[^>]*>Chen</);
+      expect(shown).toContain("If this watch stops connecting, open Settings on the watch and choose Pair again.");
+    });
+
+    it("keeps the certificate, its For fixed to the watch's owner, not a menu of people", async () => {
+      const opened = await page("w2", CHENS);
+      await vi.waitFor(() => expect(certReads(opened.ha.sent).at(-1)?.user_id).toBe("chen"));
+      const shown = pairing(opened);
+      expect(shown).toContain(`data-sec="ws-cert"`);
+      expect(shown).toMatch(/<span>For<\/span>\s*<div class="readout-v ws-cert-for">Chen</);
+      expect(shown).toContain("It goes to the watch and iPhone paired for them.");
+      expect(shown).not.toContain("Jesse (you) · Admin");
+      expect(shown).not.toContain("<select");
+    });
+
+    it("follows the row to a watch with no known owner, and the menu of people comes back", async () => {
+      const opened = await page("w2", CHENS);
+      await vi.waitFor(() => expect(certReads(opened.ha.sent).at(-1)?.user_id).toBe("chen"));
+      await opened.show("w1");
+      // The administrator's own certificate again, read with no user named.
+      await vi.waitFor(() => expect(certReads(opened.ha.sent).at(-1)).toEqual({ type: "wrist_assistant/client_certificate/status" }));
+      const shown = pairing(opened);
+      expect(shown).toContain("Jesse (you) · Admin");
+      expect(shown).toContain("<select");
+      expect(shown).toMatch(/<span>Owner<\/span>\s*<div class="readout-v"[^>]*>No one yet</);
+      // No date known: no Paired row.
+      expect(shown).not.toContain("<span>Paired</span>");
+    });
+
+    it("names the owner as the person at the card, with (you), from the person entity", async () => {
+      const mine = [{ ...owner("w1", "Jesse's Watch"), user_id: "root" } as OwnerSummary];
+      const opened = await page("w1", mine);
+      (opened.ha.hass as { states: Record<string, unknown> }).states = {
+        "person.jesse": { entity_id: "person.jesse", state: "home", attributes: { user_id: "root", friendly_name: "Jesse S" } },
+      };
+      await opened.show("w1");
+      opened.inside.group = "pairing";
+      const shown = flatten(opened.ws.render(opened.ha.hass, mine));
+      expect(shown).toMatch(/<span>For<\/span>\s*<div class="readout-v ws-cert-for">Jesse S \(you\)</);
+      expect(shown).toMatch(/<span>Owner<\/span>\s*<div class="readout-v"[^>]*>Jesse S</);
+      expect(certReads(opened.ha.sent).every((m) => !("user_id" in m))).toBe(true);
+    });
+
+    it("keeps the person at the card for someone who is not an administrator, on another person's watch", async () => {
+      const opened = await page("w2", CHENS, { notAdmin: true });
+      await settle();
+      expect(certReads(opened.ha.sent).every((m) => !("user_id" in m))).toBe(true);
+      expect(pairing(opened)).not.toContain("ws-cert-for");
+    });
+  });
+
   describe("on an iPhone, with phone pages", () => {
     const PHONE = { ...owner("p1", "Jesse's iPhone"), device_kind: "iphone", phone_pages: true } as OwnerSummary;
     const DEVICES = [...WATCHES, PHONE];
@@ -278,8 +358,12 @@ describe("Watch settings as a page under the Watch app row", () => {
       expect(shown).toContain("data-sec=ws-gestures");
       expect(shown).not.toContain("data-sec=ws-connection");
       expect(shown).not.toContain("data-sec=ws-motion");
-      // The pairing card is the home's and stays.
-      expect(shown).toContain(`data-sec="ws-pair"`);
+      // The iPhone's own page says what it knows of the iPhone, not how to
+      // pair another device.
+      expect(shown).toContain(`data-sec="ws-device"`);
+      expect(shown).toContain("<h4>This iPhone</h4>");
+      expect(shown).toContain("choose Pair Again.");
+      expect(shown).not.toContain(`data-sec="ws-pair"`);
     });
 
     it("never reads a notification style for the phone, so none of its cards show", async () => {
@@ -441,8 +525,10 @@ describe("Watch settings as a page under the Watch app row", () => {
   describe("whose watch it is", () => {
     const confirms = (sent: Record<string, unknown>[]) => sent.filter((m) => String(m.type).endsWith("/confirm"));
 
+    // The pairing card is on the page of a home with no watch yet: a paired
+    // watch's own page has This watch in its place.
     async function lookedUp(hassOpts: Parameters<typeof fakeHass>[1]) {
-      const opened = await page("w2", WATCHES, hassOpts);
+      const opened = await page(undefined, [], hassOpts);
       opened.inside.pairCard.setPairCode("ABCDEF");
       await opened.inside.pairCard.lookUpPair();
       return opened;
@@ -532,7 +618,7 @@ describe("Watch settings as a page under the Watch app row", () => {
     });
 
     it("leaves the question out for an integration whose confirm takes no user", async () => {
-      const opened = await page("w2", WATCHES, {});
+      const opened = await page(undefined, [], {});
       // The client certificate card reads the people on opening; the lookup
       // must not read them again.
       const listed = () => opened.ha.sent.filter((m) => m.type === "config/auth/list").length;
@@ -612,7 +698,7 @@ describe("Watch settings as a page under the Watch app row", () => {
     });
 
     async function qrMode(hassOpts: Parameters<typeof fakeHass>[1] = {}) {
-      const opened = await page("w2", WATCHES, hassOpts);
+      const opened = await page(undefined, [], hassOpts);
       opened.inside.pairCard.setMode("qr");
       await vi.waitFor(() => expect(opened.inside.pairCard.offer.usersRead).toBe(true));
       return opened;

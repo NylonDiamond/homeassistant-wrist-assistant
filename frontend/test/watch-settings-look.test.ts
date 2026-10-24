@@ -489,7 +489,7 @@ describe("the side panel", () => {
     expect(shown).toContain('<p class="ws-blurb">How your watch reaches Home Assistant.</p>');
     expect(shown).toContain("data-sec=ws-connection");
     for (const id of ["gestures", "navigation", "camera"]) expect(shown).not.toContain(`data-sec=ws-${id}`);
-    expect(shown).not.toContain(`data-sec="ws-pair"`);
+    expect(shown).not.toContain(`data-sec="ws-device"`);
   });
 
   it("shows a group's cards when it is picked, both of them for Gestures", () => {
@@ -500,8 +500,20 @@ describe("the side panel", () => {
     expect(shown).toContain("data-sec=ws-motion");
     expect(shown).not.toContain("data-sec=ws-connection");
     bound(navItem(page(), "pairing"), "@click")();
-    expect(flatten(page())).toContain(`data-sec="ws-pair"`);
+    // A paired watch's page: This watch and the certificate, and no card to
+    // pair another device, which is Home's.
+    expect(flatten(page())).toContain(`data-sec="ws-device"`);
     expect(flatten(page())).toContain(`data-sec="ws-cert"`);
+    expect(flatten(page())).not.toContain(`data-sec="ws-pair"`);
+  });
+
+  it("finds This watch when the search says pair", () => {
+    const { page } = dialog();
+    searchFor(page(), "pair");
+    const shown = flatten(page());
+    expect(shown).toMatch(/class="ws-found"[^>]*>Pairing and security<\/button>/);
+    expect(shown).toContain(`data-sec="ws-device"`);
+    expect(shown).not.toContain(`data-sec="ws-pair"`);
   });
 
   it("finds settings in every group, only the matching rows, under each group's name", () => {

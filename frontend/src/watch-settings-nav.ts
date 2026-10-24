@@ -5,7 +5,8 @@
 // is in one group, and the search finds any of them.
 //
 // A card is one catalog section (`watch-settings-catalog.json`), one of the
-// notification style's sections, or the pairing or client certificate card.
+// notification style's sections, or the This watch or client certificate
+// card. Pairing another device is Home's, not a device's page.
 // The view draws the cards; this file only says which go where, so the tests
 // can check that every card is in exactly one group without a DOM.
 
@@ -16,7 +17,7 @@ import type { UiIconName } from "./ui-icons.js";
 export type SettingsCardId =
   | "connection" | "gestures" | "motion" | "navigation" | "controls" | "camera"
   | "notifications" | "sounds"
-  | "pair" | "cert";
+  | "device" | "cert";
 
 export interface SettingsGroup {
   id: string;
@@ -37,7 +38,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
   { id: "cameras", title: "Cameras", blurb: "Live video, and how often pictures update.", icon: "image", color: SECTION_COLOR.look, cards: ["camera"] },
   { id: "notifications", title: "Notifications", blurb: "How alerts look on your wrist, and how fast they arrive.", icon: "note", color: SECTION_COLOR.position, cards: ["notifications"] },
   { id: "sounds", title: "Sounds", blurb: "Volume, and the sound for each action.", icon: "states", color: "var(--wa-hue-blue)", cards: ["sounds"] },
-  { id: "pairing", title: "Pairing and security", blurb: "Add a watch or iPhone, and a certificate for special setups.", icon: "lock", color: SECTION_COLOR.states, cards: ["pair", "cert"] },
+  { id: "pairing", title: "Pairing and security", blurb: "When this device was paired, and a certificate for special setups.", icon: "lock", color: SECTION_COLOR.states, cards: ["device", "cert"] },
 ];
 
 /** The group with this id, or the first. */

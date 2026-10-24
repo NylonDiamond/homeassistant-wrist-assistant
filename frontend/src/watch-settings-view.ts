@@ -169,6 +169,8 @@ import {
 import { notificationPreview, notificationPreviewStyles } from "./watch-notification-style/preview.js";
 import { ClientCertCard, clientCertStyles } from "./watch-client-cert-view.js";
 import { PairWatchCard, pairCardStyles } from "./watch-pair-view.js";
+import { THIS_DEVICE_SEARCH_WORDS, thisDeviceNote, thisDeviceRows, thisDeviceTitle } from "./watch-this-device.js";
+import { type HaPerson, haPeople } from "./people.js";
 import { friendlyError } from "./friendly-error.js";
 
 /** How often the page asks whether a device has collected a save. */
@@ -269,12 +271,19 @@ export class WatchSettings implements ReactiveController {
   private subscribeSeq = 0;
   private unsubscribe?: () => Promise<void>;
   private followed?: string;
-  /** The "Pair a device" card, after the other cards. It starts afresh on
-   * each visit, and a watch paired on it becomes the one shown. */
+  /** The "Pair a device" card, on the one column page of a home with no
+   * watch yet, or of a watch whose settings live in another home. A paired
+   * device's own page has This watch in its place: pairing another device
+   * is Home's job. It starts afresh on each visit, and a watch paired on it
+   * becomes the one shown. */
   private readonly pairCard = new PairWatchCard(() => this.changed(), (id, stale, kind) => this.showPaired(id, stale, kind));
-  /** The signed in user's client certificate, the card under the pairing
-   * card. It reads its status once each time the page is opened. */
+  /** The client certificate card, under the pairing or This watch card. On
+   * a device's page it is fixed to that device's owner (`certOwner`). It
+   * reads its status once each time the page is opened. */
   private readonly cert = new ClientCertCard(() => this.host.requestUpdate());
+  /** Home Assistant's people by user id, worked out again only when the
+   * states change. */
+  private peopleFor?: { states: unknown; people: Map<string, HaPerson> };
 
   /** `icons` is the panel's symbol provider, asked on every draw: it loads
    * its file on first use and wakes the panel when it can draw more.
@@ -355,6 +364,8 @@ export class WatchSettings implements ReactiveController {
     const id = initialWatch(devices, current);
     this.shownOwner = devices.find((w) => w.owner_watch_id === id);
     const step = settingsPageStep(this.active, this.ownerId, id);
+    // The certificate is for the shown device's owner, as the row moves.
+    if (this.active) this.cert.fixTo(this.certOwner(hass));
     if (step === "stay") return;
     if (!this.active) {
       // A new visit: the pairing card and the bar start afresh.
@@ -362,7 +373,7 @@ export class WatchSettings implements ReactiveController {
       this.confirm = undefined;
       this.note = undefined;
       this.pairCard.open(hass);
-      this.cert.open(hass);
+      this.cert.open(hass, this.certOwner(hass));
     }
     if (step === "clear" || id === undefined) {
       // Nothing to load: clear whatever was shown, a load still out
@@ -1063,7 +1074,7 @@ export class WatchSettings implements ReactiveController {
   /** Whether the page has this card to show without a search, its record's
    * note counting as one: the side panel lists a group only when it does. */
   private hasCard(card: SettingsCardId): boolean {
-    if (card === "pair" || card === "cert") return true;
+    if (card === "device" || card === "cert") return true;
     // The addresses fill the Connection card on their own.
     if (card === "connection" && this.showsAddresses) return true;
     if (NOTIFICATION_STYLE_SECTIONS.some((s) => s.id === card)) return !this.styleUnsupported && this.styleStandIn() !== null;
@@ -1130,8 +1141,8 @@ export class WatchSettings implements ReactiveController {
     } else if (style !== undefined && style !== null && !searching) {
       standIn(new Set(NOTIFICATION_STYLE_SECTIONS.map((s) => s.id)), style);
     }
-    const pairing = groupOfCard("pair")?.title;
-    if (matchesSearch(terms, ["Pair a device, watch, iPhone, QR code, pairing code, add", pairing])) cards.set("pair", this.pairCard.render());
+    const pairing = groupOfCard("device")?.title;
+    if (matchesSearch(terms, [thisDeviceTitle(this.device), THIS_DEVICE_SEARCH_WORDS, pairing])) cards.set("device", this.renderThisDevice(hass));
     if (matchesSearch(terms, ["Client certificate, mTLS, proxy, passphrase", pairing])) cards.set("cert", this.cert.render(hass));
     return cards;
   }
@@ -1139,6 +1150,40 @@ export class WatchSettings implements ReactiveController {
   /** The device on the page, in a sentence: "watch" or "iPhone". */
   private get noun(): string {
     return this.device === "iphone" ? "iPhone" : "watch";
+  }
+
+  /** The shown device's owner, the person its certificate is for, with
+   * their name when the panel knows it: their `person` entity's, or the
+   * signed in person's own. Undefined with no device, a device bound to
+   * nobody, or one whose user was deleted. */
+  private certOwner(hass: HassLike): { id: string; name?: string } | undefined {
+    const owner = this.shownOwner;
+    const id = owner?.user_id;
+    if (owner === undefined || typeof id !== "string" || id === "" || owner.user_gone === true) return undefined;
+    const states = hass.states ?? {};
+    if (this.peopleFor?.states !== states) this.peopleFor = { states, people: haPeople(states) };
+    const name = this.peopleFor.people.get(id)?.name ?? (id === hass.user?.id ? hass.user?.name : undefined);
+    return name ? { id, name } : { id };
+  }
+
+  /** The This watch card (`watch-this-device.ts`): what the panel knows
+   * about the device on the page, and what to do when it stops connecting. */
+  private renderThisDevice(hass: HassLike) {
+    const owner = this.shownOwner;
+    const person = this.certOwner(hass);
+    const name = person?.name ?? (person === undefined ? undefined : this.cert.nameOf(person.id));
+    const rows = thisDeviceRows(owner, name);
+    return html`<section class="sec ws-device" data-sec="ws-device" data-open="true" data-help="on" style=${`--c:${SECTION_COLOR.states}`}>
+      <div class="sec-h pinned">
+        <span class="swatch">${uiIcon(this.device === "iphone" ? "phone" : "watch")}</span>
+        <span class="tt"><h4>${thisDeviceTitle(this.device)}</h4></span>
+      </div>
+      <div class="sec-b">
+        ${rows.map((r) => html`<div class="field readout"><span>${r.label}</span>
+          <div class="readout-v" title=${r.title ?? nothing}>${r.value}</div></div>`)}
+        <div class="hint keep">${thisDeviceNote(this.device)}</div>
+      </div>
+    </section>`;
   }
 
   /** Beside the title: which watch, and who last saved its settings and
