@@ -13,10 +13,11 @@ administrator would notice.
 The panel is open to every signed-in user (``complication_panel.py``), and
 each command falls in exactly one of four groups (``panel_access.py``):
 
-* ``_ADMIN``: keeps ``@websocket_api.require_admin``. Only the gallery key,
-  which is about the home's public face rather than anyone's devices, and a
+* ``_ADMIN``: keeps ``@websocket_api.require_admin``. The gallery key,
+  which is about the home's public face rather than anyone's devices, a
   new library menu, which no device uses yet (a menu no device uses is an
-  administrator's).
+  administrator's), and saving or testing HTTP actions, which hold the
+  home's tokens and send requests on its own network.
 * ``_OWNER``: names one device (or two, for a move) and calls an owner
   check before it reads or writes: ``require_owner`` for the panel's
   commands, and ``may_follow_owner`` / ``_may_follow_owner`` for the
@@ -75,6 +76,7 @@ _MODULES = [
 _ADMIN = {
     _MODULE.name: {"ws_gallery_key"},
     _WATCH_CONFIG_MODULE.name: {"ws_library_menus_create", "ws_library_item_create"},
+    _HTTP_ACTIONS_MODULE.name: {"ws_http_actions_save", "ws_http_actions_test"},
 }
 
 # Command -> the owner check it must call. Every one of them is refused for
@@ -141,8 +143,11 @@ _FILTERED = {
 
 # Open to every signed-in user, each one a decision made on purpose:
 # * Parts and the four renders the editor previews with are the home's.
-# * The HTTP action library, the page photos and the camera framing are the
-#   home's too. A camera test goes only to the caller's own devices.
+# * The page photos and the camera framing are the home's too. A camera test
+#   goes only to the caller's own devices.
+# * Reading the HTTP action library: a non-admin gets only the public list a
+#   device is told, never a URL, header or global (pinned in
+#   test_the_http_actions_read_hides_secrets_from_non_admins).
 # * Pairing: any user pairs their own devices, as /v2/register_secret has
 #   always allowed. Pairing for someone else, taking over another user's
 #   device, a Replace offer, and another user's offers are refused inside
@@ -167,11 +172,7 @@ _OPEN = {
         "ws_pair_offer_status",
         "ws_pair_offer_cancel",
     },
-    _HTTP_ACTIONS_MODULE.name: {
-        "ws_http_actions_get",
-        "ws_http_actions_save",
-        "ws_http_actions_test",
-    },
+    _HTTP_ACTIONS_MODULE.name: {"ws_http_actions_get"},
     _PAGE_IMAGES_MODULE.name: {
         "ws_page_images_list",
         "ws_page_images_get",
@@ -548,3 +549,15 @@ def test_the_http_actions_capability_is_advertised() -> None:
     const = (_PKG / "const.py").read_text()
     assert "register_capability(HTTP_ACTIONS_CAPABILITY)" in init
     assert 'HTTP_ACTIONS_CAPABILITY = "http_actions"' in const
+
+
+def test_the_http_actions_read_hides_secrets_from_non_admins() -> None:
+    """The open read hands the whole library, secrets and all, only to an
+    administrator: it asks ``is_admin`` and gives anyone else the store's
+    public list. Its answers are tested in test_http_actions_ops.py."""
+    node = _command(_HTTP_ACTIONS_MODULE, "ws_http_actions_get")
+    calls = {
+        target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", None)
+        for target in (n.func for n in ast.walk(node) if isinstance(n, ast.Call))
+    }
+    assert {"is_admin", "get", "public"} <= calls

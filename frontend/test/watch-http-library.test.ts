@@ -118,6 +118,30 @@ describe("the library as the pickers read it", () => {
     expect(readWatchHttpLibrary({ revision: 1, document: "nope" })).toEqual({ revision: 1, actions: [] });
   });
 
+  it("reads a non-admin's answer, the public list, with its flags as given", () => {
+    const read = readWatchHttpLibrary({
+      revision: 3,
+      public: {
+        schemaVersion: 1,
+        actions: [
+          { id: PORCH, name: "Porch Temp", variables: [], hasReply: true },
+          { id: BLANK, name: " ", icon: "bolt", variables: [], needsSetup: true },
+          { id: "garage", name: "No UUID", variables: [] },
+        ],
+      },
+    })!;
+    expect(read).toEqual({
+      revision: 3,
+      actions: [
+        { id: PORCH, name: "Porch Temp", hasReply: true, needsSetup: false, source: "home" },
+        { id: BLANK, name: "HTTP Action", hasReply: false, needsSetup: true, source: "home", icon: "bolt" },
+      ],
+    });
+    // An administrator's whole document wins over a public list beside it.
+    expect(readWatchHttpLibrary({ ...RECORD, public: { actions: [] } })).toEqual(LIBRARY);
+    expect(readWatchHttpLibrary({ revision: 0, public: { actions: [{ id: PORCH, name: "x" }] } })).toEqual({ revision: 0, actions: [] });
+  });
+
   it("holds nothing at revision 0, and nothing at all without an answer", () => {
     expect(readWatchHttpLibrary({ revision: 0 })).toEqual({ revision: 0, actions: [] });
     expect(readWatchHttpLibrary({ revision: 0, document: RECORD.document })).toEqual({ revision: 0, actions: [] });

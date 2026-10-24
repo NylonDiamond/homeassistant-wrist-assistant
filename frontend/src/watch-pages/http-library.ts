@@ -48,12 +48,18 @@ const REPLY_SOURCES: readonly unknown[] = ["statusCode", "bodyText", "jsonField"
  * lists it: a UUID string id (a tile and a slide store one), the first of
  * ids that differ only in case, the trimmed name else "HTTP Action". Every
  * entry is marked `source: "home"`. Undefined for no answer.
+ *
+ * An administrator's answer carries the whole `document`. Anyone else's
+ * carries only `public`, the list a device is told, whose actions say
+ * `hasReply` and `needsSetup` outright and hold no URL or reply setting.
  */
-export function readWatchHttpLibrary(record: { revision?: unknown; document?: unknown } | undefined): WatchHttpLibrary | undefined {
+export function readWatchHttpLibrary(record: { revision?: unknown; document?: unknown; public?: unknown } | undefined): WatchHttpLibrary | undefined {
   if (record === undefined) return undefined;
   const revision = typeof record.revision === "number" && record.revision > 0 ? record.revision : 0;
   if (revision === 0) return { revision, actions: [] };
-  const list = isObject(record.document) && Array.isArray(record.document.actions) ? record.document.actions : [];
+  const listed = record.document === undefined && isObject(record.public);
+  const source = listed ? record.public : record.document;
+  const list = isObject(source) && Array.isArray(source.actions) ? source.actions : [];
   const seen = new Set<string>();
   const actions: WatchCatalogHTTPAction[] = [];
   for (const raw of list) {
@@ -66,8 +72,8 @@ export function readWatchHttpLibrary(record: { revision?: unknown; document?: un
     const out: WatchCatalogHTTPAction = {
       id: raw.id,
       name: name === "" ? UNNAMED : name,
-      hasReply: isObject(reply) && REPLY_SOURCES.includes(reply.source),
-      needsSetup: typeof raw.url !== "string" || raw.url.trim() === "",
+      hasReply: listed ? raw.hasReply === true : isObject(reply) && REPLY_SOURCES.includes(reply.source),
+      needsSetup: listed ? raw.needsSetup === true : typeof raw.url !== "string" || raw.url.trim() === "",
       source: "home",
     };
     if (typeof raw.icon === "string") out.icon = raw.icon;

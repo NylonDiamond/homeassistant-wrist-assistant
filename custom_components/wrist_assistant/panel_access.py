@@ -8,13 +8,16 @@ iPhone. That splits the commands three ways:
   settings, its status, forgetting it) is allowed only for a device the
   caller may manage (``may_manage_owner``). Each such command calls
   ``require_owner`` before it reads or writes anything.
-* Shared: the home's own libraries (Parts, page photos, camera framing, HTTP
-  actions, the complication Library) and the renders the editor previews
-  with are open to every signed-in user, read and write. They belong to the
-  household rather than to one person.
+* Shared: the home's own libraries (Parts, page photos, camera framing, the
+  complication Library) and the renders the editor previews with are open
+  to every signed-in user, read and write. They belong to the household
+  rather than to one person.
 * Admin only: the little that is about the home's public face rather than
   any one person's devices (the gallery key), which keeps
-  ``@websocket_api.require_admin``.
+  ``@websocket_api.require_admin``, and changing or testing HTTP actions,
+  which hold the home's tokens and send requests from Home Assistant on its
+  own network (``http_actions_ws``; anyone else reads only their public
+  list).
 
 The device signed ops in ``wa_v2_views.py`` do not come through here; they
 run as the device's bound user.

@@ -1019,20 +1019,27 @@ export interface HttpActionsDelivery {
   delivered: Record<string, number>;
 }
 
-/** The library as the get command answers. `document` is absent at
- * revision 0. `handed_over` lists the owners whose phone gave its library
- * once. `updated_by` is `panel` for a save here, else the owner that handed
- * a library over. */
+/** The library as the get command answers an administrator. `document` is
+ * absent at revision 0. `handed_over` lists the owners whose phone gave its
+ * library once. `updated_by` is `panel` for a save here, else the owner that
+ * handed a library over.
+ *
+ * Anyone else gets only `revision` and, past revision 0, `public`: the list
+ * a device is told, with no URL, header or global. Only the pickers
+ * (`readWatchHttpLibrary`) read that answer; the editor is an
+ * administrator's. */
 export interface HttpActionsRecord extends HttpActionsDelivery {
   hash: string | null;
   updated_at: string | null;
   updated_by: string | null;
   handed_over: string[];
   document?: HttpActionsDocument;
+  public?: unknown;
 }
 
-/** The home's shared library, open to anyone signed in. An integration
- * older than the library rejects with the code `unknown_command`. */
+/** The home's shared library: the whole of it for an administrator, the
+ * public list for anyone else. An integration older than the library
+ * rejects with the code `unknown_command`. */
 export async function fetchHttpActions(hass: HassLike) {
   return hass.connection.sendMessagePromise<HttpActionsRecord>({ type: `${HA_ACTIONS}/get` });
 }
