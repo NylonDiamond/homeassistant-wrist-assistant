@@ -203,7 +203,7 @@ describe("Watch settings with the notification style", () => {
     expect(shown).not.toContain("data-sec=ws-wristWebhooks");
     expect(shown).not.toContain("data-key=storedWebhookButtonSize");
     expect(at("data-sec=ws-sounds")).toBeGreaterThan(at("data-sec=ws-notifications"));
-    expect(at(`data-sec="ws-pair"`)).toBeGreaterThan(at("data-sec=ws-sounds"));
+    expect(at(`data-sec="ws-device"`)).toBeGreaterThan(at("data-sec=ws-sounds"));
     // The preview leads the Notifications card.
     expect(at('class="ns-pv"')).toBeGreaterThan(at("data-sec=ws-notifications"));
     expect(at('class="ns-pv"')).toBeLessThan(at("data-key=backgroundStyle"));

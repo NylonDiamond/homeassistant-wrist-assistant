@@ -73,6 +73,11 @@ export interface OwnerSummary {
       `app_version`: the one gate that needs it is the split migration, whose
       resolver landed part-way through a beta (see `SPLIT_GATE`). */
   app_build?: string | null;
+  /** When the device was paired, re-keyed or last reported a new app
+      version, as ISO 8601 (the secret store's `last_provision`). Null when
+      the store has none, absent from the Library and orphan rows and from
+      integrations older than the field. */
+  last_provision?: string | null;
   /** Screen size in points ("208x248"), reported by the watch app. Matches a
       renderer `WatchCase` so the preview dropdown defaults to this watch. */
   screen_size: string | null;
