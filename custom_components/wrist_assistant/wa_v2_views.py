@@ -1485,6 +1485,42 @@ async def _op_snapshot(ctx: _OpContext) -> Response:
     )
 
 
+async def _op_notification_snapshot(ctx: _OpContext) -> Response:
+    """The picture a notification push named by its ``snapshot_token``.
+
+    Body:  {"token": <the push's snapshot_token>, "live"?: true}
+    Reply: 200, the image bytes, signed like every other reply. Without
+           ``live``, the frame captured when the push was sent, waited for
+           briefly while that capture still runs. With ``live``, a fresh
+           frame from the same camera while the token has live captures
+           left, else the frozen one.
+    Refusal: 400 for a missing token; 404 for a token that is unknown,
+             expired, or whose capture failed (alike by design).
+
+    The push carries only the token, so what rides through the relay and
+    Apple's push service opens nothing on its own: the picture needs a
+    device paired to this Home Assistant as well. The plain token URLs
+    (`WANotificationSnapshotView`) stay for apps that predate the token.
+    """
+    token = ctx.payload.get("token")
+    if not isinstance(token, str) or not token:
+        return Response(status=400, text="token required")
+    if ctx.payload.get("live") is True:
+        frame = await _notification_snapshot_live_frame(ctx.hass, ctx.domain_data, token)
+        cache_control = "no-store"
+    else:
+        frame = await _notification_snapshot_frame(ctx.domain_data, token)
+        cache_control = "private, max-age=600"
+    if frame is None:
+        return Response(status=404, text="Not Found")
+    data, content_type = frame
+    return ctx.signed_bytes(
+        data,
+        content_type=content_type,
+        extra_headers={"Cache-Control": cache_control},
+    )
+
+
 async def _op_template(ctx: _OpContext) -> Response:
     """Render a Jinja template. Body: {template, variables?}.
 
@@ -3066,6 +3102,56 @@ class WABatchSnapshotView(HomeAssistantView):
 SNAPSHOT_FETCH_WAIT_SECONDS = 6.0
 
 
+async def _notification_snapshot_frame(
+    domain_data: WristAssistantData, token: str
+) -> tuple[bytes, str] | None:
+    """The frame a notification token was captured with, and its type.
+
+    If the push beat the camera, waits briefly for the in-flight capture to
+    land instead of giving up. Bounded so a dead or slow camera can't pin the
+    connection. None for a token that is missing, expired, failed or still
+    pending at the timeout: the caller answers 404 for all of them alike, and
+    the client falls back to camera_entity_id.
+    """
+    entry = await domain_data.notification_snapshot_store.get_wait(
+        token, timeout=SNAPSHOT_FETCH_WAIT_SECONDS
+    )
+    if entry is None or entry.data is None:
+        return None
+    return entry.data, entry.content_type
+
+
+async def _notification_snapshot_live_frame(
+    hass: HomeAssistant, domain_data: WristAssistantData, token: str
+) -> tuple[bytes, str] | None:
+    """A fresh frame from a notification token's camera, and its type.
+
+    Applies the camera's saved framing crop. Each token allows only a handful
+    of live re-captures (`NotificationSnapshotStore.consume_live`); past them,
+    and for a token with no source camera (a pre-built image), the frozen
+    frame comes back instead, so a tap is at worst a no-op. A failed capture
+    (camera unavailable) gives the frozen frame too. None when there is no
+    frame at all: the token is missing or expired, or its send-time capture
+    is still in flight.
+    """
+    store = domain_data.notification_snapshot_store
+    entry = store.get(token)
+    if entry is None:
+        return None
+    frozen = (entry.data, entry.content_type) if entry.data is not None else None
+    if not entry.entity_id or not store.consume_live(token):
+        return frozen
+
+    crop = domain_data.snapshot_crop_store.get(entry.entity_id)
+    try:
+        jpeg = await capture_notification_snapshot(hass, entry.entity_id, viewport=crop)
+    except Exception:  # noqa: BLE001 — never 500 a notification refresh
+        jpeg = None
+    if not jpeg:
+        return frozen
+    return jpeg, "image/jpeg"
+
+
 class WANotificationSnapshotView(HomeAssistantView):
     """Serve a camera snapshot captured for a notification, authed by token.
 
@@ -3073,8 +3159,11 @@ class WANotificationSnapshotView(HomeAssistantView):
     camera entity; it's embedded in the push as `snapshot_url`. Auth is the
     token lookup (multi-use within a short TTL) rather than HMAC/bearer, so the
     iOS content extension and the watch long look can fetch the image with a
-    plain GET — neither can carry the watch's HMAC headers. A leaked URL exposes
-    one frame for the TTL window only.
+    plain GET. A leaked URL exposes one frame for the TTL window only.
+
+    Kept for apps that predate `snapshot_token`. A current app sends the
+    push's token in the signed `notification_snapshot` op instead, so the
+    token alone opens nothing.
     """
 
     url = "/api/wrist_assistant/notification/snapshot/{token}"
@@ -3089,20 +3178,13 @@ class WANotificationSnapshotView(HomeAssistantView):
         if domain_data is None:
             return Response(text="Integration not loaded", status=503)
 
-        # If the push beat the camera, wait briefly for the in-flight capture to
-        # land instead of 404ing. Bounded so a dead/slow camera can't pin the
-        # connection; on timeout the client falls back to camera_entity_id.
-        entry = await domain_data.notification_snapshot_store.get_wait(
-            token, timeout=SNAPSHOT_FETCH_WAIT_SECONDS
-        )
-        if entry is None or entry.data is None:
-            # Missing / expired / failed / still-pending are indistinguishable
-            # to the caller by design.
+        frame = await _notification_snapshot_frame(domain_data, token)
+        if frame is None:
             return Response(text="Not Found", status=404)
-
+        data, content_type = frame
         return Response(
-            body=entry.data,
-            content_type=entry.content_type,
+            body=data,
+            content_type=content_type,
             headers={"Cache-Control": "private, max-age=600"},
         )
 
@@ -3121,6 +3203,10 @@ class WANotificationSnapshotLiveView(HomeAssistantView):
     URL is a few fresh frames of one camera, not a ten-minute live feed. Past
     the cap the tap serves the frozen frame. Responses are `no-store` so each
     tap re-fetches.
+
+    Kept for apps that predate `snapshot_token`, like the frozen view above;
+    a current app refreshes through the signed `notification_snapshot` op
+    with `live`.
     """
 
     url = "/api/wrist_assistant/notification/snapshot/{token}/live"
@@ -3135,47 +3221,13 @@ class WANotificationSnapshotLiveView(HomeAssistantView):
         if domain_data is None:
             return Response(text="Integration not loaded", status=503)
 
-        entry = domain_data.notification_snapshot_store.get(token)
-        if entry is None:
+        frame = await _notification_snapshot_live_frame(self._hass, domain_data, token)
+        if frame is None:
             return Response(text="Not Found", status=404)
-
-        # No source camera (pre-built image token) → nothing to re-capture;
-        # hand back the cached frame so the tap is at worst a no-op. The same
-        # once the token has spent its live re-captures.
-        if not entry.entity_id or not domain_data.notification_snapshot_store.consume_live(
-            token
-        ):
-            if entry.data is None:
-                return Response(text="Not Found", status=404)
-            return Response(
-                body=entry.data,
-                content_type=entry.content_type,
-                headers={"Cache-Control": "no-store"},
-            )
-
-        crop = domain_data.snapshot_crop_store.get(entry.entity_id)
-        try:
-            jpeg = await capture_notification_snapshot(
-                self._hass, entry.entity_id, viewport=crop
-            )
-        except Exception:  # noqa: BLE001 — never 500 a notification refresh
-            jpeg = None
-
-        # Capture failed (camera unavailable, away from home) → cached frame, if
-        # we have one (None while the original send-time capture is still in
-        # flight); otherwise 404 and let the client fall back.
-        if not jpeg:
-            if entry.data is None:
-                return Response(text="Not Found", status=404)
-            return Response(
-                body=entry.data,
-                content_type=entry.content_type,
-                headers={"Cache-Control": "no-store"},
-            )
-
+        data, content_type = frame
         return Response(
-            body=jpeg,
-            content_type="image/jpeg",
+            body=data,
+            content_type=content_type,
             headers={"Cache-Control": "no-store"},
         )
 
@@ -5176,6 +5228,7 @@ _OP_HANDLERS: dict[str, Any] = {
     "states_batch": _op_states_batch,
     "info": _op_info,
     "snapshot": _op_snapshot,
+    "notification_snapshot": _op_notification_snapshot,
     "template": _op_template,
     "services_list": _op_services_list,
     "config_entries_list": _op_config_entries_list,
