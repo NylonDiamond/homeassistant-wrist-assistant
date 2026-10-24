@@ -4105,9 +4105,10 @@ async def _op_complications_move_status(ctx: _OpContext) -> Response:
 #
 # Three parties: the iPhone mirror writes a record with the put op, the panel
 # writes one over the WebSocket (``watch_config_ws.py``), and the watch reads
-# its own with the get op. The watch never writes a record; the one thing it
-# sends is its list of installed voices (watch_voices_put, below), which the
-# panel's voice picker reads.
+# its own with the get op. The watch writes one thing back with the put op:
+# its ``behavior`` record when the Connect via choice changes on the watch,
+# patching only ``serverMode``. It also sends its list of installed voices
+# (watch_voices_put, below), which the panel's voice picker reads.
 
 
 def _watch_config_refusal(ctx: _OpContext, err: WatchConfigStoreError) -> Response:
@@ -4359,8 +4360,9 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
 async def _op_watch_config_put(ctx: _OpContext) -> Response:
     """Save the caller's watch config of one kind, compare-and-swap.
 
-    The iPhone mirror's write. The watch only reads (the get op above), and
-    the panel writes over the WebSocket instead.
+    The iPhone mirror's write, and the watch's own ``behavior`` write when
+    Connect via changes on the watch. The panel writes over the WebSocket
+    instead.
 
     Body:  {"kind": "pages" | "behavior" | "catalog" | "menus" | "voice"
                     | "notification_style" | "status_pages"

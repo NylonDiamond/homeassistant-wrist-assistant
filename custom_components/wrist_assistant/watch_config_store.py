@@ -19,7 +19,8 @@ parties:
   read the catalog (see ``watch_config_ws.py``), and it may make a watch's
   first record of those kinds.
 * The watch's own pull. The watch reads its records over the signed get when
-  the delta reply names a newer revision; it never writes. The phone, when
+  the delta reply names a newer revision. Its one write is its ``behavior``
+  record, when Connect via changes on the watch. The phone, when
   there is one, also picks a panel save up on its next check, or at once
   over the live line while the app is open.
 
