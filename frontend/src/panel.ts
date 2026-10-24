@@ -27,6 +27,9 @@ import {
   fetchHttpActions,
   forgetDevice,
   renameDevice,
+  type DeviceAddresses,
+  fetchDeviceAddresses,
+  setDeviceAddresses,
   type SaveHistoryEntry,
   fetchSaveHistory,
   fetchSaveHistoryEntry,
@@ -216,6 +219,7 @@ import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, dev
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { STACK_FLAT, STACK_HOME, sheetUnits, stackRigStyle, turnStack, zoomStack, type StackView } from "./stack3d.js";
 import { deviceColor, deviceColorsCache } from "./device-colors.js";
+import { type AddressDraft, type AddressSlot, ADDRESSES_BUTTON_TEXT, ADDRESSES_BUTTON_TITLE, addressDraft, addressPayload, addressStyles, addressWords, invalidAddressText, renderAddressForm } from "./device-addresses.js";
 import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
 import { type SplitNotice, autoSplitShapes, editBlockedBySplitGate, ownerCanSplit } from "./splitShapes.js";
 import { makeIconProvider } from "./icons.js";
@@ -1549,6 +1553,8 @@ export class WristAssistantPanel extends LitElement {
     // (`renderPairNext`): a new watch has nothing on it yet.
     if (kind === "watch") {
       this.pairNext = watchId;
+      // Its addresses, for the what next's third step.
+      void this.loadDeviceAddresses(watchId);
       return;
     }
     // The dialog closes on the new iPhone, picked on Home with a green
@@ -1606,6 +1612,15 @@ export class WristAssistantPanel extends LitElement {
   @state() private deviceRename?: string;
   @state() private deviceRenameBusy = false;
   @state() private deviceRenameError?: string;
+  /** A watch's two addresses as the integration last gave them
+   * (`device-addresses.ts`), for its page and the pairing dialog's what
+   * next. `record` is absent while they load, `error` when they could not. */
+  @state() private deviceAddresses?: { owner: string; record?: DeviceAddresses; error?: string };
+  /** The address form is open for this watch, with what has been picked and
+   * typed in it (absent until the record is in). */
+  @state() private addressEdit?: { owner: string; draft?: AddressDraft };
+  @state() private addressBusy = false;
+  @state() private addressError?: string;
   @state() private deviceCounts?: { owner: string; counts: Partial<Record<DeviceCountKind, number>> };
 
   /** The Watch app's shared watch as last picked, remembered per browser
@@ -6138,7 +6153,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, helpSheetStyles, boardStyles, boardStackStyles, compBoardStyles, homeLineupStyles, homeAllStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, shellStyles, watchFrameStyles, watchPagePreviewStyles, homeStyles, addressStyles, allPagesHookStyles, watchRowStyles, headBarStyles, listPageStyles, helpSheetStyles, boardStyles, boardStackStyles, compBoardStyles, homeLineupStyles, homeAllStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -20469,6 +20484,7 @@ export class WristAssistantPanel extends LitElement {
     this.deviceForgetError = undefined;
     this.deviceRename = undefined;
     this.deviceRenameError = undefined;
+    this.stopAddressEdit();
     this.homePick = ownerId;
     this.homeAll = false;
     void this.loadDeviceCounts(ownerId);
@@ -20511,10 +20527,11 @@ export class WristAssistantPanel extends LitElement {
   /** Leave the picked device's Rename and Remove steps, keeping it picked.
    * Not while either is on its way to the server. */
   private resetHomeDetail() {
-    if (this.deviceForgetBusy || this.deviceRenameBusy) return;
+    if (this.deviceForgetBusy || this.deviceRenameBusy || this.addressBusy) return;
     this.devicePaired = undefined;
     this.deviceRename = undefined;
     this.deviceRenameError = undefined;
+    this.stopAddressEdit();
     this.deviceForgetAsk = false;
     this.deviceForgetError = undefined;
   }
@@ -20615,6 +20632,7 @@ export class WristAssistantPanel extends LitElement {
       <p class="dev-small">Leave it empty to use the name the device reports.</p>
       ${this.deviceRenameError ? html`<p class="dev-err" title=${errTitle(this.deviceRenameError) ?? nothing}>${this.deviceRenameError}</p>` : nothing}
     </div>`;
+    const editingAddresses = row.kind === "watch" && this.addressEdit?.owner === ownerId;
     const goneNote = html`<div class="hb-ask"><p><b>${USER_GONE_TEXT}.</b> Home Assistant refuses everything ${row.name} sends. Remove it here, or pair it again for someone who has a user.</p></div>`;
     const overview = html`<div class="hb-state ${state}">
         <span class="hb-state-chip" aria-hidden="true">${uiIcon(rejected ? "info" : row.sync === "waiting" ? "clock" : "check")}</span>
@@ -20637,14 +20655,18 @@ export class WristAssistantPanel extends LitElement {
           ${!this.deviceForgetAsk && !renaming && !gone
             ? html`<button type="button" class="home-btn" title="Change the name Home Assistant shows for it" @click=${() => this.startDeviceRename(ownerId)}>Rename</button>`
             : nothing}
+          ${row.kind === "watch" && !this.deviceForgetAsk && !renaming && !editingAddresses && !gone
+            ? html`<button type="button" class="home-btn" title=${ADDRESSES_BUTTON_TITLE} @click=${() => void this.startAddressEdit(ownerId)}>${ADDRESSES_BUTTON_TEXT}</button>`
+            : nothing}
           ${this.deviceForgetAsk ? nothing
             : html`<button type="button" class="home-btn hb-remove" title=${`Remove ${row.name} from this Home Assistant`}
-                @click=${() => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); }}>Remove</button>`}
+                @click=${() => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); this.stopAddressEdit(); }}>Remove</button>`}
         </div>
       </div>
-      ${this.devicePaired === ownerId || renaming || this.deviceForgetAsk || gone ? html`<div class="hb-info">
+      ${this.devicePaired === ownerId || renaming || editingAddresses || this.deviceForgetAsk || gone ? html`<div class="hb-info">
           ${this.devicePaired === ownerId ? html`<div class="dev-paired" role="status">${uiIcon("check")}<span><b>Paired successfully.</b> ${row.name} is now on this Home Assistant.</span></div>` : nothing}
           ${renaming ? renameForm : nothing}
+          ${editingAddresses && !this.deviceForgetAsk ? this.renderAddressEditor(ownerId) : nothing}
           ${this.deviceForgetAsk ? ask : gone ? goneNote : nothing}
         </div>` : nothing}
       ${this.deviceForgetAsk || gone ? nothing : this.renderHomeLineup(row)}
@@ -20654,6 +20676,7 @@ export class WristAssistantPanel extends LitElement {
   /** Open the picked device's name field on the name Home Assistant shows
    * now, and put the cursor in it. */
   private startDeviceRename(ownerId: string) {
+    this.stopAddressEdit();
     this.deviceRename = this.ownerOf(ownerId)?.device_name ?? "";
     this.deviceRenameError = undefined;
     void this.updateComplete.then(() => {
@@ -20680,6 +20703,101 @@ export class WristAssistantPanel extends LitElement {
     await this.loadOwners();
     this.deviceRenameBusy = false;
     this.deviceRename = undefined;
+  }
+
+  /** Read a watch's two addresses from the integration. A reply that lands
+   * after another watch's were asked for is dropped. Gives back the record,
+   * or undefined when it could not be read. */
+  private async loadDeviceAddresses(ownerId: string): Promise<DeviceAddresses | undefined> {
+    this.deviceAddresses = { owner: ownerId };
+    try {
+      const record = await fetchDeviceAddresses(this.hass, ownerId);
+      if (this.deviceAddresses?.owner !== ownerId) return undefined;
+      this.deviceAddresses = { owner: ownerId, record };
+      return record;
+    } catch (err) {
+      if (this.deviceAddresses?.owner !== ownerId) return undefined;
+      this.deviceAddresses = { owner: ownerId, error: `Could not read the addresses: ${errText(err)}` };
+      return undefined;
+    }
+  }
+
+  /** Open the address form for a watch on what the integration has now.
+   * Closes the name field, since one form at a time fits under the bar. */
+  private async startAddressEdit(ownerId: string) {
+    this.deviceRename = undefined;
+    this.deviceRenameError = undefined;
+    this.addressError = undefined;
+    this.addressEdit = { owner: ownerId };
+    const record = await this.loadDeviceAddresses(ownerId);
+    if (this.addressEdit?.owner !== ownerId) return;
+    if (record === undefined) {
+      this.addressError = this.deviceAddresses?.error;
+      return;
+    }
+    this.addressEdit = { owner: ownerId, draft: addressDraft(record) };
+  }
+
+  /** Close the address form, keeping what was last read. Not while a save
+   * is on its way. */
+  private stopAddressEdit() {
+    if (this.addressBusy) return;
+    this.addressEdit = undefined;
+    this.addressError = undefined;
+  }
+
+  /** Change one slot of the open form. Typing an address picks Set. */
+  private editAddressSlot(slot: AddressSlot, change: { mode?: AddressDraft["local"]["mode"]; text?: string }) {
+    const edit = this.addressEdit;
+    if (edit?.draft === undefined) return;
+    const was = edit.draft[slot];
+    const next = { mode: change.mode ?? (change.text !== undefined ? "set" : was.mode), text: change.text ?? was.text };
+    this.addressEdit = { owner: edit.owner, draft: { ...edit.draft, [slot]: next } };
+    this.addressError = undefined;
+  }
+
+  /** Save the open form: Automatic as null, None as "", Set as the typed
+   * address. The integration checks the address again and moves the
+   * watch's address hash, so the watch picks the change up on its next
+   * poll. */
+  private async saveAddressesNow(ownerId: string) {
+    const draft = this.addressEdit?.owner === ownerId ? this.addressEdit.draft : undefined;
+    if (draft === undefined) return;
+    const payload = addressPayload(draft);
+    if (!payload.ok) {
+      this.addressError = payload.message;
+      return;
+    }
+    this.addressBusy = true;
+    this.addressError = undefined;
+    try {
+      const record = await setDeviceAddresses(this.hass, ownerId, payload.slots);
+      this.deviceAddresses = { owner: ownerId, record };
+    } catch (err) {
+      const code = (err as { code?: string } | undefined)?.code;
+      this.addressError = code === "invalid_url"
+        ? invalidAddressText((err as { message?: string }).message)
+        : `Could not save the addresses: ${errText(err)}`;
+      this.addressBusy = false;
+      return;
+    }
+    this.addressBusy = false;
+    if (this.addressEdit?.owner === ownerId) this.addressEdit = undefined;
+  }
+
+  /** The address form for a watch, with the panel's state behind it. */
+  private renderAddressEditor(ownerId: string) {
+    const loaded = this.deviceAddresses?.owner === ownerId ? this.deviceAddresses.record : undefined;
+    return renderAddressForm({
+      record: loaded,
+      draft: this.addressEdit?.owner === ownerId ? this.addressEdit.draft : undefined,
+      busy: this.addressBusy,
+      error: this.addressError,
+      onMode: (slot, mode) => this.editAddressSlot(slot, { mode }),
+      onText: (slot, text) => this.editAddressSlot(slot, { text }),
+      onSave: () => void this.saveAddressesNow(ownerId),
+      onCancel: () => this.stopAddressEdit(),
+    });
   }
 
   /**
@@ -20727,6 +20845,7 @@ export class WristAssistantPanel extends LitElement {
   private closePairDialog() {
     if (!this.pairOpen) return;
     this.homePair.close();
+    if (this.pairNext !== undefined && this.addressEdit?.owner === this.pairNext) this.stopAddressEdit();
     this.pairNext = undefined;
     this.pairOpen = false;
   }
@@ -20763,12 +20882,21 @@ export class WristAssistantPanel extends LitElement {
     if (row === undefined || owner === undefined) return undefined;
     const group = homeGroups(this.people(), devices).find((g) => g.rows.some((r) => r.id === watchId));
     const path = deviceListPath("pages", watchId)!;
+    const addresses = this.deviceAddresses?.owner === watchId ? this.deviceAddresses.record : undefined;
     return renderPairNext({
       name: row.name,
       facts: pairedFactsLine(deviceFacts(owner, "watch"), group?.person?.label),
       status: pairNextStatus(row),
       art: homeWatchArt(`paired-${watchId}`, owner.complication_count ?? 0, row.sync),
       pagesHref: panelUrl(this.route, path, window.location.pathname),
+      // The two addresses the watch will use, with Change opening Home's
+      // address form in place.
+      addresses: addresses === undefined ? undefined : {
+        local: addressWords(addresses, "local"),
+        remote: addressWords(addresses, "remote"),
+        editor: this.addressEdit?.owner === watchId ? this.renderAddressEditor(watchId) : undefined,
+        onEdit: () => void this.startAddressEdit(watchId),
+      },
       onNewPage: (e) => {
         if (!isPlainClick(e)) return;
         e.preventDefault();

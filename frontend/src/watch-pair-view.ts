@@ -47,6 +47,7 @@ import {
   PAIR_BACK_TEXT,
   PAIR_CHOICES,
   PAIR_CHOICE_TITLE,
+  PAIR_NEXT_ADDRESSES,
   PAIR_NEXT_ANOTHER_TEXT,
   PAIR_NEXT_COMPLICATION_TEXT,
   PAIR_NEXT_DONE_TEXT,
@@ -891,6 +892,9 @@ export interface PairNextView {
   /** The Pages screen on this watch, for New page's link. */
   pagesHref: string;
   onNewPage: (e: MouseEvent) => void;
+  /** The two addresses the watch uses (`device-addresses.ts`), once they are
+   * in, with Change to edit them in place. `editor` is the open form. */
+  addresses?: { local: string; remote: string; editor?: TemplateResult; onEdit: () => void };
   onComplication: () => void;
   onAnother: () => void;
   onDone: () => void;
@@ -899,7 +903,9 @@ export interface PairNextView {
 /**
  * "<name> is paired.", then What next: make a first page (a green New page
  * that goes to the Pages screen on this watch) and open the app on the
- * watch, with Home's sync word beside it when Home has one. The foot links
+ * watch, with Home's sync word beside it when Home has one. Once the
+ * watch's addresses are in, a third step shows the two it will use, with
+ * Change opening the address form in place. The foot links
  * out to the setup guide, quietly to the Complications tab, and offers Pair
  * another device and Done. The watch stands on a stage above, with an
  * outlined green Paired.
@@ -929,6 +935,14 @@ export function renderPairNext(v: PairNextView): TemplateResult {
             ${v.status === undefined ? nothing
               : html`<span class="pair-next-state ${v.status.state}"><i aria-hidden="true"></i>${v.status.label}</span>`}
           </li>
+          ${v.addresses === undefined ? nothing : html`<li class="pair-next-addr">
+            <b class="pair-next-n" aria-hidden="true">3</b>
+            <div class="pair-next-t"><b>${PAIR_NEXT_ADDRESSES.title}</b>
+              ${v.addresses.editor ? nothing : html`<span>${PAIR_NEXT_ADDRESSES.local}: ${v.addresses.local}</span>
+                <span>${PAIR_NEXT_ADDRESSES.remote}: ${v.addresses.remote}</span>`}</div>
+            ${v.addresses.editor ? html`<div class="pair-next-form">${v.addresses.editor}</div>`
+              : html`<button type="button" class="pair-next-btn" @click=${v.addresses.onEdit}>${PAIR_NEXT_ADDRESSES.action}</button>`}
+          </li>`}
         </ol>
         <div class="pair-next-foot">
           <a class="pair-next-guide" href=${PAIR_SETUP_GUIDE_URL} target="_blank" rel="noopener noreferrer">${PAIR_NEXT_GUIDE_TEXT}</a>
@@ -980,6 +994,7 @@ const pairNextStyles = css`
   .pair-next-t { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .pair-next-t b { font-size: 14px; font-weight: 500; }
   .pair-next-t span { font-size: 13px; line-height: 1.45; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .pair-next-form { flex: 1 1 100%; min-width: 0; }
   .pair-next-state { flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--wa-muted); }
   .pair-next-state i { width: 7px; height: 7px; border-radius: 50%; background: var(--wa-muted); }
   .pair-next-state.synced { color: var(--wa-green); }

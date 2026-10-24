@@ -215,7 +215,7 @@ describe("Home's picked device", () => {
 
   it("offers Remove to everyone, behind a second step", () => {
     expect(detail).not.toContain("is_admin");
-    expect(detail).toContain("@click=${() => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); }}>Remove</button>");
+    expect(detail).toContain("@click=${() => { this.deviceForgetAsk = true; this.deviceForgetError = undefined; stopRename(); this.stopAddressEdit(); }}>Remove</button>");
     expect(detail).toContain("@click=${() => void this.forgetDeviceNow(ownerId)}");
     expect(detail).toContain("${this.deviceForgetAsk ? ask : gone ? goneNote : nothing}");
   });
@@ -318,7 +318,7 @@ describe("Home's Pair a device dialog", () => {
   it("keeps a watch just paired in the dialog, saying what next, until it closes", () => {
     const at = SOURCE.indexOf("private homePair = new PairWatchCard(");
     const made = SOURCE.slice(at, SOURCE.indexOf("});", at));
-    const watch = made.indexOf(`if (kind === "watch") {\n      this.pairNext = watchId;\n      return;\n    }`);
+    const watch = made.indexOf(`if (kind === "watch") {\n      this.pairNext = watchId;\n      // Its addresses, for the what next's third step.\n      void this.loadDeviceAddresses(watchId);\n      return;\n    }`);
     expect(watch).toBeGreaterThan(made.indexOf("if (stale() || !this.pairOpen"));
     expect(watch).toBeLessThan(made.indexOf("this.closePairDialog();"));
     expect(method("  private openPairDialog() {")).toContain("this.pairNext = undefined;");
