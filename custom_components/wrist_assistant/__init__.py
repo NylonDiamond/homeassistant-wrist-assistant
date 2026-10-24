@@ -197,34 +197,39 @@ def _mint_snapshot_url(
     hass: HomeAssistant,
     runtime_data: WristAssistantData,
     image_source: object,
-) -> tuple[str, str, float | None] | None:
+) -> tuple[str | None, str, float | None] | None:
     """Reserve a snapshot token + token-authed URL *without* capturing yet.
 
-    Returns ``(absolute_url, token, cached_aspect)`` or None. The bytes are
-    filled in by ``_capture_snapshot_into`` running in the background, so the
-    capture never blocks the alert; ``WANotificationSnapshotView`` waits briefly
-    for the in-flight capture when the device fetches the URL. ``cached_aspect``
-    is this camera's last-known snapshot width/height (None the first time we see
-    it) so the client can reserve the image's footprint up front. Returns None
-    (and logs) when no reachable HA URL exists — a missing image must never block
-    the notification. Uses the external HA URL when configured so the device can
-    fetch it away from home; users without remote access get an internal URL that
-    only resolves on the LAN.
+    Returns ``(absolute_url, token, cached_aspect)`` or None for no image
+    source. The bytes are filled in by ``_capture_snapshot_into`` running in
+    the background, so the capture never blocks the alert; the device's fetch
+    waits briefly for the in-flight capture. ``cached_aspect`` is this camera's
+    last-known snapshot width/height (None the first time we see it) so the
+    client can reserve the image's footprint up front.
+
+    The token rides in the push as ``snapshot_token``, which a current app
+    redeems through the signed ``notification_snapshot`` op: that needs no
+    URL in the push, since the app already knows how to reach this Home
+    Assistant. The URL is for apps that predate the token. It uses the
+    external HA URL when configured so the device can fetch it away from home;
+    users without remote access get an internal URL that only resolves on the
+    LAN. With no reachable URL at all it is None (and logged), and the token
+    still serves the signed op.
     """
     if not isinstance(image_source, str) or not image_source:
         return None
     store = runtime_data.notification_snapshot_store
     token = store.reserve(entity_id=image_source)
+    cached_aspect = runtime_data.snapshot_aspect_store.get(image_source)
     try:
         base = get_url(hass, prefer_external=True)
     except NoURLAvailableError:
-        store.fail(token)  # release the reservation; nothing will fetch it
         _LOGGER.warning(
-            "No reachable Home Assistant URL; notification snapshot for %s omitted",
+            "No reachable Home Assistant URL; notification snapshot link for %s "
+            "omitted, and only an app that sends the snapshot token shows it",
             image_source,
         )
-        return None
-    cached_aspect = runtime_data.snapshot_aspect_store.get(image_source)
+        return None, token, cached_aspect
     url = f"{base}/api/wrist_assistant/notification/snapshot/{token}"
     return url, token, cached_aspect
 
@@ -396,12 +401,19 @@ async def _deliver_push(
     # source delays only the image, not the alert. The device fetches the URL on
     # arrival; WANotificationSnapshotView waits briefly for the in-flight
     # capture. A pre-built `snapshot_url` is honored as-is.
+    #
+    # The token rides on its own as `snapshot_token` too. A current app sends
+    # it in the signed `notification_snapshot` op, so the picture needs a
+    # paired device and not just the push. The URL stays for apps that
+    # predate the token, for one release, and then goes.
     snapshot_token: str | None = None
     if image_source is not None and not extra_data.get("snapshot_url"):
         minted = _mint_snapshot_url(hass, data, image_source)
         if minted:
             snapshot_url, snapshot_token, snapshot_aspect = minted
-            extra_data["snapshot_url"] = snapshot_url
+            extra_data["snapshot_token"] = snapshot_token
+            if snapshot_url:
+                extra_data["snapshot_url"] = snapshot_url
             # Aspect (cached from this camera's last snapshot) lets the client
             # reserve the image's footprint up front so nothing resizes when the
             # image arrives. Absent on the first push per camera; learned then.
@@ -467,6 +479,7 @@ async def _deliver_push(
             push_type == "alert"
             or enriched_actions
             or extra_data.get("snapshot_url")
+            or extra_data.get("snapshot_token")
             or extra_data.get("camera_entity_id")
         )
         else None
