@@ -4,12 +4,13 @@
 // on a focused device adding the page to that device's own record.
 
 import { nothing } from "lit";
-import { describe, expect, it } from "vitest";
-import type { OwnerSummary } from "../src/ha-api.js";
+import { readFileSync } from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { HassLike, OwnerSummary } from "../src/ha-api.js";
 import { libraryOf } from "../src/library/model.js";
 import { previewLabel, previewOwner, renderPreviewPicker, renderStripSaved, startPreviewKind, startSideBySide } from "../src/library/item-mode.js";
 import { itemWhereText, listedItems } from "../src/library/item-list.js";
-import { onEachDeviceLines, ordinal, placeText, syncText } from "../src/library/on-each-device.js";
+import { DELIVERY_SETTLE_MS, followDeliveries, onEachDeviceLines, ordinal, placeText, syncText } from "../src/library/on-each-device.js";
 import { libraryItems } from "../src/library/model.js";
 import { deviceDifferenceText } from "../src/watch-pages/device-differences.js";
 import type { WatchPage } from "../src/watch-pages/model.js";
@@ -170,6 +171,76 @@ describe("On each device", () => {
 
   it("counts places as people say them", () => {
     expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 103].map(ordinal)).toEqual(["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "103rd"]);
+  });
+});
+
+describe("On each device follows the deliveries", () => {
+  /** A connection that hands out one delivery subscription and says when
+   * it was ended. */
+  function deliveryHome(refuse = false) {
+    let hear: ((e: { owner_watch_id: string; kind: string }) => void) | undefined;
+    const asked: Record<string, unknown>[] = [];
+    let ended = 0;
+    const hass = {
+      states: {},
+      connection: {
+        sendMessagePromise: () => Promise.reject(new Error("unused")),
+        subscribeMessage: (cb: typeof hear, msg: Record<string, unknown>) => {
+          asked.push(msg);
+          if (refuse) return Promise.reject({ code: "unknown_command" });
+          hear = cb;
+          return Promise.resolve(async () => { ended++; });
+        },
+      },
+    } as unknown as HassLike;
+    return { hass, asked, deliver: (kind: string) => hear?.({ owner_watch_id: JESSE, kind }), ended: () => ended };
+  }
+
+  afterEach(() => vi.useRealTimers());
+
+  it("reads the numbers again once a burst of deliveries of its kind settles, and never for another kind", async () => {
+    vi.useFakeTimers();
+    const home = deliveryHome();
+    let reads = 0;
+    const stop = followDeliveries(home.hass, "pages", () => reads++);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(home.asked).toEqual([{ type: "wrist_assistant/watch_config/subscribe_delivery" }]);
+    // The watch picks up the renamed page, then its iPhone does.
+    home.deliver("pages");
+    home.deliver("pages");
+    home.deliver("status_pages");
+    expect(reads).toBe(0);
+    await vi.advanceTimersByTimeAsync(DELIVERY_SETTLE_MS);
+    expect(reads).toBe(1);
+    home.deliver("menus");
+    await vi.advanceTimersByTimeAsync(DELIVERY_SETTLE_MS);
+    expect(reads).toBe(1);
+    // Closed: a delivery still settling is dropped, and the line is ended.
+    home.deliver("pages");
+    stop();
+    await vi.advanceTimersByTimeAsync(DELIVERY_SETTLE_MS);
+    expect(reads).toBe(1);
+    expect(home.ended()).toBe(1);
+  });
+
+  it("ends a subscription that answers after the editor closed, and takes a refusal quietly", async () => {
+    const late = deliveryHome();
+    followDeliveries(late.hass, "status_pages", () => undefined)();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(late.ended()).toBe(1);
+    const old = deliveryHome(true);
+    const stop = followDeliveries(old.hass, "pages", () => undefined);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(() => stop()).not.toThrow();
+  });
+
+  it("is started by both editors, and read again after a reconnect", () => {
+    for (const [file, kind] of [["../src/watch-pages/page-editor.ts", "pages"], ["../src/watch-status-pages/status-pages-editor.ts", "status_pages"]] as const) {
+      const source = readFileSync(new URL(file, import.meta.url), "utf8");
+      expect(source).toContain(`followDeliveries(this.hass, "${kind}", () => void this.readConfigSummary())`);
+      expect(source).toMatch(/this\.stopDeliveries\?\.\(\);\n\s*this\.stopDeliveries = undefined;/);
+      expect(source).toMatch(/onReconnect = \(\): void => \{[\s\S]*?void this\.readConfigSummary\(\);[\s\S]*?\n {2}\};/);
+    }
   });
 });
 

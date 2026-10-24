@@ -25,6 +25,7 @@ import {
   menuSections,
   menusDeviceFoot,
   menusEmptyText,
+  noMenuText,
   NEW_MENU_ADMIN_TEXT,
   menuInUseText,
   newMenuMadeText,
@@ -38,6 +39,7 @@ import {
 import { shownMenu, showMenuSettings, selectedMenuSlot } from "../src/watch-menus/menu-view.js";
 import { type MenusDocument, watchMenusDefaults } from "../src/watch-menus/model.js";
 import { libraryEditTitle } from "../src/watch-pages/all-pages-model.js";
+import { WAIT_FOR_IPHONE_TEXT } from "../src/watch-settings.js";
 import { CHEN, CHEN_MENU, DEVICES, HOME_MENU, JESSE, PHONE, QUICK, SPARE, summary } from "./library-fixture.js";
 import { fakeHome, standUp } from "./library-tab-fake.js";
 
@@ -124,6 +126,13 @@ describe("the tab's words", () => {
     expect(menusDeviceFoot(PHONE_D)).toBe("Pick which menu this iPhone uses. Click a menu to edit it.");
     expect(menusEmptyText([], "")).toBe("No watch or iPhone has connected yet. Pair one on the Home tab.");
     expect(menusEmptyText(DEVICES, "zz")).toBe("No menu or device has that name.");
+    // A watch still waiting for its iPhone: its menus are on their way.
+    expect(menusEmptyText(DEVICES, "")).toBe("None yet.");
+    expect(menusEmptyText(DEVICES, "", true)).toBe("None yet. Update Wrist Assistant on your iPhone and open it once. Its menus move here by themselves.");
+    expect(noMenuText(JESSE_D, "", true)).toBe(`No menus from ${JESSE_D.name} yet. ${WAIT_FOR_IPHONE_TEXT}`);
+    expect(noMenuText(JESSE_D, "", false)).toBe(`${JESSE_D.name} uses no menu yet.`);
+    expect(noMenuText(JESSE_D, "zz", true)).toBe(`No menu ${JESSE_D.name} uses has that name.`);
+    expect(menusEmptyText(DEVICES, "", true)).not.toMatch(/[–—]| - /);
     for (const text of [allMenusLead(2), MENUS_FOOT, MENUS_BOARD_FOOT, MENUS_BOARD_HINT, menusDeviceFoot(JESSE_D), libraryEditTitle("A"), newMenuText("anywhere"), newMenuMadeText("A"), NEW_MENU_ADMIN_TEXT]) {
       expect(text).not.toMatch(/[–—]| - /);
       expect(text).not.toMatch(/[Ll]ink|Same as/);

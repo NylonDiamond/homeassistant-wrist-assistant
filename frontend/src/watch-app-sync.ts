@@ -82,6 +82,11 @@ export interface WatchAppSync {
   /** The parts whose stored save the watch reported it could not use
    * (`rejectedNow`), by label, in part order. Absent when there are none. */
   rejected?: string[];
+  /** Home Assistant holds no record of any part for the device yet (the
+   * HTTP action library aside, which is the home's). Absent when it holds
+   * one. A watch whose iPhone may still move its setup here then waits for
+   * that (`deviceVerdict`). */
+  noRecord?: true;
 }
 
 type Delivery = Pick<WatchConfigRecord, "revision" | "delivered_revision" | "rejected_revision">;
@@ -115,7 +120,13 @@ function partsSync(parts: readonly WatchAppPart[], records: ReadonlyMap<string, 
     count(records.get(part.kind), part.label);
     if (part.kind === HTTP_ACTIONS_AFTER) count(httpActions, HTTP_ACTIONS_PART_LABEL);
   }
-  return rejected.length === 0 ? { waiting, delivered } : { waiting, delivered, rejected };
+  const held = parts.some((part) => deliveryState(records.get(part.kind)) !== "none");
+  return {
+    waiting,
+    delivered,
+    ...(rejected.length === 0 ? {} : { rejected }),
+    ...(held ? {} : { noRecord: true as const }),
+  };
 }
 
 /** One device's place in the library: the revision Home Assistant holds and
@@ -171,6 +182,10 @@ export async function readWatchAppSync(read: (kind: WatchConfigPanelKind) => Pro
   return watchAppSync(records);
 }
 
+/** What a watch waits for while its iPhone may still move its setup here:
+ * "Waiting for your iPhone", as the watch's Settings screen says it. */
+export const IPHONE_MOVE_LABEL = "your iPhone";
+
 /** One device's verdict on Home: the worse of its complications and its
  * watch app records (an iPhone's own, on a home with phone pages), with
  * what it is waiting for. */
@@ -191,9 +206,19 @@ export interface DeviceVerdict {
  * the complications decide alone.
  * A save the watch could not use rides along as `rejected`; Home then says
  * so in place of "Synced" (`homeDeviceLabel`).
+ *
+ * A watch whose iPhone may still move its setup here (`waitsForIphone`,
+ * the watch editors' `noRecordStart` rule) while Home Assistant holds none
+ * of it yet waits for that iPhone, whatever its complications say: its
+ * pages, menus and settings are still on the iPhone, so "Synced" would
+ * claim more than it has (`IPHONE_MOVE_LABEL`).
  */
-export function deviceVerdict(complications: DeviceSync, watchApp: WatchAppSync | undefined): DeviceVerdict {
-  const waitingFor = [...(complications === "waiting" ? ["complications"] : []), ...(watchApp?.waiting ?? [])];
+export function deviceVerdict(complications: DeviceSync, watchApp: WatchAppSync | undefined, waitsForIphone = false): DeviceVerdict {
+  const waitingFor = [
+    ...(complications === "waiting" ? ["complications"] : []),
+    ...(watchApp?.waiting ?? []),
+    ...(waitsForIphone && watchApp?.noRecord === true ? [IPHONE_MOVE_LABEL] : []),
+  ];
   const rejected = watchApp?.rejected ?? [];
   const sync: DeviceSync = waitingFor.length > 0 ? "waiting"
     : complications === "synced" || watchApp?.delivered === true ? "synced" : "idle";

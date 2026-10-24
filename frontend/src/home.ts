@@ -12,10 +12,14 @@ import type { UiIconName } from "./ui-icons.js";
 import { type WatchPage, isHiddenWatchPage, isSystemWatchPage } from "./watch-pages/model.js";
 import { type DeviceKind, deviceKindOf } from "./version.js";
 import { type WatchAppSync, deviceVerdict, rejectedSaveText, waitingForText } from "./watch-app-sync.js";
+import { noRecordStart } from "./watch-settings.js";
 
 /** A home device as the sync rule reads it, with the id it came from. */
 export interface IdHomeDevice extends HomeDevice {
   id: string;
+  /** Its iPhone may still move the watch's setup here (`noRecordStart` is
+   * `wait`), so a watch with no record yet waits for it (`deviceVerdict`). */
+  waitsForIphone?: boolean;
 }
 
 /**
@@ -38,6 +42,7 @@ export function homeDevices(
     appliedToken: o.applied_token,
     count: o.complication_count,
     orphan: o.is_orphan,
+    waitsForIphone: noRecordStart(o) === "wait",
   }));
 }
 
@@ -97,7 +102,8 @@ export function homeDeviceWhy(row: Pick<HomeDeviceRow, "waitingFor" | "rejected"
  * order given. A device with a watch app reading in `watchApp` (a watch,
  * or an iPhone on a home with phone pages) takes the worse of that and its
  * complications (`deviceVerdict`); every other device is judged on its
- * complications alone. */
+ * complications alone. A watch whose iPhone may still move its setup here,
+ * with none of it in Home Assistant yet, waits for that iPhone. */
 export function homeDeviceRows(devices: readonly IdHomeDevice[], watchApp: ReadonlyMap<string, WatchAppSync> = new Map()): HomeDeviceRow[] {
   const rows: HomeDeviceRow[] = [];
   for (const d of devices) {
@@ -105,7 +111,7 @@ export function homeDeviceRows(devices: readonly IdHomeDevice[], watchApp: Reado
     if (complications === undefined) continue;
     const kind = deviceKindOf({ owner_watch_id: d.id, device_kind: d.kind });
     if (kind === "library") continue;
-    const { sync, waitingFor, rejected } = deviceVerdict(complications, watchApp.get(d.id));
+    const { sync, waitingFor, rejected } = deviceVerdict(complications, watchApp.get(d.id), kind === "watch" && d.waitsForIphone === true);
     rows.push(rejected === undefined ? { id: d.id, name: d.name, kind, sync, waitingFor } : { id: d.id, name: d.name, kind, sync, waitingFor, rejected });
   }
   return [...rows.filter((r) => r.kind === "watch"), ...rows.filter((r) => r.kind === "iphone")];
@@ -322,11 +328,17 @@ export function homeGroups(people: readonly Person[], rows: readonly HomeDeviceR
 }
 
 /** The line under the device sheet's title: what it is, its app version, and
- * on a watch the iPhone it is paired with. Only what the device reported. */
+ * on a watch the iPhone that set it up, while that iPhone may still move
+ * the watch's setup here (`has_iphone`). Only what the device reported.
+ *
+ * Not "Paired with": the iPhone and the watch no longer talk to each other,
+ * and Home Assistant keeps the iPhone that once paired a watch
+ * (`paired_iphone_name`) after the watch was paired again by code, when no
+ * iPhone holds its key any more and `has_iphone` is false. */
 export function deviceFacts(owner: OwnerSummary | undefined, kind: "watch" | "iphone"): string[] {
   const facts: string[] = [kind === "iphone" ? "iPhone" : "Apple Watch"];
   if (owner?.app_version) facts.push(`App ${owner.app_version}${owner.app_build ? ` (${owner.app_build})` : ""}`);
-  if (kind === "watch" && owner?.paired_iphone_name) facts.push(`Paired with ${owner.paired_iphone_name}`);
+  if (kind === "watch" && owner?.paired_iphone_name && owner.has_iphone === true) facts.push(`Set up by ${owner.paired_iphone_name}`);
   return facts;
 }
 
@@ -389,6 +401,11 @@ const SCREEN_DOORS: Partial<Record<WatchScreen["id"] | "settings", HomeDoorLook>
   "settings": { icon: "sliders", hue: "var(--wa-hue-grey)", blurb: "Gestures, wrist twists and how it connects." },
 };
 
+/** An iPhone's Settings door: the sections its Settings screen shows
+ * (`watch-settings-catalog.json`, the rows for an iPhone), which have no
+ * wrist twists and no connection. */
+export const IPHONE_SETTINGS_BLURB = "Gestures, page look and cameras.";
+
 /** The look of one of the device's doors (`deviceSheetTabs`). */
 export function homeDoorLook(tab: DeviceSheetTab, kind: "watch" | "iphone"): HomeDoorLook {
   if (tab.kind === "list") {
@@ -397,7 +414,8 @@ export function homeDoorLook(tab: DeviceSheetTab, kind: "watch" | "iphone"): Hom
       ? { icon: "gauge", hue: "var(--wa-hue-blue)", blurb: "On this watch’s faces." }
       : { icon: "grid", hue: "var(--wa-hue-blue)", blurb: "On the Lock Screen and Home Screen." };
   }
-  return SCREEN_DOORS[tab.screen.id] ?? { icon: "pages", hue: "var(--wa-hue-grey)", blurb: "" };
+  const look = SCREEN_DOORS[tab.screen.id] ?? { icon: "pages", hue: "var(--wa-hue-grey)", blurb: "" };
+  return kind === "iphone" && tab.screen.id === "settings" ? { ...look, blurb: IPHONE_SETTINGS_BLURB } : look;
 }
 
 /** How many of a watch's pages its Pages door draws, and how wide each

@@ -429,7 +429,7 @@ import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import { PairWatchCard, renderPairNext } from "./watch-pair-view.js";
 import { type PairChoice, pairChoiceNote, pairNextStatus, pairedFactsLine } from "./pair-flow.js";
-import { settingsWatches, watchName } from "./watch-settings.js";
+import { noRecordStart, settingsWatches, watchName } from "./watch-settings.js";
 import { hasPhoneAwaitingUpdate, iphoneAddressFor, iphoneDevices, isPhoneId, phonePagesOn } from "./phone-pages.js";
 import { NOT_FOR_IPHONE_TEXT, watchCommandError } from "./watch-pages/save-note.js";
 import {
@@ -20228,6 +20228,7 @@ export class WristAssistantPanel extends LitElement {
     const listOf = (kind: "pages" | "status_pages" | "menus") => kind === "menus" ? ALL_MENUS_PATH : kind === "status_pages" ? ALL_STATUS_PAGES_PATH : ALL_PAGES_PATH;
     const library = row.kind === "watch" || this.phonePages ? renderHomeLineup({
       hass: this.hass, ownerId, deviceName: row.name, kind: row.kind, phones: this.phonePages, icons: this.icons, iconsTick: this.iconsTick,
+      waitsForIphone: row.kind === "watch" && noRecordStart(this.ownerOf(ownerId)) === "wait",
       onEdit: (kind, id) => this.goTo(libraryItemPath(kind, id, ownerId)),
       onChange: (kind) => this.goTo(listFocusPath(listOf(kind), ownerId)),
       onLoaded: () => this.requestUpdate(),

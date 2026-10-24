@@ -9,7 +9,7 @@ import { property, state } from "lit/decorators.js";
 import type { HassLike } from "./ha-api.js";
 import { type LineupDrag, type LineupGroup, type LineupLine, homeLineupStyles, renderLineupGroup } from "./home-lineup-look.js";
 import type { LibraryKind, MenuUnit } from "./library/client.js";
-import { MENU_UNIT_TITLES, itemsFor, menuFor, sameId, type Library, type LibraryPick } from "./library/model.js";
+import { MENU_UNIT_TITLES, holdsRecord, itemsFor, menuFor, sameId, type Library, type LibraryPick } from "./library/model.js";
 import { renderPageRowPicture, renderStatusRowPicture, rowPictureStyles } from "./library/row-picture.js";
 import { LibraryController } from "./library/store.js";
 import { libraryTicksStyles, renderTickAsk } from "./library/ticks.js";
@@ -17,6 +17,7 @@ import type { IconProvider } from "./renderer.js";
 import { watchFrameStyles } from "./watch-frame.js";
 import { inOrder, movedOrder } from "./watch-pages/all-pages-model.js";
 import { changeDevicePicks, picksDirtyText } from "./watch-pages/all-pages-picks.js";
+import { waitingEmptyText } from "./watch-pages/devices.js";
 import { picksIO } from "./watch-pages/all-pages-io.js";
 import { keptWatchPagesDraft } from "./watch-pages/kept.js";
 import { type UntickAsk, askUntick, tickItem } from "./watch-pages/library-editing-io.js";
@@ -51,6 +52,8 @@ export class WaHomeLineup extends LitElement {
   @property({ attribute: false }) onChange?: (kind: LibraryKind) => void;
   /** The device's name, for what a move or a remove says. */
   @property({ attribute: false }) deviceName = "";
+  /** The watch's iPhone may still move its setup here (`LineupDraw`). */
+  @property({ attribute: false }) waitsForIphone = false;
 
   /** The line being dragged: its kind, the order when it was picked up,
    * the order it would land in now (the cards it passes move aside), and
@@ -100,6 +103,7 @@ export class WaHomeLineup extends LitElement {
       ...(this.icons === undefined ? {} : { icons: this.icons }),
       tick: this.iconsTick,
       pageWidth: this.pageW,
+      waitsForIphone: this.waitsForIphone,
       arrange: {
         order: (kind) => (this.drag?.kind === kind && this.drag.order !== undefined ? this.drag.order
           : this.orderAsked?.kind === kind ? this.orderAsked.ids : undefined),
@@ -387,6 +391,10 @@ export interface LineupDraw {
   /** A watch page picture's width; an iPhone's is narrower. */
   pageWidth?: number;
   arrange?: LineupArrange;
+  /** The watch's iPhone may still move its setup here (`noRecordStart` is
+   * `wait`): a kind Home Assistant holds no record of says it waits for
+   * that iPhone rather than that there is none. */
+  waitsForIphone?: boolean;
   onEdit: (kind: LibraryKind, id: string) => void;
   onChange: (kind: LibraryKind) => void;
 }
@@ -434,6 +442,9 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
     }),
     action: { label: "Edit", title: `Edit ${pick.entry.name}`, onClick: () => draw.onEdit("status_pages", pick.id) },
   }));
+  /** A kind's empty line: its iPhone's move still to come, or none yet. */
+  const empty = (k: LibraryKind, what: string, none: string): string =>
+    draw.waitsForIphone === true && !holdsRecord(library, ownerId, k) ? waitingEmptyText(what, `this ${word}`) : none;
   const underPages = arrange?.under?.("pages");
   const zonePages = arrange?.zone?.("pages");
   const underStatus = arrange?.under?.("status_pages");
@@ -450,7 +461,7 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
   return [
     {
       key: "pages", title: "Pages", icon: "pages", hue: "var(--wa-hue-green)", sub: `in the order the ${word} swipes them`,
-      lines: pageLines, strip: true, empty: `No pages on this ${word} yet.`,
+      lines: pageLines, strip: true, empty: empty("pages", "pages", `No pages on this ${word} yet.`),
       change: { title: `Add, order and hide pages on this ${word}`, onClick: () => draw.onChange("pages") },
       ...(underPages === undefined ? {} : { under: underPages }),
       ...(zonePages === undefined ? {} : { zone: zonePages }),
@@ -459,13 +470,13 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
       key: "status_pages", title: "Status pages", icon: "checklist", hue: "var(--wa-hue-yellow)",
       // Cards with their pictures as big as a page's, but no numbers: a
       // status page's order shows nowhere on the device.
-      lines: statusLines, strip: true, numbered: false, empty: `No status pages on this ${word} yet.`,
+      lines: statusLines, strip: true, numbered: false, empty: empty("status_pages", "status pages", `No status pages on this ${word} yet.`),
       ...(underStatus === undefined ? {} : { under: underStatus }),
       change: { title: `Add, order and hide status pages on this ${word}`, onClick: () => draw.onChange("status_pages") },
     },
     {
       key: "menus", title: "Menus", icon: "radial", hue: "var(--wa-hue-orange)",
-      lines: menuLines, empty: `This ${word} uses no menu yet.`,
+      lines: menuLines, empty: empty("menus", "menus", `This ${word} uses no menu yet.`),
       change: { title: `Pick the menus this ${word} uses`, onClick: () => draw.onChange("menus") },
     },
   ];

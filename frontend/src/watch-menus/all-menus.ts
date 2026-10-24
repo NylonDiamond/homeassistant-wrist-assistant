@@ -58,6 +58,7 @@ import {
   menusDeviceFoot,
   menusDirtyText,
   menusEmptyText,
+  noMenuText,
   menuInUseText,
   newMenuMadeText,
   newMenuName,
@@ -432,7 +433,7 @@ export class WaAllMenus extends LitElement {
       <div class="am-section-head">
         <h2 class="am-section-title" id=${`am-section-${unit}`}>${MENU_SECTION_TITLES[unit]} <span class="am-section-n">${menus.length}</span></h2>
       </div>
-      ${menus.length === 0 ? html`<p class="ap-empty">${menusEmptyText(devices, this.search)}</p>`
+      ${menus.length === 0 ? html`<p class="ap-empty">${menusEmptyText(devices, this.search, waiting.size > 0)}</p>`
         : html`<div class="ap-grid" role="list">${menus.map((menu) => this.renderCard(library, menu, devices, waiting))}</div>`}
     </section>`)}`;
   }
@@ -584,7 +585,7 @@ export class WaAllMenus extends LitElement {
     return this.renderBoardOf(library, devices, menuSections(shown).map(({ unit, menus }) => ({
       key: unit, title: MENU_SECTION_TITLES[unit], count: menus.length, hint: MENUS_BOARD_HINT,
       rows: menus.map((menu) => this.boardRow(library, menu, devices, waiting)),
-      empty: menusEmptyText(devices, this.search),
+      empty: menusEmptyText(devices, this.search, waiting.size > 0),
     })));
   }
 
@@ -652,7 +653,7 @@ export class WaAllMenus extends LitElement {
       ${this.renderBoardOf(library, devices, [
         { key: "on", title: onDeviceTitle(device), count: used.length, hint: `One of each kind. Pick a dot to switch.`,
           rows: used.map((menu) => this.boardRow(library, menu, devices, waiting, device)),
-          empty: this.search.trim() === "" ? `${device.name} uses no menu yet.` : `No menu ${device.name} uses has that name.` },
+          empty: noMenuText(device, this.search, waiting.has(device.ownerId)) },
         { key: "rest", title: restTitle(device), count: rest.length, hint: `Pick its dot under ${device.name} to use it there.`,
           rows: rest.map((menu) => this.boardRow(library, menu, devices, waiting, device)),
           empty: this.search.trim() === "" ? `${device.name} uses every menu in your home.` : "No other menu has that name." },

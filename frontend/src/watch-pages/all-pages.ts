@@ -101,7 +101,7 @@ import { type PickChange, changeDevicePicks, picksDirtyText } from "./all-pages-
 import { pagesBulkIO, picksIO } from "./all-pages-io.js";
 import { NO_ICONS as NO_PICTURE_ICONS } from "./editor-host.js";
 import { keptWatchPagesDraft } from "./kept.js";
-import { DEVICES_WAIT_TEXT, type LinkDevice, type PagesRecordFacts, awaitingMove, deviceWord, freePlanText, linkDevicesOf } from "./devices.js";
+import { DEVICES_WAIT_TEXT, type LinkDevice, type PagesRecordFacts, awaitingMove, deviceWord, freePlanText, linkDevicesOf, waitingEmptyText, waitingLibraryText } from "./devices.js";
 import { type UntickAsk, askUntick, tickItem } from "./library-editing-io.js";
 import { libraryListStyles } from "./library-list-styles.js";
 import { listTabStyles } from "./list-tab-styles.js";
@@ -850,12 +850,15 @@ export class WaAllPages extends LitElement {
   }
 
   /** An empty library's block: how a page works, with New page for whoever
-   * may make one. Undefined while the library holds some. */
+   * may make one, and while a watch waits for its iPhone, that its pages
+   * move here by themselves. Undefined while the library holds some. */
   private renderEmptyLibrary(library: Library, devices: readonly LinkDevice[]): TemplateResult | undefined {
     if (devices.length === 0 || libraryItems(library, this.kind).length > 0) return undefined;
     const may = this.mayMake;
+    const waiting = this.waiting(library).size > 0;
     return html`<div class="ap-empty-lib">
       <p>${emptyLibraryText(this.kind, may)}</p>
+      ${waiting ? html`<p class="ap-empty-wait">${waitingLibraryText(cardNoun(this.kind, 2))}</p>` : nothing}
       ${may ? html`<button type="button" class="ap-new-btn" ?disabled=${this.newForm?.busy === true} @click=${() => this.toggleNew()}>
         ${uiIcon("plus")}<span>New ${cardNoun(this.kind)}</span></button>` : nothing}
     </div>`;
@@ -1151,7 +1154,9 @@ export class WaAllPages extends LitElement {
       ${this.renderBoardOf(library, devices, [
         {
           key: "on", title: onDeviceTitle(device), count: total, hint: orderHint(device), rows,
-          empty: noPicksText(device, this.kind, this.search, view.rest.length, this.mayMake),
+          empty: waiting.has(device.ownerId) && this.search.trim() === ""
+            ? waitingEmptyText(many, device.name)
+            : noPicksText(device, this.kind, this.search, view.rest.length, this.mayMake),
         },
         {
           key: "rest", title: restTitle(device), count: view.rest.length, hint: `Tick its box under ${device.name} to add it.`, rows: rest,

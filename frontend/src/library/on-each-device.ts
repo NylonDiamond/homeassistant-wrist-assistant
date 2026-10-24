@@ -7,10 +7,12 @@
 // device's record (`changeDevicePicks`), which lands at once, like a tick.
 // The order itself is changed on the device's board, which the place opens.
 // The sync word reads `watch_config/summary`'s numbers for the device's
-// record of the kind, as Home's Devices card does (`watch-app-sync.ts`).
+// record of the kind, as Home's Devices card does (`watch-app-sync.ts`), and
+// reads them again on every delivery of the kind, as Home does
+// (`followDeliveries`).
 
 import { css, html, nothing, type TemplateResult } from "lit";
-import type { WatchConfigSummary } from "../ha-api.js";
+import { type HassLike, type WatchConfigSummary, subscribeDeliveries } from "../ha-api.js";
 import { uiIcon } from "../ui-icons.js";
 import type { LinkDevice } from "../watch-pages/devices.js";
 import { type DeliveryState, deliveryState } from "../watch-settings.js";
@@ -52,6 +54,48 @@ export function onEachDeviceLines(
     if (summary !== undefined) line.sync = deliveryState(owner?.[kind]);
     return [line];
   });
+}
+
+/** How long a burst of deliveries is gathered before the numbers are read
+ * again: a save of a shared page reaches several devices at once. */
+export const DELIVERY_SETTLE_MS = 400;
+
+/**
+ * Hear every device picking up a record of `kind` while the card is on
+ * screen, the way Home hears them (`subscribeDeliveries`), and call `onNews`
+ * once a burst has settled. A delivery is no change, so the editor's own
+ * live line never says it: without this the card read "Waiting for the
+ * watch" until the editor was opened again. Gives the function that stops
+ * it, safe to call before the subscription has answered. An integration
+ * without the command leaves the words as last read.
+ */
+export function followDeliveries(hass: HassLike, kind: LibraryListKind, onNews: () => void): () => void {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let end: (() => Promise<void>) | undefined;
+  // Asked through a promise, so a connection with no subscriptions at all
+  // is the same refusal as an integration without the command.
+  Promise.resolve().then(() => subscribeDeliveries(hass, (event) => {
+    if (stopped || event.kind !== kind) return;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = undefined;
+      if (!stopped) onNews();
+    }, DELIVERY_SETTLE_MS);
+  })).then(
+    (unsubscribe) => {
+      if (stopped) void unsubscribe().catch(() => undefined);
+      else end = unsubscribe;
+    },
+    () => undefined,
+  );
+  return () => {
+    stopped = true;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+    void end?.().catch(() => undefined);
+    end = undefined;
+  };
 }
 
 /** 1st, 2nd, 3rd, 4th, 11th, 21st. */

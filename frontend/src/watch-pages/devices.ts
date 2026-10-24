@@ -94,6 +94,20 @@ export function pagesRecordFacts(record: Pick<WatchConfigRecord, "revision" | "m
 /** A watch that waits for its iPhone, in the page editor's own wait words. */
 export const DEVICES_WAIT_TEXT = `${WAIT_FOR_IPHONE_TEXT} Pages can go on this watch after that.`;
 
+/** What a watch's empty list says while it waits for its iPhone to move
+ * its setup here, as its Settings screen says it of the settings: "No pages
+ * from this watch yet. Waiting for your iPhone. …". `what` is the list's
+ * noun, `device` the watch as the line names it. */
+export function waitingEmptyText(what: string, device = "this watch"): string {
+  return `No ${what} from ${device} yet. ${WAIT_FOR_IPHONE_TEXT}`;
+}
+
+/** What an empty tab adds while a watch waits for its iPhone, as the HTTP
+ * actions tab says it of its actions. */
+export function waitingLibraryText(what: string): string {
+  return `Update Wrist Assistant on your iPhone and open it once. Its ${what} move here by themselves.`;
+}
+
 /**
  * The watches that wait for their iPhone to move their pages here: the page
  * editor's rule (`noRecordStart` is `wait`) while Home Assistant holds no

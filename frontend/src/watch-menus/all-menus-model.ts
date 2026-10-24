@@ -18,7 +18,7 @@
 import { MENU_UNITS, MENU_UNIT_SECTIONS, type MenuUnit } from "../library/client.js";
 import { type Library, type LibraryMenu, MENU_UNIT_TITLES, libraryMenus, menuDocument, otherMenus, sameId } from "../library/model.js";
 import { matchesSearch } from "../watch-pages/all-pages-model.js";
-import { type LinkDevice, deviceWord, joinWords } from "../watch-pages/devices.js";
+import { type LinkDevice, deviceWord, joinWords, waitingEmptyText, waitingLibraryText } from "../watch-pages/devices.js";
 import { WAIT_FOR_IPHONE_TEXT } from "../watch-settings.js";
 import { menuRowCount } from "./menu-view.js";
 import { type MenusDocument, watchMenusDefaults } from "./model.js";
@@ -134,11 +134,19 @@ export function newMenuSections(unit: MenuUnit, defaults: MenusDocument = watchM
   return Object.fromEntries(MENU_UNIT_SECTIONS[unit].flatMap((k) => (Object.hasOwn(defaults, k) ? [[k, structuredClone(defaults[k])]] : [])));
 }
 
-/** What the tab says with no menu to show. */
-export function menusEmptyText(devices: readonly LinkDevice[], search: string): string {
+/** What the tab says with no menu to show. `waiting`: a watch waits for its
+ * iPhone to move its menus here (`awaitingMove`), so they are on their way. */
+export function menusEmptyText(devices: readonly LinkDevice[], search: string, waiting = false): string {
   if (devices.length === 0) return "No watch or iPhone has connected yet. Pair one on the Home tab.";
   if (search.trim() !== "") return "No menu or device has that name.";
-  return "None yet.";
+  return waiting ? `None yet. ${waitingLibraryText("menus")}` : "None yet.";
+}
+
+/** What a focused device says while it uses no menu: that its iPhone's
+ * move is still to come when it waits for one, else that it uses none. */
+export function noMenuText(device: LinkDevice, search: string, waiting: boolean): string {
+  if (search.trim() !== "") return `No menu ${device.name} uses has that name.`;
+  return waiting ? waitingEmptyText("menus", device.name) : `${device.name} uses no menu yet.`;
 }
 
 /** The Duplicate button's tooltip on a focused device's shared menu. */

@@ -4,7 +4,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { countWord, deviceCardTiles, deviceFacts, homeDoorLook, homeGroups, homePageThumbs, homePickOf, homeRowSub, homeStep, homeTotalBucket, homeTotals, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
+import catalog from "../src/watch-settings-catalog.json";
+import { IPHONE_SETTINGS_BLURB, countWord, deviceCardTiles, deviceFacts, homeDoorLook, homeGroups, homePageThumbs, homePickOf, homeRowSub, homeStep, homeTotalBucket, homeTotals, needsAttention, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected, userGone, USER_GONE_TEXT } from "../src/home.js";
 import { phoneWidgetPlaces } from "../src/home-art.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
@@ -256,11 +257,20 @@ describe("homeGroups", () => {
 });
 
 describe("deviceFacts", () => {
-  it("says what the device is, its app, and a watch's iPhone", () => {
-    expect(deviceFacts(owner({ app_version: "3.1", app_build: "4", paired_iphone_name: "Ann's iPhone" }), "watch"))
-      .toEqual(["Apple Watch", "App 3.1 (4)", "Paired with Ann's iPhone"]);
+  it("says what the device is, its app, and the iPhone that set a watch up while it may still move the setup", () => {
+    expect(deviceFacts(owner({ app_version: "3.1", app_build: "4", paired_iphone_name: "Ann's iPhone", has_iphone: true }), "watch"))
+      .toEqual(["Apple Watch", "App 3.1 (4)", "Set up by Ann's iPhone"]);
     expect(deviceFacts(owner({ device_kind: "iphone", app_version: "3.1", paired_iphone_name: null }), "iphone"))
       .toEqual(["iPhone", "App 3.1"]);
+  });
+
+  it("never says a watch is paired with an iPhone, and drops the iPhone once no iPhone holds the watch's key", () => {
+    // Paired again by code: Home Assistant still names the old iPhone, but
+    // the watch made its own key and `has_iphone` is false.
+    const coded = owner({ app_version: "3.1", paired_iphone_name: "WA-E2E A iPhone", has_iphone: false });
+    expect(deviceFacts(coded, "watch")).toEqual(["Apple Watch", "App 3.1"]);
+    expect(deviceFacts(owner({ paired_iphone_name: "Ann's iPhone" }), "watch")).toEqual(["Apple Watch", "App 3.0"]);
+    expect(deviceFacts(owner({ paired_iphone_name: "Ann's iPhone", has_iphone: true }), "watch").join(" · ")).not.toMatch(/Paired/);
   });
 
   it("leaves out what the device never reported", () => {
@@ -316,6 +326,21 @@ describe("homeDoorLook", () => {
         expect(look.blurb, tab.label).not.toBe("");
       }
     }
+  });
+
+  it("gives an iPhone's Settings iPhone words, from the sections its Settings screen shows", () => {
+    const settings = deviceSheetTabs("iphone", true).find((t) => t.kind === "screen" && t.screen.id === "settings")!;
+    expect(homeDoorLook(settings, "iphone").blurb).toBe(IPHONE_SETTINGS_BLURB);
+    expect(IPHONE_SETTINGS_BLURB).not.toMatch(/wrist|connect/i);
+    expect(homeDoorLook(settings, "watch").blurb).toBe("Gestures, wrist twists and how it connects.");
+    expect(homeDoorLook(settings, "iphone").hue).toBe(homeDoorLook(settings, "watch").hue);
+    // Every section the blurb names holds a setting the iPhone shows.
+    const sections = (catalog as { sections: { title: string; settings: { devices?: string[] }[] }[] }).sections
+      .filter((s) => s.settings.some((row) => row.devices?.includes("iphone")))
+      .map((s) => s.title.toLowerCase());
+    expect(sections).toEqual(expect.arrayContaining(["gestures", "pages", "cameras"]));
+    expect(sections).not.toContain("wrist twists");
+    expect(sections).not.toContain("connection");
   });
 
   it("gives a watch's Control Center the iPhone's look, and leaves Settings alone in grey", () => {

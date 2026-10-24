@@ -29,6 +29,9 @@ export interface HomeLineupInput {
   deviceName: string;
   kind: "watch" | "iphone";
   phones: boolean;
+  /** The watch's iPhone may still move its setup here: an empty kind says
+   * it waits for that iPhone. */
+  waitsForIphone: boolean;
   icons: IconProvider;
   iconsTick: number;
   onEdit: (kind: LibraryKind, id: string) => void;
@@ -42,5 +45,5 @@ export function renderHomeLineup(input: HomeLineupInput): TemplateResult {
   if (!ready && !loadFailed) void loadLineup().then(input.onLoaded, input.onLoaded);
   if (!ready) return html`<p class="hl-empty">${loadFailed ? "This part of Home did not load. Reload the page to try again." : "Loading…"}</p>`;
   return html`<wa-home-lineup .hass=${input.hass} .ownerId=${input.ownerId} .deviceName=${input.deviceName} .kind=${input.kind} .phones=${input.phones}
-    .icons=${input.icons} .iconsTick=${input.iconsTick} .onEdit=${input.onEdit} .onChange=${input.onChange}></wa-home-lineup>`;
+    .waitsForIphone=${input.waitsForIphone} .icons=${input.icons} .iconsTick=${input.iconsTick} .onEdit=${input.onEdit} .onChange=${input.onChange}></wa-home-lineup>`;
 }

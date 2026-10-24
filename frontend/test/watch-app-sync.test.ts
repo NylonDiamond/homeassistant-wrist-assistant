@@ -8,6 +8,7 @@ import type { OwnerSummary } from "../src/ha-api.js";
 import { deviceSyncLabel, homeSync } from "../src/send-state.js";
 import {
   HTTP_ACTIONS_PART_LABEL,
+  IPHONE_MOVE_LABEL,
   PHONE_APP_PARTS,
   PHONE_REJECTED_SAVE_TEXT,
   REJECTED_SAVE_TEXT,
@@ -38,7 +39,13 @@ describe("watchAppSync", () => {
   });
 
   it("counts a kind with no record for neither side", () => {
-    expect(watchAppSync(new Map([["pages", rec(0, 0)], ["menus", undefined]]))).toEqual({ waiting: [], delivered: false });
+    expect(watchAppSync(new Map([["pages", rec(0, 0)], ["menus", undefined]]))).toEqual({ waiting: [], delivered: false, noRecord: true });
+  });
+
+  it("says when Home Assistant holds no record of any part, the HTTP action library aside", () => {
+    expect(watchAppSync(new Map(), rec(3, 3))).toEqual({ waiting: [], delivered: true, noRecord: true });
+    expect(watchAppSync(new Map([["menus", rec(1, 0)]]))).toEqual({ waiting: ["menus"], delivered: false });
+    expect(phoneAppSync(new Map())).toEqual({ waiting: [], delivered: false, noRecord: true });
   });
 
   it("calls the behavior record settings, which Rooms writes too", () => {
@@ -91,7 +98,7 @@ describe("summaryWatchAppSyncs", () => {
   });
 
   it("reads a watch with no stored records as nothing waiting and nothing collected", () => {
-    expect(summaryWatchAppSyncs({ owners: {} }, ["w1"]).get("w1")).toEqual({ waiting: [], delivered: false });
+    expect(summaryWatchAppSyncs({ owners: {} }, ["w1"]).get("w1")).toEqual({ waiting: [], delivered: false, noRecord: true });
   });
 
   it("agrees with the per-kind reads on the same numbers", async () => {
@@ -106,16 +113,16 @@ describe("summaryWatchAppSyncs", () => {
       http_actions: { revision: 3, delivered: { w1: 2, w2: 3 } },
     }, ["w1", "w2", "w3"]);
     expect(syncs.get("w1")).toEqual({ waiting: ["voice", HTTP_ACTIONS_PART_LABEL, "settings"], delivered: false });
-    expect(syncs.get("w2")).toEqual({ waiting: [], delivered: true });
+    expect(syncs.get("w2")).toEqual({ waiting: [], delivered: true, noRecord: true });
     // A watch that never pulled the library waits for it.
-    expect(syncs.get("w3")).toEqual({ waiting: ["HTTP actions"], delivered: false });
+    expect(syncs.get("w3")).toEqual({ waiting: ["HTTP actions"], delivered: false, noRecord: true });
   });
 
   it("counts the HTTP actions for neither side at revision 0, or from an integration that sends none", () => {
     const empty = summaryWatchAppSyncs({ owners: { w1: { pages: full(1, 1) } }, http_actions: { revision: 0, delivered: {} } }, ["w1"]);
     expect(empty.get("w1")).toEqual({ waiting: [], delivered: true });
     const older = summaryWatchAppSyncs({ owners: { w1: {} } }, ["w1"]);
-    expect(older.get("w1")).toEqual({ waiting: [], delivered: false });
+    expect(older.get("w1")).toEqual({ waiting: [], delivered: false, noRecord: true });
     expect(httpActionsDeliveryFor(undefined, "w1")).toBeUndefined();
     expect(httpActionsDeliveryFor({ revision: 4, delivered: {} }, "w1")).toEqual({ revision: 4, delivered_revision: 0 });
   });
@@ -123,7 +130,7 @@ describe("summaryWatchAppSyncs", () => {
   it("leaves the HTTP actions out of the per-kind reads an older integration gets", async () => {
     const read = await readWatchAppSync(async () => full(1, 1));
     expect(read?.waiting).toEqual([]);
-    expect(watchAppSync(new Map(), undefined)).toEqual({ waiting: [], delivered: false });
+    expect(watchAppSync(new Map(), undefined)).toEqual({ waiting: [], delivered: false, noRecord: true });
   });
 
   it("only takes an unknown command as the sign of an older integration", () => {
@@ -154,6 +161,21 @@ describe("deviceVerdict", () => {
     expect(deviceVerdict("idle", app([], false))).toEqual({ sync: "idle", waitingFor: [] });
     expect(deviceVerdict("idle", undefined)).toEqual({ sync: "idle", waitingFor: [] });
     expect(deviceSyncLabel("idle")).toBe("Nothing waiting");
+  });
+
+  it("waits for the iPhone on a watch whose setup has not moved here, whatever its complications say", () => {
+    const none: WatchAppSync = { waiting: [], delivered: false, noRecord: true };
+    expect(deviceVerdict("synced", none, true)).toEqual({ sync: "waiting", waitingFor: [IPHONE_MOVE_LABEL] });
+    expect(deviceVerdict("waiting", { ...none, waiting: [HTTP_ACTIONS_PART_LABEL] }, true))
+      .toEqual({ sync: "waiting", waitingFor: ["complications", HTTP_ACTIONS_PART_LABEL, IPHONE_MOVE_LABEL] });
+    // A watch with no iPhone to wait for (a new watch paired by code) is
+    // judged as before: nothing stored is nothing waiting.
+    expect(deviceVerdict("synced", none, false)).toEqual({ sync: "synced", waitingFor: [] });
+    expect(deviceVerdict("idle", none)).toEqual({ sync: "idle", waitingFor: [] });
+    // Once any of its setup is here, the move is done or was never coming.
+    expect(deviceVerdict("synced", app([]), true)).toEqual({ sync: "synced", waitingFor: [] });
+    // No reading at all says nothing about the move.
+    expect(deviceVerdict("synced", undefined, true)).toEqual({ sync: "synced", waitingFor: [] });
   });
 
   it("writes the note as a plain list", () => {
@@ -220,6 +242,28 @@ describe("Home's rows with the watch app", () => {
   it("reads only the kinds an iPhone may own on a phone", () => {
     expect(PHONE_APP_PARTS.map((p) => p.kind)).toEqual(["pages", "menus", "status_pages", "behavior", "rooms"]);
     expect(phoneAppSync(new Map([["voice", rec(3, 1)], ["status_pages", rec(2, 1)]]))).toEqual({ waiting: ["status pages"], delivered: false });
+  });
+
+  it("says Waiting for your iPhone, not Synced, for a watch whose setup the iPhone has not moved here yet", () => {
+    // The upgrade test: the integration updated, the iPhone app not yet.
+    // Complications are synced, Home Assistant holds no watch app record,
+    // and the watch's own iPhone may still move them (`has_iphone`).
+    const owners = [
+      owner({ owner_watch_id: "w1", device_name: "Old watch", has_iphone: true }),
+      // A new watch paired by code with nothing made yet: nothing is coming.
+      owner({ owner_watch_id: "w2", device_name: "New watch", has_iphone: false }),
+      // The move landed: its pages are here.
+      owner({ owner_watch_id: "w3", device_name: "Moved watch", has_iphone: true }),
+    ];
+    const syncs = summaryWatchAppSyncs({ owners: { w3: { pages: { revision: 1, delivered_revision: 1, rejected_revision: 0 } } } }, ["w1", "w2", "w3"]);
+    const rows = homeDeviceRows(devices(owners), syncs);
+    expect(rows.map((r) => [r.id, r.sync, r.waitingFor])).toEqual([
+      ["w1", "waiting", ["your iPhone"]],
+      ["w2", "synced", []],
+      ["w3", "synced", []],
+    ]);
+    expect(homeDeviceLabel(rows[0]!)).toBe("Waiting");
+    expect(attentionText(rows[0]!, undefined)).toBe("Waiting for your iPhone");
   });
 
   it("judges on complications alone without a reading, as before", () => {

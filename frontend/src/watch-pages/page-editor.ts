@@ -86,7 +86,7 @@ import {
   startSideBySide,
   summaryRevision,
 } from "../library/item-mode.js";
-import { onEachDeviceLines, onEachDeviceStyles, renderOnEachDevice } from "../library/on-each-device.js";
+import { followDeliveries, onEachDeviceLines, onEachDeviceStyles, renderOnEachDevice } from "../library/on-each-device.js";
 import { type ItemFilter, itemListStyles, itemWhereText, listedItems, renderItemFilter, renderNoneLeft } from "../library/item-list.js";
 import { changeDevicePicks } from "./all-pages-picks.js";
 import { picksIO } from "./all-pages-io.js";
@@ -670,9 +670,12 @@ export class WaPageEditor extends LitElement {
   /** Library mode: an On each device Hide here write is running. */
   @state() private hideBusy = false;
   /** Library mode: the delivery numbers of every device's records, for the
-   * On each device card's sync words; read on open and after each write. */
+   * On each device card's sync words; read on open, after each write and
+   * on each delivery of pages (`followDeliveries`). */
   @state() private configSummary?: WatchConfigSummary;
   private configSummarySeq = 0;
+  /** Stops hearing deliveries; set while a library page is open. */
+  private stopDeliveries?: () => void;
   /** The library page open now, in library mode. */
   private openedItem?: LibraryItemRef;
   /** Library mode's preview kind was picked with the library read. */
@@ -957,6 +960,8 @@ export class WaPageEditor extends LitElement {
     this.cancelGestures();
     this.endScrub();
     this.endSubscription();
+    this.stopDeliveries?.();
+    this.stopDeliveries = undefined;
     this.stopTemplates();
     this.loadSeq++;
     this.catalogSeq++;
@@ -1003,6 +1008,8 @@ export class WaPageEditor extends LitElement {
   private onReconnect = (): void => {
     const key = this.recordKey;
     if (this.isConnected && key !== undefined) void this.load(key, true);
+    // Deliveries while the socket was down sent no event either.
+    if (this.isConnected) void this.readConfigSummary();
     const watchId = this.watchId;
     if (!this.isConnected || watchId === undefined) return;
     // A catalog the phone published while the socket was down sent no event.
@@ -1350,6 +1357,11 @@ export class WaPageEditor extends LitElement {
     }
     const preview = previewOwner(this.watches, this.previewKind, [ref.from, ...(owners ?? [])]);
     if (preview !== this.watchId || (preview === undefined && this.openedItem === undefined)) this.openPreview(preview);
+    // A device picking the save up is no change, so the live line never
+    // says it: the sync words follow the deliveries, as Home's do.
+    if (this.stopDeliveries === undefined && this.hass !== undefined && this.isConnected) {
+      this.stopDeliveries = followDeliveries(this.hass, "pages", () => void this.readConfigSummary());
+    }
     if (!sameLibraryItem(ref, this.openedItem)) {
       this.openedItem = ref;
       this.openItem();

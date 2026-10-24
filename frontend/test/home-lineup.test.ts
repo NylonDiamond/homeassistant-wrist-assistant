@@ -10,6 +10,7 @@ import { libraryOf } from "../src/library/model.js";
 import { lineupGroups } from "../src/home-lineup.js";
 import { LINEUP_HIDDEN_TAG, LINEUP_OWN_TAG, renderLineupGroup } from "../src/home-lineup-look.js";
 import type { LibraryKind } from "../src/library/client.js";
+import { WAIT_FOR_IPHONE_TEXT } from "../src/watch-settings.js";
 import { CAMERA, CHEN, CHEN_MENU, JESSE, LIGHTS, PAGE1, SMART, summary } from "./library-fixture.js";
 import { flat } from "./library-editor-home.js";
 
@@ -101,6 +102,27 @@ describe("a device's lineup on Home", () => {
     expect(out.map((g) => g.lines.length)).toEqual([0, 0, 0]);
     expect(out.map((g) => g.empty)).toEqual(["No pages on this iPhone yet.", "No status pages on this iPhone yet.", "This iPhone uses no menu yet."]);
     expect(out[0]!.sub).toBe("in the order the iPhone swipes them");
+  });
+
+  it("says a watch waits for its iPhone where Home Assistant holds none of a kind and its iPhone may still move it", () => {
+    const draw = { waitsForIphone: true, onEdit: () => undefined, onChange: () => undefined };
+    const waiting = lineupGroups(libraryOf(summary()), "nobody", "watch", draw);
+    expect(waiting.map((g) => g.empty)).toEqual([
+      `No pages from this watch yet. ${WAIT_FOR_IPHONE_TEXT}`,
+      `No status pages from this watch yet. ${WAIT_FOR_IPHONE_TEXT}`,
+      `No menus from this watch yet. ${WAIT_FOR_IPHONE_TEXT}`,
+    ]);
+    for (const g of waiting) {
+      expect(g.empty).not.toMatch(/[–—]| - /);
+      // Change still opens the board.
+      expect(g.change).toBeDefined();
+    }
+    // A watch whose records are here keeps its own empty lines.
+    const held = lineupGroups(libraryOf(summary()), CHEN, "watch", draw);
+    expect(held.map((g) => g.empty)).toEqual(groups(CHEN).out.map((g) => g.empty));
+    // A new watch with nothing to wait for still says there is none yet.
+    expect(groups("nobody").out.map((g) => g.empty)).toEqual(["No pages on this watch yet.", "No status pages on this watch yet.", "This watch uses no menu yet."]);
+    expect(PANEL).toContain(`waitsForIphone: row.kind === "watch" && noRecordStart(this.ownerOf(ownerId)) === "wait"`);
   });
 
   it("draws a group with its count, its Change, and a tag on a hidden line", () => {

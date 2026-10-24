@@ -75,7 +75,7 @@ import {
   startSideBySide,
   summaryRevision,
 } from "../library/item-mode.js";
-import { onEachDeviceLines, onEachDeviceStyles, renderOnEachDevice } from "../library/on-each-device.js";
+import { followDeliveries, onEachDeviceLines, onEachDeviceStyles, renderOnEachDevice } from "../library/on-each-device.js";
 import { type ItemFilter, itemListStyles, itemWhereText, listedItems, renderItemFilter, renderNoneLeft } from "../library/item-list.js";
 import { sectionCard } from "../editor-chrome.js";
 import { SECTION_COLOR } from "../kinds.js";
@@ -272,9 +272,13 @@ export class WaStatusPagesEditor extends LitElement {
   @state() private sideBySide = false;
   /** The Status pages card: every status page, or those on no device. */
   @state() private listFilter: ItemFilter = "all";
-  /** Every device's delivery numbers, for On each device. */
+  /** Every device's delivery numbers, for On each device: read on open,
+   * after each write and on each delivery of status pages. */
   @state() private configSummary?: WatchConfigSummary;
   private configSummarySeq = 0;
+  /** Stops hearing deliveries (`followDeliveries`); set while a status page
+   * is open. */
+  private stopDeliveries?: () => void;
 
   /** The status page being edited, made from the record when none is kept
    * (the panel's leave guard may have dropped it). None before the record is
@@ -333,6 +337,8 @@ export class WaStatusPagesEditor extends LitElement {
     this.stopListeningForReconnect();
     this.reloadPending = false;
     this.endScrub();
+    this.stopDeliveries?.();
+    this.stopDeliveries = undefined;
     this.loadSeq++;
   }
 
@@ -413,6 +419,8 @@ export class WaStatusPagesEditor extends LitElement {
     const watchId = this.recordKey;
     if (!this.isConnected || watchId === undefined) return;
     void this.load(watchId, true);
+    // Deliveries while the socket was down sent no event.
+    void this.readConfigSummary();
   };
 
   /** The preview device (the home's first device of the kind remembered for
@@ -428,6 +436,11 @@ export class WaStatusPagesEditor extends LitElement {
     }
     const preview = previewOwner(this.watches, this.previewKind, [ref.from, ...(owners ?? [])]);
     if (preview !== this.watchId) this.watchId = preview;
+    // A device picking the save up is no change: the sync words follow the
+    // deliveries, as Home's do.
+    if (this.stopDeliveries === undefined && this.hass !== undefined && this.isConnected) {
+      this.stopDeliveries = followDeliveries(this.hass, "status_pages", () => void this.readConfigSummary());
+    }
     if (!sameLibraryItem(ref, this.openedItem)) {
       this.openedItem = ref;
       this.openItem();

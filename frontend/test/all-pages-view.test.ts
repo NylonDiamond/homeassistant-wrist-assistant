@@ -17,7 +17,9 @@ import { forgetWatchPagesDraft, keptWatchPagesSelection, takeWatchPagesRecord } 
 import type { JsonObject } from "../src/watch-pages/model.js";
 import { LIBRARY_PREVIEW_KEY } from "../src/library/item-mode.js";
 import { CAMERA, CHEN, CHEN_MENU, DOORS, JESSE, LIGHTS, LONELY, PAGE1, PHONE, SMART, STARTER, SYSTEM } from "./library-fixture.js";
-import { type Msg, fakeHome, settle, standUp } from "./library-tab-fake.js";
+import { type Msg, OWNERS, fakeHome, settle, standUp } from "./library-tab-fake.js";
+import type { OwnerSummary } from "../src/ha-api.js";
+import { waitingEmptyText, waitingLibraryText } from "../src/watch-pages/devices.js";
 
 function tab(kind: "pages" | "status_pages" = "pages", admin = true) {
   const home = fakeHome(admin);
@@ -572,5 +574,48 @@ describe("the Status pages tab", () => {
     t.call("willUpdate", new Map([["kind", "pages"]]));
     expect(t.el.selecting).toBe(false);
     expect(t.el.search).toBe("");
+  });
+});
+
+describe("a watch whose iPhone has not moved its pages here yet", () => {
+  // The upgrade test: the integration is new, the iPhone app is not, so Home
+  // Assistant holds no pages for a watch the old phone link set up.
+  const OLD = "old-watch";
+  const owners = [...OWNERS, { owner_watch_id: OLD, device_name: "Old Watch", device_kind: "watch", has_iphone: true }] as unknown as OwnerSummary[];
+
+  function waitingTab(kind: "pages" | "status_pages" = "pages") {
+    const home = fakeHome();
+    return { home, ...standUp("wa-all-pages", home, { kind, owners }) };
+  }
+
+  it("says on the watch's own board that it waits for its iPhone, not that it has none", async () => {
+    for (const kind of ["pages", "status_pages"] as const) {
+      const t = waitingTab(kind);
+      t.el.focusOwner = OLD;
+      await t.ready();
+      const many = kind === "pages" ? "pages" : "status pages";
+      expect(t.whole()).toContain(waitingEmptyText(many, "Old Watch"));
+      expect(t.whole()).not.toContain(`No ${many} on Old Watch yet.`);
+    }
+  });
+
+  it("adds to an empty tab that the pages move here by themselves, and still offers New page", async () => {
+    const t = waitingTab();
+    t.home.lib.pages = {};
+    for (const picks of Object.values(t.home.lib.picks)) picks.pages = [];
+    await t.ready();
+    const text = t.whole();
+    expect(text).toContain(waitingLibraryText("pages"));
+    expect(text).toContain("New page");
+  });
+
+  it("says nothing of an iPhone on a home where no watch waits for one", async () => {
+    const home = fakeHome();
+    home.lib.pages = {};
+    for (const picks of Object.values(home.lib.picks)) picks.pages = [];
+    const t = standUp("wa-all-pages", home, { kind: "pages" });
+    await t.ready();
+    expect(t.whole()).not.toContain(waitingLibraryText("pages"));
+    expect(t.whole()).toContain("New page");
   });
 });
