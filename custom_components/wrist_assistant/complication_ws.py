@@ -160,6 +160,12 @@ from .statistics_series import (
     StatisticsSeriesError,
     async_statistics_series,
 )
+from .watch_addresses import (
+    INVALID_URL_ERROR,
+    InvalidAddressError,
+    device_addresses,
+    update_device_addresses,
+)
 from .watch_config_store import WatchConfigPhoneKindError, WatchConfigStoreError
 from .widget_secret_store import (
     DEVICE_KIND_IPHONE,
@@ -192,6 +198,8 @@ _CMD_FORGET = f"{DOMAIN}/devices/forget"
 _CMD_RENAME = f"{DOMAIN}/devices/rename"
 # As long as a name gets before the device sheet and the sidebar cut it off.
 _RENAME_MAX_CHARS = 100
+_CMD_ADDRESSES = f"{DOMAIN}/devices/addresses"
+_CMD_SET_ADDRESSES = f"{DOMAIN}/devices/set_addresses"
 _CMD_GALLERY_KEY = f"{DOMAIN}/gallery_key"
 _CMD_PARTS_LIST = f"{DOMAIN}/complications/parts_list"
 _CMD_PARTS_SAVE = f"{DOMAIN}/complications/parts_save"
@@ -324,6 +332,8 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_watch_status)
     websocket_api.async_register_command(hass, ws_forget_device)
     websocket_api.async_register_command(hass, ws_rename_device)
+    websocket_api.async_register_command(hass, ws_device_addresses)
+    websocket_api.async_register_command(hass, ws_set_device_addresses)
     websocket_api.async_register_command(hass, ws_gallery_key)
     websocket_api.async_register_command(hass, ws_parts_list)
     websocket_api.async_register_command(hass, ws_parts_save)
@@ -865,6 +875,101 @@ def ws_rename_device(
     device_registry.async_update_device(device.id, name_by_user=name)
     _LOGGER.info("Renamed device watch_id=%s name=%r", watch_id, name)
     connection.send_result(msg["id"], {"ok": True, "watch_id": watch_id, "name": name})
+
+
+def _addresses_result(watch_id: str, found: tuple[Any, Any]) -> dict[str, Any]:
+    """The panel's view of a device's addresses: the record the watch gets
+    from ``addresses_get``, with what Home Assistant detects beside it."""
+    record, detected = found
+    return {**record.as_wire(), "watch_id": watch_id, "detected": detected.as_dict()}
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_ADDRESSES,
+        vol.Required("watch_id"): str,
+    }
+)
+@callback
+def ws_device_addresses(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """One device's home network and internet address (watch_addresses.py).
+
+    Result: {"ok": true, "watch_id", "local_url", "remote_url",
+    "local_source", "remote_source", "hash", "detected": {"internal",
+    "external", "cloud"}}. Each ``*_url`` is the address the watch uses and
+    each ``*_source`` is ``auto``, ``set`` or ``none``; ``detected`` is what
+    Home Assistant's Settings, System, Network give, which an ``auto`` slot
+    follows. A non-administrator may read only a device paired to them.
+    """
+    domain_data = hass.data.get(DOMAIN)
+    if domain_data is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    watch_id = msg["watch_id"]
+    if not require_owner(hass, connection, msg, watch_id):
+        return
+    found = device_addresses(hass, domain_data.widget_secret_store, watch_id)
+    if found is None:
+        connection.send_error(
+            msg["id"], "not_found", f"no registered device with id {watch_id}"
+        )
+        return
+    connection.send_result(msg["id"], _addresses_result(watch_id, found))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_SET_ADDRESSES,
+        vol.Required("watch_id"): str,
+        vol.Optional("local_url"): vol.Any(str, None),
+        vol.Optional("remote_url"): vol.Any(str, None),
+    }
+)
+@callback
+def ws_set_device_addresses(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Set one device's addresses, as the watch's ``addresses_set`` does.
+
+    ``local_url`` and ``remote_url`` each: left out to keep it, a non-empty
+    string for that address, ``""`` for none, null for automatic. A value
+    that is not an http or https address with a host and no path is refused
+    ``invalid_url`` (the message names the field) and nothing changes. A
+    change moves the record's hash and wakes the watch's poll, so the watch
+    picks it up at once. Result: as for ``devices/addresses``. The owner
+    check is the one ``devices/rename`` makes.
+    """
+    domain_data = hass.data.get(DOMAIN)
+    if domain_data is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    watch_id = msg["watch_id"]
+    if not require_owner(hass, connection, msg, watch_id):
+        return
+    payload = {key: msg[key] for key in ("local_url", "remote_url") if key in msg}
+    try:
+        found = update_device_addresses(
+            hass,
+            domain_data.widget_secret_store,
+            getattr(domain_data, "coordinator", None),
+            watch_id,
+            payload,
+        )
+    except InvalidAddressError as err:
+        connection.send_error(
+            msg["id"],
+            INVALID_URL_ERROR,
+            f"{err.field} must be an http:// or https:// address with no path",
+        )
+        return
+    if found is None:
+        connection.send_error(
+            msg["id"], "not_found", f"no registered device with id {watch_id}"
+        )
+        return
+    connection.send_result(msg["id"], _addresses_result(watch_id, found))
 
 
 @websocket_api.websocket_command(

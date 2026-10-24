@@ -199,6 +199,12 @@ from .wa_pair_requests import (
     validate_pair_fields,
     validate_pair_start,
 )
+from .watch_addresses import (
+    INVALID_URL_ERROR,
+    InvalidAddressError,
+    device_addresses,
+    update_device_addresses,
+)
 from .watch_config_store import (
     WatchConfigConflictError,
     WatchConfigLinkError,
@@ -702,6 +708,14 @@ def _held_revision(raw: Any) -> int | None:
     return None
 
 
+def _held_hash(raw: Any) -> str | None:
+    """A hash a device reports holding (the ``addresses`` one): a short
+    non-empty string, or None for anything else."""
+    if isinstance(raw, str) and 0 < len(raw) <= _DELTA_TOKEN_MAX_CHARS:
+        return raw
+    return None
+
+
 def _held_revisions(raw: Any) -> dict[str, int] | None:
     """The ``watch_config`` revisions a device reports holding, kind by
     kind. A kind whose revision is not one is left out; anything but an
@@ -887,15 +901,16 @@ class WADeltaView(HomeAssistantView):
             voices_hash = raw_voices_hash
 
         # The config numbers the device holds, under the keys a reply carries
-        # them: `watch_config` ({kind: revision}), `http_actions` and
-        # `client_certificate`. The coordinator compares them with the
-        # current ones so a hint whose reply was lost still reaches the
-        # device (see HeldConfig). Absent from older apps; junk reads as
-        # absent, and a junk kind is left out.
+        # them: `watch_config` ({kind: revision}), `http_actions`,
+        # `client_certificate` and `addresses` (a hash). The coordinator
+        # compares them with the current ones so a hint whose reply was lost
+        # still reaches the device (see HeldConfig). Absent from older apps;
+        # junk reads as absent, and a junk kind is left out.
         held = HeldConfig(
             watch_config=_held_revisions(payload.get("watch_config")),
             http_actions=_held_revision(payload.get("http_actions")),
             client_certificate=_held_revision(payload.get("client_certificate")),
+            addresses=_held_hash(payload.get("addresses")),
         )
 
         # A watch that sees `delta_lean` sends `lean: true`, with the hash of
@@ -2749,6 +2764,58 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
             "user_bound": bool(entry is not None and entry.user_id),
         }
     )
+
+
+async def _op_addresses_get(ctx: _OpContext) -> Response:
+    """The caller's own two addresses (watch_addresses.py).
+
+    Body:  {}
+    Reply: {"ok": true, "local_url": str|null, "remote_url": str|null,
+            "local_source": "auto"|"set"|"none",
+            "remote_source": "auto"|"set"|"none", "hash": str}
+
+    Each ``*_url`` is the address to use: the one set, Home Assistant's own
+    on ``auto`` (null when it has none), null on ``none``. ``hash`` is the
+    ``addresses`` value delta replies carry, so the watch pulls again only
+    when that moves. A device with no entry (the race with removal) gets the
+    signed 410 ``update_metadata`` answers.
+    """
+    found = device_addresses(ctx.hass, ctx.domain_data.widget_secret_store, ctx.watch_id)
+    if found is None:
+        return ctx.signed_json({"ok": False, "error": "not registered"}, status=410)
+    record, _detected = found
+    return ctx.signed_json(record.as_wire())
+
+
+async def _op_addresses_set(ctx: _OpContext) -> Response:
+    """Set the caller's own addresses.
+
+    Body:  {"local_url"?: str|null, "remote_url"?: str|null}. A key that is
+           absent is left alone, a non-empty string sets that address, ""
+           sets none, and null goes back to auto.
+    Reply: the ``addresses_get`` reply, for the record as it now stands.
+    Refusal: signed 400 {"ok": false, "error": "invalid_url", "field":
+             "local_url"|"remote_url"} for a value that is not an http or
+             https address with a host and no path, and nothing changes.
+
+    Only the signer's own record: nothing in the body names another device.
+    """
+    try:
+        found = update_device_addresses(
+            ctx.hass,
+            ctx.domain_data.widget_secret_store,
+            getattr(ctx.domain_data, "coordinator", None),
+            ctx.watch_id,
+            ctx.payload,
+        )
+    except InvalidAddressError as err:
+        return ctx.signed_json(
+            {"ok": False, "error": INVALID_URL_ERROR, "field": err.field}, status=400
+        )
+    if found is None:
+        return ctx.signed_json({"ok": False, "error": "not registered"}, status=410)
+    record, _detected = found
+    return ctx.signed_json(record.as_wire())
 
 
 # The largest `sealed.box` a re-key takes: 32 secret bytes and the 16 byte
@@ -5079,5 +5146,8 @@ _OP_HANDLERS: dict[str, Any] = {
     "webrtc_close": _op_webrtc_close,
     "verify_identity": _op_verify_identity,
     "update_metadata": _op_update_metadata,
+    # The caller's home network and internet addresses (watch_addresses.py).
+    "addresses_get": _op_addresses_get,
+    "addresses_set": _op_addresses_set,
     "rekey": _op_rekey,
 }

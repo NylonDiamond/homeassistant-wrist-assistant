@@ -140,6 +140,17 @@ class WidgetSecretEntry:
     False for every watch. Kept on disk only while True. Not secret
     material, so a `register()` keeps it."""
 
+    local_url: str | None = None
+    """The home network address this device should use (watch_addresses.py):
+    None to follow Home Assistant's Network settings (``auto``), ``""`` for
+    none on purpose, or an address someone set, already cleaned. None for
+    every entry from before this field. Kept on disk only while not None.
+    Not secret material, so a `register()` keeps it."""
+
+    remote_url: str | None = None
+    """The internet address, kept like `local_url`. On ``auto`` it follows
+    the external URL, else the Home Assistant Cloud one."""
+
     secret_bytes: bytes | None = field(init=False, repr=False, default=None)
     """Decoded HMAC key bytes, cached on construction to avoid base64-decoding
     on every signed request and every signed response. None if `secret_b64`
@@ -213,6 +224,8 @@ class WidgetSecretStore:
                     user_id=entry.get("user_id"),
                     main_house=entry.get("main_house") is not False,
                     phone_pages=entry.get("phone_pages") is True,
+                    local_url=_stored_address(entry.get("local_url")),
+                    remote_url=_stored_address(entry.get("remote_url")),
                 )
         _LOGGER.debug("Loaded %d widget secrets from storage", len(self._secrets))
 
@@ -255,6 +268,18 @@ class WidgetSecretStore:
                     # said otherwise is the one it always was.
                     **({} if entry.main_house else {"main_house": False}),
                     **({"phone_pages": True} if entry.phone_pages else {}),
+                    # Only while not auto, so the file of a device that never
+                    # had an address set is the one it always was.
+                    **(
+                        {"local_url": entry.local_url}
+                        if entry.local_url is not None
+                        else {}
+                    ),
+                    **(
+                        {"remote_url": entry.remote_url}
+                        if entry.remote_url is not None
+                        else {}
+                    ),
                 }
                 for watch_id, entry in self._secrets.items()
             }
@@ -334,6 +359,8 @@ class WidgetSecretStore:
             user_id=user_id,
             main_house=existing.main_house if existing is not None else True,
             phone_pages=existing.phone_pages if existing is not None else False,
+            local_url=existing.local_url if existing is not None else None,
+            remote_url=existing.remote_url if existing is not None else None,
         )
         _LOGGER.info(
             "Registered widget secret for watch_id=%s algo=%s app_version=%s owner_iphone_id=%s user=%s",
@@ -521,6 +548,43 @@ class WidgetSecretStore:
         _LOGGER.info("watch_id=%s runs an iPhone app that shows its own pages", watch_id)
         return True
 
+    def set_addresses(
+        self, watch_id: str, changes: Mapping[str, str | None]
+    ) -> bool | None:
+        """Write a device's address settings (watch_addresses.py).
+
+        ``changes`` maps ``local_url`` or ``remote_url`` to the setting as
+        kept: None for auto, ``""`` for none, or an address already cleaned
+        by ``watch_addresses.parse_address_update``, the one parser every
+        write path goes through. A slot left out is left alone, and any other
+        key is ignored. Returns whether anything changed, or None when the
+        device has no entry (the race with removal the other ops share). No
+        listeners are told: the device entities do not show it; the caller
+        wakes the device's poll.
+        """
+        entry = self._secrets.get(watch_id)
+        if entry is None:
+            return None
+        changed = False
+        for name in ("local_url", "remote_url"):
+            if name not in changes:
+                continue
+            value = changes[name]
+            if value is not None and not isinstance(value, str):
+                continue
+            if getattr(entry, name) != value:
+                setattr(entry, name, value)
+                changed = True
+        if changed:
+            self._schedule_save()
+            _LOGGER.info(
+                "watch_id=%s addresses: local=%r remote=%r",
+                watch_id,
+                entry.local_url,
+                entry.remote_url,
+            )
+        return changed
+
     def bind_owned_watches(self, owner_iphone_id: str, user_id: str) -> list[str]:
         """Give every unbound watch paired by `owner_iphone_id` that iPhone's user.
 
@@ -600,6 +664,13 @@ class WidgetSecretStore:
                 listener()
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Widget secret store listener raised")
+
+
+def _stored_address(raw: object) -> str | None:
+    """An address setting as read from the file: a string (``""`` for none)
+    or None for auto, which anything else reads as. The value is cleaned
+    again whenever it is resolved (watch_addresses.effective_addresses)."""
+    return raw if isinstance(raw, str) else None
 
 
 def watch_has_iphone(entries: Mapping[str, WidgetSecretEntry], watch_id: str) -> bool:

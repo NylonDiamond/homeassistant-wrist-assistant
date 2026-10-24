@@ -249,6 +249,8 @@ def _loaded_modules():
         _load("listener_relay")
         # The real one: who may touch which owner is what these tests check.
         _load("panel_access")
+        # The real one: the address commands resolve through it.
+        _load("watch_addresses")
         yield _load("complication_ws"), store_mod, secrets_mod, watch_config_mod
     finally:
         for key in list(sys.modules):

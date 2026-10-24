@@ -60,6 +60,7 @@ from .const import (
     PUSH_PAIRED_BY_USER_CAPABILITY,
     SEALED_CODE_PAIRING_CAPABILITY,
     WA_HMAC_NONCE_TTL_SECONDS,
+    WATCH_ADDRESSES_CAPABILITY,
     WATCH_CONFIG_CAPABILITY,
     WATCH_CONFIG_CATALOG_CAPABILITY,
     WATCH_CONFIG_CONTROL_CENTER_CAPABILITY,
@@ -119,6 +120,7 @@ from .wa_v2_views import (
     WAStreamView,
     WAVersionView,
 )
+from .watch_addresses import addresses_hash_for
 from .watch_config_store import WatchConfigStore
 from .watch_config_ws import async_register_watch_config_commands
 from .watch_logs_store import WatchLogsStore
@@ -771,6 +773,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     coordinator.attach_device_check(
         lambda watch_id: widget_secret_store.get(watch_id) is not None
     )
+    # Each watch's address record rides its poll as a hash (watch_addresses.py).
+    coordinator.attach_addresses(
+        lambda watch_id: addresses_hash_for(hass, widget_secret_store, watch_id)
+    )
     # Step 6, once per install: an iPhone's push token filed under its
     # companion watch moves to the phone's own id, where it now lives and
     # where routing pairs it with the watches of the same user.
@@ -1057,6 +1063,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # iPhone pairing with no Home Assistant token: the panel's QR offer,
     # WAPairRedeemView, an iPhone by code, and the signed rekey op.
     coordinator.register_capability(PHONE_PAIRING_CAPABILITY)
+    # Each watch's home network and internet address (watch_addresses.py):
+    # the signed addresses_get and addresses_set ops, and `addresses` on a
+    # watch's delta reply (attached above). The watch asks for its addresses
+    # after pairing, and sends the ones set on it, only when it sees this.
+    coordinator.register_capability(WATCH_ADDRESSES_CAPABILITY)
     # Phone pages: an iPhone owns its own pages, status pages, menus, rooms
     # and settings in the watch config store, the panel may start them, and
     # the phone polls /v2/delta for them signed as itself. The phone holds

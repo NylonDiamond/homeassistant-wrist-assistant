@@ -53,6 +53,7 @@ _NAMES = {
     "_lean_request",
     "_held_revision",
     "_held_revisions",
+    "_held_hash",
     "DELTA_MAX_BODY_BYTES",
     "DELTA_MAX_ENTITIES",
     "DELTA_MAX_TEMPLATES",

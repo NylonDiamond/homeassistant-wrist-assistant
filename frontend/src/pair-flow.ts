@@ -173,6 +173,14 @@ export const PAIR_NEXT_OPEN = {
   title: "Open Wrist Assistant on the watch",
   line: "The watch gets your changes when the app opens.",
 } as const;
+/** A third step, once the watch's addresses are in: the two the watch will
+ * use, with Change to fix them here (`device-addresses.ts`). */
+export const PAIR_NEXT_ADDRESSES = {
+  title: "Check its addresses",
+  local: "Home network",
+  remote: "Internet",
+  action: "Change",
+} as const;
 
 /** The foot's links and buttons. */
 export const PAIR_NEXT_GUIDE_TEXT = "Setup guide";

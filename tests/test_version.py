@@ -52,3 +52,11 @@ def test_version_endpoint_exposes_instance_id(base_url: str) -> None:
     body = r.json()
     assert "instance_id" in body, "version probe must expose instance_id"
     assert isinstance(body["instance_id"], str) and body["instance_id"], body
+
+
+def test_version_endpoint_lists_watch_addresses(base_url: str) -> None:
+    """A watch asks for its home network and internet address after pairing,
+    and sends the ones set on it, only when it sees `watch_addresses`."""
+    r = requests.get(f"{base_url}/api/wrist_assistant/version", timeout=10)
+    assert r.status_code == 200, r.text
+    assert "watch_addresses" in r.json()["capabilities"]

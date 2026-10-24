@@ -365,6 +365,45 @@ export async function renameDevice(hass: HassLike, watchId: string, name: string
   });
 }
 
+/** Where one address slot comes from: Home Assistant's own Network settings,
+ * an address someone set, or none on purpose. */
+export type AddressSource = "auto" | "set" | "none";
+
+/** A watch's two addresses (`devices/addresses`). Each `*_url` is the address
+ * the watch uses, null when it has none; `detected` is what Home Assistant's
+ * Settings, System, Network give, which an `auto` slot follows (the internet
+ * address takes `external`, else `cloud`). */
+export interface DeviceAddresses {
+  ok: true;
+  watch_id: string;
+  local_url: string | null;
+  remote_url: string | null;
+  local_source: AddressSource;
+  remote_source: AddressSource;
+  hash: string;
+  detected: { internal: string | null; external: string | null; cloud: string | null };
+}
+
+/** One watch's home network and internet address. */
+export async function fetchDeviceAddresses(hass: HassLike, watchId: string) {
+  return hass.connection.sendMessagePromise<DeviceAddresses>({
+    type: "wrist_assistant/devices/addresses", watch_id: watchId,
+  });
+}
+
+/** Set a watch's addresses. Each slot left out stays as it is; a string sets
+ * that address, `""` sets none, and null goes back to automatic. An address
+ * that is not http:// or https:// with no path is refused `invalid_url`. The
+ * watch picks the change up on its next poll. */
+export async function setDeviceAddresses(
+  hass: HassLike, watchId: string,
+  slots: { local_url?: string | null; remote_url?: string | null },
+) {
+  return hass.connection.sendMessagePromise<DeviceAddresses>({
+    type: "wrist_assistant/devices/set_addresses", watch_id: watchId, ...slots,
+  });
+}
+
 /** Remove one device from this home: its pairing, its push token and its
  * watch setup go, and its designs move to the Library. Always forced: the
  * panel asks first, and every device in use still holds a token or a design,
