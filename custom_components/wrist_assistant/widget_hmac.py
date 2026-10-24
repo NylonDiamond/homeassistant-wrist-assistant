@@ -41,6 +41,7 @@ import logging
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
+from typing import Any
 
 from aiohttp.web import Request
 
@@ -133,16 +134,38 @@ class WANonceCache:
             self._entries.popitem(last=False)
 
 
-def validate_wa_request(
+@dataclass
+class _CheckedHeaders:
+    version: int
+    op: str
+    watch_id: str
+    ts: int
+    nonce: str
+    sig_hex: str
+    secret: bytes
+    algo: str
+    digest: Any
+    now: float
+
+
+def precheck_wa_request(
     request: Request,
-    body: bytes,
     secret_store: WidgetSecretStore,
-    nonce_cache: WANonceCache,
     *,
     now: float | None = None,
-) -> ValidatedWARequest:
-    """Validate the headers + signature on `request`. Raises WAHMACError on any failure."""
+) -> None:
+    """Every check :func:`validate_wa_request` makes that needs no body: the
+    headers are there and plain, the version is one this build takes, the
+    timestamp is in the window, and the watch is known with a usable
+    secret. A view runs it before it reads the body, so a stranger who
+    knows no paired watch cannot make Home Assistant read a large body.
+    Raises WAHMACError with the same reasons."""
+    _check_headers(request, secret_store, now)
 
+
+def _check_headers(
+    request: Request, secret_store: WidgetSecretStore, now: float | None
+) -> _CheckedHeaders:
     version_str = request.headers.get("X-WA-Version", "")
     op = request.headers.get("X-WA-Op", "")
     watch_id = request.headers.get("X-WA-Watch", "")
@@ -199,16 +222,40 @@ def validate_wa_request(
         )
         raise WAHMACError("unsupported_algo")
 
-    canonical = f"v{version}|{op}|{watch_id}|{ts}|{nonce}".encode() + b"\n" + body
-    expected = hmac.new(secret, canonical, digest).hexdigest()
-    if not hmac.compare_digest(expected, sig_hex.lower()):
+    return _CheckedHeaders(
+        version=version,
+        op=op,
+        watch_id=watch_id,
+        ts=ts,
+        nonce=nonce,
+        sig_hex=sig_hex,
+        secret=secret,
+        algo=entry.algo,
+        digest=digest,
+        now=current,
+    )
+
+
+def validate_wa_request(
+    request: Request,
+    body: bytes,
+    secret_store: WidgetSecretStore,
+    nonce_cache: WANonceCache,
+    *,
+    now: float | None = None,
+) -> ValidatedWARequest:
+    """Validate the headers + signature on `request`. Raises WAHMACError on any failure."""
+    h = _check_headers(request, secret_store, now)
+    canonical = f"v{h.version}|{h.op}|{h.watch_id}|{h.ts}|{h.nonce}".encode() + b"\n" + body
+    expected = hmac.new(h.secret, canonical, h.digest).hexdigest()
+    if not hmac.compare_digest(expected, h.sig_hex.lower()):
         raise WAHMACError("bad_signature")
 
-    if not nonce_cache.check_and_record(watch_id, nonce, current):
+    if not nonce_cache.check_and_record(h.watch_id, h.nonce, h.now):
         raise WAHMACError("replayed_nonce")
 
     return ValidatedWARequest(
-        version=version, op=op, watch_id=watch_id, body=body, algo=entry.algo
+        version=h.version, op=h.op, watch_id=h.watch_id, body=body, algo=h.algo
     )
 
 

@@ -37,6 +37,7 @@ import types
 from typing import Any
 
 import pytest
+from capped_body_stubs import CAPPED_BODY_NAMES
 
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from test_pair_requests import loaded_pair_module
@@ -157,6 +158,7 @@ def _view_classes(pair_mod, log_hmac_failure) -> dict[str, type]:
         dont_inherit=True,
     )
     namespace: dict[str, Any] = {
+        **CAPPED_BODY_NAMES,
         "Any": Any,
         "Response": _Response,
         "HomeAssistantView": _HeaderView,
