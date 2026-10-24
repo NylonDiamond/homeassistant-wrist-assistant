@@ -450,10 +450,11 @@ class DeltaCoordinator:
         # watch_id → the certificate revision its last reply with a body
         # carried, kept like _http_actions_sent.
         self._client_certificate_sent: dict[str, int] = {}
-        # Each watch's two addresses ride the poll as a hash (`addresses`, see
-        # watch_addresses.py): ``_addresses_of(watch_id)`` gives it, None for
-        # an iPhone or an unknown id. It moves when the panel or the watch
-        # sets an address, which wakes that watch's poll, and when Home
+        # Each device's two addresses ride the poll as a hash (`addresses`,
+        # see watch_addresses.py), a watch's and an iPhone's alike:
+        # ``_addresses_of(watch_id)`` gives it, None for an unknown id. It
+        # moves when the panel or the device sets an address, which wakes
+        # that device's poll, and when Home
         # Assistant's own Network settings change what an automatic address
         # resolves to, which the next poll finds. None until setup attaches
         # it (attach_addresses).
@@ -908,21 +909,21 @@ class DeltaCoordinator:
             if self._bound_user(watch_id) == user_id:
                 self.wake_watch(watch_id, renotify=False)
 
-    # ── the watch's addresses on the poll ─────────────────────────────
+    # ── the device's addresses on the poll ────────────────────────────
 
     @callback
     def attach_addresses(self, addresses_of: Callable[[str], str | None]) -> None:
-        """Wire in ``addresses_of(watch_id)``, the hash of that watch's
-        address record (watch_addresses.addresses_hash_for), or None for a
-        device that gets none. Its value goes out on every reply with a body
-        as ``addresses``. The wake on a set is the setter's
-        (watch_addresses.update_device_addresses)."""
+        """Wire in ``addresses_of(watch_id)``, the hash of that device's
+        address record (watch_addresses.addresses_hash_for), a watch's or an
+        iPhone's, or None for an id that gets none. Its value goes out on
+        every reply with a body as ``addresses``. The wake on a set is the
+        setter's (watch_addresses.update_device_addresses)."""
         self._addresses_of = addresses_of
 
     def addresses_hash(self, watch_id: str) -> str | None:
-        """The watch's addresses hash, or None with nothing attached, for
-        an iPhone, or when the lookup fails: the reply then leaves the field
-        out."""
+        """The device's addresses hash, or None with nothing attached, for
+        an unknown id, or when the lookup fails: the reply then leaves the
+        field out."""
         if self._addresses_of is None:
             return None
         try:
@@ -1278,13 +1279,14 @@ class DeltaCoordinator:
         past the one it saw, and a change wakes the parked polls of that
         user's devices.
 
-        A watch's reply with a body also carries ``addresses``: the hash of
-        its address record (``watch_addresses.AddressRecord.hash``), the
-        ``hash`` the signed ``addresses_get`` returns. The watch pulls its
-        addresses when it differs from the one it holds. A set from the panel
-        or the watch wakes its parked poll; a change to Home Assistant's own
-        Network settings moves the hash on its own and the next poll finds
-        it. An iPhone's reply leaves it out.
+        A reply with a body also carries ``addresses``: the hash of the
+        polling device's address record
+        (``watch_addresses.AddressRecord.hash``), the ``hash`` the signed
+        ``addresses_get`` returns. A watch and an iPhone polling for its own
+        pages get it alike, and each pulls its addresses when it differs from
+        the one it holds. A set from the panel or the device wakes its parked
+        poll; a change to Home Assistant's own Network settings moves the
+        hash on its own and the next poll finds it.
 
         ``held`` is what the device says it holds of those values (see
         HeldConfig), the addresses hash included. A poll whose report lags a current number is

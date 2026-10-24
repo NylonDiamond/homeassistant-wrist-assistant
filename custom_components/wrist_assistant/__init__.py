@@ -773,7 +773,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     coordinator.attach_device_check(
         lambda watch_id: widget_secret_store.get(watch_id) is not None
     )
-    # Each watch's address record rides its poll as a hash (watch_addresses.py).
+    # Each watch's and iPhone's address record rides its poll as a hash
+    # (watch_addresses.py).
     coordinator.attach_addresses(
         lambda watch_id: addresses_hash_for(hass, widget_secret_store, watch_id)
     )
@@ -1063,10 +1064,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # iPhone pairing with no Home Assistant token: the panel's QR offer,
     # WAPairRedeemView, an iPhone by code, and the signed rekey op.
     coordinator.register_capability(PHONE_PAIRING_CAPABILITY)
-    # Each watch's home network and internet address (watch_addresses.py):
-    # the signed addresses_get and addresses_set ops, and `addresses` on a
-    # watch's delta reply (attached above). The watch asks for its addresses
-    # after pairing, and sends the ones set on it, only when it sees this.
+    # Each paired watch's and iPhone's home network and internet address
+    # (watch_addresses.py): the signed addresses_get and addresses_set ops,
+    # and `addresses` on the device's delta reply (attached above). The
+    # device asks for its addresses after pairing, and sends the ones set on
+    # it, only when it sees this.
     coordinator.register_capability(WATCH_ADDRESSES_CAPABILITY)
     # Phone pages: an iPhone owns its own pages, status pages, menus, rooms
     # and settings in the watch config store, the panel may start them, and

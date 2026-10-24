@@ -1,8 +1,10 @@
-"""The two addresses a watch reaches this Home Assistant at.
+"""The two addresses a watch or an iPhone reaches this Home Assistant at.
 
-Each paired device keeps one record here, beside its secret
-(``WidgetSecretEntry.local_url`` and ``remote_url``): a home network address
-and an internet address. Each slot is one of three settings:
+Each paired device, a watch or an iPhone (both live in the one
+WidgetSecretStore, told apart by ``device_kind``), keeps one record here,
+beside its secret (``WidgetSecretEntry.local_url`` and ``remote_url``): a
+home network address and an internet address. Each slot is one of three
+settings:
 
 * ``auto``: follow Home Assistant's own Settings, System, Network. The home
   network address is the internal URL (or the one Home Assistant works out for
@@ -13,12 +15,13 @@ and an internet address. Each slot is one of three settings:
   that address, sanitized.
 * ``none``: deliberately no address in that slot. Stored as ``""``.
 
-The watch reads the record with the signed ``addresses_get`` op and writes it
-with ``addresses_set``; the panel does both over the WebSocket
-(``devices/addresses`` and ``devices/set_addresses`` in complication_ws.py).
-Every reply with a body to a watch's delta poll carries the record's
-``hash`` as ``addresses``, so a watch learns of a change, from the panel or
-from Home Assistant's own Network settings, on its next poll.
+The device reads its record with the signed ``addresses_get`` op and writes
+it with ``addresses_set``, signed as itself; the panel does both over the
+WebSocket (``devices/addresses`` and ``devices/set_addresses`` in
+complication_ws.py). Every reply with a body to a device's delta poll (a
+watch's, or an iPhone's poll for its own pages) carries the record's
+``hash`` as ``addresses``, so the device learns of a change, from the panel
+or from Home Assistant's own Network settings, on its next poll.
 
 Pure apart from ``detected_addresses``, which asks Home Assistant, so the
 rules are tested with no Home Assistant at all.
@@ -275,10 +278,11 @@ def update_device_addresses(
 
 
 def addresses_hash_for(hass: Any, secret_store: Any, watch_id: str) -> str | None:
-    """The ``addresses`` hash a delta reply carries for ``watch_id``: only
-    for a paired watch, None for an iPhone or an unknown id."""
+    """The ``addresses`` hash a delta reply carries for ``watch_id``: for
+    any paired device, a watch or an iPhone polling for its own pages, and
+    None for an unknown id."""
     entry = secret_store.get(watch_id)
-    if entry is None or getattr(entry, "device_kind", None) != "watch":
+    if entry is None:
         return None
     return effective_addresses(entry, detected_addresses(hass)).hash
 

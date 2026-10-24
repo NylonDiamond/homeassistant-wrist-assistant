@@ -878,7 +878,7 @@ def ws_rename_device(
 
 
 def _addresses_result(watch_id: str, found: tuple[Any, Any]) -> dict[str, Any]:
-    """The panel's view of a device's addresses: the record the watch gets
+    """The panel's view of a device's addresses: the record the device gets
     from ``addresses_get``, with what Home Assistant detects beside it."""
     record, detected = found
     return {**record.as_wire(), "watch_id": watch_id, "detected": detected.as_dict()}
@@ -898,7 +898,8 @@ def ws_device_addresses(
 
     Result: {"ok": true, "watch_id", "local_url", "remote_url",
     "local_source", "remote_source", "hash", "detected": {"internal",
-    "external", "cloud"}}. Each ``*_url`` is the address the watch uses and
+    "external", "cloud"}}. The device is a watch or an iPhone. Each
+    ``*_url`` is the address the device uses and
     each ``*_source`` is ``auto``, ``set`` or ``none``; ``detected`` is what
     Home Assistant's Settings, System, Network give, which an ``auto`` slot
     follows. A non-administrator may read only a device paired to them.
@@ -937,8 +938,8 @@ def ws_set_device_addresses(
     string for that address, ``""`` for none, null for automatic. A value
     that is not an http or https address with a host and no path is refused
     ``invalid_url`` (the message names the field) and nothing changes. A
-    change moves the record's hash and wakes the watch's poll, so the watch
-    picks it up at once. Result: as for ``devices/addresses``. The owner
+    change moves the record's hash and wakes the device's poll, so the
+    watch or iPhone picks it up at once. Result: as for ``devices/addresses``. The owner
     check is the one ``devices/rename`` makes.
     """
     domain_data = hass.data.get(DOMAIN)
