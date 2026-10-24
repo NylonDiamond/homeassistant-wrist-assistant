@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from capped_body_stubs import CAPPED_BODY_NAMES
 
 from device_lookup_loader import find_paired_device
 from test_pair_requests import loaded_pair_module
@@ -184,6 +185,7 @@ def _register_view_class() -> type:
     with loaded_pair_module() as pair_mod:
         validate_pair_fields = pair_mod.validate_pair_fields
     namespace: dict[str, Any] = {
+        **CAPPED_BODY_NAMES,
         "validate_pair_fields": validate_pair_fields,
         "Any": Any,
         "base64": base64,
@@ -383,6 +385,7 @@ def _update_metadata(env, watch_id: str, payload: dict) -> _Response:
     with loaded_pair_module() as pair_mod:
         text_max = pair_mod.REGISTER_TEXT_MAX_LEN
     namespace: dict[str, Any] = {
+        **CAPPED_BODY_NAMES,
         "Response": _Response,
         "_OpContext": object,
         "DOMAIN": "wrist_assistant",

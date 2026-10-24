@@ -82,6 +82,14 @@ export interface WatchHttpActionsViewInput {
  * handed no watch: the library is shared by every watch. Until the chunk is
  * in, a plain line stands in. */
 export function renderWatchHttpActionsView(input: WatchHttpActionsViewInput): TemplateResult {
+  // Saving and testing are an administrator's (`http_actions_ws.py`), and
+  // anyone else reads only the names, so the editor would have nothing to
+  // show them. The pickers on the other screens still list every action.
+  if (input.hass.user?.is_admin === false) {
+    return html`<div class="wp-loading">
+        <span>Only an administrator can change HTTP actions. Your watch and iPhone can still run every one, from a tile, a menu or a complication.</span>
+      </div>`;
+  }
   const ready = customElements.get("wa-http-actions-editor") !== undefined;
   if (!ready && !loadFailed) void loadHttpActionsEditor().then(input.onLoaded, input.onLoaded);
   return ready

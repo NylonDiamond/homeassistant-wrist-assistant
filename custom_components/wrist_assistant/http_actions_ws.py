@@ -1,24 +1,26 @@
 """WebSocket commands for the panel's HTTP actions screen (step 4d batch 4).
 
 The panel reads the home's HTTP action library, saves it, and tests a draft
-action over the WebSocket it already holds. The library is the home's, shared
-by the household like Parts and page photos, so every command is open to every
-signed-in user, not only administrators. That is a deliberate choice with a
-cost worth knowing: a read hands out every URL, header and global in the
-house, and a test sends a request from Home Assistant to wherever the draft
-points, so any signed-in user can make Home Assistant send a request on its
-own network.
+action over the WebSocket it already holds. The library holds the home's
+URLs, headers and globals, tokens among them, and a test sends a request
+from Home Assistant to wherever the draft points, on its own network. So
+saving and testing are for administrators only, as Home Assistant keeps its
+own REST commands, and a read gives anyone else only the public list a
+device is told (ids, names, looks and the questions to ask), which is all
+the page, menu and complication pickers need. Every device still runs every
+action, whoever it is bound to.
 
 Commands:
 
     wrist_assistant/http_actions/get    {}
-    wrist_assistant/http_actions/save   {base_revision, document}
-    wrist_assistant/http_actions/test   {action, global_variables?, values?}
+    wrist_assistant/http_actions/save   {base_revision, document}   admin
+    wrist_assistant/http_actions/test   {action, global_variables?, values?}   admin
 
 Every refusal is a WebSocket error with a stable code: ``invalid``,
 ``conflict`` (the message always begins ``stored revision is <N>``),
-``unavailable``, ``busy``, or for a test of an action that presents a
-client certificate ``client_certificate_missing`` or
+``unavailable``, ``busy``, ``unauthorized`` (a save or test by a user who is
+not an administrator), or for a test of an action that presents a client
+certificate ``client_certificate_missing`` or
 ``client_certificate_unreadable``.
 """
 
@@ -35,6 +37,7 @@ from homeassistant.core import HomeAssistant, callback
 from .const import DOMAIN
 from .http_actions_runner import HTTPActionRefusal
 from .http_actions_store import HTTPActionsStoreError
+from .panel_access import is_admin
 
 if TYPE_CHECKING:
     from .http_actions_runner import HTTPActionRunner
@@ -67,7 +70,7 @@ def async_register_http_actions_commands(hass: HomeAssistant) -> None:
 def ws_http_actions_get(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """The home's library with its marks.
+    """The home's library with its marks, for an administrator.
 
     Result: {"revision", "hash", "updated_at", "updated_by",
              "handed_over": [owner id], "delivered": {owner id: revision},
@@ -76,19 +79,30 @@ def ws_http_actions_get(
     At revision 0 the strings are null and there is no ``document``: the
     screen's "No HTTP actions yet" state, which a save over base 0 or a
     phone's hand-over ends. Reading changes nothing.
+
+    Anyone else gets {"revision", "public"?}: the public list a device is
+    told (``http_actions.public_list``), with no URL, header, body or
+    global, and no ``public`` at revision 0.
     """
     store = _store(hass)
     if store is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     try:
-        result = store.get()
+        if is_admin(connection):
+            result = store.get()
+        else:
+            revision, listed, _digest = store.public()
+            result = {"revision": revision}
+            if listed is not None:
+                result["public"] = listed
     except HTTPActionsStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
         return
     connection.send_result(msg["id"], result)
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_SAVE,
@@ -124,6 +138,7 @@ def ws_http_actions_save(
     connection.send_result(msg["id"], {"revision": revision})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): _CMD_TEST,

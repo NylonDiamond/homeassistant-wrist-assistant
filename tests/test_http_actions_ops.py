@@ -33,7 +33,7 @@ import cryptography.hazmat.primitives.asymmetric.x25519  # noqa: F401
 import cryptography.hazmat.primitives.ciphers.aead  # noqa: F401
 import cryptography.hazmat.primitives.hashes  # noqa: F401
 import cryptography.hazmat.primitives.kdf.hkdf  # noqa: F401
-from test_http_actions import ID_A, ID_B, action, library, variable
+from test_http_actions import ID_A, ID_B, action, header, library, variable
 from test_http_actions_runner import CERT_PASSWORD, FakeHass, FakeResponse, FakeSession, make_p12
 from test_http_actions_store import CONFLICT, loaded_package, new_store
 
@@ -161,6 +161,7 @@ def env():
             async_response=lambda func: func,
         )
         sys.modules["voluptuous"] = types.SimpleNamespace(Required=_marker, Optional=_marker)
+        pkg.load("panel_access")
         ws = pkg.load("http_actions_ws")
         certs = pkg.load("client_certificate_store")
         store = new_store(pkg.store_mod)
@@ -525,7 +526,8 @@ def test_an_unreadable_library_is_a_signed_503(env) -> None:
 
 class _Connection:
     def __init__(self, user_id: str = "admin") -> None:
-        self.user = types.SimpleNamespace(id=user_id)
+        known = _Auth.users.get(user_id)
+        self.user = types.SimpleNamespace(id=user_id, is_admin=known is not None and known.is_admin)
         self.results: dict[int, Any] = {}
         self.errors: list[tuple[int, str, str]] = []
 
@@ -566,6 +568,25 @@ def test_ws_save_then_get(env) -> None:
     assert got["document"] == doc
     assert got["updated_by"] == "panel"
     assert got["delivered"] == {"watch-A": 1}
+
+
+def test_ws_get_gives_a_non_admin_only_the_public_list(env) -> None:
+    assert ws_call(env, env.ws.ws_http_actions_get, user_id="member").results[1] == {"revision": 0}
+    doc = library(
+        action(responseConfig={"source": "statusCode"}, headers=[header("Authorization", "Bearer {{token}}")]),
+        action(id=ID_B, name="Blank", url=""),
+        globals_=[{"id": "G", "key": "token", "value": "secret-token"}],
+    )
+    ws_call(env, env.ws.ws_http_actions_save, base_revision=0, document=doc)
+    got = ws_call(env, env.ws.ws_http_actions_get, user_id="member").results[1]
+    assert set(got) == {"revision", "public"}
+    assert got["revision"] == 1
+    assert got["public"] == env.store.public()[1]
+    assert [a["id"] for a in got["public"]["actions"]] == [ID_A, ID_B]
+    assert got["public"]["actions"][0]["hasReply"] is True
+    assert got["public"]["actions"][1]["needsSetup"] is True
+    flat = json.dumps(got)
+    assert "secret-token" not in flat and URL_A not in flat and "headers" not in flat
 
 
 def test_ws_save_conflict_and_invalid(env) -> None:

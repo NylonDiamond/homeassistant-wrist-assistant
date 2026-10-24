@@ -55,6 +55,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import gzip
+import json
 import logging
 import math
 import time
@@ -218,6 +219,7 @@ from .watch_voices_store import VOICES_HASH_RE, WatchVoicesValidationError
 from .widget_hmac import (
     WAHMACError,
     WANonceCache,
+    precheck_wa_request,
     sign_response,
     validate_wa_request,
 )
@@ -549,7 +551,18 @@ class WAActionView(HomeAssistantView):
         if domain_data is None:
             return Response(status=503, text="Integration not loaded")
 
-        body = await request.read()
+        # Every check that needs no body comes first, so a stranger who
+        # knows no paired watch never gets a body read, and the read is then
+        # held to the largest body an op takes.
+        try:
+            precheck_wa_request(request, domain_data.widget_secret_store)
+        except WAHMACError as err:
+            _LOGGER.debug("WA HMAC rejected (v2/action): %s", err.reason)
+            _log_signed_request_rejected(self._hass, domain_data, request, err.reason)
+            return Response(status=401, text="Unauthorized")
+        body = await _read_capped_body(request, ACTION_MAX_BODY_BYTES)
+        if body is None:
+            return Response(status=413, text="Request body too large")
 
         try:
             validated = validate_wa_request(
@@ -628,6 +641,17 @@ class WAActionView(HomeAssistantView):
 # a few KB; these leave room for the largest home and refuse the rest before
 # any of it reaches the coordinator.
 DELTA_MAX_BODY_BYTES = 256 * 1024
+
+# The longest body /v2/action reads. The largest op body is a watch's logs
+# (``WATCH_LOGS_MAX_BODY_BYTES``, 2 MiB); the room over it lets a slightly
+# larger upload still reach that op and hear its own ``too_large``.
+ACTION_MAX_BODY_BYTES = WATCH_LOGS_MAX_BODY_BYTES + 1024 * 1024
+
+# The longest body the pairing views and register_secret read. Every field
+# they take is at most a few hundred characters
+# (``wa_pair_requests.REGISTER_TEXT_MAX_LEN``), so a real body is well under
+# 4 KiB; anything near this cap is not a pairing.
+PAIR_MAX_BODY_BYTES = 16 * 1024
 DELTA_MAX_ENTITIES = 2000
 DELTA_MAX_TEMPLATES = 100
 DELTA_MAX_TEMPLATE_CHARS = 4096
@@ -657,6 +681,21 @@ async def _read_capped_body(request: Request, limit: int) -> bytes | None:
         if size > limit:
             return None
         chunks.append(chunk)
+
+
+class _BodyTooLarge(ValueError):
+    """A body over its view's cap. A ValueError, so a view that does not
+    catch it on its own answers it as invalid JSON."""
+
+
+async def _read_capped_json(request: Request, limit: int) -> Any:
+    """The JSON body, read only up to ``limit`` bytes. Raises
+    ``_BodyTooLarge`` over the cap, and ValueError (UnicodeDecodeError among
+    them) for a body that is not JSON, as ``request.json()`` does."""
+    raw = await _read_capped_body(request, limit)
+    if raw is None:
+        raise _BodyTooLarge("request body too large")
+    return json.loads(raw)
 
 
 def _delta_over_caps(payload: dict[str, Any]) -> str | None:
@@ -3172,7 +3211,9 @@ class WARegisterSecretView(HomeAssistantView):
             return self.json_message("Integration not loaded", status_code=503)
 
         try:
-            payload = await request.json()
+            payload = await _read_capped_json(request, PAIR_MAX_BODY_BYTES)
+        except _BodyTooLarge:
+            return self.json_message("Request body too large", status_code=413)
         except (ValueError, UnicodeDecodeError):
             return self.json_message("Invalid JSON body", status_code=400)
         if not isinstance(payload, dict):
@@ -3360,7 +3401,9 @@ class WAPairStartView(HomeAssistantView):
             return self.json_message("Integration not loaded", status_code=503)
 
         try:
-            payload = await request.json()
+            payload = await _read_capped_json(request, PAIR_MAX_BODY_BYTES)
+        except _BodyTooLarge:
+            return self.json_message("Request body too large", status_code=413)
         except (ValueError, UnicodeDecodeError):
             return self.json_message("Invalid JSON body", status_code=400)
         if not isinstance(payload, dict):
@@ -3477,7 +3520,9 @@ class WAPairStatusView(HomeAssistantView):
         if pair_store is None:
             return self.json_message("Integration not loaded", status_code=503)
         try:
-            payload = await request.json()
+            payload = await _read_capped_json(request, PAIR_MAX_BODY_BYTES)
+        except _BodyTooLarge:
+            return self.json_message("Request body too large", status_code=413)
         except (ValueError, UnicodeDecodeError):
             return self.json_message("Invalid JSON body", status_code=400)
         if not isinstance(payload, dict):
@@ -3558,7 +3603,9 @@ class WAPairRedeemView(HomeAssistantView):
             return self._refuse(503, "unavailable", "Integration not loaded")
 
         try:
-            payload = await request.json()
+            payload = await _read_capped_json(request, PAIR_MAX_BODY_BYTES)
+        except _BodyTooLarge:
+            return self._refuse(413, "invalid_request", "Request body too large")
         except (ValueError, UnicodeDecodeError):
             return self._refuse(400, "invalid_request", "Invalid JSON body")
         if not isinstance(payload, dict):

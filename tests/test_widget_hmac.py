@@ -131,3 +131,36 @@ def test_a_non_ascii_signature_for_a_known_watch_is_refused_not_crashed() -> Non
         headers = _headers(b"{}", **{"X-WA-Sig": "é"})
         with pytest.raises(mod.WAHMACError):
             _validate(mod, headers)
+
+
+# ── the precheck the action view runs before it reads a body ─────────────
+
+
+def _precheck(mod, headers: dict[str, str]) -> None:
+    mod.precheck_wa_request(types.SimpleNamespace(headers=headers), _SecretStore(), now=NOW)
+
+
+def test_the_precheck_lets_a_known_watch_in_the_window_through() -> None:
+    with _loaded_hmac() as mod:
+        # The signature is not looked at: it needs the body.
+        _precheck(mod, _headers(b"{}", **{"X-WA-Sig": "0" * 64}))
+
+
+@pytest.mark.parametrize(
+    "overrides, reason",
+    [
+        ({"X-WA-Watch": "someone-else"}, "unknown_watch"),
+        ({"X-WA-Ts": str(NOW - 3600)}, "ts_out_of_window"),
+        ({"X-WA-Version": "1"}, "unsupported_version"),
+        ({"X-WA-Op": ""}, "missing_headers"),
+        ({"X-WA-Nonce": "é"}, "invalid_header"),
+    ],
+)
+def test_the_precheck_refuses_what_validate_refuses_without_a_body(overrides, reason) -> None:
+    with _loaded_hmac() as mod:
+        with pytest.raises(mod.WAHMACError) as err:
+            _precheck(mod, _headers(b"{}", **overrides))
+        assert err.value.reason == reason
+        with pytest.raises(mod.WAHMACError) as full:
+            _validate(mod, _headers(b"{}", **overrides))
+        assert full.value.reason == reason

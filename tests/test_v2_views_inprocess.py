@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from capped_body_stubs import CAPPED_BODY_NAMES
 
 from test_complication_store import MAX_PER_OWNER, MAX_SCHEMA, _doc, _loaded_module
 from test_pair_requests import loaded_pair_module
@@ -132,6 +133,7 @@ def _handlers(store_mod: Any) -> dict[str, Any]:
     with loaded_pair_module() as pair_mod:
         validate_pair_fields = pair_mod.validate_pair_fields
     namespace: dict[str, Any] = {
+        **CAPPED_BODY_NAMES,
         "Any": Any,
         "uuid": uuid,
         "_LOGGER": logging.getLogger("wa_v2_views_test"),

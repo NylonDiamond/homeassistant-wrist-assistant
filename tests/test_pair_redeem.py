@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from capped_body_stubs import CAPPED_BODY_NAMES
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from test_pairing_ws import INSTANCE_ID, pairing_env
@@ -363,6 +364,7 @@ def env(sealed):
                 "orjson": _FAKE_ORJSON,
                 "Response": _RawResponse,
                 "HomeAssistantView": _JSONView,
+                **CAPPED_BODY_NAMES,
                 "HomeAssistant": object,
                 "Request": object,
                 "_OpContext": object,
