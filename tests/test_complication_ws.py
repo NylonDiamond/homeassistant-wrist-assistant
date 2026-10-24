@@ -182,6 +182,7 @@ def _loaded_modules():
             WATCH_CONFIG_PANEL_KINDS=frozenset({"pages", "behavior"}),
             WATCH_CONFIG_PANEL_WRITER="panel",
             WATCH_CONFIG_PHONE_KINDS=frozenset({"pages", "behavior"}),
+            WATCH_CONFIG_SEED_KINDS=frozenset({"behavior"}),
             PHONE_BEHAVIOR_KEYS=frozenset({"wrapPages"}),
             PHONE_BEHAVIOR_DECODE_KEYS=frozenset({"schemaVersion"}),
             WATCH_CONFIG_MAX_DOCUMENT_BYTES={"pages": 4096, "behavior": 4096},

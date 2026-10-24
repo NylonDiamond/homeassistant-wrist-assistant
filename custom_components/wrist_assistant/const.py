@@ -236,6 +236,10 @@ WATCH_CONFIG_PHONE_KINDS = frozenset(
         "behavior",
     }
 )
+# The kinds a watch may seed: its own copy of the two records its main house
+# keeps for the whole watch, sent once with `seed: true` on watch_config_put
+# while Home Assistant holds no record of the kind (WatchConfigStore.put).
+WATCH_CONFIG_SEED_KINDS = frozenset({"behavior", "notification_style"})
 # The settings an iPhone's `behavior` record keeps: every key the panel's
 # catalog (frontend/src/watch-settings-catalog.json) marks with
 # `"devices": ["watch", "iphone"]`. A behavior write for an iPhone owner keeps
@@ -395,6 +399,12 @@ WATCH_CONFIG_CONTROL_CENTER_CAPABILITY = "watch_config_control_center"
 # watch's main house. The phone uploads a second home's rooms and the watch
 # pulls them only when it sees this.
 WATCH_CONFIG_ROOMS_CAPABILITY = "watch_config_rooms"
+# What the integration advertises once watch_config_put takes `seed: true`
+# (WATCH_CONFIG_SEED_KINDS): a watch's own copy of a kind Home Assistant holds
+# no record of, refused `awaiting_move` while the watch's iPhone may still
+# move its setup here. The watch seeds only when it sees this, so an older
+# integration, which would take the seed over that move, is never sent one.
+WATCH_CONFIG_SEED_CAPABILITY = "watch_config_seed"
 # What the integration advertises once every /v2/delta reply with a body names
 # the signer's own `watch_config: {"pages": rev, "behavior": rev}` (0 for a
 # kind with no record) and a save of either kind wakes that owner's parked

@@ -19,16 +19,22 @@ parties:
   read the catalog (see ``watch_config_ws.py``), and it may make a watch's
   first record of those kinds.
 * The watch's own pull. The watch reads its records over the signed get when
-  the delta reply names a newer revision. Its one write is its ``behavior``
-  record, when Connect via changes on the watch. The phone, when
+  the delta reply names a newer revision. It writes two kinds back: its
+  ``behavior`` record, when Connect via changes on the watch, and a seed
+  (``seed`` on :meth:`WatchConfigStore.put`): its own copy of a kind in
+  ``WATCH_CONFIG_SEED_KINDS`` (``behavior``, ``notification_style``), sent
+  once when Home Assistant holds no record of it. The phone, when
   there is one, also picks a panel save up on its next check, or at once
   over the live line while the app is open.
 
-The first record of a kind comes from the iPhone mirror or from the panel
-(``base_revision`` 0 with nothing stored). The panel's create is taken only
-for a watch the secret store knows: a watch with no phone never uploads, so
-without it that watch would have no pages or settings at all, and an id
-nothing has paired as must never gain a record the panel invented.
+The first record of a kind comes from the iPhone mirror, from the panel, or
+from the watch's seed (``base_revision`` 0 with nothing stored). The panel's
+create is taken only for a watch the secret store knows: a watch with no
+phone never uploads its pages, so without it that watch would have no pages
+or settings at all, and an id nothing has paired as must never gain a record
+the panel invented. A seed is never taken while the watch's iPhone may still
+move its own setup here (``awaiting_move``), so it never makes the first
+record that move skips.
 
 An iPhone is an owner too (phone pages, app repo
 ``docs/phone_pages_mvp_2026-10.md``): it owns its own pages, status pages,
@@ -176,6 +182,7 @@ from .const import (
     WATCH_CONFIG_PANEL_KINDS,
     WATCH_CONFIG_PANEL_WRITER,
     WATCH_CONFIG_PHONE_KINDS,
+    WATCH_CONFIG_SEED_KINDS,
     WATCH_CONFIG_STORAGE_KEY,
     WATCH_CONFIG_STORAGE_VERSION,
     WATCH_LIBRARY_STORAGE_KEY,
@@ -2072,12 +2079,23 @@ class WatchConfigStore:
         document_hash: Any,
         base_revision: Any,
         force: Any = False,
+        seed: bool = False,
         updated_by: str,
     ) -> WatchConfigRecord:
         """Save one document, compare-and-swap on the revision.
 
         Accepted when ``base_revision`` equals the stored revision (0 when
-        there is no record), or when ``force`` is true. Every accepted save
+        there is no record), or when ``force`` is true.
+
+        ``seed`` is a watch's own copy of a kind its Home Assistant holds no
+        record of, sent once so the panel shows the watch's real settings
+        rather than the defaults. It only ever makes a first record: the kind
+        must be one of ``WATCH_CONFIG_SEED_KINDS``, the owner a watch (never
+        an iPhone), ``base_revision`` 0 and ``force`` off, else it is
+        refused as malformed. A stored record is the usual 409 conflict, and
+        with none it is refused ``awaiting_move`` while the watch's iPhone
+        may still move its own setup here (:meth:`_check_not_awaiting_move`),
+        so the seed never makes the first record that move skips. Every accepted save
         replacing a document files that document in the history first, so a
         forced save never loses the copy it overwrote. Everything about the
         request is checked before the revision is, so a malformed save is
@@ -2106,6 +2124,17 @@ class WatchConfigStore:
             raise WatchConfigValidationError("force must be true or false")
         if not force:
             _validate_base_revision(base_revision)
+        if seed:
+            if kind not in WATCH_CONFIG_SEED_KINDS:
+                raise WatchConfigValidationError(
+                    f"a watch does not seed its {kind.replace('_', ' ')}"
+                )
+            if self._owner_is_iphone(owner_watch_id):
+                raise WatchConfigValidationError("only a watch seeds its records")
+            if force or base_revision != 0:
+                raise WatchConfigValidationError(
+                    "a seed makes a first record: base_revision 0, no force"
+                )
         self._check_available(owner_watch_id)
 
         by_kind = self._records.get(owner_watch_id, {})
@@ -2118,6 +2147,8 @@ class WatchConfigStore:
                 stored_revision,
                 existing.hash if existing is not None else None,
             )
+        if seed:
+            self._check_not_awaiting_move(owner_watch_id, kind)
 
         before = existing.document if existing is not None else None
         prep = None

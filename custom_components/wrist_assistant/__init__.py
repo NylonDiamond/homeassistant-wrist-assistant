@@ -70,6 +70,7 @@ from .const import (
     WATCH_CONFIG_NOTIFICATION_STYLE_CAPABILITY,
     WATCH_CONFIG_REJECT_REPORT_CAPABILITY,
     WATCH_CONFIG_ROOMS_CAPABILITY,
+    WATCH_CONFIG_SEED_CAPABILITY,
     WATCH_CONFIG_STATUS_PAGES_CAPABILITY,
     WATCH_CONFIG_VOICE_CAPABILITY,
     WATCH_LOGS_CAPABILITY,
@@ -1046,6 +1047,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # The `rooms` kind (step 8), the rooms of a home that is not the watch's
     # main house, the same way.
     coordinator.register_capability(WATCH_CONFIG_ROOMS_CAPABILITY)
+    # A watch's seed: its own watch settings or notification style, sent
+    # once when Home Assistant holds no record of the kind.
+    coordinator.register_capability(WATCH_CONFIG_SEED_CAPABILITY)
     # `watch_config` on every delta reply and the wake on a save (attached
     # above): the watch's trigger to pull its own pages, behavior, menus,
     # voice, notification style, status pages, Control Center list and rooms.
