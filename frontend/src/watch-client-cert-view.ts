@@ -8,7 +8,10 @@
 // "For" menu, the same list of people as the pairing card's "Whose watch is
 // this?", picks someone else, so a watch paired for a household member can
 // get one: that watch reads only its own user's certificate. Anyone else
-// gets no menu and keeps their own (`mayPairForOthers`). It reads the
+// gets no menu and keeps their own (`mayPairForOthers`). On a paired
+// device's page the card is fixed to that device's owner (`fixTo`): "For"
+// is their name as plain text, since the certificate goes to their devices,
+// and the menu comes back only when the owner is not known. It reads the
 // chosen person's status once each time the page is opened or the person
 // changes, and never again until something here changes it. No polling.
 //
@@ -83,13 +86,57 @@ export class ClientCertCard {
   private users?: readonly PairUserChoice[];
   /** Whose certificate the card shows. Starts on the signed in person. */
   private userId?: string;
+  /** The person the card is fixed to (`fixTo`): a paired device's owner on
+   * that device's Settings page. Then "For" is their name, not a menu. */
+  private fixed?: { id: string; name?: string };
 
   /** `update` asks the page to draw again. */
   constructor(private readonly update: () => void) {}
 
-  /** The page has come on screen: start afresh on the signed in person, read
-   * the people for the menu, and read the status once. */
-  open(hass: HassLike): void {
+  /**
+   * Fix the card to one person, the owner of the device on the page, or
+   * let go of it with undefined: the menu (or the signed in person) is
+   * back. Only a person the one at the card may keep a certificate for: an
+   * administrator for anyone, anyone else only for themselves. Safe to call
+   * on every draw; it reads again only when the person changes.
+   */
+  fixTo(person: { id: string; name?: string } | undefined): void {
+    const me = this.hass?.user?.id;
+    const allowed = this.allowed(person);
+    const before = this.fixed;
+    this.fixed = allowed;
+    const want = allowed?.id ?? (before !== undefined ? me : this.userId);
+    if (want === this.userId || this.busy !== undefined) return;
+    this.visit++;
+    this.reset();
+    this.userId = want;
+    this.status = undefined;
+    this.readError = undefined;
+    if (this.hass && !this.unsupported) void this.read();
+  }
+
+  /** `person`, when the one at the card may keep a certificate for them. */
+  private allowed(person: { id: string; name?: string } | undefined): { id: string; name?: string } | undefined {
+    if (person === undefined) return undefined;
+    return person.id === this.hass?.user?.id || mayPairForOthers(this.hass?.user) ? person : undefined;
+  }
+
+  /** A person's name from the menu's list, when it was read. */
+  nameOf(userId: string): string | undefined {
+    return this.users?.find((u) => u.id === userId)?.name;
+  }
+
+  /** The fixed person's name: the one the page gave, else the menu's. */
+  private fixedName(): string | undefined {
+    const fixed = this.fixed;
+    if (fixed === undefined) return undefined;
+    return fixed.name ?? this.users?.find((u) => u.id === fixed.id)?.name;
+  }
+
+  /** The page has come on screen: start afresh on the signed in person, or
+   * on `person` when the page fixes the card to one (`fixTo`), read the
+   * people for the menu, and read the status once. */
+  open(hass: HassLike, person?: { id: string; name?: string }): void {
     this.hass = hass;
     this.visit++;
     this.reset();
@@ -97,7 +144,8 @@ export class ClientCertCard {
     this.readError = undefined;
     this.unsupported = false;
     this.users = undefined;
-    this.userId = hass.user?.id;
+    this.fixed = this.allowed(person);
+    this.userId = this.fixed?.id ?? hass.user?.id;
     void this.readUsers();
     void this.read();
   }
@@ -110,6 +158,9 @@ export class ClientCertCard {
 
   /** The chosen person by name when it is not the person at the card. */
   private otherName(): string | undefined {
+    if (this.fixed !== undefined && this.fixedName() !== undefined) {
+      return this.fixed.id === this.hass?.user?.id ? undefined : this.fixedName();
+    }
     return clientCertOtherName(this.users, this.userId, this.hass?.user?.id);
   }
 
@@ -307,6 +358,14 @@ export class ClientCertCard {
    * the body so a person whose status cannot be read can be swapped for
    * another. */
   private renderUserMenu() {
+    const fixedName = this.fixedName();
+    if (this.fixed !== undefined && fixedName !== undefined) {
+      const you = this.fixed.id === this.hass?.user?.id ? " (you)" : "";
+      return html`<div class="field readout ws-cert-user"><span>${CLIENT_CERT_FOR_TITLE}</span>
+          <div class="readout-v ws-cert-for">${fixedName}${you}</div>
+        </div>
+        <div class="hint keep">${CLIENT_CERT_FOR_HINT}</div>`;
+    }
     const users = this.users;
     if (users === undefined || users.length < 2) return nothing;
     const picked = this.userId !== undefined && users.some((u) => u.id === this.userId) ? this.userId : undefined;

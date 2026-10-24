@@ -435,6 +435,64 @@ describe("the For menu", () => {
   });
 });
 
+describe("fixed to a device's owner", () => {
+  const certCommands = (sent: Record<string, unknown>[]) => sent.filter((m) => String(m.type).startsWith("wrist_assistant/client_certificate/"));
+
+  it("opens on the owner, says their name as plain text, and acts for them", async () => {
+    stubReader("data:application/x-pkcs12;base64,MIIK");
+    const ha = fakeHass(held(), PEOPLE);
+    const c = new ClientCertCard(() => undefined);
+    const inside = c as unknown as Inside;
+    c.open(ha.hass, { id: "u-anna" });
+    await settle();
+    expect(certCommands(ha.sent)).toEqual([{ type: "wrist_assistant/client_certificate/status", user_id: "u-anna" }]);
+    const shown = flatten(c.render());
+    // The name from the people list, since the page gave none.
+    expect(shown).toMatch(/<span>For<\/span>\s*<div class="readout-v ws-cert-for">Anna</);
+    expect(shown).toContain(CLIENT_CERT_FOR_HINT);
+    expect(shown).not.toContain("<select");
+    await inside.pick({ files: [{ name: "anna.p12", size: 2_400 }], value: "" });
+    inside.passphrase = "right";
+    await inside.upload();
+    expect(certCommands(ha.sent).at(-1)).toMatchObject({ type: "wrist_assistant/client_certificate/put", user_id: "u-anna" });
+    expect(flatten(c.render())).toContain(clientCertSavedNote("Anna"));
+  });
+
+  it("says (you) for the person at the card and sends no user", async () => {
+    const ha = fakeHass(held(), PEOPLE);
+    const c = new ClientCertCard(() => undefined);
+    c.open(ha.hass, { id: "u-admin", name: "Jesse" });
+    await settle();
+    expect(flatten(c.render())).toContain(`ws-cert-for">Jesse (you)<`);
+    expect(certCommands(ha.sent)).toEqual([{ type: "wrist_assistant/client_certificate/status" }]);
+  });
+
+  it("reads again only when the person changes, and lets go back to the menu", async () => {
+    const ha = fakeHass(held(), PEOPLE);
+    const c = new ClientCertCard(() => undefined);
+    c.open(ha.hass, { id: "u-anna", name: "Anna" });
+    await settle();
+    c.fixTo({ id: "u-anna", name: "Anna" });
+    await settle();
+    expect(certCommands(ha.sent)).toHaveLength(1);
+    c.fixTo(undefined);
+    await settle();
+    expect(certCommands(ha.sent).at(-1)).toEqual({ type: "wrist_assistant/client_certificate/status" });
+    const shown = flatten(c.render());
+    expect(shown).toContain("<select");
+    expect(shown).toContain("Jesse (you) · Admin");
+  });
+
+  it("keeps someone who is not an administrator on their own certificate", async () => {
+    const ha = fakeHass(held(), PEOPLE, false);
+    const c = new ClientCertCard(() => undefined);
+    c.open(ha.hass, { id: "u-anna", name: "Anna" });
+    await settle();
+    expect(certCommands(ha.sent)).toEqual([{ type: "wrist_assistant/client_certificate/status" }]);
+    expect(flatten(c.render())).not.toContain("ws-cert-for");
+  });
+});
+
 describe("the words for another person", () => {
   const choices = [
     { id: "u-admin", label: "Jesse (you) · Admin", name: "Jesse", admin: true },
