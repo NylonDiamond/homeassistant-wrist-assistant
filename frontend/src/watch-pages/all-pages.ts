@@ -81,6 +81,7 @@ import {
   orderHint,
   resolveFilter,
   restTitle,
+  showsRest,
   shownItems,
 } from "./all-pages-model.js";
 import { deleteLater, laterKey } from "../delete-later.js";
@@ -1158,10 +1159,11 @@ export class WaAllPages extends LitElement {
             ? waitingEmptyText(many, device.name)
             : noPicksText(device, this.kind, this.search, view.rest.length, this.mayMake),
         },
-        {
+        // A home with nothing in it has no rest to list.
+        ...(showsRest(total, view.rest.length, this.search) ? [{
           key: "rest", title: restTitle(device), count: view.rest.length, hint: `Tick its box under ${device.name} to add it.`, rows: rest,
           empty: this.search.trim() === "" ? `Every ${cardNoun(this.kind)} in your home is on ${device.name}.` : `No other ${cardNoun(this.kind)} has that name.`,
-        },
+        }] : []),
       ], device.ownerId)}
       <p class="lt-line bd-foot-line">${total} ${total === 1 ? cardNoun(this.kind) : many} on ${device.name}.</p>`;
   }

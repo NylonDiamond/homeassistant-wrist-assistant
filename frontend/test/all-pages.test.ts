@@ -28,6 +28,7 @@ import {
   orderHint,
   resolveFilter,
   restTitle,
+  showsRest,
   shownItems,
 } from "../src/watch-pages/all-pages-model.js";
 import { linkDevicesOf } from "../src/watch-pages/devices.js";
@@ -109,6 +110,11 @@ describe("a focused device", () => {
     expect(orderHint(PHONE_D)).toBe("Drag to order. The order is this iPhone's own.");
     expect(restTitle(JESSE_D)).toBe("Not on this watch");
     expect(restTitle(PHONE_D)).toBe("Not on this iPhone");
+    // An empty home lists no rest: "every page is on it" says nothing there.
+    expect(showsRest(0, 0, "")).toBe(false);
+    expect(showsRest(2, 0, "")).toBe(true);
+    expect(showsRest(0, 3, "")).toBe(true);
+    expect(showsRest(0, 0, "zz")).toBe(true);
     expect(noPicksText(CHEN_D, "pages", "")).toBe("No pages on Chen Watch yet. Tick one below, or make a new one.");
     // Nothing below to tick: the library holds nothing this device lacks.
     expect(noPicksText(CHEN_D, "pages", "", 0)).toBe("No pages on Chen Watch yet. Use New page to make one.");

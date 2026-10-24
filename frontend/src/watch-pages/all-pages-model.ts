@@ -194,6 +194,13 @@ export function restTitle(device: LinkDevice): string {
   return `Not on this ${deviceWord(device.kind)}`;
 }
 
+/** Whether a focused device shows its "Not on this watch" list. With no
+ * search, a home with nothing at all (none on the device, none left over)
+ * has no rest to list, and "every page is on it" would be an empty claim. */
+export function showsRest(total: number, rest: number, search: string): boolean {
+  return search.trim() !== "" || total > 0 || rest > 0;
+}
+
 /** What a focused device says with nothing on it. `rest` is how many
  * the library has that this device does not: with none there is nothing to
  * tick below. `admin` false is a user who cannot make one (New is off). */
