@@ -77,8 +77,9 @@ def capabilities_hash(capabilities: Iterable[str]) -> str:
 class HeldConfig:
     """The config numbers a polling device says it holds, sent on the poll
     under the same keys a reply carries them (``watch_config``,
-    ``http_actions``, ``client_certificate``). None for a number it did not
-    send, and an older app sends none.
+    ``http_actions``, ``client_certificate``, and ``addresses``, a hash
+    rather than a number). None for a value it did not send, and an older
+    app sends none.
 
     The server records what each reply carried (``_watch_config_sent`` and
     its siblings) when it builds the reply, before the bytes reach the
@@ -91,6 +92,7 @@ class HeldConfig:
     watch_config: dict[str, int] | None = None
     http_actions: int | None = None
     client_certificate: int | None = None
+    addresses: str | None = None
 
     def watch_config_lags(self, current: dict[str, int]) -> bool:
         """Whether a kind the device reported differs from the current
@@ -448,11 +450,23 @@ class DeltaCoordinator:
         # watch_id → the certificate revision its last reply with a body
         # carried, kept like _http_actions_sent.
         self._client_certificate_sent: dict[str, int] = {}
-        # watch_id → for each of "watch_config", "http_actions" and
-        # "client_certificate", the value a reply carried to a poll whose own
-        # report (HeldConfig) was behind it. A report still behind that value
-        # earns no second immediate reply: once per change, as for the
-        # complication token, so a device whose pull keeps failing parks.
+        # Each watch's two addresses ride the poll as a hash (`addresses`, see
+        # watch_addresses.py): ``_addresses_of(watch_id)`` gives it, None for
+        # an iPhone or an unknown id. It moves when the panel or the watch
+        # sets an address, which wakes that watch's poll, and when Home
+        # Assistant's own Network settings change what an automatic address
+        # resolves to, which the next poll finds. None until setup attaches
+        # it (attach_addresses).
+        self._addresses_of: Callable[[str], str | None] | None = None
+        # watch_id → the addresses hash its last reply with a body carried,
+        # kept like _http_actions_sent.
+        self._addresses_sent: dict[str, str] = {}
+        # watch_id → for each of "watch_config", "http_actions",
+        # "client_certificate" and "addresses", the value a reply carried to
+        # a poll whose own report (HeldConfig) was behind it. A report still
+        # behind that value earns no second immediate reply: once per change,
+        # as for the complication token, so a device whose pull keeps failing
+        # parks.
         self._held_repeated: dict[str, dict[str, Any]] = {}
         # Answers whether a device id still has a secret here. None until
         # setup attaches it (attach_device_check), and then a poll for an id
@@ -602,6 +616,7 @@ class DeltaCoordinator:
         self._watch_config_sent.pop(watch_id, None)
         self._http_actions_sent.pop(watch_id, None)
         self._client_certificate_sent.pop(watch_id, None)
+        self._addresses_sent.pop(watch_id, None)
         self._held_repeated.pop(watch_id, None)
         self._just_paired.add(watch_id)
 
@@ -779,19 +794,20 @@ class DeltaCoordinator:
         )
 
     def _config_behind(self, watch_id: str, held: HeldConfig | None = None) -> bool:
-        """The watch's own config, the home's library or its user's client
-        certificate moved since it was last told, or its own report on this
-        poll says it does not have them: any of them earns an empty reply
-        carrying the new numbers."""
+        """The watch's own config, the home's library, its user's client
+        certificate or its addresses moved since it was last told, or its own
+        report on this poll says it does not have them: any of them earns an
+        empty reply carrying the new values."""
         return (
             self._watch_config_behind(watch_id, held)
             or self._http_actions_behind(watch_id, held)
             or self._client_certificate_behind(watch_id, held)
+            or self._addresses_behind(watch_id, held)
         )
 
     def _note_config_baseline(self, watch_id: str) -> None:
-        """_note_watch_config_baseline, and the same for the library and the
-        client certificate."""
+        """_note_watch_config_baseline, and the same for the library, the
+        client certificate and the addresses."""
         self._note_watch_config_baseline(watch_id)
         if watch_id not in self._http_actions_sent:
             current = self.http_actions_revision()
@@ -801,6 +817,10 @@ class DeltaCoordinator:
             current = self._client_certificate_baseline(watch_id)
             if current is not None:
                 self._client_certificate_sent[watch_id] = current
+        if watch_id not in self._addresses_sent:
+            current_hash = self.addresses_hash(watch_id)
+            if current_hash is not None:
+                self._addresses_sent[watch_id] = current_hash
 
     @callback
     def http_actions_changed(self, _revision: int) -> None:
@@ -887,6 +907,46 @@ class DeltaCoordinator:
         for watch_id in list(self._waiters):
             if self._bound_user(watch_id) == user_id:
                 self.wake_watch(watch_id, renotify=False)
+
+    # ── the watch's addresses on the poll ─────────────────────────────
+
+    @callback
+    def attach_addresses(self, addresses_of: Callable[[str], str | None]) -> None:
+        """Wire in ``addresses_of(watch_id)``, the hash of that watch's
+        address record (watch_addresses.addresses_hash_for), or None for a
+        device that gets none. Its value goes out on every reply with a body
+        as ``addresses``. The wake on a set is the setter's
+        (watch_addresses.update_device_addresses)."""
+        self._addresses_of = addresses_of
+
+    def addresses_hash(self, watch_id: str) -> str | None:
+        """The watch's addresses hash, or None with nothing attached, for
+        an iPhone, or when the lookup fails: the reply then leaves the field
+        out."""
+        if self._addresses_of is None:
+            return None
+        try:
+            return self._addresses_of(watch_id)
+        except Exception:  # noqa: BLE001 (a failed lookup must not fail the poll)
+            _LOGGER.debug("No addresses hash for %s", watch_id, exc_info=True)
+            return None
+
+    def _addresses_behind(self, watch_id: str, held: HeldConfig | None = None) -> bool:
+        """True when the hash moved since the last reply this watch was
+        handed with a body (or the baseline noted before it parked), or the
+        watch's own report lags it (see _held_behind)."""
+        current = self.addresses_hash(watch_id)
+        if current is None:
+            return False
+        sent = self._addresses_sent.get(watch_id)
+        if sent is not None and current != sent:
+            return True
+        return held is not None and self._held_behind(
+            watch_id,
+            "addresses",
+            held.addresses is not None and held.addresses != current,
+            current,
+        )
 
     # ── the watch's voice list on the poll ────────────────────────────
 
@@ -1131,6 +1191,7 @@ class DeltaCoordinator:
         self._watch_config_sent.pop(watch_id, None)
         self._http_actions_sent.pop(watch_id, None)
         self._client_certificate_sent.pop(watch_id, None)
+        self._addresses_sent.pop(watch_id, None)
         self._held_repeated.pop(watch_id, None)
         # A device paired again under the same id is a first sync again.
         self._first_sync_logged.discard(watch_id)
@@ -1217,8 +1278,16 @@ class DeltaCoordinator:
         past the one it saw, and a change wakes the parked polls of that
         user's devices.
 
-        ``held`` is what the device says it holds of those three numbers
-        (see HeldConfig). A poll whose report lags a current number is
+        A watch's reply with a body also carries ``addresses``: the hash of
+        its address record (``watch_addresses.AddressRecord.hash``), the
+        ``hash`` the signed ``addresses_get`` returns. The watch pulls its
+        addresses when it differs from the one it holds. A set from the panel
+        or the watch wakes its parked poll; a change to Home Assistant's own
+        Network settings moves the hash on its own and the next poll finds
+        it. An iPhone's reply leaves it out.
+
+        ``held`` is what the device says it holds of those values (see
+        HeldConfig), the addresses hash included. A poll whose report lags a current number is
         answered at once with an empty reply carrying it, like a poll whose
         last reply predates the change, once per value. It is how a hint
         lost in a half-open connection reaches the device on its next poll.
@@ -1326,6 +1395,16 @@ class DeltaCoordinator:
                 and reported.client_certificate != certificate_revision,
                 certificate_revision,
             )
+        addresses = self.addresses_hash(watch_id)
+        if addresses is not None:
+            body["addresses"] = addresses
+            self._addresses_sent[watch_id] = addresses
+            self._note_held(
+                watch_id,
+                "addresses",
+                reported.addresses is not None and reported.addresses != addresses,
+                addresses,
+            )
         if self._voices_wanted(watch_id, voices_hash):
             body["voices_wanted"] = True
 
@@ -1344,8 +1423,9 @@ class DeltaCoordinator:
           server's, and then with ``caps_hash``.
         * ``need_entities`` and ``resync_required`` only when true, and
           ``events`` only when there are some. ``next_cursor`` always.
-        * Each config number only when it differs from what the poll
-          reported holding; ``watch_config`` names only the kinds that differ.
+        * Each config number, and the ``addresses`` hash, only when it
+          differs from what the poll reported holding; ``watch_config`` names
+          only the kinds that differ.
         * ``watch_config_hashes`` always whole, as a full reply carries it:
           the watch does not report the hashes it holds. The same for
           ``http_actions_hash``.
@@ -1382,6 +1462,7 @@ class DeltaCoordinator:
         for key, held_value in (
             ("http_actions", reported.http_actions),
             ("client_certificate", reported.client_certificate),
+            ("addresses", reported.addresses),
             ("complications_token", applied_token),
         ):
             if key in body and body[key] == held_value:
@@ -2210,6 +2291,7 @@ class DeltaCoordinator:
             self._watch_config_sent.pop(watch_id, None)
             self._http_actions_sent.pop(watch_id, None)
             self._client_certificate_sent.pop(watch_id, None)
+            self._addresses_sent.pop(watch_id, None)
             self._held_repeated.pop(watch_id, None)
             # `handle_poll` stamps `_last_poll_at` before this runs, so a watch
             # polling again after a long idle arrives with a fresh stamp and a

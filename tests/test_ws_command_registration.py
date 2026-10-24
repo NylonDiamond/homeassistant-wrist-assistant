@@ -83,6 +83,8 @@ _OWNER = {
     _MODULE.name: {
         "ws_forget_device": "require_owner",
         "ws_rename_device": "require_owner",
+        "ws_device_addresses": "require_owner",
+        "ws_set_device_addresses": "require_owner",
         "ws_list": "require_owner",
         "ws_get": "require_owner",
         "ws_save": "require_owner",
