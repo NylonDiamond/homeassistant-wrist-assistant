@@ -202,8 +202,8 @@ def test_offer_lists_the_user_s_watches_with_names_and_pages(env) -> None:
         "ok": True,
         "has_pages": False,
         "watches": [
-            {"id": WATCH, "name": "Jesse's Apple Watch", "has_pages": True},
-            {"id": OTHER, "name": f"Watch {OTHER[:8]}", "has_pages": False},
+            {"id": WATCH, "name": "Jesse's Apple Watch", "has_pages": True, "last_seen_seconds": None},
+            {"id": OTHER, "name": f"Watch {OTHER[:8]}", "has_pages": False, "last_seen_seconds": None},
         ],
     }
 

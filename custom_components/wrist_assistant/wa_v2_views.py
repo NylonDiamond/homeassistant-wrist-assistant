@@ -141,6 +141,7 @@ from .complication_store import (
     shapes_of,
     validate_document,
 )
+from .complication_ws import _seconds_since_poll
 from .const import (
     APP_UPDATE_MESSAGE,
     COMPLICATION_MAX_PER_OWNER,
@@ -4352,12 +4353,15 @@ async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
 
     Body:  {}
     Reply: {"ok": true, "has_pages": <bool>,
-            "watches": [{"id", "name", "has_pages"}]}
+            "watches": [{"id", "name", "has_pages", "last_seen_seconds"}]}
 
     ``has_pages`` is whether the phone's own pages record lists a page;
     ``watches`` are its user's watches (`phone_watch_ids`), each with its
     name as its user sees it (``paired_device_name``: a rename on its
-    device page wins, never how it paired) and whether it lists a page.
+    device page wins, never how it paired), whether it lists a page, and
+    how long since it last polled (the phone's Apple Watch page), the
+    same answer as the panel's chip (`_seconds_since_poll`), null for a
+    watch never heard from.
     Refused ``not_an_iphone`` (403) for a watch.
     """
     secrets = ctx.domain_data.widget_secret_store
@@ -4366,6 +4370,14 @@ async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
         return _not_an_iphone(ctx)
     entries = secrets.all_entries
     device_registry = dr.async_get(ctx.hass)
+    coordinator = getattr(ctx.domain_data, "coordinator", None)
+
+    def seen_seconds(watch_id: str) -> int | None:
+        if coordinator is None:
+            return None
+        seconds = _seconds_since_poll(ctx.hass, coordinator, watch_id)
+        return None if seconds is None else round(seconds)
+
     return ctx.signed_json(
         {
             "ok": True,
@@ -4377,6 +4389,7 @@ async def _op_phone_pages_offer(ctx: _OpContext) -> Response:
                         device_registry, entries.get(watch_id), watch_id
                     ),
                     "has_pages": _owner_has_pages(store, watch_id),
+                    "last_seen_seconds": seen_seconds(watch_id),
                 }
                 for watch_id in phone_watch_ids(entries, ctx.watch_id)
             ],
