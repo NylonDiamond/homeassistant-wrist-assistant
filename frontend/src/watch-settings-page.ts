@@ -60,15 +60,17 @@ export function settingsPageStep(active: boolean, shown: string | undefined, tar
 /** Whether Save can run: something changed, nothing else is running, and
  * each record with changes has a document to save: the one Home Assistant
  * holds, or on a new watch the defaults the page opened on, which the first
- * Save creates. */
+ * Save creates. Changed addresses always have somewhere to go: the
+ * integration keeps them for any paired watch. */
 export function settingsCanSave(input: {
   behaviorChanges: number;
   styleChanges: number;
+  addressChanges?: number;
   busy: boolean;
   behaviorHeld: boolean;
   styleHeld: boolean;
 }): boolean {
-  return input.behaviorChanges + input.styleChanges > 0 && !input.busy
+  return input.behaviorChanges + input.styleChanges + (input.addressChanges ?? 0) > 0 && !input.busy
     && (input.behaviorChanges === 0 || input.behaviorHeld)
     && (input.styleChanges === 0 || input.styleHeld);
 }

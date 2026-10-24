@@ -11,11 +11,14 @@
 // record) moves under the edits: they are key writes, so they stay on top of
 // it, and an edit the newer copy already holds stops counting.
 
-import type { WatchConfigRecord } from "./ha-api.js";
+import type { DeviceAddresses, WatchConfigRecord } from "./ha-api.js";
+import { type AddressDraft, changedSlots } from "./device-addresses.js";
 import { type BehaviorDocument, type SettingEdits, type SettingValue, dirtyKeys } from "./watch-settings.js";
 import { type StyleDocument, type StyleEdits, type StyleValue, readStyleDocument, styleDirtyKeys } from "./watch-notification-style/model.js";
 
-/** One watch's kept edits and the copies they were made on. */
+/** One watch's kept edits and the copies they were made on. `addresses` is
+ * the Connection card's open address form, with the record it was opened
+ * on: a third store, saved by the same Save (`devices/set_addresses`). */
 export interface KeptSettings {
   behaviorRevision: number;
   behaviorDocument: BehaviorDocument | undefined;
@@ -23,6 +26,7 @@ export interface KeptSettings {
   styleRevision: number;
   styleDocument: StyleDocument | undefined;
   styleEdits: StyleEdits;
+  addresses?: { record: DeviceAddresses; draft: AddressDraft } | undefined;
 }
 
 const kept = new Map<string, KeptSettings>();
@@ -42,9 +46,11 @@ export function settingsStartedFresh(watchId: string): boolean {
   return fresh.has(watchId);
 }
 
-/** The unsaved changes in a kept draft, both records together. */
+/** The unsaved changes in a kept draft, both records and the addresses
+ * together. Each address changed counts one. */
 export function keptChanges(draft: KeptSettings): number {
-  return dirtyKeys(draft.behaviorDocument, draft.edits).length + styleDirtyKeys(draft.styleDocument, draft.styleEdits).length;
+  const addresses = draft.addresses === undefined ? 0 : changedSlots(draft.addresses.record, draft.addresses.draft).length;
+  return dirtyKeys(draft.behaviorDocument, draft.edits).length + styleDirtyKeys(draft.styleDocument, draft.styleEdits).length + addresses;
 }
 
 /** Keep a watch's form as it stands. A form with nothing unsaved is

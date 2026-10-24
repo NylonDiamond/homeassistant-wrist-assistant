@@ -4,10 +4,13 @@
 // address someone set, or None. The watch reads them after it pairs and
 // whenever they change, so the panel always shows what the watch uses.
 //
-// Edited in two places with the same form: a watch's page on Home, under
-// its Addresses button, and the "what next" step of Home's pairing dialog.
-// The panel holds the state; the words, the rules and the form are here so
-// the tests read them without a DOM.
+// Shown and edited in three places with the same parts: a watch's page on
+// Home, which shows both addresses under its bar with Edit opening the form
+// in place; the Connection card of the Watch app's Settings page, the same
+// block, whose form the page's own Save saves; and the "what next" step of
+// Home's pairing dialog. The panel and the Settings page hold the state; the
+// words, the rules and the drawing are here so the tests read them without a
+// DOM.
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
@@ -50,8 +53,24 @@ export const ADDRESS_MODES: readonly { mode: AddressSource; label: string }[] = 
   { mode: "none", label: "None" },
 ];
 
-export const ADDRESSES_BUTTON_TEXT = "Addresses";
-export const ADDRESSES_BUTTON_TITLE = "The addresses this watch uses to reach Home Assistant";
+/** Each slot's name in the short block that shows both. */
+export const ADDRESS_SHORT_LABELS: Record<AddressSlot, string> = {
+  local: "Home network",
+  remote: "Internet",
+};
+
+export const ADDRESSES_TITLE = "Addresses";
+export const ADDRESSES_HELP = "The two addresses this watch uses to reach Home Assistant.";
+export const ADDRESSES_EDIT_TEXT = "Edit";
+export const ADDRESSES_EDIT_TITLE = "Change the addresses this watch uses to reach Home Assistant";
+/** The quiet tag on a slot that follows Home Assistant. */
+export const ADDRESSES_AUTOMATIC_TAG = "Automatic";
+export const ADDRESSES_NONE = "None";
+export const ADDRESSES_LOADING = "Loading the addresses…";
+/** Under the form on the Settings page, whose Save at the top saves it. */
+export const ADDRESSES_PAGE_SAVE_NOTE = "Press Save at the top to keep these.";
+/** The words a settings search looks through for the addresses. */
+export const ADDRESSES_SEARCH_WORDS = "Addresses, address, URL, home network, internet, local, remote, external, internal, Nabu Casa, Home Assistant Cloud";
 export const ADDRESSES_NETWORK_PATH = "/config/network";
 export const ADDRESSES_NETWORK_TEXT = "Settings > System > Network";
 export const ADDRESSES_NOTHING_DETECTED = "nothing set in Home Assistant";
@@ -91,25 +110,68 @@ export function addressProblem(text: string): string | undefined {
   return undefined;
 }
 
+/** One slot of a draft changed: a mode picked, or an address typed. Typing
+ * picks Set, whatever the slot was on, so a field on Automatic or None never
+ * holds words it would not save. */
+export function withSlotEdit(draft: AddressDraft, slot: AddressSlot, change: { mode?: AddressSource; text?: string }): AddressDraft {
+  const was = draft[slot];
+  const next: AddressSlotDraft = { mode: change.mode ?? (change.text !== undefined ? "set" : was.mode), text: change.text ?? was.text };
+  return { ...draft, [slot]: next };
+}
+
+/** The slots a draft changes from the record: another mode, or for Set
+ * another address. Space round a typed address does not count. */
+export function changedSlots(record: DeviceAddresses, draft: AddressDraft): AddressSlot[] {
+  const base = addressDraft(record);
+  return ADDRESS_SLOTS.filter((s) => {
+    const d = draft[s];
+    if (d.mode !== base[s].mode) return true;
+    return d.mode === "set" && d.text.trim() !== base[s].text.trim();
+  });
+}
+
+/** A draft kept while the page was away, laid over a record read since: the
+ * slots it changed from the record it was made on keep their edit, unless
+ * the newer record already says the same. The other slots follow the newer
+ * record. */
+export function restoreAddressDraft(kept: { record: DeviceAddresses; draft: AddressDraft }, fresh: DeviceAddresses): AddressDraft {
+  const out = addressDraft(fresh);
+  for (const s of changedSlots(kept.record, kept.draft)) out[s] = { ...kept.draft[s] };
+  return out;
+}
+
+type SlotsPayload = { local_url?: string | null; remote_url?: string | null };
+
 /** What to send for a draft: null for Automatic, "" for None, the typed
- * address for Set. A Set slot with no usable address stops the save and
- * names the slot. */
-export function addressPayload(draft: AddressDraft):
-  { ok: true; slots: { local_url: string | null; remote_url: string | null } }
+ * address for Set. `only` limits it to those slots, so a slot nobody
+ * touched stays as Home Assistant has it. A Set slot with no usable address
+ * stops the save and names the slot. */
+export function addressPayload(draft: AddressDraft, only: readonly AddressSlot[] = ADDRESS_SLOTS):
+  { ok: true; slots: SlotsPayload }
   | { ok: false; slot: AddressSlot; message: string } {
-  const value = (slot: AddressSlot): string | null | { problem: string } => {
+  const slots: SlotsPayload = {};
+  for (const slot of ADDRESS_SLOTS) {
+    if (!only.includes(slot)) continue;
     const d = draft[slot];
-    if (d.mode === "auto") return null;
-    if (d.mode === "none") return "";
-    const problem = addressProblem(d.text);
-    return problem === undefined ? d.text.trim() : { problem };
-  };
-  const local = value("local");
-  const remote = value("remote");
-  for (const [slot, v] of [["local", local], ["remote", remote]] as const) {
-    if (v !== null && typeof v === "object") return { ok: false, slot, message: `${ADDRESS_LABELS[slot]}: ${v.problem}` };
+    let value: string | null;
+    if (d.mode === "auto") value = null;
+    else if (d.mode === "none") value = "";
+    else {
+      const problem = addressProblem(d.text);
+      if (problem !== undefined) return { ok: false, slot, message: `${ADDRESS_LABELS[slot]}: ${problem}` };
+      value = d.text.trim();
+    }
+    slots[slot === "local" ? "local_url" : "remote_url"] = value;
   }
-  return { ok: true, slots: { local_url: local as string | null, remote_url: remote as string | null } };
+  return { ok: true, slots };
+}
+
+/** One slot as the short block shows it: the address the watch uses, null
+ * for none, and whether it follows Home Assistant. */
+export function addressShown(record: DeviceAddresses, slot: AddressSlot): { url: string | null; automatic: boolean } {
+  const source = slot === "local" ? record.local_source : record.remote_source;
+  const url = slot === "local" ? record.local_url : record.remote_url;
+  return { url: source === "none" ? null : url, automatic: source === "auto" };
 }
 
 /** The words for an `invalid_url` refusal, naming the slot the integration
@@ -147,8 +209,13 @@ export interface AddressFormView {
   draft?: AddressDraft;
   busy: boolean;
   error?: string;
+  /** Who saves the form. `own` (the default): its own Save, lit once
+   * something changed, beside Cancel. `page`: the Settings page's Save at
+   * the top does, so the form says so and keeps only Cancel. */
+  saves?: "own" | "page";
   onMode: (slot: AddressSlot, mode: AddressSource) => void;
   onText: (slot: AddressSlot, text: string) => void;
+  /** Enter in a field. */
   onSave: () => void;
   onCancel: () => void;
 }
@@ -156,8 +223,11 @@ export interface AddressFormView {
 /**
  * The form: for each address its name and what it is for, a choice of
  * Automatic, Set or None, the address field, and what Automatic gives.
- * Typing in the field picks Set. A line under both links to Home
- * Assistant's Network settings, which Automatic follows. Escape cancels.
+ * Typing in the field picks Set, from Automatic or None too, so the field
+ * is never greyed out. A line under both links to Home Assistant's Network
+ * settings, which Automatic follows. Save wears the panel's call to action,
+ * the Settings page's own green Save, and stays greyed out until something
+ * changed. Escape cancels.
  */
 export function renderAddressForm(v: AddressFormView): TemplateResult {
   const { record, draft } = v;
@@ -167,6 +237,8 @@ export function renderAddressForm(v: AddressFormView): TemplateResult {
       <div class="dev-acts"><button type="button" class="ghost" @click=${v.onCancel}>Cancel</button></div>
     </div>`;
   }
+  const changed = changedSlots(record, draft).length > 0;
+  const page = v.saves === "page";
   const slot = (s: AddressSlot) => {
     const d = draft[s];
     return html`<fieldset class="dev-addr-slot" ?disabled=${v.busy}>
@@ -177,9 +249,9 @@ export function renderAddressForm(v: AddressFormView): TemplateResult {
           <input type="radio" name=${`addr-${s}`} value=${m.mode} .checked=${live(d.mode === m.mode)}
             @change=${() => v.onMode(s, m.mode)} /><span>${m.label}</span></label>`)}
       </div>
-      <input type="url" class="dev-addr-in" inputmode="url" autocomplete="off" spellcheck="false"
-        aria-label=${ADDRESS_LABELS[s]} placeholder=${automaticAddress(record, s) ?? ADDRESS_PLACEHOLDERS[s]}
-        .value=${live(d.mode === "set" ? d.text : "")} ?disabled=${d.mode === "none"}
+      <input type="url" class="dev-addr-in ${d.mode === "set" ? "" : "idle"}" inputmode="url" autocomplete="off" spellcheck="false"
+        aria-label=${ADDRESS_LABELS[s]} placeholder=${(d.mode === "auto" ? automaticAddress(record, s) : undefined) ?? ADDRESS_PLACEHOLDERS[s]}
+        .value=${live(d.mode === "set" ? d.text : "")}
         @input=${(e: Event) => v.onText(s, (e.target as HTMLInputElement).value)} />
       <p class="dev-small dev-addr-auto">${automaticLine(record, s)}</p>
     </fieldset>`;
@@ -193,16 +265,83 @@ export function renderAddressForm(v: AddressFormView): TemplateResult {
       <p class="dev-small">Automatic follows <a href=${ADDRESSES_NETWORK_PATH} @click=${openNetworkSettings}>${ADDRESSES_NETWORK_TEXT}</a> in Home Assistant. ${ADDRESSES_SAVED_NOTE}</p>
       ${v.error ? html`<p class="dev-err">${v.error}</p>` : nothing}
       <div class="dev-acts">
-        <button type="submit" class="home-btn" ?disabled=${v.busy}>${v.busy ? "Saving…" : "Save"}</button>
+        ${page
+          ? html`<p class="dev-small dev-addr-page">${ADDRESSES_PAGE_SAVE_NOTE}</p>`
+          : html`<button type="submit" class="primary save ${changed ? "dirty" : ""}" ?disabled=${v.busy || !changed}
+              title=${changed ? "Save the addresses" : "Nothing changed yet"}>${v.busy ? "Saving…" : "Save"}</button>`}
         <button type="button" class="ghost" ?disabled=${v.busy} @click=${v.onCancel}>Cancel</button>
       </div>
     </form>
   </div>`;
 }
 
-/** The form's look: each address in a hairline box, the three choices as a
- * small segmented row, the field full width under them. */
+export interface AddressBlockView {
+  /** The record as the integration has it, once it is in. */
+  record?: DeviceAddresses;
+  /** Why it could not be read. */
+  readError?: string;
+  /** The form is open in the block's place. */
+  editing: boolean;
+  onEdit: () => void;
+  /** The form, when `editing`. */
+  form: AddressFormView;
+}
+
+/**
+ * Both addresses, short: one line each, the slot's name, the address the
+ * watch uses or None, and a quiet Automatic tag when it follows Home
+ * Assistant. One Edit button opens the form in the block's place. No
+ * explaining until then; the form says what each address is for.
+ */
+export function renderAddressBlock(v: AddressBlockView): TemplateResult {
+  if (v.editing) return renderAddressForm(v.form);
+  const record = v.record;
+  if (record === undefined) {
+    return html`<div class="addr-sum">${v.readError
+      ? html`<p class="dev-err">${v.readError}</p>`
+      : html`<p class="dev-small">${ADDRESSES_LOADING}</p>`}</div>`;
+  }
+  const line = (s: AddressSlot) => {
+    const { url, automatic } = addressShown(record, s);
+    return html`<div class="addr-sum-line">
+      <dt>${ADDRESS_SHORT_LABELS[s]}</dt>
+      <dd><span class="addr-sum-url ${url === null ? "none" : ""}" title=${url ?? nothing}>${url ?? ADDRESSES_NONE}</span>${automatic
+        ? html`<span class="addr-sum-tag" title="Follows Home Assistant's Network settings">${ADDRESSES_AUTOMATIC_TAG}</span>`
+        : nothing}</dd>
+    </div>`;
+  };
+  return html`<div class="addr-sum">
+    <dl class="addr-sum-list" aria-label=${ADDRESSES_TITLE}>${ADDRESS_SLOTS.map(line)}</dl>
+    <button type="button" class="small lined addr-sum-edit" title=${ADDRESSES_EDIT_TITLE} @click=${v.onEdit}>${ADDRESSES_EDIT_TEXT}</button>
+  </div>`;
+}
+
+/** The look: the short block as two lines of name and address with Edit at
+ * their right; the form with each address in a hairline box, the three
+ * choices as a small segmented row, the field full width under them. */
 export const addressStyles = css`
+  .addr-sum { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+  .addr-sum > p { flex: 1; }
+  .addr-sum-list {
+    flex: 1; min-width: 0; margin: 0;
+    display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 14px; row-gap: 4px; align-items: baseline;
+  }
+  .addr-sum-line { display: contents; }
+  .addr-sum-list dt { font-size: 12.5px; color: var(--wa-muted); white-space: nowrap; }
+  .addr-sum-list dd { margin: 0; min-width: 0; display: flex; align-items: baseline; gap: 7px; }
+  .addr-sum-url { min-width: 0; font-size: 13px; color: var(--wa-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .addr-sum-url.none { color: var(--wa-muted); }
+  .addr-sum-tag {
+    flex: none; padding: 1px 7px; border-radius: 999px; font-size: 11px; line-height: 16px; color: var(--wa-muted);
+    background: color-mix(in srgb, var(--wa-ink) 7%, transparent);
+  }
+  .addr-sum-edit { flex: none; }
+  /* Very narrow: each address goes under its name. */
+  @container (max-width: 360px) {
+    .addr-sum-list { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
+    .addr-sum-line + .addr-sum-line dt { margin-top: 6px; }
+  }
+  .dev-addr-page { flex: 1 1 180px; }
   .hb-addr { display: flex; flex-direction: column; gap: 10px; }
   .dev-addr { display: flex; flex-direction: column; gap: 10px; }
   .dev-addr-slot {
@@ -217,7 +356,7 @@ export const addressStyles = css`
   .dev-addr-mode.on { color: var(--wa-ink); background: color-mix(in srgb, var(--wa-ink) 9%, transparent); }
   .dev-addr-mode:has(input:focus-visible) { box-shadow: var(--wa-ring); }
   .dev-addr-in { width: 100%; height: 32px; box-sizing: border-box; }
-  .dev-addr-in:disabled { opacity: .55; }
+  .dev-addr-in.idle:not(:focus) { opacity: .7; }
   .dev-addr-auto { overflow-wrap: anywhere; }
   .dev-addr a { color: var(--wa-hue-blue); text-decoration: none; }
   .dev-addr a:hover { text-decoration: underline; }

@@ -127,6 +127,13 @@ describe("settingsCanSave", () => {
     expect(settingsCanSave({ ...base, behaviorChanges: 0, styleChanges: 2, styleHeld: false })).toBe(false);
     expect(settingsCanSave({ ...base, behaviorChanges: 0, styleChanges: 2, behaviorHeld: false })).toBe(true);
   });
+
+  it("saves changed addresses alone, even on a watch whose records are not held yet", () => {
+    const none = { behaviorChanges: 0, styleChanges: 0, busy: false, behaviorHeld: false, styleHeld: false };
+    expect(settingsCanSave(none)).toBe(false);
+    expect(settingsCanSave({ ...none, addressChanges: 1 })).toBe(true);
+    expect(settingsCanSave({ ...none, addressChanges: 1, busy: true })).toBe(false);
+  });
 });
 
 describe("kept settings drafts", () => {
@@ -146,6 +153,20 @@ describe("kept settings drafts", () => {
     keepSettingsDraft("w1", draft({ edits: new Map() }));
     expect(keptSettingsDraft("w1")).toBeUndefined();
     expect(anyWatchSettingsDirty()).toBe(false);
+  });
+
+  it("counts the open address form's changes, one per address", () => {
+    const record = {
+      ok: true as const, watch_id: "w1", local_url: "http://ha.local:8123", remote_url: null,
+      local_source: "auto" as const, remote_source: "auto" as const, hash: "h", detected: { internal: "http://ha.local:8123", external: null, cloud: null },
+    };
+    const open = { local: { mode: "auto" as const, text: "" }, remote: { mode: "auto" as const, text: "" } };
+    keepSettingsDraft("w1", draft({ edits: new Map(), addresses: { record, draft: open } }));
+    expect(keptSettingsDraft("w1")).toBeUndefined();
+    const both = { local: { mode: "none" as const, text: "" }, remote: { mode: "set" as const, text: "https://x.example.com" } };
+    keepSettingsDraft("w1", draft({ addresses: { record, draft: both } }));
+    expect(keptChanges(keptSettingsDraft("w1")!)).toBe(3);
+    expect(anyWatchSettingsDirty()).toBe(true);
   });
 
   it("does not count an edit that only says what the copy says", () => {
