@@ -265,6 +265,7 @@ import {
   renderTileLayerInspector,
   renderTileLayerRows,
   renderTileLayersCard,
+  renderTileLayersLegend,
   tileLayerCrumb,
   tileLayersStyles,
   tileRowDesignNote,
@@ -2413,7 +2414,10 @@ export class WaPageEditor extends LitElement {
       this.nudge(direction);
     } else if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
-      this.deleteTile();
+      // With a layer or tap zone picked, that is what the inspector shows,
+      // so that is what goes, not the whole tile.
+      if (this.pickedLayerId() !== undefined) this.deletePickedLayer();
+      else this.deleteTile();
     } else if (e.key === "Escape") {
       e.preventDefault();
       // A picked layer goes back to its tile first, then the tile goes.
@@ -3427,7 +3431,8 @@ export class WaPageEditor extends LitElement {
       };
       body = html`<div class="layers pe-tile-list" role="list">
         ${repeat(tiles, keyOf, (t) => this.renderTileRow(page, t, pages, screen, sizeOfTile(t), layout.unit, off))}
-      </div>`;
+      </div>
+      ${tiles.some((t) => tileHasLayers(t)) ? renderTileLayersLegend() : nothing}`;
     }
     return html`<section class="card lc pe-tiles-card" aria-label="Tiles"
       style=${`--c: var(--wa-lc-layers, #4a7fe8); --thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px`}>
@@ -3526,6 +3531,17 @@ export class WaPageEditor extends LitElement {
     const pick = this.layerPick;
     if (pick === undefined || this.multiPicked || !sameWatchId(pick.tileId, this.selectedTileId)) return undefined;
     return pick.id;
+  }
+
+  /** Delete the picked layer or tap zone of the selected tile, as its row's
+   * Delete does, and go back to the tile. */
+  private deletePickedLayer(): void {
+    const id = this.pickedLayerId();
+    const page = this.currentPage();
+    const tile = page === undefined || this.selectedTileId === undefined ? undefined : this.tileOn(page, this.selectedTileId);
+    if (id === undefined || page === undefined || tile === undefined) return;
+    const host = this.tileSettingsHost(page, tile);
+    if (host !== undefined && tileLayerEdits(host).remove(id)) this.pickLayer(undefined);
   }
 
   /** Pick a layer or zone of the selected tile, or the tile itself. */
@@ -4174,6 +4190,9 @@ export class WaPageEditor extends LitElement {
           this.swallowTileClick = false;
           return;
         }
+        // A plain click on a tile shows its simple settings, as its row's
+        // does, never the layer picked under it.
+        if (!e.shiftKey && !e.metaKey && !e.ctrlKey) this.layerPick = undefined;
         this.clickTile(id, e);
       }}>${face}</button>`;
   }
@@ -4509,7 +4528,7 @@ export class WaPageEditor extends LitElement {
       ${host === undefined ? nothing : renderTileName(host)}
       ${host === undefined || off ? nothing : renderTileGroupLine(host, this.groupActions)}
       ${host === undefined ? nothing : renderTileSettings(host, { sections: tileInspectorSections(host), size })}
-      ${layers === undefined ? nothing : renderTileLayersCard(layers, { pickers: this.pagePickers(watchPageId(page)), page })}
+      ${layers === undefined ? nothing : renderTileLayersCard(layers, { pickers: this.pagePickers(watchPageId(page)), page, watchWidth: this.pageWatchWidth(watchPageId(page)) })}
       <div class="ts-acts"><button class="pe-btn pe-danger" ?disabled=${off} title="Delete or Backspace" @click=${() => this.deleteTile()}>
         ${uiIcon("delete")}<span>Delete tile</span></button></div>`;
   }

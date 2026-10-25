@@ -21,6 +21,7 @@ import { type DescribeContext, checkField, describeValue, entityField, layerEdit
 import { sectionCard } from "../editor-chrome.js";
 import { KIND_COLOR, KIND_LABEL, SECTION_COLOR } from "../kinds.js";
 import type { Element, EntityRef } from "../model.js";
+import { compile } from "../compiler.js";
 import { CASES } from "../renderer.js";
 import type { ResolvedLayout } from "../resolver.js";
 import { uiIcon } from "../ui-icons.js";
@@ -48,11 +49,11 @@ import {
   BASE_LAYER_NAMES,
   DELTA_MAX_TEMPLATES,
   TILE_DESIGN_MAX_LAYERS,
-  TILE_DESIGN_MAX_ZONES,
   TILE_DESIGN_SCREEN_WIDTH,
   TILE_LAYER_KINDS,
   TILE_TEMPLATE_MAX_CHARS,
   TILE_ZONE_MIN_POINTS,
+  TILE_ZONE_PRESET_FRAMES,
   baseRoleOf,
   codePoints,
   designSummary,
@@ -122,17 +123,36 @@ export function watchSizeLabel(width: number): string {
   return CASES.find((c) => c.screen.width === width)?.label ?? `${width} pt`;
 }
 
-/** The Add layer menu: each kind a tile may hold, refused over its cap. */
-export function addLayerChoices(tile: WatchPageTile, design: TileDesign): { kind: Element["kind"]; label: string; reason?: string }[] {
+/** The splits Add layer's Tap zone tries, in order, on a tile with none. */
+const ADD_ZONE_PRESETS: readonly TileZonePreset[] = ["leftRight", "topBottom", "quad"];
+
+/**
+ * The Add layer menu: each kind a tile may hold, refused over its cap. Tap
+ * zones only come from the Split presets, so Tap zone splits a tile with
+ * none by the first preset whose zones keep the 40 pt rule on a watch
+ * `watchWidth` points wide (its `preset`), and is refused on a tile that is
+ * split already (its zone card changes the split) or too small for any.
+ */
+export function addLayerChoices(
+  tile: WatchPageTile,
+  design: TileDesign,
+  watchWidth: number = TILE_DESIGN_SCREEN_WIDTH,
+): { kind: Element["kind"]; label: string; reason?: string; preset?: TileZonePreset }[] {
   const g = tileGeometry(tile);
   const elements = design.doc.elements;
   const zones = elements.filter((e) => e.kind === "tap").length;
   const layers = elements.length - zones;
   const kinds: Element["kind"][] = [...TILE_LAYER_KINDS, ...(tileLayerKindAllowed("chart", g.colSpan, g.rowSpan) ? ["chart" as const] : []), "tap"];
   return kinds.map((kind) => {
-    const label = kind === "tap" ? "Tap zone" : KIND_LABEL[kind];
-    if (kind === "tap" && zones >= TILE_DESIGN_MAX_ZONES) return { kind, label, reason: `A tile holds ${TILE_DESIGN_MAX_ZONES} tap zones at most.` };
-    if (kind !== "tap" && layers >= TILE_DESIGN_MAX_LAYERS) return { kind, label, reason: `A tile holds ${TILE_DESIGN_MAX_LAYERS} layers at most.` };
+    if (kind === "tap") {
+      const label = "Tap zone";
+      if (zones > 0) return { kind, label, reason: "Pick a tap zone to change how the tile is split." };
+      const preset = ADD_ZONE_PRESETS.find((p) => zonePresetAllowed(p, g.colSpan, g.rowSpan, watchWidth));
+      if (preset === undefined) return { kind, label, reason: `Too small for tap zones on a ${watchSizeLabel(watchWidth)} watch` };
+      return { kind, label, preset };
+    }
+    const label = KIND_LABEL[kind];
+    if (layers >= TILE_DESIGN_MAX_LAYERS) return { kind, label, reason: `A tile holds ${TILE_DESIGN_MAX_LAYERS} layers at most.` };
     return { kind, label };
   });
 }
@@ -171,6 +191,8 @@ export interface TileLayerRow {
   role: BaseLayerRole | undefined;
   hidden: boolean;
   rules: boolean;
+  /** What it shows needs a Home Assistant template, one of the page's 100. */
+  template: boolean;
   /** It can go up (toward the top) or down among the drawing layers. */
   up: boolean;
   down: boolean;
@@ -221,6 +243,7 @@ export function tileLayerRows(
   const layers = top.map((el, i): TileLayerRow => {
     const role = baseRoleOf(el.payload.id);
     const rules = "rules" in el.payload && Array.isArray(el.payload.rules) && el.payload.rules.length > 0;
+    const template = compile({ ...design.doc, elements: [el] }).document !== undefined;
     return {
       id: el.payload.id.toUpperCase(),
       kind: el.kind,
@@ -230,6 +253,7 @@ export function tileLayerRows(
       role,
       hidden: el.payload.isHidden === true,
       rules,
+      template,
       up: i > 0,
       down: i < top.length - 1,
     };
@@ -239,6 +263,16 @@ export function tileLayerRows(
     return { id: z.id, label: `Tap zone ${i + 1} · ${zoneActionLabel(tile, z.action, httpActions)}`, hidden: el?.payload.isHidden === true };
   });
   return { layers, zones };
+}
+
+/** The key under the Tiles list: what a layer row's dot and tag mean, and
+ * why some tiles have no arrow. */
+export function renderTileLayersLegend(): TemplateResult {
+  return html`<div class="tl-legend" aria-hidden="true">
+    <span class="tl-legend-item"><span class="tl-dot"></span>changed</span>
+    <span class="tl-added">added</span>
+    <span>No arrow: live tile, no layers</span>
+  </div>`;
 }
 
 // ── the view ─────────────────────────────────────────────────────────────
@@ -298,7 +332,7 @@ export function renderTileLayerRows(view: TileLayersView): TemplateResult | type
         <small><span class="kind">${r.detail.kind}</span>${r.detail.value === "" ? nothing : html` · <span class="val-tok">${r.detail.value}</span>`}${r.detail.size === "" ? nothing : ` · ${r.detail.size}`}</small>
       </span>
       <span class="right">
-        <span class="badges">${r.rules ? html`<span class="badge states" title="Changes with the state">rules</span>` : nothing}</span>
+        <span class="badges">${r.template ? html`<span class="badge states" title="Reads a Home Assistant template, one of the page's ${DELTA_MAX_TEMPLATES}">template</span>` : nothing}${r.rules ? html`<span class="badge states" title="Changes with the state">rules</span>` : nothing}</span>
         ${off ? nothing : html`<span class="acts" @click=${stop}>
           <button type="button" class="icon" ?disabled=${!r.up} title="Bring forward" aria-label=${`Bring ${r.title} forward`} @click=${() => edits.move(r.id, 1)}>${uiIcon("up")}</button>
           <button type="button" class="icon" ?disabled=${!r.down} title="Send backward" aria-label=${`Send ${r.title} backward`} @click=${() => edits.move(r.id, -1)}>${uiIcon("down")}</button>
@@ -503,6 +537,8 @@ export interface TileLayersCardInfo {
   pickers: readonly { name: string; version?: string | null }[];
   /** The page as edited, for its template count. */
   page: WatchPage;
+  /** The smallest watch the page is on, for the 40 pt rule of Tap zone. */
+  watchWidth?: number;
 }
 
 /**
@@ -524,7 +560,7 @@ export function renderTileLayersCard(view: TileLayersView, info: TileLayersCardI
     return sectionCard({ color: "var(--wa-hue-blue, #2f6ccc)", icon: uiIcon("layers"), title: "Layers", open, onToggle: toggle, summary: layersSummaryText(summary), dot: stored !== undefined, id: `${module}:${section}` }, html``);
   }
   const edits = tileLayerEdits(host);
-  const choices = addLayerChoices(tile, design);
+  const choices = addLayerChoices(tile, design, info.watchWidth);
   const templates = pageTemplateKeys(info.page).size;
   const template = stored?.template;
   const chars = template === undefined ? 0 : codePoints(template);
@@ -538,8 +574,19 @@ export function renderTileLayersCard(view: TileLayersView, info: TileLayersCardI
     <div class="tl-card">
       <div class="tl-sum">${layersSummaryText(summary)}</div>
       <div class="field"><span>Add layer</span><div class="tl-add" role="group" aria-label="Add layer">
-        ${choices.map((c) => html`<button type="button" class="pe-chip tl-add-btn" ?disabled=${view.off || c.reason !== undefined} title=${c.reason ?? `Add a ${c.label.toLowerCase()} layer on top`}
-          @click=${() => { const id = edits.add(c.kind); if (id !== "") view.pick(id); }}>${uiIcon(c.kind === "image" ? "image" : c.kind)}<span>${c.label}</span></button>`)}
+        ${choices.map((c) => html`<button type="button" class="pe-chip tl-add-btn" ?disabled=${view.off || c.reason !== undefined}
+          title=${c.reason ?? (c.preset !== undefined ? `Split the tile into ${TILE_ZONE_PRESET_FRAMES[c.preset].length} tap zones` : `Add a ${c.label.toLowerCase()} layer on top`)}
+          @click=${() => {
+            if (c.kind === "tap") {
+              // A zone comes from a Split preset, never a free frame.
+              if (c.preset === undefined || !edits.preset(c.preset)) return;
+              const first = zonesOf(readTileDesign(host.tile))[0];
+              if (first !== undefined) view.pick(first.id);
+              return;
+            }
+            const id = edits.add(c.kind);
+            if (id !== "") view.pick(id);
+          }}>${uiIcon(c.kind === "image" ? "image" : c.kind)}<span>${c.label}</span></button>`)}
       </div></div>
       <div class="tl-meters">
         ${meter("Layers", summary.layers, TILE_DESIGN_MAX_LAYERS, false)}
@@ -611,4 +658,6 @@ export const tileLayersStyles = css`
   .tl-meter.over { color: var(--wa-need); }
   .tl-meter.over .tl-meter-bar > span { background: var(--wa-need); }
   .tl-reset { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tl-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 6px 4px 0; font-size: 10px; color: var(--wa-muted); }
+  .tl-legend-item { display: inline-flex; align-items: center; gap: 4px; }
 `;

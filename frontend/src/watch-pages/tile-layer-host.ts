@@ -13,11 +13,11 @@
 // App repo docs/tile_layers_contract_2026-10.md, section 10.4 items 2, 3 and 6.
 
 import { type EditorHost, defaultOpenSections } from "../editors.js";
-import type { CustomComplicationConfig, Element, Rule, Test, Value } from "../model.js";
+import type { CustomComplicationConfig, Element, EntityRef, Rule, Test, Value } from "../model.js";
 import { newId } from "../model.js";
 import { type ForcedBranches, Resolver } from "../resolver.js";
 import type { TileSettingsHost } from "./editor-host.js";
-import { type WatchPageTile, type WatchPagesDocument, watchPagesOf } from "./model.js";
+import { type WatchPageTile, type WatchPagesDocument, tileEntityId, tileKind, watchPagesOf } from "./model.js";
 import { editTile } from "./tile-settings-model.js";
 import {
   type BaseLayerContext,
@@ -183,6 +183,14 @@ export function tileLayerForced(host: TileSettingsHost): ForcedBranches {
   return forcedOf(host);
 }
 
+/** The tile's own entity as a picture layer names it, its name read from
+ * Home Assistant. */
+export function tileEntityRef(host: Pick<TileSettingsHost, "hass" | "tile">): EntityRef {
+  const entityId = tileEntityId(host.tile);
+  const friendly = host.hass.states[entityId]?.attributes?.friendly_name;
+  return { entityId, displayName: typeof friendly === "string" ? friendly : "", domain: tileKind(entityId) };
+}
+
 /**
  * The `EditorHost` the layer cards edit one tile's layers through. Built
  * afresh on each draw, like the tile settings' own host. `config` is the
@@ -268,5 +276,6 @@ export function tileLayerHost(host: TileSettingsHost, selectLayer: (id: string) 
     setRowEdit: () => undefined,
     designBox: tileBoxOf(host.tile),
     tileValueKinds: true,
+    tileEntity: tileEntityRef(host),
   };
 }

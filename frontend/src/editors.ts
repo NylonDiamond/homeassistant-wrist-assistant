@@ -595,6 +595,9 @@ export interface EditorHost {
    * Tile name, which mean nothing outside a tile, and a picture takes only
    * the tile's own entity's picture or an upload. */
   tileValueKinds?: boolean;
+  /** The page tile's own entity, when the layers are a tile's: the only
+   * entity a picture layer there may show the picture of. */
+  tileEntity?: EntityRef;
 }
 
 /** The box a host's layers are authored in on a shape: the host's own
@@ -6235,6 +6238,11 @@ function deviceClassOf(host: EditorHost, entityId: string): string | undefined {
  */
 function layerEntityField(host: EditorHost, el: CElement, key: string): TemplateResult {
   const id = el.payload.id;
+  // A tile's picture is its own entity's, so there is nothing to pick.
+  if (el.kind === "image" && host.tileEntity !== undefined) {
+    const own = host.tileEntity;
+    return html`<div class="hint">The picture of the tile's own entity, ${own.displayName.trim() || own.entityId || "which it has none of"}.</div>`;
+  }
   const uses = layerEntityUses(host.config, id);
   const ref = uses[0]?.ref ?? { entityId: "", displayName: "", domain: "" };
   // A camera layer keeps the camera-only picker it has always had. An entity
@@ -8961,6 +8969,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             const target = c.elements.find((e) => e.payload.id === img.id);
             if (target?.kind !== "image") return;
             setImageSource(target.payload, v);
+            if (v === "entityPicture" && host.tileEntity !== undefined) target.payload.entity = { ...host.tileEntity };
             // A timestamp over an uploaded picture has no fetched-at time to
             // print, so it would sit there drawing nothing. Its text and the
             // capsule behind it go with the switch, in the same undo step.
@@ -9254,7 +9263,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               if (chart) restoreKeys(chart.payload, base, CHART_EXTRAS_KEYS);
             }) }
           : {}) }) : nothing}
-    ${el.kind === "timeline" || (el.kind === "image" && el.payload.source !== "inline") ? ownedExtrasCard(host, el) : nothing}
+    ${el.kind === "timeline" || (el.kind === "image" && el.payload.source !== "inline" && host.tileValueKinds !== true) ? ownedExtrasCard(host, el) : nothing}
     ${el.kind === "list"
       ? card(host, "row", "Row", listRowCard(host, el, (m, k) => upd((e) => m((e as typeof el).payload), k)),
           { color: SECTION_COLOR.numbers, icon: "content",

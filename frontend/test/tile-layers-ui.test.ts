@@ -23,7 +23,7 @@ import {
   syncTileDesigns,
   tileTemplateKey,
 } from "../src/watch-pages/tile-design.js";
-import { tileLayerContext, tileLayerEdits, tileLayerHost } from "../src/watch-pages/tile-layer-host.js";
+import { tileDesignNow, tileLayerContext, tileLayerEdits, tileLayerHost } from "../src/watch-pages/tile-layer-host.js";
 import {
   LAYER_STATUS_TEXT,
   type TileLayersView,
@@ -314,6 +314,63 @@ describe("the simple settings", () => {
     const text = flat(renderTileSettings(withLinks, { sections: ["action"] }));
     expect(text).toContain("Split into 2 tap zones");
     expect(text).not.toContain("<span>Single tap</span>\n      <select");
+  });
+});
+
+describe("a layer row's template badge", () => {
+  it("marks a layer whose value needs a template, and not the base layers", () => {
+    const { host, tile } = draftHost();
+    const edits = tileLayerEdits(host);
+    const id = edits.add("text");
+    edits.doc((c) => {
+      const el = c.elements.find((e) => e.payload.id.toUpperCase() === id);
+      if (el?.kind === "text") el.payload.value = { ...el.payload.value, kind: { kind: "jinja", value: "{{ relative_time(states.light.office.last_changed) }}" } };
+    });
+    const design = readTileDesign(tile())!;
+    const rows = tileLayerRows(tile(), design, design);
+    expect(rows.layers.find((r) => r.id === id)?.template).toBe(true);
+    expect(rows.layers.filter((r) => r.role !== undefined).every((r) => !r.template)).toBe(true);
+    expect(flat(renderTileLayerRows(view(host)))).toContain(">template</span>");
+  });
+});
+
+describe("adding a tap zone", () => {
+  it("splits a tile with no zones by the first preset that fits, never a free zone", () => {
+    const { host, tile } = draftHost(SWITCH); // 6x6
+    const choice = addLayerChoices(tile(), tileDesignNow(host), 208).find((c) => c.kind === "tap")!;
+    expect(choice).toEqual({ kind: "tap", label: "Tap zone", preset: "leftRight" });
+    expect(tileLayerEdits(host).preset(choice.preset!)).toBe(true);
+    const zoned = readTileDesign(tile())!;
+    expect(zoned.doc.elements.filter((e) => e.kind === "tap").map((e) => e.payload.frame.width)).toEqual([0.5, 0.5]);
+    expect(addLayerChoices(tile(), zoned, 208).find((c) => c.kind === "tap")?.reason).toBe("Pick a tap zone to change how the tile is split.");
+  });
+
+  it("is refused on a tile too small for any split on the smallest watch", () => {
+    const small: WatchPage = { ...page(), items: [{ id: LIGHT, entityId: "light.office", gridCol: 0, gridRow: 0, colSpan: 3, rowSpan: 2 }] };
+    const { host, tile } = draftHost(LIGHT, small);
+    const choice = addLayerChoices(tile(), tileDesignNow(host), 162).find((c) => c.kind === "tap")!;
+    expect(choice.reason).toBe("Too small for tap zones on a 40 mm watch");
+    expect(choice.preset).toBeUndefined();
+  });
+});
+
+describe("a picture layer in a tile", () => {
+  it("shows its own entity's picture with no picker and no Timestamp card", () => {
+    const { host, tile } = draftHost();
+    const edits = tileLayerEdits(host);
+    const id = edits.add("image");
+    edits.doc((c) => {
+      const el = c.elements.find((e) => e.payload.id.toUpperCase() === id);
+      if (el?.kind === "image") {
+        el.payload.source = "entityPicture";
+        el.payload.entity = { entityId: "light.office", displayName: "Office", domain: "light" };
+      }
+    });
+    expect(readTileDesign(tile())!.doc.elements.some((e) => e.payload.id.toUpperCase() === id)).toBe(true);
+    const text = flat(renderTileLayerInspector(view(host, id), 208));
+    expect(text).toContain("The picture of the tile's own entity, Office.");
+    expect(text).not.toContain("Adds the time the picture was fetched");
+    expect(tileLayerHost(host, () => undefined).tileEntity).toEqual({ entityId: "light.office", displayName: "Office", domain: "light" });
   });
 });
 
