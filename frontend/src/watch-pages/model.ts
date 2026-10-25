@@ -62,6 +62,10 @@ export interface WatchPageTile {
   color?: unknown;
   customLabel?: unknown;
   showLabel?: unknown;
+  /** The tile's layers, once one was changed or added (`tile-design.ts`;
+   * app repo docs/tile_layers_contract_2026-10.md). Absent on a tile nobody
+   * has touched, which draws from the simple keys alone. */
+  design?: unknown;
   [key: string]: unknown;
 }
 
