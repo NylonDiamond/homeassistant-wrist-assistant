@@ -314,8 +314,14 @@ def test_a_design_at_every_cap_passes(mod) -> None:  # noqa: F811
 
 
 def test_a_design_that_is_not_an_object_is_refused(mod) -> None:  # noqa: F811
-    for design in ("layers", [1], 1, None, True):
+    for design in ("layers", [1], 1, True):
         assert _refusal(mod, design) == f"{WHERE} must be an object"
+
+
+def test_a_null_design_is_no_design(mod) -> None:  # noqa: F811
+    tile = _tile()
+    tile["design"] = None
+    mod.validate_document("pages", _pages(tile), check_items=True)
 
 
 def test_a_design_over_the_byte_cap_is_refused(mod) -> None:  # noqa: F811

@@ -868,7 +868,10 @@ def _check_items(page: dict[str, Any], where: str) -> None:
                 "item ids must be unique in a page"
             )
         seen[folded] = index
-        if _TILE_DESIGN_KEY in item:
+        # A null design is no design, as the panel and the apps read it: a
+        # writer that nulls the key instead of deleting it must not leave a
+        # tile the panel cannot save.
+        if item.get(_TILE_DESIGN_KEY) is not None:
             _check_design(item[_TILE_DESIGN_KEY], at)
 
 
