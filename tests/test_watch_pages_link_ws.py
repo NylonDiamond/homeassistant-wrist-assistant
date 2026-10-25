@@ -281,6 +281,7 @@ def test_save_and_restore_name_the_devices_that_could_not_take_it(
     assert saved.results[1] == {
         "revision": links.store.get(WATCH, "pages").revision,
         "link_failures": failures,
+        "template_budget": {"used": 0, "limit": 100, "scope": "device"},
     }
     assert links.store.get(PHONE, "pages").document["pages"][-1]["name"] == "Lights"
 

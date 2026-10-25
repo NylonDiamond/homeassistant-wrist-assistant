@@ -456,7 +456,11 @@ def test_save_may_save_pages(env) -> None:
     edited = _pages_doc("Renamed")
     connection = _save(env, edited, 1, kind="pages")
     assert connection.errors == []
-    assert connection.results[1] == {"revision": 2, "link_failures": []}
+    assert connection.results[1] == {
+        "revision": 2,
+        "link_failures": [],
+        "template_budget": {"used": 0, "limit": 100, "scope": "device"},
+    }
     result = _get(env, "pages")
     assert (result["updated_by"], result["document"]) == ("panel", edited)
     assert result["hash"] == env.mod.canonical_hash(edited)
@@ -1358,7 +1362,11 @@ def _phone_pages_store(env) -> None:
 def test_the_panel_starts_a_phone_s_pages_and_settings(env) -> None:
     _phone_pages_store(env)
     subscriber = _subscribe(env, owner=PHONE)
-    assert _save(env, _pages_doc(), 0, kind="pages", owner=PHONE).results[1] == {"revision": 1, "link_failures": []}
+    assert _save(env, _pages_doc(), 0, kind="pages", owner=PHONE).results[1] == {
+        "revision": 1,
+        "link_failures": [],
+        "template_budget": {"used": 0, "limit": 100, "scope": "device"},
+    }
     sent = {"schemaVersion": 1, "wrapPages": True, "serverMode": "Local", "roomQuickJumpEnabled": True}
     assert _save(env, sent, 0, kind="behavior", owner=PHONE).results[1] == {"revision": 1, "link_failures": []}
     # The watch only setting and the room key are gone, silently, and the

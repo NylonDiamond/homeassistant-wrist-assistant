@@ -108,6 +108,7 @@ from .watch_config_store import (
     WatchConfigStore,
     WatchConfigStoreError,
     short_hash,
+    template_budget_reply,
 )
 
 if TYPE_CHECKING:
@@ -407,7 +408,8 @@ def ws_watch_config_save(
     settings, notification style, status pages or Control Center list as
     edited in the panel.
 
-    Result: {"revision": <new revision>, "link_failures": [{"owner", "name"}]}
+    Result: {"revision": <new revision>, "link_failures": [{"owner", "name"}],
+    "template_budget"?: {"used", "limit", "scope": "device"}}
 
     The panel sends the whole document, keys it does not show included, and
     the store keeps it as sent. ``base_revision`` 0 with nothing stored
@@ -434,6 +436,13 @@ def ws_watch_config_save(
     save stands, those copies stay as they were. ``name`` is the device's
     name, null for one the secret store does not know. Empty when every copy
     took it, and for a kind that is never linked.
+
+    ``template_budget``, for ``pages`` only, counts the distinct delta
+    templates the saved pages ask the device to send (Show tile templates and
+    tile layers' templates, ``watch_config_store.template_budget``) against
+    the 100 a delta poll takes. The save stands whatever the count; past the
+    limit the device draws the tiles it leaves out plain, and the panel says
+    so.
     """
     store = _store(hass)
     if store is None:
@@ -459,10 +468,13 @@ def ws_watch_config_save(
         record.owner_watch_id,
         record.revision,
     )
-    connection.send_result(
-        msg["id"],
-        {"revision": record.revision, "link_failures": _link_failures(hass, failed)},
-    )
+    result: dict[str, Any] = {
+        "revision": record.revision,
+        "link_failures": _link_failures(hass, failed),
+    }
+    if record.kind == "pages":
+        result["template_budget"] = template_budget_reply(record.document, "device")
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command(
@@ -1107,7 +1119,8 @@ def ws_library_item_save(
     on the item's revision.
 
     Request: {kind, item_id, base_revision, document}
-    Result:  {"revision": <the item's revision>}
+    Result:  {"revision": <the item's revision>,
+              "template_budget"?: {"used", "limit", "scope": "page"}}
 
     ``document`` is a whole document of the kind, as ``library/item`` gives
     it; only the item is read from it (a menu's own unit's sections). Every
@@ -1119,6 +1132,10 @@ def ws_library_item_save(
     revision is <N>``; read the item again), and ``unauthorized`` for an
     item a device the caller may not manage has (or that no device has, for
     anyone but an administrator), since the save writes every one of them.
+
+    ``template_budget``, for a page only, is the record save's count
+    (:func:`ws_watch_config_save`) for the saved page alone: each device that
+    picks it adds its other pages' templates to it.
     """
     store = _store(hass)
     if store is None:
@@ -1133,6 +1150,10 @@ def ws_library_item_save(
     except WatchConfigStoreError as err:
         connection.send_error(msg["id"], err.code, err.message)
         return
+    if msg["kind"] == "pages":
+        # The store took exactly one page out of the document, so the
+        # document's count is the page's.
+        result = {**result, "template_budget": template_budget_reply(msg["document"], "page")}
     connection.send_result(msg["id"], result)
 
 
