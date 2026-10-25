@@ -56,7 +56,7 @@ export type { BaseLayerContext } from "./tile-base-layers.js";
 // ── the design box ───────────────────────────────────────────────────────
 
 /** A tile's design box: its drawn size on a 46 mm watch (208 pt screen)
- * under One Look, `17.25 * colSpan - 3` by `17.25 * rowSpan - 3`. 3x3 is
+ * under One Look, `17.25*colSpan-3` by `17.25*rowSpan-3`. 3x3 is
  * 48.75 square, 4x4 66, 6x4 100.5 by 66, 12x4 204 by 66. */
 export function tileDesignBox(colSpan: number, rowSpan: number): { width: number; height: number } {
   return designBoxFor(colSpan, rowSpan);

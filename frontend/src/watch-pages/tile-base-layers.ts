@@ -67,13 +67,14 @@ export interface BaseLayerContext {
 
 // ── the design box ───────────────────────────────────────────────────────
 
-/** The grid unit on the reference watch: (208 - 3 - 22) / 12 = 15.25. */
+/** The grid unit on the reference watch: 208 less 3 of padding less 22 of
+ * spacing, over 12 columns, is 15.25. */
 function designUnit(): number {
   return oneLookGridUnit(TILE_DESIGN_SCREEN_WIDTH, "watch");
 }
 
 /** A tile's design box: its drawn size on a 46 mm watch under One Look,
- * `17.25 * colSpan - 3` by `17.25 * rowSpan - 3` (6x4 is 100.5 by 66).
+ * `17.25*colSpan-3` by `17.25*rowSpan-3` (6x4 is 100.5 by 66).
  * `tile-design.ts` exports it; it lives here so the base layers need no
  * import back. */
 export function designBoxFor(colSpan: number, rowSpan: number): { width: number; height: number } {
