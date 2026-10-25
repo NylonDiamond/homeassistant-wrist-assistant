@@ -204,6 +204,10 @@ export interface ResolveContext {
    * so the preview does not tick every second. The panel moves it on save and
    * on a demo tap. Undefined reads the clock, as the gallery picture does. */
   pictureTimeMs?: number;
+  /** A page tile's own words, for the `tileState` and `tileName` value kinds
+   * its layers read (`tileValuesFor` in watch-pages/tile-base-layers.ts).
+   * Undefined outside a tile, where both kinds resolve to nothing. */
+  tileValues?: { state?: string; name?: string };
 }
 
 export interface ResolvedBase {
@@ -1988,6 +1992,14 @@ export class Resolver {
         break;
       case "dataAge":
         raw = this.ctx.dataAgeSeconds === undefined ? undefined : String(Math.trunc(this.ctx.dataAgeSeconds));
+        break;
+      // Local: the tile the layer sits in hands over its words. Outside a tile,
+      // nothing, which draws the way an unresolved value always does.
+      case "tileState":
+        raw = this.ctx.tileValues?.state;
+        break;
+      case "tileName":
+        raw = this.ctx.tileValues?.name;
         break;
       case "chartStat": {
         // The chart has already decided its series and its scale; this only

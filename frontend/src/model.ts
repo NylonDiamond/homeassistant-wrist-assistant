@@ -514,7 +514,15 @@ export type ValueKind =
    * reads as nothing, and the text draws empty (the watch draws nothing until
    * the picture has been fetched). This is what a picture's "Timestamp" is
    * made of: an ordinary text layer over an ordinary capsule, in a group. */
-  | { kind: "imageTime"; layer: string };
+  | { kind: "imageTime"; layer: string }
+  /** The state line a page tile draws (One Look's "82%", "21° → 22°",
+   * "Away"), as text. Local: only a tile's layers carry it, and the app
+   * reads it off the tile it draws. Outside a tile it is nil. App repo
+   * docs/tile_layers_contract_2026-10.md, section 5.1. */
+  | { kind: "tileState" }
+  /** The name a page tile draws (its label, else the friendly name, else the
+   * entity id), whether or not the label is shown. Local, like `tileState`. */
+  | { kind: "tileName" };
 
 /** What a `listStat` reads. An unknown spelling reads as `count`. */
 export type ListStat = "count" | "total";
@@ -4480,6 +4488,10 @@ function parseValueKind(o: J): ValueKind {
       };
     case "imageTime":
       return { kind: "imageTime", layer: str(o.layer).toUpperCase() };
+    case "tileState":
+      return { kind: "tileState" };
+    case "tileName":
+      return { kind: "tileName" };
     default:
       throw new ConfigParseError(`unknown value kind ${String(o.kind)}`);
   }
@@ -6668,6 +6680,8 @@ function encodeValueKind(k: ValueKind): J {
     case "item": return { kind: "item", field: k.field };
     case "listStat": return { kind: "listStat", layer: k.layer, stat: k.stat };
     case "imageTime": return { kind: "imageTime", layer: k.layer };
+    case "tileState": return { kind: "tileState" };
+    case "tileName": return { kind: "tileName" };
   }
 }
 
@@ -8098,6 +8112,8 @@ const VALUE_KIND_KEYS: Record<string, string[]> = {
   item: ["kind", "field"],
   listStat: ["kind", "layer", "stat"],
   imageTime: ["kind", "layer"],
+  tileState: ["kind"],
+  tileName: ["kind"],
 };
 
 /** One key list per `source.kind`, the way `VALUE_KIND_KEYS` reads a value.

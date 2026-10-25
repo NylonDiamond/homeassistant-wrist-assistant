@@ -332,9 +332,12 @@ function collector(namedValues: NamedValue[]) {
       case "item":
       case "listStat":
       case "imageTime":
+      case "tileState":
+      case "tileName":
         // A chart stat reads a chart layer that registers its own sources, and
         // both list kinds read a list that registers its own the same way. A
-        // picture's time is when the watch fetched it: nothing to ask for.
+        // picture's time is when the watch fetched it: nothing to ask for. A
+        // tile's state and name come off the tile the app draws.
         return;
       case "entityState":
         entities.set(kind.entityId, kind);

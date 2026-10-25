@@ -3165,6 +3165,8 @@ function switchKind(current: ValueKind, kind: ValueKind["kind"]): ValueKind {
     case "item": return { kind, field: current.kind === "item" ? current.field : "" };
     case "listStat": return { kind, layer: "", stat: "count" };
     case "imageTime": return { kind, layer: "" };
+    case "tileState": return { kind };
+    case "tileName": return { kind };
   }
 }
 
@@ -3877,6 +3879,10 @@ export function formatFits(kind: ValueKind | undefined): FormatFits {
     // read as an age prints 9999d.
     case "imageTime":
       return { numbers: false, textCase: false, unit: false, seconds: false };
+    // The tile's own words, already formatted the way the tile draws them.
+    case "tileState":
+    case "tileName":
+      return { numbers: false, textCase: true, unit: false, seconds: false };
   }
 }
 
@@ -10702,6 +10708,8 @@ function describeValueBody(v: Value, ctx?: DescribeContext): string {
     case "aggregate": return describeAggregate(k.aggregate);
     case "time": return TIME_FIELD_WORDS[k.timeField];
     case "dataAge": return "data age";
+    case "tileState": return "Tile state";
+    case "tileName": return "Tile name";
     case "item": return k.field ? `item ${k.field}` : "item field";
     case "listStat": return k.stat === "total" ? "items in total" : "items shown";
     case "imageTime": {
