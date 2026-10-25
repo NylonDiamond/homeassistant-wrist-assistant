@@ -156,11 +156,12 @@ function withEntityState(
   states: Readonly<Record<string, HassEntityState>> | undefined,
   entityId: string,
   state: string,
+  attributes?: Readonly<Record<string, unknown>>,
 ): Record<string, HassEntityState> {
   const prior = states !== undefined && Object.hasOwn(states, entityId) ? states[entityId] : undefined;
   const entity: HassEntityState = prior === undefined
-    ? { entity_id: entityId, state, attributes: {}, last_changed: "", last_updated: "" }
-    : { ...prior, state };
+    ? { entity_id: entityId, state, attributes: { ...(attributes ?? {}) }, last_changed: "", last_updated: "" }
+    : { ...prior, state, ...(attributes === undefined ? {} : { attributes: { ...(prior.attributes ?? {}), ...attributes } }) };
   return { ...(states ?? {}), [entityId]: entity };
 }
 
@@ -274,12 +275,23 @@ function stateIconRule(tile: WatchPageTile, ctx: BaseLayerContext): Rule | undef
   };
 }
 
-/** The tile's face with its entity in another state, one per state asked. */
-function facesAt(tile: WatchPageTile, ctx: BaseLayerContext): (state: string) => Face | undefined {
+/** A state to read the tile's face at: its word, and any attributes that
+ * must read a set way then (a cover's position). */
+interface Probe {
+  state: string;
+  attributes?: Readonly<Record<string, unknown>>;
+}
+
+type FacesAt = (state: string, attributes?: Readonly<Record<string, unknown>>) => Face | undefined;
+
+/** The tile's face with its entity in another state (and those attributes),
+ * one per state asked. */
+function facesAt(tile: WatchPageTile, ctx: BaseLayerContext): FacesAt {
   const held = new Map<string, Face | undefined>();
-  return (state) => {
-    if (!held.has(state)) held.set(state, faceOf(tile, ctx, withEntityState(ctx.states, tileEntityId(tile), state)));
-    return held.get(state);
+  return (state, attributes) => {
+    const key = attributes === undefined ? state : `${state}\u0000${JSON.stringify(attributes)}`;
+    if (!held.has(key)) held.set(key, faceOf(tile, ctx, withEntityState(ctx.states, tileEntityId(tile), state, attributes)));
+    return held.get(key);
   };
 }
 
@@ -296,53 +308,122 @@ function drawnSymbolOf(face: Face | undefined): string | undefined {
   return icon === "" ? undefined : icon;
 }
 
+/** One case of the icon's symbol rule: the test on the entity's state, the
+ * state its symbol is read off One Look at, and whether the test also holds
+ * while the entity is unavailable (so the unavailable case knows what it
+ * would otherwise fall to). */
+interface StateCase {
+  test: Comparison;
+  probe: Probe;
+  matchesUnavailable: boolean;
+}
+
+/** A number as Home Assistant stores one in an attribute, as One Look reads
+ * a cover's position (`storedNumber` in `preview.ts`). */
+function finiteNumber(value: unknown): boolean {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+/**
+ * The states a kind's symbol swaps between, as One Look swaps it
+ * (`watchTileSymbol` and the fill rules in `preview.ts`): the state every
+ * other one draws like, and a case per state that draws another symbol, the
+ * first matching case winning. Undefined for a kind whose symbol does not
+ * follow its state.
+ *
+ * A light, switch or fan fills while on. A climate stands off as an outline.
+ * A lock draws the open padlock in every state but locked. A cover or valve
+ * draws its open form while open or opening, and while closing too when it
+ * reports a position (One Look then reads the position, above 0 until the
+ * cover is closed). A timer draws pause while paused. A battery reading draws
+ * its level at One Look's thresholds, under 10, 25, 50 and 75.
+ */
+function stateCasesFor(kind: string, ctx: BaseLayerContext, entityId: string): { base: Probe; cases: StateCase[] } | undefined {
+  const entity = ctx.states !== undefined && Object.hasOwn(ctx.states, entityId) ? ctx.states[entityId] : undefined;
+  if (LIT_ON_KINDS.has(kind)) {
+    return { base: { state: "off" }, cases: [{ test: { kind: "isOn" }, probe: { state: "on" }, matchesUnavailable: false }] };
+  }
+  if (kind === "climate") {
+    const raw = entity?.state;
+    const running = raw !== undefined && raw !== "off" && raw !== "unavailable" && raw !== "unknown" ? raw : "heat";
+    return { base: { state: running }, cases: [{ test: { kind: "equals", value: literal("off") }, probe: { state: "off" }, matchesUnavailable: false }] };
+  }
+  if (kind === "lock") {
+    return { base: { state: "locked" }, cases: [{ test: { kind: "notEquals", value: literal("locked") }, probe: { state: "unlocked" }, matchesUnavailable: true }] };
+  }
+  if (kind === "cover" || kind === "valve") {
+    const positioned = finiteNumber(entity?.attributes?.current_position);
+    return {
+      base: positioned ? { state: "closed", attributes: { current_position: 0 } } : { state: "closed" },
+      cases: [{
+        test: { kind: "isOneOf", options: positioned ? ["open", "opening", "closing"] : ["open", "opening"] },
+        probe: positioned ? { state: "open", attributes: { current_position: 100 } } : { state: "open" },
+        matchesUnavailable: false,
+      }],
+    };
+  }
+  if (kind === "timer") {
+    return { base: { state: "idle" }, cases: [{ test: { kind: "equals", value: literal("paused") }, probe: { state: "paused" }, matchesUnavailable: false }] };
+  }
+  const deviceClass = entity?.attributes?.device_class;
+  if (typeof deviceClass === "string" && deviceClass.toLowerCase() === "battery") {
+    const below = (limit: number, state: string): StateCase => ({
+      test: { kind: "lessThan", value: literal(String(limit)) },
+      probe: { state },
+      matchesUnavailable: false,
+    });
+    return { base: { state: "100" }, cases: [below(10, "5"), below(25, "20"), below(50, "40"), below(75, "60")] };
+  }
+  return undefined;
+}
+
 /**
  * The symbol an icon layer starts with and the rule that swaps it the way
- * One Look does: the filled variant while a light, switch or fan is on (its
- * outline while off), a climate's outline while off, and the crossed out
- * form while unavailable. Read off One Look's own faces at those states, with
- * the per state icons off (their own rule comes after this one and wins when
- * an entry matches, as One Look draws an entry's symbol as it is). Kinds
- * that always fill take the filled symbol and need no rule.
+ * One Look does (`stateCasesFor`), with the crossed out form while
+ * unavailable first. Each symbol is read off One Look's own face at that
+ * state, with the per state icons off (their own rule comes after this one
+ * and wins when an entry matches, as One Look draws an entry's symbol as it
+ * is). A kind whose symbol does not follow its state takes the symbol drawn
+ * now (the filled one while unavailable) and only the unavailable case.
  */
-function symbolRule(tile: WatchPageTile, ctx: BaseLayerContext, face: Face, tileAt: (state: string) => Face | undefined): { symbol: string; rule?: Rule } {
+function symbolRule(tile: WatchPageTile, ctx: BaseLayerContext, face: Face, tileAt: FacesAt): { symbol: string; rule?: Rule } {
   const plainTile = tile.usesStateIcons === true ? { ...tile, usesStateIcons: false } : tile;
   const at = plainTile === tile ? tileAt : facesAt(plainTile, ctx);
-  const kind = tileKind(tileEntityId(tile));
-  const current = face.model.kind;
+  const entityId = tileEntityId(tile);
+  const kind = tileKind(entityId);
   const plainNow = plainTile === tile ? face : faceOf(plainTile, ctx);
   const fallback = plainNow?.model.baseIcon || face.model.baseIcon;
-  // The symbol in every state the rule does not name.
+  const swaps = stateCasesFor(kind, ctx, entityId);
+  // The symbol in every state the rule does not name, and the state cases
+  // with their symbols. They are kept together or not at all: a battery's
+  // thresholds are read in order, so dropping one would hand its readings to
+  // the next.
   let symbol: string;
-  let lit: { test: Comparison; symbol: string } | undefined;
-  if (LIT_ON_KINDS.has(kind)) {
-    symbol = drawnSymbolOf(at("off")) ?? fallback;
-    const on = drawnSymbolOf(at("on"));
-    if (on !== undefined && on !== symbol) lit = { test: { kind: "isOn" }, symbol: on };
-  } else if (kind === "climate") {
-    const raw = ctx.states?.[tileEntityId(tile)]?.state;
-    const running = raw !== undefined && raw !== "off" && !current.isUnavailable ? raw : "heat";
-    symbol = drawnSymbolOf(at(running)) ?? fallback;
-    const off = drawnSymbolOf(at("off"));
-    if (off !== undefined && off !== symbol) lit = { test: { kind: "equals", value: literal("off") }, symbol: off };
+  let stateCases: { test: Comparison; symbol: string; matchesUnavailable: boolean }[] = [];
+  if (swaps !== undefined) {
+    symbol = drawnSymbolOf(at(swaps.base.state, swaps.base.attributes)) ?? fallback;
+    stateCases = swaps.cases.map((c) => ({ test: c.test, symbol: drawnSymbolOf(at(c.probe.state, c.probe.attributes)) ?? symbol, matchesUnavailable: c.matchesUnavailable }));
+    if (stateCases.every((c) => c.symbol === symbol)) stateCases = [];
   } else {
     symbol = plainNow !== undefined && !plainNow.model.kind.isUnavailable ? (drawnSymbolOf(plainNow) ?? fallback) : filledSymbol(ctx.icons, fallback, true);
   }
   const cases: RuleCase[] = [];
   const value = entityValue(tile, ctx.states);
   const unavailable = drawnSymbolOf(at("unavailable"));
-  if (unavailable !== undefined && unavailable !== symbol && unavailable !== lit?.symbol) {
+  // What the rule would draw while unavailable without a case of its own.
+  const otherwise = stateCases.find((c) => c.matchesUnavailable)?.symbol ?? symbol;
+  if (unavailable !== undefined && unavailable !== otherwise) {
     cases.push({
       id: baseRuleId("icon", 3, cases.length + 1, 2),
       when: { join: "all", tests: [{ id: baseRuleId("icon", 3, cases.length + 1, 3), value, comparison: { kind: "isUnavailable" } }] },
       then: [{ kind: "setIcon", value: literal(unavailable) }],
     });
   }
-  if (lit !== undefined) {
+  for (const c of stateCases) {
     cases.push({
       id: baseRuleId("icon", 3, cases.length + 1, 2),
-      when: { join: "all", tests: [{ id: baseRuleId("icon", 3, cases.length + 1, 3), value, comparison: lit.test }] },
-      then: [{ kind: "setIcon", value: literal(lit.symbol) }],
+      when: { join: "all", tests: [{ id: baseRuleId("icon", 3, cases.length + 1, 3), value, comparison: c.test }] },
+      then: [{ kind: "setIcon", value: literal(c.symbol) }],
     });
   }
   return cases.length === 0 ? { symbol } : { symbol, rule: { id: baseRuleId("icon", 3, 0, 1), cases } };

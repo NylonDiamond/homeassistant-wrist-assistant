@@ -326,6 +326,52 @@ describe("baseLayers", () => {
       expect(sensor.rules.some((r) => r.cases.some((c) => c.then.some((t) => t.kind === "setIcon")))).toBe(false);
     });
 
+    it("follows a lock, a cover, a timer and a battery's level by a rule, as One Look swaps their symbols", () => {
+      const ctx = (e: HassEntityState): BaseLayerContext => ({ ...ctxFor(e), icons: ALL_ICONS });
+      const tileFor = (entityId: string): WatchPageTile => ({ ...LIGHT, entityId });
+      const symbolsOf = (layer: IconElement) => {
+        const rule = layer.rules[0];
+        return {
+          symbol: (layer.symbol.kind as { value: string }).value,
+          cases: (rule?.cases ?? []).map((c) => [c.when.tests[0]!.comparison, (c.then[0]!.value!.kind as { value: string }).value]),
+        };
+      };
+      const lit = (v: string) => ({ kind: { kind: "literal", value: v } });
+
+      // A lock built while locked opens in every other state.
+      const lock = symbolsOf(icon(baseLayers(tileFor("lock.front"), ctx(entity("lock.front", "locked", { friendly_name: "Front" })))));
+      expect(lock.symbol).toBe("lock.fill");
+      expect(lock.cases.at(-1)).toEqual([{ kind: "notEquals", value: lit("locked") }, "lock.open.fill"]);
+      expect(icon(baseLayers(tileFor("lock.front"), ctx(entity("lock.front", "unlocked", { friendly_name: "Front" }))))).toEqual(
+        icon(baseLayers(tileFor("lock.front"), ctx(entity("lock.front", "locked", { friendly_name: "Front" })))),
+      );
+
+      // A garage door draws its open form while open, and while closing when
+      // it reports a position.
+      const garage = (state: string, attributes: Record<string, unknown>) =>
+        symbolsOf(icon(baseLayers(tileFor("cover.garage"), ctx(entity("cover.garage", state, { device_class: "garage", ...attributes })))));
+      const closed = garage("closed", {});
+      expect(closed.symbol).toBe("door.garage.closed.fill");
+      expect(closed.cases.at(-1)).toEqual([{ kind: "isOneOf", options: ["open", "opening"] }, "door.garage.open.fill"]);
+      const positioned = garage("open", { current_position: 40 });
+      expect(positioned.symbol).toBe("door.garage.closed.fill");
+      expect(positioned.cases.at(-1)).toEqual([{ kind: "isOneOf", options: ["open", "opening", "closing"] }, "door.garage.open.fill"]);
+
+      // A timer pauses.
+      const timer = symbolsOf(icon(baseLayers(tileFor("timer.tea"), ctx(entity("timer.tea", "active")))));
+      expect(timer.cases.at(-1)).toEqual([{ kind: "equals", value: lit("paused") }, "pause.fill"]);
+
+      // A battery draws its level at One Look's thresholds, lowest first.
+      const battery = symbolsOf(icon(baseLayers(tileFor("sensor.phone_battery"), ctx(entity("sensor.phone_battery", "90", { device_class: "battery", unit_of_measurement: "%" })))));
+      expect(battery.symbol).toBe("battery.100.fill");
+      expect(battery.cases.filter(([c]) => (c as { kind: string }).kind === "lessThan")).toEqual([
+        [{ kind: "lessThan", value: lit("10") }, "battery.0.fill"],
+        [{ kind: "lessThan", value: lit("25") }, "battery.25.fill"],
+        [{ kind: "lessThan", value: lit("50") }, "battery.50.fill"],
+        [{ kind: "lessThan", value: lit("75") }, "battery.75.fill"],
+      ]);
+    });
+
     it("puts the per state icons after the fill rule, so a matching entry wins", () => {
       const tile = { ...LIGHT, usesStateIcons: true, stateIcons: { on: "lightbulb.max" } };
       const layer = icon(baseLayers(tile, { ...ctxFor(OFFICE), icons: ALL_ICONS }));
