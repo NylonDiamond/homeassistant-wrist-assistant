@@ -124,6 +124,15 @@ export interface OneLookTileFaceInput {
    * the picture's symbols. A tile's base layers pass the estimate measurer
    * for stable fixtures (`tile-base-layers.ts`). */
   measurer?: TextMeasurer;
+  /** A tile's layers (`design`), drawn in place of what One Look draws
+   * inside the tile: the disc or photo, the accessory, the name and state,
+   * the big value and the chart. The fill, the bar, the pattern, the rim,
+   * the border and the dim stay the tile's own (app repo
+   * docs/tile_layers_contract_2026-10.md, section 3). */
+  content?: TemplateResult;
+  /** Drawn over the tile's content, under the rim: the page editor's outline
+   * of a picked layer on a tile that has no layers saved yet. */
+  overlay?: TemplateResult;
 }
 
 /** The iPhone's Page look a tile's old sizes are read in; the watch is
@@ -824,14 +833,14 @@ export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
     ${layers}
     ${model.decorated ? tileUnderlay(f.tile, input, active, { width: f.width, height: f.height }, s) : nothing}
     ${pictureLayer(model, f)}
-    ${chartLayer(model, s)}
+    ${f.content === undefined ? chartLayer(model, s) : nothing}
     <span class="ol-content" style=${palette.contentOpacity < 1 ? `opacity:${palette.contentOpacity}` : nothing}>
       ${barLayer(model, s)}
-      ${discLayer(model, input, s)}
-      ${accessoryLayer(model, input, s)}
-      ${textLayer(model, s)}
-      ${bigValueLayer(model, s)}
+      ${f.content === undefined
+        ? html`${discLayer(model, input, s)}${accessoryLayer(model, input, s)}${textLayer(model, s)}${bigValueLayer(model, s)}`
+        : f.content}
     </span>
+    ${f.overlay ?? nothing}
     <span class="ol-rim" style=${`padding:${r2(rim * s)}px;background:${oneLookRimCss(palette.rimOpacity)}`}></span>
     ${borderLayer(model, f, active, radius)}
   </div>`;

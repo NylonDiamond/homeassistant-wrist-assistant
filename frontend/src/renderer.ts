@@ -219,9 +219,11 @@ export interface Fit {
 /**
  * Uniform fit of the family's design box into a real slot, centred. Mirrors
  * `CustomComplication.DesignBox.fit` in Swift; the two must agree to the point.
+ * `box` stands in for the family's box: a page tile's layers are drawn in the
+ * tile's own design box (`tileDesignBox`, watch-pages/tile-design.ts).
  */
-export function fitBox(slot: CanvasSize, family: DrawableFamily): Fit {
-  const ref = CANVAS[family];
+export function fitBox(slot: CanvasSize, family: DrawableFamily, box?: CanvasSize): Fit {
+  const ref = box ?? CANVAS[family];
   if (slot.width <= 0 || slot.height <= 0) return { scale: 0, x: 0, y: 0, width: 0, height: 0 };
   const scale = Math.min(slot.width / ref.width, slot.height / ref.height);
   const width = ref.width * scale;
@@ -345,6 +347,10 @@ export interface RenderOptions {
    * exactly as the watch does.
    */
   slot?: CanvasSize;
+  /** The box the layers were authored in, in place of the family's: a page
+   * tile's design box (`tileDesignBox`), which is the tile's drawn size on
+   * the 46 mm watch. Absent: the family's own box. */
+  designBox?: CanvasSize;
   /** Editor affordance: the snap grid's step as a fraction of the face. Draws
    * faint lines over the layers, with the middle lines in the accent color. */
   grid?: number;
@@ -3111,9 +3117,9 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   // `canvas` is the real slot: background, body clip, border and bezel fill it,
   // as on the watch. `design` is the box the layers were authored in; it lands
   // inside the slot through `fit` (docs/custom_complication_design_box.md).
-  const canvas = options.slot ?? CANVAS[family];
-  const design = CANVAS[family];
-  const fit = fitBox(canvas, family);
+  const design = options.designBox ?? CANVAS[family];
+  const canvas = options.slot ?? design;
+  const fit = fitBox(canvas, family, design);
   const uid = `clip-${family}-${Math.random().toString(36).slice(2, 8)}`;
   const bg = parseColor(layout.backgroundColorHex);
   // The background's gradient, over the whole slot, beating the flat color.
@@ -3515,6 +3521,9 @@ export interface ThumbOptions {
    * the box behind the picture shows through. The Background row sets it
    * to show a see-through ground as a checkerboard. */
   clearFace?: boolean;
+  /** The box the layers were authored in, in place of the family's: a page
+   * tile's design box. Absent: the family's own box. */
+  designBox?: CanvasSize;
 }
 
 /** Padding around the cropped layers, as a share of the crop's longer side. */
@@ -3544,9 +3553,9 @@ function inkBox(el: ResolvedElement, canvas: CanvasSize): Box {
  * aspect ratio so the picture never squashes. Empty `ids` mean the whole
  * canvas, which is what the background row shows.
  */
-export function thumbCrop(layout: ResolvedLayout, ids: readonly string[], aspect: number): { x: number; y: number; w: number; h: number } {
+export function thumbCrop(layout: ResolvedLayout, ids: readonly string[], aspect: number, designBox?: CanvasSize): { x: number; y: number; w: number; h: number } {
   const family = (layout.family in CANVAS ? layout.family : "rectangular") as DrawableFamily;
-  const design = CANVAS[family];
+  const design = designBox ?? CANVAS[family];
   const picked = layout.elements.filter((el) => ids.includes(el.id));
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const el of picked) {
@@ -3589,8 +3598,8 @@ export function thumbCrop(layout: ResolvedLayout, ids: readonly string[], aspect
  */
 export function renderLayerThumb(layout: ResolvedLayout, ids: readonly string[], options: ThumbOptions): TemplateResult {
   const family = (layout.family in CANVAS ? layout.family : "rectangular") as DrawableFamily;
-  const design = CANVAS[family];
-  const crop = thumbCrop(layout, ids, options.width / options.height);
+  const design = options.designBox ?? CANVAS[family];
+  const crop = thumbCrop(layout, ids, options.width / options.height, options.designBox);
   const bg = parseColor(layout.backgroundColorHex);
   // The background's gradient, over the whole face, beating the flat color.
   const bgFill = layout.backgroundFill === undefined
