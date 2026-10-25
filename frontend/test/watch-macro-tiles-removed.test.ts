@@ -7,7 +7,7 @@
 // direction is kept too, read as removed and offered nowhere.
 
 import { nothing } from "lit";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -26,7 +26,7 @@ import {
   tileKindLabel,
   tileLabel,
 } from "../src/watch-pages/model.js";
-import { renderWatchTileFace, watchPreviewTileLabel } from "../src/watch-pages/preview.js";
+import { renderWatchTileFace, setPreviewOneLookDefault, watchPreviewTileLabel } from "../src/watch-pages/preview.js";
 import { resolveSmartPagesBeforeSave } from "../src/watch-pages/smart-model.js";
 import {
   isWatchLibraryAction,
@@ -42,6 +42,11 @@ import menuKeys from "../src/watch-menus/menu-keys.json";
 import { watchMenuDomain } from "../src/watch-menus/model.js";
 import { watchTileSettingsSections } from "../src/watch-pages/tile-settings-options.js";
 import { renderTileName, renderTileSettings } from "../src/watch-pages/tile-settings.js";
+
+// These pin the old tile look, which a device below One Look's version
+// still draws; One Look's own are in one-look-render.test.ts.
+beforeAll(() => setPreviewOneLookDefault(false));
+afterAll(() => setPreviewOneLookDefault(undefined));
 
 // The views ask for the focused field (`document.activeElement`); Node has
 // no document.

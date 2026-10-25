@@ -54,6 +54,8 @@ export class WaHomeLineup extends LitElement {
   @property({ attribute: false }) deviceName = "";
   /** The watch's iPhone may still move its setup here (`LineupDraw`). */
   @property({ attribute: false }) waitsForIphone = false;
+  /** The app version the device reported (`LineupDraw`). */
+  @property({ attribute: false }) appVersion?: string | null;
 
   /** The line being dragged: its kind, the order when it was picked up,
    * the order it would land in now (the cards it passes move aside), and
@@ -104,6 +106,7 @@ export class WaHomeLineup extends LitElement {
       tick: this.iconsTick,
       pageWidth: this.pageW,
       waitsForIphone: this.waitsForIphone,
+      ...(this.appVersion === undefined ? {} : { appVersion: this.appVersion }),
       arrange: {
         order: (kind) => (this.drag?.kind === kind && this.drag.order !== undefined ? this.drag.order
           : this.orderAsked?.kind === kind ? this.orderAsked.ids : undefined),
@@ -395,6 +398,9 @@ export interface LineupDraw {
    * `wait`): a kind Home Assistant holds no record of says it waits for
    * that iPhone rather than that there is none. */
   waitsForIphone?: boolean;
+  /** The app version the device reported, which decides whether its page
+   * pictures draw One Look (`previewOneLook`). */
+  appVersion?: string | null;
   onEdit: (kind: LibraryKind, id: string) => void;
   onChange: (kind: LibraryKind) => void;
 }
@@ -427,6 +433,7 @@ export function lineupGroups(library: Library, ownerId: string, kind: "watch" | 
       ...(states === undefined ? {} : { states }),
       ...(draw.icons === undefined ? {} : { icons: draw.icons }),
       ...(draw.tick === undefined ? {} : { tick: draw.tick }),
+      ...(draw.appVersion === undefined ? {} : { appVersion: draw.appVersion }),
     }),
     action: { label: "Edit", title: `Edit ${pick.entry.name}`, onClick: () => draw.onEdit("pages", pick.id) },
   }));

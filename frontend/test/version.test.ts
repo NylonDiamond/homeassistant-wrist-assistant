@@ -5,6 +5,7 @@ import {
   LIBRARY_OWNER_ID,
   MIN_IPHONE_VERSION_FOR_LOCK_SCREEN,
   MIN_VERSION_FOR_CONTROL_CENTER,
+  MIN_VERSION_FOR_ONE_LOOK,
   MIN_WATCH_VERSION_FOR_CHART_LOOKS,
   MIN_WATCH_VERSION_FOR_SHAPES,
   compareVersions,
@@ -13,6 +14,9 @@ import {
   deviceSupportsControls,
   deviceSupportsShapes,
   isLibraryOwner,
+  oneLookAtVersion,
+  oneLookFor,
+  oneLookForEvery,
   ownerSupportsControls,
   parseVersion,
   updateDeviceMessage,
@@ -22,6 +26,32 @@ import {
   watchSupportsShapes,
   watchVersionNote,
 } from "../src/version.js";
+
+describe("oneLookFor", () => {
+  it("is unset until the app release is cut, so every device draws One Look", () => {
+    expect(MIN_VERSION_FOR_ONE_LOOK).toBeNull();
+    for (const v of ["1.0.0", "3.1.0 (5)", undefined, null, "", "beta"]) expect(oneLookFor(v), String(v)).toBe(true);
+  });
+
+  it("with a minimum, is true at or above it and for a version not reported", () => {
+    expect(oneLookAtVersion("3.2.0", "3.2.0")).toBe(true);
+    expect(oneLookAtVersion("3.2.1 (7)", "3.2")).toBe(true);
+    expect(oneLookAtVersion("3.1.9", "3.2.0")).toBe(false);
+    expect(oneLookAtVersion("3.1.0-beta.5", "3.2.0")).toBe(false);
+    expect(oneLookAtVersion(undefined, "3.2.0")).toBe(true);
+    expect(oneLookAtVersion(null, "3.2.0")).toBe(true);
+    expect(oneLookAtVersion("not a version", "3.2.0")).toBe(true);
+    expect(oneLookAtVersion("1.0.0", null)).toBe(true);
+  });
+
+  it("asks every device, and reads no device as an unreported one", () => {
+    expect(oneLookForEvery([])).toBe(true);
+    expect(oneLookForEvery(["3.1.0", null])).toBe(true);
+    expect(oneLookForEvery(["3.2.0", null, "3.3.1"], "3.2.0")).toBe(true);
+    expect(oneLookForEvery(["3.2.0", "3.1.0"], "3.2.0")).toBe(false);
+    expect(oneLookForEvery([], "3.2.0")).toBe(true);
+  });
+});
 
 describe("watchVersionNote", () => {
   it("is unset until the app release is cut, and then says nothing", () => {

@@ -1,7 +1,7 @@
 // The stage's Live switch: off, every tile is drawn lit, with the badge it
 // shows in a typical on state; on, the real states from Home Assistant.
 
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { HassEntityState } from "../src/ha-api.js";
 import type { WatchPage, WatchPageTile } from "../src/watch-pages/model.js";
@@ -13,8 +13,14 @@ import {
   watchTileBadge,
   watchTileIconTreatment,
   watchTileStyleActive,
+  setPreviewOneLookDefault,
 } from "../src/watch-pages/preview.js";
 import { STAGE_LIVE_KEY, loadStageLive, saveStageLive } from "../src/watch-pages/stage.js";
+
+// These pin the old tile look, which a device below One Look's version
+// still draws; One Look's own are in one-look-render.test.ts.
+beforeAll(() => setPreviewOneLookDefault(false));
+afterAll(() => setPreviewOneLookDefault(undefined));
 
 const entity = (entityId: string, state: string, attributes: Record<string, unknown> = {}): HassEntityState =>
   ({ entity_id: entityId, state, attributes, last_changed: "", last_updated: "" });

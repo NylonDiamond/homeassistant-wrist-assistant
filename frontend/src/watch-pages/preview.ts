@@ -88,6 +88,10 @@ import {
   PHONE_GROUPED_BACKGROUND,
   PHONE_LABEL_INK,
   PHONE_PAGES_DOCK_HEIGHT,
+  PHONE_PAGES_SIDE_INSET,
+  PHONE_PAGES_SIDE_INSET_IPHONE,
+  PHONE_TILE_CELL_INSET,
+  PHONE_VAULT_GUTTER,
   type PhonePageDots,
   type PhonePagesLayout,
   phoneDrawsIphoneLook,
@@ -98,6 +102,16 @@ import {
 } from "../phone-frame.js";
 import { readSmartConfig, smartRuleIndexForTile, smartSyntheticPage, smartTrackingWords, smartWord } from "./smart-model.js";
 import { watchShowWhenPasses, watchTileShowWhen } from "./show-when.js";
+import { oneLookFor } from "../version.js";
+import {
+  type OneLookDevice,
+  oneLookCellInset,
+  oneLookCornerRadius,
+  oneLookGridSidePadding,
+  oneLookMetrics,
+  oneLookPhonePagesInset,
+} from "./one-look/metrics.js";
+import { renderOneLookTile } from "./one-look/render.js";
 
 export type WatchPreviewStateMode = "live" | "all-on";
 
@@ -149,6 +163,32 @@ export interface WatchPagePreviewInput {
   /** Play camera tiles live over the snapshot (`<wa-camera-live>`), each on
    * the entity `entityFor` names (its SD stream). Absent: snapshots only. */
   liveCameras?: { hass: HassLike; entityFor: (entityId: string) => string };
+  /** The app version the drawn device reported (`OwnerSummary.app_version`),
+   * which decides whether its tiles draw One Look (`oneLookFor`). Absent or
+   * not yet reported reads as new enough: One Look. */
+  appVersion?: string | null;
+  /** Draws One Look (true) or the old tile look (false) whatever the
+   * version says. Absent: the version decides. */
+  oneLook?: boolean;
+}
+
+/** The device a picture draws One Look's tiles for, or undefined while the
+ * device draws the old look: `oneLook` when given, else the device's app
+ * version (`oneLookFor`). The iPhone draws One Look in both its page looks,
+ * as the app does. */
+export function previewOneLook(input: Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion">): OneLookDevice | undefined {
+  if (!(input.oneLook ?? oneLookByDefault ?? oneLookFor(input.appVersion))) return undefined;
+  return input.phone === undefined ? "watch" : "phone";
+}
+
+let oneLookByDefault: boolean | undefined;
+
+/** What a picture with no `oneLook` of its own draws, over the version's
+ * answer; undefined goes back to the version. For the old look's tests,
+ * which pin its every rule and were written before One Look: nothing in the
+ * panel sets it. */
+export function setPreviewOneLookDefault(on: boolean | undefined): void {
+  oneLookByDefault = on;
 }
 
 /** The watch's own page indicator, when the document has more than one
@@ -261,16 +301,38 @@ export const WATCH_SCREEN_SIDE_INSET = WATCH_GRID_SIDE_INSET;
 /** The side room of a picture's grid, in points: the watch's side safe area,
  * or none in an iPhone's pages area, whose grid runs to its edges (measured
  * on the iPhone 17 Pro simulator: tiles span 6 to 396 of a pages area 6 to
- * 396 across). */
-export function watchPreviewSideInset(input: Pick<WatchPagePreviewInput, "phone">): number {
+ * 396 across).
+ *
+ * Under One Look each tile is drawn in from its cell on both devices, and the
+ * grid moves out by as much so the drawn edges stay where they were
+ * (`OneLookGrid`): the watch keeps 1.5, and the iPhone's pages pad the grid
+ * with the look's tile edge less the cell inset (11 with the iPhone look, 1
+ * with the Watch look), which is that much wider than the pages area this
+ * picture lays out on, so the room here is negative. */
+export function watchPreviewSideInset(input: Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion">): number {
+  const oneLook = previewOneLook(input);
+  if (oneLook === "watch") return oneLookGridSidePadding(oneLook);
+  if (oneLook === "phone") {
+    const iphone = phoneDrawsIphoneLook(input.phone);
+    const edge = iphone ? PHONE_VAULT_GUTTER : PHONE_PAGES_SIDE_INSET;
+    return oneLookPhonePagesInset(edge) - (iphone ? PHONE_PAGES_SIDE_INSET_IPHONE : PHONE_PAGES_SIDE_INSET);
+  }
   return input.phone === undefined ? WATCH_SCREEN_SIDE_INSET : 0;
 }
 
 /** The room above a picture's grid on a page that is not full screen, in
  * points: the watch's 34 for its clock, or in an iPhone's pages area the
- * phone's 4 (`WatchScreenMetrics.gridTopInset` on iOS), in either look. */
-export function watchPreviewTopInset(input: Pick<WatchPagePreviewInput, "phone">): number {
-  return input.phone === undefined ? WATCH_GRID_TOP_INSET : PHONE_GRID_TOP_INSET;
+ * phone's 4 (`WatchScreenMetrics.gridTopInset` on iOS), in either look.
+ * Under One Look the iPhone's grid starts higher by what its cell inset adds
+ * over the look's own (`gridTopInset(oneLook:lookCellInset:)`): 3 with the
+ * iPhone look, 0 with the Watch look. */
+export function watchPreviewTopInset(input: Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion">): number {
+  if (input.phone === undefined) return WATCH_GRID_TOP_INSET;
+  if (previewOneLook(input) === "phone") {
+    const lookInset = phoneDrawsIphoneLook(input.phone) ? PHONE_TILE_CELL_INSET : 0;
+    return Math.max(0, PHONE_GRID_TOP_INSET + lookInset - oneLookCellInset("phone"));
+  }
+  return PHONE_GRID_TOP_INSET;
 }
 
 export interface WatchPreviewLayoutOptions extends WatchPageLayoutOptions {
@@ -434,16 +496,36 @@ export function watchTileCornerRadius(widthPt: number, heightPt: number): number
 
 /** A tile's corner radius in a picture, in points, from its grid cell's
  * size: up to 22 in an iPhone's iPhone look (`phoneTileCornerRadius`), else
- * the watch's. */
-export function previewTileCornerRadius(input: Pick<WatchPagePreviewInput, "phone">, widthPt: number, heightPt: number): number {
+ * the watch's. Under One Look the corners are its own, from the size the
+ * tile is drawn at (`OneLookMetrics.cornerRadius`): the cell less `inset` a
+ * side, the device's cell inset unless a caller that already has the drawn
+ * size says 0. */
+export function previewTileCornerRadius(
+  input: Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion">,
+  widthPt: number,
+  heightPt: number,
+  inset?: number,
+): number {
+  const oneLook = previewOneLook(input);
+  if (oneLook !== undefined) {
+    const by = inset ?? oneLookCellInset(oneLook);
+    return oneLookCornerRadius(oneLookMetrics(oneLook), { width: Math.max(0, widthPt - 2 * by), height: Math.max(0, heightPt - 2 * by) });
+  }
   return phoneDrawsIphoneLook(input.phone) ? phoneTileCornerRadius(widthPt, heightPt) : watchTileCornerRadius(widthPt, heightPt);
 }
 
 /** How far a tile is drawn in from its grid cell, in points
  * (`InteractiveGrid.cellInset`): in an iPhone's iPhone look the Home app's
  * wider gap (`phoneTileCellInset`); a header, a spacer and every other
- * picture keep the whole cell. */
-export function previewTileCellInset(input: Pick<WatchPagePreviewInput, "phone">, tile: WatchPageTile, widthPt: number, heightPt: number): number {
+ * picture keep the whole cell. Under One Look every tile but a header or a
+ * spacer is drawn in by its device's inset, on the watch too, with no clamp
+ * on small tiles (`OneLookGrid.cellInset`). */
+export function previewTileCellInset(input: Pick<WatchPagePreviewInput, "phone" | "oneLook" | "appVersion">, tile: WatchPageTile, widthPt: number, heightPt: number): number {
+  const oneLook = previewOneLook(input);
+  if (oneLook !== undefined) {
+    const kind = tileKind(tileEntityId(tile));
+    return oneLookCellInset(oneLook, kind === "divider", kind === "spacer");
+  }
   if (!phoneDrawsIphoneLook(input.phone)) return 0;
   const kind = tileKind(tileEntityId(tile));
   if (kind === "divider" || kind === "spacer") return 0;
@@ -1318,7 +1400,7 @@ export function watchTileStateKey(tile: WatchPageTile, raw: string | undefined):
   return key === "unknown" || key === "unavailable" ? "unavailable" : key;
 }
 
-function stateEntry(map: unknown, key: string | undefined): string | undefined {
+export function stateEntry(map: unknown, key: string | undefined): string | undefined {
   if (key === undefined || map === null || typeof map !== "object" || Array.isArray(map)) return undefined;
   const value = Object.hasOwn(map, key) ? (map as Record<string, unknown>)[key] : undefined;
   return typeof value === "string" ? value : undefined;
@@ -1640,7 +1722,7 @@ function inkCss(ink: WatchInk): string {
 }
 
 /** The symbol's fill variant when the provider draws one, else the name. */
-function filledSymbol(icons: IconProvider | undefined, name: string, filled: boolean): string {
+export function filledSymbol(icons: IconProvider | undefined, name: string, filled: boolean): string {
   if (!filled || name.endsWith(".fill")) return name;
   const f = `${name}.fill`;
   return icons?.render(f, 1, "#FFFFFF") !== undefined ? f : name;
@@ -1752,7 +1834,7 @@ export function watchMultiCamBorder(tile: WatchPageTile): { on: boolean; width: 
   return { on: true, width, spacing: Math.max(width, 1), background };
 }
 
-function pictureOf(states: Readonly<Record<string, HassEntityState>> | undefined, entityId: string): string | undefined {
+export function pictureOf(states: Readonly<Record<string, HassEntityState>> | undefined, entityId: string): string | undefined {
   const p = states !== undefined && Object.hasOwn(states, entityId) ? states[entityId]?.attributes?.entity_picture : undefined;
   return typeof p === "string" && p !== "" ? p : undefined;
 }
@@ -1761,7 +1843,7 @@ function pictureOf(states: Readonly<Record<string, HassEntityState>> | undefined
  * cropped and moved by the offsets (half the box per 1). The move shifts
  * the whole scaled picture, as the watch's offset does, so what overflows
  * the box comes into view before any black does. */
-function snapshot(url: string, fill: boolean, w: number, h: number, ox: number, oy: number, s: number): TemplateResult {
+export function snapshot(url: string, fill: boolean, w: number, h: number, ox: number, oy: number, s: number): TemplateResult {
   const shift = (v: number) => {
     const px = Math.round(v * s * 100) / 100;
     return px === 0 ? "50%" : `calc(50% ${px < 0 ? "-" : "+"} ${Math.abs(px)}px)`;
@@ -1773,7 +1855,7 @@ function snapshot(url: string, fill: boolean, w: number, h: number, ox: number, 
 
 /** A camera playing live over its snapshot, when the stage plays them
  * (`liveCameras`). */
-function liveOver(input: WatchPagePreviewInput, entityId: string, fill: boolean): TemplateResult | typeof nothing {
+export function liveOver(input: WatchPagePreviewInput, entityId: string, fill: boolean): TemplateResult | typeof nothing {
   const live = input.liveCameras;
   if (live === undefined) return nothing;
   return html`<wa-camera-live class="wp-live" .hass=${live.hass} .entity=${live.entityFor(entityId)} .fit=${!fill}></wa-camera-live>`;
@@ -1829,6 +1911,26 @@ function cameraFace(tile: WatchPageTile, width: number, height: number, box: str
       ${rim}
     </div>`;
   }
+  return html`<div class="wp-cam" style=${`${outer};background:${border.background}`} title=${hint ?? nothing}>${watchMultiCamCells(tile, ids, width, height, input, s)}${rim}</div>`;
+}
+
+/**
+ * A camera group's cells in a box of `width` by `height` points: each its
+ * camera's snapshot (fill or fit, moved by its own offsets), an empty cell
+ * black with a faint camera, an unavailable one under a wash with the
+ * crossed out camera. The old look washes it red; One Look under black at
+ * half with the camera at 0.75 (`oneLook`).
+ */
+export function watchMultiCamCells(
+  tile: WatchPageTile,
+  ids: readonly string[],
+  width: number,
+  height: number,
+  input: WatchPagePreviewInput,
+  s: number,
+  oneLook = false,
+): TemplateResult[] {
+  const border = watchMultiCamBorder(tile);
   const grid = watchMultiCamGrid(ids.length, tile.cameraGridColumns);
   const inset = border.on ? border.width : 0;
   const innerW = width - inset * 2;
@@ -1858,12 +1960,12 @@ function cameraFace(tile: WatchPageTile, width: number, height: number, box: str
           ? snapshot(url, watchMultiCamCellFill(tile, i) === "fill", cellW, h, storedNumber(offsetsX[i]) ?? 0, storedNumber(offsetsY[i]) ?? 0, s)
           : html`<span style="opacity:0.2;display:flex">${symbolMark(input.icons, "video.fill", small * 0.3 * s, "#FFFFFF")}</span>`}
         ${gone ? nothing : liveOver(input, id, watchMultiCamCellFill(tile, i) === "fill")}
-        ${gone ? html`<span class="wp-cell-gone"><span style="opacity:0.7;display:flex">${symbolMark(input.icons, "video.slash.fill", small * 0.25 * s, "#FFFFFF")}</span></span>` : nothing}
+        ${gone ? html`<span class="wp-cell-gone" style=${oneLook ? "background:rgba(0, 0, 0, 0.5)" : nothing}><span style=${`opacity:${oneLook ? 0.75 : 0.7};display:flex`}>${symbolMark(input.icons, "video.slash.fill", small * 0.25 * s, "#FFFFFF")}</span></span>` : nothing}
       </span>`);
     }
     y += h + border.spacing;
   }
-  return html`<div class="wp-cam" style=${`${outer};background:${border.background}`} title=${hint ?? nothing}>${cells}${rim}</div>`;
+  return cells;
 }
 
 /** A music hub's album art filling the tile (fit, as the watch draws it),
@@ -2092,7 +2194,7 @@ export function watchBorderContentPadding(tile: WatchPageTile): number {
 /** A tile's border drawn over its content: the rounded rectangle on the
  * tile's edge, stroked, the outer half clipped away by the tile, whose
  * corners are `radiusPt`. */
-function renderTileRim(border: WatchTileBorder | undefined, widthPt: number, heightPt: number, s: number, radiusPt: number): TemplateResult | typeof nothing {
+export function renderTileRim(border: WatchTileBorder | undefined, widthPt: number, heightPt: number, s: number, radiusPt: number): TemplateResult | typeof nothing {
   if (border === undefined) return nothing;
   const w = widthPt * s;
   const h = heightPt * s;
@@ -2137,7 +2239,7 @@ export function watchSpacerStyle(tile: WatchPageTile, s: number, size?: { width:
 /** The layers drawn inside a tile behind its content: the effect's hint,
  * the pattern (times `colorOpacity` on a tile; a spacer's is not), the state
  * bar's fill. A spacer has no effect and no bar. */
-function tileUnderlay(tile: WatchPageTile, input: WatchPagePreviewInput, active: boolean, size: { width: number; height: number }, s: number, spacer = false): TemplateResult | typeof nothing {
+export function tileUnderlay(tile: WatchPageTile, input: WatchPagePreviewInput, active: boolean, size: { width: number; height: number }, s: number, spacer = false): TemplateResult | typeof nothing {
   const tileInk = flatInk(tile.color, watchTileFallbackInk(tile, input.page, input.states));
   const layers: string[] = [];
   const pattern = typeof tile.backgroundPattern === "string" ? tile.backgroundPattern : "none";
@@ -2643,7 +2745,7 @@ const SYMBOL_ALIASES: Readonly<Record<string, string>> = {
 };
 
 /** A symbol's name as the provider knows it: its own, else its alias. */
-function knownSymbol(icons: IconProvider | undefined, name: string): string {
+export function knownSymbol(icons: IconProvider | undefined, name: string): string {
   if (icons === undefined || icons.render(name, 1, "#FFFFFF") !== undefined) return name;
   const alias = SYMBOL_ALIASES[name];
   return alias !== undefined && icons.render(alias, 1, "#FFFFFF") !== undefined ? alias : name;
@@ -3059,7 +3161,7 @@ const PHONE_OUTLINE_TEXT_MIN_HEIGHT = 35;
  * iPhone, under the tiles that move up into its place.
  */
 function phoneOnlyOutline(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, s: number, hint: string | undefined): TemplateResult {
-  const radius = previewTileCornerRadius(input, width, height) * s;
+  const radius = previewTileCornerRadius(input, width, height, 0) * s;
   const glyph = Math.max(8, Math.min(18, Math.min(width, height) * 0.4)) * s;
   const words = height >= PHONE_OUTLINE_TEXT_MIN_HEIGHT && width >= 30;
   return html`<div class="wp-tile wp-phone-out" data-phone-only=${tileKind(tileEntityId(tile))}
@@ -3185,7 +3287,10 @@ function tileFace(
     </div>`;
   }
   if (cls === "spacer") {
-    return html`<div class="wp-spacer" style=${`${box}border-radius:${previewTileCornerRadius(input, width, height) * s}px;${watchSpacerStyle(tile, s, { width, height })}`} title=${titled ? hint : nothing}>${tileUnderlay(tile, input, true, { width, height }, s, true)}</div>`;
+    // A spacer keeps its own face under One Look, with the watch's corners
+    // on its whole cell on both devices (`SpacerTile.cornerRadius`).
+    const radiusPt = previewOneLook(given) === undefined ? previewTileCornerRadius(input, width, height, 0) : watchTileCornerRadius(width, height);
+    return html`<div class="wp-spacer" style=${`${box}border-radius:${radiusPt * s}px;${watchSpacerStyle(tile, s, { width, height })}`} title=${titled ? hint : nothing}>${tileUnderlay(tile, input, true, { width, height }, s, true)}</div>`;
   }
 
   // A kind only the iPhone draws: its outline on a watch, a simple face on
@@ -3194,6 +3299,17 @@ function tileFace(
     return input.phone === undefined
       ? phoneOnlyOutline(tile, width, height, box, input, s, titled ? hint : undefined)
       : phoneTileFace(tile, width, height, box, input, s, titled ? hint : undefined, cell);
+  }
+  // One Look draws every other kind, cameras included; only templates keep
+  // their own face. On the iPhone a tile is drawn as stored: only the
+  // watch's pull gives a tile with no colour its kind's
+  // (`applyDefaultTileColors`), so an iPhone tile with none is graphite.
+  const oneLook = previewOneLook(given);
+  if (oneLook !== undefined && kind !== "template") {
+    return renderOneLookTile({
+      tile: oneLook === "phone" ? stored : tile, input, stub, device: oneLook, look,
+      width, height, cell, unit, box, s, ...(titled ? { hint } : {}),
+    });
   }
   if (kind === "camera" || kind === "multicam") return cameraFace(tile, width, height, box, input, unit, s, titled ? hint : undefined, cell);
   if (kind === "template") return templateFace(tile, width, height, box, input, unit, s, titled ? hint : undefined, cell);
@@ -3456,7 +3572,7 @@ function specialGlow(kind: string, look: WatchSpecialLook): WatchIconTreatment["
 
 /** A default symbol's outline form, when the provider draws it: the kinds
  * whose symbol fills only while on stand off as an outline. */
-function unfilledSymbol(icons: IconProvider | undefined, name: string): string {
+export function unfilledSymbol(icons: IconProvider | undefined, name: string): string {
   if (!name.endsWith(".fill")) return name;
   const plain = name.slice(0, -5);
   return icons?.render(plain, 1, "#FFFFFF") !== undefined ? plain : name;
@@ -3876,6 +3992,42 @@ export const watchPagePreviewStyles = css`
   .wp-smart-item {
     position: absolute; display: block; margin: 0; padding: 0; border: 0; border-radius: 6px;
     background: transparent; color: inherit; font: inherit; text-align: inherit; transition: opacity .12s ease-out;
+  }
+  /* One Look's tile (one-look/render.ts): every part placed in points by its
+     layout, in the tile's own box, which clips them to its corners. */
+  .wp-tile.ol-tile { isolation: isolate; color: #fff; -webkit-font-smoothing: antialiased; }
+  .ol-layer { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+  .ol-art { background-size: cover; background-position: center; background-repeat: no-repeat; }
+  .ol-fill { position: absolute; left: 0; top: 0; bottom: 0; overflow: hidden; pointer-events: none; }
+  .ol-fill > .ol-layer { right: auto; border-radius: 0; }
+  .ol-edge { position: absolute; top: 0; bottom: 0; pointer-events: none; }
+  .ol-chart { position: absolute; left: 0; top: 0; display: block; pointer-events: none; }
+  .ol-content { position: absolute; inset: 0; pointer-events: none; }
+  .ol-bar { position: absolute; display: block; overflow: hidden; border-radius: 999px; }
+  .ol-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
+  .ol-disc, .ol-halo, .ol-acc { position: absolute; display: block; border-radius: 50%; }
+  .ol-photo { position: absolute; display: block; box-sizing: border-box; border-radius: 50%; object-fit: cover; background: #000; }
+  .ol-glyph { position: absolute; display: flex; align-items: center; justify-content: center; }
+  .ol-glyph > svg { display: block; flex: none; }
+  .ol-dot-glyph { display: block; border-radius: 50%; opacity: 0.7; }
+  /* The layout has fitted every line to its room, so none wraps or clips. */
+  .ol-text { position: absolute; display: flex; flex-direction: column; align-items: flex-start; }
+  .ol-text.centred { justify-content: flex-end; align-items: center; }
+  .ol-name { display: flex; align-items: center; flex: none; white-space: pre; letter-spacing: -0.01em; }
+  .ol-state { position: absolute; display: flex; align-items: center; }
+  .ol-state.pill { justify-content: center; border-radius: 999px; }
+  .ol-state-row { display: flex; align-items: center; flex: none; }
+  /* No strut of the screen's own font: each part sets its own size, so the
+     line is as tall as its parts and their baselines meet. */
+  .ol-line { display: block; white-space: pre; font-size: 0; line-height: 1; }
+  .ol-figure { letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .ol-amber { display: inline-block; width: 0.5em; height: 0.5em; margin-right: 0.3em; border-radius: 50%; vertical-align: 0.08em; }
+  .ol-big { position: absolute; display: flex; flex-direction: column; align-items: flex-end; white-space: pre; font-variant-numeric: tabular-nums; }
+  /* The rim: a stroke inside the edge, the gradient masked to the padding. */
+  .ol-rim {
+    position: absolute; inset: 0; box-sizing: border-box; border-radius: inherit; pointer-events: none;
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
   }
   button.wp-smart-item { cursor: pointer; }
   button.wp-smart-item:focus-visible { outline: 2px solid var(--wa-accent, #0a84ff); outline-offset: 1px; }

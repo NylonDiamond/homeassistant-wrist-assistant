@@ -54,6 +54,11 @@ export interface WatchPagesEditorHost {
   /** The device whose pages these are, for the lines that name it ("the
    * iPhone hides the title"). Absent: a watch. */
   readonly device?: SettingDevice;
+  /** Whether every device that shows the page draws One Look
+   * (`oneLookForEvery`, version.ts), so the tile settings speak for it
+   * (`one-look-settings.ts`): its lines, and the controls it does not draw
+   * greyed. A getter. Absent: the old look's settings, as before. */
+  readonly oneLook?: boolean;
   /** The selected page: its id as the document has it, and the page. */
   readonly pageId: string;
   readonly page: WatchPage;

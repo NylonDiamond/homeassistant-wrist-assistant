@@ -110,6 +110,9 @@ export interface RoomsViewHost {
   pagesDocument?: WatchPagesDocument;
   /** The watch's screen in points. Absent, the 46 mm watch's. */
   screen?: { width: number; height: number };
+  /** The app version the device reported, which decides whether its page
+   * pictures draw One Look (`previewOneLook`). */
+  appVersion?: string | null;
   icons?: IconProvider;
   /** The page is one column: the watch drawn a little smaller. */
   narrow?: boolean;
@@ -391,6 +394,7 @@ function renderPageThumb(host: RoomsViewHost, stored: string): TemplateResult {
   if (page === undefined) return html`<span class="rm-thumb empty" aria-hidden="true" style=${size}></span>`;
   return html`<span class="rm-thumb" aria-hidden="true" title=${watchPageName(page)} style=${size}>${renderWatchPagePreview({
     page, pages: [page], screen, states: host.hass.states, ...(host.icons ? { icons: host.icons } : {}), scale: THUMB_SCALE,
+    ...(host.appVersion === undefined ? {} : { appVersion: host.appVersion }),
   })}</span>`;
 }
 
@@ -709,6 +713,7 @@ function renderRoomWatch(host: RoomsViewHost, stored: string, blank: string): Te
       ...(host.icons ? { icons: host.icons } : {}),
       scale,
       ...(host.home === true ? {} : { behavior: host.document }),
+      ...(host.appVersion === undefined ? {} : { appVersion: host.appVersion }),
     });
   }
   const name = pageNameOf(host, stored);

@@ -3,7 +3,7 @@
 // where the code leaves it open, against the 46 mm simulator.
 
 import { svg } from "lit";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { HassEntityState } from "../src/ha-api.js";
 import type { IconProvider } from "../src/renderer.js";
@@ -41,7 +41,13 @@ import {
   watchTimerRemainingText,
   watchUniformScale,
   watchValueInLabel,
+  setPreviewOneLookDefault,
 } from "../src/watch-pages/preview.js";
+
+// These pin the old tile look, which a device below One Look's version
+// still draws; One Look's own are in one-look-render.test.ts.
+beforeAll(() => setPreviewOneLookDefault(false));
+afterAll(() => setPreviewOneLookDefault(undefined));
 
 /** A template's text with its values. */
 function text(t: unknown): string {

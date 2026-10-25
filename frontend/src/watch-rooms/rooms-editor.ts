@@ -754,6 +754,7 @@ export class WaRoomsEditor extends LitElement {
       },
       pagesDocument: asWatchPagesDocument(this.pagesRecord?.document),
       screen: this.screen(),
+      appVersion: this.watches.find((w) => w.owner_watch_id === watchId)?.app_version,
       icons: this.memoIcons(),
       narrow: this.stacked,
       requestUpdate: () => this.requestUpdate(),

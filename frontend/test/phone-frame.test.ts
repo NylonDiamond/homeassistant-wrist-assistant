@@ -9,7 +9,7 @@
 // down, the watch's room for its clock; since 2026-10-15 the phone keeps 4
 // (`WatchScreenMetrics.gridTopInset` on iOS), so every row is 30 higher.
 
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   DEFAULT_PHONE,
@@ -41,6 +41,7 @@ import {
   watchPreviewTopInset,
   watchTileIconSize,
   watchTileLabelFontSize,
+  setPreviewOneLookDefault,
 } from "../src/watch-pages/preview.js";
 import { cellRectPx, stageGrid } from "../src/watch-pages/stage.js";
 import { readFileSync } from "node:fs";
@@ -51,6 +52,11 @@ import type { StatusPagesDocument } from "../src/watch-status-pages/model.js";
 import { type StatusPagesViewHost, renderStatusPageScreen } from "../src/watch-status-pages/view.js";
 import type { MenusViewHost } from "../src/watch-menus/menu-view.js";
 import { renderMenuScreen } from "../src/watch-menus/menu-stage.js";
+
+// These pin the old tile look, which a device below One Look's version
+// still draws; One Look's own are in one-look-render.test.ts.
+beforeAll(() => setPreviewOneLookDefault(false));
+afterAll(() => setPreviewOneLookDefault(undefined));
 
 const flat = (v: unknown): string => {
   if (Array.isArray(v)) return v.map(flat).join("");

@@ -3,7 +3,7 @@
 // look.
 
 import { svg } from "lit";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { WatchPage, WatchPageTile } from "../src/watch-pages/model.js";
 import type { HassEntityState } from "../src/ha-api.js";
@@ -64,8 +64,14 @@ import {
   watchBorderContentPadding,
   watchGearCentre,
   watchSaturate,
+  setPreviewOneLookDefault,
 } from "../src/watch-pages/preview.js";
 import { watchStylingTheme } from "../src/watch-pages/tile-styling.js";
+
+// These pin the old tile look, which a device below One Look's version
+// still draws; One Look's own are in one-look-render.test.ts.
+beforeAll(() => setPreviewOneLookDefault(false));
+afterAll(() => setPreviewOneLookDefault(undefined));
 
 const tile = (extra: Record<string, unknown> = {}): WatchPageTile => ({ id: "T1", entityId: "light.desk", ...extra });
 

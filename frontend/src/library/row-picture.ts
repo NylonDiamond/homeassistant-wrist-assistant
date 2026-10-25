@@ -23,6 +23,7 @@ import { NO_ICONS } from "../watch-pages/editor-host.js";
 import { type WatchPage, isSmartWatchPage } from "../watch-pages/model.js";
 import {
   type WatchPagePreviewInput,
+  previewOneLook,
   renderWatchTileFace,
   watchPreviewLayout,
   watchPreviewSideInset,
@@ -73,6 +74,10 @@ export interface PageRowPictureInput {
   /** In CSS pixels; `ROW_PICTURE_W` (or `ROW_PICTURE_PHONE_W`) when not
    * given. */
   width?: number;
+  /** The device's app version, which decides whether its tiles draw One
+   * Look (`previewOneLook`); absent for a page drawn for no device, which
+   * draws it. */
+  appVersion?: string | null;
 }
 
 interface Kept {
@@ -104,7 +109,8 @@ export function renderPageRowPicture(input: PageRowPictureInput): TemplateResult
   const width = input.width ?? (iphone ? ROW_PICTURE_PHONE_W : ROW_PICTURE_W);
   const stamp = [input.states, input.icons, input.tick, input.pages];
   const look = input.look ?? "iphone";
-  return keptPicture(input.page, `page:${iphone ? `p:${look}` : "w"}:${width}`, stamp, () => drawPage(input, width, iphone, look));
+  const tiles = previewOneLook({ appVersion: input.appVersion }) === undefined ? "old" : "one";
+  return keptPicture(input.page, `page:${iphone ? `p:${look}` : "w"}:${width}:${tiles}`, stamp, () => drawPage(input, width, iphone, look));
 }
 
 function drawPage(input: PageRowPictureInput, width: number, iphone: boolean, look: PhonePageLook): TemplateResult {
@@ -122,6 +128,7 @@ function drawPage(input: PageRowPictureInput, width: number, iphone: boolean, lo
     ...(input.states === undefined ? {} : { states: input.states }),
     ...(input.icons === undefined ? {} : { icons: input.icons }),
     ...(phone === undefined ? {} : { phone }),
+    ...(input.appVersion === undefined ? {} : { appVersion: input.appVersion }),
   };
   const layout = watchPreviewLayout(page, screen, { sideInset: watchPreviewSideInset(preview), topInset: watchPreviewTopInset(preview) });
   // Only what reaches onto the picture: a long page costs no more than a short one.

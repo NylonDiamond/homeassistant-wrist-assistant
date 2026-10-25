@@ -28,6 +28,9 @@ export interface HomeLineupInput {
   /** The device's name, for what a move or a remove says. */
   deviceName: string;
   kind: "watch" | "iphone";
+  /** The app version the device reported, which decides whether its page
+   * pictures draw One Look. */
+  appVersion?: string | null;
   phones: boolean;
   /** The watch's iPhone may still move its setup here: an empty kind says
    * it waits for that iPhone. */
@@ -45,5 +48,5 @@ export function renderHomeLineup(input: HomeLineupInput): TemplateResult {
   if (!ready && !loadFailed) void loadLineup().then(input.onLoaded, input.onLoaded);
   if (!ready) return html`<p class="hl-empty">${loadFailed ? "This part of Home did not load. Reload the page to try again." : "Loading…"}</p>`;
   return html`<wa-home-lineup .hass=${input.hass} .ownerId=${input.ownerId} .deviceName=${input.deviceName} .kind=${input.kind} .phones=${input.phones}
-    .waitsForIphone=${input.waitsForIphone} .icons=${input.icons} .iconsTick=${input.iconsTick} .onEdit=${input.onEdit} .onChange=${input.onChange}></wa-home-lineup>`;
+    .waitsForIphone=${input.waitsForIphone} .appVersion=${input.appVersion} .icons=${input.icons} .iconsTick=${input.iconsTick} .onEdit=${input.onEdit} .onChange=${input.onChange}></wa-home-lineup>`;
 }

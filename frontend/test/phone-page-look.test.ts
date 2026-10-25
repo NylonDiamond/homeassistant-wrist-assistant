@@ -8,7 +8,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   DEFAULT_PHONE,
@@ -31,7 +31,13 @@ import {
   watchPageHasDefaultBlackBackground,
   watchScreenBackground,
   watchTileCornerRadius,
+  setPreviewOneLookDefault,
 } from "../src/watch-pages/preview.js";
+
+// These pin the old tile look, which a device below One Look's version
+// still draws; One Look's own are in one-look-render.test.ts.
+beforeAll(() => setPreviewOneLookDefault(false));
+afterAll(() => setPreviewOneLookDefault(undefined));
 
 const flat = (v: unknown): string => {
   if (Array.isArray(v)) return v.map(flat).join("");

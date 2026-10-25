@@ -49,6 +49,42 @@ export function watchSupportsPhoneTiles(appVersion: string | null | undefined): 
   return compareVersions(have, parseVersion(MIN_WATCH_VERSION_FOR_PHONE_TILES)!) >= 0;
 }
 
+/** First app version, on either device, that draws every tile in One Look,
+ * the shared tile look of the iPhone and the watch. null until the app
+ * release that draws One Look is cut; until then every device previews One
+ * Look. Set it at release so an older app keeps the old look in the preview
+ * and the old settings. Not a gate on what is stored: a tile keeps every key
+ * whichever look draws it. */
+export const MIN_VERSION_FOR_ONE_LOOK: string | null = null;
+
+/** Whether an app at this version draws One Look, by `MIN_VERSION_FOR_ONE_LOOK`.
+ * A version not yet reported reads as new enough, as `deviceSupportsControls`
+ * does: guessing "too old" would show the old look to a device that is not. */
+export function oneLookFor(appVersion: string | null | undefined): boolean {
+  return oneLookAtVersion(appVersion, MIN_VERSION_FOR_ONE_LOOK);
+}
+
+/** `oneLookFor` against a given minimum, so the rule can be checked with a
+ * version set before the release sets one. A minimum that does not parse
+ * reads as none. */
+export function oneLookAtVersion(appVersion: string | null | undefined, minimum: string | null): boolean {
+  if (minimum === null) return true;
+  const need = parseVersion(minimum);
+  const have = parseVersion(appVersion);
+  if (!need || !have) return true;
+  return compareVersions(have, need) >= 0;
+}
+
+/** Whether every one of these devices draws One Look, from the versions they
+ * reported: what a setting shared by all of them can be written for. No
+ * device at all (a page on none yet) reads as an unreported one. */
+export function oneLookForEvery(
+  appVersions: readonly (string | null | undefined)[],
+  minimum: string | null = MIN_VERSION_FOR_ONE_LOOK,
+): boolean {
+  return appVersions.length === 0 ? oneLookAtVersion(undefined, minimum) : appVersions.every((v) => oneLookAtVersion(v, minimum));
+}
+
 /** First iPhone app version that draws custom complications on the lock
  * screen. The phone is an owner in its own right from that release: it signs
  * with its own identity, pulls its own records and renders them in the iOS

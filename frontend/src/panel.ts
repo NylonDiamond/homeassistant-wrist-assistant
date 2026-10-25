@@ -20248,6 +20248,7 @@ export class WristAssistantPanel extends LitElement {
     const library = row.kind === "watch" || this.phonePages ? renderHomeLineup({
       hass: this.hass, ownerId, deviceName: row.name, kind: row.kind, phones: this.phonePages, icons: this.icons, iconsTick: this.iconsTick,
       waitsForIphone: row.kind === "watch" && noRecordStart(this.ownerOf(ownerId)) === "wait",
+      appVersion: this.ownerOf(ownerId)?.app_version,
       onEdit: (kind, id) => this.goTo(libraryItemPath(kind, id, ownerId)),
       onChange: (kind) => this.goTo(listFocusPath(listOf(kind), ownerId)),
       onLoaded: () => this.requestUpdate(),

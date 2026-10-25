@@ -60,6 +60,7 @@ import {
 import { watchCameraLiveEntity, watchCameraRows, watchEditorLiveCameras } from "./camera-live.js";
 import { deviceColor, deviceColorsCache } from "../device-colors.js";
 import { type LibraryItem, devicesFor, libraryItem, libraryItems, pagesDocumentFor, sameId } from "../library/model.js";
+import { oneLookForEvery } from "../version.js";
 import { LibraryController } from "../library/store.js";
 import { libraryTicksStyles, renderTicks } from "../library/ticks.js";
 import { libraryErrorText } from "../library/client.js";
@@ -1905,6 +1906,7 @@ export class WaPageEditor extends LitElement {
       musicAssistant: () => watchMusicAssistantPresent(this.homeData.musicAssistant, this.hass?.entities),
       cloudTTS: () => this.homeData.cloudTTS,
       templateRenders: () => this.templateRenders,
+      oneLook: () => this.oneLookOn(pageId),
       smartRuleId: () => {
         const id = this.selectedSmartRuleId;
         const rules = readSmartConfig(pageNow())?.rules ?? [];
@@ -3199,10 +3201,19 @@ export class WaPageEditor extends LitElement {
     return (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
   }
 
-  /** The grid's room each side in points: the watch's side safe area, none
-   * in an iPhone's pages area. */
+  /** The grid's room each side in points, as the stage draws it
+   * (`watchPreviewSideInset`): the watch's side safe area, none in an
+   * iPhone's pages area, or One Look's own grid padding when the preview
+   * device draws it. */
   private get gridSideInset(): number {
-    return this.onPhone ? 0 : WATCH_GRID_SIDE_INSET;
+    const phone = this.phoneLayoutOf(undefined);
+    return watchPreviewSideInset({ ...(phone === undefined ? {} : { phone }), appVersion: this.previewAppVersion(undefined) });
+  }
+
+  /** The app version the preview device reported, which decides whether
+   * its tiles draw One Look (`previewOneLook`). */
+  private previewAppVersion(owner: OwnerSummary | undefined): string | null | undefined {
+    return (owner ?? this.ownerList.find((o) => o.owner_watch_id === this.watchId))?.app_version;
   }
 
   /** On an iPhone, where its pages screen lays itself out (`phone-frame.ts`),
@@ -3229,6 +3240,7 @@ export class WaPageEditor extends LitElement {
     return {
       page, pages, screen, states: this.previewStates(), icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
       behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(), photo: this.photoUrl,
+      appVersion: this.previewAppVersion(undefined),
       ...(phone === undefined ? {} : { phone }),
     };
   }
@@ -3600,6 +3612,7 @@ export class WaPageEditor extends LitElement {
       page, pages, screen, states, icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
       // The watch's own settings, for its page dots and its page title mode.
       behavior: this.behavior,
+      appVersion: this.previewAppVersion(owner),
       ...(phoneLayout === undefined ? {} : { phone: phoneLayout }),
       // Live off: every tile lit, as the page looks in use, but for a state
       // being tried in the Live strip. A smart page is always live.
@@ -3704,6 +3717,8 @@ export class WaPageEditor extends LitElement {
     delete rest.phone;
     delete rest.liveCameras;
     delete rest.smart;
+    // Its own device's version, which decides its look.
+    rest.appVersion = owner?.app_version;
     if (kind === "iphone") {
       const phone = phonePagesLayout(phoneModelForScreenSize(owner?.screen_size), { look: phonePageLookOf(undefined) });
       return { ...rest, page, pages, behavior: undefined, phone, screen: phonePagesScreen(phone), scale: this.stageScale * PHONE_STAGE_ZOOM };
@@ -4445,16 +4460,35 @@ export class WaPageEditor extends LitElement {
    * version it reported, for the version gate.
    */
   private phoneTilesGroup(pageId: string): WatchPhoneTilesGroup {
+    return watchPhoneTilesGroup(this.device, this.pagePickers(pageId));
+  }
+
+  /** The devices that pick a page, as the library has them, each with the
+   * app version it reported. */
+  private pagePickers(pageId: string): WatchPhoneTilesPicker[] {
     const lib = this.lib.library;
     const owners = new Set((lib === undefined ? [] : devicesFor(lib, "pages", pageId)).map((o) => o.toUpperCase()));
-    const pickers: WatchPhoneTilesPicker[] = this.linkDevices
+    return this.linkDevices
       .filter((d) => owners.has(d.ownerId.toUpperCase()))
       .map((d) => ({
         kind: d.kind,
         name: d.name,
         version: this.ownerList.find((o) => sameId(o.owner_watch_id, d.ownerId))?.app_version ?? null,
       }));
-    return watchPhoneTilesGroup(this.device, pickers);
+  }
+
+  /**
+   * Whether the tile settings speak for One Look on a page: every device
+   * that picks it draws One Look (`oneLookForEvery`), since a tile's settings
+   * are one set for all of them, and a device on an older app still draws
+   * what One Look greys. A page on no device yet goes by the device it is
+   * previewed on, whose version may be unknown too.
+   */
+  private oneLookOn(pageId: string): boolean {
+    const versions = this.pagePickers(pageId).map((p) => p.version);
+    if (versions.length > 0) return oneLookForEvery(versions);
+    const preview = this.watchId === undefined ? undefined : this.ownerList.find((o) => sameId(o.owner_watch_id, this.watchId!));
+    return oneLookForEvery(preview === undefined ? [] : [preview.app_version ?? null]);
   }
 
   /** On a smart page, its Rules cards (`smart-settings.ts`): the Rules card,

@@ -4,7 +4,7 @@
 // their watch views draw them.
 
 import { svg } from "lit";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { type HassEntityState, type HassLike, type RenderResult, fetchCloudStatus, fetchConfigEntries } from "../src/ha-api.js";
 import type { IconProvider } from "../src/renderer.js";
@@ -28,8 +28,14 @@ import {
   watchTemplateFontSize,
   watchTemplateTileLook,
   watchTilePreviewActive,
+  setPreviewOneLookDefault,
 } from "../src/watch-pages/preview.js";
 import { watchThemeRoleColors } from "../src/watch-pages/tile-new.js";
+
+// These pin the old tile look, which a device below One Look's version
+// still draws; One Look's own are in one-look-render.test.ts.
+beforeAll(() => setPreviewOneLookDefault(false));
+afterAll(() => setPreviewOneLookDefault(undefined));
 
 /** A `hass` whose socket answers with `reply` and keeps what was sent. */
 function socket(reply: (message: Record<string, unknown>) => unknown) {

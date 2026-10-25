@@ -21,6 +21,7 @@ import { uiIcon } from "../ui-icons.js";
 import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type WatchPagesDocument, tileEntityId, tileKind, watchPageTiles } from "./model.js";
 import { colorPicker, commit, fieldNote, linkButton, menuField, resetButton, typed, typingField } from "./tile-settings.js";
+import { ONE_LOOK_CAMERA_PREVIEW_HINT } from "./one-look-settings.js";
 import { appSummary, isWatchAppTaskKind, renderAppTask, watchAppTaskHasReset } from "./app-settings.js";
 import {
   type WatchSpecialResize,
@@ -421,6 +422,9 @@ function renderLayout(host: TileSettingsHost): TemplateResult {
 
 // ── Camera ───────────────────────────────────────────────────────────────
 
+/** In One Look Preview says the picture stands alone too
+ * (`ONE_LOOK_CAMERA_PREVIEW_HINT`), as the Icon, Text, Border and Background
+ * sections are greyed then. */
 const CAMERA_HINTS: Readonly<Record<string, string>> = {
   icon: "Tap opens the full-screen live view.",
   preview: "Tap opens the live view; hold and slide up refreshes the snapshot.",
@@ -567,7 +571,7 @@ function renderCamera(host: TileSettingsHost): TemplateResult {
   return html`
     ${segField("Display", c.displayMode, T.camera.displayModes.map((m) => [m.value, m.label] as [string, string]), (v) =>
       commit(host, "displayMode", (d) => setWatchCameraDisplayMode(d, ...at(host), v)))}
-    <div class="hint ts-under">${CAMERA_HINTS[c.displayMode] ?? ""}</div>
+    <div class="hint ts-under">${(host.oneLook === true && c.displayMode === "preview" ? ONE_LOOK_CAMERA_PREVIEW_HINT : CAMERA_HINTS[c.displayMode]) ?? ""}</div>
     ${segField("Content", c.fillMode, T.camera.fillModes.map((m) => [m.value, m.label] as [string, string]), (v) =>
       commit(host, "fill", (d) => setWatchCameraFill(d, ...at(host), v)))}
     ${c.fillMode === "fill"

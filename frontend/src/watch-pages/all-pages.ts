@@ -1122,11 +1122,19 @@ export class WaAllPages extends LitElement {
     if (entry.kind === "status_pages") {
       return renderStatusRowPicture({ page: entry.item, hass: this.hassNow, width: this.roomy.size(BOARD_PICTURE_W), tick: this.iconsTick, ...(this.icons === undefined ? {} : { icons: this.icons }) });
     }
+    const appVersion = this.appVersionOf(device);
     return renderPageRowPicture({
       page: entry.item as WatchPage, width: this.roomy.size(device?.kind === "iphone" ? BOARD_PHONE_PICTURE_W : BOARD_PICTURE_W), tick: this.iconsTick, iphone: device?.kind === "iphone",
       ...(this.hassNow === undefined ? {} : { states: this.hassNow.states }),
       ...(this.icons === undefined ? {} : { icons: this.icons }),
+      ...(appVersion === undefined ? {} : { appVersion }),
     });
+  }
+
+  /** The app version a device reported, which decides whether a picture of
+   * its page draws One Look; undefined for none or a page on no device. */
+  private appVersionOf(device: LinkDevice | undefined): string | null | undefined {
+    return device === undefined ? undefined : this.owners.find((o) => sameId(o.owner_watch_id, device.ownerId))?.app_version;
   }
 
   /**
@@ -1290,10 +1298,13 @@ export class WaAllPages extends LitElement {
     const tall = crop.height * scale;
     const cut = tall > PIC_MAX_H;
     const px = (n: number) => `${Math.round(n * 100) / 100}px`;
+    // A watch picture: drawn in the look of the watch it opens on, if any.
+    const appVersion = on?.kind === "watch" ? this.appVersionOf(on) : undefined;
     return html`<span class="ap-pic ${cut ? "cut" : ""}" style=${`width:${px(PIC_W)};height:${px(Math.min(tall, PIC_MAX_H))}`}>
       <span class="ap-pic-in" style=${`transform:translateY(${px(-crop.top * scale)})`}>${renderWatchPagePreview({
         page, pages, screen: PIC_SCREEN, scale,
         ...(states === undefined ? {} : { states }), ...(icons === undefined ? {} : { icons }),
+        ...(appVersion === undefined ? {} : { appVersion }),
       })}</span>
     </span>`;
   }

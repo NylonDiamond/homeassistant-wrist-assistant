@@ -71,6 +71,7 @@ import {
   WATCH_STATE_ROW_SETTERS,
   watchTileStateCards,
   watchTileStateIcons,
+  watchTileStateIsButtonOnly,
   watchTileTaskHeld,
   watchTileTaskModified,
 } from "./styling-model.js";
@@ -263,6 +264,7 @@ import {
   watchMediaArtwork,
   watchPhoneKeyChanged,
   watchPhoneKeysOf,
+  watchSensorChart,
 } from "./phone-keys-model.js";
 import {
   watchAddThemeOf,
@@ -275,6 +277,29 @@ import {
   watchThemeSwatches,
   type WatchHassView,
 } from "./tile-new.js";
+import {
+  ONE_LOOK_ANIMATE_REASON,
+  ONE_LOOK_ARTWORK_NOTE,
+  ONE_LOOK_BUTTON_ONLY_KINDS,
+  ONE_LOOK_CHART_NOTE,
+  ONE_LOOK_DIM_LIGHT_NOTE,
+  ONE_LOOK_DIM_OFF_REASON,
+  ONE_LOOK_EXTRA_THIN_REASON,
+  ONE_LOOK_RAINBOW_NOTE,
+  ONE_LOOK_STATE_ICONS_NOTE,
+  ONE_LOOK_TEXT_SHADOW_NOTE,
+  ONE_LOOK_WEIGHT_NOTE,
+  oneLookCardSubtitle,
+  oneLookColorNote,
+  oneLookDims,
+  oneLookDrawsThickness,
+  oneLookFontSizeHint,
+  oneLookIconSizeHint,
+  oneLookSectionOff,
+  oneLookStateRowNote,
+  oneLookStateRowOff,
+  oneLookValueStylesOff,
+} from "./one-look-settings.js";
 
 /** Every `uiState` key of this module starts with this. */
 const KEY = "tile-settings";
@@ -559,7 +584,31 @@ export interface TileSettingsExtras {
  * size first, as the page editor hands those rows in, then the tile's own on
  * the device showing the page (`watchTileSectionsFor`). */
 export function tileInspectorSections(host: TileSettingsHost): WatchTileSettingsSection[] {
-  return ["size", ...watchTileSectionsFor(host.tile, host.hass.states, hostDevice(host))];
+  return ["size", ...tileSections(host)];
+}
+
+/** The tile's own sections on the device showing the page
+ * (`watchTileSectionsFor`). In One Look, Point control and Assist get a
+ * State section after Icon too, for the size of the round button One Look
+ * gives them (`watchTileStateCards`). */
+function tileSections(host: TileSettingsHost): WatchTileSettingsSection[] {
+  const sections = watchTileSectionsFor(host.tile, host.hass.states, hostDevice(host));
+  if (!oneLook(host) || sections.includes("state") || !ONE_LOOK_BUTTON_ONLY_KINDS.has(tileKind(tileEntityId(host.tile)))) return sections;
+  const at = sections.indexOf("icon");
+  return at < 0 ? sections : [...sections.slice(0, at + 1), "state", ...sections.slice(at + 1)];
+}
+
+/** Whether the settings speak for One Look (`one-look-settings.ts`): only
+ * when the host says every device showing the page draws it. */
+function oneLook(host: TileSettingsHost): boolean {
+  return host.oneLook === true;
+}
+
+/** A control One Look does not draw: greyed, its stored value kept as it
+ * is, with the reason under it. The disabled fieldset of hold and slide,
+ * laid out as if it were not there. */
+function greyed(reason: string, body: TemplateResult | typeof nothing): TemplateResult {
+  return html`<fieldset class="ts-plain ts-off" disabled>${body}</fieldset><div class="hint ts-under">${reason}</div>`;
 }
 
 /** Whether the section is one line rather than a card: the webhook inbox's,
@@ -594,7 +643,7 @@ export function tileWordsHost(host: TileSettingsHost): TileSettingsHost {
 /** The settings cards for `host.tile`, or nothing. */
 export function renderTileSettings(watchHost: TileSettingsHost, extras: TileSettingsExtras = {}): TemplateResult | typeof nothing {
   const host = tileWordsHost(watchHost);
-  const sections = (extras.sections ?? watchTileSectionsFor(host.tile, host.hass.states, hostDevice(host))).filter((s) => s !== "size" || extras.size !== undefined);
+  const sections = (extras.sections ?? tileSections(host)).filter((s) => s !== "size" || extras.size !== undefined);
   if (sections.length === 0) return nothing;
   dropStaleTyping(host);
   return html`<div class="ts-root">
@@ -622,7 +671,7 @@ function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection
   // A fieldset only to switch every control off at once while a save is out.
   // Drawn only while open: a body is work, and the Icon one can edit.
   const body = open
-    ? html`<fieldset class="ts-body" id=${`ts-body-${section}`} ?disabled=${host.busy} aria-label=${title}>${section === "size" ? (extras.size?.body() ?? nothing) : sectionBody(host, section)}</fieldset>`
+    ? html`<fieldset class="ts-body" id=${`ts-body-${section}`} ?disabled=${host.busy} aria-label=${title}>${section === "size" ? (extras.size?.body() ?? nothing) : sectionBodyFor(host, section)}</fieldset>`
     : html``;
   return sectionCard({
     color: badge.color,
@@ -747,6 +796,8 @@ export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTi
         || (h.color !== undefined && (defaultColor === undefined || !sameWatchColor(h.color, defaultColor)));
     }
     case "state":
+      // One Look's button card on a kind with no State task holds one key.
+      return watchTileStateIsButtonOnly(tile) ? Object.hasOwn(tile, "statusIconSizeOverride") : taskModified(host, section);
     case "border":
     case "background":
       return taskModified(host, section);
@@ -859,7 +910,7 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
     case "removed":
       return "";
     case "state":
-      return taskModified(host, "state") ? "Changed" : "";
+      return watchTileSectionChanged(host, "state") ? "Changed" : "";
     case "border": {
       const b = watchTileBorderSettings(tile);
       if (tileKind(tileEntityId(tile)) === "spacer") return watchStylingLabel("borderThickness", b.thickness);
@@ -871,6 +922,14 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
       return [g.pattern, g.effect].filter((v) => v !== "none").map((v, i) => watchStylingLabel(i === 0 && g.pattern !== "none" ? "backgroundPattern" : "tileAnimation", v)).join(", ");
     }
   }
+}
+
+/** A section's rows, greyed as a whole with the reason first when One Look
+ * draws none of them on this tile (a camera showing its picture). */
+function sectionBodyFor(host: TileSettingsHost, section: WatchTileSettingsSection): TemplateResult {
+  const off = oneLook(host) ? oneLookSectionOff(host.tile, section) : undefined;
+  if (off === undefined) return sectionBody(host, section);
+  return html`<div class="hint">${off}</div><fieldset class="ts-plain ts-off" disabled>${sectionBody(host, section)}</fieldset>`;
 }
 
 function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection): TemplateResult {
@@ -1292,16 +1351,25 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
     ${host.domainStyle === true ? nothing : renderStateIcons(host)}
     ${renderIconSize(host)}
     ${checkField("Icon shadow", s.iconShadow, (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}
-    ${s.dimWhenOff.applies && host.domainStyle !== true
-      ? html`${checkField("Dim when off", s.dimWhenOff.value, (on) => commit(host, "dimWhenOff", (d) => setWatchTileDimWhenOff(d, host.pageId, host.tileId, on)))}
-          <div class="hint ts-under">The tile dims while it is off.</div>`
-      : nothing}
-    ${s.activeAnimation.shown ? renderActiveAnimation(host, s.activeAnimation.stored) : nothing}
+    ${s.dimWhenOff.applies && host.domainStyle !== true ? renderDimWhenOff(host, s.dimWhenOff.value) : nothing}
+    ${!s.activeAnimation.shown ? nothing
+      // One Look never moves the icon for being on: the switch is greyed.
+      : oneLook(host) ? greyed(ONE_LOOK_ANIMATE_REASON, checkField("Animate while on", s.activeAnimation.value, () => {}))
+      : renderActiveAnimation(host, s.activeAnimation.stored)}
     ${menuField("Tap animation", animation, (v) =>
       commit(host, "tapAnimation", (d) => setWatchTileTapAnimation(d, host.pageId, host.tileId, v)))}
     <div class="hint ts-under">How the icon moves when the tile is tapped.${unknownAnimation === undefined
       ? nothing
       : html` Stored as "${unknownAnimation}", which the ${hostDeviceNoun(host)} plays as Bounce; it stays until another is picked.`}</div>`;
+}
+
+/** Dim when off, for a kind whose table entry has it. One Look dims only a
+ * light (a dark gray tile, its bulb in its color); on any other kind the
+ * tile keeps its color, so the switch is greyed there. */
+function renderDimWhenOff(host: TileSettingsHost, value: boolean): TemplateResult {
+  const row = checkField("Dim when off", value, (on) => commit(host, "dimWhenOff", (d) => setWatchTileDimWhenOff(d, host.pageId, host.tileId, on)));
+  if (!oneLook(host)) return html`${row}<div class="hint ts-under">The tile dims while it is off.</div>`;
+  return oneLookDims(host.tile) ? html`${row}<div class="hint ts-under">${ONE_LOOK_DIM_LIGHT_NOTE}</div>` : greyed(ONE_LOOK_DIM_OFF_REASON, row);
 }
 
 /** Animate while on, for a kind the watch animates: the switch writes
@@ -1346,7 +1414,10 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
   const resetColor = () => commit(host, "color", watchTileDefaultColorEdit(host));
   // The Form switch is this picker's heading: the Icon card has no Color
   // heading of its own.
-  return colorPickerView({
+  // One Look fills the tile with its color, and a still rainbow; a tile
+  // with none draws its kind's color on the watch, graphite on the iPhone.
+  const lookNote = oneLook(host) ? oneLookColorNote(mode, hostDevice(host)) : undefined;
+  return html`${colorPickerView({
     color,
     swatches,
     swatchesLabel: `${watchThemeDisplayName(theme)} colors`,
@@ -1357,10 +1428,10 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
       pick: resetColor,
     },
     form: { title: "Color", shown: mode, forms: WATCH_COLOR_MODES.map(([m]) => m), pick: pickMode },
-    rainbow: { note: `The ${hostDeviceNoun(host)} cycles the tile through every color.` },
+    rainbow: { note: oneLook(host) ? ONE_LOOK_RAINBOW_NOTE : `The ${hostDeviceNoun(host)} cycles the tile through every color.` },
     custom: { shown: typed(host, "color") ?? watchCustomBoxColor(color), pick: custom },
     wrap: (body) => typingField(host, "color", body),
-  });
+  })}${lookNote === undefined ? nothing : html`<div class="hint ts-under">${lookNote}</div>`}`;
 }
 
 function renderIconSize(host: TileSettingsHost): TemplateResult {
@@ -1378,7 +1449,7 @@ function renderIconSize(host: TileSettingsHost): TemplateResult {
       ${numberField("Icon size", shown, set, { step: 1, min: WATCH_ICON_SIZE_RANGE.min, max: top, optional: true, placeholder: "Auto", unit: "pt", rawTyping: true })}
       ${s.iconSize === undefined ? nothing : linkButton("Auto", `Let the ${hostDeviceNoun(host)} size the icon to the tile`, () => commit(host, "iconSize", (d) => setWatchTileIconSize(d, host.pageId, host.tileId, null)))}
     </div>`, s.iconSize)}
-    <div class="hint ts-under">${watchIconSizeHint(s.iconSizeMax)}</div>`;
+    <div class="hint ts-under">${oneLook(host) ? oneLookIconSizeHint(top) : watchIconSizeHint(s.iconSizeMax)}</div>`;
 }
 
 export function reasonOf(reason: string | undefined): { reason?: string } {
@@ -1409,10 +1480,14 @@ function renderText(host: TileSettingsHost): TemplateResult {
       ${numberField("Font size", fontSize, setFontSize, { step: 1, min: WATCH_FONT_SIZE_RANGE.min, max: WATCH_FONT_SIZE_RANGE.max, optional: true, placeholder: "Auto", unit: "pt", rawTyping: true })}
       ${t.fontSize === undefined ? nothing : linkButton("Auto", `Let the ${hostDeviceNoun(host)} size the label to the tile`, () => commit(host, "fontSize", (d) => setWatchTileFontSize(d, host.pageId, host.tileId, null)))}
     </div>`, t.fontSize)}
-    <div class="hint ts-under">Leave empty for Auto, sized to the tile's width, or pick ${WATCH_FONT_SIZE_RANGE.min} to ${WATCH_FONT_SIZE_RANGE.max} pt.</div>
+    <div class="hint ts-under">${oneLook(host)
+      ? oneLookFontSizeHint(WATCH_FONT_SIZE_RANGE.min, WATCH_FONT_SIZE_RANGE.max)
+      : `Leave empty for Auto, sized to the tile's width, or pick ${WATCH_FONT_SIZE_RANGE.min} to ${WATCH_FONT_SIZE_RANGE.max} pt.`}</div>
     ${menuField("Weight", watchFontWeightMenu(t.fontWeight), (v) => commit(host, "fontWeight", (d) => setWatchTileFontWeight(d, host.pageId, host.tileId, v)))}
+    ${oneLook(host) ? html`<div class="hint ts-under">${ONE_LOOK_WEIGHT_NOTE}</div>` : nothing}
     ${menuField("Design", watchFontDesignMenu(t.fontDesign), (v) => commit(host, "fontDesign", (d) => setWatchTileFontDesign(d, host.pageId, host.tileId, v)))}
     ${checkField("Text shadow", t.textShadow, (on) => commit(host, "textShadow", (d) => setWatchTileTextShadow(d, host.pageId, host.tileId, on)))}
+    ${oneLook(host) ? html`<div class="hint ts-under">${ONE_LOOK_TEXT_SHADOW_NOTE}</div>` : nothing}
     ${colorPickerView({
       label: "Label color",
       color: t.labelColor,
@@ -1785,16 +1860,24 @@ type Edit<V> = (document: WatchPagesDocument, pageId: string, tileId: string, va
 
 /** A styling enum: buttons for up to four values, a menu for more. A
  * stored value the table does not offer is shown, not offered. */
-export function stylingEnumField(label: string, enumName: string, value: string, pick: (v: string) => void): TemplateResult {
+export function stylingEnumField(label: string, enumName: string, value: string, pick: (v: string) => void, opts: StylingEnumOptions = {}): TemplateResult {
   const choices = watchStylingChoices(enumName);
   if (choices.length <= 4 && choices.some((c) => c.value === value)) {
-    return segField(label, value, choices.map((c) => [c.value, c.label] as [string, string]), (v) => pick(v));
+    return segField(label, value, choices.map((c) => [c.value, c.label] as [string, string]), (v) => pick(v), opts);
   }
-  return menuField(label, watchChoiceMenu(choices, value), pick);
+  const menu = watchChoiceMenu(choices, value);
+  return menuField(label, { ...menu, options: menu.options.map((o) => (opts.disabled?.[o.value] === true ? { ...o, disabled: true } : o)) }, pick);
 }
 
-function enumRow(host: TileSettingsHost, setting: string, label: string, enumName: string, value: string, set: Edit<string>): TemplateResult {
-  return stylingEnumField(label, enumName, value, (v) => commit(host, setting, (d) => set(d, host.pageId, host.tileId, v)));
+/** Choices of a styling enum that are drawn but cannot be picked, with the
+ * reason as each one's tooltip. */
+export interface StylingEnumOptions {
+  disabled?: Readonly<Record<string, boolean>>;
+  titles?: Readonly<Record<string, string>>;
+}
+
+function enumRow(host: TileSettingsHost, setting: string, label: string, enumName: string, value: string, set: Edit<string>, opts: StylingEnumOptions = {}): TemplateResult {
+  return stylingEnumField(label, enumName, value, (v) => commit(host, setting, (d) => set(d, host.pageId, host.tileId, v)), opts);
 }
 
 function boolRow(host: TileSettingsHost, setting: string, label: string, value: boolean, set: Edit<boolean>): TemplateResult {
@@ -1825,7 +1908,7 @@ function sliderRow(
 }
 
 /** A whole number slider with an Auto button (`null` removes the key). */
-function autoSizeRow(host: TileSettingsHost, setting: string, label: string, sliderName: string, value: number | undefined, set: Edit<number | null>): TemplateResult {
+function autoSizeRow(host: TileSettingsHost, setting: string, label: string, sliderName: string, value: number | undefined, set: Edit<number | null>, placeholder?: string): TemplateResult {
   const spec = watchStylingSlider(sliderName);
   const shown = typedNumber(typed(host, setting), value);
   const write = (v: number | undefined) =>
@@ -1834,7 +1917,7 @@ function autoSizeRow(host: TileSettingsHost, setting: string, label: string, sli
       ...(v === undefined ? {} : reasonOf(watchWholeRefusal(v, spec.min, spec.max))),
     });
   return html`${typingField(host, setting, html`<div class="ts-with-link">
-      ${numberField(label, shown, write, { step: 1, min: spec.min, max: spec.max, optional: true, placeholder: `Auto (${spec.auto ?? ""})`, unit: "pt", rawTyping: true })}
+      ${numberField(label, shown, write, { step: 1, min: spec.min, max: spec.max, optional: true, placeholder: placeholder ?? `Auto (${spec.auto ?? ""})`, unit: "pt", rawTyping: true })}
       ${value === undefined ? nothing : linkButton("Auto", `Let the ${hostDeviceNoun(host)} size it`, () => commit(host, setting, (d) => set(d, host.pageId, host.tileId, null)))}
     </div>`, value)}`;
 }
@@ -1988,13 +2071,32 @@ const STATE_ROW_LABELS: Readonly<Record<string, string>> = {
   statusIconSizeOverride: "Icon size",
 };
 
+/** A State row as One Look draws it: greyed with its reason where it does
+ * nothing on the kind, else with its line under it where One Look has one. */
 function renderStateRow(host: TileSettingsHost, row: WatchStateRow): TemplateResult | typeof nothing {
+  if (!oneLook(host)) return stateRow(host, row);
+  const kind = tileKind(tileEntityId(host.tile));
+  const off = oneLookStateRowOff(kind, row.key);
+  if (off !== undefined) return greyed(off, stateRow(host, row));
+  const note = oneLookStateRowNote(kind, row.key, row.value);
+  const body = stateRow(host, row, true);
+  return note === undefined ? body : html`${body}<div class="hint ts-under">${note}</div>`;
+}
+
+function stateRow(host: TileSettingsHost, row: WatchStateRow, oneLookOn = false): TemplateResult | typeof nothing {
   const label = STATE_ROW_LABELS[row.key] ?? row.key;
   const setters = WATCH_STATE_ROW_SETTERS as Record<string, Edit<never>>;
   const set = setters[row.key];
   if (set === undefined) return nothing;
   switch (row.key) {
-    case "stateValueLabelStyle":
+    case "stateValueLabelStyle": {
+      // One Look draws no number for some kinds' values (a media player's
+      // volume is the bar): those choices are greyed, their reason the
+      // button's tooltip.
+      const off = oneLookOn ? oneLookValueStylesOff(tileKind(tileEntityId(host.tile))) : {};
+      const disabled = Object.fromEntries(Object.keys(off).map((v) => [v, true]));
+      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>, { disabled, titles: off });
+    }
     case "stateBarStyle":
     case "stateBarColorStyle":
       return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>);
@@ -2005,7 +2107,10 @@ function renderStateRow(host: TileSettingsHost, row: WatchStateRow): TemplateRes
     }
     case "badgeFontSizeOverride":
     case "statusIconSizeOverride":
-      return autoSizeRow(host, row.key, label, row.key, typeof row.value === "number" ? row.value : undefined, set as Edit<number | null>);
+      // One Look's state size is a share of the tile's own, not a fixed
+      // point size, so its Auto names no number.
+      return autoSizeRow(host, row.key, label, row.key, typeof row.value === "number" ? row.value : undefined, set as Edit<number | null>,
+        oneLookOn && row.key === "badgeFontSizeOverride" ? "Auto" : undefined);
     default:
       return boolRow(host, row.key, label, row.value === true, set as Edit<boolean>);
   }
@@ -2017,16 +2122,32 @@ const NO_DOMAIN_STATE_ROWS: ReadonlySet<string> = new Set(["showTargetTempOnTile
 
 function renderState(host: TileSettingsHost): TemplateResult {
   const domain = host.domainStyle === true;
-  const cards = watchTileStateCards(host.tile)
+  const look = oneLook(host);
+  const kind = tileKind(tileEntityId(host.tile));
+  const cards = watchTileStateCards(host.tile, { oneLook: look })
     .map((card) => (domain ? { ...card, rows: card.rows.filter((row) => !NO_DOMAIN_STATE_ROWS.has(row.key)) } : card))
     .filter((card) => !domain || card.rows.length > 0);
   if (cards.length === 0) return html`<p class="hint">${watchStateEmptyText()}</p>`;
   return html`
-    ${cards.map((card) => html`
+    ${cards.map((card) => {
+      const subtitle = (look ? oneLookCardSubtitle(card.id, kind) : undefined) ?? card.subtitle;
+      return html`
       <div class="ts-sub-h"><span>${card.title}</span></div>
-      ${card.subtitle === "" ? nothing : html`<div class="hint ts-sub-note">${card.subtitle}.</div>`}
-      ${card.rows.map((row) => renderStateRow(host, row))}`)}
-    ${resetRow(host, "state", "State")}`;
+      ${subtitle === "" ? nothing : html`<div class="hint ts-sub-note">${subtitle}.</div>`}
+      ${card.rows.map((row) => renderStateRow(host, row))}
+      ${look ? stateCardNote(host, card.id) : nothing}`;
+    })}
+    ${look && watchTileStateIsButtonOnly(host.tile) ? nothing : resetRow(host, "state", "State")}`;
+}
+
+/** One Look's line under a card for a tile the iPhone draws as a picture or
+ * a chart, in the disc layout, where neither the bar nor the pill shows. */
+function stateCardNote(host: TileSettingsHost, cardId: string): TemplateResult | typeof nothing {
+  const kind = tileKind(tileEntityId(host.tile));
+  const note = kind === "media_player" && watchMediaArtwork(host.tile) && cardId === "bar" ? ONE_LOOK_ARTWORK_NOTE
+    : kind === "sensor" && watchSensorChart(host.tile) !== undefined && cardId === "valueLabel" ? ONE_LOOK_CHART_NOTE
+    : undefined;
+  return note === undefined ? nothing : html`<div class="hint ts-under">${note}</div>`;
 }
 
 // ── styling: State Icons and Colors ──────────────────────────────────────
@@ -2060,7 +2181,7 @@ function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothi
   };
   return html`<div class="ts-sub">
     <div class="ts-sub-h"><span>State icons and colors</span><span class="ts-faint">Optional</span></div>
-    <div class="hint ts-sub-note">An icon or color per state. A state with none uses the tile's.</div>
+    <div class="hint ts-sub-note">${oneLook(host) ? ONE_LOOK_STATE_ICONS_NOTE : "An icon or color per state. A state with none uses the tile's."}</div>
     ${card.rows.map((row) => {
       const ink = watchColorEnds(row.color ?? tileColor)?.from ?? "#FFFFFF";
       const symbol = row.icon ?? (tileIcon !== undefined && tileIcon !== "" ? tileIcon : row.defaultIcon);
@@ -2154,7 +2275,7 @@ function renderBorder(host: TileSettingsHost): TemplateResult {
   return html`
     ${enumRow(host, "borderStyle", "Style", "borderStyle", b.style, setWatchTileBorderStyle)}
     ${b.style === "line" ? html`
-      ${enumRow(host, "borderThickness", "Thickness", "borderThickness", b.thickness, setWatchTileBorderThickness)}
+      ${oneLook(host) ? oneLookThickness(host, b.thickness) : enumRow(host, "borderThickness", "Thickness", "borderThickness", b.thickness, setWatchTileBorderThickness)}
       ${enumRow(host, "borderLineStyle", "Line style", "borderLineStyle", b.lineStyle, setWatchTileBorderLineStyle)}
       ${sliderRow(host, "borderGlow", "Glow", "borderGlow", b.glow, setWatchTileBorderGlow, { reset: reset("borderGlow"), percent: true })}` : nothing}
     ${b.style === "animate" ? html`
@@ -2174,6 +2295,17 @@ function renderBorder(host: TileSettingsHost): TemplateResult {
         write: (d, v) => setWatchTileBorderColor(d, host.pageId, host.tileId, v),
       })}`}
     ${resetRow(host, "border", "Border")}`;
+}
+
+/** A Line border's Thickness in One Look: the hairlines are dropped for the
+ * look's own rim, so Extra Thin is greyed, and a tile that holds one is told
+ * why it draws no border. */
+function oneLookThickness(host: TileSettingsHost, thickness: string): TemplateResult {
+  const row = enumRow(host, "borderThickness", "Thickness", "borderThickness", thickness, setWatchTileBorderThickness, {
+    disabled: { extraThin: true },
+    titles: { extraThin: ONE_LOOK_EXTRA_THIN_REASON },
+  });
+  return oneLookDrawsThickness(thickness) ? row : html`${row}<div class="hint ts-under">${ONE_LOOK_EXTRA_THIN_REASON}</div>`;
 }
 
 // ── styling: Background ──────────────────────────────────────────────────
@@ -2239,6 +2371,9 @@ export const tileSettingsStyles = css`
   /* A fieldset only to switch every control off at once while a save is
      out; it draws nothing of its own. */
   fieldset.ts-body, fieldset.ts-plain { margin: 0; padding: 0; border: 0; min-width: 0; }
+  /* A control One Look does not draw, greyed in place: its rows keep the
+     card's layout as if the fieldset were not there. */
+  fieldset.ts-plain.ts-off { display: contents; }
   fieldset.ts-body { display: flex; flex-direction: column; gap: 2px; padding: 2px 0 0; --wa-lab: 112px; }
   .ts-body .hint { margin: 0 0 4px; }
   .ts-body .hint.ts-under { padding-left: calc(var(--wa-lab) + 8px); margin-top: -2px; }
