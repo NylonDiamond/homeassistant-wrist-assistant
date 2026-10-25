@@ -1,0 +1,180 @@
+{
+  "description": "A person at 4x4, home, showing their photo.",
+  "tile": {
+    "id": "A1B2C3D4-0002-4000-8000-000000000002",
+    "entityId": "person.chen",
+    "colSpan": 4,
+    "rowSpan": 4,
+    "gridCol": 0,
+    "gridRow": 0,
+    "color": "#5E8FD0",
+    "usePersonPhoto": true
+  },
+  "states": {
+    "person.chen": {
+      "entity_id": "person.chen",
+      "state": "home",
+      "attributes": {
+        "friendly_name": "Chen",
+        "entity_picture": "/api/image/serve/chen/512x512"
+      },
+      "last_changed": "",
+      "last_updated": ""
+    }
+  },
+  "edit": null,
+  "design": {
+    "v": 1,
+    "owned": [],
+    "zones": {},
+    "doc": {
+      "schemaVersion": 6,
+      "id": "A1B2C3D4-0002-4000-8000-000000000002",
+      "name": "Chen",
+      "values": [],
+      "slotIndex": 0,
+      "elements": [
+        {
+          "kind": "image",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000002",
+            "entity": {
+              "entityId": "person.chen",
+              "displayName": "Chen",
+              "domain": "person"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.3506,
+              "y": 0.3052,
+              "width": 0.2988,
+              "height": 0.2988,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "source": "entityPicture",
+            "cornerRadius": 9.86,
+            "name": "Photo"
+          }
+        },
+        {
+          "kind": "text",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000004",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.09,
+              "y": 0.09,
+              "width": 0.82,
+              "height": 0.2,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "shadow": {
+              "colorHex": "#00000040",
+              "radius": 0.75,
+              "dx": 0,
+              "dy": 0.5
+            },
+            "value": {
+              "kind": {
+                "kind": "tileState"
+              }
+            },
+            "fontSize": 11,
+            "fontWeight": "semibold",
+            "minimumScale": 0.91,
+            "alignment": "leading",
+            "name": "State"
+          }
+        },
+        {
+          "kind": "text",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000003",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.0455,
+              "y": 0.7491,
+              "width": 0.9091,
+              "height": 0.1609,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "shadow": {
+              "colorHex": "#00000040",
+              "radius": 0.75,
+              "dx": 0,
+              "dy": 0.5
+            },
+            "value": {
+              "kind": {
+                "kind": "tileName"
+              }
+            },
+            "fontSize": 9,
+            "fontWeight": "medium",
+            "minimumScale": 0.87,
+            "name": "Name"
+          }
+        }
+      ],
+      "supportedFamilies": [
+        "rectangular"
+      ],
+      "perFamily": [
+        "rectangular",
+        {
+          "cornerBodyShape": "circle",
+          "borderWidth": 2
+        }
+      ],
+      "dataSources": [],
+      "tapAction": {
+        "type": "none"
+      }
+    }
+  },
+  "template": null,
+  "templateKey": null,
+  "resolve": {
+    "tileState": "Home",
+    "tileName": "Chen",
+    "entityStates": [
+      {
+        "entityId": "person.chen",
+        "displayName": "Chen",
+        "state": "home",
+        "unitOfMeasurement": null,
+        "deviceClass": null,
+        "domain": "person"
+      }
+    ],
+    "templateResults": {}
+  },
+  "expected": [
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000002",
+      "kind": "image",
+      "hidden": false
+    },
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000004",
+      "kind": "text",
+      "text": "Home",
+      "hidden": false
+    },
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000003",
+      "kind": "text",
+      "text": "Chen",
+      "hidden": false
+    }
+  ]
+}

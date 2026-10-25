@@ -1,0 +1,177 @@
+{
+  "description": "A temperature sensor at 12x4 reading 21.5 °C.",
+  "tile": {
+    "id": "A1B2C3D4-0003-4000-8000-000000000003",
+    "entityId": "sensor.living_temperature",
+    "colSpan": 12,
+    "rowSpan": 4,
+    "gridCol": 0,
+    "gridRow": 0,
+    "color": "#FF9500"
+  },
+  "states": {
+    "sensor.living_temperature": {
+      "entity_id": "sensor.living_temperature",
+      "state": "21.5",
+      "attributes": {
+        "friendly_name": "Living room",
+        "unit_of_measurement": "°C",
+        "device_class": "temperature"
+      },
+      "last_changed": "",
+      "last_updated": ""
+    }
+  },
+  "edit": null,
+  "design": {
+    "v": 1,
+    "owned": [],
+    "zones": {},
+    "doc": {
+      "schemaVersion": 6,
+      "id": "A1B2C3D4-0003-4000-8000-000000000003",
+      "name": "Living room",
+      "values": [],
+      "slotIndex": 0,
+      "elements": [
+        {
+          "kind": "icon",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000001",
+            "colorSlot": {
+              "baseColorHex": "#FAEDDB"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.4154,
+              "y": 0.193,
+              "width": 0.1692,
+              "height": 0.523,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "symbol": {
+              "kind": {
+                "kind": "literal",
+                "value": "thermometer.medium"
+              }
+            },
+            "size": 32.88,
+            "name": "Icon"
+          }
+        },
+        {
+          "kind": "text",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000004",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.0291,
+              "y": 0.09,
+              "width": 0.3765,
+              "height": 0.2121,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "shadow": {
+              "colorHex": "#00000040",
+              "radius": 0.75,
+              "dx": 0,
+              "dy": 0.5
+            },
+            "value": {
+              "kind": {
+                "kind": "tileState"
+              }
+            },
+            "fontSize": 14,
+            "fontWeight": "bold",
+            "fontDesign": "rounded",
+            "minimumScale": 0.71,
+            "alignment": "leading",
+            "name": "State"
+          }
+        },
+        {
+          "kind": "text",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000003",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.0147,
+              "y": 0.7312,
+              "width": 0.9706,
+              "height": 0.1788,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "shadow": {
+              "colorHex": "#00000040",
+              "radius": 0.75,
+              "dx": 0,
+              "dy": 0.5
+            },
+            "value": {
+              "kind": {
+                "kind": "tileName"
+              }
+            },
+            "fontSize": 10,
+            "fontWeight": "medium",
+            "minimumScale": 0.87,
+            "name": "Name"
+          }
+        }
+      ],
+      "supportedFamilies": [
+        "rectangular"
+      ],
+      "perFamily": [
+        "rectangular",
+        {
+          "cornerBodyShape": "circle",
+          "borderWidth": 2
+        }
+      ],
+      "dataSources": [],
+      "tapAction": {
+        "type": "none"
+      }
+    }
+  },
+  "template": null,
+  "templateKey": null,
+  "resolve": {
+    "tileState": "21.5°C",
+    "tileName": "Living room",
+    "entityStates": [],
+    "templateResults": {}
+  },
+  "expected": [
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000001",
+      "kind": "icon",
+      "symbol": "thermometer.medium",
+      "colorHex": "#FAEDDB",
+      "hidden": false
+    },
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000004",
+      "kind": "text",
+      "text": "21.5°C",
+      "hidden": false
+    },
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000003",
+      "kind": "text",
+      "text": "Living room",
+      "hidden": false
+    }
+  ]
+}

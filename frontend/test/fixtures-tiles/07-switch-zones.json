@@ -1,0 +1,264 @@
+{
+  "description": "A switch at 6x4, on, split Left · Right: the left zone toggles, the right runs a script after asking first.",
+  "tile": {
+    "id": "A1B2C3D4-0007-4000-8000-000000000007",
+    "entityId": "switch.porch",
+    "colSpan": 6,
+    "rowSpan": 4,
+    "gridCol": 0,
+    "gridRow": 0,
+    "color": "#34C759"
+  },
+  "states": {
+    "switch.porch": {
+      "entity_id": "switch.porch",
+      "state": "on",
+      "attributes": {
+        "friendly_name": "Porch"
+      },
+      "last_changed": "",
+      "last_updated": ""
+    }
+  },
+  "edit": [
+    {
+      "op": "zonePreset",
+      "preset": "leftRight",
+      "ids": [
+        "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A01",
+        "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A02"
+      ]
+    },
+    {
+      "op": "zoneAction",
+      "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A01",
+      "action": {
+        "action": "toggle"
+      }
+    },
+    {
+      "op": "zoneAction",
+      "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A02",
+      "action": {
+        "action": "triggerEntity",
+        "triggerTarget": {
+          "entityId": "script.ring_chen",
+          "mode": "run",
+          "friendlyName": "Ring Chen's phone"
+        },
+        "requiresConfirmation": true
+      }
+    }
+  ],
+  "design": {
+    "v": 1,
+    "owned": [],
+    "zones": {
+      "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A01": {
+        "action": "toggle"
+      },
+      "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A02": {
+        "action": "triggerEntity",
+        "triggerTarget": {
+          "entityId": "script.ring_chen",
+          "mode": "run",
+          "friendlyName": "Ring Chen's phone"
+        },
+        "requiresConfirmation": true
+      }
+    },
+    "doc": {
+      "schemaVersion": 6,
+      "id": "A1B2C3D4-0007-4000-8000-000000000007",
+      "name": "Porch",
+      "values": [],
+      "slotIndex": 0,
+      "elements": [
+        {
+          "kind": "icon",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000001",
+            "colorSlot": {
+              "baseColorHex": "#E0F3E5"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.3283,
+              "y": 0.193,
+              "width": 0.3435,
+              "height": 0.523,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "symbol": {
+              "kind": {
+                "kind": "literal",
+                "value": "switch.2"
+              }
+            },
+            "size": 32.88,
+            "name": "Icon"
+          }
+        },
+        {
+          "kind": "text",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000004",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.0591,
+              "y": 0.09,
+              "width": 0.2493,
+              "height": 0.2,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "shadow": {
+              "colorHex": "#00000040",
+              "radius": 0.75,
+              "dx": 0,
+              "dy": 0.5
+            },
+            "value": {
+              "kind": {
+                "kind": "tileState"
+              }
+            },
+            "fontSize": 11,
+            "fontWeight": "semibold",
+            "minimumScale": 0.91,
+            "alignment": "leading",
+            "name": "State"
+          }
+        },
+        {
+          "kind": "text",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000003",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.0299,
+              "y": 0.7312,
+              "width": 0.9403,
+              "height": 0.1788,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "shadow": {
+              "colorHex": "#00000040",
+              "radius": 0.75,
+              "dx": 0,
+              "dy": 0.5
+            },
+            "value": {
+              "kind": {
+                "kind": "tileName"
+              }
+            },
+            "fontSize": 10,
+            "fontWeight": "medium",
+            "minimumScale": 0.87,
+            "name": "Name"
+          }
+        },
+        {
+          "kind": "tap",
+          "payload": {
+            "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A01",
+            "action": {
+              "type": "none"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "width": 0.5,
+              "height": 1,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "name": "Tap zone 1"
+          }
+        },
+        {
+          "kind": "tap",
+          "payload": {
+            "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A02",
+            "action": {
+              "type": "none"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.5,
+              "y": 0,
+              "width": 0.5,
+              "height": 1,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "name": "Tap zone 2"
+          }
+        }
+      ],
+      "supportedFamilies": [
+        "rectangular"
+      ],
+      "perFamily": [
+        "rectangular",
+        {
+          "cornerBodyShape": "circle",
+          "borderWidth": 2
+        }
+      ],
+      "dataSources": [],
+      "tapAction": {
+        "type": "none"
+      }
+    }
+  },
+  "template": null,
+  "templateKey": null,
+  "resolve": {
+    "tileState": "On",
+    "tileName": "Porch",
+    "entityStates": [],
+    "templateResults": {}
+  },
+  "expected": [
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000001",
+      "kind": "icon",
+      "symbol": "switch.2",
+      "colorHex": "#E0F3E5",
+      "hidden": false
+    },
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000004",
+      "kind": "text",
+      "text": "On",
+      "hidden": false
+    },
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000003",
+      "kind": "text",
+      "text": "Porch",
+      "hidden": false
+    },
+    {
+      "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A01",
+      "kind": "tap",
+      "hidden": false
+    },
+    {
+      "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A02",
+      "kind": "tap",
+      "hidden": false
+    }
+  ]
+}

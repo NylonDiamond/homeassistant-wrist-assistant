@@ -1,0 +1,135 @@
+{
+  "description": "A switch at 3x3, off.",
+  "tile": {
+    "id": "A1B2C3D4-0004-4000-8000-000000000004",
+    "entityId": "switch.kettle",
+    "colSpan": 3,
+    "rowSpan": 3,
+    "gridCol": 0,
+    "gridRow": 0,
+    "color": "#34C759"
+  },
+  "states": {
+    "switch.kettle": {
+      "entity_id": "switch.kettle",
+      "state": "off",
+      "attributes": {
+        "friendly_name": "Kettle"
+      },
+      "last_changed": "",
+      "last_updated": ""
+    }
+  },
+  "edit": null,
+  "design": {
+    "v": 1,
+    "owned": [],
+    "zones": {},
+    "doc": {
+      "schemaVersion": 6,
+      "id": "A1B2C3D4-0004-4000-8000-000000000004",
+      "name": "Kettle",
+      "values": [],
+      "slotIndex": 0,
+      "elements": [
+        {
+          "kind": "icon",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000001",
+            "colorSlot": {
+              "baseColorHex": "#E0F3E5"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.0923,
+              "y": 0.0923,
+              "width": 0.41,
+              "height": 0.41,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "symbol": {
+              "kind": {
+                "kind": "literal",
+                "value": "switch.2"
+              }
+            },
+            "size": 11.69,
+            "name": "Icon"
+          }
+        },
+        {
+          "kind": "text",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000003",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.0923,
+              "y": 0.6656,
+              "width": 0.8154,
+              "height": 0.2421,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "shadow": {
+              "colorHex": "#00000040",
+              "radius": 0.75,
+              "dx": 0,
+              "dy": 0.5
+            },
+            "value": {
+              "kind": {
+                "kind": "tileName"
+              }
+            },
+            "fontSize": 10,
+            "fontWeight": "semibold",
+            "minimumScale": 0.7,
+            "alignment": "leading",
+            "name": "Name"
+          }
+        }
+      ],
+      "supportedFamilies": [
+        "rectangular"
+      ],
+      "perFamily": [
+        "rectangular",
+        {
+          "cornerBodyShape": "circle",
+          "borderWidth": 2
+        }
+      ],
+      "dataSources": [],
+      "tapAction": {
+        "type": "none"
+      }
+    }
+  },
+  "template": null,
+  "templateKey": null,
+  "resolve": {
+    "tileState": "Off",
+    "tileName": "Kettle",
+    "entityStates": [],
+    "templateResults": {}
+  },
+  "expected": [
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000001",
+      "kind": "icon",
+      "symbol": "switch.2",
+      "colorHex": "#E0F3E5",
+      "hidden": false
+    },
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000003",
+      "kind": "text",
+      "text": "Kettle",
+      "hidden": false
+    }
+  ]
+}

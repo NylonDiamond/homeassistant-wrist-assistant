@@ -1,0 +1,224 @@
+{
+  "description": "A light at 6x4, on at 82%.",
+  "tile": {
+    "id": "A1B2C3D4-0001-4000-8000-000000000001",
+    "entityId": "light.office",
+    "colSpan": 6,
+    "rowSpan": 4,
+    "gridCol": 0,
+    "gridRow": 0,
+    "color": "#F2AE4E"
+  },
+  "states": {
+    "light.office": {
+      "entity_id": "light.office",
+      "state": "on",
+      "attributes": {
+        "friendly_name": "Office",
+        "brightness": 209
+      },
+      "last_changed": "",
+      "last_updated": ""
+    }
+  },
+  "edit": null,
+  "design": {
+    "v": 1,
+    "owned": [],
+    "zones": {},
+    "doc": {
+      "schemaVersion": 6,
+      "id": "A1B2C3D4-0001-4000-8000-000000000001",
+      "name": "Office",
+      "values": [],
+      "slotIndex": 0,
+      "elements": [
+        {
+          "kind": "icon",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000001",
+            "colorSlot": {
+              "baseColorHex": "#F5C27A"
+            },
+            "rules": [
+              {
+                "id": "BA5E0001-0002-4000-8001-000000000000",
+                "cases": [
+                  {
+                    "id": "BA5E0001-0002-4001-8002-000000000000",
+                    "when": {
+                      "join": "all",
+                      "tests": [
+                        {
+                          "id": "BA5E0001-0002-4001-8003-000000000000",
+                          "value": {
+                            "kind": {
+                              "kind": "entityState",
+                              "entityId": "light.office",
+                              "displayName": "Office",
+                              "domain": "light"
+                            }
+                          },
+                          "comparison": {
+                            "kind": "isOn"
+                          }
+                        }
+                      ]
+                    },
+                    "then": [
+                      {
+                        "kind": "setColor",
+                        "value": {
+                          "kind": {
+                            "kind": "literal",
+                            "value": "#FFF8EA"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "frame": {
+              "x": 0.3283,
+              "y": 0.193,
+              "width": 0.3435,
+              "height": 0.523,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "symbol": {
+              "kind": {
+                "kind": "literal",
+                "value": "lightbulb"
+              }
+            },
+            "size": 32.88,
+            "name": "Icon"
+          }
+        },
+        {
+          "kind": "text",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000004",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.0591,
+              "y": 0.1439,
+              "width": 0.2493,
+              "height": 0.2121,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "shadow": {
+              "colorHex": "#00000040",
+              "radius": 0.75,
+              "dx": 0,
+              "dy": 0.5
+            },
+            "value": {
+              "kind": {
+                "kind": "tileState"
+              }
+            },
+            "fontSize": 14,
+            "fontWeight": "bold",
+            "fontDesign": "rounded",
+            "minimumScale": 0.71,
+            "alignment": "leading",
+            "name": "State"
+          }
+        },
+        {
+          "kind": "text",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000003",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.0299,
+              "y": 0.7312,
+              "width": 0.9403,
+              "height": 0.1788,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "shadow": {
+              "colorHex": "#00000040",
+              "radius": 0.75,
+              "dx": 0,
+              "dy": 0.5
+            },
+            "value": {
+              "kind": {
+                "kind": "tileName"
+              }
+            },
+            "fontSize": 10,
+            "fontWeight": "medium",
+            "minimumScale": 0.87,
+            "name": "Name"
+          }
+        }
+      ],
+      "supportedFamilies": [
+        "rectangular"
+      ],
+      "perFamily": [
+        "rectangular",
+        {
+          "cornerBodyShape": "circle",
+          "borderWidth": 2
+        }
+      ],
+      "dataSources": [],
+      "tapAction": {
+        "type": "none"
+      }
+    }
+  },
+  "template": null,
+  "templateKey": null,
+  "resolve": {
+    "tileState": "82%",
+    "tileName": "Office",
+    "entityStates": [
+      {
+        "entityId": "light.office",
+        "displayName": "Office",
+        "state": "on",
+        "unitOfMeasurement": null,
+        "deviceClass": null,
+        "domain": "light"
+      }
+    ],
+    "templateResults": {}
+  },
+  "expected": [
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000001",
+      "kind": "icon",
+      "symbol": "lightbulb",
+      "colorHex": "#FFF8EA",
+      "hidden": false
+    },
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000004",
+      "kind": "text",
+      "text": "82%",
+      "hidden": false
+    },
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000003",
+      "kind": "text",
+      "text": "Office",
+      "hidden": false
+    }
+  ]
+}

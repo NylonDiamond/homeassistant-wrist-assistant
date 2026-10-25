@@ -1,0 +1,323 @@
+{
+  "description": "A person at 6x4 with two added layers: a text reading another entity's attribute (so the design has a template) and a gauge of that entity's state.",
+  "tile": {
+    "id": "A1B2C3D4-0006-4000-8000-000000000006",
+    "entityId": "person.chen",
+    "colSpan": 6,
+    "rowSpan": 4,
+    "gridCol": 0,
+    "gridRow": 0,
+    "color": "#5E8FD0"
+  },
+  "states": {
+    "person.chen": {
+      "entity_id": "person.chen",
+      "state": "not_home",
+      "attributes": {
+        "friendly_name": "Chen"
+      },
+      "last_changed": "",
+      "last_updated": ""
+    },
+    "sensor.chen_phone_battery": {
+      "entity_id": "sensor.chen_phone_battery",
+      "state": "64",
+      "attributes": {
+        "friendly_name": "Chen phone battery",
+        "unit_of_measurement": "%",
+        "device_class": "battery",
+        "battery_level": 71
+      },
+      "last_changed": "",
+      "last_updated": ""
+    }
+  },
+  "edit": [
+    {
+      "op": "addLayer",
+      "kind": "text",
+      "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A11",
+      "set": {
+        "value": {
+          "kind": {
+            "kind": "entityAttribute",
+            "entityId": "sensor.chen_phone_battery",
+            "displayName": "Chen phone battery",
+            "domain": "sensor",
+            "attribute": "battery_level"
+          },
+          "format": {
+            "suffix": "%"
+          }
+        },
+        "fontSize": 11,
+        "frame": {
+          "x": 0.55,
+          "y": 0.1,
+          "width": 0.4,
+          "height": 0.2,
+          "rotationDegrees": 0
+        }
+      }
+    },
+    {
+      "op": "addLayer",
+      "kind": "gauge",
+      "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A12",
+      "set": {
+        "value": {
+          "kind": {
+            "kind": "entityState",
+            "entityId": "sensor.chen_phone_battery",
+            "displayName": "Chen phone battery",
+            "domain": "sensor"
+          }
+        },
+        "frame": {
+          "x": 0.7,
+          "y": 0.35,
+          "width": 0.25,
+          "height": 0.38,
+          "rotationDegrees": 0
+        }
+      }
+    }
+  ],
+  "design": {
+    "v": 1,
+    "owned": [],
+    "zones": {},
+    "template": "{% set v_e_34234bf3206c6b40 = state_attr('sensor.chen_phone_battery', 'battery_level') %}\n{{ { \"e_34234bf3206c6b40\": v_e_34234bf3206c6b40 } | to_json }}",
+    "doc": {
+      "schemaVersion": 6,
+      "id": "A1B2C3D4-0006-4000-8000-000000000006",
+      "name": "Chen",
+      "values": [],
+      "slotIndex": 0,
+      "elements": [
+        {
+          "kind": "icon",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000001",
+            "colorSlot": {
+              "baseColorHex": "#E8EFF8"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.3283,
+              "y": 0.193,
+              "width": 0.3435,
+              "height": 0.523,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "symbol": {
+              "kind": {
+                "kind": "literal",
+                "value": "person"
+              }
+            },
+            "size": 32.88,
+            "name": "Icon"
+          }
+        },
+        {
+          "kind": "text",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000004",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.0591,
+              "y": 0.09,
+              "width": 0.2493,
+              "height": 0.2,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "shadow": {
+              "colorHex": "#00000040",
+              "radius": 0.75,
+              "dx": 0,
+              "dy": 0.5
+            },
+            "value": {
+              "kind": {
+                "kind": "tileState"
+              }
+            },
+            "fontSize": 11,
+            "fontWeight": "semibold",
+            "minimumScale": 0.91,
+            "alignment": "leading",
+            "name": "State"
+          }
+        },
+        {
+          "kind": "text",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000003",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.0299,
+              "y": 0.7312,
+              "width": 0.9403,
+              "height": 0.1788,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "shadow": {
+              "colorHex": "#00000040",
+              "radius": 0.75,
+              "dx": 0,
+              "dy": 0.5
+            },
+            "value": {
+              "kind": {
+                "kind": "tileName"
+              }
+            },
+            "fontSize": 10,
+            "fontWeight": "medium",
+            "minimumScale": 0.87,
+            "name": "Name"
+          }
+        },
+        {
+          "kind": "text",
+          "payload": {
+            "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A11",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.55,
+              "y": 0.1,
+              "width": 0.4,
+              "height": 0.2,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "value": {
+              "kind": {
+                "kind": "entityAttribute",
+                "entityId": "sensor.chen_phone_battery",
+                "displayName": "Chen phone battery",
+                "domain": "sensor",
+                "attribute": "battery_level"
+              },
+              "format": {
+                "suffix": "%"
+              }
+            },
+            "fontSize": 11,
+            "fontWeight": "regular"
+          }
+        },
+        {
+          "kind": "gauge",
+          "payload": {
+            "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A12",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.7,
+              "y": 0.35,
+              "width": 0.25,
+              "height": 0.38,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "value": {
+              "kind": {
+                "kind": "entityState",
+                "entityId": "sensor.chen_phone_battery",
+                "displayName": "Chen phone battery",
+                "domain": "sensor"
+              }
+            },
+            "minValue": 0,
+            "maxValue": 100,
+            "style": "arc",
+            "lineWidth": 4,
+            "trackColorHex": "#FFFFFF40"
+          }
+        }
+      ],
+      "supportedFamilies": [
+        "rectangular"
+      ],
+      "perFamily": [
+        "rectangular",
+        {
+          "cornerBodyShape": "circle",
+          "borderWidth": 2
+        }
+      ],
+      "dataSources": [],
+      "tapAction": {
+        "type": "none"
+      }
+    }
+  },
+  "template": "{% set v_e_34234bf3206c6b40 = state_attr('sensor.chen_phone_battery', 'battery_level') %}\n{{ { \"e_34234bf3206c6b40\": v_e_34234bf3206c6b40 } | to_json }}",
+  "templateKey": "tile_e76fc21eda481a9b",
+  "resolve": {
+    "tileState": "Away",
+    "tileName": "Chen",
+    "entityStates": [
+      {
+        "entityId": "sensor.chen_phone_battery",
+        "displayName": "Chen phone battery",
+        "state": "64",
+        "unitOfMeasurement": "%",
+        "deviceClass": "battery",
+        "domain": "sensor"
+      }
+    ],
+    "templateResults": {
+      "e_34234bf3206c6b40": "71"
+    }
+  },
+  "expected": [
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000001",
+      "kind": "icon",
+      "symbol": "person",
+      "colorHex": "#E8EFF8",
+      "hidden": false
+    },
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000004",
+      "kind": "text",
+      "text": "Away",
+      "hidden": false
+    },
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000003",
+      "kind": "text",
+      "text": "Chen",
+      "hidden": false
+    },
+    {
+      "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A11",
+      "kind": "text",
+      "text": "71%",
+      "hidden": false
+    },
+    {
+      "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A12",
+      "kind": "gauge",
+      "value": 0.64,
+      "hidden": false
+    }
+  ]
+}

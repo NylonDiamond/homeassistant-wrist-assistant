@@ -8,7 +8,8 @@ import { fnv1a64Hex } from "../src/compiler.js";
 import type { HassEntityState } from "../src/ha-api.js";
 import { type Element, type TextElement, encodeConfig, newElement, parseConfig } from "../src/model.js";
 import { customTilesFor, customTilesUpdateNote, MIN_VERSION_FOR_CUSTOM_TILES } from "../src/version.js";
-import { checkWatchPagesValues } from "../src/watch-pages/merge.js";
+import { checkWatchPagesValues, mergeWatchPages } from "../src/watch-pages/merge.js";
+import { settleMergedWatchPages } from "../src/watch-pages/page-settings-model.js";
 import type { WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { oneLookMeasurer } from "../src/watch-pages/one-look/measurer.js";
 import {
@@ -512,6 +513,23 @@ describe("problems", () => {
     expect(problems, JSON.stringify(problems)).toHaveLength(1);
     expect(problems[0]).toContain("tile 1 (light.office): design.v must be 1.");
     expect(checkWatchPagesValues({ schemaVersion: 1, pages: [{ id: PAGE_ID, name: "Home", items: [tile] }] })).toEqual([]);
+  });
+});
+
+describe("the page draft keeps the design", () => {
+  it("through a three-way merge and the merge's settling", () => {
+    const tile = ownedNameTile();
+    const other = { id: "2C2C2C2C-2C2C-4C2C-8C2C-2C2C2C2C2C2C", entityId: "switch.a", colSpan: 3, rowSpan: 3, gridCol: 6, gridRow: 0 };
+    const base: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: PAGE_ID, name: "Home", items: [LIGHT, other] }] };
+    const local: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: PAGE_ID, name: "Home", items: [tile, other] }] };
+    const server: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: PAGE_ID, name: "Home", items: [LIGHT, { ...other, color: "#FF0000" }] }] };
+    const merged = settleMergedWatchPages(base, local, server, mergeWatchPages(base, local, server));
+    const items = (merged.pages as { items: WatchPageTile[] }[])[0]!.items;
+    expect(items[0]!.design).toEqual(tile.design);
+    expect(items[1]!.color).toBe("#FF0000");
+    // A design removed locally stays removed.
+    const cleared = settleMergedWatchPages(local, base, local, mergeWatchPages(local, base, local));
+    expect(Object.hasOwn((cleared.pages as { items: WatchPageTile[] }[])[0]!.items[0]!, "design")).toBe(false);
   });
 });
 
