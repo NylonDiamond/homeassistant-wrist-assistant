@@ -783,6 +783,18 @@ describe("One Look's bridge look", () => {
     }), wideM);
     near(widePhoto("Away").glyphSize, widePhoto("Home").glyphSize);
     expect(widePhoto("Home").glyphSize).toBeLessThan(home.glyphSize);
+    // However wide "Home" is against "Away" (one can shrink beside the
+    // photo while the other cannot), one photo size.
+    for (const extra of [0.5, 1, 1.5, 2]) {
+      const measurer: TextMeasurer = { width: (text, size) => (Array.from(text).length + extra * Array.from(text.toLowerCase()).filter((c) => c === "m").length) * size * 0.55 };
+      for (const unitWide of [99, 105, 108]) {
+        const at = (name: string, w: string) => resolveOneLookLayout({ ...input("ultra211", 6, 4, {
+          name, state: word(w), centred: true, glyphIsPhoto: true, style: { iconSize: 36, iconOffset: -4 },
+        }), size: { width: unitWide, height: unitWide * 0.62 } }, measurer);
+        const chen = at("Chen", "Away"), jesse = at("jesse", "Home");
+        near(chen.glyphSize, jesse.glyphSize);
+      }
+    }
     for (const l of [away, home]) {
       near(l.glyphInk!.width, l.discRect.width);
       expect(oneLookRectsIntersect(l.stateRect, l.glyphInk)).toBe(false);

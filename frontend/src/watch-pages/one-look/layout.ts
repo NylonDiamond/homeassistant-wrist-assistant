@@ -317,7 +317,7 @@ export const ONE_LOOK_STATE_GIVE_WAY = 0.7;
 /** A person's photo's diameter over the icon size. */
 export const ONE_LOOK_OLD_PLACE_PHOTO_SHARE = 1.35;
 /** The words a person's state shows most: a photo keeps clear of the
- * wider, whichever one the tile shows now. */
+ * room the widest takes, whichever one the tile shows now. */
 export const ONE_LOOK_PHOTO_STATE_WORDS: readonly string[] = ["Home", "Away"];
 
 /** The disc may go under its floor to this, the last step before compact. */
@@ -749,24 +749,44 @@ function centred(input: OneLookLayoutInput, fitter: OneLookTextFitter, s: Step):
     });
     const full = place([bar, accRect, nameBox]);
     const beside = minX(full.ink) - ONE_LOOK_OLD_PLACE_GAP - inset;
-    if (state !== undefined && stateW > beside) {
-      const fitted = fitter.fitState(input.state, beside - 2 * padH, input.colSpan, ONE_LOOK_STATE_GIVE_WAY);
-      if (fitted !== undefined) {
-        state = fitted;
-        stateW = Math.min(beside, oneLookStateWidth(fitted, m, fitter.measurer) + 2 * padH);
-      }
-    }
-    // A person's photo clears the wider of "Home" and "Away", so two
-    // people's photos stay one size whichever word each shows.
+    // A line and its width once it has given way beside the glyph drawn
+    // whole.
+    const givenWay = (line: StateLine, fit: StateFit): { fit: StateFit; width: number } => {
+      const whole = Math.min(stateAvail, oneLookStateWidth(fit, m, fitter.measurer) + 2 * padH);
+      const fitted = whole > beside ? fitter.fitState(line, beside - 2 * padH, input.colSpan, ONE_LOOK_STATE_GIVE_WAY) : undefined;
+      return fitted === undefined ? { fit, width: whole } : { fit: fitted, width: Math.min(beside, oneLookStateWidth(fitted, m, fitter.measurer) + 2 * padH) };
+    };
+    const wholeState = state, wholeW = stateW;
+    if (state !== undefined) ({ fit: state, width: stateW } = givenWay(input.state, state));
+    // A person's photo clears whatever room the widest of "Home" and
+    // "Away" takes, so two people's photos stay one size whichever word
+    // each shows.
     let clearW = stateW;
-    if (input.glyphIsPhoto && state !== undefined && state.parts.kind === "word") {
+    const photoWord = input.glyphIsPhoto && wholeState?.parts.kind === "word";
+    if (photoWord) {
       for (const word of ONE_LOOK_PHOTO_STATE_WORDS) {
-        const wide: StateFit = { ...state, parts: { kind: "word", word, amber: false } };
-        clearW = Math.max(clearW, Math.min(stateAvail, oneLookStateWidth(wide, m, fitter.measurer) + 2 * padH));
+        const line: StateLine = { kind: "word", word };
+        const fit = fitter.fitState(line, stateAvail - 2 * padH, input.colSpan);
+        if (fit !== undefined) clearW = Math.max(clearW, givenWay(line, fit).width);
       }
     }
     const stateBox: OneLookRect | undefined = state === undefined ? undefined : { x: inset, y: top, width: clearW, height: stateLH };
     const placed = stateBox === undefined ? full : place([bar, stateBox, accRect, nameBox]);
+    // The photo gave way for a wider word, so this one may take back its
+    // whole size in the room left of it.
+    if (photoWord && clearW > stateW && wholeState !== undefined) {
+      const room = minX(placed.ink) - ONE_LOOK_OLD_PLACE_GAP - inset;
+      if (wholeW <= room) {
+        state = wholeState;
+        stateW = wholeW;
+      } else {
+        const fitted = fitter.fitState(input.state, room - 2 * padH, input.colSpan, ONE_LOOK_STATE_GIVE_WAY);
+        if (fitted !== undefined) {
+          state = fitted;
+          stateW = Math.min(room, oneLookStateWidth(fitted, m, fitter.measurer) + 2 * padH);
+        }
+      }
+    }
     glyph = placed.box;
     ink = placed.ink;
   } else if (hasIcon) {
