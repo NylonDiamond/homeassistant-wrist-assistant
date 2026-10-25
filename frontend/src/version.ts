@@ -75,6 +75,33 @@ export function oneLookAtVersion(appVersion: string | null | undefined, minimum:
   return compareVersions(have, need) >= 0;
 }
 
+/** First app version, on either device, that draws a tile's layers
+ * (`design`). An older app draws the plain tile from the simple keys, which
+ * stay saved beside the design. Confirmed at release time: bump it if the
+ * release that ships tile layers is not 3.2.0. */
+export const MIN_VERSION_FOR_CUSTOM_TILES = "3.2.0";
+
+/** Whether an app at this version draws tile layers. Not yet reported reads
+ * as new enough, as `deviceSupportsControls` does. */
+export function customTilesFor(appVersion: string | null | undefined): boolean {
+  const have = parseVersion(appVersion);
+  if (!have) return true;
+  return compareVersions(have, parseVersion(MIN_VERSION_FOR_CUSTOM_TILES)!) >= 0;
+}
+
+/** The line the Layers section shows when some devices on the page are too
+ * old, naming them: "Chen Watch shows the plain tile until it updates to
+ * Wrist Assistant 3.2." (two: "A and B show..."; more: "A, B and C show...").
+ * Undefined for an empty list. The version is written by `versionForCopy`. */
+export function customTilesUpdateNote(deviceNames: readonly string[]): string | undefined {
+  const names = deviceNames.filter((n) => n.trim() !== "");
+  if (names.length === 0) return undefined;
+  const version = versionForCopy(MIN_VERSION_FOR_CUSTOM_TILES);
+  if (names.length === 1) return `${names[0]} shows the plain tile until it updates to Wrist Assistant ${version}.`;
+  const list = `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `${list} show the plain tile until they update to Wrist Assistant ${version}.`;
+}
+
 /** Whether every one of these devices draws One Look, from the versions they
  * reported: what a setting shared by all of them can be written for. No
  * device at all (a page on none yet) reads as an unreported one. */
