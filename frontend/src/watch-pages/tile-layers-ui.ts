@@ -660,4 +660,6 @@ export const tileLayersStyles = css`
   .tl-reset { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .tl-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 6px 4px 0; font-size: 10px; color: var(--wa-muted); }
   .tl-legend-item { display: inline-flex; align-items: center; gap: 4px; }
+  /* The shared layer editor's Format summary note, spaced as panel.ts does. */
+  details.sub.format summary .sum-note { margin-left: 6px; color: var(--wa-muted); font-weight: 400; }
 `;
