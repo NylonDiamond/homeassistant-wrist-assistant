@@ -24,8 +24,10 @@ import {
   type TextElement,
   type Value,
   IMAGE_DEFAULT_TIMESTAMP_SIZE,
+  encodeConfig,
   literal,
   newConfig,
+  parseConfig,
 } from "../model.js";
 import type { IconProvider } from "../renderer.js";
 import { type WatchPage, type WatchPageTile, tileEntityId, tileGeometry, tileKind } from "./model.js";
@@ -405,13 +407,18 @@ function stateLayer(face: Face): Element | undefined {
  * A tile's base layers in draw order (the glyph or photo, the state, the
  * name), made from its simple settings and One Look's layout at the tile's
  * design box. Empty for a tile whose kind has no layers, and for one One
- * Look does not draw.
+ * Look does not draw. They come out as a saved document reads back (every
+ * key at its default left out), so a layer read from a design compares
+ * equal to the one built now.
  */
 export function baseLayers(tile: WatchPageTile, ctx: BaseLayerContext): Element[] {
   if (!tileHasLayers(tile)) return [];
   const face = faceOf(tile, ctx);
   if (face === undefined) return [];
-  return [glyphLayer(face.tile, ctx, face), stateLayer(face), nameLayer(face)].filter((el): el is Element => el !== undefined);
+  const built = [glyphLayer(face.tile, ctx, face), stateLayer(face), nameLayer(face)].filter((el): el is Element => el !== undefined);
+  const cfg = newConfig("", 0, TILE_DESIGN_FAMILY);
+  cfg.elements = built;
+  return parseConfig(encodeConfig(cfg)).elements;
 }
 
 /** The role of each base layer `baseLayers` builds. */

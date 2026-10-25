@@ -181,7 +181,8 @@ describe("baseLayers", () => {
     });
 
     it("is centred in the centred layout and leading in a strip", () => {
-      expect(text(baseLayers(LIGHT, ctxFor(OFFICE)), "name").alignment).toBe("center");
+      // Center is the default, which a saved layer leaves out.
+      expect(text(baseLayers(LIGHT, ctxFor(OFFICE)), "name").alignment ?? "center").toBe("center");
       expect(text(baseLayers({ ...LIGHT, rowSpan: 2 }, ctxFor(OFFICE)), "name").alignment).toBe("leading");
     });
   });
@@ -194,7 +195,7 @@ describe("baseLayers", () => {
       const word = text(baseLayers(PERSON, ctxFor(CHEN)), "state");
       expect(word.fontWeight).toBe("semibold");
       expect(word.fontDesign).toBeUndefined();
-      expect(word.lineLimit).toBe(1);
+      expect(word.lineLimit ?? 1).toBe(1);
       expect(word.alignment).toBe("leading");
     });
 
