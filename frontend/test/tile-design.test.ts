@@ -283,6 +283,21 @@ describe("owned base layers", () => {
     expect(ids.indexOf(BASE_LAYER_IDS.name)).toBe(ids.indexOf(BASE_LAYER_IDS.state) + 1);
   });
 
+  it("a move on the grid rewrites no layer, and a tile whose entity has no state keeps its layers", () => {
+    const tile = ownedNameTile();
+    const page = { id: "P1", items: [tile] };
+    const before: WatchPagesDocument = { schemaVersion: 1, pages: [page] };
+    const moved: WatchPagesDocument = { schemaVersion: 1, pages: [{ ...page, items: [{ ...tile, gridCol: 6, gridRow: 2 }] }] };
+    expect(syncTileDesigns(before, moved, CTX)).toBe(moved);
+    // The entity renamed in Home Assistant: a simple edit leaves the State
+    // layer where it was rather than building it from no state.
+    const edited: WatchPagesDocument = { schemaVersion: 1, pages: [{ ...page, items: [{ ...tile, labelFontSizeOverride: 16 }] }] };
+    const { "light.office": _gone, ...withoutOffice } = STATES;
+    expect(syncTileDesigns(before, edited, { ...CTX, states: withoutOffice })).toBe(edited);
+    expect(syncTileDesigns(before, edited, { measurer })).toBe(edited);
+    expect(syncTileDesigns(before, edited, CTX)).not.toBe(edited);
+  });
+
   it("syncTileDesigns hands back the same document when no design tile changed", () => {
     const tile = ownedNameTile();
     const doc: WatchPagesDocument = { schemaVersion: 1, pages: [{ id: "P1", items: [tile, { id: "T2", entityId: "switch.a" }] }] };
@@ -373,6 +388,23 @@ describe("adding, removing and moving layers", () => {
     expect(up.doc.elements.map((e) => e.payload.id).slice(0, 3)).toEqual([BASE_LAYER_IDS.icon, BASE_LAYER_IDS.name, BASE_LAYER_IDS.state]);
     expect(moveLayer(up, BASE_LAYER_IDS.state, 1)).toBe(up);
     expect(moveLayer(zoned, BASE_LAYER_IDS.icon, -1)).toBe(zoned);
+  });
+
+  it("owns a base layer it moves, and Reset puts it back at its place", () => {
+    const base = designForEdit(LIGHT, CTX);
+    const added = addLayer(base, "shape");
+    const down = moveLayer(added.design, BASE_LAYER_IDS.name, -1);
+    expect(down.owned).toEqual(["name"]);
+    expect(layerStatus(down, BASE_LAYER_IDS.name)).toBe("changed");
+    // An added layer moved owns nothing.
+    expect(moveLayer(added.design, added.id, -1).owned).toEqual([]);
+    const tile = withDesign(LIGHT, down, CTX);
+    expect(designSummary(readTileDesign(tile), tile).changed).toBe(1);
+    const reset = readTileDesign(resetBaseLayer(tile, "name", CTX))!;
+    const ids = reset.doc.elements.map((e) => e.payload.id);
+    expect(reset.owned).toEqual([]);
+    expect(ids.indexOf(BASE_LAYER_IDS.name)).toBe(ids.indexOf(BASE_LAYER_IDS.state) + 1);
+    expect(ids).toContain(added.id);
   });
 });
 

@@ -25,7 +25,7 @@ import {
   newElement,
   newId,
 } from "../model.js";
-import { type JsonObject, type WatchPage, type WatchPageTile, type WatchPagesDocument, isJsonObject, tileGeometry, watchPageTiles, watchPagesOf } from "./model.js";
+import { type JsonObject, type WatchPage, type WatchPageTile, type WatchPagesDocument, isJsonObject, tileEntityId, tileGeometry, watchPageTiles, watchPagesOf } from "./model.js";
 import { oneLookDrawnSize, oneLookGridUnit } from "./one-look/metrics.js";
 import { watchSingleTapSettings } from "./tile-settings-model.js";
 import { type BaseLayerContext, baseLayersByRole, baseLayersDocument, designBoxFor, tileValuesFor } from "./tile-base-layers.js";
@@ -296,7 +296,29 @@ export function resetBaseLayer(tile: WatchPageTile, role: BaseLayerRole, ctx: Ba
   const design = readTileDesign(tile);
   if (design === undefined) return tile;
   const owned = design.owned.filter((r) => (isGlyph(role) ? !isGlyph(r) : r !== role));
-  return withDesign(tile, rebuildBaseLayers(tile, { ...design, owned }, ctx), ctx);
+  // A layer moved out of its rank among the base layers is taken out first,
+  // so the rebuild puts it back at its place rather than where it was moved.
+  const reset = (r: BaseLayerRole) => (isGlyph(role) ? isGlyph(r) : r === role);
+  const elements = design.doc.elements;
+  const outOfRank = elements.some((el, i) => {
+    const r = baseRoleOf(el.payload.id);
+    return r !== undefined && reset(r) && !inRank(elements, i);
+  });
+  const doc = outOfRank ? { ...design.doc, elements: elements.filter((el) => { const r = baseRoleOf(el.payload.id); return r === undefined || !reset(r); }) } : design.doc;
+  return withDesign(tile, rebuildBaseLayers(tile, { ...design, doc, owned }, ctx), ctx);
+}
+
+/** Whether the base layer at `index` sits in rank among the other base
+ * layers: none under it ranks higher and none above it ranks lower. */
+function inRank(elements: readonly Element[], index: number): boolean {
+  const role = baseRoleOf(elements[index]!.payload.id);
+  if (role === undefined) return true;
+  const rank = ROLE_RANK[role];
+  return elements.every((el, i) => {
+    const r = baseRoleOf(el.payload.id);
+    if (r === undefined || i === index) return true;
+    return i < index ? ROLE_RANK[r] <= rank : ROLE_RANK[r] >= rank;
+  });
 }
 
 /** The tile back to plain simple settings: no design. */
@@ -304,9 +326,12 @@ export function resetAllLayers(tile: WatchPageTile): WatchPageTile {
   return withoutDesign(tile);
 }
 
-/** A tile's keys other than its design, for telling a simple edit apart. */
+/** A tile's keys other than its design and its place on the grid, for
+ * telling a simple edit apart: a move feeds no base layer, so it never
+ * rewrites one. */
 function simpleKeys(tile: WatchPageTile): string {
-  return stableJson(withoutDesign(tile));
+  const { gridCol: _col, gridRow: _row, ...rest } = withoutDesign(tile);
+  return stableJson(rest);
 }
 
 /**
@@ -338,6 +363,11 @@ export function syncTileDesigns(before: WatchPagesDocument, after: WatchPagesDoc
       if (design === undefined || typeof p.id !== "string" || typeof tile.id !== "string") return item;
       const prior = old.get(`${p.id}\n${tile.id}`);
       if (prior === undefined || simpleKeys(prior) === simpleKeys(tile)) return item;
+      // Built from no state (a renamed entity, Home Assistant not loaded),
+      // the base layers would lose the state line until the next edit, so
+      // they are kept as they are until the entity is back.
+      const entityId = tileEntityId(tile);
+      if (ctx.states === undefined || !Object.hasOwn(ctx.states, entityId)) return item;
       const pageCtx: BaseLayerContext = { ...ctx, page: p, pages: allPages };
       const next = withDesign(tile, rebuildBaseLayers(tile, design, pageCtx), pageCtx);
       if (stableJson(next) === stableJson(tile)) return item;
@@ -419,7 +449,9 @@ export function removeLayer(design: TileDesign, elementId: string): TileDesign {
 
 /** The design with one layer a step up the draw order (1, toward the top)
  * or down (-1). A drawing layer moves among drawing layers and a tap zone
- * among tap zones, so tap zones stay above everything they cover. */
+ * among tap zones, so tap zones stay above everything they cover. A base
+ * layer moved is owned, as any other change to it is, so its row says it
+ * was changed and Reset puts it back at its place. */
 export function moveLayer(design: TileDesign, elementId: string, dir: -1 | 1): TileDesign {
   const id = elementId.toUpperCase();
   const elements = tapsOnTop(design.doc.elements);
@@ -429,7 +461,9 @@ export function moveLayer(design: TileDesign, elementId: string, dir: -1 | 1): T
   const target = elements[to];
   if (target === undefined || isTap(target) !== isTap(elements[at]!)) return design;
   [elements[at], elements[to]] = [elements[to]!, elements[at]!];
-  return { ...design, doc: { ...design.doc, elements } };
+  const role = baseRoleOf(id);
+  const owned = role === undefined || design.owned.includes(role) ? design.owned : sortRoles([...design.owned, role]);
+  return { ...design, doc: { ...design.doc, elements }, owned };
 }
 
 // ── tap zones ────────────────────────────────────────────────────────────
