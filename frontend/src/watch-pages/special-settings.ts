@@ -20,7 +20,7 @@ import { checkField, entityField, segField, sliderField, symbolField, textField 
 import { uiIcon } from "../ui-icons.js";
 import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type WatchPagesDocument, tileEntityId, tileKind, watchPageTiles } from "./model.js";
-import { colorPicker, commit, fieldNote, linkButton, menuField, resetButton, typed, typingField } from "./tile-settings.js";
+import { colorPicker, commit, fieldNote, linkButton, menuField, ownedSetting, renderChangedInLayer, resetButton, typed, typingField } from "./tile-settings.js";
 import { ONE_LOOK_CAMERA_PREVIEW_HINT } from "./one-look-settings.js";
 import { appSummary, isWatchAppTaskKind, renderAppTask, watchAppTaskHasReset } from "./app-settings.js";
 import {
@@ -932,6 +932,9 @@ function renderWeather(host: TileSettingsHost): TemplateResult {
 
 function renderPerson(host: TileSettingsHost): TemplateResult {
   const photo = watchUsesPersonPhoto(host.tile);
+  // The tile's Photo or Icon layer, once changed directly, holds the choice.
+  const owner = ownedSetting(host, "usePersonPhoto");
+  if (owner !== undefined) return renderChangedInLayer(host, owner, "Tile icon");
   return html`
     ${segField("Tile icon", photo ? "photo" : "icon", T.person.choices.map((c) => [c.value ? "photo" : "icon", c.label] as [string, string]), (v) =>
       commit(host, "personPhoto", (d) => setWatchUsePersonPhoto(d, ...at(host), v === "photo")))}

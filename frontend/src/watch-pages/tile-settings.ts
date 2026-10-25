@@ -80,6 +80,7 @@ import { colorPickerView } from "./color-picker.js";
 import type { SettingDevice } from "../watch-settings.js";
 import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
+import { type BaseLayerRole, type TileDesign, BASE_LAYER_NAMES, SIMPLE_KEY_ROLES, settingOwnerRole } from "./tile-design.js";
 import { forgetSpecialStatus, renderSpecial, specialSummary, watchSpecialSectionTitle } from "./special-settings.js";
 import { renderInboxLine, renderPhoneTileTask } from "./app-settings.js";
 import { watchPhoneTileChanged, watchPhoneTileKindOf, watchPhoneTileSummary, watchPhoneTileTitle } from "./phone-tiles-model.js";
@@ -565,6 +566,65 @@ export function watchTileDefaultColorEdit(host: TileSettingsHost): (d: WatchPage
     color !== undefined
       ? setWatchTileColor(d, host.pageId, host.tileId, color)
       : setWatchTileIconDefault(d, host.pageId, host.tileId, { icon: watchTileIconSettings(host.tile).icon ?? null, color: null });
+}
+
+// ── a tile's layers ──────────────────────────────────────────────────────
+
+/** What the page editor hands the tile settings about the tile's layers
+ * (`design`), on the host as `tileLayers` (`extendHost`): a simple setting
+ * whose layer was changed directly shows "Changed in the X layer" with a
+ * link to that layer and a Reset, and a tile split into tap zones shows that
+ * in place of its single tap. App repo docs/tile_layers_contract_2026-10.md,
+ * section 3. */
+export interface TileLayerLinks {
+  /** The tile's design as stored, undefined while it has none. */
+  readonly design: TileDesign | undefined;
+  /** Its tap zones, 0 for none. */
+  readonly zones: number;
+  /** Pick the layer of a role in the Tiles list. */
+  pickLayer(role: BaseLayerRole): void;
+  /** Give a role's layer back to the simple settings. */
+  reset(role: BaseLayerRole): void;
+  /** Pick the first tap zone. */
+  pickZones(): void;
+}
+
+/** The host's layer links, when the page editor handed some. */
+function layerLinks(host: TileSettingsHost): TileLayerLinks | undefined {
+  return (host as TileSettingsHost & { readonly tileLayers?: TileLayerLinks }).tileLayers;
+}
+
+/** The role whose layer took this simple key away from the simple settings,
+ * or undefined while the key is the simple settings' own. */
+export function ownedSetting(host: TileSettingsHost, key: string): BaseLayerRole | undefined {
+  return settingOwnerRole(layerLinks(host)?.design, key);
+}
+
+/** "Changed in the Name layer · Reset", in place of the rows a role's layer
+ * took over. The layer's name picks the layer. */
+export function renderChangedInLayer(host: TileSettingsHost, role: BaseLayerRole, label?: string): TemplateResult {
+  const links = layerLinks(host);
+  const name = BASE_LAYER_NAMES[role];
+  return html`<div class="field ts-taken-row">${label === undefined ? nothing : html`<span>${label}</span>`}
+    <div class="ts-taken" data-taken=${role}>
+      <span class="ts-taken-dot" aria-hidden="true"></span>
+      <span class="ts-taken-words">Changed in the <button type="button" class="link" title=${`Edit the ${name} layer`} @click=${() => links?.pickLayer(role)}>${name}</button> layer</span>
+      <button type="button" class="link" title=${`Give the ${name} layer back to these settings`} ?disabled=${host.busy} @click=${() => links?.reset(role)}>Reset</button>
+    </div></div>`;
+}
+
+/** The simple keys each role takes over, from `SIMPLE_KEY_ROLES`. */
+function keysOf(role: BaseLayerRole): string[] {
+  return Object.entries(SIMPLE_KEY_ROLES).filter(([, r]) => r === role).map(([k]) => k);
+}
+
+/** The role that owns any of these keys, or undefined. */
+function ownerOfAny(host: TileSettingsHost, keys: readonly string[]): BaseLayerRole | undefined {
+  for (const key of keys) {
+    const role = ownedSetting(host, key);
+    if (role !== undefined) return role;
+  }
+  return undefined;
 }
 
 // ── sections ─────────────────────────────────────────────────────────────
@@ -1317,7 +1377,10 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
 
   const animation = watchChoiceMenu(WATCH_ICON_TAP_ANIMATIONS, s.tapAnimation);
   const unknownAnimation = s.tapAnimationStored !== undefined && s.tapAnimationStored !== s.tapAnimation ? s.tapAnimationStored : undefined;
-  return html`
+  // The icon, its states' icons, its size and shadow, once the tile's Icon
+  // or Photo layer was changed directly: that layer holds them now.
+  const glyphOwner = ownerOfAny(host, keysOf("icon"));
+  const glyph = glyphOwner !== undefined ? renderChangedInLayer(host, glyphOwner, "Icon") : html`
     ${symbolField(
       { icons: host.icons, symbols: host.symbols, device: hostDevice(host) },
       s.icon ?? "",
@@ -1337,11 +1400,13 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
       <button type="button" class="pe-chip ${atDefaultIcon && s.icon !== "" ? "on" : ""}" aria-pressed=${atDefaultIcon && s.icon !== "" ? "true" : "false"}
         title=${host.domainStyle === true ? `No icon of its own: the ${hostDeviceNoun(host)} draws its default` : defaults.icon === undefined ? `The ${hostDeviceNoun(host)} picks the icon` : `The default for this kind of tile: ${defaults.icon}`}
         @click=${defaultIcon}>Default</button>
-    </div>
+    </div>`;
+  return html`
+    ${glyph}
     ${renderTileColor(host, defaults.color)}
-    ${host.domainStyle === true ? nothing : renderStateIcons(host)}
-    ${renderIconSize(host)}
-    ${checkField("Icon shadow", s.iconShadow, (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}
+    ${glyphOwner !== undefined || host.domainStyle === true ? nothing : renderStateIcons(host)}
+    ${glyphOwner !== undefined ? nothing : html`${renderIconSize(host)}
+    ${checkField("Icon shadow", s.iconShadow, (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}`}
     ${s.dimWhenOff.applies && host.domainStyle !== true ? renderDimWhenOff(host, s.dimWhenOff.value) : nothing}
     ${!s.activeAnimation.shown ? nothing
       // One Look never moves the icon for being on: the switch is greyed.
@@ -1407,7 +1472,7 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
   // heading of its own.
   // One Look fills the tile with its color, and a still rainbow; a tile
   // with none draws its kind's color on the watch, graphite on the iPhone.
-  const lookNote = oneLook(host) ? oneLookColorNote(mode, hostDevice(host)) : undefined;
+  const lookNote = layerLinks(host)?.design !== undefined ? "Color fills the tile." : oneLook(host) ? oneLookColorNote(mode, hostDevice(host)) : undefined;
   return html`${colorPickerView({
     color,
     swatches,
@@ -1463,6 +1528,9 @@ function renderText(host: TileSettingsHost): TemplateResult {
     // switch goes back to what is stored.
     host.requestUpdate();
   };
+  // Every row here is the Name layer's once that layer was changed directly.
+  const nameOwner = ownerOfAny(host, keysOf("name"));
+  if (nameOwner !== undefined) return renderChangedInLayer(host, nameOwner, "Label");
   // The label itself is the Name card's (`renderTileName`); a rule's tiles
   // each carry their entity's own name and have none.
   return html`
@@ -1508,9 +1576,14 @@ function renderAction(host: TileSettingsHost): TemplateResult {
   if (host.domainStyle === true) return ask;
   const tap = watchSingleTapMenu(tile);
   const slides = watchHoldSlideMenus(tile, host.catalog, hostDevice(host));
+  const zones = layerLinks(host)?.zones ?? 0;
   return html`
     ${tap === undefined
       ? nothing
+      : zones > 0
+      ? html`<div class="field ts-taken-row"><span>Single tap</span><div class="ts-taken ts-zones" data-taken="zones">
+          <span class="ts-taken-words">Split into ${zones} tap ${zones === 1 ? "zone" : "zones"}</span>
+          <button type="button" class="link" title="Edit the tap zones" @click=${() => layerLinks(host)?.pickZones()}>Edit</button></div></div>`
       : menuField("Single tap", tap, (v) =>
           commit(host, "singleTap", (d) => setWatchTileSingleTap(d, host.pageId, host.tileId, v === WATCH_DEFAULT_CHOICE ? null : v)))}
     ${slides === undefined ? nothing : renderHoldSlide(host, slides)}
@@ -2107,6 +2180,19 @@ function stateRow(host: TileSettingsHost, row: WatchStateRow, oneLookOn = false)
   }
 }
 
+/** A State card's rows, each one a layer took over drawn once as "Changed
+ * in the State layer" where the first of them stood. */
+function stateRows(host: TileSettingsHost, rows: readonly WatchStateRow[]): (TemplateResult | typeof nothing)[] {
+  let shown = false;
+  return rows.map((row) => {
+    const role = ownedSetting(host, row.key);
+    if (role === undefined) return renderStateRow(host, row);
+    if (shown) return nothing;
+    shown = true;
+    return renderChangedInLayer(host, role, "State text");
+  });
+}
+
 /** The State rows a rule's style cannot hold: the phone fixes both on for
  * a domain. */
 const NO_DOMAIN_STATE_ROWS: ReadonlySet<string> = new Set(["showTargetTempOnTile", "showCurrentTempOnTile"]);
@@ -2125,7 +2211,7 @@ function renderState(host: TileSettingsHost): TemplateResult {
       return html`
       <div class="ts-sub-h"><span>${card.title}</span></div>
       ${subtitle === "" ? nothing : html`<div class="hint ts-sub-note">${subtitle}.</div>`}
-      ${card.rows.map((row) => renderStateRow(host, row))}
+      ${stateRows(host, card.rows)}
       ${look ? stateCardNote(host, card.id) : nothing}`;
     })}
     ${resetRow(host, "state", "State")}`;
@@ -2343,6 +2429,15 @@ function renderEffect(host: TileSettingsHost, g: ReturnType<typeof watchTileBack
 /** This module's rules, in the page editor's sheet after the shared form
  * rules and the editor's own. Prefix classes with `ts-`. */
 export const tileSettingsStyles = css`
+  /* "Changed in the X layer": the row's control, given over to the layer. */
+  .ts-taken {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 3px 8px; box-sizing: border-box;
+    border: 1px dashed color-mix(in srgb, var(--wa-accent) 55%, transparent); border-radius: 6px;
+    background: color-mix(in srgb, var(--wa-accent) 10%, transparent); font-size: 12px;
+  }
+  .ts-taken-words { flex: 1; min-width: 0; }
+  .ts-taken .link { font-weight: 600; }
+  .ts-taken-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--wa-accent); flex: none; }
   /* The section cards are the shared inspector's (\`.sec\`, editor-chrome.ts);
      this only stacks them. */
   .ts-root { display: flex; flex-direction: column; }
