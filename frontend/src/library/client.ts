@@ -17,7 +17,7 @@
 // library answers every one with `unknown_command`.
 // Plan: app repo docs/one_library_plan_2026-10.md.
 
-import type { HassLike, WatchConfigLinkFailure } from "../ha-api.js";
+import type { HassLike, WatchConfigLinkFailure, WatchConfigTemplateBudget } from "../ha-api.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
 import { WAIT_FOR_IPHONE_TEXT } from "../watch-settings.js";
 
@@ -215,6 +215,9 @@ export interface LibraryItemReply {
 /** What `library/item/save` answers: the item's revision now. */
 export interface LibraryItemSaveReply {
   revision: number;
+  /** On a page's save, the templates that page alone asks for (`scope`
+   * "page"). Absent from integrations older than tile layers. */
+  template_budget?: WatchConfigTemplateBudget;
 }
 
 /** Read one item for its editor's library mode. Refusals: `not_found`,

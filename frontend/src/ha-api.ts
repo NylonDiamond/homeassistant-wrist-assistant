@@ -816,6 +816,18 @@ export interface WatchConfigLinkFailure {
 export interface WatchConfigSaveReply {
   revision: number;
   link_failures?: WatchConfigLinkFailure[];
+  /** On a `pages` save, the distinct delta templates the saved pages ask
+   * the device for, against the most a delta poll takes. Absent from
+   * integrations older than tile layers. */
+  template_budget?: WatchConfigTemplateBudget;
+}
+
+/** A pages save's template count (`template_budget`): `scope` "device" for
+ * a device's whole record, "page" for one library page. */
+export interface WatchConfigTemplateBudget {
+  used: number;
+  limit: number;
+  scope: "device" | "page";
 }
 
 /** Save one watch's config of one kind, compare-and-swap on `baseRevision`.

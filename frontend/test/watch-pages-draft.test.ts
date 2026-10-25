@@ -12,7 +12,7 @@ import {
   type WatchPagesSaveIO,
   saveWatchPagesDraft,
 } from "../src/watch-pages/draft.js";
-import { linkFailuresOf, linkFailuresText, watchPagesSaveNote, withLinkFailures } from "../src/watch-pages/save-note.js";
+import { linkFailuresOf, linkFailuresText, templateBudgetOf, templateBudgetText, watchPagesSaveNote, withLinkFailures } from "../src/watch-pages/save-note.js";
 
 // ── documents ────────────────────────────────────────────────────────────
 
@@ -697,6 +697,31 @@ describe("a save that tidies the document first", () => {
     await saveWatchPagesDraft(draft, { prepare: (d) => d, save: async () => ({ revision: 4 }), fetch: async () => ({ revision: 4, document: document() }) });
     expect(draft.document).toBe(before);
     expect(draft.undoDepth).toBe(depth);
+  });
+});
+
+describe("the templates a save counted", () => {
+  it("carries the reply's count and says so only past the limit", async () => {
+    const doc = document();
+    const draft = new WatchPagesDraft(doc, 3);
+    draft.apply(withName(doc, "Mine"));
+    const over = { used: 112, limit: 100, scope: "page" as const };
+    const result = await saveWatchPagesDraft(draft, { save: vi.fn(async () => ({ revision: 4, template_budget: over })), fetch: vi.fn() });
+    expect(result).toEqual({ ok: true, revision: 4, merged: false, templateBudget: over });
+    expect(watchPagesSaveNote(result)).toEqual({
+      kind: "warn",
+      text: "Saved. This page asks for 112 templates and a device takes 100, so the tiles past that show their plain look.",
+    });
+    expect(watchPagesSaveNote({ ok: true, revision: 4, merged: false, templateBudget: { used: 100, limit: 100, scope: "device" } })).toBeUndefined();
+    expect(templateBudgetText({ used: 101, limit: 100, scope: "device" })).toMatch(/^These pages ask for 101 templates/);
+    expect(templateBudgetText({ used: 101, limit: 100, scope: "device" })).not.toMatch(/ - |–|—/);
+  });
+
+  it("reads the count leniently: a missing or odd one is none", () => {
+    expect(templateBudgetOf({ revision: 3 })).toBeUndefined();
+    expect(templateBudgetOf({ template_budget: { used: "3", limit: 100 } })).toBeUndefined();
+    expect(templateBudgetOf({ template_budget: { used: 3, limit: 0 } })).toBeUndefined();
+    expect(templateBudgetOf({ template_budget: { used: 3, limit: 100, scope: "elsewhere" } })).toEqual({ used: 3, limit: 100, scope: "device" });
   });
 });
 

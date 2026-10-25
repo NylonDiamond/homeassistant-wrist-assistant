@@ -21,7 +21,7 @@ import { keyed } from "lit/directives/keyed.js";
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../ha-api.js";
 import { UNDO_AFTER_TEXT } from "../delete-later.js";
 import { isPhoneId } from "../phone-pages.js";
-import { type LibraryKind, type LibraryObject, fetchLibraryItem, saveLibraryItem } from "./client.js";
+import { type LibraryItemSaveReply, type LibraryKind, type LibraryObject, fetchLibraryItem, saveLibraryItem } from "./client.js";
 import { type Library, libraryItem, libraryMenu } from "./model.js";
 import { SAVED_FLASH_MS } from "./board.js";
 import type { LibraryStore } from "./store.js";
@@ -74,7 +74,7 @@ export async function fetchLibraryRecord(hass: HassLike, ref: LibraryItemRef): P
  * save goes through the shared store when there is one, so the tabs read
  * the item's new revision. */
 export function libraryItemIO<D extends object>(hass: HassLike, store: LibraryStore | undefined, ref: LibraryItemRef): {
-  save: (baseRevision: number, document: D) => Promise<{ revision: number }>;
+  save: (baseRevision: number, document: D) => Promise<LibraryItemSaveReply>;
   fetch: () => Promise<{ revision: number; document: unknown }>;
 } {
   return {

@@ -2,7 +2,7 @@
 // save can end. Kept apart from the element so the words can be tested
 // without a browser.
 
-import type { WatchConfigLinkFailure } from "../ha-api.js";
+import type { WatchConfigLinkFailure, WatchConfigTemplateBudget } from "../ha-api.js";
 import { type SettingDevice, deviceNoun } from "../watch-settings.js";
 import type { WatchPagesSaveResult } from "./draft.js";
 
@@ -55,6 +55,25 @@ export function linkFailuresOf(reply: unknown): WatchConfigLinkFailure[] {
   });
 }
 
+/** A pages save's template count (`template_budget`), or undefined for a
+ * reply without one (an older integration) or one that cannot be read. */
+export function templateBudgetOf(reply: unknown): WatchConfigTemplateBudget | undefined {
+  const raw = typeof reply === "object" && reply !== null ? (reply as { template_budget?: unknown }).template_budget : undefined;
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const { used, limit, scope } = raw as { used?: unknown; limit?: unknown; scope?: unknown };
+  if (typeof used !== "number" || !Number.isFinite(used) || typeof limit !== "number" || !(limit > 0)) return undefined;
+  return { used, limit, scope: scope === "page" ? "page" : "device" };
+}
+
+/** What a save says when the pages ask a device for more templates than a
+ * delta poll takes: the tiles past the limit draw plain. Undefined within
+ * it. */
+export function templateBudgetText(budget: WatchConfigTemplateBudget | undefined): string | undefined {
+  if (budget === undefined || budget.used <= budget.limit) return undefined;
+  const subject = budget.scope === "page" ? "This page asks" : "These pages ask";
+  return `${subject} for ${budget.used} templates and a device takes ${budget.limit}, so the tiles past that show their plain look.`;
+}
+
 /** What a save of a shared kind calls what it saved: the library's pages,
  * status pages and menus, or a watch's linked phrases. */
 export type LinkedNoun = "pages" | "status pages" | "menus" | "phrases";
@@ -91,7 +110,10 @@ export function watchPagesSaveNote(result: WatchPagesSaveResult, device: Setting
       return { kind: "ok", text: `Nothing left to save. The same changes were saved somewhere else, as revision ${result.revision}.` };
     }
     const note: WatchPagesNote | undefined = result.merged ? { kind: "ok", text: "Saved. Changes made somewhere else were merged in." } : undefined;
-    return withLinkFailures(note, result.linkFailures, "pages");
+    const linked = withLinkFailures(note, result.linkFailures, "pages");
+    const budget = templateBudgetText(result.templateBudget);
+    if (budget === undefined) return linked;
+    return { kind: linked?.kind === "err" ? "err" : "warn", text: `${linked === undefined ? "Saved." : linked.text} ${budget}` };
   }
   const message = (result.message ?? "").trim();
   switch (result.code) {
