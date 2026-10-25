@@ -523,6 +523,26 @@ PHONE_PAGES_LINK_CAPABILITY = "phone_pages_link"
 # companion_watch_id, reads the notification style signed as itself, and
 # may drop its copy of the watch key.
 PUSH_PAIRED_BY_USER_CAPABILITY = "push_paired_by_user"
+# What the integration advertises once a page tile may carry layers (app repo
+# docs/tile_layers_contract_2026-10.md): a panel save or restore checks a
+# tile's `design` key against the caps below (watch_config_store
+# `_check_items`), and the pages save replies name the page's template budget
+# (`template_budget`). The apps draw a design without looking for it; the
+# panel ships with an integration that has it.
+CUSTOM_TILES_CAPABILITY = "custom_tiles"
+# A tile's `design` caps, the same numbers as the panel's tile-design.ts. The
+# size is the design as compact UTF-8 JSON; a layer is an element of
+# `design.doc.elements` whose `kind` is not "tap", a tap zone one whose kind
+# is; the template is counted in code points (Python `len`), as the delta's
+# own template cap is.
+TILE_DESIGN_MAX_BYTES = 16 * 1024
+TILE_DESIGN_MAX_LAYERS = 8
+TILE_DESIGN_MAX_ZONES = 4
+TILE_TEMPLATE_MAX_CHARS = 4096
+# The distinct templates one device sends in a delta poll, show-when and tile
+# templates together: `DELTA_MAX_TEMPLATES` in wa_v2_views.py, which refuses
+# a poll over it. The pages save replies report a page's use against it.
+TEMPLATE_BUDGET_LIMIT = 100
 # Highest CustomComplicationConfig schemaVersion this integration can edit.
 # Must track `CustomComplicationConfig.currentSchemaVersion` in the app repo.
 # A newer document is displayed read-only and never re-saved.
