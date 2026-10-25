@@ -776,6 +776,13 @@ describe("One Look's bridge look", () => {
     const away = photo("Away"), home = photo("Home");
     expect([away.mode, home.mode]).toEqual(["centred", "centred"]);
     near(away.glyphSize, home.glyphSize);
+    // Still one size when "Home" is the wider word: both clear it.
+    const wideM: TextMeasurer = { width: (text, size) => (Array.from(text).length + Array.from(text.toLowerCase()).filter((c) => c === "m").length) * size * 0.55 };
+    const widePhoto = (w: string) => resolveOneLookLayout(input("ultra211", 6, 4, {
+      name: "Chen", state: word(w), centred: true, glyphIsPhoto: true, style: { iconSize: 36, iconOffset: -3 },
+    }), wideM);
+    near(widePhoto("Away").glyphSize, widePhoto("Home").glyphSize);
+    expect(widePhoto("Home").glyphSize).toBeLessThan(home.glyphSize);
     for (const l of [away, home]) {
       near(l.glyphInk!.width, l.discRect.width);
       expect(oneLookRectsIntersect(l.stateRect, l.glyphInk)).toBe(false);

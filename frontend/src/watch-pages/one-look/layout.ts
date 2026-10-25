@@ -316,6 +316,9 @@ export const ONE_LOOK_OLD_PLACE_GAP = 1;
 export const ONE_LOOK_STATE_GIVE_WAY = 0.7;
 /** A person's photo's diameter over the icon size. */
 export const ONE_LOOK_OLD_PLACE_PHOTO_SHARE = 1.35;
+/** The words a person's state shows most: a photo keeps clear of the
+ * wider, whichever one the tile shows now. */
+export const ONE_LOOK_PHOTO_STATE_WORDS: readonly string[] = ["Home", "Away"];
 
 /** The disc may go under its floor to this, the last step before compact. */
 export function oneLookTinyDiscFloor(device: OneLookDevice): number {
@@ -753,7 +756,16 @@ function centred(input: OneLookLayoutInput, fitter: OneLookTextFitter, s: Step):
         stateW = Math.min(beside, oneLookStateWidth(fitted, m, fitter.measurer) + 2 * padH);
       }
     }
-    const stateBox: OneLookRect | undefined = state === undefined ? undefined : { x: inset, y: top, width: stateW, height: stateLH };
+    // A person's photo clears the wider of "Home" and "Away", so two
+    // people's photos stay one size whichever word each shows.
+    let clearW = stateW;
+    if (input.glyphIsPhoto && state !== undefined && state.parts.kind === "word") {
+      for (const word of ONE_LOOK_PHOTO_STATE_WORDS) {
+        const wide: StateFit = { ...state, parts: { kind: "word", word, amber: false } };
+        clearW = Math.max(clearW, Math.min(stateAvail, oneLookStateWidth(wide, m, fitter.measurer) + 2 * padH));
+      }
+    }
+    const stateBox: OneLookRect | undefined = state === undefined ? undefined : { x: inset, y: top, width: clearW, height: stateLH };
     const placed = stateBox === undefined ? full : place([bar, stateBox, accRect, nameBox]);
     glyph = placed.box;
     ink = placed.ink;
