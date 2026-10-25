@@ -46,7 +46,7 @@ import {
   type TileDesign,
   type TileZoneAction,
   type TileZonePreset,
-  BASE_LAYER_NAMES,
+  baseLayerName,
   DELTA_MAX_TEMPLATES,
   TILE_DESIGN_MAX_LAYERS,
   TILE_DESIGN_SCREEN_WIDTH,
@@ -247,7 +247,7 @@ export function tileLayerRows(
     return {
       id: el.payload.id.toUpperCase(),
       kind: el.kind,
-      title: role !== undefined ? BASE_LAYER_NAMES[role] : layerTitle(el, ctx),
+      title: baseLayerName(el.payload.id) ?? layerTitle(el, ctx),
       detail: { kind: KIND_LABEL[el.kind], value: layerValueText(el, ctx), size: layerSizeText(el) },
       status: layerStatus(stored, el.payload.id),
       role,
@@ -383,10 +383,9 @@ export function tileLayerCrumb(view: TileLayersView): { kind: string; name: stri
     const index = zonesOf(design).findIndex((z) => z.id === el.payload.id.toUpperCase());
     return { kind: layerKindWords("tap"), name: `Tap zone ${index + 1}`, color: KIND_COLOR.tap };
   }
-  const role = baseRoleOf(el.payload.id);
   return {
     kind: layerKindWords(el.kind),
-    name: role !== undefined ? BASE_LAYER_NAMES[role] : layerTitle(el, { values: design.doc.values, hass: view.host.hass, elements: design.doc.elements }),
+    name: baseLayerName(el.payload.id) ?? layerTitle(el, { values: design.doc.values, hass: view.host.hass, elements: design.doc.elements }),
     color: KIND_COLOR[el.kind],
   };
 }
@@ -523,6 +522,7 @@ function renderZoneCard(view: TileLayersView, zoneId: string, watchWidth: number
       set(next);
     })}
     <div class="hint ts-under">A tap here runs this zone's action instead of the tile's single tap. Hold and slide stay the whole tile's.</div>
+    <div class="hint ts-under">A zone keeps its place in the Split: it does not drag on the page. Pick another Split to change it.</div>
   </fieldset>`);
 }
 

@@ -39,7 +39,46 @@
             "colorSlot": {
               "baseColorHex": "#E0F3E5"
             },
-            "rules": [],
+            "rules": [
+              {
+                "id": "BA5E0001-0003-4000-8001-000000000000",
+                "cases": [
+                  {
+                    "id": "BA5E0001-0003-4001-8002-000000000000",
+                    "when": {
+                      "join": "all",
+                      "tests": [
+                        {
+                          "id": "BA5E0001-0003-4001-8003-000000000000",
+                          "value": {
+                            "kind": {
+                              "kind": "entityState",
+                              "entityId": "switch.kettle",
+                              "displayName": "Kettle",
+                              "domain": "switch"
+                            }
+                          },
+                          "comparison": {
+                            "kind": "isOn"
+                          }
+                        }
+                      ]
+                    },
+                    "then": [
+                      {
+                        "kind": "setIcon",
+                        "value": {
+                          "kind": {
+                            "kind": "literal",
+                            "value": "switch.2.fill"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
             "frame": {
               "x": 0.0923,
               "y": 0.0923,
@@ -117,19 +156,5 @@
     "entityStates": [],
     "templateResults": {}
   },
-  "expected": [
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000001",
-      "kind": "icon",
-      "symbol": "switch.2",
-      "colorHex": "#E0F3E5",
-      "hidden": false
-    },
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000003",
-      "kind": "text",
-      "text": "Kettle",
-      "hidden": false
-    }
-  ]
+  "expected": []
 }

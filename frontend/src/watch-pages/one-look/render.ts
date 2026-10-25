@@ -93,6 +93,7 @@ import {
 } from "./layout.js";
 import { ONE_LOOK_FONT_FAMILIES, oneLookCssWeight, oneLookMeasurer, oneLookSymbolImage } from "./measurer.js";
 import { type OneLookTextWeight, type StateFit, type StateLine, type TextMeasurer, glyphAspectOf, glyphExtentOf } from "./text.js";
+import type { TileHiddenParts } from "../tile-design-core.js";
 
 /** What a page picture has for one tile when it hands it to One Look. */
 export interface OneLookTileFaceInput {
@@ -124,11 +125,16 @@ export interface OneLookTileFaceInput {
    * the picture's symbols. A tile's base layers pass the estimate measurer
    * for stable fixtures (`tile-base-layers.ts`). */
   measurer?: TextMeasurer;
-  /** A tile's layers (`design`), drawn in place of what One Look draws
-   * inside the tile: the disc or photo, the accessory, the name and state,
-   * the big value and the chart. The fill, the bar, the pattern, the rim,
-   * the border and the dim stay the tile's own (app repo
-   * docs/tile_layers_contract_2026-10.md, section 3). */
+  /** The parts of the tile a design took over (its owned roles), which are
+   * left undrawn: the layout is the same as with them, so nothing else
+   * moves. The glyph takes its disc or halo with it; the state its pill,
+   * unit, tail and amber dot, the big value that stands in for it, and the
+   * accessory beside it (as the apps hide it, touch area and all). The bar
+   * and the chart are never hidden. */
+  hidden?: TileHiddenParts;
+  /** A tile's layers (`design`) that it draws itself (its owned base layers
+   * and added layers), over One Look's own content and under the rim,
+   * dimmed with it (app repo docs/tile_layers_contract_2026-10.md). */
   content?: TemplateResult;
   /** Drawn over the tile's content, under the rim: the page editor's outline
    * of a picked layer on a tile that has no layers saved yet. */
@@ -611,8 +617,9 @@ function nameFont(model: OneLookPreviewModel, centred: boolean, s: number): stri
 
 /** The name and the state: in the centred layout the state alone in its
  * box top left and the name lines centred at the bottom; in every other
- * layout the name lines then the state, top left at the text's origin. */
-function textLayer(model: OneLookPreviewModel, s: number): TemplateResult | typeof nothing {
+ * layout the name lines then the state, top left at the text's origin. A
+ * hidden part keeps its room, so the other stays where it was. */
+function textLayer(model: OneLookPreviewModel, s: number, hidden?: TileHiddenParts): TemplateResult | typeof nothing {
   const { layout, palette, device, kind } = model;
   const shadows = palette.textShadow && device === "phone";
   const nameShadow = textShadow(shadows && model.style.nameShadow, s);
@@ -620,18 +627,19 @@ function textLayer(model: OneLookPreviewModel, s: number): TemplateResult | type
   const lines = layout.name.lines;
   if (layout.mode === "centred") {
     const rect = layout.stateRect;
-    const state = layout.state !== undefined && rect !== undefined && !kind.stateHidden
+    const state = layout.state !== undefined && rect !== undefined && !kind.stateHidden && hidden?.state !== true
       ? html`<span class="ol-state ${model.style.statePill ? "pill" : ""}" style=${`${rectCss(rect, s)}${model.style.statePill ? `;background:rgba(0, 0, 0, ${ONE_LOOK_PILL_OPACITY})` : ""}${stateShadow}`}>${stateLine(layout.state, palette, device, s)}</span>`
       : nothing;
-    const name = lines.length === 0 ? nothing : html`<span class="ol-text centred" style=${`${rectCss({ x: layout.textOrigin.x, y: layout.textOrigin.y, width: layout.textWidth, height: layout.textHeight }, s)}`}>
+    const name = lines.length === 0 || hidden?.name === true ? nothing : html`<span class="ol-text centred" style=${`${rectCss({ x: layout.textOrigin.x, y: layout.textOrigin.y, width: layout.textWidth, height: layout.textHeight }, s)}`}>
       ${lines.map((line) => html`<span class="ol-name" style=${`height:${r2(layout.nameLineHeight * s)}px;${nameFont(model, true, s)}${nameShadow}`}>${line}</span>`)}
     </span>`;
     return html`${state}${name}`;
   }
   if (lines.length === 0 && layout.state === undefined) return nothing;
+  const nameGone = hidden?.name === true ? ";visibility:hidden" : "";
   return html`<span class="ol-text" style=${rectCss({ x: layout.textOrigin.x, y: layout.textOrigin.y, width: layout.textWidth, height: layout.textHeight }, s)}>
-    ${lines.map((line) => html`<span class="ol-name" style=${`height:${r2(layout.nameLineHeight * s)}px;${nameFont(model, false, s)}${nameShadow}`}>${line}</span>`)}
-    ${layout.state === undefined ? nothing : html`<span class="ol-state-row" style=${`height:${r2(layout.stateLineHeight * s)}px${stateShadow}`}>${kind.stateHidden ? nothing : stateLine(layout.state, palette, device, s)}</span>`}
+    ${lines.map((line) => html`<span class="ol-name" style=${`height:${r2(layout.nameLineHeight * s)}px;${nameFont(model, false, s)}${nameShadow}${nameGone}`}>${line}</span>`)}
+    ${layout.state === undefined ? nothing : html`<span class="ol-state-row" style=${`height:${r2(layout.stateLineHeight * s)}px${stateShadow}`}>${kind.stateHidden || hidden?.state === true ? nothing : stateLine(layout.state, palette, device, s)}</span>`}
   </span>`;
 }
 
@@ -813,8 +821,9 @@ function borderLayer(model: OneLookPreviewModel, f: OneLookTileFaceInput, active
  * A tile drawn in One Look at its place, or undefined for a kind that keeps
  * its own face. Under the clip: the fill, the pattern and effect, the
  * picture, the chart, then the content at the palette's content opacity
- * (the bar, the glyph, the button, the text), the rim and the user's
- * border. Outside it, on the iPhone, the under-glow of a lit coloured tile.
+ * (the bar, the glyph, the button, the text, less the parts a design hides,
+ * then the design's own layers), the rim and the user's border. Outside it,
+ * on the iPhone, the under-glow of a lit coloured tile.
  */
 export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
   const model = oneLookPreviewModel(f);
@@ -833,12 +842,11 @@ export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
     ${layers}
     ${model.decorated ? tileUnderlay(f.tile, input, active, { width: f.width, height: f.height }, s) : nothing}
     ${pictureLayer(model, f)}
-    ${f.content === undefined ? chartLayer(model, s) : nothing}
+    ${chartLayer(model, s)}
     <span class="ol-content" style=${palette.contentOpacity < 1 ? `opacity:${palette.contentOpacity}` : nothing}>
       ${barLayer(model, s)}
-      ${f.content === undefined
-        ? html`${discLayer(model, input, s)}${accessoryLayer(model, input, s)}${textLayer(model, s)}${bigValueLayer(model, s)}`
-        : f.content}
+      ${f.hidden?.glyph === true ? nothing : discLayer(model, input, s)}${f.hidden?.state === true ? nothing : accessoryLayer(model, input, s)}${textLayer(model, s, f.hidden)}${f.hidden?.state === true ? nothing : bigValueLayer(model, s)}
+      ${f.content ?? nothing}
     </span>
     ${f.overlay ?? nothing}
     <span class="ol-rim" style=${`padding:${r2(rim * s)}px;background:${oneLookRimCss(palette.rimOpacity)}`}></span>

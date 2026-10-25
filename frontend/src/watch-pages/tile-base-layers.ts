@@ -13,6 +13,7 @@
 
 import type { HassEntityState } from "../ha-api.js";
 import {
+  type Comparison,
   type CustomComplicationConfig,
   type Element,
   type FontDesign,
@@ -21,6 +22,8 @@ import {
   type ImageElement,
   type NormalizedFrame,
   type Rule,
+  type RuleCase,
+  type ShapeElement,
   type TextElement,
   type Value,
   IMAGE_DEFAULT_TIMESTAMP_SIZE,
@@ -31,18 +34,20 @@ import {
 } from "../model.js";
 import type { IconProvider } from "../renderer.js";
 import { type WatchPage, type WatchPageTile, tileEntityId, tileGeometry, tileKind } from "./model.js";
-import { type WatchPagePreviewInput, knownSymbol, watchPreviewTileLabel, watchSpecialTileLook, watchSyncedTile } from "./preview.js";
+import { type WatchPagePreviewInput, filledSymbol, knownSymbol, watchPreviewTileLabel, watchSpecialTileLook, watchSyncedTile } from "./preview.js";
 import { type OneLookPreviewModel, oneLookPreviewModel } from "./one-look/render.js";
-import { type OneLookInk, oneLookGlyphInk, oneLookHex } from "./one-look/colour.js";
+import { type OneLookInk, ONE_LOOK_PILL_OPACITY, oneLookGlyphInk, oneLookHex } from "./one-look/colour.js";
 import { type OneLookStateLine, oneLookStateFor } from "./one-look/state.js";
 import { oneLookCellSize, oneLookCentredGlyph, oneLookDrawnSize, oneLookGridUnit } from "./one-look/metrics.js";
-import { type OneLookRect, ONE_LOOK_GLYPH_INK_SHARE, ONE_LOOK_GLYPH_STATE_GAP, oneLookLayoutMetrics } from "./one-look/layout.js";
+import { type OneLookRect, ONE_LOOK_GLYPH_INK_SHARE, ONE_LOOK_GLYPH_STATE_GAP, ONE_LOOK_PILL_PAD_H, oneLookLayoutMetrics } from "./one-look/layout.js";
 import { oneLookMeasurer } from "./one-look/measurer.js";
 import { ONE_LOOK_WATCH_TAIL_COLUMNS, type TextMeasurer, glyphExtentOf } from "./one-look/text.js";
 import {
   type BaseLayerRole,
   BASE_LAYER_IDS,
   BASE_LAYER_NAMES,
+  BASE_STATE_PILL_ID,
+  BASE_STATE_PILL_NAME,
   TILE_DESIGN_FAMILY,
   TILE_DESIGN_SCREEN_WIDTH,
   normalizeDesignDoc,
@@ -269,11 +274,78 @@ function stateIconRule(tile: WatchPageTile, ctx: BaseLayerContext): Rule | undef
   };
 }
 
-/** The glyph's ink at a state, or undefined when the tile draws none then. */
-function glyphInkAt(tile: WatchPageTile, ctx: BaseLayerContext, state: string): string | undefined {
-  const face = faceOf(tile, ctx, withEntityState(ctx.states, tileEntityId(tile), state));
+/** The tile's face with its entity in another state, one per state asked. */
+function facesAt(tile: WatchPageTile, ctx: BaseLayerContext): (state: string) => Face | undefined {
+  const held = new Map<string, Face | undefined>();
+  return (state) => {
+    if (!held.has(state)) held.set(state, faceOf(tile, ctx, withEntityState(ctx.states, tileEntityId(tile), state)));
+    return held.get(state);
+  };
+}
+
+/** The glyph's ink in a face, or undefined when the tile draws none then. */
+function glyphInkOf(face: Face | undefined): string | undefined {
   if (face === undefined) return undefined;
   return inkHex(oneLookGlyphInk(face.model.palette, face.model.layout.drawsDisc, oneLookCentredGlyph("watch")));
+}
+
+/** The symbol One Look draws in a face (its fill, outline or slashed form),
+ * or undefined when it draws none. */
+function drawnSymbolOf(face: Face | undefined): string | undefined {
+  const icon = face?.model.icon ?? "";
+  return icon === "" ? undefined : icon;
+}
+
+/**
+ * The symbol an icon layer starts with and the rule that swaps it the way
+ * One Look does: the filled variant while a light, switch or fan is on (its
+ * outline while off), a climate's outline while off, and the crossed out
+ * form while unavailable. Read off One Look's own faces at those states, with
+ * the per state icons off (their own rule comes after this one and wins when
+ * an entry matches, as One Look draws an entry's symbol as it is). Kinds
+ * that always fill take the filled symbol and need no rule.
+ */
+function symbolRule(tile: WatchPageTile, ctx: BaseLayerContext, face: Face, tileAt: (state: string) => Face | undefined): { symbol: string; rule?: Rule } {
+  const plainTile = tile.usesStateIcons === true ? { ...tile, usesStateIcons: false } : tile;
+  const at = plainTile === tile ? tileAt : facesAt(plainTile, ctx);
+  const kind = tileKind(tileEntityId(tile));
+  const current = face.model.kind;
+  const plainNow = plainTile === tile ? face : faceOf(plainTile, ctx);
+  const fallback = plainNow?.model.baseIcon || face.model.baseIcon;
+  // The symbol in every state the rule does not name.
+  let symbol: string;
+  let lit: { test: Comparison; symbol: string } | undefined;
+  if (LIT_ON_KINDS.has(kind)) {
+    symbol = drawnSymbolOf(at("off")) ?? fallback;
+    const on = drawnSymbolOf(at("on"));
+    if (on !== undefined && on !== symbol) lit = { test: { kind: "isOn" }, symbol: on };
+  } else if (kind === "climate") {
+    const raw = ctx.states?.[tileEntityId(tile)]?.state;
+    const running = raw !== undefined && raw !== "off" && !current.isUnavailable ? raw : "heat";
+    symbol = drawnSymbolOf(at(running)) ?? fallback;
+    const off = drawnSymbolOf(at("off"));
+    if (off !== undefined && off !== symbol) lit = { test: { kind: "equals", value: literal("off") }, symbol: off };
+  } else {
+    symbol = plainNow !== undefined && !plainNow.model.kind.isUnavailable ? (drawnSymbolOf(plainNow) ?? fallback) : filledSymbol(ctx.icons, fallback, true);
+  }
+  const cases: RuleCase[] = [];
+  const value = entityValue(tile, ctx.states);
+  const unavailable = drawnSymbolOf(at("unavailable"));
+  if (unavailable !== undefined && unavailable !== symbol && unavailable !== lit?.symbol) {
+    cases.push({
+      id: baseRuleId("icon", 3, cases.length + 1, 2),
+      when: { join: "all", tests: [{ id: baseRuleId("icon", 3, cases.length + 1, 3), value, comparison: { kind: "isUnavailable" } }] },
+      then: [{ kind: "setIcon", value: literal(unavailable) }],
+    });
+  }
+  if (lit !== undefined) {
+    cases.push({
+      id: baseRuleId("icon", 3, cases.length + 1, 2),
+      when: { join: "all", tests: [{ id: baseRuleId("icon", 3, cases.length + 1, 3), value, comparison: lit.test }] },
+      then: [{ kind: "setIcon", value: literal(lit.symbol) }],
+    });
+  }
+  return cases.length === 0 ? { symbol } : { symbol, rule: { id: baseRuleId("icon", 3, 0, 1), cases } };
 }
 
 /** The glyph layer: the person's photo, or the symbol. */
@@ -306,18 +378,16 @@ function glyphLayer(tile: WatchPageTile, ctx: BaseLayerContext, face: Face): Ele
   }
   if (model.baseIcon === "") return undefined;
   const iconRule = stateIconRule(tile, ctx);
-  // With per state icons the symbol is the one shown when no entry matches:
-  // the tile's own, read with the state icons off.
-  let symbol = model.baseIcon;
-  if (iconRule !== undefined) {
-    const plain = faceOf({ ...tile, usesStateIcons: false }, ctx);
-    if (plain !== undefined && plain.model.baseIcon !== "") symbol = plain.model.baseIcon;
-  }
+  // The symbol shown when no per state icon matches, filled or not as One
+  // Look fills it, with the rule that swaps it as the state changes.
+  const tileAt = facesAt(tile, ctx);
+  const { symbol, rule: fillRule } = symbolRule(tile, ctx, face, tileAt);
   let colorHex = inkHex(oneLookGlyphInk(model.palette, layout.drawsDisc, oneLookCentredGlyph("watch")));
   let colorRule: Rule | undefined;
   if (LIT_ON_KINDS.has(tileKind(entityId))) {
-    const on = glyphInkAt(tile, ctx, "on");
-    const off = glyphInkAt(tile, ctx, "off");
+    const at = tileAt;
+    const on = glyphInkOf(at("on"));
+    const off = glyphInkOf(at("off"));
     if (on !== undefined && off !== undefined) {
       colorHex = off;
       if (on !== off) {
@@ -337,7 +407,8 @@ function glyphLayer(tile: WatchPageTile, ctx: BaseLayerContext, face: Face): Ele
     id: BASE_LAYER_IDS.icon,
     name: BASE_LAYER_NAMES.icon,
     colorSlot: { baseColorHex: colorHex },
-    rules: [iconRule, colorRule].filter((r): r is Rule => r !== undefined),
+    // The fill rule first: a per state icon, later, wins where it matches.
+    rules: [fillRule, colorRule, iconRule].filter((r): r is Rule => r !== undefined),
     frame: frameOf(rect, box),
     isHidden: false,
     symbol: literal(symbol),
@@ -384,36 +455,69 @@ function nameLayer(face: Face): Element | undefined {
  * own font metrics, a little wider than the measurer's, still fit. */
 const STATE_FIT_SLACK = 0.92;
 
+/** Whether One Look draws this face's state in the Pill style's capsule:
+ * the centred layout, with the style on and a box for the state. */
+function drawsPill(face: Face): boolean {
+  const layout = face.model.layout;
+  return face.model.style.statePill && layout.mode === "centred" && layout.stateRect !== undefined && layout.state !== undefined;
+}
+
+/** The state's pill: a black capsule at One Look's pill opacity over the
+ * state's box (its padding included), just under the State layer. */
+function statePillLayer(face: Face): Element | undefined {
+  const rect = face.model.layout.stateRect;
+  if (!drawsPill(face) || rect === undefined) return undefined;
+  const alpha = Math.round(ONE_LOOK_PILL_OPACITY * 255).toString(16).padStart(2, "0").toUpperCase();
+  const payload: ShapeElement = {
+    id: BASE_STATE_PILL_ID,
+    name: BASE_STATE_PILL_NAME,
+    colorSlot: { baseColorHex: `#000000${alpha}` },
+    rules: [],
+    frame: frameOf(rect, face.box),
+    isHidden: false,
+    kind: "capsule",
+    cornerRadius: 0,
+    thickness: 1,
+    borderWidth: 0,
+  };
+  return { kind: "shape", payload };
+}
+
 /** The state layer: the state line's box, widened to the room the layout
- * leaves it, bold rounded for a number and semibold for a word. */
+ * leaves it (in the Pill style the pill's box, the line centred in it), in
+ * One Look's own state type: a number bold rounded with tabular digits in the
+ * main ink, a word regular in the second ink. */
 function stateLayer(face: Face): Element | undefined {
   const { model, box } = face;
   const layout = model.layout;
   const state = layout.state;
   if (state === undefined) return undefined;
   const w = layout.size.width;
+  const pill = drawsPill(face);
   const line: OneLookRect = layout.mode === "centred" && layout.stateRect !== undefined
     ? layout.stateRect
     : { x: layout.textOrigin.x, y: layout.textOrigin.y + layout.name.lines.length * layout.nameLineHeight, width: layout.textWidth, height: layout.stateLineHeight };
+  const m = oneLookLayoutMetrics(layout, "watch");
   // Up to the glyph's left edge when the glyph is beside the line, else to
-  // the tile's right inset.
+  // the tile's right inset; in a pill, the pill's own box.
   const glyph = layout.discRect.width > 0 ? (layout.glyphInk ?? layout.discRect) : undefined;
   const beside = glyph !== undefined && glyph.x > line.x && glyph.y < line.y + line.height && glyph.y + glyph.height > line.y;
   const right = beside ? glyph.x - ONE_LOOK_GLYPH_STATE_GAP : w - layout.insetH;
-  const width = Math.max(line.width, right - line.x);
+  const width = pill ? line.width : Math.max(line.width, right - line.x);
+  // The room the line itself has: in a pill, less its padding each side.
+  const room = pill ? Math.max(1, width - 2 * Math.round(m.wordSize * ONE_LOOK_PILL_PAD_H)) : width;
   const number = state.parts.kind === "number";
   const size = state.size;
-  const m = oneLookLayoutMetrics(layout, "watch");
-  // One Look draws a number's unit smaller (66%), and the layer draws the
+  // One Look draws a number's unit smaller (84%), and the layer draws the
   // whole line at one size, so "15.6°C" beside a glyph can need more room
   // than One Look's own shrink floor leaves it: the iPhone, whose face is
   // wider than the watch's, then cut it to "15....". The floor goes low
   // enough for the line shown now to fit on both, with a little slack for
   // the apps' own font metrics, never under half.
   const text = model.kind.stateHidden ? "" : oneLookStateLineText(oneLookStateFor(model.kind, false), model.colSpan);
-  const weight = number ? "bold" : "semibold";
+  const weight = number ? "bold" : "regular";
   const drawn = text === "" ? 0 : Math.max(face.measurer.width(text, size, weight, number, 0), face.phoneMeasurer.width(text, size, weight, number, 0));
-  const fits = drawn > 0 ? Math.floor(((width * STATE_FIT_SLACK) / drawn) * 100) / 100 : 1;
+  const fits = drawn > 0 ? Math.floor(((room * STATE_FIT_SLACK) / drawn) * 100) / 100 : 1;
   const payload: TextElement = {
     id: BASE_LAYER_IDS.state,
     name: BASE_LAYER_NAMES.state,
@@ -423,41 +527,41 @@ function stateLayer(face: Face): Element | undefined {
     isHidden: false,
     value: { kind: { kind: "tileState" } },
     fontSize: round(size, 2),
-    fontWeight: number ? "bold" : "semibold",
+    fontWeight: weight,
     lineLimit: 1,
     minimumScale: round(Math.min(1, Math.max(0.5, Math.min(m.textMin / size, fits))), 2),
-    alignment: "leading",
+    alignment: pill ? "center" : "leading",
   };
-  if (number) payload.fontDesign = "rounded";
+  if (number) {
+    payload.fontDesign = "rounded";
+    payload.monospacedDigits = true;
+  }
   if (model.palette.textShadow && model.style.stateShadow) payload.shadow = { ...TEXT_SHADOW };
   return { kind: "text", payload };
 }
 
 /**
- * A tile's base layers in draw order (the glyph or photo, the state, the
- * name), made from its simple settings and One Look's layout at the tile's
- * design box. Empty for a tile whose kind has no layers, and for one One
- * Look does not draw. They come out as a saved document reads back (every
- * key at its default left out), so a layer read from a design compares
- * equal to the one built now.
+ * A tile's base layers in draw order (the glyph or photo, the state's pill
+ * in the Pill style, the state, the name), made from its simple settings and
+ * One Look's layout at the tile's design box, each looking as much like the
+ * part One Look draws as a layer can. Empty for a tile whose kind has no
+ * layers, and for one One Look does not draw. They come out as a saved
+ * document reads back (every key at its default left out), so a layer read
+ * from a design compares equal to the one built now.
  */
 export function baseLayers(tile: WatchPageTile, ctx: BaseLayerContext): Element[] {
   if (!tileHasLayers(tile)) return [];
   const face = faceOf(tile, ctx);
   if (face === undefined) return [];
-  const built = [glyphLayer(face.tile, ctx, face), stateLayer(face), nameLayer(face)].filter((el): el is Element => el !== undefined);
+  const built = [glyphLayer(face.tile, ctx, face), statePillLayer(face), stateLayer(face), nameLayer(face)].filter((el): el is Element => el !== undefined);
   const cfg = newConfig("", 0, TILE_DESIGN_FAMILY);
   cfg.elements = built;
   return parseConfig(encodeConfig(cfg)).elements;
 }
 
-/** The role of each base layer `baseLayers` builds. */
-export function baseLayersByRole(tile: WatchPageTile, ctx: BaseLayerContext): Map<BaseLayerRole, Element> {
-  const out = new Map<BaseLayerRole, Element>();
-  for (const el of baseLayers(tile, ctx)) {
-    for (const role of Object.keys(BASE_LAYER_IDS) as BaseLayerRole[]) if (BASE_LAYER_IDS[role] === el.payload.id) out.set(role, el);
-  }
-  return out;
+/** Each base layer `baseLayers` builds, by its id (upper case). */
+export function baseLayersById(tile: WatchPageTile, ctx: BaseLayerContext): Map<string, Element> {
+  return new Map(baseLayers(tile, ctx).map((el) => [el.payload.id.toUpperCase(), el]));
 }
 
 /** The base layers as a design's document (section 1.1): the tile's id and

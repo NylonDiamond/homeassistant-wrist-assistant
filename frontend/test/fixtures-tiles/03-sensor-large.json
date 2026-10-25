@@ -53,7 +53,7 @@
             "symbol": {
               "kind": {
                 "kind": "literal",
-                "value": "thermometer.medium"
+                "value": "thermometer.medium.fill"
               }
             },
             "size": 32.88,
@@ -89,6 +89,7 @@
             },
             "fontSize": 14,
             "fontWeight": "bold",
+            "monospacedDigits": true,
             "fontDesign": "rounded",
             "minimumScale": 0.71,
             "alignment": "leading",
@@ -153,25 +154,5 @@
     "entityStates": [],
     "templateResults": {}
   },
-  "expected": [
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000001",
-      "kind": "icon",
-      "symbol": "thermometer.medium",
-      "colorHex": "#FAEDDB",
-      "hidden": false
-    },
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000004",
-      "kind": "text",
-      "text": "21.5°C",
-      "hidden": false
-    },
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000003",
-      "kind": "text",
-      "text": "Living room",
-      "hidden": false
-    }
-  ]
+  "expected": []
 }

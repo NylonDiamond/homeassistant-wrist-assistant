@@ -42,6 +42,7 @@ import {
   zonePresetChoices,
 } from "../src/watch-pages/tile-layers-ui.js";
 import { type TileLayerLinks, renderTileSettings } from "../src/watch-pages/tile-settings.js";
+import { editTile } from "../src/watch-pages/tile-settings-model.js";
 import { flat } from "./library-editor-home.js";
 
 const PAGE_ID = "7A1E0000-0000-4000-8000-000000000001";
@@ -401,6 +402,50 @@ describe("the preview", () => {
     const drawn = flat(renderWatchTileFace(tile(), { width: 100.5, height: 66 }, { ...input, page: host.page, pages: [host.page] }, 15.25));
     expect(drawn).toContain("ol-design");
     expect(drawn).toContain("Desk lamp");
+  });
+
+  it("draws a design that owns nothing and adds nothing exactly as the plain tile", () => {
+    const { host, tile } = draftHost();
+    const input = { page: host.page, pages: [host.page], screen: REFERENCE_CASE.screen, states: STATES, oneLook: true };
+    const plain = flat(renderWatchTileFace(tile(), { width: 100.5, height: 66 }, input, 15.25));
+    // Tap zones only: a design is saved, but it draws nothing of its own.
+    tileLayerEdits(host).preset("leftRight");
+    expect(readTileDesign(tile())).toBeDefined();
+    const zoned = flat(renderWatchTileFace(tile(), { width: 100.5, height: 66 }, { ...input, page: host.page, pages: [host.page] }, 15.25));
+    expect(zoned).toBe(plain);
+  });
+
+  it("moving one layer redraws only that layer: every other part stays the native tile's", () => {
+    const { host, tile } = draftHost();
+    const input = () => ({ page: host.page, pages: [host.page], screen: REFERENCE_CASE.screen, states: STATES, oneLook: true });
+    const plain = flat(renderWatchTileFace(tile(), { width: 100.5, height: 66 }, input(), 15.25));
+    expect(plain).toContain("ol-glyph");
+    expect(plain).toContain("ol-state");
+    const icon = tileDesignNow(host).doc.elements.find((e) => e.payload.id === BASE_LAYER_IDS.icon)!;
+    expect(tileLayerEdits(host).frame(BASE_LAYER_IDS.icon, { ...icon.payload.frame, x: icon.payload.frame.x + 0.05 })).toBe(true);
+    const drawn = flat(renderWatchTileFace(tile(), { width: 100.5, height: 66 }, input(), 15.25));
+    // The native glyph is gone, the layer draws it instead; the native state
+    // line (its pill and all) and the native name stay exactly as they were.
+    expect(drawn).not.toContain("ol-glyph");
+    expect(drawn).toContain("ol-design");
+    const native = (html: string) => html.match(/<span class="ol-(state|text)[^]*?<\/span>\s*<\/span>/g) ?? [];
+    expect(native(plain).length).toBeGreaterThan(0);
+    expect(native(drawn)).toEqual(native(plain));
+  });
+
+  it("hides the owned state natively with its pill, and draws the State layer and its pill instead", () => {
+    const { host, tile } = draftHost();
+    const set = editTile(host.document, host.pageId, host.tileId, (t) => ({ ...t, stateValueLabelStyle: "Pill" }));
+    host.apply(set);
+    const input = () => ({ page: host.page, pages: [host.page], screen: REFERENCE_CASE.screen, states: STATES, oneLook: true });
+    expect(flat(renderWatchTileFace(tile(), { width: 100.5, height: 66 }, input(), 15.25))).toContain("ol-state pill");
+    const state = tileDesignNow(host).doc.elements.find((e) => e.payload.id === BASE_LAYER_IDS.state)!;
+    tileLayerEdits(host).frame(BASE_LAYER_IDS.state, { ...state.payload.frame, y: state.payload.frame.y + 0.05 });
+    expect(readTileDesign(tile())!.owned).toEqual(["state"]);
+    const drawn = flat(renderWatchTileFace(tile(), { width: 100.5, height: 66 }, input(), 15.25));
+    expect(drawn).not.toContain("ol-state");
+    expect(drawn).toContain("ol-design");
+    expect(drawn).toContain("ol-glyph");
   });
 
   it("asks for each design tile's template under its tile key, and reads its render back", () => {

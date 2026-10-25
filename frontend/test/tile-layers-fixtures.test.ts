@@ -16,8 +16,10 @@
 // the contract's order: description, tile, states, edit, design, template,
 // templateKey, resolve, expected.
 //
-// - `design`: `baseLayersDocument(tile)` with the estimate measurer and the
-//   file's states, then `edit` applied, then `encodeTileDesign`.
+// - `design`: `baseLayersDocument(tile)` with the estimate measurer, the
+//   file's states and symbols that draw every filled variant (so an icon
+//   layer carries the rule that fills it as One Look does), then `edit`
+//   applied, then `encodeTileDesign`.
 // - `edit`: null, or the operations run in order on the design, each written
 //   as `{"op": ...}`:
 //   - `setLayer` `{id, set}`: the layer's fields set to `set` (a `value`
@@ -28,20 +30,30 @@
 //   - `zonePreset` `{preset, ids}`: the tile split by the preset
 //     (`applyZonePreset`), its zones given these ids in order.
 //   - `zoneAction` `{id, action}`: one zone's action (`setZoneAction`).
+//   - `dragLayer` `{id, dx, dy}`: the layer dragged on the stage by that much
+//     of the design box (`dragLayerFrame` then `setLayerFrame`), so a base
+//     layer is owned and the State layer takes its pill along.
+// - `template`: compiled from the layers the design draws only (owned base
+//   layers and added layers); a base layer that follows the simple settings
+//   is drawn natively and reads nothing.
 // - `resolve`: the context `expected` is resolved in: the tile's own words
-//   (`tileValuesFor`), each entity the document reads as the app builds a
+//   (`tileValuesFor`), each entity the drawn layers read as the app builds a
 //   `ComplicationEntityState`, and the template's rendered values by key.
-// - `expected`: every layer in draw order, resolved by the panel's resolver:
-//   `id`, `kind`, then `text` for a text layer, `symbol` and `colorHex` for an
-//   icon, `value` (the gauge's fill fraction, 0 to 1, to 4 places) for a gauge,
-//   and `hidden`.
+// - `expected`: every layer the design draws itself (`drawnDesignDoc`: owned
+//   base layers, added layers, tap zones) in draw order, resolved by the
+//   panel's resolver: `id`, `kind`, then `text` for a text layer, `symbol`
+//   and `colorHex` for an icon, `value` (the gauge's fill fraction, 0 to 1,
+//   to 4 places) for a gauge, and `hidden`. A design that owns nothing and
+//   adds nothing draws nothing of its own: the native tile draws it all.
 
 import { describe, expect, it } from "vitest";
+import { html } from "lit";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { compile } from "../src/compiler.js";
 import type { HassEntityState } from "../src/ha-api.js";
+import type { IconProvider } from "../src/renderer.js";
 import { type CustomComplicationConfig, type Element, parseConfig, parseValue } from "../src/model.js";
 import { type EntityState, resolveAll } from "../src/resolver.js";
 import type { WatchPageTile } from "../src/watch-pages/model.js";
@@ -52,9 +64,13 @@ import {
   type TileZoneAction,
   type TileZonePreset,
   BASE_LAYER_IDS,
+  BASE_STATE_PILL_ID,
   TILE_DESIGN_VERSION,
   addLayer,
   applyZonePreset,
+  dragLayerFrame,
+  drawnDesignDoc,
+  setLayerFrame,
   encodeTileDesign,
   ownChangedBaseLayers,
   parseTileDesign,
@@ -70,7 +86,8 @@ type Op =
   | { op: "setLayer"; id: string; set: Record<string, unknown> }
   | { op: "addLayer"; kind: Element["kind"]; id: string; set: Record<string, unknown> }
   | { op: "zonePreset"; preset: TileZonePreset; ids: string[] }
-  | { op: "zoneAction"; id: string; action: TileZoneAction };
+  | { op: "zoneAction"; id: string; action: TileZoneAction }
+  | { op: "dragLayer"; id: string; dx: number; dy: number };
 
 interface Case {
   file: string;
@@ -177,9 +194,27 @@ const CASES: Case[] = [
     states: OFFICE,
     edit: null,
   },
+  {
+    file: "09-light-pill-owned-icon-state.json",
+    description: "A light at 6x4, on at 100%, with the Pill value style, its icon dragged a little right and its state dragged a little down and right on the stage: the Icon layer and the State layer with its pill are owned and drawn from the document (the filled bulb while on, the pill under the state), the name is still the native tile's.",
+    tile: { id: "A1B2C3D4-0009-4000-8000-000000000009", entityId: "light.office", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0, color: "#F2AE4E", stateValueLabelStyle: "Pill" },
+    states: { "light.office": entity("light.office", "on", { friendly_name: "Office", brightness: 255 }) },
+    edit: [
+      { op: "dragLayer", id: BASE_LAYER_IDS.icon, dx: 0.05, dy: 0 },
+      { op: "dragLayer", id: BASE_LAYER_IDS.state, dx: 0.02, dy: 0.02 },
+    ],
+  },
 ];
 
 const measurer = oneLookMeasurer("watch", { estimate: true });
+
+/** The symbols the fixtures are built with: every name draws, filled
+ * variants included, and crossed out forms only for the bulb. */
+const icons: IconProvider = {
+  render: (name) => (name.includes(".slash") && !name.startsWith("lightbulb.slash") ? undefined : html``),
+  available: () => true,
+  names: () => [],
+};
 
 /** A layer's fields set as an edit in the layer editor sets them. */
 function setFields(el: Element, set: Record<string, unknown>): void {
@@ -220,6 +255,11 @@ function runEdit(tile: WatchPageTile, design: TileDesign, op: Op): TileDesign {
     }
     case "zoneAction":
       return setZoneAction(design, op.id, op.action);
+    case "dragLayer": {
+      const el = design.doc.elements.find((e) => e.payload.id === op.id);
+      if (el === undefined) throw new Error(`no layer ${op.id}`);
+      return setLayerFrame(design, op.id, dragLayerFrame(el.payload.frame, "move", op.dx, op.dy));
+    }
   }
 }
 
@@ -240,21 +280,22 @@ function entityStatesFor(doc: CustomComplicationConfig, states: Record<string, H
 }
 
 function build(c: Case): Record<string, unknown> {
-  const ctx: BaseLayerContext = { states: c.states, measurer };
+  const ctx: BaseLayerContext = { states: c.states, measurer, icons };
   let design: TileDesign = { v: TILE_DESIGN_VERSION, doc: baseLayersDocument(c.tile, ctx), owned: [], zones: {} };
   for (const op of c.edit ?? []) design = runEdit(c.tile, design, op);
   const encoded = encodeTileDesign(design);
   const read = parseTileDesign(encoded)!;
   const template = read.template ?? null;
   const values = tileValuesFor(c.tile, ctx);
-  const entityStates = entityStatesFor(read.doc, c.states);
+  const drawn = drawnDesignDoc(read.doc, read.owned);
+  const entityStates = entityStatesFor(drawn, c.states);
   const templateResults: Record<string, string> = {};
-  for (const [key, expr] of [...compile(read.doc).expressions].sort(([a], [b]) => (a < b ? -1 : 1))) {
+  for (const [key, expr] of [...compile(drawn).expressions].sort(([a], [b]) => (a < b ? -1 : 1))) {
     const hit = Object.entries(c.rendered ?? {}).find(([start]) => expr.startsWith(start));
     if (hit === undefined) throw new Error(`no rendered value for ${expr}`);
     templateResults[key] = hit[1];
   }
-  const resolved = resolveAll(read.doc, {
+  const resolved = resolveAll(drawn, {
     entityStates: new Map<string, EntityState>(entityStates.map((s) => [s.entityId, {
       entityId: s.entityId, state: s.state, iconName: "", domain: s.domain,
       ...(s.unitOfMeasurement === null ? {} : { unitOfMeasurement: s.unitOfMeasurement }),
@@ -265,7 +306,7 @@ function build(c: Case): Record<string, unknown> {
     locale: "en-US",
     timeZone: "UTC",
   }).rectangular?.elements ?? [];
-  const expected = read.doc.elements.map((el) => {
+  const expected = drawn.elements.map((el) => {
     const r = resolved.find((x) => x.id === el.payload.id);
     const out: Record<string, unknown> = { id: el.payload.id, kind: el.kind };
     if (r?.kind === "text") out.text = r.text;
@@ -312,9 +353,9 @@ describe("tile layer fixtures", () => {
     for (const c of CASES) {
       const fixture = JSON.parse(readFileSync(join(dir, c.file), "utf8")) as { design: { owned: string[]; doc: unknown } };
       const doc = parseConfig(fixture.design.doc);
-      const fresh = baseLayersDocument(c.tile, { states: c.states, measurer });
+      const fresh = baseLayersDocument(c.tile, { states: c.states, measurer, icons });
       for (const el of fresh.elements) {
-        const role = Object.entries(BASE_LAYER_IDS).find(([, id]) => id === el.payload.id)![0];
+        const role = el.payload.id === BASE_STATE_PILL_ID ? "state" : Object.entries(BASE_LAYER_IDS).find(([, id]) => id === el.payload.id)![0];
         if (fixture.design.owned.includes(`base.${role}`)) continue;
         expect(doc.elements.find((e) => e.payload.id === el.payload.id), `${c.file} ${role}`).toEqual(el);
       }
@@ -328,16 +369,31 @@ describe("tile layer fixtures", () => {
     };
     const light = by("01-light-medium.json");
     expect(light.resolve).toMatchObject({ tileState: "82%", tileName: "Office" });
-    expect(light.expected.map((e) => e.kind)).toEqual(["icon", "text", "text"]);
-    expect(light.expected.find((e) => e.id === BASE_LAYER_IDS.state)?.text).toBe("82%");
-    expect(by("02-person-photo-small.json").expected[0]).toMatchObject({ id: BASE_LAYER_IDS.photo, kind: "image" });
+    // Nothing owned and nothing added: the native tile draws every part, and
+    // the design draws nothing of its own and computes nothing.
+    for (const file of ["01-light-medium.json", "02-person-photo-small.json", "03-sensor-large.json", "04-switch-extra-small.json", "08-light-no-label.json"]) {
+      expect(by(file).expected, file).toEqual([]);
+      expect(by(file).template, file).toBeNull();
+    }
     expect(by("03-sensor-large.json").resolve.tileState).toBe("21.5°C");
-    expect(by("05-light-owned-name.json").design.owned).toEqual(["base.name"]);
+    const name = by("05-light-owned-name.json");
+    expect(name.design.owned).toEqual(["base.name"]);
+    expect(name.expected).toEqual([{ id: BASE_LAYER_IDS.name, kind: "text", text: "Office", hidden: false }]);
     const added = by("06-person-added-layers.json");
     expect(added.template).not.toBeNull();
     expect(added.templateKey).toBe(tileTemplateKey(added.template!));
+    expect(added.expected.map((e) => e.id)).toEqual([BATTERY_TEXT, BATTERY_GAUGE]);
     expect(added.expected.find((e) => e.id === BATTERY_TEXT)?.text).toBe("71%");
     expect(Object.keys(by("07-switch-zones.json").design.zones)).toEqual([ZONE_LEFT, ZONE_RIGHT]);
-    expect(by("08-light-no-label.json").expected.some((e) => e.id === BASE_LAYER_IDS.name)).toBe(false);
+    expect(by("07-switch-zones.json").expected.map((e) => e.kind)).toEqual(["tap", "tap"]);
+    // The Pill light: the filled bulb while on, the pill under the state,
+    // the name left to the native tile.
+    const pill = by("09-light-pill-owned-icon-state.json");
+    expect(pill.design.owned).toEqual(["base.icon", "base.state"]);
+    expect(pill.expected.map((e) => e.id)).toEqual([BASE_LAYER_IDS.icon, BASE_STATE_PILL_ID, BASE_LAYER_IDS.state]);
+    expect(pill.expected[0]).toMatchObject({ kind: "icon", symbol: "lightbulb.fill" });
+    expect(pill.expected[1]).toMatchObject({ kind: "shape", hidden: false });
+    expect(pill.expected[2]).toMatchObject({ kind: "text", text: "100%" });
+    expect(pill.template).toBeNull();
   });
 });

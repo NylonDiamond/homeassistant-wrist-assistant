@@ -1,0 +1,333 @@
+{
+  "description": "A light at 6x4, on at 100%, with the Pill value style, its icon dragged a little right and its state dragged a little down and right on the stage: the Icon layer and the State layer with its pill are owned and drawn from the document (the filled bulb while on, the pill under the state), the name is still the native tile's.",
+  "tile": {
+    "id": "A1B2C3D4-0009-4000-8000-000000000009",
+    "entityId": "light.office",
+    "colSpan": 6,
+    "rowSpan": 4,
+    "gridCol": 0,
+    "gridRow": 0,
+    "color": "#F2AE4E",
+    "stateValueLabelStyle": "Pill"
+  },
+  "states": {
+    "light.office": {
+      "entity_id": "light.office",
+      "state": "on",
+      "attributes": {
+        "friendly_name": "Office",
+        "brightness": 255
+      },
+      "last_changed": "",
+      "last_updated": ""
+    }
+  },
+  "edit": [
+    {
+      "op": "dragLayer",
+      "id": "BA5E0000-0000-4000-8000-000000000001",
+      "dx": 0.05,
+      "dy": 0
+    },
+    {
+      "op": "dragLayer",
+      "id": "BA5E0000-0000-4000-8000-000000000004",
+      "dx": 0.02,
+      "dy": 0.02
+    }
+  ],
+  "design": {
+    "v": 1,
+    "owned": [
+      "base.icon",
+      "base.state"
+    ],
+    "zones": {},
+    "doc": {
+      "schemaVersion": 6,
+      "id": "A1B2C3D4-0009-4000-8000-000000000009",
+      "name": "Office",
+      "values": [],
+      "slotIndex": 0,
+      "elements": [
+        {
+          "kind": "icon",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000001",
+            "colorSlot": {
+              "baseColorHex": "#F5C27A"
+            },
+            "rules": [
+              {
+                "id": "BA5E0001-0003-4000-8001-000000000000",
+                "cases": [
+                  {
+                    "id": "BA5E0001-0003-4001-8002-000000000000",
+                    "when": {
+                      "join": "all",
+                      "tests": [
+                        {
+                          "id": "BA5E0001-0003-4001-8003-000000000000",
+                          "value": {
+                            "kind": {
+                              "kind": "entityState",
+                              "entityId": "light.office",
+                              "displayName": "Office",
+                              "domain": "light"
+                            }
+                          },
+                          "comparison": {
+                            "kind": "isUnavailable"
+                          }
+                        }
+                      ]
+                    },
+                    "then": [
+                      {
+                        "kind": "setIcon",
+                        "value": {
+                          "kind": {
+                            "kind": "literal",
+                            "value": "lightbulb.slash"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "BA5E0001-0003-4002-8002-000000000000",
+                    "when": {
+                      "join": "all",
+                      "tests": [
+                        {
+                          "id": "BA5E0001-0003-4002-8003-000000000000",
+                          "value": {
+                            "kind": {
+                              "kind": "entityState",
+                              "entityId": "light.office",
+                              "displayName": "Office",
+                              "domain": "light"
+                            }
+                          },
+                          "comparison": {
+                            "kind": "isOn"
+                          }
+                        }
+                      ]
+                    },
+                    "then": [
+                      {
+                        "kind": "setIcon",
+                        "value": {
+                          "kind": {
+                            "kind": "literal",
+                            "value": "lightbulb.fill"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "BA5E0001-0002-4000-8001-000000000000",
+                "cases": [
+                  {
+                    "id": "BA5E0001-0002-4001-8002-000000000000",
+                    "when": {
+                      "join": "all",
+                      "tests": [
+                        {
+                          "id": "BA5E0001-0002-4001-8003-000000000000",
+                          "value": {
+                            "kind": {
+                              "kind": "entityState",
+                              "entityId": "light.office",
+                              "displayName": "Office",
+                              "domain": "light"
+                            }
+                          },
+                          "comparison": {
+                            "kind": "isOn"
+                          }
+                        }
+                      ]
+                    },
+                    "then": [
+                      {
+                        "kind": "setColor",
+                        "value": {
+                          "kind": {
+                            "kind": "literal",
+                            "value": "#FFF8EA"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "frame": {
+              "x": 0.4633,
+              "y": 0.3226,
+              "width": 0.1733,
+              "height": 0.2639,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "symbol": {
+              "kind": {
+                "kind": "literal",
+                "value": "lightbulb"
+              }
+            },
+            "size": 16.59,
+            "name": "Icon"
+          }
+        },
+        {
+          "kind": "shape",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000005",
+            "colorSlot": {
+              "baseColorHex": "#00000038"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.0791,
+              "y": 0.1639,
+              "width": 0.3443,
+              "height": 0.2424,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "kind": "capsule",
+            "cornerRadius": 0,
+            "borderWidth": 0,
+            "name": "State pill"
+          }
+        },
+        {
+          "kind": "text",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000004",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.0791,
+              "y": 0.1639,
+              "width": 0.3443,
+              "height": 0.2424,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "shadow": {
+              "colorHex": "#00000040",
+              "radius": 0.75,
+              "dx": 0,
+              "dy": 0.5
+            },
+            "value": {
+              "kind": {
+                "kind": "tileState"
+              }
+            },
+            "fontSize": 14,
+            "fontWeight": "bold",
+            "monospacedDigits": true,
+            "fontDesign": "rounded",
+            "minimumScale": 0.71,
+            "name": "State"
+          }
+        },
+        {
+          "kind": "text",
+          "payload": {
+            "id": "BA5E0000-0000-4000-8000-000000000003",
+            "colorSlot": {
+              "baseColorHex": "#FFFFFF"
+            },
+            "rules": [],
+            "frame": {
+              "x": 0.0299,
+              "y": 0.7312,
+              "width": 0.9403,
+              "height": 0.1788,
+              "rotationDegrees": 0
+            },
+            "isHidden": false,
+            "shadow": {
+              "colorHex": "#00000040",
+              "radius": 0.75,
+              "dx": 0,
+              "dy": 0.5
+            },
+            "value": {
+              "kind": {
+                "kind": "tileName"
+              }
+            },
+            "fontSize": 10,
+            "fontWeight": "medium",
+            "minimumScale": 0.87,
+            "name": "Name"
+          }
+        }
+      ],
+      "supportedFamilies": [
+        "rectangular"
+      ],
+      "perFamily": [
+        "rectangular",
+        {
+          "cornerBodyShape": "circle",
+          "borderWidth": 2
+        }
+      ],
+      "dataSources": [],
+      "tapAction": {
+        "type": "none"
+      }
+    }
+  },
+  "template": null,
+  "templateKey": null,
+  "resolve": {
+    "tileState": "100%",
+    "tileName": "Office",
+    "entityStates": [
+      {
+        "entityId": "light.office",
+        "displayName": "Office",
+        "state": "on",
+        "unitOfMeasurement": null,
+        "deviceClass": null,
+        "domain": "light"
+      }
+    ],
+    "templateResults": {}
+  },
+  "expected": [
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000001",
+      "kind": "icon",
+      "symbol": "lightbulb.fill",
+      "colorHex": "#FFF8EA",
+      "hidden": false
+    },
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000005",
+      "kind": "shape",
+      "hidden": false
+    },
+    {
+      "id": "BA5E0000-0000-4000-8000-000000000004",
+      "kind": "text",
+      "text": "100%",
+      "hidden": false
+    }
+  ]
+}

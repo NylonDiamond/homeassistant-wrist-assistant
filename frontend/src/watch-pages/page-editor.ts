@@ -233,7 +233,9 @@ import {
 } from "./preview.js";
 import { PagePhotoStore } from "./page-photo-store.js";
 import { addWatchTile, watchAddRefusal, watchAddThemeOf, watchKindColor } from "./tile-new.js";
-import { renderWatchClock, watchPreviewLayout, watchPreviewSideInset, watchPreviewTopInset } from "./preview.js";
+import { previewTileCellInset, renderWatchClock, watchPreviewLayout, watchPreviewSideInset, watchPreviewTopInset } from "./preview.js";
+import { tileBoxOf, tileDesignDrawsLayer, tileLayerPlacement } from "./tile-design-face.js";
+import type { NormalizedFrame } from "../model.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import {
   PHONE_SIZE_TEXT,
@@ -256,7 +258,19 @@ import {
   tileSettingsFoldIds,
   tileSettingsStyles,
 } from "./tile-settings.js";
-import { BASE_LAYER_IDS, TILE_DESIGN_SCREEN_WIDTH, designForEdit, readTileDesign, syncTileDesigns, tileHasLayers, zonesOf } from "./tile-design.js";
+import {
+  type LayerDragMode,
+  BASE_LAYER_IDS,
+  TILE_DESIGN_SCREEN_WIDTH,
+  designForEdit,
+  dragLayerFrame,
+  layerDraggable,
+  readTileDesign,
+  syncTileDesigns,
+  tileHasLayers,
+  withLayerFrame,
+  zonesOf,
+} from "./tile-design.js";
 import { tileLayerContext, tileLayerEdits } from "./tile-layer-host.js";
 import {
   type TileLayersView,
@@ -521,7 +535,25 @@ interface ResizeGesture extends GestureBase {
   preview?: WatchResizePreview;
 }
 
-type Gesture = MoveGesture | ResizeGesture;
+/** A drag of the picked layer of the selected tile: moving its frame, or
+ * pulling one of its corners, inside the tile. */
+interface LayerGesture extends GestureBase {
+  kind: "layer";
+  layerId: string;
+  mode: LayerDragMode;
+  /** The layer's frame when the press began, as the native tile draws that
+   * part now for a base layer that follows the simple settings. */
+  startFrame: NormalizedFrame;
+  /** The design box fitted in the drawn tile, in pixels: a pointer's travel
+   * over its size is the travel in fractions of the box. */
+  fitPx: { width: number; height: number };
+  /** The frame the pointer asks for now. */
+  frame?: NormalizedFrame;
+  /** The tile with the layer at `frame`, drawn while the drag lasts. */
+  preview?: WatchPageTile;
+}
+
+type Gesture = MoveGesture | ResizeGesture | LayerGesture;
 
 /** The part of `home-assistant-js-websocket`'s connection that tells of a
  * reconnect. Both optional: a test double or another frontend may lack them. */
@@ -549,6 +581,13 @@ function tileIdOf(tile: WatchPageTile): string {
 function sameRect(a: WatchRect, b: WatchRect): boolean {
   return a.col === b.col && a.row === b.row && a.colSpan === b.colSpan && a.rowSpan === b.rowSpan;
 }
+
+function sameLayerFrame(a: NormalizedFrame, b: NormalizedFrame): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
+/** The corners of a picked layer's outline a drag can pull. */
+const LAYER_HANDLES: readonly Exclude<LayerDragMode, "move">[] = ["nw", "ne", "sw", "se"];
 
 /** Fields where keys type text: the editor's own keys stay out of them. A
  * slider or a menu is not one, so Cmd+Z there undoes the edit it made
@@ -2518,6 +2557,14 @@ export class WaPageEditor extends LitElement {
     const draft = this.draft;
     if (draft === undefined) return;
     this.swallowTileClick = false;
+    // With a layer or a tap zone of this tile picked, a drag moves that layer
+    // inside the tile, not the tile (a zone keeps its preset's place, so a
+    // drag on it does nothing).
+    const layerId = this.pickedLayerId();
+    if (layerId !== undefined && sameWatchId(tileId, this.selectedTileId)) {
+      this.beginLayerDrag(e, tileId, layerId, "move");
+      return;
+    }
     // A plain press on one of a pick of several keeps the pick and drags all
     // of it (a click without a drag still collapses it, in `clickTile`); on a
     // tile outside the pick it collapses to that tile, as a plain click does,
@@ -2555,6 +2602,47 @@ export class WaPageEditor extends LitElement {
       captured: this.capture(button, e.pointerId),
       baseVersion: draft.baseVersion,
       ...(members.length >= 2 ? { group: members } : {}),
+    };
+    this.armWindow();
+  }
+
+  /**
+   * A press on the selected tile with one of its layers picked, or on a
+   * corner of that layer's outline: the start of a drag of the layer's frame,
+   * measured in the tile as drawn. A tap zone, or a tile whose layers cannot
+   * be read, starts nothing.
+   */
+  private beginLayerDrag(e: PointerEvent, tileId: string, layerId: string, mode: LayerDragMode): void {
+    const draft = this.draft;
+    const page = this.currentPage();
+    const tile = page === undefined ? undefined : this.tileOn(page, tileId);
+    const host = page === undefined || tile === undefined ? undefined : this.tileSettingsHost(page, tile);
+    if (draft === undefined || page === undefined || tile === undefined || host === undefined) return;
+    const design = designForEdit(tile, tileLayerContext(host));
+    if (!layerDraggable(design, layerId)) return;
+    const el = design.doc.elements.find((x) => x.payload.id.toUpperCase() === layerId.toUpperCase());
+    const button = this.renderRoot.querySelector<HTMLElement>(`.pe-tile[data-tile="${CSS.escape(tileId)}"]`);
+    const drawn = button?.querySelector<HTMLElement>(".ol-tile")?.getBoundingClientRect() ?? button?.getBoundingClientRect();
+    if (el === undefined || drawn === undefined || !(drawn.width > 0) || !(drawn.height > 0)) return;
+    const { fit } = tileLayerPlacement(el.payload.frame, tileBoxOf(tile), drawn.width, drawn.height);
+    if (mode !== "move") e.stopPropagation();
+    e.preventDefault();
+    this.gesture = {
+      kind: "layer",
+      pointerId: e.pointerId,
+      pageId: watchPageId(page),
+      tileId,
+      startX: e.clientX,
+      startY: e.clientY,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      started: false,
+      layerId: layerId.toUpperCase(),
+      mode,
+      startFrame: { ...el.payload.frame },
+      fitPx: { width: fit.width, height: fit.height },
+      captured: this.capture(e.currentTarget as HTMLElement, e.pointerId),
+      baseVersion: draft.baseVersion,
     };
     this.armWindow();
   }
@@ -2623,7 +2711,7 @@ export class WaPageEditor extends LitElement {
         if (!pastDragThreshold(e.clientX - g.startX, e.clientY - g.startY)) return;
         g.started = true;
         this.menuPageId = undefined;
-        this.startAutoScroll();
+        if (g.kind !== "layer") this.startAutoScroll();
       }
       e.preventDefault();
       this.trackGesture();
@@ -2635,7 +2723,7 @@ export class WaPageEditor extends LitElement {
     if (g && e.pointerId === g.pointerId) {
       if (this.baseMoved(g.baseVersion)) return;
       this.endGesture();
-      if (g.started && g.kind === "move" && g.group !== undefined) {
+      if (g.started && ((g.kind === "move" && g.group !== undefined) || g.kind === "layer")) {
         // The click after this pointer up lands on a picked tile; it is the
         // drag's, not a plain click that would collapse the pick.
         this.swallowTileClick = true;
@@ -2656,6 +2744,10 @@ export class WaPageEditor extends LitElement {
    * do; or the rectangle a handle asks for and the page it would leave. */
   private trackGesture(): void {
     const g = this.gesture;
+    if (g?.kind === "layer") {
+      this.trackLayerGesture(g);
+      return;
+    }
     const screen = this.screenEl();
     const page = this.currentPage();
     const measured = screen ? this.measuredGrid(screen) : undefined;
@@ -2695,9 +2787,33 @@ export class WaPageEditor extends LitElement {
     this.requestUpdate();
   }
 
+  /** Follow the pointer with the picked layer: its frame moved or resized by
+   * the travel in fractions of the tile's design box, inside the tile, and
+   * the tile drawn with it there. */
+  private trackLayerGesture(g: LayerGesture): void {
+    if (!(g.fitPx.width > 0) || !(g.fitPx.height > 0)) return;
+    const frame = dragLayerFrame(g.startFrame, g.mode, (g.clientX - g.startX) / g.fitPx.width, (g.clientY - g.startY) / g.fitPx.height);
+    if (g.frame !== undefined && sameLayerFrame(g.frame, frame)) return;
+    g.frame = frame;
+    const page = this.currentPage();
+    const tile = page === undefined ? undefined : this.tileOn(page, g.tileId);
+    const host = page === undefined || tile === undefined ? undefined : this.tileSettingsHost(page, tile);
+    if (tile === undefined || host === undefined) return;
+    g.preview = withLayerFrame(tile, g.layerId, frame, tileLayerContext(host));
+    this.requestUpdate();
+  }
+
   private finishGesture(g: Gesture): void {
     const document = this.draft?.document;
     if (document === undefined) return;
+    if (g.kind === "layer") {
+      // One undo step through the page draft, owning a base layer it moves.
+      const page = this.currentPage();
+      const tile = page === undefined ? undefined : this.tileOn(page, g.tileId);
+      const host = page === undefined || tile === undefined ? undefined : this.tileSettingsHost(page, tile);
+      if (host !== undefined && g.frame !== undefined) tileLayerEdits(host).frame(g.layerId, g.frame);
+      return;
+    }
     if (g.kind === "move") {
       if (g.cell === undefined || g.outcome === undefined) return;
       if (g.group !== undefined) {
@@ -3582,13 +3698,56 @@ export class WaPageEditor extends LitElement {
     const id = this.pickedLayerId();
     const tileId = this.selectedTileId;
     if (id === undefined || tileId === undefined) return undefined;
-    const tile = this.tileOn(page, tileId);
+    const tile = this.stageTile(page, tileId);
     if (tile === undefined || !tileHasLayers(tile)) return undefined;
-    const isZone = zonesOf(readTileDesign(tile)).some((z) => z.id === id);
-    if (readTileDesign(tile) !== undefined) return isZone ? { tileId, zoneId: id } : { tileId, layerId: id };
+    if (zonesOf(readTileDesign(tile)).some((z) => z.id === id)) return { tileId, zoneId: id };
+    // A layer the design draws itself is outlined where it draws; one the
+    // native tile draws (a base layer that follows the simple settings) at
+    // its frame as built now.
+    if (tileDesignDrawsLayer(tile, id)) return { tileId, layerId: id };
+    const frame = this.pickedLayerFrame(page, tile, id);
+    return frame === undefined ? undefined : { tileId, layerId: id, outline: frame };
+  }
+
+  /** A tile as the stage draws it: while its picked layer is dragged, with
+   * the layer where the pointer has it. */
+  private stageTile(page: WatchPage, tileId: string): WatchPageTile | undefined {
+    const g = this.gesture;
+    if (g?.kind === "layer" && g.started && g.preview !== undefined && sameWatchId(g.tileId, tileId)) return g.preview;
+    return this.tileOn(page, tileId);
+  }
+
+  /** Where the picked layer of the selected tile is on the stage, in
+   * pixels: its frame (the pointer's while it is dragged) in the tile as
+   * drawn in its cell box `cell`. Undefined for no layer picked, and for a
+   * tap zone, which is not dragged. */
+  private pickedLayerBox(
+    page: WatchPage,
+    tile: WatchPageTile,
+    cell: { left: number; top: number; width: number; height: number },
+    input: WatchPagePreviewInput,
+  ): { left: number; top: number; width: number; height: number; tileId: string; layerId: string } | undefined {
+    const layerId = this.pickedLayerId();
+    const tileId = tileIdOf(tile);
+    if (layerId === undefined || tileId === "" || !tileHasLayers(tile)) return undefined;
     const host = this.tileSettingsHost(page, tile);
-    const el = host === undefined ? undefined : designForEdit(tile, tileLayerContext(host)).doc.elements.find((e) => e.payload.id.toUpperCase() === id);
-    return el === undefined ? undefined : { tileId, layerId: id, outline: el.payload.frame };
+    if (host === undefined || !layerDraggable(designForEdit(tile, tileLayerContext(host)), layerId)) return undefined;
+    const g = this.gesture;
+    const dragged = g?.kind === "layer" && g.started && sameWatchId(g.tileId, tileId) ? g.frame : undefined;
+    const frame = dragged ?? this.pickedLayerFrame(page, tile, layerId);
+    if (frame === undefined) return undefined;
+    const s = input.scale ?? 1.5;
+    const inset = previewTileCellInset(input, tile, cell.width / s, cell.height / s) * s;
+    const { layer } = tileLayerPlacement(frame, tileBoxOf(tile), cell.width - 2 * inset, cell.height - 2 * inset);
+    return { left: cell.left + inset + layer.left, top: cell.top + inset + layer.top, width: layer.width, height: layer.height, tileId, layerId };
+  }
+
+  /** The picked layer's frame on a tile: as the design has it, a base layer
+   * that follows the simple settings built again as it is now. */
+  private pickedLayerFrame(page: WatchPage, tile: WatchPageTile, id: string): NormalizedFrame | undefined {
+    const host = this.tileSettingsHost(page, tile);
+    if (host === undefined) return undefined;
+    return designForEdit(tile, tileLayerContext(host)).doc.elements.find((e) => e.payload.id.toUpperCase() === id.toUpperCase())?.payload.frame;
   }
 
   /** A tile's face in a 44 by 30 box, at the largest scale that fits,
@@ -3751,9 +3910,12 @@ export class WaPageEditor extends LitElement {
     this.stageTopInset = watchPreviewTopInset(input);
     const scrolls = !smart && (asOnWatch ? watchPagePreviewScrolls(page, screen, phone) : this.editStage(page, input).scrolls);
     const empty = !smart && !asOnWatch && tiles === 0;
+    const pickedZone = designFocus?.zoneId !== undefined;
     const hint = smart ? undefined
       : asOnWatch ? `Shown as the ${phone ? "iPhone" : "watch"} draws it: headers close up the rows below them. Turn off ${this.viewName} to edit.`
       : empty ? NO_TILES_TEXT
+      : pickedZone ? "A tap zone keeps its place in the Split it belongs to: change it with Split in the zone's settings. Click the tile to go back to its settings."
+      : designFocus !== undefined ? "Drag on the tile to move the picked layer, or a corner of its outline to size it. Click the tile to go back to its settings."
       : "Drag a tile to move it, or onto another tile to swap the two. Drag an edge or the corner of the selected tile to resize it. Arrow keys move the selected tile.";
     return html`<div class="card canvas-card lit pe-canvas" aria-label="Page">
       ${this.renderCanvasHead(page, watches, facts, phone ? PHONE_FRAME_TEXT : found === undefined ? `${watchCase.label}, this watch's size is not known` : undefined, tile)}
@@ -4107,6 +4269,10 @@ export class WaPageEditor extends LitElement {
         ? cellRectPx(grid, drawnRect(watchTileRect(selectedPlaced.tile)))
         : undefined;
     const back = previewFramedScreenLayers(input, shown, s, screen, this.photoUrl);
+    // With a layer of the selected tile picked, its corners take the place
+    // of the tile's own handles: a drag on the tile moves the layer, a drag
+    // on a corner sizes it.
+    const layerBox = selectedPlaced !== undefined && selBox !== undefined && !resize ? this.pickedLayerBox(page, selectedPlaced.tile, selBox, input) : undefined;
     // The grid's cells show only while a tile is moved or resized.
     return renderPreviewFrame(input, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""}" tabindex="-1" role="group" aria-label=${`Layout of ${watchPageName(page)}`}
       style=${`width:${width}px;height:${height}px;background:${back.background}`}
@@ -4121,10 +4287,19 @@ export class WaPageEditor extends LitElement {
       ${repeat(layout.tiles, keyOf, (placed) => this.renderStageTile(placed, input, layout.unit, grid, move))}
       ${selBox ? html`<div class="pe-sel ${resize?.preview?.overlaps ? "no" : ""}" aria-hidden="true"
           style=${`left:${selBox.left}px;top:${selBox.top}px;width:${selBox.width}px;height:${selBox.height}px;${handleSizes(selBox)}`}>
-          ${repeat(shownHandles(selBox, grid, resize?.handle), (h) => h, (h) => html`<span class="pe-handle ${h}" title=${this.saving ? SAVING_TEXT : "Drag to resize"}
+          ${this.pickedLayerId() !== undefined ? nothing : repeat(shownHandles(selBox, grid, resize?.handle), (h) => h, (h) => html`<span class="pe-handle ${h}" title=${this.saving ? SAVING_TEXT : "Drag to resize"}
             @pointerdown=${(e: PointerEvent) => this.onHandlePointerDown(e, h)}
             @click=${(e: Event) => e.stopPropagation()}></span>`)}
         </div>` : nothing}
+      ${layerBox === undefined ? nothing : html`<div class="pe-layer-sel" aria-hidden="true"
+          style=${`left:${layerBox.left}px;top:${layerBox.top}px;width:${layerBox.width}px;height:${layerBox.height}px`}>
+          ${LAYER_HANDLES.map((h) => html`<span class="pe-lhandle ${h}" title=${this.saving ? SAVING_TEXT : "Drag to size the layer"}
+            @pointerdown=${(e: PointerEvent) => {
+              if (e.button !== 0 || !e.isPrimary || this.gesture || this.saving || this.editingOff()) return;
+              this.beginLayerDrag(e, layerBox.tileId, layerBox.layerId, h);
+            }}
+            @click=${(e: Event) => e.stopPropagation()}></span>`)}
+        </div>`}
     </div>`, `${phone ? "iPhone" : "Watch"} showing ${watchPageName(page)}`);
   }
 
@@ -4168,7 +4343,10 @@ export class WaPageEditor extends LitElement {
       const from = cellRectPx(grid, drawnRect(move.rect));
       shift = `transform:translate(${move.left - from.left}px, ${move.top - from.top}px);`;
     }
-    const face = renderWatchTileFace(tile, { width: width / s, height: height / s }, input, unit);
+    // While its picked layer is dragged, the tile is drawn with the layer
+    // where the pointer has it.
+    const layerDrag = this.gesture?.kind === "layer" && this.gesture.started && sameWatchId(this.gesture.tileId, id) ? this.gesture.preview : undefined;
+    const face = renderWatchTileFace(layerDrag ?? tile, { width: width / s, height: height / s }, input, unit);
     // The ring of a selected tile follows the tile's own corners, which are
     // the watch's, or 22 points in an iPhone's iPhone look
     // (`previewTileCornerRadius`).
@@ -5054,6 +5232,18 @@ export class WaPageEditor extends LitElement {
     .pe-ghost.swap-to { border-color: var(--pe-mark); border-style: dotted; background: color-mix(in srgb, var(--pe-mark) 10%, transparent); }
     .pe-ghost.no { border-color: #ff6b6b; background: rgba(255, 107, 107, .16); }
     .pe-sel { position: absolute; z-index: 3; border-radius: 6px; pointer-events: none; }
+    /* The picked layer's corners: round grab points on its outline (the
+       tile's face draws the outline itself). */
+    .pe-layer-sel { position: absolute; z-index: 4; pointer-events: none; }
+    .pe-lhandle {
+      position: absolute; width: 8px; height: 8px; border-radius: 50%; pointer-events: auto; touch-action: none;
+      background: var(--pe-mark); box-shadow: 0 0 0 1.5px #fff, 0 1px 3px rgba(0, 0, 0, .6);
+    }
+    .pe-lhandle::before { content: ""; position: absolute; inset: -6px; }
+    .pe-lhandle.nw { left: -4px; top: -4px; cursor: nwse-resize; }
+    .pe-lhandle.se { right: -4px; bottom: -4px; cursor: nwse-resize; }
+    .pe-lhandle.ne { right: -4px; top: -4px; cursor: nesw-resize; }
+    .pe-lhandle.sw { left: -4px; bottom: -4px; cursor: nesw-resize; }
     .pe-fold-text { font-size: 12px; }
     .pe-sel.no { outline: 2px dashed #ff6b6b; outline-offset: 2px; background: rgba(255, 107, 107, .14); }
     /* Filled grab points straddling the outline, half in and half out, so

@@ -114,7 +114,7 @@
             "symbol": {
               "kind": {
                 "kind": "literal",
-                "value": "person"
+                "value": "person.fill"
               }
             },
             "size": 32.88,
@@ -149,7 +149,7 @@
               }
             },
             "fontSize": 11,
-            "fontWeight": "semibold",
+            "fontWeight": "regular",
             "minimumScale": 0.91,
             "alignment": "leading",
             "name": "State"
@@ -288,25 +288,6 @@
     }
   },
   "expected": [
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000001",
-      "kind": "icon",
-      "symbol": "person",
-      "colorHex": "#E8EFF8",
-      "hidden": false
-    },
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000004",
-      "kind": "text",
-      "text": "Away",
-      "hidden": false
-    },
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000003",
-      "kind": "text",
-      "text": "Chen",
-      "hidden": false
-    },
     {
       "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A11",
       "kind": "text",

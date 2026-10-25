@@ -4,7 +4,9 @@
 // make.
 
 import { describe, expect, it } from "vitest";
+import { html } from "lit";
 import type { HassEntityState } from "../src/ha-api.js";
+import type { IconProvider } from "../src/renderer.js";
 import type { Element, IconElement, ImageElement, TextElement } from "../src/model.js";
 import { oneLookMeasurer } from "../src/watch-pages/one-look/measurer.js";
 import { oneLookPreviewModel } from "../src/watch-pages/one-look/render.js";
@@ -18,9 +20,17 @@ import {
   oneLookStateLineText,
   tileValuesFor,
 } from "../src/watch-pages/tile-base-layers.js";
-import { BASE_LAYER_IDS, BASE_LAYER_NAMES } from "../src/watch-pages/tile-design.js";
+import { BASE_LAYER_IDS, BASE_LAYER_NAMES, BASE_STATE_PILL_ID } from "../src/watch-pages/tile-design.js";
 
 const measurer = oneLookMeasurer("watch", { estimate: true });
+
+/** Symbols that draw: every name, filled variants included, but crossed out
+ * forms only where SF Symbols has one. */
+const ALL_ICONS: IconProvider = {
+  render: (name) => (name.includes(".slash") && !name.startsWith("lightbulb.slash") ? undefined : html``),
+  available: () => true,
+  names: () => [],
+};
 
 function entity(entityId: string, state: string, attributes: Record<string, unknown> = {}): HassEntityState {
   return { entity_id: entityId, state, attributes, last_changed: "", last_updated: "" };
@@ -188,15 +198,37 @@ describe("baseLayers", () => {
   });
 
   describe("the state layer", () => {
-    it("is bold rounded for a number and semibold for a word", () => {
+    it("is One Look's state type: a number bold rounded with tabular digits, a word regular", () => {
       const number = text(baseLayers(LIGHT, ctxFor(OFFICE)), "state");
       expect(number.fontWeight).toBe("bold");
       expect(number.fontDesign).toBe("rounded");
+      expect(number.monospacedDigits).toBe(true);
       const word = text(baseLayers(PERSON, ctxFor(CHEN)), "state");
-      expect(word.fontWeight).toBe("semibold");
+      expect(word.fontWeight).toBe("regular");
       expect(word.fontDesign).toBeUndefined();
+      expect(word.monospacedDigits).toBeUndefined();
       expect(word.lineLimit ?? 1).toBe(1);
       expect(word.alignment).toBe("leading");
+    });
+
+    it("sits in a pill shape layer with the Pill value style, the line centred in it", () => {
+      const pillLight = { ...LIGHT, stateValueLabelStyle: "Pill" };
+      const layers = baseLayers(pillLight, ctxFor(OFFICE));
+      const pill = layers.find((el) => el.payload.id === BASE_STATE_PILL_ID);
+      expect(pill?.kind).toBe("shape");
+      if (pill?.kind !== "shape") return;
+      expect(pill.payload.kind).toBe("capsule");
+      expect(pill.payload.name).toBe("State pill");
+      expect(pill.payload.colorSlot.baseColorHex).toBe("#00000038");
+      const state = text(layers, "state");
+      // Centre is the default, which a saved layer leaves out.
+      expect(state.alignment ?? "center").toBe("center");
+      expect(state.frame).toEqual(pill.payload.frame);
+      // Just under the State layer.
+      const ids = layers.map((el) => el.payload.id);
+      expect(ids.indexOf(BASE_STATE_PILL_ID)).toBe(ids.indexOf(BASE_LAYER_IDS.state) - 1);
+      // Plain draws no pill.
+      expect(baseLayers(LIGHT, ctxFor(OFFICE)).some((el) => el.payload.id === BASE_STATE_PILL_ID)).toBe(false);
     });
 
     it("goes with the value labels Off, and stays with Plain and Pill", () => {
@@ -270,6 +302,36 @@ describe("baseLayers", () => {
       expect(off.colorSlot).toEqual(light.colorSlot);
       expect(off.rules).toEqual(light.rules);
       expect(icon(baseLayers(SENSOR, ctxFor(TEMP))).rules).toEqual([]);
+    });
+
+    it("fills its symbol when One Look would, by a rule that follows on and off", () => {
+      const ctx = (e: HassEntityState): BaseLayerContext => ({ ...ctxFor(e), icons: ALL_ICONS });
+      const light = icon(baseLayers(LIGHT, ctx(OFFICE)));
+      // The outline while off, the filled bulb while on, crossed out while
+      // unavailable, as the native tile draws them.
+      expect(light.symbol).toEqual({ kind: { kind: "literal", value: "lightbulb" } });
+      const fill = light.rules[0]!;
+      expect(fill.cases.map((c) => c.when.tests[0]!.comparison)).toEqual([{ kind: "isUnavailable" }, { kind: "isOn" }]);
+      expect(fill.cases.map((c) => c.then[0])).toEqual([
+        { kind: "setIcon", value: { kind: { kind: "literal", value: "lightbulb.slash" } } },
+        { kind: "setIcon", value: { kind: { kind: "literal", value: "lightbulb.fill" } } },
+      ]);
+      // The colour rule still follows it.
+      expect(light.rules[1]!.cases[0]!.then[0]!.kind).toBe("setColor");
+      // The same layer whichever state the light is in when it is built.
+      expect(icon(baseLayers(LIGHT, ctx({ ...OFFICE, state: "off" })))).toEqual(light);
+      // A kind that always fills takes the filled symbol and needs no rule.
+      const sensor = icon(baseLayers(SENSOR, ctx(TEMP)));
+      expect((sensor.symbol.kind as { value: string }).value.endsWith(".fill")).toBe(true);
+      expect(sensor.rules.some((r) => r.cases.some((c) => c.then.some((t) => t.kind === "setIcon")))).toBe(false);
+    });
+
+    it("puts the per state icons after the fill rule, so a matching entry wins", () => {
+      const tile = { ...LIGHT, usesStateIcons: true, stateIcons: { on: "lightbulb.max" } };
+      const layer = icon(baseLayers(tile, { ...ctxFor(OFFICE), icons: ALL_ICONS }));
+      const setsIcon = layer.rules.filter((r) => r.cases.some((c) => c.then[0]?.kind === "setIcon"));
+      expect(setsIcon).toHaveLength(2);
+      expect(setsIcon[1]!.cases[0]!.then[0]!.value).toEqual({ kind: { kind: "literal", value: "lightbulb.max" } });
     });
 
     it("turns the per state icons into one rule, unavailable by its own test", () => {

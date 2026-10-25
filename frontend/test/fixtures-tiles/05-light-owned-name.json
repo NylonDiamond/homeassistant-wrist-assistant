@@ -60,6 +60,77 @@
             },
             "rules": [
               {
+                "id": "BA5E0001-0003-4000-8001-000000000000",
+                "cases": [
+                  {
+                    "id": "BA5E0001-0003-4001-8002-000000000000",
+                    "when": {
+                      "join": "all",
+                      "tests": [
+                        {
+                          "id": "BA5E0001-0003-4001-8003-000000000000",
+                          "value": {
+                            "kind": {
+                              "kind": "entityState",
+                              "entityId": "light.office",
+                              "displayName": "Office",
+                              "domain": "light"
+                            }
+                          },
+                          "comparison": {
+                            "kind": "isUnavailable"
+                          }
+                        }
+                      ]
+                    },
+                    "then": [
+                      {
+                        "kind": "setIcon",
+                        "value": {
+                          "kind": {
+                            "kind": "literal",
+                            "value": "lightbulb.slash"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "BA5E0001-0003-4002-8002-000000000000",
+                    "when": {
+                      "join": "all",
+                      "tests": [
+                        {
+                          "id": "BA5E0001-0003-4002-8003-000000000000",
+                          "value": {
+                            "kind": {
+                              "kind": "entityState",
+                              "entityId": "light.office",
+                              "displayName": "Office",
+                              "domain": "light"
+                            }
+                          },
+                          "comparison": {
+                            "kind": "isOn"
+                          }
+                        }
+                      ]
+                    },
+                    "then": [
+                      {
+                        "kind": "setIcon",
+                        "value": {
+                          "kind": {
+                            "kind": "literal",
+                            "value": "lightbulb.fill"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
                 "id": "BA5E0001-0002-4000-8001-000000000000",
                 "cases": [
                   {
@@ -145,6 +216,7 @@
             },
             "fontSize": 14,
             "fontWeight": "bold",
+            "monospacedDigits": true,
             "fontDesign": "rounded",
             "minimumScale": 0.71,
             "alignment": "leading",
@@ -206,32 +278,10 @@
   "resolve": {
     "tileState": "82%",
     "tileName": "Office",
-    "entityStates": [
-      {
-        "entityId": "light.office",
-        "displayName": "Office",
-        "state": "on",
-        "unitOfMeasurement": null,
-        "deviceClass": null,
-        "domain": "light"
-      }
-    ],
+    "entityStates": [],
     "templateResults": {}
   },
   "expected": [
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000001",
-      "kind": "icon",
-      "symbol": "lightbulb",
-      "colorHex": "#FFF8EA",
-      "hidden": false
-    },
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000004",
-      "kind": "text",
-      "text": "82%",
-      "hidden": false
-    },
     {
       "id": "BA5E0000-0000-4000-8000-000000000003",
       "kind": "text",

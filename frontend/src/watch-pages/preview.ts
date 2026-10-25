@@ -173,8 +173,9 @@ export interface WatchPagePreviewInput {
   oneLook?: boolean;
   /** The page editor's picked tile layer, outlined on its tile: the tile's
    * id, and the layer or tap zone picked in its Layers rows. With
-   * `outline`, the frame to outline on a tile with no layers saved yet,
-   * which draws as it always has. */
+   * `outline`, the frame to outline over the native tile, for a picked base
+   * layer the design does not draw itself (it follows the simple settings,
+   * or the tile has no layers saved yet). */
   designFocus?: { tileId: string; layerId?: string; zoneId?: string; outline?: { x: number; y: number; width: number; height: number } };
 }
 
@@ -3314,22 +3315,25 @@ function tileFace(
   // (`applyDefaultTileColors`), so an iPhone tile with none is graphite.
   const oneLook = previewOneLook(given);
   if (oneLook !== undefined && kind !== "template") {
-    // A tile's layers draw in place of One Look's content, over its own
-    // fill, bar, rim and border; a tile with none draws as it always has.
+    // A design tile is the native tile less the parts its layers own, with
+    // those layers and its added ones drawn over the rest; a tile with no
+    // design draws as it always has. A picked layer the native tile draws
+    // (one that follows the simple settings) is outlined at its frame.
     const focus = given.designFocus !== undefined && typeof stored.id === "string" && stored.id.toUpperCase() === given.designFocus.tileId.toUpperCase()
       ? given.designFocus : undefined;
-    const content = renderTileDesignContent(stored, width, height, s, {
+    const drawing = renderTileDesignContent(stored, width, height, s, {
       ...(input.states === undefined ? {} : { states: input.states }),
       page: input.page, pages: input.pages,
       ...(input.icons === undefined ? {} : { icons: input.icons }),
       ...(input.templates === undefined ? {} : { templates: input.templates }),
     }, focus);
-    const overlay = content === undefined && focus?.outline !== undefined
+    const overlay = focus?.outline !== undefined
       ? renderTileLayerOutline(focus.outline, tileBoxOf(stored), width, height, s) : undefined;
     return renderOneLookTile({
       tile: oneLook === "phone" ? stored : tile, input, stub, device: oneLook, look,
       width, height, cell, unit, box, s, ...(titled ? { hint } : {}),
-      ...(content === undefined ? {} : { content }),
+      ...(drawing === undefined ? {} : { hidden: drawing.hidden }),
+      ...(drawing?.content === undefined ? {} : { content: drawing.content }),
       ...(overlay === undefined ? {} : { overlay }),
     });
   }

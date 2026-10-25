@@ -28,13 +28,15 @@ import {
 import { type JsonObject, type WatchPage, type WatchPageTile, type WatchPagesDocument, isJsonObject, tileEntityId, tileGeometry, watchPageTiles, watchPagesOf } from "./model.js";
 import { oneLookDrawnSize, oneLookGridUnit } from "./one-look/metrics.js";
 import { watchSingleTapSettings } from "./tile-settings-model.js";
-import { type BaseLayerContext, baseLayersByRole, baseLayersDocument, designBoxFor, tileValuesFor } from "./tile-base-layers.js";
+import { type BaseLayerContext, baseLayersById, baseLayersDocument, designBoxFor, tileValuesFor } from "./tile-base-layers.js";
 import {
   type BaseLayerRole,
   type TileDesign,
   type TileZoneAction,
   type TileZonePreset,
   BASE_LAYER_IDS,
+  BASE_LAYER_PARTS,
+  BASE_STATE_PILL_ID,
   TILE_DESIGN_KEY,
   TILE_DESIGN_MAX_LAYERS,
   TILE_DESIGN_MAX_ZONES,
@@ -42,6 +44,7 @@ import {
   TILE_LAYER_KINDS,
   TILE_ZONE_MIN_POINTS,
   baseRoleOf,
+  drawnDesignDoc,
   encodeZoneAction,
   normalizeDesignDoc,
   ownedString,
@@ -95,7 +98,7 @@ export function layerStatus(design: TileDesign | undefined, elementId: string): 
  * deleted in the layer list counts as changed. */
 export function designSummary(design: TileDesign | undefined, tile: WatchPageTile, ctx: BaseLayerContext = {}): DesignSummary {
   if (design === undefined) {
-    return { layers: tileHasLayers(tile) ? baseLayersByRole(tile, ctx).size : 0, changed: 0, added: 0, zones: 0 };
+    return { layers: tileHasLayers(tile) ? baseLayersById(tile, ctx).size : 0, changed: 0, added: 0, zones: 0 };
   }
   const elements = design.doc.elements;
   const zones = elements.filter((el) => el.kind === "tap").length;
@@ -107,8 +110,9 @@ export function designSummary(design: TileDesign | undefined, tile: WatchPageTil
 
 /** The design in normal form (section 1.4): the document normalised, tap
  * layers without a zone entry gone, zone entries without a tap layer gone,
- * `owned` sorted. The template is not part of it: `encodeTileDesign`
- * compiles it. */
+ * `owned` sorted, and the template compiled from the layers the design draws
+ * (owned base layers and added layers: a base layer that follows the simple
+ * settings is drawn natively and reads nothing). */
 function normalDesign(design: TileDesign): TileDesign {
   const doc = normalizeDesignDoc(design.doc);
   const zones: Record<string, TileZoneAction> = {};
@@ -120,10 +124,17 @@ function normalDesign(design: TileDesign): TileDesign {
     zones[el.payload.id.toUpperCase()] = action;
     return true;
   });
-  const out: TileDesign = { v: TILE_DESIGN_VERSION, doc, owned: sortRoles(design.owned), zones };
-  const template = compile(doc).document;
+  const owned = sortRoles(design.owned);
+  const out: TileDesign = { v: TILE_DESIGN_VERSION, doc, owned, zones };
+  const template = designTemplate(doc, owned);
   if (template !== undefined) out.template = template;
   return out;
+}
+
+/** What a design's layers compute, compiled from the layers it draws
+ * (`drawnDesignDoc`), or undefined when they compute nothing. */
+export function designTemplate(doc: CustomComplicationConfig, owned: readonly BaseLayerRole[]): string | undefined {
+  return compile(drawnDesignDoc(doc, owned)).document;
 }
 
 /** The design as the tile stores it, in normal form with its template
@@ -202,14 +213,26 @@ export function withDesign(tile: WatchPageTile, design: TileDesign | undefined, 
   return { ...tile, [TILE_DESIGN_KEY]: encodeTileDesign(normal) };
 }
 
-/** The tile's design to edit: the one it has, or its base layers fresh,
- * nothing owned and no zones (not yet saved). */
+/**
+ * The tile's design to edit: the one it has, its base layers that follow the
+ * simple settings built again as they are now (so a layer owned by this edit
+ * starts as the part the native tile draws today), or its base layers fresh,
+ * nothing owned and no zones (not yet saved). With no state for the tile's
+ * entity the stored layers are kept as they are, as `syncTileDesigns` keeps
+ * them.
+ */
 export function designForEdit(tile: WatchPageTile, ctx: BaseLayerContext): TileDesign {
   const existing = readTileDesign(tile);
-  if (existing !== undefined) return existing;
+  if (existing !== undefined) {
+    const entityId = tileEntityId(tile);
+    if (ctx.states === undefined || !Object.hasOwn(ctx.states, entityId)) return existing;
+    const rebuilt = rebuildBaseLayers(tile, existing, ctx);
+    if (stableJson(encodeConfig(rebuilt.doc)) === stableJson(encodeConfig(normalizeDesignDoc(existing.doc)))) return existing;
+    return rebuilt;
+  }
   const doc = baseLayersDocument(tile, ctx);
   const design: TileDesign = { v: TILE_DESIGN_VERSION, doc, owned: [], zones: {} };
-  const template = compile(doc).document;
+  const template = designTemplate(doc, []);
   if (template !== undefined) design.template = template;
   return design;
 }
@@ -220,8 +243,7 @@ export function ownChangedBaseLayers(before: TileDesign, after: TileDesign): Til
   const was = encodedElements(before.doc);
   const now = encodedElements(after.doc);
   const owned = new Set(after.owned);
-  for (const role of Object.keys(BASE_LAYER_IDS) as BaseLayerRole[]) {
-    const id = BASE_LAYER_IDS[role];
+  for (const { id, role } of BASE_LAYER_PARTS) {
     const a = was.get(id);
     const b = now.get(id);
     if (a !== b && (a !== undefined || b !== undefined)) owned.add(role);
@@ -237,9 +259,15 @@ export function writeDesignDoc(tile: WatchPageTile, before: TileDesign, nextDoc:
 
 // ── rebuilding the base layers ───────────────────────────────────────────
 
-/** Where a base role sits in the draw order: the glyph at the bottom, then
- * the state, then the name. */
-const ROLE_RANK: Readonly<Record<BaseLayerRole, number>> = { icon: 0, photo: 0, state: 1, name: 2 };
+/** Where a base layer sits in the draw order, by its id: the glyph at the
+ * bottom, then the state's pill, the state, then the name. */
+function baseRank(elementId: string): number | undefined {
+  const id = elementId.toUpperCase();
+  const at = BASE_LAYER_PARTS.findIndex((part) => part.id === id);
+  if (at < 0) return undefined;
+  // The icon and the photo share the bottom.
+  return Math.max(0, at - 1);
+}
 
 function roleOwned(design: TileDesign, role: BaseLayerRole): boolean {
   return isGlyph(role) ? design.owned.some(isGlyph) : design.owned.includes(role);
@@ -248,14 +276,14 @@ function roleOwned(design: TileDesign, role: BaseLayerRole): boolean {
 /** Puts a base layer in among the others at its rank: just above the
  * highest base layer under it, else just below the lowest one above it,
  * else at the bottom. Tap layers stay above every drawing layer. */
-function insertAtRank(elements: Element[], el: Element, role: BaseLayerRole): void {
-  const rank = ROLE_RANK[role];
+function insertAtRank(elements: Element[], el: Element): void {
+  const rank = baseRank(el.payload.id) ?? 0;
   let after = -1;
   let before = -1;
   elements.forEach((e, i) => {
-    const r = baseRoleOf(e.payload.id);
+    const r = baseRank(e.payload.id);
     if (r === undefined) return;
-    if (ROLE_RANK[r] <= rank) after = i;
+    if (r <= rank) after = i;
     else if (before < 0) before = i;
   });
   const at = after >= 0 ? after + 1 : before >= 0 ? before : 0;
@@ -271,19 +299,18 @@ function insertAtRank(elements: Element[], el: Element, role: BaseLayerRole): vo
  * photo keeps either from being swapped for the other.
  */
 export function rebuildBaseLayers(tile: WatchPageTile, design: TileDesign, ctx: BaseLayerContext): TileDesign {
-  const fresh = baseLayersByRole(tile, ctx);
+  const fresh = baseLayersById(tile, ctx);
   const doc = normalizeDesignDoc(design.doc);
   const elements = [...doc.elements];
-  for (const role of ["icon", "photo", "state", "name"] as const) {
+  for (const { id, role } of BASE_LAYER_PARTS) {
     if (roleOwned(design, role)) continue;
-    const id = BASE_LAYER_IDS[role];
     const at = elements.findIndex((el) => el.payload.id.toUpperCase() === id);
-    const next = fresh.get(role);
+    const next = fresh.get(id);
     if (at >= 0) {
       if (next !== undefined) elements[at] = next;
       else elements.splice(at, 1);
     } else if (next !== undefined) {
-      insertAtRank(elements, next, role);
+      insertAtRank(elements, next);
     }
   }
   return { ...design, doc: { ...doc, elements } };
@@ -311,13 +338,12 @@ export function resetBaseLayer(tile: WatchPageTile, role: BaseLayerRole, ctx: Ba
 /** Whether the base layer at `index` sits in rank among the other base
  * layers: none under it ranks higher and none above it ranks lower. */
 function inRank(elements: readonly Element[], index: number): boolean {
-  const role = baseRoleOf(elements[index]!.payload.id);
-  if (role === undefined) return true;
-  const rank = ROLE_RANK[role];
+  const rank = baseRank(elements[index]!.payload.id);
+  if (rank === undefined) return true;
   return elements.every((el, i) => {
-    const r = baseRoleOf(el.payload.id);
+    const r = baseRank(el.payload.id);
     if (r === undefined || i === index) return true;
-    return i < index ? ROLE_RANK[r] <= rank : ROLE_RANK[r] >= rank;
+    return i < index ? r <= rank : r >= rank;
   });
 }
 
@@ -430,13 +456,14 @@ export function addLayer(design: TileDesign, kind: Element["kind"]): { design: T
 }
 
 /** The design without one layer: a base layer goes and is owned (a rebuild
- * does not bring it back; Reset does), an added layer goes, a tap zone goes
- * with its entry. */
+ * does not bring it back; Reset does), the State layer with its pill, an
+ * added layer goes, a tap zone goes with its entry. */
 export function removeLayer(design: TileDesign, elementId: string): TileDesign {
   const id = elementId.toUpperCase();
   const el = design.doc.elements.find((e) => e.payload.id.toUpperCase() === id);
   if (el === undefined) return design;
-  const elements = design.doc.elements.filter((e) => e !== el);
+  const withPill = id === BASE_LAYER_IDS.state;
+  const elements = design.doc.elements.filter((e) => e !== el && !(withPill && e.payload.id.toUpperCase() === BASE_STATE_PILL_ID));
   const role = baseRoleOf(id);
   const owned = role === undefined ? design.owned : sortRoles([...design.owned, role]);
   let zones = design.zones;
@@ -464,6 +491,96 @@ export function moveLayer(design: TileDesign, elementId: string, dir: -1 | 1): T
   const role = baseRoleOf(id);
   const owned = role === undefined || design.owned.includes(role) ? design.owned : sortRoles([...design.owned, role]);
   return { ...design, doc: { ...design.doc, elements }, owned };
+}
+
+// ── dragging a layer on the stage ────────────────────────────────────────
+
+/** What a drag on the stage does to a picked layer's frame: moves it, or
+ * pulls one of its corners. */
+export type LayerDragMode = "move" | "nw" | "ne" | "sw" | "se";
+
+/** The smallest a corner drag leaves a layer, as a fraction of the design
+ * box on each side. */
+export const LAYER_MIN_FRACTION = 0.04;
+
+const round4 = (v: number): number => Math.round(v * 10000) / 10000;
+const clamp01 = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+
+/**
+ * A layer's frame after a drag of `dx`, `dy` (fractions of the design box)
+ * from where it was when the drag began, kept inside the tile: a move slides
+ * the whole frame and stops at the tile's edges; a corner pulls that corner,
+ * the opposite one staying put, down to `LAYER_MIN_FRACTION` and out to the
+ * edges. A frame larger than the tile stays at the tile's top left. Rounded
+ * to 4 places, as base layers are written; the rotation is kept.
+ */
+export function dragLayerFrame(frame: NormalizedFrame, mode: LayerDragMode, dx: number, dy: number): NormalizedFrame {
+  if (mode === "move") {
+    const x = clamp01(frame.x + dx, 0, Math.max(0, 1 - frame.width));
+    const y = clamp01(frame.y + dy, 0, Math.max(0, 1 - frame.height));
+    return { ...frame, x: round4(x), y: round4(y) };
+  }
+  let left = frame.x;
+  let top = frame.y;
+  let right = frame.x + frame.width;
+  let bottom = frame.y + frame.height;
+  if (mode === "nw" || mode === "sw") left = clamp01(left + dx, 0, right - LAYER_MIN_FRACTION);
+  else right = clamp01(right + dx, left + LAYER_MIN_FRACTION, 1);
+  if (mode === "nw" || mode === "ne") top = clamp01(top + dy, 0, bottom - LAYER_MIN_FRACTION);
+  else bottom = clamp01(bottom + dy, top + LAYER_MIN_FRACTION, 1);
+  return { ...frame, x: round4(left), y: round4(top), width: round4(right - left), height: round4(bottom - top) };
+}
+
+const sameFrameish = (a: NormalizedFrame, b: NormalizedFrame): boolean =>
+  [a.x - b.x, a.y - b.y, a.width - b.width, a.height - b.height].every((d) => Math.abs(d) < 0.0005);
+
+/**
+ * The design with one layer's frame set, as a drag on the stage sets it. A
+ * base layer moved is owned, as by any change. The State layer takes its
+ * pill along: a pill that matched its frame matches the new one, any other
+ * moves by as much as the State layer's corner did. A layer the design does
+ * not have, or a frame that did not change, gives the design back as it is.
+ */
+export function setLayerFrame(design: TileDesign, elementId: string, frame: NormalizedFrame): TileDesign {
+  const id = elementId.toUpperCase();
+  const at = design.doc.elements.findIndex((e) => e.payload.id.toUpperCase() === id);
+  const el = design.doc.elements[at];
+  if (el === undefined || sameFrameish(el.payload.frame, frame)) return design;
+  const before = el.payload.frame;
+  const elements = design.doc.elements.map((e, i) => {
+    if (i === at) return { ...e, payload: { ...e.payload, frame: { ...frame } } } as Element;
+    if (id === BASE_LAYER_IDS.state && e.payload.id.toUpperCase() === BASE_STATE_PILL_ID) {
+      const pill = e.payload.frame;
+      const next = sameFrameish(pill, before)
+        ? { ...frame }
+        : dragLayerFrame(pill, "move", frame.x - before.x, frame.y - before.y);
+      return { ...e, payload: { ...e.payload, frame: next } } as Element;
+    }
+    return e;
+  });
+  const role = baseRoleOf(id);
+  const owned = role === undefined || design.owned.includes(role) ? design.owned : sortRoles([...design.owned, role]);
+  return { ...design, doc: { ...design.doc, elements }, owned };
+}
+
+/** The tile with one layer at a new frame, as a drag on the stage leaves
+ * it: its design to edit (`designForEdit`, so a base layer it owns starts as
+ * the part the native tile draws now), the frame set (`setLayerFrame`), then
+ * written (`withDesign`). The tile itself when nothing changes. */
+export function withLayerFrame(tile: WatchPageTile, elementId: string, frame: NormalizedFrame, ctx: BaseLayerContext): WatchPageTile {
+  const before = designForEdit(tile, ctx);
+  const after = setLayerFrame(before, elementId, frame);
+  return after === before ? tile : withDesign(tile, after, ctx);
+}
+
+/** Whether a picked layer can be dragged on the stage: any drawing layer,
+ * not a tap zone (a zone keeps its Split preset's place and changes through
+ * the preset). */
+export function layerDraggable(design: TileDesign | undefined, elementId: string): boolean {
+  if (design === undefined) return false;
+  const id = elementId.toUpperCase();
+  const el = design.doc.elements.find((e) => e.payload.id.toUpperCase() === id);
+  return el !== undefined && el.kind !== "tap";
 }
 
 // ── tap zones ────────────────────────────────────────────────────────────

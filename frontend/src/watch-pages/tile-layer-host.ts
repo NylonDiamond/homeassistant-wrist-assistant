@@ -13,7 +13,7 @@
 // App repo docs/tile_layers_contract_2026-10.md, section 10.4 items 2, 3 and 6.
 
 import { type EditorHost, defaultOpenSections } from "../editors.js";
-import type { CustomComplicationConfig, Element, EntityRef, Rule, Test, Value } from "../model.js";
+import type { CustomComplicationConfig, Element, EntityRef, NormalizedFrame, Rule, Test, Value } from "../model.js";
 import { newId } from "../model.js";
 import { type ForcedBranches, Resolver } from "../resolver.js";
 import type { TileSettingsHost } from "./editor-host.js";
@@ -37,6 +37,7 @@ import {
   resetBaseLayer,
   setZoneAction,
   withDesign,
+  withLayerFrame,
   writeDesignDoc,
 } from "./tile-design.js";
 import { type TileDesignInputs, tileBoxOf, tileDesignResolveContext } from "./tile-design-face.js";
@@ -84,6 +85,9 @@ export interface TileLayerEdits {
   add(kind: Element["kind"]): string;
   remove(id: string): boolean;
   move(id: string, dir: -1 | 1): boolean;
+  /** Put a layer at a new frame, as a drag on the stage does; a base layer
+   * is owned by it (`withLayerFrame`). */
+  frame(id: string, frame: NormalizedFrame): boolean;
   /** Show or hide a layer. A base layer is owned by it, as by any change. */
   setHidden(id: string, hidden: boolean): boolean;
   /** Copy an added layer, the copy just above it; the copy's id, or "". */
@@ -131,6 +135,7 @@ export function tileLayerEdits(host: TileSettingsHost): TileLayerEdits {
     },
     remove: (id) => design((d) => removeLayer(d, id)),
     move: (id, dir) => design((d) => moveLayer(d, id, dir)),
+    frame: (id, frame) => applyTile((tile, ctx) => withLayerFrame(tile, id, frame, ctx)),
     setHidden: (id, hidden) => doc((c) => {
       const el = c.elements.find((e) => e.payload.id.toUpperCase() === id.toUpperCase());
       if (el !== undefined) el.payload.isHidden = hidden;

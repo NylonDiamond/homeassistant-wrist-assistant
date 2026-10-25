@@ -81,7 +81,46 @@
             "colorSlot": {
               "baseColorHex": "#E0F3E5"
             },
-            "rules": [],
+            "rules": [
+              {
+                "id": "BA5E0001-0003-4000-8001-000000000000",
+                "cases": [
+                  {
+                    "id": "BA5E0001-0003-4001-8002-000000000000",
+                    "when": {
+                      "join": "all",
+                      "tests": [
+                        {
+                          "id": "BA5E0001-0003-4001-8003-000000000000",
+                          "value": {
+                            "kind": {
+                              "kind": "entityState",
+                              "entityId": "switch.porch",
+                              "displayName": "Porch",
+                              "domain": "switch"
+                            }
+                          },
+                          "comparison": {
+                            "kind": "isOn"
+                          }
+                        }
+                      ]
+                    },
+                    "then": [
+                      {
+                        "kind": "setIcon",
+                        "value": {
+                          "kind": {
+                            "kind": "literal",
+                            "value": "switch.2.fill"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
             "frame": {
               "x": 0.3283,
               "y": 0.193,
@@ -128,7 +167,7 @@
               }
             },
             "fontSize": 11,
-            "fontWeight": "semibold",
+            "fontWeight": "regular",
             "minimumScale": 0.91,
             "alignment": "leading",
             "name": "State"
@@ -231,25 +270,6 @@
     "templateResults": {}
   },
   "expected": [
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000001",
-      "kind": "icon",
-      "symbol": "switch.2",
-      "colorHex": "#E0F3E5",
-      "hidden": false
-    },
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000004",
-      "kind": "text",
-      "text": "On",
-      "hidden": false
-    },
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000003",
-      "kind": "text",
-      "text": "Porch",
-      "hidden": false
-    },
     {
       "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A01",
       "kind": "tap",

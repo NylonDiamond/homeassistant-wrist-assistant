@@ -85,7 +85,7 @@
               }
             },
             "fontSize": 11,
-            "fontWeight": "semibold",
+            "fontWeight": "regular",
             "minimumScale": 0.91,
             "alignment": "leading",
             "name": "State"
@@ -146,35 +146,8 @@
   "resolve": {
     "tileState": "Home",
     "tileName": "Chen",
-    "entityStates": [
-      {
-        "entityId": "person.chen",
-        "displayName": "Chen",
-        "state": "home",
-        "unitOfMeasurement": null,
-        "deviceClass": null,
-        "domain": "person"
-      }
-    ],
+    "entityStates": [],
     "templateResults": {}
   },
-  "expected": [
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000002",
-      "kind": "image",
-      "hidden": false
-    },
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000004",
-      "kind": "text",
-      "text": "Home",
-      "hidden": false
-    },
-    {
-      "id": "BA5E0000-0000-4000-8000-000000000003",
-      "kind": "text",
-      "text": "Chen",
-      "hidden": false
-    }
-  ]
+  "expected": []
 }

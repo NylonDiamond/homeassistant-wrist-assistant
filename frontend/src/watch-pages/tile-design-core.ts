@@ -105,11 +105,80 @@ export function roleOfOwnedString(value: unknown): BaseLayerRole | undefined {
   return (BASE_LAYER_ROLES as readonly string[]).includes(role) ? (role as BaseLayerRole) : undefined;
 }
 
-/** The base role an element id is, or undefined for an added layer or a tap
- * zone. Any case. */
+/** The capsule One Look draws behind the state with the Pill value style:
+ * a shape layer just under the State layer, part of the state role. It is
+ * built with the State layer, drawn and owned with it, and goes with it. */
+export const BASE_STATE_PILL_ID = "BA5E0000-0000-4000-8000-000000000005";
+/** The pill's row name in the Layers list. */
+export const BASE_STATE_PILL_NAME = "State pill";
+
+/** Every base layer's id with its role, in draw order bottom to top: the
+ * glyph (icon or photo), the state's pill, the state, the name. */
+export const BASE_LAYER_PARTS: readonly { id: string; role: BaseLayerRole }[] = Object.freeze([
+  { id: BASE_LAYER_IDS.icon, role: "icon" },
+  { id: BASE_LAYER_IDS.photo, role: "photo" },
+  { id: BASE_STATE_PILL_ID, role: "state" },
+  { id: BASE_LAYER_IDS.state, role: "state" },
+  { id: BASE_LAYER_IDS.name, role: "name" },
+]);
+
+/** The base role an element id is (the state's pill is the state's), or
+ * undefined for an added layer or a tap zone. Any case. */
 export function baseRoleOf(elementId: string): BaseLayerRole | undefined {
   const id = elementId.toUpperCase();
-  return BASE_LAYER_ROLES.find((role) => BASE_LAYER_IDS[role] === id);
+  return BASE_LAYER_PARTS.find((part) => part.id === id)?.role;
+}
+
+/** A base layer's row name: the role's, or the pill's. */
+export function baseLayerName(elementId: string): string | undefined {
+  const id = elementId.toUpperCase();
+  if (id === BASE_STATE_PILL_ID) return BASE_STATE_PILL_NAME;
+  const role = baseRoleOf(id);
+  return role === undefined ? undefined : BASE_LAYER_NAMES[role];
+}
+
+// ── what a design tile draws ─────────────────────────────────────────────
+
+/** The parts of One Look's own tile a design takes over, which the native
+ * tile then leaves undrawn (without laying anything out again): the glyph
+ * (the disc, halo, symbol or photo) when the icon or the photo is owned, the
+ * name when the name is, the state line (its pill, unit, tail and amber dot,
+ * the big value that stands in for it and the accessory beside it) when the
+ * state is. The app's `TileNativeParts`. */
+export interface TileHiddenParts {
+  glyph: boolean;
+  name: boolean;
+  state: boolean;
+}
+
+/** Whether the glyph slot is owned: the icon and the photo are one slot. */
+function glyphOwned(owned: readonly BaseLayerRole[]): boolean {
+  return owned.includes("icon") || owned.includes("photo");
+}
+
+/** The native parts a design hides: exactly its owned roles, whether or not
+ * the owned layer is still there (a base layer the user deleted hides its
+ * part and draws nothing). */
+export function designHiddenParts(design: Pick<TileDesign, "owned"> | undefined): TileHiddenParts {
+  const owned = design?.owned ?? [];
+  return { glyph: glyphOwned(owned), name: owned.includes("name"), state: owned.includes("state") };
+}
+
+/** Whether a design draws this element from its document: an owned base
+ * layer, an added layer or a tap zone. A base layer that still follows the
+ * simple settings is never drawn from the document: the native tile draws
+ * that part. */
+export function designDrawsElement(owned: readonly BaseLayerRole[], el: Element): boolean {
+  const role = baseRoleOf(el.payload.id);
+  if (role === undefined) return true;
+  return role === "icon" || role === "photo" ? glyphOwned(owned) : owned.includes(role);
+}
+
+/** The design's document with only the layers it draws (`designDrawsElement`),
+ * in draw order: what is compiled into its template and resolved on screen.
+ * A copy; the stored document keeps every layer. */
+export function drawnDesignDoc(doc: CustomComplicationConfig, owned: readonly BaseLayerRole[]): CustomComplicationConfig {
+  return { ...doc, elements: doc.elements.filter((el) => designDrawsElement(owned, el)) };
 }
 
 /** The layer kinds a tile may hold, in the + Add layer menu's order. */
