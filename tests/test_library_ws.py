@@ -442,7 +442,7 @@ def test_item_save_answers_the_new_revision_and_writes_the_pickers(ctx) -> None:
         base_revision=item["revision"],
         document=item["document"],
     )
-    assert result == {"revision": 2}
+    assert result == {"revision": 2, "template_budget": {"used": 0, "limit": 100, "scope": "page"}}
     for owner in (WATCH, WATCH_2):
         record = ctx.store.get(owner, "pages")
         assert record.revision > before[owner]
@@ -488,7 +488,10 @@ def test_an_item_no_device_has_is_an_administrator_s_to_read_and_save(ctx) -> No
     assert _codes(ctx, ctx.ws.ws_library_item_save, ALICE, **save) == ["unauthorized"]
     item["document"]["pages"][0]["name"] = "Spare lights"
     revision = ctx.store.get(WATCH, "pages").revision
-    assert _ok(ctx, ctx.ws.ws_library_item_save, **save) == {"revision": 2}
+    assert _ok(ctx, ctx.ws.ws_library_item_save, **save) == {
+        "revision": 2,
+        "template_budget": {"used": 0, "limit": 100, "scope": "page"},
+    }
     assert ctx.store.get(WATCH, "pages").revision == revision, "no record is written"
 
 
@@ -504,7 +507,10 @@ def test_a_non_admin_reads_and_saves_only_what_their_devices_have(ctx) -> None:
     assert _codes(ctx, ctx.ws.ws_library_item_save, BOB, **save) == ["unauthorized"]
     assert _codes(ctx, ctx.ws.ws_library_item_save, ALICE, **save) == ["unauthorized"]
     ctx.store.library_pick(WATCH_2, "pages", LIGHTS, on=False)
-    assert _ok(ctx, ctx.ws.ws_library_item_save, ALICE, **save) == {"revision": 1}
+    assert _ok(ctx, ctx.ws.ws_library_item_save, ALICE, **save) == {
+        "revision": 1,
+        "template_budget": {"used": 0, "limit": 100, "scope": "page"},
+    }
 
 
 def test_the_item_commands_answer_unavailable_before_the_integration_is_ready(ctx) -> None:

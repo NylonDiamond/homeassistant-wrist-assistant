@@ -48,6 +48,7 @@ from .complication_store import ComplicationStore, ComplicationStoreError
 from .complication_ws import async_register_websocket_commands
 from .const import (
     CLIENT_CERTIFICATE_CAPABILITY,
+    CUSTOM_TILES_CAPABILITY,
     DOMAIN,
     HTTP_ACTIONS_CAPABILITY,
     LIBRARY_OWNER_ID,
@@ -1121,6 +1122,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # and test push replies, and the phone signed notification style read.
     # The phone stops naming a watch only when it sees this.
     coordinator.register_capability(PUSH_PAIRED_BY_USER_CAPABILITY)
+    # Tile layers: a panel save or restore checks a tile's `design` against
+    # its caps, and the pages save replies carry `template_budget`. The panel
+    # offers a tile's layers only when it sees this.
+    coordinator.register_capability(CUSTOM_TILES_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,
