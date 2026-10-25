@@ -222,6 +222,20 @@ describe("baseLayers", () => {
       const word = text(person, "state").frame;
       expect(word.x + word.width).toBeGreaterThan(0.8);
     });
+
+    it("may shrink far enough for the line shown now to fit beside the glyph", () => {
+      // A wide face: the measurer's widths half again as wide, so "15.6°C"
+      // at one size overflows the room left of the thermometer.
+      const wide = { ...measurer, width: (...a: Parameters<typeof measurer.width>) => measurer.width(...a) * 1.5 };
+      const outside = entity("sensor.outside", "15.6", { friendly_name: "Outside", unit_of_measurement: "°C", device_class: "temperature" });
+      const tile: WatchPageTile = { id: "44444444-4444-4444-8444-444444444444", entityId: "sensor.outside", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0 };
+      const ctx: BaseLayerContext = { states: { "sensor.outside": outside }, measurer: wide };
+      const state = text(baseLayers(tile, ctx), "state");
+      const box = designBoxFor(6, 4);
+      const drawn = wide.width(tileValuesFor(tile, ctx).state, state.fontSize, "bold", true, 0);
+      expect(state.minimumScale).toBeGreaterThanOrEqual(0.5);
+      expect(drawn * (state.minimumScale ?? 1)).toBeLessThanOrEqual(state.frame.width * box.width);
+    });
   });
 
   describe("the glyph layer", () => {

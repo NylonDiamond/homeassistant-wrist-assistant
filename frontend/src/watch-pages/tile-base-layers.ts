@@ -365,6 +365,10 @@ function nameLayer(face: Face): Element | undefined {
   return { kind: "text", payload };
 }
 
+/** The share of the state layer's width its line is fitted to, so the app's
+ * own font metrics, a little wider than the measurer's, still fit. */
+const STATE_FIT_SLACK = 0.92;
+
 /** The state layer: the state line's box, widened to the room the layout
  * leaves it, bold rounded for a number and semibold for a word. */
 function stateLayer(face: Face): Element | undefined {
@@ -385,6 +389,14 @@ function stateLayer(face: Face): Element | undefined {
   const number = state.parts.kind === "number";
   const size = state.size;
   const m = oneLookLayoutMetrics(layout, "watch");
+  // One Look draws a number's unit smaller (66%), and the layer draws the
+  // whole line at one size, so "15.6°C" beside a glyph can need more room
+  // than One Look's own shrink floor leaves it: the iPhone then cut it to
+  // "15....". The floor goes low enough for the line shown now to fit, with
+  // a little slack for the app's own font metrics, never under half.
+  const text = model.kind.stateHidden ? "" : oneLookStateLineText(oneLookStateFor(model.kind, false), model.colSpan);
+  const drawn = text === "" ? 0 : face.measurer.width(text, size, number ? "bold" : "semibold", number, 0);
+  const fits = drawn > 0 ? Math.floor(((width * STATE_FIT_SLACK) / drawn) * 100) / 100 : 1;
   const payload: TextElement = {
     id: BASE_LAYER_IDS.state,
     name: BASE_LAYER_NAMES.state,
@@ -396,7 +408,7 @@ function stateLayer(face: Face): Element | undefined {
     fontSize: round(size, 2),
     fontWeight: number ? "bold" : "semibold",
     lineLimit: 1,
-    minimumScale: round(Math.min(1, Math.max(0.5, m.textMin / size)), 2),
+    minimumScale: round(Math.min(1, Math.max(0.5, Math.min(m.textMin / size, fits))), 2),
     alignment: "leading",
   };
   if (number) payload.fontDesign = "rounded";
