@@ -29,11 +29,6 @@ export type OneLookSection = "icon" | "text" | "border" | "background";
  * view with the badge off. */
 export const ONE_LOOK_BUTTON_KINDS: ReadonlySet<string> = new Set(["media_player", "music_hub", "climate"]);
 
-/** The kinds One Look gives a round button that the phone's State task has
- * no card for: Point control's arrow and Assist's mic. Icon size scales it,
- * so they get a card of their own with that one row. */
-export const ONE_LOOK_BUTTON_ONLY_KINDS: ReadonlySet<string> = new Set(["point_control", "assist"]);
-
 function kindOf(tile: WatchPageTile): string {
   return tileKind(tileEntityId(tile));
 }
@@ -167,9 +162,6 @@ export function oneLookCardSubtitle(cardId: string, kind: string): string | unde
   return byKind[kind] ?? byKind["*"];
 }
 
-/** The card Point control and Assist get for their button. */
-export const ONE_LOOK_BUTTON_CARD = { id: "button", title: "Button", subtitle: "The round button in the top right" } as const;
-
 /** Why a State row does nothing on this kind in One Look, or undefined
  * when it draws. */
 export function oneLookStateRowOff(kind: string, key: string): string | undefined {
@@ -189,8 +181,6 @@ const BUTTON_WORDS: Readonly<Record<string, string>> = {
   media_player: "The size of the play or pause button in the top right.",
   music_hub: "The size of the play or pause button in the top right.",
   climate: "The size of the fan button in the top right, on a thermostat with fan modes.",
-  point_control: "The size of the arrow button in the top right.",
-  assist: "The size of the mic button in the top right.",
 };
 
 /** The line under a State row in One Look, from what it holds now, or

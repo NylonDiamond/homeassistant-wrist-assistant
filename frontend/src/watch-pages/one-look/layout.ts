@@ -18,9 +18,7 @@
 // two rects that only touch do not intersect. `fits` depends on all three.
 
 import {
-  ONE_LOOK_ACCESSORY_GLYPH_ARROW,
   ONE_LOOK_ACCESSORY_GLYPH_FAN,
-  ONE_LOOK_ACCESSORY_GLYPH_MIC,
   ONE_LOOK_ACCESSORY_GLYPH_PLAY,
   ONE_LOOK_CHOICES,
   oneLookDiscMin,
@@ -51,7 +49,7 @@ export interface OneLookRect { readonly x: number; readonly y: number; readonly 
 
 /** The small round control top right (a strip's right end), or the LIVE
  * chip. */
-export type OneLookAccessory = "none" | "playPause" | "fan" | "live" | "arrow" | "mic";
+export type OneLookAccessory = "none" | "playPause" | "fan" | "live";
 
 /** The glyph's share of the accessory disc (none for the LIVE chip). */
 export function oneLookAccessoryGlyphShare(accessory: OneLookAccessory): number {
@@ -60,8 +58,6 @@ export function oneLookAccessoryGlyphShare(accessory: OneLookAccessory): number 
     case "live": return 0;
     case "playPause": return ONE_LOOK_ACCESSORY_GLYPH_PLAY;
     case "fan": return ONE_LOOK_ACCESSORY_GLYPH_FAN;
-    case "arrow": return ONE_LOOK_ACCESSORY_GLYPH_ARROW;
-    case "mic": return ONE_LOOK_ACCESSORY_GLYPH_MIC;
   }
 }
 

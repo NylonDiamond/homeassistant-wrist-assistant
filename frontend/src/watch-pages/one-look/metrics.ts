@@ -97,8 +97,6 @@ export interface OneLookMetrics {
 /** The accessory glyphs' share of the accessory disc, both devices. */
 export const ONE_LOOK_ACCESSORY_GLYPH_PLAY = 0.5;
 export const ONE_LOOK_ACCESSORY_GLYPH_FAN = 0.62;
-export const ONE_LOOK_ACCESSORY_GLYPH_ARROW = 0.52;
-export const ONE_LOOK_ACCESSORY_GLYPH_MIC = 0.54;
 
 export const ONE_LOOK_PHONE: OneLookMetrics = Object.freeze({
   nameSize: 15.5, nameMin: 11, nameTracking: -0.01,

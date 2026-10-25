@@ -681,10 +681,9 @@ function discLayer(model: OneLookPreviewModel, input: WatchPagePreviewInput, s: 
   return html`${back}${glyphMark(input.icons, model.icon, g, { x: cx - g / 2, y: cy - g / 2 }, ink, s, model.style.glyphShadow)}`;
 }
 
-const ACCESSORY_SYMBOLS: Readonly<Record<string, string>> = { fan: "fan.fill", arrow: "arrow.right", mic: "mic.fill" };
+const ACCESSORY_SYMBOLS: Readonly<Record<string, string>> = { fan: "fan.fill" };
 
-/** The round button top right: play or pause, the fan, the arrow, the
- * microphone. A camera's live chip needs a stream, which a picture never
+/** The round button top right: play or pause, or the fan. A camera's live chip needs a stream, which a picture never
  * has, so it draws nothing. */
 function accessoryLayer(model: OneLookPreviewModel, input: WatchPagePreviewInput, s: number): TemplateResult | typeof nothing {
   const { layout, palette } = model;

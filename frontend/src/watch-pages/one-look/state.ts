@@ -32,7 +32,7 @@ export type OneLookStateLine =
   | { kind: "none" };
 
 /** What sits in the tile's top right disc (`OneLookAccessory`). */
-export type OneLookAccessory = "none" | "playPause" | "fan" | "live" | "arrow" | "mic";
+export type OneLookAccessory = "none" | "playPause" | "fan" | "live";
 
 /** A number on the right of a wide tile in a disc layout (weather's
  * "62°"), with a line under it. */
@@ -665,17 +665,17 @@ export function oneLookAction(isAvailable = true): OneLookTileState {
   return isAvailable ? tileState({ isCalm: true }) : oneLookUnavailable();
 }
 
-/** Point Control: the arrow cue, and while it aims at something live,
- * that thing's name as the state. */
+/** Point Control: only the name, and while it aims at something live,
+ * that thing's name as the state. The tile's own tap is its action. */
 export function oneLookPointControl(aimedAt?: string, isAvailable = true): OneLookTileState {
   if (!isAvailable) return oneLookUnavailable();
   const name = aimedAt?.trim() ?? "";
-  return tileState({ state: name === "" ? NONE : oneLookWordLine(name), accessory: "arrow", isCalm: true });
+  return tileState({ state: name === "" ? NONE : oneLookWordLine(name), isCalm: true });
 }
 
-/** Assist: the mic cue. */
+/** Assist: only the name. The tile's own tap is its action. */
 export function oneLookAssist(isAvailable = true): OneLookTileState {
-  return isAvailable ? tileState({ accessory: "mic", isCalm: true }) : oneLookUnavailable();
+  return isAvailable ? tileState({ isCalm: true }) : oneLookUnavailable();
 }
 
 /** A camera or multicam tile. Showing its picture it takes the camera's

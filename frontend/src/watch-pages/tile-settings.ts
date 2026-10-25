@@ -71,7 +71,6 @@ import {
   WATCH_STATE_ROW_SETTERS,
   watchTileStateCards,
   watchTileStateIcons,
-  watchTileStateIsButtonOnly,
   watchTileTaskHeld,
   watchTileTaskModified,
 } from "./styling-model.js";
@@ -280,7 +279,6 @@ import {
 import {
   ONE_LOOK_ANIMATE_REASON,
   ONE_LOOK_ARTWORK_NOTE,
-  ONE_LOOK_BUTTON_ONLY_KINDS,
   ONE_LOOK_CHART_NOTE,
   ONE_LOOK_DIM_LIGHT_NOTE,
   ONE_LOOK_DIM_OFF_REASON,
@@ -588,14 +586,9 @@ export function tileInspectorSections(host: TileSettingsHost): WatchTileSettings
 }
 
 /** The tile's own sections on the device showing the page
- * (`watchTileSectionsFor`). In One Look, Point control and Assist get a
- * State section after Icon too, for the size of the round button One Look
- * gives them (`watchTileStateCards`). */
+ * (`watchTileSectionsFor`). */
 function tileSections(host: TileSettingsHost): WatchTileSettingsSection[] {
-  const sections = watchTileSectionsFor(host.tile, host.hass.states, hostDevice(host));
-  if (!oneLook(host) || sections.includes("state") || !ONE_LOOK_BUTTON_ONLY_KINDS.has(tileKind(tileEntityId(host.tile)))) return sections;
-  const at = sections.indexOf("icon");
-  return at < 0 ? sections : [...sections.slice(0, at + 1), "state", ...sections.slice(at + 1)];
+  return watchTileSectionsFor(host.tile, host.hass.states, hostDevice(host));
 }
 
 /** Whether the settings speak for One Look (`one-look-settings.ts`): only
@@ -796,8 +789,6 @@ export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTi
         || (h.color !== undefined && (defaultColor === undefined || !sameWatchColor(h.color, defaultColor)));
     }
     case "state":
-      // One Look's button card on a kind with no State task holds one key.
-      return watchTileStateIsButtonOnly(tile) ? Object.hasOwn(tile, "statusIconSizeOverride") : taskModified(host, section);
     case "border":
     case "background":
       return taskModified(host, section);
@@ -2137,7 +2128,7 @@ function renderState(host: TileSettingsHost): TemplateResult {
       ${card.rows.map((row) => renderStateRow(host, row))}
       ${look ? stateCardNote(host, card.id) : nothing}`;
     })}
-    ${look && watchTileStateIsButtonOnly(host.tile) ? nothing : resetRow(host, "state", "State")}`;
+    ${resetRow(host, "state", "State")}`;
 }
 
 /** One Look's line under a card for a tile the iPhone draws as a picture or

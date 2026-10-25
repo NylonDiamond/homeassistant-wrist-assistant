@@ -522,8 +522,6 @@ describe("One Look stacked and strip", () => {
     const live = layout("phone402", 6, 2, { name: "Driveway", state: NO_STATE, accessory: "live" });
     near(plain.textWidth - live.textWidth, 11 * 4.2 + 6);
     expect(live.accessoryHitRect).toBeUndefined();
-    expect(layout("phone402", 6, 4, { accessory: "arrow" }).accessoryHitRect).toBeUndefined();
-    expect(layout("phone402", 6, 4, { accessory: "mic" }).accessoryHitRect).toBeUndefined();
     expect(layout("ultra211", 6, 4, { accessory: "fan" }).accessoryHitRect?.width).toBe(32);
   });
 
@@ -623,7 +621,7 @@ describe("One Look overflow", () => {
     ["My ecobee", { kind: "number", figure: "70°", tail: "68–77°" }, "fan", true],
     ["Driveway", NO_STATE, "live", true],
     ["Test Timer", { kind: "number", figure: "4:32", tail: "left", keepTail: true }, "none", false],
-    ["", word("On"), "arrow", true],
+    ["", word("On"), "fan", true],
   ];
 
   for (const isCentred of [false, true]) {
@@ -801,7 +799,7 @@ describe("One Look's bridge look", () => {
   });
 
   it("keeps the accessory top right", () => {
-    const l = layout("ultra211", 6, 4, { name: "Assist", state: NO_STATE, accessory: "mic", centred: true });
+    const l = layout("ultra211", 6, 4, { name: "Music", state: NO_STATE, accessory: "playPause", centred: true });
     expect(l.mode).toBe("centred");
     near(maxX(l.accessoryRect!), l.size.width - l.insetH);
     expect(oneLookRectsIntersect(l.accessoryRect, l.discRect)).toBe(false);
@@ -880,11 +878,10 @@ describe("One Look's bridge look, as the Swift lays it out (derived)", () => {
     nearRect(l.discRect, 36.2093, 12.6493, 29.5814, 29.5814);
   });
 
-  it("D6: an Assist tile's mic", () => {
-    const l = layout("ultra211", 6, 4, { name: "Assist", state: NO_STATE, accessory: "mic", centred: true });
+  it("D6: an Assist tile draws no button", () => {
+    const l = layout("ultra211", 6, 4, { name: "Assist", state: NO_STATE, centred: true });
     nearRect(l.discRect, 31.065, 6.03, 39.87, 39.87);
-    nearRect(l.accessoryRect, 75.97, 6.03, 20, 20);
-    expect(l.accessoryHitRect).toBeUndefined();
+    expect(l.accessoryRect).toBeUndefined();
     expect(l.stateRect).toBeUndefined();
   });
 
@@ -1046,8 +1043,8 @@ const pageA: MockTile[] = [
   { name: "Aranet4 03A66 Humidity", cs: 6, r: 7, rs: 6, state: percent("32") },
   { name: "Eight Sleep", cs: 3, r: 8, rs: 5, state: { kind: "number", figure: "71", unit: "°F" } },
   { name: "Speak", cs: 3, r: 8, rs: 5 },
-  { name: "Point Control", cs: 6, r: 13, rs: 4, acc: "arrow" },
-  { name: "Assist", cs: 6, r: 13, rs: 4, acc: "mic" },
+  { name: "Point Control", cs: 6, r: 13, rs: 4 },
+  { name: "Assist", cs: 6, r: 13, rs: 4 },
 ];
 
 const pageB: MockTile[] = [

@@ -387,8 +387,9 @@ describe("helpers, alarms, vacuums", () => {
 
 describe("actions and cues", () => {
   it("puts cues in the accessory disc", () => {
-    expect(oneLookPointControl()).toEqual(calm({ accessory: "arrow" }));
-    expect(oneLookAssist()).toEqual(calm({ accessory: "mic" }));
+    // Point Control and Assist draw no button: their tap is the tile's.
+    expect(oneLookPointControl()).toEqual(calm({}));
+    expect(oneLookAssist()).toEqual(calm({}));
     expect(oneLookAction()).toEqual(calm());
     expect(oneLookCameraTile(true, true)).toEqual({ ...calm({ accessory: "live", role: { kind: "camera" } }), isCalm: false });
     expect(oneLookCameraTile(true, false)).toEqual({ ...calm({ role: { kind: "camera" } }), isCalm: false });
@@ -424,9 +425,9 @@ describe("actions and cues", () => {
   });
 
   it("says what point control aims at", () => {
-    expect(oneLookPointControl("Desk Lamp")).toEqual(calm({ state: word("Desk Lamp"), accessory: "arrow" }));
-    expect(oneLookPointControl("  ")).toEqual(calm({ accessory: "arrow" }));
-    expect(oneLookPointControl(undefined)).toEqual(calm({ accessory: "arrow" }));
+    expect(oneLookPointControl("Desk Lamp")).toEqual(calm({ state: word("Desk Lamp") }));
+    expect(oneLookPointControl("  ")).toEqual(calm({}));
+    expect(oneLookPointControl(undefined)).toEqual(calm({}));
   });
 
   it("follows a vacuum's or mower's state with its battery", () => {
@@ -602,8 +603,8 @@ describe("a stored tile (each kind's oneLookBody)", () => {
   });
 
   it("draws the app's own kinds without an entity", () => {
-    expect(oneLookTileState(tile("assist.a"), {}, NOW)!.accessory).toBe("mic");
-    expect(oneLookTileState(tile("point_control.a"), {}, NOW)!.accessory).toBe("arrow");
+    expect(oneLookTileState(tile("assist.a"), {}, NOW)!.accessory).toBe("none");
+    expect(oneLookTileState(tile("point_control.a"), {}, NOW)!.accessory).toBe("none");
     expect(oneLookTileState(tile("macro.a"), {}, NOW)!.state).toEqual(word("Removed", { amber: true }));
     expect(oneLookTileState(tile("page.p1"), {}, NOW)!.state).toEqual(NONE);
     expect(oneLookTileState(tile("http_action.a"), {}, NOW, { httpNeedsAttention: true })!.isUnavailable).toBe(true);

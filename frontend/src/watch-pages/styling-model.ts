@@ -36,7 +36,7 @@ import {
   watchStylingSlider,
 } from "./tile-styling.js";
 import { type WatchPageTile, type WatchPagesDocument, isJsonObject, tileEntityId, tileKind } from "./model.js";
-import { ONE_LOOK_BUTTON_CARD, ONE_LOOK_BUTTON_KINDS, ONE_LOOK_BUTTON_ONLY_KINDS } from "./one-look-settings.js";
+import { ONE_LOOK_BUTTON_KINDS } from "./one-look-settings.js";
 
 // ── numbers ──────────────────────────────────────────────────────────────
 
@@ -178,9 +178,7 @@ function stateRowShown(tile: WatchPageTile, key: string, oneLook: boolean): bool
 }
 
 /** The State task's cards for a tile, in the phone's order, each with the
- * rows that show now. Empty for a domain with no State task, except in One
- * Look (`oneLook`), where Point control and Assist get a card for the size
- * of their round button. */
+ * rows that show now. Empty for a domain with no State task. */
 export function watchTileStateCards(tile: WatchPageTile, options: { oneLook?: boolean } = {}): WatchTileStateCard[] {
   const oneLook = options.oneLook === true;
   const cards = watchStateCards(domainOf(tile)).map((c) => ({
@@ -189,17 +187,7 @@ export function watchTileStateCards(tile: WatchPageTile, options: { oneLook?: bo
     subtitle: c.subtitle,
     rows: c.rows.filter((key) => stateRowShown(tile, key, oneLook)).map((key) => ({ key, value: stateRowValue(tile, key) })),
   }));
-  if (oneLook && cards.length === 0 && ONE_LOOK_BUTTON_ONLY_KINDS.has(domainOf(tile))) {
-    cards.push({ ...ONE_LOOK_BUTTON_CARD, rows: [{ key: "statusIconSizeOverride", value: stateRowValue(tile, "statusIconSizeOverride") }] });
-  }
   return cards;
-}
-
-/** Whether the tile's State section is only One Look's button card: a kind
- * the phone's State task has no card for. Its Reset and changed mark go by
- * that one key, not by the task's. */
-export function watchTileStateIsButtonOnly(tile: WatchPageTile): boolean {
-  return watchStateCards(domainOf(tile)).length === 0 && ONE_LOOK_BUTTON_ONLY_KINDS.has(domainOf(tile));
 }
 
 /** Target Temperature (climate): `true` or `false`. */
@@ -229,11 +217,8 @@ export const setWatchTileStateBarBorder = boolSetter("stateBarBorder", hasRow("s
 export const setWatchTileStateBarShadow = boolSetter("stateBarShadow", hasRow("stateBarShadow"));
 /** Show Status Badge. */
 export const setWatchTileShowActivity = boolSetter("showActivityStatus", hasRow("showActivityStatus"));
-/** The status badge's icon size: a whole number, or `null` for Auto. Also
- * the size of the round button One Look gives Point control and Assist,
- * which the phone's State task has no row for. */
-export const setWatchTileStatusIconSize = autoSizeSetter("statusIconSizeOverride", "statusIconSizeOverride",
-  (tile) => hasRow("statusIconSizeOverride")(tile) || ONE_LOOK_BUTTON_ONLY_KINDS.has(domainOf(tile)));
+/** The status badge's icon size: a whole number, or `null` for Auto. */
+export const setWatchTileStatusIconSize = autoSizeSetter("statusIconSizeOverride", "statusIconSizeOverride", hasRow("statusIconSizeOverride"));
 
 /** The setter of each State row, by the key it writes: what a view or a
  * replayed case uses for a row it reads from the table. */

@@ -15,7 +15,6 @@ import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-
 import {
   ONE_LOOK_ANIMATE_REASON,
   ONE_LOOK_ARTWORK_NOTE,
-  ONE_LOOK_BUTTON_CARD,
   ONE_LOOK_CAMERA_PREVIEW_HINT,
   ONE_LOOK_DIM_LIGHT_NOTE,
   ONE_LOOK_DIM_OFF_REASON,
@@ -30,7 +29,7 @@ import {
   oneLookShowsPicture,
   oneLookStateRowOff,
 } from "../src/watch-pages/one-look-settings.js";
-import { setWatchTileStatusIconSize, watchTileStateCards } from "../src/watch-pages/styling-model.js";
+import { watchTileStateCards } from "../src/watch-pages/styling-model.js";
 import { renderTileSettings, tileInspectorSections } from "../src/watch-pages/tile-settings.js";
 
 // The views ask for the focused field (`document.activeElement`); Node has
@@ -219,19 +218,11 @@ describe("State in One Look", () => {
     expect(drawn(tile("media_player.tv"), true)).not.toContain(ONE_LOOK_ARTWORK_NOTE);
   });
 
-  it("gives Point control and Assist a card for their round button, which saves", () => {
-    for (const [id, words] of [["point_control.x", "arrow"], ["assist.home", "mic"]] as const) {
-      const { host, draft } = tileHost(tile(id), true);
-      expect(tileInspectorSections(host), id).toEqual(expect.arrayContaining(["icon", "state"]));
-      expect(tileInspectorSections(host).indexOf("state")).toBe(tileInspectorSections(host).indexOf("icon") + 1);
-      const view = text(renderTileSettings(host));
-      expect(view).toContain(`${ONE_LOOK_BUTTON_CARD.subtitle}.`);
-      expect(view).toContain(`The size of the ${words} button in the top right.`);
-      // Its own Reset and changed mark go by its one key, so a fresh tile
-      // reads unchanged and offers no Reset of the phone's whole task.
-      expect(view).not.toContain("Reset state");
-      const next = setWatchTileStatusIconSize(draft.document, PAGE_ID, TILE_ID, 20);
-      expect(((next.pages as WatchPage[])[0]!.items as WatchPageTile[])[0]!.statusIconSizeOverride).toBe(20);
+  it("gives Point control and Assist no State section, as they draw no round button", () => {
+    for (const id of ["point_control.x", "assist.home"]) {
+      const { host } = tileHost(tile(id), true);
+      expect(tileInspectorSections(host), id).not.toContain("state");
+      expect(text(renderTileSettings(host)), id).not.toContain("button in the top right");
     }
   });
 });
