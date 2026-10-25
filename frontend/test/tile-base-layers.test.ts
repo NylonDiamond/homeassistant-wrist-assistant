@@ -235,6 +235,12 @@ describe("baseLayers", () => {
       const drawn = wide.width(tileValuesFor(tile, ctx).state, state.fontSize, "bold", true, 0);
       expect(state.minimumScale).toBeGreaterThanOrEqual(0.5);
       expect(drawn * (state.minimumScale ?? 1)).toBeLessThanOrEqual(state.frame.width * box.width);
+
+      // The iPhone's face is the wider one: the line is fitted to it too.
+      const onPhone: BaseLayerContext = { states: { "sensor.outside": outside }, measurer, phoneMeasurer: wide };
+      const phoneState = text(baseLayers(tile, onPhone), "state");
+      const phoneDrawn = wide.width(tileValuesFor(tile, onPhone).state, phoneState.fontSize, "bold", true, 0);
+      expect(phoneDrawn * (phoneState.minimumScale ?? 1)).toBeLessThanOrEqual(phoneState.frame.width * box.width);
     });
   });
 

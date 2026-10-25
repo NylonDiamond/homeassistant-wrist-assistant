@@ -61,6 +61,10 @@ export interface BaseLayerContext {
   /** The watch's measurer. Absent: the watch measurer with `icons`. Fixtures
    * pass `oneLookMeasurer("watch", { estimate: true })`. */
   measurer?: TextMeasurer;
+  /** The iPhone's measurer, which only fits the state line (the iPhone's
+   * face is wider). Absent: the iPhone measurer, estimating away from a
+   * browser. */
+  phoneMeasurer?: TextMeasurer;
   /** The panel's symbols, which size the glyph. */
   icons?: IconProvider;
 }
@@ -94,12 +98,23 @@ function measurerFor(icons: IconProvider | undefined): TextMeasurer {
   return m;
 }
 
+let phoneTextMeasurer: TextMeasurer | undefined;
+
+/** The iPhone's text measurer. The iPhone draws a design scaled up in its
+ * own face, which is wider than the watch's, so a text layer is fitted to
+ * both. Away from a browser it estimates, the same widths as the watch's. */
+function phoneMeasurer(ctx: BaseLayerContext): TextMeasurer {
+  return ctx.phoneMeasurer ?? (phoneTextMeasurer ??= oneLookMeasurer("phone"));
+}
+
 interface Face {
   model: OneLookPreviewModel;
   box: { width: number; height: number };
   input: WatchPagePreviewInput;
   tile: WatchPageTile;
   measurer: TextMeasurer;
+  /** The iPhone's, for fitting the state line (`phoneMeasurer`). */
+  phoneMeasurer: TextMeasurer;
 }
 
 /** The input a page picture would hand One Look for this tile on the watch,
@@ -128,7 +143,7 @@ function faceOf(stored: WatchPageTile, ctx: BaseLayerContext, states = ctx.state
     tile, input, stub: false, device: "watch", look: watchSpecialTileLook(tile, input),
     width: box.width, height: box.height, cell, unit, box: "", s: 1, measurer,
   });
-  return model === undefined ? undefined : { model, box, input, tile, measurer };
+  return model === undefined ? undefined : { model, box, input, tile, measurer, phoneMeasurer: phoneMeasurer(ctx) };
 }
 
 /** The tile's entity's state with its word replaced, its attributes kept. */
@@ -391,11 +406,13 @@ function stateLayer(face: Face): Element | undefined {
   const m = oneLookLayoutMetrics(layout, "watch");
   // One Look draws a number's unit smaller (66%), and the layer draws the
   // whole line at one size, so "15.6°C" beside a glyph can need more room
-  // than One Look's own shrink floor leaves it: the iPhone then cut it to
-  // "15....". The floor goes low enough for the line shown now to fit, with
-  // a little slack for the app's own font metrics, never under half.
+  // than One Look's own shrink floor leaves it: the iPhone, whose face is
+  // wider than the watch's, then cut it to "15....". The floor goes low
+  // enough for the line shown now to fit on both, with a little slack for
+  // the apps' own font metrics, never under half.
   const text = model.kind.stateHidden ? "" : oneLookStateLineText(oneLookStateFor(model.kind, false), model.colSpan);
-  const drawn = text === "" ? 0 : face.measurer.width(text, size, number ? "bold" : "semibold", number, 0);
+  const weight = number ? "bold" : "semibold";
+  const drawn = text === "" ? 0 : Math.max(face.measurer.width(text, size, weight, number, 0), face.phoneMeasurer.width(text, size, weight, number, 0));
   const fits = drawn > 0 ? Math.floor(((width * STATE_FIT_SLACK) / drawn) * 100) / 100 : 1;
   const payload: TextElement = {
     id: BASE_LAYER_IDS.state,
