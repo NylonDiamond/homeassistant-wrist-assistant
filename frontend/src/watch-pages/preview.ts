@@ -2739,6 +2739,8 @@ const SYMBOL_ALIASES: Readonly<Record<string, string>> = {
   gauge: "gauge.with.dots.needle.33percent",
   speedometer: "gauge.with.dots.needle.67percent",
   "waveform.and.mic": "waveform.badge.microphone",
+  mic: "microphone",
+  "mic.fill": "microphone.fill",
   "message.and.waveform": "message.badge.waveform",
   "message.and.waveform.fill": "message.badge.waveform.fill",
   "text.cursor": "character.cursor.ibeam",
