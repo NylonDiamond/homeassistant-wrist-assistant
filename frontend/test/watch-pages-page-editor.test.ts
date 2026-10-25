@@ -178,6 +178,16 @@ describe("the Tiles card", () => {
     expect(tileRow(card, "T-BOTTOM")).toContain(`aria-label=Delete Bottom`);
   });
 
+  it("gives a row an arrow when its tile is made of layers, and opens the selected one to list them", () => {
+    const text = editor("T-RIGHT").body();
+    expect(tileRow(text, "T-LEFT")).toContain(`<span class="pe-caret " aria-hidden="true">`);
+    expect(tileRow(text, "T-GAP")).toContain(`<span class="pe-caret none" aria-hidden="true">`);
+    expect(text).toContain(`<div class="tl-group" data-layers-of=T-RIGHT>`);
+    expect(tileRow(text, "T-RIGHT")).toContain(`<span class="pe-caret open" aria-hidden="true">`);
+    expect(text).toMatch(/data-layer-row=BA5E0000-0000-4000-8000-000000000003/);
+    expect(text).not.toContain("data-layers-of=T-LEFT");
+  });
+
   it("lights the selected tile's row and no other", () => {
     const text = editor("T-RIGHT").body();
     expect(tileRow(text, "T-RIGHT")).toMatch(/^<div class="layer pe-tile-row hl /);
