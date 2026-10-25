@@ -112,6 +112,7 @@ import {
   oneLookPhonePagesInset,
 } from "./one-look/metrics.js";
 import { renderOneLookTile } from "./one-look/render.js";
+import { renderTileDesignContent, renderTileLayerOutline, tileBoxOf } from "./tile-design-face.js";
 
 export type WatchPreviewStateMode = "live" | "all-on";
 
@@ -170,6 +171,11 @@ export interface WatchPagePreviewInput {
   /** Draws One Look (true) or the old tile look (false) whatever the
    * version says. Absent: the version decides. */
   oneLook?: boolean;
+  /** The page editor's picked tile layer, outlined on its tile: the tile's
+   * id, and the layer or tap zone picked in its Layers rows. With
+   * `outline`, the frame to outline on a tile with no layers saved yet,
+   * which draws as it always has. */
+  designFocus?: { tileId: string; layerId?: string; zoneId?: string; outline?: { x: number; y: number; width: number; height: number } };
 }
 
 /** The device a picture draws One Look's tiles for, or undefined while the
@@ -3308,9 +3314,23 @@ function tileFace(
   // (`applyDefaultTileColors`), so an iPhone tile with none is graphite.
   const oneLook = previewOneLook(given);
   if (oneLook !== undefined && kind !== "template") {
+    // A tile's layers draw in place of One Look's content, over its own
+    // fill, bar, rim and border; a tile with none draws as it always has.
+    const focus = given.designFocus !== undefined && typeof stored.id === "string" && stored.id.toUpperCase() === given.designFocus.tileId.toUpperCase()
+      ? given.designFocus : undefined;
+    const content = renderTileDesignContent(stored, width, height, s, {
+      ...(input.states === undefined ? {} : { states: input.states }),
+      page: input.page, pages: input.pages,
+      ...(input.icons === undefined ? {} : { icons: input.icons }),
+      ...(input.templates === undefined ? {} : { templates: input.templates }),
+    }, focus);
+    const overlay = content === undefined && focus?.outline !== undefined
+      ? renderTileLayerOutline(focus.outline, tileBoxOf(stored), width, height, s) : undefined;
     return renderOneLookTile({
       tile: oneLook === "phone" ? stored : tile, input, stub, device: oneLook, look,
       width, height, cell, unit, box, s, ...(titled ? { hint } : {}),
+      ...(content === undefined ? {} : { content }),
+      ...(overlay === undefined ? {} : { overlay }),
     });
   }
   if (kind === "camera" || kind === "multicam") return cameraFace(tile, width, height, box, input, unit, s, titled ? hint : undefined, cell);
@@ -4005,6 +4025,8 @@ export const watchPagePreviewStyles = css`
   .ol-edge { position: absolute; top: 0; bottom: 0; pointer-events: none; }
   .ol-chart { position: absolute; left: 0; top: 0; display: block; pointer-events: none; }
   .ol-content { position: absolute; inset: 0; pointer-events: none; }
+  .ol-design > svg { display: block; overflow: visible; }
+  .ol-design-outline { pointer-events: none; border: 1px solid #fff; border-radius: 2px; box-sizing: border-box; box-shadow: 0 0 0 1px #3b74e0; }
   .ol-bar { position: absolute; display: block; overflow: hidden; border-radius: 999px; }
   .ol-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
   .ol-disc, .ol-halo, .ol-acc { position: absolute; display: block; border-radius: 50%; }
