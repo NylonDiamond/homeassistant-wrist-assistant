@@ -586,6 +586,21 @@ export interface EditorHost {
   rowEditListId?: string;
   /** Enter the mode for one list, or leave it with undefined. */
   setRowEdit(listId: string | undefined): void;
+  /** The box the layers are authored in, in points, in place of the shape's
+   * own (`DESIGN_BOX`): a page tile's design box (`tileDesignBox`,
+   * watch-pages/tile-design.ts), when the page editor edits a tile's layers.
+   * Absent: the shape's box. */
+  designBox?: { width: number; height: number };
+  /** The layers are a page tile's: the value picker offers Tile state and
+   * Tile name, which mean nothing outside a tile, and a picture takes only
+   * the tile's own entity's picture or an upload. */
+  tileValueKinds?: boolean;
+}
+
+/** The box a host's layers are authored in on a shape: the host's own
+ * (a page tile's) or the shape's. */
+export function hostDesignBox(host: Pick<EditorHost, "designBox">, family: FamilyKind): { width: number; height: number } {
+  return host.designBox ?? DESIGN_BOX[family === "inline" ? "rectangular" : family];
 }
 
 /** A layer's frame lifted by Copy position, and the shape it sat on. */
@@ -2365,7 +2380,7 @@ function inlineImageFields(
     // times, which it only does if the input is emptied after each pick.
     input.value = "";
     if (!file) return;
-    const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+    const box = hostDesignBox(host, family);
     const place = effectivePlacement(host.config, family, { kind: "image", payload: img });
     const result = await encodeInlinePicture(file, {
       width: place.frame.width * box.width,
@@ -2476,6 +2491,7 @@ const VALUE_KIND_GROUPS: { label: string; kinds: ValueKind["kind"][] }[] = [
   { label: "From an entity", kinds: ["entityState", "entityAttribute", "entityAge", "aggregate"] },
   { label: "Time", kinds: ["time", "dataAge"] },
   { label: "From this complication", kinds: ["chartStat", "listStat", "item", "imageTime", "named"] },
+  { label: "From this tile", kinds: ["tileState", "tileName"] },
 ];
 
 /** `valueKindsFor`, under its group headings. A source in no group (there
@@ -2507,6 +2523,8 @@ const VALUE_KIND_HINTS: Partial<Record<ValueKind["kind"], string>> = {
   aggregate: "Count several entities, or take the sum, average, lowest or highest of their states.",
   time: "The time or date, read each time the complication refreshes.",
   dataAge: "Seconds since the watch last fetched values.",
+  tileState: "What the tile shows for its state, like 82% or Away, set by its simple settings.",
+  tileName: "The tile's name: its label, else the entity's name.",
 };
 
 const CHART_CURVE_OPTIONS: [ChartCurve, string][] = [
@@ -3452,11 +3470,16 @@ export function placePopover(anchor: AnchorBox, size: { width: number; height: n
  * the others (Jesse, 2026-09-23). It stays listed only on a value that holds it.
  */
 export function valueKindsFor(host: EditorHost, kind: ValueKind, opts: ValueEditorOptions): [ValueKind["kind"], string][] {
-  const out = VALUE_KINDS.filter(([k]) => opts.allowNamed !== false || k !== "named");
+  // A tile draws no chart, so it has no chart number to read.
+  const out = VALUE_KINDS.filter(([k]) => (opts.allowNamed !== false || k !== "named")
+    && (k !== "chartStat" || host.tileValueKinds !== true || kind.kind === "chartStat"));
   if (host.rowEditListId !== undefined || kind.kind === "item") out.push(["item", "Item field"]);
   const lists = host.config.elements.some((e) => e.kind === "list");
   if (lists || kind.kind === "listStat") out.push(["listStat", "List count"]);
   if (kind.kind === "imageTime") out.push(["imageTime", "Picture time"]);
+  if (host.tileValueKinds === true || kind.kind === "tileState" || kind.kind === "tileName") {
+    out.push(["tileState", "Tile state"], ["tileName", "Tile name"]);
+  }
   return out;
 }
 
@@ -4456,8 +4479,8 @@ function listSourceFields(
 }
 
 /** How many points tall one cell is on the shape being edited. */
-export function listCellHeightPoints(l: ListElement, frame: NormalizedFrame, family: FamilyKind): number {
-  const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+export function listCellHeightPoints(l: ListElement, frame: NormalizedFrame, family: FamilyKind, designBox?: { width: number; height: number }): number {
+  const box = designBox ?? DESIGN_BOX[family === "inline" ? "rectangular" : family];
   const cell = listCellFrames({ ...l, frame }, box)[0];
   return cell === undefined ? 0 : cell.height * Math.abs(frame.height) * box.height;
 }
@@ -6521,8 +6544,8 @@ function shortDuration(seconds: number): string {
  * The frame is a fraction of the shape's design box, so a 0.5 by 0.5 frame is
  * wide on a rectangular face and square on a circular one; the box aspect
  * decides which side is long, and a quarter turn flips it. */
-function lineIsVertical(family: FamilyKind, f: NormalizedFrame): boolean {
-  const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+function lineIsVertical(family: FamilyKind, f: NormalizedFrame, designBox?: { width: number; height: number }): boolean {
+  const box = designBox ?? DESIGN_BOX[family === "inline" ? "rectangular" : family];
   const tall = f.height * box.height > f.width * box.width;
   const turned = Math.round(((f.rotationDegrees % 180) + 180) % 180) === 90;
   return tall !== turned;
@@ -6530,9 +6553,9 @@ function lineIsVertical(family: FamilyKind, f: NormalizedFrame): boolean {
 
 /** Horizontal or Vertical for a line, written as the frame's rotation so the
  * wire carries nothing new: a quarter turn is the whole difference. */
-function lineOrientationField(family: FamilyKind, f: NormalizedFrame, setFrame: (patch: Partial<NormalizedFrame>, k: string) => void) {
-  const vertical = lineIsVertical(family, f);
-  const box = DESIGN_BOX[family === "inline" ? "rectangular" : family];
+function lineOrientationField(family: FamilyKind, f: NormalizedFrame, setFrame: (patch: Partial<NormalizedFrame>, k: string) => void, designBox?: { width: number; height: number }) {
+  const vertical = lineIsVertical(family, f, designBox);
+  const box = designBox ?? DESIGN_BOX[family === "inline" ? "rectangular" : family];
   const tall = f.height * box.height > f.width * box.width;
   return html`<div class="grid2">
     ${segField("Direction", vertical ? "vertical" : "horizontal", [["horizontal", "Horizontal"], ["vertical", "Vertical"]], (v) => {
@@ -8894,7 +8917,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             { titles: SHAPE_PICKER_TITLES, def: shapePickerKind(base.kind as ShapeKind) })}
           ${shapeCornerField(el, base, upd)}
         </div>
-        ${el.payload.kind === "line" ? lineOrientationField(family, f, setFrame) : nothing}`;
+        ${el.payload.kind === "line" ? lineOrientationField(family, f, setFrame, host.designBox) : nothing}`;
       // A line has no border and no corners: its color is the whole drawing, so
       // the Look card offers its thickness instead.
       look = el.payload.kind === "line"
@@ -8931,7 +8954,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               if (v === "svg" && icon?.kind === "icon") setIconDrawing(icon.payload, "svg");
             }, "icon-drawing"), { titles: MARKER_DRAWING_TITLES, def: "symbol" })
           : nothing}
-        ${segField("Source", img.source, [["camera", "Camera"], ["entityPicture", "Entity picture"], ["inline", "Custom image"]],
+        ${segField("Source", img.source, host.tileValueKinds === true && img.source !== "camera"
+            ? [["entityPicture", "Entity picture"], ["inline", "Custom image"]]
+            : [["camera", "Camera"], ["entityPicture", "Entity picture"], ["inline", "Custom image"]],
           (v) => host.update((c) => {
             const target = c.elements.find((e) => e.payload.id === img.id);
             if (target?.kind !== "image") return;
@@ -9280,7 +9305,7 @@ function ownedExtrasCard(host: EditorHost, el: Extract<CElement, { kind: "timeli
     const own = owner.payload.frame;
     owner.payload.frame = { ...effectivePlacement(c, family, owner).frame };
     if (timeline) convertChartTimes(c, id);
-    else addImageTime(c, id, DESIGN_BOX[family === "inline" ? "rectangular" : family]);
+    else addImageTime(c, id, hostDesignBox(host, family));
     owner.payload.frame = own;
   });
   const on = layers.length > 0;
