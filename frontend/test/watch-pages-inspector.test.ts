@@ -264,19 +264,21 @@ describe("Collapse all", () => {
     const before = flat(inspector(el));
     expect(before).toContain(">Collapse all</button>");
     expect(before).not.toContain("data-open=false");
-    expect(before.match(/data-open=true/g)?.length).toBe(8);
+    // The tile's eight settings cards and its Layers card.
+    expect(before.match(/data-open=true/g)?.length).toBe(9);
 
     click(inspector(el), ">Collapse all<");
     const folded = flat(inspector(el));
     expect(folded).toContain(">Expand all</button>");
     expect(folded).not.toContain("data-open=true");
-    expect(folded.match(/data-open=false/g)?.length).toBe(8);
+    expect(folded.match(/data-open=false/g)?.length).toBe(9);
     // The pinned Name card has no fold.
     expect(folded).toContain(`<section class="sec name-sec" data-open="true"`);
     // Across a reload too.
-    expect(Object.keys(JSON.parse(storage.data[FOLD_STORE_KEY]!))).toEqual(
-      ["action", "background", "border", "icon", "size", "state", "text", "visibility"].map((s) => `tile-settings:${s}`),
-    );
+    expect(Object.keys(JSON.parse(storage.data[FOLD_STORE_KEY]!))).toEqual([
+      "tile-layers:layers",
+      ...["action", "background", "border", "icon", "size", "state", "text", "visibility"].map((s) => `tile-settings:${s}`),
+    ]);
 
     click(inspector(el), ">Expand all<");
     const opened = flat(inspector(el));
@@ -325,7 +327,7 @@ describe("the tile's cards", () => {
     const text = flat(inspector(editor(hallPage(), DIMMER)));
     const body = text.slice(text.indexOf(`<div class="insp-body">`));
     const titles = [...body.matchAll(/<h4>([^<]+)/g)].map((m) => m[1]);
-    expect(titles).toEqual(["Name", "Size", "Icon and color", "State", "Text", "Border", "Action", "Visibility", "Background"]);
+    expect(titles).toEqual(["Name", "Size", "Icon and color", "State", "Text", "Border", "Action", "Visibility", "Background", "Layers"]);
     const name = card(body, "Name");
     expect(name).toContain(`class="sec name-sec"`);
     expect(name).toContain(`aria-label="Label"`);

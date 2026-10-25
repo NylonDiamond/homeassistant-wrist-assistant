@@ -248,6 +248,7 @@ import {
 } from "../phone-frame.js";
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
 import {
+  type TileLayerLinks,
   forgetTileSettingsNotes,
   renderTileName,
   renderTileSettings,
@@ -255,6 +256,19 @@ import {
   tileSettingsFoldIds,
   tileSettingsStyles,
 } from "./tile-settings.js";
+import { BASE_LAYER_IDS, TILE_DESIGN_SCREEN_WIDTH, designForEdit, readTileDesign, syncTileDesigns, tileHasLayers, zonesOf } from "./tile-design.js";
+import { tileLayerContext, tileLayerEdits } from "./tile-layer-host.js";
+import {
+  type TileLayersView,
+  TILE_LAYERS_FOLD,
+  pickedTileLayer,
+  renderTileLayerInspector,
+  renderTileLayerRows,
+  renderTileLayersCard,
+  tileLayerCrumb,
+  tileLayersStyles,
+  tileRowDesignNote,
+} from "./tile-layers-ui.js";
 import { type WatchGroupActions, renderPickedGroupCard, renderTileGroupLine } from "./group-settings.js";
 import {
   PAGE_DEVICES_FOLD,
@@ -757,6 +771,10 @@ export class WaPageEditor extends LitElement {
 
   @state() private selectedPageId?: string;
   @state() private selectedTileId?: string;
+  /** The layer or tap zone picked under the selected tile in the Tiles
+   * list, by the tile's id and the layer's (upper case). It counts only
+   * while that tile is the one selection (`pickedLayerId`). */
+  @state() private layerPick?: { tileId: string; id: string };
   /** The tiles picked together (Cmd or Ctrl-click, Shift-click, Select all),
    * the complication editor's `multi`: two or more ids on the shown page, with
    * `selectedTileId` among them as the primary (the last one clicked, and the
@@ -1803,7 +1821,10 @@ export class WaPageEditor extends LitElement {
   private edit(next: WatchPagesDocument, options?: WatchPagesApplyOptions): boolean {
     const draft = this.draft;
     if (!draft) return false;
-    const changed = draft.apply(next, options);
+    // A simple edit builds the base layers of every tile with layers it
+    // touched again, in the same undo step (tile-design.ts).
+    const synced = syncTileDesigns(draft.document, next, { ...(this.hass?.states === undefined ? {} : { states: this.hass.states }), icons: this.memoIcons() });
+    const changed = draft.apply(synced, options);
     if (changed) {
       this.fieldNote = undefined;
       if (this.stageRefusal !== undefined && this.note === this.stageRefusal) this.note = undefined;
@@ -2395,7 +2416,9 @@ export class WaPageEditor extends LitElement {
       this.deleteTile();
     } else if (e.key === "Escape") {
       e.preventDefault();
-      this.selectTile(undefined);
+      // A picked layer goes back to its tile first, then the tile goes.
+      if (this.pickedLayerId() !== undefined) this.pickLayer(undefined);
+      else this.selectTile(undefined);
     }
   };
 
@@ -3446,12 +3469,20 @@ export class WaPageEditor extends LitElement {
     const color = watchKindColor(entityId, watchAddThemeOf(page)) ?? SECTION_COLOR.content;
     const pick = (e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
       if (id === "") return;
+      // The tile's own row shows its simple settings, never a layer's.
+      this.layerPick = undefined;
       this.clickTile(id, e);
       this.revealTile = true;
       this.inspectorToTop = true;
     };
     const dupRefusal = id === "" ? "This tile cannot be copied." : this.duplicateRefusal(page, tile);
-    return html`<div class="layer pe-tile-row ${picked ? "hl" : ""} ${peek ? "peek" : ""} ${id === "" ? "dim" : ""} ${inMulti ? "multi" : ""}" data-row-tile=${id}
+    // A tile made of layers has an arrow; the selected one opens to list
+    // them under it. A kind with live content of its own has none.
+    const layered = id !== "" && tileHasLayers(tile);
+    const expanded = layered && primary && !inMulti;
+    const design = layered ? readTileDesign(tile) : undefined;
+    const note = tileRowDesignNote(design, tile);
+    const row = html`<div class="layer pe-tile-row ${picked ? "hl" : ""} ${peek ? "peek" : ""} ${id === "" ? "dim" : ""} ${inMulti ? "multi" : ""}" data-row-tile=${id}
       style=${`--k:${color}`} role="listitem" tabindex=${id === "" ? "-1" : "0"} aria-current=${primary ? "true" : "false"}
       aria-label=${label !== kindLabel ? `${label}, ${kindLabel}` : kindLabel}
       title=${[label, kindLabel, entityId].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ")}
@@ -3463,11 +3494,11 @@ export class WaPageEditor extends LitElement {
       }}
       @pointerenter=${() => this.peekTile(id, true)}
       @pointerleave=${() => this.peekTile(id, false)}>
-      <span class="grip" aria-hidden="true"></span>
+      <span class="pe-caret ${layered ? (expanded ? "open" : "") : "none"}" aria-hidden="true">${uiIcon("chevron")}</span>
       ${this.renderTileThumb(page, tile, pages, screen, placed, unit)}
       <span class="name">
         <b><span class="nm-t">${label}</span></b>
-        <small><span class="kind">${kindLabel}</span> · ${rect.colSpan}×${rect.rowSpan}</small>
+        <small><span class="kind">${kindLabel}</span> · ${rect.colSpan}×${rect.rowSpan}${note === "" ? "" : ` · ${note}`}</small>
       </span>
       <span class="right">
         <span class="badges">
@@ -3482,6 +3513,66 @@ export class WaPageEditor extends LitElement {
         </span>`}
       </span>
     </div>`;
+    if (!expanded) return row;
+    const view = this.tileLayersView(page, tile);
+    return html`<div class="tl-group" data-layers-of=${id}>${row}${view === undefined ? nothing : renderTileLayerRows(view)}</div>`;
+  }
+
+  // ── a tile's layers ────────────────────────────────────────────────────
+
+  /** The picked layer or zone of the selected tile, while that tile is the
+   * one selection. */
+  private pickedLayerId(): string | undefined {
+    const pick = this.layerPick;
+    if (pick === undefined || this.multiPicked || !sameWatchId(pick.tileId, this.selectedTileId)) return undefined;
+    return pick.id;
+  }
+
+  /** Pick a layer or zone of the selected tile, or the tile itself. */
+  private pickLayer(id: string | undefined): void {
+    const tileId = this.selectedTileId;
+    this.layerPick = id === undefined || tileId === undefined ? undefined : { tileId, id: id.toUpperCase() };
+    this.inspectorToTop = true;
+  }
+
+  /** What the layer views of `tile-layers-ui.ts` are handed for a tile. */
+  private tileLayersView(page: WatchPage, tile: WatchPageTile): TileLayersView | undefined {
+    const host = this.tileSettingsHost(page, tile);
+    if (host === undefined) return undefined;
+    return {
+      host,
+      selected: sameWatchId(tileIdOf(tile), this.selectedTileId) ? this.pickedLayerId() : undefined,
+      pick: (id) => this.pickLayer(id),
+      off: this.busy || this.editingOff(page),
+    };
+  }
+
+  /** The narrowest watch that picks a page, in points, for the 40 pt rule
+   * of tap zones: the 46 mm watch's 208 when none is known. */
+  private pageWatchWidth(pageId: string): number {
+    const lib = this.lib.library;
+    const owners = new Set((lib === undefined ? [] : devicesFor(lib, "pages", pageId)).map((o) => o.toUpperCase()));
+    const widths = this.ownerList
+      .filter((o) => owners.has(o.owner_watch_id.toUpperCase()) && o.device_kind !== "iphone")
+      .map((o) => caseForScreenSize(o.screen_size)?.screen.width)
+      .filter((w): w is number => w !== undefined);
+    return widths.length === 0 ? TILE_DESIGN_SCREEN_WIDTH : Math.min(...widths);
+  }
+
+  /** What the stage marks on the picked layer's tile: the layer outlined, or
+   * the zone shown. A tile with no layers saved draws as it always has, with
+   * its base layer's frame outlined over it. */
+  private stageDesignFocus(page: WatchPage): WatchPagePreviewInput["designFocus"] {
+    const id = this.pickedLayerId();
+    const tileId = this.selectedTileId;
+    if (id === undefined || tileId === undefined) return undefined;
+    const tile = this.tileOn(page, tileId);
+    if (tile === undefined || !tileHasLayers(tile)) return undefined;
+    const isZone = zonesOf(readTileDesign(tile)).some((z) => z.id === id);
+    if (readTileDesign(tile) !== undefined) return isZone ? { tileId, zoneId: id } : { tileId, layerId: id };
+    const host = this.tileSettingsHost(page, tile);
+    const el = host === undefined ? undefined : designForEdit(tile, tileLayerContext(host)).doc.elements.find((e) => e.payload.id.toUpperCase() === id);
+    return el === undefined ? undefined : { tileId, layerId: id, outline: el.payload.frame };
   }
 
   /** A tile's face in a 44 by 30 box, at the largest scale that fits,
@@ -3619,6 +3710,8 @@ export class WaPageEditor extends LitElement {
       stateMode: this.liveStates ? "live" : "all-on",
       testedIds: this.testedIds(),
     };
+    const designFocus = this.stageDesignFocus(page);
+    if (designFocus !== undefined) input.designFocus = designFocus;
     // An iPhone page's camera tiles play live when the Live video card's
     // switch says so (off by default, kept in this browser).
     const hass = this.hass;
@@ -4141,6 +4234,20 @@ export class WaPageEditor extends LitElement {
     }
     const host = this.editorHost(page);
     const tileHost = tile === undefined ? undefined : this.tileSettingsHost(page, tile);
+    // A layer or tap zone picked under the tile: that layer's own cards,
+    // headed by the way back to the tile.
+    const layerView = tile === undefined ? undefined : this.tileLayersView(page, tile);
+    if (tile !== undefined && layerView !== undefined && layerView.selected !== undefined && pickedTileLayer(layerView) !== undefined) {
+      const crumb = tileLayerCrumb(layerView)!;
+      const tileLabel = watchPreviewTileLabel(tile, { states: this.hass?.states, pages, catalog: this.pickerCatalog }) || tileKindLabel(tileKind(tileEntityId(tile)));
+      const body = renderTileLayerInspector(layerView, this.pageWatchWidth(watchPageId(page)));
+      return html`
+        <div class="insp-head">
+          <button type="button" class="pe-back" title=${`Back to ${tileLabel}'s settings`} @click=${() => this.pickLayer(undefined)}>${uiIcon("left")}<span>${tileLabel}</span></button>
+          <div class="crumbs"><span class="kchip" style=${`--k:${crumb.color}`}>${crumb.kind}</span><span class="nm" title=${crumb.name}>${crumb.name}</span></div>
+        </div>
+        <div class="insp-body tl-insp">${body ?? nothing}</div>`;
+    }
     let crumbs: TemplateResult;
     if (tile === undefined) {
       crumbs = html`<div class="crumbs"><span class="kchip" style=${`--k:${WATCH_PAGE_CHIP_COLOR}`}>${isSmartWatchPage(page) ? "Smart page" : "Page"}</span><span class="nm" title=${name}>${name}</span></div>`;
@@ -4154,7 +4261,7 @@ export class WaPageEditor extends LitElement {
     // while one is open, else opens them all, through the fold memory.
     const folds: FoldId[] = tile === undefined
       ? (host === undefined ? [] : [PAGE_DEVICES_FOLD, ...smartFoldIds(host), ...pageLookFoldIds(), PAGE_WATCH_FOLD, PAGE_SWITCHER_FOLD])
-      : (tileHost === undefined ? [] : tileSettingsFoldIds(tileHost, tileInspectorSections(tileHost)));
+      : (tileHost === undefined ? [] : [...tileSettingsFoldIds(tileHost, tileInspectorSections(tileHost)), ...(tileHasLayers(tile) ? [TILE_LAYERS_FOLD] : [])]);
     const anyOpen = anySectionOpen(this.uiState, folds);
     return html`
       <div class="insp-head">
@@ -4397,10 +4504,12 @@ export class WaPageEditor extends LitElement {
         ${this.fieldNote ? html`<p class="pe-warn" role="status">${this.fieldNote}</p>` : nothing}`,
     };
     const host = this.tileSettingsHost(page, tile);
+    const layers = this.tileLayersView(page, tile);
     return html`
       ${host === undefined ? nothing : renderTileName(host)}
       ${host === undefined || off ? nothing : renderTileGroupLine(host, this.groupActions)}
       ${host === undefined ? nothing : renderTileSettings(host, { sections: tileInspectorSections(host), size })}
+      ${layers === undefined ? nothing : renderTileLayersCard(layers, { pickers: this.pagePickers(watchPageId(page)), page })}
       <div class="ts-acts"><button class="pe-btn pe-danger" ?disabled=${off} title="Delete or Backspace" @click=${() => this.deleteTile()}>
         ${uiIcon("delete")}<span>Delete tile</span></button></div>`;
   }
@@ -4415,7 +4524,7 @@ export class WaPageEditor extends LitElement {
     // read, the one drawn once it is gone; looked up again only when the
     // page moved.
     let seen: { page: WatchPage; tile: WatchPageTile } | undefined;
-    return extendHost(host, {
+    const tileHost: TileSettingsHost = extendHost(host, {
       tileId: () => tileId,
       tile: () => {
         const now = host.page;
@@ -4423,6 +4532,25 @@ export class WaPageEditor extends LitElement {
         return seen.tile;
       },
     });
+    // The tile's layers, for the simple settings' "Changed in the X layer"
+    // rows and the split tap (`TileLayerLinks`).
+    const links = (): TileLayerLinks => {
+      const design = readTileDesign(tileHost.tile);
+      const zones = zonesOf(design);
+      const select = (id: string) => {
+        if (!sameWatchId(tileId, this.selectedTileId)) this.selectTile(tileId);
+        this.layerPick = { tileId, id: id.toUpperCase() };
+        this.inspectorToTop = true;
+      };
+      return {
+        design,
+        zones: zones.length,
+        pickLayer: (role) => select(BASE_LAYER_IDS[role]),
+        reset: (role) => { tileLayerEdits(tileHost).reset(role); },
+        pickZones: () => { if (zones[0] !== undefined) select(zones[0].id); },
+      };
+    };
+    return extendHost(tileHost, { tileLayers: links });
   }
 
   /** The Add tile dialog, the delete question's pattern: a native modal
@@ -5053,7 +5181,7 @@ export class WaPageEditor extends LitElement {
     @container (max-width: 820px) {
       .pe-hint { display: none; }
     }
-  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, libraryModeStyles, onEachDeviceStyles, itemListStyles, headBarStyles];
+  `, tileSettingsStyles, tileLayersStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, libraryModeStyles, onEachDeviceStyles, itemListStyles, headBarStyles];
 }
 
 if (!customElements.get("wa-page-editor")) {

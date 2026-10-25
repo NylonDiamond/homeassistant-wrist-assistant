@@ -3544,7 +3544,9 @@ function inkBox(el: ResolvedElement, canvas: CanvasSize): Box {
   if (shown === "") return b;
   const w = Math.min(b.w, Math.max(el.fontSize, shown.length * el.fontSize * 0.55));
   const h = Math.min(b.h, el.fontSize * 1.3);
-  return { x: b.cx - w / 2, y: b.cy - h / 2, w, h, cx: b.cx, cy: b.cy };
+  // Leading and trailing text sits at its frame's edge, not its middle.
+  const x = el.alignment === "leading" ? b.x : el.alignment === "trailing" ? b.x + b.w - w : b.cx - w / 2;
+  return { x, y: b.cy - h / 2, w, h, cx: b.cx, cy: b.cy };
 }
 
 /**
