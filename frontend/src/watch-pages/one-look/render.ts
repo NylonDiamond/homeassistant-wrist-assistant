@@ -120,6 +120,10 @@ export interface OneLookTileFaceInput {
   s: number;
   /** The tooltip, when the picture names its tiles. */
   hint?: string;
+  /** Measures the text and glyphs; absent, the device's own measurer with
+   * the picture's symbols. A tile's base layers pass the estimate measurer
+   * for stable fixtures (`tile-base-layers.ts`). */
+  measurer?: TextMeasurer;
 }
 
 /** The iPhone's Page look a tile's old sizes are read in; the watch is
@@ -462,7 +466,7 @@ export function oneLookPreviewModel(f: OneLookTileFaceInput): OneLookPreviewMode
 
   const style = oneLookTileStyle(tile, colSpan, rowSpan, oneLookOldSizes(tile, f.cell, colSpan, unit, pageLook));
   const bar = oneLookBarStyle(tile);
-  const measurer = measurerFor(device, input.icons);
+  const measurer = f.measurer ?? measurerFor(device, input.icons);
   const centred = oneLookCentredGlyph(device) && picture === "none" && !isChart;
   const reservesBar = ONE_LOOK_CHOICES.brightnessBar && !bar.fill
     && (ks.role.kind === "light" || ks.keepsBarRoom || ks.barLevel !== undefined);
