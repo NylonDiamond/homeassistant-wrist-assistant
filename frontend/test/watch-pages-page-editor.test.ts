@@ -12,9 +12,13 @@ import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js
 import { libraryDraftKey } from "../src/library/item-mode.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
 import { type WatchCatalog, readWatchCatalog } from "../src/watch-pages/catalog.js";
-import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
+import { type TileSettingsHost, watchKeysTypeText } from "../src/watch-pages/editor-host.js";
+import { EDITOR_LEVEL_HINTS, EDITOR_LEVEL_KEY, type EditorLevel, type EditorLevelLink } from "../src/watch-pages/editor-level.js";
 import { forgetWatchPagesDraft, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
-import type { WatchPagesDocument } from "../src/watch-pages/model.js";
+import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
+import { BASE_LAYER_IDS } from "../src/watch-pages/tile-design.js";
+import { tileLayerEdits } from "../src/watch-pages/tile-layer-host.js";
+import type { TileLayerLinks } from "../src/watch-pages/tile-settings.js";
 import { PAGE_LIST_HEIGHT, clampPageListHeight, loadPageListHeight } from "../src/watch-pages/page-editor.js";
 import {
   STAGE_ZOOM_KEY,
@@ -136,6 +140,8 @@ function editor(selectedTileId?: string) {
   takeWatchPagesRecord(key, HALL, 4);
   el.selectedPageId = "P-HALL";
   el.selectedTileId = selectedTileId;
+  // Every row and layer, as the editor drew them before its level switch.
+  el.level = "expert";
   return {
     el,
     owners,
@@ -974,5 +980,182 @@ describe("the pickers' HTTP actions", () => {
     answer = () => Promise.reject(Object.assign(new Error("Unknown command."), { code: "unknown_command" }));
     await (el.loadHttpLibrary as () => Promise<void>).call(el);
     expect(picker()).toBe(CATALOG);
+  });
+});
+
+// ── the level switch ────────────────────────────────────────────────────
+
+describe("the level switch", () => {
+  const NAME_LAYER = BASE_LAYER_IDS.name;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** The editor at a level, not in a document, with the Name layer of Right
+   * owned (its font size changed in the layer), so Right has layers of its
+   * own. */
+  function leveled(level: EditorLevel, selectedTileId?: string) {
+    vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+    vi.stubGlobal("HTMLElement", (globalThis as { HTMLElement?: unknown }).HTMLElement ?? class {});
+    vi.stubGlobal("document", { activeElement: null });
+    const made = editor(selectedTileId);
+    const { el } = made;
+    el.leaveTile = () => undefined;
+    el.renderRoot = { activeElement: null, querySelector: () => null };
+    el.tileButton = () => null;
+    const call = <T>(name: string, ...args: unknown[]): T => (el[name] as (...a: unknown[]) => T).call(el, ...args);
+    const page = () => call<WatchPage>("currentPage");
+    const tileOf = (id: string) => (page().items as WatchPageTile[]).find((t) => t.id === id)!;
+    const host = (id: string) => call<TileSettingsHost>("tileSettingsHost", page(), tileOf(id));
+    tileLayerEdits(host("T-RIGHT")).doc((c) => {
+      const name = c.elements.find((e) => e.payload.id === NAME_LAYER)!;
+      if (name.kind === "text") name.payload.fontSize = 13;
+    });
+    el.level = level;
+    return { ...made, call, page, tileOf, host };
+  }
+
+  const head = (text: string) => text.slice(text.indexOf(`<div class="cv-head">`), text.indexOf(`<div class="stage-area`));
+
+  it("sits in the canvas head beside Undo, with Simple, Advanced and Expert and the line for the level shown", () => {
+    const { el, body } = leveled("simple");
+    let h = head(body());
+    expect(h).toContain(`aria-label="Editor level"`);
+    expect(h.match(/role="radio"/g)).toHaveLength(3);
+    for (const word of ["Simple", "Advanced", "Expert"]) expect(h).toContain(`>${word}</button>`);
+    expect(h).toContain(`<span class="pe-level-hint">${EDITOR_LEVEL_HINTS.simple}</span>`);
+    expect(h).toMatch(/class=on\s+aria-checked=true title=Name, size, icon, color, state and tap\. No layers\.\s+@click=>Simple</);
+    // The switch just before Undo; its line the head's last.
+    expect(h.indexOf(`class="seg pe-level"`)).toBeGreaterThan(-1);
+    expect(h.indexOf(`class="seg pe-level"`)).toBeLessThan(h.indexOf(`aria-label="Undo"`));
+    expect(h.indexOf(`class="pe-level-hint"`)).toBeGreaterThan(h.indexOf(`aria-label="Delete the selected tile"`));
+    const line = rule(sheet(), ".cv-head > .pe-level-hint");
+    expect(line).toContain("flex: 1 0 100%");
+    el.level = "expert";
+    h = head(body());
+    expect(h).toContain(`<span class="pe-level-hint">${EDITOR_LEVEL_HINTS.expert}</span>`);
+  });
+
+  it("is remembered in this browser, and falls back to Simple without storage", () => {
+    const store: Record<string, string> = {};
+    vi.stubGlobal("localStorage", { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => { store[k] = v; } });
+    const { el, call } = leveled("simple");
+    call("setLevel", "advanced");
+    expect(el.level).toBe("advanced");
+    expect(store[EDITOR_LEVEL_KEY]).toBe("advanced");
+    // A new editor in this browser opens at the level picked.
+    const fresh = () => new (customElements.get("wa-page-editor") as unknown as new () => Record<string, unknown>)();
+    expect(fresh().level).toBe("advanced");
+    vi.stubGlobal("localStorage", undefined);
+    expect(fresh().level).toBe("simple");
+  });
+
+  it("lists no layers below Expert: no arrow, no rules badge, no key, and a tag on a tile with layers of its own", () => {
+    for (const level of ["simple", "advanced"] as const) {
+      const { body } = leveled(level, "T-RIGHT");
+      const text = body();
+      expect(text, level).not.toContain("data-layers-of=");
+      expect(text).not.toContain("data-layer-row=");
+      expect(text).not.toContain("tl-legend");
+      expect(tileRow(text, "T-RIGHT")).toContain(`<span class="pe-caret none" aria-hidden="true">`);
+      expect(tileRow(text, "T-RIGHT")).toContain(">Custom layers</span>");
+      expect(tileRow(text, "T-RIGHT")).not.toContain("changed");
+      // Left has state icons: no rules badge below Expert, and no layers of its own.
+      expect(tileRow(text, "T-LEFT")).not.toContain(">rules</span>");
+      expect(tileRow(text, "T-LEFT")).not.toContain("Custom layers");
+      expect(tileRow(text, "T-RIGHT")).toContain(">action</span>");
+    }
+    const text = leveled("expert", "T-RIGHT").body();
+    expect(text).toContain("data-layers-of=T-RIGHT");
+    expect(text).toMatch(new RegExp(`data-layer-row=${NAME_LAYER}`));
+    expect(tileRow(text, "T-LEFT")).toContain(">rules</span>");
+    expect(tileRow(text, "T-RIGHT")).not.toContain("Custom layers");
+    expect(tileRow(text, "T-RIGHT")).toContain(" · 1 changed</small>");
+  });
+
+  it("moves the tile on a stage drag below Expert, even with a layer picked, and the layer in Expert", () => {
+    vi.stubGlobal("CSS", { escape: (s: string) => s });
+    const { el, call } = leveled("advanced", "T-RIGHT");
+    el.screenEl = () => null;
+    el.capture = () => undefined;
+    const face = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 120, height: 60 }), querySelector: () => null };
+    el.renderRoot = { activeElement: null, querySelector: () => face };
+    el.layerPick = { tileId: "T-RIGHT", id: NAME_LAYER };
+    const press = () => call("onTilePointerDown", {
+      button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerType: "mouse", pointerId: 7, clientX: 5, clientY: 5,
+      currentTarget: face, preventDefault() {}, stopPropagation() {},
+    }, "T-RIGHT");
+    const gesture = () => el.gesture as { kind: string; layerId?: string } | undefined;
+    expect(call("pickedLayerId")).toBeUndefined();
+    press();
+    expect(gesture()?.kind).toBe("move");
+    call("endGesture");
+    el.level = "expert";
+    expect(call("pickedLayerId")).toBe(NAME_LAYER);
+    press();
+    expect(gesture()?.kind).toBe("layer");
+    expect(gesture()?.layerId).toBe(NAME_LAYER);
+    call("endGesture");
+  });
+
+  it("draws no layer handles below Expert, and the tile's own resize handles instead", () => {
+    const { el, body } = leveled("simple", "T-RIGHT");
+    el.layerPick = { tileId: "T-RIGHT", id: NAME_LAYER };
+    let text = body();
+    expect(text).not.toContain("pe-layer-sel");
+    expect(text).toContain(`class="pe-handle `);
+    el.level = "expert";
+    text = body();
+    expect(text).toContain("pe-layer-sel");
+    expect(text).not.toContain(`class="pe-handle `);
+  });
+
+  it("lets a picked layer go when the level drops below Expert, so the tile's settings show", () => {
+    const { el, call } = leveled("expert", "T-RIGHT");
+    call("pickLayer", NAME_LAYER);
+    expect(call("pickedLayerId")).toBe(NAME_LAYER);
+    call("setLevel", "advanced");
+    expect(el.layerPick).toBeUndefined();
+    expect(call("pickedLayerId")).toBeUndefined();
+    // Back at Expert, nothing comes back picked.
+    call("setLevel", "expert");
+    expect(call("pickedLayerId")).toBeUndefined();
+  });
+
+  it("switches to Expert and picks the layer from a Changed in line's link, and to Advanced from a Show", () => {
+    const { el, call, host } = leveled("simple", "T-RIGHT");
+    const links = (host("T-RIGHT") as unknown as { tileLayers: TileLayerLinks }).tileLayers;
+    links.pickLayer("name");
+    expect(el.level).toBe("expert");
+    expect(call("pickedLayerId")).toBe(NAME_LAYER);
+    call("setLevel", "simple");
+    (host("T-RIGHT") as unknown as { editorLevel: EditorLevelLink }).editorLevel.show("advanced");
+    expect(el.level).toBe("advanced");
+  });
+
+  it("leaves out the place row in Simple and the Layers card below Expert", () => {
+    const card = (level: EditorLevel) => {
+      const { call, page, tileOf } = leveled(level, "T-RIGHT");
+      return flat(call("renderTileCard", page(), tileOf("T-RIGHT")));
+    };
+    const simple = card("simple");
+    expect(simple).toContain(`class="pe-presets"`);
+    expect(simple).not.toContain("pe-size-more");
+    expect(simple).not.toContain("Add layer");
+    expect(simple).toContain("Want more?");
+    const advanced = card("advanced");
+    expect(advanced).toContain("pe-size-more");
+    expect(advanced).not.toContain("Add layer");
+    expect(advanced).not.toContain("Want more?");
+    expect(card("expert")).toContain("Add layer");
+  });
+
+  it("never changes the document by switching", () => {
+    const { el, call } = leveled("expert", "T-RIGHT");
+    const draft = (el as unknown as { draft: { document: WatchPagesDocument } }).draft;
+    const before = draft.document;
+    for (const level of ["simple", "advanced", "expert", "simple"] as const) call("setLevel", level);
+    expect(draft.document).toBe(before);
   });
 });

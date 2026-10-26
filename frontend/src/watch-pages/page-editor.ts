@@ -35,6 +35,11 @@
 // (`library/pick`), and its delete asks "This device" or "Every device".
 // The words are `library-editing.ts`.
 //
+// The level switch in the canvas head (Simple, Advanced, Expert,
+// `editor-level.ts`) changes only what is shown. Below Expert no layer is
+// listed, picked or dragged: a drag on the stage moves the tile, and a link
+// to a layer switches to Expert first.
+//
 // Plan: app repo docs/pages_in_home_assistant_step3.md, and
 // docs/one_library_plan_2026-10.md, step 3.
 
@@ -275,6 +280,7 @@ import {
   zonesOf,
 } from "./tile-design.js";
 import { tileLayerContext, tileLayerEdits } from "./tile-layer-host.js";
+import { type EditorLevel, type EditorLevelLink, EDITOR_LEVELS, EDITOR_LEVEL_HINTS, levelShowsLayers, loadEditorLevel, saveEditorLevel } from "./editor-level.js";
 import {
   type TileLayersView,
   TILE_LAYERS_FOLD,
@@ -284,6 +290,7 @@ import {
   renderTileLayersCard,
   renderTileLayersLegend,
   tileLayerCrumb,
+  tileHasCustomLayers,
   tileLayersStyles,
   tileRowDesignNote,
 } from "./tile-layers-ui.js";
@@ -818,6 +825,9 @@ export class WaPageEditor extends LitElement {
    * list, by the tile's id and the layer's (upper case). It counts only
    * while that tile is the one selection (`pickedLayerId`). */
   @state() private layerPick?: { tileId: string; id: string };
+  /** How much of a tile the editor shows (`editor-level.ts`), this
+   * browser's choice. Below Expert no layer is listed, picked or dragged. */
+  @state() private level: EditorLevel = loadEditorLevel();
   /** The tiles picked together (Cmd or Ctrl-click, Shift-click, Select all),
    * the complication editor's `multi`: two or more ids on the shown page, with
    * `selectedTileId` among them as the primary (the last one clicked, and the
@@ -3525,9 +3535,10 @@ export class WaPageEditor extends LitElement {
 
   /** The Tiles card, the complication editor's Layers card: the shown page's
    * tiles in reading order (by row, then column), each with its face, its
-   * label over its kind and size, and badges for state rules and a tap of its
-   * own. A row selects its tile; on hover it copies or deletes it, and the
-   * stage tints the tile while the pointer is on its row. */
+   * label over its kind and size, and badges for a tap of its own and, in
+   * Expert, state rules. A row selects its tile; on hover it copies or
+   * deletes it, and the stage tints the tile while the pointer is on its
+   * row. */
   private renderTileList(page: WatchPage | undefined, pages: readonly WatchPage[], owner: OwnerSummary | undefined): TemplateResult {
     const smart = page !== undefined && isSmartWatchPage(page);
     const off = page === undefined || this.saving || this.editingOff(page);
@@ -3560,7 +3571,7 @@ export class WaPageEditor extends LitElement {
       body = html`<div class="layers pe-tile-list" role="list">
         ${repeat(tiles, keyOf, (t) => this.renderTileRow(page, t, pages, screen, sizeOfTile(t), layout.unit, off))}
       </div>
-      ${tiles.some((t) => tileHasLayers(t)) ? renderTileLayersLegend() : nothing}`;
+      ${levelShowsLayers(this.level) && tiles.some((t) => tileHasLayers(t)) ? renderTileLayersLegend() : nothing}`;
     }
     return html`<section class="card lc pe-tiles-card" aria-label="Tiles"
       style=${`--c: var(--wa-lc-layers, #4a7fe8); --thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px`}>
@@ -3609,12 +3620,16 @@ export class WaPageEditor extends LitElement {
       this.inspectorToTop = true;
     };
     const dupRefusal = id === "" ? "This tile cannot be copied." : this.duplicateRefusal(page, tile);
-    // A tile made of layers has an arrow; the selected one opens to list
-    // them under it. A kind with live content of its own has none.
+    // In Expert a tile made of layers has an arrow; the selected one opens
+    // to list them under it. A kind with live content of its own has none.
+    // Below Expert no layer is listed: a tile with layers of its own says
+    // so with a tag instead.
+    const expert = levelShowsLayers(this.level);
     const layered = id !== "" && tileHasLayers(tile);
-    const expanded = layered && primary && !inMulti;
+    const expanded = expert && layered && primary && !inMulti;
     const design = layered ? readTileDesign(tile) : undefined;
-    const note = tileRowDesignNote(design, tile);
+    const note = expert ? tileRowDesignNote(design, tile) : "";
+    const custom = !expert && tileHasCustomLayers(design, tile);
     const row = html`<div class="layer pe-tile-row ${picked ? "hl" : ""} ${peek ? "peek" : ""} ${id === "" ? "dim" : ""} ${inMulti ? "multi" : ""}" data-row-tile=${id}
       style=${`--k:${color}`} role="listitem" tabindex=${id === "" ? "-1" : "0"} aria-current=${primary ? "true" : "false"}
       aria-label=${label !== kindLabel ? `${label}, ${kindLabel}` : kindLabel}
@@ -3627,15 +3642,15 @@ export class WaPageEditor extends LitElement {
       }}
       @pointerenter=${() => this.peekTile(id, true)}
       @pointerleave=${() => this.peekTile(id, false)}>
-      <span class="pe-caret ${layered ? (expanded ? "open" : "") : "none"}" aria-hidden="true">${uiIcon("chevron")}</span>
+      <span class="pe-caret ${expert && layered ? (expanded ? "open" : "") : "none"}" aria-hidden="true">${uiIcon("chevron")}</span>
       ${this.renderTileThumb(page, tile, pages, screen, placed, unit)}
       <span class="name">
-        <b><span class="nm-t">${label}</span></b>
+        <b><span class="nm-t">${label}</span>${custom ? html`<span class="pe-custom-tag" title="Made of layers of its own. Expert shows them.">Custom layers</span>` : nothing}</b>
         <small><span class="kind">${kindLabel}</span> · ${rect.colSpan}×${rect.rowSpan}${note === "" ? "" : ` · ${note}`}</small>
       </span>
       <span class="right">
         <span class="badges">
-          ${rules ? html`<span class="badge states" title="Other icons or colors in some states">rules</span>` : nothing}
+          ${rules && expert ? html`<span class="badge states" title="Other icons or colors in some states">rules</span>` : nothing}
           ${tap ? html`<span class="badge tap" title="A tap of its own">action</span>` : nothing}
         </span>
         ${id === "" ? nothing : html`<span class="acts">
@@ -3654,11 +3669,35 @@ export class WaPageEditor extends LitElement {
   // ── a tile's layers ────────────────────────────────────────────────────
 
   /** The picked layer or zone of the selected tile, while that tile is the
-   * one selection. */
+   * one selection and the level shows layers. */
   private pickedLayerId(): string | undefined {
     const pick = this.layerPick;
-    if (pick === undefined || this.multiPicked || !sameWatchId(pick.tileId, this.selectedTileId)) return undefined;
+    if (pick === undefined || this.multiPicked || !levelShowsLayers(this.level) || !sameWatchId(pick.tileId, this.selectedTileId)) return undefined;
     return pick.id;
+  }
+
+  /** Show the editor at another level, and remember it in this browser.
+   * Below Expert a picked layer lets go, so the tile's settings show and a
+   * drag on the stage moves the tile. Nothing stored changes. */
+  private setLevel(level: EditorLevel): void {
+    if (level === this.level) return;
+    this.level = level;
+    saveEditorLevel(level);
+    if (!levelShowsLayers(level)) {
+      this.layerPick = undefined;
+      if (this.gesture?.kind === "layer") this.cancelGestures();
+    }
+  }
+
+  /** The level switch beside Undo and Redo: Simple, Advanced, Expert, each
+   * saying what it shows as its tooltip. The line for the level shown is the
+   * head's last (`renderCanvasHead`). */
+  private renderLevelSwitch(): TemplateResult {
+    return html`<span class="seg pe-level" role="radiogroup" aria-label="Editor level">
+      ${EDITOR_LEVELS.map(([level, text]) => html`<button type="button" role="radio" class=${level === this.level ? "on" : ""}
+        aria-checked=${level === this.level ? "true" : "false"} title=${EDITOR_LEVEL_HINTS[level]}
+        @click=${() => this.setLevel(level)}>${text}</button>`)}
+    </span>`;
   }
 
   /** Delete the picked layer or tap zone of the selected tile, as its row's
@@ -4057,8 +4096,8 @@ export class WaPageEditor extends LitElement {
 
   /** The canvas head: the page's name, typed over where it stands (the
    * same rename as the page row's), the preview device's name, the page's
-   * facts, and at the right the edit actions. It reads "Hall / Sim / 6
-   * tiles · 16 rows · 46 mm". */
+   * facts, and at the right the level switch and the edit actions. It reads
+   * "Hall / Sim / 6 tiles · 16 rows · 46 mm". */
   private renderCanvasHead(
     page: WatchPage,
     watches: readonly OwnerSummary[],
@@ -4101,6 +4140,8 @@ export class WaPageEditor extends LitElement {
       <span class="cv-part cv-what"><span class="cv-slash" aria-hidden="true">/</span>
         <span class="cv-shape" title=${factsTitle ?? facts.join(" · ")}><span class="fam">${facts.join(" · ")}</span></span></span>
       <span class="cv-acts">
+        ${this.renderLevelSwitch()}
+        <span class="cv-div" aria-hidden="true"></span>
         <button class="cv-act icon undo" ?disabled=${!draft?.canUndo} title=${`Undo (${MOD}Z)`} aria-label="Undo"
           @click=${() => this.undo()}>${uiIcon("undo")}</button>
         <button class="cv-act icon undo" ?disabled=${!draft?.canRedo} title=${IS_MAC ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Y)"} aria-label="Redo"
@@ -4112,6 +4153,7 @@ export class WaPageEditor extends LitElement {
           title=${tile === undefined ? "Select a tile to delete it." : `${delLabel} (Delete or Backspace)`} aria-label=${delLabel}
           @click=${() => this.deleteTile()}>${uiIcon("delete")}</button>
       </span>
+      <span class="pe-level-hint">${EDITOR_LEVEL_HINTS[this.level]}</span>
     </div>`;
   }
 
@@ -4516,7 +4558,7 @@ export class WaPageEditor extends LitElement {
     // while one is open, else opens them all, through the fold memory.
     const folds: FoldId[] = tile === undefined
       ? (host === undefined ? [] : [PAGE_DEVICES_FOLD, ...smartFoldIds(host), ...pageLookFoldIds(), PAGE_WATCH_FOLD, PAGE_SWITCHER_FOLD])
-      : (tileHost === undefined ? [] : [...tileSettingsFoldIds(tileHost, tileInspectorSections(tileHost)), ...(tileHasLayers(tile) ? [TILE_LAYERS_FOLD] : [])]);
+      : (tileHost === undefined ? [] : [...tileSettingsFoldIds(tileHost, tileInspectorSections(tileHost)), ...(levelShowsLayers(this.level) && tileHasLayers(tile) ? [TILE_LAYERS_FOLD] : [])]);
     const anyOpen = anySectionOpen(this.uiState, folds);
     return html`
       <div class="insp-head">
@@ -4733,6 +4775,9 @@ export class WaPageEditor extends LitElement {
     // line that names where the tile is, and on their own while a typed
     // number was refused, so the note is never about boxes that are hidden.
     const fieldsOpen = this.sizeFieldsOpen || this.fieldNote !== undefined;
+    // Simple shows the size buttons alone, without the place row and its
+    // boxes.
+    const place = this.level !== "simple";
     const size = {
       summary: () => `${rect.colSpan}×${rect.rowSpan}`,
       body: () => html`
@@ -4744,13 +4789,13 @@ export class WaPageEditor extends LitElement {
               @click=${() => this.sizeTile(p.colSpan, p.rowSpan)}>${p.name}</button>`;
           })}
         </div>
-        <button type="button" class="pe-size-more" aria-expanded=${fieldsOpen ? "true" : "false"} aria-controls="pe-size-fields"
+        ${place ? html`<button type="button" class="pe-size-more" aria-expanded=${fieldsOpen ? "true" : "false"} aria-controls="pe-size-fields"
           title=${fieldsOpen ? "Hide the column, row, width and height boxes" : "Type the column, row, width and height"}
           @click=${() => { this.sizeFieldsOpen = !fieldsOpen; }}>
           <span class="pe-size-chev" aria-hidden="true">${uiIcon("chevron")}</span>
           <span>Column ${rect.col + 1}, row ${rect.row + 1} · ${rect.colSpan}×${rect.rowSpan}</span>
-        </button>
-        ${fieldsOpen ? html`<div class="pe-fields" id="pe-size-fields">
+        </button>` : nothing}
+        ${place && fieldsOpen ? html`<div class="pe-fields" id="pe-size-fields">
           ${field("Column", rect.col + 1, 1, WATCH_GRID_COLUMNS - rect.colSpan + 1, (v) => this.placeTile(v, rect.row + 1))}
           ${field("Row", rect.row + 1, 1, WATCH_EDITOR_MAX_ROWS - rect.rowSpan + 1, (v) => this.placeTile(rect.col + 1, v))}
           ${field("Width", rect.colSpan, 1, WATCH_GRID_COLUMNS, (v) => this.sizeTile(v, rect.rowSpan))}
@@ -4759,7 +4804,8 @@ export class WaPageEditor extends LitElement {
         ${this.fieldNote ? html`<p class="pe-warn" role="status">${this.fieldNote}</p>` : nothing}`,
     };
     const host = this.tileSettingsHost(page, tile);
-    const layers = this.tileLayersView(page, tile);
+    // The Layers card is Expert's.
+    const layers = levelShowsLayers(this.level) ? this.tileLayersView(page, tile) : undefined;
     return html`
       ${host === undefined ? nothing : renderTileName(host)}
       ${host === undefined || off ? nothing : renderTileGroupLine(host, this.groupActions)}
@@ -4788,11 +4834,13 @@ export class WaPageEditor extends LitElement {
       },
     });
     // The tile's layers, for the simple settings' "Changed in the X layer"
-    // rows and the split tap (`TileLayerLinks`).
+    // rows and the split tap (`TileLayerLinks`). A layer is Expert's, so
+    // following a link to one below Expert switches to it first.
     const links = (): TileLayerLinks => {
       const design = readTileDesign(tileHost.tile);
       const zones = zonesOf(design);
       const select = (id: string) => {
+        if (!levelShowsLayers(this.level)) this.setLevel("expert");
         if (!sameWatchId(tileId, this.selectedTileId)) this.selectTile(tileId);
         this.layerPick = { tileId, id: id.toUpperCase() };
         this.inspectorToTop = true;
@@ -4806,7 +4854,10 @@ export class WaPageEditor extends LitElement {
         pickZones: () => { if (zones[0] !== undefined) select(zones[0].id); },
       };
     };
-    return extendHost(tileHost, { tileLayers: links });
+    // The level the settings are drawn at, and the way their "Show" lines
+    // change it.
+    const level = (): EditorLevelLink => ({ level: this.level, show: (next) => this.setLevel(next) });
+    return extendHost(tileHost, { tileLayers: links, editorLevel: level });
   }
 
   /** The Add tile dialog, the delete question's pattern: a native modal
@@ -5156,6 +5207,17 @@ export class WaPageEditor extends LitElement {
     .pe-tip:hover::after, .pe-tip:has(:focus-visible)::after { opacity: 1; visibility: visible; }
     /* The preview device in the canvas head: plain words, as the shape's. */
     .cv-shape.pe-watch-crumb { color: var(--wa-ink); font-weight: 500; }
+    /* The level switch beside Undo, the shared small segmented control. Its
+       line is the head's last, a row of its own under the actions, so it
+       never squeezes the page's name or facts. */
+    .seg.pe-level button { padding: 0 8px; }
+    .cv-head > .pe-level-hint {
+      order: 9; flex: 1 0 100%; margin-top: -3px; text-align: right;
+      font-size: 11.5px; line-height: 15px; color: var(--wa-muted);
+    }
+    /* A Tiles row's tag below Expert: the tile has layers of its own. */
+    .pe-custom-tag { flex: none; margin-left: 6px; padding: 1px 5px; border-radius: 4px; font-size: 10px; font-weight: 600;
+      color: var(--wa-hue-blue, #2f6ccc); background: color-mix(in srgb, var(--wa-hue-blue, #2f6ccc) 14%, transparent); }
     /* The tool strip rides in the flow at the top, so the area needs no head
        room above it; the 64px it once kept left a band of empty canvas
        between the page bar and the strip. */

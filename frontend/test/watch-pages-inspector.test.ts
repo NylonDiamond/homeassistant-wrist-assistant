@@ -177,6 +177,8 @@ function editor(page: WatchPage, selectedTile?: string): Editor {
   el.hass = { states: STATES, entities: {} };
   el.selectedPageId = PAGE;
   el.selectedTileId = selectedTile;
+  // Every card and layer, as the editor drew them before its level switch.
+  el.level = "expert";
   // Not connected: the selection's blur reads the render root.
   el.renderRoot = { activeElement: null, querySelector: () => null };
   return el;
