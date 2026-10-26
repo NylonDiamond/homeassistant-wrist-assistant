@@ -219,8 +219,8 @@ import {
   tryMenuField,
   weightSample,
 } from "./picture-choice.js";
-import { renderArrangeHead, renderArrangement } from "./arrange-card.js";
-import { arrangeOffered } from "./arrange-model.js";
+import { renderArrangeHead } from "./arrange-card.js";
+import { arrangeFreeOn, arrangeOffered } from "./arrange-model.js";
 import {
   type WatchHTTPSlideRow,
   type WatchMenu,
@@ -613,10 +613,13 @@ export interface TileSettingsExtras {
  * size first, as the page editor hands those rows in, then the tile's own on
  * the device showing the page (`watchTileSectionsFor`). */
 export function tileInspectorSections(host: TileSettingsHost): WatchTileSettingsSection[] {
-  // Arrangement right after Size, for a tile One Look draws with its own
-  // icon, name and state.
-  const arrange = oneLook(host) && host.domainStyle !== true && arrangeOffered(host.tile);
-  return ["size", ...(arrange ? (["arrange"] as const) : []), ...tileSections(host)];
+  return ["size", ...tileSections(host)];
+}
+
+/** Whether the head card offers Arrange: a tile One Look draws with its own
+ * icon, name and state. */
+export function tileArrangeShown(host: TileSettingsHost): boolean {
+  return oneLook(host) && host.domainStyle !== true && arrangeOffered(host.tile);
 }
 
 /** The tile's own sections on the device showing the page
@@ -831,8 +834,6 @@ export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTi
       return watchPhoneKeysOf(tile, host.hass.states).some((key) => watchPhoneKeyChanged(tile, key));
     case "phoneTile":
       return watchPhoneTileChanged(tile);
-    case "arrange":
-      return watchTileArrange(tile) !== undefined;
     case "opens":
     case "target":
     case "special":
@@ -853,7 +854,7 @@ const LEFT_SECTIONS: readonly WatchTileSettingsSection[] = ["icon", "text", "bac
  * state and border draw, what a tap does, then what the tile is about (a
  * page link's target, a request, a kind's own task). A section in neither
  * list goes at the right column's end. */
-const RIGHT_SECTIONS: readonly WatchTileSettingsSection[] = ["size", "arrange", "state", "border", "action", "opens", "target", "request", "special"];
+const RIGHT_SECTIONS: readonly WatchTileSettingsSection[] = ["size", "state", "border", "action", "opens", "target", "request", "special"];
 
 /** The inspector's sections split into its two columns (one, stacked left
  * over right, on a narrow inspector), each in its column's order. */
@@ -872,7 +873,7 @@ export function tileInspectorColumns(sections: readonly WatchTileSettingsSection
  * `tileInspectorColumnRuns` balances three columns by. */
 const SECTION_WEIGHT: Partial<Record<WatchTileSettingsSection, number>> = {
   icon: 9, text: 4, background: 3, visibility: 1, header: 3, phoneTile: 3, phone: 3, phoneExtras: 3, removed: 1,
-  size: 1.5, arrange: 1.5, state: 6, border: 2, action: 2.5, opens: 3, target: 3, request: 4, special: 4,
+  size: 1.5, state: 6, border: 2, action: 2.5, opens: 3, target: 3, request: 4, special: 4,
 };
 
 /**
@@ -895,8 +896,12 @@ export function tileInspectorColumnRuns(sections: readonly WatchTileSettingsSect
 }
 
 /** About how tall the tile's head card stands, on the scale of
- * `SECTION_WEIGHT`: the live tile over Name, the entity and Preview as. */
-export const TILE_HEAD_WEIGHT = 4;
+ * `SECTION_WEIGHT`: the live tile over Name, the entity and Preview as, then
+ * Arrange, which with Free open holds the part's rows too. */
+export function tileHeadWeight(host: TileSettingsHost): number {
+  if (!tileArrangeShown(host)) return 4;
+  return arrangeFreeOn(host.uiState, host.tile) ? 8 : 4.5;
+}
 
 /** The look keys Reset tile removes beside the styling tasks' own resets:
  * the icon's size, shadow, glow, dimming, animations and per state icons
@@ -909,7 +914,7 @@ const RESET_LOOK_KEYS: readonly string[] = [
 ];
 
 /** The sections whose values Reset tile puts back. */
-const RESET_SECTIONS: readonly WatchTileSettingsSection[] = ["icon", "text", "state", "border", "background", "arrange"];
+const RESET_SECTIONS: readonly WatchTileSettingsSection[] = ["icon", "text", "state", "border", "background"];
 
 /**
  * Reset tile's edit: the tile's look back to its kind's defaults in one
@@ -933,9 +938,10 @@ export function watchTileResetEdit(host: TileSettingsHost): (d: WatchPagesDocume
 }
 
 /** Whether Reset tile would change how the tile looks: one of its sections
- * reads as changed. */
+ * reads as changed, or the head's Arrange holds an arrangement. */
 export function watchTileResettable(host: TileSettingsHost): boolean {
   const sections = tileInspectorSections(host);
+  if (tileArrangeShown(host) && watchTileArrange(host.tile) !== undefined) return true;
   return RESET_SECTIONS.some((s) => sections.includes(s) && watchTileSectionChanged(host, s));
 }
 
@@ -991,7 +997,7 @@ export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts
       ${hasEntity ? html`<div class="ts-head-f ts-head-as">${segField<WatchTilePreviewAs>("Preview as", parts.previewAs, PREVIEW_AS, (v) => parts.setPreviewAs(v), {
         titles: { on: "The tile as it draws on", off: "The tile as it draws off", unavailable: "The tile while Home Assistant cannot reach it" },
       })}</div>` : nothing}
-      ${tileInspectorSections(host).includes("arrange") ? html`<div class="ts-head-f ts-head-arr">${renderArrangeHead(host)}</div>` : nothing}
+      ${tileArrangeShown(host) ? html`<div class="ts-head-f ts-head-arr">${renderArrangeHead(host)}</div>` : nothing}
     </div>
   </section>`;
 }
@@ -1044,12 +1050,6 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
       return WATCH_PHONE_EXTRAS_HINT;
     case "phoneTile":
       return watchPhoneTileSummary(tile);
-    case "arrange": {
-      const a = watchTileArrange(tile);
-      if (a === undefined) return "Default";
-      const moved = (["icon", "name", "state"] as const).filter((p) => a.parts[p] !== undefined).map((p) => p === "icon" ? "Icon" : p === "name" ? "Name" : "State");
-      return `Free: ${moved.join(", ")}`;
-    }
     case "size":
     case "removed":
       return "";
@@ -1108,8 +1108,6 @@ function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection):
       return renderPhoneKeys(host, true);
     case "phoneTile":
       return renderPhoneTileTask(host);
-    case "arrange":
-      return renderArrangement(host);
     case "size":
     case "removed":
       return html``;
@@ -2749,9 +2747,9 @@ export const tileSettingsStyles = css`
   .ts-nested { display: flex; flex-direction: column; gap: 2px; margin: 0 0 6px 12px; padding-left: 10px;
     border-left: 2px solid var(--wa-line); --wa-lab: 62px; }
 
-  /* The Arrangement card (\`arrange-card.ts\`). */
-  .ts-arr { display: flex; flex-direction: column; gap: 6px; }
-  .ts-body .hint.ts-arr-why { margin: 0; }
+  /* Arrange in the head card (\`arrange-card.ts\`). */
+  .ts-arr { display: flex; flex-direction: column; gap: 4px; }
+  .ts-head .hint.ts-under { padding-left: calc(var(--wa-lab) + 8px); margin: -2px 0 0; }
   .ts-arr-free { display: flex; flex-direction: column; gap: 2px; }
   .ts-arr-spot-ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .ts-arr-spots {

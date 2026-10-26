@@ -17,7 +17,7 @@
 // scroll) is in `stage.ts`, without any DOM.
 //
 // A tile whose Arrangement is Free shows its parts on the stage while it is
-// the one selected: the part picked in the Arrangement card is outlined, a
+// the one selected: the part picked in the head's Arrange rows is outlined, a
 // drag on it or an arrow key moves it, a click picks another part and
 // Escape lets the pick go, so a drag moves the tile again. The pick is the
 // card's own (`arrangePickedPart` in `arrange-model.ts`), and the math is
@@ -264,7 +264,7 @@ import {
   forgetTileSettingsNotes,
   renderTileHead,
   renderTileSettings,
-  TILE_HEAD_WEIGHT,
+  tileHeadWeight,
   tileInspectorColumnRuns,
   tileInspectorSections,
   tileSettingsFoldIds,
@@ -945,7 +945,7 @@ export class WaPageEditor extends LitElement {
   /** The same for the inspector head's live tile, while it draws its parts. */
   private headArrange?: { tileId: string; stage: ArrangeStageParts; scale: number };
   /** A press landed on a part of the selected Free tile: the click it ends
-   * with picks that part in the Arrangement card, unless it became a drag. */
+   * with picks that part in the head's Arrange rows, unless it became a drag. */
   private pressedPart?: { tileId: string; part: ArrangePart };
   /** The grid's side room in points, as last drawn: the watch's side safe
    * area, none on an iPhone. */
@@ -2746,7 +2746,7 @@ export class WaPageEditor extends LitElement {
     return part === undefined ? undefined : { tileId: id, part };
   }
 
-  /** Pick a part of a tile, as the Arrangement card's Part row does. */
+  /** Pick a part of a tile, as the head's Part row does. */
   private pickStagePart(tileId: string, part: ArrangePart): void {
     setArrangePickedPart(this.uiState, tileId, part);
     this.draft?.endCoalesce();
@@ -4654,7 +4654,7 @@ export class WaPageEditor extends LitElement {
         ${this.fieldNote ? html`<p class="pe-warn" role="status">${this.fieldNote}</p>` : nothing}`,
     };
     const host = this.tileSettingsHost(page, tile);
-    const runs = host === undefined ? undefined : tileInspectorColumnRuns(tileInspectorSections(host), this.inspectorCols, TILE_HEAD_WEIGHT);
+    const runs = host === undefined ? undefined : tileInspectorColumnRuns(tileInspectorSections(host), this.inspectorCols, tileHeadWeight(host));
     // The head card and the group line open the first column, so the other
     // columns' cards start at the top.
     const head = host === undefined ? nothing : html`${renderTileHead(host, {

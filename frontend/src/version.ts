@@ -94,7 +94,7 @@ export function arrangementFor(
   return oneLookAtVersion(appVersion, minimum);
 }
 
-/** The note the Arrangement card shows when devices on the page are too
+/** The note the head's Arrange rows show when devices on the page are too
  * old to draw it, naming them: "Needs Wrist Assistant 3.2 on Chen Watch.
  * Until then it draws the Default arrangement." (two: "on A and B ... they
  * draw"; more: "on A, B and C"). Undefined for an empty list. */

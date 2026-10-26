@@ -3027,7 +3027,7 @@ export function renderWatchTileFace(
  * or undefined where the picture does not draw it in One Look: the old look,
  * a header, a spacer, a template, a kind only the iPhone draws. For what a
  * setting needs to know about the drawn tile, such as whether it is laid
- * out centred (the Arrangement card).
+ * out centred (the head's Arrange rows).
  */
 export function watchTileOneLookModel(
   stored: WatchPageTile,

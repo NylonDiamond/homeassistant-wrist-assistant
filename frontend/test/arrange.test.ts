@@ -35,7 +35,7 @@ import {
 } from "../src/watch-pages/arrange-model.js";
 import { setWatchTileArrange } from "../src/watch-pages/tile-settings-model.js";
 import { renderArrangeHead } from "../src/watch-pages/arrange-card.js";
-import { renderTileSettings, tileInspectorSections } from "../src/watch-pages/tile-settings.js";
+import { tileArrangeShown, tileInspectorSections } from "../src/watch-pages/tile-settings.js";
 
 (globalThis as { document?: unknown }).document ??= { activeElement: null };
 (globalThis as { HTMLElement?: unknown }).HTMLElement ??= class {};
@@ -333,16 +333,18 @@ function tileHost(t: Record<string, unknown>, opts: { oneLook?: boolean; pickers
   } as unknown as TileSettingsHost;
   return { host, draft };
 }
-const card = (host: TileSettingsHost) => renderTileSettings(host, { sections: ["arrange"] });
-/** The head's Arrange and Part rows, under the live tile. */
+/** The head's Arrange rows, under the live tile: Arrange, Part and the part's rows. */
 const head = (host: TileSettingsHost) => renderArrangeHead(host);
+const card = head;
 const KITCHEN = { entityId: "light.kitchen", colSpan: 6, rowSpan: 4, customLabel: "Kitchen", color: "#8F7BEA" };
 const stored = (host: TileSettingsHost) => host.tile.arrange;
 
 describe("the Arrangement card", () => {
   it("comes right after Size under One Look, for tiles with their own parts", () => {
-    expect(tileInspectorSections(tileHost(KITCHEN).host).slice(0, 3)).toEqual(["size", "arrange", "icon"]);
-    expect(tileInspectorSections(tileHost(KITCHEN, { oneLook: false }).host)).not.toContain("arrange");
+    // No card of its own: Arrange stands in the head, under the live tile.
+    expect(tileInspectorSections(tileHost(KITCHEN).host).slice(0, 2)).toEqual(["size", "icon"]);
+    expect(tileArrangeShown(tileHost(KITCHEN).host)).toBe(true);
+    expect(tileArrangeShown(tileHost(KITCHEN, { oneLook: false }).host)).toBe(false);
     for (const entityId of ["spacer.x", "divider.line.light", "template.x", "map.x", "macro.x"]) {
       expect(arrangeOffered({ id: "x", entityId }), entityId).toBe(false);
     }
@@ -352,9 +354,8 @@ describe("the Arrangement card", () => {
   it("starts on Default, and Free picked over the tile shows the rows without writing", () => {
     const { host, draft } = tileHost(KITCHEN);
     const before = text(card(host));
-    expect(before).toContain(`<h4>Arrangement</h4>`);
-    expect(before).toContain("Every part sits where the tile's layout puts it. Pick Free under the tile at the top to move them.");
     expect(before).not.toContain("Native place");
+    expect(before).not.toContain("Put every part back");
     expect(text(head(host))).toMatch(/aria-label=Arrange>/);
     expect(text(head(host))).not.toContain("aria-label=Part");
     const doc = draft.document;
@@ -363,7 +364,6 @@ describe("the Arrangement card", () => {
     const free = text(card(host));
     expect(free).toContain("Native place");
     expect(free).toContain("Put every part back");
-    expect(free).toContain("Placing the icon.");
     expect(text(head(host))).toContain("aria-label=Part");
   });
 
@@ -449,7 +449,7 @@ describe("the Arrangement card", () => {
     setArrangePickedPart(host.uiState, TILE_ID, undefined);
     const none = text(card(host));
     expect(text(head(host))).not.toMatch(/aria-checked=true\s+class=on title=The (icon|tile's name|state line)/);
-    expect(none).toContain("Pick a part under the tile at the top, or click it on the tile");
+    expect(none).toContain("Pick a part, or click it on the tile");
     expect(none).not.toContain("Native place");
     expect(none).toContain("Put every part back");
     click(head(host), ">Icon</button>");

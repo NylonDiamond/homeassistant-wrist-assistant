@@ -1,9 +1,8 @@
-// Where a tile's own parts sit. Arrange (Default or Free) and, in Free, the
-// Part being placed stand in the tile's head card under its live tile
-// (`renderArrangeHead`), where the part is dragged too. The Arrangement card
-// holds the picked part's Spot on a 3 by 3 grid of the tile's content box
-// (or its native place), its Size, Shown or Hidden, a small move across and
-// down, and "Put every part back". Every edit is one commit of the tile key
+// Where a tile's own parts sit, in the tile's head card under its live tile
+// (`renderArrangeHead`), where the parts are dragged too: Arrange (Default
+// or Free) and, in Free, the Part being placed, its Spot on a 3 by 3 grid of
+// the tile's content box (or its native place), its Size, Shown or Hidden, a
+// small move across and down, and "Put every part back". Every edit is one commit of the tile key
 // `arrange` (`setWatchTileArrange`), so it goes through the draft and undo
 // like every other tile setting; Default removes the key. The part picked
 // is shared with the stage (`arrangePickedPart`): there the picked part of
@@ -12,11 +11,11 @@
 // Free is offered only where One Look lays the tile out centred: a tile
 // whose picture fills it, a chart, and a stacked or strip tile show Free
 // greyed with the reason, and the renderer ignores a key stored on one.
-// The placement math is `one-look/arrange.ts`, what the card knows about
+// The placement math is `one-look/arrange.ts`, what the rows know about
 // the tile `arrange-model.ts`.
 // Plan: app repo docs/page_editor_calm_plan_2026-10.md, step 6.
 //
-// The card's rules are in `tileSettingsStyles` (tile-settings.ts), under
+// The rows' rules are in `tileSettingsStyles` (tile-settings.ts), under
 // `.ts-arr`: this module imports that one, so it must not hand it values
 // that are read while the two load.
 
@@ -101,7 +100,7 @@ export function putEveryPartBack(host: TileSettingsHost): void {
   writeArrange(host, "reset", () => undefined);
 }
 
-// ── the card ─────────────────────────────────────────────────────────────
+// ── the rows ─────────────────────────────────────────────────────────────
 
 const PART_LABELS: [ArrangePart, string][] = [["icon", "Icon"], ["name", "Name"], ["state", "State"]];
 const SCALES: [string, string][] = [["0.8", "80%"], ["1", "Normal"], ["1.2", "120%"], ["1.5", "150%"]];
@@ -118,7 +117,7 @@ function tooOld(host: TileSettingsHost): string[] {
   return (host.pickers ?? []).filter((p) => !arrangementFor(p.version ?? null)).map((p) => p.name);
 }
 
-/** What the head and the card read: the stored arrangement, the tile's One
+/** What the head's rows read: the stored arrangement, the tile's One
  * Look model, why Free cannot place it (undefined when it can), and whether
  * Free shows. */
 function arrangeNow(host: TileSettingsHost): { stored: TileArrange | undefined; model: OneLookPreviewModel | undefined; block: string | undefined; free: boolean } {
@@ -135,18 +134,26 @@ function arrangeNow(host: TileSettingsHost): { stored: TileArrange | undefined; 
 
 /**
  * The head's rows under the live tile: Arrange (Default or Free, Free
- * greyed with the reason on a tile that cannot use it) and, with Free, the
- * Part being placed. The parts are dragged on the live tile itself; the
- * Arrangement card holds the exact spot, size, show and move.
+ * greyed with the reason on a tile that cannot use it), and with Free the
+ * Part being placed and that part's rows. The parts are dragged on the live
+ * tile itself.
  */
 export function renderArrangeHead(host: TileSettingsHost): TemplateResult {
-  const { stored, block, free } = arrangeNow(host);
+  const { stored, model, block, free } = arrangeNow(host);
   const pick = (v: "default" | "free") => (v === "free" ? pickArrangeFree(host) : pickArrangeDefault(host));
   const arrange = segField<"default" | "free">("Arrange", free ? "free" : "default", [["default", "Default"], ["free", "Free"]], pick, {
     titles: { default: "Every part where the tile's layout puts it", free: block ?? "Move, size or hide the icon, the name and the state" },
     disabled: { free: block !== undefined },
   });
-  if (!free) return arrange;
+  const old = arrangementUpdateNote(tooOld(host));
+  const notes = html`${block === undefined || stored === undefined ? nothing
+      : html`<div class="hint keep ts-under">${block} The arrangement stored on it is kept but not drawn.</div>`}
+    ${old === undefined ? nothing : html`<div class="hint warn ts-under" role="status">${old}</div>`}`;
+  if (!free) {
+    return html`<div class="ts-arr">${arrange}${notes}${block !== undefined && stored !== undefined
+      ? html`<div class="ts-arr-foot">${resetButton("Put every part back", "Clear the stored arrangement", () => putEveryPartBack(host))}</div>`
+      : nothing}</div>`;
+  }
   const picked = arrangeSelectedPart(host);
   const moved = (p: ArrangePart) => stored?.parts[p] !== undefined;
   const pickPart = (p: ArrangePart | "none") => {
@@ -154,26 +161,9 @@ export function renderArrangeHead(host: TileSettingsHost): TemplateResult {
     host.endCoalesce();
     host.requestUpdate();
   };
-  return html`${arrange}${segField<ArrangePart | "none">("Part", picked ?? "none", PART_LABELS.map(([p, label]) => [p, moved(p) ? `${label} •` : label] as [ArrangePart, string]), (p) => pickPart(p), {
+  return html`<div class="ts-arr">${arrange}${notes}${segField<ArrangePart | "none">("Part", picked ?? "none", PART_LABELS.map(([p, label]) => [p, moved(p) ? `${label} •` : label] as [ArrangePart, string]), (p) => pickPart(p), {
     titles: { icon: "The icon, with its glow or a person's photo", name: "The tile's name", state: "The state line" },
-  })}`;
-}
-
-/** The card's body: why Free cannot place the tile, or with Default a line
- * pointing at Arrange over the tile, or with Free the picked part's rows. */
-export function renderArrangement(host: TileSettingsHost): TemplateResult {
-  const { stored, model, block, free } = arrangeNow(host);
-  const old = arrangementUpdateNote(tooOld(host));
-  const head = html`${block !== undefined
-      ? html`<div class="hint keep ts-arr-why">${block}${stored === undefined ? nothing : " The arrangement stored on it is kept but not drawn."}</div>`
-      : free ? nothing : html`<div class="hint keep ts-arr-why">Every part sits where the tile's layout puts it. Pick Free under the tile at the top to move them.</div>`}
-    ${old === undefined ? nothing : html`<div class="hint warn ts-arr-why" role="status">${old}</div>`}`;
-  if (!free) {
-    return html`<div class="ts-arr">${head}${block !== undefined && stored !== undefined
-      ? html`<div class="ts-arr-foot">${resetButton("Put every part back", "Clear the stored arrangement", () => putEveryPartBack(host))}</div>`
-      : nothing}</div>`;
-  }
-  return html`<div class="ts-arr">${head}${renderFreeRows(host, stored, model)}</div>`;
+  })}${renderFreeRows(host, stored, model)}</div>`;
 }
 
 /** The rows under Free, for the part picked. */
@@ -181,7 +171,7 @@ function renderFreeRows(host: TileSettingsHost, stored: TileArrange | undefined,
   const picked = arrangeSelectedPart(host);
   if (picked === undefined) {
     return html`<div class="ts-arr-free">
-      <div class="hint keep">Pick a part under the tile at the top, or click it on the tile, then drag it there or use the arrow keys.</div>
+      <div class="hint keep ts-under">Pick a part, or click it on the tile, then drag it there or use the arrow keys.</div>
       <div class="ts-arr-foot">${resetButton("Put every part back", "Every part back where the tile's layout puts it", () => putEveryPartBack(host))}</div>
     </div>`;
   }
@@ -209,7 +199,6 @@ function renderFreeRows(host: TileSettingsHost, stored: TileArrange | undefined,
     }), Math.round((entry[axis] ?? 0) * 1000) / 10);
   };
   return html`<div class="ts-arr-free">
-    <div class="hint keep ts-arr-now">Placing the ${PART_WORDS[part]}. Drag it on the tile at the top, or set it here.</div>
     ${drawn ? nothing : html`<div class="hint keep ts-under">This tile draws no ${PART_WORDS[part]} now; its arrangement is kept for when it does.</div>`}
     <div class="field ts-arr-spot-row"><span>Spot</span>
       <div class="ts-arr-spot-ctl">

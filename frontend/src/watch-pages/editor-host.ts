@@ -61,7 +61,7 @@ export interface WatchPagesEditorHost {
   readonly oneLook?: boolean;
   /** The devices that pick the page, as the library has them, each with
    * the app version it reported (null when none), for the notes of settings
-   * an older app ignores (the Arrangement card's). A getter. Absent: none
+   * an older app ignores (the head's Arrange rows). A getter. Absent: none
    * known, so no note. */
   readonly pickers?: readonly { name: string; version?: string | null }[];
   /** The selected page: its id as the document has it, and the page. */

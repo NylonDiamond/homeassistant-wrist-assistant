@@ -307,7 +307,7 @@ describe("the inspector's columns", () => {
     const all = Object.keys(WATCH_TILE_SETTINGS_SECTION_TITLES) as WatchTileSettingsSection[];
     const { left, right } = tileInspectorColumns(all);
     expect(left.slice(0, 4)).toEqual(["icon", "text", "background", "visibility"]);
-    expect(right.slice(0, 5)).toEqual(["size", "arrange", "state", "border", "action"]);
+    expect(right.slice(0, 5)).toEqual(["size", "state", "border", "action", "opens"]);
     expect([...left, ...right].sort()).toEqual([...all].sort());
     // A kind's own look goes left after them, what the tile is about right.
     expect(left).toEqual(expect.arrayContaining(["header", "phoneTile", "phone", "phoneExtras", "removed"]));

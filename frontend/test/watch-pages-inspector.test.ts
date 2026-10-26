@@ -274,19 +274,19 @@ describe("Collapse all", () => {
     const before = flat(inspector(el));
     expect(before).toContain(">Collapse all</button>");
     expect(before).not.toContain("data-open=false");
-    // The tile's nine settings cards.
-    expect(before.match(/data-open=true/g)?.length).toBe(9);
+    // The tile's eight settings cards.
+    expect(before.match(/data-open=true/g)?.length).toBe(8);
 
     click(inspector(el), ">Collapse all<");
     const folded = flat(inspector(el));
     expect(folded).toContain(">Expand all</button>");
     expect(folded).not.toContain("data-open=true");
-    expect(folded.match(/data-open=false/g)?.length).toBe(9);
+    expect(folded.match(/data-open=false/g)?.length).toBe(8);
     // The head card has no fold.
     expect(folded).toContain(`<section class="ts-head ts-root" aria-label="Tile">`);
     // Across a reload too.
     expect(Object.keys(JSON.parse(storage.data[FOLD_STORE_KEY]!))).toEqual(
-      ["action", "arrange", "background", "border", "icon", "size", "state", "text", "visibility"].map((s) => `tile-settings:${s}`),
+      ["action", "background", "border", "icon", "size", "state", "text", "visibility"].map((s) => `tile-settings:${s}`),
     );
 
     click(inspector(el), ">Expand all<");
@@ -357,7 +357,7 @@ describe("the tile's cards", () => {
     const right = body.slice(body.indexOf(`data-col=2`));
     const titles = (part: string) => [...part.matchAll(/<h4>([^<]+)/g)].map((m) => m[1]);
     expect(titles(left)).toEqual(["Icon and color", "Text", "Background", "Visibility"]);
-    expect(titles(right)).toEqual(["Size", "Arrangement", "State", "Border", "Action"]);
+    expect(titles(right)).toEqual(["Size", "State", "Border", "Action"]);
     // The Size card: the presets as page strips, then the boxes folded
     // under a line that says where the tile is.
     const size = card(body, "Size");
@@ -384,8 +384,8 @@ describe("the tile's cards", () => {
         return titles(text.slice(from, to));
       });
     };
-    expect(cols(1)).toEqual([["Icon and color", "Text", "Background", "Visibility", "Size", "Arrangement", "State", "Border", "Action"]]);
-    expect(cols(3)).toEqual([["Icon and color"], ["Text", "Background", "Visibility", "Size", "Arrangement"], ["State", "Border", "Action"]]);
+    expect(cols(1)).toEqual([["Icon and color", "Text", "Background", "Visibility", "Size", "State", "Border", "Action"]]);
+    expect(cols(3)).toEqual([["Icon and color"], ["Text", "Background", "Visibility", "Size"], ["State", "Border", "Action"]]);
     // The head card opens the first column, not a row across all three.
     const three = editor(hallPage(), DIMMER);
     three.inspectorCols = 3;

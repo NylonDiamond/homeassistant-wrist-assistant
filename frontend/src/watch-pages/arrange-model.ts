@@ -1,5 +1,5 @@
-// What the Arrangement card (`arrange-card.ts`) knows about the tile it
-// arranges, without drawing anything: the tile laid out on its page as One
+// What the head's Arrange rows (`arrange-card.ts`) know about the tile they
+// arrange, without drawing anything: the tile laid out on its page as One
 // Look draws it, whether Free can place its parts (only the centred layout
 // does) and the words for why not, and which kinds are offered the card at
 // all. The shared fixtures' test lays its tiles out through here too, so the
@@ -113,7 +113,7 @@ export function arrangeOffered(tile: WatchPageTile): boolean {
 // Part row and the stage's selected tile read and write the same keys, so a
 // part picked on either is the one the other shows.
 
-/** Every `uiState` key the Arrangement card keeps starts with this. */
+/** Every `uiState` key the Arrange rows keep starts with this. */
 export const ARRANGE_UI_KEY = "tile-settings:arrange";
 
 const freeKey = (tileId: string) => `${ARRANGE_UI_KEY}:free:${tileId.toUpperCase()}`;

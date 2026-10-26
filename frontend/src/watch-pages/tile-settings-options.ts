@@ -110,9 +110,6 @@ export type WatchTileSettingsSection =
   // A tile's place and size, and a smart page rule's own tile size (part 3f
   // batch 3): drawn only when the caller hands the section's rows in.
   | "size"
-  // Where the tile's icon, name and state sit (`arrange`, `arrange-card.ts`):
-  // a page tile's, right after Size, under One Look.
-  | "arrange"
   | "background"
   // The keys only the iPhone reads (`phone-keys-model.ts`): on an iPhone's
   // editor in their natural place, titled by the key; on a watch's editor
@@ -139,7 +136,6 @@ export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettin
   action: "Action",
   visibility: "Visibility",
   size: "Size",
-  arrange: "Arrangement",
   background: "Background",
   // Drawn under the key's own title (`WATCH_PHONE_KEY_WORDS`).
   phone: "iPhone",
@@ -165,7 +161,6 @@ export interface WatchSectionBadge {
  */
 export const WATCH_TILE_SECTION_BADGES: Readonly<Record<WatchTileSettingsSection, WatchSectionBadge>> = {
   size: { color: SECTION_COLOR.position, icon: "place" },
-  arrange: { color: SECTION_COLOR.position, icon: "grid" },
   opens: { color: SECTION_COLOR.content, icon: "content" },
   target: { color: SECTION_COLOR.content, icon: "content" },
   request: { color: SECTION_COLOR.content, icon: "content" },
