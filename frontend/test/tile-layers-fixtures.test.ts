@@ -14,7 +14,7 @@
 //
 // Each file is `NN-name.json`, two space indent and a closing newline, keys in
 // the contract's order: description, tile, states, edit, design, template,
-// templateKey, resolve, expected, devices, placed, halo.
+// templateKey, resolve, expected, devices, placed, halo, under.
 //
 // - `design`: `baseLayersDocument(tile)` with the estimate measurer, the
 //   file's states and symbols that draw every filled variant (so an icon
@@ -38,23 +38,36 @@
 //     exactly as built, unmoved, its anchor kept. Owning `base.icon` (or
 //     `base.photo`) owns the glyph's Glow layer and its `base.glow` anchor
 //     with it, as the slot's companions.
+//   - `setTile` `{set}` (round four): simple keys merged into the tile, and
+//     the design's base layers built again as a simple edit does
+//     (`rebuildBaseLayers`): owned layers stay as they are.
+//   - `setStates` `{states}` (round four): the states replaced for every
+//     later op and for `resolve`, `expected`, `devices`, `placed` and
+//     `halo`, with nothing built again (a state change rebuilds nothing).
+//   - `moveLayer` `{id, dir}` (round four): the layer a step up (1) or down
+//     (-1) the list (`moveLayer`).
+//   The file's `tile` and `states` stay the starting point.
 // - The design starts with every role's anchor (`baseAnchors`), as
 //   `designForEdit` holds them; only the owned roles' are written.
 // - `template`: compiled from the layers the design draws only (owned base
 //   layers and added layers); a base layer that follows the simple settings
 //   is drawn natively and reads nothing.
 // - `resolve`: the context `expected` is resolved in: the tile's own words
-//   (`tileValuesFor`: the state line, its four parts and the name), each
+//   (`tileValuesFor`: the state line, its four parts and the name), the
+//   reference watch face's tile inks (`tileInks`, round four), each
 //   entity the drawn layers read as the app builds a
 //   `ComplicationEntityState`, and the template's rendered values by key.
 // - `expected`: every layer the design draws itself (`drawnDesignDoc`: owned
 //   base layers, added layers, tap zones) in draw order, resolved by the
-//   panel's resolver: `id`, `kind`, then `text` for a text layer, `symbol`
-//   and `colorHex` for an icon, `value` (the gauge's fill fraction, 0 to 1,
-//   to 4 places) for a gauge, `opacity` for a shape whose resolved opacity
-//   (its own times its rules') is not 1, to 4 places, and `hidden`. A text layer that draws parts
-//   also lists them (`parts`: `text`, `fontSize`, `fontWeight`, `fontDesign`,
-//   `colorHex`), resolved in the unplaced document. A design that owns
+//   panel's resolver: `id`, `kind`, then `text` and `colorHex` for a text
+//   layer, `symbol` and `colorHex` for an icon, `value` (the gauge's fill
+//   fraction, 0 to 1, to 4 places) for a gauge, `colorHex` (the resolved
+//   fill colour), `stops` (the resolved fill stop hexes, with a fill) and
+//   `opacity` for a shape whose resolved opacity (its own times its rules')
+//   is not 1, to 4 places, and `hidden`. A text layer that draws parts also
+//   lists them (`parts`: `text`, `fontSize`, `fontWeight`, `fontDesign`,
+//   `colorHex`, and `tracking` when not 0), resolved in the unplaced
+//   document. A design that owns
 //   nothing and adds nothing draws nothing of its own: the native tile draws
 //   it all.
 // - `devices` (round two, section 13.5): null without anchors, else for the
@@ -70,6 +83,8 @@
 //   hue, the glyph's picture, icon, photo and disc flags with its size and
 //   centre, and what is drawn (`oneLookGlyphHalo`: opacity, diameter and
 //   colour, null when none is or the face draws a disc).
+// - `under` (round four, section 15.1): the id of the layer the drawn
+//   document draws in the under pass (`designUnderLayerId`), or empty.
 
 import { describe, expect, it } from "vitest";
 import { html } from "lit";
@@ -96,6 +111,10 @@ import {
   applyZonePreset,
   dragLayerFrame,
   drawnDesignDoc,
+  designUnderLayerId,
+  moveLayer,
+  ownedAnchors,
+  rebuildBaseLayers,
   setLayerFrame,
   encodeTileDesign,
   ownChangedBaseLayers,
@@ -118,7 +137,10 @@ type Op =
   | { op: "zonePreset"; preset: TileZonePreset; ids: string[] }
   | { op: "zoneAction"; id: string; action: TileZoneAction }
   | { op: "dragLayer"; id: string; dx: number; dy: number }
-  | { op: "own"; role: string };
+  | { op: "own"; role: string }
+  | { op: "setTile"; set: Record<string, unknown> }
+  | { op: "setStates"; states: Record<string, HassEntityState> }
+  | { op: "moveLayer"; id: string; dir: -1 | 1 };
 
 interface Case {
   file: string;
@@ -295,6 +317,34 @@ const CASES: Case[] = [
     states: { "light.bed": entity("light.bed", "off", { friendly_name: "Bed Light" }) },
     edit: [{ op: "own", role: "base.icon" }],
   },
+  {
+    file: "18-light-pill-owned-icon-under.json",
+    description: "The Bed Light with the Pill value style and its icon owned unmoved: the Glow layer is drawn under the native state's pill, where the native glow draws, so the pill is the plain tile's; the icon names the tile's live glyph ink with its symbol rule only.",
+    tile: { id: "A1B2C3D4-0018-4000-8000-000000000018", entityId: "light.bed", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0, color: "#F2AE4E", stateValueLabelStyle: "Pill" },
+    states: BED,
+    edit: [{ op: "own", role: "base.icon" }],
+  },
+  {
+    file: "19-light-glow-raised.json",
+    description: "The Bed Light with its icon owned and its Glow layer moved a step up the list, above the icon: no layer is drawn in the under pass, the glow draws over the icon in list order.",
+    tile: { id: "A1B2C3D4-0019-4000-8000-000000000019", entityId: "light.bed", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0, color: "#F2AE4E" },
+    states: BED,
+    edit: [{ op: "own", role: "base.icon" }, { op: "moveLayer", id: BASE_GLOW_ID, dir: 1 }],
+  },
+  {
+    file: "20-light-owned-colour-changed.json",
+    description: "The Bed Light off, drawn in its colour (Dim when off off), its icon and state owned, then the tile's colour changed from #F2AE4E to #3366FF: the stored hexes are the old colour's, the icon and the word Off resolve to the new colour's live inks.",
+    tile: { id: "A1B2C3D4-0020-4000-8000-000000000020", entityId: "light.bed", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0, color: "#F2AE4E", dimWhenOff: false },
+    states: { "light.bed": entity("light.bed", "off", { friendly_name: "Bed Light" }) },
+    edit: [{ op: "own", role: "base.icon" }, { op: "own", role: "base.state" }, { op: "setTile", set: { color: "#3366FF" } }],
+  },
+  {
+    file: "21-light-owned-state-unavailable.json",
+    description: "The Bed Light on at 50%, its state owned, then the light unavailable: the word part draws the unavailable word in the unavailable face's second ink, not the stored on face's; the number's parts are empty.",
+    tile: { id: "A1B2C3D4-0021-4000-8000-000000000021", entityId: "light.bed", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0, color: "#F2AE4E" },
+    states: BED,
+    edit: [{ op: "own", role: "base.state" }, { op: "setStates", states: { "light.bed": entity("light.bed", "unavailable", { friendly_name: "Bed Light" }) } }],
+  },
 ];
 
 const measurer = oneLookMeasurer("watch", { estimate: true });
@@ -318,7 +368,18 @@ function withElements(design: TileDesign, elements: Element[]): TileDesign {
   return { ...design, doc: { ...design.doc, elements } };
 }
 
-function runEdit(tile: WatchPageTile, design: TileDesign, op: Op): TileDesign {
+/** What the ops run against: the tile and states now, the states the base
+ * layers were last built with, and the context for both. */
+interface Run {
+  tile: WatchPageTile;
+  states: Record<string, HassEntityState>;
+  builtWith: Record<string, HassEntityState>;
+}
+
+const contextOf = (states: Record<string, HassEntityState>): BaseLayerContext => ({ states, measurer, phoneMeasurer, icons });
+
+function runEdit(run: Run, design: TileDesign, op: Op): TileDesign {
+  const tile = run.tile;
   switch (op.op) {
     case "setLayer": {
       const doc = structuredClone(design.doc);
@@ -357,7 +418,28 @@ function runEdit(tile: WatchPageTile, design: TileDesign, op: Op): TileDesign {
       if (role === undefined) throw new Error(`no role ${op.role}`);
       return design.owned.includes(role) ? design : { ...design, owned: [...design.owned, role] };
     }
+    case "setTile": {
+      run.tile = { ...run.tile, ...structuredClone(op.set) };
+      run.builtWith = run.states;
+      const ctx = contextOf(run.states);
+      const rebuilt = rebuildBaseLayers(run.tile, design, ctx);
+      return { ...rebuilt, anchors: { ...baseAnchors(run.tile, ctx), ...ownedAnchors(design.anchors, design.owned) } };
+    }
+    case "setStates":
+      run.states = op.states;
+      return design;
+    case "moveLayer":
+      return moveLayer(design, op.id, op.dir);
   }
+}
+
+/** A case's ops run: the design, and the run's final tile and states. */
+function replay(c: Case): { design: TileDesign; run: Run } {
+  const run: Run = { tile: c.tile, states: c.states, builtWith: c.states };
+  const ctx = contextOf(c.states);
+  let design: TileDesign = { v: TILE_DESIGN_VERSION, doc: baseLayersDocument(c.tile, ctx), owned: [], anchors: baseAnchors(c.tile, ctx), zones: {} };
+  for (const op of c.edit ?? []) design = runEdit(run, design, op);
+  return { design, run };
 }
 
 const r4 = (v: number): number => Math.round(v * 10000) / 10000;
@@ -421,15 +503,16 @@ function entityStatesFor(doc: CustomComplicationConfig, states: Record<string, H
 }
 
 function build(c: Case): Record<string, unknown> {
-  const ctx: BaseLayerContext = { states: c.states, measurer, phoneMeasurer, icons };
-  let design: TileDesign = { v: TILE_DESIGN_VERSION, doc: baseLayersDocument(c.tile, ctx), owned: [], anchors: baseAnchors(c.tile, ctx), zones: {} };
-  for (const op of c.edit ?? []) design = runEdit(c.tile, design, op);
+  const { design, run } = replay(c);
+  const tile = run.tile;
+  const states = run.states;
+  const ctx = contextOf(states);
   const encoded = encodeTileDesign(design);
   const read = parseTileDesign(encoded)!;
   const template = read.template ?? null;
-  const values = tileValuesFor(c.tile, ctx);
+  const values = tileValuesFor(tile, ctx);
   const drawn = drawnDesignDoc(read.doc, read.owned);
-  const entityStates = entityStatesFor(drawn, c.states);
+  const entityStates = entityStatesFor(drawn, states);
   const templateResults: Record<string, string> = {};
   for (const [key, expr] of [...compile(drawn).expressions].sort(([a], [b]) => (a < b ? -1 : 1))) {
     const hit = Object.entries(c.rendered ?? {}).find(([start]) => expr.startsWith(start));
@@ -450,15 +533,25 @@ function build(c: Case): Record<string, unknown> {
   const expected = drawn.elements.map((el) => {
     const r = resolved.find((x) => x.id === el.payload.id);
     const out: Record<string, unknown> = { id: el.payload.id, kind: el.kind };
-    if (r?.kind === "text") out.text = r.text;
+    if (r?.kind === "text") {
+      out.text = r.text;
+      out.colorHex = r.colorHex;
+    }
     if (r?.kind === "text" && r.parts !== undefined) {
-      out.parts = r.parts.map((p) => ({ text: p.text, fontSize: p.fontSize, fontWeight: p.fontWeight, fontDesign: p.fontDesign, colorHex: p.colorHex }));
+      out.parts = r.parts.map((p) => ({
+        text: p.text, fontSize: p.fontSize, fontWeight: p.fontWeight, fontDesign: p.fontDesign, colorHex: p.colorHex,
+        ...(p.tracking === undefined || p.tracking === 0 ? {} : { tracking: p.tracking }),
+      }));
     }
     if (r?.kind === "icon") {
       out.symbol = r.symbol;
       out.colorHex = r.colorHex;
     }
     if (r?.kind === "gauge") out.value = Math.round(r.fraction * 10000) / 10000;
+    if (r?.kind === "shape") {
+      out.colorHex = r.fillColorHex;
+      if (r.fill !== undefined) out.stops = r.fill.stops.map((s) => s.colorHex);
+    }
     if (r?.kind === "shape" && r4(r.opacity) !== 1) out.opacity = r4(r.opacity);
     out.hidden = r === undefined ? true : r.isHidden;
     return out;
@@ -468,9 +561,9 @@ function build(c: Case): Record<string, unknown> {
   if (encoded.anchors !== undefined) {
     devices = {};
     placed = {};
-    const box = tileDesignBox(Number(c.tile.colSpan), Number(c.tile.rowSpan));
+    const box = tileDesignBox(Number(tile.colSpan), Number(tile.rowSpan));
     for (const device of ["watch", "phone"] as const) {
-      const on = tileNativeFramesOn(c.tile, ctx, device);
+      const on = tileNativeFramesOn(tile, ctx, device);
       if (on === undefined) throw new Error(`no ${device} face`);
       devices[device] = {
         screenWidth: TILE_NATIVE_SCREENS[device],
@@ -489,11 +582,12 @@ function build(c: Case): Record<string, unknown> {
     design: encoded,
     template,
     templateKey: template === null ? null : tileTemplateKey(template),
-    resolve: { tileState: values.state, tileStateParts: values.stateParts, tileName: values.name, entityStates, templateResults },
+    resolve: { tileState: values.state, tileStateParts: values.stateParts, tileInks: values.inks ?? null, tileName: values.name, entityStates, templateResults },
     expected,
     devices,
     placed,
-    halo: haloJson(c.tile, ctx),
+    halo: haloJson(tile, ctx),
+    under: [designUnderLayerId(drawn)].filter((id): id is string => id !== undefined),
   };
 }
 
@@ -541,7 +635,8 @@ describe("tile layer fixtures", () => {
     for (const c of CASES) {
       const fixture = JSON.parse(readFileSync(join(dir, c.file), "utf8")) as { design: { owned: string[]; doc: unknown } };
       const doc = parseConfig(fixture.design.doc);
-      const fresh = baseLayersDocument(c.tile, { states: c.states, measurer, icons });
+      const { run } = replay(c);
+      const fresh = baseLayersDocument(run.tile, { states: run.builtWith, measurer, icons });
       for (const el of fresh.elements) {
         const role = el.payload.id === BASE_STATE_PILL_ID ? "state" : el.payload.id === BASE_GLOW_ID ? "glow" : Object.entries(BASE_LAYER_IDS).find(([, id]) => id === el.payload.id)![0];
         const owned = (r: string) => fixture.design.owned.includes(`base.${r}`);
@@ -567,7 +662,7 @@ describe("tile layer fixtures", () => {
     expect(by("03-sensor-large.json").resolve.tileState).toBe("21.5°C");
     const name = by("05-light-owned-name.json");
     expect(name.design.owned).toEqual(["base.name"]);
-    expect(name.expected).toEqual([{ id: BASE_LAYER_IDS.name, kind: "text", text: "Office", hidden: false }]);
+    expect(name.expected).toEqual([{ id: BASE_LAYER_IDS.name, kind: "text", text: "Office", colorHex: "#FFFFFF", hidden: false }]);
     const added = by("06-person-added-layers.json");
     expect(added.template).not.toBeNull();
     expect(added.templateKey).toBe(tileTemplateKey(added.template!));
@@ -737,5 +832,94 @@ describe("tile layer fixtures", () => {
     expect(g17.rules[0]!.otherwise![0]!.number).toBe(0.4375);
     expect(seventeen.expected.map((e) => [e.id, e.opacity])).toEqual([[BASE_GLOW_ID, 0.14], [BASE_LAYER_IDS.icon, undefined]]);
     expect(seventeen.halo!.drawn).toMatchObject({ opacity: 0.14, colorHex: "#FFFFFF" });
+  });
+
+  it("draws a first Glow under the native foreground, tracks the figure and resolves live inks (round four)", () => {
+    interface Payload { id: string; colorSlot?: { baseColorHex: string; tileInk?: string }; rules?: { id: string }[]; fill?: { stops: { colorHex: string; tileInk?: string }[] }; parts?: { id: string; colorHex?: string; tileInk?: string; tracking?: number }[] }
+    interface Round4 {
+      design: { owned: string[]; doc: { elements: { kind: string; payload: Payload }[] } };
+      resolve: { tileInks: Record<string, string>; tileStateParts: Record<string, string> };
+      expected: { id: string; kind: string; colorHex?: string; stops?: string[]; parts?: { text: string; colorHex: string; tracking?: number }[] }[];
+      under: string[];
+    }
+    const by = (file: string) => JSON.parse(readFileSync(join(dir, file), "utf8")) as Round4;
+    const el = (c: Round4, id: string) => c.design.doc.elements.find((e) => e.payload.id === id)?.payload;
+    const exp = (c: Round4, id: string) => c.expected.find((e) => e.id === id)!;
+
+    // The under pass: the Glow first among the drawn layers with the slot owned.
+    for (const file of ["09-light-pill-owned-icon-state.json", "14-light-owned-icon-glow.json", "15-light-glow-moved.json", "17-light-off-glow-on.json", "18-light-pill-owned-icon-under.json", "20-light-owned-colour-changed.json"]) {
+      expect(by(file).under, file).toEqual([BASE_GLOW_ID]);
+    }
+    for (const file of ["01-light-medium.json", "05-light-owned-name.json", "11-light-pill-owned-state-number.json", "13-light-glow-setting.json", "16-light-glow-off.json", "19-light-glow-raised.json", "21-light-owned-state-unavailable.json"]) {
+      expect(by(file).under, file).toEqual([]);
+    }
+
+    // Every State layer's figure is tracked as One Look's, and no base layer
+    // carries an ink rule any more.
+    const eleven = by("11-light-pill-owned-state-number.json");
+    expect(exp(eleven, BASE_LAYER_IDS.state).parts![0]).toMatchObject({ text: "50", tracking: -0.01 });
+    expect(el(eleven, BASE_LAYER_IDS.state)!.rules).toEqual([]);
+    expect(el(eleven, BASE_LAYER_IDS.state)!.parts!.map((p) => p.tileInk)).toEqual([undefined, "unit", "ink2", "ink2"]);
+    expect(el(eleven, BASE_LAYER_IDS.state)!.colorSlot!.tileInk).toBe("ink");
+
+    // 13: the Glow in the tile's colour names the hue.
+    const g13 = el(by("13-light-glow-setting.json"), BASE_GLOW_ID)!;
+    expect(g13.colorSlot).toEqual({ baseColorHex: "#F2AE4E", tileInk: "hue" });
+    expect(g13.fill!.stops.map((s) => s.tileInk)).toEqual(["hue", "hueClear"]);
+
+    // 18: the pill stays native, the icon names the glyph ink, its symbol
+    // rule its only rule.
+    const eighteen = by("18-light-pill-owned-icon-under.json");
+    expect(eighteen.design.owned).toEqual(["base.icon"]);
+    const icon18 = el(eighteen, BASE_LAYER_IDS.icon)!;
+    expect(icon18.colorSlot).toEqual({ baseColorHex: "#FFF8EA", tileInk: "glyph" });
+    expect(icon18.rules!.map((r) => r.id)).toEqual(["BA5E0001-0003-4000-8001-000000000000"]);
+
+    // 19: the raised glow draws after the icon.
+    const nineteen = by("19-light-glow-raised.json");
+    const order = nineteen.design.doc.elements.map((e) => e.payload.id);
+    expect(order.indexOf(BASE_GLOW_ID)).toBe(order.indexOf(BASE_LAYER_IDS.icon) + 1);
+    expect(nineteen.expected.map((e) => e.id)).toEqual([BASE_LAYER_IDS.icon, BASE_GLOW_ID]);
+
+    // 20: stored at the old colour, drawn at the new one.
+    const twenty = by("20-light-owned-colour-changed.json");
+    const icon20 = el(twenty, BASE_LAYER_IDS.icon)!;
+    expect(icon20.colorSlot!.tileInk).toBe("glyph");
+    expect(twenty.resolve.tileInks.hue).toBe("#3366FF");
+    expect(exp(twenty, BASE_LAYER_IDS.icon).colorHex).toBe(twenty.resolve.tileInks.glyph);
+    expect(icon20.colorSlot!.baseColorHex).not.toBe(twenty.resolve.tileInks.glyph);
+    const off = exp(twenty, BASE_LAYER_IDS.state).parts!;
+    expect(off[3]).toMatchObject({ text: "Off", colorHex: twenty.resolve.tileInks.ink2 });
+
+    // 21: the unavailable word in the unavailable face's second ink.
+    const twentyOne = by("21-light-owned-state-unavailable.json");
+    const words = exp(twentyOne, BASE_LAYER_IDS.state).parts!;
+    expect(words.slice(0, 3).map((p) => p.text)).toEqual(["", "", ""]);
+    expect(words[3]!.text).toBe(twentyOne.resolve.tileStateParts.word);
+    expect(words[3]!.colorHex).toBe(twentyOne.resolve.tileInks.ink2);
+    const stored = el(twentyOne, BASE_LAYER_IDS.state)!.parts!.find((p) => p.tileInk === "ink2")!.colorHex;
+    expect(words[3]!.colorHex).not.toBe(stored);
+  });
+
+  it("proves the inks are live in cases 20 and 21: a resolved colour differs from the hex stored beside its reference", () => {
+    for (const file of ["20-light-owned-colour-changed.json", "21-light-owned-state-unavailable.json"]) {
+      const c = CASES.find((x) => x.file === file)!;
+      const { design } = replay(c);
+      const built = build(c) as { expected: { id: string; colorHex?: string; parts?: { colorHex: string }[] }[] };
+      let differs = false;
+      for (const e of built.expected) {
+        const el = design.doc.elements.find((x) => x.payload.id === e.id);
+        if (el === undefined || !("colorSlot" in el.payload)) continue;
+        const slot = el.payload.colorSlot;
+        if (slot.tileInk !== undefined && e.colorHex !== undefined && e.colorHex !== slot.baseColorHex) differs = true;
+        if (el.kind === "text") {
+          (el.payload.parts ?? []).forEach((p, i) => {
+            const got = e.parts?.[i]?.colorHex;
+            if (p.tileInk !== undefined && got !== undefined && got !== p.colorHex) differs = true;
+          });
+        }
+      }
+      expect(differs, file).toBe(true);
+    }
   });
 });

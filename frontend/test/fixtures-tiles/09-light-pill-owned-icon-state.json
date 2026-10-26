@@ -157,7 +157,8 @@
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000001",
             "colorSlot": {
-              "baseColorHex": "#F5C27A"
+              "baseColorHex": "#FFF8EA",
+              "tileInk": "glyph"
             },
             "rules": [
               {
@@ -230,44 +231,6 @@
                     ]
                   }
                 ]
-              },
-              {
-                "id": "BA5E0001-0002-4000-8001-000000000000",
-                "cases": [
-                  {
-                    "id": "BA5E0001-0002-4001-8002-000000000000",
-                    "when": {
-                      "join": "all",
-                      "tests": [
-                        {
-                          "id": "BA5E0001-0002-4001-8003-000000000000",
-                          "value": {
-                            "kind": {
-                              "kind": "entityState",
-                              "entityId": "light.office",
-                              "displayName": "Office",
-                              "domain": "light"
-                            }
-                          },
-                          "comparison": {
-                            "kind": "isOn"
-                          }
-                        }
-                      ]
-                    },
-                    "then": [
-                      {
-                        "kind": "setColor",
-                        "value": {
-                          "kind": {
-                            "kind": "literal",
-                            "value": "#FFF8EA"
-                          }
-                        }
-                      }
-                    ]
-                  }
-                ]
               }
             ],
             "frame": {
@@ -315,88 +278,10 @@
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000004",
             "colorSlot": {
-              "baseColorHex": "#FFFFFF"
+              "baseColorHex": "#FFFFFF",
+              "tileInk": "ink"
             },
-            "rules": [
-              {
-                "id": "BA5E0004-0003-4000-8001-000000000000",
-                "cases": [
-                  {
-                    "id": "BA5E0004-0003-4001-8002-000000000000",
-                    "when": {
-                      "join": "all",
-                      "tests": [
-                        {
-                          "id": "BA5E0004-0003-4001-8003-000000000000",
-                          "value": {
-                            "kind": {
-                              "kind": "entityState",
-                              "entityId": "light.office",
-                              "displayName": "Office",
-                              "domain": "light"
-                            }
-                          },
-                          "comparison": {
-                            "kind": "isOn"
-                          }
-                        }
-                      ]
-                    },
-                    "then": [
-                      {
-                        "kind": "setColor",
-                        "value": {
-                          "kind": {
-                            "kind": "literal",
-                            "value": "#FFFFFF"
-                          }
-                        }
-                      }
-                    ]
-                  }
-                ],
-                "partId": "BA5E0004-0000-4000-8000-0000000000F3"
-              },
-              {
-                "id": "BA5E0004-0004-4000-8001-000000000000",
-                "cases": [
-                  {
-                    "id": "BA5E0004-0004-4001-8002-000000000000",
-                    "when": {
-                      "join": "all",
-                      "tests": [
-                        {
-                          "id": "BA5E0004-0004-4001-8003-000000000000",
-                          "value": {
-                            "kind": {
-                              "kind": "entityState",
-                              "entityId": "light.office",
-                              "displayName": "Office",
-                              "domain": "light"
-                            }
-                          },
-                          "comparison": {
-                            "kind": "isOn"
-                          }
-                        }
-                      ]
-                    },
-                    "then": [
-                      {
-                        "kind": "setColor",
-                        "value": {
-                          "kind": {
-                            "kind": "literal",
-                            "value": "#FFFFFF"
-                          }
-                        }
-                      }
-                    ]
-                  }
-                ],
-                "partId": "BA5E0004-0000-4000-8000-0000000000F4"
-              }
-            ],
+            "rules": [],
             "frame": {
               "x": 0.0791,
               "y": 0.1639,
@@ -430,7 +315,8 @@
                     "kind": "tileState",
                     "part": "figure"
                   }
-                }
+                },
+                "tracking": -0.01
               },
               {
                 "id": "BA5E0004-0000-4000-8000-0000000000F2",
@@ -441,6 +327,7 @@
                   }
                 },
                 "colorHex": "#FFFFFFD6",
+                "tileInk": "unit",
                 "fontWeight": "semibold",
                 "fontSize": 10
               },
@@ -452,7 +339,8 @@
                     "part": "tail"
                   }
                 },
-                "colorHex": "#FFFFFF99",
+                "colorHex": "#FFFFFF",
+                "tileInk": "ink2",
                 "fontWeight": "regular",
                 "fontSize": 11,
                 "fontDesign": "default"
@@ -465,7 +353,8 @@
                     "part": "word"
                   }
                 },
-                "colorHex": "#FFFFFF99",
+                "colorHex": "#FFFFFF",
+                "tileInk": "ink2",
                 "fontWeight": "regular",
                 "fontDesign": "default"
               }
@@ -478,7 +367,8 @@
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000003",
             "colorSlot": {
-              "baseColorHex": "#FFFFFF"
+              "baseColorHex": "#FFFFFF",
+              "tileInk": "ink"
             },
             "rules": [],
             "frame": {
@@ -533,6 +423,14 @@
       "tail": "",
       "word": ""
     },
+    "tileInks": {
+      "ink": "#FFFFFF",
+      "ink2": "#FFFFFF",
+      "unit": "#FFFFFFD6",
+      "glyph": "#FFF8EA",
+      "hue": "#F2AE4E",
+      "hueClear": "#F2AE4E00"
+    },
     "tileName": "Office",
     "entityStates": [
       {
@@ -550,6 +448,11 @@
     {
       "id": "BA5E0000-0000-4000-8000-000000000006",
       "kind": "shape",
+      "colorHex": "#FFFFFF",
+      "stops": [
+        "#FFFFFF",
+        "#FFFFFF00"
+      ],
       "opacity": 0.32,
       "hidden": false
     },
@@ -563,19 +466,22 @@
     {
       "id": "BA5E0000-0000-4000-8000-000000000005",
       "kind": "shape",
+      "colorHex": "#00000038",
       "hidden": false
     },
     {
       "id": "BA5E0000-0000-4000-8000-000000000004",
       "kind": "text",
       "text": "100%",
+      "colorHex": "#FFFFFF",
       "parts": [
         {
           "text": "100",
           "fontSize": 14,
           "fontWeight": "bold",
           "fontDesign": "rounded",
-          "colorHex": "#FFFFFF"
+          "colorHex": "#FFFFFF",
+          "tracking": -0.01
         },
         {
           "text": "%",
@@ -870,5 +776,8 @@
       "diameter": 36.1712,
       "colorHex": "#FFFFFF"
     }
-  }
+  },
+  "under": [
+    "BA5E0000-0000-4000-8000-000000000006"
+  ]
 }

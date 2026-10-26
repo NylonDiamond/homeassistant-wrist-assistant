@@ -225,6 +225,21 @@ export function drawnDesignDoc(doc: CustomComplicationConfig, owned: readonly Ba
   return { ...doc, elements: doc.elements.filter((el) => designDrawsElement(owned, el)) };
 }
 
+/**
+ * The drawn layer drawn in the under pass (round four, section 15.1): the
+ * base Glow element when it is the first drawing (non tap) element of the
+ * drawn document, else undefined. The under pass draws it where the native
+ * halo draws, under the native state, pill and name, so an unmoved owned
+ * glow over a native state is the plain tile's. A Glow moved up the list, or
+ * an added layer put under it, leaves no under layer: everything then draws
+ * over the native parts in list order. A hidden first Glow still counts and
+ * draws nothing.
+ */
+export function designUnderLayerId(drawnDoc: Pick<CustomComplicationConfig, "elements">): string | undefined {
+  const first = drawnDoc.elements.find((el) => el.kind !== "tap");
+  return first !== undefined && isGlowId(first.payload.id) ? first.payload.id : undefined;
+}
+
 /** The layer kinds a tile may hold, in the + Add layer menu's order. */
 export const TILE_LAYER_KINDS: readonly Element["kind"][] = ["text", "icon", "gauge", "shape", "image"];
 

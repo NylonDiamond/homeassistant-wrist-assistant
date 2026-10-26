@@ -27,6 +27,7 @@ import {
   type TextElement,
   type Value,
   type TextPart,
+  type TileInks,
   type TileStatePart,
   IMAGE_DEFAULT_TIMESTAMP_SIZE,
   TILE_STATE_PARTS,
@@ -44,6 +45,7 @@ import { type OneLookPreviewModel, oneLookPreviewModel } from "./one-look/render
 import {
   type OneLookGlyphHalo,
   type OneLookInk,
+  type OneLookPalette,
   ONE_LOOK_PILL_OPACITY,
   ONE_LOOK_UNIT_OPACITY,
   oneLookGlyphGlowOf,
@@ -52,7 +54,7 @@ import {
   oneLookHex,
 } from "./one-look/colour.js";
 import { type OneLookStateLine, oneLookStateFor } from "./one-look/state.js";
-import { type OneLookDevice, oneLookCellSize, oneLookCentredGlyph, oneLookDrawnSize, oneLookGridUnit } from "./one-look/metrics.js";
+import { type OneLookDevice, oneLookCellSize, oneLookCentredGlyph, oneLookDrawnSize, oneLookGridUnit, oneLookMetrics } from "./one-look/metrics.js";
 import { type OneLookRect, ONE_LOOK_GLYPH_INK_SHARE, ONE_LOOK_GLYPH_STATE_GAP, ONE_LOOK_PILL_PAD_H, oneLookLayoutMetrics } from "./one-look/layout.js";
 import { oneLookMeasurer } from "./one-look/measurer.js";
 import { ONE_LOOK_WATCH_TAIL_COLUMNS, type TextMeasurer, glyphExtentOf, oneLookStateWidth } from "./one-look/text.js";
@@ -235,15 +237,19 @@ const NO_STATE_PARTS: Readonly<TileStateParts> = Object.freeze({ figure: "", uni
  * text ("" while its entity has not loaded), the same line in its four
  * pieces, and its name (its label, else the friendly name, else the entity
  * id), whether or not the label shows. `device` is the frame the words
- * draw in, for the tail rule (the watch unless the iPhone frame says so). */
-export function tileValuesFor(tile: WatchPageTile, ctx: BaseLayerContext, device: OneLookDevice = "watch"): { state: string; name: string; stateParts: TileStateParts } {
+ * draw in, for the tail rule (the watch unless the iPhone frame says so).
+ * With them the inks of the reference watch face (round four, section
+ * 15.3), absent when One Look draws no face for the tile; a frame drawing
+ * the tile hands its own face's in their place. */
+export function tileValuesFor(tile: WatchPageTile, ctx: BaseLayerContext, device: OneLookDevice = "watch"): { state: string; name: string; stateParts: TileStateParts; inks?: TileInks } {
   const face = faceOf(tile, ctx);
   const name = watchPreviewTileLabel(face?.tile ?? tile, face?.input ?? previewInput(tile, ctx, ctx.states));
   if (face === undefined) return { state: "", name, stateParts: { ...NO_STATE_PARTS } };
+  const inks = tileInksOf(face.model.palette, face.model.layout.drawsDisc, "watch");
   const ks = face.model.kind;
-  if (ks.stateHidden) return { state: "", name, stateParts: { ...NO_STATE_PARTS } };
+  if (ks.stateHidden) return { state: "", name, stateParts: { ...NO_STATE_PARTS }, inks };
   const line = oneLookStateFor(ks, false);
-  return { state: oneLookStateLineText(line, face.model.colSpan, device), name, stateParts: oneLookStateLineParts(line, face.model.colSpan, device) };
+  return { state: oneLookStateLineText(line, face.model.colSpan, device), name, stateParts: oneLookStateLineParts(line, face.model.colSpan, device), inks };
 }
 
 // ── building the layers ──────────────────────────────────────────────────
@@ -272,14 +278,42 @@ function inkHex(ink: OneLookInk): string {
   return `${hex}${alpha}`;
 }
 
+const WHITE: readonly [number, number, number] = [255, 255, 255];
+
+/**
+ * The tile inks of a palette, as the native tile draws its parts with them
+ * (round four, section 15.3): the figure's and name's ink, the tail's and
+ * word's second ink, the unit's (the ink at One Look's unit opacity), the
+ * glyph's (`oneLookGlyphInk` with the layout's disc, centred as the device
+ * centres it), the tile's hue (white with none) and that hue clear. Each a
+ * hex as the documents write one.
+ */
+export function tileInksOf(palette: OneLookPalette, drawsDisc: boolean, device: OneLookDevice): TileInks {
+  const hue = oneLookHex(palette.hue ?? [...WHITE]);
+  return {
+    ink: inkHex(palette.ink),
+    ink2: inkHex(palette.ink2),
+    unit: inkHex({ rgb: palette.ink.rgb, opacity: palette.ink.opacity * ONE_LOOK_UNIT_OPACITY }),
+    glyph: inkHex(oneLookGlyphInk(palette, drawsDisc, oneLookCentredGlyph(device))),
+    hue,
+    hueClear: `${hue}00`,
+  };
+}
+
+/** A face's tile inks, as the base layers write them beside their
+ * references. */
+function faceInks(face: Face): TileInks {
+  return tileInksOf(face.model.palette, face.model.layout.drawsDisc, "watch");
+}
+
 /** A hex as the documents write one: "#" and upper case. */
 function normalHex(value: string): string {
   const body = value.trim().replace(/^#/, "");
   return `#${body.toUpperCase()}`;
 }
 
-/** The kinds whose lit state is `on`: their glyph ink follows on and off by
- * a rule. */
+/** The kinds whose lit state is `on`: their symbol and glow follow on and
+ * off by a rule. */
 const LIT_ON_KINDS: ReadonlySet<string> = new Set(["light", "switch", "input_boolean", "fan", "siren", "humidifier", "automation"]);
 
 /** One Look's text shadow on a coloured fill (`OneLookViews.TextShadow`). */
@@ -347,12 +381,6 @@ function facesAt(tile: WatchPageTile, ctx: BaseLayerContext): FacesAt {
     if (!held.has(key)) held.set(key, faceOf(tile, ctx, withEntityState(ctx.states, tileEntityId(tile), state, attributes)));
     return held.get(key);
   };
-}
-
-/** The glyph's ink in a face, or undefined when the tile draws none then. */
-function glyphInkOf(face: Face | undefined): string | undefined {
-  if (face === undefined) return undefined;
-  return inkHex(oneLookGlyphInk(face.model.palette, face.model.layout.drawsDisc, oneLookCentredGlyph("watch")));
 }
 
 /** The symbol One Look draws in a face (its fill, outline or slashed form),
@@ -546,6 +574,10 @@ function glowLayer(tile: WatchPageTile, face: Face, tileAt: FacesAt, ctx: BaseLa
   const halo = haloOf(giver);
   if (!(M > 0) || halo === undefined) return undefined;
   const hex = oneLookHex(halo.rgb);
+  // In the tile's colour, the glow names the tile's hue (round four, section
+  // 15.3), so it follows a change of the tile's colour as the native one
+  // does. White and a colour of the user's are constants.
+  const live = face.model.style.glow.colour.kind === "tile";
   const d = glyph.width * (face.model.style.glow.size / 100);
   const cx = glyph.x + glyph.width / 2;
   const cy = glyph.y + glyph.height / 2;
@@ -571,7 +603,7 @@ function glowLayer(tile: WatchPageTile, face: Face, tileAt: FacesAt, ctx: BaseLa
   const payload: ShapeElement = {
     id: BASE_GLOW_ID,
     name: BASE_GLOW_NAME,
-    colorSlot: { baseColorHex: hex },
+    colorSlot: live ? { baseColorHex: hex, tileInk: "hue" } : { baseColorHex: hex },
     rules,
     frame: frameOf({ x: cx - d / 2, y: cy - d / 2, width: d, height: d }, face.box),
     isHidden: false,
@@ -579,7 +611,12 @@ function glowLayer(tile: WatchPageTile, face: Face, tileAt: FacesAt, ctx: BaseLa
     cornerRadius: 0,
     thickness: 1,
     borderWidth: 0,
-    fill: { kind: "radial", stops: [{ at: 0, colorHex: hex }, { at: 1, colorHex: `${hex}00` }] },
+    fill: {
+      kind: "radial",
+      stops: live
+        ? [{ at: 0, colorHex: hex, tileInk: "hue" }, { at: 1, colorHex: `${hex}00`, tileInk: "hueClear" }]
+        : [{ at: 0, colorHex: hex }, { at: 1, colorHex: `${hex}00` }],
+    },
   };
   const opacity = round(M, 4);
   if (opacity < 1) payload.opacity = opacity;
@@ -645,33 +682,16 @@ function glyphLayer(tile: WatchPageTile, ctx: BaseLayerContext, face: Face, face
   // Look fills it, with the rule that swaps it as the state changes.
   const tileAt = faces ?? facesAt(tile, ctx);
   const { symbol, rule: fillRule } = symbolRule(tile, ctx, face, tileAt);
-  let colorHex = inkHex(oneLookGlyphInk(model.palette, layout.drawsDisc, oneLookCentredGlyph("watch")));
-  let colorRule: Rule | undefined;
-  if (LIT_ON_KINDS.has(tileKind(entityId))) {
-    const at = tileAt;
-    const on = glyphInkOf(at("on"));
-    const off = glyphInkOf(at("off"));
-    if (on !== undefined && off !== undefined) {
-      colorHex = off;
-      if (on !== off) {
-        colorRule = {
-          id: baseRuleId("icon", 2, 0, 1),
-          cases: [{
-            id: baseRuleId("icon", 2, 1, 2),
-            when: { join: "all", tests: [{ id: baseRuleId("icon", 2, 1, 3), value: entityValue(tile, ctx.states), comparison: { kind: "isOn" } }] },
-            then: [{ kind: "setColor", value: literal(on) }],
-          }],
-        };
-      }
-    }
-  }
+  // The glyph's ink is the tile's live glyph ink (round four, section 15.3):
+  // it follows on and off, the tile's colour and every other palette change
+  // by itself, the face's ink now beside it for a reader without inks.
   const extent = Math.max(0.5, glyphExtentOf(face.measurer, model.baseIcon));
   const payload: IconElement = {
     id: BASE_LAYER_IDS.icon,
     name: BASE_LAYER_NAMES.icon,
-    colorSlot: { baseColorHex: colorHex },
+    colorSlot: { baseColorHex: faceInks(face).glyph, tileInk: "glyph" },
     // The fill rule first: a per state icon, later, wins where it matches.
-    rules: [fillRule, colorRule, iconRule].filter((r): r is Rule => r !== undefined),
+    rules: [fillRule, iconRule].filter((r): r is Rule => r !== undefined),
     frame: frameOf(rect, box),
     isHidden: false,
     symbol: literal(symbol),
@@ -693,12 +713,14 @@ function nameLayer(face: Face): Element | undefined {
   const centred = layout.mode === "centred";
   const size = layout.name.size;
   const m = oneLookLayoutMetrics(layout, "watch");
-  const colour = model.picture === "none" && model.style.nameColour !== undefined ? normalHex(model.style.nameColour) : inkHex(model.palette.ink);
+  // A Label Color of the tile's own is a constant; else the name takes the
+  // tile's live ink (round four, section 15.3).
+  const labelColour = model.picture === "none" && model.style.nameColour !== undefined ? normalHex(model.style.nameColour) : undefined;
   const design = FONT_DESIGNS[model.style.nameDesign] ?? "default";
   const payload: TextElement = {
     id: BASE_LAYER_IDS.name,
     name: BASE_LAYER_NAMES.name,
-    colorSlot: { baseColorHex: colour },
+    colorSlot: labelColour !== undefined ? { baseColorHex: labelColour } : { baseColorHex: faceInks(face).ink, tileInk: "ink" },
     rules: [],
     frame: frameOf({ x: layout.textOrigin.x, y: layout.textOrigin.y, width: layout.textWidth, height: lines * layout.nameLineHeight }, box),
     isHidden: false,
@@ -755,8 +777,9 @@ function statePillLayer(face: Face): Element | undefined {
  * One Look's unit opacity, the tail regular in the second ink at the word
  * size, and the word regular in the second ink. The pieces a line does not
  * have are empty and draw nothing, so it turns from a number into a word
- * live, with no rule. */
-function stateLayer(face: Face, ctx?: BaseLayerContext): Element | undefined {
+ * live, with no rule. The figure keeps One Look's tracking, and every ink
+ * names the tile's live ink (round four, sections 15.2 and 15.3). */
+function stateLayer(face: Face): Element | undefined {
   const { model, box } = face;
   const layout = model.layout;
   const state = layout.state;
@@ -782,38 +805,10 @@ function stateLayer(face: Face, ctx?: BaseLayerContext): Element | undefined {
   // with a little slack for the apps' own font metrics, never under half.
   const drawn = model.kind.stateHidden ? 0 : Math.max(oneLookStateWidth(state, m, face.measurer), oneLookStateWidth(state, m, face.phoneMeasurer));
   const fits = drawn > 0 ? Math.floor(((room * STATE_FIT_SLACK) / drawn) * 100) / 100 : 1;
-  // The inks follow on and off as the glyph's do: for a kind lit when on,
-  // the off face's inks, with a rule per ink that takes the on face's while
-  // the entity is on (the layer's ink reaches the figure, the unit, tail and
-  // word have their own), so "Off" turns the second ink as the line does.
-  const inks = (f: Face | undefined) => f === undefined ? undefined : {
-    ink: inkHex(f.model.palette.ink),
-    unit: inkHex({ rgb: f.model.palette.ink.rgb, opacity: f.model.palette.ink.opacity * ONE_LOOK_UNIT_OPACITY }),
-    ink2: inkHex(f.model.palette.ink2),
-  };
-  let base = inks(face)!;
-  let lit: typeof base | undefined;
-  if (ctx !== undefined && LIT_ON_KINDS.has(tileKind(tileEntityId(face.tile)))) {
-    const at = facesAt(face.tile, ctx);
-    const on = inks(at("on"));
-    const off = inks(at("off"));
-    if (on !== undefined && off !== undefined) {
-      base = off;
-      lit = on;
-    }
-  }
-  const litRule = (rule: number, key: keyof typeof base, partId?: string): Rule | undefined => {
-    if (lit === undefined || ctx === undefined || lit[key] === base[key]) return undefined;
-    return {
-      id: baseRuleId("state", rule, 0, 1),
-      ...(partId === undefined ? {} : { partId }),
-      cases: [{
-        id: baseRuleId("state", rule, 1, 2),
-        when: { join: "all", tests: [{ id: baseRuleId("state", rule, 1, 3), value: entityValue(face.tile, ctx.states), comparison: { kind: "isOn" } }] },
-        then: [{ kind: "setColor", value: literal(lit[key]) }],
-      }],
-    };
-  };
+  // The inks are the tile's live ones (the layer's reaches the figure; the
+  // unit, tail and word name their own), the face's now beside each, so
+  // "Off" turns the second ink as the line does, with no rule.
+  const inks = faceInks(face);
   const part = (piece: TileStatePart, look: Omit<TextPart, "id" | "value"> = {}): TextPart => ({
     id: BASE_STATE_PART_IDS[piece],
     value: { kind: { kind: "tileState", part: piece } },
@@ -821,27 +816,22 @@ function stateLayer(face: Face, ctx?: BaseLayerContext): Element | undefined {
   });
   const parts: TextPart[] = TILE_STATE_PARTS.map((piece) => {
     switch (piece) {
-      case "figure": return part(piece);
+      case "figure": return part(piece, { tracking: round(oneLookMetrics("watch").nameTracking, 4) });
       case "unit": return part(piece, {
         fontSize: round(state.unitSize, 2),
         fontWeight: "semibold",
-        colorHex: base.unit,
+        colorHex: inks.unit,
+        tileInk: "unit",
       });
-      case "tail": return part(piece, { fontSize: round(state.tailSize, 2), fontWeight: "regular", fontDesign: "default", colorHex: base.ink2 });
-      case "word": return part(piece, { fontWeight: "regular", fontDesign: "default", colorHex: base.ink2 });
+      case "tail": return part(piece, { fontSize: round(state.tailSize, 2), fontWeight: "regular", fontDesign: "default", colorHex: inks.ink2, tileInk: "ink2" });
+      case "word": return part(piece, { fontWeight: "regular", fontDesign: "default", colorHex: inks.ink2, tileInk: "ink2" });
     }
   });
-  const rules = [
-    litRule(1, "ink"),
-    litRule(2, "unit", BASE_STATE_PART_IDS.unit),
-    litRule(3, "ink2", BASE_STATE_PART_IDS.tail),
-    litRule(4, "ink2", BASE_STATE_PART_IDS.word),
-  ].filter((r): r is Rule => r !== undefined);
   const payload: TextElement = {
     id: BASE_LAYER_IDS.state,
     name: BASE_LAYER_NAMES.state,
-    colorSlot: { baseColorHex: base.ink },
-    rules,
+    colorSlot: { baseColorHex: inks.ink, tileInk: "ink" },
+    rules: [],
     frame: frameOf({ x: line.x, y: line.y, width, height: line.height }, box),
     isHidden: false,
     value: richTextFallback(parts),
@@ -872,7 +862,7 @@ export function baseLayers(tile: WatchPageTile, ctx: BaseLayerContext): Element[
   const face = faceOf(tile, ctx);
   if (face === undefined) return [];
   const tileAt = facesAt(face.tile, ctx);
-  const built = [glowLayer(face.tile, face, tileAt, ctx), glyphLayer(face.tile, ctx, face, tileAt), statePillLayer(face), stateLayer(face, ctx), nameLayer(face)].filter((el): el is Element => el !== undefined);
+  const built = [glowLayer(face.tile, face, tileAt, ctx), glyphLayer(face.tile, ctx, face, tileAt), statePillLayer(face), stateLayer(face), nameLayer(face)].filter((el): el is Element => el !== undefined);
   const cfg = newConfig("", 0, TILE_DESIGN_FAMILY);
   cfg.elements = built;
   return parseConfig(encodeConfig(cfg)).elements;

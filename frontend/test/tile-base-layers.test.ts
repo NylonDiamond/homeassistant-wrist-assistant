@@ -93,9 +93,12 @@ describe("oneLookStateLineText", () => {
 
 describe("tileValuesFor", () => {
   it("gives the state line and the name One Look draws", () => {
-    expect(tileValuesFor(LIGHT, ctxFor(OFFICE))).toEqual({ state: "82%", name: "Office", stateParts: { figure: "82", unit: "%", tail: "", word: "" } });
-    expect(tileValuesFor(SENSOR, ctxFor(TEMP))).toEqual({ state: "21.5°C", name: "Living room", stateParts: { figure: "21.5", unit: "°C", tail: "", word: "" } });
-    expect(tileValuesFor(PERSON, ctxFor(CHEN))).toEqual({ state: "Home", name: "Chen", stateParts: { figure: "", unit: "", tail: "", word: "Home" } });
+    const { inks, ...light } = tileValuesFor(LIGHT, ctxFor(OFFICE));
+    expect(light).toEqual({ state: "82%", name: "Office", stateParts: { figure: "82", unit: "%", tail: "", word: "" } });
+    // With the reference face's live inks (round four).
+    expect(Object.keys(inks ?? {})).toEqual(["ink", "ink2", "unit", "glyph", "hue", "hueClear"]);
+    expect(tileValuesFor(SENSOR, ctxFor(TEMP))).toMatchObject({ state: "21.5°C", name: "Living room", stateParts: { figure: "21.5", unit: "°C", tail: "", word: "" } });
+    expect(tileValuesFor(PERSON, ctxFor(CHEN))).toMatchObject({ state: "Home", name: "Chen", stateParts: { figure: "", unit: "", tail: "", word: "Home" } });
   });
 
   it("names the tile by its label whether or not the label shows", () => {
@@ -214,8 +217,8 @@ describe("baseLayers", () => {
       }
       const number = text(baseLayers(LIGHT, ctxFor(OFFICE)), "state");
       const [figure, unit, tail, word] = number.parts!;
-      // The figure takes the layer's look.
-      expect(figure).toEqual({ id: BASE_STATE_PART_IDS.figure, value: { kind: { kind: "tileState", part: "figure" } } });
+      // The figure takes the layer's look, with One Look's tracking.
+      expect(figure).toEqual({ id: BASE_STATE_PART_IDS.figure, value: { kind: { kind: "tileState", part: "figure" } }, tracking: -0.01 });
       // One Look's unit: 0.66 of the figure (a 10 pt floor on the watch),
       // semibold, the main ink at 0.84.
       expect(unit!.fontSize).toBe(10);
@@ -310,16 +313,15 @@ describe("baseLayers", () => {
       expect(icon(baseLayers({ ...LIGHT, iconShadow: true }, ctxFor(OFFICE))).shadow).toEqual({ colorHex: "#00000080", radius: 2, dx: 0, dy: 1 });
     });
 
-    it("follows on and off by a rule for a kind lit when on", () => {
+    it("names the tile's live glyph ink, which follows on and off by itself, in place of a rule (round four)", () => {
       const light = icon(baseLayers(LIGHT, ctxFor(OFFICE)));
-      expect(light.rules).toHaveLength(1);
-      const rule = light.rules[0]!;
-      expect(rule.cases[0]!.when.tests[0]!.comparison).toEqual({ kind: "isOn" });
-      expect(rule.cases[0]!.then[0]!.kind).toBe("setColor");
-      // The same rule whichever state the light is in now.
+      expect(light.rules).toEqual([]);
+      expect(light.colorSlot.tileInk).toBe("glyph");
+      // The face's ink now beside it: the lit bare glyph while on.
+      expect(light.colorSlot.baseColorHex).toBe(tileValuesFor(LIGHT, ctxFor(OFFICE)).inks!.glyph);
       const off = icon(baseLayers(LIGHT, ctxFor({ ...OFFICE, state: "off" })));
-      expect(off.colorSlot).toEqual(light.colorSlot);
-      expect(off.rules).toEqual(light.rules);
+      expect(off.colorSlot.tileInk).toBe("glyph");
+      expect(off.rules).toEqual([]);
       expect(icon(baseLayers(SENSOR, ctxFor(TEMP))).rules).toEqual([]);
     });
 
@@ -335,10 +337,12 @@ describe("baseLayers", () => {
         { kind: "setIcon", value: { kind: { kind: "literal", value: "lightbulb.slash" } } },
         { kind: "setIcon", value: { kind: { kind: "literal", value: "lightbulb.fill" } } },
       ]);
-      // The colour rule still follows it.
-      expect(light.rules[1]!.cases[0]!.then[0]!.kind).toBe("setColor");
-      // The same layer whichever state the light is in when it is built.
-      expect(icon(baseLayers(LIGHT, ctx({ ...OFFICE, state: "off" })))).toEqual(light);
+      // No colour rule: the glyph names the live ink.
+      expect(light.rules).toHaveLength(1);
+      // The same symbol and rule whichever state the light is in when it is built.
+      const off = icon(baseLayers(LIGHT, ctx({ ...OFFICE, state: "off" })));
+      expect(off.symbol).toEqual(light.symbol);
+      expect(off.rules).toEqual(light.rules);
       // A kind that always fills takes the filled symbol and needs no rule.
       const sensor = icon(baseLayers(SENSOR, ctx(TEMP)));
       expect((sensor.symbol.kind as { value: string }).value.endsWith(".fill")).toBe(true);

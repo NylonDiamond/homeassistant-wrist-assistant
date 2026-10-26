@@ -186,3 +186,113 @@ describe("drawing a part's tracking (15.2)", () => {
     expect(sizeOf(tracked)).toBeLessThan(sizeOf(plain));
   });
 });
+
+// ── step 2: the inks of a palette, the base layers' new form, the under layer
+
+import type { HassEntityState } from "../src/ha-api.js";
+import type { WatchPageTile } from "../src/watch-pages/model.js";
+import { oneLookMeasurer } from "../src/watch-pages/one-look/measurer.js";
+import { oneLookPalette } from "../src/watch-pages/one-look/colour.js";
+import { baseLayers, tileInksOf } from "../src/watch-pages/tile-base-layers.js";
+import { BASE_GLOW_ID, BASE_LAYER_IDS, designUnderLayerId } from "../src/watch-pages/tile-design.js";
+
+const watchMeasurer = oneLookMeasurer("watch", { estimate: true });
+const ent = (id: string, state: string, attributes: Record<string, unknown> = {}): HassEntityState =>
+  ({ entity_id: id, state, attributes, last_changed: "", last_updated: "" });
+const BED_ON = { "light.bed": ent("light.bed", "on", { friendly_name: "Bed Light", brightness: 128 }) };
+const BED: WatchPageTile = { id: "4D000000-0000-4000-8000-0000000000B1", entityId: "light.bed", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0, color: "#F2AE4E" };
+
+describe("tileInksOf (15.3)", () => {
+  const lit = oneLookPalette({ role: { kind: "light", on: true, brightness: 1 }, hue: "#F2AE4E" });
+  const unlit = oneLookPalette({ role: { kind: "light", on: false }, hue: "#F2AE4E", dimWhenOff: false });
+  const graphite = oneLookPalette({ role: { kind: "plain" } });
+  const wristDown = oneLookPalette({ role: { kind: "light", on: true, brightness: 1 }, hue: "#F2AE4E", aod: true });
+
+  it("reads a lit coloured palette as the native parts draw: white inks, the lit bare glyph, the hue", () => {
+    expect(tileInksOf(lit, false, "watch")).toEqual({ ink: "#FFFFFF", ink2: "#FFFFFF", unit: "#FFFFFFD6", glyph: "#FFF8EA", hue: "#F2AE4E", hueClear: "#F2AE4E00" });
+  });
+
+  it("gives an unlit coloured palette the pale tint of its base for the glyph, and the iPhone's bare glyph the same", () => {
+    const inks = tileInksOf(unlit, false, "watch");
+    expect(inks.glyph).not.toBe("#FFF8EA");
+    expect(inks.glyph).toMatch(/^#[0-9A-F]{6}$/);
+    expect(tileInksOf(unlit, false, "phone").glyph).toBe(inks.glyph);
+  });
+
+  it("names white for the hue of a graphite palette, and draws its glyph in the palette's glyph ink", () => {
+    const inks = tileInksOf(graphite, false, "watch");
+    expect(inks.hue).toBe("#FFFFFF");
+    expect(inks.hueClear).toBe("#FFFFFF00");
+    expect(inks.glyph).toBe(tileInksOf(graphite, true, "watch").glyph);
+  });
+
+  it("follows wrist down's dimmed inks", () => {
+    expect(tileInksOf(wristDown, false, "watch")).not.toEqual(tileInksOf(lit, false, "watch"));
+  });
+
+  it("takes the disc's glyph ink when the layout draws a disc", () => {
+    expect(tileInksOf(lit, true, "watch").glyph).not.toBe(tileInksOf(lit, false, "watch").glyph);
+  });
+});
+
+describe("the base layers' round four form (15.3)", () => {
+  const ctx = { states: BED_ON, measurer: watchMeasurer };
+  const layer = (tile: WatchPageTile, id: string) => baseLayers(tile, ctx).find((el) => el.payload.id === id)!;
+
+  it("writes no ink rule: the State layer and its parts, the icon and the name name live inks beside the face's hexes", () => {
+    const state = layer(BED, BASE_LAYER_IDS.state) as Extract<Element, { kind: "text" }>;
+    expect(state.payload.rules).toEqual([]);
+    expect(state.payload.colorSlot).toEqual({ baseColorHex: "#FFFFFF", tileInk: "ink" });
+    expect(state.payload.parts!.map((p) => [p.tileInk, p.colorHex, p.tracking])).toEqual([
+      [undefined, undefined, -0.01], ["unit", "#FFFFFFD6", undefined], ["ink2", "#FFFFFF", undefined], ["ink2", "#FFFFFF", undefined],
+    ]);
+    const icon = layer(BED, BASE_LAYER_IDS.icon) as Extract<Element, { kind: "icon" }>;
+    expect(icon.payload.colorSlot).toEqual({ baseColorHex: "#FFF8EA", tileInk: "glyph" });
+    expect(icon.payload.rules.some((r) => r.cases.some((c) => c.then.some((t) => t.kind === "setColor")))).toBe(false);
+    expect((layer(BED, BASE_LAYER_IDS.name) as Extract<Element, { kind: "text" }>).payload.colorSlot).toEqual({ baseColorHex: "#FFFFFF", tileInk: "ink" });
+  });
+
+  it("keeps a Label Color a constant on the name", () => {
+    const named = layer({ ...BED, labelColorHex: "#FF00AA" }, BASE_LAYER_IDS.name) as Extract<Element, { kind: "text" }>;
+    expect(named.payload.colorSlot.tileInk).toBeUndefined();
+    expect(named.payload.colorSlot.baseColorHex).toMatch(/^#FF00AA/);
+  });
+
+  it("names the hue on a Glow in the tile's colour, and keeps white a constant", () => {
+    const tinted = layer({ ...BED, iconGlow: { mode: "on", color: "tile" } }, BASE_GLOW_ID) as Extract<Element, { kind: "shape" }>;
+    expect(tinted.payload.colorSlot).toEqual({ baseColorHex: "#F2AE4E", tileInk: "hue" });
+    expect(tinted.payload.fill!.stops).toEqual([{ at: 0, colorHex: "#F2AE4E", tileInk: "hue" }, { at: 1, colorHex: "#F2AE4E00", tileInk: "hueClear" }]);
+    const white = layer(BED, BASE_GLOW_ID) as Extract<Element, { kind: "shape" }>;
+    expect(white.payload.colorSlot.tileInk).toBeUndefined();
+    expect(white.payload.fill!.stops.every((s) => s.tileInk === undefined)).toBe(true);
+  });
+});
+
+describe("designUnderLayerId (15.1)", () => {
+  const glow = () => { const el = newElement("shape"); el.payload.id = BASE_GLOW_ID; return el; };
+  const icon = () => { const el = newElement("icon"); el.payload.id = BASE_LAYER_IDS.icon; return el; };
+  const tap = () => newElement("tap");
+
+  it("is the Glow when it is the first drawing layer", () => {
+    expect(designUnderLayerId({ elements: [glow(), icon()] })).toBe(BASE_GLOW_ID);
+  });
+  it("is none when the Glow was raised above the icon", () => {
+    expect(designUnderLayerId({ elements: [icon(), glow()] })).toBeUndefined();
+  });
+  it("is none with an added layer at the bottom", () => {
+    expect(designUnderLayerId({ elements: [newElement("text"), glow(), icon()] })).toBeUndefined();
+  });
+  it("is still the Glow while it is hidden", () => {
+    const hidden = glow();
+    hidden.payload.isHidden = true;
+    expect(designUnderLayerId({ elements: [hidden, icon()] })).toBe(BASE_GLOW_ID);
+  });
+  it("is none when the glyph slot is not owned (no Glow drawn) and with no layers", () => {
+    expect(designUnderLayerId({ elements: [icon()] })).toBeUndefined();
+    expect(designUnderLayerId({ elements: [] })).toBeUndefined();
+  });
+  it("looks past a tap zone, which is never in the under pass", () => {
+    expect(designUnderLayerId({ elements: [tap(), glow(), icon()] })).toBe(BASE_GLOW_ID);
+    expect(designUnderLayerId({ elements: [tap()] })).toBeUndefined();
+  });
+});

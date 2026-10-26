@@ -126,7 +126,8 @@
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000001",
             "colorSlot": {
-              "baseColorHex": "#E0F3E5"
+              "baseColorHex": "#E0F3E5",
+              "tileInk": "glyph"
             },
             "rules": [
               {
@@ -191,7 +192,8 @@
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000004",
             "colorSlot": {
-              "baseColorHex": "#FFFFFF"
+              "baseColorHex": "#FFFFFF",
+              "tileInk": "ink"
             },
             "rules": [],
             "frame": {
@@ -228,7 +230,8 @@
                     "kind": "tileState",
                     "part": "figure"
                   }
-                }
+                },
+                "tracking": -0.01
               },
               {
                 "id": "BA5E0004-0000-4000-8000-0000000000F2",
@@ -239,6 +242,7 @@
                   }
                 },
                 "colorHex": "#FFFFFFD6",
+                "tileInk": "unit",
                 "fontWeight": "semibold",
                 "fontSize": 10
               },
@@ -251,6 +255,7 @@
                   }
                 },
                 "colorHex": "#FFFFFF",
+                "tileInk": "ink2",
                 "fontWeight": "regular",
                 "fontSize": 11,
                 "fontDesign": "default"
@@ -264,6 +269,7 @@
                   }
                 },
                 "colorHex": "#FFFFFF",
+                "tileInk": "ink2",
                 "fontWeight": "regular",
                 "fontDesign": "default"
               }
@@ -276,7 +282,8 @@
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000003",
             "colorSlot": {
-              "baseColorHex": "#FFFFFF"
+              "baseColorHex": "#FFFFFF",
+              "tileInk": "ink"
             },
             "rules": [],
             "frame": {
@@ -331,6 +338,14 @@
       "tail": "",
       "word": "Off"
     },
+    "tileInks": {
+      "ink": "#FFFFFF",
+      "ink2": "#FFFFFF",
+      "unit": "#FFFFFFD6",
+      "glyph": "#E0F3E5",
+      "hue": "#34C759",
+      "hueClear": "#34C75900"
+    },
     "tileName": "Kettle",
     "entityStates": [],
     "templateResults": {}
@@ -340,13 +355,15 @@
       "id": "BA5E0000-0000-4000-8000-000000000004",
       "kind": "text",
       "text": "Off",
+      "colorHex": "#FFFFFF",
       "parts": [
         {
           "text": "",
           "fontSize": 11,
           "fontWeight": "bold",
           "fontDesign": "rounded",
-          "colorHex": "#FFFFFF"
+          "colorHex": "#FFFFFF",
+          "tracking": -0.01
         },
         {
           "text": "",
@@ -573,5 +590,6 @@
       "diameter": 71.6778,
       "colorHex": "#FFFFFF"
     }
-  }
+  },
+  "under": []
 }

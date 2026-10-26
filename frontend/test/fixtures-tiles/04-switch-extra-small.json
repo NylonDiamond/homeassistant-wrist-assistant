@@ -107,7 +107,8 @@
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000001",
             "colorSlot": {
-              "baseColorHex": "#E0F3E5"
+              "baseColorHex": "#E0F3E5",
+              "tileInk": "glyph"
             },
             "rules": [
               {
@@ -172,7 +173,8 @@
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000003",
             "colorSlot": {
-              "baseColorHex": "#FFFFFF"
+              "baseColorHex": "#FFFFFF",
+              "tileInk": "ink"
             },
             "rules": [],
             "frame": {
@@ -228,6 +230,14 @@
       "tail": "",
       "word": "Off"
     },
+    "tileInks": {
+      "ink": "#FFFFFF",
+      "ink2": "#FFFFFF",
+      "unit": "#FFFFFFD6",
+      "glyph": "#E0F3E5",
+      "hue": "#34C759",
+      "hueClear": "#34C75900"
+    },
     "tileName": "Kettle",
     "entityStates": [],
     "templateResults": {}
@@ -263,5 +273,6 @@
       "diameter": 25.4841,
       "colorHex": "#FFFFFF"
     }
-  }
+  },
+  "under": []
 }

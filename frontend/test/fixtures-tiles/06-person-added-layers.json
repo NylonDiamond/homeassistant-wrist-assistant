@@ -170,7 +170,8 @@
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000001",
             "colorSlot": {
-              "baseColorHex": "#E8EFF8"
+              "baseColorHex": "#E8EFF8",
+              "tileInk": "glyph"
             },
             "rules": [],
             "frame": {
@@ -196,7 +197,8 @@
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000004",
             "colorSlot": {
-              "baseColorHex": "#FFFFFF"
+              "baseColorHex": "#FFFFFF",
+              "tileInk": "ink"
             },
             "rules": [],
             "frame": {
@@ -233,7 +235,8 @@
                     "kind": "tileState",
                     "part": "figure"
                   }
-                }
+                },
+                "tracking": -0.01
               },
               {
                 "id": "BA5E0004-0000-4000-8000-0000000000F2",
@@ -244,6 +247,7 @@
                   }
                 },
                 "colorHex": "#FFFFFFD6",
+                "tileInk": "unit",
                 "fontWeight": "semibold",
                 "fontSize": 10
               },
@@ -256,6 +260,7 @@
                   }
                 },
                 "colorHex": "#FFFFFF",
+                "tileInk": "ink2",
                 "fontWeight": "regular",
                 "fontSize": 11,
                 "fontDesign": "default"
@@ -269,6 +274,7 @@
                   }
                 },
                 "colorHex": "#FFFFFF",
+                "tileInk": "ink2",
                 "fontWeight": "regular",
                 "fontDesign": "default"
               }
@@ -281,7 +287,8 @@
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000003",
             "colorSlot": {
-              "baseColorHex": "#FFFFFF"
+              "baseColorHex": "#FFFFFF",
+              "tileInk": "ink"
             },
             "rules": [],
             "frame": {
@@ -399,6 +406,14 @@
       "tail": "",
       "word": "Away"
     },
+    "tileInks": {
+      "ink": "#FFFFFF",
+      "ink2": "#FFFFFF",
+      "unit": "#FFFFFFD6",
+      "glyph": "#E8EFF8",
+      "hue": "#5E8FD0",
+      "hueClear": "#5E8FD000"
+    },
     "tileName": "Chen",
     "entityStates": [
       {
@@ -419,6 +434,7 @@
       "id": "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A11",
       "kind": "text",
       "text": "71%",
+      "colorHex": "#FFFFFF",
       "hidden": false
     },
     {
@@ -458,5 +474,6 @@
       "diameter": 71.6778,
       "colorHex": "#FFFFFF"
     }
-  }
+  },
+  "under": []
 }

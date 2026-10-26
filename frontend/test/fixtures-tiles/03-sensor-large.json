@@ -109,7 +109,8 @@
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000001",
             "colorSlot": {
-              "baseColorHex": "#FAEDDB"
+              "baseColorHex": "#FAEDDB",
+              "tileInk": "glyph"
             },
             "rules": [],
             "frame": {
@@ -135,7 +136,8 @@
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000004",
             "colorSlot": {
-              "baseColorHex": "#FFFFFF"
+              "baseColorHex": "#FFFFFF",
+              "tileInk": "ink"
             },
             "rules": [],
             "frame": {
@@ -172,7 +174,8 @@
                     "kind": "tileState",
                     "part": "figure"
                   }
-                }
+                },
+                "tracking": -0.01
               },
               {
                 "id": "BA5E0004-0000-4000-8000-0000000000F2",
@@ -183,6 +186,7 @@
                   }
                 },
                 "colorHex": "#FFFFFFD6",
+                "tileInk": "unit",
                 "fontWeight": "semibold",
                 "fontSize": 10
               },
@@ -195,6 +199,7 @@
                   }
                 },
                 "colorHex": "#FFFFFF",
+                "tileInk": "ink2",
                 "fontWeight": "regular",
                 "fontSize": 11,
                 "fontDesign": "default"
@@ -208,6 +213,7 @@
                   }
                 },
                 "colorHex": "#FFFFFF",
+                "tileInk": "ink2",
                 "fontWeight": "regular",
                 "fontDesign": "default"
               }
@@ -220,7 +226,8 @@
           "payload": {
             "id": "BA5E0000-0000-4000-8000-000000000003",
             "colorSlot": {
-              "baseColorHex": "#FFFFFF"
+              "baseColorHex": "#FFFFFF",
+              "tileInk": "ink"
             },
             "rules": [],
             "frame": {
@@ -275,6 +282,14 @@
       "tail": "",
       "word": ""
     },
+    "tileInks": {
+      "ink": "#FFFFFF",
+      "ink2": "#FFFFFF",
+      "unit": "#FFFFFFD6",
+      "glyph": "#FAEDDB",
+      "hue": "#FF9500",
+      "hueClear": "#FF950000"
+    },
     "tileName": "Living room",
     "entityStates": [],
     "templateResults": {}
@@ -310,5 +325,6 @@
       "diameter": 71.6778,
       "colorHex": "#FFFFFF"
     }
-  }
+  },
+  "under": []
 }
