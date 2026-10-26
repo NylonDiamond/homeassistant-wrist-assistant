@@ -28,6 +28,12 @@
 // moment it commits (they are getters, `editor-host.ts`), never from the
 // draw: two edits in one task each build on the one before.
 //
+// The page editor's level (`editor-level.ts`) comes on the host too. Simple
+// draws the cards a tile needs, each cut to its main rows, and a card or
+// rows it leaves out that hold a value of the tile's own say so with a way
+// to Advanced; Advanced and Expert draw every card. A host with no level
+// draws every card.
+//
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("3c build contract").
 
 import { css, html, nothing, type TemplateResult } from "lit";
@@ -80,6 +86,7 @@ import { colorPickerView } from "./color-picker.js";
 import type { SettingDevice } from "../watch-settings.js";
 import { type TileSettingsHost, extendHost, hostDevice, hostDeviceNoun } from "./editor-host.js";
 import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
+import type { EditorLevel, EditorLevelLink } from "./editor-level.js";
 import { type BaseLayerRole, type TileDesign, BASE_GLOW_ID, BASE_GLOW_NAME, BASE_LAYER_NAMES, SIMPLE_KEY_ROLES, settingOwnerRole } from "./tile-design.js";
 import {
   type OneLookGlowMode,
@@ -648,6 +655,152 @@ function ownerOfAny(host: TileSettingsHost, keys: readonly string[]): BaseLayerR
   return undefined;
 }
 
+// ── the editor's level ───────────────────────────────────────────────────
+
+/** The host's level link, when the page editor handed one. */
+function levelLink(host: TileSettingsHost): EditorLevelLink | undefined {
+  return (host as TileSettingsHost & { readonly editorLevel?: EditorLevelLink }).editorLevel;
+}
+
+/** The level the settings are drawn at. A host with no level (a smart page
+ * rule's style) shows every setting, as before the switch. */
+function levelOf(host: TileSettingsHost): EditorLevel {
+  return levelLink(host)?.level ?? "expert";
+}
+
+/** Whether the settings are drawn at Simple. */
+function simple(host: TileSettingsHost): boolean {
+  return levelOf(host) === "simple";
+}
+
+/** The cards Simple leaves out whole: drawn only while they hold a value of
+ * the tile's own, as that line (`renderAdvancedLine`). */
+const SIMPLE_HIDDEN_SECTIONS: ReadonlySet<WatchTileSettingsSection> = new Set(["text", "border", "background", "visibility", "phone", "phoneExtras"]);
+
+/** The State rows Simple shows: what the state shows on the tile. */
+const SIMPLE_STATE_ROWS: ReadonlySet<string> = new Set(["stateValueLabelStyle", "showTargetTempOnTile", "showCurrentTempOnTile", "showActivityStatus"]);
+
+/** The line a card hidden or cut short by Simple shows while what it hides
+ * holds a value of the tile's own. */
+export const ADVANCED_LINE_TEXT = "Has Advanced settings";
+
+/** What the card under the last one says in Simple. */
+export const WANT_MORE_TEXT = "Advanced adds state icons, glow, text, border, hold and double tap, and when the tile shows. Expert adds layers.";
+
+/** "Has Advanced settings · Show": Show switches the editor to Advanced. */
+function renderAdvancedLine(host: TileSettingsHost): TemplateResult {
+  return html`<div class="ts-advanced" data-advanced>
+    <span class="ts-advanced-words">${ADVANCED_LINE_TEXT}</span><span aria-hidden="true">·</span>
+    <button type="button" class="link" title="Show every setting of this tile" @click=${() => levelLink(host)?.show("advanced")}>Show</button>
+  </div>`;
+}
+
+/** The card under the last one in Simple: what the other levels add. */
+function renderWantMore(host: TileSettingsHost): TemplateResult {
+  return html`<section class="sec ts-want-more" data-open="true" data-help="on" style="--c: var(--wa-accent)">
+    <div class="sec-h pinned">
+      <span class="swatch">${uiIcon("sliders")}</span>
+      <span class="tt"><h4>Want more?</h4></span>
+    </div>
+    <div class="sec-b">
+      <p class="hint keep">${WANT_MORE_TEXT}</p>
+      <div class="ts-want-acts"><button type="button" class="pe-btn" @click=${() => levelLink(host)?.show("advanced")}>Show Advanced</button></div>
+    </div>
+  </section>`;
+}
+
+/** The keys of `keys` no layer took over: a key a layer holds is the layer's,
+ * and its "Changed in" line says so at every level. */
+function freeKeys(host: TileSettingsHost, keys: readonly string[]): string[] {
+  return keys.filter((key) => ownedSetting(host, key) === undefined);
+}
+
+/** Whether the tile's color is its kind's default, what Default writes. A
+ * rule's style only with no color of its own. */
+function colorAtDefault(host: TileSettingsHost, color: string | undefined, defaultColor: string | undefined): boolean {
+  return color === undefined || (host.domainStyle !== true && defaultColor !== undefined && sameWatchColor(color, defaultColor));
+}
+
+/** Whether the Icon card holds a value Simple does not show: a gradient or
+ * rainbow of its own, state icons or colors, icon size or shadow, the glow,
+ * Dim when off, Animate while on or a tap animation. */
+export function iconHasAdvanced(host: TileSettingsHost): boolean {
+  const tile = host.tile;
+  if (readsOtherThanDefault(tile, freeKeys(host, SECTION_KEYS.icon ?? []), SECTION_READS.icon!)) return true;
+  const color = watchTileIconSettings(tile).color;
+  const mode = watchColorModeChoice(color);
+  return (mode === "gradient" || mode === "rainbow") && !colorAtDefault(host, color, kindDefaults(host).color);
+}
+
+/** Whether the State card holds a value Simple does not show: one of the
+ * rows of the tile's kind other than what the state shows, away from what
+ * it reads with no key. */
+export function stateHasAdvanced(host: TileSettingsHost): boolean {
+  const tile = host.tile;
+  const options = { oneLook: oneLook(host) };
+  const keys = watchTileStateCards(tile, options).flatMap((card) => card.rows.map((row) => row.key))
+    .filter((key) => !SIMPLE_STATE_ROWS.has(key));
+  return freeKeys(host, keys).some((key) =>
+    readsOtherThanDefault(tile, [key], (t) => watchTileStateCards(t, options).flatMap((card) => card.rows).find((row) => row.key === key)?.value));
+}
+
+/** Whether the Action card holds a value Simple does not show: hold and
+ * slide, Ask before running or Skip conditions. */
+export function actionHasAdvanced(host: TileSettingsHost): boolean {
+  const keys = (SECTION_KEYS.action ?? []).filter((key) => key !== "singleTapAction");
+  return readsOtherThanDefault(host.tile, keys, (t) => {
+    const read = SECTION_READS.action!(t) as unknown[];
+    // Everything but the single tap, which Simple shows.
+    return read.slice(1);
+  });
+}
+
+/** What the Border and Background rows read, for `readsOtherThanDefault`. */
+const STYLED_READS: Readonly<Record<"border" | "background", (tile: WatchPageTile) => unknown>> = {
+  border: (t) => watchTileBorderSettings(t),
+  background: (t) => watchTileBackgroundSettings(t),
+};
+
+/** Whether a card Simple leaves out holds a value of the tile's own. Border
+ * and Background need both their Reset to change something and their rows
+ * to read other than with no key: a tile the panel added holds none of
+ * their keys, which their Reset alone reads as a change. */
+function hiddenSectionHolds(host: TileSettingsHost, section: WatchTileSettingsSection): boolean {
+  if (!watchTileSectionChanged(host, section)) return false;
+  if (section !== "border" && section !== "background") return true;
+  return readsOtherThanDefault(host.tile, Object.keys(watchStylingReset(section)), STYLED_READS[section]);
+}
+
+/** Whether a card Simple leaves out is drawn anyway: while it holds a value
+ * of the tile's own, or a layer took its rows (the Text card's Name layer). */
+function hiddenSectionShown(host: TileSettingsHost, section: WatchTileSettingsSection): boolean {
+  return hiddenSectionHolds(host, section) || hiddenSectionOwner(host, section) !== undefined;
+}
+
+/** The role whose layer took a hidden card's rows, if any. */
+function hiddenSectionOwner(host: TileSettingsHost, section: WatchTileSettingsSection): BaseLayerRole | undefined {
+  return section === "text" ? ownerOfAny(host, keysOf("name")) : undefined;
+}
+
+/**
+ * The cards drawn at the host's level. Advanced and Expert draw every one;
+ * Simple leaves out Text, Border, Background, Show tile and the iPhone's
+ * extras unless they hold something of the tile's own, and State and Action
+ * when nothing of them is left to show.
+ */
+export function levelSections(host: TileSettingsHost, sections: readonly WatchTileSettingsSection[]): WatchTileSettingsSection[] {
+  if (!simple(host)) return [...sections];
+  return sections.filter((section) => {
+    if (SIMPLE_HIDDEN_SECTIONS.has(section)) return hiddenSectionShown(host, section);
+    if (section === "state") return simpleStateCards(host).length > 0 || stateHasAdvanced(host);
+    if (section === "action") {
+      if (host.domainStyle === true) return true;
+      return watchSingleTapMenu(host.tile) !== undefined || actionHasAdvanced(host);
+    }
+    return true;
+  });
+}
+
 // ── sections ─────────────────────────────────────────────────────────────
 
 /** What a caller hands `renderTileSettings` beyond its host: the sections to
@@ -698,9 +851,9 @@ function renderRemovedLine(): TemplateResult {
 }
 
 /** The folds the inspector's Collapse all turns: each of the sections that is
- * drawn as a card. */
+ * drawn as a card at the host's level. */
 export function tileSettingsFoldIds(host: TileSettingsHost, sections: readonly WatchTileSettingsSection[]): FoldId[] {
-  return sections.filter((s) => !inboxLine(host, s)).map((section) => ({ module: KEY, section, ...(startsFolded(section) ? { folded: true } : {}) }));
+  return levelSections(host, sections).filter((s) => !inboxLine(host, s)).map((section) => ({ module: KEY, section, ...(startsFolded(section) ? { folded: true } : {}) }));
 }
 
 /**
@@ -714,14 +867,16 @@ export function tileWordsHost(host: TileSettingsHost): TileSettingsHost {
   return extendHost(host, { device: (): SettingDevice => "iphone" });
 }
 
-/** The settings cards for `host.tile`, or nothing. */
+/** The settings cards for `host.tile` at the host's level, or nothing. In
+ * Simple, the Want more card follows the last. */
 export function renderTileSettings(watchHost: TileSettingsHost, extras: TileSettingsExtras = {}): TemplateResult | typeof nothing {
   const host = tileWordsHost(watchHost);
-  const sections = (extras.sections ?? tileSections(host)).filter((s) => s !== "size" || extras.size !== undefined);
+  const sections = levelSections(host, (extras.sections ?? tileSections(host)).filter((s) => s !== "size" || extras.size !== undefined));
   if (sections.length === 0) return nothing;
   dropStaleTyping(host);
   return html`<div class="ts-root">
     ${sections.map((section) => renderSection(host, section, extras))}
+    ${simple(host) ? renderWantMore(host) : nothing}
   </div>`;
 }
 
@@ -999,6 +1154,12 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
 /** A section's rows, greyed as a whole with the reason first when One Look
  * draws none of them on this tile (a camera showing its picture). */
 function sectionBodyFor(host: TileSettingsHost, section: WatchTileSettingsSection): TemplateResult {
+  // A card Simple leaves out is only drawn for what it holds: the layer that
+  // took its rows, else the way to Advanced.
+  if (simple(host) && SIMPLE_HIDDEN_SECTIONS.has(section)) {
+    const owner = hiddenSectionOwner(host, section);
+    return owner !== undefined ? renderChangedInLayer(host, owner, "Label") : renderAdvancedLine(host);
+  }
   const off = oneLook(host) ? oneLookSectionOff(host.tile, section) : undefined;
   if (off === undefined) return sectionBody(host, section);
   return html`<div class="hint">${off}</div><fieldset class="ts-plain ts-off" disabled>${sectionBody(host, section)}</fieldset>`;
@@ -1422,6 +1583,17 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
         title=${host.domainStyle === true ? `No icon of its own: the ${hostDeviceNoun(host)} draws its default` : defaults.icon === undefined ? `The ${hostDeviceNoun(host)} picks the icon` : `The default for this kind of tile: ${defaults.icon}`}
         @click=${defaultIcon}>Default</button>
     </div>`;
+  if (simple(host)) {
+    // Simple: the icon and a solid color. The rest waits for Advanced, said
+    // in one line while any of it holds a value; a glow a layer took still
+    // says so.
+    const glowTaken = oneLook(host) && host.domainStyle !== true && s.icon !== "" && ownedSetting(host, "iconGlow") !== undefined;
+    return html`
+      ${glyph}
+      ${renderTileColor(host, defaults.color, true)}
+      ${glowTaken ? renderIconGlow(host) : nothing}
+      ${iconHasAdvanced(host) ? renderAdvancedLine(host) : nothing}`;
+  }
   return html`
     ${glyph}
     ${renderTileColor(host, defaults.color)}
@@ -1525,11 +1697,13 @@ function renderActiveAnimation(host: TileSettingsHost, stored: boolean | undefin
       ${stored === undefined ? nothing : linkButton("Use the default", "Remove this tile's own setting", () => set(null))}</div>`;
 }
 
-function renderTileColor(host: TileSettingsHost, defaultColor: string | undefined): TemplateResult {
+/** The tile's color. `solidOnly` (Simple) leaves out the Form switch and the
+ * rainbow, and shows the whole solid palette whatever form the page uses. */
+function renderTileColor(host: TileSettingsHost, defaultColor: string | undefined, solidOnly = false): TemplateResult {
   const color = watchTileIconSettings(host.tile).color;
   const mode = watchColorModeChoice(color);
   const theme = watchAddThemeOf(host.page);
-  const gradient = watchSwatchesInGradient(color, watchAddUsesGradient(host.page));
+  const gradient = !solidOnly && watchSwatchesInGradient(color, watchAddUsesGradient(host.page));
   const swatches = watchThemeSwatches(theme, gradient);
   const fallback = defaultColor ?? swatches[0];
   /** The tile's color when the edit is made, not when it was drawn. */
@@ -1552,8 +1726,7 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
   };
   // No color stored draws the theme's color for the kind, which is what
   // Default writes out.
-  // A rule's style only with no color of its own.
-  const atDefault = color === undefined || (host.domainStyle !== true && defaultColor !== undefined && sameWatchColor(color, defaultColor));
+  const atDefault = colorAtDefault(host, color, defaultColor);
   const resetColor = () => commit(host, "color", watchTileDefaultColorEdit(host));
   // The Form switch is this picker's heading: the Icon card has no Color
   // heading of its own.
@@ -1570,8 +1743,10 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
       on: atDefault,
       pick: resetColor,
     },
-    form: { title: "Color", shown: mode, forms: WATCH_COLOR_MODES.map(([m]) => m), pick: pickMode },
-    rainbow: { note: oneLook(host) ? ONE_LOOK_RAINBOW_NOTE : `The ${hostDeviceNoun(host)} cycles the tile through every color.` },
+    ...(solidOnly ? { label: "Color" } : {
+      form: { title: "Color", shown: mode, forms: WATCH_COLOR_MODES.map(([m]) => m), pick: pickMode },
+      rainbow: { note: oneLook(host) ? ONE_LOOK_RAINBOW_NOTE : `The ${hostDeviceNoun(host)} cycles the tile through every color.` },
+    }),
     custom: { shown: typed(host, "color") ?? watchCustomBoxColor(color), pick: custom },
     wrap: (body) => typingField(host, "color", body),
   })}${lookNote === undefined ? nothing : html`<div class="hint ts-under">${lookNote}</div>`}`;
@@ -1664,15 +1839,18 @@ function renderAction(host: TileSettingsHost): TemplateResult {
   const tap = watchSingleTapMenu(tile);
   const slides = watchHoldSlideMenus(tile, host.catalog, hostDevice(host));
   const zones = layerLinks(host)?.zones ?? 0;
+  const single = tap === undefined
+    ? nothing
+    : zones > 0
+    ? html`<div class="field ts-taken-row"><span>Single tap</span><div class="ts-taken ts-zones" data-taken="zones">
+        <span class="ts-taken-words">Split into ${zones} tap ${zones === 1 ? "zone" : "zones"}</span>
+        <button type="button" class="link" title="Edit the tap zones" @click=${() => layerLinks(host)?.pickZones()}>Edit</button></div></div>`
+    : menuField("Single tap", tap, (v) =>
+        commit(host, "singleTap", (d) => setWatchTileSingleTap(d, host.pageId, host.tileId, v === WATCH_DEFAULT_CHOICE ? null : v)));
+  // Simple: the single tap alone, and one line while the rest holds a value.
+  if (simple(host)) return html`${single}${actionHasAdvanced(host) ? renderAdvancedLine(host) : nothing}`;
   return html`
-    ${tap === undefined
-      ? nothing
-      : zones > 0
-      ? html`<div class="field ts-taken-row"><span>Single tap</span><div class="ts-taken ts-zones" data-taken="zones">
-          <span class="ts-taken-words">Split into ${zones} tap ${zones === 1 ? "zone" : "zones"}</span>
-          <button type="button" class="link" title="Edit the tap zones" @click=${() => layerLinks(host)?.pickZones()}>Edit</button></div></div>`
-      : menuField("Single tap", tap, (v) =>
-          commit(host, "singleTap", (d) => setWatchTileSingleTap(d, host.pageId, host.tileId, v === WATCH_DEFAULT_CHOICE ? null : v)))}
+    ${single}
     ${slides === undefined ? nothing : renderHoldSlide(host, slides)}
     ${ask}
     ${a.skipConditions.shown
@@ -2284,14 +2462,24 @@ function stateRows(host: TileSettingsHost, rows: readonly WatchStateRow[]): (Tem
  * a domain. */
 const NO_DOMAIN_STATE_ROWS: ReadonlySet<string> = new Set(["showTargetTempOnTile", "showCurrentTempOnTile"]);
 
+/** The State cards Simple shows: each with only what the state shows, and a
+ * row a layer took (its "Changed in the State layer" line); a card left with
+ * no row goes. */
+function simpleStateCards(host: TileSettingsHost): ReturnType<typeof watchTileStateCards> {
+  return watchTileStateCards(host.tile, { oneLook: oneLook(host) })
+    .map((card) => ({ ...card, rows: card.rows.filter((row) => SIMPLE_STATE_ROWS.has(row.key) || ownedSetting(host, row.key) !== undefined) }))
+    .filter((card) => card.rows.length > 0);
+}
+
 function renderState(host: TileSettingsHost): TemplateResult {
   const domain = host.domainStyle === true;
   const look = oneLook(host);
   const kind = tileKind(tileEntityId(host.tile));
-  const cards = watchTileStateCards(host.tile, { oneLook: look })
+  const short = simple(host);
+  const cards = short ? simpleStateCards(host) : watchTileStateCards(host.tile, { oneLook: look })
     .map((card) => (domain ? { ...card, rows: card.rows.filter((row) => !NO_DOMAIN_STATE_ROWS.has(row.key)) } : card))
     .filter((card) => !domain || card.rows.length > 0);
-  if (cards.length === 0) return html`<p class="hint">${watchStateEmptyText()}</p>`;
+  if (cards.length === 0 && !short) return html`<p class="hint">${watchStateEmptyText()}</p>`;
   return html`
     ${cards.map((card) => {
       const subtitle = (look ? oneLookCardSubtitle(card.id, kind) : undefined) ?? card.subtitle;
@@ -2301,7 +2489,7 @@ function renderState(host: TileSettingsHost): TemplateResult {
       ${stateRows(host, card.rows)}
       ${look ? stateCardNote(host, card.id) : nothing}`;
     })}
-    ${resetRow(host, "state", "State")}`;
+    ${!short ? resetRow(host, "state", "State") : stateHasAdvanced(host) ? renderAdvancedLine(host) : nothing}`;
 }
 
 /** One Look's line under a card for a tile the iPhone draws as a picture or
@@ -2525,6 +2713,16 @@ export const tileSettingsStyles = css`
   .ts-taken-words { flex: 1; min-width: 0; }
   .ts-taken .link { font-weight: 600; }
   .ts-taken-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--wa-accent); flex: none; }
+  /* "Has Advanced settings · Show": what Simple hides holds a value. */
+  .ts-advanced {
+    display: flex; align-items: center; gap: 6px; min-height: 28px; margin: 4px 0 2px; padding: 3px 8px; box-sizing: border-box;
+    border: 1px solid var(--wa-line); border-radius: 6px; background: var(--wa-field); font-size: 12px; color: var(--wa-muted);
+  }
+  .ts-advanced-words { min-width: 0; }
+  .ts-advanced .link { font-weight: 600; }
+  /* Simple's last card: what Advanced and Expert add. */
+  .ts-want-more .sec-b > .hint.keep { margin: 0 0 8px; }
+  .ts-want-acts { display: flex; }
   /* The section cards are the shared inspector's (\`.sec\`, editor-chrome.ts);
      this only stacks them. */
   .ts-root { display: flex; flex-direction: column; }
