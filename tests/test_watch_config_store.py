@@ -108,14 +108,10 @@ SEED_KINDS = frozenset({"behavior", "notification_style"})
 PHONE_BEHAVIOR_KEYS = _const_set("PHONE_BEHAVIOR_KEYS")
 PHONE_BEHAVIOR_DECODE_KEYS = _const_set("PHONE_BEHAVIOR_DECODE_KEYS")
 
-# The tile design caps and the template budget's limit (tile layers), which
-# the store imports from const.py. Kept equal to const.py by
-# test_tile_designs.py.
-TILE_DESIGN_CONSTS = {
-    "TILE_DESIGN_MAX_BYTES": 16 * 1024,
-    "TILE_DESIGN_MAX_LAYERS": 8,
-    "TILE_DESIGN_MAX_ZONES": 4,
-    "TILE_TEMPLATE_MAX_CHARS": 4096,
+# The template budget's caps, which the store imports from const.py. Kept
+# equal to const.py by test_template_budget.py.
+TEMPLATE_CONSTS = {
+    "SHOW_TEMPLATE_MAX_CHARS": 4096,
     "TEMPLATE_BUDGET_LIMIT": 100,
 }
 
@@ -222,7 +218,7 @@ def _loaded_module():
             WATCH_CONFIG_HISTORY_LIMIT=HISTORY_LIMIT,
             WATCH_LIBRARY_STORAGE_KEY=LIBRARY_KEY,
             WATCH_LIBRARY_STORAGE_VERSION=1,
-            **TILE_DESIGN_CONSTS,
+            **TEMPLATE_CONSTS,
         )
 
         # The store's pure helpers, linked pages and then the library (which

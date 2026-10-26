@@ -177,11 +177,8 @@ from homeassistant.helpers.storage import Store
 from .const import (
     PHONE_BEHAVIOR_DECODE_KEYS,
     PHONE_BEHAVIOR_KEYS,
+    SHOW_TEMPLATE_MAX_CHARS,
     TEMPLATE_BUDGET_LIMIT,
-    TILE_DESIGN_MAX_BYTES,
-    TILE_DESIGN_MAX_LAYERS,
-    TILE_DESIGN_MAX_ZONES,
-    TILE_TEMPLATE_MAX_CHARS,
     WATCH_CONFIG_HISTORY_LIMIT,
     WATCH_CONFIG_KINDS,
     WATCH_CONFIG_MAX_DOCUMENT_BYTES,
@@ -504,7 +501,7 @@ def validate_document(kind: str, document: Any, *, check_items: bool = False) ->
     object.
 
     The server guards the shape, not the content. No key's value is looked at
-    beyond the ids and a tile design's caps: the app is the only thing that understands a tile or a
+    beyond the ids and the shape of a tile's icon glow: the app is the only thing that understands a tile or a
     setting, and a server that half understood one would refuse configs a
     newer app writes.
     """
@@ -817,11 +814,9 @@ def _check_pages(pages: list[Any], *, check_items: bool) -> None:
 
     With ``check_items`` (a panel save or a restore): ``items`` is a list when
     present, each item an object with a non-empty string ``id`` and
-    ``entityId``, no two items in one page share an id, a tile's ``design``
-    (its layers) is within its caps (:func:`_check_design`), and its
+    ``entityId``, no two items in one page share an id, and a tile's
     ``iconGlow`` (the glow behind its icon) has the shape the apps read
-    (:func:`_check_icon_glow`). A
-    device save skips this level on purpose: a phone refused for a fault in its own old
+    (:func:`_check_icon_glow`). A device save skips this level on purpose: a phone refused for a fault in its own old
     tiles could never upload again, while the panel can always fix what it
     sends.
 
@@ -871,88 +866,11 @@ def _check_items(page: dict[str, Any], where: str) -> None:
                 "item ids must be unique in a page"
             )
         seen[folded] = index
-        # A null design is no design, as the panel and the apps read it: a
+        # A null glow is no setting, as the panel and the apps read it: a
         # writer that nulls the key instead of deleting it must not leave a
         # tile the panel cannot save.
-        if item.get(_TILE_DESIGN_KEY) is not None:
-            _check_design(item[_TILE_DESIGN_KEY], at)
-        # A null glow is no setting, as for the design.
         if item.get(_ICON_GLOW_KEY) is not None:
             _check_icon_glow(item[_ICON_GLOW_KEY], at)
-
-
-# A tile's layers (app repo docs/tile_layers_contract_2026-10.md), and the
-# one version of them the apps read.
-_TILE_DESIGN_KEY = "design"
-_TILE_DESIGN_VERSION = 1
-# The element kind of a tap zone, which counts against the zone cap and not
-# the layer cap.
-_TAP_KIND = "tap"
-
-
-def _check_design(design: Any, at: str) -> None:
-    """The tile level's guard for one tile's ``design`` (tile layers), run
-    only where :func:`_check_items` runs: a panel save or a restore, never a
-    device save. ``at`` names the tile by page and index.
-
-    The caps are the panel's own (``tile-design.ts``), so a save the panel
-    lets through is one the server takes: the design under
-    ``TILE_DESIGN_MAX_BYTES`` as compact UTF-8 JSON, version 1, a ``doc``
-    object with a list of ``elements``, at most ``TILE_DESIGN_MAX_LAYERS``
-    elements that are not tap zones (an element that is not an object counts
-    as a layer) and ``TILE_DESIGN_MAX_ZONES`` that are, and when present an
-    ``owned`` list of strings, a ``zones`` object, an ``anchors`` object (each
-    owned base layer's place on its native part, which the byte cap already
-    counts) and a ``template`` string of at most ``TILE_TEMPLATE_MAX_CHARS``
-    code points.
-
-    Nothing else in the design is looked at. As with every other key, the
-    server guards the shape the caps need, not the content: the layers are
-    the apps' to read, and they draw the plain tile from one they cannot.
-    """
-    where = f"{at}.{_TILE_DESIGN_KEY}"
-    if not isinstance(design, dict):
-        raise WatchConfigValidationError(f"{where} must be an object")
-    size = len(json.dumps(design, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
-    if size > TILE_DESIGN_MAX_BYTES:
-        raise WatchConfigValidationError(
-            f"{where} is {size} bytes; the limit is {TILE_DESIGN_MAX_BYTES}"
-        )
-    version = design.get("v")
-    # A JSON true would compare equal to 1 in Python; the apps read an integer.
-    if isinstance(version, bool) or version != _TILE_DESIGN_VERSION:
-        raise WatchConfigValidationError(f"{where}.v must be {_TILE_DESIGN_VERSION}")
-    doc = design.get("doc")
-    elements = doc.get("elements") if isinstance(doc, dict) else None
-    if not isinstance(elements, list):
-        raise WatchConfigValidationError(f"{where}.doc must be an object with a list of elements")
-    zones = sum(
-        1 for element in elements if isinstance(element, dict) and element.get("kind") == _TAP_KIND
-    )
-    layers = len(elements) - zones
-    if layers > TILE_DESIGN_MAX_LAYERS:
-        raise WatchConfigValidationError(
-            f"{where} has {layers} layers; the limit is {TILE_DESIGN_MAX_LAYERS}"
-        )
-    if zones > TILE_DESIGN_MAX_ZONES:
-        raise WatchConfigValidationError(
-            f"{where} has {zones} tap zones; the limit is {TILE_DESIGN_MAX_ZONES}"
-        )
-    if "owned" in design:
-        owned = design["owned"]
-        if not isinstance(owned, list) or not all(isinstance(role, str) for role in owned):
-            raise WatchConfigValidationError(f"{where}.owned must be a list of strings")
-    if "zones" in design and not isinstance(design["zones"], dict):
-        raise WatchConfigValidationError(f"{where}.zones must be an object")
-    if "anchors" in design and not isinstance(design["anchors"], dict):
-        raise WatchConfigValidationError(f"{where}.anchors must be an object")
-    if "template" in design:
-        template = design["template"]
-        if not isinstance(template, str) or len(template) > TILE_TEMPLATE_MAX_CHARS:
-            raise WatchConfigValidationError(
-                f"{where}.template must be a string of at most "
-                f"{TILE_TEMPLATE_MAX_CHARS} characters"
-            )
 
 
 # The glow behind a tile's icon (app repo docs/tile_layers_contract_2026-10.md,
@@ -989,20 +907,18 @@ def _check_icon_glow(glow: Any, at: str) -> None:
 
 def template_budget(document: Any) -> int:
     """How many distinct delta templates a pages document asks a device to
-    send: the Show tile templates and the tile layers' templates of every
-    tile on every page, each text counted once per kind (tiles with the same
-    text share one key on the device, ``show_<hash>`` or ``tile_<hash>``).
+    send: the Show tile templates of every tile on every page, each text
+    counted once (tiles with the same text share one ``show_<hash>`` key on
+    the device).
 
     A ``showWhenTemplate`` counts when it is a non-blank string of at most
-    ``TILE_TEMPLATE_MAX_CHARS`` code points, the ones a device sends
-    (``TemplateCondition.subscribable`` in the app); a ``design.template``
-    when it is a non-blank string. The pages save replies set this against
-    ``TEMPLATE_BUDGET_LIMIT`` (:func:`template_budget_reply`); past it a
-    device keeps every show-when template and draws the tiles it leaves out
-    plain. Anything that is not a pages document, or a page or tile that is
-    not an object, counts nothing.
+    ``SHOW_TEMPLATE_MAX_CHARS`` code points, the ones a device sends
+    (``TemplateCondition.subscribable`` in the app). The pages save replies
+    set this against ``TEMPLATE_BUDGET_LIMIT`` (:func:`template_budget_reply`).
+    Anything that is not a pages document, or a page or tile that is not an
+    object, counts nothing.
     """
-    seen: set[tuple[str, str]] = set()
+    seen: set[str] = set()
     pages = document.get("pages") if isinstance(document, dict) else None
     for page in pages if isinstance(pages, list) else []:
         items = page.get("items") if isinstance(page, dict) else None
@@ -1010,12 +926,8 @@ def template_budget(document: Any) -> int:
             if not isinstance(item, dict):
                 continue
             show = item.get("showWhenTemplate")
-            if isinstance(show, str) and show.strip() and len(show) <= TILE_TEMPLATE_MAX_CHARS:
-                seen.add(("show", show))
-            design = item.get(_TILE_DESIGN_KEY)
-            tile = design.get("template") if isinstance(design, dict) else None
-            if isinstance(tile, str) and tile.strip():
-                seen.add(("tile", tile))
+            if isinstance(show, str) and show.strip() and len(show) <= SHOW_TEMPLATE_MAX_CHARS:
+                seen.add(show)
     return len(seen)
 
 
