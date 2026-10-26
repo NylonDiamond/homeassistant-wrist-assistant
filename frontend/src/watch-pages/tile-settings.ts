@@ -204,6 +204,18 @@ import {
   watchTileIconSettings,
   watchTileTextSettings,
 } from "./tile-settings-model.js";
+import {
+  type PictureChoiceSize,
+  designSample,
+  lineStyleLine,
+  patternSwatch,
+  pictureChoice,
+  pictureChoiceStyles,
+  thicknessLine,
+  tilePictures,
+  tryMenuField,
+  weightSample,
+} from "./picture-choice.js";
 import { renderArrangement } from "./arrange-card.js";
 import { arrangeOffered } from "./arrange-model.js";
 import {
@@ -1411,8 +1423,16 @@ function renderIconGlow(host: TileSettingsHost): TemplateResult {
     const rgb = oneLookParseHex(value);
     if (rgb !== undefined) write("glowColor", (g) => ({ ...g, colour: { kind: "custom", rgb } }));
   };
-  return html`${segField<OneLookGlowMode>("Glow", glow.mode, GLOW_MODES, (v) => write("glowMode", (g) => ({ ...g, mode: v })), { def: "auto" })}
-    <div class="hint ts-under">Auto glows behind the icon on a colored tile, brighter while it is on. On glows on gray and off tiles too. Never over a picture.</div>
+  // Each choice as the tile on, then off: Auto and On differ only off.
+  const pics = tilePictures(host);
+  const withMode = (mode: OneLookGlowMode) => (d: WatchPagesDocument) => setWatchTileIconGlow(d, host.pageId, host.tileId, { ...glow, mode });
+  const options = GLOW_MODES.map(([mode, label]) => ({
+    value: mode,
+    label,
+    picture: () => html`${pics.tile(`glow:${mode}`, withMode(mode), "on", 54, 44)}${pics.tile(`glow:${mode}`, withMode(mode), "off", 54, 44)}`,
+  }));
+  return html`${pictureChoice<OneLookGlowMode>("Glow", glow.mode, options, (v) => write("glowMode", (g) => ({ ...g, mode: v })), { def: "auto", size: "pair" })}
+    <div class="hint">Each picture shows the tile on, then off. Auto glows behind the icon on a colored tile, brighter while it is on. On glows on gray and off tiles too. Never over a picture.</div>
     ${glow.mode === "off" ? nothing : html`
       ${typingField(host, "glowSize", sliderField("Size", glow.size, (v) => write("glowSize", (g) => ({ ...g, size: v }), true), {
         min: ONE_LOOK_GLOW_SIZE_RANGE[0], max: ONE_LOOK_GLOW_SIZE_RANGE[1], step: 5, def: ONE_LOOK_NATIVE_GLOW.size, unit: "%",
@@ -1446,9 +1466,16 @@ function renderIconGlow(host: TileSettingsHost): TemplateResult {
  * light (a dark gray tile, its bulb in its color); on any other kind the
  * tile keeps its color, so the switch is greyed there. */
 function renderDimWhenOff(host: TileSettingsHost, value: boolean): TemplateResult {
-  const row = checkField("Dim when off", value, (on) => commit(host, "dimWhenOff", (d) => setWatchTileDimWhenOff(d, host.pageId, host.tileId, on)));
-  if (!oneLook(host)) return html`${row}<div class="hint ts-under">The tile dims while it is off.</div>`;
-  return oneLookDims(host.tile) ? html`${row}<div class="hint ts-under">${ONE_LOOK_DIM_LIGHT_NOTE}</div>` : greyed(ONE_LOOK_DIM_OFF_REASON, row);
+  // Dim or Keep color, each as the tile off: the Dim when off switch's key
+  // and values, `dimWhenOff` removed for Dim and false for Keep color.
+  const pics = tilePictures(host);
+  const edit = (dim: boolean) => (d: WatchPagesDocument) => setWatchTileDimWhenOff(d, host.pageId, host.tileId, dim);
+  const row = pictureChoice<"dim" | "keep">("When it is off", value ? "dim" : "keep", [
+    { value: "dim", label: "Dim", picture: () => pics.tile("dim:on", edit(true), "off", 64, 46) },
+    { value: "keep", label: "Keep color", picture: () => pics.tile("dim:off", edit(false), "off", 64, 46) },
+  ], (v) => commit(host, "dimWhenOff", edit(v === "dim")), { def: "dim" });
+  if (!oneLook(host)) return html`${row}<div class="hint">The tile dims while it is off, or keeps its color.</div>`;
+  return oneLookDims(host.tile) ? html`${row}<div class="hint">${ONE_LOOK_DIM_LIGHT_NOTE}</div>` : greyed(ONE_LOOK_DIM_OFF_REASON, row);
 }
 
 /** Animate while on, for a kind the watch animates: the switch writes
@@ -1562,9 +1589,9 @@ function renderText(host: TileSettingsHost): TemplateResult {
     <div class="hint ts-under">${oneLook(host)
       ? oneLookFontSizeHint(WATCH_FONT_SIZE_RANGE.min, WATCH_FONT_SIZE_RANGE.max)
       : `Leave empty for Auto, sized to the tile's width, or pick ${WATCH_FONT_SIZE_RANGE.min} to ${WATCH_FONT_SIZE_RANGE.max} pt.`}</div>
-    ${menuField("Weight", watchFontWeightMenu(t.fontWeight), (v) => commit(host, "fontWeight", (d) => setWatchTileFontWeight(d, host.pageId, host.tileId, v)))}
+    ${aaField("Weight", watchFontWeightMenu(t.fontWeight), weightSample, (v) => commit(host, "fontWeight", (d) => setWatchTileFontWeight(d, host.pageId, host.tileId, v)))}
     ${oneLook(host) ? html`<div class="hint ts-under">${ONE_LOOK_WEIGHT_NOTE}</div>` : nothing}
-    ${menuField("Design", watchFontDesignMenu(t.fontDesign), (v) => commit(host, "fontDesign", (d) => setWatchTileFontDesign(d, host.pageId, host.tileId, v)))}
+    ${aaField("Design", watchFontDesignMenu(t.fontDesign), designSample, (v) => commit(host, "fontDesign", (d) => setWatchTileFontDesign(d, host.pageId, host.tileId, v)))}
     ${checkField("Text shadow", t.textShadow, (on) => commit(host, "textShadow", (d) => setWatchTileTextShadow(d, host.pageId, host.tileId, on)))}
     ${oneLook(host) ? html`<div class="hint ts-under">${ONE_LOOK_TEXT_SHADOW_NOTE}</div>` : nothing}
     ${colorPickerView({
@@ -1577,6 +1604,14 @@ function renderText(host: TileSettingsHost): TemplateResult {
       custom: { shown: labelColor, pick: setLabelColor },
       wrap: (body) => typingField(host, "labelColor", body),
     })}`;
+}
+
+/** A label's Weight or Design as "Aa" chips, each in its own weight or
+ * design; a stored value the panel does not offer keeps the menu, which
+ * shows it. */
+function aaField(label: string, menu: WatchMenu, sample: (value: string) => TemplateResult, pick: (value: string) => void): TemplateResult {
+  if (menu.note !== undefined) return menuField(label, menu, pick);
+  return pictureChoice(label, menu.selected, menu.options.map((o) => ({ value: o.value, label: o.label, picture: () => sample(o.value) })), pick, { size: "small" });
 }
 
 // ── action ───────────────────────────────────────────────────────────────
@@ -1938,11 +1973,24 @@ function renderHeader(host: TileSettingsHost): TemplateResult {
 
 type Edit<V> = (document: WatchPagesDocument, pageId: string, tileId: string, value: V) => WatchPagesDocument;
 
-/** A styling enum: buttons for up to four values, a menu for more. A
- * stored value the table does not offer is shown, not offered. */
+/** A styling enum: buttons for up to four values, a menu for more; with a
+ * `picture`, a picture per value (`pictureChoice`) however many there are.
+ * A stored value the table does not offer is shown in the menu, not
+ * offered. */
 export function stylingEnumField(label: string, enumName: string, value: string, pick: (v: string) => void, opts: StylingEnumOptions = {}): TemplateResult {
   const choices = watchStylingChoices(enumName);
-  if (choices.length <= 4 && choices.some((c) => c.value === value)) {
+  const offered = choices.some((c) => c.value === value);
+  if (opts.picture !== undefined && offered) {
+    const picture = opts.picture;
+    return pictureChoice(label, value, choices.map((c) => ({
+      value: c.value,
+      label: c.label,
+      picture: () => picture(c.value),
+      ...(opts.disabled?.[c.value] === true ? { disabled: true } : {}),
+      ...(opts.titles?.[c.value] === undefined ? {} : { title: opts.titles[c.value]! }),
+    })), pick, { size: opts.size ?? "tile" });
+  }
+  if (choices.length <= 4 && offered) {
     return segField(label, value, choices.map((c) => [c.value, c.label] as [string, string]), (v) => pick(v), opts);
   }
   const menu = watchChoiceMenu(choices, value);
@@ -1950,14 +1998,50 @@ export function stylingEnumField(label: string, enumName: string, value: string,
 }
 
 /** Choices of a styling enum that are drawn but cannot be picked, with the
- * reason as each one's tooltip. */
+ * reason as each one's tooltip; and the picture of each value, which draws
+ * the enum as pictures. */
 export interface StylingEnumOptions {
   disabled?: Readonly<Record<string, boolean>>;
   titles?: Readonly<Record<string, string>>;
+  picture?: (value: string) => TemplateResult | typeof nothing;
+  size?: PictureChoiceSize;
 }
 
 function enumRow(host: TileSettingsHost, setting: string, label: string, enumName: string, value: string, set: Edit<string>, opts: StylingEnumOptions = {}): TemplateResult {
   return stylingEnumField(label, enumName, value, (v) => commit(host, setting, (d) => set(d, host.pageId, host.tileId, v)), opts);
+}
+
+/** A border's Thickness as sample lines. */
+const SMALL_THICKNESS: StylingEnumOptions = { picture: thicknessLine, size: "small" };
+
+/**
+ * A styling enum whose choices move (a tile's Effect, a border's Animation):
+ * a menu where pointing at a choice plays it on the inspector head's
+ * preview tile and nothing is saved until one is clicked (`tryMenuField`).
+ * A stored value the table does not offer keeps the plain menu, which
+ * shows it.
+ */
+function tryEnumRow(host: TileSettingsHost, setting: string, label: string, enumName: string, value: string, set: Edit<string>): TemplateResult {
+  const choices = watchStylingChoices(enumName);
+  if (!choices.some((c) => c.value === value)) return enumRow(host, setting, label, enumName, value, set);
+  return tryMenuField(host, setting, label, choices, value,
+    (v) => commit(host, setting, (d) => set(d, host.pageId, host.tileId, v)),
+    (v) => (d) => set(d, host.pageId, host.tileId, v));
+}
+
+/** What a pattern swatch is drawn on: the tile's color (or its kind's),
+ * as a gradient where it is one, else a dark gray. */
+function tileGround(host: TileSettingsHost): string {
+  const ends = watchColorEnds(watchTileIconSettings(host.tile).color ?? kindDefaults(host).color);
+  if (ends === undefined) return "#2C2C2E";
+  return ends.from === ends.to ? ends.from : `linear-gradient(135deg, ${ends.from}, ${ends.to})`;
+}
+
+/** The picture of each value of a styling enum: the tile on, as `set` with
+ * that value would leave it. */
+function tilePicture(host: TileSettingsHost, setting: string, set: Edit<string>): (value: string) => TemplateResult | typeof nothing {
+  const pics = tilePictures(host);
+  return (value) => pics.tile(`${setting}:${value}`, (d) => set(d, host.pageId, host.tileId, value), "on", 64, 46);
 }
 
 function boolRow(host: TileSettingsHost, setting: string, label: string, value: boolean, set: Edit<boolean>): TemplateResult {
@@ -2175,9 +2259,10 @@ function stateRow(host: TileSettingsHost, row: WatchStateRow, oneLookOn = false)
       // button's tooltip.
       const off = oneLookOn ? oneLookValueStylesOff(tileKind(tileEntityId(host.tile))) : {};
       const disabled = Object.fromEntries(Object.keys(off).map((v) => [v, true]));
-      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>, { disabled, titles: off });
+      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>, { disabled, titles: off, picture: tilePicture(host, row.key, set as Edit<string>) });
     }
     case "stateBarStyle":
+      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>, { picture: tilePicture(host, row.key, set as Edit<string>) });
     case "stateBarColorStyle":
       return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>);
     case "decimalPlaces": {
@@ -2353,18 +2438,18 @@ function renderBorder(host: TileSettingsHost): TemplateResult {
   const reset = (key: string) => resetValue("border", key);
   if (tileKind(tileEntityId(host.tile)) === "spacer") {
     return html`
-      ${enumRow(host, "borderThickness", "Thickness", "borderThickness", b.thickness, setWatchTileBorderThickness)}
+      ${enumRow(host, "borderThickness", "Thickness", "borderThickness", b.thickness, setWatchTileBorderThickness, SMALL_THICKNESS)}
       <div class="hint ts-under">A spacer draws a plain line in its own color at this thickness. The other border settings do nothing on it.</div>
       ${resetRow(host, "border", "Border")}`;
   }
   return html`
-    ${enumRow(host, "borderStyle", "Style", "borderStyle", b.style, setWatchTileBorderStyle)}
+    ${enumRow(host, "borderStyle", "Style", "borderStyle", b.style, setWatchTileBorderStyle, { picture: tilePicture(host, "borderStyle", setWatchTileBorderStyle) })}
     ${b.style === "line" ? html`
-      ${oneLook(host) ? oneLookThickness(host, b.thickness) : enumRow(host, "borderThickness", "Thickness", "borderThickness", b.thickness, setWatchTileBorderThickness)}
-      ${enumRow(host, "borderLineStyle", "Line style", "borderLineStyle", b.lineStyle, setWatchTileBorderLineStyle)}
+      ${oneLook(host) ? oneLookThickness(host, b.thickness) : enumRow(host, "borderThickness", "Thickness", "borderThickness", b.thickness, setWatchTileBorderThickness, SMALL_THICKNESS)}
+      ${enumRow(host, "borderLineStyle", "Line style", "borderLineStyle", b.lineStyle, setWatchTileBorderLineStyle, { picture: lineStyleLine, size: "small" })}
       ${sliderRow(host, "borderGlow", "Glow", "borderGlow", b.glow, setWatchTileBorderGlow, { reset: reset("borderGlow"), percent: true })}` : nothing}
     ${b.style === "animate" ? html`
-      ${enumRow(host, "borderAnimation", "Animation", "borderAnimation", b.animation, setWatchTileBorderAnimation)}
+      ${tryEnumRow(host, "borderAnimation", "Animation", "borderAnimation", b.animation, setWatchTileBorderAnimation)}
       ${b.animation === "none" ? nothing : html`
         ${sliderRow(host, "borderSpeed", "Speed", "borderAnimationSpeed", b.speed, setWatchTileBorderSpeed, { reset: reset("borderAnimationSpeed") })}
         ${sliderRow(host, "borderIntensity", "Intensity", "borderAnimationIntensity", b.intensity, setWatchTileBorderIntensity, { reset: reset("borderAnimationIntensity") })}
@@ -2387,6 +2472,7 @@ function renderBorder(host: TileSettingsHost): TemplateResult {
  * why it draws no border. */
 function oneLookThickness(host: TileSettingsHost, thickness: string): TemplateResult {
   const row = enumRow(host, "borderThickness", "Thickness", "borderThickness", thickness, setWatchTileBorderThickness, {
+    ...SMALL_THICKNESS,
     disabled: { extraThin: true },
     titles: { extraThin: ONE_LOOK_EXTRA_THIN_REASON },
   });
@@ -2400,7 +2486,7 @@ function renderBackground(host: TileSettingsHost): TemplateResult {
   const reset = (key: string) => resetValue("background", key);
   return html`
     <div class="ts-sub-h"><span>Pattern</span></div>
-    ${enumRow(host, "pattern", "Type", "backgroundPattern", g.pattern, setWatchTilePattern)}
+    ${enumRow(host, "pattern", "Type", "backgroundPattern", g.pattern, setWatchTilePattern, { picture: (v) => patternSwatch(v, tileGround(host)), size: "swatch" })}
     ${g.pattern === "none" ? nothing : html`
       ${sliderRow(host, "patternOpacity", "Opacity", "patternOpacity", g.patternOpacity, setWatchTilePatternOpacity, { reset: reset("patternOpacity"), percent: true })}
       ${sliderRow(host, "patternScale", "Size", "patternScale", g.patternScale, setWatchTilePatternScale)}
@@ -2417,7 +2503,7 @@ function renderBackground(host: TileSettingsHost): TemplateResult {
 function renderEffect(host: TileSettingsHost, g: ReturnType<typeof watchTileBackgroundSettings>, reset: (key: string) => unknown): TemplateResult {
   return html`
     <div class="ts-sub-h"><span>Effect</span></div>
-    ${enumRow(host, "effect", "Type", "tileAnimation", g.effect, setWatchTileEffect)}
+    ${tryEnumRow(host, "effect", "Type", "tileAnimation", g.effect, setWatchTileEffect)}
     ${g.effect === "none" ? nothing : html`
       ${boolRow(host, "effectActiveOnly", "Only when on", g.effectActiveOnly, setWatchTileEffectActiveOnly)}
       ${colorPicker(host, "effectColor", {
@@ -2573,4 +2659,6 @@ export const tileSettingsStyles = css`
   .ts-arr-spot.on > span { background: var(--wa-accent); }
   .ts-arr-spot:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .ts-arr-foot { display: flex; justify-content: flex-end; padding-top: 4px; }
+
+  ${pictureChoiceStyles}
 `;

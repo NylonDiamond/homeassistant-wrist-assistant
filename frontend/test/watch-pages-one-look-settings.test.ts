@@ -98,12 +98,12 @@ describe("the old look stays as it was", () => {
     for (const oneLook of [undefined, false]) {
       const light = drawn(tile("light.desk", { color: "#RAINBOW" }), oneLook);
       expect(light).toContain("The watch cycles the tile through every color.");
-      expect(light).toContain("The tile dims while it is off.");
+      expect(light).toContain("The tile dims while it is off, or keeps its color.");
       expect(light).toContain("An icon or color per state. A state with none uses the tile's.");
       expect(light).toContain("Show brightness percentage on tile.");
       expect(light).not.toContain("ts-off");
       for (const line of [ONE_LOOK_RAINBOW_NOTE, ONE_LOOK_WEIGHT_NOTE, ONE_LOOK_TEXT_SHADOW_NOTE, ONE_LOOK_DIM_LIGHT_NOTE]) expect(light).not.toContain(line);
-      expect(drawn(tile("switch.fan"), oneLook)).toContain("The tile dims while it is off.");
+      expect(drawn(tile("switch.fan"), oneLook)).toContain("The tile dims while it is off, or keeps its color.");
       expect(tileInspectorSections(tileHost(tile("point_control.x"), oneLook).host)).not.toContain("state");
     }
   });
@@ -134,8 +134,8 @@ describe("Icon and color in One Look", () => {
     const { host, draft } = tileHost(tile("switch.fan", { dimWhenOff: false }), true);
     const before = draft.document;
     const sw = text(renderTileSettings(host));
-    expect(greyedBefore(sw, ONE_LOOK_DIM_OFF_REASON)).toContain("Dim when off");
-    expect(sw).not.toContain("The tile dims while it is off.");
+    expect(greyedBefore(sw, ONE_LOOK_DIM_OFF_REASON)).toContain("When it is off");
+    expect(sw).not.toContain("The tile dims while it is off, or keeps its color.");
     // Drawing greys; it never writes.
     expect(draft.document).toBe(before);
     expect(host.tile.dimWhenOff).toBe(false);
