@@ -895,8 +895,10 @@ def _check_design(design: Any, at: str) -> None:
     object with a list of ``elements``, at most ``TILE_DESIGN_MAX_LAYERS``
     elements that are not tap zones (an element that is not an object counts
     as a layer) and ``TILE_DESIGN_MAX_ZONES`` that are, and when present an
-    ``owned`` list of strings, a ``zones`` object and a ``template`` string of
-    at most ``TILE_TEMPLATE_MAX_CHARS`` code points.
+    ``owned`` list of strings, a ``zones`` object, an ``anchors`` object (each
+    owned base layer's place on its native part, which the byte cap already
+    counts) and a ``template`` string of at most ``TILE_TEMPLATE_MAX_CHARS``
+    code points.
 
     Nothing else in the design is looked at. As with every other key, the
     server guards the shape the caps need, not the content: the layers are
@@ -936,6 +938,8 @@ def _check_design(design: Any, at: str) -> None:
             raise WatchConfigValidationError(f"{where}.owned must be a list of strings")
     if "zones" in design and not isinstance(design["zones"], dict):
         raise WatchConfigValidationError(f"{where}.zones must be an object")
+    if "anchors" in design and not isinstance(design["anchors"], dict):
+        raise WatchConfigValidationError(f"{where}.anchors must be an object")
     if "template" in design:
         template = design["template"]
         if not isinstance(template, str) or len(template) > TILE_TEMPLATE_MAX_CHARS:

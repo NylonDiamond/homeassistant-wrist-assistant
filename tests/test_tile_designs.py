@@ -378,6 +378,29 @@ def test_bad_zones_are_refused(mod) -> None:  # noqa: F811
         assert _refusal(mod, _design(zones=zones)) == f"{WHERE}.zones must be an object"
 
 
+def test_a_design_with_anchors_saves(mod) -> None:  # noqa: F811
+    anchors = {
+        "base.name": {"x": 0.0299, "y": 0.7312, "width": 0.9403, "height": 0.1788, "size": 10},
+        "base.state": {
+            "x": 0.0591, "y": 0.1439, "width": 0.2469, "height": 0.2424,
+            "size": 14, "textSize": 12.6, "unitSize": 9, "tailSize": 11,
+        },
+    }
+    design = _design(owned=["base.name", "base.state"], anchors=anchors)
+    document = _pages(_tile(design))
+    mod.validate_document("pages", document, check_items=True)
+    # Kept as sent, its place in the key order included.
+    assert document["pages"][0]["items"][0]["design"]["anchors"] == anchors
+    # The anchors count toward the byte cap like every other key.
+    padded = _design(anchors={"base.name": {"x": 0, "y": 0, "width": 1, "height": 1, "size": 10, "pad": "x" * 16384}})
+    assert _refusal(mod, padded).endswith("bytes; the limit is 16384")
+
+
+def test_bad_anchors_are_refused(mod) -> None:  # noqa: F811
+    for anchors in ([], [{"x": 0}], "base.name", None, 3):
+        assert _refusal(mod, _design(anchors=anchors)) == f"{WHERE}.anchors must be an object"
+
+
 def test_a_bad_template_is_refused(mod) -> None:  # noqa: F811
     message = f"{WHERE}.template must be a string of at most 4096 characters"
     for template in (None, 3, ["x"], "x" * 4097):
