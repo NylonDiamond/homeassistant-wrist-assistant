@@ -65,6 +65,7 @@ import {
   baseRoleOf,
   codePoints,
   designSummary,
+  elementUsesTileInks,
   layerStatus,
   pageTemplateKeys,
   readTileDesign,
@@ -88,6 +89,10 @@ export const LAYER_STATUS_TEXT: Readonly<Record<Exclude<LayerStatus, "zone">, st
   changed: "Changed here. The simple setting now points to this layer.",
   added: "Added layer. The simple settings do not touch it.",
 };
+
+/** What a base layer's status line adds while a colour of it names a tile
+ * ink (round four, section 15.3). */
+export const TILE_INK_STATUS_TEXT = "Its colors follow the tile. Picking a color sets it for good.";
 
 /** The Layers card's summary: "6 layers: 2 changed, 2 added, 2 tap zones". */
 export function layersSummaryText(s: DesignSummary): string {
@@ -456,15 +461,17 @@ export function renderTileLayerInspector(view: TileLayersView, watchWidth: numbe
   const status = layerStatus(readTileDesign(host.tile), el.payload.id);
   const role = baseRoleOf(el.payload.id);
   const edits = tileLayerEdits(host);
+  const lh = tileLayerHost(host, (id) => view.pick(id.toUpperCase()));
+  const current = lh.config.elements.find((e) => e.payload.id.toUpperCase() === el.payload.id.toUpperCase()) ?? el;
+  // A base layer whose colours name the tile's inks says they follow it.
+  const inks = role !== undefined && elementUsesTileInks(current) ? ` ${TILE_INK_STATUS_TEXT}` : "";
   const line = status === "follows"
-    ? html`<div class="tl-status follow">${LAYER_STATUS_TEXT.follows}</div>`
+    ? html`<div class="tl-status follow" ?data-tile-inks=${inks !== ""}>${LAYER_STATUS_TEXT.follows}${inks}</div>`
     : status === "changed"
-    ? html`<div class="tl-status changed"><span class="tl-dot" aria-hidden="true"></span><span>${LAYER_STATUS_TEXT.changed}</span>
+    ? html`<div class="tl-status changed" ?data-tile-inks=${inks !== ""}><span class="tl-dot" aria-hidden="true"></span><span>${LAYER_STATUS_TEXT.changed}${inks}</span>
         ${view.off || role === undefined ? nothing : html`<button type="button" class="link" @click=${() => edits.reset(role)}>Reset layer</button>`}</div>`
     : html`<div class="tl-status added"><span>${LAYER_STATUS_TEXT.added}</span>
         ${view.off ? nothing : html`<button type="button" class="link" @click=${() => { if (edits.remove(el.payload.id)) view.pick(undefined); }}>Delete</button>`}</div>`;
-  const lh = tileLayerHost(host, (id) => view.pick(id.toUpperCase()));
-  const current = lh.config.elements.find((e) => e.payload.id.toUpperCase() === el.payload.id.toUpperCase()) ?? el;
   const glow = current.kind === "shape" && current.payload.id.toUpperCase() === BASE_GLOW_ID ? renderGlowCard(view, current.payload) : nothing;
   return html`${line}${glow}
     <fieldset class="tl-editor ts-plain" ?disabled=${view.off} aria-label=${layerKindWords(el.kind)}>
@@ -637,17 +644,28 @@ function renderGlowCard(view: TileLayersView, glow: ShapeElement): TemplateResul
   });
   const values = glowCardValues(glow, ref);
   const hex = glow.colorSlot.baseColorHex.slice(0, 7).toUpperCase();
+  // White, a swatch and a custom colour are constants: the tile's hue is no
+  // longer named (round four, section 15.3).
   const setHex = (value: string) => {
     const rgb = oneLookParseHex(value);
     if (rgb === undefined) return;
     const next = oneLookHex(rgb);
     write((p) => {
-      p.colorSlot = { ...p.colorSlot, baseColorHex: next };
+      p.colorSlot = { baseColorHex: next };
       p.fill = { kind: "radial", stops: [{ at: 0, colorHex: next }, { at: 1, colorHex: `${next}00` }] };
     });
   };
+  // The tile's colour names the tile's hue, so the glow follows a change of
+  // it as the native glow does, the hue now beside it as the fallback.
+  const tileOn = glow.colorSlot.tileInk === "hue";
+  const setTile = () => {
+    if (tileOn) return;
+    write((p) => {
+      p.colorSlot = { baseColorHex: ref.tileHex, tileInk: "hue" };
+      p.fill = { kind: "radial", stops: [{ at: 0, colorHex: ref.tileHex, tileInk: "hue" }, { at: 1, colorHex: `${ref.tileHex}00`, tileInk: "hueClear" }] };
+    });
+  };
   const theme = watchAddThemeOf(host.page);
-  const tileOn = hex === ref.tileHex && hex !== "#FFFFFF";
   return html`<fieldset class="tl-glow ts-plain" ?disabled=${view.off} aria-label="Glow">
     <div class="ts-sub-h"><span>Glow</span></div>
     ${checkField("Show glow", glow.isHidden !== true, (on) => write((p) => { p.isHidden = !on; }))}
@@ -662,12 +680,12 @@ function renderGlowCard(view: TileLayersView, glow: ShapeElement): TemplateResul
     <div class="hint ts-under">100% is the tile's own glow. The glow still dims as the tile turns off.</div>
     ${colorPickerView({
       label: "Color",
-      color: hex === "#FFFFFF" ? undefined : hex,
+      color: hex === "#FFFFFF" || tileOn ? undefined : hex,
       swatches: watchThemeSwatches(theme, false),
       swatchesLabel: `Glow color: ${watchThemeDisplayName(theme)} colors`,
       pickSwatch: setHex,
-      default: { title: "White, the tile's own glow", on: hex === "#FFFFFF", pick: () => setHex("#FFFFFF") },
-      tile: { title: `The tile's color, ${ref.tileHex}`, on: tileOn, pick: () => setHex(ref.tileHex) },
+      default: { title: "White, the tile's own glow", on: hex === "#FFFFFF" && !tileOn, pick: () => setHex("#FFFFFF") },
+      tile: { title: `The tile's color, ${ref.tileHex}, following it`, on: tileOn, pick: setTile },
       custom: {
         shown: hex,
         pick: (value) => { if (value !== undefined && watchColorRefusal(value) === undefined) setHex(value); },

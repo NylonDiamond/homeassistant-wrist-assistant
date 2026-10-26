@@ -652,3 +652,91 @@ function findRow(v: unknown, id: string): { strings: readonly string[]; values: 
   if (found === undefined) throw new Error(`no row for ${id}`);
   return found;
 }
+
+/** The first template in a drawn tree whose text holds `marker`, and the
+ * function values (its event handlers) in it. */
+function handlersOf(v: unknown, marker: string): ((...args: unknown[]) => unknown)[] {
+  let found: { strings: readonly string[]; values: unknown[] } | undefined;
+  const walk = (x: unknown): void => {
+    if (found !== undefined || x === null || typeof x !== "object") return;
+    if (Array.isArray(x)) return x.forEach(walk);
+    if ("strings" in x && "values" in x) {
+      const t = x as { strings: readonly string[]; values: unknown[] };
+      if (t.strings.join("").includes(marker)) {
+        found = t;
+        return;
+      }
+      t.values.forEach(walk);
+    }
+  };
+  walk(v);
+  if (found === undefined) throw new Error(`nothing drawn with ${marker}`);
+  return found.values.filter((x): x is (...args: unknown[]) => unknown => typeof x === "function");
+}
+
+describe("live tile inks while editing (round four, section 15.3)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const GLOW = "BA5E0000-0000-4000-8000-000000000006";
+  type Inked = { colorSlot: { baseColorHex: string; tileInk?: string }; parts?: { id: string; colorHex?: string; tileInk?: string }[]; fill?: { stops: { colorHex: string; tileInk?: string }[] } };
+  const payloadOf = (host: TileSettingsHost, id: string) => readTileDesign(host.tile)!.doc.elements.find((e) => e.payload.id === id)!.payload as unknown as Inked;
+
+  it("drops a reference whose hex was picked, keeps one left alone, and keeps a new one", async () => {
+    const { dropStaleTileInks } = await import("../src/watch-pages/tile-design.js");
+    const { newElement } = await import("../src/model.js");
+    const el = (hex: string, ink?: "ink" | "hue") => {
+      const e = newElement("shape");
+      if (e.kind === "shape") e.payload.colorSlot = ink === undefined ? { baseColorHex: hex } : { baseColorHex: hex, tileInk: ink };
+      return e;
+    };
+    const slot = (e: ReturnType<typeof el>) => (e.payload as unknown as Inked).colorSlot;
+    expect(slot(dropStaleTileInks(el("#FFFFFF", "ink"), el("#FF0000", "ink")))).toEqual({ baseColorHex: "#FF0000" });
+    const kept = el("#FFFFFF", "ink");
+    expect(dropStaleTileInks(el("#FFFFFF", "ink"), kept)).toBe(kept);
+    const fresh = el("#F2AE4E", "hue");
+    expect(dropStaleTileInks(el("#FFFFFF"), fresh)).toBe(fresh);
+  });
+
+  it("sets a State part's colour for good when it is picked in the layer editor, the other parts still following", () => {
+    const { host } = draftHost();
+    tileLayerEdits(host).doc((c) => {
+      const state = c.elements.find((e) => e.payload.id === BASE_LAYER_IDS.state)!;
+      if (state.kind === "text") state.payload.parts!.find((p) => p.id.endsWith("F4"))!.colorHex = "#FF3B30";
+    });
+    const state = payloadOf(host, BASE_LAYER_IDS.state);
+    const word = state.parts!.find((p) => p.id.endsWith("F4"))!;
+    expect(word).toMatchObject({ colorHex: "#FF3B30" });
+    expect(word.tileInk).toBeUndefined();
+    expect(state.parts!.find((p) => p.id.endsWith("F3"))!.tileInk).toBe("ink2");
+    expect(state.colorSlot.tileInk).toBe("ink");
+    expect(readTileDesign(host.tile)!.owned).toEqual(["state"]);
+  });
+
+  it("says in the status line that a base layer's colours follow the tile", async () => {
+    const { TILE_INK_STATUS_TEXT } = await import("../src/watch-pages/tile-layers-ui.js");
+    const { host } = draftHost();
+    expect(TILE_INK_STATUS_TEXT).toBe("Its colors follow the tile. Picking a color sets it for good.");
+    expect(flat(renderTileLayerInspector(view(host, BASE_LAYER_IDS.state), 208))).toContain(TILE_INK_STATUS_TEXT);
+    // The white Glow names no ink.
+    expect(flat(renderTileLayerInspector(view(host, GLOW), 208))).not.toContain(TILE_INK_STATUS_TEXT);
+  });
+
+  it("writes the hue's references from the Glow card's Tile color, reads it back as picked, and White writes plain hexes again", () => {
+    const { host } = draftHost();
+    vi.stubGlobal("document", { activeElement: null });
+    const card = () => renderTileLayerInspector(view(host, GLOW), 208)!;
+    expect(flat(card())).toContain('class="pe-chip ts-color-tile "');
+    handlersOf(card(), "ts-color-tile")[0]!();
+    const tinted = payloadOf(host, GLOW);
+    expect(tinted.colorSlot).toEqual({ baseColorHex: "#F2AE4E", tileInk: "hue" });
+    expect(tinted.fill!.stops).toEqual([{ at: 0, colorHex: "#F2AE4E", tileInk: "hue" }, { at: 1, colorHex: "#F2AE4E00", tileInk: "hueClear" }]);
+    expect(readTileDesign(host.tile)!.owned).toEqual(["icon"]);
+    expect(flat(card())).toContain('class="pe-chip ts-color-tile on"');
+    expect(flat(card())).toContain(TILE_INK_STATUS_TEXT_FOR_TEST);
+    handlersOf(card(), "ts-color-default")[0]!();
+    const white = payloadOf(host, GLOW);
+    expect(white.colorSlot).toEqual({ baseColorHex: "#FFFFFF" });
+    expect(white.fill!.stops.every((s) => s.tileInk === undefined)).toBe(true);
+  });
+});
+
+const TILE_INK_STATUS_TEXT_FOR_TEST = "Its colors follow the tile.";

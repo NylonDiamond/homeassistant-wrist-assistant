@@ -331,8 +331,49 @@ function slotRoleOf(...docs: CustomComplicationConfig[]): BaseLayerRole {
   return docs.some((doc) => glyphSlotRole(doc) === "photo") ? "photo" : "icon";
 }
 
+/** Whether a layer names a tile ink anywhere: on its colour, on a part, or
+ * on a fill stop (round four, section 15.3). */
+export function elementUsesTileInks(el: Element): boolean {
+  const p = el.payload as { colorSlot?: { tileInk?: string }; parts?: readonly { tileInk?: string }[]; fill?: { stops: readonly { tileInk?: string }[] } };
+  return p.colorSlot?.tileInk !== undefined
+    || (p.parts ?? []).some((part) => part.tileInk !== undefined)
+    || (p.fill?.stops ?? []).some((stop) => stop.tileInk !== undefined);
+}
+
+/**
+ * `after` with each tile ink dropped whose hex an edit changed while the ink
+ * stayed (round four, section 15.3): on the colour slot, on each part
+ * (matched by id) and on each fill stop (matched by index). So a colour
+ * picked in any editor is set for good, while a write that names a new ink
+ * (the Glow card's Tile color) keeps it. `after` itself when nothing drops.
+ */
+export function dropStaleTileInks(before: Element, after: Element): Element {
+  type Inked = { colorSlot?: { baseColorHex: string; tileInk?: string }; parts?: { id: string; colorHex?: string; tileInk?: string }[]; fill?: { stops: { colorHex: string; tileInk?: string }[] } };
+  const a = before.payload as Inked;
+  const b = after.payload as Inked;
+  const stale = (was: { ink?: string; hex?: string } | undefined, now: { ink?: string; hex?: string }) =>
+    now.ink !== undefined && was?.ink === now.ink && was.hex !== now.hex;
+  const slot = b.colorSlot !== undefined && stale({ ink: a.colorSlot?.tileInk, hex: a.colorSlot?.baseColorHex }, { ink: b.colorSlot.tileInk, hex: b.colorSlot.baseColorHex });
+  const parts = (b.parts ?? []).map((part) => {
+    const was = (a.parts ?? []).find((x) => x.id === part.id);
+    return stale(was === undefined ? undefined : { ink: was.tileInk, hex: was.colorHex }, { ink: part.tileInk, hex: part.colorHex });
+  });
+  const stops = (b.fill?.stops ?? []).map((stop, i) => {
+    const was = a.fill?.stops[i];
+    return stale(was === undefined ? undefined : { ink: was.tileInk, hex: was.colorHex }, { ink: stop.tileInk, hex: stop.colorHex });
+  });
+  if (!slot && !parts.includes(true) && !stops.includes(true)) return after;
+  const next = structuredClone(after);
+  const n = next.payload as Inked;
+  if (slot && n.colorSlot !== undefined) delete n.colorSlot.tileInk;
+  n.parts?.forEach((part, i) => { if (parts[i] === true) delete part.tileInk; });
+  n.fill?.stops.forEach((stop, i) => { if (stops[i] === true) delete stop.tileInk; });
+  return next;
+}
+
 /** `after` with every base role owned whose layer differs from `before`'s
- * or is gone from it. */
+ * or is gone from it, and each tile ink whose hex the edit changed dropped
+ * (`dropStaleTileInks`). */
 export function ownChangedBaseLayers(before: TileDesign, after: TileDesign): TileDesign {
   const was = encodedElements(before.doc);
   const now = encodedElements(after.doc);
@@ -344,7 +385,18 @@ export function ownChangedBaseLayers(before: TileDesign, after: TileDesign): Til
     if (id !== BASE_GLOW_ID) owned.add(role);
     else if (!glyphOwned([...owned])) owned.add(slotRoleOf(after.doc, before.doc));
   }
-  return { ...after, owned: sortRoles([...owned]) };
+  const prior = new Map(before.doc.elements.map((el) => [el.payload.id.toUpperCase(), el]));
+  let dropped = false;
+  const elements = after.doc.elements.map((el) => {
+    const id = el.payload.id.toUpperCase();
+    const old = prior.get(id);
+    if (old === undefined || was.get(id) === now.get(id)) return el;
+    const next = dropStaleTileInks(old, el);
+    if (next !== el) dropped = true;
+    return next;
+  });
+  const doc = dropped ? { ...after.doc, elements } : after.doc;
+  return { ...after, doc, owned: sortRoles([...owned]) };
 }
 
 /** A layer edit written to the tile: every base role whose layer changed or
