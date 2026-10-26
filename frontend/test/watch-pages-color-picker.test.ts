@@ -216,6 +216,17 @@ describe("colorPickerView", () => {
     expect(own).toContain(`class="ts-no-alpha ts-custom" ?hidden=false`);
   });
 
+  it("lets no input from the hidden Custom row through, as a Mac's color window can send after a swatch is picked", () => {
+    const tpl = templates(colorPickerView(base)).find((t) => t.strings.some((x) => x.includes(`ts-custom"`)))!;
+    const listener = tpl.values.find((x) => typeof x === "object" && x !== null && "handleEvent" in x) as { capture: boolean; handleEvent(e: unknown): void };
+    expect(listener.capture).toBe(true);
+    let stopped = 0;
+    listener.handleEvent({ currentTarget: { hidden: true }, stopPropagation: () => { stopped += 1; } });
+    expect(stopped).toBe(1);
+    listener.handleEvent({ currentTarget: { hidden: false }, stopPropagation: () => { stopped += 1; } });
+    expect(stopped).toBe(1);
+  });
+
   it("draws the heading, Form, Default leading the swatches, then Custom", () => {
     const text = flat(colorPickerView({
       ...base,

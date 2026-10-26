@@ -158,6 +158,18 @@ function rainbowSwatch(on: boolean, pick: () => void, trial: ColorTrial | undefi
     @click=${() => { pick(); trial?.end(); }}></button>`;
 }
 
+/** The Custom row's own listener, on the way down: while the row is
+ * hidden, an input or change from inside it never reaches its boxes. On a
+ * Mac the system's color window stays open after a pick and keeps the color
+ * box as its own, so a swatch picked after it could be put back to the
+ * custom color by what that window sends (Jesse, 2026-10-26). */
+const QUIET_WHILE_HIDDEN = {
+  capture: true,
+  handleEvent(e: Event): void {
+    if ((e.currentTarget as HTMLElement | null)?.hidden === true) e.stopPropagation();
+  },
+};
+
 /** The Custom swatch's words. */
 export const COLOR_CUSTOM_SWATCH_LABEL = "Custom color";
 
@@ -241,5 +253,5 @@ export function colorPickerView(v: ColorPickerView): TemplateResult {
         })}
     <div class="ts-swatch-row">${swatchRow(v.swatchesLabel, swatches, color, v.pickSwatch, chips, tail, v.trial)}</div>
     ${note === undefined ? nothing : html`<div class="hint ts-under">${note}</div>`}
-    ${v.wrap(html`<div class="ts-no-alpha ts-custom" ?hidden=${!customOn}>${colorField(COLOR_CUSTOM_LABEL, v.custom.shown, v.custom.pick)}</div>`)}`;
+    ${v.wrap(html`<div class="ts-no-alpha ts-custom" ?hidden=${!customOn} @input=${QUIET_WHILE_HIDDEN} @change=${QUIET_WHILE_HIDDEN}>${colorField(COLOR_CUSTOM_LABEL, v.custom.shown, v.custom.pick)}</div>`)}`;
 }
