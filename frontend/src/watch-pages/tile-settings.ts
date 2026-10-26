@@ -2746,7 +2746,9 @@ export const tileSettingsStyles = css`
     border: 1px solid var(--wa-line); border-radius: 6px; background: var(--wa-field); font-size: 12px; color: var(--wa-muted);
   }
   .ts-advanced-words { min-width: 0; }
-  .ts-advanced .link { font-weight: 600; }
+  .ts-advanced .link { font-weight: 600; white-space: nowrap; }
+  /* The custom layers line is longer: its links wrap whole, never "Reset" over "all". */
+  .ts-custom-layers { flex-wrap: wrap; row-gap: 0; }
   /* Simple's last card: what Advanced and Expert add. */
   .ts-want-more .sec-b > .hint.keep { margin: 0 0 8px; }
   .ts-want-acts { display: flex; }
