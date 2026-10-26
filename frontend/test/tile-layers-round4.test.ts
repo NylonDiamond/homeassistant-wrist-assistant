@@ -296,3 +296,71 @@ describe("designUnderLayerId (15.1)", () => {
     expect(designUnderLayerId({ elements: [tap()] })).toBeUndefined();
   });
 });
+
+// ── step 3: drawing the passes, the native figure's tracking, frame inks
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { renderWatchTileFace } from "../src/watch-pages/preview.js";
+import { phonePagesLayout } from "../src/phone-frame.js";
+import { oneLookCellSize, oneLookGridUnit } from "../src/watch-pages/one-look/metrics.js";
+
+describe("drawing a design tile in two passes (15.1) on the watch and the iPhone", () => {
+  const fixture = (file: string) => JSON.parse(readFileSync(join(__dirname, "fixtures-tiles", file), "utf8")) as {
+    tile: WatchPageTile; states: Record<string, HassEntityState>; design: Record<string, unknown>; edit: { op: string; states?: Record<string, HassEntityState> }[] | null;
+  };
+  const face = (file: string, device: "watch" | "phone", states?: Record<string, HassEntityState>) => {
+    const f = fixture(file);
+    const tile: WatchPageTile = { ...f.tile, design: f.design };
+    const page = { id: "4D000000-0000-4000-8000-000000000000", items: [tile] };
+    const screen = device === "watch" ? 208 : 402;
+    const unit = oneLookGridUnit(screen, device);
+    return flatten(renderWatchTileFace(tile, oneLookCellSize(6, 4, unit), {
+      page, pages: [page], screen: { width: screen, height: screen * 2 }, states: states ?? f.states, oneLook: true, scale: 1,
+      ...(device === "phone" ? { phone: phonePagesLayout(undefined, { look: "iphone" }) } : {}),
+    }, unit));
+  };
+
+  for (const device of ["watch", "phone"] as const) {
+    it(`draws a first Glow after the bar and before the native pill and state, the owned icon over them (${device})`, () => {
+      const html = face("18-light-pill-owned-icon-under.json", device);
+      const content = html.slice(html.indexOf('class="ol-content"'));
+      const under = content.indexOf("data-pass=under");
+      const state = content.indexOf('class="ol-state pill');
+      const over = content.indexOf("data-pass=over");
+      expect(under).toBeGreaterThan(0);
+      expect(state).toBeGreaterThan(under);
+      expect(over).toBeGreaterThan(state);
+      const bar = content.indexOf('class="ol-bar"');
+      if (bar >= 0) expect(bar).toBeLessThan(under);
+      // The under pass holds the Glow alone, the over pass the icon.
+      const underSpan = content.slice(under, state);
+      expect(underSpan).toContain(`data-element-id=${BASE_GLOW_ID}`);
+      expect(underSpan).not.toContain(`data-element-id=${BASE_LAYER_IDS.icon}`);
+      expect(content.slice(over)).toContain(`data-element-id=${BASE_LAYER_IDS.icon}`);
+    });
+
+    it(`draws a raised Glow over the native parts in list order, with no under pass (${device})`, () => {
+      const html = face("19-light-glow-raised.json", device);
+      expect(html).not.toContain("data-pass=under");
+      const over = html.slice(html.indexOf("data-pass=over"));
+      expect(over.indexOf(`data-element-id=${BASE_GLOW_ID}`)).toBeGreaterThan(over.indexOf(`data-element-id=${BASE_LAYER_IDS.icon}`));
+    });
+
+    it(`tracks the native figure as the apps do (${device})`, () => {
+      const html = face("01-light-medium.json", device);
+      expect(html).toMatch(/class="ol-figure" style=font:700 [^;]+;letter-spacing:-0\.01em;/);
+    });
+
+    it(`resolves an owned State's colours from the frame's own live palette (${device})`, () => {
+      const f = fixture("21-light-owned-state-unavailable.json");
+      const unavailable = f.edit!.find((op) => op.op === "setStates")!.states!;
+      const html = face("21-light-owned-state-unavailable.json", device, unavailable);
+      // The unavailable word in the unavailable face's second ink, not the
+      // stored on face's white.
+      const word = /fill=(#[0-9A-F]{6}) fill-opacity=([\d.]+)>Offline<\/tspan>/.exec(html);
+      expect(word).not.toBeNull();
+      expect(Number(word![2])).toBeLessThan(0.9);
+    });
+  }
+});

@@ -17,7 +17,7 @@
 import { html, type TemplateResult } from "lit";
 import type { HassEntityState } from "../ha-api.js";
 import { type Compiled, compile, parseValueDocument } from "../compiler.js";
-import type { CustomComplicationConfig } from "../model.js";
+import type { CustomComplicationConfig, TileInks } from "../model.js";
 import { type EntityState, type ForcedBranches, type ResolveContext, type ResolvedLayout, Resolver } from "../resolver.js";
 import { type IconProvider, fitBox, renderLayerThumb, renderLayout } from "../renderer.js";
 import { type WatchPage, type WatchPageTile, tileEntityId, tileGeometry } from "./model.js";
@@ -32,6 +32,7 @@ import {
   TILE_DESIGN_KEY,
   designHiddenParts,
   designTemplate,
+  designUnderLayerId,
   drawnDesignDoc,
   parseTileDesign,
   tileDesignBox,
@@ -53,6 +54,10 @@ export interface TileDesignInputs {
   /** The frame the tile draws in, for the state line's tail rule. Absent:
    * the watch. */
   device?: OneLookDevice;
+  /** The live inks of the face the tile is drawn with (`tileInksOf` of that
+   * frame's own model), which a colour naming a tile ink resolves to (round
+   * four, section 15.3). Absent: the reference watch face's. */
+  inks?: TileInks;
 }
 
 /** A design read and compiled, kept by the stored object: a draw reads the
@@ -140,16 +145,17 @@ export function tileDesignResolveContext(tile: WatchPageTile, design: TileDesign
     const parsed = rendered === undefined ? undefined : parseValueDocument(rendered);
     if (parsed !== undefined) templateResults = parsed.values;
   }
+  const tileValues = tileValuesFor(tile, {
+    ...(inputs.states === undefined ? {} : { states: inputs.states }),
+    ...(inputs.page === undefined ? {} : { page: inputs.page }),
+    ...(inputs.pages === undefined ? {} : { pages: inputs.pages }),
+    ...(inputs.icons === undefined ? {} : { icons: inputs.icons }),
+  }, inputs.device);
   return {
     entityStates,
     templateResults,
     namedValues: design.doc.values,
-    tileValues: tileValuesFor(tile, {
-      ...(inputs.states === undefined ? {} : { states: inputs.states }),
-      ...(inputs.page === undefined ? {} : { page: inputs.page }),
-      ...(inputs.pages === undefined ? {} : { pages: inputs.pages }),
-      ...(inputs.icons === undefined ? {} : { icons: inputs.icons }),
-    }, inputs.device),
+    tileValues: inputs.inks === undefined ? tileValues : { ...tileValues, inks: inputs.inks },
   };
 }
 
@@ -173,10 +179,13 @@ export interface TileDesignFocus {
   zoneId?: string;
 }
 
-/** How a design tile draws: the native parts it hides, and its own layers
- * drawn over the rest (undefined when it draws none). */
+/** How a design tile draws: the native parts it hides, the layer it draws
+ * under the native foreground (its first Glow, round four section 15.1,
+ * undefined with none), and its other layers drawn over the rest (undefined
+ * when it draws none). */
 export interface TileDesignDrawing {
   hidden: TileHiddenParts;
+  under?: TemplateResult;
   content?: TemplateResult;
 }
 
@@ -203,6 +212,11 @@ export function tileDesignHiddenParts(tile: WatchPageTile): TileHiddenParts | un
  * part draws exactly where and as big as the native one; added layers, tap
  * zones and roles with no anchor keep the box fit. Without it every layer
  * keeps the box fit.
+ *
+ * The design's under layer (`designUnderLayerId`: a Glow first in the list)
+ * comes back apart as `under`, for the face to draw where the native halo
+ * draws, under the native state, pill and name; `content` holds the rest.
+ * Each is resolved once, together, and split by id.
  */
 export function renderTileDesignContent(
   tile: WatchPageTile,
@@ -227,15 +241,23 @@ export function renderTileDesignContent(
   const doc = native === undefined ? drawnDoc : placeDesignDoc(drawnDoc, design.anchors, native, { width, height }, box);
   const layout = new Resolver(tileDesignResolveContext(tile, design, inputs), doc).resolveLayout(doc, TILE_DESIGN_FAMILY);
   const picked = zone ?? focus?.layerId;
-  const content = html`<span class="ol-design" style=${`position:absolute;left:0;top:0;width:${width * s}px;height:${height * s}px`}>${renderLayout(layout, {
+  const underId = designUnderLayerId(drawnDoc)?.toUpperCase();
+  const isUnder = (id: string) => underId !== undefined && id.toUpperCase() === underId;
+  const span = (pass: ResolvedLayout, under: boolean, options: { highlight: boolean; taps: boolean }) => html`<span class="ol-design" data-pass=${under ? "under" : "over"} style=${`position:absolute;left:0;top:0;width:${width * s}px;height:${height * s}px`}>${renderLayout(pass, {
     icons: inputs.icons ?? NO_DRAW,
     bare: true,
     slot: { width: width * s, height: height * s },
     designBox: box,
-    ...(picked === undefined ? {} : { highlightId: picked }),
-    ...(zone === undefined ? {} : { tapAreas: true, quietTaps: true }),
+    ...(picked === undefined || !options.highlight ? {} : { highlightId: picked }),
+    ...(zone === undefined || !options.taps ? {} : { tapAreas: true, quietTaps: true }),
   })}</span>`;
-  return { hidden, content };
+  if (underId === undefined) return { hidden, content: span(layout, false, { highlight: true, taps: true }) };
+  const underLayout: ResolvedLayout = { ...layout, elements: layout.elements.filter((el) => isUnder(el.id)) };
+  const overLayout: ResolvedLayout = { ...layout, elements: layout.elements.filter((el) => !isUnder(el.id)) };
+  const pickedUnder = picked !== undefined && isUnder(picked);
+  const under = span(underLayout, true, { highlight: pickedUnder, taps: false });
+  const drawsOver = overLayout.elements.some((el) => el.kind !== "tap") || (zone !== undefined && overLayout.elements.length > 0);
+  return drawsOver ? { hidden, under, content: span(overLayout, false, { highlight: !pickedUnder, taps: true }) } : { hidden, under };
 }
 
 /** Whether a design draws a layer itself (so `renderTileDesignContent`

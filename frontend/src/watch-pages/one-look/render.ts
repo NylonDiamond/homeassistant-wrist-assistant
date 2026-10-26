@@ -141,6 +141,12 @@ export interface OneLookTileFaceInput {
    * layout (round two: app repo docs/tile_layers_contract_2026-10.md,
    * section 13.2). Drawn where `content` is, and wins over it. */
   contentFor?: (model: OneLookPreviewModel) => TemplateResult | undefined;
+  /** The design's layers drawn from the model this tile is laid out by, in
+   * two passes (round four, section 15.1): `under` right after the bar,
+   * where the native halo draws, under the glyph, accessory, state, pill,
+   * name and big value; `over` over all of them, where `content` draws.
+   * Called once per draw; wins over `contentFor` and `content`. */
+  layersFor?: (model: OneLookPreviewModel) => { under?: TemplateResult; over?: TemplateResult } | undefined;
   /** Drawn over the tile's content, under the rim: the page editor's outline
    * of a picked layer on a tile that has no layers saved yet. */
   overlay?: TemplateResult;
@@ -602,14 +608,16 @@ function textShadow(on: boolean, s: number): string {
 }
 
 /** A state line: the number in bold rounded with its unit at 84% and the
- * tail after it, or a word (the amber dot before it when it asks). */
+ * tail after it, or a word (the amber dot before it when it asks). The
+ * figure is tracked as the apps track it (`nameTracking`, round four section
+ * 15.2), as the fitter measured it. */
 function stateLine(state: StateFit, palette: OneLookPalette, device: OneLookDevice, s: number): TemplateResult {
   const family = ONE_LOOK_FONT_FAMILIES[device];
   const ink = oneLookInkCss(palette.ink);
   const ink2 = oneLookInkCss(palette.ink2);
   const p = state.parts;
   if (p.kind === "number") {
-    return html`<span class="ol-line"><span class="ol-figure" style=${`font:700 ${r2(state.size * s)}px/1 ${family.rounded};color:${ink}`}>${p.figure}</span>${p.unit === undefined ? nothing
+    return html`<span class="ol-line"><span class="ol-figure" style=${`font:700 ${r2(state.size * s)}px/1 ${family.rounded};letter-spacing:${oneLookMetrics(device).nameTracking}em;color:${ink}`}>${p.figure}</span>${p.unit === undefined ? nothing
       : html`<span class="ol-unit" style=${`font:600 ${r2(state.unitSize * s)}px/1 ${family.rounded};color:${ink};opacity:${ONE_LOOK_UNIT_OPACITY}`}>${p.unit}</span>`}${p.tail === undefined ? nothing
       : html`<span class="ol-tail" style=${`font:400 ${r2(state.tailSize * s)}px/1 ${family.standard};color:${ink2}`}>${` ${p.tail}`}</span>`}</span>`;
   }
@@ -837,9 +845,10 @@ function borderLayer(model: OneLookPreviewModel, f: OneLookTileFaceInput, active
  * A tile drawn in One Look at its place, or undefined for a kind that keeps
  * its own face. Under the clip: the fill, the pattern and effect, the
  * picture, the chart, then the content at the palette's content opacity
- * (the bar, the glyph, the button, the text, less the parts a design hides,
- * then the design's own layers), the rim and the user's border. Outside it,
- * on the iPhone, the under-glow of a lit coloured tile.
+ * (the bar, the design's under layer, the glyph, the button, the text, less
+ * the parts a design hides, then the design's other layers), the rim and the
+ * user's border. Outside it, on the iPhone, the under-glow of a lit coloured
+ * tile.
  */
 export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
   const model = oneLookPreviewModel(f);
@@ -852,6 +861,8 @@ export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
   const active = watchTilePreviewActive(f.tile, input.states);
   const fade = f.stub ? 0.7 : 1;
   const rim = oneLookMetrics(device).rim;
+  const passes = f.layersFor?.(model);
+  const over = f.layersFor !== undefined ? passes?.over : f.contentFor !== undefined ? f.contentFor(model) : f.content;
   return html`<div class="wp-tile ol-tile" data-ol-mode=${layout.mode}
     style=${`${f.box}border-radius:${r2(radius * s)}px;background:${ground}${glow === undefined ? "" : `;box-shadow:${glow}`}${fade < 1 ? `;opacity:${fade}` : ""}`}
     title=${f.hint ?? nothing}>
@@ -861,8 +872,9 @@ export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
     ${chartLayer(model, s)}
     <span class="ol-content" style=${palette.contentOpacity < 1 ? `opacity:${palette.contentOpacity}` : nothing}>
       ${barLayer(model, s)}
+      ${passes?.under ?? nothing}
       ${f.hidden?.glyph === true ? nothing : discLayer(model, input, s)}${f.hidden?.state === true ? nothing : accessoryLayer(model, input, s)}${textLayer(model, s, f.hidden)}${f.hidden?.state === true ? nothing : bigValueLayer(model, s)}
-      ${f.contentFor !== undefined ? (f.contentFor(model) ?? nothing) : (f.content ?? nothing)}
+      ${over ?? nothing}
     </span>
     ${f.overlayFor !== undefined ? (f.overlayFor(model) ?? nothing) : (f.overlay ?? nothing)}
     <span class="ol-rim" style=${`padding:${r2(rim * s)}px;background:${oneLookRimCss(palette.rimOpacity)}`}></span>

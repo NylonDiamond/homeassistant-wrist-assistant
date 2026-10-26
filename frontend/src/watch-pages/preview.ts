@@ -113,6 +113,7 @@ import {
 } from "./one-look/metrics.js";
 import { type OneLookPreviewModel, oneLookPreviewModel, renderOneLookTile } from "./one-look/render.js";
 import { renderTileDesignContent, renderTileLayerOutline, tileBoxOf, tileDesignHiddenParts } from "./tile-design-face.js";
+import { tileInksOf } from "./tile-base-layers.js";
 import { type TileNativeFrames, layerPlacementMap, tileNativeFrames } from "./tile-anchors.js";
 import type { TileAnchors } from "./tile-design-core.js";
 
@@ -3380,7 +3381,15 @@ function tileFace(
       width, height, cell, unit, box, s, ...(titled ? { hint } : {}),
       ...(hidden === undefined ? {} : {
         hidden,
-        contentFor: (model: OneLookPreviewModel) => renderTileDesignContent(stored, width, height, s, { ...inputs, device: model.device }, focus, tileNativeFrames(model.layout, model.device))?.content,
+        // Two passes (round four, section 15.1): a first Glow under the
+        // native foreground, the rest over it. Each frame resolves the
+        // layers' tile inks from its own face (section 15.3).
+        layersFor: (model: OneLookPreviewModel) => {
+          const d = renderTileDesignContent(stored, width, height, s, {
+            ...inputs, device: model.device, inks: tileInksOf(model.palette, model.layout.drawsDisc, model.device),
+          }, focus, tileNativeFrames(model.layout, model.device));
+          return d === undefined ? undefined : { ...(d.under === undefined ? {} : { under: d.under }), ...(d.content === undefined ? {} : { over: d.content }) };
+        },
       }),
       ...(overlayFor === undefined ? {} : { overlayFor }),
     });
