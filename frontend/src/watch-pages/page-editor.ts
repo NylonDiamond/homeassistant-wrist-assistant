@@ -4084,8 +4084,28 @@ export class WaPageEditor extends LitElement {
     return html`<div class="lib-duo">
       ${side(kind, edited, "editing")}
       ${side(other, html`<button type="button" class="lib-duo-other" title=${`Click to edit on the ${word}`} aria-label=${`Edit on the ${word}`}
-        @click=${() => this.pickPreview(other, true)}>${renderWatchPagePreview(this.companionInput(page, pages, input, other))}</button>`, "preview")}
+        @click=${() => this.pickPreview(other, true)}>${renderWatchPagePreview(this.companionInput(this.withTriedTiles(page), pages, input, other))}</button>`, "preview")}
     </div>`;
+  }
+
+  /**
+   * The page with each tile being tried in the inspector (`tryTileEdit`)
+   * in place of the stored one, for the other kind's picture of Side by
+   * side: the edited stage draws the try tile by tile, and without this the
+   * picture beside it kept the stored look while the pointer rested on a
+   * choice. The page itself while no try is on.
+   */
+  private withTriedTiles(page: WatchPage): WatchPage {
+    const items = Array.isArray(page.items) ? page.items : [];
+    let tried = false;
+    const drawn = items.map((item) => {
+      const id = (item as WatchPageTile | null)?.id;
+      const swap = typeof id === "string" ? watchTriedTile(this.uiState, id, this.draft?.document) : undefined;
+      if (swap === undefined) return item;
+      tried = true;
+      return swap;
+    });
+    return tried ? { ...page, items: drawn } : page;
   }
 
   /**

@@ -3514,7 +3514,8 @@ export const tileSettingsStyles = css`
   }
   .ts-grp { min-width: 0; border: 1px solid var(--wa-line); border-radius: 14px; background: var(--wa-card); }
   .ts-grp-h { display: flex; align-items: baseline; gap: 10px; padding: 14px 18px 12px; border-bottom: 1px solid var(--wa-line); }
-  .ts-grp-t { margin: 0; flex: none; font-size: 15px; font-weight: 600; color: var(--wa-ink); }
+  /* Sentence case said outright: the panel's heading rules set uppercase. */
+  .ts-grp-t { margin: 0; flex: none; font-size: 15px; font-weight: 600; color: var(--wa-ink); text-transform: none; letter-spacing: normal; }
   .ts-grp-d { flex: 1; min-width: 0; font-size: 12px; color: var(--wa-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ts-grp-n { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ts-blue); white-space: nowrap; }
   .ts-grp-n > i { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--ts-blue); }
