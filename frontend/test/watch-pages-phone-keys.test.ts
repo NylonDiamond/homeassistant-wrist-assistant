@@ -1,8 +1,8 @@
 // The four tile keys only the iPhone reads (plan phase 2): a live camera, a
 // chart under a sensor, a media player's artwork and controls, and a
 // template's line limit. On an iPhone's editor each is a card in its natural
-// place with the iPhone tag; on a watch's editor they sit in one folded
-// "iPhone extras" card, last. The rules files name the keys the device table
+// place with the iPhone tag; on a watch's editor they sit in one
+// "iPhone extras" card, last, open as every card starts. The rules files name the keys the device table
 // gives the iPhone alone.
 //
 // No DOM: each view is drawn to its Lit templates, read as text, and its
@@ -226,7 +226,7 @@ describe("the rules files and the device table", () => {
 // ── where the sections sit ───────────────────────────────────────────────
 
 describe("the sections on each device", () => {
-  it("put the key in its natural place on an iPhone and in the folded group last on a watch", () => {
+  it("put the key in its natural place on an iPhone and in the group last on a watch", () => {
     const camera = { entityId: "camera.door" };
     expect(watchTileSectionsFor(camera, {}, "iphone")).toEqual(["special", "phone", "icon", "text", "border", "action", "visibility", "background"]);
     expect(watchTileSectionsFor(camera, {}, "watch")).toEqual(["special", "icon", "text", "border", "action", "visibility", "background", "phoneExtras"]);
@@ -239,18 +239,18 @@ describe("the sections on each device", () => {
     }
   });
 
-  it("let Collapse all know the watch's group starts folded", () => {
+  it("let Collapse all know the watch's group starts open, as every card does", () => {
     const { host } = tileHost("camera.door", {}, "watch");
-    expect(tileSettingsFoldIds(host, tileInspectorSections(host)).at(-1)).toEqual({ module: "tile-settings", section: "phoneExtras", folded: true });
+    expect(tileSettingsFoldIds(host, tileInspectorSections(host)).at(-1)).toEqual({ module: "tile-settings", section: "phoneExtras" });
   });
 });
 
 // ── one test per section ─────────────────────────────────────────────────
 
 /** On an iPhone: the card is drawn open with the iPhone tag, right after
- * `before`, and its control writes through `press`. On a watch: one folded
- * "iPhone extras" card, last, with the hint and none of the rows until it is
- * opened; opened, the same control writes the same key. */
+ * `before`, and its control writes through `press`. On a watch: one open
+ * "iPhone extras" card, last, with the hint and the rows under it; the same
+ * control writes the same key, and a fold puts the rows away. */
 function sectionChecks(opts: {
   entityId: string;
   extra?: Record<string, unknown>;
@@ -274,13 +274,9 @@ function sectionChecks(opts: {
   opts.wrote(phone.tile());
 
   const watch = tileHost(opts.entityId, opts.extra ?? {}, "watch");
-  const folded = draw(watch.host);
-  expect(titles(folded).at(-1)).toBe(WATCH_PHONE_EXTRAS_TITLE);
-  expect(titles(folded)).not.toContain(opts.title);
-  expect(flatten(folded)).toContain(WATCH_PHONE_EXTRAS_HINT);
-  expect(flatten(folded)).not.toContain(opts.help);
-  fold(folded, WATCH_PHONE_EXTRAS_TITLE);
   const open = draw(watch.host);
+  expect(titles(open).at(-1)).toBe(WATCH_PHONE_EXTRAS_TITLE);
+  expect(titles(open)).not.toContain(opts.title);
   const openText = flatten(open);
   expect(openText).toContain(`<p class="hint">${WATCH_PHONE_EXTRAS_HINT}</p>`);
   expect(openText).toMatch(new RegExp(`<span>${opts.title}</span><span class="ts-dev-tag"`));
@@ -288,6 +284,10 @@ function sectionChecks(opts: {
   expect(openText).toContain(opts.help);
   opts.press(open, watch.host);
   opts.wrote(watch.tile());
+  fold(draw(watch.host), WATCH_PHONE_EXTRAS_TITLE);
+  const folded = flatten(draw(watch.host));
+  expect(folded).toContain(WATCH_PHONE_EXTRAS_HINT);
+  expect(folded).not.toContain(opts.help);
 }
 
 describe("Live video", () => {
@@ -356,9 +356,8 @@ describe("Stream", () => {
     expect(flatten(draw(off.host))).toContain("HD starts on SD so video shows");
   });
 
-  it("sits under Live video in the watch's folded group too", () => {
+  it("sits under Live video in the watch's group too", () => {
     const { host, tile } = tileHost("camera.door", { cameraTileLive: true }, "watch");
-    fold(draw(host), WATCH_PHONE_EXTRAS_TITLE);
     const open = draw(host);
     expect(flatten(open)).toMatch(/<span>Live video<\/span><span class="ts-dev-tag"/);
     expect(flatten(open)).not.toMatch(/ts-sub-h"><span>Stream/);
@@ -484,13 +483,14 @@ describe("the iPhone extras fold", () => {
     vi.unstubAllGlobals();
   });
 
-  it("stores only an opening, and drops it when folded again", () => {
+  it("stores only a fold, and drops it when opened again", () => {
     const { host } = tileHost("camera.door", {}, "watch");
+    expect(flatten(draw(host))).toContain("Live video in the tile");
     fold(draw(host), WATCH_PHONE_EXTRAS_TITLE);
-    expect(JSON.parse(data[FOLD_STORE_KEY]!)).toEqual({ "tile-settings:phoneExtras": false });
-    // A reload: open from the store.
+    expect(JSON.parse(data[FOLD_STORE_KEY]!)).toEqual({ "tile-settings:phoneExtras": true });
+    // A reload: folded from the store.
     const again = tileHost("camera.door", {}, "watch").host;
-    expect(flatten(draw(again))).toContain("Live video in the tile");
+    expect(flatten(draw(again))).not.toContain("Live video in the tile");
     fold(draw(again), WATCH_PHONE_EXTRAS_TITLE);
     expect(Object.hasOwn(data, FOLD_STORE_KEY)).toBe(false);
   });

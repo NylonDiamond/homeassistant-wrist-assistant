@@ -7,9 +7,9 @@
 // stored; opening one again drops it. A watch switch clears `uiState`, and
 // the stored folds still answer then.
 //
-// A few sections start folded instead (a watch's "iPhone extras", whose rows
-// the watch ignores). For those the store keeps the other choice: a section
-// opened is stored as `false`, and folding it again drops it.
+// A module may start a section folded instead (`folded`). For those the
+// store keeps the other choice: a section opened is stored as `false`, and
+// folding it again drops it.
 
 import { browserStorage, type ColumnStorage } from "../column-split.js";
 
