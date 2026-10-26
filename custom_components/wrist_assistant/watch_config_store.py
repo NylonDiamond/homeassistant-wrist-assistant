@@ -163,6 +163,7 @@ import copy
 import hashlib
 import json
 import logging
+import math
 import re
 import time
 from collections.abc import Callable
@@ -816,8 +817,10 @@ def _check_pages(pages: list[Any], *, check_items: bool) -> None:
 
     With ``check_items`` (a panel save or a restore): ``items`` is a list when
     present, each item an object with a non-empty string ``id`` and
-    ``entityId``, no two items in one page share an id, and a tile's
-    ``design`` (its layers) is within its caps (:func:`_check_design`). A
+    ``entityId``, no two items in one page share an id, a tile's ``design``
+    (its layers) is within its caps (:func:`_check_design`), and its
+    ``iconGlow`` (the glow behind its icon) has the shape the apps read
+    (:func:`_check_icon_glow`). A
     device save skips this level on purpose: a phone refused for a fault in its own old
     tiles could never upload again, while the panel can always fix what it
     sends.
@@ -873,6 +876,9 @@ def _check_items(page: dict[str, Any], where: str) -> None:
         # tile the panel cannot save.
         if item.get(_TILE_DESIGN_KEY) is not None:
             _check_design(item[_TILE_DESIGN_KEY], at)
+        # A null glow is no setting, as for the design.
+        if item.get(_ICON_GLOW_KEY) is not None:
+            _check_icon_glow(item[_ICON_GLOW_KEY], at)
 
 
 # A tile's layers (app repo docs/tile_layers_contract_2026-10.md), and the
@@ -947,6 +953,38 @@ def _check_design(design: Any, at: str) -> None:
                 f"{where}.template must be a string of at most "
                 f"{TILE_TEMPLATE_MAX_CHARS} characters"
             )
+
+
+# The glow behind a tile's icon (app repo docs/tile_layers_contract_2026-10.md,
+# section 14), and the modes it takes.
+_ICON_GLOW_KEY = "iconGlow"
+_ICON_GLOW_MODES = ("auto", "on", "off")
+
+
+def _check_icon_glow(glow: Any, at: str) -> None:
+    """The tile level's guard for one tile's ``iconGlow``, run only where
+    :func:`_check_items` runs: a panel save or a restore, never a device save.
+    ``at`` names the tile by page and index.
+
+    The setting is an object; when present, ``mode`` is ``"auto"``, ``"on"``
+    or ``"off"``, ``size`` and ``brightness`` are finite numbers (a JSON
+    ``true`` is not one), and ``color`` is a string. Ranges and colour forms
+    are not checked: the apps clamp the numbers and read a colour they do not
+    know as white. The panel refuses the same (``tileGlowProblems``).
+    """
+    where = f"{at}.{_ICON_GLOW_KEY}"
+    if not isinstance(glow, dict):
+        raise WatchConfigValidationError(f"{where} must be an object")
+    if "mode" in glow and glow["mode"] not in _ICON_GLOW_MODES:
+        raise WatchConfigValidationError(f'{where}.mode must be "auto", "on" or "off"')
+    for key in ("size", "brightness"):
+        if key not in glow:
+            continue
+        value = glow[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise WatchConfigValidationError(f"{where}.{key} must be a number")
+    if "color" in glow and not isinstance(glow["color"], str):
+        raise WatchConfigValidationError(f"{where}.color must be a string")
 
 
 def template_budget(document: Any) -> int:

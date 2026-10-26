@@ -447,6 +447,58 @@ def test_a_panel_save_is_refused_over_a_cap(mod) -> None:  # noqa: F811
     assert store.get(OWNER, "pages").revision == 1
 
 
+# ── The icon's glow (tile layers round three) ────────────────────────────
+
+
+GLOW_AT = f'document.pages[0] (id "{PAGE}").items[0].iconGlow'
+
+
+def _glow_refusal(mod, glow: Any) -> str:  # noqa: F811
+    with pytest.raises(mod.WatchConfigValidationError) as err:
+        mod.validate_document("pages", _pages(_tile(iconGlow=glow)), check_items=True)
+    return err.value.message
+
+
+def test_a_valid_icon_glow_saves(mod) -> None:  # noqa: F811
+    for glow in (
+        {"mode": "on", "size": 180, "brightness": 150, "color": "tile"},
+        {"mode": "off"},
+        {"size": 12.5, "color": "#f2ae4e"},
+        # Ranges and colour forms are the readers' to clamp and fall back.
+        {"size": 900, "brightness": -3, "color": "red"},
+        {},
+    ):
+        mod.validate_document("pages", _pages(_tile(iconGlow=glow)), check_items=True)
+
+
+def test_a_null_icon_glow_is_no_setting(mod) -> None:  # noqa: F811
+    mod.validate_document("pages", _pages(_tile(iconGlow=None)), check_items=True)
+
+
+def test_a_bad_icon_glow_is_refused(mod) -> None:  # noqa: F811
+    for glow in ("on", [1], 1, True):
+        assert _glow_refusal(mod, glow) == f"{GLOW_AT} must be an object"
+    for mode in ("ON", "", None, 1):
+        assert _glow_refusal(mod, {"mode": mode}) == f'{GLOW_AT}.mode must be "auto", "on" or "off"'
+    for key in ("size", "brightness"):
+        for value in (True, "big", None, float("nan"), float("inf")):
+            assert _glow_refusal(mod, {key: value}) == f"{GLOW_AT}.{key} must be a number"
+    for color in (3, None, ["#FFFFFF"]):
+        assert _glow_refusal(mod, {"color": color}) == f"{GLOW_AT}.color must be a string"
+
+
+def test_a_device_save_with_a_bad_icon_glow_is_not_refused(mod) -> None:  # noqa: F811
+    broken = _pages(_tile(iconGlow="bright"))
+    assert mod.validate_document("pages", broken) > 0
+    store = _new(mod)
+    record = store.put(
+        OWNER, "pages", broken, document_hash="a" * 64, base_revision=0, updated_by=OWNER
+    )
+    assert record.document == broken
+    with pytest.raises(mod.WatchConfigValidationError):
+        store.panel_save(OWNER, "pages", broken, base_revision=1)
+
+
 # ── The design kept as sent ──────────────────────────────────────────────
 
 
