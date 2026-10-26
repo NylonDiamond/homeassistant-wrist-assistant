@@ -32,7 +32,7 @@ from typing import Any
 
 import pytest
 
-from test_watch_config_store import TILE_DESIGN_CONSTS
+from test_watch_config_store import TEMPLATE_CONSTS
 
 _SRC = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
 
@@ -191,7 +191,7 @@ def _loaded_modules():
             WATCH_CONFIG_HISTORY_LIMIT=5,
             WATCH_LIBRARY_STORAGE_KEY="wrist_assistant.library",
             WATCH_LIBRARY_STORAGE_VERSION=1,
-            **TILE_DESIGN_CONSTS,
+            **TEMPLATE_CONSTS,
         )
         # Neither series module is exercised here; complication_ws only needs
         # their names to build its command schemas at import time.

@@ -438,11 +438,10 @@ def ws_watch_config_save(
     took it, and for a kind that is never linked.
 
     ``template_budget``, for ``pages`` only, counts the distinct delta
-    templates the saved pages ask the device to send (Show tile templates and
-    tile layers' templates, ``watch_config_store.template_budget``) against
-    the 100 a delta poll takes. The save stands whatever the count; past the
-    limit the device draws the tiles it leaves out plain, and the panel says
-    so.
+    templates the saved pages ask the device to send (Show tile templates,
+    ``watch_config_store.template_budget``) against the 100 a delta poll
+    takes. The save stands whatever the count, and the panel says when it is
+    over.
     """
     store = _store(hass)
     if store is None:

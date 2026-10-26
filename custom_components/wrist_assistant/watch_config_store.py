@@ -177,11 +177,8 @@ from homeassistant.helpers.storage import Store
 from .const import (
     PHONE_BEHAVIOR_DECODE_KEYS,
     PHONE_BEHAVIOR_KEYS,
+    SHOW_TEMPLATE_MAX_CHARS,
     TEMPLATE_BUDGET_LIMIT,
-    TILE_DESIGN_MAX_BYTES,
-    TILE_DESIGN_MAX_LAYERS,
-    TILE_DESIGN_MAX_ZONES,
-    TILE_TEMPLATE_MAX_CHARS,
     WATCH_CONFIG_HISTORY_LIMIT,
     WATCH_CONFIG_KINDS,
     WATCH_CONFIG_MAX_DOCUMENT_BYTES,
@@ -220,6 +217,7 @@ from .library import (
     rename_menu,
     rename_refs,
     replace_item,
+    stamp_item_revisions,
     stored_item_id,
     validate_library,
 )
@@ -504,15 +502,22 @@ def validate_document(kind: str, document: Any, *, check_items: bool = False) ->
     object.
 
     The server guards the shape, not the content. No key's value is looked at
-    beyond the ids and a tile design's caps: the app is the only thing that understands a tile or a
+    beyond the ids and the shape of a tile's icon glow and arrangement: the app is the only thing that understands a tile or a
     setting, and a server that half understood one would refuse configs a
     newer app writes.
+
+    With ``check_items`` a page config also loses every tile's old layers
+    (``design``, :func:`drop_tile_designs`) in place, before its size is
+    measured: a panel tab opened before layers went still sends them, and its
+    save goes through without them rather than being refused.
     """
     if not isinstance(document, dict):
         raise WatchConfigValidationError("document must be a JSON object")
     list_key = _KIND_LIST_KEYS.get(kind)
     if list_key is not None and not isinstance(document.get(list_key), list):
         raise WatchConfigValidationError(f"document.{list_key} must be a list")
+    if kind == "pages" and check_items:
+        drop_tile_designs(document)
     size = document_size(document)
     limit = WATCH_CONFIG_MAX_DOCUMENT_BYTES[kind]
     if size > limit:
@@ -817,11 +822,10 @@ def _check_pages(pages: list[Any], *, check_items: bool) -> None:
 
     With ``check_items`` (a panel save or a restore): ``items`` is a list when
     present, each item an object with a non-empty string ``id`` and
-    ``entityId``, no two items in one page share an id, a tile's ``design``
-    (its layers) is within its caps (:func:`_check_design`), and its
+    ``entityId``, no two items in one page share an id, a tile's
     ``iconGlow`` (the glow behind its icon) has the shape the apps read
-    (:func:`_check_icon_glow`). A
-    device save skips this level on purpose: a phone refused for a fault in its own old
+    (:func:`_check_icon_glow`), and so has its ``arrange`` (where its parts
+    sit, :func:`_check_arrange`). A device save skips this level on purpose: a phone refused for a fault in its own old
     tiles could never upload again, while the panel can always fix what it
     sends.
 
@@ -871,88 +875,14 @@ def _check_items(page: dict[str, Any], where: str) -> None:
                 "item ids must be unique in a page"
             )
         seen[folded] = index
-        # A null design is no design, as the panel and the apps read it: a
+        # A null glow is no setting, as the panel and the apps read it: a
         # writer that nulls the key instead of deleting it must not leave a
         # tile the panel cannot save.
-        if item.get(_TILE_DESIGN_KEY) is not None:
-            _check_design(item[_TILE_DESIGN_KEY], at)
-        # A null glow is no setting, as for the design.
         if item.get(_ICON_GLOW_KEY) is not None:
             _check_icon_glow(item[_ICON_GLOW_KEY], at)
-
-
-# A tile's layers (app repo docs/tile_layers_contract_2026-10.md), and the
-# one version of them the apps read.
-_TILE_DESIGN_KEY = "design"
-_TILE_DESIGN_VERSION = 1
-# The element kind of a tap zone, which counts against the zone cap and not
-# the layer cap.
-_TAP_KIND = "tap"
-
-
-def _check_design(design: Any, at: str) -> None:
-    """The tile level's guard for one tile's ``design`` (tile layers), run
-    only where :func:`_check_items` runs: a panel save or a restore, never a
-    device save. ``at`` names the tile by page and index.
-
-    The caps are the panel's own (``tile-design.ts``), so a save the panel
-    lets through is one the server takes: the design under
-    ``TILE_DESIGN_MAX_BYTES`` as compact UTF-8 JSON, version 1, a ``doc``
-    object with a list of ``elements``, at most ``TILE_DESIGN_MAX_LAYERS``
-    elements that are not tap zones (an element that is not an object counts
-    as a layer) and ``TILE_DESIGN_MAX_ZONES`` that are, and when present an
-    ``owned`` list of strings, a ``zones`` object, an ``anchors`` object (each
-    owned base layer's place on its native part, which the byte cap already
-    counts) and a ``template`` string of at most ``TILE_TEMPLATE_MAX_CHARS``
-    code points.
-
-    Nothing else in the design is looked at. As with every other key, the
-    server guards the shape the caps need, not the content: the layers are
-    the apps' to read, and they draw the plain tile from one they cannot.
-    """
-    where = f"{at}.{_TILE_DESIGN_KEY}"
-    if not isinstance(design, dict):
-        raise WatchConfigValidationError(f"{where} must be an object")
-    size = len(json.dumps(design, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
-    if size > TILE_DESIGN_MAX_BYTES:
-        raise WatchConfigValidationError(
-            f"{where} is {size} bytes; the limit is {TILE_DESIGN_MAX_BYTES}"
-        )
-    version = design.get("v")
-    # A JSON true would compare equal to 1 in Python; the apps read an integer.
-    if isinstance(version, bool) or version != _TILE_DESIGN_VERSION:
-        raise WatchConfigValidationError(f"{where}.v must be {_TILE_DESIGN_VERSION}")
-    doc = design.get("doc")
-    elements = doc.get("elements") if isinstance(doc, dict) else None
-    if not isinstance(elements, list):
-        raise WatchConfigValidationError(f"{where}.doc must be an object with a list of elements")
-    zones = sum(
-        1 for element in elements if isinstance(element, dict) and element.get("kind") == _TAP_KIND
-    )
-    layers = len(elements) - zones
-    if layers > TILE_DESIGN_MAX_LAYERS:
-        raise WatchConfigValidationError(
-            f"{where} has {layers} layers; the limit is {TILE_DESIGN_MAX_LAYERS}"
-        )
-    if zones > TILE_DESIGN_MAX_ZONES:
-        raise WatchConfigValidationError(
-            f"{where} has {zones} tap zones; the limit is {TILE_DESIGN_MAX_ZONES}"
-        )
-    if "owned" in design:
-        owned = design["owned"]
-        if not isinstance(owned, list) or not all(isinstance(role, str) for role in owned):
-            raise WatchConfigValidationError(f"{where}.owned must be a list of strings")
-    if "zones" in design and not isinstance(design["zones"], dict):
-        raise WatchConfigValidationError(f"{where}.zones must be an object")
-    if "anchors" in design and not isinstance(design["anchors"], dict):
-        raise WatchConfigValidationError(f"{where}.anchors must be an object")
-    if "template" in design:
-        template = design["template"]
-        if not isinstance(template, str) or len(template) > TILE_TEMPLATE_MAX_CHARS:
-            raise WatchConfigValidationError(
-                f"{where}.template must be a string of at most "
-                f"{TILE_TEMPLATE_MAX_CHARS} characters"
-            )
+        # A null arrangement is Default, as for the glow.
+        if item.get(_ARRANGE_KEY) is not None:
+            _check_arrange(item[_ARRANGE_KEY], at)
 
 
 # The glow behind a tile's icon (app repo docs/tile_layers_contract_2026-10.md,
@@ -987,22 +917,130 @@ def _check_icon_glow(glow: Any, at: str) -> None:
         raise WatchConfigValidationError(f"{where}.color must be a string")
 
 
+# A tile's Arrangement (app repo docs/page_editor_calm_plan_2026-10.md, "The
+# Arrangement key"): where its own parts sit when it is set to Free. Absent
+# is Default, every part in its native place.
+_ARRANGE_KEY = "arrange"
+_ARRANGE_VERSION = 1
+_ARRANGE_KEYS = ("v", "parts")
+_ARRANGE_PARTS = ("icon", "name", "state")
+_ARRANGE_PART_KEYS = ("spot", "dx", "dy", "scale", "hidden")
+_ARRANGE_SPOTS = ("tl", "tc", "tr", "ml", "mc", "mr", "bl", "bc", "br")
+# Inclusive ranges: a move as a share of the tile's width or height, and a
+# size as a share of the part's native one.
+_ARRANGE_OFFSET_RANGE = (-0.5, 0.5)
+_ARRANGE_SCALE_RANGE = (0.8, 1.5)
+
+
+def _is_number_in(value: Any, bounds: tuple[float, float]) -> bool:
+    """A finite JSON number (a JSON ``true`` is not one) within ``bounds``,
+    both ends included."""
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and math.isfinite(value)
+        and bounds[0] <= value <= bounds[1]
+    )
+
+
+def _check_arrange(arrange: Any, at: str) -> None:
+    """The tile level's guard for one tile's ``arrange``, run only where
+    :func:`_check_items` runs: a panel save or a restore, never a device save.
+    ``at`` names the tile by page and index.
+
+    The setting is an object with ``v`` 1 and, when present, ``parts``: an
+    object keyed by ``icon``, ``name`` and ``state``, so at most three. Each
+    part is an object with, when present, ``spot`` one of the nine spots
+    (``tl`` to ``br``), ``dx`` and ``dy`` finite numbers from -0.5 to 0.5,
+    ``scale`` a finite number from 0.8 to 1.5 and ``hidden`` a bool. Any
+    other key, at any level, is refused: unlike the rest of a tile, this is
+    a closed shape the apps place parts by, and a key one of them does not
+    know would be a setting that silently does nothing.
+    """
+    where = f"{at}.{_ARRANGE_KEY}"
+    if not isinstance(arrange, dict):
+        raise WatchConfigValidationError(f"{where} must be an object")
+    for key in arrange:
+        if key not in _ARRANGE_KEYS:
+            raise WatchConfigValidationError(f'{where} has the unknown key "{key}"')
+    version = arrange.get("v")
+    # A JSON true would compare equal to 1 in Python; the apps read an integer.
+    if isinstance(version, bool) or not isinstance(version, int) or version != _ARRANGE_VERSION:
+        raise WatchConfigValidationError(f"{where}.v must be {_ARRANGE_VERSION}")
+    if "parts" not in arrange:
+        return
+    parts = arrange["parts"]
+    if not isinstance(parts, dict):
+        raise WatchConfigValidationError(f"{where}.parts must be an object")
+    for name, part in parts.items():
+        if name not in _ARRANGE_PARTS:
+            raise WatchConfigValidationError(
+                f'{where}.parts has the unknown part "{name}"; the parts are icon, name and state'
+            )
+        at_part = f"{where}.parts.{name}"
+        if not isinstance(part, dict):
+            raise WatchConfigValidationError(f"{at_part} must be an object")
+        for key in part:
+            if key not in _ARRANGE_PART_KEYS:
+                raise WatchConfigValidationError(f'{at_part} has the unknown key "{key}"')
+        if "spot" in part and part["spot"] not in _ARRANGE_SPOTS:
+            raise WatchConfigValidationError(
+                f"{at_part}.spot must be one of {', '.join(_ARRANGE_SPOTS)}"
+            )
+        for key in ("dx", "dy"):
+            if key in part and not _is_number_in(part[key], _ARRANGE_OFFSET_RANGE):
+                raise WatchConfigValidationError(
+                    f"{at_part}.{key} must be a number from -0.5 to 0.5"
+                )
+        if "scale" in part and not _is_number_in(part["scale"], _ARRANGE_SCALE_RANGE):
+            raise WatchConfigValidationError(f"{at_part}.scale must be a number from 0.8 to 1.5")
+        if "hidden" in part and not isinstance(part["hidden"], bool):
+            raise WatchConfigValidationError(f"{at_part}.hidden must be true or false")
+
+
+# The key tile layers kept on a tile. Layers were taken out before they were
+# released (app repo docs/page_editor_calm_plan_2026-10.md), and what a tile
+# still carries of them is dropped, never converted: on a panel save or a
+# restore (:func:`validate_document`) and once on load
+# (:meth:`WatchConfigStore._drop_old_tile_designs`).
+_OLD_TILE_DESIGN_KEY = "design"
+
+
+def _drop_designs_from_pages(pages: Any) -> bool:
+    """Take ``design`` off every tile of every page in a list of pages, in
+    place. True when one was there. Anything that is not a page or a tile
+    is left alone."""
+    dropped = False
+    for page in pages if isinstance(pages, list) else []:
+        items = page.get("items") if isinstance(page, dict) else None
+        for item in items if isinstance(items, list) else []:
+            if isinstance(item, dict) and _OLD_TILE_DESIGN_KEY in item:
+                del item[_OLD_TILE_DESIGN_KEY]
+                dropped = True
+    return dropped
+
+
+def drop_tile_designs(document: Any) -> bool:
+    """Take the old tile layers (``design``) off every tile of a pages
+    document, in place. True when one was there."""
+    pages = document.get("pages") if isinstance(document, dict) else None
+    return _drop_designs_from_pages(pages)
+
+
 def template_budget(document: Any) -> int:
     """How many distinct delta templates a pages document asks a device to
-    send: the Show tile templates and the tile layers' templates of every
-    tile on every page, each text counted once per kind (tiles with the same
-    text share one key on the device, ``show_<hash>`` or ``tile_<hash>``).
+    send: the Show tile templates of every tile on every page, each text
+    counted once (tiles with the same text share one ``show_<hash>`` key on
+    the device).
 
     A ``showWhenTemplate`` counts when it is a non-blank string of at most
-    ``TILE_TEMPLATE_MAX_CHARS`` code points, the ones a device sends
-    (``TemplateCondition.subscribable`` in the app); a ``design.template``
-    when it is a non-blank string. The pages save replies set this against
-    ``TEMPLATE_BUDGET_LIMIT`` (:func:`template_budget_reply`); past it a
-    device keeps every show-when template and draws the tiles it leaves out
-    plain. Anything that is not a pages document, or a page or tile that is
-    not an object, counts nothing.
+    ``SHOW_TEMPLATE_MAX_CHARS`` code points, the ones a device sends
+    (``TemplateCondition.subscribable`` in the app). The pages save replies
+    set this against ``TEMPLATE_BUDGET_LIMIT`` (:func:`template_budget_reply`).
+    Anything that is not a pages document, or a page or tile that is not an
+    object, counts nothing.
     """
-    seen: set[tuple[str, str]] = set()
+    seen: set[str] = set()
     pages = document.get("pages") if isinstance(document, dict) else None
     for page in pages if isinstance(pages, list) else []:
         items = page.get("items") if isinstance(page, dict) else None
@@ -1010,12 +1048,8 @@ def template_budget(document: Any) -> int:
             if not isinstance(item, dict):
                 continue
             show = item.get("showWhenTemplate")
-            if isinstance(show, str) and show.strip() and len(show) <= TILE_TEMPLATE_MAX_CHARS:
-                seen.add(("show", show))
-            design = item.get(_TILE_DESIGN_KEY)
-            tile = design.get("template") if isinstance(design, dict) else None
-            if isinstance(tile, str) and tile.strip():
-                seen.add(("tile", tile))
+            if isinstance(show, str) and show.strip() and len(show) <= SHOW_TEMPLATE_MAX_CHARS:
+                seen.add(show)
     return len(seen)
 
 
@@ -1614,6 +1648,7 @@ class WatchConfigStore:
         # After the floor is written, so every record the library rewrites
         # gets a revision above it.
         await self._async_load_library()
+        self._drop_old_tile_designs()
         _LOGGER.debug(
             "Loaded watch config for %d owner(s), %d unreadable",
             len(self._records),
@@ -1670,6 +1705,51 @@ class WatchConfigStore:
             except Exception:
                 _LOGGER.exception("Could not write the library; the debounced save retries it")
                 self._schedule_library_save()
+
+    def _drop_old_tile_designs(self) -> None:
+        """Take the old tile layers (``design``) off every stored tile, once.
+
+        Run on load, after the library. The library's pages and the system
+        pages its picks hold lose the key first, and every record the change
+        reaches is built again as its next revision (:meth:`_apply_library`),
+        so each device pulls its tiles without layers. Then any ``pages``
+        record that still has one (an owner the library builds nothing for,
+        or a library that could not be read) is written again without it.
+        Nothing is written when no tile has the key, which after the first
+        start with this build is every start: a device save is the only
+        writer that can still store one (it skips the tile level), and the
+        next start drops that too. The history is left as it was; a restore
+        drops the key on its way in (:func:`validate_document`)."""
+        if self._load_failed:
+            return
+        written = 0
+        if not self._library_failed:
+            library = copy.deepcopy(self._library)
+            pages = list(library["pages"].values())
+            for held in library["picks"].values():
+                pages.extend(
+                    pick["page"]
+                    for pick in held.get("pages", [])
+                    if isinstance(pick, dict) and isinstance(pick.get("page"), dict)
+                )
+            if _drop_designs_from_pages(pages):
+                library = stamp_item_revisions(self._library, library)
+                done, _failed = self._apply_library(library, _MIGRATION_WRITER)
+                written += len(done)
+        for owner in sorted(self._records):
+            if owner in self._failed_owners:
+                continue
+            record = self._records[owner].get("pages")
+            if record is None:
+                continue
+            document = copy.deepcopy(record.document)
+            if drop_tile_designs(document):
+                # Its hash is not noted: the library builds nothing for it,
+                # so the next start folds it in as it would have anyway.
+                self._write_quietly(owner, "pages", document, _MIGRATION_WRITER)
+                written += 1
+        if written:
+            _LOGGER.info("Dropped old tile layers; %d record(s) written again", written)
 
     def _migrate_library(self) -> None:
         """Build the library from the records (the first start with it).
