@@ -15,7 +15,7 @@
 
 import type { WatchConfigLinkFailure, WatchConfigTemplateBudget } from "../ha-api.js";
 import { type WatchPagesDocument, isJsonObject } from "./model.js";
-import { checkWatchPages, checkWatchPagesValues, mergeWatchPages, sameWatchPagesJson } from "./merge.js";
+import { checkWatchPages, checkWatchPagesValues, mergeWatchPages, sameWatchPagesJson, withRequiredTileKeys } from "./merge.js";
 import { settleMergedWatchPages } from "./page-settings-model.js";
 import { linkFailuresOf, templateBudgetOf } from "./save-note.js";
 
@@ -406,6 +406,10 @@ async function runSave(draft: WatchPagesDraft, io: WatchPagesSaveIO): Promise<Wa
   for (let attempt = 1; ; attempt++) {
     const prepared = io.prepare?.(draft.document);
     if (prepared !== undefined && prepared !== draft.document) draft.amend(prepared);
+    // A tile missing a required key would make both devices refuse the
+    // whole save: put each one's default back first.
+    const complete = withRequiredTileKeys(draft.document);
+    if (complete !== draft.document) draft.amend(complete);
     const sent = draft.document;
     const shape = checkWatchPages(sent);
     const problems = shape.length > 0 ? shape : checkWatchPagesValues(sent);

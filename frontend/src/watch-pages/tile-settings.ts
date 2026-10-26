@@ -328,6 +328,7 @@ import {
   oneLookValueStylesOff,
 } from "./one-look-settings.js";
 import { splitColumns } from "./inspector-columns.js";
+import { requiredTileKeyDefault } from "./merge.js";
 
 /** Every `uiState` key of this module starts with this. */
 const KEY = "tile-settings";
@@ -912,7 +913,13 @@ export function watchTileResetEdit(host: TileSettingsHost): (d: WatchPagesDocume
   return (d) => {
     let next = setWatchTileIconDefault(d, pageId, tileId, { icon: defaults.icon ?? null, color: defaults.color ?? null });
     for (const task of ["state", "border", "background"] as const) next = resetWatchTileTask(next, pageId, tileId, task);
-    return editTile(next, pageId, tileId, (tile) => RESET_LOOK_KEYS.reduce((t, key) => withoutKey(t, key), tile));
+    // A key the phone and the watch require (`iconShadow`, `labelShadow`,
+    // `iconTapAnimation`) goes back to its default, never away: a tile
+    // without it makes both refuse the whole page.
+    return editTile(next, pageId, tileId, (tile) => RESET_LOOK_KEYS.reduce((t, key) => {
+      const start = requiredTileKeyDefault(key);
+      return start === undefined ? withoutKey(t, key) : { ...t, [key]: structuredClone(start) };
+    }, tile));
   };
 }
 

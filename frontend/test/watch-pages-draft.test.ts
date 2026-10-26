@@ -12,6 +12,7 @@ import {
   type WatchPagesSaveIO,
   saveWatchPagesDraft,
 } from "../src/watch-pages/draft.js";
+import { withRequiredTileKeys } from "../src/watch-pages/merge.js";
 import { linkFailuresOf, linkFailuresText, templateBudgetOf, templateBudgetText, watchPagesSaveNote, withLinkFailures } from "../src/watch-pages/save-note.js";
 
 // ── documents ────────────────────────────────────────────────────────────
@@ -20,8 +21,10 @@ const PAGE = "C52206FB-F7ED-4FB7-95F4-E6519A2865FC";
 const A = "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14";
 const B = "686E2455-977D-4F0B-914F-BA804DC98CEA";
 
+/** A small document whose tiles carry every key the phone and the watch
+ * require, as a real one does, so a save sends it as it is. */
 function document(): WatchPagesDocument {
-  return {
+  return withRequiredTileKeys({
     schemaVersion: 1,
     pages: [
       {
@@ -33,7 +36,7 @@ function document(): WatchPagesDocument {
         ],
       },
     ],
-  };
+  });
 }
 
 /** `doc` with one tile's keys changed; only the objects on the path are new. */
@@ -405,6 +408,21 @@ describe("saveWatchPagesDraft", () => {
     expect(draft.dirty).toBe(false);
     expect(draft.base).toBe(edited);
     expect(draft.revision).toBe(4);
+  });
+
+  it("puts back a required tile key an edit took away before it sends, so the devices can read the save", async () => {
+    const doc = document();
+    const draft = new WatchPagesDraft(doc, 3);
+    const { iconShadow: _gone, ...bare } = tile(doc, A);
+    draft.apply(withTile(withName(doc, "Mine"), A, {}));
+    const pages = draft.document.pages as JsonObject[];
+    draft.apply({ ...draft.document, pages: [{ ...pages[0]!, items: [bare, tile(doc, B)] }] });
+    const io: WatchPagesSaveIO = { save: vi.fn(async () => ({ revision: 4 })), fetch: vi.fn() };
+    const result = await saveWatchPagesDraft(draft, io);
+    expect(result.ok).toBe(true);
+    const sent = vi.mocked(io.save).mock.calls[0]![1] as WatchPagesDocument;
+    expect(tile(sent, A).iconShadow).toBe(false);
+    expect(draft.dirty).toBe(false);
   });
 
   it("carries the devices whose linked copies the save could not update", async () => {

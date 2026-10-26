@@ -919,6 +919,50 @@ function tileLabel(index: number, tile: JsonObject): string {
  * no problem: the watch skips the tile or ignores the key. Its value is
  * still checked by its type, as the watch decodes it like any other.
  */
+/** The value a required tile key starts at (`page-keys.json`), or undefined
+ * for a key that is optional or has no fixed starting value. A required key
+ * must be present: the phone and the watch decode a tile with a synthesized
+ * decoder, so one missing key (or a `null`) refuses the whole document. */
+export function requiredTileKeyDefault(key: string): unknown {
+  const spec = VALUE_TYPES.types.tile?.keys[key];
+  return spec?.required === true && Object.hasOwn(spec, "default") ? spec.default : undefined;
+}
+
+/**
+ * The document with every required tile key that has a default put back
+ * where a tile lacks it (absent or `null`), so the phone and the watch can
+ * decode it. The same object when no tile lacks one, so a caller can tell
+ * nothing changed. Run on every save (`saveWatchPagesDraft`): an edit that
+ * removed such a key (Reset tile once did, on 2026-10-26) would otherwise
+ * leave both devices on their last copy.
+ */
+export function withRequiredTileKeys(document: WatchPagesDocument): WatchPagesDocument {
+  const keys = VALUE_TYPES.types.tile?.keys ?? {};
+  const required = Object.entries(keys).filter(([, spec]) => spec.required === true && Object.hasOwn(spec, "default"));
+  const pages = own(document as unknown as JsonObject, PAGES_KEY);
+  if (!Array.isArray(pages)) return document;
+  let changed = false;
+  const nextPages = pages.map((page: unknown) => {
+    if (!isJsonObject(page)) return page;
+    const items = own(page, ITEMS_KEY);
+    if (!Array.isArray(items)) return page;
+    let pageChanged = false;
+    const nextItems = items.map((tile: unknown) => {
+      if (!isJsonObject(tile)) return tile;
+      const missing = required.filter(([key]) => present(own(tile, key)) === undefined);
+      if (missing.length === 0) return tile;
+      pageChanged = true;
+      const next: JsonObject = { ...tile };
+      for (const [key, spec] of missing) put(next, key, structuredClone(spec.default));
+      return next;
+    });
+    if (!pageChanged) return page;
+    changed = true;
+    return { ...page, [ITEMS_KEY]: nextItems };
+  });
+  return changed ? ({ ...document, [PAGES_KEY]: nextPages } as WatchPagesDocument) : document;
+}
+
 export function checkWatchPagesValues(document: unknown): string[] {
   if (!isJsonObject(document)) return [];
   const problems: string[] = [];

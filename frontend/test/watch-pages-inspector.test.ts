@@ -406,11 +406,19 @@ describe("the tile's cards", () => {
   });
 
   it("put the tile's look back in one step with Reset tile, keeping its name and size", () => {
-    const page = hallPage({ items: [{ ...DIMMER_TILE, borderStyle: "line", backgroundPattern: "dots", iconSizeOverride: 30, labelFontWeight: "bold" }, SPACER_TILE] });
+    const page = hallPage({ items: [{
+      ...DIMMER_TILE, borderStyle: "line", backgroundPattern: "dots", iconSizeOverride: 30, labelFontWeight: "bold",
+      iconShadow: true, labelShadow: false, iconTapAnimation: "slide",
+    }, SPACER_TILE] });
     const el = editor(page, DIMMER);
     expect(flat(inspector(el))).toMatch(/<button type="button" class="ghost ts-reset-btn" \?disabled=false[^>]*>.*Reset tile<\/button>/s);
     click(inspector(el), "Reset tile</button>");
     const tile = (el.currentPage()!.items as WatchPageTile[]).find((t) => t.id === DIMMER)!;
+    // The keys the phone and the watch require go back to their defaults,
+    // never away: without one, both refuse the whole page (2026-10-26).
+    expect(tile.iconShadow).toBe(false);
+    expect(tile.labelShadow).toBe(true);
+    expect(tile.iconTapAnimation).toBe("replace");
     expect(tile.borderStyle).not.toBe("line");
     expect(tile.backgroundPattern ?? "none").toBe("none");
     expect(tile.iconSizeOverride).toBeUndefined();

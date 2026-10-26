@@ -18,6 +18,7 @@ import {
   mergeWatchPages,
   mergeWatchPagesByKey,
   sameWatchPagesJson,
+  withRequiredTileKeys,
 } from "../src/watch-pages/merge.js";
 
 function deepFreeze<T>(value: T): T {
@@ -1057,5 +1058,28 @@ describe("a tile's parallel lists", () => {
     const server = group({ cameraGroupIds: ["camera.a", "camera.b", "camera.c"], cameraRowWeights: [1, 1, 1] });
     const out = merge(base, group({ name: "x" }), server);
     expect(tileOf(out).cameraGroupIds).toBe(tileOf(server).cameraGroupIds);
+  });
+});
+
+describe("withRequiredTileKeys", () => {
+  const doc = (tile: JsonObject): WatchPagesDocument => ({ schemaVersion: 1, pages: [{ id: PAGE_UUID, name: "Home", items: [tile] }] });
+  it("puts back each required key with a default that a tile lacks or holds as null, and leaves a complete document the same object", () => {
+    const filled = withRequiredTileKeys(doc({ id: "6F1C1E0A-0000-4000-8000-000000000002", entityId: "light.a", iconShadow: null }));
+    const tile = ((filled.pages as JsonObject[])[0]!.items as JsonObject[])[0]!;
+    expect(tile.iconShadow).toBe(false);
+    expect(tile.labelShadow).toBe(true);
+    expect(tile.iconTapAnimation).toBe("replace");
+    expect(tile.entityId).toBe("light.a");
+    expect(withRequiredTileKeys(filled)).toBe(filled);
+  });
+  it("finds nothing to put back in any shared fixture", () => {
+    for (const dir of ["test/fixtures", "test/fixtures-transfer"]) {
+      if (!existsSync(dir)) continue;
+      for (const name of readdirSync(dir).filter((n) => n.endsWith(".json"))) {
+        const parsed = JSON.parse(readFileSync(join(dir, name), "utf8")) as unknown;
+        if (typeof parsed !== "object" || parsed === null || !Array.isArray((parsed as JsonObject).pages)) continue;
+        expect(withRequiredTileKeys(parsed as WatchPagesDocument), name).toBe(parsed);
+      }
+    }
   });
 });
