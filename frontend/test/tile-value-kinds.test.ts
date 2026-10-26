@@ -97,3 +97,48 @@ describe("resolving the tile value kinds", () => {
     expect(resolveText(name.cfg, name.text.payload.id, { name: "Office" })).toBe("OFFICE");
   });
 });
+
+describe("a tile state's parts (round two, section 13.4)", () => {
+  const parts50 = { figure: "50", unit: "%", tail: "", word: "" };
+  const partsOff = { figure: "", unit: "", tail: "", word: "Off" };
+
+  it("a part round-trips, is written after the kind, and an unknown part reads the whole line", () => {
+    for (const part of ["figure", "unit", "tail", "word"] as const) {
+      const v = parseValue({ kind: { kind: "tileState", part } });
+      expect(v.kind).toEqual({ kind: "tileState", part });
+      expect(JSON.stringify(encodeValue(v))).toBe(`{"kind":{"kind":"tileState","part":"${part}"}}`);
+    }
+    expect(parseValue({ kind: { kind: "tileState", part: "number" } }).kind).toEqual({ kind: "tileState" });
+    expect(encodeValue(parseValue({ kind: { kind: "tileState" } }))).toEqual({ kind: { kind: "tileState" } });
+  });
+
+  it("a part audits clean and compiles to nothing", () => {
+    const { cfg, text } = docReading("tileState");
+    text.payload.value = { kind: { kind: "tileState", part: "unit" } };
+    expect(auditUnknownKeys(encodeConfig(cfg))).toEqual([]);
+    expect(compile(cfg).document).toBeUndefined();
+  });
+
+  it("each part reads its piece of the line, and outside a tile nothing", () => {
+    const { cfg, text } = docReading("tileState");
+    text.payload.value = { kind: { kind: "tileState", part: "unit" } };
+    expect(resolveText(cfg, text.payload.id, { state: "50%", stateParts: parts50 })).toBe("%");
+    text.payload.value = { kind: { kind: "tileState", part: "word" } };
+    expect(resolveText(cfg, text.payload.id, { state: "Off", stateParts: partsOff })).toBe("Off");
+    const plain = docReading("tileState");
+    expect(resolveText(cfg, text.payload.id)).toBe(resolveText(plain.cfg, plain.text.payload.id));
+  });
+
+  it("a rich text part that resolves to empty keeps its slot with empty text, never --", () => {
+    const { cfg, text } = docReading("tileState");
+    const ids = ["BA5E0004-0000-4000-8000-0000000000F1", "BA5E0004-0000-4000-8000-0000000000F2", "BA5E0004-0000-4000-8000-0000000000F3", "BA5E0004-0000-4000-8000-0000000000F4"];
+    text.payload.parts = (["figure", "unit", "tail", "word"] as const).map((part, i) => ({ id: ids[i]!, value: { kind: { kind: "tileState" as const, part } } }));
+    const ctx = (stateParts: typeof parts50): ResolveContext => ({ entityStates: new Map(), templateResults: new Map(), namedValues: cfg.values, tileValues: { stateParts } });
+    const read = (stateParts: typeof parts50) => {
+      const el = resolveAll(cfg, ctx(stateParts)).rectangular!.elements.find((e) => e.id === text.payload.id);
+      return el?.kind === "text" ? { text: el.text, parts: el.parts?.map((p) => p.text) } : undefined;
+    };
+    expect(read(parts50)).toEqual({ text: "50%", parts: ["50", "%", "", ""] });
+    expect(read(partsOff)).toEqual({ text: "Off", parts: ["", "", "", "Off"] });
+  });
+});

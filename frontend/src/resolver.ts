@@ -206,8 +206,19 @@ export interface ResolveContext {
   pictureTimeMs?: number;
   /** A page tile's own words, for the `tileState` and `tileName` value kinds
    * its layers read (`tileValuesFor` in watch-pages/tile-base-layers.ts).
-   * Undefined outside a tile, where both kinds resolve to nothing. */
-  tileValues?: { state?: string; name?: string };
+   * Undefined outside a tile, where both kinds resolve to nothing. A
+   * `tileState` with a `part` reads `stateParts` (round two, section 13.4). */
+  tileValues?: { state?: string; name?: string; stateParts?: TileStateParts };
+}
+
+/** A tile's state line in its four pieces, each "" when the line has none
+ * (`oneLookStateLineParts` in watch-pages/tile-base-layers.ts). A number's
+ * `figure + unit + tail`, or the `word`, is always the whole line. */
+export interface TileStateParts {
+  figure: string;
+  unit: string;
+  tail: string;
+  word: string;
 }
 
 export interface ResolvedBase {
@@ -1996,7 +2007,7 @@ export class Resolver {
       // Local: the tile the layer sits in hands over its words. Outside a tile,
       // nothing, which draws the way an unresolved value always does.
       case "tileState":
-        raw = this.ctx.tileValues?.state;
+        raw = deref.kind.part === undefined ? this.ctx.tileValues?.state : this.ctx.tileValues?.stateParts?.[deref.kind.part];
         break;
       case "tileName":
         raw = this.ctx.tileValues?.name;

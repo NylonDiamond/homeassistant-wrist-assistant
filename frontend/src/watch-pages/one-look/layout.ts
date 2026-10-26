@@ -239,6 +239,10 @@ export interface OneLookLayout {
   readonly glyphInk?: OneLookRect;
   /** The centred glyph sits where the old look drew its icon, at its size. */
   readonly glyphAtOldPlace: boolean;
+  /** The glyph's ink height over its font size the layout was made with:
+   * the input's in the centred layout, `ONE_LOOK_DEFAULT_GLYPH_EXTENT` in
+   * every other (Swift's `OneLookLayout.glyphExtent`). */
+  readonly glyphExtent: number;
 }
 
 /** The text block as a rect. */
@@ -433,10 +437,16 @@ export function resolveOneLookLayout(given: OneLookLayoutInput | OneLookLayoutIn
   return keepScales(compact(input, fitter), input);
 }
 
-type Unscaled = Omit<OneLookLayout, "textScale" | "nameScale" | "stateScale">;
+type Unscaled = Omit<OneLookLayout, "textScale" | "nameScale" | "stateScale" | "glyphExtent">;
 
 function keepScales(layout: Unscaled, input: OneLookLayoutInput): OneLookLayout {
-  return { ...layout, textScale: input.textScale, nameScale: oneLookNameScale(input), stateScale: input.style.stateScale };
+  return {
+    ...layout,
+    textScale: input.textScale,
+    nameScale: oneLookNameScale(input),
+    stateScale: input.style.stateScale,
+    glyphExtent: layout.mode === "centred" ? input.glyphExtent : ONE_LOOK_DEFAULT_GLYPH_EXTENT,
+  };
 }
 
 /**

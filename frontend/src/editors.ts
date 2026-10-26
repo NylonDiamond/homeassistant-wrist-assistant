@@ -10732,6 +10732,14 @@ export function describeValue(v: Value, ctx?: DescribeContext): string {
   return `${describeValueBody(v, ctx)}${describeFormat(v.format)}`;
 }
 
+/** How a `tileState` value with a part reads in a layer's summary. */
+const TILE_STATE_PART_WORDS: Readonly<Record<"figure" | "unit" | "tail" | "word", string>> = {
+  figure: "Tile state number",
+  unit: "Tile state unit",
+  tail: "Tile state tail",
+  word: "Tile state word",
+};
+
 function describeValueBody(v: Value, ctx?: DescribeContext): string {
   const k = v.kind;
   switch (k.kind) {
@@ -10742,7 +10750,7 @@ function describeValueBody(v: Value, ctx?: DescribeContext): string {
     case "aggregate": return describeAggregate(k.aggregate);
     case "time": return TIME_FIELD_WORDS[k.timeField];
     case "dataAge": return "data age";
-    case "tileState": return "Tile state";
+    case "tileState": return k.part === undefined ? "Tile state" : TILE_STATE_PART_WORDS[k.part];
     case "tileName": return "Tile name";
     case "item": return k.field ? `item ${k.field}` : "item field";
     case "listStat": return k.stat === "total" ? "items in total" : "items shown";

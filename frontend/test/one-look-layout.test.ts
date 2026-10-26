@@ -1199,3 +1199,14 @@ describe("One Look's panel measurer", () => {
     expect(ONE_LOOK_FONT_FAMILIES.watch.rounded).toBe(WATCH_ROUNDED_FAMILY);
   });
 });
+
+describe("the layout's glyph extent", () => {
+  it("is the input's in the centred layout and 1.25 in every other, as Swift's", () => {
+    const centred = layout("ultra211", 6, 4, { name: "Back Yard Motion", state: word("Clear"), centred: true, glyphExtent: 1.1 });
+    expect(centred.mode).toBe("centred");
+    expect(centred.glyphExtent).toBe(1.1);
+    const stacked = layout("ultra211", 6, 4, { name: "Back Yard Motion", state: word("Clear"), glyphExtent: 1.1 });
+    expect(stacked.mode).toBe("stacked");
+    expect(stacked.glyphExtent).toBe(1.25);
+  });
+});

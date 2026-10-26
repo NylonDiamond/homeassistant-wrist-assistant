@@ -482,6 +482,13 @@ export interface AggregateSpec {
   attribute?: string;
 }
 
+/** One piece of a tile's state line, for a `tileState` value with a `part`:
+ * the number's figure ("50"), its unit with its space when spaced ("%",
+ * " °C"), its tail with its leading space when the tile shows it, or the
+ * word ("Off"). App repo docs/tile_layers_contract_2026-10.md, section 13.4. */
+export type TileStatePart = "figure" | "unit" | "tail" | "word";
+export const TILE_STATE_PARTS: readonly TileStatePart[] = ["figure", "unit", "tail", "word"];
+
 export type ValueKind =
   | { kind: "literal"; value: string }
   | ({ kind: "entityState" } & EntityRef)
@@ -518,8 +525,10 @@ export type ValueKind =
   /** The state line a page tile draws (One Look's "82%", "21° → 22°",
    * "Away"), as text. Local: only a tile's layers carry it, and the app
    * reads it off the tile it draws. Outside a tile it is nil. App repo
-   * docs/tile_layers_contract_2026-10.md, section 5.1. */
-  | { kind: "tileState" }
+   * docs/tile_layers_contract_2026-10.md, section 5.1. With a `part`, one
+   * piece of that line (section 13.4): the number's figure, its unit, its
+   * tail, or the word; each is "" when the line has no such piece. */
+  | { kind: "tileState"; part?: TileStatePart }
   /** The name a page tile draws (its label, else the friendly name, else the
    * entity id), whether or not the label is shown. Local, like `tileState`. */
   | { kind: "tileName" };
@@ -4489,7 +4498,8 @@ function parseValueKind(o: J): ValueKind {
     case "imageTime":
       return { kind: "imageTime", layer: str(o.layer).toUpperCase() };
     case "tileState":
-      return { kind: "tileState" };
+      // A part that is not one of the four reads the whole line.
+      return TILE_STATE_PARTS.includes(o.part as TileStatePart) ? { kind: "tileState", part: o.part as TileStatePart } : { kind: "tileState" };
     case "tileName":
       return { kind: "tileName" };
     default:
@@ -6680,7 +6690,7 @@ function encodeValueKind(k: ValueKind): J {
     case "item": return { kind: "item", field: k.field };
     case "listStat": return { kind: "listStat", layer: k.layer, stat: k.stat };
     case "imageTime": return { kind: "imageTime", layer: k.layer };
-    case "tileState": return { kind: "tileState" };
+    case "tileState": return k.part === undefined ? { kind: "tileState" } : { kind: "tileState", part: k.part };
     case "tileName": return { kind: "tileName" };
   }
 }
@@ -8112,7 +8122,7 @@ const VALUE_KIND_KEYS: Record<string, string[]> = {
   item: ["kind", "field"],
   listStat: ["kind", "layer", "stat"],
   imageTime: ["kind", "layer"],
-  tileState: ["kind"],
+  tileState: ["kind", "part"],
   tileName: ["kind"],
 };
 
