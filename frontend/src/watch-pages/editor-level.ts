@@ -24,7 +24,7 @@ export const EDITOR_LEVELS: readonly [EditorLevel, string][] = [
   ["expert", "Expert"],
 ];
 
-/** The line beside the switch, one per level. */
+/** What each level shows: its button's hover hint in the switch. */
 export const EDITOR_LEVEL_HINTS: Readonly<Record<EditorLevel, string>> = {
   simple: "Name, size, icon, color, state and tap. No layers.",
   advanced: "Every tile setting. Layers stay hidden.",

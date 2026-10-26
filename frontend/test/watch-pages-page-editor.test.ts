@@ -1018,23 +1018,25 @@ describe("the level switch", () => {
 
   const head = (text: string) => text.slice(text.indexOf(`<div class="cv-head">`), text.indexOf(`<div class="stage-area`));
 
-  it("sits in the canvas head beside Undo, with Simple, Advanced and Expert and the line for the level shown", () => {
+  it("sits in the canvas head beside Undo, with Simple, Advanced and Expert, each saying what it shows only as a hover hint", () => {
     const { el, body } = leveled("simple");
     let h = head(body());
     expect(h).toContain(`aria-label="Editor level"`);
     expect(h.match(/role="radio"/g)).toHaveLength(3);
     for (const word of ["Simple", "Advanced", "Expert"]) expect(h).toContain(`>${word}</button>`);
-    expect(h).toContain(`<span class="pe-level-hint">${EDITOR_LEVEL_HINTS.simple}</span>`);
-    expect(h).toMatch(/class=on\s+aria-checked=true title=Name, size, icon, color, state and tap\. No layers\.\s+@click=>Simple</);
-    // The switch just before Undo; its line the head's last.
+    // No line of its own: each hint is its button's data-tip, shown on hover.
+    expect(h).not.toContain("pe-level-hint");
+    for (const hint of Object.values(EDITOR_LEVEL_HINTS)) expect(h).toContain(`data-tip=${hint}`);
+    expect(h).toMatch(/class=on\s+aria-checked=true data-tip=Name, size, icon, color, state and tap\. No layers\./);
+    // The switch just before Undo.
     expect(h.indexOf(`class="seg pe-level"`)).toBeGreaterThan(-1);
     expect(h.indexOf(`class="seg pe-level"`)).toBeLessThan(h.indexOf(`aria-label="Undo"`));
-    expect(h.indexOf(`class="pe-level-hint"`)).toBeGreaterThan(h.indexOf(`aria-label="Delete the selected tile"`));
-    const line = rule(sheet(), ".cv-head > .pe-level-hint");
-    expect(line).toContain("flex: 1 0 100%");
+    // The level shown is filled in the accent; the hint appears only on hover or keyboard focus.
+    expect(rule(sheet(), ".seg.pe-level button.on")).toContain("background: var(--wa-accent)");
+    expect(rule(sheet(), ".seg.pe-level button::after")).toContain("opacity: 0");
     el.level = "expert";
     h = head(body());
-    expect(h).toContain(`<span class="pe-level-hint">${EDITOR_LEVEL_HINTS.expert}</span>`);
+    expect(h).toMatch(/class=on\s+aria-checked=true data-tip=Every setting, plus layers/);
   });
 
   it("is remembered in this browser, and falls back to Simple without storage", () => {

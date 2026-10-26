@@ -3689,15 +3689,17 @@ export class WaPageEditor extends LitElement {
     }
   }
 
-  /** The level switch beside Undo and Redo: Simple, Advanced, Expert, each
-   * saying what it shows as its tooltip. The line for the level shown is the
-   * head's last (`renderCanvasHead`). */
+  /** The level switch beside Undo and Redo: Simple, Advanced, Expert, the
+   * level shown filled in the accent so it reads at a glance. What each
+   * shows is an instant hint under its button while the pointer is on it,
+   * never a line of its own. */
   private renderLevelSwitch(): TemplateResult {
-    return html`<span class="seg pe-level" role="radiogroup" aria-label="Editor level">
+    return html`<span class="pe-level-wrap"><span class="pe-level-label" aria-hidden="true">Level</span>
+      <span class="seg pe-level" role="radiogroup" aria-label="Editor level">
       ${EDITOR_LEVELS.map(([level, text]) => html`<button type="button" role="radio" class=${level === this.level ? "on" : ""}
-        aria-checked=${level === this.level ? "true" : "false"} title=${EDITOR_LEVEL_HINTS[level]}
-        @click=${() => this.setLevel(level)}>${text}</button>`)}
-    </span>`;
+        aria-checked=${level === this.level ? "true" : "false"} data-tip=${EDITOR_LEVEL_HINTS[level]}
+        aria-description=${EDITOR_LEVEL_HINTS[level]} @click=${() => this.setLevel(level)}>${text}</button>`)}
+    </span></span>`;
   }
 
   /** Delete the picked layer or tap zone of the selected tile, as its row's
@@ -4153,7 +4155,6 @@ export class WaPageEditor extends LitElement {
           title=${tile === undefined ? "Select a tile to delete it." : `${delLabel} (Delete or Backspace)`} aria-label=${delLabel}
           @click=${() => this.deleteTile()}>${uiIcon("delete")}</button>
       </span>
-      <span class="pe-level-hint">${EDITOR_LEVEL_HINTS[this.level]}</span>
     </div>`;
   }
 
@@ -5207,14 +5208,27 @@ export class WaPageEditor extends LitElement {
     .pe-tip:hover::after, .pe-tip:has(:focus-visible)::after { opacity: 1; visibility: visible; }
     /* The preview device in the canvas head: plain words, as the shape's. */
     .cv-shape.pe-watch-crumb { color: var(--wa-ink); font-weight: 500; }
-    /* The level switch beside Undo, the shared small segmented control. Its
-       line is the head's last, a row of its own under the actions, so it
-       never squeezes the page's name or facts. */
-    .seg.pe-level button { padding: 0 8px; }
-    .cv-head > .pe-level-hint {
-      order: 9; flex: 1 0 100%; margin-top: -3px; text-align: right;
-      font-size: 11.5px; line-height: 15px; color: var(--wa-muted);
+    /* The level switch beside Undo: larger than the shared small segmented
+       control, with the level shown filled in the accent, so it is plain
+       which one is on. What a level shows is an instant hint under its
+       button, from its data-tip, as the stage tools' Live preview does. */
+    .pe-level-wrap { display: inline-flex; align-items: center; gap: 7px; flex: none; }
+    .pe-level-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--wa-muted); }
+    .seg.pe-level { height: 30px; padding: 3px; border-radius: 8px; }
+    .seg.pe-level button { position: relative; padding: 0 12px; font-size: 12.5px; border-radius: 6px; color: var(--wa-ink); }
+    .seg.pe-level button:hover:not(.on) { background: color-mix(in srgb, var(--wa-ink) 9%, transparent); }
+    .seg.pe-level button.on { color: var(--wa-accent-ink); background: var(--wa-accent); box-shadow: none; outline: none; }
+    .seg.pe-level button.on:focus-visible { box-shadow: var(--wa-ring); }
+    .seg.pe-level button::after {
+      content: attr(data-tip); position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 30;
+      width: max-content; max-width: 260px; white-space: normal; text-align: left; padding: 6px 9px; border-radius: 7px;
+      font-size: 11.5px; font-weight: 400; letter-spacing: 0; line-height: 1.35; color: var(--wa-ink); background: var(--wa-card);
+      border: 1px solid var(--wa-line-strong); box-shadow: var(--wa-shadow-pop);
+      opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .08s ease-out;
     }
+    /* Under the pointer, or reached by keyboard. Not after a click: the
+       button keeps focus then, and the hint would stay up. */
+    .seg.pe-level button:hover::after, .seg.pe-level button:focus-visible::after { opacity: 1; visibility: visible; }
     /* A Tiles row's tag below Expert: the tile has layers of its own. */
     .pe-custom-tag { flex: none; margin-left: 6px; padding: 1px 5px; border-radius: 4px; font-size: 10px; font-weight: 600;
       color: var(--wa-hue-blue, #2f6ccc); background: color-mix(in srgb, var(--wa-hue-blue, #2f6ccc) 14%, transparent); }
