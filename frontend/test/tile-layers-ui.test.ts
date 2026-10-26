@@ -4,7 +4,8 @@
 // layer" rows, the layer host owning a base layer on its first change, a
 // simple edit building the followers again and keeping an owned layer, the
 // tap zone presets and the 40 pt rule, the preview drawing a design tile from
-// its layers, and the design tiles' templates in the preview's requests.
+// its layers, and the design tiles' templates in the preview's requests. The
+// Glow layer's row nested under the Icon row.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -26,13 +27,17 @@ import {
 import { tileDesignNow, tileLayerContext, tileLayerEdits, tileLayerHost } from "../src/watch-pages/tile-layer-host.js";
 import {
   LAYER_STATUS_TEXT,
+  type TileLayerRow,
   type TileLayersView,
   addLayerChoices,
   layersSummaryText,
+  nestGlowRow,
+  nestedGlowText,
   pickedZoneAction,
   renderTileLayerInspector,
   renderTileLayerRows,
   renderTileLayersCard,
+  tileHasCustomLayers,
   tileLayerCrumb,
   tileLayerRows,
   tileRowDesignNote,
@@ -563,3 +568,87 @@ describe("the icon's glow in the editor (round three)", () => {
     expect(readTileDesign(host.tile)!.owned).toEqual(["icon"]);
   });
 });
+
+describe("the Glow layer's row (Expert's list)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const GLOW = "BA5E0000-0000-4000-8000-000000000006";
+  const row = (id: string, title: string): TileLayerRow => ({
+    id, kind: "shape", title, detail: { kind: "Shape", value: "", size: "" }, status: "follows", role: undefined,
+    hidden: false, rules: false, template: false, up: true, down: true,
+  });
+
+  it("is listed under the Icon row, marked as part of it, the order of the rest kept", () => {
+    const rows = [row(BASE_LAYER_IDS.name, "Name"), row(BASE_LAYER_IDS.state, "State"), row(GLOW, "Glow"), row("ADDED", "Added"), row(BASE_LAYER_IDS.icon, "Icon")];
+    const listed = nestGlowRow(rows);
+    expect(listed.map((r) => r.title)).toEqual(["Name", "State", "Added", "Icon", "Glow"]);
+    expect(listed.find((r) => r.title === "Glow")?.under).toBe("icon");
+    expect(listed.filter((r) => r.under !== undefined)).toHaveLength(1);
+    // The rows handed in are not reordered.
+    expect(rows.map((r) => r.title)).toEqual(["Name", "State", "Glow", "Added", "Icon"]);
+    // Under the Photo row on a photo tile, and left alone with no glyph.
+    expect(nestGlowRow([row(GLOW, "Glow"), row(BASE_LAYER_IDS.photo, "Photo")]).map((r) => [r.title, r.under])).toEqual([["Photo", undefined], ["Glow", "photo"]]);
+    expect(nestGlowRow([row(BASE_LAYER_IDS.name, "Name"), row(GLOW, "Glow")]).map((r) => r.under)).toEqual([undefined, undefined]);
+    expect(nestedGlowText("icon", 150)).toBe("Part of the icon · 150%");
+    expect(nestedGlowText("photo", undefined)).toBe("Part of the photo");
+  });
+
+  it("draws the tile's Glow row nested under its Icon row, with its size, and a click picks the Glow layer, the design untouched", () => {
+    const { host } = draftHost();
+    vi.stubGlobal("document", { activeElement: null });
+    const v = view(host);
+    const before = host.tile;
+    const drawn = renderTileLayerRows(v);
+    const text = flat(drawn);
+    const icon = text.indexOf(`data-layer-row=${BASE_LAYER_IDS.icon}`);
+    const glow = text.indexOf(`data-layer-row=${GLOW}`);
+    expect(icon).toBeGreaterThan(-1);
+    // The very next row after the Icon row, though the document draws it first.
+    expect(glow).toBeGreaterThan(icon);
+    expect(text.slice(icon, glow).match(/data-layer-row=/g)).toHaveLength(1);
+    expect(tileDesignNow(host).doc.elements[0]!.payload.id).toBe(GLOW);
+    const glowRow = text.slice(text.lastIndexOf(`<div class="layer tl-row`, glow), text.indexOf(`<div class="layer tl-row`, glow));
+    expect(glowRow).toContain("tl-nested");
+    expect(glowRow).toContain("Part of the icon · 150%");
+    // Part of the Icon row: not brought forward or sent back on its own.
+    expect(glowRow).not.toContain("Bring Glow forward");
+    expect(glowRow).toContain("Hide Glow");
+    // A click on it picks the Glow layer, whose editor shows.
+    const t = findRow(drawn, GLOW);
+    (t.values[t.strings.findIndex((s) => s.trimEnd().endsWith("@click="))] as () => void)();
+    expect(v.picked).toEqual([GLOW]);
+    expect(flat(renderTileLayerInspector(view(host, GLOW), 208)!)).toContain("Show glow");
+    expect(host.tile).toBe(before);
+    expect(readTileDesign(host.tile)).toBeUndefined();
+  });
+
+  it("says whether a tile holds layers of its own, for the Custom layers tag", () => {
+    const { host } = draftHost();
+    expect(tileHasCustomLayers(readTileDesign(host.tile), host.tile)).toBe(false);
+    tileLayerEdits(host).doc((c) => {
+      const name = c.elements.find((e) => e.payload.id === BASE_LAYER_IDS.name)!;
+      if (name.kind === "text") name.payload.fontSize = 13;
+    });
+    expect(tileHasCustomLayers(readTileDesign(host.tile), host.tile)).toBe(true);
+  });
+});
+
+/** The template of the layer row for `id` in a drawn tree. */
+function findRow(v: unknown, id: string): { strings: readonly string[]; values: unknown[] } {
+  let found: { strings: readonly string[]; values: unknown[] } | undefined;
+  const walk = (x: unknown): void => {
+    if (found !== undefined || x === null || typeof x !== "object") return;
+    if (Array.isArray(x)) return x.forEach(walk);
+    if ("strings" in x && "values" in x) {
+      const t = x as { strings: readonly string[]; values: unknown[] };
+      const at = t.strings.findIndex((s) => s.trimEnd().endsWith("data-layer-row="));
+      if (at > -1 && t.values[at] === id) {
+        found = t;
+        return;
+      }
+      t.values.forEach(walk);
+    }
+  };
+  walk(v);
+  if (found === undefined) throw new Error(`no row for ${id}`);
+  return found;
+}

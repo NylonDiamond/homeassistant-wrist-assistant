@@ -53,6 +53,8 @@ import {
   type TileZonePreset,
   baseLayerName,
   BASE_GLOW_ID,
+  BASE_LAYER_IDS,
+  isGlowId,
   DELTA_MAX_TEMPLATES,
   TILE_DESIGN_MAX_LAYERS,
   TILE_DESIGN_SCREEN_WIDTH,
@@ -103,6 +105,15 @@ export function tileRowDesignNote(design: TileDesign | undefined, tile: WatchPag
   if (s.added > 0) parts.push(`${s.added} added`);
   if (parts.length === 0 && s.zones > 0) parts.push(plural(s.zones, "tap zone", "tap zones"));
   return parts.join(", ");
+}
+
+/** Whether a tile holds layers of its own: a base layer changed, a layer
+ * added or a tap zone. Below Expert its Tiles row says so with a tag, since
+ * its layer rows are not listed. */
+export function tileHasCustomLayers(design: TileDesign | undefined, tile: WatchPageTile): boolean {
+  if (design === undefined) return false;
+  const s = designSummary(design, tile);
+  return s.changed > 0 || s.added > 0 || s.zones > 0;
 }
 
 /** A tile's own action in words, for a zone ("Toggle light", "Run script:
@@ -271,6 +282,32 @@ export function tileLayerRows(
   return { layers, zones };
 }
 
+/** A layer row as the list draws it: `under`, the glyph a nested row is
+ * part of. */
+export type ListedLayerRow = TileLayerRow & { under?: "icon" | "photo" };
+
+/**
+ * The layer rows in the order the list draws them: the glyph's Glow row just
+ * under the Icon row (else the Photo row), marked as part of it, since the
+ * glow belongs to the glyph slot. Only the list moves it: the document's
+ * order stays as it is. With no Icon or Photo row the Glow row stays where
+ * it is, on its own.
+ */
+export function nestGlowRow(layers: readonly TileLayerRow[]): ListedLayerRow[] {
+  const glow = layers.find((r) => isGlowId(r.id));
+  const glyph = layers.find((r) => r.id === BASE_LAYER_IDS.icon) ?? layers.find((r) => r.id === BASE_LAYER_IDS.photo);
+  if (glow === undefined || glyph === undefined) return [...layers];
+  const out: ListedLayerRow[] = layers.filter((r) => r !== glow);
+  out.splice(out.indexOf(glyph) + 1, 0, { ...glow, under: glyph.id === BASE_LAYER_IDS.photo ? "photo" : "icon" });
+  return out;
+}
+
+/** A nested Glow row's line: "Part of the icon · 150%", its size against the
+ * glyph box when the tile has a state to measure against. */
+export function nestedGlowText(under: "icon" | "photo", size: number | undefined): string {
+  return `Part of the ${under}${size === undefined ? "" : ` · ${size}%`}`;
+}
+
 /** The key under the Tiles list: what a layer row's dot and tag mean, and
  * why some tiles have no arrow. */
 export function renderTileLayersLegend(): TemplateResult {
@@ -319,11 +356,18 @@ export function renderTileLayerRows(view: TileLayersView): TemplateResult | type
   const edits = tileLayerEdits(host);
   const off = view.off;
   const stop = (e: Event) => e.stopPropagation();
-  const layerRow = (r: TileLayerRow) => {
+  // The Glow row's size against the glyph box, for its nested line.
+  const glowEl = design.doc.elements.find((e) => isGlowId(e.payload.id));
+  const glowRef = glowEl?.kind === "shape" ? glowCardReference(host) : undefined;
+  const glowSize = glowEl?.kind === "shape" && glowRef !== undefined ? glowCardValues(glowEl.payload, glowRef).size : undefined;
+  const layerRow = (r: ListedLayerRow) => {
     const picked = view.selected === r.id;
     const pick = () => view.pick(r.id);
     const added = r.status === "added";
-    return html`<div class="layer tl-row ${picked ? "hl" : ""} ${r.hidden ? "dim" : ""}" role="listitem" tabindex="0" data-layer-row=${r.id}
+    // A nested row is part of the row over it: it is not brought forward or
+    // sent back on its own.
+    const nested = r.under !== undefined;
+    return html`<div class="layer tl-row ${nested ? "tl-nested" : ""} ${picked ? "hl" : ""} ${r.hidden ? "dim" : ""}" role="listitem" tabindex="0" data-layer-row=${r.id}
       style=${`--k:${KIND_COLOR[r.kind]}`} aria-current=${picked ? "true" : "false"} aria-label=${`${r.title}, ${layerKindWords(r.kind)}`}
       @click=${pick}
       @keydown=${(e: KeyboardEvent) => {
@@ -335,13 +379,15 @@ export function renderTileLayerRows(view: TileLayersView): TemplateResult | type
       <span class="thumb" aria-hidden="true">${renderTileLayerThumb(layout, r.id, box, host.icons, ROW_THUMB.width, ROW_THUMB.height)}</span>
       <span class="name">
         <b><span class="nm-t">${r.title}</span>${r.status === "changed" ? html`<span class="tl-dot" title="Changed here" aria-label="changed"></span>` : nothing}${added ? html`<span class="tl-added">added</span>` : nothing}</b>
-        <small><span class="kind">${r.detail.kind}</span>${r.detail.value === "" ? nothing : html` · <span class="val-tok">${r.detail.value}</span>`}${r.detail.size === "" ? nothing : ` · ${r.detail.size}`}</small>
+        <small>${r.under !== undefined
+          ? html`<span class="kind">${nestedGlowText(r.under, glowSize)}</span>`
+          : html`<span class="kind">${r.detail.kind}</span>${r.detail.value === "" ? nothing : html` · <span class="val-tok">${r.detail.value}</span>`}${r.detail.size === "" ? nothing : ` · ${r.detail.size}`}`}</small>
       </span>
       <span class="right">
         <span class="badges">${r.template ? html`<span class="badge states" title="Reads a Home Assistant template, one of the page's ${DELTA_MAX_TEMPLATES}">template</span>` : nothing}${r.rules ? html`<span class="badge states" title="Changes with the state">rules</span>` : nothing}</span>
         ${off ? nothing : html`<span class="acts" @click=${stop}>
-          <button type="button" class="icon" ?disabled=${!r.up} title="Bring forward" aria-label=${`Bring ${r.title} forward`} @click=${() => edits.move(r.id, 1)}>${uiIcon("up")}</button>
-          <button type="button" class="icon" ?disabled=${!r.down} title="Send backward" aria-label=${`Send ${r.title} backward`} @click=${() => edits.move(r.id, -1)}>${uiIcon("down")}</button>
+          ${nested ? nothing : html`<button type="button" class="icon" ?disabled=${!r.up} title="Bring forward" aria-label=${`Bring ${r.title} forward`} @click=${() => edits.move(r.id, 1)}>${uiIcon("up")}</button>
+          <button type="button" class="icon" ?disabled=${!r.down} title="Send backward" aria-label=${`Send ${r.title} backward`} @click=${() => edits.move(r.id, -1)}>${uiIcon("down")}</button>`}
           <button type="button" class="icon" title=${r.hidden ? "Show" : "Hide"} aria-label=${`${r.hidden ? "Show" : "Hide"} ${r.title}`} @click=${() => edits.setHidden(r.id, !r.hidden)}>${uiIcon(r.hidden ? "show" : "hide")}</button>
           ${added ? html`<button type="button" class="icon" title="Duplicate" aria-label=${`Duplicate ${r.title}`} @click=${() => { const id = edits.duplicate(r.id); if (id !== "") view.pick(id); }}>${uiIcon("duplicate")}</button>` : nothing}
           <button type="button" class="icon danger" title=${r.role === undefined ? "Delete" : "Delete (Reset brings it back)"} aria-label=${`Delete ${r.title}`}
@@ -368,7 +414,7 @@ export function renderTileLayerRows(view: TileLayersView): TemplateResult | type
     </div>`;
   };
   return html`<div class="tl-rows" role="list" aria-label="Layers">
-    ${rows.layers.map(layerRow)}
+    ${nestGlowRow(rows.layers).map(layerRow)}
     ${rows.zones.map(zoneRow)}
   </div>`;
 }
@@ -719,6 +765,8 @@ export const tileLayersStyles = css`
     border: 1px solid color-mix(in srgb, var(--wa-pick-line, #3b74e0) 45%, transparent); background: color-mix(in srgb, var(--wa-pick-bg, #e3ecfa) 30%, transparent); }
   .tl-rows { display: flex; flex-direction: column; gap: 2px; }
   .tl-rows > .layer { margin-left: 14px; min-height: 36px; }
+  /* The Glow row, part of the glyph's row over it. */
+  .tl-rows > .layer.tl-nested { margin-left: 30px; }
   .pe-tile-row .pe-caret { display: grid; place-items: center; width: 12px; color: var(--wa-muted); }
   .pe-tile-row .pe-caret svg.ui-icon { width: 11px; height: 11px; transform: rotate(-90deg); }
   .pe-tile-row .pe-caret.open svg.ui-icon { transform: none; }
