@@ -23,6 +23,7 @@ import { type IconProvider, fitBox, renderLayerThumb, renderLayout } from "../re
 import { type WatchPage, type WatchPageTile, tileEntityId, tileGeometry } from "./model.js";
 import { type WatchTemplateRender, watchTileDesignRender } from "./app-model.js";
 import { tileValuesFor } from "./tile-base-layers.js";
+import { type TileNativeFrames, placeDesignDoc } from "./tile-anchors.js";
 import {
   type TileDesign,
   type TileHiddenParts,
@@ -175,6 +176,13 @@ export interface TileDesignDrawing {
   content?: TemplateResult;
 }
 
+/** The native parts a tile's stored design hides, or undefined for a tile
+ * with no design that reads (it draws as it always has). */
+export function tileDesignHiddenParts(tile: WatchPageTile): TileHiddenParts | undefined {
+  const stored = storedTileDesign(tile);
+  return stored === undefined ? undefined : designHiddenParts(stored.design);
+}
+
 /**
  * How a design tile draws on the stage: the native parts its owned roles
  * hide, and the layers it draws itself (owned base layers, added layers,
@@ -184,6 +192,13 @@ export interface TileDesignDrawing {
  * design that owns nothing and adds nothing draws exactly as the plain tile.
  * Undefined for a tile with no design that reads, which draws as it always
  * has.
+ *
+ * With `native`, the native parts of the layout this tile is drawn by (its
+ * device's own, `tileNativeFrames`), each owned role with an anchor is placed
+ * on its native part (`placeDesignDoc`, section 13.2), so an unmoved owned
+ * part draws exactly where and as big as the native one; added layers, tap
+ * zones and roles with no anchor keep the box fit. Without it every layer
+ * keeps the box fit.
  */
 export function renderTileDesignContent(
   tile: WatchPageTile,
@@ -192,6 +207,7 @@ export function renderTileDesignContent(
   s: number,
   inputs: TileDesignInputs,
   focus?: TileDesignFocus,
+  native?: TileNativeFrames,
 ): TileDesignDrawing | undefined {
   const stored = storedTileDesign(tile);
   if (stored === undefined || !(width > 0) || !(height > 0)) return undefined;
@@ -202,13 +218,16 @@ export function renderTileDesignContent(
   // Tap zones draw nothing but their areas while a zone is picked.
   const draws = drawn.some((el) => el.kind !== "tap") || (zone !== undefined && drawn.some((el) => el.kind === "tap"));
   if (!draws) return { hidden };
-  const layout = tileDesignLayout(tile, design, inputs, undefined, true);
+  const box = tileBoxOf(tile);
+  const drawnDoc = drawnDesignDoc(design.doc, design.owned);
+  const doc = native === undefined ? drawnDoc : placeDesignDoc(drawnDoc, design.anchors, native, { width, height }, box);
+  const layout = new Resolver(tileDesignResolveContext(tile, design, inputs), doc).resolveLayout(doc, TILE_DESIGN_FAMILY);
   const picked = zone ?? focus?.layerId;
   const content = html`<span class="ol-design" style=${`position:absolute;left:0;top:0;width:${width * s}px;height:${height * s}px`}>${renderLayout(layout, {
     icons: inputs.icons ?? NO_DRAW,
     bare: true,
     slot: { width: width * s, height: height * s },
-    designBox: tileBoxOf(tile),
+    designBox: box,
     ...(picked === undefined ? {} : { highlightId: picked }),
     ...(zone === undefined ? {} : { tapAreas: true, quietTaps: true }),
   })}</span>`;

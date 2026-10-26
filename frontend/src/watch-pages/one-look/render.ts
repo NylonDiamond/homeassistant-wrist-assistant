@@ -136,6 +136,11 @@ export interface OneLookTileFaceInput {
    * and added layers), over One Look's own content and under the rim,
    * dimmed with it (app repo docs/tile_layers_contract_2026-10.md). */
   content?: TemplateResult;
+  /** The design's layers drawn from the model this tile is laid out by, so
+   * its owned base layers can be placed on the native parts of this very
+   * layout (round two: app repo docs/tile_layers_contract_2026-10.md,
+   * section 13.2). Drawn where `content` is, and wins over it. */
+  contentFor?: (model: OneLookPreviewModel) => TemplateResult | undefined;
   /** Drawn over the tile's content, under the rim: the page editor's outline
    * of a picked layer on a tile that has no layers saved yet. */
   overlay?: TemplateResult;
@@ -846,7 +851,7 @@ export function renderOneLookTile(f: OneLookTileFaceInput): TemplateResult {
     <span class="ol-content" style=${palette.contentOpacity < 1 ? `opacity:${palette.contentOpacity}` : nothing}>
       ${barLayer(model, s)}
       ${f.hidden?.glyph === true ? nothing : discLayer(model, input, s)}${f.hidden?.state === true ? nothing : accessoryLayer(model, input, s)}${textLayer(model, s, f.hidden)}${f.hidden?.state === true ? nothing : bigValueLayer(model, s)}
-      ${f.content ?? nothing}
+      ${f.contentFor !== undefined ? (f.contentFor(model) ?? nothing) : (f.content ?? nothing)}
     </span>
     ${f.overlay ?? nothing}
     <span class="ol-rim" style=${`padding:${r2(rim * s)}px;background:${oneLookRimCss(palette.rimOpacity)}`}></span>

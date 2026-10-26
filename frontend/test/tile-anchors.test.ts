@@ -10,6 +10,10 @@ import { oneLookMeasurer } from "../src/watch-pages/one-look/measurer.js";
 import { resolveOneLookLayout } from "../src/watch-pages/one-look/layout.js";
 import { oneLookStateFor } from "../src/watch-pages/one-look/state.js";
 import { type TileNativeFrames, anchorOf, placeDesignDoc, tileNativeFrames } from "../src/watch-pages/tile-anchors.js";
+import type { TemplateResult } from "lit";
+import { renderWatchTileFace } from "../src/watch-pages/preview.js";
+import { phonePagesLayout } from "../src/phone-frame.js";
+import { oneLookCellSize, oneLookGridUnit } from "../src/watch-pages/one-look/metrics.js";
 import { baseAnchors, baseLayers, oneLookStateLineParts, tileNativeFramesOn } from "../src/watch-pages/tile-base-layers.js";
 import {
   type BaseLayerContext,
@@ -342,5 +346,81 @@ describe("the state layer through a resolve", () => {
     cfg.elements = baseLayers(BED_TILE, CTX);
     const wire = JSON.stringify(encodeConfig(cfg));
     for (const part of ["figure", "unit", "tail", "word"]) expect(wire).toContain(`"part":"${part}"`);
+  });
+});
+
+/** A template as plain text, every value written in. */
+function flat(t: unknown): string {
+  if (t === null || t === undefined || typeof t === "symbol") return "";
+  if (Array.isArray(t)) return t.map(flat).join("");
+  if (typeof t === "object" && "strings" in t) {
+    const r = t as TemplateResult;
+    let out = "";
+    r.strings.forEach((str, i) => {
+      out += str;
+      if (i < r.values.length) out += flat(r.values[i]);
+    });
+    return out;
+  }
+  return String(t);
+}
+
+describe("the preview", () => {
+  const page = { id: PAGE_ID, items: [BED_TILE] };
+  const ctx: BaseLayerContext = { states: BED, page, pages: [page] };
+
+  /** The bed light with its icon and state owned, unmoved. */
+  function ownedTile(): WatchPageTile {
+    const d = designForEdit(BED_TILE, ctx);
+    return withDesign(BED_TILE, { ...d, owned: ["icon", "state"] }, ctx);
+  }
+
+  /** Where the design draws its icon in a tile face, in the tile's points:
+   * the glyph's centre and its point size (the symbol is drawn as a square
+   * of its size centred in its frame), through the design box's own
+   * transform. */
+  function drawnIcon(html: string): { cx: number; cy: number; size: number } {
+    const at = html.indexOf("ol-design");
+    expect(at).toBeGreaterThan(0);
+    const t = /data-design-box transform="translate\(([-\d.e]+) ([-\d.e]+)\) scale\(([-\d.e]+)\)"/.exec(html.slice(at))!;
+    const [ox, oy, f] = [Number(t[1]), Number(t[2]), Number(t[3])];
+    const el = html.slice(html.indexOf(`data-element-id=${BASE_LAYER_IDS.icon}`));
+    const r = /<rect x=([-\d.e]+) y=([-\d.e]+) width=([-\d.e]+) height=([-\d.e]+)/.exec(el)!;
+    const [x, y, w, h] = [Number(r[1]), Number(r[2]), Number(r[3]), Number(r[4])];
+    return { cx: ox + (x + w / 2) * f, cy: oy + (y + h / 2) * f, size: w * f };
+  }
+
+  /** The native glyph's centre and point size. */
+  const glyphOf = (n: TileNativeFrames) => ({ cx: n.icon!.rect.x + n.icon!.rect.width / 2, cy: n.icon!.rect.y + n.icon!.rect.height / 2, size: n.icon!.size });
+
+  const near = (a: { cx: number; cy: number; size: number }, b: { cx: number; cy: number; size: number }, what: string) => {
+    for (const k of ["cx", "cy", "size"] as const) expect(Math.abs(a[k] - b[k]), `${what} ${k}`).toBeLessThan(0.01);
+  };
+
+  it("places an unmoved owned icon exactly on the native glyph in a watch frame of another size", () => {
+    const tile = ownedTile();
+    const p = { id: PAGE_ID, items: [tile] };
+    for (const screen of [176, 198, 211]) {
+      const unit = oneLookGridUnit(screen, "watch");
+      const html = flat(renderWatchTileFace(tile, oneLookCellSize(6, 4, unit), { page: p, pages: [p], screen: { width: screen, height: screen * 1.2 }, states: BED, oneLook: true, scale: 1 }, unit));
+      const native = tileNativeFramesOn(BED_TILE, ctx, "watch", screen)!.native;
+      near(drawnIcon(html), glyphOf(native), `watch ${screen} icon`);
+    }
+  });
+
+  it("places an unmoved owned icon exactly on the native glyph in the iPhone frame, where the box fit drew it bigger", () => {
+    const tile = ownedTile();
+    const p = { id: PAGE_ID, items: [tile] };
+    const unit = oneLookGridUnit(402, "phone");
+    const html = flat(renderWatchTileFace(tile, oneLookCellSize(6, 4, unit), {
+      page: p, pages: [p], screen: { width: 402, height: 700 }, states: BED, oneLook: true, scale: 1,
+      phone: phonePagesLayout(undefined, { look: "iphone" }),
+    }, unit));
+    const on = tileNativeFramesOn(BED_TILE, ctx, "phone")!;
+    const icon = drawnIcon(html);
+    near(icon, glyphOf(on.native), "phone icon");
+    // The box fit would have drawn it about 9% bigger (section 13.3).
+    const stored = readTileDesign(tile)!.doc.elements.find((e) => e.payload.id === BASE_LAYER_IDS.icon)!.payload as IconElement;
+    expect((stored.size * drawnRect(stored.frame, on.drawnSize).f) / icon.size).toBeGreaterThan(1.05);
   });
 });

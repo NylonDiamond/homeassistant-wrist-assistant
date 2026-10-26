@@ -111,8 +111,9 @@ import {
   oneLookMetrics,
   oneLookPhonePagesInset,
 } from "./one-look/metrics.js";
-import { renderOneLookTile } from "./one-look/render.js";
-import { renderTileDesignContent, renderTileLayerOutline, tileBoxOf } from "./tile-design-face.js";
+import { type OneLookPreviewModel, renderOneLookTile } from "./one-look/render.js";
+import { renderTileDesignContent, renderTileLayerOutline, tileBoxOf, tileDesignHiddenParts } from "./tile-design-face.js";
+import { tileNativeFrames } from "./tile-anchors.js";
 
 export type WatchPreviewStateMode = "live" | "all-on";
 
@@ -3321,19 +3322,25 @@ function tileFace(
     // (one that follows the simple settings) is outlined at its frame.
     const focus = given.designFocus !== undefined && typeof stored.id === "string" && stored.id.toUpperCase() === given.designFocus.tileId.toUpperCase()
       ? given.designFocus : undefined;
-    const drawing = renderTileDesignContent(stored, width, height, s, {
+    // The layers are drawn from the model this very tile is laid out by, so
+    // an owned base layer lands on the native part of this frame's own
+    // layout (the watch's at its size, or the iPhone's).
+    const hidden = tileDesignHiddenParts(stored);
+    const inputs = {
       ...(input.states === undefined ? {} : { states: input.states }),
       page: input.page, pages: input.pages,
       ...(input.icons === undefined ? {} : { icons: input.icons }),
       ...(input.templates === undefined ? {} : { templates: input.templates }),
-    }, focus);
+    };
     const overlay = focus?.outline !== undefined
       ? renderTileLayerOutline(focus.outline, tileBoxOf(stored), width, height, s) : undefined;
     return renderOneLookTile({
       tile: oneLook === "phone" ? stored : tile, input, stub, device: oneLook, look,
       width, height, cell, unit, box, s, ...(titled ? { hint } : {}),
-      ...(drawing === undefined ? {} : { hidden: drawing.hidden }),
-      ...(drawing?.content === undefined ? {} : { content: drawing.content }),
+      ...(hidden === undefined ? {} : {
+        hidden,
+        contentFor: (model: OneLookPreviewModel) => renderTileDesignContent(stored, width, height, s, inputs, focus, tileNativeFrames(model.layout, model.device))?.content,
+      }),
       ...(overlay === undefined ? {} : { overlay }),
     });
   }
