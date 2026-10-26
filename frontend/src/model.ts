@@ -680,6 +680,10 @@ export const FILL_KINDS: readonly [FillKind, string][] = [
 export interface FillStop {
   at: number;
   colorHex: string;
+  /** A tile ink the stop takes from the tile's live palette, `colorHex`
+   * standing in where there is none (tile layers round four, contract
+   * section 15.3). Absent means `colorHex` alone. */
+  tileInk?: TileInkName;
 }
 
 /**
@@ -715,7 +719,10 @@ function parseFill(o: unknown): Fill | undefined {
     if (!isObject(raw)) continue;
     const colorHex = optStr(raw.colorHex);
     if (colorHex === undefined || colorHex === "") continue;
-    stops.push({ at: clamp01(num(raw.at, 0)), colorHex });
+    const stop: FillStop = { at: clamp01(num(raw.at, 0)), colorHex };
+    const ink = parseTileInk(raw.tileInk);
+    if (ink !== undefined) stop.tileInk = ink;
+    stops.push(stop);
   }
   if (stops.length < FILL_MIN_STOPS) return undefined;
   const fill: Fill = { kind: o.kind === "radial" ? "radial" : "linear", stops };
@@ -727,7 +734,7 @@ function parseFill(o: unknown): Fill | undefined {
 /** The matching write. The angle is omitted at zero and never written on a
  * radial fill, which has no direction to name. */
 function encodeFill(f: Fill): J {
-  const o: J = { kind: f.kind, stops: f.stops.map((s) => ({ at: encNum(s.at), colorHex: s.colorHex })) };
+  const o: J = { kind: f.kind, stops: f.stops.map((s) => (s.tileInk === undefined ? { at: encNum(s.at), colorHex: s.colorHex } : { at: encNum(s.at), colorHex: s.colorHex, tileInk: s.tileInk })) };
   if (f.kind === "linear" && f.angle !== undefined && f.angle !== 0) o.angle = encNum(f.angle);
   return o;
 }
@@ -987,6 +994,28 @@ export function encodeTextArc(a: TextArc): J {
 
 export interface ColorSlot {
   baseColorHex: string;
+  /** A tile ink the layer takes from the tile's live palette, `baseColorHex`
+   * standing in where there is none (tile layers round four, contract
+   * section 15.3). Absent means `baseColorHex` alone. */
+  tileInk?: TileInkName;
+}
+
+/**
+ * A colour a page tile's layer takes, at draw time, from the tile's live One
+ * Look palette on the device drawing it, exactly as the native part takes it
+ * (tile layers round four, contract section 15.3): the figure's and name's
+ * ink, the tail's and word's second ink, the unit's ink, the glyph's ink, the
+ * tile's hue, and that hue clear. Mirrors `CustomComplication.TileInkName`.
+ */
+export type TileInkName = "ink" | "ink2" | "unit" | "glyph" | "hue" | "hueClear";
+export const TILE_INK_NAMES: readonly TileInkName[] = ["ink", "ink2", "unit", "glyph", "hue", "hueClear"];
+/** Each tile ink resolved to a hex, as the documents write one. */
+export type TileInks = Readonly<Record<TileInkName, string>>;
+
+/** A stored tile ink name, or undefined for anything that is not one of the
+ * six (the hex beside it then stands). */
+export function parseTileInk(raw: unknown): TileInkName | undefined {
+  return typeof raw === "string" && (TILE_INK_NAMES as readonly string[]).includes(raw) ? raw as TileInkName : undefined;
 }
 
 export type ComparisonKind =
@@ -1270,6 +1299,10 @@ export interface TextPart {
   iconPaths?: Record<string, string>;
   /** Absent means the layer's resolved color. */
   colorHex?: string;
+  /** A tile ink the part takes from the tile's live palette, `colorHex`
+   * standing in where there is none (tile layers round four, contract
+   * section 15.3). */
+  tileInk?: TileInkName;
   /** Absent means the layer's resolved weight. */
   fontWeight?: FontWeight;
   /** Absent means the layer's resolved size. */
@@ -1280,6 +1313,10 @@ export interface TextPart {
   fontWidth?: FontWidth;
   /** Absent means the layer's resolved slant. */
   italic?: boolean;
+  /** Extra space after every character, in ems of the part's drawn size,
+   * negative to tighten (tile layers round four, contract section 15.2).
+   * Held in -0.5 to 0.5; absent or 0 means none. */
+  tracking?: number;
   /** Absent means one color. */
   coloring?: ChartColoring;
   /** Absent means empty. */
@@ -4618,7 +4655,19 @@ function parseRules(raw: unknown): Rule[] {
 }
 
 function parseColorSlot(o: unknown, fallback: string): ColorSlot {
-  return { baseColorHex: isObject(o) ? str(o.baseColorHex, fallback) : fallback };
+  const slot: ColorSlot = { baseColorHex: isObject(o) ? str(o.baseColorHex, fallback) : fallback };
+  const ink = isObject(o) ? parseTileInk(o.tileInk) : undefined;
+  if (ink !== undefined) slot.tileInk = ink;
+  return slot;
+}
+
+/** The most a part's tracking opens or tightens, in ems either way. */
+export const TEXT_PART_TRACKING_LIMIT = 0.5;
+
+/** A stored part tracking: a finite number held in the limit, else none. */
+function parseTracking(raw: unknown): number | undefined {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined;
+  return Math.min(TEXT_PART_TRACKING_LIMIT, Math.max(-TEXT_PART_TRACKING_LIMIT, raw));
 }
 
 /** A chart's color table, reading the two-bound shape forward when that is all
@@ -4669,6 +4718,8 @@ function parseTextParts(raw: unknown): TextPart[] {
       if (paths.length > 0) part.iconPaths = Object.fromEntries(paths);
     }
     if (typeof o.colorHex === "string") part.colorHex = o.colorHex;
+    const ink = parseTileInk(o.tileInk);
+    if (ink !== undefined) part.tileInk = ink;
     const weight = optStr(o.fontWeight);
     if (weight === "regular" || weight === "medium" || weight === "semibold" || weight === "bold") part.fontWeight = weight;
     if (typeof o.fontSize === "number") part.fontSize = o.fontSize;
@@ -4677,6 +4728,8 @@ function parseTextParts(raw: unknown): TextPart[] {
     const width = parseFontWidth(optStr(o.fontWidth));
     if (width !== undefined) part.fontWidth = width;
     if (typeof o.italic === "boolean") part.italic = o.italic;
+    const tracking = parseTracking(o.tracking);
+    if (tracking !== undefined && tracking !== 0) part.tracking = tracking;
     if (optStr(o.coloring) === "bands") part.coloring = "bands";
     const bands = parseColorBands(o.bands);
     if (bands.length > 0) part.bands = bands;
@@ -6789,11 +6842,13 @@ function encodeTextPart(p: TextPart): J {
   const paths = Object.keys(p.iconPaths ?? {}).sort();
   if (paths.length > 0) o.iconPaths = Object.fromEntries(paths.map((n) => [n, p.iconPaths![n]!]));
   if (p.colorHex !== undefined) o.colorHex = p.colorHex;
+  if (p.tileInk !== undefined) o.tileInk = p.tileInk;
   if (p.fontWeight !== undefined) o.fontWeight = p.fontWeight;
   if (p.fontSize !== undefined) o.fontSize = encNum(p.fontSize);
   if (p.fontDesign !== undefined) o.fontDesign = p.fontDesign;
   if (p.fontWidth !== undefined) o.fontWidth = p.fontWidth;
   if (p.italic !== undefined) o.italic = p.italic;
+  if (p.tracking !== undefined && p.tracking !== 0) o.tracking = encNum(p.tracking);
   if (p.coloring !== undefined && p.coloring !== "uniform") o.coloring = p.coloring;
   if (p.bands !== undefined && p.bands.length > 0) o.bands = p.bands.map(encodeBand);
   if (p.bandAboveColorHex !== undefined && p.bandAboveColorHex !== CHART_DEFAULT_BAND_HIGH_HEX) o.bandAboveColorHex = p.bandAboveColorHex;
@@ -6822,7 +6877,7 @@ function encodeElementKind(el: Element): J {
   const base = (p: ElementBase): J => {
     const o: J = {
       id: p.id,
-      colorSlot: { baseColorHex: p.colorSlot.baseColorHex },
+      colorSlot: p.colorSlot.tileInk === undefined ? { baseColorHex: p.colorSlot.baseColorHex } : { baseColorHex: p.colorSlot.baseColorHex, tileInk: p.colorSlot.tileInk },
       rules: encodeRules(p.rules),
       frame: encodeFrame(p.frame),
       isHidden: p.isHidden,
@@ -8009,7 +8064,7 @@ const K = {
   // A gradient and one of its stops. Carried by every key that fills an area:
   // `shape.fill`, `gauge.fill`, `chart.areaFill` and `layout.backgroundFill`.
   fill: ["kind", "stops", "angle"],
-  fillStop: ["at", "colorHex"],
+  fillStop: ["at", "colorHex", "tileInk"],
   // What fills an icon or a shape by a reading. Carried by those two kinds only.
   level: ["value", "minValue", "maxValue", "minSource", "maxSource", "direction", "trackColorHex"],
   // A gauge's two dial extras, each its own object on the gauge payload.
@@ -8029,8 +8084,8 @@ const K = {
     "fontDesign", "fontWidth", "italic", "minimumScale", "alignment",
     "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex", "parts",
     "arc", "chartAnchor"],
-  textPart: ["id", "value", "icon", "iconPaths", "colorHex", "fontWeight", "fontSize", "fontDesign", "fontWidth", "italic",
-    "coloring", "bands", "bandAboveColorHex"],
+  textPart: ["id", "value", "icon", "iconPaths", "colorHex", "tileInk", "fontWeight", "fontSize", "fontDesign", "fontWidth", "italic",
+    "tracking", "coloring", "bands", "bandAboveColorHex"],
   icon: ["symbol", "path", "viewBox", "size", "level", "chartAnchor"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex",
     "coloring", "bands", "bandAboveColorHex", "thresholdValue", "thresholdColorHex", "total", "minSource", "maxSource",
@@ -8087,7 +8142,7 @@ const K = {
   // A row template drawn once per item. `template` holds whole elements, so it
   // is audited the way `$.elements` is, one level deeper.
   list: ["source", "rows", "direction", "columns", "gap", "template"],
-  colorSlot: ["baseColorHex"],
+  colorSlot: ["baseColorHex", "tileInk"],
   rule: ["id", "cases", "otherwise", "partId"],
   case: ["id", "when", "then"],
   condition: ["join", "tests"],

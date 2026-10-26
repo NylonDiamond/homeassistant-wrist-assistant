@@ -694,11 +694,13 @@ const FONT_STRETCH: Record<string, string> = {
 
 /** The inline style a drawn run needs: fixed-width digits, a letter width, or
  * neither. `nothing` leaves the attribute off entirely. */
-function textStyle(monospacedDigits: boolean, width: string | undefined) {
+function textStyle(monospacedDigits: boolean, width: string | undefined, letterSpacing = 0) {
   const bits: string[] = [];
   if (monospacedDigits) bits.push("font-variant-numeric: tabular-nums");
   const stretch = FONT_STRETCH[width ?? "standard"];
   if (stretch !== undefined) bits.push(`font-stretch: ${stretch}`);
+  // A part's tracking, in drawn user units (`px` is one in an SVG).
+  if (letterSpacing !== 0) bits.push(`letter-spacing: ${Math.round(letterSpacing * 10000) / 10000}px`);
   return bits.length > 0 ? bits.join("; ") : nothing;
 }
 
@@ -869,7 +871,7 @@ interface ArcGlyph {
 function arcGlyphs(el: Extract<ResolvedElement, { kind: "text" }>): ArcGlyph[] {
   const layerLook: PartLook = {
     fontSize: el.fontSize, fontWeight: el.fontWeight, fontDesign: el.fontDesign,
-    fontWidth: el.fontWidth, italic: el.italic, colorHex: el.colorHex,
+    fontWidth: el.fontWidth, italic: el.italic, colorHex: el.colorHex, tracking: 0,
   };
   const drawsParts = el.parts !== undefined && el.parts.map((p) => p.text).join("") === el.text;
   // The resolver leaves icon parts off a curve. Filtered here too, so a stale
@@ -1083,6 +1085,9 @@ interface PartLook {
   fontWidth: string;
   italic: boolean;
   colorHex: string;
+  /** Extra space after every character, in ems of `fontSize` (a part's
+   * `tracking`, 0 for none). A curve ignores it. */
+  tracking: number;
   /** Set on an icon part's look, whose one character is `ICON_MARK`. */
   symbol?: string;
   /** A Material Design icon part's drawing, drawn instead of `symbol`. */
@@ -1107,9 +1112,10 @@ function partsLine(parts: readonly ResolvedTextPart[]): string {
 }
 
 /** One character's width at a size: an icon's advance for `ICON_MARK`, the
- * usual estimate for anything else. */
-function charWidth(ch: string, size: number): number {
-  return ch === ICON_MARK ? ICON_ADVANCE * size : ch.length * textCharWidth(size);
+ * usual estimate for anything else, with `tracking` ems of the size added
+ * after it (as One Look's measurer adds its tracking per character). */
+function charWidth(ch: string, size: number, tracking = 0): number {
+  return ch === ICON_MARK ? ICON_ADVANCE * size : ch.length * textCharWidth(size) + tracking * size;
 }
 
 /** The look of each code unit of the joined parts: the part's size and weight,
@@ -1123,7 +1129,7 @@ function partLooks(parts: readonly ResolvedTextPart[]): PartLook[] {
       out.push({
         fontSize: part.fontSize, fontWeight: part.fontWeight,
         fontDesign: part.fontDesign, fontWidth: part.fontWidth,
-        italic: part.italic, colorHex: part.colorHex, symbol: part.symbol,
+        italic: part.italic, colorHex: part.colorHex, tracking: 0, symbol: part.symbol,
         ...(part.path !== undefined ? { path: part.path } : {}),
       });
       continue;
@@ -1135,7 +1141,7 @@ function partLooks(parts: readonly ResolvedTextPart[]): PartLook[] {
       const look: PartLook = {
         fontSize: part.fontSize, fontWeight: part.fontWeight,
         fontDesign: part.fontDesign, fontWidth: part.fontWidth,
-        italic: part.italic, colorHex: run.colorHex,
+        italic: part.italic, colorHex: run.colorHex, tracking: part.tracking ?? 0,
       };
       for (let i = 0; i < run.text.length; i++) out.push(look);
     }
@@ -1146,7 +1152,7 @@ function partLooks(parts: readonly ResolvedTextPart[]): PartLook[] {
 /** Width of drawn runs at `scale`, each character at its own size. */
 function runsWidth(runs: readonly PartRun[], scale: number): number {
   let w = 0;
-  for (const r of runs) for (const ch of r.text) w += charWidth(ch, r.look.fontSize * scale);
+  for (const r of runs) for (const ch of r.text) w += charWidth(ch, r.look.fontSize * scale, r.look.tracking);
   return w;
 }
 
@@ -1158,6 +1164,7 @@ function wrapPartsToLines(text: string, looks: readonly PartLook[], boxWidth: nu
   const limit = Math.max(1, Math.min(maxLines, words.length));
   if (limit < 2) return [text];
   const size = (i: number) => looks[i]?.fontSize ?? 0;
+  const track = (i: number) => looks[i]?.tracking ?? 0;
   const join = (list: RegExpExecArray[]) => list.map((m) => m[0]).join(" ");
   const lines: string[] = [];
   let from = 0;
@@ -1170,7 +1177,7 @@ function wrapPartsToLines(text: string, looks: readonly PartLook[], boxWidth: nu
     for (let i = from; i <= last; i++) {
       const start = words[i]!.index ?? 0;
       let add = i === from ? 0 : textCharWidth(size(start - 1));
-      for (let j = start; j < start + words[i]![0].length; j++) add += charWidth(text[j]!, size(j));
+      for (let j = start; j < start + words[i]![0].length; j++) add += charWidth(text[j]!, size(j), track(j));
       if (i > from && used + add > boxWidth) break;
       used += add;
       taken = i + 1;
@@ -1195,12 +1202,13 @@ function truncateRuns(runs: readonly PartRun[], scale: number, boxWidth: number)
     const budget = boxWidth - 0.8 * size;
     let text = "";
     for (const ch of run.text) {
-      if (kept > 0 && used + charWidth(ch, size) > budget) {
+      const w = charWidth(ch, size, run.look.tracking);
+      if (kept > 0 && used + w > budget) {
         if (text !== "") out.push({ text, look: run.look });
         break cut;
       }
       text += ch;
-      used += charWidth(ch, size);
+      used += w;
       kept += 1;
     }
     out.push({ text, look: run.look });
@@ -1227,9 +1235,10 @@ function renderTextParts(el: Extract<ResolvedElement, { kind: "text" }>, parts: 
   const looks = partLooks(parts);
   const text = partsLine(parts);
   const size = (i: number) => looks[i]?.fontSize ?? 0;
+  const track = (i: number) => looks[i]?.tracking ?? 0;
   const wordsWidth = (words: readonly RegExpExecArray[]) => words.reduce((w, m, k) => {
     let add = k === 0 ? 0 : textCharWidth(size(m.index - 1));
-    for (let j = m.index; j < m.index + m[0].length; j++) add += charWidth(text[j]!, size(j));
+    for (let j = m.index; j < m.index + m[0].length; j++) add += charWidth(text[j]!, size(j), track(j));
     return w + add;
   }, 0);
   const lines = breakLines(text, el.lineLimit, box.w, wordsWidth)
@@ -1255,7 +1264,7 @@ function renderTextParts(el: Extract<ResolvedElement, { kind: "text" }>, parts: 
     const a = colorAttrs(run.look.colorHex, "fill");
     return svg`<tspan font-size=${run.look.fontSize * scale} font-weight=${FONT_WEIGHT[run.look.fontWeight] ?? 400}
       font-family=${fontFamilyFor(run.look.fontDesign)} font-style=${run.look.italic ? "italic" : "normal"}
-      style=${textStyle(false, run.look.fontWidth)}
+      style=${textStyle(false, run.look.fontWidth, run.look.tracking * run.look.fontSize * scale)}
       fill=${a.fill} fill-opacity=${a["fill-opacity"]}>${run.text}</tspan>`;
   });
   const c = colorAttrs(el.colorHex, "fill");
@@ -1327,7 +1336,7 @@ function renderPartPieces(
       const w = runsWidth([{ text: piece.text!, look: piece.look }], scale);
       x += w;
       const a = colorAttrs(piece.look.colorHex, "fill");
-      const stretch = textStyle(false, piece.look.fontWidth);
+      const stretch = textStyle(false, piece.look.fontWidth, piece.look.tracking * s);
       return svg`<text x=${at} y=${y} text-anchor="start"
         textLength=${k < pieces.length - 1 ? w : nothing} lengthAdjust=${k < pieces.length - 1 ? "spacing" : nothing}
         font-size=${s} font-weight=${FONT_WEIGHT[piece.look.fontWeight] ?? 400}
