@@ -243,19 +243,24 @@ describe("One Look draws the arrangement", () => {
 // ── the version note ─────────────────────────────────────────────────────
 
 describe("the version note", () => {
-  it("needs 3.2, and an unreported version reads as new enough", () => {
-    expect(MIN_VERSION_FOR_ARRANGEMENT).toBe("3.2.0");
-    expect(arrangementFor("3.2.0")).toBe(true);
-    expect(arrangementFor("3.10.0")).toBe(true);
-    expect(arrangementFor("3.1.9")).toBe(false);
-    expect(arrangementFor(null)).toBe(true);
-    expect(arrangementFor(undefined)).toBe(true);
+  it("is unset until the release, so every device reads as new enough", () => {
+    expect(MIN_VERSION_FOR_ARRANGEMENT).toBeNull();
+    expect(arrangementFor("3.1.0")).toBe(true);
+    expect(arrangementUpdateNote(["Chen Watch"])).toBeUndefined();
+  });
+
+  it("with a minimum set, an older version does not draw it and an unreported one does", () => {
+    expect(arrangementFor("3.2.0", "3.2.0")).toBe(true);
+    expect(arrangementFor("3.10.0", "3.2.0")).toBe(true);
+    expect(arrangementFor("3.1.9", "3.2.0")).toBe(false);
+    expect(arrangementFor(null, "3.2.0")).toBe(true);
+    expect(arrangementFor(undefined, "3.2.0")).toBe(true);
   });
 
   it("names the devices that draw Default", () => {
-    expect(arrangementUpdateNote([])).toBeUndefined();
-    expect(arrangementUpdateNote(["Chen Watch"])).toBe("Needs Wrist Assistant 3.2 on Chen Watch. Until then it draws the Default arrangement.");
-    expect(arrangementUpdateNote(["A", "B", "C"])).toBe("Needs Wrist Assistant 3.2 on A, B and C. Until then they draw the Default arrangement.");
+    expect(arrangementUpdateNote([], "3.2.0")).toBeUndefined();
+    expect(arrangementUpdateNote(["Chen Watch"], "3.2.0")).toBe("Needs Wrist Assistant 3.2 on Chen Watch. Until then it draws the Default arrangement.");
+    expect(arrangementUpdateNote(["A", "B", "C"], "3.2.0")).toBe("Needs Wrist Assistant 3.2 on A, B and C. Until then they draw the Default arrangement.");
   });
 });
 
@@ -400,10 +405,9 @@ describe("the Arrangement card", () => {
     expect(Object.hasOwn(host.tile, "arrange")).toBe(false);
   });
 
-  it("notes the devices too old to draw it", () => {
+  it("notes no device as too old while the release has not set a minimum", () => {
     const old = text(card(tileHost(KITCHEN, { pickers: [{ name: "Chen Watch", version: "3.1.4" }, { name: "Jesse iPhone", version: "3.2.0" }] }).host));
-    expect(old).toContain("Needs Wrist Assistant 3.2 on Chen Watch. Until then it draws the Default arrangement.");
-    expect(text(card(tileHost(KITCHEN, { pickers: [{ name: "Jesse iPhone", version: null }] }).host))).not.toContain("Needs Wrist Assistant");
+    expect(old).not.toContain("Needs Wrist Assistant");
   });
 
   it("shares the part picked with the stage through the editor's view state", () => {
