@@ -152,11 +152,16 @@ describe("resolving tile inks (15.3)", () => {
     expect(out[1]).toMatchObject({ colorHex: "#0000FF" });
   });
 
-  it("carries a part's tracking, only when it has one and only on a part of words", () => {
-    const text = textWith([{ id: "F", value: literal("50"), tracking: -0.01 }, { id: "U", value: literal("%") }]);
-    const t = layoutOf(docOf(text)).elements[0]! as { parts: { tracking?: number }[] };
+  it("carries a part's tracking only when it has one, on an icon part as on a part of words (as the app resolves it)", () => {
+    const text = textWith([
+      { id: "F", value: literal("50"), tracking: -0.01 },
+      { id: "U", value: literal("%") },
+      { id: "I", value: literal(""), icon: literal("bolt.fill"), tracking: 0.2 },
+    ]);
+    const t = layoutOf(docOf(text)).elements[0]! as { parts: { tracking?: number; symbol?: string }[] };
     expect(t.parts[0]!.tracking).toBe(-0.01);
     expect("tracking" in t.parts[1]!).toBe(false);
+    expect(t.parts[2]).toMatchObject({ symbol: "bolt.fill", tracking: 0.2 });
   });
 });
 

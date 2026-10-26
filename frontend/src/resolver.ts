@@ -320,7 +320,8 @@ export interface ResolvedTextPart {
   italic: boolean;
   colorHex: string;
   /** Extra space after every character, in ems of `fontSize`. Present only
-   * when not 0 (round four, section 15.2). */
+   * when not 0 (round four, section 15.2). An icon part carries it as stored,
+   * like the app, though no renderer spaces a symbol. */
   tracking?: number;
   /** The part's text cut into runs by its own band table, with no highlight.
    * Absent when the part is one color. */
@@ -2366,7 +2367,9 @@ export class Resolver {
         italic: style.get("italic")?.italic ?? part.italic ?? layer.italic,
         colorHex: this.styleColor(style, "color") ?? this.tileInk(part.tileInk) ?? part.colorHex ?? layer.colorHex,
       };
-      if (symbol === undefined && part.tracking !== undefined && part.tracking !== 0) resolved.tracking = part.tracking;
+      // An icon part keeps its tracking too, as the app resolves it; neither
+      // renderer spaces a symbol, so it only keeps the two models alike.
+      if (part.tracking !== undefined && part.tracking !== 0) resolved.tracking = part.tracking;
       if (symbol !== undefined) {
         resolved.symbol = symbol;
         if (glyph?.path !== undefined) resolved.path = glyph.path;
