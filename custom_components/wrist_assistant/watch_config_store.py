@@ -502,7 +502,7 @@ def validate_document(kind: str, document: Any, *, check_items: bool = False) ->
     object.
 
     The server guards the shape, not the content. No key's value is looked at
-    beyond the ids and the shape of a tile's icon glow: the app is the only thing that understands a tile or a
+    beyond the ids and the shape of a tile's icon glow and arrangement: the app is the only thing that understands a tile or a
     setting, and a server that half understood one would refuse configs a
     newer app writes.
 
@@ -822,9 +822,10 @@ def _check_pages(pages: list[Any], *, check_items: bool) -> None:
 
     With ``check_items`` (a panel save or a restore): ``items`` is a list when
     present, each item an object with a non-empty string ``id`` and
-    ``entityId``, no two items in one page share an id, and a tile's
+    ``entityId``, no two items in one page share an id, a tile's
     ``iconGlow`` (the glow behind its icon) has the shape the apps read
-    (:func:`_check_icon_glow`). A device save skips this level on purpose: a phone refused for a fault in its own old
+    (:func:`_check_icon_glow`), and so has its ``arrange`` (where its parts
+    sit, :func:`_check_arrange`). A device save skips this level on purpose: a phone refused for a fault in its own old
     tiles could never upload again, while the panel can always fix what it
     sends.
 
@@ -879,6 +880,9 @@ def _check_items(page: dict[str, Any], where: str) -> None:
         # tile the panel cannot save.
         if item.get(_ICON_GLOW_KEY) is not None:
             _check_icon_glow(item[_ICON_GLOW_KEY], at)
+        # A null arrangement is Default, as for the glow.
+        if item.get(_ARRANGE_KEY) is not None:
+            _check_arrange(item[_ARRANGE_KEY], at)
 
 
 # The glow behind a tile's icon (app repo docs/tile_layers_contract_2026-10.md,
@@ -911,6 +915,87 @@ def _check_icon_glow(glow: Any, at: str) -> None:
             raise WatchConfigValidationError(f"{where}.{key} must be a number")
     if "color" in glow and not isinstance(glow["color"], str):
         raise WatchConfigValidationError(f"{where}.color must be a string")
+
+
+# A tile's Arrangement (app repo docs/page_editor_calm_plan_2026-10.md, "The
+# Arrangement key"): where its own parts sit when it is set to Free. Absent
+# is Default, every part in its native place.
+_ARRANGE_KEY = "arrange"
+_ARRANGE_VERSION = 1
+_ARRANGE_KEYS = ("v", "parts")
+_ARRANGE_PARTS = ("icon", "name", "state")
+_ARRANGE_PART_KEYS = ("spot", "dx", "dy", "scale", "hidden")
+_ARRANGE_SPOTS = ("tl", "tc", "tr", "ml", "mc", "mr", "bl", "bc", "br")
+# Inclusive ranges: a move as a share of the tile's width or height, and a
+# size as a share of the part's native one.
+_ARRANGE_OFFSET_RANGE = (-0.5, 0.5)
+_ARRANGE_SCALE_RANGE = (0.8, 1.5)
+
+
+def _is_number_in(value: Any, bounds: tuple[float, float]) -> bool:
+    """A finite JSON number (a JSON ``true`` is not one) within ``bounds``,
+    both ends included."""
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and math.isfinite(value)
+        and bounds[0] <= value <= bounds[1]
+    )
+
+
+def _check_arrange(arrange: Any, at: str) -> None:
+    """The tile level's guard for one tile's ``arrange``, run only where
+    :func:`_check_items` runs: a panel save or a restore, never a device save.
+    ``at`` names the tile by page and index.
+
+    The setting is an object with ``v`` 1 and, when present, ``parts``: an
+    object keyed by ``icon``, ``name`` and ``state``, so at most three. Each
+    part is an object with, when present, ``spot`` one of the nine spots
+    (``tl`` to ``br``), ``dx`` and ``dy`` finite numbers from -0.5 to 0.5,
+    ``scale`` a finite number from 0.8 to 1.5 and ``hidden`` a bool. Any
+    other key, at any level, is refused: unlike the rest of a tile, this is
+    a closed shape the apps place parts by, and a key one of them does not
+    know would be a setting that silently does nothing.
+    """
+    where = f"{at}.{_ARRANGE_KEY}"
+    if not isinstance(arrange, dict):
+        raise WatchConfigValidationError(f"{where} must be an object")
+    for key in arrange:
+        if key not in _ARRANGE_KEYS:
+            raise WatchConfigValidationError(f'{where} has the unknown key "{key}"')
+    version = arrange.get("v")
+    # A JSON true would compare equal to 1 in Python; the apps read an integer.
+    if isinstance(version, bool) or not isinstance(version, int) or version != _ARRANGE_VERSION:
+        raise WatchConfigValidationError(f"{where}.v must be {_ARRANGE_VERSION}")
+    if "parts" not in arrange:
+        return
+    parts = arrange["parts"]
+    if not isinstance(parts, dict):
+        raise WatchConfigValidationError(f"{where}.parts must be an object")
+    for name, part in parts.items():
+        if name not in _ARRANGE_PARTS:
+            raise WatchConfigValidationError(
+                f'{where}.parts has the unknown part "{name}"; the parts are icon, name and state'
+            )
+        at_part = f"{where}.parts.{name}"
+        if not isinstance(part, dict):
+            raise WatchConfigValidationError(f"{at_part} must be an object")
+        for key in part:
+            if key not in _ARRANGE_PART_KEYS:
+                raise WatchConfigValidationError(f'{at_part} has the unknown key "{key}"')
+        if "spot" in part and part["spot"] not in _ARRANGE_SPOTS:
+            raise WatchConfigValidationError(
+                f"{at_part}.spot must be one of {', '.join(_ARRANGE_SPOTS)}"
+            )
+        for key in ("dx", "dy"):
+            if key in part and not _is_number_in(part[key], _ARRANGE_OFFSET_RANGE):
+                raise WatchConfigValidationError(
+                    f"{at_part}.{key} must be a number from -0.5 to 0.5"
+                )
+        if "scale" in part and not _is_number_in(part["scale"], _ARRANGE_SCALE_RANGE):
+            raise WatchConfigValidationError(f"{at_part}.scale must be a number from 0.8 to 1.5")
+        if "hidden" in part and not isinstance(part["hidden"], bool):
+            raise WatchConfigValidationError(f"{at_part}.hidden must be true or false")
 
 
 # The key tile layers kept on a tile. Layers were taken out before they were
