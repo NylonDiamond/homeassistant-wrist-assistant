@@ -14,6 +14,7 @@
 // Plan: app repo docs/phone_native_pages_plan_2026-10.md, phases 3 and 4; the
 // names in docs/phone_native_contract.md.
 
+import { html } from "lit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { HassEntityState } from "../src/ha-api.js";
@@ -81,7 +82,7 @@ import {
 } from "../src/watch-pages/preview.js";
 import { type WatchPhoneAddKind, addNewWatchTile, newWatchTile, watchAddEntityId, watchEntityAddFromHass } from "../src/watch-pages/tile-new.js";
 import { watchTileSectionsFor } from "../src/watch-pages/tile-settings-options.js";
-import { renderTileName, renderTileSettings, tileInspectorSections, tileWordsHost } from "../src/watch-pages/tile-settings.js";
+import { renderTileHead, renderTileSettings, tileInspectorSections, tileWordsHost } from "../src/watch-pages/tile-settings.js";
 
 // These pin the old tile look, which a device below One Look's version
 // still draws; One Look's own are in one-look-render.test.ts.
@@ -583,7 +584,7 @@ describe("the settings of an iPhone only tile on a watch's editor", () => {
   it("name the iPhone, the one device that shows the tile, as an iPhone's editor does", () => {
     for (const kind of WATCH_PHONE_TILE_KINDS) {
       const { host } = tileHost(`${kind}.${UUID}`, { color: "#RAINBOW", hideWhenInactive: true }, "watch");
-      const text = flatten(renderTileName(host)) + flatten(draw(host));
+      const text = flatten(renderTileHead(host, { picture: html``, previewAs: "on", setPreviewAs: () => undefined })) + flatten(draw(host));
       expect(text.match(/[^.>]*\b(the watch|watch's)\b[^.<]*/gi) ?? [], kind).toEqual([]);
       for (const line of ["The iPhone picks the icon", "The iPhone cycles the tile through every color.", "The iPhone leaves the tile out while it is off."]) {
         expect(text, `${kind}: ${line}`).toContain(line);

@@ -363,6 +363,8 @@ export const pictureChoiceStyles = css`
   .pc-strip { --pc-lane: color-mix(in srgb, var(--wa-ink) 14%, transparent); position: relative; display: block; border-radius: 5px; }
   .pc-block { position: absolute; left: 0; top: 0; border-radius: 4px; background: var(--wa-accent); }
 
+  .field.pc-menu-field { align-items: start; }
+  .field.pc-menu-field > span:first-child { padding-top: 7px; }
   .pc-menu { position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .pc-menu-btn {
     display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; padding: 0 8px 0 10px;
@@ -370,8 +372,8 @@ export const pictureChoiceStyles = css`
     font: inherit; font-size: 12.5px; cursor: pointer;
   }
   .pc-menu-btn:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
-  .pc-chev { display: inline-flex; transform: rotate(90deg); color: var(--wa-muted); }
-  .pc-menu-btn[aria-expanded="true"] .pc-chev { transform: rotate(-90deg); }
+  .pc-chev { display: inline-flex; color: var(--wa-muted); }
+  .pc-menu-btn[aria-expanded="true"] .pc-chev { transform: rotate(180deg); }
   .pc-chev svg { width: 12px; height: 12px; }
   .pc-menu-list {
     display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; padding: 4px; scrollbar-width: thin;

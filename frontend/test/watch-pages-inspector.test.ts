@@ -272,8 +272,8 @@ describe("Collapse all", () => {
     expect(folded).toContain(">Expand all</button>");
     expect(folded).not.toContain("data-open=true");
     expect(folded.match(/data-open=false/g)?.length).toBe(9);
-    // The pinned Name card has no fold.
-    expect(folded).toContain(`<section class="sec name-sec" data-open="true"`);
+    // The head card has no fold.
+    expect(folded).toContain(`<section class="ts-head ts-root" aria-label="Tile">`);
     // Across a reload too.
     expect(Object.keys(JSON.parse(storage.data[FOLD_STORE_KEY]!))).toEqual(
       ["action", "arrange", "background", "border", "icon", "size", "state", "text", "visibility"].map((s) => `tile-settings:${s}`),
@@ -322,25 +322,87 @@ describe("Collapse all", () => {
 // ── the cards ────────────────────────────────────────────────────────────
 
 describe("the tile's cards", () => {
-  it("pin the Name card with the label's box first, then Size and Arrangement, then the tile's sections", () => {
+  it("start with the head card, then the cards in two columns: the look on the left, place, state, border and tap on the right", () => {
     const text = flat(inspector(editor(hallPage(), DIMMER)));
     const body = text.slice(text.indexOf(`<div class="insp-body">`));
-    const titles = [...body.matchAll(/<h4>([^<]+)/g)].map((m) => m[1]);
-    expect(titles).toEqual(["Name", "Size", "Arrangement", "Icon and color", "State", "Text", "Border", "Action", "Visibility", "Background"]);
-    const name = card(body, "Name");
-    expect(name).toContain(`class="sec name-sec"`);
-    expect(name).toContain(`aria-label="Label"`);
-    expect(name).toContain("light.smart_plug_dimmer");
-    // The label is the Name card's alone.
+    // The head: the live tile, Name, Entity, Preview as and Reset tile,
+    // before any card.
+    const head = body.slice(body.indexOf(`<section class="ts-head ts-root"`), body.indexOf(`<div class="pe-insp-cols">`));
+    expect(body.indexOf(`<section class="ts-head`)).toBeLessThan(body.indexOf("<h4>"));
+    expect(head).toContain(`<div class="ts-head-pic"><span class="pe-head-tile"`);
+    expect(head).toContain(`aria-label="Name"`);
+    expect(head).toContain(`<code class="ts-head-entity" title=light.smart_plug_dimmer>light.smart_plug_dimmer</code>`);
+    expect(head).toContain(`aria-label=Preview as`);
+    expect(head).toContain("Reset tile</button>");
+    expect(head).not.toContain("<h4>");
+    // No Name card any more, and the name's box is the head's alone.
+    expect(body).not.toContain("name-sec");
+    expect(body.match(/aria-label="Name"/g)?.length).toBe(1);
     expect(card(body, "Text")).not.toContain(`aria-label="Label"`);
-    // The Size card: the presets, then the boxes folded under a line that
-    // says where the tile is.
+    // The columns.
+    const left = body.slice(body.indexOf(`data-col="left"`), body.indexOf(`data-col="right"`));
+    const right = body.slice(body.indexOf(`data-col="right"`));
+    const titles = (part: string) => [...part.matchAll(/<h4>([^<]+)/g)].map((m) => m[1]);
+    expect(titles(left)).toEqual(["Icon and color", "Text", "Background", "Visibility"]);
+    expect(titles(right)).toEqual(["Size", "Arrangement", "State", "Border", "Action"]);
+    // The Size card: the presets as page strips, then the boxes folded
+    // under a line that says where the tile is.
     const size = card(body, "Size");
     expect(size).toContain(`class="pe-presets"`);
+    expect(size).toContain(`class="pc-strip"`);
     expect(size).toContain(`class="pe-size-more" aria-expanded=false`);
     expect(size).not.toContain(`class="pe-fields"`);
     expect(size.indexOf("pe-presets")).toBeLessThan(size.indexOf("pe-size-more"));
     expect(body).toContain("Delete tile");
+  });
+
+  it("stand in two columns from 760px of inspector, one under it, and widen the inspector for a tile", () => {
+    const sheet = (s: unknown): string => (Array.isArray(s) ? s.map(sheet).join("\n") : String((s as { cssText?: string } | undefined)?.cssText ?? ""));
+    const css = sheet((customElements.get("wa-page-editor") as unknown as { styles: unknown }).styles);
+    expect(flat(inspector(editor(hallPage(), DIMMER)))).toContain(`<div class="pe-insp-cols">`);
+    expect(css).toMatch(/\.pe-tile-insp \{ container: pe-tile \/ inline-size;/);
+    expect(css).toMatch(/\.pe-insp-cols \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/);
+    expect(css).toMatch(/@container pe-tile \(min-width: 760px\) \{\s*\.pe-insp-cols \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
+    expect(css).toMatch(/\.layout\.pe-layout\.pe-wide\.pe-tile-on \{\s*grid-template-columns: minmax\(0, 1fr\) clamp\(340px, max\(38%, min\(55%, 100% - 640px\)\), 1100px\);/);
+  });
+
+  it("switch the head's live tile with Preview as, and leave the stage and the draft alone", () => {
+    const el = editor(hallPage(), DIMMER);
+    const pic = () => {
+      const text = flat(inspector(el));
+      return text.slice(text.indexOf(`<div class="ts-head-pic">`), text.indexOf(`<div class="ts-head-fields">`));
+    };
+    const document = () => (el.draft as { document: unknown }).document;
+    const before = document();
+    expect(el.tilePreviewAs).toBe("on");
+    const on = pic();
+    expect(on).toContain(">On<");
+    click(inspector(el), `>Off</button>`);
+    expect(el.tilePreviewAs).toBe("off");
+    const off = pic();
+    expect(off).not.toBe(on);
+    expect(off).toContain(">Off<");
+    click(inspector(el), `>Unavailable</button>`);
+    expect(el.tilePreviewAs).toBe("unavailable");
+    expect(pic()).not.toBe(off);
+    expect(document()).toBe(before);
+    expect(el.liveStates).toBe(false);
+    expect((el.testStates as Map<string, string>).size).toBe(0);
+  });
+
+  it("put the tile's look back in one step with Reset tile, keeping its name and size", () => {
+    const page = hallPage({ items: [{ ...DIMMER_TILE, borderStyle: "line", backgroundPattern: "dots", iconSizeOverride: 30, labelFontWeight: "bold" }, SPACER_TILE] });
+    const el = editor(page, DIMMER);
+    expect(flat(inspector(el))).toMatch(/<button type="button" class="ghost ts-reset-btn" \?disabled=false[^>]*>.*Reset tile<\/button>/s);
+    click(inspector(el), "Reset tile</button>");
+    const tile = (el.currentPage()!.items as WatchPageTile[]).find((t) => t.id === DIMMER)!;
+    expect(tile.borderStyle).not.toBe("line");
+    expect(tile.backgroundPattern ?? "none").toBe("none");
+    expect(tile.iconSizeOverride).toBeUndefined();
+    expect(tile.labelFontWeight).toBeUndefined();
+    expect(tile.customLabel).toBe("Smart Plug Dimmer");
+    expect([tile.colSpan, tile.rowSpan]).toEqual([6, 4]);
+    expect(flat(inspector(el))).toMatch(/<button type="button" class="ghost ts-reset-btn" \?disabled=true/);
   });
 
   it("opens the Size card's boxes on the line under the presets, and on their own while a typed number was refused", () => {
@@ -371,7 +433,6 @@ describe("the tile's cards", () => {
   it("badge each card in the complication editor's colors and glyphs", () => {
     const text = flat(inspector(editor(hallPage(), DIMMER)));
     const expected: [string, string, Parameters<typeof uiIcon>[0]][] = [
-      ["Name", SECTION_COLOR.place, "text"],
       ["Size", SECTION_COLOR.position, "place"],
       ["Icon and color", SECTION_COLOR.look, "look"],
       ["State", SECTION_COLOR.states, "states"],
@@ -407,10 +468,16 @@ describe("the tile's cards", () => {
     expect(card(flat(inspector(el)), "Size")).toContain(`<span class="sum">6×4</span>`);
   });
 
-  it("give a spacer no Name card: it has no label", () => {
+  it("give a spacer no Name and no Preview as in its head: it has no label and no entity", () => {
     const text = flat(inspector(editor(hallPage(), SPACER)));
     expect(text).not.toContain("name-sec");
-    expect([...text.matchAll(/<h4>([^<]+)/g)].map((m) => m[1])).toEqual(["Size", "Border", "Background"]);
+    expect(text).not.toContain(`aria-label="Name"`);
+    expect(text).not.toContain("Preview as");
+    expect(text).toContain(`<span class="ts-head-none">None</span>`);
+    const left = text.slice(text.indexOf(`data-col="left"`), text.indexOf(`data-col="right"`));
+    const right = text.slice(text.indexOf(`data-col="right"`));
+    expect([...left.matchAll(/<h4>([^<]+)/g)].map((m) => m[1])).toEqual(["Background"]);
+    expect([...right.matchAll(/<h4>([^<]+)/g)].map((m) => m[1])).toEqual(["Size", "Border"]);
   });
 });
 

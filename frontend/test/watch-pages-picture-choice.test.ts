@@ -1,8 +1,9 @@
-// The tile settings' picture choices (`picture-choice.ts`): each setting
-// shown as pictures writes what its old control wrote, a choice of a menu
-// that moves plays on the preview tile without touching the draft, the arrow
-// keys move between pictures, and a tile's entity is drawn on, off or
-// unavailable for them.
+// The tile inspector's picture choices (`picture-choice.ts`) and its two
+// columns: each setting shown as pictures writes what its old control wrote,
+// a choice of a menu that moves plays on the head's preview tile without
+// touching the draft, the arrow keys move between pictures, Preview as draws
+// a tile's entity on, off or unavailable, and every section lands in one of
+// the two columns.
 //
 // No DOM: the settings are drawn to their Lit templates and read as text, and
 // a button is pressed by calling the handler its template holds.
@@ -21,7 +22,8 @@ import {
   setWatchTileIconGlow,
   watchTileIconGlow,
 } from "../src/watch-pages/tile-settings-model.js";
-import { renderTileSettings } from "../src/watch-pages/tile-settings.js";
+import { renderTileSettings, tileInspectorColumns } from "../src/watch-pages/tile-settings.js";
+import { WATCH_TILE_SETTINGS_SECTION_TITLES, type WatchTileSettingsSection } from "../src/watch-pages/tile-settings-options.js";
 import { pictureChoice, watchTriedTile } from "../src/watch-pages/picture-choice.js";
 import { watchTileStatesAs } from "../src/watch-pages/preview.js";
 
@@ -295,5 +297,22 @@ describe("Preview as", () => {
     expect(watchTileStatesAs(tile("sensor.t"), states, "off")).toBe(states);
     expect(watchTileStatesAs(tile("spacer.x"), states, "unavailable")).toBe(states);
     expect(STATES["light.desk"].state).toBe("on");
+  });
+});
+
+// ── the columns ──────────────────────────────────────────────────────────
+
+describe("the inspector's columns", () => {
+  it("put the look and Show tile on the left, place, state, border and tap on the right, and lose no section", () => {
+    const all = Object.keys(WATCH_TILE_SETTINGS_SECTION_TITLES) as WatchTileSettingsSection[];
+    const { left, right } = tileInspectorColumns(all);
+    expect(left.slice(0, 4)).toEqual(["icon", "text", "background", "visibility"]);
+    expect(right.slice(0, 5)).toEqual(["size", "arrange", "state", "border", "action"]);
+    expect([...left, ...right].sort()).toEqual([...all].sort());
+    // A kind's own look goes left after them, what the tile is about right.
+    expect(left).toEqual(expect.arrayContaining(["header", "phoneTile", "phone", "phoneExtras", "removed"]));
+    expect(right).toEqual(expect.arrayContaining(["opens", "target", "request", "special"]));
+    // Each column keeps its order whatever order it was given.
+    expect(tileInspectorColumns(["visibility", "border", "icon", "size"])).toEqual({ left: ["icon", "visibility"], right: ["size", "border"] });
   });
 });

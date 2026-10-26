@@ -107,7 +107,8 @@ import {
 } from "./show-when.js";
 import { watchShowWhenTemplateRender } from "./app-model.js";
 import { setWatchEditorLiveCameras, watchCameraRows, watchCameraStreamsFrom, watchEditorLiveCameras } from "./camera-live.js";
-import { type WatchPageTile, type WatchPagesDocument, WATCH_REMOVED_TILE_TEXT, tileEntityId, tileKind, watchPageId, watchPageName, watchPagesOf } from "./model.js";
+import { type WatchPageTile, type WatchPagesDocument, WATCH_REMOVED_TILE_TEXT, isVirtualTileKind, tileEntityId, tileKind, tileKindLabel, watchPageId, watchPageName, watchPagesOf } from "./model.js";
+import type { WatchTilePreviewAs } from "./preview.js";
 import {
   type WatchLibraryKind,
   WATCH_LIBRARY_WORDS,
@@ -151,6 +152,8 @@ import {
   watchStoredPageName,
   watchTileIconSizeTop,
   clearWatchTileHoldSlide,
+  editTile,
+  withoutKey,
   isWatchTriggerTarget,
   setWatchHeaderColor,
   setWatchHeaderGlow,
@@ -227,7 +230,6 @@ import {
   WATCH_COLOR_MODES,
   WATCH_DEFAULT_CHOICE,
   WATCH_HTTP_REPLY_OFF,
-  WATCH_NAME_BADGE,
   WATCH_SKIP_CHOICES,
   WATCH_TILE_SECTION_BADGES,
   WATCH_TILE_SETTINGS_SECTION_TITLES,
@@ -838,47 +840,119 @@ export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTi
   }
 }
 
-// ── name ─────────────────────────────────────────────────────────────────
+// ── the inspector's head and columns ─────────────────────────────────────
 
-/**
- * The pinned Name card at the top of the inspector, a tile's or a page's:
- * one header row with its badge, its title and the name's box, and under it
- * an optional line. A div rather than a label round the row, as the
- * complication editor's: a label hands its clicks to its first control.
- */
-export function watchNameSection(input: TemplateResult, under: TemplateResult | typeof nothing = nothing): TemplateResult {
-  return html`<section class="sec name-sec" data-open="true" style=${`--c:${WATCH_NAME_BADGE.color}`}>
-    <div class="sec-h pinned">
-      <span class="swatch">${uiIcon(WATCH_NAME_BADGE.icon)}</span>
-      <h4>Name</h4>
-      ${input}
-    </div>
-    ${under === nothing ? nothing : html`<div class="sec-b ts-name-b">${under}</div>`}
-  </section>`;
+/** The sections of the tile inspector's left column, in order: how the
+ * tile looks and when it shows, then a kind's own look (a header, the
+ * iPhone's keys). */
+const LEFT_SECTIONS: readonly WatchTileSettingsSection[] = ["icon", "text", "background", "visibility", "header", "phoneTile", "phone", "phoneExtras", "removed"];
+
+/** The right column's, in order: where the tile sits and how big, how its
+ * state and border draw, what a tap does, then what the tile is about (a
+ * page link's target, a request, a kind's own task). A section in neither
+ * list goes at the right column's end. */
+const RIGHT_SECTIONS: readonly WatchTileSettingsSection[] = ["size", "arrange", "state", "border", "action", "opens", "target", "request", "special"];
+
+/** The inspector's sections split into its two columns (one, stacked left
+ * over right, on a narrow inspector), each in its column's order. */
+export function tileInspectorColumns(sections: readonly WatchTileSettingsSection[]): { left: WatchTileSettingsSection[]; right: WatchTileSettingsSection[] } {
+  const rank = (list: readonly WatchTileSettingsSection[], s: WatchTileSettingsSection) => {
+    const i = list.indexOf(s);
+    return i < 0 ? list.length : i;
+  };
+  const left = sections.filter((s) => LEFT_SECTIONS.includes(s)).sort((a, b) => rank(LEFT_SECTIONS, a) - rank(LEFT_SECTIONS, b));
+  const right = sections.filter((s) => !LEFT_SECTIONS.includes(s)).sort((a, b) => rank(RIGHT_SECTIONS, a) - rank(RIGHT_SECTIONS, b));
+  return { left, right };
 }
 
+/** The look keys Reset tile removes beside the styling tasks' own resets:
+ * the icon's size, shadow, glow, dimming, animations and per state icons
+ * and colors, the label's size, weight, design, shadow and color, and the
+ * arrangement. The name, whether it shows, the size, the tap and Show tile
+ * stay. */
+const RESET_LOOK_KEYS: readonly string[] = [
+  "iconSizeOverride", "iconShadow", "iconGlow", "dimWhenOff", "activeIconAnimationEnabled", "iconTapAnimation", "stateIcons", "stateColors",
+  "labelFontSizeOverride", "labelFontWeight", "labelFontDesign", "labelShadow", "labelColorHex", "arrange",
+];
+
+/** The sections whose values Reset tile puts back. */
+const RESET_SECTIONS: readonly WatchTileSettingsSection[] = ["icon", "text", "state", "border", "background", "arrange"];
+
 /**
- * The tile's label as its Name card, for every tile with a Text section (a
- * header's words are its Header's, a spacer has none), and never for a
- * rule's style, whose tiles carry each entity's own name. Empty shows the
- * name the watch falls back to and stores no label. Inside a `.ts-root`, so
- * the editor lets the box go when the selection moves, as it does the
- * settings' own fields.
+ * Reset tile's edit: the tile's look back to its kind's defaults in one
+ * step. The icon and color as Default writes them, State, Border and
+ * Background as their own Resets do, and `RESET_LOOK_KEYS` removed.
  */
-export function renderTileName(watchHost: TileSettingsHost): TemplateResult | typeof nothing {
+export function watchTileResetEdit(host: TileSettingsHost): (d: WatchPagesDocument) => WatchPagesDocument {
+  const defaults = host.domainStyle === true ? { icon: undefined, color: undefined } : kindDefaults(host);
+  const { pageId, tileId } = host;
+  return (d) => {
+    let next = setWatchTileIconDefault(d, pageId, tileId, { icon: defaults.icon ?? null, color: defaults.color ?? null });
+    for (const task of ["state", "border", "background"] as const) next = resetWatchTileTask(next, pageId, tileId, task);
+    return editTile(next, pageId, tileId, (tile) => RESET_LOOK_KEYS.reduce((t, key) => withoutKey(t, key), tile));
+  };
+}
+
+/** Whether Reset tile would change how the tile looks: one of its sections
+ * reads as changed. */
+export function watchTileResettable(host: TileSettingsHost): boolean {
+  const sections = tileInspectorSections(host);
+  return RESET_SECTIONS.some((s) => sections.includes(s) && watchTileSectionChanged(host, s));
+}
+
+/** What the page editor hands the head: the live tile it drew, and the
+ * state the tile is previewed in. */
+export interface TileHeadParts {
+  picture: TemplateResult | typeof nothing;
+  previewAs: WatchTilePreviewAs;
+  setPreviewAs: (as: WatchTilePreviewAs) => void;
+}
+
+const PREVIEW_AS: [WatchTilePreviewAs, string][] = [["on", "On"], ["off", "Off"], ["unavailable", "Unavailable"]];
+
+/**
+ * The tile inspector's head card: the live tile at its own shape, and
+ * beside it the tile's Name (for a tile with a Text section; empty shows
+ * the name the watch falls back to and stores no label), its entity,
+ * Preview as (On, Off, Unavailable: the picture only, never Home Assistant)
+ * for a tile with an entity, and Reset tile. Inside a `.ts-root`, so the
+ * editor lets the name's box go when the selection moves.
+ */
+export function renderTileHead(watchHost: TileSettingsHost, parts: TileHeadParts): TemplateResult {
   const host = tileWordsHost(watchHost);
-  if (host.domainStyle === true || !watchTileSettingsSections(host.tile, host.hass.states).includes("text")) return nothing;
   const tile = host.tile;
-  const fallback = watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document), host.catalog);
-  const label = typed(host, "label") ?? watchTileTextSettings(tile).label ?? "";
-  const set = (v: string) =>
-    commit(host, "label", (d) => setWatchTileLabel(d, host.pageId, host.tileId, v, { emptyRemoves: true }), { typing: true });
   const entityId = tileEntityId(tile);
-  const input = typingField(host, "label", html`<input type="text" aria-label="Label" .value=${label} placeholder=${fallback}
-    ?disabled=${host.busy} @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`);
-  return html`<div class="ts-root ts-name-root">${watchNameSection(input, html`
-    <div class="hint keep">${watchLabelNote(tile, hostDevice(host))}</div>
-    ${entityId === "" ? nothing : html`<div class="ts-entity"><code>${entityId}</code></div>`}`)}</div>`;
+  const kind = tileKind(entityId);
+  const hasEntity = entityId.includes(".") && kind !== "spacer" && kind !== "divider" && !isVirtualTileKind(kind);
+  const named = host.domainStyle !== true && watchTileSettingsSections(tile, host.hass.states).includes("text");
+  let name: TemplateResult | typeof nothing = nothing;
+  if (named) {
+    const fallback = watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document), host.catalog);
+    const label = typed(host, "label") ?? watchTileTextSettings(tile).label ?? "";
+    const set = (v: string) =>
+      commit(host, "label", (d) => setWatchTileLabel(d, host.pageId, host.tileId, v, { emptyRemoves: true }), { typing: true });
+    name = html`<div class="field ts-head-f ts-head-name"><span>Name</span>${typingField(host, "label", html`<input type="text" aria-label="Name" .value=${label}
+      placeholder=${fallback} ?disabled=${host.busy} @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`)}
+      <span class="hint ts-head-note">${watchLabelNote(tile, hostDevice(host))}</span></div>`;
+  }
+  const resettable = watchTileResettable(host);
+  return html`<section class="ts-head ts-root" aria-label="Tile">
+    <div class="ts-head-pic">${parts.picture}</div>
+    <div class="ts-head-fields">
+      ${name}
+      <div class="field ts-head-f"><span>Entity</span>${hasEntity
+        ? html`<code class="ts-head-entity" title=${entityId}>${entityId}</code>`
+        : html`<span class="ts-head-none">${entityId === "" || kind === "spacer" || kind === "divider" ? "None" : tileKindLabel(kind)}</span>`}</div>
+      ${hasEntity ? html`<div class="ts-head-f ts-head-as">${segField<WatchTilePreviewAs>("Preview as", parts.previewAs, PREVIEW_AS, (v) => parts.setPreviewAs(v), {
+        titles: { on: "The tile as it draws on", off: "The tile as it draws off", unavailable: "The tile while Home Assistant cannot reach it" },
+      })}</div>` : nothing}
+      <div class="ts-head-acts">
+        <button type="button" class="ghost ts-reset-btn" ?disabled=${!resettable || host.busy}
+          title=${resettable ? "Put the icon, color, text, state, border, background and arrangement back to their defaults. The name, size, tap and Show tile stay." : "The tile's look is at its defaults"}
+          @click=${() => { host.endCoalesce(); commit(host, "resetTile", watchTileResetEdit(host)); }}>${uiIcon("undo")}Reset tile</button>
+      </div>
+    </div>
+  </section>`;
 }
 
 /** What a folded section's heading says it holds. */
@@ -2528,15 +2602,6 @@ export const tileSettingsStyles = css`
   .ts-root { display: flex; flex-direction: column; }
   /* A removed kind's one line, where its tasks would be. */
   .ts-removed { margin: 6px 0 2px; }
-  /* The Name card's box takes the header's free width, its line sits under. */
-  .name-sec .sec-h > .ts-typing { flex: 1 1 auto; min-width: 0; display: flex; }
-  .name-sec .sec-h > .ts-typing > input { flex: 1 1 auto; width: 0; min-width: 0; }
-  .ts-name-b { display: flex; flex-direction: column; gap: 2px; }
-  /* Both lines start at the card's edge. The shared rule that starts a card's
-     help where its controls start would push the hint to a column this card
-     does not have. */
-  .name-sec > .sec-b.ts-name-b > .hint.keep, .ts-name-b > .hint { margin: 0; }
-  .ts-entity { min-width: 0; font-size: 11.5px; color: var(--wa-muted); overflow-wrap: anywhere; }
   /* The row under the last card: Delete tile. */
   .ts-acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0 0; }
   /* A fieldset only to switch every control off at once while a save is
@@ -2659,6 +2724,38 @@ export const tileSettingsStyles = css`
   .ts-arr-spot.on > span { background: var(--wa-accent); }
   .ts-arr-spot:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .ts-arr-foot { display: flex; justify-content: flex-end; padding-top: 4px; }
+
+  /* The inspector's head card (\`renderTileHead\`): the live tile on a black
+     well, and beside it Name, Entity, Preview as and Reset tile, each title
+     over its control: two by two on an inspector of 760px or more (the page
+     editor's \`pe-tile\` container), one under another below that, and
+     under the tile below 560px. */
+  .ts-head {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px 18px;
+    margin: 0 0 10px; padding: 12px 14px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-card);
+  }
+  .ts-head-pic { display: grid; place-items: center; width: 220px; height: 150px; border-radius: 10px; background: #000; overflow: hidden; }
+  .ts-head-fields { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 10px 16px; min-width: 0; }
+  @container pe-tile (min-width: 760px) {
+    .ts-head-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  .ts-head .field.ts-head-f, .ts-head .ts-head-f > .field { display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-height: 0; }
+  .ts-head .ts-head-f input[type=text] {
+    width: 100%; min-width: 0; height: 30px; min-height: 30px; padding: 0 9px; font-size: 13px; border-radius: 6px;
+    border-color: var(--wa-line-strong); background-color: var(--wa-field);
+  }
+  .ts-head .field > span { font-size: 11.5px; }
+  .ts-head .ts-head-f .ts-typing { display: flex; flex-direction: column; min-width: 0; }
+  .ts-head-entity { display: block; min-width: 0; padding: 6px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wa-ink); }
+  .ts-head-none { padding: 6px 0; font-size: 12.5px; color: var(--wa-muted); }
+  .ts-head-acts { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
+  .ts-head .field > span.ts-head-note { margin: 0; font-size: 11px; color: var(--wa-muted); }
+  .ts-head-acts > button { flex: none; white-space: nowrap; }
+  button.ghost.ts-reset-btn:disabled { opacity: .45; }
+  @container pe-tile (max-width: 560px) {
+    .ts-head { grid-template-columns: minmax(0, 1fr); justify-items: stretch; }
+    .ts-head-pic { width: 100%; }
+  }
 
   ${pictureChoiceStyles}
 `;

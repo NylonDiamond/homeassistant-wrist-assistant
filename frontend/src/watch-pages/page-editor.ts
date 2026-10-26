@@ -222,6 +222,8 @@ import {
   renderWatchPagePreview,
   renderWatchScreenFold,
   renderWatchTileFace,
+  type WatchTilePreviewAs,
+  watchTileStatesAs,
   watchPagePreviewScrolls,
   watchPagePreviewStyles,
   watchPreviewTileLabel,
@@ -252,12 +254,14 @@ import {
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
 import {
   forgetTileSettingsNotes,
-  renderTileName,
+  renderTileHead,
   renderTileSettings,
+  tileInspectorColumns,
   tileInspectorSections,
   tileSettingsFoldIds,
   tileSettingsStyles,
 } from "./tile-settings.js";
+import { pictureChoice, sizeStrip, watchTriedTile } from "./picture-choice.js";
 import { type WatchGroupActions, renderPickedGroupCard, renderTileGroupLine } from "./group-settings.js";
 import {
   PAGE_DEVICES_FOLD,
@@ -351,6 +355,12 @@ const CARD_THUMB_W = 76;
 /** A page's picture is at most this many times as tall as it is wide: an
  * iPhone's tall pages area shows its top. */
 const PAGE_THUMB_MAX_RATIO = 1.4;
+/** The inspector head's live tile is drawn as large as fits this box, CSS
+ * px (its well is `.ts-head-pic`, 220 by 150), and never past this scale,
+ * so a small tile does not read as a big one. */
+const HEAD_TILE_W = 204;
+const HEAD_TILE_H = 134;
+const HEAD_TILE_MAX_SCALE = 3;
 
 /** Entity id kinds whose part after the dot is an id of the tile's own
  * (`spacer.<id>`, `template.<id>`): a copy takes a new one. */
@@ -783,6 +793,10 @@ export class WaPageEditor extends LitElement {
    * strip: the previews draw its entity in that state, over any pinned test
    * state, until the pointer leaves. */
   @state() private hoverState?: { entityId: string; state: string };
+  /** The state the inspector head's preview tile draws its entity in
+   * (Preview as): on, off or unavailable. That tile only, never the stage,
+   * never saved. */
+  @state() private tilePreviewAs: WatchTilePreviewAs = "on";
   /** The entity whose test value is being typed in the Live strip. */
   @state() private editingValue?: string;
   /** The stage's scale as stepped with the zoom buttons, undefined while it
@@ -3178,8 +3192,10 @@ export class WaPageEditor extends LitElement {
     // screen tall and each column scrolls in its own box. Every page is
     // reached from the picker and every tile on the stage: there is no
     // list beside them.
+    // One tile's settings take a wider inspector, so its two columns fit.
+    const tileInspector = page !== undefined && tile !== undefined && !(this.multiPicked && this.pickedIds(page).length >= 2);
     return html`${page ? this.renderPageHead(page, pages, owner) : nothing}
-    <div class="layout pe-layout ${this.stacked ? "cols-1" : "pe-wide"}">
+    <div class="layout pe-layout ${this.stacked ? "cols-1" : "pe-wide"}${tileInspector ? " pe-tile-on" : ""}">
       <div class="column canvas">
         ${page ? this.renderStage(page, pages, owner, watches, tile) : html`<div class="card canvas-card pe-no-page">
             <p class="pe-muted">${listed.length === 0 ? "Add a page to start." : "Pick a page."}</p>
@@ -4318,17 +4334,23 @@ export class WaPageEditor extends LitElement {
     // line that names where the tile is, and on their own while a typed
     // number was refused, so the note is never about boxes that are hidden.
     const fieldsOpen = this.sizeFieldsOpen || this.fieldNote !== undefined;
+    // The presets as pictures: a strip as wide as the page's grid with the
+    // tile's block on it.
+    const preset = WATCH_TILE_SIZE_PRESETS.find((p) => rect.colSpan === p.colSpan && rect.rowSpan === p.rowSpan);
     const size = {
       summary: () => `${rect.colSpan}×${rect.rowSpan}`,
       body: () => html`
-        <div class="pe-presets" role="group" aria-label="Size">
-          ${WATCH_TILE_SIZE_PRESETS.map((p) => {
-            const on = rect.colSpan === p.colSpan && rect.rowSpan === p.rowSpan;
-            return html`<button class="pe-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"} ?disabled=${off}
-              title=${`${p.colSpan} columns by ${p.rowSpan} rows`}
-              @click=${() => this.sizeTile(p.colSpan, p.rowSpan)}>${p.name}</button>`;
-          })}
-        </div>
+        <div class="pe-presets">${pictureChoice("Preset", preset?.name, WATCH_TILE_SIZE_PRESETS.map((p) => ({
+          value: p.name,
+          label: p.name,
+          title: `${p.colSpan} columns by ${p.rowSpan} rows`,
+          disabled: off,
+          picture: () => sizeStrip(p.colSpan, p.rowSpan, WATCH_GRID_COLUMNS),
+        })), (name) => {
+          const p = WATCH_TILE_SIZE_PRESETS.find((q) => q.name === name);
+          if (p !== undefined) this.sizeTile(p.colSpan, p.rowSpan);
+        }, { size: "strip" })}</div>
+        <div class="hint">The strip is the page's width. Drag the tile's corner on the ${deviceWord(this.linkKind)} for any other size.</div>
         ${html`<button type="button" class="pe-size-more" aria-expanded=${fieldsOpen ? "true" : "false"} aria-controls="pe-size-fields"
           title=${fieldsOpen ? "Hide the column, row, width and height boxes" : "Type the column, row, width and height"}
           @click=${() => { this.sizeFieldsOpen = !fieldsOpen; }}>
@@ -4344,12 +4366,48 @@ export class WaPageEditor extends LitElement {
         ${this.fieldNote ? html`<p class="pe-warn" role="status">${this.fieldNote}</p>` : nothing}`,
     };
     const host = this.tileSettingsHost(page, tile);
-    return html`
-      ${host === undefined ? nothing : renderTileName(host)}
+    const columns = host === undefined ? undefined : tileInspectorColumns(tileInspectorSections(host));
+    return html`<div class="pe-tile-insp">
+      ${host === undefined ? nothing : renderTileHead(host, {
+        picture: this.renderTileHeadPicture(page, tile),
+        previewAs: this.tilePreviewAs,
+        setPreviewAs: (as) => { this.tilePreviewAs = as; },
+      })}
       ${host === undefined || off ? nothing : renderTileGroupLine(host, this.groupActions)}
-      ${host === undefined ? nothing : renderTileSettings(host, { sections: tileInspectorSections(host), size })}
+      ${host === undefined || columns === undefined ? nothing : html`<div class="pe-insp-cols">
+        <div class="pe-insp-col" data-col="left">${renderTileSettings(host, { sections: columns.left, size })}</div>
+        <div class="pe-insp-col" data-col="right">${renderTileSettings(host, { sections: columns.right, size })}</div>
+      </div>`}
       <div class="ts-acts"><button class="pe-btn pe-danger" ?disabled=${off} title="Delete or Backspace" @click=${() => this.deleteTile()}>
-        ${uiIcon("delete")}<span>Delete tile</span></button></div>`;
+        ${uiIcon("delete")}<span>Delete tile</span></button></div>
+    </div>`;
+  }
+
+  /**
+   * The inspector head's live tile: the selected tile at its own shape as
+   * the stage lays it out on the preview device, at the largest scale that
+   * fits the head's well, its entity drawn as Preview as says (on, off or
+   * unavailable) and the choice being pointed at in an Effect or Animation
+   * menu drawn in place of the stored one (`watchTriedTile`). Nothing for a
+   * tile with no place on the page.
+   */
+  private renderTileHeadPicture(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
+    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
+    const screen = this.screenOf(owner);
+    const layout = watchPreviewLayout(page, screen, { flat: true, sideInset: this.gridSideInset });
+    const id = tileIdOf(tile);
+    const placed = layout.tiles.find((t) => t.tile === tile) ?? layout.tiles.find((t) => sameWatchId(tileIdOf(t.tile), id));
+    if (placed === undefined || !(placed.width > 0 && placed.height > 0)) return nothing;
+    const drawn = watchTriedTile(this.uiState, id) ?? tile;
+    const s = Math.min(HEAD_TILE_W / placed.width, HEAD_TILE_H / placed.height, HEAD_TILE_MAX_SCALE);
+    const pages = this.draft === undefined ? [page] : watchPagesOf(this.contextPages(this.draft.document));
+    // Drawn as Preview as says, whatever the Live switch or a state tried
+    // in the Live strip does to the stage.
+    const { testedIds: _tested, ...base } = this.previewInput(page, pages, screen, s);
+    const states = watchTileStatesAs(drawn, this.hass?.states, this.tilePreviewAs);
+    const input: WatchPagePreviewInput = { ...base, stateMode: "live", ...(states === undefined ? {} : { states }) };
+    return html`<span class="pe-head-tile" style=${`width:${Math.round(placed.width * s)}px;height:${Math.round(placed.height * s)}px`}>${
+      renderWatchTileFace(drawn, { width: placed.width, height: placed.height }, input, layout.unit)}</span>`;
   }
 
   /** The tile settings' host for the selected tile, or undefined with no
@@ -4565,6 +4623,13 @@ export class WaPageEditor extends LitElement {
     .layout.pe-layout.pe-wide {
       grid-template-columns: minmax(0, 1fr) clamp(340px, 38%, 640px); column-gap: 8px;
       flex: 1 1 0; min-height: 0; overflow: hidden;
+    }
+    /* With one tile selected the inspector grows to 55% of the editor, at
+       most 1100px, so its settings stand in two columns on a large screen,
+       while the stage keeps at least 640px (never less than the 38% it has
+       anyway). */
+    .layout.pe-layout.pe-wide.pe-tile-on {
+      grid-template-columns: minmax(0, 1fr) clamp(340px, max(38%, min(55%, 100% - 640px)), 1100px);
     }
     .layout.pe-layout.cols-1 { flex: none; min-height: auto; overflow: visible; }
     .pe-layout.pe-wide > .column.inspector { overflow-y: auto; overscroll-behavior: contain; }
@@ -4924,7 +4989,18 @@ export class WaPageEditor extends LitElement {
     .pe-field > input:hover:not(:disabled) { border-color: var(--wa-line-strong); }
     .pe-field > input:focus:not(:disabled) { outline: none; box-shadow: var(--wa-ring); border-color: var(--wa-sel-ring); }
     .pe-field > input:disabled { opacity: .55; }
-    .pe-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pe-presets { display: flex; flex-direction: column; }
+    /* The tile inspector: the head card over the settings in two columns
+       (left how the tile looks and when it shows, right where it sits and
+       what it does), one column on an inspector narrower than 760px. The
+       container also lays out the head (\`tileSettingsStyles\`). */
+    .pe-tile-insp { container: pe-tile / inline-size; display: flex; flex-direction: column; min-width: 0; }
+    .pe-insp-cols { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 0 14px; }
+    .pe-insp-col { display: flex; flex-direction: column; min-width: 0; }
+    @container pe-tile (min-width: 760px) {
+      .pe-insp-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .pe-head-tile { position: relative; display: block; flex: none; pointer-events: none; }
     /* The line under the presets that opens the four boxes: where the tile
        is, behind a chevron that turns, so it reads as a disclosure. The
        text arrow it had read as a list bullet. */

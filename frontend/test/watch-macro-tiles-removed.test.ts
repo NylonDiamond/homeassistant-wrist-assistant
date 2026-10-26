@@ -7,6 +7,7 @@
 // direction is kept too, read as removed and offered nowhere.
 
 import { nothing } from "lit";
+import type { TileHeadParts } from "../src/watch-pages/tile-settings.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -41,7 +42,7 @@ import tileDefaults from "../src/watch-pages/tile-defaults.json";
 import menuKeys from "../src/watch-menus/menu-keys.json";
 import { watchMenuDomain } from "../src/watch-menus/model.js";
 import { watchTileSettingsSections } from "../src/watch-pages/tile-settings-options.js";
-import { renderTileName, renderTileSettings } from "../src/watch-pages/tile-settings.js";
+import { renderTileHead, renderTileSettings } from "../src/watch-pages/tile-settings.js";
 
 // These pin the old tile look, which a device below One Look's version
 // still draws; One Look's own are in one-look-render.test.ts.
@@ -132,14 +133,15 @@ function host(tileId: string) {
 }
 
 describe("a stored macro tile's settings", () => {
-  it("are one line that says why, with nothing to edit and no Name card", () => {
+  it("are one line that says why, with nothing to edit and no Name in the head", () => {
     const { host: h } = host(MACRO);
     expect(watchTileSettingsSections(h.tile)).toEqual(["removed"]);
     const drawn = text(renderTileSettings(h));
     expect(drawn).toContain(WATCH_REMOVED_TILE_TEXT);
     expect(WATCH_REMOVED_TILE_TEXT).toBe("Macros were removed. Use a Home Assistant script instead.");
     for (const gone of ["Run silently", "When it finishes", "Target", "<input", "<select"]) expect(drawn, gone).not.toContain(gone);
-    expect(renderTileName(h)).toBe(nothing);
+    const head: TileHeadParts = { picture: nothing, previewAs: "on", setPreviewAs: () => undefined };
+    expect(text(renderTileHead(h, head))).not.toContain(`aria-label="Name"`);
   });
 });
 
