@@ -14,6 +14,7 @@ import type { LibrarySummary } from "../src/library/client.js";
 import { libraryDraftKey } from "../src/library/item-mode.js";
 import { libraryOf } from "../src/library/model.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
+import { arrangePickedPart, setArrangeFreePicked, setArrangePickedPart } from "../src/watch-pages/arrange-model.js";
 import { type WatchCatalog, readWatchCatalog } from "../src/watch-pages/catalog.js";
 import { giveWatchTileId } from "../src/watch-pages/edit.js";
 import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
@@ -1209,3 +1210,198 @@ describe("the pickers' HTTP actions", () => {
   });
 });
 
+
+describe("dragging a tile's own parts (Arrangement, Free)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** Big, a lamp laid out centred (6 by 4), so Free can place its parts;
+   * Strip, a lamp 3 rows high, laid out in a row, so it cannot. */
+  const ROOM = {
+    schemaVersion: 1,
+    pages: [{
+      id: "P-ROOM", name: "Room", items: [
+        { id: "T-BIG", entityId: "light.big", customLabel: "Big", gridRow: 0, gridCol: 0, colSpan: 6, rowSpan: 4 },
+        { id: "T-STRIP", entityId: "light.strip", customLabel: "Strip", gridRow: 4, gridCol: 0, colSpan: 6, rowSpan: 3 },
+      ],
+    }],
+  } as unknown as WatchPagesDocument;
+  const STATES = {
+    "light.big": { entity_id: "light.big", state: "on", attributes: { brightness: 200 } },
+    "light.strip": { entity_id: "light.strip", state: "on", attributes: { brightness: 200 } },
+  };
+  type Arr = { v: 1; parts: Record<string, Record<string, unknown>> } | undefined;
+  type PartMove = { kind: string; part?: string; started: boolean; width?: number; height?: number; arrange?: Arr };
+
+  /** The editor on Room with `selected` picked, Free picked on it when
+   * `free`, drawn once, with no pointer to capture. */
+  function stage(selected: string, free = true) {
+    const made = editor(selected, ROOM, STATES);
+    const { el } = made;
+    const { Element } = stubBrowser(el);
+    el.capture = () => undefined;
+    const ui = el.uiState as Map<string, unknown>;
+    if (free) setArrangeFreePicked(ui, selected, true);
+    made.body();
+    const screen = nodeOf(Element, "pe-screen");
+    const tileOf = (id: string) => ((made.draft().document.pages as { items: (WatchPageTile & { id: string })[] }[])[0]!.items.find((t) => t.id === id))!;
+    const press = (part: string, tileId = selected, mods: Record<string, boolean> = {}) => {
+      let stopped = false;
+      made.call("onPartPointerDown", {
+        button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, ...mods, pointerType: "mouse", pointerId: 7, clientX: 100, clientY: 100,
+        currentTarget: null, stopPropagation: () => { stopped = true; },
+      }, tileId, part);
+      return stopped;
+    };
+    const pressTile = (tileId = selected) => made.call("onTilePointerDown", {
+      button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerType: "mouse", pointerId: 7, clientX: 100, clientY: 100,
+      currentTarget: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+    }, tileId);
+    const move = (dx: number, dy: number) => made.call("onPointerMove", { pointerId: 7, clientX: 100 + dx, clientY: 100 + dy, preventDefault: () => undefined });
+    const up = () => made.call("onPointerUp", { pointerId: 7 });
+    const key = (name: string, mods: Record<string, boolean> = {}) => {
+      const k = keyEvent(el, name, screen, mods);
+      made.call("onKeyDown", k.event);
+      return k.prevented();
+    };
+    const click = (tileId = selected) => made.call("takePressedPart", tileId, { shiftKey: false, metaKey: false, ctrlKey: false });
+    return { ...made, ui, tileOf, press, pressTile, move, up, key, click, gesture: () => el.gesture as PartMove | undefined };
+  }
+
+  it("outlines the picked part of the selected Free tile, and boxes its other parts to pick", () => {
+    const { body } = stage("T-BIG");
+    const big = stageTile(body(), "T-BIG");
+    expect(big).toMatch(/<span class="pe-part on [^"]*" data-part=icon /);
+    expect(big).toMatch(/<span class="pe-part  [^"]*" data-part=name /);
+    expect(big).toMatch(/<span class="pe-part  [^"]*" data-part=state /);
+    expect(big).toContain("Drag to move the icon. Arrow keys nudge it, Escape lets it go.");
+    expect(sheet()).toMatch(/\.pe-part\.on\s*\{[^}]*outline: 1px solid var\(--pe-mark\)/);
+  });
+
+  it("draws no parts with Free off, on a tile Free cannot place, or with several tiles picked", () => {
+    expect(stageTile(stage("T-BIG", false).body(), "T-BIG")).not.toContain("pe-part");
+    const strip = stage("T-STRIP");
+    expect(stageTile(strip.body(), "T-STRIP")).not.toContain("pe-part");
+    expect(strip.el.stageArrange).toBeUndefined();
+    const several = stage("T-BIG");
+    (several.el.clickTile as (i: string, e: object) => void).call(several.el, "T-STRIP", { shiftKey: false, metaKey: true, ctrlKey: false });
+    expect(several.body()).not.toContain("pe-part");
+  });
+
+  it("drags the picked part by shares of the tile, live, and writes dx and dy once, clamped, as one undo step", () => {
+    const { el, body, press, move, up, gesture, tileOf, draft } = stage("T-BIG");
+    // A press on the picked part is the part's, not the tile's.
+    expect(press("icon")).toBe(true);
+    const g = gesture()!;
+    expect(g.kind).toBe("part");
+    expect(g.part).toBe("icon");
+    const before = draft().document;
+    move(13, -7);
+    const across = Math.round((13 / g.width!) * 1000) / 1000;
+    const down = Math.round((-7 / g.height!) * 1000) / 1000;
+    expect(gesture()!.arrange).toEqual({ v: 1, parts: { icon: { dx: across, dy: down } } });
+    // Drawn where the pointer puts it, nothing written yet.
+    expect(draft().document).toBe(before);
+    expect(body()).toMatch(/class="pe-part on dragging" data-part=icon /);
+    // Far past the tile: half the tile at most.
+    move(5000, -5000);
+    expect(gesture()!.arrange).toEqual({ v: 1, parts: { icon: { dx: 0.5, dy: -0.5 } } });
+    move(13, -7);
+    up();
+    expect(el.gesture).toBeUndefined();
+    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { icon: { dx: across, dy: down } } });
+    // The tile did not move.
+    expect(tileOf("T-BIG")).toMatchObject({ gridRow: 0, gridCol: 0 });
+    draft().undo();
+    expect(Object.hasOwn(tileOf("T-BIG"), "arrange")).toBe(false);
+    expect(draft().canUndo).toBe(false);
+  });
+
+  it("keeps a part's spot when it is dragged, and a press with no travel writes nothing", () => {
+    const made = editor("T-BIG", {
+      ...ROOM,
+      pages: [{ ...(ROOM.pages as WatchPage[])[0]!, items: (ROOM.pages as { items: WatchPageTile[] }[])[0]!.items.map((t) => t.id === "T-BIG" ? { ...t, arrange: { v: 1, parts: { name: { spot: "bl" } } } } : t) }],
+    } as unknown as WatchPagesDocument, STATES);
+    stubBrowser(made.el);
+    made.el.capture = () => undefined;
+    setArrangePickedPart(made.el.uiState as Map<string, unknown>, "T-BIG", "name");
+    made.body();
+    const ev = { button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerId: 7, clientX: 50, clientY: 50, currentTarget: null, stopPropagation: () => undefined };
+    made.call("onPartPointerDown", ev, "T-BIG", "name");
+    const before = made.draft().document;
+    made.call("onPointerUp", { pointerId: 7 });
+    expect(made.draft().document).toBe(before);
+    made.call("onPartPointerDown", ev, "T-BIG", "name");
+    made.call("onPointerMove", { pointerId: 7, clientX: 50, clientY: 90, preventDefault: () => undefined });
+    made.call("onPointerUp", { pointerId: 7 });
+    const arrange = ((made.draft().document.pages as { items: WatchPageTile[] }[])[0]!.items.find((t) => t.id === "T-BIG")!.arrange as Arr)!;
+    expect(arrange.parts.name!.spot).toBe("bl");
+    expect(arrange.parts.name!.dy).toBeGreaterThan(0);
+  });
+
+  it("picks a part with a click on it, in the card's view state too", () => {
+    const { ui, press, click, gesture, body } = stage("T-BIG");
+    // Another part's press is the tile's: no part drag, and its click picks it.
+    expect(press("state")).toBe(false);
+    expect(gesture()).toBeUndefined();
+    expect(click()).toBe(true);
+    expect(arrangePickedPart(ui, "T-BIG")).toBe("state");
+    expect(stageTile(body(), "T-BIG")).toMatch(/<span class="pe-part on [^"]*" data-part=state /);
+    // A click with no press on a part picks nothing, and a press that became
+    // a drag of the tile picks nothing either.
+    expect(click()).toBe(false);
+    press("name");
+    expect(click("T-STRIP")).toBe(false);
+    expect(arrangePickedPart(ui, "T-BIG")).toBe("state");
+  });
+
+  it("nudges the picked part 1% a key, 5% with Shift, one undo step each, and Escape lets it go so the arrows move the tile", () => {
+    const { el, ui, key, tileOf, draft, body } = stage("T-BIG");
+    expect(key("ArrowRight")).toBe(true);
+    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { icon: { dx: 0.01 } } });
+    expect(key("ArrowDown", { shiftKey: true })).toBe(true);
+    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { icon: { dx: 0.01, dy: 0.05 } } });
+    expect(tileOf("T-BIG")).toMatchObject({ gridRow: 0, gridCol: 0 });
+    draft().undo();
+    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { icon: { dx: 0.01 } } });
+    // Escape lets the part go, and the tile stays selected.
+    expect(key("Escape")).toBe(true);
+    expect(arrangePickedPart(ui, "T-BIG")).toBeUndefined();
+    expect(el.selectedTileId).toBe("T-BIG");
+    body();
+    expect(stageTile(body(), "T-BIG")).not.toContain("pe-part on");
+    key("ArrowRight");
+    expect(tileOf("T-BIG").arrange).toEqual({ v: 1, parts: { icon: { dx: 0.01 } } });
+    expect(tileOf("T-BIG").gridCol).toBe(1);
+    // A second Escape lets the tile go.
+    key("Escape");
+    expect(el.selectedTileId).toBeUndefined();
+  });
+
+  it("moves the tile as before with no part picked, with Free off, and on a tile Free cannot place", () => {
+    const loose = stage("T-BIG");
+    setArrangePickedPart(loose.ui, "T-BIG", undefined);
+    loose.body();
+    expect(loose.press("icon")).toBe(false);
+    expect(loose.gesture()).toBeUndefined();
+    loose.pressTile();
+    expect(loose.gesture()!.kind).toBe("move");
+    loose.call("endGesture");
+
+    const off = stage("T-BIG", false);
+    off.pressTile();
+    expect(off.gesture()!.kind).toBe("move");
+    off.call("endGesture");
+    off.key("ArrowRight");
+    expect(off.tileOf("T-BIG").gridCol).toBe(1);
+    expect(Object.hasOwn(off.tileOf("T-BIG"), "arrange")).toBe(false);
+
+    const strip = stage("T-STRIP");
+    expect(strip.press("icon")).toBe(false);
+    expect(strip.gesture()).toBeUndefined();
+    strip.key("ArrowRight");
+    expect(Object.hasOwn(strip.tileOf("T-STRIP"), "arrange")).toBe(false);
+    expect(strip.tileOf("T-STRIP").gridCol).toBe(1);
+  });
+});

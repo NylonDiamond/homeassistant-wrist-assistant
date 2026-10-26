@@ -4,7 +4,9 @@
 // (or its native place), its Size, Shown or Hidden, a small move across and
 // down, and "Put every part back". Every edit is one commit of the tile key
 // `arrange` (`setWatchTileArrange`), so it goes through the draft and undo
-// like every other tile setting; Default removes the key.
+// like every other tile setting; Default removes the key. The part picked
+// is shared with the stage (`arrangePickedPart`): there the picked part of
+// the selected tile is outlined and dragged, or nudged with the arrow keys.
 //
 // Free is offered only where One Look lays the tile out centred: a tile
 // whose picture fills it, a chart, and a stacked or strip tile show Free
@@ -25,10 +27,19 @@ import { type TileSettingsHost, hostDevice } from "./editor-host.js";
 import type { WatchPageTile } from "./model.js";
 import { renderWatchTileFace } from "./preview.js";
 import type { OneLookPreviewModel } from "./one-look/render.js";
-import { ARRANGE_SAMPLE, type ArrangeFrame, type ArrangeFrameSource, arrangeFrame, arrangeFreeBlock } from "./arrange-model.js";
+import {
+  ARRANGE_SAMPLE,
+  type ArrangeFrame,
+  type ArrangeFrameSource,
+  arrangeFrame,
+  arrangeFreeBlock,
+  arrangeFreeOn,
+  arrangePickedPart,
+  setArrangeFreePicked,
+  setArrangePickedPart,
+} from "./arrange-model.js";
 import {
   ARRANGE_OFFSET_RANGE,
-  ARRANGE_PARTS,
   ARRANGE_SPOTS,
   type ArrangePart,
   type ArrangePartEntry,
@@ -39,24 +50,22 @@ import {
 import { setWatchTileArrange, watchTileArrange } from "./tile-settings-model.js";
 import { commit, resetButton, typed, typedNumber, typingField } from "./tile-settings.js";
 
-/** Every `uiState` key of this card starts with this. */
-const KEY = "tile-settings:arrange";
-
 // ── state kept between draws ─────────────────────────────────────────────
+//
+// Free and the part picked live in `uiState` by tile (`arrange-model.ts`),
+// where the stage reads them too: a part clicked on the stage tile is the
+// one this card shows, and Escape on the stage lets the pick go.
 
-const freeKey = (host: TileSettingsHost) => `${KEY}:free:${host.tileId.toUpperCase()}`;
-const partKey = (host: TileSettingsHost) => `${KEY}:part:${host.tileId.toUpperCase()}`;
-
-/** The part the card is placing: Icon until another is picked. */
-export function arrangeSelectedPart(host: TileSettingsHost): ArrangePart {
-  const v = host.uiState.get(partKey(host));
-  return typeof v === "string" && (ARRANGE_PARTS as readonly string[]).includes(v) ? (v as ArrangePart) : "icon";
+/** The part the card is placing: Icon until another is picked, undefined
+ * once the pick was let go on the stage. */
+export function arrangeSelectedPart(host: TileSettingsHost): ArrangePart | undefined {
+  return arrangePickedPart(host.uiState, host.tileId);
 }
 
 /** Whether the card shows Free: a stored arrangement, or Free picked and
  * nothing moved yet (which stores nothing: no move is Default). */
 export function arrangeFreeShown(host: TileSettingsHost): boolean {
-  return watchTileArrange(host.tile) !== undefined || host.uiState.get(freeKey(host)) === true;
+  return arrangeFreeOn(host.uiState, host.tile);
 }
 
 // ── edits ────────────────────────────────────────────────────────────────
@@ -67,27 +76,30 @@ function writeArrange(host: TileSettingsHost, setting: string, next: (now: TileA
 
 function writePart(host: TileSettingsHost, setting: string, change: (entry: ArrangePartEntry) => ArrangePartEntry, typing = false): void {
   const part = arrangeSelectedPart(host);
+  if (part === undefined) return;
   writeArrange(host, setting, (now) => withArrangePart(now, part, change), typing);
 }
 
 /** Default: the key goes (one undo step brings it back), and Free is
  * forgotten. */
 export function pickArrangeDefault(host: TileSettingsHost): void {
-  host.uiState.delete(freeKey(host));
+  setArrangeFreePicked(host.uiState, host.tileId, false);
   host.endCoalesce();
   writeArrange(host, "default", () => undefined);
   host.requestUpdate();
 }
 
-/** Free: shown at once; nothing is written until a part moves. */
+/** Free: shown at once; nothing is written until a part moves. A part let
+ * go before is picked again (Icon), so the stage tile can be grabbed at once. */
 export function pickArrangeFree(host: TileSettingsHost): void {
-  host.uiState.set(freeKey(host), true);
+  setArrangeFreePicked(host.uiState, host.tileId, true);
+  if (arrangeSelectedPart(host) === undefined) setArrangePickedPart(host.uiState, host.tileId, "icon");
   host.requestUpdate();
 }
 
 /** Put every part back: the key goes, Free stays picked. */
 export function putEveryPartBack(host: TileSettingsHost): void {
-  host.uiState.set(freeKey(host), true);
+  setArrangeFreePicked(host.uiState, host.tileId, true);
   host.endCoalesce();
   writeArrange(host, "reset", () => undefined);
 }
@@ -166,18 +178,29 @@ export function renderArrangement(host: TileSettingsHost): TemplateResult {
 
 /** The rows under Free, for the part picked. */
 function renderFreeRows(host: TileSettingsHost, stored: TileArrange | undefined, model: OneLookPreviewModel | undefined): TemplateResult {
-  const part = arrangeSelectedPart(host);
+  const picked = arrangeSelectedPart(host);
+  const moved = (p: ArrangePart) => stored?.parts[p] !== undefined;
+  const pickPart = (p: ArrangePart | "none") => {
+    setArrangePickedPart(host.uiState, host.tileId, p === "none" ? undefined : p);
+    host.endCoalesce();
+    host.requestUpdate();
+  };
+  const partRow = segField<ArrangePart | "none">("Part", picked ?? "none", PART_LABELS.map(([p, label]) => [p, moved(p) ? `${label} •` : label] as [ArrangePart, string]), (p) => pickPart(p), {
+    titles: { icon: "The icon, with its glow or a person's photo", name: "The tile's name", state: "The state line" },
+  });
+  if (picked === undefined) {
+    return html`<div class="ts-arr-free">
+      ${partRow}
+      <div class="hint ts-under">Pick a part here or click it on the tile, then drag it there or use the arrow keys.</div>
+      <div class="ts-arr-foot">${resetButton("Put every part back", "Every part back where the tile's layout puts it", () => putEveryPartBack(host))}</div>
+    </div>`;
+  }
+  const part = picked;
   const entry = stored?.parts[part] ?? {};
   const drawn = model === undefined ? true
     : part === "icon" ? model.layout.discRect.width > 0
     : part === "name" ? model.layout.name.lines.length > 0
     : model.layout.stateRect !== undefined;
-  const moved = (p: ArrangePart) => stored?.parts[p] !== undefined;
-  const pickPart = (p: ArrangePart) => {
-    host.uiState.set(partKey(host), p);
-    host.endCoalesce();
-    host.requestUpdate();
-  };
   const scale = String(entry.scale ?? 1);
   const offset = (axis: "dx" | "dy") => {
     const label = axis === "dx" ? "Across" : "Down";
@@ -188,9 +211,7 @@ function renderFreeRows(host: TileSettingsHost, stored: TileArrange | undefined,
     }), Math.round((entry[axis] ?? 0) * 1000) / 10);
   };
   return html`<div class="ts-arr-free">
-    ${segField<ArrangePart>("Part", part, PART_LABELS.map(([p, label]) => [p, moved(p) ? `${label} •` : label] as [ArrangePart, string]), (p) => pickPart(p), {
-      titles: { icon: "The icon, with its glow or a person's photo", name: "The tile's name", state: "The state line" },
-    })}
+    ${partRow}
     ${drawn ? nothing : html`<div class="hint ts-under">This tile draws no ${PART_WORDS[part]} now; its arrangement is kept for when it does.</div>`}
     <div class="field ts-arr-spot-row"><span>Spot</span>
       <div class="ts-arr-spot-ctl">
