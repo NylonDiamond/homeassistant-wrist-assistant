@@ -154,7 +154,7 @@ describe("reading and writing the key", () => {
   it("writes the keys in order, owned as roles, the doc in normal form", () => {
     const tile = ownedNameTile();
     const raw = tile.design as Record<string, unknown>;
-    expect(Object.keys(raw)).toEqual(["v", "owned", "zones", "doc"]);
+    expect(Object.keys(raw)).toEqual(["v", "owned", "anchors", "zones", "doc"]);
     expect(raw.v).toBe(1);
     expect(raw.owned).toEqual(["base.name"]);
     expect(raw.zones).toEqual({});

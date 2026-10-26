@@ -20,7 +20,7 @@ import {
   oneLookStateLineText,
   tileValuesFor,
 } from "../src/watch-pages/tile-base-layers.js";
-import { BASE_LAYER_IDS, BASE_LAYER_NAMES, BASE_STATE_PILL_ID } from "../src/watch-pages/tile-design.js";
+import { BASE_LAYER_IDS, BASE_LAYER_NAMES, BASE_STATE_PART_IDS, BASE_STATE_PILL_ID } from "../src/watch-pages/tile-design.js";
 
 const measurer = oneLookMeasurer("watch", { estimate: true });
 
@@ -93,9 +93,9 @@ describe("oneLookStateLineText", () => {
 
 describe("tileValuesFor", () => {
   it("gives the state line and the name One Look draws", () => {
-    expect(tileValuesFor(LIGHT, ctxFor(OFFICE))).toEqual({ state: "82%", name: "Office" });
-    expect(tileValuesFor(SENSOR, ctxFor(TEMP))).toEqual({ state: "21.5°C", name: "Living room" });
-    expect(tileValuesFor(PERSON, ctxFor(CHEN))).toEqual({ state: "Home", name: "Chen" });
+    expect(tileValuesFor(LIGHT, ctxFor(OFFICE))).toEqual({ state: "82%", name: "Office", stateParts: { figure: "82", unit: "%", tail: "", word: "" } });
+    expect(tileValuesFor(SENSOR, ctxFor(TEMP))).toEqual({ state: "21.5°C", name: "Living room", stateParts: { figure: "21.5", unit: "°C", tail: "", word: "" } });
+    expect(tileValuesFor(PERSON, ctxFor(CHEN))).toEqual({ state: "Home", name: "Chen", stateParts: { figure: "", unit: "", tail: "", word: "Home" } });
   });
 
   it("names the tile by its label whether or not the label shows", () => {
@@ -135,7 +135,8 @@ describe("baseLayers", () => {
     expect(layers.map((el) => el.payload.id)).toEqual([BASE_LAYER_IDS.icon, BASE_LAYER_IDS.state, BASE_LAYER_IDS.name]);
     expect(layers.map((el) => el.payload.name)).toEqual([BASE_LAYER_NAMES.icon, BASE_LAYER_NAMES.state, BASE_LAYER_NAMES.name]);
     expect(text(layers, "name").value).toEqual({ kind: { kind: "tileName" } });
-    expect(text(layers, "state").value).toEqual({ kind: { kind: "tileState" } });
+    // Rich text: the value is the parts' fallback, the figure's.
+    expect(text(layers, "state").value).toEqual({ kind: { kind: "tileState", part: "figure" } });
   });
 
   it("is empty for a kind without layers", () => {
@@ -198,17 +199,31 @@ describe("baseLayers", () => {
   });
 
   describe("the state layer", () => {
-    it("is One Look's state type: a number bold rounded with tabular digits, a word regular", () => {
+    it("is One Look's state type: the layer in the number's type, four parts each in its piece's type", () => {
+      for (const layer of [text(baseLayers(LIGHT, ctxFor(OFFICE)), "state"), text(baseLayers(PERSON, ctxFor(CHEN)), "state")]) {
+        expect(layer.fontWeight).toBe("bold");
+        expect(layer.fontDesign).toBe("rounded");
+        expect(layer.monospacedDigits).toBe(true);
+        expect(layer.lineLimit ?? 1).toBe(1);
+        expect(layer.parts?.map((p) => p.id)).toEqual(Object.values(BASE_STATE_PART_IDS));
+        expect(layer.parts?.map((p) => p.value.kind)).toEqual((["figure", "unit", "tail", "word"] as const).map((part) => ({ kind: "tileState", part })));
+      }
       const number = text(baseLayers(LIGHT, ctxFor(OFFICE)), "state");
-      expect(number.fontWeight).toBe("bold");
-      expect(number.fontDesign).toBe("rounded");
-      expect(number.monospacedDigits).toBe(true);
-      const word = text(baseLayers(PERSON, ctxFor(CHEN)), "state");
-      expect(word.fontWeight).toBe("regular");
-      expect(word.fontDesign).toBeUndefined();
-      expect(word.monospacedDigits).toBeUndefined();
-      expect(word.lineLimit ?? 1).toBe(1);
-      expect(word.alignment).toBe("leading");
+      const [figure, unit, tail, word] = number.parts!;
+      // The figure takes the layer's look.
+      expect(figure).toEqual({ id: BASE_STATE_PART_IDS.figure, value: { kind: { kind: "tileState", part: "figure" } } });
+      // One Look's unit: 0.66 of the figure (a 10 pt floor on the watch),
+      // semibold, the main ink at 0.84.
+      expect(unit!.fontSize).toBe(10);
+      expect(unit!.fontWeight).toBe("semibold");
+      expect(unit!.colorHex).toBe(`${number.colorSlot.baseColorHex.slice(0, 7)}D6`);
+      expect(unit!.fontDesign).toBeUndefined();
+      // The tail and the word: regular, the system face, the second ink.
+      expect(tail).toMatchObject({ fontWeight: "regular", fontDesign: "default", fontSize: 11 });
+      expect(word).toMatchObject({ fontWeight: "regular", fontDesign: "default" });
+      expect(word!.fontSize).toBeUndefined();
+      expect(tail!.colorHex).toBe(word!.colorHex);
+      expect(text(baseLayers(PERSON, ctxFor(CHEN)), "state").alignment).toBe("leading");
     });
 
     it("sits in a pill shape layer with the Pill value style, the line centred in it", () => {

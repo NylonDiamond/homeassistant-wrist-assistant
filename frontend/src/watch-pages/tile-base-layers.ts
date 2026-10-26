@@ -26,26 +26,35 @@ import {
   type ShapeElement,
   type TextElement,
   type Value,
+  type TextPart,
+  type TileStatePart,
   IMAGE_DEFAULT_TIMESTAMP_SIZE,
+  TILE_STATE_PARTS,
   encodeConfig,
   literal,
   newConfig,
   parseConfig,
+  richTextFallback,
 } from "../model.js";
+import type { TileStateParts } from "../resolver.js";
 import type { IconProvider } from "../renderer.js";
 import { type WatchPage, type WatchPageTile, tileEntityId, tileGeometry, tileKind } from "./model.js";
 import { type WatchPagePreviewInput, filledSymbol, knownSymbol, watchPreviewTileLabel, watchSpecialTileLook, watchSyncedTile } from "./preview.js";
 import { type OneLookPreviewModel, oneLookPreviewModel } from "./one-look/render.js";
-import { type OneLookInk, ONE_LOOK_PILL_OPACITY, oneLookGlyphInk, oneLookHex } from "./one-look/colour.js";
+import { type OneLookInk, ONE_LOOK_PILL_OPACITY, ONE_LOOK_UNIT_OPACITY, oneLookGlyphInk, oneLookHex } from "./one-look/colour.js";
 import { type OneLookStateLine, oneLookStateFor } from "./one-look/state.js";
-import { oneLookCellSize, oneLookCentredGlyph, oneLookDrawnSize, oneLookGridUnit } from "./one-look/metrics.js";
+import { type OneLookDevice, oneLookCellSize, oneLookCentredGlyph, oneLookDrawnSize, oneLookGridUnit } from "./one-look/metrics.js";
 import { type OneLookRect, ONE_LOOK_GLYPH_INK_SHARE, ONE_LOOK_GLYPH_STATE_GAP, ONE_LOOK_PILL_PAD_H, oneLookLayoutMetrics } from "./one-look/layout.js";
 import { oneLookMeasurer } from "./one-look/measurer.js";
-import { ONE_LOOK_WATCH_TAIL_COLUMNS, type TextMeasurer, glyphExtentOf } from "./one-look/text.js";
+import { ONE_LOOK_WATCH_TAIL_COLUMNS, type TextMeasurer, glyphExtentOf, oneLookStateWidth } from "./one-look/text.js";
+import { phonePagesLayout } from "../phone-frame.js";
+import { type TileNativeFrames, anchorOf, tileNativeFrames } from "./tile-anchors.js";
 import {
   type BaseLayerRole,
+  type TileAnchors,
   BASE_LAYER_IDS,
   BASE_LAYER_NAMES,
+  BASE_STATE_PART_IDS,
   BASE_STATE_PILL_ID,
   BASE_STATE_PILL_NAME,
   TILE_DESIGN_FAMILY,
@@ -180,16 +189,36 @@ export function oneLookStateLineText(line: OneLookStateLine, colSpan: number): s
   return line.figure + (line.unitSpaced === true ? " " : "") + (line.unit ?? "") + tail;
 }
 
+/**
+ * A One Look state line in its four pieces, as a `tileState` value with a
+ * `part` reads them (round two, section 13.4): a number's figure, its unit
+ * (after a space when spaced; "" with none) and its tail (after a space,
+ * when the watch shows it, by the same rule as the whole line), or the word.
+ * The pieces a line does not have are "". A number's `figure + unit + tail`,
+ * or the `word`, is the whole line (`oneLookStateLineText`).
+ */
+export function oneLookStateLineParts(line: OneLookStateLine, colSpan: number): TileStateParts {
+  if (line.kind === "none") return { ...NO_STATE_PARTS };
+  if (line.kind === "word") return { ...NO_STATE_PARTS, word: line.word };
+  const tail = line.tail !== undefined && (line.keepTail === true || colSpan >= ONE_LOOK_WATCH_TAIL_COLUMNS) ? ` ${line.tail}` : "";
+  const unit = line.unit === undefined ? "" : (line.unitSpaced === true ? " " : "") + line.unit;
+  return { figure: line.figure, unit, tail, word: "" };
+}
+
+const NO_STATE_PARTS: Readonly<TileStateParts> = Object.freeze({ figure: "", unit: "", tail: "", word: "" });
+
 /** A tile's own words for `ResolveContext.tileValues`: its state line as
- * text ("" while its entity has not loaded) and its name (its label, else
- * the friendly name, else the entity id), whether or not the label shows. */
-export function tileValuesFor(tile: WatchPageTile, ctx: BaseLayerContext): { state: string; name: string } {
+ * text ("" while its entity has not loaded), the same line in its four
+ * pieces, and its name (its label, else the friendly name, else the entity
+ * id), whether or not the label shows. */
+export function tileValuesFor(tile: WatchPageTile, ctx: BaseLayerContext): { state: string; name: string; stateParts: TileStateParts } {
   const face = faceOf(tile, ctx);
   const name = watchPreviewTileLabel(face?.tile ?? tile, face?.input ?? previewInput(tile, ctx, ctx.states));
-  if (face === undefined) return { state: "", name };
+  if (face === undefined) return { state: "", name, stateParts: { ...NO_STATE_PARTS } };
   const ks = face.model.kind;
-  const state = ks.stateHidden ? "" : oneLookStateLineText(oneLookStateFor(ks, false), face.model.colSpan);
-  return { state, name };
+  if (ks.stateHidden) return { state: "", name, stateParts: { ...NO_STATE_PARTS } };
+  const line = oneLookStateFor(ks, false);
+  return { state: oneLookStateLineText(line, face.model.colSpan), name, stateParts: oneLookStateLineParts(line, face.model.colSpan) };
 }
 
 // ── building the layers ──────────────────────────────────────────────────
@@ -566,8 +595,14 @@ function statePillLayer(face: Face): Element | undefined {
 
 /** The state layer: the state line's box, widened to the room the layout
  * leaves it (in the Pill style the pill's box, the line centred in it), in
- * One Look's own state type: a number bold rounded with tabular digits in the
- * main ink, a word regular in the second ink. */
+ * One Look's own state type as rich text (round two, section 13.4): the
+ * layer in the number's type (bold, rounded, tabular digits, the main ink at
+ * the fitted size), and four parts, each reading one piece of the line: the
+ * figure in the layer's type, the unit smaller, semibold, in the main ink at
+ * One Look's unit opacity, the tail regular in the second ink at the word
+ * size, and the word regular in the second ink. The pieces a line does not
+ * have are empty and draw nothing, so it turns from a number into a word
+ * live, with no rule. */
 function stateLayer(face: Face): Element | undefined {
   const { model, box } = face;
   const layout = model.layout;
@@ -587,36 +622,48 @@ function stateLayer(face: Face): Element | undefined {
   const width = pill ? line.width : Math.max(line.width, right - line.x);
   // The room the line itself has: in a pill, less its padding each side.
   const room = pill ? Math.max(1, width - 2 * Math.round(m.wordSize * ONE_LOOK_PILL_PAD_H)) : width;
-  const number = state.parts.kind === "number";
   const size = state.size;
-  // One Look draws a number's unit smaller (84%), and the layer draws the
-  // whole line at one size, so "15.6°C" beside a glyph can need more room
-  // than One Look's own shrink floor leaves it: the iPhone, whose face is
-  // wider than the watch's, then cut it to "15....". The floor goes low
-  // enough for the line shown now to fit on both, with a little slack for
-  // the apps' own font metrics, never under half.
-  const text = model.kind.stateHidden ? "" : oneLookStateLineText(oneLookStateFor(model.kind, false), model.colSpan);
-  const weight = number ? "bold" : "regular";
-  const drawn = text === "" ? 0 : Math.max(face.measurer.width(text, size, weight, number, 0), face.phoneMeasurer.width(text, size, weight, number, 0));
+  // The line shown now, measured as One Look draws it, can need more room
+  // than One Look's own shrink floor leaves it (the iPhone's face is wider
+  // than the watch's), so the floor goes low enough for it to fit on both,
+  // with a little slack for the apps' own font metrics, never under half.
+  const drawn = model.kind.stateHidden ? 0 : Math.max(oneLookStateWidth(state, m, face.measurer), oneLookStateWidth(state, m, face.phoneMeasurer));
   const fits = drawn > 0 ? Math.floor(((room * STATE_FIT_SLACK) / drawn) * 100) / 100 : 1;
+  const ink2 = inkHex(model.palette.ink2);
+  const part = (piece: TileStatePart, look: Omit<TextPart, "id" | "value"> = {}): TextPart => ({
+    id: BASE_STATE_PART_IDS[piece],
+    value: { kind: { kind: "tileState", part: piece } },
+    ...look,
+  });
+  const parts: TextPart[] = TILE_STATE_PARTS.map((piece) => {
+    switch (piece) {
+      case "figure": return part(piece);
+      case "unit": return part(piece, {
+        fontSize: round(state.unitSize, 2),
+        fontWeight: "semibold",
+        colorHex: inkHex({ rgb: model.palette.ink.rgb, opacity: model.palette.ink.opacity * ONE_LOOK_UNIT_OPACITY }),
+      });
+      case "tail": return part(piece, { fontSize: round(state.tailSize, 2), fontWeight: "regular", fontDesign: "default", colorHex: ink2 });
+      case "word": return part(piece, { fontWeight: "regular", fontDesign: "default", colorHex: ink2 });
+    }
+  });
   const payload: TextElement = {
     id: BASE_LAYER_IDS.state,
     name: BASE_LAYER_NAMES.state,
-    colorSlot: { baseColorHex: inkHex(number ? model.palette.ink : model.palette.ink2) },
+    colorSlot: { baseColorHex: inkHex(model.palette.ink) },
     rules: [],
     frame: frameOf({ x: line.x, y: line.y, width, height: line.height }, box),
     isHidden: false,
-    value: { kind: { kind: "tileState" } },
+    value: richTextFallback(parts),
     fontSize: round(size, 2),
-    fontWeight: weight,
+    fontWeight: "bold",
+    fontDesign: "rounded",
+    monospacedDigits: true,
     lineLimit: 1,
     minimumScale: round(Math.min(1, Math.max(0.5, Math.min(m.textMin / size, fits))), 2),
     alignment: pill ? "center" : "leading",
+    parts,
   };
-  if (number) {
-    payload.fontDesign = "rounded";
-    payload.monospacedDigits = true;
-  }
   if (model.palette.textShadow && model.style.stateShadow) payload.shadow = { ...TEXT_SHADOW };
   return { kind: "text", payload };
 }
@@ -652,4 +699,65 @@ export function baseLayersDocument(tile: WatchPageTile, ctx: BaseLayerContext): 
   if (typeof tile.id === "string" && tile.id !== "") cfg.id = tile.id.toUpperCase();
   cfg.elements = baseLayers(tile, ctx);
   return normalizeDesignDoc(cfg);
+}
+
+// ── anchors ──────────────────────────────────────────────────────────────
+
+/**
+ * Each base role's anchor (round two, section 13.1): the native part of the
+ * tile's One Look face at its design box on the watch, the face its base
+ * layers are built from, as fractions of the box and reference sizes,
+ * rounded as the layers are. Only roles with a base layer have one: the
+ * icon or the photo, whichever the glyph is, the name and the state. Empty
+ * for a tile with no layers or no face.
+ */
+export function baseAnchors(tile: WatchPageTile, ctx: BaseLayerContext): TileAnchors {
+  if (!tileHasLayers(tile)) return {};
+  const face = faceOf(tile, ctx);
+  if (face === undefined) return {};
+  const { model, box } = face;
+  const native = tileNativeFrames(model.layout, "watch");
+  const out: TileAnchors = {};
+  if (model.photo !== undefined) {
+    if (native.photo !== undefined) out.photo = anchorOf(native.photo, box);
+  } else if (model.baseIcon !== "" && native.icon !== undefined) {
+    out.icon = anchorOf(native.icon, box);
+  }
+  if (model.name !== "" && native.name !== undefined) out.name = anchorOf(native.name, box);
+  if (native.state !== undefined) out.state = anchorOf(native.state, box);
+  return out;
+}
+
+/** The screen a device's native frames are read on for the fixtures and
+ * tests: the 46 mm watch, and a 402 point iPhone in the iPhone look. */
+export const TILE_NATIVE_SCREENS: Readonly<Record<OneLookDevice, number>> = Object.freeze({ watch: TILE_DESIGN_SCREEN_WIDTH, phone: 402 });
+
+/**
+ * A tile's drawn size and native parts on a device `screenWidth` points
+ * wide, as that device lays it out: on the watch the tile as the watch
+ * holds it (its pull's colour), on the iPhone as stored in the iPhone look.
+ * The watch at 208 is exactly the face the base layers are built from.
+ * Undefined when One Look draws no face for it.
+ */
+export function tileNativeFramesOn(
+  stored: WatchPageTile,
+  ctx: BaseLayerContext,
+  device: OneLookDevice,
+  screenWidth: number = TILE_NATIVE_SCREENS[device],
+): { drawnSize: { width: number; height: number }; native: TileNativeFrames } | undefined {
+  const tile = device === "watch" ? watchSyncedTile(stored, ctx.page) : stored;
+  const g = tileGeometry(tile);
+  const unit = oneLookGridUnit(screenWidth, device);
+  const drawnSize = oneLookDrawnSize(g.colSpan, g.rowSpan, unit, device);
+  const cell = oneLookCellSize(g.colSpan, g.rowSpan, unit);
+  const base = previewInput(tile, ctx, ctx.states);
+  const input: WatchPagePreviewInput = device === "phone"
+    ? { ...base, screen: { width: screenWidth, height: screenWidth * 2 }, phone: phonePagesLayout(undefined, { look: "iphone" }) }
+    : { ...base, screen: { width: screenWidth, height: screenWidth } };
+  const measurer = device === "watch" ? (ctx.measurer ?? measurerFor(ctx.icons)) : phoneMeasurer(ctx);
+  const model = oneLookPreviewModel({
+    tile, input, stub: false, device, look: watchSpecialTileLook(tile, input),
+    width: drawnSize.width, height: drawnSize.height, cell, unit, box: "", s: 1, measurer,
+  });
+  return model === undefined ? undefined : { drawnSize, native: tileNativeFrames(model.layout, device) };
 }

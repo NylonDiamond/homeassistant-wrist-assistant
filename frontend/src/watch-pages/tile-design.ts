@@ -28,9 +28,10 @@ import {
 import { type JsonObject, type WatchPage, type WatchPageTile, type WatchPagesDocument, isJsonObject, tileEntityId, tileGeometry, watchPageTiles, watchPagesOf } from "./model.js";
 import { oneLookDrawnSize, oneLookGridUnit } from "./one-look/metrics.js";
 import { watchSingleTapSettings } from "./tile-settings-model.js";
-import { type BaseLayerContext, baseLayersById, baseLayersDocument, designBoxFor, tileValuesFor } from "./tile-base-layers.js";
+import { type BaseLayerContext, baseAnchors, baseLayersById, baseLayersDocument, designBoxFor, tileValuesFor } from "./tile-base-layers.js";
 import {
   type BaseLayerRole,
+  type TileAnchors,
   type TileDesign,
   type TileZoneAction,
   type TileZonePreset,
@@ -45,8 +46,10 @@ import {
   TILE_ZONE_MIN_POINTS,
   baseRoleOf,
   drawnDesignDoc,
+  encodeAnchors,
   encodeZoneAction,
   normalizeDesignDoc,
+  ownedAnchors,
   ownedString,
   readTileDesign,
   sortRoles,
@@ -110,7 +113,8 @@ export function designSummary(design: TileDesign | undefined, tile: WatchPageTil
 
 /** The design in normal form (section 1.4): the document normalised, tap
  * layers without a zone entry gone, zone entries without a tap layer gone,
- * `owned` sorted, and the template compiled from the layers the design draws
+ * `owned` sorted, the anchors of the owned roles only, and the template
+ * compiled from the layers the design draws
  * (owned base layers and added layers: a base layer that follows the simple
  * settings is drawn natively and reads nothing). */
 function normalDesign(design: TileDesign): TileDesign {
@@ -125,7 +129,7 @@ function normalDesign(design: TileDesign): TileDesign {
     return true;
   });
   const owned = sortRoles(design.owned);
-  const out: TileDesign = { v: TILE_DESIGN_VERSION, doc, owned, zones };
+  const out: TileDesign = { v: TILE_DESIGN_VERSION, doc, owned, anchors: ownedAnchors(design.anchors, owned), zones };
   const template = designTemplate(doc, owned);
   if (template !== undefined) out.template = template;
   return out;
@@ -138,13 +142,16 @@ export function designTemplate(doc: CustomComplicationConfig, owned: readonly Ba
 }
 
 /** The design as the tile stores it, in normal form with its template
- * compiled: keys `v`, `owned`, `zones`, `template` (when anything is
- * computed) and `doc`. */
+ * compiled: keys `v`, `owned`, `anchors` (when an owned role has one),
+ * `zones`, `template` (when anything is computed) and `doc`. */
 export function encodeTileDesign(design: TileDesign): JsonObject {
   const normal = normalDesign(design);
   const zones: JsonObject = {};
   for (const [id, action] of Object.entries(normal.zones)) zones[id] = encodeZoneAction(action);
-  const out: JsonObject = { v: TILE_DESIGN_VERSION, owned: normal.owned.map(ownedString), zones };
+  const out: JsonObject = { v: TILE_DESIGN_VERSION, owned: normal.owned.map(ownedString) };
+  const anchors = encodeAnchors(normal.anchors, normal.owned);
+  if (anchors !== undefined) out.anchors = anchors;
+  out.zones = zones;
   if (normal.template !== undefined) out.template = normal.template;
   out.doc = encodeConfig(normal.doc);
   return out;
@@ -220,21 +227,39 @@ export function withDesign(tile: WatchPageTile, design: TileDesign | undefined, 
  * nothing owned and no zones (not yet saved). With no state for the tile's
  * entity the stored layers are kept as they are, as `syncTileDesigns` keeps
  * them.
+ *
+ * Anchors (section 13.1): each role that is not owned gets a fresh anchor
+ * beside its fresh layer, held in memory, so the write that owns it keeps
+ * the anchor built with the layer it owns. An owned role keeps its stored
+ * anchor, frozen; one saved before anchors (none stored) takes the fresh
+ * one, which the next write saves.
  */
 export function designForEdit(tile: WatchPageTile, ctx: BaseLayerContext): TileDesign {
   const existing = readTileDesign(tile);
   if (existing !== undefined) {
     const entityId = tileEntityId(tile);
     if (ctx.states === undefined || !Object.hasOwn(ctx.states, entityId)) return existing;
+    const anchors = editAnchors(existing, baseAnchors(tile, ctx));
     const rebuilt = rebuildBaseLayers(tile, existing, ctx);
-    if (stableJson(encodeConfig(rebuilt.doc)) === stableJson(encodeConfig(normalizeDesignDoc(existing.doc)))) return existing;
-    return rebuilt;
+    if (stableJson(encodeConfig(rebuilt.doc)) === stableJson(encodeConfig(normalizeDesignDoc(existing.doc)))) return { ...existing, anchors };
+    return { ...rebuilt, anchors };
   }
   const doc = baseLayersDocument(tile, ctx);
-  const design: TileDesign = { v: TILE_DESIGN_VERSION, doc, owned: [], zones: {} };
+  const design: TileDesign = { v: TILE_DESIGN_VERSION, doc, owned: [], anchors: baseAnchors(tile, ctx), zones: {} };
   const template = designTemplate(doc, []);
   if (template !== undefined) design.template = template;
   return design;
+}
+
+/** The anchors a design is edited with: the fresh ones, with each owned
+ * role's stored one in its place where it has one. */
+function editAnchors(existing: TileDesign, fresh: TileAnchors): TileAnchors {
+  const out: TileAnchors = { ...fresh };
+  for (const role of existing.owned) {
+    const stored = existing.anchors[role];
+    if (stored !== undefined) out[role] = stored;
+  }
+  return out;
 }
 
 /** `after` with every base role owned whose layer differs from `before`'s

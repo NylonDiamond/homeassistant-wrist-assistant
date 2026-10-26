@@ -81,13 +81,64 @@
             },
             "value": {
               "kind": {
-                "kind": "tileState"
+                "kind": "tileState",
+                "part": "figure"
               }
             },
             "fontSize": 11,
-            "fontWeight": "regular",
+            "fontWeight": "bold",
+            "monospacedDigits": true,
+            "fontDesign": "rounded",
             "minimumScale": 0.91,
             "alignment": "leading",
+            "parts": [
+              {
+                "id": "BA5E0004-0000-4000-8000-0000000000F1",
+                "value": {
+                  "kind": {
+                    "kind": "tileState",
+                    "part": "figure"
+                  }
+                }
+              },
+              {
+                "id": "BA5E0004-0000-4000-8000-0000000000F2",
+                "value": {
+                  "kind": {
+                    "kind": "tileState",
+                    "part": "unit"
+                  }
+                },
+                "colorHex": "#FFFFFFD6",
+                "fontWeight": "semibold",
+                "fontSize": 10
+              },
+              {
+                "id": "BA5E0004-0000-4000-8000-0000000000F3",
+                "value": {
+                  "kind": {
+                    "kind": "tileState",
+                    "part": "tail"
+                  }
+                },
+                "colorHex": "#FFFFFF",
+                "fontWeight": "regular",
+                "fontSize": 11,
+                "fontDesign": "default"
+              },
+              {
+                "id": "BA5E0004-0000-4000-8000-0000000000F4",
+                "value": {
+                  "kind": {
+                    "kind": "tileState",
+                    "part": "word"
+                  }
+                },
+                "colorHex": "#FFFFFF",
+                "fontWeight": "regular",
+                "fontDesign": "default"
+              }
+            ],
             "name": "State"
           }
         },
@@ -145,9 +196,17 @@
   "templateKey": null,
   "resolve": {
     "tileState": "Home",
+    "tileStateParts": {
+      "figure": "",
+      "unit": "",
+      "tail": "",
+      "word": "Home"
+    },
     "tileName": "Chen",
     "entityStates": [],
     "templateResults": {}
   },
-  "expected": []
+  "expected": [],
+  "devices": null,
+  "placed": null
 }

@@ -14,6 +14,7 @@ import {
   type CustomComplicationConfig,
   type DrawableFamily,
   type Element,
+  type TileStatePart,
   defaultLayout,
   elementsFor,
   parseConfig,
@@ -111,6 +112,16 @@ export function roleOfOwnedString(value: unknown): BaseLayerRole | undefined {
 export const BASE_STATE_PILL_ID = "BA5E0000-0000-4000-8000-000000000005";
 /** The pill's row name in the Layers list. */
 export const BASE_STATE_PILL_NAME = "State pill";
+
+/** The four parts of the base State layer (round two, section 13.4), each
+ * reading one piece of the state line in One Look's own type for it. Fixed,
+ * so a rebuild writes the same document. */
+export const BASE_STATE_PART_IDS: Readonly<Record<TileStatePart, string>> = Object.freeze({
+  figure: "BA5E0004-0000-4000-8000-0000000000F1",
+  unit: "BA5E0004-0000-4000-8000-0000000000F2",
+  tail: "BA5E0004-0000-4000-8000-0000000000F3",
+  word: "BA5E0004-0000-4000-8000-0000000000F4",
+});
 
 /** Every base layer's id with its role, in draw order bottom to top: the
  * glyph (icon or photo), the state's pill, the state, the name. */
@@ -268,6 +279,94 @@ export function encodeZoneAction(action: TileZoneAction): JsonObject {
   return out;
 }
 
+// ── anchors ──────────────────────────────────────────────────────────────
+
+/**
+ * Where an owned role's native part was when its base layer was built from
+ * it (round two, section 13.1): the part's rect as fractions of the design
+ * box and its size in reference watch points. Each device draws the role's
+ * elements through a map from this to its own native part (`placeDesignDoc`
+ * in `tile-anchors.ts`), so an unmoved owned part lands on the native one.
+ */
+export interface TileAnchor {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** The glyph's point size (icon), the glyph box's side (photo), the fitted
+   * name size (name), or the design figure size (state). */
+  size: number;
+  /** The state only: the fitted size of the line shown, the unit's and the
+   * tail's. */
+  textSize?: number;
+  unitSize?: number;
+  tailSize?: number;
+}
+
+export type TileAnchors = Partial<Record<BaseLayerRole, TileAnchor>>;
+
+const positiveNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
+const finiteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** One anchor entry as stored, or undefined when it is not usable: finite
+ * `x`, `y`, a positive `width`, `height` and `size`, and for the state a
+ * positive `textSize`, `unitSize` and `tailSize`. Unknown keys are dropped. */
+function parseAnchor(role: BaseLayerRole, raw: unknown): TileAnchor | undefined {
+  if (!isJsonObject(raw)) return undefined;
+  if (!finiteNumber(raw.x) || !finiteNumber(raw.y) || !positiveNumber(raw.width) || !positiveNumber(raw.height) || !positiveNumber(raw.size)) return undefined;
+  const out: TileAnchor = { x: raw.x, y: raw.y, width: raw.width, height: raw.height, size: raw.size };
+  if (role === "state") {
+    if (!positiveNumber(raw.textSize) || !positiveNumber(raw.unitSize) || !positiveNumber(raw.tailSize)) return undefined;
+    out.textSize = raw.textSize;
+    out.unitSize = raw.unitSize;
+    out.tailSize = raw.tailSize;
+  }
+  return out;
+}
+
+/** `design.anchors` as stored, usable entries only, by role. Anything that
+ * is not an object reads as none; a bad entry is dropped (that role draws by
+ * the box fit). Never makes the design unreadable. */
+export function parseAnchors(raw: unknown): TileAnchors {
+  const out: TileAnchors = {};
+  if (!isJsonObject(raw)) return out;
+  for (const [key, entry] of Object.entries(raw)) {
+    const role = roleOfOwnedString(key);
+    if (role === undefined) continue;
+    const anchor = parseAnchor(role, entry);
+    if (anchor !== undefined) out[role] = anchor;
+  }
+  return out;
+}
+
+/** The anchors of the owned roles, as `design.anchors` writes them: keyed by
+ * `owned` string in `owned` order, keys `x, y, width, height, size` then for
+ * the state `textSize, unitSize, tailSize`. Undefined when no owned role has
+ * one, so the key is left out. */
+export function encodeAnchors(anchors: TileAnchors, owned: readonly BaseLayerRole[]): JsonObject | undefined {
+  const out: JsonObject = {};
+  for (const role of sortRoles(owned)) {
+    const a = anchors[role];
+    if (a === undefined) continue;
+    const entry: JsonObject = { x: a.x, y: a.y, width: a.width, height: a.height, size: a.size };
+    if (role === "state") {
+      if (a.textSize === undefined || a.unitSize === undefined || a.tailSize === undefined) continue;
+      entry.textSize = a.textSize;
+      entry.unitSize = a.unitSize;
+      entry.tailSize = a.tailSize;
+    }
+    out[ownedString(role)] = entry;
+  }
+  return Object.keys(out).length === 0 ? undefined : out;
+}
+
+/** The anchors of the owned roles only. */
+export function ownedAnchors(anchors: TileAnchors, owned: readonly BaseLayerRole[]): TileAnchors {
+  const out: TileAnchors = {};
+  for (const role of owned) if (anchors[role] !== undefined) out[role] = anchors[role];
+  return out;
+}
+
 // ── reading the key ──────────────────────────────────────────────────────
 
 export interface TileDesign {
@@ -275,6 +374,11 @@ export interface TileDesign {
   /** The layers, parsed. */
   doc: CustomComplicationConfig;
   owned: BaseLayerRole[];
+  /** Each role's anchor (round two, section 13.1). Read and written for the
+   * owned roles only; while a design is edited it also holds the fresh
+   * anchors of the roles not owned (`designForEdit`), so the write that
+   * owns one keeps the anchor built with the layer it owns. */
+  anchors: TileAnchors;
   /** By tap layer id, upper case. */
   zones: Record<string, TileZoneAction>;
   template?: string;
@@ -305,7 +409,8 @@ export function parseTileDesign(raw: unknown): TileDesign | undefined {
       if (action !== undefined) zones[id.toUpperCase()] = action;
     }
   }
-  const design: TileDesign = { v: TILE_DESIGN_VERSION, doc, owned: sortRoles(owned), zones };
+  const sorted = sortRoles(owned);
+  const design: TileDesign = { v: TILE_DESIGN_VERSION, doc, owned: sorted, anchors: ownedAnchors(parseAnchors(raw.anchors), sorted), zones };
   if (typeof raw.template === "string") design.template = raw.template;
   return design;
 }

@@ -42,6 +42,25 @@
       "base.icon",
       "base.state"
     ],
+    "anchors": {
+      "base.icon": {
+        "x": 0.4133,
+        "y": 0.3226,
+        "width": 0.1733,
+        "height": 0.2639,
+        "size": 16.59
+      },
+      "base.state": {
+        "x": 0.0591,
+        "y": 0.1439,
+        "width": 0.3443,
+        "height": 0.2424,
+        "size": 14,
+        "textSize": 14,
+        "unitSize": 10,
+        "tailSize": 11
+      }
+    },
     "zones": {},
     "doc": {
       "schemaVersion": 6,
@@ -232,7 +251,8 @@
             },
             "value": {
               "kind": {
-                "kind": "tileState"
+                "kind": "tileState",
+                "part": "figure"
               }
             },
             "fontSize": 14,
@@ -240,6 +260,54 @@
             "monospacedDigits": true,
             "fontDesign": "rounded",
             "minimumScale": 0.71,
+            "parts": [
+              {
+                "id": "BA5E0004-0000-4000-8000-0000000000F1",
+                "value": {
+                  "kind": {
+                    "kind": "tileState",
+                    "part": "figure"
+                  }
+                }
+              },
+              {
+                "id": "BA5E0004-0000-4000-8000-0000000000F2",
+                "value": {
+                  "kind": {
+                    "kind": "tileState",
+                    "part": "unit"
+                  }
+                },
+                "colorHex": "#FFFFFFD6",
+                "fontWeight": "semibold",
+                "fontSize": 10
+              },
+              {
+                "id": "BA5E0004-0000-4000-8000-0000000000F3",
+                "value": {
+                  "kind": {
+                    "kind": "tileState",
+                    "part": "tail"
+                  }
+                },
+                "colorHex": "#FFFFFF",
+                "fontWeight": "regular",
+                "fontSize": 11,
+                "fontDesign": "default"
+              },
+              {
+                "id": "BA5E0004-0000-4000-8000-0000000000F4",
+                "value": {
+                  "kind": {
+                    "kind": "tileState",
+                    "part": "word"
+                  }
+                },
+                "colorHex": "#FFFFFF",
+                "fontWeight": "regular",
+                "fontDesign": "default"
+              }
+            ],
             "name": "State"
           }
         },
@@ -297,6 +365,12 @@
   "templateKey": null,
   "resolve": {
     "tileState": "100%",
+    "tileStateParts": {
+      "figure": "100",
+      "unit": "%",
+      "tail": "",
+      "word": ""
+    },
     "tileName": "Office",
     "entityStates": [
       {
@@ -327,7 +401,235 @@
       "id": "BA5E0000-0000-4000-8000-000000000004",
       "kind": "text",
       "text": "100%",
+      "parts": [
+        {
+          "text": "100",
+          "fontSize": 14,
+          "fontWeight": "bold",
+          "fontDesign": "rounded",
+          "colorHex": "#FFFFFF"
+        },
+        {
+          "text": "%",
+          "fontSize": 10,
+          "fontWeight": "semibold",
+          "fontDesign": "rounded",
+          "colorHex": "#FFFFFFD6"
+        },
+        {
+          "text": "",
+          "fontSize": 11,
+          "fontWeight": "regular",
+          "fontDesign": "default",
+          "colorHex": "#FFFFFF"
+        },
+        {
+          "text": "",
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "fontDesign": "default",
+          "colorHex": "#FFFFFF"
+        }
+      ],
       "hidden": false
     }
-  ]
+  ],
+  "devices": {
+    "watch": {
+      "screenWidth": 208,
+      "drawnSize": {
+        "width": 100.5,
+        "height": 66
+      },
+      "native": {
+        "icon": {
+          "rect": {
+            "x": 41.54,
+            "y": 21.29,
+            "width": 17.42,
+            "height": 17.42
+          },
+          "size": 16.5905
+        },
+        "photo": {
+          "rect": {
+            "x": 41.54,
+            "y": 21.29,
+            "width": 17.42,
+            "height": 17.42
+          },
+          "size": 24.1141
+        },
+        "name": {
+          "rect": {
+            "x": 3,
+            "y": 48.26,
+            "width": 94.5,
+            "height": 11.8
+          },
+          "size": 10
+        },
+        "state": {
+          "rect": {
+            "x": 5.94,
+            "y": 9.5,
+            "width": 34.6,
+            "height": 16
+          },
+          "size": 14,
+          "textSize": 14,
+          "unitSize": 10,
+          "tailSize": 11
+        }
+      }
+    },
+    "phone": {
+      "screenWidth": 402,
+      "drawnSize": {
+        "width": 179,
+        "height": 115.3333
+      },
+      "native": {
+        "icon": {
+          "rect": {
+            "x": 61.864,
+            "y": 26.0307,
+            "width": 55.272,
+            "height": 55.272
+          },
+          "size": 52.64
+        },
+        "photo": {
+          "rect": {
+            "x": 61.864,
+            "y": 26.0307,
+            "width": 55.272,
+            "height": 55.272
+          },
+          "size": 76.5116
+        },
+        "name": {
+          "rect": {
+            "x": 8,
+            "y": 84.9467,
+            "width": 163,
+            "height": 17.7
+          },
+          "size": 15
+        },
+        "state": {
+          "rect": {
+            "x": 12.6867,
+            "y": 17,
+            "width": 45.9321,
+            "height": 27.1
+          },
+          "size": 21,
+          "textSize": 17.85,
+          "unitSize": 11.781,
+          "tailSize": 15
+        }
+      }
+    }
+  },
+  "placed": {
+    "watch": [
+      {
+        "id": "BA5E0000-0000-4000-8000-000000000001",
+        "frame": {
+          "x": 0.4633,
+          "y": 0.3226,
+          "width": 0.1733,
+          "height": 0.2639
+        },
+        "size": 16.5905
+      },
+      {
+        "id": "BA5E0000-0000-4000-8000-000000000005",
+        "frame": {
+          "x": 0.0791,
+          "y": 0.1639,
+          "width": 0.3443,
+          "height": 0.2424
+        },
+        "cornerRadius": 0,
+        "borderWidth": 0,
+        "thickness": 1
+      },
+      {
+        "id": "BA5E0000-0000-4000-8000-000000000004",
+        "frame": {
+          "x": 0.0791,
+          "y": 0.1639,
+          "width": 0.3443,
+          "height": 0.2424
+        },
+        "fontSize": 14,
+        "parts": [
+          {
+            "id": "BA5E0004-0000-4000-8000-0000000000F2",
+            "fontSize": 10
+          },
+          {
+            "id": "BA5E0004-0000-4000-8000-0000000000F3",
+            "fontSize": 11
+          }
+        ],
+        "shadow": {
+          "radius": 0.75,
+          "dx": 0,
+          "dy": 0.5
+        }
+      }
+    ],
+    "phone": [
+      {
+        "id": "BA5E0000-0000-4000-8000-000000000001",
+        "frame": {
+          "x": 0.4334,
+          "y": 0.2257,
+          "width": 0.3147,
+          "height": 0.4792
+        },
+        "size": 30.1235
+      },
+      {
+        "id": "BA5E0000-0000-4000-8000-000000000005",
+        "frame": {
+          "x": 0.0798,
+          "y": 0.1646,
+          "width": 0.2615,
+          "height": 0.235
+        },
+        "cornerRadius": 0,
+        "borderWidth": 0,
+        "thickness": 0.8584
+      },
+      {
+        "id": "BA5E0000-0000-4000-8000-000000000004",
+        "frame": {
+          "x": 0.0798,
+          "y": 0.1646,
+          "width": 0.2615,
+          "height": 0.235
+        },
+        "fontSize": 10.2147,
+        "parts": [
+          {
+            "id": "BA5E0004-0000-4000-8000-0000000000F2",
+            "fontSize": 6.7417
+          },
+          {
+            "id": "BA5E0004-0000-4000-8000-0000000000F3",
+            "fontSize": 8.5838
+          }
+        ],
+        "shadow": {
+          "radius": 0.6438,
+          "dx": 0,
+          "dy": 0.4292
+        }
+      }
+    ]
+  }
 }

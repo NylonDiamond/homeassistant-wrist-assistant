@@ -14,7 +14,7 @@
 //
 // Each file is `NN-name.json`, two space indent and a closing newline, keys in
 // the contract's order: description, tile, states, edit, design, template,
-// templateKey, resolve, expected.
+// templateKey, resolve, expected, devices, placed.
 //
 // - `design`: `baseLayersDocument(tile)` with the estimate measurer, the
 //   file's states and symbols that draw every filled variant (so an icon
@@ -33,18 +33,33 @@
 //   - `dragLayer` `{id, dx, dy}`: the layer dragged on the stage by that much
 //     of the design box (`dragLayerFrame` then `setLayerFrame`), so a base
 //     layer is owned and the State layer takes its pill along.
+//   - `own` `{role}` (an `owned` string): the role owned with its base layers
+//     exactly as built, unmoved, its anchor kept.
+// - The design starts with every role's anchor (`baseAnchors`), as
+//   `designForEdit` holds them; only the owned roles' are written.
 // - `template`: compiled from the layers the design draws only (owned base
 //   layers and added layers); a base layer that follows the simple settings
 //   is drawn natively and reads nothing.
 // - `resolve`: the context `expected` is resolved in: the tile's own words
-//   (`tileValuesFor`), each entity the drawn layers read as the app builds a
+//   (`tileValuesFor`: the state line, its four parts and the name), each
+//   entity the drawn layers read as the app builds a
 //   `ComplicationEntityState`, and the template's rendered values by key.
 // - `expected`: every layer the design draws itself (`drawnDesignDoc`: owned
 //   base layers, added layers, tap zones) in draw order, resolved by the
 //   panel's resolver: `id`, `kind`, then `text` for a text layer, `symbol`
 //   and `colorHex` for an icon, `value` (the gauge's fill fraction, 0 to 1,
-//   to 4 places) for a gauge, and `hidden`. A design that owns nothing and
-//   adds nothing draws nothing of its own: the native tile draws it all.
+//   to 4 places) for a gauge, and `hidden`. A text layer that draws parts
+//   also lists them (`parts`: `text`, `fontSize`, `fontWeight`, `fontDesign`,
+//   `colorHex`), resolved in the unplaced document. A design that owns
+//   nothing and adds nothing draws nothing of its own: the native tile draws
+//   it all.
+// - `devices` (round two, section 13.5): null without anchors, else for the
+//   watch (208) and the iPhone (402, the iPhone look) the tile's drawn size
+//   and native parts (`tileNativeFramesOn`, the estimate measurer), to 4
+//   places.
+// - `placed`: null without `devices`, else per device the drawn document's
+//   elements the anchor map places (`placeDesignDoc`), in draw order: `id`,
+//   `frame`, then the sizes the map scales, as written, to 4 places.
 
 import { describe, expect, it } from "vitest";
 import { html } from "lit";
@@ -78,7 +93,9 @@ import {
   tileTemplateKey,
   zonesOf,
 } from "../src/watch-pages/tile-design.js";
-import { baseLayersDocument, tileValuesFor } from "../src/watch-pages/tile-base-layers.js";
+import { TILE_NATIVE_SCREENS, baseAnchors, baseLayersDocument, tileNativeFramesOn, tileValuesFor } from "../src/watch-pages/tile-base-layers.js";
+import { type TileNativeFrames, type TilePartFrame, placeDesignDoc } from "../src/watch-pages/tile-anchors.js";
+import { roleOfOwnedString, tileDesignBox } from "../src/watch-pages/tile-design.js";
 
 const dir = join(__dirname, "fixtures-tiles");
 
@@ -87,7 +104,8 @@ type Op =
   | { op: "addLayer"; kind: Element["kind"]; id: string; set: Record<string, unknown> }
   | { op: "zonePreset"; preset: TileZonePreset; ids: string[] }
   | { op: "zoneAction"; id: string; action: TileZoneAction }
-  | { op: "dragLayer"; id: string; dx: number; dy: number };
+  | { op: "dragLayer"; id: string; dx: number; dy: number }
+  | { op: "own"; role: string };
 
 interface Case {
   file: string;
@@ -110,6 +128,7 @@ const ZONE_LEFT = "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A01";
 const ZONE_RIGHT = "6F1C2A1E-0B7D-4C55-9E0B-2B9B0D7C1A02";
 
 const OFFICE = { "light.office": entity("light.office", "on", { friendly_name: "Office", brightness: 209 }) };
+const BED = { "light.bed": entity("light.bed", "on", { friendly_name: "Bed Light", brightness: 128 }) };
 
 const CASES: Case[] = [
   {
@@ -204,9 +223,34 @@ const CASES: Case[] = [
       { op: "dragLayer", id: BASE_LAYER_IDS.state, dx: 0.02, dy: 0.02 },
     ],
   },
+  {
+    file: "10-light-anchors-icon-moved.json",
+    description: "A light at 6x4, on at 50%, Plain value style, its icon dragged down 0.08 of the design box and its state owned unmoved: the state lands exactly on the native state box on the watch and the iPhone, the icon off the native glyph by 0.08 of the box times the glyph's scale.",
+    tile: { id: "A1B2C3D4-0010-4000-8000-000000000010", entityId: "light.bed", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0, color: "#F2AE4E" },
+    states: BED,
+    edit: [
+      { op: "dragLayer", id: BASE_LAYER_IDS.icon, dx: 0, dy: 0.08 },
+      { op: "own", role: "base.state" },
+    ],
+  },
+  {
+    file: "11-light-pill-owned-state-number.json",
+    description: "The light of 10 with the Pill value style, its state owned unmoved: the pill and the State layer land exactly on the native state box on both devices, the figure bold rounded and the unit smaller and lighter.",
+    tile: { id: "A1B2C3D4-0011-4000-8000-000000000011", entityId: "light.bed", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0, color: "#F2AE4E", stateValueLabelStyle: "Pill" },
+    states: BED,
+    edit: [{ op: "own", role: "base.state" }],
+  },
+  {
+    file: "12-switch-owned-state-word.json",
+    description: "A switch at 6x4, off, its state owned unmoved: the word Off in the word part, regular in the system face and the second ink, the number's parts empty.",
+    tile: { id: "A1B2C3D4-0012-4000-8000-000000000012", entityId: "switch.kettle", colSpan: 6, rowSpan: 4, gridCol: 0, gridRow: 0, color: "#34C759" },
+    states: { "switch.kettle": entity("switch.kettle", "off", { friendly_name: "Kettle" }) },
+    edit: [{ op: "own", role: "base.state" }],
+  },
 ];
 
 const measurer = oneLookMeasurer("watch", { estimate: true });
+const phoneMeasurer = oneLookMeasurer("phone", { estimate: true });
 
 /** The symbols the fixtures are built with: every name draws, filled
  * variants included, and crossed out forms only for the bulb. */
@@ -260,7 +304,56 @@ function runEdit(tile: WatchPageTile, design: TileDesign, op: Op): TileDesign {
       if (el === undefined) throw new Error(`no layer ${op.id}`);
       return setLayerFrame(design, op.id, dragLayerFrame(el.payload.frame, "move", op.dx, op.dy));
     }
+    case "own": {
+      const role = roleOfOwnedString(op.role);
+      if (role === undefined) throw new Error(`no role ${op.role}`);
+      return design.owned.includes(role) ? design : { ...design, owned: [...design.owned, role] };
+    }
   }
+}
+
+const r4 = (v: number): number => Math.round(v * 10000) / 10000;
+
+/** A native part as the fixtures write it, to 4 places. */
+function partJson(part: TilePartFrame): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    rect: { x: r4(part.rect.x), y: r4(part.rect.y), width: r4(part.rect.width), height: r4(part.rect.height) },
+    size: r4(part.size),
+  };
+  if (part.textSize !== undefined) out.textSize = r4(part.textSize);
+  if (part.unitSize !== undefined) out.unitSize = r4(part.unitSize);
+  if (part.tailSize !== undefined) out.tailSize = r4(part.tailSize);
+  return out;
+}
+
+function nativeJson(native: TileNativeFrames): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const role of ["icon", "photo", "name", "state"] as const) {
+    const part = native[role];
+    if (part !== undefined) out[role] = partJson(part);
+  }
+  return out;
+}
+
+/** An element the map placed, as the fixtures write it: its id and frame,
+ * then each size the map scales that the element has, to 4 places. */
+function placedJson(el: Element): Record<string, unknown> {
+  const f = el.payload.frame;
+  const out: Record<string, unknown> = { id: el.payload.id, frame: { x: r4(f.x), y: r4(f.y), width: r4(f.width), height: r4(f.height) } };
+  if (el.kind === "text") {
+    out.fontSize = r4(el.payload.fontSize);
+    const own = (el.payload.parts ?? []).filter((p) => p.fontSize !== undefined);
+    if (own.length > 0) out.parts = own.map((p) => ({ id: p.id, fontSize: r4(p.fontSize!) }));
+  }
+  if (el.kind === "icon") out.size = r4(el.payload.size);
+  if (el.kind === "image" || el.kind === "shape") out.cornerRadius = r4(el.payload.cornerRadius);
+  if (el.kind === "shape") {
+    out.borderWidth = r4(el.payload.borderWidth);
+    out.thickness = r4(el.payload.thickness);
+  }
+  const shadow = el.payload.shadow;
+  if (shadow !== undefined) out.shadow = { radius: r4(shadow.radius), dx: r4(shadow.dx), dy: r4(shadow.dy) };
+  return out;
 }
 
 /** Each entity a document reads, as the app's `ComplicationEntityState`. */
@@ -280,8 +373,8 @@ function entityStatesFor(doc: CustomComplicationConfig, states: Record<string, H
 }
 
 function build(c: Case): Record<string, unknown> {
-  const ctx: BaseLayerContext = { states: c.states, measurer, icons };
-  let design: TileDesign = { v: TILE_DESIGN_VERSION, doc: baseLayersDocument(c.tile, ctx), owned: [], zones: {} };
+  const ctx: BaseLayerContext = { states: c.states, measurer, phoneMeasurer, icons };
+  let design: TileDesign = { v: TILE_DESIGN_VERSION, doc: baseLayersDocument(c.tile, ctx), owned: [], anchors: baseAnchors(c.tile, ctx), zones: {} };
   for (const op of c.edit ?? []) design = runEdit(c.tile, design, op);
   const encoded = encodeTileDesign(design);
   const read = parseTileDesign(encoded)!;
@@ -310,6 +403,9 @@ function build(c: Case): Record<string, unknown> {
     const r = resolved.find((x) => x.id === el.payload.id);
     const out: Record<string, unknown> = { id: el.payload.id, kind: el.kind };
     if (r?.kind === "text") out.text = r.text;
+    if (r?.kind === "text" && r.parts !== undefined) {
+      out.parts = r.parts.map((p) => ({ text: p.text, fontSize: p.fontSize, fontWeight: p.fontWeight, fontDesign: p.fontDesign, colorHex: p.colorHex }));
+    }
     if (r?.kind === "icon") {
       out.symbol = r.symbol;
       out.colorHex = r.colorHex;
@@ -318,6 +414,24 @@ function build(c: Case): Record<string, unknown> {
     out.hidden = r === undefined ? true : r.isHidden;
     return out;
   });
+  let devices: Record<string, unknown> | null = null;
+  let placed: Record<string, unknown> | null = null;
+  if (encoded.anchors !== undefined) {
+    devices = {};
+    placed = {};
+    const box = tileDesignBox(Number(c.tile.colSpan), Number(c.tile.rowSpan));
+    for (const device of ["watch", "phone"] as const) {
+      const on = tileNativeFramesOn(c.tile, ctx, device);
+      if (on === undefined) throw new Error(`no ${device} face`);
+      devices[device] = {
+        screenWidth: TILE_NATIVE_SCREENS[device],
+        drawnSize: { width: r4(on.drawnSize.width), height: r4(on.drawnSize.height) },
+        native: nativeJson(on.native),
+      };
+      const doc = placeDesignDoc(drawn, read.anchors, on.native, on.drawnSize, box);
+      placed[device] = doc.elements.filter((el, i) => el !== drawn.elements[i]).map(placedJson);
+    }
+  }
   return {
     description: c.description,
     tile: c.tile,
@@ -326,8 +440,10 @@ function build(c: Case): Record<string, unknown> {
     design: encoded,
     template,
     templateKey: template === null ? null : tileTemplateKey(template),
-    resolve: { tileState: values.state, tileName: values.name, entityStates, templateResults },
+    resolve: { tileState: values.state, tileStateParts: values.stateParts, tileName: values.name, entityStates, templateResults },
     expected,
+    devices,
+    placed,
   };
 }
 
@@ -395,5 +511,77 @@ describe("tile layer fixtures", () => {
     expect(pill.expected[1]).toMatchObject({ kind: "shape", hidden: false });
     expect(pill.expected[2]).toMatchObject({ kind: "text", text: "100%" });
     expect(pill.template).toBeNull();
+  });
+
+  it("places owned parts on the native ones on both devices (round two)", () => {
+    type Rect = { x: number; y: number; width: number; height: number };
+    interface Round2 {
+      design: { owned: string[]; anchors?: Record<string, Rect & { size: number }> };
+      resolve: { tileStateParts: Record<string, string> };
+      expected: { id: string; parts?: { text: string; fontWeight: string; fontDesign: string; colorHex: string }[] }[];
+      devices: Record<string, { drawnSize: { width: number; height: number }; native: Record<string, { rect: Rect; size: number }> }> | null;
+      placed: Record<string, { id: string; frame: Rect; size?: number }[]> | null;
+    }
+    const by = (file: string) => JSON.parse(readFileSync(join(dir, file), "utf8")) as Round2;
+    // Where a placed frame lands in the drawn tile, in points.
+    const drawnRect = (c: Round2, device: string, frame: Rect, tile: WatchPageTile): Rect => {
+      const box = tileDesignBox(Number(tile.colSpan), Number(tile.rowSpan));
+      const slot = c.devices![device]!.drawnSize;
+      const f = Math.min(slot.width / box.width, slot.height / box.height);
+      const ox = (slot.width - box.width * f) / 2;
+      const oy = (slot.height - box.height * f) / 2;
+      return { x: ox + frame.x * box.width * f, y: oy + frame.y * box.height * f, width: frame.width * box.width * f, height: frame.height * box.height * f };
+    };
+    const near = (a: Rect, b: Rect, what: string) => {
+      for (const k of ["x", "y", "width", "height"] as const) expect(Math.abs(a[k] - b[k]), `${what} ${k}`).toBeLessThan(0.02);
+    };
+    // Without anchors nothing is placed.
+    for (const file of ["01-light-medium.json", "06-person-added-layers.json", "07-switch-zones.json"]) {
+      expect(by(file).devices, file).toBeNull();
+      expect(by(file).placed, file).toBeNull();
+    }
+    expect(Object.keys(by("05-light-owned-name.json").design.anchors ?? {})).toEqual(["base.name"]);
+    expect(Object.keys(by("09-light-pill-owned-icon-state.json").design.anchors ?? {})).toEqual(["base.icon", "base.state"]);
+
+    // 10: the state unmoved lands exactly on the native state box; the icon
+    // moved down 0.08 of the box lands that far below the native glyph,
+    // scaled by the glyph.
+    const moved = CASES.find((c) => c.file === "10-light-anchors-icon-moved.json")!;
+    const ten = by(moved.file);
+    expect(ten.design.owned).toEqual(["base.icon", "base.state"]);
+    for (const device of ["watch", "phone"]) {
+      const native = ten.devices![device]!.native;
+      const placedIcon = ten.placed![device]!.find((p) => p.id === BASE_LAYER_IDS.icon)!;
+      const icon = drawnRect(ten, device, placedIcon.frame, moved.tile);
+      const kPos = native.icon!.size / ten.design.anchors!["base.icon"]!.size;
+      near(icon, { ...native.icon!.rect, y: native.icon!.rect.y + 0.08 * 66 * kPos }, `${device} icon`);
+      // The move is the same share of the glyph on both devices.
+      expect((icon.y - native.icon!.rect.y) / native.icon!.rect.height).toBeCloseTo(0.08 * 66 / 34.52, 2);
+      const state = ten.placed![device]!.find((p) => p.id === BASE_LAYER_IDS.state)!;
+      const at = drawnRect(ten, device, state.frame, moved.tile);
+      near({ ...at, width: native.state!.rect.width }, native.state!.rect, `${device} state`);
+    }
+
+    // 11: the pill and the State layer exactly on the native state box.
+    const pillCase = CASES.find((c) => c.file === "11-light-pill-owned-state-number.json")!;
+    const eleven = by(pillCase.file);
+    expect(eleven.resolve.tileStateParts).toEqual({ figure: "50", unit: "%", tail: "", word: "" });
+    for (const device of ["watch", "phone"]) {
+      for (const id of [BASE_STATE_PILL_ID, BASE_LAYER_IDS.state]) {
+        const p = eleven.placed![device]!.find((x) => x.id === id)!;
+        near(drawnRect(eleven, device, p.frame, pillCase.tile), eleven.devices![device]!.native.state!.rect, `${device} ${id}`);
+      }
+    }
+    const number = eleven.expected.find((e) => e.id === BASE_LAYER_IDS.state)!.parts!;
+    expect(number.map((p) => p.text)).toEqual(["50", "%", "", ""]);
+    expect(number[0]).toMatchObject({ fontWeight: "bold", fontDesign: "rounded" });
+    expect(number[1]).toMatchObject({ fontWeight: "semibold", fontDesign: "rounded" });
+
+    // 12: a word in the word part, regular in the system face.
+    const twelve = by("12-switch-owned-state-word.json");
+    expect(twelve.resolve.tileStateParts).toEqual({ figure: "", unit: "", tail: "", word: "Off" });
+    const word = twelve.expected.find((e) => e.id === BASE_LAYER_IDS.state)!.parts!;
+    expect(word.map((p) => p.text)).toEqual(["", "", "", "Off"]);
+    expect(word[3]).toMatchObject({ fontWeight: "regular", fontDesign: "default" });
   });
 });

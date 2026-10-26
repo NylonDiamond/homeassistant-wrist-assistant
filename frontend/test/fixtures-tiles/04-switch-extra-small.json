@@ -152,9 +152,17 @@
   "templateKey": null,
   "resolve": {
     "tileState": "Off",
+    "tileStateParts": {
+      "figure": "",
+      "unit": "",
+      "tail": "",
+      "word": "Off"
+    },
     "tileName": "Kettle",
     "entityStates": [],
     "templateResults": {}
   },
-  "expected": []
+  "expected": [],
+  "devices": null,
+  "placed": null
 }

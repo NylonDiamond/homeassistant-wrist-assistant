@@ -149,7 +149,7 @@ describe("the rows under a tile", () => {
   it("lists a tile with no design by its base layers, all following, top first", () => {
     const { host } = draftHost();
     const design = tileLayerHost(host, () => undefined).config;
-    const rows = tileLayerRows(host.tile, undefined, { v: 1, doc: design, owned: [], zones: {} });
+    const rows = tileLayerRows(host.tile, undefined, { v: 1, doc: design, owned: [], anchors: {}, zones: {} });
     expect(rows.layers.map((r) => r.title)).toEqual(["Name", "State", "Icon"]);
     expect(rows.layers.every((r) => r.status === "follows")).toBe(true);
     expect(rows.layers[0]).toMatchObject({ up: false, down: true });
