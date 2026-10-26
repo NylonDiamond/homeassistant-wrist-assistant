@@ -1167,6 +1167,10 @@
           "type": "json",
           "required": false
         },
+        "arrange": {
+          "type": "json",
+          "required": false
+        },
         "iconTapAnimation": {
           "type": "enum",
           "enum": "IconTapAnimation",
@@ -2355,7 +2359,8 @@
       "assistPrimaryAction": "speakOnly reads as assistOnly on an Assist tile.",
       "assistSpeechVolumePercent": "0 to 100, clamped on read.",
       "speakMessageSpeechVolumePercent": "0 to 100, clamped on read.",
-      "iconGlow": "The soft glow behind a tile's icon (docs/tile_layers_contract_2026-10.md section 14 in the app repo): {mode, size, brightness, color}. Absent draws One Look's own glow; the apps read it tolerantly."
+      "iconGlow": "The soft glow behind a tile's icon (docs/tile_layers_contract_2026-10.md section 14 in the app repo): {mode, size, brightness, color}. Absent draws One Look's own glow; the apps read it tolerantly.",
+      "arrange": "The tile's Arrangement (docs/page_editor_calm_plan_2026-10.md in the app repo): {v: 1, parts: {icon, name, state}}, each part optional with spot (tl tc tr ml mc mr bl bc br), dx and dy (-0.5 to 0.5 of the tile's width and height), scale (0.8 to 1.5) and hidden. Absent is Default. Only the centred layout draws it; an app before 3.2 ignores it. The math is in frontend/test/fixtures-arrange/README.md."
     }
   }
 }

@@ -42,6 +42,7 @@ import {
   encodeOneLookGlyphGlow,
   oneLookGlyphGlowOf,
 } from "./one-look/colour.js";
+import { type TileArrange, encodeTileArrange, normalizeTileArrange } from "./one-look/arrange.js";
 
 // ── the table ────────────────────────────────────────────────────────────
 
@@ -582,6 +583,28 @@ export function setWatchTileIconGlow(
   };
   const encoded = encodeOneLookGlyphGlow(glow);
   return setKey(document, pageId, tileId, "iconGlow", () => encoded ?? REMOVE);
+}
+
+/** The tile's Arrangement (`arrange`) as One Look reads it: undefined is
+ * Default, every part in its native place. */
+export function watchTileArrange(tile: WatchPageTile): TileArrange | undefined {
+  return normalizeTileArrange(tile.arrange);
+}
+
+/** The Arrangement written sparsely (`encodeTileArrange`): only the parts
+ * with a change, each with only its own keys; the key removed when nothing
+ * is left (Default). Writing what is stored already changes nothing. */
+export function setWatchTileArrange(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  next: TileArrange | undefined,
+): WatchPagesDocument {
+  const encoded = encodeTileArrange(next);
+  return setKey(document, pageId, tileId, "arrange", (tile) => {
+    if (encoded === undefined) return Object.hasOwn(tile, "arrange") ? REMOVE : undefined;
+    return JSON.stringify(tile.arrange) === JSON.stringify(encoded) ? undefined : encoded;
+  });
 }
 
 /** Dim When Off: on removes the key (dimmed is the default), off writes

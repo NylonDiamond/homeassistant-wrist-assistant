@@ -1,0 +1,44 @@
+{
+  "name": "ignored-camera-picture",
+  "about": "A tile that cannot use Free: a camera showing its picture fills the tile, so the arrange key stored on it is ignored and every part is drawn as Default.",
+  "device": "watch",
+  "tile": {
+    "id": "A11A0000-0000-4000-8000-000000000008",
+    "entityId": "camera.porch",
+    "gridCol": 0,
+    "gridRow": 0,
+    "colSpan": 6,
+    "rowSpan": 4,
+    "customLabel": "Porch",
+    "cameraDisplayMode": "preview"
+  },
+  "states": {
+    "camera.porch": {
+      "state": "idle",
+      "attributes": {
+        "entity_picture": "/api/camera_proxy/camera.porch"
+      }
+    }
+  },
+  "cell": {
+    "width": 101.5,
+    "height": 67
+  },
+  "unit": 15.25,
+  "size": {
+    "width": 100.5,
+    "height": 66
+  },
+  "applies": false,
+  "arrange": {
+    "v": 1,
+    "parts": {
+      "icon": {
+        "spot": "tr"
+      },
+      "name": {
+        "spot": "tl"
+      }
+    }
+  }
+}
